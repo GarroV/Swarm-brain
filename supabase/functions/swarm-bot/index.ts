@@ -328,10 +328,18 @@ async function handleAsk(chatId: number, question: string): Promise<void> {
   const handledByTasks = await smartTaskSearch(chatId, question);
   if (handledByTasks) return;
 
-  const embedding = await getEmbedding(question);
+  // Expand query for better semantic search
+  const expandedQuery = await chatComplete(
+    "Ты помогаешь улучшить поисковый запрос для семантического поиска по базе знаний компании. " +
+    "Перефразируй запрос пользователя в развёрнутый поисковый запрос: добавь синонимы, связанные термины, возможные формулировки. " +
+    "Верни только расширенный запрос, без пояснений.",
+    question
+  );
+
+  const embedding = await getEmbedding(`${question} ${expandedQuery}`);
   const { data: entries, error } = await supabase.rpc("match_entries", {
     query_embedding: embedding,
-    match_threshold: 0.4,
+    match_threshold: 0.3,
     match_count: 5,
   });
 
@@ -340,7 +348,9 @@ async function handleAsk(chatId: number, question: string): Promise<void> {
 
   const context = entries.map((e: { content: string }, i: number) => `[${i + 1}] ${e.content}`).join("\n\n");
   const answer = await chatComplete(
-    "Ты помощник командной базы знаний. Отвечай строго на основе контекста. Если ответа нет — так и скажи. Отвечай на русском языке.",
+    "Ты помощник командной базы знаний. Отвечай на основе предоставленного контекста. " +
+    "Делай смысловые связи — если в контексте есть релевантная информация по теме вопроса, используй её даже если термины не совпадают дословно. " +
+    "Если информации действительно нет — скажи об этом. Отвечай на русском языке.",
     `Контекст:\n\n${context}\n\nВопрос: ${question}`
   );
   await sendMessage(chatId, answer);
