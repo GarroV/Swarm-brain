@@ -435,6 +435,87 @@ async function handleUsers(chatId: number, adminId: number, argText: string): Pr
   await sendMessage(chatId, "Подкоманды: /users list · /users add [id] · /users remove [id] · /users promote [id] · /users demote [id]");
 }
 
+// ── Task management ───────────────────────────────────────────────────────────
+
+const STATUS_LABEL: Record<string, string> = {
+  open: "🔲 Открыта",
+  in_progress: "🔄 В работе",
+  done: "✅ Готово",
+  cancelled: "❌ Отменено",
+};
+
+async function handleTasks(chatId: number, filter: string): Promise<void> {
+  let query = supabase
+    .from("tasks")
+    .select("*")
+    .not("status", "in", '("done","cancelled")')
+    .order("due_date", { ascending: true });
+
+  const f = filter.trim();
+
+  if (f.startsWith("@")) {
+    const person = f.slice(1).toLowerCase();
+    query = query.contains("assignees", [person]);
+  } else if (f === "week") {
+    const today = new Date().toISOString().split("T")[0];
+    const end = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
+    query = query.gte("due_date", today).lte("due_date", end);
+  } else if (f === "all") {
+    query = supabase.from("tasks").select("*").order("due_date", { ascending: true });
+  } else if (f) {
+    query = query.contains("tags", [f]);
+  }
+
+  const { data: tasks, error } = await query.limit(15);
+  if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
+  if (!tasks?.length) { await sendMessage(chatId, "Задач не найдено."); return; }
+
+  await sendMessage(chatId, `<b>Задачи${f ? ` · ${f}` : ""}:</b> ${tasks.length} шт.`);
+
+  for (const task of tasks) {
+    const assignees = task.assignees?.length ? task.assignees.join(", ") : "—";
+    const due = task.due_date ? `📅 ${task.due_date}` : "";
+    const tags = task.tags?.length ? `🏷 ${task.tags.join(", ")}` : "";
+    const status = STATUS_LABEL[task.status] ?? task.status;
+
+    const text = [
+      `${status} <b>${task.title}</b>`,
+      `👤 ${assignees}`,
+      [due, tags].filter(Boolean).join("  "),
+    ].filter(Boolean).join("\n");
+
+    const keyboard = task.status !== "done" && task.status !== "cancelled"
+      ? [[
+          { text: "🔄 В работе", callback_data: `ts_${task.id}_in_progress` },
+          { text: "✅ Готово", callback_data: `ts_${task.id}_done` },
+          { text: "❌ Отмена", callback_data: `ts_${task.id}_cancelled` },
+        ]]
+      : [];
+
+    await sendInlineMessage(chatId, text, keyboard);
+  }
+}
+
+async function handleTaskStatusChange(
+  chatId: number,
+  username: string,
+  taskId: string,
+  newStatus: string
+): Promise<void> {
+  const { data: task } = await supabase.from("tasks").select("title, status").eq("id", taskId).maybeSingle();
+  if (!task) { await sendMessage(chatId, "Задача не найдена."); return; }
+
+  await supabase.from("tasks").update({ status: newStatus, updated_at: new Date().toISOString() }).eq("id", taskId);
+  await supabase.from("task_history").insert({
+    task_id: taskId,
+    changed_by: username,
+    old_status: task.status,
+    new_status: newStatus,
+  });
+
+  await sendMessage(chatId, `${STATUS_LABEL[newStatus]} <b>${task.title}</b>`);
+}
+
 async function handleConnect(chatId: number): Promise<void> {
   await sendMessage(
     chatId,
@@ -513,7 +594,11 @@ function getHelpText(admin: boolean): string {
     "<b>Команды Swarm:</b>\n\n" +
     "/add [текст] — добавить запись\n" +
     "/ask [вопрос] — задать вопрос по базе знаний\n" +
-    "/meetings — список встреч из Read.ai\n" +
+    "/tasks — все открытые задачи\n" +
+    "/tasks @Имя — задачи человека\n" +
+    "/tasks Болгария — задачи по тегу/стране\n" +
+    "/tasks week — задачи на этой неделе\n" +
+    "/meetings — встречи из Read.ai\n" +
     "/help — справка\n\n" +
     "<b>Автоматически обрабатывается:</b>\n" +
     "🎤 Голосовые сообщения — транскрибация\n" +
@@ -548,6 +633,11 @@ Deno.serve(async (req: Request) => {
     try {
       if (cb.data.startsWith("meeting_")) {
         await handleMeetingCallback(chatId, username, cb.data.replace("meeting_", ""));
+      } else if (cb.data.startsWith("ts_")) {
+        const parts = cb.data.split("_");
+        const taskId = parts[1];
+        const newStatus = parts.slice(2).join("_");
+        await handleTaskStatusChange(chatId, username, taskId, newStatus);
       }
     } catch (err) {
       await sendMessage(chatId, `Ошибка: ${err instanceof Error ? err.message : String(err)}`);
@@ -642,6 +732,8 @@ Deno.serve(async (req: Request) => {
     } else if (command === "/users" || text === "👥 Пользователи") {
       if (!admin) { await sendMessage(chatId, "Эта команда доступна только администратору."); }
       else { await handleUsers(chatId, userId, argText); }
+    } else if (command === "/tasks") {
+      await handleTasks(chatId, argText);
     } else if (command === "/connect") {
       if (!admin) { await sendMessage(chatId, "Эта команда доступна только администратору."); }
       else { await handleConnect(chatId); }
