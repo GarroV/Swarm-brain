@@ -431,17 +431,39 @@ async function handleUsers(chatId: number, adminId: number, argText: string): Pr
   const targetArg = parts[1];
 
   if (!sub || sub === "list") {
-    const { data, error } = await supabase.from("allowed_users").select("telegram_id, username, is_admin, created_at").order("created_at");
+    const { data, error } = await supabase
+      .from("allowed_users")
+      .select("telegram_id, username, is_admin")
+      .order("created_at");
     if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
 
-    const lines = (data ?? []).map((u: { telegram_id: number; username: string | null; is_admin: boolean }) => {
-      const name = u.username ? `@${u.username}` : `ID ${u.telegram_id}`;
-      const role = u.is_admin ? " 👑" : "";
-      return `• ${name} (${u.telegram_id})${role}`;
-    });
-    const adminLine = `• Суперадмин (${ADMIN_USER_ID}) 👑`;
-    const body = lines.length > 0 ? `${adminLine}\n${lines.join("\n")}` : `${adminLine}\n\nДругих пользователей нет.`;
-    await sendMessage(chatId, `<b>Разрешённые пользователи:</b>\n${body}`);
+    const ids = (data ?? []).map((u: { telegram_id: number }) => u.telegram_id);
+    const { data: profiles } = await supabase.from("user_profiles").select("*").in("telegram_id", ids);
+    const profileMap = Object.fromEntries((profiles ?? []).map((p: { telegram_id: number; first_name?: string; last_name?: string; markets?: string[] }) => [p.telegram_id, p]));
+
+    await sendMessage(chatId, `<b>Пользователи:</b> ${(data ?? []).length + 1} чел.`);
+
+    // Superadmin card
+    await sendInlineMessage(chatId, `👑 Суперадмин (${ADMIN_USER_ID})`, [
+      [{ text: "👤 Профиль", callback_data: `pu_${ADMIN_USER_ID}` }],
+    ]);
+
+    for (const u of (data ?? []) as Array<{ telegram_id: number; username: string | null; is_admin: boolean }>) {
+      const p = profileMap[u.telegram_id];
+      const fullName = [p?.first_name, p?.last_name].filter(Boolean).join(" ");
+      const markets = p?.markets?.join(", ");
+      const displayName = fullName || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`);
+
+      const lines = [
+        `${u.is_admin ? "👑 " : "👤 "}<b>${displayName}</b>`,
+        u.username ? `@${u.username} · ${u.telegram_id}` : `ID ${u.telegram_id}`,
+        markets ? `🌍 ${markets}` : "",
+      ].filter(Boolean).join("\n");
+
+      await sendInlineMessage(chatId, lines, [
+        [{ text: "✏️ Редактировать профиль", callback_data: `pu_${u.telegram_id}` }],
+      ]);
+    }
     return;
   }
 
@@ -828,6 +850,9 @@ Deno.serve(async (req: Request) => {
         const taskId = parts[1];
         const newStatus = parts.slice(2).join("_");
         await handleTaskStatusChange(chatId, username, taskId, newStatus);
+      } else if (cb.data.startsWith("pu_")) {
+        const targetId = Number(cb.data.replace("pu_", ""));
+        await showProfile(chatId, targetId);
       } else if (cb.data.startsWith("pe_")) {
         // Profile edit: pe_{targetId}_{field}
         const parts = cb.data.split("_");
