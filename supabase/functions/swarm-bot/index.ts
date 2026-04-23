@@ -846,6 +846,25 @@ Deno.serve(async (req: Request) => {
         const taskId = parts[1];
         const newStatus = parts.slice(2).join("_");
         await handleTaskStatusChange(chatId, username, taskId, newStatus);
+      } else if (cb.data.startsWith("md_")) {
+        const parts = cb.data.replace("md_", "").split("_");
+        const entryId = parts[0];
+        const meetingId = parts[1] || null;
+
+        const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).maybeSingle();
+        const title = (entry?.metadata?.title as string) ?? "Встреча";
+
+        if (meetingId) {
+          const { data: taskIds } = await supabase.from("tasks").select("id").eq("meeting_id", meetingId);
+          if (taskIds?.length) {
+            const ids = taskIds.map((t: { id: string }) => t.id);
+            await supabase.from("task_history").delete().in("task_id", ids);
+            await supabase.from("tasks").delete().eq("meeting_id", meetingId);
+          }
+        }
+        await supabase.from("entries").delete().eq("id", entryId);
+
+        await sendMessage(chatId, `🗑 Удалено: <b>${title}</b> и все связанные задачи.`);
       } else if (cb.data.startsWith("mr_")) {
         const entryId = cb.data.replace("mr_", "");
         const { data: entry } = await supabase.from("entries").select("content, metadata, created_at").eq("id", entryId).maybeSingle();
@@ -872,7 +891,11 @@ Deno.serve(async (req: Request) => {
         // Extract summary section from content (first part before transcript)
         const contentPreview = entry.content.split("Стенограмма:")[0].trim().slice(0, 2000);
 
-        await sendMessage(chatId, `<b>📋 ${title}</b>\n<i>${date}</i>\n\n${contentPreview}${tasksText}`);
+        await sendInlineMessage(
+          chatId,
+          `<b>📋 ${title}</b>\n<i>${date}</i>\n\n${contentPreview}${tasksText}`,
+          [[{ text: "🗑 Удалить встречу и все задачи", callback_data: `md_${entryId}_${meetingId ?? ""}` }]]
+        );
       } else if (cb.data.startsWith("pu_")) {
         const targetId = Number(cb.data.replace("pu_", ""));
         await showProfile(chatId, targetId);
