@@ -227,13 +227,13 @@ async function saveEntry(content: string, addedBy: string, source: string, metad
 
 // ── Session ───────────────────────────────────────────────────────────────────
 
-async function getSession(chatId: number): Promise<string | null> {
-  const { data } = await supabase.from("sessions").select("action").eq("chat_id", chatId).maybeSingle();
-  return data?.action ?? null;
+async function getSession(chatId: number): Promise<{ action: string; context?: string } | null> {
+  const { data } = await supabase.from("sessions").select("action, context").eq("chat_id", chatId).maybeSingle();
+  return data ?? null;
 }
 
-async function setSession(chatId: number, action: string): Promise<void> {
-  await supabase.from("sessions").upsert({ chat_id: chatId, action });
+async function setSession(chatId: number, action: string, context?: string): Promise<void> {
+  await supabase.from("sessions").upsert({ chat_id: chatId, action, context: context ?? null });
 }
 
 async function clearSession(chatId: number): Promise<void> {
@@ -328,15 +328,14 @@ async function handleAsk(chatId: number, question: string): Promise<void> {
   const handledByTasks = await smartTaskSearch(chatId, question);
   if (handledByTasks) return;
 
-  // Expand query for better semantic search
+  // Expand query to help GPT understand intent (not used for embedding)
   const expandedQuery = await chatComplete(
-    "Ты помогаешь улучшить поисковый запрос для семантического поиска по базе знаний компании. " +
-    "Перефразируй запрос пользователя в развёрнутый поисковый запрос: добавь синонимы, связанные термины, возможные формулировки. " +
+    "Перефразируй запрос пользователя: добавь синонимы и связанные термины для лучшего понимания контекста. " +
     "Верни только расширенный запрос, без пояснений.",
     question
   );
 
-  const embedding = await getEmbedding(`${question} ${expandedQuery}`);
+  const embedding = await getEmbedding(question);
   const { data: entries, error } = await supabase.rpc("match_entries", {
     query_embedding: embedding,
     match_threshold: 0.3,
@@ -351,9 +350,10 @@ async function handleAsk(chatId: number, question: string): Promise<void> {
     "Ты помощник командной базы знаний. Отвечай на основе предоставленного контекста. " +
     "Делай смысловые связи — если в контексте есть релевантная информация по теме вопроса, используй её даже если термины не совпадают дословно. " +
     "Если информации действительно нет — скажи об этом. Отвечай на русском языке.",
-    `Контекст:\n\n${context}\n\nВопрос: ${question}`
+    `Контекст:\n\n${context}\n\nВопрос: ${question}\nПодсказка по теме: ${expandedQuery}`
   );
   await sendMessage(chatId, answer);
+  await setSession(chatId, "clarify_ready", question);
 }
 
 async function handleVoice(chatId: number, username: string, fileId: string, duration: number): Promise<void> {
@@ -915,7 +915,7 @@ Deno.serve(async (req: Request) => {
         const targetId = Number(parts[1]);
         const field = parts.slice(2).join("_");
         const label = PROFILE_FIELDS[field] ?? field;
-        await setSession(chatId, `profile_${targetId}_${field}`);
+        await setSession(chatId, `profile_${targetId}_${field}`, undefined);
         await sendMessage(chatId, `Введи новое значение для <b>${label}</b>:`);
       } else if (cb.data.startsWith("td_")) {
         const taskId = cb.data.replace("td_", "");
@@ -988,16 +988,23 @@ Deno.serve(async (req: Request) => {
 
       // Check pending session
       const session = await getSession(chatId);
-      if (session === "waiting_add") {
+      const action = session?.action ?? null;
+
+      if (action === "waiting_add") {
         await clearSession(chatId);
         await saveEntry(text, username, "telegram");
         await sendMessage(chatId, "Запись добавлена в базу знаний.");
-      } else if (session === "waiting_ask") {
+      } else if (action === "waiting_ask") {
         await clearSession(chatId);
         await handleAsk(chatId, text);
-      } else if (session?.startsWith("profile_")) {
+      } else if (action === "clarify_ready" && text.length < 300) {
         await clearSession(chatId);
-        const parts = session.split("_");
+        const originalQuestion = session?.context ?? "";
+        const combined = originalQuestion ? `${originalQuestion}. Уточнение: ${text}` : text;
+        await handleAsk(chatId, combined);
+      } else if (action?.startsWith("profile_")) {
+        await clearSession(chatId);
+        const parts = action.split("_");
         const targetId = Number(parts[1]);
         const field = parts.slice(2).join("_");
         await handleProfileEdit(chatId, targetId, field, text);
