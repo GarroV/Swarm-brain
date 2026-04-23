@@ -93,9 +93,9 @@ async function sendInlineMessage(chatId: number, text: string, keyboard: unknown
 function buildKeyboard(admin: boolean) {
   const rows = [
     [{ text: "📝 Добавить" }, { text: "❓ Спросить" }],
-    [{ text: "ℹ️ Помощь" }],
+    [{ text: "ℹ️ Помощь" }, { text: "📋 Задачи" }],
   ];
-  if (admin) rows[1].push({ text: "👥 Пользователи" });
+  if (admin) rows.push([{ text: "👥 Пользователи" }, { text: "🎙 Read.ai" }]);
   return { keyboard: rows, resize_keyboard: true, persistent: true };
 }
 
@@ -434,36 +434,32 @@ async function handleUsers(chatId: number, adminId: number, argText: string): Pr
     const { data, error } = await supabase
       .from("allowed_users")
       .select("telegram_id, username, is_admin")
+      .neq("telegram_id", ADMIN_USER_ID)
       .order("created_at");
     if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
 
     const ids = (data ?? []).map((u: { telegram_id: number }) => u.telegram_id);
-    const { data: profiles } = await supabase.from("user_profiles").select("*").in("telegram_id", ids);
-    const profileMap = Object.fromEntries((profiles ?? []).map((p: { telegram_id: number; first_name?: string; last_name?: string; markets?: string[] }) => [p.telegram_id, p]));
+    const { data: profiles } = await supabase.from("user_profiles").select("*").in("telegram_id", [ADMIN_USER_ID, ...ids]);
+    const profileMap = Object.fromEntries((profiles ?? []).map((p: { telegram_id: number; first_name?: string; last_name?: string }) => [p.telegram_id, p]));
 
-    await sendMessage(chatId, `<b>Пользователи:</b> ${(data ?? []).length + 1} чел.`);
+    const allUsers = [
+      { telegram_id: ADMIN_USER_ID, username: null, is_admin: true, isSuperAdmin: true },
+      ...(data ?? []).map((u: { telegram_id: number; username: string | null; is_admin: boolean }) => ({ ...u, isSuperAdmin: false })),
+    ];
 
-    // Superadmin card
-    await sendInlineMessage(chatId, `👑 Суперадмин (${ADMIN_USER_ID})`, [
-      [{ text: "👤 Профиль", callback_data: `pu_${ADMIN_USER_ID}` }],
-    ]);
-
-    for (const u of (data ?? []) as Array<{ telegram_id: number; username: string | null; is_admin: boolean }>) {
+    const lines = allUsers.map((u) => {
       const p = profileMap[u.telegram_id];
       const fullName = [p?.first_name, p?.last_name].filter(Boolean).join(" ");
-      const markets = p?.markets?.join(", ");
       const displayName = fullName || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`);
+      const crown = u.isSuperAdmin || u.is_admin ? " 👑" : "";
+      return `• ${displayName}${crown}`;
+    });
 
-      const lines = [
-        `${u.is_admin ? "👑 " : "👤 "}<b>${displayName}</b>`,
-        u.username ? `@${u.username} · ${u.telegram_id}` : `ID ${u.telegram_id}`,
-        markets ? `🌍 ${markets}` : "",
-      ].filter(Boolean).join("\n");
-
-      await sendInlineMessage(chatId, lines, [
-        [{ text: "✏️ Редактировать профиль", callback_data: `pu_${u.telegram_id}` }],
-      ]);
-    }
+    await sendInlineMessage(
+      chatId,
+      `<b>Пользователи (${allUsers.length}):</b>\n\n${lines.join("\n")}`,
+      allUsers.map((u) => [{ text: u.isSuperAdmin || u.is_admin ? `👑 ${profileMap[u.telegram_id]?.first_name ?? `ID ${u.telegram_id}`}` : `👤 ${profileMap[u.telegram_id]?.first_name ?? `ID ${u.telegram_id}`}`, callback_data: `pu_${u.telegram_id}` }])
+    );
     return;
   }
 
@@ -850,6 +846,33 @@ Deno.serve(async (req: Request) => {
         const taskId = parts[1];
         const newStatus = parts.slice(2).join("_");
         await handleTaskStatusChange(chatId, username, taskId, newStatus);
+      } else if (cb.data.startsWith("mr_")) {
+        const entryId = cb.data.replace("mr_", "");
+        const { data: entry } = await supabase.from("entries").select("content, metadata, created_at").eq("id", entryId).maybeSingle();
+        if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return; }
+
+        const title = (entry.metadata?.title as string) ?? "Встреча";
+        const meetingId = entry.metadata?.meeting_id as string | undefined;
+        const date = new Date(entry.created_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+        // Get related tasks
+        let tasksText = "";
+        if (meetingId) {
+          const { data: tasks } = await supabase.from("tasks").select("title, assignees, due_date, status").eq("meeting_id", meetingId);
+          if (tasks?.length) {
+            tasksText = "\n\n<b>✅ Задачи:</b>\n" + tasks.map((t: { title: string; assignees: string[]; due_date: string | null; status: string }) => {
+              const who = t.assignees?.join(", ");
+              const due = t.due_date ? ` · до ${t.due_date}` : "";
+              const done = t.status === "done" ? " ✓" : "";
+              return `• ${t.title}${who ? ` (${who})` : ""}${due}${done}`;
+            }).join("\n");
+          }
+        }
+
+        // Extract summary section from content (first part before transcript)
+        const contentPreview = entry.content.split("Стенограмма:")[0].trim().slice(0, 2000);
+
+        await sendMessage(chatId, `<b>📋 ${title}</b>\n<i>${date}</i>\n\n${contentPreview}${tasksText}`);
       } else if (cb.data.startsWith("pu_")) {
         const targetId = Number(cb.data.replace("pu_", ""));
         await showProfile(chatId, targetId);
@@ -918,7 +941,7 @@ Deno.serve(async (req: Request) => {
     const text = message.text?.trim();
     if (!text) return new Response("OK", { status: 200 });
 
-    const BUTTON_LABELS = new Set(["📝 Добавить", "❓ Спросить", "ℹ️ Помощь", "👥 Пользователи"]);
+    const BUTTON_LABELS = new Set(["📝 Добавить", "❓ Спросить", "ℹ️ Помощь", "👥 Пользователи", "📋 Задачи", "🎙 Read.ai"]);
     const isButtonPress = BUTTON_LABELS.has(text);
     const isCommand = text.startsWith("/") || isButtonPress;
 
@@ -967,8 +990,31 @@ Deno.serve(async (req: Request) => {
     } else if (command === "/users" || text === "👥 Пользователи") {
       if (!admin) { await sendMessage(chatId, "Эта команда доступна только администратору."); }
       else { await handleUsers(chatId, userId, argText); }
-    } else if (command === "/tasks") {
+    } else if (command === "/tasks" || text === "📋 Задачи") {
       await handleTasks(chatId, argText);
+    } else if (text === "🎙 Read.ai" || command === "/readai") {
+      const { data: meetings } = await supabase
+        .from("entries")
+        .select("id, metadata, created_at")
+        .eq("source", "read_ai")
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (!meetings?.length) {
+        await sendMessage(chatId, "Встреч пока нет. Они появятся автоматически после завершения созвона в Read.ai.");
+      } else {
+        await sendMessage(chatId, `<b>🎙 Встречи из Read.ai:</b>`);
+        for (const m of meetings as Array<{ id: string; metadata: Record<string, unknown>; created_at: string }>) {
+          const title = (m.metadata?.title as string) ?? "Встреча";
+          const date = new Date(m.created_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+          const duration = m.metadata?.duration ? ` · ${Math.round((m.metadata.duration as number) / 60)} мин` : "";
+          await sendInlineMessage(
+            chatId,
+            `📋 <b>${title}</b>\n${date}${duration}`,
+            [[{ text: "🔍 Подробнее", callback_data: `mr_${m.id}` }]]
+          );
+        }
+      }
     } else if (command === "/connect") {
       if (!admin) { await sendMessage(chatId, "Эта команда доступна только администратору."); }
       else { await handleConnect(chatId); }
