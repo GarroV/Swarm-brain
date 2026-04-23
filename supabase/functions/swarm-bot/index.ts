@@ -270,12 +270,63 @@ async function handleAdd(chatId: number, username: string, text: string): Promis
   await sendMessage(chatId, "Запись добавлена в базу знаний.");
 }
 
+const TASK_KEYWORDS = /задач|таск|task|сделать|выполнить|поручен|назначен|дедлайн|deadline|кто должен/i;
+
+async function smartTaskSearch(chatId: number, question: string): Promise<boolean> {
+  if (!TASK_KEYWORDS.test(question)) return false;
+
+  // Extract person or tag from question via GPT
+  const raw = await chatComplete(
+    "Из вопроса извлеки фильтр для поиска задач. Верни JSON: {\"person\": \"Имя или null\", \"tag\": \"тег/страна или null\", \"period\": \"week/null\"}\nТолько JSON.",
+    question
+  );
+
+  let person: string | null = null;
+  let tag: string | null = null;
+  let period: string | null = null;
+
+  try {
+    const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()) as { person?: string | null; tag?: string | null; period?: string | null };
+    person = parsed.person && parsed.person !== "null" ? parsed.person : null;
+    tag = parsed.tag && parsed.tag !== "null" ? parsed.tag : null;
+    period = parsed.period && parsed.period !== "null" ? parsed.period : null;
+  } catch { /* ignore */ }
+
+  let query = supabase.from("tasks").select("*").not("status", "in", '("done","cancelled")').order("due_date");
+
+  if (person) query = query.ilike("assignees", `%${person}%`);
+  if (tag) query = query.ilike("tags", `%${tag}%`);
+  if (period === "week") {
+    const today = new Date().toISOString().split("T")[0];
+    const end = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
+    query = query.gte("due_date", today).lte("due_date", end);
+  }
+
+  const { data: tasks } = await query.limit(10);
+
+  if (!tasks?.length) return false;
+
+  const taskLines = tasks.map((t: { title: string; assignees: string[]; due_date: string | null; tags: string[]; status: string }) => {
+    const assignees = t.assignees?.join(", ") || "—";
+    const due = t.due_date ? ` · до ${t.due_date}` : "";
+    const tags = t.tags?.length ? ` · ${t.tags.join(", ")}` : "";
+    return `• ${t.title} (${assignees}${due}${tags})`;
+  }).join("\n");
+
+  await sendMessage(chatId, `<b>Задачи по запросу:</b>\n\n${taskLines}`);
+  return true;
+}
+
 async function handleAsk(chatId: number, question: string): Promise<void> {
   if (!question.trim()) {
     await setSession(chatId, "waiting_ask");
     await sendMessage(chatId, "Напиши свой вопрос:");
     return;
   }
+
+  // Check if question is about tasks
+  const handledByTasks = await smartTaskSearch(chatId, question);
+  if (handledByTasks) return;
 
   const embedding = await getEmbedding(question);
   const { data: entries, error } = await supabase.rpc("match_entries", {
@@ -444,56 +495,118 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "❌ Отменено",
 };
 
-async function handleTasks(chatId: number, filter: string): Promise<void> {
-  let query = supabase
-    .from("tasks")
-    .select("*")
+type Task = {
+  id: string;
+  title: string;
+  assignees: string[];
+  due_date: string | null;
+  tags: string[];
+  status: string;
+  created_at: string;
+  meeting_id: string | null;
+};
+
+function buildTaskQuery(filter: string) {
+  const f = filter.trim();
+
+  if (f === "done") {
+    return supabase.from("tasks").select("*").eq("status", "done").order("updated_at", { ascending: false });
+  }
+  if (f === "all") {
+    return supabase.from("tasks").select("*").order("due_date", { ascending: true });
+  }
+
+  let q = supabase.from("tasks").select("*")
     .not("status", "in", '("done","cancelled")')
     .order("due_date", { ascending: true });
 
-  const f = filter.trim();
-
   if (f.startsWith("@")) {
-    const person = f.slice(1).toLowerCase();
-    query = query.contains("assignees", [person]);
+    q = q.ilike("assignees", `%${f.slice(1)}%`);
   } else if (f === "week") {
     const today = new Date().toISOString().split("T")[0];
     const end = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
-    query = query.gte("due_date", today).lte("due_date", end);
-  } else if (f === "all") {
-    query = supabase.from("tasks").select("*").order("due_date", { ascending: true });
+    q = q.gte("due_date", today).lte("due_date", end);
   } else if (f) {
-    query = query.contains("tags", [f]);
+    q = q.ilike("tags", `%${f}%`);
   }
 
-  const { data: tasks, error } = await query.limit(15);
+  return q;
+}
+
+async function handleTasks(chatId: number, filter: string): Promise<void> {
+  const sub = filter.trim().toLowerCase();
+
+  if (sub === "export" || sub.startsWith("export ")) {
+    await handleTasksExport(chatId, sub.replace("export", "").trim());
+    return;
+  }
+
+  const { data: tasks, error } = await buildTaskQuery(filter).limit(15);
   if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
   if (!tasks?.length) { await sendMessage(chatId, "Задач не найдено."); return; }
 
-  await sendMessage(chatId, `<b>Задачи${f ? ` · ${f}` : ""}:</b> ${tasks.length} шт.`);
+  const label = filter.trim() ? ` · ${filter.trim()}` : "";
+  await sendMessage(chatId, `<b>Задачи${label}:</b> ${tasks.length} шт.`);
 
-  for (const task of tasks) {
-    const assignees = task.assignees?.length ? task.assignees.join(", ") : "—";
-    const due = task.due_date ? `📅 ${task.due_date}` : "";
-    const tags = task.tags?.length ? `🏷 ${task.tags.join(", ")}` : "";
-    const status = STATUS_LABEL[task.status] ?? task.status;
-
-    const text = [
-      `${status} <b>${task.title}</b>`,
-      `👤 ${assignees}`,
-      [due, tags].filter(Boolean).join("  "),
-    ].filter(Boolean).join("\n");
-
-    const keyboard = task.status !== "done" && task.status !== "cancelled"
-      ? [[
-          { text: "🔄 В работе", callback_data: `ts_${task.id}_in_progress` },
-          { text: "✅ Готово", callback_data: `ts_${task.id}_done` },
-          { text: "❌ Отмена", callback_data: `ts_${task.id}_cancelled` },
-        ]]
-      : [];
-
-    await sendInlineMessage(chatId, text, keyboard);
+  for (const task of tasks as Task[]) {
+    await sendTaskCard(chatId, task);
   }
+}
+
+async function sendTaskCard(chatId: number, task: Task): Promise<void> {
+  const assignees = task.assignees?.length ? task.assignees.join(", ") : "—";
+  const due = task.due_date ? `📅 ${task.due_date}` : "";
+  const tags = task.tags?.length ? `🏷 ${task.tags.join(", ")}` : "";
+  const status = STATUS_LABEL[task.status] ?? task.status;
+
+  const text = [
+    `${status} <b>${task.title}</b>`,
+    `👤 ${assignees}`,
+    [due, tags].filter(Boolean).join("  "),
+  ].filter(Boolean).join("\n");
+
+  const isActive = task.status !== "done" && task.status !== "cancelled";
+  const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
+
+  if (isActive) {
+    keyboard.push([
+      { text: "🔄 В работе", callback_data: `ts_${task.id}_in_progress` },
+      { text: "✅ Готово", callback_data: `ts_${task.id}_done` },
+      { text: "⏸ Отмена", callback_data: `ts_${task.id}_cancelled` },
+    ]);
+  }
+  keyboard.push([{ text: "🗑 Удалить", callback_data: `td_${task.id}` }]);
+
+  await sendInlineMessage(chatId, text, keyboard);
+}
+
+async function handleTasksExport(chatId: number, filter: string): Promise<void> {
+  const { data: tasks, error } = await buildTaskQuery(filter || "").limit(100);
+  if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
+  if (!tasks?.length) { await sendMessage(chatId, "Задач для экспорта не найдено."); return; }
+
+  const lines = ["Задача\tИсполнители\tДедлайн\tТеги\tСтатус\tСоздана"];
+  for (const t of tasks as Task[]) {
+    lines.push([
+      t.title,
+      (t.assignees ?? []).join("; "),
+      t.due_date ?? "",
+      (t.tags ?? []).join("; "),
+      t.status,
+      t.created_at.slice(0, 10),
+    ].join("\t"));
+  }
+
+  const csv = lines.join("\n");
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("document", new Blob([csv], { type: "text/plain" }), `tasks_${new Date().toISOString().slice(0, 10)}.tsv`);
+  form.append("caption", `Экспорт задач · ${tasks.length} шт.`);
+
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, {
+    method: "POST",
+    body: form,
+  });
 }
 
 async function handleTaskStatusChange(
@@ -638,6 +751,12 @@ Deno.serve(async (req: Request) => {
         const taskId = parts[1];
         const newStatus = parts.slice(2).join("_");
         await handleTaskStatusChange(chatId, username, taskId, newStatus);
+      } else if (cb.data.startsWith("td_")) {
+        const taskId = cb.data.replace("td_", "");
+        const { data: task } = await supabase.from("tasks").select("title").eq("id", taskId).maybeSingle();
+        await supabase.from("task_history").delete().eq("task_id", taskId);
+        await supabase.from("tasks").delete().eq("id", taskId);
+        await sendMessage(chatId, `🗑 Удалено: <b>${task?.title ?? taskId}</b>`);
       }
     } catch (err) {
       await sendMessage(chatId, `Ошибка: ${err instanceof Error ? err.message : String(err)}`);
