@@ -19,6 +19,75 @@ interface TgMessage {
   photo?: Array<{ file_id: string; file_size?: number }>;
 }
 
+interface TgCallbackQuery {
+  id: string;
+  from: { id?: number; username?: string };
+  message: { chat: { id: number }; message_id: number };
+  data: string;
+}
+
+// ── Read.ai token management ──────────────────────────────────────────────────
+
+const READ_AI_TOKEN_URL = "https://authn.read.ai/oauth2/token";
+const READ_AI_API = "https://api.read.ai/v1";
+const READ_AI_AUTH_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/read-ai-auth?start=1";
+
+async function getReadAiToken(): Promise<string | null> {
+  const { data } = await supabase.from("oauth_tokens").select("*").eq("service", "read_ai").maybeSingle();
+  if (!data?.access_token) return null;
+
+  if (new Date(data.expires_at) > new Date(Date.now() + 60_000)) return data.access_token;
+
+  const res = await fetch(READ_AI_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: data.refresh_token,
+      client_id: data.client_id,
+    }),
+  });
+  const tokenData = await res.json();
+  if (!res.ok) return null;
+
+  const expiresAt = new Date(Date.now() + (tokenData.expires_in ?? 600) * 1000).toISOString();
+  await supabase.from("oauth_tokens").update({
+    access_token: tokenData.access_token,
+    refresh_token: tokenData.refresh_token ?? data.refresh_token,
+    expires_at: expiresAt,
+    updated_at: new Date().toISOString(),
+  }).eq("service", "read_ai");
+
+  return tokenData.access_token;
+}
+
+async function readAiGet(path: string): Promise<unknown> {
+  const token = await getReadAiToken();
+  if (!token) throw new Error("Read.ai не подключён. Используй /connect");
+  const res = await fetch(`${READ_AI_API}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error((data as { message?: string }).message ?? "Read.ai API error");
+  return data;
+}
+
+async function answerCallback(callbackId: string): Promise<void> {
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callback_query_id: callbackId }),
+  });
+}
+
+async function sendInlineMessage(chatId: number, text: string, keyboard: unknown[][]): Promise<void> {
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", reply_markup: { inline_keyboard: keyboard } }),
+  });
+}
+
 // ── Telegram helpers ──────────────────────────────────────────────────────────
 
 function buildKeyboard(admin: boolean) {
@@ -366,11 +435,85 @@ async function handleUsers(chatId: number, adminId: number, argText: string): Pr
   await sendMessage(chatId, "Подкоманды: /users list · /users add [id] · /users remove [id] · /users promote [id] · /users demote [id]");
 }
 
+async function handleConnect(chatId: number): Promise<void> {
+  await sendMessage(
+    chatId,
+    `Для подключения Read.ai открой ссылку в браузере и авторизуйся:\n\n<a href="${READ_AI_AUTH_URL}">${READ_AI_AUTH_URL}</a>\n\nПосле авторизации вернись в Telegram — бот готов к работе.`
+  );
+}
+
+async function handleMeetings(chatId: number, hoursBack = 24): Promise<void> {
+  const token = await getReadAiToken();
+  if (!token) {
+    await sendMessage(chatId, "Read.ai не подключён. Используй /connect для авторизации.");
+    return;
+  }
+
+  await sendMessage(chatId, "Загружаю список встреч...");
+
+  const startTime = new Date(Date.now() - hoursBack * 3_600_000).toISOString();
+  const data = await readAiGet(`/meetings?page_size=15&start_time=${encodeURIComponent(startTime)}`) as Record<string, unknown>;
+  const meetings = (data.meetings ?? data.results ?? data.data ?? []) as Array<Record<string, unknown>>;
+
+  if (!meetings.length) {
+    await sendMessage(chatId, `Встреч за последние ${hoursBack} часов не найдено.`);
+    return;
+  }
+
+  const keyboard = meetings.map((m) => {
+    const ts = (m.created_at ?? m.date ?? m.start_time ?? "") as string;
+    const date = ts ? new Date(ts) : new Date();
+    const dateStr = date.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const duration = m.duration ? ` · ${Math.round((m.duration as number) / 60)} мин` : "";
+    const title = (m.title as string | undefined) ?? "Без названия";
+    return [{ text: `${title} · ${dateStr}${duration}`, callback_data: `meeting_${m.id}` }];
+  });
+
+  await sendInlineMessage(
+    chatId,
+    `<b>Встречи за последние ${hoursBack} часов:</b>\n\nВыбери встречи для добавления в базу знаний:`,
+    keyboard
+  );
+}
+
+async function handleMeetingCallback(chatId: number, username: string, meetingId: string): Promise<void> {
+  await sendMessage(chatId, "Обрабатываю встречу...");
+
+  const meeting = await readAiGet(`/meetings/${meetingId}`) as Record<string, unknown>;
+
+  const title = (meeting.title as string | undefined) ?? "Встреча";
+  const summaryObj = meeting.summary as Record<string, unknown> | undefined;
+  const summary = (summaryObj?.summary_text ?? summaryObj?.overview ?? "") as string;
+  const transcript = (meeting.transcript ?? summaryObj?.transcript ?? "") as string;
+  const actionItems = (summaryObj?.action_items ?? meeting.action_items ?? []) as Array<Record<string, unknown>>;
+
+  const contentParts = [
+    `Встреча: ${title}`,
+    summary ? `Краткое содержание: ${summary}` : "",
+    actionItems.length
+      ? `Задачи: ${actionItems.map((a) => a.text ?? a.description ?? JSON.stringify(a)).join("; ")}`
+      : "",
+    transcript ? `Транскрипция:\n${transcript.slice(0, 8000)}` : "",
+  ].filter(Boolean).join("\n\n");
+
+  const gptResult = await chatComplete(
+    "Ты помощник для обработки встреч. На основе данных встречи сформируй структурированный итог:\n" +
+    "1. 🔑 Ключевые тезисы (3-7 пунктов)\n" +
+    "2. ✅ Задачи с ответственными и дедлайнами (если есть)\n" +
+    "Отвечай на русском языке. Будь конкретным.",
+    contentParts
+  );
+
+  await saveEntry(contentParts, username, "read_ai", { meeting_id: meetingId, title });
+  await sendMessage(chatId, `<b>📋 ${title}</b>\n\n${gptResult}`);
+}
+
 function getHelpText(admin: boolean): string {
   const base =
     "<b>Команды Swarm:</b>\n\n" +
     "/add [текст] — добавить запись\n" +
     "/ask [вопрос] — задать вопрос по базе знаний\n" +
+    "/meetings — список встреч из Read.ai\n" +
     "/help — справка\n\n" +
     "<b>Автоматически обрабатывается:</b>\n" +
     "🎤 Голосовые сообщения — транскрибация\n" +
@@ -379,7 +522,7 @@ function getHelpText(admin: boolean): string {
     "🔗 Ссылки — загрузка содержимого страницы";
 
   return admin
-    ? base + "\n\n<b>Управление пользователями:</b>\n/users list · /users add [id] · /users remove [id]"
+    ? base + "\n\n<b>Управление пользователями:</b>\n/users list · /users add [id] · /users remove [id]\n\n<b>Read.ai:</b>\n/connect — подключить Read.ai\n/meetings — встречи за 24 часа"
     : base;
 }
 
@@ -388,8 +531,30 @@ function getHelpText(admin: boolean): string {
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("OK", { status: 200 });
 
-  let update: { message?: TgMessage };
+  let update: { message?: TgMessage; callback_query?: TgCallbackQuery };
   try { update = await req.json(); } catch { return new Response("Bad Request", { status: 400 }); }
+
+  // ── Callback query (inline button press) ────────────────────────────────────
+  if (update.callback_query) {
+    const cb = update.callback_query;
+    const userId = cb.from.id ?? 0;
+    const username = cb.from.username ?? String(userId);
+    const chatId = cb.message.chat.id;
+
+    await answerCallback(cb.id);
+
+    if (!(await checkAllowed(userId))) return new Response("OK", { status: 200 });
+
+    try {
+      if (cb.data.startsWith("meeting_")) {
+        await handleMeetingCallback(chatId, username, cb.data.replace("meeting_", ""));
+      }
+    } catch (err) {
+      await sendMessage(chatId, `Ошибка: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return new Response("OK", { status: 200 });
+  }
 
   const message = update.message;
   if (!message) return new Response("OK", { status: 200 });
@@ -477,6 +642,12 @@ Deno.serve(async (req: Request) => {
     } else if (command === "/users" || text === "👥 Пользователи") {
       if (!admin) { await sendMessage(chatId, "Эта команда доступна только администратору."); }
       else { await handleUsers(chatId, userId, argText); }
+    } else if (command === "/connect") {
+      if (!admin) { await sendMessage(chatId, "Эта команда доступна только администратору."); }
+      else { await handleConnect(chatId); }
+    } else if (command === "/meetings") {
+      if (!admin) { await sendMessage(chatId, "Эта команда доступна только администратору."); }
+      else { await handleMeetings(chatId, argText ? parseInt(argText) || 24 : 24); }
     } else {
       await sendMessage(chatId, `Неизвестная команда: <code>${command}</code>\n\nИспользуй /help для списка команд.`);
     }
