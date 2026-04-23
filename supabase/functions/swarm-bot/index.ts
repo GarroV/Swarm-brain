@@ -483,7 +483,12 @@ async function handleUsers(chatId: number, adminId: number, argText: string): Pr
     return;
   }
 
-  await sendMessage(chatId, "Подкоманды: /users list · /users add [id] · /users remove [id] · /users promote [id] · /users demote [id]");
+  if (sub === "profile") {
+    await handleUsersProfile(chatId, targetArg ?? "");
+    return;
+  }
+
+  await sendMessage(chatId, "Подкоманды: /users list · /users add [id] · /users remove [id] · /users promote [id] · /users demote [id] · /users profile [id]");
 }
 
 // ── Task management ───────────────────────────────────────────────────────────
@@ -629,6 +634,78 @@ async function handleTaskStatusChange(
   await sendMessage(chatId, `${STATUS_LABEL[newStatus]} <b>${task.title}</b>`);
 }
 
+// ── User profiles ─────────────────────────────────────────────────────────────
+
+const PROFILE_FIELDS: Record<string, string> = {
+  first_name: "Имя",
+  last_name:  "Фамилия",
+  role:       "Роль",
+  markets:    "Рынки (через запятую)",
+  phone:      "Телефон",
+  email:      "Email",
+  notes:      "Заметки",
+};
+
+async function showProfile(chatId: number, targetId: number): Promise<void> {
+  const { data: user } = await supabase
+    .from("allowed_users").select("telegram_id, username, is_admin").eq("telegram_id", targetId).maybeSingle();
+  if (!user) { await sendMessage(chatId, "Пользователь не найден."); return; }
+
+  const { data: profile } = await supabase
+    .from("user_profiles").select("*").eq("telegram_id", targetId).maybeSingle();
+
+  const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || "—";
+  const markets = profile?.markets?.join(", ") || "—";
+
+  const lines = [
+    `<b>👤 ${name}</b>${user.is_admin ? " 👑" : ""}`,
+    `🔖 @${user.username ?? "—"} (${targetId})`,
+    `💼 ${profile?.role || "—"}`,
+    `🌍 ${markets}`,
+    `📞 ${profile?.phone || "—"}`,
+    `📧 ${profile?.email || "—"}`,
+    profile?.notes ? `📝 ${profile.notes}` : "",
+  ].filter(Boolean).join("\n");
+
+  const keyboard = Object.entries(PROFILE_FIELDS).map(([field, label]) => [
+    { text: `✏️ ${label}`, callback_data: `pe_${targetId}_${field}` },
+  ]);
+
+  await sendInlineMessage(chatId, lines, keyboard);
+}
+
+async function handleUsersProfile(chatId: number, argText: string): Promise<void> {
+  const targetArg = argText.trim();
+  if (!targetArg || isNaN(Number(targetArg))) {
+    await sendMessage(chatId, "Использование: /users profile [telegram_id]");
+    return;
+  }
+  await showProfile(chatId, Number(targetArg));
+}
+
+async function handleProfileEdit(
+  chatId: number,
+  targetId: number,
+  field: string,
+  value: string
+): Promise<void> {
+  const label = PROFILE_FIELDS[field] ?? field;
+  const updateData: Record<string, unknown> = {
+    telegram_id: targetId,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (field === "markets") {
+    updateData[field] = value.split(",").map((s) => s.trim()).filter(Boolean);
+  } else {
+    updateData[field] = value.trim();
+  }
+
+  await supabase.from("user_profiles").upsert(updateData);
+  await sendMessage(chatId, `✅ ${label} обновлено.`);
+  await showProfile(chatId, targetId);
+}
+
 async function handleConnect(chatId: number): Promise<void> {
   await sendMessage(
     chatId,
@@ -751,6 +828,14 @@ Deno.serve(async (req: Request) => {
         const taskId = parts[1];
         const newStatus = parts.slice(2).join("_");
         await handleTaskStatusChange(chatId, username, taskId, newStatus);
+      } else if (cb.data.startsWith("pe_")) {
+        // Profile edit: pe_{targetId}_{field}
+        const parts = cb.data.split("_");
+        const targetId = Number(parts[1]);
+        const field = parts.slice(2).join("_");
+        const label = PROFILE_FIELDS[field] ?? field;
+        await setSession(chatId, `profile_${targetId}_${field}`);
+        await sendMessage(chatId, `Введи новое значение для <b>${label}</b>:`);
       } else if (cb.data.startsWith("td_")) {
         const taskId = cb.data.replace("td_", "");
         const { data: task } = await supabase.from("tasks").select("title").eq("id", taskId).maybeSingle();
@@ -829,6 +914,12 @@ Deno.serve(async (req: Request) => {
       } else if (session === "waiting_ask") {
         await clearSession(chatId);
         await handleAsk(chatId, text);
+      } else if (session?.startsWith("profile_")) {
+        await clearSession(chatId);
+        const parts = session.split("_");
+        const targetId = Number(parts[1]);
+        const field = parts.slice(2).join("_");
+        await handleProfileEdit(chatId, targetId, field, text);
       } else {
         await sendMessage(chatId, "Используй /add или /ask для работы с базой знаний.");
       }
