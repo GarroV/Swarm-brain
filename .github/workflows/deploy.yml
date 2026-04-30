@@ -1,0 +1,24 @@
+name: Deploy to Supabase
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions deploy swarm-bot --project-ref vbqglndbxkpmreccpqmr --no-verify-jwt
+          supabase functions deploy swarm-mcp --project-ref vbqglndbxkpmreccpqmr --no-verify-jwt
+          supabase functions deploy read-ai-auth --project-ref vbqglndbxkpmreccpqmr --no-verify-jwt
+          supabase functions deploy read-ai-webhook --project-ref vbqglndbxkpmreccpqmr --no-verify-jwt
