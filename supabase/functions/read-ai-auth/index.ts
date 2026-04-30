@@ -3,9 +3,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const REDIRECT_URI = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/read-ai-auth";
-const CLIENT_REG_URL = "https://authn.read.ai/oauth2/register";
+const CLIENT_REG_URL = "https://api.read.ai/oauth/register";
 const TOKEN_URL = "https://authn.read.ai/oauth2/token";
-const AUTH_UI_URL = "https://api.read.ai/oauth/ui";
+const AUTH_URL = "https://authn.read.ai/oauth2/auth";
+const PRECONFIGURED_CLIENT_ID = Deno.env.get("READ_AI_CLIENT_ID");
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -44,10 +45,13 @@ Deno.serve(async (req: Request) => {
 
   // ── Step 1: Start OAuth ────────────────────────────────────────────────────
   if (start === "1") {
-    let { data: existing } = await supabase
-      .from("oauth_tokens").select("client_id").eq("service", "read_ai").maybeSingle();
+    let clientId: string | undefined = PRECONFIGURED_CLIENT_ID;
 
-    let clientId = existing?.client_id;
+    if (!clientId) {
+      const { data: existing } = await supabase
+        .from("oauth_tokens").select("client_id").eq("service", "read_ai").maybeSingle();
+      clientId = existing?.client_id;
+    }
 
     if (!clientId) {
       const regRes = await fetch(CLIENT_REG_URL, {
@@ -63,9 +67,15 @@ Deno.serve(async (req: Request) => {
       });
       const regData = await regRes.json();
       if (!regRes.ok) {
-        return htmlPage("❌ Ошибка регистрации", JSON.stringify(regData), "#ef4444");
+        return htmlPage(
+          "❌ Ошибка регистрации",
+          `Read.ai не поддерживает автоматическую регистрацию.<br><br>` +
+          `Добавь переменную <b>READ_AI_CLIENT_ID</b> в Supabase Secrets.<br><br>` +
+          `<small style="color:#888">${JSON.stringify(regData)}</small>`,
+          "#ef4444"
+        );
       }
-      clientId = regData.client_id;
+      clientId = regData.client_id as string;
       await supabase.from("oauth_tokens").upsert({ service: "read_ai", client_id: clientId });
     }
 
@@ -79,7 +89,7 @@ Deno.serve(async (req: Request) => {
       code_verifier: codeVerifier,
     });
 
-    const authUrl = new URL(AUTH_UI_URL);
+    const authUrl = new URL(AUTH_URL);
     authUrl.searchParams.set("client_id", clientId);
     authUrl.searchParams.set("redirect_uri", REDIRECT_URI);
     authUrl.searchParams.set("response_type", "code");

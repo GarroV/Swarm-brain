@@ -83,6 +83,17 @@ const TOOLS = [
     },
   },
   {
+    name: "get_entry",
+    description: "Получить полный текст записи из базы знаний по ID. Используй когда search_knowledge вернул обрезанный текст.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "ID записи из результатов search_knowledge" },
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "add_knowledge",
     description: "Добавить текст или заметку в командную базу знаний.",
     inputSchema: {
@@ -108,9 +119,10 @@ async function toolSearchKnowledge(args: { query: string; limit?: number }): Pro
   if (error) return `Ошибка: ${error.message}`;
   if (!data?.length) return "Ничего не найдено по запросу.";
 
-  return data.map((e: { content: string; source: string; created_at: string }, i: number) => {
+  return data.map((e: { id: string; content: string; source: string; created_at: string }, i: number) => {
     const date = new Date(e.created_at).toLocaleDateString("ru-RU");
-    return `[${i + 1}] (${e.source} · ${date})\n${e.content.slice(0, 800)}`;
+    const preview = e.content.length > 3000 ? e.content.slice(0, 3000) + `\n...[текст обрезан, полный текст: get_entry("${e.id}")]` : e.content;
+    return `[${i + 1}] id:${e.id} (${e.source} · ${date})\n${preview}`;
   }).join("\n\n---\n\n");
 }
 
@@ -189,6 +201,18 @@ async function toolGetUsers(args: { market?: string }): Promise<string> {
   }).join("\n\n");
 }
 
+async function toolGetEntry(args: { id: string }): Promise<string> {
+  const { data, error } = await supabase
+    .from("entries")
+    .select("content, source, created_at")
+    .eq("id", args.id)
+    .maybeSingle();
+  if (error) return `Ошибка: ${error.message}`;
+  if (!data) return "Запись не найдена.";
+  const date = new Date(data.created_at).toLocaleDateString("ru-RU");
+  return `(${data.source} · ${date})\n\n${data.content}`;
+}
+
 async function toolAddKnowledge(args: { content: string; source?: string }): Promise<string> {
   const embedding = await getEmbedding(args.content);
   const { error } = await supabase.from("entries").insert({
@@ -261,6 +285,8 @@ Deno.serve(async (req: Request) => {
         result = await toolGetMeetings(args as { limit?: number });
       } else if (name === "get_users") {
         result = await toolGetUsers(args as { market?: string });
+      } else if (name === "get_entry") {
+        result = await toolGetEntry(args as { id: string });
       } else if (name === "add_knowledge") {
         result = await toolAddKnowledge(args as { content: string; source?: string });
       } else {
