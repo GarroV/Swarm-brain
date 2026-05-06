@@ -34,6 +34,33 @@ async function getEmbedding(text: string): Promise<number[]> {
   return data.data[0].embedding;
 }
 
+async function chatComplete(system: string, user: string): Promise<string> {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+    body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "system", content: system }, { role: "user", content: user }], max_tokens: 300 }),
+  });
+  const data = await res.json() as { choices: Array<{ message: { content: string } }> };
+  return data.choices[0].message.content;
+}
+
+async function extractEntryMeta(text: string): Promise<{ countries: string[]; entry_type: string; entry_date: string | null }> {
+  try {
+    const raw = await chatComplete(
+      "Проанализируй текст и верни JSON (только JSON):\n" +
+      '{"countries":["Serbia"],"entry_type":"transcript|summary|note|document|meeting","entry_date":"YYYY-MM-DD или null"}\n' +
+      "countries — страны/рынки на английском. entry_date — дата события из текста, null если нет.",
+      text.slice(0, 2000)
+    );
+    const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
+    return {
+      countries: Array.isArray(parsed.countries) ? parsed.countries : [],
+      entry_type: parsed.entry_type ?? "note",
+      entry_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date ?? "") ? parsed.entry_date : null,
+    };
+  } catch { return { countries: [], entry_type: "note", entry_date: null }; }
+}
+
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
 const TOOLS = [
@@ -95,14 +122,15 @@ const TOOLS = [
   },
   {
     name: "add_knowledge",
-    description: "Добавить текст или заметку в командную базу знаний.",
+    description: "Добавить текст в командную базу знаний. Всегда передавай оба поля: content (оригинал) и summary (согласованные тезисы).",
     inputSchema: {
       type: "object",
       properties: {
-        content: { type: "string", description: "Текст для добавления" },
-        source: { type: "string", description: "Источник (необязательно)" },
+        content: { type: "string", description: "Полный оригинальный текст" },
+        summary: { type: "string", description: "Детальные тезисы — согласованные с пользователем ключевые пункты" },
+        source: { type: "string", description: "Источник (название файла, тип контента)" },
       },
-      required: ["content"],
+      required: ["content", "summary"],
     },
   },
 ];
@@ -112,7 +140,7 @@ const TOOLS = [
 async function toolSearchKnowledge(args: { query: string; limit?: number }): Promise<string> {
   const embedding = await getEmbedding(args.query);
   const { data, error } = await supabase.rpc("match_entries", {
-    query_embedding: embedding,
+    query_embedding: `[${embedding.join(",")}]`,
     match_threshold: 0.35,
     match_count: Math.min(args.limit ?? 5, 20),
   });
@@ -213,17 +241,63 @@ async function toolGetEntry(args: { id: string }): Promise<string> {
   return `(${data.source} · ${date})\n\n${data.content}`;
 }
 
-async function toolAddKnowledge(args: { content: string; source?: string }): Promise<string> {
-  const embedding = await getEmbedding(args.content);
-  const { error } = await supabase.from("entries").insert({
-    content: args.content,
-    embedding,
+async function toolAddKnowledge(args: { content: string; summary: string; source?: string }): Promise<string> {
+  const CHUNK = 3000, OVERLAP = 200;
+  const source = args.source ?? "claude";
+
+  // Split original content into chunks for storage
+  const chunks: string[] = [];
+  if (args.content.length <= CHUNK) {
+    chunks.push(args.content);
+  } else {
+    for (let pos = 0; pos < args.content.length; pos += CHUNK - OVERLAP) {
+      chunks.push(args.content.slice(pos, pos + CHUNK));
+    }
+  }
+
+  // Extract metadata + embed summary in parallel
+  const groupId = chunks.length > 1 ? crypto.randomUUID() : null;
+  const [summaryEmbedding, entryMeta] = await Promise.all([
+    getEmbedding(args.summary.slice(0, 8000)),
+    extractEntryMeta(args.summary),
+  ]);
+
+  // First chunk: summary + metadata + embedding
+  await supabase.from("entries").insert({
+    content: chunks[0],
+    summary: args.summary,
+    embedding: summaryEmbedding,
     added_by: "claude_desktop",
-    source: args.source ?? "claude",
-    metadata: {},
+    source,
+    metadata: chunks.length > 1 ? { total_chunks: chunks.length, chunk: 1 } : {},
+    countries: entryMeta.countries,
+    entry_type: entryMeta.entry_type,
+    entry_date: entryMeta.entry_date,
+    group_id: groupId,
   });
-  if (error) return `Ошибка: ${error.message}`;
-  return "Добавлено в базу знаний.";
+
+  // Remaining chunks: content only, same group_id
+  if (chunks.length > 1) {
+    const restEmbeddings = await Promise.all(chunks.slice(1).map(c => getEmbedding(c)));
+    await Promise.all(chunks.slice(1).map((chunk, i) =>
+      supabase.from("entries").insert({
+        content: chunk,
+        summary: null,
+        embedding: restEmbeddings[i],
+        added_by: "claude_desktop",
+        source,
+        metadata: { total_chunks: chunks.length, chunk: i + 2 },
+        countries: entryMeta.countries,
+        entry_type: entryMeta.entry_type,
+        entry_date: entryMeta.entry_date,
+        group_id: groupId,
+      })
+    ));
+  }
+
+  return chunks.length > 1
+    ? `Сохранено: ${args.content.length} символов (${chunks.length} частей). Тезисы проиндексированы.`
+    : "Сохранено. Тезисы проиндексированы.";
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -288,7 +362,7 @@ Deno.serve(async (req: Request) => {
       } else if (name === "get_entry") {
         result = await toolGetEntry(args as { id: string });
       } else if (name === "add_knowledge") {
-        result = await toolAddKnowledge(args as { content: string; source?: string });
+        result = await toolAddKnowledge(args as { content: string; summary: string; source?: string });
       } else {
         return err(id, -32601, `Unknown tool: ${name}`);
       }

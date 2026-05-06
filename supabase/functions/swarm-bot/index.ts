@@ -197,10 +197,13 @@ async function sendInlineMessage(chatId: number, text: string, keyboard: unknown
 // ── Telegram helpers ──────────────────────────────────────────────────────────
 
 function buildKeyboard() {
-  return { keyboard: [
-    [{ text: "ℹ️ Помощь" }, { text: "📋 Задачи" }],
-    [{ text: "👥 Пользователи" }, { text: "🎙 Встречи" }],
-  ], resize_keyboard: true, persistent: true };
+  return {
+    keyboard: [
+      [{ text: "📥 Добавить" }, { text: "❓ Спросить" }, { text: "📋 Задачи" }],
+    ],
+    resize_keyboard: true,
+    persistent: true,
+  };
 }
 
 async function sendMessage(
@@ -250,6 +253,66 @@ async function chatComplete(system: string, user: string): Promise<string> {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "OpenAI error");
   return data.choices[0].message.content;
+}
+
+// Lightweight completion for classification — small output, low cost
+async function chatCompleteMini(system: string, user: string): Promise<string> {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [{ role: "system", content: system }, { role: "user", content: user }],
+      max_tokens: 150,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message ?? "OpenAI error");
+  return data.choices[0].message.content;
+}
+
+interface QueryIntent {
+  type: "semantic_search" | "countries_list" | "entries_by_country" | "digest" | "tasks" | "bot_info";
+  entry_type?: string | null;
+  country?: string | null;
+  q?: string;
+  wants_full_text?: boolean;
+}
+
+async function classifyQuery(question: string): Promise<QueryIntent> {
+  const SYSTEM =
+    `Таблицы: entries(entry_type:transcript/meeting/summary/document/note, countries:string[], summary, content), tasks(title,assignees,due_date,status).
+Верни ТОЛЬКО JSON без пояснений:
+{"type":"<intent>","entry_type":"<тип или null>","country":"<страна на английском или null>","q":"<запрос на русском И английском через запятую>","wants_full_text":<true или false>}
+Интенты:
+semantic_search — найти информацию по содержанию
+countries_list — по каким странам есть записи
+entries_by_country — последние записи по каждой стране
+digest — общий обзор базы
+tasks — задачи/поручения
+bot_info — возможности бота
+wants_full_text: true — если просят исходник, дословно, точный кусок, транскрипцию, подробнее/больше деталей
+Примеры:
+"новости по странам"→{type:entries_by_country}
+"транскрипции по сербии"→{type:semantic_search,country:"Serbia",entry_type:transcript,wants_full_text:true}
+"подробнее про пепси"→{type:semantic_search,q:"пепси, Pepsi",wants_full_text:true}
+"что решили по встрече"→{type:semantic_search,q:"решения встреча decisions meeting"}`;
+
+  try {
+    const raw = await chatCompleteMini(SYSTEM, question);
+    const match = raw.match(/\{[\s\S]*?\}/);
+    if (!match) return { type: "semantic_search", q: question, wants_full_text: false };
+    const parsed = JSON.parse(match[0]) as Partial<QueryIntent>;
+    return {
+      type: parsed.type ?? "semantic_search",
+      entry_type: parsed.entry_type ?? null,
+      country: parsed.country ?? null,
+      q: parsed.q ?? question,
+      wants_full_text: parsed.wants_full_text ?? false,
+    };
+  } catch {
+    return { type: "semantic_search", q: question, wants_full_text: false };
+  }
 }
 
 async function transcribeAudio(fileId: string): Promise<string> {
@@ -323,21 +386,59 @@ async function fetchUrlContent(url: string): Promise<string> {
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 
-async function saveEntry(content: string, addedBy: string, source: string, metadata: Record<string, unknown> = {}): Promise<string> {
-  // Generate Russian keywords for multilingual search (skip if content is short or already Russian)
-  const isLikelyNonRussian = content.length > 100 && (content.match(/[a-zA-Z]/g) ?? []).length > content.length * 0.3;
-  let indexContent = content;
-  if (isLikelyNonRussian) {
-    try {
-      const keywords = await chatComplete(
-        "Из текста извлеки ключевые слова, названия, темы и перепиши их на русском языке одной строкой через запятую. Только ключевые слова, без пояснений.",
-        content.slice(0, 3000)
-      );
-      indexContent = `[Ключевые слова: ${keywords}]\n\n${content}`;
-    } catch { /* ignore, use original content */ }
+async function extractEntryMeta(text: string): Promise<{ countries: string[]; entry_type: string; entry_date: string | null }> {
+  try {
+    const raw = await chatComplete(
+      "Проанализируй текст и верни JSON (только JSON, без markdown):\n" +
+      '{"countries":["Serbia","Bulgaria"...],"entry_type":"transcript|summary|note|document|meeting","entry_date":"YYYY-MM-DD или null"}\n\n' +
+      "countries — страны/рынки упомянутые в тексте. СТРОГО короткое официальное название на английском без 'Republic of', 'Kingdom of' и т.п.: Serbia (не Republic of Serbia), Montenegro (не Montenegro Republic), Moldova (не Republic of Moldova). Только ISO-подобные короткие имена.\n" +
+      "entry_type — transcript (расшифровка звонка), summary (саммари/тезисы), meeting (заметки встречи), document (файл/отчёт), note (заметка/факт).\n" +
+      "entry_date — дата события из текста (не сегодняшняя), null если нет.",
+      text.slice(0, 2000)
+    );
+    const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
+    return {
+      countries: Array.isArray(parsed.countries) ? parsed.countries : [],
+      entry_type: parsed.entry_type ?? "note",
+      entry_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date ?? "") ? parsed.entry_date : null,
+    };
+  } catch { return { countries: [], entry_type: "note", entry_date: null }; }
+}
+
+async function saveEntry(content: string, addedBy: string, source: string, metadata: Record<string, unknown> = {}, summary?: string, groupId?: string): Promise<string> {
+  // Embed summary if provided, otherwise embed content (with multilingual keywords for non-Russian)
+  let indexContent = summary ?? content;
+  if (!summary) {
+    const isLikelyNonRussian = content.length > 100 && (content.match(/[a-zA-Z]/g) ?? []).length > content.length * 0.3;
+    if (isLikelyNonRussian) {
+      try {
+        const keywords = await chatComplete(
+          "Из текста извлеки ключевые слова, названия, темы и перепиши их на русском языке одной строкой через запятую. Только ключевые слова, без пояснений.",
+          content.slice(0, 3000)
+        );
+        indexContent = `[Ключевые слова: ${keywords}]\n\n${content}`;
+      } catch { /* ignore */ }
+    }
   }
-  const embedding = await getEmbedding(indexContent);
-  const { data, error } = await supabase.from("entries").insert({ content, embedding, added_by: addedBy, source, metadata }).select("id").single();
+
+  // Extract structured metadata in parallel with embedding
+  const [embedding, entryMeta] = await Promise.all([
+    getEmbedding(indexContent.slice(0, 8000)),
+    extractEntryMeta(summary ?? content),
+  ]);
+
+  const { data, error } = await supabase.from("entries").insert({
+    content,
+    summary: summary ?? null,
+    embedding,
+    added_by: addedBy,
+    source,
+    metadata,
+    countries: entryMeta.countries,
+    entry_type: entryMeta.entry_type,
+    entry_date: entryMeta.entry_date,
+    group_id: groupId ?? null,
+  }).select("id").single();
   if (error) throw new Error(error.message);
   return data.id as string;
 }
@@ -345,8 +446,17 @@ async function saveEntry(content: string, addedBy: string, source: string, metad
 // ── Session ───────────────────────────────────────────────────────────────────
 
 async function getSession(chatId: number): Promise<{ action: string; context?: string } | null> {
-  const { data } = await supabase.from("sessions").select("action, context").eq("chat_id", chatId).maybeSingle();
-  return data ?? null;
+  const { data } = await supabase.from("sessions")
+    .select("action, context, updated_at")
+    .eq("chat_id", chatId).maybeSingle();
+  if (!data) return null;
+  // Auto-expire sessions older than 30 minutes
+  const age = Date.now() - new Date(data.updated_at ?? 0).getTime();
+  if (age > 30 * 60 * 1000) {
+    await supabase.from("sessions").delete().eq("chat_id", chatId);
+    return null;
+  }
+  return data;
 }
 
 async function setSession(chatId: number, action: string, context?: string): Promise<void> {
@@ -376,14 +486,27 @@ async function checkAllowed(userId: number, username?: string): Promise<boolean>
 
 // ── Command handlers ──────────────────────────────────────────────────────────
 
+async function generateSummary(text: string): Promise<string | null> {
+  if (text.length < 80) return null;
+  try {
+    return await chatComplete(
+      "Сделай краткие тезисы из текста. Только конкретные факты: имена, цифры, решения, даты. Без общих фраз. 3–7 пунктов. Маркированный список на русском.",
+      text.slice(0, 6000)
+    );
+  } catch { return null; }
+}
+
 async function handleAdd(chatId: number, username: string, text: string): Promise<void> {
   if (!text.trim()) {
     await setSession(chatId, "waiting_add");
     await sendMessage(chatId, "Напиши текст, который нужно сохранить в базу знаний:");
     return;
   }
-  const entryId = await saveEntry(text, username, "telegram");
-  await sendMessage(chatId, "Запись добавлена в базу знаний.");
+  const summary = await generateSummary(text);
+  const entryId = await saveEntry(text, username, "telegram", {}, summary ?? undefined);
+  await sendMessage(chatId, summary
+    ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
+    : "✅ Запись добавлена в базу знаний.");
   await analyzeAndCreateTasks(text, chatId, entryId);
 }
 
@@ -449,65 +572,244 @@ async function handleAsk(chatId: number, question: string): Promise<void> {
     return;
   }
 
-  // Check if question is about tasks
-  const handledByTasks = await smartTaskSearch(chatId, question);
-  if (handledByTasks) return;
+  const intent = await classifyQuery(question);
 
-  // Expand query: translate to English + add synonyms for better cross-lingual search
-  const expandedQuery = await chatComplete(
-    "Расширь поисковый запрос для семантического поиска по базе знаний:\n" +
-    "1. Переведи на английский\n" +
-    "2. Добавь синонимы и связанные термины на русском и английском\n" +
-    "3. Верни одной строкой через запятую без пояснений.\n" +
-    "Пример: 'исследование венгрия' → 'исследование Венгрия, Hungary research, market analysis Budapest, pizza market Hungary'",
-    question
-  );
-
-  // Use expanded query for embedding — improves cross-lingual search
-  const searchQuery = `${question} ${expandedQuery}`;
-  const embedding = await getEmbedding(searchQuery);
-
-  // Extract keywords for text search (Russian stems + English words from expansion)
-  const allWords = `${question} ${expandedQuery}`.split(/[\s,;]+/).filter(w => w.length > 4);
-  const uniqueKeywords = [...new Set(allWords)].slice(0, 8);
-
-  const [semanticResult, ...keywordResults] = await Promise.all([
-    supabase.rpc("match_entries", {
-      query_embedding: embedding,
-      match_threshold: 0.1,
-      match_count: 15,
-    }),
-    // Run each keyword as a separate ilike query in parallel
-    ...uniqueKeywords.slice(0, 4).map(w =>
-      supabase.from("entries").select("id, content")
-        .ilike("content", `%${w}%`)
-        .limit(3)
-    ),
-  ]);
-
-  if (semanticResult.error) { await sendMessage(chatId, `Ошибка поиска: ${semanticResult.error.message}`); return; }
-
-  // Merge all results, deduplicate by id
-  const seen = new Set<string>();
-  const allEntries: Array<{ id: string; content: string }> = [];
-  type KwResult = { data: Array<{ id: string; content: string }> | null };
-  const allResults = [semanticResult.data ?? [], ...keywordResults.map((r: KwResult) => r.data ?? [])].flat();
-  for (const e of allResults) {
-    if (e?.id && !seen.has(e.id)) { seen.add(e.id); allEntries.push(e); }
+  // ── Bot info ───────────────────────────────────────────────────────────────
+  if (intent.type === "bot_info") {
+    await sendMessage(chatId,
+      "<b>🧠 Swarm Brain — командная память</b>\n\n" +
+      "Всё важное сохраняется, индексируется и доступно по запросу в любой момент.\n\n" +
+      "<b>📱 Telegram бот — быстрые заметки</b>\n" +
+      "Для коротких записей, решений, новостей, голосовых.\n" +
+      "• Текст или голосовое → автоматические тезисы + сохранение\n" +
+      "• Ссылки, фото, файлы — тоже принимает\n" +
+      "• Тезисы генерируются автоматически без проверки\n\n" +
+      "<b>🖥 Claude Desktop — большие тексты и документы</b>\n" +
+      "Для транскриптов встреч, длинных документов, важных материалов.\n" +
+      "• Claude сам делает подробные тезисы\n" +
+      "• Ты проверяешь и подтверждаешь перед сохранением\n" +
+      "• Качество выше — человек в процессе\n\n" +
+      "<b>🔍 Поиск</b>\n" +
+      "Пиши вопрос как обычно — бот ищет по смыслу. Работает на русском даже по английским документам.\n\n" +
+      "<b>✅ Задачи</b>\n" +
+      "Извлекаются автоматически из любого контента.\n\n" +
+      "/help — команды"
+    );
+    return;
   }
 
-  if (!allEntries.length) {
-    await sendMessage(chatId, "В базе знаний пока нет информации по этой теме.");
+  // ── Tasks ──────────────────────────────────────────────────────────────────
+  if (intent.type === "tasks") {
+    await smartTaskSearch(chatId, question);
+    return;
+  }
+
+  // ── Countries list: по каким странам есть [тип] ───────────────────────────
+  if (intent.type === "countries_list") {
+    const entryTypeFilter = intent.entry_type ?? null;
+    type Row = { countries: string[] };
+    let q = supabase.from("entries").select("countries").not("countries", "eq", "{}");
+    if (entryTypeFilter) q = q.eq("entry_type", entryTypeFilter);
+    const { data: rows } = await q.limit(500);
+    if (!rows?.length) {
+      await sendMessage(chatId, "В базе нет записей с указанием стран.");
+      await setSession(chatId, "clarify_ready", question);
+      return;
+    }
+    const countryCount: Record<string, number> = {};
+    for (const r of rows as Row[]) {
+      for (const c of (r.countries ?? [])) {
+        countryCount[c] = (countryCount[c] ?? 0) + 1;
+      }
+    }
+    const sorted = Object.entries(countryCount).sort((a, b) => b[1] - a[1]);
+    const typeLabels: Record<string, string> = { transcript: "транскрипций", meeting: "встреч", summary: "саммари", document: "документов" };
+    const label = entryTypeFilter ? (typeLabels[entryTypeFilter] ?? "записей") : "записей";
+    const lines = sorted.map(([c, n]) => `• ${c} — ${n} ${label}`).join("\n");
+    await sendMessage(chatId, `<b>🌍 Страны в базе${entryTypeFilter ? ` (${label})` : ""}:</b>\n\n${lines}`);
     await setSession(chatId, "clarify_ready", question);
     return;
   }
 
-  const context = allEntries.slice(0, 10).map((e, i) => `[${i + 1}] ${e.content}`).join("\n\n");
+  // ── Entries by country: последние по каждой стране ────────────────────────
+  if (intent.type === "entries_by_country") {
+    type GRow = { countries: string[]; source: string; summary?: string; entry_date?: string; created_at: string };
+    let q = supabase.from("entries")
+      .select("countries, source, summary, entry_date, created_at")
+      .not("countries", "eq", "{}");
+    if (intent.country) q = q.contains("countries", [intent.country]);
+    const { data: rows } = await q.order("created_at", { ascending: false }).limit(100);
+    if (!rows?.length) {
+      await sendMessage(chatId, "В базе нет записей с указанием стран.");
+      await setSession(chatId, "clarify_ready", question);
+      return;
+    }
+    const byCountry: Record<string, GRow> = {};
+    for (const r of rows as GRow[]) {
+      for (const c of (r.countries ?? [])) {
+        if (!byCountry[c]) byCountry[c] = r;
+      }
+    }
+    const lines = Object.entries(byCountry)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([c, r]) => {
+        const date = r.entry_date ?? r.created_at.slice(0, 10);
+        const text = (r.summary ?? r.source ?? "").slice(0, 120);
+        return `<b>${c}</b> (${date})\n${text}`;
+      }).join("\n\n");
+    await sendMessage(chatId, `<b>🌍 Последние записи по странам:</b>\n\n${lines}`);
+    await setSession(chatId, "clarify_ready", question);
+    return;
+  }
+
+  // ── Digest: общий срез базы ────────────────────────────────────────────────
+  if (intent.type === "digest") {
+    type DRow = { entry_type?: string; source: string; summary?: string; countries?: string[]; entry_date?: string; created_at: string };
+    const { data: rows } = await supabase.from("entries")
+      .select("entry_type, source, summary, countries, entry_date, created_at")
+      .order("created_at", { ascending: false }).limit(30);
+    if (!rows?.length) { await sendMessage(chatId, "База знаний пустая."); return; }
+    const byType: Record<string, DRow[]> = {};
+    for (const r of rows as DRow[]) {
+      const t = r.entry_type ?? "note";
+      byType[t] = byType[t] ?? [];
+      byType[t].push(r);
+    }
+    const typeLabels: Record<string, string> = {
+      transcript: "📞 Транскрипции", meeting: "🤝 Встречи", summary: "📋 Саммари",
+      document: "📄 Документы", note: "💡 Заметки",
+    };
+    const sections = Object.entries(byType).map(([type, items]) => {
+      const label = typeLabels[type] ?? `📌 ${type}`;
+      const lines = items.slice(0, 3).map(r => {
+        const date = r.entry_date ?? r.created_at.slice(0, 10);
+        const ctrs = r.countries?.length ? ` [${r.countries.join(", ")}]` : "";
+        const text = (r.summary ?? r.source ?? "").slice(0, 100);
+        return `• ${date}${ctrs}: ${text}`;
+      }).join("\n");
+      return `<b>${label} (${items.length})</b>\n${lines}`;
+    }).join("\n\n");
+    await sendMessage(chatId, `<b>📚 Общий срез базы знаний</b>\n\n${sections}`);
+    await setSession(chatId, "clarify_ready", question);
+    return;
+  }
+
+  // ── Semantic search (default) ──────────────────────────────────────────────
+  const searchPhrases = [
+    "🧠 Коллективный разум в работе..",
+    "🐝 47 пчёл-аналитиков в работе..",
+    "🍯 Улей проснулся..",
+    "📡 Улей получил запрос..",
+    "🌀 Рой сканирует архивы..",
+    "⚡ Жужжание усиливается..",
+  ];
+  await sendMessage(chatId, searchPhrases[Math.floor(Math.random() * searchPhrases.length)]);
+
+  type Entry = { id: string; content: string; summary?: string; source?: string };
+  const seen = new Set<string>();
+  const allEntries: Entry[] = [];
+
+  // 1. Structured filter — fuzzy match on countries array via RPC, then exact, then source text
+  const structuredPromise = intent.country
+    ? (async () => {
+        try {
+          // Fuzzy: ANY(countries) ILIKE '%Serbia%' — catches "Republic of Serbia" etc.
+          const { data: fuzzy } = await supabase.rpc("search_entries_by_country", {
+            country_query: intent.country,
+          });
+          if (fuzzy?.length) return fuzzy as Entry[];
+          // Exact array contains fallback
+          const { data: exact } = await supabase.from("entries")
+            .select("id, content, summary, source")
+            .contains("countries", [intent.country!])
+            .order("created_at", { ascending: false })
+            .limit(5);
+          if (exact?.length) return exact as Entry[];
+          // Source text fallback
+          const { data: src } = await supabase.from("entries")
+            .select("id, content, summary, source")
+            .ilike("source", `%${intent.country}%`)
+            .order("created_at", { ascending: false })
+            .limit(5);
+          return (src ?? []) as Entry[];
+        } catch { return [] as Entry[]; }
+      })()
+    : Promise.resolve([] as Entry[]);
+
+  // 2. Vector search — wrapped in try-catch so an OpenAI error doesn't kill the whole search
+  const vectorPromise = (async () => {
+    try {
+      const searchQuery = intent.q ?? question;
+      const embedding = await getEmbedding(searchQuery);
+      const { data } = await supabase.rpc("match_entries", {
+        query_embedding: `[${embedding.join(",")}]`,
+        match_threshold: intent.wants_full_text ? 0.05 : 0.1,
+        match_count: intent.wants_full_text ? 15 : 10,
+      });
+      return (data ?? []) as Entry[];
+    } catch { return [] as Entry[]; }
+  })();
+
+  // 3. Keyword search — source, content, summary; English words from intent.q first
+  const keywordPromise = (async () => {
+    try {
+      const STOP = new Set(["дай", "дать", "покажи", "найди", "расскажи", "точный", "точно", "кусок", "часть", "про", "для", "что", "как", "где", "кто", "это", "есть"]);
+      const fromQ = (intent.q ?? "").toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2 && !STOP.has(w));
+      const fromQuestion = question.toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2 && !STOP.has(w));
+      const words = [...new Set([...fromQ, ...fromQuestion])].slice(0, 8);
+      if (!words.length) return [] as Entry[];
+      const filter = words.map(w => `source.ilike.%${w}%,content.ilike.%${w}%,summary.ilike.%${w}%`).join(",");
+      const { data } = await supabase.from("entries")
+        .select("id, content, summary, source")
+        .or(filter)
+        .limit(5);
+      return (data ?? []) as Entry[];
+    } catch { return [] as Entry[]; }
+  })();
+
+  // Merge: structured first (most precise), then vector, then keyword
+  const [structuredEntries, vectorEntries, keywordEntries] = await Promise.all([
+    structuredPromise, vectorPromise, keywordPromise,
+  ]);
+  for (const e of [...structuredEntries, ...vectorEntries, ...keywordEntries]) {
+    if (e?.id && !seen.has(e.id)) { seen.add(e.id); allEntries.push(e); }
+  }
+
+  // Last-resort fallback: if country known but nothing found, get recent entries for that country
+  if (!allEntries.length && intent.country) {
+    try {
+      const { data } = await supabase.from("entries")
+        .select("id, content, summary, source")
+        .contains("countries", [intent.country])
+        .order("created_at", { ascending: false })
+        .limit(3);
+      for (const e of (data ?? []) as Entry[]) {
+        if (e?.id && !seen.has(e.id)) { seen.add(e.id); allEntries.push(e); }
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (!allEntries.length) {
+    await sendMessage(chatId, "В базе знаний нет информации по этой теме.");
+    await setSession(chatId, "clarify_ready", question);
+    return;
+  }
+
+  const wantsFullText = intent.wants_full_text || intent.entry_type === "transcript";
+  const context = allEntries.slice(0, 5).map((e, i) => {
+    const text = wantsFullText
+      ? (e.content ?? "").slice(0, 4000)
+      : (e.summary || (e.content ?? "").slice(0, 3000));
+    return `[${i + 1}] ${text}`;
+  }).join("\n\n---\n\n");
+
+  const systemPrompt = wantsFullText
+    ? "Из контекста извлеки и процитируй дословно все части относящиеся к вопросу. Не сокращай — пользователь хочет точный текст. Отвечай на русском."
+    : "Помощник командной базы знаний. Отвечай ТОЛЬКО на основе контекста. Если ответа нет — напиши: 'В базе знаний нет информации по этой теме.' Отвечай на русском.";
+
   const answer = await chatComplete(
-    "Ты помощник командной базы знаний. Отвечай на основе предоставленного контекста. " +
-    "Делай смысловые связи — если в контексте есть релевантная информация по теме вопроса, используй её даже если термины не совпадают дословно. " +
-    "Если информации действительно нет — скажи об этом. Отвечай на русском языке.",
-    `Контекст:\n\n${context}\n\nВопрос: ${question}\nПодсказка по теме: ${expandedQuery}`
+    systemPrompt,
+    `Контекст:\n\n${context}\n\nВопрос: ${question}`
   );
   await sendMessage(chatId, answer);
   await setSession(chatId, "clarify_ready", question);
@@ -516,8 +818,11 @@ async function handleAsk(chatId: number, question: string): Promise<void> {
 async function handleVoice(chatId: number, username: string, fileId: string, duration: number): Promise<void> {
   await sendMessage(chatId, `Транскрибирую голосовое (${duration} сек)...`);
   const transcript = await transcribeAudio(fileId);
-  const entryId = await saveEntry(transcript, username, "voice");
-  await sendMessage(chatId, `Транскрипция сохранена:\n\n<i>${transcript}</i>`);
+  const summary = await generateSummary(transcript);
+  const entryId = await saveEntry(transcript, username, "voice", {}, summary ?? undefined);
+  await sendMessage(chatId, summary
+    ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
+    : `✅ Транскрипция сохранена:\n\n<i>${transcript.slice(0, 500)}</i>`);
   await analyzeAndCreateTasks(transcript, chatId, entryId);
 }
 
@@ -1387,7 +1692,14 @@ function getHelpText(): string {
     "/reindex — переиндексировать базу\n" +
     "/help — эта справка";
 
-  return base + "\n\n<b>Управление пользователями:</b>\n/users list · /users add [id] · /users remove [id]\n/status · /reindex";
+  return base +
+    "\n\n<b>Управление пользователями:</b>\n/users list · /users add [id] · /users remove [id]\n/status · /reindex" +
+    "\n\n<b>Claude Desktop — подключение:</b>\n" +
+    "1. Settings → Developer → Add MCP Server\n" +
+    "   Name: <code>swarm-brain</code>\n" +
+    "   URL: <code>https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp</code>\n" +
+    "2. Projects → New Project → вставь инструкции из файла <code>SETUP_CLAUDE_DESKTOP.md</code>\n" +
+    "3. Кидай транскрипты — Claude сохранит оригинал и сделает саммари автоматически";
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -1763,7 +2075,7 @@ Deno.serve(async (req: Request) => {
     const text = message.text?.trim();
     if (!text) return new Response("OK", { status: 200 });
 
-    const BUTTON_LABELS = new Set(["ℹ️ Помощь", "👥 Пользователи", "📋 Задачи", "🎙 Встречи", "🎙 Read.ai"]);
+    const BUTTON_LABELS = new Set(["📥 Добавить", "❓ Спросить", "📋 Задачи", "ℹ️ Помощь", "👥 Пользователи", "🎙 Встречи", "🎙 Read.ai"]);
     const isButtonPress = BUTTON_LABELS.has(text);
     const isCommand = text.startsWith("/") || isButtonPress;
 
@@ -1922,26 +2234,9 @@ Deno.serve(async (req: Request) => {
         const field = parts.slice(2).join("_");
         await handleProfileEdit(chatId, targetId, field, text);
       } else {
-        // Intent detection: route automatically without explicit commands
-        if (text.length < 15) {
-          // Too short to classify — ignore silently
-        } else {
-          const intent = await chatComplete(
-            "Определи намерение пользователя. Ответь ОДНИМ словом:\n" +
-            "- 'question' — пользователь задаёт вопрос, хочет что-то узнать или найти\n" +
-            "- 'add' — пользователь передаёт информацию, заметку, факт, договорённость\n" +
-            "- 'ignore' — приветствие, благодарность, короткий ответ, не несёт смысла для базы знаний",
-            text
-          );
-          const trimmed = intent.trim().toLowerCase();
-          if (trimmed === "question") {
-            await handleAsk(chatId, text);
-          } else if (trimmed === "add") {
-            const entryId = await saveEntry(text, username, "telegram");
-            await sendMessage(chatId, "✅ Сохранено в базу знаний.");
-            await analyzeAndCreateTasks(text, chatId, entryId);
-          }
-          // 'ignore' — do nothing
+        // Free text → always search (user uses buttons to add explicitly)
+        if (text.length >= 3) {
+          await handleAsk(chatId, text);
         }
       }
       return new Response("OK", { status: 200 });
@@ -1952,7 +2247,11 @@ Deno.serve(async (req: Request) => {
     const argText = isButtonPress ? "" : rest.join(" ");
     await clearSession(chatId);
 
-    if (command === "/start") {
+    if (command === "/reset") {
+      await clearSession(chatId);
+      await sendMessage(chatId, "🔄 Сброс выполнен. Бот готов к работе.");
+    } else if (command === "/start") {
+      await clearSession(chatId);
       await sendInlineMessage(chatId,
         `<b>Добро пожаловать в Swarm!</b> 👋\n\nЭто командная база знаний команды.\n\nЧтобы бот правильно назначал задачи и присылал релевантный дайджест — заполни профиль.`,
         [[{ text: "👤 Заполнить профиль", callback_data: "start_onboard" }]]
@@ -1960,7 +2259,7 @@ Deno.serve(async (req: Request) => {
       await sendMessage(chatId, getHelpText(), buildKeyboard());
     } else if (command === "/help" || text === "ℹ️ Помощь") {
       await sendMessage(chatId, getHelpText(), buildKeyboard());
-    } else if (command === "/add" || text === "📝 Добавить") {
+    } else if (command === "/add" || text === "📥 Добавить") {
       await handleAdd(chatId, username, argText);
     } else if (command === "/ask" || text === "❓ Спросить") {
       await handleAsk(chatId, argText.trim() ? argText : "");
@@ -1994,25 +2293,46 @@ Deno.serve(async (req: Request) => {
       }
     } else if (command === "/reindex") {
       {
-        await sendMessage(chatId, "⏳ Переиндексирую базу знаний...");
-        const { data: entries } = await supabase.from("entries").select("id, content").order("created_at", { ascending: false });
+        // Only process entries without metadata yet
+        const { data: entries } = await supabase
+          .from("entries").select("id, content, summary")
+          .or("countries.eq.{},entry_type.eq.note,entry_type.is.null")
+          .order("created_at", { ascending: false });
+        const all = (entries ?? []) as Array<{ id: string; content: string; summary?: string }>;
+        await sendMessage(chatId, `⏳ Обновляю метаданные: <b>${all.length}</b> записей...`);
         let updated = 0, skipped = 0;
-        for (const entry of (entries ?? []) as Array<{ id: string; content: string }>) {
-          const isNonRussian = entry.content.length > 100 &&
-            (entry.content.match(/[a-zA-Z]/g) ?? []).length > entry.content.length * 0.3;
-          if (!isNonRussian) { skipped++; continue; }
-          try {
-            const keywords = await chatComplete(
-              "Извлеки ключевые слова и переведи на русский. Одна строка через запятую, без пояснений.",
-              entry.content.slice(0, 3000)
-            );
-            const indexContent = `[Ключевые слова: ${keywords}]\n\n${entry.content}`;
-            const embedding = await getEmbedding(indexContent);
-            await supabase.from("entries").update({ embedding }).eq("id", entry.id);
-            updated++;
-          } catch { skipped++; }
+        const BATCH = 5;
+        for (let i = 0; i < all.length; i += BATCH) {
+          const batch = all.slice(i, i + BATCH);
+          await Promise.all(batch.map(async (entry) => {
+            try {
+              const textForMeta = entry.summary ?? entry.content;
+              const meta = await extractEntryMeta(textForMeta);
+              const updateData: Record<string, unknown> = {
+                countries: meta.countries,
+                entry_type: meta.entry_type,
+                entry_date: meta.entry_date,
+              };
+              if (!entry.summary) {
+                const isNonRussian = entry.content.length > 100 &&
+                  (entry.content.match(/[a-zA-Z]/g) ?? []).length > entry.content.length * 0.3;
+                if (isNonRussian) {
+                  const keywords = await chatComplete(
+                    "Извлеки ключевые слова и переведи на русский. Одна строка через запятую.",
+                    entry.content.slice(0, 3000)
+                  );
+                  updateData.embedding = await getEmbedding(`[Ключевые слова: ${keywords}]\n\n${entry.content}`);
+                }
+              }
+              await supabase.from("entries").update(updateData).eq("id", entry.id);
+              updated++;
+            } catch { skipped++; }
+          }));
+          if (i + BATCH < all.length) {
+            await sendMessage(chatId, `⏳ Обработано ${Math.min(i + BATCH, all.length)}/${all.length}...`);
+          }
         }
-        await sendMessage(chatId, `✅ Переиндексировано: <b>${updated}</b> записей\nПропущено (уже на русском): <b>${skipped}</b>`);
+        await sendMessage(chatId, `✅ Готово! Обновлено: <b>${updated}</b> записей\nОшибок: <b>${skipped}</b>`);
       }
     } else if (command === "/status") {
       {
