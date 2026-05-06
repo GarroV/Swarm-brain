@@ -256,62 +256,172 @@ async function chatComplete(system: string, user: string): Promise<string> {
 }
 
 // Lightweight completion for classification — small output, low cost
-async function chatCompleteMini(system: string, user: string): Promise<string> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [{ role: "system", content: system }, { role: "user", content: user }],
-      max_tokens: 150,
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message ?? "OpenAI error");
-  return data.choices[0].message.content;
-}
+// ── GPT Tool definitions ──────────────────────────────────────────────────────
 
-interface QueryIntent {
-  type: "semantic_search" | "countries_list" | "entries_by_country" | "digest" | "tasks" | "bot_info";
-  entry_type?: string | null;
-  country?: string | null;
-  q?: string;
-  wants_full_text?: boolean;
-}
+const KNOWLEDGE_TOOLS = [
+  {
+    type: "function" as const,
+    function: {
+      name: "search_knowledge",
+      description: "Semantic search of the knowledge base. Use for specific questions about meeting content, decisions, people, products, data. Include Russian and English terms in query.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query — include both Russian and English variants of key terms" },
+          wants_full_text: { type: "boolean", description: "true = return raw transcript/original text; false = return summaries/theses" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "search_by_country",
+      description: "Find knowledge base entries for a specific country or market. Use when a specific country is mentioned.",
+      parameters: {
+        type: "object",
+        properties: {
+          country: { type: "string", description: "Country name in English: Serbia, Bulgaria, Croatia, Montenegro, Moldova, Hungary, Romania, Estonia, Slovenia, Cyprus, Belarus, Russia, Spain, etc." },
+          wants_full_text: { type: "boolean", description: "true = return raw text; false = return summaries" },
+        },
+        required: ["country"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_countries_list",
+      description: "Get list of all countries/markets in the knowledge base with entry counts. Use for 'which countries', 'what markets', 'по каким странам есть данные'.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_digest",
+      description: "Get overview of the most recent knowledge base entries grouped by type. Use for 'что нового', 'общий обзор', 'что есть в базе', 'а еще что'.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_entries_by_country",
+      description: "Get the latest entry for each country as a country-by-country news feed. Use for 'новости по странам', 'последнее по рынкам', 'дай данные по всем странам'.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+];
 
-async function classifyQuery(question: string): Promise<QueryIntent> {
-  const SYSTEM =
-    `Таблицы: entries(entry_type:transcript/meeting/summary/document/note, countries:string[], summary, content), tasks(title,assignees,due_date,status).
-Верни ТОЛЬКО JSON без пояснений:
-{"type":"<intent>","entry_type":"<тип или null>","country":"<страна на английском или null>","q":"<запрос на русском И английском через запятую>","wants_full_text":<true или false>}
-Интенты:
-semantic_search — найти информацию по содержанию
-countries_list — по каким странам есть записи
-entries_by_country — последние записи по каждой стране
-digest — общий обзор базы
-tasks — задачи/поручения
-bot_info — возможности бота
-wants_full_text: true — если просят исходник, дословно, точный кусок, транскрипцию, подробнее/больше деталей
-Примеры:
-"новости по странам"→{type:entries_by_country}
-"транскрипции по сербии"→{type:semantic_search,country:"Serbia",entry_type:transcript,wants_full_text:true}
-"подробнее про пепси"→{type:semantic_search,q:"пепси, Pepsi",wants_full_text:true}
-"что решили по встрече"→{type:semantic_search,q:"решения встреча decisions meeting"}`;
+type KbEntry = { id: string; content: string; summary?: string | null; source?: string | null };
 
+async function executeTool(name: string, args: Record<string, unknown>): Promise<string> {
   try {
-    const raw = await chatCompleteMini(SYSTEM, question);
-    const match = raw.match(/\{[\s\S]*?\}/);
-    if (!match) return { type: "semantic_search", q: question, wants_full_text: false };
-    const parsed = JSON.parse(match[0]) as Partial<QueryIntent>;
-    return {
-      type: parsed.type ?? "semantic_search",
-      entry_type: parsed.entry_type ?? null,
-      country: parsed.country ?? null,
-      q: parsed.q ?? question,
-      wants_full_text: parsed.wants_full_text ?? false,
-    };
-  } catch {
-    return { type: "semantic_search", q: question, wants_full_text: false };
+    switch (name) {
+
+      case "search_knowledge": {
+        const query = String(args.query ?? "");
+        const wantsFullText = Boolean(args.wants_full_text ?? false);
+
+        const embPromise = getEmbedding(query)
+          .then(emb => supabase.rpc("match_entries", {
+            query_embedding: `[${emb.join(",")}]`,
+            match_threshold: wantsFullText ? 0.05 : 0.1,
+            match_count: wantsFullText ? 15 : 8,
+          }).then(r => (r.data ?? []) as KbEntry[]))
+          .catch(() => [] as KbEntry[]);
+
+        const words = query.toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2).slice(0, 6);
+        const kwPromise = words.length
+          ? supabase.from("entries").select("id, content, summary, source")
+              .or(words.map(w => `source.ilike.%${w}%,content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
+              .limit(5).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
+          : Promise.resolve([] as KbEntry[]);
+
+        const [vec, kw] = await Promise.all([embPromise, kwPromise]);
+        const seen = new Set<string>();
+        const entries: KbEntry[] = [];
+        for (const e of [...vec, ...kw]) {
+          if (e?.id && !seen.has(e.id)) { seen.add(e.id); entries.push(e); }
+        }
+        if (!entries.length) return "Ничего не найдено по запросу.";
+        return entries.slice(0, 5).map((e, i) => {
+          const text = wantsFullText
+            ? (e.content ?? "").slice(0, 3000)
+            : (e.summary || (e.content ?? "").slice(0, 1500));
+          return `[${i + 1}] ${e.source ?? ""}\n${text}`;
+        }).join("\n\n---\n\n");
+      }
+
+      case "search_by_country": {
+        const country = String(args.country ?? "");
+        const wantsFullText = Boolean(args.wants_full_text ?? false);
+        const { data: fuzzy } = await supabase.rpc("search_entries_by_country", { country_query: country }).catch(() => ({ data: null }));
+        let entries = (fuzzy ?? []) as KbEntry[];
+        if (!entries.length) {
+          const { data: exact } = await supabase.from("entries").select("id, content, summary, source")
+            .contains("countries", [country]).order("created_at", { ascending: false }).limit(5);
+          entries = (exact ?? []) as KbEntry[];
+        }
+        if (!entries.length) return `Нет записей по стране ${country}.`;
+        return entries.slice(0, 5).map((e, i) => {
+          const text = wantsFullText
+            ? (e.content ?? "").slice(0, 3000)
+            : (e.summary || (e.content ?? "").slice(0, 1500));
+          return `[${i + 1}] ${e.source ?? ""}\n${text}`;
+        }).join("\n\n---\n\n");
+      }
+
+      case "get_countries_list": {
+        const { data } = await supabase.from("entries").select("countries").not("countries", "eq", "{}");
+        const count: Record<string, number> = {};
+        for (const r of (data ?? []) as Array<{ countries: string[] }>) {
+          for (const c of (r.countries ?? [])) { count[c] = (count[c] ?? 0) + 1; } // r is typed above
+        }
+        if (!Object.keys(count).length) return "В базе нет записей с указанием страны.";
+        return Object.entries(count).sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c}: ${n} записей`).join("\n");
+      }
+
+      case "get_digest": {
+        const { data } = await supabase.from("entries")
+          .select("entry_type, source, summary, countries, entry_date, created_at")
+          .order("created_at", { ascending: false }).limit(30);
+        if (!data?.length) return "База знаний пустая.";
+        type DRow = { entry_type?: string; source: string; summary?: string; countries?: string[]; entry_date?: string; created_at: string };
+        const byType: Record<string, DRow[]> = {};
+        for (const r of data as DRow[]) { const t = r.entry_type ?? "note"; byType[t] = byType[t] ?? []; byType[t].push(r); }
+        return Object.entries(byType).map(([type, items]) => {
+          const lines = items.slice(0, 3).map(r => {
+            const date = r.entry_date ?? r.created_at.slice(0, 10);
+            const ctrs = r.countries?.length ? ` [${r.countries.join(", ")}]` : "";
+            return `• ${date}${ctrs}: ${(r.summary ?? r.source ?? "").slice(0, 120)}`;
+          }).join("\n");
+          return `${type} (${items.length}):\n${lines}`;
+        }).join("\n\n");
+      }
+
+      case "get_entries_by_country": {
+        const { data } = await supabase.from("entries")
+          .select("countries, source, summary, entry_date, created_at")
+          .not("countries", "eq", "{}").order("created_at", { ascending: false }).limit(100);
+        if (!data?.length) return "Нет записей с указанием стран.";
+        type GRow = { countries: string[]; source: string; summary?: string; entry_date?: string; created_at: string };
+        const byCountry: Record<string, GRow> = {};
+        for (const r of data as GRow[]) {
+          for (const c of (r.countries ?? [])) { if (!byCountry[c]) byCountry[c] = r; }
+        }
+        return Object.entries(byCountry).sort((a, b) => a[0].localeCompare(b[0])).map(([c, r]) => {
+          const date = r.entry_date ?? r.created_at.slice(0, 10);
+          return `${c} (${date}): ${(r.summary ?? r.source ?? "").slice(0, 120)}`;
+        }).join("\n");
+      }
+
+      default: return "Неизвестный инструмент.";
+    }
+  } catch (err) {
+    return `Ошибка: ${err instanceof Error ? err.message : "unknown"}`;
   }
 }
 
@@ -394,7 +504,7 @@ async function extractEntryMeta(text: string): Promise<{ countries: string[]; en
       "countries — страны/рынки упомянутые в тексте. СТРОГО короткое официальное название на английском без 'Republic of', 'Kingdom of' и т.п.: Serbia (не Republic of Serbia), Montenegro (не Montenegro Republic), Moldova (не Republic of Moldova). Только ISO-подобные короткие имена.\n" +
       "entry_type — transcript (расшифровка звонка), summary (саммари/тезисы), meeting (заметки встречи), document (файл/отчёт), note (заметка/факт).\n" +
       "entry_date — дата события из текста (не сегодняшняя), null если нет.",
-      text.slice(0, 2000)
+      text.slice(0, 4000)
     );
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     return {
@@ -572,129 +682,12 @@ async function handleAsk(chatId: number, question: string): Promise<void> {
     return;
   }
 
-  const intent = await classifyQuery(question);
-
-  // ── Bot info ───────────────────────────────────────────────────────────────
-  if (intent.type === "bot_info") {
-    await sendMessage(chatId,
-      "<b>🧠 Swarm Brain — командная память</b>\n\n" +
-      "Всё важное сохраняется, индексируется и доступно по запросу в любой момент.\n\n" +
-      "<b>📱 Telegram бот — быстрые заметки</b>\n" +
-      "Для коротких записей, решений, новостей, голосовых.\n" +
-      "• Текст или голосовое → автоматические тезисы + сохранение\n" +
-      "• Ссылки, фото, файлы — тоже принимает\n" +
-      "• Тезисы генерируются автоматически без проверки\n\n" +
-      "<b>🖥 Claude Desktop — большие тексты и документы</b>\n" +
-      "Для транскриптов встреч, длинных документов, важных материалов.\n" +
-      "• Claude сам делает подробные тезисы\n" +
-      "• Ты проверяешь и подтверждаешь перед сохранением\n" +
-      "• Качество выше — человек в процессе\n\n" +
-      "<b>🔍 Поиск</b>\n" +
-      "Пиши вопрос как обычно — бот ищет по смыслу. Работает на русском даже по английским документам.\n\n" +
-      "<b>✅ Задачи</b>\n" +
-      "Извлекаются автоматически из любого контента.\n\n" +
-      "/help — команды"
-    );
-    return;
+  // Task queries go to the dedicated task system
+  if (TASK_KEYWORDS.test(question)) {
+    const handled = await smartTaskSearch(chatId, question);
+    if (handled) return;
   }
 
-  // ── Tasks ──────────────────────────────────────────────────────────────────
-  if (intent.type === "tasks") {
-    await smartTaskSearch(chatId, question);
-    return;
-  }
-
-  // ── Countries list: по каким странам есть [тип] ───────────────────────────
-  if (intent.type === "countries_list") {
-    const entryTypeFilter = intent.entry_type ?? null;
-    type Row = { countries: string[] };
-    let q = supabase.from("entries").select("countries").not("countries", "eq", "{}");
-    if (entryTypeFilter) q = q.eq("entry_type", entryTypeFilter);
-    const { data: rows } = await q.limit(500);
-    if (!rows?.length) {
-      await sendMessage(chatId, "В базе нет записей с указанием стран.");
-      await setSession(chatId, "clarify_ready", question);
-      return;
-    }
-    const countryCount: Record<string, number> = {};
-    for (const r of rows as Row[]) {
-      for (const c of (r.countries ?? [])) {
-        countryCount[c] = (countryCount[c] ?? 0) + 1;
-      }
-    }
-    const sorted = Object.entries(countryCount).sort((a, b) => b[1] - a[1]);
-    const typeLabels: Record<string, string> = { transcript: "транскрипций", meeting: "встреч", summary: "саммари", document: "документов" };
-    const label = entryTypeFilter ? (typeLabels[entryTypeFilter] ?? "записей") : "записей";
-    const lines = sorted.map(([c, n]) => `• ${c} — ${n} ${label}`).join("\n");
-    await sendMessage(chatId, `<b>🌍 Страны в базе${entryTypeFilter ? ` (${label})` : ""}:</b>\n\n${lines}`);
-    await setSession(chatId, "clarify_ready", question);
-    return;
-  }
-
-  // ── Entries by country: последние по каждой стране ────────────────────────
-  if (intent.type === "entries_by_country") {
-    type GRow = { countries: string[]; source: string; summary?: string; entry_date?: string; created_at: string };
-    let q = supabase.from("entries")
-      .select("countries, source, summary, entry_date, created_at")
-      .not("countries", "eq", "{}");
-    if (intent.country) q = q.contains("countries", [intent.country]);
-    const { data: rows } = await q.order("created_at", { ascending: false }).limit(100);
-    if (!rows?.length) {
-      await sendMessage(chatId, "В базе нет записей с указанием стран.");
-      await setSession(chatId, "clarify_ready", question);
-      return;
-    }
-    const byCountry: Record<string, GRow> = {};
-    for (const r of rows as GRow[]) {
-      for (const c of (r.countries ?? [])) {
-        if (!byCountry[c]) byCountry[c] = r;
-      }
-    }
-    const lines = Object.entries(byCountry)
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([c, r]) => {
-        const date = r.entry_date ?? r.created_at.slice(0, 10);
-        const text = (r.summary ?? r.source ?? "").slice(0, 120);
-        return `<b>${c}</b> (${date})\n${text}`;
-      }).join("\n\n");
-    await sendMessage(chatId, `<b>🌍 Последние записи по странам:</b>\n\n${lines}`);
-    await setSession(chatId, "clarify_ready", question);
-    return;
-  }
-
-  // ── Digest: общий срез базы ────────────────────────────────────────────────
-  if (intent.type === "digest") {
-    type DRow = { entry_type?: string; source: string; summary?: string; countries?: string[]; entry_date?: string; created_at: string };
-    const { data: rows } = await supabase.from("entries")
-      .select("entry_type, source, summary, countries, entry_date, created_at")
-      .order("created_at", { ascending: false }).limit(30);
-    if (!rows?.length) { await sendMessage(chatId, "База знаний пустая."); return; }
-    const byType: Record<string, DRow[]> = {};
-    for (const r of rows as DRow[]) {
-      const t = r.entry_type ?? "note";
-      byType[t] = byType[t] ?? [];
-      byType[t].push(r);
-    }
-    const typeLabels: Record<string, string> = {
-      transcript: "📞 Транскрипции", meeting: "🤝 Встречи", summary: "📋 Саммари",
-      document: "📄 Документы", note: "💡 Заметки",
-    };
-    const sections = Object.entries(byType).map(([type, items]) => {
-      const label = typeLabels[type] ?? `📌 ${type}`;
-      const lines = items.slice(0, 3).map(r => {
-        const date = r.entry_date ?? r.created_at.slice(0, 10);
-        const ctrs = r.countries?.length ? ` [${r.countries.join(", ")}]` : "";
-        const text = (r.summary ?? r.source ?? "").slice(0, 100);
-        return `• ${date}${ctrs}: ${text}`;
-      }).join("\n");
-      return `<b>${label} (${items.length})</b>\n${lines}`;
-    }).join("\n\n");
-    await sendMessage(chatId, `<b>📚 Общий срез базы знаний</b>\n\n${sections}`);
-    await setSession(chatId, "clarify_ready", question);
-    return;
-  }
-
-  // ── Semantic search (default) ──────────────────────────────────────────────
   const searchPhrases = [
     "🧠 Коллективный разум в работе..",
     "🐝 47 пчёл-аналитиков в работе..",
@@ -705,115 +698,63 @@ async function handleAsk(chatId: number, question: string): Promise<void> {
   ];
   await sendMessage(chatId, searchPhrases[Math.floor(Math.random() * searchPhrases.length)]);
 
-  type Entry = { id: string; content: string; summary?: string; source?: string };
-  const seen = new Set<string>();
-  const allEntries: Entry[] = [];
+  const messages: Record<string, unknown>[] = [
+    {
+      role: "system",
+      content:
+        "Ты помощник командной базы знаний команды. " +
+        "Используй инструменты чтобы найти нужную информацию в базе. " +
+        "Отвечай ТОЛЬКО на основе данных из инструментов — не придумывай информацию. " +
+        "Если данных нет — честно скажи. Отвечай на русском языке.",
+    },
+    { role: "user", content: question },
+  ];
 
-  // 1. Structured filter — fuzzy match on countries array via RPC, then exact, then source text
-  const structuredPromise = intent.country
-    ? (async () => {
-        try {
-          // Fuzzy: ANY(countries) ILIKE '%Serbia%' — catches "Republic of Serbia" etc.
-          const { data: fuzzy } = await supabase.rpc("search_entries_by_country", {
-            country_query: intent.country,
-          });
-          if (fuzzy?.length) return fuzzy as Entry[];
-          // Exact array contains fallback
-          const { data: exact } = await supabase.from("entries")
-            .select("id, content, summary, source")
-            .contains("countries", [intent.country!])
-            .order("created_at", { ascending: false })
-            .limit(5);
-          if (exact?.length) return exact as Entry[];
-          // Source text fallback
-          const { data: src } = await supabase.from("entries")
-            .select("id, content, summary, source")
-            .ilike("source", `%${intent.country}%`)
-            .order("created_at", { ascending: false })
-            .limit(5);
-          return (src ?? []) as Entry[];
-        } catch { return [] as Entry[]; }
-      })()
-    : Promise.resolve([] as Entry[]);
+  let finalAnswer = "";
 
-  // 2. Vector search — wrapped in try-catch so an OpenAI error doesn't kill the whole search
-  const vectorPromise = (async () => {
-    try {
-      const searchQuery = intent.q ?? question;
-      const embedding = await getEmbedding(searchQuery);
-      const { data } = await supabase.rpc("match_entries", {
-        query_embedding: `[${embedding.join(",")}]`,
-        match_threshold: intent.wants_full_text ? 0.05 : 0.1,
-        match_count: intent.wants_full_text ? 15 : 10,
-      });
-      return (data ?? []) as Entry[];
-    } catch { return [] as Entry[]; }
-  })();
+  for (let round = 0; round < 4; round++) {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages,
+        tools: KNOWLEDGE_TOOLS,
+        tool_choice: round === 0 ? "required" : "auto",
+        max_tokens: 1500,
+      }),
+    });
 
-  // 3. Keyword search — source, content, summary; English words from intent.q first
-  const keywordPromise = (async () => {
-    try {
-      const STOP = new Set(["дай", "дать", "покажи", "найди", "расскажи", "точный", "точно", "кусок", "часть", "про", "для", "что", "как", "где", "кто", "это", "есть"]);
-      const fromQ = (intent.q ?? "").toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2 && !STOP.has(w));
-      const fromQuestion = question.toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2 && !STOP.has(w));
-      const words = [...new Set([...fromQ, ...fromQuestion])].slice(0, 8);
-      if (!words.length) return [] as Entry[];
-      const filter = words.map(w => `source.ilike.%${w}%,content.ilike.%${w}%,summary.ilike.%${w}%`).join(",");
-      const { data } = await supabase.from("entries")
-        .select("id, content, summary, source")
-        .or(filter)
-        .limit(5);
-      return (data ?? []) as Entry[];
-    } catch { return [] as Entry[]; }
-  })();
+    if (!res.ok) { finalAnswer = "Ошибка при обращении к AI. Попробуй ещё раз."; break; }
 
-  // Merge: structured first (most precise), then vector, then keyword
-  const [structuredEntries, vectorEntries, keywordEntries] = await Promise.all([
-    structuredPromise, vectorPromise, keywordPromise,
-  ]);
-  for (const e of [...structuredEntries, ...vectorEntries, ...keywordEntries]) {
-    if (e?.id && !seen.has(e.id)) { seen.add(e.id); allEntries.push(e); }
+    const data = await res.json() as {
+      choices: Array<{ finish_reason: string; message: Record<string, unknown> }>;
+    };
+
+    const choice = data.choices[0];
+    const msg = choice.message;
+    const toolCalls = msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined;
+
+    if (choice.finish_reason === "stop" || !toolCalls?.length) {
+      finalAnswer = String(msg.content ?? "В базе знаний нет информации по этому вопросу.");
+      break;
+    }
+
+    messages.push(msg);
+
+    for (const tc of toolCalls) {
+      let result: string;
+      try {
+        result = await executeTool(tc.function.name, JSON.parse(tc.function.arguments) as Record<string, unknown>);
+      } catch { result = "Ошибка выполнения инструмента."; }
+      messages.push({ role: "tool", tool_call_id: tc.id, content: result });
+    }
   }
 
-  // Last-resort fallback: if country known but nothing found, get recent entries for that country
-  if (!allEntries.length && intent.country) {
-    try {
-      const { data } = await supabase.from("entries")
-        .select("id, content, summary, source")
-        .contains("countries", [intent.country])
-        .order("created_at", { ascending: false })
-        .limit(3);
-      for (const e of (data ?? []) as Entry[]) {
-        if (e?.id && !seen.has(e.id)) { seen.add(e.id); allEntries.push(e); }
-      }
-    } catch { /* ignore */ }
-  }
-
-  if (!allEntries.length) {
-    await sendMessage(chatId, "В базе знаний нет информации по этой теме.");
-    await setSession(chatId, "clarify_ready", question);
-    return;
-  }
-
-  const wantsFullText = intent.wants_full_text || intent.entry_type === "transcript";
-  const context = allEntries.slice(0, 5).map((e, i) => {
-    const text = wantsFullText
-      ? (e.content ?? "").slice(0, 4000)
-      : (e.summary || (e.content ?? "").slice(0, 3000));
-    return `[${i + 1}] ${text}`;
-  }).join("\n\n---\n\n");
-
-  const systemPrompt = wantsFullText
-    ? "Из контекста извлеки и процитируй дословно все части относящиеся к вопросу. Не сокращай — пользователь хочет точный текст. Отвечай на русском."
-    : "Помощник командной базы знаний. Отвечай ТОЛЬКО на основе контекста. Если ответа нет — напиши: 'В базе знаний нет информации по этой теме.' Отвечай на русском.";
-
-  const answer = await chatComplete(
-    systemPrompt,
-    `Контекст:\n\n${context}\n\nВопрос: ${question}`
-  );
-  await sendMessage(chatId, answer);
+  await sendMessage(chatId, finalAnswer || "В базе знаний нет информации по этому вопросу.");
   await setSession(chatId, "clarify_ready", question);
 }
+
 
 async function handleVoice(chatId: number, username: string, fileId: string, duration: number): Promise<void> {
   await sendMessage(chatId, `Транскрибирую голосовое (${duration} сек)...`);
