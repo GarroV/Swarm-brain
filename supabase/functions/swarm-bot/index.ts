@@ -358,13 +358,32 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
       case "search_by_country": {
         const country = String(args.country ?? "");
         const wantsFullText = Boolean(args.wants_full_text ?? false);
-        const { data: fuzzy } = await supabase.rpc("search_entries_by_country", { country_query: country }).catch(() => ({ data: null }));
-        let entries = (fuzzy ?? []) as KbEntry[];
+
+        // Primary: semantic vector search — works regardless of how country is stored in DB
+        let entries: KbEntry[] = [];
+        try {
+          const emb = await getEmbedding(country);
+          const { data: vecData } = await supabase.rpc("match_entries", {
+            query_embedding: `[${emb.join(",")}]`,
+            match_threshold: 0.1,
+            match_count: 8,
+          });
+          entries = (vecData ?? []) as KbEntry[];
+        } catch { /* fall through */ }
+
+        // Fallback: fuzzy array match via RPC
+        if (!entries.length) {
+          const { data: fuzzy } = await supabase.rpc("search_entries_by_country", { country_query: country }).catch(() => ({ data: null }));
+          entries = (fuzzy ?? []) as KbEntry[];
+        }
+
+        // Fallback: exact contains
         if (!entries.length) {
           const { data: exact } = await supabase.from("entries").select("id, content, summary, source")
             .contains("countries", [country]).order("created_at", { ascending: false }).limit(5);
           entries = (exact ?? []) as KbEntry[];
         }
+
         if (!entries.length) return `Нет записей по стране ${country}.`;
         return entries.slice(0, 5).map((e, i) => {
           const text = wantsFullText
