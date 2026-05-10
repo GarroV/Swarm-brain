@@ -1,4 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// @ts-ignore - esm.sh module, no local type declarations needed
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
@@ -199,7 +201,7 @@ async function sendInlineMessage(chatId: number, text: string, keyboard: unknown
 function buildKeyboard() {
   return {
     keyboard: [
-      [{ text: "📥 Добавить" }, { text: "❓ Спросить" }, { text: "📋 Задачи" }],
+      [{ text: "📥 Добавить" }, { text: "❓ Спросить" }],
     ],
     resize_keyboard: true,
     persistent: true,
@@ -263,17 +265,35 @@ const KNOWLEDGE_TOOLS = [
     type: "function" as const,
     function: {
       name: "search_knowledge",
-      description: "Semantic search of the knowledge base. Use for specific questions about meeting content, decisions, people, products, data. Include Russian and English terms in query.",
+      description: "Semantic search of the knowledge base. Use for any question about stored content. Include Russian and English terms in query.",
       parameters: {
         type: "object",
         properties: {
           query: { type: "string", description: "Search query — include both Russian and English variants of key terms" },
-          wants_full_text: { type: "boolean", description: "true = return raw transcript/original text; false = return summaries/theses" },
+          wants_full_text: { type: "boolean", description: "true = return raw text; false = return summaries" },
         },
         required: ["query"],
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "export_entry",
+      description: "Export the full raw content of an entry as a downloadable file. Use when user asks to 'скинь файлом', 'выгрузи', 'скачать транскрипцию', 'export', 'пришли исходник'. First use search_knowledge to find the entry id, then call export_entry with that id.",
+      parameters: {
+        type: "object",
+        properties: {
+          entry_id: { type: "string", description: "Entry id from search results (the id: prefix value)" },
+        },
+        required: ["entry_id"],
+      },
+    },
+  },
+];
+
+/* === DISABLED: extra knowledge tools (search_by_country, get_countries_list, get_digest, get_entries_by_country, get_recent_meetings, list_meetings_by_country, update_entry) — kept for future re-enable === */
+const KNOWLEDGE_TOOLS_DISABLED = [
   {
     type: "function" as const,
     function: {
@@ -313,7 +333,55 @@ const KNOWLEDGE_TOOLS = [
       parameters: { type: "object", properties: {} },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_recent_meetings",
+      description: "Get recent meetings sorted by date. Use for: 'что последнее', 'последние встречи', 'что приходило от рид аи', 'последнее от read.ai', 'новые встречи'. Can filter by source (read_ai, voice, telegram) or leave empty for all.",
+      parameters: {
+        type: "object",
+        properties: {
+          source: { type: "string", description: "Filter by source: 'read_ai', 'voice', 'telegram', or empty for all" },
+          limit: { type: "number", description: "Number of results, default 10" },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "list_meetings_by_country",
+      description: "Get compact list of meetings (title + date + id) for a country. Use when user asks 'какие встречи были', 'список встреч', 'покажи встречи по X' — do NOT return summaries, just names and dates.",
+      parameters: {
+        type: "object",
+        properties: {
+          country: { type: "string", description: "Country in English: Serbia, Croatia, Bulgaria, etc. Empty string = all countries." },
+        },
+        required: ["country"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "update_entry",
+      description: "Update metadata of a knowledge base entry. Use when user asks to fix/change a date, title, year, or tags of a specific entry. First search to find the entry id, then call this to update it.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Entry id from search results" },
+          entry_date: { type: "string", description: "New date in YYYY-MM-DD format, e.g. 2026-04-29" },
+          title: { type: "string", description: "New title for the entry (stored in metadata.title)" },
+          countries: { type: "array", items: { type: "string" }, description: "New countries list e.g. ['Serbia', 'Montenegro']" },
+        },
+        required: ["id"],
+      },
+    },
+  },
 ];
+/* === END DISABLED === */
+void KNOWLEDGE_TOOLS_DISABLED;
 
 type KbEntry = { id: string; content: string; summary?: string | null; source?: string | null };
 
@@ -351,7 +419,7 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
           const text = wantsFullText
             ? (e.content ?? "").slice(0, 3000)
             : (e.summary || (e.content ?? "").slice(0, 1500));
-          return `[${i + 1}] ${e.source ?? ""}\n${text}`;
+          return `[${i + 1}] id:${e.id} source:${e.source ?? ""}\n${text}`;
         }).join("\n\n---\n\n");
       }
 
@@ -389,7 +457,7 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
           const text = wantsFullText
             ? (e.content ?? "").slice(0, 3000)
             : (e.summary || (e.content ?? "").slice(0, 1500));
-          return `[${i + 1}] ${e.source ?? ""}\n${text}`;
+          return `[${i + 1}] id:${e.id} source:${e.source ?? ""}\n${text}`;
         }).join("\n\n---\n\n");
       }
 
@@ -435,6 +503,73 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
           const date = r.entry_date ?? r.created_at.slice(0, 10);
           return `${c} (${date}): ${(r.summary ?? r.source ?? "").slice(0, 120)}`;
         }).join("\n");
+      }
+
+      case "get_recent_meetings": {
+        const source = String(args.source ?? "").trim();
+        const limit = Math.min(Number(args.limit ?? 10), 20);
+        let q = supabase.from("entries")
+          .select("id, metadata, entry_date, created_at, source, content, summary, entry_type")
+          .order("created_at", { ascending: false })
+          .limit(limit);
+        if (source) {
+          // Explicit source filter (e.g. "read_ai", "voice", "granola")
+          q = q.eq("source", source);
+        } else {
+          // Default: all meeting/transcript entries regardless of source tool
+          // Catches both old entries (source=read_ai/voice) and new ones from any tool
+          q = q.or("source.in.(read_ai,voice),entry_type.in.(transcript,meeting)");
+        }
+        const { data } = await q;
+        if (!data?.length) return "Записей не найдено.";
+        type RRow = { id: string; metadata?: Record<string, unknown>; entry_date?: string; created_at: string; source?: string; entry_type?: string; content?: string; summary?: string };
+        return (data as RRow[]).map((e, i) => {
+          const title = String(e.metadata?.title ?? e.content?.split("\n")[0].slice(0, 70) ?? "Запись");
+          const date = e.entry_date ?? e.created_at?.slice(0, 10) ?? "?";
+          const preview = (e.summary ?? e.content ?? "").slice(0, 120);
+          return `${i + 1}. [${date}] ${title} (${e.entry_type ?? e.source}) — id:${e.id}\n   ${preview}`;
+        }).join("\n\n");
+      }
+
+      case "list_meetings_by_country": {
+        const country = String(args.country ?? "").toLowerCase();
+        const { data } = await supabase
+          .from("entries")
+          .select("id, metadata, entry_date, created_at, countries, content")
+          .order("entry_date", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false })
+          .limit(50);
+        if (!data?.length) return "Встреч не найдено.";
+        type MRow = { id: string; metadata?: Record<string, unknown>; entry_date?: string; created_at: string; countries?: string[]; content?: string };
+        const filtered = country
+          ? (data as MRow[]).filter(e =>
+              (e.countries ?? []).some((c: string) => c.toLowerCase().includes(country) || country.includes(c.toLowerCase())) ||
+              (e.content ?? "").toLowerCase().includes(country) ||
+              String(e.metadata?.title ?? "").toLowerCase().includes(country)
+            )
+          : (data as MRow[]);
+        if (!filtered.length) return `Встреч по ${country} не найдено.`;
+        return filtered.slice(0, 15).map((e, i) => {
+          const title = String(e.metadata?.title ?? e.content?.split("\n")[0].slice(0, 70) ?? "Встреча");
+          const date = e.entry_date ?? e.created_at?.slice(0, 10) ?? "?";
+          return `${i + 1}. [${date}] ${title} — id:${e.id}`;
+        }).join("\n");
+      }
+
+      case "update_entry": {
+        const id = String(args.id ?? "");
+        if (!id) return "Укажи id записи.";
+        const { data: existing } = await supabase.from("entries").select("metadata, countries, entry_date").eq("id", id).maybeSingle();
+        if (!existing) return `Запись ${id} не найдена.`;
+        const updates: Record<string, unknown> = {};
+        if (args.entry_date) updates.entry_date = String(args.entry_date);
+        if (args.title) updates.metadata = { ...(existing.metadata ?? {}), title: String(args.title) };
+        if (args.countries) updates.countries = args.countries;
+        if (!Object.keys(updates).length) return "Нечего обновлять — передай хотя бы одно поле.";
+        const { error } = await supabase.from("entries").update(updates).eq("id", id);
+        if (error) return `Ошибка обновления: ${error.message}`;
+        const changed = Object.keys(updates).join(", ");
+        return `✅ Запись обновлена (${changed}).`;
       }
 
       default: return "Неизвестный инструмент.";
@@ -550,11 +685,8 @@ async function saveEntry(content: string, addedBy: string, source: string, metad
     }
   }
 
-  // Extract structured metadata in parallel with embedding
-  const [embedding, entryMeta] = await Promise.all([
-    getEmbedding(indexContent.slice(0, 8000)),
-    extractEntryMeta(summary ?? content),
-  ]);
+  // === Stripped down: only embedding, no auto-tagging ===
+  const embedding = await getEmbedding(indexContent.slice(0, 8000));
 
   const { data, error } = await supabase.from("entries").insert({
     content,
@@ -563,9 +695,10 @@ async function saveEntry(content: string, addedBy: string, source: string, metad
     added_by: addedBy,
     source,
     metadata,
-    countries: entryMeta.countries,
-    entry_type: entryMeta.entry_type,
-    entry_date: entryMeta.entry_date,
+    /* === DISABLED: countries/entry_type/entry_date auto-detection — kept for future re-enable === */
+    // countries: entryMeta.countries,
+    // entry_type: entryMeta.entry_type,
+    // entry_date: entryMeta.entry_date,
     group_id: groupId ?? null,
   }).select("id").single();
   if (error) throw new Error(error.message);
@@ -589,7 +722,10 @@ async function getSession(chatId: number): Promise<{ action: string; context?: s
 }
 
 async function setSession(chatId: number, action: string, context?: string): Promise<void> {
-  await supabase.from("sessions").upsert({ chat_id: chatId, action, context: context ?? null });
+  await supabase.from("sessions").upsert(
+    { chat_id: chatId, action, context: context ?? null, updated_at: new Date().toISOString() },
+    { onConflict: "chat_id" }
+  );
 }
 
 async function clearSession(chatId: number): Promise<void> {
@@ -636,7 +772,7 @@ async function handleAdd(chatId: number, username: string, text: string): Promis
   await sendMessage(chatId, summary
     ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
     : "✅ Запись добавлена в базу знаний.");
-  await analyzeAndCreateTasks(text, chatId, entryId);
+  // DISABLED: await analyzeAndCreateTasks(text, chatId, entryId);
 }
 
 const TASK_KEYWORDS = /задач|таск|task|сделать|выполнить|поручен|назначен|дедлайн|deadline|кто должен/i;
@@ -707,6 +843,10 @@ async function handleAsk(chatId: number, question: string): Promise<void> {
     if (handled) return;
   }
 
+  // Load previous answer for referential follow-ups ("эту встречу", "её", etc.)
+  const prevSession = await getSession(chatId);
+  const prevAnswer = prevSession?.action === "last_answer" ? (prevSession.context ?? null) : null;
+
   const searchPhrases = [
     "🧠 Коллективный разум в работе..",
     "🐝 47 пчёл-аналитиков в работе..",
@@ -722,16 +862,22 @@ async function handleAsk(chatId: number, question: string): Promise<void> {
       role: "system",
       content:
         "Ты помощник командной базы знаний команды. " +
-        "Используй инструменты чтобы найти нужную информацию в базе. " +
+        "Используй инструменты чтобы найти или изменить информацию в базе. " +
+        "Если пользователь говорит 'эту', 'её', 'этот' — он имеет в виду запись из предыдущего ответа. " +
+        "Если пользователь просит скинуть файлом, выгрузить, скачать транскрипцию или исходник — " +
+        "сначала найди запись через search_knowledge (получи её id из результата), " +
+        "затем вызови export_entry с этим id. " +
         "Отвечай ТОЛЬКО на основе данных из инструментов — не придумывай информацию. " +
         "Если данных нет — честно скажи. Отвечай на русском языке.",
     },
+    ...(prevAnswer ? [{ role: "assistant" as const, content: prevAnswer }] : []),
     { role: "user", content: question },
   ];
 
   let finalAnswer = "";
+  let exportFile: { content: string; filename: string } | null = null;
 
-  for (let round = 0; round < 4; round++) {
+  for (let round = 0; round < 6; round++) {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
@@ -740,7 +886,7 @@ async function handleAsk(chatId: number, question: string): Promise<void> {
         messages,
         tools: KNOWLEDGE_TOOLS,
         tool_choice: round === 0 ? "required" : "auto",
-        max_tokens: 1500,
+        max_tokens: 2000,
       }),
     });
 
@@ -764,14 +910,49 @@ async function handleAsk(chatId: number, question: string): Promise<void> {
     for (const tc of toolCalls) {
       let result: string;
       try {
-        result = await executeTool(tc.function.name, JSON.parse(tc.function.arguments) as Record<string, unknown>);
+        if (tc.function.name === "export_entry") {
+          const args = JSON.parse(tc.function.arguments) as Record<string, unknown>;
+          const entryId = String(args.entry_id ?? "").replace(/^id:/, "");
+          const { data: entry } = await supabase
+            .from("entries")
+            .select("content, metadata, source, created_at")
+            .eq("id", entryId)
+            .maybeSingle();
+          if (!entry) {
+            result = "Запись не найдена.";
+          } else {
+            const rawTitle = ((entry.metadata as Record<string, unknown>)?.title as string | undefined)
+              ?? (entry.source as string | undefined)
+              ?? "entry";
+            const safeTitle = rawTitle.replace(/[^\wа-яёА-ЯЁ\s-]/g, "").trim().replace(/\s+/g, "_");
+            const dateStr = new Date(entry.created_at as string).toISOString().slice(0, 10);
+            exportFile = { content: entry.content as string, filename: `${safeTitle}_${dateStr}.txt` };
+            result = "Файл готов к отправке.";
+          }
+        } else {
+          result = await executeTool(tc.function.name, JSON.parse(tc.function.arguments) as Record<string, unknown>);
+        }
       } catch { result = "Ошибка выполнения инструмента."; }
       messages.push({ role: "tool", tool_call_id: tc.id, content: result });
     }
   }
 
-  await sendMessage(chatId, finalAnswer || "В базе знаний нет информации по этому вопросу.");
-  await setSession(chatId, "clarify_ready", question);
+  if (exportFile) {
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("document", new Blob([exportFile.content], { type: "text/plain; charset=utf-8" }), exportFile.filename);
+    if (finalAnswer && finalAnswer !== "В базе знаний нет информации по этому вопросу.") {
+      form.append("caption", finalAnswer.slice(0, 1024));
+    }
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, { method: "POST", body: form });
+    return;
+  }
+
+  const answer = finalAnswer || "В базе знаний нет информации по этому вопросу.";
+  await sendMessage(chatId, answer);
+
+  // Save answer as context so follow-up references ("эту", "её") resolve correctly
+  await setSession(chatId, "last_answer", answer.slice(0, 800));
 }
 
 
@@ -783,39 +964,135 @@ async function handleVoice(chatId: number, username: string, fileId: string, dur
   await sendMessage(chatId, summary
     ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
     : `✅ Транскрипция сохранена:\n\n<i>${transcript.slice(0, 500)}</i>`);
-  await analyzeAndCreateTasks(transcript, chatId, entryId);
+  // DISABLED: await analyzeAndCreateTasks(transcript, chatId, entryId);
+}
+
+const TEXT_EXTENSIONS = new Set([".txt", ".md", ".csv", ".log", ".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".env", ".ts", ".js", ".py", ".html", ".htm", ".css"]);
+
+function getFileExt(name: string): string {
+  const idx = name.lastIndexOf(".");
+  return idx >= 0 ? name.slice(idx).toLowerCase() : "";
+}
+
+function isTextFile(mime: string, name: string): boolean {
+  if (mime.startsWith("text/")) return true;
+  if (["application/json", "application/xml"].includes(mime)) return true;
+  return TEXT_EXTENSIONS.has(getFileExt(name));
+}
+
+const SPREADSHEET_MIMES = new Set([
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "application/vnd.oasis.opendocument.spreadsheet",
+  "application/vnd.ms-excel.sheet.macroEnabled.12",
+]);
+const SPREADSHEET_EXTS = new Set([".xlsx", ".xls", ".ods", ".xlsm"]);
+
+function isSpreadsheet(mime: string, name: string): boolean {
+  return SPREADSHEET_MIMES.has(mime) || SPREADSHEET_EXTS.has(getFileExt(name));
+}
+
+function parseSpreadsheet(buffer: ArrayBuffer): string {
+  // @ts-ignore - XLSX types not available locally
+  const wb = XLSX.read(new Uint8Array(buffer), { type: "array", sheetStubs: true });
+  const parts: string[] = [];
+  // @ts-ignore
+  for (const sheetName of wb.SheetNames) {
+    // @ts-ignore
+    const csv: string = XLSX.utils.sheet_to_csv(wb.Sheets[sheetName], { blankrows: false });
+    const trimmed = csv.trim();
+    if (trimmed) parts.push(`=== Лист: ${sheetName} ===\n${trimmed}`);
+  }
+  return parts.join("\n\n");
 }
 
 async function handleDocument(chatId: number, username: string, doc: NonNullable<TgMessage["document"]>): Promise<void> {
   const mime = doc.mime_type ?? "";
   const name = doc.file_name ?? "файл";
 
-  if (mime.startsWith("text/") || ["application/json", "application/xml"].includes(mime)) {
+  if (isTextFile(mime, name)) {
     await sendMessage(chatId, `Читаю файл <b>${name}</b>...`);
     const fileUrl = await getTelegramFileUrl(doc.file_id);
     const res = await fetch(fileUrl);
-    const text = await res.text();
+    const buffer = await res.arrayBuffer();
+    const text = new TextDecoder("utf-8").decode(buffer);
     if (!text.trim()) { await sendMessage(chatId, "Файл пустой."); return; }
+
+    const [driveLink, summary] = await Promise.all([
+      uploadToDrive(name, buffer, mime || "text/plain", "Documents"),
+      generateSummary(text),
+    ]);
+
     const CHUNK = 3000, OVL = 200;
     const chunks: string[] = [];
     for (let p = 0; p < text.length; p += CHUNK - OVL) chunks.push(text.slice(p, p + CHUNK));
     let firstId = "";
     for (let i = 0; i < chunks.length; i++) {
-      const eid = await saveEntry(chunks[i], username, "document", { file_name: name, mime, chunk: i + 1, total_chunks: chunks.length });
+      const eid = await saveEntry(chunks[i], username, "document",
+        { file_name: name, mime: mime || "text/plain", chunk: i + 1, total_chunks: chunks.length, drive_link: driveLink },
+        i === 0 ? (summary ?? undefined) : undefined,
+      );
       if (i === 0) firstId = eid;
     }
-    await sendMessage(chatId, `Файл <b>${name}</b> сохранён (${text.length} символов, ${chunks.length} частей).`);
-    await analyzeAndCreateTasks(text.slice(0, 6000), chatId, firstId);
+    const driveMsg = driveLink ? `\n<a href="${driveLink}">Открыть на Google Drive</a>` : "";
+    const summaryMsg = summary ? `\n\n<b>Тезисы:</b>\n${summary}` : "";
+    await sendMessage(chatId, `✅ Файл <b>${name}</b> сохранён (${text.length} символов).${summaryMsg}${driveMsg}`);
+    // DISABLED: await analyzeAndCreateTasks(text.slice(0, 6000), chatId, firstId);
     return;
   }
 
-  if (mime === "application/pdf") {
+  if (isSpreadsheet(mime, name)) {
+    await sendMessage(chatId, `Обрабатываю таблицу <b>${name}</b>...`);
+    const fileUrl = await getTelegramFileUrl(doc.file_id);
+    const res = await fetch(fileUrl);
+    const buffer = await res.arrayBuffer();
+
+    const driveLink = await uploadToDrive(name, buffer, mime || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Documents");
+
+    let extracted: string;
+    try {
+      extracted = parseSpreadsheet(buffer);
+    } catch {
+      const driveMsg = driveLink ? ` Файл сохранён на <a href="${driveLink}">Google Drive</a>.` : "";
+      await sendMessage(chatId, `Не удалось прочитать таблицу (повреждённый файл?).${driveMsg}`);
+      return;
+    }
+
+    if (!extracted.trim()) {
+      const driveMsg = driveLink ? ` Файл сохранён на <a href="${driveLink}">Google Drive</a>.` : "";
+      await sendMessage(chatId, `Таблица пустая или все листы без данных.${driveMsg}`);
+      return;
+    }
+
+    const summary = await generateSummary(extracted);
+
+    const CHUNK = 3000, OVL = 200;
+    const chunks: string[] = [];
+    for (let p = 0; p < extracted.length; p += CHUNK - OVL) chunks.push(extracted.slice(p, p + CHUNK));
+
+    let firstId = "";
+    for (let i = 0; i < chunks.length; i++) {
+      const eid = await saveEntry(chunks[i], username, "document",
+        { file_name: name, mime: mime || "spreadsheet", chunk: i + 1, total_chunks: chunks.length, drive_link: driveLink },
+        i === 0 ? (summary ?? undefined) : undefined,
+      );
+      if (i === 0) firstId = eid;
+    }
+
+    const driveMsg = driveLink ? `\n<a href="${driveLink}">Открыть на Google Drive</a>` : "";
+    const summaryMsg = summary ? `\n\n<b>Тезисы:</b>\n${summary}` : "";
+    await sendMessage(chatId, `✅ Таблица <b>${name}</b> сохранена (${extracted.length} символов).${summaryMsg}${driveMsg}`);
+    // DISABLED: await analyzeAndCreateTasks(extracted.slice(0, 6000), chatId, firstId);
+    return;
+  }
+
+  if (mime === "application/pdf" || getFileExt(name) === ".pdf") {
     await sendMessage(chatId, `Обрабатываю PDF <b>${name}</b>...`);
     const fileUrl = await getTelegramFileUrl(doc.file_id);
     const pdfRes = await fetch(fileUrl);
     const pdfBuffer = await pdfRes.arrayBuffer();
+    const driveLink = await uploadToDrive(name, pdfBuffer, "application/pdf", "Documents");
 
-    // Extract readable text streams from PDF binary
     const raw = new TextDecoder("latin1").decode(pdfBuffer);
     const streams: string[] = [];
     const streamMatches = raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g);
@@ -824,7 +1101,6 @@ async function handleDocument(chatId: number, username: string, doc: NonNullable
       if (chunk.length > 20) streams.push(chunk);
     }
 
-    // Also try to extract text from BT...ET blocks
     const btMatches = raw.matchAll(/BT([\s\S]*?)ET/g);
     const btTexts: string[] = [];
     for (const m of btMatches) {
@@ -841,7 +1117,8 @@ async function handleDocument(chatId: number, username: string, doc: NonNullable
       return;
     }
 
-    // Chunk large documents into ~3000-char pieces with 200-char overlap
+    const summary = await generateSummary(extracted);
+
     const CHUNK_SIZE = 3000;
     const OVERLAP = 200;
     const chunks: string[] = [];
@@ -851,24 +1128,23 @@ async function handleDocument(chatId: number, username: string, doc: NonNullable
       pos += CHUNK_SIZE - OVERLAP;
     }
 
-    await sendMessage(chatId, `📄 <b>${name}</b> — ${extracted.length} символов, разбиваю на ${chunks.length} частей...`);
-
     let firstEntryId = "";
     for (let i = 0; i < chunks.length; i++) {
-      const entryId = await saveEntry(chunks[i], username, "pdf", {
-        file_name: name,
-        chunk: i + 1,
-        total_chunks: chunks.length,
-      });
+      const entryId = await saveEntry(chunks[i], username, "pdf",
+        { file_name: name, chunk: i + 1, total_chunks: chunks.length, drive_link: driveLink },
+        i === 0 ? (summary ?? undefined) : undefined,
+      );
       if (i === 0) firstEntryId = entryId;
     }
 
-    await sendMessage(chatId, `✅ PDF сохранён полностью (${chunks.length} частей).`);
-    await analyzeAndCreateTasks(extracted.slice(0, 6000), chatId, firstEntryId);
+    const drivePdfMsg = driveLink ? `\n<a href="${driveLink}">Открыть на Google Drive</a>` : "";
+    const summaryMsg = summary ? `\n\n<b>Тезисы:</b>\n${summary}` : "";
+    await sendMessage(chatId, `✅ PDF <b>${name}</b> сохранён (${chunks.length} частей).${summaryMsg}${drivePdfMsg}`);
+    // DISABLED: await analyzeAndCreateTasks(extracted.slice(0, 6000), chatId, firstEntryId);
     return;
   }
 
-  await sendMessage(chatId, `Формат <code>${mime || name}</code> пока не поддерживается.\n\nПоддерживаемые форматы: TXT, MD, CSV, JSON, PDF.`);
+  await sendMessage(chatId, `Формат <code>${mime || name}</code> пока не поддерживается.\n\nПоддерживаемые форматы: TXT, MD, CSV, JSON, XLSX, PDF.`);
 }
 
 async function handlePhoto(chatId: number, username: string, photos: NonNullable<TgMessage["photo"]>): Promise<void> {
@@ -877,7 +1153,7 @@ async function handlePhoto(chatId: number, username: string, photos: NonNullable
   const description = await describeImage(largest.file_id);
   const entryId = await saveEntry(description, username, "image");
   await sendMessage(chatId, `Изображение обработано и сохранено:\n\n<i>${description.slice(0, 500)}${description.length > 500 ? "..." : ""}</i>`);
-  await analyzeAndCreateTasks(description, chatId, entryId);
+  // DISABLED: await analyzeAndCreateTasks(description, chatId, entryId);
 }
 
 async function handleUrl(chatId: number, username: string, url: string): Promise<void> {
@@ -886,7 +1162,7 @@ async function handleUrl(chatId: number, username: string, url: string): Promise
   if (!content || content.length < 50) { await sendMessage(chatId, "Не удалось извлечь текст со страницы."); return; }
   const entryId = await saveEntry(content, username, "url", { url });
   await sendMessage(chatId, `Страница сохранена (${content.length} символов):\n<code>${url}</code>`);
-  await analyzeAndCreateTasks(content, chatId, entryId);
+  // DISABLED: await analyzeAndCreateTasks(content, chatId, entryId);
 }
 
 async function handleUsers(chatId: number, adminId: number, argText: string): Promise<void> {
@@ -1630,7 +1906,7 @@ async function handleMeetingCallback(chatId: number, username: string, meetingId
 
   const entryId = await saveEntry(contentParts, username, "read_ai", { meeting_id: meetingId, title });
   await sendMessage(chatId, `<b>📋 ${title}</b>\n\n${gptResult}`);
-  await analyzeAndCreateTasks(contentParts, chatId, entryId);
+  // DISABLED: await analyzeAndCreateTasks(contentParts, chatId, entryId);
 }
 
 function getHelpText(): string {
@@ -1662,6 +1938,16 @@ function getHelpText(): string {
     "3. Кидай транскрипты — Claude сохранит оригинал и сделает саммари автоматически";
 }
 
+// ── Background runner — returns 200 to Telegram immediately, processes async ──
+
+function bgRun(promise: Promise<void>, chatId: number): void {
+  const safe = promise.catch(async (err) => {
+    await sendMessage(chatId, `Ошибка обработки: ${err instanceof Error ? err.message : String(err)}`);
+  });
+  // @ts-ignore - Supabase Edge Runtime API
+  if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(safe);
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -1671,6 +1957,26 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { return new Response("Bad Request", { status: 400 }); }
 
   // ── Cron triggers ─────────────────────────────────────────────────────────────
+  if (body.setup_commands === true) {
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commands: [
+        { command: "start", description: "Главное меню" },
+        { command: "add", description: "Добавить запись в базу знаний" },
+        { command: "ask", description: "Задать вопрос" },
+        { command: "tasks", description: "Задачи команды" },
+        { command: "meetings", description: "Встречи и транскрипты" },
+        { command: "status", description: "Состояние базы знаний" },
+        { command: "digest", description: "Личный дайджест" },
+        { command: "help", description: "Справка" },
+        { command: "reset", description: "Сбросить состояние бота" },
+      ]}),
+    });
+    const json = await res.json();
+    return new Response(JSON.stringify(json), { status: 200 });
+  }
+
   if (body.digest_cron === true) {
     await sendAllDigests(7);
     return new Response("OK", { status: 200 });
@@ -1789,18 +2095,25 @@ Deno.serve(async (req: Request) => {
         const sub = cb.data.replace("rai_", "");
         if (sub === "saved") {
           const { data: meetings } = await supabase
-            .from("entries").select("id, metadata, created_at")
-            .eq("source", "read_ai").order("created_at", { ascending: false }).limit(15);
+            .from("entries").select("id, metadata, created_at, source, entry_type")
+            .or("source.in.(read_ai,voice),entry_type.in.(transcript,meeting)")
+            .order("created_at", { ascending: false }).limit(15);
           if (!meetings?.length) {
             await sendMessage(chatId, "Сохранённых встреч пока нет.");
           } else {
             await sendMessage(chatId, `<b>📋 Встречи из Read.ai:</b>`);
             for (const m of meetings as Array<{ id: string; metadata: Record<string, unknown>; created_at: string }>) {
               const title = (m.metadata?.title as string) ?? "Встреча";
-              const date = new Date(m.created_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+              const date = new Date(m.created_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
               const duration = m.metadata?.duration ? ` · ${Math.round((m.metadata.duration as number) / 60)} мин` : "";
               const tags = (m.metadata?.tags as string[] | undefined)?.length ? `\n🏷 ${(m.metadata.tags as string[]).join(", ")}` : "";
-              await sendInlineMessage(chatId, `📋 <b>${title}</b>\n${date}${duration}${tags}`, [[{ text: "🔍 Подробнее", callback_data: `mr_${m.id}` }]]);
+              const meetingId = (m.metadata?.meeting_id as string | undefined) ?? m.id;
+              const row1 = [{ text: "🔍 Подробнее", callback_data: `mr_${m.id}` }];
+              const row2 = [
+                { text: "🌍 Теги/страны", callback_data: `mtag_${meetingId}` },
+                { text: "👤 Участники", callback_data: `massign_${meetingId}` },
+              ];
+              await sendInlineMessage(chatId, `📋 <b>${title}</b>\n📅 ${date}${duration}${tags}`, [row1, row2]);
             }
           }
         } else if (sub === "import") {
@@ -1984,6 +2297,40 @@ Deno.serve(async (req: Request) => {
         await supabase.from("task_history").delete().eq("task_id", taskId);
         await supabase.from("tasks").delete().eq("id", taskId);
         await sendMessage(chatId, `🗑 Удалено: <b>${task?.title ?? taskId}</b>`);
+      } else if (cb.data.startsWith("mexp_")) {
+        // Export meeting as file from admin panel
+        const entryId = cb.data.replace("mexp_", "");
+        const { data: entry } = await supabase.from("entries").select("content, metadata, created_at").eq("id", entryId).maybeSingle();
+        if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
+        else {
+          const rawTitle = ((entry.metadata as Record<string, unknown>)?.title as string | undefined) ?? "meeting";
+          const safeTitle = rawTitle.replace(/[^\wа-яёА-ЯЁ\s-]/g, "").trim().replace(/\s+/g, "_");
+          const dateStr = new Date(entry.created_at as string).toISOString().slice(0, 10);
+          const form = new FormData();
+          form.append("chat_id", String(chatId));
+          form.append("document", new Blob([entry.content as string], { type: "text/plain; charset=utf-8" }), `${safeTitle}_${dateStr}.txt`);
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, { method: "POST", body: form });
+        }
+      } else if (cb.data.startsWith("mc_")) {
+        // Confirm meeting from read-ai-webhook
+        const entryId = cb.data.replace("mc_", "");
+        const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).maybeSingle();
+        if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
+        else {
+          await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true } }).eq("id", entryId);
+          const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
+          await sendMessage(chatId, `✅ Встреча сохранена: <b>${title}</b>`);
+        }
+      } else if (cb.data.startsWith("met_")) {
+        // Edit meeting title (from confirmation flow)
+        const entryId = cb.data.replace("met_", "");
+        await setSession(chatId, `meeting_title_${entryId}`);
+        await sendMessage(chatId, "Введи название встречи:");
+      } else if (cb.data.startsWith("med_")) {
+        // Edit meeting date (from confirmation flow)
+        const entryId = cb.data.replace("med_", "");
+        await setSession(chatId, `meeting_date_${entryId}`);
+        await sendMessage(chatId, "Введи дату встречи (например: 7 мая 2025 или 2025-05-07):");
       }
     } catch (err) {
       await sendMessage(chatId, `Ошибка: ${err instanceof Error ? err.message : String(err)}`);
@@ -2010,24 +2357,24 @@ Deno.serve(async (req: Request) => {
   try {
     // ── Voice / audio ─────────────────────────────────────────────────────────
     if (message.voice) {
-      await handleVoice(chatId, username, message.voice.file_id, message.voice.duration);
+      bgRun(handleVoice(chatId, username, message.voice.file_id, message.voice.duration), chatId);
       return new Response("OK", { status: 200 });
     }
 
     if (message.audio) {
-      await handleVoice(chatId, username, message.audio.file_id, 0);
+      bgRun(handleVoice(chatId, username, message.audio.file_id, 0), chatId);
       return new Response("OK", { status: 200 });
     }
 
     // ── Document ──────────────────────────────────────────────────────────────
     if (message.document) {
-      await handleDocument(chatId, username, message.document);
+      bgRun(handleDocument(chatId, username, message.document), chatId);
       return new Response("OK", { status: 200 });
     }
 
     // ── Photo ─────────────────────────────────────────────────────────────────
     if (message.photo?.length) {
-      await handlePhoto(chatId, username, message.photo);
+      bgRun(handlePhoto(chatId, username, message.photo), chatId);
       return new Response("OK", { status: 200 });
     }
 
@@ -2055,16 +2402,24 @@ Deno.serve(async (req: Request) => {
         await clearSession(chatId);
         const entryId = await saveEntry(text, username, "telegram");
         await sendMessage(chatId, "Запись добавлена в базу знаний.");
-        await analyzeAndCreateTasks(text, chatId, entryId);
+        // DISABLED: await analyzeAndCreateTasks(text, chatId, entryId);
       } else if (action === "waiting_ask") {
         await clearSession(chatId);
         await handleAsk(chatId, text);
-      } else if (action === "clarify_ready" && text.length < 300) {
+      /* === DISABLED: clarify_ready / meeting_* / task_* / onboard_* / profile_* session handlers === */
+      } else if (false && action === "clarify_ready" && text.length < 300) {
         await clearSession(chatId);
         const originalQuestion = session?.context ?? "";
-        const combined = originalQuestion ? `${originalQuestion}. Уточнение: ${text}` : text;
+        const EDIT_INTENT = /поменяй|измени|обнови|исправь|правильный год|дату на|год на|переименуй|замени/i;
+        let combined: string;
+        if (EDIT_INTENT.test(text) && originalQuestion) {
+          // Put edit request FIRST so GPT treats it as the primary task
+          combined = `Выполни изменение: ${text}. Чтобы найти нужную запись, используй контекст: пользователь ранее искал "${originalQuestion}". Найди запись, получи её id, затем вызови update_entry.`;
+        } else {
+          combined = originalQuestion ? `${originalQuestion}. Уточнение: ${text}` : text;
+        }
         await handleAsk(chatId, combined);
-      } else if (action?.startsWith("meeting_rename_")) {
+      } else if (false && action?.startsWith("meeting_rename_")) {
         await clearSession(chatId);
         const entryId = action.replace("meeting_rename_", "");
         const newTitle = text.trim();
@@ -2074,7 +2429,7 @@ Deno.serve(async (req: Request) => {
           await supabase.from("entries").update({ metadata: { ...entry.metadata, title: newTitle } }).eq("id", entryId);
           await sendMessage(chatId, `✅ Встреча переименована: <b>${newTitle}</b>`);
         }
-      } else if (action?.startsWith("meeting_tag_")) {
+      } else if (false && action?.startsWith("meeting_tag_")) {
         await clearSession(chatId);
         const meetingId = action.replace("meeting_tag_", "");
         const tags = text.split(",").map((s: string) => s.trim()).filter(Boolean);
@@ -2126,7 +2481,7 @@ Deno.serve(async (req: Request) => {
         let reply = `✅ Теги добавлены: <b>${tags.join(", ")}</b>`;
         if (matched.length > 0) reply += `\n👤 Задачи назначены: <b>${matched.join(", ")}</b>`;
         await sendMessage(chatId, reply);
-      } else if (action?.startsWith("task_date_")) {
+      } else if (false && action?.startsWith("task_date_")) {
         await clearSession(chatId);
         const taskId = action.replace("task_date_", "");
         const today = new Date().toISOString().split("T")[0];
@@ -2141,23 +2496,23 @@ Deno.serve(async (req: Request) => {
           const dueFmt = new Date(due + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
           await sendMessage(chatId, `📅 Дедлайн: <b>${dueFmt}</b>`);
         }
-      } else if (action?.startsWith("task_title_")) {
+      } else if (false && action?.startsWith("task_title_")) {
         await clearSession(chatId);
         const taskId = action.replace("task_title_", "");
         await supabase.from("tasks").update({ title: text.trim() }).eq("id", taskId);
         await sendMessage(chatId, `✅ Название обновлено: <b>${text.trim()}</b>`);
-      } else if (action?.startsWith("task_url_")) {
+      } else if (false && action?.startsWith("task_url_")) {
         await clearSession(chatId);
         const taskId = action.replace("task_url_", "");
         await supabase.from("tasks").update({ url: text.trim() }).eq("id", taskId);
         await sendMessage(chatId, `🔗 Ссылка сохранена.`);
-      } else if (action?.startsWith("task_comment_")) {
+      } else if (false && action?.startsWith("task_comment_")) {
         await clearSession(chatId);
         const taskId = action.replace("task_comment_", "");
         await supabase.from("task_comments").insert({ task_id: taskId, content: text.trim(), added_by: username });
         await sendMessage(chatId, `💬 Комментарий добавлен.`);
         await showTaskComments(chatId, taskId);
-      } else if (action === "onboard_role") {
+      } else if (false && action === "onboard_role") {
         await clearSession(chatId);
         await supabase.from("user_profiles").upsert({ telegram_id: userId, role: text.trim(), updated_at: new Date().toISOString() }, { onConflict: "telegram_id" });
         await setSession(chatId, "onboard_markets");
@@ -2165,7 +2520,7 @@ Deno.serve(async (req: Request) => {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat_id: chatId, text: "✅ Роль сохранена!\n\n<b>Шаг 2/4.</b> За какие рынки/страны отвечаешь?\n\n<i>Перечисли через запятую: Словения, Болгария, Румыния</i>", parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_markets" }]] } }),
         });
-      } else if (action === "onboard_markets") {
+      } else if (false && action === "onboard_markets") {
         await clearSession(chatId);
         const markets = text.split(",").map(s => s.trim()).filter(Boolean);
         await supabase.from("user_profiles").upsert({ telegram_id: userId, markets, updated_at: new Date().toISOString() }, { onConflict: "telegram_id" });
@@ -2174,7 +2529,7 @@ Deno.serve(async (req: Request) => {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat_id: chatId, text: "✅ Рынки сохранены!\n\n<b>Шаг 3/4.</b> Рабочий email?", parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_email" }]] } }),
         });
-      } else if (action === "onboard_email") {
+      } else if (false && action === "onboard_email") {
         await clearSession(chatId);
         await supabase.from("user_profiles").upsert({ telegram_id: userId, email: text.trim(), updated_at: new Date().toISOString() }, { onConflict: "telegram_id" });
         await setSession(chatId, "onboard_phone");
@@ -2182,17 +2537,56 @@ Deno.serve(async (req: Request) => {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat_id: chatId, text: "✅ Email сохранён!\n\n<b>Шаг 4/4.</b> Номер телефона? (необязательно)", parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "Пропустить →", callback_data: "onboard_skip_phone" }]] } }),
         });
-      } else if (action === "onboard_phone") {
+      } else if (false && action === "onboard_phone") {
         await clearSession(chatId);
         await supabase.from("user_profiles").upsert({ telegram_id: userId, phone: text.trim(), updated_at: new Date().toISOString() }, { onConflict: "telegram_id" });
         await sendMessage(chatId, "✅ Готово! Профиль заполнен.", buildKeyboard());
         await showProfile(chatId, userId);
-      } else if (action?.startsWith("profile_")) {
+      } else if (false && action?.startsWith("profile_")) {
         await clearSession(chatId);
         const parts = action.split("_");
         const targetId = Number(parts[1]);
         const field = parts.slice(2).join("_");
         await handleProfileEdit(chatId, targetId, field, text);
+      } else if (action?.startsWith("meeting_title_")) {
+        await clearSession(chatId);
+        const entryId = action.replace("meeting_title_", "");
+        const newTitle = text.trim();
+        const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).maybeSingle();
+        if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
+        else {
+          await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle } }).eq("id", entryId);
+          await sendMessage(chatId, `✅ Название: <b>${newTitle}</b>`, {
+            inline_keyboard: [[
+              { text: "✅ Сохранить", callback_data: `mc_${entryId}` },
+              { text: "📅 Дата", callback_data: `med_${entryId}` },
+            ]],
+          });
+        }
+      } else if (action?.startsWith("meeting_date_")) {
+        await clearSession(chatId);
+        const entryId = action.replace("meeting_date_", "");
+        const today = new Date().toISOString().split("T")[0];
+        const parsed = await chatComplete(
+          `Сегодня ${today}. Преобразуй дату из текста пользователя в формат ГГГГ-ММ-ДД. Верни ТОЛЬКО дату в этом формате, без пояснений. Если не можешь распознать — верни "null".`,
+          text.trim()
+        );
+        const dateVal = /^\d{4}-\d{2}-\d{2}$/.test(parsed.trim()) ? parsed.trim() : null;
+        if (!dateVal) { await sendMessage(chatId, "Не удалось распознать дату. Попробуй ещё раз."); }
+        else {
+          const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).maybeSingle();
+          if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
+          else {
+            await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), entry_date: dateVal } }).eq("id", entryId);
+            const dateFmt = new Date(`${dateVal}T12:00:00`).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+            await sendMessage(chatId, `📅 Дата: <b>${dateFmt}</b>`, {
+              inline_keyboard: [[
+                { text: "✅ Сохранить", callback_data: `mc_${entryId}` },
+                { text: "✏️ Название", callback_data: `met_${entryId}` },
+              ]],
+            });
+          }
+        }
       } else {
         // Free text → always search (user uses buttons to add explicitly)
         if (text.length >= 3) {
@@ -2212,22 +2606,33 @@ Deno.serve(async (req: Request) => {
       await sendMessage(chatId, "🔄 Сброс выполнен. Бот готов к работе.");
     } else if (command === "/start") {
       await clearSession(chatId);
-      await sendInlineMessage(chatId,
-        `<b>Добро пожаловать в Swarm!</b> 👋\n\nЭто командная база знаний команды.\n\nЧтобы бот правильно назначал задачи и присылал релевантный дайджест — заполни профиль.`,
-        [[{ text: "👤 Заполнить профиль", callback_data: "start_onboard" }]]
-      );
-      await sendMessage(chatId, getHelpText(), buildKeyboard());
+      await sendMessage(chatId, "<b>Swarm Brain</b>\n\nКомандная база знаний.\n\n📥 <b>Добавить</b> — записать текст в базу\n❓ <b>Спросить</b> — задать вопрос по базе\n\nТакже можно отправить голосовое или файл — содержимое будет сохранено.", buildKeyboard());
+      // Register bot commands in side menu (idempotent)
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commands: [
+          { command: "start", description: "Главное меню" },
+          { command: "add", description: "Добавить запись в базу знаний" },
+          { command: "ask", description: "Задать вопрос" },
+          { command: "meetings", description: "Список встреч" },
+          { command: "status", description: "Состояние базы знаний" },
+          { command: "help", description: "Справка" },
+          { command: "reset", description: "Сбросить состояние бота" },
+        ]}),
+      });
     } else if (command === "/help" || text === "ℹ️ Помощь") {
       await sendMessage(chatId, getHelpText(), buildKeyboard());
     } else if (command === "/add" || text === "📥 Добавить") {
       await handleAdd(chatId, username, argText);
     } else if (command === "/ask" || text === "❓ Спросить") {
       await handleAsk(chatId, argText.trim() ? argText : "");
-    } else if (command === "/users" || text === "👥 Пользователи") {
+    /* === DISABLED: users / tasks / meetings commands — kept for future re-enable === */
+    } else if (false && (command === "/users" || text === "👥 Пользователи")) {
       await handleUsers(chatId, userId, argText);
-    } else if (command === "/tasks" || text === "📋 Задачи") {
+    } else if (false && (command === "/tasks" || text === "📋 Задачи")) {
       await handleTasks(chatId, argText);
-    } else if (text === "🎙 Встречи" || text === "🎙 Read.ai" || command === "/readai") {
+    } else if (false && (text === "🎙 Встречи" || text === "🎙 Read.ai" || command === "/readai" || command === "/meetings")) {
       const { count } = await supabase.from("entries").select("*", { count: "exact", head: true }).eq("source", "read_ai");
       await sendMessage(chatId, `<b>🎙 Встречи</b>\nСохранено: ${count ?? 0}\n<i>Встречи сохраняются автоматически после завершения.</i>`, {
         inline_keyboard: [
@@ -2237,7 +2642,34 @@ Deno.serve(async (req: Request) => {
       if (text === "🎙 Read.ai") {
         await sendMessage(chatId, "Кнопка переименована в «🎙 Встречи».", buildKeyboard());
       }
-    } else if (command === "/digest") {
+    } else if (command === "/meetings") {
+      const { data: meetings } = await supabase
+        .from("entries")
+        .select("id, metadata, created_at, source")
+        .or("source.in.(read_ai,voice),entry_type.in.(transcript,meeting)")
+        .order("created_at", { ascending: false })
+        .limit(30);
+      if (!meetings?.length) {
+        await sendMessage(chatId, "Встреч пока нет.");
+      } else {
+        await sendMessage(chatId, `<b>📋 Встречи (${meetings.length})</b>`);
+        for (const m of (meetings as Array<{ id: string; metadata: Record<string, unknown>; created_at: string; source: string }>)) {
+          const title = (m.metadata?.title as string) ?? "Без названия";
+          const entryDate = m.metadata?.entry_date as string | undefined;
+          const dateStr = entryDate
+            ? new Date(`${entryDate}T12:00:00`).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" })
+            : new Date(m.created_at).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+          const unconfirmed = m.metadata?.confirmed === false ? " ⏳" : "";
+          const src = m.source === "read_ai" ? "📹" : m.source === "voice" ? "🎙" : "📄";
+          await sendInlineMessage(chatId, `${src} <b>${title}</b>${unconfirmed}\n📅 ${dateStr}`, [[
+            { text: "🔍 Детали", callback_data: `mr_${m.id}` },
+            { text: "📤 Файл", callback_data: `mexp_${m.id}` },
+            { text: "🗑", callback_data: `md_${m.id}` },
+          ]]);
+        }
+      }
+    /* === DISABLED: digest / reindex / connect commands === */
+    } else if (false && command === "/digest") {
       const sub = argText.trim().toLowerCase();
       if (sub === "on" || sub === "off") {
         const enabled = sub === "on";
@@ -2251,7 +2683,7 @@ Deno.serve(async (req: Request) => {
         const days = sub ? parseInt(sub) || 7 : 7;
         await generatePersonalDigest(chatId, userId, days);
       }
-    } else if (command === "/reindex") {
+    } else if (false && command === "/reindex") {
       {
         // Only process entries without metadata yet
         const { data: entries } = await supabase
@@ -2321,9 +2753,9 @@ Deno.serve(async (req: Request) => {
         statusMsg += `\n✅ Активных задач: <b>${openTasks ?? 0}</b>`;
         await sendMessage(chatId, statusMsg);
       }
-    } else if (command === "/connect") {
+    } else if (false && command === "/connect") {
       await handleConnect(chatId);
-    } else if (command === "/meetings") {
+    } else if (false && command === "/meetings") {
       await handleMeetings(chatId, argText ? parseInt(argText) || 24 : 24);
     } else {
       await sendMessage(chatId, `Неизвестная команда: <code>${command}</code>\n\nИспользуй /help для списка команд.`);

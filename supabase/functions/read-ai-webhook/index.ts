@@ -201,16 +201,24 @@ Deno.serve(async (req: Request) => {
       extractAndSaveTasks(fullContent, meetingId),
     ]);
 
-    // Save to knowledge base
-    await supabase.from("entries").insert({
+    // Extract meeting date for display
+    const meetingDateStr = startTime
+      ? new Date(startTime).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" })
+      : "неизвестна";
+    const entryDateIso = startTime ? startTime.split("T")[0] : null;
+
+    // Save to knowledge base with confirmed: false (awaiting user confirmation)
+    const { data: savedEntry } = await supabase.from("entries").insert({
       content: fullContent,
       embedding,
       added_by: "read_ai",
       source: "read_ai",
-      metadata: { meeting_id: meetingId, title, duration },
-    });
+      metadata: { meeting_id: meetingId, title, duration, confirmed: false, entry_date: entryDateIso },
+    }).select("id").single();
 
-    // Build compact notification
+    const entryId = (savedEntry as { id: string } | null)?.id ?? meetingId;
+
+    // Build confirmation notification
     const durationStr = duration ? ` · ${Math.round(duration / 60)} мин` : "";
     const participantsStr = participants
       .map((p) => (p.name ?? p.first_name ?? "") as string)
@@ -218,16 +226,20 @@ Deno.serve(async (req: Request) => {
       .slice(0, 5)
       .join(", ");
 
-    let text = `✅ <b>${title}${durationStr}</b>`;
+    let text = `📋 <b>Новая встреча получена</b>\n`;
+    text += `<b>${title}</b>${durationStr}\n`;
+    text += `📅 ${meetingDateStr}`;
     if (participantsStr) text += `\n👥 ${participantsStr}`;
     if (taskCount > 0) {
       const word = taskCount === 1 ? "задача" : taskCount < 5 ? "задачи" : "задач";
-      text += `\n📋 ${taskCount} ${word} на подтверждении`;
+      text += `\n📌 ${taskCount} ${word} извлечено`;
     }
+    text += `\n\nПроверьте и подтвердите:`;
 
     await sendTelegramInline(text, [[
-      { text: "🌍 Теги/страны", callback_data: `mtag_${meetingId}` },
-      { text: "👤 Участники", callback_data: `massign_${meetingId}` },
+      { text: "✅ Сохранить", callback_data: `mc_${entryId}` },
+      { text: "✏️ Название", callback_data: `met_${entryId}` },
+      { text: "📅 Дата", callback_data: `med_${entryId}` },
     ]]);
 
   } catch (err) {
