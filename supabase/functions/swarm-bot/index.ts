@@ -4,9 +4,9 @@ import { checkAllowed, autoSyncProfile, getSession, clearSession } from "./lib/s
 import { getReadAiToken } from "./lib/readai.ts";
 import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
 import { handleVoice, handleDocument, handlePhoto, handleUrl, extractUrl } from "./handlers/media.ts";
-import { handleTaskCallbacks, handleTaskSessionInput } from "./handlers/tasks.ts";
+import { handleTaskCallbacks } from "./handlers/tasks.ts";
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
-import { handleUserCallbacks, handleUserSessionInput } from "./handlers/users.ts";
+import { handleUserCallbacks } from "./handlers/users.ts";
 import { sendAllDigests } from "./handlers/digest.ts";
 import { getHelpText } from "./handlers/help.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
@@ -147,10 +147,6 @@ Deno.serve(async (req: Request) => {
         await handleAsk(chatId, text);
       } else if (action && await handleMeetingSessionInput(chatId, action, text)) {
         // meeting session handled
-      } else if (action && await handleTaskSessionInput(chatId, action, text)) {
-        // task session handled
-      } else if (action && await handleUserSessionInput(chatId, userId, action, text)) {
-        // user/onboarding session handled
       } else {
         if (text.length >= 3) await handleAsk(chatId, text);
       }
