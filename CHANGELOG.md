@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-05-11
+
+### Task 14: Завершение рефакторинга — чистый диспетчер index.ts
+- `index.ts` переписан с 2769 строк до 251 строки — теперь только диспетчер
+- Создан `handlers/help.ts` с функцией `getHelpText()`
+- Все callback-обработчики делегированы в `handleTaskCallbacks`, `handleMeetingCallbacks`, `handleUserCallbacks`
+- Session routing делегирован в `handleMeetingSessionInput`, `handleTaskSessionInput`, `handleUserSessionInput`
+- Cron-триггеры (`setup_commands`, `digest_cron`, `readai_token_refresh`) остались в index.ts
+- Stale meeting alert теперь использует `sendMessage` из `lib/telegram.ts` вместо прямого fetch
+- 14-задачный рефакторинг завершён: вся бизнес-логика вынесена в lib/ и handlers/
+
+### Рефакторинг swarm-bot: вынос knowledge handlers + фикс получения исходника
+- Создан `handlers/knowledge.ts`: `KNOWLEDGE_TOOLS`, `KNOWLEDGE_TOOLS_DISABLED`, `executeTool`, `handleAdd`, `handleAsk`
+- Фикс source text: `search_knowledge` теперь возвращает summary + хинт `[Полный текст: export_entry(id=X)]` для длинных записей (>500 символов), GPT использует хинт для вызова `export_entry`
+- Удалён параметр `wants_full_text` из `search_knowledge` (инструмент больше не нужен — GPT сам решает через хинт)
+- Обновлён system prompt в `handleAsk`: добавлена инструкция реагировать на хинт `[Полный текст: ...]` и не выдавать длинный текст в сообщении
+
 ## 2026-05-08
 
 ### Read.ai: подтверждение встречи перед сохранением
