@@ -344,5 +344,35 @@ export async function handleMeetingSessionInput(
     }
     return true;
   }
+  if (action.startsWith("meeting_rename_")) {
+    await clearSession(chatId);
+    const entryId = action.replace("meeting_rename_", "");
+    const newTitle = text.trim();
+    const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).maybeSingle();
+    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
+    else {
+      await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle } }).eq("id", entryId);
+      await sendMessage(chatId, `✅ Встреча переименована: <b>${newTitle}</b>`);
+    }
+    return true;
+  }
+  if (action.startsWith("meeting_tag_")) {
+    await clearSession(chatId);
+    const meetingId = action.replace("meeting_tag_", "");
+    const rawTags = text.split(",").map((t) => t.trim()).filter(Boolean);
+    const { data: entries } = await supabase
+      .from("entries").select("id, metadata")
+      .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`);
+    if (!entries?.length) { await sendMessage(chatId, "Встреча не найдена."); }
+    else {
+      for (const entry of entries as Array<{ id: string; metadata: Record<string, unknown> }>) {
+        const existing = (entry.metadata?.tags as string[] | undefined) ?? [];
+        const merged = [...new Set([...existing, ...rawTags])];
+        await supabase.from("entries").update({ metadata: { ...entry.metadata, tags: merged } }).eq("id", entry.id);
+      }
+      await sendMessage(chatId, `🏷 Теги сохранены: <b>${rawTags.join(", ")}</b>`);
+    }
+    return true;
+  }
   return false;
 }

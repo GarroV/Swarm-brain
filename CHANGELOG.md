@@ -2,11 +2,16 @@
 
 ## 2026-05-11
 
+### Фикс рефакторинга: восстановлены session handlers для meeting_rename_ и meeting_tag_
+- `handlers/meetings.ts`: добавлены обработчики `meeting_rename_` и `meeting_tag_` в `handleMeetingSessionInput`
+- `meeting_rename_` — сохраняет новое название встречи после нажатия ✏️ Переименовать
+- `meeting_tag_` — сохраняет теги/страны, ищет запись по `meeting_id` или прямому `id`
+
 ### Task 14: Завершение рефакторинга — чистый диспетчер index.ts
-- `index.ts` переписан с 2769 строк до 251 строки — теперь только диспетчер
+- `index.ts` переписан с 2769 строк до 247 строк — теперь только диспетчер
 - Создан `handlers/help.ts` с функцией `getHelpText()`
 - Все callback-обработчики делегированы в `handleTaskCallbacks`, `handleMeetingCallbacks`, `handleUserCallbacks`
-- Session routing делегирован в `handleMeetingSessionInput`, `handleTaskSessionInput`, `handleUserSessionInput`
+- Session routing: активен только `handleMeetingSessionInput` (`meeting_title_`, `meeting_date_`, `meeting_rename_`, `meeting_tag_`); `handleTaskSessionInput` и `handleUserSessionInput` — disabled, не подключены
 - Cron-триггеры (`setup_commands`, `digest_cron`, `readai_token_refresh`) остались в index.ts
 - Stale meeting alert теперь использует `sendMessage` из `lib/telegram.ts` вместо прямого fetch
 - 14-задачный рефакторинг завершён: вся бизнес-логика вынесена в lib/ и handlers/
