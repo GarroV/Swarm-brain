@@ -288,7 +288,7 @@ export async function handleTasks(chatId: number, filter: string): Promise<void>
   }
 }
 
-async function sendTaskCard(chatId: number, task: Task): Promise<void> {
+export async function sendTaskCard(chatId: number, task: Task): Promise<void> {
   const assignees = task.assignees?.length ? task.assignees.join(", ") : "—";
   const due = task.due_date ? `📅 ${new Date(task.due_date + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}` : "";
   const tags = task.tags?.length ? `🏷 ${task.tags.join(", ")}` : "";
