@@ -1,15 +1,12 @@
 import { supabase } from "../lib/supabase.ts";
 import { chatComplete } from "../lib/openai.ts";
 import { sendMessage } from "../lib/telegram.ts";
-
-// Type for saveEntry callback function
-type SaveEntryFn = (content: string, addedBy: string, source: string, metadata?: Record<string, unknown>, summary?: string, groupId?: string) => Promise<string>;
+import { saveEntry } from "../lib/storage.ts";
 
 export async function generatePersonalDigest(
   chatId: number,
   userId: number,
   daysBack: number = 7,
-  saveEntry: SaveEntryFn,
 ): Promise<void> {
   const since = new Date(Date.now() - daysBack * 86_400_000).toISOString();
   const periodStart = new Date(Date.now() - daysBack * 86_400_000).toLocaleDateString("ru-RU");
@@ -94,14 +91,14 @@ export async function generatePersonalDigest(
   }
 }
 
-export async function sendAllDigests(daysBack: number = 7, saveEntry: SaveEntryFn): Promise<void> {
+export async function sendAllDigests(daysBack: number = 7): Promise<void> {
   const { data: users } = await supabase.from("user_profiles")
     .select("telegram_id, digest_enabled")
     .eq("digest_enabled", true);
 
   for (const u of (users ?? []) as Array<{ telegram_id: number }>) {
     try {
-      await generatePersonalDigest(u.telegram_id, u.telegram_id, daysBack, saveEntry);
+      await generatePersonalDigest(u.telegram_id, u.telegram_id, daysBack);
     } catch { /* skip failed user */ }
   }
 }
