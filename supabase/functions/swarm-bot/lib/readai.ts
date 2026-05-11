@@ -3,7 +3,7 @@ import { sendMessage } from "./telegram.ts";
 
 const READ_AI_TOKEN_URL = "https://authn.read.ai/oauth2/token";
 export const READ_AI_API = "https://api.read.ai/v1";
-const READ_AI_AUTH_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/read-ai-auth?start=1";
+export const READ_AI_AUTH_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/read-ai-auth?start=1";
 
 export async function getReadAiToken(): Promise<string | null> {
   const { data } = await supabase.from("oauth_tokens").select("*").eq("service", "read_ai").maybeSingle();
