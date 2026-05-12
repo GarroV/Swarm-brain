@@ -223,8 +223,7 @@ export async function handleUserCallbacks(
     return true;
   }
   if (data === "ua_add") {
-    await setSession(chatId, "user_add");
-    await sendMessage(chatId, "Введи Telegram username или ID нового пользователя:\n\n<i>Например: @username или 123456789</i>");
+    await sendMessage(chatId, "Для добавления пользователя отправь команду:\n\n<code>/users add @username</code>\n\nили\n\n<code>/users add 123456789</code>");
     return true;
   }
   if (data.startsWith("udel_")) {
@@ -308,32 +307,6 @@ export async function handleUserSessionInput(
   action: string,
   text: string
 ): Promise<boolean> {
-  if (action === "user_add") {
-    const input = text.trim().replace(/^@/, "");
-    if (!input) {
-      await sendMessage(chatId, "Введи @username или числовой Telegram ID:");
-      return true;
-    }
-    await clearSession(chatId);
-    if (!isNaN(Number(input)) && input.length > 4) {
-      const { error } = await supabase.from("allowed_users").insert({ telegram_id: Number(input), added_by: userId });
-      if (error) {
-        await sendMessage(chatId, error.code === "23505" ? `Пользователь ${input} уже в списке.` : `Ошибка: ${error.message}`);
-      } else {
-        await sendMessage(chatId, `✅ Пользователь ${input} добавлен.`);
-        await handleUsers(chatId, userId, "list");
-      }
-    } else {
-      const { error } = await supabase.from("allowed_users").insert({ telegram_id: null, username: input, added_by: userId });
-      if (error) {
-        await sendMessage(chatId, error.code === "23505" ? `@${input} уже в списке.` : `Ошибка: ${error.message}`);
-      } else {
-        await sendMessage(chatId, `✅ @${input} добавлен. ID подтянется автоматически когда напишет боту.`);
-        await handleUsers(chatId, userId, "list");
-      }
-    }
-    return true;
-  }
   if (action === "onboard_role") {
     await clearSession(chatId);
     await supabase.from("user_profiles").upsert({ telegram_id: userId, role: text.trim(), updated_at: new Date().toISOString() }, { onConflict: "telegram_id" });
