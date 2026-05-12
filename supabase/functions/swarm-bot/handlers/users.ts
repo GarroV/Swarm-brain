@@ -44,10 +44,18 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
       return `• ${displayName}${crown}`;
     });
 
+    const userButtons = allUsers.map((u) => [{
+      text: u.isSuperAdmin || u.is_admin
+        ? `👑 ${profileMap[u.telegram_id]?.first_name ?? `ID ${u.telegram_id}`}`
+        : `👤 ${profileMap[u.telegram_id]?.first_name ?? `ID ${u.telegram_id}`}`,
+      callback_data: `pu_${u.telegram_id}`,
+    }]);
+    userButtons.push([{ text: "➕ Добавить пользователя", callback_data: "ua_add" }]);
+
     await sendInlineMessage(
       chatId,
       `<b>Пользователи (${allUsers.length}):</b>\n\n${lines.join("\n")}`,
-      allUsers.map((u) => [{ text: u.isSuperAdmin || u.is_admin ? `👑 ${profileMap[u.telegram_id]?.first_name ?? `ID ${u.telegram_id}`}` : `👤 ${profileMap[u.telegram_id]?.first_name ?? `ID ${u.telegram_id}`}`, callback_data: `pu_${u.telegram_id}` }])
+      userButtons,
     );
     return;
   }
@@ -142,10 +150,20 @@ export async function showProfile(chatId: number, targetId: number): Promise<voi
     profile?.email ? `📧 ${profile.email}` : "",
   ].filter(Boolean).join("\n");
 
-  await sendInlineMessage(chatId, lines, [[
-    { text: "✏️ Редактировать", callback_data: `pe_menu_${targetId}` },
-    { text: "📋 Задачи", callback_data: `ptasks_${targetId}` },
-  ]]);
+  const isAdmin = user?.is_admin;
+  const isSuperAdmin = targetId === ADMIN_USER_ID;
+  const adminButtons = isSuperAdmin ? [] : [
+    { text: isAdmin ? "👑 Снять права" : "👑 Сделать админом", callback_data: isAdmin ? `udm_${targetId}` : `upm_${targetId}` },
+    { text: "🗑 Удалить", callback_data: `udel_${targetId}` },
+  ];
+
+  const keyboard = [
+    [{ text: "✏️ Редактировать", callback_data: `pe_menu_${targetId}` }, { text: "📋 Задачи", callback_data: `ptasks_${targetId}` }],
+    ...(adminButtons.length ? [adminButtons] : []),
+    [{ text: "← Список", callback_data: "ua_list" }],
+  ];
+
+  await sendInlineMessage(chatId, lines, keyboard);
 }
 
 export async function handleProfileTasks(chatId: number, targetId: number): Promise<void> {
@@ -228,6 +246,46 @@ export async function handleUserCallbacks(
 ): Promise<boolean> {
   const data = cb.data;
 
+  if (data === "ua_list") {
+    await handleUsers(chatId, userId, "list");
+    return true;
+  }
+  if (data === "ua_add") {
+    await setSession(chatId, "user_add");
+    await sendMessage(chatId, "Введи Telegram username или ID нового пользователя:\n\n<i>Например: @username или 123456789</i>");
+    return true;
+  }
+  if (data.startsWith("udel_")) {
+    const targetId = Number(data.replace("udel_", ""));
+    const { data: profile } = await supabase.from("user_profiles").select("first_name, last_name").eq("telegram_id", targetId).maybeSingle();
+    const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || `ID ${targetId}`;
+    await sendInlineMessage(chatId, `Удалить <b>${name}</b> из базы?\n\nПользователь потеряет доступ к боту.`, [[
+      { text: "✅ Да, удалить", callback_data: `udelc_${targetId}` },
+      { text: "Отмена", callback_data: `pu_${targetId}` },
+    ]]);
+    return true;
+  }
+  if (data.startsWith("udelc_")) {
+    const targetId = Number(data.replace("udelc_", ""));
+    const { data: profile } = await supabase.from("user_profiles").select("first_name, last_name").eq("telegram_id", targetId).maybeSingle();
+    const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || `ID ${targetId}`;
+    await supabase.from("allowed_users").delete().eq("telegram_id", targetId);
+    await sendMessage(chatId, `✅ ${name} удалён.`);
+    await handleUsers(chatId, userId, "list");
+    return true;
+  }
+  if (data.startsWith("upm_")) {
+    const targetId = Number(data.replace("upm_", ""));
+    await supabase.from("allowed_users").update({ is_admin: true }).eq("telegram_id", targetId);
+    await showProfile(chatId, targetId);
+    return true;
+  }
+  if (data.startsWith("udm_")) {
+    const targetId = Number(data.replace("udm_", ""));
+    await supabase.from("allowed_users").update({ is_admin: false }).eq("telegram_id", targetId);
+    await showProfile(chatId, targetId);
+    return true;
+  }
   if (data.startsWith("ptasks_")) {
     await handleProfileTasks(chatId, Number(data.replace("ptasks_", "")));
     return true;
@@ -290,6 +348,31 @@ export async function handleUserSessionInput(
   action: string,
   text: string
 ): Promise<boolean> {
+  if (action === "user_add") {
+    await clearSession(chatId);
+    const input = text.trim();
+    if (input.startsWith("@")) {
+      const uname = input.slice(1);
+      const { error } = await supabase.from("allowed_users").insert({ telegram_id: null, username: uname, added_by: userId });
+      if (error) {
+        await sendMessage(chatId, error.code === "23505" ? `@${uname} уже в списке.` : `Ошибка: ${error.message}`);
+      } else {
+        await sendMessage(chatId, `✅ @${uname} добавлен. ID подтянется автоматически когда напишет боту.`);
+        await handleUsers(chatId, userId, "list");
+      }
+    } else if (!isNaN(Number(input))) {
+      const { error } = await supabase.from("allowed_users").insert({ telegram_id: Number(input), added_by: userId });
+      if (error) {
+        await sendMessage(chatId, error.code === "23505" ? `Пользователь ${input} уже в списке.` : `Ошибка: ${error.message}`);
+      } else {
+        await sendMessage(chatId, `✅ Пользователь ${input} добавлен.`);
+        await handleUsers(chatId, userId, "list");
+      }
+    } else {
+      await sendMessage(chatId, "Не понял. Введи @username или числовой Telegram ID.");
+    }
+    return true;
+  }
   if (action === "onboard_role") {
     await clearSession(chatId);
     await supabase.from("user_profiles").upsert({ telegram_id: userId, role: text.trim(), updated_at: new Date().toISOString() }, { onConflict: "telegram_id" });
