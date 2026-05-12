@@ -23,7 +23,7 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
     const { data, error } = await supabase
       .from("allowed_users")
       .select("telegram_id, username")
-      .neq("telegram_id", ADMIN_USER_ID)
+      .or(`telegram_id.neq.${ADMIN_USER_ID},telegram_id.is.null`)
       .order("created_at");
     if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
 
