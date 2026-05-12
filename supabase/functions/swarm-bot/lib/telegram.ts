@@ -32,7 +32,6 @@ export function buildKeyboard() {
   return {
     keyboard: [
       [{ text: "📥 Добавить" }, { text: "❓ Спросить" }],
-      [{ text: "👥 Пользователи" }],
     ],
     resize_keyboard: true,
     persistent: true,
