@@ -27,7 +27,9 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
       .order("created_at");
     if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
 
-    const ids = (data ?? []).map((u: { telegram_id: number }) => u.telegram_id);
+    const ids = (data ?? [])
+      .map((u: { telegram_id: number | null }) => u.telegram_id)
+      .filter((id: number | null): id is number => id !== null);
     const { data: profiles } = await supabase.from("user_profiles").select("*").in("telegram_id", [ADMIN_USER_ID, ...ids]);
     const profileMap = Object.fromEntries((profiles ?? []).map((p: { telegram_id: number; first_name?: string; last_name?: string }) => [p.telegram_id, p]));
 
@@ -80,11 +82,19 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
   }
 
   if (sub === "remove") {
-    if (!targetArg || isNaN(Number(targetArg))) { await sendMessage(chatId, "Использование: /users remove [telegram_id]"); return; }
-    if (Number(targetArg) === ADMIN_USER_ID) { await sendMessage(chatId, "Нельзя удалить администратора."); return; }
-    const { error, count } = await supabase.from("allowed_users").delete({ count: "exact" }).eq("telegram_id", Number(targetArg));
-    if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
-    await sendMessage(chatId, count === 0 ? `Пользователь ${targetArg} не найден.` : `Пользователь ${targetArg} удалён.`);
+    if (!targetArg) { await sendMessage(chatId, "Использование: /users remove [telegram_id или @username]"); return; }
+    if (targetArg.startsWith("@")) {
+      const uname = targetArg.slice(1);
+      const { error, count } = await supabase.from("allowed_users").delete({ count: "exact" }).eq("username", uname).is("telegram_id", null);
+      if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
+      await sendMessage(chatId, count === 0 ? `@${uname} не найден (без ID).` : `@${uname} удалён (${count} записей).`);
+    } else {
+      if (isNaN(Number(targetArg))) { await sendMessage(chatId, "Использование: /users remove [telegram_id или @username]"); return; }
+      if (Number(targetArg) === ADMIN_USER_ID) { await sendMessage(chatId, "Нельзя удалить администратора."); return; }
+      const { error, count } = await supabase.from("allowed_users").delete({ count: "exact" }).eq("telegram_id", Number(targetArg));
+      if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
+      await sendMessage(chatId, count === 0 ? `Пользователь ${targetArg} не найден.` : `Пользователь ${targetArg} удалён.`);
+    }
     return;
   }
 

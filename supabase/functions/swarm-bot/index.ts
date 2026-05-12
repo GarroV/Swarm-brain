@@ -88,6 +88,8 @@ Deno.serve(async (req: Request) => {
 
     if (!(await checkAllowed(userId))) return new Response("OK", { status: 200 });
 
+    await autoSyncProfile(userId, cb.from.first_name, cb.from.last_name, cb.from.username);
+
     try {
       if (await handleTaskCallbacks(cb, chatId, userId, username)) {
         // handled

@@ -92,8 +92,9 @@ export async function checkAllowed(userId: number, username?: string): Promise<b
   const { data } = await supabase.from("allowed_users").select("telegram_id").eq("telegram_id", userId).maybeSingle();
   if (data) return true;
   if (username) {
-    const { data: pending } = await supabase.from("allowed_users")
-      .select("id").eq("username", username).is("telegram_id", null).maybeSingle();
+    const { data: pendingRows } = await supabase.from("allowed_users")
+      .select("id").eq("username", username).is("telegram_id", null).limit(1);
+    const pending = pendingRows?.[0];
     if (pending) {
       await supabase.from("allowed_users").update({ telegram_id: userId }).eq("id", pending.id);
       return true;

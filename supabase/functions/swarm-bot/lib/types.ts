@@ -12,7 +12,7 @@ export interface TgMessage {
 
 export interface TgCallbackQuery {
   id: string;
-  from: { id?: number; username?: string };
+  from: { id?: number; username?: string; first_name?: string; last_name?: string };
   message: { chat: { id: number }; message_id: number };
   data: string;
 }
