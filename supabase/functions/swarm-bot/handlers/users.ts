@@ -22,7 +22,7 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
   if (!sub || sub === "list") {
     const { data, error } = await supabase
       .from("allowed_users")
-      .select("telegram_id, username, is_admin")
+      .select("telegram_id, username")
       .neq("telegram_id", ADMIN_USER_ID)
       .order("created_at");
     if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
@@ -32,22 +32,19 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
     const profileMap = Object.fromEntries((profiles ?? []).map((p: { telegram_id: number; first_name?: string; last_name?: string }) => [p.telegram_id, p]));
 
     const allUsers = [
-      { telegram_id: ADMIN_USER_ID, username: null, is_admin: true, isSuperAdmin: true },
-      ...(data ?? []).map((u: { telegram_id: number; username: string | null; is_admin: boolean }) => ({ ...u, isSuperAdmin: false })),
+      { telegram_id: ADMIN_USER_ID, username: null },
+      ...(data ?? []).map((u: { telegram_id: number; username: string | null }) => u),
     ];
 
     const lines = allUsers.map((u) => {
       const p = profileMap[u.telegram_id];
       const fullName = [p?.first_name, p?.last_name].filter(Boolean).join(" ");
       const displayName = fullName || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`);
-      const crown = u.isSuperAdmin || u.is_admin ? " 👑" : "";
-      return `• ${displayName}${crown}`;
+      return `• ${displayName}`;
     });
 
     const userButtons = allUsers.map((u) => [{
-      text: u.isSuperAdmin || u.is_admin
-        ? `👑 ${profileMap[u.telegram_id]?.first_name ?? `ID ${u.telegram_id}`}`
-        : `👤 ${profileMap[u.telegram_id]?.first_name ?? `ID ${u.telegram_id}`}`,
+      text: `👤 ${profileMap[u.telegram_id]?.first_name ?? (u.username ? `@${u.username}` : `ID ${u.telegram_id}`)}`,
       callback_data: `pu_${u.telegram_id}`,
     }]);
     userButtons.push([{ text: "➕ Добавить пользователя", callback_data: "ua_add" }]);
@@ -91,30 +88,12 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
     return;
   }
 
-  if (sub === "promote") {
-    if (!targetArg || isNaN(Number(targetArg))) { await sendMessage(chatId, "Использование: /users promote [telegram_id]"); return; }
-    if (Number(targetArg) === ADMIN_USER_ID) { await sendMessage(chatId, "Суперадмин уже имеет все права."); return; }
-    const { error } = await supabase.from("allowed_users").update({ is_admin: true }).eq("telegram_id", Number(targetArg));
-    if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
-    await sendMessage(chatId, `Пользователь ${targetArg} назначен администратором 👑`);
-    return;
-  }
-
-  if (sub === "demote") {
-    if (!targetArg || isNaN(Number(targetArg))) { await sendMessage(chatId, "Использование: /users demote [telegram_id]"); return; }
-    if (Number(targetArg) === ADMIN_USER_ID) { await sendMessage(chatId, "Нельзя снять права суперадмина."); return; }
-    const { error } = await supabase.from("allowed_users").update({ is_admin: false }).eq("telegram_id", Number(targetArg));
-    if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
-    await sendMessage(chatId, `Права администратора сняты с пользователя ${targetArg}.`);
-    return;
-  }
-
   if (sub === "profile") {
     await handleUsersProfile(chatId, targetArg ?? "");
     return;
   }
 
-  await sendMessage(chatId, "Подкоманды: /users list · /users add [id] · /users remove [id] · /users promote [id] · /users demote [id] · /users profile [id]");
+  await sendMessage(chatId, "Подкоманды: /users list · /users add [id/@username] · /users remove [id] · /users profile [id]");
 }
 
 export async function startOnboarding(chatId: number): Promise<void> {
@@ -133,7 +112,7 @@ export async function startOnboarding(chatId: number): Promise<void> {
 
 export async function showProfile(chatId: number, targetId: number): Promise<void> {
   const { data: user } = await supabase
-    .from("allowed_users").select("telegram_id, username, is_admin").eq("telegram_id", targetId).maybeSingle();
+    .from("allowed_users").select("telegram_id, username").eq("telegram_id", targetId).maybeSingle();
   if (!user) { await sendMessage(chatId, "Пользователь не найден."); return; }
 
   const { data: profile } = await supabase
@@ -143,23 +122,16 @@ export async function showProfile(chatId: number, targetId: number): Promise<voi
   const markets = profile?.markets?.join(", ") || "—";
 
   const lines = [
-    `<b>👤 ${name}</b>${user?.is_admin ? " 👑" : ""}`,
+    `<b>👤 ${name}</b>`,
     `🔖 @${profile?.username ?? user?.username ?? "—"} (${targetId})`,
     `💼 ${profile?.role || "—"}`,
     `🌍 ${markets}`,
     profile?.email ? `📧 ${profile.email}` : "",
   ].filter(Boolean).join("\n");
 
-  const isAdmin = user?.is_admin;
-  const isSuperAdmin = targetId === ADMIN_USER_ID;
-  const adminButtons = isSuperAdmin ? [] : [
-    { text: isAdmin ? "👑 Снять права" : "👑 Сделать админом", callback_data: isAdmin ? `udm_${targetId}` : `upm_${targetId}` },
-    { text: "🗑 Удалить", callback_data: `udel_${targetId}` },
-  ];
-
   const keyboard = [
     [{ text: "✏️ Редактировать", callback_data: `pe_menu_${targetId}` }, { text: "📋 Задачи", callback_data: `ptasks_${targetId}` }],
-    ...(adminButtons.length ? [adminButtons] : []),
+    ...(targetId !== ADMIN_USER_ID ? [[{ text: "🗑 Удалить", callback_data: `udel_${targetId}` }]] : []),
     [{ text: "← Список", callback_data: "ua_list" }],
   ];
 
@@ -272,18 +244,6 @@ export async function handleUserCallbacks(
     await supabase.from("allowed_users").delete().eq("telegram_id", targetId);
     await sendMessage(chatId, `✅ ${name} удалён.`);
     await handleUsers(chatId, userId, "list");
-    return true;
-  }
-  if (data.startsWith("upm_")) {
-    const targetId = Number(data.replace("upm_", ""));
-    await supabase.from("allowed_users").update({ is_admin: true }).eq("telegram_id", targetId);
-    await showProfile(chatId, targetId);
-    return true;
-  }
-  if (data.startsWith("udm_")) {
-    const targetId = Number(data.replace("udm_", ""));
-    await supabase.from("allowed_users").update({ is_admin: false }).eq("telegram_id", targetId);
-    await showProfile(chatId, targetId);
     return true;
   }
   if (data.startsWith("ptasks_")) {
