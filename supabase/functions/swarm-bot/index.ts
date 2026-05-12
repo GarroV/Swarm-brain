@@ -6,7 +6,7 @@ import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
 import { handleVoice, handleDocument, handlePhoto, handleUrl, extractUrl } from "./handlers/media.ts";
 import { handleTaskCallbacks } from "./handlers/tasks.ts";
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
-import { handleUserCallbacks } from "./handlers/users.ts";
+import { handleUsers, handleUserCallbacks, handleUserSessionInput } from "./handlers/users.ts";
 import { sendAllDigests } from "./handlers/digest.ts";
 import { getHelpText } from "./handlers/help.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
@@ -147,6 +147,8 @@ Deno.serve(async (req: Request) => {
         await handleAsk(chatId, text);
       } else if (action && await handleMeetingSessionInput(chatId, action, text)) {
         // meeting session handled
+      } else if (action && await handleUserSessionInput(chatId, userId, action, text)) {
+        // user session handled
       } else {
         if (text.length >= 3) await handleAsk(chatId, text);
       }
@@ -173,6 +175,7 @@ Deno.serve(async (req: Request) => {
           { command: "add", description: "Добавить запись в базу знаний" },
           { command: "ask", description: "Задать вопрос" },
           { command: "meetings", description: "Список встреч" },
+          { command: "users", description: "Управление командой" },
           { command: "status", description: "Состояние базы знаний" },
           { command: "help", description: "Справка" },
           { command: "reset", description: "Сбросить состояние бота" },
@@ -184,6 +187,8 @@ Deno.serve(async (req: Request) => {
       await handleAdd(chatId, username, argText);
     } else if (command === "/ask" || text === "❓ Спросить") {
       await handleAsk(chatId, argText.trim() ? argText : "");
+    } else if (command === "/users" || text === "👥 Пользователи") {
+      await handleUsers(chatId, userId, argText);
     } else if (command === "/meetings") {
       const { data: meetings } = await supabase
         .from("entries")
