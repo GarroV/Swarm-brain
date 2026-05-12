@@ -309,18 +309,13 @@ export async function handleUserSessionInput(
   text: string
 ): Promise<boolean> {
   if (action === "user_add") {
+    const input = text.trim().replace(/^@/, "");
+    if (!input) {
+      await sendMessage(chatId, "Введи @username или числовой Telegram ID:");
+      return true;
+    }
     await clearSession(chatId);
-    const input = text.trim();
-    if (input.startsWith("@")) {
-      const uname = input.slice(1);
-      const { error } = await supabase.from("allowed_users").insert({ telegram_id: null, username: uname, added_by: userId });
-      if (error) {
-        await sendMessage(chatId, error.code === "23505" ? `@${uname} уже в списке.` : `Ошибка: ${error.message}`);
-      } else {
-        await sendMessage(chatId, `✅ @${uname} добавлен. ID подтянется автоматически когда напишет боту.`);
-        await handleUsers(chatId, userId, "list");
-      }
-    } else if (!isNaN(Number(input))) {
+    if (!isNaN(Number(input)) && input.length > 4) {
       const { error } = await supabase.from("allowed_users").insert({ telegram_id: Number(input), added_by: userId });
       if (error) {
         await sendMessage(chatId, error.code === "23505" ? `Пользователь ${input} уже в списке.` : `Ошибка: ${error.message}`);
@@ -329,7 +324,13 @@ export async function handleUserSessionInput(
         await handleUsers(chatId, userId, "list");
       }
     } else {
-      await sendMessage(chatId, "Не понял. Введи @username или числовой Telegram ID.");
+      const { error } = await supabase.from("allowed_users").insert({ telegram_id: null, username: input, added_by: userId });
+      if (error) {
+        await sendMessage(chatId, error.code === "23505" ? `@${input} уже в списке.` : `Ошибка: ${error.message}`);
+      } else {
+        await sendMessage(chatId, `✅ @${input} добавлен. ID подтянется автоматически когда напишет боту.`);
+        await handleUsers(chatId, userId, "list");
+      }
     }
     return true;
   }
