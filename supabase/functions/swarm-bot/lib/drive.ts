@@ -36,13 +36,13 @@ export async function getGoogleAccessToken(): Promise<string> {
 
 export async function getOrCreateDriveFolder(name: string, parentId: string, token: string): Promise<string> {
   const q = `name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`, {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json() as { files: Array<{ id: string }> };
   if (data.files?.length) return data.files[0].id;
 
-  const createRes = await fetch("https://www.googleapis.com/drive/v3/files", {
+  const createRes = await fetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] }),
@@ -51,8 +51,8 @@ export async function getOrCreateDriveFolder(name: string, parentId: string, tok
   return created.id;
 }
 
-export async function uploadToDrive(fileName: string, buffer: ArrayBuffer, mimeType: string, subFolder: string): Promise<string | null> {
-  if (!GOOGLE_DRIVE_FOLDER_ID || !GOOGLE_CLIENT_EMAIL) return null;
+export async function uploadToDrive(fileName: string, buffer: ArrayBuffer, mimeType: string, subFolder: string): Promise<{ link: string | null; error: string | null }> {
+  if (!GOOGLE_DRIVE_FOLDER_ID || !GOOGLE_CLIENT_EMAIL) return { link: null, error: "GOOGLE_DRIVE_FOLDER_ID или GOOGLE_CLIENT_EMAIL не заданы" };
   try {
     const token = await getGoogleAccessToken();
     const folderId = await getOrCreateDriveFolder(subFolder, GOOGLE_DRIVE_FOLDER_ID, token);
@@ -67,12 +67,16 @@ export async function uploadToDrive(fileName: string, buffer: ArrayBuffer, mimeT
     const combined = new Uint8Array(bodyBytes.length + fileBytes.length + endBytes.length);
     combined.set(bodyBytes); combined.set(fileBytes, bodyBytes.length); combined.set(endBytes, bodyBytes.length + fileBytes.length);
 
-    const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink", {
+    const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink&supportsAllDrives=true", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
       body: combined,
     });
-    const result = await res.json() as { webViewLink?: string };
-    return result.webViewLink ?? null;
-  } catch { return null; }
+    const result = await res.json() as { id?: string; webViewLink?: string; error?: { message?: string } };
+    if (result.error) return { link: null, error: result.error.message ?? JSON.stringify(result.error) };
+    if (!result.id) return { link: null, error: `Нет id в ответе: ${JSON.stringify(result)}` };
+    return { link: result.webViewLink ?? `https://drive.google.com/file/d/${result.id}/view`, error: null };
+  } catch (e) {
+    return { link: null, error: e instanceof Error ? e.message : String(e) };
+  }
 }

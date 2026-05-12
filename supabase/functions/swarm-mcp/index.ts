@@ -133,6 +133,46 @@ const TOOLS = [
       required: ["content", "summary"],
     },
   },
+  {
+    name: "list_entries",
+    description: "Список записей в базе знаний с фильтрами. Используй для ревизии — посмотреть что есть, найти старые или дублирующие записи.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        source: { type: "string", description: "Фильтр по источнику: telegram, voice, pdf, document, read_ai, url, claude и др." },
+        entry_type: { type: "string", description: "Тип записи: transcript, meeting, note, document, summary" },
+        date_from: { type: "string", description: "Дата от в формате YYYY-MM-DD" },
+        date_to: { type: "string", description: "Дата до в формате YYYY-MM-DD" },
+        limit: { type: "number", description: "Количество записей (по умолчанию 20, макс 100)" },
+      },
+    },
+  },
+  {
+    name: "delete_entry",
+    description: "Удалить запись из базы знаний по ID. Если к записи прикреплён файл в Storage — файл тоже удаляется.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "ID записи из list_entries или search_knowledge" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "update_entry",
+    description: "Обновить содержимое записи: текст, тезисы или метаданные. Используй чтобы исправить или дополнить существующую запись.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "ID записи" },
+        content: { type: "string", description: "Новый полный текст (опционально)" },
+        summary: { type: "string", description: "Новые тезисы (опционально)" },
+        title: { type: "string", description: "Новый заголовок в metadata (опционально)" },
+        entry_date: { type: "string", description: "Новая дата события YYYY-MM-DD (опционально)" },
+      },
+      required: ["id"],
+    },
+  },
 ];
 
 // ── Tool implementations ──────────────────────────────────────────────────────
@@ -300,6 +340,98 @@ async function toolAddKnowledge(args: { content: string; summary: string; source
     : "Сохранено. Тезисы проиндексированы.";
 }
 
+async function toolListEntries(args: { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number }): Promise<string> {
+  let query = supabase
+    .from("entries")
+    .select("id, source, entry_type, entry_date, created_at, summary, metadata")
+    .order("created_at", { ascending: false })
+    .limit(Math.min(args.limit ?? 20, 100));
+
+  if (args.source) query = query.eq("source", args.source);
+  if (args.entry_type) query = query.eq("entry_type", args.entry_type);
+  if (args.date_from) query = query.gte("created_at", args.date_from);
+  if (args.date_to) query = query.lte("created_at", args.date_to + "T23:59:59");
+
+  const { data, error } = await query;
+  if (error) return `Ошибка: ${error.message}`;
+  if (!data?.length) return "Записей не найдено.";
+
+  type Row = { id: string; source: string; entry_type: string; entry_date: string | null; created_at: string; summary: string | null; metadata: Record<string, unknown> | null };
+  return (data as Row[]).map((e, i) => {
+    const date = e.entry_date ?? e.created_at.slice(0, 10);
+    const title = (e.metadata?.title as string | undefined) ?? (e.metadata?.file_name as string | undefined) ?? "";
+    const hasFile = !!(e.metadata?.file_url);
+    const preview = (e.summary ?? "").slice(0, 120).replace(/\n/g, " ");
+    return `[${i + 1}] id:${e.id}\n  ${date} · ${e.source}/${e.entry_type}${title ? ` · ${title}` : ""}${hasFile ? " 📎" : ""}\n  ${preview}`;
+  }).join("\n\n");
+}
+
+async function toolDeleteEntry(args: { id: string }): Promise<string> {
+  const { data: entry, error: fetchErr } = await supabase
+    .from("entries")
+    .select("metadata, source")
+    .eq("id", args.id)
+    .maybeSingle();
+
+  if (fetchErr) return `Ошибка: ${fetchErr.message}`;
+  if (!entry) return `Запись ${args.id} не найдена.`;
+
+  const fileUrl = (entry.metadata as Record<string, unknown> | null)?.file_url as string | undefined;
+  if (fileUrl) {
+    try {
+      const url = new URL(fileUrl);
+      const pathParts = url.pathname.split("/object/public/swarm_drive/");
+      if (pathParts.length > 1) {
+        await supabase.storage.from("swarm_drive").remove([decodeURIComponent(pathParts[1])]);
+      }
+    } catch { /* ignore storage deletion errors */ }
+  }
+
+  const { error: delErr } = await supabase.from("entries").delete().eq("id", args.id);
+  if (delErr) return `Ошибка удаления: ${delErr.message}`;
+
+  return `✅ Запись удалена${fileUrl ? " вместе с файлом из Storage" : ""}.`;
+}
+
+async function toolUpdateEntry(args: { id: string; content?: string; summary?: string; title?: string; entry_date?: string }): Promise<string> {
+  const { data: existing, error: fetchErr } = await supabase
+    .from("entries")
+    .select("metadata")
+    .eq("id", args.id)
+    .maybeSingle();
+
+  if (fetchErr) return `Ошибка: ${fetchErr.message}`;
+  if (!existing) return `Запись ${args.id} не найдена.`;
+
+  const updates: Record<string, unknown> = {};
+
+  if (args.content) {
+    updates.content = args.content;
+    const emb = await getEmbedding(args.content.slice(0, 8000));
+    updates.embedding = emb;
+  }
+  if (args.summary) {
+    updates.summary = args.summary;
+    if (!args.content) {
+      const emb = await getEmbedding(args.summary.slice(0, 8000));
+      updates.embedding = emb;
+    }
+  }
+  if (args.title) {
+    updates.metadata = { ...((existing.metadata as Record<string, unknown>) ?? {}), title: args.title };
+  }
+  if (args.entry_date) {
+    updates.entry_date = args.entry_date;
+  }
+
+  if (!Object.keys(updates).length) return "Нечего обновлять — передай хотя бы одно поле.";
+
+  const { error: updErr } = await supabase.from("entries").update(updates).eq("id", args.id);
+  if (updErr) return `Ошибка обновления: ${updErr.message}`;
+
+  return `✅ Запись обновлена (${Object.keys(updates).join(", ")}).`;
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -363,6 +495,12 @@ Deno.serve(async (req: Request) => {
         result = await toolGetEntry(args as { id: string });
       } else if (name === "add_knowledge") {
         result = await toolAddKnowledge(args as { content: string; summary: string; source?: string });
+      } else if (name === "list_entries") {
+        result = await toolListEntries(args as { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number });
+      } else if (name === "delete_entry") {
+        result = await toolDeleteEntry(args as { id: string });
+      } else if (name === "update_entry") {
+        result = await toolUpdateEntry(args as { id: string; content?: string; summary?: string; title?: string; entry_date?: string });
       } else {
         return err(id, -32601, `Unknown tool: ${name}`);
       }

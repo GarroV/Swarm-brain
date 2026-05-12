@@ -120,10 +120,10 @@ Deno.serve(async (req: Request) => {
   await autoSyncProfile(userId, message.from?.first_name, message.from?.last_name, message.from?.username);
 
   try {
-    if (message.voice) { bgRun(handleVoice(chatId, username, message.voice.file_id, message.voice.duration), chatId); return new Response("OK", { status: 200 }); }
-    if (message.audio) { bgRun(handleVoice(chatId, username, message.audio.file_id, 0), chatId); return new Response("OK", { status: 200 }); }
-    if (message.document) { bgRun(handleDocument(chatId, username, message.document), chatId); return new Response("OK", { status: 200 }); }
-    if (message.photo?.length) { bgRun(handlePhoto(chatId, username, message.photo), chatId); return new Response("OK", { status: 200 }); }
+    if (message.voice) { await handleVoice(chatId, username, message.voice.file_id, message.voice.duration); return new Response("OK", { status: 200 }); }
+    if (message.audio) { await handleVoice(chatId, username, message.audio.file_id, 0); return new Response("OK", { status: 200 }); }
+    if (message.document) { await handleDocument(chatId, username, message.document); return new Response("OK", { status: 200 }); }
+    if (message.photo?.length) { await handlePhoto(chatId, username, message.photo); return new Response("OK", { status: 200 }); }
 
     const text = message.text?.trim();
     if (!text) return new Response("OK", { status: 200 });

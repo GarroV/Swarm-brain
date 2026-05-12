@@ -17,7 +17,7 @@ export interface TgCallbackQuery {
   data: string;
 }
 
-export type KbEntry = { id: string; content: string; summary?: string | null; source?: string | null };
+export type KbEntry = { id: string; content: string; summary?: string | null; source?: string | null; metadata?: Record<string, unknown> | null };
 
 export type Task = {
   id: string;

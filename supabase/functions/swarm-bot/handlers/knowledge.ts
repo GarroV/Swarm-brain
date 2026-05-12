@@ -146,19 +146,32 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
 
         const words = query.toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2).slice(0, 6);
         const kwPromise = words.length
-          ? supabase.from("entries").select("id, content, summary, source")
+          ? supabase.from("entries").select("id, content, summary, source, metadata")
               .or(words.map(w => `source.ilike.%${w}%,content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
               .limit(5).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
           : Promise.resolve([] as KbEntry[]);
 
-        const [vec, kw] = await Promise.all([embPromise, kwPromise]);
+        // Also search entries that have file_url in metadata matching the query
+        const filePromise = words.length
+          ? supabase.from("entries").select("id, content, summary, source, metadata")
+              .or(words.map(w => `metadata->>file_name.ilike.%${w}%`).join(","))
+              .not("metadata->>file_url", "is", null)
+              .limit(3).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
+          : Promise.resolve([] as KbEntry[]);
+
+        const [vec, kw, files] = await Promise.all([embPromise, kwPromise, filePromise]);
         const seen = new Set<string>();
         const combined: KbEntry[] = [];
-        for (const e of [...vec, ...kw]) {
+        for (const e of [...files, ...vec, ...kw]) {
           if (e?.id && !seen.has(e.id)) { seen.add(e.id); combined.push(e); }
         }
         if (!combined.length) return "Ничего не найдено по запросу.";
         return combined.slice(0, 5).map((e: KbEntry) => {
+          const fileUrl = (e.metadata?.file_url ?? e.metadata?.drive_link) as string | undefined;
+          if (fileUrl) {
+            const fileName = (e.metadata?.file_name as string | undefined) ?? e.source ?? "файл";
+            return `[id:${e.id}] ${e.source ?? ""}: ${fileName}\n[Скачать оригинал: ${fileUrl}]`;
+          }
           const isShort = (e.content ?? "").length <= 500;
           const text = isShort
             ? (e.content ?? "")
@@ -438,12 +451,12 @@ export async function handleAsk(chatId: number, question: string): Promise<void>
         "Ты помощник командной базы знаний команды. " +
         "Используй инструменты чтобы найти или изменить информацию в базе. " +
         "Если пользователь говорит 'эту', 'её', 'этот' — он имеет в виду запись из предыдущего ответа. " +
+        "Если результат поиска содержит [Скачать оригинал: <url>] — верни пользователю эту ссылку напрямую, не вызывай export_entry. " +
         "Если результат поиска содержит [Полный текст: export_entry(id=...)] и пользователь " +
         "просит исходник, полный текст или дословно — вызови export_entry с этим id. " +
         "Не выдавай длинный текст в сообщении — отправляй файлом через export_entry. " +
-        "Если пользователь просит скинуть файлом, выгрузить, скачать транскрипцию или исходник — " +
-        "сначала найди запись через search_knowledge (получи её id), " +
-        "затем вызови export_entry с этим id. " +
+        "Если пользователь просит скинуть файлом, выгрузить, скачать или исходник — " +
+        "сначала найди запись через search_knowledge, затем либо верни ссылку [Скачать оригинал] либо вызови export_entry. " +
         "Отвечай ТОЛЬКО на основе данных из инструментов — не придумывай информацию. " +
         "Если данных нет — честно скажи. Отвечай на русском языке.",
     },
@@ -453,6 +466,7 @@ export async function handleAsk(chatId: number, question: string): Promise<void>
 
   let finalAnswer = "";
   let exportFile: { content: string; filename: string } | null = null;
+  let exportDriveLink: { url: string; title: string } | null = null;
 
   for (let round = 0; round < 6; round++) {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -498,13 +512,21 @@ export async function handleAsk(chatId: number, question: string): Promise<void>
           if (!entry) {
             result = "Запись не найдена.";
           } else {
-            const rawTitle = ((entry.metadata as Record<string, unknown>)?.title as string | undefined)
+            const meta = entry.metadata as Record<string, unknown> | null ?? {};
+            const fileUrl = (meta.file_url ?? meta.drive_link) as string | undefined;
+            const rawTitle = (meta.title as string | undefined)
+              ?? (meta.file_name as string | undefined)
               ?? (entry.source as string | undefined)
               ?? "entry";
-            const safeTitle = rawTitle.replace(/[^\wа-яёА-ЯЁ\s-]/g, "").trim().replace(/\s+/g, "_");
-            const dateStr = new Date(entry.created_at as string).toISOString().slice(0, 10);
-            exportFile = { content: entry.content as string, filename: `${safeTitle}_${dateStr}.txt` };
-            result = "Файл готов к отправке.";
+            if (fileUrl) {
+              exportDriveLink = { url: fileUrl, title: rawTitle };
+              result = "Ссылка на оригинальный файл готова.";
+            } else {
+              const safeTitle = rawTitle.replace(/[^\wа-яёА-ЯЁ\s-]/g, "").trim().replace(/\s+/g, "_");
+              const dateStr = new Date(entry.created_at as string).toISOString().slice(0, 10);
+              exportFile = { content: entry.content as string, filename: `${safeTitle}_${dateStr}.txt` };
+              result = "Файл готов к отправке.";
+            }
           }
         } else {
           result = await executeTool(tc.function.name, JSON.parse(tc.function.arguments) as Record<string, unknown>);
@@ -512,6 +534,14 @@ export async function handleAsk(chatId: number, question: string): Promise<void>
       } catch { result = "Ошибка выполнения инструмента."; }
       messages.push({ role: "tool", tool_call_id: tc.id, content: result });
     }
+  }
+
+  if (exportDriveLink) {
+    const caption = finalAnswer && finalAnswer !== "В базе знаний нет информации по этому вопросу."
+      ? `${finalAnswer}\n\n`
+      : "";
+    await sendMessage(chatId, `${caption}📎 <b>${exportDriveLink.title}</b>\n<a href="${exportDriveLink.url}">Открыть оригинальный файл на Google Drive</a>`);
+    return;
   }
 
   if (exportFile) {

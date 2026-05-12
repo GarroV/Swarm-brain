@@ -112,6 +112,30 @@ export async function generateSummary(text: string): Promise<string | null> {
   } catch { return null; }
 }
 
+export async function uploadToStorage(
+  fileName: string,
+  buffer: ArrayBuffer,
+  mimeType: string,
+  folder: string,
+): Promise<{ url: string | null; error: string | null }> {
+  try {
+    const date = new Date().toISOString().slice(0, 10);
+    const safeName = fileName.replace(/[^a-zA-Zа-яёА-ЯЁ0-9.\-_]/g, "_");
+    const path = `${folder}/${date}_${safeName}`;
+
+    const { error } = await supabase.storage
+      .from("swarm_drive")
+      .upload(path, buffer, { contentType: mimeType, upsert: true });
+
+    if (error) return { url: null, error: error.message };
+
+    const { data: { publicUrl } } = supabase.storage.from("swarm_drive").getPublicUrl(path);
+    return { url: publicUrl, error: null };
+  } catch (e) {
+    return { url: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function autoSyncProfile(userId: number, firstName?: string, lastName?: string, username?: string): Promise<void> {
   const update: Record<string, unknown> = { telegram_id: userId, updated_at: new Date().toISOString() };
   if (firstName) update.first_name = firstName;
