@@ -4,7 +4,7 @@ import { checkAllowed, autoSyncProfile, getSession, clearSession } from "./lib/s
 import { getReadAiToken } from "./lib/readai.ts";
 import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
 import { handleVoice, handleDocument, handlePhoto, handleUrl, extractUrl } from "./handlers/media.ts";
-import { handleTaskCallbacks } from "./handlers/tasks.ts";
+import { handleTaskCallbacks, handleTasks } from "./handlers/tasks.ts";
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
 import { handleUsers, handleUserCallbacks, handleUserSessionInput } from "./handlers/users.ts";
 import { sendAllDigests } from "./handlers/digest.ts";
@@ -191,7 +191,9 @@ Deno.serve(async (req: Request) => {
       await handleAsk(chatId, argText.trim() ? argText : "");
     } else if (command === "/users" || text === "👥 Пользователи") {
       await handleUsers(chatId, userId, argText);
-    } else if (command === "/meetings") {
+    } else if (command === "/tasks" || text === "📋 Задачи") {
+      await handleTasks(chatId, argText);
+    } else if (command === "/meetings" || text === "🎙 Встречи") {
       const { data: meetings } = await supabase
         .from("entries")
         .select("id, metadata, created_at, source")

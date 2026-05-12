@@ -1,5 +1,5 @@
 export function getHelpText(): string {
-  const base =
+  return (
     "<b>Swarm Brain</b>\n\n" +
     "Просто пиши — бот сам поймёт что делать:\n" +
     "• Вопрос → найдёт ответ в базе знаний\n" +
@@ -12,17 +12,18 @@ export function getHelpText(): string {
     "<b>Команды:</b>\n" +
     "/add [текст] — принудительно сохранить запись\n" +
     "/ask [вопрос] — принудительно спросить\n" +
-    "/tasks — задачи\n" +
+    "/tasks — активные задачи команды\n" +
+    "/meetings — список встреч и транскрипты\n" +
     "/status — состояние системы\n" +
-    "/reindex — переиндексировать базу\n" +
-    "/help — эта справка";
-
-  return base +
-    "\n\n<b>Управление пользователями:</b>\n/users list · /users add [id] · /users remove [id]\n/status · /reindex" +
-    "\n\n<b>Claude Desktop — подключение:</b>\n" +
-    "1. Settings → Developer → Add MCP Server\n" +
-    "   Name: <code>swarm-brain</code>\n" +
-    "   URL: <code>https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp</code>\n" +
-    "2. Projects → New Project → вставь инструкции из файла <code>SETUP_CLAUDE_DESKTOP.md</code>\n" +
-    "3. Кидай транскрипты — Claude сохранит оригинал и сделает саммари автоматически";
+    "/reset — сбросить состояние бота\n" +
+    "/help — эта справка\n\n" +
+    "<b>Управление командой:</b>\n" +
+    "/users — список пользователей\n" +
+    "/users add @username или [telegram_id]\n" +
+    "/users remove @username или [telegram_id]\n" +
+    "/users profile [telegram_id]\n\n" +
+    "<b>Claude Desktop — подключение MCP:</b>\n" +
+    "Settings → Developer → Add MCP Server\n" +
+    "URL: <code>https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp</code>"
+  );
 }
