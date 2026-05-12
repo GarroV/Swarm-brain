@@ -217,8 +217,9 @@ export async function handleProfileEdit(
   }
 
   await supabase.from("user_profiles").upsert(updateData);
-  await sendMessage(chatId, `✅ ${label} обновлено.`);
-  await showProfile(chatId, targetId);
+  await sendInlineMessage(chatId, `✅ <b>${label}</b> сохранено.`, [
+    [{ text: "✏️ Ещё поля", callback_data: `pe_menu_${targetId}` }, { text: "← Профиль", callback_data: `pu_${targetId}` }],
+  ]);
 }
 
 export async function handleUserCallbacks(
