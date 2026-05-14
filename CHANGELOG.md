@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-05-14
+
+### Фикс MCP: swarm-mcp задеплоен с --no-verify-jwt, content стал опциональным
+- `swarm-mcp` передеплоен с флагом `--no-verify-jwt` — без него Claude Desktop получал 401
+- `add_knowledge`: поле `content` сделано опциональным; если не передано — сохраняются тезисы (`summary`) как основной текст
+- `storage.ts` (`swarm-bot`): убрана авто-экспирация сессий по 30 мин (требовала колонку `updated_at`), добавлено логирование ошибок getSession/setSession
+
 ## 2026-05-11
 
 ### Фикс рефакторинга: восстановлены session handlers для meeting_rename_ и meeting_tag_

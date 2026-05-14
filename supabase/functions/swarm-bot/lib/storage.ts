@@ -61,24 +61,20 @@ export async function saveEntry(content: string, addedBy: string, source: string
 // ── Session ───────────────────────────────────────────────────────────────────
 
 export async function getSession(chatId: number): Promise<{ action: string; context?: string } | null> {
-  const { data } = await supabase.from("sessions")
-    .select("action, context, updated_at")
+  const { data, error } = await supabase.from("sessions")
+    .select("action, context")
     .eq("chat_id", chatId).maybeSingle();
+  if (error) console.error("[getSession] error:", JSON.stringify(error));
   if (!data) return null;
-  // Auto-expire sessions older than 30 minutes
-  const age = Date.now() - new Date(data.updated_at ?? 0).getTime();
-  if (age > 30 * 60 * 1000) {
-    await supabase.from("sessions").delete().eq("chat_id", chatId);
-    return null;
-  }
   return data;
 }
 
 export async function setSession(chatId: number, action: string, context?: string): Promise<void> {
-  await supabase.from("sessions").upsert(
-    { chat_id: chatId, action, context: context ?? null, updated_at: new Date().toISOString() },
+  const { error } = await supabase.from("sessions").upsert(
+    { chat_id: chatId, action, context: context ?? null },
     { onConflict: "chat_id" }
   );
+  if (error) console.error("[setSession] error:", JSON.stringify(error));
 }
 
 export async function clearSession(chatId: number): Promise<void> {

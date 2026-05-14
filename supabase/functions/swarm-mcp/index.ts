@@ -122,15 +122,15 @@ const TOOLS = [
   },
   {
     name: "add_knowledge",
-    description: "Добавить текст в командную базу знаний. Всегда передавай оба поля: content (оригинал) и summary (согласованные тезисы).",
+    description: "Добавить текст в командную базу знаний. summary обязателен. content опционален — передавай если текст умещается в инструмент; если транскрипт слишком большой, передай только summary.",
     inputSchema: {
       type: "object",
       properties: {
-        content: { type: "string", description: "Полный оригинальный текст" },
+        content: { type: "string", description: "Полный оригинальный текст (опционально — если слишком большой, можно не передавать)" },
         summary: { type: "string", description: "Детальные тезисы — согласованные с пользователем ключевые пункты" },
         source: { type: "string", description: "Источник (название файла, тип контента)" },
       },
-      required: ["content", "summary"],
+      required: ["summary"],
     },
   },
   {
@@ -281,17 +281,18 @@ async function toolGetEntry(args: { id: string }): Promise<string> {
   return `(${data.source} · ${date})\n\n${data.content}`;
 }
 
-async function toolAddKnowledge(args: { content: string; summary: string; source?: string }): Promise<string> {
+async function toolAddKnowledge(args: { content?: string; summary: string; source?: string }): Promise<string> {
   const CHUNK = 3000, OVERLAP = 200;
   const source = args.source ?? "claude";
+  const rawContent = args.content?.trim() || args.summary;
 
   // Split original content into chunks for storage
   const chunks: string[] = [];
-  if (args.content.length <= CHUNK) {
-    chunks.push(args.content);
+  if (rawContent.length <= CHUNK) {
+    chunks.push(rawContent);
   } else {
-    for (let pos = 0; pos < args.content.length; pos += CHUNK - OVERLAP) {
-      chunks.push(args.content.slice(pos, pos + CHUNK));
+    for (let pos = 0; pos < rawContent.length; pos += CHUNK - OVERLAP) {
+      chunks.push(rawContent.slice(pos, pos + CHUNK));
     }
   }
 
@@ -335,9 +336,10 @@ async function toolAddKnowledge(args: { content: string; summary: string; source
     ));
   }
 
+  const contentNote = !args.content?.trim() ? " (сохранены тезисы, оригинал не передан)" : "";
   return chunks.length > 1
-    ? `Сохранено: ${args.content.length} символов (${chunks.length} частей). Тезисы проиндексированы.`
-    : "Сохранено. Тезисы проиндексированы.";
+    ? `Сохранено: ${rawContent.length} символов (${chunks.length} частей). Тезисы проиндексированы.${contentNote}`
+    : `Сохранено. Тезисы проиндексированы.${contentNote}`;
 }
 
 async function toolListEntries(args: { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number }): Promise<string> {
@@ -494,7 +496,7 @@ Deno.serve(async (req: Request) => {
       } else if (name === "get_entry") {
         result = await toolGetEntry(args as { id: string });
       } else if (name === "add_knowledge") {
-        result = await toolAddKnowledge(args as { content: string; summary: string; source?: string });
+        result = await toolAddKnowledge(args as { content?: string; summary: string; source?: string });
       } else if (name === "list_entries") {
         result = await toolListEntries(args as { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number });
       } else if (name === "delete_entry") {
