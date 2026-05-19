@@ -106,27 +106,32 @@ function applyArrayFilter(tasks: Task[], filter: string): Task[] {
 }
 
 export async function analyzeAndCreateTasks(content: string, chatId: number, entryId: string): Promise<void> {
-  const { data: profiles } = await supabase.from("user_profiles").select("first_name, last_name, markets");
+  const { data: profiles } = await supabase.from("user_profiles").select("telegram_id, first_name, last_name, username, role, markets");
 
-  type Profile = { first_name?: string; last_name?: string; markets?: string[] };
+  type Profile = { telegram_id: number; first_name?: string; last_name?: string; username?: string; role?: string; markets?: string[] };
 
-  const userList = (profiles ?? []).map((p: Profile) => {
-    const name = [p.first_name, p.last_name].filter(Boolean).join(" ");
-    const markets = p.markets?.length ? ` (рынки: ${p.markets.join(", ")})` : "";
-    return name ? `${name}${markets}` : null;
-  }).filter(Boolean).join("; ");
+  const userList = JSON.stringify(
+    (profiles ?? []).map((p: Profile) => ({
+      id: p.telegram_id,
+      name: [p.first_name, p.last_name].filter(Boolean).join(" ") || p.username || String(p.telegram_id),
+      username: p.username ?? null,
+      role: p.role ?? null,
+      markets: p.markets ?? [],
+    }))
+  );
 
   const raw = await chatComplete(
     `Ты анализируешь текст командной базы знаний. Извлеки задачи — только конкретные поручения/действия.\n` +
-    `Члены команды и их рынки: ${userList || "неизвестны"}\n` +
-    `Если в тексте упоминается страна/рынок — назначь задачу ответственному за этот рынок.\n` +
+    `Члены команды (JSON): ${userList || "[]"}\n` +
+    `Если в тексте упоминается страна/рынок — назначь задачу ответственному за этот рынок по полю markets.\n` +
     `Верни ТОЛЬКО JSON без markdown:\n` +
-    `{"tasks":[{"title":"Название задачи","assignee":"Полное имя из списка или null","due_date":"YYYY-MM-DD или null","confidence":0.9}]}\n` +
+    `{"tasks":[{"title":"Название задачи","assignee_id":123456789,"due_date":"YYYY-MM-DD или null","confidence":0.9}]}\n` +
+    `assignee_id — поле id из списка выше, или null если исполнитель неизвестен.\n` +
     `Создавай задачи только с confidence >= 0.7. Если задач нет — {"tasks":[]}.`,
     content.slice(0, 6000)
   );
 
-  let tasks: Array<{ title: string; assignee: string | null; due_date: string | null; confidence: number }> = [];
+  let tasks: Array<{ title: string; assignee_id: number | null; due_date: string | null; confidence: number }> = [];
   try {
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     tasks = (parsed.tasks ?? []).filter((t: { confidence: number }) => t.confidence >= 0.7);
@@ -134,16 +139,17 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, ent
 
   if (!tasks.length) return;
 
-  const profileNames = (profiles ?? []).map((p: Profile) =>
-    [p.first_name, p.last_name].filter(Boolean).join(" ")
+  const profileMap: Record<number, string> = Object.fromEntries(
+    (profiles ?? []).map((p: Profile) => [
+      p.telegram_id,
+      [p.first_name, p.last_name].filter(Boolean).join(" ") || p.username || String(p.telegram_id),
+    ])
   );
 
   for (const task of tasks) {
     const assignees: string[] = [];
-    if (task.assignee) {
-      const lower = task.assignee.toLowerCase();
-      const match = profileNames.find((n: string) => n.toLowerCase().includes(lower) || lower.includes(n.toLowerCase()));
-      if (match) assignees.push(match);
+    if (task.assignee_id != null && profileMap[task.assignee_id]) {
+      assignees.push(profileMap[task.assignee_id]);
     }
     await supabase.from("tasks").insert({
       title: task.title,
