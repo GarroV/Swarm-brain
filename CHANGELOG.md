@@ -8,6 +8,7 @@
 - `/tasks` — мои задачи; `/tasks все` — все с разбивкой по исполнителям; `/tasks Имя` — задачи человека
 - Новый формат карточки: `📌 Название / 👤 Имя | 🌍 Рынок | 📅 до ДД.ММ` + кнопки `[✅ Готово] [🗑 Удалить] [📅 Дедлайн]`
 - MCP: `add_task`, `update_task`, `delete_task` — Claude Desktop управляет задачами; `get_tasks` расширен фильтром `country`
+- `/addtask` добавлен в боковое меню бота (setMyCommands)
 - Schema: добавлены `description`, `source`, `country`, `assignee_telegram_id` в таблицу `tasks`
 - `analyzeAndCreateTasks`: теперь заполняет `assignee_telegram_id` и `country` из транскрипта
 
