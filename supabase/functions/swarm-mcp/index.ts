@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, TASK_TOOL_DEFINITIONS } from "./tasks/tools.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -78,17 +79,18 @@ const TOOLS = [
   },
   {
     name: "get_tasks",
-    description: "Получить задачи команды с фильтрами по исполнителю, стране/тегу или статусу.",
+    description: "Получить задачи команды с фильтрами по исполнителю, стране или статусу.",
     inputSchema: {
       type: "object",
       properties: {
         assignee: { type: "string", description: "Имя исполнителя" },
-        tag: { type: "string", description: "Страна, рынок или тема" },
+        country: { type: "string", description: "Страна или рынок" },
         status: { type: "string", enum: ["open", "in_progress", "done", "cancelled"] },
-        period: { type: "string", enum: ["week"], description: "Период: week — задачи на этой неделе" },
+        period: { type: "string", enum: ["week"], description: "Задачи на этой неделе" },
       },
     },
   },
+  ...TASK_TOOL_DEFINITIONS,
   {
     name: "get_meetings",
     description: "Получить последние встречи из Read.ai сохранённые в базе знаний.",
@@ -194,34 +196,6 @@ async function toolSearchKnowledge(args: { query: string; limit?: number }): Pro
   }).join("\n\n---\n\n");
 }
 
-async function toolGetTasks(args: { assignee?: string; tag?: string; status?: string; period?: string }): Promise<string> {
-  let query = supabase.from("tasks").select("*").order("due_date", { ascending: true });
-
-  if (args.status) {
-    query = query.eq("status", args.status);
-  } else {
-    query = query.not("status", "in", '("done","cancelled")');
-  }
-  if (args.assignee) query = query.ilike("assignees", `%${args.assignee}%`);
-  if (args.tag) query = query.ilike("tags", `%${args.tag}%`);
-  if (args.period === "week") {
-    const today = new Date().toISOString().split("T")[0];
-    const end = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
-    query = query.gte("due_date", today).lte("due_date", end);
-  }
-
-  const { data, error } = await query.limit(30);
-  if (error) return `Ошибка: ${error.message}`;
-  if (!data?.length) return "Задач не найдено.";
-
-  return data.map((t: { title: string; assignees: string[]; due_date: string | null; tags: string[]; status: string }) => {
-    const who = t.assignees?.join(", ") || "—";
-    const due = t.due_date ? ` | дедлайн: ${t.due_date}` : "";
-    const tags = t.tags?.length ? ` | ${t.tags.join(", ")}` : "";
-    return `• [${t.status}] ${t.title}\n  Исполнитель: ${who}${due}${tags}`;
-  }).join("\n\n");
-}
-
 async function toolGetMeetings(args: { limit?: number }): Promise<string> {
   const { data, error } = await supabase
     .from("entries")
@@ -262,7 +236,7 @@ async function toolGetUsers(args: { market?: string }): Promise<string> {
     const p = profileMap[u.telegram_id] as Record<string, unknown> | undefined;
     const name = [p?.first_name, p?.last_name].filter(Boolean).join(" ") || `@${u.username ?? u.telegram_id}`;
     const role = p?.role ? `\n  Роль: ${p.role}` : "";
-    const markets = (p?.markets as string[] | undefined)?.length ? `\n  Рынки: ${(p.markets as string[]).join(", ")}` : "";
+    const markets = (p?.markets as string[] | undefined)?.length ? `\n  Рынки: ${(p?.markets as string[]).join(", ")}` : "";
     const phone = p?.phone ? `\n  Тел: ${p.phone}` : "";
     const email = p?.email ? `\n  Email: ${p.email}` : "";
     return `• ${name}${role}${markets}${phone}${email}`;
@@ -488,7 +462,13 @@ Deno.serve(async (req: Request) => {
       if (name === "search_knowledge") {
         result = await toolSearchKnowledge(args as { query: string; limit?: number });
       } else if (name === "get_tasks") {
-        result = await toolGetTasks(args as { assignee?: string; tag?: string; status?: string; period?: string });
+        result = await toolGetTasksMcp(args as { assignee?: string; country?: string; status?: string; period?: string });
+      } else if (name === "add_task") {
+        result = await toolAddTask(args as { title: string; description?: string; assignee_name?: string; country?: string; due_date?: string; source: string; context_id?: string });
+      } else if (name === "update_task") {
+        result = await toolUpdateTask(args as { id: string; title?: string; description?: string; assignee_name?: string; country?: string; due_date?: string | null; status?: string });
+      } else if (name === "delete_task") {
+        result = await toolDeleteTask(args as { id: string });
       } else if (name === "get_meetings") {
         result = await toolGetMeetings(args as { limit?: number });
       } else if (name === "get_users") {
