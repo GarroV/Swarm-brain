@@ -2,6 +2,15 @@
 
 ## 2026-05-19
 
+### Tasks module — изолированный модуль задач
+- `swarm-bot/tasks/` — новый изолированный модуль (types, db, matcher, formatter, handlers, index); удалён монолитный `handlers/tasks.ts`
+- `/addtask` — пошаговый диалог: название → исполнитель (кнопками) → рынок → дедлайн
+- `/tasks` — мои задачи; `/tasks все` — все с разбивкой по исполнителям; `/tasks Имя` — задачи человека
+- Новый формат карточки: `📌 Название / 👤 Имя | 🌍 Рынок | 📅 до ДД.ММ` + кнопки `[✅ Готово] [🗑 Удалить] [📅 Дедлайн]`
+- MCP: `add_task`, `update_task`, `delete_task` — Claude Desktop управляет задачами; `get_tasks` расширен фильтром `country`
+- Schema: добавлены `description`, `source`, `country`, `assignee_telegram_id` в таблицу `tasks`
+- `analyzeAndCreateTasks`: теперь заполняет `assignee_telegram_id` и `country` из транскрипта
+
 ### Schema migration: расширение tasks таблицы
 - Добавлены колонки: `description` (text), `source` (text, default 'manual'), `country` (text), `assignee_telegram_id` (bigint)
 - Миграция создана и задеплоена через `supabase db push`
