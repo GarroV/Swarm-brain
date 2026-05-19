@@ -2,6 +2,10 @@
 
 ## 2026-05-19
 
+### Schema migration: расширение tasks таблицы
+- Добавлены колонки: `description` (text), `source` (text, default 'manual'), `country` (text), `assignee_telegram_id` (bigint)
+- Миграция создана и задеплоена через `supabase db push`
+
 ### LLM-матчинг пользователей из транскриптов
 - `analyzeAndCreateTasks`: LLM теперь получает список команды с `telegram_id` и возвращает `assignee_id` вместо строки с именем — прямой lookup по ID заменяет ненадёжный `string.includes`-матчинг. Имена в кириллице, сокращения и никнеймы теперь корректно резолвятся в профиль.
 
