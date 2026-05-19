@@ -4,7 +4,7 @@ import { checkAllowed, autoSyncProfile, getSession, clearSession } from "./lib/s
 import { getReadAiToken } from "./lib/readai.ts";
 import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
 import { handleVoice, handleDocument, handlePhoto, handleUrl, extractUrl } from "./handlers/media.ts";
-import { handleTaskCallbacks, handleTasks } from "./handlers/tasks.ts";
+import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput } from "./tasks/index.ts";
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
 import { handleUsers, handleUserCallbacks, handleUserSessionInput } from "./handlers/users.ts";
 import { sendAllDigests } from "./handlers/digest.ts";
@@ -136,7 +136,11 @@ Deno.serve(async (req: Request) => {
 
     if (!isCommand) {
       const url = extractUrl(text);
-      if (url && text.length < 300) { await handleUrl(chatId, username, url); return new Response("OK", { status: 200 }); }
+      if (url && text.length < 300) {
+        const analyze = /посмотри|проанализируй|прочитай|загрузи|открой|что тут|что здесь|что это|summarize|analyze/i.test(text);
+        await handleUrl(chatId, username, url, text, analyze);
+        return new Response("OK", { status: 200 });
+      }
 
       const session = await getSession(chatId);
       const action = session?.action ?? null;
@@ -151,6 +155,8 @@ Deno.serve(async (req: Request) => {
         // meeting session handled
       } else if (action && await handleUserSessionInput(chatId, userId, action, text)) {
         // user session handled
+      } else if (action && await handleTaskSessionInput(chatId, userId, action, text, session?.context ?? undefined)) {
+        // task session handled
       } else {
         if (text.length >= 3) await handleAsk(chatId, text);
       }
@@ -192,7 +198,9 @@ Deno.serve(async (req: Request) => {
     } else if (command === "/users" || text === "👥 Пользователи") {
       await handleUsers(chatId, userId, argText);
     } else if (command === "/tasks" || text === "📋 Задачи") {
-      await handleTasks(chatId, argText);
+      await handleTasks(chatId, userId, argText);
+    } else if (command === "/addtask") {
+      await handleAddTask(chatId);
     } else if (command === "/meetings" || text === "🎙 Встречи") {
       const { data: meetings } = await supabase
         .from("entries")
