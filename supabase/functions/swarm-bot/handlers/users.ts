@@ -2,7 +2,7 @@ import { supabase, ADMIN_USER_ID } from "../lib/supabase.ts";
 import { sendMessage, sendInlineMessage, buildKeyboard } from "../lib/telegram.ts";
 import { setSession, clearSession } from "../lib/storage.ts";
 import type { Task, TgCallbackQuery } from "../lib/types.ts";
-import { sendTaskCard } from "./tasks.ts";
+import { sendTaskCard } from "../tasks/index.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
