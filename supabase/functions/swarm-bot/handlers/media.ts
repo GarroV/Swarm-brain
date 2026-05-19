@@ -209,12 +209,24 @@ export async function handlePhoto(chatId: number, username: string, photos: NonN
   await sendMessage(chatId, `Изображение обработано и сохранено:\n\n<i>${description.slice(0, 500)}${description.length > 500 ? "..." : ""}</i>`);
 }
 
-export async function handleUrl(chatId: number, username: string, url: string): Promise<void> {
-  await sendMessage(chatId, `Загружаю страницу...`);
-  const content = await fetchUrlContent(url);
-  if (!content || content.length < 50) { await sendMessage(chatId, "Не удалось извлечь текст со страницы."); return; }
-  await saveEntry(content, username, "url", { url });
-  await sendMessage(chatId, `Страница сохранена (${content.length} символов):\n<code>${url}</code>`);
+export async function handleUrl(chatId: number, username: string, url: string, rawText: string, analyze: boolean): Promise<void> {
+  if (analyze) {
+    await sendMessage(chatId, `Загружаю страницу...`);
+    try {
+      const content = await fetchUrlContent(url);
+      if (!content || content.length < 50) { await sendMessage(chatId, "Не удалось извлечь текст со страницы."); return; }
+      await saveEntry(content, username, "url", { url });
+      await sendMessage(chatId, `Страница сохранена (${content.length} символов):\n<code>${url}</code>`);
+    } catch (err) {
+      await sendMessage(chatId, `Не удалось загрузить страницу: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  } else {
+    const description = rawText.replace(url, "").replace(/^(добавь в базу[:\s]*|сохрани[:\s]*|добавь[:\s]*)/i, "").trim();
+    const title = description || url;
+    const content = description ? `${description}\n\nСсылка: ${url}` : url;
+    await saveEntry(content, username, "link", { url, title }, description || undefined);
+    await sendMessage(chatId, `🔗 Ссылка сохранена.\n<code>${url}</code>${description ? `\n\n<i>${description}</i>` : ""}`);
+  }
 }
 
 export async function handleVoice(chatId: number, username: string, fileId: string, duration: number): Promise<void> {
