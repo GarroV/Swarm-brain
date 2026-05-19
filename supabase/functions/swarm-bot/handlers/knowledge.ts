@@ -3,6 +3,7 @@ import { getEmbedding } from "../lib/openai.ts";
 import { saveEntry, generateSummary, getSession, setSession, clearSession } from "../lib/storage.ts";
 import { sendMessage } from "../lib/telegram.ts";
 import type { KbEntry } from "../lib/types.ts";
+import { TASK_KEYWORDS, smartTaskSearch } from "../tasks/index.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -351,71 +352,7 @@ export async function handleAdd(chatId: number, username: string, text: string):
   // DISABLED: await analyzeAndCreateTasks(text, chatId, entryId);
 }
 
-const TASK_KEYWORDS = /задач|таск|task|сделать|выполнить|поручен|назначен|дедлайн|deadline|кто должен/i;
 
-type Task = { title: string; assignees: string[]; due_date: string | null; tags: string[]; status: string };
-
-async function smartTaskSearch(chatId: number, question: string): Promise<boolean> {
-  if (!TASK_KEYWORDS.test(question)) return false;
-
-  // Extract person or tag from question via GPT
-  const raw = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: "Из вопроса извлеки фильтр для поиска задач. Верни JSON: {\"person\": \"Имя или null\", \"tag\": \"тег/страна или null\", \"period\": \"week/null\"}\nТолько JSON." },
-        { role: "user", content: question },
-      ],
-      max_tokens: 200,
-    }),
-  }).then(r => r.json() as Promise<{ choices: Array<{ message: { content: string } }> }>)
-    .then(d => d.choices[0]?.message?.content ?? "{}");
-
-  let person: string | null = null;
-  let tag: string | null = null;
-  let period: string | null = null;
-
-  try {
-    const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()) as { person?: string | null; tag?: string | null; period?: string | null };
-    person = parsed.person && parsed.person !== "null" ? parsed.person : null;
-    tag = parsed.tag && parsed.tag !== "null" ? parsed.tag : null;
-    period = parsed.period && parsed.period !== "null" ? parsed.period : null;
-  } catch { /* ignore */ }
-
-  let query = supabase.from("tasks").select("*").not("status", "in", '("done","cancelled")').order("due_date");
-
-  if (period === "week") {
-    const today = new Date().toISOString().split("T")[0];
-    const end = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
-    query = query.gte("due_date", today).lte("due_date", end);
-  }
-
-  const { data: allTasks } = await query.limit(100);
-  let tasks = (allTasks ?? []) as Task[];
-  if (person) {
-    const pl = person.toLowerCase();
-    tasks = tasks.filter(t => t.assignees?.some(a => a.toLowerCase().includes(pl)));
-  }
-  if (tag) {
-    const tl = tag.toLowerCase();
-    tasks = tasks.filter(t => t.tags?.some(tg => tg.toLowerCase().includes(tl)));
-  }
-  tasks = tasks.slice(0, 10);
-
-  if (!tasks.length) return false;
-
-  const taskLines = tasks.map((t: Task) => {
-    const assignees = t.assignees?.join(", ") || "—";
-    const due = t.due_date ? ` · до ${t.due_date}` : "";
-    const tags = t.tags?.length ? ` · ${t.tags.join(", ")}` : "";
-    return `• ${t.title} (${assignees}${due}${tags})`;
-  }).join("\n");
-
-  await sendMessage(chatId, `<b>Задачи по запросу:</b>\n\n${taskLines}`);
-  return true;
-}
 
 export async function handleAsk(chatId: number, question: string): Promise<void> {
   if (!question.trim()) {
