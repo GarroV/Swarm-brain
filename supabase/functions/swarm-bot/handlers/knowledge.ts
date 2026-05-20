@@ -26,6 +26,21 @@ export const KNOWLEDGE_TOOLS = [
   {
     type: "function" as const,
     function: {
+      name: "get_recent_by_country",
+      description: "Get recent knowledge base entries for a specific country as a news digest. Use for: 'последние новости по X', 'что нового по X', 'что происходит в X', 'дайджест по X', 'обнови по X'. Returns entries from the last 60 days sorted by date.",
+      parameters: {
+        type: "object",
+        properties: {
+          country: { type: "string", description: "Country name in Russian or English: Хорватия/Croatia, Болгария/Bulgaria, Сербия/Serbia, Словения/Slovenia, etc." },
+          days: { type: "number", description: "How many days back to look, default 60" },
+        },
+        required: ["country"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "export_entry",
       description: "Export the full raw content of an entry as a downloadable file. Use when user asks to 'скинь файлом', 'выгрузи', 'скачать транскрипцию', 'export', 'пришли исходник', 'полный текст', 'дословно'. Also call this when search results contain [Полный текст: export_entry(id=...)]. First use search_knowledge to find the entry id, then call export_entry with that id.",
       parameters: {
@@ -146,9 +161,12 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
           .catch(() => [] as KbEntry[]);
 
         const words = query.toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2).slice(0, 6);
-        const kwPromise = words.length
+        // For Russian morphology: also search by word stem (first 5 chars) to match different declensions
+        // e.g. "муравьев" → also search "муравь" to match "муравьи", "муравьям" etc.
+        const searchTerms = [...new Set(words.flatMap(w => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
+        const kwPromise = searchTerms.length
           ? supabase.from("entries").select("id, content, summary, source, metadata")
-              .or(words.map(w => `source.ilike.%${w}%,content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
+              .or(searchTerms.map(w => `source.ilike.%${w}%,content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
               .limit(5).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
           : Promise.resolve([] as KbEntry[]);
 
@@ -168,18 +186,61 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
         }
         if (!combined.length) return "Ничего не найдено по запросу.";
         return combined.slice(0, 5).map((e: KbEntry) => {
-          const fileUrl = (e.metadata?.file_url ?? e.metadata?.drive_link) as string | undefined;
+          const rawUrl = (e.metadata?.file_url ?? e.metadata?.drive_link) as string | undefined;
+          const fileUrl = rawUrl && !rawUrl.startsWith("sandbox:") && rawUrl.startsWith("http") ? rawUrl : undefined;
           if (fileUrl) {
             const fileName = (e.metadata?.file_name as string | undefined) ?? e.source ?? "файл";
             return `[id:${e.id}] ${e.source ?? ""}: ${fileName}\n[Скачать оригинал: ${fileUrl}]`;
           }
-          const isShort = (e.content ?? "").length <= 500;
+          // Prefer summary (full tezises as saved by Claude Desktop) over content (chunked raw)
+          const displayText = (e.summary && e.summary.length > (e.content ?? "").length
+            ? e.summary
+            : e.content) ?? "";
+          const isShort = displayText.length <= 4000;
           const text = isShort
-            ? (e.content ?? "")
-            : (e.summary || (e.content ?? "").slice(0, 500)) +
-              `\n[Полный текст: export_entry(id=${e.id})]`;
+            ? displayText
+            : displayText.slice(0, 4000) + `\n...\n[Полный текст: export_entry(id=${e.id})]`;
           return `[id:${e.id}] ${e.source ?? ""}:\n${text}`;
         }).join("\n\n") || "Ничего не найдено.";
+      }
+
+      case "get_recent_by_country": {
+        const country = String(args.country ?? "");
+        const days = Math.min(Number(args.days ?? 60), 365);
+        const since = new Date(Date.now() - days * 86400000).toISOString();
+
+        // Step 1: semantic vector search — handles morphology automatically
+        const emb = await getEmbedding(`${country} встреча новости`);
+        const { data: vecResults } = await supabase.rpc("match_entries", {
+          query_embedding: `[${emb.join(",")}]`,
+          match_threshold: 0.1,
+          match_count: 20,
+        });
+
+        const ids = ((vecResults ?? []) as Array<{ id: string }>).map(r => r.id);
+        if (!ids.length) return `Записей по "${country}" не найдено.`;
+
+        // Step 2: fetch full data for matched entries
+        const { data: entries } = await supabase
+          .from("entries")
+          .select("id, content, summary, source, entry_date, created_at, metadata")
+          .in("id", ids);
+
+        type REntry = { id: string; metadata?: Record<string, unknown> | null; entry_date?: string | null; created_at: string; summary?: string | null; content?: string | null };
+        const all = (entries ?? []) as REntry[];
+        // Preserve vector search relevance order
+        all.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+
+        const recent = all.filter(e => e.created_at >= since);
+        const results = recent.length ? recent : all.slice(0, 5);
+        const prefix = !recent.length ? `Свежих записей за ${days} дней нет. Последние найденные:\n\n` : "";
+
+        return prefix + results.slice(0, 6).map(e => {
+          const title = (e.metadata?.title as string) ?? e.content?.split("\n")[0].slice(0, 60) ?? "Запись";
+          const date = e.entry_date ?? e.created_at.slice(0, 10);
+          const displayText = (e.summary && e.summary.length > (e.content ?? "").length ? e.summary : e.content) ?? "";
+          return `📅 ${date} — ${title}\n${displayText.slice(0, 500)}\n[Полный текст: export_entry(id=${e.id})]`;
+        }).join("\n\n---\n\n");
       }
 
       case "search_by_country": {
@@ -385,17 +446,22 @@ export async function handleAsk(chatId: number, question: string): Promise<void>
     {
       role: "system",
       content:
-        "Ты помощник командной базы знаний команды. " +
-        "Используй инструменты чтобы найти или изменить информацию в базе. " +
-        "Если пользователь говорит 'эту', 'её', 'этот' — он имеет в виду запись из предыдущего ответа. " +
-        "Если результат поиска содержит [Скачать оригинал: <url>] — верни пользователю эту ссылку напрямую, не вызывай export_entry. " +
-        "Если результат поиска содержит [Полный текст: export_entry(id=...)] и пользователь " +
-        "просит исходник, полный текст или дословно — вызови export_entry с этим id. " +
-        "Не выдавай длинный текст в сообщении — отправляй файлом через export_entry. " +
-        "Если пользователь просит скинуть файлом, выгрузить, скачать или исходник — " +
-        "сначала найди запись через search_knowledge, затем либо верни ссылку [Скачать оригинал] либо вызови export_entry. " +
-        "Отвечай ТОЛЬКО на основе данных из инструментов — не придумывай информацию. " +
-        "Если данных нет — честно скажи. Отвечай на русском языке.",
+        "Ты помощник командной базы знаний команды. Всегда используй инструменты — никогда не отвечай по памяти.\n\n" +
+        "СТРАТЕГИЯ ПОИСКА (важно):\n" +
+        "1. Для 'последние новости/тезисы/что нового по X' → get_recent_by_country\n" +
+        "2. Для конкретного вопроса → search_knowledge\n" +
+        "3. Если инструмент вернул пустой результат или ошибку — НЕ сдавайся. " +
+        "Попробуй search_knowledge с другим запросом. Если снова пусто — задай уточняющий вопрос: " +
+        "например 'Не нашёл по Сербии. Уточни период или тему — покажу что есть.' " +
+        "Или вызови search_knowledge с запросом 'встречи' и покажи что есть в базе. " +
+        "НИКОГДА не говори 'не удаётся получить' или 'попробуйте позже' — это не полезно.\n\n" +
+        "ВЫВОД ДАННЫХ:\n" +
+        "- Всегда показывай содержимое прямо в сообщении, не файлом\n" +
+        "- export_entry только если пользователь явно просит 'скачать', 'файлом', 'выгрузи'\n" +
+        "- Перед export_entry всегда делай search_knowledge чтобы получить id\n" +
+        "- [Скачать оригинал: url] → верни ссылку напрямую\n\n" +
+        "Если пользователь говорит 'эту', 'её', 'этот' — он имеет в виду запись из предыдущего ответа.\n" +
+        "Отвечай на русском языке.",
     },
     ...(prevAnswer ? [{ role: "assistant" as const, content: prevAnswer }] : []),
     { role: "user", content: question },
@@ -414,7 +480,7 @@ export async function handleAsk(chatId: number, question: string): Promise<void>
         messages,
         tools: KNOWLEDGE_TOOLS,
         tool_choice: round === 0 ? "required" : "auto",
-        max_tokens: 2000,
+        max_tokens: 3500,
       }),
     });
 
@@ -443,14 +509,15 @@ export async function handleAsk(chatId: number, question: string): Promise<void>
           const entryId = String(tcArgs.entry_id ?? "").replace(/^id:/, "");
           const { data: entry } = await supabase
             .from("entries")
-            .select("content, metadata, source, created_at")
+            .select("content, summary, metadata, source, created_at, group_id")
             .eq("id", entryId)
             .maybeSingle();
           if (!entry) {
             result = "Запись не найдена.";
           } else {
             const meta = entry.metadata as Record<string, unknown> | null ?? {};
-            const fileUrl = (meta.file_url ?? meta.drive_link) as string | undefined;
+            const rawFileUrl = (meta.file_url ?? meta.drive_link) as string | undefined;
+            const fileUrl = rawFileUrl && rawFileUrl.startsWith("http") ? rawFileUrl : undefined;
             const rawTitle = (meta.title as string | undefined)
               ?? (meta.file_name as string | undefined)
               ?? (entry.source as string | undefined)
@@ -459,9 +526,25 @@ export async function handleAsk(chatId: number, question: string): Promise<void>
               exportDriveLink = { url: fileUrl, title: rawTitle };
               result = "Ссылка на оригинальный файл готова.";
             } else {
+              // Use summary if it's longer (complete tezises); otherwise reassemble chunks via group_id
+              let fullContent = entry.summary && (entry.summary as string).length > ((entry.content as string) ?? "").length
+                ? entry.summary as string
+                : entry.content as string;
+              if (entry.group_id && !entry.summary) {
+                const { data: chunks } = await supabase
+                  .from("entries")
+                  .select("content, metadata")
+                  .eq("group_id", entry.group_id)
+                  .order("created_at", { ascending: true });
+                if (chunks?.length) {
+                  fullContent = (chunks as Array<{ content: string; metadata: Record<string, unknown> }>)
+                    .sort((a, b) => ((a.metadata?.chunk as number) ?? 0) - ((b.metadata?.chunk as number) ?? 0))
+                    .map(c => c.content).join("\n");
+                }
+              }
               const safeTitle = rawTitle.replace(/[^\wа-яёА-ЯЁ\s-]/g, "").trim().replace(/\s+/g, "_");
               const dateStr = new Date(entry.created_at as string).toISOString().slice(0, 10);
-              exportFile = { content: entry.content as string, filename: `${safeTitle}_${dateStr}.txt` };
+              exportFile = { content: fullContent, filename: `${safeTitle}_${dateStr}.txt` };
               result = "Файл готов к отправке.";
             }
           }

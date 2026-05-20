@@ -3,7 +3,7 @@ import { chatComplete } from "../lib/openai.ts";
 import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession } from "../lib/storage.ts";
 import { dbGetTask, dbListTasks, dbCreateTask, dbUpdateTask, dbDeleteTask, dbListAllOpen } from "./db.ts";
-import { getProfilesForPrompt, buildProfileMap, getAllUniqueMarkets } from "./matcher.ts";
+import { getProfilesForPrompt, buildProfileMap, buildDisplayNameMap, getAllUniqueMarkets } from "./matcher.ts";
 import { sendTaskCard, sendPendingTaskCard, STATUS_LABEL, formatTaskLine } from "./formatter.ts";
 import type { Task } from "./types.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
@@ -76,7 +76,7 @@ export async function handleTasks(chatId: number, userId: number, filter: string
 
 export async function handleAddTask(chatId: number): Promise<void> {
   await setSession(chatId, "addtask_title");
-  await sendMessage(chatId, "📌 <b>Новая задача</b>\n\nНазвание задачи?");
+  await sendMessage(chatId, "📌 <b>Новая задача</b>\n\nЗадача?");
 }
 
 // ── analyzeAndCreateTasks ─────────────────────────────────────────────────────
@@ -180,12 +180,11 @@ export async function handleTaskCallbacks(
     const sep = rest.lastIndexOf("_");
     const taskId = rest.slice(0, sep);
     const telegramId = Number(rest.slice(sep + 1));
-    const profiles = await getProfilesForPrompt();
-    const profileMap = buildProfileMap(profiles);
-    const assigneeName = profileMap[telegramId] ?? String(telegramId);
+    const nameMap = await buildDisplayNameMap([telegramId]);
+    const assigneeName = nameMap[telegramId] ?? String(telegramId);
     await dbUpdateTask(taskId, { assignee_telegram_id: telegramId, assignees: [assigneeName] });
     const markets = await getAllUniqueMarkets();
-    const countryButtons = markets.map(m => [{ text: `🌍 ${m}`, callback_data: `tac_${taskId}:${m}` }]);
+    const countryButtons = markets.map((m, i) => [{ text: `🌍 ${m}`, callback_data: `tac_${taskId}:${i}` }]);
     countryButtons.push([{ text: "❌ Без рынка", callback_data: `tac_${taskId}:none` }]);
     countryButtons.push([{ text: "🚫 Отмена", callback_data: `tacx_${taskId}` }]);
     await sendInlineMessage(chatId, "Рынок?", countryButtons);
@@ -201,14 +200,24 @@ export async function handleTaskCallbacks(
     return true;
   }
 
-  // /addtask: country selection → tac_{taskId}:{country}
+  // /addtask: country selection → tac_{taskId}:{index|none}
   if (data.startsWith("tac_")) {
     const rest = data.replace("tac_", "");
     const sep = rest.indexOf(":");
     if (sep === -1) return false;
     const taskId = rest.slice(0, sep);
-    const country = rest.slice(sep + 1);
-    await dbUpdateTask(taskId, { country: country === "none" ? null : country });
+    const raw = rest.slice(sep + 1);
+    let country: string | null = null;
+    if (raw !== "none") {
+      const idx = Number(raw);
+      if (!isNaN(idx)) {
+        const markets = await getAllUniqueMarkets();
+        country = markets[idx] ?? null;
+      } else {
+        country = raw; // backwards compat with old buttons that stored name
+      }
+    }
+    await dbUpdateTask(taskId, { country });
     await setSession(chatId, "addtask_due", taskId);
     await sendMessage(chatId, `Дедлайн? (ДД.ММ.ГГГГ или «пропустить»)`);
     return true;
@@ -257,16 +266,20 @@ export async function handleTaskCallbacks(
   // Earlier returns for tat_, tac_, tacx_ guarantee this only matches plain ta_
   if (data.startsWith("ta_")) {
     const taskId = data.replace("ta_", "");
-    const profiles = await getProfilesForPrompt();
     const { data: allowedUsers } = await supabase.from("allowed_users").select("telegram_id, username");
-    const profileMap = buildProfileMap(profiles);
     const seen = new Set<number>();
     const allUsers = [
       { telegram_id: ADMIN_USER_ID, username: null as string | null },
-      ...((allowedUsers ?? []) as Array<{ telegram_id: number; username: string | null }>),
-    ].filter(u => { if (seen.has(u.telegram_id)) return false; seen.add(u.telegram_id); return true; });
+      ...((allowedUsers ?? []) as Array<{ telegram_id: number | null; username: string | null }>),
+    ].filter((u): u is { telegram_id: number; username: string | null } => {
+      if (u.telegram_id == null) return false;
+      if (seen.has(u.telegram_id)) return false;
+      seen.add(u.telegram_id);
+      return true;
+    });
+    const nameMap = await buildDisplayNameMap(allUsers.map(u => u.telegram_id));
     const buttons = allUsers.map(u => [{
-      text: profileMap[u.telegram_id] || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`),
+      text: nameMap[u.telegram_id] || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`),
       callback_data: `tas_${taskId}_${u.telegram_id}`,
     }]);
     await sendInlineMessage(chatId, "Кому назначить?", buttons);
@@ -382,16 +395,20 @@ export async function handleTaskSessionInput(
       return true;
     }
     const task = await dbCreateTask({ title, source: "manual", status: "draft" });
-    const profiles = await getProfilesForPrompt();
     const { data: allowedUsers } = await supabase.from("allowed_users").select("telegram_id, username");
-    const profileMap = buildProfileMap(profiles);
     const seen = new Set<number>();
     const allUsers = [
       { telegram_id: ADMIN_USER_ID, username: null as string | null },
-      ...((allowedUsers ?? []) as Array<{ telegram_id: number; username: string | null }>),
-    ].filter(u => { if (seen.has(u.telegram_id)) return false; seen.add(u.telegram_id); return true; });
+      ...((allowedUsers ?? []) as Array<{ telegram_id: number | null; username: string | null }>),
+    ].filter((u): u is { telegram_id: number; username: string | null } => {
+      if (u.telegram_id == null) return false;
+      if (seen.has(u.telegram_id)) return false;
+      seen.add(u.telegram_id);
+      return true;
+    });
+    const nameMap = await buildDisplayNameMap(allUsers.map(u => u.telegram_id));
     const buttons = allUsers.map(u => [{
-      text: profileMap[u.telegram_id] || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`),
+      text: nameMap[u.telegram_id] || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`),
       callback_data: `tat_${task.id}_${u.telegram_id}`,
     }]);
     buttons.push([{ text: "❌ Без исполнителя", callback_data: `tac_${task.id}:none` }]);

@@ -19,6 +19,7 @@ async function verifySignature(req: Request, body: string): Promise<boolean> {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+
 async function sendTelegramInline(text: string, keyboard: Array<Array<{ text: string; callback_data: string }>>): Promise<void> {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
@@ -143,15 +144,16 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const meeting = (payload.meeting ?? payload) as Record<string, unknown>;
-    const title = (meeting.title ?? "Встреча") as string;
-    const meetingId = (meeting.session_id ?? meeting.id ?? crypto.randomUUID()) as string;
-    const startTime = meeting.start_time as string | undefined;
-    const endTime = meeting.end_time as string | undefined;
-    const duration = meeting.duration as number | undefined ??
+    // Read.ai webhook payload is flat (no "meeting" wrapper):
+    // { session_id, trigger, transcript, chapter_summaries, request_id, title, participants, ... }
+    const meetingId = (payload.session_id ?? payload.id ?? crypto.randomUUID()) as string;
+    const title = (payload.title ?? payload.meeting_title ?? "Встреча") as string;
+    const startTime = payload.start_time as string | undefined;
+    const endTime = payload.end_time as string | undefined;
+    const duration = payload.duration as number | undefined ??
       (startTime && endTime ? Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000) * 60 : undefined);
 
-    // Safely convert any value to string
+    // Convert Read.ai transcript (array of speaker blocks) to readable text
     const toStr = (v: unknown): string => {
       if (!v) return "";
       if (typeof v === "string") return v;
@@ -160,8 +162,12 @@ Deno.serve(async (req: Request) => {
         if (typeof item === "object" && item !== null) {
           const o = item as Record<string, unknown>;
           const speaker = (o.speaker ?? o.name ?? o.speaker_name ?? "") as string;
-          const text = (o.text ?? o.content ?? o.words ?? "") as string;
-          return speaker ? `${speaker}: ${toStr(text)}` : toStr(text);
+          // words can be array of {text} objects or plain string
+          const wordsRaw = o.words ?? o.text ?? o.content ?? "";
+          const text = Array.isArray(wordsRaw)
+            ? (wordsRaw as Array<{ text?: string; word?: string }>).map(w => w.text ?? w.word ?? "").join(" ")
+            : String(wordsRaw);
+          return speaker ? `${speaker}: ${text}` : text;
         }
         return String(item);
       }).filter(Boolean).join("\n");
@@ -169,14 +175,12 @@ Deno.serve(async (req: Request) => {
       return String(v);
     };
 
-    const summaryRaw = meeting.summary ?? meeting.overview ?? "";
-    const summary = typeof summaryRaw === "object" && summaryRaw !== null
-      ? toStr((summaryRaw as Record<string, unknown>).summary_text ?? (summaryRaw as Record<string, unknown>).overview ?? summaryRaw)
-      : toStr(summaryRaw);
-    const transcript = toStr(meeting.transcript ?? meeting.transcription ?? "");
-    const chapters = (meeting.chapters ?? meeting.topics ?? []) as Array<Record<string, unknown>>;
-    const actionItems = (meeting.action_items ?? meeting.tasks ?? []) as Array<Record<string, unknown>>;
-    const participants = (meeting.participants ?? []) as Array<Record<string, unknown>>;
+    // transcript is top-level in payload per Read.ai docs
+    const transcript = toStr(payload.transcript ?? "");
+    const chapters = (payload.chapter_summaries ?? payload.chapters ?? payload.topics ?? []) as Array<Record<string, unknown>>;
+    const actionItems = (payload.action_items ?? payload.tasks ?? []) as Array<Record<string, unknown>>;
+    const participants = (payload.participants ?? []) as Array<Record<string, unknown>>;
+    const summary = toStr(payload.summary ?? payload.overview ?? "");
 
     // Build full content for knowledge base
     const parts: string[] = [`Встреча: ${title}`];
@@ -195,8 +199,22 @@ Deno.serve(async (req: Request) => {
     if (transcript) parts.push(`Стенограмма:\n${transcript.slice(0, 8000)}`);
     const fullContent = parts.join("\n\n");
 
-    // Process in parallel: embedding + task extraction
-    const [embedding, taskCount] = await Promise.all([
+    // Use transcript as primary source for tezises; fall back to summary+chapters if no transcript
+    const tezisSource = transcript
+      ? `Встреча: ${title}\n\nСтенограмма:\n${transcript.slice(0, 12000)}`
+      : fullContent.slice(0, 6000);
+
+    // Generate structured tezises + extract metadata + embedding + tasks in parallel
+    const [tezises, embedding, taskCount] = await Promise.all([
+      chatComplete(
+        "Ты помощник команды. Создай структурированные тезисы встречи строго по тексту стенограммы — " +
+        "не домысливай и не добавляй информацию которой нет в тексте.\n" +
+        "Формат: ### Тема\n- тезис\n- тезис\n\n" +
+        "Темы называй широко: 'Персонал', 'IT / Технические проблемы', 'Поставки', 'Финансы / Эквайринг', " +
+        "'Строительство', 'Маркетинг', 'Операции', 'Региональные новости' и т.п. " +
+        "Только то что реально обсуждалось. Без выдумок.",
+        tezisSource
+      ),
       getEmbedding(fullContent),
       extractAndSaveTasks(fullContent, meetingId),
     ]);
@@ -210,6 +228,7 @@ Deno.serve(async (req: Request) => {
     // Save to knowledge base with confirmed: false (awaiting user confirmation)
     const { data: savedEntry } = await supabase.from("entries").insert({
       content: fullContent,
+      summary: tezises,
       embedding,
       added_by: "read_ai",
       source: "read_ai",

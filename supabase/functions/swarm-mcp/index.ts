@@ -124,11 +124,11 @@ const TOOLS = [
   },
   {
     name: "add_knowledge",
-    description: "Добавить текст в командную базу знаний. summary обязателен. content опционален — передавай если текст умещается в инструмент; если транскрипт слишком большой, передай только summary.",
+    description: "Добавить текст в командную базу знаний. summary обязателен. content — ВСЕГДА передавай полный оригинальный текст целиком, не сокращая. Инструмент сам разобьёт на части при необходимости.",
     inputSchema: {
       type: "object",
       properties: {
-        content: { type: "string", description: "Полный оригинальный текст (опционально — если слишком большой, можно не передавать)" },
+        content: { type: "string", description: "Полный оригинальный текст целиком — обязательно передавай весь, без сокращений" },
         summary: { type: "string", description: "Детальные тезисы — согласованные с пользователем ключевые пункты" },
         source: { type: "string", description: "Источник (название файла, тип контента)" },
       },
@@ -310,7 +310,7 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
     ));
   }
 
-  const contentNote = !args.content?.trim() ? " (сохранены тезисы, оригинал не передан)" : "";
+  const contentNote = !args.content?.trim() ? " (оригинал не передан)" : "";
   return chunks.length > 1
     ? `Сохранено: ${rawContent.length} символов (${chunks.length} частей). Тезисы проиндексированы.${contentNote}`
     : `Сохранено. Тезисы проиндексированы.${contentNote}`;
