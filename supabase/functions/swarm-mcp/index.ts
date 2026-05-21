@@ -448,7 +448,7 @@ async function toolGetStorageStats(): Promise<string> {
   ].join("\n");
 }
 
-async function toolListEntries(args: { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number }): Promise<string> {
+async function toolListEntries(args: { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean }): Promise<string> {
   let query = supabase
     .from("entries")
     .select("id, source, entry_type, entry_date, created_at, summary, metadata")
@@ -459,6 +459,8 @@ async function toolListEntries(args: { source?: string; entry_type?: string; dat
   if (args.entry_type) query = query.eq("entry_type", args.entry_type);
   if (args.date_from) query = query.gte("created_at", args.date_from);
   if (args.date_to) query = query.lte("created_at", args.date_to + "T23:59:59");
+  if (args.has_file === true) query = query.not("metadata->>file_url", "is", null);
+  if (args.has_file === false) query = query.filter("metadata->>file_url", "is", "null");
 
   const { data, error } = await query;
   if (error) return `Ошибка: ${error.message}`;
