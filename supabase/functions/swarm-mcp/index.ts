@@ -503,7 +503,7 @@ async function toolDeleteEntry(args: { id: string }): Promise<string> {
   return `✅ Запись удалена${fileUrl ? " вместе с файлом из Storage" : ""}.`;
 }
 
-async function toolUpdateEntry(args: { id: string; content?: string; summary?: string; title?: string; entry_date?: string }): Promise<string> {
+async function toolUpdateEntry(args: { id: string; content?: string; summary?: string; title?: string; entry_date?: string; file_content_base64?: string; file_name?: string }): Promise<string> {
   const { data: existing, error: fetchErr } = await supabase
     .from("entries")
     .select("metadata")
@@ -512,6 +512,42 @@ async function toolUpdateEntry(args: { id: string; content?: string; summary?: s
 
   if (fetchErr) return `Ошибка: ${fetchErr.message}`;
   if (!existing) return `Запись ${args.id} не найдена.`;
+
+  if (args.file_content_base64 && args.file_name) {
+    const oldMeta = (existing.metadata as Record<string, unknown>) ?? {};
+    const oldFileUrl = oldMeta.file_url as string | undefined;
+
+    if (oldFileUrl) {
+      try {
+        const url = new URL(oldFileUrl);
+        const pathParts = url.pathname.split("/object/public/swarm_drive/");
+        if (pathParts.length > 1) {
+          await supabase.storage.from("swarm_drive").remove([decodeURIComponent(pathParts[1])]);
+        }
+      } catch { /* ignore */ }
+    }
+
+    const mimeType = mimeFromExtension(args.file_name);
+    let uploadResult: { path: string; publicUrl: string; fileSizeBytes: number };
+    try {
+      uploadResult = await uploadToStorage(args.file_content_base64, args.file_name, mimeType);
+    } catch (e) {
+      return `Ошибка загрузки файла: ${e instanceof Error ? e.message : String(e)}`;
+    }
+
+    const newMeta = {
+      ...oldMeta,
+      file_url: uploadResult.publicUrl,
+      file_name: args.file_name,
+      mime_type: mimeType,
+      file_size_bytes: uploadResult.fileSizeBytes,
+    };
+    const { error: updErr } = await supabase.from("entries").update({ metadata: newMeta }).eq("id", args.id);
+    if (updErr) return `Ошибка обновления метаданных файла: ${updErr.message}`;
+
+    const sizeKb = Math.round(uploadResult.fileSizeBytes / 1024);
+    return `✅ Файл заменён: ${args.file_name} (${sizeKb} KB)\n📎 ${uploadResult.publicUrl}`;
+  }
 
   const updates: Record<string, unknown> = {};
 
