@@ -62,6 +62,48 @@ async function extractEntryMeta(text: string): Promise<{ countries: string[]; en
   } catch { return { countries: [], entry_type: "note", entry_date: null }; }
 }
 
+function mimeFromExtension(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string, string> = {
+    pdf: "application/pdf",
+    jpg: "image/jpeg", jpeg: "image/jpeg",
+    png: "image/png", gif: "image/gif", webp: "image/webp",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    txt: "text/plain", md: "text/markdown", csv: "text/csv",
+    mp3: "audio/mpeg", mp4: "video/mp4",
+  };
+  return map[ext] ?? "application/octet-stream";
+}
+
+async function uploadToStorage(
+  fileContentBase64: string,
+  fileName: string,
+  mimeType: string
+): Promise<{ path: string; publicUrl: string; fileSizeBytes: number }> {
+  const bytes = Uint8Array.from(atob(fileContentBase64), c => c.charCodeAt(0));
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const uuid = crypto.randomUUID();
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `uploads/${yyyy}/${mm}/${uuid}-${safeName}`;
+
+  const { error } = await supabase.storage
+    .from("swarm_drive")
+    .upload(path, bytes, { contentType: mimeType, upsert: false });
+
+  if (error) throw new Error(`Storage upload failed: ${error.message}`);
+
+  const { data: { publicUrl } } = supabase.storage
+    .from("swarm_drive")
+    .getPublicUrl(path);
+
+  return { path, publicUrl, fileSizeBytes: bytes.length };
+}
+
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
 const TOOLS = [
