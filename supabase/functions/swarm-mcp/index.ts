@@ -406,6 +406,48 @@ async function toolUploadFile(args: {
   return `✅ Файл загружен: ${args.file_name} (${sizeKb} KB)\n📎 ${uploadResult.publicUrl}`;
 }
 
+async function toolGetStorageStats(): Promise<string> {
+  const { data, error } = await supabase
+    .from("entries")
+    .select("entry_type, source, created_at, metadata")
+    .order("created_at", { ascending: false })
+    .limit(2000);
+
+  if (error) return `Ошибка: ${error.message}`;
+  if (!data?.length) return "База знаний пуста.";
+
+  type Row = { entry_type: string; source: string; created_at: string; metadata: Record<string, unknown> | null };
+  const rows = data as Row[];
+
+  const total = rows.length;
+  const withFiles = rows.filter(r => !!(r.metadata?.file_url)).length;
+
+  const byType: Record<string, number> = {};
+  const bySource: Record<string, number> = {};
+  for (const r of rows) {
+    byType[r.entry_type] = (byType[r.entry_type] ?? 0) + 1;
+    bySource[r.source] = (bySource[r.source] ?? 0) + 1;
+  }
+
+  const fmtMap = (m: Record<string, number>) =>
+    Object.entries(m)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(" · ");
+
+  const lastDate = new Date(rows[0].created_at).toLocaleDateString("ru-RU");
+
+  return [
+    `📊 База знаний Swarm Brain:`,
+    `  Всего записей: ${total} (из них с файлами: ${withFiles})`,
+    ``,
+    `  По типу: ${fmtMap(byType)}`,
+    `  По источнику: ${fmtMap(bySource)}`,
+    ``,
+    `  Последняя запись: ${lastDate}`,
+  ].join("\n");
+}
+
 async function toolListEntries(args: { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number }): Promise<string> {
   let query = supabase
     .from("entries")
