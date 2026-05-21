@@ -188,6 +188,7 @@ const TOOLS = [
         date_from: { type: "string", description: "Дата от в формате YYYY-MM-DD" },
         date_to: { type: "string", description: "Дата до в формате YYYY-MM-DD" },
         limit: { type: "number", description: "Количество записей (по умолчанию 20, макс 100)" },
+        has_file: { type: "boolean", description: "true — только записи с прикреплённым файлом, false — только без файла" },
       },
     },
   },
@@ -213,8 +214,33 @@ const TOOLS = [
         summary: { type: "string", description: "Новые тезисы (опционально)" },
         title: { type: "string", description: "Новый заголовок в metadata (опционально)" },
         entry_date: { type: "string", description: "Новая дата события YYYY-MM-DD (опционально)" },
+        file_content_base64: { type: "string", description: "Новый файл в base64 — заменяет текущий файл (требует file_name)" },
+        file_name: { type: "string", description: "Имя нового файла с расширением" },
       },
       required: ["id"],
+    },
+  },
+  {
+    name: "upload_file",
+    description: "Загрузить файл в хранилище Swarm Brain. Передай содержимое файла в base64. Максимальный размер ~4 MB. После загрузки создаётся запись в базе знаний с публичной ссылкой на файл.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file_name: { type: "string", description: "Имя файла с расширением, например contract.pdf" },
+        file_content_base64: { type: "string", description: "Содержимое файла, закодированное в base64" },
+        mime_type: { type: "string", description: "MIME-тип (опционально, определяется по расширению автоматически)" },
+        summary: { type: "string", description: "Описание файла / тезисы содержимого для индексации" },
+        source: { type: "string", description: "Источник (по умолчанию: file)" },
+      },
+      required: ["file_name", "file_content_base64", "summary"],
+    },
+  },
+  {
+    name: "get_storage_stats",
+    description: "Статистика базы знаний: общее количество записей, количество файлов, разбивка по типам и источникам.",
+    inputSchema: {
+      type: "object",
+      properties: {},
     },
   },
 ];
@@ -648,11 +674,15 @@ Deno.serve(async (req: Request) => {
       } else if (name === "add_knowledge") {
         result = await toolAddKnowledge(args as { content?: string; summary: string; source?: string });
       } else if (name === "list_entries") {
-        result = await toolListEntries(args as { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number });
+        result = await toolListEntries(args as { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean });
       } else if (name === "delete_entry") {
         result = await toolDeleteEntry(args as { id: string });
       } else if (name === "update_entry") {
-        result = await toolUpdateEntry(args as { id: string; content?: string; summary?: string; title?: string; entry_date?: string });
+        result = await toolUpdateEntry(args as { id: string; content?: string; summary?: string; title?: string; entry_date?: string; file_content_base64?: string; file_name?: string });
+      } else if (name === "upload_file") {
+        result = await toolUploadFile(args as { file_name: string; file_content_base64: string; mime_type?: string; summary: string; source?: string });
+      } else if (name === "get_storage_stats") {
+        result = await toolGetStorageStats();
       } else {
         return err(id, -32601, `Unknown tool: ${name}`);
       }
