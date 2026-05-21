@@ -358,6 +358,54 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
     : `Сохранено. Тезисы проиндексированы.${contentNote}`;
 }
 
+async function toolUploadFile(args: {
+  file_name: string;
+  file_content_base64: string;
+  mime_type?: string;
+  summary: string;
+  source?: string;
+}): Promise<string> {
+  const source = args.source ?? "file";
+  const mimeType = args.mime_type ?? mimeFromExtension(args.file_name);
+
+  let uploadResult: { path: string; publicUrl: string; fileSizeBytes: number };
+  try {
+    uploadResult = await uploadToStorage(args.file_content_base64, args.file_name, mimeType);
+  } catch (e) {
+    return `Ошибка загрузки файла: ${e instanceof Error ? e.message : String(e)}`;
+  }
+
+  const [embedding, entryMeta] = await Promise.all([
+    getEmbedding(args.summary.slice(0, 8000)),
+    extractEntryMeta(args.summary),
+  ]);
+
+  const { error } = await supabase.from("entries").insert({
+    content: args.summary,
+    summary: args.summary,
+    embedding,
+    added_by: "claude_desktop",
+    source,
+    metadata: {
+      file_url: uploadResult.publicUrl,
+      file_name: args.file_name,
+      mime_type: mimeType,
+      file_size_bytes: uploadResult.fileSizeBytes,
+    },
+    countries: entryMeta.countries,
+    entry_type: entryMeta.entry_type,
+    entry_date: entryMeta.entry_date,
+  });
+
+  if (error) {
+    await supabase.storage.from("swarm_drive").remove([uploadResult.path]);
+    return `Ошибка создания записи: ${error.message}`;
+  }
+
+  const sizeKb = Math.round(uploadResult.fileSizeBytes / 1024);
+  return `✅ Файл загружен: ${args.file_name} (${sizeKb} KB)\n📎 ${uploadResult.publicUrl}`;
+}
+
 async function toolListEntries(args: { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number }): Promise<string> {
   let query = supabase
     .from("entries")
