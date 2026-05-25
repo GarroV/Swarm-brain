@@ -7,6 +7,7 @@ import { handleVoice, handleDocument, handlePhoto, handleUrl, extractUrl } from 
 import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput } from "./tasks/index.ts";
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
 import { handleUsers, handleUserCallbacks, handleUserSessionInput } from "./handlers/users.ts";
+import { handleGranolaCallbacks, handleGranolaCommand, handleGranolaSessionInput } from "./handlers/granola.ts";
 import { sendAllDigests } from "./handlers/digest.ts";
 import { getHelpText } from "./handlers/help.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
@@ -42,7 +43,7 @@ Deno.serve(async (req: Request) => {
         { command: "ask", description: "Задать вопрос" },
         { command: "tasks", description: "Задачи команды" },
         { command: "addtask", description: "Добавить задачу" },
-        { command: "meetings", description: "Встречи и транскрипты" },
+        { command: "meetings", description: "Встречи на подтверждение" },
         { command: "status", description: "Состояние базы знаний" },
         { command: "digest", description: "Личный дайджест" },
         { command: "help", description: "Справка" },
@@ -97,6 +98,8 @@ Deno.serve(async (req: Request) => {
       } else if (await handleMeetingCallbacks(cb, chatId, username)) {
         // handled
       } else if (await handleUserCallbacks(cb, chatId, userId)) {
+        // handled
+      } else if (await handleGranolaCallbacks(cb, chatId, userId, username)) {
         // handled
       }
     } catch (err) {
@@ -158,6 +161,8 @@ Deno.serve(async (req: Request) => {
         // user session handled
       } else if (action && await handleTaskSessionInput(chatId, userId, action, text, session?.context ?? undefined)) {
         // task session handled
+      } else if (action && await handleGranolaSessionInput(chatId, userId, action, text)) {
+        // granola session handled
       } else {
         if (text.length >= 3) await handleAsk(chatId, text);
       }
@@ -185,7 +190,10 @@ Deno.serve(async (req: Request) => {
           { command: "ask", description: "Задать вопрос" },
           { command: "tasks", description: "Задачи команды" },
           { command: "addtask", description: "Добавить задачу" },
-          { command: "meetings", description: "Список встреч" },
+          { command: "meetings", description: "Встречи на подтверждение" },
+          { command: "granola", description: "Импорт заметок из Granola" },
+          { command: "connect", description: "Подключить интеграцию (granola)" },
+          { command: "disconnect", description: "Отключить интеграцию" },
           { command: "users", description: "Управление командой" },
           { command: "status", description: "Состояние базы знаний" },
           { command: "help", description: "Справка" },
@@ -208,52 +216,106 @@ Deno.serve(async (req: Request) => {
       const { data: meetings } = await supabase
         .from("entries")
         .select("id, metadata, created_at, source")
-        .or("source.in.(read_ai,voice),entry_type.in.(transcript,meeting)")
+        .in("source", ["read_ai", "granola"])
+        .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false")
         .order("created_at", { ascending: false })
-        .limit(30);
+        .limit(20);
       if (!meetings?.length) {
-        await sendMessage(chatId, "Встреч пока нет.");
+        await sendMessage(chatId, "✅ Все встречи подтверждены, новых нет.");
       } else {
-        await sendMessage(chatId, `<b>📋 Встречи (${meetings.length})</b>`);
+        await sendMessage(chatId, `<b>📋 Встречи — ожидают проверки (${meetings.length})</b>\nОткрой каждую, проверь тезисы и подтверди:`);
         for (const m of (meetings as Array<{ id: string; metadata: Record<string, unknown>; created_at: string; source: string }>)) {
           const title = (m.metadata?.title as string) ?? "Без названия";
-          const entryDate = m.metadata?.entry_date as string | undefined;
-          const dateStr = entryDate
-            ? new Date(`${entryDate}T12:00:00`).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" })
-            : new Date(m.created_at).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
-          const unconfirmed = m.metadata?.confirmed === false ? " ⏳" : "";
-          const src = m.source === "read_ai" ? "📹" : m.source === "voice" ? "🎙" : "📄";
-          await sendInlineMessage(chatId, `${src} <b>${title}</b>${unconfirmed}\n📅 ${dateStr}`, [[
-            { text: "🔍 Детали", callback_data: `mr_${m.id}` },
-            { text: "📤 Файл", callback_data: `mexp_${m.id}` },
+          const entryDate = (m.metadata?.entry_date as string) ?? m.created_at.split("T")[0];
+          const dateStr = new Date(`${entryDate}T12:00:00`).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+          const src = m.source === "granola" ? "📓" : "📹";
+          await sendInlineMessage(chatId, `${src} <b>${title}</b>\n📅 ${dateStr}`, [[
+            { text: "🔍 Тезисы", callback_data: `mr_${m.id}` },
             { text: "🗑", callback_data: `md_${m.id}` },
           ]]);
         }
       }
+    } else if (command === "/granola") {
+      await handleGranolaCommand(chatId, userId);
+    } else if (command === "/connect") {
+      const [service, apiKey] = argText.trim().split(/\s+/);
+      if (!service || !apiKey) {
+        await sendMessage(chatId, "Использование: <code>/connect granola ВАШ_КЛЮЧ</code>");
+      } else if (service.toLowerCase() !== "granola") {
+        await sendMessage(chatId, `Неизвестный сервис: <code>${service}</code>. Доступно: granola`);
+      } else {
+        await sendMessage(chatId, "Проверяю ключ...");
+        const testRes = await fetch("https://public-api.granola.ai/v1/notes?limit=1", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        if (!testRes.ok) {
+          await sendMessage(chatId, "❌ Ключ не подошёл. Проверь правильность и попробуй снова.");
+        } else {
+          await supabase.from("user_integrations").upsert(
+            { telegram_id: userId, service: "granola", api_key: apiKey, last_polled_at: new Date().toISOString() },
+            { onConflict: "telegram_id,service" }
+          );
+          await sendMessage(chatId, "✅ <b>Granola подключена!</b>\n\nТеперь новые встречи будут прилетать автоматически раз в час.\nИли используй /granola для ручного импорта.");
+        }
+      }
+    } else if (command === "/disconnect") {
+      const service = argText.trim().toLowerCase();
+      if (!service) {
+        await sendMessage(chatId, "Использование: <code>/disconnect granola</code>");
+      } else {
+        const { error } = await supabase.from("user_integrations")
+          .delete().eq("telegram_id", userId).eq("service", service);
+        if (error) {
+          await sendMessage(chatId, `Ошибка: ${error.message}`);
+        } else {
+          await sendMessage(chatId, `✅ <b>${service}</b> отключена.`);
+        }
+      }
     } else if (command === "/status") {
-      const { data: lastMeeting } = await supabase
-        .from("entries").select("metadata, created_at").eq("source", "read_ai")
-        .order("created_at", { ascending: false }).limit(1).maybeSingle();
-      const { count: totalMeetings } = await supabase
-        .from("entries").select("*", { count: "exact", head: true }).eq("source", "read_ai");
-      const { count: pendingTasks } = await supabase
-        .from("tasks").select("*", { count: "exact", head: true }).eq("status", "pending");
-      const { count: openTasks } = await supabase
-        .from("tasks").select("*", { count: "exact", head: true }).eq("status", "open");
+      const [
+        { count: totalMeetings },
+        { data: unconfirmed },
+        { data: lastMeeting },
+        { count: openTasks },
+        { count: overdueTasks },
+      ] = await Promise.all([
+        supabase.from("entries").select("*", { count: "exact", head: true }).in("source", ["read_ai", "granola"]),
+        supabase.from("entries").select("id, metadata, created_at").eq("source", "read_ai").eq("metadata->>confirmed", "false").order("created_at", { ascending: false }),
+        supabase.from("entries").select("metadata, created_at, source").in("source", ["read_ai", "granola"]).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("status", "open"),
+        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("status", "open").lt("due_date", new Date().toISOString().split("T")[0]),
+      ]);
 
       let statusMsg = `<b>📊 Статус Swarm Brain</b>\n\n`;
-      statusMsg += `🎙 Встреч в базе: <b>${totalMeetings ?? 0}</b>\n`;
-      if (lastMeeting) {
-        const lastDate = new Date(lastMeeting.created_at);
-        const hoursAgo = Math.round((Date.now() - lastDate.getTime()) / 3_600_000);
-        const title = (lastMeeting.metadata?.title as string) ?? "Без названия";
-        const freshness = hoursAgo < 24 ? `${hoursAgo} ч назад ✅` : hoursAgo < 72 ? `${Math.round(hoursAgo / 24)} дн назад ⚠️` : `${Math.round(hoursAgo / 24)} дн назад ❌`;
-        statusMsg += `📅 Последняя: <b>${title}</b> — ${freshness}\n`;
+
+      statusMsg += `<b>🎙 Встречи</b>\n`;
+      statusMsg += `Всего в базе: <b>${totalMeetings ?? 0}</b>\n`;
+
+      const unconfirmedList = (unconfirmed ?? []) as Array<{ id: string; metadata: Record<string, unknown>; created_at: string }>;
+      if (unconfirmedList.length > 0) {
+        statusMsg += `⏳ Ожидают подтверждения: <b>${unconfirmedList.length}</b>\n`;
+        for (const m of unconfirmedList.slice(0, 3)) {
+          const title = (m.metadata?.title as string) ?? "Без названия";
+          const date = new Date(m.created_at).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+          statusMsg += `  • ${title} (${date})\n`;
+        }
+        if (unconfirmedList.length > 3) statusMsg += `  и ещё ${unconfirmedList.length - 3}...\n`;
       } else {
-        statusMsg += `📅 Последняя встреча: <b>не найдена</b> ❌\n`;
+        statusMsg += `✅ Все встречи подтверждены\n`;
       }
-      statusMsg += `\n⏳ Задач на подтверждении: <b>${pendingTasks ?? 0}</b>`;
-      statusMsg += `\n✅ Активных задач: <b>${openTasks ?? 0}</b>`;
+
+      if (lastMeeting) {
+        const hoursAgo = Math.round((Date.now() - new Date((lastMeeting as { created_at: string }).created_at).getTime()) / 3_600_000);
+        const title = ((lastMeeting as { metadata: Record<string, unknown> }).metadata?.title as string) ?? "Без названия";
+        const src = (lastMeeting as { source: string }).source === "granola" ? "Granola" : "Read.ai";
+        const freshness = hoursAgo < 24 ? `${hoursAgo} ч назад` : `${Math.round(hoursAgo / 24)} дн назад`;
+        statusMsg += `Последняя: <b>${title}</b> · ${src} · ${freshness}\n`;
+      }
+
+      statusMsg += `\n<b>✅ Задачи</b>\n`;
+      statusMsg += `Открытых: <b>${openTasks ?? 0}</b>`;
+      if ((overdueTasks ?? 0) > 0) statusMsg += `  ⚠️ Просрочено: <b>${overdueTasks}</b>`;
+
       await sendMessage(chatId, statusMsg);
     } else {
       await sendMessage(chatId, `Неизвестная команда: <code>${command}</code>\n\nИспользуй /help для списка команд.`);

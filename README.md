@@ -25,6 +25,14 @@
 - Просмотр встреч через `/meetings` с кнопками: детали, выгрузить файл, удалить
 - Теги/страны и участники привязываются к встрече через inline-кнопки
 
+### Встречи (Granola)
+- Каждый участник подключает **свой** аккаунт Granola — интеграция полностью изолирована по пользователю
+- Подключение: **Granola → Settings → API Key** → скопировать и отправить `/connect granola <ключ>` в Telegram-боте
+- Отключение: `/disconnect granola`
+- Автоматический поллинг раз в час: бот находит новые заметки и присылает уведомление с кнопками **✅ В базу / 🗑 Пропустить**
+- Ручной импорт через `/granola` — выбор периода: Сегодня / 7 дней / 30 дней / Свой период
+- При сохранении: GPT генерирует тезисы из транскрипта, оригинал + саммари попадают в базу знаний с тегом `granola`
+
 ### Задачи
 - Просмотр задач с фильтрами по исполнителю, тегу/стране, сроку
 - Смена статуса через inline-кнопки (open → in_progress → done / cancelled)
@@ -59,7 +67,7 @@
 | Хранилище файлов | Supabase Storage (bucket: swarm_drive) |
 | AI | OpenAI GPT-4o, Whisper, text-embedding-3-small |
 | Интерфейс | Telegram Bot API |
-| Митинги | Read.ai (OAuth2 + webhook) |
+| Митинги | Read.ai (OAuth2 + webhook), Granola (API key per user) |
 
 ---
 
@@ -83,8 +91,10 @@ supabase/functions/
 │       ├── tasks.ts        # Задачи
 │       ├── users.ts        # Пользователи и профили
 │       ├── digest.ts       # Персональный дайджест
+│       ├── granola.ts      # Импорт заметок из Granola
 │       └── help.ts         # Текст справки
 ├── swarm-mcp/              # MCP-сервер для Claude Desktop
+├── granola-poller/         # Hourly cron: поллинг Granola для всех подключённых пользователей
 ├── read-ai-auth/           # OAuth2 авторизация Read.ai
 └── read-ai-webhook/        # Вебхук для приёма встреч из Read.ai
 ```

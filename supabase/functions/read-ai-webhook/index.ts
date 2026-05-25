@@ -255,11 +255,14 @@ Deno.serve(async (req: Request) => {
     }
     text += `\n\nПроверьте и подтвердите:`;
 
-    await sendTelegramInline(text, [[
-      { text: "✅ Сохранить", callback_data: `mc_${entryId}` },
-      { text: "✏️ Название", callback_data: `met_${entryId}` },
-      { text: "📅 Дата", callback_data: `med_${entryId}` },
-    ]]);
+    await sendTelegramInline(text, [
+      [
+        { text: "✅ Сохранить", callback_data: `mc_${entryId}` },
+        { text: "✏️ Название", callback_data: `met_${entryId}` },
+        { text: "📅 Дата", callback_data: `med_${entryId}` },
+      ],
+      [{ text: "🗑 Удалить", callback_data: `md_${entryId}` }],
+    ]);
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

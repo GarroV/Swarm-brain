@@ -160,13 +160,21 @@ export async function handleMeetingCallbacks(
   }
   if (data.startsWith("mr_")) {
     const entryId = data.replace("mr_", "");
-    const { data: entry } = await supabase.from("entries").select("content, metadata, created_at").eq("id", entryId).maybeSingle();
+    const { data: entry } = await supabase.from("entries").select("content, summary, metadata, created_at, source").eq("id", entryId).maybeSingle();
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
 
     const title = (entry.metadata?.title as string) ?? "Встреча";
     const meetingId = entry.metadata?.meeting_id as string | undefined;
     const tags = (entry.metadata?.tags as string[] | undefined);
-    const date = new Date(entry.created_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    const confirmed = entry.metadata?.confirmed;
+    const entryDate = (entry.metadata?.entry_date as string) ?? entry.created_at.split("T")[0];
+    const dateStr = new Date(`${entryDate}T12:00:00`).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+    const src = entry.source === "granola" ? "📓 Granola" : "📹 Read.ai";
+
+    const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const summaryText = entry.summary
+      ? escHtml(entry.summary.slice(0, 2000))
+      : "<i>Тезисы не сгенерированы</i>";
 
     let tasksText = "";
     if (meetingId) {
@@ -182,24 +190,59 @@ export async function handleMeetingCallbacks(
     }
 
     const tagsLine = tags?.length ? `\n🏷 ${tags.join(", ")}` : "";
-    const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const contentPreview = escHtml((entry.content ?? "").split("Стенограмма:")[0].trim().slice(0, 1200));
+    const header = `<b>${title}</b>\n${src} · <i>${dateStr}</i>${tagsLine}`;
 
     const keyboard: Array<Array<{ text: string; callback_data: string }>> = [];
-    keyboard.push([{ text: "✏️ Переименовать", callback_data: `mrename_${entryId}` }]);
+    keyboard.push([
+      { text: "✅ Подтвердить", callback_data: `mc_${entryId}` },
+      { text: "✏️ Тезисы", callback_data: `medit_${entryId}` },
+    ]);
+    keyboard.push([
+      { text: "✏️ Название", callback_data: `mrename_${entryId}` },
+      { text: "📄 Транскрипт", callback_data: `mtr_${entryId}` },
+    ]);
     if (meetingId) {
       keyboard.push([
         { text: "🌍 Теги/страны", callback_data: `mtag_${meetingId}` },
         { text: "👤 Участники", callback_data: `massign_${meetingId}` },
       ]);
     }
-    keyboard.push([{ text: "🗑 Удалить встречу и все задачи", callback_data: `md_${entryId}` }]);
+    keyboard.push([{ text: "🗑 Удалить", callback_data: `md_${entryId}` }]);
 
-    await sendInlineMessage(
-      chatId,
-      `<b>📋 ${title}</b>\n<i>${date}</i>${tagsLine}\n\n${contentPreview}${tasksText}`,
-      keyboard
-    );
+    await sendInlineMessage(chatId, `${header}\n\n${summaryText}${tasksText}`, keyboard);
+    return true;
+  }
+  if (data.startsWith("mtr_")) {
+    const entryId = data.replace("mtr_", "");
+    const { data: entry } = await supabase.from("entries").select("content, metadata").eq("id", entryId).maybeSingle();
+    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
+
+    const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const transcript = (entry.content as string ?? "").split("Стенограмма:")[1]?.trim()
+      ?? (entry.content as string ?? "").trim();
+
+    if (!transcript) {
+      await sendMessage(chatId, "Транскрипт недоступен.");
+      return true;
+    }
+
+    const title = (entry.metadata?.title as string) ?? "Встреча";
+    const chunks = transcript.match(/.{1,3800}/gs) ?? [];
+    await sendMessage(chatId, `<b>📄 Транскрипт: ${title}</b>`);
+    for (const chunk of chunks.slice(0, 5)) {
+      await sendMessage(chatId, escHtml(chunk));
+    }
+    if (chunks.length > 5) {
+      await sendMessage(chatId, `<i>Транскрипт обрезан (показано ~19 000 символов из ${transcript.length})</i>`);
+    }
+    return true;
+  }
+  if (data.startsWith("medit_")) {
+    const entryId = data.replace("medit_", "");
+    const { data: entry } = await supabase.from("entries").select("summary").eq("id", entryId).maybeSingle();
+    await setSession(chatId, `meeting_edit_summary_${entryId}`);
+    const current = entry?.summary ? `\n\nТекущие тезисы:\n${entry.summary.slice(0, 1000)}` : "";
+    await sendMessage(chatId, `Введи новые тезисы для встречи.${current}\n\n<i>Отправь отредактированный текст:</i>`);
     return true;
   }
   if (data.startsWith("mrename_")) {
@@ -342,6 +385,17 @@ export async function handleMeetingSessionInput(
         });
       }
     }
+    return true;
+  }
+  if (action.startsWith("meeting_edit_summary_")) {
+    await clearSession(chatId);
+    const entryId = action.replace("meeting_edit_summary_", "");
+    const newSummary = text.trim();
+    const { error } = await supabase.from("entries").update({ summary: newSummary }).eq("id", entryId);
+    if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return true; }
+    await sendMessage(chatId, `✅ Тезисы обновлены.`, {
+      inline_keyboard: [[{ text: "✅ Подтвердить встречу", callback_data: `mc_${entryId}` }]],
+    });
     return true;
   }
   if (action.startsWith("meeting_rename_")) {
