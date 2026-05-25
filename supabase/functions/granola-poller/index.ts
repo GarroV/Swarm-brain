@@ -86,6 +86,7 @@ async function pollUser(integration: Integration): Promise<number> {
 
     await sendTelegram(integration.telegram_id, text, [[
       { text: "✅ В базу", callback_data: `gc_${note.id}` },
+      { text: "🔒 В личное", callback_data: `gcp_${note.id}` },
       { text: "🗑 Пропустить", callback_data: `gd_${note.id}` },
     ]]);
   }
