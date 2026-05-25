@@ -62,6 +62,10 @@ async function extractEntryMeta(text: string): Promise<{ countries: string[]; en
   } catch { return { countries: [], entry_type: "note", entry_date: null }; }
 }
 
+function visibilityFilter(userId: number): string {
+  return `is_private.eq.false,and(is_private.eq.true,owner_id.eq.${userId})`;
+}
+
 function mimeFromExtension(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
   const map: Record<string, string> = {
@@ -115,6 +119,7 @@ const TOOLS = [
       properties: {
         query: { type: "string", description: "Поисковый запрос" },
         limit: { type: "number", description: "Количество результатов (по умолчанию 5, макс 20)" },
+        requesting_user_id: { type: "number", description: "Your Telegram user ID — include to see your private entries in results" },
       },
       required: ["query"],
     },
@@ -160,6 +165,7 @@ const TOOLS = [
       type: "object",
       properties: {
         id: { type: "string", description: "ID записи из результатов search_knowledge" },
+        requesting_user_id: { type: "number", description: "Your Telegram user ID — required to access your private entries" },
       },
       required: ["id"],
     },
@@ -173,6 +179,8 @@ const TOOLS = [
         content: { type: "string", description: "Полный оригинальный текст целиком — обязательно передавай весь, без сокращений" },
         summary: { type: "string", description: "Детальные тезисы — согласованные с пользователем ключевые пункты" },
         source: { type: "string", description: "Источник (название файла, тип контента)" },
+        is_private: { type: "boolean", description: "Set true to save in personal private storage, invisible to other users" },
+        owner_telegram_id: { type: "number", description: "Your Telegram user ID — required when is_private is true" },
       },
       required: ["summary"],
     },
@@ -189,6 +197,7 @@ const TOOLS = [
         date_to: { type: "string", description: "Дата до в формате YYYY-MM-DD" },
         limit: { type: "number", description: "Количество записей (по умолчанию 20, макс 100)" },
         has_file: { type: "boolean", description: "true — только записи с прикреплённым файлом, false — только без файла" },
+        requesting_user_id: { type: "number", description: "Your Telegram user ID — include to see your private entries in results" },
       },
     },
   },
@@ -247,12 +256,13 @@ const TOOLS = [
 
 // ── Tool implementations ──────────────────────────────────────────────────────
 
-async function toolSearchKnowledge(args: { query: string; limit?: number }): Promise<string> {
+async function toolSearchKnowledge(args: { query: string; limit?: number; requesting_user_id?: number }): Promise<string> {
   const embedding = await getEmbedding(args.query);
   const { data, error } = await supabase.rpc("match_entries", {
     query_embedding: `[${embedding.join(",")}]`,
     match_threshold: 0.35,
     match_count: Math.min(args.limit ?? 5, 20),
+    requesting_user_id: args.requesting_user_id ?? null,
   });
   if (error) return `Ошибка: ${error.message}`;
   if (!data?.length) return "Ничего не найдено по запросу.";
@@ -311,19 +321,25 @@ async function toolGetUsers(args: { market?: string }): Promise<string> {
   }).join("\n\n");
 }
 
-async function toolGetEntry(args: { id: string }): Promise<string> {
+async function toolGetEntry(args: { id: string; requesting_user_id?: number }): Promise<string> {
   const { data, error } = await supabase
     .from("entries")
-    .select("content, source, created_at")
+    .select("content, source, created_at, is_private, owner_id")
     .eq("id", args.id)
     .maybeSingle();
   if (error) return `Ошибка: ${error.message}`;
   if (!data) return "Запись не найдена.";
-  const date = new Date(data.created_at).toLocaleDateString("ru-RU");
-  return `(${data.source} · ${date})\n\n${data.content}`;
+
+  const row = data as { content: string; source: string; created_at: string; is_private: boolean; owner_id: number | null };
+  if (row.is_private && row.owner_id !== (args.requesting_user_id ?? null)) {
+    return "Запись не найдена.";
+  }
+
+  const date = new Date(row.created_at).toLocaleDateString("ru-RU");
+  return `(${row.source} · ${date})\n\n${row.content}`;
 }
 
-async function toolAddKnowledge(args: { content?: string; summary: string; source?: string }): Promise<string> {
+async function toolAddKnowledge(args: { content?: string; summary: string; source?: string; is_private?: boolean; owner_telegram_id?: number }): Promise<string> {
   const CHUNK = 3000, OVERLAP = 200;
   const source = args.source ?? "claude";
   const rawContent = args.content?.trim() || args.summary;
@@ -340,6 +356,9 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
 
   // Extract metadata + embed summary in parallel
   const groupId = chunks.length > 1 ? crypto.randomUUID() : null;
+  const isPrivate = args.is_private === true;
+  const ownerId = isPrivate ? (args.owner_telegram_id ?? null) : null;
+  if (isPrivate && !ownerId) return "Ошибка: для личного хранилища необходимо передать owner_telegram_id.";
   const [summaryEmbedding, entryMeta] = await Promise.all([
     getEmbedding(args.summary.slice(0, 8000)),
     extractEntryMeta(args.summary),
@@ -357,6 +376,8 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
     entry_type: entryMeta.entry_type,
     entry_date: entryMeta.entry_date,
     group_id: groupId,
+    is_private: isPrivate,
+    owner_id: ownerId,
   });
 
   // Remaining chunks: content only, same group_id
@@ -374,14 +395,15 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
         entry_type: entryMeta.entry_type,
         entry_date: entryMeta.entry_date,
         group_id: groupId,
+        is_private: isPrivate,
+        owner_id: ownerId,
       })
     ));
   }
 
   const contentNote = !args.content?.trim() ? " (оригинал не передан)" : "";
-  return chunks.length > 1
-    ? `Сохранено: ${rawContent.length} символов (${chunks.length} частей). Тезисы проиндексированы.${contentNote}`
-    : `Сохранено. Тезисы проиндексированы.${contentNote}`;
+  const dest = isPrivate ? "личное хранилище" : "базу знаний";
+  return `✅ Добавлено в ${dest} (${chunks.length} ${chunks.length === 1 ? "часть" : "части/частей"}).${contentNote}`;
 }
 
 async function toolUploadFile(args: {
@@ -474,10 +496,11 @@ async function toolGetStorageStats(): Promise<string> {
   ].join("\n");
 }
 
-async function toolListEntries(args: { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean }): Promise<string> {
+async function toolListEntries(args: { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean; requesting_user_id?: number }): Promise<string> {
   let query = supabase
     .from("entries")
     .select("id, source, entry_type, entry_date, created_at, summary, metadata")
+    .or(args.requesting_user_id ? visibilityFilter(args.requesting_user_id) : "is_private.eq.false")
     .order("created_at", { ascending: false })
     .limit(Math.min(args.limit ?? 20, 100));
 
@@ -656,7 +679,7 @@ Deno.serve(async (req: Request) => {
       let result = "";
 
       if (name === "search_knowledge") {
-        result = await toolSearchKnowledge(args as { query: string; limit?: number });
+        result = await toolSearchKnowledge(args as { query: string; limit?: number; requesting_user_id?: number });
       } else if (name === "get_tasks") {
         result = await toolGetTasksMcp(args as { assignee?: string; country?: string; status?: string; period?: string });
       } else if (name === "add_task") {
@@ -670,11 +693,11 @@ Deno.serve(async (req: Request) => {
       } else if (name === "get_users") {
         result = await toolGetUsers(args as { market?: string });
       } else if (name === "get_entry") {
-        result = await toolGetEntry(args as { id: string });
+        result = await toolGetEntry(args as { id: string; requesting_user_id?: number });
       } else if (name === "add_knowledge") {
-        result = await toolAddKnowledge(args as { content?: string; summary: string; source?: string });
+        result = await toolAddKnowledge(args as { content?: string; summary: string; source?: string; is_private?: boolean; owner_telegram_id?: number });
       } else if (name === "list_entries") {
-        result = await toolListEntries(args as { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean });
+        result = await toolListEntries(args as { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean; requesting_user_id?: number });
       } else if (name === "delete_entry") {
         result = await toolDeleteEntry(args as { id: string });
       } else if (name === "update_entry") {
