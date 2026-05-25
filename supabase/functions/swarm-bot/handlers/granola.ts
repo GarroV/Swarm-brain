@@ -108,7 +108,7 @@ async function markSkipped(telegramId: number, noteId: string): Promise<void> {
     .eq("telegram_id", telegramId).eq("service", "granola");
 }
 
-async function saveGranolaNote(noteId: string, telegramId: number, username: string, chatId: number): Promise<void> {
+async function saveGranolaNote(noteId: string, telegramId: number, username: string, chatId: number, isPrivate = false): Promise<void> {
   await sendMessage(chatId, "Сохраняю в базу знаний...");
 
   const apiKey = await getUserApiKey(telegramId);
@@ -158,6 +158,8 @@ async function saveGranolaNote(noteId: string, telegramId: number, username: str
       confirmed: false,
       added_by_telegram_id: telegramId,
     },
+    is_private: isPrivate,
+    owner_id: isPrivate ? telegramId : null,
   });
 
   if (error) {
@@ -165,7 +167,8 @@ async function saveGranolaNote(noteId: string, telegramId: number, username: str
     return;
   }
 
-  await sendMessage(chatId, `📥 Встреча добавлена: <b>${title}</b>\n\nПроверь тезисы через /meetings`);
+  const label = isPrivate ? "🔒 Встреча добавлена в личное хранилище" : "📥 Встреча добавлена";
+  await sendMessage(chatId, `${label}: <b>${title}</b>\n\nПроверь тезисы через /meetings`);
 }
 
 async function sendNotesList(chatId: number, telegramId: number, createdAfter: string, periodLabel: string): Promise<void> {
@@ -202,6 +205,7 @@ async function sendNotesList(chatId: number, telegramId: number, createdAfter: s
     const text = `📓 <b>${title}</b>\n📅 ${date}${attendeeNames ? `\n👥 ${attendeeNames}` : ""}`;
     await sendInlineMessage(chatId, text, [[
       { text: "✅ В базу", callback_data: `gc_${note.id}` },
+      { text: "🔒 В личное", callback_data: `gcp_${note.id}` },
       { text: "🗑 Пропустить", callback_data: `gd_${note.id}` },
     ]]);
   }
@@ -255,6 +259,10 @@ export async function handleGranolaCallbacks(
   }
   if (data.startsWith("gc_")) {
     await saveGranolaNote(data.replace("gc_", ""), userId, username, chatId);
+    return true;
+  }
+  if (data.startsWith("gcp_")) {
+    await saveGranolaNote(data.replace("gcp_", ""), userId, username, chatId, true);
     return true;
   }
   if (data.startsWith("gd_")) {
