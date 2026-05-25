@@ -1,6 +1,6 @@
 import { supabase } from "../lib/supabase.ts";
 import { getEmbedding } from "../lib/openai.ts";
-import { saveEntry, generateSummary, getSession, setSession, clearSession } from "../lib/storage.ts";
+import { saveEntry, visibilityFilter, generateSummary, getSession, setSession, clearSession } from "../lib/storage.ts";
 import { sendMessage } from "../lib/telegram.ts";
 import type { KbEntry } from "../lib/types.ts";
 import { TASK_KEYWORDS, smartTaskSearch } from "../tasks/index.ts";
@@ -49,6 +49,20 @@ export const KNOWLEDGE_TOOLS = [
           entry_id: { type: "string", description: "Entry id from search results (the id: prefix value)" },
         },
         required: ["entry_id"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "save_private",
+      description: "Save text to the user's PRIVATE personal storage. Use when user says 'личное', 'только для меня', 'не шерить', 'приватно', 'в личное хранилище', or any similar intent. Private entries are invisible to other team members.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "The text content to save privately" },
+        },
+        required: ["text"],
       },
     },
   },
@@ -145,7 +159,7 @@ export const KNOWLEDGE_TOOLS_DISABLED = [
 /* === END DISABLED === */
 void KNOWLEDGE_TOOLS_DISABLED;
 
-export async function executeTool(name: string, args: Record<string, unknown>): Promise<string> {
+export async function executeTool(name: string, args: Record<string, unknown>, userId = 0): Promise<string> {
   try {
     switch (name) {
 
@@ -157,6 +171,7 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
             query_embedding: `[${emb.join(",")}]`,
             match_threshold: 0.1,
             match_count: 8,
+            requesting_user_id: userId || null,
           }).then(r => (r.data ?? []) as KbEntry[]))
           .catch(() => [] as KbEntry[]);
 
@@ -167,6 +182,7 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
         const kwPromise = searchTerms.length
           ? supabase.from("entries").select("id, content, summary, source, metadata")
               .or(searchTerms.map(w => `source.ilike.%${w}%,content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
+              .or(visibilityFilter(userId || 0))
               .limit(5).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
           : Promise.resolve([] as KbEntry[]);
 
@@ -175,6 +191,7 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
           ? supabase.from("entries").select("id, content, summary, source, metadata")
               .or(words.map(w => `metadata->>file_name.ilike.%${w}%`).join(","))
               .not("metadata->>file_url", "is", null)
+              .or(visibilityFilter(userId || 0))
               .limit(3).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
           : Promise.resolve([] as KbEntry[]);
 
@@ -215,6 +232,7 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
           query_embedding: `[${emb.join(",")}]`,
           match_threshold: 0.1,
           match_count: 20,
+          requesting_user_id: userId || null,
         });
 
         const ids = ((vecResults ?? []) as Array<{ id: string }>).map(r => r.id);
@@ -224,6 +242,7 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
         const { data: entries } = await supabase
           .from("entries")
           .select("id, content, summary, source, entry_date, created_at, metadata")
+          .or(visibilityFilter(userId || 0))
           .in("id", ids);
 
         type REntry = { id: string; metadata?: Record<string, unknown> | null; entry_date?: string | null; created_at: string; summary?: string | null; content?: string | null };
@@ -392,6 +411,15 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
         return `✅ Запись обновлена (${changed}).`;
       }
 
+      case "save_private": {
+        const text = String(args.text ?? "");
+        if (!text.trim()) return "Нечего сохранять — текст пустой.";
+        if (!userId) return "Ошибка: не удалось определить пользователя.";
+        const summary = await generateSummary(text);
+        await saveEntry(text, String(userId), "telegram", {}, summary ?? undefined, undefined, true, userId);
+        return "✅ Сохранено в личное хранилище.";
+      }
+
       default: return "Неизвестный инструмент.";
     }
   } catch (err) {
@@ -549,7 +577,7 @@ export async function handleAsk(chatId: number, question: string): Promise<void>
             }
           }
         } else {
-          result = await executeTool(tc.function.name, JSON.parse(tc.function.arguments) as Record<string, unknown>);
+          result = await executeTool(tc.function.name, JSON.parse(tc.function.arguments) as Record<string, unknown>, chatId);
         }
       } catch { result = "Ошибка выполнения инструмента."; }
       messages.push({ role: "tool", tool_call_id: tc.id, content: result });
