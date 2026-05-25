@@ -78,6 +78,17 @@ URL:  https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp
 ## Язык
 
 Всегда отвечай на русском языке, даже если источник на английском.
+
+## Личное хранилище
+
+У каждого пользователя есть личное приватное хранилище. Записи в нём видны только тебе — другие участники команды их не видят.
+
+**Как использовать:**
+- Когда я говорю "закинь в личное", "только для меня", "приватно" — сохрани в личное хранилище
+- При вызове `add_knowledge` с `is_private: true` — обязательно передавай `owner_telegram_id` (твой Telegram ID указан ниже)
+- При поиске передавай `requesting_user_id` в `search_knowledge`, `list_entries`, `get_entry` — тогда в результатах будут и твои личные записи
+
+**Мой Telegram ID:** [ВСТАВЬ СВОЙ TELEGRAM_ID ЗДЕСЬ]
 ```
 
 ## Шаг 3 — Готово
@@ -90,14 +101,14 @@ URL:  https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp
 
 | Инструмент | Параметры | Что делает |
 |---|---|---|
-| `add_knowledge` | `content`, `summary`, `source` | Добавить текст + тезисы в базу |
+| `add_knowledge` | `content`, `summary`, `source`, `is_private`, `owner_telegram_id` | Добавить текст в базу (или личное хранилище) |
 | `upload_file` | `file_name`, `file_content_base64`, `summary`, `source` | Загрузить файл в Storage + создать запись |
-| `search_knowledge` | `query`, `limit` | Найти информацию по запросу |
-| `get_entry` | `id` | Полный текст записи по ID |
+| `search_knowledge` | `query`, `limit`, `requesting_user_id` | Найти информацию (включая личные записи) |
+| `get_entry` | `id`, `requesting_user_id` | Полный текст записи по ID |
 | `get_tasks` | `assignee`, `tag`, `status`, `period` | Задачи команды с фильтрами |
 | `get_meetings` | `limit` | Последние встречи из Read.ai |
 | `get_users` | `market` | Список команды с профилями |
 | `get_storage_stats` | — | Статистика базы: записей, файлов, по типам |
-| `list_entries` | `source`, `entry_type`, `date_from`, `date_to`, `limit`, `has_file` | Список записей для ревизии |
+| `list_entries` | `source`, `entry_type`, `date_from`, `date_to`, `limit`, `has_file`, `requesting_user_id` | Список записей для ревизии |
 | `delete_entry` | `id` | Удалить запись (и файл из Storage если есть) |
 | `update_entry` | `id`, `content`, `summary`, `title`, `entry_date`, `file_content_base64`, `file_name` | Обновить запись или заменить файл |
