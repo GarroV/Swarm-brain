@@ -3,6 +3,10 @@ import { getEmbedding, chatComplete } from "./openai.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
+export function visibilityFilter(userId: number): string {
+  return `is_private.eq.false,and(is_private.eq.true,owner_id.eq.${userId})`;
+}
+
 export async function extractEntryMeta(text: string): Promise<{ countries: string[]; entry_type: string; entry_date: string | null }> {
   try {
     const raw = await chatComplete(
@@ -22,7 +26,8 @@ export async function extractEntryMeta(text: string): Promise<{ countries: strin
   } catch { return { countries: [], entry_type: "note", entry_date: null }; }
 }
 
-export async function saveEntry(content: string, addedBy: string, source: string, metadata: Record<string, unknown> = {}, summary?: string, groupId?: string): Promise<string> {
+export async function saveEntry(content: string, addedBy: string, source: string, metadata: Record<string, unknown> = {}, summary?: string, groupId?: string, isPrivate = false, ownerId?: number): Promise<string> {
+  if (isPrivate && !ownerId) throw new Error("saveEntry: ownerId required when isPrivate=true");
   // Embed summary if provided, otherwise embed content (with multilingual keywords for non-Russian)
   let indexContent = summary ?? content;
   if (!summary) {
@@ -53,6 +58,8 @@ export async function saveEntry(content: string, addedBy: string, source: string
     // entry_type: entryMeta.entry_type,
     // entry_date: entryMeta.entry_date,
     group_id: groupId ?? null,
+    is_private: isPrivate,
+    owner_id: ownerId ?? null,
   }).select("id").single();
   if (error) throw new Error(error.message);
   return data.id as string;
