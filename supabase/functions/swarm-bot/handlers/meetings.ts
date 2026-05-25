@@ -1,7 +1,7 @@
 import { supabase } from "../lib/supabase.ts";
 import { getReadAiToken, readAiGet, READ_AI_API, READ_AI_AUTH_URL } from "../lib/readai.ts";
 import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
-import { setSession, clearSession, saveEntry } from "../lib/storage.ts";
+import { setSession, getSession, clearSession, saveEntry } from "../lib/storage.ts";
 import { chatComplete } from "../lib/openai.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
@@ -90,17 +90,44 @@ export async function handleMeetingCallback(chatId: number, username: string, me
     contentParts
   );
 
-  const entryId = await saveEntry(contentParts, username, "read_ai", { meeting_id: meetingId, title });
+  await setSession(chatId, `meeting_pending_${meetingId}`, JSON.stringify({ content: contentParts, title }));
   await sendMessage(chatId, `<b>📋 ${title}</b>\n\n${gptResult}`);
-  // DISABLED: await analyzeAndCreateTasks(contentParts, chatId, entryId);
+  await sendInlineMessage(chatId, "Сохранить встречу в базу знаний?", [[
+    { text: "💾 В базу", callback_data: `meeting_save_pub_${meetingId}` },
+    { text: "🔒 В личное", callback_data: `meeting_save_priv_${meetingId}` },
+    { text: "🗑 Не сохранять", callback_data: `meeting_discard_${meetingId}` },
+  ]]);
 }
 
 export async function handleMeetingCallbacks(
   cb: TgCallbackQuery,
   chatId: number,
-  username: string
+  userId: number,
+  username: string,
 ): Promise<boolean> {
   const data = cb.data;
+
+  if (data.startsWith("meeting_save_pub_") || data.startsWith("meeting_save_priv_")) {
+    const isPrivate = data.startsWith("meeting_save_priv_");
+    const meetingId = data.replace("meeting_save_pub_", "").replace("meeting_save_priv_", "");
+    const session = await getSession(chatId);
+    if (!session?.action.startsWith("meeting_pending_")) {
+      await sendMessage(chatId, "Данные встречи истекли. Открой встречу заново через /meetings.");
+      return true;
+    }
+    const { content, title } = JSON.parse(session.context ?? "{}") as { content: string; title: string };
+    await clearSession(chatId);
+    await saveEntry(content, username, "read_ai", { meeting_id: meetingId, title }, undefined, undefined, isPrivate, isPrivate ? userId : undefined);
+    const label = isPrivate ? "🔒 Встреча сохранена в личное хранилище" : "💾 Встреча сохранена в базу знаний";
+    await sendMessage(chatId, `${label}: <b>${title}</b>`);
+    return true;
+  }
+
+  if (data.startsWith("meeting_discard_")) {
+    await clearSession(chatId);
+    await sendMessage(chatId, "Встреча не сохранена.");
+    return true;
+  }
 
   if (data.startsWith("meeting_")) {
     await handleMeetingCallback(chatId, username, data.replace("meeting_", ""));

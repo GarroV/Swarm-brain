@@ -95,7 +95,7 @@ Deno.serve(async (req: Request) => {
     try {
       if (await handleTaskCallbacks(cb, chatId, userId, username)) {
         // handled
-      } else if (await handleMeetingCallbacks(cb, chatId, username)) {
+      } else if (await handleMeetingCallbacks(cb, chatId, userId, username)) {
         // handled
       } else if (await handleUserCallbacks(cb, chatId, userId)) {
         // handled
