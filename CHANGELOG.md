@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-05-25 — Личное хранилище (Private Space)
+
+- Добавлены поля `is_private` / `owner_id` в таблицу `entries`
+- `match_entries` RPC обновлена: принимает `requesting_user_id`, возвращает только доступные записи
+- `saveEntry()` поддерживает `isPrivate` / `ownerId` параметры
+- `visibilityFilter()` — единый хелпер фильтрации, используется во всех запросах
+- Telegram-бот: кнопка "🔒 В личное" при сохранении встреч Granola и Read.ai
+- Telegram-бот: `save_private` tool — GPT сохраняет в личное по намерению пользователя
+- MCP: `add_knowledge` поддерживает `is_private` + `owner_telegram_id`
+- MCP: `search_knowledge`, `list_entries`, `get_entry` принимают `requesting_user_id` для видимости личных записей
+- Claude Desktop инструкции обновлены: добавлен раздел про личное хранилище
+
 ## 2026-05-25
 
 ### Granola: кнопка сохранения в личное пространство
