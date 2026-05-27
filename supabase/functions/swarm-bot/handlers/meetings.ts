@@ -241,10 +241,9 @@ export async function handleMeetingCallbacks(
   }
   if (data.startsWith("mtr_")) {
     const entryId = data.replace("mtr_", "");
-    const { data: entry } = await supabase.from("entries").select("content, metadata").eq("id", entryId).maybeSingle();
+    const { data: entry } = await supabase.from("entries").select("content, metadata, created_at").eq("id", entryId).maybeSingle();
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
 
-    const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const transcript = (entry.content as string ?? "").split("Стенограмма:")[1]?.trim()
       ?? (entry.content as string ?? "").trim();
 
@@ -254,14 +253,15 @@ export async function handleMeetingCallbacks(
     }
 
     const title = (entry.metadata?.title as string) ?? "Встреча";
-    const chunks = transcript.match(/.{1,3800}/gs) ?? [];
-    await sendMessage(chatId, `<b>📄 Транскрипт: ${title}</b>`);
-    for (const chunk of chunks.slice(0, 5)) {
-      await sendMessage(chatId, escHtml(chunk));
-    }
-    if (chunks.length > 5) {
-      await sendMessage(chatId, `<i>Транскрипт обрезан (показано ~19 000 символов из ${transcript.length})</i>`);
-    }
+    const safeTitle = title.replace(/[^\wа-яёА-ЯЁ\s-]/g, "").trim().replace(/\s+/g, "_");
+    const dateStr = new Date(entry.created_at as string).toISOString().slice(0, 10);
+    const filename = `${safeTitle}_${dateStr}.txt`;
+
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("document", new Blob([transcript], { type: "text/plain; charset=utf-8" }), filename);
+    form.append("caption", `📄 Транскрипт: ${title}`);
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`, { method: "POST", body: form });
     return true;
   }
   if (data.startsWith("medit_")) {
