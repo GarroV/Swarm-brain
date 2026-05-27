@@ -27,6 +27,10 @@ export async function dbListTasks(opts: {
 
   if (opts.country) q = q.ilike("country", `%${opts.country}%`);
 
+  if (opts.telegramId !== undefined) {
+    q = q.contains("assignee_telegram_ids", [opts.telegramId]);
+  }
+
   if (opts.period === "week") {
     const today = new Date().toISOString().split("T")[0];
     const end = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
@@ -36,9 +40,7 @@ export async function dbListTasks(opts: {
   const { data } = await q.limit(opts.limit ?? 200);
   let tasks = (data ?? []) as Task[];
 
-  if (opts.telegramId !== undefined) {
-    tasks = tasks.filter(t => t.assignee_telegram_id === opts.telegramId);
-  } else if (opts.assignee) {
+  if (opts.assignee) {
     const lower = opts.assignee.toLowerCase();
     tasks = tasks.filter(t => t.assignees?.some(a => a.toLowerCase().includes(lower)));
   }
@@ -51,10 +53,11 @@ export async function dbCreateTask(input: TaskInput): Promise<Task> {
     title: input.title,
     description: input.description ?? null,
     assignees: input.assignees ?? [],
-    assignee_telegram_id: input.assignee_telegram_id ?? null,
+    assignee_telegram_ids: input.assignee_telegram_ids ?? [],
     due_date: input.due_date ?? null,
     tags: input.tags ?? [],
     country: input.country ?? null,
+    task_role: input.task_role ?? null,
     source: input.source ?? "manual",
     status: input.status ?? "open",
     meeting_id: input.meeting_id ?? null,
