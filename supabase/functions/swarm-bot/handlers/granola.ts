@@ -1,7 +1,7 @@
 import { supabase } from "../lib/supabase.ts";
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
-import { setSession, clearSession } from "../lib/storage.ts";
+import { setSession, clearSession, getSession } from "../lib/storage.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
 const GRANOLA_API = "https://public-api.granola.ai/v1";
@@ -108,26 +108,42 @@ async function markSkipped(telegramId: number, noteId: string): Promise<void> {
     .eq("telegram_id", telegramId).eq("service", "granola");
 }
 
-async function saveGranolaNote(noteId: string, telegramId: number, username: string, chatId: number, isPrivate = false): Promise<void> {
+type GranolaPreviewCache = { content: string; title: string; tezises: string };
+
+async function saveGranolaNote(
+  noteId: string,
+  telegramId: number,
+  username: string,
+  chatId: number,
+  isPrivate = false,
+  cached?: GranolaPreviewCache,
+): Promise<void> {
   await sendMessage(chatId, "Сохраняю в базу знаний...");
 
-  const apiKey = await getUserApiKey(telegramId);
-  if (!apiKey) {
-    await sendMessage(chatId, "Granola не подключена. Используй /connect granola <ключ>");
-    return;
-  }
+  let title: string;
+  let content: string;
+  let tezises: string;
 
-  const note = await fetchGranolaNote(apiKey, noteId);
-  if (!note) {
-    await sendMessage(chatId, "Не удалось получить заметку из Granola.");
-    return;
-  }
+  if (cached) {
+    title = cached.title;
+    content = cached.content;
+    tezises = cached.tezises;
+  } else {
+    const apiKey = await getUserApiKey(telegramId);
+    if (!apiKey) {
+      await sendMessage(chatId, "Granola не подключена. Используй /connect granola <ключ>");
+      return;
+    }
 
-  const title = (note.title as string) || "Встреча";
-  const content = buildNoteContent(note);
+    const note = await fetchGranolaNote(apiKey, noteId);
+    if (!note) {
+      await sendMessage(chatId, "Не удалось получить заметку из Granola.");
+      return;
+    }
 
-  const [tezises, embedding] = await Promise.all([
-    chatComplete(
+    title = (note.title as string) || "Встреча";
+    content = buildNoteContent(note);
+    tezises = await chatComplete(
       "Ты помощник команды. Создай структурированные тезисы встречи строго по тексту — " +
       "не домысливай и не добавляй информацию которой нет в тексте.\n" +
       "Формат: ### Тема\n- тезис\n- тезис\n\n" +
@@ -135,14 +151,20 @@ async function saveGranolaNote(noteId: string, telegramId: number, username: str
       "'Строительство', 'Маркетинг', 'Операции', 'Региональные новости' и т.п. " +
       "Только то что реально обсуждалось. Без выдумок.",
       content.slice(0, 12000)
-    ),
+    );
+  }
+
+  const [embedding] = await Promise.all([
     getEmbedding(content.slice(0, 8000)),
   ]);
 
-  const calEvent = note.calendar_event as Record<string, unknown> | undefined;
-  const entryDate = calEvent?.scheduled_start_time
-    ? (calEvent.scheduled_start_time as string).split("T")[0]
-    : null;
+  // Extract entry_date from content if not cached (content always has it in "Дата: ..." line)
+  const entryDateMatch = content.match(/Дата: .*?(\d{2}\.\d{2}\.\d{4})/);
+  let entryDate: string | null = null;
+  if (entryDateMatch) {
+    const [dd, mm, yyyy] = entryDateMatch[1].split(".");
+    entryDate = `${yyyy}-${mm}-${dd}`;
+  }
 
   const { error } = await supabase.from("entries").insert({
     content,
@@ -154,7 +176,6 @@ async function saveGranolaNote(noteId: string, telegramId: number, username: str
       granola_note_id: noteId,
       title,
       entry_date: entryDate,
-      web_url: note.web_url,
       confirmed: false,
       added_by_telegram_id: telegramId,
     },
@@ -204,8 +225,7 @@ async function sendNotesList(chatId: number, telegramId: number, createdAfter: s
 
     const text = `📓 <b>${title}</b>\n📅 ${date}${attendeeNames ? `\n👥 ${attendeeNames}` : ""}`;
     await sendInlineMessage(chatId, text, [[
-      { text: "✅ В базу", callback_data: `gc_${note.id}` },
-      { text: "🔒 В личное", callback_data: `gcp_${note.id}` },
+      { text: "🔍 Тезисы", callback_data: `gp_${note.id}` },
       { text: "🗑 Пропустить", callback_data: `gd_${note.id}` },
     ]]);
   }
@@ -257,16 +277,63 @@ export async function handleGranolaCallbacks(
     await sendMessage(chatId, "Введи дату начала периода (например: <i>1 мая 2026</i> или <i>2026-05-01</i>):");
     return true;
   }
+  if (data.startsWith("gp_")) {
+    const noteId = data.replace("gp_", "");
+    await sendMessage(chatId, "Загружаю тезисы...");
+
+    const apiKey = await getUserApiKey(userId);
+    if (!apiKey) { await sendMessage(chatId, "Granola не подключена."); return true; }
+
+    const note = await fetchGranolaNote(apiKey, noteId);
+    if (!note) { await sendMessage(chatId, "Не удалось загрузить заметку из Granola."); return true; }
+
+    const title = (note.title as string) || "Встреча";
+    const content = buildNoteContent(note);
+    const tezises = await chatComplete(
+      "Ты помощник команды. Создай структурированные тезисы встречи строго по тексту — " +
+      "не домысливай и не добавляй информацию которой нет в тексте.\n" +
+      "Формат: ### Тема\n- тезис\n- тезис\n\n" +
+      "Темы называй широко: 'Персонал', 'IT / Технические проблемы', 'Поставки', 'Финансы / Эквайринг', " +
+      "'Строительство', 'Маркетинг', 'Операции', 'Региональные новости' и т.п. " +
+      "Только то что реально обсуждалось. Без выдумок.",
+      content.slice(0, 12000)
+    );
+
+    await setSession(chatId, `granola_preview_${noteId}`, JSON.stringify({ content, title, tezises }));
+
+    await sendMessage(chatId, `📓 <b>${title}</b>\n\n${tezises}`);
+    await sendInlineMessage(chatId, "Сохранить в базу знаний?", [[
+      { text: "✅ В базу", callback_data: `gc_${noteId}` },
+      { text: "🔒 В личное", callback_data: `gcp_${noteId}` },
+      { text: "🗑 Пропустить", callback_data: `gd_${noteId}` },
+    ]]);
+    return true;
+  }
   if (data.startsWith("gc_")) {
-    await saveGranolaNote(data.replace("gc_", ""), userId, username, chatId);
+    const noteId = data.replace("gc_", "");
+    const session = await getSession(chatId);
+    let cached: GranolaPreviewCache | undefined;
+    if (session?.action === `granola_preview_${noteId}` && session.context) {
+      cached = JSON.parse(session.context) as GranolaPreviewCache;
+      await clearSession(chatId);
+    }
+    await saveGranolaNote(noteId, userId, username, chatId, false, cached);
     return true;
   }
   if (data.startsWith("gcp_")) {
-    await saveGranolaNote(data.replace("gcp_", ""), userId, username, chatId, true);
+    const noteId = data.replace("gcp_", "");
+    const session = await getSession(chatId);
+    let cached: GranolaPreviewCache | undefined;
+    if (session?.action === `granola_preview_${noteId}` && session.context) {
+      cached = JSON.parse(session.context) as GranolaPreviewCache;
+      await clearSession(chatId);
+    }
+    await saveGranolaNote(noteId, userId, username, chatId, true, cached);
     return true;
   }
   if (data.startsWith("gd_")) {
     await markSkipped(userId, data.replace("gd_", ""));
+    await clearSession(chatId);
     await sendMessage(chatId, "🗑 Пропущено.");
     return true;
   }
