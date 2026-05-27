@@ -7,8 +7,8 @@ import { handleVoice, handleDocument, handlePhoto, handleUrl, extractUrl } from 
 import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput } from "./tasks/index.ts";
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
 import { handleUsers, handleUserCallbacks, handleUserSessionInput } from "./handlers/users.ts";
-import { handleGranolaCallbacks, handleGranolaCommand, handleGranolaSessionInput } from "./handlers/granola.ts";
-import { sendAllDigests } from "./handlers/digest.ts";
+import { handleGranolaCallbacks, handleGranolaCommand, handleGranolaSessionInput, pollGranolaForUser } from "./handlers/granola.ts";
+import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
 import { getHelpText } from "./handlers/help.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
 
@@ -210,6 +210,7 @@ Deno.serve(async (req: Request) => {
     } else if (command === "/addtask") {
       await handleAddTask(chatId);
     } else if (command === "/meetings" || text === "🎙 Встречи") {
+      await pollGranolaForUser(chatId, userId);
       const { data: meetings } = await supabase
         .from("entries")
         .select("id, metadata, created_at, source")
@@ -268,6 +269,8 @@ Deno.serve(async (req: Request) => {
           await sendMessage(chatId, `✅ <b>${service}</b> отключена.`);
         }
       }
+    } else if (command === "/digest") {
+      bgRun(generatePersonalDigest(chatId, userId), chatId);
     } else if (command === "/status") {
       const [
         { count: totalMeetings },

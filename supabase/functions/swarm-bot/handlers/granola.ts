@@ -231,6 +231,59 @@ async function sendNotesList(chatId: number, telegramId: number, createdAfter: s
   }
 }
 
+export async function pollGranolaForUser(chatId: number, telegramId: number): Promise<number> {
+  const { data: integration } = await supabase
+    .from("user_integrations")
+    .select("api_key, last_polled_at, skipped_note_ids")
+    .eq("telegram_id", telegramId)
+    .eq("service", "granola")
+    .maybeSingle();
+  if (!integration?.api_key) return 0;
+
+  // Always look back 48h — deduplication via savedIds/skippedIds prevents re-showing processed notes
+  const since = new Date(Date.now() - 48 * 3_600_000).toISOString();
+  const notes = await fetchNotesSince(integration.api_key, since);
+  if (!notes.length) return 0;
+
+  const [savedRes] = await Promise.all([
+    supabase.from("entries").select("metadata").eq("source", "granola")
+      .eq("metadata->>added_by_telegram_id", String(telegramId)),
+  ]);
+  const savedIds = new Set<string>(
+    (savedRes.data ?? [])
+      .map((e: { metadata: Record<string, unknown> }) => e.metadata?.granola_note_id as string)
+      .filter(Boolean)
+  );
+  const skippedIds = new Set<string>(integration.skipped_note_ids ?? []);
+  const newNotes = notes.filter((n) => !savedIds.has(n.id) && !skippedIds.has(n.id));
+
+  if (newNotes.length) {
+    await sendMessage(chatId, `📓 <b>Новые встречи Granola (${newNotes.length})</b>\nНайдены встречи, которых ещё нет в базе:`);
+    for (const note of newNotes) {
+      const title = note.title || "Встреча";
+      const ts = note.calendar_event?.scheduled_start_time ?? note.created_at;
+      const date = new Date(ts).toLocaleString("ru-RU", {
+        day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+      });
+      const attendeeNames = (note.attendees ?? [])
+        .map((a) => a.name || a.email || "").filter(Boolean).slice(0, 4).join(", ");
+      const text = `📓 <b>${title}</b>\n📅 ${date}${attendeeNames ? `\n👥 ${attendeeNames}` : ""}\n\nДобавить в базу знаний?`;
+      await sendInlineMessage(chatId, text, [[
+        { text: "✅ В базу", callback_data: `gc_${note.id}` },
+        { text: "🔒 В личное", callback_data: `gcp_${note.id}` },
+        { text: "🗑 Пропустить", callback_data: `gd_${note.id}` },
+      ]]);
+    }
+  }
+
+  // Update cursor so the hourly poller doesn't re-send the same notifications
+  await supabase.from("user_integrations")
+    .update({ last_polled_at: new Date().toISOString() })
+    .eq("telegram_id", telegramId).eq("service", "granola");
+
+  return newNotes.length;
+}
+
 export async function handleGranolaCommand(chatId: number, telegramId: number): Promise<void> {
   const apiKey = await getUserApiKey(telegramId);
   if (!apiKey) {

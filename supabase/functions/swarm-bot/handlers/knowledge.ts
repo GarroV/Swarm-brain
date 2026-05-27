@@ -27,12 +27,12 @@ export const KNOWLEDGE_TOOLS = [
     type: "function" as const,
     function: {
       name: "get_recent_by_country",
-      description: "Get recent knowledge base entries for a specific country as a news digest. Use for: 'последние новости по X', 'что нового по X', 'что происходит в X', 'дайджест по X', 'обнови по X'. Returns entries from the last 60 days sorted by date.",
+      description: "Get recent knowledge base entries for a specific country as a news digest. Use for: 'последние новости по X', 'что нового по X', 'что происходит в X', 'дайджест по X', 'обнови по X'. Default period: 7 days. If user specifies a period ('за месяц'=30, 'за две недели'=14, 'за квартал'=90) — parse and pass as days.",
       parameters: {
         type: "object",
         properties: {
           country: { type: "string", description: "Country name in Russian or English: Хорватия/Croatia, Болгария/Bulgaria, Сербия/Serbia, Словения/Slovenia, etc." },
-          days: { type: "number", description: "How many days back to look, default 60" },
+          days: { type: "number", description: "How many days back to look, default 7. Parse from user message: 'за месяц'=30, 'за две недели'=14, 'за квартал'=90" },
         },
         required: ["country"],
       },
@@ -223,38 +223,66 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
 
       case "get_recent_by_country": {
         const country = String(args.country ?? "");
-        const days = Math.min(Number(args.days ?? 60), 365);
+        const days = Number(args.days ?? 7);
         const since = new Date(Date.now() - days * 86400000).toISOString();
 
-        // Step 1: semantic vector search — handles morphology automatically
-        const emb = await getEmbedding(`${country} встреча новости`);
-        const { data: vecResults } = await supabase.rpc("match_entries", {
-          query_embedding: `[${emb.join(",")}]`,
-          match_threshold: 0.1,
-          match_count: 20,
-          requesting_user_id: userId || null,
+        type REntry = { id: string; metadata?: Record<string, unknown> | null; entry_date?: string | null; created_at: string; summary?: string | null; content?: string | null };
+
+        // Run vector search and direct date-filtered query in parallel
+        const [vecResults, recentDirect] = await Promise.all([
+          getEmbedding(`${country} встреча новости`).then(emb =>
+            supabase.rpc("match_entries", {
+              query_embedding: `[${emb.join(",")}]`,
+              match_threshold: 0.1,
+              match_count: 50,
+              requesting_user_id: userId || null,
+            }).then(r => (r.data ?? []) as Array<{ id: string }>)
+          ).catch(() => [] as Array<{ id: string }>),
+          // Direct query: entries from the last N days mentioning the country in title or content
+          supabase.from("entries")
+            .select("id, content, summary, source, entry_date, created_at, metadata")
+            .gte("created_at", since)
+            .or(`metadata->>title.ilike.%${country}%,content.ilike.%${country}%,summary.ilike.%${country}%`)
+            .or(visibilityFilter(userId || 0))
+            .order("created_at", { ascending: false })
+            .limit(20)
+            .then(r => (r.data ?? []) as REntry[])
+            .catch(() => [] as REntry[]),
+        ]);
+
+        const vecIds = vecResults.map(r => r.id);
+
+        // Fetch full data for vector results
+        const vecEntries: REntry[] = vecIds.length
+          ? await supabase.from("entries")
+              .select("id, content, summary, source, entry_date, created_at, metadata")
+              .or(visibilityFilter(userId || 0))
+              .in("id", vecIds)
+              .then(r => (r.data ?? []) as REntry[])
+              .catch(() => [] as REntry[])
+          : [];
+
+        // Merge: direct recent entries first, then vector results — deduplicate by id
+        const seen = new Set<string>();
+        const merged: REntry[] = [];
+        for (const e of [...recentDirect, ...vecEntries]) {
+          if (e?.id && !seen.has(e.id)) { seen.add(e.id); merged.push(e); }
+        }
+
+        if (!merged.length) return `Записей по "${country}" не найдено.`;
+
+        // Sort by date descending — for news digest recency matters more than relevance
+        merged.sort((a, b) => {
+          const da = a.entry_date ?? a.created_at.slice(0, 10);
+          const db = b.entry_date ?? b.created_at.slice(0, 10);
+          return db.localeCompare(da);
         });
 
-        const ids = ((vecResults ?? []) as Array<{ id: string }>).map(r => r.id);
-        if (!ids.length) return `Записей по "${country}" не найдено.`;
-
-        // Step 2: fetch full data for matched entries
-        const { data: entries } = await supabase
-          .from("entries")
-          .select("id, content, summary, source, entry_date, created_at, metadata")
-          .or(visibilityFilter(userId || 0))
-          .in("id", ids);
-
-        type REntry = { id: string; metadata?: Record<string, unknown> | null; entry_date?: string | null; created_at: string; summary?: string | null; content?: string | null };
-        const all = (entries ?? []) as REntry[];
-        // Preserve vector search relevance order
-        all.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
-
-        const recent = all.filter(e => e.created_at >= since);
-        const results = recent.length ? recent : all.slice(0, 5);
+        const recent = merged.filter(e => e.created_at >= since);
+        const results = recent.length ? recent : merged.slice(0, 5);
         const prefix = !recent.length ? `Свежих записей за ${days} дней нет. Последние найденные:\n\n` : "";
 
-        return prefix + results.slice(0, 6).map(e => {
+        return prefix + results.slice(0, 8).map(e => {
           const title = (e.metadata?.title as string) ?? e.content?.split("\n")[0].slice(0, 60) ?? "Запись";
           const date = e.entry_date ?? e.created_at.slice(0, 10);
           const displayText = (e.summary && e.summary.length > (e.content ?? "").length ? e.summary : e.content) ?? "";
@@ -478,6 +506,11 @@ export async function handleAsk(chatId: number, question: string): Promise<void>
         "СТРАТЕГИЯ ПОИСКА (важно):\n" +
         "1. Для 'последние новости/тезисы/что нового по X' → get_recent_by_country\n" +
         "2. Для конкретного вопроса → search_knowledge\n" +
+        "\nФОРМАТ ДАЙДЖЕСТА (для get_recent_by_country):\n" +
+        "- Напиши связный саммари по всем найденным записям — НЕ перечисляй записи поштучно\n" +
+        "- Если информация касается нескольких тем или объектов — раздели на блоки с заголовками\n" +
+        "- Если данных за период нет — скажи об этом и предложи расширить период\n" +
+        "- КРИТИЧНО: используй ТОЛЬКО даты из данных инструмента (поле 📅). НИКОГДА не используй сегодняшнюю дату как дату встречи или записи\n" +
         "3. Если инструмент вернул пустой результат или ошибку — НЕ сдавайся. " +
         "Попробуй search_knowledge с другим запросом. Если снова пусто — задай уточняющий вопрос: " +
         "например 'Не нашёл по Сербии. Уточни период или тему — покажу что есть.' " +

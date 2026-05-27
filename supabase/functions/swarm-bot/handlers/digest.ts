@@ -24,11 +24,11 @@ export async function generatePersonalDigest(
   await sendMessage(chatId, `⏳ Генерирую твой дайджест за ${periodLabel}...`);
 
   const { data: entries } = await supabase.from("entries")
-    .select("content, source, created_at")
+    .select("summary, content, source, created_at")
     .gte("created_at", since)
     .not("source", "eq", "digest")
     .order("created_at", { ascending: false })
-    .limit(200);
+    .limit(50);
 
   if (!entries?.length) {
     await sendMessage(chatId, "За указанный период нет записей.");
@@ -43,9 +43,9 @@ export async function generatePersonalDigest(
 
   const userKeywords = [...markets, role, userName].filter(Boolean).map(k => k.toLowerCase());
 
-  type EntryRow = { content: string; source: string; created_at: string };
+  type EntryRow = { summary: string | null; content: string; source: string; created_at: string };
   const relevant = (entries as EntryRow[]).filter(e => {
-    const lower = e.content.toLowerCase();
+    const lower = (e.summary ?? e.content).toLowerCase();
     const mentionsUserContext = userKeywords.some(k => lower.includes(k));
     const mentionsAnyMarket = allMarkets.some(m => lower.includes(m));
     // Include if: relevant to user personally OR general (doesn't mention any specific market)
@@ -59,7 +59,8 @@ export async function generatePersonalDigest(
 
   const entriesText = relevant.map((e: EntryRow) => {
     const date = new Date(e.created_at).toLocaleDateString("ru-RU");
-    return `[${e.source} · ${date}] ${e.content.slice(0, 600)}`;
+    const text = (e.summary ?? e.content).slice(0, 300);
+    return `[${e.source} · ${date}] ${text}`;
   }).join("\n\n---\n\n");
 
   const contextLine = [
@@ -78,7 +79,7 @@ export async function generatePersonalDigest(
     `🔥 Проблемы и блокеры\n` +
     `📋 На следующий период\n\n` +
     `Будь конкретным. Отвечай на русском.`,
-    entriesText.slice(0, 14000),
+    entriesText.slice(0, 8000),
   );
 
   const digestContent = `Дайджест за ${periodLabel} · ${userName || `ID ${userId}`}\n\n${digest}`;
