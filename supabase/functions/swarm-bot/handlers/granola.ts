@@ -181,7 +181,7 @@ async function saveGranolaNote(
       added_by_telegram_id: telegramId,
     },
     countries: entryMeta.countries,
-    entry_type: "meeting",
+    entry_type: entryMeta.entry_type,
     entry_date: entryDate,
     is_private: isPrivate,
     owner_id: isPrivate ? telegramId : null,
