@@ -21,6 +21,12 @@
 - Добавлен инструмент `list_personal` — показывает **только** личные записи пользователя (`is_private = true`)
 - Исправлено: раньше "Что в моём личном хранилище?" возвращало все видимые записи (публичные + личные)
 
+### Метаданные встреч — авто-детект стран, типа и даты
+- `saveEntry()` теперь вызывает `extractEntryMeta()` параллельно с `getEmbedding()` — все записи через бот получают `countries`, `entry_type`, `entry_date` автоматически
+- `granola.ts`: insert теперь включает `entry_type: "meeting"`, `entry_date` (из заголовка "Дата: ..."), `countries` от GPT
+- `read-ai-webhook`: insert теперь включает `entry_type: "transcript"`, `entry_date` (из `startTime`), `countries` от GPT — добавлен хелпер `extractCountries()`
+- Исправлено: встречи, сохранённые через бота или Read.ai вебхук, ранее имели `NULL` в полях `countries`/`entry_type`/`entry_date` — теперь заполняются при сохранении
+
 ### Задачи — роли и умное назначение
 - Добавлены роли пользователей: `marketing`, `bd`, `rnd` (в `user_profiles.role`)
 - Поле `task_role` в задачах — GPT проставляет при извлечении из транскрипта

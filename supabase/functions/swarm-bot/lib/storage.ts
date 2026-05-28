@@ -43,8 +43,10 @@ export async function saveEntry(content: string, addedBy: string, source: string
     }
   }
 
-  // === Stripped down: only embedding, no auto-tagging ===
-  const embedding = await getEmbedding(indexContent.slice(0, 8000));
+  const [entryMeta, embedding] = await Promise.all([
+    extractEntryMeta(content.slice(0, 4000)),
+    getEmbedding(indexContent.slice(0, 8000)),
+  ]);
 
   const { data, error } = await supabase.from("entries").insert({
     content,
@@ -53,10 +55,9 @@ export async function saveEntry(content: string, addedBy: string, source: string
     added_by: addedBy,
     source,
     metadata,
-    /* === DISABLED: countries/entry_type/entry_date auto-detection — kept for future re-enable === */
-    // countries: entryMeta.countries,
-    // entry_type: entryMeta.entry_type,
-    // entry_date: entryMeta.entry_date,
+    countries: entryMeta.countries,
+    entry_type: entryMeta.entry_type,
+    entry_date: entryMeta.entry_date,
     group_id: groupId ?? null,
     is_private: isPrivate,
     owner_id: ownerId ?? null,

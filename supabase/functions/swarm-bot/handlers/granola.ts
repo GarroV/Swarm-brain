@@ -1,7 +1,7 @@
 import { supabase } from "../lib/supabase.ts";
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
-import { setSession, clearSession, getSession } from "../lib/storage.ts";
+import { setSession, clearSession, getSession, extractEntryMeta } from "../lib/storage.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
 const GRANOLA_API = "https://public-api.granola.ai/v1";
@@ -154,10 +154,6 @@ async function saveGranolaNote(
     );
   }
 
-  const [embedding] = await Promise.all([
-    getEmbedding(content.slice(0, 8000)),
-  ]);
-
   // Extract entry_date from content if not cached (content always has it in "Дата: ..." line)
   const entryDateMatch = content.match(/Дата: .*?(\d{2}\.\d{2}\.\d{4})/);
   let entryDate: string | null = null;
@@ -165,6 +161,11 @@ async function saveGranolaNote(
     const [dd, mm, yyyy] = entryDateMatch[1].split(".");
     entryDate = `${yyyy}-${mm}-${dd}`;
   }
+
+  const [entryMeta, embedding] = await Promise.all([
+    extractEntryMeta(content.slice(0, 4000)),
+    getEmbedding(content.slice(0, 8000)),
+  ]);
 
   const { error } = await supabase.from("entries").insert({
     content,
@@ -179,6 +180,9 @@ async function saveGranolaNote(
       confirmed: false,
       added_by_telegram_id: telegramId,
     },
+    countries: entryMeta.countries,
+    entry_type: "meeting",
+    entry_date: entryDate,
     is_private: isPrivate,
     owner_id: isPrivate ? telegramId : null,
   });

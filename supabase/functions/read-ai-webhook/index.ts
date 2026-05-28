@@ -63,6 +63,18 @@ async function chatComplete(system: string, user: string, json = false): Promise
   return (data as { choices: Array<{ message: { content: string } }> }).choices[0].message.content;
 }
 
+async function extractCountries(text: string): Promise<string[]> {
+  try {
+    const raw = await chatComplete(
+      'Извлеки страны/рынки упомянутые в тексте. Верни JSON объект: {"countries":["Serbia","Bulgaria"]}. Короткие официальные названия на английском без "Republic of" и т.п. Если стран нет — {"countries":[]}.',
+      text.slice(0, 4000),
+      true
+    );
+    const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
+    return Array.isArray(parsed.countries) ? parsed.countries : [];
+  } catch { return []; }
+}
+
 async function extractAndSaveTasks(content: string, meetingId: string): Promise<number> {
   const { data: profiles } = await supabase.from("user_profiles").select("first_name, last_name, markets, role");
   type ProfileRow = { first_name?: string; last_name?: string; markets?: string[]; role?: string };
@@ -205,7 +217,7 @@ Deno.serve(async (req: Request) => {
       : fullContent.slice(0, 6000);
 
     // Generate structured tezises + extract metadata + embedding + tasks in parallel
-    const [tezises, embedding, taskCount] = await Promise.all([
+    const [tezises, embedding, taskCount, countries] = await Promise.all([
       chatComplete(
         "Ты помощник команды. Создай структурированные тезисы встречи строго по тексту стенограммы — " +
         "не домысливай и не добавляй информацию которой нет в тексте.\n" +
@@ -217,6 +229,7 @@ Deno.serve(async (req: Request) => {
       ),
       getEmbedding(fullContent),
       extractAndSaveTasks(fullContent, meetingId),
+      extractCountries(fullContent),
     ]);
 
     // Extract meeting date for display
@@ -233,6 +246,9 @@ Deno.serve(async (req: Request) => {
       added_by: "read_ai",
       source: "read_ai",
       metadata: { meeting_id: meetingId, title, duration, confirmed: false, entry_date: entryDateIso },
+      countries,
+      entry_type: "transcript",
+      entry_date: entryDateIso,
     }).select("id").single();
 
     const entryId = (savedEntry as { id: string } | null)?.id ?? meetingId;
