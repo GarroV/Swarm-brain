@@ -164,7 +164,14 @@ Deno.serve(async (req: Request) => {
       } else if (action && await handleGranolaSessionInput(chatId, userId, action, text)) {
         // granola session handled
       } else {
-        if (text.length >= 3) await handleAsk(chatId, text);
+        // Route "добавь в базу: ..." directly to handleAdd — bypass GPT entirely
+        const saveMatch = text.match(/^(добавь\s+в\s+баз[уе]|сохрани\s+в\s+баз[уе]|занеси\s+в\s+баз[уе]|добавь\s+в\s+знания)\s*:?\s*/i);
+        if (saveMatch) {
+          const content = text.slice(saveMatch[0].length).trim();
+          await handleAdd(chatId, username, content || text);
+        } else if (text.length >= 3) {
+          await handleAsk(chatId, text);
+        }
       }
       return new Response("OK", { status: 200 });
     }
