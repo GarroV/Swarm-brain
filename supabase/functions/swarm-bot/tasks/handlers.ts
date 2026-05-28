@@ -3,7 +3,7 @@ import { chatComplete } from "../lib/openai.ts";
 import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession } from "../lib/storage.ts";
 import { dbGetTask, dbListTasks, dbCreateTask, dbUpdateTask, dbDeleteTask, dbListAllOpen } from "./db.ts";
-import { getProfilesForPrompt, buildProfileMap, buildDisplayNameMap, getAllUniqueMarkets } from "./matcher.ts";
+import { getProfilesForPrompt, buildProfileMap, buildDisplayNameMap, getAllUniqueMarkets, resolveAssignees } from "./matcher.ts";
 import { sendTaskCard, sendPendingTaskCard, STATUS_LABEL, formatTaskLine } from "./formatter.ts";
 import type { Task } from "./types.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
@@ -83,23 +83,42 @@ export async function handleAddTask(chatId: number): Promise<void> {
 
 export async function analyzeAndCreateTasks(content: string, chatId: number, entryId: string): Promise<void> {
   const profiles = await getProfilesForPrompt();
-  const profileMap = buildProfileMap(profiles);
   const userList = JSON.stringify(profiles.map(p => ({
-    id: p.id, name: p.name, username: p.username, role: p.role, markets: p.markets,
+    id: p.id,
+    name: p.name,
+    aliases: p.name_aliases,
+    email: p.email,
+    role: p.role,
+    markets: p.markets,
   })));
 
   const raw = await chatComplete(
     `Ты анализируешь текст командной базы знаний. Извлеки задачи — только конкретные поручения/действия.\n` +
-    `Члены команды (JSON): ${userList || "[]"}\n` +
-    `Если в тексте упоминается страна/рынок — назначь задачу ответственному за этот рынок по полю markets.\n` +
+    `Члены команды (JSON): ${userList || "[]"}\n\n` +
+    `Роли команды:\n` +
+    `- "marketing" — задачи по маркетингу, рекламе, соцсетям\n` +
+    `- "rnd" — задачи по продукту, разработке, исследованиям\n` +
+    `- "bd" — всё остальное: операционка, бизнес-процессы, сопровождение\n\n` +
+    `Правила назначения:\n` +
+    `1. Если упоминается конкретный человек (по имени, фамилии, псевдониму, email или сокращённому имени) — запиши его id из списка в assignee_ids\n` +
+    `2. Если упоминается страна/рынок — заполни country\n` +
+    `3. Если понятна роль исполнителя — заполни task_role\n` +
+    `4. assignee_ids может содержать несколько id если задача явно для нескольких людей\n\n` +
     `Верни ТОЛЬКО JSON без markdown:\n` +
-    `{"tasks":[{"title":"Название","assignee_id":123456789,"country":"Словения или null","due_date":"YYYY-MM-DD или null","confidence":0.9}]}\n` +
-    `assignee_id — поле id из списка выше, или null если исполнитель неизвестен.\n` +
+    `{"tasks":[{"title":"Название","assignee_ids":[123456789],"task_role":"bd или null","country":"Словения или null","due_date":"YYYY-MM-DD или null","confidence":0.9}]}\n` +
+    `assignee_ids — массив полей id из списка выше, или [] если исполнитель неизвестен.\n` +
     `Создавай задачи только с confidence >= 0.7. Если задач нет — {"tasks":[]}.`,
     content.slice(0, 6000)
   );
 
-  let tasks: Array<{ title: string; assignee_id: number | null; country: string | null; due_date: string | null; confidence: number }> = [];
+  let tasks: Array<{
+    title: string;
+    assignee_ids: number[];
+    task_role: string | null;
+    country: string | null;
+    due_date: string | null;
+    confidence: number;
+  }> = [];
   try {
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     tasks = (parsed.tasks ?? []).filter((t: { confidence: number }) => t.confidence >= 0.7);
@@ -107,16 +126,12 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, ent
   if (!tasks.length) return;
 
   for (const task of tasks) {
-    const assignees: string[] = [];
-    let assignee_telegram_id: number | null = null;
-    if (task.assignee_id != null && profileMap[task.assignee_id]) {
-      assignees.push(profileMap[task.assignee_id]);
-      assignee_telegram_id = task.assignee_id;
-    }
+    const { assignees, assignee_telegram_ids } = resolveAssignees(profiles, task);
     await dbCreateTask({
       title: task.title,
       assignees,
-      assignee_telegram_id,
+      assignee_telegram_ids,
+      task_role: task.task_role ?? null,
       country: task.country ?? null,
       due_date: task.due_date ?? null,
       source: "transcript",
@@ -182,7 +197,7 @@ export async function handleTaskCallbacks(
     const telegramId = Number(rest.slice(sep + 1));
     const nameMap = await buildDisplayNameMap([telegramId]);
     const assigneeName = nameMap[telegramId] ?? String(telegramId);
-    await dbUpdateTask(taskId, { assignee_telegram_id: telegramId, assignees: [assigneeName] });
+    await dbUpdateTask(taskId, { assignee_telegram_ids: [telegramId], assignees: [assigneeName] });
     const markets = await getAllUniqueMarkets();
     const countryButtons = markets.map((m, i) => [{ text: `🌍 ${m}`, callback_data: `tac_${taskId}:${i}` }]);
     countryButtons.push([{ text: "❌ Без рынка", callback_data: `tac_${taskId}:none` }]);
@@ -295,7 +310,7 @@ export async function handleTaskCallbacks(
     const profiles = await getProfilesForPrompt();
     const profileMap = buildProfileMap(profiles);
     const name = profileMap[targetTgId] ?? `ID ${targetTgId}`;
-    await dbUpdateTask(taskId, { assignees: [name], assignee_telegram_id: targetTgId, status: "open" });
+    await dbUpdateTask(taskId, { assignees: [name], assignee_telegram_ids: [targetTgId], status: "open" });
     await sendMessage(chatId, `✅ Назначено: <b>${name}</b>`);
     return true;
   }
