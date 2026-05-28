@@ -27,7 +27,7 @@ export const KNOWLEDGE_TOOLS = [
     type: "function" as const,
     function: {
       name: "get_recent_by_country",
-      description: "Get recent knowledge base entries for a specific country as a news digest. Use for: 'последние новости по X', 'что нового по X', 'что происходит в X', 'дайджест по X', 'обнови по X'. Default period: 7 days. If user specifies a period ('за месяц'=30, 'за две недели'=14, 'за квартал'=90) — parse and pass as days.",
+      description: "Get recent knowledge base entries for a specific country as a news digest. Use for: 'последние новости по X', 'что нового по X', 'что происходит в X', 'дайджест по X', 'обнови по X', 'последняя встреча по X', 'что было на встрече в X', 'что последнее по X'. Default period: 7 days. If user specifies a period ('за месяц'=30, 'за две недели'=14, 'за квартал'=90) — parse and pass as days.",
       parameters: {
         type: "object",
         properties: {
@@ -63,6 +63,20 @@ export const KNOWLEDGE_TOOLS = [
           text: { type: "string", description: "The text content to save privately" },
         },
         required: ["text"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "list_meetings_by_country",
+      description: "Get list of all meetings for a country, sorted by date descending. Use when user asks 'какие встречи были по X', 'список встреч по X', 'покажи встречи по X', 'какие митинги были в X'. Returns each meeting as: date, title, short summary (1 line), id.",
+      parameters: {
+        type: "object",
+        properties: {
+          country: { type: "string", description: "Country in English or Russian: Serbia/Сербия, Croatia/Хорватия, Bulgaria/Болгария, etc. Empty string = all countries." },
+        },
+        required: ["country"],
       },
     },
   },
@@ -416,25 +430,28 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const country = String(args.country ?? "").toLowerCase();
         const { data } = await supabase
           .from("entries")
-          .select("id, metadata, entry_date, created_at, countries, content")
+          .select("id, metadata, entry_date, created_at, countries, summary, content")
+          .or("entry_type.in.(transcript,meeting),source.in.(read_ai,granola,voice)")
           .order("entry_date", { ascending: false, nullsFirst: false })
           .order("created_at", { ascending: false })
-          .limit(50);
+          .limit(100);
         if (!data?.length) return "Встреч не найдено.";
-        type MRow = { id: string; metadata?: Record<string, unknown>; entry_date?: string; created_at: string; countries?: string[]; content?: string };
+        type MRow = { id: string; metadata?: Record<string, unknown>; entry_date?: string; created_at: string; countries?: string[]; summary?: string | null; content?: string };
         const filtered = country
           ? (data as MRow[]).filter(e =>
               (e.countries ?? []).some((c: string) => c.toLowerCase().includes(country) || country.includes(c.toLowerCase())) ||
               (e.content ?? "").toLowerCase().includes(country) ||
+              (e.summary ?? "").toLowerCase().includes(country) ||
               String(e.metadata?.title ?? "").toLowerCase().includes(country)
             )
           : (data as MRow[]);
-        if (!filtered.length) return `Встреч по ${country} не найдено.`;
-        return filtered.slice(0, 15).map((e, i) => {
+        if (!filtered.length) return `Встреч по "${country}" не найдено.`;
+        return filtered.slice(0, 20).map((e, i) => {
           const title = String(e.metadata?.title ?? e.content?.split("\n")[0].slice(0, 70) ?? "Встреча");
           const date = e.entry_date ?? e.created_at?.slice(0, 10) ?? "?";
-          return `${i + 1}. [${date}] ${title} — id:${e.id}`;
-        }).join("\n");
+          const preview = (e.summary ?? e.content ?? "").split("\n").find(l => l.trim().length > 20)?.slice(0, 100) ?? "";
+          return `${i + 1}. [${date}] ${title} — id:${e.id}${preview ? `\n   ${preview}` : ""}`;
+        }).join("\n\n");
       }
 
       case "update_entry": {
