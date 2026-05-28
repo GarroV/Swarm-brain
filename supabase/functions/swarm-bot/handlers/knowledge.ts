@@ -66,6 +66,20 @@ export const KNOWLEDGE_TOOLS = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "list_personal",
+      description: "List ONLY the user's own private entries. Use when user asks 'что в моём личном хранилище', 'мои личные записи', 'что я сохранял лично', 'моё личное', 'покажи личное'. Returns ONLY private entries — never public team knowledge.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "Number of entries to return, default 10" },
+        },
+        required: [],
+      },
+    },
+  },
 ];
 
 /* === DISABLED: extra knowledge tools (search_by_country, get_countries_list, get_digest, get_entries_by_country, get_recent_meetings, list_meetings_by_country, update_entry) — kept for future re-enable === */
@@ -446,6 +460,26 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const summary = await generateSummary(text);
         await saveEntry(text, String(userId), "telegram", {}, summary ?? undefined, undefined, true, userId);
         return "✅ Сохранено в личное хранилище.";
+      }
+
+      case "list_personal": {
+        if (!userId) return "Ошибка: не удалось определить пользователя.";
+        const limit = Math.min(Number(args.limit ?? 10), 20);
+        const { data, error } = await supabase
+          .from("entries")
+          .select("id, summary, source, created_at")
+          .eq("is_private", true)
+          .eq("owner_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(limit);
+        if (error) return `Ошибка: ${error.message}`;
+        if (!data?.length) return "В личном хранилище пусто.";
+        return (data as Array<{ id: string; summary: string | null; source: string | null; created_at: string }>)
+          .map((e, i) => {
+            const date = e.created_at.slice(0, 10);
+            const title = e.summary?.split("\n")[0]?.slice(0, 80) ?? e.source ?? "без названия";
+            return `${i + 1}. [id:${e.id}] ${title} (${date})`;
+          }).join("\n");
       }
 
       default: return "Неизвестный инструмент.";
