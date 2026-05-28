@@ -55,8 +55,22 @@ export const KNOWLEDGE_TOOLS = [
   {
     type: "function" as const,
     function: {
+      name: "save_shared",
+      description: "Save text to the SHARED team knowledge base. Use by default when user says 'добавь в базу', 'сохрани', 'запомни', 'добавь это', 'занеси в базу', or any similar intent WITHOUT specifying privacy. Shared entries are visible to all team members.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "The text content to save to the shared knowledge base" },
+        },
+        required: ["text"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "save_private",
-      description: "Save text to the user's PRIVATE personal storage. Use when user says 'личное', 'только для меня', 'не шерить', 'приватно', 'в личное хранилище', or any similar intent. Private entries are invisible to other team members.",
+      description: "Save text to the user's PRIVATE personal storage. Use ONLY when user explicitly says 'личное', 'только для меня', 'не шерить', 'приватно', 'в личное хранилище'. Private entries are invisible to other team members.",
       parameters: {
         type: "object",
         properties: {
@@ -468,6 +482,14 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         if (error) return `Ошибка обновления: ${error.message}`;
         const changed = Object.keys(updates).join(", ");
         return `✅ Запись обновлена (${changed}).`;
+      }
+
+      case "save_shared": {
+        const text = String(args.text ?? "");
+        if (!text.trim()) return "Нечего сохранять — текст пустой.";
+        const summary = await generateSummary(text);
+        await saveEntry(text, String(userId || "bot"), "telegram", {}, summary ?? undefined);
+        return "✅ Сохранено в общую базу знаний.";
       }
 
       case "save_private": {
