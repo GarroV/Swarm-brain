@@ -105,8 +105,10 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, ent
     `3. Если понятна роль исполнителя — заполни task_role\n` +
     `4. assignee_ids может содержать несколько id если задача явно для нескольких людей\n\n` +
     `Верни ТОЛЬКО JSON без markdown:\n` +
-    `{"tasks":[{"title":"Название","assignee_ids":[123456789],"task_role":"bd или null","country":"Словения или null","due_date":"YYYY-MM-DD или null","confidence":0.9}]}\n` +
+    `{"tasks":[{"title":"Название","assignee_ids":[123456789],"task_role":"bd","country":"Словения","due_date":"2026-06-01","confidence":0.9}]}\n` +
     `assignee_ids — массив полей id из списка выше, или [] если исполнитель неизвестен.\n` +
+    `task_role — одно из: "marketing", "bd", "rnd", или null если неизвестно.\n` +
+    `country — название страны или null. due_date — YYYY-MM-DD или null.\n` +
     `Создавай задачи только с confidence >= 0.7. Если задач нет — {"tasks":[]}.`,
     content.slice(0, 6000)
   );
@@ -125,13 +127,15 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, ent
   } catch { return; }
   if (!tasks.length) return;
 
+  const VALID_ROLES = new Set(["marketing", "bd", "rnd"]);
   for (const task of tasks) {
     const { assignees, assignee_telegram_ids } = resolveAssignees(profiles, task);
+    const task_role = VALID_ROLES.has(task.task_role ?? "") ? task.task_role : null;
     await dbCreateTask({
       title: task.title,
       assignees,
       assignee_telegram_ids,
-      task_role: task.task_role ?? null,
+      task_role,
       country: task.country ?? null,
       due_date: task.due_date ?? null,
       source: "transcript",

@@ -84,8 +84,7 @@ export function resolveAssignees(
   const matchesCountry = (p: UserProfile) =>
     country !== null && p.markets.some(m =>
       m.toLowerCase() === country ||
-      m.toLowerCase().includes(country) ||
-      country.includes(m.toLowerCase())
+      m.toLowerCase().includes(country)
     );
 
   // 2. Role + country
@@ -110,6 +109,17 @@ export function resolveAssignees(
     }
   }
 
-  // 4 & 5. General pool
+  // 4. Role only (no country)
+  if (extracted.task_role) {
+    const matched = profiles.filter(p => p.role === extracted.task_role);
+    if (matched.length) {
+      return {
+        assignees: matched.map(p => p.name),
+        assignee_telegram_ids: matched.map(p => p.id),
+      };
+    }
+  }
+
+  // 5. General pool
   return { assignees: [], assignee_telegram_ids: [] };
 }
