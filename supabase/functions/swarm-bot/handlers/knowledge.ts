@@ -568,8 +568,10 @@ export async function handleAsk(chatId: number, question: string): Promise<void>
     return;
   }
 
-  // Task queries go to the dedicated task system
-  if (TASK_KEYWORDS.test(question)) {
+  // Task queries go to the dedicated task system.
+  // Skip if message starts with save intent — TASK_KEYWORDS may fire on submitted content, not user intent.
+  const SAVE_INTENT = /^(добавь|сохрани|занеси|запомни|добавить)\b/i;
+  if (!SAVE_INTENT.test(question) && TASK_KEYWORDS.test(question)) {
     const handled = await smartTaskSearch(chatId, question);
     if (handled) return;
   }
