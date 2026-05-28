@@ -10,9 +10,10 @@ type TaskRow = {
   title: string;
   description: string | null;
   assignees: string[];
-  assignee_telegram_id: number | null;
+  assignee_telegram_ids: number[];
   due_date: string | null;
   country: string | null;
+  task_role: string | null;
   source: string;
   status: string;
   created_at: string;
@@ -21,16 +22,29 @@ type TaskRow = {
 async function matchAssignee(name: string): Promise<{ telegram_id: number; display_name: string } | null> {
   const { data } = await supabase
     .from("user_profiles")
-    .select("telegram_id, first_name, last_name, username");
+    .select("telegram_id, first_name, last_name, username, email, name_aliases");
 
   if (!data?.length) return null;
   const lower = name.toLowerCase();
-  const match = (data as Array<{ telegram_id: number; first_name?: string; last_name?: string; username?: string }>)
-    .find(p => {
-      const fullName = [p.first_name, p.last_name].filter(Boolean).join(" ").toLowerCase();
-      const uname = (p.username ?? "").toLowerCase();
-      return fullName.includes(lower) || lower.includes(fullName) || uname.includes(lower);
-    });
+  const match = (data as Array<{
+    telegram_id: number;
+    first_name?: string;
+    last_name?: string;
+    username?: string;
+    email?: string;
+    name_aliases?: string[];
+  }>).find(p => {
+    const fullName = [p.first_name, p.last_name].filter(Boolean).join(" ").toLowerCase();
+    const uname = (p.username ?? "").toLowerCase();
+    const email = (p.email ?? "").toLowerCase();
+    const aliases = (p.name_aliases ?? []).map((a: string) => a.toLowerCase());
+    return (
+      fullName.includes(lower) || lower.includes(fullName) ||
+      uname.includes(lower) ||
+      (email.length > 0 && email.includes(lower)) ||
+      aliases.some(a => a.includes(lower) || lower.includes(a))
+    );
+  });
   if (!match) return null;
   return {
     telegram_id: match.telegram_id,
@@ -44,18 +58,19 @@ export async function toolAddTask(args: {
   assignee_name?: string;
   country?: string;
   due_date?: string;
+  task_role?: string;
   source: string;
   context_id?: string;
 }): Promise<string> {
   const assignees: string[] = [];
-  let assignee_telegram_id: number | null = null;
+  let assignee_telegram_ids: number[] = [];
   let matchWarning = "";
 
   if (args.assignee_name) {
     const match = await matchAssignee(args.assignee_name);
     if (match) {
       assignees.push(match.display_name);
-      assignee_telegram_id = match.telegram_id;
+      assignee_telegram_ids = [match.telegram_id];
     } else {
       assignees.push(args.assignee_name);
       matchWarning = " ⚠️ исполнитель не найден в профилях — записан как текст";
@@ -66,9 +81,10 @@ export async function toolAddTask(args: {
     title: args.title,
     description: args.description ?? null,
     assignees,
-    assignee_telegram_id,
+    assignee_telegram_ids,
     country: args.country ?? null,
     due_date: args.due_date ?? null,
+    task_role: args.task_role ?? null,
     source: args.source,
     status: "open",
     meeting_id: args.context_id ?? null,
@@ -87,6 +103,7 @@ export async function toolUpdateTask(args: {
   country?: string;
   due_date?: string | null;
   status?: string;
+  task_role?: string;
 }): Promise<string> {
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
@@ -95,19 +112,20 @@ export async function toolUpdateTask(args: {
   if (args.country !== undefined) updates.country = args.country;
   if ("due_date" in args) updates.due_date = args.due_date ?? null;
   if (args.status !== undefined) updates.status = args.status;
+  if (args.task_role !== undefined) updates.task_role = args.task_role;
 
   if (args.assignee_name !== undefined) {
     if (!args.assignee_name) {
       updates.assignees = [];
-      updates.assignee_telegram_id = null;
+      updates.assignee_telegram_ids = [];
     } else {
       const match = await matchAssignee(args.assignee_name);
       if (match) {
         updates.assignees = [match.display_name];
-        updates.assignee_telegram_id = match.telegram_id;
+        updates.assignee_telegram_ids = [match.telegram_id];
       } else {
         updates.assignees = [args.assignee_name];
-        updates.assignee_telegram_id = null;
+        updates.assignee_telegram_ids = [];
       }
     }
   }
@@ -178,6 +196,11 @@ export const TASK_TOOL_DEFINITIONS = [
         due_date: { type: "string", description: "Дедлайн в формате YYYY-MM-DD (опционально)" },
         source: { type: "string", enum: ["transcript", "claude", "manual"], description: "Источник задачи" },
         context_id: { type: "string", description: "ID записи в базе знаний (опционально)" },
+        task_role: {
+          type: "string",
+          enum: ["marketing", "bd", "rnd"],
+          description: "Роль исполнителя: marketing — маркетинг, rnd — продукт/разработка, bd — всё остальное (операционка, бизнес)",
+        },
       },
       required: ["title", "source"],
     },
@@ -195,6 +218,11 @@ export const TASK_TOOL_DEFINITIONS = [
         country: { type: "string" },
         due_date: { type: ["string", "null"], description: "YYYY-MM-DD или null чтобы убрать" },
         status: { type: "string", enum: ["open", "in_progress", "done", "cancelled"] },
+        task_role: {
+          type: "string",
+          enum: ["marketing", "bd", "rnd"],
+          description: "Роль исполнителя: marketing — маркетинг, rnd — продукт/разработка, bd — всё остальное (операционка, бизнес)",
+        },
       },
       required: ["id"],
     },
