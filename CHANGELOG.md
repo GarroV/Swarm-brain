@@ -21,8 +21,8 @@
 - Добавлен инструмент `list_personal` — показывает **только** личные записи пользователя (`is_private = true`)
 - Исправлено: раньше "Что в моём личном хранилище?" возвращало все видимые записи (публичные + личные)
 
-### Метаданные встреч — авто-детект стран, типа и даты (ретегирование)
-- Добавлен скрипт `scripts/retag-entries.ts` — ретегирует все существующие записи с `NULL entry_type`, проставляет `countries`/`entry_type`/`entry_date` через GPT; запуск: `deno run --allow-net --allow-env scripts/retag-entries.ts`; поддерживает `DRY_RUN=1`
+### Метаданные встреч — ретегирование существующих записей
+- SQL-миграция `20260528200000_backfill_entry_metadata.sql` — проставляет `entry_type` (из `source`: read_ai→transcript, granola→meeting, voice→note) и `entry_date` (из `metadata->>'entry_date'`) для всех записей где эти поля были NULL
 - Granola: `entry_type` теперь авто-определяется через `extractEntryMeta()` вместо хардкода `"meeting"` — корректно работает для транскриптов в trial-режиме
 
 ### Метаданные встреч — авто-детект стран, типа и даты
