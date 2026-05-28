@@ -165,7 +165,8 @@ Deno.serve(async (req: Request) => {
         // granola session handled
       } else {
         // Route "добавь в базу: ..." directly to handleAdd — bypass GPT entirely
-        const saveMatch = text.match(/^(добавь\s+в\s+баз[уе]|сохрани\s+в\s+баз[уе]|занеси\s+в\s+баз[уе]|добавь\s+в\s+знания)\s*:?\s*/i);
+        // Match any verb + "в базу/знания/хранилище" in first 5 words — covers добавь/запихни/кинь/внеси/etc.
+        const saveMatch = text.match(/^(?:\S+\s+){0,4}(?:в\s+базу|в\s+знания|в\s+хранилище)\s*:?\s*/i);
         if (saveMatch) {
           const content = text.slice(saveMatch[0].length).trim();
           await handleAdd(chatId, username, content || text);
