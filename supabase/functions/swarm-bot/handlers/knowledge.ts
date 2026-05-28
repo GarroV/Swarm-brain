@@ -184,7 +184,7 @@ export const KNOWLEDGE_TOOLS_DISABLED = [
     type: "function" as const,
     function: {
       name: "update_entry",
-      description: "Update metadata of a knowledge base entry. Use when user asks to fix/change a date, title, year, or tags of a specific entry. First search to find the entry id, then call this to update it.",
+      description: "Update metadata of a knowledge base entry. Use when user asks to fix/change a date, title, year, tags, or visibility of a specific entry. Also use when user wants to move entry between personal and shared storage ('перенеси в общую', 'сделай публичным', 'убери в личное'). First search to find the entry id, then call this to update it.",
       parameters: {
         type: "object",
         properties: {
@@ -192,6 +192,7 @@ export const KNOWLEDGE_TOOLS_DISABLED = [
           entry_date: { type: "string", description: "New date in YYYY-MM-DD format, e.g. 2026-04-29" },
           title: { type: "string", description: "New title for the entry (stored in metadata.title)" },
           countries: { type: "array", items: { type: "string" }, description: "New countries list e.g. ['Serbia', 'Montenegro']" },
+          is_private: { type: "boolean", description: "true = move to personal storage (only owner sees it), false = move to shared team knowledge base" },
         },
         required: ["id"],
       },
@@ -471,15 +472,31 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
       case "update_entry": {
         const id = String(args.id ?? "");
         if (!id) return "Укажи id записи.";
-        const { data: existing } = await supabase.from("entries").select("metadata, countries, entry_date").eq("id", id).maybeSingle();
+        const { data: existing } = await supabase.from("entries").select("metadata, countries, entry_date, is_private, owner_id").eq("id", id).maybeSingle();
         if (!existing) return `Запись ${id} не найдена.`;
         const updates: Record<string, unknown> = {};
         if (args.entry_date) updates.entry_date = String(args.entry_date);
         if (args.title) updates.metadata = { ...(existing.metadata ?? {}), title: String(args.title) };
         if (args.countries) updates.countries = args.countries;
+        if (typeof args.is_private === "boolean") {
+          if (args.is_private) {
+            if (!userId) return "Ошибка: не удалось определить пользователя.";
+            updates.is_private = true;
+            updates.owner_id = userId;
+          } else {
+            if (existing.is_private && existing.owner_id && existing.owner_id !== userId) {
+              return "Нельзя перенести чужую личную запись в общую базу.";
+            }
+            updates.is_private = false;
+            updates.owner_id = null;
+          }
+        }
         if (!Object.keys(updates).length) return "Нечего обновлять — передай хотя бы одно поле.";
         const { error } = await supabase.from("entries").update(updates).eq("id", id);
         if (error) return `Ошибка обновления: ${error.message}`;
+        if (typeof args.is_private === "boolean") {
+          return args.is_private ? "✅ Запись перенесена в личное хранилище." : "✅ Запись перенесена в общую базу знаний.";
+        }
         const changed = Object.keys(updates).join(", ");
         return `✅ Запись обновлена (${changed}).`;
       }
