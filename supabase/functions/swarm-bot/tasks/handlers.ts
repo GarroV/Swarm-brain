@@ -1,6 +1,6 @@
 import { supabase, ADMIN_USER_ID } from "../lib/supabase.ts";
 import { chatComplete } from "../lib/openai.ts";
-import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
+import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession } from "../lib/storage.ts";
 import { dbGetTask, dbListTasks, dbCreateTask, dbUpdateTask, dbDeleteTask, dbListAllOpen } from "./db.ts";
 import { getProfilesForPrompt, buildProfileMap, buildDisplayNameMap, getAllUniqueMarkets, resolveAssignees } from "./matcher.ts";
@@ -20,22 +20,14 @@ export async function handleTasks(chatId: number, userId: number, filter: string
   const sub = filter.trim().toLowerCase();
 
   if (!sub) {
-    const allMine = await dbListTasks({ telegramId: userId, limit: 200, groupId });
-    const pending = allMine.filter(t => t.status === "pending");
-    const active = allMine.filter(t => !["pending", "done", "cancelled", "draft"].includes(t.status));
-
-    if (!allMine.length) {
-      await sendMessage(chatId, "У тебя нет активных задач. 🎉");
-      return;
-    }
-    if (pending.length) {
-      await sendMessage(chatId, `<b>⏳ На подтверждении: ${pending.length}</b>`);
-      for (const t of pending) await sendPendingTaskCard(chatId, t);
-    }
-    if (active.length) {
-      await sendMessage(chatId, `<b>📋 Мои задачи: ${active.length}</b>`);
-      for (const t of active.slice(0, 15)) await sendTaskCard(chatId, t);
-    }
+    // Interactive main menu — single inline message
+    await sendInlineMessage(chatId, "📋 <b>Задачи</b>", [
+      [
+        { text: "📌 Мои задачи", callback_data: "tk_mine" },
+        { text: "👥 Все задачи", callback_data: "tk_all" },
+      ],
+      [{ text: "➕ Создать задачу", callback_data: "tk_add" }],
+    ]);
     return;
   }
 
@@ -184,6 +176,93 @@ export async function smartTaskSearch(chatId: number, question: string): Promise
   return true;
 }
 
+// ── Interactive task browser helpers ─────────────────────────────────────────
+
+const STATUS_EMOJI: Record<string, string> = {
+  open: "🔵",
+  in_progress: "🟡",
+  pending: "⏳",
+  done: "✅",
+  cancelled: "❌",
+  draft: "📝",
+};
+
+const STATUS_LABEL_FULL: Record<string, string> = {
+  open: "Открыта",
+  in_progress: "В работе",
+  done: "Выполнена",
+  cancelled: "Отменена",
+  pending: "На подтверждении",
+  draft: "Черновик",
+};
+
+function truncateTitle(title: string): string {
+  return title.length > 32 ? title.slice(0, 31) + "…" : title;
+}
+
+function formatDueSuffix(dueDate: string | null): string {
+  if (!dueDate) return "";
+  const today = new Date().toISOString().split("T")[0];
+  const d = new Date(dueDate + "T12:00:00");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  if (dueDate < today) return ` · ${dd}.${mm} 🔴`;
+  return ` · ${dd}.${mm}`;
+}
+
+function buildMainMenuMessage(): { text: string; keyboard: unknown[][] } {
+  return {
+    text: "📋 <b>Задачи</b>",
+    keyboard: [
+      [
+        { text: "📌 Мои задачи", callback_data: "tk_mine" },
+        { text: "👥 Все задачи", callback_data: "tk_all" },
+      ],
+      [{ text: "➕ Создать задачу", callback_data: "tk_add" }],
+    ],
+  };
+}
+
+function buildTaskDetailMessage(task: Task): { text: string; keyboard: unknown[][] } {
+  const who = task.assignees?.length ? task.assignees.join(", ") : "—";
+  const due = task.due_date
+    ? (() => {
+        const d = new Date(task.due_date + "T12:00:00");
+        return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+      })()
+    : "—";
+  const statusLabel = STATUS_LABEL_FULL[task.status] ?? task.status;
+
+  const text =
+    `📌 <b>${task.title}</b>\n\n` +
+    `👤 ${who}\n` +
+    `📅 Дедлайн: ${due}\n` +
+    `🏷 Статус: ${statusLabel}`;
+
+  const statusRow: unknown[] = [];
+  if (task.status === "open") {
+    statusRow.push({ text: "▶️ В работу", callback_data: `tk_st_${task.id}_in_progress` });
+    statusRow.push({ text: "✅ Готово", callback_data: `tk_st_${task.id}_done` });
+  } else if (task.status === "in_progress") {
+    statusRow.push({ text: "✅ Готово", callback_data: `tk_st_${task.id}_done` });
+    statusRow.push({ text: "↩️ Открыть", callback_data: `tk_st_${task.id}_open` });
+  } else if (task.status === "done" || task.status === "cancelled") {
+    statusRow.push({ text: "↩️ Переоткрыть", callback_data: `tk_st_${task.id}_open` });
+  } else if (task.status === "pending") {
+    statusRow.push({ text: "▶️ В работу", callback_data: `tk_st_${task.id}_in_progress` });
+    statusRow.push({ text: "✅ Готово", callback_data: `tk_st_${task.id}_done` });
+  }
+
+  const keyboard: unknown[][] = [];
+  if (statusRow.length) keyboard.push(statusRow);
+  keyboard.push([
+    { text: "🗑 Удалить", callback_data: `tk_del_${task.id}` },
+    { text: "🔙 Мои задачи", callback_data: "tk_mine" },
+  ]);
+
+  return { text, keyboard };
+}
+
 // ── Callbacks ─────────────────────────────────────────────────────────────────
 
 export async function handleTaskCallbacks(
@@ -194,6 +273,183 @@ export async function handleTaskCallbacks(
   groupId: string,
 ): Promise<boolean> {
   const data = cb.data;
+
+  // ── Interactive task browser: tk_ prefix ──────────────────────────────────
+
+  // tk_menu — back to main menu
+  if (data === "tk_menu") {
+    const { text, keyboard } = buildMainMenuMessage();
+    await editInlineMessage(chatId, cb.message.message_id, text, keyboard);
+    return true;
+  }
+
+  // tk_mine — my tasks list
+  if (data === "tk_mine") {
+    const tasks = await dbListTasks({
+      telegramId: userId,
+      groupId,
+      limit: 20,
+    });
+    const active = tasks.filter(t => !["done", "cancelled", "draft"].includes(t.status));
+
+    if (!active.length) {
+      await editInlineMessage(
+        chatId,
+        cb.message.message_id,
+        "📌 У тебя нет активных задач 🎉",
+        [[{ text: "🔙 Назад", callback_data: "tk_menu" }]],
+      );
+      return true;
+    }
+
+    const taskButtons = active.map(t => [{
+      text: `${STATUS_EMOJI[t.status] ?? "🔵"} ${truncateTitle(t.title)}${formatDueSuffix(t.due_date)}`,
+      callback_data: `tk_t_${t.id}`,
+    }]);
+    taskButtons.push([{ text: "🔙 Назад", callback_data: "tk_menu" }]);
+
+    await editInlineMessage(
+      chatId,
+      cb.message.message_id,
+      `📌 <b>Мои задачи (${active.length}):</b>`,
+      taskButtons,
+    );
+    return true;
+  }
+
+  // tk_all — all tasks compact view
+  if (data === "tk_all") {
+    const tasks = await dbListAllOpen(groupId);
+
+    if (!tasks.length) {
+      await editInlineMessage(
+        chatId,
+        cb.message.message_id,
+        "📋 Открытых задач нет.",
+        [[{ text: "🔙 Назад", callback_data: "tk_menu" }]],
+      );
+      return true;
+    }
+
+    const limited = tasks.slice(0, 30);
+    const groups: Map<string, Task[]> = new Map();
+    const noAssignee: Task[] = [];
+    for (const t of limited) {
+      if (!t.assignees?.length) { noAssignee.push(t); continue; }
+      const key = t.assignees[0];
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(t);
+    }
+
+    const lines: string[] = [`👥 <b>Все задачи (${limited.length}):</b>`];
+    for (const [assignee, atasks] of groups) {
+      lines.push(`\n👤 <b>${assignee} (${atasks.length})</b>`);
+      for (const t of atasks) {
+        const due = t.due_date
+          ? (() => {
+              const d = new Date(t.due_date + "T12:00:00");
+              const today = new Date().toISOString().split("T")[0];
+              const dd = String(d.getDate()).padStart(2, "0");
+              const mm = String(d.getMonth() + 1).padStart(2, "0");
+              return t.due_date < today ? ` · ${dd}.${mm} 🔴` : ` · ${dd}.${mm}`;
+            })()
+          : "";
+        lines.push(`• ${t.title}${due}`);
+      }
+    }
+    if (noAssignee.length) {
+      lines.push(`\n❓ <b>Без исполнителя (${noAssignee.length})</b>`);
+      for (const t of noAssignee) {
+        const due = t.due_date
+          ? (() => {
+              const d = new Date(t.due_date + "T12:00:00");
+              const today = new Date().toISOString().split("T")[0];
+              const dd = String(d.getDate()).padStart(2, "0");
+              const mm = String(d.getMonth() + 1).padStart(2, "0");
+              return t.due_date < today ? ` · ${dd}.${mm} 🔴` : ` · ${dd}.${mm}`;
+            })()
+          : "";
+        lines.push(`• ${t.title}${due}`);
+      }
+    }
+
+    await editInlineMessage(
+      chatId,
+      cb.message.message_id,
+      lines.join("\n"),
+      [[{ text: "🔙 Назад", callback_data: "tk_menu" }]],
+    );
+    return true;
+  }
+
+  // tk_add — start add task flow
+  if (data === "tk_add") {
+    await setSession(chatId, "addtask_title");
+    await sendMessage(chatId, "📌 <b>Новая задача</b>\n\nНазвание задачи?");
+    return true;
+  }
+
+  // tk_t_{taskId} — task detail
+  if (data.startsWith("tk_t_") && !data.startsWith("tk_st_")) {
+    const taskId = data.replace("tk_t_", "");
+    const task = await dbGetTask(taskId);
+    if (!task) {
+      await editInlineMessage(chatId, cb.message.message_id, "Задача не найдена.", [[{ text: "🔙 Назад", callback_data: "tk_mine" }]]);
+      return true;
+    }
+    const { text, keyboard } = buildTaskDetailMessage(task);
+    await editInlineMessage(chatId, cb.message.message_id, text, keyboard);
+    return true;
+  }
+
+  // tk_st_{taskId}_{status} — update status
+  if (data.startsWith("tk_st_")) {
+    const rest = data.replace("tk_st_", "");
+    const lastUnderscore = rest.lastIndexOf("_");
+    const taskId = rest.slice(0, lastUnderscore);
+    const newStatus = rest.slice(lastUnderscore + 1);
+    await dbUpdateTask(taskId, { status: newStatus });
+    const task = await dbGetTask(taskId);
+    if (!task) {
+      await editInlineMessage(chatId, cb.message.message_id, "Задача не найдена.", [[{ text: "🔙 Назад", callback_data: "tk_mine" }]]);
+      return true;
+    }
+    const { text, keyboard } = buildTaskDetailMessage(task);
+    await editInlineMessage(chatId, cb.message.message_id, text, keyboard);
+    return true;
+  }
+
+  // tk_del_{taskId} — confirm delete
+  if (data.startsWith("tk_del_") && !data.startsWith("tk_delc_")) {
+    const taskId = data.replace("tk_del_", "");
+    const task = await dbGetTask(taskId);
+    const title = task?.title ?? taskId;
+    await editInlineMessage(
+      chatId,
+      cb.message.message_id,
+      `Удалить задачу?\n<b>${title}</b>`,
+      [[
+        { text: "✅ Да, удалить", callback_data: `tk_delc_${taskId}` },
+        { text: "Отмена", callback_data: `tk_t_${taskId}` },
+      ]],
+    );
+    return true;
+  }
+
+  // tk_delc_{taskId} — execute delete
+  if (data.startsWith("tk_delc_")) {
+    const taskId = data.replace("tk_delc_", "");
+    await dbDeleteTask(taskId);
+    await editInlineMessage(
+      chatId,
+      cb.message.message_id,
+      "✅ Задача удалена.",
+      [[{ text: "📌 Мои задачи", callback_data: "tk_mine" }]],
+    );
+    return true;
+  }
+
+  // ── End interactive task browser ──────────────────────────────────────────
 
   // /addtask: assignee selection → tat_{taskId}_{telegramId}
   if (data.startsWith("tat_")) {
