@@ -3,7 +3,7 @@ import { chatComplete } from "../lib/openai.ts";
 import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession } from "../lib/storage.ts";
 import { dbGetTask, dbListTasks, dbCreateTask, dbUpdateTask, dbDeleteTask, dbListAllOpen } from "./db.ts";
-import { getProfilesForPrompt, buildProfileMap, buildDisplayNameMap, getAllUniqueMarkets, resolveAssignees } from "./matcher.ts";
+import { getProfilesForPrompt, buildProfileMap, buildDisplayNameMap, getAllUniqueMarkets, resolveAssignees, findUserByMention } from "./matcher.ts";
 import { sendTaskCard, sendPendingTaskCard, STATUS_LABEL, formatTaskLine } from "./formatter.ts";
 import type { Task } from "./types.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
@@ -97,8 +97,9 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, ent
     `3. Если понятна роль исполнителя — заполни task_role\n` +
     `4. assignee_ids может содержать несколько id если задача явно для нескольких людей\n\n` +
     `Верни ТОЛЬКО JSON без markdown:\n` +
-    `{"tasks":[{"title":"Название","assignee_ids":[123456789],"task_role":"bd","country":"Словения","due_date":"2026-06-01","confidence":0.9}]}\n` +
+    `{"tasks":[{"title":"Название","assignee_ids":[123456789],"assignee_mention":"Vasya","task_role":"bd","country":"Словения","due_date":"2026-06-01","confidence":0.9}]}\n` +
     `assignee_ids — массив полей id из списка выше, или [] если исполнитель неизвестен.\n` +
+    `assignee_mention — точная цитата из текста как упоминается исполнитель (имя, email, ник) — даже если id не найден.\n` +
     `task_role — одно из: "marketing", "bd", "rnd", или null если неизвестно.\n` +
     `country — название страны или null. due_date — YYYY-MM-DD или null.\n` +
     `Создавай задачи только с confidence >= 0.7. Если задач нет — {"tasks":[]}.`,
@@ -108,6 +109,7 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, ent
   let tasks: Array<{
     title: string;
     assignee_ids: number[];
+    assignee_mention?: string;
     task_role: string | null;
     country: string | null;
     due_date: string | null;
@@ -122,11 +124,23 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, ent
   const VALID_ROLES = new Set(["marketing", "bd", "rnd"]);
   for (const task of tasks) {
     const { assignees, assignee_telegram_ids } = resolveAssignees(profiles, task);
+
+    // Fuzzy fallback: if GPT couldn't resolve the ID but gave us a mention text
+    let finalAssignees = assignees;
+    let finalTelegramIds = assignee_telegram_ids;
+    if (!finalTelegramIds.length && task.assignee_mention) {
+      const matched = findUserByMention(task.assignee_mention, profiles);
+      if (matched) {
+        finalAssignees = [matched.name];
+        finalTelegramIds = [matched.id];
+      }
+    }
+
     const task_role = VALID_ROLES.has(task.task_role ?? "") ? task.task_role : null;
     await dbCreateTask({
       title: task.title,
-      assignees,
-      assignee_telegram_ids,
+      assignees: finalAssignees,
+      assignee_telegram_ids: finalTelegramIds,
       task_role,
       country: task.country ?? null,
       due_date: task.due_date ?? null,

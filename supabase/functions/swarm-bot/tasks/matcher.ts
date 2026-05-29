@@ -123,3 +123,45 @@ export function resolveAssignees(
   // 5. General pool
   return { assignees: [], assignee_telegram_ids: [] };
 }
+
+export function findUserByMention(
+  mention: string,
+  profiles: UserProfile[],
+): UserProfile | null {
+  if (!mention?.trim()) return null;
+  const m = mention.trim().toLowerCase();
+
+  // Exact or strong matches first
+  for (const p of profiles) {
+    // Full name exact
+    if (p.name.toLowerCase() === m) return p;
+    // Email exact
+    if (p.email && p.email.toLowerCase() === m) return p;
+    // Username exact (with or without @)
+    if (p.username && (p.username.toLowerCase() === m || p.username.toLowerCase() === m.replace(/^@/, ""))) return p;
+    // Any alias exact
+    if (p.name_aliases.some(a => a.toLowerCase() === m)) return p;
+  }
+
+  // Partial / substring matches
+  for (const p of profiles) {
+    const nameLower = p.name.toLowerCase();
+    const parts = nameLower.split(" ");
+    // First name match
+    if (parts[0] && (parts[0] === m || m.includes(parts[0]) || parts[0].includes(m))) return p;
+    // Last name match
+    if (parts[1] && (parts[1] === m || m.includes(parts[1]) || parts[1].includes(m))) return p;
+    // Email username part (before @)
+    if (p.email) {
+      const emailUser = p.email.split("@")[0].toLowerCase();
+      if (emailUser === m || m.includes(emailUser) || emailUser.includes(m)) return p;
+    }
+    // Any alias partial
+    if (p.name_aliases.some(a => {
+      const al = a.toLowerCase();
+      return al === m || m.includes(al) || al.includes(m);
+    })) return p;
+  }
+
+  return null;
+}
