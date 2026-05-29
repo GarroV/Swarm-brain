@@ -236,9 +236,9 @@ Deno.serve(async (req: Request) => {
     } else if (command === "/ask" || text === "❓ Спросить") {
       await handleAsk(chatId, argText.trim() ? argText : "", userId, groupId);
     } else if (command === "/users" || text === "👥 Пользователи") {
-      await handleUsers(chatId, userId, argText);
+      await handleUsers(chatId, userId, argText, groupId);
     } else if (command === "/tasks" || text === "📋 Задачи") {
-      await handleTasks(chatId, userId, argText);
+      await handleTasks(chatId, userId, argText, groupId);
     } else if (command === "/addtask") {
       await handleAddTask(chatId);
     } else if (command === "/meetings" || text === "🎙 Встречи") {
@@ -307,7 +307,7 @@ Deno.serve(async (req: Request) => {
     } else if (command === "/workspace") {
       await handleWorkspace(chatId, userId, argText);
     } else if (command === "/broadcast") {
-      await handleBroadcast(chatId, userId, argText);
+      await handleBroadcast(chatId, userId, argText, groupId);
     } else if (command === "/feedback") {
       await handleFeedbackCommand(chatId);
     } else if (command === "/digest") {
