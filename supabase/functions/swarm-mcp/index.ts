@@ -351,11 +351,15 @@ async function toolGetUsers(args: { market?: string; requesting_user_id?: number
 }
 
 async function toolGetEntry(args: { id: string; requesting_user_id?: number }): Promise<string> {
-  const { data, error } = await supabase
+  let groupId: string | null = null;
+  if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
+
+  let query = supabase
     .from("entries")
     .select("content, source, created_at, is_private, owner_id")
-    .eq("id", args.id)
-    .maybeSingle();
+    .eq("id", args.id);
+  if (groupId) query = query.eq("group_id", groupId);
+  const { data, error } = await query.maybeSingle();
   if (error) return `Ошибка: ${error.message}`;
   if (!data) return "Запись не найдена.";
 
@@ -390,7 +394,7 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
   if (isPrivate && !ownerId) return "Ошибка: для личного хранилища необходимо передать owner_telegram_id.";
 
   // Resolve workspace
-  const callerTelegramId = args.owner_telegram_id ?? args.requesting_user_id ?? null;
+  const callerTelegramId = args.requesting_user_id ?? args.owner_telegram_id ?? null;
   const workspaceGroupId = callerTelegramId ? await getUserGroupId(callerTelegramId) : null;
   const [summaryEmbedding, entryMeta] = await Promise.all([
     getEmbedding(args.summary.slice(0, 8000)),
@@ -398,7 +402,7 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
   ]);
 
   // First chunk: summary + metadata + embedding
-  await supabase.from("entries").insert({
+  const { error: insertErr } = await supabase.from("entries").insert({
     content: chunks[0],
     summary: args.summary,
     embedding: summaryEmbedding,
@@ -412,26 +416,31 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
     is_private: isPrivate,
     owner_id: ownerId,
   });
+  if (insertErr) return `Ошибка сохранения: ${insertErr.message}`;
 
   // Remaining chunks: content only, same chunk_group_id in metadata
   if (chunks.length > 1) {
     const restEmbeddings = await Promise.all(chunks.slice(1).map(c => getEmbedding(c)));
-    await Promise.all(chunks.slice(1).map((chunk, i) =>
-      supabase.from("entries").insert({
-        content: chunk,
-        summary: null,
-        embedding: restEmbeddings[i],
-        added_by: "claude_desktop",
-        source,
-        metadata: { total_chunks: chunks.length, chunk: i + 2, chunk_group_id: chunkGroupId },
-        countries: entryMeta.countries,
-        entry_type: entryMeta.entry_type,
-        entry_date: entryMeta.entry_date,
-        group_id: workspaceGroupId,
-        is_private: isPrivate,
-        owner_id: ownerId,
-      })
-    ));
+    try {
+      await Promise.all(chunks.slice(1).map((chunk, i) =>
+        supabase.from("entries").insert({
+          content: chunk,
+          summary: null,
+          embedding: restEmbeddings[i],
+          added_by: "claude_desktop",
+          source,
+          metadata: { total_chunks: chunks.length, chunk: i + 2, chunk_group_id: chunkGroupId },
+          countries: entryMeta.countries,
+          entry_type: entryMeta.entry_type,
+          entry_date: entryMeta.entry_date,
+          group_id: workspaceGroupId,
+          is_private: isPrivate,
+          owner_id: ownerId,
+        })
+      ));
+    } catch (e) {
+      return `Ошибка сохранения (часть ${e instanceof Error ? e.message : String(e)}).`;
+    }
   }
 
   const contentNote = !args.content?.trim() ? " (оригинал не передан)" : "";
