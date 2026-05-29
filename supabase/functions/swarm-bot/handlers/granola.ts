@@ -177,7 +177,7 @@ async function saveGranolaNote(
       granola_note_id: noteId,
       title,
       entry_date: entryDate,
-      confirmed: false,
+      confirmed: true,
       added_by_telegram_id: telegramId,
     },
     countries: entryMeta.countries,
@@ -192,8 +192,8 @@ async function saveGranolaNote(
     return;
   }
 
-  const label = isPrivate ? "🔒 Встреча добавлена в личное хранилище" : "📥 Встреча добавлена";
-  await sendMessage(chatId, `${label}: <b>${title}</b>\n\nПроверь тезисы через /meetings`);
+  const label = isPrivate ? "🔒 Сохранено в личное хранилище" : "✅ Сохранено в базу знаний";
+  await sendMessage(chatId, `${label}: <b>${title}</b>`);
 }
 
 async function sendNotesList(chatId: number, telegramId: number, createdAfter: string, periodLabel: string): Promise<void> {
