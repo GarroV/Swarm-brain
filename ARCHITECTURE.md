@@ -123,6 +123,8 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 | `meeting_edit_summary_<entryId>` | meetings.ts | Ожидание инструкции для AI-редактирования тезисов (после сохранения) |
 | `meeting_rename_<entryId>` | meetings.ts | Ожидание переименования встречи |
 | `meeting_tag_<meetingId>` | meetings.ts | Ожидание тегов/стран |
+| `feedback_text` | feedback.ts | Ожидание текста фидбека |
+| `feedback_photo` | feedback.ts | Ожидание скриншота или кнопки "Готово" |
 | `task_*` | tasks/handlers.ts | Различные состояния для создания/редактирования задач |
 | `user_*` | users.ts | Состояния управления пользователями |
 
@@ -160,6 +162,26 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 | `meeting_discard_<id>` | Не сохранять Read.ai встречу |
 | `mau_<meetingId>_<tgId>` | Добавить участника встречи |
 | `mexp_<entryId>` | Экспортировать встречу файлом |
+
+### Feedback
+| Код | Действие |
+|----|---------|
+| `fb_done` | Пропустить скриншот, сохранить фидбек без фото |
+
+---
+
+## Таблица feedback
+
+| Колонка | Тип | Описание |
+|---------|-----|---------|
+| `id` | uuid PK | |
+| `telegram_id` | bigint | Кто отправил |
+| `username` | text | Telegram username |
+| `text` | text NOT NULL | Текст фидбека |
+| `photo_file_id` | text | file_id скриншота (null если нет) |
+| `created_at` | timestamptz | |
+
+Канал для пересылки: `app_settings.feedback_channel_id` (chat_id группы/канала). Если не задан — фидбек только в БД.
 
 ---
 
