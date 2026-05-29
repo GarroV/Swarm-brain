@@ -16,11 +16,11 @@ export { sendTaskCard };
 
 // ── /tasks command ────────────────────────────────────────────────────────────
 
-export async function handleTasks(chatId: number, userId: number, filter: string): Promise<void> {
+export async function handleTasks(chatId: number, userId: number, filter: string, groupId: string): Promise<void> {
   const sub = filter.trim().toLowerCase();
 
   if (!sub) {
-    const allMine = await dbListTasks({ telegramId: userId, limit: 200 });
+    const allMine = await dbListTasks({ telegramId: userId, limit: 200, groupId });
     const pending = allMine.filter(t => t.status === "pending");
     const active = allMine.filter(t => !["pending", "done", "cancelled", "draft"].includes(t.status));
 
@@ -40,7 +40,7 @@ export async function handleTasks(chatId: number, userId: number, filter: string
   }
 
   if (sub === "все" || sub === "all") {
-    const tasks = await dbListAllOpen();
+    const tasks = await dbListAllOpen(groupId);
     if (!tasks.length) { await sendMessage(chatId, "Открытых задач нет."); return; }
 
     const groups: Map<string, Task[]> = new Map();
@@ -66,7 +66,7 @@ export async function handleTasks(chatId: number, userId: number, filter: string
   }
 
   // Search by person name
-  const tasks = await dbListTasks({ assignee: filter.trim(), limit: 200 });
+  const tasks = await dbListTasks({ assignee: filter.trim(), limit: 200, groupId });
   if (!tasks.length) { await sendMessage(chatId, `Задач для <b>${filter.trim()}</b> не найдено.`); return; }
   await sendMessage(chatId, `<b>👤 ${filter.trim()}: ${tasks.length} задач</b>`);
   for (const t of tasks.slice(0, 15)) await sendTaskCard(chatId, t);
@@ -190,6 +190,7 @@ export async function handleTaskCallbacks(
   chatId: number,
   userId: number,
   username: string,
+  groupId: string,
 ): Promise<boolean> {
   const data = cb.data;
 
@@ -403,6 +404,7 @@ export async function handleTaskSessionInput(
   action: string,
   text: string,
   context?: string,
+  groupId?: string,
 ): Promise<boolean> {
   // /addtask step 1: title received
   if (action === "addtask_title") {
@@ -413,7 +415,7 @@ export async function handleTaskSessionInput(
       await setSession(chatId, "addtask_title");
       return true;
     }
-    const task = await dbCreateTask({ title, source: "manual", status: "draft" });
+    const task = await dbCreateTask({ title, source: "manual", status: "draft", group_id: groupId ?? null });
     const { data: allowedUsers } = await supabase.from("allowed_users").select("telegram_id, username");
     const seen = new Set<number>();
     const allUsers = [

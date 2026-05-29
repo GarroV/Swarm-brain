@@ -13,6 +13,7 @@ export async function dbListTasks(opts: {
   status?: string;
   period?: string;
   limit?: number;
+  groupId?: string;
 }): Promise<Task[]> {
   let q = supabase
     .from("tasks")
@@ -36,6 +37,8 @@ export async function dbListTasks(opts: {
     const end = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
     q = q.gte("due_date", today).lte("due_date", end);
   }
+
+  if (opts.groupId) q = q.eq("group_id", opts.groupId);
 
   const { data } = await q.limit(opts.limit ?? 200);
   let tasks = (data ?? []) as Task[];
@@ -61,6 +64,7 @@ export async function dbCreateTask(input: TaskInput): Promise<Task> {
     source: input.source ?? "manual",
     status: input.status ?? "open",
     meeting_id: input.meeting_id ?? null,
+    group_id: input.group_id ?? null,
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Task;
@@ -80,10 +84,11 @@ export async function dbDeleteTask(id: string): Promise<void> {
   await supabase.from("tasks").delete().eq("id", id);
 }
 
-export async function dbListAllOpen(): Promise<Task[]> {
-  const { data } = await supabase.from("tasks").select("*")
+export async function dbListAllOpen(groupId?: string): Promise<Task[]> {
+  let q = supabase.from("tasks").select("*")
     .not("status", "in", '("done","cancelled","draft","pending")')
-    .order("assignees", { ascending: true })
-    .limit(200);
+    .order("assignees", { ascending: true });
+  if (groupId) q = q.eq("group_id", groupId);
+  const { data } = await q.limit(200);
   return (data ?? []) as Task[];
 }

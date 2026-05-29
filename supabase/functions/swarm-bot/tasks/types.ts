@@ -14,6 +14,7 @@ export type Task = {
   updated_at: string | null;
   meeting_id: string | null;
   url: string | null;
+  group_id?: string | null;
 };
 
 export type TaskInput = {
@@ -28,4 +29,5 @@ export type TaskInput = {
   source?: string;
   status?: string;
   meeting_id?: string | null;
+  group_id?: string | null;
 };
