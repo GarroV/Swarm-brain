@@ -84,9 +84,11 @@ export async function assignUserToWorkspace(
     const { data: existing } = await supabase
       .from("allowed_users").select("id").eq("username", username).maybeSingle();
     if (existing) {
-      await supabase.from("allowed_users").update({ group_id: workspaceId }).eq("username", username);
+      const { error } = await supabase.from("allowed_users").update({ group_id: workspaceId }).eq("username", username);
+      if (error) throw new Error(error.message);
     } else {
-      await supabase.from("allowed_users").insert({ username, group_id: workspaceId });
+      const { error } = await supabase.from("allowed_users").insert({ username, group_id: workspaceId });
+      if (error) throw new Error(error.message);
     }
     return "ok";
   }
