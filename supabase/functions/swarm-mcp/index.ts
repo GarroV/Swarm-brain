@@ -7,6 +7,15 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+async function getUserGroupId(telegramId: number): Promise<string | null> {
+  const { data } = await supabase
+    .from("allowed_users")
+    .select("group_id")
+    .eq("telegram_id", telegramId)
+    .maybeSingle();
+  return (data as { group_id: string | null } | null)?.group_id ?? null;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function ok(id: unknown, result: unknown): Response {
@@ -134,6 +143,7 @@ const TOOLS = [
         country: { type: "string", description: "Страна или рынок" },
         status: { type: "string", enum: ["open", "in_progress", "done", "cancelled"] },
         period: { type: "string", enum: ["week"], description: "Задачи на этой неделе" },
+        requesting_user_id: { type: "number", description: "Your Telegram user ID — filters tasks to your workspace" },
       },
     },
   },
@@ -145,6 +155,7 @@ const TOOLS = [
       type: "object",
       properties: {
         limit: { type: "number", description: "Количество встреч (по умолчанию 10)" },
+        requesting_user_id: { type: "number", description: "Your Telegram user ID — filters meetings to your workspace" },
       },
     },
   },
@@ -155,6 +166,7 @@ const TOOLS = [
       type: "object",
       properties: {
         market: { type: "string", description: "Фильтр по рынку/стране" },
+        requesting_user_id: { type: "number", description: "Your Telegram user ID — filters users to your workspace" },
       },
     },
   },
@@ -240,6 +252,7 @@ const TOOLS = [
         mime_type: { type: "string", description: "MIME-тип (опционально, определяется по расширению автоматически)" },
         summary: { type: "string", description: "Описание файла / тезисы содержимого для индексации" },
         source: { type: "string", description: "Источник (по умолчанию: file)" },
+        requesting_user_id: { type: "number", description: "Your Telegram user ID — sets workspace for uploaded file" },
       },
       required: ["file_name", "file_content_base64", "summary"],
     },
@@ -249,7 +262,9 @@ const TOOLS = [
     description: "Статистика базы знаний: общее количество записей, количество файлов, разбивка по типам и источникам.",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        requesting_user_id: { type: "number", description: "Your Telegram user ID — filters stats to your workspace" },
+      },
     },
   },
 ];
@@ -258,12 +273,17 @@ const TOOLS = [
 
 async function toolSearchKnowledge(args: { query: string; limit?: number; requesting_user_id?: number }): Promise<string> {
   const embedding = await getEmbedding(args.query);
-  const { data, error } = await supabase.rpc("match_entries", {
+  let groupId: string | null = null;
+  if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
+
+  let rpcQuery = supabase.rpc("match_entries", {
     query_embedding: `[${embedding.join(",")}]`,
     match_threshold: 0.35,
     match_count: Math.min(args.limit ?? 5, 20),
     requesting_user_id: args.requesting_user_id ?? null,
   });
+  if (groupId) rpcQuery = rpcQuery.eq("group_id", groupId);
+  const { data, error } = await rpcQuery;
   if (error) return `Ошибка: ${error.message}`;
   if (!data?.length) return "Ничего не найдено по запросу.";
 
@@ -274,13 +294,18 @@ async function toolSearchKnowledge(args: { query: string; limit?: number; reques
   }).join("\n\n---\n\n");
 }
 
-async function toolGetMeetings(args: { limit?: number }): Promise<string> {
-  const { data, error } = await supabase
+async function toolGetMeetings(args: { limit?: number; requesting_user_id?: number }): Promise<string> {
+  let groupId: string | null = null;
+  if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
+
+  let query = supabase
     .from("entries")
     .select("content, metadata, created_at")
     .eq("source", "read_ai")
     .order("created_at", { ascending: false })
     .limit(args.limit ?? 10);
+  if (groupId) query = query.eq("group_id", groupId);
+  const { data, error } = await query;
 
   if (error) return `Ошибка: ${error.message}`;
   if (!data?.length) return "Встреч пока нет.";
@@ -293,11 +318,15 @@ async function toolGetMeetings(args: { limit?: number }): Promise<string> {
   }).join("\n\n---\n\n");
 }
 
-async function toolGetUsers(args: { market?: string }): Promise<string> {
+async function toolGetUsers(args: { market?: string; requesting_user_id?: number }): Promise<string> {
+  let groupId: string | null = null;
+  if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
+
   let query = supabase
     .from("allowed_users")
     .select("telegram_id, username")
     .neq("telegram_id", 744230399);
+  if (groupId) query = query.eq("group_id", groupId);
 
   const { data: users, error } = await query;
   if (error) return `Ошибка: ${error.message}`;
@@ -339,7 +368,7 @@ async function toolGetEntry(args: { id: string; requesting_user_id?: number }): 
   return `(${row.source} · ${date})\n\n${row.content}`;
 }
 
-async function toolAddKnowledge(args: { content?: string; summary: string; source?: string; is_private?: boolean; owner_telegram_id?: number }): Promise<string> {
+async function toolAddKnowledge(args: { content?: string; summary: string; source?: string; is_private?: boolean; owner_telegram_id?: number; requesting_user_id?: number }): Promise<string> {
   const CHUNK = 3000, OVERLAP = 200;
   const source = args.source ?? "claude";
   const rawContent = args.content?.trim() || args.summary;
@@ -354,11 +383,15 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
     }
   }
 
-  // Extract metadata + embed summary in parallel
-  const groupId = chunks.length > 1 ? crypto.randomUUID() : null;
+  // Chunk grouping UUID (not the workspace group_id)
+  const chunkGroupId = chunks.length > 1 ? crypto.randomUUID() : null;
   const isPrivate = args.is_private === true;
   const ownerId = isPrivate ? (args.owner_telegram_id ?? null) : null;
   if (isPrivate && !ownerId) return "Ошибка: для личного хранилища необходимо передать owner_telegram_id.";
+
+  // Resolve workspace
+  const callerTelegramId = args.owner_telegram_id ?? args.requesting_user_id ?? null;
+  const workspaceGroupId = callerTelegramId ? await getUserGroupId(callerTelegramId) : null;
   const [summaryEmbedding, entryMeta] = await Promise.all([
     getEmbedding(args.summary.slice(0, 8000)),
     extractEntryMeta(args.summary),
@@ -371,16 +404,16 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
     embedding: summaryEmbedding,
     added_by: "claude_desktop",
     source,
-    metadata: chunks.length > 1 ? { total_chunks: chunks.length, chunk: 1 } : {},
+    metadata: chunkGroupId ? { total_chunks: chunks.length, chunk: 1, chunk_group_id: chunkGroupId } : {},
     countries: entryMeta.countries,
     entry_type: entryMeta.entry_type,
     entry_date: entryMeta.entry_date,
-    group_id: groupId,
+    group_id: workspaceGroupId,
     is_private: isPrivate,
     owner_id: ownerId,
   });
 
-  // Remaining chunks: content only, same group_id
+  // Remaining chunks: content only, same chunk_group_id in metadata
   if (chunks.length > 1) {
     const restEmbeddings = await Promise.all(chunks.slice(1).map(c => getEmbedding(c)));
     await Promise.all(chunks.slice(1).map((chunk, i) =>
@@ -390,11 +423,11 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
         embedding: restEmbeddings[i],
         added_by: "claude_desktop",
         source,
-        metadata: { total_chunks: chunks.length, chunk: i + 2 },
+        metadata: { total_chunks: chunks.length, chunk: i + 2, chunk_group_id: chunkGroupId },
         countries: entryMeta.countries,
         entry_type: entryMeta.entry_type,
         entry_date: entryMeta.entry_date,
-        group_id: groupId,
+        group_id: workspaceGroupId,
         is_private: isPrivate,
         owner_id: ownerId,
       })
@@ -412,6 +445,7 @@ async function toolUploadFile(args: {
   mime_type?: string;
   summary: string;
   source?: string;
+  requesting_user_id?: number;
 }): Promise<string> {
   const source = args.source ?? "file";
   const mimeType = args.mime_type ?? mimeFromExtension(args.file_name);
@@ -428,6 +462,9 @@ async function toolUploadFile(args: {
     extractEntryMeta(args.summary),
   ]);
 
+  let workspaceGroupId: string | null = null;
+  if (args.requesting_user_id) workspaceGroupId = await getUserGroupId(args.requesting_user_id);
+
   const { error } = await supabase.from("entries").insert({
     content: args.summary,
     summary: args.summary,
@@ -443,6 +480,7 @@ async function toolUploadFile(args: {
     countries: entryMeta.countries,
     entry_type: entryMeta.entry_type,
     entry_date: entryMeta.entry_date,
+    group_id: workspaceGroupId,
   });
 
   if (error) {
@@ -454,12 +492,17 @@ async function toolUploadFile(args: {
   return `✅ Файл загружен: ${args.file_name} (${sizeKb} KB)\n📎 ${uploadResult.publicUrl}`;
 }
 
-async function toolGetStorageStats(): Promise<string> {
-  const { data, error } = await supabase
+async function toolGetStorageStats(args: { requesting_user_id?: number } = {}): Promise<string> {
+  let groupId: string | null = null;
+  if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
+
+  let query = supabase
     .from("entries")
     .select("entry_type, source, created_at, metadata")
     .order("created_at", { ascending: false })
     .limit(2000);
+  if (groupId) query = query.eq("group_id", groupId);
+  const { data, error } = await query;
 
   if (error) return `Ошибка: ${error.message}`;
   if (!data?.length) return "База знаний пуста.";
@@ -497,12 +540,16 @@ async function toolGetStorageStats(): Promise<string> {
 }
 
 async function toolListEntries(args: { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean; requesting_user_id?: number }): Promise<string> {
+  let groupId: string | null = null;
+  if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
+
   let query = supabase
     .from("entries")
     .select("id, source, entry_type, entry_date, created_at, summary, metadata")
     .or(args.requesting_user_id ? visibilityFilter(args.requesting_user_id) : "is_private.eq.false")
     .order("created_at", { ascending: false })
     .limit(Math.min(args.limit ?? 20, 100));
+  if (groupId) query = query.eq("group_id", groupId);
 
   if (args.source) query = query.eq("source", args.source);
   if (args.entry_type) query = query.eq("entry_type", args.entry_type);
@@ -681,21 +728,21 @@ Deno.serve(async (req: Request) => {
       if (name === "search_knowledge") {
         result = await toolSearchKnowledge(args as { query: string; limit?: number; requesting_user_id?: number });
       } else if (name === "get_tasks") {
-        result = await toolGetTasksMcp(args as { assignee?: string; country?: string; status?: string; period?: string });
+        result = await toolGetTasksMcp(args as { assignee?: string; country?: string; status?: string; period?: string; requesting_user_id?: number });
       } else if (name === "add_task") {
-        result = await toolAddTask(args as { title: string; description?: string; assignee_name?: string; country?: string; due_date?: string; source: string; context_id?: string });
+        result = await toolAddTask(args as { title: string; description?: string; assignee_name?: string; country?: string; due_date?: string; source: string; context_id?: string; requesting_user_id?: number });
       } else if (name === "update_task") {
         result = await toolUpdateTask(args as { id: string; title?: string; description?: string; assignee_name?: string; country?: string; due_date?: string | null; status?: string });
       } else if (name === "delete_task") {
         result = await toolDeleteTask(args as { id: string });
       } else if (name === "get_meetings") {
-        result = await toolGetMeetings(args as { limit?: number });
+        result = await toolGetMeetings(args as { limit?: number; requesting_user_id?: number });
       } else if (name === "get_users") {
-        result = await toolGetUsers(args as { market?: string });
+        result = await toolGetUsers(args as { market?: string; requesting_user_id?: number });
       } else if (name === "get_entry") {
         result = await toolGetEntry(args as { id: string; requesting_user_id?: number });
       } else if (name === "add_knowledge") {
-        result = await toolAddKnowledge(args as { content?: string; summary: string; source?: string; is_private?: boolean; owner_telegram_id?: number });
+        result = await toolAddKnowledge(args as { content?: string; summary: string; source?: string; is_private?: boolean; owner_telegram_id?: number; requesting_user_id?: number });
       } else if (name === "list_entries") {
         result = await toolListEntries(args as { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean; requesting_user_id?: number });
       } else if (name === "delete_entry") {
@@ -703,9 +750,9 @@ Deno.serve(async (req: Request) => {
       } else if (name === "update_entry") {
         result = await toolUpdateEntry(args as { id: string; content?: string; summary?: string; title?: string; entry_date?: string; file_content_base64?: string; file_name?: string });
       } else if (name === "upload_file") {
-        result = await toolUploadFile(args as { file_name: string; file_content_base64: string; mime_type?: string; summary: string; source?: string });
+        result = await toolUploadFile(args as { file_name: string; file_content_base64: string; mime_type?: string; summary: string; source?: string; requesting_user_id?: number });
       } else if (name === "get_storage_stats") {
-        result = await toolGetStorageStats();
+        result = await toolGetStorageStats(args as { requesting_user_id?: number });
       } else {
         return err(id, -32601, `Unknown tool: ${name}`);
       }

@@ -61,6 +61,7 @@ export async function toolAddTask(args: {
   task_role?: string;
   source: string;
   context_id?: string;
+  requesting_user_id?: number;
 }): Promise<string> {
   const assignees: string[] = [];
   let assignee_telegram_ids: number[] = [];
@@ -77,6 +78,16 @@ export async function toolAddTask(args: {
     }
   }
 
+  let workspaceGroupId: string | null = null;
+  if (args.requesting_user_id) {
+    const { data: uRow } = await supabase
+      .from("allowed_users")
+      .select("group_id")
+      .eq("telegram_id", args.requesting_user_id)
+      .maybeSingle();
+    workspaceGroupId = (uRow as { group_id: string | null } | null)?.group_id ?? null;
+  }
+
   const { data, error } = await supabase.from("tasks").insert({
     title: args.title,
     description: args.description ?? null,
@@ -89,6 +100,7 @@ export async function toolAddTask(args: {
     status: "open",
     meeting_id: args.context_id ?? null,
     tags: [],
+    group_id: workspaceGroupId,
   }).select("id").single();
 
   if (error) return `Ошибка: ${error.message}`;
@@ -149,8 +161,20 @@ export async function toolGetTasks(args: {
   country?: string;
   status?: string;
   period?: string;
+  requesting_user_id?: number;
 }): Promise<string> {
+  let workspaceGroupId: string | null = null;
+  if (args.requesting_user_id) {
+    const { data: uRow } = await supabase
+      .from("allowed_users")
+      .select("group_id")
+      .eq("telegram_id", args.requesting_user_id)
+      .maybeSingle();
+    workspaceGroupId = (uRow as { group_id: string | null } | null)?.group_id ?? null;
+  }
+
   let query = supabase.from("tasks").select("*").order("due_date", { ascending: true });
+  if (workspaceGroupId) query = query.eq("group_id", workspaceGroupId);
 
   if (args.status) {
     query = query.eq("status", args.status);
