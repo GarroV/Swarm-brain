@@ -98,11 +98,11 @@ Deno.serve(async (req: Request) => {
     await autoSyncProfile(userId, cb.from.first_name, cb.from.last_name, cb.from.username);
 
     try {
-      if (await handleTaskCallbacks(cb, chatId, userId, username)) {
+      if (await handleTaskCallbacks(cb, chatId, userId, username, cbGroupId)) {
         // handled
-      } else if (await handleMeetingCallbacks(cb, chatId, userId, username)) {
+      } else if (await handleMeetingCallbacks(cb, chatId, userId, username, cbGroupId)) {
         // handled
-      } else if (await handleUserCallbacks(cb, chatId, userId)) {
+      } else if (await handleUserCallbacks(cb, chatId, userId, cbGroupId)) {
         // handled
       } else if (await handleGranolaCallbacks(cb, chatId, userId, username)) {
         // handled
@@ -170,11 +170,11 @@ Deno.serve(async (req: Request) => {
       } else if (action === "waiting_ask") {
         await clearSession(chatId);
         await handleAsk(chatId, text, userId, groupId);
-      } else if (action && await handleMeetingSessionInput(chatId, action, text)) {
+      } else if (action && await handleMeetingSessionInput(chatId, action, text, groupId)) {
         // meeting session handled
       } else if (action && await handleUserSessionInput(chatId, userId, action, text)) {
         // user session handled
-      } else if (action && await handleTaskSessionInput(chatId, userId, action, text, session?.context ?? undefined)) {
+      } else if (action && await handleTaskSessionInput(chatId, userId, action, text, session?.context ?? undefined, groupId)) {
         // task session handled
       } else if (action && await handleGranolaSessionInput(chatId, userId, action, text)) {
         // granola session handled
