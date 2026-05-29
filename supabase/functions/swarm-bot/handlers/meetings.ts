@@ -424,26 +424,45 @@ export async function handleMeetingSessionInput(
 
     const { data: entry } = await supabase
       .from("entries")
-      .select("content, summary")
+      .select("content, summary, metadata")
       .eq("id", entryId)
       .maybeSingle();
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
 
-    await sendMessage(chatId, "Переписываю тезисы...");
+    await sendMessage(chatId, "Обновляю...");
 
-    const newSummary = await chatComplete(
-      "Ты помощник команды. Перепиши тезисы встречи согласно инструкции пользователя.\n" +
-      "Не домысливай — только то что есть в исходном тексте или в текущих тезисах.\n" +
-      "Сохраняй формат: ### Тема\n- тезис\n- тезис\n\n" +
+    const currentTitle = (entry.metadata as Record<string, unknown>)?.title as string ?? "";
+    const raw = await chatComplete(
+      "Ты помощник команды. Измени тезисы и/или название встречи согласно инструкции пользователя.\n" +
+      "Не домысливай — только то что есть в исходном тексте или в текущих данных.\n" +
+      "Верни ТОЛЬКО JSON без markdown: {\"title\": \"новое название или null если не менять\", \"summary\": \"новые тезисы\"}\n" +
+      "Тезисы — в формате: ### Тема\n- тезис\n- тезис\n\n" +
       `Инструкция: ${text.trim()}\n\n` +
+      `Текущее название: ${currentTitle}\n` +
       `Текущие тезисы:\n${(entry.summary as string) ?? ""}`,
       (entry.content as string ?? "").slice(0, 6000)
     );
 
-    const { error } = await supabase.from("entries").update({ summary: newSummary }).eq("id", entryId);
+    let newTitle: string | null = null;
+    let newSummary = (entry.summary as string) ?? "";
+    try {
+      const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()) as { title?: string | null; summary?: string };
+      if (parsed.title) newTitle = parsed.title;
+      if (parsed.summary) newSummary = parsed.summary;
+    } catch {
+      newSummary = raw;
+    }
+
+    const updates: Record<string, unknown> = { summary: newSummary };
+    if (newTitle) {
+      updates.metadata = { ...(entry.metadata as Record<string, unknown>), title: newTitle };
+    }
+    const { error } = await supabase.from("entries").update(updates).eq("id", entryId);
     if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return true; }
 
-    await sendMessage(chatId, `✅ Тезисы обновлены.\n\n${newSummary.slice(0, 1500)}`, {
+    const displayTitle = newTitle ?? currentTitle;
+    const titleLine = newTitle ? `✅ Название: <b>${newTitle}</b>\n\n` : "";
+    await sendMessage(chatId, `${titleLine}✅ Тезисы обновлены.\n\n${newSummary.slice(0, 1400)}`, {
       inline_keyboard: [[{ text: "✅ Подтвердить встречу", callback_data: `mc_${entryId}` }]],
     });
     return true;

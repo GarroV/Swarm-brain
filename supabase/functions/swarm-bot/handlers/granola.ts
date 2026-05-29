@@ -433,21 +433,33 @@ export async function handleGranolaSessionInput(
     }
 
     const cached = JSON.parse(session.context) as GranolaPreviewCache;
-    await sendMessage(chatId, "Переписываю тезисы...");
+    await sendMessage(chatId, "Обновляю...");
 
-    const newTezises = await chatComplete(
-      "Ты помощник команды. Перепиши тезисы встречи согласно инструкции пользователя.\n" +
-      "Не домысливай — только то что есть в исходном тексте или в текущих тезисах.\n" +
-      "Сохраняй формат: ### Тема\n- тезис\n- тезис\n\n" +
+    const raw = await chatComplete(
+      "Ты помощник команды. Измени тезисы и/или название встречи согласно инструкции пользователя.\n" +
+      "Не домысливай — только то что есть в исходном тексте или в текущих данных.\n" +
+      "Верни ТОЛЬКО JSON без markdown: {\"title\": \"новое название или null если не менять\", \"tezises\": \"новые тезисы\"}\n" +
+      "Тезисы — в формате: ### Тема\n- тезис\n- тезис\n\n" +
       `Инструкция: ${text.trim()}\n\n` +
+      `Текущее название: ${cached.title}\n` +
       `Текущие тезисы:\n${cached.tezises}`,
       cached.content.slice(0, 6000)
     );
 
-    const updatedCache: GranolaPreviewCache = { ...cached, tezises: newTezises };
+    let newTitle = cached.title;
+    let newTezises = cached.tezises;
+    try {
+      const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()) as { title?: string | null; tezises?: string };
+      if (parsed.title) newTitle = parsed.title;
+      if (parsed.tezises) newTezises = parsed.tezises;
+    } catch {
+      newTezises = raw;
+    }
+
+    const updatedCache: GranolaPreviewCache = { ...cached, title: newTitle, tezises: newTezises };
     await setSession(chatId, `granola_preview_${noteId}`, JSON.stringify(updatedCache));
 
-    await sendMessage(chatId, `📓 <b>${cached.title}</b>\n\n${newTezises}`);
+    await sendMessage(chatId, `📓 <b>${newTitle}</b>\n\n${newTezises}`);
     await sendInlineMessage(chatId, "Сохранить в базу знаний?", [
       [
         { text: "✅ В базу", callback_data: `gc_${noteId}` },
