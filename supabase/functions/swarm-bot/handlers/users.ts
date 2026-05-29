@@ -14,7 +14,7 @@ export const PROFILE_FIELDS: Record<string, string> = {
   email:      "Email",
 };
 
-export async function handleUsers(chatId: number, adminId: number, argText: string): Promise<void> {
+export async function handleUsers(chatId: number, adminId: number, argText: string, groupId: string): Promise<void> {
   const parts = argText.trim().split(/\s+/);
   const sub = parts[0]?.toLowerCase();
   const targetArg = parts[1];
@@ -23,20 +23,17 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
     const { data, error } = await supabase
       .from("allowed_users")
       .select("telegram_id, username")
-      .or(`telegram_id.neq.${ADMIN_USER_ID},telegram_id.is.null`)
+      .eq("group_id", groupId)
       .order("created_at");
     if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
 
     const ids = (data ?? [])
       .map((u: { telegram_id: number | null }) => u.telegram_id)
       .filter((id: number | null): id is number => id !== null);
-    const { data: profiles } = await supabase.from("user_profiles").select("*").in("telegram_id", [ADMIN_USER_ID, ...ids]);
+    const { data: profiles } = await supabase.from("user_profiles").select("*").in("telegram_id", ids.length ? ids : [0]);
     const profileMap = Object.fromEntries((profiles ?? []).map((p: { telegram_id: number; first_name?: string; last_name?: string }) => [p.telegram_id, p]));
 
-    const allUsers = [
-      { telegram_id: ADMIN_USER_ID, username: null },
-      ...(data ?? []).map((u: { telegram_id: number; username: string | null }) => u),
-    ];
+    const allUsers = (data ?? []).map((u: { telegram_id: number; username: string | null }) => u);
 
     const lines = allUsers.map((u) => {
       const p = profileMap[u.telegram_id];
@@ -63,7 +60,7 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
     if (!targetArg) { await sendMessage(chatId, "Использование: /users add [telegram_id или @username]"); return; }
     if (targetArg.startsWith("@")) {
       const uname = targetArg.slice(1);
-      const { error } = await supabase.from("allowed_users").insert({ telegram_id: null, username: uname, added_by: adminId });
+      const { error } = await supabase.from("allowed_users").insert({ telegram_id: null, username: uname, added_by: adminId, group_id: groupId });
       if (error) {
         await sendMessage(chatId, error.code === "23505" ? `@${uname} уже в списке.` : `Ошибка: ${error.message}`);
         return;
@@ -71,7 +68,7 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
       await sendMessage(chatId, `@${uname} добавлен. ID подтянется автоматически когда напишет боту.`);
     } else {
       if (isNaN(Number(targetArg))) { await sendMessage(chatId, "Использование: /users add [telegram_id или @username]"); return; }
-      const { error } = await supabase.from("allowed_users").insert({ telegram_id: Number(targetArg), added_by: adminId });
+      const { error } = await supabase.from("allowed_users").insert({ telegram_id: Number(targetArg), added_by: adminId, group_id: groupId });
       if (error) {
         await sendMessage(chatId, error.code === "23505" ? `Пользователь ${targetArg} уже в списке.` : `Ошибка: ${error.message}`);
         return;
@@ -189,7 +186,7 @@ export async function showProfileEditMenu(chatId: number, targetId: number): Pro
   await sendInlineMessage(chatId, "Что хочешь изменить?", keyboard);
 }
 
-export async function handleBroadcast(chatId: number, adminId: number, text: string): Promise<void> {
+export async function handleBroadcast(chatId: number, adminId: number, text: string, groupId: string): Promise<void> {
   if (adminId !== ADMIN_USER_ID) {
     await sendMessage(chatId, "Недостаточно прав.");
     return;
@@ -202,6 +199,7 @@ export async function handleBroadcast(chatId: number, adminId: number, text: str
   const { data: users } = await supabase
     .from("allowed_users")
     .select("telegram_id")
+    .eq("group_id", groupId)
     .not("telegram_id", "is", null)
     .neq("telegram_id", ADMIN_USER_ID);
 
@@ -261,12 +259,13 @@ export async function handleProfileEdit(
 export async function handleUserCallbacks(
   cb: TgCallbackQuery,
   chatId: number,
-  userId: number
+  userId: number,
+  groupId: string = "",
 ): Promise<boolean> {
   const data = cb.data;
 
   if (data === "ua_list") {
-    await handleUsers(chatId, userId, "list");
+    await handleUsers(chatId, userId, "list", groupId);
     return true;
   }
   if (data === "ua_add") {
@@ -289,7 +288,7 @@ export async function handleUserCallbacks(
     const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || `ID ${targetId}`;
     await supabase.from("allowed_users").delete().eq("telegram_id", targetId);
     await sendMessage(chatId, `✅ ${name} удалён.`);
-    await handleUsers(chatId, userId, "list");
+    await handleUsers(chatId, userId, "list", groupId);
     return true;
   }
   if (data.startsWith("ptasks_")) {
