@@ -202,7 +202,7 @@ export const KNOWLEDGE_TOOLS_DISABLED = [
 /* === END DISABLED === */
 void KNOWLEDGE_TOOLS_DISABLED;
 
-export async function executeTool(name: string, args: Record<string, unknown>, userId = 0): Promise<string> {
+export async function executeTool(name: string, args: Record<string, unknown>, userId = 0, groupId = ""): Promise<string> {
   try {
     switch (name) {
 
@@ -215,7 +215,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
             match_threshold: 0.1,
             match_count: 8,
             requesting_user_id: userId || null,
-          }).then(r => (r.data ?? []) as KbEntry[]))
+          }).eq("group_id", groupId).then(r => (r.data ?? []) as KbEntry[]))
           .catch(() => [] as KbEntry[]);
 
         const words = query.toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2).slice(0, 6);
@@ -225,6 +225,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const kwPromise = searchTerms.length
           ? supabase.from("entries").select("id, content, summary, source, metadata")
               .or(searchTerms.map(w => `source.ilike.%${w}%,content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
+              .eq("group_id", groupId)
               .or(visibilityFilter(userId || 0))
               .limit(5).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
           : Promise.resolve([] as KbEntry[]);
@@ -234,6 +235,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
           ? supabase.from("entries").select("id, content, summary, source, metadata")
               .or(words.map(w => `metadata->>file_name.ilike.%${w}%`).join(","))
               .not("metadata->>file_url", "is", null)
+              .eq("group_id", groupId)
               .or(visibilityFilter(userId || 0))
               .limit(3).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
           : Promise.resolve([] as KbEntry[]);
@@ -286,6 +288,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
             .select("id, content, summary, source, entry_date, created_at, metadata")
             .gte("created_at", since)
             .or(`metadata->>title.ilike.%${country}%,content.ilike.%${country}%,summary.ilike.%${country}%`)
+            .eq("group_id", groupId)
             .or(visibilityFilter(userId || 0))
             .order("created_at", { ascending: false })
             .limit(20)
@@ -299,6 +302,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const vecEntries: REntry[] = vecIds.length
           ? await supabase.from("entries")
               .select("id, content, summary, source, entry_date, created_at, metadata")
+              .eq("group_id", groupId)
               .or(visibilityFilter(userId || 0))
               .in("id", vecIds)
               .then(r => (r.data ?? []) as REntry[])
@@ -447,6 +451,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
           .from("entries")
           .select("id, metadata, entry_date, created_at, countries, summary, content")
           .or("entry_type.in.(transcript,meeting),source.in.(read_ai,granola,voice)")
+          .eq("group_id", groupId)
           .order("entry_date", { ascending: false, nullsFirst: false })
           .order("created_at", { ascending: false })
           .limit(100);
@@ -505,7 +510,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const text = String(args.text ?? "");
         if (!text.trim()) return "Нечего сохранять — текст пустой.";
         const summary = await generateSummary(text);
-        await saveEntry(text, String(userId || "bot"), "telegram", {}, summary ?? undefined);
+        await saveEntry(text, String(userId || "bot"), "telegram", {}, summary ?? undefined, groupId);
         return "✅ Сохранено в общую базу знаний.";
       }
 
@@ -514,7 +519,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         if (!text.trim()) return "Нечего сохранять — текст пустой.";
         if (!userId) return "Ошибка: не удалось определить пользователя.";
         const summary = await generateSummary(text);
-        await saveEntry(text, String(userId), "telegram", {}, summary ?? undefined, undefined, true, userId);
+        await saveEntry(text, String(userId), "telegram", {}, summary ?? undefined, groupId, true, userId);
         return "✅ Сохранено в личное хранилище.";
       }
 
@@ -545,14 +550,14 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
   }
 }
 
-export async function handleAdd(chatId: number, username: string, text: string): Promise<void> {
+export async function handleAdd(chatId: number, username: string, text: string, groupId: string): Promise<void> {
   if (!text.trim()) {
     await setSession(chatId, "waiting_add");
     await sendMessage(chatId, "Напиши текст, который нужно сохранить в базу знаний:");
     return;
   }
   const summary = await generateSummary(text);
-  const entryId = await saveEntry(text, username, "telegram", {}, summary ?? undefined);
+  const entryId = await saveEntry(text, username, "telegram", {}, summary ?? undefined, groupId);
   await sendMessage(chatId, summary
     ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
     : "✅ Запись добавлена в базу знаний.");
@@ -561,7 +566,7 @@ export async function handleAdd(chatId: number, username: string, text: string):
 
 
 
-export async function handleAsk(chatId: number, question: string): Promise<void> {
+export async function handleAsk(chatId: number, question: string, userId: number, groupId: string): Promise<void> {
   if (!question.trim()) {
     await setSession(chatId, "waiting_ask");
     await sendMessage(chatId, "Напиши свой вопрос:");
@@ -664,6 +669,7 @@ export async function handleAsk(chatId: number, question: string): Promise<void>
             .from("entries")
             .select("content, summary, metadata, source, created_at, group_id")
             .eq("id", entryId)
+            .eq("group_id", groupId)
             .maybeSingle();
           if (!entry) {
             result = "Запись не найдена.";
@@ -702,7 +708,7 @@ export async function handleAsk(chatId: number, question: string): Promise<void>
             }
           }
         } else {
-          result = await executeTool(tc.function.name, JSON.parse(tc.function.arguments) as Record<string, unknown>, chatId);
+          result = await executeTool(tc.function.name, JSON.parse(tc.function.arguments) as Record<string, unknown>, userId, groupId);
         }
       } catch { result = "Ошибка выполнения инструмента."; }
       messages.push({ role: "tool", tool_call_id: tc.id, content: result });
