@@ -1,4 +1,4 @@
-CREATE TABLE public.feedback (
+CREATE TABLE IF NOT EXISTS public.feedback (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   telegram_id   bigint NOT NULL,
   username      text,

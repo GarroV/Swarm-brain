@@ -12,7 +12,8 @@
 - Новый файл `handlers/workspace.ts` — команды `/workspace list/create/add/move` (только суперадмин)
 - MCP-сервер резолвит `group_id` из `requesting_user_id` — данные через Claude Desktop также изолированы
 - Личные записи (`is_private=true`) привязаны к `owner_id` и переезжают с пользователем при смене воркспейса
-- Read.ai webhook хардкодит `group_id = 'europa'` (один OAuth токен на один воркспейс)
+- Read.ai webhook хардкодит `group_id = 'cee'` (один OAuth токен на один воркспейс)
+- Воркспейсы: `cee` (CEE) и `other` (Other Markets)
 
 ## 2026-05-29
 
