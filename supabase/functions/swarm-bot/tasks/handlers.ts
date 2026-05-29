@@ -81,7 +81,7 @@ export async function handleAddTask(chatId: number): Promise<void> {
 
 // ── analyzeAndCreateTasks ─────────────────────────────────────────────────────
 
-export async function analyzeAndCreateTasks(content: string, chatId: number, entryId: string): Promise<void> {
+export async function analyzeAndCreateTasks(content: string, chatId: number, entryId: string, groupId?: string): Promise<void> {
   const profiles = await getProfilesForPrompt();
   const userList = JSON.stringify(profiles.map(p => ({
     id: p.id,
@@ -141,6 +141,7 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, ent
       source: "transcript",
       status: "pending",
       meeting_id: entryId,
+      group_id: groupId ?? null,
     });
   }
 

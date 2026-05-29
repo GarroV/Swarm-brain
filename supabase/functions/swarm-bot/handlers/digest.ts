@@ -86,7 +86,7 @@ export async function generatePersonalDigest(
   );
 
   const digestContent = `Дайджест за ${periodLabel} · ${userName || `ID ${userId}`}\n\n${digest}`;
-  await saveEntry(digestContent, "system", "digest", { period: periodLabel, days_back: daysBack, user_id: userId });
+  await saveEntry(digestContent, "system", "digest", { period: periodLabel, days_back: daysBack, user_id: userId }, undefined, groupId);
 
   let remaining = `<b>📊 Твой дайджест ${periodLabel}</b>\n\n${digest}`;
   while (remaining.length > 0) {
