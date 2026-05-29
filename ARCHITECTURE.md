@@ -1,0 +1,191 @@
+# Swarm Brain — Architecture
+
+> **Для Claude Code:** Читай этот файл в начале КАЖДОЙ сессии перед тем как трогать код. После любых изменений — обновляй соответствующие разделы сразу.
+
+## Стек
+
+- **Runtime:** Deno (Supabase Edge Functions)
+- **БД:** Supabase Postgres + pgvector
+- **AI:** OpenAI GPT-4o-mini (chat) + text-embedding-3-small (поиск)
+- **Bot:** Telegram Bot API (webhook)
+- **Источники встреч:** Granola API, Read.ai (webhook)
+
+---
+
+## Edge Functions
+
+| Функция | Триггер | Назначение |
+|---------|---------|-----------|
+| `swarm-bot` | Telegram webhook POST | Главный бот — весь пользовательский флоу |
+| `granola-poller` | Cron (каждый час) | Опрашивает Granola API для всех пользователей, шлёт уведомления в Telegram |
+| `read-ai-webhook` | Webhook от Read.ai | Принимает завершённые встречи, сохраняет в `entries`, уведомляет бота |
+| `read-ai-auth` | HTTP redirect (OAuth) | OAuth callback для авторизации Read.ai, сохраняет токен в `app_settings` |
+| `swarm-mcp` | MCP (Claude Desktop) | MCP-сервер для Claude Desktop: поиск, добавление знаний, управление задачами |
+
+**Деплой:** `supabase functions deploy <name> --no-verify-jwt` (обязательно `--no-verify-jwt` для Telegram webhook)
+
+---
+
+## swarm-bot — структура файлов
+
+```
+supabase/functions/swarm-bot/
+├── index.ts                 # Entry point: роутинг команд, callback-ов, сессий
+├── handlers/
+│   ├── granola.ts           # Granola: импорт/превью/сохранение встреч
+│   ├── meetings.ts          # Read.ai + saved meetings: просмотр, подтверждение, редактирование
+│   ├── knowledge.ts         # /add, /ask — добавление и поиск по базе знаний
+│   ├── media.ts             # Голос, документы, фото, URL — парсинг и сохранение
+│   ├── digest.ts            # /digest — персональный дайджест за период
+│   ├── users.ts             # /users — управление командой (allow/block)
+│   └── help.ts              # /help — текст справки
+├── tasks/
+│   ├── index.ts             # Экспорт task-хендлеров
+│   ├── handlers.ts          # Callback/session обработка для задач
+│   ├── db.ts                # CRUD задач в Supabase
+│   ├── formatter.ts         # Форматирование задач для Telegram
+│   ├── matcher.ts           # NLP-определение intent для задач
+│   └── types.ts             # TypeScript типы задач
+└── lib/
+    ├── supabase.ts          # Supabase client + ADMIN_USER_ID
+    ├── openai.ts            # chatComplete(), getEmbedding()
+    ├── telegram.ts          # sendMessage(), sendInlineMessage(), answerCallback()
+    ├── storage.ts           # getSession/setSession/clearSession, saveEntry, checkAllowed, visibilityFilter
+    ├── readai.ts            # Read.ai API client + токен-рефреш
+    ├── drive.ts             # Google Drive интеграция (если используется)
+    └── types.ts             # TgMessage, TgCallbackQuery и др.
+```
+
+---
+
+## Таблицы БД
+
+| Таблица | Назначение | Ключевые поля |
+|---------|-----------|---------------|
+| `entries` | База знаний — все записи | `id`, `content`, `summary`, `embedding`, `source`, `added_by`, `metadata` (jsonb), `countries`, `entry_type`, `entry_date`, `is_private`, `owner_id`, `group_id` |
+| `tasks` | Задачи команды | `id`, `title`, `assignees`, `due_date`, `status`, `meeting_id`, `created_by` |
+| `task_history` | История изменений задач | `task_id`, `changed_at`, `changes` |
+| `sessions` | Состояние диалога бота | `chat_id` (PK), `action`, `context` (jsonb) |
+| `allowed_users` | Белый список | `telegram_id`, `username`, `is_admin` |
+| `user_profiles` | Профили пользователей | `telegram_id`, `first_name`, `last_name`, `username` |
+| `user_integrations` | API-ключи интеграций | `telegram_id`, `service` (`granola`), `api_key`, `last_polled_at`, `skipped_note_ids` |
+| `app_settings` | Глобальные настройки | `key`, `value` — хранит Read.ai токены |
+
+**Миграции:** `supabase/migrations/` — файлы по дате. Начальная схема (`CREATE TABLE entries` и др.) **отсутствует** в миграциях (исторический долг).
+
+---
+
+## Флоу встреч
+
+### Granola (ручной импорт через /granola)
+```
+/granola → выбор периода → список заметок (gp_/gd_)
+         → [gp_] генерация тезисов → показ тезисов
+         → [gedit_] инструкция пользователя → GPT переписывает → показ обновлённых тезисов
+         → [gc_/gcp_] сохранение в entries (общее/личное)
+         → [gd_] пропустить (запись в skipped_note_ids)
+```
+
+### Granola (автоматический поллер)
+```
+granola-poller (hourly cron) → новые заметки за период
+  → Telegram: кнопки [🔍 Тезисы / 🗑 Пропустить]  ← callback обрабатывает swarm-bot
+  → дальше тот же флоу что ручной (gp_, gedit_, gc_, gcp_, gd_)
+```
+
+### Read.ai (автоматически)
+```
+Read.ai webhook → read-ai-webhook функция → сохраняет в entries (confirmed=false)
+  → Telegram уведомление: [✅ Подтвердить / ✏️ Редактировать / 🗑 Удалить]
+  → /meetings показывает все unconfirmed → mr_ → детальный просмотр
+```
+
+### Тезисы — AI-редактирование (✏️ Тезисы / ✏️ Переписать)
+- **До сохранения (preview):** `gedit_` → сессия `granola_edit_preview_<noteId>` → инструкция → GPT переписывает → сессия восстанавливается в `granola_preview_<noteId>` → можно итерировать
+- **После сохранения (/meetings):** `medit_` → сессия `meeting_edit_summary_<entryId>` → инструкция → GPT переписывает, читая `entries.content` + `entries.summary`
+
+---
+
+## Сессионный механизм
+
+Хранится в таблице `sessions` (`chat_id` → `{action, context}`). Один активный сеанс на chat_id.
+
+| Prefix action | Файл | Описание |
+|--------------|------|---------|
+| `waiting_add` | index.ts | Ожидание текста для /add |
+| `waiting_ask` | index.ts | Ожидание вопроса для /ask |
+| `granola_custom_period` | granola.ts | Ожидание даты для кастомного периода |
+| `granola_preview_<noteId>` | granola.ts | Кэш {content,title,tezises} для preview перед сохранением |
+| `granola_edit_preview_<noteId>` | granola.ts | Ожидание инструкции для AI-редактирования тезисов (до сохранения) |
+| `meeting_pending_<meetingId>` | meetings.ts | Кэш {content,title} для Read.ai встречи до сохранения |
+| `meeting_title_<entryId>` | meetings.ts | Ожидание нового названия встречи |
+| `meeting_date_<entryId>` | meetings.ts | Ожидание новой даты встречи |
+| `meeting_edit_summary_<entryId>` | meetings.ts | Ожидание инструкции для AI-редактирования тезисов (после сохранения) |
+| `meeting_rename_<entryId>` | meetings.ts | Ожидание переименования встречи |
+| `meeting_tag_<meetingId>` | meetings.ts | Ожидание тегов/стран |
+| `task_*` | tasks/handlers.ts | Различные состояния для создания/редактирования задач |
+| `user_*` | users.ts | Состояния управления пользователями |
+
+---
+
+## Callback-коды (Telegram inline кнопки)
+
+### Granola
+| Код | Действие |
+|----|---------|
+| `gp_<noteId>` | Показать тезисы (preview) |
+| `gc_<noteId>` | Сохранить в общую базу |
+| `gcp_<noteId>` | Сохранить в личное хранилище |
+| `gd_<noteId>` | Пропустить заметку |
+| `gedit_<noteId>` | Начать AI-редактирование тезисов |
+| `gran_today/7d/30d/custom` | Выбор периода для /granola |
+
+### Meetings (Read.ai + Granola saved)
+| Код | Действие |
+|----|---------|
+| `mr_<entryId>` | Открыть детальный просмотр встречи |
+| `mc_<entryId>` | Подтвердить встречу |
+| `medit_<entryId>` | Редактировать тезисы (AI) |
+| `mrename_<entryId>` | Переименовать встречу |
+| `mtr_<entryId>` | Скачать транскрипт |
+| `mtag_<meetingId>` | Установить теги/страны |
+| `massign_<meetingId>` | Назначить участников |
+| `md_<entryId>` | Удалить встречу |
+| `met_<entryId>` | Редактировать название (из confirmation flow) |
+| `med_<entryId>` | Редактировать дату (из confirmation flow) |
+| `rai_saved/import/connect` | Подменю Read.ai |
+| `meeting_<id>` | Открыть конкретную Read.ai встречу |
+| `meeting_save_pub_<id>` | Сохранить Read.ai встречу в общую базу |
+| `meeting_save_priv_<id>` | Сохранить Read.ai встречу в личное |
+| `meeting_discard_<id>` | Не сохранять Read.ai встречу |
+| `mau_<meetingId>_<tgId>` | Добавить участника встречи |
+| `mexp_<entryId>` | Экспортировать встречу файлом |
+
+---
+
+## Контроль доступа
+
+- `checkAllowed(userId)` в `lib/storage.ts` — проверка белого списка
+- `visibilityFilter(userId)` — строка фильтра для запросов: `is_private=false OR (is_private=true AND owner_id=userId)`
+- `ADMIN_USER_ID = 744230399` в `lib/supabase.ts` — всегда имеет доступ
+- Все запросы через `SERVICE_ROLE_KEY` — RLS не работает, фильтрация только в коде
+
+---
+
+## Переменные окружения
+
+| Переменная | Где используется |
+|-----------|----------------|
+| `TELEGRAM_BOT_TOKEN` | swarm-bot, granola-poller |
+| `SUPABASE_URL` | все функции |
+| `SUPABASE_SERVICE_ROLE_KEY` | все функции |
+| `OPENAI_API_KEY` | swarm-bot, swarm-mcp |
+
+---
+
+## Деплой и разработка
+
+- Ветка: `sandbox_vas` → всегда разрабатывать здесь, в `main` не коммитить
+- Деплой: `supabase functions deploy swarm-bot --no-verify-jwt`
+- Деплой обоих: `supabase functions deploy swarm-bot granola-poller --no-verify-jwt`
+- После каждого изменения функционала: обновить этот файл + `CHANGELOG.md`
