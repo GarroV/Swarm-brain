@@ -2,6 +2,7 @@ import { supabase } from "../lib/supabase.ts";
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession, getSession, extractEntryMeta } from "../lib/storage.ts";
+import { getUserGroupId } from "../lib/workspace.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
 const GRANOLA_API = "https://public-api.granola.ai/v1";
@@ -118,6 +119,11 @@ async function saveGranolaNote(
   isPrivate = false,
   cached?: GranolaPreviewCache,
 ): Promise<void> {
+  const groupId = await getUserGroupId(telegramId);
+  if (!groupId) {
+    await sendMessage(chatId, "Ошибка: пользователь не привязан к воркспейсу.");
+    return;
+  }
   await sendMessage(chatId, "Сохраняю в базу знаний...");
 
   let title: string;
@@ -185,6 +191,7 @@ async function saveGranolaNote(
     entry_date: entryDate,
     is_private: isPrivate,
     owner_id: isPrivate ? telegramId : null,
+    group_id: groupId,
   });
 
   if (error) {
