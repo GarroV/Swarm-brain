@@ -6,7 +6,7 @@ import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
 import { handleVoice, handleDocument, handlePhoto, handleUrl, extractUrl } from "./handlers/media.ts";
 import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput } from "./tasks/index.ts";
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
-import { handleUsers, handleUserCallbacks, handleUserSessionInput } from "./handlers/users.ts";
+import { handleUsers, handleUserCallbacks, handleUserSessionInput, handleBroadcast } from "./handlers/users.ts";
 import { handleGranolaCallbacks, handleGranolaCommand, handleGranolaSessionInput, pollGranolaForUser } from "./handlers/granola.ts";
 import { handleFeedbackCommand, handleFeedbackCallbacks, handleFeedbackPhoto, handleFeedbackSessionInput } from "./handlers/feedback.ts";
 import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
@@ -292,6 +292,8 @@ Deno.serve(async (req: Request) => {
           await sendMessage(chatId, `✅ <b>${service}</b> отключена.`);
         }
       }
+    } else if (command === "/broadcast") {
+      await handleBroadcast(chatId, userId, argText);
     } else if (command === "/feedback") {
       await handleFeedbackCommand(chatId);
     } else if (command === "/digest") {

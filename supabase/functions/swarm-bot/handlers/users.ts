@@ -189,6 +189,42 @@ export async function showProfileEditMenu(chatId: number, targetId: number): Pro
   await sendInlineMessage(chatId, "Что хочешь изменить?", keyboard);
 }
 
+export async function handleBroadcast(chatId: number, adminId: number, text: string): Promise<void> {
+  if (adminId !== ADMIN_USER_ID) {
+    await sendMessage(chatId, "Недостаточно прав.");
+    return;
+  }
+  if (!text.trim()) {
+    await sendMessage(chatId, "Использование: <code>/broadcast Текст сообщения</code>");
+    return;
+  }
+
+  const { data: users } = await supabase
+    .from("allowed_users")
+    .select("telegram_id")
+    .not("telegram_id", "is", null)
+    .neq("telegram_id", ADMIN_USER_ID);
+
+  const ids = (users ?? []).map((u: { telegram_id: number }) => u.telegram_id);
+  if (!ids.length) {
+    await sendMessage(chatId, "Нет пользователей для рассылки.");
+    return;
+  }
+
+  let sent = 0;
+  let failed = 0;
+  for (const id of ids) {
+    try {
+      await sendMessage(id, text.trim());
+      sent++;
+    } catch {
+      failed++;
+    }
+  }
+
+  await sendMessage(chatId, `✅ Отправлено: <b>${sent}</b>${failed ? `, не доставлено: <b>${failed}</b>` : ""}`);
+}
+
 export async function handleUsersProfile(chatId: number, argText: string): Promise<void> {
   const targetArg = argText.trim();
   if (!targetArg || isNaN(Number(targetArg))) {
