@@ -86,7 +86,7 @@ export async function dbDeleteTask(id: string): Promise<void> {
 
 export async function dbListAllOpen(groupId?: string): Promise<Task[]> {
   let q = supabase.from("tasks").select("*")
-    .not("status", "in", '("done","cancelled","draft","pending")')
+    .not("status", "in", '("done","cancelled","draft")')
     .order("assignees", { ascending: true });
   if (groupId) q = q.eq("group_id", groupId);
   const { data } = await q.limit(200);

@@ -285,12 +285,25 @@ export async function handleTaskCallbacks(
 
   // tk_mine — my tasks list
   if (data === "tk_mine") {
-    const tasks = await dbListTasks({
-      telegramId: userId,
-      groupId,
-      limit: 20,
-    });
-    const active = tasks.filter(t => !["done", "cancelled", "draft"].includes(t.status));
+    // Look up user's display name to also catch text-assigned tasks from meetings
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("first_name, last_name")
+      .eq("telegram_id", userId)
+      .maybeSingle();
+    const displayName = profile
+      ? [profile.first_name, profile.last_name].filter(Boolean).join(" ")
+      : null;
+
+    const [byId, byName] = await Promise.all([
+      dbListTasks({ telegramId: userId, groupId, limit: 50 }),
+      displayName
+        ? dbListTasks({ assignee: displayName, groupId, limit: 50 })
+        : Promise.resolve([]),
+    ]);
+    const seen = new Set<string>();
+    const merged = [...byId, ...byName].filter(t => !seen.has(t.id) && seen.add(t.id));
+    const active = merged.filter(t => !["done", "cancelled", "draft"].includes(t.status));
 
     if (!active.length) {
       await editInlineMessage(
