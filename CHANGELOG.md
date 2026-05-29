@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-05-29 — Воркспейсы (мультитенантность)
+
+### Воркспейсы — изоляция данных внутри одного бота
+
+- Новая таблица `workspaces (id TEXT PK, name TEXT, created_at)` — тенанты системы
+- `allowed_users.group_id TEXT FK → workspaces.id` — каждый пользователь принадлежит одному воркспейсу
+- `tasks.group_id TEXT FK → workspaces.id` — задачи изолированы по воркспейсу
+- `entries.group_id` теперь получил FK на `workspaces.id` — записи базы знаний также изолированы
+- Новый файл `lib/workspace.ts` — `getUserGroupId()`, `checkAllowedWithGroup()`, CRUD воркспейсов
+- Новый файл `handlers/workspace.ts` — команды `/workspace list/create/add/move` (только суперадмин)
+- MCP-сервер резолвит `group_id` из `requesting_user_id` — данные через Claude Desktop также изолированы
+- Личные записи (`is_private=true`) привязаны к `owner_id` и переезжают с пользователем при смене воркспейса
+- Read.ai webhook хардкодит `group_id = 'europa'` (один OAuth токен на один воркспейс)
+
 ## 2026-05-29
 
 ### Фидбек — /feedback

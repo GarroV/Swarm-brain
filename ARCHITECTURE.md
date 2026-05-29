@@ -38,6 +38,7 @@ supabase/functions/swarm-bot/
 │   ├── media.ts             # Голос, документы, фото, URL — парсинг и сохранение
 │   ├── digest.ts            # /digest — персональный дайджест за период
 │   ├── users.ts             # /users — управление командой (allow/block)
+│   ├── workspace.ts         # /workspace — управление воркспейсами (суперадмин)
 │   └── help.ts              # /help — текст справки
 ├── tasks/
 │   ├── index.ts             # Экспорт task-хендлеров
@@ -53,6 +54,7 @@ supabase/functions/swarm-bot/
     ├── storage.ts           # getSession/setSession/clearSession, saveEntry, checkAllowed, visibilityFilter
     ├── readai.ts            # Read.ai API client + токен-рефреш
     ├── drive.ts             # Google Drive интеграция (если используется)
+    ├── workspace.ts         # getUserGroupId(), checkAllowedWithGroup(), CRUD воркспейсов
     └── types.ts             # TgMessage, TgCallbackQuery и др.
 ```
 
@@ -62,11 +64,12 @@ supabase/functions/swarm-bot/
 
 | Таблица | Назначение | Ключевые поля |
 |---------|-----------|---------------|
-| `entries` | База знаний — все записи | `id`, `content`, `summary`, `embedding`, `source`, `added_by`, `metadata` (jsonb), `countries`, `entry_type`, `entry_date`, `is_private`, `owner_id`, `group_id` |
-| `tasks` | Задачи команды | `id`, `title`, `assignees`, `due_date`, `status`, `meeting_id`, `created_by` |
+| `workspaces` | Воркспейсы (тенанты) | `id` (TEXT PK), `name` TEXT, `created_at` |
+| `entries` | База знаний — все записи | `id`, `content`, `summary`, `embedding`, `source`, `added_by`, `metadata` (jsonb), `countries`, `entry_type`, `entry_date`, `is_private`, `owner_id`, `group_id` (FK → `workspaces.id`) |
+| `tasks` | Задачи команды | `id`, `title`, `assignees`, `due_date`, `status`, `meeting_id`, `created_by`, `group_id` (FK → `workspaces.id`) |
 | `task_history` | История изменений задач | `task_id`, `changed_at`, `changes` |
 | `sessions` | Состояние диалога бота | `chat_id` (PK), `action`, `context` (jsonb) |
-| `allowed_users` | Белый список | `telegram_id`, `username`, `is_admin` |
+| `allowed_users` | Белый список | `telegram_id`, `username`, `is_admin`, `group_id` (FK → `workspaces.id`) |
 | `user_profiles` | Профили пользователей | `telegram_id`, `first_name`, `last_name`, `username` |
 | `user_integrations` | API-ключи интеграций | `telegram_id`, `service` (`granola`), `api_key`, `last_polled_at`, `skipped_note_ids` |
 | `app_settings` | Глобальные настройки | `key`, `value` — хранит Read.ai токены |
@@ -188,9 +191,35 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 ## Контроль доступа
 
 - `checkAllowed(userId)` в `lib/storage.ts` — проверка белого списка
+- `checkAllowedWithGroup(userId)` в `lib/workspace.ts` — проверка белого списка + возвращает `group_id` пользователя одним запросом
 - `visibilityFilter(userId)` — строка фильтра для запросов: `is_private=false OR (is_private=true AND owner_id=userId)`
-- `ADMIN_USER_ID = 744230399` в `lib/supabase.ts` — всегда имеет доступ
+- `ADMIN_USER_ID = 744230399` в `lib/supabase.ts` — всегда имеет доступ, единственный кто может управлять воркспейсами
 - Все запросы через `SERVICE_ROLE_KEY` — RLS не работает, фильтрация только в коде
+- Workspace-изоляция: все запросы к `entries` и `tasks` фильтруются по `group_id` пользователя — пользователь видит только данные своего воркспейса
+
+## Воркспейсы
+
+Воркспейсы — механизм мультитенантности внутри одного бота. Каждый пользователь принадлежит ровно одному воркспейсу и видит только его данные.
+
+**Как работает изоляция:**
+- `allowed_users.group_id` — воркспейс пользователя
+- `entries.group_id` и `tasks.group_id` — к какому воркспейсу принадлежит запись/задача
+- При любом запросе `getUserGroupId(userId)` резолвит `group_id` пользователя, после чего все запросы к БД фильтруются по этому `group_id`
+- MCP-сервер (`swarm-mcp`) резолвит `group_id` из `requesting_user_id` — данные через Claude Desktop также изолированы по воркспейсу
+
+**Личные записи при смене воркспейса:**
+- Записи с `is_private=true` привязаны к `owner_id` (владелец) — они переезжают вместе с пользователем при смене воркспейса
+
+**Особые случаи:**
+- Read.ai webhook хардкодит `group_id = 'europa'` — один OAuth токен обслуживает только один воркспейс
+
+**Команды суперадмина (`/workspace`):**
+- `/workspace list` — список всех воркспейсов
+- `/workspace create <id> <name>` — создать новый воркспейс
+- `/workspace add <userId> <workspaceId>` — добавить пользователя в воркспейс
+- `/workspace move <userId> <workspaceId>` — перевести пользователя в другой воркспейс
+
+Команды доступны только `ADMIN_USER_ID`. Логика — в `handlers/workspace.ts`, CRUD-операции — в `lib/workspace.ts`.
 
 ---
 
