@@ -15,20 +15,29 @@ async function getFeedbackChannelId(): Promise<string | null> {
 }
 
 async function postToChannel(channelId: string, text: string, photoFileId?: string): Promise<void> {
-  if (photoFileId) {
-    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: channelId, photo: photoFileId, caption: text, parse_mode: "HTML" }),
-    });
-    if (!res.ok) console.error("[feedback] channel sendPhoto failed:", res.status, await res.text());
-  } else {
-    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: channelId, text, parse_mode: "HTML" }),
-    });
-    if (!res.ok) console.error("[feedback] channel sendMessage failed:", res.status, await res.text());
+  const method = photoFileId ? "sendPhoto" : "sendMessage";
+  const payload = photoFileId
+    ? { chat_id: channelId, photo: photoFileId, caption: text, parse_mode: "HTML" }
+    : { chat_id: channelId, text, parse_mode: "HTML" };
+
+  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const json = await res.json().catch(() => null);
+    // Telegram migrated group → supergroup: update stored chat_id and retry
+    if (json?.parameters?.migrate_to_chat_id) {
+      const newId = String(json.parameters.migrate_to_chat_id);
+      await supabase.from("app_settings")
+        .update({ value: newId })
+        .eq("key", "feedback_channel_id");
+      await postToChannel(newId, text, photoFileId);
+      return;
+    }
+    throw new Error(`${method} failed ${res.status}: ${JSON.stringify(json)}`);
   }
 }
 
@@ -80,8 +89,8 @@ export async function handleFeedbackCallbacks(
   try {
     await saveFeedback(userId, username, text);
     await sendMessage(chatId, "✅ Фидбек принят, спасибо!");
-  } catch {
-    await sendMessage(chatId, "Ошибка при сохранении фидбека. Попробуй снова.");
+  } catch (err) {
+    await sendMessage(chatId, `Ошибка: ${err instanceof Error ? err.message : String(err)}`);
   }
   return true;
 }
@@ -105,8 +114,8 @@ export async function handleFeedbackPhoto(
   try {
     await saveFeedback(userId, username, text, photoFileId);
     await sendMessage(chatId, "✅ Фидбек принят, спасибо!");
-  } catch {
-    await sendMessage(chatId, "Ошибка при сохранении фидбека. Попробуй снова.");
+  } catch (err) {
+    await sendMessage(chatId, `Ошибка: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
