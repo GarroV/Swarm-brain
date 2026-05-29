@@ -111,7 +111,7 @@ function parseSpreadsheet(buffer: ArrayBuffer): string {
   return parts.join("\n\n");
 }
 
-export async function handleDocument(chatId: number, username: string, doc: NonNullable<TgMessage["document"]>): Promise<void> {
+export async function handleDocument(chatId: number, username: string, doc: NonNullable<TgMessage["document"]>, groupId: string): Promise<void> {
   const mime = doc.mime_type ?? "";
   const name = doc.file_name ?? "файл";
 
@@ -135,6 +135,7 @@ export async function handleDocument(chatId: number, username: string, doc: NonN
       await saveEntry(chunks[i], username, "document",
         { file_name: name, mime: mime || "text/plain", chunk: i + 1, total_chunks: chunks.length, file_url: stored.url },
         i === 0 ? (summary ?? undefined) : undefined,
+        groupId,
       );
     }
     const fileMsg = stored.url ? `\n📎 <a href="${stored.url}">Скачать файл</a>` : (stored.error ? `\n⚠️ Storage: ${stored.error}` : "");
@@ -173,6 +174,7 @@ export async function handleDocument(chatId: number, username: string, doc: NonN
       await saveEntry(chunks[i], username, "document",
         { file_name: name, mime: mime || "spreadsheet", chunk: i + 1, total_chunks: chunks.length, file_url: stored.url },
         i === 0 ? (summary ?? undefined) : undefined,
+        groupId,
       );
     }
     const fileMsg = stored.url ? `\n📎 <a href="${stored.url}">Скачать файл</a>` : (stored.error ? `\n⚠️ Storage: ${stored.error}` : "");
@@ -193,7 +195,7 @@ export async function handleDocument(chatId: number, username: string, doc: NonN
       return;
     }
 
-    await saveEntry(`PDF файл: ${name}`, username, "pdf", { file_name: name, file_url: stored.url });
+    await saveEntry(`PDF файл: ${name}`, username, "pdf", { file_name: name, file_url: stored.url }, undefined, groupId);
     await sendMessage(chatId, `✅ PDF <b>${name}</b> сохранён.\n📎 <a href="${stored.url}">Скачать файл</a>`);
     return;
   }
@@ -201,21 +203,21 @@ export async function handleDocument(chatId: number, username: string, doc: NonN
   await sendMessage(chatId, `Формат <code>${mime || name}</code> пока не поддерживается.\n\nПоддерживаемые форматы: TXT, MD, CSV, JSON, XLSX, PDF.`);
 }
 
-export async function handlePhoto(chatId: number, username: string, photos: NonNullable<TgMessage["photo"]>): Promise<void> {
+export async function handlePhoto(chatId: number, username: string, photos: NonNullable<TgMessage["photo"]>, groupId: string): Promise<void> {
   await sendMessage(chatId, "Анализирую изображение...");
   const largest = photos.reduce((a, b) => ((b.file_size ?? 0) > (a.file_size ?? 0) ? b : a));
   const description = await describeImage(largest.file_id);
-  await saveEntry(description, username, "image");
+  await saveEntry(description, username, "image", undefined, undefined, groupId);
   await sendMessage(chatId, `Изображение обработано и сохранено:\n\n<i>${description.slice(0, 500)}${description.length > 500 ? "..." : ""}</i>`);
 }
 
-export async function handleUrl(chatId: number, username: string, url: string, rawText: string, analyze: boolean): Promise<void> {
+export async function handleUrl(chatId: number, username: string, url: string, rawText: string, analyze: boolean, groupId: string): Promise<void> {
   if (analyze) {
     await sendMessage(chatId, `Загружаю страницу...`);
     try {
       const content = await fetchUrlContent(url);
       if (!content || content.length < 50) { await sendMessage(chatId, "Не удалось извлечь текст со страницы."); return; }
-      await saveEntry(content, username, "url", { url });
+      await saveEntry(content, username, "url", { url }, undefined, groupId);
       await sendMessage(chatId, `Страница сохранена (${content.length} символов):\n<code>${url}</code>`);
     } catch (err) {
       await sendMessage(chatId, `Не удалось загрузить страницу: ${err instanceof Error ? err.message : String(err)}`);
@@ -224,16 +226,16 @@ export async function handleUrl(chatId: number, username: string, url: string, r
     const description = rawText.replace(url, "").replace(/^(добавь в базу[:\s]*|сохрани[:\s]*|добавь[:\s]*)/i, "").trim();
     const title = description || url;
     const content = description ? `${description}\n\nСсылка: ${url}` : url;
-    await saveEntry(content, username, "link", { url, title }, description || undefined);
+    await saveEntry(content, username, "link", { url, title }, description || undefined, groupId);
     await sendMessage(chatId, `🔗 Ссылка сохранена.\n<code>${url}</code>${description ? `\n\n<i>${description}</i>` : ""}`);
   }
 }
 
-export async function handleVoice(chatId: number, username: string, fileId: string, duration: number): Promise<void> {
+export async function handleVoice(chatId: number, username: string, fileId: string, duration: number, groupId: string): Promise<void> {
   await sendMessage(chatId, `Транскрибирую голосовое (${duration} сек)...`);
   const transcript = await transcribeAudio(fileId);
   const summary = await generateSummary(transcript);
-  await saveEntry(transcript, username, "voice", {}, summary ?? undefined);
+  await saveEntry(transcript, username, "voice", {}, summary ?? undefined, groupId);
   await sendMessage(chatId, summary
     ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
     : `✅ Транскрипция сохранена:\n\n<i>${transcript.slice(0, 500)}</i>`);
