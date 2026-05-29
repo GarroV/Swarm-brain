@@ -3,6 +3,7 @@ import { sendMessage, sendInlineMessage, editInlineMessage, buildKeyboard } from
 import { setSession, clearSession } from "../lib/storage.ts";
 import type { Task, TgCallbackQuery } from "../lib/types.ts";
 import { sendTaskCard } from "../tasks/index.ts";
+import { generateNameAliases } from "../lib/name-aliases.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -253,6 +254,25 @@ export async function handleProfileEdit(
   }
 
   await supabase.from("user_profiles").upsert(updateData);
+
+  // Regenerate aliases when name changes
+  if (field === "first_name" || field === "last_name") {
+    const { data: current } = await supabase
+      .from("user_profiles")
+      .select("first_name, last_name")
+      .eq("telegram_id", targetId)
+      .maybeSingle();
+    if (current) {
+      const aliases = generateNameAliases(
+        current.first_name ?? undefined,
+        current.last_name ?? undefined,
+      );
+      await supabase.from("user_profiles")
+        .update({ name_aliases: aliases })
+        .eq("telegram_id", targetId);
+    }
+  }
+
   await sendInlineMessage(chatId, `✅ <b>${label}</b> сохранено.`, [
     [{ text: "✏️ Ещё поля", callback_data: `pe_menu_${targetId}` }, { text: "← Профиль", callback_data: `pu_${targetId}` }],
   ]);
