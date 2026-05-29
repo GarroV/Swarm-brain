@@ -269,7 +269,11 @@ export async function handleMeetingCallbacks(
     const { data: entry } = await supabase.from("entries").select("summary").eq("id", entryId).maybeSingle();
     await setSession(chatId, `meeting_edit_summary_${entryId}`);
     const current = entry?.summary ? `\n\nТекущие тезисы:\n${entry.summary.slice(0, 1000)}` : "";
-    await sendMessage(chatId, `Введи новые тезисы для встречи.${current}\n\n<i>Отправь отредактированный текст:</i>`);
+    await sendMessage(
+      chatId,
+      `Напиши инструкцию: что изменить в тезисах.${current}\n\n` +
+      "<i>Например: «убери раздел Финансы», «сделай тезисы короче», «добавь задачу на Васю»</i>"
+    );
     return true;
   }
   if (data.startsWith("mrename_")) {
@@ -417,10 +421,29 @@ export async function handleMeetingSessionInput(
   if (action.startsWith("meeting_edit_summary_")) {
     await clearSession(chatId);
     const entryId = action.replace("meeting_edit_summary_", "");
-    const newSummary = text.trim();
+
+    const { data: entry } = await supabase
+      .from("entries")
+      .select("content, summary")
+      .eq("id", entryId)
+      .maybeSingle();
+    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
+
+    await sendMessage(chatId, "Переписываю тезисы...");
+
+    const newSummary = await chatComplete(
+      "Ты помощник команды. Перепиши тезисы встречи согласно инструкции пользователя.\n" +
+      "Не домысливай — только то что есть в исходном тексте или в текущих тезисах.\n" +
+      "Сохраняй формат: ### Тема\n- тезис\n- тезис\n\n" +
+      `Инструкция: ${text.trim()}\n\n` +
+      `Текущие тезисы:\n${(entry.summary as string) ?? ""}`,
+      (entry.content as string ?? "").slice(0, 6000)
+    );
+
     const { error } = await supabase.from("entries").update({ summary: newSummary }).eq("id", entryId);
     if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return true; }
-    await sendMessage(chatId, `✅ Тезисы обновлены.`, {
+
+    await sendMessage(chatId, `✅ Тезисы обновлены.\n\n${newSummary.slice(0, 1500)}`, {
       inline_keyboard: [[{ text: "✅ Подтвердить встречу", callback_data: `mc_${entryId}` }]],
     });
     return true;
