@@ -50,6 +50,14 @@ export async function sendMessage(
   });
 }
 
+export async function deleteMessage(chatId: number | string, messageId: number): Promise<void> {
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/deleteMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+  });
+}
+
 export async function getTelegramFileUrl(fileId: string): Promise<string> {
   const res = await fetch(
     `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`

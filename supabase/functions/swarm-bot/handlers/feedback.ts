@@ -1,5 +1,5 @@
 import { supabase } from "../lib/supabase.ts";
-import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
+import { sendMessage, sendInlineMessage, deleteMessage } from "../lib/telegram.ts";
 import { setSession, clearSession, getSession } from "../lib/storage.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
@@ -11,14 +11,20 @@ async function getFeedbackChannelId(): Promise<string | null> {
     .select("value")
     .eq("key", "feedback_channel_id")
     .maybeSingle();
-  return data?.value ?? null;
+  return data?.value ? String(data.value) : null;
 }
 
-async function postToChannel(channelId: string, text: string, photoFileId?: string): Promise<void> {
+async function postToChannel(
+  channelId: string,
+  text: string,
+  feedbackId: string,
+  photoFileId?: string,
+): Promise<void> {
+  const keyboard = { inline_keyboard: [[{ text: "✅ Прочитано", callback_data: `fb_read_${feedbackId}` }]] };
   const method = photoFileId ? "sendPhoto" : "sendMessage";
   const payload = photoFileId
-    ? { chat_id: channelId, photo: photoFileId, caption: text, parse_mode: "HTML" }
-    : { chat_id: channelId, text, parse_mode: "HTML" };
+    ? { chat_id: channelId, photo: photoFileId, caption: text, parse_mode: "HTML", reply_markup: keyboard }
+    : { chat_id: channelId, text, parse_mode: "HTML", reply_markup: keyboard };
 
   const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`, {
     method: "POST",
@@ -34,7 +40,7 @@ async function postToChannel(channelId: string, text: string, photoFileId?: stri
       await supabase.from("app_settings")
         .update({ value: newId })
         .eq("key", "feedback_channel_id");
-      await postToChannel(newId, text, photoFileId);
+      await postToChannel(newId, text, feedbackId, photoFileId);
       return;
     }
     throw new Error(`${method} failed ${res.status}: ${JSON.stringify(json)}`);
@@ -47,12 +53,12 @@ async function saveFeedback(
   text: string,
   photoFileId?: string,
 ): Promise<void> {
-  const { error } = await supabase.from("feedback").insert({
+  const { data, error } = await supabase.from("feedback").insert({
     telegram_id: telegramId,
     username,
     text,
     photo_file_id: photoFileId ?? null,
-  });
+  }).select("id").single();
   if (error) throw new Error(`feedback insert failed: ${error.message}`);
 
   const channelId = await getFeedbackChannelId();
@@ -62,7 +68,7 @@ async function saveFeedback(
     day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit",
   });
   const channelText = `🐛 @${username} · ${date}\n\n${text}`;
-  await postToChannel(channelId, channelText, photoFileId);
+  await postToChannel(channelId, channelText, data.id, photoFileId);
 }
 
 export async function handleFeedbackCommand(chatId: number): Promise<void> {
@@ -76,6 +82,14 @@ export async function handleFeedbackCallbacks(
   userId: number,
   username: string,
 ): Promise<boolean> {
+  // "Прочитано" button in the feedback channel
+  if (cb.data.startsWith("fb_read_")) {
+    const feedbackId = cb.data.slice("fb_read_".length);
+    await supabase.from("feedback").delete().eq("id", feedbackId);
+    await deleteMessage(cb.message.chat.id, cb.message.message_id);
+    return true;
+  }
+
   if (cb.data !== "fb_done") return false;
 
   const session = await getSession(chatId);
