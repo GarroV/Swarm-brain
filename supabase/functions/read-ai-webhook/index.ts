@@ -132,6 +132,8 @@ async function extractAndSaveTasks(content: string, meetingId: string): Promise<
         tags: task.tags ?? [],
         meeting_id: meetingId,
         status: "pending",
+        // Read.ai uses single OAuth token tied to CEE workspace
+        group_id: "cee",
       });
     }
     return tasks.length;
@@ -249,6 +251,8 @@ Deno.serve(async (req: Request) => {
       countries,
       entry_type: "transcript",
       entry_date: entryDateIso,
+      // Read.ai uses single OAuth token tied to CEE workspace
+      group_id: "cee",
     }).select("id").single();
 
     const entryId = (savedEntry as { id: string } | null)?.id ?? meetingId;
