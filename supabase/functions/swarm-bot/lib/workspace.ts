@@ -82,7 +82,7 @@ export async function assignUserToWorkspace(
   if (wsErr) throw new Error(wsErr.message);
   if (!ws) return "workspace_not_found";
 
-  if (telegramId) {
+  if (telegramId !== null) {
     const { data: existing } = await supabase
       .from("allowed_users").select("id").eq("telegram_id", telegramId).maybeSingle();
     if (existing) {

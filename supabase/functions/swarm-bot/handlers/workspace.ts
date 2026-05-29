@@ -39,7 +39,7 @@ export async function handleWorkspace(
       await sendMessage(chatId, `✅ Воркспейс <code>${id}</code> — <b>${name}</b> создан.`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      await sendMessage(chatId, msg.includes("duplicate") ? `Воркспейс <code>${id}</code> уже существует.` : `Ошибка: ${msg}`);
+      await sendMessage(chatId, (msg.includes("duplicate") || msg.includes("unique") || msg.includes("23505")) ? `Воркспейс <code>${id}</code> уже существует.` : `Ошибка: ${msg}`);
     }
     return;
   }
