@@ -20,7 +20,7 @@ export async function handleConnect(chatId: number): Promise<void> {
   });
 }
 
-export async function handleMeetings(chatId: number, hoursBack = 24): Promise<void> {
+export async function handleMeetings(chatId: number, hoursBack = 24, groupId = ""): Promise<void> {
   const token = await getReadAiToken();
   if (!token) {
     await sendMessage(chatId, "Read.ai не подключён. Используй /connect для авторизации.");
@@ -104,6 +104,7 @@ export async function handleMeetingCallbacks(
   chatId: number,
   userId: number,
   username: string,
+  groupId: string,
 ): Promise<boolean> {
   const data = cb.data;
 
@@ -117,7 +118,7 @@ export async function handleMeetingCallbacks(
     }
     const { content, title } = JSON.parse(session.context ?? "{}") as { content: string; title: string };
     await clearSession(chatId);
-    await saveEntry(content, username, "read_ai", { meeting_id: meetingId, title }, undefined, undefined, isPrivate, isPrivate ? userId : undefined);
+    await saveEntry(content, username, "read_ai", { meeting_id: meetingId, title }, undefined, groupId, isPrivate, isPrivate ? userId : undefined);
     const label = isPrivate ? "🔒 Встреча сохранена в личное хранилище" : "💾 Встреча сохранена в базу знаний";
     await sendMessage(chatId, `${label}: <b>${title}</b>`);
     return true;
@@ -136,7 +137,7 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("md_")) {
     const entryId = data.replace("md_", "");
 
-    const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).maybeSingle();
+    const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).eq("group_id", groupId).maybeSingle();
     const title = (entry?.metadata?.title as string) ?? "Встреча";
     const meetingId = entry?.metadata?.meeting_id as string | null ?? null;
 
@@ -148,7 +149,7 @@ export async function handleMeetingCallbacks(
         await supabase.from("tasks").delete().eq("meeting_id", meetingId);
       }
     }
-    await supabase.from("entries").delete().eq("id", entryId);
+    await supabase.from("entries").delete().eq("id", entryId).eq("group_id", groupId);
 
     await sendMessage(chatId, `🗑 Удалено: <b>${title}</b> и все связанные задачи.`);
     return true;
@@ -158,6 +159,7 @@ export async function handleMeetingCallbacks(
     if (sub === "saved") {
       const { data: meetings } = await supabase
         .from("entries").select("id, metadata, created_at, source, entry_type")
+        .eq("group_id", groupId)
         .or("source.in.(read_ai,voice),entry_type.in.(transcript,meeting)")
         .order("created_at", { ascending: false }).limit(15);
       if (!meetings?.length) {
@@ -179,7 +181,7 @@ export async function handleMeetingCallbacks(
         }
       }
     } else if (sub === "import") {
-      await handleMeetings(chatId, 48);
+      await handleMeetings(chatId, 48, groupId);
     } else if (sub === "connect") {
       await handleConnect(chatId);
     }
@@ -187,7 +189,7 @@ export async function handleMeetingCallbacks(
   }
   if (data.startsWith("mr_")) {
     const entryId = data.replace("mr_", "");
-    const { data: entry } = await supabase.from("entries").select("content, summary, metadata, created_at, source").eq("id", entryId).maybeSingle();
+    const { data: entry } = await supabase.from("entries").select("content, summary, metadata, created_at, source").eq("id", entryId).eq("group_id", groupId).maybeSingle();
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
 
     const title = (entry.metadata?.title as string) ?? "Встреча";
@@ -241,7 +243,7 @@ export async function handleMeetingCallbacks(
   }
   if (data.startsWith("mtr_")) {
     const entryId = data.replace("mtr_", "");
-    const { data: entry } = await supabase.from("entries").select("content, metadata, created_at").eq("id", entryId).maybeSingle();
+    const { data: entry } = await supabase.from("entries").select("content, metadata, created_at").eq("id", entryId).eq("group_id", groupId).maybeSingle();
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
 
     const transcript = (entry.content as string ?? "").split("Стенограмма:")[1]?.trim()
@@ -266,7 +268,7 @@ export async function handleMeetingCallbacks(
   }
   if (data.startsWith("medit_")) {
     const entryId = data.replace("medit_", "");
-    const { data: entry } = await supabase.from("entries").select("summary").eq("id", entryId).maybeSingle();
+    const { data: entry } = await supabase.from("entries").select("summary").eq("id", entryId).eq("group_id", groupId).maybeSingle();
     await setSession(chatId, `meeting_edit_summary_${entryId}`);
     const current = entry?.summary ? `\n\nТекущие тезисы:\n${entry.summary.slice(0, 1000)}` : "";
     await sendMessage(
@@ -328,7 +330,7 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("mexp_")) {
     // Export meeting as file from admin panel
     const entryId = data.replace("mexp_", "");
-    const { data: entry } = await supabase.from("entries").select("content, metadata, created_at").eq("id", entryId).maybeSingle();
+    const { data: entry } = await supabase.from("entries").select("content, metadata, created_at").eq("id", entryId).eq("group_id", groupId).maybeSingle();
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
     else {
       const rawTitle = ((entry.metadata as Record<string, unknown>)?.title as string | undefined) ?? "meeting";
@@ -344,10 +346,10 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("mc_")) {
     // Confirm meeting from read-ai-webhook
     const entryId = data.replace("mc_", "");
-    const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).maybeSingle();
+    const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).eq("group_id", groupId).maybeSingle();
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
     else {
-      await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true } }).eq("id", entryId);
+      await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true } }).eq("id", entryId).eq("group_id", groupId);
       const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
       await sendMessage(chatId, `✅ Встреча сохранена: <b>${title}</b>`);
     }
@@ -373,16 +375,17 @@ export async function handleMeetingCallbacks(
 export async function handleMeetingSessionInput(
   chatId: number,
   action: string,
-  text: string
+  text: string,
+  groupId: string,
 ): Promise<boolean> {
   if (action.startsWith("meeting_title_")) {
     await clearSession(chatId);
     const entryId = action.replace("meeting_title_", "");
     const newTitle = text.trim();
-    const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).maybeSingle();
+    const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).eq("group_id", groupId).maybeSingle();
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
     else {
-      await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle } }).eq("id", entryId);
+      await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle } }).eq("id", entryId).eq("group_id", groupId);
       await sendMessage(chatId, `✅ Название: <b>${newTitle}</b>`, {
         inline_keyboard: [[
           { text: "✅ Сохранить", callback_data: `mc_${entryId}` },
@@ -403,10 +406,10 @@ export async function handleMeetingSessionInput(
     const dateVal = /^\d{4}-\d{2}-\d{2}$/.test(parsed.trim()) ? parsed.trim() : null;
     if (!dateVal) { await sendMessage(chatId, "Не удалось распознать дату. Попробуй ещё раз."); }
     else {
-      const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).maybeSingle();
+      const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).eq("group_id", groupId).maybeSingle();
       if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
       else {
-        await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), entry_date: dateVal } }).eq("id", entryId);
+        await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), entry_date: dateVal } }).eq("id", entryId).eq("group_id", groupId);
         const dateFmt = new Date(`${dateVal}T12:00:00`).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
         await sendMessage(chatId, `📅 Дата: <b>${dateFmt}</b>`, {
           inline_keyboard: [[
@@ -426,6 +429,7 @@ export async function handleMeetingSessionInput(
       .from("entries")
       .select("content, summary, metadata")
       .eq("id", entryId)
+      .eq("group_id", groupId)
       .maybeSingle();
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
 
@@ -457,7 +461,7 @@ export async function handleMeetingSessionInput(
     if (newTitle) {
       updates.metadata = { ...(entry.metadata as Record<string, unknown>), title: newTitle };
     }
-    const { error } = await supabase.from("entries").update(updates).eq("id", entryId);
+    const { error } = await supabase.from("entries").update(updates).eq("id", entryId).eq("group_id", groupId);
     if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return true; }
 
     const displayTitle = newTitle ?? currentTitle;
@@ -471,10 +475,10 @@ export async function handleMeetingSessionInput(
     await clearSession(chatId);
     const entryId = action.replace("meeting_rename_", "");
     const newTitle = text.trim();
-    const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).maybeSingle();
+    const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).eq("group_id", groupId).maybeSingle();
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
     else {
-      await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle } }).eq("id", entryId);
+      await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle } }).eq("id", entryId).eq("group_id", groupId);
       await sendMessage(chatId, `✅ Встреча переименована: <b>${newTitle}</b>`);
     }
     return true;
@@ -485,13 +489,14 @@ export async function handleMeetingSessionInput(
     const rawTags = text.split(",").map((t) => t.trim()).filter(Boolean);
     const { data: entries } = await supabase
       .from("entries").select("id, metadata")
+      .eq("group_id", groupId)
       .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`);
     if (!entries?.length) { await sendMessage(chatId, "Встреча не найдена."); }
     else {
       for (const entry of entries as Array<{ id: string; metadata: Record<string, unknown> }>) {
         const existing = (entry.metadata?.tags as string[] | undefined) ?? [];
         const merged = [...new Set([...existing, ...rawTags])];
-        await supabase.from("entries").update({ metadata: { ...entry.metadata, tags: merged } }).eq("id", entry.id);
+        await supabase.from("entries").update({ metadata: { ...entry.metadata, tags: merged } }).eq("id", entry.id).eq("group_id", groupId);
       }
       await sendMessage(chatId, `🏷 Теги сохранены: <b>${rawTags.join(", ")}</b>`);
     }
