@@ -72,7 +72,10 @@ supabase/functions/swarm-bot/
 | `allowed_users` | Белый список | `telegram_id`, `username`, `is_admin`, `group_id` (FK → `workspaces.id`) |
 | `user_profiles` | Профили пользователей | `telegram_id`, `first_name`, `last_name`, `username` |
 | `user_integrations` | API-ключи интеграций | `telegram_id`, `service` (`granola`), `api_key`, `last_polled_at`, `skipped_note_ids` |
-| `app_settings` | Глобальные настройки | `key`, `value` — хранит Read.ai токены |
+| `app_settings` | Глобальные настройки | `key`, `value` — хранит `feedback_channel_id` |
+| `oauth_tokens` | OAuth токены интеграций | `service` (`read_ai`), `client_id`, `access_token`, `refresh_token`, `expires_at`, `updated_at` |
+| `oauth_state` | Временный PKCE state для OAuth | `state`, `client_id`, `code_verifier` — создаётся при старте OAuth, удаляется после callback |
+| `task_comments` | Комментарии к задачам | Таблица существует, код не использует — не задействована |
 
 **Миграции:** `supabase/migrations/` — файлы по дате. Начальная схема (`CREATE TABLE entries` и др.) **отсутствует** в миграциях (исторический долг).
 
