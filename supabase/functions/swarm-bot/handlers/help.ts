@@ -40,6 +40,7 @@ export function getHelpText(): string {
     "Settings → Developer → Add MCP Server\n" +
     "URL: <code>https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp</code>\n\n" +
 
+    "/feedback — отправить фидбек\n" +
     "/reset — сбросить состояние · /help — эта справка"
   );
 }
