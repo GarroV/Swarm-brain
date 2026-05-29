@@ -28,6 +28,26 @@ export async function sendInlineMessage(chatId: number, text: string, keyboard: 
   }
 }
 
+export async function editInlineMessage(
+  chatId: number,
+  messageId: number,
+  text: string,
+  keyboard: unknown[][]
+): Promise<void> {
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: keyboard },
+    }),
+  });
+  // "message is not modified" errors (400) are silently ignored
+}
+
 export function buildKeyboard() {
   return {
     keyboard: [

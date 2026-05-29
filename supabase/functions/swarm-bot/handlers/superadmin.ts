@@ -1,5 +1,5 @@
 import { supabase, ADMIN_USER_ID } from "../lib/supabase.ts";
-import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
+import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession } from "../lib/storage.ts";
 import { listWorkspaces, createWorkspace, assignUserToWorkspace } from "../lib/workspace.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
@@ -56,7 +56,7 @@ export async function handleSuperadminCallbacks(
   try {
     // sa_main — re-show main menu
     if (data === "sa_main") {
-      await sendInlineMessage(chatId, "🔧 <b>Суперадмин панель</b>", [[
+      await editInlineMessage(chatId, cb.message.message_id, "🔧 <b>Суперадмин панель</b>", [[
         { text: "📋 Спейсы", callback_data: "sa_spaces" },
         { text: "➕ Создать спейс", callback_data: "sa_create" },
       ]]);
@@ -67,7 +67,7 @@ export async function handleSuperadminCallbacks(
     if (data === "sa_spaces") {
       const workspaces = await listWorkspaces();
       if (!workspaces.length) {
-        await sendInlineMessage(chatId, "📋 Нет ни одного спейса.", [[
+        await editInlineMessage(chatId, cb.message.message_id, "📋 Нет ни одного спейса.", [[
           { text: "➕ Создать спейс", callback_data: "sa_create" },
           { text: "🔙 Главная", callback_data: "sa_main" },
         ]]);
@@ -84,7 +84,7 @@ export async function handleSuperadminCallbacks(
         rows.push([{ text: `${ws.name} (${count ?? 0} чел.)`, callback_data: `sa_sp_${ws.id}` }]);
       }
       rows.push([{ text: "🔙 Главная", callback_data: "sa_main" }]);
-      await sendInlineMessage(chatId, "📋 <b>Воркспейсы:</b>", rows);
+      await editInlineMessage(chatId, cb.message.message_id, "📋 <b>Воркспейсы:</b>", rows);
       return true;
     }
 
@@ -110,7 +110,7 @@ export async function handleSuperadminCallbacks(
         .eq("group_id", wsId);
       const msg =
         `📦 <b>${ws.name}</b>\nID: ${wsId}\nПользователей: ${count ?? 0}`;
-      await sendInlineMessage(chatId, msg, [
+      await editInlineMessage(chatId, cb.message.message_id, msg, [
         [
           { text: "👥 Пользователи", callback_data: `sa_su_${wsId}` },
           { text: "✏️ Переименовать", callback_data: `sa_ren_${wsId}` },
@@ -150,8 +150,9 @@ export async function handleSuperadminCallbacks(
       }>;
 
       if (!users?.length) {
-        await sendInlineMessage(
+        await editInlineMessage(
           chatId,
+          cb.message.message_id,
           `В спейсе ${wsName} нет пользователей.`,
           [
             [
@@ -176,7 +177,7 @@ export async function handleSuperadminCallbacks(
         { text: "🔙 К спейсу", callback_data: `sa_sp_${wsId}` },
       ]);
 
-      await sendInlineMessage(chatId, `👥 <b>Пользователи ${wsName}:</b>`, userRows);
+      await editInlineMessage(chatId, cb.message.message_id, `👥 <b>Пользователи ${wsName}:</b>`, userRows);
       return true;
     }
 
@@ -221,7 +222,7 @@ export async function handleSuperadminCallbacks(
       }
       keyboard.push([{ text: "🔙 К пользователям", callback_data: `sa_su_${wsId}` }]);
 
-      await sendInlineMessage(chatId, msg, keyboard);
+      await editInlineMessage(chatId, cb.message.message_id, msg, keyboard);
       return true;
     }
 
@@ -238,7 +239,7 @@ export async function handleSuperadminCallbacks(
       ]);
       rows.push([{ text: "🔙 Назад", callback_data: `sa_u_${tgId}_${wsId}` }]);
 
-      await sendInlineMessage(chatId, "Переместить пользователя в:", rows);
+      await editInlineMessage(chatId, cb.message.message_id, "Переместить пользователя в:", rows);
       return true;
     }
 
@@ -257,8 +258,9 @@ export async function handleSuperadminCallbacks(
       const ws = workspaces.find((w) => w.id === toWsId);
       const wsName = ws?.name ?? toWsId.toUpperCase();
 
-      await sendInlineMessage(
+      await editInlineMessage(
         chatId,
+        cb.message.message_id,
         `✅ Пользователь перемещён в ${wsName}.`,
         [[
           { text: `👥 Пользователи ${wsName}`, callback_data: `sa_su_${toWsId}` },
@@ -287,8 +289,9 @@ export async function handleSuperadminCallbacks(
         return true;
       }
 
-      await sendInlineMessage(
+      await editInlineMessage(
         chatId,
+        cb.message.message_id,
         "✅ Пользователь удалён из спейса.",
         [[{ text: "👥 Пользователи", callback_data: `sa_su_${wsId}` }]],
       );

@@ -1,5 +1,5 @@
 import { supabase, ADMIN_USER_ID } from "../lib/supabase.ts";
-import { sendMessage, sendInlineMessage, buildKeyboard } from "../lib/telegram.ts";
+import { sendMessage, sendInlineMessage, editInlineMessage, buildKeyboard } from "../lib/telegram.ts";
 import { setSession, clearSession } from "../lib/storage.ts";
 import type { Task, TgCallbackQuery } from "../lib/types.ts";
 import { sendTaskCard } from "../tasks/index.ts";
@@ -14,7 +14,7 @@ export const PROFILE_FIELDS: Record<string, string> = {
   email:      "Email",
 };
 
-export async function handleUsers(chatId: number, adminId: number, argText: string, groupId: string): Promise<void> {
+export async function handleUsers(chatId: number, adminId: number, argText: string, groupId: string, messageId?: number): Promise<void> {
   const parts = argText.trim().split(/\s+/);
   const sub = parts[0]?.toLowerCase();
   const targetArg = parts[1];
@@ -48,11 +48,9 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
     }]);
     userButtons.push([{ text: "➕ Добавить пользователя", callback_data: "ua_add" }]);
 
-    await sendInlineMessage(
-      chatId,
-      `<b>Пользователи (${allUsers.length}):</b>\n\n${lines.join("\n")}`,
-      userButtons,
-    );
+    messageId
+      ? await editInlineMessage(chatId, messageId, `<b>Пользователи (${allUsers.length}):</b>\n\n${lines.join("\n")}`, userButtons)
+      : await sendInlineMessage(chatId, `<b>Пользователи (${allUsers.length}):</b>\n\n${lines.join("\n")}`, userButtons);
     return;
   }
 
@@ -117,7 +115,7 @@ export async function startOnboarding(chatId: number): Promise<void> {
   });
 }
 
-export async function showProfile(chatId: number, targetId: number): Promise<void> {
+export async function showProfile(chatId: number, targetId: number, messageId?: number): Promise<void> {
   const { data: user } = await supabase
     .from("allowed_users").select("telegram_id, username").eq("telegram_id", targetId).maybeSingle();
   if (!user) { await sendMessage(chatId, "Пользователь не найден."); return; }
@@ -142,7 +140,9 @@ export async function showProfile(chatId: number, targetId: number): Promise<voi
     [{ text: "← Список", callback_data: "ua_list" }],
   ];
 
-  await sendInlineMessage(chatId, lines, keyboard);
+  messageId
+    ? await editInlineMessage(chatId, messageId, lines, keyboard)
+    : await sendInlineMessage(chatId, lines, keyboard);
 }
 
 export async function handleProfileTasks(chatId: number, targetId: number): Promise<void> {
@@ -178,12 +178,14 @@ export async function handleProfileTasks(chatId: number, targetId: number): Prom
   }
 }
 
-export async function showProfileEditMenu(chatId: number, targetId: number): Promise<void> {
+export async function showProfileEditMenu(chatId: number, targetId: number, messageId?: number): Promise<void> {
   const keyboard = Object.entries(PROFILE_FIELDS).map(([field, label]) => [
     { text: `✏️ ${label}`, callback_data: `pe_${targetId}_${field}` },
   ]);
   keyboard.push([{ text: "← Назад", callback_data: `pu_${targetId}` }]);
-  await sendInlineMessage(chatId, "Что хочешь изменить?", keyboard);
+  messageId
+    ? await editInlineMessage(chatId, messageId, "Что хочешь изменить?", keyboard)
+    : await sendInlineMessage(chatId, "Что хочешь изменить?", keyboard);
 }
 
 export async function handleBroadcast(chatId: number, adminId: number, text: string, groupId: string): Promise<void> {
@@ -263,9 +265,10 @@ export async function handleUserCallbacks(
   groupId: string = "",
 ): Promise<boolean> {
   const data = cb.data;
+  const msgId = cb.message.message_id;
 
   if (data === "ua_list") {
-    await handleUsers(chatId, userId, "list", groupId);
+    await handleUsers(chatId, userId, "list", groupId, msgId);
     return true;
   }
   if (data === "ua_add") {
@@ -276,7 +279,7 @@ export async function handleUserCallbacks(
     const targetId = Number(data.replace("udel_", ""));
     const { data: profile } = await supabase.from("user_profiles").select("first_name, last_name").eq("telegram_id", targetId).maybeSingle();
     const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || `ID ${targetId}`;
-    await sendInlineMessage(chatId, `Удалить <b>${name}</b> из базы?\n\nПользователь потеряет доступ к боту.`, [[
+    await editInlineMessage(chatId, msgId, `Удалить <b>${name}</b> из базы?\n\nПользователь потеряет доступ к боту.`, [[
       { text: "✅ Да, удалить", callback_data: `udelc_${targetId}` },
       { text: "Отмена", callback_data: `pu_${targetId}` },
     ]]);
@@ -288,7 +291,7 @@ export async function handleUserCallbacks(
     const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || `ID ${targetId}`;
     await supabase.from("allowed_users").delete().eq("telegram_id", targetId);
     await sendMessage(chatId, `✅ ${name} удалён.`);
-    await handleUsers(chatId, userId, "list", groupId);
+    await handleUsers(chatId, userId, "list", groupId, msgId);
     return true;
   }
   if (data.startsWith("ptasks_")) {
@@ -296,11 +299,11 @@ export async function handleUserCallbacks(
     return true;
   }
   if (data.startsWith("pu_")) {
-    await showProfile(chatId, Number(data.replace("pu_", "")));
+    await showProfile(chatId, Number(data.replace("pu_", "")), msgId);
     return true;
   }
   if (data.startsWith("pe_menu_")) {
-    await showProfileEditMenu(chatId, Number(data.replace("pe_menu_", "")));
+    await showProfileEditMenu(chatId, Number(data.replace("pe_menu_", "")), msgId);
     return true;
   }
   if (data.startsWith("pe_")) {
