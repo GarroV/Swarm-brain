@@ -8,6 +8,7 @@ import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
 import { handleUsers, handleUserCallbacks, handleUserSessionInput } from "./handlers/users.ts";
 import { handleGranolaCallbacks, handleGranolaCommand, handleGranolaSessionInput, pollGranolaForUser } from "./handlers/granola.ts";
+import { handleFeedbackCommand, handleFeedbackCallbacks, handleFeedbackPhoto, handleFeedbackSessionInput } from "./handlers/feedback.ts";
 import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
 import { getHelpText } from "./handlers/help.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
@@ -47,6 +48,7 @@ Deno.serve(async (req: Request) => {
         { command: "status", description: "Состояние базы знаний" },
         { command: "digest", description: "Личный дайджест" },
         { command: "help", description: "Справка" },
+        { command: "feedback", description: "Отправить фидбек" },
         { command: "reset", description: "Сбросить состояние бота" },
       ]}),
     });
@@ -101,6 +103,8 @@ Deno.serve(async (req: Request) => {
         // handled
       } else if (await handleGranolaCallbacks(cb, chatId, userId, username)) {
         // handled
+      } else if (await handleFeedbackCallbacks(cb, chatId, userId, username)) {
+        // handled
       }
     } catch (err) {
       await sendMessage(chatId, `Ошибка: ${err instanceof Error ? err.message : String(err)}`);
@@ -129,7 +133,15 @@ Deno.serve(async (req: Request) => {
     if (message.voice) { await handleVoice(chatId, username, message.voice.file_id, message.voice.duration); return new Response("OK", { status: 200 }); }
     if (message.audio) { await handleVoice(chatId, username, message.audio.file_id, 0); return new Response("OK", { status: 200 }); }
     if (message.document) { await handleDocument(chatId, username, message.document); return new Response("OK", { status: 200 }); }
-    if (message.photo?.length) { await handlePhoto(chatId, username, message.photo); return new Response("OK", { status: 200 }); }
+    if (message.photo?.length) {
+      const photoSession = await getSession(chatId);
+      if (photoSession?.action === "feedback_photo") {
+        await handleFeedbackPhoto(chatId, userId, username, message.photo);
+      } else {
+        await handlePhoto(chatId, username, message.photo);
+      }
+      return new Response("OK", { status: 200 });
+    }
 
     const text = message.text?.trim();
     if (!text) return new Response("OK", { status: 200 });
@@ -163,6 +175,8 @@ Deno.serve(async (req: Request) => {
         // task session handled
       } else if (action && await handleGranolaSessionInput(chatId, userId, action, text)) {
         // granola session handled
+      } else if (action && await handleFeedbackSessionInput(chatId, action, text)) {
+        // feedback session handled
       } else {
         // Route "добавь в базу: ..." directly to handleAdd — bypass GPT entirely
         // Match any verb + destination in first 5 words — covers добавь/запихни/кинь/внеси/etc.
@@ -202,6 +216,7 @@ Deno.serve(async (req: Request) => {
           { command: "users", description: "Управление командой" },
           { command: "status", description: "Состояние базы знаний" },
           { command: "help", description: "Справка" },
+          { command: "feedback", description: "Отправить фидбек" },
           { command: "reset", description: "Сбросить состояние бота" },
         ]}),
       });
@@ -277,6 +292,8 @@ Deno.serve(async (req: Request) => {
           await sendMessage(chatId, `✅ <b>${service}</b> отключена.`);
         }
       }
+    } else if (command === "/feedback") {
+      await handleFeedbackCommand(chatId);
     } else if (command === "/digest") {
       bgRun(generatePersonalDigest(chatId, userId), chatId);
     } else if (command === "/status") {
