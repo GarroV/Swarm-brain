@@ -94,7 +94,7 @@ export async function assignUserToWorkspace(
     } else {
       const { error } = await supabase
         .from("allowed_users")
-        .insert({ telegram_id: telegramId, group_id: workspaceId });
+        .insert({ telegram_id: telegramId, group_id: workspaceId, added_by: ADMIN_USER_ID });
       if (error) throw new Error(error.message);
     }
     return "ok";
@@ -108,7 +108,7 @@ export async function assignUserToWorkspace(
       const { error } = await supabase.from("allowed_users").update({ group_id: workspaceId }).eq("username", username);
       if (error) throw new Error(error.message);
     } else {
-      const { error } = await supabase.from("allowed_users").insert({ username, group_id: workspaceId });
+      const { error } = await supabase.from("allowed_users").insert({ username, group_id: workspaceId, added_by: ADMIN_USER_ID });
       if (error) throw new Error(error.message);
     }
     return "ok";

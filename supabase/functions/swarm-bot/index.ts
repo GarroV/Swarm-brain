@@ -11,6 +11,7 @@ import { handleUsers, handleUserCallbacks, handleUserSessionInput, handleBroadca
 import { handleGranolaCallbacks, handleGranolaCommand, handleGranolaSessionInput, pollGranolaForUser } from "./handlers/granola.ts";
 import { handleFeedbackCommand, handleFeedbackCallbacks, handleFeedbackPhoto, handleFeedbackSessionInput } from "./handlers/feedback.ts";
 import { handleWorkspace } from "./handlers/workspace.ts";
+import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
 import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
 import { getHelpText } from "./handlers/help.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
@@ -98,6 +99,9 @@ Deno.serve(async (req: Request) => {
     await autoSyncProfile(userId, cb.from.first_name, cb.from.last_name, cb.from.username);
 
     try {
+      const saHandled = await handleSuperadminCallbacks(cb, chatId, userId);
+      if (saHandled) return new Response("OK", { status: 200 });
+
       if (await handleTaskCallbacks(cb, chatId, userId, username, cbGroupId)) {
         // handled
       } else if (await handleMeetingCallbacks(cb, chatId, userId, username, cbGroupId)) {
@@ -164,7 +168,9 @@ Deno.serve(async (req: Request) => {
       const session = await getSession(chatId);
       const action = session?.action ?? null;
 
-      if (action === "waiting_add") {
+      if (action && action.startsWith("sa_")) {
+        await handleSuperadminSession(chatId, action, text, userId);
+      } else if (action === "waiting_add") {
         await clearSession(chatId);
         await handleAdd(chatId, username, text, groupId);
       } else if (action === "waiting_ask") {
@@ -296,6 +302,8 @@ Deno.serve(async (req: Request) => {
           await sendMessage(chatId, `✅ <b>${service}</b> отключена.`);
         }
       }
+    } else if (command === "/superadmin") {
+      await handleSuperadmin(chatId, userId);
     } else if (command === "/workspace") {
       await handleWorkspace(chatId, userId, argText);
     } else if (command === "/broadcast") {
