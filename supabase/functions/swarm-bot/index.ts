@@ -1,6 +1,7 @@
 import { supabase, ADMIN_USER_ID } from "./lib/supabase.ts";
 import { sendMessage, sendInlineMessage, buildKeyboard, answerCallback } from "./lib/telegram.ts";
-import { checkAllowed, autoSyncProfile, getSession, clearSession } from "./lib/storage.ts";
+import { autoSyncProfile, getSession, clearSession } from "./lib/storage.ts";
+import { checkAllowedWithGroup } from "./lib/workspace.ts";
 import { getReadAiToken } from "./lib/readai.ts";
 import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
 import { handleVoice, handleDocument, handlePhoto, handleUrl, extractUrl } from "./handlers/media.ts";
@@ -9,6 +10,7 @@ import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } fro
 import { handleUsers, handleUserCallbacks, handleUserSessionInput, handleBroadcast } from "./handlers/users.ts";
 import { handleGranolaCallbacks, handleGranolaCommand, handleGranolaSessionInput, pollGranolaForUser } from "./handlers/granola.ts";
 import { handleFeedbackCommand, handleFeedbackCallbacks, handleFeedbackPhoto, handleFeedbackSessionInput } from "./handlers/feedback.ts";
+import { handleWorkspace } from "./handlers/workspace.ts";
 import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
 import { getHelpText } from "./handlers/help.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
@@ -90,7 +92,8 @@ Deno.serve(async (req: Request) => {
 
     await answerCallback(cb.id);
 
-    if (!(await checkAllowed(userId))) return new Response("OK", { status: 200 });
+    const { allowed: cbAllowed, groupId: cbGroupId } = await checkAllowedWithGroup(userId);
+    if (!cbAllowed) return new Response("OK", { status: 200 });
 
     await autoSyncProfile(userId, cb.from.first_name, cb.from.last_name, cb.from.username);
 
@@ -121,7 +124,7 @@ Deno.serve(async (req: Request) => {
   const userId = message.from?.id ?? 0;
   const username = message.from?.username ?? String(userId);
 
-  const allowed = await checkAllowed(userId, message.from?.username);
+  const { allowed, groupId } = await checkAllowedWithGroup(userId, message.from?.username);
   if (!allowed) {
     await sendMessage(chatId, "Доступ запрещён. Обратитесь к администратору.");
     return new Response("OK", { status: 200 });
@@ -130,15 +133,15 @@ Deno.serve(async (req: Request) => {
   await autoSyncProfile(userId, message.from?.first_name, message.from?.last_name, message.from?.username);
 
   try {
-    if (message.voice) { await handleVoice(chatId, username, message.voice.file_id, message.voice.duration); return new Response("OK", { status: 200 }); }
-    if (message.audio) { await handleVoice(chatId, username, message.audio.file_id, 0); return new Response("OK", { status: 200 }); }
-    if (message.document) { await handleDocument(chatId, username, message.document); return new Response("OK", { status: 200 }); }
+    if (message.voice) { await handleVoice(chatId, username, message.voice.file_id, message.voice.duration, groupId); return new Response("OK", { status: 200 }); }
+    if (message.audio) { await handleVoice(chatId, username, message.audio.file_id, 0, groupId); return new Response("OK", { status: 200 }); }
+    if (message.document) { await handleDocument(chatId, username, message.document, groupId); return new Response("OK", { status: 200 }); }
     if (message.photo?.length) {
       const photoSession = await getSession(chatId);
       if (photoSession?.action === "feedback_photo") {
         await handleFeedbackPhoto(chatId, userId, username, message.photo);
       } else {
-        await handlePhoto(chatId, username, message.photo);
+        await handlePhoto(chatId, username, message.photo, groupId);
       }
       return new Response("OK", { status: 200 });
     }
@@ -154,7 +157,7 @@ Deno.serve(async (req: Request) => {
       const url = extractUrl(text);
       if (url && text.length < 300) {
         const analyze = /посмотри|проанализируй|прочитай|загрузи|открой|что тут|что здесь|что это|summarize|analyze/i.test(text);
-        await handleUrl(chatId, username, url, text, analyze);
+        await handleUrl(chatId, username, url, text, analyze, groupId);
         return new Response("OK", { status: 200 });
       }
 
@@ -163,10 +166,10 @@ Deno.serve(async (req: Request) => {
 
       if (action === "waiting_add") {
         await clearSession(chatId);
-        await handleAdd(chatId, username, text);
+        await handleAdd(chatId, username, text, groupId);
       } else if (action === "waiting_ask") {
         await clearSession(chatId);
-        await handleAsk(chatId, text);
+        await handleAsk(chatId, text, userId, groupId);
       } else if (action && await handleMeetingSessionInput(chatId, action, text)) {
         // meeting session handled
       } else if (action && await handleUserSessionInput(chatId, userId, action, text)) {
@@ -183,9 +186,9 @@ Deno.serve(async (req: Request) => {
         const saveMatch = text.match(/^(?:\S+\s+){0,4}(?:в\s+базу|в\s+знания|в\s+хранилище|в\s+рой|в\s+сворм|в\s+swarm|в\s+улей)\s*:?\s*/i);
         if (saveMatch) {
           const content = text.slice(saveMatch[0].length).trim();
-          await handleAdd(chatId, username, content || text);
+          await handleAdd(chatId, username, content || text, groupId);
         } else if (text.length >= 3) {
-          await handleAsk(chatId, text);
+          await handleAsk(chatId, text, userId, groupId);
         }
       }
       return new Response("OK", { status: 200 });
@@ -223,9 +226,9 @@ Deno.serve(async (req: Request) => {
     } else if (command === "/help" || text === "ℹ️ Помощь") {
       await sendMessage(chatId, getHelpText(), buildKeyboard());
     } else if (command === "/add" || text === "📥 Добавить") {
-      await handleAdd(chatId, username, argText);
+      await handleAdd(chatId, username, argText, groupId);
     } else if (command === "/ask" || text === "❓ Спросить") {
-      await handleAsk(chatId, argText.trim() ? argText : "");
+      await handleAsk(chatId, argText.trim() ? argText : "", userId, groupId);
     } else if (command === "/users" || text === "👥 Пользователи") {
       await handleUsers(chatId, userId, argText);
     } else if (command === "/tasks" || text === "📋 Задачи") {
@@ -237,6 +240,7 @@ Deno.serve(async (req: Request) => {
       const { data: meetings } = await supabase
         .from("entries")
         .select("id, metadata, created_at, source")
+        .eq("group_id", groupId)
         .in("source", ["read_ai", "granola"])
         .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false")
         .order("created_at", { ascending: false })
@@ -292,12 +296,14 @@ Deno.serve(async (req: Request) => {
           await sendMessage(chatId, `✅ <b>${service}</b> отключена.`);
         }
       }
+    } else if (command === "/workspace") {
+      await handleWorkspace(chatId, userId, argText);
     } else if (command === "/broadcast") {
       await handleBroadcast(chatId, userId, argText);
     } else if (command === "/feedback") {
       await handleFeedbackCommand(chatId);
     } else if (command === "/digest") {
-      bgRun(generatePersonalDigest(chatId, userId), chatId);
+      bgRun(generatePersonalDigest(chatId, userId, 7, groupId), chatId);
     } else if (command === "/status") {
       const [
         { count: totalMeetings },
@@ -306,11 +312,11 @@ Deno.serve(async (req: Request) => {
         { count: openTasks },
         { count: overdueTasks },
       ] = await Promise.all([
-        supabase.from("entries").select("*", { count: "exact", head: true }).in("source", ["read_ai", "granola"]),
-        supabase.from("entries").select("id, metadata, created_at").eq("source", "read_ai").eq("metadata->>confirmed", "false").order("created_at", { ascending: false }),
-        supabase.from("entries").select("metadata, created_at, source").in("source", ["read_ai", "granola"]).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("status", "open"),
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("status", "open").lt("due_date", new Date().toISOString().split("T")[0]),
+        supabase.from("entries").select("*", { count: "exact", head: true }).eq("group_id", groupId).in("source", ["read_ai", "granola"]),
+        supabase.from("entries").select("id, metadata, created_at").eq("group_id", groupId).eq("source", "read_ai").eq("metadata->>confirmed", "false").order("created_at", { ascending: false }),
+        supabase.from("entries").select("metadata, created_at, source").eq("group_id", groupId).in("source", ["read_ai", "granola"]).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open"),
+        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open").lt("due_date", new Date().toISOString().split("T")[0]),
       ]);
 
       let statusMsg = `<b>📊 Статус Swarm Brain</b>\n\n`;
