@@ -273,6 +273,11 @@ export async function handleSuperadminCallbacks(
       const rest = data.slice("sa_blk_".length);
       const { tgId, wsId } = parseTgIdWsId(rest);
 
+      if (tgId === ADMIN_USER_ID) {
+        await sendMessage(chatId, "Нельзя удалить суперадмина.");
+        return true;
+      }
+
       const { error } = await supabase
         .from("allowed_users")
         .delete()
