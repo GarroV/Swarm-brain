@@ -341,44 +341,32 @@ export async function handleTaskCallbacks(
       groups.get(key)!.push(t);
     }
 
-    const lines: string[] = [`👥 <b>Все задачи (${limited.length}):</b>`];
-    for (const [assignee, atasks] of groups) {
-      lines.push(`\n👤 <b>${assignee} (${atasks.length})</b>`);
-      for (const t of atasks) {
-        const due = t.due_date
-          ? (() => {
-              const d = new Date(t.due_date + "T12:00:00");
-              const today = new Date().toISOString().split("T")[0];
-              const dd = String(d.getDate()).padStart(2, "0");
-              const mm = String(d.getMonth() + 1).padStart(2, "0");
-              return t.due_date < today ? ` · ${dd}.${mm} 🔴` : ` · ${dd}.${mm}`;
-            })()
-          : "";
-        lines.push(`• ${t.title}${due}`);
-      }
-    }
-    if (noAssignee.length) {
-      lines.push(`\n❓ <b>Без исполнителя (${noAssignee.length})</b>`);
-      for (const t of noAssignee) {
-        const due = t.due_date
-          ? (() => {
-              const d = new Date(t.due_date + "T12:00:00");
-              const today = new Date().toISOString().split("T")[0];
-              const dd = String(d.getDate()).padStart(2, "0");
-              const mm = String(d.getMonth() + 1).padStart(2, "0");
-              return t.due_date < today ? ` · ${dd}.${mm} 🔴` : ` · ${dd}.${mm}`;
-            })()
-          : "";
-        lines.push(`• ${t.title}${due}`);
-      }
-    }
+    // Header with counts
+    const parts: string[] = [];
+    for (const [a, ts] of groups) parts.push(`👤 ${a} (${ts.length})`);
+    if (noAssignee.length) parts.push(`❓ Без исполнителя (${noAssignee.length})`);
+    const header = `👥 <b>Все задачи (${limited.length}):</b>\n${parts.join(" · ")}`;
 
-    await editInlineMessage(
-      chatId,
-      cb.message.message_id,
-      lines.join("\n"),
-      [[{ text: "🔙 Назад", callback_data: "tk_menu" }]],
-    );
+    // Build buttons: grouped order — assigned first, then unassigned
+    const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
+    for (const [assignee, atasks] of groups) {
+      const firstName = assignee.split(" ")[0];
+      for (const t of atasks) {
+        buttons.push([{
+          text: `${STATUS_EMOJI[t.status] ?? "🔵"} ${truncateTitle(t.title)} · ${firstName}`,
+          callback_data: `tk_t_${t.id}`,
+        }]);
+      }
+    }
+    for (const t of noAssignee) {
+      buttons.push([{
+        text: `${STATUS_EMOJI[t.status] ?? "🔵"} ${truncateTitle(t.title)}`,
+        callback_data: `tk_t_${t.id}`,
+      }]);
+    }
+    buttons.push([{ text: "🔙 Назад", callback_data: "tk_menu" }]);
+
+    await editInlineMessage(chatId, cb.message.message_id, header, buttons);
     return true;
   }
 
