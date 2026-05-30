@@ -4,6 +4,7 @@ import { setSession, clearSession, getSession } from "../lib/storage.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
+const BOT_NAME = Deno.env.get("BOT_NAME") ?? "bot";;
 
 async function getFeedbackChannelId(): Promise<string | null> {
   const { data } = await supabase
@@ -67,7 +68,7 @@ async function saveFeedback(
   const date = new Date().toLocaleString("ru-RU", {
     day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit",
   });
-  const channelText = `🐛 @${username} · ${date}\n\n${text}`;
+  const channelText = `<b>[${BOT_NAME}]</b> 🐛 @${username} · ${date}\n\n${text}`;
   await postToChannel(channelId, channelText, data.id, photoFileId);
 }
 
