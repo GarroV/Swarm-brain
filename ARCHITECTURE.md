@@ -206,6 +206,7 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 | Код | Действие |
 |----|---------|
 | `fb_done` | Пропустить скриншот, сохранить фидбек без фото |
+| `fb_read_<feedbackId>` | Кнопка "Прочитано" в канале — удалить из БД и убрать сообщение |
 
 ---
 
@@ -267,12 +268,54 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 
 ## Переменные окружения
 
-| Переменная | Где используется |
-|-----------|----------------|
-| `TELEGRAM_BOT_TOKEN` | swarm-bot, granola-poller |
-| `SUPABASE_URL` | все функции |
-| `SUPABASE_SERVICE_ROLE_KEY` | все функции |
-| `OPENAI_API_KEY` | swarm-bot, swarm-mcp |
+| Переменная | Где используется | Обязательная |
+|-----------|----------------|-------------|
+| `TELEGRAM_BOT_TOKEN` | swarm-bot, granola-poller | да |
+| `SUPABASE_URL` | все функции | да |
+| `SUPABASE_SERVICE_ROLE_KEY` | все функции | да |
+| `OPENAI_API_KEY` | swarm-bot, swarm-mcp | да |
+| `BOT_NAME` | swarm-bot (feedback) | нет, дефолт `"bot"` |
+
+---
+
+## swarm-mcp — структура файлов
+
+```
+supabase/functions/swarm-mcp/
+├── index.ts        # MCP-сервер: регистрация инструментов, роутинг вызовов
+└── tasks/
+    └── tools.ts    # toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks
+```
+
+**Инструменты (tools) swarm-mcp:**
+
+| Инструмент | Назначение |
+|-----------|-----------|
+| `search_knowledge` | Семантический поиск по базе знаний |
+| `add_knowledge` | Добавить запись в базу знаний |
+| `get_entry` | Получить запись по ID |
+| `list_entries` | Список записей с фильтрами |
+| `update_entry` | Обновить запись (контент, тезисы, файл) |
+| `delete_entry` | Удалить запись |
+| `upload_file` | Загрузить файл в Storage + добавить запись |
+| `get_meetings` | Список встреч |
+| `get_storage_stats` | Статистика хранилища |
+| `get_users` | Список пользователей воркспейса |
+| `add_task` | Создать задачу (с fuzzy-матчингом исполнителя) |
+| `update_task` | Обновить задачу |
+| `delete_task` | Удалить задачу |
+| `get_tasks` | Список задач с фильтрами |
+
+Все инструменты принимают `requesting_user_id` (Telegram ID) для резолва воркспейса.
+
+---
+
+## app_settings — ключи
+
+| Ключ | Тип значения | Назначение |
+|------|-------------|-----------|
+| `feedback_channel_id` | number (chat_id) | Telegram-группа для пересылки фидбеков. Текущее значение: `-1003955027649` |
+| `granola_last_polled_at` | ISO timestamp | Время последнего опроса Granola-поллером |
 
 ---
 
