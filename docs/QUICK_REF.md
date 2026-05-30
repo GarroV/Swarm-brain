@@ -1,6 +1,6 @@
 # Swarm Brain — Quick Reference
 
-> Читай этот файл в начале сессии. За деталями — ARCHITECTURE.md.
+> Читай этот файл в начале сессии. За деталями — [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
