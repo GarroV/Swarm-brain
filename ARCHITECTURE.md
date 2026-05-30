@@ -38,23 +38,25 @@ supabase/functions/swarm-bot/
 │   ├── media.ts             # Голос, документы, фото, URL — парсинг и сохранение
 │   ├── digest.ts            # /digest — персональный дайджест за период
 │   ├── users.ts             # /users — управление командой (allow/block)
-│   ├── workspace.ts         # /workspace — управление воркспейсами (суперадмин)
+│   ├── workspace.ts         # /workspace — управление воркспейсами (суперадмин, CLI)
+│   ├── superadmin.ts        # /superadmin — интерактивная inline-панель (ADMIN_USER_ID only)
 │   └── help.ts              # /help — текст справки
 ├── tasks/
 │   ├── index.ts             # Экспорт task-хендлеров
 │   ├── handlers.ts          # Callback/session обработка для задач
 │   ├── db.ts                # CRUD задач в Supabase
 │   ├── formatter.ts         # Форматирование задач для Telegram
-│   ├── matcher.ts           # NLP-определение intent для задач
+│   ├── matcher.ts           # NLP-определение intent, fuzzy assignee matching (findUserByMention)
 │   └── types.ts             # TypeScript типы задач
 └── lib/
     ├── supabase.ts          # Supabase client + ADMIN_USER_ID
     ├── openai.ts            # chatComplete(), getEmbedding()
-    ├── telegram.ts          # sendMessage(), sendInlineMessage(), answerCallback()
+    ├── telegram.ts          # sendMessage(), sendInlineMessage(), editInlineMessage(), answerCallback()
     ├── storage.ts           # getSession/setSession/clearSession, saveEntry, checkAllowed, visibilityFilter
     ├── readai.ts            # Read.ai API client + токен-рефреш
     ├── drive.ts             # Google Drive интеграция (если используется)
     ├── workspace.ts         # getUserGroupId(), checkAllowedWithGroup(), CRUD воркспейсов
+    ├── name-aliases.ts      # generateNameAliases() — автогенерация алиасов имён
     └── types.ts             # TgMessage, TgCallbackQuery и др.
 ```
 
@@ -133,6 +135,10 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 | `feedback_photo` | feedback.ts | Ожидание скриншота или кнопки "Готово" |
 | `task_*` | tasks/handlers.ts | Различные состояния для создания/редактирования задач |
 | `user_*` | users.ts | Состояния управления пользователями |
+| `sa_adduser_<wsId>` | superadmin.ts | Ожидание Telegram ID / @username для добавления в воркспейс |
+| `sa_create_id` | superadmin.ts | Ожидание ID нового воркспейса |
+| `sa_create_name_<wsId>` | superadmin.ts | Ожидание названия нового воркспейса |
+| `sa_rename_<wsId>` | superadmin.ts | Ожидание нового названия воркспейса |
 
 ---
 
@@ -168,6 +174,33 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 | `meeting_discard_<id>` | Не сохранять Read.ai встречу |
 | `mau_<meetingId>_<tgId>` | Добавить участника встречи |
 | `mexp_<entryId>` | Экспортировать встречу файлом |
+
+### Superadmin (`/superadmin`)
+| Код | Действие |
+|----|---------|
+| `sa_main` | Главное меню суперадмина |
+| `sa_spaces` | Список всех воркспейсов с количеством пользователей |
+| `sa_create` | Начать создание воркспейса |
+| `sa_sp_<wsId>` | Детали воркспейса |
+| `sa_su_<wsId>` | Список пользователей воркспейса |
+| `sa_u_<tgId>_<wsId>` | Детали пользователя |
+| `sa_mv_<tgId>_<wsId>` | Выбор воркспейса для перемещения |
+| `sa_mvto_<tgId>_<toWsId>` | Подтвердить перемещение |
+| `sa_blk_<tgId>_<wsId>` | Удалить пользователя из системы |
+| `sa_add_<wsId>` | Начать добавление пользователя |
+| `sa_ren_<wsId>` | Начать переименование воркспейса |
+
+### Tasks (браузер `/tasks`)
+| Код | Действие |
+|----|---------|
+| `tk_menu` | Главное меню задач |
+| `tk_mine` | Мои задачи (edit-in-place список) |
+| `tk_all` | Все задачи команды |
+| `tk_add` | Создать задачу (запускает addtask сессию) |
+| `tk_t_<taskId>` | Детали задачи |
+| `tk_st_<taskId>_<status>` | Сменить статус задачи |
+| `tk_del_<taskId>` | Запрос подтверждения удаления |
+| `tk_delc_<taskId>` | Подтвердить удаление задачи |
 
 ### Feedback
 | Код | Действие |
