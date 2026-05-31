@@ -348,27 +348,7 @@ Deno.serve(async (req: Request) => {
         );
       }
     } else if (command === "/claude") {
-      const { data: tokenRow } = await supabase
-        .from("allowed_users")
-        .select("claude_mcp_token_hash")
-        .eq("telegram_id", userId)
-        .maybeSingle();
-      const hasToken = !!(tokenRow as { claude_mcp_token_hash: string | null } | null)?.claude_mcp_token_hash;
-      const tokenNote = hasToken
-        ? "✅ Токен выдан. Если потерял — попроси администратора сгенерировать новый."
-        : "⚠️ Токен ещё не выдан — напиши администратору.";
-
-      // Message 1: MCP server settings
-      await sendMessage(chatId,
-        `<b>🖥 Подключение Claude Desktop — шаг 1</b>\n\n` +
-        `Settings → Developer → Add MCP Server:\n\n` +
-        `<b>Name:</b> <code>swarm-brain</code>\n` +
-        `<b>URL:</b> <code>https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp</code>\n` +
-        `<b>Header:</b> <code>Authorization: Bearer &lt;твой токен&gt;</code>\n\n` +
-        `${tokenNote}`
-      );
-
-      // Message 2: full instructions block (copy-paste into Claude Desktop project)
+      // Instructions block to paste into Claude Desktop project settings
       const instructions =
         `Ты работаешь с командной базой знаний Swarm Brain — инструментом для хранения встреч, решений и задач команды международного бизнеса (пиццерии Додо в Сербии, Болгарии, Хорватии, Венгрии, Молдове, Румынии и других странах).\n\n` +
         `## Работа с прикреплёнными файлами\n\n` +
@@ -410,7 +390,8 @@ Deno.serve(async (req: Request) => {
         `- requesting_user_id передавать не нужно — определяется автоматически по токену`;
 
       await sendMessage(chatId,
-        `<b>Шаг 2 — Instructions для проекта</b>\n` +
+        `<b>🖥 Claude Desktop — Instructions для проекта</b>\n\n` +
+        `Если сервер ещё не подключён — сначала /mytoken\n\n` +
         `Projects → New Project → вставь в поле Instructions:\n\n` +
         `<code>${instructions}</code>`
       );
