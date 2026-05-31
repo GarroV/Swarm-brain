@@ -69,6 +69,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | `SUPABASE_SERVICE_ROLE_KEY` | да |
 | `OPENAI_API_KEY` | да |
 | `BOT_NAME` | нет (дефолт `"bot"`) |
+| `MCP_AUTH_REQUIRED` | нет; `true` = жёсткий режим MCP-токена |
 
 ---
 

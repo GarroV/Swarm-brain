@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-31 — MCP-аутентификация: токен + хеш
+
+- Миграция `20260531_mcp_auth.sql`: колонка `allowed_users.claude_mcp_token_hash`, индекс, SQL-функция `generate_mcp_token(telegram_id)` — создаёт `smcp_<uuid>`, сохраняет sha256-хеш, возвращает plaintext один раз
+- `swarm-mcp/index.ts`: прослойка проверки — одна точка после разбора тела; sha256(Bearer token) → lookup → `verifiedTelegramId` → инжектируется в `args.requesting_user_id` перед dispatch
+- Мягкий режим по умолчанию; `MCP_AUTH_REQUIRED=true` → жёсткий (без токена — -32001 Unauthorized)
+- CORS: `Authorization` уже был в `Access-Control-Allow-Headers` — ничего не менялось
+- Документация: `MCP_AUTH_FIX.md` (план→факт), `ARCHITECTURE.md`, `QUICK_REF.md`, `decisions/2026-05-31-mcp-auth.md`
+
 ## 2026-05-31 — Рефактор: единый движок задач (_shared/tasks/)
 
 Рефактор без изменения поведения. Дублированный CRUD задач вынесен в общий движок.

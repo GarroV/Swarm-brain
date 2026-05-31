@@ -711,6 +711,39 @@ Deno.serve(async (req: Request) => {
 
   const { method, params, id } = body;
 
+  // ── Auth check (one place, covers all tools) ───────────────────────────────
+  // Token → sha256 hex → lookup in allowed_users.claude_mcp_token_hash → telegram_id.
+  // Soft mode (default): no header → proceed with args.requesting_user_id as before.
+  // Strict mode (MCP_AUTH_REQUIRED=true): no valid token → reject.
+
+  let verifiedTelegramId: number | null = null;
+  const authHeader = req.headers.get("Authorization") ?? "";
+
+  if (authHeader.startsWith("Bearer ")) {
+    const token = authHeader.slice(7).trim();
+    const encoder = new TextEncoder();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", encoder.encode(token));
+    const hashHex = Array.from(new Uint8Array(hashBuffer))
+      .map(b => b.toString(16).padStart(2, "0"))
+      .join("");
+
+    const { data: tokenRow } = await supabase
+      .from("allowed_users")
+      .select("telegram_id")
+      .eq("claude_mcp_token_hash", hashHex)
+      .maybeSingle();
+
+    if (tokenRow) {
+      verifiedTelegramId = (tokenRow as { telegram_id: number }).telegram_id;
+    } else {
+      return err(id, -32001, "Unauthorized");
+    }
+  }
+
+  if (Deno.env.get("MCP_AUTH_REQUIRED") === "true" && verifiedTelegramId === null) {
+    return err(id, -32001, "Unauthorized");
+  }
+
   if (method === "initialize") {
     return ok(id, {
       protocolVersion: "2024-11-05",
@@ -730,6 +763,11 @@ Deno.serve(async (req: Request) => {
   if (method === "tools/call") {
     const name = (params?.name as string) ?? "";
     const args = (params?.arguments ?? {}) as Record<string, unknown>;
+
+    // Verified token identity wins over any requesting_user_id from args
+    if (verifiedTelegramId !== null) {
+      args.requesting_user_id = verifiedTelegramId;
+    }
 
     try {
       let result = "";

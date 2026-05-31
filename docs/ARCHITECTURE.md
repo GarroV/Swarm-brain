@@ -302,6 +302,24 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 
 ---
 
+## MCP-аутентификация
+
+Персональные токены вместо `requesting_user_id` на доверии.
+
+**Механизм:**
+- `allowed_users.claude_mcp_token_hash TEXT` — sha256(token) в hex; plaintext никогда не хранится
+- Claude Desktop отправляет `Authorization: Bearer smcp_<uuid>` с каждым запросом
+- `swarm-mcp/index.ts` — одна точка проверки сразу после разбора тела запроса:
+  1. sha256(token) → lookup по `claude_mcp_token_hash` → `verifiedTelegramId`
+  2. Инжектируется в `args.requesting_user_id` — значение из тела игнорируется
+  3. `MCP_AUTH_REQUIRED=true` → строгий режим (без токена — отказ)
+- Выдача: `SELECT generate_mcp_token(<telegram_id>)` в SQL — возвращает plaintext единожды
+- Отзыв: `UPDATE allowed_users SET claude_mcp_token_hash = NULL WHERE telegram_id = <id>`
+
+Ошибка при невалидном/отсутствующем токене: JSON-RPC -32001 "Unauthorized".
+
+---
+
 ## Переменные окружения
 
 | Переменная | Где используется | Обязательная |
@@ -311,6 +329,7 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 | `SUPABASE_SERVICE_ROLE_KEY` | все функции | да |
 | `OPENAI_API_KEY` | swarm-bot, swarm-mcp | да |
 | `BOT_NAME` | swarm-bot (feedback) | нет, дефолт `"bot"` |
+| `MCP_AUTH_REQUIRED` | swarm-mcp | нет; `true` = жёсткий режим (без токена — отказ) |
 
 ---
 
