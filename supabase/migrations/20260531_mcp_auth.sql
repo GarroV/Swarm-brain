@@ -30,3 +30,12 @@ BEGIN
   RETURN v_token;
 END;
 $$;
+
+-- Convenience overload: integer literals (e.g. 744230399) don't need explicit ::bigint cast
+CREATE OR REPLACE FUNCTION generate_mcp_token(p_telegram_id integer)
+RETURNS text
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  SELECT generate_mcp_token(p_telegram_id::bigint);
+$$;
