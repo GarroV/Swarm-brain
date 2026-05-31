@@ -1,23 +1,21 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createTask, getTask, listTasks, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-type TaskRow = {
-  id: string;
-  title: string;
-  description: string | null;
-  assignees: string[];
-  assignee_telegram_ids: number[];
-  due_date: string | null;
-  country: string | null;
-  task_role: string | null;
-  source: string;
-  status: string;
-  created_at: string;
-};
+// ── Workspace + assignee resolution (MCP layer, not in shared engine) ─────────
+
+async function resolveGroupId(telegramId: number): Promise<string | null> {
+  const { data } = await supabase
+    .from("allowed_users")
+    .select("group_id")
+    .eq("telegram_id", telegramId)
+    .maybeSingle();
+  return (data as { group_id: string | null } | null)?.group_id ?? null;
+}
 
 async function matchAssignee(name: string): Promise<{ telegram_id: number; display_name: string } | null> {
   const { data } = await supabase
@@ -52,6 +50,8 @@ async function matchAssignee(name: string): Promise<{ telegram_id: number; displ
   };
 }
 
+// ── Tool implementations (MCP prослойки — резолв + shared engine + форматирование) ──
+
 export async function toolAddTask(args: {
   title: string;
   description?: string;
@@ -78,33 +78,26 @@ export async function toolAddTask(args: {
     }
   }
 
-  let workspaceGroupId: string | null = null;
-  if (args.requesting_user_id) {
-    const { data: uRow } = await supabase
-      .from("allowed_users")
-      .select("group_id")
-      .eq("telegram_id", args.requesting_user_id)
-      .maybeSingle();
-    workspaceGroupId = (uRow as { group_id: string | null } | null)?.group_id ?? null;
+  const groupId = args.requesting_user_id ? await resolveGroupId(args.requesting_user_id) : null;
+
+  try {
+    const task = await createTask({
+      title: args.title,
+      description: args.description ?? null,
+      assignees,
+      assignee_telegram_ids,
+      country: args.country ?? null,
+      due_date: args.due_date ?? null,
+      task_role: args.task_role ?? null,
+      source: args.source,
+      status: "open",
+      meeting_id: args.context_id ?? null,
+      tags: [],
+    }, groupId ?? undefined);
+    return `✅ Задача создана (id: ${task.id})${matchWarning}.`;
+  } catch (e) {
+    return `Ошибка: ${e instanceof Error ? e.message : String(e)}`;
   }
-
-  const { data, error } = await supabase.from("tasks").insert({
-    title: args.title,
-    description: args.description ?? null,
-    assignees,
-    assignee_telegram_ids,
-    country: args.country ?? null,
-    due_date: args.due_date ?? null,
-    task_role: args.task_role ?? null,
-    source: args.source,
-    status: "open",
-    meeting_id: args.context_id ?? null,
-    tags: [],
-    group_id: workspaceGroupId,
-  }).select("id").single();
-
-  if (error) return `Ошибка: ${error.message}`;
-  return `✅ Задача создана (id: ${data.id})${matchWarning}.`;
 }
 
 export async function toolUpdateTask(args: {
@@ -117,43 +110,48 @@ export async function toolUpdateTask(args: {
   status?: string;
   task_role?: string;
 }): Promise<string> {
-  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const fields: Record<string, unknown> = {};
 
-  if (args.title !== undefined) updates.title = args.title;
-  if (args.description !== undefined) updates.description = args.description;
-  if (args.country !== undefined) updates.country = args.country;
-  if ("due_date" in args) updates.due_date = args.due_date ?? null;
-  if (args.status !== undefined) updates.status = args.status;
-  if (args.task_role !== undefined) updates.task_role = args.task_role;
+  if (args.title !== undefined) fields.title = args.title;
+  if (args.description !== undefined) fields.description = args.description;
+  if (args.country !== undefined) fields.country = args.country;
+  if ("due_date" in args) fields.due_date = args.due_date ?? null;
+  if (args.status !== undefined) fields.status = args.status;
+  if (args.task_role !== undefined) fields.task_role = args.task_role;
 
   if (args.assignee_name !== undefined) {
     if (!args.assignee_name) {
-      updates.assignees = [];
-      updates.assignee_telegram_ids = [];
+      fields.assignees = [];
+      fields.assignee_telegram_ids = [];
     } else {
       const match = await matchAssignee(args.assignee_name);
       if (match) {
-        updates.assignees = [match.display_name];
-        updates.assignee_telegram_ids = [match.telegram_id];
+        fields.assignees = [match.display_name];
+        fields.assignee_telegram_ids = [match.telegram_id];
       } else {
-        updates.assignees = [args.assignee_name];
-        updates.assignee_telegram_ids = [];
+        fields.assignees = [args.assignee_name];
+        fields.assignee_telegram_ids = [];
       }
     }
   }
 
-  const { error } = await supabase.from("tasks").update(updates).eq("id", args.id);
-  if (error) return `Ошибка: ${error.message}`;
-  return `✅ Задача обновлена.`;
+  try {
+    await updateTask(args.id, fields);
+    return `✅ Задача обновлена.`;
+  } catch (e) {
+    return `Ошибка: ${e instanceof Error ? e.message : String(e)}`;
+  }
 }
 
 export async function toolDeleteTask(args: { id: string }): Promise<string> {
-  const { data: task } = await supabase.from("tasks").select("title").eq("id", args.id).maybeSingle();
+  const task = await getTask(args.id);
   if (!task) return `Задача ${args.id} не найдена.`;
-  await supabase.from("task_history").delete().eq("task_id", args.id);
-  const { error } = await supabase.from("tasks").delete().eq("id", args.id);
-  if (error) return `Ошибка: ${error.message}`;
-  return `✅ Задача «${(task as { title: string }).title}» удалена.`;
+  try {
+    await deleteTask(args.id);
+    return `✅ Задача «${task.title}» удалена.`;
+  } catch (e) {
+    return `Ошибка: ${e instanceof Error ? e.message : String(e)}`;
+  }
 }
 
 export async function toolGetTasks(args: {
@@ -163,40 +161,17 @@ export async function toolGetTasks(args: {
   period?: string;
   requesting_user_id?: number;
 }): Promise<string> {
-  let workspaceGroupId: string | null = null;
-  if (args.requesting_user_id) {
-    const { data: uRow } = await supabase
-      .from("allowed_users")
-      .select("group_id")
-      .eq("telegram_id", args.requesting_user_id)
-      .maybeSingle();
-    workspaceGroupId = (uRow as { group_id: string | null } | null)?.group_id ?? null;
-  }
+  const groupId = args.requesting_user_id ? await resolveGroupId(args.requesting_user_id) : null;
 
-  let query = supabase.from("tasks").select("*").order("due_date", { ascending: true });
-  if (workspaceGroupId) query = query.eq("group_id", workspaceGroupId);
+  const tasks = await listTasks({
+    status: args.status,
+    country: args.country,
+    period: args.period,
+    assigneeText: args.assignee,
+    limit: 30,
+  }, groupId ?? undefined);
 
-  if (args.status) {
-    query = query.eq("status", args.status);
-  } else {
-    query = query.not("status", "in", '("done","cancelled","draft")');
-  }
-  if (args.country) query = query.ilike("country", `%${args.country}%`);
-  if (args.period === "week") {
-    const today = new Date().toISOString().split("T")[0];
-    const end = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
-    query = query.gte("due_date", today).lte("due_date", end);
-  }
-
-  const { data, error } = await query.limit(30);
-  if (error) return `Ошибка: ${error.message}`;
-  if (!data?.length) return "Задач не найдено.";
-
-  let tasks = data as TaskRow[];
-  if (args.assignee) {
-    const lower = args.assignee.toLowerCase();
-    tasks = tasks.filter(t => t.assignees?.some((a: string) => a.toLowerCase().includes(lower)));
-  }
+  if (!tasks.length) return "Задач не найдено.";
 
   return tasks.map(t => {
     const who = t.assignees?.join(", ") || "—";
