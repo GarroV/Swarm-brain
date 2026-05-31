@@ -227,6 +227,8 @@ Deno.serve(async (req: Request) => {
           { command: "help", description: "Справка" },
           { command: "feedback", description: "Отправить фидбек" },
           { command: "reset", description: "Сбросить состояние бота" },
+          { command: "mytoken", description: "Получить токен для Claude Desktop" },
+          { command: "claude", description: "Инструкция подключения Claude Desktop" },
         ]}),
       });
     } else if (command === "/help" || text === "ℹ️ Помощь") {
@@ -312,6 +314,39 @@ Deno.serve(async (req: Request) => {
       await handleFeedbackCommand(chatId);
     } else if (command === "/digest") {
       bgRun(generatePersonalDigest(chatId, userId, 7, groupId), chatId);
+    } else if (command === "/mytoken") {
+      const token = "smcp_" + crypto.randomUUID();
+      const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+      const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+      const { error: tokenErr } = await supabase
+        .from("allowed_users")
+        .update({ claude_mcp_token_hash: hashHex })
+        .eq("telegram_id", userId);
+      if (tokenErr) {
+        await sendMessage(chatId, "❌ Не удалось сгенерировать токен. Обратись к администратору.");
+      } else {
+        await sendMessage(chatId,
+          `🔑 <b>Твой токен (показывается один раз):</b>\n\n` +
+          `<code>${token}</code>\n\n` +
+          `⚠️ Сохрани его — повторно не показываем. Если потеряешь — запусти /mytoken снова, старый перестанет работать.`
+        );
+        const configJson =
+          `"mcpServers": {\n` +
+          `  "swarm-brain": {\n` +
+          `    "url": "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp",\n` +
+          `    "headers": {\n` +
+          `      "Authorization": "Bearer ${token}"\n` +
+          `    }\n` +
+          `  }\n` +
+          `}`;
+        await sendMessage(chatId,
+          `<b>Claude Desktop → Settings → Developer → Edit Config</b>\n\n` +
+          `Замени строку <code>"mcpServers": {}</code> на:\n\n` +
+          `<code>${configJson}</code>\n\n` +
+          `Сохрани файл и перезапусти Claude Desktop.\n` +
+          `Потом напиши /claude чтобы получить инструкции для проекта.`
+        );
+      }
     } else if (command === "/claude") {
       const { data: tokenRow } = await supabase
         .from("allowed_users")

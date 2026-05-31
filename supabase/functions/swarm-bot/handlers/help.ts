@@ -37,7 +37,8 @@ export function getHelpText(): string {
     "/users remove @username или [telegram_id]\n\n" +
 
     "<b>🖥 Claude Desktop (MCP)</b>\n" +
-    "/claude — персональная инструкция подключения (с твоим Telegram ID)\n\n" +
+    "/mytoken — получить токен и готовый конфиг для подключения\n" +
+    "/claude — инструкции для проекта (с твоим Telegram ID)\n\n" +
 
     "/feedback — отправить фидбек\n" +
     "/reset — сбросить состояние · /help — эта справка"
