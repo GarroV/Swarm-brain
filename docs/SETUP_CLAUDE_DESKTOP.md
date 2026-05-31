@@ -1,13 +1,23 @@
 # Подключение Claude Desktop к Swarm Brain
 
+## Шаг 0 — Получить токен
+
+Напиши администратору или выполни в боте команду `/mytoken` — тебе придёт персональный токен вида `smcp_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`.  
+Храни его как пароль: он даёт доступ к данным твоего воркспейса.
+
+---
+
 ## Шаг 1 — Добавить MCP сервер
 
 Открой Claude Desktop → **Settings** → **Developer** → **Add MCP Server**:
 
 ```
-Name: swarm-brain
-URL:  https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp
+Name:    swarm-brain
+URL:     https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp
+Headers: Authorization: Bearer <твой токен из шага 0>
 ```
+
+Токен автоматически идентифицирует тебя — передавать `requesting_user_id` в инструментах вручную больше не нужно.
 
 ## Шаг 2 — Создать проект
 
@@ -85,8 +95,8 @@ URL:  https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp
 
 **Как использовать:**
 - Когда я говорю "закинь в личное", "только для меня", "приватно" — сохрани в личное хранилище
-- При вызове `add_knowledge` с `is_private: true` — обязательно передавай `owner_telegram_id` (твой Telegram ID указан ниже)
-- При поиске передавай `requesting_user_id` в `search_knowledge`, `list_entries`, `get_entry` — тогда в результатах будут и твои личные записи
+- При вызове `add_knowledge` с `is_private: true` — обязательно передавай `owner_telegram_id` (мой Telegram ID указан ниже)
+- Мой токен автоматически определяет кто я — `requesting_user_id` передавать не нужно, личные записи попадут в результаты поиска сами
 
 **Мой Telegram ID:** [ВСТАВЬ СВОЙ TELEGRAM_ID ЗДЕСЬ]
 ```
