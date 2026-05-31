@@ -333,6 +333,7 @@ Deno.serve(async (req: Request) => {
         const configJson =
           `"mcpServers": {\n` +
           `  "swarm-brain": {\n` +
+          `    "type": "http",\n` +
           `    "url": "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp",\n` +
           `    "headers": {\n` +
           `      "Authorization": "Bearer ${token}"\n` +
