@@ -312,6 +312,37 @@ Deno.serve(async (req: Request) => {
       await handleFeedbackCommand(chatId);
     } else if (command === "/digest") {
       bgRun(generatePersonalDigest(chatId, userId, 7, groupId), chatId);
+    } else if (command === "/claude") {
+      const { data: tokenRow } = await supabase
+        .from("allowed_users")
+        .select("claude_mcp_token_hash")
+        .eq("telegram_id", userId)
+        .maybeSingle();
+      const hasToken = !!(tokenRow as { claude_mcp_token_hash: string | null } | null)?.claude_mcp_token_hash;
+      const tokenNote = hasToken
+        ? "✅ Токен выдан. Если потерял — попроси администратора сгенерировать новый."
+        : "⚠️ Токен ещё не выдан — напиши администратору.";
+
+      await sendMessage(chatId,
+        `<b>🖥 Подключение Claude Desktop</b>\n\n` +
+        `<b>Шаг 1 — Добавить MCP-сервер</b>\n` +
+        `Settings → Developer → Add MCP Server:\n\n` +
+        `Name: <code>swarm-brain</code>\n` +
+        `URL: <code>https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp</code>\n` +
+        `Header: <code>Authorization: Bearer &lt;твой токен&gt;</code>\n\n` +
+        `${tokenNote}\n\n` +
+        `<b>Шаг 2 — Создать проект</b>\n` +
+        `Projects → New Project → вставь в поле Instructions:\n\n` +
+        `<code>` +
+        `Ты работаешь с командной базой знаний Swarm Brain.\n\n` +
+        `Мой Telegram ID: ${userId}\n\n` +
+        `При поиске, списке записей, просмотре записей — передавай requesting_user_id: ${userId}.\n` +
+        `Для личного хранилища (add_knowledge с is_private: true) — передавай owner_telegram_id: ${userId}.\n\n` +
+        `При любом вопросе про встречи, решения, задачи — используй search_knowledge, get_tasks, get_meetings. Не отвечай по памяти.\n` +
+        `Перед удалением ВСЕГДА показывай что будет удалено и жди подтверждения.\n` +
+        `Отвечай на русском языке.` +
+        `</code>`
+      );
     } else if (command === "/status") {
       const [
         { count: totalMeetings },

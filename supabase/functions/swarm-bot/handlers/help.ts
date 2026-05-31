@@ -37,8 +37,7 @@ export function getHelpText(): string {
     "/users remove @username или [telegram_id]\n\n" +
 
     "<b>🖥 Claude Desktop (MCP)</b>\n" +
-    "Settings → Developer → Add MCP Server\n" +
-    "URL: <code>https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp</code>\n\n" +
+    "/claude — персональная инструкция подключения (с твоим Telegram ID)\n\n" +
 
     "/feedback — отправить фидбек\n" +
     "/reset — сбросить состояние · /help — эта справка"
