@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-31 — swarm-api: новый Edge Function для Mini App
+
+- `swarm-api/auth.ts`: `verifyInitData()` — официальный алгоритм Telegram (HMAC-SHA256, secret_key = HMAC("WebAppData", BOT_TOKEN)), проверка свежести auth_date
+- `swarm-api/index.ts`: REST API поверх `_shared/tasks/db.ts` — `GET /me`, `GET /users`, `GET /tasks`, `GET /tasks/:id`, `POST /tasks`, `PATCH /tasks/:id`, `DELETE /tasks/:id`
+- Auth: `Authorization: tma <initData>` на каждый запрос; `group_id` только из проверенной личности, из тела не принимается
+- CORS через `MINIAPP_ORIGIN` env; `assignee_telegram_id` → резолв в имя через `user_profiles`
+- Документация: `MINIAPP_ARCHITECTURE.md` (план→факт, API контракт), `ARCHITECTURE.md`, `decisions/2026-05-31-swarm-api.md`
+
 ## 2026-05-31 — MCP-аутентификация: токен + хеш
 
 - Миграция `20260531_mcp_auth.sql`: колонка `allowed_users.claude_mcp_token_hash`, индекс, SQL-функция `generate_mcp_token(telegram_id)` — создаёт `smcp_<uuid>`, сохраняет sha256-хеш, возвращает plaintext один раз

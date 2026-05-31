@@ -333,6 +333,44 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 
 ---
 
+## swarm-api — Mini App backend
+
+```
+supabase/functions/swarm-api/
+├── index.ts   # Router + все эндпоинты
+└── auth.ts    # verifyInitData() — утилита проверки Telegram initData
+```
+
+**Назначение:** REST API для Telegram Mini App (доска задач). Третий клиент поверх `_shared/tasks/db.ts`.
+
+**Аутентификация (одна точка, все запросы):**
+```
+Authorization: tma <initData>
+```
+1. Проверяет подпись по алгоритму Telegram: `secret_key = HMAC("WebAppData", BOT_TOKEN)`, `hash = HMAC(secret_key, data-check-string)`
+2. Проверяет свежесть `auth_date` (дефолт 24ч, `INITDATA_MAX_AGE`)
+3. Достаёт `telegram_id` из `user` в initData
+4. Резолвит `telegram_id → group_id` через `allowed_users`
+5. `group_id` — единственный источник истины для скоупинга данных, из тела запроса не берётся
+
+**Эндпоинты:**
+
+| Метод | Путь | Что делает |
+|-------|------|-----------|
+| `GET` | `/me` | `{ telegram_id, name, group_id, language }` |
+| `GET` | `/users` | Участники воркспейса с профилями |
+| `GET` | `/tasks` | Список задач (`status`, `country`, `assignee`, `mine`, `limit`) |
+| `GET` | `/tasks/:id` | Одна задача |
+| `POST` | `/tasks` | Создать задачу (`assignee_telegram_id` → резолв в имя) |
+| `PATCH` | `/tasks/:id` | Обновить задачу (частичный апдейт) |
+| `DELETE` | `/tasks/:id` | Удалить (204) |
+
+**Переменные окружения:** `TELEGRAM_BOT_TOKEN` (уже есть), `MINIAPP_ORIGIN`, `INITDATA_MAX_AGE` (опц.)
+
+**Деплой:** `supabase functions deploy swarm-api --no-verify-jwt`
+
+---
+
 ## swarm-mcp — структура файлов
 
 ```
