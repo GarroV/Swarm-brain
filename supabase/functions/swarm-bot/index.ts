@@ -326,32 +326,16 @@ Deno.serve(async (req: Request) => {
         await sendMessage(chatId, "❌ Не удалось сгенерировать токен. Обратись к администратору.");
       } else {
         await sendMessage(chatId,
-          `🔑 <b>Твой токен (показывается один раз):</b>\n\n` +
-          `<code>${token}</code>\n\n` +
-          `⚠️ Сохрани его — повторно не показываем. Если потеряешь — запусти /mytoken снова, старый перестанет работать.`
-        );
-        const configJson =
-          `"mcpServers": {\n` +
-          `  "swarm-brain": {\n` +
-          `    "type": "http",\n` +
-          `    "url": "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp",\n` +
-          `    "headers": {\n` +
-          `      "Authorization": "Bearer ${token}"\n` +
-          `    }\n` +
-          `  }\n` +
-          `}`;
-        await sendMessage(chatId,
-          `<b>Claude Desktop → Settings → Developer → Edit Config</b>\n\n` +
-          `Замени строку <code>"mcpServers": {}</code> на:\n\n` +
-          `<code>${configJson}</code>\n\n` +
-          `Сохрани файл и перезапусти Claude Desktop.\n` +
-          `Потом напиши /claude чтобы получить инструкции для проекта.`
+          `🔑 <b>Твой токен сгенерирован и сохранён.</b>\n\n` +
+          `Токен идентифицирует тебя при запросах к базе знаний. Если понадобится переиздать — запусти /mytoken снова.`
         );
       }
     } else if (command === "/claude") {
       // Instructions block to paste into Claude Desktop project settings
       const instructions =
         `Ты работаешь с командной базой знаний Swarm Brain — инструментом для хранения встреч, решений и задач команды международного бизнеса (пиццерии Додо в Сербии, Болгарии, Хорватии, Венгрии, Молдове, Румынии и других странах).\n\n` +
+        `Мой Telegram ID: ${userId}\n` +
+        `Передавай его как requesting_user_id во все инструменты которые его принимают (search_knowledge, list_entries, get_entry, get_tasks, get_meetings).\n\n` +
         `## Работа с прикреплёнными файлами\n\n` +
         `Когда пользователь прикрепляет файл (PDF, DOCX, изображение и т.д.):\n` +
         `- Читай и работай с ним — отвечай на вопросы, делай анализ, суммаризируй\n` +
@@ -371,7 +355,7 @@ Deno.serve(async (req: Request) => {
         `Никогда не сохраняй без подтверждения.\n\n` +
         `## Поиск и ответы на вопросы\n\n` +
         `При любом вопросе про встречи, решения, задачи, страны, проекты:\n` +
-        `- Используй search_knowledge для поиска по базе\n` +
+        `- Используй search_knowledge для поиска по базе (передавай requesting_user_id: ${userId})\n` +
         `- При необходимости уточни через get_entry чтобы получить полный текст\n` +
         `- Используй get_tasks для задач (фильтры: имя, страна, статус)\n` +
         `- Используй get_meetings для последних встреч\n` +
@@ -387,8 +371,7 @@ Deno.serve(async (req: Request) => {
         `## Личное хранилище\n\n` +
         `У каждого пользователя есть личное приватное хранилище — видно только тебе.\n` +
         `- Когда говорю "закинь в личное", "только для меня", "приватно" — сохрани с is_private: true\n` +
-        `- При add_knowledge с is_private: true — передавай owner_telegram_id: ${userId}\n` +
-        `- requesting_user_id передавать не нужно — определяется автоматически по токену`;
+        `- При add_knowledge с is_private: true — передавай owner_telegram_id: ${userId}`;
 
       await sendMessage(chatId,
         `<b>🖥 Claude Desktop — Instructions для проекта</b>\n\n` +
