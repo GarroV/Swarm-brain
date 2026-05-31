@@ -1,9 +1,9 @@
 import { supabase } from "../lib/supabase.ts";
-import type { Task, TaskInput } from "./types.ts";
+import { createTask, getTask, listTasks, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
+import type { Task, TaskInput } from "../../_shared/tasks/types.ts";
 
 export async function dbGetTask(id: string): Promise<Task | null> {
-  const { data } = await supabase.from("tasks").select("*").eq("id", id).maybeSingle();
-  return data as Task | null;
+  return getTask(id);
 }
 
 export async function dbListTasks(opts: {
@@ -15,75 +15,32 @@ export async function dbListTasks(opts: {
   limit?: number;
   groupId?: string;
 }): Promise<Task[]> {
-  let q = supabase
-    .from("tasks")
-    .select("*")
-    .order("due_date", { ascending: true, nullsFirst: false });
-
-  if (opts.status) {
-    q = q.eq("status", opts.status);
-  } else {
-    q = q.not("status", "in", '("done","cancelled","draft")');
-  }
-
-  if (opts.country) q = q.ilike("country", `%${opts.country}%`);
-
-  if (opts.telegramId !== undefined) {
-    q = q.contains("assignee_telegram_ids", [opts.telegramId]);
-  }
-
-  if (opts.period === "week") {
-    const today = new Date().toISOString().split("T")[0];
-    const end = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
-    q = q.gte("due_date", today).lte("due_date", end);
-  }
-
-  if (opts.groupId) q = q.eq("group_id", opts.groupId);
-
-  const { data } = await q.limit(opts.limit ?? 200);
-  let tasks = (data ?? []) as Task[];
-
-  if (opts.assignee) {
-    const lower = opts.assignee.toLowerCase();
-    tasks = tasks.filter(t => t.assignees?.some(a => a.toLowerCase().includes(lower)));
-  }
-
-  return tasks;
+  return listTasks({
+    status: opts.status,
+    country: opts.country,
+    period: opts.period,
+    telegramId: opts.telegramId,
+    assigneeText: opts.assignee,
+    limit: opts.limit,
+  }, opts.groupId);
 }
 
 export async function dbCreateTask(input: TaskInput): Promise<Task> {
-  const { data, error } = await supabase.from("tasks").insert({
-    title: input.title,
-    description: input.description ?? null,
-    assignees: input.assignees ?? [],
-    assignee_telegram_ids: input.assignee_telegram_ids ?? [],
-    due_date: input.due_date ?? null,
-    tags: input.tags ?? [],
-    country: input.country ?? null,
-    task_role: input.task_role ?? null,
-    source: input.source ?? "manual",
-    status: input.status ?? "open",
-    meeting_id: input.meeting_id ?? null,
-    group_id: input.group_id ?? null,
-  }).select().single();
-  if (error) throw new Error(error.message);
-  return data as Task;
+  return createTask(input, input.group_id ?? undefined);
 }
 
 export async function dbUpdateTask(
   id: string,
   fields: Partial<TaskInput> & { status?: string; url?: string; due_date?: string | null },
 ): Promise<void> {
-  await supabase.from("tasks")
-    .update({ ...fields, updated_at: new Date().toISOString() })
-    .eq("id", id);
+  return updateTask(id, fields);
 }
 
 export async function dbDeleteTask(id: string): Promise<void> {
-  await supabase.from("task_history").delete().eq("task_id", id);
-  await supabase.from("tasks").delete().eq("id", id);
+  return deleteTask(id);
 }
 
+// listAllOpen сортирует по assignees (не по due_date) — остаётся вне shared движка
 export async function dbListAllOpen(groupId?: string): Promise<Task[]> {
   let q = supabase.from("tasks").select("*")
     .not("status", "in", '("done","cancelled","draft")')
