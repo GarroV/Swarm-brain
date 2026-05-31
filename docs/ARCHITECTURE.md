@@ -26,6 +26,42 @@
 
 ---
 
+## Общий движок задач — _shared/tasks/
+
+Единый слой доступа к таблице `tasks`, не деплоится Supabase как функция.
+
+```
+supabase/functions/_shared/tasks/
+├── types.ts   # Task, TaskInput — единственный источник типов; клиенты импортируют отсюда
+└── db.ts      # createTask / getTask / listTasks / updateTask / deleteTask
+               # Принимает готовый group_id и готовых исполнителей.
+               # НЕ резолвит имена и НЕ ищет workspace — это делают прослойки клиентов.
+               # Бросает исключение при ошибке.
+```
+
+**Контракт `_shared/tasks/db.ts`:**
+
+| Функция | Поведение |
+|---------|-----------|
+| `createTask(input, groupId?)` | insert всеми колонками, `.select().single()`, статус дефолт `"open"`, теги дефолт `[]` |
+| `getTask(id)` | `.maybeSingle()` |
+| `listTasks(filters, groupId?)` | `select *`, order `due_date asc nullsFirst:false`; по умолчанию исключает `done/cancelled/draft`; `assigneeText` — пост-фильтр |
+| `updateTask(id, fields)` | `update {...fields, updated_at}` |
+| `deleteTask(id)` | сначала `task_history`, потом `tasks` |
+
+**Прослойки клиентов** (различия живут здесь, не в движке):
+
+| Клиент | Файл | Что делает поверх движка |
+|--------|------|--------------------------|
+| swarm-mcp | `swarm-mcp/tasks/tools.ts` | резолвит `requesting_user_id → group_id`; резолвит `assignee_name` через fuzzy-матч; форматирует `Task[]` в строку для Claude |
+| swarm-bot | `swarm-bot/tasks/db.ts` | тонкая обёртка, пробрасывает вызовы; `dbListAllOpen` остаётся локальным (сортирует по `assignees`, а не `due_date`) |
+
+**Прямые запросы к `tasks` минуя движок** (известный остаток, отдельный этап):
+- `handlers.ts` ~626, 632, 643 — `tl_pending`, `tl_done`, `tl_export` callbacks
+- `index.ts` swarm-bot ~326–327 — `smartTaskSearch`
+
+---
+
 ## swarm-bot — структура файлов
 
 ```
@@ -44,10 +80,10 @@ supabase/functions/swarm-bot/
 ├── tasks/
 │   ├── index.ts             # Экспорт task-хендлеров
 │   ├── handlers.ts          # Callback/session обработка для задач
-│   ├── db.ts                # CRUD задач в Supabase
+│   ├── db.ts                # Тонкая обёртка над _shared/tasks/db.ts + dbListAllOpen
 │   ├── formatter.ts         # Форматирование задач для Telegram
 │   ├── matcher.ts           # NLP-определение intent, fuzzy assignee matching (findUserByMention)
-│   └── types.ts             # TypeScript типы задач
+│   └── types.ts             # Реэкспорт из _shared/tasks/types.ts
 └── lib/
     ├── supabase.ts          # Supabase client + ADMIN_USER_ID
     ├── openai.ts            # chatComplete(), getEmbedding()
@@ -284,7 +320,7 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 supabase/functions/swarm-mcp/
 ├── index.ts        # MCP-сервер: регистрация инструментов, роутинг вызовов
 └── tasks/
-    └── tools.ts    # toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks
+    └── tools.ts    # Прослойка: резолв user/assignee → _shared/tasks/db.ts → форматирование строк
 ```
 
 **Инструменты (tools) swarm-mcp:**

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-05-31 — Рефактор: единый движок задач (_shared/tasks/)
+
+Рефактор без изменения поведения. Дублированный CRUD задач вынесен в общий движок.
+
+- Создан `_shared/tasks/types.ts` — единственный источник типов `Task` и `TaskInput`
+- Создан `_shared/tasks/db.ts` — `createTask / getTask / listTasks / updateTask / deleteTask`; принимает готовый `group_id` и исполнителей; бросает исключения; `nullsFirst:false` везде; лимит дефолт 200
+- `swarm-mcp/tasks/tools.ts` стал прослойкой: резолвит `requesting_user_id→group_id` и `assignee_name` через fuzzy-матч, вызывает движок, форматирует строки для Claude
+- `swarm-bot/tasks/db.ts` стал тонкой обёрткой (`dbListAllOpen` — локально, сортировка по `assignees`)
+- `swarm-bot/tasks/types.ts` реэкспортирует из `_shared` — импорты в handlers.ts/formatter.ts/matcher.ts не менялись
+- Три коммита: `27f1ff9`, `b723d94`, `0840a3f`
+- Документация: `ARCHITECTURE.md`, `QUICK_REF.md`, `SHARED_TASKS_ENGINE.md`, `decisions/2026-05-31-shared-tasks-engine.md`
+
 ## 2026-05-30 — Фидбек: имя бота в сообщениях канала
 
 - Добавлена env-переменная `BOT_NAME` в `handlers/feedback.ts`

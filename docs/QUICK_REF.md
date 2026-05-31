@@ -22,7 +22,9 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 |-----------|------|
 | Команды бота, роутинг | `swarm-bot/index.ts` |
 | Новый хендлер | `swarm-bot/handlers/<name>.ts` |
-| Задачи (логика) | `swarm-bot/tasks/handlers.ts`, `tasks/db.ts` |
+| Задачи (движок, общий) | `_shared/tasks/db.ts`, `_shared/tasks/types.ts` |
+| Задачи (бот-обёртка) | `swarm-bot/tasks/db.ts`, `swarm-bot/tasks/handlers.ts` |
+| Задачи (MCP-прослойка) | `swarm-mcp/tasks/tools.ts` |
 | Fuzzy assignee | `swarm-bot/tasks/matcher.ts` |
 | Telegram helpers | `swarm-bot/lib/telegram.ts` |
 | Сессии, доступ, saveEntry | `swarm-bot/lib/storage.ts` |
