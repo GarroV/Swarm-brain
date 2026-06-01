@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-01 — miniapp: shadcn/ui
+
+- Установлены зависимости: shadcn, @base-ui/react, clsx, tailwind-merge, class-variance-authority, lucide-react, tw-animate-css
+- `components.json`: конфиг shadcn
+- `globals.css`: CSS-переменные shadcn, dark mode через `.dark`
+- `src/lib/utils.ts`: утилита `cn()`
+- `src/components/ui/button.tsx`: первый компонент
+
 ## 2026-06-01 — swarm-bot: инфо о Granola и Claude Desktop в /start
 
 - Стартовое сообщение дополнено: блок "Подключить автоматический импорт встреч" (Granola + команда подключения) и "Работать из Claude Desktop" (ссылка на /connect_claude)
