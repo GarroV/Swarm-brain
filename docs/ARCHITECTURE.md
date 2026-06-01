@@ -412,9 +412,47 @@ supabase/functions/swarm-mcp/
 
 ---
 
+## Mini App frontend — miniapp/
+
+Next.js 16 приложение внутри монорепо, полностью отдельное от Deno Edge Functions.
+
+```
+miniapp/
+├── src/app/           # Next.js App Router
+│   ├── layout.tsx     # Root layout
+│   ├── page.tsx       # Главная страница
+│   └── globals.css    # Tailwind base styles
+├── public/            # Статические ассеты
+├── next.config.ts     # output: "export", images: unoptimized
+├── .env.local.example # Пример переменных окружения (в git)
+└── .env.local         # Локальные переменные (gitignored)
+```
+
+**Конфигурация:**
+- `output: "export"` — статический HTML/CSS/JS в `miniapp/out/`, без сервера
+- Деплой: Cloudflare Pages (из директории `out/`)
+- TypeScript + Tailwind CSS
+
+**Переменные окружения Mini App:**
+
+| Переменная | Значение | Назначение |
+|-----------|---------|-----------|
+| `NEXT_PUBLIC_API_URL` | `https://*.supabase.co/functions/v1/swarm-api` | URL бэкенда |
+| `NEXT_PUBLIC_DEV_MODE` | `true` / `false` | Режим разработки |
+
+**Разработка:**
+```bash
+cd miniapp
+npm run dev    # dev-сервер
+npm run build  # статический экспорт в out/
+```
+
+---
+
 ## Деплой и разработка
 
 - Ветка: `sandbox_vas` → всегда разрабатывать здесь, в `main` не коммитить
-- Деплой: `supabase functions deploy swarm-bot --no-verify-jwt`
+- Деплой Edge Functions: `supabase functions deploy swarm-bot --no-verify-jwt`
 - Деплой обоих: `supabase functions deploy swarm-bot granola-poller --no-verify-jwt`
+- Деплой Mini App: `cd miniapp && npm run build` → `out/` → Cloudflare Pages
 - После каждого изменения функционала: обновить этот файл + `CHANGELOG.md`

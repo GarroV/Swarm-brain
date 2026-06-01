@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-01 — miniapp: scaffold Next.js static export
+
+- Создан `miniapp/` — Next.js 16 + TypeScript + Tailwind CSS внутри монорепо как отдельный субпроект
+- `miniapp/next.config.ts`: `output: "export"`, `images: { unoptimized: true }` — статический экспорт в `out/` для деплоя на Cloudflare Pages без сервера
+- `miniapp/.env.local.example`: шаблон переменных окружения (в git); `miniapp/.env.local`: локальный конфиг (gitignored)
+- `NEXT_PUBLIC_API_URL` указывает на `swarm-api` Edge Function; `NEXT_PUBLIC_DEV_MODE=true` для локальной разработки
+- Сборка `npm run build` проходит, `miniapp/out/index.html` генерируется
+
 ## 2026-06-01 — База знаний: справки по Granola + бот выводит инструкции целиком
 
 - Добавлены две справочные статьи в базу знаний: «Как добавить встречу из Granola (copy-paste)» и «Как подключить Granola через API-ключ» — покрывают вопросы «как подключить гранолу», «где взять ключ», «как импортировать встречи»
