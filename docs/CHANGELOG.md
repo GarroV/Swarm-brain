@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-01 — swarm-bot: /mytoken теперь показывает сам токен
+
+- Баг: `/mytoken` генерировал токен, сохранял хэш и говорил "сохранён" — не отображая реальное значение `smcp_...`. Пользователь не мог настроить Claude Desktop.
+- Исправлено: токен теперь выводится в ответе бота как моноширинный текст + подсказка перейти к `/claude`.
+- Обновлена `docs/SETUP_CLAUDE_DESKTOP.md`: полный пошаговый гайд — `/mytoken` → Authorization header в Connectors → `/claude` для инструкций проекта + FAQ.
+
 ## 2026-06-01 — miniapp: scaffold Next.js static export
 
 - Создан `miniapp/` — Next.js 16 + TypeScript + Tailwind CSS внутри монорепо как отдельный субпроект
