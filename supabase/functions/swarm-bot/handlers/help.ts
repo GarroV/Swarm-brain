@@ -38,8 +38,7 @@ export function getHelpText(): string {
 
     "<b>🖥 Claude Desktop (MCP)</b>\n" +
     "/connect_claude — как подключить Claude Desktop (пошагово)\n" +
-    "/claude — инструкции для проекта (с твоим Telegram ID)\n" +
-    "/mytoken — сгенерировать токен идентификации (опционально)\n\n" +
+    "/claude — инструкции для проекта (с твоим Telegram ID)\n\n" +
 
     "/feedback — отправить фидбек\n" +
     "/reset — сбросить состояние · /help — эта справка"

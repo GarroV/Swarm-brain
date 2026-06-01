@@ -228,7 +228,6 @@ Deno.serve(async (req: Request) => {
           { command: "feedback", description: "Отправить фидбек" },
           { command: "reset", description: "Сбросить состояние бота" },
           { command: "connect_claude", description: "Как подключить Claude Desktop" },
-          { command: "mytoken", description: "Сгенерировать токен идентификации (опционально)" },
           { command: "claude", description: "Инструкции для проекта Claude Desktop" },
         ]}),
       });
