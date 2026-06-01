@@ -87,11 +87,27 @@ supabase functions deploy swarm-api --no-verify-jwt
 
 ---
 
-## Следующий шаг — фронтенд Mini App
+## Фронтенд Mini App — реализован (2026-06-01)
 
-Telegram Mini App (React/Vite или Next.js):
-- `@twa-dev/sdk` для получения initData из `Telegram.WebApp.initData`
-- Канбан-доска задач: колонки open / in_progress / done
-- Смена статуса drag-and-drop или кнопками
-- Создание задачи с назначением исполнителя из `/users`
-- Поллинг `/tasks` каждые ~10 секунд
+**Расположение:** `miniapp/`
+**Деплой:** Cloudflare Pages — build command `npm run build`, output dir `out`
+**Локальная разработка:** `cd miniapp && npm run dev` (с `NEXT_PUBLIC_DEV_MODE=true` в `.env.local`)
+
+### Стек
+- Next.js 16, `output: 'export'`, TypeScript
+- Tailwind CSS v4 + shadcn/ui
+- `@twa-dev/sdk` → `Telegram.WebApp.initData`
+- Plain fetch + useEffect (поллинг 10 сек + visibilitychange)
+
+### Ключевые файлы
+| Файл | Назначение |
+|------|-----------|
+| `src/lib/api.ts` | Все запросы к swarm-api + DEV_MODE mock |
+| `src/lib/telegram.ts` | getInitData, initApp |
+| `src/components/KanbanBoard.tsx` | Главный компонент: табы, поллинг |
+| `src/components/TaskCard.tsx` | Карточка задачи + кнопки статуса |
+| `src/components/TaskModal.tsx` | Создание/редактирование задачи |
+
+### Финальная проверка авторизации
+DEV_MODE проверяет только UI/логику. Реальный `initData` и авторизацию
+проверяй только открыв приложение из Telegram.

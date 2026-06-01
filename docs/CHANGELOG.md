@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-01 — miniapp: канбан-доска задач (полная реализация)
+
+- `KanbanBoard`: три таба (Open / In Progress / Done), одна колонка за раз, поллинг 10 сек + дозапрос при `visibilitychange`, шапка с именем пользователя
+- `TaskCard`: карточка с кнопками статуса (open→in_progress, in_progress→done/open, done→in_progress), Edit, Delete с confirm
+- `TaskModal`: shadcn Dialog для создания и редактирования — поля title, description, due_date, role (select: marketing/bd/rnd), country, assignee (select из /users)
+- Обработка ошибок: 401 → экран «No access», 403 → экран «No workspace»
+- Сборка `npm run build` → `miniapp/out/` готов к деплою на Cloudflare Pages
+
 ## 2026-06-01 — miniapp: TelegramProvider + layout
 
 - `TelegramProvider`: вызывает `initApp()` (expand + ready) при монтировании
