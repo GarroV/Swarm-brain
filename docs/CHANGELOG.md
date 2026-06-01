@@ -1,12 +1,11 @@
 # Changelog
 
-## 2026-06-01 — miniapp: shadcn/ui
+## 2026-06-01 — miniapp: shadcn/ui + @twa-dev/sdk
 
-- Установлены зависимости: shadcn, @base-ui/react, clsx, tailwind-merge, class-variance-authority, lucide-react, tw-animate-css
-- `components.json`: конфиг shadcn
-- `globals.css`: CSS-переменные shadcn, dark mode через `.dark`
-- `src/lib/utils.ts`: утилита `cn()`
-- `src/components/ui/button.tsx`: первый компонент
+- Инициализирован shadcn/ui (Tailwind v4 compatible): `components.json`, CSS-переменные, `src/lib/utils.ts`
+- Добавлены компоненты: `button`, `card`, `dialog`, `select`, `input`, `textarea`, `label`, `badge`, `tabs`
+- Установлен `@twa-dev/sdk` — обёртка над `Telegram.WebApp` для получения `initData`
+- Сборка `npm run build` проходит после добавления зависимостей
 
 ## 2026-06-01 — swarm-bot: инфо о Granola и Claude Desktop в /start
 
