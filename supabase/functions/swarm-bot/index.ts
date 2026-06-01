@@ -210,7 +210,18 @@ Deno.serve(async (req: Request) => {
       await sendMessage(chatId, "🔄 Сброс выполнен. Бот готов к работе.");
     } else if (command === "/start") {
       await clearSession(chatId);
-      await sendMessage(chatId, "<b>Swarm Brain</b>\n\nКомандная база знаний.\n\n📥 <b>Добавить</b> — записать текст в базу\n❓ <b>Спросить</b> — задать вопрос по базе\n\nТакже можно отправить голосовое или файл — содержимое будет сохранено.", buildKeyboard());
+      await sendMessage(chatId,
+        `<b>Swarm Brain</b> — командная база знаний.\n\n` +
+        `📥 <b>Добавить</b> — записать текст в базу\n` +
+        `❓ <b>Спросить</b> — задать вопрос по базе\n\n` +
+        `Также можно отправить голосовое или файл — содержимое будет сохранено.\n\n` +
+        `<b>Подключить автоматический импорт встреч:</b>\n` +
+        `📓 <b>Granola</b> — /connect granola &lt;API-ключ&gt;\n` +
+        `   Ключ: Granola → Settings → Integrations → API Key\n\n` +
+        `<b>Работать с базой из Claude Desktop:</b>\n` +
+        `🖥 /connect_claude — пошаговая инструкция`,
+        buildKeyboard()
+      );
       // Register bot commands in side menu (idempotent)
       await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
         method: "POST",
