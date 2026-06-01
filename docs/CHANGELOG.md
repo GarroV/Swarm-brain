@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-01 — miniapp: типы и API-клиент
+
+- `src/types.ts`: Task, User, Me — зеркало типов swarm-api
+- `src/lib/telegram.ts`: `getInitData()` + `initApp()` через @twa-dev/sdk
+- `src/lib/api.ts`: все fetch-функции (fetchMe, fetchUsers, fetchTasks, createTask, updateTask, deleteTask) + полный DEV_MODE mock без обращений к API
+
 ## 2026-06-01 — miniapp: shadcn/ui + @twa-dev/sdk
 
 - Инициализирован shadcn/ui (Tailwind v4 compatible): `components.json`, CSS-переменные, `src/lib/utils.ts`
