@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-01 — miniapp: TelegramProvider + layout
+
+- `TelegramProvider`: вызывает `initApp()` (expand + ready) при монтировании
+- `layout.tsx`: подключён TelegramProvider, заголовок "Swarm Tasks"
+- `page.tsx`: заглушка, будет заменена KanbanBoard
+
 ## 2026-06-01 — miniapp: типы и API-клиент
 
 - `src/types.ts`: Task, User, Me — зеркало типов swarm-api
