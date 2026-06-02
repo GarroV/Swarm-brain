@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-06-02 — feat(tasks): pending/today views, tag picker, deadline edit from card
+
+- **swarm-bot/tasks/handlers.ts**:
+  - `buildMainMenuMessage()`: добавлены кнопки «⏳ На проверке» (`tk_pending`) и «📅 На сегодня» (`tk_today`) — первая строка меню
+  - `/tasks` команда (handleTasks): меню синхронизировано с buildMainMenuMessage — те же 4 кнопки
+  - `tk_pending` — список задач со статусом `pending`, созданных текущим пользователем; каждая задача кликабельна → `tk_pen_<taskId>`
+  - `tk_pen_<taskId>` — открывает карточку задачи через `sendPendingTaskCard`
+  - `tk_today` — задачи со сроком сегодня или просроченные (красный/жёлтый маркер), клик → `tk_t_<taskId>`
+  - `tdue_<taskId>` — запрашивает новый дедлайн в свободной форме (из карточки pending); добавлен ПЕРЕД `tdate_` чтобы не было конфликта префиксов
+  - `tctag_<taskId>` — показывает два меню: страны (Serbia/Bulgaria/Croatia/Hungary/Moldova/Romania + «Без страны») и теги (#all/#marketing/#rnd/#bd)
+  - `tctagc_<taskId>:<country|none>` — устанавливает страну задачи
+  - `tctagr_<taskId>:<tag>` — переключает тег (toggle): добавляет если не было, убирает если был
+- **import**: добавлены `dbListPending`, `dbListToday` в импорт из `./db.ts`
+
 ## 2026-06-02 — feat(tasks): bot helpers + sendPendingTaskCard full card
 
 - **swarm-bot/tasks/db.ts**: 

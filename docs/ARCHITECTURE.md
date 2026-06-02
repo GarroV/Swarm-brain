@@ -230,6 +230,9 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 | Код | Действие |
 |----|---------|
 | `tk_menu` | Главное меню задач |
+| `tk_pending` | Задачи на проверке (статус pending, созданные мной) |
+| `tk_pen_<taskId>` | Открыть карточку pending-задачи |
+| `tk_today` | Задачи на сегодня / просроченные |
 | `tk_mine` | Мои задачи (edit-in-place список) |
 | `tk_all` | Все задачи команды |
 | `tk_add` | Создать задачу (запускает addtask сессию) |
@@ -237,6 +240,10 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 | `tk_st_<taskId>_<status>` | Сменить статус задачи |
 | `tk_del_<taskId>` | Запрос подтверждения удаления |
 | `tk_delc_<taskId>` | Подтвердить удаление задачи |
+| `tdue_<taskId>` | Ввод нового дедлайна в свободной форме (из pending-карточки) |
+| `tctag_<taskId>` | Открыть пикер страны и тегов |
+| `tctagc_<taskId>:<country\|none>` | Установить страну задачи |
+| `tctagr_<taskId>:<tag>` | Переключить тег задачи (toggle) |
 
 ### Feedback
 | Код | Действие |
