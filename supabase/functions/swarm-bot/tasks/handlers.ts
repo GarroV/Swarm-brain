@@ -10,6 +10,37 @@ import type { TgCallbackQuery } from "../lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
+async function broadcastTaskAssigned(task: Task, groupId: string): Promise<void> {
+  let recipientIds: number[] = [...(task.assignee_telegram_ids ?? [])];
+
+  if ((task.tags ?? []).includes("#all")) {
+    const { data } = await supabase
+      .from("allowed_users")
+      .select("telegram_id")
+      .eq("group_id", groupId)
+      .not("telegram_id", "is", null);
+    const all = ((data ?? []) as Array<{ telegram_id: number }>).map(u => u.telegram_id);
+    const seen = new Set(recipientIds);
+    for (const id of all) if (!seen.has(id)) recipientIds.push(id);
+  }
+
+  if (!recipientIds.length) return;
+
+  const due = task.due_date
+    ? ` · до ${new Date(task.due_date + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}`
+    : "";
+  const country = task.country ? ` · ${task.country}` : "";
+  const text = `📋 Тебе назначена задача: <b>${task.title}</b>${country}${due}`;
+
+  await Promise.all(recipientIds.map(id =>
+    fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: id, text, parse_mode: "HTML" }),
+    })
+  ));
+}
+
 export const TASK_KEYWORDS = /задач|таск|task|сделать|выполнить|поручен|назначен|дедлайн|deadline|кто должен/i;
 
 export { sendTaskCard };
@@ -579,12 +610,15 @@ export async function handleTaskCallbacks(
     return true;
   }
 
-  // Task confirm pending → open: tc_{taskId}
+  // Task confirm → confirmed=true + broadcast: tc_{taskId}
   if (data.startsWith("tc_")) {
     const taskId = data.replace("tc_", "");
     const task = await dbGetTask(taskId);
-    await dbUpdateTask(taskId, { status: "open" });
-    await sendMessage(chatId, `✅ Подтверждено: <b>${task?.title ?? ""}</b>`);
+    if (!task) { await sendMessage(chatId, "Задача не найдена."); return true; }
+    await dbUpdateTask(taskId, { confirmed: true, status: "open" });
+    await sendMessage(chatId, `✅ Подтверждено: <b>${task.title}</b>`);
+    const confirmedTask = { ...task, confirmed: true, status: "open" };
+    await broadcastTaskAssigned(confirmedTask, groupId);
     return true;
   }
 
