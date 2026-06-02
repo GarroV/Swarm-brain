@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-06-02 — feat(tasks): confirm sets confirmed=true, broadcasts to assignees
+
+- **swarm-bot/tasks/handlers.ts**:
+  - Добавлена новая функция `broadcastTaskAssigned()` для отправки Telegram-уведомлений исполнителям задачи
+  - Функция собирает список получателей: `assignee_telegram_ids` + все пользователи воркспейса если в тегах есть `#all`
+  - Отправляет каждому: "📋 Тебе назначена задача: <b>{title}</b> · {country} · до {due_date}"
+  - Callback `tc_<taskId>` (подтверждение pending-задачи) расширена:
+    - Теперь устанавливает `confirmed=true` в БД (вместо просто `status="open"`)
+    - После обновления вызывает `broadcastTaskAssigned()` чтобы уведомить исполнителей
+    - Добавлена проверка что задача существует перед обновлением
+
 ## 2026-06-02 — feat(tasks): pending/today views, tag picker, deadline edit from card
 
 - **swarm-bot/tasks/handlers.ts**:

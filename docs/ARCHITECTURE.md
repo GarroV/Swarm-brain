@@ -240,6 +240,7 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 | `tk_st_<taskId>_<status>` | Сменить статус задачи |
 | `tk_del_<taskId>` | Запрос подтверждения удаления |
 | `tk_delc_<taskId>` | Подтвердить удаление задачи |
+| `tc_<taskId>` | Подтвердить pending-задачу: `confirmed=true`, `status=open`, отправить Telegram-уведомления исполнителям |
 | `tdue_<taskId>` | Ввод нового дедлайна в свободной форме (из pending-карточки) |
 | `tctag_<taskId>` | Открыть пикер страны и тегов |
 | `tctagc_<taskId>:<country\|none>` | Установить страну задачи |
