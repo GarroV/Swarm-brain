@@ -129,20 +129,14 @@ Deno.serve(async (req: Request) => {
 
   // GET /me
   if (req.method === "GET" && routePath === "/me") {
-    const { data: profile } = await supabase
-      .from("user_profiles")
-      .select("first_name, last_name, username")
-      .eq("telegram_id", telegram_id)
-      .maybeSingle();
-    const p = profile as {
-      first_name?: string;
-      last_name?: string;
-      username?: string;
-    } | null;
-    const name =
-      (p ? [p.first_name, p.last_name].filter(Boolean).join(" ") || p.username : null) ||
-      String(telegram_id);
-    return json({ telegram_id, name, group_id: groupId, language: language_code }, 200, origin);
+    const [{ data: profile }, { data: allowedUser }] = await Promise.all([
+      supabase.from("user_profiles").select("first_name, last_name, role, markets").eq("telegram_id", telegram_id).maybeSingle(),
+      supabase.from("allowed_users").select("username").eq("telegram_id", telegram_id).maybeSingle(),
+    ]);
+    const p = profile as { first_name?: string; last_name?: string; role?: string; markets?: string[] } | null;
+    const username = (allowedUser as { username?: string } | null)?.username ?? null;
+    const name = (p ? [p.first_name, p.last_name].filter(Boolean).join(" ") : null) || username || String(telegram_id);
+    return json({ telegram_id, name, username, group_id: groupId, language: language_code, role: p?.role ?? null, markets: p?.markets ?? [] }, 200, origin);
   }
 
   // GET /users
@@ -154,10 +148,14 @@ Deno.serve(async (req: Request) => {
 
     if (!users?.length) return json([], 200, origin);
 
-    const ids = (users as Array<{ telegram_id: number }>).map(u => u.telegram_id);
+    // filter out entries with null telegram_id (users added by username before joining bot)
+    const validUsers = (users as Array<{ telegram_id: number | null; username: string | null }>).filter(u => u.telegram_id != null) as Array<{ telegram_id: number; username: string | null }>;
+    if (!validUsers.length) return json([], 200, origin);
+
+    const ids = validUsers.map(u => u.telegram_id);
     const { data: profiles } = await supabase
       .from("user_profiles")
-      .select("telegram_id, first_name, last_name, username, role, markets")
+      .select("telegram_id, first_name, last_name, role, markets")
       .in("telegram_id", ids);
 
     const profileMap = Object.fromEntries(
@@ -166,23 +164,18 @@ Deno.serve(async (req: Request) => {
           telegram_id: number;
           first_name?: string;
           last_name?: string;
-          username?: string;
           role?: string;
           markets?: string[];
         }> ?? []
       ).map(p => [p.telegram_id, p]),
     );
 
-    const result = (
-      users as Array<{ telegram_id: number; username: string | null }>
-    ).map(u => {
+    const result = validUsers.map(u => {
       const p = profileMap[u.telegram_id];
+      const fullName = p ? [p.first_name, p.last_name].filter(Boolean).join(" ") : null;
       return {
         telegram_id: u.telegram_id,
-        name:
-          (p
-            ? [p.first_name, p.last_name].filter(Boolean).join(" ") || p.username
-            : null) || String(u.telegram_id),
+        name: fullName || u.username || String(u.telegram_id),
         username: u.username ?? null,
         role: p?.role ?? null,
         markets: p?.markets ?? [],
@@ -550,6 +543,7 @@ Deno.serve(async (req: Request) => {
           fields.metadata = { ...(entry.metadata as Record<string, unknown>), confirmed: body.confirmed };
         }
         if ("summary" in body) fields.summary = body.summary;
+        if ("countries" in body && Array.isArray(body.countries)) fields.countries = body.countries;
         await supabase.from("entries").update(fields).eq("id", entry.id);
         const { data } = await supabase.from("entries").select("*").eq("id", entry.id).single();
         return json(data, 200, origin);

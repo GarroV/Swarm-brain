@@ -28,8 +28,11 @@ export type User = {
 export type Me = {
   telegram_id: number;
   name: string;
+  username: string | null;
   group_id: string;
   language: string | null;
+  role: string | null;
+  markets: string[];
 };
 
 export type Entry = {

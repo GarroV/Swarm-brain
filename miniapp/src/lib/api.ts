@@ -25,6 +25,7 @@ export type UpdateEntryInput = {
 export type UpdateMeetingInput = {
   confirmed?: boolean;
   summary?: string | null;
+  countries?: string[];
 };
 
 export type UpdateMeInput = {
@@ -51,8 +52,11 @@ const DEV_MODE = process.env.NEXT_PUBLIC_DEV_MODE === "true";
 const MOCK_ME: Me = {
   telegram_id: 123456,
   name: "Dev User",
+  username: "devuser",
   group_id: "cee",
   language: "en",
+  role: "bd",
+  markets: ["KZ", "PL"],
 };
 
 const MOCK_USERS: User[] = [
@@ -333,6 +337,8 @@ export async function patchMeeting(id: string, fields: UpdateMeetingInput): Prom
       mockMeetings[idx] = { ...mockMeetings[idx], metadata: { ...mockMeetings[idx].metadata, confirmed: fields.confirmed } };
     if (fields.summary !== undefined)
       mockMeetings[idx] = { ...mockMeetings[idx], summary: fields.summary };
+    if (fields.countries !== undefined)
+      mockMeetings[idx] = { ...mockMeetings[idx], countries: fields.countries };
     return mockMeetings[idx];
   }
   return apiFetch<Entry>(`/meetings/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
