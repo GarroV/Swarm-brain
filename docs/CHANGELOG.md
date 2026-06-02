@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-06-02 — miniapp: навигация + 4 новых экрана (Фазы 0–5, frontend)
+
+- `BottomNav`: 5 вкладок — Задачи / База / Встречи / Команда / Настройки; fixed bottom, icons из lucide-react
+- `TeamScreen`: список участников воркспейса (имя, роль, рынки, аватар из инициалов)
+- `KnowledgeScreen`: список записей, семантический поиск, просмотр/редактирование/удаление записи (только owner), добавление новой записи с флагом is_private
+- `MeetingsScreen`: список встреч (Granola + Read.ai) с табами Все/Ожидают/Подтверждены; подтверждение встречи, редактирование тезисов, удаление
+- `SettingsScreen`: профиль (role, markets), Granola (подключение/отключение + список необработанных заметок с preview/import/skip), дайджест (GPT, период 7/14/30 дней), загрузка файла, фидбек
+- `types.ts`: добавлены Entry, Integration, GranolaNote
+- `api.ts`: полный набор API-функций для entries, meetings, integrations, granola, feedback, digest, upload + DEV_MODE моки для всех
+- fix(miniapp): порядок кнопок статуса in_progress — ← Open слева, → Done справа
+
 ## 2026-06-02 — swarm-api: entries-guard.ts — обязательный слой защиты личного хранилища
 
 - `entries-guard.ts`: два хелпера для всех entry-endpoints в swarm-api:
