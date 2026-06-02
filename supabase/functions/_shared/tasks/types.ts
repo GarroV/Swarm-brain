@@ -15,6 +15,8 @@ export type Task = {
   meeting_id: string | null;
   url: string | null;
   group_id?: string | null;
+  confirmed: boolean;
+  created_by_telegram_id: number | null;
 };
 
 export type TaskInput = {
@@ -30,4 +32,6 @@ export type TaskInput = {
   status?: string;
   meeting_id?: string | null;
   group_id?: string | null;
+  confirmed?: boolean;
+  created_by_telegram_id?: number | null;
 };
