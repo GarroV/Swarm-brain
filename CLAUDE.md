@@ -35,6 +35,26 @@
 - Cron-триггеры (`digest_cron`, `readai_token_refresh`, `setup_commands`) не аутентифицированы — не добавлять в них деструктивные операции
 - `ADMIN_USER_ID = 744230399` зашит в `lib/supabase.ts` — если меняется, обновить там
 
+### swarm-api — обязательное правило для всех endpoints с entries
+
+`entries` содержит личные хранилища пользователей. Команда растёт — утечка чужих приватных записей недопустима.
+
+**Запрещено** писать `supabase.from("entries")` напрямую в endpoint'ах swarm-api.  
+**Обязательно** использовать хелперы из `swarm-api/entries-guard.ts`:
+
+| Ситуация | Хелпер |
+|----------|--------|
+| Одиночный доступ (GET /:id, PATCH, DELETE) | `getEntrySecure(supabase, id, { groupId, telegramId, requireOwner? })` |
+| Список (GET /entries, GET /search) | `buildEntriesQuery(supabase, select, { groupId, telegramId })` |
+
+Хелперы автоматически применяют два слоя защиты:
+1. **Воркспейс-изоляция** — `entry.group_id === groupId`
+2. **Приватность** — `is_private=false OR owner_id=telegramId`
+
+Для мутаций (PATCH, DELETE) передавать `requireOwner: true` — хелпер вернёт 403 если не владелец.
+
+Обернуть handler в `withEntries(origin, async () => { ... })` — он перехватывает `EntryAccessError` и возвращает правильный 404/403 автоматически.
+
 ### Известные архитектурные риски (не чинить без обсуждения, просто знать)
 - Файлы в `swarm_drive` Storage отдаются по публичным URL без авторизации
 - `requesting_user_id` в MCP передаётся вызывающим на доверии — нет JWT-верификации

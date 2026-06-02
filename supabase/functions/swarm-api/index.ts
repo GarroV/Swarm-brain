@@ -1,6 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
 import {
+  EntryAccessError,
+  buildEntriesQuery,
+  getEntrySecure,
+} from "./entries-guard.ts";
+import {
   createTask,
   getTask,
   listTasks,
@@ -41,6 +46,20 @@ function json(data: unknown, status = 200, origin = ""): Response {
 
 function apiErr(status: number, message: string, origin = ""): Response {
   return json({ error: message }, status, origin);
+}
+
+// Wrap any async handler that calls getEntrySecure / buildEntriesQuery.
+// Converts EntryAccessError into the correct 404/403 response automatically.
+async function withEntries(
+  origin: string,
+  fn: () => Promise<Response>,
+): Promise<Response> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof EntryAccessError) return apiErr(e.status, e.message, origin);
+    throw e;
+  }
 }
 
 // Resolve telegram_id → { telegram_id, name } via user_profiles

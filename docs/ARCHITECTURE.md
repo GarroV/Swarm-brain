@@ -337,11 +337,29 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 
 ```
 supabase/functions/swarm-api/
-├── index.ts   # Router + все эндпоинты
-└── auth.ts    # verifyInitData() — утилита проверки Telegram initData
+├── index.ts        # Router + все эндпоинты
+├── auth.ts         # verifyInitData() — утилита проверки Telegram initData
+└── entries-guard.ts  # Обязательный слой безопасности для всех endpoints с entries
 ```
 
 **Назначение:** REST API для Telegram Mini App (доска задач). Третий клиент поверх `_shared/tasks/db.ts`.
+
+**Безопасность entries — `entries-guard.ts`:**
+
+`entries` содержит личные хранилища пользователей. `service_role_key` обходит RLS — вся защита в коде.
+
+Два обязательных хелпера, которые нужно использовать во всех entry-endpoints:
+
+| Хелпер | Когда использовать | Что проверяет |
+|--------|--------------------|---------------|
+| `getEntrySecure(supabase, id, { groupId, telegramId, requireOwner? })` | GET /:id, PATCH, DELETE | 1) workspace (`group_id`), 2) visibility (`is_private`), 3) ownership (если `requireOwner=true`) |
+| `buildEntriesQuery(supabase, select, { groupId, telegramId })` | GET /entries, GET /search | Возвращает query с workspace + visibility фильтрами уже встроены |
+
+Обернуть handler в `withEntries(origin, async () => { ... })` — перехватывает `EntryAccessError` → 404/403.
+
+**Запрещено:** `supabase.from("entries").select(...)` напрямую в endpoint'ах — только через хелперы.
+
+Оба случая недоступности (entry не существует / entry приватная чужая) возвращают 404 — утечка информации о существовании чужой записи недопустима.
 
 **Аутентификация (одна точка, все запросы):**
 ```
