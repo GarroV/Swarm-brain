@@ -10,6 +10,14 @@
 
 ---
 
+## Развернуть с нуля
+
+Полная пошаговая инструкция — в **[docs/SETUP.md](docs/SETUP.md)**.
+
+Кратко: Supabase проект → схема из `supabase/migrations/` → secrets → `supabase functions deploy` → Telegram webhook.
+
+---
+
 ## Технический стек
 
 | Слой | Технология |
