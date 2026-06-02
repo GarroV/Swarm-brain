@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-03 — feat(miniapp): markets chips picker + meeting countries editing
+
+- **miniapp/src/components/SettingsScreen.tsx**:
+  - Поле рынков заменено на toggle-chips сгруппированные по регионам (Европа / Другие рынки)
+  - Нормализация устаревших написаний при загрузке (Croatia→Хорватия и т.п.)
+  - Имя и @username теперь отображаются в секции профиля
+- **miniapp/src/components/MeetingsScreen.tsx**:
+  - В диалоге встречи добавлено редактирование стран: chips с кнопкой удаления + поле добавления новой страны
+- **supabase/functions/swarm-api/index.ts**: `PATCH /meetings/:id` теперь принимает поле `countries`
+
 ## 2026-06-03 — feat(api): GET /me returns role/markets/username; fix null telegram_id in /users
 
 - **supabase/functions/swarm-api/index.ts**:
