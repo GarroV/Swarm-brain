@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-02 — swarm-api: entries-guard.ts — обязательный слой защиты личного хранилища
+
+- `entries-guard.ts`: два хелпера для всех entry-endpoints в swarm-api:
+  - `getEntrySecure(supabase, id, { groupId, telegramId, requireOwner? })` — одиночный доступ с тремя слоями: workspace-изоляция → visibility → ownership
+  - `buildEntriesQuery(supabase, select, { groupId, telegramId })` — list-запросы с фильтрами уже встроены, нельзя случайно забыть
+- `index.ts`: добавлен `withEntries(origin, fn)` — перехватывает `EntryAccessError` → правильный 404/403 автоматически
+- Оба случая недоступности (не существует / приватная чужая) возвращают 404 — утечка о существовании записи исключена
+- Правило закреплено в `CLAUDE.md` и `ARCHITECTURE.md` как обязательное: `supabase.from("entries")` напрямую в endpoint'ах запрещено
+
 ## 2026-06-01 — miniapp: канбан-доска задач (полная реализация)
 
 - `KanbanBoard`: три таба (Open / In Progress / Done), одна колонка за раз, поллинг 10 сек + дозапрос при `visibilitychange`, шапка с именем пользователя
