@@ -16,8 +16,8 @@ const STATUS_ACTIONS: Record<
 > = {
   open: [{ label: "→ In Progress", next: "in_progress", variant: "outline" }],
   in_progress: [
-    { label: "→ Done", next: "done", variant: "outline" },
     { label: "← Open", next: "open", variant: "ghost" },
+    { label: "→ Done", next: "done", variant: "outline" },
   ],
   done: [{ label: "← Reopen", next: "in_progress", variant: "ghost" }],
 };
