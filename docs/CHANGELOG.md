@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-02 — feat(tasks): shared types + db layer support confirmed/createdBy/dueToday
+
+- **types.ts**: добавлены поля `confirmed: boolean` и `created_by_telegram_id: number | null` в `Task` и `TaskInput`
+- **db.ts**: 
+  - `createTask()` теперь сохраняет `confirmed` (дефолт `false`) и `created_by_telegram_id` (дефолт `null`)
+  - `listTasks()` расширен тремя новыми фильтрами: `confirmed`, `createdBy`, `dueToday`
+  - `dueToday` возвращает задачи с `due_date <= сегодня` и `confirmed = true`
+- Контракт в ARCHITECTURE.md обновлён
+
 ## 2026-06-02 — fix(security): техдолг — cron защита, MCP ownership, OpenAI retry, session TTL
 
 - **cron-защита**: `X-Cron-Secret` header теперь обязателен для `setup_commands` / `digest_cron` / `readai_token_refresh` в swarm-bot и granola-poller. Без заголовка — 403. Секрет из env `CRON_SECRET`.

@@ -43,9 +43,9 @@ supabase/functions/_shared/tasks/
 
 | Функция | Поведение |
 |---------|-----------|
-| `createTask(input, groupId?)` | insert всеми колонками, `.select().single()`, статус дефолт `"open"`, теги дефолт `[]` |
+| `createTask(input, groupId?)` | insert всеми колонками (+ `confirmed` дефолт `false`, `created_by_telegram_id` дефолт `null`), `.select().single()`, статус дефолт `"open"`, теги дефолт `[]` |
 | `getTask(id)` | `.maybeSingle()` |
-| `listTasks(filters, groupId?)` | `select *`, order `due_date asc nullsFirst:false`; по умолчанию исключает `done/cancelled/draft`; `assigneeText` — пост-фильтр |
+| `listTasks(filters, groupId?)` | `select *`, order `due_date asc nullsFirst:false`; по умолчанию исключает `done/cancelled/draft`; фильтры: `status`, `country`, `telegramId`, `assigneeText`, `confirmed`, `createdBy`, `dueToday` (пост-фильтр `assigneeText`) |
 | `updateTask(id, fields)` | `update {...fields, updated_at}` |
 | `deleteTask(id)` | сначала `task_history`, потом `tasks` |
 
