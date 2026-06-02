@@ -20,6 +20,8 @@ export async function createTask(input: TaskInput, groupId?: string): Promise<Ta
     status: input.status ?? "open",
     meeting_id: input.meeting_id ?? null,
     group_id: groupId ?? input.group_id ?? null,
+    confirmed: input.confirmed ?? false,
+    created_by_telegram_id: input.created_by_telegram_id ?? null,
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Task;
@@ -37,22 +39,32 @@ export async function listTasks(filters: {
   telegramId?: number;
   assigneeText?: string;
   limit?: number;
+  confirmed?: boolean;
+  createdBy?: number;
+  dueToday?: boolean;
 }, groupId?: string): Promise<Task[]> {
   let q = supabase
     .from("tasks")
     .select("*")
     .order("due_date", { ascending: true, nullsFirst: false });
 
-  if (filters.status) {
-    q = q.eq("status", filters.status);
-  } else {
+  if (filters.confirmed !== undefined) {
+    q = q.eq("confirmed", filters.confirmed);
+  } else if (!filters.dueToday) {
     q = q.not("status", "in", '("done","cancelled","draft")');
   }
 
+  if (filters.status) q = q.eq("status", filters.status);
   if (filters.country) q = q.ilike("country", `%${filters.country}%`);
+  if (filters.createdBy !== undefined) q = q.eq("created_by_telegram_id", filters.createdBy);
 
   if (filters.telegramId !== undefined) {
     q = q.contains("assignee_telegram_ids", [filters.telegramId]);
+  }
+
+  if (filters.dueToday) {
+    const today = new Date().toISOString().split("T")[0];
+    q = q.lte("due_date", today).eq("confirmed", true);
   }
 
   if (filters.period === "week") {
