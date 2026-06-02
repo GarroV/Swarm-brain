@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-02 — feat(tasks): bot helpers + sendPendingTaskCard full card
+
+- **swarm-bot/tasks/db.ts**: 
+  - `dbListPending(createdBy, groupId?)` — новая задача: вернуть 20 неподтверждённых задач созданных пользователем
+  - `dbListToday(telegramId, groupId?)` — вернуть задачи на сегодня для пользователя + все задачи с тегом #all; дедупликация по id
+- **swarm-bot/tasks/formatter.ts**: 
+  - `sendPendingTaskCard()` полностью переписана: теперь показывает страну, теги, дедлайн, 6 кнопок редактирования вместо 3
+  - Исполнитель: если не назначен → "⚠️ Исполнитель не назначен"; if assigned → "👤 Исполнитель" вместо "👤 Назначить"
+  - Кнопки: подтвердить + удалить (first row), исполнитель + дедлайн + страна/теги (second row)
+
 ## 2026-06-02 — feat(tasks): shared types + db layer support confirmed/createdBy/dueToday
 
 - **types.ts**: добавлены поля `confirmed: boolean` и `created_by_telegram_id: number | null` в `Task` и `TaskInput`

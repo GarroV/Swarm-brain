@@ -54,7 +54,7 @@ supabase/functions/_shared/tasks/
 | Клиент | Файл | Что делает поверх движка |
 |--------|------|--------------------------|
 | swarm-mcp | `swarm-mcp/tasks/tools.ts` | резолвит `requesting_user_id → group_id`; резолвит `assignee_name` через fuzzy-матч; форматирует `Task[]` в строку для Claude |
-| swarm-bot | `swarm-bot/tasks/db.ts` | тонкая обёртка, пробрасывает вызовы; `dbListAllOpen` остаётся локальным (сортирует по `assignees`, а не `due_date`) |
+| swarm-bot | `swarm-bot/tasks/db.ts` | тонкая обёртка, пробрасывает вызовы; `dbListAllOpen`, `dbListPending`, `dbListToday` остаются локальными (собственная логика сортировки/фильтрации) |
 
 **Прямые запросы к `tasks` минуя движок** (известный остаток, отдельный этап):
 - `handlers.ts` ~626, 632, 643 — `tl_pending`, `tl_done`, `tl_export` callbacks

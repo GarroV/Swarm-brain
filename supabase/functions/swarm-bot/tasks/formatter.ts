@@ -38,14 +38,34 @@ export async function sendTaskCard(chatId: number, task: Task): Promise<void> {
 }
 
 export async function sendPendingTaskCard(chatId: number, task: Task): Promise<void> {
-  const who = task.assignees?.length ? `👤 ${task.assignees.join(", ")}` : "";
-  const due = formatDue(task.due_date);
-  const meta = [who, due].filter(Boolean).join(" · ");
-  const text = [`⏳ <b>${task.title}</b>`, meta].filter(Boolean).join("\n");
+  const who = task.assignees?.length
+    ? `👤 ${task.assignees.join(", ")}`
+    : "⚠️ Исполнитель не назначен";
+  const country = task.country ? `🌍 ${task.country}` : "";
+  const tags = (task.tags ?? []).filter(t => t.startsWith("#")).join(" ");
+  const meta = [country, tags].filter(Boolean).join(" · ");
+  const due = task.due_date
+    ? `📅 ${new Date(task.due_date + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}`
+    : "📅 Без дедлайна";
 
-  await sendInlineMessage(chatId, text, [[
-    { text: "✅ Подтвердить", callback_data: `tc_${task.id}` },
-    { text: "👤 Назначить", callback_data: `ta_${task.id}` },
-    { text: "🗑 Удалить", callback_data: `tdc_${task.id}` },
-  ]]);
+  const text = [
+    `⏳ <b>${task.title}</b>`,
+    who,
+    meta || null,
+    due,
+  ].filter(Boolean).join("\n");
+
+  const hasAssignee = (task.assignee_telegram_ids ?? []).length > 0 || (task.assignees ?? []).length > 0;
+
+  await sendInlineMessage(chatId, text, [
+    [
+      { text: "✅ Подтвердить", callback_data: `tc_${task.id}` },
+      { text: "🗑 Удалить", callback_data: `tdc_${task.id}` },
+    ],
+    [
+      { text: hasAssignee ? "👤 Исполнитель" : "⚠️ Назначить", callback_data: `ta_${task.id}` },
+      { text: "📅 Дедлайн", callback_data: `tdue_${task.id}` },
+      { text: "🌍 Страна/теги", callback_data: `tctag_${task.id}` },
+    ],
+  ]);
 }
