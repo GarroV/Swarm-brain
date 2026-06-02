@@ -75,16 +75,16 @@
 
 ---
 
-#### FEAT-5: Админка — управление списком стран/рынков по воркспейсам
-Сейчас список рынков для профиля пользователя хардкодирован в `SettingsScreen.tsx`. Разные воркспейсы могут работать в разных регионах.
+#### FEAT-5: Нормализация стран по ISO-кодам + Суперадминка
 
-Что сделать:
-1. **Таблица в БД** `workspace_config` (или поле `allowed_markets` в `group_settings`): список допустимых стран/рынков для каждого `group_id`
-2. **Backend** `GET /config` — возвращает `{ markets: string[] }` для текущего `group_id`
-3. **Frontend** — `SettingsScreen` загружает список с сервера вместо хардкода
-4. **Суперадмин-интерфейс** — Telegram-команда `/sa markets_set <group_id> <список>` или простая веб-страница на `swarm-api/admin`
+> 📋 **Готовый план:** `docs/superpowers/plans/2026-06-03-superadmin-country-normalization.md`
 
-🟡 Средне (нужна таблица конфигурации + API + суперадмин UI)
+Три фазы:
+1. **Country Registry** — `_shared/countries.ts` (ISO коды + `normalizeCountries()`), нормализация всех 4 GPT write-путей, SQL-миграция существующих данных, `workspaces.allowed_markets` колонка, `GET /config` эндпоинт
+2. **Admin API** — `swarm-api/admin.ts`: `/admin/workspaces` CRUD, управление пользователями воркспейса, настройка разрешённых рынков
+3. **Admin Mini App** — условный таб «Админ» только для `telegram_id=744230399`: список воркспейсов → пользователи + рынки
+
+🟡 Средне-сложно (15 задач, план полностью готов к исполнению)
 
 ---
 
