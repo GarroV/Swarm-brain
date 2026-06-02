@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-03 — fix(tasks): поменять порядок кнопок «Назад» и «Удалить» в карточке задачи
+
+- **swarm-bot/tasks/handlers.ts**: в `buildTaskDetailMessage` кнопка «🔙 Назад» теперь слева, «🗑 Удалить» справа
+
 ## 2026-06-03 — feat(tasks): edit button, "Для меня" view, авто-задачи из встреч
 
 - **swarm-bot/tasks/handlers.ts**:
