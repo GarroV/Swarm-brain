@@ -68,18 +68,25 @@ export async function saveEntry(content: string, addedBy: string, source: string
 
 // ── Session ───────────────────────────────────────────────────────────────────
 
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
 export async function getSession(chatId: number): Promise<{ action: string; context?: string } | null> {
   const { data, error } = await supabase.from("sessions")
-    .select("action, context")
+    .select("action, context, updated_at")
     .eq("chat_id", chatId).maybeSingle();
   if (error) console.error("[getSession] error:", JSON.stringify(error));
   if (!data) return null;
-  return data;
+  const row = data as { action: string; context?: string; updated_at?: string };
+  if (row.updated_at && Date.now() - new Date(row.updated_at).getTime() > SESSION_TTL_MS) {
+    await supabase.from("sessions").delete().eq("chat_id", chatId);
+    return null;
+  }
+  return { action: row.action, context: row.context };
 }
 
 export async function setSession(chatId: number, action: string, context?: string): Promise<void> {
   const { error } = await supabase.from("sessions").upsert(
-    { chat_id: chatId, action, context: context ?? null },
+    { chat_id: chatId, action, context: context ?? null, updated_at: new Date().toISOString() },
     { onConflict: "chat_id" }
   );
   if (error) console.error("[setSession] error:", JSON.stringify(error));

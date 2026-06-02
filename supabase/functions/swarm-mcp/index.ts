@@ -215,13 +215,14 @@ const TOOLS = [
   },
   {
     name: "delete_entry",
-    description: "Удалить запись из базы знаний по ID. Если к записи прикреплён файл в Storage — файл тоже удаляется.",
+    description: "Удалить запись из базы знаний по ID. Если к записи прикреплён файл в Storage — файл тоже удаляется. Можно удалить только свою запись (owner_id = requesting_user_id).",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "string", description: "ID записи из list_entries или search_knowledge" },
+        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки права на удаление" },
       },
-      required: ["id"],
+      required: ["id", "requesting_user_id"],
     },
   },
   {
@@ -581,15 +582,19 @@ async function toolListEntries(args: { source?: string; entry_type?: string; dat
   }).join("\n\n");
 }
 
-async function toolDeleteEntry(args: { id: string }): Promise<string> {
+async function toolDeleteEntry(args: { id: string; requesting_user_id?: number }): Promise<string> {
   const { data: entry, error: fetchErr } = await supabase
     .from("entries")
-    .select("metadata, source")
+    .select("metadata, source, owner_id")
     .eq("id", args.id)
     .maybeSingle();
 
   if (fetchErr) return `Ошибка: ${fetchErr.message}`;
   if (!entry) return `Запись ${args.id} не найдена.`;
+
+  if (args.requesting_user_id && (entry as { owner_id?: number }).owner_id !== args.requesting_user_id) {
+    return `Запрещено: можно удалить только свою запись. Владелец записи — другой пользователь.`;
+  }
 
   const fileUrl = (entry.metadata as Record<string, unknown> | null)?.file_url as string | undefined;
   if (fileUrl) {

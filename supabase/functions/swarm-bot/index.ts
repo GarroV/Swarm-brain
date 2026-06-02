@@ -17,6 +17,7 @@ import { getHelpText } from "./handlers/help.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
+const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 
 // ── Background runner — returns 200 to Telegram immediately, processes async ──
 
@@ -36,7 +37,12 @@ Deno.serve(async (req: Request) => {
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return new Response("Bad Request", { status: 400 }); }
 
-  // ── Cron triggers ─────────────────────────────────────────────────────────────
+  // ── Cron triggers (требуют X-Cron-Secret) ────────────────────────────────────
+  if (body.setup_commands === true || body.digest_cron === true || body.readai_token_refresh === true) {
+    if (!CRON_SECRET || req.headers.get("X-Cron-Secret") !== CRON_SECRET) {
+      return new Response("Forbidden", { status: 403 });
+    }
+  }
   if (body.setup_commands === true) {
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
       method: "POST",
