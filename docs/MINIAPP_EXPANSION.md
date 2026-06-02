@@ -99,7 +99,57 @@
 
 ---
 
-## 3. Технически сложно (gotchas)
+## 3. Безопасность личного хранилища — обязательный чеклист
+
+> ⚠️ Проверять при каждом новом endpoint, который работает с `entries`.
+
+`swarm-api` использует `service_role_key` — RLS в Supabase не работает. **Вся защита только в коде.**
+
+### Два независимых слоя на каждый запрос
+
+**Слой 1 — воркспейс-изоляция** (как у задач):
+- Всегда фильтровать по `group_id = groupId`, где `groupId` берётся из верифицированного initData.
+- Никогда не принимать `group_id` из тела запроса.
+
+**Слой 2 — приватность** (нет в задачах, есть только в entries):
+- При чтении (GET): `is_private = false OR (is_private = true AND owner_id = telegram_id)`
+- Это уже реализовано в боте как `visibilityFilter(telegram_id)` в `lib/storage.ts`.
+
+### Права на мутацию (DELETE, PATCH)
+
+| Операция | Правило |
+|----------|---------|
+| DELETE /entries/:id | Только если `owner_id = telegram_id` — нельзя удалить чужую запись, даже публичную |
+| PATCH /entries/:id | Только если `owner_id = telegram_id` |
+| GET /entries/:id | Оба слоя: group_id + visibility filter |
+
+> ⚠️ В `swarm-mcp` `delete_entry` не проверяет владельца — известная дыра (в BACKLOG.md). В `swarm-api` это повторять нельзя.
+
+### При создании (POST /entries)
+
+Поля, которые **всегда** берутся из initData, игнорируя тело запроса:
+- `group_id` → из `groupId` (initData → allowed_users)
+- `owner_id` → из `telegram_id` (initData)
+
+Поле `is_private` принимается из тела, но `owner_id` ставится принудительно в любом случае.
+
+### Итог: шаблон проверки для нового endpoint
+
+```ts
+// 1. Воркспейс
+const entry = await getEntry(id);
+if (!entry || entry.group_id !== groupId) return apiErr(404, "Not found");
+
+// 2. Приватность (для READ)
+if (entry.is_private && entry.owner_id !== telegram_id) return apiErr(404, "Not found");
+
+// 3. Владение (для DELETE/PATCH)
+if (entry.owner_id !== telegram_id) return apiErr(403, "Forbidden");
+```
+
+---
+
+## 4. Технически сложно (gotchas)
 
 ### Granola
 - API-ключ хранится в `user_integrations.api_key` plaintext (per-user).
