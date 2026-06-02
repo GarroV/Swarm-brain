@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-06-03 — feat(tasks): edit button, "Для меня" view, авто-задачи из встреч
+
+- **swarm-bot/tasks/handlers.ts**:
+  - `buildTaskDetailMessage`: добавлена строка кнопок «✏️ Название · 📅 Дедлайн · 👤 Исполнитель» для редактирования любой задачи из «Мои задачи» / «Команда»
+  - `tren_<taskId>` callback + `task_rename` session handler: переименование задачи в свободном тексте
+  - `buildMainMenuMessage`: «👥 Все задачи» разбит на «📋 Для меня» (`tk_all`) + «👥 Команда» (`tk_team`)
+  - `tk_all` («Для меня»): показывает командные задачи (без исполнителя или с тегом `#all`) + задачи назначенные текущему пользователю
+  - `tk_team` («Команда»): все задачи воркспейса, сгруппированные по исполнителю (старое поведение `tk_all`)
+- **swarm-bot/handlers/meetings.ts**:
+  - `mc_` callback: при подтверждении встречи теперь выбирает `content` записи и вызывает `analyzeAndCreateTasks` — задачи из транскрипта автоматически попадают в «⏳ На проверке»
+  - Добавлен импорт `analyzeAndCreateTasks` из `../tasks/handlers.ts`
+
 ## 2026-06-03 — feat(miniapp): markets chips picker + meeting countries editing
 
 - **miniapp/src/components/SettingsScreen.tsx**:
