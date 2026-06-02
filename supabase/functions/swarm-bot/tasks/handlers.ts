@@ -108,7 +108,7 @@ export async function handleAddTask(chatId: number): Promise<void> {
 
 // ── analyzeAndCreateTasks ─────────────────────────────────────────────────────
 
-export async function analyzeAndCreateTasks(content: string, chatId: number, entryId: string, groupId?: string): Promise<void> {
+export async function analyzeAndCreateTasks(content: string, chatId: number, userId: number, entryId: string, groupId?: string): Promise<void> {
   const profiles = await getProfilesForPrompt();
   const userList = JSON.stringify(profiles.map(p => ({
     id: p.id,
@@ -181,6 +181,8 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, ent
       due_date: task.due_date ?? null,
       source: "transcript",
       status: "pending",
+      confirmed: false,
+      created_by_telegram_id: userId,
       meeting_id: entryId,
       group_id: groupId ?? null,
     });
@@ -817,7 +819,7 @@ async function handleTasksExport(chatId: number): Promise<void> {
 
 export async function handleTaskSessionInput(
   chatId: number,
-  _userId: number,
+  userId: number,
   action: string,
   text: string,
   context?: string,
@@ -832,7 +834,14 @@ export async function handleTaskSessionInput(
       await setSession(chatId, "addtask_title");
       return true;
     }
-    const task = await dbCreateTask({ title, source: "manual", status: "draft", group_id: groupId ?? null });
+    const task = await dbCreateTask({
+      title,
+      source: "manual",
+      status: "draft",
+      group_id: groupId ?? null,
+      confirmed: false,
+      created_by_telegram_id: userId,
+    });
     const { data: allowedUsers } = await supabase.from("allowed_users").select("telegram_id, username");
     const seen = new Set<number>();
     const allUsers = [
@@ -860,11 +869,12 @@ export async function handleTaskSessionInput(
     await clearSession(chatId);
     const taskId = context;
     if (["пропустить", "skip", "пропуск"].includes(text.trim().toLowerCase())) {
-      await dbUpdateTask(taskId, { status: "open" });
+      await dbUpdateTask(taskId, { status: "open", confirmed: true });
       const task = await dbGetTask(taskId);
       if (task) {
         await sendMessage(chatId, "✅ Задача создана!");
         await sendTaskCard(chatId, task);
+        await broadcastTaskAssigned(task, groupId ?? "");
       }
       return true;
     }
@@ -879,11 +889,12 @@ export async function handleTaskSessionInput(
       await setSession(chatId, "addtask_due", taskId);
       return true;
     }
-    await dbUpdateTask(taskId, { due_date: due, status: "open" });
+    await dbUpdateTask(taskId, { due_date: due, status: "open", confirmed: true });
     const task = await dbGetTask(taskId);
     if (task) {
       await sendMessage(chatId, "✅ Задача создана!");
       await sendTaskCard(chatId, task);
+      await broadcastTaskAssigned(task, groupId ?? "");
     }
     return true;
   }
