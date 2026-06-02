@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { CheckCircle, Clock } from "lucide-react";
+import { CheckCircle, Clock, X } from "lucide-react";
 
 const SOURCE_LABEL: Record<string, string> = { granola: "Granola", read_ai: "Read.ai" };
 
@@ -51,6 +51,8 @@ function MeetingDetailDialog({
 }) {
   const [editingSummary, setEditingSummary] = useState(false);
   const [summaryText, setSummaryText] = useState(meeting.summary ?? "");
+  const [countries, setCountries] = useState<string[]>(meeting.countries ?? []);
+  const [countryInput, setCountryInput] = useState("");
   const [saving, setSaving] = useState(false);
 
   const confirmed = Boolean(meeting.metadata.confirmed);
@@ -65,6 +67,21 @@ function MeetingDetailDialog({
     setSaving(true);
     try { await patchMeeting(meeting.id, { summary: summaryText }); onUpdated(); setEditingSummary(false); }
     finally { setSaving(false); }
+  };
+
+  const addCountry = () => {
+    const c = countryInput.trim();
+    if (!c || countries.includes(c)) { setCountryInput(""); return; }
+    const next = [...countries, c];
+    setCountries(next);
+    setCountryInput("");
+    patchMeeting(meeting.id, { countries: next });
+  };
+
+  const removeCountry = async (c: string) => {
+    const next = countries.filter(x => x !== c);
+    setCountries(next);
+    await patchMeeting(meeting.id, { countries: next });
   };
 
   const handleDelete = async () => {
@@ -119,6 +136,32 @@ function MeetingDetailDialog({
               <p className="text-sm whitespace-pre-wrap line-clamp-6">{meeting.content}</p>
             </div>
           )}
+
+          <div>
+            <p className="text-xs text-muted-foreground mb-1.5">Страны</p>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {countries.map((c) => (
+                <span key={c} className="inline-flex items-center gap-1 text-xs bg-secondary px-2 py-0.5 rounded-full">
+                  {c}
+                  <button onClick={() => removeCountry(c)} className="text-muted-foreground hover:text-destructive">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                className="flex-1 text-sm border rounded-md px-2 py-1 bg-background"
+                placeholder="Добавить страну…"
+                value={countryInput}
+                onChange={(e) => setCountryInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCountry(); } }}
+              />
+              <Button size="sm" variant="outline" onClick={addCountry} disabled={!countryInput.trim()}>
+                +
+              </Button>
+            </div>
+          </div>
 
           <div className="flex gap-2 pt-1">
             {!confirmed && (

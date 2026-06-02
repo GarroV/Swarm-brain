@@ -15,21 +15,38 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ChevronDown, ChevronRight, CheckCircle, Wifi, WifiOff, Loader2 } from "lucide-react";
 
+// ── Markets config ────────────────────────────────────────────────────────────
+
+const MARKETS_EUROPE = ["Сербия", "Словения", "Черногория", "Хорватия", "Болгария", "Испания", "Румыния", "Польша", "Эстония", "Литва", "Кипр", "Венгрия", "Молдова", "Беларусь"];
+const MARKETS_OTHER = ["Турция", "Азербайджан", "Армения", "Грузия", "Таджикистан", "Кыргызстан", "Монголия", "Нигерия", "Мексика", "Бали"];
+const ALL_MARKETS = [...MARKETS_EUROPE, ...MARKETS_OTHER];
+
+// Normalize legacy market names to canonical spelling
+function normalizeMarket(m: string): string {
+  const map: Record<string, string> = {
+    "Croatia": "Хорватия", "Slovenia": "Словения", "Serbia": "Сербия",
+    "Montenegro": "Черногория", "Bulgaria": "Болгария", "Spain": "Испания",
+    "(Испания)": "Испания",
+  };
+  return map[m] ?? m;
+}
+
 // ── Profile section ───────────────────────────────────────────────────────────
 
 function ProfileSection({ me }: { me: Me }) {
-  const [role, setRole] = useState<string | null>(null);
-  const [markets, setMarkets] = useState("");
+  const [role, setRole] = useState<string | null>(me.role);
+  const [markets, setMarkets] = useState<string[]>(() => me.markets.map(normalizeMarket));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  const toggleMarket = (m: string) => {
+    setMarkets((prev) => prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]);
+  };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await patchMe({
-        role: role || null,
-        markets: markets ? markets.split(",").map((m) => m.trim()).filter(Boolean) : undefined,
-      });
+      await patchMe({ role: role || null, markets });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally {
@@ -42,6 +59,9 @@ function ProfileSection({ me }: { me: Me }) {
       <div>
         <Label className="text-xs text-muted-foreground">Имя</Label>
         <p className="text-sm font-medium mt-0.5">{me.name}</p>
+        {me.username && (
+          <p className="text-xs text-muted-foreground mt-0.5">@{me.username}</p>
+        )}
       </div>
       <div>
         <Label htmlFor="role" className="text-xs">Роль</Label>
@@ -57,14 +77,33 @@ function ProfileSection({ me }: { me: Me }) {
         </Select>
       </div>
       <div>
-        <Label htmlFor="markets" className="text-xs">Рынки (через запятую)</Label>
-        <Input
-          id="markets"
-          className="mt-1 text-sm"
-          placeholder="KZ, PL, RS"
-          value={markets}
-          onChange={(e) => setMarkets(e.target.value)}
-        />
+        <Label className="text-xs">Рынки</Label>
+        <div className="mt-1.5 space-y-1.5">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Европа</p>
+          <div className="flex flex-wrap gap-1.5">
+            {MARKETS_EUROPE.map((m) => (
+              <button
+                key={m}
+                onClick={() => toggleMarket(m)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${markets.includes(m) ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground border-border"}`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wide pt-1">Другие рынки</p>
+          <div className="flex flex-wrap gap-1.5">
+            {MARKETS_OTHER.map((m) => (
+              <button
+                key={m}
+                onClick={() => toggleMarket(m)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${markets.includes(m) ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground border-border"}`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       <Button size="sm" onClick={handleSave} disabled={saving} className="w-full">
         {saving ? "Сохраняю…" : saved ? "✓ Сохранено" : "Сохранить"}
