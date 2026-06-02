@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-03 — feat(api): GET /me returns role/markets/username; fix null telegram_id in /users
+
+- **supabase/functions/swarm-api/index.ts**:
+  - `GET /me`: теперь возвращает `role`, `markets`, `username` из `user_profiles` / `allowed_users`
+  - `GET /users`: фильтрует записи с `telegram_id = null` (пользователи добавленные по username до первого входа в бот)
+- **miniapp/src/types.ts**: `Me` тип дополнен полями `username`, `role`, `markets`
+- **miniapp/src/lib/api.ts**: `MOCK_ME` и `UpdateMeetingInput` обновлены под новые поля
+
 ## 2026-06-03 — feat(tasks): swarm-api sets confirmed=true on POST, supports ?confirmed= filter
 
 - **supabase/functions/swarm-api/index.ts**:
