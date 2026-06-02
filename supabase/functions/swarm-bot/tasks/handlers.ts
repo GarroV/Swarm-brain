@@ -2,7 +2,7 @@ import { supabase, ADMIN_USER_ID } from "../lib/supabase.ts";
 import { chatComplete } from "../lib/openai.ts";
 import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession } from "../lib/storage.ts";
-import { dbGetTask, dbListTasks, dbCreateTask, dbUpdateTask, dbDeleteTask, dbListAllOpen } from "./db.ts";
+import { dbGetTask, dbListTasks, dbCreateTask, dbUpdateTask, dbDeleteTask, dbListAllOpen, dbListPending, dbListToday } from "./db.ts";
 import { getProfilesForPrompt, buildProfileMap, buildDisplayNameMap, getAllUniqueMarkets, resolveAssignees, findUserByMention } from "./matcher.ts";
 import { sendTaskCard, sendPendingTaskCard, STATUS_LABEL, formatTaskLine } from "./formatter.ts";
 import type { Task } from "./types.ts";
@@ -22,6 +22,10 @@ export async function handleTasks(chatId: number, userId: number, filter: string
   if (!sub) {
     // Interactive main menu — single inline message
     await sendInlineMessage(chatId, "📋 <b>Задачи</b>", [
+      [
+        { text: "⏳ На проверке", callback_data: "tk_pending" },
+        { text: "📅 На сегодня", callback_data: "tk_today" },
+      ],
       [
         { text: "📌 Мои задачи", callback_data: "tk_mine" },
         { text: "👥 Все задачи", callback_data: "tk_all" },
@@ -224,10 +228,14 @@ function formatDueSuffix(dueDate: string | null): string {
   return ` · ${dd}.${mm}`;
 }
 
-function buildMainMenuMessage(): { text: string; keyboard: unknown[][] } {
+function buildMainMenuMessage(): { text: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } {
   return {
     text: "📋 <b>Задачи</b>",
     keyboard: [
+      [
+        { text: "⏳ На проверке", callback_data: "tk_pending" },
+        { text: "📅 На сегодня", callback_data: "tk_today" },
+      ],
       [
         { text: "📌 Мои задачи", callback_data: "tk_mine" },
         { text: "👥 Все задачи", callback_data: "tk_all" },
@@ -404,6 +412,62 @@ export async function handleTaskCallbacks(
     return true;
   }
 
+  // tk_pending — tasks awaiting my review
+  if (data === "tk_pending") {
+    const tasks = await dbListPending(userId, groupId);
+    if (!tasks.length) {
+      await editInlineMessage(
+        chatId, cb.message.message_id,
+        "✅ Задач на проверке нет.",
+        [[{ text: "🔙 Назад", callback_data: "tk_menu" }]],
+      );
+      return true;
+    }
+    const buttons = tasks.map((t) => {
+      const who = t.assignees?.length ? ` · ${t.assignees[0].split(" ")[0]}` : " · ⚠️";
+      const due = t.due_date ? ` · ${t.due_date.slice(5)}` : "";
+      return [{ text: `⏳ ${truncateTitle(t.title)}${who}${due}`, callback_data: `tk_pen_${t.id}` }];
+    });
+    buttons.push([{ text: "🔙 Назад", callback_data: "tk_menu" }]);
+    await editInlineMessage(chatId, cb.message.message_id, `⏳ <b>На проверке (${tasks.length}):</b>`, buttons);
+    return true;
+  }
+
+  // tk_pen_{taskId} — open single pending task card
+  if (data.startsWith("tk_pen_")) {
+    const taskId = data.replace("tk_pen_", "");
+    const task = await dbGetTask(taskId);
+    if (!task) {
+      await editInlineMessage(chatId, cb.message.message_id, "Задача не найдена.", [[{ text: "🔙 Назад", callback_data: "tk_pending" }]]);
+      return true;
+    }
+    await sendPendingTaskCard(chatId, task);
+    return true;
+  }
+
+  // tk_today — tasks due today or overdue, assigned to me or #all
+  if (data === "tk_today") {
+    const tasks = await dbListToday(userId, groupId);
+    if (!tasks.length) {
+      await editInlineMessage(
+        chatId, cb.message.message_id,
+        "📅 Задач на сегодня нет. Отдыхай 🎉",
+        [[{ text: "🔙 Назад", callback_data: "tk_menu" }]],
+      );
+      return true;
+    }
+    const today = new Date().toISOString().split("T")[0];
+    const buttons = tasks.map(t => {
+      const overdue = t.due_date && t.due_date < today;
+      const icon = overdue ? "🔴" : "🟡";
+      const dueSuffix = overdue ? ` · просрочена (${t.due_date!.slice(5)})` : ` · сегодня`;
+      return [{ text: `${icon} ${truncateTitle(t.title)}${dueSuffix}`, callback_data: `tk_t_${t.id}` }];
+    });
+    buttons.push([{ text: "🔙 Назад", callback_data: "tk_menu" }]);
+    await editInlineMessage(chatId, cb.message.message_id, `📅 <b>На сегодня (${tasks.length}):</b>`, buttons);
+    return true;
+  }
+
   // tk_t_{taskId} — task detail
   if (data.startsWith("tk_t_") && !data.startsWith("tk_st_")) {
     const taskId = data.replace("tk_t_", "");
@@ -543,6 +607,53 @@ export async function handleTaskCallbacks(
   }
   if (data.startsWith("tdcanc_")) {
     await sendMessage(chatId, "Удаление отменено.");
+    return true;
+  }
+
+  // tdue_{taskId} — prompt deadline edit (from pending card)
+  if (data.startsWith("tdue_")) {
+    const taskId = data.replace("tdue_", "");
+    await setSession(chatId, "task_date", taskId);
+    await sendMessage(chatId, "Новый дедлайн? (например: «15 июня», «следующая пятница» или «убрать»)");
+    return true;
+  }
+
+  // tctag_{taskId} — country and tag picker (from pending card)
+  if (data.startsWith("tctag_")) {
+    const taskId = data.replace("tctag_", "");
+    const COUNTRIES = ["Serbia", "Bulgaria", "Croatia", "Hungary", "Moldova", "Romania"];
+    const ROLES = ["#all", "#marketing", "#rnd", "#bd"];
+    const countryButtons = COUNTRIES.map(c => [{ text: `🌍 ${c}`, callback_data: `tctagc_${taskId}:${c}` }]);
+    const roleButtons = ROLES.map(r => [{ text: r, callback_data: `tctagr_${taskId}:${r}` }]);
+    countryButtons.push([{ text: "❌ Без страны", callback_data: `tctagc_${taskId}:none` }]);
+    await sendInlineMessage(chatId, "Страна:", countryButtons);
+    await sendInlineMessage(chatId, "Теги (можно несколько):", roleButtons);
+    return true;
+  }
+
+  // tctagc_{taskId}:{country|none} — set country
+  if (data.startsWith("tctagc_")) {
+    const rest = data.replace("tctagc_", "");
+    const sep = rest.indexOf(":");
+    const taskId = rest.slice(0, sep);
+    const country = rest.slice(sep + 1);
+    await dbUpdateTask(taskId, { country: country === "none" ? null : country });
+    await sendMessage(chatId, country === "none" ? "🌍 Страна убрана." : `🌍 Страна: <b>${country}</b>`);
+    return true;
+  }
+
+  // tctagr_{taskId}:{tag} — toggle tag
+  if (data.startsWith("tctagr_")) {
+    const rest = data.replace("tctagr_", "");
+    const sep = rest.indexOf(":");
+    const taskId = rest.slice(0, sep);
+    const tag = rest.slice(sep + 1);
+    const task = await dbGetTask(taskId);
+    if (!task) { await sendMessage(chatId, "Задача не найдена."); return true; }
+    const current = task.tags ?? [];
+    const updated = current.includes(tag) ? current.filter(t => t !== tag) : [...current, tag];
+    await dbUpdateTask(taskId, { tags: updated });
+    await sendMessage(chatId, `🏷 Теги: <b>${updated.join(", ") || "нет"}</b>`);
     return true;
   }
 
