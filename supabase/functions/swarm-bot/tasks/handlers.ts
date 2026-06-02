@@ -317,8 +317,8 @@ function buildTaskDetailMessage(task: Task): { text: string; keyboard: unknown[]
     { text: "👤 Исполнитель", callback_data: `ta_${task.id}` },
   ]);
   keyboard.push([
-    { text: "🗑 Удалить", callback_data: `tk_del_${task.id}` },
     { text: "🔙 Назад", callback_data: "tk_menu" },
+    { text: "🗑 Удалить", callback_data: `tk_del_${task.id}` },
   ]);
 
   return { text, keyboard };
