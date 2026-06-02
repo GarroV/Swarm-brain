@@ -49,3 +49,17 @@ export async function dbListAllOpen(groupId?: string): Promise<Task[]> {
   const { data } = await q.limit(200);
   return (data ?? []) as Task[];
 }
+
+export async function dbListPending(createdBy: number, groupId?: string): Promise<Task[]> {
+  return listTasks({ confirmed: false, createdBy, limit: 20 }, groupId);
+}
+
+export async function dbListToday(telegramId: number, groupId?: string): Promise<Task[]> {
+  const [mine, allTag] = await Promise.all([
+    listTasks({ dueToday: true, telegramId, limit: 30 }, groupId),
+    listTasks({ dueToday: true, limit: 50 }, groupId),
+  ]);
+  const allFiltered = allTag.filter(t => (t.tags ?? []).includes("#all"));
+  const seen = new Set<string>();
+  return [...mine, ...allFiltered].filter(t => !seen.has(t.id) && seen.add(t.id));
+}
