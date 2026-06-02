@@ -3,6 +3,7 @@ import { getReadAiToken, readAiGet, READ_AI_API, READ_AI_AUTH_URL } from "../lib
 import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
 import { setSession, getSession, clearSession, saveEntry } from "../lib/storage.ts";
 import { chatComplete } from "../lib/openai.ts";
+import { analyzeAndCreateTasks } from "../tasks/handlers.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -344,14 +345,18 @@ export async function handleMeetingCallbacks(
     return true;
   }
   if (data.startsWith("mc_")) {
-    // Confirm meeting from read-ai-webhook
+    // Confirm meeting — save + auto-extract tasks
     const entryId = data.replace("mc_", "");
-    const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    const { data: entry } = await supabase.from("entries").select("metadata, content").eq("id", entryId).eq("group_id", groupId).maybeSingle();
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
     else {
       await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true } }).eq("id", entryId).eq("group_id", groupId);
       const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
       await sendMessage(chatId, `✅ Встреча сохранена: <b>${title}</b>`);
+      const content = (entry.content as string) ?? "";
+      if (content) {
+        await analyzeAndCreateTasks(content, chatId, userId, entryId, groupId);
+      }
     }
     return true;
   }

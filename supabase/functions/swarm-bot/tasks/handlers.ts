@@ -271,7 +271,8 @@ function buildMainMenuMessage(): { text: string; keyboard: Array<Array<{ text: s
       ],
       [
         { text: "📌 Мои задачи", callback_data: "tk_mine" },
-        { text: "👥 Все задачи", callback_data: "tk_all" },
+        { text: "📋 Для меня", callback_data: "tk_all" },
+        { text: "👥 Команда", callback_data: "tk_team" },
       ],
       [{ text: "➕ Создать задачу", callback_data: "tk_add" }],
     ],
@@ -311,8 +312,13 @@ function buildTaskDetailMessage(task: Task): { text: string; keyboard: unknown[]
   const keyboard: unknown[][] = [];
   if (statusRow.length) keyboard.push(statusRow);
   keyboard.push([
+    { text: "✏️ Название", callback_data: `tren_${task.id}` },
+    { text: "📅 Дедлайн", callback_data: `tdate_${task.id}` },
+    { text: "👤 Исполнитель", callback_data: `ta_${task.id}` },
+  ]);
+  keyboard.push([
     { text: "🗑 Удалить", callback_data: `tk_del_${task.id}` },
-    { text: "🔙 Мои задачи", callback_data: "tk_mine" },
+    { text: "🔙 Назад", callback_data: "tk_menu" },
   ]);
 
   return { text, keyboard };
@@ -385,15 +391,41 @@ export async function handleTaskCallbacks(
     return true;
   }
 
-  // tk_all — all tasks compact view
+  // tk_all — "Для меня": team tasks (#all / no assignee) + tasks assigned to me
   if (data === "tk_all") {
+    const all = await dbListAllOpen(groupId);
+    const tasks = all.filter(t =>
+      !t.assignees?.length ||
+      (t.tags ?? []).includes("#all") ||
+      (t.assignee_telegram_ids ?? []).includes(userId)
+    ).slice(0, 30);
+
+    if (!tasks.length) {
+      await editInlineMessage(
+        chatId, cb.message.message_id,
+        "📋 Задач для тебя нет.",
+        [[{ text: "🔙 Назад", callback_data: "tk_menu" }]],
+      );
+      return true;
+    }
+
+    const buttons: Array<Array<{ text: string; callback_data: string }>> = tasks.map(t => [{
+      text: `${STATUS_EMOJI[t.status] ?? "🔵"} ${truncateTitle(t.title)}${formatDueSuffix(t.due_date)}`,
+      callback_data: `tk_t_${t.id}`,
+    }]);
+    buttons.push([{ text: "🔙 Назад", callback_data: "tk_menu" }]);
+    await editInlineMessage(chatId, cb.message.message_id, `📋 <b>Для меня (${tasks.length}):</b>`, buttons);
+    return true;
+  }
+
+  // tk_team — all workspace tasks grouped by assignee
+  if (data === "tk_team") {
     const tasks = await dbListAllOpen(groupId);
 
     if (!tasks.length) {
       await editInlineMessage(
-        chatId,
-        cb.message.message_id,
-        "📋 Открытых задач нет.",
+        chatId, cb.message.message_id,
+        "👥 Открытых задач нет.",
         [[{ text: "🔙 Назад", callback_data: "tk_menu" }]],
       );
       return true;
@@ -409,13 +441,11 @@ export async function handleTaskCallbacks(
       groups.get(key)!.push(t);
     }
 
-    // Header with counts
     const parts: string[] = [];
     for (const [a, ts] of groups) parts.push(`👤 ${a} (${ts.length})`);
     if (noAssignee.length) parts.push(`❓ Без исполнителя (${noAssignee.length})`);
-    const header = `👥 <b>Все задачи (${limited.length}):</b>\n${parts.join(" · ")}`;
+    const header = `👥 <b>Команда (${limited.length}):</b>\n${parts.join(" · ")}`;
 
-    // Build buttons: grouped order — assigned first, then unassigned
     const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
     for (const [assignee, atasks] of groups) {
       const firstName = assignee.split(" ")[0];
@@ -433,7 +463,6 @@ export async function handleTaskCallbacks(
       }]);
     }
     buttons.push([{ text: "🔙 Назад", callback_data: "tk_menu" }]);
-
     await editInlineMessage(chatId, cb.message.message_id, header, buttons);
     return true;
   }
@@ -621,6 +650,15 @@ export async function handleTaskCallbacks(
     await sendMessage(chatId, `✅ Подтверждено: <b>${task.title}</b>`);
     const confirmedTask = { ...task, confirmed: true, status: "open" };
     await broadcastTaskAssigned(confirmedTask, groupId);
+    return true;
+  }
+
+  // Rename task: tren_{taskId}
+  if (data.startsWith("tren_")) {
+    const taskId = data.replace("tren_", "");
+    const task = await dbGetTask(taskId);
+    await setSession(chatId, "task_rename", taskId);
+    await sendMessage(chatId, `Новое название для:\n<i>${task?.title ?? ""}</i>`);
     return true;
   }
 
@@ -825,6 +863,20 @@ export async function handleTaskSessionInput(
   context?: string,
   groupId?: string,
 ): Promise<boolean> {
+  // Rename task
+  if (action === "task_rename" && context) {
+    await clearSession(chatId);
+    const newTitle = text.trim();
+    if (!newTitle) {
+      await sendMessage(chatId, "Название не может быть пустым. Попробуй ещё раз.");
+      await setSession(chatId, "task_rename", context);
+      return true;
+    }
+    await dbUpdateTask(context, { title: newTitle });
+    await sendMessage(chatId, `✏️ Название: <b>${newTitle}</b>`);
+    return true;
+  }
+
   // /addtask step 1: title received
   if (action === "addtask_title") {
     await clearSession(chatId);
