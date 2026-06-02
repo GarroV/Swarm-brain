@@ -143,8 +143,9 @@ const TOOLS = [
         country: { type: "string", description: "Страна или рынок" },
         status: { type: "string", enum: ["open", "in_progress", "done", "cancelled"] },
         period: { type: "string", enum: ["week"], description: "Задачи на этой неделе" },
-        requesting_user_id: { type: "number", description: "Your Telegram user ID — filters tasks to your workspace" },
+        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу" },
       },
+      required: ["requesting_user_id"],
     },
   },
   ...TASK_TOOL_DEFINITIONS,
@@ -780,13 +781,13 @@ Deno.serve(async (req: Request) => {
       if (name === "search_knowledge") {
         result = await toolSearchKnowledge(args as { query: string; limit?: number; requesting_user_id?: number });
       } else if (name === "get_tasks") {
-        result = await toolGetTasksMcp(args as { assignee?: string; country?: string; status?: string; period?: string; requesting_user_id?: number });
+        result = await toolGetTasksMcp(args as { assignee?: string; country?: string; status?: string; period?: string; requesting_user_id: number });
       } else if (name === "add_task") {
         result = await toolAddTask(args as { title: string; description?: string; assignee_name?: string; country?: string; due_date?: string; source: string; context_id?: string; requesting_user_id?: number });
       } else if (name === "update_task") {
-        result = await toolUpdateTask(args as { id: string; title?: string; description?: string; assignee_name?: string; country?: string; due_date?: string | null; status?: string });
+        result = await toolUpdateTask(args as { id: string; title?: string; description?: string; assignee_name?: string; country?: string; due_date?: string | null; status?: string; task_role?: string; requesting_user_id: number });
       } else if (name === "delete_task") {
-        result = await toolDeleteTask(args as { id: string });
+        result = await toolDeleteTask(args as { id: string; requesting_user_id: number });
       } else if (name === "get_meetings") {
         result = await toolGetMeetings(args as { limit?: number; requesting_user_id?: number });
       } else if (name === "get_users") {

@@ -1,6 +1,18 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createTask, getTask, listTasks, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
 
+const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
+
+async function notifyCreator(telegramId: number, taskTitle: string): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  const text = `📋 Новая задача на проверке: <b>${taskTitle}</b>\n\nОткрой /tasks → ⏳ На проверке чтобы подтвердить.`;
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: telegramId, text, parse_mode: "HTML" }),
+  });
+}
+
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -93,7 +105,12 @@ export async function toolAddTask(args: {
       status: "open",
       meeting_id: args.context_id ?? null,
       tags: [],
+      confirmed: false,
+      created_by_telegram_id: args.requesting_user_id ?? null,
     }, groupId ?? undefined);
+    if (args.requesting_user_id) {
+      await notifyCreator(args.requesting_user_id, args.title);
+    }
     return `✅ Задача создана (id: ${task.id})${matchWarning}.`;
   } catch (e) {
     return `Ошибка: ${e instanceof Error ? e.message : String(e)}`;
@@ -109,7 +126,13 @@ export async function toolUpdateTask(args: {
   due_date?: string | null;
   status?: string;
   task_role?: string;
+  requesting_user_id: number;
 }): Promise<string> {
+  const task = await getTask(args.id);
+  if (!task) return `Задача ${args.id} не найдена.`;
+  const groupId = await resolveGroupId(args.requesting_user_id);
+  if (!groupId || task.group_id !== groupId) return `Нет доступа: задача не принадлежит твоему воркспейсу.`;
+
   const fields: Record<string, unknown> = {};
 
   if (args.title !== undefined) fields.title = args.title;
@@ -143,9 +166,11 @@ export async function toolUpdateTask(args: {
   }
 }
 
-export async function toolDeleteTask(args: { id: string }): Promise<string> {
+export async function toolDeleteTask(args: { id: string; requesting_user_id: number }): Promise<string> {
   const task = await getTask(args.id);
   if (!task) return `Задача ${args.id} не найдена.`;
+  const groupId = await resolveGroupId(args.requesting_user_id);
+  if (!groupId || task.group_id !== groupId) return `Нет доступа: задача не принадлежит твоему воркспейсу.`;
   try {
     await deleteTask(args.id);
     return `✅ Задача «${task.title}» удалена.`;
@@ -159,9 +184,10 @@ export async function toolGetTasks(args: {
   country?: string;
   status?: string;
   period?: string;
-  requesting_user_id?: number;
+  requesting_user_id: number;
 }): Promise<string> {
-  const groupId = args.requesting_user_id ? await resolveGroupId(args.requesting_user_id) : null;
+  const groupId = await resolveGroupId(args.requesting_user_id);
+  if (!groupId) return "Ошибка: пользователь не найден в системе.";
 
   const tasks = await listTasks({
     status: args.status,
@@ -169,7 +195,7 @@ export async function toolGetTasks(args: {
     period: args.period,
     assigneeText: args.assignee,
     limit: 30,
-  }, groupId ?? undefined);
+  }, groupId);
 
   if (!tasks.length) return "Задач не найдено.";
 
@@ -222,8 +248,9 @@ export const TASK_TOOL_DEFINITIONS = [
           enum: ["marketing", "bd", "rnd"],
           description: "Роль исполнителя: marketing — маркетинг, rnd — продукт/разработка, bd — всё остальное (операционка, бизнес)",
         },
+        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
       },
-      required: ["id"],
+      required: ["id", "requesting_user_id"],
     },
   },
   {
@@ -233,8 +260,9 @@ export const TASK_TOOL_DEFINITIONS = [
       type: "object",
       properties: {
         id: { type: "string", description: "ID задачи" },
+        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
       },
-      required: ["id"],
+      required: ["id", "requesting_user_id"],
     },
   },
 ];
