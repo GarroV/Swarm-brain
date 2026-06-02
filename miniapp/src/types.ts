@@ -31,3 +31,33 @@ export type Me = {
   group_id: string;
   language: string | null;
 };
+
+export type Entry = {
+  id: string;
+  content: string;
+  summary: string | null;
+  added_by: string;
+  source: string;
+  metadata: Record<string, unknown>;
+  countries: string[];
+  entry_type: string;
+  entry_date: string | null;
+  group_id: string | null;
+  is_private: boolean;
+  owner_id: number | null;
+  created_at: string;
+};
+
+export type Integration = {
+  service: string;
+  last_polled_at: string | null;
+  skipped_note_ids: string[];
+};
+
+export type GranolaNote = {
+  id: string;
+  title: string;
+  created_at: string;
+  calendar_event?: { scheduled_start_time?: string };
+  attendees?: Array<{ name?: string; email?: string }>;
+};
