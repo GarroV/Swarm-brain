@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-02 — feat(tasks): set confirmed+created_by on creation, broadcast on addtask complete
+
+- **swarm-bot/tasks/handlers.ts**:
+  - `handleTaskSessionInput` signature: `_userId` → `userId` (параметр теперь используется)
+  - `addtask_title` block: `dbCreateTask` теперь передаёт `confirmed: false` и `created_by_telegram_id: userId`
+  - `addtask_due` block (skip и date ветки): `dbUpdateTask` теперь устанавливает `confirmed: true`; после создания вызывается `broadcastTaskAssigned(task, groupId)` — исполнители получают уведомление сразу при завершении wizard'а
+  - `analyzeAndCreateTasks`: добавлен параметр `userId: number` (третья позиция); `dbCreateTask` теперь передаёт `confirmed: false` и `created_by_telegram_id: userId`
+
 ## 2026-06-02 — feat(tasks): confirm sets confirmed=true, broadcasts to assignees
 
 - **swarm-bot/tasks/handlers.ts**:
