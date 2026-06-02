@@ -201,6 +201,8 @@ Deno.serve(async (req: Request) => {
       const mine = url.searchParams.get("mine") === "true";
       const limitParam = url.searchParams.get("limit");
       const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+      const confirmedParam = url.searchParams.get("confirmed");
+      const confirmedFilter = confirmedParam === "true" ? true : confirmedParam === "false" ? false : undefined;
 
       const tasks = await listTasks(
         {
@@ -209,6 +211,7 @@ Deno.serve(async (req: Request) => {
           assigneeText,
           telegramId: mine ? telegram_id : undefined,
           limit,
+          confirmed: confirmedFilter,
         },
         groupId,
       );
@@ -246,6 +249,8 @@ Deno.serve(async (req: Request) => {
         source: "mini_app",
         assignees,
         assignee_telegram_ids,
+        confirmed: true,
+        created_by_telegram_id: telegram_id ?? null,
       };
 
       try {
@@ -858,7 +863,7 @@ Deno.serve(async (req: Request) => {
     const created = [];
     for (const item of extracted.slice(0, 10)) {
       if (!item.title) continue;
-      const task = await createTask({ title: item.title, description: item.description ?? null, country: item.country ?? null, due_date: item.due_date ?? null, source: "mini_app" }, groupId);
+      const task = await createTask({ title: item.title, description: item.description ?? null, country: item.country ?? null, due_date: item.due_date ?? null, source: "mini_app", confirmed: true, created_by_telegram_id: telegram_id ?? null }, groupId);
       created.push(task);
     }
     return json(created, 201, origin);
