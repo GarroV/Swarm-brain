@@ -385,9 +385,9 @@ Authorization: tma <initData>
 |-------|------|-----------|
 | `GET` | `/me` | `{ telegram_id, name, group_id, language }` |
 | `GET` | `/users` | Участники воркспейса с профилями |
-| `GET` | `/tasks` | Список задач (`status`, `country`, `assignee`, `mine`, `limit`) |
+| `GET` | `/tasks` | Список задач (`status`, `country`, `assignee`, `mine`, `limit`, `confirmed`) |
 | `GET` | `/tasks/:id` | Одна задача |
-| `POST` | `/tasks` | Создать задачу (`assignee_telegram_id` → резолв в имя) |
+| `POST` | `/tasks` | Создать задачу (`assignee_telegram_id` → резолв в имя); новые задачи создаются с `confirmed=true` и `created_by_telegram_id` |
 | `PATCH` | `/tasks/:id` | Обновить задачу (частичный апдейт) |
 | `DELETE` | `/tasks/:id` | Удалить (204) |
 

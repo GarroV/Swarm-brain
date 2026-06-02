@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-03 — feat(tasks): swarm-api sets confirmed=true on POST, supports ?confirmed= filter
+
+- **supabase/functions/swarm-api/index.ts**:
+  - `POST /tasks` handler: создаваемые задачи теперь получают `confirmed: true` и `created_by_telegram_id: telegram_id`
+  - `POST /tasks/extract` handler: задачи извлечённые из текста GPT теперь также получают `confirmed: true` и `created_by_telegram_id: telegram_id`
+  - `GET /tasks` handler: добавлена поддержка параметра `?confirmed=true|false` для фильтрации по статусу подтверждения
+
 ## 2026-06-03 — security(mcp): workspace isolation for get/delete/update task; add_task notifies creator
 
 - **swarm-mcp/tasks/tools.ts**:
