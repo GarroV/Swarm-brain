@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-02 — fix(security): техдолг — cron защита, MCP ownership, OpenAI retry, session TTL
+
+- **cron-защита**: `X-Cron-Secret` header теперь обязателен для `setup_commands` / `digest_cron` / `readai_token_refresh` в swarm-bot и granola-poller. Без заголовка — 403. Секрет из env `CRON_SECRET`.
+- **MCP delete_entry**: добавлен ownership check — удалить можно только свою запись (`owner_id = requesting_user_id`). Параметр `requesting_user_id` стал обязательным в схеме инструмента.
+- **OpenAI retry**: экспоненциальный retry (3 попытки, задержка 500ms/1s/2s) в `chatComplete` и `getEmbedding` — падения при 429/500 больше не молчат.
+- **Session TTL**: зависшая сессия теперь истекает через 30 мин (`updated_at` + проверка в `getSession`). Миграция `20260602_sessions_ttl` добавила колонку `updated_at` в таблицу `sessions`.
+
 ## 2026-06-02 — miniapp: навигация + 4 новых экрана (Фазы 0–5, frontend)
 
 - `BottomNav`: 5 вкладок — Задачи / База / Встречи / Команда / Настройки; fixed bottom, icons из lucide-react

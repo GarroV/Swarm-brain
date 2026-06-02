@@ -106,7 +106,7 @@ supabase/functions/swarm-bot/
 | `entries` | База знаний — все записи | `id`, `content`, `summary`, `embedding`, `source`, `added_by`, `metadata` (jsonb), `countries`, `entry_type`, `entry_date`, `is_private`, `owner_id`, `group_id` (FK → `workspaces.id`) |
 | `tasks` | Задачи команды | `id`, `title`, `assignees`, `due_date`, `status`, `meeting_id`, `created_by`, `group_id` (FK → `workspaces.id`) |
 | `task_history` | История изменений задач | `task_id`, `changed_at`, `changes` |
-| `sessions` | Состояние диалога бота | `chat_id` (PK), `action`, `context` (jsonb) |
+| `sessions` | Состояние диалога бота | `chat_id` (PK), `action`, `context` (jsonb), `updated_at` (TTL 30 мин) |
 | `allowed_users` | Белый список | `telegram_id`, `username`, `is_admin`, `group_id` (FK → `workspaces.id`) |
 | `user_profiles` | Профили пользователей | `telegram_id`, `first_name`, `last_name`, `username` |
 | `user_integrations` | API-ключи интеграций | `telegram_id`, `service` (`granola`), `api_key`, `last_polled_at`, `skipped_note_ids` |
@@ -152,7 +152,7 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 
 ## Сессионный механизм
 
-Хранится в таблице `sessions` (`chat_id` → `{action, context}`). Один активный сеанс на chat_id.
+Хранится в таблице `sessions` (`chat_id` → `{action, context, updated_at}`). Один активный сеанс на chat_id. TTL = 30 мин: `getSession` удаляет запись если `updated_at` старше 30 мин. `/reset` очищает сессию явно.
 
 | Prefix action | Файл | Описание |
 |--------------|------|---------|
