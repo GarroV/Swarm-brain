@@ -1,5 +1,37 @@
 # Backlog
 
+## Time + Buildin интеграция
+
+> Дизайн: `docs/superpowers/specs/2026-06-02-time-buildin-integration-design.md`
+
+### Фундамент
+- **F-1** `_shared/time/client.ts` — Mattermost HTTP-клиент (авторизация, чтение постов за период)
+- **F-2** `_shared/time/summary.ts` — GPT-саммари сообщений (участники, темы, решения)
+- **F-3** `_shared/buildin/client.ts` + `types.ts` — Buildin HTTP-клиент (read/write страниц, доски)
+- **F-4** Суперадмин-команды: `/sa time_token`, `/sa time_channels`, `/sa buildin_token`, `/sa buildin_space_id`
+
+### Time — бот
+- **T-1** `/time` — пикер канала → пикер периода → саммари → [Сохранить / Закрыть]. Callback: `tm_`, session: `time_*`
+- **T-2** `/time digest` — дайджест всех каналов за период → отправляет запросившему → [Сохранить / Закрыть]
+- **T-3** `swarm-api`: `GET /time/channels`, `POST /time/summary`, `POST /time/digest` (для Mini App)
+
+### Buildin — бот + MCP
+- **B-1** `/buildin import` — дерево страниц → выбор → превью → saveEntry (source="buildin")
+- **B-2** `/buildin publish` — выбор записи из базы → пикер Buildin → createPage/updatePage
+- **B-3** `/buildin board` — список досок → снэпшот → saveEntry (source="buildin_board")
+- **B-4** MCP-инструменты: `buildin_read_page`, `buildin_write_page`, `buildin_search`, `buildin_get_board`
+- **B-5** `swarm-api`: `GET/POST /buildin/pages`, `GET /buildin/boards` (для Mini App). Callback: `bd_`, session: `buildin_*`
+
+### Позже
+- **Z-1** Scheduled дайджест Time с broadcast в настроенный чат воркспейса
+- **Z-2** Mini App: экран Time (каналы, саммари, дайджест)
+- **Z-3** Mini App: экран Buildin (страницы, import/publish, доски)
+- **Z-4** Holst интеграция: экспорт доски → Swarm entry (решить нужно ли)
+
+**Порядок:** F-1 → F-2 → T-1 → T-2 → F-3 → B-1 → B-2 → B-4 → остальное по потребности
+
+---
+
 ## Фичи
 
 ### Mini App — порядок кнопок статуса в карточке
