@@ -53,7 +53,7 @@ supabase/functions/_shared/tasks/
 
 | Клиент | Файл | Что делает поверх движка |
 |--------|------|--------------------------|
-| swarm-mcp | `swarm-mcp/tasks/tools.ts` | резолвит `requesting_user_id → group_id`; резолвит `assignee_name` через fuzzy-матч; форматирует `Task[]` в строку для Claude |
+| swarm-mcp | `swarm-mcp/tasks/tools.ts` | резолвит `requesting_user_id → group_id` (обязателен для get/delete/update); воркспейс-изоляция: `task.group_id === groupId` проверяется в delete/update; резолвит `assignee_name` через fuzzy-матч; форматирует `Task[]` в строку для Claude; при `add_task` устанавливает `confirmed: false`, `created_by_telegram_id`, отправляет Telegram-уведомление создателю через `notifyCreator` |
 | swarm-bot | `swarm-bot/tasks/db.ts` | тонкая обёртка, пробрасывает вызовы; `dbListAllOpen`, `dbListPending`, `dbListToday` остаются локальными (собственная логика сортировки/фильтрации); `handlers.ts` при создании задачи (addtask wizard + `analyzeAndCreateTasks`) всегда передаёт `confirmed: false, created_by_telegram_id: userId`; при завершении wizard (`addtask_due`) устанавливает `confirmed: true` и вызывает `broadcastTaskAssigned` |
 
 **Прямые запросы к `tasks` минуя движок** (известный остаток, отдельный этап):

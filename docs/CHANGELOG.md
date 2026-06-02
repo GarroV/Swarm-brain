@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-06-03 — security(mcp): workspace isolation for get/delete/update task; add_task notifies creator
+
+- **swarm-mcp/tasks/tools.ts**:
+  - `TELEGRAM_BOT_TOKEN` + `notifyCreator(telegramId, taskTitle)` — после создания задачи через MCP создатель получает Telegram-уведомление "📋 Новая задача на проверке"
+  - `toolGetTasks`: `requesting_user_id` стал обязательным; без валидного пользователя возвращает ошибку вместо задач всей БД без фильтра
+  - `toolDeleteTask`: добавлена воркспейс-проверка (`task.group_id === groupId`), `requesting_user_id` обязателен
+  - `toolUpdateTask`: добавлена воркспейс-проверка (`task.group_id === groupId`), `requesting_user_id` обязателен
+  - `toolAddTask`: передаёт `confirmed: false` и `created_by_telegram_id` в `createTask`; вызывает `notifyCreator` после создания
+  - `TASK_TOOL_DEFINITIONS`: `delete_task` и `update_task` — `requesting_user_id` добавлен в `properties` и `required`
+- **swarm-mcp/index.ts**:
+  - `get_tasks` tool definition: `requesting_user_id` добавлен в `required`; уточнено описание поля
+  - call-site касты для `get_tasks`, `update_task`, `delete_task` обновлены под новые типы с обязательным `requesting_user_id`
+
 ## 2026-06-02 — feat(tasks): set confirmed+created_by on creation, broadcast on addtask complete
 
 - **swarm-bot/tasks/handlers.ts**:
