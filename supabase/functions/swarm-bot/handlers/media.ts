@@ -1,4 +1,5 @@
 import { saveEntry, generateSummary, uploadToStorage } from "../lib/storage.ts";
+import { chatComplete } from "../lib/openai.ts";
 import { sendMessage, getTelegramFileUrl } from "../lib/telegram.ts";
 import { TgMessage } from "../lib/types.ts";
 // @ts-ignore - esm.sh module
@@ -226,7 +227,21 @@ export async function handleUrl(chatId: number, username: string, url: string, r
     const description = rawText.replace(url, "").replace(/^(добавь в базу[:\s]*|сохрани[:\s]*|добавь[:\s]*)/i, "").trim();
     const title = description || url;
     const content = description ? `${description}\n\nСсылка: ${url}` : url;
-    await saveEntry(content, username, "link", { url, title }, description || undefined, groupId);
+
+    // GPT-enriched summary for better searchability
+    let summary: string | undefined = description || undefined;
+    if (description) {
+      try {
+        summary = await chatComplete(
+          "Ты помогаешь индексировать ссылку для поиска в командной базе знаний. " +
+          "Напиши поисковый индекс: синонимы названия (2-3 варианта как это называют), что содержит/показывает ресурс, для чего используется. " +
+          "Ответ — 2-3 предложения на русском, без форматирования, без вводных фраз.",
+          `Описание: «${description}»\nURL: ${url}`
+        );
+      } catch { summary = description; }
+    }
+
+    await saveEntry(content, username, "link", { url, title }, summary, groupId);
     await sendMessage(chatId, `🔗 Ссылка сохранена.\n<code>${url}</code>${description ? `\n\n<i>${description}</i>` : ""}`);
   }
 }
