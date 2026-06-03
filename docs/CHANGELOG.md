@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-04 — feat(mcp): list_entries показывает страны + фильтр has_no_countries
+
+- **swarm-mcp/index.ts**: `list_entries` теперь выводит страны каждой записи (⚠️ нет стран если пусто); новый фильтр `has_no_countries: true` — показывает только записи без тегов стран, удобно для поиска того что нужно переиндексировать
+
 ## 2026-06-04 — feat(mcp): reindex_entry + countries в update_entry
 
 - **swarm-mcp/index.ts**:
