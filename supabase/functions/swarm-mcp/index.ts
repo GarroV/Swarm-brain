@@ -211,6 +211,7 @@ const TOOLS = [
         date_to: { type: "string", description: "Дата до в формате YYYY-MM-DD" },
         limit: { type: "number", description: "Количество записей (по умолчанию 20, макс 100)" },
         has_file: { type: "boolean", description: "true — только записи с прикреплённым файлом, false — только без файла" },
+        has_no_countries: { type: "boolean", description: "true — только записи без тегов стран (нужна переиндексация)" },
         requesting_user_id: { type: "number", description: "Your Telegram user ID — include to see your private entries in results" },
       },
     },
@@ -564,13 +565,13 @@ async function toolGetStorageStats(args: { requesting_user_id?: number } = {}): 
   ].join("\n");
 }
 
-async function toolListEntries(args: { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean; requesting_user_id?: number }): Promise<string> {
+async function toolListEntries(args: { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean; has_no_countries?: boolean; requesting_user_id?: number }): Promise<string> {
   let groupId: string | null = null;
   if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
 
   let query = supabase
     .from("entries")
-    .select("id, source, entry_type, entry_date, created_at, summary, metadata")
+    .select("id, source, entry_type, entry_date, created_at, summary, countries, metadata")
     .or(args.requesting_user_id ? visibilityFilter(args.requesting_user_id) : "is_private.eq.false")
     .order("created_at", { ascending: false })
     .limit(Math.min(args.limit ?? 20, 100));
@@ -582,18 +583,21 @@ async function toolListEntries(args: { source?: string; entry_type?: string; dat
   if (args.date_to) query = query.lte("created_at", args.date_to + "T23:59:59");
   if (args.has_file === true) query = query.not("metadata->>file_url", "is", null);
   if (args.has_file === false) query = query.filter("metadata->>file_url", "is", "null");
+  if (args.has_no_countries === true) query = query.eq("countries", "{}");
 
   const { data, error } = await query;
   if (error) return `Ошибка: ${error.message}`;
   if (!data?.length) return "Записей не найдено.";
 
-  type Row = { id: string; source: string; entry_type: string; entry_date: string | null; created_at: string; summary: string | null; metadata: Record<string, unknown> | null };
+  type Row = { id: string; source: string; entry_type: string; entry_date: string | null; created_at: string; summary: string | null; countries: string[] | null; metadata: Record<string, unknown> | null };
   return (data as Row[]).map((e, i) => {
     const date = e.entry_date ?? e.created_at.slice(0, 10);
     const title = (e.metadata?.title as string | undefined) ?? (e.metadata?.file_name as string | undefined) ?? "";
     const hasFile = !!(e.metadata?.file_url);
-    const preview = (e.summary ?? "").slice(0, 120).replace(/\n/g, " ");
-    return `[${i + 1}] id:${e.id}\n  ${date} · ${e.source}/${e.entry_type}${title ? ` · ${title}` : ""}${hasFile ? " 📎" : ""}\n  ${preview}`;
+    const countries = (e.countries ?? []).filter(c => c !== "General");
+    const countriesStr = countries.length ? countries.join(", ") : "⚠️ нет стран";
+    const preview = (e.summary ?? "").slice(0, 100).replace(/\n/g, " ");
+    return `[${i + 1}] id:${e.id}\n  ${date} · ${e.source}/${e.entry_type}${title ? ` · ${title}` : ""}${hasFile ? " 📎" : ""}\n  🌍 ${countriesStr}\n  ${preview}`;
   }).join("\n\n");
 }
 
@@ -880,7 +884,7 @@ Deno.serve(async (req: Request) => {
       } else if (name === "add_knowledge") {
         result = await toolAddKnowledge(args as { content?: string; summary: string; source?: string; is_private?: boolean; owner_telegram_id?: number; requesting_user_id?: number });
       } else if (name === "list_entries") {
-        result = await toolListEntries(args as { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean; requesting_user_id?: number });
+        result = await toolListEntries(args as { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean; has_no_countries?: boolean; requesting_user_id?: number });
       } else if (name === "delete_entry") {
         result = await toolDeleteEntry(args as { id: string });
       } else if (name === "update_entry") {
