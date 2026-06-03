@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-04 — feat(mcp): reindex_entry + countries в update_entry
+
+- **swarm-mcp/index.ts**:
+  - `update_entry`: новое поле `countries` — нормализует через `normalizeCountries()`, применяет General-тег
+  - Новый инструмент `reindex_entry(id, summary?)` — перечитывает запись, запускает GPT-анализ контента, обновляет `countries` + `embedding` + `keywords`. Если `summary` не передан — использует существующий. Позволяет через Claude Desktop точечно переиндексировать записи со старыми/пустыми тегами
+
 ## 2026-06-04 — feat: ISO-нормализация стран + суперадминка + BUG-2 fix
 
 **_shared/countries.ts** (новый файл):
