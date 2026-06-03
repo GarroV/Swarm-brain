@@ -1,5 +1,5 @@
 import { supabase } from "../lib/supabase.ts";
-import { getEmbedding } from "../lib/openai.ts";
+import { getEmbedding, chatComplete } from "../lib/openai.ts";
 import { saveEntry, visibilityFilter, generateSummary, getSession, setSession, clearSession } from "../lib/storage.ts";
 import { sendMessage } from "../lib/telegram.ts";
 import type { KbEntry } from "../lib/types.ts";
@@ -35,6 +35,20 @@ export const KNOWLEDGE_TOOLS = [
           days: { type: "number", description: "How many days back to look, default 7. Parse from user message: 'за месяц'=30, 'за две недели'=14, 'за квартал'=90" },
         },
         required: ["country"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "find_note",
+      description: "Search for a saved short reference note: password, login, phone number, address, API key, access code, any quick fact. Use when user asks: 'какой пароль от X', 'логин от X', 'номер X', 'адрес X', 'ключ от X', 'доступ к X', 'что такое X' (short fact). Returns the note content directly.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "What to search for — service name, topic, type of info" },
+        },
+        required: ["query"],
       },
     },
   },
@@ -278,6 +292,46 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
             : displayText.slice(0, 4000) + `\n...\n[Полный текст: export_entry(id=${e.id})]`;
           return `[id:${e.id}] ${e.source ?? ""}:\n${text}`;
         }).join("\n\n") || "Ничего не найдено.";
+      }
+
+      case "find_note": {
+        const query = String(args.query ?? "");
+        const words = query.toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2);
+        const searchTerms = [...new Set(words.flatMap(w => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
+
+        const [vecNotes, kwNotes] = await Promise.all([
+          getEmbedding(query)
+            .then(emb => supabase.rpc("match_entries", {
+              query_embedding: `[${emb.join(",")}]`,
+              match_threshold: 0.1,
+              match_count: 10,
+              requesting_user_id: userId || null,
+            })
+            .eq("group_id", groupId)
+            .eq("source", "note")
+            .then(r => (r.data ?? []) as KbEntry[]))
+            .catch(() => [] as KbEntry[]),
+
+          searchTerms.length
+            ? supabase.from("entries").select("id, content, summary, source, metadata")
+                .eq("source", "note")
+                .or(searchTerms.map(w => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
+                .eq("group_id", groupId)
+                .or(visibilityFilter(userId || 0))
+                .limit(5).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
+            : Promise.resolve([] as KbEntry[]),
+        ]);
+
+        const seen = new Set<string>();
+        const notes: KbEntry[] = [];
+        for (const e of [...kwNotes, ...vecNotes]) {
+          if (e?.id && !seen.has(e.id)) { seen.add(e.id); notes.push(e); }
+        }
+        if (!notes.length) return "Заметок по этой теме не найдено. Попробуй search_knowledge для поиска по всей базе.";
+
+        return notes.slice(0, 5).map((e: KbEntry) =>
+          `📌 ${e.content ?? ""}${e.summary ? `\n<поисковый индекс: ${e.summary}>` : ""}`
+        ).join("\n\n");
       }
 
       case "find_link": {
@@ -612,12 +666,30 @@ export async function handleAdd(chatId: number, username: string, text: string, 
     await sendMessage(chatId, "Напиши текст, который нужно сохранить в базу знаний:");
     return;
   }
+
+  // Short entries (< 300 chars) → saved as 'note' with keyword-enriched summary for better search.
+  // Long entries → standard flow with GPT tezisy.
+  if (text.trim().length < 300) {
+    let summary: string | undefined;
+    try {
+      summary = await chatComplete(
+        "Ты помогаешь индексировать короткую справочную запись для поиска в командной базе знаний. " +
+        "Напиши поисковый индекс: как это можно назвать (3-5 синонимов/вариантов), к какой теме относится, для чего используется. " +
+        "Одна строка на русском, без форматирования, без вводных слов.",
+        text.trim()
+      );
+    } catch { /* summary stays undefined, raw text will be embedded */ }
+
+    await saveEntry(text, username, "note", {}, summary, groupId);
+    await sendMessage(chatId, `📌 Заметка сохранена.${summary ? `\n\n<i>${summary}</i>` : ""}`);
+    return;
+  }
+
   const summary = await generateSummary(text);
-  const entryId = await saveEntry(text, username, "telegram", {}, summary ?? undefined, groupId);
+  await saveEntry(text, username, "telegram", {}, summary ?? undefined, groupId);
   await sendMessage(chatId, summary
     ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
     : "✅ Запись добавлена в базу знаний.");
-  // DISABLED: await analyzeAndCreateTasks(text, chatId, entryId);
 }
 
 
@@ -658,8 +730,9 @@ export async function handleAsk(chatId: number, question: string, userId: number
         "Ты помощник командной базы знаний команды. Всегда используй инструменты — никогда не отвечай по памяти.\n\n" +
         "СТРАТЕГИЯ ПОИСКА (важно):\n" +
         "1. Для 'последние новости/тезисы/что нового по X' → get_recent_by_country\n" +
-        "2. Для 'дай ссылку', 'дай дашборд', 'дай отчёт', 'где отчёт', 'ссылка на X', 'линк на X', 'дашборд по X', 'пришли ссылку' → СНАЧАЛА find_link. Только если find_link ничего не нашёл — тогда search_knowledge.\n" +
-        "3. Для любого другого вопроса → search_knowledge.\n" +
+        "2. Для 'дай ссылку', 'дай дашборд', 'дай отчёт', 'ссылка на X', 'дашборд по X' → СНАЧАЛА find_link. Если пусто — search_knowledge.\n" +
+        "3. Для 'пароль от X', 'логин от X', 'доступ к X', 'номер X', 'адрес X', 'ключ от X', 'что такое X' (короткий факт) → СНАЧАЛА find_note. Если пусто — search_knowledge.\n" +
+        "4. Для любого другого вопроса → search_knowledge.\n" +
         "\nФОРМАТ ДАЙДЖЕСТА (для get_recent_by_country):\n" +
         "- Напиши связный саммари по всем найденным записям — НЕ перечисляй записи поштучно\n" +
         "- Если информация касается нескольких тем или объектов — раздели на блоки с заголовками\n" +
