@@ -5,8 +5,9 @@ import type { User } from "@/types";
 import { Badge } from "@/components/ui/badge";
 
 function Initials({ name }: { name: string }) {
-  const parts = name.trim().split(" ");
-  const letters = parts.length >= 2 ? parts[0][0] + parts[1][0] : parts[0].slice(0, 2);
+  const isId = /^\d+$/.test(name);
+  const parts = isId ? ["#"] : name.trim().split(" ");
+  const letters = isId ? "#" : parts.length >= 2 ? parts[0][0] + parts[1][0] : parts[0].slice(0, 2);
   return (
     <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm shrink-0 uppercase">
       {letters}
@@ -46,7 +47,7 @@ export function TeamScreen() {
             <div key={u.telegram_id} className="flex items-center gap-3 p-3 rounded-lg border bg-card">
               <Initials name={u.name} />
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm">{u.name}</p>
+                <p className="font-medium text-sm">{/^\d+$/.test(u.name) ? `#${u.name}` : u.name}</p>
                 {u.username && (
                   <p className="text-xs text-muted-foreground">@{u.username}</p>
                 )}
