@@ -1,5 +1,75 @@
 # Changelog
 
+## 2026-06-04 — feat: ISO-нормализация стран + суперадминка + BUG-2 fix
+
+**_shared/countries.ts** (новый файл):
+- Канонический реестр ISO-3166-1 кодов: 27 стран с русскими названиями
+- `normalizeCountry(raw)` — нормализует одно название (русское/английское/alias) → ISO код
+- `normalizeCountries(raw[])` — массовая нормализация с дедупликацией
+
+**DB миграции:**
+- `20260603000000_workspace_markets.sql` — добавлен `allowed_markets text[]` в таблицу `workspaces`
+- `20260603000001_normalize_countries_data.sql` — однократная нормализация существующих `entries.countries` и `user_profiles.markets` к ISO кодам
+
+**swarm-bot/lib/storage.ts:**
+- `buildEntryIndex` и `extractEntryMeta` теперь возвращают нормализованные ISO коды через `normalizeCountries()`
+
+**read-ai-webhook/index.ts:**
+- `extractCountries` нормализует результат GPT через `normalizeCountries()`
+
+**swarm-api/index.ts:**
+- Импорт `normalizeCountries` и `COUNTRY_NAMES` из `_shared/countries.ts`
+- `POST /entries` inline GPT parse: страны нормализуются перед сохранением
+- `PATCH /entries/:id`: `body.countries` нормализуется
+- `PATCH /me`: `body.markets` нормализуется перед записью в `user_profiles`
+- `GET /me`: добавлен `is_admin: boolean` (true для telegram_id 744230399)
+- Новый `GET /config`: возвращает `{ allowed_markets: string[] }` — список из `workspaces.allowed_markets` или глобальный список если null
+- Admin routes: `handleAdminRoutes` вызывается до всех остальных роутов
+
+**swarm-api/admin.ts** (новый файл):
+- `GET /admin/workspaces` — список воркспейсов с количеством пользователей
+- `GET /admin/workspaces/:id/users` — пользователи воркспейса с профилями
+- `POST /admin/workspaces/:id/users` — добавить пользователя по telegram_id или username
+- `DELETE /admin/workspaces/:wsId/users/:userId` — удалить пользователя из воркспейса
+- `PATCH /admin/workspaces/:id` — обновить name или allowed_markets воркспейса
+- Все роуты защищены: доступ только для telegram_id 744230399
+
+**swarm-mcp/index.ts:**
+- Локальный `extractEntryMeta` нормализует страны через `normalizeCountries()`
+
+**miniapp/src/lib/countries.ts** (новый файл):
+- Frontend-копия code→name map: `COUNTRY_NAMES`, `countryName(code)`
+
+**miniapp/src/types.ts:**
+- `Me`: добавлен `is_admin: boolean`
+- Новые типы: `AdminWorkspace`, `AdminUser`
+
+**miniapp/src/lib/api.ts:**
+- `fetchConfig()` — загружает список рынков из `GET /config`
+- `fetchAdminWorkspaces/Users`, `addUserToWorkspace`, `removeUserFromWorkspace`, `patchAdminWorkspace` — admin API functions
+- `MOCK_ME.is_admin = true` для dev-режима
+
+**miniapp/src/components/SettingsScreen.tsx:**
+- `ProfileSection`: рынки теперь загружаются из `GET /config` (ISO коды), отображаются через `countryName()`
+- Удалены хардкоженные `MARKETS_EUROPE`, `MARKETS_OTHER`, `normalizeMarket()`
+
+**miniapp/src/components/AdminScreen.tsx** (новый файл):
+- `WorkspaceList` — список воркспейсов с количеством пользователей
+- `WorkspaceUsers` — пользователи воркспейса + добавление/удаление
+- `WorkspaceMarkets` — настройка `allowed_markets`: глобальный список или свой
+- `WorkspaceDetail` — вкладки Пользователи / Рынки
+
+**miniapp/src/components/BottomNav.tsx:**
+- Принимает `isAdmin?: boolean` prop
+- При `isAdmin=true` добавляет таб «Админ» с иконкой ShieldCheck
+
+**miniapp/src/app/page.tsx:**
+- Рендерит `<AdminScreen />` при `section === "admin"`
+- Передаёт `isAdmin={me?.is_admin ?? false}` в BottomNav
+
+**miniapp/src/components/TeamScreen.tsx:**
+- Числовое имя (пользователь без профиля) отображается как `#12345678` вместо сырого ID
+
 ## 2026-06-03 — refactor(bot): единый пайплайн индексирования записей
 
 **storage.ts:**

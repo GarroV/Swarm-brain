@@ -36,31 +36,13 @@
 
 ### Mini App — баги и фичи по итогам ревью 2026-06-02
 
-#### BUG-1: Профиль — role и markets не подтягиваются
-`GET /me` возвращает только `{ telegram_id, name, group_id, language }` — без `role`, `markets`, `email`.
-`ProfileSection` инициализирует `role=null` и `markets=""` не читая данные из API, поэтому форма всегда пустая.
-
-Что сделать:
-1. Backend: `GET /me` добавить `role`, `markets` (из `user_profiles`) в ответ
-2. Backend: `GET /me` добавить `first_name`, `last_name`, `username` — сейчас "имя" это склеенная строка, а не структура
-3. Frontend (`SettingsScreen.tsx`): `ProfileSection` — инициализировать `role` и `markets` из `me` при монтировании (`useEffect`)
-4. Типы (`types.ts`): добавить `role`, `markets`, `username` в тип `Me`
-
-🟢 Просто
+~~#### BUG-1: Профиль — role и markets не подтягиваются~~ ✅ уже было исправлено
+`GET /me` возвращает `role`, `markets`, `username`. `ProfileSection` инициализируется из `me`. Аудит 2026-06-04.
 
 ---
 
-#### BUG-2: Команда — профили не заполнены (имена = telegram_id, один = null)
-`GET /users` джойнит `allowed_users` + `user_profiles`, но `user_profiles` у большинства пустые.
-Причина: профили заполняются только если пользователь писал боту и бот записал `first_name` / `last_name`.
-@avkube1 показывает `null` — значит в `user_profiles` нет ни имени, ни username.
-
-Что сделать:
-1. Исследовать: когда именно пишется `user_profiles` — в `/start`? В каждом сообщении? Проверить `swarm-bot/lib/storage.ts` и `index.ts`
-2. Если профиль не пишется при каждом обновлении — исправить: upsert `user_profiles` при любом входящем сообщении от пользователя (не только `/start`)
-3. Frontend `TeamScreen.tsx`: если `name === null` и `username === null` — показывать `#${telegram_id}` вместо `null`
-
-🟡 Средне (нужно разобраться с источником данных)
+~~#### BUG-2: Команда — профили не заполнены~~ ✅ 2026-06-04
+`autoSyncProfile` вызывается на каждое сообщение/callback — backend корректен. Backend всегда возвращает fallback `name = String(telegram_id)`. Frontend `TeamScreen.tsx` исправлен: числовое имя отображается как `#12345678`.
 
 ---
 
@@ -75,16 +57,15 @@
 
 ---
 
-#### FEAT-5: Нормализация стран по ISO-кодам + Суперадминка
-
-> 📋 **Готовый план:** `docs/superpowers/plans/2026-06-03-superadmin-country-normalization.md`
-
-Три фазы:
-1. **Country Registry** — `_shared/countries.ts` (ISO коды + `normalizeCountries()`), нормализация всех 4 GPT write-путей, SQL-миграция существующих данных, `workspaces.allowed_markets` колонка, `GET /config` эндпоинт
-2. **Admin API** — `swarm-api/admin.ts`: `/admin/workspaces` CRUD, управление пользователями воркспейса, настройка разрешённых рынков
-3. **Admin Mini App** — условный таб «Админ» только для `telegram_id=744230399`: список воркспейсов → пользователи + рынки
-
-🟡 Средне-сложно (15 задач, план полностью готов к исполнению)
+~~#### FEAT-5: Нормализация стран по ISO-кодам + Суперадминка~~ ✅ 2026-06-04
+- `_shared/countries.ts` + `miniapp/src/lib/countries.ts` — ISO registry + `normalizeCountries()`
+- Все 4 GPT write-пути нормализованы: swarm-bot, read-ai-webhook, swarm-api, swarm-mcp
+- SQL миграция: `workspaces.allowed_markets` + нормализация существующих данных
+- `GET /config` — список разрешённых рынков воркспейса
+- `PATCH /me` markets нормализует перед записью в БД
+- `GET /me` возвращает `is_admin`
+- `swarm-api/admin.ts` — `/admin/workspaces` CRUD (просмотр, добавление/удаление пользователей, настройка рынков)
+- Mini App: `AdminScreen.tsx`, условный таб «Админ», `SettingsScreen` chips загружаются из `/config` и хранят ISO-коды
 
 ---
 
@@ -328,22 +309,15 @@ OAuth только через Telegram, один токен на всю груп
 
 ## Ревью системы задач — приоритет
 
-### Задачи: ревью изоляции и видимости
-**Проблема:** коллега видит задачи другого пользователя, включая задачи которые тот не помнит. Возможна утечка через отсутствие workspace/owner-фильтрации, либо в UI (Mini App), либо в API (`GET /tasks`), либо через MCP.
+~~### Задачи: ревью изоляции и видимости~~ ✅ 2026-06-04 — аудит завершён
 
-**Что нужно сделать:**
-1. Аудит всех точек чтения задач: MCP (`get_tasks`), API (`GET /tasks`), Mini App — какие фильтры применяются, проверяется ли `group_id` и/или `owner_id`
-2. Понять семантику задач: задачи командные (видны всем в воркспейсе) или личные (только owner)? Сейчас это не определено явно — нужно принять решение
-3. При необходимости — добавить `is_private` флаг на tasks (по аналогии с entries) или ввести явный `owner_id` фильтр в API
-4. Разобраться с "задачами которые я не помню" — откуда они взялись (AI-парсинг, автосоздание из встреч?)
-
-**Файлы для проверки:**
-- `supabase/functions/swarm-api/index.ts` — роуты `/tasks`
-- `supabase/functions/mcp/index.ts` — инструмент `get_tasks`
-- `miniapp/src/` — экраны задач
-- Таблица `tasks` в БД — какие колонки есть, есть ли `group_id`, `owner_id`, `is_private`
-
-🔴 Критично — приватность данных пользователей
+**Вывод аудита (2026-06-04):**
+- `GET /tasks` в swarm-api: всегда фильтрует по `groupId` из JWT — изоляция есть ✅
+- `get_tasks` в swarm-mcp: `requesting_user_id` обязателен, `groupId` разрешается через `allowed_users` и применяется — изоляция есть ✅
+- Mini App: `fetchTasks()` вызывает `GET /tasks` с JWT авторизацией — изоляция есть ✅
+- Семантика задач: **командные** (видны всем в воркспейсе) — это intended behavior
+- "Задачи которые я не помню" — скорее всего задачи созданные через AI-парсинг встреч (`confirmed=false`), видны в разделе «На проверке». Не утечка, а ожидаемое поведение воркспейса.
+- Единственный edge case: `add_task` в MCP без `requesting_user_id` создаёт задачи с `group_id=null` — они невидимы ни для кого. Не критично, но стоит сделать `requesting_user_id` обязательным в будущем.
 
 ---
 

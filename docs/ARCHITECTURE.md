@@ -102,7 +102,7 @@ supabase/functions/swarm-bot/
 
 | Таблица | Назначение | Ключевые поля |
 |---------|-----------|---------------|
-| `workspaces` | Воркспейсы (тенанты) | `id` (TEXT PK), `name` TEXT, `created_at` |
+| `workspaces` | Воркспейсы (тенанты) | `id` (TEXT PK), `name` TEXT, `allowed_markets text[]` (NULL = глобальный список), `created_at` |
 | `entries` | База знаний — все записи | `id`, `content`, `summary`, `embedding`, `source` (`telegram`\|`granola`\|`read_ai`\|`link`\|`note`\|`voice`\|`document`\|…), `added_by`, `metadata` (jsonb), `countries` (включает `"General"` для общекомандных/многострановых записей), `entry_type`, `entry_date`, `is_private`, `owner_id`, `group_id` (FK → `workspaces.id`) |
 | `tasks` | Задачи команды | `id`, `title`, `assignees`, `due_date`, `status`, `meeting_id`, `created_by`, `group_id` (FK → `workspaces.id`) |
 | `task_history` | История изменений задач | `task_id`, `changed_at`, `changes` |
@@ -382,6 +382,7 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 supabase/functions/swarm-api/
 ├── index.ts        # Router + все эндпоинты
 ├── auth.ts         # verifyInitData() — утилита проверки Telegram initData
+├── admin.ts        # /admin/* роуты (только telegram_id 744230399)
 └── entries-guard.ts  # Обязательный слой безопасности для всех endpoints с entries
 ```
 
@@ -418,13 +419,19 @@ Authorization: tma <initData>
 
 | Метод | Путь | Что делает |
 |-------|------|-----------|
-| `GET` | `/me` | `{ telegram_id, name, group_id, language }` |
+| `GET` | `/me` | `{ telegram_id, name, group_id, language, role, markets, is_admin }` |
+| `GET` | `/config` | `{ allowed_markets: string[] }` — ISO коды рынков воркспейса (из `workspaces.allowed_markets`, или глобальный список) |
 | `GET` | `/users` | Участники воркспейса с профилями |
 | `GET` | `/tasks` | Список задач (`status`, `country`, `assignee`, `mine`, `limit`, `confirmed`) |
 | `GET` | `/tasks/:id` | Одна задача |
 | `POST` | `/tasks` | Создать задачу (`assignee_telegram_id` → резолв в имя); новые задачи создаются с `confirmed=true` и `created_by_telegram_id` |
 | `PATCH` | `/tasks/:id` | Обновить задачу (частичный апдейт) |
 | `DELETE` | `/tasks/:id` | Удалить (204) |
+| `GET` | `/admin/workspaces` | Список воркспейсов с user_count (только admin) |
+| `GET` | `/admin/workspaces/:id/users` | Пользователи воркспейса (только admin) |
+| `POST` | `/admin/workspaces/:id/users` | Добавить пользователя (только admin) |
+| `DELETE` | `/admin/workspaces/:id/users/:uid` | Удалить пользователя (только admin) |
+| `PATCH` | `/admin/workspaces/:id` | Обновить name/allowed_markets (только admin) |
 
 **Переменные окружения:** `TELEGRAM_BOT_TOKEN` (уже есть), `MINIAPP_ORIGIN`, `INITDATA_MAX_AGE` (опц.)
 
