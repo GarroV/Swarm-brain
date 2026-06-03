@@ -41,6 +41,20 @@ export const KNOWLEDGE_TOOLS = [
   {
     type: "function" as const,
     function: {
+      name: "find_link",
+      description: "Search for a saved link, dashboard, report, document URL or external resource. Use FIRST when user asks: 'дай ссылку', 'дай дашборд', 'дай отчёт', 'где отчёт', 'ссылка на X', 'линк на X', 'дашборд по X', 'отчёт по X', 'где взять X', 'пришли ссылку'. Returns URL directly. Do NOT use search_knowledge for these requests.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "What to search for — topic, name of report/dashboard/resource" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "export_entry",
       description: "Export the full raw content of an entry as a downloadable file. Use when user asks to 'скинь файлом', 'выгрузи', 'скачать транскрипцию', 'export', 'пришли исходник', 'полный текст', 'дословно'. Also call this when search results contain [Полный текст: export_entry(id=...)]. First use search_knowledge to find the entry id, then call export_entry with that id.",
       parameters: {
@@ -264,6 +278,48 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
             : displayText.slice(0, 4000) + `\n...\n[Полный текст: export_entry(id=${e.id})]`;
           return `[id:${e.id}] ${e.source ?? ""}:\n${text}`;
         }).join("\n\n") || "Ничего не найдено.";
+      }
+
+      case "find_link": {
+        const query = String(args.query ?? "");
+        const words = query.toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2);
+        const searchTerms = [...new Set(words.flatMap(w => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
+
+        const [vecLinks, kwLinks] = await Promise.all([
+          getEmbedding(query)
+            .then(emb => supabase.rpc("match_entries", {
+              query_embedding: `[${emb.join(",")}]`,
+              match_threshold: 0.1,
+              match_count: 10,
+              requesting_user_id: userId || null,
+            })
+            .eq("group_id", groupId)
+            .eq("source", "link")
+            .then(r => (r.data ?? []) as KbEntry[]))
+            .catch(() => [] as KbEntry[]),
+
+          searchTerms.length
+            ? supabase.from("entries").select("id, content, summary, source, metadata")
+                .eq("source", "link")
+                .or(searchTerms.map(w => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
+                .eq("group_id", groupId)
+                .or(visibilityFilter(userId || 0))
+                .limit(5).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
+            : Promise.resolve([] as KbEntry[]),
+        ]);
+
+        const seen = new Set<string>();
+        const links: KbEntry[] = [];
+        for (const e of [...kwLinks, ...vecLinks]) {
+          if (e?.id && !seen.has(e.id)) { seen.add(e.id); links.push(e); }
+        }
+        if (!links.length) return "Ссылок по этой теме не найдено. Попробуй search_knowledge для поиска по всей базе.";
+
+        return links.slice(0, 5).map((e: KbEntry) => {
+          const url = (e.metadata?.url ?? e.metadata?.file_url) as string | undefined;
+          const title = (e.metadata?.title ?? e.summary ?? e.content ?? "").toString().slice(0, 200);
+          return url ? `🔗 ${title}\n${url}` : `[id:${e.id}] ${e.summary ?? e.content ?? ""}`;
+        }).join("\n\n");
       }
 
       case "get_recent_by_country": {
@@ -602,7 +658,8 @@ export async function handleAsk(chatId: number, question: string, userId: number
         "Ты помощник командной базы знаний команды. Всегда используй инструменты — никогда не отвечай по памяти.\n\n" +
         "СТРАТЕГИЯ ПОИСКА (важно):\n" +
         "1. Для 'последние новости/тезисы/что нового по X' → get_recent_by_country\n" +
-        "2. Для любого вопроса → search_knowledge. Особенно для вопросов вида 'как подключить', 'как настроить', 'как использовать', 'где взять', 'что такое', 'как добавить' — ОБЯЗАТЕЛЬНО сначала ищи в базе.\n" +
+        "2. Для 'дай ссылку', 'дай дашборд', 'дай отчёт', 'где отчёт', 'ссылка на X', 'линк на X', 'дашборд по X', 'пришли ссылку' → СНАЧАЛА find_link. Только если find_link ничего не нашёл — тогда search_knowledge.\n" +
+        "3. Для любого другого вопроса → search_knowledge.\n" +
         "\nФОРМАТ ДАЙДЖЕСТА (для get_recent_by_country):\n" +
         "- Напиши связный саммари по всем найденным записям — НЕ перечисляй записи поштучно\n" +
         "- Если информация касается нескольких тем или объектов — раздели на блоки с заголовками\n" +
