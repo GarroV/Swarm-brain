@@ -7,6 +7,7 @@ import { TeamScreen } from "@/components/TeamScreen";
 import { KnowledgeScreen } from "@/components/KnowledgeScreen";
 import { MeetingsScreen } from "@/components/MeetingsScreen";
 import { SettingsScreen } from "@/components/SettingsScreen";
+import { AdminScreen } from "@/components/AdminScreen";
 import { BottomNav } from "@/components/BottomNav";
 import type { Section } from "@/components/BottomNav";
 
@@ -24,8 +25,9 @@ export default function Home() {
         {section === "meetings" && <MeetingsScreen />}
         {section === "team" && <TeamScreen />}
         {section === "settings" && <SettingsScreen />}
+        {section === "admin" && <AdminScreen />}
       </div>
-      <BottomNav active={section} onChange={setSection} />
+      <BottomNav active={section} onChange={setSection} isAdmin={me?.is_admin ?? false} />
     </div>
   );
 }

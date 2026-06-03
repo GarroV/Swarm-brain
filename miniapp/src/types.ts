@@ -33,6 +33,24 @@ export type Me = {
   language: string | null;
   role: string | null;
   markets: string[];
+  is_admin: boolean;
+};
+
+export type AdminWorkspace = {
+  id: string;
+  name: string;
+  allowed_markets: string[] | null;
+  user_count: number;
+};
+
+export type AdminUser = {
+  telegram_id: number;
+  name: string;
+  username: string | null;
+  is_admin: boolean;
+  role: string | null;
+  markets: string[];
+  created_at: string;
 };
 
 export type Entry = {

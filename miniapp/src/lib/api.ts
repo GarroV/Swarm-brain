@@ -1,5 +1,5 @@
 import { getInitData } from "./telegram";
-import type { Me, Task, User, Entry, Integration, GranolaNote } from "@/types";
+import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser } from "@/types";
 
 export type CreateTaskInput = {
   title: string;
@@ -57,6 +57,7 @@ const MOCK_ME: Me = {
   language: "en",
   role: "bd",
   markets: ["KZ", "PL"],
+  is_admin: true,
 };
 
 const MOCK_USERS: User[] = [
@@ -171,6 +172,11 @@ async function apiFetchNoContentType<T>(path: string, options?: RequestInit): Pr
 export async function fetchMe(): Promise<Me> {
   if (DEV_MODE) return MOCK_ME;
   return apiFetch<Me>("/me");
+}
+
+export async function fetchConfig(): Promise<{ allowed_markets: string[] }> {
+  if (DEV_MODE) return { allowed_markets: ["RS","HR","SI","ME","BG","ES","RO","PL","EE","LT","CY","HU","MD","BY","TR","AZ","AM","GE","TJ","KG","MN","NG","MX","ID","RU","UA","KZ"] };
+  return apiFetch<{ allowed_markets: string[] }>("/config");
 }
 
 export async function patchMe(fields: UpdateMeInput): Promise<void> {
@@ -404,4 +410,34 @@ export async function sendFeedback(text: string): Promise<void> {
 export async function generateDigest(days = 7): Promise<{ text: string }> {
   if (DEV_MODE) return { text: "**Дайджест за 7 дней**\n\n• Встреча с партнёром в Варшаве\n• Обсуждение стратегии Q3\n• Запуск локализации для KZ" };
   return apiFetch<{ text: string }>("/digest", { method: "POST", body: JSON.stringify({ days }) });
+}
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+export async function fetchAdminWorkspaces(): Promise<AdminWorkspace[]> {
+  if (DEV_MODE) return [
+    { id: "cee", name: "CEE", allowed_markets: null, user_count: 3 },
+    { id: "other", name: "Other Markets", allowed_markets: ["NG","MX","ID"], user_count: 2 },
+  ];
+  return apiFetch<AdminWorkspace[]>("/admin/workspaces");
+}
+
+export async function fetchAdminWorkspaceUsers(wsId: string): Promise<AdminUser[]> {
+  if (DEV_MODE) return MOCK_USERS.map(u => ({ ...u, is_admin: false, created_at: new Date().toISOString() }));
+  return apiFetch<AdminUser[]>(`/admin/workspaces/${wsId}/users`);
+}
+
+export async function addUserToWorkspace(wsId: string, telegramId: number): Promise<void> {
+  if (DEV_MODE) return;
+  return apiFetch<void>(`/admin/workspaces/${wsId}/users`, { method: "POST", body: JSON.stringify({ telegram_id: telegramId }) });
+}
+
+export async function removeUserFromWorkspace(wsId: string, userId: number): Promise<void> {
+  if (DEV_MODE) return;
+  return apiFetch<void>(`/admin/workspaces/${wsId}/users/${userId}`, { method: "DELETE" });
+}
+
+export async function patchAdminWorkspace(wsId: string, fields: { name?: string; allowed_markets?: string[] | null }): Promise<AdminWorkspace> {
+  if (DEV_MODE) return { id: wsId, name: fields.name ?? wsId, allowed_markets: fields.allowed_markets ?? null, user_count: 0 };
+  return apiFetch<AdminWorkspace>(`/admin/workspaces/${wsId}`, { method: "PATCH", body: JSON.stringify(fields) });
 }
