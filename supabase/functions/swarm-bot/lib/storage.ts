@@ -1,5 +1,6 @@
 import { supabase, ADMIN_USER_ID } from "./supabase.ts";
 import { getEmbedding, chatComplete } from "./openai.ts";
+import { normalizeCountries } from "../../_shared/countries.ts";
 
 
 export function visibilityFilter(userId: number): string {
@@ -41,7 +42,7 @@ async function buildEntryIndex(content: string, existingSummary?: string): Promi
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     return {
       summary: hasSummary ? existingSummary! : (typeof parsed.summary === "string" ? parsed.summary : null),
-      countries: Array.isArray(parsed.countries) ? (parsed.countries as unknown[]).filter((c): c is string => typeof c === "string") : [],
+      countries: normalizeCountries(Array.isArray(parsed.countries) ? (parsed.countries as unknown[]).filter((c): c is string => typeof c === "string") : []),
       entry_type: typeof parsed.entry_type === "string" ? parsed.entry_type : "note",
       entry_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date ?? "") ? parsed.entry_date : null,
       keywords: typeof parsed.keywords === "string" ? parsed.keywords : "",
@@ -66,7 +67,7 @@ export async function extractEntryMeta(text: string): Promise<{ countries: strin
     );
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     return {
-      countries: Array.isArray(parsed.countries) ? parsed.countries : [],
+      countries: normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []),
       entry_type: parsed.entry_type ?? "note",
       entry_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date ?? "") ? parsed.entry_date : null,
     };

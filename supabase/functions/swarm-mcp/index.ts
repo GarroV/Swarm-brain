@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, TASK_TOOL_DEFINITIONS } from "./tasks/tools.ts";
+import { normalizeCountries } from "../_shared/countries.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -64,7 +65,7 @@ async function extractEntryMeta(text: string): Promise<{ countries: string[]; en
     );
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     return {
-      countries: Array.isArray(parsed.countries) ? parsed.countries : [],
+      countries: normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []),
       entry_type: parsed.entry_type ?? "note",
       entry_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date ?? "") ? parsed.entry_date : null,
     };

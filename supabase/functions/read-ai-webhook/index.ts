@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeCountries } from "../_shared/countries.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
@@ -71,7 +72,7 @@ async function extractCountries(text: string): Promise<string[]> {
       true
     );
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
-    return Array.isArray(parsed.countries) ? parsed.countries : [];
+    return normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []);
   } catch { return []; }
 }
 

@@ -13,6 +13,8 @@ import {
   deleteTask,
 } from "../_shared/tasks/db.ts";
 import type { TaskInput } from "../_shared/tasks/types.ts";
+import { normalizeCountries, COUNTRY_NAMES } from "../_shared/countries.ts";
+import { handleAdminRoutes } from "./admin.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const MINIAPP_ORIGIN = Deno.env.get("MINIAPP_ORIGIN") ?? "*";
@@ -127,6 +129,10 @@ Deno.serve(async (req: Request) => {
   // Strip /functions/v1/swarm-api prefix to get the route path
   const routePath = url.pathname.split("/swarm-api").pop() || "/";
 
+  // Admin routes (gated to telegram_id === 744230399)
+  const adminResp = await handleAdminRoutes(supabase, req, routePath, telegram_id, origin);
+  if (adminResp) return adminResp;
+
   // GET /me
   if (req.method === "GET" && routePath === "/me") {
     const [{ data: profile }, { data: allowedUser }] = await Promise.all([
@@ -136,7 +142,20 @@ Deno.serve(async (req: Request) => {
     const p = profile as { first_name?: string; last_name?: string; role?: string; markets?: string[] } | null;
     const username = (allowedUser as { username?: string } | null)?.username ?? null;
     const name = (p ? [p.first_name, p.last_name].filter(Boolean).join(" ") : null) || username || String(telegram_id);
-    return json({ telegram_id, name, username, group_id: groupId, language: language_code, role: p?.role ?? null, markets: p?.markets ?? [] }, 200, origin);
+    const isAdmin = telegram_id === 744230399;
+    return json({ telegram_id, name, username, group_id: groupId, language: language_code, role: p?.role ?? null, markets: p?.markets ?? [], is_admin: isAdmin }, 200, origin);
+  }
+
+  // GET /config
+  if (req.method === "GET" && routePath === "/config") {
+    const { data: ws } = await supabase
+      .from("workspaces")
+      .select("allowed_markets")
+      .eq("id", groupId)
+      .maybeSingle();
+    const allowedMarkets = (ws as { allowed_markets: string[] | null } | null)?.allowed_markets;
+    const markets = allowedMarkets ?? Object.keys(COUNTRY_NAMES);
+    return json({ allowed_markets: markets }, 200, origin);
   }
 
   // GET /users
@@ -325,7 +344,7 @@ Deno.serve(async (req: Request) => {
     try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
     const fields: Record<string, unknown> = {};
     if ("role" in body) fields.role = body.role ?? null;
-    if ("markets" in body) fields.markets = body.markets;
+    if ("markets" in body && Array.isArray(body.markets)) fields.markets = normalizeCountries(body.markets as string[]);
     await supabase.from("user_profiles").update(fields).eq("telegram_id", telegram_id);
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
@@ -462,7 +481,10 @@ Deno.serve(async (req: Request) => {
     const embedding = embeddingRes.ok ? (await embeddingRes.json()).data[0].embedding : null;
     let meta: { countries: string[]; entry_type: string; entry_date: string | null } = { countries: [], entry_type: "note", entry_date: null };
     if (metaRes.ok) {
-      try { meta = JSON.parse((await metaRes.json()).choices[0].message.content); } catch { /* use defaults */ }
+      try {
+        const parsed = JSON.parse((await metaRes.json()).choices[0].message.content);
+        meta = { ...parsed, countries: normalizeCountries(parsed.countries ?? []) };
+      } catch { /* use defaults */ }
     }
 
     const summaryRes = body.content.length >= 80 ? await fetch("https://api.openai.com/v1/chat/completions", {
@@ -543,7 +565,7 @@ Deno.serve(async (req: Request) => {
           fields.metadata = { ...(entry.metadata as Record<string, unknown>), confirmed: body.confirmed };
         }
         if ("summary" in body) fields.summary = body.summary;
-        if ("countries" in body && Array.isArray(body.countries)) fields.countries = body.countries;
+        if ("countries" in body && Array.isArray(body.countries)) fields.countries = normalizeCountries(body.countries as string[]);
         await supabase.from("entries").update(fields).eq("id", entry.id);
         const { data } = await supabase.from("entries").select("*").eq("id", entry.id).single();
         return json(data, 200, origin);
