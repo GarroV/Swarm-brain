@@ -1,4 +1,4 @@
-import { saveEntry, generateSummary, uploadToStorage } from "../lib/storage.ts";
+import { saveEntry, generateSummary, uploadToStorage } from "../lib/storage.ts"; // generateSummary used for multi-chunk docs only
 import { chatComplete } from "../lib/openai.ts";
 import { sendMessage, getTelegramFileUrl } from "../lib/telegram.ts";
 import { TgMessage } from "../lib/types.ts";
@@ -249,8 +249,7 @@ export async function handleUrl(chatId: number, username: string, url: string, r
 export async function handleVoice(chatId: number, username: string, fileId: string, duration: number, groupId: string): Promise<void> {
   await sendMessage(chatId, `Транскрибирую голосовое (${duration} сек)...`);
   const transcript = await transcribeAudio(fileId);
-  const summary = await generateSummary(transcript);
-  await saveEntry(transcript, username, "voice", {}, summary ?? undefined, groupId);
+  const { summary } = await saveEntry(transcript, username, "voice", {}, undefined, groupId);
   await sendMessage(chatId, summary
     ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
     : `✅ Транскрипция сохранена:\n\n<i>${transcript.slice(0, 500)}</i>`);

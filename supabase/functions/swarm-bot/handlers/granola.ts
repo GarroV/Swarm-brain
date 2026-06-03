@@ -168,10 +168,21 @@ async function saveGranolaNote(
     entryDate = `${yyyy}-${mm}-${dd}`;
   }
 
-  const [entryMeta, embedding] = await Promise.all([
-    extractEntryMeta(content.slice(0, 4000)),
-    getEmbedding(content.slice(0, 8000)),
-  ]);
+  const entryMeta = await extractEntryMeta(content.slice(0, 4000));
+
+  // General tag: no specific country or broad multi-country coverage
+  const countries = [...entryMeta.countries];
+  const specific = countries.filter(c => c !== "General");
+  if (specific.length === 0 || specific.length >= 3) {
+    countries.push("General");
+  }
+
+  // Embed tezisy + countries (not raw 10k content) — same strategy as saveEntry
+  const embeddingText = [
+    tezises ?? "",
+    specific.length > 0 ? `Страны: ${specific.join(", ")}` : "",
+  ].filter(Boolean).join("\n").slice(0, 8000);
+  const embedding = await getEmbedding(embeddingText || content.slice(0, 8000));
 
   const { error } = await supabase.from("entries").insert({
     content,
@@ -186,7 +197,7 @@ async function saveGranolaNote(
       confirmed: true,
       added_by_telegram_id: telegramId,
     },
-    countries: entryMeta.countries,
+    countries,
     entry_type: entryMeta.entry_type,
     entry_date: entryDate,
     is_private: isPrivate,

@@ -27,11 +27,11 @@ export const KNOWLEDGE_TOOLS = [
     type: "function" as const,
     function: {
       name: "get_recent_by_country",
-      description: "Get recent knowledge base entries for a specific country as a news digest. Use for: 'последние новости по X', 'что нового по X', 'что происходит в X', 'дайджест по X', 'обнови по X', 'последняя встреча по X', 'что было на встрече в X', 'что последнее по X'. Default period: 7 days. If user specifies a period ('за месяц'=30, 'за две недели'=14, 'за квартал'=90) — parse and pass as days.",
+      description: "Get recent knowledge base entries for a specific country as a news digest. Use for: 'последние новости по X', 'что нового по X', 'что происходит в X', 'дайджест по X', 'обнови по X', 'последняя встреча по X', 'что было на встрече в X', 'что последнее по X'. For general team-wide entries not tied to a specific country use country='General'. Default period: 7 days.",
       parameters: {
         type: "object",
         properties: {
-          country: { type: "string", description: "Country name in Russian or English: Хорватия/Croatia, Болгария/Bulgaria, Сербия/Serbia, Словения/Slovenia, etc." },
+          country: { type: "string", description: "Country name in Russian or English: Хорватия/Croatia, Болгария/Bulgaria, Сербия/Serbia, Словения/Slovenia, etc. Use 'General' for team-wide entries." },
           days: { type: "number", description: "How many days back to look, default 7. Parse from user message: 'за месяц'=30, 'за две недели'=14, 'за квартал'=90" },
         },
         required: ["country"],
@@ -380,30 +380,46 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const country = String(args.country ?? "");
         const days = Number(args.days ?? 7);
         const since = new Date(Date.now() - days * 86400000).toISOString();
+        const isGeneral = country === "General";
 
         type REntry = { id: string; metadata?: Record<string, unknown> | null; entry_date?: string | null; created_at: string; summary?: string | null; content?: string | null };
 
-        // Run vector search and direct date-filtered query in parallel
+        // For "General": use countries array filter. For specific country: vector + ILIKE.
         const [vecResults, recentDirect] = await Promise.all([
-          getEmbedding(`${country} встреча новости`).then(emb =>
-            supabase.rpc("match_entries", {
-              query_embedding: `[${emb.join(",")}]`,
-              match_threshold: 0.1,
-              match_count: 50,
-              requesting_user_id: userId || null,
-            }).then(r => (r.data ?? []) as Array<{ id: string }>)
-          ).catch(() => [] as Array<{ id: string }>),
-          // Direct query: entries from the last N days mentioning the country in title or content
-          supabase.from("entries")
-            .select("id, content, summary, source, entry_date, created_at, metadata")
-            .gte("created_at", since)
-            .or(`metadata->>title.ilike.%${country}%,content.ilike.%${country}%,summary.ilike.%${country}%`)
-            .eq("group_id", groupId)
-            .or(visibilityFilter(userId || 0))
-            .order("created_at", { ascending: false })
-            .limit(20)
-            .then(r => (r.data ?? []) as REntry[])
-            .catch(() => [] as REntry[]),
+          isGeneral
+            ? Promise.resolve([] as Array<{ id: string }>)
+            : getEmbedding(`${country} встреча новости`).then(emb =>
+                supabase.rpc("match_entries", {
+                  query_embedding: `[${emb.join(",")}]`,
+                  match_threshold: 0.1,
+                  match_count: 50,
+                  requesting_user_id: userId || null,
+                }).then(r => (r.data ?? []) as Array<{ id: string }>)
+              ).catch(() => [] as Array<{ id: string }>),
+
+          isGeneral
+            // General: query by countries array containing "General"
+            ? supabase.from("entries")
+                .select("id, content, summary, source, entry_date, created_at, metadata")
+                .gte("created_at", since)
+                .contains("countries", ["General"])
+                .eq("group_id", groupId)
+                .or(visibilityFilter(userId || 0))
+                .order("created_at", { ascending: false })
+                .limit(20)
+                .then(r => (r.data ?? []) as REntry[])
+                .catch(() => [] as REntry[])
+            // Specific country: ILIKE on content/summary/title
+            : supabase.from("entries")
+                .select("id, content, summary, source, entry_date, created_at, metadata")
+                .gte("created_at", since)
+                .or(`metadata->>title.ilike.%${country}%,content.ilike.%${country}%,summary.ilike.%${country}%`)
+                .eq("group_id", groupId)
+                .or(visibilityFilter(userId || 0))
+                .order("created_at", { ascending: false })
+                .limit(20)
+                .then(r => (r.data ?? []) as REntry[])
+                .catch(() => [] as REntry[]),
         ]);
 
         const vecIds = vecResults.map(r => r.id);
@@ -619,8 +635,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
       case "save_shared": {
         const text = String(args.text ?? "");
         if (!text.trim()) return "Нечего сохранять — текст пустой.";
-        const summary = await generateSummary(text);
-        await saveEntry(text, String(userId || "bot"), "telegram", {}, summary ?? undefined, groupId);
+        await saveEntry(text, String(userId || "bot"), "telegram", {}, undefined, groupId);
         return "✅ Сохранено в общую базу знаний.";
       }
 
@@ -628,8 +643,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const text = String(args.text ?? "");
         if (!text.trim()) return "Нечего сохранять — текст пустой.";
         if (!userId) return "Ошибка: не удалось определить пользователя.";
-        const summary = await generateSummary(text);
-        await saveEntry(text, String(userId), "telegram", {}, summary ?? undefined, groupId, true, userId);
+        await saveEntry(text, String(userId), "telegram", {}, undefined, groupId, true, userId);
         return "✅ Сохранено в личное хранилище.";
       }
 
@@ -685,8 +699,7 @@ export async function handleAdd(chatId: number, username: string, text: string, 
     return;
   }
 
-  const summary = await generateSummary(text);
-  await saveEntry(text, username, "telegram", {}, summary ?? undefined, groupId);
+  const { summary } = await saveEntry(text, username, "telegram", {}, undefined, groupId);
   await sendMessage(chatId, summary
     ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
     : "✅ Запись добавлена в базу знаний.");
@@ -729,7 +742,7 @@ export async function handleAsk(chatId: number, question: string, userId: number
       content:
         "Ты помощник командной базы знаний команды. Всегда используй инструменты — никогда не отвечай по памяти.\n\n" +
         "СТРАТЕГИЯ ПОИСКА (важно):\n" +
-        "1. Для 'последние новости/тезисы/что нового по X' → get_recent_by_country\n" +
+        "1. Для 'последние новости/тезисы/что нового по X' → get_recent_by_country. Для общекомандных запросов ('что нового вообще', 'общие новости', 'что у нас происходит') → get_recent_by_country(country='General').\n" +
         "2. Для 'дай ссылку', 'дай дашборд', 'дай отчёт', 'ссылка на X', 'дашборд по X' → СНАЧАЛА find_link. Если пусто — search_knowledge.\n" +
         "3. Для 'пароль от X', 'логин от X', 'доступ к X', 'номер X', 'адрес X', 'ключ от X', 'что такое X' (короткий факт) → СНАЧАЛА find_note. Если пусто — search_knowledge.\n" +
         "4. Для любого другого вопроса → search_knowledge.\n" +
