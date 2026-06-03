@@ -4,7 +4,27 @@
 
 > Дизайн: `docs/superpowers/specs/2026-06-02-time-buildin-integration-design.md`
 
-### Фундамент
+### ⚠️ Открытый архитектурный вопрос — нужно решить перед реализацией
+
+IT-команда разрабатывает **AI Hub** (`https://github.com/sagos95/ai-hub`) — набор интеграций с Mattermost (Time), Buildin, Kaiten и др. Они рекомендуют подключить его как **git subtree** в наш репо, чтобы получать обновления.
+
+**Проблема:** AI Hub — это bash-скрипты для локального запуска (Claude Code, Copilot). Они не работают внутри Deno Edge Functions (swarm-bot, swarm-api).
+
+**Нужно обсудить с IT-командой:**
+1. **Сценарий использования Time**: `/time` в Telegram-боте (сервер-side Deno) — или только через Claude Desktop/Code локально?
+2. **git subtree**: да, добавить AI Hub в репо — но это даёт нам только локальные Claude-скиллы, не решает серверную часть
+3. **bot token**: можно ли получить `TIME_BOT_TOKEN` от их Mattermost-бота для прямых API-вызовов из наших Edge Functions?
+
+**Три варианта архитектуры:**
+- **A)** `/time` в Telegram → Deno клиент к Mattermost API напрямую (свой F-1/F-2, AI Hub как справочник)
+- **B)** Только Claude Desktop/Code workflow → добавляем git subtree AI Hub, бот не трогаем
+- **C)** Оба: subtree для Claude-воркфлоу + свой Deno-клиент для бота
+
+**Статус: ждём решения от Василия после разговора с IT-командой.**
+
+---
+
+### Фундамент (после принятия архитектурного решения)
 - **F-1** `_shared/time/client.ts` — Mattermost HTTP-клиент (авторизация, чтение постов за период)
 - **F-2** `_shared/time/summary.ts` — GPT-саммари сообщений (участники, темы, решения)
 - **F-3** `_shared/buildin/client.ts` + `types.ts` — Buildin HTTP-клиент (read/write страниц, доски)
@@ -69,9 +89,8 @@
 
 ---
 
-### Mini App — порядок кнопок статуса в карточке
-В статусе `in_progress` кнопки стоят: `→ Done` слева, `← Open` справа. Нужно наоборот: возврат (← Open) слева, продвижение (→ Done) справа — логика лево=назад, право=вперёд.
-- Файл: `miniapp/src/components/TaskCard.tsx`, объект `STATUS_ACTIONS.in_progress`
+~~### Mini App — порядок кнопок статуса в карточке~~ ✅ уже исправлено
+`STATUS_ACTIONS.in_progress`: `← Open` слева, `→ Done` справа — порядок корректный. Аудит 2026-06-04.
 
 
 
