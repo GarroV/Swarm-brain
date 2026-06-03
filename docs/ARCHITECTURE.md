@@ -88,7 +88,7 @@ supabase/functions/swarm-bot/
     ├── supabase.ts          # Supabase client + ADMIN_USER_ID
     ├── openai.ts            # chatComplete(), getEmbedding()
     ├── telegram.ts          # sendMessage(), sendInlineMessage(), editInlineMessage(), answerCallback()
-    ├── storage.ts           # getSession/setSession/clearSession, saveEntry, checkAllowed, visibilityFilter
+    ├── storage.ts           # getSession/setSession/clearSession, saveEntry (returns {id,summary}), checkAllowed, visibilityFilter, buildEntryIndex
     ├── readai.ts            # Read.ai API client + токен-рефреш
     ├── drive.ts             # Google Drive интеграция (если используется)
     ├── workspace.ts         # getUserGroupId(), checkAllowedWithGroup(), CRUD воркспейсов
@@ -103,7 +103,7 @@ supabase/functions/swarm-bot/
 | Таблица | Назначение | Ключевые поля |
 |---------|-----------|---------------|
 | `workspaces` | Воркспейсы (тенанты) | `id` (TEXT PK), `name` TEXT, `created_at` |
-| `entries` | База знаний — все записи | `id`, `content`, `summary`, `embedding`, `source`, `added_by`, `metadata` (jsonb), `countries`, `entry_type`, `entry_date`, `is_private`, `owner_id`, `group_id` (FK → `workspaces.id`) |
+| `entries` | База знаний — все записи | `id`, `content`, `summary`, `embedding`, `source` (`telegram`\|`granola`\|`read_ai`\|`link`\|`note`\|`voice`\|`document`\|…), `added_by`, `metadata` (jsonb), `countries` (включает `"General"` для общекомандных/многострановых записей), `entry_type`, `entry_date`, `is_private`, `owner_id`, `group_id` (FK → `workspaces.id`) |
 | `tasks` | Задачи команды | `id`, `title`, `assignees`, `due_date`, `status`, `meeting_id`, `created_by`, `group_id` (FK → `workspaces.id`) |
 | `task_history` | История изменений задач | `task_id`, `changed_at`, `changes` |
 | `sessions` | Состояние диалога бота | `chat_id` (PK), `action`, `context` (jsonb), `updated_at` (TTL 30 мин) |
@@ -116,6 +116,41 @@ supabase/functions/swarm-bot/
 | `task_comments` | Комментарии к задачам | Таблица существует, код не использует — не задействована |
 
 **Миграции:** `supabase/migrations/` — файлы по дате. Начальная схема (`CREATE TABLE entries` и др.) **отсутствует** в миграциях (исторический долг).
+
+---
+
+## Флоу сохранения записей (entries)
+
+Всё проходит через `saveEntry()` в `lib/storage.ts` (исключение: granola.ts делает прямой insert, но с той же логикой индексирования).
+
+### Типы источников (`source`)
+| source | Откуда | Как индексируется |
+|--------|--------|-------------------|
+| `telegram` | Текст ≥300 символов через /add | `buildEntryIndex` (1 GPT вызов): summary + страны + тип + keywords |
+| `note` | Текст <300 символов через /add | GPT keyword-enrichment в `handleAdd`, General тег автоматически |
+| `link` | URL с описанием | GPT расширение описания в `media.ts`, затем `saveEntry` |
+| `voice` | Голосовое | Whisper транскрипция → `saveEntry` (summary через `buildEntryIndex`) |
+| `document` | Файл TXT/XLSX/CSV | `generateSummary(полный_текст)` → chunks через `saveEntry` |
+| `granola` | Granola API | GPT tezisy в `granola.ts` → прямой insert с enriched embedding |
+| `read_ai` | Read.ai webhook | Tezisy в `read-ai-webhook` → `saveEntry` |
+| `digest` | /digest команда | Прямой `saveEntry` без summary |
+
+### Пайплайн `saveEntry` / `buildEntryIndex`
+```
+content + [existingSummary?]
+  → buildEntryIndex (1 GPT вызов):
+      если нет summary  → {summary, countries, entry_type, entry_date, keywords}
+      если есть summary → {countries, entry_type, entry_date, keywords}  (summary not re-generated)
+  → General tag:
+      countries.length === 0 OR >= 3 → добавить "General"
+  → embedding на обогащённом тексте:
+      "${summary}\nСтраны: ${specific}\nКлючевые слова: ${keywords}"
+  → INSERT entries
+  → return {id, summary}
+```
+
+### source='note' (короткие справочные записи)
+Отдельный путь — без `buildEntryIndex`, всегда `countries: ["General"]`. GPT генерирует keyword-индекс в `handleAdd` для поиска.
 
 ---
 

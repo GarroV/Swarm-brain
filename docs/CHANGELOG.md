@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-06-03 — refactor(bot): единый пайплайн индексирования записей
+
+**storage.ts:**
+- Новая функция `buildEntryIndex(content, existingSummary?)` — **один GPT-вызов** вместо двух (`generateSummary` + `extractEntryMeta`). Возвращает `{summary, countries, entry_type, entry_date, keywords}`
+- `saveEntry()` теперь возвращает `{id: string, summary: string | null}` вместо строки
+- **Enriched embedding:** строится на `"${summary}\nСтраны: ${countries}\nКлючевые слова: ${keywords}"` — вектор теперь несёт страновой контекст
+- **General тег:** записи без конкретной страны (countries=[]) или с широким охватом (3+ стран) автоматически получают `"General"` в массив `countries`
+- `source='note'` (короткие заметки): всегда `countries=["General"]`, без лишних GPT-вызовов
+
+**granola.ts:**
+- Embedding теперь строится на `tezisy + страны` (не на 10k символах сырого контента)
+- General тег применяется по тем же правилам
+
+**knowledge.ts:**
+- `handleAdd`, `save_shared`, `save_private`: убраны redundant вызовы `generateSummary` — summary генерируется внутри `saveEntry`
+- `get_recent_by_country`: поддержка `country='General'` — запрос через `.contains("countries", ["General"])`
+- Системный промпт: общекомандные запросы ("что нового вообще") → `get_recent_by_country(country='General')`
+
+**media.ts:**
+- `handleVoice`: убран отдельный `generateSummary`, использует `saveEntry` return value
+
 ## 2026-06-03 — feat(bot): короткие заметки — source='note', find_note, keyword enrichment
 
 - **swarm-bot/handlers/knowledge.ts**:
