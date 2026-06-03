@@ -238,8 +238,21 @@ const TOOLS = [
         summary: { type: "string", description: "Новые тезисы (опционально)" },
         title: { type: "string", description: "Новый заголовок в metadata (опционально)" },
         entry_date: { type: "string", description: "Новая дата события YYYY-MM-DD (опционально)" },
+        countries: { type: "array", items: { type: "string" }, description: "Список стран/рынков на английском: Serbia, Croatia, Moldova и т.д. (опционально)" },
         file_content_base64: { type: "string", description: "Новый файл в base64 — заменяет текущий файл (требует file_name)" },
         file_name: { type: "string", description: "Имя нового файла с расширением" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "reindex_entry",
+    description: "Перечитать запись и пересчитать страны + embedding через GPT. Используй когда у записи пустые или неправильные страны, или embedding устарел. Можно передать новый summary — иначе берётся существующий.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "ID записи из list_entries или search_knowledge" },
+        summary: { type: "string", description: "Новые тезисы (опционально — если не передан, используется существующий)" },
       },
       required: ["id"],
     },
@@ -615,7 +628,7 @@ async function toolDeleteEntry(args: { id: string; requesting_user_id?: number }
   return `✅ Запись удалена${fileUrl ? " вместе с файлом из Storage" : ""}.`;
 }
 
-async function toolUpdateEntry(args: { id: string; content?: string; summary?: string; title?: string; entry_date?: string; file_content_base64?: string; file_name?: string }): Promise<string> {
+async function toolUpdateEntry(args: { id: string; content?: string; summary?: string; title?: string; entry_date?: string; countries?: string[]; file_content_base64?: string; file_name?: string }): Promise<string> {
   const { data: existing, error: fetchErr } = await supabase
     .from("entries")
     .select("metadata")
@@ -681,6 +694,14 @@ async function toolUpdateEntry(args: { id: string; content?: string; summary?: s
   if (args.entry_date) {
     updates.entry_date = args.entry_date;
   }
+  if (Array.isArray(args.countries)) {
+    const normalized = normalizeCountries(args.countries);
+    const specific = normalized.filter(c => c !== "General");
+    if (specific.length === 0 || specific.length >= 3) {
+      if (!normalized.includes("General")) normalized.push("General");
+    }
+    updates.countries = normalized;
+  }
 
   if (!Object.keys(updates).length) return "Нечего обновлять — передай хотя бы одно поле.";
 
@@ -688,6 +709,67 @@ async function toolUpdateEntry(args: { id: string; content?: string; summary?: s
   if (updErr) return `Ошибка обновления: ${updErr.message}`;
 
   return `✅ Запись обновлена (${Object.keys(updates).join(", ")}).`;
+}
+
+async function toolReindexEntry(args: { id: string; summary?: string }): Promise<string> {
+  const { data: entry, error } = await supabase
+    .from("entries")
+    .select("id, content, summary, source")
+    .eq("id", args.id)
+    .maybeSingle();
+
+  if (error) return `Ошибка: ${error.message}`;
+  if (!entry) return `Запись ${args.id} не найдена.`;
+
+  const e = entry as { id: string; content: string; summary: string | null; source: string };
+  const existingSummary = args.summary ?? e.summary ?? undefined;
+  const hasSummary = Boolean(existingSummary?.trim());
+
+  const system = hasSummary
+    ? "Проанализируй текст и верни JSON (только JSON):\n" +
+      '{"countries":["Serbia"],"entry_type":"transcript|summary|note|document|meeting","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n' +
+      "countries — конкретные страны/рынки. Короткое английское название: Serbia, Montenegro, Moldova, Croatia, Lithuania. Если общекомандный — [].\n" +
+      "keywords — 5-8 ключевых слов и синонимов для поиска."
+    : "Проанализируй текст и верни JSON (только JSON):\n" +
+      '{"summary":"тезисы","countries":["Serbia"],"entry_type":"transcript|summary|note|document|meeting","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n' +
+      "summary — 3-5 тезисов маркированным списком на русском: конкретные факты, имена, цифры.\n" +
+      "countries — конкретные страны/рынки. Если общекомандный — [].\n" +
+      "keywords — 5-8 ключевых слов и синонимов.";
+
+  let parsed: { summary?: string; countries?: string[]; entry_type?: string; entry_date?: string; keywords?: string };
+  try {
+    const raw = await chatComplete(system, e.content.slice(0, 5000));
+    parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
+  } catch {
+    return `Ошибка GPT при анализе записи ${args.id}.`;
+  }
+
+  const newSummary = hasSummary ? existingSummary! : (typeof parsed.summary === "string" ? parsed.summary : e.summary);
+  const rawCountries = Array.isArray(parsed.countries) ? parsed.countries.filter((c): c is string => typeof c === "string") : [];
+  const countries = normalizeCountries(rawCountries);
+  const specific = countries.filter(c => c !== "General");
+  if (specific.length === 0 || specific.length >= 3) {
+    if (!countries.includes("General")) countries.push("General");
+  }
+
+  const keywords = typeof parsed.keywords === "string" ? parsed.keywords : "";
+  const embeddingText = [
+    newSummary ?? e.content,
+    specific.length > 0 ? `Страны: ${specific.join(", ")}` : "",
+    keywords ? `Ключевые слова: ${keywords}` : "",
+  ].filter(Boolean).join("\n").slice(0, 8000);
+
+  const embedding = await getEmbedding(embeddingText);
+
+  const updates: Record<string, unknown> = { countries, embedding };
+  if (newSummary && newSummary !== e.summary) updates.summary = newSummary;
+  if (parsed.entry_type) updates.entry_type = parsed.entry_type;
+  if (parsed.entry_date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date)) updates.entry_date = parsed.entry_date;
+
+  const { error: updErr } = await supabase.from("entries").update(updates).eq("id", args.id);
+  if (updErr) return `Ошибка обновления: ${updErr.message}`;
+
+  return `✅ Запись переиндексирована.\nСтраны: ${countries.join(", ") || "не определены"}\nКлючевые слова: ${keywords || "—"}`;
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -802,7 +884,9 @@ Deno.serve(async (req: Request) => {
       } else if (name === "delete_entry") {
         result = await toolDeleteEntry(args as { id: string });
       } else if (name === "update_entry") {
-        result = await toolUpdateEntry(args as { id: string; content?: string; summary?: string; title?: string; entry_date?: string; file_content_base64?: string; file_name?: string });
+        result = await toolUpdateEntry(args as { id: string; content?: string; summary?: string; title?: string; entry_date?: string; countries?: string[]; file_content_base64?: string; file_name?: string });
+      } else if (name === "reindex_entry") {
+        result = await toolReindexEntry(args as { id: string; summary?: string });
       } else if (name === "upload_file") {
         result = await toolUploadFile(args as { file_name: string; file_content_base64: string; mime_type?: string; summary: string; source?: string; requesting_user_id?: number });
       } else if (name === "get_storage_stats") {
