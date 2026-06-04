@@ -247,6 +247,13 @@ const STATUS_LABEL_FULL: Record<string, string> = {
   draft: "Черновик",
 };
 
+const SOURCE_LABEL_BOT: Record<string, string> = {
+  transcript: "🎤 Transcript",
+  claude:     "🤖 Claude",
+  manual:     "✍️ Вручную",
+  mini_app:   "📱 Mini App",
+};
+
 function truncateTitle(title: string): string {
   return title.length > 32 ? title.slice(0, 31) + "…" : title;
 }
@@ -289,11 +296,13 @@ function buildTaskDetailMessage(task: Task): { text: string; keyboard: unknown[]
     : "—";
   const statusLabel = STATUS_LABEL_FULL[task.status] ?? task.status;
 
+  const srcLabel = SOURCE_LABEL_BOT[task.source] ?? task.source ?? "—";
   const text =
     `📌 <b>${task.title}</b>\n\n` +
     `👤 ${who}\n` +
     `📅 Дедлайн: ${due}\n` +
-    `🏷 Статус: ${statusLabel}`;
+    `🏷 Статус: ${statusLabel}\n` +
+    `📍 Источник: ${srcLabel}`;
 
   const statusRow: unknown[] = [];
   if (task.status === "open") {
