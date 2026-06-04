@@ -72,18 +72,21 @@ let mockTasks: Task[] = [
     assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: "2026-06-15",
     tags: [], country: "KZ", task_role: "bd", source: "mini_app", status: "open",
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
+    created_by_name: "Dev User",
   },
   {
     id: "2", title: "Design landing page", description: null,
     assignees: ["Alice Smith"], assignee_telegram_ids: [789012], due_date: null,
     tags: [], country: "PL", task_role: "marketing", source: "mini_app", status: "in_progress",
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
+    created_by_name: "Alice Smith",
   },
   {
     id: "3", title: "Review contracts", description: null,
     assignees: [], assignee_telegram_ids: [], due_date: "2026-05-30",
     tags: [], country: null, task_role: "rnd", source: "mini_app", status: "done",
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
+    created_by_name: null,
   },
 ];
 
@@ -203,6 +206,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       due_date: input.due_date ?? null, tags: [], country: input.country ?? null,
       task_role: input.task_role ?? null, source: "mini_app", status: "open",
       created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
+      created_by_name: MOCK_ME.name,
     };
     mockTasks.push(newTask);
     return newTask;

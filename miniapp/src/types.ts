@@ -15,6 +15,7 @@ export type Task = {
   meeting_id: string | null;
   url: string | null;
   group_id?: string | null;
+  created_by_name: string | null;
 };
 
 export type User = {
