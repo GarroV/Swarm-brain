@@ -229,7 +229,7 @@ Deno.serve(async (req: Request) => {
       );
       // Batch-resolve creator names
       const creatorIds = [...new Set(
-        tasks.map(t => (t as { created_by_telegram_id?: number | null }).created_by_telegram_id)
+        tasks.map(t => t.created_by_telegram_id)
              .filter((id): id is number => id != null)
       )];
       const creatorMap = new Map<number, string>();
@@ -242,10 +242,10 @@ Deno.serve(async (req: Request) => {
           if (p.first_name) creatorMap.set(p.telegram_id, p.first_name);
         });
       }
-      const tasksWithCreator = tasks.map(t => {
-        const createdById = (t as { created_by_telegram_id?: number | null }).created_by_telegram_id ?? null;
-        return { ...t, created_by_name: createdById != null ? (creatorMap.get(createdById) ?? null) : null };
-      });
+      const tasksWithCreator = tasks.map(t => ({
+        ...t,
+        created_by_name: t.created_by_telegram_id != null ? (creatorMap.get(t.created_by_telegram_id) ?? null) : null,
+      }));
 
       return json(tasksWithCreator, 200, origin);
     }
