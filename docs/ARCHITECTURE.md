@@ -45,7 +45,7 @@ supabase/functions/_shared/tasks/
 |---------|-----------|
 | `createTask(input, groupId?)` | insert всеми колонками (+ `confirmed` дефолт `false`, `created_by_telegram_id` дефолт `null`), `.select().single()`, статус дефолт `"open"`, теги дефолт `[]` |
 | `getTask(id)` | `.maybeSingle()` |
-| `listTasks(filters, groupId?)` | `select *`, order `due_date asc nullsFirst:false`; по умолчанию исключает `done/cancelled/draft`; фильтры: `status`, `country`, `telegramId`, `assigneeText`, `confirmed`, `createdBy`, `dueToday` (пост-фильтр `assigneeText`) |
+| `listTasks(filters, groupId?)` | `select *`, order `due_date asc nullsFirst:false`; по умолчанию исключает `done/cancelled/draft`; фильтры: `status`, `country`, `telegramId`, `assigneeText`, `confirmed`, `createdBy`, `dueToday` (пост-фильтр `assigneeText`); возвращает `created_by_name: string \| null` |
 | `updateTask(id, fields)` | `update {...fields, updated_at}` |
 | `deleteTask(id)` | сначала `task_history`, потом `tasks` |
 
@@ -104,7 +104,7 @@ supabase/functions/swarm-bot/
 |---------|-----------|---------------|
 | `workspaces` | Воркспейсы (тенанты) | `id` (TEXT PK), `name` TEXT, `allowed_markets text[]` (NULL = глобальный список), `created_at` |
 | `entries` | База знаний — все записи | `id`, `content`, `summary`, `embedding`, `source` (`telegram`\|`granola`\|`read_ai`\|`link`\|`note`\|`voice`\|`document`\|…), `added_by`, `metadata` (jsonb), `countries` (включает `"General"` для общекомандных/многострановых записей), `entry_type`, `entry_date`, `is_private`, `owner_id`, `group_id` (FK → `workspaces.id`) |
-| `tasks` | Задачи команды | `id`, `title`, `assignees`, `due_date`, `status`, `meeting_id`, `created_by`, `group_id` (FK → `workspaces.id`) |
+| `tasks` | Задачи команды | `id`, `title`, `assignees`, `due_date`, `status`, `meeting_id`, `created_by_telegram_id`, `created_by_name`, `group_id` (FK → `workspaces.id`) |
 | `task_history` | История изменений задач | `task_id`, `changed_at`, `changes` |
 | `sessions` | Состояние диалога бота | `chat_id` (PK), `action`, `context` (jsonb), `updated_at` (TTL 30 мин) |
 | `allowed_users` | Белый список | `telegram_id`, `username`, `is_admin`, `group_id` (FK → `workspaces.id`) |
@@ -422,7 +422,7 @@ Authorization: tma <initData>
 | `GET` | `/me` | `{ telegram_id, name, group_id, language, role, markets, is_admin }` |
 | `GET` | `/config` | `{ allowed_markets: string[] }` — ISO коды рынков воркспейса (из `workspaces.allowed_markets`, или глобальный список) |
 | `GET` | `/users` | Участники воркспейса с профилями |
-| `GET` | `/tasks` | Список задач (`status`, `country`, `assignee`, `mine`, `limit`, `confirmed`); каждая задача дополняется полем `created_by_name` (batch-резолв из `user_profiles`) |
+| `GET` | `/tasks` | Список задач (`status`, `country`, `assignee`, `mine`, `limit`, `confirmed`); каждая задача дополняется полем `created_by_name: string \| null` (batch-резолв из `user_profiles`) |
 | `GET` | `/tasks/:id` | Одна задача |
 | `POST` | `/tasks` | Создать задачу (`assignee_telegram_id` → резолв в имя); новые задачи создаются с `confirmed=true` и `created_by_telegram_id` |
 | `PATCH` | `/tasks/:id` | Обновить задачу (частичный апдейт) |
@@ -514,6 +514,19 @@ cd miniapp
 npm run dev    # dev-сервер
 npm run build  # статический экспорт в out/
 ```
+
+**Types (`miniapp/src/types.ts`):**
+
+| Type | Назначение | Ключевые поля |
+|------|-----------|-------|
+| `Task` | Задача из `GET /tasks` | `id`, `title`, `description`, `assignees`, `due_date`, `status`, `country`, `created_by_name: string \| null`, `created_at` и др. |
+| `User` | Участник воркспейса | `telegram_id`, `name`, `username`, `role`, `markets` |
+| `Me` | Текущий пользователь + воркспейс | Все поля User + `group_id`, `language`, `is_admin` |
+| `Entry` | Запись базы знаний | `id`, `content`, `summary`, `countries`, `entry_type`, `is_private`, `owner_id`, `created_at` |
+
+**API client (`miniapp/src/lib/api.ts`):**
+- `fetchTasks()` возвращает `Task[]` с полем `created_by_name`
+- `createTask()` при создании автоматически устанавливает `created_by_name` из имени текущего пользователя (в DEV_MODE — из `MOCK_ME.name`)
 
 ---
 

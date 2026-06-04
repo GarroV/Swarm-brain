@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-04 — feat(miniapp): добавлено поле created_by_name к типу Task
+
+- **miniapp/src/types.ts**: Добавлено поле `created_by_name: string | null` в тип `Task`
+- **miniapp/src/lib/api.ts**: Обновлены mock-задачи — добавлено `created_by_name` для каждой:
+  - Task id "1": `created_by_name: "Dev User"`
+  - Task id "2": `created_by_name: "Alice Smith"`
+  - Task id "3": `created_by_name: null`
+  - В функции `createTask()` новые задачи получают `created_by_name` из `MOCK_ME.name`
+
 ## 2026-06-04 — refactor(api): убраны лишние type cast в batch-резолве created_by_name
 
 - **swarm-api/index.ts**: В GET /tasks два ненужных каста `(t as { created_by_telegram_id?: number | null })` заменены прямым обращением `t.created_by_telegram_id` — поле уже объявлено в типе `Task` из `_shared/tasks/types.ts`. Второй `map` переписан в стрелочную функцию с объектом вместо `{ return }`.
