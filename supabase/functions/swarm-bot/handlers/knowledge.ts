@@ -4,6 +4,7 @@ import { saveEntry, visibilityFilter, generateSummary, getSession, setSession, c
 import { sendMessage } from "../lib/telegram.ts";
 import type { KbEntry } from "../lib/types.ts";
 import { TASK_KEYWORDS, smartTaskSearch } from "../tasks/index.ts";
+import { normalizeCountry } from "../../_shared/countries.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -381,11 +382,15 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const days = Number(args.days ?? 7);
         const since = new Date(Date.now() - days * 86400000).toISOString();
         const isGeneral = country === "General";
+        // Normalize country name to ISO code for precise countries-array filtering.
+        // Falls back to ILIKE if country is unknown (not in our registry).
+        const isoCode = isGeneral ? null : normalizeCountry(country);
 
         type REntry = { id: string; metadata?: Record<string, unknown> | null; entry_date?: string | null; created_at: string; summary?: string | null; content?: string | null };
 
-        // For "General": return all recent entries (no country filter — entries tagged General
-        // are rare; "general news" means everything recent). For specific country: vector + ILIKE.
+        // For "General": return all recent entries (no country filter).
+        // For specific country: primary filter by countries array (ISO code) — these are
+        // intentionally tagged entries. ILIKE fallback only for unknown countries.
         const [vecResults, recentDirect] = await Promise.all([
           isGeneral
             ? Promise.resolve([] as Array<{ id: string }>)
@@ -410,7 +415,19 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
                 .limit(20)
                 .then(r => (r.data ?? []) as REntry[])
                 .catch(() => [] as REntry[])
-            // Specific country: ILIKE on content/summary/title
+            : isoCode
+            // Known country: filter by countries array (entries explicitly tagged with this country)
+            ? supabase.from("entries")
+                .select("id, content, summary, source, entry_date, created_at, metadata")
+                .gte("created_at", since)
+                .contains("countries", [isoCode])
+                .eq("group_id", groupId)
+                .or(visibilityFilter(userId || 0))
+                .order("created_at", { ascending: false })
+                .limit(20)
+                .then(r => (r.data ?? []) as REntry[])
+                .catch(() => [] as REntry[])
+            // Unknown country: fall back to ILIKE text search
             : supabase.from("entries")
                 .select("id, content, summary, source, entry_date, created_at, metadata")
                 .gte("created_at", since)
@@ -425,16 +442,18 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
 
         const vecIds = vecResults.map(r => r.id);
 
-        // Fetch full data for vector results
-        const vecEntries: REntry[] = vecIds.length
-          ? await supabase.from("entries")
-              .select("id, content, summary, source, entry_date, created_at, metadata")
-              .eq("group_id", groupId)
-              .or(visibilityFilter(userId || 0))
-              .in("id", vecIds)
-              .then(r => (r.data ?? []) as REntry[])
-              .catch(() => [] as REntry[])
-          : [];
+        // Fetch full data for vector results, filtering by countries array when possible.
+        // This prevents tangential CEE/general meetings from appearing in country-specific news.
+        let vecEntries: REntry[] = [];
+        if (vecIds.length) {
+          let vecQ = supabase.from("entries")
+            .select("id, content, summary, source, entry_date, created_at, metadata")
+            .eq("group_id", groupId)
+            .or(visibilityFilter(userId || 0))
+            .in("id", vecIds);
+          if (isoCode) vecQ = vecQ.contains("countries", [isoCode]);
+          vecEntries = await vecQ.then(r => (r.data ?? []) as REntry[]).catch(() => [] as REntry[]);
+        }
 
         // Merge: direct recent entries first, then vector results — deduplicate by id
         const seen = new Set<string>();
