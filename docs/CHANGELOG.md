@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-04 — feat(bot): показываем источник задачи в детальном сообщении
+
+- **swarm-bot/tasks/handlers.ts**: В `buildTaskDetailMessage` добавлена строка `📍 Источник: …`. Добавлена константа `SOURCE_LABEL_BOT` — маппинг значений поля `task.source` (`transcript`, `claude`, `manual`, `mini_app`) в человекочитаемые метки с эмодзи. Для неизвестных источников выводится сырое значение поля; если поле `null/undefined` — прочерк `—`.
+
 ## 2026-06-04 — feat(miniapp): добавлено поле created_by_name к типу Task
 
 - **miniapp/src/types.ts**: Добавлено поле `created_by_name: string | null` в тип `Task`
