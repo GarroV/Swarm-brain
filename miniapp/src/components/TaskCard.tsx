@@ -20,10 +20,13 @@ const SOURCE_META: Record<string, { emoji: string; label: string }> = {
 function provenanceLine(task: Task): string | null {
   const src = SOURCE_META[task.source];
   const srcLabel = src ? `${src.emoji} ${src.label}` : task.source || null;
-  const date = new Date(task.created_at).toLocaleDateString("ru-RU", {
-    day: "numeric",
-    month: "short",
-  });
+  let date: string | null = null;
+  if (task.created_at) {
+    const d = new Date(task.created_at);
+    if (!isNaN(d.getTime())) {
+      date = d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+    }
+  }
   const parts = [srcLabel, task.created_by_name, date].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
 }
@@ -74,12 +77,9 @@ export function TaskCard({ task, onEdit, onStatusChange, onDelete }: TaskCardPro
           </p>
         )}
 
-        {(() => {
-          const line = provenanceLine(task);
-          return line ? (
-            <p className="text-xs text-muted-foreground">{line}</p>
-          ) : null;
-        })()}
+        {provenanceLine(task) && (
+          <p className="text-xs text-muted-foreground">{provenanceLine(task)}</p>
+        )}
 
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {task.assignees.length > 0 && (
