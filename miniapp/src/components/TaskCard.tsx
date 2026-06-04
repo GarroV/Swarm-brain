@@ -59,6 +59,8 @@ export function TaskCard({ task, onEdit, onStatusChange, onDelete }: TaskCardPro
     }
   };
 
+  const prov = provenanceLine(task);
+
   return (
     <Card>
       <CardContent className="pt-4 space-y-3">
@@ -77,9 +79,7 @@ export function TaskCard({ task, onEdit, onStatusChange, onDelete }: TaskCardPro
           </p>
         )}
 
-        {provenanceLine(task) && (
-          <p className="text-xs text-muted-foreground">{provenanceLine(task)}</p>
-        )}
+        {prov && <p className="text-xs text-muted-foreground">{prov}</p>}
 
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {task.assignees.length > 0 && (
