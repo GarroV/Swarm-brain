@@ -422,7 +422,7 @@ Authorization: tma <initData>
 | `GET` | `/me` | `{ telegram_id, name, group_id, language, role, markets, is_admin }` |
 | `GET` | `/config` | `{ allowed_markets: string[] }` — ISO коды рынков воркспейса (из `workspaces.allowed_markets`, или глобальный список) |
 | `GET` | `/users` | Участники воркспейса с профилями |
-| `GET` | `/tasks` | Список задач (`status`, `country`, `assignee`, `mine`, `limit`, `confirmed`) |
+| `GET` | `/tasks` | Список задач (`status`, `country`, `assignee`, `mine`, `limit`, `confirmed`); каждая задача дополняется полем `created_by_name` (batch-резолв из `user_profiles`) |
 | `GET` | `/tasks/:id` | Одна задача |
 | `POST` | `/tasks` | Создать задачу (`assignee_telegram_id` → резолв в имя); новые задачи создаются с `confirmed=true` и `created_by_telegram_id` |
 | `PATCH` | `/tasks/:id` | Обновить задачу (частичный апдейт) |

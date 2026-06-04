@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-04 — feat(api): GET /tasks возвращает created_by_name
+
+- **swarm-api/index.ts**: После вызова `listTasks` добавлен batch-резолв имён создателей задач. Собираются уникальные `created_by_telegram_id`, одним запросом достаются `first_name` из `user_profiles`, каждая задача дополняется полем `created_by_name: string | null`. Один доп. SQL-запрос на весь список вместо N запросов.
+
 ## 2026-06-04 — fix(bot): новости по стране — фильтр по countries[], не ILIKE
 
 - **swarm-bot/handlers/knowledge.ts**: `get_recent_by_country(country="Serbia")` раньше искал через ILIKE по тексту — попадали любые записи где страна упоминалась (CEE biweekly, IT+BD где Сербия была одной из 10 стран). Теперь основной фильтр — поле `countries[]` с ISO-кодом (RS/HR/...). ILIKE остался только как fallback для стран не из реестра. Тот же ISO-фильтр применяется к результатам векторного поиска.
