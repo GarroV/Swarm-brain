@@ -384,7 +384,8 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
 
         type REntry = { id: string; metadata?: Record<string, unknown> | null; entry_date?: string | null; created_at: string; summary?: string | null; content?: string | null };
 
-        // For "General": use countries array filter. For specific country: vector + ILIKE.
+        // For "General": return all recent entries (no country filter — entries tagged General
+        // are rare; "general news" means everything recent). For specific country: vector + ILIKE.
         const [vecResults, recentDirect] = await Promise.all([
           isGeneral
             ? Promise.resolve([] as Array<{ id: string }>)
@@ -398,13 +399,13 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
               ).catch(() => [] as Array<{ id: string }>),
 
           isGeneral
-            // General: query by countries array containing "General"
+            // General: all recent entries regardless of country tagging
             ? supabase.from("entries")
                 .select("id, content, summary, source, entry_date, created_at, metadata")
                 .gte("created_at", since)
-                .contains("countries", ["General"])
                 .eq("group_id", groupId)
                 .or(visibilityFilter(userId || 0))
+                .not("source", "eq", "digest")
                 .order("created_at", { ascending: false })
                 .limit(20)
                 .then(r => (r.data ?? []) as REntry[])
