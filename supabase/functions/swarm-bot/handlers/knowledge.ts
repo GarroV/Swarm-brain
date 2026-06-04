@@ -742,6 +742,8 @@ export async function handleAsk(chatId: number, question: string, userId: number
     if (handled) return;
   }
 
+  console.log(`[ask] uid=${userId} q="${question.slice(0, 120)}"`);
+
   // Load previous answer for referential follow-ups ("эту встречу", "её", etc.)
   const prevSession = await getSession(chatId);
   const prevAnswer = prevSession?.action === "last_answer" ? (prevSession.context ?? null) : null;
@@ -875,6 +877,7 @@ export async function handleAsk(chatId: number, question: string, userId: number
           result = await executeTool(tc.function.name, JSON.parse(tc.function.arguments) as Record<string, unknown>, userId, groupId);
         }
       } catch { result = "Ошибка выполнения инструмента."; }
+      console.log(`[tool] ${tc.function.name} ${tc.function.arguments.slice(0, 100)} → "${result.slice(0, 120)}"`);
       messages.push({ role: "tool", tool_call_id: tc.id, content: result });
     }
   }
