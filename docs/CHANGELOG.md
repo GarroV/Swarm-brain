@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-04 — refactor(api): убраны лишние type cast в batch-резолве created_by_name
+
+- **swarm-api/index.ts**: В GET /tasks два ненужных каста `(t as { created_by_telegram_id?: number | null })` заменены прямым обращением `t.created_by_telegram_id` — поле уже объявлено в типе `Task` из `_shared/tasks/types.ts`. Второй `map` переписан в стрелочную функцию с объектом вместо `{ return }`.
+
 ## 2026-06-04 — feat(api): GET /tasks возвращает created_by_name
 
 - **swarm-api/index.ts**: После вызова `listTasks` добавлен batch-резолв имён создателей задач. Собираются уникальные `created_by_telegram_id`, одним запросом достаются `first_name` из `user_profiles`, каждая задача дополняется полем `created_by_name: string | null`. Один доп. SQL-запрос на весь список вместо N запросов.
