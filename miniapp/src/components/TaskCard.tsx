@@ -10,6 +10,24 @@ const ROLE_LABELS: Record<string, string> = {
   rnd: "R&D",
 };
 
+const SOURCE_META: Record<string, { emoji: string; label: string }> = {
+  transcript: { emoji: "🎤", label: "Transcript" },
+  claude:     { emoji: "🤖", label: "Claude" },
+  manual:     { emoji: "✍️", label: "Manual" },
+  mini_app:   { emoji: "📱", label: "Mini App" },
+};
+
+function provenanceLine(task: Task): string | null {
+  const src = SOURCE_META[task.source];
+  const srcLabel = src ? `${src.emoji} ${src.label}` : task.source || null;
+  const date = new Date(task.created_at).toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "short",
+  });
+  const parts = [srcLabel, task.created_by_name, date].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+
 const STATUS_ACTIONS: Record<
   string,
   Array<{ label: string; next: string; variant?: "outline" | "ghost" }>
@@ -55,6 +73,13 @@ export function TaskCard({ task, onEdit, onStatusChange, onDelete }: TaskCardPro
             {task.description}
           </p>
         )}
+
+        {(() => {
+          const line = provenanceLine(task);
+          return line ? (
+            <p className="text-xs text-muted-foreground">{line}</p>
+          ) : null;
+        })()}
 
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {task.assignees.length > 0 && (
