@@ -111,6 +111,36 @@ async function markSkipped(telegramId: number, noteId: string): Promise<void> {
 
 type GranolaPreviewCache = { content: string; title: string; tezises: string };
 
+async function offerNextGranolaNote(chatId: number, telegramId: number): Promise<void> {
+  const apiKey = await getUserApiKey(telegramId);
+  if (!apiKey) return;
+
+  const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const [allNotes, processedIds] = await Promise.all([
+    fetchNotesSince(apiKey, since),
+    getProcessedIds(telegramId),
+  ]);
+
+  const remaining = allNotes.filter((n) => !processedIds.has(n.id));
+  if (!remaining.length) return;
+
+  const note = remaining[0];
+  const title = note.title || "Встреча";
+  const ts = note.calendar_event?.scheduled_start_time ?? note.created_at;
+  const date = new Date(ts).toLocaleString("ru-RU", {
+    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+  const attendeeNames = (note.attendees ?? [])
+    .map((a) => a.name || a.email || "").filter(Boolean).slice(0, 4).join(", ");
+
+  const counter = remaining.length > 1 ? ` · ещё ${remaining.length - 1}` : "";
+  const text = `➡️ Следующая встреча${counter}:\n📓 <b>${title}</b>\n📅 ${date}${attendeeNames ? `\n👥 ${attendeeNames}` : ""}`;
+  await sendInlineMessage(chatId, text, [[
+    { text: "🔍 Тезисы", callback_data: `gp_${note.id}` },
+    { text: "🗑 Пропустить", callback_data: `gd_${note.id}` },
+  ]]);
+}
+
 async function saveGranolaNote(
   noteId: string,
   telegramId: number,
@@ -118,11 +148,11 @@ async function saveGranolaNote(
   chatId: number,
   isPrivate = false,
   cached?: GranolaPreviewCache,
-): Promise<void> {
+): Promise<boolean> {
   const groupId = await getUserGroupId(telegramId);
   if (!groupId) {
     await sendMessage(chatId, "Ошибка: пользователь не привязан к воркспейсу.");
-    return;
+    return false;
   }
   await sendMessage(chatId, "Сохраняю в базу знаний...");
 
@@ -138,13 +168,13 @@ async function saveGranolaNote(
     const apiKey = await getUserApiKey(telegramId);
     if (!apiKey) {
       await sendMessage(chatId, "Granola не подключена. Используй /connect granola <ключ>");
-      return;
+      return false;
     }
 
     const note = await fetchGranolaNote(apiKey, noteId);
     if (!note) {
       await sendMessage(chatId, "Не удалось получить заметку из Granola.");
-      return;
+      return false;
     }
 
     title = (note.title as string) || "Встреча";
@@ -207,11 +237,12 @@ async function saveGranolaNote(
 
   if (error) {
     await sendMessage(chatId, `Ошибка сохранения: ${error.message}`);
-    return;
+    return false;
   }
 
   const label = isPrivate ? "🔒 Сохранено в личное хранилище" : "✅ Сохранено в базу знаний";
   await sendMessage(chatId, `${label}: <b>${title}</b>`);
+  return true;
 }
 
 async function sendNotesList(chatId: number, telegramId: number, createdAfter: string, periodLabel: string): Promise<void> {
@@ -411,7 +442,8 @@ export async function handleGranolaCallbacks(
       cached = JSON.parse(session.context) as GranolaPreviewCache;
       await clearSession(chatId);
     }
-    await saveGranolaNote(noteId, userId, username, chatId, false, cached);
+    const saved = await saveGranolaNote(noteId, userId, username, chatId, false, cached);
+    if (saved) await offerNextGranolaNote(chatId, userId);
     return true;
   }
   if (data.startsWith("gcp_")) {
@@ -422,13 +454,15 @@ export async function handleGranolaCallbacks(
       cached = JSON.parse(session.context) as GranolaPreviewCache;
       await clearSession(chatId);
     }
-    await saveGranolaNote(noteId, userId, username, chatId, true, cached);
+    const saved = await saveGranolaNote(noteId, userId, username, chatId, true, cached);
+    if (saved) await offerNextGranolaNote(chatId, userId);
     return true;
   }
   if (data.startsWith("gd_")) {
     await markSkipped(userId, data.replace("gd_", ""));
     await clearSession(chatId);
     await sendMessage(chatId, "🗑 Пропущено.");
+    await offerNextGranolaNote(chatId, userId);
     return true;
   }
 
