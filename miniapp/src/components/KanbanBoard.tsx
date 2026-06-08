@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { fetchMe, fetchTasks, updateTask, deleteTask } from "@/lib/api";
 import type { Me, Task } from "@/types";
 import { TaskCard } from "@/components/TaskCard";
@@ -16,6 +16,32 @@ const TAB_LABELS: Record<Status, string> = {
   done: "Done",
 };
 
+const SWIPE_THRESHOLD = 60;
+
+function useTabSwipe(activeStatus: Status, setActiveStatus: (s: Status) => void) {
+  const start = useRef<{ x: number; y: number } | null>(null);
+
+  return {
+    onTouchStart: (e: React.TouchEvent) => {
+      const t = e.touches[0];
+      start.current = { x: t.clientX, y: t.clientY };
+    },
+    onTouchEnd: (e: React.TouchEvent) => {
+      if (!start.current) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - start.current.x;
+      const dy = t.clientY - start.current.y;
+      start.current = null;
+
+      if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+
+      const idx = STATUSES.indexOf(activeStatus);
+      if (dx < 0 && idx < STATUSES.length - 1) setActiveStatus(STATUSES[idx + 1]);
+      else if (dx > 0 && idx > 0) setActiveStatus(STATUSES[idx - 1]);
+    },
+  };
+}
+
 export function KanbanBoard() {
   const [me, setMe] = useState<Me | null>(null);
   const [tasksByStatus, setTasksByStatus] = useState<Record<Status, Task[]>>({
@@ -27,6 +53,7 @@ export function KanbanBoard() {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<401 | 403 | null>(null);
   const [modalTask, setModalTask] = useState<Task | "new" | null>(null);
+  const swipeHandlers = useTabSwipe(activeStatus, setActiveStatus);
 
   const loadTasks = useCallback(async () => {
     try {
@@ -68,7 +95,7 @@ export function KanbanBoard() {
 
   if (authError === 401) {
     return (
-      <div className="flex items-center justify-center min-h-screen p-6 text-center">
+      <div className="flex items-center justify-center h-full p-6 text-center">
         <p className="text-destructive text-base">
           No access. Open this app from Telegram.
         </p>
@@ -78,7 +105,7 @@ export function KanbanBoard() {
 
   if (authError === 403) {
     return (
-      <div className="flex items-center justify-center min-h-screen p-6 text-center">
+      <div className="flex items-center justify-center h-full p-6 text-center">
         <p className="text-destructive text-base">
           No workspace assigned. Contact your admin.
         </p>
@@ -87,7 +114,7 @@ export function KanbanBoard() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col h-full">
       <div className="px-4 pt-5 pb-3">
         <h1 className="text-xl font-semibold">
           {me ? `Hello, ${me.name.split(" ")[0]}` : "Tasks"}
@@ -97,7 +124,9 @@ export function KanbanBoard() {
       <Tabs
         value={activeStatus}
         onValueChange={(v) => setActiveStatus(v as Status)}
-        className="flex-1 flex flex-col"
+        className="flex-1 flex flex-col min-h-0"
+        onTouchStart={swipeHandlers.onTouchStart}
+        onTouchEnd={swipeHandlers.onTouchEnd}
       >
         <TabsList className="mx-4 grid grid-cols-3">
           {STATUSES.map((s) => (
