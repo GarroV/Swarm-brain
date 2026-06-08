@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-06-09 — fix(cron): реанимация cron-триггеров + защита granola-poller
+
+**Проблема:** `CRON_SECRET` не был выставлен в секретах функций. swarm-bot fail-closed → джобы `weekly-digest` (понедельник 9:00) и `readai-token-refresh` (ежедневно 6:00) возвращали 403 и **не работали** с 2026-06-02. granola-poller был fail-open → работал, но без защиты.
+
+**Починка (без даунтайма, в правильном порядке):**
+1. Все три pg_cron-джобы (`weekly-digest`, `readai-token-refresh`, `granola-poller-hourly`) обновлены через `cron.alter_job` — добавлен заголовок `X-Cron-Secret`.
+2. Выставлен секрет: `supabase secrets set CRON_SECRET=...`.
+3. **granola-poller/index.ts**: fail-open → fail-closed (`if (!CRON_SECRET || ...)`), задеплоен. Теперь без секрета не отдаёт ничего, как swarm-bot.
+
+**Проверено:** оба эндпоинта без секрета → 403, с правильным секретом → 200.
+
 ## 2026-06-09 — test: первые автотесты на security-критичные функции
 
 - **supabase/functions/deno.json**: тест-таск `deno task test` (`deno test --allow-net`).

@@ -95,7 +95,8 @@ async function pollUser(integration: Integration): Promise<number> {
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 
 Deno.serve(async (req: Request) => {
-  if (CRON_SECRET && req.headers.get("X-Cron-Secret") !== CRON_SECRET) {
+  // Fail closed: an unset CRON_SECRET must NOT leave the poller open.
+  if (!CRON_SECRET || req.headers.get("X-Cron-Secret") !== CRON_SECRET) {
     return new Response("Forbidden", { status: 403 });
   }
   const now = new Date().toISOString();
