@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-09 — fix(api+miniapp): поиск в базе знаний не работал
+
+- **swarm-api/index.ts** GET /search: embedding передавался как JS-array вместо строки `"[0.1,0.2,...]"` — `match_entries` RPC ожидает Postgres vector literal. Исправлено на `` `[${embedding.join(",")}]` `` (аналогично боту и MCP). Порог снижен с 0.35 до 0.3.
+- **miniapp/src/components/KnowledgeScreen.tsx**: добавлен `catch` в `handleSearch` — ошибки поиска теперь показываются пользователю вместо молчаливого «Ничего не найдено».
+
 ## 2026-06-08 — fix(miniapp): свайп между табами задач + не работал скролл списка
 
 - **miniapp/src/components/KanbanBoard.tsx**: Добавлен свайп влево/вправо для переключения табов Open / In Progress / Done — хук `useTabSwipe` на нативных touch-событиях (без новых зависимостей), порог 60px, отсекает вертикальные жесты по соотношению dx/dy.
