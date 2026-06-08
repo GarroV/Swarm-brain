@@ -175,6 +175,7 @@ export function KnowledgeScreen({ myTelegramId }: KnowledgeScreenProps) {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -193,15 +194,18 @@ export function KnowledgeScreen({ myTelegramId }: KnowledgeScreenProps) {
   const handleSearch = async () => {
     if (!query.trim()) { loadEntries(); return; }
     setSearching(true);
+    setSearchError(null);
     try {
       const data = await searchEntries(query.trim());
       setEntries(data);
+    } catch {
+      setSearchError("Ошибка поиска. Попробуй ещё раз.");
     } finally {
       setSearching(false);
     }
   };
 
-  const clearSearch = () => { setQuery(""); loadEntries(); };
+  const clearSearch = () => { setQuery(""); setSearchError(null); loadEntries(); };
 
   return (
     <div className="flex flex-col h-full">
@@ -232,6 +236,8 @@ export function KnowledgeScreen({ myTelegramId }: KnowledgeScreenProps) {
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
         {loading ? (
           <p className="text-center text-muted-foreground py-8 text-sm">Загрузка…</p>
+        ) : searchError ? (
+          <p className="text-center text-destructive py-8 text-sm">{searchError}</p>
         ) : entries.length === 0 ? (
           <p className="text-center text-muted-foreground py-8 text-sm">
             {query ? "Ничего не найдено" : "Нет записей"}

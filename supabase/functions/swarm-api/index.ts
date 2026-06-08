@@ -541,10 +541,10 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({ model: "text-embedding-3-small", input: q.slice(0, 8000) }),
     });
     if (!embRes.ok) return apiErr(500, "Embedding failed", origin);
-    const embedding = (await embRes.json()).data[0].embedding;
+    const embedding: number[] = (await embRes.json()).data[0].embedding;
     const { data, error } = await supabase.rpc("match_entries", {
-      query_embedding: embedding,
-      match_threshold: 0.35,
+      query_embedding: `[${embedding.join(",")}]`,
+      match_threshold: 0.3,
       match_count: 20,
       requesting_user_id: telegram_id,
     });
