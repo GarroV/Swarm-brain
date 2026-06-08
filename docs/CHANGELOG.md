@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-09 — test: первые автотесты на security-критичные функции
+
+- **supabase/functions/deno.json**: тест-таск `deno task test` (`deno test --allow-net`).
+- **_shared/countries.test.ts**: 7 тестов на `normalizeCountry` / `normalizeCountries` (ISO, алиасы RU/EN, legacy-скобки, дедуп, неизвестные).
+- **swarm-api/entries-guard.test.ts**: 8 тестов на `getEntrySecure` / `buildEntriesQuery` — три слоя защиты (воркспейс-изоляция, приватность 404-неотличимость, ownership 403) на mock-supabase.
+- **swarm-api/auth.test.ts**: 8 тестов на `verifyInitData` — валидная подпись, подделка хеша, мутация payload, протухший `auth_date`, чужой токен, отсутствие hash/user, битый JSON.
+- Итого 23 теста, все зелёные. Запуск: `cd supabase/functions && deno task test`.
+
 ## 2026-06-09 — fix(api+miniapp): поиск в базе знаний не работал
 
 - **swarm-api/index.ts** GET /search: embedding передавался как JS-array вместо строки `"[0.1,0.2,...]"` — `match_entries` RPC ожидает Postgres vector literal. Исправлено на `` `[${embedding.join(",")}]` `` (аналогично боту и MCP). Порог снижен с 0.35 до 0.3.
