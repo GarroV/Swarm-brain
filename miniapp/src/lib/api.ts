@@ -1,5 +1,5 @@
 import { getInitData } from "./telegram";
-import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser } from "@/types";
+import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, TaskDependency, DependencyType } from "@/types";
 
 export type CreateTaskInput = {
   title: string;
@@ -8,9 +8,26 @@ export type CreateTaskInput = {
   assignee_telegram_id?: number | null;
   country?: string | null;
   task_role?: string | null;
+  // Модуль задач (Рой):
+  is_private?: boolean;
+  start_date?: string | null;
+  sprint_id?: string | null;
+  tags?: string[];
+  timeline_position?: number | null;
 };
 
 export type UpdateTaskInput = Partial<CreateTaskInput> & { status?: string };
+
+export type TaskFilters = {
+  status?: string;
+  sprint_id?: string;
+  tags?: string[];
+  start_date_from?: string;
+  start_date_to?: string;
+  due_date_from?: string;
+  due_date_to?: string;
+  mine?: boolean;
+};
 
 export type CreateEntryInput = {
   content: string;
@@ -73,6 +90,7 @@ let mockTasks: Task[] = [
     tags: [], country: "KZ", task_role: "bd", source: "mini_app", status: "open",
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
     created_by_name: "Dev User",
+    is_private: false, owner_id: null, start_date: "2026-06-10", timeline_position: null, sprint_id: null,
   },
   {
     id: "2", title: "Design landing page", description: null,
@@ -80,6 +98,7 @@ let mockTasks: Task[] = [
     tags: [], country: "PL", task_role: "marketing", source: "mini_app", status: "in_progress",
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
     created_by_name: "Alice Smith",
+    is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null,
   },
   {
     id: "3", title: "Review contracts", description: null,
@@ -87,6 +106,7 @@ let mockTasks: Task[] = [
     tags: [], country: null, task_role: "rnd", source: "mini_app", status: "done",
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
     created_by_name: null,
+    is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null,
   },
 ];
 
@@ -192,10 +212,26 @@ export async function fetchUsers(): Promise<User[]> {
   return apiFetch<User[]>("/users");
 }
 
-export async function fetchTasks(status?: string): Promise<Task[]> {
-  if (DEV_MODE) return status ? mockTasks.filter((t) => t.status === status) : mockTasks;
-  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
-  return apiFetch<Task[]>(`/tasks${qs}`);
+export async function fetchTasks(filters?: string | TaskFilters): Promise<Task[]> {
+  const f: TaskFilters = typeof filters === "string" ? { status: filters } : (filters ?? {});
+  if (DEV_MODE) {
+    let r = mockTasks;
+    if (f.status) r = r.filter((t) => t.status === f.status);
+    if (f.sprint_id) r = r.filter((t) => t.sprint_id === f.sprint_id);
+    if (f.tags?.length) r = r.filter((t) => f.tags!.some((tag) => t.tags.includes(tag)));
+    return r;
+  }
+  const params = new URLSearchParams();
+  if (f.status) params.set("status", f.status);
+  if (f.sprint_id) params.set("sprint_id", f.sprint_id);
+  if (f.tags?.length) params.set("tags", f.tags.join(","));
+  if (f.start_date_from) params.set("start_date_from", f.start_date_from);
+  if (f.start_date_to) params.set("start_date_to", f.start_date_to);
+  if (f.due_date_from) params.set("due_date_from", f.due_date_from);
+  if (f.due_date_to) params.set("due_date_to", f.due_date_to);
+  if (f.mine) params.set("mine", "true");
+  const qs = params.toString();
+  return apiFetch<Task[]>(`/tasks${qs ? `?${qs}` : ""}`);
 }
 
 export async function createTask(input: CreateTaskInput): Promise<Task> {
@@ -203,10 +239,13 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     const newTask: Task = {
       id: Date.now().toString(), title: input.title, description: input.description ?? null,
       assignees: [], assignee_telegram_ids: input.assignee_telegram_id ? [input.assignee_telegram_id] : [],
-      due_date: input.due_date ?? null, tags: [], country: input.country ?? null,
+      due_date: input.due_date ?? null, tags: input.tags ?? [], country: input.country ?? null,
       task_role: input.task_role ?? null, source: "mini_app", status: "open",
       created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
       created_by_name: MOCK_ME.name,
+      is_private: input.is_private ?? false, owner_id: input.is_private ? MOCK_ME.telegram_id : null,
+      start_date: input.start_date ?? null, timeline_position: input.timeline_position ?? null,
+      sprint_id: input.sprint_id ?? null,
     };
     mockTasks.push(newTask);
     return newTask;
@@ -225,6 +264,14 @@ export async function updateTask(id: string, fields: UpdateTaskInput): Promise<T
     if (fields.due_date !== undefined) task.due_date = fields.due_date ?? null;
     if (fields.country !== undefined) task.country = fields.country ?? null;
     if (fields.task_role !== undefined) task.task_role = fields.task_role ?? null;
+    if (fields.start_date !== undefined) task.start_date = fields.start_date ?? null;
+    if (fields.sprint_id !== undefined) task.sprint_id = fields.sprint_id ?? null;
+    if (fields.tags !== undefined) task.tags = fields.tags ?? [];
+    if (fields.timeline_position !== undefined) task.timeline_position = fields.timeline_position ?? null;
+    if (fields.is_private !== undefined) {
+      task.is_private = fields.is_private;
+      task.owner_id = fields.is_private ? MOCK_ME.telegram_id : null;
+    }
     if ("assignee_telegram_id" in fields) {
       task.assignee_telegram_ids = fields.assignee_telegram_id ? [fields.assignee_telegram_id] : [];
     }
@@ -242,6 +289,66 @@ export async function deleteTask(id: string): Promise<void> {
 export async function extractTasks(text: string): Promise<Task[]> {
   if (DEV_MODE) return [];
   return apiFetch<Task[]>("/tasks/extract", { method: "POST", body: JSON.stringify({ text }) });
+}
+
+// ── Sprints (Рой) ───────────────────────────────────────────────────────────────
+let mockSprints: Sprint[] = [
+  { id: "sp1", group_id: "cee", name: "Sprint 24", start_date: "2026-06-02", end_date: "2026-06-15", status: "active", created_at: new Date().toISOString() },
+];
+
+export async function fetchSprints(): Promise<Sprint[]> {
+  if (DEV_MODE) return mockSprints;
+  return apiFetch<Sprint[]>("/sprints");
+}
+
+export async function createSprint(input: { name: string; start_date: string; end_date: string; status?: SprintStatus }): Promise<Sprint> {
+  if (DEV_MODE) {
+    const s: Sprint = { id: Date.now().toString(), group_id: "cee", name: input.name, start_date: input.start_date, end_date: input.end_date, status: input.status ?? "planned", created_at: new Date().toISOString() };
+    mockSprints.push(s);
+    return s;
+  }
+  return apiFetch<Sprint>("/sprints", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function updateSprint(id: string, fields: Partial<{ name: string; start_date: string; end_date: string; status: SprintStatus }>): Promise<Sprint> {
+  if (DEV_MODE) {
+    const i = mockSprints.findIndex((s) => s.id === id);
+    if (i === -1) throw new ApiError(404, "Not found");
+    mockSprints[i] = { ...mockSprints[i], ...fields };
+    return mockSprints[i];
+  }
+  return apiFetch<Sprint>(`/sprints/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+}
+
+export async function deleteSprint(id: string): Promise<void> {
+  if (DEV_MODE) { mockSprints = mockSprints.filter((s) => s.id !== id); return; }
+  return apiFetch<void>(`/sprints/${id}`, { method: "DELETE" });
+}
+
+export async function addTasksToSprint(sprintId: string, taskIds: string[]): Promise<void> {
+  if (DEV_MODE) { mockTasks = mockTasks.map((t) => (taskIds.includes(t.id) ? { ...t, sprint_id: sprintId } : t)); return; }
+  await apiFetch<{ updated: number }>(`/sprints/${sprintId}/tasks`, { method: "POST", body: JSON.stringify({ task_ids: taskIds }) });
+}
+
+export async function removeTasksFromSprint(sprintId: string, taskIds: string[]): Promise<void> {
+  if (DEV_MODE) { mockTasks = mockTasks.map((t) => (taskIds.includes(t.id) ? { ...t, sprint_id: null } : t)); return; }
+  await apiFetch<{ updated: number }>(`/sprints/${sprintId}/tasks`, { method: "DELETE", body: JSON.stringify({ task_ids: taskIds }) });
+}
+
+// ── Task dependencies (Рой) ───────────────────────────────────────────────────────
+export async function fetchDependencies(taskId: string): Promise<TaskDependency[]> {
+  if (DEV_MODE) return [];
+  return apiFetch<TaskDependency[]>(`/tasks/${taskId}/dependencies`);
+}
+
+export async function createDependency(taskId: string, dependsOnId: string, type: DependencyType = "blocks"): Promise<TaskDependency> {
+  if (DEV_MODE) return { id: Date.now().toString(), task_id: taskId, depends_on_id: dependsOnId, dependency_type: type, created_at: new Date().toISOString() };
+  return apiFetch<TaskDependency>(`/tasks/${taskId}/dependencies`, { method: "POST", body: JSON.stringify({ depends_on_id: dependsOnId, dependency_type: type }) });
+}
+
+export async function deleteDependency(taskId: string, depId: string): Promise<void> {
+  if (DEV_MODE) return;
+  return apiFetch<void>(`/tasks/${taskId}/dependencies/${depId}`, { method: "DELETE" });
 }
 
 // ── Entries ───────────────────────────────────────────────────────────────────

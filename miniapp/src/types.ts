@@ -16,6 +16,35 @@ export type Task = {
   url: string | null;
   group_id?: string | null;
   created_by_name: string | null;
+  // Модуль задач (Рой):
+  is_private: boolean;
+  owner_id: number | null;
+  start_date: string | null;
+  timeline_position: number | null;
+  sprint_id: string | null;
+};
+
+export type SprintStatus = "planned" | "active" | "completed";
+
+export type Sprint = {
+  id: string;
+  group_id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  status: SprintStatus;
+  created_at: string;
+};
+
+export type DependencyType = "blocks" | "relates_to" | "duplicates";
+
+export type TaskDependency = {
+  id: string;
+  task_id: string;
+  depends_on_id: string;
+  dependency_type: DependencyType;
+  created_at: string;
+  direction?: "outgoing" | "incoming";
 };
 
 export type User = {
