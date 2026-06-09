@@ -817,13 +817,13 @@ export async function handleTaskCallbacks(
 
 async function handleTaskListCallback(chatId: number, userId: number, _username: string, type: string): Promise<void> {
   if (type === "pending") {
-    const { data } = await supabase.from("tasks").select("*").eq("status", "pending").order("created_at", { ascending: false }).limit(15);
+    const { data } = await supabase.from("tasks").select("*").eq("status", "pending").eq("is_private", false).order("created_at", { ascending: false }).limit(15);
     const tasks = (data ?? []) as Task[];
     if (!tasks.length) { await sendMessage(chatId, "Задач на подтверждении нет. ✅"); return; }
     await sendMessage(chatId, `<b>⏳ На подтверждении: ${tasks.length}</b>`);
     for (const t of tasks) await sendPendingTaskCard(chatId, t);
   } else if (type === "done") {
-    const { data } = await supabase.from("tasks").select("*").eq("status", "done").order("updated_at", { ascending: false }).limit(15);
+    const { data } = await supabase.from("tasks").select("*").eq("status", "done").eq("is_private", false).order("updated_at", { ascending: false }).limit(15);
     const tasks = (data ?? []) as Task[];
     if (!tasks.length) { await sendMessage(chatId, "Выполненных задач нет."); return; }
     await sendMessage(chatId, `<b>✅ Выполненные: ${tasks.length}</b>`);
@@ -836,6 +836,7 @@ async function handleTaskListCallback(chatId: number, userId: number, _username:
 async function handleTasksExport(chatId: number): Promise<void> {
   const { data } = await supabase.from("tasks").select("*")
     .not("status", "in", '("draft")')
+    .eq("is_private", false)  // экспорт — командные задачи, без личных (Рой)
     .order("due_date", { ascending: true })
     .limit(500);
   const tasks = (data ?? []) as Task[];

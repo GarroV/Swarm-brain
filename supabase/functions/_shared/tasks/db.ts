@@ -22,6 +22,11 @@ export async function createTask(input: TaskInput, groupId?: string): Promise<Ta
     group_id: groupId ?? input.group_id ?? null,
     confirmed: input.confirmed ?? false,
     created_by_telegram_id: input.created_by_telegram_id ?? null,
+    is_private: input.is_private ?? false,
+    owner_id: input.owner_id ?? null,
+    start_date: input.start_date ?? null,
+    timeline_position: input.timeline_position ?? null,
+    sprint_id: input.sprint_id ?? null,
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Task;
@@ -42,11 +47,30 @@ export async function listTasks(filters: {
   confirmed?: boolean;
   createdBy?: number;
   dueToday?: boolean;
+  // Модуль задач (Рой):
+  viewerId?: number;        // для visibility приватных задач
+  isAdmin?: boolean;        // админ видит все приватные
+  sprintId?: string;
+  tags?: string[];          // ANY-совпадение (overlaps)
+  startDateFrom?: string;
+  startDateTo?: string;
+  dueDateFrom?: string;
+  dueDateTo?: string;
 }, groupId?: string): Promise<Task[]> {
   let q = supabase
     .from("tasks")
     .select("*")
     .order("due_date", { ascending: true, nullsFirst: false });
+
+  // Видимость приватных задач: приватная видна только владельцу (админ — все).
+  // Безопасный дефолт: без viewerId показываем только публичные.
+  if (!filters.isAdmin) {
+    if (filters.viewerId !== undefined) {
+      q = q.or(`is_private.eq.false,owner_id.eq.${filters.viewerId}`);
+    } else {
+      q = q.eq("is_private", false);
+    }
+  }
 
   if (filters.confirmed !== undefined) {
     q = q.eq("confirmed", filters.confirmed);
@@ -57,6 +81,12 @@ export async function listTasks(filters: {
   if (filters.status) q = q.eq("status", filters.status);
   if (filters.country) q = q.ilike("country", `%${filters.country}%`);
   if (filters.createdBy !== undefined) q = q.eq("created_by_telegram_id", filters.createdBy);
+  if (filters.sprintId) q = q.eq("sprint_id", filters.sprintId);
+  if (filters.tags && filters.tags.length > 0) q = q.overlaps("tags", filters.tags);
+  if (filters.startDateFrom) q = q.gte("start_date", filters.startDateFrom);
+  if (filters.startDateTo) q = q.lte("start_date", filters.startDateTo);
+  if (filters.dueDateFrom) q = q.gte("due_date", filters.dueDateFrom);
+  if (filters.dueDateTo) q = q.lte("due_date", filters.dueDateTo);
 
   if (filters.telegramId !== undefined) {
     q = q.contains("assignee_telegram_ids", [filters.telegramId]);

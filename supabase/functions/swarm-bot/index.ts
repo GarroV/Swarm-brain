@@ -411,8 +411,8 @@ Deno.serve(async (req: Request) => {
         supabase.from("entries").select("*", { count: "exact", head: true }).eq("group_id", groupId).in("source", ["read_ai", "granola"]),
         supabase.from("entries").select("id, metadata, created_at").eq("group_id", groupId).eq("source", "read_ai").eq("metadata->>confirmed", "false").order("created_at", { ascending: false }),
         supabase.from("entries").select("metadata, created_at, source").eq("group_id", groupId).in("source", ["read_ai", "granola"]).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open"),
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open").lt("due_date", new Date().toISOString().split("T")[0]),
+        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open").eq("is_private", false),
+        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open").eq("is_private", false).lt("due_date", new Date().toISOString().split("T")[0]),
       ]);
 
       let statusMsg = `<b>📊 Статус Swarm Brain</b>\n\n`;
