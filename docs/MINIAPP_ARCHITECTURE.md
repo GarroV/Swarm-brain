@@ -41,13 +41,18 @@ Authorization: tma <Telegram initData>
 |-------|------|-------------|-------|
 | `GET` | `/me` | — | `{ telegram_id, name, group_id, language }` |
 | `GET` | `/users` | — | `User[]` |
-| `GET` | `/tasks` | `?status=&country=&assignee=&mine=true&limit=` | `Task[]` |
-| `GET` | `/tasks/:id` | — | `Task` |
-| `POST` | `/tasks` | `{ title, description?, country?, task_role?, due_date?, status?, assignee_telegram_id? }` | `Task` (201) |
-| `PATCH` | `/tasks/:id` | любые поля Task + `assignee_telegram_id?` | `Task` |
+| `GET` | `/tasks` | `?status=&country=&assignee=&mine=true&limit=&sprint_id=&tags=a,b&start_date_from/to=&due_date_from/to=` | `Task[]` (приватные видны только владельцу) |
+| `GET` | `/tasks/:id` | — | `Task` (приватная чужая → 404) |
+| `POST` | `/tasks` | `{ title, …, is_private?, start_date?, sprint_id?, tags?, timeline_position? }` | `Task` (201) |
+| `PATCH` | `/tasks/:id` | любые поля Task + `assignee_telegram_id?` (мутация приватной не владельцем → 403) | `Task` |
 | `DELETE` | `/tasks/:id` | — | 204 |
+| `GET/POST` | `/tasks/:id/dependencies` | POST `{ depends_on_id, dependency_type }` (цикл→422, дубль→409) | `TaskDependency[]` / `TaskDependency` |
+| `DELETE` | `/tasks/:id/dependencies/:depId` | — | 204 |
+| `GET` | `/sprints` | — | `Sprint[]` |
+| `POST/PATCH/DELETE` | `/sprints[/:id]` | `{ name, start_date, end_date, status? }` (только admin) | `Sprint` |
+| `POST/DELETE` | `/sprints/:id/tasks` | `{ task_ids: string[] }` | `{ updated }` |
 
-**Типы из `_shared/tasks/types.ts`** — Task, TaskInput.
+**Типы из `miniapp/src/types.ts`** (зеркалят `_shared/tasks/types.ts`) — Task (+поля Роя), Sprint, TaskDependency, DependencyType. Клиент: `miniapp/src/lib/api.ts` (fetchTasks принимает `string | TaskFilters`; sprints/dependencies CRUD; DEV_MODE mock).
 
 **Исполнитель:** фронтенд передаёт `assignee_telegram_id: number`. swarm-api резолвит его в `{ name, telegram_id }` через `user_profiles` и передаёт движку уже готовые `assignees[]` / `assignee_telegram_ids[]`.
 
