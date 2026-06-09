@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-06-09 — feat(db): фундамент модуля задач «Рой» — приватность, таймлайн, спринты, зависимости
+
+Первый шаг плана расширения задач в полноценный веб-продукт ([docs/BACKLOG.md](BACKLOG.md) → «Модуль задач (Рой)»). Только миграции БД (additive, применены на prod), кода ещё нет.
+
+- **`20260609100000_tasks_privacy.sql`** — `tasks.is_private` + `tasks.owner_id` (зеркалит приватность `entries`). Видимость задач в API будет: `group_id = :ws AND (is_private=false OR owner_id=:me)`.
+- **`20260609100001_tasks_timeline.sql`** — `tasks.start_date` + `tasks.timeline_position` (Gantt-вид). Инвариант `start_date <= due_date` будет проверяться в API.
+- **`20260609100002_sprints.sql`** — таблица `sprints` + `tasks.sprint_id`. **FIX vs план:** `group_id text` (а не `uuid`), т.к. `workspaces.id` = text.
+- **`20260609100003_task_dependencies.sql`** — таблица `task_dependencies` (blocks/relates_to/duplicates) + `get_all_dependencies()` для цикл-детекции (search_path фиксирован).
+- Новым таблицам выдан `GRANT ... TO service_role` (правило `_template_new_table.sql`, breaking change 30.10.2026).
+- `supabase/schema/00_base_schema.sql` обновлён (sprints до tasks, task_dependencies после).
+
 ## 2026-06-09 — refactor(search): единый `_shared/search.ts` вместо 3 копий
 
 Дублирование логики поиска по `match_entries` в swarm-bot / swarm-mcp / swarm-api и было причиной дивергенции, породившей баги (формат вектора, отсутствие group_id). Вынес в единый хелпер.

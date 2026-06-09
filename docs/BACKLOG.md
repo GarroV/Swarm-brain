@@ -1,5 +1,33 @@
 # Backlog
 
+## Модуль задач (Рой) — расширение miniapp в веб-продукт
+
+> План: внешний документ «Рой — План реализации модуля задач» (передан 2026-06-09).
+> Цель: таймлайн (Gantt), дерево зависимостей задач, спринты, личные задачи, Telegram-auth для браузера, PWA.
+
+### Расхождения плана с реальной схемой (учтены при реализации)
+- 🔴 `sprints.group_id` — план говорил `uuid`, реально `workspaces.id` = **text** → сделано `text`.
+- `owner_telegram_id` → используем **`owner_id`** (как у `entries`, чтобы переиспользовать паттерн видимости).
+- Роли `superadmin` нет — суперадмин = `allowed_users.is_admin` / `ADMIN_USER_ID`. Guard'ы мапить на `is_admin`.
+- Новым таблицам нужен `GRANT ... TO service_role` (правило `_template_new_table.sql`).
+
+### Открытый вопрос
+- **Проекты-списки** (как в Reminders, для личных задач) в плане отсутствуют. Обсуждали ранее как ядро «личных задач». Решить: нужны ли отдельно от `tags`/`sprints` — отложено.
+
+### Шаги
+- **R-1** ✅ Миграции БД: privacy, timeline, sprints, dependencies (применены на prod 2026-06-09).
+- **R-2** `_shared/tasks/types.ts` — поля `is_private`, `owner_id`, `start_date`, `timeline_position`, `sprint_id`; типы `Sprint`, `TaskDependency`, `DependencyType`.
+- **R-3** `_shared/tasks/db.ts` — visibility-фильтр (приватные видны только owner / is_admin), фильтры по датам/спринту/тегам.
+- **R-4** `swarm-api` — CRUD спринтов (`/sprints`), зависимостей (`/tasks/:id/dependencies`), цикл-детекция, валидация `start_date<=due_date`, теги до конца.
+- **R-5** Auth: Telegram Login Widget для браузера (`/api/auth/telegram`, `middleware.ts`, httpOnly JWT). Mini App flow через `initData` сохраняется.
+- **R-6** miniapp: теги в `TaskModal` + `api.ts` (быстрый).
+- **R-7** miniapp: `TimelineView` (drag/resize через `@dnd-kit`) + `DependencyLayer` (SVG-стрелки).
+- **R-8** miniapp: `SprintBoard` (Kanban с DnD по колонкам).
+- **R-9** miniapp: `DependencyGraph` (React Flow).
+- **R-10** PWA: manifest + service worker (`@serwist/next`), установка на macOS.
+
+---
+
 ## Time + Buildin интеграция
 
 > Дизайн: `docs/superpowers/specs/2026-06-02-time-buildin-integration-design.md`

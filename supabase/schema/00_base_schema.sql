@@ -78,6 +78,20 @@ create index if not exists idx_entries_date        on public.entries (entry_date
 create index if not exists idx_entries_group       on public.entries (group_id);
 create index if not exists idx_entries_type        on public.entries (entry_type);
 
+-- ── sprints (объявляется до tasks: tasks.sprint_id ссылается сюда) ────────────
+create table if not exists public.sprints (
+  id         uuid primary key default gen_random_uuid(),
+  group_id   text not null references public.workspaces(id) on delete cascade,
+  name       text not null,
+  start_date date not null,
+  end_date   date not null,
+  status     text not null default 'planned' check (status in ('planned','active','completed')),
+  created_at timestamptz default now(),
+  constraint sprint_dates check (start_date <= end_date)
+);
+create index if not exists idx_sprints_group on public.sprints (group_id, status);
+grant select, insert, update, delete on public.sprints to service_role;
+
 -- ── tasks ───────────────────────────────────────────────────────────────────
 create table if not exists public.tasks (
   id                     uuid primary key default gen_random_uuid(),
@@ -99,12 +113,20 @@ create table if not exists public.tasks (
   assignee_telegram_ids  bigint[] not null default '{}',
   group_id               text references public.workspaces(id),
   confirmed              boolean not null default false,
-  created_by_telegram_id bigint
+  created_by_telegram_id bigint,
+  is_private             boolean not null default false,
+  owner_id               bigint references public.allowed_users(telegram_id),
+  start_date             date,
+  timeline_position      integer,
+  sprint_id              uuid references public.sprints(id) on delete set null
 );
 create index if not exists idx_tasks_assignees on public.tasks using gin (assignees);
 create index if not exists idx_tasks_due_date  on public.tasks (due_date);
 create index if not exists idx_tasks_status    on public.tasks (status);
 create index if not exists idx_tasks_tags      on public.tasks using gin (tags);
+create index if not exists idx_tasks_owner_id  on public.tasks (owner_id) where is_private = true;
+create index if not exists idx_tasks_dates     on public.tasks (start_date, due_date) where start_date is not null;
+create index if not exists idx_tasks_sprint    on public.tasks (sprint_id) where sprint_id is not null;
 
 -- ── task_history ────────────────────────────────────────────────────────────
 create table if not exists public.task_history (
@@ -126,6 +148,34 @@ create table if not exists public.task_comments (
   added_by   text not null,
   created_at timestamptz default now()
 );
+
+-- ── task_dependencies (blocks / relates_to / duplicates) ─────────────────────
+create table if not exists public.task_dependencies (
+  id              uuid primary key default gen_random_uuid(),
+  task_id         uuid not null references public.tasks(id) on delete cascade,
+  depends_on_id   uuid not null references public.tasks(id) on delete cascade,
+  dependency_type text not null default 'blocks'
+                  check (dependency_type in ('blocks','relates_to','duplicates')),
+  created_at      timestamptz default now(),
+  unique (task_id, depends_on_id),
+  constraint no_self_dependency check (task_id <> depends_on_id)
+);
+create index if not exists idx_deps_task       on public.task_dependencies (task_id);
+create index if not exists idx_deps_depends_on on public.task_dependencies (depends_on_id);
+grant select, insert, update, delete on public.task_dependencies to service_role;
+
+create or replace function public.get_all_dependencies(root_id uuid)
+returns table(id uuid)
+language sql stable
+set search_path = public
+as $$
+  with recursive deps as (
+    select depends_on_id as id from public.task_dependencies where task_id = root_id
+    union
+    select td.depends_on_id from public.task_dependencies td inner join deps d on td.task_id = d.id
+  )
+  select id from deps;
+$$;
 
 -- ── sessions (bot conversation state) ───────────────────────────────────────
 create table if not exists public.sessions (
