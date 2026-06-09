@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
+import { verifyJWT } from "../_shared/jwt.ts";
 import {
   EntryAccessError,
   buildEntriesQuery,
@@ -34,6 +35,7 @@ const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const MINIAPP_ORIGIN = Deno.env.get("MINIAPP_ORIGIN") ?? "*";
 const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
 const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — единый суперадмин
+const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET"); // подпись веб-сессий (Login Widget, B+)
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -144,18 +146,26 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
 
-  // ── Auth: Authorization: tma <initData> ──────────────────────────────────
+  // ── Auth: два способа ─────────────────────────────────────────────────────
+  //   • Telegram Mini App:  Authorization: tma <initData>
+  //   • Веб (Login Widget):  Authorization: Bearer <JWT>  (вариант B+, проксируется CF Pages Function)
   const authHeader = req.headers.get("Authorization") ?? "";
-  if (!authHeader.startsWith("tma ")) {
-    return apiErr(401, "Unauthorized", origin);
-  }
-  const initData = authHeader.slice(4).trim();
+  let telegram_id: number;
+  let language_code = "en";
 
-  const verified = await verifyInitData(initData, BOT_TOKEN, MAX_AGE);
-  if (!verified) {
+  if (authHeader.startsWith("tma ")) {
+    const verified = await verifyInitData(authHeader.slice(4).trim(), BOT_TOKEN, MAX_AGE);
+    if (!verified) return apiErr(401, "Unauthorized", origin);
+    telegram_id = verified.telegram_id;
+    language_code = verified.language_code;
+  } else if (authHeader.startsWith("Bearer ")) {
+    if (!WEB_JWT_SECRET) return apiErr(500, "Web auth not configured", origin);
+    const verified = await verifyJWT(authHeader.slice(7).trim(), WEB_JWT_SECRET);
+    if (!verified) return apiErr(401, "Unauthorized", origin);
+    telegram_id = verified.telegram_id;
+  } else {
     return apiErr(401, "Unauthorized", origin);
   }
-  const { telegram_id, language_code } = verified;
 
   // ── Resolve workspace ────────────────────────────────────────────────────
   const { data: userRow } = await supabase
