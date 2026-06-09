@@ -3,7 +3,7 @@ import { useState } from "react";
 import { LayoutGrid, GanttChartSquare, Columns3, Share2 } from "lucide-react";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { TimelineView } from "@/components/tasks/TimelineView";
-// R-8: import { SprintBoard } from "@/components/tasks/SprintBoard";
+import { SprintBoard } from "@/components/tasks/SprintBoard";
 // R-9: import { DependencyGraph } from "@/components/tasks/DependencyGraph";
 
 type View = "board" | "timeline" | "sprint" | "graph";
@@ -52,7 +52,7 @@ export function TasksScreen() {
       <div className="flex-1 min-h-0 flex flex-col">
         {view === "board" && <KanbanBoard />}
         {view === "timeline" && <TimelineView />}
-        {view === "sprint" && <Placeholder title="Спринт-доска" />}
+        {view === "sprint" && <SprintBoard />}
         {view === "graph" && <Placeholder title="Граф зависимостей" />}
       </div>
     </div>
