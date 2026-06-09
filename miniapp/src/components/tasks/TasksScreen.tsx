@@ -4,7 +4,7 @@ import { LayoutGrid, GanttChartSquare, Columns3, Share2 } from "lucide-react";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { TimelineView } from "@/components/tasks/TimelineView";
 import { SprintBoard } from "@/components/tasks/SprintBoard";
-// R-9: import { DependencyGraph } from "@/components/tasks/DependencyGraph";
+import { DependencyGraph } from "@/components/tasks/DependencyGraph";
 
 type View = "board" | "timeline" | "sprint" | "graph";
 
@@ -14,14 +14,6 @@ const VIEWS: Array<{ id: View; label: string; Icon: React.FC<{ className?: strin
   { id: "sprint", label: "Спринт", Icon: Columns3 },
   { id: "graph", label: "Граф", Icon: Share2 },
 ];
-
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div className="flex flex-1 items-center justify-center p-8 text-center">
-      <p className="text-sm text-muted-foreground">{title} — скоро.</p>
-    </div>
-  );
-}
 
 export function TasksScreen() {
   const [view, setView] = useState<View>("board");
@@ -53,7 +45,7 @@ export function TasksScreen() {
         {view === "board" && <KanbanBoard />}
         {view === "timeline" && <TimelineView />}
         {view === "sprint" && <SprintBoard />}
-        {view === "graph" && <Placeholder title="Граф зависимостей" />}
+        {view === "graph" && <DependencyGraph />}
       </div>
     </div>
   );
