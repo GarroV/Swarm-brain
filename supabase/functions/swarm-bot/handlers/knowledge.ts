@@ -257,7 +257,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
               .or(searchTerms.map(w => `source.ilike.%${w}%,content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
               .eq("group_id", groupId)
               .or(visibilityFilter(userId || 0))
-              .limit(5).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
+              .limit(5).then(r => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
           : Promise.resolve([] as KbEntry[]);
 
         // Also search entries that have file_url in metadata matching the query
@@ -267,7 +267,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
               .not("metadata->>file_url", "is", null)
               .eq("group_id", groupId)
               .or(visibilityFilter(userId || 0))
-              .limit(3).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
+              .limit(3).then(r => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
           : Promise.resolve([] as KbEntry[]);
 
         const [vec, kw, files] = await Promise.all([embPromise, kwPromise, filePromise]);
@@ -314,7 +314,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
                 .or(searchTerms.map(w => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
                 .eq("group_id", groupId)
                 .or(visibilityFilter(userId || 0))
-                .limit(5).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
+                .limit(5).then(r => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
             : Promise.resolve([] as KbEntry[]),
         ]);
 
@@ -348,7 +348,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
                 .or(searchTerms.map(w => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
                 .eq("group_id", groupId)
                 .or(visibilityFilter(userId || 0))
-                .limit(5).then(r => (r.data ?? []) as KbEntry[]).catch(() => [] as KbEntry[])
+                .limit(5).then(r => (r.data ?? []) as KbEntry[], () => [] as KbEntry[])
             : Promise.resolve([] as KbEntry[]),
         ]);
 
@@ -402,8 +402,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
                 .not("source", "eq", "digest")
                 .order("created_at", { ascending: false })
                 .limit(20)
-                .then(r => (r.data ?? []) as REntry[])
-                .catch(() => [] as REntry[])
+                .then(r => (r.data ?? []) as REntry[], () => [] as REntry[])
             : isoCode
             // Known country: filter by countries array (entries explicitly tagged with this country)
             ? supabase.from("entries")
@@ -414,8 +413,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
                 .or(visibilityFilter(userId || 0))
                 .order("created_at", { ascending: false })
                 .limit(20)
-                .then(r => (r.data ?? []) as REntry[])
-                .catch(() => [] as REntry[])
+                .then(r => (r.data ?? []) as REntry[], () => [] as REntry[])
             // Unknown country: fall back to ILIKE text search
             : supabase.from("entries")
                 .select("id, content, summary, source, entry_date, created_at, metadata")
@@ -425,8 +423,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
                 .or(visibilityFilter(userId || 0))
                 .order("created_at", { ascending: false })
                 .limit(20)
-                .then(r => (r.data ?? []) as REntry[])
-                .catch(() => [] as REntry[]),
+                .then(r => (r.data ?? []) as REntry[], () => [] as REntry[]),
         ]);
 
         const vecIds = vecResults.map(r => r.id);
@@ -441,7 +438,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
             .or(visibilityFilter(userId || 0))
             .in("id", vecIds);
           if (isoCode) vecQ = vecQ.contains("countries", [isoCode]);
-          vecEntries = await vecQ.then(r => (r.data ?? []) as REntry[]).catch(() => [] as REntry[]);
+          vecEntries = await vecQ.then(r => (r.data ?? []) as REntry[], () => [] as REntry[]);
         }
 
         // Merge: direct recent entries first, then vector results — deduplicate by id
@@ -490,7 +487,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
 
         // Fallback: fuzzy array match via RPC
         if (!entries.length) {
-          const { data: fuzzy } = await supabase.rpc("search_entries_by_country", { country_query: country }).catch(() => ({ data: null }));
+          const { data: fuzzy } = await supabase.rpc("search_entries_by_country", { country_query: country }).then(r => r, () => ({ data: null }));
           entries = (fuzzy ?? []) as KbEntry[];
         }
 
