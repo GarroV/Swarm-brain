@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Pre-commit: type-check Deno edge functions если затронут любой их .ts файл.
+# Ловит регрессии вроде `.catch` на PromiseLike до того как красный код уйдёт в ветку.
+# Обойти осознанно: git commit --no-verify
+set -euo pipefail
+
+staged=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^supabase/functions/.*\.ts$' || true)
+if [ -z "$staged" ]; then
+  exit 0
+fi
+
+if ! command -v deno >/dev/null 2>&1; then
+  echo "[pre-commit] deno не найден — пропускаю type-check (установи deno)." >&2
+  exit 0
+fi
+
+echo "[pre-commit] deno check edge functions…"
+entrypoints=$(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts)
+
+if ! deno check $entrypoints; then
+  echo "" >&2
+  echo "[pre-commit] ❌ type-check упал — коммит заблокирован." >&2
+  echo "             Почини ошибки выше, либо 'git commit --no-verify' если осознанно." >&2
+  exit 1
+fi
+
+echo "[pre-commit] ✅ type-check OK"
