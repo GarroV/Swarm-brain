@@ -4,6 +4,10 @@
 
 - **swarm-bot/lib/storage.ts**: `uploadToStorage` строил Storage-ключ регексом `[^a-zA-Zа-яёА-ЯЁ0-9.\-_]`, который **сохранял кириллицу** — Supabase Storage принимает только ASCII-ключи → «Invalid key», файл терялся. XLSX с латинским именем проходил, PDF с русским — нет.
 - Добавлена транслитерация RU→Latin (`safeStorageName`) + стрип не-ASCII + короткий uuid-префикс против коллизий (раньше два кириллических файла за день дали бы один ключ `____`). Имя для отображения хранится отдельно в `metadata.file_name` — не страдает.
+
+## 2026-06-09 — fix(search): починить type-check в knowledge.ts (.catch на PromiseLike)
+
+После `9e01ac1` (refactor search) `deno check` падал с 10 ошибками: `.catch()` вызывался на Supabase query builder — он `PromiseLike` (thenable), но не `Promise`, метода `.catch` нет. Рантайм работал (`.then()` возвращает настоящий Promise), ошибка была чисто в type-check. Заменено на двухаргументный `.then(onOk, onErr)` (семантически эквивалентно, работает на `PromiseLike`). Все 3 функции компилируются, 16 тестов swarm-api зелёные.
 - swarm-mcp уже делал правильно (стрип + uuid) — не трогался.
 
 ## 2026-06-09 — feat(tasks): движок задач (Рой) — приватность, таймлайн, спринты + защита личных от утечки в бот
