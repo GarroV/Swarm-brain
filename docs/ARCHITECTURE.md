@@ -43,9 +43,9 @@ supabase/functions/_shared/tasks/
 
 | Функция | Поведение |
 |---------|-----------|
-| `createTask(input, groupId?)` | insert всеми колонками (+ `confirmed` дефолт `false`, `created_by_telegram_id` дефолт `null`), `.select().single()`, статус дефолт `"open"`, теги дефолт `[]` |
+| `createTask(input, groupId?)` | insert всеми колонками (+ `confirmed` дефолт `false`, `created_by_telegram_id` дефолт `null`, поля Роя `is_private`/`owner_id`/`start_date`/`timeline_position`/`sprint_id`), `.select().single()`, статус дефолт `"open"`, теги дефолт `[]` |
 | `getTask(id)` | `.maybeSingle()` |
-| `listTasks(filters, groupId?)` | `select *`, order `due_date asc nullsFirst:false`; по умолчанию исключает `done/cancelled/draft`; фильтры: `status`, `country`, `telegramId`, `assigneeText`, `confirmed`, `createdBy`, `dueToday` (пост-фильтр `assigneeText`); возвращает `created_by_name: string \| null` |
+| `listTasks(filters, groupId?)` | `select *`, order `due_date asc nullsFirst:false`; по умолчанию исключает `done/cancelled/draft`; фильтры: `status`, `country`, `telegramId`, `assigneeText`, `confirmed`, `createdBy`, `dueToday`, `sprintId`, `tags` (overlaps/ANY), `start_date`/`due_date` range (пост-фильтр `assigneeText`); **visibility приватности**: если не `isAdmin` — приватные задачи видны только владельцу (`is_private=false OR owner_id=viewerId`); без `viewerId` fail-closed → только публичные |
 | `updateTask(id, fields)` | `update {...fields, updated_at}` |
 | `deleteTask(id)` | сначала `task_history`, потом `tasks` |
 
@@ -54,7 +54,7 @@ supabase/functions/_shared/tasks/
 | Клиент | Файл | Что делает поверх движка |
 |--------|------|--------------------------|
 | swarm-mcp | `swarm-mcp/tasks/tools.ts` | резолвит `requesting_user_id → group_id` (обязателен для get/delete/update); воркспейс-изоляция: `task.group_id === groupId` проверяется в delete/update; резолвит `assignee_name` через fuzzy-матч; форматирует `Task[]` в строку для Claude; при `add_task` устанавливает `confirmed: false`, `created_by_telegram_id`, отправляет Telegram-уведомление создателю через `notifyCreator` |
-| swarm-bot | `swarm-bot/tasks/db.ts` | тонкая обёртка, пробрасывает вызовы; `dbListAllOpen`, `dbListPending`, `dbListToday` остаются локальными (собственная логика сортировки/фильтрации); `handlers.ts` при создании задачи (addtask wizard + `analyzeAndCreateTasks`) всегда передаёт `confirmed: false, created_by_telegram_id: userId`; при завершении wizard (`addtask_due`) устанавливает `confirmed: true` и вызывает `broadcastTaskAssigned` |
+| swarm-bot | `swarm-bot/tasks/db.ts` | тонкая обёртка, пробрасывает вызовы; `dbListAllOpen`, `dbListPending`, `dbListToday` остаются локальными (собственная логика сортировки/фильтрации); **все командные листинги фильтруют `is_private=false`** — личные задачи (Рой) видны только в miniapp у владельца, не текут в командный бот (`dbListAllOpen`, pending/done/export в `handlers.ts`, список по юзеру в `users.ts`, счётчики в `index.ts`); `handlers.ts` при создании задачи (addtask wizard + `analyzeAndCreateTasks`) всегда передаёт `confirmed: false, created_by_telegram_id: userId`; при завершении wizard (`addtask_due`) устанавливает `confirmed: true` и вызывает `broadcastTaskAssigned` |
 
 **Прямые запросы к `tasks` минуя движок** (известный остаток, отдельный этап):
 - `handlers.ts` ~626, 632, 643 — `tl_pending`, `tl_done`, `tl_export` callbacks
@@ -104,7 +104,9 @@ supabase/functions/swarm-bot/
 |---------|-----------|---------------|
 | `workspaces` | Воркспейсы (тенанты) | `id` (TEXT PK), `name` TEXT, `allowed_markets text[]` (NULL = глобальный список), `created_at` |
 | `entries` | База знаний — все записи | `id`, `content`, `summary`, `embedding`, `source` (`telegram`\|`granola`\|`read_ai`\|`link`\|`note`\|`voice`\|`document`\|…), `added_by`, `metadata` (jsonb), `countries` (включает `"General"` для общекомандных/многострановых записей), `entry_type`, `entry_date`, `is_private`, `owner_id`, `group_id` (FK → `workspaces.id`) |
-| `tasks` | Задачи команды | `id`, `title`, `assignees`, `due_date`, `status`, `meeting_id`, `created_by_telegram_id`, `created_by_name`, `group_id` (FK → `workspaces.id`) |
+| `tasks` | Задачи команды + личные (Рой) | `id`, `title`, `assignees`, `due_date`, `status`, `tags`, `meeting_id`, `created_by_telegram_id`, `created_by_name`, `group_id` (FK → `workspaces.id`); модуль Рой: `is_private`, `owner_id` (FK → `allowed_users`), `start_date`, `timeline_position`, `sprint_id` (FK → `sprints`) |
+| `sprints` | Спринты (Рой) | `id`, `group_id` (FK → `workspaces.id`), `name`, `start_date`, `end_date`, `status` (`planned`\|`active`\|`completed`), CHECK `start_date<=end_date` |
+| `task_dependencies` | Зависимости задач (Рой) | `id`, `task_id`, `depends_on_id` (оба FK → `tasks`), `dependency_type` (`blocks`\|`relates_to`\|`duplicates`); цикл-детекция через `get_all_dependencies()` |
 | `task_history` | История изменений задач | `task_id`, `changed_at`, `changes` |
 | `sessions` | Состояние диалога бота | `chat_id` (PK), `action`, `context` (jsonb), `updated_at` (TTL 30 мин) |
 | `allowed_users` | Белый список | `telegram_id`, `username`, `is_admin`, `group_id` (FK → `workspaces.id`) |

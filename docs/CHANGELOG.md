@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-09 — feat(tasks): движок задач (Рой) — приватность, таймлайн, спринты + защита личных от утечки в бот
+
+R-2/R-3 модуля задач. Код движка; эндпоинты swarm-api — следующим шагом (R-4).
+
+- **`_shared/tasks/types.ts`**: `Task`/`TaskInput` + `is_private`, `owner_id`, `start_date`, `timeline_position`, `sprint_id`; новые типы `Sprint`/`SprintInput`, `TaskDependency`, `DependencyType`, `SprintStatus`.
+- **`_shared/tasks/db.ts`**: `createTask` пишет новые поля; `listTasks` получил **visibility-фильтр приватности** (`is_private=false OR owner_id=viewerId`; `isAdmin` → все; без `viewerId` fail-closed → только публичные) + фильтры `sprintId`, `tags` (overlaps/ANY), `start_date`/`due_date` range.
+- **swarm-bot**: все командные листинги задач фильтруют `is_private=false` (`dbListAllOpen`, pending/done/export в `handlers.ts`, список по юзеру в `users.ts`, счётчики в `index.ts`) — личные задачи живут только в miniapp у владельца, не текут в командный интерфейс бота.
+- ⚠️ Деплой `swarm-bot` пока заблокирован чужим незакоммиченным WIP в `handlers/knowledge.ts` + `_shared/search.ts` (10 type errors, рефакторинг поиска) — деплоить после его разрешения.
+
 ## 2026-06-09 — feat(db): фундамент модуля задач «Рой» — приватность, таймлайн, спринты, зависимости
 
 Первый шаг плана расширения задач в полноценный веб-продукт ([docs/BACKLOG.md](BACKLOG.md) → «Модуль задач (Рой)»). Только миграции БД (additive, применены на prod), кода ещё нет.
