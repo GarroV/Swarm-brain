@@ -32,8 +32,10 @@
 
 ```
 supabase/functions/_shared/tasks/
-├── types.ts   # Task, TaskInput — единственный источник типов; клиенты импортируют отсюда
-└── db.ts      # createTask / getTask / listTasks / updateTask / deleteTask
+├── types.ts        # Task, TaskInput, Sprint, TaskDependency, DependencyType — единственный источник типов
+├── db.ts           # createTask / getTask / listTasks / updateTask / deleteTask
+├── sprints.ts      # listSprints / createSprint / updateSprint / deleteSprint / setTasksSprint (Рой)
+└── dependencies.ts # listDependencies / createDependency (цикл-детекция) / deleteDependency (Рой)
                # Принимает готовый group_id и готовых исполнителей.
                # НЕ резолвит имена и НЕ ищет workspace — это делают прослойки клиентов.
                # Бросает исключение при ошибке.
@@ -424,11 +426,20 @@ Authorization: tma <initData>
 | `GET` | `/me` | `{ telegram_id, name, group_id, language, role, markets, is_admin }` |
 | `GET` | `/config` | `{ allowed_markets: string[] }` — ISO коды рынков воркспейса (из `workspaces.allowed_markets`, или глобальный список) |
 | `GET` | `/users` | Участники воркспейса с профилями |
-| `GET` | `/tasks` | Список задач (`status`, `country`, `assignee`, `mine`, `limit`, `confirmed`); каждая задача дополняется полем `created_by_name: string \| null` (batch-резолв из `user_profiles`) |
-| `GET` | `/tasks/:id` | Одна задача |
-| `POST` | `/tasks` | Создать задачу (`assignee_telegram_id` → резолв в имя); новые задачи создаются с `confirmed=true` и `created_by_telegram_id` |
-| `PATCH` | `/tasks/:id` | Обновить задачу (частичный апдейт) |
-| `DELETE` | `/tasks/:id` | Удалить (204) |
+| `GET` | `/tasks` | Список задач. Фильтры: `status`, `country`, `assignee`, `mine`, `limit`, `confirmed`, `sprint_id`, `tags` (csv, ANY), `start_date_from/to`, `due_date_from/to`. **Приватность:** приватные задачи видны только владельцу (админ — все). Дополняется `created_by_name` |
+| `GET` | `/tasks/:id` | Одна задача. Приватная чужая → 404 |
+| `POST` | `/tasks` | Создать (`assignee_telegram_id` → имя); поля Роя: `is_private` (→`owner_id`), `start_date`, `sprint_id`, `tags`, `timeline_position`; валидация `start_date<=due_date` и принадлежности спринта воркспейсу; `confirmed=true` |
+| `PATCH` | `/tasks/:id` | Частичный апдейт. Приватную чужую → 404, мутация приватной не владельцем → 403. Поддержаны новые поля + смена `is_private`, привязка к спринту |
+| `DELETE` | `/tasks/:id` | Удалить (204). Приватную чужую → 404/403 |
+| `GET` | `/tasks/:id/dependencies` | Зависимости задачи (incoming + outgoing) |
+| `POST` | `/tasks/:id/dependencies` | Создать `{ depends_on_id, dependency_type }`; self→400, цикл→422, дубль→409 |
+| `DELETE` | `/tasks/:id/dependencies/:depId` | Удалить зависимость (204) |
+| `GET` | `/sprints` | Спринты воркспейса (все участники) |
+| `POST` | `/sprints` | Создать спринт (`name`, `start_date`, `end_date`, `status`) — **только admin** |
+| `PATCH` | `/sprints/:id` | Обновить спринт — только admin |
+| `DELETE` | `/sprints/:id` | Удалить (задачи освобождаются, FK SET NULL) — только admin |
+| `POST` | `/sprints/:id/tasks` | Привязать задачи `{ task_ids }` (только командные) |
+| `DELETE` | `/sprints/:id/tasks` | Отвязать задачи `{ task_ids }` |
 | `GET` | `/admin/workspaces` | Список воркспейсов с user_count (только admin) |
 | `GET` | `/admin/workspaces/:id/users` | Пользователи воркспейса (только admin) |
 | `POST` | `/admin/workspaces/:id/users` | Добавить пользователя (только admin) |
