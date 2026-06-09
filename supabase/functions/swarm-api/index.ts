@@ -20,6 +20,7 @@ import { handleAdminRoutes } from "./admin.ts";
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const MINIAPP_ORIGIN = Deno.env.get("MINIAPP_ORIGIN") ?? "*";
 const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
+const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — единый суперадмин
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -88,6 +89,39 @@ async function resolveAssignee(
   return { telegram_id: p.telegram_id, name };
 }
 
+// ── Task privacy / validation helpers (Рой) ────────────────────────────────────
+
+// Приватную задачу видит только владелец или админ; командную — любой в воркспейсе.
+function canViewTask(
+  task: { is_private: boolean; owner_id: number | null },
+  viewerId: number,
+  isAdmin: boolean,
+): boolean {
+  return !task.is_private || isAdmin || task.owner_id === viewerId;
+}
+
+// Мутировать приватную задачу может только владелец или админ.
+function canMutateTask(
+  task: { is_private: boolean; owner_id: number | null },
+  viewerId: number,
+  isAdmin: boolean,
+): boolean {
+  return !task.is_private || isAdmin || task.owner_id === viewerId;
+}
+
+// start_date не должен быть позже due_date. Возвращает текст ошибки или null.
+function validateTaskDates(start?: string | null, due?: string | null): string | null {
+  if (start && due && start > due) return "start_date не может быть позже due_date";
+  return null;
+}
+
+// Проверяет, что спринт существует и принадлежит тому же воркспейсу.
+async function sprintInWorkspace(sprintId: string, groupId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("sprints").select("id").eq("id", sprintId).eq("group_id", groupId).maybeSingle();
+  return !!data;
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -124,6 +158,7 @@ Deno.serve(async (req: Request) => {
   if (!groupId) {
     return apiErr(403, "No workspace assigned", origin);
   }
+  const isAdmin = telegram_id === ADMIN_USER_ID;
 
   // ── Routing ──────────────────────────────────────────────────────────────
   const url = new URL(req.url);
@@ -143,7 +178,6 @@ Deno.serve(async (req: Request) => {
     const p = profile as { first_name?: string; last_name?: string; role?: string; markets?: string[] } | null;
     const username = (allowedUser as { username?: string } | null)?.username ?? null;
     const name = (p ? [p.first_name, p.last_name].filter(Boolean).join(" ") : null) || username || String(telegram_id);
-    const isAdmin = telegram_id === 744230399;
     return json({ telegram_id, name, username, group_id: groupId, language: language_code, role: p?.role ?? null, markets: p?.markets ?? [], is_admin: isAdmin }, 200, origin);
   }
 
@@ -216,6 +250,13 @@ Deno.serve(async (req: Request) => {
       const limit = limitParam ? parseInt(limitParam, 10) : undefined;
       const confirmedParam = url.searchParams.get("confirmed");
       const confirmedFilter = confirmedParam === "true" ? true : confirmedParam === "false" ? false : undefined;
+      const sprintId = url.searchParams.get("sprint_id") ?? undefined;
+      const tagsParam = url.searchParams.get("tags");
+      const tags = tagsParam ? tagsParam.split(",").map(t => t.trim()).filter(Boolean) : undefined;
+      const startDateFrom = url.searchParams.get("start_date_from") ?? undefined;
+      const startDateTo = url.searchParams.get("start_date_to") ?? undefined;
+      const dueDateFrom = url.searchParams.get("due_date_from") ?? undefined;
+      const dueDateTo = url.searchParams.get("due_date_to") ?? undefined;
 
       const tasks = await listTasks(
         {
@@ -225,6 +266,15 @@ Deno.serve(async (req: Request) => {
           telegramId: mine ? telegram_id : undefined,
           limit,
           confirmed: confirmedFilter,
+          // Приватность: владелец видит свои личные задачи; админ — все
+          viewerId: telegram_id,
+          isAdmin,
+          sprintId,
+          tags,
+          startDateFrom,
+          startDateTo,
+          dueDateFrom,
+          dueDateTo,
         },
         groupId,
       );
@@ -272,18 +322,36 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      const dueDate = (body.due_date as string | null) ?? null;
+      const startDate = (body.start_date as string | null) ?? null;
+      const dateErr = validateTaskDates(startDate, dueDate);
+      if (dateErr) return apiErr(400, dateErr, origin);
+
+      const isPrivate = body.is_private === true;
+      const sprintId = (body.sprint_id as string | null) ?? null;
+      if (sprintId && !(await sprintInWorkspace(sprintId, groupId))) {
+        return apiErr(400, "sprint_id не найден в этом воркспейсе", origin);
+      }
+
       const input: TaskInput = {
         title: body.title as string,
         description: (body.description as string | null) ?? null,
         country: (body.country as string | null) ?? null,
         task_role: (body.task_role as string | null) ?? null,
-        due_date: (body.due_date as string | null) ?? null,
+        due_date: dueDate,
         status: (body.status as string) ?? "open",
         source: "mini_app",
         assignees,
         assignee_telegram_ids,
         confirmed: true,
         created_by_telegram_id: telegram_id ?? null,
+        // Модуль задач (Рой):
+        is_private: isPrivate,
+        owner_id: isPrivate ? telegram_id : null,
+        start_date: startDate,
+        sprint_id: sprintId,
+        timeline_position: typeof body.timeline_position === "number" ? body.timeline_position : null,
+        tags: Array.isArray(body.tags) ? (body.tags as string[]) : undefined,
       };
 
       try {
@@ -303,6 +371,8 @@ Deno.serve(async (req: Request) => {
     if (req.method === "GET") {
       const task = await getTask(taskId);
       if (!task || task.group_id !== groupId) return apiErr(404, "Not found", origin);
+      // Приватная задача чужого пользователя — 404 (не раскрываем существование)
+      if (!canViewTask(task, telegram_id, isAdmin)) return apiErr(404, "Not found", origin);
       return json(task, 200, origin);
     }
 
@@ -316,6 +386,9 @@ Deno.serve(async (req: Request) => {
 
       const task = await getTask(taskId);
       if (!task || task.group_id !== groupId) return apiErr(404, "Not found", origin);
+      if (!canViewTask(task, telegram_id, isAdmin)) return apiErr(404, "Not found", origin);
+      // Мутировать приватную может только владелец/админ
+      if (!canMutateTask(task, telegram_id, isAdmin)) return apiErr(403, "Forbidden", origin);
 
       const fields: Partial<TaskInput> & { status?: string; due_date?: string | null } = {};
       if (body.title !== undefined) fields.title = body.title as string;
@@ -324,6 +397,30 @@ Deno.serve(async (req: Request) => {
       if (body.task_role !== undefined) fields.task_role = body.task_role as string | null;
       if ("due_date" in body) fields.due_date = body.due_date as string | null;
       if (body.status !== undefined) fields.status = body.status as string;
+      if ("start_date" in body) fields.start_date = body.start_date as string | null;
+      if (typeof body.timeline_position === "number") fields.timeline_position = body.timeline_position;
+      if (Array.isArray(body.tags)) fields.tags = body.tags as string[];
+
+      // Смена приватности: владелец задаётся/снимается вместе с флагом
+      if (typeof body.is_private === "boolean") {
+        fields.is_private = body.is_private;
+        fields.owner_id = body.is_private ? (task.owner_id ?? telegram_id) : null;
+      }
+
+      // Привязка к спринту (с проверкой воркспейса; null — отвязать)
+      if ("sprint_id" in body) {
+        const sid = body.sprint_id as string | null;
+        if (sid && !(await sprintInWorkspace(sid, groupId))) {
+          return apiErr(400, "sprint_id не найден в этом воркспейсе", origin);
+        }
+        fields.sprint_id = sid;
+      }
+
+      // Валидация дат с учётом итогового состояния (новое значение или текущее)
+      const effStart = "start_date" in fields ? fields.start_date : task.start_date;
+      const effDue = "due_date" in fields ? fields.due_date : task.due_date;
+      const dateErr = validateTaskDates(effStart, effDue);
+      if (dateErr) return apiErr(400, dateErr, origin);
 
       if ("assignee_telegram_id" in body) {
         if (!body.assignee_telegram_id) {
@@ -350,6 +447,8 @@ Deno.serve(async (req: Request) => {
     if (req.method === "DELETE") {
       const task = await getTask(taskId);
       if (!task || task.group_id !== groupId) return apiErr(404, "Not found", origin);
+      if (!canViewTask(task, telegram_id, isAdmin)) return apiErr(404, "Not found", origin);
+      if (!canMutateTask(task, telegram_id, isAdmin)) return apiErr(403, "Forbidden", origin);
       try {
         await deleteTask(taskId);
         return new Response(null, { status: 204, headers: corsHeaders(origin) });
