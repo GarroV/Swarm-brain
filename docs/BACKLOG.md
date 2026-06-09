@@ -15,16 +15,28 @@
 - **Проекты-списки** (как в Reminders, для личных задач) в плане отсутствуют. Обсуждали ранее как ядро «личных задач». Решить: нужны ли отдельно от `tags`/`sprints` — отложено.
 
 ### Шаги
-- **R-1** ✅ Миграции БД: privacy, timeline, sprints, dependencies (применены на prod 2026-06-09).
-- **R-2** `_shared/tasks/types.ts` — поля `is_private`, `owner_id`, `start_date`, `timeline_position`, `sprint_id`; типы `Sprint`, `TaskDependency`, `DependencyType`.
-- **R-3** `_shared/tasks/db.ts` — visibility-фильтр (приватные видны только owner / is_admin), фильтры по датам/спринту/тегам.
-- **R-4** `swarm-api` — CRUD спринтов (`/sprints`), зависимостей (`/tasks/:id/dependencies`), цикл-детекция, валидация `start_date<=due_date`, теги до конца.
-- **R-5** Auth: Telegram Login Widget для браузера (`/api/auth/telegram`, `middleware.ts`, httpOnly JWT). Mini App flow через `initData` сохраняется.
-- **R-6** miniapp: теги в `TaskModal` + `api.ts` (быстрый).
-- **R-7** miniapp: `TimelineView` (drag/resize через `@dnd-kit`) + `DependencyLayer` (SVG-стрелки).
-- **R-8** miniapp: `SprintBoard` (Kanban с DnD по колонкам).
-- **R-9** miniapp: `DependencyGraph` (React Flow).
-- **R-10** PWA: manifest + service worker (`@serwist/next`), установка на macOS.
+- **R-1** ✅ Миграции БД: privacy, timeline, sprints, dependencies (prod 2026-06-09).
+- **R-2** ✅ `_shared/tasks/types.ts` — поля Роя + `Sprint`/`TaskDependency`/`DependencyType`.
+- **R-3** ✅ `_shared/tasks/db.ts` — visibility приватности + фильтры; защита: личные не текут в командный бот.
+- **R-4** ✅ `swarm-api` — спринты CRUD, зависимости + цикл-детекция, валидация дат, теги, owner-guard. Задеплоено.
+- **R-5** ⛔ Auth Telegram Widget для браузера — **заблокирован, см. ниже**.
+- **R-6** ✅ miniapp: контракт `types.ts` + `api.ts` (поля задач, sprints, dependencies, tags, фильтры).
+- **R-7** ✅ miniapp: `TimelineView` — editorial Gantt, drag/resize на pointer events (без `@dnd-kit`).
+- **R-8** ✅ miniapp: `SprintBoard` — Kanban с нативным HTML5 DnD, спринты, прогресс.
+- **R-9** ✅ miniapp: `DependencyGraph` — SVG слоистый граф (без React Flow).
+- **R-10** ✅ PWA: manifest + SW (кэширует только статику) + SVG-иконка. SW написан вручную (не `@serwist`).
+
+### ⛔ R-5 заблокирован — архитектурная развилка + действия в BotFather
+1. **`output: "export"` (статик) не поддерживает Next API routes и middleware.** План R-5 (`/api/auth/telegram` + `middleware.ts` + httpOnly JWT) в текущей архитектуре miniapp работать НЕ будет. Развилка:
+   - **A)** Снять `output:"export"`, деплоить miniapp как полноценный Next (Node/Vercel) → route handlers + middleware работают. Меняет деплой-модель.
+   - **B)** Верификацию Telegram-widget делать в `swarm-api` (Deno edge): новый `POST /auth/telegram-widget` проверяет hash → выдаёт токен; фронт остаётся статикой. Минус: токен не в httpOnly cookie (cross-origin) — компромисс по хранению.
+2. **Действия пользователя:** `BOT_USERNAME` + `/setdomain` в BotFather (домен деплоя).
+> Решить развилку (A/B) перед реализацией R-5.
+
+### Техдолг модуля
+- **DependencyGraph N+1:** граф собирает рёбра вызовом `fetchDependencies` на каждую задачу. Нужен bulk-эндпоинт `GET /dependencies?group` для одного запроса.
+- **PWA-иконки:** сейчас только SVG. Для лучшей совместимости (старый Safari/iOS) добавить PNG 192/512 + maskable.
+- **Проекты-списки** (как в Reminders) — отложены (см. «Открытый вопрос»).
 
 ---
 

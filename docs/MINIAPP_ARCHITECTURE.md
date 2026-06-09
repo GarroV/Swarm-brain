@@ -107,11 +107,21 @@ supabase functions deploy swarm-api --no-verify-jwt
 ### Ключевые файлы
 | Файл | Назначение |
 |------|-----------|
-| `src/lib/api.ts` | Все запросы к swarm-api + DEV_MODE mock |
+| `src/lib/api.ts` | Все запросы к swarm-api + DEV_MODE mock (tasks, sprints, dependencies) |
 | `src/lib/telegram.ts` | getInitData, initApp |
-| `src/components/KanbanBoard.tsx` | Главный компонент: табы, поллинг |
+| `src/lib/timeline.ts` | Чистые утилиты Gantt (date↔px, шкала, геометрия баров, статус-палитра oklch) |
+| `src/components/tasks/TasksScreen.tsx` | Обёртка с переключателем видов: Доска / Таймлайн / Спринт / Граф |
+| `src/components/KanbanBoard.tsx` | Вид «Доска»: табы статусов, поллинг |
+| `src/components/tasks/TimelineView.tsx` | Вид «Таймлайн»: editorial Gantt, drag/resize баров (pointer capture) |
+| `src/components/tasks/SprintBoard.tsx` | Вид «Спринт»: Kanban с нативным DnD, селектор спринтов, прогресс |
+| `src/components/tasks/DependencyGraph.tsx` | Вид «Граф»: SVG слоистый граф зависимостей |
 | `src/components/TaskCard.tsx` | Карточка задачи + кнопки статуса |
 | `src/components/TaskModal.tsx` | Создание/редактирование задачи |
+| `src/components/ServiceWorkerRegister.tsx` | Регистрация SW (PWA) |
+| `public/manifest.webmanifest`, `public/sw.js`, `public/icon.svg` | PWA: манифест, SW (кэширует только статику, не API), иконка |
+
+### Модуль задач (Рой)
+Виды Timeline / Sprint / Graph работают поверх того же `swarm-api` контракта. Приватные задачи видны в miniapp только владельцу (фильтрация на бэкенде). PWA устанавливается на macOS: Safari → Поделиться → «Добавить в Dock».
 
 ### Финальная проверка авторизации
 DEV_MODE проверяет только UI/логику. Реальный `initData` и авторизацию
