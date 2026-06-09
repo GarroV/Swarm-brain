@@ -12,7 +12,14 @@ import {
   updateTask,
   deleteTask,
 } from "../_shared/tasks/db.ts";
-import type { TaskInput } from "../_shared/tasks/types.ts";
+import type { TaskInput, SprintInput } from "../_shared/tasks/types.ts";
+import {
+  listSprints,
+  createSprint,
+  updateSprint,
+  deleteSprint,
+  setTasksSprint,
+} from "../_shared/tasks/sprints.ts";
 import { normalizeCountries, COUNTRY_NAMES } from "../_shared/countries.ts";
 import { matchEntries } from "../_shared/search.ts";
 import { handleAdminRoutes } from "./admin.ts";
@@ -455,6 +462,77 @@ Deno.serve(async (req: Request) => {
       } catch (e) {
         return apiErr(500, e instanceof Error ? e.message : String(e), origin);
       }
+    }
+  }
+
+  // ── Sprints (Рой) ──────────────────────────────────────────────────────────
+  // Чтение — любой в воркспейсе; создание/изменение/удаление — только админ.
+  if (routePath === "/sprints") {
+    if (req.method === "GET") {
+      return json(await listSprints(groupId), 200, origin);
+    }
+    if (req.method === "POST") {
+      if (!isAdmin) return apiErr(403, "Forbidden", origin);
+      let body: Record<string, unknown>;
+      try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
+      if (!body.name || typeof body.name !== "string") return apiErr(400, "name is required", origin);
+      if (!body.start_date || !body.end_date) return apiErr(400, "start_date и end_date обязательны", origin);
+      if ((body.start_date as string) > (body.end_date as string)) {
+        return apiErr(400, "start_date не может быть позже end_date", origin);
+      }
+      const input: SprintInput = {
+        name: body.name as string,
+        start_date: body.start_date as string,
+        end_date: body.end_date as string,
+        status: (body.status as SprintInput["status"]) ?? "planned",
+      };
+      try {
+        return json(await createSprint(input, groupId), 201, origin);
+      } catch (e) {
+        return apiErr(500, e instanceof Error ? e.message : String(e), origin);
+      }
+    }
+  }
+
+  const sprintMatch = routePath.match(/^\/sprints\/([^/]+)$/);
+  if (sprintMatch) {
+    const sprintId = sprintMatch[1];
+    if (req.method === "PATCH") {
+      if (!isAdmin) return apiErr(403, "Forbidden", origin);
+      let body: Record<string, unknown>;
+      try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
+      const fields: Partial<SprintInput> = {};
+      if (typeof body.name === "string") fields.name = body.name;
+      if (typeof body.start_date === "string") fields.start_date = body.start_date;
+      if (typeof body.end_date === "string") fields.end_date = body.end_date;
+      if (typeof body.status === "string") fields.status = body.status as SprintInput["status"];
+      const updated = await updateSprint(sprintId, fields, groupId);
+      if (!updated) return apiErr(404, "Not found", origin);
+      return json(updated, 200, origin);
+    }
+    if (req.method === "DELETE") {
+      if (!isAdmin) return apiErr(403, "Forbidden", origin);
+      const ok = await deleteSprint(sprintId, groupId);
+      if (!ok) return apiErr(404, "Not found", origin);
+      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+    }
+  }
+
+  // POST /sprints/:id/tasks { task_ids: [] } — привязать; DELETE — отвязать (sprint_id = null)
+  const sprintTasksMatch = routePath.match(/^\/sprints\/([^/]+)\/tasks$/);
+  if (sprintTasksMatch) {
+    const sprintId = sprintTasksMatch[1];
+    let body: Record<string, unknown>;
+    try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
+    const taskIds = Array.isArray(body.task_ids) ? (body.task_ids as string[]) : [];
+    if (req.method === "POST") {
+      if (!(await sprintInWorkspace(sprintId, groupId))) return apiErr(404, "Not found", origin);
+      const n = await setTasksSprint(taskIds, sprintId, groupId);
+      return json({ updated: n }, 200, origin);
+    }
+    if (req.method === "DELETE") {
+      const n = await setTasksSprint(taskIds, null, groupId);
+      return json({ updated: n }, 200, origin);
     }
   }
 
