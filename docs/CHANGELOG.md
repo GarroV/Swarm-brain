@@ -1,5 +1,8 @@
 # Changelog
 
+> ⚠️ **Архив.** С 2026-06-09 changelog вручную не ведётся — генерируется из git-истории:
+> `scripts/changelog.sh [<since-ref>]`. Записи ниже — история до перехода. Новое — в commit-сообщениях (conventional commits).
+
 ## 2026-06-09 — fix(media): PDF с кириллицей в имени не сохранялся (Invalid key)
 
 - **swarm-bot/lib/storage.ts**: `uploadToStorage` строил Storage-ключ регексом `[^a-zA-Zа-яёА-ЯЁ0-9.\-_]`, который **сохранял кириллицу** — Supabase Storage принимает только ASCII-ключи → «Invalid key», файл терялся. XLSX с латинским именем проходил, PDF с русским — нет.
