@@ -185,6 +185,28 @@ export async function generateSummary(text: string): Promise<string | null> {
   } catch { return null; }
 }
 
+const RU_TRANSLIT: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z",
+  и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
+  с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh",
+  щ: "shch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+};
+
+/**
+ * Build an ASCII-safe Supabase Storage object key. Storage keys reject
+ * non-ASCII (Cyrillic etc.) — transliterate, strip the rest, keep it readable.
+ */
+function safeStorageName(fileName: string): string {
+  const translit = [...fileName].map((ch) => {
+    const lower = ch.toLowerCase();
+    const mapped = RU_TRANSLIT[lower];
+    if (mapped === undefined) return ch;
+    return ch === lower ? mapped : mapped.charAt(0).toUpperCase() + mapped.slice(1);
+  }).join("");
+  const ascii = translit.replace(/[^a-zA-Z0-9.\-_]/g, "_").replace(/_+/g, "_");
+  return ascii.replace(/^_+|_+$/g, "") || "file";
+}
+
 export async function uploadToStorage(
   fileName: string,
   buffer: ArrayBuffer,
@@ -193,8 +215,8 @@ export async function uploadToStorage(
 ): Promise<{ url: string | null; error: string | null }> {
   try {
     const date = new Date().toISOString().slice(0, 10);
-    const safeName = fileName.replace(/[^a-zA-Zа-яёА-ЯЁ0-9.\-_]/g, "_");
-    const path = `${folder}/${date}_${safeName}`;
+    const safeName = safeStorageName(fileName);
+    const path = `${folder}/${date}_${crypto.randomUUID().slice(0, 8)}_${safeName}`;
 
     const { error } = await supabase.storage
       .from("swarm_drive")
