@@ -14,6 +14,7 @@ import {
 } from "../_shared/tasks/db.ts";
 import type { TaskInput } from "../_shared/tasks/types.ts";
 import { normalizeCountries, COUNTRY_NAMES } from "../_shared/countries.ts";
+import { matchEntries } from "../_shared/search.ts";
 import { handleAdminRoutes } from "./admin.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -542,15 +543,17 @@ Deno.serve(async (req: Request) => {
     });
     if (!embRes.ok) return apiErr(500, "Embedding failed", origin);
     const embedding: number[] = (await embRes.json()).data[0].embedding;
-    const { data, error } = await supabase.rpc("match_entries", {
-      query_embedding: `[${embedding.join(",")}]`,
-      match_threshold: 0.3,
-      match_count: 20,
-      requesting_user_id: telegram_id,
-    });
-    if (error) return apiErr(500, error.message, origin);
-    const filtered = (data ?? []).filter((e: { group_id: string }) => e.group_id === groupId);
-    return json(filtered, 200, origin);
+    try {
+      const results = await matchEntries(supabase, embedding, {
+        groupId,
+        requestingUserId: telegram_id,
+        threshold: 0.3,
+        limit: 20,
+      });
+      return json(results, 200, origin);
+    } catch (e) {
+      return apiErr(500, e instanceof Error ? e.message : "Search failed", origin);
+    }
   }
 
   // ── GET /meetings ─────────────────────────────────────────────────────────────

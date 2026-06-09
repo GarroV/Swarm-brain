@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, TASK_TOOL_DEFINITIONS } from "./tasks/tools.ts";
 import { normalizeCountries } from "../_shared/countries.ts";
+import { matchEntries } from "../_shared/search.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -293,19 +294,21 @@ async function toolSearchKnowledge(args: { query: string; limit?: number; reques
   let groupId: string | null = null;
   if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
 
-  let rpcQuery = supabase.rpc("match_entries", {
-    query_embedding: `[${embedding.join(",")}]`,
-    match_threshold: 0.35,
-    match_count: Math.min(args.limit ?? 5, 20),
-    requesting_user_id: args.requesting_user_id ?? null,
-  });
-  if (groupId) rpcQuery = rpcQuery.eq("group_id", groupId);
-  const { data, error } = await rpcQuery;
-  if (error) return `Ошибка: ${error.message}`;
-  if (!data?.length) return "Ничего не найдено по запросу.";
+  let data;
+  try {
+    data = await matchEntries(supabase, embedding, {
+      groupId,
+      requestingUserId: args.requesting_user_id ?? null,
+      threshold: 0.35,
+      limit: Math.min(args.limit ?? 5, 20),
+    });
+  } catch (e) {
+    return `Ошибка: ${e instanceof Error ? e.message : String(e)}`;
+  }
+  if (!data.length) return "Ничего не найдено по запросу.";
 
-  return data.map((e: { id: string; content: string; source: string; created_at: string }, i: number) => {
-    const date = new Date(e.created_at).toLocaleDateString("ru-RU");
+  return data.map((e, i) => {
+    const date = e.entry_date ? new Date(e.entry_date).toLocaleDateString("ru-RU") : "—";
     const preview = e.content.length > 3000 ? e.content.slice(0, 3000) + `\n...[текст обрезан, полный текст: get_entry("${e.id}")]` : e.content;
     return `[${i + 1}] id:${e.id} (${e.source} · ${date})\n${preview}`;
   }).join("\n\n---\n\n");

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-09 — refactor(search): единый `_shared/search.ts` вместо 3 копий
+
+Дублирование логики поиска по `match_entries` в swarm-bot / swarm-mcp / swarm-api и было причиной дивергенции, породившей баги (формат вектора, отсутствие group_id). Вынес в единый хелпер.
+
+- **_shared/search.ts**: `matchEntries(supabase, embedding, { groupId, requestingUserId, threshold, limit, source })` — единственный источник истины для формата pgvector-литерала, фильтра изоляции `group_id` и опционального фильтра `source`. Бросает при ошибке RPC.
+- Подключён в **swarm-api** (`/search`), **swarm-mcp** (`search_knowledge`), **swarm-bot** (`search_knowledge`, `find_note`, `find_link` — 5 из 6 точек; 2 country-вызова со своим shape оставлены).
+- Попутно: MCP-форматтер использовал `e.created_at` (которого нет в ответе) → показывал «Invalid Date». Исправлено на `entry_date`.
+- Проверено end-to-end: MCP `search_knowledge` возвращает результаты с корректной датой и изоляцией по воркспейсу.
+
 ## 2026-06-09 — fix(search): match_entries не возвращал group_id — поиск всегда пустой
 
 **Корень проблемы поиска** (глубже, чем формат вектора): RPC `match_entries` не возвращала `group_id`, а все три потребителя по нему фильтруют:

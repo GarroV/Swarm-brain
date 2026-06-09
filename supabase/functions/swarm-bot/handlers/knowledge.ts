@@ -5,6 +5,7 @@ import { sendMessage } from "../lib/telegram.ts";
 import type { KbEntry } from "../lib/types.ts";
 import { TASK_KEYWORDS, smartTaskSearch } from "../tasks/index.ts";
 import { normalizeCountry } from "../../_shared/countries.ts";
+import { matchEntries } from "../../_shared/search.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -238,13 +239,13 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
       case "search_knowledge": {
         const query = String(args.query ?? "");
 
-        const embPromise = getEmbedding(query)
-          .then(emb => supabase.rpc("match_entries", {
-            query_embedding: `[${emb.join(",")}]`,
-            match_threshold: 0.1,
-            match_count: 8,
-            requesting_user_id: userId || null,
-          }).eq("group_id", groupId).then(r => (r.data ?? []) as KbEntry[]))
+        const embPromise: Promise<KbEntry[]> = getEmbedding(query)
+          .then(emb => matchEntries(supabase, emb, {
+            groupId,
+            requestingUserId: userId || null,
+            threshold: 0.1,
+            limit: 8,
+          }))
           .catch(() => [] as KbEntry[]);
 
         const words = query.toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2).slice(0, 6);
@@ -302,15 +303,9 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
 
         const [vecNotes, kwNotes] = await Promise.all([
           getEmbedding(query)
-            .then(emb => supabase.rpc("match_entries", {
-              query_embedding: `[${emb.join(",")}]`,
-              match_threshold: 0.1,
-              match_count: 10,
-              requesting_user_id: userId || null,
-            })
-            .eq("group_id", groupId)
-            .eq("source", "note")
-            .then(r => (r.data ?? []) as KbEntry[]))
+            .then(emb => matchEntries(supabase, emb, {
+              groupId, requestingUserId: userId || null, threshold: 0.1, limit: 10, source: "note",
+            }) as Promise<KbEntry[]>)
             .catch(() => [] as KbEntry[]),
 
           searchTerms.length
@@ -342,15 +337,9 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
 
         const [vecLinks, kwLinks] = await Promise.all([
           getEmbedding(query)
-            .then(emb => supabase.rpc("match_entries", {
-              query_embedding: `[${emb.join(",")}]`,
-              match_threshold: 0.1,
-              match_count: 10,
-              requesting_user_id: userId || null,
-            })
-            .eq("group_id", groupId)
-            .eq("source", "link")
-            .then(r => (r.data ?? []) as KbEntry[]))
+            .then(emb => matchEntries(supabase, emb, {
+              groupId, requestingUserId: userId || null, threshold: 0.1, limit: 10, source: "link",
+            }) as Promise<KbEntry[]>)
             .catch(() => [] as KbEntry[]),
 
           searchTerms.length
