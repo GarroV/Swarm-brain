@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-06-09 — fix(search): match_entries не возвращал group_id — поиск всегда пустой
+
+**Корень проблемы поиска** (глубже, чем формат вектора): RPC `match_entries` не возвращала `group_id`, а все три потребителя по нему фильтруют:
+- swarm-api — JS `.filter(e => e.group_id === groupId)` → отсекал всё (поле `undefined`);
+- swarm-bot / swarm-mcp — `.eq("group_id", groupId)` → SQL-ошибка `column group_id does not exist`. У бота есть keyword-фолбэк, который маскировал поломку; у miniapp фолбэка нет → «Ничего не найдено».
+
+**Починка:** `supabase/migrations/20260609000000_match_entries_return_group_id.sql` — DROP+CREATE функции с `group_id` в `RETURNS TABLE`. Применено на prod. Чинит miniapp, MCP и вектор-поиск бота разом, без правки их кода. Проверено: фильтр по `group_id` возвращает результаты.
+
+## 2026-06-09 — chore(db): базовая схема для bootstrap с нуля
+
+- **supabase/schema/00_base_schema.sql**: полная реконструкция схемы (13 таблиц, индексы, FK, `match_entries`, дефолтные воркспейсы, storage-бакет) — раньше `CREATE TABLE entries/tasks/...` не было ни в одной миграции, проект нельзя было поднять с нуля. Теперь `psql -f supabase/schema/00_base_schema.sql` поднимает чистый проект. Снят техдолг из BACKLOG.
+
 ## 2026-06-09 — fix(cron): реанимация cron-триггеров + защита granola-poller
 
 **Проблема:** `CRON_SECRET` не был выставлен в секретах функций. swarm-bot fail-closed → джобы `weekly-digest` (понедельник 9:00) и `readai-token-refresh` (ежедневно 6:00) возвращали 403 и **не работали** с 2026-06-02. granola-poller был fail-open → работал, но без защиты.

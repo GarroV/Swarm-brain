@@ -59,7 +59,7 @@
 - Файлы в `swarm_drive` Storage отдаются по публичным URL без авторизации
 - `requesting_user_id` в MCP передаётся вызывающим на доверии — нет JWT-верификации
 - Granola API-ключи хранятся plaintext в `user_integrations`
-- Начальная схема БД (`CREATE TABLE entries` и др.) не находится в `supabase/migrations/` — нельзя поднять проект с нуля
+- ~~Начальная схема БД не в `supabase/migrations/`~~ ✅ `supabase/schema/00_base_schema.sql` поднимает проект с нуля
 
 ---
 

@@ -166,7 +166,7 @@ IT-команда разрабатывает **AI Hub** (`https://github.com/sag
 
 ### Инфраструктура
 - **Staging-окружение** — завести второй Supabase-проект + тестовый Telegram-бот. Схема: feature-branch → staging → main (prod)
-- **Начальная схема в миграциях** — `CREATE TABLE entries`, `tasks`, `allowed_users` и др. нигде в `supabase/migrations/` нет. Нельзя поднять проект с нуля из репо. Выгрузить через `supabase db dump` — ⚠️ требует Docker Desktop
+- ~~**Начальная схема в миграциях**~~ ✅ 2026-06-09 — `supabase/schema/00_base_schema.sql` (13 таблиц + индексы + FK + match_entries + дефолтные воркспейсы + storage-бакет). Bootstrap: `psql -f supabase/schema/00_base_schema.sql`
 
 ### Данные
 - **Granola API-ключи plaintext** — хранятся в `user_integrations.api_key` без шифрования. Рассмотреть Supabase Vault или шифрование на уровне приложения
