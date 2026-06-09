@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { fetchMe } from "@/lib/api";
 import type { Me } from "@/types";
-import { KanbanBoard } from "@/components/KanbanBoard";
+import { TasksScreen } from "@/components/tasks/TasksScreen";
 import { TeamScreen } from "@/components/TeamScreen";
 import { KnowledgeScreen } from "@/components/KnowledgeScreen";
 import { MeetingsScreen } from "@/components/MeetingsScreen";
@@ -20,7 +20,7 @@ export default function Home() {
   return (
     <div className="flex flex-col h-screen">
       <div className="flex-1 overflow-hidden pb-16">
-        {section === "tasks" && <KanbanBoard />}
+        {section === "tasks" && <TasksScreen />}
         {section === "knowledge" && <KnowledgeScreen myTelegramId={me?.telegram_id ?? 0} />}
         {section === "meetings" && <MeetingsScreen />}
         {section === "team" && <TeamScreen />}
