@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { fetchMe } from "@/lib/api";
+import { getInitData } from "@/lib/telegram";
 import type { Me } from "@/types";
 import { TasksScreen } from "@/components/tasks/TasksScreen";
 import { TeamScreen } from "@/components/TeamScreen";
@@ -15,7 +16,17 @@ export default function Home() {
   const [section, setSection] = useState<Section>("tasks");
   const [me, setMe] = useState<Me | null>(null);
 
-  useEffect(() => { fetchMe().then(setMe).catch(() => {}); }, []);
+  useEffect(() => {
+    fetchMe()
+      .then(setMe)
+      .catch((err: unknown) => {
+        // В браузере (вне Telegram) без сессии → на страницу входа
+        const status = (err as { status?: number }).status;
+        if (status === 401 && !getInitData() && typeof window !== "undefined") {
+          window.location.href = "/login";
+        }
+      });
+  }, []);
 
   return (
     <div className="flex flex-col h-screen">

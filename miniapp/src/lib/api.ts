@@ -159,13 +159,23 @@ const mockGranolaUnprocessed: GranolaNote[] = [
 
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
+// База — same-origin прокси /api (CF Pages Function). В Telegram шлём initData
+// в Authorization: tma; в браузере — httpOnly cookie (credentials: include),
+// прокси перекладывает её в Bearer на сервере.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
+
+function authHeaders(): Record<string, string> {
+  const initData = getInitData();
+  return initData ? { Authorization: `tma ${initData}` } : {};
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const base = process.env.NEXT_PUBLIC_API_URL!;
-  const res = await fetch(`${base}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `tma ${getInitData()}`,
+      ...authHeaders(),
       ...(options?.headers ?? {}),
     },
   });
@@ -176,11 +186,11 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 async function apiFetchNoContentType<T>(path: string, options?: RequestInit): Promise<T> {
-  const base = process.env.NEXT_PUBLIC_API_URL!;
-  const res = await fetch(`${base}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: "include",
     headers: {
-      Authorization: `tma ${getInitData()}`,
+      ...authHeaders(),
       ...(options?.headers ?? {}),
     },
   });
