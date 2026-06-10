@@ -65,11 +65,24 @@ Authorization: tma <Telegram initData>
 
 ---
 
+## Аутентификация — два контекста
+
+| Контекст | Способ | Поток |
+|----------|--------|-------|
+| Telegram Mini App | `Authorization: tma <initData>` | фронт → `/api/*` (прокси) → swarm-api проверяет initData |
+| Браузер / PWA (вариант B+) | httpOnly cookie `roj_session` (JWT) | `/login` → Telegram Login Widget → CF Function `auth/telegram` проверяет подпись → JWT в httpOnly cookie → прокси `/api/[[path]]` перекладывает cookie в `Authorization: Bearer` → swarm-api проверяет JWT |
+
+**Почему прокси (B+):** miniapp — статика на Cloudflare Pages (нет Next API routes/middleware). httpOnly-cookie недоступна JS (защита от XSS) и не уходит cross-origin на `*.supabase.co`, поэтому CF Pages Function `functions/api/[[path]].ts` форвардит запросы на swarm-api server-side, перекладывая cookie → `Bearer`. JWT: HS256, секрет `WEB_JWT_SECRET` (общий у CF и Supabase). Login Widget подписывает данные секретом `SHA256(bot_token)` (иначе, чем Mini App).
+
+Авторизация в обоих случаях одинакова: `telegram_id` → `allowed_users` → `group_id`. Виджет лишь подтверждает личность; доступ по-прежнему гейтится белым списком.
+
 ## Безопасность
 
-- `group_id` берётся **только** из проверенной личности (initData → telegram_id → allowed_users). Из тела запроса не принимается.
+- `group_id` берётся **только** из проверенной личности (initData/JWT → telegram_id → allowed_users). Из тела запроса не принимается.
 - Каждая операция с задачами скоупится по `group_id` — пользователь не может видеть или менять задачи другого воркспейса.
+- Приватные задачи (`is_private`) видны только владельцу/админу; в командный бот не попадают.
 - `service_role_key` только внутри swarm-api, фронтенду не передаётся.
+- Веб-сессия: JWT в httpOnly Secure SameSite=Lax cookie (недоступен JS). SW не кэширует API.
 
 ---
 
@@ -77,9 +90,13 @@ Authorization: tma <Telegram initData>
 
 | Переменная | Обязательная | Описание |
 |-----------|-------------|----------|
-| `TELEGRAM_BOT_TOKEN` | да | уже есть |
+| `TELEGRAM_BOT_TOKEN` | да | уже есть (Supabase + CF Pages) |
 | `MINIAPP_ORIGIN` | рекомендуется | CORS origin Mini App (напр. `https://t.me`) |
 | `INITDATA_MAX_AGE` | нет | свежесть initData в секундах (дефолт 86400) |
+| `WEB_JWT_SECRET` | для веб-входа | подпись веб-сессий (одинаковый в Supabase secrets и CF Pages env) |
+| `SWARM_API_URL` | CF Pages | цель прокси `functions/api/[[path]]` → swarm-api |
+| `NEXT_PUBLIC_BOT_USERNAME` | CF Pages build | username бота для Login Widget (`swarm_brain_bot`) |
+| `NEXT_PUBLIC_API_URL` | CF Pages build | `/api` (прокси same-origin) |
 
 ---
 

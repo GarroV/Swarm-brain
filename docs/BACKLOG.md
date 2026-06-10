@@ -19,19 +19,25 @@
 - **R-2** ✅ `_shared/tasks/types.ts` — поля Роя + `Sprint`/`TaskDependency`/`DependencyType`.
 - **R-3** ✅ `_shared/tasks/db.ts` — visibility приватности + фильтры; защита: личные не текут в командный бот.
 - **R-4** ✅ `swarm-api` — спринты CRUD, зависимости + цикл-детекция, валидация дат, теги, owner-guard. Задеплоено.
-- **R-5** ⛔ Auth Telegram Widget для браузера — **заблокирован, см. ниже**.
+- **R-5** 🟡 Auth Telegram Widget для браузера (B+) — **код готов, нужна настройка CF, см. ниже**.
 - **R-6** ✅ miniapp: контракт `types.ts` + `api.ts` (поля задач, sprints, dependencies, tags, фильтры).
 - **R-7** ✅ miniapp: `TimelineView` — editorial Gantt, drag/resize на pointer events (без `@dnd-kit`).
 - **R-8** ✅ miniapp: `SprintBoard` — Kanban с нативным HTML5 DnD, спринты, прогресс.
 - **R-9** ✅ miniapp: `DependencyGraph` — SVG слоистый граф (без React Flow).
 - **R-10** ✅ PWA: manifest + SW (кэширует только статику) + SVG-иконка. SW написан вручную (не `@serwist`).
 
-### ⛔ R-5 заблокирован — архитектурная развилка + действия в BotFather
-1. **`output: "export"` (статик) не поддерживает Next API routes и middleware.** План R-5 (`/api/auth/telegram` + `middleware.ts` + httpOnly JWT) в текущей архитектуре miniapp работать НЕ будет. Развилка:
-   - **A)** Снять `output:"export"`, деплоить miniapp как полноценный Next (Node/Vercel) → route handlers + middleware работают. Меняет деплой-модель.
-   - **B)** Верификацию Telegram-widget делать в `swarm-api` (Deno edge): новый `POST /auth/telegram-widget` проверяет hash → выдаёт токен; фронт остаётся статикой. Минус: токен не в httpOnly cookie (cross-origin) — компромисс по хранению.
-2. **Действия пользователя:** `BOT_USERNAME` + `/setdomain` в BotFather (домен деплоя).
-> Решить развилку (A/B) перед реализацией R-5.
+### 🟡 R-5 — выбран вариант B+ (httpOnly cookie + same-origin прокси). Код готов.
+`output:"export"` не поддерживает Next API routes/middleware → реализовано через **Cloudflare Pages Functions**:
+- `miniapp/functions/api/auth/telegram.ts` — проверка подписи Login Widget → JWT в httpOnly cookie.
+- `miniapp/functions/api/[[path]].ts` — прокси `/api/*` → swarm-api; cookie→`Bearer` server-side (httpOnly недоступен JS и не уходит cross-origin — отсюда прокси).
+- `swarm-api` принимает `Bearer <JWT>` (HS256, `WEB_JWT_SECRET`) вдобавок к `tma <initData>`.
+- Bot: **@swarm_brain_bot**.
+
+**Осталось активировать (действия пользователя):**
+1. `/setdomain` в @BotFather → @swarm_brain_bot → домен miniapp (`*.pages.dev`).
+2. Cloudflare Pages → env vars: `WEB_JWT_SECRET` (= тот, что в Supabase), `TELEGRAM_BOT_TOKEN`, `SWARM_API_URL=https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-api`, build-time `NEXT_PUBLIC_BOT_USERNAME=swarm_brain_bot`, `NEXT_PUBLIC_API_URL=/api`.
+3. `WEB_JWT_SECRET` в Supabase — ✅ установлен.
+> Тест в реале: открыть miniapp в обычном браузере → /login → войти через Telegram → доступ.
 
 ### Техдолг модуля
 - **DependencyGraph N+1:** граф собирает рёбра вызовом `fetchDependencies` на каждую задачу. Нужен bulk-эндпоинт `GET /dependencies?group` для одного запроса.
