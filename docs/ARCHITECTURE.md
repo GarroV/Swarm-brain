@@ -355,13 +355,20 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 
 **Механизм:**
 - `allowed_users.claude_mcp_token_hash TEXT` — sha256(token) в hex; plaintext никогда не хранится
+- `allowed_users.claude_mcp_token_expires_at timestamptz` — срок жизни токена (90 дней с момента выдачи)
 - Claude Desktop отправляет `Authorization: Bearer smcp_<uuid>` с каждым запросом
 - `swarm-mcp/index.ts` — одна точка проверки сразу после разбора тела запроса:
   1. sha256(token) → lookup по `claude_mcp_token_hash` → `verifiedTelegramId`
-  2. Инжектируется в `args.requesting_user_id` — значение из тела игнорируется
-  3. `MCP_AUTH_REQUIRED=true` → строгий режим (без токена — отказ)
-- Выдача: `SELECT generate_mcp_token(<telegram_id>)` в SQL — возвращает plaintext единожды
-- Отзыв: `UPDATE allowed_users SET claude_mcp_token_hash = NULL WHERE telegram_id = <id>`
+  2. Если `claude_mcp_token_expires_at` в прошлом → отказ `Token expired`
+  3. Инжектируется в `args.requesting_user_id` — значение из тела игнорируется
+  4. `MCP_AUTH_REQUIRED=true` → строгий режим (без токена — отказ)
+- Выдача: `/mytoken` в боте (90 дней) или `SELECT generate_mcp_token(<telegram_id>)` в SQL — plaintext единожды
+- Отзыв: `/revoketoken` в боте или `SELECT revoke_mcp_token(<telegram_id>)` (гасит хэш + срок)
+
+**Доступ при выходе коннектора в орг-список Claude:**
+Орг-список управляет только видимостью коннектора, не доступом к данным. Шлюз — токен:
+- В soft-режиме (`MCP_AUTH_REQUIRED` не выставлен) `requesting_user_id` берётся из аргументов **на доверии** → любой член орга читает всё. **Перед публикацией в орг обязательно `MCP_AUTH_REQUIRED=true`.**
+- В strict-режиме доступ есть только у владельцев валидного `smcp_`-токена; нежелательные члены орга получают `401`. Даже владелец токена видит лишь свой `group_id` и свои приватные записи.
 
 Ошибка при невалидном/отсутствующем токене: JSON-RPC -32001 "Unauthorized".
 

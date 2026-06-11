@@ -26,7 +26,8 @@ create table if not exists allowed_users (
   created_at            timestamptz not null default now(),
   is_admin              boolean not null default false,
   group_id              text references workspaces(id),
-  claude_mcp_token_hash text
+  claude_mcp_token_hash text,
+  claude_mcp_token_expires_at timestamptz
 );
 
 create index if not exists allowed_users_mcp_token_hash_idx
@@ -255,7 +256,8 @@ declare
 begin
   v_token := 'smcp_' || gen_random_uuid()::text;
   update allowed_users
-    set claude_mcp_token_hash = encode(digest(v_token, 'sha256'), 'hex')
+    set claude_mcp_token_hash = encode(digest(v_token, 'sha256'), 'hex'),
+        claude_mcp_token_expires_at = now() + interval '90 days'
     where telegram_id = p_telegram_id;
   if not found then
     raise exception 'User % not found in allowed_users', p_telegram_id;
@@ -267,6 +269,19 @@ $$;
 create or replace function generate_mcp_token(p_telegram_id integer)
 returns text language sql security definer as $$
   select generate_mcp_token(p_telegram_id::bigint);
+$$;
+
+create or replace function revoke_mcp_token(p_telegram_id bigint)
+returns void language sql security definer as $$
+  update allowed_users
+    set claude_mcp_token_hash = null,
+        claude_mcp_token_expires_at = null
+    where telegram_id = p_telegram_id;
+$$;
+
+create or replace function revoke_mcp_token(p_telegram_id integer)
+returns void language sql security definer as $$
+  select revoke_mcp_token(p_telegram_id::bigint);
 $$;
 
 -- ── RLS ───────────────────────────────────────────────────────────────────────

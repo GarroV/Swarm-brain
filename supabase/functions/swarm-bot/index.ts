@@ -335,19 +335,33 @@ Deno.serve(async (req: Request) => {
       const token = "smcp_" + crypto.randomUUID();
       const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
       const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+      const TOKEN_TTL_DAYS = 90;
+      const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
       const { error: tokenErr } = await supabase
         .from("allowed_users")
-        .update({ claude_mcp_token_hash: hashHex })
+        .update({ claude_mcp_token_hash: hashHex, claude_mcp_token_expires_at: expiresAt.toISOString() })
         .eq("telegram_id", userId);
       if (tokenErr) {
         await sendMessage(chatId, "❌ Не удалось сгенерировать токен. Обратись к администратору.");
       } else {
+        const expStr = expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
         await sendMessage(chatId,
           `🔑 <b>Твой токен для Claude Desktop</b>\n\n` +
           `<code>${token}</code>\n\n` +
-          `Сохрани его — повторно не покажу. Если потеряешь — запусти /mytoken снова (старый перестанет работать).\n\n` +
+          `Действует до <b>${expStr}</b> (${TOKEN_TTL_DAYS} дней). Сохрани его — повторно не покажу. Если потеряешь или истечёт — запусти /mytoken снова (старый перестанет работать).\n\n` +
+          `Отозвать прямо сейчас: /revoketoken\n\n` +
           `Следующий шаг: /claude — получи готовые инструкции для проекта.`
         );
+      }
+    } else if (command === "/revoketoken") {
+      const { error: revErr } = await supabase
+        .from("allowed_users")
+        .update({ claude_mcp_token_hash: null, claude_mcp_token_expires_at: null })
+        .eq("telegram_id", userId);
+      if (revErr) {
+        await sendMessage(chatId, "❌ Не удалось отозвать токен. Попробуй позже.");
+      } else {
+        await sendMessage(chatId, "🔒 <b>Токен отозван.</b> Доступ к Swarm Brain из Claude закрыт. Новый — через /mytoken.");
       }
     } else if (command === "/connect_claude") {
       await sendMessage(chatId,

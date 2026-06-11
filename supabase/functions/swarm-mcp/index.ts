@@ -825,12 +825,16 @@ Deno.serve(async (req: Request) => {
 
     const { data: tokenRow } = await supabase
       .from("allowed_users")
-      .select("telegram_id")
+      .select("telegram_id, claude_mcp_token_expires_at")
       .eq("claude_mcp_token_hash", hashHex)
       .maybeSingle();
 
     if (tokenRow) {
-      verifiedTelegramId = (tokenRow as { telegram_id: number }).telegram_id;
+      const row = tokenRow as { telegram_id: number; claude_mcp_token_expires_at: string | null };
+      if (row.claude_mcp_token_expires_at && Date.parse(row.claude_mcp_token_expires_at) < Date.now()) {
+        return err(id, -32001, "Token expired — run /mytoken in the bot to get a fresh one");
+      }
+      verifiedTelegramId = row.telegram_id;
     } else {
       return err(id, -32001, "Unauthorized");
     }

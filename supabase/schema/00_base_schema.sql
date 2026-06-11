@@ -32,7 +32,8 @@ create table if not exists public.allowed_users (
   created_at            timestamptz not null default now(),
   is_admin              boolean not null default false,
   group_id              text references public.workspaces(id),
-  claude_mcp_token_hash text
+  claude_mcp_token_hash text,
+  claude_mcp_token_expires_at timestamptz
 );
 create index if not exists allowed_users_mcp_token_hash_idx
   on public.allowed_users (claude_mcp_token_hash)
