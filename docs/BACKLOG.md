@@ -31,6 +31,7 @@
 - `miniapp/functions/api/auth/telegram.ts` — проверка подписи Login Widget → JWT в httpOnly cookie.
 - `miniapp/functions/api/[[path]].ts` — прокси `/api/*` → swarm-api; cookie→`Bearer` server-side (httpOnly недоступен JS и не уходит cross-origin — отсюда прокси).
 - `swarm-api` принимает `Bearer <JWT>` (HS256, `WEB_JWT_SECRET`) вдобавок к `tma <initData>`.
+- `miniapp/functions/api/auth/logout.ts` — гасит cookie. Подключён к UI: `AccountSection` в Настройках (кнопка «Выйти / сменить аккаунт», только в браузерной сессии) → `POST /api/auth/logout` → `/login`. Смена Telegram-аккаунта — через Log out в самом Login Widget.
 - Bot: **@swarm_brain_bot**.
 
 **Осталось активировать (действия пользователя):**

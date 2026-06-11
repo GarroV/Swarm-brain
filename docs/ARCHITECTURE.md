@@ -409,15 +409,20 @@ supabase/functions/swarm-api/
 
 Оба случая недоступности (entry не существует / entry приватная чужая) возвращают 404 — утечка информации о существовании чужой записи недопустима.
 
-**Аутентификация (одна точка, все запросы):**
-```
-Authorization: tma <initData>
-```
-1. Проверяет подпись по алгоритму Telegram: `secret_key = HMAC("WebAppData", BOT_TOKEN)`, `hash = HMAC(secret_key, data-check-string)`
-2. Проверяет свежесть `auth_date` (дефолт 24ч, `INITDATA_MAX_AGE`)
-3. Достаёт `telegram_id` из `user` в initData
-4. Резолвит `telegram_id → group_id` через `allowed_users`
-5. `group_id` — единственный источник истины для скоупинга данных, из тела запроса не берётся
+**Аутентификация (два режима, оба резолвятся в `telegram_id`):**
+
+1. **Telegram Mini App** — `Authorization: tma <initData>`
+   - Проверка подписи: `secret_key = HMAC("WebAppData", BOT_TOKEN)`, `hash = HMAC(secret_key, data-check-string)`
+   - Свежесть `auth_date` (дефолт 24ч, `INITDATA_MAX_AGE`)
+   - `telegram_id` из `user` в initData
+2. **Браузер (веб, R-5 вариант B+)** — `Authorization: Bearer <JWT>` (HS256, `WEB_JWT_SECRET`)
+   - JWT выдаёт CF Pages Function `/api/auth/telegram` после проверки подписи Login Widget, кладёт в httpOnly-cookie `roj_session` (7 дней)
+   - Прокси `/api/[[path]].ts` перекладывает cookie → `Bearer` при форварде в swarm-api (httpOnly недоступен JS и не уходит cross-origin)
+   - Выход/смена аккаунта: `POST /api/auth/logout` гасит cookie (`Max-Age=0`) → редирект на `/login`. Кнопка в Настройках (`AccountSection`), показывается только в браузерной сессии (`!getInitData()`)
+
+После аутентификации (любой режим):
+- Резолвит `telegram_id → group_id` через `allowed_users`
+- `group_id` — единственный источник истины для скоупинга данных, из тела запроса не берётся
 
 **Эндпоинты:**
 

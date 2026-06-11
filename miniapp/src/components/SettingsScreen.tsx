@@ -3,8 +3,9 @@ import { useState, useEffect } from "react";
 import {
   fetchMe, patchMe, fetchConfig, fetchIntegrations, connectGranola, disconnectGranola,
   fetchGranolaUnprocessed, previewGranolaNote, importGranolaNote, skipGranolaNote,
-  sendFeedback, generateDigest, uploadFile,
+  sendFeedback, generateDigest, uploadFile, logout,
 } from "@/lib/api";
+import { getInitData } from "@/lib/telegram";
 import { countryName } from "@/lib/countries";
 import type { Me, Integration, GranolaNote } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -455,10 +456,42 @@ function Section({ title, children, defaultOpen = false }: { title: string; chil
   );
 }
 
+// ── Account section ───────────────────────────────────────────────────────────
+
+// Браузерная сессия (httpOnly cookie). Внутри Telegram Mini App initData непустой —
+// там аккаунт определяется тем, кто открыл бота, сменить его из приложения нельзя.
+function AccountSection() {
+  const [busy, setBusy] = useState(false);
+
+  const handleLogout = async () => {
+    if (!window.confirm("Выйти и войти под другим аккаунтом?")) return;
+    setBusy(true);
+    try {
+      await logout();
+      window.location.href = "/login";
+    } catch {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        Завершить сессию в браузере. После выхода — вход через Telegram (можно другим аккаунтом).
+      </p>
+      <Button size="sm" variant="outline" onClick={handleLogout} disabled={busy} className="w-full">
+        {busy ? "Выхожу…" : "Выйти / сменить аккаунт"}
+      </Button>
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function SettingsScreen() {
   const [me, setMe] = useState<Me | null>(null);
+  // В браузере getInitData() пустой → показываем выход; внутри Telegram — нет.
+  const isWebSession = !getInitData();
 
   useEffect(() => { fetchMe().then(setMe).catch(() => {}); }, []);
 
@@ -483,6 +516,11 @@ export function SettingsScreen() {
         <Section title="💬 Фидбек">
           <FeedbackSection />
         </Section>
+        {isWebSession && (
+          <Section title="🚪 Аккаунт">
+            <AccountSection />
+          </Section>
+        )}
       </div>
     </div>
   );

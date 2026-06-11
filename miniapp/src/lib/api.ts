@@ -207,6 +207,13 @@ export async function fetchMe(): Promise<Me> {
   return apiFetch<Me>("/me");
 }
 
+// Гасит httpOnly-cookie roj_session (браузерная сессия). Обрабатывает CF-функция
+// /api/auth/logout напрямую, минуя прокси в swarm-api. Внутри Telegram Mini App
+// бессмысленно — там сессия определяется initData, а не cookie.
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
+}
+
 export async function fetchConfig(): Promise<{ allowed_markets: string[] }> {
   if (DEV_MODE) return { allowed_markets: ["RS","HR","SI","ME","BG","ES","RO","PL","EE","LT","CY","HU","MD","BY","TR","AZ","AM","GE","TJ","KG","MN","NG","MX","ID","RU","UA","KZ"] };
   return apiFetch<{ allowed_markets: string[] }>("/config");
