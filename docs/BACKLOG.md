@@ -200,12 +200,52 @@ IT-команда разрабатывает **AI Hub** (`https://github.com/sag
 
 ---
 
+## MCP — доступ из Claude через орг-коннектор (Team, OAuth)
+
+> Контекст собран 2026-06-11. Команда переходит на **корпоративные Claude-аккаунты, тариф Team.**
+> Цель: подключить `swarm-mcp` к Claude так, чтобы доступ был только у нужных людей.
+
+### Почему нельзя как сейчас
+- На Team/Enterprise **кастомный коннектор добавляет только Owner орга** — рядовой участник не может подключить MCP-сервер сам.
+- **Орг-коннектор = только OAuth.** В UI нет поля для статического `Authorization: Bearer`-токена (Anthropic закрыла запрос как «not planned», issue anthropics/claude-ai-mcp #112). Claude ходит на сервер из облака Anthropic; при `401` ждёт OAuth-discovery (`/.well-known/oauth-*`).
+- **Нет пер-юзерного гейта** у орг-коннектора: Owner включил → подключиться может любой член орга. Ограничить доступ на стороне Claude нельзя.
+- Наш статический `smcp_`-токен работает только через локальный путь — Claude Desktop `claude_desktop_config.json` + `mcp-remote --header`. Но локальный MCP корп-IT может вырубить политикой (`isLocalDevMcpEnabled=false` через MDM) → как командное решение ненадёжен.
+
+### Вывод
+Единственный санкционированный путь на Team — **Owner добавляет swarm-mcp в орг-список**, а это требует **OAuth на нашем сервере**. Гейт «нежелательных» обязан жить **внутри swarm-mcp, в шаге `authorize`**: пропускаем только тех, чья личность есть в `allowed_users`, остальным членам орга — отказ.
+
+### Предлагаемая архитектура (переиспользуем R-5)
+В R-5 уже сделан веб-вход через **Telegram Login Widget → JWT с `telegram_id`** (CF Pages Functions, httpOnly cookie). Это готовый identity-слой для OAuth-флоу:
+```
+Claude (орг-коннектор) → authorize на swarm-mcp
+  → редирект на R-5 Telegram-login страницу (уже есть)
+  → знаем telegram_id → проверяем allowed_users → нет → отказ
+  → минтим MCP access-token, привязанный к telegram_id
+swarm-mcp валидирует OAuth-токен (вместо/поверх текущего smcp_)
+```
+`allowed_users` (ключ `telegram_id`) ложится идеально, маппинг email↔telegram не нужен.
+
+### Объём работ (для будущей дизайн-сессии)
+- `swarm-mcp`: эндпоинты `/.well-known/oauth-protected-resource` + `/.well-known/oauth-authorization-server`, `authorize`, `token`, PKCE.
+- `authorize`: гейт по `allowed_users`; источник личности — R-5 Telegram-login.
+- Хранение OAuth-кодов/токенов (новая таблица или переиспользовать `oauth_tokens`).
+- Owner орга добавляет коннектор: Organization settings → Connectors → Add → Custom → Web.
+
+### Что уже сделано (groundwork, prod 2026-06-11)
+- ✅ Token lifecycle: миграция `mcp_token_lifecycle` — `claude_mcp_token_expires_at` (срок 90 дней), `revoke_mcp_token()`; enforce expiry в `swarm-mcp`; `/mytoken` со сроком + `/revoketoken` в боте. Это усиливает локальный (config.json) путь и пригодится как fallback.
+
+### Открытый вопрос (узнать у Claude-админа/IT, ~неделя 2026-06-15)
+- Заблокирован ли локальный MCP политикой (`isLocalDevMcpEnabled`)? Если **нет** — есть быстрый интерим для отдельных людей (config.json + `/mytoken` + strict-режим), пока строится OAuth.
+- ⚠️ **Strict-режим (`MCP_AUTH_REQUIRED=true`) пока НЕ включён** — включение сломает текущие UI-коннекторы (soft-режим). Включать только после миграции на OAuth либо на config.json-путь.
+
+---
+
 ## Технический долг
 
 ### Безопасность
 - ~~**Защита cron-эндпоинтов**~~ ✅ `X-Cron-Secret` header добавлен в swarm-bot и granola-poller (2026-06-02)
 - ~~**`delete_entry` в MCP без проверки владельца**~~ ✅ ownership check добавлен, `requesting_user_id` обязателен (2026-06-02)
-- **`requesting_user_id` в MCP на доверии** — нет JWT-верификации вызывающего. Долгосрочно: привязать к Supabase Auth
+- **`requesting_user_id` в MCP на доверии** — нет JWT-верификации вызывающего. Решается OAuth-надстройкой (см. секцию «MCP — доступ из Claude через орг-коннектор»).
 
 ### Надёжность
 - ~~**Retry на OpenAI**~~ ✅ экспоненциальный retry 3 попытки в `chatComplete` и `getEmbedding` (2026-06-02)
