@@ -209,7 +209,7 @@ claimer → meeting-ingest: транскрипт → meetings.transcript
 
 **Веб (miniapp):** `MeetingReview` — страница вычитки одной встречи (тезисы редактируются, транскрипт под спойлером, участники, публикация с выбором базы команда/личное); `AgentReviewQueue` — очередь «на вычитке» в разделе Встречи (невидима без черновиков). Deep-link из уведомления: `?meeting=<id>` (браузер) / `startapp=meeting_<id>` (Mini App) → `getDeepLinkMeetingId()` в `lib/telegram.ts` открывает вычитку.
 
-**Статус:** бэкенд (схема + `meeting-claim` + `meeting-ingest` + аппрув/публикация + фильтры) и веб-страница вычитки готовы, type-check зелёный, **НЕ задеплоено**. Осталось: применить миграцию + деплой функций + `WEB_BASE_URL`; экстракция задач при публикации (TODO); агент (anarlog).
+**Статус:** **задеплоено на прод** (`vbqglndbxkpmreccpqmr`) — таблица `meetings` (через `apply_migration`: `supabase db push` нельзя, история миграций дрифтит — локальные файлы и remote-записи расходятся по таймстампам) + функции `meeting-claim`/`meeting-ingest`/`swarm-api`/`swarm-mcp`/`swarm-bot`. Smoke-тест auth зелёный (нет/невалидный токен → 401). Осталось: `supabase secrets set WEB_BASE_URL=<домен miniapp>` (для кнопки-ссылки в уведомлении; без неё уведомление работает, просто без кнопки); веб-страница уезжает на прод через Cloudflare Pages (зависит от ветки CF — push в `sandbox_vas` сделан); полный e2e с реальным `smcp_`-токеном; экстракция задач при публикации (TODO); агент (anarlog).
 
 ---
 
