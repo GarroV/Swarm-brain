@@ -1,11 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyAgentToken, AgentAuthError } from "../_shared/agent-auth.ts";
 
-// meeting-ingest — заливка транскрипта (только claimer; см. 10-REVISED-DESIGN.md §4, §7.2).
-// Сохраняет транскрипт и асинхронно генерит тезисы → meetings.draft_notes_md (черновик,
-// НЕ в базе знаний). Уведомляет записавших «готово к вычитке». Запись entries создаётся
-// позже, на аппруве (отдельный эндпоинт). 202/processing — чтобы не упереться в wall-clock
-// и не словить дубли от retry агента.
+// meeting-ingest — заливка АУДИО от claimer (см. transcribator/10-REVISED-DESIGN.md §4, §7.2).
+// Облачная схема: рекордор пишет звук → грузит сюда; сервер сам транскрибирует
+// (OpenAI Whisper) → текст → тезисы (GPT) → meetings.draft_notes_md (черновик, НЕ в базе
+// знаний) → уведомляет записавших. Запись entries создаётся позже, на аппруве.
+// 202/processing + EdgeRuntime.waitUntil — транскрибация+тезисы идут в фоне, чтобы не
+// упереться в wall-clock и не словить дубли от retry агента.
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -13,16 +14,16 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "";
 
+// Лимит файла на эндпоинте транскрибации OpenAI. Длинные встречи — резать/жать (TODO).
+const OPENAI_AUDIO_MAX_BYTES = 25 * 1024 * 1024;
+
 // Supabase-инъектируемый глобал для фоновой работы после ответа.
 declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void } | undefined;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 interface Segment { start: number; end: number; text: string }
-interface IngestBody {
-  meeting_id: string;
-  transcript: { language?: string; model?: string; segments: Segment[] };
-}
+interface Transcript { language: string; model: string; segments: Segment[] }
 interface RecorderEntry { telegram_id: number; claimed_at: string; role: string }
 interface InlineButton { text: string; url: string }
 
@@ -45,36 +46,33 @@ function fail(message: string, status = 400): Response {
   return json({ ok: false, error: message }, status);
 }
 
-function validate(raw: unknown): IngestBody {
-  if (typeof raw !== "object" || raw === null) throw new Error("body must be an object");
-  const b = raw as Record<string, unknown>;
-  if (typeof b.meeting_id !== "string" || b.meeting_id.length === 0) {
-    throw new Error("meeting_id required");
-  }
-  const t = b.transcript;
-  if (typeof t !== "object" || t === null) throw new Error("transcript required");
-  const segments = (t as Record<string, unknown>).segments;
-  if (!Array.isArray(segments) || segments.length === 0) {
-    throw new Error("transcript.segments must be a non-empty array");
-  }
-  const parsed: Segment[] = segments.map((s) => {
-    const o = s as Record<string, unknown>;
-    if (typeof o.text !== "string") throw new Error("transcript.segments[].text must be a string");
-    return {
-      start: typeof o.start === "number" ? o.start : 0,
-      end: typeof o.end === "number" ? o.end : 0,
-      text: o.text,
-    };
+// Транскрибация аудио через OpenAI Whisper (verbose_json → сегменты с таймстампами).
+async function transcribeAudio(audio: Blob, filename: string): Promise<Transcript> {
+  const form = new FormData();
+  form.append("file", audio, filename);
+  form.append("model", "whisper-1");
+  form.append("response_format", "verbose_json");
+  form.append("language", "ru");
+
+  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+    body: form,
   });
-  const meta = t as Record<string, unknown>;
-  return {
-    meeting_id: b.meeting_id,
-    transcript: {
-      language: typeof meta.language === "string" ? meta.language : undefined,
-      model: typeof meta.model === "string" ? meta.model : undefined,
-      segments: parsed,
-    },
-  };
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI transcription error");
+  }
+  const d = data as { language?: string; text?: string; segments?: Array<{ start: number; end: number; text: string }> };
+  const segments: Segment[] = (d.segments ?? []).map((s) => ({
+    start: s.start,
+    end: s.end,
+    text: s.text.trim(),
+  }));
+  if (segments.length === 0 && d.text) {
+    segments.push({ start: 0, end: 0, text: d.text });
+  }
+  return { language: d.language ?? "ru", model: "whisper-1", segments };
 }
 
 async function chatComplete(system: string, user: string): Promise<string> {
@@ -94,11 +92,7 @@ async function chatComplete(system: string, user: string): Promise<string> {
   return (data as { choices: Array<{ message: { content: string } }> }).choices[0].message.content;
 }
 
-async function sendTelegram(
-  chatId: number,
-  text: string,
-  keyboard?: InlineButton[][],
-): Promise<void> {
+async function sendTelegram(chatId: number, text: string, keyboard?: InlineButton[][]): Promise<void> {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -111,18 +105,25 @@ async function sendTelegram(
   });
 }
 
-// Фоновая работа: генерим тезисы из транскрипта → draft_notes_md, уведомляем записавших.
-async function generateAndNotify(
+// Фон: транскрибируем аудио → meetings.transcript, генерим тезисы → draft_notes_md,
+// уведомляем записавших.
+async function processAudio(
   meetingId: string,
   title: string | null,
-  transcriptText: string,
+  audio: Blob,
+  filename: string,
   recorders: RecorderEntry[],
 ): Promise<void> {
+  const nowIso = new Date().toISOString();
+
+  const transcript = await transcribeAudio(audio, filename);
+  await supabase.from("meetings").update({ transcript, updated_at: nowIso }).eq("id", meetingId);
+
+  const transcriptText = transcript.segments.map((s) => s.text).join(" ");
   const tezisi = await chatComplete(
     TEZIS_SYSTEM,
     `Встреча: ${title ?? "без названия"}\n\nСтенограмма:\n${transcriptText.slice(0, 100000)}`,
   );
-
   await supabase
     .from("meetings")
     .update({ draft_notes_md: tezisi, updated_at: new Date().toISOString() })
@@ -132,7 +133,6 @@ async function generateAndNotify(
   const titleStr = title ? `: <b>${title}</b>` : "";
   const text = `📝 Тезисы встречи готовы к вычитке${titleStr}\nВозьмёт любой из участников.`;
   const keyboard: InlineButton[][] | undefined = webUrl ? [[{ text: "Открыть", url: webUrl }]] : undefined;
-
   for (const r of recorders) {
     await sendTelegram(r.telegram_id, text, keyboard);
   }
@@ -149,17 +149,32 @@ Deno.serve(async (req: Request) => {
     throw e;
   }
 
-  let body: IngestBody;
+  // multipart/form-data: meeting_id (text) + audio (file)
+  let formData: FormData;
   try {
-    body = validate(await req.json());
-  } catch (e) {
-    return fail(e instanceof Error ? e.message : "invalid body");
+    formData = await req.formData();
+  } catch {
+    return fail("expected multipart/form-data with meeting_id + audio");
+  }
+  const meetingId = formData.get("meeting_id");
+  const audioField = formData.get("audio");
+  if (typeof meetingId !== "string" || meetingId.length === 0) {
+    return fail("meeting_id required");
+  }
+  if (!(audioField instanceof File)) {
+    return fail("audio file required");
+  }
+  if (audioField.size === 0) {
+    return fail("audio is empty");
+  }
+  if (audioField.size > OPENAI_AUDIO_MAX_BYTES) {
+    return fail("audio too large (>25MB) — нужна нарезка/сжатие на стороне рекордера", 413);
   }
 
   const { data: meeting } = await supabase
     .from("meetings")
     .select("id, title, claim_owner, notes_edited_at, recorders")
-    .eq("id", body.meeting_id)
+    .eq("id", meetingId)
     .maybeSingle();
 
   if (!meeting) return fail("meeting not found", 404);
@@ -171,31 +186,29 @@ Deno.serve(async (req: Request) => {
     recorders: RecorderEntry[] | null;
   };
 
-  // Транскрипт льёт только тот, кто держит право (claim_owner). Иначе — defer-участник.
+  // Аудио льёт только держатель права транскрибации (claim_owner).
   if (m.claim_owner !== identity.telegramId) {
     return fail("not the transcription owner for this meeting", 403);
   }
 
-  // Сохраняем транскрипт всегда (повторная заливка перезаписывает).
-  await supabase
-    .from("meetings")
-    .update({ transcript: body.transcript, updated_at: new Date().toISOString() })
-    .eq("id", body.meeting_id);
+  const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${meetingId}` : "";
 
-  const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${body.meeting_id}` : "";
-
-  // Защита правок человека: если черновик уже правили — тезисы не перегенерируем.
+  // Защита правок человека: черновик уже правили → не перетранскрибируем и не перегенерим.
   if (m.notes_edited_at) {
-    return json({ ok: true, meeting_id: body.meeting_id, web_url: webUrl, summary_status: "skipped_human_edit" });
+    return json({ ok: true, meeting_id: meetingId, web_url: webUrl, summary_status: "skipped_human_edit" });
   }
 
-  const transcriptText = body.transcript.segments.map((s) => s.text).join(" ");
+  // Считываем аудио в память до ответа, чтобы фон мог им пользоваться.
+  const buf = await audioField.arrayBuffer();
+  const audioBlob = new Blob([buf], { type: audioField.type || "audio/m4a" });
+  const filename = audioField.name && audioField.name.length > 0 ? audioField.name : "audio.m4a";
   const recorders = m.recorders ?? [];
-  const job = generateAndNotify(m.id, m.title, transcriptText, recorders).catch((e) => {
-    console.error(`meeting-ingest: generation failed for ${m.id}:`, e);
+
+  const job = processAudio(m.id, m.title, audioBlob, filename, recorders).catch((e) => {
+    console.error(`meeting-ingest: processing failed for ${m.id}:`, e);
   });
 
-  // 202 + фоновая генерация: возвращаем сразу, тезисы досчитываются после ответа.
+  // 202 + фон: транскрибация и тезисы досчитываются после ответа.
   if (typeof EdgeRuntime !== "undefined" && EdgeRuntime) {
     EdgeRuntime.waitUntil(job);
   } else {
@@ -203,7 +216,7 @@ Deno.serve(async (req: Request) => {
   }
 
   return json(
-    { ok: true, meeting_id: body.meeting_id, web_url: webUrl, summary_status: "processing" },
+    { ok: true, meeting_id: meetingId, web_url: webUrl, summary_status: "processing" },
     202,
   );
 });

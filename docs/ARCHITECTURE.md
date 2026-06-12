@@ -22,7 +22,7 @@
 | `read-ai-auth` | HTTP redirect (OAuth) | OAuth callback для авторизации Read.ai, сохраняет токен в `app_settings` |
 | `swarm-mcp` | MCP (Claude Desktop) | MCP-сервер для Claude Desktop: поиск, добавление знаний, управление задачами |
 | `meeting-claim` | HTTP POST (desktop-agent) | Swarm Meetings: claim/lease до транскрибации (кто транскрибирует), регистрация записавших, личные пометки → приватная entry. Auth — персональный токен |
-| `meeting-ingest` | HTTP POST (desktop-agent) | Swarm Meetings: приём транскрипта от claimer → async-генерация тезисов в `meetings.draft_notes_md` → уведомление записавшим. Auth — персональный токен |
+| `meeting-ingest` | HTTP POST (desktop-agent) | Swarm Meetings: приём **аудио** от claimer → транскрибация (OpenAI Whisper) → async-генерация тезисов в `meetings.draft_notes_md` → уведомление записавшим. Auth — персональный токен |
 
 **Деплой:** `supabase functions deploy <name> --no-verify-jwt` (обязательно `--no-verify-jwt` для Telegram webhook)
 
@@ -191,12 +191,12 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 - **После сохранения (/meetings):** `medit_` → сессия `meeting_edit_summary_<entryId>` → инструкция → GPT переписывает, читая `entries.content` + `entries.summary`
 
 ### Swarm Meetings (desktop-agent) — В РАЗРАБОТКЕ
-Замена Read.ai/Granola: macOS-агент (форк anarlog) пишет онлайн-звонки локально, транскрибирует Whisper'ом, шлёт в Swarm Brain. Полный дизайн — `transcribator/10-REVISED-DESIGN.md`.
+Замена Read.ai/Granola: лёгкий **свой** macOS-рекордер (Swift/ScreenCaptureKit, **без форка anarlog**) пишет аудио онлайн-звонков и шлёт в Swarm Brain; **транскрибация и тезисы — в облаке (OpenAI)**, без локальной модели. Полный дизайн — `transcribator/10-REVISED-DESIGN.md`.
 ```
-Все участники записывают → meeting-claim (до Whisper):
+Все участники записывают аудио → meeting-claim (до загрузки):
   первый получает decision=transcribe, остальные defer (lease с TTL, перехват по истечении);
   каждый регистрируется в meetings.recorders; его пометки → приватная entry (metadata.meeting_id)
-claimer → meeting-ingest: транскрипт → meetings.transcript
+claimer → meeting-ingest: грузит АУДИО → сервер транскрибирует (OpenAI Whisper) → meetings.transcript
   → async GPT-тезисы → meetings.draft_notes_md (общий черновик, НЕ в базе знаний/поиске)
   → уведомление записавшим «готово к вычитке»
 вычитка (PATCH /agent-meetings/:id) + аппрув (POST /agent-meetings/:id/publish):
@@ -209,7 +209,7 @@ claimer → meeting-ingest: транскрипт → meetings.transcript
 
 **Веб (miniapp):** `MeetingReview` — страница вычитки одной встречи (тезисы редактируются, транскрипт под спойлером, участники, публикация с выбором базы команда/личное); `AgentReviewQueue` — очередь «на вычитке» в разделе Встречи (невидима без черновиков). Deep-link из уведомления: `?meeting=<id>` (браузер) / `startapp=meeting_<id>` (Mini App) → `getDeepLinkMeetingId()` в `lib/telegram.ts` открывает вычитку.
 
-**Статус:** **задеплоено на прод** (`vbqglndbxkpmreccpqmr`) — таблица `meetings` (через `apply_migration`: `supabase db push` нельзя, история миграций дрифтит — локальные файлы и remote-записи расходятся по таймстампам) + функции `meeting-claim`/`meeting-ingest`/`swarm-api`/`swarm-mcp`/`swarm-bot`. Smoke-тест auth зелёный (нет/невалидный токен → 401). Осталось: `supabase secrets set WEB_BASE_URL=<домен miniapp>` (для кнопки-ссылки в уведомлении; без неё уведомление работает, просто без кнопки); веб-страница уезжает на прод через Cloudflare Pages (зависит от ветки CF — push в `sandbox_vas` сделан); полный e2e с реальным `smcp_`-токеном; экстракция задач при публикации (TODO); агент (anarlog).
+**Статус:** **задеплоено на прод** (`vbqglndbxkpmreccpqmr`) — таблица `meetings` (через `apply_migration`: `supabase db push` нельзя, история миграций дрифтит — локальные файлы и remote-записи расходятся по таймстампам) + функции `meeting-claim`/`meeting-ingest`/`swarm-api`/`swarm-mcp`/`swarm-bot`. Smoke-тест auth зелёный (нет/невалидный токен → 401). Осталось: `supabase secrets set WEB_BASE_URL=<домен miniapp>` (для кнопки-ссылки в уведомлении; без неё уведомление работает, просто без кнопки); веб-страница уезжает на прод через Cloudflare Pages (зависит от ветки CF — push в `sandbox_vas` сделан); полный e2e с реальным `smcp_`-токеном; экстракция задач при публикации (TODO); агент — **свой лёгкий рекордер** (Swift/ScreenCaptureKit, захват звука + отправка аудио), ещё не написан. Транскрибация/тезисы — облако OpenAI (`meeting-ingest` принимает аудио).
 
 ---
 

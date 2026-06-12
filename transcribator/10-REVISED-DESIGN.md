@@ -4,6 +4,8 @@
 
 ---
 
+> **ОБНОВЛЕНИЕ 2026-06-12 — разворот на облако.** Транскрибация **и** тезисы делаются в **облаке** (OpenAI), не локально. Рекордер на маке — лёгкое **своё** приложение (Swift/ScreenCaptureKit: захват звука + отправка аудио), **без форка anarlog и без локальной модели** (Whisper/Soniqo). Причина: не тащить тяжёлый локальный ML на машины пользователей; облако стоит центы (~$0.40/час встречи) и не требует GPU. Как читать этот документ с учётом разворота: упоминания Soniqo/Whisper-q8/локальной модели — неактуальны; «claim перед локальной транскрибацией» → «claim перед загрузкой аудио»; форк anarlog — **отменён** (`RECON.md` подтверждал anarlog, но мы ушли от локального стека; от него взяли бы только захват звука — проще написать свой). Шаг «транскрибировать» сменный: если появится машина с NVIDIA-GPU, переедем на локальный Whisper без переделок. Контракт §7.2 актуализирован: ingest принимает **АУДИО**.
+
 ## 0. Что отменяем относительно 00–07
 
 | Было в спеке | Стало (решено на воркшопе) |
@@ -159,28 +161,27 @@
 
 Claim — точка регистрации **каждого** участника: сервер заносит его в `meetings.recorders` и сохраняет его `user_notes` как **его приватную entry** (`metadata.meeting_id`). Так личные пометки доезжают и от `defer`-участников, которые транскрипт не льют. `transcribe`-участник дополнительно вызывает `/meeting-ingest`.
 
-### 7.2 `POST /meeting-ingest` (заливка транскрипта — только claimer)
+### 7.2 `POST /meeting-ingest` (заливка АУДИО — только claimer)
 
+Облачная схема: рекордер шлёт аудиофайл, сервер сам транскрибирует через OpenAI Whisper.
+
+```
+POST /meeting-ingest
+Authorization: Bearer <personal-agent-token>
+Content-Type: multipart/form-data
+  meeting_id = <server-uuid>             (из claim)
+  audio      = <файл m4a/mp3/…, ≤25 МБ>  (компактный речевой формат; длинные — резать)
+```
 ```jsonc
-// request
-{
-  "meeting_id": "<server-uuid>",          // из claim
-  "transcript": {
-    "language": "ru",
-    "model": "soniqo-parakeet-v3 | whisper-large-v3-turbo-q8",
-    "segments": [{ "start": 0.0, "end": 6.4, "text": "..." }]
-  }
-  // user_notes здесь НЕ дублируем — они уже ушли с claim'ом (см. 7.1)
-}
-// response
+// response (202)
 {
   "ok": true,
   "meeting_id": "...",
-  "entry_id": "...",
-  "web_url": "https://<webapp>/meetings/<server-uuid>",
-  "summary_status": "processing | done"   // 202/processing допустим (см. §8)
+  "web_url": "https://<webapp>/?meeting=<server-uuid>",
+  "summary_status": "processing | skipped_human_edit"
 }
 ```
+Сервер в фоне (`EdgeRuntime.waitUntil`): OpenAI Whisper (`verbose_json` → сегменты с таймстампами) → `meetings.transcript` → GPT-4o тезисы → `draft_notes_md` → уведомление записавшим. `entry_id` появляется только при публикации (аппрув, §5), не здесь. Лимит OpenAI 25 МБ — длинные встречи резать/жать (TODO). `user_notes` уходят с `claim` (§7.1), не здесь.
 
 ### 7.3 Ошибки
 
