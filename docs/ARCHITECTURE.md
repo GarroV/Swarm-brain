@@ -21,6 +21,8 @@
 | `read-ai-webhook` | Webhook от Read.ai | Принимает завершённые встречи, сохраняет в `entries`, уведомляет бота |
 | `read-ai-auth` | HTTP redirect (OAuth) | OAuth callback для авторизации Read.ai, сохраняет токен в `app_settings` |
 | `swarm-mcp` | MCP (Claude Desktop) | MCP-сервер для Claude Desktop: поиск, добавление знаний, управление задачами |
+| `meeting-claim` | HTTP POST (desktop-agent) | Swarm Meetings: claim/lease до транскрибации (кто транскрибирует), регистрация записавших, личные пометки → приватная entry. Auth — персональный токен |
+| `meeting-ingest` | HTTP POST (desktop-agent) | Swarm Meetings: приём транскрипта от claimer → async-генерация тезисов в `meetings.draft_notes_md` → уведомление записавшим. Auth — персональный токен |
 
 **Деплой:** `supabase functions deploy <name> --no-verify-jwt` (обязательно `--no-verify-jwt` для Telegram webhook)
 
@@ -110,6 +112,7 @@ supabase/functions/swarm-bot/
 | `sprints` | Спринты (Рой) | `id`, `group_id` (FK → `workspaces.id`), `name`, `start_date`, `end_date`, `status` (`planned`\|`active`\|`completed`), CHECK `start_date<=end_date` |
 | `task_dependencies` | Зависимости задач (Рой) | `id`, `task_id`, `depends_on_id` (оба FK → `tasks`), `dependency_type` (`blocks`\|`relates_to`\|`duplicates`); цикл-детекция через `get_all_dependencies()` |
 | `task_history` | История изменений задач | `task_id`, `changed_at`, `changes` |
+| `meetings` | Swarm Meetings — источник истины о встрече (НЕ путать с `entries`) | `id`, `source` (`desktop-agent`), `identity_kind`/`identity_key` (дедуп: calendar/room/manual, UNIQUE кроме manual), `transcript` (jsonb), `draft_notes_md` (черновик тезисов до публикации), `notes_edited_at`, `entry_id` (FK → `entries`, при публикации), `recorders` (jsonb — кто записал), `claim_owner`/`lease_expires_at` (право транскрибации), `status` (`awaiting_review`\|`in_base`), `group_id` (FK → `workspaces.id`). Личные пометки участников — отдельные приватные `entries` с `metadata.meeting_id` |
 | `sessions` | Состояние диалога бота | `chat_id` (PK), `action`, `context` (jsonb), `updated_at` (TTL 30 мин) |
 | `allowed_users` | Белый список | `telegram_id`, `username`, `is_admin`, `group_id` (FK → `workspaces.id`) |
 | `user_profiles` | Профили пользователей | `telegram_id`, `first_name`, `last_name`, `username` |
@@ -186,6 +189,20 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 ### Тезисы — AI-редактирование (✏️ Тезисы / ✏️ Переписать)
 - **До сохранения (preview):** `gedit_` → сессия `granola_edit_preview_<noteId>` → инструкция → GPT переписывает → сессия восстанавливается в `granola_preview_<noteId>` → можно итерировать
 - **После сохранения (/meetings):** `medit_` → сессия `meeting_edit_summary_<entryId>` → инструкция → GPT переписывает, читая `entries.content` + `entries.summary`
+
+### Swarm Meetings (desktop-agent) — В РАЗРАБОТКЕ
+Замена Read.ai/Granola: macOS-агент (форк anarlog) пишет онлайн-звонки локально, транскрибирует Whisper'ом, шлёт в Swarm Brain. Полный дизайн — `transcribator/10-REVISED-DESIGN.md`.
+```
+Все участники записывают → meeting-claim (до Whisper):
+  первый получает decision=transcribe, остальные defer (lease с TTL, перехват по истечении);
+  каждый регистрируется в meetings.recorders; его пометки → приватная entry (metadata.meeting_id)
+claimer → meeting-ingest: транскрипт → meetings.transcript
+  → async GPT-тезисы → meetings.draft_notes_md (общий черновик, НЕ в базе знаний/поиске)
+  → уведомление записавшим «готово к вычитке»
+вычитка + аппрув (TODO эндпоинт) → создаётся entries (выбор базы: воркспейс/личное)
+  + экстракция задач → status=in_base. Один объект → из «на подтверждении» уходит у всех разом
+```
+Дедуп нескольких записавших — по `meetings.identity_key` (calendar/room; manual без дедупа, дубли — ручным «объединить»). Аутентификация — персональный токен (`_shared/agent-auth.ts`, личность из токена, не из payload). **Статус:** схема + `meeting-claim` + `meeting-ingest` готовы (не задеплоены); аппрув/публикация и фикс фильтров источников (swarm-api/MCP/бот) — следующий шаг.
 
 ---
 
