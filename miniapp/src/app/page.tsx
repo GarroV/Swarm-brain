@@ -12,6 +12,7 @@ import { MeetingReview } from "@/components/MeetingReview";
 import { SettingsScreen } from "@/components/SettingsScreen";
 import { AdminScreen } from "@/components/AdminScreen";
 import { BottomNav } from "@/components/BottomNav";
+import { Sidebar } from "@/components/Sidebar";
 import type { Section } from "@/components/BottomNav";
 
 export default function Home() {
@@ -47,34 +48,38 @@ export default function Home() {
     }
   };
 
+  const go = (s: Section) => { setReviewId(null); setSection(s); };
+
   return (
-    <div className="flex flex-col h-screen">
-      <div className="flex-1 overflow-hidden pb-16">
-        {reviewId ? (
-          <MeetingReview id={reviewId} onClose={closeReview} />
-        ) : (
-          <>
-            {section === "tasks" && <TasksScreen />}
-            {section === "knowledge" && <KnowledgeScreen myTelegramId={me?.telegram_id ?? 0} />}
-            {section === "meetings" && (
-              <div className="flex flex-col h-full">
-                <AgentReviewQueue onOpen={setReviewId} />
-                <div className="flex-1 overflow-hidden">
-                  <MeetingsScreen />
-                </div>
-              </div>
+    <div className="flex h-screen">
+      <Sidebar active={section} onChange={go} isAdmin={me?.is_admin ?? false} className="hidden lg:flex" />
+
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 overflow-hidden pb-16 lg:pb-0">
+          <div className="h-full lg:max-w-5xl lg:mx-auto lg:w-full">
+            {reviewId ? (
+              <MeetingReview id={reviewId} onClose={closeReview} />
+            ) : (
+              <>
+                {section === "tasks" && <TasksScreen />}
+                {section === "knowledge" && <KnowledgeScreen myTelegramId={me?.telegram_id ?? 0} />}
+                {section === "meetings" && (
+                  <div className="flex flex-col h-full">
+                    <AgentReviewQueue onOpen={setReviewId} />
+                    <div className="flex-1 overflow-hidden">
+                      <MeetingsScreen />
+                    </div>
+                  </div>
+                )}
+                {section === "team" && <TeamScreen />}
+                {section === "settings" && <SettingsScreen />}
+                {section === "admin" && <AdminScreen />}
+              </>
             )}
-            {section === "team" && <TeamScreen />}
-            {section === "settings" && <SettingsScreen />}
-            {section === "admin" && <AdminScreen />}
-          </>
-        )}
+          </div>
+        </div>
+        <BottomNav active={section} onChange={go} isAdmin={me?.is_admin ?? false} className="lg:hidden" />
       </div>
-      <BottomNav
-        active={section}
-        onChange={(s) => { setReviewId(null); setSection(s); }}
-        isAdmin={me?.is_admin ?? false}
-      />
     </div>
   );
 }
