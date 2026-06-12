@@ -22,8 +22,9 @@ declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void } | undefi
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-interface Segment { start: number; end: number; text: string }
+interface Segment { start: number; end: number; text: string; speaker?: string }
 interface Transcript { language: string; model: string; segments: Segment[] }
+interface AudioPart { blob: Blob; name: string }
 interface RecorderEntry { telegram_id: number; claimed_at: string; role: string }
 interface InlineButton { text: string; url: string }
 
@@ -110,19 +111,28 @@ async function sendTelegram(chatId: number, text: string, keyboard?: InlineButto
 async function processAudio(
   meetingId: string,
   title: string | null,
-  audio: Blob,
-  filename: string,
+  system: AudioPart,
+  mic: AudioPart | null,
   recorders: RecorderEntry[],
 ): Promise<void> {
-  const nowIso = new Date().toISOString();
+  // Транскрибируем системный звук (собеседники) и, если есть, микрофон (я).
+  const sys = await transcribeAudio(system.blob, system.name);
+  let segments: Segment[] = sys.segments.map((s) => ({ ...s, speaker: "собеседник" }));
+  let model = sys.model;
+  if (mic) {
+    const m = await transcribeAudio(mic.blob, mic.name);
+    segments = segments.concat(m.segments.map((s) => ({ ...s, speaker: "я" })));
+    model = `${sys.model}+mic`;
+  }
+  // Сводим по таймстампам (общий старт сессии) → восстанавливаем порядок реплик.
+  segments.sort((a, b) => a.start - b.start);
+  const transcript: Transcript = { language: sys.language, model, segments };
+  await supabase.from("meetings").update({ transcript, updated_at: new Date().toISOString() }).eq("id", meetingId);
 
-  const transcript = await transcribeAudio(audio, filename);
-  await supabase.from("meetings").update({ transcript, updated_at: nowIso }).eq("id", meetingId);
-
-  const transcriptText = transcript.segments.map((s) => s.text).join(" ");
+  const transcriptText = segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n").slice(0, 100000);
   const tezisi = await chatComplete(
     TEZIS_SYSTEM,
-    `Встреча: ${title ?? "без названия"}\n\nСтенограмма:\n${transcriptText.slice(0, 100000)}`,
+    `Встреча: ${title ?? "без названия"}\n\nСтенограмма (реплики помечены «собеседник» — другие участники, «я» — владелец записи):\n${transcriptText}`,
   );
   await supabase
     .from("meetings")
@@ -170,6 +180,12 @@ Deno.serve(async (req: Request) => {
   if (audioField.size > OPENAI_AUDIO_MAX_BYTES) {
     return fail("audio too large (>25MB) — нужна нарезка/сжатие на стороне рекордера", 413);
   }
+  // Опциональная вторая дорожка — микрофон владельца записи.
+  const micField = formData.get("audio_mic");
+  const micFile = micField instanceof File && micField.size > 1024 ? micField : null;
+  if (micFile && micFile.size > OPENAI_AUDIO_MAX_BYTES) {
+    return fail("audio_mic too large (>25MB)", 413);
+  }
 
   const { data: meeting } = await supabase
     .from("meetings")
@@ -199,12 +215,22 @@ Deno.serve(async (req: Request) => {
   }
 
   // Считываем аудио в память до ответа, чтобы фон мог им пользоваться.
-  const buf = await audioField.arrayBuffer();
-  const audioBlob = new Blob([buf], { type: audioField.type || "audio/m4a" });
-  const filename = audioField.name && audioField.name.length > 0 ? audioField.name : "audio.m4a";
+  const sysBuf = await audioField.arrayBuffer();
+  const systemPart: AudioPart = {
+    blob: new Blob([sysBuf], { type: audioField.type || "audio/m4a" }),
+    name: audioField.name && audioField.name.length > 0 ? audioField.name : "audio.m4a",
+  };
+  let micPart: AudioPart | null = null;
+  if (micFile) {
+    const micBuf = await micFile.arrayBuffer();
+    micPart = {
+      blob: new Blob([micBuf], { type: micFile.type || "audio/m4a" }),
+      name: micFile.name && micFile.name.length > 0 ? micFile.name : "audio_mic.m4a",
+    };
+  }
   const recorders = m.recorders ?? [];
 
-  const job = processAudio(m.id, m.title, audioBlob, filename, recorders).catch((e) => {
+  const job = processAudio(m.id, m.title, systemPart, micPart, recorders).catch((e) => {
     console.error(`meeting-ingest: processing failed for ${m.id}:`, e);
   });
 

@@ -11,7 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var configError: String?
     private enum State { case idle, recording, sending, error(String) }
     private var state: State = .idle
-    private var currentFileURL: URL?
+    private var sysURL: URL?
+    private var micURL: URL?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do { config = try SwarmConfig.load() }
@@ -89,12 +90,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setState(.error("нет доступа к записи экрана — выдай в System Settings → Privacy"))
             return
         }
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("swarm-\(UUID().uuidString).m4a")
+        let base = UUID().uuidString
+        let sys = FileManager.default.temporaryDirectory.appendingPathComponent("swarm-\(base)-sys.m4a")
+        let mic = FileManager.default.temporaryDirectory.appendingPathComponent("swarm-\(base)-mic.m4a")
         Task {
             do {
-                try await recorder.start(to: url)
-                currentFileURL = url
+                try await recorder.start(systemURL: sys, micURL: mic)
+                sysURL = sys; micURL = mic
                 setState(.recording)
             } catch {
                 setState(.error("старт записи: \(error)"))
@@ -107,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setState(.sending)
         Task {
             do {
-                let fileURL = try await recorder.stop()
+                let res = try await recorder.stop()
                 let client = SwarmClient(config: cfg)
 
                 let iso = ISO8601DateFormatter()
@@ -122,9 +124,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
                 let claim = try await withRetry { try await client.claim(req) }
                 if claim.shouldTranscribe {
-                    _ = try await withRetry { try await client.uploadAudio(meetingID: claim.meetingId, fileURL: fileURL) }
+                    _ = try await withRetry { try await client.uploadAudio(meetingID: claim.meetingId, systemURL: res.system, micURL: res.mic) }
                 }
-                try? FileManager.default.removeItem(at: fileURL)
+                try? FileManager.default.removeItem(at: res.system)
+                if let m = res.mic { try? FileManager.default.removeItem(at: m) }
                 setState(.idle)
             } catch {
                 setState(.error("\(error)"))

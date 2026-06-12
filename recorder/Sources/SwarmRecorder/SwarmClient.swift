@@ -53,27 +53,33 @@ struct SwarmClient {
     }
 
     // POST /meeting-ingest — загрузить аудио (multipart). Только если decision=transcribe.
-    func uploadAudio(meetingID: String, fileURL: URL) async throws -> IngestResponse {
+    // audio = системный звук (собеседники), audio_mic = микрофон (я), опционально.
+    // Сервер транскрибирует оба и сводит по таймстампам.
+    func uploadAudio(meetingID: String, systemURL: URL, micURL: URL? = nil) async throws -> IngestResponse {
         let boundary = "swarm-\(UUID().uuidString)"
         var req = URLRequest(url: url("/meeting-ingest"))
         req.httpMethod = "POST"
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         authed(&req)
 
-        let audioData = try Data(contentsOf: fileURL)
-        let filename = fileURL.lastPathComponent
         var body = Data()
         func append(_ s: String) { body.append(s.data(using: .utf8)!) }
+        func filePart(name: String, fileURL: URL) throws {
+            let fileData = try Data(contentsOf: fileURL)
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(fileURL.lastPathComponent)\"\r\n")
+            append("Content-Type: audio/mp4\r\n\r\n")
+            body.append(fileData)
+            append("\r\n")
+        }
 
         append("--\(boundary)\r\n")
         append("Content-Disposition: form-data; name=\"meeting_id\"\r\n\r\n")
         append("\(meetingID)\r\n")
 
-        append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"audio\"; filename=\"\(filename)\"\r\n")
-        append("Content-Type: audio/mp4\r\n\r\n")
-        body.append(audioData)
-        append("\r\n--\(boundary)--\r\n")
+        try filePart(name: "audio", fileURL: systemURL)
+        if let micURL { try filePart(name: "audio_mic", fileURL: micURL) }
+        append("--\(boundary)--\r\n")
 
         let (data, resp) = try await URLSession.shared.upload(for: req, from: body)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
