@@ -24,8 +24,28 @@ func runSelfTest() {
 
             let out = try await rec.stop()
             let size = ((try? FileManager.default.attributesOfItem(atPath: out.path))?[.size] as? Int) ?? 0
-            print("SELFTEST_RESULT path=\(out.path) size=\(size)")
-            NSLog("selftest: готово, size=\(size)")
+            print("SELFTEST_CAPTURE path=\(out.path) size=\(size)")
+            NSLog("selftest: захват готов, size=\(size)")
+
+            // Полный цикл (если есть config.json): claim + загрузка своим же SwarmClient.
+            if let cfg = try? SwarmConfig.load() {
+                let client = SwarmClient(config: cfg)
+                let now = ISO8601DateFormatter().string(from: Date())
+                let req = ClaimRequest(
+                    identityKind: .manual,
+                    identityKey: "manual:selftest-\(UUID().uuidString)",
+                    title: "Selftest захват",
+                    startedAt: now, endedAt: now, agentVersion: "0.1.0-selftest"
+                )
+                let claim = try await client.claim(req)
+                print("SELFTEST_CLAIM meeting_id=\(claim.meetingId) decision=\(claim.decision)")
+                if claim.shouldTranscribe {
+                    let ing = try await client.uploadAudio(meetingID: claim.meetingId, fileURL: out)
+                    print("SELFTEST_UPLOAD meeting_id=\(claim.meetingId) status=\(ing.summaryStatus ?? "?")")
+                }
+            } else {
+                print("SELFTEST_NOCONFIG (только захват, без отправки)")
+            }
             exit(0)
         } catch {
             print("SELFTEST_ERROR \(error)")
