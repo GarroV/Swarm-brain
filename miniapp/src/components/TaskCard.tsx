@@ -3,44 +3,32 @@ import type { Task } from "@/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { displayName } from "@/lib/utils";
+import { Mic, Bot, PenLine, Smartphone, User, Calendar, Globe, type LucideIcon } from "lucide-react";
 
 const ROLE_LABELS: Record<string, string> = {
-  marketing: "Marketing",
+  marketing: "Маркетинг",
   bd: "BD",
   rnd: "R&D",
 };
 
-const SOURCE_META: Record<string, { emoji: string; label: string }> = {
-  transcript: { emoji: "🎤", label: "Transcript" },
-  claude:     { emoji: "🤖", label: "Claude" },
-  manual:     { emoji: "✍️", label: "Manual" },
-  mini_app:   { emoji: "📱", label: "Mini App" },
+const SOURCE_META: Record<string, { Icon: LucideIcon; label: string }> = {
+  transcript: { Icon: Mic, label: "Транскрипт" },
+  claude: { Icon: Bot, label: "Claude" },
+  manual: { Icon: PenLine, label: "Вручную" },
+  mini_app: { Icon: Smartphone, label: "Mini App" },
 };
-
-function provenanceLine(task: Task): string | null {
-  const src = SOURCE_META[task.source];
-  const srcLabel = src ? `${src.emoji} ${src.label}` : task.source || null;
-  let date: string | null = null;
-  if (task.created_at) {
-    const d = new Date(task.created_at);
-    if (!isNaN(d.getTime())) {
-      date = d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-    }
-  }
-  const parts = [srcLabel, task.created_by_name, date].filter(Boolean);
-  return parts.length ? parts.join(" · ") : null;
-}
 
 const STATUS_ACTIONS: Record<
   string,
   Array<{ label: string; next: string; variant?: "outline" | "ghost" }>
 > = {
-  open: [{ label: "→ In Progress", next: "in_progress", variant: "outline" }],
+  open: [{ label: "В работу", next: "in_progress", variant: "outline" }],
   in_progress: [
-    { label: "← Open", next: "open", variant: "ghost" },
-    { label: "→ Done", next: "done", variant: "outline" },
+    { label: "В ожидание", next: "open", variant: "ghost" },
+    { label: "Готово", next: "done", variant: "outline" },
   ],
-  done: [{ label: "← Reopen", next: "in_progress", variant: "ghost" }],
+  done: [{ label: "Вернуть", next: "in_progress", variant: "ghost" }],
 };
 
 interface TaskCardProps {
@@ -52,14 +40,19 @@ interface TaskCardProps {
 
 export function TaskCard({ task, onEdit, onStatusChange, onDelete }: TaskCardProps) {
   const actions = STATUS_ACTIONS[task.status] ?? [];
+  const src = SOURCE_META[task.source];
+
+  let createdAt: string | null = null;
+  if (task.created_at) {
+    const d = new Date(task.created_at);
+    if (!isNaN(d.getTime())) createdAt = d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  }
 
   const handleDelete = async () => {
-    if (window.confirm(`Delete "${task.title}"?`)) {
+    if (window.confirm(`Удалить «${task.title}»?`)) {
       await onDelete();
     }
   };
-
-  const prov = provenanceLine(task);
 
   return (
     <Card>
@@ -74,19 +67,32 @@ export function TaskCard({ task, onEdit, onStatusChange, onDelete }: TaskCardPro
         </div>
 
         {task.description && (
-          <p className="text-xs text-muted-foreground line-clamp-2">
-            {task.description}
+          <p className="text-xs text-muted-foreground line-clamp-2">{task.description}</p>
+        )}
+
+        {(src || task.created_by_name || createdAt) && (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {src && <src.Icon className="w-3.5 h-3.5 shrink-0" />}
+            <span>{[src?.label, task.created_by_name, createdAt].filter(Boolean).join(" · ")}</span>
           </p>
         )}
 
-        {prov && <p className="text-xs text-muted-foreground">{prov}</p>}
-
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {task.assignees.length > 0 && (
-            <span>👤 {task.assignees.join(", ")}</span>
+            <span className="inline-flex items-center gap-1">
+              <User className="w-3.5 h-3.5" /> {task.assignees.map(displayName).join(", ")}
+            </span>
           )}
-          {task.due_date && <span>📅 {task.due_date}</span>}
-          {task.country && <span>🌍 {task.country}</span>}
+          {task.due_date && (
+            <span className="inline-flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5" /> {task.due_date}
+            </span>
+          )}
+          {task.country && (
+            <span className="inline-flex items-center gap-1">
+              <Globe className="w-3.5 h-3.5" /> {task.country}
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2 pt-1">
@@ -102,7 +108,7 @@ export function TaskCard({ task, onEdit, onStatusChange, onDelete }: TaskCardPro
             </Button>
           ))}
           <Button size="sm" variant="ghost" className="text-xs h-7" onClick={onEdit}>
-            Edit
+            Изменить
           </Button>
           <Button
             size="sm"
@@ -110,7 +116,7 @@ export function TaskCard({ task, onEdit, onStatusChange, onDelete }: TaskCardPro
             className="text-xs h-7 text-destructive hover:text-destructive"
             onClick={handleDelete}
           >
-            Delete
+            Удалить
           </Button>
         </div>
       </CardContent>

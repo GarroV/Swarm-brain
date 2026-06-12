@@ -11,9 +11,9 @@ const STATUSES = ["open", "in_progress", "done"] as const;
 type Status = (typeof STATUSES)[number];
 
 const TAB_LABELS: Record<Status, string> = {
-  open: "Open",
-  in_progress: "In Progress",
-  done: "Done",
+  open: "Открыто",
+  in_progress: "В работе",
+  done: "Готово",
 };
 
 const SWIPE_THRESHOLD = 60;
@@ -97,7 +97,7 @@ export function KanbanBoard() {
     return (
       <div className="flex items-center justify-center h-full p-6 text-center">
         <p className="text-destructive text-base">
-          No access. Open this app from Telegram.
+          Нет доступа. Откройте приложение из Telegram.
         </p>
       </div>
     );
@@ -107,7 +107,7 @@ export function KanbanBoard() {
     return (
       <div className="flex items-center justify-center h-full p-6 text-center">
         <p className="text-destructive text-base">
-          No workspace assigned. Contact your admin.
+          Воркспейс не назначен. Обратитесь к админу.
         </p>
       </div>
     );
@@ -117,7 +117,7 @@ export function KanbanBoard() {
     <div className="flex flex-col h-full">
       <div className="px-4 pt-5 pb-3">
         <h1 className="text-xl font-semibold">
-          {me ? `Hello, ${me.name.split(" ")[0]}` : "Tasks"}
+          {me ? `Привет, ${me.name.split(" ")[0]}` : "Задачи"}
         </h1>
       </div>
 
@@ -144,11 +144,11 @@ export function KanbanBoard() {
           >
             {loading && s === activeStatus ? (
               <p className="text-center text-muted-foreground py-8 text-sm">
-                Loading…
+                Загрузка…
               </p>
             ) : tasksByStatus[s].length === 0 && s === activeStatus ? (
               <p className="text-center text-muted-foreground py-8 text-sm">
-                No tasks
+                Нет задач
               </p>
             ) : (
               tasksByStatus[s].map((task) => (
@@ -173,7 +173,7 @@ export function KanbanBoard() {
 
       <div className="p-4">
         <Button className="w-full" onClick={() => setModalTask("new")}>
-          + New Task
+          + Новая задача
         </Button>
       </div>
 

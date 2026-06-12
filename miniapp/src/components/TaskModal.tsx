@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import type { Task, User } from "@/types";
+import { displayName } from "@/lib/utils";
 import {
   type CreateTaskInput,
   createTask,
@@ -70,7 +71,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
 
   const handleSave = async () => {
     if (!title.trim()) {
-      setError("Title is required");
+      setError("Нужно название");
       return;
     }
     setSaving(true);
@@ -93,7 +94,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
       onSaved();
       onClose();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      setError(err instanceof Error ? err.message : "Не удалось сохранить");
     } finally {
       setSaving(false);
     }
@@ -103,33 +104,33 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit Task" : "New Task"}</DialogTitle>
+          <DialogTitle>{isEdit ? "Изменить задачу" : "Новая задача"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div className="space-y-1">
-            <Label htmlFor="modal-title">Title *</Label>
+            <Label htmlFor="modal-title">Название *</Label>
             <Input
               id="modal-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Task title"
+              placeholder="Название задачи"
             />
           </div>
 
           <div className="space-y-1">
-            <Label htmlFor="modal-desc">Description</Label>
+            <Label htmlFor="modal-desc">Описание</Label>
             <Textarea
               id="modal-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description"
+              placeholder="Необязательное описание"
               rows={3}
             />
           </div>
 
           <div className="space-y-1">
-            <Label htmlFor="modal-due">Due Date</Label>
+            <Label htmlFor="modal-due">Срок</Label>
             <Input
               id="modal-due"
               type="date"
@@ -139,13 +140,13 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
           </div>
 
           <div className="space-y-1">
-            <Label>Role</Label>
+            <Label>Роль</Label>
             <Select value={taskRole} onValueChange={(v) => setTaskRole(v ?? NONE)}>
               <SelectTrigger>
-                <SelectValue placeholder="Select role" />
+                <SelectValue placeholder="Выберите роль" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NONE}>— None —</SelectItem>
+                <SelectItem value={NONE}>— Нет —</SelectItem>
                 {TASK_ROLES.map((r) => (
                   <SelectItem key={r.value} value={r.value}>
                     {r.label}
@@ -156,26 +157,26 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
           </div>
 
           <div className="space-y-1">
-            <Label htmlFor="modal-country">Country</Label>
+            <Label htmlFor="modal-country">Страна</Label>
             <Input
               id="modal-country"
               value={country}
               onChange={(e) => setCountry(e.target.value)}
-              placeholder="e.g. KZ, PL"
+              placeholder="напр. KZ, PL"
             />
           </div>
 
           <div className="space-y-1">
-            <Label>Assignee</Label>
+            <Label>Исполнитель</Label>
             <Select value={assigneeId} onValueChange={(v) => setAssigneeId(v ?? NONE)}>
               <SelectTrigger>
-                <SelectValue placeholder="Select assignee" />
+                <SelectValue placeholder="Выберите исполнителя" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NONE}>— None —</SelectItem>
+                <SelectItem value={NONE}>— Нет —</SelectItem>
                 {users.map((u) => (
                   <SelectItem key={u.telegram_id} value={u.telegram_id.toString()}>
-                    {u.name}
+                    {displayName(u.name)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -187,10 +188,10 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
-            Cancel
+            Отмена
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Сохранение…" : "Сохранить"}
           </Button>
         </DialogFooter>
       </DialogContent>
