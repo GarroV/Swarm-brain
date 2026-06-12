@@ -804,7 +804,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "GET" && routePath === "/meetings") {
     const confirmedParam = url.searchParams.get("confirmed");
     let q = buildEntriesQuery(supabase, "*", { groupId, telegramId: telegram_id })
-      .in("source", ["read_ai", "granola"])
+      .in("source", ["read_ai", "granola", "desktop-agent"])
       .order("created_at", { ascending: false })
       .limit(50);
     if (confirmedParam === "true") q = q.eq("metadata->>confirmed", "true");
@@ -844,6 +844,119 @@ Deno.serve(async (req: Request) => {
       }
       return apiErr(405, "Method not allowed", origin);
     });
+  }
+
+  // ── Swarm Meetings (desktop-agent): черновики на вычитке (таблица meetings) ─────
+  // Видимость: тот же воркспейс + caller среди записавших (recorders) или админ.
+  // GET /agent-meetings?status=awaiting_review|in_base — очередь вычитки / опубликованные
+  if (req.method === "GET" && routePath === "/agent-meetings") {
+    const status = url.searchParams.get("status") ?? "awaiting_review";
+    let q = supabase.from("meetings")
+      .select("id, title, source, identity_kind, started_at, ended_at, status, draft_notes_md, recorders, entry_id, created_at")
+      .eq("group_id", groupId)
+      .eq("status", status)
+      .order("started_at", { ascending: false, nullsFirst: false })
+      .limit(50);
+    if (!isAdmin) q = q.contains("recorders", [{ telegram_id }]);
+    const { data, error } = await q;
+    if (error) return apiErr(500, error.message, origin);
+    return json(data, 200, origin);
+  }
+
+  // GET/PATCH /agent-meetings/:id, POST /agent-meetings/:id/publish
+  const agentMeetingMatch = routePath.match(/^\/agent-meetings\/([^/]+)$/);
+  const agentPublishMatch = routePath.match(/^\/agent-meetings\/([^/]+)\/publish$/);
+  if (agentMeetingMatch || agentPublishMatch) {
+    const mId = (agentMeetingMatch ?? agentPublishMatch)![1];
+    const { data: mRow } = await supabase.from("meetings").select("*").eq("id", mId).maybeSingle();
+    const meeting = mRow as Record<string, unknown> | null;
+    const recorders = (meeting?.recorders as Array<{ telegram_id: number }> | undefined) ?? [];
+    const isRecorder = recorders.some((r) => r.telegram_id === telegram_id);
+    if (!meeting || meeting.group_id !== groupId || (!isRecorder && !isAdmin)) {
+      return apiErr(404, "Not found", origin);
+    }
+
+    // GET — полный черновик (транскрипт + тезисы + участники)
+    if (agentMeetingMatch && req.method === "GET") {
+      return json(meeting, 200, origin);
+    }
+
+    // PATCH — вычитка/правка черновика тезисов (только до публикации)
+    if (agentMeetingMatch && req.method === "PATCH") {
+      if (meeting.status === "in_base") return apiErr(409, "Уже опубликовано — правьте запись в базе", origin);
+      let body: Record<string, unknown>;
+      try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
+      if (typeof body.draft_notes_md !== "string") return apiErr(400, "draft_notes_md required", origin);
+      const nowIso = new Date().toISOString();
+      await supabase.from("meetings")
+        .update({ draft_notes_md: body.draft_notes_md, notes_edited_at: nowIso, updated_at: nowIso })
+        .eq("id", mId);
+      const { data } = await supabase.from("meetings").select("*").eq("id", mId).single();
+      return json(data, 200, origin);
+    }
+
+    // POST publish — аппрув: создаём entries (выбор базы), привязываем, status=in_base
+    if (agentPublishMatch && req.method === "POST") {
+      let body: Record<string, unknown>;
+      try { body = await req.json(); } catch { body = {}; }
+      const isPrivate = body.base === "personal";
+
+      // идемпотентность: уже опубликовано → вернуть существующую запись
+      if (meeting.status === "in_base" && meeting.entry_id) {
+        const { data: existing } = await supabase.from("entries").select("*").eq("id", meeting.entry_id as string).single();
+        return json(existing, 200, origin);
+      }
+      const draft = meeting.draft_notes_md as string | null;
+      if (!draft) return apiErr(400, "Тезисы ещё не готовы — публиковать нечего", origin);
+
+      // эмбеддинг тезисов (как в /search)
+      const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+      const embRes = await fetch("https://api.openai.com/v1/embeddings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
+        body: JSON.stringify({ model: "text-embedding-3-small", input: draft.slice(0, 8000) }),
+      });
+      const embedding: number[] | null = embRes.ok ? (await embRes.json()).data[0].embedding : null;
+
+      const startedAt = meeting.started_at as string | null;
+      const entryDate = startedAt ? startedAt.split("T")[0] : null;
+
+      const { data: created, error: insErr } = await supabase.from("entries").insert({
+        content: draft,
+        summary: draft,
+        embedding,
+        added_by: String(telegram_id),
+        source: "desktop-agent",
+        entry_type: "transcript",
+        metadata: { meeting_id: mId, title: meeting.title ?? null, confirmed: true },
+        countries: [],
+        entry_date: entryDate,
+        group_id: groupId,
+        is_private: isPrivate,
+        owner_id: isPrivate ? telegram_id : null,
+      }).select("*").single();
+      if (insErr || !created) return apiErr(500, insErr?.message ?? "publish failed", origin);
+
+      // привязка + статус с защитой от гонки (только если ещё не привязано)
+      const { data: linked } = await supabase.from("meetings")
+        .update({ entry_id: (created as { id: string }).id, status: "in_base", updated_at: new Date().toISOString() })
+        .eq("id", mId)
+        .is("entry_id", null)
+        .select("id")
+        .maybeSingle();
+      if (!linked) {
+        // параллельная публикация — убираем дубль, возвращаем уже привязанную запись
+        await supabase.from("entries").delete().eq("id", (created as { id: string }).id);
+        const { data: m2 } = await supabase.from("meetings").select("entry_id").eq("id", mId).single();
+        const existingId = (m2 as { entry_id: string | null }).entry_id;
+        const { data: existing } = await supabase.from("entries").select("*").eq("id", existingId as string).single();
+        return json(existing, 200, origin);
+      }
+      // TODO: экстракция задач из тезисов при публикации (пока — вручную «обновить задачи из тезисов»)
+      return json(created, 201, origin);
+    }
+
+    return apiErr(405, "Method not allowed", origin);
   }
 
   // ── GET /integrations ─────────────────────────────────────────────────────────

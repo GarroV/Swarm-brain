@@ -161,7 +161,7 @@ export async function handleMeetingCallbacks(
       const { data: meetings } = await supabase
         .from("entries").select("id, metadata, created_at, source, entry_type")
         .eq("group_id", groupId)
-        .or("source.in.(read_ai,voice),entry_type.in.(transcript,meeting)")
+        .or("source.in.(read_ai,voice,desktop-agent),entry_type.in.(transcript,meeting)")
         .order("created_at", { ascending: false }).limit(15);
       if (!meetings?.length) {
         await sendMessage(chatId, "Сохранённых встреч пока нет.");

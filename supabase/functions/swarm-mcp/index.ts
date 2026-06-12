@@ -321,7 +321,7 @@ async function toolGetMeetings(args: { limit?: number; requesting_user_id?: numb
   let query = supabase
     .from("entries")
     .select("content, metadata, created_at")
-    .eq("source", "read_ai")
+    .in("source", ["read_ai", "granola", "desktop-agent"])
     .order("created_at", { ascending: false })
     .limit(args.limit ?? 10);
   if (groupId) query = query.eq("group_id", groupId);

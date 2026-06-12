@@ -199,10 +199,13 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 claimer → meeting-ingest: транскрипт → meetings.transcript
   → async GPT-тезисы → meetings.draft_notes_md (общий черновик, НЕ в базе знаний/поиске)
   → уведомление записавшим «готово к вычитке»
-вычитка + аппрув (TODO эндпоинт) → создаётся entries (выбор базы: воркспейс/личное)
-  + экстракция задач → status=in_base. Один объект → из «на подтверждении» уходит у всех разом
+вычитка (PATCH /agent-meetings/:id) + аппрув (POST /agent-meetings/:id/publish):
+  создаётся entries (выбор базы: воркспейс/личное), эмбеддинг, status=in_base.
+  Один объект → из «на вычитке» уходит у всех разом
 ```
-Дедуп нескольких записавших — по `meetings.identity_key` (calendar/room; manual без дедупа, дубли — ручным «объединить»). Аутентификация — персональный токен (`_shared/agent-auth.ts`, личность из токена, не из payload). **Статус:** схема + `meeting-claim` + `meeting-ingest` готовы (не задеплоены); аппрув/публикация и фикс фильтров источников (swarm-api/MCP/бот) — следующий шаг.
+**Эндпоинты swarm-api (вызывает веб/Mini App, auth — сессия роя):** `GET /agent-meetings?status=` (очередь вычитки/опубликованные; видны записавшим или админу), `GET /agent-meetings/:id` (черновик + транскрипт), `PATCH /agent-meetings/:id` (правка `draft_notes_md` → `notes_edited_at`), `POST /agent-meetings/:id/publish` (`{base: workspace|personal}` → создать entries, привязать, идемпотентно).
+
+Дедуп нескольких записавших — по `meetings.identity_key` (calendar/room; manual без дедупа, дубли — ручным «объединить»). Аутентификация агента — персональный токен (`_shared/agent-auth.ts`, личность из токена, не из payload). Фильтры источников включают `desktop-agent` (swarm-api `GET /meetings`, MCP `get_meetings`, бот `rai_saved`). **Статус:** бэкенд готов (схема + `meeting-claim` + `meeting-ingest` + аппрув/публикация + фильтры), НЕ задеплоен. Осталось: экстракция задач при публикации (TODO), веб-страница встречи, агент (anarlog).
 
 ---
 
