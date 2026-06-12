@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Ключи для Info.plist приложения SwarmRecorder.
+  Добавить в Info.plist Xcode-проекта (см. README).
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Меню-бар приложение: без иконки в Dock и без главного окна -->
+  <key>LSUIElement</key>
+  <true/>
+
+  <!-- TCC usage descriptions (показываются в системном запросе разрешений) -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>SwarmRecorder записывает звук встречи, чтобы подготовить тезисы.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>SwarmRecorder читает календарь, чтобы автоматически начинать запись запланированных встреч.</string>
+  <!-- Запись экрана/системного звука (ScreenCaptureKit) отдельной Info-строки не требует:
+       macOS сам запросит «Screen & System Audio Recording» в Privacy при первом запуске. -->
+</dict>
+</plist>
