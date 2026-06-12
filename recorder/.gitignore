@@ -8,5 +8,9 @@ xcuserdata/
 *.swiftpm
 .DS_Store
 
+# Сборочный артефакт .app (создаётся build-app.sh)
+*.app/
+SwarmRecorder.app/
+
 # Local config with the personal token — never commit
 config.json
