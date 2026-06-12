@@ -205,7 +205,11 @@ claimer → meeting-ingest: транскрипт → meetings.transcript
 ```
 **Эндпоинты swarm-api (вызывает веб/Mini App, auth — сессия роя):** `GET /agent-meetings?status=` (очередь вычитки/опубликованные; видны записавшим или админу), `GET /agent-meetings/:id` (черновик + транскрипт), `PATCH /agent-meetings/:id` (правка `draft_notes_md` → `notes_edited_at`), `POST /agent-meetings/:id/publish` (`{base: workspace|personal}` → создать entries, привязать, идемпотентно).
 
-Дедуп нескольких записавших — по `meetings.identity_key` (calendar/room; manual без дедупа, дубли — ручным «объединить»). Аутентификация агента — персональный токен (`_shared/agent-auth.ts`, личность из токена, не из payload). Фильтры источников включают `desktop-agent` (swarm-api `GET /meetings`, MCP `get_meetings`, бот `rai_saved`). **Статус:** бэкенд готов (схема + `meeting-claim` + `meeting-ingest` + аппрув/публикация + фильтры), НЕ задеплоен. Осталось: экстракция задач при публикации (TODO), веб-страница встречи, агент (anarlog).
+Дедуп нескольких записавших — по `meetings.identity_key` (calendar/room; manual без дедупа, дубли — ручным «объединить»). Аутентификация агента — персональный токен (`_shared/agent-auth.ts`, личность из токена, не из payload). Фильтры источников включают `desktop-agent` (swarm-api `GET /meetings`, MCP `get_meetings`, бот `rai_saved`).
+
+**Веб (miniapp):** `MeetingReview` — страница вычитки одной встречи (тезисы редактируются, транскрипт под спойлером, участники, публикация с выбором базы команда/личное); `AgentReviewQueue` — очередь «на вычитке» в разделе Встречи (невидима без черновиков). Deep-link из уведомления: `?meeting=<id>` (браузер) / `startapp=meeting_<id>` (Mini App) → `getDeepLinkMeetingId()` в `lib/telegram.ts` открывает вычитку.
+
+**Статус:** бэкенд (схема + `meeting-claim` + `meeting-ingest` + аппрув/публикация + фильтры) и веб-страница вычитки готовы, type-check зелёный, **НЕ задеплоено**. Осталось: применить миграцию + деплой функций + `WEB_BASE_URL`; экстракция задач при публикации (TODO); агент (anarlog).
 
 ---
 

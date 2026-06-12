@@ -1,5 +1,5 @@
 import { getInitData } from "./telegram";
-import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, TaskDependency, DependencyType } from "@/types";
+import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, TaskDependency, DependencyType, AgentMeeting } from "@/types";
 
 export type CreateTaskInput = {
   title: string;
@@ -481,6 +481,72 @@ export async function patchMeeting(id: string, fields: UpdateMeetingInput): Prom
 export async function deleteMeeting(id: string): Promise<void> {
   if (DEV_MODE) return;
   return apiFetch<void>(`/meetings/${id}`, { method: "DELETE" });
+}
+
+// ── Agent meetings (Swarm Meetings desktop-agent) ───────────────────────────────
+
+const mockAgentMeetings: AgentMeeting[] = [
+  {
+    id: "am-1",
+    title: "Синк по Болгарии",
+    source: "desktop-agent",
+    identity_kind: "calendar",
+    started_at: "2026-06-12T14:00:00+03:00",
+    ended_at: "2026-06-12T14:47:00+03:00",
+    status: "awaiting_review",
+    draft_notes_md: "### Контекст\n- Обсудили эквайринг в Болгарии\n\n### Ключевые решения\n- Сдвинуть запуск на июль",
+    transcript: {
+      language: "ru",
+      model: "whisper-large-v3-turbo",
+      segments: [
+        { start: 0, end: 6, text: "Так, все собрались, начинаем." },
+        { start: 6, end: 14, text: "По Болгарии: клиент просит сдвинуть запуск." },
+      ],
+    },
+    recorders: [{ telegram_id: 744230399, claimed_at: "2026-06-12T14:47:10+03:00", role: "transcribe" }],
+    entry_id: null,
+    created_at: "2026-06-12T14:47:00+03:00",
+  },
+];
+
+export async function fetchAgentMeetings(
+  status: "awaiting_review" | "in_base" = "awaiting_review",
+): Promise<AgentMeeting[]> {
+  if (DEV_MODE) return mockAgentMeetings.filter((m) => m.status === status);
+  return apiFetch<AgentMeeting[]>(`/agent-meetings?status=${status}`);
+}
+
+export async function fetchAgentMeeting(id: string): Promise<AgentMeeting> {
+  if (DEV_MODE) {
+    const m = mockAgentMeetings.find((x) => x.id === id);
+    if (!m) throw new ApiError(404, "Not found");
+    return m;
+  }
+  return apiFetch<AgentMeeting>(`/agent-meetings/${id}`);
+}
+
+export async function patchAgentMeetingDraft(id: string, draft_notes_md: string): Promise<AgentMeeting> {
+  if (DEV_MODE) {
+    const idx = mockAgentMeetings.findIndex((x) => x.id === id);
+    if (idx === -1) throw new ApiError(404, "Not found");
+    mockAgentMeetings[idx] = { ...mockAgentMeetings[idx], draft_notes_md };
+    return mockAgentMeetings[idx];
+  }
+  return apiFetch<AgentMeeting>(`/agent-meetings/${id}`, { method: "PATCH", body: JSON.stringify({ draft_notes_md }) });
+}
+
+export async function publishAgentMeeting(id: string, base: "workspace" | "personal"): Promise<Entry> {
+  if (DEV_MODE) {
+    const idx = mockAgentMeetings.findIndex((x) => x.id === id);
+    if (idx !== -1) mockAgentMeetings[idx] = { ...mockAgentMeetings[idx], status: "in_base" };
+    return {
+      id: "mock-entry", content: "", summary: mockAgentMeetings[idx]?.draft_notes_md ?? "",
+      added_by: "", source: "desktop-agent", metadata: {}, countries: [], entry_type: "transcript",
+      entry_date: null, group_id: null, is_private: base === "personal", owner_id: null,
+      created_at: new Date().toISOString(),
+    };
+  }
+  return apiFetch<Entry>(`/agent-meetings/${id}/publish`, { method: "POST", body: JSON.stringify({ base }) });
 }
 
 // ── Integrations / Granola ────────────────────────────────────────────────────
