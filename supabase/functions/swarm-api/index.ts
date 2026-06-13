@@ -104,6 +104,88 @@ async function resolveAssignee(
   return { telegram_id: p.telegram_id, name };
 }
 
+// ── Извлечение задач из тезисов встречи (тот же подход, что POST /tasks/extract,
+//    плюс резолв исполнителей и привязка к встрече) ───────────────────────────────
+type ExtractedTask = { title: string; description?: string; assignee?: string; due_date?: string | null; country?: string | null };
+
+async function gptExtractTasks(text: string): Promise<ExtractedTask[]> {
+  const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: 'Извлеки задачи из тезисов встречи. Верни JSON массив (только JSON, без markdown): [{"title":"...","description":"... или null","assignee":"Полное имя или null","due_date":"YYYY-MM-DD или null","country":"... или null"}]. Бери только реальные поручения/действия с конкретным результатом. Если задач нет — пустой массив [].' },
+        { role: "user", content: text.slice(0, 8000) },
+      ],
+      max_tokens: 1200,
+    }),
+  });
+  if (!res.ok) return [];
+  try {
+    const raw = (await res.json()).choices[0].message.content.replace(/```json\n?|\n?```/g, "").trim();
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function buildNameResolver(): Promise<(raw: string | null | undefined) => { name: string; id: number } | null> {
+  const { data } = await supabase.from("user_profiles").select("telegram_id, first_name, last_name, username");
+  const members = ((data ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string; username?: string }>).map((p) => ({
+    id: p.telegram_id,
+    name: [p.first_name, p.last_name].filter(Boolean).join(" ") || p.username || String(p.telegram_id),
+  }));
+  return (raw) => {
+    if (!raw) return null;
+    const lower = raw.toLowerCase().trim();
+    if (!lower) return null;
+    return members.find((m) => {
+      const mn = m.name.toLowerCase();
+      return mn.includes(lower) || lower.includes(mn.split(" ").pop() ?? mn);
+    }) ?? null;
+  };
+}
+
+// Извлекает задачи из тезисов и создаёт их с привязкой к встрече. Возвращает число созданных.
+async function createMeetingTasks(
+  text: string,
+  opts: { groupId: string; createdBy: number | null; meetingId: string; isPrivate: boolean },
+): Promise<number> {
+  const extracted = await gptExtractTasks(text);
+  if (!extracted.length) return 0;
+  const resolve = await buildNameResolver();
+  let n = 0;
+  for (const item of extracted.slice(0, 15)) {
+    if (!item.title) continue;
+    let assignees: string[] = [];
+    let assignee_telegram_ids: number[] = [];
+    const matched = resolve(item.assignee);
+    if (matched) {
+      assignees = [matched.name];
+      assignee_telegram_ids = [matched.id];
+    }
+    await createTask({
+      title: item.title,
+      description: item.description ?? null,
+      country: item.country ?? null,
+      due_date: item.due_date ?? null,
+      source: "transcript",
+      confirmed: true,
+      created_by_telegram_id: opts.createdBy,
+      meeting_id: opts.meetingId,
+      assignees,
+      assignee_telegram_ids,
+      is_private: opts.isPrivate,
+      owner_id: opts.isPrivate ? opts.createdBy : null,
+    }, opts.groupId);
+    n++;
+  }
+  return n;
+}
+
 // ── Task privacy / validation helpers (Рой) ────────────────────────────────────
 
 // Приватную задачу видит только владелец или админ; командную — любой в воркспейсе.
@@ -952,7 +1034,13 @@ Deno.serve(async (req: Request) => {
         const { data: existing } = await supabase.from("entries").select("*").eq("id", existingId as string).single();
         return json(existing, 200, origin);
       }
-      // TODO: экстракция задач из тезисов при публикации (пока — вручную «обновить задачи из тезисов»)
+      // Авто-извлечение задач из тезисов (привязка к встрече mId, резолв исполнителей).
+      // Не валит публикацию при сбое — entry уже создан.
+      try {
+        await createMeetingTasks(draft, { groupId, createdBy: telegram_id, meetingId: mId, isPrivate });
+      } catch (e) {
+        console.error("publish: извлечение задач не удалось для " + mId + ":", e);
+      }
       return json(created, 201, origin);
     }
 
