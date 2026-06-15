@@ -412,6 +412,41 @@ export async function searchEntries(q: string): Promise<Entry[]> {
   return apiFetch<Entry[]>(`/search?q=${encodeURIComponent(q)}`);
 }
 
+export type AskSource = {
+  n: number;
+  id: string;
+  tag: string; // doc | mic | note | meet | pdf
+  entry_type: string;
+  title: string;
+  snippet: string;
+  market: string | null;
+  similarity: number;
+};
+export type AskResult = {
+  query: string;
+  answer: string; // с inline-сносками [n]
+  sources: AskSource[];
+  followups: string[];
+};
+
+// RAG-ответ (экран Answer): POST /ask → синтез по найденным источникам.
+export async function ask(q: string): Promise<AskResult> {
+  if (DEV_MODE) {
+    const sources: AskSource[] = mockEntries.slice(0, 3).map((e, i) => ({
+      n: i + 1,
+      id: e.id,
+      tag: e.entry_type === "transcript" ? "mic" : "doc",
+      entry_type: e.entry_type,
+      title: (e.summary ?? e.content).slice(0, 56),
+      snippet: (e.summary ?? e.content).slice(0, 200),
+      market: e.countries?.[0] ?? null,
+      similarity: 0.82 - i * 0.1,
+    }));
+    return { query: q, answer: `Демо-ответ на «${q}» по источникам [1][2].`, sources, followups: ["Уточнить по рынку?", "Какие задачи связаны?"] };
+  }
+  return apiFetch<AskResult>("/ask", { method: "POST", body: JSON.stringify({ q }) });
+}
+
 export async function createEntry(input: CreateEntryInput): Promise<Entry> {
   if (DEV_MODE) {
     const e: Entry = {
