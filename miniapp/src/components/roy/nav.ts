@@ -10,6 +10,8 @@ export type RoyTab = "search" | "task" | "book" | "cal";
 export type RoyRoute =
   | { view: "answer"; params: { query: string } }
   | { view: "record"; params: { id: string } }
+  | { view: "taskDetail"; params: { id: string } }
+  | { view: "newTask"; params?: { id?: string } }
   | { view: "meetingReview"; params: { id: string } }
   | { view: "settings" }
   | { view: "team" }

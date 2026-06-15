@@ -88,7 +88,7 @@ let mockTasks: Task[] = [
   {
     id: "1", title: "Prepare Q2 report", description: "Collect metrics and draft slides",
     assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: "2026-06-15",
-    tags: [], country: "KZ", task_role: "bd", source: "mini_app", status: "open",
+    tags: [], country: "KZ", task_role: "bd", priority: "high", source: "mini_app", status: "open",
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
     created_by_name: "Dev User",
     is_private: false, owner_id: null, start_date: "2026-06-10", timeline_position: null, sprint_id: null,
@@ -96,7 +96,7 @@ let mockTasks: Task[] = [
   {
     id: "2", title: "Design landing page", description: null,
     assignees: ["Alice Smith"], assignee_telegram_ids: [789012], due_date: null,
-    tags: [], country: "PL", task_role: "marketing", source: "mini_app", status: "in_progress",
+    tags: [], country: "PL", task_role: "marketing", priority: "med", source: "mini_app", status: "in_progress",
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
     created_by_name: "Alice Smith",
     is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null,
@@ -104,7 +104,7 @@ let mockTasks: Task[] = [
   {
     id: "3", title: "Review contracts", description: null,
     assignees: [], assignee_telegram_ids: [], due_date: "2026-05-30",
-    tags: [], country: null, task_role: "rnd", source: "mini_app", status: "done",
+    tags: [], country: null, task_role: "rnd", priority: "low", source: "mini_app", status: "done",
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
     created_by_name: null,
     is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null,
@@ -252,13 +252,23 @@ export async function fetchTasks(filters?: string | TaskFilters): Promise<Task[]
   return apiFetch<Task[]>(`/tasks${qs ? `?${qs}` : ""}`);
 }
 
+export async function fetchTask(id: string): Promise<Task> {
+  if (DEV_MODE) {
+    const all = await fetchTasks();
+    const t = all.find((x) => x.id === id);
+    if (!t) throw new ApiError(404, "Not found");
+    return t;
+  }
+  return apiFetch<Task>(`/tasks/${id}`);
+}
+
 export async function createTask(input: CreateTaskInput): Promise<Task> {
   if (DEV_MODE) {
     const newTask: Task = {
       id: Date.now().toString(), title: input.title, description: input.description ?? null,
       assignees: [], assignee_telegram_ids: input.assignee_telegram_id ? [input.assignee_telegram_id] : [],
       due_date: input.due_date ?? null, tags: input.tags ?? [], country: input.country ?? null,
-      task_role: input.task_role ?? null, source: "mini_app", status: "open",
+      task_role: input.task_role ?? null, priority: input.priority ?? null, source: "mini_app", status: "open",
       created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
       created_by_name: MOCK_ME.name,
       is_private: input.is_private ?? false, owner_id: input.is_private ? MOCK_ME.telegram_id : null,

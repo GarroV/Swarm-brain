@@ -7,7 +7,9 @@ import { RoyTabBar, NavHeader } from "./ui";
 import { SearchScreen } from "./screens/SearchScreen";
 import { AnswerScreen } from "./screens/AnswerScreen";
 import { RecordDetail } from "./screens/RecordDetail";
-import { TasksScreen } from "@/components/tasks/TasksScreen";
+import { RoyTasksScreen } from "./screens/RoyTasksScreen";
+import { TaskDetail } from "./screens/TaskDetail";
+import { NewTask } from "./screens/NewTask";
 import { KnowledgeScreen } from "@/components/KnowledgeScreen";
 import { MeetingsScreen } from "@/components/MeetingsScreen";
 import { AgentReviewQueue } from "@/components/AgentReviewQueue";
@@ -66,7 +68,7 @@ export function RoyApp({ me }: { me: Me | null }) {
           <>
             <div className="min-h-0 flex-1 overflow-hidden">
               {tab === "search" && <SearchScreen />}
-              {tab === "task" && <TasksScreen />}
+              {tab === "task" && <RoyTasksScreen />}
               {tab === "book" && <KnowledgeScreen myTelegramId={me?.telegram_id ?? 0} />}
               {tab === "cal" && (
                 <div className="flex h-full flex-col">
@@ -98,6 +100,8 @@ function PushScreen({ route }: { route: RoyRoute }) {
   if (route.view === "meetingReview") return <MeetingReviewScreen id={route.params.id} />;
   if (route.view === "answer") return <AnswerScreen query={route.params.query} />;
   if (route.view === "record") return <RecordDetail id={route.params.id} />;
+  if (route.view === "taskDetail") return <TaskDetail id={route.params.id} />;
+  if (route.view === "newTask") return <NewTask id={route.params?.id} />;
   if (route.view === "more") return <MoreScreen />;
   if (route.view === "settings") return <Wrapped title="Настройки"><SettingsScreen /></Wrapped>;
   if (route.view === "team") return <Wrapped title="Команда"><TeamScreen /></Wrapped>;
