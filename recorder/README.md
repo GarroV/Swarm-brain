@@ -2,30 +2,74 @@
 
 Лёгкое меню-бар приложение: записывает звук онлайн-звонка → отправляет аудио в Swarm Brain
 (`meeting-claim` → `meeting-ingest`), где сервер транскрибирует (OpenAI) и делает тезисы.
-Дизайн и контракт — `../transcribator/10-REVISED-DESIGN.md`.
+Контракт — `../transcribator/02-API-CONTRACT.md`, дизайн — `../transcribator/10-REVISED-DESIGN.md`.
 
-## Статус (первый cut, писался без компилятора — нужен проход в Xcode)
+Агент **тупой**: запись → claim → загрузка аудио. Никакой LLM-логики на клиенте — транскрибация
+и тезисы целиком на сервере.
 
-| Модуль | Уверенность | Заметки |
-|---|---|---|
-| `SwarmTypes.swift` (Config, Codable-модели) | высокая | по доказанному e2e контракту |
-| `SwarmClient.swift` (claim + upload, ретраи) | высокая | контракт проверен на проде |
-| `Permissions.swift` (Screen/Mic/Calendar TCC) | средняя | стандартные API, проверить промпты |
-| `AudioRecorder.swift` (ScreenCaptureKit → m4a) | **низкая — главный кандидат на правки** | API-тяжёлый, слепой код |
-| `AppDelegate.swift` / `main.swift` (меню-бар) | средняя | AppKit NSStatusItem |
+## Две дорожки звука
 
-**MVP пишет только СИСТЕМНЫЙ звук** (удалённые участники). Микрофон локального юзера + микширование — **следующая итерация** (это сложный real-time аудио-код, его писать с живой компиляцией). Цель MVP — доказать весь цикл «запись → claim → загрузка → тезисы в вебе».
+Одна сессия пишет **две** независимые дорожки в AAC `.m4a`:
 
-## Настройка в Xcode (после установки Xcode)
+- **системный звук** (удалённые участники) — через `ScreenCaptureKit`;
+- **микрофон** (локальный юзер) — через `AVAudioRecorder`.
 
-`.xcodeproj` намеренно не хэндписан (хрупко). Создать проект руками — 2 минуты:
+Сведение **не на клиенте**: оба файла уходят на сервер, он транскрибирует каждую дорожку
+(`whisper-1`, `verbose_json`) и сводит сегменты по таймстампам (общий старт сессии) с метками
+«собеседник»/«я». Так надёжнее, чем real-time микшировать два потока в коде.
+
+Микрофон — best-effort: если нет доступа или ошибка, запись продолжается **только** с системным
+звуком (в результате `mic = nil`, на сервер уходит лишь `audio`).
+
+## Статус
+
+E2E доказан: `--selftest` прогоняет полный цикл (захват → `claim` → загрузка → тезисы на сервере).
+
+| Модуль | Заметки |
+|---|---|
+| `SwarmTypes.swift` (Config, Codable-модели) | по контракту прода |
+| `SwarmClient.swift` (claim + upload, ретраи) | контракт проверен на проде |
+| `Permissions.swift` (Screen/Mic/Calendar TCC) | стандартные API |
+| `AudioRecorder.swift` (две дорожки: ScreenCaptureKit + AVAudioRecorder → m4a) | прогнан в `--selftest` |
+| `AppDelegate.swift` / `main.swift` (меню-бар, `--selftest`) | AppKit `NSStatusItem`, `LSUIElement` |
+
+## Сборка — `build-app.sh` (полный Xcode не нужен)
+
+Основной путь — `./build-app.sh`. Скрипту достаточно **Command Line Tools** (SwiftPM):
+
+1. `swift build -c release` — собирает бинарь.
+2. Сборка `.app`-бандла руками: `SwarmRecorder.app/Contents/MacOS/` + сгенерённый `Info.plist`
+   (`io.dodobrands.swarmrecorder`, `LSMinimumSystemVersion=13.0`, `LSUIElement=YES`,
+   `NSMicrophoneUsageDescription`, `NSCalendarsUsageDescription`).
+3. Ad-hoc подпись: `codesign --force --deep -s - SwarmRecorder.app` — TCC-разрешения для
+   локального теста при этом работают.
+
+```sh
+./build-app.sh
+open SwarmRecorder.app
+# логи: log stream --predicate 'process == "SwarmRecorder"'  (или Console.app)
+```
+
+При первом запуске macOS попросит доступ к записи экрана/системного звука
+(System Settings → Privacy → Screen Recording) и к микрофону — выдать вручную.
+После пересборки разрешения может понадобиться выдать заново — известное неудобство.
+
+### Прогон без меню-бара
+
+`SwarmRecorder --selftest` — headless: пишет ~6 с (параллельно проигрывая клип через `afplay`),
+печатает размеры дорожек и, если найден `config.json`, делает `claim` + загрузку своим же
+`SwarmClient`. Маркеры в выводе: `SELFTEST_CAPTURE`, `SELFTEST_CLAIM`, `SELFTEST_UPLOAD`.
+
+### Альтернатива — Xcode (опционально, удобнее для отладки)
+
+`.xcodeproj` намеренно не версионируется (хрупко). Если нужен Xcode для отладки — создать проект руками:
 
 1. **Xcode → File → New → Project → macOS → App.** Name: `SwarmRecorder`, Interface: **AppKit (не SwiftUI)**, Language: Swift. Minimum Deployments: **macOS 13.0**.
 2. Удалить сгенерённые `AppDelegate.swift`/`main`/`MainMenu.xib`/`ViewController` и **перетащить файлы из `Sources/SwarmRecorder/`** в проект.
-3. **Info.plist** — добавить ключи из `Info-keys.plist` (этого репо): `LSUIElement=YES` (меню-бар без дока), `NSMicrophoneUsageDescription`, `NSCalendarsUsageDescription` (тексты — там же). Запись экрана/системного звука TCC-строки не требует, но требует разрешения в System Settings при первом запуске.
-4. **Signing & Capabilities:** для локального запуска хватит автоматической подписи Xcode (Team = твой Apple ID, бесплатно). App Sandbox можно **выключить** для MVP (ScreenCaptureKit + сеть проще без песочницы).
+3. **Info.plist** — те же ключи, что генерит `build-app.sh`: `LSUIElement=YES`, `NSMicrophoneUsageDescription`, `NSCalendarsUsageDescription`. Запись экрана/системного звука TCC-строки не требует, но требует разрешения в System Settings при первом запуске.
+4. **Signing & Capabilities:** для локального запуска хватит автоматической подписи Xcode (Team = твой Apple ID). App Sandbox можно **выключить** (ScreenCaptureKit + сеть проще без песочницы).
 5. Прописать конфиг (токен + URL) — см. ниже.
-6. **Run** (⌘R). При первом запуске macOS попросит доступ к записи экрана/звука и микрофону — выдать в System Settings → Privacy.
+6. **Run** (⌘R).
 
 ## Конфиг
 
@@ -37,11 +81,13 @@
   "webBaseURL": ""
 }
 ```
-Токен — персональный `smcp_` из бота (`/mytoken`). Для MVP можно положить файл руками; онбординг-ввод — следующим шагом.
+Токен — персональный `smcp_` из бота (`/mytoken`). Личность и `group_id` сервер берёт из токена
+(SHA-256-хэш в `allowed_users`), не из payload — спуфинга нет. Для запуска можно положить файл
+руками; онбординг-ввод — следующим шагом.
 
 ## Что дальше (итерации)
-1. Микрофон + микширование с системным звуком (полный разговор).
-2. Авто-старт по календарю (EventKit: `external_id` = iCalUID → `identity_kind=calendar`, `meeting_link`, участники).
-3. Очередь/ретраи на диск (переживать перезапуск), как в `SwarmClient` заложено в памяти.
+1. Авто-старт по календарю (EventKit: `external_id` = iCalUID → `identity_kind=calendar`, `meeting_link`, участники).
+2. Резка/сжатие длинных записей под лимит OpenAI 25 МБ на дорожку.
+3. Очередь/ретраи на диск (переживать перезапуск), как в `SwarmClient` заложено.
 4. Меню-бар: онбординг ввода токена, индикатор статуса, «переотправить».
-5. Авто-апдейтер.
+5. Распространение бинаря — открытый вопрос (подпись сейчас ad-hoc).
