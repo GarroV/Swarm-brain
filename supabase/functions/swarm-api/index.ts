@@ -467,6 +467,7 @@ Deno.serve(async (req: Request) => {
         description: (body.description as string | null) ?? null,
         country: (body.country as string | null) ?? null,
         task_role: (body.task_role as string | null) ?? null,
+        priority: ["high", "med", "low"].includes(body.priority as string) ? (body.priority as string) : null,
         due_date: dueDate,
         status: (body.status as string) ?? "open",
         source: "mini_app",
@@ -529,6 +530,7 @@ Deno.serve(async (req: Request) => {
       if ("start_date" in body) fields.start_date = body.start_date as string | null;
       if (typeof body.timeline_position === "number") fields.timeline_position = body.timeline_position;
       if (Array.isArray(body.tags)) fields.tags = body.tags as string[];
+      if (body.priority !== undefined) fields.priority = ["high", "med", "low"].includes(body.priority as string) ? (body.priority as string) : null;
 
       // Смена приватности: владелец задаётся/снимается вместе с флагом
       if (typeof body.is_private === "boolean") {

@@ -8,6 +8,7 @@ export type Task = {
   tags: string[];
   country: string | null;
   task_role: string | null;
+  priority: string | null;
   source: string;
   status: string;
   created_at: string;
@@ -34,6 +35,7 @@ export type TaskInput = {
   tags?: string[];
   country?: string | null;
   task_role?: string | null;
+  priority?: string | null;
   source?: string;
   status?: string;
   meeting_id?: string | null;

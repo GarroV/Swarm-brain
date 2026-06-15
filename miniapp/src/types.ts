@@ -8,6 +8,7 @@ export type Task = {
   tags: string[];
   country: string | null;
   task_role: string | null;
+  priority: string | null;
   source: string;
   status: string;
   created_at: string;

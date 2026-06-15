@@ -8,6 +8,7 @@ export type CreateTaskInput = {
   assignee_telegram_id?: number | null;
   country?: string | null;
   task_role?: string | null;
+  priority?: string | null;
   // Модуль задач (Рой):
   is_private?: boolean;
   start_date?: string | null;

@@ -16,6 +16,7 @@ export async function createTask(input: TaskInput, groupId?: string): Promise<Ta
     tags: input.tags ?? [],
     country: input.country ?? null,
     task_role: input.task_role ?? null,
+    priority: input.priority ?? null,
     source: input.source ?? "manual",
     status: input.status ?? "open",
     meeting_id: input.meeting_id ?? null,
