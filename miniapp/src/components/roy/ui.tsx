@@ -1,0 +1,263 @@
+"use client";
+import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
+import { cn } from "@/lib/utils";
+import { RoyIcon, type RoyIconName } from "./icons";
+
+// Примитивы дизайн-системы из design_handoff_roy (mobile-proto-ui.jsx), портированные
+// в идиому miniapp: Tailwind + семантические токены хендоффа (см. globals.css). Значения,
+// которых нет как Tailwind-классы (точные радиусы пилюль, динамические цвета типов),
+// заданы инлайн-стилем для пиксельного соответствия дизайну.
+
+const TAP = "transition-transform active:scale-[0.97]";
+
+// ── Card ───────────────────────────────────────────────────────────────────
+export function RoyCard({ className, ...props }: ComponentPropsWithoutRef<"div">) {
+  return <div className={cn("bg-surface border border-line rounded-[18px]", className)} {...props} />;
+}
+
+// ── TypeTag (тип записи базы) ────────────────────────────────────────────────
+export const TYPE_TAG: Record<string, { icon: RoyIconName; label: string; color: string }> = {
+  doc: { icon: "doc", label: "Документ", color: "#5B6BE0" },
+  mic: { icon: "mic", label: "Транскрипт", color: "#C2569E" },
+  note: { icon: "note", label: "Заметка", color: "#8A7A3A" },
+  meet: { icon: "meet", label: "Встреча", color: "#2E9E6B" },
+  pdf: { icon: "pdf", label: "PDF", color: "#D9483B" },
+};
+export type RoyTypeKey = keyof typeof TYPE_TAG;
+
+export function TypeTag({ type, small }: { type: RoyTypeKey; small?: boolean }) {
+  const t = TYPE_TAG[type] ?? TYPE_TAG.doc;
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 font-semibold whitespace-nowrap"
+      style={{
+        fontSize: small ? 11 : 12,
+        color: t.color,
+        background: `${t.color}14`,
+        border: `1px solid ${t.color}26`,
+        borderRadius: 8,
+        padding: small ? "2px 7px" : "3px 9px",
+      }}
+    >
+      <RoyIcon name={t.icon} size={small ? 11 : 12} strokeWidth={1.9} />
+      {t.label}
+    </span>
+  );
+}
+
+// ── Market (код рынка) ───────────────────────────────────────────────────────
+export function Market({ code }: { code?: string | null }) {
+  if (!code || code === "—") return null;
+  return (
+    <span
+      className="inline-flex items-center font-semibold whitespace-nowrap text-ink-soft bg-surface-2 border border-line-2"
+      style={{ fontSize: 11, borderRadius: 7, padding: "2px 7px" }}
+    >
+      {code}
+    </span>
+  );
+}
+
+// ── Meta (вторичная строка: иконка + текст) ──────────────────────────────────
+export function Meta({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1 text-ink-soft whitespace-nowrap", className)} style={{ fontSize: 12 }}>
+      {children}
+    </span>
+  );
+}
+
+// ── Avatar (инициалы) ────────────────────────────────────────────────────────
+export function Avatar({ children, size = 32 }: { children: ReactNode; size?: number }) {
+  return (
+    <span
+      className="inline-flex items-center justify-center shrink-0 rounded-full bg-accent-soft text-accent-ink font-bold"
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.37) }}
+    >
+      {children}
+    </span>
+  );
+}
+
+// ── Приоритет / статус задачи ────────────────────────────────────────────────
+const PRI_COLOR: Record<string, string> = { high: "var(--pri-high)", med: "var(--pri-med)", low: "var(--pri-low)" };
+export function PriDot({ pri }: { pri?: "high" | "med" | "low" | null }) {
+  return <span className="inline-block shrink-0 rounded-full" style={{ width: 8, height: 8, background: PRI_COLOR[pri ?? "low"] ?? "var(--pri-low)" }} />;
+}
+
+// Поддерживает оба написания статуса в данных: "in_progress" и "progress".
+export const STATUS_META: Record<string, { color: string; label: string }> = {
+  open: { color: "var(--status-open)", label: "Открыто" },
+  in_progress: { color: "var(--status-prog)", label: "В работе" },
+  progress: { color: "var(--status-prog)", label: "В работе" },
+  done: { color: "var(--status-done)", label: "Готово" },
+};
+
+// ── Chip (фильтр/выбор) ──────────────────────────────────────────────────────
+export function Chip({ children, active, onClick, leading }: { children: ReactNode; active?: boolean; onClick?: () => void; leading?: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 font-semibold whitespace-nowrap rounded-full border",
+        TAP,
+        active ? "bg-ink text-white border-ink" : "bg-surface text-ink-soft border-line-2",
+      )}
+      style={{ fontSize: 13, padding: "7px 13px" }}
+    >
+      {leading}
+      {children}
+    </button>
+  );
+}
+
+// ── Segmented (переключатель статуса/режима) ─────────────────────────────────
+type SegItem = { id: string; label: string; count?: number };
+export function Segmented({ items, value, onChange }: { items: SegItem[]; value: string; onChange: (id: string) => void }) {
+  return (
+    <div className="flex gap-[3px] bg-surface-2 border border-line p-[3px]" style={{ borderRadius: 12 }}>
+      {items.map((it) => {
+        const on = it.id === value;
+        return (
+          <button
+            key={it.id}
+            type="button"
+            onClick={() => onChange(it.id)}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 font-semibold border-0",
+              TAP,
+              on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(80,60,20,.1)]" : "bg-transparent text-ink-soft",
+            )}
+            style={{ fontSize: 13.5, padding: "8px 6px", borderRadius: 9 }}
+          >
+            {it.label}
+            {it.count != null && (
+              <span style={{ fontSize: 11 }} className={on ? "text-accent-ink" : "text-ink-mute"}>
+                {it.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Header (крупный заголовок экрана) ────────────────────────────────────────
+export function RoyHeader({ title, right, sub }: { title: ReactNode; right?: ReactNode; sub?: ReactNode }) {
+  return (
+    <div className="px-5 pt-2 pb-3">
+      <div className="flex items-center justify-between gap-2.5">
+        {/* -0.02em трекинг из хендоффа: на кириллице Golos проверить на 320/1440 + dark; если слипается — поднять до -0.015em */}
+        <h1 className="font-bold leading-[1.1]" style={{ fontSize: 30, letterSpacing: "-0.02em" }}>
+          {title}
+        </h1>
+        {right}
+      </div>
+      {sub && (
+        <div className="text-ink-soft" style={{ fontSize: 13.5, marginTop: 3 }}>
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── IconBtn (круглая кнопка-иконка в шапке) ──────────────────────────────────
+export function IconBtn({ name, onClick, className, "aria-label": ariaLabel }: { name: RoyIconName; onClick?: () => void; className?: string; "aria-label"?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className={cn("inline-flex items-center justify-center shrink-0 rounded-full bg-surface border border-line-2 text-ink-soft", TAP, className)}
+      style={{ width: 38, height: 38 }}
+    >
+      <RoyIcon name={name} size={19} strokeWidth={1.9} />
+    </button>
+  );
+}
+
+// ── SectionLabel (мелкий лейбл секции, uppercase) ────────────────────────────
+export function SectionLabel({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={cn("font-bold uppercase text-ink-mute", className)} style={{ fontSize: 12, letterSpacing: "0.05em", margin: "0 4px 9px" }}>
+      {children}
+    </div>
+  );
+}
+
+// ── FAB (плавающая кнопка действия) ──────────────────────────────────────────
+export function FAB({ onClick, className, "aria-label": ariaLabel = "Создать" }: { onClick?: () => void; className?: string; "aria-label"?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className={cn(
+        "absolute z-20 flex items-center justify-center rounded-[18px] bg-primary text-white border-0 shadow-[0_10px_24px_-6px_rgba(200,130,30,.6)]",
+        TAP,
+        className,
+      )}
+      style={{ right: 18, bottom: 96, width: 56, height: 56 }}
+    >
+      <RoyIcon name="plus" size={26} strokeWidth={2.3} />
+    </button>
+  );
+}
+
+// ── NavHeader (шапка push-экрана с «Назад») ──────────────────────────────────
+export function NavHeader({ onBack, title, right }: { onBack: () => void; title?: ReactNode; right?: ReactNode }) {
+  return (
+    <div className="shrink-0 flex items-center gap-2.5 bg-background" style={{ padding: "6px 14px 10px" }}>
+      <button
+        type="button"
+        onClick={onBack}
+        className={cn("inline-flex items-center gap-0.5 bg-transparent border-0 text-primary font-semibold", TAP)}
+        style={{ fontSize: 16, padding: "4px 4px 4px 0" }}
+      >
+        <RoyIcon name="cleft" size={20} strokeWidth={2.2} />
+        Назад
+      </button>
+      <div className="flex-1 text-center font-semibold truncate" style={{ fontSize: 16, opacity: title ? 1 : 0 }}>
+        {title}
+      </div>
+      <div className="flex justify-end" style={{ width: 64 }}>
+        {right}
+      </div>
+    </div>
+  );
+}
+
+// ── TabBar (4 корневых таба) ─────────────────────────────────────────────────
+export const ROY_TABS: { id: string; label: string; icon: RoyIconName }[] = [
+  { id: "search", label: "Поиск", icon: "search" },
+  { id: "task", label: "Задачи", icon: "task" },
+  { id: "book", label: "База", icon: "book" },
+  { id: "cal", label: "Встречи", icon: "cal" },
+];
+
+export function RoyTabBar({ active, onChange, className }: { active: string; onChange: (id: string) => void; className?: string }) {
+  return (
+    <div className={cn("shrink-0 flex justify-around items-start bg-surface border-t border-line", className)} style={{ paddingTop: 9, paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+      {ROY_TABS.map((t) => {
+        const on = active === t.id;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onChange(t.id)}
+            className={cn("flex flex-col items-center gap-1 bg-transparent border-0", TAP, on ? "text-primary" : "text-ink-mute")}
+            style={{ padding: "2px 14px" }}
+          >
+            <RoyIcon name={t.icon} size={23} strokeWidth={on ? 2.1 : 1.8} />
+            <span style={{ fontSize: 10.5 }} className={on ? "font-bold" : "font-medium"}>
+              {t.label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
