@@ -481,6 +481,8 @@ supabase/functions/swarm-api/
 | `POST` | `/admin/workspaces/:id/users` | Добавить пользователя (только admin) |
 | `DELETE` | `/admin/workspaces/:id/users/:uid` | Удалить пользователя (только admin) |
 | `PATCH` | `/admin/workspaces/:id` | Обновить name/allowed_markets (только admin) |
+| `GET` | `/search?q=` | Семантический поиск по `entries` (вектор `match_entries`, threshold 0.3) → `Entry[]` |
+| `POST` | `/ask` | RAG-ответ (экран Answer редизайна): embed → `matchEntries` (топ-8, приватность+воркспейс в RPC) → GPT-4o-mini синтез строго по источникам со сносками `[n]` → `{ query, answer, sources[], followups[] }`. Пусто → без GPT; сбой синтеза → деградация до источников |
 
 **Переменные окружения:** `TELEGRAM_BOT_TOKEN` (уже есть), `MINIAPP_ORIGIN`, `INITDATA_MAX_AGE` (опц.)
 
@@ -549,6 +551,13 @@ miniapp/
 - `output: "export"` — статический HTML/CSS/JS в `miniapp/out/`, без сервера
 - Деплой: Cloudflare Pages (из директории `out/`)
 - TypeScript + Tailwind CSS
+
+**Редизайн под `design_handoff_roy` (Claude Design) — в работе:**
+- **Дизайн-токены** из хендоффа на shadcn-переменных (`globals.css`): тёплая бумага `#F4F1EB`, янтарный бренд `#D98A2B`, три уровня текста, статусы/приоритеты/типы, радиус карточек 18px, мета на Golos (моно — только таймстампы транскрипта). Семантический слой вынесен в `@theme` (`bg-surface-2`, `text-ink-soft`, `text-status-open`, …).
+- **Дизайн-система `src/components/roy/`**: `icons.tsx` (набор путей хендоффа), `ui.tsx` (Card/TypeTag/Market/Avatar/Chip/Segmented/Header/IconBtn/SectionLabel/FAB/NavHeader/RoyTabBar), `nav.ts` (контекст навигации).
+- **IA**: `RoyApp.tsx` — 4 корневых таба (Поиск/Задачи/База/Встречи) + push-стек деталей вместо плоских секций + модалок; аватар-меню «Ещё» (Настройки/Команда/Админ). Deep-link встреч (`?meeting=`/`startapp=`) и приватность сохранены.
+- **Экраны**: `screens/SearchScreen` (герой: поле + Недавнее + Продолжить), `screens/AnswerScreen` (RAG `/ask`: AI-карточка со сносками + источники + чипы «Уточнить»), `screens/RecordDetail`. Задачи/База/Встречи/Настройки пока подключены существующими компонентами.
+- **Осталось** (фазы 5–7): push-деталь задачи + поле `priority` (миграция), рестайл Базы/Встреч, десктоп-сайдбар + виды задач (Доска/Таймлайн/Спринт/Граф). Спецификация — `transcribator/08-UI-UX-V2.md` + `design_handoff_roy/`.
 
 **Переменные окружения Mini App:**
 
