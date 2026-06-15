@@ -1,0 +1,101 @@
+"use client";
+import { useEffect, useState } from "react";
+import { useRoyNav } from "../nav";
+import { RoyHeader, RoyCard, TypeTag, Market, Chip, FAB } from "../ui";
+import { RoyIcon } from "../icons";
+import { entryTagKey, deriveEntryTitle } from "../entry";
+import { fetchEntries } from "@/lib/api";
+import type { Entry } from "@/types";
+
+// Встреч в фильтрах нет: GET /entries исключает source read_ai/granola/digest — встречи
+// живут в своём табе. Здесь — записи базы: документы, транскрипты, заметки.
+const FILTERS = [
+  { id: "all", label: "Все" },
+  { id: "document", label: "Документы" },
+  { id: "transcript", label: "Транскрипты" },
+  { id: "note", label: "Заметки" },
+];
+
+function fmtDate(iso: string | null): string | null {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  } catch {
+    return null;
+  }
+}
+
+export function RoyBaseScreen() {
+  const { push } = useRoyNav();
+  const [entries, setEntries] = useState<Entry[] | null>(null);
+  const [filter, setFilter] = useState("all");
+  const [q, setQ] = useState("");
+
+  useEffect(() => {
+    fetchEntries()
+      .then(setEntries)
+      .catch(() => setEntries([]));
+  }, []);
+
+  const items = (entries ?? []).filter((e) => filter === "all" || e.entry_type === filter);
+  const go = (query: string) => {
+    const v = query.trim();
+    if (v) push({ view: "answer", params: { query: v } });
+  };
+
+  return (
+    <div className="relative h-full overflow-y-auto">
+      <RoyHeader title="База" />
+      <div className="px-5">
+        <form onSubmit={(e) => { e.preventDefault(); go(q); }}>
+          <div className="flex items-center gap-2.5 rounded-[15px] border border-line-2 bg-surface px-4 py-3">
+            <RoyIcon name="spark" size={18} className="shrink-0 text-primary" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Семантический поиск по базе"
+              enterKeyHint="search"
+              className="flex-1 bg-transparent text-ink outline-none placeholder:text-ink-mute"
+              style={{ fontSize: 15 }}
+            />
+          </div>
+        </form>
+      </div>
+      <div className="flex gap-2 overflow-x-auto px-5 py-3 [scrollbar-width:none]">
+        {FILTERS.map((f) => (
+          <Chip key={f.id} active={filter === f.id} onClick={() => setFilter(f.id)}>
+            {f.label}
+          </Chip>
+        ))}
+      </div>
+      <div className="space-y-2.5 px-5 pb-28">
+        {entries == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 88, borderRadius: 18 }} />)}
+        {entries && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">Здесь пока пусто</div>}
+        {items.map((e) => (
+          <button key={e.id} type="button" onClick={() => push({ view: "record", params: { id: e.id } })} className="w-full text-left transition-transform active:scale-[0.99]">
+            <RoyCard className="px-4 py-3.5">
+              <div className="mb-1.5 flex items-center gap-2">
+                <TypeTag type={entryTagKey(e)} small />
+                <Market code={e.countries?.[0]} />
+                {fmtDate(e.entry_date || e.created_at) && (
+                  <span className="text-ink-mute" style={{ fontSize: 11 }}>
+                    {fmtDate(e.entry_date || e.created_at)}
+                  </span>
+                )}
+              </div>
+              <div className="mb-0.5 font-semibold text-ink" style={{ fontSize: 14.5, letterSpacing: "-0.01em" }}>
+                {deriveEntryTitle(e)}
+              </div>
+              {e.summary && (
+                <div className="line-clamp-2 text-ink-soft" style={{ fontSize: 13 }}>
+                  {e.summary}
+                </div>
+              )}
+            </RoyCard>
+          </button>
+        ))}
+      </div>
+      <FAB onClick={() => push({ view: "newEntry" })} />
+    </div>
+  );
+}

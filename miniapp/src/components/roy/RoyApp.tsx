@@ -10,7 +10,8 @@ import { RecordDetail } from "./screens/RecordDetail";
 import { RoyTasksScreen } from "./screens/RoyTasksScreen";
 import { TaskDetail } from "./screens/TaskDetail";
 import { NewTask } from "./screens/NewTask";
-import { KnowledgeScreen } from "@/components/KnowledgeScreen";
+import { RoyBaseScreen } from "./screens/RoyBaseScreen";
+import { NewEntry } from "./screens/NewEntry";
 import { MeetingsScreen } from "@/components/MeetingsScreen";
 import { AgentReviewQueue } from "@/components/AgentReviewQueue";
 import { MeetingReview } from "@/components/MeetingReview";
@@ -69,7 +70,7 @@ export function RoyApp({ me }: { me: Me | null }) {
             <div className="min-h-0 flex-1 overflow-hidden">
               {tab === "search" && <SearchScreen />}
               {tab === "task" && <RoyTasksScreen />}
-              {tab === "book" && <KnowledgeScreen myTelegramId={me?.telegram_id ?? 0} />}
+              {tab === "book" && <RoyBaseScreen />}
               {tab === "cal" && (
                 <div className="flex h-full flex-col">
                   <AgentReviewQueue onOpen={(id) => push({ view: "meetingReview", params: { id } })} />
@@ -102,6 +103,7 @@ function PushScreen({ route }: { route: RoyRoute }) {
   if (route.view === "record") return <RecordDetail id={route.params.id} />;
   if (route.view === "taskDetail") return <TaskDetail id={route.params.id} />;
   if (route.view === "newTask") return <NewTask id={route.params?.id} />;
+  if (route.view === "newEntry") return <NewEntry />;
   if (route.view === "more") return <MoreScreen />;
   if (route.view === "settings") return <Wrapped title="Настройки"><SettingsScreen /></Wrapped>;
   if (route.view === "team") return <Wrapped title="Команда"><TeamScreen /></Wrapped>;

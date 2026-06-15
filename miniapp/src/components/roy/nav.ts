@@ -12,6 +12,7 @@ export type RoyRoute =
   | { view: "record"; params: { id: string } }
   | { view: "taskDetail"; params: { id: string } }
   | { view: "newTask"; params?: { id?: string } }
+  | { view: "newEntry" }
   | { view: "meetingReview"; params: { id: string } }
   | { view: "settings" }
   | { view: "team" }
