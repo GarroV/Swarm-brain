@@ -28,7 +28,7 @@ import {
 } from "../_shared/tasks/dependencies.ts";
 import type { DependencyType } from "../_shared/tasks/types.ts";
 import { normalizeCountries, COUNTRY_NAMES } from "../_shared/countries.ts";
-import { matchEntries } from "../_shared/search.ts";
+import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { handleAdminRoutes } from "./admin.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -184,6 +184,30 @@ async function createMeetingTasks(
     n++;
   }
   return n;
+}
+
+// Человеческий заголовок записи: metadata.title → первая непустая строка summary → срез content.
+function deriveEntryTitle(e: { summary: string | null; content: string; metadata: Record<string, unknown> }): string {
+  const metaTitle = typeof e.metadata?.title === "string" ? (e.metadata.title as string).trim() : "";
+  if (metaTitle) return metaTitle;
+  const base = (e.summary && e.summary.trim()) || e.content || "";
+  const firstLine = base.split("\n").map((s) => s.trim()).find(Boolean) ?? "";
+  if (!firstLine) return "Запись";
+  return firstLine.length > 80 ? firstLine.slice(0, 77) + "…" : firstLine;
+}
+
+// Ключ типа для TypeTag фронта (doc/mic/note/meet/pdf) из entry_type + metadata.file_type.
+function entryTagKey(entryType: string, metadata: Record<string, unknown>): string {
+  const ft = typeof metadata?.file_type === "string" ? (metadata.file_type as string) : "";
+  if (ft.includes("pdf")) return "pdf";
+  switch (entryType) {
+    case "transcript": return "mic";
+    case "meeting": return "meet";
+    case "note": return "note";
+    case "document": return "doc";
+    case "summary": return "note";
+    default: return "doc";
+  }
 }
 
 // ── Task privacy / validation helpers (Рой) ────────────────────────────────────
@@ -880,6 +904,72 @@ Deno.serve(async (req: Request) => {
     } catch (e) {
       return apiErr(500, e instanceof Error ? e.message : "Search failed", origin);
     }
+  }
+
+  // ── POST /ask — RAG: семантический ответ + пронумерованные источники (экран Answer) ──
+  if (req.method === "POST" && routePath === "/ask") {
+    let askBody: { q?: string };
+    try { askBody = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
+    const q = (askBody.q ?? "").trim();
+    if (!q) return apiErr(400, "q required", origin);
+    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+    // 1) эмбеддинг запроса
+    const embRes = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
+      body: JSON.stringify({ model: "text-embedding-3-small", input: q.slice(0, 8000) }),
+    });
+    if (!embRes.ok) return apiErr(500, "Embedding failed", origin);
+    const embedding: number[] = (await embRes.json()).data[0].embedding;
+    // 2) retrieve (воркспейс-изоляция и приватность — внутри matchEntries/RPC)
+    let matched: MatchedEntry[];
+    try {
+      matched = await matchEntries(supabase, embedding, { groupId, requestingUserId: telegram_id, threshold: 0.3, limit: 8 });
+    } catch (e) {
+      return apiErr(500, e instanceof Error ? e.message : "Search failed", origin);
+    }
+    const sources = matched.map((e, i) => ({
+      n: i + 1,
+      id: e.id,
+      tag: entryTagKey(e.entry_type, e.metadata),
+      entry_type: e.entry_type,
+      title: deriveEntryTitle(e),
+      snippet: (e.summary || e.content || "").replace(/\s+/g, " ").trim().slice(0, 220),
+      market: (e.countries && e.countries[0]) || null,
+      similarity: e.similarity,
+    }));
+    // 3) пусто — без вызова GPT
+    if (sources.length === 0) {
+      return json({ query: q, answer: "По базе, встречам и задачам ничего релевантного не нашлось. Попробуй переформулировать запрос.", sources: [], followups: [] }, 200, origin);
+    }
+    // 4) синтез ответа строго по источникам
+    const ctx = sources.map((s) => `[${s.n}] (${s.entry_type}${s.market ? ", " + s.market : ""}) ${s.title} — ${s.snippet}`).join("\n");
+    const askRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: 'Ты — ассистент команды Dodo CEE. Отвечай на вопрос ТОЛЬКО на основе пронумерованных источников. По-русски, кратко и по делу (2–5 предложений). Где утверждение опирается на источник — ставь сноску [n] (можно несколько подряд: [1][3]). Не выдумывай факты вне источников; если данных недостаточно — честно скажи. Верни СТРОГО JSON: {"answer": "...", "followups": ["...","..."]}. followups — 2–3 коротких логичных уточняющих вопроса.' },
+          { role: "user", content: `Вопрос: ${q}\n\nИсточники:\n${ctx}` },
+        ],
+        max_tokens: 700,
+      }),
+    });
+    if (!askRes.ok) {
+      // деградация: вернуть источники без AI-ответа, экран покажет список
+      return json({ query: q, answer: "", sources, followups: [] }, 200, origin);
+    }
+    let answer = "";
+    let followups: string[] = [];
+    try {
+      const raw = (await askRes.json()).choices[0].message.content as string;
+      const parsed = JSON.parse(raw);
+      answer = typeof parsed.answer === "string" ? parsed.answer : "";
+      followups = Array.isArray(parsed.followups) ? parsed.followups.filter((x: unknown) => typeof x === "string").slice(0, 3) : [];
+    } catch { /* answer пустой → фронт покажет только источники */ }
+    return json({ query: q, answer, sources, followups }, 200, origin);
   }
 
   // ── GET /meetings ─────────────────────────────────────────────────────────────
