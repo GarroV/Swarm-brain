@@ -39,6 +39,34 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+
+  /* Handoff (design_handoff_roy) — семантический слой поверх shadcn.
+     Доступны как Tailwind-классы: bg-surface-2, text-ink-soft, border-line,
+     text-status-open, bg-accent-soft, text-accent-ink, bg-meet-soft, text-tag-mic, … */
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-mute: var(--ink-mute);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-line: var(--accent-line);
+  --color-status-open: var(--status-open);
+  --color-status-prog: var(--status-prog);
+  --color-status-done: var(--status-done);
+  --color-pri-high: var(--pri-high);
+  --color-pri-med: var(--pri-med);
+  --color-pri-low: var(--pri-low);
+  --color-meet-soft: var(--meet-soft);
+  --color-meet-ink: var(--meet-ink);
+  --color-tag-doc: var(--tag-doc);
+  --color-tag-mic: var(--tag-mic);
+  --color-tag-note: var(--tag-note);
+  --color-tag-meet: var(--tag-meet);
+  --color-tag-pdf: var(--tag-pdf);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -48,75 +76,127 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Swarm — «Плотный рабочий инструмент»: тёплая бумага/графит + медовый акцент (08-UI-UX.md).
-   Палитра наложена на стандартные shadcn-переменные → все ui/-компоненты перекрашиваются сами. */
+/* Swarm «Рой» — дизайн-токены из design_handoff_roy (Claude Design): тёплая бумага
+   #F4F1EB + белые поверхности, янтарный бренд-акцент #D98A2B, три уровня текста,
+   статусы (индиго/янтарь/зелёный), приоритеты, тег встречи. Точные hex хендоффа
+   наложены на стандартные shadcn-переменные → ui/-компоненты перекрашиваются сами.
+   Радиус 0.8rem → карточка (rounded-xl) ≈ 18px, кнопка (rounded-lg) ≈ 13px. */
 :root {
-  --background: oklch(0.98 0.003 90);          /* тёплая бумага, не чистый белый */
-  --foreground: oklch(0.22 0.01 90);
-  --card: oklch(1 0 0);                          /* белые поверхности поверх бумаги */
-  --card-foreground: oklch(0.22 0.01 90);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.01 90);
-  --primary: oklch(0.72 0.135 78);              /* мёд — основной акцент/кнопки */
-  --primary-foreground: oklch(0.24 0.04 80);
-  --secondary: oklch(0.96 0.004 90);
-  --secondary-foreground: oklch(0.24 0.01 90);
-  --muted: oklch(0.962 0.004 90);
-  --muted-foreground: oklch(0.50 0.012 90);
-  --accent: oklch(0.95 0.035 85);              /* медовая подложка hover/активных */
-  --accent-foreground: oklch(0.26 0.04 80);
-  --destructive: oklch(0.56 0.20 27);
-  --border: oklch(0.90 0.005 90);
-  --input: oklch(0.90 0.005 90);
-  --ring: oklch(0.72 0.135 78);                /* фокус — медовый */
-  --chart-1: oklch(0.72 0.135 78);             /* мёд */
-  --chart-2: oklch(0.58 0.12 250);             /* синий */
-  --chart-3: oklch(0.62 0.14 150);             /* зелёный */
-  --chart-4: oklch(0.72 0.14 70);              /* янтарь */
-  --chart-5: oklch(0.56 0.20 27);              /* красный */
-  --radius: 0.375rem;                           /* 6px — плотнее, менее «надувной» */
-  --sidebar: oklch(0.97 0.004 90);
-  --sidebar-foreground: oklch(0.22 0.01 90);
-  --sidebar-primary: oklch(0.72 0.135 78);
-  --sidebar-primary-foreground: oklch(0.24 0.04 80);
-  --sidebar-accent: oklch(0.95 0.035 85);
-  --sidebar-accent-foreground: oklch(0.26 0.04 80);
-  --sidebar-border: oklch(0.90 0.005 90);
-  --sidebar-ring: oklch(0.72 0.135 78);
+  --background: #F4F1EB;
+  --foreground: #221F1A;
+  --card: #FFFFFF;
+  --card-foreground: #221F1A;
+  --popover: #FFFFFF;
+  --popover-foreground: #221F1A;
+  --primary: #D98A2B;                 /* бренд-янтарь — filled primary */
+  --primary-foreground: #FFFFFF;
+  --secondary: #FBF9F4;
+  --secondary-foreground: #221F1A;
+  --muted: #FBF9F4;
+  --muted-foreground: #7A7367;
+  --accent: #FBEED7;                  /* = handoff accent-soft: подложка hover/AI */
+  --accent-foreground: #9A5E12;       /* = accent-ink */
+  --destructive: #D9483B;
+  --border: #ECE6DB;                  /* = line */
+  --input: #E2DBCD;                   /* = line-2 */
+  --ring: #D98A2B;
+  --chart-1: #D98A2B;                 /* янтарь */
+  --chart-2: #5B6BE0;                 /* индиго */
+  --chart-3: #2E9E6B;                 /* зелёный */
+  --chart-4: #C2569E;                 /* маджента */
+  --chart-5: #D9483B;                 /* красный */
+  --radius: 0.8rem;
+  --sidebar: #FBF9F4;
+  --sidebar-foreground: #221F1A;
+  --sidebar-primary: #D98A2B;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #FBEED7;
+  --sidebar-accent-foreground: #9A5E12;
+  --sidebar-border: #ECE6DB;
+  --sidebar-ring: #D98A2B;
+
+  /* Семантический слой хендоффа (сырые токены) */
+  --surface: #FFFFFF;
+  --surface-2: #FBF9F4;
+  --ink: #221F1A;
+  --ink-soft: #7A7367;
+  --ink-mute: #ADA694;
+  --line: #ECE6DB;
+  --line-2: #E2DBCD;
+  --accent-soft: #FBEED7;
+  --accent-ink: #9A5E12;
+  --accent-line: #EBD3A2;
+  --status-open: #5B6BE0;
+  --status-prog: #D98A2B;
+  --status-done: #2E9E6B;
+  --pri-high: #D9483B;
+  --pri-med: #D98A2B;
+  --pri-low: #B3AC9C;
+  --meet-soft: #E7F2EC;
+  --meet-ink: #2E9E6B;
+  --tag-doc: #5B6BE0;
+  --tag-mic: #C2569E;
+  --tag-note: #8A7A3A;
+  --tag-meet: #2E9E6B;
+  --tag-pdf: #D9483B;
 }
 
 .dark {
-  --background: oklch(0.185 0.006 90);         /* тёплый графит, не #000 */
-  --foreground: oklch(0.94 0.005 90);
-  --card: oklch(0.225 0.007 90);
-  --card-foreground: oklch(0.94 0.005 90);
-  --popover: oklch(0.225 0.007 90);
-  --popover-foreground: oklch(0.94 0.005 90);
-  --primary: oklch(0.80 0.125 83);
-  --primary-foreground: oklch(0.22 0.05 80);
-  --secondary: oklch(0.27 0.007 90);
-  --secondary-foreground: oklch(0.94 0.005 90);
-  --muted: oklch(0.27 0.007 90);
-  --muted-foreground: oklch(0.66 0.01 90);
-  --accent: oklch(0.30 0.045 80);
-  --accent-foreground: oklch(0.92 0.02 85);
-  --destructive: oklch(0.62 0.19 27);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.80 0.125 83);
-  --chart-1: oklch(0.80 0.125 83);
-  --chart-2: oklch(0.66 0.12 250);
-  --chart-3: oklch(0.70 0.14 150);
-  --chart-4: oklch(0.78 0.13 70);
-  --chart-5: oklch(0.62 0.19 27);
-  --sidebar: oklch(0.205 0.006 90);
-  --sidebar-foreground: oklch(0.94 0.005 90);
-  --sidebar-primary: oklch(0.80 0.125 83);
-  --sidebar-primary-foreground: oklch(0.22 0.05 80);
-  --sidebar-accent: oklch(0.30 0.045 80);
-  --sidebar-accent-foreground: oklch(0.92 0.02 85);
-  --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: oklch(0.80 0.125 83);
+  --background: #1A1714;              /* тёплый графит, не #000 */
+  --foreground: #F2EDE3;
+  --card: #231F19;
+  --card-foreground: #F2EDE3;
+  --popover: #231F19;
+  --popover-foreground: #F2EDE3;
+  --primary: #D98A2B;
+  --primary-foreground: #FFFFFF;
+  --secondary: #2B261F;
+  --secondary-foreground: #F2EDE3;
+  --muted: #2B261F;
+  --muted-foreground: #A89F90;
+  --accent: #3A2B14;                  /* accent-soft dark */
+  --accent-foreground: #F0B45F;       /* accent-ink dark */
+  --destructive: #D9483B;
+  --border: #322D26;                  /* line dark */
+  --input: #3E372E;                   /* line-2 dark */
+  --ring: #D98A2B;
+  --chart-1: #D98A2B;
+  --chart-2: #8A95F0;
+  --chart-3: #52B98C;
+  --chart-4: #C2569E;
+  --chart-5: #D9483B;
+  --sidebar: #231F19;
+  --sidebar-foreground: #F2EDE3;
+  --sidebar-primary: #D98A2B;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #3A2B14;
+  --sidebar-accent-foreground: #F0B45F;
+  --sidebar-border: #322D26;
+  --sidebar-ring: #D98A2B;
+
+  --surface: #231F19;
+  --surface-2: #2B261F;
+  --ink: #F2EDE3;
+  --ink-soft: #A89F90;
+  --ink-mute: #766E61;
+  --line: #322D26;
+  --line-2: #3E372E;
+  --accent-soft: #3A2B14;
+  --accent-ink: #F0B45F;
+  --accent-line: #5A4424;
+  --status-open: #8A95F0;
+  --status-prog: #D98A2B;
+  --status-done: #52B98C;
+  --pri-high: #D9483B;
+  --pri-med: #D98A2B;
+  --pri-low: #B3AC9C;
+  --meet-soft: #1E3328;
+  --meet-ink: #5FBF8E;
+  --tag-doc: #8A95F0;
+  --tag-mic: #C2569E;
+  --tag-note: #B3A24A;
+  --tag-meet: #5FBF8E;
+  --tag-pdf: #D9483B;
 }
 
 @layer base {
@@ -128,5 +208,17 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* Доступность: уважать «уменьшить движение» (анимации хендоффа royIn/shimmer/spin/tap). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -4,9 +4,10 @@ import "./globals.css";
 import { TelegramProvider } from "@/components/TelegramProvider";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
-// Golos Text — весь UI и заголовки (эталонная кириллица). JetBrains Mono — метаданные
-// (даты, таймстампы, коды рынков). Определяют CSS-переменные --font-sans / --font-geist-mono,
-// которые ждёт @theme в globals.css. Это чинит «серифный Times» (раньше переменные не были заданы).
+// Golos Text — весь UI, заголовки И метаданные (эталонная кириллица; дизайн-хендофф
+// набирает мету тоже на Golos). JetBrains Mono оставлен только для технических
+// таймстампов транскрипта в MeetingReview. Определяют CSS-переменные
+// --font-sans / --font-geist-mono, которые ждёт @theme в globals.css.
 const golos = Golos_Text({ subsets: ["latin", "cyrillic"], variable: "--font-sans", display: "swap" });
 const mono = JetBrains_Mono({ subsets: ["latin", "cyrillic"], variable: "--font-geist-mono", display: "swap" });
 
@@ -18,7 +19,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f8f7f5",
+  themeColor: "#F4F1EB",
 };
 
 export default function RootLayout({
