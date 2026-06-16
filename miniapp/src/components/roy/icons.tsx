@@ -27,6 +27,8 @@ export const ROY_ICON_PATHS = {
   check: "M4.5 10.5l3.5 3.5 7.5-8",
   home: "M3.5 8.5L10 3l6.5 5.5M5 7.5V16h10V7.5",
   pdf: "M5.5 2.5h6l3.5 3.5v11h-9.5zM11.5 2.5v4h4M7 11h1.2a1 1 0 010 2H7v-2zm0 2v2",
+  pencil: "M4 16l.9-3.3L13 4.6a1.3 1.3 0 011.8 0l.6.6a1.3 1.3 0 010 1.8L7.3 15.1 4 16z",
+  trash: "M5 6h10M8.5 6V4.5a1 1 0 011-1h1a1 1 0 011 1V6M6.5 6v9a1 1 0 001 1h5a1 1 0 001-1V6M8.5 9v4M11.5 9v4",
 } as const;
 
 export type RoyIconName = keyof typeof ROY_ICON_PATHS;

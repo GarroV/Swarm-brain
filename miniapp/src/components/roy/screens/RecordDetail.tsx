@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
 import { NavHeader, TypeTag, Market, SectionLabel } from "../ui";
-import { entryTagKey, deriveEntryTitle } from "../entry";
+import { entryTagKey, deriveEntryTitle, isSearchIndexSummary } from "../entry";
 import { fetchEntry } from "@/lib/api";
 import type { Entry } from "@/types";
 
@@ -49,7 +49,7 @@ export function RecordDetail({ id }: { id: string }) {
             <h1 className="mb-3 font-bold text-ink" style={{ fontSize: 22, letterSpacing: "-0.01em", lineHeight: 1.2 }}>
               {deriveEntryTitle(e)}
             </h1>
-            {e.summary && (
+            {e.summary && !isSearchIndexSummary(e) && (
               <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 16 }}>
                 <div className="mb-1.5 font-bold uppercase text-accent-ink" style={{ fontSize: 11, letterSpacing: "0.05em" }}>
                   Кратко от ИИ

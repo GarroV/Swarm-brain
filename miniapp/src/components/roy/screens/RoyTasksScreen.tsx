@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState, type MouseEvent } from "react";
 import { useRoyNav } from "../nav";
 import { RoyHeader, Segmented, RoyCard, PriDot, Market, Avatar, FAB } from "../ui";
 import { RoyIcon } from "../icons";
-import { fetchTasks, updateTask } from "@/lib/api";
+import { SwipeRow } from "../SwipeRow";
+import { fetchTasks, updateTask, deleteTask } from "@/lib/api";
 import { displayName } from "@/lib/utils";
 import type { Task } from "@/types";
 
@@ -31,7 +32,7 @@ function initials(name: string): string {
 }
 
 export function RoyTasksScreen() {
-  const { push } = useRoyNav();
+  const { push, toast } = useRoyNav();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [seg, setSeg] = useState("open");
 
@@ -46,10 +47,11 @@ export function RoyTasksScreen() {
 
   const counts = (id: string) => (tasks ?? []).filter((t) => norm(t.status) === id).length;
   const items = (tasks ?? []).filter((t) => norm(t.status) === seg);
+  const done = (t: Task) => norm(t.status) === "done";
 
   const toggle = async (t: Task, e: MouseEvent) => {
     e.stopPropagation();
-    const next = norm(t.status) === "done" ? "open" : "done";
+    const next = done(t) ? "open" : "done";
     setTasks((prev) => prev?.map((x) => (x.id === t.id ? { ...x, status: next } : x)) ?? null);
     try {
       await updateTask(t.id, { status: next });
@@ -58,7 +60,16 @@ export function RoyTasksScreen() {
     }
   };
 
-  const done = (t: Task) => norm(t.status) === "done";
+  const remove = async (t: Task) => {
+    setTasks((prev) => prev?.filter((x) => x.id !== t.id) ?? null);
+    try {
+      await deleteTask(t.id);
+      toast("Задача удалена");
+    } catch {
+      toast("Не удалось удалить");
+      load();
+    }
+  };
 
   return (
     <div className="relative h-full overflow-y-auto">
@@ -72,11 +83,19 @@ export function RoyTasksScreen() {
           <div className="py-10 text-center text-sm text-ink-soft">{seg === "done" ? "Пусто — всё разобрано" : "Здесь пока пусто"}</div>
         )}
         {items.map((t) => (
-          <button key={t.id} type="button" onClick={() => push({ view: "taskDetail", params: { id: t.id } })} className="w-full text-left transition-transform active:scale-[0.99]">
+          <SwipeRow
+            key={t.id}
+            onTap={() => push({ view: "taskDetail", params: { id: t.id } })}
+            actions={[
+              { icon: "pencil", label: "Изменить", color: "var(--status-open)", onClick: () => push({ view: "newTask", params: { id: t.id } }) },
+              { icon: "trash", label: "Удалить", color: "var(--pri-high)", onClick: () => remove(t) },
+            ]}
+          >
             <RoyCard className="flex items-center gap-3 px-4 py-3.5">
               <span
                 role="checkbox"
                 aria-checked={done(t)}
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => toggle(t, e)}
                 className="flex shrink-0 items-center justify-center rounded-full border-2"
                 style={{
@@ -110,7 +129,7 @@ export function RoyTasksScreen() {
               </div>
               {t.assignees?.[0] && <Avatar size={28}>{initials(t.assignees[0])}</Avatar>}
             </RoyCard>
-          </button>
+          </SwipeRow>
         ))}
       </div>
       <FAB onClick={() => push({ view: "newTask" })} />

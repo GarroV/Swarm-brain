@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
 import { RoyHeader, RoyCard, TypeTag, Market, Chip, FAB } from "../ui";
 import { RoyIcon } from "../icons";
-import { entryTagKey, deriveEntryTitle } from "../entry";
+import { entryTagKey, deriveEntryTitle, entryPreview } from "../entry";
 import { fetchEntries } from "@/lib/api";
 import type { Entry } from "@/types";
 
@@ -86,11 +86,14 @@ export function RoyBaseScreen() {
               <div className="mb-0.5 font-semibold text-ink" style={{ fontSize: 14.5, letterSpacing: "-0.01em" }}>
                 {deriveEntryTitle(e)}
               </div>
-              {e.summary && (
-                <div className="line-clamp-2 text-ink-soft" style={{ fontSize: 13 }}>
-                  {e.summary}
-                </div>
-              )}
+              {(() => {
+                const preview = entryPreview(e);
+                return preview ? (
+                  <div className="line-clamp-2 text-ink-soft" style={{ fontSize: 13 }}>
+                    {preview}
+                  </div>
+                ) : null;
+              })()}
             </RoyCard>
           </button>
         ))}
