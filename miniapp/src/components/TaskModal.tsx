@@ -4,6 +4,7 @@ import type { Task, User } from "@/types";
 import { displayName } from "@/lib/utils";
 import {
   type CreateTaskInput,
+  type UpdateTaskInput,
   createTask,
   updateTask,
   fetchUsers,
@@ -52,6 +53,8 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
   const [country, setCountry] = useState("");
   const [taskRole, setTaskRole] = useState(NONE);
   const [assigneeId, setAssigneeId] = useState(NONE);
+  // Исходный исполнитель: чтобы при правке других полей не затирать его (PATCH шлём только при изменении).
+  const [initialAssignee, setInitialAssignee] = useState(NONE);
   const [users, setUsers] = useState<User[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,10 +67,25 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
     setDueDate(task?.due_date ?? "");
     setCountry(task?.country ?? "");
     setTaskRole(task?.task_role ?? NONE);
-    setAssigneeId(task?.assignee_telegram_ids?.[0]?.toString() ?? NONE);
+    const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
+    setAssigneeId(cur);
+    setInitialAssignee(cur);
     setError(null);
     fetchUsers().then(setUsers).catch(() => {});
   }, [open, task]);
+
+  // Опции исполнителя = пользователи воркспейса + текущий исполнитель, если его нет в списке
+  // (иначе Select не показал бы его, а сохранение затёрло бы назначение).
+  const assigneeOptions: { id: string; name: string }[] = [
+    ...users.map((u) => ({ id: u.telegram_id.toString(), name: displayName(u.name) })),
+  ];
+  if (assigneeId !== NONE && !assigneeOptions.some((o) => o.id === assigneeId)) {
+    const curName = task?.assignees?.[0];
+    assigneeOptions.unshift({
+      id: assigneeId,
+      name: curName && !/^\d+$/.test(curName) ? curName : `#${assigneeId}`,
+    });
+  }
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -77,18 +95,22 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
     setSaving(true);
     setError(null);
     try {
-      const fields: CreateTaskInput = {
+      const base = {
         title: title.trim(),
         description: description.trim() || null,
         due_date: dueDate || null,
         country: country.trim() || null,
         task_role: taskRole === NONE ? null : taskRole,
-        assignee_telegram_id:
-          assigneeId === NONE ? null : parseInt(assigneeId, 10),
       };
+      const assigneeValue = assigneeId === NONE ? null : parseInt(assigneeId, 10);
       if (isEdit && task) {
+        // Исполнителя шлём только если поменяли — иначе правка других полей затёрла бы
+        // назначение, которое нельзя было префиллить (имя без telegram_id).
+        const fields: UpdateTaskInput = { ...base };
+        if (assigneeId !== initialAssignee) fields.assignee_telegram_id = assigneeValue;
         await updateTask(task.id, fields);
       } else {
+        const fields: CreateTaskInput = { ...base, assignee_telegram_id: assigneeValue };
         await createTask(fields);
       }
       onSaved();
@@ -174,9 +196,9 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NONE}>— Нет —</SelectItem>
-                {users.map((u) => (
-                  <SelectItem key={u.telegram_id} value={u.telegram_id.toString()}>
-                    {displayName(u.name)}
+                {assigneeOptions.map((o) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    {o.name}
                   </SelectItem>
                 ))}
               </SelectContent>
