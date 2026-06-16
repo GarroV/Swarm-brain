@@ -52,6 +52,26 @@ struct SwarmClient {
         return try decoder.decode(ClaimResponse.self, from: data)
     }
 
+    // GET /meeting-current — идущая/ближайшая встреча из Google Calendar (на сервере).
+    // nil, если Google не подключён / событий нет / сетевой сбой.
+    func currentMeeting() async throws -> MeetingIdentity.Info? {
+        var req = URLRequest(url: url("/meeting-current"))
+        authed(&req)
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        guard (200...299).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else { return nil }
+        struct M: Decodable {
+            let identityKey: String
+            let title: String?
+            let attendees: [Attendee]?
+            let startedAt: String?
+            let endedAt: String?
+        }
+        struct Resp: Decodable { let meeting: M? }
+        guard let m = try decoder.decode(Resp.self, from: data).meeting else { return nil }
+        return MeetingIdentity.Info(kind: .calendar, key: m.identityKey, title: m.title,
+                                    attendees: m.attendees ?? [], startISO: m.startedAt, endISO: m.endedAt)
+    }
+
     // POST /meeting-ingest — загрузить аудио (multipart). Только если decision=transcribe.
     // audio = системный звук (собеседники), audio_mic = микрофон (я), опционально.
     // Сервер транскрибирует оба и сводит по таймстампам.

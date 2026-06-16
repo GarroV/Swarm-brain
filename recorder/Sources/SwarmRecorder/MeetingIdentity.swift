@@ -1,8 +1,8 @@
 import Foundation
 
-// Идентичность встречи для claim/дедупа — БЕЗ календаря (им никто не пользуется).
-// Источники: комната из URL активной вкладки браузера (Meet/Контур, см. BrowserRoom) →
-// manual. Дедуп онлайн-звонков идёт по ключу комнаты (одинаков у всех по одной ссылке).
+// Идентичность встречи для claim/дедупа. Источники (приоритет): календарь (Google, с сервера
+// meeting-current — см. SwarmClient.currentMeeting) → комната из URL браузера (BrowserRoom) →
+// manual. macOS-Календарь не используется: события читаются на сервере по OAuth-интеграции.
 enum MeetingIdentity {
     struct Info: Sendable {
         let kind: IdentityKind

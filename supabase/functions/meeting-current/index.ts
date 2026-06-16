@@ -43,8 +43,9 @@ Deno.serve(async (req: Request) => {
   if (!token) return json({ meeting: null, reason: "token_refresh_failed" });
 
   const now = new Date();
-  const timeMin = new Date(now.getTime() - 30 * 60_000).toISOString();
-  const timeMax = new Date(now.getTime() + 30 * 60_000).toISOString();
+  // Окно: чуть назад (идущая) + вперёд на 10 мин (предстоящая, для упреждающего «через N мин»).
+  const timeMin = new Date(now.getTime() - 2 * 60_000).toISOString();
+  const timeMax = new Date(now.getTime() + 10 * 60_000).toISOString();
   const q = new URLSearchParams({ singleEvents: "true", orderBy: "startTime", timeMin, timeMax, maxResults: "10" });
   const calRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${q}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -58,10 +59,12 @@ Deno.serve(async (req: Request) => {
   };
   const items = ((await calRes.json()).items ?? []) as GEvent[];
   const timed = items.filter((e) => e.start?.dateTime && e.end?.dateTime);
-  // Идущее сейчас; иначе последнее уже начавшееся.
+  // Идущее сейчас; иначе ближайшее предстоящее (в окне) — для упреждающего уведомления.
   const ongoing = timed.find((e) => new Date(e.start!.dateTime!) <= now && now <= new Date(e.end!.dateTime!));
-  const started = timed.filter((e) => new Date(e.start!.dateTime!) <= now).pop();
-  const ev = ongoing ?? started;
+  const upcoming = timed
+    .filter((e) => new Date(e.start!.dateTime!) > now)
+    .sort((a, b) => new Date(a.start!.dateTime!).getTime() - new Date(b.start!.dateTime!).getTime())[0];
+  const ev = ongoing ?? upcoming;
   if (!ev) return json({ meeting: null, reason: "no_ongoing_event" });
 
   const uid = ev.iCalUID ?? ev.id;

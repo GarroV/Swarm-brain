@@ -2,10 +2,11 @@ import AppKit
 import Foundation
 import UserNotifications
 
-// Меню-бар приложение. Ручная запись + авто-детект ЗВОНКА ПО МИКРОФОНУ (без календаря) с
-// ЗАПРОСОМ СОГЛАСИЯ: как только вход занят (идёт звонок) — уведомление «записать?» и пункт
-// меню. Запись стартует только по явному действию пользователя, никогда молча.
-// Идентичность для дедупа: комната из URL браузера (Meet/Контур) → manual.
+// Меню-бар приложение. Авто-предложение записи с СОГЛАСИЕМ из двух источников:
+//   • Календарь (Google, через сервер meeting-current) — с упреждением «встреча через N мин».
+//   • Микрофон (CoreAudio) — запасной детект звонка, если встречи нет в календаре.
+// Запись стартует только по явному действию пользователя, никогда молча.
+// Идентичность/дедуп: календарное событие → комната из URL браузера → manual.
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var statusItem: NSStatusItem!
     private let recorder = AudioRecorder()
@@ -19,10 +20,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var recordStartedAt: Date?
     private var identity: MeetingIdentity.Info?
 
-    // Авто-детект звонка по микрофону.
-    private var callActive = false              // идёт звонок, по которому предлагаем запись
-    private var micWasActive = false            // прошлое состояние входа (для детекта старта)
-    private var callDismissedUntil: Date?       // «не сейчас» → не предлагать до этого времени
+    // Календарное предложение.
+    private var pendingMeeting: MeetingIdentity.Info?
+    private var dismissedKeys: Set<String> = []   // «не записывать» / уже записали
+    private var notifiedKeys: Set<String> = []     // по каким уже слали уведомление
+    // Микрофонный запасной детект.
+    private var callActive = false
+    private var micWasActive = false
+    private var callDismissedUntil: Date?
     private var watchTimer: Timer?
 
     private let notifyCategory = "MEETING_START"
@@ -41,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         startWatching()
     }
 
-    // ── Авто-детект звонка (опрос активности микрофона) ──────────────────────────
+    // ── Авто-детект (календарь + микрофон) ───────────────────────────────────────
     private func setupNotifications() {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
@@ -52,33 +57,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func startWatching() {
-        let t = Timer.scheduledTimer(timeInterval: 8, target: self, selector: #selector(watchTick), userInfo: nil, repeats: true)
+        let t = Timer.scheduledTimer(timeInterval: 25, target: self, selector: #selector(watchTick), userInfo: nil, repeats: true)
         RunLoop.main.add(t, forMode: .common)
         watchTimer = t
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.watchTick() }
     }
 
     @objc private func watchTick() {
-        guard config != nil, configError == nil else { return }
-        handleMic(CallDetector.isMicActive())
+        guard let cfg = config, configError == nil else { return }
+        Task {
+            let meeting = (try? await SwarmClient(config: cfg).currentMeeting()) ?? nil
+            let micOn = CallDetector.isMicActive()
+            DispatchQueue.main.async { [weak self] in self?.handleDetection(meeting: meeting, micActive: micOn) }
+        }
     }
 
-    private func handleMic(_ active: Bool) {
+    private func handleDetection(meeting: MeetingIdentity.Info?, micActive: Bool) {
         let wasActive = micWasActive
-        micWasActive = active
-        // Во время записи/отправки не предлагаем (микрофон занят нами).
+        micWasActive = micActive
         guard case .idle = state else { return }
 
-        if active && !wasActive {
-            if let until = callDismissedUntil, Date() < until { return }   // «не сейчас» — cooldown
-            if !callActive {
-                callActive = true
-                postCallNotification()
+        // Календарь — приоритет (богаче: название, участники, упреждение).
+        if let m = meeting, !dismissedKeys.contains(m.key) {
+            callActive = false
+            if pendingMeeting?.key != m.key {
+                pendingMeeting = m
+                if !notifiedKeys.contains(m.key) { notifiedKeys.insert(m.key); notifyMeeting(m) }
                 rebuildMenu()
             }
-        } else if !active, callActive {
+            return
+        }
+        if pendingMeeting != nil { pendingMeeting = nil; rebuildMenu() }
+
+        // Нет события календаря → запасной детект звонка по микрофону.
+        if micActive && !wasActive {
+            if let until = callDismissedUntil, Date() < until { return }
+            if !callActive { callActive = true; postCallNotification(); rebuildMenu() }
+        } else if !micActive, callActive {
             callActive = false
             rebuildMenu()
         }
+    }
+
+    private func meetingWhen(_ m: MeetingIdentity.Info) -> String {
+        guard let iso = m.startISO, let start = ISO8601DateFormatter().date(from: iso) else { return "идёт" }
+        let mins = Int(start.timeIntervalSinceNow / 60)
+        return mins <= 0 ? "идёт" : "через \(mins) мин"
+    }
+
+    private func notifyMeeting(_ m: MeetingIdentity.Info) {
+        let content = UNMutableNotificationContent()
+        content.title = "Встреча \(meetingWhen(m))"
+        content.body = "«\(m.title ?? "Без названия")» — записать?"
+        content.categoryIdentifier = notifyCategory
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "meeting-\(m.key)", content: content, trigger: nil))
     }
 
     private func postCallNotification() {
@@ -87,8 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         content.body = "Записать встречу?"
         content.categoryIdentifier = notifyCategory
         content.sound = .default
-        let req = UNNotificationRequest(identifier: "call-\(Int(Date().timeIntervalSince1970))", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(req)
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "call-\(Int(Date().timeIntervalSince1970))", content: content, trigger: nil))
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
@@ -97,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         if response.actionIdentifier == recordAction || response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-            DispatchQueue.main.async { [weak self] in self?.acceptCall() }
+            DispatchQueue.main.async { [weak self] in self?.acceptPrompt() }
         }
         completionHandler()
     }
@@ -105,7 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // ── UI ──────────────────────────────────────────────────────────────────────
     private func symbol() -> String {
         switch state {
-        case .idle: return callActive ? "record.circle" : "mic"
+        case .idle: return (pendingMeeting != nil || callActive) ? "record.circle" : "mic"
         case .recording: return "record.circle.fill"
         case .sending: return "arrow.up.circle"
         case .error: return "exclamationmark.triangle"
@@ -115,7 +147,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func statusText() -> String {
         if let e = configError { return "⚠️ \(e)" }
         switch state {
-        case .idle: return callActive ? "Идёт звонок" : "Готов"
+        case .idle:
+            if let m = pendingMeeting { return "Встреча \(meetingWhen(m)): «\(m.title ?? "")»" }
+            if callActive { return "Идёт звонок" }
+            return "Готов"
         case .recording: return "● Идёт запись"
         case .sending: return "Отправка…"
         case .error(let m): return "Ошибка: \(m)"
@@ -138,7 +173,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             case .sending:
                 break
             default:
-                if callActive {
+                if pendingMeeting != nil {
+                    menu.addItem(NSMenuItem(title: "🔴 Записать встречу", action: #selector(recordMeetingTapped), keyEquivalent: "r"))
+                    menu.addItem(NSMenuItem(title: "Не записывать", action: #selector(dismissMeetingTapped), keyEquivalent: ""))
+                } else if callActive {
                     menu.addItem(NSMenuItem(title: "🔴 Записать звонок", action: #selector(recordCallTapped), keyEquivalent: "r"))
                     menu.addItem(NSMenuItem(title: "Не сейчас", action: #selector(dismissCallTapped), keyEquivalent: ""))
                 } else {
@@ -169,15 +207,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSWorkspace.shared.open(url)
     }
 
-    // Токен из буфера (без текстового поля — вставка в NSTextField в меню-бар-приложении
-    // работала криво). Пользователь копирует токен в боте (тап по smcp_-блоку) → жмёт пункт.
     @objc private func pasteTokenTapped() {
         func info(_ title: String, _ text: String = "") {
-            let a = NSAlert()
-            a.messageText = title
-            a.informativeText = text
-            NSApp.activate(ignoringOtherApps: true)
-            a.runModal()
+            let a = NSAlert(); a.messageText = title; a.informativeText = text
+            NSApp.activate(ignoringOtherApps: true); a.runModal()
         }
         let clip = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !clip.isEmpty else {
@@ -204,18 +237,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc private func recordTapped() {
         beginRecording(identity: MeetingIdentity.currentRoom())
     }
+    @objc private func recordMeetingTapped() { acceptPrompt() }
+    @objc private func recordCallTapped() { acceptPrompt() }
 
-    @objc private func recordCallTapped() {
-        acceptCall()
+    private func acceptPrompt() {
+        if let m = pendingMeeting {
+            pendingMeeting = nil
+            beginRecording(identity: m)
+        } else {
+            callActive = false
+            beginRecording(identity: MeetingIdentity.currentRoom())
+        }
     }
 
-    private func acceptCall() {
-        callActive = false
-        beginRecording(identity: MeetingIdentity.currentRoom())
+    @objc private func dismissMeetingTapped() {
+        if let m = pendingMeeting { dismissedKeys.insert(m.key) }
+        pendingMeeting = nil
+        rebuildMenu()
     }
-
     @objc private func dismissCallTapped() {
-        callDismissedUntil = Date().addingTimeInterval(10 * 60)   // не предлагать 10 минут
+        callDismissedUntil = Date().addingTimeInterval(10 * 60)
         callActive = false
         rebuildMenu()
     }
@@ -227,6 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             setState(.error("нет доступа к записи экрана — выдай в System Settings → Privacy"))
             return
         }
+        pendingMeeting = nil
         callActive = false
         let startedAt = Date()
         let base = UUID().uuidString
@@ -252,8 +294,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             do {
                 let res = try await recorder.stop()
 
-                // Лимит OpenAI 25 МБ/дорожку (~2,3 ч при 24 кбит/с). Полная нарезка длинных
-                // записей — отдельная итерация. Пока честная ошибка вместо невнятного 413.
                 func fileSize(_ u: URL?) -> Int {
                     guard let u, let attrs = try? FileManager.default.attributesOfItem(atPath: u.path) else { return 0 }
                     return (attrs[.size] as? Int) ?? 0
@@ -270,7 +310,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 let started = recordStartedAt ?? now
                 let req: ClaimRequest
                 if let info = identity {
-                    // Комната (ссылка звонка): общий ключ у всех записавших → дедуп.
                     req = ClaimRequest(
                         identityKind: info.kind,
                         identityKey: info.key,
@@ -294,6 +333,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 if claim.shouldTranscribe {
                     _ = try await withRetry { try await client.uploadAudio(meetingID: claim.meetingId, systemURL: res.system, micURL: res.mic) }
                 }
+                // Записанную встречу больше не предлагать.
+                if let info = identity { dismissedKeys.insert(info.key) }
                 identity = nil
                 try? FileManager.default.removeItem(at: res.system)
                 if let m = res.mic { try? FileManager.default.removeItem(at: m) }
