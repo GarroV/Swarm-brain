@@ -349,7 +349,8 @@ Deno.serve(async (req: Request) => {
         const expStr = expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
         await sendMessage(chatId,
           `🔑 <b>Твой токен для Claude Desktop</b>\n\n` +
-          `<code>${token}</code>\n\n` +
+          `<code>${token}</code>\n` +
+          `<i>👆 Нажми на токен — скопируется целиком.</i>\n\n` +
           `Действует до <b>${expStr}</b> (${TOKEN_TTL_DAYS} дней). Сохрани его — повторно не покажу. Если потеряешь или истечёт — запусти /mytoken снова (старый перестанет работать).\n\n` +
           `Отозвать прямо сейчас: /revoketoken\n\n` +
           `Следующий шаг: /claude — получи готовые инструкции для проекта.`
