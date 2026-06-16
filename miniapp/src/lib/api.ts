@@ -620,6 +620,19 @@ export async function disconnectGranola(): Promise<void> {
   return apiFetch<void>("/integrations/granola", { method: "DELETE" });
 }
 
+export async function googleConnectUrl(): Promise<string> {
+  if (DEV_MODE) return "#";
+  return (await apiFetch<{ url: string }>("/google/connect-url")).url;
+}
+export async function disconnectGoogle(): Promise<void> {
+  if (DEV_MODE) {
+    const idx = mockIntegrations.findIndex((i) => i.service === "google_calendar");
+    if (idx !== -1) mockIntegrations.splice(idx, 1);
+    return;
+  }
+  return apiFetch<void>("/integrations/google", { method: "DELETE" });
+}
+
 export async function fetchGranolaUnprocessed(period: "today" | "7d" | "30d" = "7d"): Promise<GranolaNote[]> {
   if (DEV_MODE) return mockGranolaUnprocessed;
   return apiFetch<GranolaNote[]>(`/granola/notes?period=${period}`);
