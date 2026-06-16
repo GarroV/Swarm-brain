@@ -552,12 +552,13 @@ miniapp/
 - Деплой: Cloudflare Pages (из директории `out/`)
 - TypeScript + Tailwind CSS
 
-**Редизайн под `design_handoff_roy` (Claude Design) — в работе:**
+**Редизайн под `design_handoff_roy` (Claude Design) — фазы 1–7 в проде:**
 - **Дизайн-токены** из хендоффа на shadcn-переменных (`globals.css`): тёплая бумага `#F4F1EB`, янтарный бренд `#D98A2B`, три уровня текста, статусы/приоритеты/типы, радиус карточек 18px, мета на Golos (моно — только таймстампы транскрипта). Семантический слой вынесен в `@theme` (`bg-surface-2`, `text-ink-soft`, `text-status-open`, …).
-- **Дизайн-система `src/components/roy/`**: `icons.tsx` (набор путей хендоффа), `ui.tsx` (Card/TypeTag/Market/Avatar/Chip/Segmented/Header/IconBtn/SectionLabel/FAB/NavHeader/RoyTabBar), `nav.ts` (контекст навигации).
-- **IA**: `RoyApp.tsx` — 4 корневых таба (Поиск/Задачи/База/Встречи) + push-стек деталей вместо плоских секций + модалок; аватар-меню «Ещё» (Настройки/Команда/Админ). Deep-link встреч (`?meeting=`/`startapp=`) и приватность сохранены.
-- **Экраны**: `screens/SearchScreen` (герой: поле + Недавнее + Продолжить), `screens/AnswerScreen` (RAG `/ask`: AI-карточка со сносками + источники + чипы «Уточнить»), `screens/RecordDetail`. Задачи/База/Встречи/Настройки пока подключены существующими компонентами.
-- **Осталось** (фазы 5–7): push-деталь задачи + поле `priority` (миграция), рестайл Базы/Встреч, десктоп-сайдбар + виды задач (Доска/Таймлайн/Спринт/Граф). Спецификация — `transcribator/08-UI-UX-V2.md` + `design_handoff_roy/`.
+- **Дизайн-система `src/components/roy/`**: `icons.tsx`, `ui.tsx` (Card/TypeTag/Market/Avatar/Chip/Segmented/Header/IconBtn/SectionLabel/FAB/NavHeader/RoyTabBar), `nav.ts` (контекст), `entry.ts` (deriveEntryTitle/entryTagKey), `useIsDesktop.ts`.
+- **IA**: `RoyApp.tsx` — 4 корневых таба + push-стек деталей вместо плоских секций/модалок; аватар-меню «Ещё» (Настройки/Команда/Админ). **Адаптив:** мобайл — нижний таб-бар; десктоп (lg+) — левый `RoySidebar`, вкладка «Задачи» → полный `TasksScreen` с видами Доска/Таймлайн/Спринт/Граф (мобайл — список). Deep-link встреч и приватность сохранены.
+- **Экраны** (`screens/`): `SearchScreen` (герой), `AnswerScreen` (RAG `/ask`: ответ со сносками + источники + «Уточнить»), `RoyTasksScreen` + `TaskDetail` + `NewTask` (поле `priority`), `RoyBaseScreen` + `RecordDetail` + `NewEntry`, `RoyMeetingsScreen` + `MeetingDetail` (вычитка `AgentReviewQueue`/`MeetingReview` и подтверждение/правка/удаление сохранены).
+- **Бэкенд под редизайн**: `POST /ask` (RAG), колонка `tasks.priority` (миграция `20260615000000`). Спецификация — `transcribator/08-UI-UX-V2.md` + `design_handoff_roy/`.
+- **Хвосты (не блокеры):** визуальная очная проверка десктопа в Telegram; чистка осиротевших старых компонентов (`BottomNav`/`Sidebar`/`KnowledgeScreen`/`MeetingsScreen`/`TaskCard`/`TaskModal`/`*Dialog` — больше не используются `RoyApp`, но `TasksScreen`+виды задач используются на десктопе); бэкенд-расширения из хендоффа (человеческий `title` записи, связь task↔entry) — по желанию.
 
 **Переменные окружения Mini App:**
 
