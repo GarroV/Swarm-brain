@@ -158,7 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 menu.addItem(NSMenuItem(title: "Открыть Рой", action: #selector(openWeb), keyEquivalent: ""))
             }
         } else {
-            menu.addItem(NSMenuItem(title: "Вставить токен…", action: #selector(enterTokenTapped), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Вставить токен из буфера", action: #selector(pasteTokenTapped), keyEquivalent: ""))
         }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Выйти", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
@@ -194,25 +194,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSApp.mainMenu = mainMenu
     }
 
-    @objc private func enterTokenTapped() {
-        let alert = NSAlert()
-        alert.messageText = "Токен Swarm"
-        alert.informativeText = "Вставь персональный токен из бота (/mytoken), начинается с smcp_."
-        alert.addButton(withTitle: "Сохранить")
-        alert.addButton(withTitle: "Отмена")
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-        field.placeholderString = "smcp_…"
-        alert.accessoryView = field
-        NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let token = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else { return }
+    // Токен берём ПРЯМО ИЗ БУФЕРА — без текстового поля (в меню-бар-приложении вставка в
+    // NSTextField работала криво). Пользователь копирует токен в боте (тап по smcp_-блоку) →
+    // жмёт этот пункт. Валидируем префикс smcp_, чтобы отсечь обрезки.
+    @objc private func pasteTokenTapped() {
+        func info(_ title: String, _ text: String = "") {
+            let a = NSAlert()
+            a.messageText = title
+            a.informativeText = text
+            NSApp.activate(ignoringOtherApps: true)
+            a.runModal()
+        }
+        let clip = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !clip.isEmpty else {
+            info("Буфер пуст", "Скопируй токен из бота: /mytoken (тапни по smcp_-блоку — скопируется целиком).")
+            return
+        }
+        guard clip.hasPrefix("smcp_"), clip.count >= 12 else {
+            info("Это не похоже на токен", "В буфере: «\(clip.prefix(24))…». Нужен токен из /mytoken — начинается с smcp_. Скопируй его целиком (тап по smcp_-блоку в боте).")
+            return
+        }
         do {
-            try SwarmConfig.saveToken(token)
+            try SwarmConfig.saveToken(clip)
             config = try SwarmConfig.load()
             configError = nil
             state = .idle
             rebuildMenu()
+            info("Токен сохранён ✅", "smcp_…\(clip.suffix(4))")
         } catch {
             setState(.error("не сохранить токен: \(error)"))
         }
