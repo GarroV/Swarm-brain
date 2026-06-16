@@ -40,8 +40,8 @@ enum IdentityKind: String, Codable {
     case manual
 }
 
-// Участник встречи (из календаря) → meetings.attendees.
-struct Attendee: Encodable, Sendable {
+// Участник встречи → meetings.attendees (шлём в claim) и приходит из meeting-current (Google).
+struct Attendee: Codable, Sendable {
     let name: String?
     let email: String?
 }

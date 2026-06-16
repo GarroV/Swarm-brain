@@ -7,7 +7,7 @@ extension MeetingIdentity {
     // разрешения Automation (контроль браузера); при отказе/неизвестном браузере → nil → manual.
     static func currentRoom() -> Info? {
         guard let urlStr = frontmostBrowserURL(), let room = parseRoom(urlStr) else { return nil }
-        return Info(kind: .room, key: room.key, title: room.title, attendees: [], start: nil, end: nil)
+        return Info(kind: .room, key: room.key, title: room.title, attendees: [], startISO: nil, endISO: nil)
     }
 
     private static func frontmostBrowserURL() -> String? {

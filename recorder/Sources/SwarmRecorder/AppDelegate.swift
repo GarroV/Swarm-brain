@@ -61,11 +61,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc private func watchTick() {
-        guard config != nil, configError == nil else { return }
+        guard let cfg = config, configError == nil else { return }
         // Пока идёт запись/отправка — не предлагаем ничего.
         if case .idle = state {} else { return }
         Task {
-            let info = await MeetingIdentity.currentCalendar()
+            // Идущая встреча — с сервера (Google Calendar). Сеть/нет интеграции → nil (тихо).
+            let info = (try? await SwarmClient(config: cfg).currentMeeting()) ?? nil
             DispatchQueue.main.async { [weak self] in self?.handleOngoing(info) }
         }
     }
@@ -228,11 +229,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // ── Запись ───────────────────────────────────────────────────────────────────
     @objc private func recordTapped() {
-        guard config != nil else { return }
-        // Ручной старт: идентичность — событие календаря, иначе комната из URL браузера
+        guard let cfg = config else { return }
+        // Ручной старт: встреча с сервера (Google), иначе комната из URL браузера
         // (Meet/Контур), иначе manual.
         Task {
-            let cal = await MeetingIdentity.currentCalendar()
+            let cal = (try? await SwarmClient(config: cfg).currentMeeting()) ?? nil
             DispatchQueue.main.async { [weak self] in
                 let id = cal ?? MeetingIdentity.currentRoom()
                 self?.beginRecording(identity: id)
@@ -307,8 +308,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         identityKind: info.kind,
                         identityKey: info.key,
                         title: info.title ?? "Встреча",
-                        startedAt: iso.string(from: info.start ?? started),
-                        endedAt: iso.string(from: now),
+                        startedAt: info.startISO ?? iso.string(from: started),
+                        endedAt: info.endISO ?? iso.string(from: now),
                         attendees: info.attendees.isEmpty ? nil : info.attendees,
                         agentVersion: "0.1.0"
                     )
