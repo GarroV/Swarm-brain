@@ -1,9 +1,12 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import type { Me } from "@/types";
+import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId } from "@/lib/telegram";
 import { RoyNavContext, useRoyNav, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
-import { RoyTabBar, NavHeader } from "./ui";
+import { RoyTabBar, NavHeader, Avatar, ROY_TABS } from "./ui";
+import { RoyIcon } from "./icons";
+import { useIsDesktop } from "./useIsDesktop";
 import { SearchScreen } from "./screens/SearchScreen";
 import { AnswerScreen } from "./screens/AnswerScreen";
 import { RecordDetail } from "./screens/RecordDetail";
@@ -15,18 +18,20 @@ import { NewEntry } from "./screens/NewEntry";
 import { RoyMeetingsScreen } from "./screens/RoyMeetingsScreen";
 import { MeetingDetail } from "./screens/MeetingDetail";
 import { MeetingReview } from "@/components/MeetingReview";
+import { TasksScreen } from "@/components/tasks/TasksScreen";
 import { TeamScreen } from "@/components/TeamScreen";
 import { SettingsScreen } from "@/components/SettingsScreen";
 import { AdminScreen } from "@/components/AdminScreen";
 
-// Каркас «Рой» по дизайн-хендоффу: 4 корневых таба (Поиск/Задачи/База/Встречи) + push-стек
-// детальных/создающих экранов. На время фаз 5–7 существующие экраны задач/базы/встреч и
-// настроек/команды/админа подключены как есть; визуально перестраиваются позже.
+// Каркас «Рой» по дизайн-хендоффу: 4 корневых таба (Поиск/Задачи/База/Встречи) + push-стек.
+// Мобайл — нижний таб-бар; десктоп (lg+) — левый сайдбар. На десктопе вкладка «Задачи»
+// показывает полный TasksScreen с видами Доска/Таймлайн/Спринт/Граф; на мобайле — список.
 
 export function RoyApp({ me }: { me: Me | null }) {
   const [tab, setTabState] = useState<RoyTab>("search");
   const [stack, setStack] = useState<RoyRoute[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const isDesktop = useIsDesktop();
 
   const setTab = useCallback((t: RoyTab) => {
     setStack([]);
@@ -62,31 +67,80 @@ export function RoyApp({ me }: { me: Me | null }) {
 
   return (
     <RoyNavContext.Provider value={nav}>
-      <div className="relative mx-auto flex h-[100dvh] w-full max-w-[480px] flex-col overflow-hidden bg-background text-foreground lg:max-w-[560px]">
-        {top ? (
-          <PushScreen route={top} />
-        ) : (
-          <>
-            <div className="min-h-0 flex-1 overflow-hidden">
-              {tab === "search" && <SearchScreen />}
-              {tab === "task" && <RoyTasksScreen />}
-              {tab === "book" && <RoyBaseScreen />}
-              {tab === "cal" && <RoyMeetingsScreen />}
-            </div>
-            <RoyTabBar active={tab} onChange={(id) => setTab(id as RoyTab)} />
-          </>
-        )}
+      <div className="flex h-[100dvh] bg-background text-foreground">
+        <RoySidebar className="hidden lg:flex" />
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="relative mx-auto flex min-h-0 w-full max-w-[480px] flex-1 flex-col overflow-hidden lg:max-w-[940px]">
+            {top ? (
+              <PushScreen route={top} />
+            ) : (
+              <>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  {tab === "search" && <SearchScreen />}
+                  {tab === "task" && (isDesktop ? <TasksScreen /> : <RoyTasksScreen />)}
+                  {tab === "book" && <RoyBaseScreen />}
+                  {tab === "cal" && <RoyMeetingsScreen />}
+                </div>
+                <RoyTabBar active={tab} onChange={(id) => setTab(id as RoyTab)} className="lg:hidden" />
+              </>
+            )}
 
-        {toastMsg && (
-          <div
-            role="status"
-            className="roy-pop absolute bottom-[110px] left-1/2 z-50 -translate-x-1/2 rounded-[13px] bg-ink px-4 py-2.5 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,.3)]"
-          >
-            {toastMsg}
+            {toastMsg && (
+              <div
+                role="status"
+                className="roy-pop absolute bottom-[110px] left-1/2 z-50 -translate-x-1/2 rounded-[13px] bg-ink px-4 py-2.5 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,.3)]"
+              >
+                {toastMsg}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </RoyNavContext.Provider>
+  );
+}
+
+function initials(name: string | undefined | null): string {
+  if (!name || /^\d+$/.test(name.trim())) return "Я";
+  return name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("") || "Я";
+}
+
+function RoySidebar({ className }: { className?: string }) {
+  const { tab, setTab, push, me } = useRoyNav();
+  return (
+    <aside className={cn("w-[232px] shrink-0 flex-col border-r border-line bg-surface-2 px-3 py-4", className)}>
+      <div className="flex items-center gap-2 px-2 pb-5">
+        <span className="inline-flex items-center justify-center rounded-[10px] bg-primary font-extrabold text-white" style={{ width: 30, height: 30, fontSize: 18 }}>
+          Р
+        </span>
+        <span className="font-bold" style={{ fontSize: 20, letterSpacing: "-0.01em" }}>
+          Рой
+        </span>
+      </div>
+      <nav className="flex flex-col gap-1">
+        {ROY_TABS.map((t) => {
+          const on = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id as RoyTab)}
+              className={cn("flex items-center gap-3 rounded-[12px] px-3 py-2.5 font-semibold transition-colors", on ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:bg-surface")}
+              style={{ fontSize: 14.5 }}
+            >
+              <RoyIcon name={t.icon} size={20} strokeWidth={on ? 2.1 : 1.8} />
+              {t.label}
+            </button>
+          );
+        })}
+      </nav>
+      <button type="button" onClick={() => push({ view: "more" })} className="mt-auto flex items-center gap-3 rounded-[12px] px-2.5 py-2 text-left transition-colors hover:bg-surface">
+        <Avatar size={32}>{initials(me?.name)}</Avatar>
+        <span className="font-medium text-ink-soft" style={{ fontSize: 14 }}>
+          Ещё
+        </span>
+      </button>
+    </aside>
   );
 }
 
