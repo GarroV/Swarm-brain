@@ -61,12 +61,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc private func watchTick() {
-        guard let cfg = config, configError == nil else { return }
+        guard config != nil, configError == nil else { return }
         // Пока идёт запись/отправка — не предлагаем ничего.
         if case .idle = state {} else { return }
         Task {
-            // Идущая встреча — с сервера (Google Calendar). Сеть/нет интеграции → nil (тихо).
-            let info = (try? await SwarmClient(config: cfg).currentMeeting()) ?? nil
+            // Идущая встреча — из macOS-Календаря (EventKit; читает Google-аккаунт, добавленный на маке).
+            let info = await MeetingIdentity.currentCalendar()
             DispatchQueue.main.async { [weak self] in self?.handleOngoing(info) }
         }
     }
@@ -229,11 +229,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // ── Запись ───────────────────────────────────────────────────────────────────
     @objc private func recordTapped() {
-        guard let cfg = config else { return }
-        // Ручной старт: встреча с сервера (Google), иначе комната из URL браузера
-        // (Meet/Контур), иначе manual.
+        guard config != nil else { return }
+        // Ручной старт: событие календаря (EventKit), иначе комната из URL браузера, иначе manual.
         Task {
-            let cal = (try? await SwarmClient(config: cfg).currentMeeting()) ?? nil
+            let cal = await MeetingIdentity.currentCalendar()
             DispatchQueue.main.async { [weak self] in
                 let id = cal ?? MeetingIdentity.currentRoom()
                 self?.beginRecording(identity: id)

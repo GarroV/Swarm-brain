@@ -2,7 +2,6 @@
 import { useState, useEffect } from "react";
 import {
   fetchMe, patchMe, fetchConfig, fetchIntegrations, connectGranola, disconnectGranola,
-  googleConnectUrl, disconnectGoogle,
   fetchGranolaUnprocessed, previewGranolaNote, importGranolaNote, skipGranolaNote,
   sendFeedback, generateDigest, uploadFile, logout,
 } from "@/lib/api";
@@ -487,44 +486,6 @@ function AccountSection() {
   );
 }
 
-// ── Google Calendar section ────────────────────────────────────────────────────
-
-function GoogleCalendarSection() {
-  const [connected, setConnected] = useState<boolean | null>(null);
-  useEffect(() => {
-    fetchIntegrations()
-      .then((l) => setConnected(l.some((i) => i.service === "google_calendar")))
-      .catch(() => setConnected(false));
-  }, []);
-  const connect = async () => {
-    const url = await googleConnectUrl();
-    const tg = (window as unknown as { Telegram?: { WebApp?: { openLink?: (u: string) => void } } }).Telegram?.WebApp;
-    if (tg?.openLink) tg.openLink(url);
-    else window.open(url, "_blank");
-  };
-  const disconnect = async () => {
-    if (!window.confirm("Отключить Google-календарь?")) return;
-    await disconnectGoogle();
-    setConnected(false);
-  };
-  if (connected === null) return <p className="text-sm text-muted-foreground">Загрузка…</p>;
-  return (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        Чтобы рекордер сам определял встречу (название, участники, дедуп между записавшими) — подключи Google-календарь. Доступ только на чтение событий.
-      </p>
-      {connected ? (
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-green-600">✓ Подключён</span>
-          <Button variant="outline" size="sm" onClick={disconnect}>Отключить</Button>
-        </div>
-      ) : (
-        <Button onClick={connect}>Подключить Google-календарь</Button>
-      )}
-    </div>
-  );
-}
-
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function SettingsScreen() {
@@ -545,9 +506,6 @@ export function SettingsScreen() {
         </Section>
         <Section title="🟣 Granola">
           <GranolaSection />
-        </Section>
-        <Section title="📅 Google-календарь">
-          <GoogleCalendarSection />
         </Section>
         <Section title="📋 Дайджест">
           <DigestSection />
