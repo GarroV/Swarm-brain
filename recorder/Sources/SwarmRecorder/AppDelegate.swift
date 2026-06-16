@@ -1,9 +1,11 @@
 import AppKit
 import Foundation
+import UserNotifications
 
-// Меню-бар приложение. MVP: ручная запись системного звука → claim(manual) → загрузка аудио.
-// Состояния отражаются в иконке/меню. Авто-старт по календарю и онбординг токена — следующее.
-final class AppDelegate: NSObject, NSApplicationDelegate {
+// Меню-бар приложение. Ручная запись + авто-детект идущей встречи (календарь) с ЗАПРОСОМ
+// СОГЛАСИЯ: при обнаружении события показываем уведомление «записать?» и пункт меню — запись
+// стартует только по явному действию пользователя, никогда молча.
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var statusItem: NSStatusItem!
     private let recorder = AudioRecorder()
 
@@ -16,6 +18,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recordStartedAt: Date?
     private var identity: MeetingIdentity.Info?
 
+    // Авто-детект: идущая встреча, на которую ещё не дали согласие/отказ.
+    private var ongoingPrompt: MeetingIdentity.Info?
+    private var dismissedKeys: Set<String> = []   // встречи, по которым сказали «не записывать»
+    private var notifiedKeys: Set<String> = []     // по которым уже слали уведомление
+    private var watchTimer: Timer?
+
+    private let notifyCategory = "MEETING_START"
+    private let recordAction = "RECORD"
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         do { config = try SwarmConfig.load() }
         catch { configError = "нет config.json (см. README)" }
@@ -24,13 +35,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildMenu()
         _ = Permissions.ensureScreenRecording()
         Task { _ = await Permissions.requestMicrophone() }
+
+        setupNotifications()
+        startWatching()
+    }
+
+    // ── Авто-детект встречи (опрос календаря) ────────────────────────────────────
+    private func setupNotifications() {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        let record = UNNotificationAction(identifier: recordAction, title: "Записать", options: [.foreground])
+        let cat = UNNotificationCategory(identifier: notifyCategory, actions: [record], intentIdentifiers: [], options: [])
+        center.setNotificationCategories([cat])
+        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
+    private func startWatching() {
+        // Опрашиваем календарь раз в 45с; запись стартуем только с согласия.
+        let t = Timer.scheduledTimer(timeInterval: 45, target: self, selector: #selector(watchTick), userInfo: nil, repeats: true)
+        RunLoop.main.add(t, forMode: .common)
+        watchTimer = t
+        // Первая проверка вскоре после запуска (дать время выдать доступ к календарю).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.watchTick() }
+    }
+
+    @objc private func watchTick() {
+        guard config != nil, configError == nil else { return }
+        // Пока идёт запись/отправка — не предлагаем ничего.
+        if case .idle = state {} else { return }
+        Task {
+            let info = await MeetingIdentity.currentCalendar()
+            DispatchQueue.main.async { [weak self] in self?.handleOngoing(info) }
+        }
+    }
+
+    private func handleOngoing(_ info: MeetingIdentity.Info?) {
+        if case .idle = state {} else { return }
+        guard let info, !dismissedKeys.contains(info.key) else {
+            if ongoingPrompt != nil { ongoingPrompt = nil; rebuildMenu() }
+            return
+        }
+        if ongoingPrompt?.key == info.key { return }   // уже предлагаем эту
+        ongoingPrompt = info
+        if !notifiedKeys.contains(info.key) {
+            notifiedKeys.insert(info.key)
+            postMeetingNotification(info)
+        }
+        rebuildMenu()
+    }
+
+    private func postMeetingNotification(_ info: MeetingIdentity.Info) {
+        let content = UNMutableNotificationContent()
+        content.title = "Встреча идёт"
+        content.body = "«\(info.title ?? "Без названия")» — записать?"
+        content.categoryIdentifier = notifyCategory
+        content.sound = .default
+        let req = UNNotificationRequest(identifier: "meeting-\(info.key)", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req)
+    }
+
+    // Показывать баннер даже когда приложение «активно».
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
+    }
+
+    // Нажали «Записать» в уведомлении (или тапнули само уведомление) → старт с согласия.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        if response.actionIdentifier == recordAction || response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let p = self.ongoingPrompt else { return }
+                self.beginRecording(identity: p)
+            }
+        }
+        completionHandler()
     }
 
     // ── UI ──────────────────────────────────────────────────────────────────────
     private func symbol() -> String {
         switch state {
-        case .idle: return "mic"
-        case .recording: return "record.circle"
+        case .idle: return ongoingPrompt != nil ? "record.circle" : "mic"
+        case .recording: return "record.circle.fill"
         case .sending: return "arrow.up.circle"
         case .error: return "exclamationmark.triangle"
         }
@@ -39,7 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func statusText() -> String {
         if let e = configError { return "⚠️ \(e)" }
         switch state {
-        case .idle: return "Готов"
+        case .idle: return ongoingPrompt != nil ? "Идёт встреча: «\(ongoingPrompt?.title ?? "")»" : "Готов"
         case .recording: return "● Идёт запись"
         case .sending: return "Отправка…"
         case .error(let m): return "Ошибка: \(m)"
@@ -62,7 +146,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .sending:
                 break
             default:
-                menu.addItem(NSMenuItem(title: "Записать встречу", action: #selector(recordTapped), keyEquivalent: "r"))
+                if ongoingPrompt != nil {
+                    menu.addItem(NSMenuItem(title: "🔴 Записать эту встречу", action: #selector(recordOngoingTapped), keyEquivalent: "r"))
+                    menu.addItem(NSMenuItem(title: "Не записывать эту встречу", action: #selector(dismissOngoingTapped), keyEquivalent: ""))
+                } else {
+                    menu.addItem(NSMenuItem(title: "Записать встречу", action: #selector(recordTapped), keyEquivalent: "r"))
+                }
             }
             if let web = config?.webBaseURL, !web.isEmpty {
                 menu.addItem(NSMenuItem(title: "Открыть Рой", action: #selector(openWeb), keyEquivalent: ""))
@@ -89,18 +178,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // ── Запись ───────────────────────────────────────────────────────────────────
     @objc private func recordTapped() {
         guard config != nil else { return }
+        // Ручной старт: подтянуть идентичность из календаря (если событие идёт).
+        Task {
+            let id = await MeetingIdentity.currentCalendar()
+            DispatchQueue.main.async { [weak self] in self?.beginRecording(identity: id) }
+        }
+    }
+
+    @objc private func recordOngoingTapped() {
+        beginRecording(identity: ongoingPrompt)
+    }
+
+    @objc private func dismissOngoingTapped() {
+        if let p = ongoingPrompt { dismissedKeys.insert(p.key) }
+        ongoingPrompt = nil
+        rebuildMenu()
+    }
+
+    private func beginRecording(identity id: MeetingIdentity.Info?) {
+        guard config != nil else { return }
+        if case .recording = state { return }
         if !Permissions.ensureScreenRecording() {
             setState(.error("нет доступа к записи экрана — выдай в System Settings → Privacy"))
             return
         }
+        ongoingPrompt = nil
         let startedAt = Date()
         let base = UUID().uuidString
         let sys = FileManager.default.temporaryDirectory.appendingPathComponent("swarm-\(base)-sys.m4a")
         let mic = FileManager.default.temporaryDirectory.appendingPathComponent("swarm-\(base)-mic.m4a")
         Task {
-            // Идентичность встречи: идущее сейчас событие календаря (общий ключ → дедуп у всех
-            // записавших); нет события → manual (своя встреча без авто-дедупа).
-            let id = await MeetingIdentity.currentCalendar()
             do {
                 try await recorder.start(systemURL: sys, micURL: mic)
                 sysURL = sys; micURL = mic
@@ -150,6 +257,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if claim.shouldTranscribe {
                     _ = try await withRetry { try await client.uploadAudio(meetingID: claim.meetingId, systemURL: res.system, micURL: res.mic) }
                 }
+                // Если эту встречу больше не предлагать (мы её записали).
+                if let info = identity { dismissedKeys.insert(info.key) }
+                identity = nil
                 try? FileManager.default.removeItem(at: res.system)
                 if let m = res.mic { try? FileManager.default.removeItem(at: m) }
                 setState(.idle)
