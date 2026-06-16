@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private let recordAction = "RECORD"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installEditMenu()
         do { config = try SwarmConfig.load() }
         catch { configError = "нужен токен — вставь через меню" }
 
@@ -175,6 +176,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc private func openWeb() {
         guard let web = config?.webBaseURL, let url = URL(string: web) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    // LSUIElement-приложение без главного меню → в текстовых полях не работают ⌘V/⌘C/⌘X.
+    // Ставим минимальное меню Edit: стандартные правки роутятся через responder chain
+    // в редактор активного поля, поэтому вставка токена (⌘V) заработает.
+    private func installEditMenu() {
+        let mainMenu = NSMenu()
+        let editItem = NSMenuItem()
+        mainMenu.addItem(editItem)
+        let edit = NSMenu(title: "Edit")
+        editItem.submenu = edit
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        NSApp.mainMenu = mainMenu
     }
 
     @objc private func enterTokenTapped() {
