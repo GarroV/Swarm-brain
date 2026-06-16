@@ -332,7 +332,9 @@ Deno.serve(async (req: Request) => {
     } else if (command === "/digest") {
       bgRun(generatePersonalDigest(chatId, userId, 7, groupId), chatId);
     } else if (command === "/mytoken") {
-      const token = "smcp_" + crypto.randomUUID();
+      // Без дефисов: на десктоп-Telegram двойной клик по <code> выделяет «слово» до дефиса —
+      // с дефисами копировался лишь кусок. Дефисы убраны → токен выделяется/копируется целиком.
+      const token = "smcp_" + crypto.randomUUID().replaceAll("-", "");
       const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
       const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
       const TOKEN_TTL_DAYS = 90;
