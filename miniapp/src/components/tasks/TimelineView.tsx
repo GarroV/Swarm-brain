@@ -46,6 +46,16 @@ export function TimelineView() {
   const today = todayISO();
   const todayX = dateToX(today, rangeStart);
 
+  // Сегменты месяцев для верхней строки шкалы — явное разделение по месяцам.
+  const monthSegs: { key: string; label: string; left: number; width: number }[] = [];
+  scale.forEach((c, i) => {
+    if (c.monthLabel || monthSegs.length === 0) {
+      monthSegs.push({ key: c.iso, label: c.monthLabel ?? "", left: i * DAY_WIDTH, width: DAY_WIDTH });
+    } else {
+      monthSegs[monthSegs.length - 1].width += DAY_WIDTH;
+    }
+  });
+
   // ── drag/resize через pointer capture ──────────────────────────────────────
   function onPointerDown(e: React.PointerEvent, task: Task, mode: DragMode) {
     e.preventDefault();
@@ -94,24 +104,32 @@ export function TimelineView() {
 
       <div className="flex-1 overflow-auto">
         <div className="relative" style={{ width: bodyWidth, minHeight: "100%" }}>
-          {/* Шкала дней */}
-          <div className="sticky top-0 z-20 flex bg-background/95 backdrop-blur border-b border-border">
-            {scale.map((c) => (
-              <div
-                key={c.iso}
-                className={`shrink-0 flex flex-col items-center justify-center py-1.5 text-[10px] leading-tight ${
-                  c.isWeekend ? "text-muted-foreground/50" : "text-muted-foreground"
-                }`}
-                style={{ width: DAY_WIDTH }}
-              >
-                {c.monthLabel && (
-                  <span className="absolute -translate-y-5 left-1 text-[10px] font-semibold text-foreground whitespace-nowrap">
-                    {c.monthLabel}
-                  </span>
-                )}
-                <span className={c.isToday ? "font-bold text-foreground" : ""}>{c.dayOfMonth}</span>
-              </div>
-            ))}
+          {/* Шкала: верхняя строка — месяцы, нижняя — дни */}
+          <div className="sticky top-0 z-20 bg-background/95 backdrop-blur border-b border-border">
+            <div className="flex">
+              {monthSegs.map((m) => (
+                <div
+                  key={m.key}
+                  className="shrink-0 overflow-hidden whitespace-nowrap border-l border-border px-2 py-1 text-[11px] font-bold text-foreground first:border-l-0"
+                  style={{ width: m.width }}
+                >
+                  {m.label}
+                </div>
+              ))}
+            </div>
+            <div className="flex border-t border-border/50">
+              {scale.map((c) => (
+                <div
+                  key={c.iso}
+                  className={`shrink-0 flex items-center justify-center py-1 text-[10px] leading-tight ${
+                    c.monthLabel ? "border-l border-border" : ""
+                  } ${c.isWeekend ? "text-muted-foreground/50" : "text-muted-foreground"}`}
+                  style={{ width: DAY_WIDTH }}
+                >
+                  <span className={c.isToday ? "font-bold text-foreground" : ""}>{c.dayOfMonth}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Тело: фон-сетка + полосы выходных + линия "сегодня" + бары */}
@@ -126,6 +144,11 @@ export function TimelineView() {
             {/* вертикальные линии дней */}
             <div className="absolute inset-0 pointer-events-none"
               style={{ backgroundImage: `repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px ${DAY_WIDTH}px)` }} />
+            {/* границы месяцев — жирнее, чем дни */}
+            {monthSegs.slice(1).map((m) => (
+              <div key={`mb${m.key}`} className="absolute top-0 bottom-0 pointer-events-none"
+                style={{ left: m.left, width: 1, background: "var(--muted-foreground)", opacity: 0.35 }} />
+            ))}
             {/* линия "сегодня" */}
             <div className="absolute top-0 bottom-0 z-10 pointer-events-none"
               style={{ left: todayX, width: 2, background: "oklch(0.62 0.19 264)" }} />
@@ -200,8 +223,11 @@ export function TimelineView() {
       {/* Задачи без дат */}
       {noDates.length > 0 && (
         <div className="border-t border-border px-5 py-3 max-h-40 overflow-y-auto">
-          <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
-            Без дат · {noDates.length}
+          <p className="text-xs font-semibold text-foreground mb-0.5">
+            Задачи без сроков · {noDates.length}
+          </p>
+          <p className="text-[11px] text-muted-foreground mb-2">
+            Не на таймлайне — поставь срок, чтобы появились выше.
           </p>
           <div className="flex flex-wrap gap-2">
             {noDates.map((t) => (
