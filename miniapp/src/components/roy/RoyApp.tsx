@@ -17,6 +17,7 @@ import { RoyBaseScreen } from "./screens/RoyBaseScreen";
 import { NewEntry } from "./screens/NewEntry";
 import { RoyMeetingsScreen } from "./screens/RoyMeetingsScreen";
 import { MeetingDetail } from "./screens/MeetingDetail";
+import { RoyDashboard } from "./RoyDashboard";
 import { MeetingReview } from "@/components/MeetingReview";
 import { TasksScreen } from "@/components/tasks/TasksScreen";
 import { TeamScreen } from "@/components/TeamScreen";
@@ -64,19 +65,27 @@ export function RoyApp({ me }: { me: Me | null }) {
 
   const nav: RoyNav = { me, tab, setTab, push, pop, toast };
   const top = stack[stack.length - 1];
+  // На десктопе домашняя вкладка («Поиск») — бенто-дашборд во всю ширину; на мобайле и в
+  // push-стеке остаётся центрированная колонка.
+  const isDashboard = isDesktop && tab === "search" && !top;
 
   return (
     <RoyNavContext.Provider value={nav}>
       <div className="flex h-[100dvh] bg-background text-foreground">
         <RoySidebar className="hidden lg:flex" />
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="relative mx-auto flex min-h-0 w-full max-w-[480px] flex-1 flex-col overflow-hidden lg:max-w-[940px]">
+          <div
+            className={cn(
+              "relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden",
+              isDashboard ? "max-w-[1240px]" : "max-w-[480px] lg:max-w-[940px]",
+            )}
+          >
             {top ? (
               <PushScreen route={top} />
             ) : (
               <>
                 <div className="min-h-0 flex-1 overflow-hidden">
-                  {tab === "search" && <SearchScreen />}
+                  {tab === "search" && (isDashboard ? <RoyDashboard /> : <SearchScreen />)}
                   {tab === "task" && (isDesktop ? <TasksScreen /> : <RoyTasksScreen />)}
                   {tab === "book" && <RoyBaseScreen />}
                   {tab === "cal" && <RoyMeetingsScreen />}
