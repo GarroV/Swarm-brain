@@ -1,7 +1,7 @@
 // Service worker для PWA «Рой». Кэширует ТОЛЬКО статику.
 // API (swarm-api, /functions/v1/) НЕ кэшируется — там приватные задачи/entries,
 // они не должны оседать в кэше устройства (особенно общего).
-const CACHE = "roj-static-v6";
+const CACHE = "roj-static-v7";
 const PRECACHE = ["/"];
 
 self.addEventListener("install", (event) => {
