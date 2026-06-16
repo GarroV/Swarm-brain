@@ -144,7 +144,7 @@ async function gptExtractTasks(text: string): Promise<ExtractedTask[]> {
     body: JSON.stringify({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: 'Извлеки задачи из тезисов встречи. Верни JSON массив (только JSON, без markdown): [{"title":"...","description":"... или null","assignee":"Полное имя или null","due_date":"YYYY-MM-DD или null","country":"... или null"}]. Бери только реальные поручения/действия с конкретным результатом. Если задач нет — пустой массив [].' },
+        { role: "system", content: 'Извлеки задачи из тезисов встречи. Верни JSON массив (только JSON, без markdown): [{"title":"короткая формулировка действия","description":"1 фраза контекста из обсуждения: зачем/какой ожидаемый результат/важная деталь. НЕ повторяй заголовок другими словами. null, если заголовок самодостаточен","assignee":"Полное имя или null","due_date":"YYYY-MM-DD или null","country":"... или null"}]. Бери только реальные поручения/действия с конкретным результатом. Если задач нет — пустой массив [].' },
         { role: "user", content: text.slice(0, 8000) },
       ],
       max_tokens: 1200,
@@ -1469,7 +1469,7 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: 'Извлеки задачи из текста. Верни JSON массив (только JSON, без markdown): [{"title":"...","description":"...","assignee":"...","due_date":"YYYY-MM-DD или null","country":"... или null"}]. Если задач нет — пустой массив.' },
+          { role: "system", content: 'Извлеки задачи из текста. Верни JSON массив (только JSON, без markdown): [{"title":"короткая формулировка действия","description":"1 фраза контекста: зачем/какой результат/важная деталь. НЕ повторяй заголовок. null, если заголовок самодостаточен","assignee":"...","due_date":"YYYY-MM-DD или null","country":"... или null"}]. Если задач нет — пустой массив.' },
           { role: "user", content: body.text.slice(0, 6000) },
         ],
         max_tokens: 1000,
