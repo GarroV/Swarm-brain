@@ -27,6 +27,12 @@ enum IdentityKind: String, Codable {
     case manual
 }
 
+// Участник встречи (из календаря) → meetings.attendees.
+struct Attendee: Encodable, Sendable {
+    let name: String?
+    let email: String?
+}
+
 // ── Контракт meeting-claim (§7.1) ───────────────────────────────────────────────
 struct ClaimRequest: Encodable {
     let identityKind: IdentityKind
@@ -34,6 +40,7 @@ struct ClaimRequest: Encodable {
     var title: String?
     var startedAt: String?      // ISO 8601
     var endedAt: String?
+    var attendees: [Attendee]? = nil
     var agentVersion: String?
     // user_notes опускаем в MVP (окно пометок — следующая итерация)
 }

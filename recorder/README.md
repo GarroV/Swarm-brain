@@ -21,6 +21,14 @@
 Микрофон — best-effort: если нет доступа или ошибка, запись продолжается **только** с системным
 звуком (в результате `mic = nil`, на сервер уходит лишь `audio`).
 
+## Идентичность встречи (дедуп нескольких записавших)
+
+При старте записи рекордер ищет **идущее сейчас событие календаря** (EventKit) и отправляет его
+в `claim` как `identity_kind=calendar`, `identity_key = <iCalUID>:<дата>`. Ключ одинаков у всех
+участников → сервер схлопывает их записи в **одну** встречу (транскрибирует один раз). Вместе с
+ключом уезжают название и участники события (`meetings.attendees`). Нет события календаря →
+`manual:<uuid>` (своя встреча без авто-дедупа). Требует доступа к Календарю при первом запуске.
+
 ## Статус
 
 E2E доказан: `--selftest` прогоняет полный цикл (захват → `claim` → загрузка → тезисы на сервере).
@@ -29,7 +37,8 @@ E2E доказан: `--selftest` прогоняет полный цикл (за�
 |---|---|
 | `SwarmTypes.swift` (Config, Codable-модели) | по контракту прода |
 | `SwarmClient.swift` (claim + upload, ретраи) | контракт проверен на проде |
-| `Permissions.swift` (Screen/Mic/Calendar TCC) | стандартные API |
+| `Permissions.swift` (Screen/Mic TCC) | стандартные API; микрофон запрашивается при запуске |
+| `Calendar.swift` (EventKit: идентичность встречи) | календарный ключ дедупа + название + участники |
 | `AudioRecorder.swift` (две дорожки: ScreenCaptureKit + AVAudioRecorder → m4a) | прогнан в `--selftest` |
 | `AppDelegate.swift` / `main.swift` (меню-бар, `--selftest`) | AppKit `NSStatusItem`, `LSUIElement` |
 
@@ -40,7 +49,7 @@ E2E доказан: `--selftest` прогоняет полный цикл (за�
 1. `swift build -c release` — собирает бинарь.
 2. Сборка `.app`-бандла руками: `SwarmRecorder.app/Contents/MacOS/` + сгенерённый `Info.plist`
    (`io.dodobrands.swarmrecorder`, `LSMinimumSystemVersion=13.0`, `LSUIElement=YES`,
-   `NSMicrophoneUsageDescription`, `NSCalendarsUsageDescription`).
+   `NSMicrophoneUsageDescription`, `NSCalendarsUsageDescription`, `NSCalendarsFullAccessUsageDescription`).
 3. Ad-hoc подпись: `codesign --force --deep -s - SwarmRecorder.app` — TCC-разрешения для
    локального теста при этом работают.
 
@@ -86,7 +95,7 @@ open SwarmRecorder.app
 руками; онбординг-ввод — следующим шагом.
 
 ## Что дальше (итерации)
-1. Авто-старт по календарю (EventKit: `external_id` = iCalUID → `identity_kind=calendar`, `meeting_link`, участники).
+1. ~~Идентичность по календарю~~ ✅ сделана (`claim` с calendar-ключом, название, участники). Осталось: **авто-старт** записи (детект идущего события/звонка) и извлечение id комнаты из URL вкладки (Meet/Контур.Толк) для ad-hoc-звонков без календаря (`identity_kind=room`).
 2. Резка/сжатие длинных записей под лимит OpenAI 25 МБ на дорожку.
 3. Очередь/ретраи на диск (переживать перезапуск), как в `SwarmClient` заложено.
 4. Меню-бар: онбординг ввода токена, индикатор статуса, «переотправить».

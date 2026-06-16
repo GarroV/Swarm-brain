@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var state: State = .idle
     private var sysURL: URL?
     private var micURL: URL?
+    private var recordStartedAt: Date?
+    private var identity: MeetingIdentity.Info?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do { config = try SwarmConfig.load() }
@@ -21,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         rebuildMenu()
         _ = Permissions.ensureScreenRecording()
+        Task { _ = await Permissions.requestMicrophone() }
     }
 
     // ── UI ──────────────────────────────────────────────────────────────────────
@@ -90,13 +93,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setState(.error("нет доступа к записи экрана — выдай в System Settings → Privacy"))
             return
         }
+        let startedAt = Date()
         let base = UUID().uuidString
         let sys = FileManager.default.temporaryDirectory.appendingPathComponent("swarm-\(base)-sys.m4a")
         let mic = FileManager.default.temporaryDirectory.appendingPathComponent("swarm-\(base)-mic.m4a")
         Task {
+            // Идентичность встречи: идущее сейчас событие календаря (общий ключ → дедуп у всех
+            // записавших); нет события → manual (своя встреча без авто-дедупа).
+            let id = await MeetingIdentity.currentCalendar()
             do {
                 try await recorder.start(systemURL: sys, micURL: mic)
                 sysURL = sys; micURL = mic
+                recordStartedAt = startedAt
+                identity = id
                 setState(.recording)
             } catch {
                 setState(.error("старт записи: \(error)"))
@@ -113,15 +122,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let client = SwarmClient(config: cfg)
 
                 let iso = ISO8601DateFormatter()
-                let now = iso.string(from: Date())
-                let req = ClaimRequest(
-                    identityKind: .manual,
-                    identityKey: "manual:\(UUID().uuidString)",
-                    title: "Запись \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))",
-                    startedAt: now,
-                    endedAt: now,
-                    agentVersion: "0.1.0"
-                )
+                let now = Date()
+                let started = recordStartedAt ?? now
+                let req: ClaimRequest
+                if let info = identity {
+                    // Календарная встреча: общий ключ у всех записавших → сервер схлопывает в одну.
+                    req = ClaimRequest(
+                        identityKind: info.kind,
+                        identityKey: info.key,
+                        title: info.title ?? "Встреча",
+                        startedAt: iso.string(from: info.start ?? started),
+                        endedAt: iso.string(from: now),
+                        attendees: info.attendees.isEmpty ? nil : info.attendees,
+                        agentVersion: "0.1.0"
+                    )
+                } else {
+                    req = ClaimRequest(
+                        identityKind: .manual,
+                        identityKey: "manual:\(UUID().uuidString)",
+                        title: "Запись \(DateFormatter.localizedString(from: now, dateStyle: .short, timeStyle: .short))",
+                        startedAt: iso.string(from: started),
+                        endedAt: iso.string(from: now),
+                        agentVersion: "0.1.0"
+                    )
+                }
                 let claim = try await withRetry { try await client.claim(req) }
                 if claim.shouldTranscribe {
                     _ = try await withRetry { try await client.uploadAudio(meetingID: claim.meetingId, systemURL: res.system, micURL: res.mic) }
