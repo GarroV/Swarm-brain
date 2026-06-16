@@ -30,9 +30,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>SwarmRecorder записывает звук встречи, чтобы подготовить тезисы.</string>
-  <key>NSCalendarsUsageDescription</key><string>SwarmRecorder читает календарь, чтобы определить встречу для записи.</string>
-  <key>NSCalendarsFullAccessUsageDescription</key><string>SwarmRecorder читает календарь, чтобы определить встречу (название, участники) для записи и дедупа между участниками.</string>
-  <key>NSAppleEventsUsageDescription</key><string>SwarmRecorder читает URL активной вкладки браузера, чтобы определить комнату звонка (Meet/Контур) для дедупа ad-hoc-встреч.</string>
+  <key>NSAppleEventsUsageDescription</key><string>SwarmRecorder читает URL активной вкладки браузера, чтобы определить комнату звонка (Meet/Контур) для дедупа встреч.</string>
 </dict>
 </plist>
 PLIST
