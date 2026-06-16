@@ -29,6 +29,8 @@ export function SprintBoard() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formErr, setFormErr] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", start_date: "", end_date: "" });
 
   const load = useCallback(async () => {
@@ -68,13 +70,22 @@ export function SprintBoard() {
   }
 
   async function submitSprint() {
-    if (!form.name || !form.start_date || !form.end_date) return;
+    if (!form.name.trim()) { setFormErr("Введите название спринта"); return; }
+    if (!form.start_date || !form.end_date) { setFormErr("Укажите даты начала и конца"); return; }
+    if (form.start_date > form.end_date) { setFormErr("Дата начала позже даты конца"); return; }
+    setSaving(true);
+    setFormErr(null);
     try {
-      await createSprint(form);
+      const created = await createSprint(form);
       setForm({ name: "", start_date: "", end_date: "" });
       setCreating(false);
-      load();
-    } catch { /* surfaced via reload */ }
+      await load();
+      setSelected(created.id);
+    } catch (e) {
+      setFormErr(e instanceof Error ? e.message : "Не удалось создать спринт");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (loading) return <p className="text-center text-muted-foreground py-12 text-sm">Загрузка…</p>;
@@ -123,7 +134,10 @@ export function SprintBoard() {
             <input type="date" className="flex-1 text-sm bg-transparent border-b border-border py-1 outline-none"
               value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
           </div>
-          <Button size="sm" className="w-full h-8 text-xs" onClick={submitSprint}>Создать спринт</Button>
+          {formErr && <p className="text-xs text-destructive">{formErr}</p>}
+          <Button size="sm" className="w-full h-8 text-xs" onClick={submitSprint} disabled={saving}>
+            {saving ? "Создание…" : "Создать спринт"}
+          </Button>
         </div>
       )}
 
