@@ -700,8 +700,9 @@ export async function handleAdd(chatId: number, username: string, text: string, 
       );
     } catch { /* summary stays undefined, raw text will be embedded */ }
 
-    await saveEntry(text, username, "note", {}, summary, groupId);
-    await sendMessage(chatId, `📌 Заметка сохранена.${summary ? `\n\n<i>${summary}</i>` : ""}`);
+    // Синоним-индекс уходит в searchText (только для эмбеддинга/поиска), не в видимый summary.
+    await saveEntry(text, username, "note", {}, undefined, groupId, false, undefined, summary);
+    await sendMessage(chatId, "📌 Заметка сохранена.");
     return;
   }
 

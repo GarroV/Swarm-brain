@@ -1,5 +1,4 @@
 import { saveEntry, generateSummary, uploadToStorage } from "../lib/storage.ts"; // generateSummary used for multi-chunk docs only
-import { chatComplete } from "../lib/openai.ts";
 import { sendMessage, getTelegramFileUrl } from "../lib/telegram.ts";
 import { TgMessage } from "../lib/types.ts";
 // @ts-ignore - esm.sh module
@@ -228,20 +227,9 @@ export async function handleUrl(chatId: number, username: string, url: string, r
     const title = description || url;
     const content = description ? `${description}\n\nСсылка: ${url}` : url;
 
-    // GPT-enriched summary for better searchability
-    let summary: string | undefined = description || undefined;
-    if (description) {
-      try {
-        summary = await chatComplete(
-          "Ты помогаешь индексировать ссылку для поиска в командной базе знаний. " +
-          "Напиши поисковый индекс: синонимы названия (2-3 варианта как это называют), что содержит/показывает ресурс, для чего используется. " +
-          "Ответ — 2-3 предложения на русском, без форматирования, без вводных фраз.",
-          `Описание: «${description}»\nURL: ${url}`
-        );
-      } catch { summary = description; }
-    }
-
-    await saveEntry(content, username, "link", { url, title }, summary, groupId);
+    // Реальные тезисы и keywords (синонимы для поиска) сгенерит buildEntryIndex из content.
+    // Отдельный «синоним-индекс» не делаем: он дублировал keywords и лез в видимый summary.
+    await saveEntry(content, username, "link", { url, title }, undefined, groupId);
     await sendMessage(chatId, `🔗 Ссылка сохранена.\n<code>${url}</code>${description ? `\n\n<i>${description}</i>` : ""}`);
   }
 }

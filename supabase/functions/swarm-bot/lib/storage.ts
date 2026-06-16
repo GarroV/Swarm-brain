@@ -83,6 +83,9 @@ export async function saveEntry(
   groupId?: string,
   isPrivate = false,
   ownerId?: number,
+  // Поисковый индекс (синонимы/ключевые слова) — эмбеддится для recall, но НЕ кладётся в
+  // видимый summary. Для коротких заметок, где summary иначе оставался бы синоним-мусором.
+  searchText?: string,
 ): Promise<{ id: string; summary: string | null }> {
   if (isPrivate && !ownerId) throw new Error("saveEntry: ownerId required when isPrivate=true");
 
@@ -101,9 +104,11 @@ export async function saveEntry(
     if (!countries.includes("General")) countries.push("General");
   }
 
-  // Enriched embedding: summary + countries + keywords (all three give vector country context).
+  // Enriched embedding: (searchText | summary | content) + countries + keywords.
+  // searchText эмбеддится тем же текстом, что раньше лежал в summary → recall не меняется,
+  // но summary остаётся чистым для отображения.
   const embeddingParts = [
-    index.summary ?? content,
+    searchText ?? index.summary ?? content,
     specific.length > 0 ? `Страны: ${specific.join(", ")}` : "",
     index.keywords ? `Ключевые слова: ${index.keywords}` : "",
   ].filter(Boolean);
