@@ -1307,7 +1307,7 @@ Deno.serve(async (req: Request) => {
     const note = await noteRes.json() as Record<string, unknown>;
 
     const { data: profile } = await supabase.from("user_profiles")
-      .select("first_name, username").eq("telegram_id", telegram_id).maybeSingle();
+      .select("first_name").eq("telegram_id", telegram_id).maybeSingle();
     const addedBy = (profile as { first_name?: string } | null)?.first_name || String(telegram_id);
 
     const calEvent = note.calendar_event as Record<string, unknown> | undefined;
@@ -1379,10 +1379,10 @@ Deno.serve(async (req: Request) => {
     try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
     if (!body.text || typeof body.text !== "string") return apiErr(400, "text required", origin);
 
-    const { data: profile } = await supabase.from("user_profiles")
-      .select("first_name, username").eq("telegram_id", telegram_id).maybeSingle();
-    const p = profile as { first_name?: string; username?: string } | null;
-    const username = p?.username ?? String(telegram_id);
+    // username — в allowed_users (не в user_profiles), иначе селект падал и было всегда «#id».
+    const { data: au } = await supabase.from("allowed_users")
+      .select("username").eq("telegram_id", telegram_id).maybeSingle();
+    const username = (au as { username?: string } | null)?.username ?? String(telegram_id);
 
     const { data: feedbackRow } = await supabase.from("feedback")
       .insert({ telegram_id, username, text: body.text as string })

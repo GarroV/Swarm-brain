@@ -240,7 +240,8 @@ export async function autoSyncProfile(userId: number, firstName?: string, lastNa
   const update: Record<string, unknown> = { telegram_id: userId, updated_at: new Date().toISOString() };
   if (firstName) update.first_name = firstName;
   if (lastName !== undefined) update.last_name = lastName;
-  if (username) update.username = username;
+  // username — НЕ колонка user_profiles (она в allowed_users). Раньше его клали в этот upsert
+  // → весь upsert падал, и для юзеров с @username имя (first/last) не синкалось вовсе.
   await supabase.from("user_profiles").upsert(update, { onConflict: "telegram_id", ignoreDuplicates: false });
   if (username) {
     await supabase.from("allowed_users").update({ username }).eq("telegram_id", userId);

@@ -352,9 +352,9 @@ export async function handleSuperadminSession(
         // Username (strip leading @)
         const username = input.startsWith("@") ? input.slice(1) : input;
 
-        // Try to find existing user_profile by username
+        // Try to find existing user by username (username хранится в allowed_users)
         const { data: profileRow } = await supabase
-          .from("user_profiles")
+          .from("allowed_users")
           .select("telegram_id")
           .ilike("username", username)
           .maybeSingle();
