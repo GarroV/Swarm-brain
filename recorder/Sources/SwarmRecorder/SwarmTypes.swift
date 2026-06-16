@@ -18,6 +18,19 @@ struct SwarmConfig: Codable {
         let data = try Data(contentsOf: url)
         return try JSONDecoder().decode(SwarmConfig.self, from: data)
     }
+
+    // Онбординг: сохранить персональный токен с зашитыми URL прод-окружения
+    // (пользователю не нужно знать ingest/web URL — только вставить токен из бота).
+    static func saveToken(_ token: String) throws {
+        let cfg = SwarmConfig(
+            token: token,
+            ingestBaseURL: "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1",
+            webBaseURL: "https://swarm-brain.pages.dev"
+        )
+        let url = configURL()
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(cfg).write(to: url)
+    }
 }
 
 // Тип идентичности встречи (см. 10-REVISED-DESIGN §3).

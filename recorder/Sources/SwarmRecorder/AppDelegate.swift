@@ -29,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do { config = try SwarmConfig.load() }
-        catch { configError = "нет config.json (см. README)" }
+        catch { configError = "нужен токен — вставь через меню" }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         rebuildMenu()
@@ -156,6 +156,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if let web = config?.webBaseURL, !web.isEmpty {
                 menu.addItem(NSMenuItem(title: "Открыть Рой", action: #selector(openWeb), keyEquivalent: ""))
             }
+        } else {
+            menu.addItem(NSMenuItem(title: "Вставить токен…", action: #selector(enterTokenTapped), keyEquivalent: ""))
         }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Выйти", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
@@ -173,6 +175,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc private func openWeb() {
         guard let web = config?.webBaseURL, let url = URL(string: web) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    @objc private func enterTokenTapped() {
+        let alert = NSAlert()
+        alert.messageText = "Токен Swarm"
+        alert.informativeText = "Вставь персональный токен из бота (/mytoken), начинается с smcp_."
+        alert.addButton(withTitle: "Сохранить")
+        alert.addButton(withTitle: "Отмена")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        field.placeholderString = "smcp_…"
+        alert.accessoryView = field
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let token = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return }
+        do {
+            try SwarmConfig.saveToken(token)
+            config = try SwarmConfig.load()
+            configError = nil
+            state = .idle
+            rebuildMenu()
+        } catch {
+            setState(.error("не сохранить токен: \(error)"))
+        }
     }
 
     // ── Запись ───────────────────────────────────────────────────────────────────
@@ -230,6 +256,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Task {
             do {
                 let res = try await recorder.stop()
+
+                // Лимит OpenAI 25 МБ/дорожку (~2,3 ч при 24 кбит/с). Полная нарезка длинных
+                // записей — отдельная итерация (edge без ffmpeg → резать на клиенте + multipart).
+                // Пока честная ошибка вместо невнятного 413; временные файлы не удаляем.
+                func fileSize(_ u: URL?) -> Int {
+                    guard let u, let attrs = try? FileManager.default.attributesOfItem(atPath: u.path) else { return 0 }
+                    return (attrs[.size] as? Int) ?? 0
+                }
+                let limit = 25 * 1024 * 1024
+                if fileSize(res.system) > limit || fileSize(res.mic) > limit {
+                    setState(.error("Запись длиннее ~2,3 ч (>25 МБ/дорожку). Нарезка длинных встреч — в планах."))
+                    return
+                }
+
                 let client = SwarmClient(config: cfg)
 
                 let iso = ISO8601DateFormatter()
