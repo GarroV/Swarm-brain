@@ -139,7 +139,7 @@ export async function handleSuperadminCallbacks(
 
       const { data: profiles } = await supabase
         .from("user_profiles")
-        .select("telegram_id, first_name, last_name, username")
+        .select("telegram_id, first_name, last_name")
         .in("telegram_id", telegramIds.length ? telegramIds : [0]);
 
       const profileList = (profiles ?? []) as Array<{
@@ -194,7 +194,7 @@ export async function handleSuperadminCallbacks(
 
       const { data: profile } = await supabase
         .from("user_profiles")
-        .select("telegram_id, first_name, last_name, username")
+        .select("telegram_id, first_name, last_name")
         .eq("telegram_id", tgId)
         .maybeSingle();
 

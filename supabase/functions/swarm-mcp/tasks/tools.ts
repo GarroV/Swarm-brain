@@ -30,11 +30,19 @@ async function resolveGroupId(telegramId: number): Promise<string | null> {
 }
 
 async function matchAssignee(name: string): Promise<{ telegram_id: number; display_name: string } | null> {
-  const { data } = await supabase
-    .from("user_profiles")
-    .select("telegram_id, first_name, last_name, username, email, name_aliases");
-
-  if (!data?.length) return null;
+  // username — в allowed_users (НЕ в user_profiles). Раньше селект username из user_profiles
+  // падал → data=null → matchAssignee всегда возвращал null (резолв исполнителя в MCP не работал).
+  const [{ data: profs }, { data: aus }] = await Promise.all([
+    supabase.from("user_profiles").select("telegram_id, first_name, last_name, email, name_aliases"),
+    supabase.from("allowed_users").select("telegram_id, username"),
+  ]);
+  if (!profs?.length) return null;
+  const uname = new Map<number, string>();
+  ((aus ?? []) as Array<{ telegram_id: number; username?: string | null }>).forEach((u) => {
+    if (u.username) uname.set(u.telegram_id, u.username);
+  });
+  const data = (profs as Array<{ telegram_id: number; first_name?: string; last_name?: string; email?: string; name_aliases?: string[] }>)
+    .map((p) => ({ ...p, username: uname.get(p.telegram_id) }));
   const lower = name.toLowerCase();
   const match = (data as Array<{
     telegram_id: number;

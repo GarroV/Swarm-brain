@@ -11,23 +11,29 @@ export type UserProfile = {
 };
 
 export async function getProfilesForPrompt(): Promise<UserProfile[]> {
-  const { data } = await supabase
-    .from("user_profiles")
-    .select("telegram_id, first_name, last_name, username, role, markets, email, name_aliases");
+  // username — в allowed_users (НЕ в user_profiles). Селект username из user_profiles
+  // падал на несуществующей колонке → data=null → пустой список → резолв исполнителей не работал.
+  const [{ data: profs }, { data: aus }] = await Promise.all([
+    supabase.from("user_profiles").select("telegram_id, first_name, last_name, role, markets, email, name_aliases"),
+    supabase.from("allowed_users").select("telegram_id, username"),
+  ]);
+  const uname = new Map<number, string>();
+  ((aus ?? []) as Array<{ telegram_id: number; username?: string | null }>).forEach((u) => {
+    if (u.username) uname.set(u.telegram_id, u.username);
+  });
 
-  return (data ?? []).map((p: {
+  return (profs ?? []).map((p: {
     telegram_id: number;
     first_name?: string;
     last_name?: string;
-    username?: string;
     role?: string;
     markets?: string[];
     email?: string;
     name_aliases?: string[];
   }) => ({
     id: p.telegram_id,
-    name: [p.first_name, p.last_name].filter(Boolean).join(" ") || p.username || String(p.telegram_id),
-    username: p.username ?? null,
+    name: [p.first_name, p.last_name].filter(Boolean).join(" ") || (uname.get(p.telegram_id) ? `@${uname.get(p.telegram_id)}` : "") || String(p.telegram_id),
+    username: uname.get(p.telegram_id) ?? null,
     role: p.role ?? null,
     markets: p.markets ?? [],
     email: p.email ?? null,
@@ -41,13 +47,17 @@ export function buildProfileMap(profiles: UserProfile[]): Record<number, string>
 
 export async function buildDisplayNameMap(telegramIds: number[]): Promise<Record<number, string>> {
   if (!telegramIds.length) return {};
-  const { data } = await supabase
-    .from("user_profiles")
-    .select("telegram_id, first_name, last_name, username")
-    .in("telegram_id", telegramIds);
+  const [{ data: profs }, { data: aus }] = await Promise.all([
+    supabase.from("user_profiles").select("telegram_id, first_name, last_name").in("telegram_id", telegramIds),
+    supabase.from("allowed_users").select("telegram_id, username").in("telegram_id", telegramIds),
+  ]);
+  const uname = new Map<number, string>();
+  ((aus ?? []) as Array<{ telegram_id: number; username?: string | null }>).forEach((u) => {
+    if (u.username) uname.set(u.telegram_id, u.username);
+  });
   const map: Record<number, string> = {};
-  for (const p of (data ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string; username?: string }>) {
-    const name = [p.first_name, p.last_name].filter(Boolean).join(" ") || p.username || null;
+  for (const p of (profs ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string }>) {
+    const name = [p.first_name, p.last_name].filter(Boolean).join(" ") || (uname.get(p.telegram_id) ? `@${uname.get(p.telegram_id)}` : null);
     if (name) map[p.telegram_id] = name;
   }
   return map;
