@@ -104,6 +104,34 @@ async function resolveAssignee(
   return { telegram_id: p.telegram_id, name };
 }
 
+// Имена исполнителей денормализованы в tasks.assignees при создании задачи и со временем
+// устаревают: если профиля ещё не было, туда попадал сырой telegram_id (в UI — «#744230399»).
+// Перерезолвим имена из актуальных user_profiles по assignee_telegram_ids (батч на список).
+// Если у профиля по-прежнему нет имени — оставляем как было (деградация, а не регресс).
+async function withFreshAssignees<
+  T extends { assignee_telegram_ids?: number[]; assignees?: string[] },
+>(tasks: T[]): Promise<T[]> {
+  const ids = [...new Set(tasks.flatMap((t) => t.assignee_telegram_ids ?? []))];
+  if (ids.length === 0) return tasks;
+  const { data } = await supabase
+    .from("user_profiles")
+    .select("telegram_id, first_name, last_name, username")
+    .in("telegram_id", ids);
+  const nameById = new Map<number, string>();
+  (data ?? []).forEach(
+    (p: { telegram_id: number; first_name?: string; last_name?: string; username?: string }) => {
+      const name = [p.first_name, p.last_name].filter(Boolean).join(" ") || p.username || "";
+      if (name) nameById.set(p.telegram_id, name);
+    },
+  );
+  return tasks.map((t) => {
+    const tids = t.assignee_telegram_ids ?? [];
+    if (tids.length === 0) return t;
+    const fresh = tids.map((id) => nameById.get(id)).filter((n): n is string => !!n);
+    return fresh.length === tids.length ? { ...t, assignees: fresh } : t;
+  });
+}
+
 // ── Извлечение задач из тезисов встречи (тот же подход, что POST /tasks/extract,
 //    плюс резолв исполнителей и привязка к встрече) ───────────────────────────────
 type ExtractedTask = { title: string; description?: string; assignee?: string; due_date?: string | null; country?: string | null };
@@ -422,7 +450,7 @@ Deno.serve(async (req: Request) => {
           if (p.first_name) creatorMap.set(p.telegram_id, p.first_name);
         });
       }
-      const tasksWithCreator = tasks.map(t => ({
+      const tasksWithCreator = (await withFreshAssignees(tasks)).map(t => ({
         ...t,
         created_by_name: t.created_by_telegram_id != null ? (creatorMap.get(t.created_by_telegram_id) ?? null) : null,
       }));
@@ -503,7 +531,8 @@ Deno.serve(async (req: Request) => {
       if (!task || task.group_id !== groupId) return apiErr(404, "Not found", origin);
       // Приватная задача чужого пользователя — 404 (не раскрываем существование)
       if (!canViewTask(task, telegram_id, isAdmin)) return apiErr(404, "Not found", origin);
-      return json(task, 200, origin);
+      const [fresh] = await withFreshAssignees([task]);
+      return json(fresh, 200, origin);
     }
 
     if (req.method === "PATCH") {
