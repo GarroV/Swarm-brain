@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
-import { verifyJWT } from "../_shared/jwt.ts";
+import { verifyJWT, signJWT } from "../_shared/jwt.ts";
 import {
   EntryAccessError,
   buildEntriesQuery,
@@ -1145,6 +1145,20 @@ Deno.serve(async (req: Request) => {
       .select("service, last_polled_at, skipped_note_ids")
       .eq("telegram_id", telegram_id);
     return json(data ?? [], 200, origin);
+  }
+
+  // ── GET /google/connect-url — OAuth-ссылка для подключения Google-календаря ──────
+  if (req.method === "GET" && routePath === "/google/connect-url") {
+    if (!WEB_JWT_SECRET) return apiErr(500, "Web auth not configured", origin);
+    const state = await signJWT({ telegram_id }, WEB_JWT_SECRET, 600);
+    const base = Deno.env.get("SUPABASE_URL")!;
+    return json({ url: `${base}/functions/v1/google-oauth/start?state=${encodeURIComponent(state)}` }, 200, origin);
+  }
+
+  // ── DELETE /integrations/google — отключить Google-календарь ─────────────────────
+  if (req.method === "DELETE" && routePath === "/integrations/google") {
+    await supabase.from("user_integrations").delete().eq("telegram_id", telegram_id).eq("service", "google_calendar");
+    return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
 
   // ── POST /integrations/granola ────────────────────────────────────────────────
