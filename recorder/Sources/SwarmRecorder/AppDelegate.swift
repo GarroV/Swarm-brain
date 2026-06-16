@@ -178,10 +178,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // ── Запись ───────────────────────────────────────────────────────────────────
     @objc private func recordTapped() {
         guard config != nil else { return }
-        // Ручной старт: подтянуть идентичность из календаря (если событие идёт).
+        // Ручной старт: идентичность — событие календаря, иначе комната из URL браузера
+        // (Meet/Контур), иначе manual.
         Task {
-            let id = await MeetingIdentity.currentCalendar()
-            DispatchQueue.main.async { [weak self] in self?.beginRecording(identity: id) }
+            let cal = await MeetingIdentity.currentCalendar()
+            DispatchQueue.main.async { [weak self] in
+                let id = cal ?? MeetingIdentity.currentRoom()
+                self?.beginRecording(identity: id)
+            }
         }
     }
 
