@@ -82,26 +82,42 @@ async function withEntries(
 }
 
 // Resolve telegram_id → { telegram_id, name } via user_profiles
+// Имена пользователей по telegram_id. ВАЖНО: имя (first/last) — в user_profiles, а
+// username — в allowed_users (НЕ в user_profiles). Раньше код селектил username прямо из
+// user_profiles → PostgREST падал на несуществующей колонке → data=null → имена не
+// резолвились (в UI «#744230399»). Берём first+last, фолбэк на @username, затем «#id».
+async function resolveNames(ids: number[]): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  if (ids.length === 0) return out;
+  const [{ data: profs }, { data: aus }] = await Promise.all([
+    supabase.from("user_profiles").select("telegram_id, first_name, last_name").in("telegram_id", ids),
+    supabase.from("allowed_users").select("telegram_id, username").in("telegram_id", ids),
+  ]);
+  const uname = new Map<number, string>();
+  (aus ?? []).forEach((u: { telegram_id: number; username?: string | null }) => {
+    if (u.username) uname.set(u.telegram_id, u.username);
+  });
+  const nameFor = (id: number, first?: string | null, last?: string | null): string => {
+    const full = [first, last].filter(Boolean).join(" ");
+    return full || (uname.get(id) ? `@${uname.get(id)}` : "");
+  };
+  (profs ?? []).forEach((p: { telegram_id: number; first_name?: string | null; last_name?: string | null }) => {
+    const name = nameFor(p.telegram_id, p.first_name, p.last_name);
+    if (name) out.set(p.telegram_id, name);
+  });
+  // id, у которых нет user_profiles, но есть @username
+  ids.forEach((id) => { if (!out.has(id) && uname.get(id)) out.set(id, `@${uname.get(id)}`); });
+  return out;
+}
+
 async function resolveAssignee(
   telegramId: number,
 ): Promise<{ telegram_id: number; name: string } | null> {
-  const { data } = await supabase
-    .from("user_profiles")
-    .select("telegram_id, first_name, last_name, username")
-    .eq("telegram_id", telegramId)
-    .maybeSingle();
-  if (!data) return null;
-  const p = data as {
-    telegram_id: number;
-    first_name?: string;
-    last_name?: string;
-    username?: string;
-  };
-  const name =
-    [p.first_name, p.last_name].filter(Boolean).join(" ") ||
-    p.username ||
-    String(p.telegram_id);
-  return { telegram_id: p.telegram_id, name };
+  const { data: au } = await supabase
+    .from("allowed_users").select("telegram_id").eq("telegram_id", telegramId).maybeSingle();
+  if (!au) return null; // не член воркспейса — не назначаем
+  const name = (await resolveNames([telegramId])).get(telegramId) ?? String(telegramId);
+  return { telegram_id: telegramId, name };
 }
 
 // Имена исполнителей денормализованы в tasks.assignees при создании задачи и со временем
@@ -113,17 +129,7 @@ async function withFreshAssignees<
 >(tasks: T[]): Promise<T[]> {
   const ids = [...new Set(tasks.flatMap((t) => t.assignee_telegram_ids ?? []))];
   if (ids.length === 0) return tasks;
-  const { data } = await supabase
-    .from("user_profiles")
-    .select("telegram_id, first_name, last_name, username")
-    .in("telegram_id", ids);
-  const nameById = new Map<number, string>();
-  (data ?? []).forEach(
-    (p: { telegram_id: number; first_name?: string; last_name?: string; username?: string }) => {
-      const name = [p.first_name, p.last_name].filter(Boolean).join(" ") || p.username || "";
-      if (name) nameById.set(p.telegram_id, name);
-    },
-  );
+  const nameById = await resolveNames(ids);
   return tasks.map((t) => {
     const tids = t.assignee_telegram_ids ?? [];
     if (tids.length === 0) return t;
@@ -161,10 +167,18 @@ async function gptExtractTasks(text: string): Promise<ExtractedTask[]> {
 }
 
 async function buildNameResolver(): Promise<(raw: string | null | undefined) => { name: string; id: number } | null> {
-  const { data } = await supabase.from("user_profiles").select("telegram_id, first_name, last_name, username");
-  const members = ((data ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string; username?: string }>).map((p) => ({
+  // username — в allowed_users (не в user_profiles), иначе селект падает и список пуст.
+  const [{ data: profs }, { data: aus }] = await Promise.all([
+    supabase.from("user_profiles").select("telegram_id, first_name, last_name"),
+    supabase.from("allowed_users").select("telegram_id, username"),
+  ]);
+  const uname = new Map<number, string>();
+  ((aus ?? []) as Array<{ telegram_id: number; username?: string | null }>).forEach((u) => {
+    if (u.username) uname.set(u.telegram_id, u.username);
+  });
+  const members = ((profs ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string }>).map((p) => ({
     id: p.telegram_id,
-    name: [p.first_name, p.last_name].filter(Boolean).join(" ") || p.username || String(p.telegram_id),
+    name: [p.first_name, p.last_name].filter(Boolean).join(" ") || (uname.get(p.telegram_id) ? `@${uname.get(p.telegram_id)}` : "") || String(p.telegram_id),
   }));
   return (raw) => {
     if (!raw) return null;
@@ -826,8 +840,8 @@ Deno.serve(async (req: Request) => {
     const { data: { publicUrl } } = supabase.storage.from("swarm_drive").getPublicUrl(path);
 
     const { data: profile } = await supabase.from("user_profiles")
-      .select("first_name, username").eq("telegram_id", telegram_id).maybeSingle();
-    const addedBy = (profile as { first_name?: string; username?: string } | null)?.first_name || String(telegram_id);
+      .select("first_name").eq("telegram_id", telegram_id).maybeSingle();
+    const addedBy = (profile as { first_name?: string } | null)?.first_name || String(telegram_id);
 
     const { data: entry, error: insertError } = await supabase.from("entries").insert({
       content: `Файл: ${file.name}`,
@@ -855,8 +869,8 @@ Deno.serve(async (req: Request) => {
     const isPrivate = body.is_private === true;
 
     const { data: profile } = await supabase.from("user_profiles")
-      .select("first_name, username").eq("telegram_id", telegram_id).maybeSingle();
-    const addedBy = (profile as { first_name?: string; username?: string } | null)?.first_name || String(telegram_id);
+      .select("first_name").eq("telegram_id", telegram_id).maybeSingle();
+    const addedBy = (profile as { first_name?: string } | null)?.first_name || String(telegram_id);
 
     const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
