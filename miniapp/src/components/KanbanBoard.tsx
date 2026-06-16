@@ -1,70 +1,49 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, type DragEvent } from "react";
 import { fetchMe, fetchTasks, updateTask, deleteTask } from "@/lib/api";
 import type { Me, Task } from "@/types";
-import { TaskCard } from "@/components/TaskCard";
 import { TaskModal } from "@/components/TaskModal";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { displayName } from "@/lib/utils";
+import { RoyCard, PriDot, Market, Avatar, STATUS_META } from "@/components/roy/ui";
+import { RoyIcon } from "@/components/roy/icons";
 
 const STATUSES = ["open", "in_progress", "done"] as const;
 type Status = (typeof STATUSES)[number];
 
-const TAB_LABELS: Record<Status, string> = {
-  open: "Открыто",
-  in_progress: "В работе",
-  done: "Готово",
-};
+const COLUMNS: { status: Status; label: string }[] = [
+  { status: "open", label: "Открыто" },
+  { status: "in_progress", label: "В работе" },
+  { status: "done", label: "Готово" },
+];
 
-const SWIPE_THRESHOLD = 60;
+const norm = (s: string): Status => (s === "progress" ? "in_progress" : (s as Status));
+const pri = (t: Task) => (t.priority as "high" | "med" | "low" | null) ?? null;
 
-function useTabSwipe(activeStatus: Status, setActiveStatus: (s: Status) => void) {
-  const start = useRef<{ x: number; y: number } | null>(null);
-
-  return {
-    onTouchStart: (e: React.TouchEvent) => {
-      const t = e.touches[0];
-      start.current = { x: t.clientX, y: t.clientY };
-    },
-    onTouchEnd: (e: React.TouchEvent) => {
-      if (!start.current) return;
-      const t = e.changedTouches[0];
-      const dx = t.clientX - start.current.x;
-      const dy = t.clientY - start.current.y;
-      start.current = null;
-
-      if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-
-      const idx = STATUSES.indexOf(activeStatus);
-      if (dx < 0 && idx < STATUSES.length - 1) setActiveStatus(STATUSES[idx + 1]);
-      else if (dx > 0 && idx > 0) setActiveStatus(STATUSES[idx - 1]);
-    },
-  };
+function fmtDue(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+function initials(name: string): string {
+  const n = displayName(name);
+  if (n === "—" || n.startsWith("#")) return "?";
+  return n.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
 export function KanbanBoard() {
   const [me, setMe] = useState<Me | null>(null);
-  const [tasksByStatus, setTasksByStatus] = useState<Record<Status, Task[]>>({
-    open: [],
-    in_progress: [],
-    done: [],
-  });
-  const [activeStatus, setActiveStatus] = useState<Status>("open");
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<401 | 403 | null>(null);
   const [modalTask, setModalTask] = useState<Task | "new" | null>(null);
-  const swipeHandlers = useTabSwipe(activeStatus, setActiveStatus);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overCol, setOverCol] = useState<Status | null>(null);
 
   const loadTasks = useCallback(async () => {
     try {
-      const [open, in_progress, done] = await Promise.all([
-        fetchTasks("open"),
-        fetchTasks("in_progress"),
-        fetchTasks("done"),
-      ]);
-      setTasksByStatus({ open, in_progress, done });
+      setTasks(await fetchTasks());
     } catch {
-      // On polling error, keep existing data visible
+      /* keep existing on polling error */
     } finally {
       setLoading(false);
     }
@@ -93,88 +72,130 @@ export function KanbanBoard() {
     };
   }, [loadTasks]);
 
-  if (authError === 401) {
-    return (
-      <div className="flex items-center justify-center h-full p-6 text-center">
-        <p className="text-destructive text-base">
-          Нет доступа. Откройте приложение из Telegram.
-        </p>
-      </div>
-    );
-  }
+  const move = async (id: string, status: Status) => {
+    const cur = tasks.find((t) => t.id === id);
+    if (!cur || norm(cur.status) === status) return;
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)));
+    try {
+      await updateTask(id, { status });
+    } catch {
+      loadTasks();
+    }
+  };
 
+  const remove = async (t: Task) => {
+    if (!window.confirm(`Удалить «${t.title}»?`)) return;
+    setTasks((prev) => prev.filter((x) => x.id !== t.id));
+    try {
+      await deleteTask(t.id);
+    } catch {
+      loadTasks();
+    }
+  };
+
+  const onDrop = (e: DragEvent, status: Status) => {
+    e.preventDefault();
+    setOverCol(null);
+    const id = e.dataTransfer.getData("text/plain") || dragId;
+    if (id) move(id, status);
+  };
+
+  if (authError === 401) {
+    return <CenterMsg>Нет доступа. Откройте приложение из Telegram.</CenterMsg>;
+  }
   if (authError === 403) {
-    return (
-      <div className="flex items-center justify-center h-full p-6 text-center">
-        <p className="text-destructive text-base">
-          Воркспейс не назначен. Обратитесь к админу.
-        </p>
-      </div>
-    );
+    return <CenterMsg>Воркспейс не назначен. Обратитесь к админу.</CenterMsg>;
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-4 pt-5 pb-3">
-        <h1 className="text-xl font-semibold">
+    <div className="flex h-full flex-col">
+      <header className="flex items-center justify-between px-5 pt-4 pb-3">
+        <h1 className="font-bold text-ink" style={{ fontSize: 26, letterSpacing: "-0.02em" }}>
           {me ? `Привет, ${me.name.split(" ")[0]}` : "Задачи"}
         </h1>
-      </div>
+        <button
+          type="button"
+          onClick={() => setModalTask("new")}
+          className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 font-semibold text-white transition-transform active:scale-[0.97]"
+          style={{ fontSize: 13.5 }}
+        >
+          <RoyIcon name="plus" size={16} strokeWidth={2.3} />
+          Новая задача
+        </button>
+      </header>
 
-      <Tabs
-        value={activeStatus}
-        onValueChange={(v) => setActiveStatus(v as Status)}
-        className="flex-1 flex flex-col min-h-0"
-        onTouchStart={swipeHandlers.onTouchStart}
-        onTouchEnd={swipeHandlers.onTouchEnd}
-      >
-        <TabsList className="mx-4 grid grid-cols-3">
-          {STATUSES.map((s) => (
-            <TabsTrigger key={s} value={s}>
-              {TAB_LABELS[s]}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-
-        {STATUSES.map((s) => (
-          <TabsContent
-            key={s}
-            value={s}
-            className="flex-1 overflow-y-auto px-4 py-3 space-y-3 mt-0"
-          >
-            {loading && s === activeStatus ? (
-              <p className="text-center text-muted-foreground py-8 text-sm">
-                Загрузка…
-              </p>
-            ) : tasksByStatus[s].length === 0 && s === activeStatus ? (
-              <p className="text-center text-muted-foreground py-8 text-sm">
-                Нет задач
-              </p>
-            ) : (
-              tasksByStatus[s].map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  onEdit={() => setModalTask(task)}
-                  onStatusChange={async (newStatus) => {
-                    await updateTask(task.id, { status: newStatus });
-                    loadTasks();
-                  }}
-                  onDelete={async () => {
-                    await deleteTask(task.id);
-                    loadTasks();
-                  }}
-                />
-              ))
-            )}
-          </TabsContent>
-        ))}
-      </Tabs>
-
-      <div className="p-4">
-        <Button className="w-full" onClick={() => setModalTask("new")}>
-          + Новая задача
-        </Button>
+      <div className="min-h-0 flex-1 px-4 pb-4">
+        <div className="grid h-full grid-cols-3 gap-3">
+          {COLUMNS.map((col) => {
+            const meta = STATUS_META[col.status];
+            const colTasks = tasks.filter((t) => norm(t.status) === col.status);
+            const isOver = overCol === col.status;
+            return (
+              <div
+                key={col.status}
+                onDragOver={(e) => { e.preventDefault(); setOverCol(col.status); }}
+                onDragLeave={() => setOverCol((c) => (c === col.status ? null : c))}
+                onDrop={(e) => onDrop(e, col.status)}
+                className="flex min-h-0 flex-col rounded-[16px] border bg-surface-2/50 transition-colors"
+                style={{ borderColor: isOver ? meta.color : "var(--line)" }}
+              >
+                <div className="flex shrink-0 items-center gap-2 px-3.5 py-3">
+                  <span className="inline-block rounded-full" style={{ width: 9, height: 9, background: meta.color }} />
+                  <span className="font-bold text-ink" style={{ fontSize: 14 }}>{col.label}</span>
+                  <span className="ml-auto font-semibold text-ink-mute" style={{ fontSize: 12.5 }}>{colTasks.length}</span>
+                </div>
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2.5 pb-3">
+                  {loading && tasks.length === 0 && [0, 1].map((i) => <div key={i} className="roy-shim" style={{ height: 76, borderRadius: 14 }} />)}
+                  {!loading && colTasks.length === 0 && (
+                    <p className="py-8 text-center text-ink-mute" style={{ fontSize: 12.5 }}>пусто</p>
+                  )}
+                  {colTasks.map((t) => (
+                    <RoyCard
+                      key={t.id}
+                      draggable
+                      onDragStart={(e) => { e.dataTransfer.setData("text/plain", t.id); e.dataTransfer.effectAllowed = "move"; setDragId(t.id); }}
+                      onDragEnd={() => setDragId(null)}
+                      className="group cursor-grab rounded-[14px] p-3 active:cursor-grabbing"
+                      style={{ opacity: dragId === t.id ? 0.5 : 1 }}
+                    >
+                      <p className="line-clamp-2 font-semibold text-ink" style={{ fontSize: 13.5, letterSpacing: "-0.01em", lineHeight: 1.3 }}>
+                        {t.title}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                        {pri(t) && <PriDot pri={pri(t)} />}
+                        <Market code={t.country} />
+                        {fmtDue(t.due_date) && (
+                          <span className="inline-flex items-center gap-1 text-ink-mute" style={{ fontSize: 11.5 }}>
+                            <RoyIcon name="cal" size={11} />
+                            {fmtDue(t.due_date)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2">
+                        {t.assignees?.[0] ? (
+                          <span className="inline-flex items-center gap-1.5 text-ink-soft" style={{ fontSize: 11.5 }}>
+                            <Avatar size={20}>{initials(t.assignees[0])}</Avatar>
+                            <span className="max-w-[110px] truncate">{displayName(t.assignees[0])}</span>
+                          </span>
+                        ) : (
+                          <span />
+                        )}
+                        <span className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                          <IconBtn label="Изменить" onClick={() => setModalTask(t)} color="var(--status-open)">
+                            <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
+                          </IconBtn>
+                          <IconBtn label="Удалить" onClick={() => remove(t)} color="var(--pri-high)">
+                            <RoyIcon name="trash" size={15} strokeWidth={1.9} />
+                          </IconBtn>
+                        </span>
+                      </div>
+                    </RoyCard>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <TaskModal
@@ -183,6 +204,29 @@ export function KanbanBoard() {
         onClose={() => setModalTask(null)}
         onSaved={loadTasks}
       />
+    </div>
+  );
+}
+
+function IconBtn({ label, onClick, color, children }: { label: string; onClick: () => void; color: string; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      onPointerDown={(e) => e.stopPropagation()}
+      className="flex items-center justify-center rounded-[8px] p-1.5 transition-colors hover:bg-surface-2 active:scale-[0.92]"
+      style={{ color }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function CenterMsg({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-full items-center justify-center p-6 text-center">
+      <p className="text-base" style={{ color: "var(--pri-high)" }}>{children}</p>
     </div>
   );
 }
