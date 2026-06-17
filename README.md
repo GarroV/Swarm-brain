@@ -1,6 +1,6 @@
 # Swarm Brain
 
-Командная база знаний с AI-поиском и интеграцией митингов. Работает в Telegram и Claude Desktop, живёт на Supabase Edge Functions.
+Командная база знаний с AI-поиском и интеграцией митингов. Доступна из Telegram, веб/Mini App, Claude Desktop и macOS-рекордера встреч; живёт на Supabase Edge Functions.
 
 ---
 
@@ -26,8 +26,10 @@
 | База данных | Supabase (PostgreSQL + pgvector) |
 | Хранилище файлов | Supabase Storage (bucket: `swarm_drive`) |
 | AI | OpenAI GPT-4o-mini, Whisper, text-embedding-3-small |
-| Интерфейс | Telegram Bot API |
-| Митинги | Read.ai (OAuth2 + webhook), Granola (API key per user) |
+| Интерфейс | Telegram Bot API + веб/Mini App (Next.js 16, React 19) |
+| Веб-бэкенд | `swarm-api` (REST поверх Edge Functions), хостинг Cloudflare Pages |
+| Рекордер | macOS, Swift + ScreenCaptureKit + AVFoundation (меню-бар приложение) |
+| Митинги | Read.ai (OAuth2 + webhook), Granola (API key per user), SwarmRecorder (свой macOS-рекордер) |
 
 ---
 
@@ -62,6 +64,9 @@ supabase/
 │   │       ├── types.ts        # Task types
 │   │       └── tools.ts        # MCP-совместимые инструменты задач
 │   ├── swarm-mcp/              # MCP-сервер для Claude Desktop (JSON-RPC)
+│   ├── swarm-api/              # REST API для веб/Mini App (поверх той же логики, что и бот)
+│   ├── meeting-claim/          # Рекордер: claim/lease встречи до транскрибации
+│   ├── meeting-ingest/         # Рекордер: приём аудио → Whisper → тезисы
 │   ├── granola-poller/         # Hourly cron: поллинг Granola для всех пользователей
 │   ├── read-ai-auth/           # OAuth2 авторизация Read.ai
 │   └── read-ai-webhook/        # Вебхук: приём встреч из Read.ai → /meetings
@@ -70,6 +75,12 @@ supabase/
     ├── 20260521_app_settings.sql
     ├── 20260522_user_integrations.sql
     └── 20260525_private_space.sql
+
+miniapp/                        # Веб / Telegram Mini App «Рой» (Next.js 16 → статический экспорт → Cloudflare Pages)
+└── src/                        # Поиск/RAG, доска задач, база знаний, вычитка встреч
+
+recorder/                       # SwarmRecorder — macOS меню-бар рекордер встреч (Swift)
+└── Sources/SwarmRecorder/      # запись звонка (2 дорожки) → meeting-claim/ingest
 ```
 
 ---
@@ -146,16 +157,46 @@ supabase/
 | `get_meetings` | Последние встречи из Read.ai |
 | `get_users` | Команда с профилями, фильтр по market |
 
+### Веб-интерфейс — Mini App «Рой»
+
+Весь функционал бота доступен и в графическом UI — как **Telegram Mini App**, и как **обычный сайт** (PWA). Кодовое имя — «Рой».
+
+- **Стек:** Next.js 16 + React 19 + Tailwind + shadcn; статический экспорт, хостинг — Cloudflare Pages (`swarm-brain.pages.dev`)
+- **Бэкенд:** edge-функция `swarm-api` — REST поверх той же бизнес-логики, что и бот (новой логики нет, только маршруты)
+- **Два режима входа:** в Telegram — по `initData` (подпись бота); в браузере — Telegram Login Widget → JWT в httpOnly-cookie
+- **Экраны:** поиск + AI-ответ (RAG со сносками на источники), доска задач (на десктопе — виды Доска / Таймлайн / Спринт / Граф), база знаний, встречи + вычитка тезисов и публикация. Адаптив: мобайл — нижний таб-бар, десктоп — бенто-дашборд
+- **Приватность («Рой»):** приватные задачи и записи видны только владельцу — командный бот их не показывает
+- Детали — `docs/ARCHITECTURE.md` (swarm-api + miniapp), `docs/MINIAPP_EXPANSION.md`
+
+### Рекордер встреч — SwarmRecorder (macOS)
+
+Лёгкое **меню-бар приложение** для macOS: записывает звук онлайн-звонка и отправляет аудио в Swarm Brain, где сервер транскрибирует его и делает тезисы. Зачем — Read.ai и Granola подключаются не к каждому сервису и не к каждому звонку; рекордер пишет **любой** онлайн-звонок локально, без внешних интеграций и без локальной AI-модели.
+
+- **Две дорожки звука:** системный звук собеседников (ScreenCaptureKit) + микрофон (AVAudioRecorder) → сервер транскрибирует каждую (Whisper) и сводит по таймстампам с метками «я» / «собеседник»
+- **Клиент «тупой»:** никакой LLM на машине — транскрибация и тезисы целиком на сервере (`meeting-claim` → `meeting-ingest`)
+- **Без календаря:** дедуп встречи — по комнате из ссылки звонка (Meet / Контур.Толк); авто-детект звонка — по занятости микрофона **с явным согласием** (молча не пишет)
+- **Распространение:** без платного Apple-аккаунта (`recorder/install.sh`); токен вставляется через меню приложения
+- Подробности и сборка — **[recorder/README.md](recorder/README.md)**
+
 ---
 
 ## Деплой
 
 ```bash
-# Всегда с --no-verify-jwt, иначе Telegram получает 401
+# Edge Functions — всегда с --no-verify-jwt, иначе Telegram/клиент получает 401
 supabase functions deploy swarm-bot --no-verify-jwt
 supabase functions deploy swarm-mcp --no-verify-jwt
+supabase functions deploy swarm-api --no-verify-jwt          # бэкенд веб/Mini App
+supabase functions deploy meeting-claim --no-verify-jwt       # рекордер
+supabase functions deploy meeting-ingest --no-verify-jwt      # рекордер
 supabase functions deploy granola-poller --no-verify-jwt
 supabase functions deploy read-ai-webhook --no-verify-jwt
+
+# Веб/Mini App — статический экспорт → Cloudflare Pages
+cd miniapp && npm run build                                   # → miniapp/out/
+
+# Рекордер — сборка .app без платного Apple-аккаунта
+cd recorder && ./install.sh                                   # подробности в recorder/README.md
 ```
 
 Рабочая ветка: **`sandbox_vas`**. В `main` не коммитить.
