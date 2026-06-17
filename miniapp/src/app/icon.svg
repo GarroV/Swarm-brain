@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Фавикон «Рой/соты». Адаптивен к теме браузера: на тёмной — янтарь чуть ярче. -->
+  <style>
+    .chip { fill: #D98A2B; }
+    @media (prefers-color-scheme: dark) { .chip { fill: #ECA945; } }
+  </style>
+  <rect class="chip" width="512" height="512" rx="112"/>
+  <path d="M406 256 331 386 181 386 106 256 181 126 331 126Z"
+        fill="none" stroke="#ffffff" stroke-width="32" stroke-linejoin="round"/>
+  <g fill="#ffffff">
+    <circle cx="256" cy="205" r="29"/>
+    <circle cx="209" cy="284" r="29"/>
+    <circle cx="303" cy="284" r="29"/>
+  </g>
+</svg>
