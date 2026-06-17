@@ -22,7 +22,7 @@
 | `read-ai-auth` | HTTP redirect (OAuth) | OAuth callback для авторизации Read.ai, сохраняет токен в `app_settings` |
 | `swarm-mcp` | MCP (Claude Desktop) | MCP-сервер для Claude Desktop: поиск, добавление знаний, управление задачами |
 | `meeting-claim` | HTTP POST (desktop-agent) | Swarm Meetings: claim/lease до транскрибации (кто транскрибирует), регистрация записавших, личные пометки → приватная entry. Auth — персональный токен |
-| `meeting-ingest` | HTTP POST (desktop-agent) | Swarm Meetings: приём **аудио** от claimer → транскрибация (OpenAI Whisper) → async-генерация тезисов в `meetings.draft_notes_md` → уведомление записавшим. Auth — персональный токен |
+| `meeting-ingest` | HTTP POST (desktop-agent) | Swarm Meetings: приём **аудио** от claimer → транскрибация (OpenAI Whisper) → async-генерация тезисов в `meetings.draft_notes_md` + **авто-название** по сути встречи (если заголовок пуст/плейсхолдер «Запись <дата>») → уведомление записавшим. Auth — персональный токен. Вычитка: `swarm-api` `GET/PATCH/DELETE /agent-meetings/:id` (PATCH правит `draft_notes_md` и/или `title`, DELETE — до публикации) + `POST /agent-meetings/:id/publish` |
 
 **Деплой:** `supabase functions deploy <name> --no-verify-jwt` (обязательно `--no-verify-jwt` для Telegram webhook)
 
