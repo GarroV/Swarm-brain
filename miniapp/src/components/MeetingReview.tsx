@@ -14,6 +14,19 @@ function fmtTs(sec: number): string {
   return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
 }
 
+// Время суток сегмента = старт записи + смещение сегмента (сек). started_at в UTC →
+// toLocaleTimeString переводит в локальную зону браузера. Фолбэк на MM:SS, если старта нет.
+function fmtClock(startISO: string | null, sec: number): string {
+  if (!startISO) return fmtTs(sec);
+  const base = Date.parse(startISO);
+  if (Number.isNaN(base)) return fmtTs(sec);
+  return new Date(base + Math.max(0, sec) * 1000).toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 export function MeetingReview({ id, onClose, onChanged }: Props) {
   const [meeting, setMeeting] = useState<AgentMeeting | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,7 +140,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
               <div className="mt-2 space-y-1">
                 {segments.map((s, i) => (
                   <div key={i} className="flex gap-2 text-sm">
-                    <span className="font-mono text-xs text-muted-foreground shrink-0 w-12">{fmtTs(s.start)}</span>
+                    <span className="font-mono text-xs text-muted-foreground shrink-0 w-16">{fmtClock(meeting.started_at, s.start)}</span>
                     <span className="flex-1">{s.text}</span>
                   </div>
                 ))}
