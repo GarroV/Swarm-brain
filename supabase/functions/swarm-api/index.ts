@@ -1098,18 +1098,32 @@ Deno.serve(async (req: Request) => {
       return json(meeting, 200, origin);
     }
 
-    // PATCH — вычитка/правка черновика тезисов (только до публикации)
+    // PATCH — вычитка/правка черновика: тезисы и/или название (только до публикации)
     if (agentMeetingMatch && req.method === "PATCH") {
       if (meeting.status === "in_base") return apiErr(409, "Уже опубликовано — правьте запись в базе", origin);
       let body: Record<string, unknown>;
       try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
-      if (typeof body.draft_notes_md !== "string") return apiErr(400, "draft_notes_md required", origin);
       const nowIso = new Date().toISOString();
-      await supabase.from("meetings")
-        .update({ draft_notes_md: body.draft_notes_md, notes_edited_at: nowIso, updated_at: nowIso })
-        .eq("id", mId);
+      const upd: Record<string, unknown> = { updated_at: nowIso };
+      if (typeof body.draft_notes_md === "string") {
+        upd.draft_notes_md = body.draft_notes_md;
+        upd.notes_edited_at = nowIso;
+      }
+      if (typeof body.title === "string") {
+        const t = body.title.trim();
+        if (t) upd.title = t.slice(0, 200);
+      }
+      if (Object.keys(upd).length === 1) return apiErr(400, "Нужно draft_notes_md или title", origin);
+      await supabase.from("meetings").update(upd).eq("id", mId);
       const { data } = await supabase.from("meetings").select("*").eq("id", mId).single();
       return json(data, 200, origin);
+    }
+
+    // DELETE — убрать черновик из очереди вычитки (до публикации)
+    if (agentMeetingMatch && req.method === "DELETE") {
+      if (meeting.status === "in_base") return apiErr(409, "Уже в базе — удаляйте через раздел «База»", origin);
+      await supabase.from("meetings").delete().eq("id", mId);
+      return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
 
     // POST publish — аппрув: создаём entries (выбор базы), привязываем, status=in_base

@@ -134,13 +134,27 @@ async function processAudio(
     TEZIS_SYSTEM,
     `Встреча: ${title ?? "без названия"}\n\nСтенограмма (реплики помечены «собеседник» — другие участники, «я» — владелец записи):\n${transcriptText}`,
   );
+
+  // Авто-название по сути встречи, если заголовка нет или это плейсхолдер «Запись <дата>»
+  // (ручная запись без события календаря). Календарные названия не трогаем.
+  let finalTitle = title;
+  if (!title || /^Запись\s/i.test(title)) {
+    try {
+      const t = (await chatComplete(
+        "Придумай короткое название встречи на русском: 3–6 слов, по сути обсуждения, без даты, кавычек и префиксов. Верни ТОЛЬКО название.",
+        (tezisi || transcriptText).slice(0, 2000),
+      )).trim().replace(/^["«»\s]+|["«»\s]+$/g, "").slice(0, 120);
+      if (t) finalTitle = t;
+    } catch { /* оставляем исходный заголовок */ }
+  }
+
   await supabase
     .from("meetings")
-    .update({ draft_notes_md: tezisi, updated_at: new Date().toISOString() })
+    .update({ draft_notes_md: tezisi, title: finalTitle, updated_at: new Date().toISOString() })
     .eq("id", meetingId);
 
   const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${meetingId}` : "";
-  const titleStr = title ? `: <b>${title}</b>` : "";
+  const titleStr = finalTitle ? `: <b>${finalTitle}</b>` : "";
   const text = `📝 Тезисы встречи готовы к вычитке${titleStr}\nВозьмёт любой из участников.`;
   const keyboard: InlineButton[][] | undefined = webUrl ? [[{ text: "Открыть", url: webUrl }]] : undefined;
   for (const r of recorders) {
