@@ -3,6 +3,7 @@ import { Golos_Text, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { TelegramProvider } from "@/components/TelegramProvider";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
+import { SingleTabGate } from "@/components/SingleTabGate";
 
 // Golos Text — весь UI, заголовки И метаданные (эталонная кириллица; дизайн-хендофф
 // набирает мету тоже на Golos). JetBrains Mono оставлен только для технических
@@ -30,7 +31,9 @@ export default function RootLayout({
   return (
     <html lang="ru" className={`${golos.variable} ${mono.variable}`}>
       <body className="bg-background text-foreground antialiased min-h-screen">
-        <TelegramProvider>{children}</TelegramProvider>
+        <TelegramProvider>
+          <SingleTabGate>{children}</SingleTabGate>
+        </TelegramProvider>
         <ServiceWorkerRegister />
       </body>
     </html>

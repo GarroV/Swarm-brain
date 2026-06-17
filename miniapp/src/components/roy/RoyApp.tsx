@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Me } from "@/types";
 import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId } from "@/lib/telegram";
+import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { RoyNavContext, useRoyNav, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
 import { RoyTabBar, NavHeader, Avatar, ROY_TABS } from "./ui";
 import { RoyIcon } from "./icons";
@@ -51,26 +52,43 @@ export function RoyApp({ me }: { me: Me | null }) {
   }, []);
   const toast = useCallback((msg: string) => setToastMsg(msg), []);
 
+  // Открыть вычитку встречи в этом инстансе: вкладка Встречи + push вычитки.
+  // Дёргается и из начального deep-link, и по событию roy:open-meeting (когда встречу
+  // передала другая вкладка/лаунч PWA — см. lib/single-tab.ts).
+  const openMeeting = useCallback((id: string) => {
+    setTabState("cal");
+    setStack([{ view: "meetingReview", params: { id } }]);
+  }, []);
+
   useEffect(() => {
     if (!toastMsg) return;
     const id = setTimeout(() => setToastMsg(null), 1900);
     return () => clearTimeout(id);
   }, [toastMsg]);
 
-  // Deep-link из уведомления «тезисы готовы» → вкладка Встречи + push вычитки.
+  // Deep-link из уведомления «тезисы готовы» → открыть вычитку.
   // Иначе — восстанавливаем последнюю вкладку (рефреш не должен кидать на «Поиск»).
   useEffect(() => {
     const id = getDeepLinkMeetingId();
     if (id) {
-      setTabState("cal");
-      setStack([{ view: "meetingReview", params: { id } }]);
+      openMeeting(id);
       return;
     }
     try {
       const saved = sessionStorage.getItem("roy_tab");
       if (saved && ROY_TABS.some((t) => t.id === saved)) setTabState(saved as RoyTab);
     } catch { /* приватный режим */ }
-  }, []);
+  }, [openMeeting]);
+
+  // Встреча, переданная из другой вкладки (дедуп) или из лаунча установленного PWA.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent<{ id: string }>).detail?.id;
+      if (id) openMeeting(id);
+    };
+    window.addEventListener(OPEN_MEETING_EVENT, handler);
+    return () => window.removeEventListener(OPEN_MEETING_EVENT, handler);
+  }, [openMeeting]);
 
   const nav: RoyNav = { me, tab, setTab, push, pop, toast };
   const top = stack[stack.length - 1];
