@@ -75,6 +75,7 @@ supabase/functions/swarm-bot/
 │   ├── granola.ts           # Granola: импорт/превью/сохранение встреч
 │   ├── meetings.ts          # Read.ai + saved meetings: просмотр, подтверждение, редактирование
 │   ├── knowledge.ts         # /add, /ask — добавление и поиск по базе знаний
+│   ├── manage.ts            # Правка/удаление записей из чата (поиск→подтверждение→действие, kb*-коллбеки)
 │   ├── media.ts             # Голос, документы, фото, URL — парсинг и сохранение
 │   ├── digest.ts            # /digest — персональный дайджест за период
 │   ├── users.ts             # /users — управление командой (allow/block)
@@ -92,8 +93,8 @@ supabase/functions/swarm-bot/
     ├── supabase.ts          # Supabase client + ADMIN_USER_ID
     ├── openai.ts            # chatComplete(), getEmbedding()
     ├── telegram.ts          # sendMessage(), sendInlineMessage(), editInlineMessage(), answerCallback()
-    ├── storage.ts           # getSession/setSession/clearSession, saveEntry (returns {id,summary}), checkAllowed, visibilityFilter, buildEntryIndex
-    ├── intent.ts            # isEditEntryCommand() — отличает «замени/удали… <url>» (инструкция) от «сохрани ссылку»
+    ├── storage.ts           # getSession/setSession/clearSession, saveEntry, checkAllowed, visibilityFilter, buildEntryIndex, getManageableEntry/updateEntryContent (правка/удаление)
+    ├── intent.ts            # classifyEntryCommand/parseManageCommand (удали/замени запись), extractUrl — чистые, тестируемые (intent_test.ts)
     ├── readai.ts            # Read.ai API client + токен-рефреш
     ├── drive.ts             # Google Drive интеграция (если используется)
     ├── workspace.ts         # getUserGroupId(), checkAllowedWithGroup(), CRUD воркспейсов
@@ -239,6 +240,8 @@ claimer → meeting-ingest: грузит АУДИО → сервер транс�
 | `sa_create_id` | superadmin.ts | Ожидание ID нового воркспейса |
 | `sa_create_name_<wsId>` | superadmin.ts | Ожидание названия нового воркспейса |
 | `sa_rename_<wsId>` | superadmin.ts | Ожидание нового названия воркспейса |
+| `manage` | manage.ts | Выбор записи для правки/удаления (context: `{cmd,newValue}`) |
+| `manage_replace` | manage.ts | Ожидание нового значения для замены (context: id записи) |
 
 ---
 
@@ -274,6 +277,16 @@ claimer → meeting-ingest: грузит АУДИО → сервер транс�
 | `meeting_discard_<id>` | Не сохранять Read.ai встречу |
 | `mau_<meetingId>_<tgId>` | Добавить участника встречи |
 | `mexp_<entryId>` | Экспортировать встречу файлом |
+
+### Управление записями (правка/удаление из чата)
+| Код | Действие |
+|----|---------|
+| `kbpick_<id>` | Выбрать запись из списка совпадений |
+| `kbdo_<id>` | Подтвердить удаление / замену (значение известно) |
+| `kbask_<id>` | Запросить новое значение для замены |
+| `kbno` | Отмена |
+
+Флоу: `удали/замени запись X` → `classifyEntryCommand` → `handleEntryCommand` ищет (vector+ilike, `visibilityFilter`+`group_id`) → карточка с кнопкой подтверждения → `getManageableEntry` (гейт: воркспейс + приватность) → `delete` / `updateEntryContent` (пересчёт summary/embedding).
 
 ### Superadmin (`/superadmin`)
 | Код | Действие |

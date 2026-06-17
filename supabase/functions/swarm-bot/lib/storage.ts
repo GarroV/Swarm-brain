@@ -132,6 +132,84 @@ export async function saveEntry(
   return { id: data.id as string, summary: index.summary };
 }
 
+// ── Управление записями (правка/удаление из чата) ──────────────────────────────
+
+export class EntryAccessError extends Error {
+  constructor(public kind: "not_found" | "forbidden") {
+    super(kind);
+  }
+}
+
+export type ManageableEntry = {
+  id: string;
+  group_id: string | null;
+  is_private: boolean;
+  owner_id: number | null;
+  content: string;
+  summary: string | null;
+  source: string | null;
+  entry_type: string | null;
+  entry_date: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
+/**
+ * Загружает запись для правки/удаления с проверкой доступа:
+ * воркспейс-изоляция (group_id) + приватность (общие — любой в воркспейсе,
+ * приватные — только владелец). Бросает EntryAccessError.
+ */
+export async function getManageableEntry(id: string, userId: number, groupId: string): Promise<ManageableEntry> {
+  const { data } = await supabase.from("entries")
+    .select("id, group_id, is_private, owner_id, content, summary, source, entry_type, entry_date, metadata, created_at")
+    .eq("id", id).maybeSingle();
+  if (!data) throw new EntryAccessError("not_found");
+  const e = data as ManageableEntry;
+  if (e.group_id !== groupId) throw new EntryAccessError("forbidden");
+  if (e.is_private && e.owner_id !== userId) throw new EntryAccessError("forbidden");
+  return e;
+}
+
+/**
+ * Полная замена контента записи: пересчитывает summary/countries/type/embedding
+ * (как saveEntry). metadataPatch (если передан) — это ПОЛНЫЙ новый metadata-объект
+ * (вызывающий мержит сам). Всегда фильтрует по group_id — никогда без WHERE.
+ */
+export async function updateEntryContent(
+  id: string,
+  groupId: string,
+  newContent: string,
+  metadataPatch?: Record<string, unknown>,
+): Promise<void> {
+  const index = await buildEntryIndex(newContent);
+  const countries = [...index.countries];
+  const specific = countries.filter((c) => c !== "General");
+  if (specific.length === 0 || specific.length >= 3) {
+    if (!countries.includes("General")) countries.push("General");
+  }
+  const embeddingParts = [
+    index.summary ?? newContent,
+    specific.length > 0 ? `Страны: ${specific.join(", ")}` : "",
+    index.keywords ? `Ключевые слова: ${index.keywords}` : "",
+  ].filter(Boolean);
+  const embedding = await getEmbedding(embeddingParts.join("\n").slice(0, 8000));
+
+  const updates: Record<string, unknown> = {
+    content: newContent,
+    summary: index.summary,
+    embedding,
+    countries,
+    entry_type: index.entry_type,
+    entry_date: index.entry_date,
+    updated_at: new Date().toISOString(),
+  };
+  if (metadataPatch) updates.metadata = metadataPatch;
+
+  const { error } = await supabase.from("entries").update(updates)
+    .eq("id", id).eq("group_id", groupId);
+  if (error) throw new Error(error.message);
+}
+
 // ── Session ───────────────────────────────────────────────────────────────────
 
 const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes

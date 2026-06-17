@@ -47,11 +47,7 @@ async function describeImage(fileId: string): Promise<string> {
   return data.choices[0].message.content;
 }
 
-const URL_REGEX = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/i;
-
-export function extractUrl(text: string): string | null {
-  return text.match(URL_REGEX)?.[0] ?? null;
-}
+export { extractUrl } from "../lib/intent.ts";
 
 async function fetchUrlContent(url: string): Promise<string> {
   const res = await fetch(url, {

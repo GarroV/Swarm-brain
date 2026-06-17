@@ -21,6 +21,8 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Что менять | Файл |
 |-----------|------|
 | Команды бота, роутинг | `swarm-bot/index.ts` |
+| Правка/удаление записей из чата | `swarm-bot/handlers/manage.ts` |
+| Классификатор намерения (удали/замени/url) | `swarm-bot/lib/intent.ts` |
 | Новый хендлер | `swarm-bot/handlers/<name>.ts` |
 | Задачи (движок, общий) | `_shared/tasks/db.ts`, `_shared/tasks/types.ts` |
 | Задачи (бот-обёртка) | `swarm-bot/tasks/db.ts`, `swarm-bot/tasks/handlers.ts` |
@@ -43,6 +45,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | `sa_` | superadmin.ts |
 | `tk_` | tasks/handlers.ts |
 | `fb_` | handlers/feedback.ts |
+| `kbpick_`, `kbdo_`, `kbask_`, `kbno` | handlers/manage.ts |
 
 ---
 
@@ -57,6 +60,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | `task_*` | tasks/handlers.ts |
 | `user_*` | users.ts |
 | `sa_*` | superadmin.ts |
+| `manage`, `manage_replace` | handlers/manage.ts |
 
 ---
 
