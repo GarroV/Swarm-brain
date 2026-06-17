@@ -328,7 +328,7 @@ swarm-mcp валидирует OAuth-токен (вместо/поверх те�
 
 ---
 
-## Таксономия записей — встреча vs заметка (модель решена 2026-06-17)
+## ~~Таксономия записей — встреча vs заметка~~ ✅ реализовано 2026-06-17
 
 Связано с памятью `project-taxonomy-tasks-notes-types`. Поводом стал баг правки записей из чата: «замени ссылку в форме … стандартов» тащило транскрипты встреч — фильтры по источнику текли.
 
@@ -344,17 +344,15 @@ swarm-mcp валидирует OAuth-токен (вместо/поверх те�
 - **`source` = канал** (контролируемый enum: `telegram · web · granola · read_ai · recorder · upload · mcp`). Свободный текст (заголовок встречи, имя файла) → в `metadata.title`/`metadata.file_name`, никогда не в `source`.
 - Граница встреча↔заметка проводится **по `entry_type`, не по источнику**.
 
-### План реализации (не начат — ждёт «го»)
-1. **Бэкфилл-миграция `entries`** (через `apply_migration`, не `db push`; сперва SELECT-проверка выборок, staging нет):
-   - `entry_type` → `meeting` для {meeting, transcript, summary} c встреча-источником; `note` — всё прочее (document/link/summary-файлов).
-   - `source` → канал; свободный текст вынести в `metadata.title`/`metadata.file_name`. Безопасно-двухшагово (сначала наполнить metadata, потом править source).
-2. **Write-пути** ставят `{meeting|note}` + контролируемый `source` + фасеты в metadata: `swarm-bot/lib/storage.ts` (`buildEntryIndex`/`saveEntry`), `granola.ts`, `read-ai-webhook`, `media.ts` (link/file/voice), `meeting-ingest` (publish), `swarm-api` (upload/extract).
-3. **UI**: `entryTagKey`/`TYPE_TAG` — тег по фасету; фильтры «База»/«Встречи» по `entry_type`.
-4. **manage-флоу** (`swarm-bot/handlers/manage.ts`): убрать костыли (`MEETING_SOURCES`/`requireLink` — сейчас задеплоен стопгап), фильтровать правку по `entry_type` (заметки vs встречи — чисто по типу). Заметка может содержать что угодно (пароль, данные), не только ссылку.
-5. Заодно починить связь `meeting_id` (встреча→задачи). Граница «задача» — отдельная сущность (`tasks`), остаётся как есть.
+### ✅ Реализовано 2026-06-17 (prod)
+1. ✅ **Бэкфилл-миграция** `entries`: `entry_type` → {meeting, note} (файлы по расширению → note даже при transcript/summary; granola/read_ai/recorder/«встреча…» → meeting). Исходный тип в `metadata.legacy_entry_type`. + **CHECK-инвариант** `entry_type IN (meeting, note)` (миграции `20260617110000`, `20260617140000`).
+2. ✅ **Write-пути** ставят только meeting|note (с клампом): классификатор `storage.ts`, granola→meeting, read-ai→meeting, meeting-claim личные пометки→note, swarm-api upload→note/publish→meeting/POST extract, swarm-mcp промпты+клампы.
+3. ✅ **UI**: `entryTagKey` по фасету (встреча/ссылка/файл/заметка) + тег `link`; фильтры Базы `entryFacet` (Все/Заметки/Ссылки/Файлы). Фильтры База/Встречи на бэке — по `entry_type` (`GET /entries`='note', `GET /meetings`='meeting').
+4. ✅ **manage-флоу**: стопгап убран — правка/удаление ищет по всем записям точно (порог 0.4 + тема); встречи тоже правятся.
 
-### Открытый вопрос
-- `summary`/`transcript` файлов-презентаций (напр. `20cm_Pizzas_Presentation.pptx`, разбит на чанки) → это `note` (файл) — подтвердить при миграции.
+**Не сделано (хвосты):**
+- `source` НЕ нормализовал в строгий enum — оставил как есть (фильтры теперь по `entry_type`, source = просто метка; чистить нет нужды). Свободный текст в source остался у старых записей.
+- Связь `meeting_id` (встреча→задачи) — заодно не чинил, отдельно.
 
 ---
 
