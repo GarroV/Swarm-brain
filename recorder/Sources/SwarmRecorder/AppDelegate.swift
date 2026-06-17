@@ -10,6 +10,7 @@ import UserNotifications
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var statusItem: NSStatusItem!
     private let recorder = AudioRecorder()
+    private let widget = RecorderWidget()
 
     private var config: SwarmConfig?
     private var configError: String?
@@ -47,6 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // за процесс, и если «съесть» его молча здесь — по клику «Записать» он уже не появится.
         // Микрофон спросить заранее безопасно (отдельный промпт).
         Task { _ = await Permissions.requestMicrophone() }
+
+        widget.onStop = { [weak self] in self?.stopTapped() }
+        widget.onRecord = { [weak self] in self?.widgetRecord() }
+        widget.onDismiss = { [weak self] in self?.widgetDismiss() }
 
         setupNotifications()
         startWatching()
@@ -141,14 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     // ── UI ──────────────────────────────────────────────────────────────────────
-    private func symbol() -> String {
-        switch state {
-        case .idle: return (pendingMeeting != nil || callActive) ? "record.circle" : "mic"
-        case .recording: return "record.circle.fill"
-        case .sending: return "arrow.up.circle"
-        case .error: return "exclamationmark.triangle"
-        }
-    }
+    private var isRecording: Bool { if case .recording = state { return true }; return false }
 
     private func statusText() -> String {
         if let e = configError { return "⚠️ \(e)" }
@@ -165,8 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func rebuildMenu() {
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: symbol(), accessibilityDescription: "Swarm")
-            button.image?.isTemplate = true
+            button.image = RoyArt.menuBarImage(recording: isRecording)
         }
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: statusText(), action: nil, keyEquivalent: ""))
@@ -201,6 +198,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             item.target = self
         }
         statusItem.menu = menu
+        syncWidget()
+    }
+
+    // Плавающий виджет следует за состоянием.
+    private func syncWidget() {
+        if configError != nil { widget.hide(); return }
+        switch state {
+        case .recording:
+            widget.showRecording(startedAt: recordStartedAt ?? Date())
+        case .idle:
+            if let m = pendingMeeting {
+                widget.showPending(title: m.title ?? "Встреча", when: meetingWhen(m))
+            } else if callActive {
+                widget.showPending(title: "Идёт звонок", when: "")
+            } else {
+                widget.hide()
+            }
+        case .sending, .error:
+            widget.hide()
+        }
+    }
+
+    // Кнопка «Записать» в виджете — маршрутизируем по текущему контексту.
+    @objc private func widgetRecord() {
+        if pendingMeeting != nil { recordMeetingTapped() }
+        else if callActive { recordCallTapped() }
+        else { recordTapped() }
+    }
+
+    @objc private func widgetDismiss() {
+        if pendingMeeting != nil { dismissMeetingTapped() }
+        else if callActive { dismissCallTapped() }
     }
 
     private func setState(_ s: State) {

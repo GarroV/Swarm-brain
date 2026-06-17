@@ -12,8 +12,9 @@ APP="SwarmRecorder.app"
 BIN=".build/release/SwarmRecorder"
 echo "[2/4] собираю бандл $APP…"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/SwarmRecorder"
+cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -23,6 +24,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>SwarmRecorder</string>
   <key>CFBundleDisplayName</key><string>Swarm Recorder</string>
   <key>CFBundleExecutable</key><string>SwarmRecorder</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>io.dodobrands.swarmrecorder</string>
   <key>CFBundleVersion</key><string>0.1.0</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
