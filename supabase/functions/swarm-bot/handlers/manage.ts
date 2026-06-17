@@ -34,38 +34,58 @@ function titleOf(metadata: Record<string, unknown> | null | undefined, summary?:
   return (line ?? "запись").replace(/^[#*\s]+/, "").slice(0, 80) || "запись";
 }
 
+// Поиск конкретной записи для правки/удаления. Главное — ТОЧНОСТЬ: пользователь
+// называет одну запись, мусор в списке недопустим. Семантика с реальным порогом +
+// ключевые слова с требованием совпадения по ТЕМЕ (не по одному общему слову).
 async function searchCandidates(query: string, userId: number, groupId: string): Promise<Candidate[]> {
-  const out: Candidate[] = [];
-  const seen = new Set<string>();
-  const push = (id: string, title: string, date: string) => {
-    if (id && !seen.has(id)) { seen.add(id); out.push({ id, title, date }); }
+  const scored = new Map<string, Candidate & { score: number }>();
+  const add = (id: string, title: string, date: string, score: number) => {
+    if (!id) return;
+    const prev = scored.get(id);
+    if (!prev || score > prev.score) scored.set(id, { id, title, date, score });
   };
 
+  // 1. Семантика — только уверенные совпадения (порог 0.4, не 0.1: иначе в список
+  //    попадает топ-5 «хоть как-то похожих», включая мусор).
   const emb = await getEmbedding(query).catch(() => null);
   if (emb) {
     const vec = await matchEntries(supabase, emb, {
-      groupId, requestingUserId: userId, threshold: 0.1, limit: MAX_RESULTS,
+      groupId, requestingUserId: userId, threshold: 0.4, limit: MAX_RESULTS,
     }).catch(() => []);
-    for (const e of vec) push(e.id, titleOf(e.metadata, e.summary, e.content), e.entry_date ?? "");
+    for (const e of vec) {
+      add(e.id, titleOf(e.metadata, e.summary, e.content), e.entry_date ?? "", 1 + (e.similarity ?? 0));
+    }
   }
 
-  if (out.length < MAX_RESULTS) {
-    const words = query.toLowerCase().split(/[\s,.!?]+/).filter((w) => w.length > 2).slice(0, 5);
-    if (words.length) {
-      const { data } = await supabase.from("entries")
-        .select("id, content, summary, metadata, entry_date, created_at")
-        .or(words.map((w) => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
-        .eq("group_id", groupId).or(visibilityFilter(userId)).limit(MAX_RESULTS);
-      for (const e of (data ?? []) as Array<Record<string, unknown>>) {
-        push(
+  // 2. Ключевые слова — кандидат проходит, только если совпала тема: хотя бы половина
+  //    значимых слов запроса (минимум 2) ИЛИ все слова есть в заголовке. Ранжируем по числу
+  //    совпадений. Это отсекает «совпало одно общее слово» (отсюда и был мусор в списке).
+  const words = [...new Set(query.toLowerCase().split(/[\s,.!?]+/).filter((w) => w.length > 2))].slice(0, 6);
+  if (words.length) {
+    const { data } = await supabase.from("entries")
+      .select("id, content, summary, metadata, entry_date, created_at")
+      .or(words.map((w) => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
+      .eq("group_id", groupId).or(visibilityFilter(userId)).limit(40);
+    const need = Math.max(2, Math.ceil(words.length / 2));
+    for (const e of (data ?? []) as Array<Record<string, unknown>>) {
+      const meta = e.metadata as Record<string, unknown> | null;
+      const titleStr = (typeof meta?.title === "string" ? meta.title : "").toLowerCase();
+      const hay = `${titleStr} ${e.summary ?? ""} ${e.content ?? ""}`.toLowerCase();
+      const hits = words.filter((w) => hay.includes(w)).length;
+      const titleAll = titleStr.length > 0 && words.every((w) => titleStr.includes(w));
+      if (hits >= need || titleAll) {
+        add(
           e.id as string,
-          titleOf(e.metadata as Record<string, unknown>, e.summary as string, e.content as string),
+          titleOf(meta, e.summary as string, e.content as string),
           (e.entry_date as string) ?? (e.created_at as string)?.slice(0, 10) ?? "",
+          (titleAll ? 10 : 0) + hits, // тайтл-матч приоритетнее семантики
         );
       }
     }
   }
-  return out.slice(0, MAX_RESULTS);
+
+  return [...scored.values()].sort((a, b) => b.score - a.score).slice(0, MAX_RESULTS)
+    .map(({ id, title, date }) => ({ id, title, date }));
 }
 
 function cardText(e: ManageableEntry): string {
