@@ -189,6 +189,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if let web = config?.webBaseURL, !web.isEmpty {
                 menu.addItem(NSMenuItem(title: "Открыть Рой", action: #selector(openWeb), keyEquivalent: ""))
             }
+            // Доступно всегда: перевставить токен (напр. если протух → 401). Раньше пункт
+            // показывался только при отсутствии токена, и перевставить было неоткуда.
+            menu.addItem(NSMenuItem(title: "Обновить токен из буфера", action: #selector(pasteTokenTapped), keyEquivalent: ""))
         } else {
             menu.addItem(NSMenuItem(title: "Вставить токен из буфера", action: #selector(pasteTokenTapped), keyEquivalent: ""))
         }
