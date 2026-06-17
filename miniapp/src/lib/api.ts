@@ -531,7 +531,7 @@ export async function deleteMeeting(id: string): Promise<void> {
 
 // ── Agent meetings (Swarm Meetings desktop-agent) ───────────────────────────────
 
-const mockAgentMeetings: AgentMeeting[] = [
+let mockAgentMeetings: AgentMeeting[] = [
   {
     id: "am-1",
     title: "Синк по Болгарии",
@@ -579,6 +579,24 @@ export async function patchAgentMeetingDraft(id: string, draft_notes_md: string)
     return mockAgentMeetings[idx];
   }
   return apiFetch<AgentMeeting>(`/agent-meetings/${id}`, { method: "PATCH", body: JSON.stringify({ draft_notes_md }) });
+}
+
+export async function renameAgentMeeting(id: string, title: string): Promise<AgentMeeting> {
+  if (DEV_MODE) {
+    const idx = mockAgentMeetings.findIndex((x) => x.id === id);
+    if (idx === -1) throw new ApiError(404, "Not found");
+    mockAgentMeetings[idx] = { ...mockAgentMeetings[idx], title };
+    return mockAgentMeetings[idx];
+  }
+  return apiFetch<AgentMeeting>(`/agent-meetings/${id}`, { method: "PATCH", body: JSON.stringify({ title }) });
+}
+
+export async function deleteAgentMeeting(id: string): Promise<void> {
+  if (DEV_MODE) {
+    mockAgentMeetings = mockAgentMeetings.filter((x) => x.id !== id);
+    return;
+  }
+  return apiFetch<void>(`/agent-meetings/${id}`, { method: "DELETE" });
 }
 
 export async function publishAgentMeeting(id: string, base: "workspace" | "personal"): Promise<Entry> {

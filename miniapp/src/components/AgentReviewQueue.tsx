@@ -1,8 +1,10 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { fetchAgentMeetings } from "@/lib/api";
+import { fetchAgentMeetings, deleteAgentMeeting } from "@/lib/api";
 import type { AgentMeeting } from "@/types";
 import { Clock } from "lucide-react";
+import { RoyIcon } from "@/components/roy/icons";
+import { useRoyNav } from "@/components/roy/nav";
 
 type Props = { onOpen: (id: string) => void };
 
@@ -10,6 +12,7 @@ type Props = { onOpen: (id: string) => void };
 // (в т.ч. до деплоя эндпоинта /agent-meetings — тогда fetch падает и очередь
 // просто не показывается, остальное приложение работает). Это намеренная деградация.
 export function AgentReviewQueue({ onOpen }: Props) {
+  const { toast } = useRoyNav();
   const [items, setItems] = useState<AgentMeeting[]>([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -25,6 +28,18 @@ export function AgentReviewQueue({ onOpen }: Props) {
 
   useEffect(() => { load(); }, [load]);
 
+  const remove = async (m: AgentMeeting) => {
+    if (typeof window !== "undefined" && !window.confirm(`Удалить черновик «${m.title ?? "Встреча"}»? Это удалит расшифровку и тезисы.`)) return;
+    setItems((prev) => prev.filter((x) => x.id !== m.id));
+    try {
+      await deleteAgentMeeting(m.id);
+      toast("Черновик удалён");
+    } catch {
+      toast("Не удалось удалить");
+      load();
+    }
+  };
+
   if (!loaded || items.length === 0) return null;
 
   return (
@@ -35,17 +50,38 @@ export function AgentReviewQueue({ onOpen }: Props) {
       </div>
       <div className="space-y-2 max-h-[40vh] overflow-y-auto">
         {items.map((m) => (
-          <button
-            key={m.id}
-            onClick={() => onOpen(m.id)}
-            className="w-full text-left p-3 rounded-lg border bg-card"
-          >
-            <p className="text-sm font-medium leading-snug line-clamp-1">{m.title ?? "Встреча без названия"}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {(m.started_at ?? m.created_at).slice(0, 10)}
-              {m.draft_notes_md === null ? " · готовим тезисы…" : ""}
-            </p>
-          </button>
+          <div key={m.id} className="relative">
+            <button
+              onClick={() => onOpen(m.id)}
+              className="block w-full text-left p-3 pr-[84px] rounded-lg border bg-card"
+            >
+              <p className="text-sm font-medium leading-snug line-clamp-1">{m.title ?? "Встреча без названия"}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {(m.started_at ?? m.created_at).slice(0, 10)}
+                {m.draft_notes_md === null ? " · готовим тезисы…" : ""}
+              </p>
+            </button>
+            <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
+              <button
+                type="button"
+                aria-label="Изменить"
+                onClick={() => onOpen(m.id)}
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background transition-colors hover:bg-secondary active:scale-[0.92]"
+                style={{ color: "var(--status-open)" }}
+              >
+                <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
+              </button>
+              <button
+                type="button"
+                aria-label="Удалить"
+                onClick={() => remove(m)}
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background transition-colors hover:bg-secondary active:scale-[0.92]"
+                style={{ color: "var(--pri-high)" }}
+              >
+                <RoyIcon name="trash" size={15} strokeWidth={1.9} />
+              </button>
+            </div>
+          </div>
         ))}
       </div>
     </div>
