@@ -25,13 +25,21 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-type Candidate = { id: string; title: string; date: string };
+type Candidate = { id: string; title: string; date: string; preview: string };
 
 function titleOf(metadata: Record<string, unknown> | null | undefined, summary?: string | null, content?: string | null): string {
   const fromMeta = metadata?.title;
-  if (typeof fromMeta === "string" && fromMeta.trim()) return fromMeta.trim().slice(0, 80);
+  if (typeof fromMeta === "string" && fromMeta.trim()) return fromMeta.trim().slice(0, 120);
   const line = (summary ?? content ?? "").split("\n").find((l) => l.trim());
-  return (line ?? "запись").replace(/^[#*\s]+/, "").slice(0, 80) || "запись";
+  return (line ?? "запись").replace(/^[#*\s]+/, "").slice(0, 120) || "запись";
+}
+
+// Короткий сниппет содержимого, чтобы понять, что внутри (без дублирования заголовка).
+function previewOf(title: string, summary?: string | null, content?: string | null): string {
+  const body = (summary ?? content ?? "").replace(/[#*>`]/g, " ").replace(/\s+/g, " ").trim();
+  let p = body;
+  if (p.toLowerCase().startsWith(title.toLowerCase())) p = p.slice(title.length).trim();
+  return p.slice(0, 110);
 }
 
 // Поиск конкретной записи для правки/удаления. Главное — ТОЧНОСТЬ: пользователь
@@ -39,10 +47,10 @@ function titleOf(metadata: Record<string, unknown> | null | undefined, summary?:
 // ключевые слова с требованием совпадения по ТЕМЕ (не по одному общему слову).
 async function searchCandidates(query: string, userId: number, groupId: string): Promise<Candidate[]> {
   const scored = new Map<string, Candidate & { score: number }>();
-  const add = (id: string, title: string, date: string, score: number) => {
+  const add = (id: string, title: string, date: string, preview: string, score: number) => {
     if (!id) return;
     const prev = scored.get(id);
-    if (!prev || score > prev.score) scored.set(id, { id, title, date, score });
+    if (!prev || score > prev.score) scored.set(id, { id, title, date, preview, score });
   };
 
   // 1. Семантика — только уверенные совпадения (порог 0.4, не 0.1: иначе в список
@@ -53,7 +61,8 @@ async function searchCandidates(query: string, userId: number, groupId: string):
       groupId, requestingUserId: userId, threshold: 0.4, limit: MAX_RESULTS,
     }).catch(() => []);
     for (const e of vec) {
-      add(e.id, titleOf(e.metadata, e.summary, e.content), e.entry_date ?? "", 1 + (e.similarity ?? 0));
+      const title = titleOf(e.metadata, e.summary, e.content);
+      add(e.id, title, e.entry_date ?? "", previewOf(title, e.summary, e.content), 1 + (e.similarity ?? 0));
     }
   }
 
@@ -74,10 +83,12 @@ async function searchCandidates(query: string, userId: number, groupId: string):
       const hits = words.filter((w) => hay.includes(w)).length;
       const titleAll = titleStr.length > 0 && words.every((w) => titleStr.includes(w));
       if (hits >= need || titleAll) {
+        const title = titleOf(meta, e.summary as string, e.content as string);
         add(
           e.id as string,
-          titleOf(meta, e.summary as string, e.content as string),
+          title,
           (e.entry_date as string) ?? (e.created_at as string)?.slice(0, 10) ?? "",
+          previewOf(title, e.summary as string, e.content as string),
           (titleAll ? 10 : 0) + hits, // тайтл-матч приоритетнее семантики
         );
       }
@@ -85,7 +96,7 @@ async function searchCandidates(query: string, userId: number, groupId: string):
   }
 
   return [...scored.values()].sort((a, b) => b.score - a.score).slice(0, MAX_RESULTS)
-    .map(({ id, title, date }) => ({ id, title, date }));
+    .map(({ id, title, date, preview }) => ({ id, title, date, preview }));
 }
 
 function cardText(e: ManageableEntry): string {
@@ -152,12 +163,15 @@ export async function handleEntryCommand(
   }
 
   const verb = cmd === "delete" ? "удалить" : "заменить";
-  await sendInlineMessage(chatId, `Нашёл несколько записей. Какую ${verb}?`,
-    candidates.map((c) => [{
-      text: `📄 ${c.title}${c.date ? ` (${c.date})` : ""}`.slice(0, 60),
-      callback_data: `kbpick_${c.id}`,
-    }]).concat([[{ text: "Отмена", callback_data: "kbno" }]]),
-  );
+  // Полный заголовок + сниппет — в тексте (не режется), выбор — кнопками-номерами.
+  const body = candidates.map((c, i) =>
+    `${i + 1}. 📄 <b>${escapeHtml(c.title)}</b>${c.date ? ` · ${c.date}` : ""}` +
+    (c.preview ? `\n<i>${escapeHtml(c.preview)}…</i>` : "")
+  ).join("\n\n");
+  await sendInlineMessage(chatId, `Нашёл несколько записей — какую ${verb}?\n\n${body}`, [
+    candidates.map((c, i) => ({ text: String(i + 1), callback_data: `kbpick_${c.id}` })),
+    [{ text: "Отмена", callback_data: "kbno" }],
+  ]);
 }
 
 type ManageState = { cmd: EntryCommand; newValue: string | null };
