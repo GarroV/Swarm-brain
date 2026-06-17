@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
 import { RoyIcon } from "../icons";
 import { Avatar, SectionLabel, Chip } from "../ui";
+import { RoyMark } from "../RoyMark";
 
 const RECENT_KEY = "roy_recent_searches";
 
@@ -49,9 +50,7 @@ export function SearchScreen() {
       {/* лого + аватар */}
       <div className="flex items-center justify-between px-5 pt-3 pb-2">
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center justify-center rounded-[10px] bg-primary font-extrabold text-white" style={{ width: 30, height: 30, fontSize: 18 }}>
-            Р
-          </span>
+          <RoyMark size={30} />
           <span className="font-bold" style={{ fontSize: 22, letterSpacing: "-0.01em" }}>
             Рой
           </span>

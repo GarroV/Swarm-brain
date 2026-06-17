@@ -4,6 +4,7 @@ import { useRoyNav } from "./nav";
 import { RoyIcon, type RoyIconName } from "./icons";
 import { RoyCard, TypeTag, Market, PriDot, Avatar } from "./ui";
 import { entryTagKey, deriveEntryTitle } from "./entry";
+import { RoyMark } from "./RoyMark";
 import { saveRecent } from "./screens/SearchScreen";
 import { sourceLabel } from "./screens/RoyMeetingsScreen";
 import { fetchTasks, fetchMeetings, fetchEntries } from "@/lib/api";
@@ -60,9 +61,7 @@ export function RoyDashboard() {
       {/* шапка: лого + аватар */}
       <div className="flex items-center justify-between pb-4">
         <div className="flex items-center gap-2.5">
-          <span className="inline-flex items-center justify-center rounded-[11px] bg-primary font-extrabold text-white" style={{ width: 34, height: 34, fontSize: 19 }}>
-            Р
-          </span>
+          <RoyMark size={34} />
           <span className="font-bold" style={{ fontSize: 24, letterSpacing: "-0.01em" }}>
             Рой
           </span>

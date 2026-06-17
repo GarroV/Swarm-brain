@@ -1,16 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <rect width="512" height="512" rx="112" fill="oklch(0.16 0.02 264)"/>
-  <!-- рой: кластер точек, образующий восходящее движение -->
-  <g fill="oklch(0.62 0.19 264)">
-    <circle cx="256" cy="256" r="48"/>
-    <circle cx="168" cy="208" r="30"/>
-    <circle cx="344" cy="208" r="30"/>
-    <circle cx="208" cy="332" r="26"/>
-    <circle cx="312" cy="332" r="26"/>
-  </g>
-  <g fill="oklch(0.78 0.16 75)">
-    <circle cx="150" cy="320" r="16"/>
-    <circle cx="362" cy="320" r="16"/>
-    <circle cx="256" cy="150" r="18"/>
+  <!-- Бренд «Рой»: янтарный чип + сота (honeycomb) с роем из трёх точек -->
+  <rect width="512" height="512" rx="112" fill="#D98A2B"/>
+  <path d="M406 256 331 386 181 386 106 256 181 126 331 126Z"
+        fill="none" stroke="#ffffff" stroke-width="30" stroke-linejoin="round"/>
+  <g fill="#ffffff">
+    <circle cx="256" cy="205" r="28"/>
+    <circle cx="209" cy="284" r="28"/>
+    <circle cx="303" cy="284" r="28"/>
   </g>
 </svg>

@@ -18,6 +18,7 @@ import { NewEntry } from "./screens/NewEntry";
 import { RoyMeetingsScreen } from "./screens/RoyMeetingsScreen";
 import { MeetingDetail } from "./screens/MeetingDetail";
 import { RoyDashboard } from "./RoyDashboard";
+import { RoyMark } from "./RoyMark";
 import { MeetingReview } from "@/components/MeetingReview";
 import { TasksScreen } from "@/components/tasks/TasksScreen";
 import { TeamScreen } from "@/components/TeamScreen";
@@ -127,9 +128,7 @@ function RoySidebar({ className }: { className?: string }) {
   return (
     <aside className={cn("w-[232px] shrink-0 flex-col border-r border-line bg-surface-2 px-3 py-4", className)}>
       <div className="flex items-center gap-2 px-2 pb-5">
-        <span className="inline-flex items-center justify-center rounded-[10px] bg-primary font-extrabold text-white" style={{ width: 30, height: 30, fontSize: 18 }}>
-          Р
-        </span>
+        <RoyMark size={30} />
         <span className="font-bold" style={{ fontSize: 20, letterSpacing: "-0.01em" }}>
           Рой
         </span>
