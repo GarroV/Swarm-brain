@@ -2,22 +2,27 @@ import type { RoyTypeKey } from "./ui";
 
 // Хелперы записи базы, общие для Базы и RecordDetail.
 
-// Ключ TypeTag (doc/mic/note/meet/pdf) из entry_type + metadata.file_type.
+// Тег записи. Таксономия: два типа — meeting / note; ссылка и файл это ФАСЕТЫ заметки
+// (по metadata), а не отдельные типы. Встреча → meet; есть файл → pdf/doc; есть url → link; иначе note.
 export function entryTagKey(e: { entry_type: string; metadata: Record<string, unknown> }): RoyTypeKey {
-  const ft = typeof e.metadata?.file_type === "string" ? (e.metadata.file_type as string) : "";
-  if (ft.includes("pdf")) return "pdf";
-  switch (e.entry_type) {
-    case "transcript":
-      return "mic";
-    case "meeting":
-      return "meet";
-    case "note":
-      return "note";
-    case "document":
-      return "doc";
-    default:
-      return "doc";
-  }
+  if (e.entry_type === "meeting") return "meet";
+  const m = e.metadata ?? {};
+  const ft = typeof m.file_type === "string" ? (m.file_type as string) : "";
+  const isFile = Boolean(ft) || typeof m.file_name === "string" || typeof m.filename === "string" || typeof m.file_url === "string";
+  if (isFile) return ft.includes("pdf") ? "pdf" : "doc";
+  if (typeof m.url === "string") return "link";
+  // легаси: старые типы до миграции (если вдруг встретятся)
+  if (e.entry_type === "transcript") return "mic";
+  if (e.entry_type === "document") return "doc";
+  return "note";
+}
+
+// Фасет для фильтров Базы: note | link | file.
+export function entryFacet(e: { entry_type: string; metadata: Record<string, unknown> }): "note" | "link" | "file" {
+  const k = entryTagKey(e);
+  if (k === "link") return "link";
+  if (k === "doc" || k === "pdf") return "file";
+  return "note";
 }
 
 function firstLine(s: string): string {

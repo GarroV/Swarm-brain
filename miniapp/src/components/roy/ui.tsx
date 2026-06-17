@@ -22,6 +22,7 @@ export const TYPE_TAG: Record<string, { icon: RoyIconName; label: string; color:
   note: { icon: "note", label: "Заметка", color: "#8A7A3A" },
   meet: { icon: "meet", label: "Встреча", color: "#2E9E6B" },
   pdf: { icon: "pdf", label: "PDF", color: "#D9483B" },
+  link: { icon: "link", label: "Ссылка", color: "#3E8E7E" },
 };
 export type RoyTypeKey = keyof typeof TYPE_TAG;
 

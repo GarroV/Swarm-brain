@@ -3,17 +3,17 @@ import { useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
 import { RoyHeader, RoyCard, TypeTag, Market, Chip, FAB } from "../ui";
 import { RoyIcon } from "../icons";
-import { entryTagKey, deriveEntryTitle, entryPreview } from "../entry";
+import { entryTagKey, entryFacet, deriveEntryTitle, entryPreview } from "../entry";
 import { fetchEntries } from "@/lib/api";
 import type { Entry } from "@/types";
 
-// Встреч в фильтрах нет: GET /entries исключает source read_ai/granola/digest — встречи
-// живут в своём табе. Здесь — записи базы: документы, транскрипты, заметки.
+// Встреч здесь нет (GET /entries отдаёт только entry_type='note'; встречи — свой таб).
+// Фильтры — по ФАСЕТУ заметки: заметки / ссылки / файлы.
 const FILTERS = [
   { id: "all", label: "Все" },
-  { id: "document", label: "Документы" },
-  { id: "transcript", label: "Транскрипты" },
   { id: "note", label: "Заметки" },
+  { id: "link", label: "Ссылки" },
+  { id: "file", label: "Файлы" },
 ];
 
 function fmtDate(iso: string | null): string | null {
@@ -37,7 +37,7 @@ export function RoyBaseScreen() {
       .catch(() => setEntries([]));
   }, []);
 
-  const items = (entries ?? []).filter((e) => filter === "all" || e.entry_type === filter);
+  const items = (entries ?? []).filter((e) => filter === "all" || entryFacet(e) === filter);
   const go = (query: string) => {
     const v = query.trim();
     if (v) push({ view: "answer", params: { query: v } });
