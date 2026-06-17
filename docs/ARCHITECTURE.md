@@ -21,6 +21,7 @@
 | `read-ai-webhook` | Webhook от Read.ai | Принимает завершённые встречи, сохраняет в `entries`, уведомляет бота |
 | `read-ai-auth` | HTTP redirect (OAuth) | OAuth callback для авторизации Read.ai, сохраняет токен в `app_settings` |
 | `swarm-mcp` | MCP (Claude Desktop) | MCP-сервер для Claude Desktop: поиск, добавление знаний, управление задачами |
+| `swarm-setup` | HTTP GET (публичный) | Отдаёт bash-скрипт авто-подключения Claude Desktop (macOS). Юзер запускает его через `/setup` в боте: `curl -fsSL …/swarm-setup \| SWARM_TOKEN=… bash`. Скрипт ставит Node в `~/.swarm-brain` (без sudo), мёржит блок `swarm-brain` (mcp-remote, абсолютный путь к node) в `claude_desktop_config.json`, рестартит Claude. Без секретов. Текст скрипта — `swarm-setup/script.ts` |
 | `meeting-claim` | HTTP POST (desktop-agent) | Swarm Meetings: claim/lease до транскрибации (кто транскрибирует), регистрация записавших, личные пометки → приватная entry. Auth — персональный токен |
 | `meeting-ingest` | HTTP POST (desktop-agent) | Swarm Meetings: приём **аудио** от claimer → транскрибация (OpenAI Whisper) → async-генерация тезисов в `meetings.draft_notes_md` + **авто-название** по сути встречи (если заголовок пуст/плейсхолдер «Запись <дата>») → уведомление записавшим. Auth — персональный токен. Вычитка: `swarm-api` `GET/PATCH/DELETE /agent-meetings/:id` (PATCH правит `draft_notes_md` и/или `title`, DELETE — до публикации) + `POST /agent-meetings/:id/publish` |
 
@@ -394,14 +395,16 @@ claimer → meeting-ingest: грузит АУДИО → сервер транс�
 **Механизм:**
 - `allowed_users.claude_mcp_token_hash TEXT` — sha256(token) в hex; plaintext никогда не хранится
 - `allowed_users.claude_mcp_token_expires_at timestamptz` — срок жизни токена (90 дней с момента выдачи)
+- `allowed_users.recorder_token_hash`/`recorder_token_expires_at` — **отдельный токен рекордера** (`/recordertoken`, 365 дней), независимый от MCP-токена: перевыпуск `/mytoken` в Claude Desktop не ломает рекордер. `agent-auth` (meeting-claim/ingest) принимает claude_mcp_token_hash **ИЛИ** recorder_token_hash
 - Claude Desktop отправляет `Authorization: Bearer smcp_<uuid>` с каждым запросом
 - `swarm-mcp/index.ts` — одна точка проверки сразу после разбора тела запроса:
   1. sha256(token) → lookup по `claude_mcp_token_hash` → `verifiedTelegramId`
   2. Если `claude_mcp_token_expires_at` в прошлом → отказ `Token expired`
   3. Инжектируется в `args.requesting_user_id` — значение из тела игнорируется
   4. `MCP_AUTH_REQUIRED=true` → строгий режим (без токена — отказ)
-- Выдача: `/mytoken` в боте (90 дней) или `SELECT generate_mcp_token(<telegram_id>)` в SQL — plaintext единожды
+- Выдача: `/setup` в боте (минтит токен + даёт команду авто-установки, см. `swarm-setup`), `/mytoken` (ручной токен для своего config.json) или `SELECT generate_mcp_token(<telegram_id>)` в SQL. Plaintext единожды. Логика минта — общий хелпер `swarm-bot/lib/mcp-setup.ts` (`mintMcpToken`)
 - Отзыв: `/revoketoken` в боте или `SELECT revoke_mcp_token(<telegram_id>)` (гасит хэш + срок)
+- ⚠️ В `claude_desktop_config.json` использовать только stdio-форму (`command`+`mcp-remote`); поле `url`/`type:http` Claude Desktop молча затирает весь `mcpServers` (anthropics/claude-code#37286)
 
 **Доступ при выходе коннектора в орг-список Claude:**
 Орг-список управляет только видимостью коннектора, не доступом к данным. Шлюз — токен:
