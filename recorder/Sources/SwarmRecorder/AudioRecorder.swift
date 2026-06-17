@@ -40,10 +40,16 @@ final class AudioRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func stop() async throws -> Result {
         // система
-        guard let s = stream, let w = writer, let input = audioInput, let sysURL = systemURL else {
+        guard let w = writer, let input = audioInput, let sysURL = systemURL else {
             throw SwarmError.transport("recorder not started")
         }
-        try await s.stopCapture()
+        // Стоп стрима — best-effort: стрим мог остановиться сам (didStopWithError при завершении
+        // звонка/смене контента), тогда stopCapture бросает «already stopped or does not exist».
+        // Игнорируем и ВСЁ РАВНО финализируем файл и загружаем — иначе запись терялась.
+        if let s = stream {
+            do { try await s.stopCapture() }
+            catch { NSLog("SwarmRecorder: stopCapture: \(error.localizedDescription) — финализирую запись дальше") }
+        }
         input.markAsFinished()
         await w.finishWriting()
         let failed = w.status == .failed
