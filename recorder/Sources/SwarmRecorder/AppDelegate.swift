@@ -29,6 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var micWasActive = false
     private var callDismissedUntil: Date?
     private var watchTimer: Timer?
+    // Авто-стоп по концу звонка (per-process детект во время записи).
+    private var recWatchTimer: Timer?
+    private var callSeenDuringRec = false
+    private var silentTicks = 0
 
     private let notifyCategory = "MEETING_START"
     private let recordAction = "RECORD"
@@ -266,7 +270,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func beginRecording(identity id: MeetingIdentity.Info?) {
         guard config != nil else { return }
         if case .recording = state { return }
-        if !Permissions.ensureScreenRecording() {
+        // macOS 14.4+: системный звук через Core Audio process-tap — нужно «System Audio
+        // Recording», НЕ «запись экрана»; TCC-промпт всплывёт сам при старте тапа.
+        // Ниже 14.4 — старый путь ScreenCaptureKit, требует «запись экрана».
+        if #available(macOS 14.4, *) {
+            // ничего не гейтим — промпт системного звука покажется при старте
+        } else if !Permissions.ensureScreenRecording() {
             setState(.error("Нет доступа к записи экрана. Открыл настройки — включи SwarmRecorder и перезапусти приложение."))
             Permissions.openScreenRecordingSettings()
             return
@@ -284,14 +293,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 recordStartedAt = startedAt
                 identity = id
                 setState(.recording)
+                startCallEndWatch()
             } catch {
-                setState(.error("старт записи: \(error)"))
+                setState(.error("Не удалось начать запись: \(error). Первый запуск? Разреши «System Audio Recording» в System Settings → Privacy и попробуй снова."))
             }
         }
     }
 
+    // ── Авто-стоп по концу звонка ────────────────────────────────────────────────
+    // Во время записи раз в 5с смотрим, держит ли вход ДРУГОЕ приложение (CallDetector,
+    // исключая нас). Как только конференц-приложение отпустило микрофон на ~15с подряд —
+    // звонок завершён → останавливаем запись. Ловит и ранний конец (как Granola).
+    private func startCallEndWatch() {
+        callSeenDuringRec = false
+        silentTicks = 0
+        recWatchTimer?.invalidate()
+        let t = Timer.scheduledTimer(timeInterval: 5, target: self, selector: #selector(recWatchTick), userInfo: nil, repeats: true)
+        RunLoop.main.add(t, forMode: .common)
+        recWatchTimer = t
+    }
+
+    private func stopCallEndWatch() {
+        recWatchTimer?.invalidate()
+        recWatchTimer = nil
+    }
+
+    @objc private func recWatchTick() {
+        guard case .recording = state else { stopCallEndWatch(); return }
+        guard #available(macOS 14.0, *) else { return } // per-process детект только 14.0+
+        let others = CallDetector.othersUsingMic()
+        if !others.isEmpty {
+            callSeenDuringRec = true
+            silentTicks = 0
+        } else if callSeenDuringRec {
+            silentTicks += 1
+            if silentTicks >= 3 { // ~15с тишины после звонка
+                stopCallEndWatch()
+                postCallEndedNotification()
+                stopTapped()
+            }
+        }
+    }
+
+    private func postCallEndedNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "Запись остановлена"
+        content.body = "Звонок завершён — сохраняю встречу."
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "callend-\(Int(Date().timeIntervalSince1970))", content: content, trigger: nil))
+    }
+
     @objc private func stopTapped() {
         guard let cfg = config else { return }
+        stopCallEndWatch()
         setState(.sending)
         Task {
             do {
