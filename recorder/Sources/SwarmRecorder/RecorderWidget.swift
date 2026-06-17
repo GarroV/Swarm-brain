@@ -41,7 +41,7 @@ final class RecorderWidget {
         pendRow.toolTip = title
         recRow.isHidden = true
         pendRow.isHidden = false
-        present(width: 200)
+        present(width: 240)
     }
 
     func hide() {
@@ -84,6 +84,10 @@ final class RecorderWidget {
         // pending
         pendLabel.font = .systemFont(ofSize: 12.5, weight: .semibold)
         pendLabel.textColor = .white
+        pendLabel.lineBreakMode = .byTruncatingTail
+        pendLabel.maximumNumberOfLines = 1
+        // длинное название усекаем, чтобы кнопки не вылезали за капсулу
+        pendLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         stylePillButton(recordBtn, title: "Записать", action: #selector(recordAction))
         styleIconButton(dismissBtn, symbol: "xmark", color: NSColor(white: 1, alpha: 0.6), action: #selector(dismissAction))
         pendRow.orientation = .horizontal
@@ -136,11 +140,13 @@ final class RecorderWidget {
         guard let p = panel, let screen = NSScreen.main else { return }
         let h: CGFloat = 38
         let vf = screen.visibleFrame
-        // если уже видим — не двигаем (юзер мог перетащить); иначе якорим в правый нижний угол
         if p.isVisible {
-            var f = p.frame; f.size = NSSize(width: width, height: h); p.setFrame(f, display: true)
+            // сохраняем правый верхний угол при смене ширины (юзер мог перетащить)
+            let f = p.frame
+            p.setFrame(NSRect(x: f.maxX - width, y: f.maxY - h, width: width, height: h), display: true)
         } else {
-            p.setFrame(NSRect(x: vf.maxX - width - 20, y: vf.minY + 24, width: width, height: h), display: true)
+            // правый верх, чуть ниже области уведомлений
+            p.setFrame(NSRect(x: vf.maxX - width - 18, y: vf.maxY - h - 96, width: width, height: h), display: true)
         }
         p.orderFrontRegardless()
     }
