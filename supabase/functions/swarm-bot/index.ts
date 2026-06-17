@@ -16,6 +16,7 @@ import { handleWorkspace } from "./handlers/workspace.ts";
 import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
 import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
 import { getHelpText } from "./handlers/help.ts";
+import { mintMcpToken, buildSetupOneLiner, TOKEN_TTL_DAYS } from "./lib/mcp-setup.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -58,6 +59,7 @@ Deno.serve(async (req: Request) => {
         { command: "meetings", description: "Встречи на подтверждение" },
         { command: "status", description: "Состояние базы знаний" },
         { command: "digest", description: "Личный дайджест" },
+        { command: "setup", description: "Подключить Claude Desktop (авто)" },
         { command: "help", description: "Справка" },
         { command: "feedback", description: "Отправить фидбек" },
         { command: "reset", description: "Сбросить состояние бота" },
@@ -244,7 +246,7 @@ Deno.serve(async (req: Request) => {
         `📓 <b>Granola</b> — /connect granola &lt;API-ключ&gt;\n` +
         `   Ключ: Granola → Settings → Integrations → API Key\n\n` +
         `<b>Работать с базой из Claude Desktop:</b>\n` +
-        `🖥 /connect_claude — пошаговая инструкция`,
+        `🖥 /setup — подключить автоматически (одна команда)`,
         buildKeyboard()
       );
       // Register bot commands in side menu (idempotent)
@@ -260,6 +262,7 @@ Deno.serve(async (req: Request) => {
           { command: "meetings", description: "Встречи на подтверждение" },
           { command: "users", description: "Управление командой" },
           { command: "status", description: "Состояние базы знаний" },
+          { command: "setup", description: "Подключить Claude Desktop (авто)" },
           { command: "help", description: "Справка" },
           { command: "feedback", description: "Отправить фидбек" },
           { command: "reset", description: "Сбросить состояние бота" },
@@ -350,29 +353,37 @@ Deno.serve(async (req: Request) => {
       await handleFeedbackCommand(chatId);
     } else if (command === "/digest") {
       bgRun(generatePersonalDigest(chatId, userId, 7, groupId), chatId);
+    } else if (command === "/setup") {
+      const minted = await mintMcpToken(userId);
+      if (!minted) {
+        await sendMessage(chatId, "❌ Не удалось подготовить подключение. Попробуй позже или напиши администратору.");
+      } else {
+        const expStr = minted.expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+        await sendMessage(chatId,
+          `<b>🖥 Подключаем Claude Desktop за один шаг</b> (macOS)\n\n` +
+          `1️⃣ Открой приложение <b>Терминал</b>\n` +
+          `<i>(⌘+Пробел → набери «Терминал» → Enter)</i>\n\n` +
+          `2️⃣ Вставь эту команду (⌘+V) и нажми Enter:\n\n` +
+          `<code>${buildSetupOneLiner(minted.token)}</code>\n\n` +
+          `3️⃣ Подожди — скрипт сам поставит всё нужное и перезапустит Claude. Готово ✅\n\n` +
+          `<i>В команде твой личный токен (действует до ${expStr}). Никому не пересылай. Отозвать: /revoketoken.</i>\n\n` +
+          `Текст инструкций для проекта Claude → /claude`
+        );
+      }
     } else if (command === "/mytoken") {
-      // Без дефисов: на десктоп-Telegram двойной клик по <code> выделяет «слово» до дефиса —
-      // с дефисами копировался лишь кусок. Дефисы убраны → токен выделяется/копируется целиком.
-      const token = "smcp_" + crypto.randomUUID().replaceAll("-", "");
-      const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
-      const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
-      const TOKEN_TTL_DAYS = 90;
-      const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
-      const { error: tokenErr } = await supabase
-        .from("allowed_users")
-        .update({ claude_mcp_token_hash: hashHex, claude_mcp_token_expires_at: expiresAt.toISOString() })
-        .eq("telegram_id", userId);
-      if (tokenErr) {
+      // Ручной токен (для тех, кто настраивает config сам). Авто-путь — /setup.
+      const minted = await mintMcpToken(userId);
+      if (!minted) {
         await sendMessage(chatId, "❌ Не удалось сгенерировать токен. Обратись к администратору.");
       } else {
-        const expStr = expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+        const expStr = minted.expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
         await sendMessage(chatId,
           `🔑 <b>Твой токен для Claude Desktop</b>\n\n` +
-          `<code>${token}</code>\n` +
+          `<code>${minted.token}</code>\n` +
           `<i>👆 Нажми на токен — скопируется целиком.</i>\n\n` +
           `Действует до <b>${expStr}</b> (${TOKEN_TTL_DAYS} дней). Сохрани его — повторно не покажу. Если потеряешь или истечёт — запусти /mytoken снова (старый перестанет работать).\n\n` +
-          `Отозвать прямо сейчас: /revoketoken\n\n` +
-          `Следующий шаг: /claude — получи готовые инструкции для проекта.`
+          `Проще: /setup — подключит Claude Desktop автоматически, без ручной возни.\n\n` +
+          `Отозвать прямо сейчас: /revoketoken`
         );
       }
     } else if (command === "/revoketoken") {
@@ -385,17 +396,44 @@ Deno.serve(async (req: Request) => {
       } else {
         await sendMessage(chatId, "🔒 <b>Токен отозван.</b> Доступ к Swarm Brain из Claude закрыт. Новый — через /mytoken.");
       }
+    } else if (command === "/recordertoken") {
+      // Отдельный токен для рекордера встреч (desktop-agent), независимый от /mytoken.
+      const token = "smcp_" + crypto.randomUUID().replaceAll("-", "");
+      const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+      const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+      const REC_TTL_DAYS = 365;
+      const expiresAt = new Date(Date.now() + REC_TTL_DAYS * 24 * 60 * 60 * 1000);
+      const { error: rtErr } = await supabase
+        .from("allowed_users")
+        .update({ recorder_token_hash: hashHex, recorder_token_expires_at: expiresAt.toISOString() })
+        .eq("telegram_id", userId);
+      if (rtErr) {
+        await sendMessage(chatId, "❌ Не удалось сгенерировать токен рекордера. Обратись к администратору.");
+      } else {
+        const expStr = expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+        await sendMessage(chatId,
+          `🎙 <b>Токен для рекордера встреч</b>\n\n` +
+          `<code>${token}</code>\n` +
+          `<i>👆 Нажми на токен — скопируется целиком.</i>\n\n` +
+          `Вставь в рекордере: иконка в меню-баре → «Вставить токен из буфера».\n\n` +
+          `Действует до <b>${expStr}</b>. Это <b>отдельный</b> токен — перевыпуск /mytoken для Claude Desktop его НЕ трогает.\n` +
+          `Отозвать: /revokerecordertoken`
+        );
+      }
+    } else if (command === "/revokerecordertoken") {
+      const { error: rvErr } = await supabase
+        .from("allowed_users")
+        .update({ recorder_token_hash: null, recorder_token_expires_at: null })
+        .eq("telegram_id", userId);
+      await sendMessage(chatId, rvErr ? "❌ Не удалось отозвать." : "🔒 <b>Токен рекордера отозван.</b> Новый — через /recordertoken.");
     } else if (command === "/connect_claude") {
       await sendMessage(chatId,
         `<b>🖥 Как подключить Claude Desktop</b>\n\n` +
-        `<b>Шаг 1 — Добавить сервер</b>\n` +
-        `Settings → Connectors → + (Add custom connector)\n\n` +
-        `• Name: <code>Swarm Brain</code>\n` +
-        `• Remote MCP server URL:\n<code>https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp</code>\n\n` +
-        `Нажми Add — появятся 14 инструментов Swarm Brain.\n\n` +
-        `<b>Шаг 2 — Создать проект</b>\n` +
+        `<b>Самый простой способ (macOS)</b> — команда /setup: пришлёт одну строчку для Терминала, которая поставит и настроит всё сама. Ничего вручную трогать не нужно.\n\n` +
+        `После подключения создай проект:\n` +
         `Projects → New Project → вставь инструкции из /claude в поле Instructions.\n\n` +
-        `Всё. Можно кидать транскрипты и задавать вопросы по базе знаний.`
+        `Всё. Можно кидать транскрипты и задавать вопросы по базе знаний.\n\n` +
+        `<i>Хочешь настроить вручную — /mytoken даст токен для своего config.json.</i>`
       );
     } else if (command === "/claude") {
       const instructions =
@@ -434,7 +472,7 @@ Deno.serve(async (req: Request) => {
         `<b>🖥 Claude Desktop — инструкции для проекта</b>\n\n` +
         `Projects → New Project → скопируй в поле <b>Instructions</b>:\n\n` +
         `<code>${instructions}</code>\n\n` +
-        `Сервер ещё не подключён? → /connect_claude`
+        `Сервер ещё не подключён? → /setup`
       );
     } else if (command === "/status") {
       const [

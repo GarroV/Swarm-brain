@@ -35,10 +35,12 @@ export async function verifyAgentToken(
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
+  // Принимаем ЛЮБОЙ из двух токенов: отдельный токен рекордера (/recordertoken) ИЛИ
+  // общий MCP-токен (/mytoken). Так перевыпуск MCP-токена в Claude Desktop не ломает рекордер.
   const { data } = await supabase
     .from("allowed_users")
-    .select("telegram_id, group_id, claude_mcp_token_expires_at")
-    .eq("claude_mcp_token_hash", hashHex)
+    .select("telegram_id, group_id, claude_mcp_token_hash, claude_mcp_token_expires_at, recorder_token_hash, recorder_token_expires_at")
+    .or(`claude_mcp_token_hash.eq.${hashHex},recorder_token_hash.eq.${hashHex}`)
     .maybeSingle();
 
   if (!data) throw new AgentAuthError(401, "Unauthorized");
@@ -46,11 +48,16 @@ export async function verifyAgentToken(
   const row = data as {
     telegram_id: number;
     group_id: string | null;
+    claude_mcp_token_hash: string | null;
     claude_mcp_token_expires_at: string | null;
+    recorder_token_hash: string | null;
+    recorder_token_expires_at: string | null;
   };
 
-  if (row.claude_mcp_token_expires_at && Date.parse(row.claude_mcp_token_expires_at) < Date.now()) {
-    throw new AgentAuthError(401, "Token expired — run /mytoken in the bot to get a fresh one");
+  const isRecorder = row.recorder_token_hash === hashHex;
+  const expiresAt = isRecorder ? row.recorder_token_expires_at : row.claude_mcp_token_expires_at;
+  if (expiresAt && Date.parse(expiresAt) < Date.now()) {
+    throw new AgentAuthError(401, "Token expired — get a fresh one in the bot (/recordertoken)");
   }
 
   return { telegramId: row.telegram_id, groupId: row.group_id };
