@@ -60,14 +60,14 @@ async function extractEntryMeta(text: string): Promise<{ countries: string[]; en
   try {
     const raw = await chatComplete(
       "Проанализируй текст и верни JSON (только JSON):\n" +
-      '{"countries":["Serbia"],"entry_type":"transcript|summary|note|document|meeting","entry_date":"YYYY-MM-DD или null"}\n' +
+      '{"countries":["Serbia"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n' +
       "countries — страны/рынки на английском. entry_date — дата события из текста, null если нет.",
       text.slice(0, 2000)
     );
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     return {
       countries: normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []),
-      entry_type: parsed.entry_type ?? "note",
+      entry_type: parsed.entry_type === "meeting" ? "meeting" : "note",
       entry_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date ?? "") ? parsed.entry_date : null,
     };
   } catch { return { countries: [], entry_type: "note", entry_date: null }; }
@@ -207,7 +207,7 @@ const TOOLS = [
       type: "object",
       properties: {
         source: { type: "string", description: "Фильтр по источнику: telegram, voice, pdf, document, read_ai, url, claude и др." },
-        entry_type: { type: "string", description: "Тип записи: transcript, meeting, note, document, summary" },
+        entry_type: { type: "string", description: "Тип записи: meeting (транскрипт/тезисы созвона) или note (всё остальное)" },
         date_from: { type: "string", description: "Дата от в формате YYYY-MM-DD" },
         date_to: { type: "string", description: "Дата до в формате YYYY-MM-DD" },
         limit: { type: "number", description: "Количество записей (по умолчанию 20, макс 100)" },
@@ -734,11 +734,11 @@ async function toolReindexEntry(args: { id: string; summary?: string }): Promise
 
   const system = hasSummary
     ? "Проанализируй текст и верни JSON (только JSON):\n" +
-      '{"countries":["Serbia"],"entry_type":"transcript|summary|note|document|meeting","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n' +
+      '{"countries":["Serbia"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n' +
       "countries — конкретные страны/рынки. Короткое английское название: Serbia, Montenegro, Moldova, Croatia, Lithuania. Если общекомандный — [].\n" +
       "keywords — 5-8 ключевых слов и синонимов для поиска."
     : "Проанализируй текст и верни JSON (только JSON):\n" +
-      '{"summary":"тезисы","countries":["Serbia"],"entry_type":"transcript|summary|note|document|meeting","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n' +
+      '{"summary":"тезисы","countries":["Serbia"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n' +
       "summary — 3-5 тезисов маркированным списком на русском: конкретные факты, имена, цифры.\n" +
       "countries — конкретные страны/рынки. Если общекомандный — [].\n" +
       "keywords — 5-8 ключевых слов и синонимов.";
@@ -770,7 +770,7 @@ async function toolReindexEntry(args: { id: string; summary?: string }): Promise
 
   const updates: Record<string, unknown> = { countries, embedding };
   if (newSummary && newSummary !== e.summary) updates.summary = newSummary;
-  if (parsed.entry_type) updates.entry_type = parsed.entry_type;
+  if (parsed.entry_type) updates.entry_type = parsed.entry_type === "meeting" ? "meeting" : "note";
   if (parsed.entry_date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date)) updates.entry_date = parsed.entry_date;
 
   const { error: updErr } = await supabase.from("entries").update(updates).eq("id", args.id);

@@ -42,22 +42,11 @@ function previewOf(title: string, summary?: string | null, content?: string | nu
   return p.slice(0, 110);
 }
 
-// Источники-встречи: ими управляют в разделе «Встречи», не в правке записей из чата.
-const MEETING_SOURCES = new Set(["granola", "read_ai", "desktop-agent", "digest"]);
-function hasLink(metadata: Record<string, unknown> | null | undefined, content?: string | null, summary?: string | null): boolean {
-  if (typeof metadata?.url === "string" && /^https?:\/\//.test(metadata.url)) return true;
-  return /https?:\/\//.test(`${content ?? ""} ${summary ?? ""}`);
-}
-
 // Поиск конкретной записи для правки/удаления. Главное — ТОЧНОСТЬ: пользователь называет
-// одну запись. НЕ ищем по встречам (у них свой раздел). Для замены ссылки берём только
-// записи, где ссылка реально есть — иначе менять нечего.
-async function searchCandidates(
-  query: string, userId: number, groupId: string, opts: { requireLink: boolean },
-): Promise<Candidate[]> {
+// одну запись (заметку ИЛИ встречу — править/удалять можно и то, и то). Точность даёт
+// порог семантики + совпадение темы по словам; мусор не подмешиваем.
+async function searchCandidates(query: string, userId: number, groupId: string): Promise<Candidate[]> {
   const scored = new Map<string, Candidate & { score: number }>();
-  const keep = (source: string, metadata: Record<string, unknown> | null | undefined, content?: string | null, summary?: string | null) =>
-    !MEETING_SOURCES.has(source) && (!opts.requireLink || hasLink(metadata, content, summary));
   const add = (id: string, title: string, date: string, preview: string, score: number) => {
     if (!id) return;
     const prev = scored.get(id);
@@ -71,7 +60,6 @@ async function searchCandidates(
       groupId, requestingUserId: userId, threshold: 0.4, limit: MAX_RESULTS * 3,
     }).catch(() => []);
     for (const e of vec) {
-      if (!keep(e.source, e.metadata, e.content, e.summary)) continue;
       const title = titleOf(e.metadata, e.summary, e.content);
       add(e.id, title, e.entry_date ?? "", previewOf(title, e.summary, e.content), 1 + (e.similarity ?? 0));
     }
@@ -82,13 +70,12 @@ async function searchCandidates(
   const words = [...new Set(query.toLowerCase().split(/[\s,.!?]+/).filter((w) => w.length > 2))].slice(0, 6);
   if (words.length) {
     const { data } = await supabase.from("entries")
-      .select("id, content, summary, metadata, entry_date, created_at, source")
+      .select("id, content, summary, metadata, entry_date, created_at")
       .or(words.map((w) => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
       .eq("group_id", groupId).or(visibilityFilter(userId)).limit(40);
     const need = Math.max(2, Math.ceil(words.length / 2));
     for (const e of (data ?? []) as Array<Record<string, unknown>>) {
       const meta = e.metadata as Record<string, unknown> | null;
-      if (!keep(e.source as string, meta, e.content as string, e.summary as string)) continue;
       const titleStr = (typeof meta?.title === "string" ? meta.title : "").toLowerCase();
       const hay = `${titleStr} ${e.summary ?? ""} ${e.content ?? ""}`.toLowerCase();
       const hits = words.filter((w) => hay.includes(w)).length;
@@ -159,8 +146,7 @@ export async function handleEntryCommand(
     return;
   }
 
-  // Замена ссылки (newValue — URL) → ищем только среди записей со ссылкой.
-  const candidates = await searchCandidates(query, userId, groupId, { requireLink: cmd === "replace" && !!newValue });
+  const candidates = await searchCandidates(query, userId, groupId);
   if (!candidates.length) {
     await sendMessage(chatId, `Не нашёл записи по запросу «${escapeHtml(query)}». Уточни тему.`);
     return;

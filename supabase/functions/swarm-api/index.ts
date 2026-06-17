@@ -773,7 +773,8 @@ Deno.serve(async (req: Request) => {
     const dateTo = url.searchParams.get("date_to") ?? undefined;
 
     let q = buildEntriesQuery(supabase, "id,content,summary,source,entry_type,entry_date,countries,is_private,owner_id,created_at", { groupId, telegramId: telegram_id })
-      .not("source", "in", '("read_ai","granola","digest")')
+      .eq("entry_type", "note")
+      .not("source", "eq", "digest")
       .order("created_at", { ascending: false })
       .limit(50);
     if (source) q = q.eq("source", source);
@@ -851,7 +852,7 @@ Deno.serve(async (req: Request) => {
       source: "file",
       metadata: { filename: file.name, file_url: publicUrl, file_type: file.type },
       countries: [],
-      entry_type: "document",
+      entry_type: "note",
       entry_date: null,
       group_id: groupId,
       is_private: isPrivate,
@@ -886,7 +887,7 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({
           model: "gpt-4o-mini",
           messages: [
-            { role: "system", content: 'Проанализируй текст и верни JSON (только JSON, без markdown): {"countries":[],"entry_type":"note","entry_date":null}' },
+            { role: "system", content: 'Проанализируй текст и верни JSON (только JSON, без markdown): {"countries":[],"entry_type":"meeting|note","entry_date":null}. entry_type=meeting только если это транскрипт/тезисы созвона; иначе note.' },
             { role: "user", content: body.content.slice(0, 4000) },
           ],
           max_tokens: 200,
@@ -919,7 +920,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: entry, error } = await supabase.from("entries").insert({
       content: body.content, summary, embedding, added_by: addedBy, source: "note",
-      metadata: {}, countries: meta.countries, entry_type: meta.entry_type, entry_date: meta.entry_date,
+      metadata: {}, countries: meta.countries, entry_type: meta.entry_type === "meeting" ? "meeting" : "note", entry_date: meta.entry_date,
       group_id: groupId, is_private: isPrivate, owner_id: telegram_id,
     }).select().single();
     if (error) return apiErr(500, error.message, origin);
@@ -1021,7 +1022,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "GET" && routePath === "/meetings") {
     const confirmedParam = url.searchParams.get("confirmed");
     let q = buildEntriesQuery(supabase, "*", { groupId, telegramId: telegram_id })
-      .in("source", ["read_ai", "granola", "desktop-agent"])
+      .eq("entry_type", "meeting")
       .order("created_at", { ascending: false })
       .limit(50);
     if (confirmedParam === "true") q = q.eq("metadata->>confirmed", "true");
@@ -1158,7 +1159,7 @@ Deno.serve(async (req: Request) => {
         embedding,
         added_by: String(telegram_id),
         source: "desktop-agent",
-        entry_type: "transcript",
+        entry_type: "meeting",
         metadata: { meeting_id: mId, title: meeting.title ?? null, confirmed: true },
         countries: [],
         entry_date: entryDate,

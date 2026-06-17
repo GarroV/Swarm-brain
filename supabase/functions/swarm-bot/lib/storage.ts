@@ -23,18 +23,18 @@ async function buildEntryIndex(content: string, existingSummary?: string): Promi
   const hasSummary = Boolean(existingSummary?.trim());
   const system = hasSummary
     ? "Проанализируй текст и верни JSON (только JSON, без markdown):\n" +
-      '{"countries":["Serbia","Moldova"],"entry_type":"transcript|summary|note|document|meeting","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n\n' +
+      '{"countries":["Serbia","Moldova"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n\n' +
       "countries — конкретные страны/рынки из текста. Короткое английское название: Serbia, Montenegro, Moldova, Croatia, Lithuania. " +
       "Если текст общекомандный без привязки к стране — пустой массив [].\n" +
-      "entry_type — тип записи.\n" +
+      "entry_type — meeting (это транскрипт/тезисы созвона) или note (всё остальное: заметка, ссылка, файл, данные).\n" +
       "entry_date — дата события из текста (не сегодняшняя), null если нет.\n" +
       "keywords — 5-8 ключевых слов и синонимов для поиска через запятую."
     : "Проанализируй текст и верни JSON (только JSON, без markdown):\n" +
-      '{"summary":"тезисы","countries":["Serbia"],"entry_type":"transcript|summary|note|document|meeting","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n\n' +
+      '{"summary":"тезисы","countries":["Serbia"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n\n' +
       "summary — 3-5 тезисов маркированным списком на русском: конкретные факты, имена, цифры, решения. Без общих фраз.\n" +
       "countries — конкретные страны/рынки из текста. Короткое английское название: Serbia, Montenegro, Moldova, Croatia, Lithuania. " +
       "Если текст общекомандный без привязки к стране — пустой массив [].\n" +
-      "entry_type — тип записи.\n" +
+      "entry_type — meeting (это транскрипт/тезисы созвона) или note (всё остальное: заметка, ссылка, файл, данные).\n" +
       "entry_date — дата события из текста (не сегодняшняя), null если нет.\n" +
       "keywords — 5-8 ключевых слов и синонимов для поиска через запятую.";
   try {
@@ -43,7 +43,7 @@ async function buildEntryIndex(content: string, existingSummary?: string): Promi
     return {
       summary: hasSummary ? existingSummary! : (typeof parsed.summary === "string" ? parsed.summary : null),
       countries: normalizeCountries(Array.isArray(parsed.countries) ? (parsed.countries as unknown[]).filter((c): c is string => typeof c === "string") : []),
-      entry_type: typeof parsed.entry_type === "string" ? parsed.entry_type : "note",
+      entry_type: parsed.entry_type === "meeting" ? "meeting" : "note", // только два типа
       entry_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date ?? "") ? parsed.entry_date : null,
       keywords: typeof parsed.keywords === "string" ? parsed.keywords : "",
     };
@@ -60,15 +60,15 @@ export async function extractEntryMeta(text: string): Promise<{ countries: strin
   try {
     const raw = await chatComplete(
       "Проанализируй текст и верни JSON (только JSON, без markdown):\n" +
-      '{"countries":["Serbia","Bulgaria"...],"entry_type":"transcript|summary|note|document|meeting","entry_date":"YYYY-MM-DD или null"}\n\n' +
+      '{"countries":["Serbia","Bulgaria"...],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n\n' +
       "countries — страны/рынки. Короткое английское название: Serbia, Montenegro, Moldova. Если общекомандный текст — [].\n" +
-      "entry_type — тип записи.\nentry_date — дата события из текста, null если нет.",
+      "entry_type — meeting (транскрипт/тезисы созвона) или note (всё остальное).\nentry_date — дата события из текста, null если нет.",
       text.slice(0, 4000)
     );
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     return {
       countries: normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []),
-      entry_type: parsed.entry_type ?? "note",
+      entry_type: parsed.entry_type === "meeting" ? "meeting" : "note", // только два типа
       entry_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date ?? "") ? parsed.entry_date : null,
     };
   } catch { return { countries: idx.countries, entry_type: idx.entry_type, entry_date: idx.entry_date }; }

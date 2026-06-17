@@ -228,7 +228,7 @@ async function saveGranolaNote(
       added_by_telegram_id: telegramId,
     },
     countries,
-    entry_type: entryMeta.entry_type,
+    entry_type: "meeting", // Granola-импорт — всегда встреча
     entry_date: entryDate,
     is_private: isPrivate,
     owner_id: isPrivate ? telegramId : null,

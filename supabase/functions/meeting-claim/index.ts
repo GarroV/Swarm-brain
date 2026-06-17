@@ -149,7 +149,7 @@ async function savePersonalNotes(
     embedding,
     added_by: String(identity.telegramId),
     source: "desktop-agent",
-    entry_type: "meeting_note",
+    entry_type: "note", // личные пометки участника — заметка (фасет kind=personal_notes)
     metadata: { meeting_id: meetingId, kind: "personal_notes" },
     group_id: identity.groupId,
     is_private: true,

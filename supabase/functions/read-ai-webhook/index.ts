@@ -250,7 +250,7 @@ Deno.serve(async (req: Request) => {
       source: "read_ai",
       metadata: { meeting_id: meetingId, title, duration, confirmed: false, entry_date: entryDateIso },
       countries,
-      entry_type: "transcript",
+      entry_type: "meeting",
       entry_date: entryDateIso,
       // Read.ai uses single OAuth token tied to CEE workspace
       group_id: "cee",
