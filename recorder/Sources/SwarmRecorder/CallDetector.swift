@@ -32,13 +32,31 @@ enum CallDetector {
     // ── per-process детект входа (macOS 14.0+), исключая свой процесс ─────────────
     @available(macOS 14.0, *)
     static func othersUsingMic() -> [pid_t] {
+        othersUsingMicInfo().map { $0.pid }
+    }
+
+    // То же + bundle id — для диагностики.
+    @available(macOS 14.0, *)
+    static func othersUsingMicInfo() -> [(pid: pid_t, bundle: String)] {
         let me = ProcessInfo.processInfo.processIdentifier
-        return processList().compactMap { obj in
+        return processList().compactMap { obj -> (pid_t, String)? in
             guard let pid = readPID(obj), pid > 0, pid != me else { return nil }
             // Boolean Core Audio читаем как UInt32 (4 байта), сравниваем с 1.
             guard (readU32(obj, kAudioProcessPropertyIsRunningInput) ?? 0) == 1 else { return nil }
-            return pid
+            return (pid, readBundle(obj) ?? "?")
         }
+    }
+
+    @available(macOS 14.0, *)
+    private static func readBundle(_ obj: AudioObjectID) -> String? {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioProcessPropertyBundleID,
+            mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var cf: CFString = "" as CFString
+        var sz = UInt32(MemoryLayout<CFString>.size)
+        guard AudioObjectGetPropertyData(obj, &addr, 0, nil, &sz, &cf) == noErr else { return nil }
+        let s = cf as String
+        return s.isEmpty ? nil : s
     }
 
     @available(macOS 14.0, *)

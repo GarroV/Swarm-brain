@@ -350,17 +350,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc private func recWatchTick() {
         guard case .recording = state else { stopCallEndWatch(); return }
         guard #available(macOS 14.0, *) else { return } // per-process детект только 14.0+
-        let others = CallDetector.othersUsingMic()
-        if !others.isEmpty {
+        let info = CallDetector.othersUsingMicInfo()
+        dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks)")
+        if !info.isEmpty {
             callSeenDuringRec = true
             silentTicks = 0
         } else if callSeenDuringRec {
             silentTicks += 1
             if silentTicks >= 3 { // ~15с тишины после звонка
+                dbg("AUTO-STOP: звонок завершён")
                 stopCallEndWatch()
                 postCallEndedNotification()
                 stopTapped()
             }
+        }
+    }
+
+    // Диагностика в файл (читается снаружи) — временно, для отладки авто-стопа.
+    private func dbg(_ s: String) {
+        let line = "\(Date()) \(s)\n"
+        let url = URL(fileURLWithPath: "/tmp/swarm-calldetect.log")
+        guard let data = line.data(using: .utf8) else { return }
+        if let h = try? FileHandle(forWritingTo: url) {
+            h.seekToEndOfFile(); h.write(data); try? h.close()
+        } else {
+            try? data.write(to: url)
         }
     }
 
