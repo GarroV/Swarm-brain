@@ -5,6 +5,7 @@ import { checkAllowedWithGroup } from "./lib/workspace.ts";
 import { getReadAiToken } from "./lib/readai.ts";
 import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
 import { handleVoice, handleDocument, handlePhoto, handleUrl, extractUrl } from "./handlers/media.ts";
+import { isEditEntryCommand } from "./lib/intent.ts";
 import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput } from "./tasks/index.ts";
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
 import { handleUsers, handleUserCallbacks, handleUserSessionInput, handleBroadcast } from "./handlers/users.ts";
@@ -166,6 +167,15 @@ Deno.serve(async (req: Request) => {
     if (!isCommand) {
       const url = extractUrl(text);
       if (url && text.length < 300) {
+        // «замени эту форму на <url>», «обнови ссылку на <url>» — это инструкция изменить
+        // существующую запись, а НЕ «сохрани ссылку». Не глотаем такой текст в базу.
+        if (isEditEntryCommand(text)) {
+          await sendMessage(chatId,
+            "Похоже, ты хочешь изменить существующую запись со ссылкой. Я так пока не умею — только добавляю новые.\n\n" +
+            "Чтобы заменить: найди нужную запись (например «найди запись про форму»), потом добавь новую с актуальной ссылкой. " +
+            "Если нужно удалить старую — напиши мне или администратору.");
+          return new Response("OK", { status: 200 });
+        }
         const analyze = /посмотри|проанализируй|прочитай|загрузи|открой|что тут|что здесь|что это|summarize|analyze/i.test(text);
         await handleUrl(chatId, username, url, text, analyze, groupId);
         return new Response("OK", { status: 200 });

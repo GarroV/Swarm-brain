@@ -93,6 +93,7 @@ supabase/functions/swarm-bot/
     ├── openai.ts            # chatComplete(), getEmbedding()
     ├── telegram.ts          # sendMessage(), sendInlineMessage(), editInlineMessage(), answerCallback()
     ├── storage.ts           # getSession/setSession/clearSession, saveEntry (returns {id,summary}), checkAllowed, visibilityFilter, buildEntryIndex
+    ├── intent.ts            # isEditEntryCommand() — отличает «замени/удали… <url>» (инструкция) от «сохрани ссылку»
     ├── readai.ts            # Read.ai API client + токен-рефреш
     ├── drive.ts             # Google Drive интеграция (если используется)
     ├── workspace.ts         # getUserGroupId(), checkAllowedWithGroup(), CRUD воркспейсов
