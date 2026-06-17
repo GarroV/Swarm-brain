@@ -1,8 +1,9 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { RoyHeader, Segmented, RoyCard, Market } from "../ui";
+import { RoyHeader, Segmented, RoyCard, Market, SectionLabel } from "../ui";
 import { RoyIcon, type RoyIconName } from "../icons";
+import { useIsDesktop } from "../useIsDesktop";
 import { deriveEntryTitle } from "../entry";
 import { fetchMeetings, deleteMeeting } from "@/lib/api";
 import { AgentReviewQueue } from "@/components/AgentReviewQueue";
@@ -29,6 +30,12 @@ function fmtDate(iso: string | null): string | null {
     return null;
   }
 }
+// Подсчёт с сортировкой по убыванию.
+function tally(keys: string[]): [string, number][] {
+  const m = new Map<string, number>();
+  keys.forEach((k) => m.set(k, (m.get(k) ?? 0) + 1));
+  return [...m.entries()].sort((a, b) => b[1] - a[1]);
+}
 
 function ActionIcon({ name, label, color, onClick }: { name: RoyIconName; label: string; color: string; onClick: () => void }) {
   return (
@@ -44,8 +51,61 @@ function ActionIcon({ name, label, color, onClick }: { name: RoyIconName; label:
   );
 }
 
+function MeetingCard({ e, onOpen, onRemove }: { e: Entry; onOpen: () => void; onRemove: () => void }) {
+  return (
+    <div className="relative">
+      <button type="button" onClick={onOpen} className="block w-full text-left transition-transform active:scale-[0.99]">
+        <RoyCard className="flex items-center gap-3 px-4 py-3.5">
+          <span className="inline-flex shrink-0 items-center justify-center rounded-[12px]" style={{ width: 38, height: 38, background: "var(--meet-soft)", color: "var(--meet-ink)" }}>
+            <RoyIcon name="meet" size={19} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="mb-0.5 truncate font-semibold text-ink" style={{ fontSize: 14.5, letterSpacing: "-0.01em" }}>
+              {deriveEntryTitle(e)}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 7, padding: "1px 7px" }}>
+                {sourceLabel(e.source)}
+              </span>
+              <Market code={e.countries?.[0]} />
+              {fmtDate(e.entry_date || e.created_at) && (
+                <span className="text-ink-mute" style={{ fontSize: 11 }}>
+                  {fmtDate(e.entry_date || e.created_at)}
+                </span>
+              )}
+            </div>
+          </div>
+          <span className="shrink-0" style={{ width: 70 }} />
+        </RoyCard>
+      </button>
+      <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
+        <ActionIcon name="pencil" label="Изменить" color="var(--status-open)" onClick={onOpen} />
+        <ActionIcon name="trash" label="Удалить" color="var(--pri-high)" onClick={onRemove} />
+      </div>
+    </div>
+  );
+}
+
+function CountsPanel({ title, counts }: { title: string; counts: [string, number][] }) {
+  if (counts.length === 0) return null;
+  return (
+    <RoyCard className="px-3.5 py-3">
+      <SectionLabel className="!mb-2">{title}</SectionLabel>
+      <div className="space-y-1.5">
+        {counts.map(([k, n]) => (
+          <div key={k} className="flex items-center justify-between gap-2" style={{ fontSize: 13 }}>
+            <span className="truncate text-ink-soft">{k}</span>
+            <span className="shrink-0 font-bold text-ink">{n}</span>
+          </div>
+        ))}
+      </div>
+    </RoyCard>
+  );
+}
+
 export function RoyMeetingsScreen() {
   const { push, toast } = useRoyNav();
+  const isDesktop = useIsDesktop();
   const [meetings, setMeetings] = useState<Entry[] | null>(null);
   const [seg, setSeg] = useState("all");
 
@@ -58,7 +118,8 @@ export function RoyMeetingsScreen() {
     load();
   }, [load]);
 
-  const items = (meetings ?? []).filter((e) => (seg === "all" ? true : seg === "confirmed" ? isConfirmed(e) : !isConfirmed(e)));
+  const all = meetings ?? [];
+  const items = all.filter((e) => (seg === "all" ? true : seg === "confirmed" ? isConfirmed(e) : !isConfirmed(e)));
 
   const open = (id: string) => push({ view: "meetingDetail", params: { id } });
   const remove = async (e: Entry) => {
@@ -72,52 +133,53 @@ export function RoyMeetingsScreen() {
       load();
     }
   };
+  const openReview = (id: string) => push({ view: "meetingReview", params: { id } });
 
-  return (
-    <div className="relative h-full overflow-y-auto">
-      {/* Очередь вычитки черновиков от рекордера (desktop-agent) — невидима без черновиков */}
-      <AgentReviewQueue onOpen={(id) => push({ view: "meetingReview", params: { id } })} />
-      <RoyHeader title="Встречи" />
-      <div className="px-5 pb-3">
-        <Segmented items={SEGS} value={seg} onChange={setSeg} />
-      </div>
-      <div className="space-y-2.5 px-5 pb-28">
-        {meetings == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 72, borderRadius: 18 }} />)}
-        {meetings && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">Встреч нет</div>}
-        {items.map((e) => (
-          <div key={e.id} className="relative">
-            <button type="button" onClick={() => open(e.id)} className="block w-full text-left transition-transform active:scale-[0.99]">
-              <RoyCard className="flex items-center gap-3 px-4 py-3.5">
-                <span className="inline-flex shrink-0 items-center justify-center rounded-[12px]" style={{ width: 38, height: 38, background: "var(--meet-soft)", color: "var(--meet-ink)" }}>
-                  <RoyIcon name="meet" size={19} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="mb-0.5 truncate font-semibold text-ink" style={{ fontSize: 14.5, letterSpacing: "-0.01em" }}>
-                    {deriveEntryTitle(e)}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 7, padding: "1px 7px" }}>
-                      {sourceLabel(e.source)}
-                    </span>
-                    <Market code={e.countries?.[0]} />
-                    {fmtDate(e.entry_date || e.created_at) && (
-                      <span className="text-ink-mute" style={{ fontSize: 11 }}>
-                        {fmtDate(e.entry_date || e.created_at)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {/* место под всегда-видимые кнопки действий справа */}
-                <span className="shrink-0" style={{ width: 70 }} />
-              </RoyCard>
-            </button>
-            {/* Быстрые действия — всегда видимы (правка / удаление) */}
-            <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
-              <ActionIcon name="pencil" label="Изменить" color="var(--status-open)" onClick={() => open(e.id)} />
-              <ActionIcon name="trash" label="Удалить" color="var(--pri-high)" onClick={() => remove(e)} />
+  const segmented = <Segmented items={SEGS} value={seg} onChange={setSeg} />;
+  const skeleton = meetings == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 72, borderRadius: 18 }} />);
+  const emptyFeed = meetings && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">Встреч нет</div>;
+  const feedCards = items.map((e) => <MeetingCard key={e.id} e={e} onOpen={() => open(e.id)} onRemove={() => remove(e)} />);
+
+  const sidebarCounts = (
+    <>
+      <CountsPanel title="По странам" counts={tally(all.flatMap((e) => (e.countries?.length ? e.countries : ["—"])))} />
+      <CountsPanel title="Источники" counts={tally(all.map((e) => sourceLabel(e.source)))} />
+    </>
+  );
+
+  // ── Десктоп: лента + правый сайдбар (бенто) ──────────────────────────────────
+  if (isDesktop) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <RoyHeader title="Встречи" />
+        <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] gap-4 px-5 pb-5">
+          <div className="min-h-0 overflow-y-auto pr-1">
+            <div className="pb-3">{segmented}</div>
+            <div className="space-y-2.5 pb-4">
+              {skeleton}
+              {emptyFeed}
+              {feedCards}
             </div>
           </div>
-        ))}
+          <aside className="min-h-0 space-y-3 overflow-y-auto">
+            <AgentReviewQueue onOpen={openReview} />
+            {sidebarCounts}
+          </aside>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Мобайл: стопкой (как было) ───────────────────────────────────────────────
+  return (
+    <div className="relative h-full overflow-y-auto">
+      <AgentReviewQueue onOpen={openReview} />
+      <RoyHeader title="Встречи" />
+      <div className="px-5 pb-3">{segmented}</div>
+      <div className="space-y-2.5 px-5 pb-28">
+        {skeleton}
+        {emptyFeed}
+        {feedCards}
       </div>
     </div>
   );
