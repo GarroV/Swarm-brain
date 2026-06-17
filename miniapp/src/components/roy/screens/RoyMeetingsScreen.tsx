@@ -44,9 +44,9 @@ function ActionIcon({ name, label, color, onClick }: { name: RoyIconName; label:
       aria-label={label}
       onClick={(ev) => { ev.stopPropagation(); onClick(); }}
       className="flex items-center justify-center rounded-[10px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
-      style={{ width: 32, height: 32, color }}
+      style={{ width: 36, height: 36, color }}
     >
-      <RoyIcon name={name} size={16} strokeWidth={1.9} />
+      <RoyIcon name={name} size={18} strokeWidth={1.9} />
     </button>
   );
 }
@@ -75,7 +75,7 @@ function MeetingCard({ e, onOpen, onRemove }: { e: Entry; onOpen: () => void; on
               )}
             </div>
           </div>
-          <span className="shrink-0" style={{ width: 70 }} />
+          <span className="shrink-0" style={{ width: 90 }} />
         </RoyCard>
       </button>
       <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">

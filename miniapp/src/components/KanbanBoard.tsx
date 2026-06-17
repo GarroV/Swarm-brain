@@ -175,17 +175,17 @@ export function KanbanBoard() {
                         {t.assignees?.[0] ? (
                           <span className="inline-flex items-center gap-1.5 text-ink-soft" style={{ fontSize: 11.5 }}>
                             <Avatar size={20}>{initials(t.assignees[0])}</Avatar>
-                            <span className="max-w-[110px] truncate">{displayName(t.assignees[0])}</span>
+                            <span className="max-w-[90px] truncate">{displayName(t.assignees[0])}</span>
                           </span>
                         ) : (
                           <span />
                         )}
-                        <span className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                        <span className="flex items-center gap-1.5">
                           <IconBtn label="Изменить" onClick={() => setModalTask(t)} color="var(--status-open)">
-                            <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
+                            <RoyIcon name="pencil" size={18} strokeWidth={1.9} />
                           </IconBtn>
                           <IconBtn label="Удалить" onClick={() => remove(t)} color="var(--pri-high)">
-                            <RoyIcon name="trash" size={15} strokeWidth={1.9} />
+                            <RoyIcon name="trash" size={18} strokeWidth={1.9} />
                           </IconBtn>
                         </span>
                       </div>
@@ -215,8 +215,8 @@ function IconBtn({ label, onClick, color, children }: { label: string; onClick: 
       aria-label={label}
       onClick={onClick}
       onPointerDown={(e) => e.stopPropagation()}
-      className="flex items-center justify-center rounded-[8px] p-1.5 transition-colors hover:bg-surface-2 active:scale-[0.92]"
-      style={{ color }}
+      className="flex items-center justify-center rounded-[10px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
+      style={{ width: 36, height: 36, color }}
     >
       {children}
     </button>

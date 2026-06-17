@@ -7,6 +7,7 @@ import {
   type UpdateTaskInput,
   createTask,
   updateTask,
+  deleteTask,
   fetchUsers,
 } from "@/lib/api";
 import {
@@ -57,6 +58,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
   const [initialAssignee, setInitialAssignee] = useState(NONE);
   const [users, setUsers] = useState<User[]>([]);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Reset form whenever the dialog opens or the task changes
@@ -119,6 +121,22 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
       setError(err instanceof Error ? err.message : "Не удалось сохранить");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!task) return;
+    if (typeof window !== "undefined" && !window.confirm(`Удалить «${task.title}»?`)) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteTask(task.id);
+      onSaved();
+      onClose();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Не удалось удалить");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -208,13 +226,27 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>
-            Отмена
-          </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Сохранение…" : "Сохранить"}
-          </Button>
+        <DialogFooter className="sm:justify-between">
+          {isEdit ? (
+            <Button
+              variant="ghost"
+              onClick={handleDelete}
+              disabled={saving || deleting}
+              className="text-destructive hover:text-destructive"
+            >
+              {deleting ? "Удаление…" : "Удалить"}
+            </Button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose} disabled={saving || deleting}>
+              Отмена
+            </Button>
+            <Button onClick={handleSave} disabled={saving || deleting}>
+              {saving ? "Сохранение…" : "Сохранить"}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
