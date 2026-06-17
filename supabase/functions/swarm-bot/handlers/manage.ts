@@ -42,42 +42,53 @@ function previewOf(title: string, summary?: string | null, content?: string | nu
   return p.slice(0, 110);
 }
 
-// Поиск конкретной записи для правки/удаления. Главное — ТОЧНОСТЬ: пользователь
-// называет одну запись, мусор в списке недопустим. Семантика с реальным порогом +
-// ключевые слова с требованием совпадения по ТЕМЕ (не по одному общему слову).
-async function searchCandidates(query: string, userId: number, groupId: string): Promise<Candidate[]> {
+// Источники-встречи: ими управляют в разделе «Встречи», не в правке записей из чата.
+const MEETING_SOURCES = new Set(["granola", "read_ai", "desktop-agent", "digest"]);
+function hasLink(metadata: Record<string, unknown> | null | undefined, content?: string | null, summary?: string | null): boolean {
+  if (typeof metadata?.url === "string" && /^https?:\/\//.test(metadata.url)) return true;
+  return /https?:\/\//.test(`${content ?? ""} ${summary ?? ""}`);
+}
+
+// Поиск конкретной записи для правки/удаления. Главное — ТОЧНОСТЬ: пользователь называет
+// одну запись. НЕ ищем по встречам (у них свой раздел). Для замены ссылки берём только
+// записи, где ссылка реально есть — иначе менять нечего.
+async function searchCandidates(
+  query: string, userId: number, groupId: string, opts: { requireLink: boolean },
+): Promise<Candidate[]> {
   const scored = new Map<string, Candidate & { score: number }>();
+  const keep = (source: string, metadata: Record<string, unknown> | null | undefined, content?: string | null, summary?: string | null) =>
+    !MEETING_SOURCES.has(source) && (!opts.requireLink || hasLink(metadata, content, summary));
   const add = (id: string, title: string, date: string, preview: string, score: number) => {
     if (!id) return;
     const prev = scored.get(id);
     if (!prev || score > prev.score) scored.set(id, { id, title, date, preview, score });
   };
 
-  // 1. Семантика — только уверенные совпадения (порог 0.4, не 0.1: иначе в список
-  //    попадает топ-5 «хоть как-то похожих», включая мусор).
+  // 1. Семантика — только уверенные совпадения (порог 0.4, не 0.1).
   const emb = await getEmbedding(query).catch(() => null);
   if (emb) {
     const vec = await matchEntries(supabase, emb, {
-      groupId, requestingUserId: userId, threshold: 0.4, limit: MAX_RESULTS,
+      groupId, requestingUserId: userId, threshold: 0.4, limit: MAX_RESULTS * 3,
     }).catch(() => []);
     for (const e of vec) {
+      if (!keep(e.source, e.metadata, e.content, e.summary)) continue;
       const title = titleOf(e.metadata, e.summary, e.content);
       add(e.id, title, e.entry_date ?? "", previewOf(title, e.summary, e.content), 1 + (e.similarity ?? 0));
     }
   }
 
   // 2. Ключевые слова — кандидат проходит, только если совпала тема: хотя бы половина
-  //    значимых слов запроса (минимум 2) ИЛИ все слова есть в заголовке. Ранжируем по числу
-  //    совпадений. Это отсекает «совпало одно общее слово» (отсюда и был мусор в списке).
+  //    значимых слов запроса (минимум 2) ИЛИ все слова есть в заголовке. Ранжируем по числу совпадений.
   const words = [...new Set(query.toLowerCase().split(/[\s,.!?]+/).filter((w) => w.length > 2))].slice(0, 6);
   if (words.length) {
     const { data } = await supabase.from("entries")
-      .select("id, content, summary, metadata, entry_date, created_at")
+      .select("id, content, summary, metadata, entry_date, created_at, source")
       .or(words.map((w) => `content.ilike.%${w}%,summary.ilike.%${w}%`).join(","))
       .eq("group_id", groupId).or(visibilityFilter(userId)).limit(40);
     const need = Math.max(2, Math.ceil(words.length / 2));
     for (const e of (data ?? []) as Array<Record<string, unknown>>) {
       const meta = e.metadata as Record<string, unknown> | null;
+      if (!keep(e.source as string, meta, e.content as string, e.summary as string)) continue;
       const titleStr = (typeof meta?.title === "string" ? meta.title : "").toLowerCase();
       const hay = `${titleStr} ${e.summary ?? ""} ${e.content ?? ""}`.toLowerCase();
       const hits = words.filter((w) => hay.includes(w)).length;
@@ -148,7 +159,8 @@ export async function handleEntryCommand(
     return;
   }
 
-  const candidates = await searchCandidates(query, userId, groupId);
+  // Замена ссылки (newValue — URL) → ищем только среди записей со ссылкой.
+  const candidates = await searchCandidates(query, userId, groupId, { requireLink: cmd === "replace" && !!newValue });
   if (!candidates.length) {
     await sendMessage(chatId, `Не нашёл записи по запросу «${escapeHtml(query)}». Уточни тему.`);
     return;
