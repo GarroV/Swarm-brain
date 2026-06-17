@@ -39,7 +39,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         rebuildMenu()
-        _ = Permissions.ensureScreenRecording()
+        // НЕ дёргаем ensureScreenRecording() на старте: системный промпт показывается один раз
+        // за процесс, и если «съесть» его молча здесь — по клику «Записать» он уже не появится.
+        // Микрофон спросить заранее безопасно (отдельный промпт).
         Task { _ = await Permissions.requestMicrophone() }
 
         setupNotifications()
@@ -265,7 +267,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard config != nil else { return }
         if case .recording = state { return }
         if !Permissions.ensureScreenRecording() {
-            setState(.error("нет доступа к записи экрана — выдай в System Settings → Privacy"))
+            setState(.error("Нет доступа к записи экрана. Открыл настройки — включи SwarmRecorder и перезапусти приложение."))
+            Permissions.openScreenRecordingSettings()
             return
         }
         pendingMeeting = nil
