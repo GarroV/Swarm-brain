@@ -1,13 +1,13 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { RoyHeader, Segmented, RoyCard, Market, SectionLabel } from "../ui";
+import { RoyHeader, Segmented, RoyCard, Market, SectionLabel, PriDot } from "../ui";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { useIsDesktop } from "../useIsDesktop";
 import { deriveEntryTitle } from "../entry";
-import { fetchMeetings, deleteMeeting } from "@/lib/api";
+import { fetchMeetings, fetchTasks, deleteMeeting } from "@/lib/api";
 import { AgentReviewQueue } from "@/components/AgentReviewQueue";
-import type { Entry } from "@/types";
+import type { Entry, Task } from "@/types";
 
 const SEGS = [
   { id: "all", label: "Все" },
@@ -83,6 +83,35 @@ function MeetingCard({ e, onOpen, onRemove }: { e: Entry; onOpen: () => void; on
         <ActionIcon name="trash" label="Удалить" color="var(--pri-high)" onClick={onRemove} />
       </div>
     </div>
+  );
+}
+
+// Задачи, извлечённые из встреч (meeting_id != null) — быстрый доступ из раздела встреч.
+function MeetingTasksPanel({ onOpen }: { onOpen: (id: string) => void }) {
+  const [tasks, setTasks] = useState<Task[] | null>(null);
+  useEffect(() => {
+    fetchTasks()
+      .then((ts) => setTasks(ts.filter((t) => t.meeting_id && t.status !== "done")))
+      .catch(() => setTasks([]));
+  }, []);
+  if (!tasks || tasks.length === 0) return null;
+  return (
+    <RoyCard className="px-3.5 py-3">
+      <SectionLabel className="!mb-2">Задачи из встреч · {tasks.length}</SectionLabel>
+      <div className="space-y-0.5">
+        {tasks.slice(0, 10).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onOpen(t.id)}
+            className="flex w-full items-center gap-2 rounded-[9px] px-2 py-1.5 text-left transition-colors hover:bg-surface-2"
+          >
+            <PriDot pri={(t.priority as "high" | "med" | "low" | null) ?? null} />
+            <span className="min-w-0 flex-1 truncate text-ink" style={{ fontSize: 13 }}>{t.title}</span>
+          </button>
+        ))}
+      </div>
+    </RoyCard>
   );
 }
 
@@ -163,6 +192,7 @@ export function RoyMeetingsScreen() {
           </div>
           <aside className="min-h-0 space-y-3 overflow-y-auto">
             <AgentReviewQueue onOpen={openReview} />
+            <MeetingTasksPanel onOpen={(id) => push({ view: "taskDetail", params: { id } })} />
             {sidebarCounts}
           </aside>
         </div>
