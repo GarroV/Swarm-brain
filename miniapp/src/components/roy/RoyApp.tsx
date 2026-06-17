@@ -37,6 +37,8 @@ export function RoyApp({ me }: { me: Me | null }) {
   const setTab = useCallback((t: RoyTab) => {
     setStack([]);
     setTabState(t);
+    // Запоминаем вкладку, чтобы рефреш страницы не сбрасывал на «Поиск».
+    try { sessionStorage.setItem("roy_tab", t); } catch { /* приватный режим */ }
   }, []);
   const push = useCallback((r: RoyRoute) => setStack((s) => [...s, r]), []);
   const pop = useCallback(() => {
@@ -54,13 +56,19 @@ export function RoyApp({ me }: { me: Me | null }) {
     return () => clearTimeout(id);
   }, [toastMsg]);
 
-  // Deep-link из уведомления «тезисы готовы» → вкладка Встречи + push вычитки
+  // Deep-link из уведомления «тезисы готовы» → вкладка Встречи + push вычитки.
+  // Иначе — восстанавливаем последнюю вкладку (рефреш не должен кидать на «Поиск»).
   useEffect(() => {
     const id = getDeepLinkMeetingId();
     if (id) {
       setTabState("cal");
       setStack([{ view: "meetingReview", params: { id } }]);
+      return;
     }
+    try {
+      const saved = sessionStorage.getItem("roy_tab");
+      if (saved && ROY_TABS.some((t) => t.id === saved)) setTabState(saved as RoyTab);
+    } catch { /* приватный режим */ }
   }, []);
 
   const nav: RoyNav = { me, tab, setTab, push, pop, toast };
