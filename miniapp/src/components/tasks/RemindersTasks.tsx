@@ -25,7 +25,7 @@ export function RemindersTasks() {
 
   const activeDef = SMART_LISTS.find((s) => s.id === r.activeList)!;
   const total = r.activeList === "byMarket" ? r.marketGroups.reduce((n, g) => n + g.tasks.length, 0) : r.visible.length;
-  const showAssignee = r.lens === "all";
+  const showAssignee = r.lens !== "mine";
 
   const submitDraft = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter") return;

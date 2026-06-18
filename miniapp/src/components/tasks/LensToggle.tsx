@@ -4,6 +4,7 @@ import type { Lens } from "@/lib/smartLists";
 
 const ITEMS: { id: Lens; label: string }[] = [
   { id: "mine", label: "Мои" },
+  { id: "team", label: "Команда" },
   { id: "all", label: "Все" },
 ];
 

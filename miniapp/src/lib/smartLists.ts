@@ -6,7 +6,7 @@ import type { Task, Me } from "@/types";
 import type { RoyIconName } from "@/components/roy/icons";
 
 export type SmartListId = "today" | "upcoming" | "flagged" | "all" | "done" | "byMarket";
-export type Lens = "mine" | "all";
+export type Lens = "mine" | "team" | "all";
 
 export type SmartListDef = { id: SmartListId; label: string; icon: RoyIconName };
 
@@ -49,6 +49,7 @@ export function isOverdue(task: Task, now: Date = new Date()): boolean {
 
 function matchesLens(task: Task, lens: Lens, me: Me | null): boolean {
   if (lens === "all") return true;
+  if (lens === "team") return !(me && (task.assignee_telegram_ids?.includes(me.telegram_id) ?? false));
   if (!me) return false;
   return task.assignee_telegram_ids?.includes(me.telegram_id) ?? false;
 }
