@@ -5,7 +5,7 @@ import { checkAllowedWithGroup } from "./lib/workspace.ts";
 import { getReadAiToken } from "./lib/readai.ts";
 import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
 import { handleVoice, handleDocument, handlePhoto, handleUrl } from "./handlers/media.ts";
-import { classifyEntryCommand, parseManageCommand, extractUrl } from "./lib/intent.ts";
+import { classifyEntryCommand, parseManageCommand, extractUrl, parseSaveCommand } from "./lib/intent.ts";
 import { handleEntryCommand, handleManageCallbacks, handleManageSessionInput } from "./handlers/manage.ts";
 import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput } from "./tasks/index.ts";
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
@@ -195,6 +195,12 @@ Deno.serve(async (req: Request) => {
       const session = await getSession(chatId);
       const action = session?.action ?? null;
 
+      // Пересланное сообщение = контент на сохранение, а не вопрос. Детерминированный
+      // сигнал от Telegram (forward_origin/legacy-поля) — НЕ отдаём решение LLM.
+      const isForward = Boolean(
+        message.forward_origin || message.forward_date || message.forward_from || message.forward_from_chat,
+      );
+
       // Ждём новое значение для замены записи — весь текст/URL = новое значение.
       if (action === "manage_replace") {
         await handleManageSessionInput(chatId, userId, action, text, session?.context ?? undefined, groupId);
@@ -235,13 +241,15 @@ Deno.serve(async (req: Request) => {
         // granola session handled
       } else if (action && await handleFeedbackSessionInput(chatId, action, text)) {
         // feedback session handled
+      } else if (isForward) {
+        // Форвард → всегда сохраняем (сразу + тезисы), минуя LLM-угадайку.
+        await handleAdd(chatId, username, text, groupId);
       } else {
-        // Route "добавь в базу: ..." directly to handleAdd — bypass GPT entirely
-        // Match any verb + destination in first 5 words — covers добавь/запихни/кинь/внеси/etc.
-        const saveMatch = text.match(/^(?:\S+\s+){0,4}(?:в\s+базу|в\s+знания|в\s+хранилище|в\s+рой|в\s+сворм|в\s+swarm|в\s+улей)\s*:?\s*/i);
-        if (saveMatch) {
-          const content = text.slice(saveMatch[0].length).trim();
-          await handleAdd(chatId, username, content || text, groupId);
+        // Явное намерение сохранить ("сохрани: …", "добавь в базу: …") → handleAdd, минуя GPT.
+        // Иначе набранный руками текст = вопрос/поиск. Сохранение НЕ отдаётся LLM.
+        const saveContent = parseSaveCommand(text);
+        if (saveContent !== null) {
+          await handleAdd(chatId, username, saveContent || text, groupId);
         } else if (text.length >= 3) {
           await handleAsk(chatId, text, userId, groupId);
         }

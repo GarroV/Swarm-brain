@@ -85,14 +85,14 @@ export const KNOWLEDGE_TOOLS = [
   {
     type: "function" as const,
     function: {
-      name: "save_shared",
-      description: "Save text to the SHARED team knowledge base. Use by default when user says 'добавь в базу', 'сохрани', 'запомни', 'добавь это', 'занеси в базу', or any similar intent WITHOUT specifying privacy. Shared entries are visible to all team members.",
+      name: "list_recent",
+      description: "List the most RECENTLY ADDED entries by save time (created_at), newest first. Use for recency questions: 'что только что сохранил', 'что последнее сохранили/добавили', 'что недавно добавили в базу', 'покажи последние записи', 'что нового в базе' (by save time, not by topic). NEVER use search_knowledge for these — it ranks by meaning, not by recency, and will return an old unrelated entry.",
       parameters: {
         type: "object",
         properties: {
-          text: { type: "string", description: "The text content to save to the shared knowledge base" },
+          limit: { type: "number", description: "How many entries to return, default 5, max 15" },
         },
-        required: ["text"],
+        required: [],
       },
     },
   },
@@ -638,11 +638,27 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         return `✅ Запись обновлена (${changed}).`;
       }
 
-      case "save_shared": {
-        const text = String(args.text ?? "");
-        if (!text.trim()) return "Нечего сохранять — текст пустой.";
-        await saveEntry(text, String(userId || "bot"), "telegram", {}, undefined, groupId);
-        return "✅ Сохранено в общую базу знаний.";
+      case "list_recent": {
+        const limit = Math.min(Math.max(Number(args.limit ?? 5), 1), 15);
+        const { data, error } = await supabase
+          .from("entries")
+          .select("id, summary, content, source, added_by, created_at, metadata")
+          .eq("group_id", groupId)
+          .or(visibilityFilter(userId || 0))
+          .order("created_at", { ascending: false })
+          .limit(limit);
+        if (error) return `Ошибка: ${error.message}`;
+        if (!data?.length) return "В базе знаний пока нет записей.";
+        return (data as Array<{ id: string; summary: string | null; content: string | null; source: string | null; created_at: string; metadata: Record<string, unknown> | null }>)
+          .map((e, i) => {
+            const when = new Date(e.created_at).toLocaleString("ru-RU", { day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" });
+            const title = (e.metadata?.title as string | undefined)
+              ?? e.summary?.split("\n").find(l => l.trim().length > 3)?.slice(0, 80)
+              ?? e.content?.split("\n").find(l => l.trim().length > 3)?.slice(0, 80)
+              ?? e.source ?? "запись";
+            const preview = (e.summary ?? e.content ?? "").slice(0, 400);
+            return `${i + 1}. [id:${e.id}] ${title} (${when})\n${preview}`;
+          }).join("\n\n---\n\n");
       }
 
       case "save_private": {
@@ -751,6 +767,7 @@ export async function handleAsk(chatId: number, question: string, userId: number
       content:
         "Ты помощник командной базы знаний команды. Всегда используй инструменты — никогда не отвечай по памяти.\n\n" +
         "СТРАТЕГИЯ ПОИСКА (важно):\n" +
+        "0. Для вопросов про СВЕЖЕСТЬ ('что только что/последнее сохранил', 'что недавно добавили', 'покажи последние записи', 'что нового в базе' — по времени сохранения, не по теме) → list_recent. НИКОГДА не используй для этого search_knowledge: он ранжирует по смыслу и вернёт старую нерелевантную запись.\n" +
         "1. Для 'последние новости/тезисы/что нового по X' → get_recent_by_country. Для общекомандных запросов ('что нового вообще', 'общие новости', 'что у нас происходит') → get_recent_by_country(country='General').\n" +
         "2. Для 'дай ссылку', 'дай дашборд', 'дай отчёт', 'ссылка на X', 'дашборд по X' → СНАЧАЛА find_link. Если пусто — search_knowledge.\n" +
         "3. Для 'пароль от X', 'логин от X', 'доступ к X', 'номер X', 'адрес X', 'ключ от X', 'что такое X' (короткий факт) → СНАЧАЛА find_note. Если пусто — search_knowledge.\n" +

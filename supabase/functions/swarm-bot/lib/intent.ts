@@ -26,6 +26,28 @@ export function classifyEntryCommand(text: string): EntryCommand | null {
   return null;
 }
 
+// Явное намерение «сохранить в общую базу». Детерминированно, без LLM.
+// Два варианта формулировки:
+//   1) <глагол> … в базу/знания/…: текст  — глагол любой (добавь/кинь/запихни/внеси…), destination фиксирован
+//   2) сохрани/запомни/занеси/запиши/внеси[:] текст — ведущий глагол сохранения без destination
+// «добавь» без destination сюда НЕ входит (ловил бы «добавь задачу …»).
+const SAVE_DEST_RE = /^(?:\S+\s+){0,4}(?:в\s+базу|в\s+знания|в\s+хранилище|в\s+рой|в\s+сворм|в\s+swarm|в\s+улей)\s*:?\s*/i;
+// (?=[\s:]|$) — чтобы не ловить «сохранил», «занесённый», «записаться» как префиксы.
+const SAVE_VERB_RE = /^\s*(?:сохрани(?:те)?|запомни(?:те)?|занеси|запиши|внеси)(?=[\s:]|$)\s*:?\s*/iu;
+
+/**
+ * Если текст — явная команда сохранения, вернуть контент для сохранения
+ * (без командного префикса; пустая строка, если после глагола ничего нет).
+ * Иначе null — текст идёт в обычный флоу (вопрос/поиск).
+ */
+export function parseSaveCommand(text: string): string | null {
+  const destMatch = text.match(SAVE_DEST_RE);
+  if (destMatch) return text.slice(destMatch[0].length).trim();
+  const verbMatch = text.match(SAVE_VERB_RE);
+  if (verbMatch) return text.slice(verbMatch[0].length).trim();
+  return null;
+}
+
 export interface ManageCommand {
   cmd: EntryCommand;
   query: string;

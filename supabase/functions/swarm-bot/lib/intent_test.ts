@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { classifyEntryCommand, parseManageCommand, extractUrl } from "./intent.ts";
+import { classifyEntryCommand, parseManageCommand, extractUrl, parseSaveCommand } from "./intent.ts";
 
 Deno.test("classifyEntryCommand: команды удаления → 'delete'", () => {
   for (const t of [
@@ -66,6 +66,30 @@ Deno.test("parseManageCommand: тема и новое значение", () => {
     newValue: "https://x.io",
   });
   assertEquals(parseManageCommand("как удалить запись"), null);
+});
+
+Deno.test("parseSaveCommand: явный сейв → контент без префикса", () => {
+  assertEquals(parseSaveCommand("сохрани: важный текст"), "важный текст");
+  assertEquals(parseSaveCommand("сохрани важный текст"), "важный текст");
+  assertEquals(parseSaveCommand("запомни это"), "это");
+  assertEquals(parseSaveCommand("запиши: пароль 1234"), "пароль 1234");
+  assertEquals(parseSaveCommand("добавь в базу: текст встречи"), "текст встречи");
+  assertEquals(parseSaveCommand("запихни в улей логи"), "логи");
+  assertEquals(parseSaveCommand("кинь в знания отчёт"), "отчёт");
+  assertEquals(parseSaveCommand("сохрани"), ""); // только глагол → пустой контент (бот спросит текст)
+});
+
+Deno.test("parseSaveCommand: НЕ сейв → null", () => {
+  for (const t of [
+    "сохранил ли кто-то отчёт по Сербии", // вопрос, не «сохрани»
+    "добавь задачу купить молоко", // голый «добавь» без destination → не сейв (это задача)
+    "что нового по Сербии", // вопрос
+    "удали запись про форму", // команда управления, не сейв
+    "записаться на встречу", // не «запиши» как префикс
+    "что последнее сохранили в базе", // вопрос про базу, не команда
+  ]) {
+    assertEquals(parseSaveCommand(t), null, `null: "${t}"`);
+  }
 });
 
 Deno.test("extractUrl: достаёт первый URL или null", () => {
