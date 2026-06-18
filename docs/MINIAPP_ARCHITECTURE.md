@@ -140,6 +140,7 @@ supabase functions deploy swarm-api --no-verify-jwt
 | `src/components/TaskCard.tsx` | Карточка задачи + кнопки статуса |
 | `src/components/TaskModal.tsx` | Создание/редактирование задачи |
 | `src/components/ServiceWorkerRegister.tsx` | Регистрация SW (PWA) |
+| `src/app/layout.tsx` | Корневой layout. Тема **следует за системой**: пре-гидрационный inline-скрипт вешает/снимает класс `.dark` на `<html>` по `prefers-color-scheme` (без FOUC, `suppressHydrationWarning`) и переключается вживую; токены `.dark` в `globals.css`, `dark:`-утилиты в `ui/*`. В Telegram вебвью сам выставляет `prefers-color-scheme` под тему Telegram |
 | `public/manifest.webmanifest`, `public/sw.js`, `public/icon.svg` | PWA: манифест, SW (кэширует только статику, не API), иконка |
 
 ### Модуль задач (Рой)
