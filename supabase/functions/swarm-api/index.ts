@@ -1050,6 +1050,13 @@ Deno.serve(async (req: Request) => {
           fields.metadata = { ...(entry.metadata as Record<string, unknown>), confirmed: body.confirmed };
         }
         if ("summary" in body) fields.summary = body.summary;
+        if ("content" in body && typeof body.content === "string") fields.content = body.content;
+        if ("entry_type" in body && typeof body.entry_type === "string") fields.entry_type = body.entry_type;
+        // Смена приватности встречи-записи: владелец задаётся/снимается вместе с флагом (как у задач).
+        if (typeof body.is_private === "boolean") {
+          fields.is_private = body.is_private;
+          fields.owner_id = body.is_private ? (entry.owner_id ?? telegram_id) : null;
+        }
         if ("countries" in body && Array.isArray(body.countries)) fields.countries = normalizeCountries(body.countries as string[]);
         await supabase.from("entries").update(fields).eq("id", entry.id);
         const { data } = await supabase.from("entries").select("*").eq("id", entry.id).single();
@@ -1507,6 +1514,12 @@ Deno.serve(async (req: Request) => {
     if (!gptRes.ok) return apiErr(500, "GPT error", origin);
     let extracted: Array<{ title: string; description?: string; assignee?: string; due_date?: string | null; country?: string | null }> = [];
     try { extracted = JSON.parse((await gptRes.json()).choices[0].message.content.replace(/```json\n?|\n?```/g, "").trim()); } catch { return json([], 200, origin); }
+
+    // Preview-режим: вернуть предложенные задачи БЕЗ создания (ревью на экране встреч —
+    // пользователь правит/удаляет/добавляет к себе). save !== false → старое поведение (создать).
+    if (body.save === false) {
+      return json(extracted.slice(0, 10).filter((t) => t.title), 200, origin);
+    }
 
     const created = [];
     for (const item of extracted.slice(0, 10)) {
