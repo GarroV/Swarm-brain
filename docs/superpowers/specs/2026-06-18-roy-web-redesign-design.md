@@ -167,3 +167,13 @@ assignee; материалы показывают только записи за
 - Текущий код: `miniapp/src/components/roy/`, `miniapp/src/components/tasks/`,
   `miniapp/src/components/{AdminScreen,AgentReviewQueue,MeetingReview}.tsx`, `miniapp/src/lib/api.ts`
 - Бэкенд встреч/календаря: `supabase/functions/{meeting-current,google-oauth,swarm-api}/`
+
+## 14. Реализационная поправка (2026-06-18)
+
+- **§7 (Доска задач):** на момент написания спеки предполагался Kanban-вид `KanbanBoard`. Во время
+  реализации выяснилось, что параллельная работа уже заменила вид «Доска» на **Reminders-список**
+  (смарт-листы + линза). Поэтому WS-Board реализован как **расширение существующей линзы** до
+  «Мои/Команда/Все» (в `lib/smartLists.ts` + `LensToggle`), а не как Kanban. Канбан-раскладка
+  осталась только в виде «Спринт». Живой `docs/MINIAPP_ARCHITECTURE.md` отражает актуальное состояние.
+- **§10 (Dark mode):** код-аудит выполнен (хардкод-цвета → токены). Натурный прогон в Telegram
+  WebView на устройстве — единственный незакрытый acceptance-пункт, выполнить перед раскаткой.
