@@ -63,7 +63,7 @@ export function SearchScreen() {
       {/* поле поиска (герой) */}
       <div className="px-5 pt-2">
         <form onSubmit={(e) => { e.preventDefault(); go(q); }}>
-          <div className="flex items-center gap-2.5 bg-surface" style={{ border: "2px solid var(--ink)", borderRadius: 15, padding: "13px 15px" }}>
+          <div className="flex items-center gap-2.5 bg-surface" style={{ border: "2px solid var(--ink)", borderRadius: 18, padding: "13px 15px" }}>
             <RoyIcon name="spark" size={20} className="shrink-0 text-primary" />
             <input
               value={q}

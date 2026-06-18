@@ -38,11 +38,11 @@ export function NewEntry() {
             rows={10}
             autoFocus
             placeholder="Вставь текст, заметку или транскрипт — ИИ сам сделает тезисы, тип и теги"
-            className="w-full resize-none rounded-[14px] border border-line-2 bg-surface px-4 py-3 text-ink outline-none focus:border-primary"
+            className="w-full resize-none rounded-[18px] border border-line-2 bg-surface px-4 py-3 text-ink outline-none focus:border-primary"
             style={{ fontSize: 15, lineHeight: 1.5 }}
           />
         </div>
-        <button type="button" onClick={() => setIsPrivate((v) => !v)} className="flex w-full items-center justify-between rounded-[14px] border border-line bg-surface px-4 py-3.5">
+        <button type="button" onClick={() => setIsPrivate((v) => !v)} className="flex w-full items-center justify-between rounded-[18px] border border-line bg-surface px-4 py-3.5">
           <span className="font-medium text-ink" style={{ fontSize: 14.5 }}>
             Личная запись
           </span>

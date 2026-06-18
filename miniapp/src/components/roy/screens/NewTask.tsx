@@ -21,7 +21,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-const inputCls = "w-full bg-surface border border-line-2 rounded-[14px] px-4 py-3 text-ink outline-none focus:border-primary";
+const inputCls = "w-full bg-surface border border-line-2 rounded-[18px] px-4 py-3 text-ink outline-none focus:border-primary";
 
 export function NewTask({ id }: { id?: string }) {
   const { pop, setTab, toast } = useRoyNav();
@@ -132,7 +132,7 @@ export function NewTask({ id }: { id?: string }) {
             </div>
           </Field>
         )}
-        <button type="button" onClick={() => setIsPrivate((v) => !v)} className="flex w-full items-center justify-between rounded-[14px] border border-line bg-surface px-4 py-3.5">
+        <button type="button" onClick={() => setIsPrivate((v) => !v)} className="flex w-full items-center justify-between rounded-[18px] border border-line bg-surface px-4 py-3.5">
           <span className="font-medium text-ink" style={{ fontSize: 14.5 }}>
             Личная задача
           </span>
