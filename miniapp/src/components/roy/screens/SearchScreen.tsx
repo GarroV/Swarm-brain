@@ -66,8 +66,11 @@ export function SearchScreen() {
 
   // Задачи в работе (статус in_progress / progress)
   const inProgressTasks = (tasks ?? []).filter((t) => norm(t.status) === "in_progress");
-  // Ближайшая встреча: берём первую по entry_date (или created_at) среди всех встреч
-  const nextMeeting: Entry | null = (() => {
+  // Последняя встреча для «Продолжить». Встречи в продукте — это записи уже
+  // прошедших встреч (транскрипты Granola/Read.ai/Desktop Agent), будущих в данных
+  // нет (календарь подключён отдельно, read-only). Поэтому «самая свежая по дате» —
+  // и есть та, к которой логично вернуться.
+  const recentMeeting: Entry | null = (() => {
     const list = [...(meetings ?? [])];
     list.sort((a, b) => {
       const da = new Date(a.entry_date ?? a.created_at).getTime();
@@ -76,7 +79,7 @@ export function SearchScreen() {
     });
     return list[0] ?? null;
   })();
-  const showContinue = tasks !== null && meetings !== null && (inProgressTasks.length > 0 || nextMeeting !== null);
+  const showContinue = tasks !== null && meetings !== null && (inProgressTasks.length > 0 || recentMeeting !== null);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -151,10 +154,10 @@ export function SearchScreen() {
               </button>
             )}
 
-            {nextMeeting && (
+            {recentMeeting && (
               <button
                 type="button"
-                onClick={() => push({ view: "meetingDetail", params: { id: nextMeeting.id } })}
+                onClick={() => push({ view: "meetingDetail", params: { id: recentMeeting.id } })}
                 className="w-full text-left transition-transform active:scale-[0.97]"
               >
                 <RoyCard className="flex items-center gap-3 px-4 py-3">
@@ -166,15 +169,14 @@ export function SearchScreen() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-semibold text-ink" style={{ fontSize: 14.5, letterSpacing: "-0.01em" }}>
-                      {deriveEntryTitle(nextMeeting)}
+                      {deriveEntryTitle(recentMeeting)}
                     </div>
                     <div className="mt-0.5 flex items-center gap-2">
-                      <Market code={nextMeeting.countries?.[0]} />
-                      {fmtDate(nextMeeting.entry_date ?? nextMeeting.created_at) && (
-                        <span className="text-ink-mute" style={{ fontSize: 12 }}>
-                          {fmtDate(nextMeeting.entry_date ?? nextMeeting.created_at)}
-                        </span>
-                      )}
+                      <Market code={recentMeeting.countries?.[0]} />
+                      {(() => {
+                        const d = fmtDate(recentMeeting.entry_date ?? recentMeeting.created_at);
+                        return d ? <span className="text-ink-mute" style={{ fontSize: 12 }}>{d}</span> : null;
+                      })()}
                     </div>
                   </div>
                   <RoyIcon name="cright" size={16} strokeWidth={2} className="shrink-0 text-ink-mute" />
