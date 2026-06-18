@@ -291,7 +291,7 @@ function ActionsPanel({
           padding: "10px 14px",
           fontSize: 14,
           background: "var(--accent-ink)",
-          color: "#fff",
+          color: "var(--card)",
         }}
       >
         <RoyIcon name="check" size={16} strokeWidth={2.1} />
