@@ -18,7 +18,8 @@ export type RoyRoute =
   | { view: "settings" }
   | { view: "team" }
   | { view: "admin" }
-  | { view: "more" };
+  | { view: "more" }
+  | { view: "meetAdmin" };
 
 export type RoyNav = {
   me: Me | null;
