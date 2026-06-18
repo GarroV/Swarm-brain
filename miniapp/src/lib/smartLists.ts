@@ -1,0 +1,149 @@
+// Смарт-списки задач в стиле macOS Reminders (Direction C из design_handoff_roy).
+// Чистая логика без React: фильтрация, счётчики и группировка по рынкам.
+// Дизайн-решения и семантика — docs/superpowers/specs/2026-06-18-tasks-reminders-list-design.md
+
+import type { Task, Me } from "@/types";
+import type { RoyIconName } from "@/components/roy/icons";
+
+export type SmartListId = "today" | "upcoming" | "flagged" | "all" | "done" | "byMarket";
+export type Lens = "mine" | "all";
+
+export type SmartListDef = { id: SmartListId; label: string; icon: RoyIconName };
+
+// Единый источник правды для порядка/подписей/иконок смарт-списков.
+export const SMART_LISTS: SmartListDef[] = [
+  { id: "today", label: "Сегодня", icon: "clock" },
+  { id: "upcoming", label: "Предстоящее", icon: "cal" },
+  { id: "flagged", label: "Важное", icon: "flag" },
+  { id: "all", label: "Все", icon: "task" },
+  { id: "done", label: "Готово", icon: "check" },
+  { id: "byMarket", label: "По рынкам", icon: "globe" },
+];
+
+export const HIGH_PRIORITY = "high";
+const PRI_RANK: Record<string, number> = { high: 3, med: 2, low: 1 };
+
+// Поддерживаем оба написания статуса в данных: "progress" и "in_progress".
+export function normStatus(status: string): string {
+  return status === "progress" ? "in_progress" : status;
+}
+export function isDone(task: Task): boolean {
+  return normStatus(task.status) === "done";
+}
+
+// Локальная полночь переданной даты (день без времени), в часовом поясе устройства.
+function midnight(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+// Полночь срока задачи. null — если срока нет или дата не парсится.
+function dueMidnight(task: Task): number | null {
+  if (!task.due_date) return null;
+  const d = new Date(task.due_date);
+  return isNaN(d.getTime()) ? null : midnight(d);
+}
+
+export function isOverdue(task: Task, now: Date = new Date()): boolean {
+  const due = dueMidnight(task);
+  return due != null && !isDone(task) && due < midnight(now);
+}
+
+function matchesLens(task: Task, lens: Lens, me: Me | null): boolean {
+  if (lens === "all") return true;
+  if (!me) return false;
+  return task.assignee_telegram_ids?.includes(me.telegram_id) ?? false;
+}
+
+// Сравнение по сроку: сначала ближайший, задачи без срока — в конец.
+function byDueAsc(a: Task, b: Task): number {
+  const da = dueMidnight(a);
+  const db = dueMidnight(b);
+  if (da == null && db == null) return 0;
+  if (da == null) return 1;
+  if (db == null) return -1;
+  return da - db;
+}
+function byPriorityDesc(a: Task, b: Task): number {
+  return (PRI_RANK[b.priority ?? ""] ?? 0) - (PRI_RANK[a.priority ?? ""] ?? 0);
+}
+function byCreatedDesc(a: Task, b: Task): number {
+  return (b.created_at ?? "").localeCompare(a.created_at ?? "");
+}
+function byUpdatedDesc(a: Task, b: Task): number {
+  const ua = a.updated_at ?? a.created_at ?? "";
+  const ub = b.updated_at ?? b.created_at ?? "";
+  return ub.localeCompare(ua);
+}
+// Композиция компараторов: первый ненулевой результат побеждает.
+function chain(...cmps: Array<(a: Task, b: Task) => number>) {
+  return (a: Task, b: Task): number => {
+    for (const cmp of cmps) {
+      const r = cmp(a, b);
+      if (r !== 0) return r;
+    }
+    return 0;
+  };
+}
+
+// Базовый предикат «принадлежит списку» (без линзы и сортировки).
+function inList(task: Task, listId: SmartListId, now: Date): boolean {
+  if (listId === "done") return isDone(task);
+  if (isDone(task)) return false; // все остальные списки — только незавершённое
+  const today = midnight(now);
+  const due = dueMidnight(task);
+  switch (listId) {
+    case "today":
+      return due != null && due <= today;
+    case "upcoming":
+      return due != null && due > today;
+    case "flagged":
+      return task.priority === HIGH_PRIORITY;
+    case "all":
+    case "byMarket":
+      return true;
+  }
+}
+
+function sorterFor(listId: SmartListId): (a: Task, b: Task) => number {
+  if (listId === "done") return byUpdatedDesc;
+  if (listId === "today" || listId === "upcoming") return chain(byDueAsc, byPriorityDesc, byCreatedDesc);
+  return chain(byDueAsc, byPriorityDesc, byCreatedDesc); // flagged / all / byMarket
+}
+
+// Отфильтрованный и отсортированный список задач для смарт-списка под линзой.
+export function filterTasks(tasks: Task[], listId: SmartListId, lens: Lens, me: Me | null, now: Date = new Date()): Task[] {
+  return tasks
+    .filter((t) => matchesLens(t, lens, me) && inList(t, listId, now))
+    .sort(sorterFor(listId));
+}
+
+// Счётчики для всех списков (для рельса/чипов).
+export function countLists(tasks: Task[], lens: Lens, me: Me | null, now: Date = new Date()): Record<SmartListId, number> {
+  const counts = {} as Record<SmartListId, number>;
+  for (const def of SMART_LISTS) {
+    counts[def.id] = tasks.filter((t) => matchesLens(t, lens, me) && inList(t, def.id, now)).length;
+  }
+  return counts;
+}
+
+export type MarketGroup = { country: string | null; label: string; tasks: Task[] };
+
+// Группировка незавершённых задач по рынку (страна). Без страны → «Без рынка», в конец.
+// Группы по убыванию размера, затем по коду рынка.
+export function groupByMarket(tasks: Task[], lens: Lens, me: Me | null, now: Date = new Date()): MarketGroup[] {
+  const inScope = filterTasks(tasks, "byMarket", lens, me, now);
+  const map = new Map<string | null, Task[]>();
+  for (const t of inScope) {
+    const key = t.country && t.country !== "—" ? t.country : null;
+    const bucket = map.get(key);
+    if (bucket) bucket.push(t);
+    else map.set(key, [t]);
+  }
+  return [...map.entries()]
+    .map(([country, list]) => ({ country, label: country ?? "Без рынка", tasks: list }))
+    .sort((a, b) => {
+      if (a.country === null) return 1;
+      if (b.country === null) return -1;
+      if (b.tasks.length !== a.tasks.length) return b.tasks.length - a.tasks.length;
+      return a.label.localeCompare(b.label);
+    });
+}

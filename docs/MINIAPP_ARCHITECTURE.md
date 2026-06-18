@@ -127,10 +127,15 @@ supabase functions deploy swarm-api --no-verify-jwt
 | `src/lib/api.ts` | Все запросы к swarm-api + DEV_MODE mock (tasks, sprints, dependencies) |
 | `src/lib/telegram.ts` | getInitData, initApp |
 | `src/lib/timeline.ts` | Чистые утилиты Gantt (date↔px, шкала, геометрия баров). `statusColor` (oklch) больше не используется — палитра баров берётся из токенов «Рой» (`STATUS_META`) |
-| `src/components/tasks/TasksScreen.tsx` | Обёртка с переключателем видов: Доска / Таймлайн / Спринт / Граф |
-| `src/components/KanbanBoard.tsx` | Вид «Доска»: табы статусов, поллинг |
+| `src/lib/smartLists.ts` | Чистая логика смарт-списков в стиле Reminders: `filterTasks`/`countLists`/`groupByMarket`, линза Мои/Все, списки Сегодня·Предстоящее·Важное·Все·Готово·По рынкам |
+| `src/components/tasks/TasksScreen.tsx` | Обёртка с переключателем видов: Список / Таймлайн / Спринт / Граф |
+| `src/components/tasks/RemindersTasks.tsx` | Вид «Список» (десктоп): рельс смарт-списков + спокойный чек-лист (Reminders), инлайн быстрое добавление, `TaskModal` |
+| `src/components/tasks/useReminderTasks.ts` | Общий хук вида «Список» (десктоп+мобайл): загрузка/поллинг, линза, активный список, оптимистичные toggle/удаление/quick-add |
+| `src/components/tasks/TaskRow.tsx` | Строка чек-листа: крупный чекбокс, чипы рынок/срок (красный при просрочке)/важное, аватар |
+| `src/components/tasks/SmartListNav.tsx` | Навигация по смарт-спискам: рельс (десктоп) / чипы (мобайл) |
+| `src/components/tasks/LensToggle.tsx` | Переключатель линзы Мои/Все |
 | `src/components/tasks/TimelineView.tsx` | Вид «Таймлайн»: Gantt на дизайн-системе «Рой», drag/resize баров (pointer capture); клик без сдвига (порог 4px) и чипы «без срока» открывают `TaskModal` |
-| `src/components/tasks/SprintBoard.tsx` | Вид «Спринт»: Kanban с нативным DnD, селектор спринтов, прогресс |
+| `src/components/tasks/SprintBoard.tsx` | Вид «Спринт»: Kanban с нативным DnD, селектор спринтов, прогресс (единственный канбан после ухода «Доски») |
 | `src/components/tasks/DependencyGraph.tsx` | Вид «Граф»: SVG слоистый граф зависимостей |
 | `src/components/TaskCard.tsx` | Карточка задачи + кнопки статуса |
 | `src/components/TaskModal.tsx` | Создание/редактирование задачи |
@@ -138,7 +143,7 @@ supabase functions deploy swarm-api --no-verify-jwt
 | `public/manifest.webmanifest`, `public/sw.js`, `public/icon.svg` | PWA: манифест, SW (кэширует только статику, не API), иконка |
 
 ### Модуль задач (Рой)
-Виды Timeline / Sprint / Graph работают поверх того же `swarm-api` контракта. Приватные задачи видны в miniapp только владельцу (фильтрация на бэкенде). PWA устанавливается на macOS: Safari → Поделиться → «Добавить в Dock».
+Дефолтный вид — **«Список»** в стиле macOS Reminders (смарт-списки Сегодня/Предстоящее/Важное/Все/Готово/По рынкам, линза Мои/Все, бинарный чекбокс). Десктоп и мобайл (`RoyTasksScreen`) делят логику через `useReminderTasks` + `TaskRow` + `SmartListNav`; на десктопе смарт-списки — левый рельс, на мобайле — чипы. Виды List / Timeline / Sprint / Graph работают поверх того же `swarm-api` контракта (счётчики и линза считаются на клиенте из общего `fetchTasks`). Канбан остался только в «Спринте». Приватные задачи видны в miniapp только владельцу (фильтрация на бэкенде). PWA устанавливается на macOS: Safari → Поделиться → «Добавить в Dock».
 
 ### Финальная проверка авторизации
 DEV_MODE проверяет только UI/логику. Реальный `initData` и авторизацию

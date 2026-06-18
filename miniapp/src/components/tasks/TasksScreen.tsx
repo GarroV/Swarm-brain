@@ -1,22 +1,22 @@
 "use client";
 import { useState } from "react";
-import { LayoutGrid, GanttChartSquare, Columns3, Share2 } from "lucide-react";
-import { KanbanBoard } from "@/components/KanbanBoard";
+import { ListChecks, GanttChartSquare, Columns3, Share2 } from "lucide-react";
+import { RemindersTasks } from "@/components/tasks/RemindersTasks";
 import { TimelineView } from "@/components/tasks/TimelineView";
 import { SprintBoard } from "@/components/tasks/SprintBoard";
 import { DependencyGraph } from "@/components/tasks/DependencyGraph";
 
-type View = "board" | "timeline" | "sprint" | "graph";
+type View = "list" | "timeline" | "sprint" | "graph";
 
 const VIEWS: Array<{ id: View; label: string; Icon: React.FC<{ className?: string }> }> = [
-  { id: "board", label: "Доска", Icon: LayoutGrid },
+  { id: "list", label: "Список", Icon: ListChecks },
   { id: "timeline", label: "Таймлайн", Icon: GanttChartSquare },
   { id: "sprint", label: "Спринт", Icon: Columns3 },
   { id: "graph", label: "Граф", Icon: Share2 },
 ];
 
 export function TasksScreen() {
-  const [view, setView] = useState<View>("board");
+  const [view, setView] = useState<View>("list");
 
   return (
     <div className="flex flex-col h-full">
@@ -42,7 +42,7 @@ export function TasksScreen() {
       </div>
 
       <div className="flex-1 min-h-0 flex flex-col">
-        {view === "board" && <KanbanBoard />}
+        {view === "list" && <RemindersTasks />}
         {view === "timeline" && <TimelineView />}
         {view === "sprint" && <SprintBoard />}
         {view === "graph" && <DependencyGraph />}
