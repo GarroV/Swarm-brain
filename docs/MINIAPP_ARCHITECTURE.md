@@ -206,11 +206,16 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 
 Три колонки (desktop):
 - **Слева (300px):** объединённый список = `fetchAgentMeetings("awaiting_review")` (черновики desktop-agent, первыми) + `fetchMeetings({confirmed:false})` (неподтверждённые встречи). Стат-плашки: «на согласовании» / «черновиков».
-- **Центр (flex):** детали выбранного — заголовок, источник, дата, саммари/тезисы, контент.
-- **Справа (220px):** действия — «Согласовать/Опубликовать» и «Отклонить».
+- **Центр (flex):** детали выбранного — заголовок, источник, дата, саммари/тезисы, контент. Для entry: **inline-правка СОДЕРЖАНИЯ** (`ContentEditor` → `patchMeeting(id,{content})`) + секция **«Задачи из встречи»** (`TasksFromMeeting` → `extractTasksPreview(content)` без создания → правка/удаление/добавить Себе|В общие через `createTask({is_private})`).
+- **Справа (220px):** действия — Segmented **«Общее/Личное»** (дефолт Общее) → «Согласовать/Опубликовать»; «Отклонить»; для entry — **«Не встреча → в заметки»** (`patchMeeting(id,{entry_type:"note"})`). Обновление списка/`selected` — через `onEntryUpdated`. Ошибки операций → тост.
 
 **API-операции:**
 | Действие | Entry (неподтв. встреча) | AgentMeeting (черновик) |
 |----------|--------------------------|-------------------------|
-| Согласовать | `patchMeeting(id, {confirmed:true})` | `publishAgentMeeting(id, "workspace")` |
-| Отклонить | `deleteMeeting(id)` | `deleteAgentMeeting(id)` |
+| Согласовать (Общее/Личное) | `patchMeeting(id, {confirmed:true, is_private})` | `publishAgentMeeting(id, "workspace"\|"personal")` |
+| Править содержание | `patchMeeting(id, {content})` | — |
+| Реклассифицировать | `patchMeeting(id, {entry_type:"note"})` → уходит из очереди | — |
+| Вычленить задачи | `extractTasksPreview(content)` → `createTask({is_private})` | — |
+| Отклонить | `deleteMeeting(id)` (с confirm) | `deleteAgentMeeting(id)` (с confirm) |
+
+> Бэкенд: `PATCH /meetings/:id` принимает `content`/`is_private`(+`owner_id`)/`entry_type` (swarm-api); `POST /tasks/extract { save:false }` возвращает предложения без создания.

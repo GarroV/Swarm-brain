@@ -206,6 +206,10 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 - **До сохранения (preview):** `gedit_` → сессия `granola_edit_preview_<noteId>` → инструкция → GPT переписывает → сессия восстанавливается в `granola_preview_<noteId>` → можно итерировать
 - **После сохранения (/meetings):** `medit_` → сессия `meeting_edit_summary_<entryId>` → инструкция → GPT переписывает, читая `entries.content` + `entries.summary`
 
+### swarm-api: PATCH /meetings и preview-извлечение задач (для desktop-ревью встреч)
+- `PATCH /meetings/:id` принимает (помимо `confirmed`/`summary`/`countries`): `content` (правка текста), `is_private` (+ `owner_id` задаётся/снимается как у задач), `entry_type` (реклассификация «встреча → заметка», уводит запись из очереди `GET /meetings`).
+- `POST /tasks/extract { text, save:false }` — возвращает предложенные задачи БЕЗ создания (preview). Без `save:false` (по умолчанию) — старое поведение: создаёт задачи и возвращает их.
+
 ### Swarm Meetings (desktop-agent) — В РАЗРАБОТКЕ
 Замена Read.ai/Granola: лёгкий **свой** macOS-рекордер (Swift/ScreenCaptureKit, **без форка anarlog**) пишет аудио онлайн-звонков и шлёт в Swarm Brain; **транскрибация и тезисы — в облаке (OpenAI)**, без локальной модели. Полный дизайн — `transcribator/10-REVISED-DESIGN.md`.
 ```
