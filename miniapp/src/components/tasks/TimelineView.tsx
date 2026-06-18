@@ -2,25 +2,57 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchTasks, updateTask } from "@/lib/api";
 import type { Task } from "@/types";
+import { TaskModal } from "@/components/TaskModal";
+import { STATUS_META, SectionLabel } from "@/components/roy/ui";
 import {
   DAY_WIDTH, ROW_HEIGHT, BAR_HEIGHT,
-  addDays, parseISO, diffDays, dateToX, todayISO,
-  buildDayScale, computeRange, barGeometry, statusColor,
+  addDays, parseISO, dateToX, todayISO,
+  buildDayScale, computeRange, barGeometry,
 } from "@/lib/timeline";
 
 type DragMode = "move" | "left" | "right";
 type DragState = {
-  id: string; mode: DragMode; startClientX: number; origStart: string; origDue: string;
+  id: string; mode: DragMode; startClientX: number; origStart: string; origDue: string; moved: boolean;
 };
+
+// Клик vs перетаскивание: меньше этого сдвига в px считаем кликом (→ открыть задачу).
+const CLICK_SLOP = 4;
+
+// Цвет бара по статусу — из семантических токенов «Рой» (адаптируется к dark).
+const STATUS_BAR: Record<string, string> = {
+  open: "var(--status-open)",
+  in_progress: "var(--status-prog)",
+  progress: "var(--status-prog)",
+  done: "var(--status-done)",
+  cancelled: "var(--ink-mute)",
+};
+const barBg = (status: string) => STATUS_BAR[status] ?? "var(--status-open)";
+const statusDot = (status: string) => STATUS_META[status]?.color ?? "var(--status-open)";
+
+const PRI_COLOR: Record<string, string> = { high: "var(--pri-high)", med: "var(--pri-med)", low: "var(--pri-low)" };
 
 function initials(names: string[]): string {
   if (!names.length) return "";
   return names[0].split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 }
 
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return forms[0];
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1];
+  return forms[2];
+}
+
+const LEGEND = [
+  { id: "open", label: "Открыто" },
+  { id: "in_progress", label: "В работе" },
+  { id: "done", label: "Готово" },
+];
+
 export function TimelineView() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [modalTask, setModalTask] = useState<Task | null>(null);
   const tasksRef = useRef<Task[]>([]);
   const dragRef = useRef<DragState | null>(null);
 
@@ -56,19 +88,20 @@ export function TimelineView() {
     }
   });
 
-  // ── drag/resize через pointer capture ──────────────────────────────────────
+  // ── drag/resize через pointer capture; без сдвига → клик (открыть задачу) ────
   function onPointerDown(e: React.PointerEvent, task: Task, mode: DragMode) {
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     const start = task.start_date ?? task.due_date!;
     const due = task.due_date ?? task.start_date!;
-    dragRef.current = { id: task.id, mode, startClientX: e.clientX, origStart: start, origDue: due };
+    dragRef.current = { id: task.id, mode, startClientX: e.clientX, origStart: start, origDue: due, moved: false };
   }
 
   function onPointerMove(e: React.PointerEvent) {
     const ds = dragRef.current;
     if (!ds) return;
+    if (Math.abs(e.clientX - ds.startClientX) > CLICK_SLOP) ds.moved = true;
     const deltaDays = Math.round((e.clientX - ds.startClientX) / DAY_WIDTH);
     setTasks((prev) => prev.map((t) => {
       if (t.id !== ds.id) return t;
@@ -86,100 +119,134 @@ export function TimelineView() {
     dragRef.current = null;
     const t = tasksRef.current.find((x) => x.id === ds.id);
     if (!t) return;
+    // Клик без сдвига — открыть задачу, дату не трогаем.
+    if (!ds.moved) { setModalTask(t); return; }
     updateTask(t.id, { start_date: t.start_date, due_date: t.due_date }).catch(() => loadTasks());
   }
 
   if (loading) {
-    return <p className="text-center text-muted-foreground py-12 text-sm">Загрузка…</p>;
+    return (
+      <div className="space-y-2.5 px-5 pt-5">
+        {[0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: BAR_HEIGHT, borderRadius: 10 }} />)}
+      </div>
+    );
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <header className="px-5 pt-5 pb-3">
-        <h1 className="text-2xl font-bold tracking-tight">Таймлайн</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          {withDates.length} задач с датами · перетаскивай и тяни за края
-        </p>
+    <div className="flex h-full flex-col overflow-y-auto">
+      <header className="flex items-end justify-between gap-3 px-5 pt-3 pb-3">
+        <div>
+          <h1 className="font-bold leading-[1.1] text-ink" style={{ fontSize: 28, letterSpacing: "-0.02em" }}>Таймлайн</h1>
+          <p className="text-ink-soft mt-1" style={{ fontSize: 13 }}>
+            {withDates.length} {plural(withDates.length, ["задача", "задачи", "задач"])} с датами · перетаскивай и тяни за края
+          </p>
+        </div>
+        <div className="hidden sm:flex items-center gap-3.5 pb-0.5">
+          {LEGEND.map((s) => (
+            <span key={s.id} className="inline-flex items-center gap-1.5 text-ink-soft" style={{ fontSize: 11.5 }}>
+              <span className="inline-block rounded-full" style={{ width: 8, height: 8, background: statusDot(s.id) }} />
+              {s.label}
+            </span>
+          ))}
+        </div>
       </header>
 
-      <div className="flex-1 overflow-auto">
-        <div className="relative" style={{ width: bodyWidth, minHeight: "100%" }}>
+      <div className="mx-5 overflow-auto rounded-2xl border border-line bg-surface shadow-sm" style={{ maxHeight: "58vh" }}>
+        <div className="relative" style={{ width: bodyWidth }}>
           {/* Шкала: верхняя строка — месяцы, нижняя — дни */}
-          <div className="sticky top-0 z-20 bg-background/95 backdrop-blur border-b border-border">
+          <div className="sticky top-0 z-20 bg-surface/95 backdrop-blur border-b border-line">
             <div className="flex">
               {monthSegs.map((m) => (
                 <div
                   key={m.key}
-                  className="shrink-0 overflow-hidden whitespace-nowrap border-l border-border px-2 py-1 text-[11px] font-bold text-foreground first:border-l-0"
-                  style={{ width: m.width }}
+                  className="shrink-0 overflow-hidden whitespace-nowrap border-l border-line px-2.5 py-1.5 font-bold uppercase text-ink first:border-l-0"
+                  style={{ width: m.width, fontSize: 11, letterSpacing: "0.05em" }}
                 >
                   {m.label}
                 </div>
               ))}
             </div>
-            <div className="flex border-t border-border/50">
+            <div className="flex border-t border-line/60">
               {scale.map((c) => (
                 <div
                   key={c.iso}
-                  className={`shrink-0 flex items-center justify-center py-1 text-[10px] leading-tight ${
-                    c.monthLabel ? "border-l border-border" : ""
-                  } ${c.isWeekend ? "text-muted-foreground/50" : "text-muted-foreground"}`}
+                  className={`shrink-0 flex items-center justify-center py-1 ${c.monthLabel ? "border-l border-line" : ""}`}
                   style={{ width: DAY_WIDTH }}
                 >
-                  <span className={c.isToday ? "font-bold text-foreground" : ""}>{c.dayOfMonth}</span>
+                  {c.isToday ? (
+                    <span
+                      className="inline-flex items-center justify-center rounded-full bg-primary font-bold text-white"
+                      style={{ minWidth: 18, height: 18, fontSize: 10.5, padding: "0 5px" }}
+                    >
+                      {c.dayOfMonth}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 10.5 }} className={c.isWeekend ? "text-ink-mute" : "text-ink-soft"}>
+                      {c.dayOfMonth}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
           </div>
 
           {/* Тело: фон-сетка + полосы выходных + линия "сегодня" + бары */}
-          <div className="relative" style={{ minHeight: withDates.length * ROW_HEIGHT + 16 }}>
+          <div className="relative" style={{ minHeight: withDates.length * ROW_HEIGHT + 24 }}>
             {/* выходные */}
             {scale.map((c, i) =>
               c.isWeekend ? (
-                <div key={`w${c.iso}`} className="absolute top-0 bottom-0 bg-muted/40"
-                  style={{ left: i * DAY_WIDTH, width: DAY_WIDTH }} />
+                <div key={`w${c.iso}`} className="absolute top-0 bottom-0 bg-surface-2" style={{ left: i * DAY_WIDTH, width: DAY_WIDTH, opacity: 0.6 }} />
               ) : null
             )}
             {/* вертикальные линии дней */}
             <div className="absolute inset-0 pointer-events-none"
-              style={{ backgroundImage: `repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px ${DAY_WIDTH}px)` }} />
+              style={{ backgroundImage: `repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px ${DAY_WIDTH}px)` }} />
+            {/* горизонтальные дорожки строк */}
+            <div className="absolute inset-0 pointer-events-none"
+              style={{ backgroundImage: `repeating-linear-gradient(to bottom, transparent 0 ${ROW_HEIGHT - 1}px, var(--line) ${ROW_HEIGHT - 1}px ${ROW_HEIGHT}px)`, opacity: 0.5 }} />
             {/* границы месяцев — жирнее, чем дни */}
             {monthSegs.slice(1).map((m) => (
               <div key={`mb${m.key}`} className="absolute top-0 bottom-0 pointer-events-none"
-                style={{ left: m.left, width: 1, background: "var(--muted-foreground)", opacity: 0.35 }} />
+                style={{ left: m.left, width: 1, background: "var(--line-2)" }} />
             ))}
             {/* линия "сегодня" */}
             <div className="absolute top-0 bottom-0 z-10 pointer-events-none"
-              style={{ left: todayX, width: 2, background: "oklch(0.62 0.19 264)" }} />
+              style={{ left: todayX, width: 2, background: "var(--primary)", opacity: 0.85 }} />
 
             {/* строки задач */}
             {withDates.map((t, row) => {
               const geo = barGeometry(t, rangeStart);
               if (!geo) return null;
-              const c = statusColor(t.status);
+              const bg = barBg(t.status);
+              const pri = (t.priority as "high" | "med" | "low" | null) ?? null;
               const top = row * ROW_HEIGHT + (ROW_HEIGHT - BAR_HEIGHT) / 2;
               if (geo.isMilestone) {
                 return (
-                  <div key={t.id} className="absolute z-10 flex items-center"
-                    style={{ left: geo.x, top, height: BAR_HEIGHT }}>
+                  <div key={t.id} className="absolute z-10 flex items-center" style={{ left: geo.x + DAY_WIDTH / 2 - BAR_HEIGHT / 2, top, height: BAR_HEIGHT }}>
                     <button
                       onPointerDown={(e) => onPointerDown(e, t, "move")}
                       onPointerMove={onPointerMove}
                       onPointerUp={onPointerUp}
-                      className="size-4 rotate-45 rounded-[3px] shadow-md touch-none cursor-grab active:cursor-grabbing"
-                      style={{ background: c.bar }}
+                      className="size-[18px] rotate-45 rounded-[5px] shadow-md ring-2 ring-surface touch-none cursor-grab active:cursor-grabbing transition-transform hover:scale-110"
+                      style={{ background: bg }}
                       title={t.title}
+                      aria-label={t.title}
                     />
-                    <span className="ml-2 text-xs font-medium truncate max-w-[180px]">{t.title}</span>
+                    <button
+                      onClick={() => setModalTask(t)}
+                      className="ml-2.5 inline-flex max-w-[220px] items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-left shadow-sm transition-colors hover:border-accent-line"
+                    >
+                      {pri && <span className="shrink-0 rounded-full" style={{ width: 7, height: 7, background: PRI_COLOR[pri] }} />}
+                      <span className="truncate text-ink" style={{ fontSize: 12.5, fontWeight: 600 }}>{t.title}</span>
+                    </button>
                   </div>
                 );
               }
               return (
                 <div
                   key={t.id}
-                  className="absolute z-10 rounded-lg shadow-md flex items-center px-2 group touch-none cursor-grab active:cursor-grabbing select-none"
-                  style={{ left: geo.x, top, width: geo.width, height: BAR_HEIGHT, background: c.bar }}
+                  className="group absolute z-10 flex select-none items-center gap-1.5 rounded-[10px] px-2.5 shadow-md ring-1 ring-black/5 touch-none cursor-grab active:cursor-grabbing transition-shadow hover:shadow-lg"
+                  style={{ left: geo.x, top, width: geo.width, height: BAR_HEIGHT, background: bg }}
                   onPointerDown={(e) => onPointerDown(e, t, "move")}
                   onPointerMove={onPointerMove}
                   onPointerUp={onPointerUp}
@@ -190,13 +257,13 @@ export function TimelineView() {
                     onPointerDown={(e) => onPointerDown(e, t, "left")}
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
-                    className="absolute left-0 top-0 bottom-0 w-2 rounded-l-lg cursor-ew-resize opacity-0 group-hover:opacity-100 bg-black/15"
+                    className="absolute left-0 top-0 bottom-0 w-2 rounded-l-[10px] cursor-ew-resize opacity-0 group-hover:opacity-100 bg-black/15"
                   />
-                  <span className="text-xs font-semibold truncate" style={{ color: c.text }}>
-                    {t.title}
-                  </span>
+                  {pri && <span className="shrink-0 rounded-full ring-2 ring-white/70" style={{ width: 8, height: 8, background: PRI_COLOR[pri] }} />}
+                  <span className="truncate font-semibold text-white" style={{ fontSize: 12.5 }}>{t.title}</span>
                   {t.assignees.length > 0 && (
-                    <span className="ml-auto pl-2 text-[10px] font-bold shrink-0" style={{ color: c.text }}>
+                    <span className="ml-auto inline-flex shrink-0 items-center justify-center rounded-full bg-white/25 font-bold text-white"
+                      style={{ width: 20, height: 20, fontSize: 9.5 }}>
                       {initials(t.assignees)}
                     </span>
                   )}
@@ -205,16 +272,17 @@ export function TimelineView() {
                     onPointerDown={(e) => onPointerDown(e, t, "right")}
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
-                    className="absolute right-0 top-0 bottom-0 w-2 rounded-r-lg cursor-ew-resize opacity-0 group-hover:opacity-100 bg-black/15"
+                    className="absolute right-0 top-0 bottom-0 w-2 rounded-r-[10px] cursor-ew-resize opacity-0 group-hover:opacity-100 bg-black/15"
                   />
                 </div>
               );
             })}
 
             {withDates.length === 0 && (
-              <p className="text-center text-muted-foreground py-12 text-sm">
-                Нет задач с датами. Поставь срок задаче — она появится здесь.
-              </p>
+              <div className="flex flex-col items-center gap-1 py-16 text-center">
+                <p className="font-semibold text-ink" style={{ fontSize: 14 }}>Нет задач с датами</p>
+                <p className="text-ink-soft" style={{ fontSize: 12.5 }}>Открой задачу ниже и поставь срок — она появится на таймлайне.</p>
+              </div>
             )}
           </div>
         </div>
@@ -222,22 +290,32 @@ export function TimelineView() {
 
       {/* Задачи без дат */}
       {noDates.length > 0 && (
-        <div className="border-t border-border px-5 py-3 max-h-40 overflow-y-auto">
-          <p className="text-xs font-semibold text-foreground mb-0.5">
-            Задачи без сроков · {noDates.length}
-          </p>
-          <p className="text-[11px] text-muted-foreground mb-2">
-            Не на таймлайне — поставь срок, чтобы появились выше.
+        <div className="px-5 pt-4 pb-5">
+          <SectionLabel className="!mx-0 !mb-1">Без срока · {noDates.length}</SectionLabel>
+          <p className="text-ink-soft mb-2.5" style={{ fontSize: 11.5 }}>
+            Не на таймлайне — нажми, чтобы открыть и поставить срок.
           </p>
           <div className="flex flex-wrap gap-2">
             {noDates.map((t) => (
-              <span key={t.id} className="text-xs bg-secondary text-secondary-foreground rounded-full px-3 py-1 truncate max-w-[160px]">
-                {t.title}
-              </span>
+              <button
+                key={t.id}
+                onClick={() => setModalTask(t)}
+                className="inline-flex max-w-[200px] items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-left shadow-sm transition-all hover:-translate-y-px hover:border-accent-line hover:shadow-md"
+              >
+                <span className="shrink-0 rounded-full" style={{ width: 7, height: 7, background: statusDot(t.status) }} />
+                <span className="truncate text-ink" style={{ fontSize: 12.5, fontWeight: 500 }}>{t.title}</span>
+              </button>
             ))}
           </div>
         </div>
       )}
+
+      <TaskModal
+        task={modalTask ?? undefined}
+        open={modalTask !== null}
+        onClose={() => setModalTask(null)}
+        onSaved={loadTasks}
+      />
     </div>
   );
 }

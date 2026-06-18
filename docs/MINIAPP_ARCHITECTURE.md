@@ -126,10 +126,10 @@ supabase functions deploy swarm-api --no-verify-jwt
 |------|-----------|
 | `src/lib/api.ts` | Все запросы к swarm-api + DEV_MODE mock (tasks, sprints, dependencies) |
 | `src/lib/telegram.ts` | getInitData, initApp |
-| `src/lib/timeline.ts` | Чистые утилиты Gantt (date↔px, шкала, геометрия баров, статус-палитра oklch) |
+| `src/lib/timeline.ts` | Чистые утилиты Gantt (date↔px, шкала, геометрия баров). `statusColor` (oklch) больше не используется — палитра баров берётся из токенов «Рой» (`STATUS_META`) |
 | `src/components/tasks/TasksScreen.tsx` | Обёртка с переключателем видов: Доска / Таймлайн / Спринт / Граф |
 | `src/components/KanbanBoard.tsx` | Вид «Доска»: табы статусов, поллинг |
-| `src/components/tasks/TimelineView.tsx` | Вид «Таймлайн»: editorial Gantt, drag/resize баров (pointer capture) |
+| `src/components/tasks/TimelineView.tsx` | Вид «Таймлайн»: Gantt на дизайн-системе «Рой», drag/resize баров (pointer capture); клик без сдвига (порог 4px) и чипы «без срока» открывают `TaskModal` |
 | `src/components/tasks/SprintBoard.tsx` | Вид «Спринт»: Kanban с нативным DnD, селектор спринтов, прогресс |
 | `src/components/tasks/DependencyGraph.tsx` | Вид «Граф»: SVG слоистый граф зависимостей |
 | `src/components/TaskCard.tsx` | Карточка задачи + кнопки статуса |
