@@ -403,7 +403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 }
                 let limit = 25 * 1024 * 1024
                 if fileSize(res.system) > limit || fileSize(res.mic) > limit {
-                    setState(.error("Запись длиннее ~2,3 ч (>25 МБ/дорожку). Нарезка длинных встреч — в планах."))
+                    setState(.error("Запись длиннее ~2,4 ч (>25 МБ/дорожку — лимит Whisper). Нарезка очень длинных встреч — в планах."))
                     return
                 }
 

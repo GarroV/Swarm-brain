@@ -197,14 +197,17 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
         }
         aggID = a
 
-        // 5. AAC m4a — тот же выход, что у SCK-ветки
+        // 5. AAC m4a — тот же выход, что у SCK-ветки.
+        // Битрейт 24 kbps (как у микрофона и SCK): Whisper всё равно ресемплит в 16 кГц,
+        // а 25 МБ-лимит OpenAI при 24 kbps достигается лишь к ~2,4 ч (при 128 kbps — уже к ~27 мин,
+        // из-за чего нормальные встречи ловили ложную «ошибку про 2,3 ч»).
         file = try AVAudioFile(
             forWriting: systemURL,
             settings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: inFmt.sampleRate,
                 AVNumberOfChannelsKey: inFmt.channelCount,
-                AVEncoderBitRateKey: 128_000,
+                AVEncoderBitRateKey: 24_000,
             ],
             commonFormat: .pcmFormatFloat32,
             interleaved: inFmt.isInterleaved)
