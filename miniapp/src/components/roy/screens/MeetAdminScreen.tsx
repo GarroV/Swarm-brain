@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { NavHeader, RoyCard, SectionLabel, Avatar } from "../ui";
+import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented } from "../ui";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import {
@@ -11,7 +11,10 @@ import {
   deleteMeeting,
   deleteAgentMeeting,
   publishAgentMeeting,
+  extractTasksPreview,
+  createTask,
 } from "@/lib/api";
+import type { ProposedTask } from "@/lib/api";
 import type { Entry, AgentMeeting } from "@/types";
 import { sourceLabel } from "./RoyMeetingsScreen";
 
@@ -20,6 +23,9 @@ import { sourceLabel } from "./RoyMeetingsScreen";
 type MeetItem =
   | { kind: "entry"; data: Entry }
   | { kind: "agent"; data: AgentMeeting };
+
+// Хранилище при согласовании/публикации: общее (воркспейс) либо личное.
+type Storage = "shared" | "personal";
 
 function itemId(it: MeetItem): string {
   return it.data.id;
@@ -138,9 +144,283 @@ function ListRow({
   );
 }
 
+// ── Inline-редактор содержания (entry) ────────────────────────────────────────
+
+function ContentEditor({
+  entry,
+  onSaved,
+}: {
+  entry: Entry;
+  onSaved: (updated: Entry) => void;
+}) {
+  const { toast } = useRoyNav();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(entry.content);
+  const [saving, setSaving] = useState(false);
+
+  // Если выбрали другую запись — сбросить локальное состояние редактора.
+  useEffect(() => {
+    setEditing(false);
+    setDraft(entry.content);
+    setSaving(false);
+  }, [entry.id, entry.content]);
+
+  const startEdit = () => {
+    setDraft(entry.content);
+    setEditing(true);
+  };
+
+  const cancel = () => {
+    setDraft(entry.content);
+    setEditing(false);
+  };
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const updated = await patchMeeting(entry.id, { content: draft });
+      onSaved(updated);
+      setEditing(false);
+    } catch {
+      toast("Не удалось сохранить");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hasContent = Boolean(entry.content?.trim());
+
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ margin: "0 4px 9px" }}>
+        <span className="font-bold uppercase text-ink-mute" style={{ fontSize: 12, letterSpacing: "0.05em" }}>
+          Содержание
+        </span>
+        {!editing && (
+          <button
+            type="button"
+            onClick={startEdit}
+            className="inline-flex items-center gap-1 bg-transparent border-0 font-semibold text-ink-soft transition-opacity hover:opacity-70"
+            style={{ fontSize: 11.5 }}
+          >
+            <RoyIcon name="pencil" size={13} strokeWidth={1.9} />
+            Редактировать
+          </button>
+        )}
+      </div>
+
+      {editing ? (
+        <div className="flex flex-col gap-2.5">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            disabled={saving}
+            className="w-full resize-y rounded-[12px] border border-line bg-surface text-ink leading-relaxed outline-none focus:border-[var(--accent-ink)] disabled:opacity-50"
+            style={{ fontSize: 13, padding: "10px 12px", minHeight: 220 }}
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={save}
+              className="inline-flex items-center gap-1.5 rounded-[11px] border-0 font-semibold transition-opacity disabled:opacity-50"
+              style={{ padding: "8px 14px", fontSize: 13, background: "var(--accent-ink)", color: "var(--card)" }}
+            >
+              <RoyIcon name="check" size={14} strokeWidth={2.1} />
+              {saving ? "Сохранение…" : "Сохранить"}
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={cancel}
+              className="rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-opacity disabled:opacity-50"
+              style={{ padding: "7px 14px", fontSize: 13 }}
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      ) : hasContent ? (
+        <p className="text-ink-soft leading-relaxed whitespace-pre-wrap" style={{ fontSize: 13 }}>
+          {entry.content.slice(0, 800)}{entry.content.length > 800 ? "…" : ""}
+        </p>
+      ) : (
+        <p className="text-ink-mute" style={{ fontSize: 13 }}>Содержания нет.</p>
+      )}
+    </div>
+  );
+}
+
+// ── Область «Задачи из встречи» (entry) ───────────────────────────────────────
+
+type DraftTask = ProposedTask & { _key: string };
+type TaskTarget = "personal" | "shared";
+
+function TasksFromMeeting({ entry }: { entry: Entry }) {
+  const { toast } = useRoyNav();
+  const [tasks, setTasks] = useState<DraftTask[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [addingKey, setAddingKey] = useState<string | null>(null);
+
+  // Смена выбранной записи сбрасывает локальный список предложенных задач.
+  useEffect(() => {
+    setTasks(null);
+    setLoading(false);
+    setAddingKey(null);
+  }, [entry.id]);
+
+  const extract = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const proposed = await extractTasksPreview(entry.content);
+      setTasks(proposed.map((p, i) => ({ ...p, _key: `${Date.now()}-${i}` })));
+    } catch {
+      toast("Не удалось вычленить задачи");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const setTitle = (key: string, title: string) => {
+    setTasks((prev) => prev?.map((t) => (t._key === key ? { ...t, title } : t)) ?? null);
+  };
+
+  const removeRow = (key: string) => {
+    setTasks((prev) => prev?.filter((t) => t._key !== key) ?? null);
+  };
+
+  const addTask = async (task: DraftTask, target: TaskTarget) => {
+    if (addingKey) return;
+    const title = task.title.trim();
+    if (!title) return;
+    setAddingKey(task._key);
+    try {
+      await createTask({
+        title,
+        description: task.description ?? null,
+        country: task.country ?? null,
+        due_date: task.due_date ?? null,
+        is_private: target === "personal",
+      });
+      removeRow(task._key);
+      toast("Задача добавлена");
+    } catch {
+      toast("Не удалось добавить задачу");
+    } finally {
+      setAddingKey(null);
+    }
+  };
+
+  const hasContent = Boolean(entry.content?.trim());
+
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ margin: "0 4px 9px" }}>
+        <span className="font-bold uppercase text-ink-mute" style={{ fontSize: 12, letterSpacing: "0.05em" }}>
+          Задачи из встречи
+        </span>
+        <button
+          type="button"
+          disabled={loading || !hasContent}
+          onClick={extract}
+          className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-opacity disabled:opacity-50"
+          style={{ padding: "6px 12px", fontSize: 12 }}
+        >
+          <RoyIcon name="spark" size={13} strokeWidth={1.9} />
+          {loading ? "Извлекаем…" : "Вычленить задачи"}
+        </button>
+      </div>
+
+      {!hasContent && (
+        <p className="text-ink-mute" style={{ fontSize: 12.5 }}>Нет содержания для извлечения.</p>
+      )}
+
+      {hasContent && tasks !== null && tasks.length === 0 && !loading && (
+        <p className="text-ink-mute" style={{ fontSize: 12.5 }}>Задач не найдено.</p>
+      )}
+
+      {tasks && tasks.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {tasks.map((t) => {
+            const busy = addingKey === t._key;
+            return (
+              <RoyCard key={t._key} className="px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  <input
+                    value={t.title}
+                    onChange={(e) => setTitle(t._key, e.target.value)}
+                    disabled={busy}
+                    className="min-w-0 flex-1 rounded-[9px] border border-line bg-surface text-ink font-medium outline-none focus:border-[var(--accent-ink)] disabled:opacity-50"
+                    style={{ fontSize: 13, padding: "6px 9px" }}
+                  />
+                  <button
+                    type="button"
+                    aria-label="Удалить предложенную задачу"
+                    disabled={busy}
+                    onClick={() => removeRow(t._key)}
+                    className="inline-flex shrink-0 items-center justify-center rounded-[9px] border border-line bg-surface text-ink-mute transition-opacity disabled:opacity-50"
+                    style={{ width: 30, height: 30 }}
+                  >
+                    <RoyIcon name="x" size={14} strokeWidth={1.9} />
+                  </button>
+                </div>
+                {(t.country || t.due_date) && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 px-0.5">
+                    {t.country && (
+                      <span
+                        className="inline-flex items-center font-semibold text-ink-soft bg-surface-2 border border-line-2"
+                        style={{ fontSize: 10.5, borderRadius: 6, padding: "1px 6px" }}
+                      >
+                        {t.country}
+                      </span>
+                    )}
+                    {t.due_date && (
+                      <span className="text-ink-mute" style={{ fontSize: 11 }}>
+                        до {fmtDate(t.due_date) ?? t.due_date}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => addTask(t, "personal")}
+                    className="flex-1 rounded-[10px] border border-line bg-surface font-semibold text-ink transition-opacity disabled:opacity-50"
+                    style={{ padding: "6px 10px", fontSize: 12.5 }}
+                  >
+                    Себе
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => addTask(t, "shared")}
+                    className="flex-1 rounded-[10px] border-0 font-semibold transition-opacity disabled:opacity-50"
+                    style={{ padding: "7px 10px", fontSize: 12.5, background: "var(--accent-ink)", color: "var(--card)" }}
+                  >
+                    В общие
+                  </button>
+                </div>
+              </RoyCard>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Панель деталей (центр) ────────────────────────────────────────────────────
 
-function DetailPanel({ item }: { item: MeetItem }) {
+function DetailPanel({
+  item,
+  onEntryUpdated,
+}: {
+  item: MeetItem;
+  onEntryUpdated: (updated: Entry) => void;
+}) {
   const title = itemTitle(item);
   const date = fmtDate(itemDate(item));
   const src = itemSource(item);
@@ -179,14 +459,9 @@ function DetailPanel({ item }: { item: MeetItem }) {
           </div>
         )}
 
-        {e.content && (
-          <div>
-            <SectionLabel>Содержание</SectionLabel>
-            <p className="text-ink-soft leading-relaxed whitespace-pre-wrap" style={{ fontSize: 13 }}>
-              {e.content.slice(0, 800)}{e.content.length > 800 ? "…" : ""}
-            </p>
-          </div>
-        )}
+        <ContentEditor entry={e} onSaved={onEntryUpdated} />
+
+        <TasksFromMeeting entry={e} />
       </div>
     );
   }
@@ -243,20 +518,32 @@ function ActionsPanel({
   item,
   onConfirm,
   onReject,
+  onReclassify,
 }: {
   item: MeetItem;
-  onConfirm: () => Promise<void>;
+  onConfirm: (storage: Storage) => Promise<void>;
   onReject: () => Promise<void>;
+  onReclassify: () => Promise<void>;
 }) {
   const [confirmState, setConfirmState] = useState<ActionState>("idle");
   const [rejectState, setRejectState] = useState<ActionState>("idle");
+  const [reclassState, setReclassState] = useState<ActionState>("idle");
+  const [storage, setStorage] = useState<Storage>("shared");
   const isAgent = item.kind === "agent";
+
+  // Смена выбранной записи — вернуть хранилище к дефолту.
+  useEffect(() => {
+    setStorage("shared");
+    setConfirmState("idle");
+    setRejectState("idle");
+    setReclassState("idle");
+  }, [item.data.id]);
 
   const handleConfirm = async () => {
     if (confirmState !== "idle") return;
     setConfirmState("busy");
     try {
-      await onConfirm();
+      await onConfirm(storage);
       setConfirmState("done");
     } catch {
       setConfirmState("idle");
@@ -274,12 +561,34 @@ function ActionsPanel({
     }
   };
 
+  const handleReclassify = async () => {
+    if (reclassState !== "idle") return;
+    setReclassState("busy");
+    try {
+      await onReclassify();
+      setReclassState("done");
+    } catch {
+      setReclassState("idle");
+    }
+  };
+
   const confirmLabel = confirmState === "busy" ? "…" : confirmState === "done" ? "Готово" : isAgent ? "Опубликовать" : "Согласовать";
   const rejectLabel = rejectState === "busy" ? "…" : rejectState === "done" ? "Удалено" : "Отклонить";
+  const reclassLabel = reclassState === "busy" ? "…" : reclassState === "done" ? "В заметках" : "Не встреча → в заметки";
 
   return (
     <div className="flex flex-col gap-3 px-4 py-4">
       <SectionLabel>Решение</SectionLabel>
+
+      {/* Выбор хранилища */}
+      <Segmented
+        items={[
+          { id: "shared", label: "Общее" },
+          { id: "personal", label: "Личное" },
+        ]}
+        value={storage}
+        onChange={(id) => setStorage(id as Storage)}
+      />
 
       {/* Кнопка «Согласовать / Опубликовать» */}
       <button
@@ -314,9 +623,23 @@ function ActionsPanel({
         {rejectLabel}
       </button>
 
+      {/* Реклассификация в заметки — только для entry */}
+      {!isAgent && (
+        <button
+          type="button"
+          disabled={reclassState !== "idle"}
+          onClick={handleReclassify}
+          className="flex w-full items-center justify-center gap-1.5 bg-transparent border-0 font-semibold text-ink-mute transition-opacity disabled:opacity-50 hover:opacity-70"
+          style={{ padding: "4px 8px", fontSize: 12.5 }}
+        >
+          <RoyIcon name="note" size={14} strokeWidth={1.9} />
+          {reclassLabel}
+        </button>
+      )}
+
       {isAgent && (
         <p className="text-ink-mute leading-snug" style={{ fontSize: 11 }}>
-          «Опубликовать» — сохранит тезисы в базу команды. Для полного редактирования — откройте встречу на вкладке «Встречи».
+          «Опубликовать» — сохранит тезисы в базу команды или в личное хранилище. Для полного редактирования — откройте встречу на вкладке «Встречи».
         </p>
       )}
     </div>
@@ -360,17 +683,27 @@ export function MeetAdminScreen() {
     setSelected((prev) => (prev && prev.data.id === id ? null : prev));
   };
 
-  const handleConfirm = async (item: MeetItem) => {
+  // Иммутабельно заменяет запись в списке встреч и в выбранной (если совпадает id).
+  const onEntryUpdated = (updated: Entry) => {
+    setEntries((prev) => prev?.map((e) => (e.id === updated.id ? updated : e)) ?? null);
+    setSelected((prev) =>
+      prev && prev.kind === "entry" && prev.data.id === updated.id
+        ? { kind: "entry", data: updated }
+        : prev,
+    );
+  };
+
+  const handleConfirm = async (item: MeetItem, storage: Storage) => {
     if (item.kind === "entry") {
-      // Подтверждение встречи: patchMeeting(id, { confirmed: true })
-      await patchMeeting(item.data.id, { confirmed: true });
+      // Подтверждение встречи + выбор хранилища (личное/общее)
+      await patchMeeting(item.data.id, { confirmed: true, is_private: storage === "personal" });
       removeFromList(item.data.id);
-      toast("Встреча согласована");
+      toast(storage === "personal" ? "Согласовано в личное" : "Встреча согласована");
     } else {
-      // Публикация черновика агента в базу команды: publishAgentMeeting
-      await publishAgentMeeting(item.data.id, "workspace");
+      // Публикация черновика агента в выбранную базу
+      await publishAgentMeeting(item.data.id, storage === "personal" ? "personal" : "workspace");
       removeFromList(item.data.id);
-      toast("Черновик опубликован");
+      toast(storage === "personal" ? "Опубликовано в личное" : "Черновик опубликован");
     }
   };
 
@@ -386,6 +719,14 @@ export function MeetAdminScreen() {
       removeFromList(item.data.id);
       toast("Черновик удалён");
     }
+  };
+
+  // Реклассификация встречи в заметку — убирает её из очереди встреч (entry only).
+  const handleReclassify = async (item: MeetItem) => {
+    if (item.kind !== "entry") return;
+    await patchMeeting(item.data.id, { entry_type: "note" });
+    removeFromList(item.data.id);
+    toast("Перемещено в заметки");
   };
 
   const isLoading = entries === null || agentMeetings === null;
@@ -441,7 +782,7 @@ export function MeetAdminScreen() {
         {/* ── Центр: детали ─────────────────────────────────────────────────── */}
         <div className="min-h-0 flex-1 overflow-hidden">
           {selected ? (
-            <DetailPanel item={selected} />
+            <DetailPanel item={selected} onEntryUpdated={onEntryUpdated} />
           ) : (
             <div className="flex h-full items-center justify-center">
               <div className="text-center space-y-2">
@@ -483,8 +824,9 @@ export function MeetAdminScreen() {
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <ActionsPanel
                   item={selected}
-                  onConfirm={() => handleConfirm(selected)}
+                  onConfirm={(storage) => handleConfirm(selected, storage)}
                   onReject={() => handleReject(selected)}
+                  onReclassify={() => handleReclassify(selected)}
                 />
               </div>
             </>

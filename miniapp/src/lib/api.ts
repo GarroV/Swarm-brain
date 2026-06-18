@@ -44,6 +44,19 @@ export type UpdateMeetingInput = {
   confirmed?: boolean;
   summary?: string | null;
   countries?: string[];
+  content?: string;
+  is_private?: boolean;
+  entry_type?: string;
+};
+
+// Предложенная задача из preview-извлечения (POST /tasks/extract { save:false }) —
+// ещё НЕ создана в базе; на экране ревью встреч пользователь правит/удаляет/добавляет к себе.
+export type ProposedTask = {
+  title: string;
+  description?: string | null;
+  assignee?: string | null;
+  due_date?: string | null;
+  country?: string | null;
 };
 
 export type UpdateMeInput = {
@@ -319,6 +332,17 @@ export async function extractTasks(text: string): Promise<Task[]> {
   return apiFetch<Task[]>("/tasks/extract", { method: "POST", body: JSON.stringify({ text }) });
 }
 
+// Preview-извлечение: вернуть предложенные задачи БЕЗ создания (для ревью на экране встреч).
+export async function extractTasksPreview(text: string): Promise<ProposedTask[]> {
+  if (DEV_MODE) {
+    return [
+      { title: "Свести правки по продуктовой аналитике", description: "Из обсуждения встречи", due_date: null, country: null },
+      { title: "Поделиться записью встречи маркетологов", description: null, due_date: null, country: null },
+    ];
+  }
+  return apiFetch<ProposedTask[]>("/tasks/extract", { method: "POST", body: JSON.stringify({ text, save: false }) });
+}
+
 // ── Sprints (Рой) ───────────────────────────────────────────────────────────────
 let mockSprints: Sprint[] = [
   { id: "sp1", group_id: "cee", name: "Sprint 24", start_date: "2026-06-02", end_date: "2026-06-15", status: "active", created_at: new Date().toISOString() },
@@ -519,6 +543,12 @@ export async function patchMeeting(id: string, fields: UpdateMeetingInput): Prom
       mockMeetings[idx] = { ...mockMeetings[idx], summary: fields.summary };
     if (fields.countries !== undefined)
       mockMeetings[idx] = { ...mockMeetings[idx], countries: fields.countries };
+    if (fields.content !== undefined)
+      mockMeetings[idx] = { ...mockMeetings[idx], content: fields.content };
+    if (fields.entry_type !== undefined)
+      mockMeetings[idx] = { ...mockMeetings[idx], entry_type: fields.entry_type };
+    if (fields.is_private !== undefined)
+      mockMeetings[idx] = { ...mockMeetings[idx], is_private: fields.is_private };
     return mockMeetings[idx];
   }
   return apiFetch<Entry>(`/meetings/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
