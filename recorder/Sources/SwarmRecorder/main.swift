@@ -42,7 +42,10 @@ func runSelfTest() {
                 let claim = try await client.claim(req)
                 print("SELFTEST_CLAIM meeting_id=\(claim.meetingId) decision=\(claim.decision)")
                 if claim.shouldTranscribe {
-                    let ing = try await client.uploadAudio(meetingID: claim.meetingId, systemURL: res.system, micURL: res.mic)
+                    let sysParts = try await Segmenter.segment(res.system)
+                    var micParts: [AudioPart] = []
+                    if let micURL = res.mic { micParts = try await Segmenter.segment(micURL) }
+                    let ing = try await client.uploadAudio(meetingID: claim.meetingId, system: sysParts, mic: micParts)
                     print("SELFTEST_UPLOAD meeting_id=\(claim.meetingId) status=\(ing.summaryStatus ?? "?")")
                 }
             } else {

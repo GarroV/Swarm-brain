@@ -73,9 +73,10 @@ struct SwarmClient {
     }
 
     // POST /meeting-ingest — загрузить аудио (multipart). Только если decision=transcribe.
-    // audio = системный звук (собеседники), audio_mic = микрофон (я), опционально.
-    // Сервер транскрибирует оба и сводит по таймстампам.
-    func uploadAudio(meetingID: String, systemURL: URL, micURL: URL? = nil) async throws -> IngestResponse {
+    // Контракт: sys_parts/mic_parts — JSON-манифест [{name,offset}] + файлы по этим name
+    // (sys_0, sys_1, …; mic_0, …). Короткая встреча = одна часть с offset 0; длинная нарезана
+    // Segmenter'ом на части ≤25 МБ. Сервер транскрибирует все части и сводит по таймстампам.
+    func uploadAudio(meetingID: String, system: [AudioPart], mic: [AudioPart] = []) async throws -> IngestResponse {
         let boundary = "swarm-\(UUID().uuidString)"
         var req = URLRequest(url: url("/meeting-ingest"))
         req.httpMethod = "POST"
@@ -84,21 +85,35 @@ struct SwarmClient {
 
         var body = Data()
         func append(_ s: String) { body.append(s.data(using: .utf8)!) }
+        func textField(_ name: String, _ value: String) {
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
+            append("\(value)\r\n")
+        }
         func filePart(name: String, fileURL: URL) throws {
             let fileData = try Data(contentsOf: fileURL)
             append("--\(boundary)\r\n")
-            append("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(fileURL.lastPathComponent)\"\r\n")
+            append("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(name).m4a\"\r\n")
             append("Content-Type: audio/mp4\r\n\r\n")
             body.append(fileData)
             append("\r\n")
         }
+        // Приложить файлы части по порядку и вернуть JSON-манифест [{name,offset}].
+        func appendTrack(prefix: String, parts: [AudioPart]) throws -> String {
+            var entries: [String] = []
+            for (i, p) in parts.enumerated() {
+                let fieldName = "\(prefix)_\(i)"
+                try filePart(name: fieldName, fileURL: p.url)
+                entries.append("{\"name\":\"\(fieldName)\",\"offset\":\(p.offset)}")
+            }
+            return "[" + entries.joined(separator: ",") + "]"
+        }
 
-        append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"meeting_id\"\r\n\r\n")
-        append("\(meetingID)\r\n")
-
-        try filePart(name: "audio", fileURL: systemURL)
-        if let micURL { try filePart(name: "audio_mic", fileURL: micURL) }
+        textField("meeting_id", meetingID)
+        textField("sys_parts", try appendTrack(prefix: "sys", parts: system))
+        if !mic.isEmpty {
+            textField("mic_parts", try appendTrack(prefix: "mic", parts: mic))
+        }
         append("--\(boundary)--\r\n")
 
         let (data, resp) = try await URLSession.shared.upload(for: req, from: body)

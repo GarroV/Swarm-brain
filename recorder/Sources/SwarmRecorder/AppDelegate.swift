@@ -396,17 +396,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Task {
             do {
                 let res = try await recorder.stop()
-
-                func fileSize(_ u: URL?) -> Int {
-                    guard let u, let attrs = try? FileManager.default.attributesOfItem(atPath: u.path) else { return 0 }
-                    return (attrs[.size] as? Int) ?? 0
-                }
-                let limit = 25 * 1024 * 1024
-                if fileSize(res.system) > limit || fileSize(res.mic) > limit {
-                    setState(.error("Запись длиннее ~2,4 ч (>25 МБ/дорожку — лимит Whisper). Нарезка очень длинных встреч — в планах."))
-                    return
-                }
-
                 let client = SwarmClient(config: cfg)
                 let iso = ISO8601DateFormatter()
                 let now = Date()
@@ -434,7 +423,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 }
                 let claim = try await withRetry { try await client.claim(req) }
                 if claim.shouldTranscribe {
-                    _ = try await withRetry { try await client.uploadAudio(meetingID: claim.meetingId, systemURL: res.system, micURL: res.mic) }
+                    // Длинные дорожки режем на части ≤25 МБ; короткие = одна часть с offset 0.
+                    let sysParts = try await Segmenter.segment(res.system)
+                    var micParts: [AudioPart] = []
+                    if let micURL = res.mic { micParts = try await Segmenter.segment(micURL) }
+                    _ = try await withRetry { try await client.uploadAudio(meetingID: claim.meetingId, system: sysParts, mic: micParts) }
+                    // Временные файлы нарезки (если были) — отдельные от исходников, чистим их тут.
+                    for p in sysParts where p.url != res.system { try? FileManager.default.removeItem(at: p.url) }
+                    for p in micParts where p.url != res.mic { try? FileManager.default.removeItem(at: p.url) }
                 }
                 // Записанную встречу больше не предлагать.
                 if let info = identity { dismissedKeys.insert(info.key) }

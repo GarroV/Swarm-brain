@@ -24,9 +24,14 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 interface Segment { start: number; end: number; text: string; speaker?: string }
 interface Transcript { language: string; model: string; segments: Segment[] }
-interface AudioPart { blob: Blob; name: string }
+// Часть дорожки: один файл ≤25МБ + смещение начала (сек) в общей таймлинии встречи.
+// Короткая встреча = одна часть с offset=0; длинная нарезана рекордером на N частей.
+interface AudioPart { blob: Blob; name: string; offset: number }
 interface RecorderEntry { telegram_id: number; claimed_at: string; role: string }
 interface InlineButton { text: string; url: string }
+
+// Параллелизм транскрибации частей — держим в узде, чтобы не упереться в rate-limit OpenAI.
+const TRANSCRIBE_CONCURRENCY = 4;
 
 const TEZIS_SYSTEM =
   "Ты помощник команды. Создай структурированные тезисы встречи строго по тексту стенограммы — " +
@@ -47,6 +52,24 @@ function fail(message: string, status = 400): Response {
   return json({ ok: false, error: message }, status);
 }
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// Запрос к OpenAI с ретраями на 429/5xx (учитывает Retry-After). С нарезкой на части один
+// транзиентный сбой не должен ронять всю встречу. Не-ok ответ отдаём наверх для разбора тела.
+async function openaiFetch(url: string, init: RequestInit, attempts = 4): Promise<Response> {
+  let res = await fetch(url, init);
+  for (let i = 1; i < attempts; i++) {
+    const retryable = res.status === 429 || (res.status >= 500 && res.status < 600);
+    if (res.ok || !retryable) return res;
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : Math.pow(2, i - 1) * 1000;
+    await res.body?.cancel(); // освобождаем тело перед повтором
+    await sleep(delayMs);
+    res = await fetch(url, init);
+  }
+  return res;
+}
+
 // Транскрибация аудио через OpenAI Whisper (verbose_json → сегменты с таймстампами).
 async function transcribeAudio(audio: Blob, filename: string): Promise<Transcript> {
   const form = new FormData();
@@ -55,7 +78,7 @@ async function transcribeAudio(audio: Blob, filename: string): Promise<Transcrip
   form.append("response_format", "verbose_json");
   form.append("language", "ru");
 
-  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+  const res = await openaiFetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: form,
@@ -76,8 +99,37 @@ async function transcribeAudio(audio: Blob, filename: string): Promise<Transcrip
   return { language: d.language ?? "ru", model: "whisper-1", segments };
 }
 
+// Ограниченно-параллельный map: не больше `limit` промисов в полёте одновременно.
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
+// Транскрибируем все части одной дорожки (параллельно, с ограничением) и сводим в единый
+// поток сегментов: к таймстампам каждой части прибавляем её offset (Whisper нумерует с нуля).
+async function transcribeTrack(parts: AudioPart[], speaker: string): Promise<Segment[]> {
+  const perPart = await mapLimit(parts, TRANSCRIBE_CONCURRENCY, async (p) => {
+    const t = await transcribeAudio(p.blob, p.name);
+    return t.segments.map((s) => ({
+      start: s.start + p.offset,
+      end: s.end + p.offset,
+      text: s.text,
+      speaker,
+    }));
+  });
+  return perPart.flat();
+}
+
 async function chatComplete(system: string, user: string): Promise<string> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await openaiFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({
@@ -111,22 +163,22 @@ async function sendTelegram(chatId: number, text: string, keyboard?: InlineButto
 async function processAudio(
   meetingId: string,
   title: string | null,
-  system: AudioPart,
-  mic: AudioPart | null,
+  systemParts: AudioPart[],
+  micParts: AudioPart[],
   recorders: RecorderEntry[],
 ): Promise<void> {
   // Транскрибируем системный звук (собеседники) и, если есть, микрофон (я).
-  const sys = await transcribeAudio(system.blob, system.name);
-  let segments: Segment[] = sys.segments.map((s) => ({ ...s, speaker: "собеседник" }));
-  let model = sys.model;
-  if (mic) {
-    const m = await transcribeAudio(mic.blob, mic.name);
-    segments = segments.concat(m.segments.map((s) => ({ ...s, speaker: "я" })));
-    model = `${sys.model}+mic`;
+  // Каждая дорожка может быть нарезана на части — сводим их по offset внутри transcribeTrack.
+  let segments = await transcribeTrack(systemParts, "собеседник");
+  let model = "whisper-1";
+  if (micParts.length > 0) {
+    segments = segments.concat(await transcribeTrack(micParts, "я"));
+    model = "whisper-1+mic";
   }
   // Сводим по таймстампам (общий старт сессии) → восстанавливаем порядок реплик.
   segments.sort((a, b) => a.start - b.start);
-  const transcript: Transcript = { language: sys.language, model, segments };
+  // language форсим в запросе Whisper ('ru'), поэтому фиксируем константой.
+  const transcript: Transcript = { language: "ru", model, segments };
   await supabase.from("meetings").update({ transcript, updated_at: new Date().toISOString() }).eq("id", meetingId);
 
   const transcriptText = segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n").slice(0, 100000);
@@ -150,7 +202,7 @@ async function processAudio(
 
   await supabase
     .from("meetings")
-    .update({ draft_notes_md: tezisi, title: finalTitle, updated_at: new Date().toISOString() })
+    .update({ draft_notes_md: tezisi, title: finalTitle, summary_status: "done", updated_at: new Date().toISOString() })
     .eq("id", meetingId);
 
   const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${meetingId}` : "";
@@ -160,6 +212,66 @@ async function processAudio(
   for (const r of recorders) {
     await sendTelegram(r.telegram_id, text, keyboard);
   }
+}
+
+// Ошибка разбора частей с HTTP-статусом (413 для превышения лимита, 400 для прочего).
+class PartError extends Error {
+  constructor(message: string, public status = 400) {
+    super(message);
+  }
+}
+
+// Собирает части одной дорожки. Новый путь — JSON-манифест `manifestField` ([{name,offset}])
+// + файлы по `name`. Легаси-путь — одиночный файл `legacyField` (offset 0). Файлы буферизуются
+// в память (req.formData() уже прочитал тело). Бросает PartError при невалидном вводе/превышении.
+async function buildTrackParts(
+  formData: FormData,
+  manifestField: string,
+  legacyField: string,
+  fallbackName: string,
+  legacyMinSize: number,
+): Promise<AudioPart[]> {
+  const toPart = async (file: File, name: string, offset: number): Promise<AudioPart> => {
+    const buf = await file.arrayBuffer();
+    return {
+      blob: new Blob([buf], { type: file.type || "audio/m4a" }),
+      name: file.name && file.name.length > 0 ? file.name : name,
+      offset,
+    };
+  };
+
+  const raw = formData.get(manifestField);
+  if (typeof raw === "string" && raw.length > 0) {
+    let manifest: unknown;
+    try {
+      manifest = JSON.parse(raw);
+    } catch {
+      throw new PartError(`${manifestField}: invalid JSON manifest`);
+    }
+    if (!Array.isArray(manifest)) throw new PartError(`${manifestField}: manifest must be an array`);
+    const parts: AudioPart[] = [];
+    const seen = new Set<string>();
+    for (const item of manifest as Array<{ name?: unknown; offset?: unknown }>) {
+      const name = typeof item?.name === "string" ? item.name : "";
+      const offset = Number(item?.offset);
+      if (!name) throw new PartError(`${manifestField}: part name required`);
+      if (seen.has(name)) throw new PartError(`${manifestField}: duplicate part name "${name}"`);
+      seen.add(name);
+      if (!Number.isFinite(offset) || offset < 0) throw new PartError(`${manifestField}: bad offset for "${name}"`);
+      const file = formData.get(name);
+      if (!(file instanceof File)) throw new PartError(`${manifestField}: file "${name}" missing`);
+      if (file.size === 0) throw new PartError(`${manifestField}: file "${name}" empty`);
+      if (file.size > OPENAI_AUDIO_MAX_BYTES) throw new PartError(`part "${name}" too large (>25MB)`, 413);
+      parts.push(await toPart(file, `${name}.m4a`, offset));
+    }
+    return parts;
+  }
+
+  // Легаси: один файл, offset 0. Пустой/мелкий (mic без доступа) → дорожки нет.
+  const legacy = formData.get(legacyField);
+  if (!(legacy instanceof File) || legacy.size <= legacyMinSize) return [];
+  if (legacy.size > OPENAI_AUDIO_MAX_BYTES) throw new PartError(`${legacyField} too large (>25MB)`, 413);
+  return [await toPart(legacy, fallbackName, 0)];
 }
 
 Deno.serve(async (req: Request) => {
@@ -181,29 +293,13 @@ Deno.serve(async (req: Request) => {
     return fail("expected multipart/form-data with meeting_id + audio");
   }
   const meetingId = formData.get("meeting_id");
-  const audioField = formData.get("audio");
   if (typeof meetingId !== "string" || meetingId.length === 0) {
     return fail("meeting_id required");
-  }
-  if (!(audioField instanceof File)) {
-    return fail("audio file required");
-  }
-  if (audioField.size === 0) {
-    return fail("audio is empty");
-  }
-  if (audioField.size > OPENAI_AUDIO_MAX_BYTES) {
-    return fail("audio too large (>25MB) — нужна нарезка/сжатие на стороне рекордера", 413);
-  }
-  // Опциональная вторая дорожка — микрофон владельца записи.
-  const micField = formData.get("audio_mic");
-  const micFile = micField instanceof File && micField.size > 1024 ? micField : null;
-  if (micFile && micFile.size > OPENAI_AUDIO_MAX_BYTES) {
-    return fail("audio_mic too large (>25MB)", 413);
   }
 
   const { data: meeting } = await supabase
     .from("meetings")
-    .select("id, title, claim_owner, notes_edited_at, recorders")
+    .select("id, title, claim_owner, notes_edited_at, recorders, summary_status")
     .eq("id", meetingId)
     .maybeSingle();
 
@@ -214,6 +310,7 @@ Deno.serve(async (req: Request) => {
     claim_owner: number | null;
     notes_edited_at: string | null;
     recorders: RecorderEntry[] | null;
+    summary_status: string | null;
   };
 
   // Аудио льёт только держатель права транскрибации (claim_owner).
@@ -228,24 +325,47 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true, meeting_id: meetingId, web_url: webUrl, summary_status: "skipped_human_edit" });
   }
 
-  // Считываем аудио в память до ответа, чтобы фон мог им пользоваться.
-  const sysBuf = await audioField.arrayBuffer();
-  const systemPart: AudioPart = {
-    blob: new Blob([sysBuf], { type: audioField.type || "audio/m4a" }),
-    name: audioField.name && audioField.name.length > 0 ? audioField.name : "audio.m4a",
-  };
-  let micPart: AudioPart | null = null;
-  if (micFile) {
-    const micBuf = await micFile.arrayBuffer();
-    micPart = {
-      blob: new Blob([micBuf], { type: micFile.type || "audio/m4a" }),
-      name: micFile.name && micFile.name.length > 0 ? micFile.name : "audio_mic.m4a",
-    };
+  // Идемпотентность: повторный upload (потерянный 202 → ретрай клиента) не должен запускать
+  // вторую транскрибацию. 'failed'/null — можно (пере)обработать, 'processing'/'done' — нет.
+  if (m.summary_status === "processing" || m.summary_status === "done") {
+    return json({ ok: true, meeting_id: meetingId, web_url: webUrl, summary_status: "already_processed" });
   }
-  const recorders = m.recorders ?? [];
 
-  const job = processAudio(m.id, m.title, systemPart, micPart, recorders).catch((e) => {
+  // Собираем части дорожек (файлы уже в памяти после req.formData()).
+  // Новый контракт: sys_parts/mic_parts — JSON-манифест [{name,offset}] + файлы по name.
+  // Легаси: одиночные audio/audio_mic (offset 0) для старых рекордеров.
+  let systemParts: AudioPart[];
+  let micParts: AudioPart[];
+  try {
+    systemParts = await buildTrackParts(formData, "sys_parts", "audio", "audio.m4a", 1);
+    micParts = await buildTrackParts(formData, "mic_parts", "audio_mic", "audio_mic.m4a", 1024);
+  } catch (e) {
+    if (e instanceof PartError) return fail(e.message, e.status);
+    throw e;
+  }
+  if (systemParts.length === 0) {
+    return fail("audio required (sys_parts manifest or legacy audio field)");
+  }
+
+  const recorders = m.recorders ?? [];
+  // Метим 'processing' ДО фоновой работы: зависший в этом статусе = незавершённая обработка
+  // (например, воркер убит по wall-clock на очень длинной встрече) — это видно снаружи.
+  await supabase
+    .from("meetings")
+    .update({ summary_status: "processing", updated_at: new Date().toISOString() })
+    .eq("id", m.id);
+
+  const job = processAudio(m.id, m.title, systemParts, micParts, recorders).catch(async (e) => {
     console.error(`meeting-ingest: processing failed for ${m.id}:`, e);
+    // Не глотаем: помечаем 'failed' и явно сообщаем записавшим, что обработка не удалась.
+    await supabase
+      .from("meetings")
+      .update({ summary_status: "failed", updated_at: new Date().toISOString() })
+      .eq("id", m.id);
+    const note = "⚠️ Не удалось обработать запись встречи — попробуй записать заново.";
+    for (const r of recorders) {
+      await sendTelegram(r.telegram_id, note).catch(() => {});
+    }
   });
 
   // 202 + фон: транскрибация и тезисы досчитываются после ответа.
