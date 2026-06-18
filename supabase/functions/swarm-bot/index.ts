@@ -16,7 +16,7 @@ import { handleWorkspace } from "./handlers/workspace.ts";
 import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
 import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
 import { getHelpText } from "./handlers/help.ts";
-import { mintMcpToken, buildSetupOneLiner, TOKEN_TTL_DAYS } from "./lib/mcp-setup.ts";
+import { mintMcpToken, buildSetupOneLiner, hasActiveMcpToken } from "./lib/mcp-setup.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -30,6 +30,23 @@ function bgRun(promise: Promise<void>, chatId: number): void {
   });
   // @ts-ignore - Supabase Edge Runtime API
   if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(safe);
+}
+
+// Минтит и показывает новый MCP-токен (общий путь для /mytoken и подтверждённого перевыпуска).
+async function sendMyToken(chatId: number, userId: number): Promise<void> {
+  const minted = await mintMcpToken(userId);
+  if (!minted) {
+    await sendMessage(chatId, "❌ Не удалось сгенерировать токен. Обратись к администратору.");
+    return;
+  }
+  await sendMessage(chatId,
+    `🔑 <b>Твой токен для Claude Desktop</b>\n\n` +
+    `<code>${minted.token}</code>\n` +
+    `<i>👆 Нажми на токен — скопируется целиком.</i>\n\n` +
+    `Токен <b>бессрочный</b>. Сохрани — повторно не покажу. Потеряешь — запусти /mytoken снова (старый перестанет работать).\n\n` +
+    `Проще: /setup — подключит Claude Desktop автоматически, без ручной возни.\n\n` +
+    `Отозвать прямо сейчас: /revoketoken`
+  );
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -109,6 +126,11 @@ Deno.serve(async (req: Request) => {
     await autoSyncProfile(userId, cb.from.first_name, cb.from.last_name, cb.from.username);
 
     try {
+      if (cb.data === "mtk_reissue") {
+        await sendMyToken(chatId, userId);
+        return new Response("OK", { status: 200 });
+      }
+
       const saHandled = await handleSuperadminCallbacks(cb, chatId, userId);
       if (saHandled) return new Response("OK", { status: 200 });
 
@@ -358,7 +380,6 @@ Deno.serve(async (req: Request) => {
       if (!minted) {
         await sendMessage(chatId, "❌ Не удалось подготовить подключение. Попробуй позже или напиши администратору.");
       } else {
-        const expStr = minted.expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
         await sendMessage(chatId,
           `<b>🖥 Подключаем Claude Desktop за один шаг</b> (macOS)\n\n` +
           `1️⃣ Открой приложение <b>Терминал</b>\n` +
@@ -366,25 +387,24 @@ Deno.serve(async (req: Request) => {
           `2️⃣ Вставь эту команду (⌘+V) и нажми Enter:\n\n` +
           `<code>${buildSetupOneLiner(minted.token)}</code>\n\n` +
           `3️⃣ Подожди — скрипт сам поставит всё нужное и перезапустит Claude. Готово ✅\n\n` +
-          `<i>В команде твой личный токен (действует до ${expStr}). Никому не пересылай. Отозвать: /revoketoken.</i>\n\n` +
+          `<i>В команде твой личный токен (бессрочный). Никому не пересылай. Отозвать: /revoketoken.</i>\n\n` +
           `Текст инструкций для проекта Claude → /claude`
         );
       }
     } else if (command === "/mytoken") {
       // Ручной токен (для тех, кто настраивает config сам). Авто-путь — /setup.
-      const minted = await mintMcpToken(userId);
-      if (!minted) {
-        await sendMessage(chatId, "❌ Не удалось сгенерировать токен. Обратись к администратору.");
-      } else {
-        const expStr = minted.expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
-        await sendMessage(chatId,
-          `🔑 <b>Твой токен для Claude Desktop</b>\n\n` +
-          `<code>${minted.token}</code>\n` +
-          `<i>👆 Нажми на токен — скопируется целиком.</i>\n\n` +
-          `Действует до <b>${expStr}</b> (${TOKEN_TTL_DAYS} дней). Сохрани его — повторно не покажу. Если потеряешь или истечёт — запусти /mytoken снова (старый перестанет работать).\n\n` +
-          `Проще: /setup — подключит Claude Desktop автоматически, без ручной возни.\n\n` +
-          `Отозвать прямо сейчас: /revoketoken`
+      // Если живой токен уже есть — НЕ перевыпускаем молча (это убьёт рабочий config.json).
+      // Предупреждаем и просим явного подтверждения.
+      if (await hasActiveMcpToken(userId)) {
+        await sendInlineMessage(chatId,
+          `🔑 <b>У тебя уже есть активный токен.</b>\n\n` +
+          `Если Claude Desktop уже подключён — он <b>работает</b>, делать ничего не нужно.\n\n` +
+          `Перевыпуск нужен, только если ты <b>потерял</b> токен или подозреваешь <b>утечку</b>. ` +
+          `Он <b>убьёт старый</b> — придётся заново прописать config.json (проще: /setup).`,
+          [[{ text: "🔄 Всё равно перевыпустить", callback_data: "mtk_reissue" }]]
         );
+      } else {
+        await sendMyToken(chatId, userId);
       }
     } else if (command === "/revoketoken") {
       const { error: revErr } = await supabase

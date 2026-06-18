@@ -394,7 +394,7 @@ claimer → meeting-ingest: грузит АУДИО → сервер транс�
 
 **Механизм:**
 - `allowed_users.claude_mcp_token_hash TEXT` — sha256(token) в hex; plaintext никогда не хранится
-- `allowed_users.claude_mcp_token_expires_at timestamptz` — срок жизни токена (90 дней с момента выдачи)
+- `allowed_users.claude_mcp_token_expires_at timestamptz` — срок жизни токена. **MCP-токен бессрочный**: `mintMcpToken` пишет `null`, а `swarm-mcp`/`agent-auth` трактуют `null` как «без срока» (проверка `expires_at && expires_at < now()` короткозамыкается). Колонка остаётся для рекордера и на случай возврата TTL
 - `allowed_users.recorder_token_hash`/`recorder_token_expires_at` — **отдельный токен рекордера** (`/recordertoken`, 365 дней), независимый от MCP-токена: перевыпуск `/mytoken` в Claude Desktop не ломает рекордер. `agent-auth` (meeting-claim/ingest) принимает claude_mcp_token_hash **ИЛИ** recorder_token_hash
 - Claude Desktop отправляет `Authorization: Bearer smcp_<uuid>` с каждым запросом
 - `swarm-mcp/index.ts` — одна точка проверки сразу после разбора тела запроса:
@@ -403,6 +403,7 @@ claimer → meeting-ingest: грузит АУДИО → сервер транс�
   3. Инжектируется в `args.requesting_user_id` — значение из тела игнорируется
   4. `MCP_AUTH_REQUIRED=true` → строгий режим (без токена — отказ)
 - Выдача: `/setup` в боте (минтит токен + даёт команду авто-установки, см. `swarm-setup`), `/mytoken` (ручной токен для своего config.json) или `SELECT generate_mcp_token(<telegram_id>)` в SQL. Plaintext единожды. Логика минта — общий хелпер `swarm-bot/lib/mcp-setup.ts` (`mintMcpToken`)
+- ⚠️ **`/mytoken` не перевыпускает молча**: если живой токен уже есть (`hasActiveMcpToken`), бот предупреждает и просит подтверждения кнопкой (`callback_data: mtk_reissue`) — иначе случайный `/mytoken` убил бы рабочий `config.json`. `/setup` минтит всегда (ему нужен plaintext для команды) и сам же переписывает config, поэтому самосогласован
 - Отзыв: `/revoketoken` в боте или `SELECT revoke_mcp_token(<telegram_id>)` (гасит хэш + срок)
 - ⚠️ В `claude_desktop_config.json` использовать только stdio-форму (`command`+`mcp-remote`); поле `url`/`type:http` Claude Desktop молча затирает весь `mcpServers` (anthropics/claude-code#37286)
 
