@@ -145,6 +145,34 @@ supabase functions deploy swarm-api --no-verify-jwt
 ### Модуль задач (Рой)
 Дефолтный вид — **«Список»** в стиле macOS Reminders (смарт-списки Сегодня/Предстоящее/Важное/Все/Готово/По рынкам, линза Мои/Все, бинарный чекбокс). Десктоп и мобайл (`RoyTasksScreen`) делят логику через `useReminderTasks` + `TaskRow` + `SmartListNav`; на десктопе смарт-списки — левый рельс, на мобайле — чипы. Виды List / Timeline / Sprint / Graph работают поверх того же `swarm-api` контракта (счётчики и линза считаются на клиенте из общего `fetchTasks`). Канбан остался только в «Спринте». Приватные задачи видны в miniapp только владельцу (фильтрация на бэкенде). PWA устанавливается на macOS: Safari → Поделиться → «Добавить в Dock».
 
+### Десктоп-главный экран (`RoyDashboard`) — 3 колонки
+
+**Где:** `RoyApp.tsx` рендерит `RoyDashboard` только когда `isDashboard` = desktop (`lg+`) + активна вкладка `search` + push-стек пуст. На узких экранах (`< lg`) домашняя вкладка — `SearchScreen`. Контракт named-export `RoyDashboard` не менять (его импортит `RoyApp`).
+
+**Раскладка** (`grid`, `gap:16px`, `padding:16px`):
+```
+gridTemplateColumns: minmax(260px,288px)  minmax(0,1fr)  minmax(300px,344px)
+   ├─ Лево            ├─ Центр (колонка)          └─ Право (колонка)
+   PersonalTasks      [SearchHero, Materials]       [MeetingsApprove, TeamTasks]
+```
+`minmax(0,1fr)` у центра — чтобы длинные строки не распирали грид. На случай узкого рендера колонки имеют min-width и складываются (graceful, отдельного мобильного фолбэка внутри нет — на мобайле экран не рендерится).
+
+**Модуль `src/components/roy/dash/`:**
+| Файл | Назначение |
+|------|-----------|
+| `myTasks.ts` | Чистые хелперы (без React): `splitByOwner(tasks, meId)`, `groupMine(mine, todayISO)`, `recentEntries(entries, now)`, `sortMeetingsApprovalFirst(meetings)` |
+| `useDashboardData.ts` | Единый хук данных: параллельно грузит `fetchTasks/Meetings/Entries/AgentMeetings`, берёт `me` из nav, прогоняет через хелперы. Отдаёт `{loading, mine, team, today, week, noDate, materials, meetingsApprovalFirst, pendingMeetings, reviewCount}`. `meId = me?.telegram_id` (если нет — все задачи в `team`, личные секции пусты). `todayISO` — **локальная** дата (`Intl.DateTimeFormat("en-CA")`), т.к. `groupMine` сравнивает как UTC-полночь. Ошибка любого fetch → `[]` (graceful) |
+| `shared.tsx` | Общий каркас панелей: `DashBlock` (шапка-кнопка → раскрытие, скролл-тело, `roy-shim` loading, empty), `Row`, `SubHead`, `StatusPill`, `CountBadge`/`AccentBadge`, `fmtDate`, `initials`, `relTime`, `norm` |
+| `PersonalTasks.tsx` | Лево: `groupMine` → секции «Сегодня»/«На неделе» + кнопка «+ N без срока». Шапка → `setTab("task")`. Строка → `taskDetail` |
+| `SearchHero.tsx` | Центр-верх: поле (рамка `2px ink`, `spark` primary, ⌘K-kbd) + чипы быстрых запросов. Submit/чип → `push({view:"answer"})` (+`saveRecent`). Не `DashBlock` — центрированный герой |
+| `Materials.tsx` | Центр-низ: `recentEntries` (24ч). Строка — иконка типа (`entryTagKey`), заголовок (`deriveEntryTitle`), `TypeTag`, аватар автора (`added_by`, если человеческое имя), `relTime`. Бейдж «N новых». Шапка → `setTab("book")`. Строка → `record` |
+| `MeetingsApprove.tsx` | Право-верх: `meetingsApprovalFirst` (неподтв. первыми). Бейдж «N на согласовании» = `pendingMeetings + reviewCount`. Шапка → `push({view:"meetAdmin"})`. Строка → `meetingDetail` |
+| `TeamTasks.tsx` | Право-низ: `team` (незавершённые) — аватар исполнителя (`assignees[0]`), заголовок, `StatusPill`. Шапка → `setTab("task")`. Строка → `taskDetail` |
+
+**Иконки:** в `icons.tsx` добавлен `team` (люди) для шапки «Задачи команды».
+
+**Автор записи для аватара:** берётся из `Entry.added_by` (строка-имя). Если там сырой `telegram_id` (только цифры) или пусто — аватар не показываем (graceful, отдельного поля автора в `Entry` нет).
+
 ### Финальная проверка авторизации
 DEV_MODE проверяет только UI/логику. Реальный `initData` и авторизацию
 проверяй только открыв приложение из Telegram.
