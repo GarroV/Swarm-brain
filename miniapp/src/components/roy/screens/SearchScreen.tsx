@@ -2,10 +2,25 @@
 import { useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
 import { RoyIcon } from "../icons";
-import { Avatar, SectionLabel, Chip } from "../ui";
+import { Avatar, SectionLabel, Chip, RoyCard, Market } from "../ui";
 import { RoyMark } from "../RoyMark";
+import { fetchTasks, fetchMeetings } from "@/lib/api";
+import { deriveEntryTitle } from "../entry";
+import type { Task, Entry } from "@/types";
 
 const RECENT_KEY = "roy_recent_searches";
+
+// Переиспользуем паттерн нормализации статуса из RoyDashboard
+const norm = (s: string) => (s === "progress" ? "in_progress" : s);
+
+function fmtDate(iso: string | null): string | null {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  } catch {
+    return null;
+  }
+}
 
 function loadRecent(): string[] {
   try {
@@ -30,12 +45,16 @@ function initials(name: string | undefined | null): string {
 }
 
 export function SearchScreen() {
-  const { me, push } = useRoyNav();
+  const { me, push, setTab } = useRoyNav();
   const [q, setQ] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
+  const [tasks, setTasks] = useState<Task[] | null>(null);
+  const [meetings, setMeetings] = useState<Entry[] | null>(null);
 
   useEffect(() => {
     setRecent(loadRecent());
+    fetchTasks().then(setTasks).catch(() => setTasks([]));
+    fetchMeetings().then(setMeetings).catch(() => setMeetings([]));
   }, []);
 
   const go = (query: string) => {
@@ -44,6 +63,23 @@ export function SearchScreen() {
     saveRecent(v);
     push({ view: "answer", params: { query: v } });
   };
+
+  // Задачи в работе (статус in_progress / progress)
+  const inProgressTasks = (tasks ?? []).filter((t) => norm(t.status) === "in_progress");
+  // Последняя встреча для «Продолжить». Встречи в продукте — это записи уже
+  // прошедших встреч (транскрипты Granola/Read.ai/Desktop Agent), будущих в данных
+  // нет (календарь подключён отдельно, read-only). Поэтому «самая свежая по дате» —
+  // и есть та, к которой логично вернуться.
+  const recentMeeting: Entry | null = (() => {
+    const list = [...(meetings ?? [])];
+    list.sort((a, b) => {
+      const da = new Date(a.entry_date ?? a.created_at).getTime();
+      const db = new Date(b.entry_date ?? b.created_at).getTime();
+      return db - da; // самая свежая первой
+    });
+    return list[0] ?? null;
+  })();
+  const showContinue = tasks !== null && meetings !== null && (inProgressTasks.length > 0 || recentMeeting !== null);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -78,7 +114,7 @@ export function SearchScreen() {
       </div>
 
       {recent.length > 0 && (
-        <div className="px-5 pt-6 pb-24">
+        <div className="px-5 pt-6">
           <SectionLabel>Недавнее</SectionLabel>
           <div className="flex flex-wrap gap-2">
             {recent.map((r) => (
@@ -89,6 +125,69 @@ export function SearchScreen() {
           </div>
         </div>
       )}
+
+      {showContinue && (
+        <div className="px-5 pt-6 pb-24">
+          <SectionLabel>Продолжить</SectionLabel>
+          <div className="flex flex-col gap-2">
+            {inProgressTasks.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setTab("task")}
+                className="w-full text-left transition-transform active:scale-[0.97]"
+              >
+                <RoyCard className="flex items-center gap-3 px-4 py-3">
+                  <span
+                    className="inline-flex shrink-0 items-center justify-center rounded-[10px]"
+                    style={{ width: 36, height: 36, background: "color-mix(in srgb, var(--status-prog) 14%, transparent)", color: "var(--status-prog)" }}
+                  >
+                    <RoyIcon name="task" size={18} strokeWidth={2} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-ink" style={{ fontSize: 14.5, letterSpacing: "-0.01em" }}>
+                      {inProgressTasks.length} {inProgressTasks.length === 1 ? "задача в работе" : inProgressTasks.length < 5 ? "задачи в работе" : "задач в работе"}
+                    </div>
+                    <div className="text-ink-mute" style={{ fontSize: 12 }}>Открыть в задачах</div>
+                  </div>
+                  <RoyIcon name="cright" size={16} strokeWidth={2} className="shrink-0 text-ink-mute" />
+                </RoyCard>
+              </button>
+            )}
+
+            {recentMeeting && (
+              <button
+                type="button"
+                onClick={() => push({ view: "meetingDetail", params: { id: recentMeeting.id } })}
+                className="w-full text-left transition-transform active:scale-[0.97]"
+              >
+                <RoyCard className="flex items-center gap-3 px-4 py-3">
+                  <span
+                    className="inline-flex shrink-0 items-center justify-center rounded-[10px]"
+                    style={{ width: 36, height: 36, background: "var(--meet-soft)", color: "var(--meet-ink)" }}
+                  >
+                    <RoyIcon name="meet" size={18} strokeWidth={2} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold text-ink" style={{ fontSize: 14.5, letterSpacing: "-0.01em" }}>
+                      {deriveEntryTitle(recentMeeting)}
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-2">
+                      <Market code={recentMeeting.countries?.[0]} />
+                      {(() => {
+                        const d = fmtDate(recentMeeting.entry_date ?? recentMeeting.created_at);
+                        return d ? <span className="text-ink-mute" style={{ fontSize: 12 }}>{d}</span> : null;
+                      })()}
+                    </div>
+                  </div>
+                  <RoyIcon name="cright" size={16} strokeWidth={2} className="shrink-0 text-ink-mute" />
+                </RoyCard>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!showContinue && <div className="pb-24" />}
     </div>
   );
 }

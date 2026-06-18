@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
 import { NavHeader, TypeTag, Market, SectionLabel } from "../ui";
 import { entryTagKey, deriveEntryTitle, isSearchIndexSummary } from "../entry";
-import { fetchEntry } from "@/lib/api";
+import { fetchEntry, createTask } from "@/lib/api";
 import type { Entry } from "@/types";
 
 function fmtDate(iso: string | null): string {
@@ -16,9 +16,27 @@ function fmtDate(iso: string | null): string {
 }
 
 export function RecordDetail({ id }: { id: string }) {
-  const { pop } = useRoyNav();
+  const { pop, setTab, toast } = useRoyNav();
   const [e, setE] = useState<Entry | null>(null);
   const [err, setErr] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  const handleCreateTask = async () => {
+    if (!e || creating) return;
+    setCreating(true);
+    try {
+      const title = deriveEntryTitle(e);
+      await createTask({
+        title,
+        country: e.countries?.[0] ?? null,
+      });
+      toast("Задача создана");
+      setTab("task");
+    } catch {
+      toast("Не удалось создать задачу");
+      setCreating(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -33,7 +51,7 @@ export function RecordDetail({ id }: { id: string }) {
   return (
     <div className="roy-pop flex h-full flex-col">
       <NavHeader onBack={pop} title="Запись" />
-      <div className="flex-1 overflow-y-auto px-5 pb-24">
+      <div className="flex-1 overflow-y-auto px-5 pb-28">
         {err && <div className="py-8 text-center text-sm text-ink-soft">Не удалось загрузить запись.</div>}
         {e && (
           <>
@@ -65,6 +83,17 @@ export function RecordDetail({ id }: { id: string }) {
             </p>
           </>
         )}
+      </div>
+      <div className="shrink-0 border-t border-line bg-background px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
+        <button
+          type="button"
+          onClick={handleCreateTask}
+          disabled={!e || creating}
+          className="w-full rounded-[14px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60"
+          style={{ fontSize: 15 }}
+        >
+          {creating ? "Создаём…" : "В задачу"}
+        </button>
       </div>
     </div>
   );

@@ -25,6 +25,7 @@ import { TasksScreen } from "@/components/tasks/TasksScreen";
 import { TeamScreen } from "@/components/TeamScreen";
 import { SettingsScreen } from "@/components/SettingsScreen";
 import { AdminScreen } from "@/components/AdminScreen";
+import { MeetAdminScreen } from "./screens/MeetAdminScreen";
 
 // Каркас «Рой» по дизайн-хендоффу: 4 корневых таба (Поиск/Задачи/База/Встречи) + push-стек.
 // Мобайл — нижний таб-бар; десктоп (lg+) — левый сайдбар. На десктопе вкладка «Задачи»
@@ -190,6 +191,7 @@ function PushScreen({ route }: { route: RoyRoute }) {
   if (route.view === "settings") return <Wrapped title="Настройки"><SettingsScreen /></Wrapped>;
   if (route.view === "team") return <Wrapped title="Команда"><TeamScreen /></Wrapped>;
   if (route.view === "admin") return <Wrapped title="Админ"><AdminScreen /></Wrapped>;
+  if (route.view === "meetAdmin") return <MeetAdminScreen />;
   return null;
 }
 

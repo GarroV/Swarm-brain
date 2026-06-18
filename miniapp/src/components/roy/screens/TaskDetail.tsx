@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
 import { useRoyNav } from "../nav";
-import { NavHeader, Segmented, RoyCard, PriDot, Market, Avatar, SectionLabel, IconBtn } from "../ui";
+import { NavHeader, Segmented, RoyCard, PriDot, Market, Avatar, SectionLabel, IconBtn, TypeTag } from "../ui";
 import { RoyIcon } from "../icons";
-import { fetchTask, updateTask, deleteTask } from "@/lib/api";
+import { entryTagKey, deriveEntryTitle } from "../entry";
+import { fetchTask, updateTask, deleteTask, fetchMeeting } from "@/lib/api";
 import { displayName } from "@/lib/utils";
-import type { Task } from "@/types";
+import type { Task, Entry } from "@/types";
 
 const SEGS = [
   { id: "open", label: "Открыто" },
@@ -40,13 +41,22 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 export function TaskDetail({ id }: { id: string }) {
   const { pop, push, toast } = useRoyNav();
   const [t, setT] = useState<Task | null>(null);
+  const [meeting, setMeeting] = useState<Entry | null>(null);
   const [err, setErr] = useState(false);
   const [menu, setMenu] = useState(false);
 
   useEffect(() => {
     let alive = true;
     fetchTask(id)
-      .then((x) => alive && setT(x))
+      .then((x) => {
+        if (!alive) return;
+        setT(x);
+        if (x.meeting_id) {
+          fetchMeeting(x.meeting_id)
+            .then((m) => alive && setMeeting(m))
+            .catch(() => {/* нет встречи — не показываем секцию */});
+        }
+      })
       .catch(() => alive && setErr(true));
     return () => {
       alive = false;
@@ -136,6 +146,25 @@ export function TaskDetail({ id }: { id: string }) {
                 <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 14.5, lineHeight: 1.6 }}>
                   {t.description}
                 </p>
+              </div>
+            )}
+            {meeting && (
+              <div className="mt-5">
+                <SectionLabel>Связано из базы</SectionLabel>
+                <button
+                  type="button"
+                  onClick={() => push({ view: "meetingDetail", params: { id: meeting.id } })}
+                  className="w-full text-left transition-transform active:scale-[0.99]"
+                >
+                  <RoyCard className="flex items-center gap-2 px-4 py-3">
+                    <TypeTag type={entryTagKey(meeting)} small />
+                    <Market code={meeting.countries?.[0]} />
+                    <span className="flex-1 truncate font-medium text-ink" style={{ fontSize: 14 }}>
+                      {deriveEntryTitle(meeting)}
+                    </span>
+                    <RoyIcon name="cright" size={16} strokeWidth={1.9} className="shrink-0 text-ink-soft" />
+                  </RoyCard>
+                </button>
               </div>
             )}
           </>
