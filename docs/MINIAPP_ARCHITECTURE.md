@@ -148,3 +148,40 @@ supabase functions deploy swarm-api --no-verify-jwt
 ### Финальная проверка авторизации
 DEV_MODE проверяет только UI/логику. Реальный `initData` и авторизацию
 проверяй только открыв приложение из Telegram.
+
+---
+
+### Навигация «Рой» — push-роуты (`RoyRoute`)
+
+Корневые табы: `search` · `task` · `book` · `cal` (определены в `ui.tsx:ROY_TABS`).
+Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen` рендерит нужный экран.
+
+| `view` | Параметры | Экран | Файл |
+|--------|-----------|-------|------|
+| `answer` | `{ query: string }` | RAG-ответ | `screens/AnswerScreen.tsx` |
+| `record` | `{ id: string }` | Детали записи агента | `screens/RecordDetail.tsx` |
+| `taskDetail` | `{ id: string }` | Детали задачи | `screens/TaskDetail.tsx` |
+| `newTask` | `{ id?: string }` | Создание/редактирование задачи | `screens/NewTask.tsx` |
+| `newEntry` | — | Новая запись в базу | `screens/NewEntry.tsx` |
+| `meetingDetail` | `{ id: string }` | Детали встречи (Entry) | `screens/MeetingDetail.tsx` |
+| `meetingReview` | `{ id: string }` | Вычитка черновика AgentMeeting | `MeetingReview.tsx` |
+| `meetAdmin` | — | **Desktop-ревью встреч (master-detail)** | `screens/MeetAdminScreen.tsx` |
+| `more` | — | Ещё (настройки / команда / админ) | inline `MoreScreen` в RoyApp |
+| `settings` | — | Настройки | `SettingsScreen.tsx` |
+| `team` | — | Команда | `TeamScreen.tsx` |
+| `admin` | — | Системная админка | `AdminScreen.tsx` |
+
+#### Экран `meetAdmin` — master-detail ревью встреч
+
+**Файл:** `miniapp/src/components/roy/screens/MeetAdminScreen.tsx`
+
+Три колонки (desktop):
+- **Слева (300px):** объединённый список = `fetchAgentMeetings("awaiting_review")` (черновики desktop-agent, первыми) + `fetchMeetings({confirmed:false})` (неподтверждённые встречи). Стат-плашки: «на согласовании» / «черновиков».
+- **Центр (flex):** детали выбранного — заголовок, источник, дата, саммари/тезисы, контент.
+- **Справа (220px):** действия — «Согласовать/Опубликовать» и «Отклонить».
+
+**API-операции:**
+| Действие | Entry (неподтв. встреча) | AgentMeeting (черновик) |
+|----------|--------------------------|-------------------------|
+| Согласовать | `patchMeeting(id, {confirmed:true})` | `publishAgentMeeting(id, "workspace")` |
+| Отклонить | `deleteMeeting(id)` | `deleteAgentMeeting(id)` |
