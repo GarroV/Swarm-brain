@@ -86,8 +86,23 @@ export async function saveEntry(
   // Поисковый индекс (синонимы/ключевые слова) — эмбеддится для recall, но НЕ кладётся в
   // видимый summary. Для коротких заметок, где summary иначе оставался бы синоним-мусором.
   searchText?: string,
-): Promise<{ id: string; summary: string | null }> {
+): Promise<{ id: string; summary: string | null; duplicate?: boolean }> {
   if (isPrivate && !ownerId) throw new Error("saveEntry: ownerId required when isPrivate=true");
+
+  // Дедуп: точный дубль того же контента за последние сутки в том же воркспейсе → не плодим
+  // ещё одну запись (частый кейс — повторная отправка/вставка одного текста боту). ЛЮБАЯ
+  // правка контента = не точный матч → сохраняется как отдельный вариант (оба остаются).
+  if (groupId && content.trim()) {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    let dq = supabase.from("entries").select("id, summary")
+      .eq("group_id", groupId)
+      .eq("content", content)
+      .gte("created_at", since)
+      .limit(1);
+    dq = isPrivate ? dq.eq("is_private", true).eq("owner_id", ownerId!) : dq.eq("is_private", false);
+    const { data: dup } = await dq.maybeSingle();
+    if (dup) return { id: dup.id as string, summary: (dup.summary as string | null) ?? null, duplicate: true };
+  }
 
   // Short notes (source='note') need no country extraction — always General.
   let index: EntryIndex;
