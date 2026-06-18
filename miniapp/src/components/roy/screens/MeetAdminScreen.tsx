@@ -115,7 +115,7 @@ function ListRow({
                 style={{
                   fontSize: 10,
                   color: isAgent ? "var(--status-open)" : "var(--meet-ink)",
-                  background: isAgent ? "var(--status-open)1A" : "var(--meet-soft)",
+                  background: isAgent ? "color-mix(in srgb, var(--status-open) 10%, transparent)" : "var(--meet-soft)",
                   borderRadius: 6,
                   padding: "1px 6px",
                 }}
@@ -202,7 +202,7 @@ function DetailPanel({ item }: { item: MeetItem }) {
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span
             className="inline-flex items-center font-semibold"
-            style={{ fontSize: 11, color: "var(--status-open)", background: "var(--status-open)1A", borderRadius: 7, padding: "2px 8px" }}
+            style={{ fontSize: 11, color: "var(--status-open)", background: "color-mix(in srgb, var(--status-open) 10%, transparent)", borderRadius: 7, padding: "2px 8px" }}
           >
             На вычитке
           </span>
@@ -376,10 +376,12 @@ export function MeetAdminScreen() {
 
   const handleReject = async (item: MeetItem) => {
     if (item.kind === "entry") {
+      if (typeof window !== "undefined" && !window.confirm(`Удалить встречу «${itemTitle(item)}»? Это удалит и расшифровку.`)) return;
       await deleteMeeting(item.data.id);
       removeFromList(item.data.id);
       toast("Встреча удалена");
     } else {
+      if (typeof window !== "undefined" && !window.confirm(`Удалить черновик «${itemTitle(item)}»? Это удалит расшифровку и тезисы.`)) return;
       await deleteAgentMeeting(item.data.id);
       removeFromList(item.data.id);
       toast("Черновик удалён");
