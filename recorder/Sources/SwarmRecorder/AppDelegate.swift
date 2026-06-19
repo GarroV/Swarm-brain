@@ -34,6 +34,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var recWatchTimer: Timer?
     private var callSeenDuringRec = false
     private var silentTicks = 0
+    // Дефолтный стоп: если активный созвон не детектится, запись не идёт дольше этого лимита.
+    // Бэкстоп от runaway-записи (когда детект созвона молчит — напр. ручной старт без звонка).
+    private static let maxNoCallSeconds: TimeInterval = 75 * 60   // 1ч15м
 
     private let notifyCategory = "MEETING_START"
     private let recordAction = "RECORD"
@@ -78,7 +81,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let cfg = config, configError == nil else { return }
         Task {
             let meeting = (try? await SwarmClient(config: cfg).currentMeeting()) ?? nil
-            let micOn = CallDetector.isMicActive()
+            // Реальный созвон, а не просто занятый микрофон: фильтруем системные демоны
+            // (CoreSpeech), иначе «звонок» виден всегда и сыпались бы ложные предложения записи.
+            let micOn = CallDetector.realCallActive()
             DispatchQueue.main.async { [weak self] in self?.handleDetection(meeting: meeting, micActive: micOn) }
         }
     }
@@ -360,21 +365,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc private func recWatchTick() {
         guard case .recording = state else { stopCallEndWatch(); return }
-        guard #available(macOS 14.0, *) else { return } // per-process детект только 14.0+
-        let info = CallDetector.othersUsingMicInfo()
-        dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks)")
-        if !info.isEmpty {
+        let elapsed = Date().timeIntervalSince(recordStartedAt ?? Date())
+
+        // Реальный созвон = кто-то, КРОМЕ нас и системных демонов (CoreSpeech), держит мик.
+        // На macOS <14 per-process детекта нет → realCall всегда false, работает только лимит ниже.
+        var realCall = false
+        if #available(macOS 14.0, *) {
+            let info = CallDetector.othersUsingMicInfo()
+            realCall = !info.isEmpty
+            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks) elapsed=\(Int(elapsed))s")
+        }
+
+        if realCall {
             callSeenDuringRec = true
             silentTicks = 0
-        } else if callSeenDuringRec {
-            silentTicks += 1
-            if silentTicks >= 3 { // ~15с тишины после звонка
-                dbg("AUTO-STOP: звонок завершён")
-                stopCallEndWatch()
-                postCallEndedNotification()
-                stopTapped()
-            }
+            return
         }
+
+        // Реального созвона сейчас нет — копим «тихие» тики (5с каждый).
+        silentTicks += 1
+        // (а) Созвон был и смолк ~15с → закончился → стоп.
+        if callSeenDuringRec && silentTicks >= 3 {
+            autoStop(reason: "звонок завершён")
+            return
+        }
+        // (б) Дефолтный стоп: за 1ч15м активный созвон так и не детектился (или давно смолк) →
+        // запись не должна тянуться дальше. Защита от runaway, когда детект молчит.
+        if elapsed >= Self.maxNoCallSeconds && silentTicks >= 3 {
+            autoStop(reason: "лимит 1ч15м без активного созвона")
+            return
+        }
+    }
+
+    // Единая остановка по авто-детекту: лог + уведомление + штатный стоп/отправка.
+    private func autoStop(reason: String) {
+        dbg("AUTO-STOP: \(reason)")
+        stopCallEndWatch()
+        postCallEndedNotification(body: "\(reason) — сохраняю встречу.")
+        stopTapped()
     }
 
     // Диагностика в файл (читается снаружи) — временно, для отладки авто-стопа.
@@ -389,10 +417,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    private func postCallEndedNotification() {
+    private func postCallEndedNotification(body: String = "Звонок завершён — сохраняю встречу.") {
         let content = UNMutableNotificationContent()
         content.title = "Запись остановлена"
-        content.body = "Звонок завершён — сохраняю встречу."
+        content.body = body
         content.sound = .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "callend-\(Int(Date().timeIntervalSince1970))", content: content, trigger: nil))
     }

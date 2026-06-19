@@ -29,6 +29,18 @@ enum CallDetector {
         return running != 0
     }
 
+    // Системные демоны, держащие микрофон ПОСТОЯННО (не реальные созвоны). Из-за них список
+    // «других» никогда не пустел и авто-стоп не срабатывал. Доказано пробой: com.apple.CoreSpeech
+    // (Siri/диктовка) держит вход всегда, даже когда никакого созвона нет.
+    static let ignoredMicBundles: Set<String> = ["com.apple.CoreSpeech"]
+
+    // Активен ли РЕАЛЬНЫЙ созвон: кто-то, КРОМЕ нас и системных демонов, держит вход микрофона.
+    // macOS 14+ — точный per-process детект; ниже — грубый device-level (там фильтра демонов нет).
+    static func realCallActive() -> Bool {
+        if #available(macOS 14.0, *) { return !othersUsingMicInfo().isEmpty }
+        return isMicActive()
+    }
+
     // ── per-process детект входа (macOS 14.0+), исключая свой процесс ─────────────
     @available(macOS 14.0, *)
     static func othersUsingMic() -> [pid_t] {
@@ -43,7 +55,9 @@ enum CallDetector {
             guard let pid = readPID(obj), pid > 0, pid != me else { return nil }
             // Boolean Core Audio читаем как UInt32 (4 байта), сравниваем с 1.
             guard (readU32(obj, kAudioProcessPropertyIsRunningInput) ?? 0) == 1 else { return nil }
-            return (pid, readBundle(obj) ?? "?")
+            let bundle = readBundle(obj) ?? "?"
+            if ignoredMicBundles.contains(bundle) { return nil }   // системный демон ≠ созвон
+            return (pid, bundle)
         }
     }
 
