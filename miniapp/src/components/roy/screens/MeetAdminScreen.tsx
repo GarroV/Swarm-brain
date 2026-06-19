@@ -136,6 +136,9 @@ function ListRow({
                   {date}
                 </span>
               )}
+              {item.kind === "entry" && item.data.added_by && (
+                <span className="text-ink-mute" style={{ fontSize: 11 }}>· {item.data.added_by}</span>
+              )}
             </div>
           </div>
         </div>

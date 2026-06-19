@@ -73,6 +73,9 @@ function MeetingCard({ e, onOpen, onRemove }: { e: Entry; onOpen: () => void; on
                   {fmtDate(e.entry_date || e.created_at)}
                 </span>
               )}
+              {e.added_by && (
+                <span className="text-ink-mute" style={{ fontSize: 11 }}>· {e.added_by}</span>
+              )}
             </div>
           </div>
           <span className="shrink-0" style={{ width: 90 }} />

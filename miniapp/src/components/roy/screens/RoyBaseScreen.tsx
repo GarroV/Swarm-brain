@@ -82,6 +82,9 @@ export function RoyBaseScreen() {
                     {fmtDate(e.entry_date || e.created_at)}
                   </span>
                 )}
+                {e.added_by && (
+                  <span className="text-ink-mute" style={{ fontSize: 11 }}>· {e.added_by}</span>
+                )}
               </div>
               <div className="mb-0.5 font-semibold text-ink" style={{ fontSize: 14.5, letterSpacing: "-0.01em" }}>
                 {deriveEntryTitle(e)}
