@@ -89,11 +89,12 @@ export async function saveEntry(
 ): Promise<{ id: string; summary: string | null; duplicate?: boolean }> {
   if (isPrivate && !ownerId) throw new Error("saveEntry: ownerId required when isPrivate=true");
 
-  // Дедуп: точный дубль того же контента за последние сутки в том же воркспейсе → не плодим
-  // ещё одну запись (частый кейс — повторная отправка/вставка одного текста боту). ЛЮБАЯ
-  // правка контента = не точный матч → сохраняется как отдельный вариант (оба остаются).
+  // Дедуп: точный дубль того же контента за последнюю НЕДЕЛЮ в том же воркспейсе → не плодим
+  // ещё одну запись. Кейсы: повторная отправка/вставка боту; коллега сохранил то же позже
+  // (дедуп на уровне воркспейса, не по автору). Окно недельное, т.к. точный дубль = дубль
+  // независимо от времени, а ЛЮБАЯ правка контента = не точный матч → сохраняется как вариант.
   if (groupId && content.trim()) {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     let dq = supabase.from("entries").select("id, summary")
       .eq("group_id", groupId)
       .eq("content", content)

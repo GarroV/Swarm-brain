@@ -718,13 +718,13 @@ export async function handleAdd(chatId: number, username: string, text: string, 
 
     // Синоним-индекс уходит в searchText (только для эмбеддинга/поиска), не в видимый summary.
     const noteDup = (await saveEntry(text, username, "note", {}, undefined, groupId, false, undefined, summary)).duplicate;
-    await sendMessage(chatId, noteDup ? "📌 Уже сохранено за последние сутки — дубликат не добавил." : "📌 Заметка сохранена.");
+    await sendMessage(chatId, noteDup ? "📌 Уже сохранено недавно — дубликат не добавил." : "📌 Заметка сохранена.");
     return;
   }
 
   const { summary, duplicate } = await saveEntry(text, username, "telegram", {}, undefined, groupId);
   await sendMessage(chatId, duplicate
-    ? "✅ Уже сохранено за последние сутки — дубликат не добавил."
+    ? "✅ Уже сохранено недавно — дубликат не добавил."
     : summary
     ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
     : "✅ Запись добавлена в базу знаний.");
