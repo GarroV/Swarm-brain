@@ -88,7 +88,7 @@ export function SearchScreen() {
         <div className="flex items-center gap-2">
           <RoyMark size={30} />
           <span className="font-bold" style={{ fontSize: 22, letterSpacing: "-0.01em" }}>
-            Рой
+            Swarm
           </span>
         </div>
         <button type="button" onClick={() => push({ view: "more" })} aria-label="Меню" className="transition-transform active:scale-[0.95]">

@@ -13,10 +13,10 @@ const golos = Golos_Text({ subsets: ["latin", "cyrillic"], variable: "--font-san
 const mono = JetBrains_Mono({ subsets: ["latin", "cyrillic"], variable: "--font-geist-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Рой",
+  title: "Swarm",
   description: "База знаний, встречи и задачи команды",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, title: "Рой", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Swarm", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

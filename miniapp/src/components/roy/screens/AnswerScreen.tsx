@@ -30,7 +30,7 @@ function Loading() {
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-ink-soft" style={{ fontSize: 13.5 }}>
         <RoyIcon name="spark" size={16} className="text-primary roy-spin" />
-        Рой ищет по базе, встречам и задачам…
+        Swarm ищет по базе, встречам и задачам…
       </div>
       <div className="roy-shim" style={{ height: 86, borderRadius: 16 }} />
       <div className="space-y-2.5">

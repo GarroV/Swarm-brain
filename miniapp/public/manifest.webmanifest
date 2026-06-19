@@ -1,6 +1,6 @@
 {
-  "name": "Рой — задачи",
-  "short_name": "Рой",
+  "name": "Swarm — задачи",
+  "short_name": "Swarm",
   "description": "Командные и личные задачи команды",
   "start_url": "/",
   "scope": "/",
