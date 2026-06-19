@@ -1,9 +1,6 @@
 "use client";
-import { useRoyNav } from "./nav";
-import { Avatar } from "./ui";
 import { RoyMark } from "./RoyMark";
 import { useDashboardData } from "./dash/useDashboardData";
-import { initials } from "./dash/shared";
 import { PersonalTasks } from "./dash/PersonalTasks";
 import { SearchHero } from "./dash/SearchHero";
 import { Materials } from "./dash/Materials";
@@ -17,27 +14,18 @@ import { TeamTasks } from "./dash/TeamTasks";
 // колонки складываются вертикально через grid с min-width (graceful, без отдельного фолбэка).
 
 export function RoyDashboard() {
-  const { me, push } = useRoyNav();
   const data = useDashboardData();
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* шапка: лого + аватар */}
-      <div className="flex shrink-0 items-center justify-between px-4 pb-1 pt-4">
+      <div className="flex shrink-0 items-center px-4 pb-1 pt-4">
         <div className="flex items-center gap-2.5">
           <RoyMark size={32} />
           <span className="font-bold" style={{ fontSize: 22, letterSpacing: "-0.01em" }}>
             Рой
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => push({ view: "more" })}
-          aria-label="Меню"
-          className="transition-transform active:scale-[0.95]"
-        >
-          <Avatar size={36}>{initials(me?.name)}</Avatar>
-        </button>
       </div>
 
       {/* 3 колонки: лево / центр / право. minmax(0,1fr) — чтобы центр не распирал грид. */}

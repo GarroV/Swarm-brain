@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId } from "@/lib/telegram";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { RoyNavContext, useRoyNav, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
-import { RoyTabBar, NavHeader, ROY_TABS } from "./ui";
+import { RoyTabBar, NavHeader, Avatar, ROY_TABS } from "./ui";
+import { initials } from "./dash/shared";
 import { useIsDesktop } from "./useIsDesktop";
 import { SearchScreen } from "./screens/SearchScreen";
 import { AnswerScreen } from "./screens/AnswerScreen";
@@ -142,6 +143,19 @@ export function RoyApp({ me }: { me: Me | null }) {
               </div>
             )}
           </div>
+          {/* Профиль/настройки — внизу слева (desktop, dashboard-центрично, вместо сайдбара).
+              Открывает «Ещё»: Настройки / Команда / Админ. На мобайле — аватар в шапке + таб-бар. */}
+          {isDesktop && (
+            <button
+              type="button"
+              onClick={() => push({ view: "more" })}
+              aria-label="Профиль и настройки"
+              className="absolute bottom-3 left-3 z-40 flex items-center gap-2 rounded-[12px] border border-line bg-surface px-3 py-2 shadow-[0_4px_14px_-8px_rgba(60,45,20,.4)] transition-colors hover:bg-surface-2"
+            >
+              <Avatar size={28}>{initials(me?.name)}</Avatar>
+              <span className="font-semibold text-ink-soft" style={{ fontSize: 13 }}>Ещё</span>
+            </button>
+          )}
         </div>
       </div>
     </RoyNavContext.Provider>
