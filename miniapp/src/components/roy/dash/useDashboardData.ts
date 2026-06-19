@@ -22,7 +22,7 @@ export type DashboardData = {
   week: Task[];
   /** мои задачи без срока (или дальше недели) */
   noDate: Task[];
-  /** записи базы за последние 24ч, от новых к старым */
+  /** всё за последние 24ч (заметки + встречи/расшифровки), от новых к старым */
   materials: Entry[];
   /** встречи: неподтверждённые первыми */
   meetingsApprovalFirst: Entry[];
@@ -67,7 +67,11 @@ export function useDashboardData(): DashboardData {
 
     const { today, week, noDate } = groupMine(mine, localTodayISO());
 
-    const materials = recentEntries(entries ?? [], Date.now());
+    // «Добавлено за сутки» — лента ВСЕГО, что попало в базу за 24ч: заметки/доки/ссылки
+    // (fetchEntries, entry_type=note) + встречи/расшифровки (fetchMeetings, entry_type=meeting).
+    // fetchEntries на бэкенде отдаёт только note → встречи добавляем явно, иначе свежие
+    // Granola-встречи не видны в ленте, хотя пользователь их там ждёт.
+    const materials = recentEntries([...(entries ?? []), ...(meetings ?? [])], Date.now());
 
     const meetingsApprovalFirst = sortMeetingsApprovalFirst(meetings ?? []);
     const pendingMeetings = (meetings ?? []).filter((m) => m.metadata?.confirmed !== true).length;
