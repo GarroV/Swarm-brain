@@ -207,7 +207,12 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: inFmt.sampleRate,
                 AVNumberOfChannelsKey: inFmt.channelCount,
-                AVEncoderBitRateKey: 24_000,
+                // AAC @ 48кГц требует ≥32 kbps/канал. Проверено на macOS 26: стерео@24/32/48k →
+                // AudioConverterSetProperty(kAudioConverterEncodeBitRate) FAIL (avfaudio 560226676),
+                // 64k OK; моно@24k FAIL, 32k OK. Системный тап = стерео 48кГц → прежние 24k роняли
+                // создание AVAudioFile (и запись «молча» не стартовала). Размер не критичен —
+                // Segmenter режет дорожку по 24МБ.
+                AVEncoderBitRateKey: max(32_000, Int(inFmt.channelCount) * 32_000),
             ],
             commonFormat: .pcmFormatFloat32,
             interleaved: inFmt.isInterleaved)
