@@ -150,6 +150,8 @@ supabase functions deploy swarm-api --no-verify-jwt
 
 **Где:** `RoyApp.tsx` рендерит `RoyDashboard` только когда `isDashboard` = desktop (`lg+`) + активна вкладка `search` + push-стек пуст. На узких экранах (`< lg`) домашняя вкладка — `SearchScreen`. Контракт named-export `RoyDashboard` не менять (его импортит `RoyApp`).
 
+**Навигация десктопа — dashboard-центрично (без сайдбара):** левого сайдбара нет. Дашборд — десктоп-дом; его собственная шапка даёт лого и аватар → «Ещё» (настройки/команда/админ). Разделы открываются из шапок панелей дашборда (PersonalTasks/TeamTasks → таб «Задачи», Materials → «База», MeetingsApprove → `meetAdmin`). На секции (таб ≠ `search`) сверху — тонкая строка **«← Главная»** (`setTab("search")`); push-экраны имеют свой «Назад». Мобайл — нижний `RoyTabBar` (без изменений).
+
 **Раскладка** (`grid`, `gap:16px`, `padding:16px`):
 ```
 gridTemplateColumns: minmax(260px,288px)  minmax(0,1fr)  minmax(300px,344px)
