@@ -5,8 +5,7 @@ import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId } from "@/lib/telegram";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { RoyNavContext, useRoyNav, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
-import { RoyTabBar, NavHeader, Avatar, ROY_TABS } from "./ui";
-import { RoyIcon } from "./icons";
+import { RoyTabBar, NavHeader, ROY_TABS } from "./ui";
 import { useIsDesktop } from "./useIsDesktop";
 import { SearchScreen } from "./screens/SearchScreen";
 import { AnswerScreen } from "./screens/AnswerScreen";
@@ -100,7 +99,6 @@ export function RoyApp({ me }: { me: Me | null }) {
   return (
     <RoyNavContext.Provider value={nav}>
       <div className="flex h-[100dvh] bg-background text-foreground">
-        <RoySidebar className="hidden lg:flex" />
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <div
             className={cn(
@@ -112,6 +110,19 @@ export function RoyApp({ me }: { me: Me | null }) {
               <PushScreen route={top} />
             ) : (
               <>
+                {/* Desktop dashboard-центрично: сайдбара нет, дашборд — дом. На секции
+                    (Задачи/База/Встречи) ведут шапки панелей дашборда; назад на дашборд —
+                    эта строка. Push-экраны имеют свой «Назад». Мобайл — нижний таб-бар. */}
+                {isDesktop && tab !== "search" && (
+                  <button
+                    type="button"
+                    onClick={() => setTab("search")}
+                    className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-2.5 text-left font-semibold text-ink-soft transition-colors hover:text-ink"
+                  >
+                    <RoyMark size={22} />
+                    <span style={{ fontSize: 14 }}>← Главная</span>
+                  </button>
+                )}
                 <div className="min-h-0 flex-1 overflow-hidden">
                   {tab === "search" && (isDashboard ? <RoyDashboard /> : <SearchScreen />)}
                   {tab === "task" && (isDesktop ? <TasksScreen /> : <RoyTasksScreen />)}
@@ -134,48 +145,6 @@ export function RoyApp({ me }: { me: Me | null }) {
         </div>
       </div>
     </RoyNavContext.Provider>
-  );
-}
-
-function initials(name: string | undefined | null): string {
-  if (!name || /^\d+$/.test(name.trim())) return "Я";
-  return name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("") || "Я";
-}
-
-function RoySidebar({ className }: { className?: string }) {
-  const { tab, setTab, push, me } = useRoyNav();
-  return (
-    <aside className={cn("w-[232px] shrink-0 flex-col border-r border-line bg-surface-2 px-3 py-4", className)}>
-      <div className="flex items-center gap-2 px-2 pb-5">
-        <RoyMark size={30} />
-        <span className="font-bold" style={{ fontSize: 20, letterSpacing: "-0.01em" }}>
-          Рой
-        </span>
-      </div>
-      <nav className="flex flex-col gap-1">
-        {ROY_TABS.map((t) => {
-          const on = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id as RoyTab)}
-              className={cn("flex items-center gap-3 rounded-[12px] px-3 py-2.5 font-semibold transition-colors", on ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:bg-surface")}
-              style={{ fontSize: 14.5 }}
-            >
-              <RoyIcon name={t.icon} size={20} strokeWidth={on ? 2.1 : 1.8} />
-              {t.label}
-            </button>
-          );
-        })}
-      </nav>
-      <button type="button" onClick={() => push({ view: "more" })} className="mt-auto flex items-center gap-3 rounded-[12px] px-2.5 py-2 text-left transition-colors hover:bg-surface">
-        <Avatar size={32}>{initials(me?.name)}</Avatar>
-        <span className="font-medium text-ink-soft" style={{ fontSize: 14 }}>
-          Ещё
-        </span>
-      </button>
-    </aside>
   );
 }
 
