@@ -160,8 +160,12 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
         let me = try AudioObjectID.translatePIDToProcessObject(getpid())
         let desc = CATapDescription(stereoGlobalTapButExcludeProcesses: [me])
         desc.uuid = UUID()
+        desc.name = "SwarmRecorder"
         desc.muteBehavior = .unmuted
-        desc.isPrivate = true
+        // НЕ приватный: приватный тап виден только своему процессу → macOS не регистрирует
+        // приложение в «System Audio Recording Only» и может не показать промпт. Не-приватный
+        // (как у Granola) → система сама добавляет SwarmRecorder в список разрешений + спросит доступ.
+        desc.isPrivate = false
 
         // 2. создать тап
         var t = AudioObjectID(kAudioObjectUnknown)
