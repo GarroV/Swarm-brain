@@ -10,7 +10,7 @@ import { handleEntryCommand, handleManageCallbacks, handleManageSessionInput } f
 import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput } from "./tasks/index.ts";
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
 import { handleUsers, handleUserCallbacks, handleUserSessionInput, handleBroadcast } from "./handlers/users.ts";
-import { handleGranolaCallbacks, handleGranolaCommand, handleGranolaSessionInput, pollGranolaForUser } from "./handlers/granola.ts";
+import { handleGranolaCallbacks, handleGranolaCommand, handleGranolaSessionInput, pollGranolaForUser, ingestNewGranolaNotesAllUsers } from "./handlers/granola.ts";
 import { handleFeedbackCommand, handleFeedbackCallbacks, handleFeedbackPhoto, handleFeedbackSessionInput } from "./handlers/feedback.ts";
 import { handleWorkspace } from "./handlers/workspace.ts";
 import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
@@ -58,7 +58,7 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { return new Response("Bad Request", { status: 400 }); }
 
   // ── Cron triggers (требуют X-Cron-Secret) ────────────────────────────────────
-  if (body.setup_commands === true || body.digest_cron === true || body.readai_token_refresh === true) {
+  if (body.setup_commands === true || body.digest_cron === true || body.readai_token_refresh === true || body.granola_poll === true) {
     if (!CRON_SECRET || req.headers.get("X-Cron-Secret") !== CRON_SECRET) {
       return new Response("Forbidden", { status: 403 });
     }
@@ -89,6 +89,11 @@ Deno.serve(async (req: Request) => {
   if (body.digest_cron === true) {
     await sendAllDigests(7);
     return new Response("OK", { status: 200 });
+  }
+
+  if (body.granola_poll === true) {
+    const count = await ingestNewGranolaNotesAllUsers();
+    return new Response(`OK: ${count} new granola meetings`, { status: 200 });
   }
 
   if (body.readai_token_refresh === true) {

@@ -17,7 +17,8 @@
 | Функция | Триггер | Назначение |
 |---------|---------|-----------|
 | `swarm-bot` | Telegram webhook POST | Главный бот — весь пользовательский флоу |
-| `granola-poller` | Cron (каждый час) | Опрашивает Granola API для всех пользователей, шлёт уведомления в Telegram |
+| `swarm-bot` (`granola_poll`) | Cron (каждый час) | Импортирует новые заметки Granola как черновики `confirmed:false` (видны в вебе «на согласовании» + Telegram-ревью). Заменил standalone `granola-poller` |
+| `granola-poller` | ⚠️ выведен из крона | Устаревшая standalone-функция: только слала уведомление в Telegram, в БД ничего не клала. Логика переехала в `swarm-bot` (`ingestNewGranolaNotesAllUsers`) |
 | `read-ai-webhook` | Webhook от Read.ai | Принимает завершённые встречи, сохраняет в `entries`, уведомляет бота |
 | `read-ai-auth` | HTTP redirect (OAuth) | OAuth callback для авторизации Read.ai, сохраняет токен в `app_settings` |
 | `swarm-mcp` | MCP (Claude Desktop) | MCP-сервер для Claude Desktop: поиск, добавление знаний, управление задачами |
@@ -188,12 +189,18 @@ content + [existingSummary?]
          → [gd_] пропустить (запись в skipped_note_ids)
 ```
 
-### Granola (автоматический поллер)
+### Granola (автоматический поллер) — зеркало Read.ai
 ```
-granola-poller (hourly cron) → новые заметки за период
-  → Telegram: кнопки [🔍 Тезисы / 🗑 Пропустить]  ← callback обрабатывает swarm-bot
-  → дальше тот же флоу что ручной (gp_, gedit_, gc_, gcp_, gd_)
+hourly cron → swarm-bot { granola_poll:true } → ingestNewGranolaNotesAllUsers (handlers/granola.ts)
+  → для каждой новой заметки (дедуп по granola_note_id + skipped, окно 48ч, ≤10/прогон):
+      тезисы (GPT) + эмбеддинг → insert в entries (source=granola, entry_type=meeting, confirmed=FALSE)
+  → встреча сразу видна в вебе «на согласовании» (GET /meetings?confirmed=false)
+  → Telegram: те же кнопки ревью что у Read.ai [✅ Сохранить mc_ / ✏️ Название met_ / 📅 Дата med_ / 🗑 Удалить md_]
+  → подтверждение в вебе (PATCH confirmed:true) ИЛИ в Telegram (mc_) — единый флоу meetings.ts
 ```
+> Принцип: «всё что в Telegram, то и в вебе». Старая standalone-функция `granola-poller`
+> (только слала уведомление, ничего не клала в БД) **выведена из крона** этим флоу.
+> Ручной `/granola` (ниже) сохраняет сразу `confirmed:true` — это явное действие пользователя.
 
 ### Read.ai (автоматически)
 ```

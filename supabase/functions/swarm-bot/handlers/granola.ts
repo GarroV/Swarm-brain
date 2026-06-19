@@ -7,6 +7,16 @@ import type { TgCallbackQuery } from "../lib/types.ts";
 
 const GRANOLA_API = "https://public-api.granola.ai/v1";
 
+// Единый промпт тезисов — используется при ручном сохранении, авто-импорте и предпросмотре,
+// чтобы тезисы Granola выглядели одинаково независимо от точки входа.
+const GRANOLA_TEZISY_PROMPT =
+  "Ты помощник команды. Создай структурированные тезисы встречи строго по тексту — " +
+  "не домысливай и не добавляй информацию которой нет в тексте.\n" +
+  "Формат: ### Тема\n- тезис\n- тезис\n\n" +
+  "Темы называй широко: 'Персонал', 'IT / Технические проблемы', 'Поставки', 'Финансы / Эквайринг', " +
+  "'Строительство', 'Маркетинг', 'Операции', 'Региональные новости' и т.п. " +
+  "Только то что реально обсуждалось. Без выдумок.";
+
 type GranolaNote = {
   id: string;
   title: string;
@@ -141,6 +151,70 @@ async function offerNextGranolaNote(chatId: number, telegramId: number): Promise
   ]]);
 }
 
+type PreparedGranolaEntry = {
+  title: string;
+  content: string;
+  tezises: string;
+  entryDate: string | null;
+  countries: string[];
+  embedding: number[];
+};
+
+// Собирает поля записи из заметки Granola (контент → тезисы → страны → эмбеддинг).
+// Возвращает null, если заметку не удалось получить. Общий код для ручного сохранения
+// (saveGranolaNote, confirmed:true) и авто-импорта (ingest, confirmed:false).
+async function prepareGranolaEntry(
+  noteId: string,
+  telegramId: number,
+  cached?: GranolaPreviewCache,
+): Promise<PreparedGranolaEntry | null> {
+  let title: string;
+  let content: string;
+  let tezises: string;
+
+  if (cached) {
+    title = cached.title;
+    content = cached.content;
+    tezises = cached.tezises;
+  } else {
+    const apiKey = await getUserApiKey(telegramId);
+    if (!apiKey) return null;
+
+    const note = await fetchGranolaNote(apiKey, noteId);
+    if (!note) return null;
+
+    title = (note.title as string) || "Встреча";
+    content = buildNoteContent(note);
+    tezises = await chatComplete(GRANOLA_TEZISY_PROMPT, content.slice(0, 12000));
+  }
+
+  // Extract entry_date from content (content always has it in "Дата: ..." line)
+  const entryDateMatch = content.match(/Дата: .*?(\d{2}\.\d{2}\.\d{4})/);
+  let entryDate: string | null = null;
+  if (entryDateMatch) {
+    const [dd, mm, yyyy] = entryDateMatch[1].split(".");
+    entryDate = `${yyyy}-${mm}-${dd}`;
+  }
+
+  const entryMeta = await extractEntryMeta(content.slice(0, 4000));
+
+  // General tag: no specific country or broad multi-country coverage
+  const countries = [...entryMeta.countries];
+  const specific = countries.filter((c) => c !== "General");
+  if (specific.length === 0 || specific.length >= 3) {
+    countries.push("General");
+  }
+
+  // Embed tezisy + countries (not raw 10k content) — same strategy as saveEntry
+  const embeddingText = [
+    tezises ?? "",
+    specific.length > 0 ? `Страны: ${specific.join(", ")}` : "",
+  ].filter(Boolean).join("\n").slice(0, 8000);
+  const embedding = await getEmbedding(embeddingText || content.slice(0, 8000));
+
+  return { title, content, tezises, entryDate, countries, embedding };
+}
+
 async function saveGranolaNote(
   noteId: string,
   telegramId: number,
@@ -156,63 +230,12 @@ async function saveGranolaNote(
   }
   await sendMessage(chatId, "Сохраняю в базу знаний...");
 
-  let title: string;
-  let content: string;
-  let tezises: string;
-
-  if (cached) {
-    title = cached.title;
-    content = cached.content;
-    tezises = cached.tezises;
-  } else {
-    const apiKey = await getUserApiKey(telegramId);
-    if (!apiKey) {
-      await sendMessage(chatId, "Granola не подключена. Используй /connect granola <ключ>");
-      return false;
-    }
-
-    const note = await fetchGranolaNote(apiKey, noteId);
-    if (!note) {
-      await sendMessage(chatId, "Не удалось получить заметку из Granola.");
-      return false;
-    }
-
-    title = (note.title as string) || "Встреча";
-    content = buildNoteContent(note);
-    tezises = await chatComplete(
-      "Ты помощник команды. Создай структурированные тезисы встречи строго по тексту — " +
-      "не домысливай и не добавляй информацию которой нет в тексте.\n" +
-      "Формат: ### Тема\n- тезис\n- тезис\n\n" +
-      "Темы называй широко: 'Персонал', 'IT / Технические проблемы', 'Поставки', 'Финансы / Эквайринг', " +
-      "'Строительство', 'Маркетинг', 'Операции', 'Региональные новости' и т.п. " +
-      "Только то что реально обсуждалось. Без выдумок.",
-      content.slice(0, 12000)
-    );
+  const prepared = await prepareGranolaEntry(noteId, telegramId, cached);
+  if (!prepared) {
+    await sendMessage(chatId, "Не удалось получить заметку из Granola.");
+    return false;
   }
-
-  // Extract entry_date from content if not cached (content always has it in "Дата: ..." line)
-  const entryDateMatch = content.match(/Дата: .*?(\d{2}\.\d{2}\.\d{4})/);
-  let entryDate: string | null = null;
-  if (entryDateMatch) {
-    const [dd, mm, yyyy] = entryDateMatch[1].split(".");
-    entryDate = `${yyyy}-${mm}-${dd}`;
-  }
-
-  const entryMeta = await extractEntryMeta(content.slice(0, 4000));
-
-  // General tag: no specific country or broad multi-country coverage
-  const countries = [...entryMeta.countries];
-  const specific = countries.filter(c => c !== "General");
-  if (specific.length === 0 || specific.length >= 3) {
-    countries.push("General");
-  }
-
-  // Embed tezisy + countries (not raw 10k content) — same strategy as saveEntry
-  const embeddingText = [
-    tezises ?? "",
-    specific.length > 0 ? `Страны: ${specific.join(", ")}` : "",
-  ].filter(Boolean).join("\n").slice(0, 8000);
-  const embedding = await getEmbedding(embeddingText || content.slice(0, 8000));
+  const { title, content, tezises, entryDate, countries, embedding } = prepared;
 
   const { error } = await supabase.from("entries").insert({
     content,
@@ -336,6 +359,110 @@ export async function pollGranolaForUser(chatId: number, telegramId: number): Pr
   return newNotes.length;
 }
 
+// Сколько новых заметок импортировать за один прогон на пользователя — чтобы тяжёлый
+// (LLM-тезисы + эмбеддинг на каждую) часовой крон не упёрся в лимит времени функции.
+// Остаток подхватится на следующем часу (дедуп по granola_note_id не даст дублей).
+const MAX_GRANOLA_INGEST_PER_USER = 10;
+
+// Авто-импорт новых заметок Granola как черновиков «на согласовании» (confirmed:false).
+// Зеркало вебхука Read.ai: создаёт запись entry + шлёт те же кнопки ревью (mc_/met_/med_/md_),
+// поэтому встреча сразу видна И в Telegram, И в вебе («на согласовании»). Дедуп — через
+// getProcessedIds (уже сохранённые granola_note_id + skipped). Окно — фиксированные 48ч
+// (как pollGranolaForUser): дедуп защищает от повторов, а сбойную вставку подхватит след. прогон.
+async function ingestNewGranolaNotesForUser(integration: {
+  telegram_id: number;
+  api_key: string;
+}): Promise<number> {
+  const groupId = await getUserGroupId(integration.telegram_id);
+  if (!groupId) return 0; // пользователь не привязан к воркспейсу — пропускаем
+
+  const since = new Date(Date.now() - 48 * 3_600_000).toISOString();
+  const notes = await fetchNotesSince(integration.api_key, since);
+  if (!notes.length) return 0;
+
+  const processedIds = await getProcessedIds(integration.telegram_id);
+  const newNotes = notes
+    .filter((n) => !processedIds.has(n.id))
+    .slice(0, MAX_GRANOLA_INGEST_PER_USER);
+
+  let created = 0;
+  for (const note of newNotes) {
+    const prepared = await prepareGranolaEntry(note.id, integration.telegram_id);
+    if (!prepared) continue;
+    const { title, content, tezises, entryDate, countries, embedding } = prepared;
+
+    const { data: inserted, error } = await supabase.from("entries").insert({
+      content,
+      summary: tezises,
+      embedding,
+      added_by: "granola",
+      source: "granola",
+      metadata: {
+        granola_note_id: note.id,
+        title,
+        entry_date: entryDate,
+        confirmed: false,
+        added_by_telegram_id: integration.telegram_id,
+      },
+      countries,
+      entry_type: "meeting",
+      entry_date: entryDate,
+      group_id: groupId,
+    }).select("id").single();
+    if (error || !inserted) {
+      console.error("granola ingest insert error", integration.telegram_id, note.id, error?.message);
+      continue;
+    }
+    created++;
+
+    const entryId = (inserted as { id: string }).id;
+    const ts = note.calendar_event?.scheduled_start_time ?? note.created_at;
+    const date = new Date(ts).toLocaleString("ru-RU", {
+      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+    const attendeeNames = (note.attendees ?? [])
+      .map((a) => a.name || a.email || "").filter(Boolean).slice(0, 4).join(", ");
+    let text = `📓 <b>Новая встреча Granola</b>\n<b>${title}</b>\n📅 ${date}`;
+    if (attendeeNames) text += `\n👥 ${attendeeNames}`;
+    text += `\n\nДобавлена в «на согласовании». Проверьте и подтвердите:`;
+    await sendInlineMessage(integration.telegram_id, text, [
+      [
+        { text: "✅ Сохранить", callback_data: `mc_${entryId}` },
+        { text: "✏️ Название", callback_data: `met_${entryId}` },
+        { text: "📅 Дата", callback_data: `med_${entryId}` },
+      ],
+      [{ text: "🗑 Удалить", callback_data: `md_${entryId}` }],
+    ]);
+  }
+
+  return created;
+}
+
+// Часовой крон (cron → swarm-bot { granola_poll:true }): импортирует новые заметки Granola
+// у всех подключённых пользователей. Заменяет standalone-функцию granola-poller, которая
+// только слала уведомление в Telegram и ничего не клала в БД.
+export async function ingestNewGranolaNotesAllUsers(): Promise<number> {
+  const { data: integrations } = await supabase
+    .from("user_integrations")
+    .select("telegram_id, api_key")
+    .eq("service", "granola");
+  if (!integrations?.length) return 0;
+
+  let total = 0;
+  for (const integration of integrations as Array<{ telegram_id: number; api_key: string }>) {
+    try {
+      total += await ingestNewGranolaNotesForUser(integration);
+    } catch (err) {
+      console.error("granola ingest error", integration.telegram_id, err);
+    }
+    // Курсор двигаем для информативности; на корректность дедупа он не влияет (окно фикс. 48ч).
+    await supabase.from("user_integrations")
+      .update({ last_polled_at: new Date().toISOString() })
+      .eq("telegram_id", integration.telegram_id).eq("service", "granola");
+  }
+  return total;
+}
+
 export async function handleGranolaCommand(chatId: number, telegramId: number): Promise<void> {
   const apiKey = await getUserApiKey(telegramId);
   if (!apiKey) {
@@ -394,15 +521,7 @@ export async function handleGranolaCallbacks(
 
     const title = (note.title as string) || "Встреча";
     const content = buildNoteContent(note);
-    const tezises = await chatComplete(
-      "Ты помощник команды. Создай структурированные тезисы встречи строго по тексту — " +
-      "не домысливай и не добавляй информацию которой нет в тексте.\n" +
-      "Формат: ### Тема\n- тезис\n- тезис\n\n" +
-      "Темы называй широко: 'Персонал', 'IT / Технические проблемы', 'Поставки', 'Финансы / Эквайринг', " +
-      "'Строительство', 'Маркетинг', 'Операции', 'Региональные новости' и т.п. " +
-      "Только то что реально обсуждалось. Без выдумок.",
-      content.slice(0, 12000)
-    );
+    const tezises = await chatComplete(GRANOLA_TEZISY_PROMPT, content.slice(0, 12000));
 
     await setSession(chatId, `granola_preview_${noteId}`, JSON.stringify({ content, title, tezises }));
 
