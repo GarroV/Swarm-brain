@@ -108,20 +108,46 @@ open SwarmRecorder.app
 
 Платный Apple Developer-аккаунт и нотаризацию не используем. Два пути:
 
-**А. Сборка на машине (рекомендуется)** — локально собранное приложение Gatekeeper **не
-карантинит**, TCC-разрешения стабильны между обновлениями:
+**А. Сборка на машине (рекомендуется):**
 ```sh
 cd swarm/recorder
-./install.sh          # соберёт, поставит в /Applications, откроет
+./install.sh          # соберёт, подпишет, поставит в /Applications, откроет
 ```
 Нужны Command Line Tools (`xcode-select --install`). Дальше в меню — «Вставить токен…».
+
+### Стабильная подпись (TCC) — один раз на машину
+macOS привязывает выданные разрешения (Screen & System Audio Recording и пр.) к **designated
+requirement** подписи = `identifier + certificate leaf`, **не** к cdhash. Со **стабильным
+самоподписанным cert** разрешение выдаётся ОДИН раз и держится между пересборками. Ad-hoc-подпись
+(`-s -`) cert не имеет → DR схлопывается в cdhash → грант слетает каждую сборку. `build-app.sh`
+подписывает идентичностью `SwarmRecorder Self-Signed`, если она есть (иначе ad-hoc + предупреждение).
+
+Создать её **один раз** (CLI; либо Keychain Access → Certificate Assistant → Create a Certificate →
+тип «Code Signing», self-signed root):
+```sh
+openssl req -x509 -newkey rsa:2048 -keyout /tmp/cs.key -out /tmp/cs.crt -days 3650 -nodes \
+  -subj "/CN=SwarmRecorder Self-Signed" \
+  -addext "basicConstraints=critical,CA:false" \
+  -addext "keyUsage=critical,digitalSignature" \
+  -addext "extendedKeyUsage=critical,codeSigning"
+# -legacy/-macalg sha1 — иначе macOS `security` не примет p12 от OpenSSL 3 («MAC verification failed»)
+openssl pkcs12 -export -inkey /tmp/cs.key -in /tmp/cs.crt -out /tmp/cs.p12 \
+  -passout pass:temp -name "SwarmRecorder Self-Signed" -legacy -macalg sha1
+security import /tmp/cs.p12 -k ~/Library/Keychains/login.keychain-db -P temp -T /usr/bin/codesign
+# доверие для code signing (подтвердить системный диалог паролем):
+security add-trusted-cert -r trustRoot -p codeSign -k ~/Library/Keychains/login.keychain-db /tmp/cs.crt
+rm -f /tmp/cs.key /tmp/cs.crt /tmp/cs.p12
+security find-identity -v -p codesigning    # должна появиться «SwarmRecorder Self-Signed»
+```
+НЕ пересоздавать cert и НЕ переносить app из `/Applications` — и то, и другое меняет DR → грант сбросится.
+Энтайтлмент для системного звука (Core Audio process-tap) НЕ нужен (приложение без sandbox и без
+hardened runtime; в `build-app.sh` намеренно нет `--options runtime`). Хватает `NSAudioCaptureUsageDescription` + TCC-грант.
 
 **Б. Получили `.zip` с собранным `.app`** — снять карантин и открыть:
 ```sh
 xattr -dr com.apple.quarantine SwarmRecorder.app && open SwarmRecorder.app
 ```
-Минус: ad-hoc подпись меняется при каждой пересборке → после обновления TCC-разрешения может
-понадобиться выдать заново. Для частых обновлений путь А удобнее.
+(в этом случае подпись чужая/ad-hoc → разрешения придётся выдать на своей машине заново; путь А стабильнее).
 
 ## Что дальше (итерации)
 1. ~~Дедуп по комнате из ссылки (Meet/Контур)~~ ✅; ~~авто-детект звонка по микрофону с согласием~~ ✅; ~~онбординг токена~~ ✅ («Вставить токен…»). Календарь сознательно не используется.

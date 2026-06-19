@@ -15,10 +15,17 @@ enum Permissions {
         return CGRequestScreenCaptureAccess()
     }
 
-    // Открывает прямо нужную панель настроек (выдать доступ к записи экрана/системного звука).
+    // Открывает панель «Screen & System Audio Recording» — там же живёт разрешение
+    // Core Audio process-tap (macOS 14.4+, TCC-сервис kTCCServiceScreenCapture). Отдельной
+    // «System Audio»-панели/anchor НЕТ — правильный anchor именно Privacy_ScreenCapture.
+    // Сначала пробуем современный bundle id (Sequoia+), затем легаси-фолбэк.
     static func openScreenRecordingSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
+        let anchors = [
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+        ]
+        for s in anchors {
+            if let url = URL(string: s), NSWorkspace.shared.open(url) { return }
         }
     }
 

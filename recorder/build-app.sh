@@ -38,12 +38,30 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-echo "[3/4] ad-hoc подпись…"
-codesign --force --deep -s - "$APP"
+echo "[3/4] подпись…"
+# Стабильная самоподпись: TCC привязывает разрешения к designated requirement
+# (identifier + certificate leaf), а не к cdhash. Один и тот же cert → DR не меняется
+# между пересборками → «System Audio Recording» выдаётся ОДИН раз и держится.
+# Ad-hoc (-s -) не имеет cert → DR схлопывается в cdhash → грант слетает каждую сборку.
+# Cert создаётся один раз (см. README, раздел «Стабильная подпись (TCC)»).
+IDENTITY="SwarmRecorder Self-Signed"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
+  codesign --force --timestamp=none -s "$IDENTITY" "$APP"
+  if codesign -d --requirements - "$APP" 2>&1 | grep -q 'certificate leaf'; then
+    echo "  → стабильная подпись (DR cert-based) — TCC-грант переживёт пересборки ✅"
+  else
+    echo "ОШИБКА: подпись не cert-based (DR без certificate leaf) — TCC сбросится"; exit 1
+  fi
+else
+  echo "  ⚠ Нет стабильного cert «$IDENTITY» — ad-hoc подпись (разрешения будут слетать!)."
+  echo "    Создай cert один раз: см. recorder/README.md → «Стабильная подпись (TCC)»."
+  codesign --force -s - "$APP"
+fi
 
 echo "[4/4] проверка подписи…"
 codesign -v --verbose=2 "$APP" 2>&1 || true
 
-echo "Готово: $(pwd)/$APP"
-echo "Запуск:  open $APP   (или двойной клик)"
+echo "Готово (бандл собран): $(pwd)/$APP"
+echo "НЕ запускай отсюда — установи в /Applications:  ./install.sh"
+echo "  (запуск из папки сборки = другой путь → TCC-грант привяжется к нему и сбросится)"
 echo "Логи:    log stream --predicate 'process == \"SwarmRecorder\"'  (или Console.app)"

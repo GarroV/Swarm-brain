@@ -195,6 +195,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         } else {
             menu.addItem(NSMenuItem(title: "Вставить токен из буфера", action: #selector(pasteTokenTapped), keyEquivalent: ""))
         }
+        // Бэкстоп: macOS-разрешение на запись системного звука можно открыть вручную в любой
+        // момент (Core Audio process-tap при отказе иногда даёт тишину без ошибки → catch не сработает).
+        menu.addItem(NSMenuItem(title: "Открыть настройки записи", action: #selector(openRecordingSettingsTapped), keyEquivalent: ""))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Выйти", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         for item in menu.items where item.action != nil && item.action != #selector(NSApplication.terminate(_:)) {
@@ -238,6 +241,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func setState(_ s: State) {
         state = s
         DispatchQueue.main.async { self.rebuildMenu() }
+    }
+
+    @objc private func openRecordingSettingsTapped() {
+        Permissions.openScreenRecordingSettings()
     }
 
     @objc private func openWeb() {
@@ -327,7 +334,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 setState(.recording)
                 startCallEndWatch()
             } catch {
-                setState(.error("Не удалось начать запись: \(error). Первый запуск? Разреши «System Audio Recording» в System Settings → Privacy и попробуй снова."))
+                setState(.error("Не удалось начать запись: \(error). Первый запуск? Открыл настройки — включи SwarmRecorder в «Screen & System Audio Recording», затем «Записать» снова."))
+                Permissions.openScreenRecordingSettings()
             }
         }
     }
