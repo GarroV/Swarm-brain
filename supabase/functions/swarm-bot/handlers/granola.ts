@@ -170,12 +170,10 @@ async function prepareGranolaEntry(
 ): Promise<PreparedGranolaEntry | null> {
   let title: string;
   let content: string;
-  let tezises: string;
 
   if (cached) {
     title = cached.title;
     content = cached.content;
-    tezises = cached.tezises;
   } else {
     const apiKey = await getUserApiKey(telegramId);
     if (!apiKey) return null;
@@ -185,8 +183,16 @@ async function prepareGranolaEntry(
 
     title = (note.title as string) || "Встреча";
     content = buildNoteContent(note);
-    tezises = await chatComplete(GRANOLA_TEZISY_PROMPT, content.slice(0, 12000));
   }
+
+  // Тезисы (если нет кэша) и метаданные — два независимых LLM-вызова, считаем параллельно.
+  // Последовательно они упирали авто-импорт в idle-timeout функции (150с).
+  const [tezises, entryMeta] = await Promise.all([
+    cached
+      ? Promise.resolve(cached.tezises)
+      : chatComplete(GRANOLA_TEZISY_PROMPT, content.slice(0, 12000)),
+    extractEntryMeta(content.slice(0, 4000)),
+  ]);
 
   // Extract entry_date from content (content always has it in "Дата: ..." line)
   const entryDateMatch = content.match(/Дата: .*?(\d{2}\.\d{2}\.\d{4})/);
@@ -195,8 +201,6 @@ async function prepareGranolaEntry(
     const [dd, mm, yyyy] = entryDateMatch[1].split(".");
     entryDate = `${yyyy}-${mm}-${dd}`;
   }
-
-  const entryMeta = await extractEntryMeta(content.slice(0, 4000));
 
   // General tag: no specific country or broad multi-country coverage
   const countries = [...entryMeta.countries];
@@ -359,10 +363,10 @@ export async function pollGranolaForUser(chatId: number, telegramId: number): Pr
   return newNotes.length;
 }
 
-// Сколько новых заметок импортировать за один прогон на пользователя — чтобы тяжёлый
-// (LLM-тезисы + эмбеддинг на каждую) часовой крон не упёрся в лимит времени функции.
-// Остаток подхватится на следующем часу (дедуп по granola_note_id не даст дублей).
-const MAX_GRANOLA_INGEST_PER_USER = 10;
+// Сколько новых заметок импортировать за один прогон на пользователя. Каждая = LLM-тезисы +
+// извлечение метаданных + эмбеддинг (~12-15с даже с распараллеливанием), а у функции idle-timeout
+// 150с — поэтому держим запас. Остаток подхватится на следующем часу (дедуп по granola_note_id).
+const MAX_GRANOLA_INGEST_PER_USER = 6;
 
 // Авто-импорт новых заметок Granola как черновиков «на согласовании» (confirmed:false).
 // Зеркало вебхука Read.ai: создаёт запись entry + шлёт те же кнопки ревью (mc_/met_/med_/md_),
