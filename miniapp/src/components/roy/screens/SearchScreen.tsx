@@ -6,21 +6,10 @@ import { Avatar, SectionLabel, Chip, RoyCard, Market } from "../ui";
 import { RoyMark } from "../RoyMark";
 import { fetchTasks, fetchMeetings } from "@/lib/api";
 import { deriveEntryTitle } from "../entry";
+import { fmtDate, norm } from "../dash/shared";
 import type { Task, Entry } from "@/types";
 
 const RECENT_KEY = "roy_recent_searches";
-
-// Переиспользуем паттерн нормализации статуса из RoyDashboard
-const norm = (s: string) => (s === "progress" ? "in_progress" : s);
-
-function fmtDate(iso: string | null): string | null {
-  if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-  } catch {
-    return null;
-  }
-}
 
 function loadRecent(): string[] {
   try {
