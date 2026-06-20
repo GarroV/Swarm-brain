@@ -51,7 +51,7 @@ function MeetingRow({ e, onOpen }: { e: Entry; onOpen: () => void }) {
 }
 
 export function MeetingsApprove({ data, className }: { data: DashboardData; className?: string }) {
-  const { push } = useRoyNav();
+  const { push, setTab } = useRoyNav();
   const { loading, meetingsApprovalFirst, pendingMeetings, reviewCount } = data;
   const approvalCount = pendingMeetings + reviewCount;
 
@@ -71,6 +71,16 @@ export function MeetingsApprove({ data, className }: { data: DashboardData; clas
       {meetingsApprovalFirst.map((e) => (
         <MeetingRow key={e.id} e={e} onOpen={() => push({ view: "meetingDetail", params: { id: e.id } })} />
       ))}
+      {/* Полный список встреч (Все/Ожидают/Подтверждены) — на desktop сайдбара нет, поэтому
+          вход во вкладку «Встречи» здесь. Шапка панели ведёт в ревью (meetAdmin). */}
+      <button
+        type="button"
+        onClick={() => setTab("cal")}
+        className="mt-1 block w-full rounded-[10px] py-2 text-center font-semibold text-ink-mute transition-colors hover:bg-surface-2 hover:text-primary"
+        style={{ fontSize: 12 }}
+      >
+        Все встречи →
+      </button>
     </DashBlock>
   );
 }
