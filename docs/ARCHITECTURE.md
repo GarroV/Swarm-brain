@@ -162,6 +162,15 @@ supabase/functions/swarm-bot/
 ### Пайплайн `saveEntry` / `buildEntryIndex`
 ```
 content + [existingSummary?]
+  → дедуп+группировка (ТОЛЬКО source telegram|note, при groupId):
+      кандидаты = ≤40 свежих записей той же видимости в воркспейсе за неделю
+      1) near-identical → return {..., duplicate:true} (запись не плодим):
+           точный матч по нормализации (любая длина)
+           ИЛИ триграм-Жаккар ≥0.95 (только для контента >100 симв)
+      2) группировка фрагментов (source telegram, тот же added_by, окно 60с):
+           дописать новый текст к найденной записи + переиндексировать
+           → return {..., merged:true}
+      (document/pdf/voice/read_ai/digest НЕ дедупим — у документа чанки в цикле)
   → buildEntryIndex (1 GPT вызов):
       если нет summary  → {summary, countries, entry_type, entry_date, keywords}
       если есть summary → {countries, entry_type, entry_date, keywords}  (summary not re-generated)
