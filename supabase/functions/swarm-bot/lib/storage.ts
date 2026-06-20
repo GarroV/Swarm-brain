@@ -74,6 +74,22 @@ export async function extractEntryMeta(text: string): Promise<{ countries: strin
   } catch { return { countries: idx.countries, entry_type: idx.entry_type, entry_date: idx.entry_date }; }
 }
 
+// Char-trigram Jaccard similarity — детект near-identical контента (повторная отправка
+// с мелкой правкой). 1.0 = идентично; для разного текста быстро падает.
+function trigramSimilarity(a: string, b: string): number {
+  const grams = (s: string): Set<string> => {
+    const t = s.replace(/\s+/g, " ").trim().toLowerCase();
+    const g = new Set<string>();
+    for (let i = 0; i < t.length - 2; i++) g.add(t.slice(i, i + 3));
+    return g;
+  };
+  const A = grams(a), B = grams(b);
+  if (A.size === 0 || B.size === 0) return A.size === B.size ? 1 : 0;
+  let inter = 0;
+  for (const x of A) if (B.has(x)) inter++;
+  return inter / (A.size + B.size - inter);
+}
+
 export async function saveEntry(
   content: string,
   addedBy: string,
@@ -86,23 +102,58 @@ export async function saveEntry(
   // Поисковый индекс (синонимы/ключевые слова) — эмбеддится для recall, но НЕ кладётся в
   // видимый summary. Для коротких заметок, где summary иначе оставался бы синоним-мусором.
   searchText?: string,
-): Promise<{ id: string; summary: string | null; duplicate?: boolean }> {
+): Promise<{ id: string; summary: string | null; duplicate?: boolean; merged?: boolean }> {
   if (isPrivate && !ownerId) throw new Error("saveEntry: ownerId required when isPrivate=true");
 
-  // Дедуп: точный дубль того же контента за последнюю НЕДЕЛЮ в том же воркспейсе → не плодим
-  // ещё одну запись. Кейсы: повторная отправка/вставка боту; коллега сохранил то же позже
-  // (дедуп на уровне воркспейса, не по автору). Окно недельное, т.к. точный дубль = дубль
-  // независимо от времени, а ЛЮБАЯ правка контента = не точный матч → сохраняется как вариант.
-  if (groupId && content.trim()) {
-    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    let dq = supabase.from("entries").select("id, summary")
+  // ── Дедуп + группировка фрагментов ──────────────────────────────────────────────
+  // Только для ручных текстовых сохранений (add_knowledge: telegram/note). Source
+  // document/pdf/voice/read_ai/digest НЕ дедупим: документы сохраняются чанками в
+  // цикле — похожий чанк нельзя молча выкинуть (потеря части документа), а транскрипты
+  // и дайджесты дедуп не требуют. Кандидаты — недавние записи той же видимости в воркспейсе.
+  if (groupId && content.trim() && (source === "telegram" || source === "note")) {
+    const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+    const target = norm(content);
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    let cq = supabase.from("entries")
+      .select("id, content, summary, added_by, source, created_at")
       .eq("group_id", groupId)
-      .eq("content", content)
-      .gte("created_at", since)
-      .limit(1);
-    dq = isPrivate ? dq.eq("is_private", true).eq("owner_id", ownerId!) : dq.eq("is_private", false);
-    const { data: dup } = await dq.maybeSingle();
-    if (dup) return { id: dup.id as string, summary: (dup.summary as string | null) ?? null, duplicate: true };
+      .gte("created_at", weekAgo)
+      .order("created_at", { ascending: false })
+      .limit(40);
+    cq = isPrivate ? cq.eq("is_private", true).eq("owner_id", ownerId!) : cq.eq("is_private", false);
+    const { data: recent } = await cq;
+    const cands = (recent ?? []) as Array<{ id: string; content: string; summary: string | null; added_by: string; source: string; created_at: string }>;
+
+    // 1) NEAR-IDENTICAL дедуп: точный (по нормализации) ИЛИ ≥95% похожий (триграмы, только
+    //    для существенного текста >100 симв) за неделю → не плодим дубль. Повторная
+    //    отправка/вставка и отложенный дубль коллеги ловятся; реальная правка (<95%) сохраняется.
+    for (const c of cands) {
+      const cc = c.content ?? "";
+      if (norm(cc) === target || (target.length > 100 && trigramSimilarity(content, cc) >= 0.95)) {
+        return { id: c.id, summary: c.summary ?? null, duplicate: true };
+      }
+    }
+
+    // 2) ГРУППИРОВКА ФРАГМЕНТОВ: тот же автор прислал ещё текст в окне ~60с (source=telegram —
+    //    ручная отправка/вставка/форвард кусками) → дописываем к той записи и переиндексируем
+    //    (summary/embedding/страны по объединённому тексту). Не near-dup (см. п.1 выше).
+    if (source === "telegram") {
+      const minuteAgo = Date.now() - 60_000;
+      const frag = cands.find((c) => c.source === "telegram" && c.added_by === addedBy && Date.parse(c.created_at) >= minuteAgo);
+      if (frag) {
+        const merged = `${frag.content}\n\n${content}`;
+        const midx = await buildEntryIndex(merged);
+        const mc = [...midx.countries];
+        const msp = mc.filter((x) => x !== "General");
+        if (msp.length === 0 || msp.length >= 3) { if (!mc.includes("General")) mc.push("General"); }
+        const memb = await getEmbedding([midx.summary ?? merged, msp.length ? `Страны: ${msp.join(", ")}` : "", midx.keywords ? `Ключевые слова: ${midx.keywords}` : ""].filter(Boolean).join("\n").slice(0, 8000));
+        await supabase.from("entries").update({
+          content: merged, summary: midx.summary, embedding: memb,
+          countries: mc, entry_type: midx.entry_type, entry_date: midx.entry_date,
+        }).eq("id", frag.id);
+        return { id: frag.id, summary: midx.summary, merged: true };
+      }
+    }
   }
 
   // Short notes (source='note') need no country extraction — always General.

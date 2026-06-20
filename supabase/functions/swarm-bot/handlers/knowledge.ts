@@ -722,9 +722,13 @@ export async function handleAdd(chatId: number, username: string, text: string, 
     return;
   }
 
-  const { summary, duplicate } = await saveEntry(text, username, "telegram", {}, undefined, groupId);
+  const { summary, duplicate, merged } = await saveEntry(text, username, "telegram", {}, undefined, groupId);
   await sendMessage(chatId, duplicate
     ? "✅ Уже сохранено недавно — дубликат не добавил."
+    : merged
+    ? (summary
+        ? `📎 Дописал к предыдущей записи.\n\n<b>Тезисы:</b>\n${summary}`
+        : "📎 Дописал к предыдущей записи.")
     : summary
     ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`
     : "✅ Запись добавлена в базу знаний.");
