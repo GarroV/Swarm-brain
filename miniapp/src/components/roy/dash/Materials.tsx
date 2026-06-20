@@ -26,7 +26,7 @@ function MaterialRow({ e, now, onOpen }: { e: Entry; now: number; onOpen: () => 
     <Row onClick={onOpen}>
       <span
         className="inline-flex shrink-0 items-center justify-center rounded-full"
-        style={{ width: 30, height: 30, color: tag.color, background: `${tag.color}14`, border: `1px solid ${tag.color}26` }}
+        style={{ width: 30, height: 30, color: tag.color, background: `color-mix(in srgb, ${tag.color} 8%, transparent)`, border: `1px solid color-mix(in srgb, ${tag.color} 15%, transparent)` }}
       >
         <RoyIcon name={tag.icon} size={15} strokeWidth={1.9} />
       </span>

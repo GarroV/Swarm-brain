@@ -66,6 +66,7 @@
   --color-tag-note: var(--tag-note);
   --color-tag-meet: var(--tag-meet);
   --color-tag-pdf: var(--tag-pdf);
+  --color-tag-link: var(--tag-link);
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -139,6 +140,7 @@
   --tag-note: #8A7A3A;
   --tag-meet: #2E9E6B;
   --tag-pdf: #D9483B;
+  --tag-link: #3E8E7E;
 }
 
 .dark {
@@ -197,6 +199,7 @@
   --tag-note: #B3A24A;
   --tag-meet: #5FBF8E;
   --tag-pdf: #D9483B;
+  --tag-link: #5FAE9E;
 }
 
 @layer base {

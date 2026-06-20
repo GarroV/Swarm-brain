@@ -16,13 +16,16 @@ export function RoyCard({ className, ...props }: ComponentPropsWithoutRef<"div">
 }
 
 // ── TypeTag (тип записи базы) ────────────────────────────────────────────────
+// color — CSS-токен (var), а не сырой hex: в тёмной теме токены тюнятся ярче
+// (note/doc/meet), иначе тег теряет контраст на тёмной поверхности. Фон/бордер
+// собираются через color-mix (см. TypeTag / Materials), а не конкатенацией hex+alpha.
 export const TYPE_TAG: Record<string, { icon: RoyIconName; label: string; color: string }> = {
-  doc: { icon: "doc", label: "Документ", color: "#5B6BE0" },
-  mic: { icon: "mic", label: "Транскрипт", color: "#C2569E" },
-  note: { icon: "note", label: "Заметка", color: "#8A7A3A" },
-  meet: { icon: "meet", label: "Встреча", color: "#2E9E6B" },
-  pdf: { icon: "pdf", label: "PDF", color: "#D9483B" },
-  link: { icon: "link", label: "Ссылка", color: "#3E8E7E" },
+  doc: { icon: "doc", label: "Документ", color: "var(--tag-doc)" },
+  mic: { icon: "mic", label: "Транскрипт", color: "var(--tag-mic)" },
+  note: { icon: "note", label: "Заметка", color: "var(--tag-note)" },
+  meet: { icon: "meet", label: "Встреча", color: "var(--tag-meet)" },
+  pdf: { icon: "pdf", label: "PDF", color: "var(--tag-pdf)" },
+  link: { icon: "link", label: "Ссылка", color: "var(--tag-link)" },
 };
 export type RoyTypeKey = keyof typeof TYPE_TAG;
 
@@ -34,8 +37,8 @@ export function TypeTag({ type, small }: { type: RoyTypeKey; small?: boolean }) 
       style={{
         fontSize: small ? 11 : 12,
         color: t.color,
-        background: `${t.color}14`,
-        border: `1px solid ${t.color}26`,
+        background: `color-mix(in srgb, ${t.color} 8%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${t.color} 15%, transparent)`,
         borderRadius: 8,
         padding: small ? "2px 7px" : "3px 9px",
       }}
@@ -103,7 +106,7 @@ export function Chip({ children, active, onClick, leading }: { children: ReactNo
       className={cn(
         "inline-flex items-center gap-1.5 font-semibold whitespace-nowrap rounded-full border",
         TAP,
-        active ? "bg-ink text-white border-ink" : "bg-surface text-ink-soft border-line-2",
+        active ? "bg-ink text-surface border-ink" : "bg-surface text-ink-soft border-line-2",
       )}
       style={{ fontSize: 13, padding: "7px 13px" }}
     >

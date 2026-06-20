@@ -137,7 +137,7 @@ export function RoyApp({ me }: { me: Me | null }) {
             {toastMsg && (
               <div
                 role="status"
-                className="roy-pop absolute bottom-[110px] left-1/2 z-50 -translate-x-1/2 rounded-[13px] bg-ink px-4 py-2.5 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,.3)]"
+                className="roy-pop absolute bottom-[110px] left-1/2 z-50 -translate-x-1/2 rounded-[13px] bg-ink px-4 py-2.5 text-sm text-surface shadow-[0_10px_30px_rgba(0,0,0,.3)]"
               >
                 {toastMsg}
               </div>
