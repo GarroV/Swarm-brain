@@ -171,9 +171,11 @@ content + [existingSummary?]
            дописать новый текст к найденной записи + переиндексировать
            → return {..., merged:true}
       (document/pdf/voice/read_ai/digest НЕ дедупим — у документа чанки в цикле)
-  → buildEntryIndex (1 GPT вызов):
+  → buildEntryIndex (1 GPT вызов, classifier-режим: temperature 0 + response_format json_object):
       если нет summary  → {summary, countries, entry_type, entry_date, keywords}
       если есть summary → {countries, entry_type, entry_date, keywords}  (summary not re-generated)
+      правила страны/типа — из _shared/countries.ts (COUNTRY_PROMPT_RULE / ENTRY_TYPE_PROMPT_RULE),
+      единый источник для swarm-bot/swarm-mcp/swarm-api (детерминизм, без якоря на одну страну)
   → General tag:
       countries.length === 0 OR >= 3 → добавить "General"
   → embedding на обогащённом тексте:
@@ -518,6 +520,7 @@ supabase/functions/swarm-api/
 | `POST` | `/tasks` | Создать (`assignee_telegram_id` → имя); поля Роя: `is_private` (→`owner_id`), `start_date`, `sprint_id`, `tags`, `timeline_position`; валидация `start_date<=due_date` и принадлежности спринта воркспейсу; `confirmed=true` |
 | `PATCH` | `/tasks/:id` | Частичный апдейт. Приватную чужую → 404, мутация приватной не владельцем → 403. Поддержаны новые поля + смена `is_private`, привязка к спринту |
 | `DELETE` | `/tasks/:id` | Удалить (204). Приватную чужую → 404/403 |
+| `GET` | `/dependencies` | Bulk: все рёбра зависимостей воркспейса одним запросом (граф, без N+1). Изоляция+приватность: ребро видно только если оба конца видимы вызывающему |
 | `GET` | `/tasks/:id/dependencies` | Зависимости задачи (incoming + outgoing) |
 | `POST` | `/tasks/:id/dependencies` | Создать `{ depends_on_id, dependency_type }`; self→400, цикл→422, дубль→409 |
 | `DELETE` | `/tasks/:id/dependencies/:depId` | Удалить зависимость (204) |
