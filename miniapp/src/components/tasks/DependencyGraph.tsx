@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { fetchTasks, fetchDependencies } from "@/lib/api";
+import { fetchTasks, fetchAllDependencies } from "@/lib/api";
 import type { Task, TaskDependency } from "@/types";
 import { statusColor } from "@/lib/timeline";
 
@@ -50,14 +50,11 @@ export function DependencyGraph() {
 
   const load = useCallback(async () => {
     try {
-      const tasks = await fetchTasks();
-      const map = new Map(tasks.map((t) => [t.id, t] as const));
-      // Собираем уникальные рёбра по всем задачам (дедуп по id ребра).
-      const per = await Promise.all(tasks.map((t) => fetchDependencies(t.id).catch(() => [])));
-      const seen = new Map<string, TaskDependency>();
-      for (const list of per) for (const d of list) seen.set(d.id, d);
-      setTaskMap(map);
-      setEdges([...seen.values()]);
+      // Один bulk-запрос рёбер воркспейса вместо N вызовов по задачам (было N+1).
+      // Граф рисует только рёбра, у которых оба конца есть в taskMap (см. render).
+      const [tasks, deps] = await Promise.all([fetchTasks(), fetchAllDependencies()]);
+      setTaskMap(new Map(tasks.map((t) => [t.id, t] as const)));
+      setEdges(deps);
     } catch {
       /* keep */
     } finally {

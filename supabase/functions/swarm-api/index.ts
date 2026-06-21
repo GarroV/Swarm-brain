@@ -23,6 +23,7 @@ import {
 } from "../_shared/tasks/sprints.ts";
 import {
   listDependencies,
+  listWorkspaceDependencies,
   createDependency,
   deleteDependency,
 } from "../_shared/tasks/dependencies.ts";
@@ -633,6 +634,11 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── Task dependencies (Рой) ─────────────────────────────────────────────────
+  // Bulk: все рёбра воркспейса одним запросом (граф зависимостей, без N+1).
+  if (routePath === "/dependencies" && req.method === "GET") {
+    return json(await listWorkspaceDependencies(groupId, telegram_id, isAdmin), 200, origin);
+  }
+
   // GET список; POST создать (с цикл-детекцией); DELETE удалить.
   const depsMatch = routePath.match(/^\/tasks\/([^/]+)\/dependencies$/);
   if (depsMatch) {

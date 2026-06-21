@@ -393,6 +393,12 @@ export async function fetchDependencies(taskId: string): Promise<TaskDependency[
   return apiFetch<TaskDependency[]>(`/tasks/${taskId}/dependencies`);
 }
 
+// Все рёбра зависимостей воркспейса одним запросом (граф — без N+1 по задачам).
+export async function fetchAllDependencies(): Promise<TaskDependency[]> {
+  if (DEV_MODE) return [];
+  return apiFetch<TaskDependency[]>(`/dependencies`);
+}
+
 export async function createDependency(taskId: string, dependsOnId: string, type: DependencyType = "blocks"): Promise<TaskDependency> {
   if (DEV_MODE) return { id: Date.now().toString(), task_id: taskId, depends_on_id: dependsOnId, dependency_type: type, created_at: new Date().toISOString() };
   return apiFetch<TaskDependency>(`/tasks/${taskId}/dependencies`, { method: "POST", body: JSON.stringify({ depends_on_id: dependsOnId, dependency_type: type }) });

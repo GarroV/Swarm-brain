@@ -19,6 +19,28 @@ export async function listDependencies(taskId: string): Promise<DepEdge[]> {
   return [...outgoing, ...incoming];
 }
 
+// Все рёбра зависимостей воркспейса одним махом (устраняет N+1 в графе: раньше
+// фронт звал listDependencies на каждую задачу). task_dependencies не имеет group_id —
+// изоляция и приватность только через tasks. Возвращаем ребро лишь если ОБА конца
+// видимы вызывающему (приватные задачи не утекают). Та же приватность, что в listTasks.
+export async function listWorkspaceDependencies(
+  groupId: string,
+  viewerId: number,
+  isAdmin: boolean,
+): Promise<TaskDependency[]> {
+  let tq = supabase.from("tasks").select("id").eq("group_id", groupId);
+  if (!isAdmin) tq = tq.or(`is_private.eq.false,owner_id.eq.${viewerId}`);
+  const { data: taskRows } = await tq;
+  const visible = new Set(((taskRows ?? []) as Array<{ id: string }>).map(t => t.id));
+  if (visible.size === 0) return [];
+
+  const { data: depRows } = await supabase
+    .from("task_dependencies")
+    .select("*")
+    .in("task_id", [...visible]);
+  return ((depRows ?? []) as TaskDependency[]).filter(d => visible.has(d.depends_on_id));
+}
+
 export type CreateDepResult =
   | { ok: true; dependency: TaskDependency }
   | { ok: false; reason: "cycle" | "duplicate" };
