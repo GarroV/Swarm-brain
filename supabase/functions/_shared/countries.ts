@@ -67,3 +67,20 @@ export function normalizeCountry(raw: string): string | null {
 export function normalizeCountries(raw: string[]): string[] {
   return [...new Set(raw.map(normalizeCountry).filter((c): c is string => c !== null))];
 }
+
+// ── Правила промпта-классификатора (DRY) ───────────────────────────────────────
+// Один источник для всех GPT write-путей (swarm-bot, swarm-mcp, swarm-api). Раньше
+// промпт дублировался в 5+ местах и расходился, из-за чего баг (страна-галлюцинация,
+// note→meeting) жил везде. Важно: НЕ якорить примеры на одну страну (модель тянула
+// незнакомый город на «знакомую» Сербию) и звать с temperature 0 + JSON-режимом.
+
+export const COUNTRY_PROMPT_RULE =
+  "countries — страны/рынки, ЯВНО упомянутые в тексте, короткими английскими названиями " +
+  "(Serbia, Spain, Bulgaria, Moldova, Croatia, Slovenia, …). Город указывает на свою страну: " +
+  "Сабадель/Барселона → Spain, Белград → Serbia, Варна → Bulgaria. Если страна/рынок в тексте явно " +
+  "не названы — пустой массив []. НЕ угадывай страну и НЕ подставляй её по умолчанию.";
+
+export const ENTRY_TYPE_PROMPT_RULE =
+  'entry_type — "meeting" ТОЛЬКО если текст это расшифровка/тезисы реального созвона ' +
+  "(участники, реплики, ход обсуждения встречи). Заметка, ссылка, документ, список, данные, " +
+  'инструкция — это "note", даже если в тексте упоминается встреча.';

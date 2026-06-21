@@ -1,6 +1,6 @@
 import { supabase, ADMIN_USER_ID } from "./supabase.ts";
 import { getEmbedding, chatComplete } from "./openai.ts";
-import { normalizeCountries } from "../../_shared/countries.ts";
+import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../../_shared/countries.ts";
 
 
 export function visibilityFilter(userId: number): string {
@@ -21,24 +21,21 @@ type EntryIndex = {
 // existingSummary: pass when the caller already has a summary (e.g. Granola tezisy, voice transcript).
 async function buildEntryIndex(content: string, existingSummary?: string): Promise<EntryIndex> {
   const hasSummary = Boolean(existingSummary?.trim());
-  const system = hasSummary
-    ? "Проанализируй текст и верни JSON (только JSON, без markdown):\n" +
-      '{"countries":["Serbia","Moldova"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n\n' +
-      "countries — конкретные страны/рынки из текста. Короткое английское название: Serbia, Montenegro, Moldova, Croatia, Lithuania. " +
-      "Если текст общекомандный без привязки к стране — пустой массив [].\n" +
-      "entry_type — meeting (это транскрипт/тезисы созвона) или note (всё остальное: заметка, ссылка, файл, данные).\n" +
-      "entry_date — дата события из текста (не сегодняшняя), null если нет.\n" +
-      "keywords — 5-8 ключевых слов и синонимов для поиска через запятую."
-    : "Проанализируй текст и верни JSON (только JSON, без markdown):\n" +
-      '{"summary":"тезисы","countries":["Serbia"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n\n' +
-      "summary — 3-5 тезисов маркированным списком на русском: конкретные факты, имена, цифры, решения. Без общих фраз.\n" +
-      "countries — конкретные страны/рынки из текста. Короткое английское название: Serbia, Montenegro, Moldova, Croatia, Lithuania. " +
-      "Если текст общекомандный без привязки к стране — пустой массив [].\n" +
-      "entry_type — meeting (это транскрипт/тезисы созвона) или note (всё остальное: заметка, ссылка, файл, данные).\n" +
-      "entry_date — дата события из текста (не сегодняшняя), null если нет.\n" +
-      "keywords — 5-8 ключевых слов и синонимов для поиска через запятую.";
+  const schema = hasSummary
+    ? '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}'
+    : '{"summary":"тезисы","countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}';
+  const summaryRule = hasSummary
+    ? ""
+    : "summary — 3-5 тезисов маркированным списком на русском: конкретные факты, имена, цифры, решения. Без общих фраз.\n";
+  const system =
+    "Проанализируй текст и верни JSON (только JSON, без markdown):\n" + schema + "\n\n" +
+    summaryRule +
+    COUNTRY_PROMPT_RULE + "\n" +
+    ENTRY_TYPE_PROMPT_RULE + "\n" +
+    "entry_date — дата события из текста (не сегодняшняя), null если нет.\n" +
+    "keywords — 5-8 ключевых слов и синонимов для поиска через запятую.";
   try {
-    const raw = await chatComplete(system, content.slice(0, 5000));
+    const raw = await chatComplete(system, content.slice(0, 5000), { temperature: 0, json: true });
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     return {
       summary: hasSummary ? existingSummary! : (typeof parsed.summary === "string" ? parsed.summary : null),
@@ -60,10 +57,12 @@ export async function extractEntryMeta(text: string): Promise<{ countries: strin
   try {
     const raw = await chatComplete(
       "Проанализируй текст и верни JSON (только JSON, без markdown):\n" +
-      '{"countries":["Serbia","Bulgaria"...],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n\n' +
-      "countries — страны/рынки. Короткое английское название: Serbia, Montenegro, Moldova. Если общекомандный текст — [].\n" +
-      "entry_type — meeting (транскрипт/тезисы созвона) или note (всё остальное).\nentry_date — дата события из текста, null если нет.",
-      text.slice(0, 4000)
+      '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n\n' +
+      COUNTRY_PROMPT_RULE + "\n" +
+      ENTRY_TYPE_PROMPT_RULE + "\n" +
+      "entry_date — дата события из текста, null если нет.",
+      text.slice(0, 4000),
+      { temperature: 0, json: true }
     );
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     return {

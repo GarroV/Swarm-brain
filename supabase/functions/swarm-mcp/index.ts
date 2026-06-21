@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, TASK_TOOL_DEFINITIONS } from "./tasks/tools.ts";
-import { normalizeCountries } from "../_shared/countries.ts";
+import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../_shared/countries.ts";
 import { matchEntries } from "../_shared/search.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -46,11 +46,14 @@ async function getEmbedding(text: string): Promise<number[]> {
   return data.data[0].embedding;
 }
 
-async function chatComplete(system: string, user: string): Promise<string> {
+async function chatComplete(system: string, user: string, opts: { temperature?: number; json?: boolean } = {}): Promise<string> {
+  const body: Record<string, unknown> = { model: "gpt-4o-mini", messages: [{ role: "system", content: system }, { role: "user", content: user }], max_tokens: 300 };
+  if (opts.temperature !== undefined) body.temperature = opts.temperature;
+  if (opts.json) body.response_format = { type: "json_object" };
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-    body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "system", content: system }, { role: "user", content: user }], max_tokens: 300 }),
+    body: JSON.stringify(body),
   });
   const data = await res.json() as { choices: Array<{ message: { content: string } }> };
   return data.choices[0].message.content;
@@ -60,9 +63,12 @@ async function extractEntryMeta(text: string): Promise<{ countries: string[]; en
   try {
     const raw = await chatComplete(
       "Проанализируй текст и верни JSON (только JSON):\n" +
-      '{"countries":["Serbia"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n' +
-      "countries — страны/рынки на английском. entry_date — дата события из текста, null если нет.",
-      text.slice(0, 2000)
+      '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n' +
+      COUNTRY_PROMPT_RULE + "\n" +
+      ENTRY_TYPE_PROMPT_RULE + "\n" +
+      "entry_date — дата события из текста, null если нет.",
+      text.slice(0, 2000),
+      { temperature: 0, json: true }
     );
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
     return {
@@ -732,20 +738,22 @@ async function toolReindexEntry(args: { id: string; summary?: string }): Promise
   const existingSummary = args.summary ?? e.summary ?? undefined;
   const hasSummary = Boolean(existingSummary?.trim());
 
-  const system = hasSummary
-    ? "Проанализируй текст и верни JSON (только JSON):\n" +
-      '{"countries":["Serbia"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n' +
-      "countries — конкретные страны/рынки. Короткое английское название: Serbia, Montenegro, Moldova, Croatia, Lithuania. Если общекомандный — [].\n" +
-      "keywords — 5-8 ключевых слов и синонимов для поиска."
-    : "Проанализируй текст и верни JSON (только JSON):\n" +
-      '{"summary":"тезисы","countries":["Serbia"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}\n' +
-      "summary — 3-5 тезисов маркированным списком на русском: конкретные факты, имена, цифры.\n" +
-      "countries — конкретные страны/рынки. Если общекомандный — [].\n" +
-      "keywords — 5-8 ключевых слов и синонимов.";
+  const reindexSchema = hasSummary
+    ? '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}'
+    : '{"summary":"тезисы","countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null","keywords":"слово1,слово2"}';
+  const reindexSummaryRule = hasSummary
+    ? ""
+    : "summary — 3-5 тезисов маркированным списком на русском: конкретные факты, имена, цифры.\n";
+  const system =
+    "Проанализируй текст и верни JSON (только JSON):\n" + reindexSchema + "\n" +
+    reindexSummaryRule +
+    COUNTRY_PROMPT_RULE + "\n" +
+    ENTRY_TYPE_PROMPT_RULE + "\n" +
+    "keywords — 5-8 ключевых слов и синонимов для поиска.";
 
   let parsed: { summary?: string; countries?: string[]; entry_type?: string; entry_date?: string; keywords?: string };
   try {
-    const raw = await chatComplete(system, e.content.slice(0, 5000));
+    const raw = await chatComplete(system, e.content.slice(0, 5000), { temperature: 0, json: true });
     parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
   } catch {
     return `Ошибка GPT при анализе записи ${args.id}.`;

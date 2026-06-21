@@ -27,7 +27,7 @@ import {
   deleteDependency,
 } from "../_shared/tasks/dependencies.ts";
 import type { DependencyType } from "../_shared/tasks/types.ts";
-import { normalizeCountries, COUNTRY_NAMES } from "../_shared/countries.ts";
+import { normalizeCountries, COUNTRY_NAMES, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../_shared/countries.ts";
 import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { handleAdminRoutes } from "./admin.ts";
 
@@ -886,8 +886,10 @@ Deno.serve(async (req: Request) => {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
         body: JSON.stringify({
           model: "gpt-4o-mini",
+          temperature: 0,
+          response_format: { type: "json_object" },
           messages: [
-            { role: "system", content: 'Проанализируй текст и верни JSON (только JSON, без markdown): {"countries":[],"entry_type":"meeting|note","entry_date":null}. entry_type=meeting только если это транскрипт/тезисы созвона; иначе note.' },
+            { role: "system", content: 'Проанализируй текст и верни JSON (только JSON, без markdown): {"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":null}\n' + COUNTRY_PROMPT_RULE + "\n" + ENTRY_TYPE_PROMPT_RULE + "\nentry_date — дата события из текста, null если нет." },
             { role: "user", content: body.content.slice(0, 4000) },
           ],
           max_tokens: 200,
