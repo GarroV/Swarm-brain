@@ -132,17 +132,20 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, use
     `3. Если понятна роль исполнителя — заполни task_role\n` +
     `4. assignee_ids может содержать несколько id если задача явно для нескольких людей\n\n` +
     `Верни ТОЛЬКО JSON без markdown:\n` +
-    `{"tasks":[{"title":"Название","assignee_ids":[123456789],"assignee_mention":"Vasya","task_role":"bd","country":"Словения","due_date":"2026-06-01","confidence":0.9}]}\n` +
+    `{"tasks":[{"title":"Название","description":"1 фраза контекста","assignee_ids":[123456789],"assignee_mention":"Vasya","task_role":"bd","country":"Словения","due_date":"2026-06-01","confidence":0.9}]}\n` +
     `assignee_ids — массив полей id из списка выше, или [] если исполнитель неизвестен.\n` +
     `assignee_mention — точная цитата из текста как упоминается исполнитель (имя, email, ник) — даже если id не найден.\n` +
+    `description — 1 короткая фраза контекста задачи (зачем / какой результат / важная деталь из текста); НЕ повторяй заголовок; null если заголовок самодостаточен.\n` +
     `task_role — одно из: "marketing", "bd", "rnd", или null если неизвестно.\n` +
     `country — название страны или null. due_date — YYYY-MM-DD или null.\n` +
     `Создавай задачи только с confidence >= 0.7. Если задач нет — {"tasks":[]}.`,
-    content.slice(0, 6000)
+    content.slice(0, 6000),
+    { temperature: 0, json: true }
   );
 
   let tasks: Array<{
     title: string;
+    description?: string | null;
     assignee_ids: number[];
     assignee_mention?: string;
     task_role: string | null;
@@ -174,6 +177,7 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, use
     const task_role = VALID_ROLES.has(task.task_role ?? "") ? task.task_role : null;
     await dbCreateTask({
       title: task.title,
+      description: task.description ?? null,
       assignees: finalAssignees,
       assignee_telegram_ids: finalTelegramIds,
       task_role,
