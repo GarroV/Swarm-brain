@@ -61,12 +61,12 @@ async function sendRecorderToken(chatId: number, userId: number): Promise<void> 
   const expStr = minted.expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
   await sendMessage(chatId,
     `<b>🎙 Подключаем рекордер встреч за один шаг</b> (macOS)\n\n` +
-    `Одна команда + один ввод пароля для прав. Скрипт сам поставит рекордер и пропишет токен.\n\n` +
+    `Одна команда — скрипт сам поставит рекордер, подпишет и пропишет токен. Пароль может спросить только установка Command Line Tools (если их ещё нет на маке).\n\n` +
     `1️⃣ Открой приложение <b>Терминал</b>\n` +
     `<i>(⌘+Пробел → набери «Терминал» → Enter)</i>\n\n` +
     `2️⃣ Вставь эту команду (⌘+V) и нажми Enter:\n\n` +
     `<code>${buildRecorderSetupOneLiner(minted.token)}</code>\n\n` +
-    `3️⃣ Введи пароль когда попросят (нужен для прав на запись). Готово ✅\n\n` +
+    `3️⃣ Приложение откроется само. Выдай разрешение: System Settings → Privacy → «Screen &amp; System Audio Recording» → включи SwarmRecorder, затем ⌘Q и открой заново. Готово ✅\n\n` +
     `Токен действует до <b>${expStr}</b>. Это <b>отдельный</b> токен — перевыпуск /mytoken для Claude Desktop его НЕ трогает. Никому не пересылай. Отозвать: /revokerecordertoken.\n\n` +
     `<i>Вручную: вставь токен <code>${minted.token}</code> в рекордере — иконка в меню-баре → «Вставить токен из буфера».</i>`
   );
