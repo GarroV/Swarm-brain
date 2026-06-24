@@ -100,6 +100,7 @@ Deno.serve(async (req: Request) => {
         { command: "status", description: "Состояние базы знаний" },
         { command: "digest", description: "Личный дайджест" },
         { command: "setup", description: "Подключить Claude Desktop (авто)" },
+        { command: "recordertoken", description: "🎙 Рекордер встреч (Mac) — установка" },
         { command: "help", description: "Справка" },
         { command: "feedback", description: "Отправить фидбек" },
         { command: "reset", description: "Сбросить состояние бота" },
