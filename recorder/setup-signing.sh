@@ -1,22 +1,27 @@
 #!/bin/bash
-# Создаёт и доверяет стабильному self-signed code-signing cert «SwarmRecorder Self-Signed».
-# Зачем: macOS привязывает TCC-разрешения (Screen & System Audio Recording и пр.) к designated
-# requirement подписи = identifier + certificate leaf, а НЕ к cdhash. С одним стабильным cert
-# разрешение выдаётся ОДИН раз и держится между пересборками. Ad-hoc (-s -) cert не имеет → DR
-# схлопывается в cdhash → грант слетает каждую сборку. Подробнее — recorder/README.md.
+# Создаёт стабильный self-signed code-signing cert "SwarmRecorder Self-Signed" в login keychain.
 #
-# Идемпотентно: если cert уже есть в keychain — выходим сразу.
-# Один привилегированный шаг — sudo security add-trusted-cert (попросит пароль один раз).
+# Зачем: macOS привязывает TCC-разрешения (Screen & System Audio Recording и пр.) к designated
+# requirement подписи = identifier + certificate LEAF, а НЕ к cdhash. Подписывая каждый раз ОДНИМ
+# и тем же cert, держим DR стабильным → разрешение выдаётся один раз и переживает пересборки.
+# Ad-hoc (-s -) cert не имеет → DR схлопывается в cdhash → грант слетает каждую сборку.
+#
+# ВАЖНО (масштабирование на команду): cert НЕ нужно ДОВЕРЯТЬ. `codesign -s` подписывает и
+# недоверенным self-signed cert'ом (проверено), а локально собранный (не карантиненный) .app
+# Gatekeeper не блокирует. Поэтому здесь НЕТ add-trusted-cert / sudo / GUI-запроса пароля —
+# шаг полностью НЕИНТЕРАКТИВНЫЙ и детерминированный на любой машине.
+#
+# Идемпотентно: если identity уже в keychain — выходим сразу.
 set -euo pipefail
 
 IDENTITY="SwarmRecorder Self-Signed"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
-# Системный /usr/bin/openssl — это LibreSSL: он пишет p12 с legacy-MAC, который `security import`
+# Системный /usr/bin/openssl — это LibreSSL: пишет p12 с legacy-MAC, который `security import`
 # принимает БЕЗ флага -legacy (в отличие от Homebrew OpenSSL 3, требующего -legacy/-macalg sha1).
 OPENSSL="/usr/bin/openssl"
 
-# ── 0. Уже есть? ────────────────────────────────────────────────────────────────
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
+# ── 0. Уже есть? (без -v: недоверенный self-signed для ПОДПИСИ годится) ──────────
+if security find-identity -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
   echo "[signing] cert \"$IDENTITY\" уже в keychain — пропускаю."
   exit 0
 fi
@@ -30,7 +35,7 @@ if [ ! -f "$KEYCHAIN" ]; then
   exit 1
 fi
 
-echo "[signing] создаю self-signed code-signing cert \"$IDENTITY\"…"
+echo "[signing] создаю self-signed code-signing cert \"$IDENTITY\" (без доверия и пароля)..."
 
 TMP="$(mktemp -d)"
 cleanup() { rm -f "$TMP/cs.key" "$TMP/cs.crt" "$TMP/cs.p12" 2>/dev/null || true; rmdir "$TMP" 2>/dev/null || true; }
@@ -51,17 +56,13 @@ P12="$TMP/cs.p12"
 "$OPENSSL" pkcs12 -export -inkey "$KEY" -in "$CRT" -out "$P12" \
   -passout pass:temp -name "$IDENTITY"
 
-# ── 3. Импорт в login keychain, доступ для codesign ──────────────────────────────
+# ── 3. Импорт в login keychain + ACL-доступ для codesign (чтобы подпись не просила пароль) ──
 security import "$P12" -k "$KEYCHAIN" -P temp -T /usr/bin/codesign
 
-# ── 4. Доверие для code signing (единственный привилегированный шаг — пароль один раз) ──
-echo "[signing] доверяю cert для code signing (понадобится пароль)…"
-sudo security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$CRT"
-
-# ── 5. Проверка ──────────────────────────────────────────────────────────────────
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
-  echo "[signing] готово — \"$IDENTITY\" доступен для подписи ✅"
+# ── 4. Проверка: identity видна для codesigning (без -v — доверие не требуется) ──────
+if security find-identity -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
+  echo "[signing] готово — \"$IDENTITY\" доступен для подписи (доверие не требуется; DR на cert leaf)."
 else
-  echo "[signing] ОШИБКА: cert создан, но не виден в find-identity. Проверь keychain." >&2
+  echo "[signing] ОШИБКА: cert импортирован, но не виден в find-identity. Проверь keychain." >&2
   exit 1
 fi

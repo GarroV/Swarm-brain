@@ -45,7 +45,8 @@ echo "[3/4] подпись…"
 # Ad-hoc (-s -) не имеет cert → DR схлопывается в cdhash → грант слетает каждую сборку.
 # Cert создаётся один раз (см. README, раздел «Стабильная подпись (TCC)»).
 IDENTITY="SwarmRecorder Self-Signed"
-if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
+# Без -v: недоверенный self-signed cert для ПОДПИСИ годится (codesign -s работает; доверие не нужно).
+if ! security find-identity -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
   # Раньше здесь был молчаливый ad-hoc fallback — он ронял TCC (грант слетал каждую сборку).
   # Теперь это ЖЁСТКАЯ ОШИБКА: без стабильного cert подписывать нельзя, иначе разрешения
   # «System Audio Recording» будут молча сбрасываться. Cert ставится один раз.

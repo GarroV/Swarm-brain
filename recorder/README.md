@@ -119,14 +119,14 @@ curl -fsSL https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-recorder-
 Вставь её в Терминал. Скрипт сам:
 1. поставит **Command Line Tools** (если их нет — один скачивание, может занять минуты);
 2. склонирует публичный репозиторий;
-3. создаст и доверит стабильному cert подписи — **попросит пароль ОДИН раз** (`setup-signing.sh`);
+3. создаст локальный cert подписи (`setup-signing.sh`) — **без доверия и без пароля** (codesign подписывает им и так);
 4. соберёт, подпишет и поставит приложение в `/Applications`, откроет его;
 5. сам пропишет токен в `config.json` (вручную «Вставить токен…» уже не нужно).
 
 После этого остаётся **один** шаг — выдать разрешение «Screen & System Audio Recording»
 (System Settings → Privacy & Security), затем **выйти из рекордера (⌘Q) и открыть заново**
-(macOS применяет разрешение только после перезапуска). Честно: будет один скачивание CLT
-(если их нет) и один запрос пароля для cert — больше ничего вводить не нужно.
+(macOS применяет разрешение только после перезапуска). Честно: единственный возможный запрос
+пароля — скачивание Command Line Tools (если их ещё нет); сертификат и сборка идут БЕЗ запросов.
 
 Edge-функция: `supabase/functions/swarm-recorder-setup` (публичный GET, без секретов).
 
@@ -137,7 +137,7 @@ Edge-функция: `supabase/functions/swarm-recorder-setup` (публичны
 **А. Сборка на машине (рекомендуется):**
 ```sh
 cd swarm/recorder
-./setup-signing.sh    # один раз на машину: создаёт+доверяет стабильному cert (один пароль)
+./setup-signing.sh    # один раз на машину: создаёт локальный cert подписи (без доверия/пароля)
 ./install.sh          # соберёт, подпишет, поставит в /Applications, откроет
 ```
 Нужны Command Line Tools (`xcode-select --install`). Дальше в меню — «Вставить токен…»
@@ -148,7 +148,8 @@ macOS привязывает выданные разрешения (Screen & Sys
 requirement** подписи = `identifier + certificate leaf`, **не** к cdhash. Со **стабильным
 самоподписанным cert** разрешение выдаётся ОДИН раз и держится между пересборками. Ad-hoc-подпись
 (`-s -`) cert не имеет → DR схлопывается в cdhash → грант слетает каждую сборку. `build-app.sh`
-подписывает идентичностью `SwarmRecorder Self-Signed`, если она есть (иначе ad-hoc + предупреждение).
+подписывает идентичностью `SwarmRecorder Self-Signed`; если её нет — **жёсткая ошибка** (ad-hoc
+fallback убран, он ронял TCC). Cert **не требуется доверять** — codesign подписывает им и недоверенным.
 
 Создать её **один раз** (CLI; либо Keychain Access → Certificate Assistant → Create a Certificate →
 тип «Code Signing», self-signed root):
@@ -162,10 +163,9 @@ openssl req -x509 -newkey rsa:2048 -keyout /tmp/cs.key -out /tmp/cs.crt -days 36
 openssl pkcs12 -export -inkey /tmp/cs.key -in /tmp/cs.crt -out /tmp/cs.p12 \
   -passout pass:temp -name "SwarmRecorder Self-Signed" -legacy -macalg sha1
 security import /tmp/cs.p12 -k ~/Library/Keychains/login.keychain-db -P temp -T /usr/bin/codesign
-# доверие для code signing (подтвердить системный диалог паролем):
-security add-trusted-cert -r trustRoot -p codeSign -k ~/Library/Keychains/login.keychain-db /tmp/cs.crt
+# Доверять cert НЕ нужно (codesign -s подписывает и недоверенным; локальный .app Gatekeeper не карантинит).
 rm -f /tmp/cs.key /tmp/cs.crt /tmp/cs.p12
-security find-identity -v -p codesigning    # должна появиться «SwarmRecorder Self-Signed»
+security find-identity -p codesigning    # должна появиться «SwarmRecorder Self-Signed» (без -v — доверие не нужно)
 ```
 НЕ пересоздавать cert и НЕ переносить app из `/Applications` — и то, и другое меняет DR → грант сбросится.
 Энтайтлмент для системного звука (Core Audio process-tap) НЕ нужен (приложение без sandbox и без
