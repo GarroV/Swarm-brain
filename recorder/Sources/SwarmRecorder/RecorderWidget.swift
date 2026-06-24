@@ -1,8 +1,8 @@
 import AppKit
 
-// Минимальная плавающая капсула: марка «Рой» + центральная иконка + ✕. Без текста.
-//   • запись  → 🎙 (красный, пульсирует) индикатор, ✕ = остановить;
-//   • встреча → ▶ (янтарный) = записать, ✕ = не сейчас.
+// Минимальная плавающая ВЕРТИКАЛЬНАЯ капсула. Без текста. Сверху вниз:
+//   • запись  → ✕ (стоп) / 🎙 (красный, пульсирует) + полоса уровня / марка «Рой»;
+//   • встреча → ✕ (не сейчас) / ▶ (янтарный, записать) / марка «Рой».
 // Тёмная пилюля поверх всех окон, правый верх (ниже уведомлений), перетаскивается.
 final class RecorderWidget {
     var onStop: (() -> Void)?
@@ -17,6 +17,7 @@ final class RecorderWidget {
     private let micIndicator = NSImageView()
     private let stopBtn = NSButton()
     private let recRow = NSStackView()
+    private let micRow = NSStackView()  // микрофон + уровень (горизонтально, внутри вертикального recRow)
     // Живой индикатор уровня: тонкая полоса (трек + заполнение).
     private let levelTrack = NSView()
     private let levelFill = CALayer()
@@ -57,7 +58,7 @@ final class RecorderWidget {
     // ── Построение ───────────────────────────────────────────────────────────────
     private func ensurePanel() {
         if panel != nil { return }
-        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 96, height: 36),
+        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 72, height: 100),
                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isFloatingPanel = true
         p.level = .floating
@@ -87,24 +88,30 @@ final class RecorderWidget {
         sizeIcon(playBtn, 17)
         iconButton(dismissBtn, symbol: "xmark", color: NSColor(white: 1, alpha: 0.65), action: #selector(dismissAction))
 
-        recRow.orientation = .horizontal
-        recRow.spacing = 9
-        recRow.alignment = .centerY
-        recRow.setViews([recMark, micIndicator, levelTrack, stopBtn], in: .leading)
+        // Вертикальная капсула: ✕ сверху → 🎙 микрофон + уровень посередине → иконка «Рой» снизу.
+        micRow.orientation = .horizontal
+        micRow.spacing = 6
+        micRow.alignment = .centerY
+        micRow.setViews([micIndicator, levelTrack], in: .leading)
 
-        pendRow.orientation = .horizontal
-        pendRow.spacing = 9
-        pendRow.alignment = .centerY
-        pendRow.setViews([pendMark, playBtn, dismissBtn], in: .leading)
+        recRow.orientation = .vertical
+        recRow.spacing = 10
+        recRow.alignment = .centerX
+        recRow.setViews([stopBtn, micRow, recMark], in: .top)
+
+        // Состояние «встреча — записать?»: ✕ сверху → ▶ → иконка «Рой» снизу (та же вертикаль).
+        pendRow.orientation = .vertical
+        pendRow.spacing = 10
+        pendRow.alignment = .centerX
+        pendRow.setViews([dismissBtn, playBtn, pendMark], in: .top)
         pendRow.isHidden = true
 
         for row in [recRow, pendRow] {
             row.translatesAutoresizingMaskIntoConstraints = false
-            row.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+            row.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
             card.addSubview(row)
             NSLayoutConstraint.activate([
-                row.leadingAnchor.constraint(equalTo: card.leadingAnchor),
-                row.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+                row.centerXAnchor.constraint(equalTo: card.centerXAnchor),
                 row.centerYAnchor.constraint(equalTo: card.centerYAnchor),
             ])
         }
@@ -153,9 +160,8 @@ final class RecorderWidget {
 
     private func present() {
         guard let p = panel, let screen = NSScreen.main else { return }
-        // Шире прежнего (112): в строке записи добавилась полоса уровня. Капсула авто-подгоняется
-        // под содержимое через стек-вью, фиксированной ширины достаточно под самую широкую строку.
-        let w: CGFloat = 140, h: CGFloat = 36
+        // Вертикальная капсула (✕ / микрофон+уровень / иконка «Рой»). Узкая и высокая; правый верх.
+        let w: CGFloat = 72, h: CGFloat = 100
         let vf = screen.visibleFrame
         if !p.isVisible {
             // правый верх, чуть ниже области уведомлений
