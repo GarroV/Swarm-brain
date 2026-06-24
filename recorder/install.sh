@@ -33,7 +33,7 @@ fi
 ./build-app.sh
 
 DEST="/Applications/SwarmRecorder.app"
-echo "[install] ставлю в $DEST…"
+echo "[install] ставлю в $DEST ..."
 rm -rf "$DEST"
 cp -R SwarmRecorder.app "$DEST"
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true   # на случай, если папка пришла из сети
@@ -44,7 +44,8 @@ open "$DEST"
 cat <<'NEXT'
 
 Готово. Дальше:
-  1. Иконка в меню-баре → «Вставить токен…» (персональный smcp_-токен из бота: /mytoken).
+  1. Токен уже прописан установщиком. Если ставил вручную — вставь через меню рекордера
+     «Вставить токен…» (персональный smcp_-токен из бота: /recordertoken).
   2. Выдай разрешение «Screen & System Audio Recording» (системный звук): System Settings →
      Privacy & Security → включи SwarmRecorder (это же — пункт меню «Открыть настройки записи»).
      Затем ВЫЙДИ из рекордера (⌘Q) и открой заново — macOS применяет разрешение после перезапуска.

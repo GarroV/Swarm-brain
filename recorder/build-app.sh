@@ -10,7 +10,7 @@ swift build -c release
 
 APP="SwarmRecorder.app"
 BIN=".build/release/SwarmRecorder"
-echo "[2/4] собираю бандл $APP…"
+echo "[2/4] собираю бандл $APP ..."
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/SwarmRecorder"
@@ -49,7 +49,7 @@ if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY";
   # Раньше здесь был молчаливый ad-hoc fallback — он ронял TCC (грант слетал каждую сборку).
   # Теперь это ЖЁСТКАЯ ОШИБКА: без стабильного cert подписывать нельзя, иначе разрешения
   # «System Audio Recording» будут молча сбрасываться. Cert ставится один раз.
-  echo "ОШИБКА: нет стабильного cert «$IDENTITY» — без него TCC-разрешения будут слетать." >&2
+  echo "ОШИБКА: нет стабильного cert \"$IDENTITY\" — без него TCC-разрешения будут слетать." >&2
   echo "        Создай его один раз и повтори сборку:" >&2
   echo "          ./setup-signing.sh" >&2
   echo "        (подробнее — recorder/README.md → «Стабильная подпись (TCC)»)." >&2

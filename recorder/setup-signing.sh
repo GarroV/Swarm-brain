@@ -17,7 +17,7 @@ OPENSSL="/usr/bin/openssl"
 
 # ── 0. Уже есть? ────────────────────────────────────────────────────────────────
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
-  echo "[signing] cert «$IDENTITY» уже в keychain — пропускаю."
+  echo "[signing] cert \"$IDENTITY\" уже в keychain — пропускаю."
   exit 0
 fi
 
@@ -30,7 +30,7 @@ if [ ! -f "$KEYCHAIN" ]; then
   exit 1
 fi
 
-echo "[signing] создаю self-signed code-signing cert «$IDENTITY»…"
+echo "[signing] создаю self-signed code-signing cert \"$IDENTITY\"…"
 
 TMP="$(mktemp -d)"
 cleanup() { rm -f "$TMP/cs.key" "$TMP/cs.crt" "$TMP/cs.p12" 2>/dev/null || true; rmdir "$TMP" 2>/dev/null || true; }
@@ -60,7 +60,7 @@ sudo security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$CRT"
 
 # ── 5. Проверка ──────────────────────────────────────────────────────────────────
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
-  echo "[signing] готово — «$IDENTITY» доступен для подписи ✅"
+  echo "[signing] готово — \"$IDENTITY\" доступен для подписи ✅"
 else
   echo "[signing] ОШИБКА: cert создан, но не виден в find-identity. Проверь keychain." >&2
   exit 1
