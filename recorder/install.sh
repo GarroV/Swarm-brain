@@ -5,9 +5,28 @@
 set -e
 cd "$(dirname "$0")"
 
+need_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "ОШИБКА: не найден '$1'. $2" >&2
+    exit 1
+  fi
+}
+
+# Preflight: всё нужное для сборки/подписи должно быть на месте — иначе понятная ошибка.
 if ! xcode-select -p >/dev/null 2>&1; then
-  echo "Нужны Command Line Tools. Запусти:  xcode-select --install"
-  echo "…дождись установки и повтори ./install.sh"
+  echo "ОШИБКА: нет Command Line Tools. Поставь:  xcode-select --install" >&2
+  echo "        …дождись установки и повтори ./install.sh" >&2
+  exit 1
+fi
+need_cmd git      "Нужны Command Line Tools (xcode-select --install)."
+need_cmd swift    "Нужны Command Line Tools (xcode-select --install)."
+need_cmd codesign "Нужны Command Line Tools (xcode-select --install)."
+
+# Стабильная подпись обязательна (иначе TCC-грант слетает). Сам cert НЕ создаём здесь —
+# это делает ./setup-signing.sh; build-app.sh подпишет им и упадёт, если cert отсутствует.
+if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "SwarmRecorder Self-Signed"; then
+  echo "ОШИБКА: нет стабильного cert «SwarmRecorder Self-Signed» — без него разрешения будут слетать." >&2
+  echo "        Создай его один раз и повтори:  ./setup-signing.sh" >&2
   exit 1
 fi
 

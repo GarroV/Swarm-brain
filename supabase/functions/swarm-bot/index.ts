@@ -16,7 +16,7 @@ import { handleWorkspace } from "./handlers/workspace.ts";
 import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
 import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
 import { getHelpText } from "./handlers/help.ts";
-import { mintMcpToken, buildSetupOneLiner, hasActiveMcpToken } from "./lib/mcp-setup.ts";
+import { mintMcpToken, buildSetupOneLiner, hasActiveMcpToken, mintRecorderToken, buildRecorderSetupOneLiner, hasActiveRecorderToken } from "./lib/mcp-setup.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -46,6 +46,29 @@ async function sendMyToken(chatId: number, userId: number): Promise<void> {
     `Токен <b>бессрочный</b>. Сохрани — повторно не покажу. Потеряешь — запусти /mytoken снова (старый перестанет работать).\n\n` +
     `Проще: /setup — подключит Claude Desktop автоматически, без ручной возни.\n\n` +
     `Отозвать прямо сейчас: /revoketoken`
+  );
+}
+
+// Минтит токен рекордера и присылает готовый однострочник установки (общий путь для
+// /recordertoken и подтверждённого перевыпуска rtk_reissue). Мгновенный сетап как у /setup:
+// одна команда в Терминале — поставит и настроит рекордер сам.
+async function sendRecorderToken(chatId: number, userId: number): Promise<void> {
+  const minted = await mintRecorderToken(userId);
+  if (!minted) {
+    await sendMessage(chatId, "❌ Не удалось сгенерировать токен рекордера. Обратись к администратору.");
+    return;
+  }
+  const expStr = minted.expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+  await sendMessage(chatId,
+    `<b>🎙 Подключаем рекордер встреч за один шаг</b> (macOS)\n\n` +
+    `Одна команда + один ввод пароля для прав. Скрипт сам поставит рекордер и пропишет токен.\n\n` +
+    `1️⃣ Открой приложение <b>Терминал</b>\n` +
+    `<i>(⌘+Пробел → набери «Терминал» → Enter)</i>\n\n` +
+    `2️⃣ Вставь эту команду (⌘+V) и нажми Enter:\n\n` +
+    `<code>${buildRecorderSetupOneLiner(minted.token)}</code>\n\n` +
+    `3️⃣ Введи пароль когда попросят (нужен для прав на запись). Готово ✅\n\n` +
+    `Токен действует до <b>${expStr}</b>. Это <b>отдельный</b> токен — перевыпуск /mytoken для Claude Desktop его НЕ трогает. Никому не пересылай. Отозвать: /revokerecordertoken.\n\n` +
+    `<i>Вручную: вставь токен <code>${minted.token}</code> в рекордере — иконка в меню-баре → «Вставить токен из буфера».</i>`
   );
 }
 
@@ -133,6 +156,11 @@ Deno.serve(async (req: Request) => {
     try {
       if (cb.data === "mtk_reissue") {
         await sendMyToken(chatId, userId);
+        return new Response("OK", { status: 200 });
+      }
+
+      if (cb.data === "rtk_reissue") {
+        await sendRecorderToken(chatId, userId);
         return new Response("OK", { status: 200 });
       }
 
@@ -431,27 +459,19 @@ Deno.serve(async (req: Request) => {
       }
     } else if (command === "/recordertoken") {
       // Отдельный токен для рекордера встреч (desktop-agent), независимый от /mytoken.
-      const token = "smcp_" + crypto.randomUUID().replaceAll("-", "");
-      const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
-      const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
-      const REC_TTL_DAYS = 365;
-      const expiresAt = new Date(Date.now() + REC_TTL_DAYS * 24 * 60 * 60 * 1000);
-      const { error: rtErr } = await supabase
-        .from("allowed_users")
-        .update({ recorder_token_hash: hashHex, recorder_token_expires_at: expiresAt.toISOString() })
-        .eq("telegram_id", userId);
-      if (rtErr) {
-        await sendMessage(chatId, "❌ Не удалось сгенерировать токен рекордера. Обратись к администратору.");
-      } else {
-        const expStr = expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
-        await sendMessage(chatId,
-          `🎙 <b>Токен для рекордера встреч</b>\n\n` +
-          `<code>${token}</code>\n` +
-          `<i>👆 Нажми на токен — скопируется целиком.</i>\n\n` +
-          `Вставь в рекордере: иконка в меню-баре → «Вставить токен из буфера».\n\n` +
-          `Действует до <b>${expStr}</b>. Это <b>отдельный</b> токен — перевыпуск /mytoken для Claude Desktop его НЕ трогает.\n` +
-          `Отозвать: /revokerecordertoken`
+      // Мгновенный сетап как /setup: одна команда в Терминале ставит и настраивает рекордер.
+      // Если живой токен уже есть — НЕ перевыпускаем молча (это убьёт авторизацию рекордера).
+      // Предупреждаем и просим явного подтверждения (зеркало mtk_reissue для Claude Desktop).
+      if (await hasActiveRecorderToken(userId)) {
+        await sendInlineMessage(chatId,
+          `🎙 <b>У тебя уже есть активный токен рекордера.</b>\n\n` +
+          `Если рекордер уже подключён — он <b>работает</b>, делать ничего не нужно.\n\n` +
+          `Перевыпуск нужен, только если ты <b>потерял</b> токен или подозреваешь <b>утечку</b>. ` +
+          `Он <b>убьёт старый</b> — придётся заново прогнать установку рекордера.`,
+          [[{ text: "🔄 Всё равно перевыпустить", callback_data: "rtk_reissue" }]]
         );
+      } else {
+        await sendRecorderToken(chatId, userId);
       }
     } else if (command === "/revokerecordertoken") {
       const { error: rvErr } = await supabase

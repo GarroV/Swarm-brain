@@ -45,17 +45,21 @@ echo "[3/4] подпись…"
 # Ad-hoc (-s -) не имеет cert → DR схлопывается в cdhash → грант слетает каждую сборку.
 # Cert создаётся один раз (см. README, раздел «Стабильная подпись (TCC)»).
 IDENTITY="SwarmRecorder Self-Signed"
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
-  codesign --force --timestamp=none -s "$IDENTITY" "$APP"
-  if codesign -d --requirements - "$APP" 2>&1 | grep -q 'certificate leaf'; then
-    echo "  → стабильная подпись (DR cert-based) — TCC-грант переживёт пересборки ✅"
-  else
-    echo "ОШИБКА: подпись не cert-based (DR без certificate leaf) — TCC сбросится"; exit 1
-  fi
+if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
+  # Раньше здесь был молчаливый ad-hoc fallback — он ронял TCC (грант слетал каждую сборку).
+  # Теперь это ЖЁСТКАЯ ОШИБКА: без стабильного cert подписывать нельзя, иначе разрешения
+  # «System Audio Recording» будут молча сбрасываться. Cert ставится один раз.
+  echo "ОШИБКА: нет стабильного cert «$IDENTITY» — без него TCC-разрешения будут слетать." >&2
+  echo "        Создай его один раз и повтори сборку:" >&2
+  echo "          ./setup-signing.sh" >&2
+  echo "        (подробнее — recorder/README.md → «Стабильная подпись (TCC)»)." >&2
+  exit 1
+fi
+codesign --force --timestamp=none -s "$IDENTITY" "$APP"
+if codesign -d --requirements - "$APP" 2>&1 | grep -q 'certificate leaf'; then
+  echo "  → стабильная подпись (DR cert-based) — TCC-грант переживёт пересборки ✅"
 else
-  echo "  ⚠ Нет стабильного cert «$IDENTITY» — ad-hoc подпись (разрешения будут слетать!)."
-  echo "    Создай cert один раз: см. recorder/README.md → «Стабильная подпись (TCC)»."
-  codesign --force -s - "$APP"
+  echo "ОШИБКА: подпись не cert-based (DR без certificate leaf) — TCC сбросится"; exit 1
 fi
 
 echo "[4/4] проверка подписи…"

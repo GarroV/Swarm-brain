@@ -58,9 +58,12 @@ E2E доказан: `--selftest` прогоняет полный цикл (за�
 1. `swift build -c release` — собирает бинарь.
 2. Сборка `.app`-бандла руками: `SwarmRecorder.app/Contents/MacOS/` + сгенерённый `Info.plist`
    (`io.dodobrands.swarmrecorder`, `LSMinimumSystemVersion=13.0`, `LSUIElement=YES`,
-   `NSMicrophoneUsageDescription`, `NSCalendarsUsageDescription`, `NSCalendarsFullAccessUsageDescription`).
-3. Ad-hoc подпись: `codesign --force --deep -s - SwarmRecorder.app` — TCC-разрешения для
-   локального теста при этом работают.
+   `NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`, `NSAppleEventsUsageDescription`).
+   Календарём (ни macOS, ни серверным) **не пользуемся** — TCC-ключей `NSCalendars*` нет (см.
+   `Info-keys.plist`).
+3. Подпись стабильным self-signed cert `SwarmRecorder Self-Signed` (создаётся один раз через
+   `./setup-signing.sh`). TCC-разрешения держатся между пересборками. Ad-hoc подпись (`-s -`)
+   **не используется** — она ронит грант.
 
 ```sh
 ./build-app.sh
@@ -84,7 +87,7 @@ open SwarmRecorder.app
 
 1. **Xcode → File → New → Project → macOS → App.** Name: `SwarmRecorder`, Interface: **AppKit (не SwiftUI)**, Language: Swift. Minimum Deployments: **macOS 13.0**.
 2. Удалить сгенерённые `AppDelegate.swift`/`main`/`MainMenu.xib`/`ViewController` и **перетащить файлы из `Sources/SwarmRecorder/`** в проект.
-3. **Info.plist** — те же ключи, что генерит `build-app.sh`: `LSUIElement=YES`, `NSMicrophoneUsageDescription`, `NSCalendarsUsageDescription`. Запись экрана/системного звука TCC-строки не требует, но требует разрешения в System Settings при первом запуске.
+3. **Info.plist** — те же ключи, что генерит `build-app.sh`: `LSUIElement=YES`, `NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`, `NSAppleEventsUsageDescription` (календарь не используется — `NSCalendars*` нет). Запись экрана/системного звука TCC-строки не требует, но требует разрешения в System Settings при первом запуске.
 4. **Signing & Capabilities:** для локального запуска хватит автоматической подписи Xcode (Team = твой Apple ID). App Sandbox можно **выключить** (ScreenCaptureKit + сеть проще без песочницы).
 5. Прописать конфиг (токен + URL) — см. ниже.
 6. **Run** (⌘R).
@@ -104,6 +107,29 @@ open SwarmRecorder.app
 вставить токен через меню рекордера («Вставить токен…») — URL прод-окружения зашиты, пользователю
 нужен только токен.
 
+## Установка из бота (`/recordertoken`)
+
+Самый простой путь — одна команда, всё делает за тебя. В боте набери **`/recordertoken`**,
+он пришлёт строку вида:
+
+```sh
+curl -fsSL https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-recorder-setup | SWARM_TOKEN='smcp_…' bash
+```
+
+Вставь её в Терминал. Скрипт сам:
+1. поставит **Command Line Tools** (если их нет — один скачивание, может занять минуты);
+2. склонирует публичный репозиторий;
+3. создаст и доверит стабильному cert подписи — **попросит пароль ОДИН раз** (`setup-signing.sh`);
+4. соберёт, подпишет и поставит приложение в `/Applications`, откроет его;
+5. сам пропишет токен в `config.json` (вручную «Вставить токен…» уже не нужно).
+
+После этого остаётся **один** шаг — выдать разрешение «Screen & System Audio Recording»
+(System Settings → Privacy & Security), затем **выйти из рекордера (⌘Q) и открыть заново**
+(macOS применяет разрешение только после перезапуска). Честно: будет один скачивание CLT
+(если их нет) и один запрос пароля для cert — больше ничего вводить не нужно.
+
+Edge-функция: `supabase/functions/swarm-recorder-setup` (публичный GET, без секретов).
+
 ## Распространение команде
 
 Платный Apple Developer-аккаунт и нотаризацию не используем. Два пути:
@@ -111,9 +137,11 @@ open SwarmRecorder.app
 **А. Сборка на машине (рекомендуется):**
 ```sh
 cd swarm/recorder
+./setup-signing.sh    # один раз на машину: создаёт+доверяет стабильному cert (один пароль)
 ./install.sh          # соберёт, подпишет, поставит в /Applications, откроет
 ```
-Нужны Command Line Tools (`xcode-select --install`). Дальше в меню — «Вставить токен…».
+Нужны Command Line Tools (`xcode-select --install`). Дальше в меню — «Вставить токен…»
+(или используй one-liner из `/recordertoken`, который делает всё это сам, включая токен).
 
 ### Стабильная подпись (TCC) — один раз на машину
 macOS привязывает выданные разрешения (Screen & System Audio Recording и пр.) к **designated
