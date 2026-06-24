@@ -28,6 +28,22 @@ enum Segmenter {
         return size
     }
 
+    // Нарезать НЕСКОЛЬКО сегментов одной дорожки (напр. system после пересборок тапа) в общий
+    // список частей. К offset каждой нарезанной части прибавляем базовый offset её сегмента
+    // (старт сегмента в таймлинии сессии), чтобы сервер свёл всё в единую шкалу.
+    static func segmentTrack(_ segments: [(url: URL, offset: Double)]) async throws -> [AudioPart] {
+        var out: [AudioPart] = []
+        for seg in segments {
+            // Сегмент мог не записаться (пересборка упала) — пропускаем отсутствующий/пустой файл.
+            guard fileSize(seg.url) > 1024 else { continue }
+            let parts = try await segment(seg.url)
+            for p in parts {
+                out.append(AudioPart(url: p.url, offset: p.offset + seg.offset))
+            }
+        }
+        return out
+    }
+
     static func segment(_ url: URL) async throws -> [AudioPart] {
         let size = fileSize(url)
         if size <= singlePartMaxBytes { return [AudioPart(url: url, offset: 0)] }

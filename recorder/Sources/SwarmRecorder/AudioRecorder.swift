@@ -9,7 +9,18 @@ import AVFoundation
 // сегменты по таймстампам с метками «собеседник»/«я».
 @available(macOS 13.0, *)
 final class AudioRecorder: NSObject {
-    struct Result { let system: URL; let mic: URL? }
+    // micStartOffset — сдвиг первого реального сэмпла mic относительно system (сек):
+    //   micFirst − systemFirst. nil, если одной из дорожек нет первого сэмпла (mic не писался,
+    //   или система так и не выдала буфер). Сервер прибавит его к таймстампам mic при сведении.
+    // systemSegments — доп. файлы системной дорожки сверх `system` (после пересборок тапа при
+    //   смене устройства/зависшей тишине), каждый со своим offset (сек от старта сессии).
+    //   В обычном сценарии пусто. system всегда имеет offset 0.
+    struct Result {
+        let system: URL
+        let mic: URL?
+        let micStartOffset: Double?
+        let systemSegments: [(url: URL, offset: Double)]
+    }
 
     private var systemCapturer: SystemAudioCapturer?
     private var micRecorder: AVAudioRecorder?
@@ -17,26 +28,54 @@ final class AudioRecorder: NSObject {
     private var micURL: URL?
     private var micActive = false
 
-    // Старт обеих дорожек. Микрофон — best-effort: если нет доступа/ошибка, продолжаем
-    // только с системным звуком (mic = nil в результате).
+    // Текущий уровень входа микрофона, нормализованный в 0…1 (для живого индикатора в виджете).
+    // 0, если запись не идёт / mic недоступен. averagePower даёт dBFS (≈ −160…0); −50 dB берём
+    // за тишину, 0 dB — за максимум, между ними линейно по dB (достаточно для визуальной полосы).
+    func currentMicLevel() -> Float {
+        guard micActive, let rec = micRecorder, rec.isRecording else { return 0 }
+        rec.updateMeters()
+        let db = rec.averagePower(forChannel: 0)
+        let floorDb: Float = -50
+        if db <= floorDb { return 0 }
+        if db >= 0 { return 1 }
+        return (db - floorDb) / (0 - floorDb)
+    }
+
+    // Монотонные якоря первого РЕАЛЬНОГО сэмпла каждой дорожки (один источник времени —
+    // ProcessInfo.systemUptime, не настенные часы; невосприимчив к коррекции NTP/сна).
+    //   • mic   — берём сразу после успешного rec.record()==true (AVAudioRecorder начинает писать).
+    //   • system— первый непустой буфер тапа / первый didOutputSampleBuffer SCK (см. SystemAudioCapturer).
+    private var micFirstSampleUptime: Double?
+
+    // Старт обеих дорожек. ВАЖНО: система СНАЧАЛА — если она не поднялась (нет доступа/HAL),
+    // не запускаем микрофон, чтобы не остался «осиротевший» mic-файл без системного звука.
+    // Микрофон — best-effort: его сбой не валит запись (mic = nil в результате).
     func start(systemURL: URL, micURL: URL) async throws {
         self.systemURL = systemURL
         self.micURL = micURL
+        micFirstSampleUptime = nil
         try? FileManager.default.removeItem(at: systemURL)
         try? FileManager.default.removeItem(at: micURL)
 
-        try startMicBestEffort(to: micURL)
+        // 1) Система первой. Бросит → запись не началась, mic не трогали.
         let cap = makeSystemCapturer()
         try await cap.start(systemURL: systemURL)
         self.systemCapturer = cap
+
+        // 2) Только теперь — микрофон (best-effort).
+        try startMicBestEffort(to: micURL)
     }
 
     func stop() async throws -> Result {
         guard let sysURL = systemURL else {
             throw SwarmError.transport("recorder not started")
         }
+        // Якорь первого системного сэмпла снимаем ДО stop() (capturer ещё жив).
+        let systemFirst = systemCapturer?.firstSampleUptime
         // Системная дорожка — финализируется внутри capturer (best-effort, не бросает).
         await systemCapturer?.stop()
+        // extraSegments читаем ПОСЛЕ stop() — финализация дописывает последний сегмент.
+        let extraSegments = systemCapturer?.extraSegments ?? []
         systemCapturer = nil
 
         // микрофон
@@ -50,22 +89,39 @@ final class AudioRecorder: NSObject {
                 resultMic = mURL
             }
         }
+
+        // Сдвиг mic относительно system: оба якоря в одной шкале (ProcessInfo.systemUptime).
+        // Считаем только если есть mic-файл И оба якоря известны — иначе сервер сведёт без сдвига.
+        var offset: Double? = nil
+        if resultMic != nil, let micFirst = micFirstSampleUptime, let sysFirst = systemFirst {
+            offset = micFirst - sysFirst
+        }
+
         systemURL = nil
         micURL = nil
-        return Result(system: sysURL, mic: resultMic)
+        micFirstSampleUptime = nil
+        // Первый сегмент = sysURL (offset 0), затем доп. сегменты в порядке появления.
+        let segments = [(url: sysURL, offset: 0.0)] + extraSegments
+        return Result(system: sysURL, mic: resultMic, micStartOffset: offset, systemSegments: segments)
     }
 
     // ── Микрофон через AVAudioRecorder (простой надёжный путь) ───────────────────
     private func startMicBestEffort(to url: URL) throws {
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: 16_000,
+            AVSampleRateKey: 16_000,           // 16 кГц моно — достаточно для речи и Whisper
             AVNumberOfChannelsKey: 1,
-            AVEncoderBitRateKey: 24_000,
+            // 32 kbps вместо 24: на 16 кГц моно AAC@24k заметно «булькает» на тихой речи,
+            // 32k даёт ощутимо чище разборчивость для транскрибации при том же 16 кГц/моно.
+            AVEncoderBitRateKey: 32_000,
         ]
         do {
             let rec = try AVAudioRecorder(url: url, settings: settings)
+            // Метеринг для живого индикатора уровня в виджете (averagePower(forChannel:)).
+            rec.isMeteringEnabled = true
             if rec.record() {
+                // Якорь: rec.record()==true → AVAudioRecorder начал писать прямо сейчас.
+                micFirstSampleUptime = ProcessInfo.processInfo.systemUptime
                 micRecorder = rec
                 micActive = true
             } else {

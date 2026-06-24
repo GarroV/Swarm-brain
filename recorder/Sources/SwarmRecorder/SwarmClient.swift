@@ -1,15 +1,45 @@
 import Foundation
 
 enum SwarmError: Error, CustomStringConvertible {
-    case http(Int, String)
+    // http(код, тело, Retry-After в секундах если сервер прислал заголовок).
+    // retryAfter нужен ретраю (429/503) — спим ровно столько, сколько просит сервер.
+    case http(Int, String, retryAfter: TimeInterval?)
     case transport(String)
+
+    // Удобный конструктор для кода, которому не важен Retry-After.
+    static func http(_ code: Int, _ body: String) -> SwarmError {
+        .http(code, body, retryAfter: nil)
+    }
+
+    var httpStatus: Int? {
+        if case .http(let code, _, _) = self { return code }
+        return nil
+    }
+
+    var isAuthExpired: Bool { httpStatus == 401 }
 
     var description: String {
         switch self {
-        case .http(let code, let body): return "HTTP \(code): \(body)"
+        case .http(let code, let body, _): return "HTTP \(code): \(body)"
         case .transport(let m): return "transport: \(m)"
         }
     }
+}
+
+// Разобрать Retry-After: либо число секунд, либо HTTP-date. nil → заголовка нет/не распарсился.
+private func parseRetryAfter(_ resp: URLResponse?) -> TimeInterval? {
+    guard let http = resp as? HTTPURLResponse,
+          let raw = http.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespaces),
+          !raw.isEmpty else { return nil }
+    if let secs = TimeInterval(raw), secs >= 0 { return secs }
+    let fmt = DateFormatter()
+    fmt.locale = Locale(identifier: "en_US_POSIX")
+    fmt.timeZone = TimeZone(identifier: "GMT")
+    fmt.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+    if let date = fmt.date(from: raw) {
+        return max(0, date.timeIntervalSinceNow)
+    }
+    return nil
 }
 
 // Клиент к Swarm Brain: claim (до загрузки) + upload аудио.
@@ -47,7 +77,7 @@ struct SwarmClient {
         let (data, resp) = try await URLSession.shared.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200...299).contains(code) else {
-            throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "")
+            throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "", retryAfter: parseRetryAfter(resp))
         }
         return try decoder.decode(ClaimResponse.self, from: data)
     }
@@ -76,6 +106,11 @@ struct SwarmClient {
     // Контракт: sys_parts/mic_parts — JSON-манифест [{name,offset}] + файлы по этим name
     // (sys_0, sys_1, …; mic_0, …). Короткая встреча = одна часть с offset 0; длинная нарезана
     // Segmenter'ом на части ≤25 МБ. Сервер транскрибирует все части и сводит по таймстампам.
+    // Размер чанка при потоковой записи файловых частей в конверт (1 MiB).
+    // Файлы аудио могут быть до 25 МБ × N частей — держать их все в памяти Data() —
+    // десятки-сотни МБ резидентно. Пишем конверт на диск чанками и грузим upload(fromFile:).
+    private static let copyChunkBytes = 1 << 20
+
     func uploadAudio(meetingID: String, system: [AudioPart], mic: [AudioPart] = []) async throws -> IngestResponse {
         let boundary = "swarm-\(UUID().uuidString)"
         var req = URLRequest(url: url("/meeting-ingest"))
@@ -83,20 +118,44 @@ struct SwarmClient {
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         authed(&req)
 
-        var body = Data()
-        func append(_ s: String) { body.append(s.data(using: .utf8)!) }
-        func textField(_ name: String, _ value: String) {
-            append("--\(boundary)\r\n")
-            append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
-            append("\(value)\r\n")
+        // Конверт собираем в temp-файл (а не в память) → URLSession.upload(fromFile:).
+        let envelopeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("swarm-upload-\(UUID().uuidString).multipart")
+        FileManager.default.createFile(atPath: envelopeURL.path, contents: nil)
+        guard let handle = try? FileHandle(forWritingTo: envelopeURL) else {
+            throw SwarmError.transport("cannot open upload envelope")
         }
+        // Конверт — временный; чистим всегда, успех это или ошибка.
+        defer {
+            try? handle.close()
+            try? FileManager.default.removeItem(at: envelopeURL)
+        }
+
+        func write(_ s: String) throws {
+            guard let d = s.data(using: .utf8) else { throw SwarmError.transport("utf8 encode") }
+            try handle.write(contentsOf: d)
+        }
+        func textField(_ name: String, _ value: String) throws {
+            try write("--\(boundary)\r\n")
+            try write("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
+            try write("\(value)\r\n")
+        }
+        // Файловую часть пишем потоково: заголовок строкой, тело — чанками по 1 MiB из
+        // FileHandle источника (никогда не держим весь файл в памяти разом).
         func filePart(name: String, fileURL: URL) throws {
-            let fileData = try Data(contentsOf: fileURL)
-            append("--\(boundary)\r\n")
-            append("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(name).m4a\"\r\n")
-            append("Content-Type: audio/mp4\r\n\r\n")
-            body.append(fileData)
-            append("\r\n")
+            try write("--\(boundary)\r\n")
+            try write("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(name).m4a\"\r\n")
+            try write("Content-Type: audio/mp4\r\n\r\n")
+            guard let src = try? FileHandle(forReadingFrom: fileURL) else {
+                throw SwarmError.transport("cannot read part \(name)")
+            }
+            defer { try? src.close() }
+            while true {
+                let chunk = try src.read(upToCount: Self.copyChunkBytes) ?? Data()
+                if chunk.isEmpty { break }
+                try handle.write(contentsOf: chunk)
+            }
+            try write("\r\n")
         }
         // Приложить файлы части по порядку и вернуть JSON-манифест [{name,offset}].
         func appendTrack(prefix: String, parts: [AudioPart]) throws -> String {
@@ -109,35 +168,67 @@ struct SwarmClient {
             return "[" + entries.joined(separator: ",") + "]"
         }
 
-        textField("meeting_id", meetingID)
-        textField("sys_parts", try appendTrack(prefix: "sys", parts: system))
-        if !mic.isEmpty {
-            textField("mic_parts", try appendTrack(prefix: "mic", parts: mic))
-        }
-        append("--\(boundary)--\r\n")
+        try textField("meeting_id", meetingID)
+        // Манифест собираем ПОСЛЕ записи соответствующих файловых частей: порядок частей в
+        // конверте не важен (сервер ищет файлы по name), а текстовые поля можно дописать в конец.
+        let sysManifest = try appendTrack(prefix: "sys", parts: system)
+        var micManifest: String?
+        if !mic.isEmpty { micManifest = try appendTrack(prefix: "mic", parts: mic) }
+        try textField("sys_parts", sysManifest)
+        if let micManifest { try textField("mic_parts", micManifest) }
+        try write("--\(boundary)--\r\n")
 
-        let (data, resp) = try await URLSession.shared.upload(for: req, from: body)
+        try handle.synchronize()
+        try? handle.close()
+
+        let (data, resp) = try await URLSession.shared.upload(for: req, fromFile: envelopeURL)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200...299).contains(code) else {
-            throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "")
+            throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "", retryAfter: parseRetryAfter(resp))
         }
         return try decoder.decode(IngestResponse.self, from: data)
     }
 }
 
-// Простой ретрай с бэкоффом для сетевых сбоев/5xx (очередь на диск — следующая итерация).
-func withRetry<T>(_ attempts: Int = 4, _ op: @escaping () async throws -> T) async throws -> T {
+// Ретрай с full-jitter бэкоффом для сетевых сбоев/5xx/429.
+//   • База 1с, экспонента 2^i, full jitter: задержка = random(base*exp/2 ... base*exp), кап 30с.
+//     Jitter разводит одновременные ретраи нескольких рекордеров (thundering herd).
+//   • Если сервер прислал Retry-After на 429/503 — уважаем его (спим ровно столько), кап 60с.
+//   • 8 попыток вместо 4: прежние 4 (1+2+4≈7с) бросали транзиентный 429/5xx уже за ~15с.
+//     8 даёт суммарно до ~неск. минут с джиттером — переживаем короткие всплески 429/5xx.
+//   • 4xx кроме 429 — не ретраим (постоянный сбой: 401 токен, 403 не владелец, 413 размер).
+func withRetry<T>(_ attempts: Int = 8, _ op: @escaping () async throws -> T) async throws -> T {
+    let baseSec = 1.0
+    let maxBackoffSec = 30.0
+    let maxRetryAfterSec = 60.0
+
+    // Full-jitter backoff: random(base*exp/2 ... base*exp), кап maxBackoffSec.
+    func jitterBackoff(_ i: Int) -> Double {
+        let exp = min(baseSec * pow(2.0, Double(i)), maxBackoffSec)
+        return Double.random(in: (exp / 2)...exp)
+    }
+    // Сколько спать перед попыткой i+1: Retry-After если сервер прислал, иначе jitter-backoff.
+    func sleepSec(_ i: Int, retryAfter: TimeInterval?) -> Double {
+        if let ra = retryAfter, ra > 0 { return min(ra, maxRetryAfterSec) }
+        return jitterBackoff(i)
+    }
+
     var lastError: Error = SwarmError.transport("no attempts")
     for i in 0..<attempts {
         do { return try await op() }
-        catch let SwarmError.http(code, body) where !(500...599).contains(code) && code != 429 {
-            // 4xx (кроме 429) — не ретраим, это не временный сбой
-            throw SwarmError.http(code, body)
+        catch let SwarmError.http(code, body, retryAfter) {
+            let transient = (500...599).contains(code) || code == 429
+            if !transient {
+                throw SwarmError.http(code, body, retryAfter: retryAfter)   // постоянный сбой
+            }
+            lastError = SwarmError.http(code, body, retryAfter: retryAfter)
+            if i == attempts - 1 { break }
+            try? await Task.sleep(nanoseconds: UInt64(sleepSec(i, retryAfter: retryAfter) * 1_000_000_000))
         }
         catch {
             lastError = error
-            let delaySec = pow(2.0, Double(i))   // 1, 2, 4, 8с
-            try? await Task.sleep(nanoseconds: UInt64(delaySec * 1_000_000_000))
+            if i == attempts - 1 { break }
+            try? await Task.sleep(nanoseconds: UInt64(jitterBackoff(i) * 1_000_000_000))
         }
     }
     throw lastError

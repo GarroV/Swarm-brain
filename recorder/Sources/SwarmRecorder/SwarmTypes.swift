@@ -55,6 +55,12 @@ struct ClaimRequest: Encodable {
     var endedAt: String?
     var attendees: [Attendee]? = nil
     var agentVersion: String?
+    // Сдвиг старта микрофонной дорожки относительно системной (сек, может быть < 0):
+    //   micStartOffset = (момент первого сэмпла mic) − (момент первого сэмпла system).
+    // Дорожки стартуют не строго одновременно (HAL-тап и AVAudioRecorder инициализируются
+    // по-разному); без сдвига сервер сводит реплики «я» и «собеседник» с рассинхроном.
+    // Кодируется как mic_start_offset (snake_case). nil → дорожки считаем синхронными.
+    var micStartOffset: Double? = nil
     // user_notes опускаем в MVP (окно пометок — следующая итерация)
 }
 

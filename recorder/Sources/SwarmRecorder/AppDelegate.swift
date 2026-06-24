@@ -14,12 +14,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private var config: SwarmConfig?
     private var configError: String?
-    private enum State { case idle, recording, sending, error(String) }
+    // Типизированные сбои вместо общего .error(String): каждый даёт точный текст «куда идти»
+    // в System Settings + кнопку «Повторить». .error(String) остаётся только для по-настоящему
+    // непредвиденного (не классифицировали) — чтобы не прятать причину.
+    //   • noScreenRecording — нет «Screen Recording» (<14.4, путь ScreenCaptureKit);
+    //   • noSystemAudio     — нет «System Audio Recording» (14.4+, Core Audio process-tap);
+    //   • noMic             — отказан доступ к микрофону;
+    //   • offline           — сеть недоступна (claim/upload не прошли по транспорту);
+    //   • tokenExpired      — HTTP 401, токен протух/отозван (ведём в бот /recordertoken).
+    private enum State {
+        case idle, recording, sending
+        case noScreenRecording, noSystemAudio, noMic, offline, tokenExpired
+        case error(String)
+    }
     private var state: State = .idle
+    // Последнее действие записи — чтобы «Повторить» после сбоя разрешений повторило именно его
+    // (встреча из календаря / звонок / ручной старт), а не угадывало контекст заново.
+    private var lastRecordIdentity: MeetingIdentity.Info?
     private var sysURL: URL?
     private var micURL: URL?
     private var recordStartedAt: Date?
     private var identity: MeetingIdentity.Info?
+    // Сколько записей ждёт дозагрузки (UploadQueue) — показываем «N в очереди» в меню.
+    private var queuedCount = 0
 
     // Календарное предложение.
     private var pendingMeeting: MeetingIdentity.Info?
@@ -55,9 +72,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         widget.onStop = { [weak self] in self?.stopTapped() }
         widget.onRecord = { [weak self] in self?.widgetRecord() }
         widget.onDismiss = { [weak self] in self?.widgetDismiss() }
+        // Живой уровень входа для полосы в виджете — читаем текущий уровень микрофона.
+        widget.levelProvider = { [weak self] in self?.recorder.currentMicLevel() ?? 0 }
 
         setupNotifications()
         startWatching()
+
+        // Дозагрузка на старте: если в прошлый раз приложение закрыли/упало с висящими записями
+        // в pending/, заливаем их сейчас (meetingId переиспользуется, claim не повторяем).
+        if let cfg = config, configError == nil {
+            Task { await UploadQueue.shared.drain(config: cfg); await refreshQueueBadge() }
+        }
     }
 
     // ── Авто-детект (календарь + микрофон) ───────────────────────────────────────
@@ -153,16 +178,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // ── UI ──────────────────────────────────────────────────────────────────────
     private var isRecording: Bool { if case .recording = state { return true }; return false }
 
+    // Сетевой/транспортный сбой → состояние .offline (а не общая ошибка): URLError (нет связи,
+    // таймаут) или SwarmError.transport (мы не дошли до HTTP-ответа).
+    private func isOfflineError(_ error: Error) -> Bool {
+        if error is URLError { return true }
+        if case SwarmError.transport = error { return true }
+        return false
+    }
+
+    // Состояния с собственным UI «путь в Settings/сеть + Повторить» (отдельно от idle/recording).
+    private func isPermissionOrOfflineError(_ s: State) -> Bool {
+        switch s {
+        case .noScreenRecording, .noSystemAudio, .noMic, .offline, .error:
+            return true
+        default:
+            return false
+        }
+    }
+
     private func statusText() -> String {
         if let e = configError { return "⚠️ \(e)" }
         switch state {
         case .idle:
             if let m = pendingMeeting { return "Встреча \(meetingWhen(m)): «\(m.title ?? "")»" }
             if callActive { return "Идёт звонок" }
+            if queuedCount > 0 { return "Готов · \(queuedCount) в очереди" }
             return "Готов"
         case .recording: return "● Идёт запись"
         case .sending: return "Отправка…"
+        case .noScreenRecording: return "🔴 Нет доступа «Screen Recording»"
+        case .noSystemAudio: return "🔴 Нет доступа «System Audio Recording»"
+        case .noMic: return "🔴 Нет доступа к микрофону"
+        case .offline: return "🔴 Нет сети — повтори, когда появится"
         case .error(let m): return "Ошибка: \(m)"
+        case .tokenExpired: return "🔴 Токен истёк/недействителен"
+        }
+    }
+
+    // Текст «куда идти» в System Settings для каждого типа сбоя разрешений (для пункта меню).
+    private func settingsHint(for s: State) -> String? {
+        switch s {
+        case .noScreenRecording, .noSystemAudio:
+            return Permissions.captureSettingsPath
+        case .noMic:
+            return "System Settings → Privacy & Security → Microphone → включить SwarmRecorder"
+        default:
+            return nil
         }
     }
 
@@ -174,7 +235,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         menu.addItem(NSMenuItem(title: statusText(), action: nil, keyEquivalent: ""))
         menu.addItem(.separator())
 
-        if configError == nil {
+        // 401: токен протух — показываем явный путь «Получить новый токен» (ведёт в бот к
+        // /recordertoken) + обычную вставку из буфера. Запись недоступна, пока токен невалиден.
+        if case .tokenExpired = state {
+            menu.addItem(NSMenuItem(title: "Получить новый токен", action: #selector(getNewTokenTapped), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Обновить токен из буфера", action: #selector(pasteTokenTapped), keyEquivalent: ""))
+            if queuedCount > 0 {
+                menu.addItem(NSMenuItem(title: "⏳ \(queuedCount) в очереди (дозагрузим после токена)", action: nil, keyEquivalent: ""))
+            }
+        } else if isPermissionOrOfflineError(state) {
+            // Типизированный сбой разрешений/сети: точный путь в Settings + «Повторить».
+            if let hint = settingsHint(for: state) {
+                let item = NSMenuItem(title: hint, action: nil, keyEquivalent: "")
+                item.isEnabled = false
+                menu.addItem(item)
+            }
+            switch state {
+            case .noMic:
+                menu.addItem(NSMenuItem(title: "Открыть настройки микрофона", action: #selector(openMicSettingsTapped), keyEquivalent: ""))
+            case .noScreenRecording, .noSystemAudio:
+                menu.addItem(NSMenuItem(title: "Открыть настройки записи", action: #selector(openRecordingSettingsTapped), keyEquivalent: ""))
+            default:
+                break
+            }
+            menu.addItem(NSMenuItem(title: "Повторить", action: #selector(retryTapped), keyEquivalent: "r"))
+            if queuedCount > 0 {
+                menu.addItem(NSMenuItem(title: "⏳ \(queuedCount) в очереди", action: #selector(drainQueueTapped), keyEquivalent: ""))
+            }
+        } else if configError == nil {
             switch state {
             case .recording:
                 menu.addItem(NSMenuItem(title: "Остановить и отправить", action: #selector(stopTapped), keyEquivalent: "s"))
@@ -190,6 +278,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 } else {
                     menu.addItem(NSMenuItem(title: "Записать встречу", action: #selector(recordTapped), keyEquivalent: "r"))
                 }
+            }
+            // Висящие дозагрузки видно всегда (даже во время записи): «N в очереди».
+            if queuedCount > 0 {
+                menu.addItem(NSMenuItem(title: "⏳ \(queuedCount) в очереди", action: #selector(drainQueueTapped), keyEquivalent: ""))
             }
             if let web = config?.webBaseURL, !web.isEmpty {
                 menu.addItem(NSMenuItem(title: "Открыть Рой", action: #selector(openWeb), keyEquivalent: ""))
@@ -226,7 +318,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else {
                 widget.hide()
             }
-        case .sending, .error:
+        case .sending, .error, .tokenExpired,
+             .noScreenRecording, .noSystemAudio, .noMic, .offline:
             widget.hide()
         }
     }
@@ -252,9 +345,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Permissions.openScreenRecordingSettings()
     }
 
+    @objc private func openMicSettingsTapped() {
+        Permissions.openMicrophoneSettings()
+    }
+
+    // «Повторить» после типизированного сбоя: сбрасываем состояние и повторяем последнее
+    // действие записи (тот же контекст: встреча/звонок/ручной старт). Сеть/разрешения к этому
+    // моменту пользователь уже мог поправить через пункты выше.
+    @objc private func retryTapped() {
+        let id = lastRecordIdentity
+        state = .idle
+        rebuildMenu()
+        beginRecording(identity: id)
+    }
+
     @objc private func openWeb() {
         guard let web = config?.webBaseURL, let url = URL(string: web) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    // 401: подсказать получить новый токен из бота (команда /recordertoken), затем вставить.
+    // Бот — Telegram, прямой deep-link в конфиге не хранится; ведём текстом к команде.
+    @objc private func getNewTokenTapped() {
+        let a = NSAlert()
+        a.messageText = "Нужен новый токен"
+        a.informativeText = "Токен истёк или отозван. Открой бота Swarm Brain в Telegram, набери /recordertoken, скопируй выданный smcp_-токен и нажми «Обновить токен из буфера»."
+        a.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        a.runModal()
+    }
+
+    // Ручной запуск дозагрузки очереди (пункт «N в очереди»).
+    @objc private func drainQueueTapped() {
+        guard let cfg = config else { return }
+        Task {
+            await UploadQueue.shared.drain(config: cfg)
+            await refreshQueueBadge()
+        }
     }
 
     @objc private func pasteTokenTapped() {
@@ -278,6 +405,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             state = .idle
             rebuildMenu()
             info("Токен сохранён ✅", "smcp_…\(clip.suffix(4))")
+            // Свежий токен → пробуем дозалить всё, что копилось при протухшем (включая 401-висяки).
+            if let cfg = config {
+                Task { await UploadQueue.shared.drain(config: cfg); await refreshQueueBadge() }
+            }
         } catch {
             setState(.error("не сохранить токен: \(error)"))
         }
@@ -314,13 +445,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func beginRecording(identity id: MeetingIdentity.Info?) {
         guard config != nil else { return }
         if case .recording = state { return }
+        // Запоминаем контекст для «Повторить» (встреча/звонок/manual).
+        lastRecordIdentity = id
         // macOS 14.4+: системный звук через Core Audio process-tap — нужно «System Audio
         // Recording», НЕ «запись экрана»; TCC-промпт всплывёт сам при старте тапа.
         // Ниже 14.4 — старый путь ScreenCaptureKit, требует «запись экрана».
         if #available(macOS 14.4, *) {
             // ничего не гейтим — промпт системного звука покажется при старте
         } else if !Permissions.ensureScreenRecording() {
-            setState(.error("Нет доступа к записи экрана. Открыл настройки — включи SwarmRecorder и перезапусти приложение."))
+            setState(.noScreenRecording)
             Permissions.openScreenRecordingSettings()
             return
         }
@@ -339,7 +472,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 setState(.recording)
                 startCallEndWatch()
             } catch {
-                setState(.error("Не удалось начать запись: \(error). Первый запуск? Открыл настройки — включи SwarmRecorder в «Screen & System Audio Recording», затем «Записать» снова."))
+                // Сбой старта захвата системного звука = нет нужного TCC-разрешения. На 14.4+ это
+                // «System Audio Recording», ниже — «Screen Recording»; ведём пользователя точно туда.
+                setState(Permissions.usesSystemAudioCapture ? .noSystemAudio : .noScreenRecording)
                 Permissions.openScreenRecordingSettings()
             }
         }
@@ -429,6 +564,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let cfg = config else { return }
         stopCallEndWatch()
         setState(.sending)
+        let info = identity
         Task {
             do {
                 let res = try await recorder.stop()
@@ -437,7 +573,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 let now = Date()
                 let started = recordStartedAt ?? now
                 let req: ClaimRequest
-                if let info = identity {
+                if let info {
                     req = ClaimRequest(
                         identityKind: info.kind,
                         identityKey: info.key,
@@ -446,6 +582,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         endedAt: info.endISO ?? iso.string(from: now),
                         attendees: info.attendees.isEmpty ? nil : info.attendees,
                         agentVersion: "0.1.0",
+                        micStartOffset: res.micStartOffset,
                     )
                 } else {
                     req = ClaimRequest(
@@ -455,28 +592,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         startedAt: iso.string(from: started),
                         endedAt: iso.string(from: now),
                         agentVersion: "0.1.0",
+                        micStartOffset: res.micStartOffset,
                     )
                 }
+                // Claim (с ретраем). meetingId переиспользуется очередью при дозагрузке.
                 let claim = try await withRetry { try await client.claim(req) }
                 if claim.shouldTranscribe {
-                    // Длинные дорожки режем на части ≤25 МБ; короткие = одна часть с offset 0.
-                    let sysParts = try await Segmenter.segment(res.system)
-                    var micParts: [AudioPart] = []
-                    if let micURL = res.mic { micParts = try await Segmenter.segment(micURL) }
-                    _ = try await withRetry { try await client.uploadAudio(meetingID: claim.meetingId, system: sysParts, mic: micParts) }
-                    // Временные файлы нарезки (если были) — отдельные от исходников, чистим их тут.
-                    for p in sysParts where p.url != res.system { try? FileManager.default.removeItem(at: p.url) }
-                    for p in micParts where p.url != res.mic { try? FileManager.default.removeItem(at: p.url) }
+                    // КРИТИЧНО против потери данных: ДО загрузки переносим записи в pending/<id>/
+                    // с сайдкаром. Файлы удалятся только после подтверждённого ingest (в drain).
+                    try await UploadQueue.shared.enqueue(
+                        meetingId: claim.meetingId,
+                        systemSegments: res.systemSegments,
+                        micURL: res.mic,
+                        micStartOffset: res.micStartOffset,
+                        startISO: iso.string(from: started),
+                        endISO: iso.string(from: now)
+                    )
+                } else {
+                    // decision=defer — транскрибирует другой участник; наши файлы не нужны.
+                    for s in res.systemSegments { try? FileManager.default.removeItem(at: s.url) }
+                    if let m = res.mic { try? FileManager.default.removeItem(at: m) }
                 }
                 // Записанную встречу больше не предлагать.
-                if let info = identity { dismissedKeys.insert(info.key) }
+                if let info { dismissedKeys.insert(info.key) }
                 identity = nil
-                try? FileManager.default.removeItem(at: res.system)
-                if let m = res.mic { try? FileManager.default.removeItem(at: m) }
                 setState(.idle)
+                // Дозагрузка (этой записи + всех висящих) — в фоне с бэкоффом.
+                await UploadQueue.shared.drain(config: cfg)
+                await refreshQueueBadge()
+            } catch let err as SwarmError where err.isAuthExpired {
+                // 401: токен истёк/недействителен — отдельное состояние с подсказкой получить новый.
+                identity = nil
+                setState(.tokenExpired)
+                await refreshQueueBadge()
+            } catch where isOfflineError(error) {
+                // Транспорт/сеть недоступна (claim/upload не прошли по сети). Запись уже могла лечь
+                // в pending/ (если claim успел) — дозальётся при следующем drain; иначе «Повторить».
+                identity = nil
+                setState(.offline)
+                await refreshQueueBadge()
             } catch {
+                identity = nil
                 setState(.error("\(error)"))
+                await refreshQueueBadge()
             }
         }
+    }
+
+    // Подтянуть счётчик очереди и перерисовать меню (вызывать с любого потока).
+    private func refreshQueueBadge() async {
+        let n = await UploadQueue.shared.pendingCount()
+        await MainActor.run { self.queuedCount = n; self.rebuildMenu() }
     }
 }

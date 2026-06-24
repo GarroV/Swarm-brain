@@ -29,6 +29,9 @@ interface ClaimBody {
   attendees?: Attendee[];
   user_notes?: UserNote[];
   agent_version?: string;
+  // Сдвиг старта mic-дорожки относительно system (сек, может быть < 0). См. миграцию
+  // 20260624120000_meetings_mic_start_offset.sql — ingest прибавит его к таймстампам mic.
+  mic_start_offset?: number;
 }
 
 function json(payload: unknown, status = 200): Response {
@@ -77,6 +80,7 @@ function validate(raw: unknown): ClaimBody {
     });
   }
 
+  const micOffset = b.mic_start_offset;
   return {
     identity_kind: kind,
     identity_key: b.identity_key,
@@ -86,6 +90,7 @@ function validate(raw: unknown): ClaimBody {
     attendees: Array.isArray(b.attendees) ? (b.attendees as Attendee[]) : undefined,
     user_notes: notes,
     agent_version: typeof b.agent_version === "string" ? b.agent_version : undefined,
+    mic_start_offset: typeof micOffset === "number" && Number.isFinite(micOffset) ? micOffset : undefined,
   };
 }
 
@@ -192,6 +197,7 @@ Deno.serve(async (req: Request) => {
     attendees: body.attendees ?? [],
     group_id: identity.groupId,
     agent_version: body.agent_version ?? null,
+    mic_start_offset: body.mic_start_offset ?? null,
   };
 
   let meetingId: string;
@@ -231,7 +237,8 @@ Deno.serve(async (req: Request) => {
 
       const { data: claimed } = await supabase
         .from("meetings")
-        .update({ claim_owner: identity.telegramId, lease_expires_at: leaseIso, updated_at: nowIso })
+        // mic_start_offset принадлежит тому, кто реально зальёт аудио → пишем при перехвате claim.
+        .update({ claim_owner: identity.telegramId, lease_expires_at: leaseIso, updated_at: nowIso, mic_start_offset: body.mic_start_offset ?? null })
         .eq("id", meetingId)
         .is("transcript", null)
         .or(`claim_owner.is.null,lease_expires_at.lt.${nowIso}`)

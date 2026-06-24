@@ -6,6 +6,26 @@ import AppKit
 // Запрос TCC-разрешений. MVP нужен «Screen & System Audio Recording» (для ScreenCaptureKit).
 // Микрофон/Календарь — для следующих итераций, но запросить заранее не вредно.
 enum Permissions {
+    // На macOS 14.4+ системный звук пишется через Core Audio process-tap → нужен ОТДЕЛЬНЫЙ
+    // TCC-сервис kTCCServiceAudioCapture, в System Settings он называется «System Audio Recording».
+    // Ниже 14.4 системный звук берётся через ScreenCaptureKit → требуется «Screen Recording».
+    // Эта развилка определяет и текст для пользователя, и какую панель настроек открывать.
+    static var usesSystemAudioCapture: Bool {
+        if #available(macOS 14.4, *) { return true }
+        return false
+    }
+
+    // Человекочитаемое имя нужного разрешения (для заголовков ошибок и текста «куда идти»).
+    static var captureSettingName: String {
+        usesSystemAudioCapture ? "System Audio Recording" : "Screen Recording"
+    }
+
+    // Точный путь в System Settings, который надо продиктовать пользователю (RU-локаль macOS
+    // показывает английские названия секций приватности как есть).
+    static var captureSettingsPath: String {
+        "System Settings → Privacy & Security → \(captureSettingName) → включить SwarmRecorder"
+    }
+
     // Запись экрана/системного звука. CGRequestScreenCaptureAccess покажет системный запрос
     // ОДИН раз за жизнь процесса — поэтому дёргаем его только по явному действию пользователя
     // (старт записи), а не на старте приложения, иначе промпт «съедается» молча и больше не
@@ -15,17 +35,30 @@ enum Permissions {
         return CGRequestScreenCaptureAccess()
     }
 
-    // Открывает панель разрешения на запись СИСТЕМНОГО ЗВУКА.
-    // macOS 26 (Tahoe): системный звук — ОТДЕЛЬНЫЙ TCC-сервис kTCCServiceAudioCapture
-    // («…would like access to record your system audio»), своя панель, НЕ «Screen Recording».
-    // Сначала аудио-anchor (современный + легаси bundle id), затем фолбэк на ScreenCapture
-    // (старые ОС, где тап шёл через ScreenCaptureKit/kTCCServiceScreenCapture).
+    // Открывает панель нужного разрешения на запись звука.
+    // 14.4+ → kTCCServiceAudioCapture («System Audio Recording»), своя панель, НЕ «Screen Recording».
+    // Сначала пробуем якорь, соответствующий ОС, затем фолбэки (легаси bundle id / другой сервис).
     static func openScreenRecordingSettings() {
-        let anchors = [
+        let audio = [
             "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AudioCapture",
             "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture",
+        ]
+        let screen = [
             "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture",
             "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+        ]
+        // На 14.4+ нужен AudioCapture, на старых ОС — ScreenCapture; второй список как фолбэк.
+        let anchors = usesSystemAudioCapture ? audio + screen : screen + audio
+        for s in anchors {
+            if let url = URL(string: s), NSWorkspace.shared.open(url) { return }
+        }
+    }
+
+    // Открывает панель разрешения МИКРОФОНА (Privacy → Microphone).
+    static func openMicrophoneSettings() {
+        let anchors = [
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
         ]
         for s in anchors {
             if let url = URL(string: s), NSWorkspace.shared.open(url) { return }

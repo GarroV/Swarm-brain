@@ -166,13 +166,22 @@ async function processAudio(
   systemParts: AudioPart[],
   micParts: AudioPart[],
   recorders: RecorderEntry[],
+  micStartOffset: number,
 ): Promise<void> {
   // Транскрибируем системный звук (собеседники) и, если есть, микрофон (я).
   // Каждая дорожка может быть нарезана на части — сводим их по offset внутри transcribeTrack.
   let segments = await transcribeTrack(systemParts, "собеседник");
   let model = "whisper-1";
   if (micParts.length > 0) {
-    segments = segments.concat(await transcribeTrack(micParts, "я"));
+    // micStartOffset (сек, из claim) — глобальный сдвиг mic-дорожки относительно system:
+    // дорожки стартуют не строго одновременно. Прибавляем ко всем mic-сегментам, чтобы реплики
+    // «я» легли в общую хронологию с «собеседник». Per-part offset уже учтён в transcribeTrack.
+    const micSegs = (await transcribeTrack(micParts, "я")).map((s) => ({
+      ...s,
+      start: s.start + micStartOffset,
+      end: s.end + micStartOffset,
+    }));
+    segments = segments.concat(micSegs);
     model = "whisper-1+mic";
   }
   // Сводим по таймстампам (общий старт сессии) → восстанавливаем порядок реплик.
@@ -299,7 +308,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: meeting } = await supabase
     .from("meetings")
-    .select("id, title, claim_owner, notes_edited_at, recorders, summary_status")
+    .select("id, title, claim_owner, notes_edited_at, recorders, summary_status, mic_start_offset")
     .eq("id", meetingId)
     .maybeSingle();
 
@@ -311,6 +320,7 @@ Deno.serve(async (req: Request) => {
     notes_edited_at: string | null;
     recorders: RecorderEntry[] | null;
     summary_status: string | null;
+    mic_start_offset: number | null;
   };
 
   // Аудио льёт только держатель права транскрибации (claim_owner).
@@ -355,7 +365,8 @@ Deno.serve(async (req: Request) => {
     .update({ summary_status: "processing", updated_at: new Date().toISOString() })
     .eq("id", m.id);
 
-  const job = processAudio(m.id, m.title, systemParts, micParts, recorders).catch(async (e) => {
+  const micStartOffset = typeof m.mic_start_offset === "number" && Number.isFinite(m.mic_start_offset) ? m.mic_start_offset : 0;
+  const job = processAudio(m.id, m.title, systemParts, micParts, recorders, micStartOffset).catch(async (e) => {
     console.error(`meeting-ingest: processing failed for ${m.id}:`, e);
     // Не глотаем: помечаем 'failed' и явно сообщаем записавшим, что обработка не удалась.
     await supabase
