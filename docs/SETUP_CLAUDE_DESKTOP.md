@@ -23,7 +23,7 @@
 Если не хочешь автоскрипт — можно прописать конфиг руками.
 
 1. В боте: **`/mytoken`** — получишь токен `smcp_…`. Если токен у тебя уже выдан, бот **не перевыпустит его молча** (это сломало бы рабочий config): предупредит и попросит подтвердить кнопкой. Перевыпускай, только если потерял токен или подозреваешь утечку — старый при этом перестаёт работать.
-2. Создай/открой `~/Library/Application Support/Claude/claude_desktop_config.json` и добавь блок (не затирая существующие серверы):
+2. Создай/открой `~/Library/Application Support/Claude/claude_desktop_config.json` и добавь блок (не затирая существующие серверы). Замени `<SUPABASE_PROJECT_REF>` на ref своего Supabase-проекта и `smcp_ТВОЙ_ТОКЕН` — на токен из `/mytoken`:
 
 ```json
 {
@@ -32,7 +32,7 @@
       "command": "npx",
       "args": [
         "-y", "mcp-remote",
-        "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp",
+        "https://<SUPABASE_PROJECT_REF>.supabase.co/functions/v1/swarm-mcp",
         "--transport", "http-only",
         "--header", "Authorization:${AUTH_HEADER}"
       ],
@@ -41,6 +41,8 @@
   }
 }
 ```
+
+> Продакшен Dodo Brands развёрнут на ref `vbqglndbxkpmreccpqmr` — для подключения к нему URL будет `https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp`. Свой ref можно найти в дашборде Supabase (Project Settings → General) или в начале URL `…supabase.co`.
 
 3. Нужен Node (`mcp-remote` гоняется через `npx`). Если Claude Desktop пишет «npx not found» — укажи в `command` **абсолютный путь** к `node`, а первым элементом `args` — абсолютный путь к `npx` (GUI-приложение не наследует PATH шелла). Это именно то, что автоскрипт делает за тебя.
 4. Полностью выйди из Claude Desktop (**Cmd+Q**) и открой заново.
@@ -61,6 +63,7 @@
 | `get_meetings` | Последние встречи |
 | `get_users` | Список команды с профилями |
 | `get_storage_stats` | Статистика базы |
-| `list_entries` | Список записей для ревизии |
-| `delete_entry` | Удалить запись |
+| `list_entries` | Список записей с фильтрами (источник, тип, дата, файлы, страны) — для ревизии |
+| `delete_entry` | Удалить запись (и прикреплённый файл из Storage) |
 | `update_entry` | Обновить запись или заменить файл |
+| `reindex_entry` | Перечитать запись и пересчитать страны + embedding через GPT |

@@ -2,6 +2,49 @@
 
 > **Для Claude Code:** Читай этот файл в начале КАЖДОЙ сессии перед тем как трогать код. После любых изменений — обновляй соответствующие разделы сразу.
 
+## Что такое Swarm Brain
+
+Командная база знаний с AI-поиском, управлением задачами и интеграцией встреч — для распределённых команд. Цель: собрать в одном месте всё, что знает команда (заметки, документы, договорённости, итоги встреч, ссылки), и сделать это мгновенно доступным на естественном языке, не выходя из инструментов, где команда уже работает.
+
+**Проблема, которую решает:** институциональное знание расползается по чатам, головам и встречам — новый человек или коллега с другого рынка не может быстро поднять контекст. Swarm Brain централизует знание и отвечает на вопросы по содержимому базы со ссылками на источники, а не «по памяти».
+
+**Кто пользуется:** распределённые команды международного бизнеса. Текущее развёртывание — Dodo Brands, рынки CEE и Other (домен — общепит/доставка: пиццерии в Сербии, Болгарии, Хорватии, Венгрии, Молдове, Румынии и др.). Изоляция данных — по воркспейсам, которые маппятся на группы рынков (`cee` / `other`).
+
+## Поверхности продукта
+
+Четыре пользовательские поверхности поверх одного бэкенда (Supabase Edge Functions + Postgres/pgvector + OpenAI):
+
+| Поверхность | Технология | Для чего | Бэкенд |
+|---|---|---|---|
+| **Telegram-бот** | Deno Edge Function | Быстрый ввод и поиск, встречи, задачи, фидбек, админка — прямо там, где команда общается | `swarm-bot` |
+| **Веб Mini App «Рой»** | Next.js (static export) → Cloudflare Pages | Доска задач (Список/Таймлайн/Спринты/Граф), RAG-поиск, вычитка встреч | `swarm-api` |
+| **Claude Desktop (MCP)** | MCP-сервер | Та же база + инструменты внутри Claude Desktop (большие тексты, с проверкой человеком) | `swarm-mcp` |
+| **SwarmRecorder** | macOS-приложение (Swift) | Запись звука онлайн-встреч → облачная транскрибация → тезисы в базу | `meeting-claim`, `meeting-ingest` |
+
+## Сквозные сценарии
+
+1. **Захват.** Переслать боту текст / файл / голос / ссылку → сохраняется в базу (генерятся тезисы, эмбеддинг, страны и тип записи).
+2. **Поиск / ответ.** Вопрос боту или в вебе → семантический поиск + RAG-ответ со сносками на источники.
+3. **Встречи.** Read.ai / Granola авто-импорт или SwarmRecorder → черновик «на согласовании» → правка/подтверждение в вебе или Telegram → запись в базе; задачи извлекаются автоматически.
+4. **Задачи.** Извлечены из встречи или созданы вручную → назначение и трекинг (спринты, зависимости, таймлайн — в вебе).
+5. **Claude Desktop.** Та же база и те же операции через MCP-инструменты (по персональному токену).
+
+## Глоссарий
+
+- **«Рой»** (Swarm по-русски) — веб / Mini App фронтенд продукта.
+- **Воркспейс** (workspace, поле `group_id`) — тенант, единица изоляции данных; маппится на группу рынков (`cee` / `other`).
+- **entry** — запись базы знаний (таблица `entries`). **meeting** — источник истины о встрече рекордера (таблица `meetings`). Это разные сущности, не путать.
+- **`/meetings`** — подтверждённые записи-встречи в `entries`; **`/agent-meetings`** — черновики рекордера в `meetings` до публикации.
+- **claim / lease** — право на транскрибацию встречи, выдаваемое одному из записавших (чтобы не транскрибировать дубли).
+- **`confirmed:false`** — «на согласовании»: встреча сохранена, но ждёт подтверждения в вебе или Telegram.
+
+## Ветка и деплой (канон)
+
+- Разработка только в ветке **`sandbox_vas`**; в `main` не коммитим.
+- Edge Functions: `supabase functions deploy <name> --no-verify-jwt`.
+- Mini App: `cd miniapp && npm run build` → `out/` → Cloudflare Pages.
+- Прод project-ref: `vbqglndbxkpmreccpqmr` (развёртывание Dodo Brands). `ADMIN_USER_ID = 744230399` зашит в `swarm-bot/lib/supabase.ts`.
+
 ## Стек
 
 - **Runtime:** Deno (Supabase Edge Functions)
@@ -25,6 +68,9 @@
 | `swarm-setup` | HTTP GET (публичный) | Отдаёт bash-скрипт авто-подключения Claude Desktop (macOS). Юзер запускает его через `/setup` в боте: `curl -fsSL …/swarm-setup \| SWARM_TOKEN=… bash`. Скрипт ставит Node в `~/.swarm-brain` (без sudo), мёржит блок `swarm-brain` (mcp-remote, абсолютный путь к node) в `claude_desktop_config.json`, рестартит Claude. Без секретов. Текст скрипта — `swarm-setup/script.ts` |
 | `meeting-claim` | HTTP POST (desktop-agent) | Swarm Meetings: claim/lease до транскрибации (кто транскрибирует), регистрация записавших, личные пометки → приватная entry. Auth — персональный токен |
 | `meeting-ingest` | HTTP POST (desktop-agent) | Swarm Meetings: приём **аудио** от claimer (multipart: `sys_parts`/`mic_parts` — JSON-манифест `[{name,offset}]` + файлы `sys_0,sys_1,…`/`mic_0,…`; **длинные дорожки рекордер режет на части ≤25 МБ**, сервер транскрибирует ограниченно-параллельно и сводит по `offset`; старый одиночный `audio`/`audio_mic` поддержан как фолбэк) → транскрибация (OpenAI Whisper, ретраи 429/5xx) → async-генерация тезисов в `meetings.draft_notes_md` + **авто-название** по сути встречи (если заголовок пуст/плейсхолдер «Запись <дата>») → уведомление записавшим. `summary_status` (`processing`/`done`/`failed`): идемпотентность повторного upload + видимость сбоя (на `failed` — Telegram записавшим). Auth — персональный токен. Вычитка: `swarm-api` `GET/PATCH/DELETE /agent-meetings/:id` (PATCH правит `draft_notes_md` и/или `title`, DELETE — до публикации) + `POST /agent-meetings/:id/publish` |
+| `meeting-current` | HTTP GET (desktop-agent) | Swarm Meetings: «какая встреча идёт сейчас» для рекордера. Agent-токен (`smcp_`) → `telegram_id` → `refresh_token` из `user_integrations(service='google_calendar')` → Google Calendar API (события now±30мин) → идущее событие + идентичность для claim. Рекордеру не нужен локальный доступ к календарю |
+| `google-oauth` | HTTP redirect (OAuth) | Серверная Google Calendar-интеграция для рекордера (как Granola/Read.ai). `/start` редиректит на consent Google (scope `calendar.events.readonly`), `/callback` меняет код на токены и кладёт `refresh_token` в `user_integrations(service='google_calendar')`. State — подписанный JWT с `telegram_id` (выдаёт `swarm-api` `/google/connect-url`). Секреты `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` |
+| `swarm-api` | HTTP (Mini App / веб) | REST API для Telegram Mini App «Рой» и браузера: задачи, спринты, зависимости, entries CRUD, поиск/RAG, встречи (`/meetings` + `/agent-meetings`), интеграции (Granola/Google), дайджест, фидбек, админка. Третий клиент поверх `_shared/tasks/db.ts`. Полный список эндпоинтов — в разделе [swarm-api — Mini App backend](#swarm-api--mini-app-backend) (канон) |
 
 **Деплой:** `supabase functions deploy <name> --no-verify-jwt` (обязательно `--no-verify-jwt` для Telegram webhook)
 
@@ -112,21 +158,38 @@ supabase/functions/swarm-bot/
 |---------|-----------|---------------|
 | `workspaces` | Воркспейсы (тенанты) | `id` (TEXT PK), `name` TEXT, `allowed_markets text[]` (NULL = глобальный список), `created_at` |
 | `entries` | База знаний — все записи | `id`, `content`, `summary`, `embedding`, `source` (канал: `telegram`\|`granola`\|`read_ai`\|`desktop-agent`\|`link`\|`note`\|`voice`\|`file`\|…), `added_by`, `metadata` (jsonb), `countries` (включает `"General"` для общекомандных/многострановых записей), `entry_type` **CHECK `meeting`\|`note`** — два типа: встреча (транскрипт/тезисы созвона) и заметка (всё остальное). Ссылка/файл — это **фасеты заметки** через `metadata` (`url` / `file_name`+`file_type`), НЕ отдельные типы. Граница встреча↔заметка — по `entry_type`, не по source. `entry_date`, `is_private`, `owner_id`, `group_id` (FK → `workspaces.id`). Старый тип до миграции — в `metadata.legacy_entry_type` |
-| `tasks` | Задачи команды + личные (Рой) | `id`, `title`, `assignees`, `due_date`, `status`, `tags`, `meeting_id`, `created_by_telegram_id`, `created_by_name`, `group_id` (FK → `workspaces.id`); модуль Рой: `is_private`, `owner_id` (FK → `allowed_users`), `start_date`, `timeline_position`, `sprint_id` (FK → `sprints`) |
+| `tasks` | Задачи команды + личные (Рой) | `id`, `title`, `assignees`, `due_date`, `status` (`text not null default 'open'`, **БЕЗ CHECK** — см. ниже), `tags`, `meeting_id`, `created_by`, `created_by_telegram_id`, `priority` (NULL\|`high`\|`med`\|`low`, **CHECK** `priority is null or priority in ('high','med','low')`, миграция `20260615000000`), `task_role` (NULL\|`marketing`\|`bd`\|`rnd`, **CHECK**, миграция `20260528120000`), `group_id` (FK → `workspaces.id`); модуль Рой: `is_private`, `owner_id` (FK → `allowed_users`), `start_date`, `timeline_position`, `sprint_id` (FK → `sprints`). ⚠️ `created_by_name` — **НЕ колонка**: вычисляется в слое `swarm-api` (`GET /tasks`) из `created_by_telegram_id` через `creatorMap` |
 | `sprints` | Спринты (Рой) | `id`, `group_id` (FK → `workspaces.id`), `name`, `start_date`, `end_date`, `status` (`planned`\|`active`\|`completed`), CHECK `start_date<=end_date` |
 | `task_dependencies` | Зависимости задач (Рой) | `id`, `task_id`, `depends_on_id` (оба FK → `tasks`), `dependency_type` (`blocks`\|`relates_to`\|`duplicates`); цикл-детекция через `get_all_dependencies()` |
-| `task_history` | История изменений задач | `task_id`, `changed_at`, `changes` |
-| `meetings` | Swarm Meetings — источник истины о встрече (НЕ путать с `entries`) | `id`, `source` (`desktop-agent`), `identity_kind`/`identity_key` (дедуп: calendar/room/manual, UNIQUE кроме manual), `transcript` (jsonb), `draft_notes_md` (черновик тезисов до публикации), `notes_edited_at`, `entry_id` (FK → `entries`, при публикации), `recorders` (jsonb — кто записал), `claim_owner`/`lease_expires_at` (право транскрибации), `status` (`awaiting_review`\|`in_base` — публикация), `summary_status` (`processing`\|`done`\|`failed` — фоновая транскрибация+тезисы, отдельно от `status`), `group_id` (FK → `workspaces.id`). Личные пометки участников — отдельные приватные `entries` с `metadata.meeting_id` |
+| `task_history` | История изменений задач | `id`, `task_id` (FK → `tasks`, ON DELETE CASCADE), `changed_by`, `old_status`, `new_status`, `note`, `created_at` |
+| `meetings` | Swarm Meetings — источник истины о встрече (НЕ путать с `entries`) | `id`, `source` (`desktop-agent`), `identity_kind` (**CHECK** `identity_kind in ('calendar','room','manual')`)/`identity_key` (дедуп; UNIQUE кроме manual), `transcript` (jsonb), `draft_notes_md` (черновик тезисов до публикации), `notes_edited_at`, `entry_id` (FK → `entries`, при публикации), `recorders` (jsonb — кто записал), `claim_owner`/`lease_expires_at` (право транскрибации), `status` (`awaiting_review`\|`in_base` — публикация), `summary_status` (`processing`\|`done`\|`failed` — фоновая транскрибация+тезисы, отдельно от `status`), `group_id` (FK → `workspaces.id`). Личные пометки участников — отдельные приватные `entries` с `metadata.meeting_id` |
 | `sessions` | Состояние диалога бота | `chat_id` (PK), `action`, `context` (jsonb), `updated_at` (TTL 30 мин) |
-| `allowed_users` | Белый список | `telegram_id`, `username`, `is_admin`, `group_id` (FK → `workspaces.id`) |
-| `user_profiles` | Профили пользователей | `telegram_id`, `first_name`, `last_name`, `role`, `markets`, `phone`, `email`, `notes`, `name_aliases`. ⚠️ **`username` здесь НЕТ** — он в `allowed_users`. Имя = `first_name`+`last_name`, фолбэк на `@username` из `allowed_users` (хелпер `resolveNames` в swarm-api). Не селектить `username` из `user_profiles` — PostgREST упадёт на несуществующей колонке → `data=null` |
+| `allowed_users` | Белый список | `telegram_id`, `username`, `is_admin`, `group_id` (FK → `workspaces.id`); токены (см. [MCP-аутентификация](#mcp-аутентификация)): `claude_mcp_token_hash`, `claude_mcp_token_expires_at` (MCP/Claude Desktop, бессрочный → `null`), `recorder_token_hash`, `recorder_token_expires_at` (отдельный токен рекордера, миграция `20260617120000`) |
+| `user_profiles` | Профили пользователей | `telegram_id`, `first_name`, `last_name`, `role` (**CHECK** `role in ('marketing','bd','rnd')`, миграция `20260528120000`), `markets`, `phone`, `email`, `notes`, `name_aliases`. ⚠️ **`username` здесь НЕТ** — он в `allowed_users`. Имя = `first_name`+`last_name`, фолбэк на `@username` из `allowed_users` (хелпер `resolveNames` в swarm-api). Не селектить `username` из `user_profiles` — PostgREST упадёт на несуществующей колонке → `data=null` |
 | `user_integrations` | API-ключи интеграций | `telegram_id`, `service` (`granola`), `api_key`, `last_polled_at`, `skipped_note_ids` |
 | `app_settings` | Глобальные настройки | `key`, `value` — хранит `feedback_channel_id` |
 | `oauth_tokens` | OAuth токены интеграций | `service` (`read_ai`), `client_id`, `access_token`, `refresh_token`, `expires_at`, `updated_at` |
 | `oauth_state` | Временный PKCE state для OAuth | `state`, `client_id`, `code_verifier` — создаётся при старте OAuth, удаляется после callback |
 | `task_comments` | Комментарии к задачам | Таблица существует, код не использует — не задействована |
 
-**Миграции:** `supabase/migrations/` — файлы по дате. Начальная схема (`CREATE TABLE entries` и др.) **отсутствует** в миграциях (исторический долг).
+### `tasks.status` — значения и целостность
+
+⚠️ **`tasks.status` НЕ ограничен CHECK на уровне БД** (`text not null default 'open'`, `supabase/schema/00_base_schema.sql`; ни одна миграция CHECK не добавляет). БД примет **любую строку** — целостность держится только на прикладном слое. CHECK на `status` есть лишь у `sprints` (`planned`/`active`/`completed`) и `meetings` (`awaiting_review`/`in_base`), но НЕ у `tasks`.
+
+Прикладные значения `tasks.status` (используются в swarm-bot / swarm-mcp / swarm-api):
+
+| Значение | Смысл |
+|----------|-------|
+| `pending` | Ожидает подтверждения (создана, но `confirmed=false`) |
+| `open` | Создана / активна (дефолт при insert) |
+| `in_progress` | Взята в работу |
+| `done` | Завершена |
+| `cancelled` | Отклонена / отменена |
+| `draft` | Несохранённый черновик |
+
+`listTasks` по умолчанию исключает `done`/`cancelled`/`draft`. Поскольку CHECK нет — опечатка или новое значение из кода молча запишутся в БД; следить за консистентностью значений нужно в коде.
+
+**Миграции:** начальная схема (полный набор `CREATE TABLE` в их текущем end-state) живёт в `supabase/schema/00_base_schema.sql` — фундамент изначально строился руками в дашборде Supabase, этот файл его реконструирует для bootstrap'а чистого проекта с нуля. Инкрементальные файлы в `supabase/migrations/` (по дате) в основном только `ALTER` существующие таблицы, **но не все**: таблица `meetings` (Swarm Meetings) **создаётся** миграцией `20260612000000_meetings.sql` (`CREATE TABLE`, additive). ⚠️ `00_base_schema.sql` может отставать от migrations — например, на момент ревизии в нём нет `tasks.priority`, токенов рекордера и таблицы `meetings` (они добавлены поздними миграциями).
 
 ---
 
@@ -259,6 +322,7 @@ claimer → meeting-ingest: грузит АУДИО → сервер транс�
 |--------------|------|---------|
 | `waiting_add` | index.ts | Ожидание текста для /add |
 | `waiting_ask` | index.ts | Ожидание вопроса для /ask |
+| `last_answer` | knowledge.ts | Кэш последнего ответа (context = текст ≤800 симв) для уточняющих вопросов: set ~923 после ответа, read ~758 как `prevAnswer` |
 | `granola_custom_period` | granola.ts | Ожидание даты для кастомного периода |
 | `granola_preview_<noteId>` | granola.ts | Кэш {content,title,tezises} для preview перед сохранением |
 | `granola_edit_preview_<noteId>` | granola.ts | Ожидание инструкции для AI-редактирования тезисов (до сохранения) |
@@ -270,8 +334,15 @@ claimer → meeting-ingest: грузит АУДИО → сервер транс�
 | `meeting_tag_<meetingId>` | meetings.ts | Ожидание тегов/стран |
 | `feedback_text` | feedback.ts | Ожидание текста фидбека |
 | `feedback_photo` | feedback.ts | Ожидание скриншота или кнопки "Готово" |
-| `task_*` | tasks/handlers.ts | Различные состояния для создания/редактирования задач |
-| `user_*` | users.ts | Состояния управления пользователями |
+| `addtask_title` | tasks/handlers.ts | Wizard `/addtask`: ожидание названия задачи |
+| `addtask_due` | tasks/handlers.ts | Wizard `/addtask`: ожидание дедлайна (по завершении — `confirmed:true` + `broadcastTaskAssigned`) |
+| `task_date` | tasks/handlers.ts | Ожидание нового дедлайна (правка существующей задачи / из pending-карточки) |
+| `task_rename` | tasks/handlers.ts | Ожидание нового названия задачи |
+| `onboard_role` | users.ts | Онбординг нового пользователя: ожидание роли (далее `onboard_markets` → `onboard_email` → `onboard_phone`; каждый шаг можно пропустить кнопкой `onboard_skip_<step>`) |
+| `onboard_markets` | users.ts | Онбординг: ожидание рынков |
+| `onboard_email` | users.ts | Онбординг: ожидание email |
+| `onboard_phone` | users.ts | Онбординг: ожидание телефона |
+| `profile_<targetId>_<field>` | users.ts | Редактирование поля профиля пользователя (`/users` → ✏️ Редактировать) — ожидание нового значения поля |
 | `sa_adduser_<wsId>` | superadmin.ts | Ожидание Telegram ID / @username для добавления в воркспейс |
 | `sa_create_id` | superadmin.ts | Ожидание ID нового воркспейса |
 | `sa_create_name_<wsId>` | superadmin.ts | Ожидание названия нового воркспейса |
@@ -306,7 +377,9 @@ claimer → meeting-ingest: грузит АУДИО → сервер транс�
 | `md_<entryId>` | Удалить встречу |
 | `met_<entryId>` | Редактировать название (из confirmation flow) |
 | `med_<entryId>` | Редактировать дату (из confirmation flow) |
-| `rai_saved/import/connect` | Подменю Read.ai |
+| `rai_saved` | Список сохранённых встреч (read_ai/voice/desktop-agent + meeting/transcript) |
+| `rai_import` | Импорт встреч за окно 48ч (→ `handleMeetings`) |
+| `rai_connect` | Подключение Read.ai (→ `handleConnect`) |
 | `meeting_<id>` | Открыть конкретную Read.ai встречу |
 | `meeting_save_pub_<id>` | Сохранить Read.ai встречу в общую базу |
 | `meeting_save_priv_<id>` | Сохранить Read.ai встречу в личное |
@@ -348,16 +421,43 @@ claimer → meeting-ingest: грузит АУДИО → сервер транс�
 | `tk_today` | Задачи на сегодня / просроченные |
 | `tk_mine` | Мои задачи (edit-in-place список) |
 | `tk_all` | Все задачи команды |
+| `tk_team` | Командные задачи (список) |
 | `tk_add` | Создать задачу (запускает addtask сессию) |
 | `tk_t_<taskId>` | Детали задачи |
 | `tk_st_<taskId>_<status>` | Сменить статус задачи |
 | `tk_del_<taskId>` | Запрос подтверждения удаления |
 | `tk_delc_<taskId>` | Подтвердить удаление задачи |
+| `tl_<type>` | Меню списков задач (`tl_pending`/`tl_done`/`tl_export` и др.) → `handleTaskListCallback` |
 | `tc_<taskId>` | Подтвердить pending-задачу: `confirmed=true`, `status=open`, отправить Telegram-уведомления исполнителям |
 | `tdue_<taskId>` | Ввод нового дедлайна в свободной форме (из pending-карточки) |
+| `tdate_<taskId>` | Запросить новый дедлайн (формат ДД.ММ.ГГГГ / «убрать») — сессия `task_date` |
+| `tren_<taskId>` | Переименовать задачу — сессия `task_rename` |
 | `tctag_<taskId>` | Открыть пикер страны и тегов |
 | `tctagc_<taskId>:<country\|none>` | Установить страну задачи |
 | `tctagr_<taskId>:<tag>` | Переключить тег задачи (toggle) |
+| `ts_<taskId>_<status>` | Сменить статус задачи + запись в `task_history` (`changed_by`/`old_status`/`new_status`) |
+| `ta_<taskId>` | Показать кнопки выбора исполнителя |
+| `tas_<taskId>_<tgId>` | Назначить исполнителя (`status=open`) |
+| `tat_<taskId>_<tgId>` | Wizard `/addtask`: исполнитель выбран → показать пикер рынка |
+| `tac_<taskId>:<index\|none>` | Wizard `/addtask`: выбор страны → перейти к дедлайну (сессия `addtask_due`) |
+| `tacx_<taskId>` | Wizard `/addtask`: отмена создания (удаляет черновик задачи) |
+| `tdc_<taskId>` | Запрос подтверждения удаления задачи (карточка) |
+| `tdconf_<taskId>` | Подтвердить удаление задачи |
+| `tdcanc_<taskId>` | Отменить удаление задачи |
+
+### Users (управление командой, `/users` → `handleUserCallbacks`)
+| Код | Действие |
+|----|---------|
+| `ua_list` | Список участников воркспейса |
+| `ua_add` | Подсказка как добавить пользователя (`/users add @username`) |
+| `start_onboard` | Запустить онбординг нового пользователя (шаг 1/4 — роль) |
+| `onboard_skip_<field>` | Пропустить шаг онбординга (`role`/`markets`/`email`/`phone`) → переход к следующему шагу или завершение на `phone` |
+| `pu_<targetId>` | Профиль пользователя (карточка) |
+| `pe_menu_<targetId>` | Меню «что изменить» в профиле |
+| `pe_<targetId>_<field>` | Начать правку поля профиля → сессия `profile_<targetId>_<field>` |
+| `ptasks_<targetId>` | Активные командные задачи пользователя |
+| `udel_<targetId>` | Запрос подтверждения удаления пользователя (нет для `ADMIN_USER_ID`) |
+| `udelc_<targetId>` | Подтвердить удаление пользователя из `allowed_users` |
 
 ### Feedback
 | Код | Действие |
@@ -438,7 +538,7 @@ claimer → meeting-ingest: грузит АУДИО → сервер транс�
   3. Инжектируется в `args.requesting_user_id` — значение из тела игнорируется
   4. `MCP_AUTH_REQUIRED=true` → строгий режим (без токена — отказ)
 - Выдача: `/setup` в боте (минтит токен + даёт команду авто-установки, см. `swarm-setup`), `/mytoken` (ручной токен для своего config.json) или `SELECT generate_mcp_token(<telegram_id>)` в SQL. Plaintext единожды. Логика минта — общий хелпер `swarm-bot/lib/mcp-setup.ts` (`mintMcpToken`)
-- ⚠️ **`/mytoken` не перевыпускает молча**: если живой токен уже есть (`hasActiveMcpToken`), бот предупреждает и просит подтверждения кнопкой (`callback_data: mtk_reissue`) — иначе случайный `/mytoken` убил бы рабочий `config.json`. `/setup` минтит всегда (ему нужен plaintext для команды) и сам же переписывает config, поэтому самосогласован
+- ⚠️ **`/mytoken` не перевыпускает молча**: если живой токен уже есть (`hasActiveMcpToken`), бот предупреждает и просит подтверждения кнопкой `mtk_reissue` (callback, обрабатывается в `swarm-bot/index.ts` ~134; кнопка генерится ~417) — экстренный перевыпуск токена, иначе случайный `/mytoken` убил бы рабочий `config.json`. `/setup` минтит всегда (ему нужен plaintext для команды) и сам же переписывает config, поэтому самосогласован
 - Отзыв: `/revoketoken` в боте или `SELECT revoke_mcp_token(<telegram_id>)` (гасит хэш + срок)
 - ⚠️ В `claude_desktop_config.json` использовать только stdio-форму (`command`+`mcp-remote`); поле `url`/`type:http` Claude Desktop молча затирает весь `mcpServers` (anthropics/claude-code#37286)
 
@@ -453,14 +553,48 @@ claimer → meeting-ingest: грузит АУДИО → сервер транс�
 
 ## Переменные окружения
 
-| Переменная | Где используется | Обязательная |
-|-----------|----------------|-------------|
-| `TELEGRAM_BOT_TOKEN` | swarm-bot, granola-poller | да |
-| `SUPABASE_URL` | все функции | да |
-| `SUPABASE_SERVICE_ROLE_KEY` | все функции | да |
-| `OPENAI_API_KEY` | swarm-bot, swarm-mcp | да |
-| `BOT_NAME` | swarm-bot (feedback) | нет, дефолт `"bot"` |
-| `MCP_AUTH_REQUIRED` | swarm-mcp | нет; `true` = жёсткий режим (без токена — отказ) |
+Канонический список — таблица ниже. Покрывает Supabase Edge Functions (секреты `supabase secrets set`), Cloudflare Pages Functions (`miniapp/functions/*`, задаются в дашборде CF) и сборочные `NEXT_PUBLIC_*` Mini App. Потребители выверены `grep` по `Deno.env.get(...)` / `env.*` / `NEXT_PUBLIC_*`.
+
+### Supabase Edge Functions (секреты)
+
+| Переменная | Где используется (функции) | Обязательная | Назначение |
+|-----------|---------------------------|-------------|-----------|
+| `SUPABASE_URL` | все функции (через `_shared`) | да | URL проекта Supabase для клиента |
+| `SUPABASE_SERVICE_ROLE_KEY` | все функции (через `_shared`) | да | Service-role ключ; RLS обходится, фильтрация в коде |
+| `OPENAI_API_KEY` | swarm-bot, swarm-mcp, swarm-api, meeting-claim, meeting-ingest, read-ai-webhook | да | OpenAI: chat (GPT-4o-mini), embeddings, Whisper-транскрибация |
+| `TELEGRAM_BOT_TOKEN` | swarm-bot, swarm-api, swarm-mcp, meeting-ingest, read-ai-webhook, granola-poller (legacy) | да | Telegram Bot API: отправка сообщений/уведомлений; проверка подписи Mini App initData (swarm-api) |
+| `BOT_NAME` | swarm-bot (feedback) | нет, дефолт `"bot"` | Префикс `[BOT_NAME]` в пересланном фидбеке (одна группа на несколько ботов) |
+| `MCP_AUTH_REQUIRED` | swarm-mcp | нет | `true` = жёсткий режим (без валидного `smcp_`-токена — отказ); не выставлен = soft-режим на доверии. **Перед орг-публикацией обязательно `true`** |
+| `CRON_SECRET` | swarm-bot, granola-poller (legacy) | нет | Общий секрет для авторизации cron-вызовов (Granola-поллинг) |
+| `INITDATA_MAX_AGE` | swarm-api | нет, дефолт 24ч | TTL свежести `auth_date` в Telegram Mini App initData (секунды) |
+| `MINIAPP_ORIGIN` | swarm-api | нет | Разрешённый Origin для CORS Mini App |
+| `WEB_JWT_SECRET` | swarm-api, google-oauth | да (для веб-режима/Google) | HS256-секрет: проверка `Bearer`-JWT браузерной сессии (swarm-api) и подписанного OAuth-state (google-oauth `/google/connect-url`). Должен совпадать с CF Pages |
+| `WEB_BASE_URL` | google-oauth, meeting-ingest | да (для deep-link/OAuth-redirect) | База веб-фронта (`https://swarm-brain.pages.dev`): кнопка «Открыть» `?meeting=<id>` в уведомлении (meeting-ingest), redirect после Google OAuth (google-oauth) |
+| `GOOGLE_CLIENT_ID` | google-oauth, meeting-current | да (для Google Calendar рекордера) | OAuth client id серверной Google Calendar-интеграции |
+| `GOOGLE_CLIENT_SECRET` | google-oauth, meeting-current | да (для Google Calendar рекордера) | OAuth client secret той же интеграции (обмен кода / рефреш токена) |
+| `GOOGLE_CLIENT_EMAIL` | swarm-bot (`lib/drive.ts`) | нет (для Google Drive) | Service-account email: JWT-issuer для Google Drive (загрузка файлов) |
+| `GOOGLE_PRIVATE_KEY` | swarm-bot (`lib/drive.ts`) | нет (для Google Drive) | Приватный ключ того же service-account (подпись JWT; `\n` разэкранируются) |
+| `GOOGLE_DRIVE_FOLDER_ID` | swarm-bot (`lib/drive.ts`) | нет (для Google Drive) | Корневая папка Drive для авто-создаваемых подпапок/файлов |
+| `READ_AI_CLIENT_ID` | read-ai-auth | да (для Read.ai OAuth) | OAuth client id Read.ai (авторизация в `read-ai-auth`) |
+| `READ_AI_WEBHOOK_SECRET` | read-ai-webhook | да (для Read.ai webhook) | Секрет проверки входящего вебхука Read.ai |
+
+> Примечание: `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (OAuth-интеграция календаря рекордера) и `GOOGLE_CLIENT_EMAIL`/`GOOGLE_PRIVATE_KEY`/`GOOGLE_DRIVE_FOLDER_ID` (service-account для Google Drive) — **разные** механизмы Google, не путать.
+
+### Cloudflare Pages Functions (`miniapp/functions/*`, дашборд CF)
+
+| Переменная | Где используется | Обязательная | Назначение |
+|-----------|----------------|-------------|-----------|
+| `SWARM_API_URL` | `api/[[path]].ts` | да | Целевой URL swarm-api для прокси-форварда (`/api/*` → swarm-api) |
+| `WEB_JWT_SECRET` | `api/auth/telegram.ts`, `_lib/jwt.ts` | да | HS256-секрет выдачи/проверки браузерного JWT (тот же, что в Supabase) |
+| `TELEGRAM_BOT_TOKEN` | `api/auth/telegram.ts` | да | Проверка подписи Telegram Login Widget (тот же, что в Supabase) |
+
+### Mini App build-time (`NEXT_PUBLIC_*`)
+
+| Переменная | Значение | Назначение |
+|-----------|---------|-----------|
+| `NEXT_PUBLIC_API_URL` | `/api` (прокси) или прямой URL swarm-api | База API; `/api` → same-origin прокси через CF Pages Function (вариант B+) |
+| `NEXT_PUBLIC_BOT_USERNAME` | напр. `swarm_brain_bot` (без `@`) | Username бота для Telegram Login Widget |
+| `NEXT_PUBLIC_DEV_MODE` | `true` / `false` | `true` — мок-данные без бэкенда (локальная разработка UI) |
 
 ---
 
@@ -508,18 +642,27 @@ supabase/functions/swarm-api/
 - Резолвит `telegram_id → group_id` через `allowed_users`
 - `group_id` — единственный источник истины для скоупинга данных, из тела запроса не берётся
 
-**Эндпоинты:**
+**Эндпоинты (канон — другие документы ссылаются сюда):**
+
+_Профиль / воркспейс:_
 
 | Метод | Путь | Что делает |
 |-------|------|-----------|
 | `GET` | `/me` | `{ telegram_id, name, group_id, language, role, markets, is_admin }` |
+| `PATCH` | `/me` | Правка профиля текущего пользователя: `role`, `markets` (нормализуются) в `user_profiles`; 204 |
 | `GET` | `/config` | `{ allowed_markets: string[] }` — ISO коды рынков воркспейса (из `workspaces.allowed_markets`, или глобальный список) |
 | `GET` | `/users` | Участники воркспейса с профилями |
-| `GET` | `/tasks` | Список задач. Фильтры: `status`, `country`, `assignee`, `mine`, `limit`, `confirmed`, `sprint_id`, `tags` (csv, ANY), `start_date_from/to`, `due_date_from/to`. **Приватность:** приватные задачи видны только владельцу (админ — все). Дополняется `created_by_name` |
+
+_Задачи / спринты / зависимости:_
+
+| Метод | Путь | Что делает |
+|-------|------|-----------|
+| `GET` | `/tasks` | Список задач. Фильтры: `status`, `country`, `assignee`, `mine`, `limit`, `confirmed`, `sprint_id`, `tags` (csv, ANY), `start_date_from/to`, `due_date_from/to`. **Приватность:** приватные задачи видны только владельцу (админ — все). Дополняется вычисляемым `created_by_name` (из `created_by_telegram_id`) |
 | `GET` | `/tasks/:id` | Одна задача. Приватная чужая → 404 |
 | `POST` | `/tasks` | Создать (`assignee_telegram_id` → имя); поля Роя: `is_private` (→`owner_id`), `start_date`, `sprint_id`, `tags`, `timeline_position`; валидация `start_date<=due_date` и принадлежности спринта воркспейсу; `confirmed=true` |
 | `PATCH` | `/tasks/:id` | Частичный апдейт. Приватную чужую → 404, мутация приватной не владельцем → 403. Поддержаны новые поля + смена `is_private`, привязка к спринту |
 | `DELETE` | `/tasks/:id` | Удалить (204). Приватную чужую → 404/403 |
+| `POST` | `/tasks/extract` | Извлечь задачи из текста через GPT-4o-mini. `{ save:false }` → **preview**: вернуть предложенные задачи БЕЗ создания (≤10, ревью на экране встреч). Без `save:false` (по умолчанию) — старое поведение: создать задачи и вернуть |
 | `GET` | `/dependencies` | Bulk: все рёбра зависимостей воркспейса одним запросом (граф, без N+1). Изоляция+приватность: ребро видно только если оба конца видимы вызывающему |
 | `GET` | `/tasks/:id/dependencies` | Зависимости задачи (incoming + outgoing) |
 | `POST` | `/tasks/:id/dependencies` | Создать `{ depends_on_id, dependency_type }`; self→400, цикл→422, дубль→409 |
@@ -530,15 +673,71 @@ supabase/functions/swarm-api/
 | `DELETE` | `/sprints/:id` | Удалить (задачи освобождаются, FK SET NULL) — только admin |
 | `POST` | `/sprints/:id/tasks` | Привязать задачи `{ task_ids }` (только командные) |
 | `DELETE` | `/sprints/:id/tasks` | Отвязать задачи `{ task_ids }` |
-| `GET` | `/admin/workspaces` | Список воркспейсов с user_count (только admin) |
-| `GET` | `/admin/workspaces/:id/users` | Пользователи воркспейса (только admin) |
-| `POST` | `/admin/workspaces/:id/users` | Добавить пользователя (только admin) |
-| `DELETE` | `/admin/workspaces/:id/users/:uid` | Удалить пользователя (только admin) |
-| `PATCH` | `/admin/workspaces/:id` | Обновить name/allowed_markets (только admin) |
+
+_Записи базы знаний (entries — только через `entries-guard.ts`):_
+
+| Метод | Путь | Что делает |
+|-------|------|-----------|
+| `GET` | `/entries` | Список заметок (`entry_type=note`, без `source=digest`). Фильтры: `source`, `type`, `date_from/to`; ≤50, по `created_at desc`. Воркспейс+приватность через `buildEntriesQuery` |
+| `GET` | `/entries/:id` | Одна запись (`getEntrySecure`). Приватная чужая / несуществующая → 404 |
+| `PATCH` | `/entries/:id` | Правка `content`/`summary` — **только владелец** (`requireOwner`) |
+| `DELETE` | `/entries/:id` | Удалить запись + прикреплённый файл из Storage (`swarm_drive`) — только владелец; 204 |
+| `POST` | `/entries` | Создать заметку из текста: эмбеддинг + классификация стран/типа (GPT-4o-mini, `COUNTRY_PROMPT_RULE`/`ENTRY_TYPE_PROMPT_RULE`) + тезисы (если ≥80 симв); `source=note`, привязка `group_id`/`owner_id`; 201 |
+| `POST` | `/entries/upload` | Multipart-загрузка файла в Storage (`swarm_drive/uploads/`) + создание записи (`source=file`, `metadata.file_url`); `is_private` опц.; 201 |
+
+_Встречи — `/meetings` (подтверждённые записи-встречи в `entries`):_
+
+| Метод | Путь | Что делает |
+|-------|------|-----------|
+| `GET` | `/meetings` | Записи-встречи (`entry_type=meeting`). `?confirmed=true/false` фильтрует по `metadata.confirmed` (очередь «на согласовании») |
+| `GET` | `/meetings/:id` | Одна встреча-запись (`getEntrySecure`) |
+| `PATCH` | `/meetings/:id` | Правка: `confirmed` (в `metadata`), `summary`, `content`, `entry_type` (реклассификация «встреча → заметка», уводит из очереди), `is_private` (+`owner_id` как у задач), `countries` |
+| `DELETE` | `/meetings/:id` | Удалить встречу-запись (204) |
+
+_Встречи — `/agent-meetings` (черновики рекордера в таблице `meetings` до публикации):_
+
+| Метод | Путь | Что делает |
+|-------|------|-----------|
+| `GET` | `/agent-meetings` | Очередь вычитки / опубликованные (`?status=awaiting_review\|in_base`). Видны записавшим (`recorders`) или админу |
+| `GET` | `/agent-meetings/:id` | Черновик `draft_notes_md` + транскрипт |
+| `PATCH` | `/agent-meetings/:id` | Правка `draft_notes_md` → `notes_edited_at` (и/или `title`) |
+| `DELETE` | `/agent-meetings/:id` | Удалить черновик (до публикации) |
+| `POST` | `/agent-meetings/:id/publish` | Аппрув: `{ base: workspace\|personal }` → создать `entries` + эмбеддинг, привязать, `createMeetingTasks` (извлечение задач), `status=in_base`; идемпотентно |
+
+_Интеграции (per-user):_
+
+| Метод | Путь | Что делает |
+|-------|------|-----------|
+| `GET` | `/integrations` | Подключённые интеграции пользователя (`service`, `last_polled_at`, `skipped_note_ids`) |
+| `GET` | `/google/connect-url` | Подписанная OAuth-ссылка для подключения Google-календаря (state = JWT с `telegram_id`, ведёт в `google-oauth`) |
+| `DELETE` | `/integrations/google` | Отключить Google-календарь (удаляет `user_integrations(service='google_calendar')`); 204 |
+| `POST` | `/integrations/granola` | Подключить Granola: валидирует `api_key` против Granola API → upsert в `user_integrations`; 204 |
+| `DELETE` | `/integrations/granola` | Отключить Granola; 204 |
+| `GET` | `/granola/notes` | Необработанные заметки Granola за период (`?period=today\|7d\|30d`), минус skipped и уже импортированные |
+| `GET` | `/granola/notes/:id/preview` | Превью одной заметки Granola с тезисами |
+| `POST` | `/granola/notes/:id/import` | Импортировать заметку Granola в `entries` |
+| `POST` | `/granola/notes/:id/skip` | Пометить заметку Granola как пропущенную (`skipped_note_ids`); 204 |
+
+_Поиск / RAG / прочее:_
+
+| Метод | Путь | Что делает |
+|-------|------|-----------|
 | `GET` | `/search?q=` | Семантический поиск по `entries` (вектор `match_entries`, threshold 0.3) → `Entry[]` |
 | `POST` | `/ask` | RAG-ответ (экран Answer редизайна): embed → `matchEntries` (топ-8, приватность+воркспейс в RPC) → GPT-4o-mini синтез строго по источникам со сносками `[n]` → `{ query, answer, sources[], followups[] }`. Пусто → без GPT; сбой синтеза → деградация до источников |
+| `POST` | `/digest` | Персональный дайджест за период (`{ days }`, дефолт 7): GPT-сводка по `entries` воркспейса (приватность учтена); пусто → текстовая заглушка |
+| `POST` | `/feedback` | Сохранить фидбек (`text`) в `feedback` (username из `allowed_users`) + переслать в Telegram-канал `feedback_channel_id`; 204 |
 
-**Переменные окружения:** `TELEGRAM_BOT_TOKEN` (уже есть), `MINIAPP_ORIGIN`, `INITDATA_MAX_AGE` (опц.)
+_Админка (`admin.ts`, только `telegram_id 744230399`):_
+
+| Метод | Путь | Что делает |
+|-------|------|-----------|
+| `GET` | `/admin/workspaces` | Список воркспейсов с user_count |
+| `GET` | `/admin/workspaces/:id/users` | Пользователи воркспейса |
+| `POST` | `/admin/workspaces/:id/users` | Добавить пользователя |
+| `DELETE` | `/admin/workspaces/:id/users/:uid` | Удалить пользователя |
+| `PATCH` | `/admin/workspaces/:id` | Обновить name/allowed_markets |
+
+**Переменные окружения:** канон — раздел [Переменные окружения](#переменные-окружения). Для swarm-api: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `MINIAPP_ORIGIN`, `INITDATA_MAX_AGE` (опц.), `WEB_JWT_SECRET` (веб-режим/Google connect-url).
 
 **Деплой:** `supabase functions deploy swarm-api --no-verify-jwt`
 
@@ -562,6 +761,7 @@ supabase/functions/swarm-mcp/
 | `get_entry` | Получить запись по ID |
 | `list_entries` | Список записей с фильтрами |
 | `update_entry` | Обновить запись (контент, тезисы, файл) |
+| `reindex_entry` | Перечитать запись и пересчитать страны + embedding через GPT (для записей с пустыми/неверными странами или устаревшим embedding) |
 | `delete_entry` | Удалить запись |
 | `upload_file` | Загрузить файл в Storage + добавить запись |
 | `get_meetings` | Список встреч |
@@ -609,17 +809,12 @@ miniapp/
 **Редизайн под `design_handoff_roy` (Claude Design) — фазы 1–7 в проде:**
 - **Дизайн-токены** из хендоффа на shadcn-переменных (`globals.css`): тёплая бумага `#F4F1EB`, янтарный бренд `#D98A2B`, три уровня текста, статусы/приоритеты/типы, радиус карточек 18px, мета на Golos (моно — только таймстампы транскрипта). Семантический слой вынесен в `@theme` (`bg-surface-2`, `text-ink-soft`, `text-status-open`, …).
 - **Дизайн-система `src/components/roy/`**: `icons.tsx`, `ui.tsx` (Card/TypeTag/Market/Avatar/Chip/Segmented/Header/IconBtn/SectionLabel/FAB/NavHeader/RoyTabBar), `nav.ts` (контекст), `entry.ts` (deriveEntryTitle/entryTagKey), `useIsDesktop.ts`, `RoyDashboard.tsx` (бенто-дашборд десктопа).
-- **IA**: `RoyApp.tsx` — 4 корневых таба + push-стек деталей вместо плоских секций/модалок; аватар-меню «Ещё» (Настройки/Команда/Админ). **Адаптив:** мобайл — нижний таб-бар; десктоп (lg+) — левый `RoySidebar`. Домашняя вкладка «Поиск» на десктопе — **бенто-дашборд `RoyDashboard`** во всю ширину (≤1240px): поиск-герой сверху + три панели сразу (Задачи крупно слева на всю высоту, Встречи и База справа), каждая скроллится внутри себя и раскрывается в полную вкладку по клику на шапку; на мобайле — `SearchScreen`. Вкладка «Задачи» на десктопе → полный `TasksScreen` с видами Список/Таймлайн/Спринт/Граф; дефолт — **«Список»** в стиле macOS Reminders (смарт-списки Сегодня/Предстоящее/Важное/Все/Готово/По рынкам, линза Мои/Все, бинарный чекбокс), общий с мобайлом через `useReminderTasks`. Канбан остался только в «Спринте». Deep-link встреч и приватность сохранены.
+- **IA**: `RoyApp.tsx` — 4 корневых таба + push-стек деталей вместо плоских секций/модалок; аватар-меню «Ещё» (Настройки/Команда/Админ — `Админ` только если `me.is_admin`). **Адаптив:** мобайл — аватар в шапке + нижний таб-бар (`RoyTabBar`); десктоп (lg+) — **дашборд-центричный, без боковой панели** (sidebar нет — `RoySidebar` в коде отсутствует). Навигация по второстепенным разделам — через то же меню «Ещё» (аватар внизу слева). Домашняя вкладка «Поиск» на десктопе — **бенто-дашборд `RoyDashboard`** во всю ширину (≤1240px): поиск-герой сверху + три панели сразу (Задачи крупно слева на всю высоту, Встречи и База справа), каждая скроллится внутри себя и раскрывается в полную вкладку по клику на шапку; на мобайле — `SearchScreen`. Вкладка «Задачи» на десктопе → полный `TasksScreen` с видами Список/Таймлайн/Спринт/Граф; дефолт — **«Список»** в стиле macOS Reminders (смарт-списки Сегодня/Предстоящее/Важное/Все/Готово/По рынкам, линза Мои/Все, бинарный чекбокс), общий с мобайлом через `useReminderTasks`. Канбан остался только в «Спринте». Deep-link встреч и приватность сохранены.
 - **Экраны** (`screens/`): `SearchScreen` (герой), `AnswerScreen` (RAG `/ask`: ответ со сносками + источники + «Уточнить»), `RoyTasksScreen` + `TaskDetail` + `NewTask` (поле `priority`), `RoyBaseScreen` + `RecordDetail` + `NewEntry`, `RoyMeetingsScreen` + `MeetingDetail` (вычитка `AgentReviewQueue`/`MeetingReview` и подтверждение/правка/удаление сохранены).
 - **Бэкенд под редизайн**: `POST /ask` (RAG), колонка `tasks.priority` (миграция `20260615000000`). Спецификация — `transcribator/08-UI-UX-V2.md` + `design_handoff_roy/`.
 - **Хвосты (не блокеры):** визуальная очная проверка десктопа в Telegram; чистка осиротевших старых компонентов (`BottomNav`/`Sidebar`/`KnowledgeScreen`/`MeetingsScreen`/`TaskCard`/`TaskModal`/`*Dialog` — больше не используются `RoyApp`, но `TasksScreen`+виды задач используются на десктопе); бэкенд-расширения из хендоффа (человеческий `title` записи, связь task↔entry) — по желанию.
 
-**Переменные окружения Mini App:**
-
-| Переменная | Значение | Назначение |
-|-----------|---------|-----------|
-| `NEXT_PUBLIC_API_URL` | `https://*.supabase.co/functions/v1/swarm-api` | URL бэкенда |
-| `NEXT_PUBLIC_DEV_MODE` | `true` / `false` | Режим разработки |
+**Переменные окружения Mini App:** канон — раздел [Переменные окружения](#переменные-окружения) (подразделы «Cloudflare Pages Functions» и «Mini App build-time»). Кратко: `NEXT_PUBLIC_API_URL` (`/api` прокси или прямой URL swarm-api), `NEXT_PUBLIC_BOT_USERNAME`, `NEXT_PUBLIC_DEV_MODE`; серверные CF-секреты `SWARM_API_URL`, `WEB_JWT_SECRET`, `TELEGRAM_BOT_TOKEN`.
 
 **Разработка:**
 ```bash
@@ -647,6 +842,6 @@ npm run build  # статический экспорт в out/
 
 - Ветка: `sandbox_vas` → всегда разрабатывать здесь, в `main` не коммитить
 - Деплой Edge Functions: `supabase functions deploy swarm-bot --no-verify-jwt`
-- Деплой обоих: `supabase functions deploy swarm-bot granola-poller --no-verify-jwt`
+- ⚠️ `granola-poller` — legacy, **не деплоить** как обычный шаг: standalone-функция выведена из крона. Поллинг Granola идёт внутри `swarm-bot` (часовой крон с `{granola_poll:true}` → `ingestNewGranolaNotesAllUsers`). См. таблицу Edge Functions выше.
 - Деплой Mini App: `cd miniapp && npm run build` → `out/` → Cloudflare Pages
-- После каждого изменения функционала: обновить этот файл + `CHANGELOG.md`
+- После каждого изменения функционала: обновить этот файл (ARCHITECTURE) + `docs/BACKLOG.md`. **Changelog руками не вести** — генерируется из git (`scripts/changelog.sh`); источник истины — conventional commit-сообщения.

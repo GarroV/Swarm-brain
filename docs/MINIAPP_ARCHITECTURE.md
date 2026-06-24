@@ -30,38 +30,11 @@ Supabase DB (service_role_key, фильтр по group_id)
 
 **Базовый URL:** `https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-api`
 
-**Заголовок аутентификации (обязателен на каждый запрос):**
-```
-Authorization: tma <Telegram initData>
-```
-
-**Эндпоинты v1:**
-
-| Метод | Путь | Тело / Query | Ответ |
-|-------|------|-------------|-------|
-| `GET` | `/me` | — | `{ telegram_id, name, group_id, language }` |
-| `GET` | `/users` | — | `User[]` |
-| `GET` | `/tasks` | `?status=&country=&assignee=&mine=true&limit=&sprint_id=&tags=a,b&start_date_from/to=&due_date_from/to=` | `Task[]` (приватные видны только владельцу) |
-| `GET` | `/tasks/:id` | — | `Task` (приватная чужая → 404) |
-| `POST` | `/tasks` | `{ title, …, is_private?, start_date?, sprint_id?, tags?, timeline_position? }` | `Task` (201) |
-| `PATCH` | `/tasks/:id` | любые поля Task + `assignee_telegram_id?` (мутация приватной не владельцем → 403) | `Task` |
-| `DELETE` | `/tasks/:id` | — | 204 |
-| `GET/POST` | `/tasks/:id/dependencies` | POST `{ depends_on_id, dependency_type }` (цикл→422, дубль→409) | `TaskDependency[]` / `TaskDependency` |
-| `DELETE` | `/tasks/:id/dependencies/:depId` | — | 204 |
-| `GET` | `/sprints` | — | `Sprint[]` |
-| `POST/PATCH/DELETE` | `/sprints[/:id]` | `{ name, start_date, end_date, status? }` (только admin) | `Sprint` |
-| `POST/DELETE` | `/sprints/:id/tasks` | `{ task_ids: string[] }` | `{ updated }` |
+> **Канонический список эндпоинтов swarm-api — в `docs/ARCHITECTURE.md` (раздел swarm-api).** Здесь — только miniapp-специфика (режимы аутентификации, структура клиента, deep-linking). Не дублируем и не переписываем перечень эндпоинтов: единый источник истины — `ARCHITECTURE.md`.
 
 **Типы из `miniapp/src/types.ts`** (зеркалят `_shared/tasks/types.ts`) — Task (+поля Роя), Sprint, TaskDependency, DependencyType. Клиент: `miniapp/src/lib/api.ts` (fetchTasks принимает `string | TaskFilters`; sprints/dependencies CRUD; DEV_MODE mock).
 
 **Исполнитель:** фронтенд передаёт `assignee_telegram_id: number`. swarm-api резолвит его в `{ name, telegram_id }` через `user_profiles` и передаёт движку уже готовые `assignees[]` / `assignee_telegram_ids[]`.
-
-**HTTP-коды ошибок:**
-- 401 — нет заголовка / невалидный / протухший initData / пользователь не в allowed_users
-- 403 — пользователь без воркспейса (group_id = null)
-- 400 — плохое тело запроса
-- 404 — задача не найдена или не принадлежит воркспейсу
-- 500 — внутренняя ошибка
 
 ---
 
@@ -75,6 +48,8 @@ Authorization: tma <Telegram initData>
 **Почему прокси (B+):** miniapp — статика на Cloudflare Pages (нет Next API routes/middleware). httpOnly-cookie недоступна JS (защита от XSS) и не уходит cross-origin на `*.supabase.co`, поэтому CF Pages Function `functions/api/[[path]].ts` форвардит запросы на swarm-api server-side, перекладывая cookie → `Bearer`. JWT: HS256, секрет `WEB_JWT_SECRET` (общий у CF и Supabase). Login Widget подписывает данные секретом `SHA256(bot_token)` (иначе, чем Mini App).
 
 Авторизация в обоих случаях одинакова: `telegram_id` → `allowed_users` → `group_id`. Виджет лишь подтверждает личность; доступ по-прежнему гейтится белым списком.
+
+**`recorder_token` Mini App НЕ использует.** Персональный токен рекордера (`recorder_token_hash`, `/recordertoken`) — только для desktop-agent (`meeting-claim`/`meeting-ingest`, auth через `_shared/agent-auth.ts`). Mini App всегда ходит либо через Telegram `initData` (`tma`), либо через браузерный JWT (`Bearer`) — никогда через токен рекордера.
 
 ## Безопасность
 

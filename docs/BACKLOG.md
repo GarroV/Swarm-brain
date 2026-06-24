@@ -1,5 +1,7 @@
 # Backlog
 
+> Этот файл ведётся **вручную**: открытые задачи, технический долг, идеи. Это НЕ автогенерируемый `CHANGELOG.md` (тот собирается из git-коммитов).
+
 ## Редизайн веба «Рой» (Swarm-brain-4) — отложенные пункты
 
 > Спека/план: `docs/superpowers/specs/2026-06-18-roy-web-redesign-design.md`, `docs/superpowers/plans/2026-06-18-roy-web-redesign.md`.

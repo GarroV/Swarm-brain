@@ -10,6 +10,21 @@
 
 ---
 
+## Поверхности
+
+Все входные точки поверх одного бэкенда (Supabase Edge Functions + Postgres/pgvector + OpenAI). Подробности — **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** (разделы «Поверхности продукта» и «Сквозные сценарии»).
+
+| Поверхность | Доступ | Бэкенд-функция |
+|-------------|--------|----------------|
+| Telegram-бот | команды и сообщения в чате | `swarm-bot` |
+| Веб / Mini App «Рой» | в Telegram (`initData`) или браузер (Login Widget → JWT) | `swarm-api` |
+| Claude Desktop (MCP) | MCP-сервер по токену из `/setup` | `swarm-mcp` |
+| SwarmRecorder | macOS меню-бар приложение по токену из `/recordertoken` | `meeting-claim`, `meeting-ingest` |
+| Read.ai | OAuth2 + webhook (завершённые встречи) | `read-ai-auth`, `read-ai-webhook` |
+| Granola | API-ключ на пользователя (`/connect granola`), часовой поллинг | `swarm-bot` (`granola_poll`) |
+
+---
+
 ## Развернуть с нуля
 
 Полная пошаговая инструкция — в **[docs/SETUP.md](docs/SETUP.md)**.
@@ -67,7 +82,7 @@ supabase/
 │   ├── swarm-api/              # REST API для веб/Mini App (поверх той же логики, что и бот)
 │   ├── meeting-claim/          # Рекордер: claim/lease встречи до транскрибации
 │   ├── meeting-ingest/         # Рекордер: приём аудио → Whisper → тезисы
-│   ├── granola-poller/         # Hourly cron: поллинг Granola для всех пользователей
+│   ├── granola-poller/         # LEGACY / DEPRECATED: standalone-поллер, выведен из крона (только слал уведомление, ничего не клал в БД). Поллинг Granola теперь внутри swarm-bot — см. ingestNewGranolaNotesAllUsers
 │   ├── read-ai-auth/           # OAuth2 авторизация Read.ai
 │   └── read-ai-webhook/        # Вебхук: приём встреч из Read.ai → /meetings
 └── migrations/
@@ -87,15 +102,43 @@ recorder/                       # SwarmRecorder — macOS меню-бар рек
 
 ## Таблицы БД
 
+Краткий справочник (16 таблиц). Полная схема БД с ключевыми полями — **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** (раздел «Таблицы БД»), единственный источник истины.
+
 | Таблица | Назначение |
 |---------|-----------|
-| `entries` | База знаний: тексты, файлы, встречи, заметки. Поля: `content`, `summary`, `embedding` (vector), `source`, `entry_type`, `countries`, `entry_date`, `is_private`, `owner_id`, `group_id`, `metadata` |
-| `tasks` | Задачи команды: `title`, `assignees[]`, `country`, `due_date`, `status`, `meeting_id` |
+| `workspaces` | Воркспейсы (тенанты) |
+| `entries` | База знаний — все записи (встречи и заметки) |
+| `tasks` | Задачи команды + личные (Рой) |
+| `sprints` | Спринты (Рой) |
+| `task_dependencies` | Зависимости задач (Рой) |
 | `task_history` | История изменений задач |
-| `allowed_users` | Белый список Telegram-аккаунтов |
-| `user_profiles` | Профили: `first_name`, `last_name`, `role`, `markets[]`, `phone`, `email` |
-| `user_integrations` | Интеграции пользователей: Granola API ключи, `last_polled_at`, `skipped_note_ids[]` |
-| `app_settings` | Глобальные настройки (курсоры, токены) |
+| `task_comments` | Комментарии к задачам (таблица есть, код не использует) |
+| `meetings` | Swarm Meetings — источник истины о встрече рекордера (НЕ путать с `entries`) |
+| `sessions` | Состояние диалога бота (TTL 30 мин) |
+| `allowed_users` | Белый список Telegram-аккаунтов + токены MCP/рекордера |
+| `user_profiles` | Профили: имя, роль, рынки, контакты, алиасы |
+| `user_integrations` | API-ключи интеграций (Granola) |
+| `app_settings` | Глобальные настройки |
+| `oauth_tokens` | OAuth токены интеграций (Read.ai) |
+| `oauth_state` | Временный PKCE state для OAuth |
+| `feedback` | Фидбек пользователей |
+
+---
+
+## Команды бота
+
+Полный список команд роутера `swarm-bot` (25). Часть команд в меню Telegram (`setMyCommands`) не выводится — они доступны вводом вручную или из `/help`.
+
+| Категория | Команды |
+|-----------|---------|
+| Знания | `/add` — добавить запись · `/ask` — задать вопрос · `/status` — состояние базы |
+| Встречи | `/meetings` — инбокс на подтверждение · `/granola` — ручной импорт Granola · `/connect granola <ключ>` — подключить Granola · `/disconnect granola` — отключить |
+| Задачи | `/tasks` — активные задачи (фильтры по имени/стране) · `/addtask` — создать задачу |
+| Команда | `/users` — управление командой и профилями |
+| Claude Desktop | `/setup` — авто-подключение (one-liner) · `/connect_claude` — инструкция по подключению · `/claude` — инструкции для проекта · `/mytoken` — выдать MCP-токен · `/revoketoken` — отозвать MCP-токен |
+| Рекордер | `/recordertoken` — токен SwarmRecorder · `/revokerecordertoken` — отозвать токен рекордера |
+| Администратор | `/superadmin` — панель супер-админа · `/workspace` — управление воркспейсами · `/broadcast` — рассылка команде |
+| Утилиты | `/start` — главное меню · `/help` — справка · `/reset` — сбросить состояние · `/feedback` — отправить фидбек · `/digest` — личный дайджест |
 
 ---
 
@@ -120,7 +163,7 @@ recorder/                       # SwarmRecorder — macOS меню-бар рек
 
 ### Встречи — Granola
 - Каждый пользователь подключает **свой** аккаунт: `/connect granola <API-ключ>`
-- Поллинг раз в час (`granola-poller`): новые заметки → Telegram-уведомление → `gc_` / `gcp_` / `gd_`
+- Поллинг раз в час: cron бьёт в `swarm-bot` с `{"granola_poll": true}` → `ingestNewGranolaNotesAllUsers` импортирует новые заметки всех пользователей в `entries` и шлёт Telegram-уведомление → `gc_` / `gcp_` / `gd_`. (Standalone-функция `granola-poller` устарела и выведена из крона — она только слала уведомление, не сохраняя в БД.)
 - `/granola` — ручной импорт: выбор периода → список заметок → `[🔍 Тезисы] [🗑 Пропустить]`
 - Тезисы генерируются при просмотре и кэшируются в сессии; при сохранении повторный вызов API не нужен
 - Сохранение через `/meetings`, `/granola` не фигурирует в командном меню (только в /help)
@@ -189,8 +232,8 @@ supabase functions deploy swarm-mcp --no-verify-jwt
 supabase functions deploy swarm-api --no-verify-jwt          # бэкенд веб/Mini App
 supabase functions deploy meeting-claim --no-verify-jwt       # рекордер
 supabase functions deploy meeting-ingest --no-verify-jwt      # рекордер
-supabase functions deploy granola-poller --no-verify-jwt
 supabase functions deploy read-ai-webhook --no-verify-jwt
+# granola-poller — LEGACY, выведен из крона; деплоить не нужно. Поллинг Granola идёт через swarm-bot ({"granola_poll":true}, см. Шаг 12 в docs/SETUP.md)
 
 # Веб/Mini App — статический экспорт → Cloudflare Pages
 cd miniapp && npm run build                                   # → miniapp/out/
@@ -198,6 +241,8 @@ cd miniapp && npm run build                                   # → miniapp/out/
 # Рекордер — сборка .app без платного Apple-аккаунта
 cd recorder && ./install.sh                                   # подробности в recorder/README.md
 ```
+
+В копи-паст примерах (URL вида `https://<YOUR_PROJECT_REF>.supabase.co/...`) подставляй свой project-ref. Прод-реф Dodo Brands — `vbqglndbxkpmreccpqmr`.
 
 Рабочая ветка: **`sandbox_vas`**. В `main` не коммитить.
 
