@@ -8,8 +8,9 @@
 
 ```bash
 supabase functions deploy swarm-bot --no-verify-jwt          # всегда --no-verify-jwt
-supabase functions deploy swarm-bot granola-poller --no-verify-jwt
-supabase functions deploy swarm-setup --no-verify-jwt        # публичный GET, отдаёт installer
+supabase functions deploy swarm-setup --no-verify-jwt        # публичный GET, Claude Desktop installer
+supabase functions deploy swarm-recorder-setup --no-verify-jwt  # публичный GET, установщик рекордера (/recordertoken)
+# granola-poller — legacy, НЕ деплоить: поллинг Granola внутри swarm-bot ({granola_poll:true} крон)
 supabase secrets set BOT_NAME=swarm-bot                       # env-переменные
 ```
 
@@ -34,6 +35,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Воркспейсы | `swarm-bot/lib/workspace.ts` |
 | MCP инструменты | `swarm-mcp/index.ts`, `swarm-mcp/tasks/tools.ts` |
 | Авто-сетап Claude Desktop (`/setup`) | `swarm-setup/script.ts` (bash), `swarm-bot/lib/mcp-setup.ts` (минт токена) |
+| Установка рекордера (`/recordertoken`) | `swarm-recorder-setup/script.ts` (bash), `recorder/setup-signing.sh` (cert), `recorder/install.sh`, `swarm-bot/lib/mcp-setup.ts` (`mintRecorderToken`) |
 | ADMIN_USER_ID | `swarm-bot/lib/supabase.ts` → `744230399` |
 
 ---
