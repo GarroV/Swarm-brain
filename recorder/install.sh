@@ -24,7 +24,8 @@ need_cmd codesign "Нужны Command Line Tools (xcode-select --install)."
 
 # Стабильная подпись обязательна (иначе TCC-грант слетает). Сам cert НЕ создаём здесь —
 # это делает ./setup-signing.sh; build-app.sh подпишет им и упадёт, если cert отсутствует.
-if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "SwarmRecorder Self-Signed"; then
+# Без -v: недоверенный self-signed cert для ПОДПИСИ годится (codesign -s работает; доверие не нужно).
+if ! security find-identity -p codesigning 2>/dev/null | grep -q "SwarmRecorder Self-Signed"; then
   echo "ОШИБКА: нет стабильного cert «SwarmRecorder Self-Signed» — без него разрешения будут слетать." >&2
   echo "        Создай его один раз и повтори:  ./setup-signing.sh" >&2
   exit 1
