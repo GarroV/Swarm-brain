@@ -759,23 +759,37 @@ function ActionsPanel({
 
 // ── Главный экран ─────────────────────────────────────────────────────────────
 
+// Область видимости очереди ревью. «Мои» — только загруженные текущим пользователем
+// pending-встречи (дефолт для всех, включая админа). «Все» — все pending воркспейса,
+// доступно только админу (сервер уважает ?all=true лишь для is_admin).
+type Scope = "mine" | "all";
+
 export function MeetAdminScreen() {
-  const { pop, toast } = useRoyNav();
+  const { pop, toast, me } = useRoyNav();
+  const isAdmin = Boolean(me?.is_admin);
 
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [agentMeetings, setAgentMeetings] = useState<AgentMeeting[] | null>(null);
   const [selected, setSelected] = useState<MeetItem | null>(null);
+  const [scope, setScope] = useState<Scope>("mine");
+
+  // ?all=true шлём только когда админ явно выбрал «Все»; иначе own-scoped для всех.
+  const all = isAdmin && scope === "all";
 
   const load = useCallback(async () => {
     const [ents, agents] = await Promise.allSettled([
-      fetchMeetings({ confirmed: false }),
-      fetchAgentMeetings("awaiting_review"),
+      fetchMeetings({ confirmed: false, all }),
+      fetchAgentMeetings("awaiting_review", all),
     ]);
     setEntries(ents.status === "fulfilled" ? ents.value : []);
     setAgentMeetings(agents.status === "fulfilled" ? agents.value : []);
-  }, []);
+  }, [all]);
 
+  // Смена области видимости перезагружает очередь и сбрасывает выбор (он мог исчезнуть из списка).
   useEffect(() => {
+    setEntries(null);
+    setAgentMeetings(null);
+    setSelected(null);
     load();
   }, [load]);
 
@@ -859,6 +873,20 @@ export function MeetAdminScreen() {
             <StatChip label="на согласовании" value={pendingCount} accent />
             <StatChip label="черновиков" value={agentCount} />
           </div>
+
+          {/* Переключатель «Мои»/«Все» — только админу. «Все» = ?all=true (весь воркспейс). */}
+          {isAdmin && (
+            <div className="px-3 pb-2">
+              <Segmented
+                items={[
+                  { id: "mine", label: "Мои" },
+                  { id: "all", label: "Все" },
+                ]}
+                value={scope}
+                onChange={(id) => setScope(id as Scope)}
+              />
+            </div>
+          )}
 
           {/* Метка секции */}
           <div className="px-3 pb-1">

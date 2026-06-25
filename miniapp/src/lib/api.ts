@@ -520,14 +520,19 @@ export async function uploadFile(file: File, is_private = false): Promise<Entry>
 
 // ── Meetings ──────────────────────────────────────────────────────────────────
 
-export async function fetchMeetings(filters?: { confirmed?: boolean }): Promise<Entry[]> {
+// all=true — админский оверрайд: показать все pending встречи воркспейса, а не только
+// свои. Уважается сервером ТОЛЬКО для админа; для остальных всегда own-scoped.
+export async function fetchMeetings(filters?: { confirmed?: boolean; all?: boolean }): Promise<Entry[]> {
   if (DEV_MODE) {
     if (filters?.confirmed !== undefined)
       return mockMeetings.filter((m) => Boolean(m.metadata.confirmed) === filters.confirmed);
     return mockMeetings;
   }
-  const qs = filters?.confirmed !== undefined ? `?confirmed=${filters.confirmed}` : "";
-  return apiFetch<Entry[]>(`/meetings${qs}`);
+  const params = new URLSearchParams();
+  if (filters?.confirmed !== undefined) params.set("confirmed", String(filters.confirmed));
+  if (filters?.all) params.set("all", "true");
+  const qs = params.toString();
+  return apiFetch<Entry[]>(`/meetings${qs ? `?${qs}` : ""}`);
 }
 
 export async function fetchMeeting(id: string): Promise<Entry> {
@@ -592,11 +597,15 @@ let mockAgentMeetings: AgentMeeting[] = [
   },
 ];
 
+// all=true — админский оверрайд: показать все pending черновики воркспейса, а не только
+// свои. Уважается сервером ТОЛЬКО для админа; для остальных всегда own-scoped.
 export async function fetchAgentMeetings(
   status: "awaiting_review" | "in_base" = "awaiting_review",
+  all?: boolean,
 ): Promise<AgentMeeting[]> {
   if (DEV_MODE) return mockAgentMeetings.filter((m) => m.status === status);
-  return apiFetch<AgentMeeting[]>(`/agent-meetings?status=${status}`);
+  const qs = all ? `&all=true` : "";
+  return apiFetch<AgentMeeting[]>(`/agent-meetings?status=${status}${qs}`);
 }
 
 export async function fetchAgentMeeting(id: string): Promise<AgentMeeting> {
