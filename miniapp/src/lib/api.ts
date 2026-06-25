@@ -576,6 +576,7 @@ let mockAgentMeetings: AgentMeeting[] = [
     started_at: "2026-06-12T14:00:00+03:00",
     ended_at: "2026-06-12T14:47:00+03:00",
     status: "awaiting_review",
+    summary_status: "done",
     draft_notes_md: "### Контекст\n- Обсудили эквайринг в Болгарии\n\n### Ключевые решения\n- Сдвинуть запуск на июль",
     transcript: {
       language: "ru",

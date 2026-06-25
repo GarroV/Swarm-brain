@@ -7,6 +7,7 @@ import { deriveEntryTitle } from "../entry";
 import {
   fetchMeetings,
   fetchAgentMeetings,
+  fetchAgentMeeting,
   patchMeeting,
   deleteMeeting,
   deleteAgentMeeting,
@@ -51,8 +52,7 @@ function fmtDate(iso: string | null): string | null {
 }
 
 function itemSource(it: MeetItem): string {
-  if (it.kind === "entry") return sourceLabel(it.data.source);
-  return "Запись";
+  return sourceLabel(it.data.source);
 }
 
 // ── Стат-плашка ──────────────────────────────────────────────────────────────
@@ -469,8 +469,46 @@ function DetailPanel({
     );
   }
 
-  // AgentMeeting
-  const m = item.data;
+  // AgentMeeting — вынесено в отдельный компонент: там живёт поллинг тезисов.
+  return <AgentMeetingDetail meeting={item.data} title={title} date={date} src={src} />;
+}
+
+// ── Деталь черновика агента (с поллингом тезисов) ─────────────────────────────
+
+const AGENT_POLL_MS = 10_000;
+
+function AgentMeetingDetail({
+  meeting,
+  title,
+  date,
+  src,
+}: {
+  meeting: AgentMeeting;
+  title: string;
+  date: string | null;
+  src: string;
+}) {
+  // Локальная копия: поллинг подменяет её свежими данными по мере готовности тезисов.
+  const [m, setM] = useState<AgentMeeting>(meeting);
+
+  // Смена выбранной встречи — сразу показать её, а не устаревшую.
+  useEffect(() => {
+    setM(meeting);
+  }, [meeting]);
+
+  // Поллинг, пока тезисы готовятся (нет draft_notes_md) и обработка не упала.
+  useEffect(() => {
+    if (m.draft_notes_md || m.summary_status === "failed") return;
+    const id = setInterval(() => {
+      fetchAgentMeeting(m.id)
+        .then(setM)
+        .catch(() => {
+          /* сохраняем текущее при ошибке поллинга */
+        });
+    }, AGENT_POLL_MS);
+    return () => clearInterval(id);
+  }, [m.id, m.draft_notes_md, m.summary_status]);
+
   return (
     <div className="flex flex-col gap-4 min-h-0 overflow-y-auto px-5 py-4">
       <div>
@@ -488,7 +526,7 @@ function DetailPanel({
             className="inline-flex items-center font-semibold"
             style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 7, padding: "2px 8px" }}
           >
-            desktop-agent
+            {src}
           </span>
           {date && <span className="text-ink-mute" style={{ fontSize: 12 }}>{date}</span>}
           {m.recorders && m.recorders.length > 0 && (
@@ -506,6 +544,10 @@ function DetailPanel({
             {m.draft_notes_md.slice(0, 1000)}{m.draft_notes_md.length > 1000 ? "…" : ""}
           </p>
         </div>
+      ) : m.summary_status === "failed" ? (
+        <p className="text-ink-soft" style={{ fontSize: 13 }}>
+          ⚠️ Не удалось обработать запись — попробуй записать заново.
+        </p>
       ) : (
         <p className="text-ink-mute" style={{ fontSize: 13 }}>Тезисы готовятся…</p>
       )}

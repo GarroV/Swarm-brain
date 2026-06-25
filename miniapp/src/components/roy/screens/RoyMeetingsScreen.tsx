@@ -18,7 +18,7 @@ const SEGS = [
 export function sourceLabel(s: string): string {
   if (s === "granola") return "Granola";
   if (s === "read_ai") return "Read.ai";
-  if (s === "desktop-agent") return "Запись";
+  if (s === "desktop-agent") return "Рекордер";
   return "Встреча";
 }
 const isConfirmed = (e: Entry) => e.metadata?.confirmed === true;

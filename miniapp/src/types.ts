@@ -128,6 +128,8 @@ export type AgentMeeting = {
   started_at: string | null;
   ended_at: string | null;
   status: "awaiting_review" | "in_base";
+  // Состояние генерации тезисов: тезисы готовятся / готовы / не удалось обработать.
+  summary_status: "processing" | "done" | "failed";
   draft_notes_md: string | null;
   // transcript присутствует только в детальном GET /agent-meetings/:id
   transcript?: { language?: string; model?: string; segments: TranscriptSegment[] } | null;
