@@ -72,6 +72,44 @@ async function sendRecorderToken(chatId: number, userId: number): Promise<void> 
   );
 }
 
+// ── Watchdog: спасаем встречи, зависшие в summary_status='processing' ──────────
+// Фоновая транскрибация в meeting-ingest может быть убита wall-clock воркера Supabase,
+// тогда встреча навсегда остаётся «Тезисы готовятся…». Помечаем такие как 'failed' и
+// сообщаем записавшим. Идемпотентно: трогаем только processing старше maxMinutes.
+async function sweepStuckMeetings(maxMinutes = 8): Promise<number> {
+  const cutoff = new Date(Date.now() - maxMinutes * 60_000).toISOString();
+  const { data: stuck, error } = await supabase
+    .from("meetings")
+    .select("id, title, recorders")
+    .eq("summary_status", "processing")
+    .lt("updated_at", cutoff);
+  if (error || !stuck || stuck.length === 0) return 0;
+
+  type Recorder = { telegram_id: number };
+  type StuckMeeting = { id: string; title: string | null; recorders: Recorder[] | null };
+  const note =
+    "⚠️ Не удалось обработать запись встречи — обработка превысила лимит времени. " +
+    "Попробуй записать заново (по возможности короче).";
+
+  let swept = 0;
+  for (const m of stuck as StuckMeeting[]) {
+    await supabase
+      .from("meetings")
+      .update({ summary_status: "failed", updated_at: new Date().toISOString() })
+      .eq("id", m.id);
+    swept++;
+    for (const r of m.recorders ?? []) {
+      if (!r || typeof r.telegram_id !== "number") continue;
+      try {
+        await sendMessage(r.telegram_id, note);
+      } catch (e) {
+        console.error(`sweepStuckMeetings: notify failed for ${m.id} / ${r.telegram_id}:`, e);
+      }
+    }
+  }
+  return swept;
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -81,7 +119,7 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { return new Response("Bad Request", { status: 400 }); }
 
   // ── Cron triggers (требуют X-Cron-Secret) ────────────────────────────────────
-  if (body.setup_commands === true || body.digest_cron === true || body.readai_token_refresh === true || body.granola_poll === true) {
+  if (body.setup_commands === true || body.digest_cron === true || body.readai_token_refresh === true || body.granola_poll === true || body.meetings_watchdog === true) {
     if (!CRON_SECRET || req.headers.get("X-Cron-Secret") !== CRON_SECRET) {
       return new Response("Forbidden", { status: 403 });
     }
@@ -117,7 +155,13 @@ Deno.serve(async (req: Request) => {
 
   if (body.granola_poll === true) {
     const count = await ingestNewGranolaNotesAllUsers();
+    await sweepStuckMeetings();
     return new Response(`OK: ${count} new granola meetings`, { status: 200 });
+  }
+
+  if (body.meetings_watchdog === true) {
+    const n = await sweepStuckMeetings();
+    return new Response(JSON.stringify({ ok: true, swept: n }), { status: 200 });
   }
 
   if (body.readai_token_refresh === true) {
