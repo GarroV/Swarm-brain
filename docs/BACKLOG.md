@@ -2,6 +2,43 @@
 
 > Этот файл ведётся **вручную**: открытые задачи, технический долг, идеи. Это НЕ автогенерируемый `CHANGELOG.md` (тот собирается из git-коммитов).
 
+## Единый контракт транскрибаторов (pluggable sources) — большой рефактор
+
+> Карта кода 2026-06-25. **Вердикт: транскрибаторы НЕ единообразны.** Рекордер (`desktop-agent`) — спецкейс на отдельном пути; Granola/Read.ai — на другом. Их объединяет только точка назначения (`entries`, `entry_type='meeting'`), не вход и не ревью.
+
+**Как сейчас (две параллельные семьи):**
+- **Granola / Read.ai** → пишут сразу в `entries` (`metadata.confirmed=false`), эмбеддинг+тезисы на ингесте; ревью = флаг `confirmed`; аппрув = `PATCH /meetings/:id {confirmed:true}` (флип на месте). Статус «На согласовании».
+- **desktop-agent (рекордер)** → двухшаговый протокол в отдельной таблице `meetings` (`meeting-claim` → `meeting-ingest`); эмбеддинг только на publish; ревью = `meetings.status='awaiting_review'`; аппрув = `POST /agent-meetings/:id/publish` (вставляет новую `entries`). Статус «На вычитке».
+- Нет общего контракта ингеста, нет реестра источников — список `['read_ai','granola','desktop-agent']` захардкожен по местам (swarm-mcp `.in()`, статистика бота, visibility-фильтры).
+
+**Целевой дизайн (8 шагов, инкрементально, НЕ блайнд-миграцией прод):**
+1. `meetings` — единая таблица входа для ВСЕХ источников; `source` = свободный id программы (`granola`/`read_ai`/`swarm-recorder`/`otter`/…), не дефолт `desktop-agent`.
+2. Один контракт `TranscriberAdapter`: `claim(identity)` (тривиальный create-or-find по `external_id` для push/poll-источников; реальный lease — для device-рекордеров), `ingest({transcript,summary?,attendees,started_at,source,external_id})`, нормализованный identity (+`identity_kind='external'` для дедупа по note/meeting-id).
+3. Тезисы+эмбеддинг — в ОДИН общий пост-ингест шаг (убрать дубль `GRANOLA_TEZISY_PROMPT` в granola.ts/read-ai-webhook).
+4. Ревью — на `meetings.status` (`awaiting_review`→`in_base`), retire `metadata.confirmed`; `GET /meetings?confirmed=false` → `GET /agent-meetings?status=awaiting_review` для всех.
+5. Publish — один эндпоинт `POST /agent-meetings/:id/publish` для всех (вставляет `entries` confirmed:true, линкует, извлекает задачи). `entries` остаётся финальным артефактом (downstream: поиск, страны, тезисы — не ломаем).
+6. Реестр `SOURCES` + общий `sourceLabel()` (сервер+miniapp) вместо хардкод-списка. Новый рекордер = одна запись в реестр + адаптер, ноль правок в запросах.
+7. Сквозная идентичность программы записи: `meetings.source` = конкретная программа на claim; UI рендерит `sourceLabel(source)` (после 1–6 вид один → метка выводится единообразно).
+8. Миграция: новые встречи — через `meetings`; старые `confirmed=false` записи Granola/Read.ai — оставить как есть ИЛИ разовый бэкфилл. Опубликованные не трогать.
+
+**Открытые вопросы (решить до миграции):**
+- `entries` остаётся финальным артефактом (доки: «не ломаем структуру») — подтвердить, что унифицируем только вход+ревью, не схлопываем всё в `meetings`.
+- Granola manual-save сейчас авто-публикуется (`confirmed=true`, минует ревью) — оставить bypass или гнать через вычитку?
+- Read.ai `group_id` захардкожен `'cee'` — для push/webhook-источников без per-user JWT нужна per-integration workspace-маппинг.
+- Один `claim()` с no-op для web-источников, или два тира контракта (coordinated/uncoordinated)?
+- Нужна ли РАЗЛИЧАЕМОСТЬ программы записи на карточке (наш рекордер vs будущий 3rd-party), или достаточно «device recording»? (Решает: per-program `source` vs `desktop-agent`+`metadata.recorder_app`.)
+
+**Сделано из этого блока (2026-06-25):** метка источника на карточках вычитки (`sourceLabel`, `desktop-agent`→«Рекордер») + polling статуса на экране вычитки.
+
+## Тезисы desktop-agent зависают в «готовятся» (processing) — надёжность
+
+> 2026-06-25: тестовая запись (ТВ рядом, без звонка) застряла на `summary_status=processing`, рефреш не помог → бэкенд не дописал тезисы.
+
+- **Корень (ведущая гипотеза):** фон транскрибации+тезисов (`meeting-ingest`, `EdgeRuntime.waitUntil`) убит по wall-clock воркера (~150с) до `done` и до `catch`(→`failed`). Длинная запись = вечное «готовятся». Документированный риск (durable-обработка не сделана).
+- 🟡 **Watchdog:** помечать `summary_status='failed'`, если фон не завершился за N минут (не висеть «готовятся» вечно). В `meeting-ingest` — деплой связан с миграцией `mic_start_offset` (#10).
+- ✅/🟡 **Polling на экране вычитки** — делается (frontend), статус сам обновляется + показывает `failed`.
+- 🔴 **Durable-обработка (long-term):** аудио в Storage на ingest (202 сразу) + cron/queue-воркер, добивающий транскрибацию инкрементально (переживает рестарт). Снимает wall-clock-потолок для длинных встреч. Внимание: сырое аудио в Storage = приватность (signed URLs).
+
 ## Редизайн веба «Рой» (Swarm-brain-4) — отложенные пункты
 
 > Спека/план: `docs/superpowers/specs/2026-06-18-roy-web-redesign-design.md`, `docs/superpowers/plans/2026-06-18-roy-web-redesign.md`.
