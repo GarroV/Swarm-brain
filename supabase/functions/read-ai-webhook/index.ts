@@ -158,6 +158,14 @@ Deno.serve(async (req: Request) => {
     return new Response("Bad Request", { status: 400 });
   }
 
+  // KILL-SWITCH: Read.ai ingestion disabled by default.
+  // We return 200 OK so Read.ai's webhook treats delivery as successful and does NOT retry,
+  // while skipping all DB writes and notifications below.
+  // To re-enable: set env var READ_AI_ENABLED=true (any other value / unset keeps it disabled).
+  if (Deno.env.get("READ_AI_ENABLED") !== "true") {
+    return new Response("OK", { status: 200 });
+  }
+
   try {
     // Read.ai webhook payload is flat (no "meeting" wrapper):
     // { session_id, trigger, transcript, chapter_summaries, request_id, title, participants, ... }

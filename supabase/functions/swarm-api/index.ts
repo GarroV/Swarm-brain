@@ -1027,12 +1027,25 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── GET /meetings ─────────────────────────────────────────────────────────────
+  // Видимость: по умолчанию (без ?all) — только свои встречи (через privacy-фильтр
+  // buildEntriesQuery, где pending = is_private/owner_id). Это касается всех, включая
+  // админа. Override ?all=true работает ТОЛЬКО для админа и показывает все встречи
+  // воркспейса (минуя privacy-фильтр).
   if (req.method === "GET" && routePath === "/meetings") {
     const confirmedParam = url.searchParams.get("confirmed");
-    let q = buildEntriesQuery(supabase, "*", { groupId, telegramId: telegram_id })
-      .eq("entry_type", "meeting")
-      .order("created_at", { ascending: false })
-      .limit(50);
+    const showAll = url.searchParams.get("all") === "true";
+    let q = (showAll && isAdmin)
+      ? supabase
+          .from("entries")
+          .select("*")
+          .eq("group_id", groupId)
+          .eq("entry_type", "meeting")
+          .order("created_at", { ascending: false })
+          .limit(50)
+      : buildEntriesQuery(supabase, "*", { groupId, telegramId: telegram_id })
+          .eq("entry_type", "meeting")
+          .order("created_at", { ascending: false })
+          .limit(50);
     if (confirmedParam === "true") q = q.eq("metadata->>confirmed", "true");
     if (confirmedParam === "false") q = q.or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false");
     const { data, error } = await q;
@@ -1056,6 +1069,12 @@ Deno.serve(async (req: Request) => {
         const fields: Record<string, unknown> = {};
         if ("confirmed" in body) {
           fields.metadata = { ...(entry.metadata as Record<string, unknown>), confirmed: body.confirmed };
+          // Confirm = публикация в воркспейс: pending-встреча становится видимой всем
+          // (снимаем приватность и владельца).
+          if (body.confirmed === true) {
+            fields.is_private = false;
+            fields.owner_id = null;
+          }
         }
         if ("summary" in body) fields.summary = body.summary;
         if ("content" in body && typeof body.content === "string") fields.content = body.content;
@@ -1080,17 +1099,20 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── Swarm Meetings (desktop-agent): черновики на вычитке (таблица meetings) ─────
-  // Видимость: тот же воркспейс + caller среди записавших (recorders) или админ.
+  // Видимость: тот же воркспейс + по умолчанию только свои (caller среди recorders).
+  // Это касается всех, включая админа. Override ?all=true работает ТОЛЬКО для админа
+  // и снимает фильтр по recorders (показывает все черновики воркспейса).
   // GET /agent-meetings?status=awaiting_review|in_base — очередь вычитки / опубликованные
   if (req.method === "GET" && routePath === "/agent-meetings") {
     const status = url.searchParams.get("status") ?? "awaiting_review";
+    const showAll = url.searchParams.get("all") === "true";
     let q = supabase.from("meetings")
       .select("id, title, source, identity_kind, started_at, ended_at, status, draft_notes_md, recorders, entry_id, created_at")
       .eq("group_id", groupId)
       .eq("status", status)
       .order("started_at", { ascending: false, nullsFirst: false })
       .limit(50);
-    if (!isAdmin) q = q.contains("recorders", [{ telegram_id }]);
+    if (!(showAll && isAdmin)) q = q.contains("recorders", [{ telegram_id }]);
     const { data, error } = await q;
     if (error) return apiErr(500, error.message, origin);
     return json(data, 200, origin);

@@ -411,6 +411,11 @@ async function ingestNewGranolaNotesForUser(integration: {
       countries,
       entry_type: "meeting",
       entry_date: entryDate,
+      // Авто-импорт «на согласовании» виден только загрузившему пользователю,
+      // пока он его не подтвердит (publish → is_private:false). Контракт видимости:
+      // pending = is_private:true + owner_id = telegram_id импортирующего пользователя.
+      is_private: true,
+      owner_id: integration.telegram_id,
       group_id: groupId,
     }).select("id").single();
     if (error || !inserted) {

@@ -350,7 +350,9 @@ export async function handleMeetingCallbacks(
     const { data: entry } = await supabase.from("entries").select("metadata, content").eq("id", entryId).eq("group_id", groupId).maybeSingle();
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
     else {
-      await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true } }).eq("id", entryId).eq("group_id", groupId);
+      // Publish: pending → workspace-visible. Clear uploader-private scoping so the
+      // confirmed meeting is visible to the whole workspace (visibility contract).
+      await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true }, is_private: false, owner_id: null }).eq("id", entryId).eq("group_id", groupId);
       const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
       await sendMessage(chatId, `✅ Встреча сохранена: <b>${title}</b>`);
       const content = (entry.content as string) ?? "";
