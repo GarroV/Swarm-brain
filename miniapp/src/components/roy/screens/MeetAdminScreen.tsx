@@ -476,6 +476,9 @@ function DetailPanel({
 // ── Деталь черновика агента (с поллингом тезисов) ─────────────────────────────
 
 const AGENT_POLL_MS = 10_000;
+// После ~3 минут непрерывного поллинга (18 опросов по 10с) показываем подсказку,
+// что обработка затянулась — фоновая задача могла отвалиться на длинной записи.
+const AGENT_SLOW_POLL_COUNT = 18;
 
 function AgentMeetingDetail({
   meeting,
@@ -490,16 +493,20 @@ function AgentMeetingDetail({
 }) {
   // Локальная копия: поллинг подменяет её свежими данными по мере готовности тезисов.
   const [m, setM] = useState<AgentMeeting>(meeting);
+  // Счётчик опросов: после AGENT_SLOW_POLL_COUNT показываем подсказку «обработка затянулась».
+  const [pollCount, setPollCount] = useState(0);
 
-  // Смена выбранной встречи — сразу показать её, а не устаревшую.
+  // Смена выбранной встречи — сразу показать её, а не устаревшую, и сбросить счётчик опросов.
   useEffect(() => {
     setM(meeting);
+    setPollCount(0);
   }, [meeting]);
 
   // Поллинг, пока тезисы готовятся (нет draft_notes_md) и обработка не упала.
   useEffect(() => {
     if (m.draft_notes_md || m.summary_status === "failed") return;
     const id = setInterval(() => {
+      setPollCount((c) => c + 1);
       fetchAgentMeeting(m.id)
         .then(setM)
         .catch(() => {
@@ -508,6 +515,10 @@ function AgentMeetingDetail({
     }, AGENT_POLL_MS);
     return () => clearInterval(id);
   }, [m.id, m.draft_notes_md, m.summary_status]);
+
+  // Подсказка, что обработка затянулась: всё ещё processing, тезисов нет, опросов накопилось много.
+  const isTakingTooLong =
+    !m.draft_notes_md && m.summary_status !== "failed" && pollCount >= AGENT_SLOW_POLL_COUNT;
 
   return (
     <div className="flex flex-col gap-4 min-h-0 overflow-y-auto px-5 py-4">
@@ -549,7 +560,14 @@ function AgentMeetingDetail({
           ⚠️ Не удалось обработать запись — попробуй записать заново.
         </p>
       ) : (
-        <p className="text-ink-mute" style={{ fontSize: 13 }}>Тезисы готовятся…</p>
+        <div>
+          <p className="text-ink-mute" style={{ fontSize: 13 }}>Тезисы готовятся…</p>
+          {isTakingTooLong && (
+            <p className="text-ink-mute mt-1" style={{ fontSize: 13 }}>
+              Обработка затянулась — возможно, запись слишком длинная. Можно подождать ещё или переснять покороче.
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
