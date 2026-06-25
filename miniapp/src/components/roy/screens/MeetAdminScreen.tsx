@@ -16,7 +16,7 @@ import {
   createTask,
 } from "@/lib/api";
 import type { ProposedTask } from "@/lib/api";
-import type { Entry, AgentMeeting } from "@/types";
+import type { Entry, AgentMeeting, TranscriptSegment } from "@/types";
 import { sourceLabel } from "./RoyMeetingsScreen";
 
 // ── Типы объединённого списка ────────────────────────────────────────────────
@@ -480,6 +480,13 @@ const AGENT_POLL_MS = 10_000;
 // что обработка затянулась — фоновая задача могла отвалиться на длинной записи.
 const AGENT_SLOW_POLL_COUNT = 18;
 
+// Подпись секунд транскрипта в строку «спикер: текст». Спикер опционален
+// (может быть «собеседник»/«я»); если его нет — выводим только текст.
+function transcriptLine(seg: TranscriptSegment): string {
+  const speaker = seg.speaker?.trim();
+  return speaker ? `${speaker}: ${seg.text}` : seg.text;
+}
+
 function AgentMeetingDetail({
   meeting,
   title,
@@ -495,11 +502,14 @@ function AgentMeetingDetail({
   const [m, setM] = useState<AgentMeeting>(meeting);
   // Счётчик опросов: после AGENT_SLOW_POLL_COUNT показываем подсказку «обработка затянулась».
   const [pollCount, setPollCount] = useState(0);
+  // Транскрипт по умолчанию свёрнут — он длинный и нужен лишь чтобы вспомнить детали.
+  const [showTranscript, setShowTranscript] = useState(false);
 
-  // Смена выбранной встречи — сразу показать её, а не устаревшую, и сбросить счётчик опросов.
+  // Смена выбранной встречи — сразу показать её, а не устаревшую, сбросить счётчик и свернуть транскрипт.
   useEffect(() => {
     setM(meeting);
     setPollCount(0);
+    setShowTranscript(false);
   }, [meeting]);
 
   // Поллинг, пока тезисы готовятся (нет draft_notes_md) и обработка не упала.
@@ -520,9 +530,13 @@ function AgentMeetingDetail({
   const isTakingTooLong =
     !m.draft_notes_md && m.summary_status !== "failed" && pollCount >= AGENT_SLOW_POLL_COUNT;
 
+  const segments = m.transcript?.segments ?? [];
+  const hasTranscript = segments.length > 0;
+
   return (
-    <div className="flex flex-col gap-4 min-h-0 overflow-y-auto px-5 py-4">
-      <div>
+    // Панель — flex-колонка во всю высоту: шапка фиксирована, контент скроллится в своём контейнере.
+    <div className="flex h-full min-h-0 flex-col px-5 py-4">
+      <div className="shrink-0">
         <h2 className="font-bold text-ink leading-tight" style={{ fontSize: 22, letterSpacing: "-0.015em" }}>
           {title}
         </h2>
@@ -548,27 +562,61 @@ function AgentMeetingDetail({
         </div>
       </div>
 
-      {m.draft_notes_md ? (
-        <div>
-          <SectionLabel>Тезисы</SectionLabel>
-          <p className="text-ink leading-relaxed whitespace-pre-wrap" style={{ fontSize: 14 }}>
-            {m.draft_notes_md.slice(0, 1000)}{m.draft_notes_md.length > 1000 ? "…" : ""}
+      {/* Тезисы + транскрипт скроллятся внутри своего контейнера, а не растят страницу. */}
+      <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto" style={{ maxHeight: "60vh" }}>
+        {m.draft_notes_md ? (
+          <>
+            <div>
+              <SectionLabel>Тезисы</SectionLabel>
+              <p className="text-ink leading-relaxed whitespace-pre-wrap" style={{ fontSize: 14 }}>
+                {m.draft_notes_md}
+              </p>
+            </div>
+
+            {hasTranscript && (
+              <details className="border-t border-line pt-3">
+                <summary
+                  className="cursor-pointer select-none font-semibold text-ink-soft list-none"
+                  style={{ fontSize: 13 }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowTranscript((v) => !v);
+                  }}
+                  aria-expanded={showTranscript}
+                >
+                  {showTranscript ? "Скрыть транскрипт" : `Транскрипт (${segments.length})`}
+                </summary>
+                {showTranscript && (
+                  <div className="mt-2 flex flex-col gap-1.5">
+                    {segments.map((s, i) => (
+                      <p
+                        key={i}
+                        className="text-ink-mute leading-relaxed whitespace-pre-wrap"
+                        style={{ fontSize: 13 }}
+                      >
+                        {transcriptLine(s)}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </details>
+            )}
+          </>
+        ) : m.summary_status === "failed" ? (
+          <p className="text-ink-soft" style={{ fontSize: 13 }}>
+            ⚠️ Не удалось обработать запись — попробуй записать заново.
           </p>
-        </div>
-      ) : m.summary_status === "failed" ? (
-        <p className="text-ink-soft" style={{ fontSize: 13 }}>
-          ⚠️ Не удалось обработать запись — попробуй записать заново.
-        </p>
-      ) : (
-        <div>
-          <p className="text-ink-mute" style={{ fontSize: 13 }}>Тезисы готовятся…</p>
-          {isTakingTooLong && (
-            <p className="text-ink-mute mt-1" style={{ fontSize: 13 }}>
-              Обработка затянулась — возможно, запись слишком длинная. Можно подождать ещё или переснять покороче.
-            </p>
-          )}
-        </div>
-      )}
+        ) : (
+          <div>
+            <p className="text-ink-mute" style={{ fontSize: 13 }}>Тезисы готовятся…</p>
+            {isTakingTooLong && (
+              <p className="text-ink-mute mt-1" style={{ fontSize: 13 }}>
+                Обработка затянулась — возможно, запись слишком длинная. Можно подождать ещё или переснять покороче.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

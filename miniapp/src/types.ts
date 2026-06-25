@@ -116,7 +116,7 @@ export type GranolaNote = {
 
 // ── Swarm Meetings (desktop-agent) ──────────────────────────────────────────────
 
-export type TranscriptSegment = { start: number; end: number; text: string };
+export type TranscriptSegment = { start: number; end: number; text: string; speaker?: string };
 
 export type RecorderRef = { telegram_id: number; claimed_at: string; role: string };
 
@@ -132,7 +132,7 @@ export type AgentMeeting = {
   summary_status: "processing" | "done" | "failed";
   draft_notes_md: string | null;
   // transcript присутствует только в детальном GET /agent-meetings/:id
-  transcript?: { language?: string; model?: string; segments: TranscriptSegment[] } | null;
+  transcript?: { language?: string; model?: string; segments?: TranscriptSegment[] } | null;
   recorders: RecorderRef[] | null;
   entry_id: string | null;
   created_at: string;
