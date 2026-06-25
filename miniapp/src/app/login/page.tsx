@@ -8,13 +8,20 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!ref.current || !BOT_USERNAME) return;
+    // Пробрасываем deep-link (?meeting=…) дальше: /login?next=… → auth-url?next=…,
+    // чтобы после входа вернуться на встречу, а не на «/». Только относительный путь.
+    const next = new URLSearchParams(window.location.search).get("next");
+    const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "";
+    const authUrl = safeNext
+      ? `/api/auth/telegram?next=${encodeURIComponent(safeNext)}`
+      : "/api/auth/telegram";
     const script = document.createElement("script");
     script.src = "https://telegram.org/js/telegram-widget.js?22";
     script.async = true;
     script.setAttribute("data-telegram-login", BOT_USERNAME);
     script.setAttribute("data-size", "large");
     script.setAttribute("data-radius", "12");
-    script.setAttribute("data-auth-url", "/api/auth/telegram");
+    script.setAttribute("data-auth-url", authUrl);
     script.setAttribute("data-request-access", "write");
     ref.current.appendChild(script);
   }, []);

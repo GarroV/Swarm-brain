@@ -18,10 +18,16 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
 
   const jwt = await signJWT({ telegram_id: verified.telegram_id }, env.WEB_JWT_SECRET);
   const maxAge = 7 * 86400;
+  // Возврат на исходный deep-link (?meeting=…), если это безопасный относительный путь
+  // (защита от open-redirect: только same-origin, без // и схемы).
+  const nextRaw = url.searchParams.get("next");
+  const location = nextRaw && nextRaw.startsWith("/") && !nextRaw.startsWith("//") && !nextRaw.includes("://")
+    ? nextRaw
+    : "/";
   return new Response(null, {
     status: 302,
     headers: {
-      Location: "/",
+      Location: location,
       "Set-Cookie": `roj_session=${jwt}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`,
     },
   });

@@ -15,7 +15,10 @@ export default function Home() {
         // В браузере (вне Telegram) без сессии → на страницу входа
         const status = (err as { status?: number }).status;
         if (status === 401 && !getInitData() && typeof window !== "undefined") {
-          window.location.href = "/login";
+          // Сохраняем deep-link (?meeting=…) через логин — иначе он теряется и юзер
+          // садится на домашний экран вместо встречи из уведомления.
+          const next = window.location.pathname + window.location.search + window.location.hash;
+          window.location.href = "/login?next=" + encodeURIComponent(next);
         }
       });
   }, []);
