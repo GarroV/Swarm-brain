@@ -18,12 +18,17 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
 
   const jwt = await signJWT({ telegram_id: verified.telegram_id }, env.WEB_JWT_SECRET);
   const maxAge = 7 * 86400;
-  // Возврат на исходный deep-link (?meeting=…), если это безопасный относительный путь
-  // (защита от open-redirect: только same-origin, без // и схемы).
+  // Возврат на исходный deep-link (?meeting=…). Защита от open-redirect: резолвим next
+  // относительно своего origin и принимаем ТОЛЬКО same-origin путь — это отсекает //host,
+  // /\host, scheme: и прочие обходы строковых проверок (браузер нормализует \ → /).
   const nextRaw = url.searchParams.get("next");
-  const location = nextRaw && nextRaw.startsWith("/") && !nextRaw.startsWith("//") && !nextRaw.includes("://")
-    ? nextRaw
-    : "/";
+  let location = "/";
+  if (nextRaw) {
+    try {
+      const parsed = new URL(nextRaw, url.origin);
+      if (parsed.origin === url.origin) location = parsed.pathname + parsed.search + parsed.hash;
+    } catch { /* кривой next → остаёмся на "/" */ }
+  }
   return new Response(null, {
     status: 302,
     headers: {

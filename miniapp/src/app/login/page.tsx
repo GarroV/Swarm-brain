@@ -10,8 +10,14 @@ export default function LoginPage() {
     if (!ref.current || !BOT_USERNAME) return;
     // Пробрасываем deep-link (?meeting=…) дальше: /login?next=… → auth-url?next=…,
     // чтобы после входа вернуться на встречу, а не на «/». Только относительный путь.
-    const next = new URLSearchParams(window.location.search).get("next");
-    const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "";
+    const nextRaw = new URLSearchParams(window.location.search).get("next");
+    let safeNext = "";
+    if (nextRaw) {
+      try {
+        const parsed = new URL(nextRaw, window.location.origin);
+        if (parsed.origin === window.location.origin) safeNext = parsed.pathname + parsed.search + parsed.hash;
+      } catch { /* кривой next → без редиректа */ }
+    }
     const authUrl = safeNext
       ? `/api/auth/telegram?next=${encodeURIComponent(safeNext)}`
       : "/api/auth/telegram";
