@@ -102,6 +102,28 @@ struct SwarmClient {
                                     attendees: m.attendees ?? [], startISO: m.startedAt, endISO: m.endedAt)
     }
 
+    // GET /meeting-status?ids=a,b,c → [meetingId: summary_status]. Нужно UploadQueue: локальный
+    // бэкап аудио удаляем, когда встреча обработана (summary_status="done"). Возвращает статусы
+    // только встреч вызывающего (claim_owner). Сетевой/4xx сбой бросаем наверх (бэкап не трогаем).
+    func fetchMeetingStatuses(_ ids: [String]) async throws -> [String: String] {
+        guard !ids.isEmpty else { return [:] }
+        var comps = URLComponents(url: url("/meeting-status"), resolvingAgainstBaseURL: false)!
+        comps.queryItems = [URLQueryItem(name: "ids", value: ids.joined(separator: ","))]
+        var req = URLRequest(url: comps.url!)
+        authed(&req)
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200...299).contains(code) else {
+            throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "", retryAfter: parseRetryAfter(resp))
+        }
+        struct Item: Decodable { let id: String; let summaryStatus: String? }
+        struct Resp: Decodable { let statuses: [Item] }
+        let decoded = try decoder.decode(Resp.self, from: data)
+        var out: [String: String] = [:]
+        for it in decoded.statuses { out[it.id] = it.summaryStatus ?? "" }
+        return out
+    }
+
     // POST /meeting-ingest — загрузить аудио (multipart). Только если decision=transcribe.
     // Контракт: sys_parts/mic_parts — JSON-манифест [{name,offset}] + файлы по этим name
     // (sys_0, sys_1, …; mic_0, …). Короткая встреча = одна часть с offset 0; длинная нарезана

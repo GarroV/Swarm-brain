@@ -1,11 +1,16 @@
 import Foundation
 
-// Очередь дозагрузки записей на диске. Решает потерю данных: раньше при ЛЮБОЙ ошибке загрузки
-// .m4a сиротели в temporaryDirectory без ретрая. Теперь после успешного claim файлы
-// ПЕРЕНОСятся в ~/Library/Application Support/SwarmRecorder/pending/<meetingId>/ с JSON-сайдкаром,
-// и удаляются ТОЛЬКО после подтверждённого ingest. Дрейн — на старте приложения и после каждой
-// записи; ретраи с бэкоффом; dead-letter после лимита попыток (meetingId переиспользуется, НЕ
-// перезаклеймливается).
+// Очередь дозагрузки + ЛОКАЛЬНЫЙ БЭКАП записей на диске. Решает потерю данных:
+// файлы после claim переносятся в ~/Library/Application Support/SwarmRecorder/pending/<meetingId>/
+// с JSON-сайдкаром. Жизненный цикл бэкапа:
+//   1. uploaded=false → грузим (ретраи с бэкоффом; постоянный сбой/лимит → dead-letter failed/).
+//   2. после успешного 202 — НЕ удаляем (202 ≠ «обработано»): ставим uploaded=true, файлы остаются
+//      бэкапом на случай сбоя серверной обработки.
+//   3. опрос статуса (meeting-status): когда summary_status='done' — стенограмма/тезисы уже в БД,
+//      аудио больше не нужно → удаляем папку.
+//   4. 24ч-потолок: всё (и pending/, и failed/) старше суток сметается (sweepExpired) — бэкап
+//      «в рамках суток», диск не растёт.
+// Дрейн — на старте, после каждой записи и периодически. meetingId переиспользуется (НЕ перезаклейм).
 //
 // Сайдкар (meta.json) описывает один pending-аплоад. systemSegments вместо одиночного path:
 // системная дорожка может быть из нескольких файлов после пересборок тапа (см. SystemAudioCapturer),
@@ -18,6 +23,7 @@ struct PendingUpload: Codable {
     let startISO: String
     let endISO: String
     var attempts: Int
+    var uploaded: Bool?             // true после успешного 202; бэкап ждёт подтверждения обработки (done) или 24ч
 
     struct Segment: Codable {
         let path: String            // относительный путь файла внутри папки meetingId
@@ -32,6 +38,8 @@ actor UploadQueue {
 
     // Сколько раз пытаемся залить, прежде чем отправить в dead-letter (папку failed/).
     private static let maxAttempts = 12
+    // Бэкап исходного аудио держим до подтверждения обработки (done) или этого потолка — «в рамках суток».
+    private static let backupTTLSec: TimeInterval = 24 * 60 * 60
 
     private let fm = FileManager.default
     private var draining = false
@@ -53,8 +61,8 @@ actor UploadQueue {
         meetingDir(meetingId).appendingPathComponent("meta.json")
     }
 
-    // Сколько встреч ждёт загрузки — для строки «N в очереди» в меню.
-    func pendingCount() -> Int { loadAll().count }
+    // Сколько встреч ждёт ЗАГРУЗКИ — для строки «N в очереди». Залитые бэкапы (ждут done/24ч) не в счёт.
+    func pendingCount() -> Int { loadAll().filter { !($0.uploaded ?? false) }.count }
 
     // ── Постановка в очередь ──────────────────────────────────────────────────
     // Переносит файлы записи в pending/<meetingId>/ и пишет сайдкар. Вызывать ПОСЛЕ успешного
@@ -98,7 +106,8 @@ actor UploadQueue {
             micStartOffset: micStartOffset,
             startISO: startISO,
             endISO: endISO,
-            attempts: 0
+            attempts: 0,
+            uploaded: false
         )
         try writeMeta(pending)
     }
@@ -111,7 +120,16 @@ actor UploadQueue {
         draining = true
         defer { draining = false }
 
+        // (1) 24ч-потолок: всё старше суток (pending/ и failed/) сметаем — бэкап «в рамках суток».
+        sweepExpired()
+
+        // (2) Грузим ещё не залитые; залитые собираем для опроса статуса.
+        var uploadedIds: [String] = []
         for var pending in loadAll() {
+            if pending.uploaded ?? false {
+                uploadedIds.append(pending.meetingId)
+                continue
+            }
             // attempts уже исчерпаны → dead-letter (на случай, если запись осталась с прошлого раза).
             if pending.attempts >= Self.maxAttempts {
                 moveToDeadLetter(pending.meetingId)
@@ -119,8 +137,10 @@ actor UploadQueue {
             }
             do {
                 try await upload(pending, config: config)
-                // Успех — удаляем папку целиком (файлы + сайдкар).
-                try? fm.removeItem(at: meetingDir(pending.meetingId))
+                // Успех (202) ≠ «обработано»: НЕ удаляем — оставляем бэкап до подтверждения done или 24ч.
+                pending.uploaded = true
+                try? writeMeta(pending)
+                uploadedIds.append(pending.meetingId)
             } catch let SwarmError.http(code, _, _) where !(500...599).contains(code) && code != 429 {
                 // Постоянный сбой (401/403/413/404 и т.п.) — повторять бессмысленно → dead-letter.
                 NSLog("SwarmRecorder: upload \(pending.meetingId) постоянный сбой HTTP \(code) → dead-letter")
@@ -135,6 +155,46 @@ actor UploadQueue {
                 }
             }
         }
+
+        // (3) Опрос статуса залитых: summary_status='done' → стенограмма/тезисы в БД, аудио не нужно → удаляем бэкап.
+        // Сетевой/4xx сбой опроса — НЕ удаляем (бэкап доживёт до следующего дрейна или до 24ч-потолка).
+        guard !uploadedIds.isEmpty else { return }
+        if let statuses = try? await SwarmClient(config: config).fetchMeetingStatuses(uploadedIds) {
+            for (id, status) in statuses where status == "done" {
+                try? fm.removeItem(at: meetingDir(id))
+                NSLog("SwarmRecorder: встреча \(id) обработана (done) → локальный бэкап удалён")
+            }
+        }
+    }
+
+    // 24ч-потолок: удаляем папки бэкапа (pending/ и failed/) старше backupTTLSec — диск не растёт.
+    private func sweepExpired() {
+        let now = Date()
+        for dir in [rootDir, deadLetterDir] {
+            guard let entries = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
+            for entry in entries {
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: entry.path, isDirectory: &isDir), isDir.boolValue else { continue }
+                if folderAgeSeconds(entry, now: now) > Self.backupTTLSec {
+                    NSLog("SwarmRecorder: бэкап \(entry.lastPathComponent) старше 24ч → удаляю")
+                    try? fm.removeItem(at: entry)
+                }
+            }
+        }
+    }
+
+    // Возраст папки бэкапа: по endISO из meta (надёжно), иначе по mtime папки.
+    private func folderAgeSeconds(_ dir: URL, now: Date) -> TimeInterval {
+        let meta = dir.appendingPathComponent("meta.json")
+        if let data = try? Data(contentsOf: meta),
+           let p = try? JSONDecoder().decode(PendingUpload.self, from: data),
+           let end = ISO8601DateFormatter().date(from: p.endISO) {
+            return now.timeIntervalSince(end)
+        }
+        if let attrs = try? fm.attributesOfItem(atPath: dir.path), let m = attrs[.modificationDate] as? Date {
+            return now.timeIntervalSince(m)
+        }
+        return 0
     }
 
     // Один аплоад: сегментируем дорожки из pending-файлов и шлём ingest с переиспользованием

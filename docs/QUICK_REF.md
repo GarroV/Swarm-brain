@@ -12,6 +12,7 @@ supabase functions deploy swarm-setup --no-verify-jwt        # публичны�
 supabase functions deploy swarm-recorder-setup --no-verify-jwt  # публичный GET, установщик рекордера (/recordertoken)
 supabase functions deploy meeting-ingest --no-verify-jwt     # приём аудио → Storage → durable-обработка
 supabase functions deploy meeting-process --no-verify-jwt    # cron-воркер durable-обработки (pg_cron 'meetings-process', каждую минуту)
+supabase functions deploy meeting-status --no-verify-jwt     # статус встреч пачкой (рекордер чистит локальный бэкап по done)
 # granola-poller — legacy, НЕ деплоить: поллинг Granola внутри swarm-bot ({granola_poll:true} крон)
 supabase secrets set BOT_NAME=swarm-bot                       # env-переменные
 ```
@@ -40,6 +41,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Установка рекордера (`/recordertoken`) | `swarm-recorder-setup/script.ts` (bash), `recorder/setup-signing.sh` (cert), `recorder/install.sh`, `swarm-bot/lib/mcp-setup.ts` (`mintRecorderToken`) |
 | Обработка встреч (durable: транскрибация по куску) | `_shared/meeting-processor.ts` (шаг), `meeting-ingest/index.ts` (приём+inline), `meeting-process/index.ts` (cron), watchdog в `swarm-bot/index.ts` (`sweepStuckMeetings`); pg_cron `meetings-process`, бакет `meeting-audio` |
 | Нарезка аудио в рекордере (≤25МБ И ≤15мин) | `recorder/Sources/SwarmRecorder/Segmenter.swift` |
+| Локальный бэкап аудио (хранит до `done`/24ч, чистка) | `recorder/.../UploadQueue.swift` (drain/sweep), `recorder/.../SwarmClient.swift` (`fetchMeetingStatuses`), `meeting-status/index.ts` |
 | ADMIN_USER_ID | `swarm-bot/lib/supabase.ts` → `744230399` |
 
 ---

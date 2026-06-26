@@ -19,7 +19,7 @@
 | **Telegram-бот** | Deno Edge Function | Быстрый ввод и поиск, встречи, задачи, фидбек, админка — прямо там, где команда общается | `swarm-bot` |
 | **Веб Mini App «Рой»** | Next.js (static export) → Cloudflare Pages | Доска задач (Список/Таймлайн/Спринты/Граф), RAG-поиск, вычитка встреч | `swarm-api` |
 | **Claude Desktop (MCP)** | MCP-сервер | Та же база + инструменты внутри Claude Desktop (большие тексты, с проверкой человеком) | `swarm-mcp` |
-| **SwarmRecorder** | macOS-приложение (Swift) | Запись звука онлайн-встреч → облачная транскрибация → тезисы в базу | `meeting-claim`, `meeting-ingest`, `meeting-process` |
+| **SwarmRecorder** | macOS-приложение (Swift) | Запись звука онлайн-встреч → облачная транскрибация → тезисы в базу | `meeting-claim`, `meeting-ingest`, `meeting-process`, `meeting-status` |
 
 ## Сквозные сценарии
 
@@ -70,6 +70,7 @@
 | `meeting-claim` | HTTP POST (desktop-agent) | Swarm Meetings: claim/lease до транскрибации (кто транскрибирует), регистрация записавших, личные пометки → приватная entry. Auth — персональный токен |
 | `meeting-ingest` | HTTP POST (desktop-agent) | Swarm Meetings: приём **аудио** от claimer (multipart: `sys_parts`/`mic_parts` — JSON-манифест `[{name,offset}]` + файлы; рекордер режет дорожки на части **≤25 МБ И ≤15 мин**; старый одиночный `audio`/`audio_mic` — фолбэк). **Durable-обработка** (см. `_shared/meeting-processor.ts`): части кладутся в Storage (приватный бакет `meeting-audio`), пишется `process_state`, ставится `summary_status='processing'` + `last_progress_at`; затем короткий **inline-проход** (короткой встрече хватает — добивается сразу). Длинную добивает cron `meeting-process`. Шаг = транскрибация части (Whisper, offset) → накопление сегментов → когда все готовы: сводка тезисов (GPT-4o) + **авто-название** → `done` → уведомление → чистка Storage. Идемпотентность (`processing`/`done` → no-op) + видимость сбоя (`failed`). Auth — персональный токен. Вычитка: `swarm-api` `GET/PATCH/DELETE /agent-meetings/:id` + `POST /agent-meetings/:id/publish` |
 | `meeting-process` | Cron (каждую минуту; pg_cron `meetings-process` → `net.http_post` с `X-Cron-Secret`) | Swarm Meetings: **durable-воркер**. Берёт встречи в `summary_status='processing'` с незаконченными частями (лиз `processing_lease` — нет двойной обработки; протухший лиз перехватывается), двигает каждую на шаг в рамках бюджета (<400s wall-clock воркера) — что не успел, добьёт следующий тик. Heartbeat `last_progress_at`. Логика шага — общий `_shared/meeting-processor.ts` |
+| `meeting-status` | HTTP GET (desktop-agent) | Swarm Meetings: статус встреч пачкой (`?ids=a,b,c` → `[{id, summary_status}]`). Рекордер держит локальный бэкап исходного аудио и удаляет его, когда встреча обработана (`summary_status='done'` → стенограмма/тезисы уже в БД), либо по 24ч-потолку. Отдаёт статус **только встреч вызывающего** (`claim_owner`) — чужие не светит. Auth — персональный токен |
 | `meeting-current` | HTTP GET (desktop-agent) | Swarm Meetings: «какая встреча идёт сейчас» для рекордера. Agent-токен (`smcp_`) → `telegram_id` → `refresh_token` из `user_integrations(service='google_calendar')` → Google Calendar API (события now±30мин) → идущее событие + идентичность для claim. Рекордеру не нужен локальный доступ к календарю |
 | `google-oauth` | HTTP redirect (OAuth) | Серверная Google Calendar-интеграция для рекордера (как Granola/Read.ai). `/start` редиректит на consent Google (scope `calendar.events.readonly`), `/callback` меняет код на токены и кладёт `refresh_token` в `user_integrations(service='google_calendar')`. State — подписанный JWT с `telegram_id` (выдаёт `swarm-api` `/google/connect-url`). Секреты `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` |
 | `swarm-api` | HTTP (Mini App / веб) | REST API для Telegram Mini App «Рой» и браузера: задачи, спринты, зависимости, entries CRUD, поиск/RAG, встречи (`/meetings` + `/agent-meetings`), интеграции (Granola/Google), дайджест, фидбек, админка. Третий клиент поверх `_shared/tasks/db.ts`. Полный список эндпоинтов — в разделе [swarm-api — Mini App backend](#swarm-api--mini-app-backend) (канон) |
@@ -303,6 +304,8 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
   (inline-проход в ingest + cron meeting-process, переживает wall-clock) → meetings.transcript
   → async GPT-тезисы → meetings.draft_notes_md (общий черновик, НЕ в базе знаний/поиске)
   → уведомление записавшим «готово к вычитке»
+  локальный бэкап аудио в рекордере НЕ удаляется на 202 — живёт до summary_status='done'
+  (опрос meeting-status) или до 24ч-потолка (UploadQueue); защита от потери при сбое обработки
 вычитка (PATCH /agent-meetings/:id) + аппрув (POST /agent-meetings/:id/publish):
   создаётся entries (выбор базы: воркспейс/личное), эмбеддинг, status=in_base.
   Один объект → из «на вычитке» уходит у всех разом

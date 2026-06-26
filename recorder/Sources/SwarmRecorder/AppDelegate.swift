@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var micWasActive = false
     private var callDismissedUntil: Date?
     private var watchTimer: Timer?
+    private var maintTimer: Timer?
     // Авто-стоп по концу звонка (per-process детект во время записи).
     private var recWatchTimer: Timer?
     private var callSeenDuringRec = false
@@ -111,6 +112,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         RunLoop.main.add(t, forMode: .common)
         watchTimer = t
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.watchTick() }
+
+        // Периодическое обслуживание бэкапов (раз в 15 мин): дозагрузка, опрос статуса (удаление на done),
+        // 24ч-потолок. Нужно для долгоживущего меню-бара — иначе бэкапы чистятся только при старте/записи.
+        let maint = Timer.scheduledTimer(timeInterval: 900, target: self, selector: #selector(maintenanceTick), userInfo: nil, repeats: true)
+        RunLoop.main.add(maint, forMode: .common)
+        maintTimer = maint
+    }
+
+    @objc private func maintenanceTick() {
+        guard let cfg = config, configError == nil else { return }
+        Task { await UploadQueue.shared.drain(config: cfg); await refreshQueueBadge() }
     }
 
     @objc private func watchTick() {
