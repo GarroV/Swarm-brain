@@ -73,29 +73,33 @@ async function sendRecorderToken(chatId: number, userId: number): Promise<void> 
 }
 
 // ── Watchdog: спасаем встречи, зависшие в summary_status='processing' ──────────
-// Фоновая транскрибация в meeting-ingest может быть убита wall-clock воркера Supabase,
-// тогда встреча навсегда остаётся «Тезисы готовятся…». Помечаем такие как 'failed' и
-// сообщаем записавшим. Идемпотентно: трогаем только processing старше maxMinutes.
-async function sweepStuckMeetings(maxMinutes = 8): Promise<number> {
-  const cutoff = new Date(Date.now() - maxMinutes * 60_000).toISOString();
-  const { data: stuck, error } = await supabase
+// Durable-обработка (meeting-process) двигает встречу по куску за тик и бьёт heartbeat
+// last_progress_at на каждой готовой части. Значит здоровая ДЛИННАЯ встреча постоянно
+// освежает last_progress_at и убивать её НЕЛЬЗЯ. Валим в 'failed' только по ЗАСТОЮ:
+// прогресса нет дольше staleMinutes (а не по общему возрасту, как раньше). Это ловит
+// настоящие тупики: cron не бежит, либо встреча без process_state (старый ingest). Фолбэк
+// на updated_at — для строк без heartbeat (легаси). Идемпотентно.
+async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
+  const cutoff = Date.now() - staleMinutes * 60_000;
+  const { data: rows, error } = await supabase
     .from("meetings")
-    .select("id, title, recorders")
-    .eq("summary_status", "processing")
-    .lt("updated_at", cutoff);
-  if (error || !stuck || stuck.length === 0) return 0;
+    .select("id, title, recorders, last_progress_at, updated_at")
+    .eq("summary_status", "processing");
+  if (error || !rows || rows.length === 0) return 0;
 
   type Recorder = { telegram_id: number };
-  type StuckMeeting = { id: string; title: string | null; recorders: Recorder[] | null };
+  type Row = { id: string; title: string | null; recorders: Recorder[] | null; last_progress_at: string | null; updated_at: string | null };
   const note =
     "⚠️ Не удалось обработать запись встречи — обработка превысила лимит времени. " +
     "Попробуй записать заново (по возможности короче).";
 
   let swept = 0;
-  for (const m of stuck as StuckMeeting[]) {
+  for (const m of rows as Row[]) {
+    const beat = m.last_progress_at ?? m.updated_at;
+    if (!beat || new Date(beat).getTime() >= cutoff) continue; // прогресс свежий → встреча живая
     await supabase
       .from("meetings")
-      .update({ summary_status: "failed", updated_at: new Date().toISOString() })
+      .update({ summary_status: "failed", processing_lease: null, updated_at: new Date().toISOString() })
       .eq("id", m.id);
     swept++;
     for (const r of m.recorders ?? []) {

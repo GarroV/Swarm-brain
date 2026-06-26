@@ -19,6 +19,10 @@ enum Segmenter {
     // Целевой размер части при нарезке — ниже порога, чтобы поглотить разброс VBR
     // (AAC при заданном битрейте не строго CBR) и не упереться в 25 МБ на плотном участке.
     static let splitTargetBytes = 20 * 1024 * 1024
+    // Макс. длительность части. При 24 kbps 25 МБ ≈ 2.2 ЧАСА — один whisper-вызов на такую часть
+    // не влезает в wall-clock воркера (~400s). Поэтому режем и по времени: каждая часть ≤15 мин →
+    // короткий whisper-вызов → сервер (durable meeting-process) добивает встречу по куску за тик.
+    static let maxPartSeconds = 900.0
     // Оценка байт/сек для фолбэка, когда длительность не читается (24 kbps ≈ 3000 байт/с).
     static let bytesPerSecondEstimate = 3000.0
 
@@ -46,8 +50,6 @@ enum Segmenter {
 
     static func segment(_ url: URL) async throws -> [AudioPart] {
         let size = fileSize(url)
-        if size <= singlePartMaxBytes { return [AudioPart(url: url, offset: 0)] }
-
         let asset = AVURLAsset(url: url)
         var duration = (try? await asset.load(.duration).seconds) ?? 0
         if !duration.isFinite || duration <= 0 {
@@ -55,7 +57,14 @@ enum Segmenter {
             // чтобы всё равно нарезать на части ≤ лимита, а не слать гарантированно отбиваемый файл.
             duration = Double(size) / bytesPerSecondEstimate
         }
-        let count = max(2, Int((Double(size) / Double(splitTargetBytes)).rounded(.up)))
+        // Целая часть — только если в пределах И по размеру, И по длительности.
+        if size <= singlePartMaxBytes && duration <= maxPartSeconds {
+            return [AudioPart(url: url, offset: 0)]
+        }
+        // Частей хватит, чтобы каждая была ≤ порога и по размеру (Whisper 25 МБ), и по времени (wall-clock).
+        let byBytes = Int((Double(size) / Double(splitTargetBytes)).rounded(.up))
+        let byDuration = Int((duration / maxPartSeconds).rounded(.up))
+        let count = max(2, byBytes, byDuration)
         let segLen = duration / Double(count)
 
         let base = url.deletingPathExtension().lastPathComponent
