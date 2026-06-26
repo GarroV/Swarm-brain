@@ -502,14 +502,11 @@ function AgentMeetingDetail({
   const [m, setM] = useState<AgentMeeting>(meeting);
   // Счётчик опросов: после AGENT_SLOW_POLL_COUNT показываем подсказку «обработка затянулась».
   const [pollCount, setPollCount] = useState(0);
-  // Транскрипт по умолчанию свёрнут — он длинный и нужен лишь чтобы вспомнить детали.
-  const [showTranscript, setShowTranscript] = useState(false);
 
-  // Смена выбранной встречи — сразу показать её, а не устаревшую, сбросить счётчик и свернуть транскрипт.
+  // Смена выбранной встречи — сразу показать её, а не устаревшую, сбросить счётчик.
   useEffect(() => {
     setM(meeting);
     setPollCount(0);
-    setShowTranscript(false);
   }, [meeting]);
 
   // Поллинг, пока тезисы готовятся (нет draft_notes_md) и обработка не упала.
@@ -564,44 +561,14 @@ function AgentMeetingDetail({
 
       {/* Тезисы + транскрипт скроллятся внутри своего контейнера, а не растят страницу. */}
       <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto" style={{ maxHeight: "60vh" }}>
+        {/* Верх: тезисы / статус обработки */}
         {m.draft_notes_md ? (
-          <>
-            <div>
-              <SectionLabel>Тезисы</SectionLabel>
-              <p className="text-ink leading-relaxed whitespace-pre-wrap" style={{ fontSize: 14 }}>
-                {m.draft_notes_md}
-              </p>
-            </div>
-
-            {hasTranscript && (
-              <details className="border-t border-line pt-3">
-                <summary
-                  className="cursor-pointer select-none font-semibold text-ink-soft list-none"
-                  style={{ fontSize: 13 }}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setShowTranscript((v) => !v);
-                  }}
-                  aria-expanded={showTranscript}
-                >
-                  {showTranscript ? "Скрыть транскрипт" : `Транскрипт (${segments.length})`}
-                </summary>
-                {showTranscript && (
-                  <div className="mt-2 flex flex-col gap-1.5">
-                    {segments.map((s, i) => (
-                      <p
-                        key={i}
-                        className="text-ink-mute leading-relaxed whitespace-pre-wrap"
-                        style={{ fontSize: 13 }}
-                      >
-                        {transcriptLine(s)}
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </details>
-            )}
-          </>
+          <div>
+            <SectionLabel>Тезисы</SectionLabel>
+            <p className="text-ink leading-relaxed whitespace-pre-wrap" style={{ fontSize: 14 }}>
+              {m.draft_notes_md}
+            </p>
+          </div>
         ) : m.summary_status === "failed" ? (
           <p className="text-ink-soft" style={{ fontSize: 13 }}>
             ⚠️ Не удалось обработать запись — попробуй записать заново.
@@ -614,6 +581,24 @@ function AgentMeetingDetail({
                 Обработка затянулась — возможно, запись слишком длинная. Можно подождать ещё или переснять покороче.
               </p>
             )}
+          </div>
+        )}
+
+        {/* Низ: транскрипт — всегда видим (тезисы могут быть пустыми/в работе, а исходный текст нужен). */}
+        {hasTranscript && (
+          <div className="border-t border-line pt-3">
+            <SectionLabel>Транскрипт</SectionLabel>
+            <div className="mt-2 flex flex-col gap-1.5">
+              {segments.map((s, i) => (
+                <p
+                  key={i}
+                  className="text-ink-mute leading-relaxed whitespace-pre-wrap"
+                  style={{ fontSize: 13 }}
+                >
+                  {transcriptLine(s)}
+                </p>
+              ))}
+            </div>
           </div>
         )}
       </div>
