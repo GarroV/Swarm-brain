@@ -4,6 +4,7 @@ import ScreenCaptureKit
 import CoreAudio
 import AudioToolbox
 import CoreMedia
+import os
 
 // Захват СИСТЕМНОГО звука одной встречи. Две реализации за единым протоколом:
 //   • ProcessTapSystemRecorder (macOS 14.4+) — Core Audio process-tap. Мягкое разрешение
@@ -26,6 +27,12 @@ protocol SystemAudioCapturer: AnyObject {
 
     // Доп. сегменты сверх systemURL (см. выше). Пусто в обычном сценарии (без пересборок).
     var extraSegments: [(url: URL, offset: Double)] { get }
+
+    // Текущий уровень СИСТЕМНОЙ дорожки (собеседники), нормализованный в 0…1, слегка сглажен.
+    // Считается из тех же буферов, что пишутся в файл. Потокобезопасно (аудио-колбэк не на main).
+    // 0, если захват не идёт или буферов ещё нет. Используется: (1) живой индикатор в виджете,
+    // (2) детект конца браузерного звонка по затяжной тишине системной дорожки.
+    func currentLevel() -> Float
 }
 
 extension SystemAudioCapturer {
@@ -37,6 +44,101 @@ func makeSystemCapturer() -> SystemAudioCapturer {
     return ScreenCaptureKitRecorder()
 }
 
+// ── Потокобезопасный трекер уровня системной дорожки ──────────────────────────
+// Обновляется из аудио-колбэка (off-main), читается из main (виджет) и main-таймера
+// (детект тишины). Доступ к значению под os_unfair_lock — дёшево, без аллокаций в колбэке.
+// Сглаживание экспоненциальное: быстрый рост, плавный спад — полоса/детект не «дёргаются».
+final class SystemLevelTracker {
+    private var lock = os_unfair_lock()
+    private var smoothed: Float = 0
+
+    func update(rawPeak: Float) {
+        let clamped = max(0, min(1, rawPeak))
+        os_unfair_lock_lock(&lock)
+        // Рост — мгновенно (видеть собеседника сразу), спад — плавно.
+        smoothed = clamped > smoothed ? clamped : smoothed * 0.6 + clamped * 0.4
+        os_unfair_lock_unlock(&lock)
+    }
+
+    func current() -> Float {
+        os_unfair_lock_lock(&lock)
+        let v = smoothed
+        os_unfair_lock_unlock(&lock)
+        return v
+    }
+
+    func reset() {
+        os_unfair_lock_lock(&lock)
+        smoothed = 0
+        os_unfair_lock_unlock(&lock)
+    }
+
+    // Пиковая амплитуда float32-буфера (0.0 → буфер тишины). Дёшево, без выделений.
+    static func bufferPeak(_ buf: AVAudioPCMBuffer) -> Float {
+        guard let chans = buf.floatChannelData else { return 0 }
+        let frames = Int(buf.frameLength)
+        let channels = Int(buf.format.channelCount)
+        var peak: Float = 0
+        for c in 0..<channels {
+            let data = chans[c]
+            for i in 0..<frames {
+                let v = abs(data[i])
+                if v > peak { peak = v }
+            }
+        }
+        return peak
+    }
+
+    // Пик из CMSampleBuffer (путь ScreenCaptureKit): копируем сэмплы в AVAudioPCMBuffer.
+    // На неподдержанном формате (не float/int16) безопасно возвращаем 0.
+    static func samplePeak(_ sampleBuffer: CMSampleBuffer) -> Float {
+        guard let fmtDesc = CMSampleBufferGetFormatDescription(sampleBuffer),
+              let asbdPtr = CMAudioFormatDescriptionGetStreamBasicDescription(fmtDesc) else { return 0 }
+        let asbd = asbdPtr.pointee
+        let frames = CMSampleBufferGetNumSamples(sampleBuffer)
+        guard frames > 0, asbd.mChannelsPerFrame > 0 else { return 0 }
+
+        var blockBuffer: CMBlockBuffer?
+        let listSize = MemoryLayout<AudioBufferList>.size + Int(asbd.mChannelsPerFrame) * MemoryLayout<AudioBuffer>.size
+        let ablPtr = UnsafeMutableRawPointer.allocate(byteCount: listSize, alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { ablPtr.deallocate() }
+        let abl = ablPtr.assumingMemoryBound(to: AudioBufferList.self)
+
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: nil,
+            bufferListOut: abl,
+            bufferListSize: listSize,
+            blockBufferAllocator: kCFAllocatorDefault,
+            blockBufferMemoryAllocator: kCFAllocatorDefault,
+            flags: 0,
+            blockBufferOut: &blockBuffer)
+        guard status == noErr else { return 0 }
+
+        let isFloat = (asbd.mFormatFlags & kAudioFormatFlagIsFloat) != 0
+        let bytesPerSample = Int(asbd.mBitsPerChannel) / 8
+        let buffers = UnsafeMutableAudioBufferListPointer(abl)
+        var peak: Float = 0
+        for buffer in buffers {
+            guard let raw = buffer.mData else { continue }
+            let byteCount = Int(buffer.mDataByteSize)
+            if isFloat && bytesPerSample == 4 {
+                let count = byteCount / 4
+                let ptr = raw.assumingMemoryBound(to: Float.self)
+                for i in 0..<count { let v = abs(ptr[i]); if v > peak { peak = v } }
+            } else if !isFloat && bytesPerSample == 2 {
+                let count = byteCount / 2
+                let ptr = raw.assumingMemoryBound(to: Int16.self)
+                for i in 0..<count {
+                    let v = abs(Float(ptr[i]) / 32768.0)
+                    if v > peak { peak = v }
+                }
+            }
+        }
+        return peak
+    }
+}
+
 // ── ScreenCaptureKit (фолбэк) ────────────────────────────────────────────────
 @available(macOS 13.0, *)
 final class ScreenCaptureKitRecorder: NSObject, SystemAudioCapturer, SCStreamOutput, SCStreamDelegate {
@@ -46,7 +148,9 @@ final class ScreenCaptureKitRecorder: NSObject, SystemAudioCapturer, SCStreamOut
     private var sessionStarted = false
     private let queue = DispatchQueue(label: "swarm.recorder.sck")
     private var _firstSampleUptime: Double?
+    private let levelTracker = SystemLevelTracker()
     var firstSampleUptime: Double? { queue.sync { _firstSampleUptime } }
+    func currentLevel() -> Float { levelTracker.current() }
 
     func start(systemURL url: URL) async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
@@ -91,12 +195,15 @@ final class ScreenCaptureKitRecorder: NSObject, SystemAudioCapturer, SCStreamOut
         }
         audioInput?.markAsFinished()
         await writer?.finishWriting()
+        levelTracker.reset()
         stream = nil; writer = nil; audioInput = nil; sessionStarted = false
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, let w = writer, let input = audioInput else { return }
         guard CMSampleBufferDataIsReady(sampleBuffer) else { return }
+        // Уровень системной дорожки (для виджета + детекта тишины) — из того же буфера.
+        levelTracker.update(rawPeak: SystemLevelTracker.samplePeak(sampleBuffer))
         if !sessionStarted {
             if w.status == .unknown {
                 w.startWriting()
@@ -199,8 +306,13 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
     private var lastNonSilentUptime: Double = 0
     private static let silenceRebuildSeconds: Double = 8.0   // 0.0-сигнал дольше → пересборка
 
+    // Уровень системной дорожки (собеседники). Обновляется в IOProc-блоке (off-main), читается
+    // из main (виджет/детект тишины) под собственным lock — не блокирует аудио-очередь.
+    private let levelTracker = SystemLevelTracker()
+
     var firstSampleUptime: Double? { queue.sync { _firstSampleUptime } }
     var extraSegments: [(url: URL, offset: Double)] { queue.sync { _extraSegments } }
+    func currentLevel() -> Float { levelTracker.current() }
 
     func start(systemURL: URL) async throws {
         // Блокирующая инициализация HAL — на dedicated queue (не на вызывающем потоке).
@@ -299,7 +411,9 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
             if self._firstSampleUptime == nil { self._firstSampleUptime = ProcessInfo.processInfo.systemUptime }
             guard let f = self.file,
                   let buf = AVAudioPCMBuffer(pcmFormat: inFmt, bufferListNoCopy: inData, deallocator: nil) else { return }
-            if Self.bufferPeak(buf) > 0 { self.lastNonSilentUptime = ProcessInfo.processInfo.systemUptime }
+            let peak = SystemLevelTracker.bufferPeak(buf)
+            self.levelTracker.update(rawPeak: peak)   // живой уровень собеседников
+            if peak > 0 { self.lastNonSilentUptime = ProcessInfo.processInfo.systemUptime }
             try? f.write(from: buf)
         }
         guard err == noErr, let proc = p else { throw SwarmError.transport("AudioDeviceCreateIOProcIDWithBlock \(err)") }
@@ -315,6 +429,7 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
         file = nil // финализирует m4a (moov-атом)
         if aggID.isValid { AudioHardwareDestroyAggregateDevice(aggID); aggID = AudioObjectID(kAudioObjectUnknown) }
         if tapID.isValid { AudioHardwareDestroyProcessTap(tapID); tapID = AudioObjectID(kAudioObjectUnknown) }
+        levelTracker.reset()
     }
 
     // Полная пересборка: teardown текущего тапа + новый сегмент-файл + новый тап. На `queue`.
@@ -377,21 +492,7 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
     }
 
     // ── Утилиты ───────────────────────────────────────────────────────────────
-    // Пиковая амплитуда float32-буфера (0.0 → буфер тишины). Дёшево, без выделений.
-    private static func bufferPeak(_ buf: AVAudioPCMBuffer) -> Float {
-        guard let chans = buf.floatChannelData else { return 0 }
-        let frames = Int(buf.frameLength)
-        let channels = Int(buf.format.channelCount)
-        var peak: Float = 0
-        for c in 0..<channels {
-            let data = chans[c]
-            for i in 0..<frames {
-                let v = abs(data[i])
-                if v > peak { peak = v }
-            }
-        }
-        return peak
-    }
+    // (Пик буфера вынесен в SystemLevelTracker.bufferPeak — общий для обоих путей захвата.)
 
     // Выполнить блокирующую работу на `queue`, проброс throw наружу через continuation.
     private func withQueue(_ work: @escaping () throws -> Void) async throws {

@@ -51,6 +51,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var recWatchTimer: Timer?
     private var callSeenDuringRec = false
     private var silentTicks = 0
+    // Тики подряд с «тихой» СИСТЕМНОЙ дорожкой (собеседники молчат). Считается независимо от
+    // mic-детекта: ловит конец БРАУЗЕРНОГО звонка (Google Meet / Контур.Толк во вкладке), где
+    // браузер держит микрофон непрерывно даже после выхода → realCall никогда не гаснет.
+    private var systemSilentTicks = 0
+    // Порог «тишины» системной дорожки 0…1: ниже него считаем, что собеседников не слышно.
+    private static let systemSilenceLevel: Float = 0.02
+    // Сколько тихих тиков (5с каждый) системной дорожки = конец звонка. 36 ≈ 3 мин непрерывной
+    // тишины — в живом созвоне такое почти не встречается; компромисс ради фикса runaway-записей.
+    private static let systemSilenceTicksToStop = 36
     // Дефолтный стоп: если активный созвон не детектится, запись не идёт дольше этого лимита.
     // Бэкстоп от runaway-записи (когда детект созвона молчит — напр. ручной старт без звонка).
     private static let maxNoCallSeconds: TimeInterval = 75 * 60   // 1ч15м
@@ -74,6 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         widget.onDismiss = { [weak self] in self?.widgetDismiss() }
         // Живой уровень входа для полосы в виджете — читаем текущий уровень микрофона.
         widget.levelProvider = { [weak self] in self?.recorder.currentMicLevel() ?? 0 }
+        // Вторая полоса — уровень системной дорожки (собеседники/коллеги), видно живой захват.
+        widget.systemLevelProvider = { [weak self] in self?.recorder.currentSystemLevel() ?? 0 }
 
         setupNotifications()
         startWatching()
@@ -487,6 +498,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func startCallEndWatch() {
         callSeenDuringRec = false
         silentTicks = 0
+        systemSilentTicks = 0
         recWatchTimer?.invalidate()
         let t = Timer.scheduledTimer(timeInterval: 5, target: self, selector: #selector(recWatchTick), userInfo: nil, repeats: true)
         RunLoop.main.add(t, forMode: .common)
@@ -502,13 +514,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard case .recording = state else { stopCallEndWatch(); return }
         let elapsed = Date().timeIntervalSince(recordStartedAt ?? Date())
 
+        // Уровень СИСТЕМНОЙ дорожки (собеседники). Считаем тихие тики ВСЕГДА, независимо от
+        // mic-детекта: при браузерном звонке браузер держит мик непрерывно, и mic-правило ниже
+        // не сработает — поэтому тишина системной дорожки тут единственный надёжный сигнал конца.
+        let systemLevel = recorder.currentSystemLevel()
+        if systemLevel < Self.systemSilenceLevel { systemSilentTicks += 1 } else { systemSilentTicks = 0 }
+
         // Реальный созвон = кто-то, КРОМЕ нас и системных демонов (CoreSpeech), держит мик.
         // На macOS <14 per-process детекта нет → realCall всегда false, работает только лимит ниже.
         var realCall = false
         if #available(macOS 14.0, *) {
             let info = CallDetector.othersUsingMicInfo()
             realCall = !info.isEmpty
-            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks) elapsed=\(Int(elapsed))s")
+            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks) sysLevel=\(String(format: "%.3f", systemLevel)) sysSilent=\(systemSilentTicks) elapsed=\(Int(elapsed))s")
+        }
+
+        // (0) Конец БРАУЗЕРНОГО звонка по тишине системной дорожки. Срабатывает ДАЖЕ когда
+        // mic-холдер (браузер) всё ещё держит мик — НЕ гейтим на realCall==false. Требуем, чтобы
+        // звонок хоть раз был замечен (callSeenDuringRec), чтобы не стопать «пустой» ручной старт.
+        if callSeenDuringRec && systemSilentTicks >= Self.systemSilenceTicksToStop {
+            autoStop(reason: "звонок завершён (тишина)")
+            return
         }
 
         if realCall {

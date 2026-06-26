@@ -11,6 +11,9 @@ final class RecorderWidget {
     // Источник уровня входа 0…1 (ставит AppDelegate → recorder.currentMicLevel()).
     // Виджет сам опрашивает его таймером, пока идёт запись.
     var levelProvider: (() -> Float)?
+    // Уровень СИСТЕМНОЙ дорожки 0…1 (собеседники/коллеги → recorder.currentSystemLevel()).
+    // Рисуется второй тонкой полосой — видно, что коллег пишем живьём. Опрашивается тем же таймером.
+    var systemLevelProvider: (() -> Float)?
 
     private var panel: NSPanel?
     private let recMark = NSImageView()
@@ -18,13 +21,19 @@ final class RecorderWidget {
     private let stopBtn = NSButton()
     private let recRow = NSStackView()
     private let micRow = NSStackView()  // микрофон + уровень (горизонтально, внутри вертикального recRow)
-    // Живой индикатор уровня: тонкая полоса (трек + заполнение).
+    // Живые индикаторы уровня: две тонкие полосы (трек + заполнение).
+    //   • mic    — красная, локальный микрофон («я»);
+    //   • system — голубая, системная дорожка («собеседники/коллеги»).
     private let levelTrack = NSView()
     private let levelFill = CALayer()
+    private let sysLevelTrack = NSView()
+    private let sysLevelFill = CALayer()
+    private let levelColumn = NSStackView()   // mic-полоса над system-полосой (вертикально)
     private static let levelWidth: CGFloat = 26
     private static let levelHeight: CGFloat = 4
     private var levelTimer: Timer?
     private var lastLevel: CGFloat = 0
+    private var lastSysLevel: CGFloat = 0
 
     private let pendMark = NSImageView()
     private let playBtn = NSButton()
@@ -58,7 +67,7 @@ final class RecorderWidget {
     // ── Построение ───────────────────────────────────────────────────────────────
     private func ensurePanel() {
         if panel != nil { return }
-        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 72, height: 100),
+        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 72, height: 110),
                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isFloatingPanel = true
         p.level = .floating
@@ -88,11 +97,17 @@ final class RecorderWidget {
         sizeIcon(playBtn, 17)
         iconButton(dismissBtn, symbol: "xmark", color: NSColor(white: 1, alpha: 0.65), action: #selector(dismissAction))
 
-        // Вертикальная капсула: ✕ сверху → 🎙 микрофон + уровень посередине → иконка «Рой» снизу.
+        // Две полосы уровня стопкой: mic (я) сверху, system (собеседники) снизу.
+        levelColumn.orientation = .vertical
+        levelColumn.spacing = 4
+        levelColumn.alignment = .leading
+        levelColumn.setViews([levelTrack, sysLevelTrack], in: .top)
+
+        // Вертикальная капсула: ✕ сверху → 🎙 микрофон + 2 полосы уровня посередине → «Рой» снизу.
         micRow.orientation = .horizontal
         micRow.spacing = 6
         micRow.alignment = .centerY
-        micRow.setViews([micIndicator, levelTrack], in: .leading)
+        micRow.setViews([micIndicator, levelColumn], in: .leading)
 
         recRow.orientation = .vertical
         recRow.spacing = 10
@@ -124,22 +139,28 @@ final class RecorderWidget {
         sizeIcon(v, 24)
     }
 
-    // Тонкая полоса уровня: тёмный трек + красное заполнение (CALayer), ширина по уровню 0…1.
+    // Две тонкие полосы уровня: mic (красная, «я») и system (голубая, «собеседники»).
     private func configLevelBar() {
+        configOneBar(track: levelTrack, fill: levelFill, color: .systemRed)
+        configOneBar(track: sysLevelTrack, fill: sysLevelFill, color: .systemBlue)
+    }
+
+    // Одна полоса: тёмный трек + цветное заполнение (CALayer), ширина по уровню 0…1.
+    private func configOneBar(track: NSView, fill: CALayer, color: NSColor) {
         let w = Self.levelWidth, h = Self.levelHeight
-        levelTrack.wantsLayer = true
-        levelTrack.translatesAutoresizingMaskIntoConstraints = false
-        levelTrack.widthAnchor.constraint(equalToConstant: w).isActive = true
-        levelTrack.heightAnchor.constraint(equalToConstant: h).isActive = true
-        if let layer = levelTrack.layer {
+        track.wantsLayer = true
+        track.translatesAutoresizingMaskIntoConstraints = false
+        track.widthAnchor.constraint(equalToConstant: w).isActive = true
+        track.heightAnchor.constraint(equalToConstant: h).isActive = true
+        if let layer = track.layer {
             layer.backgroundColor = NSColor(white: 1, alpha: 0.18).cgColor
             layer.cornerRadius = h / 2
             layer.masksToBounds = true
         }
-        levelFill.backgroundColor = NSColor.systemRed.cgColor
-        levelFill.cornerRadius = h / 2
-        levelFill.frame = CGRect(x: 0, y: 0, width: 0, height: h)
-        levelTrack.layer?.addSublayer(levelFill)
+        fill.backgroundColor = color.cgColor
+        fill.cornerRadius = h / 2
+        fill.frame = CGRect(x: 0, y: 0, width: 0, height: h)
+        track.layer?.addSublayer(fill)
     }
 
     private func sizeIcon(_ v: NSView, _ s: CGFloat) {
@@ -160,8 +181,8 @@ final class RecorderWidget {
 
     private func present() {
         guard let p = panel, let screen = NSScreen.main else { return }
-        // Вертикальная капсула (✕ / микрофон+уровень / иконка «Рой»). Узкая и высокая; правый верх.
-        let w: CGFloat = 72, h: CGFloat = 100
+        // Вертикальная капсула (✕ / микрофон+уровни / иконка «Рой»). Узкая и высокая; правый верх.
+        let w: CGFloat = 72, h: CGFloat = 110
         let vf = screen.visibleFrame
         if !p.isVisible {
             // правый верх, чуть ниже области уведомлений
@@ -186,6 +207,7 @@ final class RecorderWidget {
     private func startLevelMeter() {
         stopLevelMeter()
         lastLevel = 0
+        lastSysLevel = 0
         let t = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(tickLevel), userInfo: nil, repeats: true)
         RunLoop.main.add(t, forMode: .common)
         levelTimer = t
@@ -194,20 +216,25 @@ final class RecorderWidget {
     private func stopLevelMeter() {
         levelTimer?.invalidate()
         levelTimer = nil
-        applyLevel(0)
+        applyLevel(0, to: levelFill)
+        applyLevel(0, to: sysLevelFill)
     }
 
     @objc private func tickLevel() {
-        let raw = CGFloat(max(0, min(1, levelProvider?() ?? 0)))
-        // Сглаживаем: быстрый рост, плавный спад — полоса не «прыгает».
-        lastLevel = raw > lastLevel ? raw : lastLevel * 0.6 + raw * 0.4
-        applyLevel(lastLevel)
+        // Сглаживаем обе полосы: быстрый рост, плавный спад — не «прыгают».
+        let rawMic = CGFloat(max(0, min(1, levelProvider?() ?? 0)))
+        lastLevel = rawMic > lastLevel ? rawMic : lastLevel * 0.6 + rawMic * 0.4
+        applyLevel(lastLevel, to: levelFill)
+
+        let rawSys = CGFloat(max(0, min(1, systemLevelProvider?() ?? 0)))
+        lastSysLevel = rawSys > lastSysLevel ? rawSys : lastSysLevel * 0.6 + rawSys * 0.4
+        applyLevel(lastSysLevel, to: sysLevelFill)
     }
 
-    private func applyLevel(_ level: CGFloat) {
+    private func applyLevel(_ level: CGFloat, to fill: CALayer) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        levelFill.frame = CGRect(x: 0, y: 0, width: Self.levelWidth * level, height: Self.levelHeight)
+        fill.frame = CGRect(x: 0, y: 0, width: Self.levelWidth * level, height: Self.levelHeight)
         CATransaction.commit()
     }
 
