@@ -88,6 +88,16 @@
 
 Рекомендация: начать с лёгкого (sessionStorage-стек), URL-роутинг — если понадобится шаринг/back-кнопка.
 
+## Открытая встреча сохраняется только в общее — нет выбора личное/общее (miniapp)
+
+> Найдено 2026-06-26. Симптом: открываешь встречу (экран «Встреча» с кнопкой «Сохранить в базу») → выбора, куда сохранить (личное или общее), нет — всегда уходит в общую базу команды.
+
+**Причина (по коду):** [`MeetingDetail.tsx:45-55`](../miniapp/src/components/roy/screens/MeetingDetail.tsx#L45) — `confirm()` дёргает `patchMeeting(id, { confirmed: true })` **без** `is_private`, кнопка [`:167`](../miniapp/src/components/roy/screens/MeetingDetail.tsx#L167) — просто «Сохранить в базу». Бэкенд `is_private` принимает (его шлёт MeetAdmin), фронт на этом экране его не выставляет.
+
+**Несогласованность:** выбор хранилища УЖЕ есть в двух других местах того же флоу — «Ревью встреч» ([`MeetAdminScreen`](../miniapp/src/components/roy/screens/MeetAdminScreen.tsx) — `Segmented` Общее/Личное → `is_private: storage === "personal"`) и публикация черновика рекордера ([`MeetingReview.tsx:210`](../miniapp/src/components/MeetingReview.tsx#L210) — «база команды»/«личное»). MeetingDetail — единственный экран сохранения без этого выбора.
+
+**Фикс:** добавить на MeetingDetail тот же выбор Общее/Личное (переиспользовать `Segmented`, как в MeetAdmin) и прокинуть `is_private` в `patchMeeting`. Дефолт — общее (как сейчас), чтобы не менять привычное поведение по умолчанию. Заодно свести логику выбора хранилища в один общий компонент/хелпер (DRY — сейчас она дублируется в MeetAdmin и MeetingReview).
+
 ## ✅ Тезисы desktop-agent зависают в «готовятся» (processing) — РЕШЕНО (2026-06-26)
 
 > 2026-06-26: 59-мин браузерный звонок (Контур.Толк), который рекордер не авто-стопнул, застрял на `summary_status=processing`. **Корень:** длинная запись транскрибировалась одним вызовом `meeting-ingest` (`EdgeRuntime.waitUntil`) → воркер убит по wall-clock (~400s) до `done`/`catch` → вечное «готовятся».
