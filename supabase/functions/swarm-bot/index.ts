@@ -72,31 +72,34 @@ async function sendRecorderToken(chatId: number, userId: number): Promise<void> 
   );
 }
 
-// ── Watchdog: спасаем встречи, зависшие в summary_status='processing' ──────────
-// Durable-обработка (meeting-process) двигает встречу по куску за тик и бьёт heartbeat
-// last_progress_at на каждой готовой части. Значит здоровая ДЛИННАЯ встреча постоянно
-// освежает last_progress_at и убивать её НЕЛЬЗЯ. Валим в 'failed' только по ЗАСТОЮ:
-// прогресса нет дольше staleMinutes (а не по общему возрасту, как раньше). Это ловит
-// настоящие тупики: cron не бежит, либо встреча без process_state (старый ingest). Фолбэк
-// на updated_at — для строк без heartbeat (легаси). Идемпотентно.
+// ── Watchdog: спасаем встречи, навсегда застрявшие в «Тезисы готовятся…» ─────────
+// Два класса застреваний:
+//  (1) summary_status='processing' без прогресса. Durable-обработка (meeting-process) бьёт
+//      heartbeat last_progress_at на каждой готовой части → здоровую длинную встречу убивать
+//      НЕЛЬЗЯ. Валим в 'failed' только по ЗАСТОЮ (нет прогресса дольше staleMinutes), уведомляем.
+//  (2) ПРИЗРАКИ: summary_status=null без transcript/process_state — claim был, а ingest не отработал
+//      (напр. совсем пустая запись: ни mic, ни system). UI поллит «готовятся» вечно. Старые такие
+//      метим 'failed' (без Telegram — обработка даже не начиналась), чтобы UI перестал ждать.
+// Фолбэк на updated_at — для строк без heartbeat (легаси). Идемпотентно.
 async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
-  const cutoff = Date.now() - staleMinutes * 60_000;
-  const { data: rows, error } = await supabase
-    .from("meetings")
-    .select("id, title, recorders, last_progress_at, updated_at")
-    .eq("summary_status", "processing");
-  if (error || !rows || rows.length === 0) return 0;
+  const cutoffMs = Date.now() - staleMinutes * 60_000;
+  const cutoffIso = new Date(cutoffMs).toISOString();
+  let swept = 0;
 
   type Recorder = { telegram_id: number };
   type Row = { id: string; title: string | null; recorders: Recorder[] | null; last_progress_at: string | null; updated_at: string | null };
+
+  // (1) Зависшие в processing — по застою heartbeat.
+  const { data: rows } = await supabase
+    .from("meetings")
+    .select("id, title, recorders, last_progress_at, updated_at")
+    .eq("summary_status", "processing");
   const note =
     "⚠️ Не удалось обработать запись встречи — обработка превысила лимит времени. " +
     "Попробуй записать заново (по возможности короче).";
-
-  let swept = 0;
-  for (const m of rows as Row[]) {
+  for (const m of (rows ?? []) as Row[]) {
     const beat = m.last_progress_at ?? m.updated_at;
-    if (!beat || new Date(beat).getTime() >= cutoff) continue; // прогресс свежий → встреча живая
+    if (!beat || new Date(beat).getTime() >= cutoffMs) continue; // прогресс свежий → встреча живая
     await supabase
       .from("meetings")
       .update({ summary_status: "failed", processing_lease: null, updated_at: new Date().toISOString() })
@@ -111,6 +114,23 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
       }
     }
   }
+
+  // (2) Призраки: claim был, ingest не отработал. Метим 'failed' (без уведомления), чтобы UI
+  // перестал поллить. Узкие гарды: пусто (нет transcript/notes/state), не опубликовано, старше cutoff.
+  const { data: ghosts } = await supabase
+    .from("meetings")
+    .select("id")
+    .is("summary_status", null)
+    .is("transcript", null)
+    .is("process_state", null)
+    .is("draft_notes_md", null)
+    .is("entry_id", null)
+    .lt("created_at", cutoffIso);
+  for (const g of (ghosts ?? []) as { id: string }[]) {
+    await supabase.from("meetings").update({ summary_status: "failed", updated_at: new Date().toISOString() }).eq("id", g.id);
+    swept++;
+  }
+
   return swept;
 }
 

@@ -150,7 +150,12 @@ Deno.serve(async (req: Request) => {
     if (e instanceof PartError) return fail(e.message, e.status);
     throw e;
   }
-  if (systemParts.length === 0) return fail("audio required (sys_parts manifest or legacy audio field)");
+  // Принимаем запись с ОДНОЙ дорожкой: только система ИЛИ только микрофон. mic-only — частый кейс:
+  // юзер говорил, но через систему ничего не воспроизводилось → sys-дорожка пустая, рекордер её не
+  // шлёт (гард >1024Б в Segmenter). Отклоняем лишь совсем пустую запись (нет ни одной дорожки).
+  if (systemParts.length === 0 && micParts.length === 0) {
+    return fail("audio required (sys_parts/mic_parts manifest or legacy audio field)");
+  }
 
   // Кладём части в Storage и пишем манифест в process_state. Метим 'processing' ДО фоновой работы.
   let state;
