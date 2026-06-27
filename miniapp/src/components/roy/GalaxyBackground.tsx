@@ -51,7 +51,7 @@ export function GalaxyBackground() {
       ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
       // галактика (additive)
-      const cx = W * 0.5, cy = H * 0.5, rMax = Math.max(W, H) * 1.8; // крупная галактика → хорошо видно в щелях
+      const cx = W * 0.5, cy = H * 0.5, rMax = Math.max(W, H) * 0.7; // вся спираль помещается во весь экран (не зум в ядро)
       const incl = 0.46, tilt = -0.3, cosT = Math.cos(tilt), sinT = Math.sin(tilt);
       const theta = reduce ? 0 : t * 0.00003;
       ctx.globalCompositeOperation = "lighter";
