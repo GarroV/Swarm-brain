@@ -503,10 +503,24 @@ function AgentMeetingDetail({
   // Счётчик опросов: после AGENT_SLOW_POLL_COUNT показываем подсказку «обработка затянулась».
   const [pollCount, setPollCount] = useState(0);
 
-  // Смена выбранной встречи — сразу показать её, а не устаревшую, сбросить счётчик.
+  // Смена выбранной встречи: сразу показать данные из списка, затем подтянуть полную
+  // деталь. Список (GET /agent-meetings) НЕ содержит transcript — он есть только в
+  // детальном GET /agent-meetings/:id. Без этой догрузки стенограмма не видна, когда
+  // тезисы уже готовы (поллинг ниже в этом случае не стартует и деталь не запрашивает).
   useEffect(() => {
     setM(meeting);
     setPollCount(0);
+    let alive = true;
+    fetchAgentMeeting(meeting.id)
+      .then((full) => {
+        if (alive) setM(full);
+      })
+      .catch(() => {
+        /* оставляем данные из списка при ошибке догрузки */
+      });
+    return () => {
+      alive = false;
+    };
   }, [meeting]);
 
   // Поллинг, пока тезисы готовятся (нет draft_notes_md) и обработка не упала.
