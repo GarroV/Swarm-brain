@@ -161,8 +161,15 @@
   add(BOT);
   var bfR = 182;
   BOT_FUNCS.forEach(function(f,i){ var a=-Math.PI/2 + i*(Math.PI*2/BOT_FUNCS.length); f.kind="func"; f.parent="bot"; if(!f.color)f.color="#8FDDE6"; f.r=(f.grp==="do"?18:16); f.x=BOT.x+Math.cos(a)*bfR; f.y=BOT.y+Math.sin(a)*bfR; add(f); });
-  // фоновый «рой» — еле заметные дрейфующие точки с тонкими коннекторами
-  var MOTES=[]; for(var mi=0; mi<58; mi++){ MOTES.push({ x:-1150+Math.random()*2300, y:-760+Math.random()*1520, vx:(Math.random()-0.5)*0.11, vy:(Math.random()-0.5)*0.11, r:0.6+Math.random()*1.5, ph:Math.random()*6.283 }); }
+  // фоновый «рой» — еле заметные дрейфующие точки (средний слой для глубины)
+  var MOTES=[]; for(var mi=0; mi<30; mi++){ MOTES.push({ x:-1150+Math.random()*2300, y:-760+Math.random()*1520, vx:(Math.random()-0.5)*0.11, vy:(Math.random()-0.5)*0.11, r:0.6+Math.random()*1.4, ph:Math.random()*6.283 }); }
+  // фоновая галактика (screen-space backdrop): тёплое ядро + прохладные рукава
+  var GAL=[], GAL_TONES=["rgba(250,238,212,","rgba(150,210,225,","rgba(110,170,200,","rgba(225,205,160,"], galTheta=0;
+  (function(){ var arms=2, twist=3.2, n=220, i;
+    for(i=0;i<n;i++){ var t=Math.pow(Math.random(),0.8), arm=i%arms, spread=0.05+(1-t)*0.5, ang=arm*(Math.PI*2/arms)+t*twist*Math.PI+(Math.random()-0.5)*spread;
+      GAL.push({ rf:Math.min(1,t+(Math.random()-0.5)*0.05), a0:ang, sz:0.4+(1-t)*1.5+Math.random()*0.6, tw:Math.random()*6.283, tone:(t<0.2?0:(Math.random()<0.12?3:(t<0.6?1:2))) }); }
+    for(i=0;i<22;i++){ GAL.push({ rf:Math.random()*0.08, a0:Math.random()*6.283, sz:0.7+Math.random()*1.2, tw:Math.random()*6.283, tone:0 }); }
+  })();
 
   // edges: kind core (ядро→точка), trunk (область→бот), leaf (бот→вход)
   var edges = [];
@@ -222,6 +229,23 @@
     }
   }
 
+  function drawGalaxy(t){
+    var cx=W*0.5, cy=H*0.5, rMax=Math.max(W,H)*0.64, incl=0.45, tilt=-0.3, cosT=Math.cos(tilt), sinT=Math.sin(tilt);
+    galTheta = reduce?0:(t*0.000035);
+    ctx.globalCompositeOperation="lighter";
+    var cg=ctx.createRadialGradient(cx,cy,0,cx,cy,rMax*0.5);
+    cg.addColorStop(0,"rgba(235,200,120,0.10)"); cg.addColorStop(0.4,"rgba(150,200,220,0.04)"); cg.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=cg; ctx.fillRect(0,0,W,H);
+    for(var i=0;i<GAL.length;i++){ var s=GAL[i], r=s.rf*rMax, a=s.a0+galTheta;
+      var dx=r*Math.cos(a), dy=r*Math.sin(a)*incl, x=cx+dx*cosT-dy*sinT, y=cy+dx*sinT+dy*cosT;
+      var tw=reduce?1:(0.6+0.4*Math.sin(t*0.0015+s.tw)), al=(0.5-s.rf*0.32)*tw*0.5; if(al<0)al=0;
+      ctx.fillStyle=GAL_TONES[s.tone]+al+")"; ctx.beginPath(); ctx.arc(x,y,s.sz,0,6.283); ctx.fill(); }
+    ctx.globalCompositeOperation="source-over";
+    var vg=ctx.createRadialGradient(cx,cy,Math.min(W,H)*0.28,cx,cy,Math.max(W,H)*0.72);
+    vg.addColorStop(0,"rgba(8,9,7,0)"); vg.addColorStop(1,"rgba(8,9,7,0.5)");
+    ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+  }
+
   function drawSwarm(t){
     ctx.globalCompositeOperation="lighter";
     var i,j,a,b,dx,dy,d2,maxD=22500; // 150^2 — порог коннектора
@@ -275,10 +299,11 @@
     // позиции узлов стабильны (позиционное колыхание убрано — оно сдвигало иконки/раскладку); живость — мерцание + бегущие импульсы
     list.forEach(function(n){ n._vx=n.x; n._vy=n.y; });
     ctx.clearRect(0,0,W,H);
-    var bg=ctx.createRadialGradient(sx(0),sy(0),0,sx(0),sy(0),Math.max(W,H)*0.9);
-    bg.addColorStop(0,"#12130F"); bg.addColorStop(0.55,"#0C0E0D"); bg.addColorStop(1,"#090A09");
+    var bg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*0.9);
+    bg.addColorStop(0,"#101108"); bg.addColorStop(0.55,"#0A0C0A"); bg.addColorStop(1,"#070806");
     ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle="rgba(120,210,220,0.022)"; for(var yy=0; yy<H; yy+=4){ ctx.fillRect(0,yy,W,1); }
+    drawGalaxy(t);
+    ctx.fillStyle="rgba(120,210,220,0.018)"; for(var yy=0; yy<H; yy+=4){ ctx.fillRect(0,yy,W,1); }
     if(!reduce){ var band=((t*0.06)%(H+240))-120; var sb=ctx.createLinearGradient(0,band-70,0,band+70); sb.addColorStop(0,"rgba(130,225,235,0)"); sb.addColorStop(0.5,"rgba(130,225,235,0.05)"); sb.addColorStop(1,"rgba(130,225,235,0)"); ctx.fillStyle=sb; ctx.fillRect(0,band-70,W,140); }
 
     drawSwarm(t);
