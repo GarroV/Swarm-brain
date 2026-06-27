@@ -568,9 +568,9 @@
   function pick(mx,my){ for(var i=list.length-1;i>=0;i--){ var n=list[i]; var dx=mx-sx(n.x),dy=my-sy(n.y); if(Math.sqrt(dx*dx+dy*dy)<=n.r*cam.s+8) return n; } return null; }
   var dragging=false,dragNode=null,panning=false,lastX=0,lastY=0,downX=0,downY=0,moved=false;
   function rel(e){ var r=canvas.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
-  canvas.addEventListener("pointerdown",function(e){ canvas.setPointerCapture(e.pointerId); var p=rel(e); lastX=p.x;lastY=p.y;downX=p.x;downY=p.y;moved=false; panning=true; canvas.classList.add("grabbing"); dragging=true; });
+  canvas.addEventListener("pointerdown",function(e){ canvas.setPointerCapture(e.pointerId); var p=rel(e); lastX=p.x;lastY=p.y;downX=p.x;downY=p.y;moved=false; var n=pick(p.x,p.y); if(n)dragNode=n; else {panning=true;canvas.classList.add("grabbing");} dragging=true; });
   canvas.addEventListener("pointermove",function(e){ var p=rel(e);
-    if(dragging){ var dx=p.x-lastX,dy=p.y-lastY; if(Math.abs(p.x-downX)+Math.abs(p.y-downY)>4)moved=true; cam.tx+=dx;cam.ty+=dy; lastX=p.x;lastY=p.y; }
+    if(dragging){ var dx=p.x-lastX,dy=p.y-lastY; if(Math.abs(p.x-downX)+Math.abs(p.y-downY)>4)moved=true; if(dragNode){dragNode.x+=dx/cam.s;dragNode.y+=dy/cam.s;} else if(panning){cam.tx+=dx;cam.ty+=dy;} lastX=p.x;lastY=p.y; }
     else { var n=pick(p.x,p.y); canvas.classList.toggle("onnode",!!n); hover=n; } });
   canvas.addEventListener("pointerup",function(e){ if(dragging&&!moved){ var p=rel(e); var n=pick(p.x,p.y); if(n)select(n); else deselect(); } dragging=false;dragNode=null;panning=false;canvas.classList.remove("grabbing"); });
   canvas.addEventListener("pointercancel",function(){ dragging=false;dragNode=null;panning=false;canvas.classList.remove("grabbing"); });
