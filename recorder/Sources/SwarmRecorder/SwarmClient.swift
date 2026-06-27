@@ -47,6 +47,18 @@ private func parseRetryAfter(_ resp: URLResponse?) -> TimeInterval? {
 struct SwarmClient {
     let config: SwarmConfig
 
+    // Своя сессия с явными таймаутами: дефолтный URLSession.shared имеет
+    // timeoutIntervalForResource = 7 ДНЕЙ → зависший claim/upload висит почти вечно.
+    // request = пауза между порциями данных (60с хватает и мгновенному claim, и медленному
+    // upload — сбрасывается на каждый чанк); resource = жёсткий потолок на весь запрос (30 мин).
+    private static let session: URLSession = {
+        let c = URLSessionConfiguration.default
+        c.timeoutIntervalForRequest = 60
+        c.timeoutIntervalForResource = 30 * 60
+        c.waitsForConnectivity = false
+        return URLSession(configuration: c)
+    }()
+
     private var encoder: JSONEncoder {
         let e = JSONEncoder()
         e.keyEncodingStrategy = .convertToSnakeCase
@@ -74,7 +86,7 @@ struct SwarmClient {
         authed(&req)
         req.httpBody = try encoder.encode(body)
 
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await Self.session.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200...299).contains(code) else {
             throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "", retryAfter: parseRetryAfter(resp))
@@ -87,7 +99,7 @@ struct SwarmClient {
     func currentMeeting() async throws -> MeetingIdentity.Info? {
         var req = URLRequest(url: url("/meeting-current"))
         authed(&req)
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await Self.session.data(for: req)
         guard (200...299).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else { return nil }
         struct M: Decodable {
             let identityKey: String
@@ -111,7 +123,7 @@ struct SwarmClient {
         comps.queryItems = [URLQueryItem(name: "ids", value: ids.joined(separator: ","))]
         var req = URLRequest(url: comps.url!)
         authed(&req)
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await Self.session.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200...299).contains(code) else {
             throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "", retryAfter: parseRetryAfter(resp))
@@ -203,7 +215,7 @@ struct SwarmClient {
         try handle.synchronize()
         try? handle.close()
 
-        let (data, resp) = try await URLSession.shared.upload(for: req, fromFile: envelopeURL)
+        let (data, resp) = try await Self.session.upload(for: req, fromFile: envelopeURL)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200...299).contains(code) else {
             throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "", retryAfter: parseRetryAfter(resp))

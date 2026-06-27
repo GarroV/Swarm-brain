@@ -38,6 +38,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Сколько записей ждёт дозагрузки (UploadQueue) — показываем «N в очереди» в меню.
     private var queuedCount = 0
 
+    // Снятая, но ещё не отправленная запись. Держим её, чтобы «Повторить» ПЕРЕ-ОТПРАВИЛ
+    // именно её (claim+enqueue), а не начинал новую запись (раньше так терялось снятое аудио
+    // при сбое после stop() до enqueue). Очищается только после успешного enqueue/решения сервера.
+    private struct PendingSend {
+        let res: AudioRecorder.Result
+        let identity: MeetingIdentity.Info?
+        let started: Date
+        let ended: Date
+        let manualKey: String   // стабильный ключ для manual-записи → повтор claim идемпотентен
+    }
+    private var pendingSend: PendingSend?
+    // Поколение отправки: watchdog, взведённый для попытки N, не трогает UI попытки N+1.
+    private var sendGeneration = 0
+    // Потолок ожидания в «Отправка…»: финализация записи + claim-ретраи могут занять минуты.
+    // Ложное срабатывание безопасно — pendingSend сохранён, «Повторить» пере-отправит без потерь.
+    private let sendWatchdogSeconds: Double = 150
+
     // Календарное предложение.
     private var pendingMeeting: MeetingIdentity.Info?
     private var dismissedKeys: Set<String> = []   // «не записывать» / уже записали
@@ -376,6 +393,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // действие записи (тот же контекст: встреча/звонок/ручной старт). Сеть/разрешения к этому
     // моменту пользователь уже мог поправить через пункты выше.
     @objc private func retryTapped() {
+        // Есть снятая, но не отправленная запись → пере-отправляем ИМЕННО её (не теряем аудио),
+        // а не начинаем новую запись.
+        if let p = pendingSend {
+            armSending()
+            Task { await performSend(p) }
+            return
+        }
         let id = lastRecordIdentity
         state = .idle
         rebuildMenu()
@@ -599,81 +623,113 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc private func stopTapped() {
-        guard let cfg = config else { return }
+        guard config != nil else { return }
         stopCallEndWatch()
-        setState(.sending)
+        armSending()
         let info = identity
+        let started = recordStartedAt ?? Date()
         Task {
+            // Финализация записи (внутри — best-effort stop системного тапа). Если зависнет —
+            // её НЕ убить отменой, но watchdog (armSending) выведет UI из .sending сам.
+            let res: AudioRecorder.Result
             do {
-                let res = try await recorder.stop()
-                let client = SwarmClient(config: cfg)
-                let iso = ISO8601DateFormatter()
-                let now = Date()
-                let started = recordStartedAt ?? now
-                let req: ClaimRequest
-                if let info {
-                    req = ClaimRequest(
-                        identityKind: info.kind,
-                        identityKey: info.key,
-                        title: info.title ?? "Встреча",
-                        startedAt: info.startISO ?? iso.string(from: started),
-                        endedAt: info.endISO ?? iso.string(from: now),
-                        attendees: info.attendees.isEmpty ? nil : info.attendees,
-                        agentVersion: "0.1.0",
-                        micStartOffset: res.micStartOffset,
-                    )
-                } else {
-                    req = ClaimRequest(
-                        identityKind: .manual,
-                        identityKey: "manual:\(UUID().uuidString)",
-                        title: "Запись \(DateFormatter.localizedString(from: now, dateStyle: .short, timeStyle: .short))",
-                        startedAt: iso.string(from: started),
-                        endedAt: iso.string(from: now),
-                        agentVersion: "0.1.0",
-                        micStartOffset: res.micStartOffset,
-                    )
-                }
-                // Claim (с ретраем). meetingId переиспользуется очередью при дозагрузке.
-                let claim = try await withRetry { try await client.claim(req) }
-                if claim.shouldTranscribe {
-                    // КРИТИЧНО против потери данных: ДО загрузки переносим записи в pending/<id>/
-                    // с сайдкаром. Файлы удалятся только после подтверждённого ingest (в drain).
-                    try await UploadQueue.shared.enqueue(
-                        meetingId: claim.meetingId,
-                        systemSegments: res.systemSegments,
-                        micURL: res.mic,
-                        micStartOffset: res.micStartOffset,
-                        startISO: iso.string(from: started),
-                        endISO: iso.string(from: now)
-                    )
-                } else {
-                    // decision=defer — транскрибирует другой участник; наши файлы не нужны.
-                    for s in res.systemSegments { try? FileManager.default.removeItem(at: s.url) }
-                    if let m = res.mic { try? FileManager.default.removeItem(at: m) }
-                }
-                // Записанную встречу больше не предлагать.
-                if let info { dismissedKeys.insert(info.key) }
-                identity = nil
-                setState(.idle)
-                // Дозагрузка (этой записи + всех висящих) — в фоне с бэкоффом.
-                await UploadQueue.shared.drain(config: cfg)
-                await refreshQueueBadge()
-            } catch let err as SwarmError where err.isAuthExpired {
-                // 401: токен истёк/недействителен — отдельное состояние с подсказкой получить новый.
-                identity = nil
-                setState(.tokenExpired)
-                await refreshQueueBadge()
-            } catch where isOfflineError(error) {
-                // Транспорт/сеть недоступна (claim/upload не прошли по сети). Запись уже могла лечь
-                // в pending/ (если claim успел) — дозальётся при следующем drain; иначе «Повторить».
-                identity = nil
-                setState(.offline)
-                await refreshQueueBadge()
+                res = try await recorder.stop()
             } catch {
-                identity = nil
-                setState(.error("\(error)"))
+                setState(.error("не завершить запись: \(error)"))
                 await refreshQueueBadge()
+                return
             }
+            // Записанную встречу больше не предлагать; снятую запись сохраняем для возможного
+            // повтора отправки (claim/enqueue ниже могут не пройти — аудио не должно потеряться).
+            if let info { dismissedKeys.insert(info.key) }
+            identity = nil
+            let captured = PendingSend(res: res, identity: info, started: started,
+                                       ended: Date(), manualKey: "manual:\(UUID().uuidString)")
+            pendingSend = captured
+            await performSend(captured)
+        }
+    }
+
+    // Взвести «Отправка…» + watchdog: если через sendWatchdogSeconds всё ещё .sending (та же
+    // попытка) — вывести в .error с «Повторить», чтобы не висеть в .sending вечно (зависшая
+    // финализация натива отмене не поддаётся; просто разблокируем UI, pendingSend хранит запись).
+    private func armSending() {
+        sendGeneration += 1
+        let gen = sendGeneration
+        setState(.sending)
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(sendWatchdogSeconds * 1_000_000_000))
+            if case .sending = self.state, self.sendGeneration == gen {
+                self.setState(.error("отправка зависла — нажмите «Повторить»"))
+                await self.refreshQueueBadge()
+            }
+        }
+    }
+
+    // Отправка снятой записи: claim → перенос в pending/ → дозагрузка. При сбое НЕ теряем аудио —
+    // pendingSend остаётся, «Повторить» пере-отправит. При успехе/отказе сервера очищаем pendingSend.
+    private func performSend(_ p: PendingSend) async {
+        guard let cfg = config else { return }
+        let client = SwarmClient(config: cfg)
+        let iso = ISO8601DateFormatter()
+        let req: ClaimRequest
+        if let info = p.identity {
+            req = ClaimRequest(
+                identityKind: info.kind,
+                identityKey: info.key,
+                title: info.title ?? "Встреча",
+                startedAt: info.startISO ?? iso.string(from: p.started),
+                endedAt: info.endISO ?? iso.string(from: p.ended),
+                attendees: info.attendees.isEmpty ? nil : info.attendees,
+                agentVersion: "0.1.0",
+                micStartOffset: p.res.micStartOffset,
+            )
+        } else {
+            req = ClaimRequest(
+                identityKind: .manual,
+                identityKey: p.manualKey,   // стабильный ключ → повтор claim не плодит встречи
+                title: "Запись \(DateFormatter.localizedString(from: p.ended, dateStyle: .short, timeStyle: .short))",
+                startedAt: iso.string(from: p.started),
+                endedAt: iso.string(from: p.ended),
+                agentVersion: "0.1.0",
+                micStartOffset: p.res.micStartOffset,
+            )
+        }
+        do {
+            // Claim (с ретраем). meetingId переиспользуется очередью при дозагрузке.
+            let claim = try await withRetry { try await client.claim(req) }
+            if claim.shouldTranscribe {
+                // КРИТИЧНО против потери данных: ДО загрузки переносим записи в pending/<id>/
+                // с сайдкаром. Файлы удалятся только после подтверждённого ingest (в drain).
+                try await UploadQueue.shared.enqueue(
+                    meetingId: claim.meetingId,
+                    systemSegments: p.res.systemSegments,
+                    micURL: p.res.mic,
+                    micStartOffset: p.res.micStartOffset,
+                    startISO: iso.string(from: p.started),
+                    endISO: iso.string(from: p.ended)
+                )
+            } else {
+                // decision=defer — транскрибирует другой участник; наши файлы не нужны.
+                for s in p.res.systemSegments { try? FileManager.default.removeItem(at: s.url) }
+                if let m = p.res.mic { try? FileManager.default.removeItem(at: m) }
+            }
+            pendingSend = nil   // отправлено в очередь (или сервер отказался) — повторять нечего
+            setState(.idle)
+            // Дозагрузка (этой записи + всех висящих) — в фоне с бэкоффом.
+            await UploadQueue.shared.drain(config: cfg)
+            await refreshQueueBadge()
+        } catch let err as SwarmError where err.isAuthExpired {
+            // 401: токен истёк — pendingSend сохраняем: после нового токена «Повторить» дошлёт.
+            setState(.tokenExpired)
+            await refreshQueueBadge()
+        } catch where isOfflineError(error) {
+            // Сеть недоступна — pendingSend сохраняем, «Повторить» пере-отправит (claim идемпотентен).
+            setState(.offline)
+            await refreshQueueBadge()
+        } catch {
+            setState(.error("\(error)"))
+            await refreshQueueBadge()
         }
     }
 
