@@ -1,31 +1,31 @@
-<title>Swarm Brain · Ядро</title>
-<meta name="description" content="Ядро Swarm Brain «Рой» глазами пользователя: общая умная память — принимает и не теряет, само раскладывает, находит и отвечает, превращает разговоры в задачи." />
+<title>Swarm Brain · Ядро и бот</title>
+<meta name="description" content="Карта Swarm Brain «Рой»: ядро с возможностями как единая область, от неё связь к Telegram-боту и его способам ввода информации." />
 
 <style>
   :root {
     --bg: #15120E;
-    --panel: #211C15;
-    --line: #3A3329;
-    --ink: #F3ECDD;
-    --ink-soft: #C7BCA6;
-    --ink-mute: #8E8472;
+    --panel: #1C1F22;
+    --line: #34403F;
+    --ink: #EAF6F8;
+    --ink-soft: #B9CDCE;
+    --ink-mute: #7E9092;
     --amber: #E1953A;
-    --gold: #F2B85A;
+    --teal: #5FC9D6;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); overflow: hidden; -webkit-font-smoothing: antialiased; }
-  :focus-visible { outline: 2.5px solid var(--amber); outline-offset: 2px; border-radius: 6px; }
+  :focus-visible { outline: 2.5px solid var(--teal); outline-offset: 2px; border-radius: 6px; }
   .app { position: fixed; inset: 0; display: flex; flex-direction: column; }
 
   .bar {
     display: flex; align-items: center; gap: 12px; padding: 11px 18px;
-    background: linear-gradient(180deg, rgba(30,26,20,0.96), rgba(30,26,20,0.84));
+    background: linear-gradient(180deg, rgba(22,26,28,0.96), rgba(22,26,28,0.84));
     border-bottom: 1px solid var(--line); z-index: 10; backdrop-filter: blur(8px);
   }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -0.02em; font-size: 15px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -0.02em; font-size: 15px; color: #EAF6F8; }
   .brand svg { width: 20px; height: 22px; flex: none; }
   .brand small { font-weight: 500; color: var(--ink-mute); font-size: 12.5px; }
   .tools { display: flex; gap: 6px; margin-left: auto; }
@@ -33,7 +33,7 @@
     all: unset; cursor: pointer; display: grid; place-items: center; width: 34px; height: 34px;
     border: 1px solid var(--line); border-radius: 9px; color: var(--ink-soft); font-weight: 700; font-size: 16px; transition: background .15s, border-color .15s;
   }
-  .tbtn:hover { background: rgba(255,255,255,0.05); border-color: #4b4337; }
+  .tbtn:hover { background: rgba(255,255,255,0.05); border-color: #46585a; }
   .tbtn.wide { width: auto; padding: 0 12px; font-size: 12.5px; }
 
   .stage { position: relative; flex: 1; min-height: 0; }
@@ -41,50 +41,49 @@
   #map.grabbing { cursor: grabbing; }
   #map.onnode { cursor: pointer; }
 
-  .cap {
-    position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; z-index: 5; pointer-events: none;
-    font-size: 12.5px; color: var(--ink-mute);
-  }
+  .cap { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; z-index: 5; pointer-events: none; font-size: 12.5px; color: var(--ink-mute); }
   .cap b { color: var(--ink-soft); font-weight: 600; }
 
   .panel {
     position: absolute; top: 16px; right: 16px; z-index: 8; width: 330px; max-width: calc(100vw - 32px);
     background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 24px 60px -24px rgba(0,0,0,0.7);
-    transform: translateX(calc(100% + 28px)); transition: transform .28s cubic-bezier(0.16,1,0.3,1);
-    overflow: hidden;
+    transform: translateX(calc(100% + 28px)); transition: transform .28s cubic-bezier(0.16,1,0.3,1); overflow: hidden;
   }
   @media (prefers-reduced-motion: reduce) { .panel { transition: none; } }
   .panel.open { transform: none; }
   .panel .ph { display: flex; align-items: flex-start; gap: 13px; padding: 20px 20px 14px; }
   .panel .pdot { width: 46px; height: 46px; border-radius: 13px; flex: none; display: grid; place-items: center; font-size: 24px; }
-  .panel .ptitle { font-size: 1.22rem; font-weight: 800; letter-spacing: -0.015em; line-height: 1.18; }
-  .panel .pcat { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.12em; margin-top: 5px; color: var(--amber); }
+  .panel .ptitle { font-size: 1.2rem; font-weight: 800; letter-spacing: -0.015em; line-height: 1.18; }
+  .panel .pcat { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.12em; margin-top: 5px; }
   .panel .pclose { all: unset; cursor: pointer; margin-left: auto; color: var(--ink-mute); font-size: 22px; line-height: 1; padding: 2px 4px; flex: none; }
   .panel .pclose:hover { color: var(--ink); }
-  .panel .pbody { padding: 0 20px 22px; }
-  .panel .pdesc { font-size: 0.97rem; color: var(--ink-soft); line-height: 1.62; margin: 0; }
+  .panel .pbody { padding: 0 20px 22px; max-height: 60vh; overflow-y: auto; }
+  .panel .pdesc { font-size: 0.96rem; color: var(--ink-soft); line-height: 1.6; margin: 0 0 14px; }
+  .panel .plbl { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-mute); margin: 0 0 8px; }
+  .panel .links { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 5px; }
+  .panel .links button { all: unset; cursor: pointer; display: flex; align-items: center; gap: 9px; width: 100%; font-size: 0.88rem; color: var(--ink-soft); padding: 6px 9px; border-radius: 8px; border: 1px solid transparent; transition: background .12s, border-color .12s; }
+  .panel .links button:hover { background: rgba(255,255,255,0.04); border-color: var(--line); }
+  .panel .links button i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 
-  @media (max-width: 560px) {
-    .panel { top: auto; bottom: 56px; right: 12px; left: 12px; width: auto; }
-  }
+  @media (max-width: 560px) { .panel { top: auto; bottom: 52px; right: 12px; left: 12px; width: auto; } }
 </style>
 
 <div class="app">
   <div class="bar">
     <span class="brand">
-      <svg viewBox="0 0 20 22" fill="none" aria-hidden="true"><path d="M10 1l8 4.5v11L10 21l-8-4.5v-11z" stroke="#E1953A" stroke-width="1.5" fill="rgba(225,149,58,0.16)"/><circle cx="10" cy="11" r="2.6" fill="#E1953A"/></svg>
-      Рой · ядро <small>общая умная память команды</small>
+      <svg viewBox="0 0 20 22" fill="none" aria-hidden="true"><path d="M10 1l8 4.5v11L10 21l-8-4.5v-11z" stroke="#5FC9D6" stroke-width="1.5" fill="rgba(95,201,214,0.16)"/><circle cx="10" cy="11" r="2.6" fill="#5FC9D6"/></svg>
+      Рой · карта <small>ядро и бот</small>
     </span>
     <div class="tools">
       <button class="tbtn" id="zin" title="Приблизить" aria-label="Приблизить">+</button>
       <button class="tbtn" id="zout" title="Отдалить" aria-label="Отдалить">−</button>
-      <button class="tbtn wide" id="fit" title="По центру" aria-label="По центру">⤢ Центр</button>
+      <button class="tbtn wide" id="fit" title="Показать всё" aria-label="Показать всё">⤢ Всё</button>
     </div>
   </div>
 
   <div class="stage">
-    <canvas id="map" aria-label="Ядро Swarm Brain и что оно делает"></canvas>
-    <div class="cap">🔒 И всё это — <b>в границах твоего рынка</b>; личное остаётся личным</div>
+    <canvas id="map" aria-label="Карта ядра и бота Swarm Brain"></canvas>
+    <div class="cap">🔒 Ядро и его возможности — <b>единая область</b>; от неё связь к инструментам</div>
 
     <aside class="panel" id="panel" aria-live="polite">
       <div class="ph">
@@ -95,7 +94,13 @@
         </div>
         <button class="pclose" id="p-close" aria-label="Закрыть">×</button>
       </div>
-      <div class="pbody"><p class="pdesc" id="p-desc"></p></div>
+      <div class="pbody">
+        <p class="pdesc" id="p-desc"></p>
+        <div id="p-links-wrap" hidden>
+          <p class="plbl" id="p-links-lbl">Связи</p>
+          <ul class="links" id="p-links"></ul>
+        </div>
+      </div>
     </aside>
   </div>
 </div>
@@ -105,40 +110,59 @@
   "use strict";
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  var CORE = { id:"core", core:true, emoji:"🧠", x:0, y:0, r:58, color:"#F2B85A",
+  // ── Data ────────────────────────────────────────────
+  var CORE = { id:"core", kind:"core", emoji:"🧠", x:0, y:0, r:56, color:"#F2B85A",
     title:"Ядро", cat:"Общая умная память",
-    desc:"Ты не настраиваешь его и не обслуживаешь — просто кидаешь в него всё и спрашиваешь. Оно само запоминает, раскладывает и находит. Не нужно думать, куда положить, как назвать и где потом искать." };
+    desc:"Ты не настраиваешь его и не обслуживаешь — просто кидаешь в него всё и спрашиваешь. Оно само запоминает, раскладывает и находит." };
 
   var POINTS = [
-    { id:"p1", emoji:"📥", title:"Принимает и не теряет", color:"#E1953A",
-      desc:"Кинул что угодно — текст, файл, голос, встречу — и это сохранено навсегда и доступно тем, кому нужно. Не «ещё одно сообщение в чате, которое утонет», а запись в общей памяти." },
-    { id:"p2", emoji:"🗂", title:"Само раскладывает по полочкам", color:"#D98A2B",
-      desc:"Делает короткие тезисы, помечает рынок и тип записи — без ручной возни с тегами. Ты не структурируешь — оно структурирует за тебя." },
-    { id:"p3", emoji:"🔎", title:"Находит по смыслу и отвечает", color:"#E1953A",
-      desc:"Спросил по-человечески — получил ответ со ссылками на источники. Даже если сформулировал не теми словами, что были в записи. Не «иди ищи по папкам и переписке»." },
-    { id:"p4", emoji:"✅", title:"Превращает разговоры в дела", color:"#D98A2B",
-      desc:"Из встречи сами появляются тезисы и задачи с ответственными. Разговор не остаётся «поговорили и забыли» — он превращается в конкретные дела." }
+    { id:"p1", emoji:"📥", title:"Принимает и не теряет", color:"#E1953A", desc:"Кинул что угодно — текст, файл, голос, встречу — сохранено навсегда и доступно тем, кому нужно." },
+    { id:"p2", emoji:"🗂", title:"Само раскладывает", color:"#D98A2B", desc:"Делает тезисы, помечает рынок и тип — без ручной возни с тегами." },
+    { id:"p3", emoji:"🔎", title:"Находит и отвечает", color:"#E1953A", desc:"Спросил по-человечески — получил ответ со ссылками на источники." },
+    { id:"p4", emoji:"✅", title:"Превращает в дела", color:"#D98A2B", desc:"Из встречи сами появляются тезисы и задачи с ответственными." }
   ];
 
-  var nodes = [CORE], ptR = 300;
-  POINTS.forEach(function (p, i) {
-    var ang = -Math.PI / 2 + i * (Math.PI * 2 / POINTS.length);
-    p.x = Math.cos(ang) * ptR; p.y = Math.sin(ang) * ptR; p.r = 32;
-    nodes.push(p);
-  });
+  var BOT = { id:"bot", kind:"door", emoji:"📱", x:900, y:40, r:46, color:"#5FC9D6",
+    title:"Telegram-бот", cat:"Дверь в ядро",
+    desc:"Самый быстрый и богатый вход: кидаешь что угодно прямо в чат — и оно уходит в ядро. Сам бот ничего не «помнит», он лишь передаёт в ядро." };
 
-  var canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
+  var BOT_FUNCS = [
+    { id:"b_text",  emoji:"✍️", title:"Текст", desc:"Написал или «сохрани …» — стало записью." },
+    { id:"b_fwd",   emoji:"↪️", title:"Пересланное", desc:"Переслал чужое сообщение — сохранилось как есть. Самый надёжный сигнал «это контент»." },
+    { id:"b_voice", emoji:"🎤", title:"Голос", desc:"Голосовое распознаётся в текст и сохраняется." },
+    { id:"b_doc",   emoji:"📄", title:"Документ", desc:"TXT и таблицы — извлекается содержимое и бьётся на части." },
+    { id:"b_photo", emoji:"🖼", title:"Фото", desc:"ИИ описывает изображение и сохраняет описание." },
+    { id:"b_link",  emoji:"🔗", title:"Ссылка", desc:"Либо сама ссылка, либо вся страница целиком." }
+  ];
+
+  // ── Layout ──────────────────────────────────────────
+  var nodes = {}, list = [];
+  function add(n){ nodes[n.id]=n; list.push(n); }
+  add(CORE);
+  var ptR = 290;
+  POINTS.forEach(function(p,i){ var a=-Math.PI/2 + i*(Math.PI*2/POINTS.length); p.kind="point"; p.r=30; p.x=Math.cos(a)*ptR; p.y=Math.sin(a)*ptR; add(p); });
+  var AREA_R = ptR + 86;                          // радиус «области ядра»
+  add(BOT);
+  var bfR = 150;
+  BOT_FUNCS.forEach(function(f,i){ var a=-Math.PI/2 + i*(Math.PI*2/BOT_FUNCS.length); f.kind="func"; f.parent="bot"; f.color="#8FDDE6"; f.r=17; f.x=BOT.x+Math.cos(a)*bfR; f.y=BOT.y+Math.sin(a)*bfR; add(f); });
+
+  // edges: kind core (ядро→точка), trunk (область→бот), leaf (бот→вход)
+  var edges = [];
+  POINTS.forEach(function(p){ edges.push({a:"core",b:p.id,kind:"core"}); });
+  edges.push({a:"core",b:"bot",kind:"trunk"});
+  BOT_FUNCS.forEach(function(f){ edges.push({a:"bot",b:f.id,kind:"leaf"}); });
+  var adj={}; list.forEach(function(n){ adj[n.id]={}; }); edges.forEach(function(e){ adj[e.a][e.b]=true; adj[e.b][e.a]=true; });
+
+  // ── Canvas + camera ─────────────────────────────────
+  var canvas=document.getElementById("map"), ctx=canvas.getContext("2d");
   var W=0,H=0,dpr=Math.min(window.devicePixelRatio||1,2);
   var cam={s:1,tx:0,ty:0}, selected=null, hover=null;
-
   function resize(){ var r=canvas.parentElement.getBoundingClientRect(); W=r.width; H=r.height; canvas.width=W*dpr; canvas.height=H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); }
-  function sx(x){ return x*cam.s+cam.tx; }
-  function sy(y){ return y*cam.s+cam.ty; }
-
+  function sx(x){ return x*cam.s+cam.tx; } function sy(y){ return y*cam.s+cam.ty; }
   function fit(animate){
     var a=1e9,b=1e9,c=-1e9,d=-1e9;
-    nodes.forEach(function(n){ a=Math.min(a,n.x-n.r); c=Math.max(c,n.x+n.r); b=Math.min(b,n.y-n.r); d=Math.max(d,n.y+n.r); });
-    var pad=140, target=Math.min((W-pad*2)/(c-a),(H-pad*2)/(d-b),1.5), cxw=(a+c)/2, cyw=(b+d)/2;
+    list.forEach(function(n){ a=Math.min(a,n.x-n.r); c=Math.max(c,n.x+n.r); b=Math.min(b,n.y-n.r); d=Math.max(d,n.y+n.r); });
+    var pad=90, target=Math.min((W-pad*2)/(c-a),(H-pad*2)/(d-b),1.4), cxw=(a+c)/2, cyw=(b+d)/2;
     var to={s:target,tx:W/2-cxw*target,ty:H/2-cyw*target};
     if(reduce||!animate){ cam=to; return; }
     var from={s:cam.s,tx:cam.tx,ty:cam.ty},t0=null;
@@ -148,113 +172,119 @@
 
   // ── holo helpers ────────────────────────────────────
   function nrand(i){ var a=Math.sin(i*43.137)*4517.31; return a-Math.floor(a); }
-  function hexA(hex,a){ var h=hex.replace("#",""); return "rgba("+parseInt(h.substr(0,2),16)+","+parseInt(h.substr(2,2),16)+","+parseInt(h.substr(4,2),16)+","+a+")"; }
-  function lighten(hex){ var h=hex.replace("#",""); function up(v){ return Math.round(v+(255-v)*0.55); } return "rgb("+up(parseInt(h.substr(0,2),16))+","+up(parseInt(h.substr(2,2),16))+","+up(parseInt(h.substr(4,2),16))+")"; }
+  function hexA(hex,al){ var h=hex.replace("#",""); return "rgba("+parseInt(h.substr(0,2),16)+","+parseInt(h.substr(2,2),16)+","+parseInt(h.substr(4,2),16)+","+al+")"; }
+  function lighten(hex){ var h=hex.replace("#",""); function u(v){return Math.round(v+(255-v)*0.55);} return "rgb("+u(parseInt(h.substr(0,2),16))+","+u(parseInt(h.substr(2,2),16))+","+u(parseInt(h.substr(4,2),16))+")"; }
   function flicker(t,ph){ if(reduce) return 1; var v=0.74+0.16*Math.sin(t*0.004+ph)+0.06*Math.sin(t*0.017+ph*2); if(Math.sin(t*0.011+ph*5)>0.968) v*=0.45; return Math.max(0.35,Math.min(1,v)); }
-  function wob(t,ph,amp){ if(reduce) return {x:0,y:0}; return { x:Math.sin(t*0.0013+ph)*amp, y:Math.cos(t*0.0017+ph*1.3)*amp }; }
+  function wob(t,ph,amp){ if(reduce) return {x:0,y:0}; return {x:Math.sin(t*0.0013+ph)*amp, y:Math.cos(t*0.0017+ph*1.3)*amp}; }
 
+  function wrap(s,max){ var w=s.split(" "),L=[],c=""; w.forEach(function(x){ if((c+" "+x).trim().length>max){ if(c)L.push(c); c=x; } else c=(c+" "+x).trim(); }); if(c)L.push(c); return L; }
+
+  function thread(t, ax,ay,bx,by, on, big){
+    // base wire
+    ctx.strokeStyle = on ? hexA("#CFFBFF",0.7) : hexA("#76E0E8", big?0.26:0.18);
+    ctx.lineWidth = (on?2.4:(big?1.7:1.2));
+    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+    if(reduce) return;
+    var speed = on?0.00052:0.00032, nP=(on?4:(big?3:2)), pr=(on?3.4:(big?3:2.2))*Math.max(0.7,cam.s);
+    for(var k=0;k<nP;k++){
+      var prog=((t*speed)+k/nP)%1;
+      var px=ax+(bx-ax)*prog, py=ay+(by-ay)*prog;
+      var g=ctx.createRadialGradient(px,py,0,px,py,pr*3);
+      g.addColorStop(0, on?"rgba(224,252,255,0.98)":"rgba(150,235,242,0.78)");
+      g.addColorStop(0.5, on?"rgba(160,240,250,0.5)":"rgba(120,225,235,0.3)");
+      g.addColorStop(1,"rgba(120,225,235,0)");
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(px,py,pr*3,0,6.283); ctx.fill();
+    }
+  }
+
+  function drawNode(n, t){
+    var ph=nrand((n.id.length+n.x)|0 ? n.x*0.7+n.y*0.3+n.id.length : 1)*6.283;
+    var w=wob(t,ph, n.kind==="core"?3:(n.kind==="func"?5:4));
+    var x=sx(n.x+w.x), y=sy(n.y+w.y), r=n.r*cam.s;
+    var focus=selected||hover;
+    var dim = focus && !(focus.id===n.id || adj[focus.id][n.id] || (focus.id==="core"&&n.kind==="point") || n.id==="core" && false);
+    if(focus && (focus.id===n.id)) dim=false;
+    var fl=flicker(t,ph), a=(dim?0.28:1)*fl, col=n.color;
+
+    ctx.globalCompositeOperation="lighter";
+    var br=r*(n.kind==="core"?2.7:2.1);
+    var bloom=ctx.createRadialGradient(x,y,0,x,y,br);
+    bloom.addColorStop(0,hexA(col,0.5*a)); bloom.addColorStop(0.5,hexA(col,0.12*a)); bloom.addColorStop(1,hexA(col,0));
+    ctx.fillStyle=bloom; ctx.beginPath(); ctx.arc(x,y,br,0,6.283); ctx.fill();
+    ctx.globalAlpha=0.30*a; ctx.fillStyle=col; ctx.beginPath(); ctx.arc(x,y,r,0,6.283); ctx.fill(); ctx.globalAlpha=1;
+    // scanlines
+    ctx.save(); ctx.beginPath(); ctx.arc(x,y,r,0,6.283); ctx.clip();
+    var off=reduce?0:((t*0.03)%5); ctx.strokeStyle=hexA("#CFFBFF",0.12*a); ctx.lineWidth=1;
+    for(var ry=-r; ry<=r; ry+=4){ ctx.beginPath(); ctx.moveTo(x-r,y+ry+off); ctx.lineTo(x+r,y+ry+off); ctx.stroke(); }
+    ctx.restore();
+    // chromatic rims
+    ctx.globalAlpha=0.5*a; ctx.lineWidth=1.2;
+    ctx.strokeStyle="rgba(110,225,238,0.6)"; ctx.beginPath(); ctx.arc(x-1.2,y,r,0,6.283); ctx.stroke();
+    ctx.strokeStyle="rgba(240,150,95,0.55)"; ctx.beginPath(); ctx.arc(x+1.2,y,r,0,6.283); ctx.stroke();
+    ctx.globalAlpha=a; ctx.lineWidth=n.kind==="core"?2.2:1.6; ctx.strokeStyle=hexA(lighten(col),0.9); ctx.beginPath(); ctx.arc(x,y,r,0,6.283); ctx.stroke();
+    ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over";
+
+    if(selected && selected.id===n.id){ ctx.beginPath(); ctx.arc(x,y,r+9,0,6.283); ctx.setLineDash([4,5]); if(!reduce)ctx.lineDashOffset=-(t*0.03); ctx.strokeStyle="rgba(207,251,255,0.85)"; ctx.lineWidth=2; ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset=0; }
+
+    if(r>11){ ctx.globalAlpha=(dim?0.45:1)*(0.8+0.2*fl); ctx.font=(r*0.82)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(n.emoji,x,y+1); ctx.globalAlpha=1; }
+
+    // label
+    ctx.globalAlpha=(dim?0.4:1)*Math.max(0.6,fl);
+    var big=n.kind==="core"||n.kind==="door";
+    ctx.font=(n.kind==="core"?"800 17px ":(big?"700 15px ":"600 11.5px "))+"system-ui, sans-serif";
+    ctx.textAlign="center"; ctx.textBaseline="top";
+    var ly=y+r+8, lines=(n.kind==="core")?["ЯДРО"]:wrap(n.title, big?16:14);
+    lines.forEach(function(ln,li){ ctx.fillStyle="rgba(120,225,238,0.4)"; ctx.fillText(ln,x,ly+li*16+0.5); ctx.fillStyle=big?"#EAF7F9":"#CFE6E8"; ctx.fillText(ln,x,ly+li*16); });
+    ctx.globalAlpha=1;
+  }
+
+  // ── Render ──────────────────────────────────────────
   function draw(ts){
     var t=ts||0;
     ctx.clearRect(0,0,W,H);
-    // holographic dark ground
-    var bg=ctx.createRadialGradient(sx(0),sy(0),0,sx(0),sy(0),Math.max(W,H)*0.85);
-    bg.addColorStop(0,"#12110D"); bg.addColorStop(0.55,"#0C0E0C"); bg.addColorStop(1,"#090A09");
+    var bg=ctx.createRadialGradient(sx(0),sy(0),0,sx(0),sy(0),Math.max(W,H)*0.9);
+    bg.addColorStop(0,"#12130F"); bg.addColorStop(0.55,"#0C0E0D"); bg.addColorStop(1,"#090A09");
     ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
-    // ambient scanlines + moving scan band
-    ctx.fillStyle="rgba(120,210,220,0.022)";
-    for(var yy=0; yy<H; yy+=4){ ctx.fillRect(0,yy,W,1); }
+    ctx.fillStyle="rgba(120,210,220,0.022)"; for(var yy=0; yy<H; yy+=4){ ctx.fillRect(0,yy,W,1); }
     if(!reduce){ var band=((t*0.06)%(H+240))-120; var sb=ctx.createLinearGradient(0,band-70,0,band+70); sb.addColorStop(0,"rgba(130,225,235,0)"); sb.addColorStop(0.5,"rgba(130,225,235,0.05)"); sb.addColorStop(1,"rgba(130,225,235,0)"); ctx.fillStyle=sb; ctx.fillRect(0,band-70,W,140); }
 
-    var focus = selected || hover;
+    var focus=selected||hover;
 
-    // границы — holographic dashed ring
-    var ringR=(ptR+92)*cam.s, rf=flicker(t,1.7);
-    ctx.beginPath(); ctx.arc(sx(0),sy(0),ringR,0,6.283);
-    ctx.setLineDash([2,9]); if(!reduce) ctx.lineDashOffset=-(t*0.02);
-    ctx.strokeStyle=hexA("#9FE6EE",0.30*rf); ctx.lineWidth=1.3; ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset=0;
+    // ── «Область ядра» — единое целое: заливка + контур ──
+    var cxs=sx(0), cys=sy(0), aR=AREA_R*cam.s;
+    var areaGlow=ctx.createRadialGradient(cxs,cys,0,cxs,cys,aR);
+    areaGlow.addColorStop(0,"rgba(242,184,90,0.10)"); areaGlow.addColorStop(0.7,"rgba(225,149,58,0.05)"); areaGlow.addColorStop(1,"rgba(225,149,58,0)");
+    ctx.fillStyle=areaGlow; ctx.beginPath(); ctx.arc(cxs,cys,aR,0,6.283); ctx.fill();
+    var rf=flicker(t,1.7);
+    ctx.beginPath(); ctx.arc(cxs,cys,aR,0,6.283); ctx.setLineDash([2,9]); if(!reduce)ctx.lineDashOffset=-(t*0.02);
+    ctx.strokeStyle=hexA("#E7C77A",0.34*rf); ctx.lineWidth=1.4; ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset=0;
 
-    // energy threads core → points: static wire + travelling light pulses (always moving)
+    // core pulse glow
+    var pulse=reduce?1:(1+0.06*Math.sin(t*0.0024));
+    var cg=ctx.createRadialGradient(cxs,cys,0,cxs,cys,260*cam.s*pulse);
+    cg.addColorStop(0,"rgba(242,184,90,0.16)"); cg.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(cxs,cys,260*cam.s*pulse,0,6.283); ctx.fill();
+
+    // ── threads ──
     ctx.globalCompositeOperation="lighter";
-    ctx.setLineDash([]); ctx.lineDashOffset=0;
-    POINTS.forEach(function(p,i){
-      var on = focus && (focus.id===p.id||focus.id==="core");
-      var x1=sx(0), y1=sy(0), x2=sx(p.x), y2=sy(p.y);
-      // base wire
-      ctx.strokeStyle = on ? hexA("#CFFBFF",0.7) : hexA("#76E0E8",0.20);
-      ctx.lineWidth = on ? 2.2 : 1.3;
-      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
-      // travelling pulses (core → point)
-      if(!reduce){
-        var speed = on ? 0.00050 : 0.00030, nP = on ? 4 : 3, pr = (on?3.4:2.4)*Math.max(0.7,cam.s);
-        for(var k=0;k<nP;k++){
-          var prog = ((t*speed) + i*0.17 + k/nP) % 1;
-          var px = x1+(x2-x1)*prog, py = y1+(y2-y1)*prog;
-          var g = ctx.createRadialGradient(px,py,0,px,py,pr*3);
-          g.addColorStop(0, on?"rgba(224,252,255,0.98)":"rgba(150,235,242,0.78)");
-          g.addColorStop(0.5, on?"rgba(160,240,250,0.5)":"rgba(120,225,235,0.32)");
-          g.addColorStop(1,"rgba(120,225,235,0)");
-          ctx.fillStyle=g; ctx.beginPath(); ctx.arc(px,py,pr*3,0,6.283); ctx.fill();
-        }
-      }
-    });
+    // core → points
+    POINTS.forEach(function(p){ var on=focus&&(focus.id===p.id||focus.id==="core"); thread(t, cxs,cys, sx(p.x),sy(p.y), on, false); });
+    // trunk: ОБЛАСТЬ → бот (старт от края области в сторону бота)
+    var ang=Math.atan2(BOT.y-0, BOT.x-0);
+    var ex=Math.cos(ang)*AREA_R, ey=Math.sin(ang)*AREA_R;
+    var trunkOn = focus && (focus.id==="bot"||focus.id==="core"||adj["bot"][focus.id] || adj["core"][focus.id]);
+    thread(t, sx(ex),sy(ey), sx(BOT.x),sy(BOT.y), !!trunkOn, true);
+    // бот → входы
+    BOT_FUNCS.forEach(function(f){ var on=focus&&(focus.id===f.id||focus.id==="bot"); thread(t, sx(BOT.x),sy(BOT.y), sx(f.x),sy(f.y), on, false); });
     ctx.globalCompositeOperation="source-over";
 
-    // nodes as holograms
-    nodes.forEach(function(n,idx){
-      var ph=nrand(idx+1)*6.283;
-      var w=wob(t,ph, n.core?3:6);
-      var x=sx(n.x+w.x), y=sy(n.y+w.y), r=n.r*cam.s;
-      var dim = focus && focus.id!=="core" && n.id!==focus.id && n.id!=="core";
-      var fl=flicker(t,ph), a=(dim?0.3:1)*fl, col=n.color;
-
-      ctx.globalCompositeOperation="lighter";
-      // outer bloom
-      var br=r*(n.core?2.7:2.15);
-      var bloom=ctx.createRadialGradient(x,y,0,x,y,br);
-      bloom.addColorStop(0,hexA(col,0.5*a)); bloom.addColorStop(0.5,hexA(col,0.12*a)); bloom.addColorStop(1,hexA(col,0));
-      ctx.fillStyle=bloom; ctx.beginPath(); ctx.arc(x,y,br,0,6.283); ctx.fill();
-      // translucent body
-      ctx.globalAlpha=0.30*a; ctx.fillStyle=col; ctx.beginPath(); ctx.arc(x,y,r,0,6.283); ctx.fill(); ctx.globalAlpha=1;
-      // scanlines inside disc
-      ctx.save(); ctx.beginPath(); ctx.arc(x,y,r,0,6.283); ctx.clip();
-      var off=reduce?0:((t*0.03)%5);
-      ctx.strokeStyle=hexA("#CFFBFF",0.12*a); ctx.lineWidth=1;
-      for(var ry=-r; ry<=r; ry+=4){ ctx.beginPath(); ctx.moveTo(x-r,y+ry+off); ctx.lineTo(x+r,y+ry+off); ctx.stroke(); }
-      ctx.restore();
-      // chromatic split rims
-      ctx.globalAlpha=0.5*a; ctx.lineWidth=1.3;
-      ctx.strokeStyle="rgba(110,225,238,0.6)"; ctx.beginPath(); ctx.arc(x-1.3,y,r,0,6.283); ctx.stroke();
-      ctx.strokeStyle="rgba(240,150,95,0.6)"; ctx.beginPath(); ctx.arc(x+1.3,y,r,0,6.283); ctx.stroke();
-      // bright rim
-      ctx.globalAlpha=a; ctx.lineWidth=n.core?2.2:1.7; ctx.strokeStyle=hexA(lighten(col),0.9); ctx.beginPath(); ctx.arc(x,y,r,0,6.283); ctx.stroke();
-      ctx.globalAlpha=1;
-      ctx.globalCompositeOperation="source-over";
-
-      if(selected && selected.id===n.id){ ctx.beginPath(); ctx.arc(x,y,r+9,0,6.283); ctx.setLineDash([4,5]); if(!reduce) ctx.lineDashOffset=-(t*0.03); ctx.strokeStyle="rgba(207,251,255,0.85)"; ctx.lineWidth=2; ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset=0; }
-
-      // emoji
-      ctx.globalAlpha=(dim?0.45:1)*(0.8+0.2*fl);
-      ctx.font=(r*0.82)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(n.emoji,x,y+1);
-      ctx.globalAlpha=1;
-
-      // holo label (cyan glow)
-      ctx.globalAlpha=(dim?0.4:1)*Math.max(0.6,fl);
-      ctx.font=(n.core?"800 17px ":"700 14px ")+"system-ui, sans-serif"; ctx.textAlign="center"; ctx.textBaseline="top";
-      var ly=y+r+9, lines=n.core?["ЯДРО"]:wrap(n.title,18);
-      lines.forEach(function(ln,li){
-        ctx.fillStyle="rgba(120,225,238,0.4)"; ctx.fillText(ln, x, ly+li*18+0.5);
-        ctx.fillStyle=n.core?"#EAF7F9":"#DCEEF0"; ctx.fillText(ln, x, ly+li*18);
-      });
-      ctx.globalAlpha=1;
-    });
-    ctx.globalAlpha=1;
+    // ── nodes ──
+    list.forEach(function(n){ drawNode(n,t); });
   }
-  function wrap(s, max){ var words=s.split(" "), lines=[], cur=""; words.forEach(function(w){ if((cur+" "+w).trim().length>max){ if(cur)lines.push(cur); cur=w; } else cur=(cur+" "+w).trim(); }); if(cur)lines.push(cur); return lines; }
   function loop(ts){ draw(ts); requestAnimationFrame(loop); }
 
-  function pick(mx,my){ for(var i=nodes.length-1;i>=0;i--){ var n=nodes[i]; var dx=mx-sx(n.x),dy=my-sy(n.y); if(Math.sqrt(dx*dx+dy*dy)<=n.r*cam.s+8) return n; } return null; }
-
-  // interaction
+  // ── Hit + interaction ───────────────────────────────
+  function pick(mx,my){ for(var i=list.length-1;i>=0;i--){ var n=list[i]; var dx=mx-sx(n.x),dy=my-sy(n.y); if(Math.sqrt(dx*dx+dy*dy)<=n.r*cam.s+8) return n; } return null; }
   var dragging=false,dragNode=null,panning=false,lastX=0,lastY=0,downX=0,downY=0,moved=false;
   function rel(e){ var r=canvas.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
   canvas.addEventListener("pointerdown",function(e){ canvas.setPointerCapture(e.pointerId); var p=rel(e); lastX=p.x;lastY=p.y;downX=p.x;downY=p.y;moved=false; var n=pick(p.x,p.y); if(n)dragNode=n; else {panning=true;canvas.classList.add("grabbing");} dragging=true; });
@@ -263,25 +293,39 @@
     else { var n=pick(p.x,p.y); canvas.classList.toggle("onnode",!!n); hover=n; } });
   canvas.addEventListener("pointerup",function(e){ if(dragging&&!moved){ var p=rel(e); var n=pick(p.x,p.y); if(n)select(n); else deselect(); } dragging=false;dragNode=null;panning=false;canvas.classList.remove("grabbing"); });
   canvas.addEventListener("pointercancel",function(){ dragging=false;dragNode=null;panning=false;canvas.classList.remove("grabbing"); });
-  canvas.addEventListener("wheel",function(e){ e.preventDefault(); var p=rel(e); var wx=(p.x-cam.tx)/cam.s,wy=(p.y-cam.ty)/cam.s; cam.s=Math.max(0.4,Math.min(3,cam.s*(e.deltaY<0?1.12:1/1.12))); cam.tx=p.x-wx*cam.s; cam.ty=p.y-wy*cam.s; },{passive:false});
-  function zoomBtn(f){ var wx=(W/2-cam.tx)/cam.s,wy=(H/2-cam.ty)/cam.s; cam.s=Math.max(0.4,Math.min(3,cam.s*f)); cam.tx=W/2-wx*cam.s; cam.ty=H/2-wy*cam.s; }
+  canvas.addEventListener("wheel",function(e){ e.preventDefault(); var p=rel(e); var wx=(p.x-cam.tx)/cam.s,wy=(p.y-cam.ty)/cam.s; cam.s=Math.max(0.35,Math.min(3,cam.s*(e.deltaY<0?1.12:1/1.12))); cam.tx=p.x-wx*cam.s; cam.ty=p.y-wy*cam.s; },{passive:false});
+  function zoomBtn(f){ var wx=(W/2-cam.tx)/cam.s,wy=(H/2-cam.ty)/cam.s; cam.s=Math.max(0.35,Math.min(3,cam.s*f)); cam.tx=W/2-wx*cam.s; cam.ty=H/2-wy*cam.s; }
   document.getElementById("zin").onclick=function(){ zoomBtn(1.25); };
   document.getElementById("zout").onclick=function(){ zoomBtn(1/1.25); };
   document.getElementById("fit").onclick=function(){ deselect(); fit(true); };
 
-  // panel
+  // ── Panel ───────────────────────────────────────────
   var panel=document.getElementById("panel");
+  function catLabel(n){ return n.kind==="core"?n.cat:(n.kind==="point"?"Что делает ядро":(n.kind==="door"?n.cat:"Способ ввода")); }
   function select(n){
     selected=n;
     document.getElementById("p-dot").style.background=n.color;
     document.getElementById("p-dot").textContent=n.emoji;
-    document.getElementById("p-title").textContent=n.core?"Ядро":n.title;
-    document.getElementById("p-cat").textContent=n.core?n.cat:"Что делает ядро";
+    document.getElementById("p-title").textContent=n.kind==="core"?"Ядро":n.title;
+    var cat=document.getElementById("p-cat"); cat.textContent=catLabel(n); cat.style.color=n.color;
     document.getElementById("p-desc").textContent=n.desc;
+    var lw=document.getElementById("p-links-wrap"), ul=document.getElementById("p-links"), lbl=document.getElementById("p-links-lbl");
+    ul.innerHTML="";
+    if(n.kind==="door"){
+      lbl.textContent="Способы ввода";
+      BOT_FUNCS.forEach(function(f){ var b=document.createElement("button"); b.innerHTML='<i style="background:'+f.color+'"></i>'+esc(f.title); b.onclick=function(){ select(f); soft(f); }; ul.appendChild(b); });
+      lw.hidden=false;
+    } else if(n.kind==="func"){
+      lbl.textContent="Через"; var b=document.createElement("button"); b.innerHTML='<i style="background:'+BOT.color+'"></i>'+esc(BOT.title); b.onclick=function(){ select(BOT); soft(BOT); }; ul.appendChild(b); lw.hidden=false;
+    } else if(n.kind==="core"){
+      lbl.textContent="Возможности"; POINTS.forEach(function(p){ var b=document.createElement("button"); b.innerHTML='<i style="background:'+p.color+'"></i>'+esc(p.title); b.onclick=function(){ select(p); soft(p); }; ul.appendChild(b); }); lw.hidden=false;
+    } else lw.hidden=true;
     panel.classList.add("open");
   }
+  function soft(n){ var x=sx(n.x),y=sy(n.y); if(x<120||x>W-360||y<100||y>H-120){ cam.tx+=(W/2-x); cam.ty+=(H/2-y); } }
   function deselect(){ selected=null; panel.classList.remove("open"); }
   document.getElementById("p-close").onclick=deselect;
+  function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
   resize(); fit(false); loop();
   var rt; window.addEventListener("resize",function(){ clearTimeout(rt); rt=setTimeout(resize,150); });
