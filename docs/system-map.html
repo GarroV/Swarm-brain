@@ -155,6 +155,31 @@
       desc:"Команда «/setup» подключает базу к Claude Desktop по личному токену — одной строкой. После этого можно искать, добавлять знания и вести задачи прямо внутри Claude." }
   ];
 
+  // ── Дверь: Claude Desktop (MCP) ──────────────────────
+  var CLAUDE = { id:"claude", kind:"door", emoji:"🖥️", x:-720, y:700, r:46, color:"#5FC9D6",
+    title:"Claude Desktop", cat:"Дверь в ядро",
+    desc:"Та же база внутри Claude — по личному токену. Claude работает с базой как набором инструментов: ищет, добавляет, правит, ведёт задачи. Для больших текстов с проверкой человеком." };
+
+  var CLAUDE_FUNCS = [
+    // ── достаёт (ядро → иконка) ──
+    { id:"c_search", title:"Поиск по базе",   flow:"out", desc:"Claude ищет по смыслу в общей базе и приводит нужные записи со ссылками." },
+    { id:"c_open",   title:"Открыть запись",  flow:"out", desc:"Достаёт полный текст записи по ID — когда нужен оригинал целиком." },
+    { id:"c_list",   title:"Список записей",  flow:"out", desc:"Просмотр записей с фильтрами (источник, тип, даты) — ревизия и поиск дублей." },
+    { id:"c_tasks",  title:"Список задач",    flow:"out", desc:"Задачи команды с фильтрами: исполнитель, страна, статус." },
+    { id:"c_meet",   title:"Список встреч",   flow:"out", desc:"Последние встречи, сохранённые в базе." },
+    { id:"c_users",  title:"Команда",         flow:"out", desc:"Участники с профилями: имя, роль, рынки, контакты." },
+    { id:"c_stats",  title:"Статистика базы", flow:"out", desc:"Сводка по хранилищу: сколько записей и какого типа." },
+    // ── вносит (иконка → ядро) ──
+    { id:"c_add",      title:"Добавить знание", desc:"Claude кладёт текст в общую базу (с тезисами); можно в личное хранилище." },
+    { id:"c_upload",   title:"Загрузить файл",  desc:"Загружает файл в хранилище и создаёт запись со ссылкой." },
+    { id:"c_edit",     title:"Править запись",  desc:"Исправляет/дополняет запись: текст, тезисы, даты, страны, файл." },
+    { id:"c_del",      title:"Удалить запись",  desc:"Удаляет свою запись (и прикреплённый файл) из базы." },
+    { id:"c_reindex",  title:"Обновить теги",   desc:"Перечитывает запись и пересчитывает страны и смысловой отпечаток." },
+    { id:"c_taskadd",  title:"Создать задачу",  desc:"Заводит задачу с исполнителем (умный матч имени)." },
+    { id:"c_taskedit", title:"Изменить задачу", desc:"Меняет задачу: статус, срок, исполнителя." },
+    { id:"c_taskdel",  title:"Удалить задачу",  desc:"Удаляет задачу." }
+  ];
+
   // ── Layout ──────────────────────────────────────────
   var nodes = {}, list = [];
   function add(n){ nodes[n.id]=n; list.push(n); }
@@ -163,15 +188,20 @@
   POINTS.forEach(function(p,i){ var a=-Math.PI/2 + i*(Math.PI*2/POINTS.length); p.kind="point"; p.r=30; p.x=Math.cos(a)*ptR; p.y=Math.sin(a)*ptR; add(p); });
   var AREA_R = ptR + 86;                          // радиус «области ядра»
   add(BOT);
-  // равномерно по дуге ~300° (слева — коридор под нить к ядру) + лёгкий хаос; ввод сверху, действия снизу
-  (function(){ var N=BOT_FUNCS.length, span=300, start=-150;
-    BOT_FUNCS.forEach(function(f,i){
-      var jA=(nrand(i*7+3)*2-1)*8, jR=nrand(i*5+11);
-      var deg=start + i*(span/(N-1)) + jA, rad=176 + jR*46, a=deg*Math.PI/180;
-      f.kind="func"; f.parent="bot"; if(!f.color)f.color="#8FDDE6"; f.r=(f.grp==="do"?18:16);
-      f.x=BOT.x+Math.cos(a)*rad; f.y=BOT.y+Math.sin(a)*rad; add(f);
+  add(CLAUDE);
+  // общий хелпер: функции двери — равномерно по дуге ~300° (коридор к ядру свободен) + лёгкий хаос
+  function fanDoor(door, funcs, baseR){
+    var toCore=Math.atan2(-door.y,-door.x), center=toCore+Math.PI, span=300*Math.PI/180, N=funcs.length, seed=door.id.length*17+5;
+    funcs.forEach(function(f,i){
+      var jA=(nrand(i*7+seed)*2-1)*8*Math.PI/180, jR=nrand(i*5+seed+3);
+      var a=center - span/2 + i*(span/(N-1)) + jA, rad=baseR + jR*48;
+      f.kind="func"; f.parent=door.id; if(!f.color)f.color="#E6C281"; f.r=(f.grp==="do"?18:16);
+      f.x=door.x+Math.cos(a)*rad; f.y=door.y+Math.sin(a)*rad; add(f);
     });
-  })();
+  }
+  fanDoor(BOT, BOT_FUNCS, 176);
+  fanDoor(CLAUDE, CLAUDE_FUNCS, 190);
+  var DOORS=[{node:BOT,funcs:BOT_FUNCS},{node:CLAUDE,funcs:CLAUDE_FUNCS}];
   // фоновый «рой» — еле заметные дрейфующие точки (средний слой для глубины)
   var MOTES=[]; for(var mi=0; mi<30; mi++){ MOTES.push({ x:-1150+Math.random()*2300, y:-760+Math.random()*1520, vx:(Math.random()-0.5)*0.11, vy:(Math.random()-0.5)*0.11, r:0.6+Math.random()*1.4, ph:Math.random()*6.283 }); }
   // фоновая галактика (screen-space backdrop): тёплое ядро + прохладные рукава
@@ -220,8 +250,8 @@
   function litSet(f){ var s={}; s[f.id]=true;
     if(f.id==="core"){ POINTS.forEach(function(p){ s[p.id]=true; }); }
     else if(f.kind==="point"){ s["core"]=true; }
-    else if(f.id==="bot"){ BOT_FUNCS.forEach(function(x){ s[x.id]=true; }); }
-    else if(f.kind==="func"){ s["bot"]=true; }
+    else if(f.kind==="door"){ list.forEach(function(n){ if(n.parent===f.id) s[n.id]=true; }); }
+    else if(f.kind==="func"){ s[f.parent]=true; }
     return s; }
 
   function wrap(s,max){ var w=s.split(" "),L=[],c=""; w.forEach(function(x){ if((c+" "+x).trim().length>max){ if(c)L.push(c); c=x; } else c=(c+" "+x).trim(); }); if(c)L.push(c); return L; }
@@ -283,9 +313,11 @@
   }
 
   // пиктограммы (янтарный лайн-арт, стиль старой корабельной консоли)
-  var GLYPHS={ core:"roy", p1:"inbox", p2:"sort", p3:"search", p4:"check", bot:"send",
+  var GLYPHS={ core:"roy", p1:"inbox", p2:"sort", p3:"search", p4:"check", bot:"send", claude:"desktop",
     b_text:"text", b_fwd:"forward", b_voice:"mic", b_doc:"doc", b_photo:"image", b_link:"link",
-    b_search:"search", b_task:"check", b_review:"review", b_rec:"rec", b_digest:"digest", b_claude:"desktop" };
+    b_search:"search", b_task:"check", b_review:"review", b_rec:"rec", b_digest:"digest", b_claude:"desktop",
+    c_search:"search", c_open:"doc", c_list:"sort", c_tasks:"list", c_meet:"review", c_users:"people", c_stats:"stats",
+    c_add:"addnote", c_upload:"upload", c_edit:"edit", c_del:"trash", c_reindex:"tag", c_taskadd:"check", c_taskedit:"edit", c_taskdel:"trash" };
 
   function drawGlyph(g,x,y,s,col,lw){
     ctx.save(); ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=lw; ctx.lineCap="round"; ctx.lineJoin="round";
@@ -342,6 +374,34 @@
       ctx.strokeRect(x-s*0.56,y-s*0.56,s*1.12,s*0.82);
       ctx.beginPath(); ctx.moveTo(x,y+s*0.26); ctx.lineTo(x,y+s*0.5); ctx.moveTo(x-s*0.26,y+s*0.52); ctx.lineTo(x+s*0.26,y+s*0.52); ctx.stroke();
       ctx.beginPath(); ctx.arc(x,y-s*0.16,s*0.13,0,6.283); ctx.fill();
+    } else if(g==="list"){
+      for(k=0;k<3;k++){ yy=y-s*0.4+k*s*0.4; ctx.fillRect(x-s*0.56,yy-s*0.07,s*0.14,s*0.14); ctx.beginPath(); ctx.moveTo(x-s*0.28,yy); ctx.lineTo(x+s*0.55,yy); ctx.stroke(); }
+    } else if(g==="people"){
+      ctx.beginPath(); ctx.arc(x-s*0.24,y-s*0.16,s*0.2,0,6.283); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x-s*0.56,y+s*0.46); ctx.quadraticCurveTo(x-s*0.24,y+s*0.04,x+s*0.08,y+s*0.46); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x+s*0.3,y-s*0.06,s*0.16,0,6.283); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x+s*0.04,y+s*0.5); ctx.quadraticCurveTo(x+s*0.3,y+s*0.16,x+s*0.56,y+s*0.5); ctx.stroke();
+    } else if(g==="stats"){
+      ctx.beginPath(); ctx.moveTo(x-s*0.55,y+s*0.5); ctx.lineTo(x+s*0.58,y+s*0.5); ctx.stroke();
+      var hh=[0.38,0.78,0.56]; for(k=0;k<3;k++){ var bxx=x-s*0.34+k*s*0.36; ctx.beginPath(); ctx.moveTo(bxx,y+s*0.46); ctx.lineTo(bxx,y+s*0.46-s*hh[k]); ctx.stroke(); }
+    } else if(g==="addnote"){
+      ctx.strokeRect(x-s*0.5,y-s*0.55,s*1.0,s*1.1);
+      ctx.beginPath(); ctx.moveTo(x,y-s*0.12); ctx.lineTo(x,y+s*0.32); ctx.moveTo(x-s*0.22,y+s*0.1); ctx.lineTo(x+s*0.22,y+s*0.1); ctx.stroke();
+    } else if(g==="upload"){
+      ctx.beginPath(); ctx.moveTo(x-s*0.6,y+s*0.32); ctx.lineTo(x-s*0.6,y+s*0.55); ctx.lineTo(x+s*0.6,y+s*0.55); ctx.lineTo(x+s*0.6,y+s*0.32); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x,y+s*0.22); ctx.lineTo(x,y-s*0.55); ctx.moveTo(x-s*0.24,y-s*0.28); ctx.lineTo(x,y-s*0.58); ctx.lineTo(x+s*0.24,y-s*0.28); ctx.stroke();
+    } else if(g==="edit"){
+      ctx.beginPath(); ctx.moveTo(x-s*0.42,y+s*0.42); ctx.lineTo(x+s*0.3,y-s*0.3); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x+s*0.16,y-s*0.5); ctx.lineTo(x+s*0.52,y-s*0.16); ctx.lineTo(x+s*0.3,y-s*0.3); ctx.closePath(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x-s*0.42,y+s*0.42); ctx.lineTo(x-s*0.56,y+s*0.56); ctx.stroke();
+    } else if(g==="trash"){
+      ctx.beginPath(); ctx.moveTo(x-s*0.38,y-s*0.28); ctx.lineTo(x-s*0.3,y+s*0.52); ctx.lineTo(x+s*0.3,y+s*0.52); ctx.lineTo(x+s*0.38,y-s*0.28); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x-s*0.52,y-s*0.28); ctx.lineTo(x+s*0.52,y-s*0.28); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x-s*0.16,y-s*0.28); ctx.lineTo(x-s*0.14,y-s*0.46); ctx.lineTo(x+s*0.14,y-s*0.46); ctx.lineTo(x+s*0.16,y-s*0.28); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x-s*0.1,y-s*0.1); ctx.lineTo(x-s*0.08,y+s*0.36); ctx.moveTo(x+s*0.1,y-s*0.1); ctx.lineTo(x+s*0.08,y+s*0.36); ctx.stroke();
+    } else if(g==="tag"){
+      ctx.beginPath(); ctx.moveTo(x-s*0.5,y-s*0.34); ctx.lineTo(x+s*0.14,y-s*0.34); ctx.lineTo(x+s*0.54,y); ctx.lineTo(x+s*0.14,y+s*0.34); ctx.lineTo(x-s*0.5,y+s*0.34); ctx.closePath(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x-s*0.28,y,s*0.09,0,6.283); ctx.fill();
     } else { ctx.beginPath(); ctx.arc(x,y,s*0.4,0,6.283); ctx.stroke(); }
     ctx.restore();
   }
@@ -442,15 +502,15 @@
     ctx.globalCompositeOperation="lighter";
     // core → points (концы — по «колыхнутым» позициям, чтобы держались за шарики)
     POINTS.forEach(function(p){ var on=focus&&(focus.id===p.id||focus.id==="core"); thread(t, sx(CORE._vx),sy(CORE._vy), sx(p._vx),sy(p._vy), on, false); });
-    // trunk: ОБЛАСТЬ → бот (старт от края области в сторону бота)
-    var ang=Math.atan2(BOT.y-0, BOT.x-0);
-    var ex=Math.cos(ang)*AREA_R, ey=Math.sin(ang)*AREA_R;
-    var trunkOn = focus && (focus.id==="bot" || focus.kind==="func");
-    thread(t, sx(ex),sy(ey), sx(BOT._vx),sy(BOT._vy), !!trunkOn, true);
-    // бот ↔ функции: импульсы по смыслу — «вносит» иконка→ядро, «достаёт» ядро→иконка
-    BOT_FUNCS.forEach(function(f){ var on=focus&&(focus.id===f.id||focus.id==="bot");
-      if(f.flow==="out") thread(t, sx(BOT._vx),sy(BOT._vy), sx(f._vx),sy(f._vy), on, false);   // ядро → иконка
-      else thread(t, sx(f._vx),sy(f._vy), sx(BOT._vx),sy(BOT._vy), on, false);                  // иконка → ядро
+    // двери: ствол ОБЛАСТЬ→дверь + функции (импульсы по смыслу: «вносит» иконка→ядро, «достаёт» ядро→иконка)
+    DOORS.forEach(function(d){ var door=d.node;
+      var ang=Math.atan2(door.y, door.x), ex=Math.cos(ang)*AREA_R, ey=Math.sin(ang)*AREA_R;
+      var trunkOn = focus && (focus.id===door.id || focus.parent===door.id);
+      thread(t, sx(ex),sy(ey), sx(door._vx),sy(door._vy), !!trunkOn, true);
+      d.funcs.forEach(function(f){ var on=focus&&(focus.id===f.id||focus.id===door.id);
+        if(f.flow==="out") thread(t, sx(door._vx),sy(door._vy), sx(f._vx),sy(f._vy), on, false);
+        else thread(t, sx(f._vx),sy(f._vy), sx(door._vx),sy(door._vy), on, false);
+      });
     });
     ctx.globalCompositeOperation="source-over";
 
@@ -477,7 +537,7 @@
 
   // ── Panel ───────────────────────────────────────────
   var panel=document.getElementById("panel");
-  function catLabel(n){ return n.kind==="core"?n.cat:(n.kind==="point"?"Что делает ядро":(n.kind==="door"?n.cat:(n.grp==="do"?"Действие через бота":"Способ ввода"))); }
+  function catLabel(n){ return n.kind==="core"?n.cat:(n.kind==="point"?"Что делает ядро":(n.kind==="door"?n.cat:(n.flow==="out"?"Достаёт из ядра":"Вносит в ядро"))); }
   function select(n){
     selected=n;
     document.getElementById("p-dot").style.background=n.color;
@@ -489,10 +549,10 @@
     ul.innerHTML="";
     if(n.kind==="door"){
       lbl.textContent="Что можно делать";
-      BOT_FUNCS.forEach(function(f){ var b=document.createElement("button"); b.innerHTML='<i style="background:'+f.color+'"></i>'+esc(f.title); b.onclick=function(){ select(f); soft(f); }; ul.appendChild(b); });
+      list.filter(function(m){ return m.parent===n.id; }).forEach(function(f){ var b=document.createElement("button"); b.innerHTML='<i style="background:'+(f.color||"#E6C281")+'"></i>'+esc(f.title); b.onclick=function(){ select(f); soft(f); }; ul.appendChild(b); });
       lw.hidden=false;
     } else if(n.kind==="func"){
-      lbl.textContent="Через"; var b=document.createElement("button"); b.innerHTML='<i style="background:'+BOT.color+'"></i>'+esc(BOT.title); b.onclick=function(){ select(BOT); soft(BOT); }; ul.appendChild(b); lw.hidden=false;
+      var par=nodes[n.parent]; lbl.textContent="Через"; var b=document.createElement("button"); b.innerHTML='<i style="background:'+(par.color||"#5FC9D6")+'"></i>'+esc(par.title); b.onclick=function(){ select(par); soft(par); }; ul.appendChild(b); lw.hidden=false;
     } else if(n.kind==="core"){
       lbl.textContent="Возможности"; POINTS.forEach(function(p){ var b=document.createElement("button"); b.innerHTML='<i style="background:'+p.color+'"></i>'+esc(p.title); b.onclick=function(){ select(p); soft(p); }; ul.appendChild(b); }); lw.hidden=false;
     } else lw.hidden=true;
