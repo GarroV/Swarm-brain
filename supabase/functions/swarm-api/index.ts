@@ -1547,22 +1547,9 @@ Deno.serve(async (req: Request) => {
     try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
     if (!body.text || typeof body.text !== "string") return apiErr(400, "text required", origin);
 
-    const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
-    const gptRes = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: 'Извлеки задачи из текста. Верни JSON массив (только JSON, без markdown): [{"title":"короткая формулировка действия","description":"1 фраза контекста: зачем/какой результат/важная деталь. НЕ повторяй заголовок. null, если заголовок самодостаточен","assignee":"...","due_date":"YYYY-MM-DD или null","country":"... или null"}]. Если задач нет — пустой массив.' },
-          { role: "user", content: body.text.slice(0, 6000) },
-        ],
-        max_tokens: 1000,
-      }),
-    });
-    if (!gptRes.ok) return apiErr(500, "GPT error", origin);
-    let extracted: Array<{ title: string; description?: string; assignee?: string; due_date?: string | null; country?: string | null }> = [];
-    try { extracted = JSON.parse((await gptRes.json()).choices[0].message.content.replace(/```json\n?|\n?```/g, "").trim()); } catch { return json([], 200, origin); }
+    // Единый экстрактор (тот же `gptExtractTasks`, что на публикации встречи) — без дубля промпта.
+    // Та же форма {title,description,assignee,due_date,country}; при сбое GPT отдаёт [] (мягко, не 500).
+    const extracted = await gptExtractTasks(body.text);
 
     // Preview-режим: вернуть предложенные задачи БЕЗ создания (ревью на экране встреч —
     // пользователь правит/удаляет/добавляет к себе). save !== false → старое поведение (создать).
