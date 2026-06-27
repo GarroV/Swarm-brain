@@ -159,8 +159,9 @@
   POINTS.forEach(function(p,i){ var a=-Math.PI/2 + i*(Math.PI*2/POINTS.length); p.kind="point"; p.r=30; p.x=Math.cos(a)*ptR; p.y=Math.sin(a)*ptR; add(p); });
   var AREA_R = ptR + 86;                          // радиус «области ядра»
   add(BOT);
-  var bfR = 182;
-  BOT_FUNCS.forEach(function(f,i){ var a=-Math.PI/2 + i*(Math.PI*2/BOT_FUNCS.length); f.kind="func"; f.parent="bot"; if(!f.color)f.color="#8FDDE6"; f.r=(f.grp==="do"?18:16); f.x=BOT.x+Math.cos(a)*bfR; f.y=BOT.y+Math.sin(a)*bfR; add(f); });
+  // раздельная раскладка: ВВОД — верхне-правая доля, ДЕЙСТВИЯ — нижняя доля; разные радиусы от бота
+  var BOT_LAYOUT={ b_text:[-88,170], b_fwd:[-58,210], b_voice:[-28,166], b_doc:[2,214], b_photo:[30,176], b_link:[58,206], b_search:[96,190], b_task:[122,226], b_review:[148,182], b_rec:[170,214] };
+  BOT_FUNCS.forEach(function(f){ var L=BOT_LAYOUT[f.id]||[0,182], a=L[0]*Math.PI/180; f.kind="func"; f.parent="bot"; if(!f.color)f.color="#8FDDE6"; f.r=(f.grp==="do"?18:16); f.x=BOT.x+Math.cos(a)*L[1]; f.y=BOT.y+Math.sin(a)*L[1]; add(f); });
   // фоновый «рой» — еле заметные дрейфующие точки (средний слой для глубины)
   var MOTES=[]; for(var mi=0; mi<30; mi++){ MOTES.push({ x:-1150+Math.random()*2300, y:-760+Math.random()*1520, vx:(Math.random()-0.5)*0.11, vy:(Math.random()-0.5)*0.11, r:0.6+Math.random()*1.4, ph:Math.random()*6.283 }); }
   // фоновая галактика (screen-space backdrop): тёплое ядро + прохладные рукава
