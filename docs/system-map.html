@@ -123,7 +123,7 @@
       <button class="lchip" data-cat="core"   aria-pressed="true"><i style="background:var(--c-core)"></i>Ядро</button>
       <button class="lchip" data-cat="cap"    aria-pressed="true"><i style="background:var(--c-cap)"></i>Возможности</button>
       <button class="lchip" data-cat="tool"   aria-pressed="true"><i style="background:var(--c-tool)"></i>Инструменты</button>
-      <button class="lchip" data-cat="source" aria-pressed="true"><i style="background:var(--c-source)"></i>Источники</button>
+      <button class="lchip" data-cat="source" aria-pressed="true"><i style="background:var(--c-source)"></i>Захват встреч</button>
     </div>
 
     <div class="tools">
@@ -198,18 +198,15 @@
     { id:"mcp", cat:"tool", label:"Claude Desktop", emoji:"🖥️", caps:["save","search","meet","tasks"],
       desc:"Та же база внутри Claude — для больших текстов с проверкой человеком. Подключение по личному токену.",
       funcs:["Поиск и добавление знаний","Задачи","Встречи","Файлы"] },
-    { id:"rec", cat:"tool", label:"Рекордер встреч", emoji:"🎙️", caps:["meet"],
-      desc:"Лёгкое приложение для Mac: пишет звук звонка и отдаёт ядру — оно делает расшифровку и тезисы.",
-      funcs:["Запись звонка","Определение текущей встречи","Отправка в ядро"] },
-    { id:"granola", cat:"source", label:"Granola", emoji:"📓", caps:["meet","save"],
-      desc:"Внешний сервис заметок встреч — встречи импортируются в общую базу.",
-      funcs:["Импорт вручную (/granola)","Авто-импорт раз в час"] },
-    { id:"readai", cat:"source", label:"Read.ai", emoji:"📹", caps:["meet"],
-      desc:"Сам присылает завершённые встречи — они попадают в базу автоматически.",
-      funcs:["Авто-импорт встреч"] },
-    { id:"gcal", cat:"source", label:"Google Календарь", emoji:"📅", caps:["meet"],
-      desc:"Подсказывает рекордеру, какая встреча идёт прямо сейчас.",
-      funcs:["Текущая встреча для рекордера"] }
+    { id:"capture", cat:"source", label:"Захват встреч", emoji:"🎙️", caps:["meet"],
+      desc:"Встречи попадают в систему тремя путями — это разные агенты одного процесса. Чем бы встреча ни была записана, дальше ядро одинаково делает тезисы и задачи.",
+      funcsLabel:"Агенты захвата (разные пути одного процесса)",
+      funcs:[
+        "🎙 Рекордер — наше приложение для Mac, пишет звук звонка",
+        "📓 Granola — внешний сервис заметок: импорт вручную или авто раз в час",
+        "📹 Read.ai — сам присылает завершённую встречу автоматически",
+        "📅 Google Календарь — подсказывает рекордеру, какая встреча идёт сейчас"
+      ] }
   ];
 
   // ── Build model + radial layout ─────────────────────
@@ -363,6 +360,7 @@
 
     // funcs (tools/sources)
     var fw=document.getElementById("p-funcs-wrap"), ful=document.getElementById("p-funcs"); ful.innerHTML="";
+    var flbl=fw.querySelector(".plbl"); if(flbl) flbl.textContent=n.funcsLabel||"Что можно делать";
     if(n.funcs && n.funcs.length){ fw.hidden=false; n.funcs.forEach(function(f){ var li=document.createElement("li"); li.textContent=f; ful.appendChild(li); }); }
     else fw.hidden=true;
 
