@@ -127,18 +127,28 @@
     desc:"Самый быстрый и богатый вход: кидаешь что угодно прямо в чат — и оно уходит в ядро. Сам бот ничего не «помнит», он лишь передаёт в ядро." };
 
   var BOT_FUNCS = [
-    { id:"b_text",  emoji:"✍️", title:"Текст",
+    // ── как занести информацию (бирюзовые) ──
+    { id:"b_text",  emoji:"✍️", title:"Текст", grp:"in", color:"#8FDDE6",
       desc:"Просто напиши боту сообщение (или начни со слова «сохрани») — и твоя мысль, заметка или договорённость попадёт в общую базу знаний команды. Например: «сохрани: новый поставщик упаковки — ООО Ромашка, скидка 15% от 1000 штук». Потом это можно найти, спросив бота обычными словами." },
-    { id:"b_fwd",   emoji:"↪️", title:"Пересланное",
+    { id:"b_fwd",   emoji:"↪️", title:"Пересланное", grp:"in", color:"#8FDDE6",
       desc:"Перешли боту любое сообщение из другого чата — он сохранит его как есть, ничего не переспрашивая. Удобно, когда коллега что-то написал в рабочей переписке и это важно не потерять: переслал боту — и оно в базе навсегда." },
-    { id:"b_voice", emoji:"🎤", title:"Голос",
+    { id:"b_voice", emoji:"🎤", title:"Голос", grp:"in", color:"#8FDDE6",
       desc:"Запиши боту голосовое — он сам переведёт речь в текст и сохранит. Можно надиктовать мысль на ходу, не печатая. Если в записи только тишина или шум — бот ничего не сохранит, чтобы не засорять базу." },
-    { id:"b_doc",   emoji:"📄", title:"Документ",
+    { id:"b_doc",   emoji:"📄", title:"Документ", grp:"in", color:"#8FDDE6",
       desc:"Отправь боту файл — текстовый документ или таблицу (Excel/CSV) — он вытащит из него содержимое и сохранит, чтобы потом можно было искать прямо по тексту внутри файла. Сам файл тоже остаётся в хранилище." },
-    { id:"b_photo", emoji:"🖼", title:"Фото",
+    { id:"b_photo", emoji:"🖼", title:"Фото", grp:"in", color:"#8FDDE6",
       desc:"Пришли фотографию или скриншот — искусственный интеллект «прочитает», что на изображении, опишет словами и сохранит это описание. Потом картинку можно найти по смыслу — например «фото меню» или «скрин отчёта»." },
-    { id:"b_link",  emoji:"🔗", title:"Ссылка",
-      desc:"Кинь боту ссылку — он сохранит её с коротким описанием. А если попросишь — скачает страницу целиком и сохранит её текст, чтобы потом искать по содержимому, а не только по адресу." }
+    { id:"b_link",  emoji:"🔗", title:"Ссылка", grp:"in", color:"#8FDDE6",
+      desc:"Кинь боту ссылку — он сохранит её с коротким описанием. А если попросишь — скачает страницу целиком и сохранит её текст, чтобы потом искать по содержимому, а не только по адресу." },
+    // ── что можно сделать (тёплые) ──
+    { id:"b_search", emoji:"🔎", title:"Поиск по базе", grp:"do", color:"#E6C281",
+      desc:"Задай боту вопрос обычными словами — он найдёт нужное по смыслу в общей базе и ответит, дав ссылки на записи-источники. Не нужно помнить, где что лежит и кто что писал. Например: «что мы решили по упаковке в Болгарии?»." },
+    { id:"b_task",   emoji:"✅", title:"Создать задачу", grp:"do", color:"#E6C281",
+      desc:"Заведи задачу прямо в чате: кому, что и к какому сроку (команда «/addtask»). Бот также умеет сам вытащить задачи из тезисов встречи — тебе останется только подтвердить." },
+    { id:"b_review", emoji:"🗓", title:"Ревью встреч", grp:"do", color:"#E6C281",
+      desc:"Встречи (с рекордера, Granola, Read.ai) сначала приходят в бот на проверку, а не сразу в базу. Здесь правишь тезисы, название, страны и участников — и только потом подтверждаешь добавление. Сырые или ошибочные встречи в общую базу не попадают." },
+    { id:"b_rec",    emoji:"🎙", title:"Установить рекордер", grp:"do", color:"#E6C281",
+      desc:"Команда «/recordertoken» ставит на Mac наше приложение, которое записывает звук онлайн-созвонов и отдаёт ядру на расшифровку и тезисы. Устанавливается одной строкой, без ручной возни." }
   ];
 
   // ── Layout ──────────────────────────────────────────
@@ -149,8 +159,10 @@
   POINTS.forEach(function(p,i){ var a=-Math.PI/2 + i*(Math.PI*2/POINTS.length); p.kind="point"; p.r=30; p.x=Math.cos(a)*ptR; p.y=Math.sin(a)*ptR; add(p); });
   var AREA_R = ptR + 86;                          // радиус «области ядра»
   add(BOT);
-  var bfR = 150;
-  BOT_FUNCS.forEach(function(f,i){ var a=-Math.PI/2 + i*(Math.PI*2/BOT_FUNCS.length); f.kind="func"; f.parent="bot"; f.color="#8FDDE6"; f.r=17; f.x=BOT.x+Math.cos(a)*bfR; f.y=BOT.y+Math.sin(a)*bfR; add(f); });
+  var bfR = 182;
+  BOT_FUNCS.forEach(function(f,i){ var a=-Math.PI/2 + i*(Math.PI*2/BOT_FUNCS.length); f.kind="func"; f.parent="bot"; if(!f.color)f.color="#8FDDE6"; f.r=(f.grp==="do"?18:16); f.x=BOT.x+Math.cos(a)*bfR; f.y=BOT.y+Math.sin(a)*bfR; add(f); });
+  // фоновый «рой» — еле заметные дрейфующие точки с тонкими коннекторами
+  var MOTES=[]; for(var mi=0; mi<58; mi++){ MOTES.push({ x:-1150+Math.random()*2300, y:-760+Math.random()*1520, vx:(Math.random()-0.5)*0.11, vy:(Math.random()-0.5)*0.11, r:0.6+Math.random()*1.5, ph:Math.random()*6.283 }); }
 
   // edges: kind core (ядро→точка), trunk (область→бот), leaf (бот→вход)
   var edges = [];
@@ -194,21 +206,29 @@
   function wrap(s,max){ var w=s.split(" "),L=[],c=""; w.forEach(function(x){ if((c+" "+x).trim().length>max){ if(c)L.push(c); c=x; } else c=(c+" "+x).trim(); }); if(c)L.push(c); return L; }
 
   function thread(t, ax,ay,bx,by, on, big){
-    // base wire
-    ctx.strokeStyle = on ? hexA("#CFFBFF",0.7) : hexA("#76E0E8", big?0.26:0.18);
-    ctx.lineWidth = (on?2.4:(big?1.7:1.2));
+    // еле заметная нить-коннектор; яркая только при наведении
+    ctx.strokeStyle = on ? hexA("#CFFBFF",0.72) : hexA("#76E0E8",0.12);
+    ctx.lineWidth = on?2.3:1;
     ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
     if(reduce) return;
-    var speed = on?0.00052:0.00032, nP=(on?4:(big?3:2)), pr=(on?3.4:(big?3:2.2))*Math.max(0.7,cam.s);
+    var speed = on?0.0005:0.00022, nP=(on?4:1), pr=(on?3.2:1.5)*Math.max(0.7,cam.s);
     for(var k=0;k<nP;k++){
       var prog=((t*speed)+k/nP)%1;
       var px=ax+(bx-ax)*prog, py=ay+(by-ay)*prog;
       var g=ctx.createRadialGradient(px,py,0,px,py,pr*3);
-      g.addColorStop(0, on?"rgba(224,252,255,0.98)":"rgba(150,235,242,0.78)");
-      g.addColorStop(0.5, on?"rgba(160,240,250,0.5)":"rgba(120,225,235,0.3)");
+      g.addColorStop(0, on?"rgba(224,252,255,0.95)":"rgba(150,235,242,0.32)");
       g.addColorStop(1,"rgba(120,225,235,0)");
       ctx.fillStyle=g; ctx.beginPath(); ctx.arc(px,py,pr*3,0,6.283); ctx.fill();
     }
+  }
+
+  function drawSwarm(t){
+    ctx.globalCompositeOperation="lighter";
+    var i,j,a,b,dx,dy,d2,maxD=22500; // 150^2 — порог коннектора
+    if(!reduce){ for(i=0;i<MOTES.length;i++){ a=MOTES[i]; a.x+=a.vx; a.y+=a.vy; if(a.x<-1200||a.x>1200)a.vx*=-1; if(a.y<-800||a.y>800)a.vy*=-1; } }
+    for(i=0;i<MOTES.length;i++){ a=MOTES[i]; for(j=i+1;j<MOTES.length;j++){ b=MOTES[j]; dx=a.x-b.x; dy=a.y-b.y; d2=dx*dx+dy*dy; if(d2<maxD){ var o=(1-d2/maxD)*0.06; ctx.strokeStyle="rgba(150,220,230,"+o+")"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(sx(a.x),sy(a.y)); ctx.lineTo(sx(b.x),sy(b.y)); ctx.stroke(); } } }
+    for(i=0;i<MOTES.length;i++){ a=MOTES[i]; var fl=reduce?1:(0.5+0.5*Math.sin(t*0.002+a.ph)); ctx.fillStyle="rgba(175,228,238,"+(0.09+0.11*fl)+")"; ctx.beginPath(); ctx.arc(sx(a.x),sy(a.y),a.r*Math.max(0.6,cam.s),0,6.283); ctx.fill(); }
+    ctx.globalCompositeOperation="source-over";
   }
 
   function drawNode(n, t){
@@ -260,6 +280,8 @@
     ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
     ctx.fillStyle="rgba(120,210,220,0.022)"; for(var yy=0; yy<H; yy+=4){ ctx.fillRect(0,yy,W,1); }
     if(!reduce){ var band=((t*0.06)%(H+240))-120; var sb=ctx.createLinearGradient(0,band-70,0,band+70); sb.addColorStop(0,"rgba(130,225,235,0)"); sb.addColorStop(0.5,"rgba(130,225,235,0.05)"); sb.addColorStop(1,"rgba(130,225,235,0)"); ctx.fillStyle=sb; ctx.fillRect(0,band-70,W,140); }
+
+    drawSwarm(t);
 
     var focus=selected||hover;
     curLit = focus ? litSet(focus) : null;
@@ -315,7 +337,7 @@
 
   // ── Panel ───────────────────────────────────────────
   var panel=document.getElementById("panel");
-  function catLabel(n){ return n.kind==="core"?n.cat:(n.kind==="point"?"Что делает ядро":(n.kind==="door"?n.cat:"Способ ввода")); }
+  function catLabel(n){ return n.kind==="core"?n.cat:(n.kind==="point"?"Что делает ядро":(n.kind==="door"?n.cat:(n.grp==="do"?"Действие через бота":"Способ ввода"))); }
   function select(n){
     selected=n;
     document.getElementById("p-dot").style.background=n.color;
@@ -326,7 +348,7 @@
     var lw=document.getElementById("p-links-wrap"), ul=document.getElementById("p-links"), lbl=document.getElementById("p-links-lbl");
     ul.innerHTML="";
     if(n.kind==="door"){
-      lbl.textContent="Способы ввода";
+      lbl.textContent="Что можно делать";
       BOT_FUNCS.forEach(function(f){ var b=document.createElement("button"); b.innerHTML='<i style="background:'+f.color+'"></i>'+esc(f.title); b.onclick=function(){ select(f); soft(f); }; ul.appendChild(b); });
       lw.hidden=false;
     } else if(n.kind==="func"){
