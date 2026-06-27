@@ -1,37 +1,28 @@
-<title>Swarm Brain · Интерактивная карта системы</title>
-<meta name="description" content="Интерактивная граф-карта Swarm Brain «Рой»: поверхности и их функции, общий движок, данные и инфраструктура — кликабельные узлы и связи." />
+<title>Swarm Brain · Карта ядра и инструментов</title>
+<meta name="description" content="Карта Swarm Brain «Рой»: в центре ядро и его возможности (сохранение, поиск, встречи, задачи), к ним привязаны инструменты — бот, веб, Claude, рекордер, Granola, Read.ai." />
 
 <style>
   :root {
     --bg: #15120E;
-    --bg-2: #1E1A14;
     --panel: #211C15;
     --line: #3A3329;
     --ink: #F3ECDD;
     --ink-soft: #C7BCA6;
     --ink-mute: #8E8472;
     --amber: #E1953A;
-    --amber-deep: #C2782A;
-    --c-surface: #E1953A;
-    --c-feature: #E6CB94;
-    --c-engine: #6FA0C4;
-    --c-data: #7FB890;
-    --c-infra: #B79AD6;
+    --c-core: #F2B85A;
+    --c-cap: #E1953A;
+    --c-tool: #6FA0C4;
+    --c-source: #B79AD6;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font-family: var(--sans); overflow: hidden;
-    -webkit-font-smoothing: antialiased;
-  }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); overflow: hidden; -webkit-font-smoothing: antialiased; }
   :focus-visible { outline: 2.5px solid var(--amber); outline-offset: 2px; border-radius: 6px; }
-
   .app { position: fixed; inset: 0; display: flex; flex-direction: column; }
 
-  /* ── Top bar ─────────────────────────────────────── */
   .bar {
     display: flex; align-items: center; gap: 12px; padding: 10px 16px; flex-wrap: wrap;
     background: linear-gradient(180deg, rgba(30,26,20,0.96), rgba(30,26,20,0.86));
@@ -45,18 +36,17 @@
   .search input {
     font-family: var(--sans); font-size: 13px; color: var(--ink);
     background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
-    padding: 8px 12px 8px 32px; width: 190px; transition: border-color .15s, width .2s;
+    padding: 8px 12px 8px 32px; width: 170px; transition: border-color .15s, width .2s;
   }
   .search input::placeholder { color: var(--ink-mute); }
-  .search input:focus { border-color: var(--amber); outline: none; width: 230px; }
+  .search input:focus { border-color: var(--amber); outline: none; width: 210px; }
   .search svg { position: absolute; left: 10px; width: 14px; height: 14px; color: var(--ink-mute); pointer-events: none; }
 
   .legend { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
   .lchip {
     all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
     font-size: 12px; font-weight: 600; color: var(--ink-soft);
-    border: 1px solid var(--line); border-radius: 100px; padding: 5px 11px; transition: opacity .15s, background .15s;
-    user-select: none;
+    border: 1px solid var(--line); border-radius: 100px; padding: 5px 11px; transition: opacity .15s, background .15s; user-select: none;
   }
   .lchip i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
   .lchip[aria-pressed="false"] { opacity: 0.38; text-decoration: line-through; }
@@ -65,45 +55,42 @@
   .tools { display: flex; gap: 6px; }
   .tbtn {
     all: unset; cursor: pointer; display: grid; place-items: center; width: 34px; height: 34px;
-    border: 1px solid var(--line); border-radius: 9px; color: var(--ink-soft); font-weight: 700; font-size: 16px;
-    transition: background .15s, border-color .15s;
+    border: 1px solid var(--line); border-radius: 9px; color: var(--ink-soft); font-weight: 700; font-size: 16px; transition: background .15s, border-color .15s;
   }
   .tbtn:hover { background: rgba(255,255,255,0.05); border-color: #4b4337; }
-  .tbtn.wide { width: auto; padding: 0 12px; font-size: 12.5px; gap: 6px; }
+  .tbtn.wide { width: auto; padding: 0 12px; font-size: 12.5px; }
 
-  /* ── Canvas stage ────────────────────────────────── */
   .stage { position: relative; flex: 1; min-height: 0; }
   #map { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
   #map.grabbing { cursor: grabbing; }
   #map.onnode { cursor: pointer; }
 
   .hint {
-    position: absolute; left: 16px; bottom: 14px; z-index: 5;
-    font-size: 11.5px; color: var(--ink-mute); font-family: var(--mono);
-    background: rgba(21,18,14,0.7); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px;
-    pointer-events: none; max-width: 80vw;
+    position: absolute; left: 16px; bottom: 14px; z-index: 5; font-size: 11.5px; color: var(--ink-mute); font-family: var(--mono);
+    background: rgba(21,18,14,0.7); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; pointer-events: none; max-width: 84vw;
   }
 
-  /* ── Detail panel ────────────────────────────────── */
   .panel {
-    position: absolute; top: 14px; right: 14px; z-index: 8; width: 320px; max-width: calc(100vw - 28px);
-    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
-    box-shadow: 0 24px 60px -24px rgba(0,0,0,0.7);
+    position: absolute; top: 14px; right: 14px; z-index: 8; width: 326px; max-width: calc(100vw - 28px);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 24px 60px -24px rgba(0,0,0,0.7);
     transform: translateX(calc(100% + 24px)); transition: transform .26s cubic-bezier(0.16,1,0.3,1);
     max-height: calc(100% - 28px); display: flex; flex-direction: column; overflow: hidden;
   }
   @media (prefers-reduced-motion: reduce) { .panel { transition: none; } }
   .panel.open { transform: none; }
   .panel .ph { display: flex; align-items: flex-start; gap: 12px; padding: 18px 18px 14px; }
-  .panel .pdot { width: 36px; height: 36px; border-radius: 10px; flex: none; display: grid; place-items: center; font-size: 18px; }
-  .panel .ptitle { font-size: 1.12rem; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; }
+  .panel .pdot { width: 40px; height: 40px; border-radius: 11px; flex: none; display: grid; place-items: center; font-size: 20px; }
+  .panel .ptitle { font-size: 1.16rem; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; }
   .panel .pcat { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 4px; }
   .panel .pclose { all: unset; cursor: pointer; margin-left: auto; color: var(--ink-mute); font-size: 20px; line-height: 1; padding: 2px 4px; flex: none; }
   .panel .pclose:hover { color: var(--ink); }
   .panel .pbody { padding: 0 18px 18px; overflow-y: auto; }
-  .panel .pdesc { font-size: 0.92rem; color: var(--ink-soft); line-height: 1.55; margin: 0 0 14px; }
-  .panel .pmeta { font-family: var(--mono); font-size: 11px; color: var(--ink-mute); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; display: inline-block; margin: 0 0 14px; }
+  .panel .pdesc { font-size: 0.93rem; color: var(--ink-soft); line-height: 1.58; margin: 0 0 16px; }
+  .panel .pnote { font-size: 0.84rem; color: var(--ink-mute); background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; margin: 0 0 16px; display: flex; gap: 8px; }
   .panel .plbl { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-mute); margin: 0 0 8px; }
+  .panel .funcs { list-style: none; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 7px; }
+  .panel .funcs li { position: relative; padding-left: 18px; font-size: 0.9rem; color: var(--ink-soft); }
+  .panel .funcs li::before { content: ""; position: absolute; left: 1px; top: 7px; width: 7px; height: 7px; border-radius: 2px; background: var(--c-tool); transform: rotate(45deg); }
   .panel .links { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
   .panel .links button {
     all: unset; cursor: pointer; display: flex; align-items: center; gap: 9px; width: 100%;
@@ -111,12 +98,12 @@
   }
   .panel .links button:hover { background: var(--bg); border-color: var(--line); }
   .panel .links button i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .panel .links + .plbl { margin-top: 16px; }
 
   @media (max-width: 560px) {
     .panel { width: calc(100vw - 24px); top: auto; bottom: 12px; right: 12px; left: 12px; max-height: 56%; }
-    .legend { width: 100%; margin-left: 0; }
-    .search input { width: 130px; }
-    .search input:focus { width: 150px; }
+    .legend { width: 100%; margin-left: 0; order: 5; }
+    .search input { width: 120px; } .search input:focus { width: 140px; }
   }
 </style>
 
@@ -124,32 +111,31 @@
   <div class="bar">
     <span class="brand">
       <svg viewBox="0 0 20 22" fill="none" aria-hidden="true"><path d="M10 1l8 4.5v11L10 21l-8-4.5v-11z" stroke="#E1953A" stroke-width="1.5" fill="rgba(225,149,58,0.16)"/><circle cx="10" cy="11" r="2.6" fill="#E1953A"/></svg>
-      Рой · карта системы <small>интерактивная</small>
+      Рой · карта ядра <small>и инструментов</small>
     </span>
 
     <label class="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-      <input type="search" id="q" placeholder="Найти функцию…" aria-label="Поиск по карте" autocomplete="off" />
+      <input type="search" id="q" placeholder="Найти…" aria-label="Поиск по карте" autocomplete="off" />
     </label>
 
     <div class="legend" id="legend">
-      <button class="lchip" data-cat="surface" aria-pressed="true"><i style="background:var(--c-surface)"></i>Поверхности</button>
-      <button class="lchip" data-cat="feature" aria-pressed="true"><i style="background:var(--c-feature)"></i>Функции</button>
-      <button class="lchip" data-cat="engine"  aria-pressed="true"><i style="background:var(--c-engine)"></i>Движок</button>
-      <button class="lchip" data-cat="data"    aria-pressed="true"><i style="background:var(--c-data)"></i>Данные</button>
-      <button class="lchip" data-cat="infra"   aria-pressed="true"><i style="background:var(--c-infra)"></i>Инфра</button>
+      <button class="lchip" data-cat="core"   aria-pressed="true"><i style="background:var(--c-core)"></i>Ядро</button>
+      <button class="lchip" data-cat="cap"    aria-pressed="true"><i style="background:var(--c-cap)"></i>Возможности</button>
+      <button class="lchip" data-cat="tool"   aria-pressed="true"><i style="background:var(--c-tool)"></i>Инструменты</button>
+      <button class="lchip" data-cat="source" aria-pressed="true"><i style="background:var(--c-source)"></i>Источники</button>
     </div>
 
     <div class="tools">
       <button class="tbtn" id="zin" title="Приблизить" aria-label="Приблизить">+</button>
       <button class="tbtn" id="zout" title="Отдалить" aria-label="Отдалить">−</button>
-      <button class="tbtn wide" id="fit" title="Показать всё" aria-label="Показать всё">⤢ Вся карта</button>
+      <button class="tbtn wide" id="fit" title="Показать всё" aria-label="Показать всё">⤢ Всё</button>
     </div>
   </div>
 
   <div class="stage">
-    <canvas id="map" aria-label="Граф-карта системы Swarm Brain"></canvas>
-    <div class="hint" id="hint">Тяни фон — двигать · колесо — зум · клик по узлу — детали и связи · тяни узел — переставить</div>
+    <canvas id="map" aria-label="Карта ядра Swarm Brain и подключённых инструментов"></canvas>
+    <div class="hint" id="hint">В центре — ядро и его возможности. Нити от инструментов идут к нужным возможностям · клик по узлу — детали · колесо — зум</div>
 
     <aside class="panel" id="panel" aria-live="polite">
       <div class="ph">
@@ -161,10 +147,14 @@
         <button class="pclose" id="p-close" aria-label="Закрыть">×</button>
       </div>
       <div class="pbody">
-        <div class="pmeta" id="p-meta" hidden></div>
         <p class="pdesc" id="p-desc"></p>
+        <div class="pnote" id="p-note" hidden><span>⚙️</span><span id="p-note-text"></span></div>
+        <div id="p-funcs-wrap" hidden>
+          <p class="plbl">Что можно делать</p>
+          <ul class="funcs" id="p-funcs"></ul>
+        </div>
         <div id="p-links-wrap" hidden>
-          <p class="plbl">Связи</p>
+          <p class="plbl" id="p-links-lbl">Связи</p>
           <ul class="links" id="p-links"></ul>
         </div>
       </div>
@@ -177,405 +167,232 @@
   "use strict";
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  var COLORS = {
-    surface: "#E1953A", feature: "#E6CB94", engine: "#6FA0C4", data: "#7FB890", infra: "#B79AD6"
-  };
-  var CATLABEL = { surface: "Поверхность", feature: "Функция", engine: "Общий движок", data: "Данные", infra: "Инфраструктура" };
-  var RADIUS = { surface: 30, feature: 11, engine: 22, data: 21, infra: 19 };
+  var COLORS = { core:"#F2B85A", cap:"#E1953A", tool:"#6FA0C4", source:"#B79AD6" };
+  var CATLABEL = { core:"Ядро системы", cap:"Возможность ядра", tool:"Инструмент", source:"Источник встреч" };
+  var RADIUS = { core:46, cap:24, tool:24, source:21 };
 
-  // ── Surfaces and their features ─────────────────────
-  var SURFACES = [
-    { id:"bot", label:"Telegram-бот", sub:"swarm-bot", emoji:"📱", x:-640, y:-360,
-      desc:"Основной вход: команда сохраняет и спрашивает прямо в чате, где уже общается.",
-      feats:[
-        { id:"bot_save",  label:"Сохранить знание", desc:"Переслал текст, файл, голос или ссылку — бот сам разбирает и кладёт в базу.", to:["classE"] },
-        { id:"bot_ask",   label:"Спросить базу",     desc:"Вопрос на естественном языке → ответ со ссылками на источники.", to:["searchE"] },
-        { id:"bot_meet",  label:"Ревью встреч",      desc:"Импортированные встречи (Granola / Read.ai): правка тезисов и подтверждение.", to:["meetE"] },
-        { id:"bot_task",  label:"Задачи",            desc:"Создать, назначить, посмотреть свои и командные, сменить статус.", to:["tasks"] },
-        { id:"bot_team",  label:"Команда · онбординг", desc:"Профили, роли, рынки, добавление новых участников.", to:["team"] },
-        { id:"bot_media", label:"Голос · файлы · ссылки", desc:"Распознавание речи, извлечение содержимого документов, расширение ссылок.", to:["classE"] },
-        { id:"bot_fb",    label:"Фидбек",            desc:"Обратная связь от команды уходит в отдельный канал.", to:[] }
-      ] },
-    { id:"web", label:"Веб «Рой»", sub:"swarm-api · Cloudflare", emoji:"🌐", x:640, y:-360,
-      desc:"Доска задач, поиск и вычитка встреч на большом экране. Внутри Telegram или в браузере.",
-      feats:[
-        { id:"web_board",   label:"Доска задач",   desc:"Четыре вида: Список, Таймлайн (Gantt), Спринты, Граф зависимостей.", to:["tasks"] },
-        { id:"web_search",  label:"Умный поиск",   desc:"Семантический поиск с ответом и сносками на источники.", to:["searchE"] },
-        { id:"web_review",  label:"Вычитка встреч", desc:"Правка тезисов, выбор «команде / в личное», подтверждение.", to:["meetE"] },
-        { id:"web_digest",  label:"Дайджест",      desc:"Персональная сводка по базе за период.", to:["searchE"] },
-        { id:"web_profile", label:"Профиль · команда", desc:"Свой профиль, участники, рынки.", to:["team"] },
-        { id:"web_admin",   label:"Админка",       desc:"Управление пользователями и воркспейсами (только админ).", to:["ws"] }
-      ] },
-    { id:"mcp", label:"Claude Desktop", sub:"swarm-mcp", emoji:"🖥️", x:640, y:360,
-      desc:"Та же база внутри Claude — для больших текстов с проверкой человеком. Подключение по личному токену (/setup).",
-      feats:[
-        { id:"mcp_know", label:"Поиск · добавить знание", desc:"Найти, добавить, обновить запись — как инструменты Claude.", to:["searchE","classE"] },
-        { id:"mcp_task", label:"Задачи (инструменты)",     desc:"Создать, изменить, посмотреть задачи команды.", to:["tasks"] },
-        { id:"mcp_meet", label:"Встречи · команда",        desc:"Список встреч, участники, статистика базы.", to:["meetE","team"] },
-        { id:"mcp_file", label:"Файлы",                     desc:"Загрузка файла в хранилище + запись в базе.", to:["kb"] }
-      ] },
-    { id:"rec", label:"Рекордер встреч", sub:"meeting-*", emoji:"🎙️", x:-640, y:360,
-      desc:"Лёгкое macOS-приложение: пишет звук онлайн-звонка, облако расшифровывает, тезисы приходят на вычитку.",
-      feats:[
-        { id:"rec_record", label:"Запись звонка",        desc:"Системный звук + микрофон во время созвона.", to:["meetE"] },
-        { id:"rec_detect", label:"Какая встреча идёт",   desc:"Определяет текущую встречу через календарь и предлагает записать.", to:[] },
-        { id:"rec_trans",  label:"Расшифровка + тезисы", desc:"Облако (OpenAI) режет на части, распознаёт речь и собирает тезисы.", to:["meetE","openai"] },
-        { id:"rec_queue",  label:"Очередь загрузки",     desc:"Надёжная отправка с повторами; запись хранится локально до подтверждения.", to:["meetE"] }
-      ] }
+  // ── CORE ────────────────────────────────────────────
+  var CORE = { id:"core", cat:"core", label:"ЯДРО", emoji:"🧠", x:0, y:0,
+    desc:"Центр всего: память и мозг системы. Здесь хранится знание, идёт поиск по смыслу, обрабатываются встречи и живут задачи. Инструменты сами ничего не «помнят» — они лишь дают доступ к ядру с разных сторон." };
+
+  // ── Capabilities (the core map) ─────────────────────
+  // internal:true — работает автоматически, нитей снаружи нет
+  var CAPS = [
+    { id:"save",   label:"Сохранение",  emoji:"🗄", desc:"Любой материал — заметка, документ, ссылка, голос, итог встречи — превращается в короткие тезисы, а по ним строятся «точки на карте смыслов». Поэтому потом это находится по сути, а не по словам." },
+    { id:"search", label:"Поиск и ответы", emoji:"🔎", desc:"Спрашиваешь обычным языком — система находит по смыслу (даже если формулировка другая) и даёт готовый ответ со ссылками на первоисточники. Нет данных — честно говорит." },
+    { id:"meet",   label:"Встречи",     emoji:"🎙", desc:"Итоги встреч становятся тезисами в общей базе, а из них вытаскиваются задачи с ответственными и сроками. Человек только вычитывает и подтверждает." },
+    { id:"tasks",  label:"Задачи",      emoji:"✅", desc:"Дела команды: кто, что, к какому сроку. Командные и личные, доска со сроками и спринтами. Рождаются из встреч или заводятся вручную." },
+    { id:"team",   label:"Команда",     emoji:"👥", desc:"Система знает, кто есть кто — имя, роль, рынки. Это нужно, чтобы корректно назначать задачи и понимать, кого касается информация." },
+    { id:"order",  label:"Порядок в данных", emoji:"🏷", internal:true, desc:"Система сама помечает, к какому рынку/стране относится запись и что это (встреча или заметка) — одинаково для всех. Поэтому данные сравнимы и не зависят от того, кто их вносил." },
+    { id:"access", label:"Доступ и приватность", emoji:"🔒", internal:true, desc:"У каждого рынка свой контур: люди видят только данные своего рынка. Есть личное (только для тебя) и командное (для всех в контуре). Чужое личное не утекает." }
   ];
 
-  // ── Engine (shared), data, infra ────────────────────
-  var ENGINE = [
-    { id:"classE",  label:"Классификатор", sub:"страны · тип записи", x:0, y:-190,
-      desc:"Единые правила: что это (встреча или заметка), к каким странам относится, ключевые слова — для всех поверхностей одинаково.", to:["kb","openai"] },
-    { id:"tasks",   label:"Движок задач", sub:"_shared/tasks", x:-180, y:-20,
-      desc:"Единый слой работы с задачами — общий для бота, веба и Claude. Сюда же приватность и изоляция.", to:["tk"] },
-    { id:"searchE", label:"Семантический поиск", sub:"RAG", x:180, y:-20,
-      desc:"Ищет по смыслу (не по словам) и формирует ответ строго по найденным записям со сносками.", to:["kb","openai"] },
-    { id:"meetE",   label:"Обработка встреч", sub:"meeting-processor", x:0, y:120,
-      desc:"Расшифровка по частям, фильтр тишины, тезисы, автоназвание; затем вычитка и публикация в базу + извлечение задач.", to:["mt","kb","openai","tasks"] }
+  // ── Tools + sources (outer) ─────────────────────────
+  var TOOLS = [
+    { id:"bot", cat:"tool", label:"Telegram-бот", emoji:"📱", caps:["save","search","meet","tasks","team"],
+      desc:"Самый быстрый вход: сохранить и спросить прямо в чате, где команда уже общается.",
+      funcs:["Сохранить знание","Спросить базу","Ревью встреч","Задачи","Команда","Фидбек"] },
+    { id:"web", cat:"tool", label:"Веб «Рой»", emoji:"🌐", caps:["search","meet","tasks","team"],
+      desc:"Доска задач, поиск и вычитка встреч на большом экране — в Telegram или в браузере.",
+      funcs:["Доска задач (Список/Таймлайн/Спринты/Граф)","Умный поиск","Вычитка встреч","Дайджест","Админка"] },
+    { id:"mcp", cat:"tool", label:"Claude Desktop", emoji:"🖥️", caps:["save","search","meet","tasks"],
+      desc:"Та же база внутри Claude — для больших текстов с проверкой человеком. Подключение по личному токену.",
+      funcs:["Поиск и добавление знаний","Задачи","Встречи","Файлы"] },
+    { id:"rec", cat:"tool", label:"Рекордер встреч", emoji:"🎙️", caps:["meet"],
+      desc:"Лёгкое приложение для Mac: пишет звук звонка и отдаёт ядру — оно делает расшифровку и тезисы.",
+      funcs:["Запись звонка","Определение текущей встречи","Отправка в ядро"] },
+    { id:"granola", cat:"source", label:"Granola", emoji:"📓", caps:["meet","save"],
+      desc:"Внешний сервис заметок встреч — встречи импортируются в общую базу.",
+      funcs:["Импорт вручную (/granola)","Авто-импорт раз в час"] },
+    { id:"readai", cat:"source", label:"Read.ai", emoji:"📹", caps:["meet"],
+      desc:"Сам присылает завершённые встречи — они попадают в базу автоматически.",
+      funcs:["Авто-импорт встреч"] },
+    { id:"gcal", cat:"source", label:"Google Календарь", emoji:"📅", caps:["meet"],
+      desc:"Подсказывает рекордеру, какая встреча идёт прямо сейчас.",
+      funcs:["Текущая встреча для рекордера"] }
   ];
 
-  var DATA = [
-    { id:"kb",   label:"База знаний", sub:"entries", x:-230, y:300,
-      desc:"Все записи команды: встречи и заметки (ссылка/файл — виды заметки). У каждой — смысловой отпечаток для поиска.", to:["supa"] },
-    { id:"tk",   label:"Задачи", sub:"tasks", x:30, y:320,
-      desc:"Командные и личные дела: исполнитель, срок, приоритет, спринты, зависимости, история статусов.", to:["supa"] },
-    { id:"mt",   label:"Встречи рекордера", sub:"meetings", x:280, y:250,
-      desc:"Источник истины о записанной встрече: транскрипт, черновик тезисов, кто записал, статус обработки.", to:["supa"] },
-    { id:"team", label:"Команда", sub:"users", x:-380, y:170,
-      desc:"Профили (имя, роль, рынки, контакты), белый список доступа, интеграции.", to:["supa"] },
-    { id:"ws",   label:"Воркспейсы", sub:"рынки CEE / Other", x:-40, y:450,
-      desc:"Граница изоляции: каждый видит только свой рынок. Все запросы фильтруются по воркспейсу.", to:["supa"] }
-  ];
+  // ── Build model + radial layout ─────────────────────
+  var nodes = {}, listAll = [], edges = [];
+  function add(n){ nodes[n.id]=n; listAll.push(n); }
+  function edge(a,b,kind){ if(nodes[a]&&nodes[b]&&a!==b) edges.push({a:a,b:b,kind:kind}); }
 
-  var INFRA = [
-    { id:"openai", label:"OpenAI", sub:"GPT · embeddings · Whisper", x:0, y:-360,
-      desc:"Искусственный интеллект: ответы и тезисы (GPT-4o-mini), смысловой поиск (embeddings), расшифровка речи (Whisper).", to:[] },
-    { id:"supa",   label:"Supabase", sub:"Postgres + pgvector", x:0, y:600,
-      desc:"Хранилище и бэкенд: база данных с поиском по смыслу (pgvector) и серверные функции.", to:[] },
-    { id:"tg",     label:"Telegram", sub:"Bot API", x:-900, y:20,
-      desc:"Канал бота и Mini App — где живёт основной вход.", to:[] },
-    { id:"cf",     label:"Cloudflare", sub:"Pages", x:900, y:-60,
-      desc:"Хостинг веб-приложения «Рой» (статический экспорт).", to:[] }
-  ];
+  CORE.r = RADIUS.core; add(CORE);
 
-  // ── Build node + edge model ─────────────────────────
-  var nodes = {}, list = [], edges = [];
-  function add(n, cat) { n.cat = cat; n.r = RADIUS[cat]; nodes[n.id] = n; list.push(n); }
-  function edge(a, b) { if (a !== b && nodes[a] && nodes[b]) edges.push({ a:a, b:b }); }
-
-  SURFACES.forEach(function (s) {
-    add(s, "surface");
-    var cnt = s.feats.length;
-    // fan features outward (away from map center)
-    var baseAng = Math.atan2(s.y, s.x);
-    var spread = Math.PI * 0.95;
-    var rad = 215;
-    s.feats.forEach(function (f, i) {
-      var ang = baseAng + (cnt > 1 ? (i / (cnt - 1) - 0.5) * spread : 0);
-      f.x = s.x + Math.cos(ang) * rad;
-      f.y = s.y + Math.sin(ang) * rad;
-      f.parent = s.id;
-      add(f, "feature");
-      edge(s.id, f.id);
-      (f.to || []).forEach(function (t) { f._to = f.to; });
-    });
+  var capR = 210, nCap = CAPS.length;
+  CAPS.forEach(function(c,i){
+    var ang = -Math.PI/2 + i*(Math.PI*2/nCap);
+    c.cat="cap"; c.r=RADIUS.cap; c.x=Math.cos(ang)*capR; c.y=Math.sin(ang)*capR;
+    add(c); edge("core", c.id, "core");
   });
-  ENGINE.forEach(function (n) { add(n, "engine"); });
-  DATA.forEach(function (n) { add(n, "data"); });
-  INFRA.forEach(function (n) { add(n, "infra"); });
 
-  // surface → engines it relies on
-  var SURF_ENG = { bot:["searchE","tasks","meetE","classE"], web:["tasks","searchE","meetE"], mcp:["tasks","searchE"], rec:["meetE"] };
-  Object.keys(SURF_ENG).forEach(function (s) { SURF_ENG[s].forEach(function (e) { edge(s, e); }); });
-  // engine → data / infra
-  ENGINE.forEach(function (n) { (n.to || []).forEach(function (t) { edge(n.id, t); }); });
-  // data → infra
-  DATA.forEach(function (n) { (n.to || []).forEach(function (t) { edge(n.id, t); }); });
-  // feature → engine (only where it pins a specific engine, keeps graph honest but light)
-  SURFACES.forEach(function (s) { s.feats.forEach(function (f) { (f.to || []).forEach(function (t) { if (nodes[t] && nodes[t].cat !== "surface") edge(f.id, t); }); }); });
-  // surface → infra channel
-  edge("bot", "tg"); edge("web", "cf"); edge("web", "tg"); edge("mcp", "tg");
+  var toolR = 500, nTool = TOOLS.length;
+  TOOLS.forEach(function(t,i){
+    var ang = -Math.PI/2 + i*(Math.PI*2/nTool) + Math.PI/nTool; // offset so tools sit between caps
+    t.r=RADIUS[t.cat]; t.x=Math.cos(ang)*toolR; t.y=Math.sin(ang)*toolR;
+    add(t);
+    (t.caps||[]).forEach(function(cid){ edge(t.id, cid, "thread"); });
+  });
 
-  // adjacency
-  var adj = {};
-  list.forEach(function (n) { adj[n.id] = {}; });
-  edges.forEach(function (e) { adj[e.a][e.b] = true; adj[e.b][e.a] = true; });
+  var adj = {}; listAll.forEach(function(n){ adj[n.id]={}; });
+  edges.forEach(function(e){ adj[e.a][e.b]=true; adj[e.b][e.a]=true; });
 
   // ── Canvas + camera ─────────────────────────────────
-  var canvas = document.getElementById("map");
-  var ctx = canvas.getContext("2d");
-  var W = 0, H = 0, dpr = Math.min(window.devicePixelRatio || 1, 2);
-  var cam = { s: 1, tx: 0, ty: 0 };
-  var hidden = {};          // category -> bool
-  var selected = null, hover = null;
+  var canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
+  var W=0, H=0, dpr=Math.min(window.devicePixelRatio||1,2);
+  var cam={s:1,tx:0,ty:0}, hidden={}, selected=null, hover=null;
 
-  function resize() {
-    var r = canvas.parentElement.getBoundingClientRect();
-    W = r.width; H = r.height;
-    canvas.width = W * dpr; canvas.height = H * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  function resize(){ var r=canvas.parentElement.getBoundingClientRect(); W=r.width; H=r.height; canvas.width=W*dpr; canvas.height=H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); }
+  function sx(wx){ return wx*cam.s+cam.tx; }
+  function sy(wy){ return wy*cam.s+cam.ty; }
+  function vis(n){ return !hidden[n.cat]; }
+
+  function fit(animate){
+    var a=1e9,b=1e9,c=-1e9,d=-1e9,any=false;
+    listAll.forEach(function(n){ if(!vis(n))return; any=true; a=Math.min(a,n.x-n.r); c=Math.max(c,n.x+n.r); b=Math.min(b,n.y-n.r); d=Math.max(d,n.y+n.r); });
+    if(!any)return;
+    var pad=110, target=Math.min((W-pad*2)/(c-a),(H-pad*2)/(d-b),1.5), cxw=(a+c)/2, cyw=(b+d)/2;
+    var to={s:target,tx:W/2-cxw*target,ty:H/2-cyw*target};
+    if(reduce||!animate){ cam=to; return; }
+    var from={s:cam.s,tx:cam.tx,ty:cam.ty},t0=null;
+    function an(ts){ if(!t0)t0=ts; var k=Math.min(1,(ts-t0)/460),e=1-Math.pow(1-k,3); cam.s=from.s+(to.s-from.s)*e; cam.tx=from.tx+(to.tx-from.tx)*e; cam.ty=from.ty+(to.ty-from.ty)*e; if(k<1)requestAnimationFrame(an); }
+    requestAnimationFrame(an);
   }
-  function sx(wx) { return wx * cam.s + cam.tx; }
-  function sy(wy) { return wy * cam.s + cam.ty; }
-
-  function visible(n) { return !hidden[n.cat]; }
-
-  function fit(animate) {
-    var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9, any = false;
-    list.forEach(function (n) {
-      if (!visible(n)) return; any = true;
-      minX = Math.min(minX, n.x - n.r); maxX = Math.max(maxX, n.x + n.r);
-      minY = Math.min(minY, n.y - n.r); maxY = Math.max(maxY, n.y + n.r);
-    });
-    if (!any) return;
-    var pad = 90;
-    var sw = (W - pad * 2) / (maxX - minX);
-    var sh = (H - pad * 2) / (maxY - minY);
-    var target = Math.min(sw, sh, 1.4);
-    var cxw = (minX + maxX) / 2, cyw = (minY + maxY) / 2;
-    var to = { s: target, tx: W / 2 - cxw * target, ty: H / 2 - cyw * target };
-    if (reduce || !animate) { cam = to; return; }
-    var from = { s: cam.s, tx: cam.tx, ty: cam.ty }, t0 = null;
-    function anim(ts) { if (!t0) t0 = ts; var k = Math.min(1, (ts - t0) / 480); var e = 1 - Math.pow(1 - k, 3);
-      cam.s = from.s + (to.s - from.s) * e; cam.tx = from.tx + (to.tx - from.tx) * e; cam.ty = from.ty + (to.ty - from.ty) * e;
-      if (k < 1) requestAnimationFrame(anim); }
-    requestAnimationFrame(anim);
-  }
-
-  function centerOn(n, scaleTo) {
-    var s = scaleTo || Math.max(cam.s, 1.05);
-    cam.s = s; cam.tx = W / 2 - n.x * s; cam.ty = H / 2 - n.y * s;
-  }
+  function centerOn(n,s){ s=s||Math.max(cam.s,1.05); cam.s=s; cam.tx=W/2-n.x*s; cam.ty=H/2-n.y*s; }
 
   // ── Render ──────────────────────────────────────────
-  function draw() {
-    ctx.clearRect(0, 0, W, H);
+  function draw(ts){
+    var t=ts||0;
+    ctx.clearRect(0,0,W,H);
+    var bg=ctx.createRadialGradient(sx(0),sy(0),0,sx(0),sy(0),Math.max(W,H)*0.75);
+    bg.addColorStop(0,"#1B160F"); bg.addColorStop(1,"#110E0A");
+    ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
 
-    // background vignette + cluster glows
-    var bg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.7);
-    bg.addColorStop(0, "#1A160F"); bg.addColorStop(1, "#120F0B");
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    var pulse=reduce?1:(1+0.07*Math.sin(t*0.0024)), cgr=300*cam.s*pulse;
+    var cg=ctx.createRadialGradient(sx(0),sy(0),0,sx(0),sy(0),cgr);
+    cg.addColorStop(0,"rgba(242,184,90,0.20)"); cg.addColorStop(0.5,"rgba(225,149,58,0.06)"); cg.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(sx(0),sy(0),cgr,0,6.283); ctx.fill();
 
-    SURFACES.forEach(function (s) {
-      if (hidden.surface && hidden.feature) return;
-      var gx = sx(s.x), gy = sy(s.y), gr = 300 * cam.s;
-      var g = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
-      g.addColorStop(0, "rgba(225,149,58,0.10)"); g.addColorStop(1, "rgba(225,149,58,0)");
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(gx, gy, gr, 0, 6.283); ctx.fill();
+    var focus=selected||hover, lit=null;
+    if(focus){ lit={}; lit[focus.id]=true; for(var k in adj[focus.id]) lit[k]=true; }
+
+    edges.forEach(function(e){
+      var a=nodes[e.a], b=nodes[e.b]; if(!vis(a)||!vis(b))return;
+      var on=lit && lit[a.id] && lit[b.id] && (a.id===focus.id||b.id===focus.id);
+      var ax=sx(a.x),ay=sy(a.y),bx=sx(b.x),by=sy(b.y);
+      ctx.setLineDash([]);
+      if(lit && !on){ ctx.strokeStyle="rgba(230,220,200,0.04)"; ctx.lineWidth=1; }
+      else if(on){ ctx.strokeStyle="rgba(242,184,90,0.9)"; ctx.lineWidth=2.3; }
+      else if(e.kind==="core"){ ctx.strokeStyle="rgba(225,149,58,0.4)"; ctx.lineWidth=1.7; if(!reduce){ ctx.setLineDash([5,10]); ctx.lineDashOffset=-(t*0.035); } }
+      else { ctx.strokeStyle="rgba(160,180,200,0.13)"; ctx.lineWidth=1; }
+      ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
     });
-    // core glow (engine/data)
-    var cg = ctx.createRadialGradient(sx(0), sy(60), 0, sx(0), sy(60), 360 * cam.s);
-    cg.addColorStop(0, "rgba(111,160,196,0.08)"); cg.addColorStop(1, "rgba(111,160,196,0)");
-    ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(sx(0), sy(60), 360 * cam.s, 0, 6.283); ctx.fill();
+    ctx.setLineDash([]);
 
-    var focus = selected || hover;
-    var lit = null;
-    if (focus) { lit = {}; lit[focus.id] = true; for (var k in adj[focus.id]) lit[k] = true; }
+    listAll.forEach(function(n){
+      if(!vis(n))return;
+      var x=sx(n.x), y=sy(n.y), r=n.r*cam.s, dim=lit && !lit[n.id];
+      ctx.globalAlpha=dim?0.24:1;
 
-    // edges
-    edges.forEach(function (e) {
-      var a = nodes[e.a], b = nodes[e.b];
-      if (!visible(a) || !visible(b)) return;
-      var on = lit && (lit[a.id] && lit[b.id]) && (a.id === focus.id || b.id === focus.id);
-      if (lit && !on) { ctx.strokeStyle = "rgba(230,220,200,0.04)"; ctx.lineWidth = 1; }
-      else if (on) { ctx.strokeStyle = "rgba(225,149,58,0.7)"; ctx.lineWidth = 2; }
-      else { ctx.strokeStyle = "rgba(230,220,200,0.12)"; ctx.lineWidth = 1; }
-      ctx.beginPath(); ctx.moveTo(sx(a.x), sy(a.y)); ctx.lineTo(sx(b.x), sy(b.y)); ctx.stroke();
+      if(n.cat==="core"){
+        var glow=ctx.createRadialGradient(x,y,r*0.3,x,y,r*1.9);
+        glow.addColorStop(0,"rgba(242,184,90,0.6)"); glow.addColorStop(1,"rgba(242,184,90,0)");
+        ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(x,y,r*1.9,0,6.283); ctx.fill();
+      }
+      if(selected && selected.id===n.id){ ctx.beginPath(); ctx.arc(x,y,r+7,0,6.283); ctx.strokeStyle="rgba(242,184,90,0.95)"; ctx.lineWidth=2.5; ctx.setLineDash([]); ctx.stroke(); }
+
+      ctx.beginPath(); ctx.arc(x,y,r,0,6.283); ctx.fillStyle=COLORS[n.cat]; ctx.fill();
+      if(n.cat!=="feature"){ ctx.lineWidth=1.5; ctx.strokeStyle="rgba(0,0,0,0.28)"; ctx.stroke(); }
+      // internal caps: dashed ring marker
+      if(n.internal){ ctx.beginPath(); ctx.arc(x,y,r+4,0,6.283); ctx.setLineDash([3,4]); ctx.strokeStyle="rgba(243,236,221,0.45)"; ctx.lineWidth=1.2; ctx.stroke(); ctx.setLineDash([]); }
+
+      if(n.emoji && r>13){ ctx.globalAlpha=dim?0.3:1; ctx.font=(r*0.9)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(n.emoji,x,y+1); }
+      ctx.globalAlpha=1;
+
+      ctx.globalAlpha=dim?0.34:1;
+      var weight=n.cat==="core"?"800 16px ":"700 13px ";
+      ctx.font=weight+"system-ui, sans-serif"; ctx.textAlign="center"; ctx.textBaseline="top";
+      var ly=y+r+5;
+      ctx.fillStyle="rgba(0,0,0,0.6)"; ctx.fillText(n.label,x+0.6,ly+0.6);
+      ctx.fillStyle=n.cat==="core"?"#FBE9C8":"#F3ECDD"; ctx.fillText(n.label,x,ly);
+      ctx.globalAlpha=1;
     });
-
-    // nodes
-    list.forEach(function (n) {
-      if (!visible(n)) return;
-      var x = sx(n.x), y = sy(n.y), r = n.r * cam.s;
-      var dim = lit && !lit[n.id];
-      var col = COLORS[n.cat];
-      ctx.globalAlpha = dim ? 0.28 : 1;
-
-      // halo for selected
-      if (selected && selected.id === n.id) {
-        ctx.beginPath(); ctx.arc(x, y, r + 7, 0, 6.283);
-        ctx.strokeStyle = "rgba(225,149,58,0.9)"; ctx.lineWidth = 2.5; ctx.stroke();
-      }
-      ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283);
-      ctx.fillStyle = col; ctx.fill();
-      if (n.cat === "surface" || n.cat === "engine" || n.cat === "data" || n.cat === "infra") {
-        ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(0,0,0,0.25)"; ctx.stroke();
-      }
-      // emoji on surfaces
-      if (n.emoji && r > 16) {
-        ctx.globalAlpha = dim ? 0.3 : 1;
-        ctx.font = (r * 0.95) + "px " + "system-ui";
-        ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText(n.emoji, x, y + 1);
-      }
-      ctx.globalAlpha = 1;
-
-      // label
-      var showLabel = n.cat !== "feature" || cam.s > 0.62 || (lit && lit[n.id]) || (hover && hover.id === n.id);
-      if (showLabel) {
-        ctx.globalAlpha = dim ? 0.35 : 1;
-        var big = n.cat === "surface";
-        ctx.font = (big ? "700 14px " : (n.cat === "feature" ? "600 11.5px " : "700 12.5px ")) + "var(--sans)";
-        ctx.font = (big ? "700 14px " : (n.cat === "feature" ? "600 11.5px " : "700 12.5px ")) + "system-ui, sans-serif";
-        ctx.textAlign = "center"; ctx.textBaseline = "top";
-        var ly = y + r + 5;
-        var label = n.label;
-        ctx.fillStyle = "rgba(0,0,0,0.55)";
-        // subtle text shadow for legibility
-        ctx.fillText(label, x + 0.6, ly + 0.6);
-        ctx.fillStyle = n.cat === "feature" ? "#D8CBB0" : "#F3ECDD";
-        ctx.fillText(label, x, ly);
-        ctx.globalAlpha = 1;
-      }
-    });
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha=1;
   }
-
-  var needsDraw = true;
-  function loop() { if (needsDraw) { draw(); needsDraw = false; } requestAnimationFrame(loop); }
-  function invalidate() { needsDraw = true; }
+  function loop(ts){ draw(ts); requestAnimationFrame(loop); }
 
   // ── Hit testing ─────────────────────────────────────
-  function pick(mx, my) {
-    var best = null, bestD = 1e9;
-    for (var i = list.length - 1; i >= 0; i--) {
-      var n = list[i]; if (!visible(n)) continue;
-      var dx = mx - sx(n.x), dy = my - sy(n.y);
-      var d = Math.sqrt(dx*dx + dy*dy), hitR = n.r * cam.s + 6;
-      if (d <= hitR && d < bestD) { best = n; bestD = d; }
-    }
+  function pick(mx,my){
+    var best=null,bd=1e9;
+    for(var i=listAll.length-1;i>=0;i--){ var n=listAll[i]; if(!vis(n))continue;
+      var dx=mx-sx(n.x),dy=my-sy(n.y),d=Math.sqrt(dx*dx+dy*dy),hr=n.r*cam.s+6;
+      if(d<=hr && d<bd){ best=n; bd=d; } }
     return best;
   }
 
   // ── Interaction ─────────────────────────────────────
-  var dragging = false, draggingNode = null, panning = false;
-  var lastX = 0, lastY = 0, downX = 0, downY = 0, moved = false;
+  var dragging=false,dragNode=null,panning=false,lastX=0,lastY=0,downX=0,downY=0,moved=false;
+  function rel(e){ var r=canvas.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+  canvas.addEventListener("pointerdown",function(e){ canvas.setPointerCapture(e.pointerId); var p=rel(e); lastX=p.x;lastY=p.y;downX=p.x;downY=p.y;moved=false; var n=pick(p.x,p.y); if(n)dragNode=n; else {panning=true;canvas.classList.add("grabbing");} dragging=true; });
+  canvas.addEventListener("pointermove",function(e){ var p=rel(e);
+    if(dragging){ var dx=p.x-lastX,dy=p.y-lastY; if(Math.abs(p.x-downX)+Math.abs(p.y-downY)>4)moved=true;
+      if(dragNode){dragNode.x+=dx/cam.s;dragNode.y+=dy/cam.s;} else if(panning){cam.tx+=dx;cam.ty+=dy;} lastX=p.x;lastY=p.y; }
+    else { var n=pick(p.x,p.y); canvas.classList.toggle("onnode",!!n); hover=n; } });
+  canvas.addEventListener("pointerup",function(e){ if(dragging&&!moved){ var p=rel(e); var n=pick(p.x,p.y); if(n)select(n); else deselect(); } dragging=false;dragNode=null;panning=false;canvas.classList.remove("grabbing"); });
+  canvas.addEventListener("pointercancel",function(){ dragging=false;dragNode=null;panning=false;canvas.classList.remove("grabbing"); });
+  canvas.addEventListener("wheel",function(e){ e.preventDefault(); var p=rel(e); var wx=(p.x-cam.tx)/cam.s,wy=(p.y-cam.ty)/cam.s; cam.s=Math.max(0.3,Math.min(3.4,cam.s*(e.deltaY<0?1.12:1/1.12))); cam.tx=p.x-wx*cam.s; cam.ty=p.y-wy*cam.s; },{passive:false});
+  function zoomBtn(f){ var wx=(W/2-cam.tx)/cam.s,wy=(H/2-cam.ty)/cam.s; cam.s=Math.max(0.3,Math.min(3.4,cam.s*f)); cam.tx=W/2-wx*cam.s; cam.ty=H/2-wy*cam.s; }
+  document.getElementById("zin").onclick=function(){ zoomBtn(1.25); };
+  document.getElementById("zout").onclick=function(){ zoomBtn(1/1.25); };
+  document.getElementById("fit").onclick=function(){ deselect(); fit(true); };
 
-  function rel(e) { var r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+  // ── Panel ───────────────────────────────────────────
+  var panel=document.getElementById("panel");
+  function select(n){
+    selected=n;
+    document.getElementById("p-dot").style.background=COLORS[n.cat];
+    document.getElementById("p-dot").textContent=n.emoji||"";
+    document.getElementById("p-title").textContent=n.label==="ЯДРО"?"Ядро системы":n.label;
+    var cat=document.getElementById("p-cat"); cat.textContent=CATLABEL[n.cat]; cat.style.color=COLORS[n.cat];
+    document.getElementById("p-desc").textContent=n.desc||"";
 
-  canvas.addEventListener("pointerdown", function (e) {
-    canvas.setPointerCapture(e.pointerId);
-    var p = rel(e); lastX = p.x; lastY = p.y; downX = p.x; downY = p.y; moved = false;
-    var n = pick(p.x, p.y);
-    if (n) { draggingNode = n; } else { panning = true; canvas.classList.add("grabbing"); }
-    dragging = true;
-  });
+    // internal note
+    var note=document.getElementById("p-note");
+    if(n.internal){ document.getElementById("p-note-text").textContent="Работает автоматически для всех инструментов — отдельно включать не нужно."; note.hidden=false; }
+    else note.hidden=true;
 
-  canvas.addEventListener("pointermove", function (e) {
-    var p = rel(e);
-    if (dragging) {
-      var dx = p.x - lastX, dy = p.y - lastY;
-      if (Math.abs(p.x - downX) + Math.abs(p.y - downY) > 4) moved = true;
-      if (draggingNode) { draggingNode.x += dx / cam.s; draggingNode.y += dy / cam.s; invalidate(); }
-      else if (panning) { cam.tx += dx; cam.ty += dy; invalidate(); }
-      lastX = p.x; lastY = p.y;
-    } else {
-      var n = pick(p.x, p.y);
-      canvas.classList.toggle("onnode", !!n);
-      if (n !== hover) { hover = n; invalidate(); }
-    }
-  });
+    // funcs (tools/sources)
+    var fw=document.getElementById("p-funcs-wrap"), ful=document.getElementById("p-funcs"); ful.innerHTML="";
+    if(n.funcs && n.funcs.length){ fw.hidden=false; n.funcs.forEach(function(f){ var li=document.createElement("li"); li.textContent=f; ful.appendChild(li); }); }
+    else fw.hidden=true;
 
-  canvas.addEventListener("pointerup", function (e) {
-    if (dragging && !moved) {
-      var p = rel(e); var n = pick(p.x, p.y);
-      if (n) select(n); else deselect();
-    }
-    dragging = false; draggingNode = null; panning = false; canvas.classList.remove("grabbing");
-  });
-  canvas.addEventListener("pointercancel", function () { dragging = false; draggingNode = null; panning = false; canvas.classList.remove("grabbing"); });
-
-  canvas.addEventListener("wheel", function (e) {
-    e.preventDefault();
-    var p = rel(e);
-    var wx = (p.x - cam.tx) / cam.s, wy = (p.y - cam.ty) / cam.s;
-    var f = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-    cam.s = Math.max(0.3, Math.min(3.2, cam.s * f));
-    cam.tx = p.x - wx * cam.s; cam.ty = p.y - wy * cam.s;
-    invalidate();
-  }, { passive: false });
-
-  function zoomBtn(f) {
-    var wx = (W/2 - cam.tx) / cam.s, wy = (H/2 - cam.ty) / cam.s;
-    cam.s = Math.max(0.3, Math.min(3.2, cam.s * f));
-    cam.tx = W/2 - wx * cam.s; cam.ty = H/2 - wy * cam.s; invalidate();
-  }
-  document.getElementById("zin").onclick = function () { zoomBtn(1.25); };
-  document.getElementById("zout").onclick = function () { zoomBtn(1/1.25); };
-  document.getElementById("fit").onclick = function () { deselect(); fit(true); invalidate(); };
-
-  // ── Selection + detail panel ────────────────────────
-  var panel = document.getElementById("panel");
-  function select(n) {
-    selected = n; invalidate();
-    document.getElementById("p-dot").style.background = COLORS[n.cat];
-    document.getElementById("p-dot").textContent = n.emoji || "";
-    document.getElementById("p-title").textContent = n.label;
-    var cat = document.getElementById("p-cat");
-    cat.textContent = CATLABEL[n.cat]; cat.style.color = COLORS[n.cat];
-    var meta = document.getElementById("p-meta");
-    if (n.sub) { meta.textContent = n.sub; meta.hidden = false; } else { meta.hidden = true; }
-    document.getElementById("p-desc").textContent = n.desc || "";
-
-    var neigh = Object.keys(adj[n.id]).map(function (id) { return nodes[id]; })
-      .filter(function (m) { return m && visible(m); })
-      .sort(function (a, b) { var o = { surface:0, feature:1, engine:2, data:3, infra:4 }; return o[a.cat] - o[b.cat]; });
-    var wrap = document.getElementById("p-links-wrap"), ul = document.getElementById("p-links");
-    ul.innerHTML = "";
-    if (neigh.length) {
-      wrap.hidden = false;
-      neigh.forEach(function (m) {
-        var b = document.createElement("button");
-        b.innerHTML = '<i style="background:' + COLORS[m.cat] + '"></i>' + escapeHtml(m.label);
-        b.onclick = function () { select(m); centerSoft(m); };
-        ul.appendChild(b);
-      });
-    } else { wrap.hidden = true; }
+    // links
+    var order={core:0,cap:1,tool:2,source:3};
+    var neigh=Object.keys(adj[n.id]).map(function(id){return nodes[id];}).filter(function(m){return m&&vis(m);}).sort(function(a,b){return order[a.cat]-order[b.cat];});
+    var lw=document.getElementById("p-links-wrap"), ul=document.getElementById("p-links"), lbl=document.getElementById("p-links-lbl");
+    if(n.cat==="core") lbl.textContent="Возможности ядра";
+    else if(n.cat==="cap") lbl.textContent="Кто этим пользуется";
+    else lbl.textContent="Возможности ядра, к которым подключён";
+    ul.innerHTML="";
+    if(neigh.length){ lw.hidden=false; neigh.forEach(function(m){ var btn=document.createElement("button"); btn.innerHTML='<i style="background:'+COLORS[m.cat]+'"></i>'+esc(m.label==="ЯДРО"?"Ядро":m.label); btn.onclick=function(){ select(m); soft(m); }; ul.appendChild(btn); }); }
+    else lw.hidden=true;
     panel.classList.add("open");
   }
-  function centerSoft(n) {
-    // pan node into view if off-screen, keep zoom
-    var x = sx(n.x), y = sy(n.y), m = 120;
-    if (x < m || x > W - 360 || y < 90 || y > H - m) { cam.tx += (W/2 - x); cam.ty += (H/2 - y); invalidate(); }
-  }
-  function deselect() { selected = null; panel.classList.remove("open"); invalidate(); }
-  document.getElementById("p-close").onclick = deselect;
+  function soft(n){ var x=sx(n.x),y=sy(n.y); if(x<120||x>W-360||y<100||y>H-120){ cam.tx+=(W/2-x); cam.ty+=(H/2-y); } }
+  function deselect(){ selected=null; panel.classList.remove("open"); }
+  document.getElementById("p-close").onclick=deselect;
+  function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
-  function escapeHtml(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-
-  // ── Legend toggles ──────────────────────────────────
-  document.querySelectorAll(".lchip").forEach(function (chip) {
-    chip.addEventListener("click", function () {
-      var cat = chip.getAttribute("data-cat");
-      hidden[cat] = !hidden[cat];
-      chip.setAttribute("aria-pressed", String(!hidden[cat]));
-      if (selected && hidden[selected.cat]) deselect();
-      invalidate();
-    });
-  });
+  // ── Legend ──────────────────────────────────────────
+  document.querySelectorAll(".lchip").forEach(function(chip){ chip.addEventListener("click",function(){ var c=chip.getAttribute("data-cat"); hidden[c]=!hidden[c]; chip.setAttribute("aria-pressed",String(!hidden[c])); if(selected&&hidden[selected.cat])deselect(); }); });
 
   // ── Search ──────────────────────────────────────────
-  var q = document.getElementById("q");
-  q.addEventListener("keydown", function (e) { if (e.key === "Enter") jump(); });
-  q.addEventListener("input", function () { if (!q.value.trim()) { hover = null; invalidate(); } });
-  function jump() {
-    var term = q.value.trim().toLowerCase(); if (!term) return;
-    var hit = list.filter(function (n) { return visible(n) && (n.label.toLowerCase().indexOf(term) !== -1 || (n.sub||"").toLowerCase().indexOf(term) !== -1); });
-    if (!hit.length) return;
-    var n = hit[0];
-    select(n); centerOn(n, Math.max(cam.s, 1.1)); invalidate();
-  }
+  var q=document.getElementById("q");
+  q.addEventListener("keydown",function(e){ if(e.key==="Enter")jump(); });
+  function jump(){ var term=q.value.trim().toLowerCase(); if(!term)return; var hit=listAll.filter(function(n){ return vis(n)&&n.label.toLowerCase().indexOf(term)!==-1; }); if(!hit.length)return; var n=hit[0]; select(n); centerOn(n,Math.max(cam.s,1.15)); }
 
   // ── Boot ────────────────────────────────────────────
-  function start() { resize(); fit(false); invalidate(); }
-  start();
-  loop();
-  var rt;
-  window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { resize(); invalidate(); }, 150); });
-
-  // open with the bot surface highlighted as a friendly default
-  setTimeout(function () { /* keep clean: no auto-select, just fitted view */ }, 0);
+  resize(); fit(false); loop();
+  var rt; window.addEventListener("resize",function(){ clearTimeout(rt); rt=setTimeout(resize,150); });
 })();
 </script>
