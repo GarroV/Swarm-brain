@@ -127,12 +127,18 @@
     desc:"Самый быстрый и богатый вход: кидаешь что угодно прямо в чат — и оно уходит в ядро. Сам бот ничего не «помнит», он лишь передаёт в ядро." };
 
   var BOT_FUNCS = [
-    { id:"b_text",  emoji:"✍️", title:"Текст", desc:"Написал или «сохрани …» — стало записью." },
-    { id:"b_fwd",   emoji:"↪️", title:"Пересланное", desc:"Переслал чужое сообщение — сохранилось как есть. Самый надёжный сигнал «это контент»." },
-    { id:"b_voice", emoji:"🎤", title:"Голос", desc:"Голосовое распознаётся в текст и сохраняется." },
-    { id:"b_doc",   emoji:"📄", title:"Документ", desc:"TXT и таблицы — извлекается содержимое и бьётся на части." },
-    { id:"b_photo", emoji:"🖼", title:"Фото", desc:"ИИ описывает изображение и сохраняет описание." },
-    { id:"b_link",  emoji:"🔗", title:"Ссылка", desc:"Либо сама ссылка, либо вся страница целиком." }
+    { id:"b_text",  emoji:"✍️", title:"Текст",
+      desc:"Просто напиши боту сообщение (или начни со слова «сохрани») — и твоя мысль, заметка или договорённость попадёт в общую базу знаний команды. Например: «сохрани: новый поставщик упаковки — ООО Ромашка, скидка 15% от 1000 штук». Потом это можно найти, спросив бота обычными словами." },
+    { id:"b_fwd",   emoji:"↪️", title:"Пересланное",
+      desc:"Перешли боту любое сообщение из другого чата — он сохранит его как есть, ничего не переспрашивая. Удобно, когда коллега что-то написал в рабочей переписке и это важно не потерять: переслал боту — и оно в базе навсегда." },
+    { id:"b_voice", emoji:"🎤", title:"Голос",
+      desc:"Запиши боту голосовое — он сам переведёт речь в текст и сохранит. Можно надиктовать мысль на ходу, не печатая. Если в записи только тишина или шум — бот ничего не сохранит, чтобы не засорять базу." },
+    { id:"b_doc",   emoji:"📄", title:"Документ",
+      desc:"Отправь боту файл — текстовый документ или таблицу (Excel/CSV) — он вытащит из него содержимое и сохранит, чтобы потом можно было искать прямо по тексту внутри файла. Сам файл тоже остаётся в хранилище." },
+    { id:"b_photo", emoji:"🖼", title:"Фото",
+      desc:"Пришли фотографию или скриншот — искусственный интеллект «прочитает», что на изображении, опишет словами и сохранит это описание. Потом картинку можно найти по смыслу — например «фото меню» или «скрин отчёта»." },
+    { id:"b_link",  emoji:"🔗", title:"Ссылка",
+      desc:"Кинь боту ссылку — он сохранит её с коротким описанием. А если попросишь — скачает страницу целиком и сохранит её текст, чтобы потом искать по содержимому, а не только по адресу." }
   ];
 
   // ── Layout ──────────────────────────────────────────
@@ -152,6 +158,7 @@
   edges.push({a:"core",b:"bot",kind:"trunk"});
   BOT_FUNCS.forEach(function(f){ edges.push({a:"bot",b:f.id,kind:"leaf"}); });
   var adj={}; list.forEach(function(n){ adj[n.id]={}; }); edges.forEach(function(e){ adj[e.a][e.b]=true; adj[e.b][e.a]=true; });
+  list.forEach(function(n,i){ n.ph=nrand(i+1)*6.283; n.amp=(n.kind==="core"?2.5:(n.kind==="func"?4.5:3.5)); n._vx=n.x; n._vy=n.y; });
 
   // ── Canvas + camera ─────────────────────────────────
   var canvas=document.getElementById("map"), ctx=canvas.getContext("2d");
@@ -198,9 +205,8 @@
   }
 
   function drawNode(n, t){
-    var ph=nrand((n.id.length+n.x)|0 ? n.x*0.7+n.y*0.3+n.id.length : 1)*6.283;
-    var w=wob(t,ph, n.kind==="core"?3:(n.kind==="func"?5:4));
-    var x=sx(n.x+w.x), y=sy(n.y+w.y), r=n.r*cam.s;
+    var ph=n.ph;
+    var x=sx(n._vx), y=sy(n._vy), r=n.r*cam.s;
     var focus=selected||hover;
     var dim = focus && !(focus.id===n.id || adj[focus.id][n.id] || (focus.id==="core"&&n.kind==="point") || n.id==="core" && false);
     if(focus && (focus.id===n.id)) dim=false;
@@ -241,6 +247,8 @@
   // ── Render ──────────────────────────────────────────
   function draw(ts){
     var t=ts||0;
+    // «колыхнутая» позиция каждого узла — общая для узла И концов линий (иначе нити отрываются)
+    list.forEach(function(n){ var w=wob(t,n.ph,n.amp); n._vx=n.x+w.x; n._vy=n.y+w.y; });
     ctx.clearRect(0,0,W,H);
     var bg=ctx.createRadialGradient(sx(0),sy(0),0,sx(0),sy(0),Math.max(W,H)*0.9);
     bg.addColorStop(0,"#12130F"); bg.addColorStop(0.55,"#0C0E0D"); bg.addColorStop(1,"#090A09");
@@ -267,15 +275,15 @@
 
     // ── threads ──
     ctx.globalCompositeOperation="lighter";
-    // core → points
-    POINTS.forEach(function(p){ var on=focus&&(focus.id===p.id||focus.id==="core"); thread(t, cxs,cys, sx(p.x),sy(p.y), on, false); });
+    // core → points (концы — по «колыхнутым» позициям, чтобы держались за шарики)
+    POINTS.forEach(function(p){ var on=focus&&(focus.id===p.id||focus.id==="core"); thread(t, sx(CORE._vx),sy(CORE._vy), sx(p._vx),sy(p._vy), on, false); });
     // trunk: ОБЛАСТЬ → бот (старт от края области в сторону бота)
     var ang=Math.atan2(BOT.y-0, BOT.x-0);
     var ex=Math.cos(ang)*AREA_R, ey=Math.sin(ang)*AREA_R;
     var trunkOn = focus && (focus.id==="bot"||focus.id==="core"||adj["bot"][focus.id] || adj["core"][focus.id]);
-    thread(t, sx(ex),sy(ey), sx(BOT.x),sy(BOT.y), !!trunkOn, true);
+    thread(t, sx(ex),sy(ey), sx(BOT._vx),sy(BOT._vy), !!trunkOn, true);
     // бот → входы
-    BOT_FUNCS.forEach(function(f){ var on=focus&&(focus.id===f.id||focus.id==="bot"); thread(t, sx(BOT.x),sy(BOT.y), sx(f.x),sy(f.y), on, false); });
+    BOT_FUNCS.forEach(function(f){ var on=focus&&(focus.id===f.id||focus.id==="bot"); thread(t, sx(BOT._vx),sy(BOT._vy), sx(f._vx),sy(f._vy), on, false); });
     ctx.globalCompositeOperation="source-over";
 
     // ── nodes ──
