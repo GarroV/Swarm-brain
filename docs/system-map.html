@@ -1,5 +1,5 @@
-<title>Swarm Brain · Карта ядра и инструментов</title>
-<meta name="description" content="Карта Swarm Brain «Рой»: в центре ядро и его возможности (сохранение, поиск, встречи, задачи), к ним привязаны инструменты — бот, веб, Claude, рекордер, Granola, Read.ai." />
+<title>Swarm Brain · Реестр функций</title>
+<meta name="description" content="Полная карта функций Swarm Brain «Рой»: ядро в центре, вокруг — блоки возможностей и все их функции на одном полотне." />
 
 <style>
   :root {
@@ -11,9 +11,6 @@
     --ink-mute: #8E8472;
     --amber: #E1953A;
     --c-core: #F2B85A;
-    --c-cap: #E1953A;
-    --c-tool: #6FA0C4;
-    --c-source: #B79AD6;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   }
@@ -36,20 +33,20 @@
   .search input {
     font-family: var(--sans); font-size: 13px; color: var(--ink);
     background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
-    padding: 8px 12px 8px 32px; width: 170px; transition: border-color .15s, width .2s;
+    padding: 8px 12px 8px 32px; width: 160px; transition: border-color .15s, width .2s;
   }
   .search input::placeholder { color: var(--ink-mute); }
-  .search input:focus { border-color: var(--amber); outline: none; width: 210px; }
+  .search input:focus { border-color: var(--amber); outline: none; width: 200px; }
   .search svg { position: absolute; left: 10px; width: 14px; height: 14px; color: var(--ink-mute); pointer-events: none; }
 
-  .legend { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .legend { display: flex; gap: 5px; flex-wrap: wrap; margin-left: auto; }
   .lchip {
-    all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
-    font-size: 12px; font-weight: 600; color: var(--ink-soft);
-    border: 1px solid var(--line); border-radius: 100px; padding: 5px 11px; transition: opacity .15s, background .15s; user-select: none;
+    all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11.5px; font-weight: 600; color: var(--ink-soft);
+    border: 1px solid var(--line); border-radius: 100px; padding: 4px 10px; transition: opacity .15s, background .15s; user-select: none;
   }
   .lchip i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-  .lchip[aria-pressed="false"] { opacity: 0.38; text-decoration: line-through; }
+  .lchip[aria-pressed="false"] { opacity: 0.34; text-decoration: line-through; }
   .lchip:hover { background: rgba(255,255,255,0.04); }
 
   .tools { display: flex; gap: 6px; }
@@ -71,7 +68,7 @@
   }
 
   .panel {
-    position: absolute; top: 14px; right: 14px; z-index: 8; width: 326px; max-width: calc(100vw - 28px);
+    position: absolute; top: 14px; right: 14px; z-index: 8; width: 320px; max-width: calc(100vw - 28px);
     background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 24px 60px -24px rgba(0,0,0,0.7);
     transform: translateX(calc(100% + 24px)); transition: transform .26s cubic-bezier(0.16,1,0.3,1);
     max-height: calc(100% - 28px); display: flex; flex-direction: column; overflow: hidden;
@@ -80,30 +77,27 @@
   .panel.open { transform: none; }
   .panel .ph { display: flex; align-items: flex-start; gap: 12px; padding: 18px 18px 14px; }
   .panel .pdot { width: 40px; height: 40px; border-radius: 11px; flex: none; display: grid; place-items: center; font-size: 20px; }
-  .panel .ptitle { font-size: 1.16rem; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; }
+  .panel .ptitle { font-size: 1.14rem; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; }
   .panel .pcat { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 4px; }
   .panel .pclose { all: unset; cursor: pointer; margin-left: auto; color: var(--ink-mute); font-size: 20px; line-height: 1; padding: 2px 4px; flex: none; }
   .panel .pclose:hover { color: var(--ink); }
   .panel .pbody { padding: 0 18px 18px; overflow-y: auto; }
-  .panel .pdesc { font-size: 0.93rem; color: var(--ink-soft); line-height: 1.58; margin: 0 0 16px; }
-  .panel .pnote { font-size: 0.84rem; color: var(--ink-mute); background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; margin: 0 0 16px; display: flex; gap: 8px; }
+  .panel .pdesc { font-size: 0.93rem; color: var(--ink-soft); line-height: 1.58; margin: 0 0 14px; }
+  .panel .pwhere { font-size: 0.85rem; color: var(--ink-mute); background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; margin: 0 0 14px; }
+  .panel .pwhere b { color: var(--ink-soft); }
   .panel .plbl { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-mute); margin: 0 0 8px; }
-  .panel .funcs { list-style: none; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 7px; }
-  .panel .funcs li { position: relative; padding-left: 18px; font-size: 0.9rem; color: var(--ink-soft); }
-  .panel .funcs li::before { content: ""; position: absolute; left: 1px; top: 7px; width: 7px; height: 7px; border-radius: 2px; background: var(--c-tool); transform: rotate(45deg); }
-  .panel .links { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  .panel .links { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 5px; }
   .panel .links button {
     all: unset; cursor: pointer; display: flex; align-items: center; gap: 9px; width: 100%;
-    font-size: 0.88rem; color: var(--ink-soft); padding: 7px 9px; border-radius: 8px; border: 1px solid transparent; transition: background .12s, border-color .12s;
+    font-size: 0.88rem; color: var(--ink-soft); padding: 6px 9px; border-radius: 8px; border: 1px solid transparent; transition: background .12s, border-color .12s;
   }
   .panel .links button:hover { background: var(--bg); border-color: var(--line); }
   .panel .links button i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-  .panel .links + .plbl { margin-top: 16px; }
 
   @media (max-width: 560px) {
-    .panel { width: calc(100vw - 24px); top: auto; bottom: 12px; right: 12px; left: 12px; max-height: 56%; }
+    .panel { width: calc(100vw - 24px); top: auto; bottom: 12px; right: 12px; left: 12px; max-height: 54%; }
     .legend { width: 100%; margin-left: 0; order: 5; }
-    .search input { width: 120px; } .search input:focus { width: 140px; }
+    .search input { width: 110px; } .search input:focus { width: 130px; }
   }
 </style>
 
@@ -111,20 +105,15 @@
   <div class="bar">
     <span class="brand">
       <svg viewBox="0 0 20 22" fill="none" aria-hidden="true"><path d="M10 1l8 4.5v11L10 21l-8-4.5v-11z" stroke="#E1953A" stroke-width="1.5" fill="rgba(225,149,58,0.16)"/><circle cx="10" cy="11" r="2.6" fill="#E1953A"/></svg>
-      Рой · карта ядра <small>и инструментов</small>
+      Рой · реестр функций
     </span>
 
     <label class="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-      <input type="search" id="q" placeholder="Найти…" aria-label="Поиск по карте" autocomplete="off" />
+      <input type="search" id="q" placeholder="Найти функцию…" aria-label="Поиск" autocomplete="off" />
     </label>
 
-    <div class="legend" id="legend">
-      <button class="lchip" data-cat="core"   aria-pressed="true"><i style="background:var(--c-core)"></i>Ядро</button>
-      <button class="lchip" data-cat="cap"    aria-pressed="true"><i style="background:var(--c-cap)"></i>Возможности</button>
-      <button class="lchip" data-cat="tool"   aria-pressed="true"><i style="background:var(--c-tool)"></i>Инструменты</button>
-      <button class="lchip" data-cat="source" aria-pressed="true"><i style="background:var(--c-source)"></i>Захват встреч</button>
-    </div>
+    <div class="legend" id="legend"></div>
 
     <div class="tools">
       <button class="tbtn" id="zin" title="Приблизить" aria-label="Приблизить">+</button>
@@ -134,8 +123,8 @@
   </div>
 
   <div class="stage">
-    <canvas id="map" aria-label="Карта ядра Swarm Brain и подключённых инструментов"></canvas>
-    <div class="hint" id="hint">В центре — ядро и его возможности. Нити от инструментов идут к нужным возможностям · клик по узлу — детали · колесо — зум</div>
+    <canvas id="map" aria-label="Реестр функций Swarm Brain"></canvas>
+    <div class="hint" id="hint">Ядро в центре · вокруг — блоки и все их функции · колесо — зум, чтобы вчитаться · клик по узлу — детали · легенда — скрыть блок</div>
 
     <aside class="panel" id="panel" aria-live="polite">
       <div class="ph">
@@ -148,13 +137,9 @@
       </div>
       <div class="pbody">
         <p class="pdesc" id="p-desc"></p>
-        <div class="pnote" id="p-note" hidden><span>⚙️</span><span id="p-note-text"></span></div>
-        <div id="p-funcs-wrap" hidden>
-          <p class="plbl">Что можно делать</p>
-          <ul class="funcs" id="p-funcs"></ul>
-        </div>
+        <div class="pwhere" id="p-where" hidden></div>
         <div id="p-links-wrap" hidden>
-          <p class="plbl" id="p-links-lbl">Связи</p>
+          <p class="plbl" id="p-links-lbl">Функции</p>
           <ul class="links" id="p-links"></ul>
         </div>
       </div>
@@ -167,162 +152,222 @@
   "use strict";
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  var COLORS = { core:"#F2B85A", cap:"#E1953A", tool:"#6FA0C4", source:"#B79AD6" };
-  var CATLABEL = { core:"Ядро системы", cap:"Возможность ядра", tool:"Инструмент", source:"Источник встреч" };
-  var RADIUS = { core:46, cap:24, tool:24, source:21 };
+  // ── Full functionality registry ─────────────────────
+  // where: 📱 бот · 🌐 веб · 🖥 Claude · 🎙 захват встреч ; auto:true — внутри ядра автоматически
+  var CORE = { id:"core", kind:"core", label:"ЯДРО", emoji:"🧠",
+    desc:"Центр всего: память и мозг системы. Все функции живут здесь; инструменты (бот, веб, Claude, захват встреч) лишь дают к ним доступ." };
 
-  // ── CORE ────────────────────────────────────────────
-  var CORE = { id:"core", cat:"core", label:"ЯДРО", emoji:"🧠", x:0, y:0,
-    desc:"Центр всего: память и мозг системы. Здесь хранится знание, идёт поиск по смыслу, обрабатываются встречи и живут задачи. Инструменты сами ничего не «помнят» — они лишь дают доступ к ядру с разных сторон." };
-
-  // ── Capabilities (the core map) ─────────────────────
-  // internal:true — работает автоматически, нитей снаружи нет
-  var CAPS = [
-    { id:"save",   label:"Сохранение",  emoji:"🗄", desc:"Любой материал — заметка, документ, ссылка, голос, итог встречи — превращается в короткие тезисы, а по ним строятся «точки на карте смыслов». Поэтому потом это находится по сути, а не по словам." },
-    { id:"search", label:"Поиск и ответы", emoji:"🔎", desc:"Спрашиваешь обычным языком — система находит по смыслу (даже если формулировка другая) и даёт готовый ответ со ссылками на первоисточники. Нет данных — честно говорит." },
-    { id:"meet",   label:"Встречи",     emoji:"🎙", desc:"Итоги встреч становятся тезисами в общей базе, а из них вытаскиваются задачи с ответственными и сроками. Человек только вычитывает и подтверждает." },
-    { id:"tasks",  label:"Задачи",      emoji:"✅", desc:"Дела команды: кто, что, к какому сроку. Командные и личные, доска со сроками и спринтами. Рождаются из встреч или заводятся вручную." },
-    { id:"team",   label:"Команда",     emoji:"👥", desc:"Система знает, кто есть кто — имя, роль, рынки. Это нужно, чтобы корректно назначать задачи и понимать, кого касается информация." },
-    { id:"order",  label:"Порядок в данных", emoji:"🏷", internal:true, desc:"Система сама помечает, к какому рынку/стране относится запись и что это (встреча или заметка) — одинаково для всех. Поэтому данные сравнимы и не зависят от того, кто их вносил." },
-    { id:"access", label:"Доступ и приватность", emoji:"🔒", internal:true, desc:"У каждого рынка свой контур: люди видят только данные своего рынка. Есть личное (только для тебя) и командное (для всех в контуре). Чужое личное не утекает." }
-  ];
-
-  // ── Tools + sources (outer) ─────────────────────────
-  var TOOLS = [
-    { id:"bot", cat:"tool", label:"Telegram-бот", emoji:"📱", caps:["save","search","meet","tasks","team"],
-      desc:"Самый быстрый вход: сохранить и спросить прямо в чате, где команда уже общается.",
-      funcs:["Сохранить знание","Спросить базу","Ревью встреч","Задачи","Команда","Фидбек"] },
-    { id:"web", cat:"tool", label:"Веб «Рой»", emoji:"🌐", caps:["search","meet","tasks","team"],
-      desc:"Доска задач, поиск и вычитка встреч на большом экране — в Telegram или в браузере.",
-      funcs:["Доска задач (Список/Таймлайн/Спринты/Граф)","Умный поиск","Вычитка встреч","Дайджест","Админка"] },
-    { id:"mcp", cat:"tool", label:"Claude Desktop", emoji:"🖥️", caps:["save","search","meet","tasks"],
-      desc:"Та же база внутри Claude — для больших текстов с проверкой человеком. Подключение по личному токену.",
-      funcs:["Поиск и добавление знаний","Задачи","Встречи","Файлы"] },
-    { id:"capture", cat:"source", label:"Захват встреч", emoji:"🎙️", caps:["meet"],
-      desc:"Встречи попадают в систему тремя путями — это разные агенты одного процесса. Чем бы встреча ни была записана, дальше ядро одинаково делает тезисы и задачи.",
-      funcsLabel:"Агенты захвата (разные пути одного процесса)",
+  var BLOCKS = [
+    { id:"save", label:"Сохранение", emoji:"🗄", color:"#E1953A",
+      desc:"Любой материал превращается в тезисы и «точки на карте смыслов», чтобы потом найти по сути.",
       funcs:[
-        "🎙 Рекордер — наше приложение для Mac, пишет звук звонка",
-        "📓 Granola — внешний сервис заметок: импорт вручную или авто раз в час",
-        "📹 Read.ai — сам присылает завершённую встречу автоматически",
-        "📅 Google Календарь — подсказывает рекордеру, какая встреча идёт сейчас"
+        { label:"Текст / заметка", where:"📱 🖥", desc:"Прислал текст — сохранился как запись." },
+        { label:"Документ (файл)", where:"📱 🌐 🖥", desc:"Файл → извлекается содержимое и сохраняется." },
+        { label:"Голосовое → текст", where:"📱", desc:"Голос распознаётся в текст и сохраняется." },
+        { label:"Ссылка", where:"📱", desc:"Ссылка сохраняется с расширенным описанием для поиска." },
+        { label:"Авто-тезисы", auto:true, desc:"Из длинного текста делается краткое содержание." },
+        { label:"Точки карты смыслов", auto:true, desc:"По тезисам строится «отпечаток смысла» для поиска." },
+        { label:"Защита от дублей", auto:true, desc:"Повтор того же не создаёт вторую запись." },
+        { label:"Склейка фрагментов", auto:true, desc:"Куски одного сообщения собираются в одну запись." }
+      ] },
+    { id:"search", label:"Поиск и ответы", emoji:"🔎", color:"#5FA8C4",
+      desc:"Спрашиваешь по-человечески — находит по смыслу и отвечает со ссылками на источники.",
+      funcs:[
+        { label:"Поиск по смыслу", where:"📱 🌐 🖥", desc:"Находит нужное по сути, а не по точным словам." },
+        { label:"Ответ со ссылками", where:"📱 🌐", desc:"Готовый ответ строго по найденному, со сносками." },
+        { label:"Уточнить в контексте", where:"📱 🌐", desc:"Следующий вопрос с учётом предыдущего ответа." },
+        { label:"Последнее / что нового", where:"📱 🖥", desc:"Свежие записи по времени, а не по смыслу." },
+        { label:"Дайджест за период", where:"📱 🌐", desc:"Сводка по базе за выбранный срок." }
+      ] },
+    { id:"meet", label:"Встречи", emoji:"🎙", color:"#6FB58A",
+      desc:"Итоги встреч становятся тезисами в базе, а из них — задачи с ответственными.",
+      funcs:[
+        { label:"Запись звонка", where:"🎙", desc:"Рекордер пишет звук онлайн-созвона." },
+        { label:"Импорт Granola", where:"📱 🌐", desc:"Заметки встреч из Granola — вручную или авто." },
+        { label:"Импорт Read.ai", auto:true, desc:"Read.ai сам присылает завершённые встречи." },
+        { label:"Авто-тезисы встречи", auto:true, desc:"Из расшифровки собираются тезисы." },
+        { label:"Авто-название", auto:true, desc:"Встреча получает осмысленное название." },
+        { label:"Вычитка тезисов", where:"📱 🌐", desc:"Правка тезисов, названия, стран перед публикацией." },
+        { label:"Задачи из встречи", auto:true, desc:"Поручения вытаскиваются автоматически." },
+        { label:"Публикация", where:"📱 🌐", desc:"В общую базу или в личное." }
+      ] },
+    { id:"tasks", label:"Задачи", emoji:"✅", color:"#C58FB0",
+      desc:"Дела команды: кто, что, к сроку. Командные и личные, доска со спринтами и сроками.",
+      funcs:[
+        { label:"Создать", where:"📱 🌐 🖥", desc:"Завести задачу вручную." },
+        { label:"Назначить исполнителя", where:"📱 🌐 🖥", desc:"С умным сопоставлением имён." },
+        { label:"Сроки и приоритет", where:"📱 🌐", desc:"Дедлайн и важность." },
+        { label:"Статусы", where:"📱 🌐 🖥", desc:"На проверке → открыта → в работе → готово." },
+        { label:"Спринты", where:"🌐", desc:"Группировка задач по спринтам." },
+        { label:"Зависимости", where:"🌐", desc:"Связи «блокирует / связано» с защитой от циклов." },
+        { label:"Таймлайн (Gantt)", where:"🌐", desc:"Сроки на шкале времени." },
+        { label:"Личные / командные", where:"📱 🌐", desc:"Видимость задачи." }
+      ] },
+    { id:"order", label:"Порядок в данных", emoji:"🏷", color:"#D6A93F",
+      desc:"Система сама приводит данные к единому виду — одинаково для всех инструментов.",
+      funcs:[
+        { label:"Авто-страна / рынок", auto:true, desc:"Определяет, к какому рынку относится запись." },
+        { label:"Авто-тип записи", auto:true, desc:"Встреча это или заметка." },
+        { label:"Ключевые слова", auto:true, desc:"Помечает темами для поиска." }
+      ] },
+    { id:"access", label:"Доступ и приватность", emoji:"🔒", color:"#B79AD6",
+      desc:"Кто что видит. Работает автоматически и незаметно.",
+      funcs:[
+        { label:"Изоляция по рынкам", auto:true, desc:"Каждый видит только свой рынок (воркспейс)." },
+        { label:"Личное / командное", auto:true, desc:"Личное — только владельцу; командное — всем в контуре." },
+        { label:"Белый список доступа", auto:true, desc:"В систему пускают только своих." },
+        { label:"Личные токены", where:"📱", desc:"Подключение Claude и рекордера по личному ключу." }
+      ] },
+    { id:"team", label:"Команда", emoji:"👥", color:"#CE9270",
+      desc:"Система знает, кто есть кто — чтобы назначать задачи и понимать, кого касается.",
+      funcs:[
+        { label:"Профили", where:"📱 🌐", desc:"Имя, роль, рынки, контакты." },
+        { label:"Онбординг", where:"📱", desc:"Заведение нового участника по шагам." },
+        { label:"Назначение по имени", auto:true, desc:"Понимает «поставь Васе» и находит человека." }
       ] }
   ];
 
-  // ── Build model + radial layout ─────────────────────
+  // ── Build nodes + radial sunburst layout ────────────
   var nodes = {}, listAll = [], edges = [];
   function add(n){ nodes[n.id]=n; listAll.push(n); }
-  function edge(a,b,kind){ if(nodes[a]&&nodes[b]&&a!==b) edges.push({a:a,b:b,kind:kind}); }
+  function edge(a,b,kind){ edges.push({a:a,b:b,kind:kind}); }
 
-  CORE.r = RADIUS.core; add(CORE);
+  CORE.r = 46; CORE.x = 0; CORE.y = 0; CORE.color = "#F2B85A"; add(CORE);
 
-  var capR = 210, nCap = CAPS.length;
-  CAPS.forEach(function(c,i){
-    var ang = -Math.PI/2 + i*(Math.PI*2/nCap);
-    c.cat="cap"; c.r=RADIUS.cap; c.x=Math.cos(ang)*capR; c.y=Math.sin(ang)*capR;
-    add(c); edge("core", c.id, "core");
+  var totalF = 0; BLOCKS.forEach(function(b){ totalF += b.funcs.length; });
+  var capR = 215, fR = 430, fStagger = 92, gap = 0.07;
+  var avail = Math.PI * 2 - gap * BLOCKS.length;
+  var ang = -Math.PI / 2;
+  BLOCKS.forEach(function(b, bi){
+    var wedge = avail * (b.funcs.length / totalF);
+    var mid = ang + wedge / 2;
+    b.id = b.id; b.kind = "cap"; b.r = 22; b.x = Math.cos(mid) * capR; b.y = Math.sin(mid) * capR;
+    add(b); edge("core", b.id, "core");
+
+    var n = b.funcs.length;
+    var pad = Math.min(wedge * 0.12, 0.10);
+    var a0 = ang + pad, a1 = ang + wedge - pad;
+    b.funcs.forEach(function(f, i){
+      var fa = n > 1 ? a0 + (a1 - a0) * (i / (n - 1)) : mid;
+      var rr = fR + (i % 2) * fStagger;
+      f.id = b.id + "_" + i; f.kind = "func"; f.r = 8; f.parent = b.id; f.color = b.color; f.block = b.label;
+      f.x = Math.cos(fa) * rr; f.y = Math.sin(fa) * rr;
+      add(f); edge(b.id, f.id, "fn");
+    });
+    ang += wedge + gap;
   });
 
-  var toolR = 500, nTool = TOOLS.length;
-  TOOLS.forEach(function(t,i){
-    var ang = -Math.PI/2 + i*(Math.PI*2/nTool) + Math.PI/nTool; // offset so tools sit between caps
-    t.r=RADIUS[t.cat]; t.x=Math.cos(ang)*toolR; t.y=Math.sin(ang)*toolR;
-    add(t);
-    (t.caps||[]).forEach(function(cid){ edge(t.id, cid, "thread"); });
-  });
+  var adj = {}; listAll.forEach(function(n){ adj[n.id] = {}; });
+  edges.forEach(function(e){ adj[e.a][e.b] = true; adj[e.b][e.a] = true; });
 
-  var adj = {}; listAll.forEach(function(n){ adj[n.id]={}; });
-  edges.forEach(function(e){ adj[e.a][e.b]=true; adj[e.b][e.a]=true; });
+  // ── Legend ──────────────────────────────────────────
+  var legend = document.getElementById("legend"), hiddenBlk = {};
+  BLOCKS.forEach(function(b){
+    var btn = document.createElement("button"); btn.className = "lchip"; btn.setAttribute("aria-pressed","true");
+    btn.innerHTML = '<i style="background:'+b.color+'"></i>'+b.label;
+    btn.onclick = function(){ hiddenBlk[b.id] = !hiddenBlk[b.id]; btn.setAttribute("aria-pressed", String(!hiddenBlk[b.id])); if(selected && hiddenById(selected)) deselect(); };
+    legend.appendChild(btn);
+  });
+  function hiddenById(n){ if(n.kind==="cap") return hiddenBlk[n.id]; if(n.kind==="func") return hiddenBlk[n.parent]; return false; }
+  function vis(n){ return !hiddenById(n); }
 
   // ── Canvas + camera ─────────────────────────────────
   var canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
-  var W=0, H=0, dpr=Math.min(window.devicePixelRatio||1,2);
-  var cam={s:1,tx:0,ty:0}, hidden={}, selected=null, hover=null;
+  var W=0,H=0,dpr=Math.min(window.devicePixelRatio||1,2);
+  var cam={s:1,tx:0,ty:0}, selected=null, hover=null;
 
   function resize(){ var r=canvas.parentElement.getBoundingClientRect(); W=r.width; H=r.height; canvas.width=W*dpr; canvas.height=H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); }
   function sx(wx){ return wx*cam.s+cam.tx; }
   function sy(wy){ return wy*cam.s+cam.ty; }
-  function vis(n){ return !hidden[n.cat]; }
 
   function fit(animate){
     var a=1e9,b=1e9,c=-1e9,d=-1e9,any=false;
     listAll.forEach(function(n){ if(!vis(n))return; any=true; a=Math.min(a,n.x-n.r); c=Math.max(c,n.x+n.r); b=Math.min(b,n.y-n.r); d=Math.max(d,n.y+n.r); });
     if(!any)return;
-    var pad=110, target=Math.min((W-pad*2)/(c-a),(H-pad*2)/(d-b),1.5), cxw=(a+c)/2, cyw=(b+d)/2;
+    var pad=70, target=Math.min((W-pad*2)/(c-a),(H-pad*2)/(d-b),1.4), cxw=(a+c)/2, cyw=(b+d)/2;
     var to={s:target,tx:W/2-cxw*target,ty:H/2-cyw*target};
     if(reduce||!animate){ cam=to; return; }
     var from={s:cam.s,tx:cam.tx,ty:cam.ty},t0=null;
     function an(ts){ if(!t0)t0=ts; var k=Math.min(1,(ts-t0)/460),e=1-Math.pow(1-k,3); cam.s=from.s+(to.s-from.s)*e; cam.tx=from.tx+(to.tx-from.tx)*e; cam.ty=from.ty+(to.ty-from.ty)*e; if(k<1)requestAnimationFrame(an); }
     requestAnimationFrame(an);
   }
-  function centerOn(n,s){ s=s||Math.max(cam.s,1.05); cam.s=s; cam.tx=W/2-n.x*s; cam.ty=H/2-n.y*s; }
+  function centerOn(n,s){ s=s||Math.max(cam.s,1.2); cam.s=s; cam.tx=W/2-n.x*s; cam.ty=H/2-n.y*s; }
 
   // ── Render ──────────────────────────────────────────
   function draw(ts){
     var t=ts||0;
     ctx.clearRect(0,0,W,H);
-    var bg=ctx.createRadialGradient(sx(0),sy(0),0,sx(0),sy(0),Math.max(W,H)*0.75);
+    var bg=ctx.createRadialGradient(sx(0),sy(0),0,sx(0),sy(0),Math.max(W,H)*0.8);
     bg.addColorStop(0,"#1B160F"); bg.addColorStop(1,"#110E0A");
     ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
 
-    var pulse=reduce?1:(1+0.07*Math.sin(t*0.0024)), cgr=300*cam.s*pulse;
+    var pulse=reduce?1:(1+0.06*Math.sin(t*0.0024)), cgr=300*cam.s*pulse;
     var cg=ctx.createRadialGradient(sx(0),sy(0),0,sx(0),sy(0),cgr);
-    cg.addColorStop(0,"rgba(242,184,90,0.20)"); cg.addColorStop(0.5,"rgba(225,149,58,0.06)"); cg.addColorStop(1,"rgba(0,0,0,0)");
+    cg.addColorStop(0,"rgba(242,184,90,0.18)"); cg.addColorStop(0.5,"rgba(225,149,58,0.05)"); cg.addColorStop(1,"rgba(0,0,0,0)");
     ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(sx(0),sy(0),cgr,0,6.283); ctx.fill();
 
     var focus=selected||hover, lit=null;
     if(focus){ lit={}; lit[focus.id]=true; for(var k in adj[focus.id]) lit[k]=true; }
 
+    // edges
     edges.forEach(function(e){
       var a=nodes[e.a], b=nodes[e.b]; if(!vis(a)||!vis(b))return;
       var on=lit && lit[a.id] && lit[b.id] && (a.id===focus.id||b.id===focus.id);
-      var ax=sx(a.x),ay=sy(a.y),bx=sx(b.x),by=sy(b.y);
       ctx.setLineDash([]);
       if(lit && !on){ ctx.strokeStyle="rgba(230,220,200,0.04)"; ctx.lineWidth=1; }
-      else if(on){ ctx.strokeStyle="rgba(242,184,90,0.9)"; ctx.lineWidth=2.3; }
-      else if(e.kind==="core"){ ctx.strokeStyle="rgba(225,149,58,0.4)"; ctx.lineWidth=1.7; if(!reduce){ ctx.setLineDash([5,10]); ctx.lineDashOffset=-(t*0.035); } }
-      else { ctx.strokeStyle="rgba(160,180,200,0.13)"; ctx.lineWidth=1; }
-      ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+      else if(on){ ctx.strokeStyle="rgba(242,184,90,0.9)"; ctx.lineWidth=2; }
+      else if(e.kind==="core"){ ctx.strokeStyle="rgba(225,149,58,0.42)"; ctx.lineWidth=1.7; if(!reduce){ ctx.setLineDash([5,10]); ctx.lineDashOffset=-(t*0.035); } }
+      else { // function spokes — tinted by block colour, faint
+        var col = b.color || a.color || "#888";
+        ctx.strokeStyle = hexA(col, 0.22); ctx.lineWidth=1;
+      }
+      ctx.beginPath(); ctx.moveTo(sx(a.x),sy(a.y)); ctx.lineTo(sx(b.x),sy(b.y)); ctx.stroke();
     });
     ctx.setLineDash([]);
 
+    // nodes
     listAll.forEach(function(n){
       if(!vis(n))return;
       var x=sx(n.x), y=sy(n.y), r=n.r*cam.s, dim=lit && !lit[n.id];
-      ctx.globalAlpha=dim?0.24:1;
+      ctx.globalAlpha = dim?0.22:1;
 
-      if(n.cat==="core"){
+      if(n.kind==="core"){
         var glow=ctx.createRadialGradient(x,y,r*0.3,x,y,r*1.9);
-        glow.addColorStop(0,"rgba(242,184,90,0.6)"); glow.addColorStop(1,"rgba(242,184,90,0)");
+        glow.addColorStop(0,"rgba(242,184,90,0.55)"); glow.addColorStop(1,"rgba(242,184,90,0)");
         ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(x,y,r*1.9,0,6.283); ctx.fill();
       }
-      if(selected && selected.id===n.id){ ctx.beginPath(); ctx.arc(x,y,r+7,0,6.283); ctx.strokeStyle="rgba(242,184,90,0.95)"; ctx.lineWidth=2.5; ctx.setLineDash([]); ctx.stroke(); }
+      if(selected && selected.id===n.id){ ctx.beginPath(); ctx.arc(x,y,r+6,0,6.283); ctx.strokeStyle="rgba(242,184,90,0.95)"; ctx.lineWidth=2.5; ctx.setLineDash([]); ctx.stroke(); }
 
-      ctx.beginPath(); ctx.arc(x,y,r,0,6.283); ctx.fillStyle=COLORS[n.cat]; ctx.fill();
-      if(n.cat!=="feature"){ ctx.lineWidth=1.5; ctx.strokeStyle="rgba(0,0,0,0.28)"; ctx.stroke(); }
-      // internal caps: dashed ring marker
-      if(n.internal){ ctx.beginPath(); ctx.arc(x,y,r+4,0,6.283); ctx.setLineDash([3,4]); ctx.strokeStyle="rgba(243,236,221,0.45)"; ctx.lineWidth=1.2; ctx.stroke(); ctx.setLineDash([]); }
-
-      if(n.emoji && r>13){ ctx.globalAlpha=dim?0.3:1; ctx.font=(r*0.9)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(n.emoji,x,y+1); }
+      ctx.beginPath(); ctx.arc(x,y,r,0,6.283); ctx.fillStyle=n.color; ctx.fill();
+      ctx.lineWidth=1.2; ctx.strokeStyle="rgba(0,0,0,0.3)"; ctx.stroke();
+      if(n.emoji && r>12){ ctx.globalAlpha=dim?0.3:1; ctx.font=(r*0.9)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(n.emoji,x,y+1); }
       ctx.globalAlpha=1;
 
-      ctx.globalAlpha=dim?0.34:1;
-      var weight=n.cat==="core"?"800 16px ":"700 13px ";
-      ctx.font=weight+"system-ui, sans-serif"; ctx.textAlign="center"; ctx.textBaseline="top";
-      var ly=y+r+5;
-      ctx.fillStyle="rgba(0,0,0,0.6)"; ctx.fillText(n.label,x+0.6,ly+0.6);
-      ctx.fillStyle=n.cat==="core"?"#FBE9C8":"#F3ECDD"; ctx.fillText(n.label,x,ly);
-      ctx.globalAlpha=1;
+      // label
+      var isFunc = n.kind==="func";
+      var showLabel = !isFunc || cam.s > 0.55 || (lit && lit[n.id]);
+      if(showLabel){
+        ctx.globalAlpha = dim?0.3:1;
+        var weight = n.kind==="core"?"800 16px ":(n.kind==="cap"?"700 13.5px ":"600 11px ");
+        ctx.font = weight+"system-ui, sans-serif";
+        ctx.textAlign="center"; ctx.textBaseline="top";
+        var ly=y+r+4;
+        ctx.fillStyle="rgba(0,0,0,0.62)"; ctx.fillText(n.label,x+0.6,ly+0.6);
+        ctx.fillStyle = n.kind==="core"?"#FBE9C8":(n.kind==="cap"?"#F3ECDD":"#D8CDB6");
+        ctx.fillText(n.label,x,ly);
+        ctx.globalAlpha=1;
+      }
     });
     ctx.globalAlpha=1;
   }
+  function hexA(hex, a){ var h=hex.replace("#",""); var r=parseInt(h.substr(0,2),16),g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16); return "rgba("+r+","+g+","+b+","+a+")"; }
   function loop(ts){ draw(ts); requestAnimationFrame(loop); }
 
   // ── Hit testing ─────────────────────────────────────
   function pick(mx,my){
     var best=null,bd=1e9;
     for(var i=listAll.length-1;i>=0;i--){ var n=listAll[i]; if(!vis(n))continue;
-      var dx=mx-sx(n.x),dy=my-sy(n.y),d=Math.sqrt(dx*dx+dy*dy),hr=n.r*cam.s+6;
+      var dx=mx-sx(n.x),dy=my-sy(n.y),d=Math.sqrt(dx*dx+dy*dy),hr=n.r*cam.s+7;
       if(d<=hr && d<bd){ best=n; bd=d; } }
     return best;
   }
@@ -337,8 +382,8 @@
     else { var n=pick(p.x,p.y); canvas.classList.toggle("onnode",!!n); hover=n; } });
   canvas.addEventListener("pointerup",function(e){ if(dragging&&!moved){ var p=rel(e); var n=pick(p.x,p.y); if(n)select(n); else deselect(); } dragging=false;dragNode=null;panning=false;canvas.classList.remove("grabbing"); });
   canvas.addEventListener("pointercancel",function(){ dragging=false;dragNode=null;panning=false;canvas.classList.remove("grabbing"); });
-  canvas.addEventListener("wheel",function(e){ e.preventDefault(); var p=rel(e); var wx=(p.x-cam.tx)/cam.s,wy=(p.y-cam.ty)/cam.s; cam.s=Math.max(0.3,Math.min(3.4,cam.s*(e.deltaY<0?1.12:1/1.12))); cam.tx=p.x-wx*cam.s; cam.ty=p.y-wy*cam.s; },{passive:false});
-  function zoomBtn(f){ var wx=(W/2-cam.tx)/cam.s,wy=(H/2-cam.ty)/cam.s; cam.s=Math.max(0.3,Math.min(3.4,cam.s*f)); cam.tx=W/2-wx*cam.s; cam.ty=H/2-wy*cam.s; }
+  canvas.addEventListener("wheel",function(e){ e.preventDefault(); var p=rel(e); var wx=(p.x-cam.tx)/cam.s,wy=(p.y-cam.ty)/cam.s; cam.s=Math.max(0.3,Math.min(4,cam.s*(e.deltaY<0?1.12:1/1.12))); cam.tx=p.x-wx*cam.s; cam.ty=p.y-wy*cam.s; },{passive:false});
+  function zoomBtn(f){ var wx=(W/2-cam.tx)/cam.s,wy=(H/2-cam.ty)/cam.s; cam.s=Math.max(0.3,Math.min(4,cam.s*f)); cam.tx=W/2-wx*cam.s; cam.ty=H/2-wy*cam.s; }
   document.getElementById("zin").onclick=function(){ zoomBtn(1.25); };
   document.getElementById("zout").onclick=function(){ zoomBtn(1/1.25); };
   document.getElementById("fit").onclick=function(){ deselect(); fit(true); };
@@ -347,47 +392,47 @@
   var panel=document.getElementById("panel");
   function select(n){
     selected=n;
-    document.getElementById("p-dot").style.background=COLORS[n.cat];
-    document.getElementById("p-dot").textContent=n.emoji||"";
+    document.getElementById("p-dot").style.background=n.color;
+    document.getElementById("p-dot").textContent=n.emoji||"•";
     document.getElementById("p-title").textContent=n.label==="ЯДРО"?"Ядро системы":n.label;
-    var cat=document.getElementById("p-cat"); cat.textContent=CATLABEL[n.cat]; cat.style.color=COLORS[n.cat];
+    var cat=document.getElementById("p-cat");
+    cat.textContent = n.kind==="core"?"Ядро":(n.kind==="cap"?"Блок возможностей":"Функция · "+n.block);
+    cat.style.color = n.color;
     document.getElementById("p-desc").textContent=n.desc||"";
 
-    // internal note
-    var note=document.getElementById("p-note");
-    if(n.internal){ document.getElementById("p-note-text").textContent="Работает автоматически для всех инструментов — отдельно включать не нужно."; note.hidden=false; }
-    else note.hidden=true;
+    var wh=document.getElementById("p-where");
+    if(n.kind==="func"){
+      if(n.auto){ wh.innerHTML="⚙️ <b>Автоматически</b> — внутри ядра, отдельно включать не нужно."; wh.hidden=false; }
+      else if(n.where){ wh.innerHTML="<b>Где доступно:</b> "+esc(n.where); wh.hidden=false; }
+      else wh.hidden=true;
+    } else wh.hidden=true;
 
-    // funcs (tools/sources)
-    var fw=document.getElementById("p-funcs-wrap"), ful=document.getElementById("p-funcs"); ful.innerHTML="";
-    var flbl=fw.querySelector(".plbl"); if(flbl) flbl.textContent=n.funcsLabel||"Что можно делать";
-    if(n.funcs && n.funcs.length){ fw.hidden=false; n.funcs.forEach(function(f){ var li=document.createElement("li"); li.textContent=f; ful.appendChild(li); }); }
-    else fw.hidden=true;
-
-    // links
-    var order={core:0,cap:1,tool:2,source:3};
-    var neigh=Object.keys(adj[n.id]).map(function(id){return nodes[id];}).filter(function(m){return m&&vis(m);}).sort(function(a,b){return order[a.cat]-order[b.cat];});
     var lw=document.getElementById("p-links-wrap"), ul=document.getElementById("p-links"), lbl=document.getElementById("p-links-lbl");
-    if(n.cat==="core") lbl.textContent="Возможности ядра";
-    else if(n.cat==="cap") lbl.textContent="Кто этим пользуется";
-    else lbl.textContent="Возможности ядра, к которым подключён";
     ul.innerHTML="";
-    if(neigh.length){ lw.hidden=false; neigh.forEach(function(m){ var btn=document.createElement("button"); btn.innerHTML='<i style="background:'+COLORS[m.cat]+'"></i>'+esc(m.label==="ЯДРО"?"Ядро":m.label); btn.onclick=function(){ select(m); soft(m); }; ul.appendChild(btn); }); }
-    else lw.hidden=true;
+    if(n.kind==="core"){
+      lbl.textContent="Блоки возможностей";
+      BLOCKS.forEach(function(b){ if(hiddenBlk[b.id])return; var btn=document.createElement("button"); btn.innerHTML='<i style="background:'+b.color+'"></i>'+esc(b.label); btn.onclick=function(){ select(b); soft(b); }; ul.appendChild(btn); });
+      lw.hidden=false;
+    } else if(n.kind==="cap"){
+      lbl.textContent="Функции блока";
+      n.funcs.forEach(function(f){ var btn=document.createElement("button"); btn.innerHTML='<i style="background:'+n.color+'"></i>'+esc(f.label); btn.onclick=function(){ select(f); soft(f); }; ul.appendChild(btn); });
+      lw.hidden=false;
+    } else {
+      lbl.textContent="Блок";
+      var p=nodes[n.parent]; var btn=document.createElement("button"); btn.innerHTML='<i style="background:'+p.color+'"></i>'+esc(p.label); btn.onclick=function(){ select(p); soft(p); }; ul.appendChild(btn);
+      lw.hidden=false;
+    }
     panel.classList.add("open");
   }
   function soft(n){ var x=sx(n.x),y=sy(n.y); if(x<120||x>W-360||y<100||y>H-120){ cam.tx+=(W/2-x); cam.ty+=(H/2-y); } }
   function deselect(){ selected=null; panel.classList.remove("open"); }
   document.getElementById("p-close").onclick=deselect;
-  function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-
-  // ── Legend ──────────────────────────────────────────
-  document.querySelectorAll(".lchip").forEach(function(chip){ chip.addEventListener("click",function(){ var c=chip.getAttribute("data-cat"); hidden[c]=!hidden[c]; chip.setAttribute("aria-pressed",String(!hidden[c])); if(selected&&hidden[selected.cat])deselect(); }); });
+  function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
   // ── Search ──────────────────────────────────────────
   var q=document.getElementById("q");
   q.addEventListener("keydown",function(e){ if(e.key==="Enter")jump(); });
-  function jump(){ var term=q.value.trim().toLowerCase(); if(!term)return; var hit=listAll.filter(function(n){ return vis(n)&&n.label.toLowerCase().indexOf(term)!==-1; }); if(!hit.length)return; var n=hit[0]; select(n); centerOn(n,Math.max(cam.s,1.15)); }
+  function jump(){ var term=q.value.trim().toLowerCase(); if(!term)return; var hit=listAll.filter(function(n){ return vis(n)&&n.label.toLowerCase().indexOf(term)!==-1; }); if(!hit.length)return; var n=hit[0]; select(n); centerOn(n,Math.max(cam.s,1.3)); }
 
   // ── Boot ────────────────────────────────────────────
   resize(); fit(false); loop();
