@@ -41,7 +41,7 @@ export function RemindersTasks() {
 
   const rowTrailing = (t: Task) => (
     <span className="ml-1 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-      <IconBtn label="Изменить" color="var(--status-open)" onClick={(e) => { e.stopPropagation(); setModalTask(t); }}>
+      <IconBtn label="Изменить" color="var(--accent-ink)" onClick={(e) => { e.stopPropagation(); setModalTask(t); }}>
         <RoyIcon name="pencil" size={17} strokeWidth={1.9} />
       </IconBtn>
       <IconBtn label="Удалить" color="var(--pri-high)" onClick={(e) => { e.stopPropagation(); onDelete(t); }}>
@@ -54,7 +54,7 @@ export function RemindersTasks() {
     <div
       key={t.id}
       onClick={() => setModalTask(t)}
-      className="group flex cursor-pointer border-b border-line"
+      className="group flex cursor-pointer border-b border-line transition-colors hover:bg-surface-2"
     >
       <TaskRow task={t} now={r.now} showAssignee={showAssignee} onToggle={() => r.toggle(t)} trailing={rowTrailing(t)} />
     </div>

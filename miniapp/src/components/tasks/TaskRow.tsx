@@ -36,7 +36,7 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
   const assignee = task.assignees?.[0];
 
   return (
-    <div className="flex items-start gap-3 bg-background px-1 py-3">
+    <div className="flex items-start gap-3 px-3 py-3">
       <button
         type="button"
         role="checkbox"
