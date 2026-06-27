@@ -55,6 +55,14 @@ function itemSource(it: MeetItem): string {
   return sourceLabel(it.data.source);
 }
 
+// Кто принёс запись: для entry — added_by (granola/read.ai), для рекордера —
+// имена записавших (recorder_names с сервера). null, если неизвестно.
+function itemRecorder(it: MeetItem): string | null {
+  if (it.kind === "entry") return it.data.added_by ?? null;
+  const names = it.data.recorder_names?.filter(Boolean) ?? [];
+  return names.length ? names.join(", ") : null;
+}
+
 // ── Стат-плашка ──────────────────────────────────────────────────────────────
 
 function StatChip({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
@@ -136,8 +144,8 @@ function ListRow({
                   {date}
                 </span>
               )}
-              {item.kind === "entry" && item.data.added_by && (
-                <span className="text-ink-mute" style={{ fontSize: 11 }}>· {item.data.added_by}</span>
+              {itemRecorder(item) && (
+                <span className="text-ink-mute" style={{ fontSize: 11 }}>· {itemRecorder(item)}</span>
               )}
             </div>
           </div>
@@ -565,9 +573,9 @@ function AgentMeetingDetail({
             {src}
           </span>
           {date && <span className="text-ink-mute" style={{ fontSize: 12 }}>{date}</span>}
-          {m.recorders && m.recorders.length > 0 && (
+          {m.recorder_names && m.recorder_names.length > 0 && (
             <span className="text-ink-mute" style={{ fontSize: 12 }}>
-              {m.recorders.length} записи
+              · Записал: {m.recorder_names.join(", ")}
             </span>
           )}
         </div>
@@ -956,6 +964,7 @@ export function MeetAdminScreen() {
                   </Avatar>
                   <span className="text-ink-mute" style={{ fontSize: 11 }}>
                     {itemSource(selected)} · {fmtDate(itemDate(selected)) ?? "—"}
+                    {itemRecorder(selected) && ` · ${itemRecorder(selected)}`}
                   </span>
                 </div>
               </div>

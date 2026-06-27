@@ -111,6 +111,23 @@ async function resolveNames(ids: number[]): Promise<Map<number, string>> {
   return out;
 }
 
+// Прикрепляет к встрече(ам) человекочитаемые имена записавших: recorders[].telegram_id →
+// user_profiles, одним батч-резолвом на весь список. recorder_names — уникальные имена,
+// фолбэк «#id» для тех, кого нет в профилях. Источник «кто записал» — claim рекордера.
+async function withRecorderNames<T extends { recorders?: unknown }>(
+  rows: T[],
+): Promise<Array<T & { recorder_names: string[] }>> {
+  const idsOf = (r: T): number[] =>
+    ((r.recorders as Array<{ telegram_id?: number }> | null) ?? [])
+      .map((x) => x?.telegram_id)
+      .filter((n): n is number => typeof n === "number");
+  const names = await resolveNames([...new Set(rows.flatMap(idsOf))]);
+  return rows.map((r) => ({
+    ...r,
+    recorder_names: [...new Set(idsOf(r).map((id) => names.get(id) ?? `#${id}`))],
+  }));
+}
+
 async function resolveAssignee(
   telegramId: number,
 ): Promise<{ telegram_id: number; name: string } | null> {
@@ -1115,7 +1132,7 @@ Deno.serve(async (req: Request) => {
     if (!(showAll && isAdmin)) q = q.contains("recorders", [{ telegram_id }]);
     const { data, error } = await q;
     if (error) return apiErr(500, error.message, origin);
-    return json(data, 200, origin);
+    return json(await withRecorderNames((data ?? []) as Array<{ recorders?: unknown }>), 200, origin);
   }
 
   // GET/PATCH /agent-meetings/:id, POST /agent-meetings/:id/publish
@@ -1131,9 +1148,10 @@ Deno.serve(async (req: Request) => {
       return apiErr(404, "Not found", origin);
     }
 
-    // GET — полный черновик (транскрипт + тезисы + участники)
+    // GET — полный черновик (транскрипт + тезисы + участники + имена записавших)
     if (agentMeetingMatch && req.method === "GET") {
-      return json(meeting, 200, origin);
+      const [enriched] = await withRecorderNames([meeting]);
+      return json(enriched, 200, origin);
     }
 
     // PATCH — вычитка/правка черновика: тезисы и/или название (только до публикации)
@@ -1154,7 +1172,8 @@ Deno.serve(async (req: Request) => {
       if (Object.keys(upd).length === 1) return apiErr(400, "Нужно draft_notes_md или title", origin);
       await supabase.from("meetings").update(upd).eq("id", mId);
       const { data } = await supabase.from("meetings").select("*").eq("id", mId).single();
-      return json(data, 200, origin);
+      const [enriched] = await withRecorderNames([(data ?? {}) as { recorders?: unknown }]);
+      return json(enriched, 200, origin);
     }
 
     // DELETE — убрать черновик из очереди вычитки (до публикации)

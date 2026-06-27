@@ -134,6 +134,9 @@ export type AgentMeeting = {
   // transcript присутствует только в детальном GET /agent-meetings/:id
   transcript?: { language?: string; model?: string; segments?: TranscriptSegment[] } | null;
   recorders: RecorderRef[] | null;
+  // Имена записавших (резолв recorders[].telegram_id → user_profiles на сервере). Уникальные,
+  // фолбэк «#id». Отдаётся всеми ответами /agent-meetings (список и деталь).
+  recorder_names?: string[] | null;
   entry_id: string | null;
   created_at: string;
 };
