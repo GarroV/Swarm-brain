@@ -8,15 +8,20 @@ cd "$(dirname "$0")"
 echo "[1/4] swift build (release)…"
 swift build -c release
 
+# Монотонный номер сборки — единый источник в recorder/VERSION. Вшиваем в CFBundleVersion;
+# по нему авто-апдейтер сравнивает себя с серверным swarm-recorder-version.
+BUILD="$(tr -dc '0-9' < VERSION 2>/dev/null || true)"
+[ -n "$BUILD" ] || BUILD="1"
+
 APP="SwarmRecorder.app"
 BIN=".build/release/SwarmRecorder"
-echo "[2/4] собираю бандл $APP ..."
+echo "[2/4] собираю бандл $APP (build $BUILD) ..."
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/SwarmRecorder"
 cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -26,8 +31,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>SwarmRecorder</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>io.dodobrands.swarmrecorder</string>
-  <key>CFBundleVersion</key><string>0.1.0</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>${BUILD}</string>
+  <key>CFBundleShortVersionString</key><string>1.${BUILD}.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>

@@ -10,6 +10,7 @@
 supabase functions deploy swarm-bot --no-verify-jwt          # всегда --no-verify-jwt
 supabase functions deploy swarm-setup --no-verify-jwt        # публичный GET, Claude Desktop installer
 supabase functions deploy swarm-recorder-setup --no-verify-jwt  # публичный GET, установщик рекордера (/recordertoken)
+supabase functions deploy swarm-recorder-version --no-verify-jwt # публичный GET, последний build рекордера (тихий авто-апдейт; runbook раскатки — recorder/README.md)
 supabase functions deploy meeting-ingest --no-verify-jwt     # приём аудио → Storage → durable-обработка
 supabase functions deploy meeting-process --no-verify-jwt    # cron-воркер durable-обработки (pg_cron 'meetings-process', каждую минуту)
 supabase functions deploy meeting-status --no-verify-jwt     # статус встреч пачкой (рекордер чистит локальный бэкап по done)

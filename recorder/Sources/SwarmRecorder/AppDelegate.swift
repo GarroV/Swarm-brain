@@ -135,11 +135,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let maint = Timer.scheduledTimer(timeInterval: 900, target: self, selector: #selector(maintenanceTick), userInfo: nil, repeats: true)
         RunLoop.main.add(maint, forMode: .common)
         maintTimer = maint
+
+        // Проверка обновления вскоре после старта (даём приложению осесть и подняться сети).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in self?.checkForUpdate() }
     }
 
     @objc private func maintenanceTick() {
         guard let cfg = config, configError == nil else { return }
         Task { await UploadQueue.shared.drain(config: cfg); await refreshQueueBadge() }
+        checkForUpdate()
+    }
+
+    // Тихий авто-апдейт: только в простое (запись/отправку не рвём) и один раз за сессию (после
+    // апдейта приложение перезапустится). Сервер новее → запускаем отсоединённый хелпер
+    // (пересборка из исходников тем же cert → права не слетают). Подробности — Updater.swift.
+    private var updateSpawned = false
+    private func checkForUpdate() {
+        guard let cfg = config, configError == nil, !updateSpawned else { return }
+        if case .idle = state {} else { return }   // не лезем во время записи/отправки/ошибки
+        Task {
+            guard let latest = await Updater.latestBuild(config: cfg), latest > Updater.currentBuild else { return }
+            // Перепроверяем простой на момент запуска (мог начаться созвон, пока ждали сеть).
+            guard case .idle = state, !updateSpawned else { return }
+            updateSpawned = true
+            Updater.runUpdater(currentBuild: Updater.currentBuild, targetBuild: latest)
+        }
     }
 
     @objc private func watchTick() {
@@ -378,6 +398,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func setState(_ s: State) {
         state = s
+        // Замок «идёт работа» для авто-апдейтера: пока пишем/отправляем — он не подменит приложение.
+        switch s {
+        case .recording, .sending: Updater.setRecordingLock(true)
+        default: Updater.setRecordingLock(false)
+        }
         DispatchQueue.main.async { self.rebuildMenu() }
     }
 
