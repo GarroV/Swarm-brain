@@ -1,5 +1,5 @@
-<title>Swarm Brain · Ядро и бот</title>
-<meta name="description" content="Карта Swarm Brain «Рой»: ядро с возможностями как единая область, от неё связь к Telegram-боту и его способам ввода информации." />
+<title>Swarm Brain · Карта системы</title>
+<meta name="description" content="Карта Swarm Brain «Рой»: Swarm как единая умная память с возможностями, вокруг — инструменты-двери: Telegram-бот, веб «Рой», Claude Desktop, запись встреч." />
 
 <style>
   :root {
@@ -72,7 +72,7 @@
   <div class="bar">
     <span class="brand">
       <svg viewBox="0 0 20 22" fill="none" aria-hidden="true"><path d="M10 1l8 4.5v11L10 21l-8-4.5v-11z" stroke="#5FC9D6" stroke-width="1.5" fill="rgba(95,201,214,0.16)"/><circle cx="10" cy="11" r="2.6" fill="#5FC9D6"/></svg>
-      Рой · карта <small>ядро и бот</small>
+      Рой · карта <small>Swarm и инструменты</small>
     </span>
     <div class="tools">
       <button class="tbtn" id="zin" title="Приблизить" aria-label="Приблизить">+</button>
@@ -82,8 +82,8 @@
   </div>
 
   <div class="stage">
-    <canvas id="map" aria-label="Карта ядра и бота Swarm Brain"></canvas>
-    <div class="cap">🔒 Ядро и его возможности — <b>единая область</b>; от неё связь к инструментам</div>
+    <canvas id="map" aria-label="Карта системы Swarm Brain"></canvas>
+    <div class="cap">🔒 Swarm и его возможности — <b>единая область</b>; от неё связь к инструментам</div>
 
     <aside class="panel" id="panel" aria-live="polite">
       <div class="ph">
@@ -112,7 +112,7 @@
 
   // ── Data ────────────────────────────────────────────
   var CORE = { id:"core", kind:"core", emoji:"🧠", x:0, y:0, r:56, color:"#F2B85A",
-    title:"Ядро", cat:"Общая умная память",
+    title:"Swarm", cat:"Общая умная память",
     desc:"Ты не настраиваешь его и не обслуживаешь — просто кидаешь в него всё и спрашиваешь. Оно само запоминает, раскладывает и находит." };
 
   var POINTS = [
@@ -123,8 +123,8 @@
   ];
 
   var BOT = { id:"bot", kind:"door", emoji:"📱", x:840, y:-350, r:46, color:"#5FC9D6",
-    title:"Telegram-бот", cat:"Дверь в ядро",
-    desc:"Самый быстрый и богатый вход: кидаешь что угодно прямо в чат — и оно уходит в ядро. Сам бот ничего не «помнит», он лишь передаёт в ядро." };
+    title:"Telegram-бот", cat:"Дверь в Swarm",
+    desc:"Самый быстрый и богатый вход: кидаешь что угодно прямо в чат — и оно уходит в Swarm. Сам бот ничего не «помнит», он лишь передаёт в Swarm." };
 
   var BOT_FUNCS = [
     // ── как занести информацию (бирюзовые) ──
@@ -148,7 +148,7 @@
     { id:"b_review", emoji:"🗓", title:"Ревью встреч", grp:"do", color:"#E6C281", flow:"out",
       desc:"Встречи (с рекордера, Granola, Read.ai) сначала приходят в бот на проверку, а не сразу в базу. Здесь правишь тезисы, название, страны и участников — и только потом подтверждаешь добавление. Сырые или ошибочные встречи в общую базу не попадают." },
     { id:"b_rec",    emoji:"🎙", title:"Установить рекордер", grp:"do", color:"#E6C281", flow:"out",
-      desc:"Команда «/recordertoken» ставит на Mac наше приложение, которое записывает звук онлайн-созвонов и отдаёт ядру на расшифровку и тезисы. Устанавливается одной строкой, без ручной возни." },
+      desc:"Команда «/recordertoken» ставит на Mac наше приложение, которое записывает звук онлайн-созвонов и отдаёт в Swarm на расшифровку и тезисы. Устанавливается одной строкой, без ручной возни." },
     { id:"b_digest", emoji:"📊", title:"Дайджест", grp:"do", color:"#E6C281", flow:"out",
       desc:"Команда «/digest» — личная сводка по базе за период: что нового, ключевые темы и решения. Бот собирает и присылает краткую выжимку, чтобы быстро войти в курс." },
     { id:"b_claude", emoji:"🖥", title:"Подключить Claude", grp:"do", color:"#E6C281", flow:"out",
@@ -157,7 +157,7 @@
 
   // ── Дверь: Claude Desktop (MCP) ──────────────────────
   var CLAUDE = { id:"claude", kind:"door", emoji:"🖥️", x:-820, y:340, r:46, color:"#5FC9D6",
-    title:"Claude Desktop", cat:"Дверь в ядро",
+    title:"Claude Desktop", cat:"Дверь в Swarm",
     desc:"Умный ассистент, у которого под рукой вся память команды: ты разговариваешь, а он за тебя читает и пишет в базу — с твоей проверкой на важных шагах. Видит только твой рынок и твои личные записи." };
 
   var CLAUDE_FUNCS = [
@@ -173,7 +173,7 @@
 
   // ── Дверь: Веб «Рой» (Mini App / браузер) ────────────
   var WEB = { id:"web", kind:"door", emoji:"🌐", x:-860, y:-330, r:46, color:"#5FC9D6",
-    title:"Веб «Рой»", cat:"Дверь в ядро",
+    title:"Веб «Рой»", cat:"Дверь в Swarm",
     desc:"Большой экран: доска задач, поиск и вычитка встреч. Открывается внутри Telegram (Mini App) или в браузере. Здесь работают глазами и руками, а не в чате." };
 
   var WEB_FUNCS = [
@@ -189,10 +189,10 @@
   // ── Дверь: Захват встреч (рекордер + Granola + Read.ai) ──
   var CAPTURE = { id:"capture", kind:"door", emoji:"🎙️", x:880, y:320, r:46, color:"#5FC9D6",
     title:"Захват встреч", cat:"Источники встреч",
-    desc:"Встречи попадают в систему тремя путями — это разные агенты ОДНОГО процесса. Чем бы встреча ни была записана, дальше ядро одинаково делает тезисы и задачи, и она уходит на вычитку." };
+    desc:"Встречи попадают в систему тремя путями — это разные агенты ОДНОГО процесса. Чем бы встреча ни была записана, дальше Swarm одинаково делает тезисы и задачи, и она уходит на вычитку." };
 
   var CAPTURE_FUNCS = [
-    { id:"cap_rec",     title:"Рекордер",  desc:"Наше приложение для Mac: пишет звук онлайн-звонка и отдаёт ядру — оно делает расшифровку и тезисы. Сам понимает, какая встреча идёт сейчас (через Google Календарь), предлагает запись; авто-стоп по концу созвона." },
+    { id:"cap_rec",     title:"Рекордер",  desc:"Наше приложение для Mac: пишет звук онлайн-звонка и отдаёт в Swarm — там делают расшифровку и тезисы. Сам понимает, какая встреча идёт сейчас (через Google Календарь), предлагает запись; авто-стоп по концу созвона." },
     { id:"cap_granola", title:"Granola",   desc:"Внешний сервис заметок встреч: импорт вручную (/granola) или авто-поллер раз в час подтягивает новые." },
     { id:"cap_readai",  title:"Read.ai",   desc:"Сам присылает завершённые встречи через вебхук — попадают в базу автоматически." }
   ];
@@ -494,7 +494,7 @@
       var big=isCore||n.kind==="door";
       ctx.font=(isCore?"800 17px ":(big?"700 15px ":"600 11.5px "))+"system-ui, sans-serif";
       ctx.textAlign="center"; ctx.textBaseline="top";
-      var ly=y+r+9, lines=isCore?["ЯДРО"]:wrap(n.title, big?16:14), lh=big?17:15, maxw=0;
+      var ly=y+r+9, lines=isCore?["Swarm"]:wrap(n.title, big?16:14), lh=big?17:15, maxw=0;
       lines.forEach(function(ln){ var w=ctx.measureText(ln).width; if(w>maxw)maxw=w; });
       var la=(dim?0.4:1)*Math.max(0.7,fl)*lm;
       if(n.hs>0.02){
@@ -587,12 +587,12 @@
 
   // ── Panel ───────────────────────────────────────────
   var panel=document.getElementById("panel");
-  function catLabel(n){ return n.kind==="core"?n.cat:(n.kind==="point"?"Что делает ядро":(n.kind==="door"?n.cat:(n.flow==="out"?"Достаёт из ядра":"Вносит в ядро"))); }
+  function catLabel(n){ return n.kind==="core"?n.cat:(n.kind==="point"?"Что делает Swarm":(n.kind==="door"?n.cat:(n.flow==="out"?"Достаёт из Swarm":"Вносит в Swarm"))); }
   function select(n){
     selected=n;
     document.getElementById("p-dot").style.background=n.color;
     document.getElementById("p-dot").textContent=n.emoji;
-    document.getElementById("p-title").textContent=n.kind==="core"?"Ядро":n.title;
+    document.getElementById("p-title").textContent=n.kind==="core"?"Swarm":n.title;
     var cat=document.getElementById("p-cat"); cat.textContent=catLabel(n); cat.style.color=n.color;
     document.getElementById("p-desc").textContent=n.desc;
     var lw=document.getElementById("p-links-wrap"), ul=document.getElementById("p-links"), lbl=document.getElementById("p-links-lbl");
