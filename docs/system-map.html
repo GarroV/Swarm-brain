@@ -242,7 +242,7 @@
   edges.push({a:"core",b:"bot",kind:"trunk"});
   BOT_FUNCS.forEach(function(f){ edges.push({a:"bot",b:f.id,kind:"leaf"}); });
   var adj={}; list.forEach(function(n){ adj[n.id]={}; }); edges.forEach(function(e){ adj[e.a][e.b]=true; adj[e.b][e.a]=true; });
-  list.forEach(function(n,i){ n.ph=nrand(i+1)*6.283; n.amp=(n.kind==="core"?1.8:(n.kind==="func"?3.4:2.4)); n._vx=n.x; n._vy=n.y; n.hs=0; });
+  list.forEach(function(n,i){ n.ph=nrand(i+1)*6.283; n.amp=(n.kind==="core"?1.8:(n.kind==="func"?3.4:2.4)); n._vx=n.x; n._vy=n.y; n.hs=0; n.hx=n.x; n.hy=n.y; });
 
   // ── Canvas + camera ─────────────────────────────────
   var canvas=document.getElementById("map"), ctx=canvas.getContext("2d");
@@ -519,7 +519,7 @@
   function draw(ts){
     var t=ts||0;
     // лёгкий дрейф нод — общая позиция для узла И концов линий (линии держатся за узлы)
-    list.forEach(function(n){ var w=wob(t,n.ph,n.amp); n._vx=n.x+w.x; n._vy=n.y+w.y; });
+    list.forEach(function(n){ if(n!==dragNode){ n.x+=(n.hx-n.x)*0.012; n.y+=(n.hy-n.y)*0.012; } var w=wob(t,n.ph,n.amp); n._vx=n.x+w.x; n._vy=n.y+w.y; });
     ctx.clearRect(0,0,W,H);
     var bg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*0.9);
     bg.addColorStop(0,"#101108"); bg.addColorStop(0.55,"#0A0C0A"); bg.addColorStop(1,"#070806");
