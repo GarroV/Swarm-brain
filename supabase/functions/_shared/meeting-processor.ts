@@ -36,7 +36,13 @@ const TEZIS_SYSTEM =
   "Формат: ### Тема\n- тезис\n- тезис\n\n" +
   "Темы называй широко: 'Персонал', 'IT / Технические проблемы', 'Поставки', 'Финансы / Эквайринг', " +
   "'Строительство', 'Маркетинг', 'Операции', 'Региональные новости' и т.п. " +
-  "Только то что реально обсуждалось. Без выдумок.";
+  "Только то что реально обсуждалось. Без выдумок.\n" +
+  "Если в стенограмме нет содержательного обсуждения (проверка связи, тест микрофона, тишина, " +
+  "обрывки фраз) — верни СТРОГО одну строку: НЕТ_ТЕЗИСОВ — и больше ничего, без извинений и пояснений.";
+
+// Плашка вместо тезисов, когда обсуждать в записи нечего. Короткая и нейтральная — стенограмма
+// (если есть) видна на экране вычитки ниже; пустые/бессмысленные тезисы туда не пишем.
+const NO_TEZISY_NOTE = "В записи нет содержательного обсуждения — тезисы не сформированы. Ниже доступна стенограмма.";
 
 export interface Segment { start: number; end: number; text: string; speaker?: string }
 // Одна часть дорожки в Storage. segments заполняются ПОСЛЕ успешной транскрибации (offset уже
@@ -81,6 +87,24 @@ async function openaiFetch(url: string, init: RequestInit, attempts = 4): Promis
   return res;
 }
 
+// Известные галлюцинации Whisper на тишине/шуме: «титры» из ютуб-обучения. В реальной встрече
+// этих фраз не бывает, поэтому режем по подстроке (регистронезависимо). «субтитр» покрывает
+// «Редактор субтитров … Корректор …», «Субтитры сделал/подготовил/создавал». Источники:
+// faster-whisper#621, openai/whisper#2378, whisper.cpp#2286.
+const WHISPER_HALLUCINATION_RE =
+  /субтитр|продолжение следует|спасибо за просмотр|подписывайтесь|подпиш[иеё]тесь|подпишись на канал|до новых встреч|dimatorzok|amara\.org|thank you for watching|thanks for watching|please subscribe/i;
+
+// Сегмент — галлюцинация, если пуст, матчит чёрный список фраз, ИЛИ это явная тишина
+// (высокий no_speech_prob + низкий avg_logprob). Пороги консервативные: одни они «уверенные»
+// галлюцинации не ловят (faster-whisper#621) — поэтому это лишь второй слой к чёрному списку.
+function isWhisperHallucination(text: string, noSpeechProb: number, avgLogprob: number): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  if (WHISPER_HALLUCINATION_RE.test(t)) return true;
+  if (noSpeechProb > 0.8 && avgLogprob < -0.5) return true;
+  return false;
+}
+
 async function transcribeAudio(audio: Blob, filename: string): Promise<Segment[]> {
   const form = new FormData();
   form.append("file", audio, filename);
@@ -96,9 +120,17 @@ async function transcribeAudio(audio: Blob, filename: string): Promise<Segment[]
   if (!res.ok) {
     throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI transcription error");
   }
-  const d = data as { text?: string; segments?: Array<{ start: number; end: number; text: string }> };
-  const segments: Segment[] = (d.segments ?? []).map((s) => ({ start: s.start, end: s.end, text: s.text.trim() }));
-  if (segments.length === 0 && d.text) segments.push({ start: 0, end: 0, text: d.text });
+  const d = data as {
+    text?: string;
+    segments?: Array<{ start: number; end: number; text: string; no_speech_prob?: number; avg_logprob?: number }>;
+  };
+  const segments: Segment[] = (d.segments ?? [])
+    .filter((s) => !isWhisperHallucination(s.text ?? "", s.no_speech_prob ?? 0, s.avg_logprob ?? 0))
+    .map((s) => ({ start: s.start, end: s.end, text: s.text.trim() }));
+  // Фолбэк на d.text — только если он сам не галлюцинация (иначе вернули бы тот же мусор).
+  if (segments.length === 0 && d.text && !WHISPER_HALLUCINATION_RE.test(d.text)) {
+    segments.push({ start: 0, end: 0, text: d.text.trim() });
+  }
   return segments;
 }
 
@@ -237,20 +269,34 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
   await supabase.from("meetings").update({ transcript, updated_at: new Date().toISOString() }).eq("id", m.id);
 
   const transcriptText = segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n").slice(0, 100000);
-  const tezisi = await chatComplete(
-    TEZIS_SYSTEM,
-    `Встреча: ${m.title ?? "без названия"}\n\nСтенограмма (реплики помечены «собеседник» — другие участники, «я» — владелец записи):\n${transcriptText}`,
-  );
+  // Пустая стенограмма (всё вычищено фильтром) → не зовём GPT за «отпиской». Иначе GPT сам решает:
+  // нет содержания → НЕТ_ТЕЗИСОВ (см. TEZIS_SYSTEM) → подменяем на короткую плашку.
+  let tezisi: string;
+  if (!transcriptText.trim()) {
+    tezisi = NO_TEZISY_NOTE;
+  } else {
+    const raw = (await chatComplete(
+      TEZIS_SYSTEM,
+      `Встреча: ${m.title ?? "без названия"}\n\nСтенограмма (реплики помечены «собеседник» — другие участники, «я» — владелец записи):\n${transcriptText}`,
+    )).trim();
+    tezisi = /^НЕТ[_\s]?ТЕЗИСОВ/i.test(raw) ? NO_TEZISY_NOTE : raw;
+  }
+  const noContent = tezisi === NO_TEZISY_NOTE;
 
   let finalTitle = m.title;
   if (!m.title || /^Запись\s/i.test(m.title)) {
-    try {
-      const t = (await chatComplete(
-        "Придумай короткое название встречи на русском: 3–6 слов, по сути обсуждения, без даты, кавычек и префиксов. Верни ТОЛЬКО название.",
-        (tezisi || transcriptText).slice(0, 2000),
-      )).trim().replace(/^["«»\s]+|["«»\s]+$/g, "").slice(0, 120);
-      if (t) finalTitle = t;
-    } catch { /* оставляем исходный заголовок */ }
+    // Для бессодержательной записи не выдумываем красивый титул из обрывков — нейтральная заглушка.
+    if (noContent) {
+      finalTitle = "Тема встречи не установлена";
+    } else {
+      try {
+        const t = (await chatComplete(
+          "Придумай короткое название встречи на русском: 3–6 слов, по сути обсуждения, без даты, кавычек и префиксов. Верни ТОЛЬКО название.",
+          tezisi.slice(0, 2000),
+        )).trim().replace(/^["«»\s]+|["«»\s]+$/g, "").slice(0, 120);
+        if (t) finalTitle = t;
+      } catch { /* оставляем исходный заголовок */ }
+    }
   }
 
   const nowIso = new Date().toISOString();
