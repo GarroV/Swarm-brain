@@ -463,7 +463,7 @@ function DetailPanel({
       setSavingTitle(false);
     };
     return (
-      <div className="flex flex-col gap-4 min-h-0 overflow-y-auto px-5 py-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pt-4 pb-16">
         <div>
           {editingTitle ? (
             <div className="flex items-center gap-2">
@@ -606,7 +606,7 @@ function AgentMeetingDetail({
 
   return (
     // Панель — flex-колонка во всю высоту: шапка фиксирована, контент скроллится в своём контейнере.
-    <div className="flex h-full min-h-0 flex-col px-5 py-4">
+    <div className="flex min-h-0 flex-1 flex-col px-5 py-4">
       <div className="shrink-0">
         <h2 className="font-bold text-ink leading-tight" style={{ fontSize: 22, letterSpacing: "-0.015em" }}>
           {title}
@@ -634,7 +634,7 @@ function AgentMeetingDetail({
       </div>
 
       {/* Тезисы + транскрипт скроллятся внутри своего контейнера, а не растят страницу. */}
-      <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto" style={{ maxHeight: "60vh" }}>
+      <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-16">
         {/* Верх: тезисы / статус обработки */}
         {m.draft_notes_md ? (
           <div>
@@ -966,7 +966,7 @@ export function MeetAdminScreen() {
           </div>
 
           {/* Список */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 space-y-2">
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-16 space-y-2">
             {isLoading && (
               <>
                 {[0, 1, 2].map((i) => (
@@ -992,7 +992,7 @@ export function MeetAdminScreen() {
         </div>
 
         {/* ── Центр: детали ─────────────────────────────────────────────────── */}
-        <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {selected ? (
             <DetailPanel item={selected} onEntryUpdated={onEntryUpdated} />
           ) : (
