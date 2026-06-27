@@ -40,12 +40,12 @@ export function RemindersTasks() {
   };
 
   const rowTrailing = (t: Task) => (
-    <span className="ml-1 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+    <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
       <IconBtn label="Изменить" color="var(--accent-ink)" onClick={(e) => { e.stopPropagation(); setModalTask(t); }}>
-        <RoyIcon name="pencil" size={17} strokeWidth={1.9} />
+        <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
       </IconBtn>
       <IconBtn label="Удалить" color="var(--pri-high)" onClick={(e) => { e.stopPropagation(); onDelete(t); }}>
-        <RoyIcon name="trash" size={17} strokeWidth={1.9} />
+        <RoyIcon name="trash" size={15} strokeWidth={1.9} />
       </IconBtn>
     </span>
   );
@@ -143,7 +143,7 @@ function IconBtn({ label, onClick, color, children }: { label: string; onClick: 
       aria-label={label}
       onClick={onClick}
       className="flex items-center justify-center rounded-[9px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
-      style={{ width: 32, height: 32, color }}
+      style={{ width: 26, height: 26, color }}
     >
       {children}
     </button>

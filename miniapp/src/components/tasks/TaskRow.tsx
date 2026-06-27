@@ -22,7 +22,7 @@ type TaskRowProps = {
   onToggle: () => void;
   showAssignee?: boolean;
   now?: Date;
-  /** Десктоп: кнопки изменить/удалить, показываются по hover контейнера (group). */
+  /** Десктоп: кнопки изменить/удалить в мета-ряду (рядом с датой), показываются по hover строки (group). */
   trailing?: ReactNode;
 };
 
@@ -34,6 +34,7 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
   const due = fmtDue(task.due_date);
   const high = task.priority === "high";
   const assignee = task.assignees?.[0];
+  const showMeta = !done && Boolean(task.country || due || high);
 
   return (
     <div className="flex items-start gap-3 px-3 py-3">
@@ -70,7 +71,8 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
             {task.title}
           </span>
         </div>
-        {(task.country || due || high) && !done && (
+        {showMeta ? (
+          // Есть чипы (дата/рынок/важное) — кнопки изменить/удалить встают в тот же ряд, рядом с датой.
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <Market code={task.country} />
             {due && (
@@ -91,12 +93,15 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
                 Важное
               </span>
             )}
+            {trailing}
           </div>
-        )}
+        ) : trailing ? (
+          // Чипов нет — не держим пустой ряд: кнопки появляются отдельной строкой только по hover.
+          <div className="mt-1 hidden items-center gap-2 group-hover:flex">{trailing}</div>
+        ) : null}
       </div>
 
       {showAssignee && assignee && <Avatar size={26}>{initials(assignee)}</Avatar>}
-      {trailing}
     </div>
   );
 }
