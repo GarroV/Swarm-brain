@@ -89,10 +89,12 @@ function ListRow({
   item,
   active,
   onClick,
+  removing = false,
 }: {
   item: MeetItem;
   active: boolean;
   onClick: () => void;
+  removing?: boolean;
 }) {
   const isAgent = item.kind === "agent";
   const title = itemTitle(item);
@@ -103,7 +105,12 @@ function ListRow({
     <button
       type="button"
       onClick={onClick}
-      className="w-full text-left"
+      disabled={removing}
+      // Exit-анимация при согласовании/удалении: затухание + сворачивание (maxHeight) + лёгкий сдвиг.
+      className={`block w-full text-left overflow-hidden transition-all duration-300 ease-out${
+        removing ? " opacity-0 -translate-x-2 scale-[0.97] pointer-events-none" : ""
+      }`}
+      style={{ maxHeight: removing ? 0 : 260 }}
     >
       <RoyCard
         className="px-3.5 py-3 transition-colors"
@@ -813,6 +820,19 @@ export function MeetAdminScreen() {
     setSelected((prev) => (prev && prev.data.id === id ? null : prev));
   };
 
+  // Плавный уход карточки из очереди (согласование/удаление): помечаем removing → CSS-затухание
+  // и сворачивание ~280мс → затем реально убираем из списка. Иначе карточка исчезала рывком.
+  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const animateRemove = (id: string): Promise<void> =>
+    new Promise((resolve) => {
+      setRemovingIds((s) => new Set(s).add(id));
+      setTimeout(() => {
+        removeFromList(id);
+        setRemovingIds((s) => { const n = new Set(s); n.delete(id); return n; });
+        resolve();
+      }, 280);
+    });
+
   // Иммутабельно заменяет запись в списке встреч и в выбранной (если совпадает id).
   const onEntryUpdated = (updated: Entry) => {
     setEntries((prev) => prev?.map((e) => (e.id === updated.id ? updated : e)) ?? null);
@@ -827,13 +847,13 @@ export function MeetAdminScreen() {
     if (item.kind === "entry") {
       // Подтверждение встречи + выбор хранилища (личное/общее)
       await patchMeeting(item.data.id, { confirmed: true, is_private: storage === "personal" });
-      removeFromList(item.data.id);
       toast(storage === "personal" ? "Согласовано в личное" : "Встреча согласована");
+      await animateRemove(item.data.id);
     } else {
       // Публикация черновика агента в выбранную базу
       await publishAgentMeeting(item.data.id, storage === "personal" ? "personal" : "workspace");
-      removeFromList(item.data.id);
       toast(storage === "personal" ? "Опубликовано в личное" : "Черновик опубликован");
+      await animateRemove(item.data.id);
     }
   };
 
@@ -841,13 +861,13 @@ export function MeetAdminScreen() {
     if (item.kind === "entry") {
       if (typeof window !== "undefined" && !window.confirm(`Удалить встречу «${itemTitle(item)}»? Это удалит и расшифровку.`)) return;
       await deleteMeeting(item.data.id);
-      removeFromList(item.data.id);
       toast("Встреча удалена");
+      await animateRemove(item.data.id);
     } else {
       if (typeof window !== "undefined" && !window.confirm(`Удалить черновик «${itemTitle(item)}»? Это удалит расшифровку и тезисы.`)) return;
       await deleteAgentMeeting(item.data.id);
-      removeFromList(item.data.id);
       toast("Черновик удалён");
+      await animateRemove(item.data.id);
     }
   };
 
@@ -855,8 +875,8 @@ export function MeetAdminScreen() {
   const handleReclassify = async (item: MeetItem) => {
     if (item.kind !== "entry") return;
     await patchMeeting(item.data.id, { entry_type: "note" });
-    removeFromList(item.data.id);
     toast("Перемещено в заметки");
+    await animateRemove(item.data.id);
   };
 
   const isLoading = entries === null || agentMeetings === null;
@@ -918,6 +938,7 @@ export function MeetAdminScreen() {
                 item={item}
                 active={selected !== null && itemId(selected) === itemId(item)}
                 onClick={() => setSelected(item)}
+                removing={removingIds.has(itemId(item))}
               />
             ))}
           </div>

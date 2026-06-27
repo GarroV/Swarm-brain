@@ -1076,11 +1076,11 @@ Deno.serve(async (req: Request) => {
     const meetingId = meetingMatch[1];
     return withEntries(origin, async () => {
       if (req.method === "GET") {
-        const entry = await getEntrySecure(supabase, meetingId, { groupId, telegramId: telegram_id });
+        const entry = await getEntrySecure(supabase, meetingId, { groupId, telegramId: telegram_id, isAdmin });
         return json(entry, 200, origin);
       }
       if (req.method === "PATCH") {
-        const entry = await getEntrySecure(supabase, meetingId, { groupId, telegramId: telegram_id });
+        const entry = await getEntrySecure(supabase, meetingId, { groupId, telegramId: telegram_id, isAdmin });
         let body: Record<string, unknown>;
         try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
         const fields: Record<string, unknown> = {};
@@ -1107,7 +1107,7 @@ Deno.serve(async (req: Request) => {
         return json(data, 200, origin);
       }
       if (req.method === "DELETE") {
-        await getEntrySecure(supabase, meetingId, { groupId, telegramId: telegram_id });
+        await getEntrySecure(supabase, meetingId, { groupId, telegramId: telegram_id, isAdmin });
         await supabase.from("entries").delete().eq("id", meetingId);
         return new Response(null, { status: 204, headers: corsHeaders(origin) });
       }
