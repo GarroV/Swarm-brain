@@ -5,6 +5,7 @@ import type { AgentMeeting } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { TezisyBlocks } from "@/components/roy/ui";
 import { ChevronLeft, ChevronDown, ChevronRight, Clock, CheckCircle, Pencil, Check, X } from "lucide-react";
 
 type Props = { id: string; onClose: () => void; onChanged?: () => void };
@@ -165,8 +166,10 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
                 <Button size="sm" variant="outline" onClick={() => { setDraft(meeting.draft_notes_md ?? ""); setEditing(false); }}>Отмена</Button>
               </div>
             </div>
+          ) : meeting.draft_notes_md ? (
+            <TezisyBlocks text={meeting.draft_notes_md} />
           ) : (
-            <p className="text-sm whitespace-pre-wrap">{meeting.draft_notes_md || "—"}</p>
+            <p className="text-sm text-muted-foreground">—</p>
           )}
         </div>
 

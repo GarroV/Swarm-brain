@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { NavHeader, RoyCard, Market, SectionLabel, IconBtn, PriDot } from "../ui";
+import { NavHeader, RoyCard, Market, SectionLabel, IconBtn, PriDot, TezisyBlocks } from "../ui";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
@@ -129,9 +129,7 @@ export function MeetingDetail({ id }: { id: string }) {
                 <div className="mb-1.5 font-bold uppercase text-accent-ink" style={{ fontSize: 11, letterSpacing: "0.05em" }}>
                   Кратко от ИИ
                 </div>
-                <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 14, lineHeight: 1.55 }}>
-                  {e.summary}
-                </p>
+                <TezisyBlocks text={e.summary} />
               </div>
             ) : null}
 

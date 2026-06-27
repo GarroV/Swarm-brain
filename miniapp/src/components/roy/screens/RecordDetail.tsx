@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { NavHeader, TypeTag, Market, SectionLabel } from "../ui";
+import { NavHeader, TypeTag, Market, SectionLabel, TezisyBlocks } from "../ui";
 import { entryTagKey, deriveEntryTitle, isSearchIndexSummary } from "../entry";
 import { fetchEntry, createTask } from "@/lib/api";
 import type { Entry } from "@/types";
@@ -72,9 +72,7 @@ export function RecordDetail({ id }: { id: string }) {
                 <div className="mb-1.5 font-bold uppercase text-accent-ink" style={{ fontSize: 11, letterSpacing: "0.05em" }}>
                   Кратко от ИИ
                 </div>
-                <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 14, lineHeight: 1.55 }}>
-                  {e.summary}
-                </p>
+                <TezisyBlocks text={e.summary} />
               </div>
             )}
             <SectionLabel>Текст</SectionLabel>

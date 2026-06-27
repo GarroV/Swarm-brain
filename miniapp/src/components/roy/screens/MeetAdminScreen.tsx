@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented } from "../ui";
+import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks } from "../ui";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import {
@@ -466,7 +466,7 @@ function DetailPanel({
         {e.summary && (
           <div>
             <SectionLabel>Саммари</SectionLabel>
-            <p className="text-ink leading-relaxed" style={{ fontSize: 14 }}>{e.summary}</p>
+            <TezisyBlocks text={e.summary} />
           </div>
         )}
 
@@ -587,9 +587,7 @@ function AgentMeetingDetail({
         {m.draft_notes_md ? (
           <div>
             <SectionLabel>Тезисы</SectionLabel>
-            <p className="text-ink leading-relaxed whitespace-pre-wrap" style={{ fontSize: 14 }}>
-              {m.draft_notes_md}
-            </p>
+            <TezisyBlocks text={m.draft_notes_md} />
           </div>
         ) : m.summary_status === "failed" ? (
           <p className="text-ink-soft" style={{ fontSize: 13 }}>

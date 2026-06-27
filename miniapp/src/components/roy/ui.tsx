@@ -192,6 +192,70 @@ export function SectionLabel({ children, className }: { children: ReactNode; cla
   );
 }
 
+// Рендер тезисов встречи. Все пути (granola/read.ai/рекордер/правка в боте) пишут один
+// стабильный формат: «### Тема» + «- тезис». Парсим его сами (узкий формат — без markdown-
+// зависимости: CSP/бандл-бюджет) в секции/списки, иначе в вебе видны литеральные ### и -.
+// Единый компонент для всех экранов вычитки (DRY) — см. MeetAdmin/MeetingDetail/RecordDetail/Review.
+type TezisyBlock =
+  | { kind: "heading"; text: string }
+  | { kind: "bullets"; items: string[] }
+  | { kind: "para"; text: string };
+
+function parseTezisy(src: string): TezisyBlock[] {
+  const blocks: TezisyBlock[] = [];
+  let bullets: string[] = [];
+  const flush = () => {
+    if (bullets.length) { blocks.push({ kind: "bullets", items: bullets }); bullets = []; }
+  };
+  for (const raw of src.replace(/\r\n/g, "\n").split("\n")) {
+    const t = raw.trim();
+    if (!t) { flush(); continue; }
+    const heading = t.match(/^#{1,6}\s+(.+)$/);
+    if (heading) { flush(); blocks.push({ kind: "heading", text: heading[1].trim() }); continue; }
+    const bullet = t.match(/^[-*•]\s+(.+)$/);
+    if (bullet) { bullets.push(bullet[1].trim()); continue; }
+    flush();
+    blocks.push({ kind: "para", text: t });
+  }
+  flush();
+  return blocks;
+}
+
+export function TezisyBlocks({ text, className }: { text: string; className?: string }) {
+  const blocks = parseTezisy(text);
+  if (blocks.length === 0) return null;
+  return (
+    <div className={cn("flex flex-col", className)} style={{ gap: 9 }}>
+      {blocks.map((b, i) => {
+        if (b.kind === "heading") {
+          return (
+            <div key={i} className="font-semibold text-ink" style={{ fontSize: 14, letterSpacing: "-0.01em", marginTop: i === 0 ? 0 : 5 }}>
+              {b.text}
+            </div>
+          );
+        }
+        if (b.kind === "bullets") {
+          return (
+            <ul key={i} className="flex flex-col" style={{ gap: 4 }}>
+              {b.items.map((it, j) => (
+                <li key={j} className="flex text-ink leading-relaxed" style={{ fontSize: 14, gap: 8 }}>
+                  <span className="text-ink-mute select-none">•</span>
+                  <span className="flex-1">{it}</span>
+                </li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <p key={i} className="text-ink leading-relaxed whitespace-pre-wrap" style={{ fontSize: 14 }}>
+            {b.text}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── FAB (плавающая кнопка действия) ──────────────────────────────────────────
 export function FAB({ onClick, className, "aria-label": ariaLabel = "Создать" }: { onClick?: () => void; className?: string; "aria-label"?: string }) {
   return (
