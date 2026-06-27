@@ -1,0 +1,916 @@
+<title>Swarm Brain · Живая карта системы</title>
+<meta name="description" content="Интерактивная карта продукта Swarm Brain «Рой»: поверхности, сквозные процессы с развилками, данные и устройство — на человеческом языке." />
+
+<style>
+  :root {
+    --paper: #F3EFE6;
+    --paper-2: #FBFAF5;
+    --card: #FFFFFF;
+    --line: #E6DFCE;
+    --line-2: #EFEAE0;
+    --ink: #221E17;
+    --ink-soft: #5B5446;
+    --ink-mute: #8C8475;
+    --amber: #D98A2B;
+    --amber-deep: #B06E1E;
+    --amber-soft: #F6E7CF;
+    --dark: #1A1712;
+    --dark-2: #25201A;
+    /* process hues — muted, markers only */
+    --p-capture: #D98A2B;
+    --p-search: #3E6E8E;
+    --p-meet: #5B8C6E;
+    --p-task: #7A6AA8;
+    --p-claude: #B5703E;
+    --radius: 16px;
+    --radius-s: 11px;
+    --maxw: 1180px;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  @media (max-width: 640px) { .wrap { padding: 0 16px; } }
+
+  a { color: var(--amber-deep); }
+  :focus-visible { outline: 2.5px solid var(--amber); outline-offset: 3px; border-radius: 4px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+
+  /* ── HERO ─────────────────────────────────────────── */
+  .hero {
+    position: relative;
+    background: var(--dark);
+    color: #F3EEE4;
+    overflow: hidden;
+    border-bottom: 1px solid #000;
+  }
+  #swarm { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .hero-inner {
+    position: relative;
+    z-index: 2;
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 92px 24px 76px;
+  }
+  @media (max-width: 640px) { .hero-inner { padding: 64px 16px 52px; } }
+  .hero .badge {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: #E7C892;
+    border: 1px solid rgba(217,138,43,0.4);
+    background: rgba(217,138,43,0.08);
+    padding: 6px 13px; border-radius: 100px;
+  }
+  .hero .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+  .hero h1 {
+    font-size: clamp(2.5rem, 1.2rem + 5.4vw, 5.2rem);
+    line-height: 0.98;
+    letter-spacing: -0.03em;
+    font-weight: 800;
+    margin: 22px 0 0;
+    text-wrap: balance;
+    max-width: 16ch;
+  }
+  .hero h1 .accent { color: var(--amber); }
+  .hero .lede {
+    margin: 22px 0 0;
+    font-size: clamp(1.05rem, 0.95rem + 0.6vw, 1.4rem);
+    line-height: 1.5;
+    color: #CFC8B8;
+    max-width: 56ch;
+  }
+  .hero .stats { margin-top: 40px; display: flex; flex-wrap: wrap; gap: 14px; }
+  .stat {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: var(--radius-s);
+    padding: 13px 18px;
+    backdrop-filter: blur(2px);
+  }
+  .stat b { display: block; font-size: 1.7rem; font-weight: 800; color: #F6EFE2; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12.5px; color: #B7AF9E; }
+  .hero .meta-row { margin-top: 30px; font-size: 13px; color: #9A9484; font-family: var(--mono); }
+
+  /* ── STICKY NAV ───────────────────────────────────── */
+  nav.toc {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter: blur(12px) saturate(1.3);
+    border-bottom: 1px solid var(--line);
+  }
+  .toc-inner { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; display: flex; align-items: center; gap: 6px; min-height: 58px; flex-wrap: wrap; }
+  @media (max-width: 640px) { .toc-inner { padding: 8px 12px; gap: 4px; } }
+  .toc .brand { font-weight: 800; letter-spacing: -0.02em; margin-right: auto; display: flex; align-items: center; gap: 9px; font-size: 15px; }
+  .toc .brand .hex { width: 18px; height: 20px; flex: none; }
+  .toc a.link {
+    text-decoration: none; color: var(--ink-soft); font-size: 13.5px; font-weight: 600;
+    padding: 7px 12px; border-radius: 9px; transition: background .15s, color .15s; white-space: nowrap;
+  }
+  .toc a.link:hover { background: var(--amber-soft); color: var(--amber-deep); }
+  .toc a.link.active { background: var(--ink); color: var(--paper-2); }
+  .search-box { position: relative; display: flex; align-items: center; }
+  .search-box input {
+    font-family: var(--sans); font-size: 13px; color: var(--ink);
+    background: var(--card); border: 1px solid var(--line); border-radius: 9px;
+    padding: 7px 11px 7px 30px; width: 168px; transition: width .2s, border-color .15s;
+  }
+  .search-box input::placeholder { color: var(--ink-mute); }
+  .search-box input:focus { width: 210px; border-color: var(--amber); outline: none; }
+  .search-box svg { position: absolute; left: 9px; width: 14px; height: 14px; color: var(--ink-mute); pointer-events: none; }
+  @media (max-width: 760px) { .search-box { display: none; } }
+
+  /* ── SECTIONS ─────────────────────────────────────── */
+  section { padding: 70px 0; border-bottom: 1px solid var(--line); scroll-margin-top: 70px; }
+  @media (max-width: 640px) { section { padding: 48px 0; } }
+  .sec-head { max-width: 62ch; margin-bottom: 36px; }
+  .sec-head h2 {
+    font-size: clamp(1.7rem, 1.2rem + 1.8vw, 2.7rem);
+    letter-spacing: -0.025em; font-weight: 800; margin: 12px 0 0; line-height: 1.05; text-wrap: balance;
+  }
+  .sec-head p { margin: 14px 0 0; color: var(--ink-soft); font-size: 1.06rem; }
+  .sec-num { font-family: var(--mono); color: var(--amber-deep); font-weight: 600; font-size: 13px; }
+
+  /* ── SURFACES ─────────────────────────────────────── */
+  .surfaces { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  @media (max-width: 760px) { .surfaces { grid-template-columns: 1fr; } }
+  .surface {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    overflow: hidden; transition: border-color .18s, box-shadow .18s, transform .18s;
+  }
+  .surface:hover { border-color: #D8CFB8; box-shadow: 0 10px 30px -18px rgba(60,45,20,0.35); }
+  .surface > button {
+    all: unset; box-sizing: border-box; cursor: pointer; display: flex; gap: 16px; align-items: flex-start;
+    width: 100%; padding: 22px 22px; }
+  .surface .ico {
+    flex: none; width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center;
+    font-size: 23px; background: var(--amber-soft); border: 1px solid #ECD8B4;
+  }
+  .surface .s-title { font-weight: 800; font-size: 1.18rem; letter-spacing: -0.01em; display: flex; align-items: center; gap: 9px; }
+  .surface .s-sub { color: var(--ink-soft); font-size: 0.95rem; margin-top: 4px; }
+  .surface .tag {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; color: var(--ink-mute);
+    border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; text-transform: uppercase; font-weight: 600;
+  }
+  .surface .chev { margin-left: auto; flex: none; color: var(--ink-mute); transition: transform .22s; margin-top: 4px; }
+  .surface[aria-open="true"] .chev { transform: rotate(180deg); }
+  .surface .body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .26s ease; }
+  @media (prefers-reduced-motion: reduce) { .surface .body { transition: none; } }
+  .surface[aria-open="true"] .body { grid-template-rows: 1fr; }
+  .surface .body-inner { overflow: hidden; }
+  .surface .body-pad { padding: 0 22px 22px 84px; }
+  @media (max-width: 640px) { .surface .body-pad { padding: 0 20px 20px 20px; } }
+  .feat { list-style: none; padding: 0; margin: 0 0 14px; display: flex; flex-direction: column; gap: 9px; }
+  .feat li { position: relative; padding-left: 20px; font-size: 0.95rem; color: var(--ink-soft); }
+  .feat li::before { content: ""; position: absolute; left: 2px; top: 8px; width: 7px; height: 7px; border-radius: 2px; background: var(--amber); transform: rotate(45deg); }
+  .backs { font-size: 12.5px; color: var(--ink-mute); border-top: 1px dashed var(--line); padding-top: 12px; }
+  .backs code { font-family: var(--mono); font-size: 11.5px; background: var(--paper); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; color: var(--ink-soft); }
+
+  /* ── PROCESS TABS ─────────────────────────────────── */
+  .ptabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 26px; }
+  .ptab {
+    all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 9px;
+    padding: 10px 15px; border-radius: 100px; border: 1px solid var(--line); background: var(--card);
+    font-weight: 700; font-size: 13.5px; color: var(--ink-soft); transition: all .16s; white-space: nowrap;
+  }
+  .ptab .pdot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .ptab:hover { border-color: #D8CFB8; }
+  .ptab[aria-selected="true"] { background: var(--ink); color: var(--paper-2); border-color: var(--ink); }
+  .ptab[aria-selected="true"] .pdot { box-shadow: 0 0 0 3px rgba(255,255,255,0.18); }
+
+  .ppanel { display: none; }
+  .ppanel.show { display: block; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .ppanel.show { animation: none; } }
+
+  .pintro { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 24px; padding: 16px 18px; background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius); border-left: 4px solid var(--accent, var(--amber)); }
+  .pintro .trig { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-mute); font-weight: 600; }
+  .pintro p { margin: 4px 0 0; font-size: 0.98rem; color: var(--ink-soft); }
+
+  /* flow */
+  .flow-scroll { overflow-x: auto; padding-bottom: 6px; }
+  .flow { display: flex; flex-direction: column; align-items: stretch; gap: 0; min-width: 0; }
+  .step {
+    position: relative; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-s);
+    padding: 14px 16px; max-width: 680px; margin: 0 auto; width: 100%;
+  }
+  .step .st-top { display: flex; align-items: center; gap: 10px; }
+  .step .st-n {
+    font-family: var(--mono); font-size: 11px; font-weight: 700; color: #fff; background: var(--accent, var(--amber));
+    width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; flex: none;
+  }
+  .step .st-title { font-weight: 700; font-size: 1.01rem; letter-spacing: -0.01em; }
+  .step .st-desc { color: var(--ink-soft); font-size: 0.93rem; margin: 7px 0 0; padding-left: 32px; }
+  .step.merge { border-style: solid; border-width: 2px; border-color: var(--accent, var(--amber)); background: color-mix(in srgb, var(--accent, var(--amber)) 6%, var(--card)); }
+  .step.terminal { background: var(--ink); color: var(--paper-2); border-color: var(--ink); }
+  .step.terminal .st-title { color: var(--paper-2); }
+  .step.terminal .st-desc { color: #C9C2B2; }
+  .step.terminal .st-n { background: var(--paper-2); color: var(--ink); }
+
+  .connector { width: 2px; height: 26px; background: var(--line); margin: 0 auto; flex: none; }
+  .connector.dashed { background: repeating-linear-gradient(var(--line) 0 4px, transparent 4px 8px); }
+
+  .fork-label {
+    text-align: center; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-mute); font-weight: 600; margin: 2px auto;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 100px; padding: 3px 12px; width: max-content;
+  }
+  .branches { display: grid; gap: 12px; margin: 0 auto; max-width: 920px; width: 100%; }
+  .branches.b2 { grid-template-columns: repeat(2, 1fr); }
+  .branches.b3 { grid-template-columns: repeat(3, 1fr); }
+  .branches.b4 { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 720px) { .branches.b2, .branches.b3, .branches.b4 { grid-template-columns: 1fr; } }
+  .branch {
+    background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 13px 14px;
+    border-top: 3px solid var(--accent, var(--amber));
+  }
+  .branch .br-h { font-weight: 700; font-size: 0.95rem; display: flex; align-items: center; gap: 7px; }
+  .branch .br-h .pill { font-family: var(--mono); font-size: 10px; background: var(--accent, var(--amber)); color: #fff; border-radius: 5px; padding: 1px 6px; font-weight: 700; letter-spacing: 0.03em; }
+  .branch p { margin: 6px 0 0; font-size: 0.88rem; color: var(--ink-soft); line-height: 1.5; }
+
+  .decision { max-width: 680px; margin: 0 auto; width: 100%; background: color-mix(in srgb, var(--accent, var(--amber)) 7%, var(--card)); border: 1.5px dashed var(--accent, var(--amber)); border-radius: var(--radius-s); padding: 13px 16px; }
+  .decision .dq { font-weight: 700; font-size: 0.97rem; display: flex; align-items: center; gap: 9px; }
+  .decision .dq svg { flex: none; color: var(--accent, var(--amber)); }
+  .decision .opts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .decision .opt { font-size: 0.85rem; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px; color: var(--ink-soft); }
+  .decision .opt b { color: var(--ink); }
+
+  /* ── DATA ─────────────────────────────────────────── */
+  .data-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 860px) { .data-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .data-grid { grid-template-columns: 1fr; } }
+  .dcard { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+  .dcard .dh { display: flex; align-items: center; gap: 11px; margin-bottom: 11px; }
+  .dcard .dico { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; font-size: 19px; background: var(--amber-soft); border: 1px solid #ECD8B4; flex: none; }
+  .dcard h3 { margin: 0; font-size: 1.05rem; font-weight: 800; letter-spacing: -0.01em; }
+  .dcard p { margin: 0; color: var(--ink-soft); font-size: 0.92rem; }
+  .dcard .kv { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .dcard .kv span { font-size: 0.85rem; color: var(--ink-mute); display: flex; gap: 7px; }
+  .dcard .kv span b { color: var(--ink-soft); font-weight: 700; }
+
+  .priv {
+    margin-top: 18px; background: var(--ink); color: var(--paper-2); border-radius: var(--radius); padding: 22px 24px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+  }
+  @media (max-width: 640px) { .priv { grid-template-columns: 1fr; } }
+  .priv h3 { margin: 0 0 6px; color: #F6EFE2; font-size: 1.05rem; }
+  .priv .pk { font-family: var(--mono); font-size: 11px; color: var(--amber); letter-spacing: 0.08em; text-transform: uppercase; }
+  .priv p { margin: 6px 0 0; color: #C9C2B2; font-size: 0.92rem; }
+
+  /* ── TECH (collapsible) ───────────────────────────── */
+  details.tech { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  details.tech > summary {
+    cursor: pointer; list-style: none; padding: 20px 22px; display: flex; align-items: center; gap: 12px; font-weight: 700;
+  }
+  details.tech > summary::-webkit-details-marker { display: none; }
+  details.tech > summary .sico { width: 36px; height: 36px; border-radius: 9px; background: var(--paper); border: 1px solid var(--line); display: grid; place-items: center; font-size: 17px; flex: none; }
+  details.tech > summary .chev2 { margin-left: auto; transition: transform .2s; color: var(--ink-mute); }
+  details.tech[open] > summary .chev2 { transform: rotate(180deg); }
+  details.tech > summary .hint { font-weight: 500; font-size: 0.86rem; color: var(--ink-mute); }
+  .tech-body { padding: 4px 22px 24px; border-top: 1px solid var(--line-2); }
+  .tech-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; margin-top: 18px; }
+  @media (max-width: 760px) { .tech-grid { grid-template-columns: 1fr; } }
+  .tblk h4 { margin: 0 0 10px; font-size: 0.95rem; letter-spacing: -0.01em; }
+  .tblk .trow { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--line-2); font-size: 0.88rem; align-items: baseline; }
+  .tblk .trow:last-child { border-bottom: none; }
+  .tblk .trow code { font-family: var(--mono); font-size: 11.5px; color: var(--amber-deep); background: var(--amber-soft); border-radius: 5px; padding: 1px 6px; flex: none; }
+  .tblk .trow span { color: var(--ink-soft); }
+
+  /* ── search highlight ─────────────────────────────── */
+  body.searching .dimmable:not(.hit) { opacity: 0.25; filter: grayscale(0.6); transition: opacity .2s; }
+  .hit-mark { background: var(--amber); color: #fff; border-radius: 3px; padding: 0 2px; }
+  .nores { display: none; text-align: center; color: var(--ink-mute); padding: 30px; font-size: 0.95rem; }
+  body.searching.empty .nores { display: block; }
+
+  /* ── FOOTER ───────────────────────────────────────── */
+  footer { padding: 40px 0 60px; color: var(--ink-mute); font-size: 13px; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: center; }
+  footer .legend { display: flex; gap: 14px; flex-wrap: wrap; }
+  footer .lg { display: inline-flex; align-items: center; gap: 6px; }
+  footer .lg i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+</style>
+
+<header class="hero">
+  <canvas id="swarm" aria-hidden="true"></canvas>
+  <div class="hero-inner">
+    <span class="badge"><span class="dot"></span> Живая карта системы · снимок 27.06.2026</span>
+    <h1>Swarm&nbsp;Brain <span class="accent">«Рой»</span> — командный мозг</h1>
+    <p class="lede">Всё, что знает команда — заметки, документы, договорённости, итоги встреч, ссылки — в одном месте, с ответами на вопросы по-русски и ссылками на источники. Эта карта показывает, из чего система состоит и как по ней движется информация.</p>
+    <div class="stats">
+      <div class="stat"><b>4</b><span>поверхности для работы</span></div>
+      <div class="stat"><b>5</b><span>сквозных процессов</span></div>
+      <div class="stat"><b>2</b><span>рынка-воркспейса</span></div>
+      <div class="stat"><b>1</b><span>общая база знаний</span></div>
+    </div>
+    <div class="meta-row">Dodo Brands · рынки CEE и Other · кликайте по карточкам и шагам, чтобы раскрыть ответвления</div>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Разделы карты">
+  <div class="toc-inner">
+    <span class="brand">
+      <svg class="hex" viewBox="0 0 18 20" fill="none" aria-hidden="true"><path d="M9 1l7 4v10l-7 4-7-4V5z" stroke="#D98A2B" stroke-width="1.6" fill="#F6E7CF"/><circle cx="9" cy="10" r="2.4" fill="#D98A2B"/></svg>
+      Рой · карта
+    </span>
+    <a class="link" href="#overview">Обзор</a>
+    <a class="link" href="#surfaces">Поверхности</a>
+    <a class="link" href="#processes">Процессы</a>
+    <a class="link" href="#data">Данные</a>
+    <a class="link" href="#tech">Внутри</a>
+    <label class="search-box">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+      <input type="search" id="q" placeholder="Поиск по карте…" aria-label="Поиск по карте" autocomplete="off" />
+    </label>
+  </div>
+</nav>
+
+<main class="wrap">
+
+  <!-- ── OVERVIEW ────────────────────────────────────── -->
+  <section id="overview">
+    <div class="sec-head">
+      <span class="sec-num">01 — Обзор</span>
+      <h2>Зачем это нужно</h2>
+      <p>Институциональное знание расползается по чатам, головам и встречам — новый человек или коллега с другого рынка не может быстро поднять контекст. «Рой» централизует знание и отвечает на вопросы по содержимому базы со ссылками на источники, а не «по памяти».</p>
+    </div>
+    <div class="surfaces" style="grid-template-columns: repeat(3,1fr);">
+      <div class="dcard dimmable" data-search="захват сохранить переслать">
+        <div class="dh"><div class="dico">📥</div><h3>Захватываем</h3></div>
+        <p>Переслал боту текст, файл, голос или ссылку — и это уже в общей базе: с кратким содержанием, странами и типом записи.</p>
+      </div>
+      <div class="dcard dimmable" data-search="поиск ответ вопрос">
+        <div class="dh"><div class="dico">🔎</div><h3>Находим</h3></div>
+        <p>Спрашиваешь по-человечески — система ищет по смыслу и отвечает, ссылаясь на конкретные записи-источники.</p>
+      </div>
+      <div class="dcard dimmable" data-search="встречи задачи действия">
+        <div class="dh"><div class="dico">✅</div><h3>Превращаем в дела</h3></div>
+        <p>Встречи становятся тезисами и задачами с исполнителями; задачи живут на доске со спринтами и сроками.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SURFACES ────────────────────────────────────── -->
+  <section id="surfaces">
+    <div class="sec-head">
+      <span class="sec-num">02 — Поверхности</span>
+      <h2>Где этим пользуются</h2>
+      <p>Четыре точки входа поверх одного общего «мозга». Команда работает там, где ей привычно — данные у всех одни и те же. Нажмите на карточку, чтобы раскрыть, что там можно делать.</p>
+    </div>
+    <div class="surfaces" id="surfaceList">
+
+      <article class="surface dimmable" aria-open="true" data-search="телеграм бот сохранить спросить голос файл задачи фидбек">
+        <button type="button" aria-expanded="true">
+          <div class="ico">📱</div>
+          <div>
+            <div class="s-title">Telegram-бот <span class="tag">основной вход</span></div>
+            <div class="s-sub">Быстро закинуть и спросить — прямо там, где команда уже общается.</div>
+          </div>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="body"><div class="body-inner"><div class="body-pad">
+          <ul class="feat">
+            <li>Сохранить знание: переслать сообщение, текст, документ, голосовое или ссылку — бот сам разберёт и сохранит.</li>
+            <li>Спросить базу на естественном языке и получить ответ со ссылками на источники.</li>
+            <li>Встречи: ревью импортированных встреч (Granola / Read.ai), правка тезисов, подтверждение.</li>
+            <li>Задачи: создать, назначить, посмотреть свои/командные, сменить статус.</li>
+            <li>Команда и онбординг, обратная связь по боту, админка для суперадмина.</li>
+          </ul>
+          <div class="backs">Работает на функции <code>swarm-bot</code></div>
+        </div></div></div>
+      </article>
+
+      <article class="surface dimmable" aria-open="false" data-search="веб рой mini app доска задач таймлайн спринты граф вычитка дайджест браузер">
+        <button type="button" aria-expanded="false">
+          <div class="ico">🌐</div>
+          <div>
+            <div class="s-title">Веб «Рой» <span class="tag">Mini App / браузер</span></div>
+            <div class="s-sub">Доска задач, поиск и вычитка встреч на большом экране.</div>
+          </div>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="body"><div class="body-inner"><div class="body-pad">
+          <ul class="feat">
+            <li>Доска задач в четырёх видах: Список, Таймлайн (Gantt), Спринты, Граф.</li>
+            <li>Умный поиск с ответом и сносками; персональный дайджест за период.</li>
+            <li>Вычитка встреч: правка тезисов, выбор «команде / в личное», подтверждение.</li>
+            <li>Профиль, команда, рынки; для админа — управление пользователями и воркспейсами.</li>
+            <li>Открывается внутри Telegram (Mini App) или в обычном браузере (вход через Telegram).</li>
+          </ul>
+          <div class="backs">Веб на <code>Cloudflare Pages</code>, данные через <code>swarm-api</code></div>
+        </div></div></div>
+      </article>
+
+      <article class="surface dimmable" aria-open="false" data-search="claude desktop mcp инструменты токен большие тексты">
+        <button type="button" aria-expanded="false">
+          <div class="ico">🖥️</div>
+          <div>
+            <div class="s-title">Claude Desktop <span class="tag">через MCP</span></div>
+            <div class="s-sub">Та же база — прямо внутри Claude, для больших текстов с проверкой человеком.</div>
+          </div>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="body"><div class="body-inner"><div class="body-pad">
+          <ul class="feat">
+            <li>Поиск по базе, добавление знаний, работа с записями и файлами — как инструменты Claude.</li>
+            <li>Управление задачами и просмотр встреч той же команды.</li>
+            <li>Подключение одной командой из бота (<code>/setup</code>) по личному токену.</li>
+            <li>Видит только свой воркспейс и свои личные записи — изоляция сохраняется.</li>
+          </ul>
+          <div class="backs">Работает на функции <code>swarm-mcp</code></div>
+        </div></div></div>
+      </article>
+
+      <article class="surface dimmable" aria-open="false" data-search="рекордер встреч запись звонок аудио расшифровка whisper тезисы macos">
+        <button type="button" aria-expanded="false">
+          <div class="ico">🎙️</div>
+          <div>
+            <div class="s-title">Рекордер встреч <span class="tag">macOS-приложение</span></div>
+            <div class="s-sub">Пишет звук онлайн-звонка → облако расшифровывает → тезисы на вычитку.</div>
+          </div>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="body"><div class="body-inner"><div class="body-pad">
+          <ul class="feat">
+            <li>Своё лёгкое приложение для Mac: пишет системный звук и микрофон во время созвона.</li>
+            <li>Понимает, какая встреча идёт сейчас (через календарь), и предлагает записать.</li>
+            <li>Расшифровка и тезисы — в облаке (OpenAI), без локальной модели; длинные встречи обрабатываются по частям.</li>
+            <li>Готовые тезисы приходят «на вычитку», запись хранится локально до подтверждения обработки.</li>
+            <li>Установка одной командой из бота (<code>/recordertoken</code>).</li>
+          </ul>
+          <div class="backs">Функции <code>meeting-claim</code> · <code>meeting-ingest</code> · <code>meeting-process</code> · <code>meeting-status</code></div>
+        </div></div></div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ── PROCESSES ───────────────────────────────────── -->
+  <section id="processes">
+    <div class="sec-head">
+      <span class="sec-num">03 — Сквозные процессы</span>
+      <h2>Как движется информация</h2>
+      <p>Пять основных потоков — с развилками и ветками. Выберите процесс; шаги читаются сверху вниз, развилки показывают, куда и почему путь расходится.</p>
+    </div>
+
+    <div class="ptabs" role="tablist" aria-label="Процессы">
+      <button class="ptab" role="tab" aria-selected="true"  data-p="capture"><span class="pdot" style="background:var(--p-capture)"></span>Захват знаний</button>
+      <button class="ptab" role="tab" aria-selected="false" data-p="search"><span class="pdot" style="background:var(--p-search)"></span>Поиск и ответы</button>
+      <button class="ptab" role="tab" aria-selected="false" data-p="meet"><span class="pdot" style="background:var(--p-meet)"></span>Встречи</button>
+      <button class="ptab" role="tab" aria-selected="false" data-p="task"><span class="pdot" style="background:var(--p-task)"></span>Задачи</button>
+      <button class="ptab" role="tab" aria-selected="false" data-p="claude"><span class="pdot" style="background:var(--p-claude)"></span>Claude Desktop</button>
+    </div>
+
+    <!-- CAPTURE -->
+    <div class="ppanel show" data-panel="capture" style="--accent: var(--p-capture)">
+      <div class="pintro">
+        <div><div class="trig">Когда запускается</div><p>Пользователь присылает боту любой контент — пересланное сообщение, текст, файл, голос или ссылку.</p></div>
+      </div>
+      <div class="flow-scroll"><div class="flow">
+        <div class="step"><div class="st-top"><span class="st-n">1</span><span class="st-title">Пришёл контент</span></div><div class="st-desc">Бот сначала решает: это «сохранить» или «спросить». Пересланное сообщение и явное «сохрани / запиши в базу» — всегда сохранение.</div></div>
+        <div class="connector"></div>
+        <div class="fork-label">развилка по типу</div>
+        <div class="branches b4">
+          <div class="branch"><div class="br-h"><span class="pill">текст</span> Заметка или знание</div><p>Длинный текст → краткое содержание, страны и тип. Короткий → лёгкая заметка с ключевыми словами.</p></div>
+          <div class="branch"><div class="br-h"><span class="pill">файл</span> Документ</div><p>TXT / таблицы и т.п. → извлекается содержимое и сохраняется кусками для поиска.</p></div>
+          <div class="branch"><div class="br-h"><span class="pill">голос</span> Голосовое</div><p>Распознаётся речь, отсекаются «галлюцинации» и тишина; пустое не сохраняется.</p></div>
+          <div class="branch"><div class="br-h"><span class="pill">ссылка</span> URL</div><p>Описание ссылки расширяется, чтобы её потом можно было найти по смыслу.</p></div>
+        </div>
+        <div class="connector"></div>
+        <div class="decision">
+          <div class="dq"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3v18M3 12h18"/></svg> Похожее уже есть в базе за неделю?</div>
+          <div class="opts">
+            <span class="opt"><b>Точный дубль</b> → не плодим запись</span>
+            <span class="opt"><b>Продолжение от того же автора</b> → дописываем к существующей</span>
+            <span class="opt"><b>Новое</b> → создаём запись</span>
+          </div>
+        </div>
+        <div class="connector"></div>
+        <div class="step merge"><div class="st-top"><span class="st-n">✓</span><span class="st-title">Сохранено в базу</span></div><div class="st-desc">Запись получает «смысловой отпечаток» (для поиска), страны, тип (встреча / заметка) и приватность (личное / командное). Теперь её можно найти и спросить.</div></div>
+      </div></div>
+    </div>
+
+    <!-- SEARCH -->
+    <div class="ppanel" data-panel="search" style="--accent: var(--p-search)">
+      <div class="pintro">
+        <div><div class="trig">Когда запускается</div><p>Пользователь задаёт вопрос боту или в вебе («что мы решили по Болгарии?», «где инструкция по ТВ-бордам?»).</p></div>
+      </div>
+      <div class="flow-scroll"><div class="flow">
+        <div class="step"><div class="st-top"><span class="st-n">1</span><span class="st-title">Вопрос</span></div><div class="st-desc">Система определяет: это поиск по смыслу или вопрос «что нового / последнее».</div></div>
+        <div class="connector"></div>
+        <div class="fork-label">развилка по типу вопроса</div>
+        <div class="branches b2">
+          <div class="branch"><div class="br-h"><span class="pill">по смыслу</span> Семантический поиск</div><p>Ищет не по словам, а по смыслу — находит релевантные записи, даже если формулировка другая.</p></div>
+          <div class="branch"><div class="br-h"><span class="pill">по времени</span> «Что нового»</div><p>«Что я только что сохранил», «что нового в базе» → отдельный путь, сортировка по времени, а не по смыслу.</p></div>
+        </div>
+        <div class="connector"></div>
+        <div class="decision">
+          <div class="dq"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> Что-то нашлось?</div>
+          <div class="opts">
+            <span class="opt"><b>Да</b> → ответ строго по найденному, со сносками [1][2] на источники</span>
+            <span class="opt"><b>Нет</b> → честно говорит, что ничего не нашёл (не выдумывает)</span>
+          </div>
+        </div>
+        <div class="connector"></div>
+        <div class="step merge"><div class="st-top"><span class="st-n">✓</span><span class="st-title">Ответ со ссылками</span></div><div class="st-desc">Краткий ответ + список записей-источников. Можно тут же «уточнить» — задать следующий вопрос в контексте.</div></div>
+      </div></div>
+    </div>
+
+    <!-- MEETINGS -->
+    <div class="ppanel" data-panel="meet" style="--accent: var(--p-meet)">
+      <div class="pintro">
+        <div><div class="trig">Когда запускается</div><p>Прошла встреча. Источников три — и все сходятся в один путь: черновик тезисов → вычитка → база → задачи.</p></div>
+      </div>
+      <div class="flow-scroll"><div class="flow">
+        <div class="fork-label">три источника встречи</div>
+        <div class="branches b3">
+          <div class="branch"><div class="br-h"><span class="pill">Granola</span> Импорт</div><p>Вручную через <code>/granola</code> или автоматический поллер раз в час подтягивает новые заметки.</p></div>
+          <div class="branch"><div class="br-h"><span class="pill">Read.ai</span> Вебхук</div><p>Read.ai сам присылает завершённую встречу — сохраняется автоматически.</p></div>
+          <div class="branch"><div class="br-h"><span class="pill">Рекордер</span> Запись</div><p>Записал звонок → «кто расшифровывает» → облако режет на части, распознаёт речь, отсекает тишину → тезисы.</p></div>
+        </div>
+        <div class="connector"></div>
+        <div class="step"><div class="st-top"><span class="st-n">2</span><span class="st-title">Черновик «на согласовании / на вычитке»</span></div><div class="st-desc">Появляются тезисы и авто-название. Встреча ждёт человека — она ещё не в общей базе.</div></div>
+        <div class="connector"></div>
+        <div class="step"><div class="st-top"><span class="st-n">3</span><span class="st-title">Вычитка</span></div><div class="st-desc">Правка тезисов и названия, страны, участники. Можно отклонить или сказать «это не встреча → в заметки».</div></div>
+        <div class="connector"></div>
+        <div class="decision">
+          <div class="dq"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3v18M3 12h18"/></svg> Куда сохранить?</div>
+          <div class="opts">
+            <span class="opt"><b>Команде</b> → видит весь воркспейс</span>
+            <span class="opt"><b>В личное</b> → только автор</span>
+          </div>
+        </div>
+        <div class="connector"></div>
+        <div class="step merge"><div class="st-top"><span class="st-n">✓</span><span class="st-title">В базе + задачи</span></div><div class="st-desc">Встреча попадает в базу знаний (с поиском), а из тезисов автоматически извлекаются задачи с исполнителями — они уходят в процесс «Задачи».</div></div>
+      </div></div>
+    </div>
+
+    <!-- TASKS -->
+    <div class="ppanel" data-panel="task" style="--accent: var(--p-task)">
+      <div class="pintro">
+        <div><div class="trig">Когда запускается</div><p>Появляется дело — извлечённое из встречи или заведённое руками.</p></div>
+      </div>
+      <div class="flow-scroll"><div class="flow">
+        <div class="fork-label">откуда берётся задача</div>
+        <div class="branches b2">
+          <div class="branch"><div class="br-h"><span class="pill">из встречи</span> Автоматически</div><p>После публикации встречи из тезисов извлекаются поручения и привязываются к ней.</p></div>
+          <div class="branch"><div class="br-h"><span class="pill">вручную</span> Бот или веб</div><p>Визард в боте (название → исполнитель → рынок → срок) или форма на доске.</p></div>
+        </div>
+        <div class="connector"></div>
+        <div class="step"><div class="st-top"><span class="st-n">2</span><span class="st-title">Параметры задачи</span></div><div class="st-desc">Исполнитель, страна/рынок, срок, приоритет, личная или командная.</div></div>
+        <div class="connector"></div>
+        <div class="decision">
+          <div class="dq"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Жизненный цикл по статусам</div>
+          <div class="opts">
+            <span class="opt"><b>На проверке</b></span>
+            <span class="opt">→ <b>Открыта</b> (уведомление исполнителю)</span>
+            <span class="opt">→ <b>В работе</b></span>
+            <span class="opt">→ <b>Готово</b></span>
+          </div>
+        </div>
+        <div class="connector"></div>
+        <div class="step merge"><div class="st-top"><span class="st-n">✓</span><span class="st-title">Трекинг на доске</span></div><div class="st-desc">Задачи живут в вебе: Список, Таймлайн (Gantt), Спринты и Граф зависимостей. Личные видны только владельцу, командные — всему воркспейсу.</div></div>
+      </div></div>
+    </div>
+
+    <!-- CLAUDE -->
+    <div class="ppanel" data-panel="claude" style="--accent: var(--p-claude)">
+      <div class="pintro">
+        <div><div class="trig">Когда запускается</div><p>Сотрудник работает в Claude Desktop и хочет ту же базу под рукой — особенно для больших текстов.</p></div>
+      </div>
+      <div class="flow-scroll"><div class="flow">
+        <div class="step"><div class="st-top"><span class="st-n">1</span><span class="st-title">Подключение по токену</span></div><div class="st-desc">Команда <code>/setup</code> в боте выдаёт личный токен и настраивает Claude одной строкой.</div></div>
+        <div class="connector"></div>
+        <div class="step"><div class="st-top"><span class="st-n">2</span><span class="st-title">Те же операции — как инструменты</span></div></div>
+        <div class="connector dashed"></div>
+        <div class="fork-label">доступные инструменты</div>
+        <div class="branches b3">
+          <div class="branch"><div class="br-h">Знания</div><p>Найти, добавить, обновить запись, загрузить файл.</p></div>
+          <div class="branch"><div class="br-h">Задачи</div><p>Создать, изменить, посмотреть список с фильтрами.</p></div>
+          <div class="branch"><div class="br-h">Встречи и команда</div><p>Список встреч, участники, статистика базы.</p></div>
+        </div>
+        <div class="connector"></div>
+        <div class="step merge"><div class="st-top"><span class="st-n">✓</span><span class="st-title">Изоляция сохраняется</span></div><div class="st-desc">Через Claude человек видит только свой воркспейс и свои личные записи — ровно как в боте и вебе.</div></div>
+      </div></div>
+    </div>
+
+  </section>
+
+  <!-- ── DATA ────────────────────────────────────────── -->
+  <section id="data">
+    <div class="sec-head">
+      <span class="sec-num">04 — Данные</span>
+      <h2>Что система помнит</h2>
+      <p>Под всеми поверхностями — одна база. Вот что в ней хранится, на человеческом языке.</p>
+    </div>
+    <div class="data-grid">
+      <div class="dcard dimmable" data-search="записи база знаний встречи заметки ссылки файлы">
+        <div class="dh"><div class="dico">📚</div><h3>Записи базы знаний</h3></div>
+        <p>Всё знание команды. Два типа:</p>
+        <div class="kv">
+          <span><b>Встреча</b> — тезисы созвона</span>
+          <span><b>Заметка</b> — всё остальное</span>
+          <span>Ссылка и файл — это виды заметки</span>
+        </div>
+      </div>
+      <div class="dcard dimmable" data-search="задачи спринты зависимости сроки приоритет">
+        <div class="dh"><div class="dico">✅</div><h3>Задачи</h3></div>
+        <p>Командные и личные дела.</p>
+        <div class="kv">
+          <span>Исполнитель, срок, приоритет, рынок</span>
+          <span>Спринты и зависимости</span>
+          <span>История смены статусов</span>
+        </div>
+      </div>
+      <div class="dcard dimmable" data-search="команда профили роли рынки доступ белый список">
+        <div class="dh"><div class="dico">👥</div><h3>Команда</h3></div>
+        <p>Кто есть кто и у кого доступ.</p>
+        <div class="kv">
+          <span>Профили: имя, роль, рынки, контакты</span>
+          <span>Белый список доступа</span>
+          <span>Интеграции (Granola, календарь)</span>
+        </div>
+      </div>
+      <div class="dcard dimmable" data-search="рынки воркспейсы изоляция cee other тенант">
+        <div class="dh"><div class="dico">🌍</div><h3>Рынки (воркспейсы)</h3></div>
+        <p>Данные изолированы по группам рынков.</p>
+        <div class="kv">
+          <span><b>CEE</b> — Central &amp; Eastern Europe</span>
+          <span><b>Other</b> — остальные рынки</span>
+          <span>Каждый видит только свой</span>
+        </div>
+      </div>
+      <div class="dcard dimmable" data-search="встречи рекордер транскрипт черновик">
+        <div class="dh"><div class="dico">🎙️</div><h3>Встречи рекордера</h3></div>
+        <p>Источник истины о записанной встрече.</p>
+        <div class="kv">
+          <span>Транскрипт и черновик тезисов</span>
+          <span>Кто записал, кто расшифровывает</span>
+          <span>Статус обработки и вычитки</span>
+        </div>
+      </div>
+      <div class="dcard dimmable" data-search="настройки сессии фидбек">
+        <div class="dh"><div class="dico">⚙️</div><h3>Служебное</h3></div>
+        <p>Что нужно для работы.</p>
+        <div class="kv">
+          <span>Состояние диалогов с ботом</span>
+          <span>Обратная связь от команды</span>
+          <span>Токены и настройки интеграций</span>
+        </div>
+      </div>
+    </div>
+    <div class="priv dimmable" data-search="приватность личное командное доступ изоляция">
+      <div>
+        <span class="pk">Приватность</span>
+        <h3>Личное и командное</h3>
+        <p>У каждой записи и задачи есть видимость: <b>командная</b> (видит весь воркспейс) или <b>личная</b> (только владелец). Личные записи переезжают вместе с человеком при смене рынка.</p>
+      </div>
+      <div>
+        <span class="pk">Изоляция</span>
+        <h3>Граница — это рынок</h3>
+        <p>Все запросы фильтруются по воркспейсу пользователя. Защита доступа реализована в коде на каждом обращении к данным — человек физически не видит чужой рынок.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── TECH ────────────────────────────────────────── -->
+  <section id="tech">
+    <div class="sec-head">
+      <span class="sec-num">05 — Под капотом</span>
+      <h2>Как устроено внутри</h2>
+      <p>Технический слой — для тех, кому интересно «на чём это работает». Свёрнут по умолчанию.</p>
+    </div>
+    <details class="tech">
+      <summary>
+        <div class="sico">🛠️</div>
+        <div>Технические детали <div class="hint" style="margin-top:2px">бэкенд, ИИ, функции, безопасность</div></div>
+        <svg class="chev2" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+      </summary>
+      <div class="tech-body">
+        <div class="tech-grid">
+          <div class="tblk">
+            <h4>Платформа</h4>
+            <div class="trow"><code>Supabase</code><span>Postgres + pgvector (смысловой поиск), Edge Functions на Deno</span></div>
+            <div class="trow"><code>OpenAI</code><span>GPT-4o-mini (ответы и тезисы), embeddings (поиск), Whisper (расшифровка)</span></div>
+            <div class="trow"><code>Cloudflare</code><span>Хостинг веба «Рой» (статический экспорт Next.js)</span></div>
+            <div class="trow"><code>Telegram</code><span>Бот (webhook) и Mini App</span></div>
+          </div>
+          <div class="tblk">
+            <h4>Функции бэкенда</h4>
+            <div class="trow"><code>swarm-bot</code><span>Весь флоу Telegram-бота + почасовой импорт Granola</span></div>
+            <div class="trow"><code>swarm-api</code><span>REST API для веба «Рой»</span></div>
+            <div class="trow"><code>swarm-mcp</code><span>Инструменты для Claude Desktop</span></div>
+            <div class="trow"><code>meeting-*</code><span>claim / ingest / process / status — конвейер рекордера</span></div>
+            <div class="trow"><code>read-ai-webhook</code><span>Приём встреч Read.ai</span></div>
+            <div class="trow"><code>google-oauth</code><span>Календарь для рекордера</span></div>
+          </div>
+          <div class="tblk">
+            <h4>Безопасность</h4>
+            <div class="trow"><code>токены</code><span>Личный токен на пользователя для Claude и рекордера</span></div>
+            <div class="trow"><code>воркспейс</code><span>Изоляция данных по рынку на каждом запросе</span></div>
+            <div class="trow"><code>в коде</code><span>RLS не используется (service role) — все проверки доступа в коде</span></div>
+          </div>
+          <div class="tblk">
+            <h4>Общие модули</h4>
+            <div class="trow"><code>tasks/</code><span>Единый движок задач для бота, веба и Claude</span></div>
+            <div class="trow"><code>search</code><span>Семантический поиск с учётом приватности и воркспейса</span></div>
+            <div class="trow"><code>countries</code><span>Единые правила определения стран и типа записи</span></div>
+            <div class="trow"><code>meeting-processor</code><span>Общая логика обработки встреч (inline + cron)</span></div>
+          </div>
+        </div>
+        <p style="margin:20px 0 0; font-size:0.84rem; color:var(--ink-mute); font-family:var(--mono)">Канонический источник деталей — docs/ARCHITECTURE.md в репозитории.</p>
+      </div>
+    </details>
+  </section>
+
+  <div class="nores">Ничего не найдено по запросу. Попробуйте другое слово.</div>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="legend">
+      <span class="lg"><i style="background:var(--p-capture)"></i>Захват</span>
+      <span class="lg"><i style="background:var(--p-search)"></i>Поиск</span>
+      <span class="lg"><i style="background:var(--p-meet)"></i>Встречи</span>
+      <span class="lg"><i style="background:var(--p-task)"></i>Задачи</span>
+      <span class="lg"><i style="background:var(--p-claude)"></i>Claude</span>
+    </div>
+    <div>Swarm Brain «Рой» · карта-снимок 27.06.2026 · не синхронизируется с кодом автоматически</div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ── Surfaces expand/collapse ─────────────────────── */
+  document.querySelectorAll(".surface > button").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var card = btn.closest(".surface");
+      var open = card.getAttribute("aria-open") === "true";
+      card.setAttribute("aria-open", String(!open));
+      btn.setAttribute("aria-expanded", String(!open));
+    });
+  });
+
+  /* ── Process tabs ─────────────────────────────────── */
+  var tabs = Array.prototype.slice.call(document.querySelectorAll(".ptab"));
+  var panels = document.querySelectorAll(".ppanel");
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      var key = tab.getAttribute("data-p");
+      tabs.forEach(function (t) { t.setAttribute("aria-selected", String(t === tab)); });
+      panels.forEach(function (p) { p.classList.toggle("show", p.getAttribute("data-panel") === key); });
+    });
+  });
+
+  /* ── Scrollspy for TOC ────────────────────────────── */
+  var links = Array.prototype.slice.call(document.querySelectorAll(".toc a.link"));
+  var secs = links.map(function (l) { return document.querySelector(l.getAttribute("href")); });
+  if ("IntersectionObserver" in window) {
+    var spy = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) {
+          var id = "#" + e.target.id;
+          links.forEach(function (l) { l.classList.toggle("active", l.getAttribute("href") === id); });
+        }
+      });
+    }, { rootMargin: "-45% 0px -50% 0px", threshold: 0 });
+    secs.forEach(function (s) { if (s) spy.observe(s); });
+  }
+
+  /* ── Search / filter ──────────────────────────────── */
+  var q = document.getElementById("q");
+  var items = Array.prototype.slice.call(document.querySelectorAll(".dimmable"));
+  if (q) {
+    q.addEventListener("input", function () {
+      var term = q.value.trim().toLowerCase();
+      if (!term) {
+        document.body.classList.remove("searching", "empty");
+        items.forEach(function (it) { it.classList.remove("hit"); });
+        return;
+      }
+      document.body.classList.add("searching");
+      var any = false;
+      items.forEach(function (it) {
+        var hay = (it.getAttribute("data-search") || "") + " " + it.textContent.toLowerCase();
+        var hit = hay.toLowerCase().indexOf(term) !== -1;
+        it.classList.toggle("hit", hit);
+        if (hit) any = true;
+      });
+      document.body.classList.toggle("empty", !any);
+    });
+  }
+
+  /* ── Hero swarm canvas ────────────────────────────── */
+  var canvas = document.getElementById("swarm");
+  if (!canvas) return;
+  var ctx = canvas.getContext("2d");
+  var W = 0, H = 0, dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var nodes = [];
+  var COUNT = 56;
+
+  function resize() {
+    var r = canvas.parentElement.getBoundingClientRect();
+    W = r.width; H = r.height;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function seedRand(i) {
+    /* deterministic-ish spread without Math.random reliance for layout */
+    var a = Math.sin(i * 12.9898) * 43758.5453;
+    return a - Math.floor(a);
+  }
+
+  function init() {
+    resize();
+    nodes = [];
+    var n = W < 600 ? 34 : COUNT;
+    for (var i = 0; i < n; i++) {
+      nodes.push({
+        x: seedRand(i) * W,
+        y: seedRand(i + 99) * H,
+        vx: (seedRand(i + 7) - 0.5) * 0.28,
+        vy: (seedRand(i + 31) - 0.5) * 0.28,
+        r: 1.2 + seedRand(i + 5) * 1.9
+      });
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    var i, j, a, b, dx, dy, d2, max = 132 * 132;
+    for (i = 0; i < nodes.length; i++) {
+      a = nodes[i];
+      for (j = i + 1; j < nodes.length; j++) {
+        b = nodes[j];
+        dx = a.x - b.x; dy = a.y - b.y; d2 = dx * dx + dy * dy;
+        if (d2 < max) {
+          var o = (1 - d2 / max) * 0.5;
+          ctx.strokeStyle = "rgba(217,138,43," + (o * 0.55) + ")";
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        }
+      }
+    }
+    for (i = 0; i < nodes.length; i++) {
+      a = nodes[i];
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+      ctx.fillStyle = i % 6 === 0 ? "rgba(231,200,146,0.9)" : "rgba(217,138,43,0.7)";
+      ctx.fill();
+    }
+  }
+
+  function step() {
+    var i, a;
+    for (i = 0; i < nodes.length; i++) {
+      a = nodes[i];
+      a.x += a.vx; a.y += a.vy;
+      if (a.x < 0 || a.x > W) a.vx *= -1;
+      if (a.y < 0 || a.y > H) a.vy *= -1;
+    }
+    draw();
+    raf = requestAnimationFrame(step);
+  }
+
+  var raf = null;
+  init();
+  if (reduce) { draw(); } else { step(); }
+
+  var rt;
+  window.addEventListener("resize", function () {
+    clearTimeout(rt);
+    rt = setTimeout(function () {
+      if (raf) cancelAnimationFrame(raf);
+      init();
+      if (reduce) { draw(); } else { step(); }
+    }, 200);
+  });
+})();
+</script>
