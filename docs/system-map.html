@@ -171,6 +171,23 @@
     { id:"c_totasks", title:"Разговор в задачи",      desc:"Обсудили план или встречу — Claude вытащит поручения и заведёт задачи с исполнителями; можно посмотреть и обновить статусы." }
   ];
 
+  // ── Дверь: Веб «Рой» (Mini App / браузер) ────────────
+  var WEB = { id:"web", kind:"door", emoji:"🌐", x:240, y:-900, r:46, color:"#5FC9D6",
+    title:"Веб «Рой»", cat:"Дверь в ядро",
+    desc:"Большой экран: доска задач, поиск и вычитка встреч. Открывается внутри Telegram (Mini App) или в браузере. Здесь работают глазами и руками, а не в чате." };
+
+  var WEB_FUNCS = [
+    // ── достаёт (ядро → иконка) ──
+    { id:"w_search", title:"Поиск и ответы", flow:"out", desc:"Спрашиваешь по-человечески — система находит по смыслу и даёт ответ со ссылками на источники; можно уточнить." },
+    { id:"w_base",   title:"База знаний",    flow:"out", desc:"Смотришь и ищешь записи команды — заметки, ссылки, файлы, встречи — с фильтрами." },
+    { id:"w_digest", title:"Дайджест",       flow:"out", desc:"Личная сводка по базе за период — быстро войти в курс." },
+    { id:"w_team",   title:"Команда и профиль", flow:"out", desc:"Участники команды, их рынки и роли; свой профиль и настройки." },
+    // ── вносит (иконка → ядро) ──
+    { id:"w_board",  title:"Доска задач",    desc:"Задачи визуально: Список, Таймлайн (Gantt), Спринты и Граф зависимостей. Планирование и трекинг на большом экране." },
+    { id:"w_review", title:"Вычитка встреч", desc:"Очередь встреч на согласование: правишь тезисы, страны, участников и публикуешь в базу — общее или личное." },
+    { id:"w_add",    title:"Добавить запись",desc:"Создать заметку или загрузить файл прямо в базу." }
+  ];
+
   // ── Layout ──────────────────────────────────────────
   var nodes = {}, list = [];
   function add(n){ nodes[n.id]=n; list.push(n); }
@@ -192,9 +209,11 @@
       f.x=door.x+Math.cos(a)*rad; f.y=door.y+Math.sin(a)*rad; add(f);
     });
   }
+  add(WEB);
   fanDoor(BOT, BOT_FUNCS);
   fanDoor(CLAUDE, CLAUDE_FUNCS);
-  var DOORS=[{node:BOT,funcs:BOT_FUNCS},{node:CLAUDE,funcs:CLAUDE_FUNCS}];
+  fanDoor(WEB, WEB_FUNCS);
+  var DOORS=[{node:BOT,funcs:BOT_FUNCS},{node:CLAUDE,funcs:CLAUDE_FUNCS},{node:WEB,funcs:WEB_FUNCS}];
   // фоновый «рой» — еле заметные дрейфующие точки (средний слой для глубины)
   var MOTES=[]; for(var mi=0; mi<30; mi++){ MOTES.push({ x:-1150+Math.random()*2300, y:-760+Math.random()*1520, vx:(Math.random()-0.5)*0.11, vy:(Math.random()-0.5)*0.11, r:0.6+Math.random()*1.4, ph:Math.random()*6.283 }); }
   // фоновая галактика (screen-space backdrop): тёплое ядро + прохладные рукава
@@ -309,7 +328,8 @@
   var GLYPHS={ core:"roy", p1:"inbox", p2:"sort", p3:"search", p4:"check", bot:"send", claude:"desktop",
     b_text:"text", b_fwd:"forward", b_voice:"mic", b_doc:"doc", b_photo:"image", b_link:"link",
     b_search:"search", b_task:"check", b_review:"review", b_rec:"rec", b_digest:"digest", b_claude:"desktop",
-    c_ask:"search", c_analyze:"stats", c_team:"people", c_save:"addnote", c_tidy:"sort", c_totasks:"check" };
+    c_ask:"search", c_analyze:"stats", c_team:"people", c_save:"addnote", c_tidy:"sort", c_totasks:"check",
+    web:"globe", w_search:"search", w_base:"list", w_digest:"digest", w_team:"people", w_board:"board", w_review:"review", w_add:"addnote" };
 
   function drawGlyph(g,x,y,s,col,lw){
     ctx.save(); ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=lw; ctx.lineCap="round"; ctx.lineJoin="round";
@@ -394,6 +414,14 @@
     } else if(g==="tag"){
       ctx.beginPath(); ctx.moveTo(x-s*0.5,y-s*0.34); ctx.lineTo(x+s*0.14,y-s*0.34); ctx.lineTo(x+s*0.54,y); ctx.lineTo(x+s*0.14,y+s*0.34); ctx.lineTo(x-s*0.5,y+s*0.34); ctx.closePath(); ctx.stroke();
       ctx.beginPath(); ctx.arc(x-s*0.28,y,s*0.09,0,6.283); ctx.fill();
+    } else if(g==="globe"){
+      ctx.beginPath(); ctx.arc(x,y,s*0.58,0,6.283); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x-s*0.58,y); ctx.lineTo(x+s*0.58,y); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(x,y,s*0.26,s*0.58,0,0,6.283); ctx.stroke();
+    } else if(g==="board"){
+      ctx.strokeRect(x-s*0.6,y-s*0.5,s*1.2,s*1.0);
+      ctx.beginPath(); ctx.moveTo(x-s*0.2,y-s*0.5); ctx.lineTo(x-s*0.2,y+s*0.5); ctx.moveTo(x+s*0.2,y-s*0.5); ctx.lineTo(x+s*0.2,y+s*0.5); ctx.stroke();
+      ctx.fillRect(x-s*0.5,y-s*0.34,s*0.22,s*0.16); ctx.fillRect(x-s*0.11,y-s*0.34,s*0.22,s*0.16); ctx.fillRect(x+s*0.28,y-s*0.34,s*0.22,s*0.16);
     } else { ctx.beginPath(); ctx.arc(x,y,s*0.4,0,6.283); ctx.stroke(); }
     ctx.restore();
   }
