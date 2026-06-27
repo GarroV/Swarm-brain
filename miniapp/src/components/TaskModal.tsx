@@ -35,6 +35,13 @@ const TASK_ROLES = [
   { value: "rnd", label: "R&D" },
 ];
 
+const STATUSES = [
+  { value: "open", label: "Открыто" },
+  { value: "in_progress", label: "В работе" },
+  { value: "done", label: "Готово" },
+];
+const normStatus = (s?: string | null) => (s === "progress" ? "in_progress" : (s ?? "open"));
+
 // Sentinel for shadcn Select — empty string is not a valid Select value
 const NONE = "__none__";
 
@@ -210,7 +217,13 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
             <Label>Исполнитель</Label>
             <Select value={assigneeId} onValueChange={(v) => setAssigneeId(v ?? NONE)}>
               <SelectTrigger>
-                <SelectValue placeholder="Выберите исполнителя" />
+                {/* подпись рисуем сами: список юзеров грузится асинхронно, и Radix SelectValue
+                    показывал сырое value (id / _none_), не обновляясь после подгрузки */}
+                <span className="truncate text-left">
+                  {assigneeId === NONE
+                    ? "— Нет —"
+                    : (assigneeOptions.find((o) => o.id === assigneeId)?.name ?? `#${assigneeId}`)}
+                </span>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NONE}>— Нет —</SelectItem>
