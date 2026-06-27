@@ -150,9 +150,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // апдейта приложение перезапустится). Сервер новее → запускаем отсоединённый хелпер
     // (пересборка из исходников тем же cert → права не слетают). Подробности — Updater.swift.
     private var updateSpawned = false
+    private var lastUpdateCheckAt: Date?
+    // Релизы редкие → проверять часто незачем. Чек на старте (lastUpdateCheckAt=nil) + не чаще
+    // раза в 6ч. maintenanceTick (15 мин, нужен очереди загрузок) лишь предлагает чек — троттл режет.
+    private let updateCheckMinInterval: TimeInterval = 6 * 3600
     private func checkForUpdate() {
         guard let cfg = config, configError == nil, !updateSpawned else { return }
         if case .idle = state {} else { return }   // не лезем во время записи/отправки/ошибки
+        if let last = lastUpdateCheckAt, Date().timeIntervalSince(last) < updateCheckMinInterval { return }
+        lastUpdateCheckAt = Date()
         Task {
             guard let latest = await Updater.latestBuild(config: cfg), latest > Updater.currentBuild else { return }
             // Перепроверяем простой на момент запуска (мог начаться созвон, пока ждали сеть).
