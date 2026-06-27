@@ -32,7 +32,7 @@ function TeamRow({ t, onOpen }: { t: Task; onOpen: () => void }) {
 }
 
 export function TeamTasks({ data, className }: { data: DashboardData; className?: string }) {
-  const { push, setTab } = useRoyNav();
+  const { setTab, openTask } = useRoyNav();
   const { loading, team } = data;
   // Активные задачи команды: незавершённые требуют внимания.
   const active = team.filter((t) => norm(t.status) !== "done");
@@ -50,7 +50,7 @@ export function TeamTasks({ data, className }: { data: DashboardData; className?
       className={className}
     >
       {active.map((t) => (
-        <TeamRow key={t.id} t={t} onOpen={() => push({ view: "taskDetail", params: { id: t.id } })} />
+        <TeamRow key={t.id} t={t} onOpen={() => openTask(t)} />
       ))}
     </DashBlock>
   );

@@ -40,14 +40,19 @@ function localTodayISO(): string {
 }
 
 export function useDashboardData(): DashboardData {
-  const { me } = useRoyNav();
+  const { me, tasksVersion } = useRoyNav();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [meetings, setMeetings] = useState<Entry[] | null>(null);
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [reviewCount, setReviewCount] = useState<number | null>(null);
 
+  // tasksVersion в deps: после сохранения/удаления задачи в окне-редакторе списки задач на
+  // главной («Мои»/«Команда») перезапрашиваются (общий рефреш без per-caller колбэков).
   useEffect(() => {
     fetchTasks().then(setTasks).catch(() => setTasks([]));
+  }, [tasksVersion]);
+
+  useEffect(() => {
     fetchMeetings().then(setMeetings).catch(() => setMeetings([]));
     fetchEntries().then(setEntries).catch(() => setEntries([]));
     fetchAgentMeetings("awaiting_review")

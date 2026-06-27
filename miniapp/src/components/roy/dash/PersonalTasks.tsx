@@ -36,10 +36,9 @@ function TaskItem({ t, onOpen }: { t: Task; onOpen: () => void }) {
 }
 
 export function PersonalTasks({ data, className }: { data: DashboardData; className?: string }) {
-  const { push, setTab } = useRoyNav();
+  const { setTab, openTask } = useRoyNav();
   const { loading, today, week, noDate } = data;
   const empty = today.length === 0 && week.length === 0 && noDate.length === 0;
-  const open = (id: string) => push({ view: "taskDetail", params: { id } });
 
   return (
     <DashBlock
@@ -56,13 +55,13 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
       {today.length > 0 && (
         <>
           <SubHead count={today.length}>Сегодня</SubHead>
-          {today.map((t) => <TaskItem key={t.id} t={t} onOpen={() => open(t.id)} />)}
+          {today.map((t) => <TaskItem key={t.id} t={t} onOpen={() => openTask(t)} />)}
         </>
       )}
       {week.length > 0 && (
         <>
           <SubHead count={week.length}>На неделе</SubHead>
-          {week.map((t) => <TaskItem key={t.id} t={t} onOpen={() => open(t.id)} />)}
+          {week.map((t) => <TaskItem key={t.id} t={t} onOpen={() => openTask(t)} />)}
         </>
       )}
       {noDate.length > 0 && (

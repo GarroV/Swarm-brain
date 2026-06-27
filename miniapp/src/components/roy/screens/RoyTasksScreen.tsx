@@ -12,7 +12,7 @@ import type { Task } from "@/types";
 
 // Мобильный Reminders-вид задач: чипы смарт-списков + спокойный чек-лист со свайпом.
 export function RoyTasksScreen() {
-  const { push, toast } = useRoyNav();
+  const { push, toast, openTask } = useRoyNav();
   const r = useReminderTasks();
   const activeDef = SMART_LISTS.find((s) => s.id === r.activeList)!;
   const total = r.activeList === "byMarket" ? r.marketGroups.reduce((n, g) => n + g.tasks.length, 0) : r.visible.length;
@@ -30,7 +30,7 @@ export function RoyTasksScreen() {
   const row = (t: Task) => (
     <SwipeRow
       key={t.id}
-      onTap={() => push({ view: "taskDetail", params: { id: t.id } })}
+      onTap={() => openTask(t)}
       actions={[
         { icon: "pencil", label: "Изменить", color: "var(--status-open)", onClick: () => push({ view: "newTask", params: { id: t.id } }) },
         { icon: "trash", label: "Удалить", color: "var(--pri-high)", onClick: () => remove(t) },

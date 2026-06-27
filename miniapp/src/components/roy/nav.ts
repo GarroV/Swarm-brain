@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useContext } from "react";
-import type { Me } from "@/types";
+import type { Me, Task } from "@/types";
 
 // Навигация в стиле прототипа: 4 корневых таба + push-стек детальных/создающих экранов.
 // Вынесено в отдельный модуль, чтобы RoyApp и экраны не образовывали циклический импорт.
@@ -28,6 +28,12 @@ export type RoyNav = {
   push: (r: RoyRoute) => void;
   pop: () => void;
   toast: (msg: string) => void;
+  // Открыть задачу в едином контекстном окне-редакторе (модал, рендерится в корне RoyApp).
+  // Любой клик по задаче (главная/мобайл/встречи/доска) ведёт сюда — не на отдельный экран.
+  openTask: (task: Task) => void;
+  // Счётчик ревизии задач: модал бампает его при сохранении/удалении → списки задач,
+  // включившие его в deps, перезапрашиваются (общий рефреш без per-caller колбэков).
+  tasksVersion: number;
 };
 
 export const RoyNavContext = createContext<RoyNav | null>(null);

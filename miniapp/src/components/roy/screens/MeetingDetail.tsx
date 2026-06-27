@@ -18,7 +18,7 @@ function fmtDate(iso: string | null): string {
 }
 
 export function MeetingDetail({ id }: { id: string }) {
-  const { pop, push, toast } = useRoyNav();
+  const { pop, toast, openTask } = useRoyNav();
   const [e, setE] = useState<Entry | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [err, setErr] = useState(false);
@@ -140,7 +140,7 @@ export function MeetingDetail({ id }: { id: string }) {
                 <SectionLabel>Задачи из встречи</SectionLabel>
                 <div className="space-y-2">
                   {tasks.map((t) => (
-                    <button key={t.id} type="button" onClick={() => push({ view: "taskDetail", params: { id: t.id } })} className="w-full text-left transition-transform active:scale-[0.99]">
+                    <button key={t.id} type="button" onClick={() => openTask(t)} className="w-full text-left transition-transform active:scale-[0.99]">
                       <RoyCard className="flex items-center gap-2 px-4 py-3">
                         <PriDot pri={(t.priority as "high" | "med" | "low" | null) ?? null} />
                         <span className="flex-1 truncate font-medium text-ink" style={{ fontSize: 14 }}>

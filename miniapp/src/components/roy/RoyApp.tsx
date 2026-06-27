@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Me } from "@/types";
+import type { Me, Task } from "@/types";
+import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId } from "@/lib/telegram";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
@@ -35,6 +36,10 @@ export function RoyApp({ me }: { me: Me | null }) {
   const [tab, setTabState] = useState<RoyTab>("search");
   const [stack, setStack] = useState<RoyRoute[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  // Единое окно-редактор задачи (открывается по клику откуда угодно) + ревизия для рефреша списков.
+  const [taskModalTask, setTaskModalTask] = useState<Task | null>(null);
+  const [tasksVersion, setTasksVersion] = useState(0);
+  const openTask = useCallback((t: Task) => setTaskModalTask(t), []);
   const isDesktop = useIsDesktop();
   // Стек восстановлен из sessionStorage? До этого не персистим, иначе начальный [] затрёт сохранённый.
   const hydrated = useRef(false);
@@ -122,7 +127,7 @@ export function RoyApp({ me }: { me: Me | null }) {
     return () => window.removeEventListener(OPEN_MEETING_EVENT, handler);
   }, [openMeeting]);
 
-  const nav: RoyNav = { me, tab, setTab, push, pop, toast };
+  const nav: RoyNav = { me, tab, setTab, push, pop, toast, openTask, tasksVersion };
   const top = stack[stack.length - 1];
   // На десктопе домашняя вкладка («Поиск») — бенто-дашборд во всю ширину; на мобайле и в
   // push-стеке остаётся центрированная колонка.
@@ -193,6 +198,15 @@ export function RoyApp({ me }: { me: Me | null }) {
           )}
         </div>
       </div>
+
+      {/* Единое окно-редактор задачи — рендерится один раз в корне, открывается openTask() из
+          любого места. onSaved бампает tasksVersion → списки задач перезапрашиваются. */}
+      <TaskModal
+        task={taskModalTask ?? undefined}
+        open={taskModalTask !== null}
+        onClose={() => setTaskModalTask(null)}
+        onSaved={() => setTasksVersion((v) => v + 1)}
+      />
     </RoyNavContext.Provider>
   );
 }

@@ -56,6 +56,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
   const isEdit = !!task;
 
   const [title, setTitle] = useState("");
+  const [status, setStatus] = useState("open");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [country, setCountry] = useState("");
@@ -72,6 +73,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
   useEffect(() => {
     if (!open) return;
     setTitle(task?.title ?? "");
+    setStatus(normStatus(task?.status));
     setDescription(task?.description ?? "");
     setDueDate(task?.due_date ?? "");
     setCountry(task?.country ?? "");
@@ -115,7 +117,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
       if (isEdit && task) {
         // Исполнителя шлём только если поменяли — иначе правка других полей затёрла бы
         // назначение, которое нельзя было префиллить (имя без telegram_id).
-        const fields: UpdateTaskInput = { ...base };
+        const fields: UpdateTaskInput = { ...base, status };
         if (assigneeId !== initialAssignee) fields.assignee_telegram_id = assigneeValue;
         await updateTask(task.id, fields);
       } else {
@@ -164,6 +166,22 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
               placeholder="Название задачи"
             />
           </div>
+
+          {isEdit && (
+            <div className="space-y-1">
+              <Label>Статус</Label>
+              <Select value={status} onValueChange={(v) => setStatus(v ?? "open")}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUSES.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-1">
             <Label htmlFor="modal-desc">Описание</Label>

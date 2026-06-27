@@ -90,13 +90,14 @@ function MeetingCard({ e, onOpen, onRemove }: { e: Entry; onOpen: () => void; on
 }
 
 // Задачи, извлечённые из встреч (meeting_id != null) — быстрый доступ из раздела встреч.
-function MeetingTasksPanel({ onOpen }: { onOpen: (id: string) => void }) {
+function MeetingTasksPanel({ onOpen }: { onOpen: (task: Task) => void }) {
+  const { tasksVersion } = useRoyNav();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   useEffect(() => {
     fetchTasks()
       .then((ts) => setTasks(ts.filter((t) => t.meeting_id && t.status !== "done")))
       .catch(() => setTasks([]));
-  }, []);
+  }, [tasksVersion]);
   if (!tasks || tasks.length === 0) return null;
   return (
     <RoyCard className="px-3.5 py-3">
@@ -106,7 +107,7 @@ function MeetingTasksPanel({ onOpen }: { onOpen: (id: string) => void }) {
           <button
             key={t.id}
             type="button"
-            onClick={() => onOpen(t.id)}
+            onClick={() => onOpen(t)}
             className="flex w-full items-center gap-2 rounded-[9px] px-2 py-1.5 text-left transition-colors hover:bg-surface-2"
           >
             <PriDot pri={(t.priority as "high" | "med" | "low" | null) ?? null} />
@@ -136,7 +137,7 @@ function CountsPanel({ title, counts }: { title: string; counts: [string, number
 }
 
 export function RoyMeetingsScreen() {
-  const { push, toast } = useRoyNav();
+  const { push, toast, openTask } = useRoyNav();
   const isDesktop = useIsDesktop();
   const [meetings, setMeetings] = useState<Entry[] | null>(null);
   const [seg, setSeg] = useState("all");
@@ -195,7 +196,7 @@ export function RoyMeetingsScreen() {
           </div>
           <aside className="min-h-0 space-y-3 overflow-y-auto">
             <AgentReviewQueue onOpen={openReview} />
-            <MeetingTasksPanel onOpen={(id) => push({ view: "taskDetail", params: { id } })} />
+            <MeetingTasksPanel onOpen={(t) => openTask(t)} />
             {sidebarCounts}
           </aside>
         </div>
