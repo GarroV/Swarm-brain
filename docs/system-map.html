@@ -148,7 +148,11 @@
     { id:"b_review", emoji:"🗓", title:"Ревью встреч", grp:"do", color:"#E6C281", flow:"out",
       desc:"Встречи (с рекордера, Granola, Read.ai) сначала приходят в бот на проверку, а не сразу в базу. Здесь правишь тезисы, название, страны и участников — и только потом подтверждаешь добавление. Сырые или ошибочные встречи в общую базу не попадают." },
     { id:"b_rec",    emoji:"🎙", title:"Установить рекордер", grp:"do", color:"#E6C281", flow:"out",
-      desc:"Команда «/recordertoken» ставит на Mac наше приложение, которое записывает звук онлайн-созвонов и отдаёт ядру на расшифровку и тезисы. Устанавливается одной строкой, без ручной возни." }
+      desc:"Команда «/recordertoken» ставит на Mac наше приложение, которое записывает звук онлайн-созвонов и отдаёт ядру на расшифровку и тезисы. Устанавливается одной строкой, без ручной возни." },
+    { id:"b_digest", emoji:"📊", title:"Дайджест", grp:"do", color:"#E6C281", flow:"out",
+      desc:"Команда «/digest» — личная сводка по базе за период: что нового, ключевые темы и решения. Бот собирает и присылает краткую выжимку, чтобы быстро войти в курс." },
+    { id:"b_claude", emoji:"🖥", title:"Подключить Claude", grp:"do", color:"#E6C281", flow:"out",
+      desc:"Команда «/setup» подключает базу к Claude Desktop по личному токену — одной строкой. После этого можно искать, добавлять знания и вести задачи прямо внутри Claude." }
   ];
 
   // ── Layout ──────────────────────────────────────────
@@ -160,7 +164,7 @@
   var AREA_R = ptR + 86;                          // радиус «области ядра»
   add(BOT);
   // раздельная раскладка: ВВОД — верхне-правая доля, ДЕЙСТВИЯ — нижняя доля; разные радиусы от бота
-  var BOT_LAYOUT={ b_text:[-88,170], b_fwd:[-58,210], b_voice:[-28,166], b_doc:[2,214], b_photo:[30,176], b_link:[58,206], b_search:[96,190], b_task:[122,226], b_review:[148,182], b_rec:[170,214] };
+  var BOT_LAYOUT={ b_text:[-88,170], b_fwd:[-58,210], b_voice:[-28,166], b_doc:[2,214], b_photo:[30,176], b_link:[58,206], b_search:[86,190], b_task:[106,226], b_review:[126,182], b_rec:[146,218], b_digest:[160,188], b_claude:[174,214] };
   BOT_FUNCS.forEach(function(f){ var L=BOT_LAYOUT[f.id]||[0,182], a=L[0]*Math.PI/180; f.kind="func"; f.parent="bot"; if(!f.color)f.color="#8FDDE6"; f.r=(f.grp==="do"?18:16); f.x=BOT.x+Math.cos(a)*L[1]; f.y=BOT.y+Math.sin(a)*L[1]; add(f); });
   // фоновый «рой» — еле заметные дрейфующие точки (средний слой для глубины)
   var MOTES=[]; for(var mi=0; mi<30; mi++){ MOTES.push({ x:-1150+Math.random()*2300, y:-760+Math.random()*1520, vx:(Math.random()-0.5)*0.11, vy:(Math.random()-0.5)*0.11, r:0.6+Math.random()*1.4, ph:Math.random()*6.283 }); }
@@ -179,7 +183,7 @@
   edges.push({a:"core",b:"bot",kind:"trunk"});
   BOT_FUNCS.forEach(function(f){ edges.push({a:"bot",b:f.id,kind:"leaf"}); });
   var adj={}; list.forEach(function(n){ adj[n.id]={}; }); edges.forEach(function(e){ adj[e.a][e.b]=true; adj[e.b][e.a]=true; });
-  list.forEach(function(n,i){ n.ph=nrand(i+1)*6.283; n.amp=(n.kind==="core"?2.5:(n.kind==="func"?4.5:3.5)); n._vx=n.x; n._vy=n.y; });
+  list.forEach(function(n,i){ n.ph=nrand(i+1)*6.283; n.amp=(n.kind==="core"?2.5:(n.kind==="func"?4.5:3.5)); n._vx=n.x; n._vy=n.y; n.hs=0; });
 
   // ── Canvas + camera ─────────────────────────────────
   var canvas=document.getElementById("map"), ctx=canvas.getContext("2d");
@@ -275,7 +279,7 @@
   // пиктограммы (янтарный лайн-арт, стиль старой корабельной консоли)
   var GLYPHS={ core:"roy", p1:"inbox", p2:"sort", p3:"search", p4:"check", bot:"send",
     b_text:"text", b_fwd:"forward", b_voice:"mic", b_doc:"doc", b_photo:"image", b_link:"link",
-    b_search:"search", b_task:"check", b_review:"review", b_rec:"rec" };
+    b_search:"search", b_task:"check", b_review:"review", b_rec:"rec", b_digest:"digest", b_claude:"desktop" };
 
   function drawGlyph(g,x,y,s,col,lw){
     ctx.save(); ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=lw; ctx.lineCap="round"; ctx.lineJoin="round";
@@ -325,13 +329,22 @@
     } else if(g==="rec"){
       ctx.beginPath(); ctx.arc(x,y,s*0.5,0,6.283); ctx.stroke();
       ctx.beginPath(); ctx.arc(x,y,s*0.2,0,6.283); ctx.fill();
+    } else if(g==="digest"){
+      for(k=0;k<3;k++){ yy=y-s*0.32+k*s*0.32; ctx.beginPath(); ctx.moveTo(x-s*0.5,yy); ctx.lineTo(x+(k===2?-s*0.05:s*0.36),yy); ctx.stroke(); }
+      var spx=x+s*0.46, spy=y-s*0.44, ssz=s*0.2; ctx.beginPath(); ctx.moveTo(spx,spy-ssz); ctx.lineTo(spx,spy+ssz); ctx.moveTo(spx-ssz,spy); ctx.lineTo(spx+ssz,spy); ctx.stroke();
+    } else if(g==="desktop"){
+      ctx.strokeRect(x-s*0.56,y-s*0.56,s*1.12,s*0.82);
+      ctx.beginPath(); ctx.moveTo(x,y+s*0.26); ctx.lineTo(x,y+s*0.5); ctx.moveTo(x-s*0.26,y+s*0.52); ctx.lineTo(x+s*0.26,y+s*0.52); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x,y-s*0.16,s*0.13,0,6.283); ctx.fill();
     } else { ctx.beginPath(); ctx.arc(x,y,s*0.4,0,6.283); ctx.stroke(); }
     ctx.restore();
   }
 
   function drawNode(n, t){
     var ph=n.ph;
-    var x=sx(n._vx), y=sy(n._vy), r=n.r*cam.s;
+    var hovd=(hover&&hover.id===n.id)||(selected&&selected.id===n.id);
+    n.hs += ((hovd?1:0)-n.hs)*(reduce?1:0.2);   // плавное увеличение при наведении
+    var x=sx(n._vx), y=sy(n._vy), r=n.r*cam.s*(1+0.16*n.hs);
     var dim = curLit && !curLit[n.id];
     var fl=waveFlicker(t,n), a=(dim?0.30:1)*fl;
     var isCore=n.kind==="core";
@@ -362,13 +375,20 @@
     // пиктограмма
     if(r>9){ ctx.globalAlpha=(dim?0.5:1)*(0.85+0.15*fl); drawGlyph(GLYPHS[n.id]||"check", x, y, r*0.5, gly, Math.max(1.2, r*0.085)); ctx.globalAlpha=1; }
 
-    // подпись
-    ctx.globalAlpha=(dim?0.4:1)*Math.max(0.6,fl);
+    // подпись с тёмной подложкой (читаемость поверх галактики)
     var big=isCore||n.kind==="door";
     ctx.font=(isCore?"800 17px ":(big?"700 15px ":"600 11.5px "))+"system-ui, sans-serif";
     ctx.textAlign="center"; ctx.textBaseline="top";
-    var ly=y+r+8, lines=isCore?["ЯДРО"]:wrap(n.title, big?16:14);
-    lines.forEach(function(ln,li){ ctx.fillStyle="rgba(0,0,0,0.65)"; ctx.fillText(ln,x,ly+li*16+0.6); ctx.fillStyle=isCore?"#FBE3A6":"#EBDCB6"; ctx.fillText(ln,x,ly+li*16); });
+    var ly=y+r+9, lines=isCore?["ЯДРО"]:wrap(n.title, big?16:14), lh=big?17:15, pad=6, maxw=0;
+    lines.forEach(function(ln){ var w=ctx.measureText(ln).width; if(w>maxw)maxw=w; });
+    var la=(dim?0.4:1)*Math.max(0.7,fl);
+    var bx=x-maxw/2-pad, byy=ly-4, bw=maxw+pad*2, bh=lines.length*lh+6;
+    ctx.globalAlpha=la*(0.55+0.4*n.hs);
+    ctx.fillStyle="rgba(8,8,6,0.66)";
+    if(ctx.roundRect){ ctx.beginPath(); ctx.roundRect(bx,byy,bw,bh,6); ctx.fill(); } else { ctx.fillRect(bx,byy,bw,bh); }
+    ctx.globalAlpha=la;
+    ctx.fillStyle=isCore?"#FBE3A6":"#EBDCB6";
+    lines.forEach(function(ln,li){ ctx.fillText(ln,x,ly+li*lh); });
     ctx.globalAlpha=1;
   }
 
