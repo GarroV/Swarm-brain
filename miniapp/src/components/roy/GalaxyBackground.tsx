@@ -58,8 +58,9 @@ export function GalaxyBackground() {
       const hz = ctx.createRadialGradient(cx, cy, 0, cx, cy, rMax);
       hz.addColorStop(0, "rgba(160,195,220,0.09)"); hz.addColorStop(0.45, "rgba(120,170,200,0.04)"); hz.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = hz; ctx.fillRect(0, 0, W, H);
+      // Бульдж-ядро приглушено (раньше светило слишком ярко за текстом → нечитаемо).
       const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rMax * 0.4);
-      cg.addColorStop(0, "rgba(250,224,158,0.30)"); cg.addColorStop(0.16, "rgba(246,212,150,0.14)"); cg.addColorStop(0.5, "rgba(170,205,225,0.04)"); cg.addColorStop(1, "rgba(0,0,0,0)");
+      cg.addColorStop(0, "rgba(250,224,158,0.12)"); cg.addColorStop(0.16, "rgba(246,212,150,0.06)"); cg.addColorStop(0.5, "rgba(170,205,225,0.02)"); cg.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(cx, cy, rMax * 0.4, 0, 6.283); ctx.fill();
       let halos = 0;
       for (let i = 0; i < GAL.length; i++) {
@@ -67,17 +68,18 @@ export function GalaxyBackground() {
         const dx = r * Math.cos(a), dy = r * Math.sin(a) * incl;
         const x = cx + dx * cosT - dy * sinT, y = cy + dx * sinT + dy * cosT;
         if (x < -30 || x > W + 30 || y < -30 || y > H + 30) continue;
-        const tw = reduce ? 1 : (0.62 + 0.38 * Math.sin(t * 0.0015 + s.tw));
-        const al = (0.6 - s.rf * 0.3) * tw * 0.55; if (al < 0.02) continue;
-        if (s.sz > 1.9 && halos < 90) { halos++; const gg = ctx.createRadialGradient(x, y, 0, x, y, s.sz * 5); gg.addColorStop(0, TONES[s.tone] + (al * 0.5) + ")"); gg.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(x, y, s.sz * 5, 0, 6.283); ctx.fill(); }
+        const tw = reduce ? 1 : (0.72 + 0.28 * Math.sin(t * 0.0012 + s.tw)); // мерцание спокойнее
+        const al = (0.6 - s.rf * 0.3) * tw * 0.34; if (al < 0.02) continue;   // звёзды тусклее
+        if (s.sz > 1.9 && halos < 70) { halos++; const gg = ctx.createRadialGradient(x, y, 0, x, y, s.sz * 5); gg.addColorStop(0, TONES[s.tone] + (al * 0.5) + ")"); gg.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(x, y, s.sz * 5, 0, 6.283); ctx.fill(); }
         ctx.fillStyle = TONES[s.tone] + al + ")"; const d = s.sz; ctx.fillRect(x - d * 0.5, y - d * 0.5, d, d);
       }
       ctx.globalCompositeOperation = "source-over";
-      // сканлайны (ретро-консоль) + виньетка
-      ctx.fillStyle = "rgba(120,210,220,0.016)";
+      // сканлайны (ретро-консоль) + тёмная вуаль (читаемость) + виньетка
+      ctx.fillStyle = "rgba(120,210,220,0.014)";
       for (let yy = 0; yy < H; yy += 4) ctx.fillRect(0, yy, W, 1);
-      const vg = ctx.createRadialGradient(cx, cy, Math.min(W, H) * 0.36, cx, cy, Math.max(W, H) * 0.88);
-      vg.addColorStop(0, "rgba(7,8,6,0)"); vg.addColorStop(1, "rgba(7,8,6,0.42)");
+      ctx.fillStyle = "rgba(8,9,6,0.14)"; ctx.fillRect(0, 0, W, H); // лёгкая вуаль (основное затемнение — на стекле-фрейме)
+      const vg = ctx.createRadialGradient(cx, cy, Math.min(W, H) * 0.32, cx, cy, Math.max(W, H) * 0.9);
+      vg.addColorStop(0, "rgba(7,8,6,0)"); vg.addColorStop(1, "rgba(7,8,6,0.5)");
       ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
     };
 

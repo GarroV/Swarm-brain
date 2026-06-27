@@ -146,9 +146,9 @@
 .dark {
   --background: #1A1714;              /* тёплый графит, не #000 */
   --foreground: #F2EDE3;
-  --card: #231F19;
+  --card: rgba(34,29,23,0.60);        /* стекло: полупрозрачно над галактикой */
   --card-foreground: #F2EDE3;
-  --popover: #231F19;
+  --popover: rgba(30,26,21,0.96);     /* модалки/дропдауны — почти непрозрачны (читаемость) */
   --popover-foreground: #F2EDE3;
   --primary: #D98A2B;
   --primary-foreground: #FFFFFF;
@@ -176,8 +176,8 @@
   --sidebar-border: #322D26;
   --sidebar-ring: #D98A2B;
 
-  --surface: #231F19;
-  --surface-2: #2B261F;
+  --surface: rgba(34,29,23,0.58);     /* стекло */
+  --surface-2: rgba(46,40,32,0.55);   /* стекло (чуть светлее) */
   --ink: #F2EDE3;
   --ink-soft: #A89F90;
   --ink-mute: #766E61;

@@ -135,6 +135,9 @@ export function RoyApp({ me }: { me: Me | null }) {
           <div
             className={cn(
               "relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden",
+              // Стеклянная база (тёмная тема): единый полупрозрачный слой + backdrop-blur поверх
+              // галактики → читаемость на всех экранах + «стеклянный» вид; галактика просвечивает.
+              "dark:bg-[#0e0c09]/40 dark:backdrop-blur-xl",
               // Десктоп — во всю ширину экрана (master-detail выигрывает от простора). Мобайл — узкая колонка.
               isDashboard ? "max-w-[1600px]" : "max-w-[480px] lg:max-w-none",
             )}
