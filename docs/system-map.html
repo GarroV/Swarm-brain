@@ -141,7 +141,7 @@
     { id:"b_link",  emoji:"🔗", title:"Ссылка", grp:"in", color:"#8FDDE6",
       desc:"Кинь боту ссылку — он сохранит её с коротким описанием. А если попросишь — скачает страницу целиком и сохранит её текст, чтобы потом искать по содержимому, а не только по адресу." },
     // ── что можно сделать (тёплые) ──
-    { id:"b_search", emoji:"🔎", title:"Поиск по базе", grp:"do", color:"#E6C281",
+    { id:"b_search", emoji:"🔎", title:"Поиск по базе", grp:"do", color:"#E6C281", flow:"out",
       desc:"Задай боту вопрос обычными словами — он найдёт нужное по смыслу в общей базе и ответит, дав ссылки на записи-источники. Не нужно помнить, где что лежит и кто что писал. Например: «что мы решили по упаковке в Болгарии?»." },
     { id:"b_task",   emoji:"✅", title:"Создать задачу", grp:"do", color:"#E6C281",
       desc:"Заведи задачу прямо в чате: кому, что и к какому сроку (команда «/addtask»). Бот также умеет сам вытащить задачи из тезисов встречи — тебе останется только подтвердить." },
@@ -203,6 +203,8 @@
   function hexA(hex,al){ var h=hex.replace("#",""); return "rgba("+parseInt(h.substr(0,2),16)+","+parseInt(h.substr(2,2),16)+","+parseInt(h.substr(4,2),16)+","+al+")"; }
   function lighten(hex){ var h=hex.replace("#",""); function u(v){return Math.round(v+(255-v)*0.55);} return "rgb("+u(parseInt(h.substr(0,2),16))+","+u(parseInt(h.substr(2,2),16))+","+u(parseInt(h.substr(4,2),16))+")"; }
   function flicker(t,ph){ if(reduce) return 1; var v=0.74+0.16*Math.sin(t*0.004+ph)+0.06*Math.sin(t*0.017+ph*2); if(Math.sin(t*0.011+ph*5)>0.968) v*=0.45; return Math.max(0.35,Math.min(1,v)); }
+  // волна мерцания: фаза по позиции (x+y) → гребень катится слева-сверху → вправо-вниз
+  function waveFlicker(t,n){ if(reduce) return 1; var phase=(n._vx+n._vy)*0.008; return 0.62+0.38*Math.sin(t*0.0028 - phase); }
   function wob(t,ph,amp){ if(reduce) return {x:0,y:0}; return {x:Math.sin(t*0.0013+ph)*amp, y:Math.cos(t*0.0017+ph*1.3)*amp}; }
   // что подсвечивать при фокусе (явно, без generic-смежности — иначе ядро «тянуло» бота через ствол)
   function litSet(f){ var s={}; s[f.id]=true;
@@ -331,7 +333,7 @@
     var ph=n.ph;
     var x=sx(n._vx), y=sy(n._vy), r=n.r*cam.s;
     var dim = curLit && !curLit[n.id];
-    var fl=flicker(t,ph), a=(dim?0.30:1)*fl;
+    var fl=waveFlicker(t,n), a=(dim?0.30:1)*fl;
     var isCore=n.kind==="core";
     var rim = isCore?"#F2B85A":"#E1953A", gly = isCore?"#FBE3A6":"#F4C46A";
 
@@ -412,8 +414,11 @@
     var ex=Math.cos(ang)*AREA_R, ey=Math.sin(ang)*AREA_R;
     var trunkOn = focus && (focus.id==="bot" || focus.kind==="func");
     thread(t, sx(ex),sy(ey), sx(BOT._vx),sy(BOT._vy), !!trunkOn, true);
-    // бот → входы
-    BOT_FUNCS.forEach(function(f){ var on=focus&&(focus.id===f.id||focus.id==="bot"); thread(t, sx(BOT._vx),sy(BOT._vy), sx(f._vx),sy(f._vy), on, false); });
+    // бот ↔ функции: импульсы по смыслу — «вносит» иконка→ядро, «достаёт» ядро→иконка
+    BOT_FUNCS.forEach(function(f){ var on=focus&&(focus.id===f.id||focus.id==="bot");
+      if(f.flow==="out") thread(t, sx(BOT._vx),sy(BOT._vy), sx(f._vx),sy(f._vy), on, false);   // ядро → иконка
+      else thread(t, sx(f._vx),sy(f._vy), sx(BOT._vx),sy(BOT._vy), on, false);                  // иконка → ядро
+    });
     ctx.globalCompositeOperation="source-over";
 
     // ── nodes ──
