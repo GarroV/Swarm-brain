@@ -98,15 +98,26 @@ enum Updater {
         log "building build $NEW…"
         if ! ./build-app.sh >/dev/null 2>&1; then log "build failed; keep current version"; exit 0; fi
         [ -d "SwarmRecorder.app" ] || { log "build produced no app; keep current"; exit 0; }
+        # Санити: APP_PATH обязан быть .app-бандлом — не сносим произвольный путь.
+        case "$APP_PATH" in *.app) : ;; *) log "refusing: APP_PATH не .app ($APP_PATH)"; exit 0 ;; esac
         # Не прерывать запись: ждём снятия lock (до 30 мин). Всё ещё пишет — отложим до следующего раза.
         for _ in $(seq 1 1800); do [ -f "$LOCK" ] || break; sleep 1; done
         if [ -f "$LOCK" ]; then log "still recording after wait; abort swap (retry next cycle)"; exit 0; fi
         log "quitting app pid $APP_PID for swap…"
         kill -TERM "$APP_PID" 2>/dev/null || true
         for _ in $(seq 1 30); do kill -0 "$APP_PID" 2>/dev/null || break; sleep 1; done
-        rm -rf "$APP_PATH"
-        if ! cp -R SwarmRecorder.app "$APP_PATH"; then log "swap copy failed"; open "$APP_PATH" 2>/dev/null || true; exit 1; fi
-        xattr -dr com.apple.quarantine "$APP_PATH" 2>/dev/null || true
+        # Если процесс ещё жив — НЕ трогаем бандл работающего приложения (иначе своп под ногами).
+        if kill -0 "$APP_PID" 2>/dev/null; then log "app pid $APP_PID жив после 30с; abort swap"; exit 0; fi
+        [ -f "$LOCK" ] && { log "lock present after quit; abort"; exit 0; }
+        # Безопасная подмена: НИКОГДА не оставляем слот пустым. Стейджим рядом → старое в .bak →
+        # новое на место → если финальный шаг упал, возвращаем .bak. Сбой стейджа = старое не тронуто.
+        STAGE="${APP_PATH}.new-$$"; BAK="${APP_PATH}.bak-$$"
+        rm -rf "$STAGE" "$BAK"
+        if ! cp -R SwarmRecorder.app "$STAGE"; then log "stage copy failed; current app untouched"; rm -rf "$STAGE"; open "$APP_PATH" 2>/dev/null || true; exit 0; fi
+        xattr -dr com.apple.quarantine "$STAGE" 2>/dev/null || true
+        if ! mv "$APP_PATH" "$BAK" 2>/dev/null; then log "cannot move current aside; abort"; rm -rf "$STAGE"; open "$APP_PATH" 2>/dev/null || true; exit 0; fi
+        if ! mv "$STAGE" "$APP_PATH" 2>/dev/null; then log "swap failed; restoring backup"; mv "$BAK" "$APP_PATH" 2>/dev/null || true; rm -rf "$STAGE"; open "$APP_PATH" 2>/dev/null || true; exit 1; fi
+        rm -rf "$BAK"
         open "$APP_PATH"
         log "updated -> build $NEW; relaunched"
         """

@@ -146,8 +146,8 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
           {published
             ? <span className="inline-flex items-center gap-1 text-green-600"><CheckCircle className="w-3.5 h-3.5" /> В базе</span>
             : <span className="inline-flex items-center gap-1 text-amber-600"><Clock className="w-3.5 h-3.5" /> На вычитке</span>}
-          {(meeting.recorder_names?.length ?? 0) > 0
-            ? <span>· Записал: {meeting.recorder_names!.join(", ")}</span>
+          {meeting.recorder_names?.length
+            ? <span>· Записал: {meeting.recorder_names.join(", ")}</span>
             : recorders.length > 0 && <span>· записали: {recorders.length}</span>}
         </div>
 

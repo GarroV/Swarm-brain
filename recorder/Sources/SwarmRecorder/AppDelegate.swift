@@ -158,13 +158,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let cfg = config, configError == nil, !updateSpawned else { return }
         if case .idle = state {} else { return }   // не лезем во время записи/отправки/ошибки
         if let last = lastUpdateCheckAt, Date().timeIntervalSince(last) < updateCheckMinInterval { return }
+        // Обновляем ТОЛЬКО установленную в /Applications копию — не трогаем запуск из dev/temp/DMG
+        // (иначе своп снёс бы произвольный путь). build-app.sh/install.sh ставят именно туда.
+        guard Bundle.main.bundlePath.hasPrefix("/Applications/") else { return }
         lastUpdateCheckAt = Date()
         Task {
             guard let latest = await Updater.latestBuild(config: cfg), latest > Updater.currentBuild else { return }
-            // Перепроверяем простой на момент запуска (мог начаться созвон, пока ждали сеть).
-            guard case .idle = state, !updateSpawned else { return }
-            updateSpawned = true
-            Updater.runUpdater(currentBuild: Updater.currentBuild, targetBuild: latest)
+            // Перепроверяем простой и взводим флаг на ГЛАВНОМ потоке (state/updateSpawned — только там).
+            let go: Bool = await MainActor.run {
+                guard case .idle = self.state, !self.updateSpawned else { return false }
+                self.updateSpawned = true
+                return true
+            }
+            if go { Updater.runUpdater(currentBuild: Updater.currentBuild, targetBuild: latest) }
         }
     }
 
@@ -690,10 +696,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         setState(.sending)
         Task {
             try? await Task.sleep(nanoseconds: UInt64(sendWatchdogSeconds * 1_000_000_000))
-            if case .sending = self.state, self.sendGeneration == gen {
+            // state/sendGeneration читаем и пишем на главном потоке (без гонки с setState/stopTapped).
+            let fired: Bool = await MainActor.run {
+                guard case .sending = self.state, self.sendGeneration == gen else { return false }
                 self.setState(.error("отправка зависла — нажмите «Повторить»"))
-                await self.refreshQueueBadge()
+                return true
             }
+            if fired { await self.refreshQueueBadge() }
         }
     }
 

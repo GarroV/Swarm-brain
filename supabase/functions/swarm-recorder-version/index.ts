@@ -20,6 +20,9 @@ Deno.serve((req: Request) => {
       },
     });
   }
+  if (req.method !== "GET") {
+    return new Response("Method Not Allowed", { status: 405, headers: { "Allow": "GET, OPTIONS", "Access-Control-Allow-Origin": "*" } });
+  }
   return new Response(JSON.stringify({ build: LATEST_BUILD }), {
     status: 200,
     headers: {

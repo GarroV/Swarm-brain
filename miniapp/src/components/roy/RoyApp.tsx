@@ -82,10 +82,19 @@ export function RoyApp({ me }: { me: Me | null }) {
       const saved = sessionStorage.getItem("roy_tab");
       if (saved && ROY_TABS.some((t) => t.id === saved)) setTabState(saved as RoyTab);
       // Восстанавливаем и push-стек (открытую деталь), чтобы рефреш не сбрасывал на корень таба.
+      // Валидируем не только view, но и ОБЯЗАТЕЛЬНЫЕ params (битый/усечённый storage → роут без id
+      // ушёл бы в fetch(undefined) и белый экран). Любой невалидный роут → стек не восстанавливаем.
       const rawStack = sessionStorage.getItem("roy_stack");
       if (rawStack) {
         const parsed = JSON.parse(rawStack);
-        if (Array.isArray(parsed) && parsed.every((r) => r && typeof r.view === "string")) {
+        const needsId = new Set(["record", "taskDetail", "meetingDetail", "meetingReview"]);
+        const valid = (r: { view?: unknown; params?: { id?: unknown; query?: unknown } }) => {
+          if (!r || typeof r.view !== "string") return false;
+          if (r.view === "answer") return typeof r.params?.query === "string";
+          if (needsId.has(r.view)) return typeof r.params?.id === "string" && r.params.id.length > 0;
+          return true;
+        };
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(valid)) {
           setStack(parsed as RoyRoute[]);
         }
       }
