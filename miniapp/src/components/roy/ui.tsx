@@ -12,7 +12,9 @@ const TAP = "transition-transform active:scale-[0.97]";
 
 // ── Card ───────────────────────────────────────────────────────────────────
 export function RoyCard({ className, ...props }: ComponentPropsWithoutRef<"div">) {
-  return <div className={cn("bg-surface border border-line rounded-[18px]", className)} {...props} />;
+  // dark:backdrop-blur — frosted-стекло поверх галактики (поверхности translucent в .dark);
+  // щели между карточками остаются прозрачными → галактика видна между панелями.
+  return <div className={cn("bg-surface border border-line rounded-[18px] dark:backdrop-blur-lg", className)} {...props} />;
 }
 
 // ── TypeTag (тип записи базы) ────────────────────────────────────────────────
