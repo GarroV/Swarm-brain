@@ -69,6 +69,10 @@
     border-bottom: 1px solid #000;
   }
   #swarm { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .hero::after {
+    content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    background: linear-gradient(100deg, rgba(26,23,18,0.94) 0%, rgba(26,23,18,0.6) 34%, rgba(26,23,18,0) 62%);
+  }
   .hero-inner {
     position: relative;
     z-index: 2;
@@ -826,90 +830,119 @@
     });
   }
 
-  /* ── Hero swarm canvas ────────────────────────────── */
+  /* ── Hero galaxy canvas ───────────────────────────── */
   var canvas = document.getElementById("swarm");
   if (!canvas) return;
   var ctx = canvas.getContext("2d");
   var W = 0, H = 0, dpr = Math.min(window.devicePixelRatio || 1, 2);
-  var nodes = [];
-  var COUNT = 56;
+  var stars = [], field = [];
+  var cx = 0, cy = 0, rMax = 0;
+  var incl = 0.42, tilt = -0.32, cosT = Math.cos(tilt), sinT = Math.sin(tilt);
+  var theta = 0, raf = null, t0 = 0;
 
-  function resize() {
+  var TONES = [
+    "rgba(252,242,220,", // 0 ядро — тёплый белый
+    "rgba(226,152,58,",  // 1 янтарь
+    "rgba(176,104,58,",  // 2 глубокий янтарь
+    "rgba(233,206,158,"  // 3 бледное золото
+  ];
+
+  function geom() {
     var r = canvas.parentElement.getBoundingClientRect();
     W = r.width; H = r.height;
     canvas.width = W * dpr; canvas.height = H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cx = W < 720 ? W * 0.5 : W * 0.6;
+    cy = H * 0.52;
+    rMax = Math.min(W * 0.54, H * 1.15, 560);
   }
 
-  function seedRand(i) {
-    /* deterministic-ish spread without Math.random reliance for layout */
-    var a = Math.sin(i * 12.9898) * 43758.5453;
-    return a - Math.floor(a);
+  function tone(t) {
+    if (t < 0.16) return 0;
+    if (Math.random() < 0.10) return 3;
+    return t < 0.66 ? 1 : 2;
   }
 
-  function init() {
-    resize();
-    nodes = [];
-    var n = W < 600 ? 34 : COUNT;
+  function build() {
+    geom();
+    stars = []; field = [];
+    var n = W < 600 ? 170 : 300;
+    var arms = 3, twist = 3.4;
     for (var i = 0; i < n; i++) {
-      nodes.push({
-        x: seedRand(i) * W,
-        y: seedRand(i + 99) * H,
-        vx: (seedRand(i + 7) - 0.5) * 0.28,
-        vy: (seedRand(i + 31) - 0.5) * 0.28,
-        r: 1.2 + seedRand(i + 5) * 1.9
+      var arm = i % arms;
+      var t = Math.pow(Math.random(), 0.85);           // плотнее к центру
+      var spread = 0.06 + (1 - t) * 0.55;              // рукава размытее у ядра
+      var ang = arm * (Math.PI * 2 / arms) + t * twist * Math.PI + (Math.random() - 0.5) * spread;
+      stars.push({
+        rf: Math.min(1, Math.max(0, t + (Math.random() - 0.5) * 0.05)),
+        a0: ang,
+        sz: 0.5 + (1 - t) * 1.7 + Math.random() * 0.7,
+        tw: Math.random() * 6.283,
+        tn: tone(t)
       });
     }
+    for (var k = 0; k < 30; k++) {                      // яркое скопление в ядре
+      stars.push({ rf: Math.random() * 0.09, a0: Math.random() * 6.283, sz: 0.9 + Math.random() * 1.5, tw: Math.random() * 6.283, tn: Math.random() < 0.5 ? 0 : 3 });
+    }
+    var fn = W < 600 ? 26 : 50;                         // тусклые фоновые звёзды (глубина)
+    for (var f = 0; f < fn; f++) {
+      field.push({ x: Math.random() * W, y: Math.random() * H, sz: 0.4 + Math.random() * 0.8, a: 0.05 + Math.random() * 0.12 });
+    }
   }
 
-  function draw() {
+  function render(ts) {
+    if (!t0) t0 = ts || 0;
+    var time = (ts || 0) - t0;
     ctx.clearRect(0, 0, W, H);
-    var i, j, a, b, dx, dy, d2, max = 132 * 132;
-    for (i = 0; i < nodes.length; i++) {
-      a = nodes[i];
-      for (j = i + 1; j < nodes.length; j++) {
-        b = nodes[j];
-        dx = a.x - b.x; dy = a.y - b.y; d2 = dx * dx + dy * dy;
-        if (d2 < max) {
-          var o = (1 - d2 / max) * 0.5;
-          ctx.strokeStyle = "rgba(217,138,43," + (o * 0.55) + ")";
-          ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-        }
-      }
+    ctx.globalCompositeOperation = "lighter";
+
+    var rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rMax * 0.62);
+    rg.addColorStop(0, "rgba(236,182,98,0.45)");
+    rg.addColorStop(0.35, "rgba(199,120,42,0.13)");
+    rg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, W, H);
+
+    var i, s;
+    for (i = 0; i < field.length; i++) {
+      s = field[i];
+      ctx.fillStyle = "rgba(233,206,158," + s.a + ")";
+      ctx.fillRect(s.x, s.y, s.sz, s.sz);
     }
-    for (i = 0; i < nodes.length; i++) {
-      a = nodes[i];
+
+    for (i = 0; i < stars.length; i++) {               // жёсткое вращение — спираль сохраняется
+      s = stars[i];
+      var r = s.rf * rMax;
+      var a = s.a0 + theta;
+      var dx = r * Math.cos(a), dy = r * Math.sin(a) * incl;
+      var x = cx + dx * cosT - dy * sinT;
+      var y = cy + dx * sinT + dy * cosT;
+      var alpha = (0.9 - s.rf * 0.5) * (0.72 + 0.28 * Math.sin(time * 0.002 + s.tw));
+      if (alpha < 0) alpha = 0;
+      ctx.fillStyle = TONES[s.tn] + alpha + ")";
       ctx.beginPath();
-      ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
-      ctx.fillStyle = i % 6 === 0 ? "rgba(231,200,146,0.9)" : "rgba(217,138,43,0.7)";
+      ctx.arc(x, y, s.sz, 0, 6.283);
       ctx.fill();
     }
+    ctx.globalCompositeOperation = "source-over";
   }
 
-  function step() {
-    var i, a;
-    for (i = 0; i < nodes.length; i++) {
-      a = nodes[i];
-      a.x += a.vx; a.y += a.vy;
-      if (a.x < 0 || a.x > W) a.vx *= -1;
-      if (a.y < 0 || a.y > H) a.vy *= -1;
-    }
-    draw();
-    raf = requestAnimationFrame(step);
+  function loop(ts) {
+    theta += 0.0016;
+    render(ts);
+    raf = requestAnimationFrame(loop);
   }
 
-  var raf = null;
-  init();
-  if (reduce) { draw(); } else { step(); }
+  build();
+  if (reduce) { render(0); } else { raf = requestAnimationFrame(loop); }
 
   var rt;
   window.addEventListener("resize", function () {
     clearTimeout(rt);
     rt = setTimeout(function () {
       if (raf) cancelAnimationFrame(raf);
-      init();
-      if (reduce) { draw(); } else { step(); }
+      build();
+      if (reduce) { render(0); } else { raf = requestAnimationFrame(loop); }
     }, 200);
   });
 })();
