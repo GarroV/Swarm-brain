@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Me } from "@/types";
 import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId } from "@/lib/telegram";
@@ -36,6 +36,8 @@ export function RoyApp({ me }: { me: Me | null }) {
   const [stack, setStack] = useState<RoyRoute[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const isDesktop = useIsDesktop();
+  // Стек восстановлен из sessionStorage? До этого не персистим, иначе начальный [] затрёт сохранённый.
+  const hydrated = useRef(false);
 
   const setTab = useCallback((t: RoyTab) => {
     setStack([]);
@@ -73,13 +75,33 @@ export function RoyApp({ me }: { me: Me | null }) {
     const id = getDeepLinkMeetingId();
     if (id) {
       openMeeting(id);
+      hydrated.current = true;
       return;
     }
     try {
       const saved = sessionStorage.getItem("roy_tab");
       if (saved && ROY_TABS.some((t) => t.id === saved)) setTabState(saved as RoyTab);
-    } catch { /* приватный режим */ }
+      // Восстанавливаем и push-стек (открытую деталь), чтобы рефреш не сбрасывал на корень таба.
+      const rawStack = sessionStorage.getItem("roy_stack");
+      if (rawStack) {
+        const parsed = JSON.parse(rawStack);
+        if (Array.isArray(parsed) && parsed.every((r) => r && typeof r.view === "string")) {
+          setStack(parsed as RoyRoute[]);
+        }
+      }
+    } catch { /* приватный режим / битый JSON — стартуем с корня */ }
+    hydrated.current = true;
   }, [openMeeting]);
+
+  // Персист push-стека рядом с roy_tab: после рефреша остаёмся на текущей детали.
+  // (Если восстановленная деталь по id уже удалена — её экран мягко покажет ошибку загрузки.)
+  useEffect(() => {
+    if (!hydrated.current) return;
+    try {
+      if (stack.length) sessionStorage.setItem("roy_stack", JSON.stringify(stack));
+      else sessionStorage.removeItem("roy_stack");
+    } catch { /* приватный режим */ }
+  }, [stack]);
 
   // Встреча, переданная из другой вкладки (дедуп) или из лаунча установленного PWA.
   useEffect(() => {
