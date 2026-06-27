@@ -519,7 +519,7 @@
   function draw(ts){
     var t=ts||0;
     // лёгкий дрейф нод — общая позиция для узла И концов линий (линии держатся за узлы)
-    list.forEach(function(n){ if(n!==dragNode){ n.x+=(n.hx-n.x)*0.012; n.y+=(n.hy-n.y)*0.012; } var w=wob(t,n.ph,n.amp); n._vx=n.x+w.x; n._vy=n.y+w.y; });
+    list.forEach(function(n){ if(n!==dragNode){ n.x+=(n.hx-n.x)*0.006; n.y+=(n.hy-n.y)*0.006; } var w=wob(t,n.ph,n.amp); n._vx=n.x+w.x; n._vy=n.y+w.y; });
     ctx.clearRect(0,0,W,H);
     var bg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*0.9);
     bg.addColorStop(0,"#101108"); bg.addColorStop(0.55,"#0A0C0A"); bg.addColorStop(1,"#070806");
