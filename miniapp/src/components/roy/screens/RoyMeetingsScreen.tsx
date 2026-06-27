@@ -82,7 +82,7 @@ function MeetingCard({ e, onOpen, onRemove }: { e: Entry; onOpen: () => void; on
         </RoyCard>
       </button>
       <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
-        <ActionIcon name="pencil" label="Изменить" color="var(--status-open)" onClick={onOpen} />
+        <ActionIcon name="pencil" label="Изменить" color="var(--accent-ink)" onClick={onOpen} />
         <ActionIcon name="trash" label="Удалить" color="var(--pri-high)" onClick={onRemove} />
       </div>
     </div>

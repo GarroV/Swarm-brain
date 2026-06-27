@@ -67,7 +67,7 @@ export function AgentReviewQueue({ onOpen }: Props) {
                 aria-label="Изменить"
                 onClick={() => onOpen(m.id)}
                 className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background transition-colors hover:bg-secondary active:scale-[0.92]"
-                style={{ color: "var(--status-open)" }}
+                style={{ color: "var(--accent-ink)" }}
               >
                 <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
               </button>

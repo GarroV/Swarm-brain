@@ -32,7 +32,7 @@ export function RoyTasksScreen() {
       key={t.id}
       onTap={() => openTask(t)}
       actions={[
-        { icon: "pencil", label: "Изменить", color: "var(--status-open)", onClick: () => push({ view: "newTask", params: { id: t.id } }) },
+        { icon: "pencil", label: "Изменить", color: "var(--accent-ink)", onClick: () => push({ view: "newTask", params: { id: t.id } }) },
         { icon: "trash", label: "Удалить", color: "var(--pri-high)", onClick: () => remove(t) },
       ]}
     >
