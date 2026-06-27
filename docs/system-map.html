@@ -186,6 +186,18 @@
     { id:"w_review", title:"Вычитка встреч", desc:"Очередь встреч на согласование: правишь тезисы, страны, участников и публикуешь в базу — общее или личное." }
   ];
 
+  // ── Дверь: Захват встреч (рекордер + Granola + Read.ai) ──
+  var CAPTURE = { id:"capture", kind:"door", emoji:"🎙️", x:60, y:1000, r:46, color:"#5FC9D6",
+    title:"Захват встреч", cat:"Источники встреч",
+    desc:"Встречи попадают в систему тремя путями — это разные агенты ОДНОГО процесса. Чем бы встреча ни была записана, дальше ядро одинаково делает тезисы и задачи, и она уходит на вычитку." };
+
+  var CAPTURE_FUNCS = [
+    { id:"cap_rec",     title:"Рекордер",  desc:"Наше приложение для Mac: пишет звук онлайн-звонка и отдаёт ядру — оно делает расшифровку и тезисы. Авто-стоп по концу созвона." },
+    { id:"cap_granola", title:"Granola",   desc:"Внешний сервис заметок встреч: импорт вручную (/granola) или авто-поллер раз в час подтягивает новые." },
+    { id:"cap_readai",  title:"Read.ai",   desc:"Сам присылает завершённые встречи через вебхук — попадают в базу автоматически." },
+    { id:"cap_cal",     title:"Календарь", desc:"Google Календарь подсказывает рекордеру, какая встреча идёт прямо сейчас (чтобы предложить запись)." }
+  ];
+
   // ── Layout ──────────────────────────────────────────
   var nodes = {}, list = [];
   function add(n){ nodes[n.id]=n; list.push(n); }
@@ -208,10 +220,12 @@
     });
   }
   add(WEB);
+  add(CAPTURE);
   fanDoor(BOT, BOT_FUNCS);
   fanDoor(CLAUDE, CLAUDE_FUNCS);
   fanDoor(WEB, WEB_FUNCS);
-  var DOORS=[{node:BOT,funcs:BOT_FUNCS},{node:CLAUDE,funcs:CLAUDE_FUNCS},{node:WEB,funcs:WEB_FUNCS}];
+  fanDoor(CAPTURE, CAPTURE_FUNCS);
+  var DOORS=[{node:BOT,funcs:BOT_FUNCS},{node:CLAUDE,funcs:CLAUDE_FUNCS},{node:WEB,funcs:WEB_FUNCS},{node:CAPTURE,funcs:CAPTURE_FUNCS}];
   // фоновый «рой» — еле заметные дрейфующие точки (средний слой для глубины)
   var MOTES=[]; for(var mi=0; mi<30; mi++){ MOTES.push({ x:-1150+Math.random()*2300, y:-760+Math.random()*1520, vx:(Math.random()-0.5)*0.11, vy:(Math.random()-0.5)*0.11, r:0.6+Math.random()*1.4, ph:Math.random()*6.283 }); }
   // фоновая галактика (screen-space backdrop): тёплое ядро + прохладные рукава
@@ -327,7 +341,8 @@
     b_text:"text", b_fwd:"forward", b_voice:"mic", b_doc:"doc", b_photo:"image", b_link:"link",
     b_search:"search", b_task:"check", b_review:"review", b_rec:"rec", b_digest:"digest", b_claude:"desktop",
     c_ask:"search", c_analyze:"stats", c_team:"people", c_save:"addnote", c_tidy:"sort", c_totasks:"check",
-    web:"globe", w_search:"search", w_base:"list", w_digest:"digest", w_team:"people", w_board:"board", w_review:"review", w_add:"addnote" };
+    web:"globe", w_search:"search", w_base:"list", w_digest:"digest", w_team:"people", w_board:"board", w_review:"review", w_add:"addnote",
+    capture:"mic", cap_rec:"rec", cap_granola:"doc", cap_readai:"video", cap_cal:"calendar" };
 
   function drawGlyph(g,x,y,s,col,lw){
     ctx.save(); ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=lw; ctx.lineCap="round"; ctx.lineJoin="round";
@@ -420,6 +435,15 @@
       ctx.strokeRect(x-s*0.6,y-s*0.5,s*1.2,s*1.0);
       ctx.beginPath(); ctx.moveTo(x-s*0.2,y-s*0.5); ctx.lineTo(x-s*0.2,y+s*0.5); ctx.moveTo(x+s*0.2,y-s*0.5); ctx.lineTo(x+s*0.2,y+s*0.5); ctx.stroke();
       ctx.fillRect(x-s*0.5,y-s*0.34,s*0.22,s*0.16); ctx.fillRect(x-s*0.11,y-s*0.34,s*0.22,s*0.16); ctx.fillRect(x+s*0.28,y-s*0.34,s*0.22,s*0.16);
+    } else if(g==="video"){
+      ctx.strokeRect(x-s*0.58,y-s*0.42,s*1.0,s*0.84);
+      ctx.beginPath(); ctx.moveTo(x-s*0.2,y-s*0.2); ctx.lineTo(x-s*0.2,y+s*0.2); ctx.lineTo(x+s*0.12,y); ctx.closePath(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x+s*0.42,y-s*0.18); ctx.lineTo(x+s*0.6,y-s*0.32); ctx.lineTo(x+s*0.6,y+s*0.32); ctx.lineTo(x+s*0.42,y+s*0.18); ctx.closePath(); ctx.stroke();
+    } else if(g==="calendar"){
+      ctx.strokeRect(x-s*0.55,y-s*0.48,s*1.1,s*0.96);
+      ctx.beginPath(); ctx.moveTo(x-s*0.55,y-s*0.2); ctx.lineTo(x+s*0.55,y-s*0.2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x-s*0.3,y-s*0.48); ctx.lineTo(x-s*0.3,y-s*0.62); ctx.moveTo(x+s*0.3,y-s*0.48); ctx.lineTo(x+s*0.3,y-s*0.62); ctx.stroke();
+      for(k=0;k<3;k++){ ctx.fillRect(x-s*0.34+k*s*0.32, y+s*0.04, s*0.11, s*0.11); }
     } else { ctx.beginPath(); ctx.arc(x,y,s*0.4,0,6.283); ctx.stroke(); }
     ctx.restore();
   }
