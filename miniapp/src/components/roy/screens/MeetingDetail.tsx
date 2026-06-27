@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { NavHeader, RoyCard, Market, SectionLabel, IconBtn, PriDot, TezisyBlocks } from "../ui";
+import { NavHeader, RoyCard, Market, SectionLabel, IconBtn, PriDot, TezisyBlocks, Segmented } from "../ui";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
@@ -41,12 +41,14 @@ export function MeetingDetail({ id }: { id: string }) {
   }, [id, load]);
 
   const confirmed = e ? e.metadata?.confirmed === true : false;
+  // Куда сохранить при подтверждении: общая база команды (дефолт) или личное хранилище.
+  const [storage, setStorage] = useState<"shared" | "personal">("shared");
 
   const confirm = async () => {
     setBusy(true);
     try {
-      await patchMeeting(id, { confirmed: true });
-      toast("Сохранено в базу");
+      await patchMeeting(id, { confirmed: true, is_private: storage === "personal" });
+      toast(storage === "personal" ? "Сохранено в личное" : "Сохранено в базу");
       load();
     } catch {
       toast("Не удалось");
@@ -161,8 +163,18 @@ export function MeetingDetail({ id }: { id: string }) {
       </div>
       {e && !confirmed && !editing && (
         <div className="shrink-0 border-t border-line bg-background px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
+          <div className="mb-2.5">
+            <Segmented
+              items={[
+                { id: "shared", label: "Общее" },
+                { id: "personal", label: "Личное" },
+              ]}
+              value={storage}
+              onChange={(s) => setStorage(s as "shared" | "personal")}
+            />
+          </div>
           <button type="button" onClick={confirm} disabled={busy} className="w-full rounded-[14px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
-            Сохранить в базу
+            {storage === "personal" ? "Сохранить в личное" : "Сохранить в базу"}
           </button>
         </div>
       )}
