@@ -128,6 +128,25 @@ async function withRecorderNames<T extends { recorders?: unknown }>(
   }));
 }
 
+// Имя импортёра встречи-записи (Granola/Read.ai): кто из команды вкинул её. Источник —
+// metadata.added_by_telegram_id (кладут оба пути сохранения), фолбэк owner_id (для pending =
+// импортёр). Резолв в user_profiles. importer_name=null, если не из профилей. added_by="granola"
+// (источник) на фронте больше не путаем с человеком.
+async function withImporterNames<T extends { owner_id?: number | null; metadata?: unknown }>(
+  rows: T[],
+): Promise<Array<T & { importer_name: string | null }>> {
+  const idOf = (r: T): number | null => {
+    const raw = (r.metadata as Record<string, unknown> | null)?.added_by_telegram_id;
+    const fromMeta = typeof raw === "number" ? raw : (typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : null);
+    return fromMeta ?? (typeof r.owner_id === "number" ? r.owner_id : null);
+  };
+  const names = await resolveNames([...new Set(rows.map(idOf).filter((n): n is number => n !== null))]);
+  return rows.map((r) => {
+    const id = idOf(r);
+    return { ...r, importer_name: id !== null ? (names.get(id) ?? null) : null };
+  });
+}
+
 async function resolveAssignee(
   telegramId: number,
 ): Promise<{ telegram_id: number; name: string } | null> {
@@ -1067,7 +1086,7 @@ Deno.serve(async (req: Request) => {
     if (confirmedParam === "false") q = q.or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false");
     const { data, error } = await q;
     if (error) return apiErr(500, error.message, origin);
-    return json(data, 200, origin);
+    return json(await withImporterNames((data ?? []) as Array<{ owner_id?: number | null; metadata?: unknown }>), 200, origin);
   }
 
   // ── GET/PATCH/DELETE /meetings/:id ────────────────────────────────────────────

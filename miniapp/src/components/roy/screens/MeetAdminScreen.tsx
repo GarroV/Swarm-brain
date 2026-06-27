@@ -58,7 +58,13 @@ function itemSource(it: MeetItem): string {
 // Кто принёс запись: для entry — added_by (granola/read.ai), для рекордера —
 // имена записавших (recorder_names с сервера). null, если неизвестно.
 function itemRecorder(it: MeetItem): string | null {
-  if (it.kind === "entry") return it.data.added_by ?? null;
+  if (it.kind === "entry") {
+    // Кто вкинул встречу: резолвнутое имя импортёра; иначе added_by, но НЕ источник "granola"
+    // (это не человек) → тогда ничего.
+    if (it.data.importer_name) return it.data.importer_name;
+    const a = it.data.added_by;
+    return a && a !== "granola" && a !== "read_ai" ? a : null;
+  }
   const names = it.data.recorder_names?.filter(Boolean) ?? [];
   return names.length ? names.join(", ") : null;
 }
@@ -504,6 +510,9 @@ function DetailPanel({
               {src}
             </span>
             {date && <span className="text-ink-mute" style={{ fontSize: 12 }}>{date}</span>}
+            {itemRecorder(item) && (
+              <span className="text-ink-mute" style={{ fontSize: 12 }}>· Импортировал: {itemRecorder(item)}</span>
+            )}
             {e.countries?.[0] && (
               <span
                 className="inline-flex items-center font-semibold text-ink-soft bg-surface-2 border border-line-2"

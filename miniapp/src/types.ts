@@ -89,6 +89,9 @@ export type Entry = {
   content: string;
   summary: string | null;
   added_by: string;
+  // Имя импортёра (резолв added_by_telegram_id/owner_id → user_profiles на сервере, GET /meetings).
+  // null, если не из профилей. added_by — это источник ("granola"), НЕ человек.
+  importer_name?: string | null;
   source: string;
   metadata: Record<string, unknown>;
   countries: string[];
