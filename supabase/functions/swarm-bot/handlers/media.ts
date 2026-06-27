@@ -1,6 +1,7 @@
 import { saveEntry, generateSummary, uploadToStorage } from "../lib/storage.ts"; // generateSummary used for multi-chunk docs only
 import { sendMessage, getTelegramFileUrl } from "../lib/telegram.ts";
 import { TgMessage } from "../lib/types.ts";
+import { isWhisperHallucination, WHISPER_HALLUCINATION_RE } from "../../_shared/whisper-hallucinations.ts";
 // @ts-ignore - esm.sh module
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
@@ -14,6 +15,9 @@ async function transcribeAudio(fileId: string): Promise<string> {
   const form = new FormData();
   form.append("file", new Blob([audioBuffer], { type: "audio/ogg" }), "audio.ogg");
   form.append("model", "whisper-1");
+  // verbose_json → сегменты с no_speech_prob/avg_logprob: тот же фильтр галлюцинаций, что у встреч
+  // (тишина в голосовом так же даёт ютуб-«титры», которые иначе ушли бы в базу как есть).
+  form.append("response_format", "verbose_json");
 
   const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
@@ -22,7 +26,16 @@ async function transcribeAudio(fileId: string): Promise<string> {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Whisper error");
-  return data.text;
+  const segments = (data.segments ?? []) as Array<{ text: string; no_speech_prob?: number; avg_logprob?: number }>;
+  const clean = segments
+    .filter((s) => !isWhisperHallucination(s.text ?? "", s.no_speech_prob ?? 0, s.avg_logprob ?? 0))
+    .map((s) => s.text.trim())
+    .join(" ")
+    .trim();
+  if (clean) return clean;
+  // Сегментов не было/всё вычищено — фолбэк на плоский text, но не если он сам галлюцинация.
+  const flat = (data.text ?? "").trim();
+  return WHISPER_HALLUCINATION_RE.test(flat) ? "" : flat;
 }
 
 async function describeImage(fileId: string): Promise<string> {
@@ -446,6 +459,11 @@ export async function handleUrl(chatId: number, username: string, url: string, r
 export async function handleVoice(chatId: number, username: string, fileId: string, duration: number, groupId: string): Promise<void> {
   await sendMessage(chatId, `Транскрибирую голосовое (${duration} сек)...`);
   const transcript = await transcribeAudio(fileId);
+  // Пусто = речь не распозналась (тишина/шум; галлюцинации-«титры» вычищены) — не сохраняем мусор.
+  if (!transcript.trim()) {
+    await sendMessage(chatId, "🔇 Не удалось распознать речь — запись не сохранена. Попробуй записать заново, ближе к микрофону.");
+    return;
+  }
   const { summary } = await saveEntry(transcript, username, "voice", {}, undefined, groupId);
   await sendMessage(chatId, summary
     ? `✅ Сохранено.\n\n<b>Тезисы:</b>\n${summary}`

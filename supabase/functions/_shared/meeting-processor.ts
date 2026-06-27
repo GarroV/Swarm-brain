@@ -14,6 +14,7 @@
 // Используется двумя функциями: meeting-ingest (приём + inline-проход) и meeting-process (cron).
 
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isWhisperHallucination, WHISPER_HALLUCINATION_RE } from "./whisper-hallucinations.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -85,24 +86,6 @@ async function openaiFetch(url: string, init: RequestInit, attempts = 4): Promis
     res = await fetch(url, init);
   }
   return res;
-}
-
-// Известные галлюцинации Whisper на тишине/шуме: «титры» из ютуб-обучения. В реальной встрече
-// этих фраз не бывает, поэтому режем по подстроке (регистронезависимо). «субтитр» покрывает
-// «Редактор субтитров … Корректор …», «Субтитры сделал/подготовил/создавал». Источники:
-// faster-whisper#621, openai/whisper#2378, whisper.cpp#2286.
-const WHISPER_HALLUCINATION_RE =
-  /субтитр|продолжение следует|спасибо за просмотр|подписывайтесь|подпиш[иеё]тесь|подпишись на канал|до новых встреч|dimatorzok|amara\.org|thank you for watching|thanks for watching|please subscribe/i;
-
-// Сегмент — галлюцинация, если пуст, матчит чёрный список фраз, ИЛИ это явная тишина
-// (высокий no_speech_prob + низкий avg_logprob). Пороги консервативные: одни они «уверенные»
-// галлюцинации не ловят (faster-whisper#621) — поэтому это лишь второй слой к чёрному списку.
-function isWhisperHallucination(text: string, noSpeechProb: number, avgLogprob: number): boolean {
-  const t = text.trim();
-  if (!t) return true;
-  if (WHISPER_HALLUCINATION_RE.test(t)) return true;
-  if (noSpeechProb > 0.8 && avgLogprob < -0.5) return true;
-  return false;
 }
 
 async function transcribeAudio(audio: Blob, filename: string): Promise<Segment[]> {

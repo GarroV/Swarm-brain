@@ -219,7 +219,7 @@ supabase/functions/swarm-bot/
 | `telegram` | Текст ≥300 символов через /add | `buildEntryIndex` (1 GPT вызов): summary + страны + тип + keywords |
 | `note` | Текст <300 символов через /add | GPT keyword-enrichment в `handleAdd`, General тег автоматически |
 | `link` | URL с описанием | GPT расширение описания в `media.ts`, затем `saveEntry` |
-| `voice` | Голосовое | Whisper транскрипция → `saveEntry` (summary через `buildEntryIndex`) |
+| `voice` | Голосовое | Whisper (`verbose_json`) → фильтр галлюцинаций (`_shared/whisper-hallucinations.ts`, общий со встречами) → `saveEntry` (summary через `buildEntryIndex`); пустой результат (тишина/мусор) не сохраняется |
 | `document` | Файл TXT/XLSX/CSV | `generateSummary(полный_текст)` → chunks через `saveEntry` |
 | `granola` | Granola API | GPT tezisy в `granola.ts` → прямой insert с enriched embedding |
 | `read_ai` | Read.ai webhook | Tezisy в `read-ai-webhook` → `saveEntry` |
