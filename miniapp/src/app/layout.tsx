@@ -4,6 +4,7 @@ import "./globals.css";
 import { TelegramProvider } from "@/components/TelegramProvider";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { SingleTabGate } from "@/components/SingleTabGate";
+import { GalaxyBackground } from "@/components/roy/GalaxyBackground";
 
 // Golos Text — весь UI, заголовки И метаданные (эталонная кириллица; дизайн-хендофф
 // набирает мету тоже на Golos). JetBrains Mono оставлен только для технических
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#F4F1EB" },
-    { media: "(prefers-color-scheme: dark)", color: "#1A1714" },
+    { media: "(prefers-color-scheme: dark)", color: "#0A0C0A" },
   ],
 };
 
@@ -39,8 +40,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" className={`${golos.variable} ${mono.variable}`} suppressHydrationWarning>
-      <body className="bg-background text-foreground antialiased min-h-screen">
+      <body className="bg-background text-foreground antialiased min-h-screen dark:bg-transparent">
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <GalaxyBackground />
         <TelegramProvider>
           <SingleTabGate>{children}</SingleTabGate>
         </TelegramProvider>

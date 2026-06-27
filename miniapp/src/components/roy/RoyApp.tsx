@@ -130,12 +130,13 @@ export function RoyApp({ me }: { me: Me | null }) {
 
   return (
     <RoyNavContext.Provider value={nav}>
-      <div className="flex h-[100dvh] bg-background text-foreground">
+      <div className="flex h-[100dvh] bg-background text-foreground dark:bg-transparent">
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <div
             className={cn(
               "relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden",
-              isDashboard ? "max-w-[1240px]" : "max-w-[480px] lg:max-w-[940px]",
+              // Десктоп — во всю ширину экрана (master-detail выигрывает от простора). Мобайл — узкая колонка.
+              isDashboard ? "max-w-[1600px]" : "max-w-[480px] lg:max-w-none",
             )}
           >
             {top ? (
