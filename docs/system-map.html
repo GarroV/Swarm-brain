@@ -165,10 +165,11 @@
   var MOTES=[]; for(var mi=0; mi<30; mi++){ MOTES.push({ x:-1150+Math.random()*2300, y:-760+Math.random()*1520, vx:(Math.random()-0.5)*0.11, vy:(Math.random()-0.5)*0.11, r:0.6+Math.random()*1.4, ph:Math.random()*6.283 }); }
   // фоновая галактика (screen-space backdrop): тёплое ядро + прохладные рукава
   var GAL=[], GAL_TONES=["rgba(250,238,212,","rgba(150,210,225,","rgba(110,170,200,","rgba(225,205,160,"], galTheta=0;
-  (function(){ var arms=2, twist=3.2, n=220, i;
-    for(i=0;i<n;i++){ var t=Math.pow(Math.random(),0.8), arm=i%arms, spread=0.05+(1-t)*0.5, ang=arm*(Math.PI*2/arms)+t*twist*Math.PI+(Math.random()-0.5)*spread;
-      GAL.push({ rf:Math.min(1,t+(Math.random()-0.5)*0.05), a0:ang, sz:0.4+(1-t)*1.5+Math.random()*0.6, tw:Math.random()*6.283, tone:(t<0.2?0:(Math.random()<0.12?3:(t<0.6?1:2))) }); }
-    for(i=0;i<22;i++){ GAL.push({ rf:Math.random()*0.08, a0:Math.random()*6.283, sz:0.7+Math.random()*1.2, tw:Math.random()*6.283, tone:0 }); }
+  (function(){ var arms=3, twist=3.3, n=460, i;
+    for(i=0;i<n;i++){ var t=Math.pow(Math.random(),0.8), arm=i%arms, spread=0.05+(1-t)*0.55, ang=arm*(Math.PI*2/arms)+t*twist*Math.PI+(Math.random()-0.5)*spread;
+      GAL.push({ rf:Math.min(1,t+(Math.random()-0.5)*0.05), a0:ang, sz:0.4+(1-t)*1.6+Math.random()*0.7, tw:Math.random()*6.283, tone:(t<0.2?0:(Math.random()<0.12?3:(t<0.6?1:2))) }); }
+    for(i=0;i<54;i++){ GAL.push({ rf:Math.random()*0.09, a0:Math.random()*6.283, sz:0.7+Math.random()*1.4, tw:Math.random()*6.283, tone:0 }); }
+    for(i=0;i<70;i++){ GAL.push({ rf:0.2+Math.random()*0.8, a0:Math.random()*6.283, sz:0.4+Math.random()*0.9, tw:Math.random()*6.283, tone:(Math.random()<0.5?1:2) }); } // рассеянные звёзды поля
   })();
 
   // edges: kind core (ядро→точка), trunk (область→бот), leaf (бот→вход)
@@ -230,19 +231,29 @@
   }
 
   function drawGalaxy(t){
-    var cx=W*0.5, cy=H*0.5, rMax=Math.max(W,H)*0.64, incl=0.45, tilt=-0.3, cosT=Math.cos(tilt), sinT=Math.sin(tilt);
+    // параллакс: фон смещается/масштабируется на долю от движения ядра-карты
+    var pPan=0.11, pZoom=0.13;
+    var cx=W*0.5+cam.tx*pPan, cy=H*0.5+cam.ty*pPan, zf=1+(cam.s-1)*pZoom;
+    var rMax=Math.max(W,H)*0.66*zf, incl=0.45, tilt=-0.3, cosT=Math.cos(tilt), sinT=Math.sin(tilt);
     galTheta = reduce?0:(t*0.000035);
     ctx.globalCompositeOperation="lighter";
-    var cg=ctx.createRadialGradient(cx,cy,0,cx,cy,rMax*0.5);
-    cg.addColorStop(0,"rgba(235,200,120,0.10)"); cg.addColorStop(0.4,"rgba(150,200,220,0.04)"); cg.addColorStop(1,"rgba(0,0,0,0)");
-    ctx.fillStyle=cg; ctx.fillRect(0,0,W,H);
+    // широкая дымка
+    var hz=ctx.createRadialGradient(cx,cy,0,cx,cy,rMax*0.95);
+    hz.addColorStop(0,"rgba(150,190,215,0.06)"); hz.addColorStop(0.5,"rgba(120,170,200,0.028)"); hz.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=hz; ctx.fillRect(0,0,W,H);
+    // яркое ядро
+    var cg=ctx.createRadialGradient(cx,cy,0,cx,cy,rMax*0.44);
+    cg.addColorStop(0,"rgba(246,216,142,0.22)"); cg.addColorStop(0.32,"rgba(175,212,228,0.08)"); cg.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(cx,cy,rMax*0.44,0,6.283); ctx.fill();
+    // звёзды (у крупных — ореол свечения)
     for(var i=0;i<GAL.length;i++){ var s=GAL[i], r=s.rf*rMax, a=s.a0+galTheta;
       var dx=r*Math.cos(a), dy=r*Math.sin(a)*incl, x=cx+dx*cosT-dy*sinT, y=cy+dx*sinT+dy*cosT;
-      var tw=reduce?1:(0.6+0.4*Math.sin(t*0.0015+s.tw)), al=(0.5-s.rf*0.32)*tw*0.5; if(al<0)al=0;
+      var tw=reduce?1:(0.6+0.4*Math.sin(t*0.0015+s.tw)), al=(0.55-s.rf*0.30)*tw*0.62; if(al<0)al=0;
+      if(s.sz>1.3){ var gg=ctx.createRadialGradient(x,y,0,x,y,s.sz*4.5); gg.addColorStop(0,GAL_TONES[s.tone]+(al*0.55)+")"); gg.addColorStop(1,"rgba(0,0,0,0)"); ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(x,y,s.sz*4.5,0,6.283); ctx.fill(); }
       ctx.fillStyle=GAL_TONES[s.tone]+al+")"; ctx.beginPath(); ctx.arc(x,y,s.sz,0,6.283); ctx.fill(); }
     ctx.globalCompositeOperation="source-over";
-    var vg=ctx.createRadialGradient(cx,cy,Math.min(W,H)*0.28,cx,cy,Math.max(W,H)*0.72);
-    vg.addColorStop(0,"rgba(8,9,7,0)"); vg.addColorStop(1,"rgba(8,9,7,0.5)");
+    var vg=ctx.createRadialGradient(cx,cy,Math.min(W,H)*0.32,cx,cy,Math.max(W,H)*0.8);
+    vg.addColorStop(0,"rgba(8,9,7,0)"); vg.addColorStop(1,"rgba(8,9,7,0.48)");
     ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
   }
 
