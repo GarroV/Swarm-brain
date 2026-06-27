@@ -163,9 +163,15 @@
   POINTS.forEach(function(p,i){ var a=-Math.PI/2 + i*(Math.PI*2/POINTS.length); p.kind="point"; p.r=30; p.x=Math.cos(a)*ptR; p.y=Math.sin(a)*ptR; add(p); });
   var AREA_R = ptR + 86;                          // радиус «области ядра»
   add(BOT);
-  // раздельная раскладка: ВВОД — верхне-правая доля, ДЕЙСТВИЯ — нижняя доля; разные радиусы от бота
-  var BOT_LAYOUT={ b_text:[-88,170], b_fwd:[-58,210], b_voice:[-28,166], b_doc:[2,214], b_photo:[30,176], b_link:[58,206], b_search:[86,190], b_task:[106,226], b_review:[126,182], b_rec:[146,218], b_digest:[160,188], b_claude:[174,214] };
-  BOT_FUNCS.forEach(function(f){ var L=BOT_LAYOUT[f.id]||[0,182], a=L[0]*Math.PI/180; f.kind="func"; f.parent="bot"; if(!f.color)f.color="#8FDDE6"; f.r=(f.grp==="do"?18:16); f.x=BOT.x+Math.cos(a)*L[1]; f.y=BOT.y+Math.sin(a)*L[1]; add(f); });
+  // равномерно по дуге ~300° (слева — коридор под нить к ядру) + лёгкий хаос; ввод сверху, действия снизу
+  (function(){ var N=BOT_FUNCS.length, span=300, start=-150;
+    BOT_FUNCS.forEach(function(f,i){
+      var jA=(nrand(i*7+3)*2-1)*8, jR=nrand(i*5+11);
+      var deg=start + i*(span/(N-1)) + jA, rad=176 + jR*46, a=deg*Math.PI/180;
+      f.kind="func"; f.parent="bot"; if(!f.color)f.color="#8FDDE6"; f.r=(f.grp==="do"?18:16);
+      f.x=BOT.x+Math.cos(a)*rad; f.y=BOT.y+Math.sin(a)*rad; add(f);
+    });
+  })();
   // фоновый «рой» — еле заметные дрейфующие точки (средний слой для глубины)
   var MOTES=[]; for(var mi=0; mi<30; mi++){ MOTES.push({ x:-1150+Math.random()*2300, y:-760+Math.random()*1520, vx:(Math.random()-0.5)*0.11, vy:(Math.random()-0.5)*0.11, r:0.6+Math.random()*1.4, ph:Math.random()*6.283 }); }
   // фоновая галактика (screen-space backdrop): тёплое ядро + прохладные рукава
@@ -375,20 +381,27 @@
     // пиктограмма
     if(r>9){ ctx.globalAlpha=(dim?0.5:1)*(0.85+0.15*fl); drawGlyph(GLYPHS[n.id]||"check", x, y, r*0.5, gly, Math.max(1.2, r*0.085)); ctx.globalAlpha=1; }
 
-    // подпись с тёмной подложкой (читаемость поверх галактики)
+    // подпись: подложка затемняется ТОЛЬКО при наведении (лёгкая, размытые края); в покое — мягкая тень текста
     var big=isCore||n.kind==="door";
     ctx.font=(isCore?"800 17px ":(big?"700 15px ":"600 11.5px "))+"system-ui, sans-serif";
     ctx.textAlign="center"; ctx.textBaseline="top";
-    var ly=y+r+9, lines=isCore?["ЯДРО"]:wrap(n.title, big?16:14), lh=big?17:15, pad=6, maxw=0;
+    var ly=y+r+9, lines=isCore?["ЯДРО"]:wrap(n.title, big?16:14), lh=big?17:15, maxw=0;
     lines.forEach(function(ln){ var w=ctx.measureText(ln).width; if(w>maxw)maxw=w; });
     var la=(dim?0.4:1)*Math.max(0.7,fl);
-    var bx=x-maxw/2-pad, byy=ly-4, bw=maxw+pad*2, bh=lines.length*lh+6;
-    ctx.globalAlpha=la*(0.55+0.4*n.hs);
-    ctx.fillStyle="rgba(8,8,6,0.66)";
-    if(ctx.roundRect){ ctx.beginPath(); ctx.roundRect(bx,byy,bw,bh,6); ctx.fill(); } else { ctx.fillRect(bx,byy,bw,bh); }
+    if(n.hs>0.02){
+      ctx.save();
+      if('filter' in ctx){ try{ ctx.filter="blur(7px)"; }catch(e){} }
+      ctx.globalAlpha=la*0.45*n.hs;
+      ctx.fillStyle="#070705";
+      var bw=maxw+24, bh=lines.length*lh+16, bx=x-bw/2, byy=ly-8;
+      if(ctx.roundRect){ ctx.beginPath(); ctx.roundRect(bx,byy,bw,bh,11); ctx.fill(); } else ctx.fillRect(bx,byy,bw,bh);
+      ctx.restore();
+    }
     ctx.globalAlpha=la;
     ctx.fillStyle=isCore?"#FBE3A6":"#EBDCB6";
+    ctx.shadowColor="rgba(0,0,0,0.55)"; ctx.shadowBlur=3;
     lines.forEach(function(ln,li){ ctx.fillText(ln,x,ly+li*lh); });
+    ctx.shadowBlur=0; ctx.shadowColor="transparent";
     ctx.globalAlpha=1;
   }
 
