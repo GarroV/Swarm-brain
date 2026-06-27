@@ -162,22 +162,12 @@
 
   var CLAUDE_FUNCS = [
     // ── достаёт (ядро → иконка) ──
-    { id:"c_search", title:"Поиск по базе",   flow:"out", desc:"Claude ищет по смыслу в общей базе и приводит нужные записи со ссылками." },
-    { id:"c_open",   title:"Открыть запись",  flow:"out", desc:"Достаёт полный текст записи по ID — когда нужен оригинал целиком." },
-    { id:"c_list",   title:"Список записей",  flow:"out", desc:"Просмотр записей с фильтрами (источник, тип, даты) — ревизия и поиск дублей." },
-    { id:"c_tasks",  title:"Список задач",    flow:"out", desc:"Задачи команды с фильтрами: исполнитель, страна, статус." },
-    { id:"c_meet",   title:"Список встреч",   flow:"out", desc:"Последние встречи, сохранённые в базе." },
-    { id:"c_users",  title:"Команда",         flow:"out", desc:"Участники с профилями: имя, роль, рынки, контакты." },
-    { id:"c_stats",  title:"Статистика базы", flow:"out", desc:"Сводка по хранилищу: сколько записей и какого типа." },
+    { id:"c_search", title:"Поиск и ответы", flow:"out", desc:"Claude ищет по смыслу в общей базе, открывает нужные записи целиком и показывает списки с фильтрами — даёт ответы со ссылками на источники. (поиск · открыть запись · список записей)" },
+    { id:"c_meet",   title:"Встречи",        flow:"out", desc:"Показывает встречи, сохранённые в базе." },
+    { id:"c_users",  title:"Команда",        flow:"out", desc:"Список участников с профилями: имя, роль, рынки, контакты." },
     // ── вносит (иконка → ядро) ──
-    { id:"c_add",      title:"Добавить знание", desc:"Claude кладёт текст в общую базу (с тезисами); можно в личное хранилище." },
-    { id:"c_upload",   title:"Загрузить файл",  desc:"Загружает файл в хранилище и создаёт запись со ссылкой." },
-    { id:"c_edit",     title:"Править запись",  desc:"Исправляет/дополняет запись: текст, тезисы, даты, страны, файл." },
-    { id:"c_del",      title:"Удалить запись",  desc:"Удаляет свою запись (и прикреплённый файл) из базы." },
-    { id:"c_reindex",  title:"Обновить теги",   desc:"Перечитывает запись и пересчитывает страны и смысловой отпечаток." },
-    { id:"c_taskadd",  title:"Создать задачу",  desc:"Заводит задачу с исполнителем (умный матч имени)." },
-    { id:"c_taskedit", title:"Изменить задачу", desc:"Меняет задачу: статус, срок, исполнителя." },
-    { id:"c_taskdel",  title:"Удалить задачу",  desc:"Удаляет задачу." }
+    { id:"c_notes",  title:"Вести записи",   desc:"Добавляет знания и файлы в базу, правит и удаляет записи, обновляет страны/теги — всё управление содержимым базы прямо из Claude. (добавить · загрузить файл · править · удалить · обновить теги)" },
+    { id:"c_tasks",  title:"Задачи",         desc:"Создаёт, изменяет, удаляет и просматривает задачи команды прямо из Claude. (создать · изменить · удалить · смотреть)" }
   ];
 
   // ── Layout ──────────────────────────────────────────
@@ -191,7 +181,7 @@
   add(CLAUDE);
   // общий хелпер: функции двери — равномерно по дуге ~300° (коридор к ядру свободен) + лёгкий хаос
   function fanDoor(door, funcs, baseR){
-    var toCore=Math.atan2(-door.y,-door.x), center=toCore+Math.PI, span=300*Math.PI/180, N=funcs.length, seed=door.id.length*17+5;
+    var N=funcs.length, toCore=Math.atan2(-door.y,-door.x), center=toCore+Math.PI, span=Math.min(300,Math.max(150,N*42))*Math.PI/180, seed=door.id.length*17+5;
     funcs.forEach(function(f,i){
       var jA=(nrand(i*7+seed)*2-1)*8*Math.PI/180, jR=nrand(i*5+seed+3);
       var a=center - span/2 + i*(span/(N-1)) + jA, rad=baseR + jR*48;
@@ -244,8 +234,8 @@
   function lighten(hex){ var h=hex.replace("#",""); function u(v){return Math.round(v+(255-v)*0.55);} return "rgb("+u(parseInt(h.substr(0,2),16))+","+u(parseInt(h.substr(2,2),16))+","+u(parseInt(h.substr(4,2),16))+")"; }
   function flicker(t,ph){ if(reduce) return 1; var v=0.74+0.16*Math.sin(t*0.004+ph)+0.06*Math.sin(t*0.017+ph*2); if(Math.sin(t*0.011+ph*5)>0.968) v*=0.45; return Math.max(0.35,Math.min(1,v)); }
   // волна мерцания: фаза по позиции (x+y) → гребень катится слева-сверху → вправо-вниз
-  function waveFlicker(t,n){ if(reduce) return 1; var phase=(n._vx+n._vy)*0.008; return 0.62+0.38*Math.sin(t*0.0028 - phase); }
-  function wob(t,ph,amp){ if(reduce) return {x:0,y:0}; return {x:Math.sin(t*0.0013+ph)*amp, y:Math.cos(t*0.0017+ph*1.3)*amp}; }
+  function waveFlicker(t,n){ if(reduce) return 1; var phase=(n._vx+n._vy)*0.008; return 0.72+0.28*Math.sin(t*0.0016 - phase); }
+  function wob(t,ph,amp){ if(reduce) return {x:0,y:0}; return {x:Math.sin(t*0.0007+ph)*amp, y:Math.cos(t*0.0009+ph*1.3)*amp}; }
   // что подсвечивать при фокусе (явно, без generic-смежности — иначе ядро «тянуло» бота через ствол)
   function litSet(f){ var s={}; s[f.id]=true;
     if(f.id==="core"){ POINTS.forEach(function(p){ s[p.id]=true; }); }
@@ -257,17 +247,17 @@
   function wrap(s,max){ var w=s.split(" "),L=[],c=""; w.forEach(function(x){ if((c+" "+x).trim().length>max){ if(c)L.push(c); c=x; } else c=(c+" "+x).trim(); }); if(c)L.push(c); return L; }
 
   function thread(t, ax,ay,bx,by, on, big){
-    // еле заметная нить-коннектор; яркая только при наведении
-    ctx.strokeStyle = on ? hexA("#CFFBFF",0.72) : hexA("#76E0E8",0.12);
-    ctx.lineWidth = on?2.3:1;
+    // еле заметная нить-коннектор; чуть ярче при наведении
+    ctx.strokeStyle = on ? hexA("#BFE9F0",0.5) : hexA("#76E0E8",0.10);
+    ctx.lineWidth = on?2:1;
     ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
     if(reduce) return;
-    var speed = on?0.0005:0.00022, nP=(on?4:1), pr=(on?3.2:1.5)*Math.max(0.7,cam.s);
+    var speed = on?0.00026:0.00011, nP=(on?3:1), pr=(on?2.2:1.1)*Math.max(0.7,cam.s);
     for(var k=0;k<nP;k++){
       var prog=((t*speed)+k/nP)%1;
       var px=ax+(bx-ax)*prog, py=ay+(by-ay)*prog;
       var g=ctx.createRadialGradient(px,py,0,px,py,pr*3);
-      g.addColorStop(0, on?"rgba(224,252,255,0.95)":"rgba(150,235,242,0.32)");
+      g.addColorStop(0, on?"rgba(200,240,248,0.55)":"rgba(150,235,242,0.16)");
       g.addColorStop(1,"rgba(120,225,235,0)");
       ctx.fillStyle=g; ctx.beginPath(); ctx.arc(px,py,pr*3,0,6.283); ctx.fill();
     }
@@ -278,23 +268,23 @@
     var pPan=0.11, pZoom=0.13;
     var cx=W*0.5+cam.tx*pPan, cy=H*0.5+cam.ty*pPan, zf=1+(cam.s-1)*pZoom;
     var rMax=Math.max(W,H)*0.82*zf, incl=0.46, tilt=-0.3, cosT=Math.cos(tilt), sinT=Math.sin(tilt);
-    galTheta = reduce?0:(t*0.000030);
+    galTheta = reduce?0:(t*0.000018);
     ctx.globalCompositeOperation="lighter";
     // галактический хало
     var hz=ctx.createRadialGradient(cx,cy,0,cx,cy,rMax);
-    hz.addColorStop(0,"rgba(160,195,220,0.09)"); hz.addColorStop(0.45,"rgba(120,170,200,0.04)"); hz.addColorStop(1,"rgba(0,0,0,0)");
+    hz.addColorStop(0,"rgba(160,195,220,0.07)"); hz.addColorStop(0.45,"rgba(120,170,200,0.03)"); hz.addColorStop(1,"rgba(0,0,0,0)");
     ctx.fillStyle=hz; ctx.fillRect(0,0,W,H);
-    // яркий балдж-ядро
+    // балдж-ядро (приглушённое)
     var cg=ctx.createRadialGradient(cx,cy,0,cx,cy,rMax*0.4);
-    cg.addColorStop(0,"rgba(250,224,158,0.34)"); cg.addColorStop(0.16,"rgba(246,212,150,0.16)"); cg.addColorStop(0.5,"rgba(170,205,225,0.05)"); cg.addColorStop(1,"rgba(0,0,0,0)");
+    cg.addColorStop(0,"rgba(250,224,158,0.24)"); cg.addColorStop(0.16,"rgba(246,212,150,0.10)"); cg.addColorStop(0.5,"rgba(170,205,225,0.04)"); cg.addColorStop(1,"rgba(0,0,0,0)");
     ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(cx,cy,rMax*0.4,0,6.283); ctx.fill();
     // звёзды: мелкие — fillRect (быстро), за экраном — отсев, у ярких — ореол (с лимитом)
     var i,s,r,a,dx,dy,x,y,tw,al,halos=0, zs=Math.max(0.7,Math.min(cam.s,1.5));
     for(i=0;i<GAL.length;i++){ s=GAL[i]; r=s.rf*rMax; a=s.a0+galTheta;
       dx=r*Math.cos(a); dy=r*Math.sin(a)*incl; x=cx+dx*cosT-dy*sinT; y=cy+dx*sinT+dy*cosT;
       if(x<-30||x>W+30||y<-30||y>H+30) continue;
-      tw=reduce?1:(0.62+0.38*Math.sin(t*0.0015+s.tw)); al=(0.6-s.rf*0.30)*tw*0.6; if(al<0.02) continue;
-      if(s.sz>1.9 && halos<110){ halos++; var gg=ctx.createRadialGradient(x,y,0,x,y,s.sz*5); gg.addColorStop(0,GAL_TONES[s.tone]+(al*0.5)+")"); gg.addColorStop(1,"rgba(0,0,0,0)"); ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(x,y,s.sz*5,0,6.283); ctx.fill(); }
+      tw=reduce?1:(0.65+0.35*Math.sin(t*0.001+s.tw)); al=(0.6-s.rf*0.30)*tw*0.46; if(al<0.02) continue;
+      if(s.sz>1.9 && halos<90){ halos++; var gg=ctx.createRadialGradient(x,y,0,x,y,s.sz*4); gg.addColorStop(0,GAL_TONES[s.tone]+(al*0.4)+")"); gg.addColorStop(1,"rgba(0,0,0,0)"); ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(x,y,s.sz*4,0,6.283); ctx.fill(); }
       ctx.fillStyle=GAL_TONES[s.tone]+al+")"; var d=s.sz*zs; ctx.fillRect(x-d*0.5,y-d*0.5,d,d);
     }
     ctx.globalCompositeOperation="source-over";
@@ -316,8 +306,7 @@
   var GLYPHS={ core:"roy", p1:"inbox", p2:"sort", p3:"search", p4:"check", bot:"send", claude:"desktop",
     b_text:"text", b_fwd:"forward", b_voice:"mic", b_doc:"doc", b_photo:"image", b_link:"link",
     b_search:"search", b_task:"check", b_review:"review", b_rec:"rec", b_digest:"digest", b_claude:"desktop",
-    c_search:"search", c_open:"doc", c_list:"sort", c_tasks:"list", c_meet:"review", c_users:"people", c_stats:"stats",
-    c_add:"addnote", c_upload:"upload", c_edit:"edit", c_del:"trash", c_reindex:"tag", c_taskadd:"check", c_taskedit:"edit", c_taskdel:"trash" };
+    c_search:"search", c_meet:"review", c_users:"people", c_notes:"addnote", c_tasks:"check" };
 
   function drawGlyph(g,x,y,s,col,lw){
     ctx.save(); ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=lw; ctx.lineCap="round"; ctx.lineJoin="round";
@@ -416,11 +405,11 @@
     var isCore=n.kind==="core";
     var rim = isCore?"#F2B85A":"#E1953A", gly = isCore?"#FBE3A6":"#F4C46A";
 
-    // янтарный блум
+    // янтарный блум (приглушённый)
     ctx.globalCompositeOperation="lighter";
-    var br=r*(isCore?2.6:2.0);
+    var br=r*(isCore?2.3:1.8);
     var bloom=ctx.createRadialGradient(x,y,0,x,y,br);
-    bloom.addColorStop(0,hexA(rim,0.42*a)); bloom.addColorStop(0.5,hexA(rim,0.10*a)); bloom.addColorStop(1,hexA(rim,0));
+    bloom.addColorStop(0,hexA(rim,0.26*a)); bloom.addColorStop(0.5,hexA(rim,0.06*a)); bloom.addColorStop(1,hexA(rim,0));
     ctx.fillStyle=bloom; ctx.beginPath(); ctx.arc(x,y,br,0,6.283); ctx.fill();
     ctx.globalCompositeOperation="source-over";
 
@@ -472,8 +461,8 @@
   // ── Render ──────────────────────────────────────────
   function draw(ts){
     var t=ts||0;
-    // позиции узлов стабильны (позиционное колыхание убрано — оно сдвигало иконки/раскладку); живость — мерцание + бегущие импульсы
-    list.forEach(function(n){ n._vx=n.x; n._vy=n.y; });
+    // лёгкий дрейф нод — общая позиция для узла И концов линий (линии держатся за узлы)
+    list.forEach(function(n){ var w=wob(t,n.ph,n.amp); n._vx=n.x+w.x; n._vy=n.y+w.y; });
     ctx.clearRect(0,0,W,H);
     var bg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*0.9);
     bg.addColorStop(0,"#101108"); bg.addColorStop(0.55,"#0A0C0A"); bg.addColorStop(1,"#070806");
