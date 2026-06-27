@@ -114,12 +114,12 @@ function ListRow({
       disabled={removing}
       // Exit-анимация при согласовании/удалении: затухание + сворачивание (maxHeight) + лёгкий сдвиг.
       className={`block w-full text-left overflow-hidden transition-all duration-300 ease-out${
-        removing ? " opacity-0 -translate-x-2 scale-[0.97] pointer-events-none" : ""
+        removing ? " opacity-0 -translate-x-2 scale-[0.97] pointer-events-none" : " hover:scale-[1.01]"
       }`}
       style={{ maxHeight: removing ? 0 : 260 }}
     >
       <RoyCard
-        className="px-3.5 py-3 transition-colors"
+        className="px-3.5 py-3 transition-colors hover:border-line-2 hover:bg-surface-2"
         style={active ? { borderColor: "var(--accent-ink)", background: "var(--accent-soft)" } : {}}
       >
         <div className="flex items-start gap-3">
@@ -349,7 +349,7 @@ function TasksFromMeeting({ entry }: { entry: Entry }) {
           type="button"
           disabled={loading || !hasContent}
           onClick={extract}
-          className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-opacity disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,opacity,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
           style={{ padding: "6px 12px", fontSize: 12 }}
         >
           <RoyIcon name="spark" size={13} strokeWidth={1.9} />
@@ -370,7 +370,7 @@ function TasksFromMeeting({ entry }: { entry: Entry }) {
           {tasks.map((t) => {
             const busy = addingKey === t._key;
             return (
-              <RoyCard key={t._key} className="px-3 py-2.5">
+              <RoyCard key={t._key} className="px-3 py-2.5 transition-colors hover:border-line-2">
                 <div className="flex items-start gap-2">
                   <input
                     value={t.title}
@@ -412,7 +412,7 @@ function TasksFromMeeting({ entry }: { entry: Entry }) {
                     type="button"
                     disabled={busy}
                     onClick={() => addTask(t, "personal")}
-                    className="flex-1 rounded-[10px] border border-line bg-surface font-semibold text-ink transition-opacity disabled:opacity-50"
+                    className="flex-1 rounded-[10px] border border-line bg-surface font-semibold text-ink transition-[transform,opacity,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
                     style={{ padding: "6px 10px", fontSize: 12.5 }}
                   >
                     Себе
@@ -421,7 +421,7 @@ function TasksFromMeeting({ entry }: { entry: Entry }) {
                     type="button"
                     disabled={busy}
                     onClick={() => addTask(t, "shared")}
-                    className="flex-1 rounded-[10px] border-0 font-semibold transition-opacity disabled:opacity-50"
+                    className="flex-1 rounded-[10px] border-0 font-semibold transition-[transform,opacity,filter] duration-150 hover:scale-[1.03] hover:brightness-105 active:scale-[0.97] disabled:opacity-50"
                     style={{ padding: "7px 10px", fontSize: 12.5, background: "var(--accent-ink)", color: "var(--card)" }}
                   >
                     В общие
@@ -532,8 +532,6 @@ function DetailPanel({
         )}
 
         <ContentEditor entry={e} onSaved={onEntryUpdated} />
-
-        <TasksFromMeeting entry={e} />
       </div>
     );
   }
@@ -772,7 +770,7 @@ function ActionsPanel({
         type="button"
         disabled={confirmState !== "idle"}
         onClick={handleConfirm}
-        className="flex w-full items-center justify-center gap-2 rounded-[13px] border-0 font-semibold transition-opacity disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-[13px] border-0 font-semibold transition-[transform,opacity,filter] duration-150 hover:scale-[1.02] hover:brightness-105 active:scale-[0.98] disabled:opacity-50"
         style={{
           padding: "10px 14px",
           fontSize: 14,
@@ -789,7 +787,7 @@ function ActionsPanel({
         type="button"
         disabled={rejectState !== "idle"}
         onClick={handleReject}
-        className="flex w-full items-center justify-center gap-2 rounded-[13px] border border-line bg-surface font-semibold transition-opacity disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-[13px] border border-line bg-surface font-semibold transition-[transform,background,border-color] duration-150 hover:scale-[1.02] hover:border-[var(--pri-high)] active:scale-[0.98] disabled:opacity-50"
         style={{
           padding: "9px 14px",
           fontSize: 14,
@@ -800,18 +798,25 @@ function ActionsPanel({
         {rejectLabel}
       </button>
 
-      {/* Реклассификация в заметки — только для entry */}
+      {/* «Не встреча → в заметки» — полноценной кнопкой под «Отклонить» (только entry) */}
       {!isAgent && (
         <button
           type="button"
           disabled={reclassState !== "idle"}
           onClick={handleReclassify}
-          className="flex w-full items-center justify-center gap-1.5 bg-transparent border-0 font-semibold text-ink-mute transition-opacity disabled:opacity-50 hover:opacity-70"
-          style={{ padding: "4px 8px", fontSize: 12.5 }}
+          className="flex w-full items-center justify-center gap-1.5 rounded-[13px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,background,border-color] duration-150 hover:scale-[1.02] hover:border-line-2 hover:bg-surface-2 active:scale-[0.98] disabled:opacity-50"
+          style={{ padding: "9px 14px", fontSize: 13.5 }}
         >
-          <RoyIcon name="note" size={14} strokeWidth={1.9} />
+          <RoyIcon name="note" size={15} strokeWidth={1.9} />
           {reclassLabel}
         </button>
+      )}
+
+      {/* Вычленить задачи из встречи — в правой панели под кнопками решения (только entry) */}
+      {item.kind === "entry" && (
+        <div className="mt-1 border-t border-line pt-3">
+          <TasksFromMeeting entry={item.data} />
+        </div>
       )}
 
       {isAgent && (
@@ -1021,10 +1026,10 @@ export function MeetAdminScreen() {
           )}
         </div>
 
-        {/* ── Правая колонка: действия ───────────────────────────────────────── */}
+        {/* ── Правая колонка: действия + задачи из встречи ─────────────────────── */}
         <div
           className="flex flex-col border-l border-line shrink-0 min-h-0"
-          style={{ width: 220 }}
+          style={{ width: 320 }}
         >
           {selected ? (
             <>
