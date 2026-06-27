@@ -181,17 +181,19 @@
   add(BOT);
   add(CLAUDE);
   // общий хелпер: функции двери — равномерно по дуге ~300° (коридор к ядру свободен) + лёгкий хаос
-  function fanDoor(door, funcs, baseR){
-    var N=funcs.length, toCore=Math.atan2(-door.y,-door.x), center=toCore+Math.PI, span=Math.min(300,Math.max(150,N*42))*Math.PI/180, seed=door.id.length*17+5;
+  function fanDoor(door, funcs){
+    var N=funcs.length, toCore=Math.atan2(-door.y,-door.x), center=toCore+Math.PI,
+        span=Math.min(300,Math.max(150,N*40))*Math.PI/180, seed=door.id.length*17+5,
+        baseR=112 + N*5;   // меньше функций → плотнее к двери
     funcs.forEach(function(f,i){
       var jA=(nrand(i*7+seed)*2-1)*8*Math.PI/180, jR=nrand(i*5+seed+3);
-      var a=center - span/2 + i*(span/(N-1)) + jA, rad=baseR + jR*48;
+      var a=center - span/2 + i*(span/(N-1)) + jA, rad=baseR + jR*30;
       f.kind="func"; f.parent=door.id; if(!f.color)f.color="#E6C281"; f.r=(f.grp==="do"?18:16);
       f.x=door.x+Math.cos(a)*rad; f.y=door.y+Math.sin(a)*rad; add(f);
     });
   }
-  fanDoor(BOT, BOT_FUNCS, 176);
-  fanDoor(CLAUDE, CLAUDE_FUNCS, 190);
+  fanDoor(BOT, BOT_FUNCS);
+  fanDoor(CLAUDE, CLAUDE_FUNCS);
   var DOORS=[{node:BOT,funcs:BOT_FUNCS},{node:CLAUDE,funcs:CLAUDE_FUNCS}];
   // фоновый «рой» — еле заметные дрейфующие точки (средний слой для глубины)
   var MOTES=[]; for(var mi=0; mi<30; mi++){ MOTES.push({ x:-1150+Math.random()*2300, y:-760+Math.random()*1520, vx:(Math.random()-0.5)*0.11, vy:(Math.random()-0.5)*0.11, r:0.6+Math.random()*1.4, ph:Math.random()*6.283 }); }
