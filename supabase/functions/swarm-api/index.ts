@@ -1096,6 +1096,13 @@ Deno.serve(async (req: Request) => {
         if ("summary" in body) fields.summary = body.summary;
         if ("content" in body && typeof body.content === "string") fields.content = body.content;
         if ("entry_type" in body && typeof body.entry_type === "string") fields.entry_type = body.entry_type;
+        // Переименование встречи: пишем в metadata.title (его предпочитает deriveEntryTitle на фронте).
+        // Мержим в уже собранный fields.metadata (если был confirmed) либо в текущую metadata записи.
+        if (typeof body.title === "string" && body.title.trim()) {
+          const meta = (fields.metadata as Record<string, unknown>) ?? { ...(entry.metadata as Record<string, unknown>) };
+          meta.title = body.title.trim().slice(0, 200);
+          fields.metadata = meta;
+        }
         // Смена приватности встречи-записи: владелец задаётся/снимается вместе с флагом (как у задач).
         if (typeof body.is_private === "boolean") {
           fields.is_private = body.is_private;

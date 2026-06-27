@@ -442,15 +442,60 @@ function DetailPanel({
   const title = itemTitle(item);
   const date = fmtDate(itemDate(item));
   const src = itemSource(item);
+  // Инлайн-правка названия встречи (карандаш у заголовка). Пишем в metadata.title (его и
+  // предпочитает deriveEntryTitle). Сброс при смене выбранной записи.
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [savingTitle, setSavingTitle] = useState(false);
+  useEffect(() => { setEditingTitle(false); }, [item.data.id]);
 
   if (item.kind === "entry") {
     const e = item.data;
+    const saveTitle = async () => {
+      const t = titleDraft.trim();
+      if (!t || t === title) { setEditingTitle(false); return; }
+      setSavingTitle(true);
+      try {
+        const updated = await patchMeeting(e.id, { title: t });
+        onEntryUpdated(updated);
+        setEditingTitle(false);
+      } catch { /* оставляем режим правки при ошибке */ }
+      setSavingTitle(false);
+    };
     return (
       <div className="flex flex-col gap-4 min-h-0 overflow-y-auto px-5 py-4">
         <div>
-          <h2 className="font-bold text-ink leading-tight" style={{ fontSize: 22, letterSpacing: "-0.015em" }}>
-            {title}
-          </h2>
+          {editingTitle ? (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                value={titleDraft}
+                onChange={(ev) => setTitleDraft(ev.target.value)}
+                onKeyDown={(ev) => { if (ev.key === "Enter") saveTitle(); if (ev.key === "Escape") setEditingTitle(false); }}
+                disabled={savingTitle}
+                className="min-w-0 flex-1 rounded-[10px] border border-line bg-surface px-3 py-2 font-bold text-ink outline-none focus:border-[var(--accent-ink)] disabled:opacity-50"
+                style={{ fontSize: 20, letterSpacing: "-0.015em" }}
+              />
+              <button type="button" onClick={saveTitle} disabled={savingTitle} aria-label="Сохранить название"
+                className="inline-flex shrink-0 items-center justify-center rounded-[10px] p-2.5 text-ink transition-opacity hover:opacity-70 disabled:opacity-50">
+                <RoyIcon name="check" size={18} strokeWidth={2} />
+              </button>
+              <button type="button" onClick={() => setEditingTitle(false)} disabled={savingTitle} aria-label="Отмена"
+                className="inline-flex shrink-0 items-center justify-center rounded-[10px] p-2.5 text-ink-mute transition-opacity hover:opacity-70 disabled:opacity-50">
+                <RoyIcon name="x" size={18} strokeWidth={2} />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-start gap-2">
+              <h2 className="flex-1 font-bold text-ink leading-tight" style={{ fontSize: 22, letterSpacing: "-0.015em" }}>
+                {title}
+              </h2>
+              <button type="button" onClick={() => { setTitleDraft(title); setEditingTitle(true); }} aria-label="Изменить название"
+                className="mt-1 inline-flex shrink-0 items-center justify-center rounded-[10px] p-2 text-ink-mute transition-colors hover:bg-accent-soft hover:text-ink active:scale-[0.94]">
+                <RoyIcon name="pencil" size={18} strokeWidth={1.9} />
+              </button>
+            </div>
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span
               className="inline-flex items-center font-semibold"
@@ -882,7 +927,9 @@ export function MeetAdminScreen() {
   const isLoading = entries === null || agentMeetings === null;
 
   return (
-    <div className="roy-pop flex h-full flex-col overflow-hidden">
+    // flex-1 + min-h-0 (а не h-full): надёжно занимает высоту flex-родителя без капризов
+    // процентной высоты → внутренние overflow-y-auto колонки реально скроллятся.
+    <div className="roy-pop flex min-h-0 flex-1 flex-col overflow-hidden">
       <NavHeader onBack={pop} title="Ревью встреч" />
 
       {/* ── Трёхколоночный master-detail ─────────────────────────────────────── */}

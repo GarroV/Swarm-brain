@@ -47,6 +47,7 @@ export type UpdateMeetingInput = {
   content?: string;
   is_private?: boolean;
   entry_type?: string;
+  title?: string;
 };
 
 // Предложенная задача из preview-извлечения (POST /tasks/extract { save:false }) —
