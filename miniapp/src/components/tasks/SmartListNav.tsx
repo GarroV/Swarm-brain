@@ -34,7 +34,7 @@ export function SmartListNav({ variant, active, counts, onSelect, query, onQuery
               <RoyIcon name={icon} size={13} strokeWidth={2} />
               {label}
               {counts[id] > 0 && (
-                <span className={on ? "text-white/80" : "text-ink-mute"} style={{ fontSize: 11 }}>
+                <span className={`font-mono ${on ? "text-white/80" : "text-ink-mute"}`} style={{ fontSize: 11 }}>
                   {counts[id]}
                 </span>
               )}
@@ -75,7 +75,7 @@ export function SmartListNav({ variant, active, counts, onSelect, query, onQuery
             <RoyIcon name={icon} size={16} strokeWidth={on ? 2.1 : 1.8} />
             <span className="flex-1 text-left">{label}</span>
             {counts[id] > 0 && (
-              <span className={on ? "text-accent-ink" : "text-ink-mute"} style={{ fontSize: 11.5 }}>
+              <span className={`font-mono ${on ? "text-accent-ink" : "text-ink-mute"}`} style={{ fontSize: 11.5 }}>
                 {counts[id]}
               </span>
             )}

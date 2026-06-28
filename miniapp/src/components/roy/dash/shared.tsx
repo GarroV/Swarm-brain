@@ -121,11 +121,11 @@ export function Row({ onClick, children }: { onClick: () => void; children: Reac
 export function SubHead({ children, count }: { children: ReactNode; count?: number }) {
   return (
     <div className="flex items-center gap-2 px-1 pb-1.5 pt-1">
-      <span className="font-bold uppercase text-ink-mute" style={{ fontSize: 11, letterSpacing: "0.06em" }}>
+      <span className="font-mono font-semibold uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.09em" }}>
         {children}
       </span>
       {count != null && (
-        <span className="font-bold text-accent-ink" style={{ fontSize: 11 }}>
+        <span className="font-mono font-bold text-accent-ink" style={{ fontSize: 11 }}>
           {count}
         </span>
       )}

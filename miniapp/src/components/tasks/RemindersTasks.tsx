@@ -98,8 +98,8 @@ export function RemindersTasks() {
               <section key={g.label} className="mb-4">
                 <div className="mb-1 flex items-center gap-2 pt-2">
                   <RoyIcon name="globe" size={13} className="text-ink-mute" />
-                  <span className="font-bold uppercase text-ink-mute" style={{ fontSize: 11.5, letterSpacing: "0.05em" }}>{g.label}</span>
-                  <span className="text-ink-mute" style={{ fontSize: 11.5 }}>{g.tasks.length}</span>
+                  <span className="font-mono font-semibold uppercase text-ink-mute" style={{ fontSize: 11, letterSpacing: "0.08em" }}>{g.label}</span>
+                  <span className="font-mono text-ink-mute" style={{ fontSize: 11 }}>{g.tasks.length}</span>
                 </div>
                 {g.tasks.map(renderRow)}
               </section>

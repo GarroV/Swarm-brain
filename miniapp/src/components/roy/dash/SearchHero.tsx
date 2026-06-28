@@ -25,7 +25,7 @@ export function SearchHero() {
   return (
     <RoyCard className="flex shrink-0 flex-col items-center justify-center gap-5 px-8 py-9">
       <div className="text-center">
-        <h2 className="font-bold text-ink" style={{ fontSize: 22, letterSpacing: "-0.02em" }}>
+        <h2 className="font-bold text-ink" style={{ fontSize: 30, letterSpacing: "-0.025em" }}>
           Спросите Swarm
         </h2>
         <p className="mt-1 text-ink-soft" style={{ fontSize: 13.5 }}>

@@ -224,7 +224,7 @@ export function IconBtn({ name, onClick, className, "aria-label": ariaLabel }: {
 // ── SectionLabel (мелкий лейбл секции, uppercase) ────────────────────────────
 export function SectionLabel({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("font-bold uppercase text-ink-mute", className)} style={{ fontSize: 12, letterSpacing: "0.05em", margin: "0 4px 9px" }}>
+    <div className={cn("font-mono font-semibold uppercase text-ink-mute", className)} style={{ fontSize: 11, letterSpacing: "0.08em", margin: "0 4px 9px" }}>
       {children}
     </div>
   );
