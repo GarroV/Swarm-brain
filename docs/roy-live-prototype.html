@@ -1,0 +1,309 @@
+<title>Рой Live — прототип companion-режима</title>
+<meta name="description" content="Прототип Granola-режима для «Роя»: запись с пометками на полях, тайм-штампы, склейка тезисов ИИ с твоими маргиналиями." />
+<style>
+  :root{
+    --bg:#0a0b07; --bg2:#0e0f0a;
+    --ink:#ece5d4; --soft:#b7af98; --mute:#7d7763;
+    --line:rgba(231,210,150,.14);
+    --amber:#f2b85a; --amber-hi:#fbe3a6; --amber-soft:rgba(242,184,90,.14);
+    --glass:rgba(20,19,13,.66);
+    --ai:#b7af98;            /* тезисы ИИ — приглушённее */
+    --rec:#ff6b5e;
+    --mono:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:var(--sans); color:var(--ink); background:var(--bg);
+    min-height:100vh; -webkit-font-smoothing:antialiased; line-height:1.5;
+    overflow-x:hidden;
+  }
+  #stars{position:fixed; inset:0; z-index:0; pointer-events:none}
+  .wrap{position:relative; z-index:1; max-width:1180px; margin:0 auto; padding:26px 20px 70px}
+
+  /* ---- head ---- */
+  .head{display:flex; flex-wrap:wrap; align-items:center; gap:14px 18px; margin-bottom:8px}
+  .brand{display:flex; align-items:center; gap:11px}
+  .logo{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;
+    background:radial-gradient(circle at 50% 35%,rgba(242,184,90,.5),rgba(242,184,90,.08) 70%);
+    border:1px solid rgba(242,184,90,.4); font-size:19px}
+  .brand h1{font-size:19px; margin:0; letter-spacing:-.01em; font-weight:700}
+  .brand .sub{font:500 11px/1 var(--mono); color:var(--mute); letter-spacing:.12em; text-transform:uppercase; margin-top:5px}
+  .head .spacer{flex:1}
+  .ghost{font:600 12.5px/1 var(--sans); color:var(--soft); background:transparent;
+    border:1px solid var(--line); border-radius:9px; padding:8px 13px; cursor:pointer; transition:.18s}
+  .ghost:hover{color:var(--ink); border-color:rgba(242,184,90,.4); background:var(--amber-soft)}
+
+  /* ---- steps ---- */
+  .steps{display:flex; gap:8px; margin:18px 0 22px; flex-wrap:wrap}
+  .step{display:flex; align-items:center; gap:9px; padding:9px 15px; border-radius:11px;
+    border:1px solid var(--line); background:var(--glass); cursor:pointer; transition:.2s;
+    font-size:13.5px; color:var(--soft); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px)}
+  .step .n{width:21px;height:21px;border-radius:50%;display:grid;place-items:center;
+    font:700 11px/1 var(--mono); background:rgba(255,255,255,.06); color:var(--mute); flex:none}
+  .step:hover{color:var(--ink); border-color:rgba(242,184,90,.32)}
+  .step.on{color:#1a1305; background:linear-gradient(180deg,var(--amber-hi),var(--amber)); border-color:transparent; font-weight:700}
+  .step.on .n{background:rgba(0,0,0,.22); color:#1a1305}
+
+  /* ---- stage ---- */
+  .stage{min-height:520px}
+  .panel-view{display:grid; grid-template-columns:1fr 360px; gap:18px; align-items:start}
+  @media(max-width:820px){ .panel-view{grid-template-columns:1fr} .calltile{display:none} }
+
+  /* faux call tile */
+  .calltile{border-radius:16px; border:1px solid var(--line); background:var(--bg2);
+    overflow:hidden; min-height:430px; position:relative; opacity:.92}
+  .calltile .bar{display:flex;align-items:center;gap:7px;padding:11px 14px;border-bottom:1px solid var(--line);
+    font-size:12.5px;color:var(--soft)}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .calltile .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px}
+  .face{aspect-ratio:16/10;border-radius:11px;display:grid;place-items:center;font-size:28px;
+    background:linear-gradient(160deg,#15160f,#0c0d08); border:1px solid rgba(255,255,255,.05); color:#3a3a30}
+  .calltile .cap{position:absolute;left:14px;bottom:12px;font:500 12px/1 var(--mono);color:var(--mute);letter-spacing:.04em}
+
+  /* dock panel */
+  .dock{border-radius:16px; border:1px solid rgba(242,184,90,.28); background:var(--glass);
+    -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px); overflow:hidden;
+    box-shadow:0 24px 60px -28px rgba(0,0,0,.8), 0 0 0 1px rgba(0,0,0,.4);
+    position:relative}
+  .dock::before{content:"";position:absolute;inset:0;border-radius:16px;pointer-events:none;
+    box-shadow:inset 0 1px 0 rgba(251,227,166,.12)}
+  .dock .top{display:flex; align-items:center; gap:10px; padding:13px 15px; border-bottom:1px solid var(--line)}
+  .rec{display:flex;align-items:center;gap:7px;font:600 11px/1 var(--mono);letter-spacing:.1em;color:var(--rec)}
+  .rec .blip{width:9px;height:9px;border-radius:50%;background:var(--rec);box-shadow:0 0 0 0 rgba(255,107,94,.6);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,107,94,.5)}70%{box-shadow:0 0 0 9px rgba(255,107,94,0)}100%{box-shadow:0 0 0 0 rgba(255,107,94,0)}}
+  .dock .ttl{font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .timer{font:600 12px/1 var(--mono);color:var(--soft)}
+  .collapse{margin-left:4px;border:none;background:transparent;color:var(--mute);cursor:pointer;font-size:15px;line-height:1}
+  .collapse:hover{color:var(--amber)}
+
+  .dock .body{padding:13px 15px 15px}
+  .hint{font-size:11.5px;color:var(--mute);margin:0 0 11px;display:flex;gap:7px;align-items:flex-start}
+  .hint b{color:var(--soft);font-weight:600}
+
+  .notes{display:flex;flex-direction:column;gap:9px;margin-bottom:13px;min-height:120px}
+  .note{display:flex;gap:10px;align-items:flex-start}
+  .note .t{font:600 10.5px/1.5 var(--mono);color:var(--amber);background:var(--amber-soft);
+    border-radius:6px;padding:3px 6px;flex:none;letter-spacing:.02em}
+  .note .x{font-size:13.5px;color:var(--ink);font-weight:600}  /* пометки — жирнее */
+  .composer{display:flex;gap:8px}
+  .composer input{flex:1;background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:9px;
+    padding:9px 11px;color:var(--ink);font:500 13px/1 var(--sans);outline:none}
+  .composer input:focus{border-color:rgba(242,184,90,.5)}
+  .composer input::placeholder{color:var(--mute)}
+  .btn{border:none;border-radius:9px;padding:9px 14px;cursor:pointer;font:700 12.5px/1 var(--sans);
+    background:linear-gradient(180deg,var(--amber-hi),var(--amber));color:#1a1305;transition:.18s;white-space:nowrap}
+  .btn:hover{filter:brightness(1.06)}
+  .btn.block{width:100%;margin-top:13px;padding:12px}
+  .nolive{font:500 10.5px/1.4 var(--mono);color:var(--mute);text-align:center;margin-top:11px;letter-spacing:.02em}
+
+  /* collapsed widget pill */
+  .pill{display:none; align-items:center; gap:10px; padding:11px 15px; border-radius:999px;
+    border:1px solid rgba(242,184,90,.3); background:var(--glass); cursor:pointer; width:max-content;
+    -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); box-shadow:0 16px 40px -22px rgba(0,0,0,.8)}
+  .pill .blip{width:9px;height:9px;border-radius:50%;background:var(--rec)}
+  .pill .lvl{display:flex;gap:2px;align-items:flex-end;height:15px}
+  .pill .lvl i{width:3px;background:var(--amber);border-radius:2px;animation:eq 1s infinite ease-in-out}
+  .pill .lvl i:nth-child(2){animation-delay:.15s}.pill .lvl i:nth-child(3){animation-delay:.3s}.pill .lvl i:nth-child(4){animation-delay:.45s}
+  @keyframes eq{0%,100%{height:4px}50%{height:14px}}
+  .pill span{font:600 12px/1 var(--mono);color:var(--soft)}
+  .pill .exp{color:var(--mute);font-size:14px}
+  .collapsed .dock{display:none}
+  .collapsed .pill{display:flex}
+
+  /* processing */
+  .proc{grid-column:1/-1;border-radius:16px;border:1px solid var(--line);background:var(--glass);
+    -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);padding:40px;text-align:center}
+  .proc .ring{width:46px;height:46px;border-radius:50%;margin:0 auto 16px;
+    border:3px solid rgba(242,184,90,.18);border-top-color:var(--amber);animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .proc h3{margin:0 0 6px;font-size:16px}
+  .proc p{margin:0;color:var(--mute);font:500 12.5px/1.5 var(--mono)}
+  .proc .stepline{margin-top:18px;display:flex;flex-direction:column;gap:7px;max-width:340px;margin-left:auto;margin-right:auto;text-align:left}
+  .proc .pl{display:flex;gap:9px;align-items:center;font-size:12.5px;color:var(--mute)}
+  .proc .pl.done{color:var(--soft)} .proc .pl.done .pk{color:#7bbf86}
+  .proc .pk{font:700 12px/1 var(--mono);width:16px}
+
+  /* result */
+  .result{max-width:920px;margin:0 auto}
+  .res-head{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:6px}
+  .res-head h2{font-size:21px;margin:0;letter-spacing:-.01em}
+  .res-head .meta{font:500 11.5px/1 var(--mono);color:var(--mute)}
+  .toggle{display:flex;gap:4px;background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:3px}
+  .toggle button{border:none;background:transparent;color:var(--soft);font:600 12px/1 var(--sans);
+    padding:7px 12px;border-radius:7px;cursor:pointer}
+  .toggle button.on{background:var(--amber-soft);color:var(--amber-hi)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin:14px 0 18px;font-size:12px;color:var(--mute)}
+  .legend i{display:inline-block;width:22px;height:0;border-top:3px solid;vertical-align:middle;margin-right:7px;border-radius:2px}
+  .doc{border-radius:16px;border:1px solid var(--line);background:var(--glass);
+    -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);padding:26px 30px}
+
+  .sec{display:grid;grid-template-columns:1fr 250px;gap:26px;padding:16px 0;border-top:1px solid var(--line);align-items:start}
+  .sec:first-of-type{border-top:none}
+  .sec h3{font:700 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--amber);margin:0 0 11px}
+  .sec .ai{color:var(--ai);font-size:14.5px}
+  .sec .ai ul{margin:0;padding-left:18px} .sec .ai li{margin:5px 0}
+  .sec .ai p{margin:0 0 8px}
+
+  /* margin notes */
+  .margin{display:flex;flex-direction:column;gap:11px}
+  .mnote{position:relative;border-left:2px solid var(--amber);padding:2px 0 2px 12px}
+  .mnote .t{font:600 10px/1 var(--mono);color:var(--amber);letter-spacing:.03em}
+  .mnote .x{font-size:13.5px;font-weight:700;color:var(--amber-hi);margin-top:4px}  /* пометки — жирные */
+  .mlabel{font:600 9.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--mute);margin-bottom:3px}
+
+  /* inline layout */
+  .doc.inline .sec{grid-template-columns:1fr}
+  .doc.inline .margin{margin-top:4px;gap:7px}
+  .doc.inline .mnote{background:var(--amber-soft);border-radius:8px;padding:8px 11px;border-left:3px solid var(--amber)}
+  .doc.inline .mnote .x{margin-top:3px}
+  .doc.inline .mlabel{display:none}
+
+  .foot{margin-top:30px;padding-top:18px;border-top:1px solid var(--line);color:var(--mute);font-size:12.5px;line-height:1.6}
+  .foot b{color:var(--soft)}
+  .kbd{font:600 11px/1 var(--mono);background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:5px;padding:2px 6px;color:var(--soft)}
+</style>
+
+<canvas id="stars"></canvas>
+<div class="wrap">
+  <div class="head">
+    <div class="brand">
+      <div class="logo">🎙</div>
+      <div>
+        <h1>Рой&nbsp;Live</h1>
+        <div class="sub">прототип · companion-режим</div>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <button class="ghost" id="play">▶ Проиграть сценарий</button>
+  </div>
+
+  <div class="steps" id="steps">
+    <div class="step on" data-s="1"><span class="n">1</span> Запись + пометки</div>
+    <div class="step" data-s="2"><span class="n">2</span> Сборка</div>
+    <div class="step" data-s="3"><span class="n">3</span> Результат</div>
+  </div>
+
+  <div class="stage" id="stage"></div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+(function(){
+  // ---------- starfield (лёгкий, на бренд) ----------
+  var cv=document.getElementById("stars"),cx=cv.getContext("2d"),DPR=Math.min(2,window.devicePixelRatio||1),S=[];
+  function rs(){cv.width=innerWidth*DPR;cv.height=innerHeight*DPR;cv.style.width=innerWidth+"px";cv.style.height=innerHeight+"px";
+    S=[];var n=Math.floor(innerWidth*innerHeight/9000);for(var i=0;i<n;i++)S.push({x:Math.random()*cv.width,y:Math.random()*cv.height,r:(Math.random()*1.3+.2)*DPR,a:Math.random()*.5+.15,p:Math.random()*6.28});}
+  function draw(t){cx.clearRect(0,0,cv.width,cv.height);
+    var g=cx.createRadialGradient(cv.width*.62,cv.height*.4,0,cv.width*.62,cv.height*.4,cv.width*.5);
+    g.addColorStop(0,"rgba(242,184,90,.07)");g.addColorStop(1,"rgba(242,184,90,0)");cx.fillStyle=g;cx.fillRect(0,0,cv.width,cv.height);
+    for(var i=0;i<S.length;i++){var s=S[i],fl=.6+.4*Math.sin(t*.001+s.p);cx.globalAlpha=s.a*fl;cx.fillStyle="#f6ead0";cx.beginPath();cx.arc(s.x,s.y,s.r,0,6.28);cx.fill();}
+    cx.globalAlpha=1;requestAnimationFrame(draw);}
+  rs();requestAnimationFrame(draw);addEventListener("resize",rs);
+
+  // ---------- state ----------
+  var stage=document.getElementById("stage"), foot=document.getElementById("foot");
+  var step=1, collapsed=false, layout="margin";
+  // пометки на полях — свободный текст + тайм-штамп (когда написал)
+  var notes=[
+    {t:"12:03", x:"Аня сомневалась в модели — спросить почему"},
+    {t:"12:11", x:"важно: пилот в KZ, не PL"},
+    {t:"12:24", x:"чек-лист — переиспользовать старый из Болгарии"}
+  ];
+  // тезисы ИИ + к какой секции какие пометки привязаны ПО ВРЕМЕНИ
+  var SECTIONS=[
+    {h:"Темы", at:"12:00–12:09", ai:'<p>Обсуждали модель <b>«1 управляющий на N точек»</b>: где предел нагрузки, что делегировать, как мерить.</p>', notes:["12:03"]},
+    {h:"Решения", at:"12:09–12:18", ai:'<ul><li>Запускаем <b>пилот в KZ</b> на 3 точках.</li><li>Метрика пилота — себестоимость смены.</li></ul>', notes:["12:11"]},
+    {h:"Задачи", at:"12:18–12:30", ai:'<ul><li>Подготовить чек-лист управляющего — <b>Ксения, до 30 июня</b>.</li><li>Собрать данные по текущей нагрузке точек.</li></ul>', notes:["12:24"]}
+  ];
+
+  function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+  function nowStamp(){ // имитация тайм-штампа «по ходу»
+    var base=12*60+3+notes.length*4; var h=Math.floor(base/60),m=base%60;
+    return (h<10?"0":"")+h+":"+(m<10?"0":"")+m;
+  }
+
+  // ---------- renderers ----------
+  function renderRec(){
+    var rows=notes.map(function(n){return '<div class="note"><span class="t">'+n.t+'</span><span class="x">'+esc(n.x)+'</span></div>';}).join("");
+    stage.className="stage";
+    stage.innerHTML=
+    '<div class="panel-view '+(collapsed?"collapsed":"")+'">'+
+      '<div class="calltile">'+
+        '<div class="bar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>&nbsp;&nbsp;Видеозвонок · Discovery</div>'+
+        '<div class="grid"><div class="face">🙂</div><div class="face">🧑‍💻</div><div class="face">👩</div><div class="face">🧔</div></div>'+
+        '<div class="cap">рекордер пишет системный звук + микрофон · бот не заходит</div>'+
+      '</div>'+
+      '<div>'+
+        '<div class="pill" id="pill"><span class="blip"></span><span class="lvl"><i></i><i></i><i></i><i></i></span><span>Идёт запись · 00:27</span><span class="exp">⤢</span></div>'+
+        '<div class="dock">'+
+          '<div class="top"><span class="rec"><span class="blip"></span>REC</span><span class="ttl">Discovery: практика «1 управляющий»</span><span class="timer">00:27</span><button class="collapse" id="cl" title="Свернуть в виджет">▢</button></div>'+
+          '<div class="body">'+
+            '<p class="hint">📝 <span><b>Пометки на полях</b> — пиши свободно, как на бумаге. Каждая запоминает <b>время</b>, чтобы потом лечь рядом с нужным тезисом.</span></p>'+
+            '<div class="notes" id="notes">'+rows+'</div>'+
+            '<div class="composer"><input id="inp" placeholder="пометка на полях…" autocomplete="off"><button class="btn" id="add">+</button></div>'+
+            '<button class="btn block" id="enh">✦ Готово — собрать тезисы</button>'+
+            '<div class="nolive">транскрипт идёт фоном · показывается ПОСЛЕ встречи, не по ходу</div>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+    var inp=document.getElementById("inp");
+    function add(){var v=inp.value.trim();if(!v)return;notes.push({t:nowStamp(),x:v});inp.value="";renderRec();document.getElementById("inp").focus();}
+    document.getElementById("add").onclick=add;
+    inp.onkeydown=function(e){if(e.key==="Enter")add();};
+    document.getElementById("enh").onclick=function(){go(2);autoAdvance();};
+    document.getElementById("cl").onclick=function(){collapsed=true;renderRec();};
+    document.getElementById("pill").onclick=function(){collapsed=false;renderRec();};
+  }
+
+  function renderProc(){
+    stage.className="stage";
+    stage.innerHTML='<div class="panel-view"><div class="proc">'+
+      '<div class="ring"></div><h3>Собираем встречу…</h3>'+
+      '<p>звук → расшифровка → тезисы → склейка с пометками</p>'+
+      '<div class="stepline">'+
+        '<div class="pl done"><span class="pk">✓</span> Расшифровка готова</div>'+
+        '<div class="pl done"><span class="pk">✓</span> Тезисы из транскрипта</div>'+
+        '<div class="pl" id="p3"><span class="pk">…</span> Привязка пометок по времени</div>'+
+      '</div></div></div>';
+  }
+
+  function renderResult(){
+    stage.className="stage";
+    var noteByT={}; notes.forEach(function(n){noteByT[n.t]=n;});
+    var secs=SECTIONS.map(function(s){
+      var mns=(s.notes||[]).map(function(tt){var n=noteByT[tt];return n?
+        '<div class="mnote"><span class="t">'+n.t+'</span><div class="x">'+esc(n.x)+'</div></div>':"";}).join("");
+      var marginBlock= mns? '<div class="margin"><div class="mlabel">твои пометки</div>'+mns+'</div>' : '<div class="margin"></div>';
+      return '<div class="sec"><div><h3>'+s.h+' <span style="color:var(--mute);font-weight:500"> · '+s.at+'</span></h3><div class="ai">'+s.ai+'</div></div>'+marginBlock+'</div>';
+    }).join("");
+    stage.innerHTML=
+    '<div class="result">'+
+      '<div class="res-head"><h2>Discovery: практика «1 управляющий»</h2><span class="meta">26 июня · 28 мин · KZ</span>'+
+        '<span style="flex:1"></span>'+
+        '<div class="toggle"><button class="'+(layout==="margin"?"on":"")+'" data-l="margin">На полях</button><button class="'+(layout==="inline"?"on":"")+'" data-l="inline">Инлайн</button></div>'+
+      '</div>'+
+      '<div class="legend"><span><i style="border-color:var(--ai)"></i>тезисы ИИ (из транскрипта)</span><span><i style="border-color:var(--amber)"></i><b style="color:var(--amber-hi)">твои пометки</b> — жирные, привязаны по времени</span></div>'+
+      '<div class="doc '+(layout==="inline"?"inline":"")+'">'+secs+'</div>'+
+    '</div>';
+    Array.prototype.forEach.call(stage.querySelectorAll(".toggle button"),function(b){b.onclick=function(){layout=b.dataset.l;renderResult();};});
+  }
+
+  function render(){ if(step===1)renderRec(); else if(step===2)renderProc(); else renderResult();
+    Array.prototype.forEach.call(document.querySelectorAll(".step"),function(el){el.classList.toggle("on",+el.dataset.s===step);}); }
+  function go(s){step=s;render();}
+
+  var advT=null;
+  function autoAdvance(){ clearTimeout(advT); advT=setTimeout(function(){ if(step===2) go(3); },1900); }
+
+  document.getElementById("steps").onclick=function(e){var el=e.target.closest(".step");if(!el)return;go(+el.dataset.s);if(step===2)autoAdvance();};
+  document.getElementById("play").onclick=function(){collapsed=false;layout="margin";go(1);setTimeout(function(){go(2);autoAdvance();},1400);};
+
+  foot.innerHTML='<b>Что показывает прототип.</b> ① Правая док-панель (always-on-top, плавает поверх правого края — как Granola) разворачивается из виджета [кнопка <span class="kbd">▢</span> сворачивает обратно]. Пишешь <b>свободные пометки на полях</b> — каждая ловит время. ② По «Готово» звук уходит в расшифровку → тезисы. ③ Результат: <b>тезисы ИИ</b> — структура (приглушённые), <b>твои пометки</b> — жирные, ложатся <b>рядом с нужной секцией по времени</b> (тумблер «На полях / Инлайн» — широкий экран vs узкая панель). Контент — пример. Захват звука остаётся за нативным рекордером, панель = WKWebView с этим экраном.';
+
+  render();
+})();
+</script>
