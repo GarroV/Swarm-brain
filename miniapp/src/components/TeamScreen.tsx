@@ -22,7 +22,7 @@ export function TeamScreen() {
   }, []);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-4 pt-4">
         {loading ? (
           <p className="py-8 text-center text-sm text-ink-soft">Загрузка…</p>

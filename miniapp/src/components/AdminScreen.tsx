@@ -341,7 +341,7 @@ function WorkspaceDetail({ ws, onBack }: { ws: AdminWorkspace; onBack: () => voi
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 px-4 pt-5 pb-3">
         <button onClick={onBack} aria-label="Назад" className="text-ink-soft transition-colors hover:text-ink">
           <RoyIcon name="cleft" size={20} strokeWidth={2.2} />
@@ -425,7 +425,7 @@ export function AdminScreen() {
   if (selected) return <WorkspaceDetail ws={selected} onBack={() => setSelected(null)} />;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="px-4 pt-5 pb-3">
         <h1 className="font-bold text-ink" style={{ fontSize: 20, letterSpacing: "-0.01em" }}>Суперадмин</h1>
         <p className="font-mono uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.08em", marginTop: 2 }}>Воркспейсы · рынки · доступы · рассылка</p>
