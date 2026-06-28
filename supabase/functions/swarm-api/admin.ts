@@ -193,5 +193,26 @@ export async function handleAdminRoutes(
     return json(data, 200, origin);
   }
 
+  // PATCH /admin/users/:telegramId — правка профиля пользователя (user_profiles)
+  const userPatchMatch = routePath.match(/^\/admin\/users\/([^/]+)$/);
+  if (userPatchMatch && req.method === "PATCH") {
+    const targetId = Number(userPatchMatch[1]);
+    if (!targetId) return apiErr(400, "Invalid user id", origin);
+    let body: Record<string, unknown>;
+    try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
+
+    const fields: Record<string, unknown> = { telegram_id: targetId, updated_at: new Date().toISOString() };
+    for (const k of ["first_name", "last_name", "role", "email", "phone"]) {
+      if (k in body) fields[k] = body[k] === "" ? null : body[k];
+    }
+    if ("markets" in body) {
+      fields.markets = Array.isArray(body.markets) ? body.markets : [];
+    }
+    const { error } = await supabase.from("user_profiles").upsert(fields, { onConflict: "telegram_id" });
+    if (error) return apiErr(500, error.message, origin);
+    const { data } = await supabase.from("user_profiles").select("*").eq("telegram_id", targetId).single();
+    return json(data, 200, origin);
+  }
+
   return apiErr(404, "Admin route not found", origin);
 }

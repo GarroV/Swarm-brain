@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   fetchAdminWorkspaces, fetchAdminWorkspaceUsers,
   addUserToWorkspace, removeUserFromWorkspace, patchAdminWorkspace,
-  createAdminWorkspace, broadcastMessage,
+  createAdminWorkspace, broadcastMessage, patchAdminUser,
 } from "@/lib/api";
 import type { AdminWorkspace, AdminUser } from "@/types";
 import { countryName, COUNTRY_NAMES } from "@/lib/countries";
@@ -86,6 +86,12 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
   const [addInput, setAddInput] = useState("");
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // инлайн-редактор профиля
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editRole, setEditRole] = useState("");
+  const [editMarkets, setEditMarkets] = useState<string[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const allCodes = Object.keys(COUNTRY_NAMES);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -115,6 +121,15 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
     if (!toWs || toWs === wsId) return;
     await addUserToWorkspace(toWs, { telegramId: userId }); // upsert реассайнит group_id
     load();
+  };
+
+  const startEdit = (u: AdminUser) => { setEditId(u.telegram_id); setEditRole(u.role ?? ""); setEditMarkets(u.markets ?? []); };
+  const toggleMarket = (code: string) => setEditMarkets((p) => p.includes(code) ? p.filter((c) => c !== code) : [...p, code]);
+  const saveEdit = async () => {
+    if (editId == null) return;
+    setSavingEdit(true);
+    try { await patchAdminUser(editId, { role: editRole.trim() || null, markets: editMarkets }); setEditId(null); load(); }
+    finally { setSavingEdit(false); }
   };
 
   const others = allWorkspaces.filter((w) => w.id !== wsId);
@@ -155,11 +170,39 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
                 {u.markets.length > 0 && (
                   <span className="shrink-0 text-ink-soft" style={{ fontSize: 11 }}>{u.markets.map(countryName).join(", ")}</span>
                 )}
+                <button onClick={() => startEdit(u)} aria-label="Редактировать профиль" className="shrink-0 transition-colors hover:opacity-80 active:scale-[0.92]" style={{ color: "var(--accent-ink)" }}>
+                  <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
+                </button>
                 <button onClick={() => handleRemove(u.telegram_id)} aria-label="Удалить" className="shrink-0 transition-colors hover:opacity-80 active:scale-[0.92]" style={{ color: "var(--pri-high)" }}>
                   <RoyIcon name="trash" size={16} strokeWidth={1.9} />
                 </button>
               </div>
-              {others.length > 0 && (
+              {editId === u.telegram_id ? (
+                <div className="mt-2.5 space-y-2 border-t border-line pt-2.5">
+                  <div>
+                    <span className="mb-1 block font-mono uppercase text-ink-mute" style={{ fontSize: 10, letterSpacing: "0.08em" }}>Роль</span>
+                    <input value={editRole} onChange={(e) => setEditRole(e.target.value)} placeholder="напр. BD, Marketing" className={fieldCls} />
+                  </div>
+                  <div>
+                    <span className="mb-1 block font-mono uppercase text-ink-mute" style={{ fontSize: 10, letterSpacing: "0.08em" }}>Рынки</span>
+                    <div className="flex max-h-[148px] flex-wrap gap-1.5 overflow-y-auto">
+                      {allCodes.map((code) => {
+                        const on = editMarkets.includes(code);
+                        return (
+                          <button key={code} onClick={() => toggleMarket(code)} className="rounded-full border px-2.5 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                            style={{ fontSize: 11, ...(on ? { background: "var(--primary)", color: "#fff", borderColor: "var(--primary)" } : { color: "var(--ink-soft)", borderColor: "var(--line-2)" }) }}>
+                            {countryName(code)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={saveEdit} disabled={savingEdit} className={`${btnPrimary} flex-1`} style={{ fontSize: 13 }}>{savingEdit ? "Сохраняю…" : "Сохранить профиль"}</button>
+                    <button onClick={() => setEditId(null)} className="rounded-[12px] border border-line bg-surface px-3 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97]" style={{ fontSize: 13 }}>Отмена</button>
+                  </div>
+                </div>
+              ) : others.length > 0 ? (
                 <select
                   defaultValue=""
                   onChange={(e) => { handleMove(u.telegram_id, e.target.value); e.currentTarget.value = ""; }}
@@ -169,7 +212,7 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
                   <option value="">↪ Переместить в…</option>
                   {others.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                 </select>
-              )}
+              ) : null}
             </div>
           ))}
         </div>

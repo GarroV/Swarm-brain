@@ -774,3 +774,12 @@ export async function broadcastMessage(text: string): Promise<{ sent: number; fa
   if (DEV_MODE) return { sent: 0, failed: 0, total: 0 };
   return apiFetch<{ sent: number; failed: number; total: number }>("/admin/broadcast", { method: "POST", body: JSON.stringify({ text }) });
 }
+
+// Правка профиля пользователя (роль/рынки/имя/контакты) — user_profiles.
+export async function patchAdminUser(
+  telegramId: number,
+  fields: { first_name?: string | null; last_name?: string | null; role?: string | null; email?: string | null; phone?: string | null; markets?: string[] },
+): Promise<void> {
+  if (DEV_MODE) return;
+  return apiFetch<void>(`/admin/users/${telegramId}`, { method: "PATCH", body: JSON.stringify(fields) });
+}
