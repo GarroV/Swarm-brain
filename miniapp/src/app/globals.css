@@ -127,7 +127,7 @@
   --accent-soft: #FBEED7;
   --accent-ink: #9A5E12;
   --accent-line: #EBD3A2;
-  --status-open: #5B6BE0;
+  --status-open: #8C8475;            /* «открыто» = тёплый нейтральный камень (todo-конвенция), не холодный индиго */
   --status-prog: #D98A2B;
   --status-done: #2E9E6B;
   --pri-high: #D9483B;
@@ -135,7 +135,7 @@
   --pri-low: #B3AC9C;
   --meet-soft: #E7F2EC;
   --meet-ink: #2E9E6B;
-  --tag-doc: #5B6BE0;
+  --tag-doc: #A6724B;                /* документы = тёплая глина/крафт (бумага), не холодный индиго */
   --tag-mic: #C2569E;
   --tag-note: #8A7A3A;
   --tag-meet: #2E9E6B;
@@ -186,7 +186,7 @@
   --accent-soft: #3A2B14;
   --accent-ink: #F0B45F;
   --accent-line: #5A4424;
-  --status-open: #8A95F0;
+  --status-open: #AE9F8C;            /* тёплый светлый камень (dark) */
   --status-prog: #D98A2B;
   --status-done: #52B98C;
   --pri-high: #D9483B;
@@ -194,7 +194,7 @@
   --pri-low: #B3AC9C;
   --meet-soft: #1E3328;
   --meet-ink: #5FBF8E;
-  --tag-doc: #8A95F0;
+  --tag-doc: #C99A6E;                /* светлая глина (dark) */
   --tag-mic: #C2569E;
   --tag-note: #B3A24A;
   --tag-meet: #5FBF8E;
