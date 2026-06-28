@@ -33,11 +33,8 @@ const SECTIONS: Section[] = [
   ) },
 ];
 
-const INITIAL_NOTES: Note[] = [
-  { sec: 72, text: "Аня сомневалась в модели — спросить почему" },
-  { sec: 303, text: "важно: пилот в KZ, не PL" },
-  { sec: 500, text: "чек-лист — переиспользовать старый из Болгарии" },
-];
+// Пусто на старте — пометки только те, что напишет пользователь (никаких чужих примеров).
+const INITIAL_NOTES: Note[] = [];
 
 function sectionIndexForTime(sec: number): number {
   const i = SECTIONS.findIndex((s) => sec >= s.from && sec < s.to);
@@ -47,7 +44,7 @@ function sectionIndexForTime(sec: number): number {
 export default function LivePage() {
   const [phase, setPhase] = useState<"capture" | "result">("capture");
   const [notes, setNotes] = useState<Note[]>(INITIAL_NOTES);
-  const [elapsed, setElapsed] = useState(27);
+  const [elapsed, setElapsed] = useState(0);
   const [draft, setDraft] = useState("");
   const [inline, setInline] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -112,6 +109,11 @@ export default function LivePage() {
           </p>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 130, marginBottom: 13 }}>
+            {notes.length === 0 && (
+              <div style={{ ...MONO, fontSize: 11.5, color: "var(--ink-mute)", padding: "10px 0", letterSpacing: ".02em" }}>
+                пометок пока нет — пиши ниже, каждая поймает время записи
+              </div>
+            )}
             {notes.map((n, i) => (
               <div key={i} style={{ display: "flex", gap: 11, alignItems: "flex-start" }}>
                 <span style={{ ...MONO, fontSize: 10.5, fontWeight: 600, color: "var(--accent-ink)", background: "var(--accent-soft)", borderRadius: 6, padding: "3px 7px", flex: "none" }}>{fmt(n.sec)}</span>
