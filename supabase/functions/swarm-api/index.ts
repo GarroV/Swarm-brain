@@ -1186,7 +1186,7 @@ Deno.serve(async (req: Request) => {
       return json(data ?? [], 200, origin);
     }
     if (agentNotesMatch && req.method === "POST") {
-      if (meeting.status === "in_base") return apiErr(409, "Встреча уже в базе — пометки закрыты", origin);
+      // Пометки можно добавлять к встрече в любом статусе (в т.ч. аннотировать уже опубликованную).
       let body: Record<string, unknown>;
       try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
       const text = typeof body.text === "string" ? body.text.trim() : "";
