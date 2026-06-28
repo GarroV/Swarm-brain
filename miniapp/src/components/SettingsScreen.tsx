@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ChevronDown, ChevronRight, CheckCircle, Wifi, WifiOff, Loader2 } from "lucide-react";
+import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 
 // ── Profile section ───────────────────────────────────────────────────────────
 
@@ -441,16 +442,19 @@ function FeedbackSection() {
 
 // ── Collapsible section wrapper ───────────────────────────────────────────────
 
-function Section({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+function Section({ title, icon, children, defaultOpen = false }: { title: string; icon?: RoyIconName; children: React.ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border rounded-lg overflow-hidden">
+    <div className="border border-line rounded-[14px] overflow-hidden dark:backdrop-blur-sm">
       <button
-        className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 text-sm font-medium"
+        className="w-full flex items-center justify-between px-4 py-3 bg-surface-2 text-sm font-semibold text-ink transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
         onClick={() => setOpen((v) => !v)}
       >
-        {title}
-        {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        <span className="flex items-center gap-2.5">
+          {icon && <RoyIcon name={icon} size={16} strokeWidth={1.9} className="text-ink-soft" />}
+          {title}
+        </span>
+        <RoyIcon name="cright" size={15} strokeWidth={2} className={`text-ink-soft transition-transform ${open ? "rotate-90" : ""}`} />
       </button>
       {open && <div className="px-4 py-3">{children}</div>}
     </div>
@@ -540,26 +544,26 @@ export function SettingsScreen() {
         <h1 className="text-xl font-semibold">Настройки</h1>
       </div>
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3">
-        <Section title="👤 Профиль" defaultOpen>
+        <Section icon="team" title="Профиль" defaultOpen>
           {me ? <ProfileSection me={me} /> : <p className="text-sm text-muted-foreground">Загрузка…</p>}
         </Section>
-        <Section title="🟣 Granola">
+        <Section icon="doc" title="Granola">
           <GranolaSection />
         </Section>
-        <Section title="📅 Google-календарь">
+        <Section icon="cal" title="Google-календарь">
           <GoogleCalendarSection />
         </Section>
-        <Section title="📋 Дайджест">
+        <Section icon="note" title="Дайджест">
           <DigestSection />
         </Section>
-        <Section title="📎 Загрузить файл">
+        <Section icon="doc" title="Загрузить файл">
           <UploadSection />
         </Section>
-        <Section title="💬 Фидбек">
+        <Section icon="note" title="Фидбек">
           <FeedbackSection />
         </Section>
         {isWebSession && (
-          <Section title="🚪 Аккаунт">
+          <Section icon="home" title="Аккаунт">
             <AccountSection />
           </Section>
         )}
