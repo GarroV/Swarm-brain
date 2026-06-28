@@ -3,7 +3,8 @@ import { RoyMark } from "./RoyMark";
 import { useDashboardData } from "./dash/useDashboardData";
 import { PersonalTasks } from "./dash/PersonalTasks";
 import { SearchHero } from "./dash/SearchHero";
-import { Materials } from "./dash/Materials";
+// Materials («Добавлено за сутки») временно скрыт на дашборде — переиспользуем позже.
+// import { Materials } from "./dash/Materials";
 import { MeetingsApprove } from "./dash/MeetingsApprove";
 import { TeamTasks } from "./dash/TeamTasks";
 import { ProjectMapButton } from "./dash/ProjectMapButton";
@@ -40,8 +41,8 @@ export function RoyDashboard() {
 
         <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
           <SearchHero />
-          <PersonalDigest className="shrink-0" />
-          <Materials data={data} className="min-h-0 flex-1" />
+          <PersonalDigest className="min-h-0" />
+          {/* «Добавлено за сутки» (Materials) временно скрыто — переиспользуем позже */}
         </div>
 
         <div className="flex min-h-0 flex-col gap-4 overflow-hidden">

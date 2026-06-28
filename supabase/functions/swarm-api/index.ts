@@ -1514,7 +1514,20 @@ Deno.serve(async (req: Request) => {
     const markets: string[] = p?.markets ?? [];
     const role: string = p?.role ?? "";
 
-    const { data: entries } = await supabase.from("entries")
+    type EntryRow = { summary: string | null; content: string; source: string; created_at: string };
+
+    // Варианты стран для матчинга: код + русское имя (entries.countries может хранить любой формат).
+    const NAME_TO_CODE: Record<string, string> = Object.fromEntries(
+      Object.entries(COUNTRY_NAMES).map(([c, n]) => [n.toLowerCase(), c]),
+    );
+    const countryVariants = [...new Set(markets.flatMap((m) => {
+      const code = COUNTRY_NAMES[m] ? m : (NAME_TO_CODE[m.toLowerCase()] ?? m);
+      return [code, COUNTRY_NAMES[code] ?? m];
+    }))];
+
+    // Персональный дайджест — СТРОГО по странам пользователя (entries.countries ∩ markets),
+    // если рынки заданы. Без рынков — по всему воркспейсу.
+    let q = supabase.from("entries")
       .select("summary, content, source, created_at")
       .gte("created_at", since)
       .eq("group_id", groupId)
@@ -1522,28 +1535,20 @@ Deno.serve(async (req: Request) => {
       .or(`is_private.eq.false,and(is_private.eq.true,owner_id.eq.${telegram_id})`)
       .order("created_at", { ascending: false })
       .limit(50);
+    if (countryVariants.length) q = q.overlaps("countries", countryVariants);
+    const { data: entries } = await q;
 
-    if (!entries?.length) return json({ text: "За указанный период нет записей." }, 200, origin);
-
-    type EntryRow = { summary: string | null; content: string; source: string; created_at: string };
-
-    const { data: allProfiles } = await supabase.from("user_profiles").select("markets");
-    const allMarkets = [...new Set(
-      (allProfiles ?? []).flatMap((pr: { markets?: string[] }) => pr.markets ?? [])
-    )].filter((m): m is string => typeof m === "string").map((m) => m.toLowerCase());
-
-    const userKeywords = [...markets, role, userName].filter(Boolean).map((k) => k.toLowerCase());
-    const relevant = (entries as EntryRow[]).filter((e) => {
-      const lower = (e.summary ?? e.content).toLowerCase();
-      return userKeywords.some((k) => lower.includes(k)) || !allMarkets.some((m) => lower.includes(m));
-    });
-
-    if (!relevant.length) return json({ text: "За этот период нет релевантных для тебя записей." }, 200, origin);
+    if (!entries?.length) {
+      const msg = markets.length
+        ? `За этот период нет записей по вашим странам (${markets.map((m) => COUNTRY_NAMES[m] ?? m).join(", ")}).`
+        : "За указанный период нет записей.";
+      return json({ text: msg }, 200, origin);
+    }
 
     const periodStart = new Date(Date.now() - daysBack * 86400000).toLocaleDateString("ru-RU");
     const periodEnd = new Date().toLocaleDateString("ru-RU");
     const periodLabel = `${periodStart} — ${periodEnd}`;
-    const entriesText = relevant.map((e) => {
+    const entriesText = (entries as EntryRow[]).map((e) => {
       const date = new Date(e.created_at).toLocaleDateString("ru-RU");
       return `[${e.source} · ${date}] ${(e.summary ?? e.content).slice(0, 300)}`;
     }).join("\n\n---\n\n");
