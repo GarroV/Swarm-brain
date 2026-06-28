@@ -112,7 +112,7 @@ export async function handleAdminRoutes(
         .map((u: Record<string, unknown>) => u.telegram_id as number);
 
       const { data: profiles } = ids.length
-        ? await supabase.from("user_profiles").select("telegram_id, first_name, last_name, role, markets").in("telegram_id", ids)
+        ? await supabase.from("user_profiles").select("telegram_id, first_name, last_name, role, markets, email, phone, notes").in("telegram_id", ids)
         : { data: [] };
 
       const profileMap = Object.fromEntries(
@@ -131,6 +131,11 @@ export async function handleAdminRoutes(
             is_admin: u.is_admin ?? false,
             role: p?.role ?? null,
             markets: p?.markets ?? [],
+            first_name: p?.first_name ?? null,
+            last_name: p?.last_name ?? null,
+            email: p?.email ?? null,
+            phone: p?.phone ?? null,
+            notes: p?.notes ?? null,
             created_at: u.created_at,
           };
         });
@@ -202,7 +207,7 @@ export async function handleAdminRoutes(
     try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
 
     const fields: Record<string, unknown> = { telegram_id: targetId, updated_at: new Date().toISOString() };
-    for (const k of ["first_name", "last_name", "role", "email", "phone"]) {
+    for (const k of ["first_name", "last_name", "role", "email", "phone", "notes"]) {
       if (k in body) fields[k] = body[k] === "" ? null : body[k];
     }
     if ("markets" in body) {

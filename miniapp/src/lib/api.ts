@@ -741,7 +741,7 @@ export async function fetchAdminWorkspaces(): Promise<AdminWorkspace[]> {
 }
 
 export async function fetchAdminWorkspaceUsers(wsId: string): Promise<AdminUser[]> {
-  if (DEV_MODE) return MOCK_USERS.map(u => ({ ...u, is_admin: false, created_at: new Date().toISOString() }));
+  if (DEV_MODE) return MOCK_USERS.map(u => ({ ...u, is_admin: false, first_name: null, last_name: null, email: null, phone: null, notes: null, created_at: new Date().toISOString() }));
   return apiFetch<AdminUser[]>(`/admin/workspaces/${wsId}/users`);
 }
 
@@ -778,7 +778,7 @@ export async function broadcastMessage(text: string): Promise<{ sent: number; fa
 // Правка профиля пользователя (роль/рынки/имя/контакты) — user_profiles.
 export async function patchAdminUser(
   telegramId: number,
-  fields: { first_name?: string | null; last_name?: string | null; role?: string | null; email?: string | null; phone?: string | null; markets?: string[] },
+  fields: { first_name?: string | null; last_name?: string | null; role?: string | null; email?: string | null; phone?: string | null; notes?: string | null; markets?: string[] },
 ): Promise<void> {
   if (DEV_MODE) return;
   return apiFetch<void>(`/admin/users/${telegramId}`, { method: "PATCH", body: JSON.stringify(fields) });

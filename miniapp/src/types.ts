@@ -81,6 +81,11 @@ export type AdminUser = {
   is_admin: boolean;
   role: string | null;
   markets: string[];
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
+  notes: string | null;
   created_at: string;
 };
 

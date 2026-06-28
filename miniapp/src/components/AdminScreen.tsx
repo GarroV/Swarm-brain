@@ -15,6 +15,10 @@ const fieldCls =
 const btnPrimary =
   "rounded-[12px] bg-primary px-3.5 py-2 font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
+function Lbl({ t }: { t: string }) {
+  return <span className="mb-1 block font-mono uppercase text-ink-mute" style={{ fontSize: 10, letterSpacing: "0.08em" }}>{t}</span>;
+}
+
 // ── Список воркспейсов + создание ─────────────────────────────────────────────
 function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => void }) {
   const [workspaces, setWorkspaces] = useState<AdminWorkspace[]>([]);
@@ -86,9 +90,14 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
   const [addInput, setAddInput] = useState("");
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // инлайн-редактор профиля
+  // инлайн-редактор профиля (всё кроме telegram_id и Telegram-@username)
   const [editId, setEditId] = useState<number | null>(null);
+  const [editFirst, setEditFirst] = useState("");
+  const [editLast, setEditLast] = useState("");
   const [editRole, setEditRole] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editNotes, setEditNotes] = useState("");
   const [editMarkets, setEditMarkets] = useState<string[]>([]);
   const [savingEdit, setSavingEdit] = useState(false);
   const allCodes = Object.keys(COUNTRY_NAMES);
@@ -123,13 +132,32 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
     load();
   };
 
-  const startEdit = (u: AdminUser) => { setEditId(u.telegram_id); setEditRole(u.role ?? ""); setEditMarkets(u.markets ?? []); };
+  const startEdit = (u: AdminUser) => {
+    setEditId(u.telegram_id);
+    setEditFirst(u.first_name ?? "");
+    setEditLast(u.last_name ?? "");
+    setEditRole(u.role ?? "");
+    setEditEmail(u.email ?? "");
+    setEditPhone(u.phone ?? "");
+    setEditNotes(u.notes ?? "");
+    setEditMarkets(u.markets ?? []);
+  };
   const toggleMarket = (code: string) => setEditMarkets((p) => p.includes(code) ? p.filter((c) => c !== code) : [...p, code]);
   const saveEdit = async () => {
     if (editId == null) return;
     setSavingEdit(true);
-    try { await patchAdminUser(editId, { role: editRole.trim() || null, markets: editMarkets }); setEditId(null); load(); }
-    finally { setSavingEdit(false); }
+    try {
+      await patchAdminUser(editId, {
+        first_name: editFirst.trim() || null,
+        last_name: editLast.trim() || null,
+        role: editRole.trim() || null,
+        email: editEmail.trim() || null,
+        phone: editPhone.trim() || null,
+        notes: editNotes.trim() || null,
+        markets: editMarkets,
+      });
+      setEditId(null); load();
+    } finally { setSavingEdit(false); }
   };
 
   const others = allWorkspaces.filter((w) => w.id !== wsId);
@@ -179,12 +207,20 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
               </div>
               {editId === u.telegram_id ? (
                 <div className="mt-2.5 space-y-2 border-t border-line pt-2.5">
-                  <div>
-                    <span className="mb-1 block font-mono uppercase text-ink-mute" style={{ fontSize: 10, letterSpacing: "0.08em" }}>Роль</span>
-                    <input value={editRole} onChange={(e) => setEditRole(e.target.value)} placeholder="напр. BD, Marketing" className={fieldCls} />
+                  <div className="flex gap-2">
+                    <div className="flex-1"><Lbl t="Имя" /><input value={editFirst} onChange={(e) => setEditFirst(e.target.value)} placeholder="Имя" className={fieldCls} /></div>
+                    <div className="flex-1"><Lbl t="Фамилия" /><input value={editLast} onChange={(e) => setEditLast(e.target.value)} placeholder="Фамилия" className={fieldCls} /></div>
                   </div>
                   <div>
-                    <span className="mb-1 block font-mono uppercase text-ink-mute" style={{ fontSize: 10, letterSpacing: "0.08em" }}>Рынки</span>
+                    <Lbl t="Роль" />
+                    <input value={editRole} onChange={(e) => setEditRole(e.target.value)} placeholder="напр. BD, Marketing" className={fieldCls} />
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="flex-1"><Lbl t="Email" /><input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="email@…" type="email" className={fieldCls} /></div>
+                    <div className="flex-1"><Lbl t="Телефон" /><input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="+…" className={fieldCls} /></div>
+                  </div>
+                  <div>
+                    <Lbl t="Рынки" />
                     <div className="flex max-h-[148px] flex-wrap gap-1.5 overflow-y-auto">
                       {allCodes.map((code) => {
                         const on = editMarkets.includes(code);
@@ -196,6 +232,10 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
                         );
                       })}
                     </div>
+                  </div>
+                  <div>
+                    <Lbl t="Заметки" />
+                    <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} placeholder="Заметки админа…" className={`${fieldCls} resize-none`} />
                   </div>
                   <div className="flex gap-2">
                     <button onClick={saveEdit} disabled={savingEdit} className={`${btnPrimary} flex-1`} style={{ fontSize: 13 }}>{savingEdit ? "Сохраняю…" : "Сохранить профиль"}</button>
