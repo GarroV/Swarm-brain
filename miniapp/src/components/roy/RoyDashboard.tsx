@@ -6,6 +6,7 @@ import { SearchHero } from "./dash/SearchHero";
 import { Materials } from "./dash/Materials";
 import { MeetingsApprove } from "./dash/MeetingsApprove";
 import { TeamTasks } from "./dash/TeamTasks";
+import { ProjectMapButton } from "./dash/ProjectMapButton";
 
 // Desktop-главный экран «Рой» — 3-колоночная раскладка (только lg+, см. RoyApp `isDashboard`).
 // Лево (288px): личные задачи. Центр (1fr): поиск-герой + материалы за сутки. Право (344px):
@@ -41,6 +42,7 @@ export function RoyDashboard() {
         </div>
 
         <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
+          <ProjectMapButton />
           <MeetingsApprove data={data} className="min-h-0 flex-1" />
           <TeamTasks data={data} className="min-h-0 flex-1" />
         </div>
