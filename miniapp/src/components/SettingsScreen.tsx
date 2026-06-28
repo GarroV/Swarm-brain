@@ -323,6 +323,16 @@ function DigestSection() {
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
+  // Период сохраняется и используется секцией дайджеста на главной (см. dash/PersonalDigest).
+  useEffect(() => {
+    const v = Number(localStorage.getItem("roy_digest_days"));
+    if (v === 14 || v === 30) setDays(v);
+  }, []);
+  const chooseDays = (d: number) => {
+    setDays(d);
+    try { localStorage.setItem("roy_digest_days", String(d)); } catch { /* приватный режим */ }
+  };
+
   const handleGenerate = async () => {
     setGenerating(true);
     setResult(null);
@@ -341,13 +351,14 @@ function DigestSection() {
         {([7, 14, 30] as const).map((d) => (
           <button
             key={d}
-            onClick={() => setDays(d)}
+            onClick={() => chooseDays(d)}
             className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${days === d ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground"}`}
           >
             {d}д
           </button>
         ))}
       </div>
+      <p className="text-xs text-ink-soft">Этот период используется для дайджеста на главной.</p>
       <Button onClick={handleGenerate} disabled={generating} className="w-full">
         {generating ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Генерирую (~10 сек)…</> : "Сгенерировать дайджест"}
       </Button>
