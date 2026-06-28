@@ -162,7 +162,7 @@ export function MeetingDetail({ id }: { id: string }) {
         )}
       </div>
       {e && !confirmed && !editing && (
-        <div className="shrink-0 border-t border-line bg-background px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
+        <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
           <div className="mb-2.5">
             <Segmented
               items={[

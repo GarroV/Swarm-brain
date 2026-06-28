@@ -280,7 +280,7 @@ export function FAB({ onClick, className, "aria-label": ariaLabel = "Созда�
 // ── NavHeader (шапка push-экрана с «Назад») ──────────────────────────────────
 export function NavHeader({ onBack, title, right }: { onBack: () => void; title?: ReactNode; right?: ReactNode }) {
   return (
-    <div className="shrink-0 flex items-center gap-2.5 bg-background" style={{ padding: "6px 14px 10px" }}>
+    <div className="shrink-0 flex items-center gap-2.5 bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg" style={{ padding: "6px 14px 10px" }}>
       <button
         type="button"
         onClick={onBack}

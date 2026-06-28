@@ -54,7 +54,7 @@ export function NewEntry() {
           Заголовок, тип (документ/заметка/транскрипт) и рынки определит ИИ из текста.
         </p>
       </div>
-      <div className="shrink-0 border-t border-line bg-background px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
+      <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
         <button type="button" onClick={submit} disabled={saving} className="w-full rounded-[14px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
           Сохранить
         </button>
