@@ -2,13 +2,16 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchAgentMeeting, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting } from "@/lib/api";
 import type { AgentMeeting } from "@/types";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import { TezisyBlocks } from "@/components/roy/ui";
-import { ChevronLeft, ChevronDown, ChevronRight, Clock, CheckCircle, Pencil, Check, X } from "lucide-react";
+import { TezisyBlocks, Segmented } from "@/components/roy/ui";
+import { RoyIcon } from "@/components/roy/icons";
 
 type Props = { id: string; onClose: () => void; onChanged?: () => void };
+
+// Roy-кнопки/поля (без shadcn).
+const btnPrimary =
+  "w-full rounded-[12px] bg-primary px-4 py-2.5 font-semibold text-white transition-transform active:scale-[0.98] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
+const btnOutline =
+  "rounded-[12px] border border-line bg-surface px-4 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.98] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
 function fmtTs(sec: number): string {
   const t = Math.max(0, Math.floor(sec));
@@ -93,9 +96,9 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
 
   const canRename = !!meeting && meeting.status !== "in_base";
   const header = (
-    <div className="flex items-center gap-2 px-4 pt-4 pb-2 border-b border-border shrink-0">
-      <button onClick={onClose} aria-label="Назад" className="text-muted-foreground hover:text-foreground">
-        <ChevronLeft className="w-5 h-5" />
+    <div className="flex items-center gap-2 px-4 pt-4 pb-2 border-b border-line shrink-0 bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg">
+      <button onClick={onClose} aria-label="Назад" className="text-ink-soft transition-colors hover:text-ink">
+        <RoyIcon name="cleft" size={20} strokeWidth={2.2} />
       </button>
       {editingTitle ? (
         <div className="flex flex-1 items-center gap-1.5">
@@ -105,17 +108,17 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
             onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setEditingTitle(false); }}
             autoFocus
             placeholder="Название встречи"
-            className="flex-1 rounded-md border border-line bg-surface px-2 py-1 text-base font-semibold outline-none focus:border-[var(--accent-ink)]"
+            className="flex-1 rounded-md border border-line bg-surface px-2 py-1 text-base font-semibold text-ink outline-none focus:border-[var(--accent-ink)]"
           />
-          <button onClick={saveTitle} disabled={savingTitle} aria-label="Сохранить название" className="text-primary disabled:opacity-50"><Check className="w-5 h-5" /></button>
-          <button onClick={() => setEditingTitle(false)} aria-label="Отмена" className="text-muted-foreground"><X className="w-5 h-5" /></button>
+          <button onClick={saveTitle} disabled={savingTitle} aria-label="Сохранить название" className="disabled:opacity-50" style={{ color: "var(--status-done)" }}><RoyIcon name="check" size={20} strokeWidth={2.2} /></button>
+          <button onClick={() => setEditingTitle(false)} aria-label="Отмена" className="text-ink-soft"><RoyIcon name="x" size={20} /></button>
         </div>
       ) : (
         <>
-          <h1 className="text-base font-semibold flex-1 truncate">{meeting?.title ?? "Встреча"}</h1>
+          <h1 className="text-base font-semibold flex-1 truncate text-ink">{meeting?.title ?? "Встреча"}</h1>
           {canRename && (
-            <button onClick={() => { setTitleDraft(meeting!.title ?? ""); setEditingTitle(true); }} aria-label="Переименовать" className="text-muted-foreground hover:text-foreground">
-              <Pencil className="w-4 h-4" />
+            <button onClick={() => { setTitleDraft(meeting!.title ?? ""); setEditingTitle(true); }} aria-label="Переименовать" className="transition-colors hover:opacity-80" style={{ color: "var(--accent-ink)" }}>
+              <RoyIcon name="pencil" size={17} strokeWidth={1.9} />
             </button>
           )}
         </>
@@ -124,10 +127,10 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   );
 
   if (loading) {
-    return <div className="flex flex-col h-full">{header}<p className="text-center text-muted-foreground py-8 text-sm">Загрузка…</p></div>;
+    return <div className="flex flex-col h-full">{header}<p className="text-center text-ink-soft py-8 text-sm">Загрузка…</p></div>;
   }
   if (error || !meeting) {
-    return <div className="flex flex-col h-full">{header}<p className="text-center text-destructive py-8 text-sm">{error ?? "Не найдено"}</p></div>;
+    return <div className="flex flex-col h-full">{header}<p className="text-center py-8 text-sm" style={{ color: "var(--pri-high)" }}>{error ?? "Не найдено"}</p></div>;
   }
 
   const published = meeting.status === "in_base";
@@ -140,12 +143,12 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
       {header}
 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="secondary">desktop-agent</Badge>
-          {meeting.started_at && <span>{meeting.started_at.slice(0, 10)}</span>}
+        <div className="flex flex-wrap items-center gap-2 text-xs text-ink-soft">
+          <span className="rounded-[7px] px-2 py-0.5 font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)" }}>Рекордер</span>
+          {meeting.started_at && <span className="font-mono">{meeting.started_at.slice(0, 10)}</span>}
           {published
-            ? <span className="inline-flex items-center gap-1" style={{ color: "var(--status-done)" }}><CheckCircle className="w-3.5 h-3.5" /> В базе</span>
-            : <span className="inline-flex items-center gap-1" style={{ color: "var(--status-open)" }}><Clock className="w-3.5 h-3.5" /> На вычитке</span>}
+            ? <span className="inline-flex items-center gap-1" style={{ color: "var(--status-done)" }}><RoyIcon name="check" size={13} strokeWidth={2.2} /> В базе</span>
+            : <span className="inline-flex items-center gap-1" style={{ color: "var(--status-open)" }}><RoyIcon name="clock" size={13} strokeWidth={1.9} /> На вычитке</span>}
           {meeting.recorder_names?.length
             ? <span>· Записал: {meeting.recorder_names.join(", ")}</span>
             : recorders.length > 0 && <span>· записали: {recorders.length}</span>}
@@ -153,40 +156,44 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
 
         <div>
           <div className="flex items-center justify-between mb-1">
-            <p className="text-xs text-muted-foreground">Тезисы</p>
+            <p className="text-xs text-ink-soft">Тезисы</p>
             {!published && notesReady && !editing && (
-              <button onClick={() => setEditing(true)} className="text-xs text-primary">Редактировать</button>
+              <button onClick={() => setEditing(true)} className="text-xs font-semibold text-primary">Редактировать</button>
             )}
           </div>
           {!notesReady ? (
-            <p className="text-sm text-muted-foreground">Готовим тезисы…</p>
+            <p className="text-sm text-ink-soft">Готовим тезисы…</p>
           ) : editing ? (
             <div className="space-y-2">
-              <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} className="min-h-[220px] text-sm" />
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                className="w-full min-h-[220px] resize-none rounded-[12px] border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)]"
+              />
               <div className="flex gap-2">
-                <Button size="sm" onClick={handleSave} disabled={saving} className="flex-1">{saving ? "…" : "Сохранить"}</Button>
-                <Button size="sm" variant="outline" onClick={() => { setDraft(meeting.draft_notes_md ?? ""); setEditing(false); }}>Отмена</Button>
+                <button onClick={handleSave} disabled={saving} className={`${btnPrimary} flex-1`} style={{ fontSize: 14 }}>{saving ? "…" : "Сохранить"}</button>
+                <button onClick={() => { setDraft(meeting.draft_notes_md ?? ""); setEditing(false); }} className={btnOutline} style={{ fontSize: 14 }}>Отмена</button>
               </div>
             </div>
           ) : meeting.draft_notes_md ? (
             <TezisyBlocks text={meeting.draft_notes_md} />
           ) : (
-            <p className="text-sm text-muted-foreground">—</p>
+            <p className="text-sm text-ink-soft">—</p>
           )}
         </div>
 
         {segments.length > 0 && (
           <div>
-            <button onClick={() => setShowTranscript((v) => !v)} className="flex items-center gap-1 text-xs text-muted-foreground">
-              {showTranscript ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            <button onClick={() => setShowTranscript((v) => !v)} className="flex items-center gap-1.5 text-xs text-ink-soft transition-colors hover:text-ink">
+              <RoyIcon name="cright" size={13} strokeWidth={2} className={showTranscript ? "rotate-90 transition-transform" : "transition-transform"} />
               Транскрипт ({segments.length})
             </button>
             {showTranscript && (
               <div className="mt-2 space-y-1">
                 {segments.map((s, i) => (
                   <div key={i} className="flex gap-2 text-sm">
-                    <span className="font-mono text-xs text-muted-foreground shrink-0 w-16">{fmtClock(meeting.started_at, s.start)}</span>
-                    <span className="flex-1">{s.text}</span>
+                    <span className="font-mono text-xs text-ink-mute shrink-0 w-16">{fmtClock(meeting.started_at, s.start)}</span>
+                    <span className="flex-1 text-ink">{s.text}</span>
                   </div>
                 ))}
               </div>
@@ -196,29 +203,20 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
       </div>
 
       {!published && notesReady && !editing && (
-        <div className="border-t border-border px-4 py-3 space-y-2 shrink-0">
-          <div className="flex gap-2 text-xs">
-            <button
-              onClick={() => setBase("workspace")}
-              className={`flex-1 py-1.5 rounded-md border transition-colors ${base === "workspace" ? "border-primary text-primary font-medium" : "border-border text-muted-foreground"}`}
-            >
-              В команду
-            </button>
-            <button
-              onClick={() => setBase("personal")}
-              className={`flex-1 py-1.5 rounded-md border transition-colors ${base === "personal" ? "border-primary text-primary font-medium" : "border-border text-muted-foreground"}`}
-            >
-              В личное
-            </button>
-          </div>
-          <Button onClick={handlePublish} disabled={publishing} className="w-full">
+        <div className="border-t border-line px-4 py-3 space-y-2.5 shrink-0 bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg">
+          <Segmented
+            items={[{ id: "workspace", label: "В команду" }, { id: "personal", label: "В личное" }]}
+            value={base}
+            onChange={(v) => setBase(v as "workspace" | "personal")}
+          />
+          <button onClick={handlePublish} disabled={publishing} className={btnPrimary} style={{ fontSize: 14.5 }}>
             {publishing ? "Публикуем…" : base === "workspace" ? "Сохранить в базу команды" : "Сохранить в личное"}
-          </Button>
+          </button>
         </div>
       )}
       {published && (
-        <div className="border-t border-border px-4 py-3 shrink-0">
-          <p className="text-xs text-center text-muted-foreground">Уже в базе. Правки — через раздел «База».</p>
+        <div className="border-t border-line px-4 py-3 shrink-0">
+          <p className="text-xs text-center text-ink-soft">Уже в базе. Правки — через раздел «База».</p>
         </div>
       )}
     </div>
