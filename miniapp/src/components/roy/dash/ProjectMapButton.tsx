@@ -19,17 +19,22 @@ export function ProjectMapButton() {
 
   return (
     <>
-      {/* Иконка-чип в шапке справа — зеркало бренд-марки Swarm слева (та же скруглённая
-          янтарная плашка), но с глифом-созвездием. Клик → полноэкранная карта. */}
+      {/* Подпись + иконка-чип в шапке справа — зеркало бренд-марки «Swarm» слева
+          ([чип] Swarm  ↔  Карта проекта [чип]). Клик по всей связке → полноэкранная карта. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Карта проекта"
         title="Карта проекта"
-        className="inline-flex shrink-0 items-center justify-center bg-primary text-white transition-transform hover:brightness-110 active:scale-[0.94] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-        style={{ width: SIZE, height: SIZE, borderRadius: Math.round(SIZE * 0.31) }}
+        className="group inline-flex shrink-0 items-center gap-2.5 rounded-[14px] transition-transform active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
       >
-        <MapGlyph />
+        <span className="font-bold text-ink" style={{ fontSize: 15, letterSpacing: "-0.01em" }}>Карта проекта</span>
+        <span
+          className="inline-flex shrink-0 items-center justify-center bg-primary text-white transition-[filter] group-hover:brightness-110"
+          style={{ width: SIZE, height: SIZE, borderRadius: Math.round(SIZE * 0.31) }}
+        >
+          <MapGlyph />
+        </span>
       </button>
 
       {open && typeof document !== "undefined" && createPortal(
