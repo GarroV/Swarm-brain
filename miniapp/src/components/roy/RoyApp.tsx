@@ -235,6 +235,22 @@ function MeetingReviewScreen({ id }: { id: string }) {
   return <MeetingReview id={id} onClose={pop} />;
 }
 
+// Интерактивная карта системы — самодостаточный HTML (canvas) в public/system-map.html,
+// встраиваем как iframe (своя физика/зум/пан внутри). Отдаётся Cloudflare Pages по /system-map.html.
+function MapScreen() {
+  const { pop } = useRoyNav();
+  return (
+    <div className="roy-pop flex h-full flex-col">
+      <NavHeader onBack={pop} title="Карта системы" />
+      <iframe
+        src="/system-map.html"
+        title="Карта системы Swarm"
+        className="min-h-0 w-full flex-1 border-0 bg-[#0a0b07]"
+      />
+    </div>
+  );
+}
+
 function Wrapped({ title, children }: { title: string; children: React.ReactNode }) {
   const { pop } = useRoyNav();
   return (
@@ -248,6 +264,7 @@ function Wrapped({ title, children }: { title: string; children: React.ReactNode
 function MoreScreen() {
   const { me, push, pop } = useRoyNav();
   const rows: { label: string; route: RoyRoute }[] = [
+    { label: "Карта системы", route: { view: "map" } },
     { label: "Настройки", route: { view: "settings" } },
     { label: "Команда", route: { view: "team" } },
   ];

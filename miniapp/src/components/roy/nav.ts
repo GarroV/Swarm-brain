@@ -19,6 +19,7 @@ export type RoyRoute =
   | { view: "team" }
   | { view: "admin" }
   | { view: "more" }
+  | { view: "map" }
   | { view: "meetAdmin" };
 
 export type RoyNav = {
