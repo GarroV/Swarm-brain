@@ -27,6 +27,7 @@ import { TeamScreen } from "@/components/TeamScreen";
 import { SettingsScreen } from "@/components/SettingsScreen";
 import { AdminScreen } from "@/components/AdminScreen";
 import { MeetAdminScreen } from "./screens/MeetAdminScreen";
+import { ProfileMenu } from "./ProfileMenu";
 
 // Каркас «Рой» по дизайн-хендоффу: 4 корневых таба (Поиск/Задачи/База/Встречи) + push-стек.
 // Мобайл — нижний таб-бар; десктоп (lg+) — левый сайдбар. На десктопе вкладка «Задачи»
@@ -185,19 +186,10 @@ export function RoyApp({ me }: { me: Me | null }) {
               </div>
             )}
           </div>
-          {/* Профиль/настройки — внизу слева (desktop, dashboard-центрично, вместо сайдбара).
-              Открывает «Ещё»: Настройки / Команда / Админ. На мобайле — аватар в шапке + таб-бар. */}
-          {isDesktop && (
-            <button
-              type="button"
-              onClick={() => push({ view: "more" })}
-              aria-label="Профиль и настройки"
-              className="absolute bottom-3 left-3 z-40 flex items-center gap-2 rounded-[12px] border border-line bg-surface px-3 py-2 shadow-[0_4px_14px_-8px_rgba(60,45,20,.4)] transition-colors hover:bg-surface-2"
-            >
-              <Avatar size={28}>{initials(me?.name)}</Avatar>
-              <span className="font-semibold text-ink-soft" style={{ fontSize: 13 }}>Ещё</span>
-            </button>
-          )}
+          {/* Профиль/управление — внизу слева (desktop, вместо сайдбара): нативный поповер
+              в углу с inline-секциями Настройки/Команда/Админ, без перехода на страницу.
+              На мобайле — аватар в шапке + таб-бар. */}
+          {isDesktop && <ProfileMenu />}
         </div>
       </div>
 
