@@ -259,7 +259,7 @@ function parseTezisy(src: string): TezisyBlock[] {
   return blocks;
 }
 
-export function TezisyBlocks({ text, className }: { text: string; className?: string }) {
+export function TezisyBlocks({ text, className, onDeepen }: { text: string; className?: string; onDeepen?: (topic: string) => void }) {
   const blocks = parseTezisy(text);
   if (blocks.length === 0) return null;
   return (
@@ -276,9 +276,20 @@ export function TezisyBlocks({ text, className }: { text: string; className?: st
           return (
             <ul key={i} className="flex flex-col" style={{ gap: 4 }}>
               {b.items.map((it, j) => (
-                <li key={j} className="flex text-ink leading-relaxed" style={{ fontSize: 14, gap: 8 }}>
-                  <span className="text-ink-mute select-none">•</span>
+                <li key={j} className="group/deep flex items-start text-ink leading-relaxed" style={{ fontSize: 14, gap: 8 }}>
+                  <span className="text-ink-mute select-none" style={{ marginTop: 1 }}>•</span>
                   <span className="flex-1">{it}</span>
+                  {onDeepen && (
+                    <button
+                      type="button"
+                      onClick={() => onDeepen(it)}
+                      aria-label="Углубиться в тему"
+                      title="Углубиться в тему"
+                      className="mt-0.5 shrink-0 text-ink-mute opacity-0 transition-opacity hover:text-primary focus-visible:opacity-100 focus-visible:outline-none group-hover/deep:opacity-100"
+                    >
+                      <RoyIcon name="search" size={14} strokeWidth={1.9} />
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>

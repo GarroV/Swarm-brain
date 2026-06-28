@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { generateDigest } from "@/lib/api";
+import { useRoyNav } from "../nav";
 import { RoyCard, TezisyBlocks } from "../ui";
 import { RoyIcon } from "../icons";
 
@@ -35,6 +36,7 @@ function fmtUpdated(iso: string): string {
 // (при первом открытии после 8:00) — инфа всегда свежая без ручной кнопки. Строго по странам
 // пользователя (фильтрует /digest на сервере).
 export function PersonalDigest({ className }: { className?: string }) {
+  const { push } = useRoyNav();
   const [days, setDays] = useState(7);
   const [text, setText] = useState<string | null>(null);
   const [at, setAt] = useState<string | null>(null);
@@ -81,7 +83,9 @@ export function PersonalDigest({ className }: { className?: string }) {
       <div className="space-y-2.5 px-4 py-3">
         {text ? (
           <>
-            <div className="max-h-[340px] overflow-y-auto pr-1"><TezisyBlocks text={text} /></div>
+            <div className="max-h-[340px] overflow-y-auto pr-1">
+              <TezisyBlocks text={text} onDeepen={(topic) => push({ view: "answer", params: { query: `Расскажи подробнее: ${topic}` } })} />
+            </div>
             <div className="flex items-center gap-2">
               <button onClick={() => run(days)} disabled={generating} className="font-semibold text-primary transition-opacity hover:opacity-80 disabled:opacity-60" style={{ fontSize: 12.5 }}>
                 {generating ? "Обновляю…" : "↻ Обновить"}
