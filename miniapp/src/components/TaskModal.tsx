@@ -10,24 +10,9 @@ import {
   deleteTask,
   fetchUsers,
 } from "@/lib/api";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Segmented } from "@/components/roy/ui";
+import { RoyIcon } from "@/components/roy/icons";
 
 const TASK_ROLES = [
   { value: "marketing", label: "Marketing" },
@@ -36,14 +21,19 @@ const TASK_ROLES = [
 ];
 
 const STATUSES = [
-  { value: "open", label: "Открыто" },
-  { value: "in_progress", label: "В работе" },
-  { value: "done", label: "Готово" },
+  { id: "open", label: "Открыто" },
+  { id: "in_progress", label: "В работе" },
+  { id: "done", label: "Готово" },
 ];
 const normStatus = (s?: string | null) => (s === "progress" ? "in_progress" : (s ?? "open"));
 
-// Sentinel for shadcn Select — empty string is not a valid Select value
+// Sentinel for the assignee/role selects — empty string is not a valid select value
 const NONE = "__none__";
+
+// Roy-стилизованные нативные контролы (без shadcn): стекло + линия + янтарный фокус.
+const fieldCls =
+  "w-full rounded-[12px] border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute dark:backdrop-blur-sm";
+const labelCls = "mb-1.5 block font-semibold text-ink-soft";
 
 interface TaskModalProps {
   task?: Task;
@@ -86,7 +76,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
   }, [open, task]);
 
   // Опции исполнителя = пользователи воркспейса + текущий исполнитель, если его нет в списке
-  // (иначе Select не показал бы его, а сохранение затёрло бы назначение).
+  // (иначе select не показал бы его, а сохранение затёрло бы назначение).
   const assigneeOptions: { id: string; name: string }[] = [
     ...users.map((u) => ({ id: u.telegram_id.toString(), name: displayName(u.name) })),
   ];
@@ -149,18 +139,36 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
     }
   };
 
+  const busy = saving || deleting;
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? "Изменить задачу" : "Новая задача"}</DialogTitle>
-        </DialogHeader>
+      <DialogContent
+        showCloseButton={false}
+        className="gap-0 rounded-[20px] border border-line bg-[var(--popover)] p-0 sm:max-w-md dark:backdrop-blur-xl"
+      >
+        {/* Шапка */}
+        <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <h2 className="font-bold text-ink" style={{ fontSize: 18, letterSpacing: "-0.01em" }}>
+            {isEdit ? "Изменить задачу" : "Новая задача"}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Закрыть"
+            className="flex items-center justify-center rounded-[10px] p-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          >
+            <RoyIcon name="x" size={18} />
+          </button>
+        </div>
 
-        <div className="space-y-4 py-2">
-          <div className="space-y-1">
-            <Label htmlFor="modal-title">Название *</Label>
-            <Input
+        {/* Поля */}
+        <div className="max-h-[68vh] space-y-3.5 overflow-y-auto px-5 py-4">
+          <div>
+            <label htmlFor="modal-title" className={labelCls} style={{ fontSize: 12.5 }}>Название *</label>
+            <input
               id="modal-title"
+              className={fieldCls}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Название задачи"
@@ -168,25 +176,17 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
           </div>
 
           {isEdit && (
-            <div className="space-y-1">
-              <Label>Статус</Label>
-              <Select value={status} onValueChange={(v) => setStatus(v ?? "open")}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUSES.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div>
+              <span className={labelCls} style={{ fontSize: 12.5 }}>Статус</span>
+              <Segmented items={STATUSES} value={status} onChange={setStatus} />
             </div>
           )}
 
-          <div className="space-y-1">
-            <Label htmlFor="modal-desc">Описание</Label>
-            <Textarea
+          <div>
+            <label htmlFor="modal-desc" className={labelCls} style={{ fontSize: 12.5 }}>Описание</label>
+            <textarea
               id="modal-desc"
+              className={`${fieldCls} resize-none`}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Необязательное описание"
@@ -194,91 +194,75 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
             />
           </div>
 
-          <div className="space-y-1">
-            <Label htmlFor="modal-due">Срок</Label>
-            <Input
-              id="modal-due"
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-            />
+          <div>
+            <label htmlFor="modal-due" className={labelCls} style={{ fontSize: 12.5 }}>Срок</label>
+            <input id="modal-due" type="date" className={fieldCls} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
           </div>
 
-          <div className="space-y-1">
-            <Label>Роль</Label>
-            <Select value={taskRole} onValueChange={(v) => setTaskRole(v ?? NONE)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Выберите роль" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>— Нет —</SelectItem>
-                {TASK_ROLES.map((r) => (
-                  <SelectItem key={r.value} value={r.value}>
-                    {r.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div>
+            <label htmlFor="modal-role" className={labelCls} style={{ fontSize: 12.5 }}>Роль</label>
+            <select id="modal-role" className={fieldCls} value={taskRole} onChange={(e) => setTaskRole(e.target.value)}>
+              <option value={NONE}>— Нет —</option>
+              {TASK_ROLES.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
           </div>
 
-          <div className="space-y-1">
-            <Label htmlFor="modal-country">Страна</Label>
-            <Input
-              id="modal-country"
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              placeholder="напр. KZ, PL"
-            />
+          <div>
+            <label htmlFor="modal-country" className={labelCls} style={{ fontSize: 12.5 }}>Страна</label>
+            <input id="modal-country" className={fieldCls} value={country} onChange={(e) => setCountry(e.target.value)} placeholder="напр. KZ, PL" />
           </div>
 
-          <div className="space-y-1">
-            <Label>Исполнитель</Label>
-            <Select value={assigneeId} onValueChange={(v) => setAssigneeId(v ?? NONE)}>
-              <SelectTrigger>
-                {/* подпись рисуем сами: список юзеров грузится асинхронно, и Radix SelectValue
-                    показывал сырое value (id / _none_), не обновляясь после подгрузки */}
-                <span className="truncate text-left">
-                  {assigneeId === NONE
-                    ? "— Нет —"
-                    : (assigneeOptions.find((o) => o.id === assigneeId)?.name ?? `#${assigneeId}`)}
-                </span>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>— Нет —</SelectItem>
-                {assigneeOptions.map((o) => (
-                  <SelectItem key={o.id} value={o.id}>
-                    {o.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div>
+            <label htmlFor="modal-assignee" className={labelCls} style={{ fontSize: 12.5 }}>Исполнитель</label>
+            <select id="modal-assignee" className={fieldCls} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+              <option value={NONE}>— Нет —</option>
+              {assigneeOptions.map((o) => (
+                <option key={o.id} value={o.id}>{o.name}</option>
+              ))}
+            </select>
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p className="font-semibold" style={{ fontSize: 13, color: "var(--pri-high)" }}>{error}</p>}
         </div>
 
-        <DialogFooter className="sm:justify-between">
+        {/* Действия */}
+        <div className="flex items-center justify-between gap-2 border-t border-line px-5 py-3.5">
           {isEdit ? (
-            <Button
-              variant="ghost"
+            <button
+              type="button"
               onClick={handleDelete}
-              disabled={saving || deleting}
-              className="text-destructive hover:text-destructive"
+              disabled={busy}
+              className="rounded-[12px] px-3 py-2 font-semibold transition-transform active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              style={{ fontSize: 14, color: "var(--pri-high)" }}
             >
               {deleting ? "Удаление…" : "Удалить"}
-            </Button>
+            </button>
           ) : (
             <span />
           )}
           <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose} disabled={saving || deleting}>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={busy}
+              className="rounded-[12px] border border-line bg-surface px-4 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              style={{ fontSize: 14 }}
+            >
               Отмена
-            </Button>
-            <Button onClick={handleSave} disabled={saving || deleting}>
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={busy}
+              className="rounded-[12px] bg-primary px-4 py-2 font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              style={{ fontSize: 14 }}
+            >
               {saving ? "Сохранение…" : "Сохранить"}
-            </Button>
+            </button>
           </div>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
