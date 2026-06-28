@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   fetchAdminWorkspaces, fetchAdminWorkspaceUsers,
   addUserToWorkspace, removeUserFromWorkspace, patchAdminWorkspace,
+  createAdminWorkspace, broadcastMessage,
 } from "@/lib/api";
 import type { AdminWorkspace, AdminUser } from "@/types";
 import { countryName, COUNTRY_NAMES } from "@/lib/countries";
@@ -14,17 +15,53 @@ const fieldCls =
 const btnPrimary =
   "rounded-[12px] bg-primary px-3.5 py-2 font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
-// ── Список воркспейсов ────────────────────────────────────────────────────────
+// ── Список воркспейсов + создание ─────────────────────────────────────────────
 function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => void }) {
   const [workspaces, setWorkspaces] = useState<AdminWorkspace[]>([]);
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [newId, setNewId] = useState("");
+  const [newName, setNewName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => { fetchAdminWorkspaces().then(setWorkspaces).finally(() => setLoading(false)); }, []);
+  const load = useCallback(() => {
+    setLoading(true);
+    fetchAdminWorkspaces().then(setWorkspaces).finally(() => setLoading(false));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const handleCreate = async () => {
+    const id = newId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+    const name = newName.trim();
+    if (!id || !name) { setErr("Нужны id (a-z0-9-) и название"); return; }
+    setSaving(true); setErr(null);
+    try {
+      await createAdminWorkspace(id, name);
+      setNewId(""); setNewName(""); setCreating(false); load();
+    } catch (e) { setErr(e instanceof Error ? e.message : "Не удалось создать"); }
+    finally { setSaving(false); }
+  };
 
   if (loading) return <p className="text-center text-ink-soft py-8 text-sm">Загрузка…</p>;
 
   return (
     <div className="space-y-2">
+      {creating ? (
+        <div className="space-y-2 rounded-[16px] border border-line bg-surface-2 p-3 dark:backdrop-blur-sm">
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Название (напр. LATAM)" className={fieldCls} autoFocus />
+          <input value={newId} onChange={(e) => setNewId(e.target.value)} placeholder="id-слаг (напр. latam)" className={`${fieldCls} font-mono`} />
+          {err && <p className="font-semibold" style={{ fontSize: 12, color: "var(--pri-high)" }}>{err}</p>}
+          <div className="flex gap-2">
+            <button onClick={handleCreate} disabled={saving} className={`${btnPrimary} flex-1`} style={{ fontSize: 13.5 }}>{saving ? "Создаю…" : "Создать"}</button>
+            <button onClick={() => { setCreating(false); setErr(null); }} className="rounded-[12px] border border-line bg-surface px-3.5 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface active:scale-[0.97]" style={{ fontSize: 13.5 }}>Отмена</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setCreating(true)} className="flex w-full items-center justify-center gap-1.5 rounded-[16px] border border-dashed border-line-2 px-4 py-2.5 font-semibold text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" style={{ fontSize: 13.5 }}>
+          <RoyIcon name="plus" size={15} strokeWidth={2.2} /> Создать воркспейс
+        </button>
+      )}
       {workspaces.map((ws) => (
         <button
           key={ws.id}
@@ -262,6 +299,43 @@ function WorkspaceDetail({ ws, onBack }: { ws: AdminWorkspace; onBack: () => voi
   );
 }
 
+// ── Рассылка всем пользователям ───────────────────────────────────────────────
+function BroadcastBlock() {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  const send = async () => {
+    const t = text.trim();
+    if (!t) return;
+    if (typeof window !== "undefined" && !window.confirm(`Отправить сообщение ВСЕМ пользователям системы в Telegram?\n\n«${t.slice(0, 140)}${t.length > 140 ? "…" : ""}»`)) return;
+    setSending(true); setResult(null);
+    try {
+      const r = await broadcastMessage(t);
+      setResult(`✓ Отправлено: ${r.sent}${r.failed ? ` · не доставлено: ${r.failed}` : ""} (из ${r.total})`);
+      setText("");
+    } catch (e) { setResult(e instanceof Error ? e.message : "Ошибка рассылки"); }
+    finally { setSending(false); }
+  };
+
+  return (
+    <div className="rounded-[16px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
+      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between font-semibold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" style={{ fontSize: 13.5 }}>
+        <span className="flex items-center gap-2"><RoyIcon name="note" size={15} className="text-ink-soft" /> Рассылка всем</span>
+        <RoyIcon name="cright" size={14} className={`text-ink-soft transition-transform ${open ? "rotate-90" : ""}`} />
+      </button>
+      {open && (
+        <div className="mt-2.5 space-y-2">
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} placeholder="Сообщение всем пользователям системы…" className={`${fieldCls} resize-none`} />
+          <button onClick={send} disabled={sending || !text.trim()} className={`${btnPrimary} w-full`} style={{ fontSize: 13.5 }}>{sending ? "Отправляю…" : "Отправить всем"}</button>
+          {result && <p className="font-mono text-ink-soft" style={{ fontSize: 11.5 }}>{result}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AdminScreen() {
   const [selected, setSelected] = useState<AdminWorkspace | null>(null);
 
@@ -271,9 +345,10 @@ export function AdminScreen() {
     <div className="flex h-full flex-col">
       <div className="px-4 pt-5 pb-3">
         <h1 className="font-bold text-ink" style={{ fontSize: 20, letterSpacing: "-0.01em" }}>Суперадмин</h1>
-        <p className="font-mono uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.08em", marginTop: 2 }}>Воркспейсы · рынки · доступы</p>
+        <p className="font-mono uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.08em", marginTop: 2 }}>Воркспейсы · рынки · доступы · рассылка</p>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-4">
+        <BroadcastBlock />
         <WorkspaceList onSelect={setSelected} />
       </div>
     </div>

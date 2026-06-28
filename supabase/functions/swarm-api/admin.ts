@@ -53,6 +53,49 @@ export async function handleAdminRoutes(
     return json(result, 200, origin);
   }
 
+  // POST /admin/workspaces — создать воркспейс (id = slug, как в боте sa_create)
+  if (req.method === "POST" && routePath === "/admin/workspaces") {
+    let body: Record<string, unknown>;
+    try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
+    const id = String(body.id ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+    const name = String(body.name ?? "").trim();
+    if (!id) return apiErr(400, "id обязателен (a-z, 0-9, -)", origin);
+    if (!name) return apiErr(400, "name обязателен", origin);
+    const { data: existing } = await supabase.from("workspaces").select("id").eq("id", id).maybeSingle();
+    if (existing) return apiErr(409, `Воркспейс «${id}» уже существует`, origin);
+    const { error } = await supabase.from("workspaces").insert({ id, name });
+    if (error) return apiErr(500, error.message, origin);
+    return json({ id, name, allowed_markets: null, user_count: 0 }, 201, origin);
+  }
+
+  // POST /admin/broadcast — рассылка всем пользователям системы (как бот /broadcast, но superadmin-wide)
+  if (req.method === "POST" && routePath === "/admin/broadcast") {
+    let body: Record<string, unknown>;
+    try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
+    const text = String(body.text ?? "").trim();
+    if (!text) return apiErr(400, "Текст обязателен", origin);
+    const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
+    if (!botToken) return apiErr(500, "Bot token не настроен", origin);
+
+    const { data: users } = await supabase
+      .from("allowed_users").select("telegram_id").not("telegram_id", "is", null);
+    const ids = [...new Set((users ?? []).map((u: Record<string, unknown>) => u.telegram_id as number))]
+      .filter((id) => id !== ADMIN_TELEGRAM_ID);
+
+    let sent = 0, failed = 0;
+    for (const id of ids) {
+      try {
+        const r = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: id, text, disable_web_page_preview: true }),
+        });
+        if (r.ok) sent++; else failed++;
+      } catch { failed++; }
+    }
+    return json({ sent, failed, total: ids.length }, 200, origin);
+  }
+
   // GET/POST /admin/workspaces/:id/users
   const wsUsersMatch = routePath.match(/^\/admin\/workspaces\/([^/]+)\/users$/);
   if (wsUsersMatch) {

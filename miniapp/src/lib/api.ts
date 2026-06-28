@@ -762,3 +762,15 @@ export async function patchAdminWorkspace(wsId: string, fields: { name?: string;
   if (DEV_MODE) return { id: wsId, name: fields.name ?? wsId, allowed_markets: fields.allowed_markets ?? null, user_count: 0 };
   return apiFetch<AdminWorkspace>(`/admin/workspaces/${wsId}`, { method: "PATCH", body: JSON.stringify(fields) });
 }
+
+// Создать воркспейс (id = slug a-z0-9-, name — отображаемое). Фаза 2 бот-паритета.
+export async function createAdminWorkspace(id: string, name: string): Promise<AdminWorkspace> {
+  if (DEV_MODE) return { id, name, allowed_markets: null, user_count: 0 };
+  return apiFetch<AdminWorkspace>("/admin/workspaces", { method: "POST", body: JSON.stringify({ id, name }) });
+}
+
+// Рассылка всем пользователям системы (Telegram). Возвращает счётчики доставки.
+export async function broadcastMessage(text: string): Promise<{ sent: number; failed: number; total: number }> {
+  if (DEV_MODE) return { sent: 0, failed: 0, total: 0 };
+  return apiFetch<{ sent: number; failed: number; total: number }>("/admin/broadcast", { method: "POST", body: JSON.stringify({ text }) });
+}
