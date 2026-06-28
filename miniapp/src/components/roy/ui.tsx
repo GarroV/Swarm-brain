@@ -1,6 +1,6 @@
 "use client";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { cn, displayName } from "@/lib/utils";
 import { RoyIcon, type RoyIconName } from "./icons";
 
 // Примитивы дизайн-системы из design_handoff_roy (mobile-proto-ui.jsx), портированные
@@ -81,6 +81,40 @@ export function Avatar({ children, size = 32 }: { children: ReactNode; size?: nu
       style={{ width: size, height: size, fontSize: Math.round(size * 0.37) }}
     >
       {children}
+    </span>
+  );
+}
+
+function avInitials(name: string): string {
+  const n = displayName(name);
+  if (n === "—" || n.startsWith("#")) return "?";
+  return n.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
+}
+
+// Стопка аватаров исполнителей: перекрытие + «+N». Показывает ВСЕХ назначенных, а не только
+// первого — иначе групповая задача неотличима от личной (см. беклог «мультиассайн»).
+export function AvatarStack({ names, size = 26, max = 3 }: { names: string[]; size?: number; max?: number }) {
+  const list = names.filter(Boolean);
+  if (list.length === 0) return null;
+  if (list.length === 1) return <Avatar size={size}>{avInitials(list[0])}</Avatar>;
+  const shown = list.slice(0, max);
+  const extra = list.length - shown.length;
+  const overlap = -Math.round(size * 0.32);
+  return (
+    <span className="flex items-center" title={list.join(", ")}>
+      {shown.map((n, i) => (
+        <span key={i} className="rounded-full ring-2 ring-[var(--surface)]" style={{ marginLeft: i === 0 ? 0 : overlap, zIndex: shown.length - i }}>
+          <Avatar size={size}>{avInitials(n)}</Avatar>
+        </span>
+      ))}
+      {extra > 0 && (
+        <span
+          className="inline-flex items-center justify-center shrink-0 rounded-full bg-surface-2 text-ink-soft font-bold ring-2 ring-[var(--surface)]"
+          style={{ width: size, height: size, fontSize: Math.round(size * 0.34), marginLeft: overlap, zIndex: 0 }}
+        >
+          +{extra}
+        </span>
+      )}
     </span>
   );
 }

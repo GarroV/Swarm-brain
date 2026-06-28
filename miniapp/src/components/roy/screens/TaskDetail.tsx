@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
 import { useRoyNav } from "../nav";
-import { NavHeader, Segmented, RoyCard, PriDot, Market, Avatar, SectionLabel, IconBtn, TypeTag } from "../ui";
+import { NavHeader, Segmented, RoyCard, PriDot, Market, AvatarStack, SectionLabel, IconBtn, TypeTag } from "../ui";
 import { RoyIcon } from "../icons";
 import { entryTagKey, deriveEntryTitle } from "../entry";
 import { fetchTask, updateTask, deleteTask, fetchMeeting } from "@/lib/api";
@@ -117,11 +117,11 @@ export function TaskDetail({ id }: { id: string }) {
             <Segmented items={SEGS} value={norm(t.status)} onChange={setStatus} />
             <div className="mt-4">
               <RoyCard className="divide-y divide-line">
-                <Row label="Исполнитель">
-                  {t.assignees?.[0] ? (
+                <Row label={t.assignees?.length > 1 ? "Исполнители" : "Исполнитель"}>
+                  {t.assignees?.length > 0 ? (
                     <span className="flex items-center justify-end gap-2">
-                      <Avatar size={24}>{(displayName(t.assignees[0])[0] || "?").toUpperCase()}</Avatar>
-                      {displayName(t.assignees[0])}
+                      <AvatarStack names={t.assignees} size={24} />
+                      <span className="text-right">{t.assignees.map(displayName).join(", ")}</span>
                     </span>
                   ) : (
                     "—"
@@ -138,6 +138,7 @@ export function TaskDetail({ id }: { id: string }) {
                     "—"
                   )}
                 </Row>
+                <Row label="Создано">{fmtDate(t.created_at)}</Row>
               </RoyCard>
             </div>
             {t.description && (

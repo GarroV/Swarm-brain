@@ -44,7 +44,7 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
     <DashBlock
       title="Мои задачи"
       icon="task"
-      tint="var(--status-open)"
+      tint="var(--accent-ink)"
       headAction="Доска"
       loading={loading}
       empty={empty}

@@ -1,20 +1,14 @@
 "use client";
 import type { MouseEvent, ReactNode } from "react";
 import type { Task } from "@/types";
-import { PriDot, Market, Avatar } from "@/components/roy/ui";
+import { PriDot, Market, AvatarStack } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
 import { isDone, isOverdue } from "@/lib/smartLists";
-import { displayName } from "@/lib/utils";
 
 function fmtDue(iso: string | null): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   return isNaN(d.getTime()) ? null : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-}
-function initials(name: string): string {
-  const n = displayName(name);
-  if (n === "—" || n.startsWith("#")) return "?";
-  return n.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
 type TaskRowProps = {
@@ -33,8 +27,8 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
   const overdue = isOverdue(task, now);
   const due = fmtDue(task.due_date);
   const high = task.priority === "high";
-  const assignee = task.assignees?.[0];
-  const showMeta = !done && Boolean(task.country || due || high);
+  const fromMeeting = Boolean(task.meeting_id);
+  const showMeta = !done && (Boolean(task.country || due || high) || fromMeeting);
 
   return (
     <div className="flex items-start gap-3 px-3 py-3">
@@ -74,6 +68,11 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
         {showMeta ? (
           // Есть чипы (дата/рынок/важное) — кнопки изменить/удалить встают в тот же ряд, рядом с датой.
           <div className="mt-1 flex flex-wrap items-center gap-2">
+            {fromMeeting && (
+              <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 7, padding: "2px 7px" }}>
+                <RoyIcon name="meet" size={11} /> Встреча
+              </span>
+            )}
             <Market code={task.country} />
             {due && (
               <span
@@ -101,7 +100,7 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
         ) : null}
       </div>
 
-      {showAssignee && assignee && <Avatar size={26}>{initials(assignee)}</Avatar>}
+      {showAssignee && task.assignees?.length > 0 && <AvatarStack names={task.assignees} size={26} />}
     </div>
   );
 }

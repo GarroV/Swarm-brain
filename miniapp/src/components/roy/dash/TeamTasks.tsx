@@ -1,7 +1,7 @@
 "use client";
 import { useRoyNav } from "../nav";
-import { Avatar, Market } from "../ui";
-import { DashBlock, Row, StatusPill, initials, norm } from "./shared";
+import { AvatarStack, Market } from "../ui";
+import { DashBlock, Row, StatusPill, norm } from "./shared";
 import type { DashboardData } from "./useDashboardData";
 import type { Task } from "@/types";
 
@@ -10,11 +10,10 @@ import type { Task } from "@/types";
 // Источник: splitByOwner().team. Показываем только незавершённые — то, что в работе.
 
 function TeamRow({ t, onOpen }: { t: Task; onOpen: () => void }) {
-  const assignee = t.assignees?.[0];
   return (
     <Row onClick={onOpen}>
-      {assignee ? (
-        <Avatar size={26}>{initials(assignee)}</Avatar>
+      {t.assignees?.length > 0 ? (
+        <AvatarStack names={t.assignees} size={26} />
       ) : (
         <span className="inline-block shrink-0 rounded-full bg-surface-2" style={{ width: 26, height: 26 }} />
       )}
@@ -41,7 +40,7 @@ export function TeamTasks({ data, className }: { data: DashboardData; className?
     <DashBlock
       title="Задачи команды"
       icon="team"
-      tint="var(--status-prog)"
+      tint="var(--tag-link)"
       headAction="Доска"
       loading={loading}
       empty={active.length === 0}
