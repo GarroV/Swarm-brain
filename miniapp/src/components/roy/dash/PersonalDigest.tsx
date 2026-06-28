@@ -14,7 +14,7 @@ export function readDigestDays(): number {
 export const digestPeriodLabel = (d: number) => (d === 14 ? "за 2 недели" : d === 30 ? "за месяц" : "за неделю");
 
 // Кэш последнего дайджеста, чтобы показывать сразу и авто-обновлять раз в день.
-const CACHE_KEY = "roy_digest_cache";
+const CACHE_KEY = "roy_digest_cache_v2"; // bump → сброс старого кэша при смене структуры дайджеста
 type DigestCache = { text: string; at: string; days: number };
 function loadCache(): DigestCache | null {
   if (typeof window === "undefined") return null;

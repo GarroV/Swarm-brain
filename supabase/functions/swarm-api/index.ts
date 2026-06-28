@@ -1540,7 +1540,7 @@ Deno.serve(async (req: Request) => {
     const markets: string[] = p?.markets ?? [];
     const role: string = p?.role ?? "";
 
-    type EntryRow = { summary: string | null; content: string; source: string; created_at: string };
+    type EntryRow = { summary: string | null; content: string; source: string; created_at: string; countries?: string[] };
 
     // Варианты стран для матчинга: код + русское имя (entries.countries может хранить любой формат).
     const NAME_TO_CODE: Record<string, string> = Object.fromEntries(
@@ -1554,15 +1554,19 @@ Deno.serve(async (req: Request) => {
     // Персональный дайджест — СТРОГО по странам пользователя (entries.countries ∩ markets),
     // если рынки заданы. Без рынков — по всему воркспейсу.
     let q = supabase.from("entries")
-      .select("summary, content, source, created_at")
+      .select("summary, content, source, created_at, countries")
       .gte("created_at", since)
       .eq("group_id", groupId)
       .not("source", "eq", "digest")
       .or(`is_private.eq.false,and(is_private.eq.true,owner_id.eq.${telegram_id})`)
       .order("created_at", { ascending: false })
       .limit(50);
-    if (countryVariants.length) q = q.overlaps("countries", countryVariants);
-    const { data: entries } = await q;
+    // Строго по странам пользователя И без пан-компанийных записей (тег General / широкий
+    // охват вроде «Happy Restaurant» на 17 стран) — иначе общая инфа протекает как «ахинея».
+    if (countryVariants.length) q = q.overlaps("countries", countryVariants).not("countries", "cs", "{General}");
+    const { data: entriesRaw } = await q;
+    // Отсечь пан-компанийные записи, помеченные слишком многими странами (>6 = не рыночная новость).
+    const entries = (entriesRaw ?? []).filter((e: { countries?: string[] }) => !e.countries || e.countries.length <= 6);
 
     if (!entries?.length) {
       const msg = markets.length
@@ -1574,12 +1578,20 @@ Deno.serve(async (req: Request) => {
     const periodStart = new Date(Date.now() - daysBack * 86400000).toLocaleDateString("ru-RU");
     const periodEnd = new Date().toLocaleDateString("ru-RU");
     const periodLabel = `${periodStart} — ${periodEnd}`;
+    // Помечаем каждую запись страной(ами) пользователя (рус. названия) — чтобы GPT сгруппировал по странам.
+    const marketCodes = new Set(markets.map((m) => (COUNTRY_NAMES[m] ? m : (NAME_TO_CODE[m.toLowerCase()] ?? m))));
+    const entryCountryLabel = (cs?: string[]): string => {
+      const own = (cs ?? []).filter((c) => marketCodes.has(c));
+      const use = own.length ? own : (cs ?? []).filter((c) => c !== "General");
+      return use.map((c) => COUNTRY_NAMES[c] ?? c).join(", ") || "Общее";
+    };
     const entriesText = (entries as EntryRow[]).map((e) => {
       const date = new Date(e.created_at).toLocaleDateString("ru-RU");
-      return `[${e.source} · ${date}] ${(e.summary ?? e.content).slice(0, 300)}`;
+      return `[${entryCountryLabel(e.countries)} · ${date}] ${(e.summary ?? e.content).slice(0, 320)}`;
     }).join("\n\n---\n\n");
 
-    const contextLine = [markets.length ? `Рынки: ${markets.join(", ")}` : "", role ? `Роль: ${role}` : "", userName ? `Имя: ${userName}` : ""].filter(Boolean).join(" | ");
+    const marketNames = markets.map((m) => COUNTRY_NAMES[m] ?? m).join(", ");
+    const contextLine = [marketNames ? `Рынки: ${marketNames}` : "", role ? `Роль: ${role}` : "", userName ? `Имя: ${userName}` : ""].filter(Boolean).join(" | ");
     const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
     const gptRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -1587,8 +1599,8 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: `Ты аналитик команды. Составь персональный дайджест за ${periodLabel} для сотрудника.\nПрофиль: ${contextLine}\n\nСтруктура:\n🌍 По рынкам\n✅ Что сделано\n🔥 Проблемы\n📋 На следующий период\n\nЖЁСТКО: используй ТОЛЬКО факты из предоставленных записей. НЕ придумывай цифры, названия компаний, события, сроки, которых нет в записях. Если по разделу нет данных — пропусти его или напиши «нет данных». Лучше короче и точнее, чем подробно и с домыслами. Отвечай на русском.` },
-          { role: "user", content: entriesText.slice(0, 8000) },
+          { role: "system", content: `Ты аналитик команды. Составь персональный дайджест за ${periodLabel} для сотрудника (${contextLine}).\n\nГЛАВНОЕ: сгруппируй СТРОГО ПО СТРАНАМ. Каждая запись помечена страной в начале — [Страна · дата]. Для КАЖДОЙ страны, по которой есть записи, сделай отдельный блок строго в формате:\n## <Страна>\n- пункт (что обсуждали / сделали / проблема / план по этой стране)\n2–5 пунктов на страну. Страны без записей НЕ упоминай. Не смешивай разные страны в один блок.\n\nЖЁСТКО: используй ТОЛЬКО факты из записей. НЕ придумывай цифры, названия компаний, события, сроки. Не пиши вводных абзацев и итогов — только блоки по странам. Отвечай на русском.` },
+          { role: "user", content: entriesText.slice(0, 9000) },
         ],
         max_tokens: 1500,
       }),
