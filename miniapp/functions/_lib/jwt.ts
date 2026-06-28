@@ -64,7 +64,10 @@ export async function verifyTelegramWidget(
   const hash = params.get("hash");
   if (!hash) return null;
   const pairs: string[] = [];
-  for (const [k, v] of params) if (k !== "hash") pairs.push(`${k}=${v}`);
+  // ВАЖНО: в строку подписи входят ТОЛЬКО поля от Telegram. Наш собственный `next`
+  // (deep-link возврата, напр. с /live) Telegram не подписывал — включать его нельзя,
+  // иначе hash не сойдётся и будет «Invalid Telegram login» при входе с возвратом.
+  for (const [k, v] of params) if (k !== "hash" && k !== "next") pairs.push(`${k}=${v}`);
   pairs.sort();
   const dcs = pairs.join("\n");
 

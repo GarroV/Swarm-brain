@@ -57,7 +57,12 @@ function renderTheses(md: string): ReactNode {
 }
 
 export default function LivePage() {
-  const meetingId = useMemo(() => (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("meeting") : null), []);
+  // ?m=<id> — нейтральный параметр (НЕ ?meeting=, который основное приложение ловит как deep-link).
+  const meetingId = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const p = new URLSearchParams(window.location.search);
+    return p.get("m") ?? p.get("meeting");
+  }, []);
   const recorderHost = useMemo(() => (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("host") === "recorder" : false), []);
   const real = !!meetingId && !recorderHost;
 
@@ -136,7 +141,7 @@ export default function LivePage() {
 
   // ── авторизация в реальном режиме ──
   if (real && loadErr === "AUTH") {
-    const next = encodeURIComponent(`/live?meeting=${meetingId}`);
+    const next = encodeURIComponent(typeof window !== "undefined" ? window.location.pathname + window.location.search : `/live?m=${meetingId}`);
     return (
       <main style={wrapStyle}>
         <div style={{ ...card, padding: 26, textAlign: "center", maxWidth: 420, margin: "60px auto" }}>
