@@ -3,27 +3,25 @@ import { useState, useEffect, useCallback } from "react";
 import {
   fetchAdminWorkspaces, fetchAdminWorkspaceUsers,
   addUserToWorkspace, removeUserFromWorkspace, patchAdminWorkspace,
-  fetchConfig,
 } from "@/lib/api";
 import type { AdminWorkspace, AdminUser } from "@/types";
 import { countryName, COUNTRY_NAMES } from "@/lib/countries";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ChevronLeft, Trash2, UserPlus, Loader2 } from "lucide-react";
+import { Segmented } from "@/components/roy/ui";
+import { RoyIcon } from "@/components/roy/icons";
 
-// ── Workspace list ────────────────────────────────────────────────────────────
+const fieldCls =
+  "w-full rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute";
+const btnPrimary =
+  "rounded-[12px] bg-primary px-3.5 py-2 font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
+// ── Список воркспейсов ────────────────────────────────────────────────────────
 function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => void }) {
   const [workspaces, setWorkspaces] = useState<AdminWorkspace[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchAdminWorkspaces().then(setWorkspaces).finally(() => setLoading(false));
-  }, []);
+  useEffect(() => { fetchAdminWorkspaces().then(setWorkspaces).finally(() => setLoading(false)); }, []);
 
-  if (loading) return <p className="text-center text-muted-foreground py-8 text-sm">Загрузка…</p>;
+  if (loading) return <p className="text-center text-ink-soft py-8 text-sm">Загрузка…</p>;
 
   return (
     <div className="space-y-2">
@@ -31,26 +29,26 @@ function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => void })
         <button
           key={ws.id}
           onClick={() => onSelect(ws)}
-          className="w-full text-left p-3 rounded-lg border bg-card flex items-center justify-between"
+          className="flex w-full items-center justify-between rounded-[16px] border border-line bg-surface px-4 py-3 text-left transition-colors hover:bg-surface-2 active:scale-[0.99] dark:backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
         >
-          <div>
-            <p className="font-medium text-sm">{ws.name}</p>
-            <p className="text-xs text-muted-foreground">{ws.id}</p>
+          <div className="min-w-0">
+            <p className="font-bold text-ink" style={{ fontSize: 15 }}>{ws.name}</p>
+            <p className="font-mono text-ink-mute" style={{ fontSize: 11 }}>{ws.id}</p>
           </div>
-          <Badge variant="secondary">{ws.user_count} чел.</Badge>
+          <span className="shrink-0 rounded-full bg-surface-2 px-2.5 py-1 font-mono text-ink-soft" style={{ fontSize: 11 }}>{ws.user_count} чел.</span>
         </button>
       ))}
     </div>
   );
 }
 
-// ── Workspace detail — Users tab ──────────────────────────────────────────────
-
-function WorkspaceUsers({ wsId }: { wsId: string }) {
+// ── Пользователи воркспейса ───────────────────────────────────────────────────
+function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: AdminWorkspace[] }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [addInput, setAddInput] = useState("");
   const [adding, setAdding] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -59,11 +57,14 @@ function WorkspaceUsers({ wsId }: { wsId: string }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Принимаем «@username», «username» или числовой Telegram ID — автоопределение.
   const handleAdd = async () => {
-    const id = Number(addInput.trim());
-    if (!id) return;
-    setAdding(true);
-    try { await addUserToWorkspace(wsId, id); setAddInput(""); load(); }
+    const raw = addInput.trim();
+    if (!raw) return;
+    const ref = /^\d+$/.test(raw) ? { telegramId: Number(raw) } : { username: raw.replace(/^@/, "") };
+    setAdding(true); setErr(null);
+    try { await addUserToWorkspace(wsId, ref); setAddInput(""); load(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "Не удалось добавить"); }
     finally { setAdding(false); }
   };
 
@@ -73,40 +74,65 @@ function WorkspaceUsers({ wsId }: { wsId: string }) {
     load();
   };
 
+  const handleMove = async (userId: number, toWs: string) => {
+    if (!toWs || toWs === wsId) return;
+    await addUserToWorkspace(toWs, { telegramId: userId }); // upsert реассайнит group_id
+    load();
+  };
+
+  const others = allWorkspaces.filter((w) => w.id !== wsId);
+
   return (
     <div className="space-y-3">
       <div className="flex gap-2">
-        <Input
-          placeholder="Telegram ID"
+        <input
+          placeholder="Telegram ID или @username"
           value={addInput}
           onChange={(e) => setAddInput(e.target.value)}
-          className="text-sm"
-          type="number"
+          onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+          className={fieldCls}
         />
-        <Button size="sm" onClick={handleAdd} disabled={adding || !addInput.trim()}>
-          {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-        </Button>
+        <button onClick={handleAdd} disabled={adding || !addInput.trim()} className={btnPrimary} aria-label="Добавить пользователя">
+          <RoyIcon name="plus" size={16} strokeWidth={2.2} />
+        </button>
       </div>
+      {err && <p className="font-semibold" style={{ fontSize: 12.5, color: "var(--pri-high)" }}>{err}</p>}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Загрузка…</p>
+        <p className="text-sm text-ink-soft">Загрузка…</p>
       ) : (
         <div className="space-y-2">
           {users.map((u) => (
-            <div key={u.telegram_id} className="flex items-center gap-2 p-2.5 rounded-lg border bg-card">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{u.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {u.username ? `@${u.username} · ` : ""}{u.telegram_id}
-                </p>
-                {u.role && <p className="text-xs text-muted-foreground">{u.role}</p>}
+            <div key={u.telegram_id} className="rounded-[14px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-1.5 truncate font-semibold text-ink" style={{ fontSize: 13.5 }}>
+                    {u.name}
+                    {u.is_admin && <span className="rounded-[6px] px-1.5 py-0.5 font-mono uppercase" style={{ fontSize: 9, color: "var(--accent-ink)", background: "var(--accent-soft)" }}>admin</span>}
+                  </p>
+                  <p className="font-mono text-ink-mute" style={{ fontSize: 11 }}>
+                    {u.username ? `@${u.username} · ` : ""}{u.telegram_id}
+                  </p>
+                  {u.role && <p className="text-ink-soft" style={{ fontSize: 11 }}>{u.role}</p>}
+                </div>
+                {u.markets.length > 0 && (
+                  <span className="shrink-0 text-ink-soft" style={{ fontSize: 11 }}>{u.markets.map(countryName).join(", ")}</span>
+                )}
+                <button onClick={() => handleRemove(u.telegram_id)} aria-label="Удалить" className="shrink-0 transition-colors hover:opacity-80 active:scale-[0.92]" style={{ color: "var(--pri-high)" }}>
+                  <RoyIcon name="trash" size={16} strokeWidth={1.9} />
+                </button>
               </div>
-              {u.markets.length > 0 && (
-                <span className="text-xs text-muted-foreground">{u.markets.map(countryName).join(", ")}</span>
+              {others.length > 0 && (
+                <select
+                  defaultValue=""
+                  onChange={(e) => { handleMove(u.telegram_id, e.target.value); e.currentTarget.value = ""; }}
+                  className="mt-2 w-full rounded-[10px] border border-line bg-surface-2 px-2 py-1 text-ink-soft outline-none focus:border-[var(--accent-ink)]"
+                  style={{ fontSize: 11.5 }}
+                >
+                  <option value="">↪ Переместить в…</option>
+                  {others.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select>
               )}
-              <button onClick={() => handleRemove(u.telegram_id)} className="text-muted-foreground hover:text-destructive">
-                <Trash2 className="w-4 h-4" />
-              </button>
             </div>
           ))}
         </div>
@@ -115,22 +141,18 @@ function WorkspaceUsers({ wsId }: { wsId: string }) {
   );
 }
 
-// ── Workspace detail — Markets tab ────────────────────────────────────────────
-
+// ── Рынки воркспейса ──────────────────────────────────────────────────────────
 function WorkspaceMarkets({ ws, onUpdated }: { ws: AdminWorkspace; onUpdated: () => void }) {
   const allCodes = Object.keys(COUNTRY_NAMES);
   const [selected, setSelected] = useState<string[] | null>(ws.allowed_markets);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-
   const isCustom = selected !== null;
 
   const toggle = (code: string) => {
     if (!isCustom) return;
-    setSelected(prev =>
-      (prev ?? allCodes).includes(code)
-        ? (prev ?? allCodes).filter(c => c !== code)
-        : [...(prev ?? allCodes), code]
+    setSelected((prev) =>
+      (prev ?? allCodes).includes(code) ? (prev ?? allCodes).filter((c) => c !== code) : [...(prev ?? allCodes), code]
     );
   };
 
@@ -138,108 +160,118 @@ function WorkspaceMarkets({ ws, onUpdated }: { ws: AdminWorkspace; onUpdated: ()
     setSaving(true);
     try {
       await patchAdminWorkspace(ws.id, { allowed_markets: selected });
-      setSaved(true);
-      onUpdated();
+      setSaved(true); onUpdated();
       setTimeout(() => setSaved(false), 2000);
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Режим:</p>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setSelected(null)}
-            className={`text-xs px-3 py-1 rounded-full border transition-colors ${!isCustom ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground"}`}
-          >
-            Глобальный список
-          </button>
-          <button
-            onClick={() => setSelected(ws.allowed_markets ?? allCodes)}
-            className={`text-xs px-3 py-1 rounded-full border transition-colors ${isCustom ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground"}`}
-          >
-            Свой список
-          </button>
-        </div>
-      </div>
+      <Segmented
+        items={[{ id: "global", label: "Глобальный список" }, { id: "custom", label: "Свой список" }]}
+        value={isCustom ? "custom" : "global"}
+        onChange={(v) => setSelected(v === "custom" ? (ws.allowed_markets ?? allCodes) : null)}
+      />
 
-      {isCustom && (
+      {isCustom ? (
         <div className="flex flex-wrap gap-1.5">
-          {allCodes.map((code) => (
-            <button
-              key={code}
-              onClick={() => toggle(code)}
-              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                selected!.includes(code)
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "text-muted-foreground border-border"
-              }`}
-            >
-              {countryName(code)}
-            </button>
-          ))}
+          {allCodes.map((code) => {
+            const on = selected!.includes(code);
+            return (
+              <button
+                key={code}
+                onClick={() => toggle(code)}
+                className="rounded-full border px-2.5 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                style={{ fontSize: 11.5, ...(on
+                  ? { background: "var(--primary)", color: "#fff", borderColor: "var(--primary)" }
+                  : { color: "var(--ink-soft)", borderColor: "var(--line-2)" }) }}
+              >
+                {countryName(code)}
+              </button>
+            );
+          })}
         </div>
+      ) : (
+        <p className="text-xs text-ink-soft">Пользователи видят все рынки из глобального списка.</p>
       )}
 
-      {!isCustom && (
-        <p className="text-xs text-muted-foreground">Пользователи видят все рынки из глобального списка.</p>
-      )}
-
-      <Button size="sm" onClick={handleSave} disabled={saving} className="w-full">
+      <button onClick={handleSave} disabled={saving} className={`${btnPrimary} w-full`} style={{ fontSize: 14 }}>
         {saving ? "Сохраняю…" : saved ? "✓ Сохранено" : "Сохранить"}
-      </Button>
+      </button>
     </div>
   );
 }
 
-// ── Workspace detail screen ───────────────────────────────────────────────────
-
+// ── Деталь воркспейса (переименование + табы) ─────────────────────────────────
 function WorkspaceDetail({ ws, onBack }: { ws: AdminWorkspace; onBack: () => void }) {
   const [workspace, setWorkspace] = useState(ws);
+  const [tab, setTab] = useState<"users" | "markets">("users");
+  const [allWorkspaces, setAllWorkspaces] = useState<AdminWorkspace[]>([]);
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState(ws.name);
+
+  useEffect(() => { fetchAdminWorkspaces().then(setAllWorkspaces).catch(() => {}); }, []);
+
+  const saveName = async () => {
+    const n = nameDraft.trim();
+    if (!n || n === workspace.name) { setRenaming(false); return; }
+    const updated = await patchAdminWorkspace(workspace.id, { name: n });
+    setWorkspace((w) => ({ ...w, name: updated?.name ?? n }));
+    setRenaming(false);
+  };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-4 pt-5 pb-3 flex items-center gap-2">
-        <button onClick={onBack} className="text-muted-foreground">
-          <ChevronLeft className="w-5 h-5" />
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-2 px-4 pt-5 pb-3">
+        <button onClick={onBack} aria-label="Назад" className="text-ink-soft transition-colors hover:text-ink">
+          <RoyIcon name="cleft" size={20} strokeWidth={2.2} />
         </button>
-        <h1 className="text-xl font-semibold">{workspace.name}</h1>
-        <span className="text-xs text-muted-foreground ml-auto">{workspace.id}</span>
+        {renaming ? (
+          <input
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") saveName(); if (e.key === "Escape") setRenaming(false); }}
+            autoFocus
+            className={`${fieldCls} flex-1 font-bold`}
+            style={{ fontSize: 18 }}
+          />
+        ) : (
+          <>
+            <h1 className="font-bold text-ink" style={{ fontSize: 20, letterSpacing: "-0.01em" }}>{workspace.name}</h1>
+            <button onClick={() => { setNameDraft(workspace.name); setRenaming(true); }} aria-label="Переименовать" className="transition-colors hover:opacity-80" style={{ color: "var(--accent-ink)" }}>
+              <RoyIcon name="pencil" size={16} strokeWidth={1.9} />
+            </button>
+          </>
+        )}
+        <span className="ml-auto font-mono text-ink-mute" style={{ fontSize: 11 }}>{workspace.id}</span>
       </div>
 
-      <Tabs defaultValue="users" className="flex-1 flex flex-col">
-        <TabsList className="mx-4 grid grid-cols-2">
-          <TabsTrigger value="users">Пользователи</TabsTrigger>
-          <TabsTrigger value="markets">Рынки</TabsTrigger>
-        </TabsList>
-        <TabsContent value="users" className="flex-1 overflow-y-auto px-4 py-3 mt-0">
-          <WorkspaceUsers wsId={workspace.id} />
-        </TabsContent>
-        <TabsContent value="markets" className="flex-1 overflow-y-auto px-4 py-3 mt-0">
-          <WorkspaceMarkets ws={workspace} onUpdated={() => setWorkspace(w => ({ ...w }))} />
-        </TabsContent>
-      </Tabs>
+      <div className="px-4">
+        <Segmented
+          items={[{ id: "users", label: "Пользователи" }, { id: "markets", label: "Рынки" }]}
+          value={tab}
+          onChange={(v) => setTab(v as "users" | "markets")}
+        />
+      </div>
+      <div className="mt-3 flex-1 overflow-y-auto px-4 pb-4">
+        {tab === "users"
+          ? <WorkspaceUsers wsId={workspace.id} allWorkspaces={allWorkspaces} />
+          : <WorkspaceMarkets ws={workspace} onUpdated={() => setWorkspace((w) => ({ ...w }))} />}
+      </div>
     </div>
   );
 }
-
-// ── Main ──────────────────────────────────────────────────────────────────────
 
 export function AdminScreen() {
   const [selected, setSelected] = useState<AdminWorkspace | null>(null);
 
-  if (selected) {
-    return <WorkspaceDetail ws={selected} onBack={() => setSelected(null)} />;
-  }
+  if (selected) return <WorkspaceDetail ws={selected} onBack={() => setSelected(null)} />;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
       <div className="px-4 pt-5 pb-3">
-        <h1 className="text-xl font-semibold">Суперадмин</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">Воркспейсы и рынки</p>
+        <h1 className="font-bold text-ink" style={{ fontSize: 20, letterSpacing: "-0.01em" }}>Суперадмин</h1>
+        <p className="font-mono uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.08em", marginTop: 2 }}>Воркспейсы · рынки · доступы</p>
       </div>
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         <WorkspaceList onSelect={setSelected} />

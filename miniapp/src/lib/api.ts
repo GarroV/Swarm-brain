@@ -745,9 +745,12 @@ export async function fetchAdminWorkspaceUsers(wsId: string): Promise<AdminUser[
   return apiFetch<AdminUser[]>(`/admin/workspaces/${wsId}/users`);
 }
 
-export async function addUserToWorkspace(wsId: string, telegramId: number): Promise<void> {
+// Добавление/перемещение пользователя в воркспейс. API принимает либо telegram_id, либо
+// username (allowed_users.upsert по telegram_id/username реассайнит group_id → это же = «переместить»).
+export async function addUserToWorkspace(wsId: string, ref: { telegramId?: number; username?: string }): Promise<void> {
   if (DEV_MODE) return;
-  return apiFetch<void>(`/admin/workspaces/${wsId}/users`, { method: "POST", body: JSON.stringify({ telegram_id: telegramId }) });
+  const body = ref.telegramId != null ? { telegram_id: ref.telegramId } : { username: ref.username };
+  return apiFetch<void>(`/admin/workspaces/${wsId}/users`, { method: "POST", body: JSON.stringify(body) });
 }
 
 export async function removeUserFromWorkspace(wsId: string, userId: number): Promise<void> {
