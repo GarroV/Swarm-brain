@@ -4,7 +4,7 @@ import { RoyIcon } from "../icons";
 import { Market } from "../ui";
 import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "../screens/RoyMeetingsScreen";
-import { DashBlock, Row, AccentBadge, fmtDate } from "./shared";
+import { DashBlock, Row, AccentBadge, SubHead, fmtDate } from "./shared";
 import type { DashboardData } from "./useDashboardData";
 import type { Entry } from "@/types";
 
@@ -52,8 +52,13 @@ function MeetingRow({ e, onOpen }: { e: Entry; onOpen: () => void }) {
 
 export function MeetingsApprove({ data, className }: { data: DashboardData; className?: string }) {
   const { push, setTab } = useRoyNav();
-  const { loading, meetingsApprovalFirst, pendingMeetings, reviewCount } = data;
+  const { loading, pendingList, recentMeetings, pendingMeetings, reviewCount } = data;
   const approvalCount = pendingMeetings + reviewCount;
+  // Превью в карточке: pending — что требует решения, recent — недавно опубликованные.
+  // Полные списки за «Ревью» (шапка → meetAdmin) и «Все встречи» (вкладка cal).
+  const pendingShown = pendingList.slice(0, 6);
+  const recentShown = recentMeetings.slice(0, 4);
+  const open = (id: string) => push({ view: "meetingDetail", params: { id } });
 
   return (
     <DashBlock
@@ -63,14 +68,27 @@ export function MeetingsApprove({ data, className }: { data: DashboardData; clas
       badge={approvalCount > 0 ? <AccentBadge>{approvalCount} на согласовании</AccentBadge> : undefined}
       headAction="Ревью"
       loading={loading}
-      empty={meetingsApprovalFirst.length === 0}
+      empty={pendingList.length === 0 && recentMeetings.length === 0}
       emptyText="Встреч нет"
       onHead={() => push({ view: "meetAdmin" })}
       className={className}
     >
-      {meetingsApprovalFirst.map((e) => (
-        <MeetingRow key={e.id} e={e} onOpen={() => push({ view: "meetingDetail", params: { id: e.id } })} />
-      ))}
+      {pendingShown.length > 0 && (
+        <>
+          <SubHead count={pendingMeetings}>Требуют решения</SubHead>
+          {pendingShown.map((e) => (
+            <MeetingRow key={e.id} e={e} onOpen={() => open(e.id)} />
+          ))}
+        </>
+      )}
+      {recentShown.length > 0 && (
+        <>
+          <SubHead>Недавние</SubHead>
+          {recentShown.map((e) => (
+            <MeetingRow key={e.id} e={e} onOpen={() => open(e.id)} />
+          ))}
+        </>
+      )}
       {/* Полный список встреч (Все/Ожидают/Подтверждены) — на desktop сайдбара нет, поэтому
           вход во вкладку «Встречи» здесь. Шапка панели ведёт в ревью (meetAdmin). */}
       <button

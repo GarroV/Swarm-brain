@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRoyNav } from "../nav";
 import { fetchTasks, fetchMeetings, fetchEntries, fetchAgentMeetings } from "@/lib/api";
-import { splitByOwner, groupMine, recentEntries, sortMeetingsApprovalFirst } from "./myTasks";
+import { splitByOwner, groupMine, recentEntries } from "./myTasks";
 import type { Task, Entry } from "@/types";
 
 // Единый источник данных desktop-главного экрана «Рой». Грузит tasks / meetings /
@@ -24,9 +24,11 @@ export type DashboardData = {
   noDate: Task[];
   /** всё за последние 24ч (заметки + встречи/расшифровки), от новых к старым */
   materials: Entry[];
-  /** встречи: неподтверждённые первыми */
-  meetingsApprovalFirst: Entry[];
-  /** число неподтверждённых встреч (для бейджа «на согласовании») */
+  /** встречи на согласовании (админ — весь воркспейс, иначе свои) */
+  pendingList: Entry[];
+  /** недавние опубликованные (подтверждённые) встречи */
+  recentMeetings: Entry[];
+  /** число встреч на согласовании (= pendingList.length; для бейджа) */
   pendingMeetings: number;
   /** число черновиков desktop-agent на вычитке */
   reviewCount: number;
@@ -45,6 +47,7 @@ export function useDashboardData(): DashboardData {
   const [meetings, setMeetings] = useState<Entry[] | null>(null);
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [reviewCount, setReviewCount] = useState<number | null>(null);
+  const [pending, setPending] = useState<Entry[] | null>(null);
 
   // tasksVersion в deps: после сохранения/удаления задачи в окне-редакторе списки задач на
   // главной («Мои»/«Команда») перезапрашиваются (общий рефреш без per-caller колбэков).
@@ -60,10 +63,18 @@ export function useDashboardData(): DashboardData {
       .catch(() => setReviewCount(0));
   }, []);
 
+  // Очередь «на согласовании»: админ — весь воркспейс (all=true), иначе только свои.
+  // Отдельный запрос — дефолтный /meetings приватность-фильтрован и НЕ содержит чужие pending.
+  useEffect(() => {
+    fetchMeetings({ confirmed: false, all: !!me?.is_admin })
+      .then(setPending)
+      .catch(() => setPending([]));
+  }, [me?.is_admin]);
+
   const meId = me?.telegram_id ?? null;
 
   return useMemo<DashboardData>(() => {
-    const loading = tasks == null || meetings == null || entries == null || reviewCount == null;
+    const loading = tasks == null || meetings == null || entries == null || reviewCount == null || pending == null;
 
     // meId нет → все задачи в «команду», личные секции пусты (graceful).
     const { mine, team } = meId == null
@@ -78,8 +89,11 @@ export function useDashboardData(): DashboardData {
     // Granola-встречи не видны в ленте, хотя пользователь их там ждёт.
     const materials = recentEntries([...(entries ?? []), ...(meetings ?? [])], Date.now());
 
-    const meetingsApprovalFirst = sortMeetingsApprovalFirst(meetings ?? []);
-    const pendingMeetings = (meetings ?? []).filter((m) => m.metadata?.confirmed !== true).length;
+    const pendingList = pending ?? [];
+    // «Недавние» — только опубликованные (подтверждённые) из видимых; pending показываем
+    // отдельной секцией, поэтому здесь их исключаем (иначе свои pending задвоились бы).
+    const recentMeetings = (meetings ?? []).filter((m) => m.metadata?.confirmed === true);
+    const pendingMeetings = pendingList.length;
 
     return {
       loading,
@@ -89,9 +103,10 @@ export function useDashboardData(): DashboardData {
       week,
       noDate,
       materials,
-      meetingsApprovalFirst,
+      pendingList,
+      recentMeetings,
       pendingMeetings,
       reviewCount: reviewCount ?? 0,
     };
-  }, [tasks, meetings, entries, reviewCount, meId]);
+  }, [tasks, meetings, entries, reviewCount, pending, meId]);
 }
