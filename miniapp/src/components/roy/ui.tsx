@@ -270,6 +270,22 @@ function renderInline(text: string): ReactNode {
   );
 }
 
+// Цветные эмодзи-заголовки дайджеста (🌍 ✅ 🔥 📋…) чужеродны лайн-арт-стилю → меняем на
+// пиктограммы проекта. Неизвестный ведущий эмодзи просто срезаем (без иконки), чтобы сырых
+// смайлов не оставалось.
+const EMOJI_ICON: Record<string, RoyIconName> = {
+  "🌍": "globe", "🌎": "globe", "🌏": "globe", "🗺": "globe",
+  "✅": "check", "✔": "check", "☑": "check",
+  "🔥": "flag", "⚠": "flag", "❗": "flag", "🚨": "flag", "🎯": "flag",
+  "📋": "note", "📝": "note", "🗒": "note", "📌": "note", "📅": "cal",
+  "🚀": "spark", "💡": "spark", "🎙": "mic", "👤": "team", "👥": "team", "🔗": "link",
+};
+function leadEmoji(text: string): { icon: RoyIconName | null; rest: string; had: boolean } {
+  const m = text.match(/^\s*(\p{Extended_Pictographic})️?\s*/u);
+  if (!m) return { icon: null, rest: text, had: false };
+  return { icon: EMOJI_ICON[m[1]] ?? null, rest: text.slice(m[0].length), had: true };
+}
+
 export function TezisyBlocks({ text, className, onDeepen }: { text: string; className?: string; onDeepen?: (topic: string) => void }) {
   const blocks = parseTezisy(text);
   if (blocks.length === 0) return null;
@@ -277,9 +293,11 @@ export function TezisyBlocks({ text, className, onDeepen }: { text: string; clas
     <div className={cn("flex flex-col", className)} style={{ gap: 9 }}>
       {blocks.map((b, i) => {
         if (b.kind === "heading") {
+          const { icon, rest } = leadEmoji(b.text);
           return (
-            <div key={i} className="font-semibold text-ink" style={{ fontSize: 14, letterSpacing: "-0.01em", marginTop: i === 0 ? 0 : 5 }}>
-              {renderInline(b.text)}
+            <div key={i} className="flex items-center gap-2 font-semibold text-ink" style={{ fontSize: 14, letterSpacing: "-0.01em", marginTop: i === 0 ? 0 : 5 }}>
+              {icon && <RoyIcon name={icon} size={15} strokeWidth={1.9} className="shrink-0 text-accent-ink" />}
+              <span>{renderInline(rest)}</span>
             </div>
           );
         }
@@ -305,6 +323,18 @@ export function TezisyBlocks({ text, className, onDeepen }: { text: string; clas
               ))}
             </ul>
           );
+        }
+        {
+          // Строка вида «🌍 **По рынкам…**» — это заголовок секции дайджеста: эмодзи → иконка.
+          const { icon, rest, had } = leadEmoji(b.text);
+          if (had) {
+            return (
+              <div key={i} className="flex items-center gap-2 font-semibold text-ink" style={{ fontSize: 14, letterSpacing: "-0.01em", marginTop: i === 0 ? 0 : 5 }}>
+                {icon && <RoyIcon name={icon} size={15} strokeWidth={1.9} className="shrink-0 text-accent-ink" />}
+                <span>{renderInline(rest)}</span>
+              </div>
+            );
+          }
         }
         return (
           <p key={i} className="text-ink leading-relaxed whitespace-pre-wrap" style={{ fontSize: 14 }}>
