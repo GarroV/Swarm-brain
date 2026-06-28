@@ -37,7 +37,7 @@ export function TeamScreen() {
         <h1 className="text-xl font-semibold">Команда</h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 space-y-2">
         {loading ? (
           <p className="text-center text-muted-foreground py-8 text-sm">Загрузка…</p>
         ) : users.length === 0 ? (

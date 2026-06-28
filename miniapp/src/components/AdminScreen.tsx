@@ -290,7 +290,7 @@ function WorkspaceDetail({ ws, onBack }: { ws: AdminWorkspace; onBack: () => voi
           onChange={(v) => setTab(v as "users" | "markets")}
         />
       </div>
-      <div className="mt-3 flex-1 overflow-y-auto px-4 pb-4">
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         {tab === "users"
           ? <WorkspaceUsers wsId={workspace.id} allWorkspaces={allWorkspaces} />
           : <WorkspaceMarkets ws={workspace} onUpdated={() => setWorkspace((w) => ({ ...w }))} />}
@@ -347,7 +347,7 @@ export function AdminScreen() {
         <h1 className="font-bold text-ink" style={{ fontSize: 20, letterSpacing: "-0.01em" }}>Суперадмин</h1>
         <p className="font-mono uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.08em", marginTop: 2 }}>Воркспейсы · рынки · доступы · рассылка</p>
       </div>
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-4">
         <BroadcastBlock />
         <WorkspaceList onSelect={setSelected} />
       </div>
