@@ -1,23 +1,40 @@
 "use client";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRoyNav } from "./nav";
 import { AnswerBody } from "./screens/AnswerScreen";
+import { RecordBody } from "./screens/RecordDetail";
 import { RoyIcon } from "./icons";
+import { fetchEntry } from "@/lib/api";
+import type { Entry } from "@/types";
 
-// Контекстное окно ответа (десктоп) — поверх дашборда, как другие модалки. На мобайле
-// показывается на весь экран (push идёт мимо — там AnswerScreen). Уточнения переспрашивают
-// внутри окна, источник — закрывает окно и открывает запись.
-export function AnswerModal({ query, onClose }: { query: string; onClose: () => void }) {
-  const { push } = useRoyNav();
-  const [q, setQ] = useState(query);
-
-  useEffect(() => { setQ(query); }, [query]);
+// Запись внутри окна (источник из ответа) — НЕ уводим на отдельный экран, чтобы «Назад»
+// возвращал к результатам поиска, а не на главную.
+function ModalRecord({ id }: { id: string }) {
+  const [e, setE] = useState<Entry | null>(null);
+  const [err, setErr] = useState(false);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    let alive = true;
+    setE(null); setErr(false);
+    fetchEntry(id).then((x) => alive && setE(x)).catch(() => alive && setErr(true));
+    return () => { alive = false; };
+  }, [id]);
+  if (err) return <div className="py-8 text-center text-sm text-ink-soft">Не удалось загрузить запись.</div>;
+  if (!e) return <div className="py-8 text-center text-sm text-ink-soft">Загрузка…</div>;
+  return <RecordBody entry={e} />;
+}
+
+// Контекстное окно ответа (десктоп) поверх дашборда. Уточнения переспрашивают внутри окна,
+// источник раскрывается внутри окна же (с «Назад» к ответу) — без прыжка на главную.
+export function AnswerModal({ query, onClose }: { query: string; onClose: () => void }) {
+  const [q, setQ] = useState(query);
+  const [recordId, setRecordId] = useState<string | null>(null);
+
+  useEffect(() => { setQ(query); setRecordId(null); }, [query]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { if (recordId) setRecordId(null); else onClose(); } };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, recordId]);
 
   if (typeof document === "undefined") return null;
   return createPortal(
@@ -30,11 +47,16 @@ export function AnswerModal({ query, onClose }: { query: string; onClose: () => 
         style={{ maxHeight: "88vh" }}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-3.5">
-          <span className="flex items-center gap-2 font-bold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>
-            <RoyIcon name="spark" size={17} className="text-primary" /> Ответ
-          </span>
+          {recordId ? (
+            <button onClick={() => setRecordId(null)} className="inline-flex items-center gap-0.5 font-semibold text-primary transition-transform active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" style={{ fontSize: 15 }}>
+              <RoyIcon name="cleft" size={18} strokeWidth={2.2} /> Назад
+            </button>
+          ) : (
+            <span className="flex items-center gap-2 font-bold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>
+              <RoyIcon name="spark" size={17} className="text-primary" /> Ответ
+            </span>
+          )}
           <button
-            type="button"
             onClick={onClose}
             aria-label="Закрыть"
             className="flex items-center justify-center rounded-[10px] p-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
@@ -43,7 +65,9 @@ export function AnswerModal({ query, onClose }: { query: string; onClose: () => 
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          <AnswerBody query={q} onFollowup={setQ} onOpenRecord={(id) => { onClose(); push({ view: "record", params: { id } }); }} />
+          {recordId
+            ? <ModalRecord id={recordId} />
+            : <AnswerBody query={q} onFollowup={setQ} onOpenRecord={setRecordId} />}
         </div>
       </div>
     </div>,
