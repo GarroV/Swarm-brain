@@ -2,18 +2,8 @@
 import { useState, useEffect } from "react";
 import { fetchUsers } from "@/lib/api";
 import type { User } from "@/types";
-import { Badge } from "@/components/ui/badge";
-
-function Initials({ name }: { name: string }) {
-  const isId = /^\d+$/.test(name);
-  const parts = isId ? ["#"] : name.trim().split(" ");
-  const letters = isId ? "#" : parts.length >= 2 ? parts[0][0] + parts[1][0] : parts[0].slice(0, 2);
-  return (
-    <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm shrink-0 uppercase">
-      {letters}
-    </div>
-  );
-}
+import { Avatar } from "@/components/roy/ui";
+import { initials } from "@/components/roy/dash/shared";
 
 const ROLE_LABELS: Record<string, string> = {
   marketing: "Marketing",
@@ -21,45 +11,41 @@ const ROLE_LABELS: Record<string, string> = {
   rnd: "R&D",
 };
 
+// Заголовок не рендерим: в поповере «Ещё» его даёт Segmented-таб «Команда», в мобильном
+// push-стеке — NavHeader. Свой h1 раньше дублировал их (двойной заголовок).
 export function TeamScreen() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchUsers()
-      .then(setUsers)
-      .finally(() => setLoading(false));
+    fetchUsers().then(setUsers).finally(() => setLoading(false));
   }, []);
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-4 pt-5 pb-3">
-        <h1 className="text-xl font-semibold">Команда</h1>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 space-y-2">
+    <div className="flex h-full flex-col">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-4 pt-4">
         {loading ? (
-          <p className="text-center text-muted-foreground py-8 text-sm">Загрузка…</p>
+          <p className="py-8 text-center text-sm text-ink-soft">Загрузка…</p>
         ) : users.length === 0 ? (
-          <p className="text-center text-muted-foreground py-8 text-sm">Нет участников</p>
+          <p className="py-8 text-center text-sm text-ink-soft">Нет участников</p>
         ) : (
           users.map((u) => (
-            <div key={u.telegram_id} className="flex items-center gap-3 p-3 rounded-lg border bg-card">
-              <Initials name={u.name} />
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm">{/^\d+$/.test(u.name) ? `#${u.name}` : u.name}</p>
-                {u.username && (
-                  <p className="text-xs text-muted-foreground">@{u.username}</p>
-                )}
+            <div key={u.telegram_id} className="flex items-center gap-3 rounded-[14px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
+              <Avatar size={38}>{initials(u.name)}</Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-semibold text-ink" style={{ fontSize: 13.5 }}>
+                  {/^\d+$/.test(u.name) ? `#${u.name}` : u.name}
+                </p>
+                {u.username && <p className="font-mono text-ink-mute" style={{ fontSize: 11 }}>@{u.username}</p>}
               </div>
-              <div className="flex flex-col items-end gap-1 shrink-0">
+              <div className="flex shrink-0 flex-col items-end gap-1">
                 {u.role && (
-                  <Badge variant="outline" className="text-xs">
+                  <span className="rounded-[7px] px-2 py-0.5 font-semibold" style={{ fontSize: 10.5, color: "var(--accent-ink)", background: "var(--accent-soft)" }}>
                     {ROLE_LABELS[u.role] ?? u.role}
-                  </Badge>
+                  </span>
                 )}
                 {u.markets.length > 0 && (
-                  <span className="text-xs text-muted-foreground">{u.markets.join(", ")}</span>
+                  <span className="text-ink-soft" style={{ fontSize: 11 }}>{u.markets.join(", ")}</span>
                 )}
               </div>
             </div>
