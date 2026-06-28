@@ -2,14 +2,11 @@
 import { useState } from "react";
 import { useRoyNav } from "../nav";
 import { RoyIcon } from "../icons";
-import { RoyCard, Chip } from "../ui";
+import { RoyCard } from "../ui";
 import { saveRecent } from "../screens/SearchScreen";
 
 // Центр-верх главного экрана: поисковый герой «Рой» (RAG + поиск по базе).
-// Поле — рамка 2px ink, иконка spark (primary), ⌘K-kbd. Чипы быстрых запросов.
-// Submit / чип → push({view:"answer"}). Ответ синтезирует AnswerScreen.
-
-const QUICK: string[] = ["Что нового за неделю?", "Задачи на сегодня", "Решения по рынкам", "Итоги встреч"];
+// Только поле поиска (чипы-заготовки убраны по запросу). Submit → openAnswer (модал-ответ).
 
 export function SearchHero() {
   const { openAnswer } = useRoyNav();
@@ -55,14 +52,6 @@ export function SearchHero() {
           </kbd>
         </div>
       </form>
-
-      <div className="flex flex-wrap justify-center gap-2" style={{ maxWidth: 560 }}>
-        {QUICK.map((s) => (
-          <Chip key={s} onClick={() => go(s)}>
-            {s}
-          </Chip>
-        ))}
-      </div>
     </RoyCard>
   );
 }
