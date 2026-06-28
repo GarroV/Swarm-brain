@@ -16,7 +16,6 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ChevronDown, ChevronRight, CheckCircle, Wifi, WifiOff, Loader2 } from "lucide-react";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 
 // ── Profile section ───────────────────────────────────────────────────────────
@@ -155,7 +154,7 @@ function GranolaNoteModal({
 
           {!preview ? (
             <Button size="sm" variant="secondary" onClick={loadPreview} disabled={loadingPreview} className="w-full">
-              {loadingPreview ? <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />Генерирую тезисы…</> : "Посмотреть тезисы (GPT)"}
+              {loadingPreview ? "Генерирую тезисы…" : "Посмотреть тезисы (GPT)"}
             </Button>
           ) : (
             <div>
@@ -235,7 +234,7 @@ function GranolaSection() {
     return (
       <div className="space-y-3">
         <div className="flex items-center gap-2 text-sm">
-          <WifiOff className="w-4 h-4 text-muted-foreground" />
+          <RoyIcon name="link" size={16} strokeWidth={1.9} className="text-ink-mute" />
           <span className="text-muted-foreground">Granola не подключена</span>
         </div>
         {!showForm ? (
@@ -266,7 +265,7 @@ function GranolaSection() {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm">
-          <Wifi className="w-4 h-4 text-status-done" />
+          <RoyIcon name="link" size={16} strokeWidth={1.9} className="text-status-done" />
           <span>Granola подключена</span>
         </div>
         <button onClick={handleDisconnect} className="text-xs text-muted-foreground hover:text-destructive">
@@ -360,7 +359,7 @@ function DigestSection() {
       </div>
       <p className="text-xs text-ink-soft">Этот период используется для дайджеста на главной.</p>
       <Button onClick={handleGenerate} disabled={generating} className="w-full">
-        {generating ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Генерирую (~10 сек)…</> : "Сгенерировать дайджест"}
+        {generating ? "Генерирую (~10 сек)…" : "Сгенерировать дайджест"}
       </Button>
       {result && (
         <div className="p-3 rounded-lg border bg-muted/50">
