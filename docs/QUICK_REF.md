@@ -14,6 +14,7 @@ supabase functions deploy swarm-recorder-version --no-verify-jwt # публич�
 supabase functions deploy meeting-ingest --no-verify-jwt     # приём аудио → Storage → durable-обработка
 supabase functions deploy meeting-process --no-verify-jwt    # cron-воркер durable-обработки (pg_cron 'meetings-process', каждую минуту)
 supabase functions deploy meeting-status --no-verify-jwt     # статус встреч пачкой (рекордер чистит локальный бэкап по done)
+supabase functions deploy meeting-webtoken --no-verify-jwt   # обмен recorder-токена на web-JWT (cookie roj_session) для панели /live в WKWebView рекордера
 # granola-poller — legacy, НЕ деплоить: поллинг Granola внутри swarm-bot ({granola_poll:true} крон)
 supabase secrets set BOT_NAME=swarm-bot                       # env-переменные
 ```
