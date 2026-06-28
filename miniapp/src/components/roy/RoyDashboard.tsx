@@ -41,7 +41,7 @@ export function RoyDashboard() {
 
         <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
           <SearchHero />
-          <PersonalDigest className="min-h-0" />
+          <PersonalDigest className="min-h-0 flex-1" />
           {/* «Добавлено за сутки» (Materials) временно скрыто — переиспользуем позже */}
         </div>
 

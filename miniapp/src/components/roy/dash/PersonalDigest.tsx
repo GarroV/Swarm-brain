@@ -80,13 +80,13 @@ export function PersonalDigest({ className }: { className?: string }) {
         <span className="font-mono uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.08em" }}>{digestPeriodLabel(days)}</span>
       </div>
 
-      <div className="space-y-2.5 px-4 py-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 px-4 py-3">
         {text ? (
           <>
-            <div className="max-h-[340px] overflow-y-auto pr-1">
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
               <TezisyBlocks text={text} onDeepen={(topic) => push({ view: "answer", params: { query: `Расскажи подробнее: ${topic}` } })} />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <button onClick={() => run(days)} disabled={generating} className="font-semibold text-primary transition-opacity hover:opacity-80 disabled:opacity-60" style={{ fontSize: 12.5 }}>
                 {generating ? "Обновляю…" : "↻ Обновить"}
               </button>

@@ -259,6 +259,17 @@ function parseTezisy(src: string): TezisyBlock[] {
   return blocks;
 }
 
+// Инлайн-markdown: **жирный** → <strong> (срезаем звёздочки). GPT-дайджест шлёт **...**,
+// а tezisy встреч иногда тоже — иначе видны сырые звёздочки.
+function renderInline(text: string): ReactNode {
+  const parts = text.split(/(\*\*[^*]+?\*\*)/g);
+  return parts.map((p, i) =>
+    p.length > 4 && p.startsWith("**") && p.endsWith("**")
+      ? <strong key={i} className="font-semibold text-ink">{p.slice(2, -2)}</strong>
+      : p,
+  );
+}
+
 export function TezisyBlocks({ text, className, onDeepen }: { text: string; className?: string; onDeepen?: (topic: string) => void }) {
   const blocks = parseTezisy(text);
   if (blocks.length === 0) return null;
@@ -268,7 +279,7 @@ export function TezisyBlocks({ text, className, onDeepen }: { text: string; clas
         if (b.kind === "heading") {
           return (
             <div key={i} className="font-semibold text-ink" style={{ fontSize: 14, letterSpacing: "-0.01em", marginTop: i === 0 ? 0 : 5 }}>
-              {b.text}
+              {renderInline(b.text)}
             </div>
           );
         }
@@ -278,7 +289,7 @@ export function TezisyBlocks({ text, className, onDeepen }: { text: string; clas
               {b.items.map((it, j) => (
                 <li key={j} className="group/deep flex items-start text-ink leading-relaxed" style={{ fontSize: 14, gap: 8 }}>
                   <span className="text-ink-mute select-none" style={{ marginTop: 1 }}>•</span>
-                  <span className="flex-1">{it}</span>
+                  <span className="flex-1">{renderInline(it)}</span>
                   {onDeepen && (
                     <button
                       type="button"
@@ -297,7 +308,7 @@ export function TezisyBlocks({ text, className, onDeepen }: { text: string; clas
         }
         return (
           <p key={i} className="text-ink leading-relaxed whitespace-pre-wrap" style={{ fontSize: 14 }}>
-            {b.text}
+            {renderInline(b.text)}
           </p>
         );
       })}
