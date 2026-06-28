@@ -19,14 +19,15 @@ export function RoyDashboard() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* шапка: лого + аватар */}
-      <div className="flex shrink-0 items-center px-4 pb-1 pt-4">
+      {/* шапка: лого слева, иконка «Карта проекта» справа (симметрично) */}
+      <div className="flex shrink-0 items-center justify-between px-4 pb-1 pt-4">
         <div className="flex items-center gap-2.5">
           <RoyMark size={32} />
           <span className="font-bold" style={{ fontSize: 22, letterSpacing: "-0.01em" }}>
             Swarm
           </span>
         </div>
+        <ProjectMapButton />
       </div>
 
       {/* 3 колонки: лево / центр / право. minmax(0,1fr) — чтобы центр не распирал грид. */}
@@ -42,7 +43,6 @@ export function RoyDashboard() {
         </div>
 
         <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
-          <ProjectMapButton />
           <MeetingsApprove data={data} className="min-h-0 flex-1" />
           <TeamTasks data={data} className="min-h-0 flex-1" />
         </div>

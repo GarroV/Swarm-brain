@@ -3,9 +3,10 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { RoyIcon } from "../icons";
 
-// Стеклянная кнопка «Карта проекта» (над блоком встреч на дашборде) → полноэкранный
-// оверлей с интерактивной картой системы (статический /system-map.html в iframe).
+// Иконка-чип «Карта проекта» в шапке дашборда справа (зеркало бренд-марки Swarm слева) →
+// полноэкранный оверлей с интерактивной картой системы (статический /system-map.html в iframe).
 // Self-contained: своё состояние open + портал в body, не трогает RoyApp/nav.
+const SIZE = 36; // ≈ размер RoyMark в шапке (32), чуть крупнее под клик
 export function ProjectMapButton() {
   const [open, setOpen] = useState(false);
 
@@ -18,22 +19,17 @@ export function ProjectMapButton() {
 
   return (
     <>
+      {/* Иконка-чип в шапке справа — зеркало бренд-марки Swarm слева (та же скруглённая
+          янтарная плашка), но с глифом-созвездием. Клик → полноэкранная карта. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="group flex shrink-0 items-center gap-3 rounded-[18px] border border-line bg-surface px-4 py-3 text-left transition-[transform,background] hover:-translate-y-px hover:bg-surface-2 active:scale-[0.99] dark:backdrop-blur-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        aria-label="Карта проекта"
+        title="Карта проекта"
+        className="inline-flex shrink-0 items-center justify-center bg-primary text-white transition-transform hover:brightness-110 active:scale-[0.94] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        style={{ width: SIZE, height: SIZE, borderRadius: Math.round(SIZE * 0.31) }}
       >
-        <span
-          className="inline-flex shrink-0 items-center justify-center rounded-[12px]"
-          style={{ width: 38, height: 38, background: "var(--accent-soft)", color: "var(--accent-ink)" }}
-        >
-          <MapGlyph />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block font-bold text-ink" style={{ fontSize: 15, letterSpacing: "-0.01em" }}>Карта проекта</span>
-          <span className="block text-ink-soft" style={{ fontSize: 12 }}>Архитектура и связи системы</span>
-        </span>
-        <RoyIcon name="cright" size={18} className="shrink-0 text-ink-soft transition-transform group-hover:translate-x-0.5" />
+        <MapGlyph />
       </button>
 
       {open && typeof document !== "undefined" && createPortal(
@@ -62,9 +58,9 @@ export function ProjectMapButton() {
 }
 
 // Мини-созвездие узлов — на тему «галактика / граф системы».
-function MapGlyph() {
+function MapGlyph({ size = 22 }: { size?: number }) {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <circle cx="4" cy="6" r="2" />
       <circle cx="15.5" cy="4.5" r="2" />
       <circle cx="11" cy="15" r="2" />
