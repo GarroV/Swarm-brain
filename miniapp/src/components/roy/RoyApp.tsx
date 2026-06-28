@@ -144,8 +144,9 @@ export function RoyApp({ me }: { me: Me | null }) {
               // (не размыта). Frost/стекло — на самих карточках (RoyCard). Читаемость голого
               // текста подстрахована вуалью + приглушённой галактикой.
               "dark:bg-[#0a0b07]/22",
-              // Десктоп — во всю ширину экрана (master-detail выигрывает от простора). Мобайл — узкая колонка.
-              isDashboard ? "max-w-[1600px]" : "max-w-[480px] lg:max-w-none",
+              // Десктоп — единая оптимальная ширина с авто-полями по краям (во всю ширину
+              // получалось «дерьмо»: строки/текст растягивались на весь монитор). Мобайл — узкая колонка.
+              isDashboard ? "max-w-[1280px]" : "max-w-[480px] lg:max-w-[1280px]",
             )}
           >
             {top ? (
@@ -221,6 +222,7 @@ function PushScreen({ route }: { route: RoyRoute }) {
   if (route.view === "newEntry") return <NewEntry />;
   if (route.view === "meetingDetail") return <MeetingDetail id={route.params.id} />;
   if (route.view === "more") return <MoreScreen />;
+  if (route.view === "map") return <MapScreen />;
   if (route.view === "settings") return <Wrapped title="Настройки"><SettingsScreen /></Wrapped>;
   if (route.view === "team") return <Wrapped title="Команда"><TeamScreen /></Wrapped>;
   if (route.view === "admin") return <Wrapped title="Админ"><AdminScreen /></Wrapped>;
