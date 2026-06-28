@@ -1161,17 +1161,43 @@ Deno.serve(async (req: Request) => {
     return json(await withRecorderNames((data ?? []) as Array<{ recorders?: unknown }>), 200, origin);
   }
 
-  // GET/PATCH /agent-meetings/:id, POST /agent-meetings/:id/publish
+  // GET/PATCH/DELETE /agent-meetings/:id, POST /:id/publish, GET/POST /:id/notes (live-пометки)
   const agentMeetingMatch = routePath.match(/^\/agent-meetings\/([^/]+)$/);
   const agentPublishMatch = routePath.match(/^\/agent-meetings\/([^/]+)\/publish$/);
-  if (agentMeetingMatch || agentPublishMatch) {
-    const mId = (agentMeetingMatch ?? agentPublishMatch)![1];
+  const agentNotesMatch = routePath.match(/^\/agent-meetings\/([^/]+)\/notes$/);
+  if (agentMeetingMatch || agentPublishMatch || agentNotesMatch) {
+    const mId = (agentMeetingMatch ?? agentPublishMatch ?? agentNotesMatch)![1];
     const { data: mRow } = await supabase.from("meetings").select("*").eq("id", mId).maybeSingle();
     const meeting = mRow as Record<string, unknown> | null;
     const recorders = (meeting?.recorders as Array<{ telegram_id: number }> | undefined) ?? [];
     const isRecorder = recorders.some((r) => r.telegram_id === telegram_id);
     if (!meeting || meeting.group_id !== groupId || (!isRecorder && !isAdmin)) {
       return apiErr(404, "Not found", origin);
+    }
+
+    // ── Live-пометки «Роя» (meeting_live_notes) — для экрана /live ──────────────
+    if (agentNotesMatch && req.method === "GET") {
+      const { data, error } = await supabase
+        .from("meeting_live_notes")
+        .select("id, offset_sec, text, author_id, created_at")
+        .eq("meeting_id", mId)
+        .order("offset_sec", { ascending: true });
+      if (error) return apiErr(500, error.message, origin);
+      return json(data ?? [], 200, origin);
+    }
+    if (agentNotesMatch && req.method === "POST") {
+      if (meeting.status === "in_base") return apiErr(409, "Встреча уже в базе — пометки закрыты", origin);
+      let body: Record<string, unknown>;
+      try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
+      const text = typeof body.text === "string" ? body.text.trim() : "";
+      if (!text) return apiErr(400, "Пустая пометка", origin);
+      const offsetSec = Math.max(0, Math.floor(Number(body.offset_sec) || 0));
+      const { data, error } = await supabase.from("meeting_live_notes")
+        .insert({ meeting_id: mId, group_id: groupId, author_id: telegram_id, offset_sec: offsetSec, text: text.slice(0, 2000) })
+        .select("id, offset_sec, text, author_id, created_at")
+        .single();
+      if (error) return apiErr(500, error.message, origin);
+      return json(data, 201, origin);
     }
 
     // GET — полный черновик (транскрипт + тезисы + участники + имена записавших)
