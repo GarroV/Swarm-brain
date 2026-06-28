@@ -51,7 +51,7 @@ export function GalaxyBackground() {
       ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
       // галактика (additive)
-      const cx = W * 0.5, cy = H * 0.5, rMax = Math.max(W, H) * 0.7; // вся спираль помещается во весь экран (не зум в ядро)
+      const cx = W * 0.5, cy = H * 0.5, rMax = Math.max(W, H) * 1.05; // крупнее — спираль тянется во всю ширину экрана
       const incl = 0.46, tilt = -0.3, cosT = Math.cos(tilt), sinT = Math.sin(tilt);
       const theta = reduce ? 0 : t * 0.00003;
       ctx.globalCompositeOperation = "lighter";
@@ -69,7 +69,7 @@ export function GalaxyBackground() {
         const x = cx + dx * cosT - dy * sinT, y = cy + dx * sinT + dy * cosT;
         if (x < -30 || x > W + 30 || y < -30 || y > H + 30) continue;
         const tw = reduce ? 1 : (0.72 + 0.28 * Math.sin(t * 0.0012 + s.tw)); // мерцание спокойнее
-        const al = (0.6 - s.rf * 0.3) * tw * 0.42; if (al < 0.02) continue;   // звёзды чуть ярче (видно в щелях)
+        const al = (0.6 - s.rf * 0.3) * tw * 0.5; if (al < 0.02) continue;   // ярче — крупная галактика видна во всю ширину
         if (s.sz > 1.9 && halos < 70) { halos++; const gg = ctx.createRadialGradient(x, y, 0, x, y, s.sz * 5); gg.addColorStop(0, TONES[s.tone] + (al * 0.5) + ")"); gg.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(x, y, s.sz * 5, 0, 6.283); ctx.fill(); }
         ctx.fillStyle = TONES[s.tone] + al + ")"; const d = s.sz; ctx.fillRect(x - d * 0.5, y - d * 0.5, d, d);
       }
