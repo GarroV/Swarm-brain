@@ -34,7 +34,7 @@ function initials(name: string | undefined | null): string {
 }
 
 export function SearchScreen() {
-  const { me, push, setTab } = useRoyNav();
+  const { me, push, setTab, openAnswer } = useRoyNav();
   const [q, setQ] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
   const [tasks, setTasks] = useState<Task[] | null>(null);
@@ -50,7 +50,7 @@ export function SearchScreen() {
     const v = query.trim();
     if (!v) return;
     saveRecent(v);
-    push({ view: "answer", params: { query: v } });
+    openAnswer(v);
   };
 
   // Задачи в работе (статус in_progress / progress)

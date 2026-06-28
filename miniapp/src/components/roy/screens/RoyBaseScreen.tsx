@@ -26,7 +26,7 @@ function fmtDate(iso: string | null): string | null {
 }
 
 export function RoyBaseScreen() {
-  const { push } = useRoyNav();
+  const { push, openAnswer } = useRoyNav();
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
@@ -40,7 +40,7 @@ export function RoyBaseScreen() {
   const items = (entries ?? []).filter((e) => filter === "all" || entryFacet(e) === filter);
   const go = (query: string) => {
     const v = query.trim();
-    if (v) push({ view: "answer", params: { query: v } });
+    if (v) openAnswer(v);
   };
 
   return (

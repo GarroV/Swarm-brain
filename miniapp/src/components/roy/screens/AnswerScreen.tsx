@@ -42,8 +42,10 @@ function Loading() {
   );
 }
 
-export function AnswerScreen({ query }: { query: string }) {
-  const { pop, push } = useRoyNav();
+// Тело ответа (запрос + ответ + источники + уточнения) — переиспользуется push-экраном
+// AnswerScreen (мобайл) и AnswerModal (десктоп, контекстное окно). Колбэки определяют,
+// куда вести уточнение/источник в каждом контексте.
+export function AnswerBody({ query, onFollowup, onOpenRecord }: { query: string; onFollowup: (q: string) => void; onOpenRecord: (id: string) => void }) {
   const [data, setData] = useState<AskResult | null>(null);
   const [err, setErr] = useState(false);
 
@@ -54,77 +56,79 @@ export function AnswerScreen({ query }: { query: string }) {
     ask(query)
       .then((r) => alive && setData(r))
       .catch(() => alive && setErr(true));
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [query]);
 
+  return (
+    <>
+      <RoyCard className="px-4 py-3 mb-4 flex items-center gap-2.5">
+        <RoyIcon name="search" size={16} className="text-ink-mute shrink-0" />
+        <span className="text-ink font-medium" style={{ fontSize: 14.5 }}>{query}</span>
+      </RoyCard>
+
+      {!data && !err && <Loading />}
+      {err && <div className="text-ink-soft text-sm py-8 text-center">Не удалось получить ответ. Попробуй ещё раз.</div>}
+
+      {data && (
+        <>
+          {data.answer && (
+            <div className="mb-5">
+              <SectionLabel>Ответ</SectionLabel>
+              <div className="px-4 py-4" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 16 }}>
+                <AnswerText text={data.answer} />
+              </div>
+            </div>
+          )}
+
+          {data.sources.length > 0 && (
+            <div className="mb-5">
+              <SectionLabel>Источники</SectionLabel>
+              <div className="space-y-2.5">
+                {data.sources.map((s) => (
+                  <button key={s.id} type="button" onClick={() => onOpenRecord(s.id)} className="w-full text-left transition-transform active:scale-[0.99]">
+                    <RoyCard className="px-4 py-3.5">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="inline-flex items-center justify-center rounded-full bg-accent-soft text-accent-ink font-bold shrink-0" style={{ width: 20, height: 20, fontSize: 11 }}>{s.n}</span>
+                        <TypeTag type={s.tag as RoyTypeKey} small />
+                        <Market code={s.market} />
+                      </div>
+                      <div className="font-semibold text-ink mb-0.5" style={{ fontSize: 14.5, letterSpacing: "-0.01em" }}>{s.title}</div>
+                      <div className="text-ink-soft line-clamp-2" style={{ fontSize: 13 }}>{s.snippet}</div>
+                    </RoyCard>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.followups.length > 0 && (
+            <div>
+              <SectionLabel>Уточнить</SectionLabel>
+              <div className="flex flex-wrap gap-2">
+                {data.followups.map((f) => (
+                  <Chip key={f} onClick={() => onFollowup(f)}>{f}</Chip>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+// Полноэкранный push-вариант (мобайл / стек).
+export function AnswerScreen({ query }: { query: string }) {
+  const { pop, push } = useRoyNav();
   return (
     <div className="flex flex-col h-full roy-pop">
       <NavHeader onBack={pop} title="Ответ" />
       <div className="flex-1 overflow-y-auto px-5 pb-24">
-        <RoyCard className="px-4 py-3 mb-4 flex items-center gap-2.5">
-          <RoyIcon name="search" size={16} className="text-ink-mute shrink-0" />
-          <span className="text-ink font-medium" style={{ fontSize: 14.5 }}>
-            {query}
-          </span>
-        </RoyCard>
-
-        {!data && !err && <Loading />}
-        {err && <div className="text-ink-soft text-sm py-8 text-center">Не удалось получить ответ. Попробуй ещё раз.</div>}
-
-        {data && (
-          <>
-            {data.answer && (
-              <div className="mb-5">
-                <SectionLabel>Ответ</SectionLabel>
-                <div className="px-4 py-4" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 16 }}>
-                  <AnswerText text={data.answer} />
-                </div>
-              </div>
-            )}
-
-            {data.sources.length > 0 && (
-              <div className="mb-5">
-                <SectionLabel>Источники</SectionLabel>
-                <div className="space-y-2.5">
-                  {data.sources.map((s) => (
-                    <button key={s.id} type="button" onClick={() => push({ view: "record", params: { id: s.id } })} className="w-full text-left transition-transform active:scale-[0.99]">
-                      <RoyCard className="px-4 py-3.5">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span className="inline-flex items-center justify-center rounded-full bg-accent-soft text-accent-ink font-bold shrink-0" style={{ width: 20, height: 20, fontSize: 11 }}>
-                            {s.n}
-                          </span>
-                          <TypeTag type={s.tag as RoyTypeKey} small />
-                          <Market code={s.market} />
-                        </div>
-                        <div className="font-semibold text-ink mb-0.5" style={{ fontSize: 14.5, letterSpacing: "-0.01em" }}>
-                          {s.title}
-                        </div>
-                        <div className="text-ink-soft line-clamp-2" style={{ fontSize: 13 }}>
-                          {s.snippet}
-                        </div>
-                      </RoyCard>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {data.followups.length > 0 && (
-              <div>
-                <SectionLabel>Уточнить</SectionLabel>
-                <div className="flex flex-wrap gap-2">
-                  {data.followups.map((f) => (
-                    <Chip key={f} onClick={() => push({ view: "answer", params: { query: f } })}>
-                      {f}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
+        <AnswerBody
+          query={query}
+          onFollowup={(q) => push({ view: "answer", params: { query: q } })}
+          onOpenRecord={(id) => push({ view: "record", params: { id } })}
+        />
       </div>
     </div>
   );

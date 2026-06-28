@@ -12,14 +12,14 @@ import { saveRecent } from "../screens/SearchScreen";
 const QUICK: string[] = ["Что нового за неделю?", "Задачи на сегодня", "Решения по рынкам", "Итоги встреч"];
 
 export function SearchHero() {
-  const { push } = useRoyNav();
+  const { openAnswer } = useRoyNav();
   const [q, setQ] = useState("");
 
   const go = (query: string) => {
     const v = query.trim();
     if (!v) return;
     saveRecent(v);
-    push({ view: "answer", params: { query: v } });
+    openAnswer(v);
   };
 
   return (
