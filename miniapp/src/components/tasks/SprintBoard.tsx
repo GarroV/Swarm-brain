@@ -1,6 +1,5 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { Plus } from "lucide-react";
 import {
   fetchTasks, updateTask, fetchSprints, createSprint, fetchMe,
   addTasksToSprint, removeTasksFromSprint,
@@ -8,6 +7,14 @@ import {
 import type { Task, Sprint } from "@/types";
 import { statusColor } from "@/lib/timeline";
 import { Button } from "@/components/ui/button";
+import { RoyIcon } from "@/components/roy/icons";
+
+// Дата срока в ru-RU (как в TaskRow), вместо сырой ISO-строки.
+function fmtDay(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
 
 const COLUMNS = [
   { status: "open", label: "Открыто" },
@@ -88,7 +95,7 @@ export function SprintBoard() {
     }
   }
 
-  if (loading) return <p className="text-center text-muted-foreground py-12 text-sm">Загрузка…</p>;
+  if (loading) return <p className="text-center text-ink-soft py-12 text-sm">Загрузка…</p>;
 
   return (
     <div className="flex flex-col h-full">
@@ -108,7 +115,7 @@ export function SprintBoard() {
               key={chip.id}
               onClick={() => setSelected(chip.id)}
               className={`rounded-full px-3 py-1 text-xs font-semibold whitespace-nowrap transition-colors ${
-                active ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
+                active ? "bg-primary text-primary-foreground" : "bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm"
               }`}
             >
               {chip.name}{chip.isActive ? " ·" : ""}
@@ -116,22 +123,22 @@ export function SprintBoard() {
           );
         })}
         {isAdmin && (
-          <button onClick={() => setCreating((v) => !v)} className="rounded-full p-1.5 bg-secondary text-secondary-foreground shrink-0">
-            <Plus className="size-3.5" />
+          <button onClick={() => setCreating((v) => !v)} className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm shrink-0">
+            <RoyIcon name="plus" size={14} strokeWidth={2} />
           </button>
         )}
       </div>
 
       {/* Форма создания спринта */}
       {creating && (
-        <div className="mx-4 mb-2 p-3 rounded-lg border border-border space-y-2">
-          <input className="w-full text-sm bg-transparent border-b border-border py-1 outline-none"
+        <div className="mx-4 mb-2 p-3 rounded-lg border border-line space-y-2">
+          <input className="w-full text-sm bg-transparent border-b border-line py-1 outline-none"
             placeholder="Название спринта" value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <div className="flex gap-2">
-            <input type="date" className="flex-1 text-sm bg-transparent border-b border-border py-1 outline-none"
+            <input type="date" className="flex-1 text-sm bg-transparent border-b border-line py-1 outline-none"
               value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
-            <input type="date" className="flex-1 text-sm bg-transparent border-b border-border py-1 outline-none"
+            <input type="date" className="flex-1 text-sm bg-transparent border-b border-line py-1 outline-none"
               value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
           </div>
           {formErr && <p className="text-xs text-destructive">{formErr}</p>}
@@ -144,13 +151,13 @@ export function SprintBoard() {
       {/* Прогресс выбранного спринта */}
       {selected !== BACKLOG && inScope.length > 0 && (
         <div className="px-5 pb-2">
-          <div className="flex justify-between text-xs text-muted-foreground mb-1">
+          <div className="flex justify-between text-xs text-ink-soft mb-1">
             <span>Прогресс</span>
             <span className="font-semibold">{doneCount}/{inScope.length}</span>
           </div>
-          <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+          <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
             <div className="h-full rounded-full transition-all"
-              style={{ width: `${(doneCount / inScope.length) * 100}%`, background: "oklch(0.72 0.16 155)" }} />
+              style={{ width: `${(doneCount / inScope.length) * 100}%`, background: "var(--status-done)" }} />
           </div>
         </div>
       )}
@@ -166,12 +173,12 @@ export function SprintBoard() {
                 key={col.status}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); if (id) moveStatus(id, col.status); }}
-                className="w-72 shrink-0 flex flex-col rounded-xl bg-muted/40 p-2"
+                className="w-72 shrink-0 flex flex-col rounded-xl bg-surface-2 border border-line p-2 dark:backdrop-blur-lg"
               >
                 <div className="flex items-center gap-2 px-2 py-1.5">
                   <span className="size-2.5 rounded-full" style={{ background: c.bar }} />
-                  <span className="text-sm font-semibold">{col.label}</span>
-                  <span className="ml-auto text-xs text-muted-foreground">{colTasks.length}</span>
+                  <span className="text-sm font-semibold text-ink">{col.label}</span>
+                  <span className="ml-auto text-xs text-ink-soft">{colTasks.length}</span>
                 </div>
                 <div className="flex-1 overflow-y-auto space-y-2 pt-1">
                   {colTasks.map((t) => (
@@ -179,18 +186,18 @@ export function SprintBoard() {
                       key={t.id}
                       draggable
                       onDragStart={(e) => { e.dataTransfer.setData("text/plain", t.id); e.dataTransfer.effectAllowed = "move"; }}
-                      className="rounded-lg bg-card border border-border shadow-sm p-3 cursor-grab active:cursor-grabbing"
+                      className="rounded-lg bg-card border border-line shadow-sm p-3 cursor-grab active:cursor-grabbing dark:backdrop-blur-sm"
                     >
-                      <p className="text-sm font-medium leading-snug">{t.title}</p>
-                      <div className="flex items-center gap-2 mt-2 text-[11px] text-muted-foreground">
-                        {t.due_date && <span>📅 {t.due_date}</span>}
+                      <p className="text-sm font-medium leading-snug text-ink">{t.title}</p>
+                      <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-soft">
+                        {t.due_date && <span className="inline-flex items-center gap-1"><RoyIcon name="cal" size={11} /> {fmtDay(t.due_date)}</span>}
                         {t.assignees.length > 0 && <span className="ml-auto font-bold">{initials(t.assignees)}</span>}
                       </div>
                       <select
                         value={t.sprint_id ?? BACKLOG}
                         onChange={(e) => moveToSprint(t.id, e.target.value)}
                         onClick={(e) => e.stopPropagation()}
-                        className="mt-2 w-full text-[11px] bg-transparent text-muted-foreground border-t border-border pt-1.5 outline-none"
+                        className="mt-2 w-full text-[11px] bg-transparent text-ink-soft border-t border-line pt-1.5 outline-none"
                       >
                         <option value={BACKLOG}>Бэклог</option>
                         {sprints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -198,7 +205,7 @@ export function SprintBoard() {
                     </div>
                   ))}
                   {colTasks.length === 0 && (
-                    <p className="text-center text-xs text-muted-foreground/60 py-6">пусто</p>
+                    <p className="text-center text-xs text-ink-soft/60 py-6">пусто</p>
                   )}
                 </div>
               </div>

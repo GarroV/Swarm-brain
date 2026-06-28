@@ -110,12 +110,13 @@ export function barGeometry(
   return { x: dateToX(only, rangeStart, dayWidth), width: dayWidth, isMilestone: true };
 }
 
-// Editorial-палитра статусов (oklch). Насыщенные акценты вместо монохрома.
+// Статусы — из семантических токенов (--status-*), а не сырой oklch: тюнятся под тёмную
+// тему и совпадают с Таймлайном/StatusPill на той же поверхности задач.
 export function statusColor(status: string): { bar: string; text: string } {
   switch (status) {
-    case "done":        return { bar: "oklch(0.72 0.16 155)", text: "oklch(0.27 0.05 155)" };
-    case "in_progress": return { bar: "oklch(0.78 0.16 75)",  text: "oklch(0.30 0.06 75)" };
-    case "cancelled":   return { bar: "oklch(0.70 0.02 0)",   text: "oklch(0.30 0 0)" };
-    default:            return { bar: "oklch(0.62 0.19 264)", text: "oklch(0.98 0.01 264)" }; // open
+    case "done":        return { bar: "var(--status-done)", text: "var(--status-done)" };
+    case "in_progress": return { bar: "var(--status-prog)", text: "var(--status-prog)" };
+    case "cancelled":   return { bar: "var(--ink-soft)",    text: "var(--ink-soft)" };
+    default:            return { bar: "var(--status-open)", text: "var(--status-open)" }; // open
   }
 }

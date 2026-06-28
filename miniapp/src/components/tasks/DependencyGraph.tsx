@@ -64,12 +64,12 @@ export function DependencyGraph() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <p className="text-center text-muted-foreground py-12 text-sm">Загрузка…</p>;
+  if (loading) return <p className="text-center text-ink-soft py-12 text-sm">Загрузка…</p>;
 
   if (edges.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center p-8 text-center">
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-ink-soft">
           Зависимостей пока нет. Свяжи задачи (X блокирует Y) — связи появятся здесь.
         </p>
       </div>
@@ -88,7 +88,7 @@ export function DependencyGraph() {
     <div className="flex flex-col h-full">
       <header className="px-5 pt-4 pb-2 shrink-0">
         <h1 className="text-2xl font-bold tracking-tight">Граф зависимостей</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
+        <p className="text-sm text-ink-soft mt-0.5">
           {nodeIds.length} задач · {edges.length} связей
         </p>
       </header>
@@ -126,12 +126,12 @@ export function DependencyGraph() {
             return (
               <g key={task.id}>
                 <rect x={x} y={y} width={NODE_W} height={NODE_H} rx={10}
-                  fill="var(--card)" stroke={c.bar} strokeWidth={2} />
+                  fill="var(--popover)" stroke={c.bar} strokeWidth={2} />
                 <rect x={x} y={y} width={4} height={NODE_H} rx={2} fill={c.bar} />
-                <text x={x + 14} y={y + 22} fontSize={12} fontWeight={600} fill="var(--foreground)">
+                <text x={x + 14} y={y + 22} fontSize={12} fontWeight={600} fill="var(--ink)">
                   {task.title.length > 22 ? task.title.slice(0, 21) + "…" : task.title}
                 </text>
-                <text x={x + 14} y={y + 40} fontSize={10} fill="var(--muted-foreground)">
+                <text x={x + 14} y={y + 40} fontSize={10} fill="var(--ink-soft)">
                   {task.status}{task.assignees.length ? ` · ${task.assignees[0]}` : ""}
                 </text>
               </g>
@@ -141,7 +141,7 @@ export function DependencyGraph() {
       </div>
 
       {/* легенда */}
-      <div className="flex gap-4 px-5 py-2 border-t border-border text-[11px] text-muted-foreground shrink-0">
+      <div className="flex gap-4 px-5 py-2 border-t border-line text-[11px] text-ink-soft shrink-0">
         <span className="flex items-center gap-1.5"><span className="w-4 h-px" style={{ background: EDGE_STYLE.blocks.color }} />блокирует</span>
         <span className="flex items-center gap-1.5"><span className="w-4 h-px border-t border-dashed" style={{ borderColor: EDGE_STYLE.relates_to.color }} />связана</span>
         <span className="flex items-center gap-1.5"><span className="w-4 h-px border-t border-dotted" style={{ borderColor: EDGE_STYLE.duplicates.color }} />дубль</span>
