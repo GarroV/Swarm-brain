@@ -125,7 +125,7 @@ supabase functions deploy swarm-api --no-verify-jwt
 
 **Где:** `RoyApp.tsx` рендерит `RoyDashboard` только когда `isDashboard` = desktop (`lg+`) + активна вкладка `search` + push-стек пуст. На узких экранах (`< lg`) домашняя вкладка — `SearchScreen`. Контракт named-export `RoyDashboard` не менять (его импортит `RoyApp`).
 
-**Навигация десктопа — dashboard-центрично (без сайдбара):** левого сайдбара нет. Дашборд — десктоп-дом; его собственная шапка даёт лого и аватар → «Ещё» (настройки/команда/админ). Разделы открываются из шапок панелей дашборда (PersonalTasks/TeamTasks → таб «Задачи», Materials → «База», MeetingsApprove → `meetAdmin`). На секции (таб ≠ `search`) сверху — тонкая строка **«← Главная»** (`setTab("search")`); push-экраны имеют свой «Назад». Мобайл — нижний `RoyTabBar` (без изменений).
+**Навигация десктопа — dashboard-центрично (без сайдбара):** левого сайдбара нет. Дашборд — десктоп-дом; его собственная шапка даёт лого и аватар → «Ещё» (карта системы/настройки/команда/админ). Разделы открываются из шапок панелей дашборда (PersonalTasks/TeamTasks → таб «Задачи», Materials → «База», MeetingsApprove → `meetAdmin`). На секции (таб ≠ `search`) сверху — тонкая строка **«← Главная»** (`setTab("search")`); push-экраны имеют свой «Назад». Мобайл — нижний `RoyTabBar` (без изменений).
 
 **Раскладка** (`grid`, `gap:16px`, `padding:16px`):
 ```
@@ -139,12 +139,12 @@ gridTemplateColumns: minmax(260px,288px)  minmax(0,1fr)  minmax(300px,344px)
 | Файл | Назначение |
 |------|-----------|
 | `myTasks.ts` | Чистые хелперы (без React): `splitByOwner(tasks, meId)`, `groupMine(mine, todayISO)`, `recentEntries(entries, now)`, `sortMeetingsApprovalFirst(meetings)` |
-| `useDashboardData.ts` | Единый хук данных: параллельно грузит `fetchTasks/Meetings/Entries/AgentMeetings`, берёт `me` из nav, прогоняет через хелперы. Отдаёт `{loading, mine, team, today, week, noDate, materials, meetingsApprovalFirst, pendingMeetings, reviewCount}`. `meId = me?.telegram_id` (если нет — все задачи в `team`, личные секции пусты). `todayISO` — **локальная** дата (`Intl.DateTimeFormat("en-CA")`), т.к. `groupMine` сравнивает как UTC-полночь. Ошибка любого fetch → `[]` (graceful) |
+| `useDashboardData.ts` | Единый хук данных: параллельно грузит `fetchTasks/Meetings/Entries/AgentMeetings` + **отдельно** очередь на согласовании `fetchMeetings({confirmed:false, all: me.is_admin})` (дефолтный `/meetings` приватность-фильтрован и НЕ содержит чужие pending, поэтому для админа считаем по всему воркспейсу отдельным запросом). Берёт `me` из nav. Отдаёт `{loading, mine, team, today, week, noDate, materials, pendingList, recentMeetings, pendingMeetings, reviewCount}`: `pendingList` — встречи на согласовании (админ → весь воркспейс, иначе свои), `recentMeetings` — опубликованные (`confirmed=true`), `pendingMeetings = pendingList.length`. `meId = me?.telegram_id` (если нет — все задачи в `team`, личные секции пусты). `todayISO` — **локальная** дата (`Intl.DateTimeFormat("en-CA")`), т.к. `groupMine` сравнивает как UTC-полночь. Ошибка любого fetch → `[]` (graceful) |
 | `shared.tsx` | Общий каркас панелей: `DashBlock` (шапка-кнопка → раскрытие, скролл-тело, `roy-shim` loading, empty), `Row`, `SubHead`, `StatusPill`, `CountBadge`/`AccentBadge`, `fmtDate`, `initials`, `relTime`, `norm` |
 | `PersonalTasks.tsx` | Лево: `groupMine` → секции «Сегодня»/«На неделе» + кнопка «+ N без срока». Шапка → `setTab("task")`. Строка → `taskDetail` |
 | `SearchHero.tsx` | Центр-верх: поле (рамка `2px ink`, `spark` primary, ⌘K-kbd) + чипы быстрых запросов. Submit/чип → `push({view:"answer"})` (+`saveRecent`). Не `DashBlock` — центрированный герой |
 | `Materials.tsx` | Центр-низ: `recentEntries` (24ч). Строка — иконка типа (`entryTagKey`), заголовок (`deriveEntryTitle`), `TypeTag`, аватар автора (`added_by`, если человеческое имя), `relTime`. Бейдж «N новых». Шапка → `setTab("book")`. Строка → `record` |
-| `MeetingsApprove.tsx` | Право-верх: `meetingsApprovalFirst` (неподтв. первыми). Бейдж «N на согласовании» = `pendingMeetings + reviewCount`. Шапка → `push({view:"meetAdmin"})`. Строка → `meetingDetail` |
+| `MeetingsApprove.tsx` | Право-верх: две секции (`SubHead`) — **«Требуют решения»** (`pendingList`, для админа весь воркспейс) и **«Недавние»** (`recentMeetings`, опубликованные). Бейдж «N на согласовании» = `pendingMeetings + reviewCount` (для админа = вся очередь воркспейса, совпадает с ревью «Все»). Шапка → `push({view:"meetAdmin"})`. Строка → `meetingDetail`. Кнопка «Все встречи →» → `setTab("cal")` |
 | `TeamTasks.tsx` | Право-низ: `team` (незавершённые) — аватар исполнителя (`assignees[0]`), заголовок, `StatusPill`. Шапка → `setTab("task")`. Строка → `taskDetail` |
 
 **Иконки:** в `icons.tsx` добавлен `team` (люди) для шапки «Задачи команды».
@@ -172,7 +172,8 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 | `meetingDetail` | `{ id: string }` | Детали встречи (Entry) | `screens/MeetingDetail.tsx` |
 | `meetingReview` | `{ id: string }` | Вычитка черновика AgentMeeting | `MeetingReview.tsx` |
 | `meetAdmin` | — | **Desktop-ревью встреч (master-detail)** | `screens/MeetAdminScreen.tsx` |
-| `more` | — | Ещё (настройки / команда / админ) | inline `MoreScreen` в RoyApp |
+| `more` | — | Ещё (карта системы / настройки / команда / админ) | inline `MoreScreen` в RoyApp |
+| `map` | — | Карта системы (iframe на `/system-map.html`) | inline `MapScreen` в RoyApp |
 | `settings` | — | Настройки | `SettingsScreen.tsx` |
 | `team` | — | Команда | `TeamScreen.tsx` |
 | `admin` | — | Системная админка | `AdminScreen.tsx` |
