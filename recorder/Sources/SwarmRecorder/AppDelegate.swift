@@ -554,6 +554,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 recordStartedAt = startedAt
                 identity = id
                 setState(.recording)
+                // Granola-режим: правая док-панель с /live для «пометок на полях» (Фаза 3, B).
+                if let cfg = self.config { await LiveNotesPanel.shared.show(config: cfg) }
                 startCallEndWatch()
             } catch {
                 // Сбой старта захвата системного звука = нет нужного TCC-разрешения. На 14.4+ это
@@ -756,6 +758,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             pendingSend = nil   // отправлено в очередь (или сервер отказался) — повторять нечего
             setState(.idle)
+            // Live-пометки «Роя» из панели → к этой встрече (best-effort; панель сама скроется).
+            await LiveNotesPanel.shared.flush(meetingId: claim.meetingId, config: cfg)
             // Дозагрузка (этой записи + всех висящих) — в фоне с бэкоффом.
             await UploadQueue.shared.drain(config: cfg)
             await refreshQueueBadge()

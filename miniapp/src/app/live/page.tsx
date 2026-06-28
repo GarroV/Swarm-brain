@@ -47,7 +47,14 @@ export default function LivePage() {
   const [elapsed, setElapsed] = useState(0);
   const [draft, setDraft] = useState("");
   const [inline, setInline] = useState(false);
+  const [recorderHost, setRecorderHost] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Открыт в панели нативного рекордера? (?host=recorder) — тогда пометки уходят в нативный
+  // буфер, а meetingId появится только на стопе (claim). Иначе — обычный веб-режим.
+  useEffect(() => {
+    setRecorderHost(new URLSearchParams(window.location.search).get("host") === "recorder");
+  }, []);
 
   // Тикающий таймер записи (фаза захвата) — даёт «время» новым пометкам.
   useEffect(() => {
@@ -68,6 +75,15 @@ export default function LivePage() {
     const t = draft.trim();
     if (!t) return;
     setNotes((n) => [...n, { sec: elapsed, text: t }]);
+    // В панели рекордера дублируем пометку в нативный буфер: на стопе (когда claim даст
+    // meetingId) рекордер сольёт буфер к встрече. window.webkit есть только в WKWebView.
+    if (recorderHost) {
+      try {
+        (window as unknown as {
+          webkit?: { messageHandlers?: { royNotes?: { postMessage: (m: unknown) => void } } };
+        }).webkit?.messageHandlers?.royNotes?.postMessage({ offset_sec: elapsed, text: t });
+      } catch { /* не в нативной панели — игнор */ }
+    }
     setDraft("");
     inputRef.current?.focus();
   };
@@ -134,12 +150,20 @@ export default function LivePage() {
             <button onClick={addNote} style={btnStyle}>+</button>
           </div>
 
-          <button onClick={() => setPhase("result")} style={{ ...btnStyle, width: "100%", marginTop: 13, padding: "12px" }}>
-            ✦ Готово — собрать тезисы
-          </button>
-          <p style={{ ...MONO, textAlign: "center", fontSize: 10.5, color: "var(--ink-mute)", margin: "11px 0 0", letterSpacing: ".02em" }}>
-            транскрипт идёт фоном · показывается ПОСЛЕ встречи, не по ходу
-          </p>
+          {recorderHost ? (
+            <p style={{ ...MONO, textAlign: "center", fontSize: 11, color: "var(--ink-mute)", margin: "13px 0 0", letterSpacing: ".02em", lineHeight: 1.5 }}>
+              пометки сохраняются к встрече автоматически<br />тезисы появятся после завершения записи
+            </p>
+          ) : (
+            <>
+              <button onClick={() => setPhase("result")} style={{ ...btnStyle, width: "100%", marginTop: 13, padding: "12px" }}>
+                ✦ Готово — собрать тезисы
+              </button>
+              <p style={{ ...MONO, textAlign: "center", fontSize: 10.5, color: "var(--ink-mute)", margin: "11px 0 0", letterSpacing: ".02em" }}>
+                транскрипт идёт фоном · показывается ПОСЛЕ встречи, не по ходу
+              </p>
+            </>
+          )}
         </section>
       ) : (
         <section>
