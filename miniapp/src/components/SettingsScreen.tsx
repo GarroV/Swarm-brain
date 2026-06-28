@@ -265,7 +265,7 @@ function GranolaSection() {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm">
-          <Wifi className="w-4 h-4 text-green-500" />
+          <Wifi className="w-4 h-4 text-status-done" />
           <span>Granola подключена</span>
         </div>
         <button onClick={handleDisconnect} className="text-xs text-muted-foreground hover:text-destructive">
@@ -399,7 +399,7 @@ function UploadSection() {
           </Button>
         </>
       )}
-      {done && <p className="text-sm text-green-600">✓ Файл загружен в базу знаний</p>}
+      {done && <p className="text-sm text-status-done">✓ Файл загружен в базу знаний</p>}
     </div>
   );
 }
@@ -515,7 +515,7 @@ function GoogleCalendarSection() {
       </p>
       {connected ? (
         <div className="flex items-center gap-3">
-          <span className="text-sm text-green-600">✓ Подключён</span>
+          <span className="text-sm text-status-done">✓ Подключён</span>
           <Button variant="outline" size="sm" onClick={disconnect}>Отключить</Button>
         </div>
       ) : (

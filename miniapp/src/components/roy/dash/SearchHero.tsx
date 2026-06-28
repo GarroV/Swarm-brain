@@ -35,8 +35,8 @@ export function SearchHero() {
 
       <form className="w-full" style={{ maxWidth: 560 }} onSubmit={(e) => { e.preventDefault(); go(q); }}>
         <div
-          className="flex items-center gap-3 bg-surface"
-          style={{ border: "2px solid var(--ink)", borderRadius: 16, padding: "14px 18px" }}
+          className="flex items-center gap-3 bg-surface border border-line-2 focus-within:border-primary dark:backdrop-blur-md"
+          style={{ borderRadius: 16, padding: "14px 18px" }}
         >
           <RoyIcon name="spark" size={21} className="shrink-0 text-primary" />
           <input
