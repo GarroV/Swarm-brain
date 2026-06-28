@@ -105,7 +105,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
             onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setEditingTitle(false); }}
             autoFocus
             placeholder="Название встречи"
-            className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-base font-semibold outline-none focus:border-primary"
+            className="flex-1 rounded-md border border-line bg-surface px-2 py-1 text-base font-semibold outline-none focus:border-[var(--accent-ink)]"
           />
           <button onClick={saveTitle} disabled={savingTitle} aria-label="Сохранить название" className="text-primary disabled:opacity-50"><Check className="w-5 h-5" /></button>
           <button onClick={() => setEditingTitle(false)} aria-label="Отмена" className="text-muted-foreground"><X className="w-5 h-5" /></button>
@@ -144,8 +144,8 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
           <Badge variant="secondary">desktop-agent</Badge>
           {meeting.started_at && <span>{meeting.started_at.slice(0, 10)}</span>}
           {published
-            ? <span className="inline-flex items-center gap-1 text-green-600"><CheckCircle className="w-3.5 h-3.5" /> В базе</span>
-            : <span className="inline-flex items-center gap-1 text-amber-600"><Clock className="w-3.5 h-3.5" /> На вычитке</span>}
+            ? <span className="inline-flex items-center gap-1" style={{ color: "var(--status-done)" }}><CheckCircle className="w-3.5 h-3.5" /> В базе</span>
+            : <span className="inline-flex items-center gap-1" style={{ color: "var(--status-open)" }}><Clock className="w-3.5 h-3.5" /> На вычитке</span>}
           {meeting.recorder_names?.length
             ? <span>· Записал: {meeting.recorder_names.join(", ")}</span>
             : recorders.length > 0 && <span>· записали: {recorders.length}</span>}
