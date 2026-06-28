@@ -142,7 +142,7 @@ function IconBtn({ label, onClick, color, children }: { label: string; onClick: 
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="flex items-center justify-center rounded-[9px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
+      className="flex items-center justify-center rounded-[9px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
       style={{ width: 26, height: 26, color }}
     >
       {children}

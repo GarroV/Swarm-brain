@@ -8,7 +8,9 @@ import { RoyIcon, type RoyIconName } from "./icons";
 // которых нет как Tailwind-классы (точные радиусы пилюль, динамические цвета типов),
 // заданы инлайн-стилем для пиксельного соответствия дизайну.
 
-const TAP = "transition-transform active:scale-[0.97]";
+// active:scale для тача + видимое focus-кольцо для клавиатуры (токен --ring, янтарь).
+// focus-visible (не focus) → кольцо только при Tab-навигации, не при клике мышью.
+const TAP = "transition-transform active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
 // ── Card ───────────────────────────────────────────────────────────────────
 export function RoyCard({ className, ...props }: ComponentPropsWithoutRef<"div">) {
