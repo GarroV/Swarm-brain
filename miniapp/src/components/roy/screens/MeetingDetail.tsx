@@ -143,7 +143,7 @@ export function MeetingDetail({ id }: { id: string }) {
 
             {e.content?.trim() && (
               <div className="mb-4">
-                <TasksFromMeeting entry={e} onAdded={loadTasks} />
+                <TasksFromMeeting text={e.content} meetingId={e.id} resetKey={e.id} onAdded={loadTasks} />
                 {tasks.length > 0 && (
                   <div className="mt-2 space-y-1">
                     {tasks.map((t) => <DashTaskRow key={t.id} task={t} showAssignee />)}

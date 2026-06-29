@@ -5,7 +5,6 @@ import { RoyCard } from "./ui";
 import { RoyIcon } from "./icons";
 import { extractTasksPreview, createTask } from "@/lib/api";
 import type { ProposedTask } from "@/lib/api";
-import type { Entry } from "@/types";
 
 // Генерация задач из встречи ПО ЯВНОМУ действию пользователя (кнопка), не автоматически.
 // Превью (POST /tasks/extract { save:false }) → правка/удаление → добавить себе / в общие.
@@ -24,7 +23,12 @@ function fmtDate(iso: string | null): string | null {
 type DraftTask = ProposedTask & { _key: string };
 type TaskTarget = "personal" | "shared";
 
-export function TasksFromMeeting({ entry, onAdded }: { entry: Entry; onAdded?: () => void }) {
+// text — источник для извлечения (entry.content или draft_notes_md черновика рекордера).
+// meetingId — entry.id для привязки задач (у agent-черновика записи ещё нет → undefined,
+// задачи создаются автономно). resetKey — id выбранной записи: при смене сбрасываем список.
+export function TasksFromMeeting({
+  text, meetingId, resetKey, onAdded,
+}: { text: string; meetingId?: string | null; resetKey: string; onAdded?: () => void }) {
   const { toast } = useRoyNav();
   const [tasks, setTasks] = useState<DraftTask[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -35,13 +39,13 @@ export function TasksFromMeeting({ entry, onAdded }: { entry: Entry; onAdded?: (
     setTasks(null);
     setLoading(false);
     setAddingKey(null);
-  }, [entry.id]);
+  }, [resetKey]);
 
   const extract = async () => {
     if (loading) return;
     setLoading(true);
     try {
-      const proposed = await extractTasksPreview(entry.content);
+      const proposed = await extractTasksPreview(text);
       setTasks(proposed.map((p, i) => ({ ...p, _key: `${Date.now()}-${i}` })));
     } catch {
       toast("Не удалось вычленить задачи");
@@ -69,7 +73,7 @@ export function TasksFromMeeting({ entry, onAdded }: { entry: Entry; onAdded?: (
         description: task.description ?? null,
         country: task.country ?? null,
         due_date: task.due_date ?? null,
-        meeting_id: entry.id,
+        meeting_id: meetingId ?? null,
         is_private: target === "personal",
       });
       removeRow(task._key);
@@ -82,7 +86,7 @@ export function TasksFromMeeting({ entry, onAdded }: { entry: Entry; onAdded?: (
     }
   };
 
-  const hasContent = Boolean(entry.content?.trim());
+  const hasContent = Boolean(text?.trim());
 
   return (
     <div>

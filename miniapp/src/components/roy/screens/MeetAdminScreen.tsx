@@ -651,10 +651,17 @@ function ActionsPanel({
         </button>
       )}
 
-      {/* Вычленить задачи из встречи — в правой панели под кнопками решения (только entry) */}
+      {/* Сгенерировать задачи из встречи — в правой панели под кнопками решения.
+          entry: привязываем к записи (meeting_id). agent-черновик: записи ещё нет (entry_id
+          появится при публикации) → задачи автономные; извлекаем из draft_notes_md, когда готовы. */}
       {item.kind === "entry" && (
         <div className="mt-1 border-t border-line pt-3">
-          <TasksFromMeeting entry={item.data} />
+          <TasksFromMeeting text={item.data.content} meetingId={item.data.id} resetKey={item.data.id} />
+        </div>
+      )}
+      {item.kind === "agent" && item.data.draft_notes_md && (
+        <div className="mt-1 border-t border-line pt-3">
+          <TasksFromMeeting text={item.data.draft_notes_md} resetKey={item.data.id} />
         </div>
       )}
 
