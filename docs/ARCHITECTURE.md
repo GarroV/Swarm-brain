@@ -82,39 +82,19 @@
 
 ## Общий движок задач — _shared/tasks/
 
-Единый слой доступа к таблице `tasks`, не деплоится Supabase как функция.
+Единый слой доступа к `tasks` (не деплоится как функция). Принимает готовый `group_id` и готовых исполнителей; **НЕ** резолвит имена и **НЕ** ищет workspace — это делают прослойки клиентов; бросает исключение при ошибке. Файлы: `db.ts` (CRUD), `sprints.ts`, `dependencies.ts`, `types.ts` (единственный источник типов задач).
 
-```
-supabase/functions/_shared/tasks/
-├── types.ts        # Task, TaskInput, Sprint, TaskDependency, DependencyType — единственный источник типов
-├── db.ts           # createTask / getTask / listTasks / updateTask / deleteTask
-├── sprints.ts      # listSprints / createSprint / updateSprint / deleteSprint / setTasksSprint (Рой)
-└── dependencies.ts # listDependencies / createDependency (цикл-детекция) / deleteDependency (Рой)
-               # Принимает готовый group_id и готовых исполнителей.
-               # НЕ резолвит имена и НЕ ищет workspace — это делают прослойки клиентов.
-               # Бросает исключение при ошибке.
-```
-
-**Контракт `_shared/tasks/db.ts`:**
-
-| Функция | Поведение |
-|---------|-----------|
-| `createTask(input, groupId?)` | insert всеми колонками (+ `confirmed` дефолт `false`, `created_by_telegram_id` дефолт `null`, поля Роя `is_private`/`owner_id`/`start_date`/`timeline_position`/`sprint_id`), `.select().single()`, статус дефолт `"open"`, теги дефолт `[]` |
-| `getTask(id)` | `.maybeSingle()` |
-| `listTasks(filters, groupId?)` | `select *`, order `due_date asc nullsFirst:false`; по умолчанию исключает `done/cancelled/draft`; фильтры: `status`, `country`, `telegramId`, `assigneeText`, `confirmed`, `createdBy`, `dueToday`, `sprintId`, `tags` (overlaps/ANY), `start_date`/`due_date` range (пост-фильтр `assigneeText`); **visibility приватности**: если не `isAdmin` — приватные задачи видны только владельцу (`is_private=false OR owner_id=viewerId`); без `viewerId` fail-closed → только публичные |
-| `updateTask(id, fields)` | `update {...fields, updated_at}` |
-| `deleteTask(id)` | сначала `task_history`, потом `tasks` |
+> **Канон контракта движка** (CRUD/спринты/зависимости, приватность-visibility, сведённые различия, известный остаток прямых запросов) — **[SHARED_TASKS_ENGINE.md](SHARED_TASKS_ENGINE.md)**. Здесь — только глайд клиентов поверх движка.
 
 **Прослойки клиентов** (различия живут здесь, не в движке):
 
 | Клиент | Файл | Что делает поверх движка |
 |--------|------|--------------------------|
-| swarm-mcp | `swarm-mcp/tasks/tools.ts` | резолвит `requesting_user_id → group_id` (обязателен для get/delete/update); воркспейс-изоляция: `task.group_id === groupId` проверяется в delete/update; резолвит `assignee_name` через fuzzy-матч; форматирует `Task[]` в строку для Claude; при `add_task` устанавливает `confirmed: false`, `created_by_telegram_id`, отправляет Telegram-уведомление создателю через `notifyCreator` |
-| swarm-bot | `swarm-bot/tasks/db.ts` | тонкая обёртка, пробрасывает вызовы; `dbListAllOpen`, `dbListPending`, `dbListToday` остаются локальными (собственная логика сортировки/фильтрации); **все командные листинги фильтруют `is_private=false`** — личные задачи (Рой) видны только в miniapp у владельца, не текут в командный бот (`dbListAllOpen`, pending/done/export в `handlers.ts`, список по юзеру в `users.ts`, счётчики в `index.ts`); `handlers.ts` при создании задачи (addtask wizard + `analyzeAndCreateTasks`) всегда передаёт `confirmed: false, created_by_telegram_id: userId`; при завершении wizard (`addtask_due`) устанавливает `confirmed: true` и вызывает `broadcastTaskAssigned` |
+| swarm-mcp | `swarm-mcp/tasks/tools.ts` | резолв `requesting_user_id → group_id` (обязателен для get/delete/update); воркспейс-изоляция (`task.group_id === groupId`); fuzzy-резолв `assignee_name`; форматирование `Task[]` для Claude; `add_task` → `confirmed:false` + `created_by_telegram_id` + Telegram-уведомление создателю (`notifyCreator`) |
+| swarm-bot | `swarm-bot/tasks/{db,handlers}.ts` | тонкая обёртка; **все командные листинги фильтруют `is_private=false`** — личные задачи Роя видны только в miniapp у владельца, не текут в бот; создание (wizard + `analyzeAndCreateTasks`) → `confirmed:false`+`created_by_telegram_id`, завершение wizard → `confirmed:true`+`broadcastTaskAssigned` |
+| swarm-api | `swarm-api/index.ts` | HTTP-обёртка (`/tasks*`); доступ к entries — через `entries-guard.ts`; `meeting_id` валидируется (IDOR-guard) |
 
-**Прямые запросы к `tasks` минуя движок** (известный остаток, отдельный этап):
-- `handlers.ts` ~626, 632, 643 — `tl_pending`, `tl_done`, `tl_export` callbacks
-- `index.ts` swarm-bot ~326–327 — `smartTaskSearch`
+Прямые запросы к `tasks` мимо движка (остаток) — см. [SHARED_TASKS_ENGINE.md](SHARED_TASKS_ENGINE.md) §«Известный остаток».
 
 ---
 
@@ -799,54 +779,9 @@ supabase/functions/swarm-mcp/
 
 ## Mini App frontend — miniapp/
 
-Next.js 16 приложение внутри монорепо, полностью отдельное от Deno Edge Functions.
+Next.js 16, `output: "export"` (статический HTML/CSS/JS в `miniapp/out/`, без сервера) → Cloudflare Pages, **авто-деплой с `sandbox_vas`** (см. [QUICK_REF → Деплой](QUICK_REF.md)). Монорепо, полностью отдельно от Deno Edge Functions. Дизайн-система «Рой» (`src/components/roy/`) под хендофф `design_handoff_roy`. Разработка: `cd miniapp && npm run build`.
 
-```
-miniapp/
-├── src/app/           # Next.js App Router
-│   ├── layout.tsx     # Root layout
-│   ├── page.tsx       # Главная страница
-│   └── globals.css    # Tailwind base styles
-├── public/            # Статические ассеты
-├── next.config.ts     # output: "export", images: unoptimized
-├── .env.local.example # Пример переменных окружения (в git)
-└── .env.local         # Локальные переменные (gitignored)
-```
-
-**Конфигурация:**
-- `output: "export"` — статический HTML/CSS/JS в `miniapp/out/`, без сервера
-- Деплой: Cloudflare Pages (из директории `out/`)
-- TypeScript + Tailwind CSS
-
-**Редизайн под `design_handoff_roy` (Claude Design) — фазы 1–7 в проде:**
-- **Дизайн-токены** из хендоффа на shadcn-переменных (`globals.css`): тёплая бумага `#F4F1EB`, янтарный бренд `#D98A2B`, три уровня текста, статусы/приоритеты/типы, радиус карточек 18px, мета на Golos (моно — только таймстампы транскрипта). Семантический слой вынесен в `@theme` (`bg-surface-2`, `text-ink-soft`, `text-status-open`, …).
-- **Дизайн-система `src/components/roy/`**: `icons.tsx`, `ui.tsx` (Card/TypeTag/Market/Avatar/Chip/Segmented/Header/IconBtn/SectionLabel/FAB/NavHeader/RoyTabBar), `nav.ts` (контекст), `entry.ts` (deriveEntryTitle/entryTagKey), `useIsDesktop.ts`, `RoyDashboard.tsx` (бенто-дашборд десктопа).
-- **IA**: `RoyApp.tsx` — 4 корневых таба + push-стек деталей вместо плоских секций/модалок; аватар-меню «Ещё» (Настройки/Команда/Админ — `Админ` только если `me.is_admin`). **Адаптив:** мобайл — аватар в шапке + нижний таб-бар (`RoyTabBar`); десктоп (lg+) — **дашборд-центричный, без боковой панели** (sidebar нет — `RoySidebar` в коде отсутствует). Навигация по второстепенным разделам — через то же меню «Ещё» (аватар внизу слева). Домашняя вкладка «Поиск» на десктопе — **бенто-дашборд `RoyDashboard`** во всю ширину (≤1240px): поиск-герой сверху + три панели сразу (Задачи крупно слева на всю высоту, Встречи и База справа), каждая скроллится внутри себя и раскрывается в полную вкладку по клику на шапку; на мобайле — `SearchScreen`. Вкладка «Задачи» на десктопе → полный `TasksScreen` с видами Список/Таймлайн/Спринт/Граф; дефолт — **«Список»** в стиле macOS Reminders (смарт-списки Сегодня/Предстоящее/Важное/Все/Готово/По рынкам, линза Мои/Все, бинарный чекбокс), общий с мобайлом через `useReminderTasks`. Канбан остался только в «Спринте». Deep-link встреч и приватность сохранены.
-- **Экраны** (`screens/`): `SearchScreen` (герой), `AnswerScreen` (RAG `/ask`: ответ со сносками + источники + «Уточнить»), `RoyTasksScreen` + `TaskDetail` + `NewTask` (поле `priority`), `RoyBaseScreen` + `RecordDetail` + `NewEntry`, `RoyMeetingsScreen` + `MeetingDetail` (вычитка `AgentReviewQueue`/`MeetingReview` и подтверждение/правка/удаление сохранены).
-- **Бэкенд под редизайн**: `POST /ask` (RAG), колонка `tasks.priority` (миграция `20260615000000`). Спецификация — `transcribator/08-UI-UX-V2.md` + `design_handoff_roy/`.
-- **Хвосты (не блокеры):** визуальная очная проверка десктопа в Telegram; чистка осиротевших старых компонентов (`BottomNav`/`Sidebar`/`KnowledgeScreen`/`MeetingsScreen`/`TaskCard`/`TaskModal`/`*Dialog` — больше не используются `RoyApp`, но `TasksScreen`+виды задач используются на десктопе); бэкенд-расширения из хендоффа (человеческий `title` записи, связь task↔entry) — по желанию.
-
-**Переменные окружения Mini App:** канон — раздел [Переменные окружения](#переменные-окружения) (подразделы «Cloudflare Pages Functions» и «Mini App build-time»). Кратко: `NEXT_PUBLIC_API_URL` (`/api` прокси или прямой URL swarm-api), `NEXT_PUBLIC_BOT_USERNAME`, `NEXT_PUBLIC_DEV_MODE`; серверные CF-секреты `SWARM_API_URL`, `WEB_JWT_SECRET`, `TELEGRAM_BOT_TOKEN`.
-
-**Разработка:**
-```bash
-cd miniapp
-npm run dev    # dev-сервер
-npm run build  # статический экспорт в out/
-```
-
-**Types (`miniapp/src/types.ts`):**
-
-| Type | Назначение | Ключевые поля |
-|------|-----------|-------|
-| `Task` | Задача из `GET /tasks` | `id`, `title`, `description`, `assignees`, `due_date`, `status`, `country`, `created_by_name: string \| null`, `created_at` и др. |
-| `User` | Участник воркспейса | `telegram_id`, `name`, `username`, `role`, `markets` |
-| `Me` | Текущий пользователь + воркспейс | Все поля User + `group_id`, `language`, `is_admin` |
-| `Entry` | Запись базы знаний | `id`, `content`, `summary`, `countries`, `entry_type`, `is_private`, `owner_id`, `created_at` |
-
-**API client (`miniapp/src/lib/api.ts`):**
-- `fetchTasks()` возвращает `Task[]` с полем `created_by_name`
-- `createTask()` при создании автоматически устанавливает `created_by_name` из имени текущего пользователя (в DEV_MODE — из `MOCK_ME.name`)
+> **Канон фронтенда — [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md)** (стек, дизайн-токены, IA/`RoyApp`, экраны, дашборд, виды задач, API-контракт, auth, env). Типы/клиент — `miniapp/src/types.ts`, `miniapp/src/lib/api.ts`. Env — §[Переменные окружения](#переменные-окружения). Здесь не дублируем.
 
 ---
 
