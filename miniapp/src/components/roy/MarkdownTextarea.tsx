@@ -51,10 +51,11 @@ export function MarkdownTextarea({ value, onChange, disabled, autoFocus }: Props
 
   return (
     <div>
-      <div className="mb-1.5 flex items-center gap-1.5">
-        <ToolBtn label="Раздел" title="Заголовок раздела (###)" onClick={() => prefixLines("### ")} />
-        <ToolBtn label="Пункт" title="Пункт списка (-)" onClick={() => prefixLines("- ")} />
-        <ToolBtn label="Ж" title="Жирный (**)" bold onClick={() => wrap("**")} />
+      <div className="mb-2 inline-flex items-center gap-0.5 rounded-[10px] border border-line bg-surface px-1 py-0.5">
+        <IcoBtn title="Жирный" d={ICON.bold} onClick={() => wrap("**")} />
+        <span className="mx-0.5 self-stretch w-px bg-line-2" style={{ marginTop: 5, marginBottom: 5 }} />
+        <IcoBtn title="Заголовок раздела" d={ICON.heading} onClick={() => prefixLines("### ")} />
+        <IcoBtn title="Список" d={ICON.list} onClick={() => prefixLines("- ")} />
       </div>
       <textarea
         ref={ref}
@@ -72,7 +73,14 @@ export function MarkdownTextarea({ value, onChange, disabled, autoFocus }: Props
   );
 }
 
-function ToolBtn({ label, title, onClick, bold }: { label: string; title: string; onClick: () => void; bold?: boolean }) {
+// Минимальные иконки тулбара (Lucide-style, stroke, viewBox 24). Только самое необходимое.
+const ICON = {
+  bold: "M6 4h8a4 4 0 0 1 0 8H6z M6 12h9a4 4 0 0 1 0 8H6z",
+  heading: "M6 12h12 M6 20V4 M18 20V4",
+  list: "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01",
+};
+
+function IcoBtn({ title, d, onClick }: { title: string; d: string; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -80,10 +88,12 @@ function ToolBtn({ label, title, onClick, bold }: { label: string; title: string
       aria-label={title}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
-      className="inline-flex items-center justify-center rounded-[9px] border border-line bg-surface text-ink-soft transition-[transform,border-color,background] duration-150 hover:scale-[1.04] hover:border-line-2 hover:bg-surface-2 active:scale-[0.96]"
-      style={{ padding: "5px 11px", fontSize: 12.5, fontWeight: bold ? 800 : 600, minWidth: bold ? 34 : undefined }}
+      className="inline-flex items-center justify-center rounded-[8px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.94]"
+      style={{ width: 30, height: 30 }}
     >
-      {label}
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+        <path d={d} />
+      </svg>
     </button>
   );
 }
