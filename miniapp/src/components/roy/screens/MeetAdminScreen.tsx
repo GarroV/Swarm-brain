@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks } from "../ui";
+import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks, Participants } from "../ui";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import {
@@ -477,6 +477,11 @@ function AgentMeetingDetail({
             </span>
           )}
         </div>
+        {m.attendees && m.attendees.length > 0 && (
+          <div className="mt-1.5">
+            <Participants attendees={m.attendees} />
+          </div>
+        )}
       </div>
 
       {/* Тезисы + транскрипт скроллятся внутри своего контейнера, а не растят страницу. */}

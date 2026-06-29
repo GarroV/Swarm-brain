@@ -124,6 +124,10 @@ export type GranolaNote = {
 
 // ── Swarm Meetings (desktop-agent) ──────────────────────────────────────────────
 
+// Участник встречи из календаря (Google Calendar, собирается рекордером при claim).
+// Аудио-диаризации нет — это список из календарного события, не «кто что сказал».
+export type Attendee = { name?: string; email?: string };
+
 export type TranscriptSegment = { start: number; end: number; text: string; speaker?: string };
 
 export type RecorderRef = { telegram_id: number; claimed_at: string; role: string };
@@ -139,6 +143,9 @@ export type AgentMeeting = {
   // Состояние генерации тезисов: тезисы готовятся / готовы / не удалось обработать.
   summary_status: "processing" | "done" | "failed";
   draft_notes_md: string | null;
+  // Участники из календаря (детальный GET /agent-meetings/:id, select *). Может быть пусто
+  // для ручных записей без календарного события.
+  attendees?: Attendee[] | null;
   // transcript присутствует только в детальном GET /agent-meetings/:id
   transcript?: { language?: string; model?: string; segments?: TranscriptSegment[] } | null;
   recorders: RecorderRef[] | null;

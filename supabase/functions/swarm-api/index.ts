@@ -1224,7 +1224,9 @@ Deno.serve(async (req: Request) => {
         added_by: String(telegram_id),
         source: "desktop-agent",
         entry_type: "meeting",
-        metadata: { meeting_id: mId, title: meeting.title ?? null, confirmed: true },
+        // attendees из календаря (meetings.attendees, собран рекордером при claim) — несём в запись,
+        // чтобы участники были видны и после публикации (UI: блок «Участники»).
+        metadata: { meeting_id: mId, title: meeting.title ?? null, confirmed: true, attendees: (meeting as { attendees?: unknown }).attendees ?? [] },
         countries: [],
         entry_date: entryDate,
         group_id: groupId,

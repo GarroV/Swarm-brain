@@ -66,6 +66,22 @@ export function Market({ code }: { code?: string | null }) {
   );
 }
 
+// ── Участники встречи (из календаря) ─────────────────────────────────────────
+// Показывает имена (или email-фолбэк) участников. Это календарный список, НЕ диаризация
+// аудио — кто именно говорил, мы не различаем. Пусто → ничего не рендерим.
+export function Participants({ attendees }: { attendees?: Array<{ name?: string; email?: string }> | null }) {
+  const names = (attendees ?? [])
+    .map((a) => (a.name?.trim() || a.email?.trim() || ""))
+    .filter(Boolean);
+  if (names.length === 0) return null;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-ink-soft" style={{ fontSize: 12 }}>
+      <RoyIcon name="team" size={13} className="text-ink-mute" />
+      Участники: <span className="text-ink">{names.join(", ")}</span>
+    </span>
+  );
+}
+
 // ── Meta (вторичная строка: иконка + текст) ──────────────────────────────────
 export function Meta({ children, className }: { children: ReactNode; className?: string }) {
   return (

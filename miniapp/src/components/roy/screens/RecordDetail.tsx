@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { NavHeader, TypeTag, Market, SectionLabel, TezisyBlocks } from "../ui";
+import { NavHeader, TypeTag, Market, SectionLabel, TezisyBlocks, Participants } from "../ui";
+import type { Attendee } from "@/types";
 import { RoyIcon } from "../icons";
 import { entryTagKey, deriveEntryTitle, isSearchIndexSummary } from "../entry";
 import { fetchEntry, createTask } from "@/lib/api";
@@ -36,6 +37,8 @@ function addedByName(e: Entry): string {
 export function RecordBody({ entry: e }: { entry: Entry }) {
   const who = addedByName(e);
   const date = fmtDate(e.entry_date || e.created_at);
+  // Участники из календаря — кладутся в metadata.attendees при публикации встречи рекордера.
+  const attendees = (e.metadata?.attendees as Attendee[] | undefined) ?? [];
   return (
     <>
       <div className="mb-2 flex flex-wrap items-center gap-2 pt-1">
@@ -54,6 +57,11 @@ export function RecordBody({ entry: e }: { entry: Entry }) {
         </span>
         {who && <span>· добавил: <span className="font-semibold text-ink">{who}</span></span>}
       </div>
+      {attendees.length > 0 && (
+        <div className="mb-3.5 -mt-1.5">
+          <Participants attendees={attendees} />
+        </div>
+      )}
       {e.summary && !isSearchIndexSummary(e) && (
         <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 16 }}>
           <div className="mb-1.5 font-mono font-semibold uppercase text-accent-ink" style={{ fontSize: 10.5, letterSpacing: "0.08em" }}>Кратко от ИИ</div>
