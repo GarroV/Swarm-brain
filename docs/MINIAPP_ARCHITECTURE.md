@@ -184,7 +184,8 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 
 Три колонки (desktop):
 - **Слева (300px):** объединённый список = `fetchAgentMeetings("awaiting_review")` (черновики desktop-agent, первыми) + `fetchMeetings({confirmed:false})` (неподтверждённые встречи). Стат-плашки: «на согласовании» / «черновиков».
-- **Центр (flex):** детали выбранного — заголовок, источник, дата, саммари/тезисы, контент. Для entry: **inline-правка СОДЕРЖАНИЯ** (`ContentEditor` → `patchMeeting(id,{content})`) + секция **«Задачи из встречи»** (`TasksFromMeeting` → `extractTasksPreview(content)` без создания → правка/удаление/добавить Себе|В общие через `createTask({is_private})`).
+- **Центр (flex):** детали выбранного — заголовок, источник, дата, **участники** (`Participants` ← `m.attendees`/`metadata.attendees`, если есть), саммари/тезисы, контент. Для entry: **inline-правка СОДЕРЖАНИЯ** (`ContentEditor` → `patchMeeting(id,{content})`).
+- **Задачи из встречи** (`TasksFromMeeting`, обобщён на `text`+`meetingId?`+`resetKey`) — в правой панели **для entry И agent-черновика** (когда `draft_notes_md` готов): `extractTasksPreview(text)` без создания → правка/удаление → добавить Себе|В общие (`createTask`). entry → привязка `meeting_id=entry.id`; agent → задачи автономные (записи ещё нет до публикации).
 - **Справа (220px):** действия — Segmented **«Общее/Личное»** (дефолт Общее) → «Согласовать/Опубликовать»; «Отклонить»; для entry — **«Не встреча → в заметки»** (`patchMeeting(id,{entry_type:"note"})`). Обновление списка/`selected` — через `onEntryUpdated`. Ошибки операций → тост.
 
 **API-операции:**
@@ -193,7 +194,7 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 | Согласовать (Общее/Личное) | `patchMeeting(id, {confirmed:true, is_private})` | `publishAgentMeeting(id, "workspace"\|"personal")` |
 | Править содержание | `patchMeeting(id, {content})` | — |
 | Реклассифицировать | `patchMeeting(id, {entry_type:"note"})` → уходит из очереди | — |
-| Вычленить задачи | `extractTasksPreview(content)` → `createTask({is_private})` | — |
+| Сгенерировать задачи | `extractTasksPreview(content)` → `createTask({meeting_id, is_private})` | `extractTasksPreview(draft_notes_md)` → `createTask({is_private})` (автономно) |
 | Отклонить | `deleteMeeting(id)` (с confirm) | `deleteAgentMeeting(id)` (с confirm) |
 
 > Бэкенд: `PATCH /meetings/:id` принимает `content`/`is_private`(+`owner_id`)/`entry_type` (swarm-api); `POST /tasks/extract { save:false }` возвращает предложения без создания.
