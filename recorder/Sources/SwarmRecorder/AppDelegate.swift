@@ -400,19 +400,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         case .recording:
             widget.hide()   // во время записи UI = единое окно «Рой · заметки» (LiveNotesPanel)
         case .sending:
-            // Сразу после «Стоп» — крутилка «обрабатываю», а не пустота (фидбэк, что всё ок).
-            widget.showProcessing()
+            // Спиннер-капсулу НЕ показываем (она читалась как «зависла» и была лишним виджетом):
+            // обработка идёт в фоне, «отправлено — тезисы придут в Telegram» приходит уведомлением.
+            widget.hide()
         case .idle:
             if let m = pendingMeeting {
                 widget.showPending(title: m.title ?? "Встреча", when: meetingWhen(m))
             } else if callActive {
                 widget.showPending(title: "Идёт звонок", when: "")
-            } else if processingDoneFlash {
-                widget.showProcessingDone()
-            } else if !processingIds.isEmpty {
-                widget.showProcessing()
             } else {
-                widget.hide()   // простой: пилюли нет — она появляется по детекту встречи/звонка
+                widget.hide()   // никакого «кружка»: пилюля только на детект встречи/звонка
             }
         case .error, .tokenExpired,
              .noScreenRecording, .noSystemAudio, .noMic, .offline:
