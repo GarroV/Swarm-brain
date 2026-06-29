@@ -3,19 +3,14 @@ import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession, getSession, extractEntryMeta } from "../lib/storage.ts";
 import { getUserGroupId } from "../lib/workspace.ts";
+import { TEZISY_CORE } from "../../_shared/tezisy-prompt.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
 const GRANOLA_API = "https://public-api.granola.ai/v1";
 
-// Единый промпт тезисов — используется при ручном сохранении, авто-импорте и предпросмотре,
-// чтобы тезисы Granola выглядели одинаково независимо от точки входа.
-const GRANOLA_TEZISY_PROMPT =
-  "Ты помощник команды. Создай структурированные тезисы встречи строго по тексту — " +
-  "не домысливай и не добавляй информацию которой нет в тексте.\n" +
-  "Формат: ### Тема\n- тезис\n- тезис\n\n" +
-  "Темы называй широко: 'Персонал', 'IT / Технические проблемы', 'Поставки', 'Финансы / Эквайринг', " +
-  "'Строительство', 'Маркетинг', 'Операции', 'Региональные новости' и т.п. " +
-  "Только то что реально обсуждалось. Без выдумок.";
+// Единый промпт тезисов — общий канон из _shared/tezisy-prompt.ts (DRY с рекордером/read-ai),
+// чтобы тезисы выглядели одинаково независимо от точки входа.
+const GRANOLA_TEZISY_PROMPT = TEZISY_CORE;
 
 type GranolaNote = {
   id: string;

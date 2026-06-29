@@ -15,6 +15,7 @@
 
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isWhisperHallucination, WHISPER_HALLUCINATION_RE } from "./whisper-hallucinations.ts";
+import { TEZISY_CORE } from "./tezisy-prompt.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -31,13 +32,10 @@ export const LEASE_STALE_MS = 5 * 60_000;
 
 const OPENAI_AUDIO_MAX_BYTES = 25 * 1024 * 1024;
 
+// Канон тезисов — в _shared/tezisy-prompt.ts (DRY с granola/read-ai). Здесь добавляем только
+// спец-обработку пустой записи (НЕТ_ТЕЗИСОВ → плашка ниже).
 const TEZIS_SYSTEM =
-  "Ты помощник команды. Создай структурированные тезисы встречи строго по тексту стенограммы — " +
-  "не домысливай и не добавляй информацию которой нет в тексте.\n" +
-  "Формат: ### Тема\n- тезис\n- тезис\n\n" +
-  "Темы называй широко: 'Персонал', 'IT / Технические проблемы', 'Поставки', 'Финансы / Эквайринг', " +
-  "'Строительство', 'Маркетинг', 'Операции', 'Региональные новости' и т.п. " +
-  "Только то что реально обсуждалось. Без выдумок.\n" +
+  TEZISY_CORE + "\n" +
   "Если в стенограмме нет содержательного обсуждения (проверка связи, тест микрофона, тишина, " +
   "обрывки фраз) — верни СТРОГО одну строку: НЕТ_ТЕЗИСОВ — и больше ничего, без извинений и пояснений.";
 
@@ -117,7 +115,7 @@ async function transcribeAudio(audio: Blob, filename: string): Promise<Segment[]
   return segments;
 }
 
-async function chatComplete(system: string, user: string): Promise<string> {
+async function chatComplete(system: string, user: string, temperature?: number): Promise<string> {
   const res = await openaiFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
@@ -125,6 +123,7 @@ async function chatComplete(system: string, user: string): Promise<string> {
       model: "gpt-4o",
       messages: [{ role: "system", content: system }, { role: "user", content: user }],
       max_tokens: 3000,
+      ...(temperature !== undefined ? { temperature } : {}),
     }),
   });
   const data = await res.json();
@@ -261,6 +260,7 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
     const raw = (await chatComplete(
       TEZIS_SYSTEM,
       `Встреча: ${m.title ?? "без названия"}\n\nСтенограмма (реплики помечены «собеседник» — другие участники, «я» — владелец записи):\n${transcriptText}`,
+      0.3, // ниже дефолта (1.0): меньше воды, держится фактов из стенограммы
     )).trim();
     tezisi = /^НЕТ[_\s]?ТЕЗИСОВ/i.test(raw) ? NO_TEZISY_NOTE : raw;
   }

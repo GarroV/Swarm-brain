@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeCountries } from "../_shared/countries.ts";
+import { TEZISY_CORE } from "../_shared/tezisy-prompt.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
@@ -229,15 +230,7 @@ Deno.serve(async (req: Request) => {
 
     // Generate structured tezises + extract metadata + embedding + tasks in parallel
     const [tezises, embedding, taskCount, countries] = await Promise.all([
-      chatComplete(
-        "Ты помощник команды. Создай структурированные тезисы встречи строго по тексту стенограммы — " +
-        "не домысливай и не добавляй информацию которой нет в тексте.\n" +
-        "Формат: ### Тема\n- тезис\n- тезис\n\n" +
-        "Темы называй широко: 'Персонал', 'IT / Технические проблемы', 'Поставки', 'Финансы / Эквайринг', " +
-        "'Строительство', 'Маркетинг', 'Операции', 'Региональные новости' и т.п. " +
-        "Только то что реально обсуждалось. Без выдумок.",
-        tezisSource
-      ),
+      chatComplete(TEZISY_CORE, tezisSource),
       getEmbedding(fullContent),
       extractAndSaveTasks(fullContent, meetingId),
       extractCountries(fullContent),
