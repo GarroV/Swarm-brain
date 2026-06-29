@@ -54,6 +54,7 @@ export interface Part {
   done: boolean;
   attempts: number;
   segments?: Segment[];
+  lang?: string;        // язык части, определённый Whisper (имя на англ.)
 }
 export interface ProcessState { parts: Part[]; stage: "transcribe" | "summarize" }
 // Части в памяти (как их собрал meeting-ingest из multipart) до заливки в Storage.
@@ -86,12 +87,14 @@ async function openaiFetch(url: string, init: RequestInit, attempts = 4): Promis
   return res;
 }
 
-async function transcribeAudio(audio: Blob, filename: string): Promise<Segment[]> {
+async function transcribeAudio(audio: Blob, filename: string): Promise<{ segments: Segment[]; language?: string }> {
   const form = new FormData();
   form.append("file", audio, filename);
   form.append("model", "whisper-1");
   form.append("response_format", "verbose_json");
-  form.append("language", "ru");
+  // Язык НЕ форсим: Whisper сам определяет язык встречи и транскрибирует ДОСЛОВНО на нём.
+  // Раньше тут стояло language="ru" → встречи на других языках принудительно переводились на
+  // русский. Транскрипт держим на языке встречи; тезисы (GPT, ниже) выводятся на русском отдельно.
   const res = await openaiFetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
@@ -103,6 +106,7 @@ async function transcribeAudio(audio: Blob, filename: string): Promise<Segment[]
   }
   const d = data as {
     text?: string;
+    language?: string;   // язык, определённый Whisper (имя на англ.: "russian"/"english"/…)
     segments?: Array<{ start: number; end: number; text: string; no_speech_prob?: number; avg_logprob?: number }>;
   };
   const segments: Segment[] = (d.segments ?? [])
@@ -112,7 +116,20 @@ async function transcribeAudio(audio: Blob, filename: string): Promise<Segment[]
   if (segments.length === 0 && d.text && !WHISPER_HALLUCINATION_RE.test(d.text)) {
     segments.push({ start: 0, end: 0, text: d.text.trim() });
   }
-  return segments;
+  return { segments, language: typeof d.language === "string" ? d.language : undefined };
+}
+
+// Язык транскрипта = самый «весомый» (по числу сегментов) среди определённых Whisper по частям.
+// Встреча обычно на одном языке; mic и sys дают тот же язык. Пусто → "unknown".
+function dominantLang(parts: Part[]): string {
+  const weight = new Map<string, number>();
+  for (const p of parts) {
+    if (!p.done || !p.lang) continue;
+    weight.set(p.lang, (weight.get(p.lang) ?? 0) + (p.segments?.length ?? 1));
+  }
+  let best = "", bestN = 0;
+  for (const [lang, n] of weight) if (n > bestN) { best = lang; bestN = n; }
+  return best || "unknown";
 }
 
 async function chatComplete(system: string, user: string, temperature?: number): Promise<string> {
@@ -247,7 +264,7 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
   segments.sort((a, b) => a.start - b.start);
 
   const hasMic = state.parts.some((p) => p.track === "mic" && p.done);
-  const transcript = { language: "ru", model: hasMic ? "whisper-1+mic" : "whisper-1", segments };
+  const transcript = { language: dominantLang(state.parts), model: hasMic ? "whisper-1+mic" : "whisper-1", segments };
   await supabase.from("meetings").update({ transcript, updated_at: new Date().toISOString() }).eq("id", m.id);
 
   const transcriptText = segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n").slice(0, 100000);
@@ -350,9 +367,10 @@ export async function runMeetingStep(
         await mapLimit(batch, TRANSCRIBE_CONCURRENCY, async (p) => {
           try {
             const blob = await downloadPart(supabase, p.path);
-            const segs = await transcribeAudio(blob, p.name);
+            const { segments: segs, language } = await transcribeAudio(blob, p.name);
             // per-part offset (старт части в таймлайне дорожки) добавляем сразу; глобальный mic-сдвиг — в summarize.
             p.segments = segs.map((s) => ({ start: s.start + p.offset, end: s.end + p.offset, text: s.text }));
+            if (language) p.lang = language;
             p.done = true;
           } catch (e) {
             p.attempts = (p.attempts ?? 0) + 1;
