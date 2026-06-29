@@ -62,7 +62,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         notesSection?.isHidden = !expanded
         guard let panel, let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame
-        let h = expanded ? min(vf.height - Self.margin * 2, 540) : Self.collapsedHeight
+        let h = expanded ? min(vf.height - Self.margin * 2, 440) : Self.collapsedHeight
         let f = NSRect(x: vf.maxX - Self.panelWidth - Self.margin, y: vf.maxY - h - Self.margin,
                        width: Self.panelWidth, height: h)
         if animated {
@@ -89,10 +89,15 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         p.backgroundColor = .clear
         [.closeButton, .miniaturizeButton, .zoomButton].forEach { p.standardWindowButton($0)?.isHidden = true }
 
-        let vfx = NSVisualEffectView(frame: frame)
-        vfx.material = .hudWindow; vfx.blendingMode = .behindWindow; vfx.state = .active
-        vfx.appearance = NSAppearance(named: .vibrantDark)
-        vfx.maskImage = roundedMask(16)        // ровные скруглённые углы (без белых уголков)
+        // Сплошной тёмный фон (НЕ вибрэнси): сквозь блюр лез пёстрый созвон/стол. Так — чисто,
+        // без просветов и без белых углов (скругление слоя + masksToBounds на непрозрачном фоне).
+        let vfx = NSView(frame: frame)
+        vfx.wantsLayer = true
+        vfx.layer?.backgroundColor = NSColor(srgbRed: 0.075, green: 0.062, blue: 0.04, alpha: 0.98).cgColor
+        vfx.layer?.cornerRadius = 16
+        vfx.layer?.masksToBounds = true
+        vfx.layer?.borderWidth = 1
+        vfx.layer?.borderColor = RoyArt.amber.withAlphaComponent(0.20).cgColor
 
         // ── шапка (всегда видна) ──
         let mark = NSImageView(image: RoyArt.markImage(size: 22))
@@ -191,7 +196,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
 
         let outer = NSStackView(views: [header, section])
         outer.orientation = .vertical; outer.alignment = .leading; outer.spacing = 11
-        outer.edgeInsets = NSEdgeInsets(top: 30, left: 16, bottom: 14, right: 16)
+        outer.edgeInsets = NSEdgeInsets(top: 18, left: 16, bottom: 14, right: 16)
         outer.translatesAutoresizingMaskIntoConstraints = false
         vfx.addSubview(outer)
         let fw: [NSView] = [header, divider, scroll, box, section]
