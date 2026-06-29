@@ -1,67 +1,113 @@
 import AppKit
-import WebKit
 
-/// Правая док-панель «Рой · заметки» (Granola-режим, Фаза 3, вариант B).
-/// Всплывает на старте записи, грузит /live?host=recorder в WKWebView — пользователь пишет
-/// «пометки на полях». meetingId во время записи ещё нет (claim — на стопе), поэтому пометки
-/// копятся в нативный буфер через JS→native мост (royNotes). На стопе рекордер вызывает
-/// flush() → обменивает токен на web-JWT (meeting-webtoken) и POST'ит в /agent-meetings/:id/notes.
+/// Правая док-панель «Рой · заметки» (Granola-режим, Фаза 3) — НАТИВНЫЙ блокнот.
+/// Всплывает на старте записи, даёт писать «пометки на полях» по ходу встречи. meetingId
+/// во время записи ещё нет (claim — на стопе), поэтому пометки копятся в буфер; на стопе
+/// рекордер вызывает flush() → меняет токен на web-JWT (meeting-webtoken) → POST в
+/// /agent-meetings/:id/notes. Без WKWebView (он не грузится в self-signed аппе) — чистый AppKit.
 @MainActor
-final class LiveNotesPanel: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+final class LiveNotesPanel: NSObject {
     static let shared = LiveNotesPanel()
     private override init() { super.init() }
 
     private var panel: NSPanel?
-    private var webView: WKWebView?
+    private var notesStack: NSStackView?
+    private var input: NSTextField?
     private struct Buffered { let offset: Int; let text: String }
     private var buffer: [Buffered] = []
+    private var startedAt: Date?
 
-    private static let panelWidth: CGFloat = 380
+    private static let panelWidth: CGFloat = 360
     private static let margin: CGFloat = 16
+    private static let amber = NSColor(srgbRed: 0.95, green: 0.72, blue: 0.35, alpha: 1)
+    private static let amberSoft = NSColor(srgbRed: 0.95, green: 0.72, blue: 0.35, alpha: 0.16)
+    private static let bg = NSColor(srgbRed: 0.04, green: 0.043, blue: 0.027, alpha: 1)
+    private static let ink = NSColor(srgbRed: 0.93, green: 0.90, blue: 0.83, alpha: 1)
+    private static let mute = NSColor(srgbRed: 0.60, green: 0.57, blue: 0.49, alpha: 1)
 
     func show(config: SwarmConfig) {
         buffer.removeAll()
-        ensurePanel(config: config)
+        startedAt = Date()
+        ensurePanel()
+        clearNotes()
         positionAtRightEdge()
         panel?.orderFrontRegardless()
+        panel?.makeFirstResponder(input)
     }
 
     func hide() { panel?.orderOut(nil) }
 
-    // MARK: - panel
+    // MARK: - сборка панели
 
-    private func ensurePanel(config: SwarmConfig) {
+    private func ensurePanel() {
         if panel != nil { return }
-        let frame = NSRect(x: 0, y: 0, width: Self.panelWidth, height: 600)
-        let wkc = WKWebViewConfiguration()
-        wkc.userContentController.add(self, name: "royNotes")     // JS → native мост
-        let wv = WKWebView(frame: frame, configuration: wkc)
-        wv.navigationDelegate = self
-        webView = wv
-
-        // Тёмный плейсхолдер сразу (чтобы не было белого «молчания», пока грузится /live).
-        wv.loadHTMLString("<html><body style='margin:0;background:#0a0b07;color:#9a937f;font:14px -apple-system;display:grid;place-items:center;height:100vh'>загрузка…</body></html>", baseURL: nil)
-
-        // Обычное перетаскиваемое окно (титлбар = ручка для перемещения).
-        let p = NSPanel(contentRect: frame,
-                        styleMask: [.titled, .closable, .resizable],
+        let frame = NSRect(x: 0, y: 0, width: Self.panelWidth, height: 620)
+        let p = NSPanel(contentRect: frame, styleMask: [.titled, .closable, .resizable],
                         backing: .buffered, defer: false)
         p.title = "Рой · заметки"
-        p.level = .floating                                   // поверх обычных окон
+        p.level = .floating
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.hidesOnDeactivate = false
         p.isReleasedWhenClosed = false
-        p.backgroundColor = NSColor(calibratedRed: 0.04, green: 0.043, blue: 0.027, alpha: 1) // #0a0b07
-        p.contentView = wv
-        panel = p
+        p.backgroundColor = Self.bg
 
-        // Грузим реальный экран ПОСЛЕ установки делегата/окна.
-        let base = config.webBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        if let url = URL(string: "\(base)/live?host=recorder") {
-            var req = URLRequest(url: url)
-            req.cachePolicy = .reloadIgnoringLocalCacheData      // свежий /live, без старого кэша
-            wv.load(req)
-        }
+        let content = NSView(frame: frame)
+        content.wantsLayer = true
+        content.layer?.backgroundColor = Self.bg.cgColor
+
+        let header = NSTextField(labelWithString: "🔴  Заметки встречи — пиши свободно")
+        header.font = .systemFont(ofSize: 12, weight: .semibold)
+        header.textColor = Self.mute
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 9
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        notesStack = stack
+
+        let scroll = NSScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        scroll.documentView = stack
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
+            stack.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+        ])
+
+        let field = NSTextField()
+        field.placeholderString = "пометка на полях…"
+        field.font = .systemFont(ofSize: 13)
+        field.textColor = Self.ink
+        field.bezelStyle = .roundedBezel
+        field.focusRingType = .none
+        field.target = self
+        field.action = #selector(addFromField)
+        input = field
+
+        let outer = NSStackView(views: [header, scroll, field])
+        outer.orientation = .vertical
+        outer.alignment = .leading
+        outer.spacing = 12
+        outer.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        outer.translatesAutoresizingMaskIntoConstraints = false
+        outer.setHuggingPriority(.defaultLow, for: .vertical)
+        content.addSubview(outer)
+        NSLayoutConstraint.activate([
+            outer.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            outer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            outer.topAnchor.constraint(equalTo: content.topAnchor),
+            outer.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            scroll.widthAnchor.constraint(equalTo: outer.widthAnchor, constant: -32),
+            field.widthAnchor.constraint(equalTo: outer.widthAnchor, constant: -32),
+        ])
+        scroll.setContentHuggingPriority(.defaultLow, for: .vertical)
+
+        p.contentView = content
+        panel = p
     }
 
     private func positionAtRightEdge() {
@@ -73,34 +119,45 @@ final class LiveNotesPanel: NSObject, WKScriptMessageHandler, WKNavigationDelega
         panel.setFrame(NSRect(x: x, y: y, width: Self.panelWidth, height: h), display: true)
     }
 
-    // MARK: - WKNavigationDelegate (диагностика: ошибку видно, а не «белый экран»)
-
-    nonisolated func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        NSLog("SwarmRecorder: LiveNotes /live не загрузился (provisional): \(error.localizedDescription)")
-        showLoadError(error.localizedDescription)
-    }
-    nonisolated func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        NSLog("SwarmRecorder: LiveNotes /live ошибка навигации: \(error.localizedDescription)")
-        showLoadError(error.localizedDescription)
-    }
-    nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        NSLog("SwarmRecorder: LiveNotes /live загрузился")
-    }
-    private nonisolated func showLoadError(_ msg: String) {
-        Task { @MainActor in
-            let safe = msg.replacingOccurrences(of: "<", with: "&lt;")
-            self.webView?.loadHTMLString("<html><body style='margin:0;background:#0a0b07;color:#ece5d4;font:14px -apple-system;padding:24px'>Не удалось загрузить заметки:<br><br><span style='color:#ff8a7a'>\(safe)</span><br><br>проверь сеть/доступ к swarm-brain.pages.dev</body></html>", baseURL: nil)
-        }
+    private func clearNotes() {
+        notesStack?.arrangedSubviews.forEach { $0.removeFromSuperview() }
     }
 
-    // MARK: - JS → native (каждая пометка из /live копится в буфер)
+    private func fmt(_ s: Int) -> String { String(format: "%02d:%02d", s / 60, s % 60) }
 
-    nonisolated func userContentController(_ uc: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "royNotes", let body = message.body as? [String: Any] else { return }
-        let offset = (body["offset_sec"] as? Int) ?? Int((body["offset_sec"] as? Double) ?? 0)
-        let text = ((body["text"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        Task { @MainActor in self.buffer.append(Buffered(offset: max(0, offset), text: text)) }
+    @objc private func addFromField() {
+        guard let field = input else { return }
+        let t = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        let offset = Int(max(0, Date().timeIntervalSince(startedAt ?? Date())))
+        buffer.append(Buffered(offset: offset, text: t))
+        appendNoteRow(offset: offset, text: t)
+        field.stringValue = ""
+    }
+
+    private func appendNoteRow(offset: Int, text: String) {
+        guard let stack = notesStack else { return }
+        let chip = NSTextField(labelWithString: fmt(offset))
+        chip.font = .monospacedSystemFont(ofSize: 10.5, weight: .semibold)
+        chip.textColor = Self.amber
+        chip.wantsLayer = true
+        chip.layer?.backgroundColor = Self.amberSoft.cgColor
+        chip.layer?.cornerRadius = 5
+        chip.setContentHuggingPriority(.required, for: .horizontal)
+
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = .systemFont(ofSize: 13, weight: .semibold)   // пометки — жирные
+        label.textColor = Self.ink
+
+        let row = NSStackView(views: [chip, label])
+        row.orientation = .horizontal
+        row.alignment = .firstBaseline
+        row.spacing = 9
+        row.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(row)
+        row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        // прокрутить вниз к свежей
+        if let doc = stack.enclosingScrollView { doc.documentView?.scroll(NSPoint(x: 0, y: 0)) }
     }
 
     // MARK: - flush на стопе (meetingId известен после claim)
