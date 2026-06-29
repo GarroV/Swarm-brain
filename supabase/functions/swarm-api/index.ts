@@ -203,68 +203,6 @@ async function gptExtractTasks(text: string): Promise<ExtractedTask[]> {
   }
 }
 
-async function buildNameResolver(): Promise<(raw: string | null | undefined) => { name: string; id: number } | null> {
-  // username — в allowed_users (не в user_profiles), иначе селект падает и список пуст.
-  const [{ data: profs }, { data: aus }] = await Promise.all([
-    supabase.from("user_profiles").select("telegram_id, first_name, last_name"),
-    supabase.from("allowed_users").select("telegram_id, username"),
-  ]);
-  const uname = new Map<number, string>();
-  ((aus ?? []) as Array<{ telegram_id: number; username?: string | null }>).forEach((u) => {
-    if (u.username) uname.set(u.telegram_id, u.username);
-  });
-  const members = ((profs ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string }>).map((p) => ({
-    id: p.telegram_id,
-    name: [p.first_name, p.last_name].filter(Boolean).join(" ") || (uname.get(p.telegram_id) ? `@${uname.get(p.telegram_id)}` : "") || String(p.telegram_id),
-  }));
-  return (raw) => {
-    if (!raw) return null;
-    const lower = raw.toLowerCase().trim();
-    if (!lower) return null;
-    return members.find((m) => {
-      const mn = m.name.toLowerCase();
-      return mn.includes(lower) || lower.includes(mn.split(" ").pop() ?? mn);
-    }) ?? null;
-  };
-}
-
-// Извлекает задачи из тезисов и создаёт их с привязкой к встрече. Возвращает число созданных.
-async function createMeetingTasks(
-  text: string,
-  opts: { groupId: string; createdBy: number | null; meetingId: string; isPrivate: boolean },
-): Promise<number> {
-  const extracted = await gptExtractTasks(text);
-  if (!extracted.length) return 0;
-  const resolve = await buildNameResolver();
-  let n = 0;
-  for (const item of extracted.slice(0, 15)) {
-    if (!item.title) continue;
-    let assignees: string[] = [];
-    let assignee_telegram_ids: number[] = [];
-    const matched = resolve(item.assignee);
-    if (matched) {
-      assignees = [matched.name];
-      assignee_telegram_ids = [matched.id];
-    }
-    await createTask({
-      title: item.title,
-      description: item.description ?? null,
-      country: item.country ?? null,
-      due_date: item.due_date ?? null,
-      source: "transcript",
-      confirmed: true,
-      created_by_telegram_id: opts.createdBy,
-      meeting_id: opts.meetingId,
-      assignees,
-      assignee_telegram_ids,
-      is_private: opts.isPrivate,
-      owner_id: opts.isPrivate ? opts.createdBy : null,
-    }, opts.groupId);
-    n++;
-  }
-  return n;
-}
-
 // Человеческий заголовок записи: metadata.title → первая непустая строка summary → срез content.
 function deriveEntryTitle(e: { summary: string | null; content: string; metadata: Record<string, unknown> }): string {
   const metaTitle = typeof e.metadata?.title === "string" ? (e.metadata.title as string).trim() : "";
@@ -553,6 +491,7 @@ Deno.serve(async (req: Request) => {
         assignees,
         assignee_telegram_ids,
         confirmed: true,
+        meeting_id: (body.meeting_id as string | null) ?? null,
         created_by_telegram_id: telegram_id ?? null,
         // Модуль задач (Рой):
         is_private: isPrivate,
@@ -1292,13 +1231,8 @@ Deno.serve(async (req: Request) => {
         const { data: existing } = await supabase.from("entries").select("*").eq("id", existingId as string).single();
         return json(existing, 200, origin);
       }
-      // Авто-извлечение задач из тезисов (привязка к встрече mId, резолв исполнителей).
-      // Не валит публикацию при сбое — entry уже создан.
-      try {
-        await createMeetingTasks(draft, { groupId, createdBy: telegram_id, meetingId: mId, isPrivate });
-      } catch (e) {
-        console.error("publish: извлечение задач не удалось для " + mId + ":", e);
-      }
+      // Задачи НЕ генерируем автоматически. Пользователь создаёт их вручную кнопкой
+      // «Сгенерировать задачи» в ревью встречи / на экране встречи (preview → добавить).
       return json(created, 201, origin);
     }
 

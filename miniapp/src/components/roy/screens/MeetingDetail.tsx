@@ -5,6 +5,7 @@ import { NavHeader, RoyCard, Market, SectionLabel, IconBtn, PriDot, TezisyBlocks
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
+import { TasksFromMeeting } from "../TasksFromMeeting";
 import { fetchMeeting, patchMeeting, deleteMeeting, fetchTasks } from "@/lib/api";
 import type { Entry, Task } from "@/types";
 
@@ -33,12 +34,16 @@ export function MeetingDetail({ id }: { id: string }) {
       .catch(() => setErr(true));
   }, [id]);
 
-  useEffect(() => {
-    load();
+  const loadTasks = useCallback(() => {
     fetchTasks()
       .then((ts) => setTasks(ts.filter((t) => t.meeting_id === id)))
       .catch(() => {});
-  }, [id, load]);
+  }, [id]);
+
+  useEffect(() => {
+    load();
+    loadTasks();
+  }, [id, load, loadTasks]);
 
   const confirmed = e ? e.metadata?.confirmed === true : false;
   // Куда сохранить при подтверждении: общая база команды (дефолт) или личное хранилище.
@@ -135,22 +140,24 @@ export function MeetingDetail({ id }: { id: string }) {
               </div>
             ) : null}
 
-            {tasks.length > 0 && (
+            {e.content?.trim() && (
               <div className="mb-4">
-                <SectionLabel>Задачи из встречи</SectionLabel>
-                <div className="space-y-2">
-                  {tasks.map((t) => (
-                    <button key={t.id} type="button" onClick={() => openTask(t)} className="w-full text-left transition-transform active:scale-[0.99]">
-                      <RoyCard className="flex items-center gap-2 px-4 py-3">
-                        <PriDot pri={(t.priority as "high" | "med" | "low" | null) ?? null} />
-                        <span className="flex-1 truncate font-medium text-ink" style={{ fontSize: 14 }}>
-                          {t.title}
-                        </span>
-                        <Market code={t.country} />
-                      </RoyCard>
-                    </button>
-                  ))}
-                </div>
+                <TasksFromMeeting entry={e} onAdded={loadTasks} />
+                {tasks.length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    {tasks.map((t) => (
+                      <button key={t.id} type="button" onClick={() => openTask(t)} className="w-full text-left transition-transform active:scale-[0.99]">
+                        <RoyCard className="flex items-center gap-2 px-4 py-3">
+                          <PriDot pri={(t.priority as "high" | "med" | "low" | null) ?? null} />
+                          <span className="flex-1 truncate font-medium text-ink" style={{ fontSize: 14 }}>
+                            {t.title}
+                          </span>
+                          <Market code={t.country} />
+                        </RoyCard>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

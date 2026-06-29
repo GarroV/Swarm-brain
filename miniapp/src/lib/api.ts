@@ -9,6 +9,8 @@ export type CreateTaskInput = {
   country?: string | null;
   task_role?: string | null;
   priority?: string | null;
+  // Привязка к встрече (entry.id): задача попадает в блок «Задачи из встречи».
+  meeting_id?: string | null;
   // Модуль задач (Рой):
   is_private?: boolean;
   start_date?: string | null;
@@ -283,7 +285,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       assignees: [], assignee_telegram_ids: input.assignee_telegram_id ? [input.assignee_telegram_id] : [],
       due_date: input.due_date ?? null, tags: input.tags ?? [], country: input.country ?? null,
       task_role: input.task_role ?? null, priority: input.priority ?? null, source: "mini_app", status: "open",
-      created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
+      created_at: new Date().toISOString(), updated_at: null, meeting_id: input.meeting_id ?? null, url: null, group_id: "cee",
       created_by_name: MOCK_ME.name,
       is_private: input.is_private ?? false, owner_id: input.is_private ? MOCK_ME.telegram_id : null,
       start_date: input.start_date ?? null, timeline_position: input.timeline_position ?? null,
