@@ -124,10 +124,16 @@ final class RecorderWidget {
         p.backgroundColor = .clear
         p.appearance = NSAppearance(named: .darkAqua)
 
-        let card = NSView()
+        let card = NSVisualEffectView()                       // тёмное стекло (как панель заметок)
+        card.material = .hudWindow
+        card.blendingMode = .behindWindow
+        card.state = .active
+        card.appearance = NSAppearance(named: .vibrantDark)
         card.wantsLayer = true
-        card.layer?.backgroundColor = NSColor(white: 0.13, alpha: 0.97).cgColor
         card.layer?.cornerRadius = 18
+        card.layer?.masksToBounds = true
+        card.layer?.borderWidth = 1
+        card.layer?.borderColor = RoyArt.amber.withAlphaComponent(0.32).cgColor   // янтарная обводка
 
         configMark(recMark)
         configMark(pendMark)
@@ -208,10 +214,10 @@ final class RecorderWidget {
         sizeIcon(v, 24)
     }
 
-    // Две тонкие полосы уровня: mic (красная, «я») и system (голубая, «собеседники»).
+    // Две тонкие полосы уровня в айдентике «Роя»: mic (янтарь, «я») и system (светлый янтарь, «собеседники»).
     private func configLevelBar() {
-        configOneBar(track: levelTrack, fill: levelFill, color: .systemRed)
-        configOneBar(track: sysLevelTrack, fill: sysLevelFill, color: .systemBlue)
+        configOneBar(track: levelTrack, fill: levelFill, color: RoyArt.amber)
+        configOneBar(track: sysLevelTrack, fill: sysLevelFill, color: NSColor(srgbRed: 0.96, green: 0.77, blue: 0.42, alpha: 1))
     }
 
     // Одна полоса: тёмный трек + цветное заполнение (CALayer), ширина по уровню 0…1.
