@@ -18,6 +18,7 @@ import {
 import type { Entry, AgentMeeting, TranscriptSegment } from "@/types";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { TasksFromMeeting } from "../TasksFromMeeting";
+import { MarkdownTextarea } from "../MarkdownTextarea";
 
 // ── Типы объединённого списка ────────────────────────────────────────────────
 
@@ -569,16 +570,7 @@ function AgentMeetingDetail({
             </div>
             {editingNotes ? (
               <div className="mt-1">
-                <textarea
-                  autoFocus
-                  value={notesDraft}
-                  onChange={(e) => setNotesDraft(e.target.value)}
-                  disabled={saving}
-                  rows={14}
-                  className="w-full resize-y rounded-[14px] border border-line-2 bg-surface px-4 py-3 text-ink outline-none focus:border-primary disabled:opacity-50"
-                  style={{ fontSize: 14, lineHeight: 1.6, fontFamily: "ui-monospace, monospace" }}
-                />
-                <p className="mt-1 text-ink-mute" style={{ fontSize: 11 }}>Markdown: «### Тема» — заголовок раздела, «- » — пункт.</p>
+                <MarkdownTextarea value={notesDraft} onChange={setNotesDraft} disabled={saving} autoFocus />
                 <div className="mt-2 flex gap-2">
                   <button type="button" onClick={saveNotes} disabled={saving} className="flex-1 rounded-[12px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
                     {saving ? "Сохраняем…" : "Сохранить тезисы"}
