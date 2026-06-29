@@ -1,37 +1,15 @@
 "use client";
 import { useRoyNav } from "../nav";
-import { AvatarStack, Market } from "../ui";
-import { DashBlock, Row, StatusPill, norm } from "./shared";
+import { DashBlock, DashTaskRow, norm } from "./shared";
 import type { DashboardData } from "./useDashboardData";
-import type { Task } from "@/types";
 
 // Право-низ главного экрана: задачи команды (assignee ≠ текущий пользователь).
-// Строка: аватар исполнителя, заголовок, статус-пилюля. Шапка → вкладка «Задачи» (доска).
+// Тот же `DashTaskRow` (= `TaskRow`), что и на доске/в «Моих» — единый вид; исполнитель
+// показывается аватаром (showAssignee). Шапка → вкладка «Задачи» (доска).
 // Источник: splitByOwner().team. Показываем только незавершённые — то, что в работе.
 
-function TeamRow({ t, onOpen }: { t: Task; onOpen: () => void }) {
-  return (
-    <Row onClick={onOpen}>
-      {t.assignees?.length > 0 ? (
-        <AvatarStack names={t.assignees} size={26} />
-      ) : (
-        <span className="inline-block shrink-0 rounded-full bg-surface-2" style={{ width: 26, height: 26 }} />
-      )}
-      <div className="min-w-0 flex-1">
-        <div className="truncate font-semibold text-ink" style={{ fontSize: 13.5, letterSpacing: "-0.01em" }}>
-          {t.title}
-        </div>
-        <div className="mt-0.5 flex items-center gap-2">
-          <StatusPill status={norm(t.status)} />
-          <Market code={t.country} />
-        </div>
-      </div>
-    </Row>
-  );
-}
-
 export function TeamTasks({ data, className }: { data: DashboardData; className?: string }) {
-  const { setTab, openTask } = useRoyNav();
+  const { setTab } = useRoyNav();
   const { loading, team } = data;
   // Активные задачи команды: незавершённые требуют внимания.
   const active = team.filter((t) => norm(t.status) !== "done");
@@ -49,7 +27,7 @@ export function TeamTasks({ data, className }: { data: DashboardData; className?
       className={className}
     >
       {active.map((t) => (
-        <TeamRow key={t.id} t={t} onOpen={() => openTask(t)} />
+        <DashTaskRow key={t.id} task={t} showAssignee />
       ))}
     </DashBlock>
   );

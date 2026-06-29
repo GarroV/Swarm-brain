@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { NavHeader, RoyCard, Market, SectionLabel, IconBtn, PriDot, TezisyBlocks, Segmented } from "../ui";
+import { NavHeader, Market, SectionLabel, IconBtn, TezisyBlocks, Segmented } from "../ui";
+import { DashTaskRow } from "../dash/shared";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
@@ -19,7 +20,7 @@ function fmtDate(iso: string | null): string {
 }
 
 export function MeetingDetail({ id }: { id: string }) {
-  const { pop, toast, openTask } = useRoyNav();
+  const { pop, toast, tasksVersion } = useRoyNav();
   const [e, setE] = useState<Entry | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [err, setErr] = useState(false);
@@ -38,7 +39,7 @@ export function MeetingDetail({ id }: { id: string }) {
     fetchTasks()
       .then((ts) => setTasks(ts.filter((t) => t.meeting_id === id)))
       .catch(() => {});
-  }, [id]);
+  }, [id, tasksVersion]);
 
   useEffect(() => {
     load();
@@ -144,18 +145,8 @@ export function MeetingDetail({ id }: { id: string }) {
               <div className="mb-4">
                 <TasksFromMeeting entry={e} onAdded={loadTasks} />
                 {tasks.length > 0 && (
-                  <div className="mt-2 space-y-2">
-                    {tasks.map((t) => (
-                      <button key={t.id} type="button" onClick={() => openTask(t)} className="w-full text-left transition-transform active:scale-[0.99]">
-                        <RoyCard className="flex items-center gap-2 px-4 py-3">
-                          <PriDot pri={(t.priority as "high" | "med" | "low" | null) ?? null} />
-                          <span className="flex-1 truncate font-medium text-ink" style={{ fontSize: 14 }}>
-                            {t.title}
-                          </span>
-                          <Market code={t.country} />
-                        </RoyCard>
-                      </button>
-                    ))}
+                  <div className="mt-2 space-y-1">
+                    {tasks.map((t) => <DashTaskRow key={t.id} task={t} showAssignee />)}
                   </div>
                 )}
               </div>

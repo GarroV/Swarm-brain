@@ -1,42 +1,15 @@
 "use client";
 import { useRoyNav } from "../nav";
-import { RoyIcon } from "../icons";
-import { Market, PriDot } from "../ui";
-import { DashBlock, Row, SubHead, StatusPill, fmtDate, norm } from "./shared";
+import { DashBlock, SubHead, DashTaskRow } from "./shared";
 import type { DashboardData } from "./useDashboardData";
-import type { Task } from "@/types";
 
 // Левая колонка главного экрана: личные задачи текущего пользователя, сгруппированные
 // по сроку — «Сегодня» (просрочено + сегодня), «На неделе», и счётчик «N без срока».
 // Шапка → вкладка «Задачи» (доска). Источник: groupMine(splitByOwner().mine).
-
-const pri = (t: Task) => (t.priority as "high" | "med" | "low" | null) ?? null;
-
-function TaskItem({ t, onOpen }: { t: Task; onOpen: () => void }) {
-  return (
-    <Row onClick={onOpen}>
-      <PriDot pri={pri(t)} />
-      <div className="min-w-0 flex-1">
-        <div className="truncate font-semibold text-ink" style={{ fontSize: 14, letterSpacing: "-0.01em" }}>
-          {t.title}
-        </div>
-        <div className="mt-0.5 flex items-center gap-2">
-          <StatusPill status={norm(t.status)} />
-          <Market code={t.country} />
-          {fmtDate(t.due_date) && (
-            <span className="inline-flex items-center gap-1 text-ink-mute" style={{ fontSize: 11.5 }}>
-              <RoyIcon name="cal" size={11} />
-              {fmtDate(t.due_date)}
-            </span>
-          )}
-        </div>
-      </div>
-    </Row>
-  );
-}
+// Строки рисуются общим `DashTaskRow` (= тот же `TaskRow`, что и на доске) — единый вид.
 
 export function PersonalTasks({ data, className }: { data: DashboardData; className?: string }) {
-  const { setTab, openTask } = useRoyNav();
+  const { setTab } = useRoyNav();
   const { loading, today, week, noDate } = data;
   const empty = today.length === 0 && week.length === 0 && noDate.length === 0;
 
@@ -55,13 +28,13 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
       {today.length > 0 && (
         <>
           <SubHead count={today.length}>Сегодня</SubHead>
-          {today.map((t) => <TaskItem key={t.id} t={t} onOpen={() => openTask(t)} />)}
+          {today.map((t) => <DashTaskRow key={t.id} task={t} />)}
         </>
       )}
       {week.length > 0 && (
         <>
           <SubHead count={week.length}>На неделе</SubHead>
-          {week.map((t) => <TaskItem key={t.id} t={t} onOpen={() => openTask(t)} />)}
+          {week.map((t) => <DashTaskRow key={t.id} task={t} />)}
         </>
       )}
       {noDate.length > 0 && (

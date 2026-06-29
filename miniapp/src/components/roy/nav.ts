@@ -38,6 +38,8 @@ export type RoyNav = {
   // Счётчик ревизии задач: модал бампает его при сохранении/удалении → списки задач,
   // включившие его в deps, перезапрашиваются (общий рефреш без per-caller колбэков).
   tasksVersion: number;
+  // Бампнуть tasksVersion вручную (например, после inline-чекбокса на дашборде).
+  bumpTasks: () => void;
 };
 
 export const RoyNavContext = createContext<RoyNav | null>(null);

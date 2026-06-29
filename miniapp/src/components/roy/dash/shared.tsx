@@ -2,6 +2,11 @@
 import type { ReactNode } from "react";
 import { RoyCard } from "../ui";
 import { RoyIcon, type RoyIconName } from "../icons";
+import { useRoyNav } from "../nav";
+import { TaskRow } from "@/components/tasks/TaskRow";
+import { isDone } from "@/lib/smartLists";
+import { updateTask } from "@/lib/api";
+import type { Task } from "@/types";
 
 // Общий каркас панелей desktop-главного экрана «Рой». Вынесено из RoyDashboard,
 // чтобы пять панелей (PersonalTasks/SearchHero/Materials/MeetingsApprove/TeamTasks)
@@ -117,6 +122,35 @@ export function Row({ onClick, children }: { onClick: () => void; children: Reac
   );
 }
 
+// ── Строка задачи на дашборде ─────────────────────────────────────────────────
+// Единый рендер с полным списком задач: тот же `TaskRow` (круглый чекбокс, та же
+// типографика/чипы/трактовка срока), чтобы задача не «прыгала» при переходе
+// дашборд ↔ доска. Кликабельный контейнер открывает задачу; чекбокс гасит всплытие
+// и переключает done (updateTask → bumpTasks обновляет панели). Не button — внутри
+// TaskRow уже есть button-чекбокс (вложенные button невалидны).
+export function DashTaskRow({ task, showAssignee = false }: { task: Task; showAssignee?: boolean }) {
+  const { openTask, toast, bumpTasks } = useRoyNav();
+  const toggle = async () => {
+    try {
+      await updateTask(task.id, { status: isDone(task) ? "open" : "done" });
+      bumpTasks();
+    } catch {
+      toast("Не удалось обновить");
+    }
+  };
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => openTask(task)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTask(task); } }}
+      className="cursor-pointer rounded-[12px] transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+    >
+      <TaskRow task={task} showAssignee={showAssignee} onToggle={toggle} />
+    </div>
+  );
+}
+
 // ── Мелкий лейбл подсекции внутри панели (Сегодня / На неделе) ───────────────────
 export function SubHead({ children, count }: { children: ReactNode; count?: number }) {
   return (
@@ -131,20 +165,5 @@ export function SubHead({ children, count }: { children: ReactNode; count?: numb
       )}
       <span className="ml-1 h-px flex-1 bg-line" />
     </div>
-  );
-}
-
-// ── Статус-пилюля задачи (open / in_progress) ───────────────────────────────────
-export function StatusPill({ status }: { status: string }) {
-  const isProg = status === "in_progress";
-  const color = isProg ? "var(--status-prog)" : "var(--status-open)";
-  const label = isProg ? "В работе" : "Открыто";
-  return (
-    <span
-      className="inline-flex items-center font-semibold"
-      style={{ fontSize: 11, color, background: `color-mix(in srgb, ${color} 14%, transparent)`, borderRadius: 6, padding: "1px 7px" }}
-    >
-      {label}
-    </span>
   );
 }

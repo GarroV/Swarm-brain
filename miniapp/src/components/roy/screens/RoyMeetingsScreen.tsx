@@ -1,8 +1,9 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { RoyHeader, Segmented, RoyCard, Market, SectionLabel, PriDot } from "../ui";
+import { RoyHeader, Segmented, RoyCard, Market, SectionLabel } from "../ui";
 import { RoyIcon, type RoyIconName } from "../icons";
+import { DashTaskRow } from "../dash/shared";
 import { useIsDesktop } from "../useIsDesktop";
 import { deriveEntryTitle } from "../entry";
 import { fetchMeetings, fetchTasks, deleteMeeting } from "@/lib/api";
@@ -90,7 +91,7 @@ function MeetingCard({ e, onOpen, onRemove }: { e: Entry; onOpen: () => void; on
 }
 
 // Задачи, извлечённые из встреч (meeting_id != null) — быстрый доступ из раздела встреч.
-function MeetingTasksPanel({ onOpen }: { onOpen: (task: Task) => void }) {
+function MeetingTasksPanel() {
   const { tasksVersion } = useRoyNav();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   useEffect(() => {
@@ -104,15 +105,7 @@ function MeetingTasksPanel({ onOpen }: { onOpen: (task: Task) => void }) {
       <SectionLabel className="!mb-2">Задачи из встреч · {tasks.length}</SectionLabel>
       <div className="space-y-0.5">
         {tasks.slice(0, 10).map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => onOpen(t)}
-            className="flex w-full items-center gap-2 rounded-[9px] px-2 py-1.5 text-left transition-colors hover:bg-surface-2"
-          >
-            <PriDot pri={(t.priority as "high" | "med" | "low" | null) ?? null} />
-            <span className="min-w-0 flex-1 truncate text-ink" style={{ fontSize: 13 }}>{t.title}</span>
-          </button>
+          <DashTaskRow key={t.id} task={t} showAssignee />
         ))}
       </div>
     </RoyCard>
@@ -137,7 +130,7 @@ function CountsPanel({ title, counts }: { title: string; counts: [string, number
 }
 
 export function RoyMeetingsScreen() {
-  const { push, toast, openTask } = useRoyNav();
+  const { push, toast } = useRoyNav();
   const isDesktop = useIsDesktop();
   const [meetings, setMeetings] = useState<Entry[] | null>(null);
   const [seg, setSeg] = useState("all");
@@ -196,7 +189,7 @@ export function RoyMeetingsScreen() {
           </div>
           <aside className="min-h-0 space-y-3 overflow-y-auto">
             <AgentReviewQueue onOpen={openReview} />
-            <MeetingTasksPanel onOpen={(t) => openTask(t)} />
+            <MeetingTasksPanel />
             {sidebarCounts}
           </aside>
         </div>

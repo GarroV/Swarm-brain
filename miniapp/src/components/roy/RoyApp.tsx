@@ -136,7 +136,7 @@ export function RoyApp({ me }: { me: Me | null }) {
     return () => window.removeEventListener(OPEN_MEETING_EVENT, handler);
   }, [openMeeting]);
 
-  const nav: RoyNav = { me, tab, setTab, push, pop, toast, openTask, openAnswer, tasksVersion };
+  const nav: RoyNav = { me, tab, setTab, push, pop, toast, openTask, openAnswer, tasksVersion, bumpTasks: () => setTasksVersion((v) => v + 1) };
   const top = stack[stack.length - 1];
   // На десктопе домашняя вкладка («Поиск») — бенто-дашборд во всю ширину; на мобайле и в
   // push-стеке остаётся центрированная колонка.
