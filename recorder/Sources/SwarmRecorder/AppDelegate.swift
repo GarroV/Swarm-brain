@@ -412,7 +412,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else if !processingIds.isEmpty {
                 widget.showProcessing()
             } else {
-                widget.showIdle()   // простой: пилюля с ▶ — старт записи без трея
+                widget.hide()   // простой: пилюли нет — она появляется по детекту встречи/звонка
             }
         case .error, .tokenExpired,
              .noScreenRecording, .noSystemAudio, .noMic, .offline:
