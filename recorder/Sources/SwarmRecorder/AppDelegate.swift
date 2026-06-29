@@ -618,6 +618,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 if let cfg = self.config {
                     await LiveNotesPanel.shared.show(
                         config: cfg,
+                        initialTitle: id?.title,
                         micLevel: { [weak self] in self?.recorder.currentMicLevel() ?? 0 },
                         systemLevel: { [weak self] in self?.recorder.currentSystemLevel() ?? 0 },
                         onStop: { [weak self] in self?.stopTapped() })
@@ -780,12 +781,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let cfg = config else { return }
         let client = SwarmClient(config: cfg)
         let iso = ISO8601DateFormatter()
+        // Название, поправленное пользователем в панели на ходу, побеждает дефолт (календарь/«Запись …»).
+        let titleOverride = await LiveNotesPanel.shared.currentTitleOverride()
         let req: ClaimRequest
         if let info = p.identity {
             req = ClaimRequest(
                 identityKind: info.kind,
                 identityKey: info.key,
-                title: info.title ?? "Встреча",
+                title: titleOverride ?? info.title ?? "Встреча",
                 startedAt: info.startISO ?? iso.string(from: p.started),
                 endedAt: info.endISO ?? iso.string(from: p.ended),
                 attendees: info.attendees.isEmpty ? nil : info.attendees,
@@ -796,7 +799,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             req = ClaimRequest(
                 identityKind: .manual,
                 identityKey: p.manualKey,   // стабильный ключ → повтор claim не плодит встречи
-                title: "Запись \(DateFormatter.localizedString(from: p.ended, dateStyle: .short, timeStyle: .short))",
+                title: titleOverride ?? "Запись \(DateFormatter.localizedString(from: p.ended, dateStyle: .short, timeStyle: .short))",
                 startedAt: iso.string(from: p.started),
                 endedAt: iso.string(from: p.ended),
                 agentVersion: "0.1.0",

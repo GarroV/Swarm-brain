@@ -14,6 +14,8 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private var notesSection: NSView?          // сворачиваемая часть (divider+sub+notes+input+footer)
     private var notesStack: NSStackView?
     private var input: NSTextField?
+    private var titleField: NSTextField?       // редактируемое название встречи (в шапке, всегда видно)
+    private var editedTitle: String?           // переопределение названия пользователем (nil → берём дефолт claim)
     private var fieldBox: NSView?
     private var emptyView: NSView?
     private var timerLabel: NSTextField?
@@ -28,7 +30,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private var startedAt: Date?
 
     private static let panelWidth: CGFloat = 320
-    private static let collapsedHeight: CGFloat = 86
+    private static let collapsedHeight: CGFloat = 116   // 2 ряда: контролы + строка названия
     private static let margin: CGFloat = 16
     private static let amber = RoyArt.amber
     private static let amberHi = NSColor(srgbRed: 0.96, green: 0.77, blue: 0.42, alpha: 1)
@@ -38,17 +40,27 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private static let line = NSColor(srgbRed: 0.91, green: 0.78, blue: 0.55, alpha: 0.13)
     private static let rec = NSColor(srgbRed: 1, green: 0.42, blue: 0.37, alpha: 1)
 
-    func show(config: SwarmConfig, micLevel: @escaping () -> Float, systemLevel: @escaping () -> Float, onStop: @escaping () -> Void) {
+    func show(config: SwarmConfig, initialTitle: String?, micLevel: @escaping () -> Float, systemLevel: @escaping () -> Float, onStop: @escaping () -> Void) {
         self.micLevel = micLevel; self.sysLevel = systemLevel; self.onStop = onStop
         buffer.removeAll()
+        editedTitle = nil
         startedAt = Date()
         ensurePanel()
+        titleField?.stringValue = initialTitle ?? ""
         clearNotes()
         collapsed = false
         applySize(expanded: true, animated: false)
         startTimers()
         panel?.orderFrontRegardless()
         panel?.makeFirstResponder(input)
+    }
+
+    /// Текущее переопределение названия (читается на стопе при claim). Синхронизируется со
+    /// значением поля на момент вызова — даже если пользователь не нажал Enter/не ушёл с поля.
+    func currentTitleOverride() -> String? {
+        let t = titleField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !t.isEmpty { editedTitle = t }
+        return editedTitle
     }
 
     func hide() { stopTimers(); panel?.orderOut(nil) }
@@ -137,6 +149,22 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         header.orientation = .horizontal; header.alignment = .centerY; header.spacing = 11
         header.translatesAutoresizingMaskIntoConstraints = false
 
+        // ── строка названия встречи (всегда видна, в т.ч. свёрнутой; правка на ходу → в claim) ──
+        let tag = iconView("tag", size: 13, color: Self.amber)
+        let titleFld = NSTextField()
+        titleFld.placeholderString = "Название встречи…"
+        titleFld.font = .systemFont(ofSize: 13.5, weight: .semibold); titleFld.textColor = Self.ink
+        titleFld.isBordered = false; titleFld.drawsBackground = false; titleFld.focusRingType = .none
+        titleFld.lineBreakMode = .byTruncatingTail; titleFld.cell?.isScrollable = true
+        titleFld.usesSingleLineMode = true
+        titleFld.delegate = self; titleFld.target = self; titleFld.action = #selector(commitTitle)
+        titleFld.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        titleFld.toolTip = "Название встречи — можно править на ходу, уйдёт в систему на стопе"
+        titleField = titleFld
+        let titleRow = NSStackView(views: [tag, titleFld])
+        titleRow.orientation = .horizontal; titleRow.alignment = .centerY; titleRow.spacing = 8
+        titleRow.translatesAutoresizingMaskIntoConstraints = false
+
         // ── сворачиваемая часть ──
         let divider = NSBox(); divider.boxType = .separator; divider.translatesAutoresizingMaskIntoConstraints = false
         let sub = NSTextField(labelWithString: "пиши по ходу — лягут к встрече по времени")
@@ -194,12 +222,12 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         section.setHuggingPriority(.defaultLow, for: .vertical)
         notesSection = section
 
-        let outer = NSStackView(views: [header, section])
+        let outer = NSStackView(views: [header, titleRow, section])
         outer.orientation = .vertical; outer.alignment = .leading; outer.spacing = 11
         outer.edgeInsets = NSEdgeInsets(top: 18, left: 16, bottom: 14, right: 16)
         outer.translatesAutoresizingMaskIntoConstraints = false
         vfx.addSubview(outer)
-        let fw: [NSView] = [header, divider, scroll, box, section]
+        let fw: [NSView] = [header, titleRow, divider, scroll, box, section]
         NSLayoutConstraint.activate([
             outer.leadingAnchor.constraint(equalTo: vfx.leadingAnchor),
             outer.trailingAnchor.constraint(equalTo: vfx.trailingAnchor),
@@ -279,8 +307,21 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     }
     private func fmt(_ s: Int) -> String { String(format: "%02d:%02d", s / 60, s % 60) }
 
-    func controlTextDidBeginEditing(_ obj: Notification) { fieldBox?.layer?.borderColor = Self.amber.withAlphaComponent(0.55).cgColor }
-    func controlTextDidEndEditing(_ obj: Notification) { fieldBox?.layer?.borderColor = Self.line.cgColor }
+    private func isTitle(_ obj: Notification) -> Bool { (obj.object as AnyObject) === titleField }
+    func controlTextDidBeginEditing(_ obj: Notification) {
+        guard !isTitle(obj) else { return }   // подсветка — только у поля пометок
+        fieldBox?.layer?.borderColor = Self.amber.withAlphaComponent(0.55).cgColor
+    }
+    func controlTextDidEndEditing(_ obj: Notification) {
+        if isTitle(obj) { captureTitle(); return }
+        fieldBox?.layer?.borderColor = Self.line.cgColor
+    }
+
+    private func captureTitle() {
+        let t = titleField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        editedTitle = t.isEmpty ? nil : t
+    }
+    @objc private func commitTitle() { captureTitle(); panel?.makeFirstResponder(nil) }
 
     @objc private func stopTapped() { onStop?() }
 
