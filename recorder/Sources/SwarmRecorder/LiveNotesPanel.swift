@@ -4,12 +4,10 @@ import WebKit
 /// Правая док-панель «Рой · заметки» (Granola-режим, Фаза 3, вариант B).
 /// Всплывает на старте записи, грузит /live?host=recorder в WKWebView — пользователь пишет
 /// «пометки на полях». meetingId во время записи ещё нет (claim — на стопе), поэтому пометки
-/// НЕ сохраняются по ходу, а копятся в нативный буфер через JS→native мост (royNotes).
-/// На стопе (когда claim даёт meetingId) рекордер вызывает flush() → обменивает свой токен
-/// на web-JWT (meeting-webtoken) и POST'ит пометки в /agent-meetings/:id/notes.
-/// Плавает поверх всех окон у правого края (как блокнот Granola); место не резервирует.
+/// копятся в нативный буфер через JS→native мост (royNotes). На стопе рекордер вызывает
+/// flush() → обменивает токен на web-JWT (meeting-webtoken) и POST'ит в /agent-meetings/:id/notes.
 @MainActor
-final class LiveNotesPanel: NSObject, WKScriptMessageHandler {
+final class LiveNotesPanel: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     static let shared = LiveNotesPanel()
     private override init() { super.init() }
 
@@ -21,7 +19,6 @@ final class LiveNotesPanel: NSObject, WKScriptMessageHandler {
     private static let panelWidth: CGFloat = 380
     private static let margin: CGFloat = 16
 
-    /// Показать панель (грузит /live в режиме рекордера). Буфер пометок начинаем заново.
     func show(config: SwarmConfig) {
         buffer.removeAll()
         ensurePanel(config: config)
@@ -39,23 +36,32 @@ final class LiveNotesPanel: NSObject, WKScriptMessageHandler {
         let wkc = WKWebViewConfiguration()
         wkc.userContentController.add(self, name: "royNotes")     // JS → native мост
         let wv = WKWebView(frame: frame, configuration: wkc)
-        wv.setValue(false, forKey: "drawsBackground")              // без белой вспышки (тёмная /live)
+        wv.navigationDelegate = self
         webView = wv
-        let base = config.webBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        if let url = URL(string: "\(base)/live?host=recorder") { wv.load(URLRequest(url: url)) }
 
+        // Тёмный плейсхолдер сразу (чтобы не было белого «молчания», пока грузится /live).
+        wv.loadHTMLString("<html><body style='margin:0;background:#0a0b07;color:#9a937f;font:14px -apple-system;display:grid;place-items:center;height:100vh'>загрузка…</body></html>", baseURL: nil)
+
+        // Обычное перетаскиваемое окно (титлбар = ручка для перемещения).
         let p = NSPanel(contentRect: frame,
-                        styleMask: [.titled, .closable, .resizable, .utilityWindow, .fullSizeContentView],
+                        styleMask: [.titled, .closable, .resizable],
                         backing: .buffered, defer: false)
         p.title = "Рой · заметки"
-        p.titlebarAppearsTransparent = true
-        p.isMovableByWindowBackground = true
-        p.level = .floating
+        p.level = .floating                                   // поверх обычных окон
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.hidesOnDeactivate = false
         p.isReleasedWhenClosed = false
+        p.backgroundColor = NSColor(calibratedRed: 0.04, green: 0.043, blue: 0.027, alpha: 1) // #0a0b07
         p.contentView = wv
         panel = p
+
+        // Грузим реальный экран ПОСЛЕ установки делегата/окна.
+        let base = config.webBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if let url = URL(string: "\(base)/live?host=recorder") {
+            var req = URLRequest(url: url)
+            req.cachePolicy = .reloadIgnoringLocalCacheData      // свежий /live, без старого кэша
+            wv.load(req)
+        }
     }
 
     private func positionAtRightEdge() {
@@ -65,6 +71,26 @@ final class LiveNotesPanel: NSObject, WKScriptMessageHandler {
         let x = vf.maxX - Self.panelWidth - Self.margin
         let y = vf.maxY - h - Self.margin
         panel.setFrame(NSRect(x: x, y: y, width: Self.panelWidth, height: h), display: true)
+    }
+
+    // MARK: - WKNavigationDelegate (диагностика: ошибку видно, а не «белый экран»)
+
+    nonisolated func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        NSLog("SwarmRecorder: LiveNotes /live не загрузился (provisional): \(error.localizedDescription)")
+        showLoadError(error.localizedDescription)
+    }
+    nonisolated func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        NSLog("SwarmRecorder: LiveNotes /live ошибка навигации: \(error.localizedDescription)")
+        showLoadError(error.localizedDescription)
+    }
+    nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        NSLog("SwarmRecorder: LiveNotes /live загрузился")
+    }
+    private nonisolated func showLoadError(_ msg: String) {
+        Task { @MainActor in
+            let safe = msg.replacingOccurrences(of: "<", with: "&lt;")
+            self.webView?.loadHTMLString("<html><body style='margin:0;background:#0a0b07;color:#ece5d4;font:14px -apple-system;padding:24px'>Не удалось загрузить заметки:<br><br><span style='color:#ff8a7a'>\(safe)</span><br><br>проверь сеть/доступ к swarm-brain.pages.dev</body></html>", baseURL: nil)
+        }
     }
 
     // MARK: - JS → native (каждая пометка из /live копится в буфер)
@@ -79,13 +105,11 @@ final class LiveNotesPanel: NSObject, WKScriptMessageHandler {
 
     // MARK: - flush на стопе (meetingId известен после claim)
 
-    /// Слить накопленные пометки к встрече. Best-effort: web-JWT через meeting-webtoken →
-    /// POST /swarm-api/agent-meetings/:id/notes (Bearer JWT). Не блокирует критичный путь отправки.
     func flush(meetingId: String, config: SwarmConfig) async {
         let pending = buffer
         guard !pending.isEmpty else { hide(); return }
         guard let jwt = await fetchWebToken(config: config) else {
-            NSLog("SwarmRecorder: live-пометки не слиты — нет web-JWT (\(pending.count) шт. в буфере)")
+            NSLog("SwarmRecorder: live-пометки не слиты — нет web-JWT (\(pending.count) шт.)")
             return
         }
         let api = config.ingestBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -102,12 +126,11 @@ final class LiveNotesPanel: NSObject, WKScriptMessageHandler {
             if let (_, resp) = try? await URLSession.shared.data(for: req),
                let code = (resp as? HTTPURLResponse)?.statusCode, code == 200 || code == 201 { sent += 1 }
         }
-        NSLog("SwarmRecorder: live-пометки слиты \(sent)/\(pending.count) к встрече \(meetingId)")
+        NSLog("SwarmRecorder: live-пометки слиты \(sent)/\(pending.count) → встреча \(meetingId)")
         if sent == pending.count { buffer.removeAll() }
         hide()
     }
 
-    /// recorder-токен → web-JWT (meeting-webtoken).
     private func fetchWebToken(config: SwarmConfig) async -> String? {
         let base = config.ingestBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let url = URL(string: "\(base)/meeting-webtoken") else { return nil }
