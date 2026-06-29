@@ -28,7 +28,8 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
   const due = fmtDue(task.due_date);
   const high = task.priority === "high";
   const fromMeeting = Boolean(task.meeting_id);
-  const showMeta = !done && (Boolean(task.country || due || high) || fromMeeting);
+  const hasAssignee = showAssignee && (task.assignees?.length ?? 0) > 0;
+  const showMeta = !done && (Boolean(task.country || due || high) || fromMeeting || hasAssignee);
 
   return (
     <div className="flex items-start gap-3 px-3 py-3">
@@ -68,6 +69,13 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
         {showMeta ? (
           // Есть чипы (дата/рынок/важное) — кнопки изменить/удалить встают в тот же ряд, рядом с датой.
           <div className="mt-1 flex flex-wrap items-center gap-2">
+            {hasAssignee && (
+              // Чья задача — ИМЕНЕМ, а не только аватаром-инициалами (видно в линзах «Команда»/«Все»).
+              <span className="inline-flex items-center gap-1 font-semibold text-ink-soft bg-surface-2 border border-line-2" style={{ fontSize: 11, borderRadius: 7, padding: "2px 7px" }}>
+                <RoyIcon name="team" size={11} />
+                {task.assignees[0]}{task.assignees.length > 1 ? ` +${task.assignees.length - 1}` : ""}
+              </span>
+            )}
             {fromMeeting && (
               <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 7, padding: "2px 7px" }}>
                 <RoyIcon name="meet" size={11} /> Встреча

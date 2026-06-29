@@ -65,17 +65,17 @@ export function RemindersTasks() {
       <SmartListNav variant="rail" active={r.activeList} counts={r.counts} onSelect={r.setActiveList} query={r.query} onQuery={r.setQuery} />
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <header className="flex items-baseline justify-between gap-3 px-6 pt-5 pb-3">
-          <div className="flex items-baseline gap-2.5">
-            <h1 className="font-bold text-accent-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>{activeDef.label}</h1>
-            <span className="text-ink-mute" style={{ fontSize: 13 }}>{total} {plural(total)}</span>
+        <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2 px-6 pt-5 pb-3">
+          <div className="flex min-w-0 items-baseline gap-2.5">
+            <h1 className="truncate font-bold text-accent-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>{activeDef.label}</h1>
+            <span className="shrink-0 text-ink-mute" style={{ fontSize: 13 }}>{total} {plural(total)}</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <LensToggle lens={r.lens} onChange={r.setLens} />
             <button
               type="button"
               onClick={() => setModalTask("new")}
-              className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3.5 py-1.5 font-semibold text-white transition-transform active:scale-[0.97]"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary px-3.5 py-1.5 font-semibold text-white transition-transform active:scale-[0.97]"
               style={{ fontSize: 13 }}
             >
               <RoyIcon name="plus" size={15} strokeWidth={2.3} />
