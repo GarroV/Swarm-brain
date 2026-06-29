@@ -479,6 +479,19 @@ Deno.serve(async (req: Request) => {
         return apiErr(400, "sprint_id не найден в этом воркспейсе", origin);
       }
 
+      // IDOR-guard: meeting_id — это entry.id. Принимаем, только если эта запись видна
+      // запросившему (воркспейс + приватность через getEntrySecure), иначе задачу можно
+      // подцепить к чужой/приватной встрече и засветить её в чужом блоке «Задачи из встречи».
+      const safeMeetingId = (body.meeting_id as string | null) ?? null;
+      if (safeMeetingId) {
+        try {
+          await getEntrySecure(supabase, safeMeetingId, { groupId, telegramId: telegram_id ?? 0 });
+        } catch (e) {
+          if (e instanceof EntryAccessError) return apiErr(e.status, e.message, origin);
+          throw e;
+        }
+      }
+
       const input: TaskInput = {
         title: body.title as string,
         description: (body.description as string | null) ?? null,
@@ -491,7 +504,7 @@ Deno.serve(async (req: Request) => {
         assignees,
         assignee_telegram_ids,
         confirmed: true,
-        meeting_id: (body.meeting_id as string | null) ?? null,
+        meeting_id: safeMeetingId,
         created_by_telegram_id: telegram_id ?? null,
         // Модуль задач (Рой):
         is_private: isPrivate,
