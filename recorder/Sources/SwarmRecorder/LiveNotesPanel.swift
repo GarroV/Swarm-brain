@@ -29,7 +29,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private var startedAt: Date?
 
     private static let panelWidth: CGFloat = 312
-    private static let collapsedHeight: CGFloat = 80   // 2 компактных ряда: контролы + название
+    private static let collapsedHeight: CGFloat = 54   // только ряд контролов (название — в блокноте)
     private static let margin: CGFloat = 16
     private static let amber = RoyArt.amber
     private static let amberHi = NSColor(srgbRed: 0.96, green: 0.77, blue: 0.42, alpha: 1)
@@ -214,13 +214,14 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         footLbl.font = .monospacedSystemFont(ofSize: 10, weight: .regular); footLbl.textColor = Self.mute
         let foot = NSStackView(views: [sync, footLbl]); foot.spacing = 7; foot.alignment = .centerY
 
-        let section = NSStackView(views: [divider, sub, scroll, box, foot])
+        // Название встречи — в раскрываемой части (видно только в блокноте). Свёрнутая пилюля = только контролы.
+        let section = NSStackView(views: [titleRow, divider, sub, scroll, box, foot])
         section.orientation = .vertical; section.alignment = .leading; section.spacing = 10
         section.translatesAutoresizingMaskIntoConstraints = false
         section.setHuggingPriority(.defaultLow, for: .vertical)
         notesSection = section
 
-        let outer = NSStackView(views: [header, titleRow, section])
+        let outer = NSStackView(views: [header, section])
         outer.orientation = .vertical; outer.alignment = .leading; outer.spacing = 8
         outer.edgeInsets = NSEdgeInsets(top: 13, left: 15, bottom: 12, right: 15)
         outer.translatesAutoresizingMaskIntoConstraints = false
