@@ -18,6 +18,8 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private var editedTitle: String?           // переопределение названия пользователем (nil → берём дефолт claim)
     private var fieldBox: NSView?
     private var timerLabel: NSTextField?
+    private var headerStack: NSStackView?      // контролы: горизонтально (блокнот) / вертикально (пилюля)
+    private var levelsStack: NSView?           // полоски уровня — прячем в пилюле (чистая капсула)
     private var micTrack: NSView?, sysTrack: NSView?
     private let micFill = CALayer(), sysFill = CALayer()
     private var timer: Timer?, levelTimer: Timer?
@@ -29,7 +31,8 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private var startedAt: Date?
 
     private static let panelWidth: CGFloat = 312
-    private static let collapsedHeight: CGFloat = 54   // только ряд контролов (название — в блокноте)
+    private static let collapsedWidth: CGFloat = 92    // узкая вертикальная пилюля
+    private static let collapsedHeight: CGFloat = 100  // марка · ● таймер · ✕ (вертикально)
     private static let margin: CGFloat = 16
     private static let amber = RoyArt.amber
     private static let amberHi = NSColor(srgbRed: 0.96, green: 0.77, blue: 0.42, alpha: 1)
@@ -71,11 +74,15 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
 
     private func applySize(expanded: Bool, animated: Bool) {
         notesSection?.isHidden = !expanded
+        levelsStack?.isHidden = !expanded                                 // в пилюле — без полосок, чисто
+        headerStack?.orientation = expanded ? .horizontal : .vertical     // блокнот → ряд; пилюля → столбик
+        headerStack?.alignment = expanded ? .centerY : .centerX
         guard let panel, let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame
+        let w = expanded ? Self.panelWidth : Self.collapsedWidth
         let h = expanded ? min(vf.height - Self.margin * 2, 440) : Self.collapsedHeight
-        let f = NSRect(x: vf.maxX - Self.panelWidth - Self.margin, y: vf.maxY - h - Self.margin,
-                       width: Self.panelWidth, height: h)
+        // Якорим в правый верх — пилюля растёт влево-вниз в блокнот и обратно.
+        let f = NSRect(x: vf.maxX - w - Self.margin, y: vf.maxY - h - Self.margin, width: w, height: h)
         if animated {
             NSAnimationContext.runAnimationGroup { ctx in ctx.duration = 0.2; ctx.allowsImplicitAnimation = true
                 panel.animator().setFrame(f, display: true) }
@@ -98,6 +105,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         p.isReleasedWhenClosed = false
         p.isOpaque = false
         p.backgroundColor = .clear
+        p.minSize = NSSize(width: 80, height: 80)   // titled-окно иначе не даёт ужать до узкой пилюли
         [.closeButton, .miniaturizeButton, .zoomButton].forEach { p.standardWindowButton($0)?.isHidden = true }
 
         // Сплошной тёмный фон (НЕ вибрэнси): сквозь блюр лез пёстрый созвон/стол. Так — чисто,
@@ -137,6 +145,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         let levels = NSStackView(views: [micTrack!, sysTrack!]); levels.orientation = .vertical
         levels.spacing = 3; levels.alignment = .leading; levels.distribution = .fillEqually
         levels.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        levelsStack = levels
 
         let stop = NSButton(); stop.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "стоп")
         stop.imagePosition = .imageOnly; stop.isBordered = false; stop.bezelStyle = .regularSquare
@@ -147,6 +156,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         let header = NSStackView(views: [mark, recGroup, levels, stop])
         header.orientation = .horizontal; header.alignment = .centerY; header.spacing = 9
         header.translatesAutoresizingMaskIntoConstraints = false
+        headerStack = header
 
         // ── строка названия встречи (всегда видна, в т.ч. свёрнутой; правка на ходу → в claim) ──
         let tag = iconView("tag", size: 11, color: Self.amber)
