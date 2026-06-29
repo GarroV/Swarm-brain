@@ -423,7 +423,20 @@ function AgentMeetingDetail({
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
   const [saving, setSaving] = useState(false);
-  useEffect(() => { setEditingTitle(false); setEditingNotes(false); setSaving(false); }, [meeting.id]);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { setEditingTitle(false); setEditingNotes(false); setSaving(false); setCopied(false); }, [meeting.id]);
+
+  const copyTranscript = async () => {
+    const text = (m.transcript?.segments ?? []).map(transcriptLine).join("\n");
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast("Не удалось скопировать");
+    }
+  };
 
   const apply = (updated: AgentMeeting) => { setM(updated); onUpdated(updated); };
 
@@ -602,7 +615,18 @@ function AgentMeetingDetail({
         {/* Низ: транскрипт — всегда видим (тезисы могут быть пустыми/в работе, а исходный текст нужен). */}
         {hasTranscript && (
           <div className="border-t border-line pt-3">
-            <SectionLabel>Транскрипт</SectionLabel>
+            <div className="flex items-center justify-between gap-2">
+              <SectionLabel>Транскрипт</SectionLabel>
+              <button
+                type="button"
+                onClick={copyTranscript}
+                className="-mt-1.5 inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
+                style={{ padding: "5px 11px", fontSize: 12 }}
+              >
+                {copied && <RoyIcon name="check" size={13} strokeWidth={2.2} />}
+                {copied ? "Скопировано" : "Копировать"}
+              </button>
+            </div>
             <div className="mt-2 flex flex-col gap-1.5">
               {segments.map((s, i) => (
                 <p
