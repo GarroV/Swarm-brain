@@ -11,6 +11,7 @@ import {
   patchMeeting,
   patchAgentMeetingDraft,
   renameAgentMeeting,
+  resummarizeAgentMeeting,
   deleteMeeting,
   deleteAgentMeeting,
   publishAgentMeeting,
@@ -424,7 +425,17 @@ function AgentMeetingDetail({
   const [notesDraft, setNotesDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
-  useEffect(() => { setEditingTitle(false); setEditingNotes(false); setSaving(false); setCopied(false); }, [meeting.id]);
+  const [reprocessing, setReprocessing] = useState(false);
+  useEffect(() => { setEditingTitle(false); setEditingNotes(false); setSaving(false); setCopied(false); setReprocessing(false); }, [meeting.id]);
+
+  // Переобработать тезисы текущим промптом (из сохранённого транскрипта, без ре-транскрибации).
+  const reprocess = async () => {
+    if (reprocessing) return;
+    setReprocessing(true);
+    try { apply(await resummarizeAgentMeeting(m.id)); toast("Тезисы переобработаны"); }
+    catch { toast("Не удалось переобработать"); }
+    finally { setReprocessing(false); }
+  };
 
   const copyTranscript = async () => {
     const text = (m.transcript?.segments ?? []).map(transcriptLine).join("\n");
@@ -571,14 +582,26 @@ function AgentMeetingDetail({
             <div className="flex items-center justify-between gap-2">
               <SectionLabel>Тезисы</SectionLabel>
               {!editingNotes && (
-                <button
-                  type="button"
-                  onClick={() => { setNotesDraft(m.draft_notes_md ?? ""); setEditingNotes(true); }}
-                  className="-mt-1.5 inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
-                  style={{ padding: "5px 11px", fontSize: 12 }}
-                >
-                  <RoyIcon name="pencil" size={13} strokeWidth={1.9} /> Править
-                </button>
+                <div className="-mt-1.5 flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={reprocess}
+                    disabled={reprocessing || !hasTranscript}
+                    title="Пересобрать тезисы текущим ИИ-промптом из транскрипта"
+                    className="inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
+                    style={{ padding: "5px 11px", fontSize: 12 }}
+                  >
+                    <RoyIcon name="spark" size={13} strokeWidth={1.9} /> {reprocessing ? "Обрабатываю…" : "Переобработать"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setNotesDraft(m.draft_notes_md ?? ""); setEditingNotes(true); }}
+                    className="inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
+                    style={{ padding: "5px 11px", fontSize: 12 }}
+                  >
+                    <RoyIcon name="pencil" size={13} strokeWidth={1.9} /> Править
+                  </button>
+                </div>
               )}
             </div>
             {editingNotes ? (

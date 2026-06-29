@@ -30,6 +30,7 @@ import {
 import type { DependencyType } from "../_shared/tasks/types.ts";
 import { normalizeCountries, COUNTRY_NAMES, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../_shared/countries.ts";
 import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
+import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import { handleAdminRoutes } from "./admin.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -1117,18 +1118,30 @@ Deno.serve(async (req: Request) => {
     return json(await withRecorderNames((data ?? []) as Array<{ recorders?: unknown }>), 200, origin);
   }
 
-  // GET/PATCH/DELETE /agent-meetings/:id, POST /:id/publish, GET/POST /:id/notes (live-пометки)
+  // GET/PATCH/DELETE /agent-meetings/:id, POST /:id/publish, GET/POST /:id/notes (live-пометки),
+  // POST /:id/resummarize (пере-сводка тезисов текущим промптом из сохранённого транскрипта)
   const agentMeetingMatch = routePath.match(/^\/agent-meetings\/([^/]+)$/);
   const agentPublishMatch = routePath.match(/^\/agent-meetings\/([^/]+)\/publish$/);
   const agentNotesMatch = routePath.match(/^\/agent-meetings\/([^/]+)\/notes$/);
-  if (agentMeetingMatch || agentPublishMatch || agentNotesMatch) {
-    const mId = (agentMeetingMatch ?? agentPublishMatch ?? agentNotesMatch)![1];
+  const agentResummarizeMatch = routePath.match(/^\/agent-meetings\/([^/]+)\/resummarize$/);
+  if (agentMeetingMatch || agentPublishMatch || agentNotesMatch || agentResummarizeMatch) {
+    const mId = (agentMeetingMatch ?? agentPublishMatch ?? agentNotesMatch ?? agentResummarizeMatch)![1];
     const { data: mRow } = await supabase.from("meetings").select("*").eq("id", mId).maybeSingle();
     const meeting = mRow as Record<string, unknown> | null;
     const recorders = (meeting?.recorders as Array<{ telegram_id: number }> | undefined) ?? [];
     const isRecorder = recorders.some((r) => r.telegram_id === telegram_id);
     if (!meeting || meeting.group_id !== groupId || (!isRecorder && !isAdmin)) {
       return apiErr(404, "Not found", origin);
+    }
+
+    // POST /:id/resummarize — пере-сводка тезисов ТЕКУЩИМ промптом из сохранённого транскрипта
+    // (без повторной транскрибации). Только до публикации; заголовок не трогаем.
+    if (agentResummarizeMatch && req.method === "POST") {
+      if (meeting.status === "in_base") return apiErr(409, "Уже опубликовано — правьте запись в базе", origin);
+      await resummarizeFromTranscript(supabase, mId);
+      const { data } = await supabase.from("meetings").select("*").eq("id", mId).single();
+      const [enriched] = await withRecorderNames([(data ?? {}) as { recorders?: unknown }]);
+      return json(enriched, 200, origin);
     }
 
     // ── Live-пометки «Роя» (meeting_live_notes) — для экрана /live ──────────────

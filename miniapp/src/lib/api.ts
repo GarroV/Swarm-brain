@@ -640,6 +640,16 @@ export async function renameAgentMeeting(id: string, title: string): Promise<Age
   return apiFetch<AgentMeeting>(`/agent-meetings/${id}`, { method: "PATCH", body: JSON.stringify({ title }) });
 }
 
+// Пере-сводка тезисов текущим промптом из сохранённого транскрипта (без ре-транскрибации).
+export async function resummarizeAgentMeeting(id: string): Promise<AgentMeeting> {
+  if (DEV_MODE) {
+    const idx = mockAgentMeetings.findIndex((x) => x.id === id);
+    if (idx === -1) throw new ApiError(404, "Not found");
+    return mockAgentMeetings[idx];
+  }
+  return apiFetch<AgentMeeting>(`/agent-meetings/${id}/resummarize`, { method: "POST" });
+}
+
 export async function deleteAgentMeeting(id: string): Promise<void> {
   if (DEV_MODE) {
     mockAgentMeetings = mockAgentMeetings.filter((x) => x.id !== id);

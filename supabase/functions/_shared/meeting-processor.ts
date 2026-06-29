@@ -298,6 +298,26 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
   await cleanupStorage(supabase, state);
 }
 
+// Пере-сводка тезисов из УЖЕ сохранённого транскрипта (meetings.transcript) ТЕКУЩИМ промптом —
+// без повторной транскрибации. Для кнопки «Переобработать тезисы» на ревью (вызывается из swarm-api).
+// Тот же путь, что и при первичной сводке (TEZIS_SYSTEM, temp 0.3) — один источник правды.
+// Заголовок НЕ трогаем (мог быть отредактирован вручную). Возвращает новые тезисы.
+export async function resummarizeFromTranscript(supabase: SupabaseClient, meetingId: string): Promise<string> {
+  const { data } = await supabase.from("meetings").select("id, title, transcript").eq("id", meetingId).single();
+  const row = data as { title: string | null; transcript: { segments?: Segment[] } | null } | null;
+  const segments = row?.transcript?.segments ?? [];
+  const transcriptText = segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n").slice(0, 100000);
+  if (!transcriptText.trim()) return NO_TEZISY_NOTE;
+  const raw = (await chatComplete(
+    TEZIS_SYSTEM,
+    `Встреча: ${row?.title ?? "без названия"}\n\nСтенограмма (реплики помечены «собеседник» — другие участники, «я» — владелец записи):\n${transcriptText}`,
+    0.3,
+  )).trim();
+  const tezisi = /^НЕТ[_\s]?ТЕЗИСОВ/i.test(raw) ? NO_TEZISY_NOTE : raw;
+  await supabase.from("meetings").update({ draft_notes_md: tezisi, updated_at: new Date().toISOString() }).eq("id", meetingId);
+  return tezisi;
+}
+
 // ── Главный шаг ─────────────────────────────────────────────────────────────
 // Делает ОГРАНИЧЕННУЮ бюджетом работу по одной встрече: берёт лиз, транскрибирует следующие
 // части, и если все готовы — сводит тезисы. Безопасно прерывается по бюджету (cron продолжит).
