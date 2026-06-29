@@ -423,7 +423,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // ── Сигнал «встреча в обработке» ─────────────────────────────────────────────
     // Аудио принято сервером (ingest 202) → показываем уведомление и держим капсулу «в обработке».
     private func handleMeetingUploaded(_ id: String) {
-        processingIds.insert(id)
+        // Аудио принято сервером. Пользователю уже говорим «тезисы придут в Telegram» — поэтому
+        // капсулу НЕ держим в спиннере до облачного done (это читалось как «зависла»): короткая
+        // зелёная галка и прячем. Локальный бэкап чистится в фоне сам (UploadQueue.drain, на done).
+        processingIds.remove(id)
         if processingNotified.insert(id).inserted {
             let content = UNMutableNotificationContent()
             content.title = "Запись отправлена"
@@ -432,17 +435,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             UNUserNotificationCenter.current().add(UNNotificationRequest(
                 identifier: "processing-\(id)", content: content, trigger: nil))
         }
-        rebuildMenu()
+        flashProcessingDoneAndHide()
     }
 
-    // Обработка завершена (summary_status='done') → короткая зелёная галка, затем прячем капсулу.
+    // Облачная обработка завершена (summary_status='done'): бэкап уже удалён в UploadQueue.drain,
+    // капсула скрыта ещё на upload — здесь только подчищаем трекинг.
     private func handleMeetingDone(_ id: String) {
         processingIds.remove(id)
         processingNotified.remove(id)
-        guard processingIds.isEmpty else { rebuildMenu(); return }
+        rebuildMenu()
+    }
+
+    // Короткая зелёная галка «отправлено», затем прячем капсулу.
+    private func flashProcessingDoneAndHide() {
         processingDoneFlash = true
         rebuildMenu()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
             guard let self else { return }
             self.processingDoneFlash = false
             self.rebuildMenu()
