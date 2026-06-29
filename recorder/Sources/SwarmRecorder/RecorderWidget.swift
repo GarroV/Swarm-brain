@@ -65,6 +65,20 @@ final class RecorderWidget {
         ensurePanel()
         stopLevelMeter()
         playBtn.toolTip = title
+        dismissBtn.isHidden = false      // встреча обнаружена → ✕ «не сейчас» доступна
+        recRow.isHidden = true
+        pendRow.isHidden = false
+        hideProcessingRow()
+        present()
+    }
+
+    // Простой (ничего не записывается, встреча не обнаружена): компактная пилюля с ▶ —
+    // старт записи одним кликом, не лазая в трей. Та же вертикаль, но без ✕ (нечего «не сейчас»).
+    func showIdle() {
+        ensurePanel()
+        stopLevelMeter()
+        playBtn.toolTip = "Записать встречу"
+        dismissBtn.isHidden = true       // в простое скрываем ✕ — остаётся ▶ + марка
         recRow.isHidden = true
         pendRow.isHidden = false
         hideProcessingRow()
