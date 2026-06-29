@@ -17,7 +17,6 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private var titleField: NSTextField?       // редактируемое название встречи (в шапке, всегда видно)
     private var editedTitle: String?           // переопределение названия пользователем (nil → берём дефолт claim)
     private var fieldBox: NSView?
-    private var emptyView: NSView?
     private var timerLabel: NSTextField?
     private var micTrack: NSView?, sysTrack: NSView?
     private let micFill = CALayer(), sysFill = CALayer()
@@ -29,8 +28,8 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private var buffer: [Buffered] = []
     private var startedAt: Date?
 
-    private static let panelWidth: CGFloat = 320
-    private static let collapsedHeight: CGFloat = 116   // 2 ряда: контролы + строка названия
+    private static let panelWidth: CGFloat = 312
+    private static let collapsedHeight: CGFloat = 80   // 2 компактных ряда: контролы + название
     private static let margin: CGFloat = 16
     private static let amber = RoyArt.amber
     private static let amberHi = NSColor(srgbRed: 0.96, green: 0.77, blue: 0.42, alpha: 1)
@@ -112,7 +111,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         vfx.layer?.borderColor = RoyArt.amber.withAlphaComponent(0.20).cgColor
 
         // ── шапка (всегда видна) ──
-        let mark = NSImageView(image: RoyArt.markImage(size: 22))
+        let mark = NSImageView(image: RoyArt.markImage(size: 17))
         mark.toolTip = "Свернуть/развернуть"
         mark.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(toggleMorph)))
         mark.setContentHuggingPriority(.required, for: .horizontal)
@@ -136,7 +135,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         micTrack = levelTrack(micFill, color: Self.amber)
         sysTrack = levelTrack(sysFill, color: Self.amberHi)
         let levels = NSStackView(views: [micTrack!, sysTrack!]); levels.orientation = .vertical
-        levels.spacing = 4; levels.alignment = .leading; levels.distribution = .fillEqually
+        levels.spacing = 3; levels.alignment = .leading; levels.distribution = .fillEqually
         levels.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         let stop = NSButton(); stop.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "стоп")
@@ -146,14 +145,14 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         stop.setContentHuggingPriority(.required, for: .horizontal)
 
         let header = NSStackView(views: [mark, recGroup, levels, stop])
-        header.orientation = .horizontal; header.alignment = .centerY; header.spacing = 11
+        header.orientation = .horizontal; header.alignment = .centerY; header.spacing = 9
         header.translatesAutoresizingMaskIntoConstraints = false
 
         // ── строка названия встречи (всегда видна, в т.ч. свёрнутой; правка на ходу → в claim) ──
-        let tag = iconView("tag", size: 13, color: Self.amber)
+        let tag = iconView("tag", size: 11, color: Self.amber)
         let titleFld = NSTextField()
         titleFld.placeholderString = "Название встречи…"
-        titleFld.font = .systemFont(ofSize: 13.5, weight: .semibold); titleFld.textColor = Self.ink
+        titleFld.font = .systemFont(ofSize: 13, weight: .medium); titleFld.textColor = Self.ink
         titleFld.isBordered = false; titleFld.drawsBackground = false; titleFld.focusRingType = .none
         titleFld.lineBreakMode = .byTruncatingTail; titleFld.cell?.isScrollable = true
         titleFld.usesSingleLineMode = true
@@ -162,7 +161,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         titleFld.toolTip = "Название встречи — можно править на ходу, уйдёт в систему на стопе"
         titleField = titleFld
         let titleRow = NSStackView(views: [tag, titleFld])
-        titleRow.orientation = .horizontal; titleRow.alignment = .centerY; titleRow.spacing = 8
+        titleRow.orientation = .horizontal; titleRow.alignment = .centerY; titleRow.spacing = 7
         titleRow.translatesAutoresizingMaskIntoConstraints = false
 
         // ── сворачиваемая часть ──
@@ -173,7 +172,6 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 13
         stack.translatesAutoresizingMaskIntoConstraints = false
         notesStack = stack
-        stack.addArrangedSubview(makeEmptyState())
         let doc = FlippedView(); doc.translatesAutoresizingMaskIntoConstraints = false
         doc.addSubview(stack)
         let scroll = NSScrollView(); scroll.translatesAutoresizingMaskIntoConstraints = false
@@ -223,8 +221,8 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         notesSection = section
 
         let outer = NSStackView(views: [header, titleRow, section])
-        outer.orientation = .vertical; outer.alignment = .leading; outer.spacing = 11
-        outer.edgeInsets = NSEdgeInsets(top: 18, left: 16, bottom: 14, right: 16)
+        outer.orientation = .vertical; outer.alignment = .leading; outer.spacing = 8
+        outer.edgeInsets = NSEdgeInsets(top: 13, left: 15, bottom: 12, right: 15)
         outer.translatesAutoresizingMaskIntoConstraints = false
         vfx.addSubview(outer)
         let fw: [NSView] = [header, titleRow, divider, scroll, box, section]
@@ -242,33 +240,13 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
 
     private func levelTrack(_ fill: CALayer, color: NSColor) -> NSView {
         let t = NSView(); t.wantsLayer = true
-        t.layer?.backgroundColor = NSColor(white: 1, alpha: 0.10).cgColor
-        t.layer?.cornerRadius = 2.5
+        t.layer?.backgroundColor = NSColor(white: 1, alpha: 0.08).cgColor
+        t.layer?.cornerRadius = 1.5
         t.translatesAutoresizingMaskIntoConstraints = false
-        t.heightAnchor.constraint(equalToConstant: 5).isActive = true
-        fill.backgroundColor = color.cgColor; fill.cornerRadius = 2.5; fill.frame = .zero
+        t.heightAnchor.constraint(equalToConstant: 3).isActive = true
+        fill.backgroundColor = color.cgColor; fill.cornerRadius = 1.5; fill.frame = .zero
         t.layer?.addSublayer(fill)
         return t
-    }
-
-    private func roundedMask(_ r: CGFloat) -> NSImage {
-        let s = r * 2 + 2
-        let img = NSImage(size: NSSize(width: s, height: s), flipped: false) { rect in
-            NSColor.black.setFill(); NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill(); return true
-        }
-        img.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r); img.resizingMode = .stretch
-        return img
-    }
-
-    private func makeEmptyState() -> NSView {
-        let glyph = iconView("mic", size: 34, color: Self.amber)
-        let l1 = NSTextField(labelWithString: "пиши пометки по ходу встречи")
-        let l2 = NSTextField(labelWithString: "попадут к тезисам по времени")
-        for l in [l1, l2] { l.font = .systemFont(ofSize: 12.5); l.textColor = Self.mute; l.alignment = .center }
-        let v = NSStackView(views: [glyph, l1, l2]); v.orientation = .vertical; v.alignment = .centerX; v.spacing = 6
-        v.edgeInsets = NSEdgeInsets(top: 34, left: 0, bottom: 0, right: 0)
-        emptyView = v
-        return v
     }
 
     private func iconView(_ symbol: String, size: CGFloat, color: NSColor) -> NSImageView {
@@ -297,13 +275,12 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private func applyLevel(_ lvl: CGFloat, track: NSView?, fill: CALayer) {
         guard let t = track else { return }
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        fill.frame = CGRect(x: 0, y: 0, width: max(0, min(1, lvl)) * t.bounds.width, height: 5)
+        fill.frame = CGRect(x: 0, y: 0, width: max(0, min(1, lvl)) * t.bounds.width, height: 3)
         CATransaction.commit()
     }
 
     private func clearNotes() {
-        notesStack?.arrangedSubviews.forEach { if $0 != emptyView { $0.removeFromSuperview() } }
-        emptyView?.isHidden = false
+        notesStack?.arrangedSubviews.forEach { $0.removeFromSuperview() }
     }
     private func fmt(_ s: Int) -> String { String(format: "%02d:%02d", s / 60, s % 60) }
 
@@ -337,7 +314,6 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
 
     private func appendNoteRow(offset: Int, text: String) {
         guard let stack = notesStack else { return }
-        emptyView?.isHidden = true
         let rule = NSView(); rule.wantsLayer = true; rule.layer?.backgroundColor = Self.amber.cgColor
         rule.layer?.cornerRadius = 1; rule.translatesAutoresizingMaskIntoConstraints = false
         let chip = NSTextField(labelWithString: " \(fmt(offset)) ")
