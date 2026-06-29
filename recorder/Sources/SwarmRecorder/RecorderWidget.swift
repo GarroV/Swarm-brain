@@ -8,6 +8,8 @@ final class RecorderWidget {
     var onStop: (() -> Void)?
     var onRecord: (() -> Void)?
     var onDismiss: (() -> Void)?
+    // ✕ на капсуле «в обработке» — убрать индикатор с экрана (обработка продолжится в фоне).
+    var onProcessingDismiss: (() -> Void)?
     // Источник уровня входа 0…1 (ставит AppDelegate → recorder.currentMicLevel()).
     // Виджет сам опрашивает его таймером, пока идёт запись.
     var levelProvider: (() -> Float)?
@@ -40,10 +42,18 @@ final class RecorderWidget {
     private let dismissBtn = NSButton()
     private let pendRow = NSStackView()
 
+    // Состояние «в обработке»: ✕ (убрать) сверху → крутилка / зелёная галка → марка «Рой».
+    private let procMark = NSImageView()
+    private let procDismissBtn = NSButton()
+    private let procSpinner = NSProgressIndicator()
+    private let procCheck = NSImageView()
+    private let procRow = NSStackView()
+
     func showRecording(startedAt: Date) {
         ensurePanel()
         recRow.isHidden = false
         pendRow.isHidden = true
+        hideProcessingRow()
         startPulse()
         startLevelMeter()
         present()
@@ -55,13 +65,48 @@ final class RecorderWidget {
         playBtn.toolTip = title
         recRow.isHidden = true
         pendRow.isHidden = false
+        hideProcessingRow()
+        present()
+    }
+
+    // Запись отправлена и обрабатывается на сервере — крутилка (без текста, как и вся капсула).
+    func showProcessing() {
+        ensurePanel()
+        stopPulse()
+        stopLevelMeter()
+        recRow.isHidden = true
+        pendRow.isHidden = true
+        procRow.isHidden = false
+        procCheck.isHidden = true
+        procSpinner.isHidden = false
+        procSpinner.startAnimation(nil)
+        present()
+    }
+
+    // Обработка завершена — короткая зелёная галка (AppDelegate сам прячет через пару секунд).
+    func showProcessingDone() {
+        ensurePanel()
+        stopPulse()
+        stopLevelMeter()
+        recRow.isHidden = true
+        pendRow.isHidden = true
+        procRow.isHidden = false
+        procSpinner.stopAnimation(nil)
+        procSpinner.isHidden = true
+        procCheck.isHidden = false
         present()
     }
 
     func hide() {
         stopPulse()
         stopLevelMeter()
+        hideProcessingRow()
         panel?.orderOut(nil)
+    }
+
+    private func hideProcessingRow() {
+        procSpinner.stopAnimation(nil)
+        procRow.isHidden = true
     }
 
     // ── Построение ───────────────────────────────────────────────────────────────
@@ -84,6 +129,7 @@ final class RecorderWidget {
 
         configMark(recMark)
         configMark(pendMark)
+        configMark(procMark)
 
         micIndicator.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "запись")
         micIndicator.contentTintColor = .systemRed
@@ -121,7 +167,25 @@ final class RecorderWidget {
         pendRow.setViews([dismissBtn, playBtn, pendMark], in: .top)
         pendRow.isHidden = true
 
-        for row in [recRow, pendRow] {
+        // Состояние «в обработке»: ✕ (убрать) сверху → крутилка / зелёная галка → марка «Рой».
+        iconButton(procDismissBtn, symbol: "xmark", color: NSColor(white: 1, alpha: 0.65), action: #selector(procDismissAction))
+        procSpinner.style = .spinning
+        procSpinner.controlSize = .small
+        procSpinner.isIndeterminate = true
+        procSpinner.translatesAutoresizingMaskIntoConstraints = false
+        procSpinner.widthAnchor.constraint(equalToConstant: 18).isActive = true
+        procSpinner.heightAnchor.constraint(equalToConstant: 18).isActive = true
+        procCheck.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "готово")
+        procCheck.contentTintColor = .systemGreen
+        sizeIcon(procCheck, 22)
+        procCheck.isHidden = true
+        procRow.orientation = .vertical
+        procRow.spacing = 10
+        procRow.alignment = .centerX
+        procRow.setViews([procDismissBtn, procSpinner, procCheck, procMark], in: .top)
+        procRow.isHidden = true
+
+        for row in [recRow, pendRow, procRow] {
             row.translatesAutoresizingMaskIntoConstraints = false
             row.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
             card.addSubview(row)
@@ -241,4 +305,5 @@ final class RecorderWidget {
     @objc private func stopAction() { onStop?() }
     @objc private func recordAction() { onRecord?() }
     @objc private func dismissAction() { onDismiss?() }
+    @objc private func procDismissAction() { onProcessingDismiss?() }
 }

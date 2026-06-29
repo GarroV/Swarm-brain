@@ -38,6 +38,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Сколько записей ждёт дозагрузки (UploadQueue) — показываем «N в очереди» в меню.
     private var queuedCount = 0
 
+    // ── Сигнал «встреча в обработке» (виджет + уведомление) ──────────────────────
+    // Встречи, отправленные на сервер и ещё не подтверждённые как done. Пока непусто —
+    // виджет показывает капсулу «в обработке» (крутилка). Меняется только на главном потоке.
+    private var processingIds = Set<String>()
+    // Кому уже показали уведомление «принято в обработку» (не дублируем на ретраях дрейна).
+    private var processingNotified = Set<String>()
+    // Короткая вспышка зелёной галки «готово» после done, затем виджет прячется.
+    private var processingDoneFlash = false
+
     // Снятая, но ещё не отправленная запись. Держим её, чтобы «Повторить» ПЕРЕ-ОТПРАВИЛ
     // именно её (claim+enqueue), а не начинал новую запись (раньше так терялось снятое аудио
     // при сбое после stop() до enqueue). Очищается только после успешного enqueue/решения сервера.
@@ -99,6 +108,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         widget.onStop = { [weak self] in self?.stopTapped() }
         widget.onRecord = { [weak self] in self?.widgetRecord() }
         widget.onDismiss = { [weak self] in self?.widgetDismiss() }
+        widget.onProcessingDismiss = { [weak self] in self?.dismissProcessing() }
+        // Сигналы из UploadQueue (постятся из актора, ловим на .main): принято в обработку / готово.
+        NotificationCenter.default.addObserver(forName: .swarmMeetingUploaded, object: nil, queue: .main) { [weak self] note in
+            if let id = note.userInfo?["id"] as? String { self?.handleMeetingUploaded(id) }
+        }
+        NotificationCenter.default.addObserver(forName: .swarmMeetingDone, object: nil, queue: .main) { [weak self] note in
+            if let id = note.userInfo?["id"] as? String { self?.handleMeetingDone(id) }
+        }
         // Живой уровень входа для полосы в виджете — читаем текущий уровень микрофона.
         widget.levelProvider = { [weak self] in self?.recorder.currentMicLevel() ?? 0 }
         // Вторая полоса — уровень системной дорожки (собеседники/коллеги), видно живой захват.
@@ -382,18 +399,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         switch state {
         case .recording:
             widget.showRecording(startedAt: recordStartedAt ?? Date())
+        case .sending:
+            // Сразу после «Стоп» — крутилка «обрабатываю», а не пустота (фидбэк, что всё ок).
+            widget.showProcessing()
         case .idle:
             if let m = pendingMeeting {
                 widget.showPending(title: m.title ?? "Встреча", when: meetingWhen(m))
             } else if callActive {
                 widget.showPending(title: "Идёт звонок", when: "")
+            } else if processingDoneFlash {
+                widget.showProcessingDone()
+            } else if !processingIds.isEmpty {
+                widget.showProcessing()
             } else {
                 widget.hide()
             }
-        case .sending, .error, .tokenExpired,
+        case .error, .tokenExpired,
              .noScreenRecording, .noSystemAudio, .noMic, .offline:
             widget.hide()
         }
+    }
+
+    // ── Сигнал «встреча в обработке» ─────────────────────────────────────────────
+    // Аудио принято сервером (ingest 202) → показываем уведомление и держим капсулу «в обработке».
+    private func handleMeetingUploaded(_ id: String) {
+        processingIds.insert(id)
+        if processingNotified.insert(id).inserted {
+            let content = UNMutableNotificationContent()
+            content.title = "Запись отправлена"
+            content.body = "Встреча пошла в обработку — тезисы придут в Telegram."
+            content.sound = .default
+            UNUserNotificationCenter.current().add(UNNotificationRequest(
+                identifier: "processing-\(id)", content: content, trigger: nil))
+        }
+        rebuildMenu()
+    }
+
+    // Обработка завершена (summary_status='done') → короткая зелёная галка, затем прячем капсулу.
+    private func handleMeetingDone(_ id: String) {
+        processingIds.remove(id)
+        processingNotified.remove(id)
+        guard processingIds.isEmpty else { rebuildMenu(); return }
+        processingDoneFlash = true
+        rebuildMenu()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+            guard let self else { return }
+            self.processingDoneFlash = false
+            self.rebuildMenu()
+        }
+    }
+
+    // ✕ на капсуле «в обработке»: убрать индикатор (обработка продолжается в фоне сама).
+    private func dismissProcessing() {
+        processingIds.removeAll()
+        processingDoneFlash = false
+        rebuildMenu()
     }
 
     // Кнопка «Записать» в виджете — маршрутизируем по текущему контексту.
@@ -751,6 +811,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     startISO: iso.string(from: p.started),
                     endISO: iso.string(from: p.ended)
                 )
+                // Принято в очередь → пойдёт в обработку. setState(.idle) ниже покажет капсулу
+                // «в обработке» (processingIds непуст); 202 из дрейна добавит уведомление.
+                let mid = claim.meetingId
+                await MainActor.run { self.processingIds.insert(mid) }
+                // Страховка от «вечной» капсулы, если done так и не придёт за 20 мин.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1200) { [weak self] in
+                    if self?.processingIds.remove(mid) != nil { self?.rebuildMenu() }
+                }
             } else {
                 // decision=defer — транскрибирует другой участник; наши файлы не нужны.
                 for s in p.res.systemSegments { try? FileManager.default.removeItem(at: s.url) }

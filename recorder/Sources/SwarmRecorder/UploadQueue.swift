@@ -1,5 +1,14 @@
 import Foundation
 
+// Сигналы жизненного цикла загрузки для UI (виджет/уведомления). Постятся из актора,
+// слушаются на .main (AppDelegate) — без протаскивания не-Sendable замыканий в актор.
+extension Notification.Name {
+    // Аудио встречи принято сервером (ingest 202) → встреча реально пошла в обработку.
+    static let swarmMeetingUploaded = Notification.Name("SwarmMeetingUploaded")
+    // summary_status='done' → стенограмма/тезисы в БД (обработка завершена).
+    static let swarmMeetingDone = Notification.Name("SwarmMeetingDone")
+}
+
 // Очередь дозагрузки + ЛОКАЛЬНЫЙ БЭКАП записей на диске. Решает потерю данных:
 // файлы после claim переносятся в ~/Library/Application Support/SwarmRecorder/pending/<meetingId>/
 // с JSON-сайдкаром. Жизненный цикл бэкапа:
@@ -141,6 +150,8 @@ actor UploadQueue {
                 pending.uploaded = true
                 try? writeMeta(pending)
                 uploadedIds.append(pending.meetingId)
+                // UI: запись принята сервером → «встреча пошла в обработку» (только на переходе false→true).
+                NotificationCenter.default.post(name: .swarmMeetingUploaded, object: nil, userInfo: ["id": pending.meetingId])
             } catch let SwarmError.http(code, _, _) where !(500...599).contains(code) && code != 429 {
                 // Постоянный сбой (401/403/413/404 и т.п.) — повторять бессмысленно → dead-letter.
                 NSLog("SwarmRecorder: upload \(pending.meetingId) постоянный сбой HTTP \(code) → dead-letter")
@@ -162,6 +173,7 @@ actor UploadQueue {
         if let statuses = try? await SwarmClient(config: config).fetchMeetingStatuses(uploadedIds) {
             for (id, status) in statuses where status == "done" {
                 try? fm.removeItem(at: meetingDir(id))
+                NotificationCenter.default.post(name: .swarmMeetingDone, object: nil, userInfo: ["id": id])
                 NSLog("SwarmRecorder: встреча \(id) обработана (done) → локальный бэкап удалён")
             }
         }
