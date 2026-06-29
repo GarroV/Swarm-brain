@@ -701,6 +701,7 @@ _Встречи — `/meetings` (подтверждённые записи-вс�
 | `GET` | `/meetings/:id` | Одна встреча-запись (`getEntrySecure`) |
 | `PATCH` | `/meetings/:id` | Правка: `confirmed` (в `metadata`), `summary`, `content`, `entry_type` (реклассификация «встреча → заметка», уводит из очереди), `is_private` (+`owner_id` как у задач), `countries` |
 | `DELETE` | `/meetings/:id` | Удалить встречу-запись (204) |
+| `POST` | `/meetings/:id/resummarize` | Пересобрать тезисы ОПУБЛИКОВАННОЙ встречи текущим промптом из транскрипта связанной `meetings`-строки (`metadata.meeting_id`) → обновляет `summary`+`content`+`embedding` (`resummarizeFromTranscript`) |
 
 _Встречи — `/agent-meetings` (черновики рекордера в таблице `meetings` до публикации):_
 
@@ -711,6 +712,7 @@ _Встречи — `/agent-meetings` (черновики рекордера в 
 | `PATCH` | `/agent-meetings/:id` | Правка `draft_notes_md` → `notes_edited_at` (и/или `title`) |
 | `DELETE` | `/agent-meetings/:id` | Удалить черновик (до публикации) |
 | `POST` | `/agent-meetings/:id/publish` | Аппрув: `{ base: workspace\|personal }` → создать `entries` + эмбеддинг, привязать, `status=in_base`; идемпотентно. Задачи **не** извлекаются автоматически (только по кнопке, см. `/tasks/extract`) |
+| `POST` | `/agent-meetings/:id/resummarize` | Пересобрать тезисы черновика текущим промптом из сохранённого транскрипта (`resummarizeFromTranscript`, без ре-транскрибации); до публикации |
 
 _Интеграции (per-user):_
 
