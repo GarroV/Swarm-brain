@@ -7,7 +7,7 @@ import { RoyIcon } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { TasksFromMeeting } from "../TasksFromMeeting";
-import { fetchMeeting, patchMeeting, deleteMeeting, fetchTasks } from "@/lib/api";
+import { fetchMeeting, patchMeeting, deleteMeeting, fetchTasks, resummarizeMeetingEntry } from "@/lib/api";
 import type { Entry, Task } from "@/types";
 
 function fmtDate(iso: string | null): string {
@@ -28,6 +28,22 @@ export function MeetingDetail({ id }: { id: string }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reproc, setReproc] = useState(false);
+
+  // Переобработать тезисы текущим ИИ-промптом из транскрипта (доступно для встреч рекордера).
+  const reprocess = async () => {
+    if (reproc) return;
+    setReproc(true);
+    try {
+      const u = await resummarizeMeetingEntry(id);
+      setE(u);
+      toast("Тезисы переобработаны");
+    } catch {
+      toast("Не удалось переобработать");
+    } finally {
+      setReproc(false);
+    }
+  };
 
   const load = useCallback(() => {
     fetchMeeting(id)
@@ -134,8 +150,22 @@ export function MeetingDetail({ id }: { id: string }) {
               </div>
             ) : e.summary ? (
               <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 16 }}>
-                <div className="mb-1.5 font-bold uppercase text-accent-ink" style={{ fontSize: 11, letterSpacing: "0.05em" }}>
-                  Кратко от ИИ
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="font-bold uppercase text-accent-ink" style={{ fontSize: 11, letterSpacing: "0.05em" }}>
+                    Кратко от ИИ
+                  </span>
+                  {Boolean(e.metadata?.meeting_id) && (
+                    <button
+                      type="button"
+                      onClick={reprocess}
+                      disabled={reproc}
+                      title="Пересобрать тезисы текущим ИИ-промптом из транскрипта"
+                      className="inline-flex items-center gap-1.5 rounded-[9px] border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
+                      style={{ padding: "3px 9px", fontSize: 11 }}
+                    >
+                      <RoyIcon name="spark" size={12} strokeWidth={1.9} /> {reproc ? "Обрабатываю…" : "Переобработать"}
+                    </button>
+                  )}
                 </div>
                 <TezisyBlocks text={e.summary} />
               </div>

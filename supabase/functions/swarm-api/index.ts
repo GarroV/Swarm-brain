@@ -1042,6 +1042,35 @@ Deno.serve(async (req: Request) => {
     return json(await withImporterNames((data ?? []) as Array<{ owner_id?: number | null; metadata?: unknown }>), 200, origin);
   }
 
+  // ── POST /meetings/:id/resummarize — пересобрать тезисы УЖЕ опубликованной встречи ──
+  // Текущим промптом, из транскрипта связанной meetings-строки (metadata.meeting_id), без
+  // ре-транскрибации. Обновляет summary+content+embedding записи. :id = entry.id.
+  const meetingResummarizeMatch = routePath.match(/^\/meetings\/([^/]+)\/resummarize$/);
+  if (meetingResummarizeMatch && req.method === "POST") {
+    return withEntries(origin, async () => {
+      const entry = await getEntrySecure(supabase, meetingResummarizeMatch[1], { groupId, telegramId: telegram_id, isAdmin });
+      const meetingRowId = (entry.metadata as { meeting_id?: string } | null)?.meeting_id;
+      if (!meetingRowId) return apiErr(400, "У записи нет транскрипта встречи — переобработка недоступна", origin);
+      const tezisi = await resummarizeFromTranscript(supabase, meetingRowId);
+      // Освежаем эмбеддинг (контент изменился) — как при публикации. Не критично при сбое.
+      const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+      let embedding: number[] | null = null;
+      try {
+        const r = await fetch("https://api.openai.com/v1/embeddings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
+          body: JSON.stringify({ model: "text-embedding-3-small", input: tezisi.slice(0, 8000) }),
+        });
+        if (r.ok) embedding = (await r.json()).data[0].embedding;
+      } catch { /* эмбеддинг не критичен — текст обновим в любом случае */ }
+      const upd: Record<string, unknown> = { summary: tezisi, content: tezisi };
+      if (embedding) upd.embedding = embedding;
+      await supabase.from("entries").update(upd).eq("id", entry.id);
+      const { data } = await supabase.from("entries").select("*").eq("id", entry.id).single();
+      return json(data, 200, origin);
+    });
+  }
+
   // ── GET/PATCH/DELETE /meetings/:id ────────────────────────────────────────────
   const meetingMatch = routePath.match(/^\/meetings\/([^/]+)$/);
   if (meetingMatch) {

@@ -650,6 +650,12 @@ export async function resummarizeAgentMeeting(id: string): Promise<AgentMeeting>
   return apiFetch<AgentMeeting>(`/agent-meetings/${id}/resummarize`, { method: "POST" });
 }
 
+// То же для УЖЕ опубликованной встречи (entry): пересобрать тезисы текущим промптом.
+export async function resummarizeMeetingEntry(id: string): Promise<Entry> {
+  if (DEV_MODE) return fetchMeeting(id);
+  return apiFetch<Entry>(`/meetings/${id}/resummarize`, { method: "POST" });
+}
+
 export async function deleteAgentMeeting(id: string): Promise<void> {
   if (DEV_MODE) {
     mockAgentMeetings = mockAgentMeetings.filter((x) => x.id !== id);
