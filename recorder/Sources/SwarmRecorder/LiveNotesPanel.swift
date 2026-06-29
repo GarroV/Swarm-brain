@@ -18,21 +18,17 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private var editedTitle: String?           // переопределение названия пользователем (nil → берём дефолт claim)
     private var fieldBox: NSView?
     private var timerLabel: NSTextField?
-    private var headerStack: NSStackView?      // контролы: горизонтально (блокнот) / вертикально (пилюля)
-    private var levelsStack: NSView?           // полоски уровня — прячем в пилюле (чистая капсула)
     private var micTrack: NSView?, sysTrack: NSView?
     private let micFill = CALayer(), sysFill = CALayer()
     private var timer: Timer?, levelTimer: Timer?
     private var micLevel: (() -> Float)?, sysLevel: (() -> Float)?, onStop: (() -> Void)?
-    private var collapsed = false
+    private var onCollapse: (() -> Void)?      // клик по марке в блокноте → свернуть в пилюлю (виджет)
 
     private struct Buffered { let offset: Int; let text: String }
     private var buffer: [Buffered] = []
     private var startedAt: Date?
 
     private static let panelWidth: CGFloat = 312
-    private static let collapsedWidth: CGFloat = 92    // узкая вертикальная пилюля
-    private static let collapsedHeight: CGFloat = 100  // марка · ● таймер · ✕ (вертикально)
     private static let margin: CGFloat = 16
     private static let amber = RoyArt.amber
     private static let amberHi = NSColor(srgbRed: 0.96, green: 0.77, blue: 0.42, alpha: 1)
@@ -42,19 +38,31 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private static let line = NSColor(srgbRed: 0.91, green: 0.78, blue: 0.55, alpha: 0.13)
     private static let rec = NSColor(srgbRed: 1, green: 0.42, blue: 0.37, alpha: 1)
 
-    func show(config: SwarmConfig, initialTitle: String?, micLevel: @escaping () -> Float, systemLevel: @escaping () -> Float, onStop: @escaping () -> Void) {
-        self.micLevel = micLevel; self.sysLevel = systemLevel; self.onStop = onStop
+    /// Старт записи: сбрасываем буфер/таймстампы, показываем блокнот.
+    func show(config: SwarmConfig, initialTitle: String?, micLevel: @escaping () -> Float, systemLevel: @escaping () -> Float, onStop: @escaping () -> Void, onCollapse: @escaping () -> Void) {
+        self.micLevel = micLevel; self.sysLevel = systemLevel; self.onStop = onStop; self.onCollapse = onCollapse
         buffer.removeAll()
         editedTitle = nil
         startedAt = Date()
         ensurePanel()
         titleField?.stringValue = initialTitle ?? ""
         clearNotes()
-        collapsed = false
-        applySize(expanded: true, animated: false)
+        showExpanded()
+    }
+
+    /// Развернуть блокнот заново (из пилюли) — БЕЗ сброса буфера/таймстампов.
+    func expand() { ensurePanel(); showExpanded() }
+
+    private func showExpanded() {
+        notesSection?.isHidden = false
+        guard let panel, let screen = NSScreen.main else { return }
+        let vf = screen.visibleFrame
+        let h = min(vf.height - Self.margin * 2, 440)
+        panel.setFrame(NSRect(x: vf.maxX - Self.panelWidth - Self.margin, y: vf.maxY - h - Self.margin,
+                              width: Self.panelWidth, height: h), display: true)
         startTimers()
-        panel?.orderFrontRegardless()
-        panel?.makeFirstResponder(input)
+        panel.orderFrontRegardless()
+        panel.makeFirstResponder(input)
     }
 
     /// Текущее переопределение названия (читается на стопе при claim). Синхронизируется со
@@ -67,26 +75,11 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
 
     func hide() { stopTimers(); panel?.orderOut(nil) }
 
-    @objc private func toggleMorph() {
-        collapsed.toggle()
-        applySize(expanded: !collapsed, animated: true)
-    }
-
-    private func applySize(expanded: Bool, animated: Bool) {
-        notesSection?.isHidden = !expanded
-        levelsStack?.isHidden = !expanded                                 // в пилюле — без полосок, чисто
-        headerStack?.orientation = expanded ? .horizontal : .vertical     // блокнот → ряд; пилюля → столбик
-        headerStack?.alignment = expanded ? .centerY : .centerX
-        guard let panel, let screen = NSScreen.main else { return }
-        let vf = screen.visibleFrame
-        let w = expanded ? Self.panelWidth : Self.collapsedWidth
-        let h = expanded ? min(vf.height - Self.margin * 2, 440) : Self.collapsedHeight
-        // Якорим в правый верх — пилюля растёт влево-вниз в блокнот и обратно.
-        let f = NSRect(x: vf.maxX - w - Self.margin, y: vf.maxY - h - Self.margin, width: w, height: h)
-        if animated {
-            NSAnimationContext.runAnimationGroup { ctx in ctx.duration = 0.2; ctx.allowsImplicitAnimation = true
-                panel.animator().setFrame(f, display: true) }
-        } else { panel.setFrame(f, display: true) }
+    // Клик по марке в блокноте → прячем блокнот и отдаём управление пилюле (виджету рекордера).
+    @objc private func collapseToPill() {
+        stopTimers()
+        panel?.orderOut(nil)
+        onCollapse?()
     }
 
     // MARK: - сборка
@@ -120,8 +113,8 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
 
         // ── шапка (всегда видна) ──
         let mark = NSImageView(image: RoyArt.markImage(size: 17))
-        mark.toolTip = "Свернуть/развернуть"
-        mark.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(toggleMorph)))
+        mark.toolTip = "Свернуть в пилюлю"
+        mark.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(collapseToPill)))
         mark.setContentHuggingPriority(.required, for: .horizontal)
 
         let dot = NSView(); dot.wantsLayer = true
@@ -145,7 +138,6 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         let levels = NSStackView(views: [micTrack!, sysTrack!]); levels.orientation = .vertical
         levels.spacing = 3; levels.alignment = .leading; levels.distribution = .fillEqually
         levels.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        levelsStack = levels
 
         let stop = NSButton(); stop.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "стоп")
         stop.imagePosition = .imageOnly; stop.isBordered = false; stop.bezelStyle = .regularSquare
@@ -156,7 +148,6 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         let header = NSStackView(views: [mark, recGroup, levels, stop])
         header.orientation = .horizontal; header.alignment = .centerY; header.spacing = 9
         header.translatesAutoresizingMaskIntoConstraints = false
-        headerStack = header
 
         // ── строка названия встречи (всегда видна, в т.ч. свёрнутой; правка на ходу → в claim) ──
         let tag = iconView("tag", size: 11, color: Self.amber)

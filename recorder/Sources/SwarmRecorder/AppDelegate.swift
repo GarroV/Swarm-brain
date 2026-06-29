@@ -109,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         widget.onRecord = { [weak self] in self?.widgetRecord() }
         widget.onDismiss = { [weak self] in self?.widgetDismiss() }
         widget.onProcessingDismiss = { [weak self] in self?.dismissProcessing() }
+        widget.onToggleNotes = { [weak self] in self?.expandNotes() }   // клик по марке на пилюле → блокнот
         // Сигналы из UploadQueue (постятся из актора, ловим на .main): принято в обработку / готово.
         NotificationCenter.default.addObserver(forName: .swarmMeetingUploaded, object: nil, queue: .main) { [weak self] note in
             if let id = note.userInfo?["id"] as? String { self?.handleMeetingUploaded(id) }
@@ -398,7 +399,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if configError != nil { widget.hide(); return }
         switch state {
         case .recording:
-            widget.hide()   // во время записи UI = единое окно «Рой · заметки» (LiveNotesPanel)
+            // Развёрнут блокнот → показываем его (пилюлю прячем); свёрнуто → вертикальная пилюля рекордера.
+            if notesExpanded { widget.hide() }
+            else { widget.showRecording(startedAt: recordStartedAt ?? Date()) }
         case .sending:
             // Спиннер-капсулу НЕ показываем (она читалась как «зависла» и была лишним виджетом):
             // обработка идёт в фоне, «отправлено — тезисы придут в Telegram» приходит уведомлением.
@@ -466,6 +469,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if pendingMeeting != nil { recordMeetingTapped() }
         else if callActive { recordCallTapped() }
         else { recordTapped() }
+    }
+
+    // ── Блокнот ⇄ пилюля во время записи ────────────────────────────────────────
+    // Свёрнуто = вертикальная пилюля рекордера (widget.recRow); развёрнуто = блокнот (LiveNotesPanel).
+    // Показываем строго одно из них. Оба рендера проверены по отдельности — без хрупкого морфа.
+    private var notesExpanded = false
+    private func expandNotes() {          // клик по марке на пилюле → развернуть блокнот
+        guard isRecording else { return }
+        notesExpanded = true
+        widget.hide()
+        Task { @MainActor in LiveNotesPanel.shared.expand() }
+    }
+    private func collapseNotes() {        // клик по марке в блокноте → свернуть (блокнот уже скрылся сам)
+        notesExpanded = false
+        rebuildMenu()                     // syncWidget покажет пилюлю рекордера
     }
 
     @objc private func widgetDismiss() {
@@ -619,14 +637,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 recordStartedAt = startedAt
                 identity = id
                 setState(.recording)
-                // Granola-режим: единое окно «Рой · заметки» (контролы в шапке + блокнот, морф).
+                // Granola-режим: на старте — блокнот (LiveNotesPanel). Клик по марке сворачивает в
+                // вертикальную пилюлю (виджет рекордера), клик по марке пилюли — обратно в блокнот.
                 if let cfg = self.config {
+                    self.notesExpanded = true
                     await LiveNotesPanel.shared.show(
                         config: cfg,
                         initialTitle: id?.title,
                         micLevel: { [weak self] in self?.recorder.currentMicLevel() ?? 0 },
                         systemLevel: { [weak self] in self?.recorder.currentSystemLevel() ?? 0 },
-                        onStop: { [weak self] in self?.stopTapped() })
+                        onStop: { [weak self] in self?.stopTapped() },
+                        onCollapse: { [weak self] in self?.collapseNotes() })
                 }
                 startCallEndWatch()
             } catch {
