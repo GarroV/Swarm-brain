@@ -1107,7 +1107,11 @@ Deno.serve(async (req: Request) => {
       .eq("status", status)
       .order("started_at", { ascending: false, nullsFirst: false })
       .limit(50);
-    if (!(showAll && isAdmin)) q = q.contains("recorders", [{ telegram_id }]);
+    // recorders — JSONB-массив объектов. supabase-js .contains() с JS-массивом сериализует
+    // через .join(",") в Postgres-литерал cs.{[object Object]} → 400 (invalid json), и весь
+    // запрос «Мои» падал (собственная запись не показывалась). Для jsonb-containment передаём
+    // JSON-СТРОКУ → строковая ветка .contains даёт cs.[{"telegram_id":N}] (корректно).
+    if (!(showAll && isAdmin)) q = q.contains("recorders", JSON.stringify([{ telegram_id }]));
     const { data, error } = await q;
     if (error) return apiErr(500, error.message, origin);
     return json(await withRecorderNames((data ?? []) as Array<{ recorders?: unknown }>), 200, origin);
