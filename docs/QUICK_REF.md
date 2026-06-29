@@ -76,7 +76,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Промпт тезисов (канон, DRY) | `_shared/tezisy-prompt.ts` | §Флоу встреч |
 | Ревью/правка/публикация/переобработка | `swarm-api` (`/agent-meetings*`,`/meetings*`), `miniapp .../screens/MeetAdminScreen.tsx`,`MeetingDetail.tsx` | §swarm-api, spoke [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md) |
 | Granola импорт / Read.ai / статус-бэкап | `swarm-bot/handlers/granola.ts`, `read-ai-webhook/`, `meeting-status/` | §Флоу встреч |
-| Календарь / участники | `meeting-current/`, `google-oauth/`, рекордер `MeetingIdentity.swift` | §Флоу встреч |
+| Календарь / участники (только календарные встречи; аудио-диаризации нет) | `meeting-current/`, `google-oauth/`, рекордер `MeetingIdentity.swift` | §Флоу встреч |
 
 ### Рекордер (macOS, Swift) — `recorder/`
 | Concern | Файлы | Детали |
@@ -87,7 +87,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 ### Frontend «Рой» (Mini App) — `miniapp/src/components/roy/`
 | Concern | Файлы | Детали |
 |---|---|---|
-| Экраны/панели/дизайн-система/навигация | `miniapp/src/components/roy/**` | spoke [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md) |
+| Экраны/панели/дизайн-система/навигация | `miniapp/src/components/roy/**` (app/layout/screens); переиспользуемые компоненты задач — `miniapp/src/components/tasks/**` (напр. `TaskRow.tsx`) | spoke [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md) |
 | API-клиент / типы | `miniapp/src/lib/api.ts`, `miniapp/src/types.ts` | MINIAPP_ARCHITECTURE.md |
 
 ### MCP / установщики

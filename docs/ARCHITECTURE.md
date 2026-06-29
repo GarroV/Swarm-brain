@@ -276,7 +276,7 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
 - `POST /tasks/extract { text, save:false }` — возвращает предложенные задачи БЕЗ создания (preview). Без `save:false` (по умолчанию) — старое поведение: создаёт задачи и возвращает их.
 - **Автогенерации задач при публикации встречи НЕТ** (убрана 2026-06-29). Задачи создаёт только пользователь кнопкой «Сгенерировать задачи» (компонент `TasksFromMeeting`, есть и в ревью-очереди `MeetAdminScreen`, и на экране встречи `MeetingDetail`): preview → правка → «Себе»/«В общие». Добавленные задачи идут через `POST /tasks` с `meeting_id = entry.id`, поэтому видны в блоке «Задачи из встречи» (фильтр `task.meeting_id === entry.id`).
 
-### Swarm Meetings (desktop-agent) — В РАЗРАБОТКЕ
+### Swarm Meetings (desktop-agent) — рекордер (задеплоено на прод)
 Замена Read.ai/Granola: лёгкий **свой** macOS-рекордер (Swift/ScreenCaptureKit, **без форка anarlog**) пишет аудио онлайн-звонков и шлёт в Swarm Brain; **транскрибация и тезисы — в облаке (OpenAI)**, без локальной модели. Полный дизайн — `transcribator/10-REVISED-DESIGN.md`.
 ```
 Все участники записывают аудио → meeting-claim (до загрузки):
@@ -455,6 +455,11 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 | `fb_done` | Пропустить скриншот, сохранить фидбек без фото |
 | `fb_read_<feedbackId>` | Кнопка "Прочитано" в канале — удалить из БД и убрать сообщение |
 
+### MCP-токен (`/mytoken`)
+| Код | Действие |
+|----|---------|
+| `mtk_reissue` | Подтвердить экстренный перевыпуск MCP-токена, когда живой уже есть (обработка `swarm-bot/index.ts`); см. §MCP-аутентификация |
+
 ---
 
 ## Таблица feedback
@@ -567,6 +572,7 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 | `GOOGLE_DRIVE_FOLDER_ID` | swarm-bot (`lib/drive.ts`) | нет (для Google Drive) | Корневая папка Drive для авто-создаваемых подпапок/файлов |
 | `READ_AI_CLIENT_ID` | read-ai-auth | да (для Read.ai OAuth) | OAuth client id Read.ai (авторизация в `read-ai-auth`) |
 | `READ_AI_WEBHOOK_SECRET` | read-ai-webhook | да (для Read.ai webhook) | Секрет проверки входящего вебхука Read.ai |
+| `READ_AI_ENABLED` | read-ai-webhook | нет (дефолт выкл.) | Kill-switch обработки Read.ai-вебхука: только `="true"` включает приём (иначе 200 OK без записи в БД — Read.ai не ретраит) |
 
 > Примечание: `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (OAuth-интеграция календаря рекордера) и `GOOGLE_CLIENT_EMAIL`/`GOOGLE_PRIVATE_KEY`/`GOOGLE_DRIVE_FOLDER_ID` (service-account для Google Drive) — **разные** механизмы Google, не путать.
 
