@@ -41,8 +41,8 @@ export function ProfileMenu() {
           <div
             role="dialog"
             aria-label="Профиль и управление"
-            className="absolute bottom-full left-0 z-50 mb-2 flex w-[460px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[20px] border border-line bg-[var(--popover)] shadow-[0_24px_64px_-18px_rgba(0,0,0,.5)] dark:backdrop-blur-xl"
-            style={{ maxHeight: "min(660px, 82vh)" }}
+            className={`absolute bottom-full left-0 z-50 mb-2 flex ${tab === "admin" ? "w-[860px]" : "w-[460px]"} max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[20px] border border-line bg-[var(--popover)] shadow-[0_24px_64px_-18px_rgba(0,0,0,.5)] dark:backdrop-blur-xl`}
+            style={{ maxHeight: tab === "admin" ? "min(840px, 88vh)" : "min(660px, 82vh)" }}
           >
             {/* шапка: профиль + закрыть */}
             <div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-3">
