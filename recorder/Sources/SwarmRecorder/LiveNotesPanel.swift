@@ -1,10 +1,10 @@
 import AppKit
 
-/// Правая док-панель «Рой · заметки» (Granola-режим, Фаза 3) — НАТИВНЫЙ блокнот.
-/// Всплывает на старте записи, даёт писать «пометки на полях» по ходу встречи. meetingId
-/// во время записи ещё нет (claim — на стопе), поэтому пометки копятся в буфер; на стопе
-/// рекордер вызывает flush() → меняет токен на web-JWT (meeting-webtoken) → POST в
-/// /agent-meetings/:id/notes. Без WKWebView (он не грузится в self-signed аппе) — чистый AppKit.
+/// Правая док-панель «Рой · заметки» (Granola-режим, Фаза 3) — нативный AppKit-блокнот
+/// в стиле проекта (тёмное стекло + янтарь + моно-тайм-штампы). Всплывает на старте записи,
+/// даёт писать «пометки на полях». meetingId во время записи ещё нет (claim — на стопе),
+/// поэтому пометки копятся в буфер; на стопе flush() меняет токен на web-JWT (meeting-webtoken)
+/// и POST'ит в /agent-meetings/:id/notes. WKWebView не используем — он не грузится в self-signed аппе.
 @MainActor
 final class LiveNotesPanel: NSObject {
     static let shared = LiveNotesPanel()
@@ -13,18 +13,19 @@ final class LiveNotesPanel: NSObject {
     private var panel: NSPanel?
     private var notesStack: NSStackView?
     private var input: NSTextField?
+    private var emptyHint: NSTextField?
     private struct Buffered { let offset: Int; let text: String }
     private var buffer: [Buffered] = []
     private var startedAt: Date?
 
     private static let panelWidth: CGFloat = 360
     private static let margin: CGFloat = 16
-    private static let amber = NSColor(srgbRed: 0.95, green: 0.72, blue: 0.35, alpha: 1)
-    private static let amberSoft = NSColor(srgbRed: 0.95, green: 0.72, blue: 0.35, alpha: 0.16)
-    private static let bg = NSColor(srgbRed: 0.04, green: 0.043, blue: 0.027, alpha: 1)
+    private static let amber = RoyArt.amber                                   // #D98A2B (= --primary)
+    private static let amberSoft = RoyArt.amber.withAlphaComponent(0.16)
     private static let ink = NSColor(srgbRed: 0.93, green: 0.90, blue: 0.83, alpha: 1)
-    private static let mute = NSColor(srgbRed: 0.60, green: 0.57, blue: 0.49, alpha: 1)
+    private static let mute = NSColor(srgbRed: 0.62, green: 0.58, blue: 0.50, alpha: 1)
 
+    /// Показ на старте записи: сбросить буфер/список, построить, показать.
     func show(config: SwarmConfig) {
         buffer.removeAll()
         startedAt = Date()
@@ -37,34 +38,67 @@ final class LiveNotesPanel: NSObject {
 
     func hide() { panel?.orderOut(nil) }
 
-    // MARK: - сборка панели
+    /// Клик по виджету: спрятать/показать БЕЗ сброса (та же встреча, буфер сохраняется).
+    func toggleVisibility() {
+        guard let panel else { return }                 // панель есть только во время записи
+        if panel.isVisible { panel.orderOut(nil) }
+        else { positionAtRightEdge(); panel.orderFrontRegardless(); panel.makeFirstResponder(input) }
+    }
+
+    // MARK: - сборка
 
     private func ensurePanel() {
         if panel != nil { return }
         let frame = NSRect(x: 0, y: 0, width: Self.panelWidth, height: 620)
-        let p = NSPanel(contentRect: frame, styleMask: [.titled, .closable, .resizable],
+        let p = NSPanel(contentRect: frame, styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                         backing: .buffered, defer: false)
         p.title = "Рой · заметки"
+        p.titlebarAppearsTransparent = true
+        p.titleVisibility = .hidden
+        p.isMovableByWindowBackground = true
         p.level = .floating
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.hidesOnDeactivate = false
         p.isReleasedWhenClosed = false
-        p.backgroundColor = Self.bg
+        p.isOpaque = false
+        p.backgroundColor = .clear
 
-        let content = NSView(frame: frame)
-        content.wantsLayer = true
-        content.layer?.backgroundColor = Self.bg.cgColor
+        // Тёмное стекло (как «стекло» в вебе «Рой»).
+        let vfx = NSVisualEffectView(frame: frame)
+        vfx.material = .hudWindow
+        vfx.blendingMode = .behindWindow
+        vfx.state = .active
+        vfx.appearance = NSAppearance(named: .vibrantDark)
 
-        let header = NSTextField(labelWithString: "🔴  Заметки встречи — пиши свободно")
-        header.font = .systemFont(ofSize: 12, weight: .semibold)
-        header.textColor = Self.mute
+        // Шапка: марка «Рой» + REC-точка + заголовок.
+        let mark = NSImageView(image: RoyArt.markImage(size: 18))
+        mark.setContentHuggingPriority(.required, for: .horizontal)
+        let recDot = makeDot(color: NSColor(srgbRed: 1, green: 0.42, blue: 0.37, alpha: 1), d: 8)
+        let title = NSTextField(labelWithString: "Заметки встречи")
+        title.font = .systemFont(ofSize: 13, weight: .bold)
+        title.textColor = Self.ink
+        let header = NSStackView(views: [mark, recDot, title])
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = 8
 
+        let sub = NSTextField(labelWithString: "пиши свободно — попадут к встрече по времени")
+        sub.font = .systemFont(ofSize: 11)
+        sub.textColor = Self.mute
+
+        // Список пометок.
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 9
+        stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
         notesStack = stack
+
+        let hint = NSTextField(labelWithString: "пометок пока нет")
+        hint.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        hint.textColor = Self.mute
+        emptyHint = hint
+        stack.addArrangedSubview(hint)
 
         let scroll = NSScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
@@ -78,6 +112,7 @@ final class LiveNotesPanel: NSObject {
             stack.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
         ])
 
+        // Ввод: поле + кнопка «+».
         let field = NSTextField()
         field.placeholderString = "пометка на полях…"
         field.font = .systemFont(ofSize: 13)
@@ -87,27 +122,45 @@ final class LiveNotesPanel: NSObject {
         field.target = self
         field.action = #selector(addFromField)
         input = field
+        let addBtn = NSButton(title: "+", target: self, action: #selector(addFromField))
+        addBtn.bezelStyle = .rounded
+        addBtn.keyEquivalent = "\r"
+        addBtn.setContentHuggingPriority(.required, for: .horizontal)
+        let inputRow = NSStackView(views: [field, addBtn])
+        inputRow.orientation = .horizontal
+        inputRow.spacing = 8
 
-        let outer = NSStackView(views: [header, scroll, field])
+        let outer = NSStackView(views: [header, sub, scroll, inputRow])
         outer.orientation = .vertical
         outer.alignment = .leading
-        outer.spacing = 12
+        outer.spacing = 10
         outer.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
         outer.translatesAutoresizingMaskIntoConstraints = false
         outer.setHuggingPriority(.defaultLow, for: .vertical)
-        content.addSubview(outer)
+        vfx.addSubview(outer)
         NSLayoutConstraint.activate([
-            outer.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            outer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            outer.topAnchor.constraint(equalTo: content.topAnchor),
-            outer.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            outer.leadingAnchor.constraint(equalTo: vfx.leadingAnchor),
+            outer.trailingAnchor.constraint(equalTo: vfx.trailingAnchor),
+            outer.topAnchor.constraint(equalTo: vfx.topAnchor, constant: 26),   // под прозрачный титлбар
+            outer.bottomAnchor.constraint(equalTo: vfx.bottomAnchor),
             scroll.widthAnchor.constraint(equalTo: outer.widthAnchor, constant: -32),
-            field.widthAnchor.constraint(equalTo: outer.widthAnchor, constant: -32),
+            inputRow.widthAnchor.constraint(equalTo: outer.widthAnchor, constant: -32),
         ])
         scroll.setContentHuggingPriority(.defaultLow, for: .vertical)
 
-        p.contentView = content
+        p.contentView = vfx
         panel = p
+    }
+
+    private func makeDot(color: NSColor, d: CGFloat) -> NSView {
+        let v = NSView(frame: NSRect(x: 0, y: 0, width: d, height: d))
+        v.wantsLayer = true
+        v.layer?.backgroundColor = color.cgColor
+        v.layer?.cornerRadius = d / 2
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.widthAnchor.constraint(equalToConstant: d).isActive = true
+        v.heightAnchor.constraint(equalToConstant: d).isActive = true
+        return v
     }
 
     private func positionAtRightEdge() {
@@ -120,7 +173,8 @@ final class LiveNotesPanel: NSObject {
     }
 
     private func clearNotes() {
-        notesStack?.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        notesStack?.arrangedSubviews.forEach { if $0 != emptyHint { $0.removeFromSuperview() } }
+        emptyHint?.isHidden = false
     }
 
     private func fmt(_ s: Int) -> String { String(format: "%02d:%02d", s / 60, s % 60) }
@@ -133,17 +187,21 @@ final class LiveNotesPanel: NSObject {
         buffer.append(Buffered(offset: offset, text: t))
         appendNoteRow(offset: offset, text: t)
         field.stringValue = ""
+        panel?.makeFirstResponder(field)
     }
 
     private func appendNoteRow(offset: Int, text: String) {
         guard let stack = notesStack else { return }
-        let chip = NSTextField(labelWithString: fmt(offset))
+        emptyHint?.isHidden = true
+
+        let chip = NSTextField(labelWithString: " \(fmt(offset)) ")
         chip.font = .monospacedSystemFont(ofSize: 10.5, weight: .semibold)
         chip.textColor = Self.amber
         chip.wantsLayer = true
         chip.layer?.backgroundColor = Self.amberSoft.cgColor
         chip.layer?.cornerRadius = 5
         chip.setContentHuggingPriority(.required, for: .horizontal)
+        chip.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         let label = NSTextField(wrappingLabelWithString: text)
         label.font = .systemFont(ofSize: 13, weight: .semibold)   // пометки — жирные
@@ -151,16 +209,14 @@ final class LiveNotesPanel: NSObject {
 
         let row = NSStackView(views: [chip, label])
         row.orientation = .horizontal
-        row.alignment = .firstBaseline
+        row.alignment = .top
         row.spacing = 9
         row.translatesAutoresizingMaskIntoConstraints = false
         stack.addArrangedSubview(row)
         row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        // прокрутить вниз к свежей
-        if let doc = stack.enclosingScrollView { doc.documentView?.scroll(NSPoint(x: 0, y: 0)) }
     }
 
-    // MARK: - flush на стопе (meetingId известен после claim)
+    // MARK: - flush на стопе
 
     func flush(meetingId: String, config: SwarmConfig) async {
         let pending = buffer

@@ -109,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         widget.onRecord = { [weak self] in self?.widgetRecord() }
         widget.onDismiss = { [weak self] in self?.widgetDismiss() }
         widget.onProcessingDismiss = { [weak self] in self?.dismissProcessing() }
+        widget.onToggleNotes = { Task { @MainActor in LiveNotesPanel.shared.toggleVisibility() } }
         // Сигналы из UploadQueue (постятся из актора, ловим на .main): принято в обработку / готово.
         NotificationCenter.default.addObserver(forName: .swarmMeetingUploaded, object: nil, queue: .main) { [weak self] note in
             if let id = note.userInfo?["id"] as? String { self?.handleMeetingUploaded(id) }

@@ -10,6 +10,8 @@ final class RecorderWidget {
     var onDismiss: (() -> Void)?
     // ✕ на капсуле «в обработке» — убрать индикатор с экрана (обработка продолжится в фоне).
     var onProcessingDismiss: (() -> Void)?
+    // Клик по марке «Рой» во время записи — свернуть/развернуть панель заметок (Granola-режим).
+    var onToggleNotes: (() -> Void)?
     // Источник уровня входа 0…1 (ставит AppDelegate → recorder.currentMicLevel()).
     // Виджет сам опрашивает его таймером, пока идёт запись.
     var levelProvider: (() -> Float)?
@@ -130,6 +132,9 @@ final class RecorderWidget {
         configMark(recMark)
         configMark(pendMark)
         configMark(procMark)
+        // Клик по марке «Рой» во время записи → свернуть/развернуть панель заметок.
+        recMark.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(toggleNotesAction)))
+        recMark.toolTip = "Заметки встречи (свернуть/развернуть)"
 
         micIndicator.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "запись")
         micIndicator.contentTintColor = .systemRed
@@ -302,6 +307,7 @@ final class RecorderWidget {
         CATransaction.commit()
     }
 
+    @objc private func toggleNotesAction() { onToggleNotes?() }
     @objc private func stopAction() { onStop?() }
     @objc private func recordAction() { onRecord?() }
     @objc private func dismissAction() { onDismiss?() }
