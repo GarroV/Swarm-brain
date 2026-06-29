@@ -109,7 +109,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         widget.onRecord = { [weak self] in self?.widgetRecord() }
         widget.onDismiss = { [weak self] in self?.widgetDismiss() }
         widget.onProcessingDismiss = { [weak self] in self?.dismissProcessing() }
-        widget.onToggleNotes = { Task { @MainActor in LiveNotesPanel.shared.toggleVisibility() } }
         // Сигналы из UploadQueue (постятся из актора, ловим на .main): принято в обработку / готово.
         NotificationCenter.default.addObserver(forName: .swarmMeetingUploaded, object: nil, queue: .main) { [weak self] note in
             if let id = note.userInfo?["id"] as? String { self?.handleMeetingUploaded(id) }
@@ -399,7 +398,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if configError != nil { widget.hide(); return }
         switch state {
         case .recording:
-            widget.showRecording(startedAt: recordStartedAt ?? Date())
+            widget.hide()   // во время записи UI = единое окно «Рой · заметки» (LiveNotesPanel)
         case .sending:
             // Сразу после «Стоп» — крутилка «обрабатываю», а не пустота (фидбэк, что всё ок).
             widget.showProcessing()
@@ -615,8 +614,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 recordStartedAt = startedAt
                 identity = id
                 setState(.recording)
-                // Granola-режим: правая док-панель с /live для «пометок на полях» (Фаза 3, B).
-                if let cfg = self.config { await LiveNotesPanel.shared.show(config: cfg) }
+                // Granola-режим: единое окно «Рой · заметки» (контролы в шапке + блокнот, морф).
+                if let cfg = self.config {
+                    await LiveNotesPanel.shared.show(
+                        config: cfg,
+                        micLevel: { [weak self] in self?.recorder.currentMicLevel() ?? 0 },
+                        systemLevel: { [weak self] in self?.recorder.currentSystemLevel() ?? 0 },
+                        onStop: { [weak self] in self?.stopTapped() })
+                }
                 startCallEndWatch()
             } catch {
                 // Сбой старта захвата системного звука = нет нужного TCC-разрешения. На 14.4+ это

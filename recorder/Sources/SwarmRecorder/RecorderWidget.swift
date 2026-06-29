@@ -124,16 +124,12 @@ final class RecorderWidget {
         p.backgroundColor = .clear
         p.appearance = NSAppearance(named: .darkAqua)
 
-        let card = NSVisualEffectView()                       // тёмное стекло (как панель заметок)
-        card.material = .hudWindow
-        card.blendingMode = .behindWindow
-        card.state = .active
-        card.appearance = NSAppearance(named: .vibrantDark)
+        let card = NSView()
         card.wantsLayer = true
+        card.layer?.backgroundColor = NSColor(srgbRed: 0.09, green: 0.075, blue: 0.05, alpha: 0.97).cgColor  // тёплый графит
         card.layer?.cornerRadius = 18
-        card.layer?.masksToBounds = true
         card.layer?.borderWidth = 1
-        card.layer?.borderColor = RoyArt.amber.withAlphaComponent(0.32).cgColor   // янтарная обводка
+        card.layer?.borderColor = RoyArt.amber.withAlphaComponent(0.30).cgColor   // янтарная обводка (без белых углов)
 
         configMark(recMark)
         configMark(pendMark)
