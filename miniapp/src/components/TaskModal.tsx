@@ -145,7 +145,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         showCloseButton={false}
-        className="gap-0 rounded-[20px] border border-line bg-[var(--popover)] p-0 sm:max-w-md dark:backdrop-blur-xl"
+        className="gap-0 rounded-[20px] border border-line bg-[var(--popover)] p-0 sm:max-w-3xl dark:backdrop-blur-xl"
       >
         {/* Шапка */}
         <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
@@ -162,69 +162,76 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
           </button>
         </div>
 
-        {/* Поля */}
-        <div className="max-h-[68vh] space-y-3.5 overflow-y-auto px-5 py-4">
-          <div>
-            <label htmlFor="modal-title" className={labelCls} style={{ fontSize: 12.5 }}>Название *</label>
-            <input
-              id="modal-title"
-              className={fieldCls}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Название задачи"
-            />
-          </div>
-
-          {isEdit && (
-            <div>
-              <span className={labelCls} style={{ fontSize: 12.5 }}>Статус</span>
-              <Segmented items={STATUSES} value={status} onChange={setStatus} />
+        {/* Поля — две колонки: слева название + большое поле редактуры, справа настройки */}
+        <div className="max-h-[74vh] overflow-y-auto px-5 py-4">
+          <div className="grid gap-x-5 gap-y-4 sm:grid-cols-[1.4fr_1fr]">
+            {/* Левая колонка: название + редактура */}
+            <div className="flex flex-col gap-3.5">
+              <div>
+                <label htmlFor="modal-title" className={labelCls} style={{ fontSize: 12.5 }}>Название *</label>
+                <input
+                  id="modal-title"
+                  className={fieldCls}
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Название задачи"
+                />
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col">
+                <label htmlFor="modal-desc" className={labelCls} style={{ fontSize: 12.5 }}>Описание</label>
+                <textarea
+                  id="modal-desc"
+                  className={`${fieldCls} flex-1 resize-y`}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Подробности, контекст, что именно сделать…"
+                  style={{ minHeight: 280, lineHeight: 1.6 }}
+                />
+              </div>
             </div>
-          )}
 
-          <div>
-            <label htmlFor="modal-desc" className={labelCls} style={{ fontSize: 12.5 }}>Описание</label>
-            <textarea
-              id="modal-desc"
-              className={`${fieldCls} resize-none`}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Необязательное описание"
-              rows={3}
-            />
+            {/* Правая колонка: настройки */}
+            <div className="flex flex-col gap-3.5">
+              {isEdit && (
+                <div>
+                  <span className={labelCls} style={{ fontSize: 12.5 }}>Статус</span>
+                  <Segmented items={STATUSES} value={status} onChange={setStatus} />
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="modal-due" className={labelCls} style={{ fontSize: 12.5 }}>Срок</label>
+                <input id="modal-due" type="date" className={fieldCls} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              </div>
+
+              <div>
+                <label htmlFor="modal-role" className={labelCls} style={{ fontSize: 12.5 }}>Роль</label>
+                <select id="modal-role" className={fieldCls} value={taskRole} onChange={(e) => setTaskRole(e.target.value)}>
+                  <option value={NONE}>— Нет —</option>
+                  {TASK_ROLES.map((r) => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="modal-country" className={labelCls} style={{ fontSize: 12.5 }}>Страна</label>
+                <input id="modal-country" className={fieldCls} value={country} onChange={(e) => setCountry(e.target.value)} placeholder="напр. KZ, PL" />
+              </div>
+
+              <div>
+                <label htmlFor="modal-assignee" className={labelCls} style={{ fontSize: 12.5 }}>Исполнитель</label>
+                <select id="modal-assignee" className={fieldCls} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+                  <option value={NONE}>— Нет —</option>
+                  {assigneeOptions.map((o) => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
 
-          <div>
-            <label htmlFor="modal-due" className={labelCls} style={{ fontSize: 12.5 }}>Срок</label>
-            <input id="modal-due" type="date" className={fieldCls} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-          </div>
-
-          <div>
-            <label htmlFor="modal-role" className={labelCls} style={{ fontSize: 12.5 }}>Роль</label>
-            <select id="modal-role" className={fieldCls} value={taskRole} onChange={(e) => setTaskRole(e.target.value)}>
-              <option value={NONE}>— Нет —</option>
-              {TASK_ROLES.map((r) => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="modal-country" className={labelCls} style={{ fontSize: 12.5 }}>Страна</label>
-            <input id="modal-country" className={fieldCls} value={country} onChange={(e) => setCountry(e.target.value)} placeholder="напр. KZ, PL" />
-          </div>
-
-          <div>
-            <label htmlFor="modal-assignee" className={labelCls} style={{ fontSize: 12.5 }}>Исполнитель</label>
-            <select id="modal-assignee" className={fieldCls} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
-              <option value={NONE}>— Нет —</option>
-              {assigneeOptions.map((o) => (
-                <option key={o.id} value={o.id}>{o.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {error && <p className="font-semibold" style={{ fontSize: 13, color: "var(--pri-high)" }}>{error}</p>}
+          {error && <p className="mt-3 font-semibold" style={{ fontSize: 13, color: "var(--pri-high)" }}>{error}</p>}
         </div>
 
         {/* Действия */}
