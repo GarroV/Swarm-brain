@@ -184,7 +184,7 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 
 Три колонки (desktop):
 - **Слева (300px):** объединённый список = `fetchAgentMeetings("awaiting_review")` (черновики desktop-agent, первыми) + `fetchMeetings({confirmed:false})` (неподтверждённые встречи). Стат-плашки: «на согласовании» / «черновиков».
-- **Центр (flex):** детали выбранного — заголовок, источник, дата, **участники** (`Participants` ← `m.attendees`/`metadata.attendees`, если есть), саммари/тезисы, контент. Для entry: **inline-правка СОДЕРЖАНИЯ** (`ContentEditor` → `patchMeeting(id,{content})`).
+- **Центр (flex):** детали выбранного — заголовок, источник, дата, **участники** (`Participants` ← `m.attendees`/`metadata.attendees`, если есть), саммари/тезисы, контент. Для entry: **inline-правка СОДЕРЖАНИЯ** (`ContentEditor` → `patchMeeting(id,{content})`). Для agent-черновика: **inline-правка НАЗВАНИЯ и ТЕЗИСОВ** прямо на ревью (карандаш у заголовка → `renameAgentMeeting`; «Править» у тезисов → `patchAgentMeetingDraft`); до публикации, изменения отражаются в списке через `onAgentUpdated`.
 - **Задачи из встречи** (`TasksFromMeeting`, обобщён на `text`+`meetingId?`+`resetKey`) — в правой панели **для entry И agent-черновика** (когда `draft_notes_md` готов): `extractTasksPreview(text)` без создания → правка/удаление → добавить Себе|В общие (`createTask`). entry → привязка `meeting_id=entry.id`; agent → задачи автономные (записи ещё нет до публикации).
 - **Справа (220px):** действия — Segmented **«Общее/Личное»** (дефолт Общее) → «Согласовать/Опубликовать»; «Отклонить»; для entry — **«Не встреча → в заметки»** (`patchMeeting(id,{entry_type:"note"})`). Обновление списка/`selected` — через `onEntryUpdated`. Ошибки операций → тост.
 
@@ -192,7 +192,7 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 | Действие | Entry (неподтв. встреча) | AgentMeeting (черновик) |
 |----------|--------------------------|-------------------------|
 | Согласовать (Общее/Личное) | `patchMeeting(id, {confirmed:true, is_private})` | `publishAgentMeeting(id, "workspace"\|"personal")` |
-| Править содержание | `patchMeeting(id, {content})` | — |
+| Править содержание | `patchMeeting(id, {content})` | название → `renameAgentMeeting(id,title)`; тезисы → `patchAgentMeetingDraft(id,md)` (инлайн на ревью) |
 | Реклассифицировать | `patchMeeting(id, {entry_type:"note"})` → уходит из очереди | — |
 | Сгенерировать задачи | `extractTasksPreview(content)` → `createTask({meeting_id, is_private})` | `extractTasksPreview(draft_notes_md)` → `createTask({is_private})` (автономно) |
 | Отклонить | `deleteMeeting(id)` (с confirm) | `deleteAgentMeeting(id)` (с confirm) |

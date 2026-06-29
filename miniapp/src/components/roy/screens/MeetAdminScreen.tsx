@@ -9,6 +9,8 @@ import {
   fetchAgentMeetings,
   fetchAgentMeeting,
   patchMeeting,
+  patchAgentMeetingDraft,
+  renameAgentMeeting,
   deleteMeeting,
   deleteAgentMeeting,
   publishAgentMeeting,
@@ -280,9 +282,11 @@ function ContentEditor({
 function DetailPanel({
   item,
   onEntryUpdated,
+  onAgentUpdated,
 }: {
   item: MeetItem;
   onEntryUpdated: (updated: Entry) => void;
+  onAgentUpdated: (updated: AgentMeeting) => void;
 }) {
   const title = itemTitle(item);
   const date = fmtDate(itemDate(item));
@@ -376,7 +380,7 @@ function DetailPanel({
   }
 
   // AgentMeeting — вынесено в отдельный компонент: там живёт поллинг тезисов.
-  return <AgentMeetingDetail meeting={item.data} title={title} date={date} src={src} />;
+  return <AgentMeetingDetail meeting={item.data} title={title} date={date} src={src} onUpdated={onAgentUpdated} />;
 }
 
 // ── Деталь черновика агента (с поллингом тезисов) ─────────────────────────────
@@ -398,16 +402,46 @@ function AgentMeetingDetail({
   title,
   date,
   src,
+  onUpdated,
 }: {
   meeting: AgentMeeting;
   title: string;
   date: string | null;
   src: string;
+  onUpdated: (updated: AgentMeeting) => void;
 }) {
+  const { toast } = useRoyNav();
   // Локальная копия: поллинг подменяет её свежими данными по мере готовности тезисов.
   const [m, setM] = useState<AgentMeeting>(meeting);
   // Счётчик опросов: после AGENT_SLOW_POLL_COUNT показываем подсказку «обработка затянулась».
   const [pollCount, setPollCount] = useState(0);
+
+  // Инлайн-правка названия и тезисов черновика (до публикации). Сброс при смене встречи.
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setEditingTitle(false); setEditingNotes(false); setSaving(false); }, [meeting.id]);
+
+  const apply = (updated: AgentMeeting) => { setM(updated); onUpdated(updated); };
+
+  const saveTitle = async () => {
+    const t = titleDraft.trim();
+    if (!t || saving) { setEditingTitle(false); return; }
+    setSaving(true);
+    try { apply(await renameAgentMeeting(m.id, t)); setEditingTitle(false); }
+    catch { toast("Не удалось сохранить название"); }
+    finally { setSaving(false); }
+  };
+
+  const saveNotes = async () => {
+    if (saving) return;
+    setSaving(true);
+    try { apply(await patchAgentMeetingDraft(m.id, notesDraft)); setEditingNotes(false); }
+    catch { toast("Не удалось сохранить тезисы"); }
+    finally { setSaving(false); }
+  };
 
   // Смена выбранной встречи: сразу показать данные из списка, затем подтянуть полную
   // деталь. Список (GET /agent-meetings) НЕ содержит transcript — он есть только в
@@ -454,9 +488,40 @@ function AgentMeetingDetail({
     // Панель — flex-колонка во всю высоту: шапка фиксирована, контент скроллится в своём контейнере.
     <div className="flex min-h-0 flex-1 flex-col px-5 py-4">
       <div className="shrink-0">
-        <h2 className="font-bold text-ink leading-tight" style={{ fontSize: 22, letterSpacing: "-0.015em" }}>
-          {title}
-        </h2>
+        {editingTitle ? (
+          <div className="flex items-center gap-2">
+            <input
+              autoFocus
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setEditingTitle(false); }}
+              disabled={saving}
+              className="min-w-0 flex-1 rounded-[10px] border border-line-2 bg-surface px-3 py-1.5 font-bold text-ink outline-none focus:border-primary disabled:opacity-50"
+              style={{ fontSize: 20, letterSpacing: "-0.015em" }}
+            />
+            <button type="button" onClick={saveTitle} disabled={saving} aria-label="Сохранить название" className="inline-flex items-center justify-center rounded-[9px] bg-primary text-white disabled:opacity-50" style={{ width: 32, height: 32 }}>
+              <RoyIcon name="check" size={16} strokeWidth={2.2} />
+            </button>
+            <button type="button" onClick={() => setEditingTitle(false)} disabled={saving} aria-label="Отмена" className="inline-flex items-center justify-center rounded-[9px] border border-line bg-surface text-ink-soft disabled:opacity-50" style={{ width: 32, height: 32 }}>
+              <RoyIcon name="x" size={15} strokeWidth={2} />
+            </button>
+          </div>
+        ) : (
+          <div className="group flex items-start gap-2">
+            <h2 className="flex-1 font-bold text-ink leading-tight" style={{ fontSize: 22, letterSpacing: "-0.015em" }}>
+              {title}
+            </h2>
+            <button
+              type="button"
+              onClick={() => { setTitleDraft(m.title ?? ""); setEditingTitle(true); }}
+              aria-label="Изменить название"
+              className="mt-1 inline-flex shrink-0 items-center justify-center rounded-[9px] text-ink-mute transition-colors hover:bg-surface-2 hover:text-ink"
+              style={{ width: 30, height: 30 }}
+            >
+              <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
+            </button>
+          </div>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span
             className="inline-flex items-center font-semibold"
@@ -489,8 +554,43 @@ function AgentMeetingDetail({
         {/* Верх: тезисы / статус обработки */}
         {m.draft_notes_md ? (
           <div>
-            <SectionLabel>Тезисы</SectionLabel>
-            <TezisyBlocks text={m.draft_notes_md} />
+            <div className="flex items-center justify-between gap-2">
+              <SectionLabel>Тезисы</SectionLabel>
+              {!editingNotes && (
+                <button
+                  type="button"
+                  onClick={() => { setNotesDraft(m.draft_notes_md ?? ""); setEditingNotes(true); }}
+                  className="-mt-1.5 inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
+                  style={{ padding: "5px 11px", fontSize: 12 }}
+                >
+                  <RoyIcon name="pencil" size={13} strokeWidth={1.9} /> Править
+                </button>
+              )}
+            </div>
+            {editingNotes ? (
+              <div className="mt-1">
+                <textarea
+                  autoFocus
+                  value={notesDraft}
+                  onChange={(e) => setNotesDraft(e.target.value)}
+                  disabled={saving}
+                  rows={14}
+                  className="w-full resize-y rounded-[14px] border border-line-2 bg-surface px-4 py-3 text-ink outline-none focus:border-primary disabled:opacity-50"
+                  style={{ fontSize: 14, lineHeight: 1.6, fontFamily: "ui-monospace, monospace" }}
+                />
+                <p className="mt-1 text-ink-mute" style={{ fontSize: 11 }}>Markdown: «### Тема» — заголовок раздела, «- » — пункт.</p>
+                <div className="mt-2 flex gap-2">
+                  <button type="button" onClick={saveNotes} disabled={saving} className="flex-1 rounded-[12px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
+                    {saving ? "Сохраняем…" : "Сохранить тезисы"}
+                  </button>
+                  <button type="button" onClick={() => setEditingNotes(false)} disabled={saving} className="rounded-[12px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft disabled:opacity-60" style={{ fontSize: 14 }}>
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <TezisyBlocks text={m.draft_notes_md} />
+            )}
           </div>
         ) : m.summary_status === "failed" ? (
           <p className="text-ink-soft" style={{ fontSize: 13 }}>
@@ -672,7 +772,7 @@ function ActionsPanel({
 
       {isAgent && (
         <p className="text-ink-mute leading-snug" style={{ fontSize: 11 }}>
-          «Опубликовать» — сохранит тезисы в базу команды или в личное хранилище. Для полного редактирования — откройте встречу на вкладке «Встречи».
+          «Опубликовать» — сохранит тезисы в базу команды или в личное хранилище. Название и тезисы можно поправить прямо здесь (карандаш у заголовка / «Править» у тезисов).
         </p>
       )}
     </div>
@@ -749,6 +849,16 @@ export function MeetAdminScreen() {
     setSelected((prev) =>
       prev && prev.kind === "entry" && prev.data.id === updated.id
         ? { kind: "entry", data: updated }
+        : prev,
+    );
+  };
+
+  // То же для agent-черновика (правка названия/тезисов на ревью): обновляем список и выбранное.
+  const onAgentUpdated = (updated: AgentMeeting) => {
+    setAgentMeetings((prev) => prev?.map((mm) => (mm.id === updated.id ? updated : mm)) ?? null);
+    setSelected((prev) =>
+      prev && prev.kind === "agent" && prev.data.id === updated.id
+        ? { kind: "agent", data: updated }
         : prev,
     );
   };
@@ -859,7 +969,7 @@ export function MeetAdminScreen() {
         {/* ── Центр: детали ─────────────────────────────────────────────────── */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {selected ? (
-            <DetailPanel item={selected} onEntryUpdated={onEntryUpdated} />
+            <DetailPanel item={selected} onEntryUpdated={onEntryUpdated} onAgentUpdated={onAgentUpdated} />
           ) : (
             <div className="flex h-full items-center justify-center">
               <div className="text-center space-y-2">
