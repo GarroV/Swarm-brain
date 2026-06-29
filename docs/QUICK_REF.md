@@ -35,28 +35,75 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 
 ---
 
-## Ключевые файлы
+## 🧭 Навигационный индекс — «где что» (канон, ищи здесь первым)
 
-| Что менять | Файл |
-|-----------|------|
-| Команды бота, роутинг | `swarm-bot/index.ts` |
-| Правка/удаление записей из чата | `swarm-bot/handlers/manage.ts` |
-| Классификатор намерения (удали/замени/url) | `swarm-bot/lib/intent.ts` |
-| Новый хендлер | `swarm-bot/handlers/<name>.ts` |
-| Задачи (движок, общий) | `_shared/tasks/db.ts`, `_shared/tasks/types.ts` |
-| Задачи (бот-обёртка) | `swarm-bot/tasks/db.ts`, `swarm-bot/tasks/handlers.ts` |
-| Задачи (MCP-прослойка) | `swarm-mcp/tasks/tools.ts` |
-| Fuzzy assignee | `swarm-bot/tasks/matcher.ts` |
-| Telegram helpers | `swarm-bot/lib/telegram.ts` |
-| Сессии, доступ, saveEntry | `swarm-bot/lib/storage.ts` |
-| Воркспейсы | `swarm-bot/lib/workspace.ts` |
-| MCP инструменты | `swarm-mcp/index.ts`, `swarm-mcp/tasks/tools.ts` |
-| Авто-сетап Claude Desktop (`/setup`) | `swarm-setup/script.ts` (bash), `swarm-bot/lib/mcp-setup.ts` (минт токена) |
-| Установка рекордера (`/recordertoken`) | `swarm-recorder-setup/script.ts` (bash), `recorder/setup-signing.sh` (cert), `recorder/install.sh`, `swarm-bot/lib/mcp-setup.ts` (`mintRecorderToken`) |
-| Обработка встреч (durable: транскрибация по куску) | `_shared/meeting-processor.ts` (шаг), `meeting-ingest/index.ts` (приём+inline), `meeting-process/index.ts` (cron), watchdog в `swarm-bot/index.ts` (`sweepStuckMeetings`); pg_cron `meetings-process`, бакет `meeting-audio` |
-| Нарезка аудио в рекордере (≤25МБ И ≤15мин) | `recorder/Sources/SwarmRecorder/Segmenter.swift` |
-| Локальный бэкап аудио (хранит до `done`/24ч, чистка) | `recorder/.../UploadQueue.swift` (drain/sweep), `recorder/.../SwarmClient.swift` (`fetchMeetingStatuses`), `meeting-status/index.ts` |
-| ADMIN_USER_ID | `swarm-bot/lib/supabase.ts` → `744230399` |
+> Цель: найти файл за секунды, не перечитывая репо. `§` = раздел в [ARCHITECTURE.md](ARCHITECTURE.md); spoke = отдельный док.
+
+### Бот (Telegram) — `swarm-bot/`
+| Concern | Файлы | Детали |
+|---|---|---|
+| Команды, роутинг входящего (сохранить vs искать) | `swarm-bot/index.ts`, `lib/intent.ts` | §swarm-bot, §Роутинг входящего |
+| Сохранение записи (saveEntry/индекс), сессии, доступ | `swarm-bot/lib/storage.ts` | §Флоу сохранения, §Сессионный механизм |
+| Правка/удаление записей из чата | `swarm-bot/handlers/manage.ts` | §Управление записями |
+| Воркспейсы | `swarm-bot/lib/workspace.ts` | §Воркспейсы |
+| Telegram helpers / новый хендлер | `swarm-bot/lib/telegram.ts`, `handlers/<name>.ts` | §swarm-bot |
+| `ADMIN_USER_ID` (зашит) | `swarm-bot/lib/supabase.ts` → `744230399` | §Контроль доступа |
+
+### Mini App backend — `swarm-api/`
+| Concern | Файлы | Детали |
+|---|---|---|
+| Все HTTP-эндпоинты (задачи/entries/встречи/поиск/дайджест) | `swarm-api/index.ts` | §swarm-api (канон эндпоинтов) |
+| **Доступ к `entries`** (приватность+воркспейс) — НЕ грепать напрямую | `swarm-api/entries-guard.ts` | §Контроль доступа |
+| Админка (воркспейсы/бродкаст/профили) | `swarm-api/admin.ts` | §swarm-api |
+| Auth (initData / agent-токен / web-JWT) | `swarm-api/auth.ts`, `_shared/agent-auth.ts`, `_shared/jwt.ts` | §MCP-аутентификация |
+
+### Задачи (общий движок) — `_shared/tasks/`
+| Concern | Файлы | Детали |
+|---|---|---|
+| CRUD/спринты/зависимости/типы | `_shared/tasks/{db,sprints,dependencies,types}.ts` | spoke [SHARED_TASKS_ENGINE.md](SHARED_TASKS_ENGINE.md) |
+| Бот-обёртка / MCP-прослойка / fuzzy-assignee | `swarm-bot/tasks/{db,handlers,matcher}.ts`, `swarm-mcp/tasks/tools.ts` | §Движок задач |
+
+### Поиск / записи / страны
+| Concern | Файлы | Детали |
+|---|---|---|
+| RAG / семантический поиск / matchEntries | `_shared/search.ts` (+ `swarm-api` `/search`,`/ask`,`/digest`) | §swarm-api |
+| Классификация стран | `_shared/countries.ts` | §Флоу сохранения |
+
+### Встречи — запись → транскрибация → тезисы → ревью
+| Concern | Файлы | Детали |
+|---|---|---|
+| Durable-обработка (транскрибация по куску) | `_shared/meeting-processor.ts`, `meeting-ingest/`, `meeting-process/` (cron); watchdog `swarm-bot/index.ts` `sweepStuckMeetings` | §Флоу встреч |
+| Промпт тезисов (канон, DRY) | `_shared/tezisy-prompt.ts` | §Флоу встреч |
+| Ревью/правка/публикация/переобработка | `swarm-api` (`/agent-meetings*`,`/meetings*`), `miniapp .../screens/MeetAdminScreen.tsx`,`MeetingDetail.tsx` | §swarm-api, spoke [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md) |
+| Granola импорт / Read.ai / статус-бэкап | `swarm-bot/handlers/granola.ts`, `read-ai-webhook/`, `meeting-status/` | §Флоу встреч |
+| Календарь / участники | `meeting-current/`, `google-oauth/`, рекордер `MeetingIdentity.swift` | §Флоу встреч |
+
+### Рекордер (macOS, Swift) — `recorder/`
+| Concern | Файлы | Детали |
+|---|---|---|
+| Жизненный цикл/виджет/аплоад/нарезка/бэкап | `recorder/Sources/SwarmRecorder/**` (`AppDelegate`,`RecorderWidget`,`UploadQueue`,`Segmenter`,`SwarmClient`) | spoke [recorder/README.md](../recorder/README.md) |
+| Релиз новой сборки (тег `recorder-build-N`) | `swarm-recorder-version/index.ts` (`LATEST_BUILD`) | recorder/README.md (runbook) |
+
+### Frontend «Рой» (Mini App) — `miniapp/src/components/roy/`
+| Concern | Файлы | Детали |
+|---|---|---|
+| Экраны/панели/дизайн-система/навигация | `miniapp/src/components/roy/**` | spoke [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md) |
+| API-клиент / типы | `miniapp/src/lib/api.ts`, `miniapp/src/types.ts` | MINIAPP_ARCHITECTURE.md |
+
+### MCP / установщики
+| Concern | Файлы | Детали |
+|---|---|---|
+| MCP-инструменты (Claude Desktop) | `swarm-mcp/index.ts`, `swarm-mcp/tasks/tools.ts` | §swarm-mcp |
+| Авто-сетап Claude Desktop (`/setup`) | `swarm-setup/script.ts`, `swarm-bot/lib/mcp-setup.ts` | §swarm-mcp |
+| Установка рекордера (`/recordertoken`) | `swarm-recorder-setup/script.ts`, `recorder/setup-signing.sh`, `swarm-bot/lib/mcp-setup.ts` | recorder/README.md |
+
+### Инвентари (канон — в ARCHITECTURE, не дублировать)
+| Что | Где |
+|---|---|
+| Эндпоинты swarm-api | §swarm-api |
+| Env / секреты | §Переменные окружения |
+| Таблицы БД | §Таблицы БД |
+| Callback / session-префиксы | §Callback-коды, §Сессионный механизм (выжимка — ниже) |
 
 ---
 
@@ -131,3 +178,13 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 4. Закоммитить (`sandbox_vas`) + сразу `git push`.
 5. Задеплоить (`--no-verify-jwt`).
 6. **Проверить, что не отвалилось** (принцип №2): `deno check` + смоук реального флоу; что не проверил — сказать прямо.
+
+---
+
+## Доки — держать живыми (на поток)
+
+- **🧭 Индекс выше — единый вход.** Меняешь подсистему → проверь, что её строка в индексе и инвентарь в ARCHITECTURE актуальны (тем же коммитом — часть DoD).
+- **Инвентари сверяй скриптом, не глазами:** `./scripts/doc-inventory.sh [endpoints|env|functions|tables|callbacks]` печатает факты ИЗ КОДА → сверь с таблицами в ARCHITECTURE. Расхождение = дрифт (код не задокументирован / дока устарела).
+- **Перед крупным мёржем или раз в квартал** — drift-аудит скиллом `keeping-docs-current` (`~/.claude/skills/keeping-docs-current/drift-audit.workflow.js`): перечисляет публичные поверхности из кода и диффает с доками.
+- **Один факт — одно место.** Инвентари (эндпоинты/env/таблицы/callbacks) — **канон в ARCHITECTURE**; QUICK_REF/SETUP только ссылаются или дают выжимку.
+- **ADR** на неочевидные решения — `docs/decisions/` (Context / Decision / Consequences), коротко.
