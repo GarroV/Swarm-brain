@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import type { Task, User } from "@/types";
 import { displayName } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/DatePicker";
 import {
   type CreateTaskInput,
   type UpdateTaskInput,
@@ -201,7 +202,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
 
               <div>
                 <label htmlFor="modal-due" className={labelCls} style={{ fontSize: 12.5 }}>Срок</label>
-                <input id="modal-due" type="date" className={fieldCls} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                <DatePicker value={dueDate} onChange={setDueDate} className={fieldCls} placeholder="Срок" />
               </div>
 
               <div>

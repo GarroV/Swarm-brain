@@ -4,6 +4,7 @@ import { useRoyNav } from "../nav";
 import { NavHeader, SectionLabel, Chip, Segmented } from "../ui";
 import { createTask, updateTask, fetchTask, fetchConfig, fetchUsers } from "@/lib/api";
 import { displayName } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/DatePicker";
 import type { User } from "@/types";
 
 const PRI = [
@@ -116,7 +117,7 @@ export function NewTask({ id }: { id?: string }) {
           </Field>
         )}
         <Field label="Срок">
-          <input type="date" value={due} onChange={(e) => setDue(e.target.value)} className={inputCls} style={{ fontSize: 15 }} />
+          <DatePicker value={due} onChange={setDue} className={inputCls} placeholder="Срок" />
         </Field>
         {users.length > 0 && (
           <Field label="Исполнитель">
