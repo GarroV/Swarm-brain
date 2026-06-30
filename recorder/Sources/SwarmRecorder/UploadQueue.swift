@@ -15,10 +15,12 @@ extension Notification.Name {
 //   1. uploaded=false → грузим (ретраи с бэкоффом; постоянный сбой/лимит → dead-letter failed/).
 //   2. после успешного 202 — НЕ удаляем (202 ≠ «обработано»): ставим uploaded=true, файлы остаются
 //      бэкапом на случай сбоя серверной обработки.
-//   3. опрос статуса (meeting-status): когда summary_status='done' — стенограмма/тезисы уже в БД,
-//      аудио больше не нужно → удаляем папку.
-//   4. 24ч-потолок: всё (и pending/, и failed/) старше суток сметается (sweepExpired) — бэкап
-//      «в рамках суток», диск не растёт.
+//   3. опрос статуса (meeting-status): когда встреча ОПУБЛИКОВАНА в базу (status='in_base') —
+//      запись уже у команды/в личном, аудио больше не нужно → удаляем папку. (summary_status='done'
+//      бэкап НЕ удаляет — лишь гасит капсулу «в обработке»: пока вычитка не опубликована, держим
+//      аудио как страховку, чтобы можно было перетранскрибировать/переобработать.)
+//   4. 3-суточный потолок: всё (и pending/, и failed/) старше 3 суток сметается (sweepExpired) —
+//      диск не растёт, а неопубликованная/застрявшая запись живёт достаточно, чтобы её заметить.
 // Дрейн — на старте, после каждой записи и периодически. meetingId переиспользуется (НЕ перезаклейм).
 //
 // Сайдкар (meta.json) описывает один pending-аплоад. systemSegments вместо одиночного path:
@@ -32,7 +34,7 @@ struct PendingUpload: Codable {
     let startISO: String
     let endISO: String
     var attempts: Int
-    var uploaded: Bool?             // true после успешного 202; бэкап ждёт подтверждения обработки (done) или 24ч
+    var uploaded: Bool?             // true после успешного 202; бэкап ждёт публикации в базу (in_base) или 3 суток
 
     struct Segment: Codable {
         let path: String            // относительный путь файла внутри папки meetingId
@@ -47,11 +49,14 @@ actor UploadQueue {
 
     // Сколько раз пытаемся залить, прежде чем отправить в dead-letter (папку failed/).
     private static let maxAttempts = 12
-    // Бэкап исходного аудио держим до подтверждения обработки (done) или этого потолка — «в рамках суток».
-    private static let backupTTLSec: TimeInterval = 24 * 60 * 60
+    // Бэкап исходного аудио держим до публикации в базу (in_base) или этого потолка — 3 суток.
+    private static let backupTTLSec: TimeInterval = 3 * 24 * 60 * 60
 
     private let fm = FileManager.default
     private var draining = false
+    // id встреч, по которым уже слали swarmMeetingDone (готов транскрипт) — чтобы не дёргать UI повторно
+    // на каждом дрейне, пока встреча не опубликована и бэкап ещё лежит.
+    private var doneNotified = Set<String>()
 
     private var rootDir: URL {
         let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -167,19 +172,26 @@ actor UploadQueue {
             }
         }
 
-        // (3) Опрос статуса залитых: summary_status='done' → стенограмма/тезисы в БД, аудио не нужно → удаляем бэкап.
-        // Сетевой/4xx сбой опроса — НЕ удаляем (бэкап доживёт до следующего дрейна или до 24ч-потолка).
+        // (3) Опрос статуса залитых. Два независимых события:
+        //   • summary='done' → транскрипт готов: гасим капсулу «в обработке» (один раз), бэкап НЕ трогаем.
+        //   • published (status='in_base') → опубликовано в базу: аудио не нужно → удаляем бэкап.
+        // Сетевой/4xx сбой опроса — НЕ удаляем (бэкап доживёт до следующего дрейна или до 3-суточного потолка).
         guard !uploadedIds.isEmpty else { return }
         if let statuses = try? await SwarmClient(config: config).fetchMeetingStatuses(uploadedIds) {
-            for (id, status) in statuses where status == "done" {
-                try? fm.removeItem(at: meetingDir(id))
-                NotificationCenter.default.post(name: .swarmMeetingDone, object: nil, userInfo: ["id": id])
-                NSLog("SwarmRecorder: встреча \(id) обработана (done) → локальный бэкап удалён")
+            for (id, st) in statuses {
+                if st.summary == "done", doneNotified.insert(id).inserted {
+                    NotificationCenter.default.post(name: .swarmMeetingDone, object: nil, userInfo: ["id": id])
+                }
+                if st.published {
+                    try? fm.removeItem(at: meetingDir(id))
+                    doneNotified.remove(id)
+                    NSLog("SwarmRecorder: встреча \(id) опубликована в базу → локальный бэкап удалён")
+                }
             }
         }
     }
 
-    // 24ч-потолок: удаляем папки бэкапа (pending/ и failed/) старше backupTTLSec — диск не растёт.
+    // 3-суточный потолок: удаляем папки бэкапа (pending/ и failed/) старше backupTTLSec — диск не растёт.
     private func sweepExpired() {
         let now = Date()
         for dir in [rootDir, deadLetterDir] {
@@ -188,7 +200,7 @@ actor UploadQueue {
                 var isDir: ObjCBool = false
                 guard fm.fileExists(atPath: entry.path, isDirectory: &isDir), isDir.boolValue else { continue }
                 if folderAgeSeconds(entry, now: now) > Self.backupTTLSec {
-                    NSLog("SwarmRecorder: бэкап \(entry.lastPathComponent) старше 24ч → удаляю")
+                    NSLog("SwarmRecorder: бэкап \(entry.lastPathComponent) старше 3 суток → удаляю")
                     try? fm.removeItem(at: entry)
                 }
             }

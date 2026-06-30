@@ -42,6 +42,13 @@ private func parseRetryAfter(_ resp: URLResponse?) -> TimeInterval? {
     return nil
 }
 
+// Статус встречи глазами рекордера: транскрибация (`summary`) и публикация (`published`).
+// Локальный бэкап аудио держим до `published` (опубликовано в базу) или до 3-суточного потолка.
+struct MeetingStatus {
+    let summary: String   // "" | "processing" | "done" | "failed"
+    let published: Bool   // meetings.status == "in_base"
+}
+
 // Клиент к Swarm Brain: claim (до загрузки) + upload аудио.
 // Контракт проверен e2e на проде 2026-06-12.
 struct SwarmClient {
@@ -115,9 +122,10 @@ struct SwarmClient {
     }
 
     // GET /meeting-status?ids=a,b,c → [meetingId: summary_status]. Нужно UploadQueue: локальный
-    // бэкап аудио удаляем, когда встреча обработана (summary_status="done"). Возвращает статусы
-    // только встреч вызывающего (claim_owner). Сетевой/4xx сбой бросаем наверх (бэкап не трогаем).
-    func fetchMeetingStatuses(_ ids: [String]) async throws -> [String: String] {
+    // Статус встречи для рекордера: `summary` (транскрибация: ""/processing/done/failed) гасит капсулу
+    // «в обработке»; `published` (status=='in_base') — сигнал удалить локальный бэкап аудио. Возвращает
+    // статусы только встреч вызывающего (claim_owner). Сетевой/4xx сбой бросаем наверх (бэкап не трогаем).
+    func fetchMeetingStatuses(_ ids: [String]) async throws -> [String: MeetingStatus] {
         guard !ids.isEmpty else { return [:] }
         var comps = URLComponents(url: url("/meeting-status"), resolvingAgainstBaseURL: false)!
         comps.queryItems = [URLQueryItem(name: "ids", value: ids.joined(separator: ","))]
@@ -128,11 +136,13 @@ struct SwarmClient {
         guard (200...299).contains(code) else {
             throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "", retryAfter: parseRetryAfter(resp))
         }
-        struct Item: Decodable { let id: String; let summaryStatus: String? }
+        struct Item: Decodable { let id: String; let summaryStatus: String?; let status: String? }
         struct Resp: Decodable { let statuses: [Item] }
         let decoded = try decoder.decode(Resp.self, from: data)
-        var out: [String: String] = [:]
-        for it in decoded.statuses { out[it.id] = it.summaryStatus ?? "" }
+        var out: [String: MeetingStatus] = [:]
+        for it in decoded.statuses {
+            out[it.id] = MeetingStatus(summary: it.summaryStatus ?? "", published: it.status == "in_base")
+        }
         return out
     }
 
