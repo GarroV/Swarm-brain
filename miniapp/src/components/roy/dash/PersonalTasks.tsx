@@ -1,6 +1,6 @@
 "use client";
 import { useRoyNav } from "../nav";
-import { DashBlock, SubHead, DashTaskRow } from "./shared";
+import { DashBlock, SubHead, DashTaskRow, norm } from "./shared";
 import type { DashboardData } from "./useDashboardData";
 
 // Левая колонка главного экрана: личные задачи текущего пользователя.
@@ -13,12 +13,18 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
   const { setTab } = useRoyNav();
   const { loading, today, week, mine } = data;
 
+  // Только активные — завершённые на дашборде не показываем (для них есть список «Готовые»).
+  const active = (ts: typeof mine) => ts.filter((t) => norm(t.status) !== "done");
+  const aToday = active(today);
+  const aWeek = active(week);
+  const aMine = active(mine);
+
   const tier =
-    today.length > 0 ? { label: "Сегодня", tasks: today } :
-    week.length > 0 ? { label: "Ближайшие", tasks: week } :
-    { label: "Все", tasks: mine };
-  const moreCount = mine.length - tier.tasks.length; // не вошедшие в показанный ярус
-  const empty = mine.length === 0;
+    aToday.length > 0 ? { label: "Сегодня", tasks: aToday } :
+    aWeek.length > 0 ? { label: "Ближайшие", tasks: aWeek } :
+    { label: "Все", tasks: aMine };
+  const moreCount = aMine.length - tier.tasks.length; // не вошедшие в показанный ярус
+  const empty = aMine.length === 0;
 
   return (
     <DashBlock
