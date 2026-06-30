@@ -2,9 +2,10 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   fetchTasks, updateTask, fetchSprints, createSprint, fetchMe,
-  addTasksToSprint, removeTasksFromSprint,
+  addTasksToSprint, removeTasksFromSprint, deleteSprint,
 } from "@/lib/api";
 import type { Task, Sprint } from "@/types";
+import { TaskModal } from "@/components/TaskModal";
 import { statusColor } from "@/lib/timeline";
 import { Button } from "@/components/ui/button";
 import { RoyIcon } from "@/components/roy/icons";
@@ -39,6 +40,8 @@ export function SprintBoard() {
   const [saving, setSaving] = useState(false);
   const [formErr, setFormErr] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", start_date: "", end_date: "" });
+  const [editing, setEditing] = useState<Task | null>(null);   // открытая в редакторе задача (клик по карточке)
+  const [deletingSprint, setDeletingSprint] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -95,6 +98,26 @@ export function SprintBoard() {
     }
   }
 
+  async function handleDeleteSprint() {
+    if (selected === BACKLOG || deletingSprint) return;
+    const sprint = sprints.find((s) => s.id === selected);
+    if (!sprint) return;
+    if (!window.confirm(`Удалить спринт «${sprint.name}»? Задачи вернутся в бэклог.`)) return;
+    setDeletingSprint(true);
+    try {
+      // Сначала возвращаем задачи в бэклог (deleteSprint их не переназначает) — иначе осиротеют.
+      const ids = tasks.filter((t) => t.sprint_id === selected).map((t) => t.id);
+      if (ids.length) await removeTasksFromSprint(selected, ids);
+      await deleteSprint(selected);
+      setSelected(BACKLOG);
+      await load();
+    } catch {
+      load();
+    } finally {
+      setDeletingSprint(false);
+    }
+  }
+
   if (loading) return <p className="text-center text-ink-soft py-12 text-sm">Загрузка…</p>;
 
   return (
@@ -123,8 +146,14 @@ export function SprintBoard() {
           );
         })}
         {isAdmin && (
-          <button onClick={() => setCreating((v) => !v)} className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm shrink-0">
+          <button onClick={() => setCreating((v) => !v)} className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm shrink-0" title="Новый спринт">
             <RoyIcon name="plus" size={14} strokeWidth={2} />
+          </button>
+        )}
+        {isAdmin && selected !== BACKLOG && (
+          <button onClick={handleDeleteSprint} disabled={deletingSprint} title="Удалить спринт"
+            className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 hover:text-destructive disabled:opacity-50 dark:backdrop-blur-sm shrink-0">
+            <RoyIcon name="trash" size={14} />
           </button>
         )}
       </div>
@@ -186,7 +215,8 @@ export function SprintBoard() {
                       key={t.id}
                       draggable
                       onDragStart={(e) => { e.dataTransfer.setData("text/plain", t.id); e.dataTransfer.effectAllowed = "move"; }}
-                      className="rounded-lg bg-card border border-line shadow-sm p-3 cursor-grab active:cursor-grabbing dark:backdrop-blur-sm"
+                      onClick={() => setEditing(t)}
+                      className="rounded-lg bg-card border border-line shadow-sm p-3 cursor-pointer hover:border-primary/40 active:cursor-grabbing dark:backdrop-blur-sm"
                     >
                       <p className="text-sm font-medium leading-snug text-ink">{t.title}</p>
                       <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-soft">
@@ -213,6 +243,13 @@ export function SprintBoard() {
           })}
         </div>
       </div>
+
+      <TaskModal
+        task={editing ?? undefined}
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => { setEditing(null); load(); }}
+      />
     </div>
   );
 }
