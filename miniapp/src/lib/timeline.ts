@@ -74,6 +74,19 @@ export function buildDayScale(rangeStart: string, days: number): DayCell[] {
 
 // Диапазон таймлайна: от самой ранней даты (или сегодня−7) до самой поздней (или сегодня+30),
 // с запасом по краям. Возвращает старт и число дней.
+// Защита от битого start_date (напр. год-опечатка/сорвавшийся drag → 2024 при due 2026):
+// если старт более чем на столько дней раньше due — считаем его невалидным и игнорируем
+// (задача становится вехой по due), чтобы один кривой старт не растягивал весь таймлайн на годы.
+const MAX_TASK_SPAN_DAYS = 400;
+export function taskDates(
+  t: { start_date: string | null; due_date: string | null },
+): { start: string | null; due: string | null } {
+  let start = t.start_date;
+  const due = t.due_date;
+  if (start && due && diffDays(start, due) > MAX_TASK_SPAN_DAYS) start = null;
+  return { start, due };
+}
+
 export function computeRange(
   tasks: Array<{ start_date: string | null; due_date: string | null }>,
 ): { start: string; days: number } {
@@ -81,7 +94,8 @@ export function computeRange(
   let min = parseISO(today);
   let max = parseISO(today);
   for (const t of tasks) {
-    for (const d of [t.start_date, t.due_date]) {
+    const { start, due } = taskDates(t);
+    for (const d of [start, due]) {
       if (!d) continue;
       const ts = parseISO(d);
       if (ts < min) min = ts;
@@ -99,7 +113,7 @@ export function barGeometry(
   rangeStart: string,
   dayWidth = DAY_WIDTH,
 ): { x: number; width: number; isMilestone: boolean } | null {
-  const { start_date, due_date } = task;
+  const { start: start_date, due: due_date } = taskDates(task);
   if (!start_date && !due_date) return null;
   if (start_date && due_date) {
     const x = dateToX(start_date, rangeStart, dayWidth);
