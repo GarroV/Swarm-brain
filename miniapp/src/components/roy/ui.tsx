@@ -1,6 +1,7 @@
 "use client";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { cn, displayName } from "@/lib/utils";
+import { countryName } from "@/lib/countries";
 import { RoyIcon, type RoyIconName } from "./icons";
 
 // Примитивы дизайн-системы из design_handoff_roy (mobile-proto-ui.jsx), портированные
@@ -65,7 +66,10 @@ export function TypeTag({ type, small }: { type: RoyTypeKey; small?: boolean }) 
   );
 }
 
-// ── Market (код рынка) ───────────────────────────────────────────────────────
+// ── Market (рынок) ───────────────────────────────────────────────────────────
+// Показываем человекочитаемое имя: код «SI» → «Словения» (countryName); незнакомое значение
+// (легаси-имя «Bulgaria» и т.п.) рендерится как есть (fallback). Так чипы рынка единообразны
+// независимо от того, хранится код или имя.
 export function Market({ code }: { code?: string | null }) {
   if (!code || code === "—") return null;
   return (
@@ -73,7 +77,7 @@ export function Market({ code }: { code?: string | null }) {
       className="inline-flex items-center font-semibold whitespace-nowrap text-ink-soft bg-surface-2 border border-line-2"
       style={{ fontSize: 11, borderRadius: 7, padding: "2px 7px" }}
     >
-      {code}
+      {countryName(code)}
     </span>
   );
 }

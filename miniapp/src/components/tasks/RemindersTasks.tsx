@@ -1,11 +1,13 @@
 "use client";
-import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { SmartListNav } from "./SmartListNav";
 import { TaskRow } from "./TaskRow";
 import { LensToggle } from "./LensToggle";
+import { TaskQuickActions } from "./TaskQuickActions";
 import { useReminderTasks } from "./useReminderTasks";
 import { SMART_LISTS } from "@/lib/smartLists";
-import type { Task } from "@/types";
+import { fetchUsers } from "@/lib/api";
+import type { Task, User } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { RoyIcon } from "@/components/roy/icons";
 
@@ -22,6 +24,9 @@ export function RemindersTasks() {
   const r = useReminderTasks();
   const [modalTask, setModalTask] = useState<Task | "new" | null>(null);
   const [draft, setDraft] = useState("");
+  // Роутер исполнителей для быстрого выбора — грузим один раз (не на каждую строку).
+  const [users, setUsers] = useState<User[]>([]);
+  useEffect(() => { fetchUsers().then(setUsers).catch(() => {}); }, []);
 
   const activeDef = SMART_LISTS.find((s) => s.id === r.activeList)!;
   const byMarket = r.lens === "market";
@@ -42,6 +47,8 @@ export function RemindersTasks() {
 
   const rowTrailing = (t: Task) => (
     <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      {/* Быстро задать срок / исполнителя / страну, не открывая карточку */}
+      <TaskQuickActions task={t} users={users} onChanged={r.reload} />
       <IconBtn label="Изменить" color="var(--accent-ink)" onClick={(e) => { e.stopPropagation(); setModalTask(t); }}>
         <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
       </IconBtn>

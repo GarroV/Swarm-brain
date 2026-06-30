@@ -44,11 +44,13 @@ type Props = {
   onChange: (iso: string) => void;   // "" = срок убран
   className?: string;
   placeholder?: string;
+  /** Компактный триггер: только иконка (без подписи) — для быстрых действий в строке задачи. */
+  compact?: boolean;
 };
 
 const POPOVER_W = 264, POPOVER_H = 340;
 
-export function DatePicker({ value, onChange, className = "", placeholder = "Выбрать дату" }: Props) {
+export function DatePicker({ value, onChange, className = "", placeholder = "Выбрать дату", compact = false }: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -96,10 +98,21 @@ export function DatePicker({ value, onChange, className = "", placeholder = "В�
 
   return (
     <>
-      <button ref={btnRef} type="button" onClick={() => setOpen((o) => !o)}
-        className={`${className} flex items-center gap-2 text-left`}>
-        <RoyIcon name="cal" size={15} />
-        <span className={label ? "text-ink" : "text-ink-soft"}>{label ?? placeholder}</span>
+      <button
+        ref={btnRef}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={compact ? "Срок" : undefined}
+        // stopPropagation — чтобы клик не «всплыл» как тап по строке задачи (открытие карточки)
+        // и не съелся как старт свайпа (SwipeRow на мобайле). См. чекбокс TaskRow.
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+        className={compact ? className : `${className} flex items-center gap-2 text-left`}
+        style={compact ? { color: value ? "var(--accent-ink)" : "var(--ink-soft)" } : undefined}
+      >
+        <RoyIcon name="cal" size={15} strokeWidth={compact ? 1.9 : undefined} />
+        {!compact && <span className={label ? "text-ink" : "text-ink-soft"}>{label ?? placeholder}</span>}
       </button>
 
       {open && pos && createPortal(
