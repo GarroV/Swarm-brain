@@ -37,9 +37,9 @@ export default function LoginPage() {
       style={{ background: "oklch(0.16 0.02 264)" }}>
       <div className="flex flex-col items-center gap-5 text-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/icon.svg" alt="Swarm" width={88} height={88} className="rounded-3xl" />
+        <img src="/icon.svg" alt="Swarm Brain" width={88} height={88} className="rounded-3xl" />
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-white">Swarm</h1>
+          <h1 className="text-4xl font-bold tracking-tight text-white">Swarm Brain</h1>
           <p className="mt-2 text-sm" style={{ color: "oklch(0.72 0.04 264)" }}>
             Командные и личные задачи
           </p>

@@ -372,9 +372,9 @@ Deno.serve(async (req: Request) => {
       await sendMessage(chatId,
         `<b>Swarm Brain</b> — командная база знаний и задачи.\n\n` +
         `Напиши вопрос — найду ответ по базе. Чтобы сохранить: кнопка 📥 <b>Добавить</b>, либо пришли 🎤 голос · 📎 файл · 🔗 ссылку · пересланное сообщение.\n\n` +
-        `🌐 <b>Swarm</b> — приложение: задачи, встречи, поиск.\n` +
+        `🌐 <b>Swarm Brain</b> — приложение: задачи, встречи, поиск.\n` +
         `🔗 https://swarm-brain.pages.dev — вход через Telegram, ставится как приложение (Dock / экран «Домой»).\n\n` +
-        `🎙 <b>Рекордер встреч (Mac):</b> /recordertoken → приложение встанет в /Applications. Затем привяжи Google-календарь в Swarm → Настройки → Google Calendar (без него рекордер не видит встреч).\n\n` +
+        `🎙 <b>Рекордер встреч (Mac):</b> /recordertoken → приложение встанет в /Applications. Затем привяжи Google-календарь в Swarm Brain → Настройки → Google Calendar (без него рекордер не видит встреч).\n\n` +
         `🖥 <b>Claude Desktop:</b> /setup — подключить автоматически.\n\n` +
         `📖 /help — полная справка`,
         buildKeyboard()

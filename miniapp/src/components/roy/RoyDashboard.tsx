@@ -26,7 +26,7 @@ export function RoyDashboard() {
         <div className="flex items-center gap-2.5">
           <RoyMark size={32} />
           <span className="font-bold" style={{ fontSize: 22, letterSpacing: "-0.01em" }}>
-            Swarm
+            Swarm Brain
           </span>
         </div>
         <ProjectMapButton />

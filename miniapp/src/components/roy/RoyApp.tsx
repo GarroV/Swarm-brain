@@ -245,7 +245,7 @@ function MapScreen() {
       <NavHeader onBack={pop} title="Карта системы" />
       <iframe
         src="/system-map.html"
-        title="Карта системы Swarm"
+        title="Карта системы Swarm Brain"
         className="min-h-0 w-full flex-1 border-0 bg-[#0a0b07]"
       />
     </div>
