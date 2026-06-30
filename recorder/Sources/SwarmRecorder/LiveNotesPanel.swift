@@ -61,7 +61,10 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         panel.setFrame(NSRect(x: vf.maxX - Self.panelWidth - Self.margin, y: vf.maxY - h - Self.margin,
                               width: Self.panelWidth, height: h), display: true)
         startTimers()
-        panel.orderFrontRegardless()
+        // Открыли блокнот осознанно (старт записи / клик по пилюле) → выводим вперёд и в фокус.
+        // Дальше при клике в другое окно он сам уйдёт на задний план (уровень .normal).
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(input)
     }
 
@@ -94,7 +97,10 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         p.titleVisibility = .hidden
         p.titlebarAppearsTransparent = true
         p.isMovableByWindowBackground = true
-        p.level = .floating
+        // Обычный уровень (НЕ .floating): блокнот ведёт себя как нормальное окно — кликнул другую
+        // программу → ушёл на задний план; кликнул по блокноту → снова вперёд. Маленькая пилюля
+        // (RecorderWidget) остаётся .floating как индикатор записи.
+        p.level = .normal
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.hidesOnDeactivate = false
         p.isReleasedWhenClosed = false

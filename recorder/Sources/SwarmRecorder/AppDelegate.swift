@@ -132,14 +132,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    // Ушли в другую программу → блокнот не должен висеть поверх. Сворачиваем его в пилюлю
-    // (пилюля маленькая, остаётся для возврата). Назад — клик по марке пилюли.
-    func applicationDidResignActive(_ notification: Notification) {
-        if isRecording && notesExpanded {
-            Task { @MainActor in LiveNotesPanel.shared.collapse() }
-        }
-    }
-
     // ── Авто-детект (календарь + микрофон) ───────────────────────────────────────
     private func setupNotifications() {
         let center = UNUserNotificationCenter.current()
