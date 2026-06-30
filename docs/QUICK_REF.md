@@ -19,6 +19,8 @@ supabase functions deploy meeting-webtoken --no-verify-jwt   # обмен record
 supabase secrets set BOT_NAME=swarm-bot                       # env-переменные
 ```
 
+> **`--no-verify-jwt` теперь ЗАКРЕПЛЁН в `supabase/config.toml`** (`[functions.<name>] verify_jwt = false` для всех 15 функций). Флаг в командах выше — подстраховка, конфиг и так делает функции публичными на шлюзе. **Не ставь `verify_jwt = true`** ни одной функции: рекордер/вебхуки/бот шлют не-JWT `Bearer`-токены и делают свою авторизацию в коде → шлюз с verify_jwt отобьёт их 401 `INVALID_JWT_FORMAT` ещё до функции (так в 2026-06-30 молча падали ВСЕ загрузки рекордера — разбор в BACKLOG).
+
 ### Веб (miniapp) — Cloudflare Pages, АВТО (руками НЕ деплоить)
 
 > Проверено 2026-06-28 через CF API. Веб «Рой» выкатывается **сам** на каждый push в `sandbox_vas` — отдельный ручной шаг НЕ нужен (в отличие от edge-функций выше).

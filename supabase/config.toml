@@ -361,6 +361,45 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
+# ── Edge Functions: верификация JWT на ШЛЮЗЕ ─────────────────────────────────────
+# ВСЕ наши функции публичны на шлюзе (verify_jwt = false) и делают СВОЮ авторизацию в коде:
+# рекордер-токен/MCP-токен (agent-auth), сессионный roj_session JWT (swarm-api), вебхук-секрет
+# (read-ai), либо публичный GET (setup/version). Если у функции включить gateway-verify_jwt,
+# шлюз отбивает не-JWT вызовы (рекордер шлёт Bearer <opaque-token>) с 401 INVALID_JWT_FORMAT
+# ещё ДО функции → загрузки рекордера молча уходят в dead-letter (разбор 2026-06-30: так
+# сломалась meeting-ingest). Закрепляем здесь, чтобы `supabase functions deploy` НЕ полагался
+# на ручной флаг --no-verify-jwt и не терял его. Менять на true — только осознанно.
+[functions.swarm-api]
+verify_jwt = false
+[functions.swarm-bot]
+verify_jwt = false
+[functions.swarm-mcp]
+verify_jwt = false
+[functions.swarm-setup]
+verify_jwt = false
+[functions.swarm-recorder-setup]
+verify_jwt = false
+[functions.swarm-recorder-version]
+verify_jwt = false
+[functions.meeting-claim]
+verify_jwt = false
+[functions.meeting-ingest]
+verify_jwt = false
+[functions.meeting-process]
+verify_jwt = false
+[functions.meeting-status]
+verify_jwt = false
+[functions.meeting-current]
+verify_jwt = false
+[functions.meeting-webtoken]
+verify_jwt = false
+[functions.read-ai-webhook]
+verify_jwt = false
+[functions.read-ai-auth]
+verify_jwt = false
+[functions.google-oauth]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
