@@ -248,7 +248,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
           }))
           .catch(() => [] as KbEntry[]);
 
-        const words = query.toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2).slice(0, 6);
+        const words = query.toLowerCase().split(/[\s,.!?()*:%_\\"]+/).filter(w => w.length > 2).slice(0, 6);
         // For Russian morphology: also search by word stem (first 5 chars) to match different declensions
         // e.g. "муравьев" → also search "муравь" to match "муравьи", "муравьям" etc.
         const searchTerms = [...new Set(words.flatMap(w => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
@@ -298,7 +298,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
 
       case "find_note": {
         const query = String(args.query ?? "");
-        const words = query.toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2);
+        const words = query.toLowerCase().split(/[\s,.!?()*:%_\\"]+/).filter(w => w.length > 2);
         const searchTerms = [...new Set(words.flatMap(w => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
 
         const [vecNotes, kwNotes] = await Promise.all([
@@ -332,7 +332,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
 
       case "find_link": {
         const query = String(args.query ?? "");
-        const words = query.toLowerCase().split(/[\s,.!?]+/).filter(w => w.length > 2);
+        const words = query.toLowerCase().split(/[\s,.!?()*:%_\\"]+/).filter(w => w.length > 2);
         const searchTerms = [...new Set(words.flatMap(w => w.length > 5 ? [w, w.slice(0, 5)] : [w]))];
 
         const [vecLinks, kwLinks] = await Promise.all([
@@ -418,7 +418,8 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
             : supabase.from("entries")
                 .select("id, content, summary, source, entry_date, created_at, metadata")
                 .gte("created_at", since)
-                .or(`metadata->>title.ilike.%${country}%,content.ilike.%${country}%,summary.ilike.%${country}%`)
+                // спецсимволы PostgREST (,()* и т.п.) в значении сломали бы .or() → чистим терм
+                .or((() => { const c = country.replace(/[%_,()*:\\"]+/g, " ").trim(); return `metadata->>title.ilike.%${c}%,content.ilike.%${c}%,summary.ilike.%${c}%`; })())
                 .eq("group_id", groupId)
                 .or(visibilityFilter(userId || 0))
                 .order("created_at", { ascending: false })

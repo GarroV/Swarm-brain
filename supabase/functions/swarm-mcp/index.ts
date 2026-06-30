@@ -415,12 +415,15 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
 
   // Chunk grouping UUID (not the workspace group_id)
   const chunkGroupId = chunks.length > 1 ? crypto.randomUUID() : null;
-  const isPrivate = args.is_private === true;
-  const ownerId = isPrivate ? (args.owner_telegram_id ?? null) : null;
-  if (isPrivate && !ownerId) return "Ошибка: для личного хранилища необходимо передать owner_telegram_id.";
 
-  // Resolve workspace
+  // Личность вызывающего: в strict-режиме requesting_user_id уже перетёрт verified-токеном выше,
+  // в soft — берётся из аргументов на доверии (принятый риск). Владельца ЛИЧНОЙ записи выводим
+  // именно из вызывающего, а НЕ из произвольного owner_telegram_id — иначе в strict-режиме можно
+  // было бы подсунуть чужой owner_id (мисатрибуция в пределах воркспейса). Личность из токена, не из payload.
   const callerTelegramId = args.requesting_user_id ?? args.owner_telegram_id ?? null;
+  const isPrivate = args.is_private === true;
+  const ownerId = isPrivate ? callerTelegramId : null;
+  if (isPrivate && !ownerId) return "Ошибка: для личного хранилища не удалось определить владельца (requesting_user_id).";
   const workspaceGroupId = callerTelegramId ? await getUserGroupId(callerTelegramId) : null;
   const [summaryEmbedding, entryMeta] = await Promise.all([
     getEmbedding(args.summary.slice(0, 8000)),

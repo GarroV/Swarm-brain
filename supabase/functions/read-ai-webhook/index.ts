@@ -11,9 +11,13 @@ const WEBHOOK_SECRET = Deno.env.get("READ_AI_WEBHOOK_SECRET") ?? "";
 const ADMIN_CHAT_ID = 744230399;
 
 async function verifySignature(req: Request, body: string): Promise<boolean> {
-  if (!WEBHOOK_SECRET) return true;
+  // Fail-closed, КОГДА фича включена: при READ_AI_ENABLED секрет ОБЯЗАТЕЛЕН и подпись должна
+  // сойтись — иначе отказ. Когда фича выключена (дефолт), путь всё равно ничего не пишет
+  // (kill-switch ниже возвращает 200), поэтому пропускаем, чтобы Read.ai считал доставку успешной.
+  const enabled = Deno.env.get("READ_AI_ENABLED") === "true";
+  if (!WEBHOOK_SECRET) return !enabled;          // включено без секрета → отказ (раньше: всегда пускал)
   const signature = req.headers.get("x-readai-signature") ?? req.headers.get("x-hub-signature-256") ?? "";
-  if (!signature) return true; // allow if no signature header (backwards compat)
+  if (!signature) return !enabled;               // включено без подписи → отказ
   const keyData = Uint8Array.from(atob(WEBHOOK_SECRET), c => c.charCodeAt(0));
   const key = await crypto.subtle.importKey("raw", keyData, { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
   const sigBytes = Uint8Array.from(atob(signature.replace(/^sha256=/, "")), c => c.charCodeAt(0));
