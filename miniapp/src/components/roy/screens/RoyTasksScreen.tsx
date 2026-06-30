@@ -15,7 +15,8 @@ export function RoyTasksScreen() {
   const { push, toast, openTask } = useRoyNav();
   const r = useReminderTasks();
   const activeDef = SMART_LISTS.find((s) => s.id === r.activeList)!;
-  const total = r.activeList === "byMarket" ? r.marketGroups.reduce((n, g) => n + g.tasks.length, 0) : r.visible.length;
+  const byMarket = r.lens === "market";
+  const total = byMarket ? r.marketGroups.reduce((n, g) => n + g.tasks.length, 0) : r.visible.length;
   const showAssignee = r.lens !== "mine";
 
   const remove = async (t: Task) => {
@@ -44,7 +45,8 @@ export function RoyTasksScreen() {
 
   return (
     <div className="relative h-full overflow-y-auto">
-      <RoyHeader title="Задачи" right={<LensToggle lens={r.lens} onChange={r.setLens} />} />
+      <RoyHeader title="Задачи" />
+      <div className="px-5 pb-2"><LensToggle lens={r.lens} onChange={r.setLens} /></div>
       <SmartListNav variant="chips" active={r.activeList} counts={r.counts} onSelect={r.setActiveList} />
 
       <div className="px-5 pb-2 text-ink-mute" style={{ fontSize: 12.5 }}>
@@ -60,7 +62,7 @@ export function RoyTasksScreen() {
           </div>
         )}
 
-        {!r.loading && r.activeList === "byMarket" &&
+        {!r.loading && byMarket &&
           r.marketGroups.map((g) => (
             <section key={g.label} className="space-y-2.5">
               <div className="flex items-center gap-2 pt-1.5">
@@ -72,7 +74,7 @@ export function RoyTasksScreen() {
             </section>
           ))}
 
-        {!r.loading && r.activeList !== "byMarket" && r.visible.map(row)}
+        {!r.loading && !byMarket && r.visible.map(row)}
       </div>
 
       <FAB onClick={() => push({ view: "newTask" })} />

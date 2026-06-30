@@ -58,14 +58,15 @@ export function useReminderTasks() {
     [list, activeList, lens, me, now, matchesQuery],
   );
 
+  // Линза «По рынкам» накладывается на активный смарт-список: группируем его задачи по странам.
   const marketGroups: MarketGroup[] = useMemo(
     () =>
-      activeList === "byMarket"
-        ? groupByMarket(list, lens, me, now)
+      lens === "market"
+        ? groupByMarket(list, activeList, me, now)
             .map((g) => ({ ...g, tasks: g.tasks.filter(matchesQuery) }))
             .filter((g) => g.tasks.length > 0)
         : [],
-    [activeList, list, lens, me, now, matchesQuery],
+    [lens, activeList, list, me, now, matchesQuery],
   );
 
   const toggle = useCallback(async (t: Task) => {
@@ -95,7 +96,6 @@ export function useReminderTasks() {
     const input: { title: string; assignee_telegram_id?: number; due_date?: string; priority?: string } = { title: trimmed };
     if (me) input.assignee_telegram_id = me.telegram_id;
     if (activeList === "today") input.due_date = todayISO(new Date());
-    if (activeList === "flagged") input.priority = "high";
     try {
       await createTask(input);
     } finally {

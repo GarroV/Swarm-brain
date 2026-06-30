@@ -5,19 +5,20 @@
 import type { Task, Me } from "@/types";
 import type { RoyIconName } from "@/components/roy/icons";
 
-export type SmartListId = "today" | "upcoming" | "flagged" | "all" | "done" | "byMarket";
-export type Lens = "mine" | "team" | "all";
+export type SmartListId = "today" | "upcoming" | "all" | "done";
+// Линза = ось «как смотреть»: по владельцу (mine/team/all) ИЛИ группировкой по рынку (market).
+// «market» — не фильтр владельца, а режим отображения (все владельцы, сгруппировано по странам).
+export type Lens = "mine" | "team" | "all" | "market";
 
 export type SmartListDef = { id: SmartListId; label: string; icon: RoyIconName };
 
-// Единый источник правды для порядка/подписей/иконок смарт-списков.
+// Единый источник правды для порядка/подписей/иконок смарт-списков (время/статус).
+// «По рынкам» — НЕ смарт-список, а линза (см. Lens), накладывается на любой из этих списков.
 export const SMART_LISTS: SmartListDef[] = [
   { id: "today", label: "Сегодня", icon: "clock" },
-  { id: "upcoming", label: "Предстоящее", icon: "cal" },
-  { id: "flagged", label: "Важное", icon: "flag" },
+  { id: "upcoming", label: "Ближайшие", icon: "cal" },
   { id: "all", label: "Все", icon: "task" },
-  { id: "done", label: "Готово", icon: "check" },
-  { id: "byMarket", label: "По рынкам", icon: "globe" },
+  { id: "done", label: "Готовые", icon: "check" },
 ];
 
 export const HIGH_PRIORITY = "high";
@@ -48,7 +49,8 @@ export function isOverdue(task: Task, now: Date = new Date()): boolean {
 }
 
 function matchesLens(task: Task, lens: Lens, me: Me | null): boolean {
-  if (lens === "all") return true;
+  // «Все» и «По рынкам» не фильтруют по владельцу (market фильтрует группировкой, не отбором).
+  if (lens === "all" || lens === "market") return true;
   if (lens === "team") return !(me && (task.assignee_telegram_ids?.includes(me.telegram_id) ?? false));
   if (!me) return false;
   return task.assignee_telegram_ids?.includes(me.telegram_id) ?? false;
@@ -96,18 +98,14 @@ function inList(task: Task, listId: SmartListId, now: Date): boolean {
       return due != null && due <= today;
     case "upcoming":
       return due != null && due > today;
-    case "flagged":
-      return task.priority === HIGH_PRIORITY;
     case "all":
-    case "byMarket":
       return true;
   }
 }
 
 function sorterFor(listId: SmartListId): (a: Task, b: Task) => number {
   if (listId === "done") return byUpdatedDesc;
-  if (listId === "today" || listId === "upcoming") return chain(byDueAsc, byPriorityDesc, byCreatedDesc);
-  return chain(byDueAsc, byPriorityDesc, byCreatedDesc); // flagged / all / byMarket
+  return chain(byDueAsc, byPriorityDesc, byCreatedDesc); // today / upcoming / all
 }
 
 // Отфильтрованный и отсортированный список задач для смарт-списка под линзой.
@@ -128,10 +126,10 @@ export function countLists(tasks: Task[], lens: Lens, me: Me | null, now: Date =
 
 export type MarketGroup = { country: string | null; label: string; tasks: Task[] };
 
-// Группировка незавершённых задач по рынку (страна). Без страны → «Без рынка», в конец.
-// Группы по убыванию размера, затем по коду рынка.
-export function groupByMarket(tasks: Task[], lens: Lens, me: Me | null, now: Date = new Date()): MarketGroup[] {
-  const inScope = filterTasks(tasks, "byMarket", lens, me, now);
+// Группировка задач АКТИВНОГО смарт-списка по рынку (страна) — все владельцы (линза market).
+// Без страны → «Без рынка», в конец. Группы по убыванию размера, затем по коду рынка.
+export function groupByMarket(tasks: Task[], listId: SmartListId, me: Me | null, now: Date = new Date()): MarketGroup[] {
+  const inScope = filterTasks(tasks, listId, "all", me, now);
   const map = new Map<string | null, Task[]>();
   for (const t of inScope) {
     const key = t.country && t.country !== "—" ? t.country : null;

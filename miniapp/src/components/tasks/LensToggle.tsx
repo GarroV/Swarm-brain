@@ -6,12 +6,13 @@ const ITEMS: { id: Lens; label: string }[] = [
   { id: "mine", label: "Мои" },
   { id: "team", label: "Команда" },
   { id: "all", label: "Все" },
+  { id: "market", label: "По рынкам" },
 ];
 
-// Переключатель линзы: мои задачи / все задачи команды.
+// Переключатель вида: мои / команда / все задачи · либо «По рынкам» (группировка по странам).
 export function LensToggle({ lens, onChange }: { lens: Lens; onChange: (l: Lens) => void }) {
   return (
-    <div className="flex gap-[3px] rounded-[10px] border border-line bg-surface-2 p-[3px]">
+    <div className="inline-flex gap-[3px] rounded-[10px] border border-line bg-surface-2 p-[3px]">
       {ITEMS.map((it) => {
         const on = it.id === lens;
         return (

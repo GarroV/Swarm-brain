@@ -24,7 +24,8 @@ export function RemindersTasks() {
   const [draft, setDraft] = useState("");
 
   const activeDef = SMART_LISTS.find((s) => s.id === r.activeList)!;
-  const total = r.activeList === "byMarket" ? r.marketGroups.reduce((n, g) => n + g.tasks.length, 0) : r.visible.length;
+  const byMarket = r.lens === "market";
+  const total = byMarket ? r.marketGroups.reduce((n, g) => n + g.tasks.length, 0) : r.visible.length;
   const showAssignee = r.lens !== "mine";
 
   const submitDraft = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -93,7 +94,7 @@ export function RemindersTasks() {
             </p>
           )}
 
-          {!r.loading && r.activeList === "byMarket" &&
+          {!r.loading && byMarket &&
             r.marketGroups.map((g) => (
               <section key={g.label} className="mb-4">
                 <div className="mb-1 flex items-center gap-2 pt-2">
@@ -105,7 +106,7 @@ export function RemindersTasks() {
               </section>
             ))}
 
-          {!r.loading && r.activeList !== "byMarket" && r.visible.map(renderRow)}
+          {!r.loading && !byMarket && r.visible.map(renderRow)}
 
           {/* Инлайн быстрое добавление */}
           {!r.loading && r.activeList !== "done" && (
