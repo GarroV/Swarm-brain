@@ -46,7 +46,7 @@ export function RecordBody({ entry: e }: { entry: Entry }) {
         <Market code={e.countries?.[0]} />
         {date && <span className="text-ink-mute" style={{ fontSize: 12 }}>{date}</span>}
       </div>
-      <h1 className="mb-2 font-bold text-ink" style={{ fontSize: 22, letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+      <h1 className="mb-2 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
         {deriveEntryTitle(e)}
       </h1>
       {/* Источник / провенанс — у каждой записи. */}

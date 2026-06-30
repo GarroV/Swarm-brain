@@ -12,6 +12,18 @@ import { RoyIcon, type RoyIconName } from "./icons";
 // focus-visible (не focus) → кольцо только при Tab-навигации, не при клике мышью.
 const TAP = "transition-transform active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
+// ── Канон типографики Roy (ЕДИНЫЙ МАСШТАБ) ───────────────────────────────────
+// Раньше каждый экран хардкодил свой fontSize у заголовка → при переключении экранов
+// заголовок «прыгал» (16→30px). Единый источник: заголовок экрана/детали ОДНОГО размера
+// на всех полноэкранных поверхностях. Диалоги (модалки) — отдельный, меньший тир.
+// Применять как style={ROY_TYPE.pageTitle} вместо инлайн-fontSize у h1.
+export const ROY_TYPE = {
+  /** Заголовок экрана/детали (Встречи / Задачи / База / конкретная встреча/задача / виды задач). */
+  pageTitle: { fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em" },
+  /** Заголовок модального диалога (меньше экранного — конвенция модалок). */
+  dialogTitle: { fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em" },
+} as const;
+
 // ── Card ───────────────────────────────────────────────────────────────────
 export function RoyCard({ className, ...props }: ComponentPropsWithoutRef<"div">) {
   // dark:backdrop-blur — frosted-стекло поверх галактики (поверхности translucent в .dark);
@@ -207,8 +219,8 @@ export function RoyHeader({ title, right, sub }: { title: ReactNode; right?: Rea
   return (
     <div className="px-5 pt-2 pb-3">
       <div className="flex items-center justify-between gap-2.5">
-        {/* -0.02em трекинг из хендоффа: на кириллице Golos проверить на 320/1440 + dark; если слипается — поднять до -0.015em */}
-        <h1 className="font-bold leading-[1.1]" style={{ fontSize: 30, letterSpacing: "-0.02em" }}>
+        {/* Единый масштаб заголовка экрана — ROY_TYPE.pageTitle (см. канон выше). */}
+        <h1 className="leading-[1.1]" style={ROY_TYPE.pageTitle}>
           {title}
         </h1>
         {right}

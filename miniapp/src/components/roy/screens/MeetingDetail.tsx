@@ -132,7 +132,7 @@ export function MeetingDetail({ id }: { id: string }) {
                 </span>
               )}
             </div>
-            <h1 className="mb-4 font-bold text-ink" style={{ fontSize: 22, letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+            <h1 className="mb-4 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
               {deriveEntryTitle(e)}
             </h1>
 

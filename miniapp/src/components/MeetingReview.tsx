@@ -115,7 +115,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
         </div>
       ) : (
         <>
-          <h1 className="text-base font-semibold flex-1 truncate text-ink">{meeting?.title ?? "Встреча"}</h1>
+          <h1 className="font-bold flex-1 truncate text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>{meeting?.title ?? "Встреча"}</h1>
           {canRename && (
             <button onClick={() => { setTitleDraft(meeting!.title ?? ""); setEditingTitle(true); }} aria-label="Переименовать" className="transition-colors hover:opacity-80" style={{ color: "var(--accent-ink)" }}>
               <RoyIcon name="pencil" size={17} strokeWidth={1.9} />

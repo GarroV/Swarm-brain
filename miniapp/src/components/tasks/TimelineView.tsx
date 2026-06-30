@@ -136,7 +136,7 @@ export function TimelineView() {
     <div className="flex h-full flex-col overflow-y-auto">
       <header className="flex items-end justify-between gap-3 px-5 pt-3 pb-3">
         <div>
-          <h1 className="font-bold leading-[1.1] text-ink" style={{ fontSize: 28, letterSpacing: "-0.02em" }}>Таймлайн</h1>
+          <h1 className="font-bold leading-[1.1] text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>Таймлайн</h1>
           <p className="text-ink-soft mt-1" style={{ fontSize: 13 }}>
             {withDates.length} {plural(withDates.length, ["задача", "задачи", "задач"])} с датами · перетаскивай и тяни за края
           </p>

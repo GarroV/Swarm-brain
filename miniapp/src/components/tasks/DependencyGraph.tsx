@@ -87,7 +87,7 @@ export function DependencyGraph() {
   return (
     <div className="flex flex-col h-full">
       <header className="px-5 pt-4 pb-2 shrink-0">
-        <h1 className="text-2xl font-bold tracking-tight">Граф зависимостей</h1>
+        <h1 className="font-bold leading-[1.1] text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>Граф зависимостей</h1>
         <p className="text-sm text-ink-soft mt-0.5">
           {nodeIds.length} задач · {edges.length} связей
         </p>

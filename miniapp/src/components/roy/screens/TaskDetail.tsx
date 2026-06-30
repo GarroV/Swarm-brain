@@ -111,7 +111,7 @@ export function TaskDetail({ id }: { id: string }) {
               </span>
               <Market code={t.country} />
             </div>
-            <h1 className="mb-4 font-bold text-ink" style={{ fontSize: 22, letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+            <h1 className="mb-4 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
               {t.title}
             </h1>
             <Segmented items={SEGS} value={norm(t.status)} onChange={setStatus} />

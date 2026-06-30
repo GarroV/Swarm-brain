@@ -325,7 +325,7 @@ function DetailPanel({
                 onKeyDown={(ev) => { if (ev.key === "Enter") saveTitle(); if (ev.key === "Escape") setEditingTitle(false); }}
                 disabled={savingTitle}
                 className="min-w-0 flex-1 rounded-[10px] border border-line bg-surface px-3 py-2 font-bold text-ink outline-none focus:border-[var(--accent-ink)] disabled:opacity-50"
-                style={{ fontSize: 20, letterSpacing: "-0.015em" }}
+                style={{ fontSize: 24, letterSpacing: "-0.02em" }}
               />
               <button type="button" onClick={saveTitle} disabled={savingTitle} aria-label="Сохранить название"
                 className="inline-flex shrink-0 items-center justify-center rounded-[10px] p-2.5 text-ink transition-opacity hover:opacity-70 disabled:opacity-50">
@@ -338,7 +338,7 @@ function DetailPanel({
             </div>
           ) : (
             <div className="flex items-start gap-2">
-              <h2 className="flex-1 font-bold text-ink leading-tight" style={{ fontSize: 22, letterSpacing: "-0.015em" }}>
+              <h2 className="flex-1 font-bold text-ink leading-tight" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>
                 {title}
               </h2>
               <button type="button" onClick={() => { setTitleDraft(title); setEditingTitle(true); }} aria-label="Изменить название"
@@ -522,7 +522,7 @@ function AgentMeetingDetail({
               onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setEditingTitle(false); }}
               disabled={saving}
               className="min-w-0 flex-1 rounded-[10px] border border-line-2 bg-surface px-3 py-1.5 font-bold text-ink outline-none focus:border-primary disabled:opacity-50"
-              style={{ fontSize: 20, letterSpacing: "-0.015em" }}
+              style={{ fontSize: 24, letterSpacing: "-0.02em" }}
             />
             <button type="button" onClick={saveTitle} disabled={saving} aria-label="Сохранить название" className="inline-flex items-center justify-center rounded-[9px] bg-primary text-white disabled:opacity-50" style={{ width: 32, height: 32 }}>
               <RoyIcon name="check" size={16} strokeWidth={2.2} />
@@ -533,7 +533,7 @@ function AgentMeetingDetail({
           </div>
         ) : (
           <div className="group flex items-start gap-2">
-            <h2 className="flex-1 font-bold text-ink leading-tight" style={{ fontSize: 22, letterSpacing: "-0.015em" }}>
+            <h2 className="flex-1 font-bold text-ink leading-tight" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>
               {title}
             </h2>
             <button

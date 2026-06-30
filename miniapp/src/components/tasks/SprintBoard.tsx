@@ -123,7 +123,7 @@ export function SprintBoard() {
   return (
     <div className="flex flex-col h-full">
       <header className="px-5 pt-4 pb-2">
-        <h1 className="text-2xl font-bold tracking-tight">Спринты</h1>
+        <h1 className="font-bold leading-[1.1] text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>Спринты</h1>
       </header>
 
       {/* Селектор спринтов */}

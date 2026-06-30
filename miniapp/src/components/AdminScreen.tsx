@@ -427,7 +427,7 @@ export function AdminScreen() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="px-4 pt-5 pb-3">
-        <h1 className="font-bold text-ink" style={{ fontSize: 20, letterSpacing: "-0.01em" }}>Суперадмин</h1>
+        <h1 className="font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>Суперадмин</h1>
         <p className="font-mono uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.08em", marginTop: 2 }}>Воркспейсы · рынки · доступы · рассылка</p>
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-4">
