@@ -38,11 +38,15 @@ export function ProfileMenu() {
         <>
           {/* клик-вне закрывает */}
           <button type="button" aria-label="Закрыть меню" className="fixed inset-0 z-40 cursor-default" onClick={() => setOpen(false)} />
+          {/* Единый размер для всех вкладок: фиксированная ширина + ФИКСИРОВАННАЯ высота
+              (h, не max-h), чтобы окно не «прыгало» при переключении Настройки/Команда/Админ
+              и под-видов (список ↔ деталь, Пользователи ↔ Рынки). Контент скроллится внутри —
+              все экраны построены как flex min-h-0 flex-1 + overflow-y-auto. */}
           <div
             role="dialog"
             aria-label="Профиль и управление"
-            className={`absolute bottom-full left-0 z-50 mb-2 flex ${tab === "admin" ? "w-[860px]" : "w-[460px]"} max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[20px] border border-line bg-[var(--popover)] shadow-[0_24px_64px_-18px_rgba(0,0,0,.5)] dark:backdrop-blur-xl`}
-            style={{ maxHeight: tab === "admin" ? "min(840px, 88vh)" : "min(660px, 82vh)" }}
+            className="absolute bottom-full left-0 z-50 mb-2 flex w-[520px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[20px] border border-line bg-[var(--popover)] shadow-[0_24px_64px_-18px_rgba(0,0,0,.5)] dark:backdrop-blur-xl"
+            style={{ height: "min(680px, 86vh)" }}
           >
             {/* шапка: профиль + закрыть */}
             <div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-3">
