@@ -823,7 +823,8 @@ function ActionsPanel({
 // Область видимости очереди ревью. «Мои» — только загруженные текущим пользователем
 // pending-встречи (дефолт для всех, включая админа). «Все» — все pending воркспейса,
 // доступно только админу (сервер уважает ?all=true лишь для is_admin).
-type Scope = "mine" | "all";
+// Область очереди вычитки: все (личные+командные) / только мои / только команды.
+type Scope = "all" | "mine" | "team";
 
 export function MeetAdminScreen() {
   const { pop, toast, me } = useRoyNav();
@@ -832,10 +833,11 @@ export function MeetAdminScreen() {
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [agentMeetings, setAgentMeetings] = useState<AgentMeeting[] | null>(null);
   const [selected, setSelected] = useState<MeetItem | null>(null);
-  const [scope, setScope] = useState<Scope>("mine");
+  const [scope, setScope] = useState<Scope>("all");
 
-  // ?all=true шлём только когда админ явно выбрал «Все»; иначе own-scoped для всех.
-  const all = isAdmin && scope === "all";
+  // Админ всегда тянет весь воркспейс (?all=true), а на «Личные/Общие/Все» делит ЛОКАЛЬНО —
+  // так видны оба счётчика сразу без перезапроса. Не-админ получает только своё (privacy на бэке).
+  const all = isAdmin;
 
   const load = useCallback(async () => {
     const [ents, agents] = await Promise.allSettled([
@@ -860,8 +862,16 @@ export function MeetAdminScreen() {
     ...(entries ?? []).map((e): MeetItem => ({ kind: "entry", data: e })),
   ];
 
-  const pendingCount = items.length;
-  const agentCount = agentMeetings?.length ?? 0;
+  // Личное vs общее — по ВЛАДЕЛЬЦУ: рекордерный черновик «мой», если я среди записавших;
+  // entry (Granola/Read.ai на согласовании) «мой», если owner_id == я (Read.ai без owner → общее).
+  const meId = me?.telegram_id ?? null;
+  const isMine = (it: MeetItem): boolean =>
+    it.kind === "agent"
+      ? (it.data.recorders ?? []).some((r) => r.telegram_id === meId)
+      : it.data.owner_id === meId;
+  const mineItems = items.filter(isMine);
+  const teamItems = items.filter((it) => !isMine(it));
+  const displayed = scope === "mine" ? mineItems : scope === "team" ? teamItems : items;
 
   const removeFromList = (id: string) => {
     setEntries((prev) => prev?.filter((e) => e.id !== id) ?? null);
@@ -954,23 +964,23 @@ export function MeetAdminScreen() {
           className="flex flex-col border-r border-line shrink-0 min-h-0"
           style={{ width: 300 }}
         >
-          {/* Стат-плашки */}
-          <div className="flex gap-2 px-3 py-3">
-            <StatChip label="на согласовании" value={pendingCount} accent />
-            <StatChip label="черновиков" value={agentCount} />
-          </div>
-
-          {/* Переключатель «Мои»/«Все» — только админу. «Все» = ?all=true (весь воркспейс). */}
-          {isAdmin && (
-            <div className="px-3 pb-2">
+          {/* Счётчик-фильтр: личные / общие (объединяет источники Granola/Read.ai/рекордер).
+              Админ видит разбивку по владельцу и фильтрует локально; не-админ — только свои. */}
+          {isAdmin ? (
+            <div className="px-3 py-3">
               <Segmented
                 items={[
-                  { id: "mine", label: "Мои" },
-                  { id: "all", label: "Все" },
+                  { id: "all", label: "Все", count: items.length },
+                  { id: "mine", label: "Личные", count: mineItems.length },
+                  { id: "team", label: "Общие", count: teamItems.length },
                 ]}
                 value={scope}
-                onChange={(id) => setScope(id as Scope)}
+                onChange={(id) => { setScope(id as Scope); setSelected(null); }}
               />
+            </div>
+          ) : (
+            <div className="flex gap-2 px-3 py-3">
+              <StatChip label="требуют решения" value={items.length} accent />
             </div>
           )}
 
@@ -988,12 +998,12 @@ export function MeetAdminScreen() {
                 ))}
               </>
             )}
-            {!isLoading && items.length === 0 && (
+            {!isLoading && displayed.length === 0 && (
               <div className="py-8 text-center text-ink-mute" style={{ fontSize: 13 }}>
-                Всё согласовано
+                {items.length === 0 ? "Всё согласовано" : "Здесь пусто"}
               </div>
             )}
-            {items.map((item) => (
+            {displayed.map((item) => (
               <ListRow
                 key={itemId(item)}
                 item={item}
