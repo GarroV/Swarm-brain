@@ -31,6 +31,49 @@ export async function handleAdminRoutes(
     return apiErr(403, "Forbidden", origin);
   }
 
+  // GET /admin/review-counts — СВОДКА «сколько встреч на вычитке у каждого участника».
+  // Только агрегат (имя + число), БЕЗ доступа к чужому контенту — для пригляда админа.
+  // Считаем по воркспейсу админа: непубликованные entry (Granola/Read.ai, confirmed null/false)
+  // по владельцу + черновики рекордера (awaiting_review) по каждому записавшему.
+  if (req.method === "GET" && routePath === "/admin/review-counts") {
+    const { data: adminRow } = await supabase
+      .from("allowed_users").select("group_id").eq("telegram_id", telegramId).maybeSingle();
+    const groupId = (adminRow as { group_id?: string } | null)?.group_id;
+    if (!groupId) return json([], 200, origin);
+
+    const [entRes, mtgRes] = await Promise.all([
+      supabase.from("entries").select("owner_id, metadata")
+        .eq("group_id", groupId).eq("entry_type", "meeting")
+        .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false"),
+      supabase.from("meetings").select("recorders")
+        .eq("group_id", groupId).eq("status", "awaiting_review"),
+    ]);
+
+    const counts = new Map<number, number>();
+    const bump = (id: number | null | undefined) => {
+      if (typeof id === "number") counts.set(id, (counts.get(id) ?? 0) + 1);
+    };
+    for (const e of (entRes.data ?? []) as Array<{ owner_id: number | null; metadata: { added_by_telegram_id?: number } | null }>) {
+      bump(e.owner_id ?? e.metadata?.added_by_telegram_id ?? null);
+    }
+    for (const m of (mtgRes.data ?? []) as Array<{ recorders: Array<{ telegram_id: number }> | null }>) {
+      for (const r of (m.recorders ?? [])) bump(r.telegram_id);
+    }
+
+    const ids = [...counts.keys()];
+    const { data: profs } = ids.length
+      ? await supabase.from("user_profiles").select("telegram_id, first_name, last_name").in("telegram_id", ids)
+      : { data: [] as Array<{ telegram_id: number; first_name?: string; last_name?: string }> };
+    const nameById = new Map<number, string>();
+    for (const p of (profs ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string }>) {
+      nameById.set(p.telegram_id, [p.first_name, p.last_name].filter(Boolean).join(" ") || `#${p.telegram_id}`);
+    }
+    const result = ids
+      .map((id) => ({ telegram_id: id, name: nameById.get(id) ?? `#${id}`, count: counts.get(id)! }))
+      .sort((a, b) => b.count - a.count);
+    return json(result, 200, origin);
+  }
+
   // GET /admin/workspaces
   if (req.method === "GET" && routePath === "/admin/workspaces") {
     const { data: workspaces } = await supabase

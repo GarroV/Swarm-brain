@@ -63,13 +63,13 @@ export function useDashboardData(): DashboardData {
       .catch(() => setReviewCount(0));
   }, []);
 
-  // Очередь «на согласовании»: админ — весь воркспейс (all=true), иначе только свои.
-  // Отдельный запрос — дефолтный /meetings приватность-фильтрован и НЕ содержит чужие pending.
+  // Очередь «на согласовании» — ТОЛЬКО свои (даже у админа): чужое непубликованное приватно,
+  // в него не лезем. Сводка по участникам — отдельный агрегированный счётчик в админ-панели.
   useEffect(() => {
-    fetchMeetings({ confirmed: false, all: !!me?.is_admin })
+    fetchMeetings({ confirmed: false })
       .then(setPending)
       .catch(() => setPending([]));
-  }, [me?.is_admin]);
+  }, []);
 
   const meId = me?.telegram_id ?? null;
 

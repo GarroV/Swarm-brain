@@ -749,6 +749,7 @@ _Админка (`admin.ts`, только `telegram_id 744230399`):_
 
 | Метод | Путь | Что делает |
 |-------|------|-----------|
+| `GET` | `/admin/review-counts` | Сводка «на вычитке по участникам»: `[{telegram_id,name,count}]` — агрегат непубликованных встреч (entry confirmed=false по `owner_id`/`added_by` + рекордер-черновики awaiting_review по `recorders[]`) воркспейса админа. Только число, БЕЗ контента (приватность чужого) |
 | `GET` | `/admin/workspaces` | Список воркспейсов с user_count |
 | `GET` | `/admin/workspaces/:id/users` | Пользователи воркспейса |
 | `POST` | `/admin/workspaces/:id/users` | Добавить пользователя |

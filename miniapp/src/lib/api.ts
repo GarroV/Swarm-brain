@@ -798,6 +798,16 @@ export async function broadcastMessage(text: string): Promise<{ sent: number; fa
   return apiFetch<{ sent: number; failed: number; total: number }>("/admin/broadcast", { method: "POST", body: JSON.stringify({ text }) });
 }
 
+// Сводка для админа: сколько встреч на вычитке у каждого участника (агрегат, без контента).
+export type ReviewCount = { telegram_id: number; name: string; count: number };
+export async function fetchReviewCounts(): Promise<ReviewCount[]> {
+  if (DEV_MODE) return [
+    { telegram_id: 224830225, name: "Александра Миронова", count: 3 },
+    { telegram_id: 744230399, name: "Vasiliy Garro", count: 1 },
+  ];
+  return apiFetch<ReviewCount[]>("/admin/review-counts");
+}
+
 // Правка профиля пользователя (роль/рынки/имя/контакты) — user_profiles.
 export async function patchAdminUser(
   telegramId: number,

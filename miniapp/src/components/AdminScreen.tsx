@@ -4,6 +4,7 @@ import {
   fetchAdminWorkspaces, fetchAdminWorkspaceUsers,
   addUserToWorkspace, removeUserFromWorkspace, patchAdminWorkspace,
   createAdminWorkspace, broadcastMessage, patchAdminUser,
+  fetchReviewCounts, type ReviewCount,
 } from "@/lib/api";
 import type { AdminWorkspace, AdminUser } from "@/types";
 import { countryName, COUNTRY_NAMES } from "@/lib/countries";
@@ -419,6 +420,42 @@ function BroadcastBlock() {
   );
 }
 
+// Сводка «на вычитке по участникам» — приглядеть, у кого копится бэклог встреч, БЕЗ доступа
+// к чужому контенту (только имя + число). Свёрнута по умолчанию.
+function ReviewQueueBlock() {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<ReviewCount[] | null>(null);
+
+  useEffect(() => {
+    if (!open || rows !== null) return;
+    fetchReviewCounts().then(setRows).catch(() => setRows([]));
+  }, [open, rows]);
+
+  const total = (rows ?? []).reduce((n, r) => n + r.count, 0);
+
+  return (
+    <div className="rounded-[16px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
+      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between font-semibold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" style={{ fontSize: 13.5 }}>
+        <span className="flex items-center gap-2"><RoyIcon name="cal" size={15} className="text-ink-soft" /> На вычитке по участникам{rows && total > 0 ? ` · ${total}` : ""}</span>
+        <RoyIcon name="cright" size={14} className={`text-ink-soft transition-transform ${open ? "rotate-90" : ""}`} />
+      </button>
+      {open && (
+        <div className="mt-2.5 space-y-1.5">
+          {rows === null && <p className="text-ink-mute" style={{ fontSize: 12 }}>Загрузка…</p>}
+          {rows !== null && rows.length === 0 && <p className="text-ink-mute" style={{ fontSize: 12 }}>Ни у кого нет встреч на вычитке.</p>}
+          {(rows ?? []).map((r) => (
+            <div key={r.telegram_id} className="flex items-center justify-between rounded-[10px] bg-surface-2 px-2.5 py-1.5">
+              <span className="truncate text-ink" style={{ fontSize: 13 }}>{r.name}</span>
+              <span className="shrink-0 font-mono font-semibold text-accent-ink" style={{ fontSize: 12.5 }}>{r.count}</span>
+            </div>
+          ))}
+          <p className="text-ink-mute" style={{ fontSize: 11 }}>Только число — сами встречи приватны их владельцу.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AdminScreen() {
   const [selected, setSelected] = useState<AdminWorkspace | null>(null);
 
@@ -428,9 +465,10 @@ export function AdminScreen() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="px-4 pt-5 pb-3">
         <h1 className="font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>Суперадмин</h1>
-        <p className="font-mono uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.08em", marginTop: 2 }}>Воркспейсы · рынки · доступы · рассылка</p>
+        <p className="font-mono uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.08em", marginTop: 2 }}>Воркспейсы · рынки · доступы · вычитка · рассылка</p>
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-4">
+        <ReviewQueueBlock />
         <BroadcastBlock />
         <WorkspaceList onSelect={setSelected} />
       </div>
