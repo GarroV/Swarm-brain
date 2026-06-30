@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeCountries } from "../_shared/countries.ts";
 import { TEZISY_CORE } from "../_shared/tezisy-prompt.ts";
+import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
@@ -222,6 +223,25 @@ Deno.serve(async (req: Request) => {
     }
     if (transcript) parts.push(`Стенограмма:\n${transcript.slice(0, 8000)}`);
     const fullContent = parts.join("\n\n");
+
+    // Кросс-источниковый дедуп ДО дорогих LLM-вызовов и extractAndSaveTasks (иначе на дубле
+    // зря потратим токены и создадим задачи-сироты без записи). Встреча уже в базе → выходим.
+    const dedupAttendees: MeetingAttendee[] = participants.map((p) => ({
+      name: (p.name ?? p.display_name) as string | undefined,
+      email: p.email as string | undefined,
+    }));
+    const meetingDup = await findDuplicateMeeting(supabase, {
+      groupId: "cee",
+      entryDate: startTime ? startTime.split("T")[0] : null,
+      startedAt: startTime ?? null,
+      attendees: dedupAttendees,
+    });
+    if (meetingDup) {
+      console.log("read-ai skip duplicate meeting", meetingId, "→", meetingDup.id, `(${meetingDup.source})`);
+      return new Response(JSON.stringify({ ok: true, duplicate: true, id: meetingDup.id }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    }
 
     // Use transcript as primary source for tezises; fall back to summary+chapters if no transcript
     const tezisSource = transcript

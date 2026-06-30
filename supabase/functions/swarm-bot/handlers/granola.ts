@@ -4,6 +4,7 @@ import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession, getSession, extractEntryMeta } from "../lib/storage.ts";
 import { getUserGroupId } from "../lib/workspace.ts";
 import { TEZISY_CORE } from "../../_shared/tezisy-prompt.ts";
+import { findDuplicateMeeting, parseMeetingContent, type MeetingAttendee } from "../../_shared/meeting-dedup.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
 const GRANOLA_API = "https://public-api.granola.ai/v1";
@@ -151,6 +152,10 @@ type PreparedGranolaEntry = {
   content: string;
   tezises: string;
   entryDate: string | null;
+  /** Время начала "HH:MM" (из строки "Дата: …, HH:MM" в контенте) — для дедупа. */
+  startTime: string | null;
+  /** Участники встречи (из строки "Участники: …") — для дедупа. */
+  attendees: MeetingAttendee[];
   countries: string[];
   embedding: number[];
 };
@@ -197,6 +202,11 @@ async function prepareGranolaEntry(
     entryDate = `${yyyy}-${mm}-${dd}`;
   }
 
+  // Время начала + участники для дедупа — парсим из того же контента ("Дата: …, HH:MM" + "Участники: …").
+  const timeMatch = content.match(/Дата:[^\n]*?(\d{1,2}:\d{2})/);
+  const startTime = timeMatch ? timeMatch[1] : null;
+  const attendees: MeetingAttendee[] = parseMeetingContent(content).attendees.map((name) => ({ name }));
+
   // General tag: no specific country or broad multi-country coverage
   const countries = [...entryMeta.countries];
   const specific = countries.filter((c) => c !== "General");
@@ -211,7 +221,7 @@ async function prepareGranolaEntry(
   ].filter(Boolean).join("\n").slice(0, 8000);
   const embedding = await getEmbedding(embeddingText || content.slice(0, 8000));
 
-  return { title, content, tezises, entryDate, countries, embedding };
+  return { title, content, tezises, entryDate, startTime, attendees, countries, embedding };
 }
 
 async function saveGranolaNote(
@@ -234,7 +244,15 @@ async function saveGranolaNote(
     await sendMessage(chatId, "Не удалось получить заметку из Granola.");
     return false;
   }
-  const { title, content, tezises, entryDate, countries, embedding } = prepared;
+  const { title, content, tezises, entryDate, startTime, attendees, countries, embedding } = prepared;
+
+  // Эта встреча уже в базе (другой участник / рекордер / повторное сохранение)? Не дублируем.
+  const dup = await findDuplicateMeeting(supabase, { groupId, entryDate, startedAt: startTime, attendees });
+  if (dup) {
+    await markSkipped(telegramId, noteId);
+    await sendMessage(chatId, `Эта встреча уже в базе: <b>${dup.title}</b> — повторно не сохраняю.`);
+    return false;
+  }
 
   const { error } = await supabase.from("entries").insert({
     content,
@@ -388,7 +406,18 @@ async function ingestNewGranolaNotesForUser(integration: {
   for (const note of newNotes) {
     const prepared = await prepareGranolaEntry(note.id, integration.telegram_id);
     if (!prepared) continue;
-    const { title, content, tezises, entryDate, countries, embedding } = prepared;
+    const { title, content, tezises, entryDate, startTime, attendees, countries, embedding } = prepared;
+
+    // Кросс-источниковый дедуп: эта встреча уже в базе (другой участник Granola / рекордер)?
+    // Если да — не плодим запись в очереди ревью, помечаем заметку обработанной.
+    const dup = await findDuplicateMeeting(supabase, {
+      groupId, entryDate, startedAt: startTime, attendees,
+    });
+    if (dup) {
+      console.log("granola ingest skip duplicate", integration.telegram_id, note.id, "→", dup.id, `(${dup.source})`);
+      await markSkipped(integration.telegram_id, note.id);
+      continue;
+    }
 
     const { data: inserted, error } = await supabase.from("entries").insert({
       content,

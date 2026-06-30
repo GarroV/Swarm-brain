@@ -76,6 +76,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Промпт тезисов (канон, DRY) | `_shared/tezisy-prompt.ts` | §Флоу встреч |
 | Ревью/правка/публикация/переобработка | `swarm-api` (`/agent-meetings*`,`/meetings*`), `miniapp .../screens/MeetAdminScreen.tsx`,`MeetingDetail.tsx` | §swarm-api, spoke [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md) |
 | Granola импорт / Read.ai / статус-бэкап | `swarm-bot/handlers/granola.ts`, `read-ai-webhook/`, `meeting-status/` | §Флоу встреч |
+| Дедуп встреч (кросс-источниковый: Granola/рекордер/Read.ai) | `_shared/meeting-dedup.ts` (+ `.test.ts`); применён в `granola.ts`, `swarm-api` (publish/import), `read-ai-webhook/` | §Флоу встреч → Дедуп встреч |
 | Календарь / участники (только календарные встречи; аудио-диаризации нет) | `meeting-current/`, `google-oauth/`, рекордер `MeetingIdentity.swift` | §Флоу встреч |
 
 ### Рекордер (macOS, Swift) — `recorder/`

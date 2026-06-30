@@ -250,7 +250,8 @@ content + [existingSummary?]
 ### Granola (автоматический поллер) — зеркало Read.ai
 ```
 hourly cron → swarm-bot { granola_poll:true } → ingestNewGranolaNotesAllUsers (handlers/granola.ts)
-  → для каждой новой заметки (дедуп по granola_note_id + skipped, окно 48ч, ≤10/прогон):
+  → для каждой новой заметки (дедуп по granola_note_id + skipped, окно 48ч, ≤10/прогон;
+      + кросс-источниковый дедуп перед insert — см. §Дедуп встреч):
       тезисы (GPT) + эмбеддинг → insert в entries (source=granola, entry_type=meeting, confirmed=FALSE)
   → встреча сразу видна в вебе «на согласовании» (GET /meetings?confirmed=false)
   → Telegram: те же кнопки ревью что у Read.ai [✅ Сохранить mc_ / ✏️ Название met_ / 📅 Дата med_ / 🗑 Удалить md_]
@@ -266,6 +267,22 @@ Read.ai webhook → read-ai-webhook функция → сохраняет в ent
   → Telegram уведомление: [✅ Подтвердить / ✏️ Редактировать / 🗑 Удалить]
   → /meetings показывает все unconfirmed → mr_ → детальный просмотр
 ```
+
+### Дедуп встреч — кросс-источниковый (`_shared/meeting-dedup.ts`)
+Точечные механизмы ловят дубли только ВНУТРИ одного источника: `granola_note_id` + `skipped_note_ids` (Granola), `meetings.identity_key` + race-guard `entry_id` (рекордер), retry самого Read.ai. Они НЕ видят: (а) **мульти-участничьи** дубли Granola — у каждого участника свой `note_id`, но это одна встреча; (б) **кросс-источниковые** — та же встреча из Granola и рекордера. Поверх них — общий слой `findDuplicateMeeting()`.
+
+**Правило дубля** (калибровано на prod-данных, уклон в точность — лучше пропустить дубль, чем проглотить новую встречу): та же `entry_date` + СИЛЬНОЕ пересечение участников (≥2 человек И ≥ половины меньшего списка) + время в пределах **±5 мин** (если известно у обоих). Сильное пересечение нужно, потому что разные встречи могут делить 1–2 общих человек (реальный отсечённый ложный дубль: 1-1 «Maria/Aleksandra» 08:00 ⨯ большая «CVM IMF» 08:15 — общий только один). Настоящие дубли Granola несут идентичный состав (один календарный инвайт) и тот же `scheduled_start_time` (Δ=0). Точный хэш набора участников НЕ годится — у разных участников списки различаются, нужен overlap. Кандидаты берутся по `entry_date` (индекс `idx_entries_date`); время и участники парсятся из `content` («Дата: …, HH:MM» + «Участники: …») и из `metadata.attendees` — **новых колонок и бэкфилла не нужно**, работает и против уже существующих записей.
+
+**Где применяется** (перед каждым созданием записи-встречи):
+| Точка | Файл | Поведение на дубле |
+|---|---|---|
+| Granola авто-импорт | `granola.ts` `ingestNewGranolaNotesForUser` | skip + `markSkipped` (не плодим в очереди ревью) |
+| Granola ручное сохранение | `granola.ts` `saveGranolaNote` | сообщение «уже в базе» + `markSkipped` |
+| Granola веб-импорт | `swarm-api` `POST /granola/notes/:id/import` | mark skipped + `200 {duplicate}` (уходит из очереди) |
+| Рекордер публикация | `swarm-api` `POST /agent-meetings/:id/publish` | привязать `meeting` к существующей записи + вернуть её (только если она видима публикующему — публичная/его личная; чужие приватные игнорируем) |
+| Read.ai вебхук | `read-ai-webhook` | skip ДО дорогих LLM-вызовов и `extractAndSaveTasks` (иначе задачи-сироты) |
+
+Тесты — `_shared/meeting-dedup.test.ts` (включая регрессию на тот самый ложный дубль). Чистка УЖЕ накопленных дублей — отдельная задача (см. BACKLOG).
 
 ### Тезисы — AI-редактирование (✏️ Тезисы / ✏️ Переписать)
 - **До сохранения (preview):** `gedit_` → сессия `granola_edit_preview_<noteId>` → инструкция → GPT переписывает → сессия восстанавливается в `granola_preview_<noteId>` → можно итерировать
@@ -296,7 +313,7 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 
 **Эндпоинты swarm-api (вызывает веб/Mini App, auth — сессия роя):** `GET /agent-meetings?status=` (очередь вычитки/опубликованные; видны записавшим или админу), `GET /agent-meetings/:id` (черновик + транскрипт), `PATCH /agent-meetings/:id` (правка `draft_notes_md` → `notes_edited_at`), `POST /agent-meetings/:id/publish` (`{base: workspace|personal}` → создать entries, привязать, идемпотентно), `GET/POST /agent-meetings/:id/notes` (живые пометки: список / добавление в `meeting_live_notes`, auth — web-JWT от `meeting-webtoken`).
 
-Дедуп нескольких записавших — по `meetings.identity_key` (calendar/room; manual без дедупа, дубли — ручным «объединить»). Аутентификация агента — персональный токен (`_shared/agent-auth.ts`, личность из токена, не из payload). Фильтры источников включают `desktop-agent` (swarm-api `GET /meetings`, MCP `get_meetings`, бот `rai_saved`).
+Дедуп нескольких записавших — по `meetings.identity_key` (calendar/room; manual без дедупа, дубли — ручным «объединить»); при публикации поверх работает кросс-источниковый дедуп (§Дедуп встреч) — если встреча уже в базе (напр. из Granola), `meeting` привязывается к существующей записи, а не плодит вторую. Аутентификация агента — персональный токен (`_shared/agent-auth.ts`, личность из токена, не из payload). Фильтры источников включают `desktop-agent` (swarm-api `GET /meetings`, MCP `get_meetings`, бот `rai_saved`).
 
 **Веб (miniapp):** `MeetingReview` — страница вычитки одной встречи (тезисы редактируются, транскрипт под спойлером, участники, публикация с выбором базы команда/личное); `AgentReviewQueue` — очередь «на вычитке» в разделе Встречи (невидима без черновиков). Deep-link из уведомления: `?meeting=<id>` (браузер) / `startapp=meeting_<id>` (Mini App) → `getDeepLinkMeetingId()` в `lib/telegram.ts` открывает вычитку. **Дедуп вкладок/окон** (Telegram Desktop открывает ссылку новой вкладкой каждый раз): `lib/single-tab.ts` + `SingleTabGate` (в `layout.tsx`) — новая вкладка с `?meeting=` через `BroadcastChannel` + `navigator.locks` (лидер `swarm-leader`) отдаёт встречу уже открытой вкладке и закрывается; установленный PWA через `launch_handler: focus-existing` + `handle_links` в манифесте ловит ссылку в существующее окно (`window.launchQueue`). Обе ветки → событие `roy:open-meeting` → `openMeeting(id)` в `RoyApp`. Спек: `docs/superpowers/specs/2026-06-17-single-tab-reuse-design.md`.
 

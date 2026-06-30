@@ -31,6 +31,7 @@ import type { DependencyType } from "../_shared/tasks/types.ts";
 import { normalizeCountries, COUNTRY_NAMES, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../_shared/countries.ts";
 import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
+import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 import { handleAdminRoutes } from "./admin.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -1258,6 +1259,23 @@ Deno.serve(async (req: Request) => {
 
       const startedAt = meeting.started_at as string | null;
       const entryDate = startedAt ? startedAt.split("T")[0] : null;
+      const mAttendees = ((meeting as { attendees?: MeetingAttendee[] }).attendees ?? []);
+
+      // Кросс-источниковый дедуп: эта встреча уже в базе (Granola / повторный паблиш)?
+      // Если совпавшая запись видима публикующему (публичная или его личная) — привязываем
+      // meeting к ней и возвращаем её, а не плодим вторую. Чужие приватные записи игнорируем
+      // (не привязываемся к ним и не раскрываем) — тогда публикуем как обычно.
+      const dup = await findDuplicateMeeting(supabase, {
+        groupId, entryDate, startedAt, attendees: mAttendees,
+      });
+      if (dup && (!dup.isPrivate || String(dup.ownerId ?? "") === String(telegram_id))) {
+        await supabase.from("meetings")
+          .update({ entry_id: dup.id, status: "in_base", updated_at: new Date().toISOString() })
+          .eq("id", mId)
+          .is("entry_id", null);
+        const { data: existing } = await supabase.from("entries").select("*").eq("id", dup.id).single();
+        return json(existing, 200, origin);
+      }
 
       const { data: created, error: insErr } = await supabase.from("entries").insert({
         content: draft,
@@ -1411,7 +1429,7 @@ Deno.serve(async (req: Request) => {
   if (granolaImportMatch && req.method === "POST") {
     const noteId = granolaImportMatch[1];
     const { data: integration } = await supabase.from("user_integrations")
-      .select("api_key").eq("telegram_id", telegram_id).eq("service", "granola").maybeSingle();
+      .select("api_key, skipped_note_ids").eq("telegram_id", telegram_id).eq("service", "granola").maybeSingle();
     if (!integration) return apiErr(404, "Granola not connected", origin);
 
     let body: Record<string, unknown>;
@@ -1465,11 +1483,28 @@ Deno.serve(async (req: Request) => {
     const embedding = embRes.ok ? (await embRes.json()).data[0].embedding : null;
     const summary = summaryRes.ok ? (await summaryRes.json()).choices[0].message.content : null;
 
+    const entryDate = ts ? ts.slice(0, 10) : null;
+
+    // Кросс-источниковый дедуп: встреча уже в базе (другой участник / рекордер / повторный импорт)?
+    // Помечаем заметку обработанной (чтобы ушла из очереди ревью) и не создаём дубль.
+    const dup = await findDuplicateMeeting(supabase, {
+      groupId, entryDate, startedAt: ts ?? null, attendees,
+    });
+    if (dup) {
+      const current: string[] = (integration as { skipped_note_ids?: string[] }).skipped_note_ids ?? [];
+      if (!current.includes(noteId)) {
+        await supabase.from("user_integrations")
+          .update({ skipped_note_ids: [...current, noteId] })
+          .eq("telegram_id", telegram_id).eq("service", "granola");
+      }
+      return json({ duplicate: true, id: dup.id, title: dup.title }, 200, origin);
+    }
+
     await supabase.from("entries").insert({
       content, summary, embedding, added_by: addedBy, source: "granola",
       metadata: { granola_note_id: noteId, title: note.title, confirmed: true },
       countries: [], entry_type: "meeting",
-      entry_date: ts ? ts.slice(0, 10) : null,
+      entry_date: entryDate,
       group_id: groupId, is_private: isPrivate, owner_id: telegram_id,
     });
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
