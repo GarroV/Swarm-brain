@@ -1,5 +1,5 @@
 import { supabase, ADMIN_USER_ID } from "./lib/supabase.ts";
-import { sendMessage, sendInlineMessage, buildKeyboard, answerCallback } from "./lib/telegram.ts";
+import { sendMessage, sendInlineMessage, editInlineMessage, buildKeyboard, answerCallback } from "./lib/telegram.ts";
 import { autoSyncProfile, getSession, clearSession } from "./lib/storage.ts";
 import { checkAllowedWithGroup } from "./lib/workspace.ts";
 import { getReadAiToken } from "./lib/readai.ts";
@@ -15,7 +15,7 @@ import { handleFeedbackCommand, handleFeedbackCallbacks, handleFeedbackPhoto, ha
 import { handleWorkspace } from "./handlers/workspace.ts";
 import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
 import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
-import { getHelpText } from "./handlers/help.ts";
+import { getHelpText, helpKeyboard, getHelpTopic } from "./handlers/help.ts";
 import { mintMcpToken, buildSetupOneLiner, hasActiveMcpToken, mintRecorderToken, buildRecorderSetupOneLiner, hasActiveRecorderToken } from "./lib/mcp-setup.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
 
@@ -233,6 +233,17 @@ Deno.serve(async (req: Request) => {
         return new Response("OK", { status: 200 });
       }
 
+      // Справка: главный экран ⇄ подменю (рекордер/Granola/Claude/база/команда) — правка на месте.
+      if (cb.data === "help_main") {
+        await editInlineMessage(chatId, cb.message.message_id, getHelpText(), helpKeyboard());
+        return new Response("OK", { status: 200 });
+      }
+      if (cb.data.startsWith("help_")) {
+        const topic = getHelpTopic(cb.data.slice("help_".length));
+        if (topic) await editInlineMessage(chatId, cb.message.message_id, topic.text, topic.keyboard);
+        return new Response("OK", { status: 200 });
+      }
+
       const saHandled = await handleSuperadminCallbacks(cb, chatId, userId);
       if (saHandled) return new Response("OK", { status: 200 });
 
@@ -406,7 +417,7 @@ Deno.serve(async (req: Request) => {
         ]}),
       });
     } else if (command === "/help" || text === "ℹ️ Помощь") {
-      await sendMessage(chatId, getHelpText(), buildKeyboard());
+      await sendInlineMessage(chatId, getHelpText(), helpKeyboard());
     } else if (command === "/add" || text === "📥 Добавить") {
       await handleAdd(chatId, username, argText, groupId);
     } else if (command === "/ask" || text === "❓ Спросить") {
