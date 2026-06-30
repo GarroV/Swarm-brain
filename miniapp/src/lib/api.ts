@@ -264,6 +264,11 @@ export async function fetchTasks(filters?: string | TaskFilters): Promise<Task[]
   if (f.due_date_from) params.set("due_date_from", f.due_date_from);
   if (f.due_date_to) params.set("due_date_to", f.due_date_to);
   if (f.mine) params.set("mine", "true");
+  // Все экраны задач Роя фильтруют статусы НА КЛИЕНТЕ (смарт-листы, колонка «Готово» в спринте,
+  // таймлайн). Без confirmed-фильтра бэкенд по умолчанию исключает done/cancelled/draft
+  // (см. _shared/tasks/db.ts) → список «Готово» всегда пуст. confirmed=true отдаёт ВСЕ
+  // подтверждённые задачи (включая done), а статус уже фильтруется на клиенте.
+  params.set("confirmed", "true");
   const qs = params.toString();
   return apiFetch<Task[]>(`/tasks${qs ? `?${qs}` : ""}`);
 }
