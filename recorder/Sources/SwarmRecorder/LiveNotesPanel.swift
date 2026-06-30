@@ -75,12 +75,14 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
 
     func hide() { stopTimers(); panel?.orderOut(nil) }
 
-    // Клик по марке в блокноте → прячем блокнот и отдаём управление пилюле (виджету рекордера).
-    @objc private func collapseToPill() {
+    // Свернуть блокнот в пилюлю — по клику на марке ИЛИ когда пользователь ушёл в другую программу.
+    func collapse() {
+        guard panel?.isVisible == true else { return }   // уже свёрнут — не дёргаем onCollapse повторно
         stopTimers()
         panel?.orderOut(nil)
         onCollapse?()
     }
+    @objc private func collapseToPill() { collapse() }
 
     // MARK: - сборка
 
