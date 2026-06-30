@@ -551,7 +551,7 @@ export function SettingsScreen() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4 space-y-3">
-        <Section icon="team" title="Профиль" defaultOpen>
+        <Section icon="team" title="Профиль">
           {me ? <ProfileSection me={me} /> : <p className="text-sm text-muted-foreground">Загрузка…</p>}
         </Section>
         <Section icon="doc" title="Granola">
