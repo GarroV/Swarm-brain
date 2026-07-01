@@ -11,10 +11,13 @@ type SmartListNavProps = {
   /** Только rail: локальный поиск по заголовку. */
   query?: string;
   onQuery?: (q: string) => void;
+  /** Только rail, только админ: отдельный пункт «Задачи всех сотрудников» под списками. */
+  allStaffActive?: boolean;
+  onAllStaff?: () => void;
 };
 
 // Навигация по смарт-спискам: вертикальный рельс (десктоп) или горизонтальные чипы (мобайл).
-export function SmartListNav({ variant, active, counts, onSelect, query, onQuery }: SmartListNavProps) {
+export function SmartListNav({ variant, active, counts, onSelect, query, onQuery, allStaffActive, onAllStaff }: SmartListNavProps) {
   if (variant === "chips") {
     return (
       <div className="flex gap-1.5 overflow-x-auto px-5 pb-3">
@@ -82,6 +85,25 @@ export function SmartListNav({ variant, active, counts, onSelect, query, onQuery
           </button>
         );
       })}
+
+      {/* Админ: отдельный список «Задачи всех сотрудников» под смарт-списками (линза «все»). */}
+      {onAllStaff && (
+        <>
+          <div className="my-1.5 border-t border-line" />
+          <button
+            type="button"
+            onClick={onAllStaff}
+            className={cn(
+              "flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 font-semibold transition-colors",
+              allStaffActive ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:bg-surface",
+            )}
+            style={{ fontSize: 13.5 }}
+          >
+            <RoyIcon name="team" size={16} strokeWidth={allStaffActive ? 2.1 : 1.8} />
+            <span className="flex-1 text-left">Все сотрудники</span>
+          </button>
+        </>
+      )}
     </aside>
   );
 }

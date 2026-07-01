@@ -74,7 +74,16 @@ export function RemindersTasks() {
 
   return (
     <div className="flex h-full min-h-0">
-      <SmartListNav variant="rail" active={r.activeList} counts={r.counts} onSelect={r.setActiveList} query={r.query} onQuery={r.setQuery} />
+      <SmartListNav
+        variant="rail"
+        active={r.activeList}
+        counts={r.counts}
+        onSelect={r.setActiveList}
+        query={r.query}
+        onQuery={r.setQuery}
+        allStaffActive={r.lens === "all"}
+        onAllStaff={r.me?.is_admin ? () => { r.setLens("all"); r.setActiveList("all"); } : undefined}
+      />
 
       <div className="flex min-h-0 flex-1 flex-col">
         <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2 px-6 pt-5 pb-3">
