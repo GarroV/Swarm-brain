@@ -1,8 +1,11 @@
 import { supabase } from "../lib/supabase.ts";
 import { getReadAiToken, readAiGet, READ_AI_API, READ_AI_AUTH_URL } from "../lib/readai.ts";
-import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
+import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
 import { setSession, getSession, clearSession, saveEntry } from "../lib/storage.ts";
-import { chatComplete } from "../lib/openai.ts";
+import { chatComplete, getEmbedding } from "../lib/openai.ts";
+import { getWorkspaceMarkets } from "../lib/workspace.ts";
+import { COUNTRY_NAMES } from "../../_shared/countries.ts";
+import { buildEmbeddingInput } from "../../_shared/meta-extract.ts";
 import { analyzeAndCreateTasks } from "../tasks/handlers.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
@@ -100,6 +103,41 @@ export async function handleMeetingCallback(chatId: number, username: string, me
   ]]);
 }
 
+// Пикер рынков встречи: мультивыбор ISO-кодов в entries.countries + сентинел «General».
+// Опции фильтруются до рынков воркспейса (workspaces.allowed_markets; fallback — весь
+// COUNTRY_NAMES); текущие теги записи показываем с галочкой даже если их нет в рынках
+// (легаси не теряем). Ручной выбор НЕ применяет авто-правило specific>=3→General —
+// иначе выбор 3 рынков молча исключил бы встречу из их дайджестов (digest_cron прячет General).
+type PickerRow = Array<{ text: string; callback_data: string }>;
+async function renderMarketPicker(entryId: string, groupId: string): Promise<{ text: string; keyboard: PickerRow[] } | null> {
+  const { data: entry } = await supabase.from("entries")
+    .select("countries").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+  if (!entry) return null;
+  const all = ((entry.countries as string[] | null) ?? []);
+  const current = new Set<string>(all.filter((c) => c !== "General"));
+  const hasGeneral = all.includes("General");
+  const markets = await getWorkspaceMarkets(groupId);
+  const codes = [...(markets ?? Object.keys(COUNTRY_NAMES))];
+  for (const c of current) if (!codes.includes(c)) codes.push(c); // легаси-коды вне рынков — не терять
+
+  const rows: PickerRow[] = [];
+  for (let i = 0; i < codes.length; i += 2) {
+    rows.push(codes.slice(i, i + 2).map((code) => ({
+      text: `${current.has(code) ? "✅ " : ""}${COUNTRY_NAMES[code] ?? code}`,
+      callback_data: `mctog_${entryId}_${code}`,
+    })));
+  }
+  rows.push([{ text: `${hasGeneral ? "✅ " : ""}🌐 Общее (General)`, callback_data: `mctog_${entryId}_General` }]);
+  rows.push([{ text: "✅ Готово", callback_data: `mctry_done_${entryId}` }]);
+
+  const chosen = [...current].map((c) => COUNTRY_NAMES[c] ?? c);
+  if (hasGeneral) chosen.push("Общее");
+  const text = "🌍 <b>Рынки встречи</b>\n\nОтметь рынки, к которым относится встреча (можно несколько) — тапни, чтобы переключить. " +
+    "«🌐 Общее» — если встреча не про конкретный рынок.\n\n" +
+    `Сейчас: ${chosen.length ? chosen.join(", ") : "<i>не заданы</i>"}`;
+  return { text, keyboard: rows };
+}
+
 export async function handleMeetingCallbacks(
   cb: TgCallbackQuery,
   chatId: number,
@@ -175,7 +213,7 @@ export async function handleMeetingCallbacks(
           const meetingId = (m.metadata?.meeting_id as string | undefined) ?? m.id;
           const row1 = [{ text: "🔍 Подробнее", callback_data: `mr_${m.id}` }];
           const row2 = [
-            { text: "🌍 Теги/страны", callback_data: `mtag_${meetingId}` },
+            { text: "🌍 Рынки", callback_data: `mctry_${m.id}` },
             { text: "👤 Участники", callback_data: `massign_${meetingId}` },
           ];
           await sendInlineMessage(chatId, `📋 <b>${title}</b>\n📅 ${date}${duration}${tags}`, [row1, row2]);
@@ -231,10 +269,12 @@ export async function handleMeetingCallbacks(
       { text: "✏️ Название", callback_data: `mrename_${entryId}` },
       { text: "📄 Транскрипт", callback_data: `mtr_${entryId}` },
     ]);
+    // 🌍 Рынки — типизированный мультивыбор стран (entries.countries), по entryId.
+    keyboard.push([{ text: "🌍 Рынки", callback_data: `mctry_${entryId}` }]);
     if (meetingId) {
       keyboard.push([
-        { text: "🌍 Теги/страны", callback_data: `mtag_${meetingId}` },
         { text: "👤 Участники", callback_data: `massign_${meetingId}` },
+        { text: "🏷 Темы", callback_data: `mtag_${meetingId}` },
       ]);
     }
     keyboard.push([{ text: "🗑 Удалить", callback_data: `md_${entryId}` }]);
@@ -344,21 +384,72 @@ export async function handleMeetingCallbacks(
     }
     return true;
   }
-  if (data.startsWith("mc_")) {
-    // Confirm meeting — save + auto-extract tasks
-    const entryId = data.replace("mc_", "");
-    const { data: entry } = await supabase.from("entries").select("metadata, content").eq("id", entryId).eq("group_id", groupId).maybeSingle();
-    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
-    else {
-      // Publish: pending → workspace-visible. Clear uploader-private scoping so the
-      // confirmed meeting is visible to the whole workspace (visibility contract).
-      await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true }, is_private: false, owner_id: null }).eq("id", entryId).eq("group_id", groupId);
-      const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
-      await sendMessage(chatId, `✅ Встреча сохранена: <b>${title}</b>`);
-      const content = (entry.content as string) ?? "";
-      if (content) {
-        await analyzeAndCreateTasks(content, chatId, userId, entryId, groupId);
+  // ── Пикер рынков встречи (мультивыбор → entries.countries). Ветки ДО mc_. ──────
+  // Порядок важен: mctry_done_ проверяем РАНЬШЕ mctry_ (done — префикс-надмножество).
+  // Ни один не начинается с "mc_" (после "mc" идёт "t") → с подтверждением не коллизят.
+  if (data.startsWith("mctog_")) {
+    const rest = data.slice("mctog_".length);
+    const sep = rest.indexOf("_"); // entryId = UUID (без '_'), далее код рынка / "General"
+    const entryId = rest.slice(0, sep);
+    const code = rest.slice(sep + 1);
+    const { data: entry } = await supabase.from("entries").select("countries").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
+    const set = new Set<string>(((entry.countries as string[] | null) ?? []));
+    if (set.has(code)) set.delete(code); else set.add(code); // toggle; General — обычный элемент набора
+    await supabase.from("entries").update({ countries: [...set] }).eq("id", entryId).eq("group_id", groupId);
+    const picker = await renderMarketPicker(entryId, groupId);
+    if (picker) await editInlineMessage(chatId, cb.message.message_id, picker.text, picker.keyboard);
+    return true;
+  }
+  if (data.startsWith("mctry_done_")) {
+    const entryId = data.slice("mctry_done_".length);
+    const { data: entry } = await supabase.from("entries").select("countries, summary, content").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
+    const countries = ((entry.countries as string[] | null) ?? []);
+    // Вектор включает страны («Страны: …») — пересчитываем embedding под новый набор (best-effort).
+    try {
+      const base = (entry.summary as string | null) || (entry.content as string | null) || "";
+      if (base) {
+        const emb = await getEmbedding(buildEmbeddingInput(base, countries));
+        await supabase.from("entries").update({ embedding: emb }).eq("id", entryId).eq("group_id", groupId);
       }
+    } catch (e) { console.error("[mctry_done] embedding recompute failed:", e); }
+    const names = countries.filter((c) => c !== "General").map((c) => COUNTRY_NAMES[c] ?? c);
+    if (countries.includes("General")) names.push("Общее");
+    const kb: PickerRow[] = [];
+    if (countries.length) kb.push([{ text: "✅ Подтвердить встречу", callback_data: `mc_${entryId}` }]);
+    kb.push([{ text: "🌍 Изменить рынки", callback_data: `mctry_${entryId}` }]);
+    await editInlineMessage(chatId, cb.message.message_id, `🌍 Рынки встречи: <b>${names.length ? names.join(", ") : "не заданы"}</b>`, kb);
+    return true;
+  }
+  if (data.startsWith("mctry_")) {
+    const entryId = data.slice("mctry_".length);
+    const picker = await renderMarketPicker(entryId, groupId);
+    if (!picker) { await sendMessage(chatId, "Встреча не найдена."); return true; }
+    await sendInlineMessage(chatId, picker.text, picker.keyboard);
+    return true;
+  }
+  if (data.startsWith("mc_")) {
+    // Confirm meeting — жёсткий блок без рынков, затем publish + auto-extract tasks
+    const entryId = data.replace("mc_", "");
+    const { data: entry } = await supabase.from("entries").select("metadata, content, countries").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
+    const countries = ((entry.countries as string[] | null) ?? []);
+    if (countries.length === 0) {
+      // Жёсткий блок: встреча не уходит в базу без привязки к рынку (или явного «Общее»).
+      await sendInlineMessage(chatId,
+        "⚠️ <b>Нельзя подтвердить встречу без рынков.</b>\n\nУкажи хотя бы один рынок (или «🌐 Общее», если встреча не про конкретный рынок), затем подтверди снова.",
+        [[{ text: "🌍 Проставить рынки", callback_data: `mctry_${entryId}` }]]);
+      return true;
+    }
+    // Publish: pending → workspace-visible. Clear uploader-private scoping so the
+    // confirmed meeting is visible to the whole workspace (visibility contract).
+    await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true }, is_private: false, owner_id: null }).eq("id", entryId).eq("group_id", groupId);
+    const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
+    await sendMessage(chatId, `✅ Встреча сохранена: <b>${title}</b>`);
+    const content = (entry.content as string) ?? "";
+    if (content) {
+      await analyzeAndCreateTasks(content, chatId, userId, entryId, groupId);
     }
     return true;
   }

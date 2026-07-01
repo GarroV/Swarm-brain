@@ -117,7 +117,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Префикс | Файл |
 |---------|------|
 | `gp_`, `gc_`, `gcp_`, `gd_`, `gedit_`, `gran_` | granola.ts |
-| `mr_`, `mc_`, `medit_`, `mrename_`, `mtr_`, `mtag_`, `massign_`, `md_`, `met_`, `med_`, `rai_`, `meeting_`, `mau_`, `mexp_` | meetings.ts |
+| `mr_`, `mc_`, `mctry_`, `mctog_`, `mctry_done_`, `medit_`, `mrename_`, `mtr_`, `mtag_`, `massign_`, `md_`, `met_`, `med_`, `rai_`, `meeting_`, `mau_`, `mexp_` | meetings.ts (`mctry_/mctog_` — пикер рынков; не коллизят с `mc_`: после `mc` идёт `t`) |
 | `sa_` | superadmin.ts |
 | `tk_` | tasks/handlers.ts |
 | `fb_` | handlers/feedback.ts |

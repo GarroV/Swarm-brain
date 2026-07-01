@@ -376,11 +376,14 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 | Код | Действие |
 |----|---------|
 | `mr_<entryId>` | Открыть детальный просмотр встречи |
-| `mc_<entryId>` | Подтвердить встречу |
+| `mc_<entryId>` | Подтвердить встречу. **Жёсткий блок**: если `entries.countries` пусто — не публикует, просит проставить рынки (кнопка `mctry_`) |
+| `mctry_<entryId>` | Открыть пикер **рынков** встречи (мультивыбор → `entries.countries`, фильтр до `workspaces.allowed_markets`) |
+| `mctog_<entryId>_<code>` | Переключить рынок (ISO-код или `General`) в наборе `entries.countries`; перерисовывает пикер |
+| `mctry_done_<entryId>` | Закрыть пикер: пересчитать embedding под новые страны + кнопка «Подтвердить встречу» |
 | `medit_<entryId>` | Редактировать тезисы (AI) |
 | `mrename_<entryId>` | Переименовать встречу |
 | `mtr_<entryId>` | Скачать транскрипт |
-| `mtag_<meetingId>` | Установить теги/страны |
+| `mtag_<meetingId>` | **🏷 Темы** — свободный текст → `metadata.tags` (НЕ типизированные страны; рынки — через `mctry_`) |
 | `massign_<meetingId>` | Назначить участников |
 | `md_<entryId>` | Удалить встречу |
 | `met_<entryId>` | Редактировать название (из confirmation flow) |

@@ -56,6 +56,19 @@ export async function checkAllowedWithGroup(
   return { allowed: false, groupId: "" };
 }
 
+// Рынки воркспейса (allowed_markets) — для пикера стран у встречи при вычитке.
+// null → рынки не заданы (вызывающий подставляет полный список COUNTRY_NAMES).
+export async function getWorkspaceMarkets(groupId: string): Promise<string[] | null> {
+  if (!groupId) return null;
+  const { data } = await supabase
+    .from("workspaces")
+    .select("allowed_markets")
+    .eq("id", groupId)
+    .maybeSingle();
+  const markets = (data as { allowed_markets?: string[] } | null)?.allowed_markets;
+  return markets?.length ? markets : null;
+}
+
 // Workspace management (superadmin only)
 
 export async function listWorkspaces(): Promise<Array<{ id: string; name: string }>> {
