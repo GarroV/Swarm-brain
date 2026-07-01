@@ -25,6 +25,21 @@ function fmtDate(iso: string | null): string {
   }
 }
 
+// Человекочитаемый источник задачи (провенанс): откуда задача взялась.
+const SOURCE_LABEL: Record<string, string> = {
+  transcript: "Из встречи",
+  "desktop-agent": "Из встречи",
+  mini_app: "Веб",
+  claude: "Claude",
+  manual: "Вручную",
+  file: "Файл",
+  note: "Заметка",
+};
+function sourceLabel(source: string | null): string {
+  if (!source) return "—";
+  return SOURCE_LABEL[source] ?? source;
+}
+
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center justify-between px-4 py-3" style={{ minHeight: 48 }}>
@@ -139,6 +154,8 @@ export function TaskDetail({ id }: { id: string }) {
                   )}
                 </Row>
                 <Row label="Создано">{fmtDate(t.created_at)}</Row>
+                <Row label="Источник">{sourceLabel(t.source)}</Row>
+                {t.created_by_name && <Row label="Автор">{t.created_by_name}</Row>}
               </RoyCard>
             </div>
             {t.description && (
