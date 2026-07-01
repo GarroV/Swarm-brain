@@ -122,6 +122,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | `tk_` | tasks/handlers.ts |
 | `fb_` | handlers/feedback.ts |
 | `kbpick_`, `kbdo_`, `kbask_`, `kbno` | handlers/manage.ts |
+| `guide_open`, `guide_menu`, `guide_s1/2/3` | help.ts (мастер настройки — диспатч в index.ts) |
 
 ---
 

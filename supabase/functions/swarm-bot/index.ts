@@ -1,5 +1,5 @@
 import { supabase, ADMIN_USER_ID } from "./lib/supabase.ts";
-import { sendMessage, sendInlineMessage, buildKeyboard, answerCallback } from "./lib/telegram.ts";
+import { sendMessage, sendInlineMessage, editInlineMessage, buildKeyboard, answerCallback } from "./lib/telegram.ts";
 import { autoSyncProfile, getSession, clearSession } from "./lib/storage.ts";
 import { checkAllowedWithGroup } from "./lib/workspace.ts";
 import { getReadAiToken } from "./lib/readai.ts";
@@ -15,7 +15,7 @@ import { handleFeedbackCommand, handleFeedbackCallbacks, handleFeedbackPhoto, ha
 import { handleWorkspace } from "./handlers/workspace.ts";
 import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
 import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
-import { getHelpText } from "./handlers/help.ts";
+import { getHelpText, helpKeyboard, guideMenu, guideStep } from "./handlers/help.ts";
 import { mintMcpToken, buildSetupOneLiner, hasActiveMcpToken, mintRecorderToken, buildRecorderSetupOneLiner, hasActiveRecorderToken } from "./lib/mcp-setup.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
 
@@ -233,6 +233,24 @@ Deno.serve(async (req: Request) => {
         return new Response("OK", { status: 200 });
       }
 
+      // Мастер настройки (саморедактируемое сообщение). guide_open — прислать НОВОЕ меню
+      // (из-под справки); guide_menu — вернуть текущее сообщение в меню; guide_s1/2/3 — шаг.
+      if (cb.data === "guide_open") {
+        const m = guideMenu();
+        await sendInlineMessage(chatId, m.text, m.keyboard);
+        return new Response("OK", { status: 200 });
+      }
+      if (cb.data === "guide_menu") {
+        const m = guideMenu();
+        await editInlineMessage(chatId, cb.message.message_id, m.text, m.keyboard);
+        return new Response("OK", { status: 200 });
+      }
+      if (cb.data === "guide_s1" || cb.data === "guide_s2" || cb.data === "guide_s3") {
+        const s = guideStep(Number(cb.data.slice(-1)) as 1 | 2 | 3);
+        await editInlineMessage(chatId, cb.message.message_id, s.text, s.keyboard);
+        return new Response("OK", { status: 200 });
+      }
+
       const saHandled = await handleSuperadminCallbacks(cb, chatId, userId);
       if (saHandled) return new Response("OK", { status: 200 });
 
@@ -401,7 +419,8 @@ Deno.serve(async (req: Request) => {
         ]}),
       });
     } else if (command === "/help" || text === "ℹ️ Помощь") {
-      await sendMessage(chatId, getHelpText(), buildKeyboard());
+      // Справка с inline-кнопкой «⚙️ Настроить систему» (→ мастер настройки, callback guide_open).
+      await sendInlineMessage(chatId, getHelpText(), helpKeyboard());
     } else if (command === "/add" || text === "📥 Добавить") {
       await handleAdd(chatId, username, argText, groupId);
     } else if (command === "/ask" || text === "❓ Спросить") {
