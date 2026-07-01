@@ -125,11 +125,13 @@ async function renderMarketPicker(entryId: string, groupId: string): Promise<{ t
   for (const c of selected) if (c !== "General" && !codes.includes(c)) codes.push(c); // легаси-коды не терять
   const items = [...codes, "General"];
 
-  // Компактно: 3 кнопки в ряд, флаг+короткое имя; выбранное — ✅ вместо флага.
+  // Компактно: 4 кнопки в ряд, флаг+ISO-код; выбранное — ✅ вместо флага. General → 🌐 Общее.
   const rows: PickerRow[] = [];
-  for (let i = 0; i < items.length; i += 3) {
-    rows.push(items.slice(i, i + 3).map((code) => ({
-      text: `${selected.has(code) ? "✅" : marketFlag(code)} ${code === "General" ? "Общее" : (COUNTRY_NAMES[code] ?? code)}`,
+  for (let i = 0; i < items.length; i += 4) {
+    rows.push(items.slice(i, i + 4).map((code) => ({
+      text: code === "General"
+        ? `${selected.has(code) ? "✅" : "🌐"} Общее`
+        : `${selected.has(code) ? "✅" : marketFlag(code)} ${code}`,
       callback_data: `mctog_${entryId}_${code}`,
     })));
   }
