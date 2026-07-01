@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { normalizeCountries } from "../_shared/countries.ts";
+import { normalizeCountries, COUNTRY_PROMPT_RULE } from "../_shared/countries.ts";
 import { TEZISY_CORE } from "../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 
@@ -73,7 +73,9 @@ async function chatComplete(system: string, user: string, json = false): Promise
 async function extractCountries(text: string): Promise<string[]> {
   try {
     const raw = await chatComplete(
-      'Извлеки страны/рынки упомянутые в тексте. Верни JSON объект: {"countries":["Serbia","Bulgaria"]}. Короткие официальные названия на английском без "Republic of" и т.п. Если стран нет — {"countries":[]}.',
+      'Извлеки страны/рынки из транскрипта встречи и верни JSON: {"countries":["Serbia","Bulgaria"]}.\n' +
+        COUNTRY_PROMPT_RULE +
+        '\nКороткие официальные английские названия без "Republic of". Если стран нет — {"countries":[]}.',
       text.slice(0, 4000),
       true
     );
