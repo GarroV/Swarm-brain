@@ -6,7 +6,8 @@ import { RoyIcon, type RoyIconName } from "../icons";
 import { DashTaskRow } from "../dash/shared";
 import { useIsDesktop } from "../useIsDesktop";
 import { deriveEntryTitle } from "../entry";
-import { fetchMeetings, fetchTasks, deleteMeeting } from "@/lib/api";
+import { fetchMeetings, fetchTasks, deleteMeeting, fetchConfig } from "@/lib/api";
+import { countryName } from "@/lib/countries";
 import { AgentReviewQueue } from "@/components/AgentReviewQueue";
 import type { Entry, Task } from "@/types";
 
@@ -133,6 +134,7 @@ export function RoyMeetingsScreen() {
   const { push, toast } = useRoyNav();
   const isDesktop = useIsDesktop();
   const [meetings, setMeetings] = useState<Entry[] | null>(null);
+  const [markets, setMarkets] = useState<string[] | null>(null);
   const [seg, setSeg] = useState("all");
 
   const load = useCallback(() => {
@@ -143,6 +145,10 @@ export function RoyMeetingsScreen() {
   useEffect(() => {
     load();
   }, [load]);
+  // Рынки воркспейса — чтобы «По странам» показывать только их (прочее → «Другие»).
+  useEffect(() => {
+    fetchConfig().then((c) => setMarkets(c.allowed_markets ?? null)).catch(() => setMarkets(null));
+  }, []);
 
   const all = meetings ?? [];
   const items = all.filter((e) => (seg === "all" ? true : seg === "confirmed" ? isConfirmed(e) : !isConfirmed(e)));
@@ -166,9 +172,26 @@ export function RoyMeetingsScreen() {
   const emptyFeed = meetings && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">Встреч нет</div>;
   const feedCards = items.map((e) => <MeetingCard key={e.id} e={e} onOpen={() => open(e.id)} onRemove={() => remove(e)} />);
 
+  // «По странам»: только рынки воркспейса (allowed_markets), локализованные; всё прочее
+  // (экзотические страны из глобальных встреч, General, без страны) сворачиваем в «Другие».
+  const marketSet = new Set(markets ?? []);
+  const rawCountry = tally(all.flatMap((e) => (e.countries?.length ? e.countries : ["—"])));
+  const countryCounts: [string, number][] = (() => {
+    if (marketSet.size === 0) return rawCountry; // рынки не заданы — показываем всё как есть
+    const out: [string, number][] = [];
+    let other = 0;
+    for (const [code, n] of rawCountry) {
+      if (marketSet.has(code)) out.push([countryName(code), n]);
+      else other += n;
+    }
+    out.sort((a, b) => b[1] - a[1]);
+    if (other) out.push(["Другие", other]);
+    return out;
+  })();
+
   const sidebarCounts = (
     <>
-      <CountsPanel title="По странам" counts={tally(all.flatMap((e) => (e.countries?.length ? e.countries : ["—"])))} />
+      <CountsPanel title="По странам" counts={countryCounts} />
       <CountsPanel title="Источники" counts={tally(all.map((e) => sourceLabel(e.source)))} />
     </>
   );
