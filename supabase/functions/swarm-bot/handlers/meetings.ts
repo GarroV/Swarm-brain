@@ -109,33 +109,33 @@ export async function handleMeetingCallback(chatId: number, username: string, me
 // (легаси не теряем). Ручной выбор НЕ применяет авто-правило specific>=3→General —
 // иначе выбор 3 рынков молча исключил бы встречу из их дайджестов (digest_cron прячет General).
 type PickerRow = Array<{ text: string; callback_data: string }>;
+// Флаг-эмодзи из ISO-2 кода (RS→🇷🇸); для «General» — 🌐. Компактная метка без словесного префикса.
+function marketFlag(code: string): string {
+  return /^[A-Za-z]{2}$/.test(code)
+    ? String.fromCodePoint(...[...code.toUpperCase()].map((c) => 0x1F1E6 + c.charCodeAt(0) - 65))
+    : "🌐";
+}
 async function renderMarketPicker(entryId: string, groupId: string): Promise<{ text: string; keyboard: PickerRow[] } | null> {
   const { data: entry } = await supabase.from("entries")
     .select("countries").eq("id", entryId).eq("group_id", groupId).maybeSingle();
   if (!entry) return null;
-  const all = ((entry.countries as string[] | null) ?? []);
-  const current = new Set<string>(all.filter((c) => c !== "General"));
-  const hasGeneral = all.includes("General");
+  const selected = new Set<string>(((entry.countries as string[] | null) ?? []));
   const markets = await getWorkspaceMarkets(groupId);
   const codes = [...(markets ?? Object.keys(COUNTRY_NAMES))];
-  for (const c of current) if (!codes.includes(c)) codes.push(c); // легаси-коды вне рынков — не терять
+  for (const c of selected) if (c !== "General" && !codes.includes(c)) codes.push(c); // легаси-коды не терять
+  const items = [...codes, "General"];
 
+  // Компактно: 3 кнопки в ряд, флаг+короткое имя; выбранное — ✅ вместо флага.
   const rows: PickerRow[] = [];
-  for (let i = 0; i < codes.length; i += 2) {
-    rows.push(codes.slice(i, i + 2).map((code) => ({
-      text: `${current.has(code) ? "✅ " : ""}${COUNTRY_NAMES[code] ?? code}`,
+  for (let i = 0; i < items.length; i += 3) {
+    rows.push(items.slice(i, i + 3).map((code) => ({
+      text: `${selected.has(code) ? "✅" : marketFlag(code)} ${code === "General" ? "Общее" : (COUNTRY_NAMES[code] ?? code)}`,
       callback_data: `mctog_${entryId}_${code}`,
     })));
   }
-  rows.push([{ text: `${hasGeneral ? "✅ " : ""}🌐 Общее (General)`, callback_data: `mctog_${entryId}_General` }]);
   rows.push([{ text: "✅ Готово", callback_data: `mctry_done_${entryId}` }]);
 
-  const chosen = [...current].map((c) => COUNTRY_NAMES[c] ?? c);
-  if (hasGeneral) chosen.push("Общее");
-  const text = "🌍 <b>Рынки встречи</b>\n\nОтметь рынки, к которым относится встреча (можно несколько) — тапни, чтобы переключить. " +
-    "«🌐 Общее» — если встреча не про конкретный рынок.\n\n" +
-    `Сейчас: ${chosen.length ? chosen.join(", ") : "<i>не заданы</i>"}`;
-  return { text, keyboard: rows };
+  return { text: "🌍 <b>Рынки встречи</b> — тапни, чтобы отметить (🌐 — без рынка):", keyboard: rows };
 }
 
 export async function handleMeetingCallbacks(
