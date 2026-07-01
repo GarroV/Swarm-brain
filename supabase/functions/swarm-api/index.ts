@@ -296,7 +296,7 @@ Deno.serve(async (req: Request) => {
   // ── Resolve workspace ────────────────────────────────────────────────────
   const { data: userRow } = await supabase
     .from("allowed_users")
-    .select("group_id")
+    .select("group_id, is_admin")
     .eq("telegram_id", telegram_id)
     .maybeSingle();
 
@@ -307,7 +307,9 @@ Deno.serve(async (req: Request) => {
   if (!groupId) {
     return apiErr(403, "No workspace assigned", origin);
   }
-  const isAdmin = telegram_id === ADMIN_USER_ID;
+  // Админ = зашитый суперадмин-разработчик (ADMIN_USER_ID, fail-safe) ЛИБО флаг allowed_users.is_admin
+  // (руководитель — «видит ВСЁ»). Единое определение админ-прав для всего swarm-api.
+  const isAdmin = telegram_id === ADMIN_USER_ID || (userRow as { is_admin?: boolean }).is_admin === true;
 
   // ── Routing ──────────────────────────────────────────────────────────────
   const url = new URL(req.url);
@@ -315,7 +317,7 @@ Deno.serve(async (req: Request) => {
   const routePath = url.pathname.split("/swarm-api").pop() || "/";
 
   // Admin routes (gated to telegram_id === 744230399)
-  const adminResp = await handleAdminRoutes(supabase, req, routePath, telegram_id, origin);
+  const adminResp = await handleAdminRoutes(supabase, req, routePath, telegram_id, isAdmin, origin);
   if (adminResp) return adminResp;
 
   // GET /me

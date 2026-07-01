@@ -112,7 +112,7 @@ supabase/functions/swarm-bot/
 │   ├── digest.ts            # /digest — персональный дайджест за период
 │   ├── users.ts             # /users — управление командой (allow/block)
 │   ├── workspace.ts         # /workspace — управление воркспейсами (суперадмин, CLI)
-│   ├── superadmin.ts        # /superadmin — интерактивная inline-панель (ADMIN_USER_ID only)
+│   ├── superadmin.ts        # /superadmin — интерактивная inline-панель (админы: ADMIN_USER_ID или is_admin)
 │   └── help.ts              # /help — текст справки
 ├── tasks/
 │   ├── index.ts             # Экспорт task-хендлеров
@@ -517,7 +517,7 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 - `checkAllowed(userId)` в `lib/storage.ts` — проверка белого списка
 - `checkAllowedWithGroup(userId)` в `lib/workspace.ts` — проверка белого списка + возвращает `group_id` пользователя одним запросом
 - `visibilityFilter(userId)` — строка фильтра для запросов: `is_private=false OR (is_private=true AND owner_id=userId)`
-- `ADMIN_USER_ID = 744230399` в `lib/supabase.ts` — всегда имеет доступ, единственный кто может управлять воркспейсами
+- **Админ** = `telegram_id === ADMIN_USER_ID` (зашитый суперадмин-разработчик, `lib/supabase.ts`, fail-safe) **ЛИБО** `allowed_users.is_admin=true` (напр. руководитель — «видит ВСЁ»). Единый признак: swarm-api считает `isAdmin` в резолве пользователя (`index.ts`, флаг тянется из `allowed_users`), бот — хелпер `isAdminUser()` (`lib/supabase.ts`). Админ видит все данные воркспейса (showAll задач/встреч, `/admin/*`-роуты, `canViewTask`) и управляет воркспейсами/пользователями. Защита самого суперадмина от удаления привязана к зашитому `ADMIN_USER_ID`.
 - Все запросы через `SERVICE_ROLE_KEY` — RLS не работает, фильтрация только в коде
 - Workspace-изоляция: все запросы к `entries` и `tasks` фильтруются по `group_id` пользователя — пользователь видит только данные своего воркспейса
 
@@ -547,7 +547,7 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 - `/workspace add <userId> <workspaceId>` — добавить пользователя в воркспейс
 - `/workspace move <userId> <workspaceId>` — перевести пользователя в другой воркспейс
 
-Команды доступны только `ADMIN_USER_ID`. Логика — в `handlers/workspace.ts`, CRUD-операции — в `lib/workspace.ts`.
+Команды доступны админам (`ADMIN_USER_ID` или `allowed_users.is_admin=true`, через `isAdminUser()`). Логика — в `handlers/workspace.ts`, CRUD-операции — в `lib/workspace.ts`.
 
 ---
 
@@ -633,7 +633,7 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 supabase/functions/swarm-api/
 ├── index.ts        # Router + все эндпоинты
 ├── auth.ts         # verifyInitData() — утилита проверки Telegram initData
-├── admin.ts        # /admin/* роуты (только telegram_id 744230399)
+├── admin.ts        # /admin/* роуты (админы: telegram_id 744230399 или is_admin)
 └── entries-guard.ts  # Обязательный слой безопасности для всех endpoints с entries
 ```
 
@@ -758,7 +758,7 @@ _Поиск / RAG / прочее:_
 | `POST` | `/digest` | Персональный дайджест за период (`{ days }`, дефолт 7): GPT-сводка по `entries` воркспейса (приватность учтена); пусто → текстовая заглушка |
 | `POST` | `/feedback` | Сохранить фидбек (`text`) в `feedback` (username из `allowed_users`) + переслать в Telegram-канал `feedback_channel_id`; 204 |
 
-_Админка (`admin.ts`, только `telegram_id 744230399`):_
+_Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_admin=true`):_
 
 | Метод | Путь | Что делает |
 |-------|------|-----------|

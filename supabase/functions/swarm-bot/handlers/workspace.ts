@@ -1,4 +1,4 @@
-import { ADMIN_USER_ID } from "../lib/supabase.ts";
+import { isAdminUser } from "../lib/supabase.ts";
 import { sendMessage } from "../lib/telegram.ts";
 import { listWorkspaces, createWorkspace, assignUserToWorkspace } from "../lib/workspace.ts";
 
@@ -7,7 +7,7 @@ export async function handleWorkspace(
   userId: number,
   argText: string,
 ): Promise<void> {
-  if (userId !== ADMIN_USER_ID) {
+  if (!(await isAdminUser(userId))) {
     await sendMessage(chatId, "Недостаточно прав.");
     return;
   }

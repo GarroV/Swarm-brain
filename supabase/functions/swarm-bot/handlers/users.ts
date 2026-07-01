@@ -1,4 +1,4 @@
-import { supabase, ADMIN_USER_ID } from "../lib/supabase.ts";
+import { supabase, ADMIN_USER_ID, isAdminUser } from "../lib/supabase.ts";
 import { sendMessage, sendInlineMessage, editInlineMessage, buildKeyboard } from "../lib/telegram.ts";
 import { setSession, clearSession } from "../lib/storage.ts";
 import type { Task, TgCallbackQuery } from "../lib/types.ts";
@@ -191,7 +191,7 @@ export async function showProfileEditMenu(chatId: number, targetId: number, mess
 }
 
 export async function handleBroadcast(chatId: number, adminId: number, text: string, groupId: string): Promise<void> {
-  if (adminId !== ADMIN_USER_ID) {
+  if (!(await isAdminUser(adminId))) {
     await sendMessage(chatId, "Недостаточно прав.");
     return;
   }

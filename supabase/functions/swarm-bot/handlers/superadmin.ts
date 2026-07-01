@@ -1,4 +1,4 @@
-import { supabase, ADMIN_USER_ID } from "../lib/supabase.ts";
+import { supabase, ADMIN_USER_ID, isAdminUser } from "../lib/supabase.ts";
 import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession } from "../lib/storage.ts";
 import { listWorkspaces, createWorkspace, assignUserToWorkspace } from "../lib/workspace.ts";
@@ -32,7 +32,7 @@ function parseTgIdWsId(rest: string): { tgId: number; wsId: string } {
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 export async function handleSuperadmin(chatId: number, userId: number): Promise<void> {
-  if (userId !== ADMIN_USER_ID) {
+  if (!(await isAdminUser(userId))) {
     await sendMessage(chatId, "Недостаточно прав.");
     return;
   }
@@ -51,7 +51,7 @@ export async function handleSuperadminCallbacks(
 ): Promise<boolean> {
   const data = cb.data ?? "";
   if (!data.startsWith("sa_")) return false;
-  if (userId !== ADMIN_USER_ID) return false;
+  if (!(await isAdminUser(userId))) return false;
 
   try {
     // sa_main — re-show main menu
@@ -332,7 +332,7 @@ export async function handleSuperadminSession(
   userId: number,
 ): Promise<boolean> {
   if (!action.startsWith("sa_")) return false;
-  if (userId !== ADMIN_USER_ID) return false;
+  if (!(await isAdminUser(userId))) return false;
 
   await clearSession(chatId);
 

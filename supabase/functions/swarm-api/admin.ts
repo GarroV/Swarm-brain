@@ -23,11 +23,14 @@ export async function handleAdminRoutes(
   req: Request,
   routePath: string,
   telegramId: number,
+  isAdmin: boolean,
   origin: string,
 ): Promise<Response | null> {
   if (!routePath.startsWith("/admin")) return null;
 
-  if (telegramId !== ADMIN_TELEGRAM_ID) {
+  // Гейт по единому признаку админа (ADMIN_USER_ID ЛИБО флаг is_admin) — вычислен в index.ts.
+  // ADMIN_TELEGRAM_ID ниже остаётся для «нельзя удалить суперадмина-разработчика» и added_by.
+  if (!isAdmin) {
     return apiErr(403, "Forbidden", origin);
   }
 
