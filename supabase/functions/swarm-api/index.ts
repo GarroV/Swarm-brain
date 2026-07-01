@@ -28,7 +28,8 @@ import {
   deleteDependency,
 } from "../_shared/tasks/dependencies.ts";
 import type { DependencyType } from "../_shared/tasks/types.ts";
-import { normalizeCountries, COUNTRY_NAMES, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../_shared/countries.ts";
+import { normalizeCountries, COUNTRY_NAMES } from "../_shared/countries.ts";
+import { extractEntryMeta, applyGeneralSentinel, buildEmbeddingInput, embed } from "../_shared/meta-extract.ts";
 import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
@@ -871,36 +872,12 @@ Deno.serve(async (req: Request) => {
 
     const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
-    const [embeddingRes, metaRes] = await Promise.all([
-      fetch("https://api.openai.com/v1/embeddings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
-        body: JSON.stringify({ model: "text-embedding-3-small", input: body.content.slice(0, 8000) }),
-      }),
-      fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          temperature: 0,
-          response_format: { type: "json_object" },
-          messages: [
-            { role: "system", content: 'Проанализируй текст и верни JSON (только JSON, без markdown): {"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":null}\n' + COUNTRY_PROMPT_RULE + "\n" + ENTRY_TYPE_PROMPT_RULE + "\nentry_date — дата события из текста, null если нет." },
-            { role: "user", content: body.content.slice(0, 4000) },
-          ],
-          max_tokens: 200,
-        }),
-      }),
+    // Ручная заметка из miniapp: эмбеддинг по контенту + страны/тип/дата через общее
+    // COUNTRY_PROMPT_RULE (тот же извлекатель, что и в остальных путях ингеста).
+    const [embedding, meta] = await Promise.all([
+      embed(body.content, OPENAI_KEY),
+      extractEntryMeta(body.content, OPENAI_KEY),
     ]);
-
-    const embedding = embeddingRes.ok ? (await embeddingRes.json()).data[0].embedding : null;
-    let meta: { countries: string[]; entry_type: string; entry_date: string | null } = { countries: [], entry_type: "note", entry_date: null };
-    if (metaRes.ok) {
-      try {
-        const parsed = JSON.parse((await metaRes.json()).choices[0].message.content);
-        meta = { ...parsed, countries: normalizeCountries(parsed.countries ?? []) };
-      } catch { /* use defaults */ }
-    }
 
     const summaryRes = body.content.length >= 80 ? await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -1248,14 +1225,12 @@ Deno.serve(async (req: Request) => {
       const draft = meeting.draft_notes_md as string | null;
       if (!draft) return apiErr(400, "Тезисы ещё не готовы — публиковать нечего", origin);
 
-      // эмбеддинг тезисов (как в /search)
+      // Встреча нашего рекордера: привязываем к рынкам через общее COUNTRY_PROMPT_RULE
+      // (раньше countries хардкодился []), затем эмбеддим тезисы ВМЕСТЕ со странами.
       const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
-      const embRes = await fetch("https://api.openai.com/v1/embeddings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
-        body: JSON.stringify({ model: "text-embedding-3-small", input: draft.slice(0, 8000) }),
-      });
-      const embedding: number[] | null = embRes.ok ? (await embRes.json()).data[0].embedding : null;
+      const meta = await extractEntryMeta(draft, OPENAI_KEY);
+      const countries = applyGeneralSentinel(meta.countries);
+      const embedding = await embed(buildEmbeddingInput(draft, countries), OPENAI_KEY);
 
       const startedAt = meeting.started_at as string | null;
       const entryDate = startedAt ? startedAt.split("T")[0] : null;
@@ -1287,7 +1262,7 @@ Deno.serve(async (req: Request) => {
         // attendees из календаря (meetings.attendees, собран рекордером при claim) — несём в запись,
         // чтобы участники были видны и после публикации (UI: блок «Участники»).
         metadata: { meeting_id: mId, title: meeting.title ?? null, confirmed: true, attendees: (meeting as { attendees?: unknown }).attendees ?? [] },
-        countries: [],
+        countries,
         entry_date: entryDate,
         group_id: groupId,
         is_private: isPrivate,
@@ -1461,12 +1436,13 @@ Deno.serve(async (req: Request) => {
     ].filter((l) => l !== null && l !== undefined && !(l === "" && !date)).join("\n").trim();
 
     const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
-    const [embRes, summaryRes] = await Promise.all([
-      fetch("https://api.openai.com/v1/embeddings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
-        body: JSON.stringify({ model: "text-embedding-3-small", input: content.slice(0, 8000) }),
-      }),
+    // Granola-импорт из miniapp: раньше countries хардкодился [] (в отличие от бот-пути
+    // Granola, который тегирует). Привязываем к рынкам через общее COUNTRY_PROMPT_RULE,
+    // затем эмбеддим контент ВМЕСТЕ со странами.
+    const meta = await extractEntryMeta(content, OPENAI_KEY);
+    const countries = applyGeneralSentinel(meta.countries);
+    const [embedding, summaryRes] = await Promise.all([
+      embed(buildEmbeddingInput(content, countries), OPENAI_KEY),
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
@@ -1480,7 +1456,6 @@ Deno.serve(async (req: Request) => {
         }),
       }),
     ]);
-    const embedding = embRes.ok ? (await embRes.json()).data[0].embedding : null;
     const summary = summaryRes.ok ? (await summaryRes.json()).choices[0].message.content : null;
 
     const entryDate = ts ? ts.slice(0, 10) : null;
@@ -1503,7 +1478,7 @@ Deno.serve(async (req: Request) => {
     await supabase.from("entries").insert({
       content, summary, embedding, added_by: addedBy, source: "granola",
       metadata: { granola_note_id: noteId, title: note.title, confirmed: true },
-      countries: [], entry_type: "meeting",
+      countries, entry_type: "meeting",
       entry_date: entryDate,
       group_id: groupId, is_private: isPrivate, owner_id: telegram_id,
     });

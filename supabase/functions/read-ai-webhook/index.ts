@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeCountries, COUNTRY_PROMPT_RULE } from "../_shared/countries.ts";
+import { applyGeneralSentinel } from "../_shared/meta-extract.ts";
 import { TEZISY_CORE } from "../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 
@@ -80,7 +81,8 @@ async function extractCountries(text: string): Promise<string[]> {
       true
     );
     const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
-    return normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []);
+    // General-сентинел как в granola/desktop-agent: нет рынка/широкий охват → 'General'.
+    return applyGeneralSentinel(normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []));
   } catch { return []; }
 }
 
