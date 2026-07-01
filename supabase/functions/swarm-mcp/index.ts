@@ -818,12 +818,17 @@ Deno.serve(async (req: Request) => {
 
   const { method, params, id } = body;
 
-  // ── Auth check (one place, covers all tools) ───────────────────────────────
+  // ── Auth: РАЗБОР токена, но БЕЗ отказа на хендшейке ─────────────────────────
   // Token → sha256 hex → lookup in allowed_users.claude_mcp_token_hash → telegram_id.
-  // Soft mode (default): no header → proceed with args.requesting_user_id as before.
-  // Strict mode (MCP_AUTH_REQUIRED=true): no valid token → reject.
-
+  // ВАЖНО: протокольные методы (initialize / tools/list / notifications) отвечаем ВСЕГДА,
+  // независимо от токена. Иначе устаревший/неверный Bearer в коннекторе claude.ai роняет
+  // весь хендшейк (-32001 на initialize) — и коннектор молча «отваливается» целиком
+  // (подтверждено репродукцией официальным MCP SDK: connect() падает на -32001).
+  // Контроль доступа применяем точечно к tools/call — единственному методу, трогающему данные.
+  // Soft mode (default): нет заголовка → tools/call работает как аноним (args.requesting_user_id).
+  // Strict mode (MCP_AUTH_REQUIRED=true): tools/call без валидного токена → reject.
   let verifiedTelegramId: number | null = null;
+  let tokenError: string | null = null; // заполняется, если Bearer передан, но не прошёл
   const authHeader = req.headers.get("Authorization") ?? "";
 
   if (authHeader.startsWith("Bearer ")) {
@@ -843,16 +848,13 @@ Deno.serve(async (req: Request) => {
     if (tokenRow) {
       const row = tokenRow as { telegram_id: number; claude_mcp_token_expires_at: string | null };
       if (row.claude_mcp_token_expires_at && Date.parse(row.claude_mcp_token_expires_at) < Date.now()) {
-        return err(id, -32001, "Token expired — run /mytoken in the bot to get a fresh one");
+        tokenError = "Token expired — run /mytoken in the bot to get a fresh one";
+      } else {
+        verifiedTelegramId = row.telegram_id;
       }
-      verifiedTelegramId = row.telegram_id;
     } else {
-      return err(id, -32001, "Unauthorized");
+      tokenError = "Invalid token — run /mytoken in the bot to get a fresh one";
     }
-  }
-
-  if (Deno.env.get("MCP_AUTH_REQUIRED") === "true" && verifiedTelegramId === null) {
-    return err(id, -32001, "Unauthorized");
   }
 
   if (method === "initialize") {
@@ -872,6 +874,14 @@ Deno.serve(async (req: Request) => {
   }
 
   if (method === "tools/call") {
+    // ── Точка контроля доступа (перенесена сюда с хендшейка) ──────────────────
+    // Переданный, но неверный/протухший токен → внятная ошибка, а не молчаливый отвал коннектора.
+    if (tokenError) return err(id, -32001, tokenError);
+    // Strict-режим: без валидного токена вызовы инструментов запрещены.
+    if (verifiedTelegramId === null && Deno.env.get("MCP_AUTH_REQUIRED") === "true") {
+      return err(id, -32001, "Unauthorized — run /mytoken in the bot and add the token to the connector");
+    }
+
     const name = (params?.name as string) ?? "";
     const args = (params?.arguments ?? {}) as Record<string, unknown>;
 

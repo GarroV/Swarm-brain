@@ -556,12 +556,12 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 - `allowed_users.claude_mcp_token_hash TEXT` — sha256(token) в hex; plaintext никогда не хранится
 - `allowed_users.claude_mcp_token_expires_at timestamptz` — срок жизни токена. **MCP-токен бессрочный**: `mintMcpToken` пишет `null`, а `swarm-mcp`/`agent-auth` трактуют `null` как «без срока» (проверка `expires_at && expires_at < now()` короткозамыкается). Колонка остаётся для рекордера и на случай возврата TTL
 - `allowed_users.recorder_token_hash`/`recorder_token_expires_at` — **отдельный токен рекордера** (`/recordertoken`, 365 дней), независимый от MCP-токена: перевыпуск `/mytoken` в Claude Desktop не ломает рекордер. `agent-auth` (meeting-claim/ingest) принимает claude_mcp_token_hash **ИЛИ** recorder_token_hash
-- Claude Desktop отправляет `Authorization: Bearer smcp_<uuid>` с каждым запросом
-- `swarm-mcp/index.ts` — одна точка проверки сразу после разбора тела запроса:
-  1. sha256(token) → lookup по `claude_mcp_token_hash` → `verifiedTelegramId`
-  2. Если `claude_mcp_token_expires_at` в прошлом → отказ `Token expired`
-  3. Инжектируется в `args.requesting_user_id` — значение из тела игнорируется
-  4. `MCP_AUTH_REQUIRED=true` → строгий режим (без токена — отказ)
+- Claude Desktop / коннектор claude.ai отправляет `Authorization: Bearer smcp_<uuid>` с каждым запросом
+- `swarm-mcp/index.ts` — токен **разбирается** сразу после тела запроса, но контроль доступа применяется **точечно к `tools/call`**, НЕ к хендшейку:
+  1. sha256(token) → lookup по `claude_mcp_token_hash` → `verifiedTelegramId`; если токен передан, но не найден/протух → запоминается `tokenError` (без раннего отказа)
+  2. **Протокольные методы (`initialize` / `tools/list` / `notifications/initialized`) отвечают ВСЕГДА**, независимо от токена — иначе устаревший/неверный Bearer в коннекторе claude.ai роняет весь хендшейк (`-32001` на `initialize`) и коннектор молча «отваливается» целиком (подтверждено репродукцией офиц. MCP SDK: `connect()` падал на `-32001`; fix 2026-07-01). Раскрываются только имена/описания инструментов — не данные
+  3. На `tools/call`: `tokenError` → отказ с подсказкой (`Invalid token`/`Token expired — run /mytoken`); в strict-режиме без валидного токена → отказ; иначе `verifiedTelegramId` инжектируется в `args.requesting_user_id` (значение из тела игнорируется)
+  4. `MCP_AUTH_REQUIRED=true` → строгий режим (без валидного токена `tools/call` — отказ; хендшейк по-прежнему проходит)
 - Выдача: `/setup` в боте (минтит токен + даёт команду авто-установки, см. `swarm-setup`), `/mytoken` (ручной токен для своего config.json) или `SELECT generate_mcp_token(<telegram_id>)` в SQL. Plaintext единожды. Логика минта — общий хелпер `swarm-bot/lib/mcp-setup.ts` (`mintMcpToken`)
 - ⚠️ **`/mytoken` не перевыпускает молча**: если живой токен уже есть (`hasActiveMcpToken`), бот предупреждает и просит подтверждения кнопкой `mtk_reissue` (callback, обрабатывается в `swarm-bot/index.ts` ~134; кнопка генерится ~417) — экстренный перевыпуск токена, иначе случайный `/mytoken` убил бы рабочий `config.json`. `/setup` минтит всегда (ему нужен plaintext для команды) и сам же переписывает config, поэтому самосогласован
 - Отзыв: `/revoketoken` в боте или `SELECT revoke_mcp_token(<telegram_id>)` (гасит хэш + срок)
@@ -572,7 +572,7 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 - В soft-режиме (`MCP_AUTH_REQUIRED` не выставлен) `requesting_user_id` берётся из аргументов **на доверии** → любой член орга читает всё. **Перед публикацией в орг обязательно `MCP_AUTH_REQUIRED=true`.**
 - В strict-режиме доступ есть только у владельцев валидного `smcp_`-токена; нежелательные члены орга получают `401`. Даже владелец токена видит лишь свой `group_id` и свои приватные записи.
 
-Ошибка при невалидном/отсутствующем токене: JSON-RPC -32001 "Unauthorized".
+Ошибка при невалидном/отсутствующем токене: JSON-RPC -32001 — возвращается **на `tools/call`**, а не на хендшейке (коннектор при этом остаётся подключённым, инструменты видны).
 
 ---
 
