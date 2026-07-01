@@ -26,6 +26,10 @@ export const COUNTRY_NAMES: Record<string, string> = {
   RU: "Россия",
   UA: "Украина",
   KZ: "Казахстан",
+  UZ: "Узбекистан",
+  AE: "ОАЭ",
+  IN: "Индия",
+  CH: "Швейцария",
 };
 
 const ALIASES: Record<string, string> = {
@@ -56,6 +60,10 @@ const ALIASES: Record<string, string> = {
   "россия": "RU", "russia": "RU",
   "украина": "UA", "ukraine": "UA",
   "казахстан": "KZ", "kazakhstan": "KZ",
+  "узбекистан": "UZ", "uzbekistan": "UZ",
+  "оаэ": "AE", "uae": "AE", "эмираты": "AE", "united arab emirates": "AE",
+  "индия": "IN", "india": "IN",
+  "швейцария": "CH", "switzerland": "CH",
 };
 
 export function normalizeCountry(raw: string): string | null {
