@@ -24,6 +24,15 @@ export function RemindersTasks() {
   const r = useReminderTasks();
   const [modalTask, setModalTask] = useState<Task | "new" | null>(null);
   const [draft, setDraft] = useState("");
+  // Свёрнутые секции группировки (по label): клик по заголовку прячет/раскрывает задачи.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleGroup = (label: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
   // Исполнители + рынки воркспейса для быстрого выбора — грузим один раз (не на каждую строку).
   const [users, setUsers] = useState<User[]>([]);
   const [markets, setMarkets] = useState<string[]>([]);
@@ -119,16 +128,25 @@ export function RemindersTasks() {
           )}
 
           {!r.loading && grouped &&
-            groups.map((g) => (
-              <section key={g.label} className="mb-4">
-                <div className="mb-1 flex items-center gap-2 pt-2">
-                  <RoyIcon name={byStaff ? "team" : "globe"} size={13} className="text-ink-mute" />
-                  <span className="font-mono font-semibold uppercase text-ink-mute" style={{ fontSize: 11, letterSpacing: "0.08em" }}>{g.label}</span>
-                  <span className="font-mono text-ink-mute" style={{ fontSize: 11 }}>{g.tasks.length}</span>
-                </div>
-                {g.tasks.map(renderRow)}
-              </section>
-            ))}
+            groups.map((g) => {
+              const open = !collapsed.has(g.label);
+              return (
+                <section key={g.label} className="mb-4">
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(g.label)}
+                    className="mb-1 flex w-full items-center gap-2 pt-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-[8px]"
+                    aria-expanded={open}
+                  >
+                    <RoyIcon name="cright" size={12} strokeWidth={2.2} className={`text-ink-mute transition-transform ${open ? "rotate-90" : ""}`} />
+                    <RoyIcon name={byStaff ? "team" : "globe"} size={13} className="text-ink-mute" />
+                    <span className="font-mono font-semibold uppercase text-ink-mute" style={{ fontSize: 11, letterSpacing: "0.08em" }}>{g.label}</span>
+                    <span className="font-mono text-ink-mute" style={{ fontSize: 11 }}>{g.tasks.length}</span>
+                  </button>
+                  {open && g.tasks.map(renderRow)}
+                </section>
+              );
+            })}
 
           {!r.loading && !grouped && r.visible.map(renderRow)}
 
