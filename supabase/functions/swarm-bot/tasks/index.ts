@@ -5,6 +5,7 @@ export {
   handleTaskCallbacks,
   handleTaskSessionInput,
   analyzeAndCreateTasks,
+  handleQuickCreateTask,
   smartTaskSearch,
   sendTaskCard,
 } from "./handlers.ts";

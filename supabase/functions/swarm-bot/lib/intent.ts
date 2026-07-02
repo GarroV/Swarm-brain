@@ -84,3 +84,26 @@ export function parseManageCommand(text: string): ManageCommand | null {
 
   return { cmd, query, newValue };
 }
+
+// Явное намерение «создать задачу» из свободного текста (детерминированно, без LLM).
+// Форма: «<глагол создания> [мне|себе|<имя>] задач(у): <текст>».
+//   «добавь задачу купить молоко» → { title: "купить молоко", assigneeMention: null (себе) }
+//   «поставь Ксении задачу проверить отчёт» → { title: "проверить отчёт", assigneeMention: "Ксении" }
+// «добавь в базу …» сюда НЕ попадает (после глагола нет слова «задачу»). Пустой текст → null
+// (пусть отрабатывает мастер /addtask). Отделяет СОЗДАНИЕ от ПОИСКА («какие у меня задачи?»).
+const CREATE_VERB_RE = /^\s*(?:добавь(?:те)?|создай(?:те)?|заведи(?:те)?|постав[иь](?:те)?|запланируй(?:те)?)\s+/iu;
+// (?=[\s:]|$) вместо \b: \b в JS — ASCII-граница, с кириллицей не работает (см. FILLER выше).
+// [уаи] уже отсекает «задачник»; lookahead требует разделитель после (не ловим «задачами»).
+const TASK_WORD_RE = /^(?:(мне|себе)\s+|(?:для\s+)?([^:]{1,40}?)\s+)?задач[уаи](?=[\s:]|$)\s*:?\s*/iu;
+
+export function parseCreateTaskCommand(text: string): { title: string; assigneeMention: string | null } | null {
+  const vm = text.match(CREATE_VERB_RE);
+  if (!vm) return null;
+  const afterVerb = text.slice(vm[0].length);
+  const tm = afterVerb.match(TASK_WORD_RE);
+  if (!tm) return null;                       // после глагола нет «задачу» → не создание задачи
+  const title = afterVerb.slice(tm[0].length).trim();
+  if (!title) return null;                    // «создай задачу» без текста → пусть /addtask
+  const assigneeMention = tm[1] ? null : (tm[2] ? tm[2].trim() : null); // мне/себе → себе; имя → mention
+  return { title, assigneeMention };
+}

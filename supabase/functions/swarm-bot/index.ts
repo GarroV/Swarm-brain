@@ -5,9 +5,9 @@ import { checkAllowedWithGroup } from "./lib/workspace.ts";
 import { getReadAiToken } from "./lib/readai.ts";
 import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
 import { handleVoice, handleDocument, handlePhoto, handleUrl } from "./handlers/media.ts";
-import { classifyEntryCommand, parseManageCommand, extractUrl, parseSaveCommand } from "./lib/intent.ts";
+import { classifyEntryCommand, parseManageCommand, extractUrl, parseSaveCommand, parseCreateTaskCommand } from "./lib/intent.ts";
 import { handleEntryCommand, handleManageCallbacks, handleManageSessionInput } from "./handlers/manage.ts";
-import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput } from "./tasks/index.ts";
+import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput, handleQuickCreateTask } from "./tasks/index.ts";
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
 import { handleUsers, handleUserCallbacks, handleUserSessionInput, handleBroadcast } from "./handlers/users.ts";
 import { handleGranolaCallbacks, handleGranolaCommand, handleGranolaSessionInput, pollGranolaForUser, ingestNewGranolaNotesAllUsers } from "./handlers/granola.ts";
@@ -365,10 +365,13 @@ Deno.serve(async (req: Request) => {
         // Форвард → всегда сохраняем (сразу + тезисы), минуя LLM-угадайку.
         await handleAdd(chatId, username, text, groupId);
       } else {
-        // Явное намерение сохранить ("сохрани: …", "добавь в базу: …") → handleAdd, минуя GPT.
-        // Иначе набранный руками текст = вопрос/поиск. Сохранение НЕ отдаётся LLM.
-        const saveContent = parseSaveCommand(text);
-        if (saveContent !== null) {
+        // Порядок: создать задачу ("добавь задачу: …") → сохранить ("сохрани:", "добавь в базу:")
+        // → иначе текст = вопрос/поиск. Всё детерминированно, без LLM-угадайки.
+        const createTaskCmd = parseCreateTaskCommand(text);
+        const saveContent = createTaskCmd ? null : parseSaveCommand(text);
+        if (createTaskCmd) {
+          await handleQuickCreateTask(chatId, userId, groupId, createTaskCmd);
+        } else if (saveContent !== null) {
           await handleAdd(chatId, username, saveContent || text, groupId);
         } else if (text.length >= 3) {
           await handleAsk(chatId, text, userId, groupId);

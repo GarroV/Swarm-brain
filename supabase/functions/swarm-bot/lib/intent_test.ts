@@ -1,5 +1,40 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { classifyEntryCommand, parseManageCommand, extractUrl, parseSaveCommand } from "./intent.ts";
+import { classifyEntryCommand, parseManageCommand, extractUrl, parseSaveCommand, parseCreateTaskCommand } from "./intent.ts";
+
+Deno.test("parseCreateTaskCommand: создание задачи себе", () => {
+  for (const [t, title] of [
+    ["добавь задачу купить молоко", "купить молоко"],
+    ["создай мне задачу: позвонить партнёру", "позвонить партнёру"],
+    ["поставь себе задачу проверить отчёт", "проверить отчёт"],
+    ["заведи задачу: отправить документы по Сербии", "отправить документы по Сербии"],
+  ] as const) {
+    assertEquals(parseCreateTaskCommand(t), { title, assigneeMention: null }, `create-self: "${t}"`);
+  }
+});
+
+Deno.test("parseCreateTaskCommand: создание задачи на исполнителя", () => {
+  assertEquals(
+    parseCreateTaskCommand("поставь Ксении задачу проверить доступ"),
+    { title: "проверить доступ", assigneeMention: "Ксении" },
+  );
+  assertEquals(
+    parseCreateTaskCommand("создай для Ани задачу: подготовить пост"),
+    { title: "подготовить пост", assigneeMention: "Ани" },
+  );
+});
+
+Deno.test("parseCreateTaskCommand: НЕ создание → null", () => {
+  for (const t of [
+    "какие у меня задачи по Сербии?",  // поиск задач
+    "покажи задачи команды",            // поиск
+    "добавь в базу: важный факт",       // сохранение (нет слова «задачу»)
+    "сохрани задачу компании на потом", // не команда создания (глагол «сохрани»)
+    "создай отчёт по продажам",         // нет слова «задачу»
+    "создай задачу",                    // пустой заголовок → пусть /addtask
+  ]) {
+    assertEquals(parseCreateTaskCommand(t), null, `not-create: "${t}"`);
+  }
+});
 
 Deno.test("classifyEntryCommand: команды удаления → 'delete'", () => {
   for (const t of [

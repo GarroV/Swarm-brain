@@ -45,6 +45,51 @@ export const TASK_KEYWORDS = /задач|таск|task|сделать|выпол
 
 export { sendTaskCard };
 
+// Быстрое создание задачи из свободного текста («добавь задачу: …», см. parseCreateTaskCommand).
+// Исполнитель: по имени из текста (findUserByMention) либо сам отправитель (по умолчанию).
+// Задача создаётся сразу активной (confirmed:true) — это явное действие пользователя, не авто-извлечение.
+export async function handleQuickCreateTask(
+  chatId: number,
+  userId: number,
+  groupId: string | undefined,
+  cmd: { title: string; assigneeMention: string | null },
+): Promise<void> {
+  let assignees: string[] = [];
+  let assigneeTelegramIds: number[] = [];
+  let note = "";
+
+  if (cmd.assigneeMention) {
+    const matched = findUserByMention(cmd.assigneeMention, await getProfilesForPrompt());
+    if (matched) {
+      assignees = [matched.name];
+      assigneeTelegramIds = [matched.id];
+    } else {
+      note = ` (исполнитель «${cmd.assigneeMention}» не найден — назначил на тебя)`;
+    }
+  }
+  // Имя не указано ИЛИ не распозналось → задача на самого отправителя.
+  if (!assigneeTelegramIds.length) assigneeTelegramIds = [userId];
+
+  const task = await dbCreateTask({
+    title: cmd.title,
+    assignees,
+    assignee_telegram_ids: assigneeTelegramIds,
+    source: "telegram",
+    status: "open",
+    confirmed: true,
+    created_by_telegram_id: userId,
+    group_id: groupId ?? null,
+  });
+
+  // Уведомить исполнителя, только если это другой человек (себе карточку и так покажем).
+  if (groupId && assignees.length && !assigneeTelegramIds.includes(userId)) {
+    await broadcastTaskAssigned(task, groupId);
+  }
+
+  await sendMessage(chatId, `✅ Задача создана${assignees.length ? ` · ${assignees[0]}` : ""}${note}:`);
+  await sendTaskCard(chatId, task);
+}
+
 // ── /tasks command ────────────────────────────────────────────────────────────
 
 export async function handleTasks(chatId: number, userId: number, filter: string, groupId: string): Promise<void> {
