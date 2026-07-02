@@ -7,7 +7,7 @@ import {
   fetchReviewCounts, type ReviewCount,
 } from "@/lib/api";
 import type { AdminWorkspace, AdminUser } from "@/types";
-import { countryName, COUNTRY_NAMES } from "@/lib/countries";
+import { countryCode, COUNTRY_NAMES } from "@/lib/countries";
 import { Segmented } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
 
@@ -197,7 +197,7 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
                   {u.role && <p className="text-ink-soft" style={{ fontSize: 11 }}>{u.role}</p>}
                 </div>
                 {u.markets.length > 0 && (
-                  <span className="shrink-0 text-ink-soft" style={{ fontSize: 11 }}>{u.markets.map(countryName).join(", ")}</span>
+                  <span className="shrink-0 text-ink-soft" style={{ fontSize: 11 }}>{u.markets.map(countryCode).join(", ")}</span>
                 )}
                 <button onClick={() => startEdit(u)} aria-label="Редактировать профиль" className="shrink-0 transition-colors hover:opacity-80 active:scale-[0.92]" style={{ color: "var(--accent-ink)" }}>
                   <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
@@ -228,7 +228,7 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
                         return (
                           <button key={code} onClick={() => toggleMarket(code)} className="rounded-full border px-2.5 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                             style={{ fontSize: 11, ...(on ? { background: "var(--primary)", color: "#fff", borderColor: "var(--primary)" } : { color: "var(--ink-soft)", borderColor: "var(--line-2)" }) }}>
-                            {countryName(code)}
+                            {countryCode(code)}
                           </button>
                         );
                       })}
@@ -307,7 +307,7 @@ function WorkspaceMarkets({ ws, onUpdated }: { ws: AdminWorkspace; onUpdated: ()
                   ? { background: "var(--primary)", color: "#fff", borderColor: "var(--primary)" }
                   : { color: "var(--ink-soft)", borderColor: "var(--line-2)" }) }}
               >
-                {countryName(code)}
+                {countryCode(code)}
               </button>
             );
           })}

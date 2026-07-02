@@ -8,7 +8,7 @@ import {
   fetchRecorderSetup, mintRecorderToken,
 } from "@/lib/api";
 import { getInitData } from "@/lib/telegram";
-import { countryName } from "@/lib/countries";
+import { countryCode } from "@/lib/countries";
 import type { Me, Integration, GranolaNote } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,7 +84,7 @@ function ProfileSection({ me }: { me: Me }) {
                 onClick={() => toggleMarket(code)}
                 className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${markets.includes(code) ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground border-border"}`}
               >
-                {countryName(code)}
+                {countryCode(code)}
               </button>
             ))}
           </div>

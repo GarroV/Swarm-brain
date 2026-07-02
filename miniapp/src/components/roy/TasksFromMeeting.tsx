@@ -5,6 +5,7 @@ import { RoyCard } from "./ui";
 import { RoyIcon } from "./icons";
 import { extractTasksPreview, createTask } from "@/lib/api";
 import type { ProposedTask } from "@/lib/api";
+import { countryCode } from "@/lib/countries";
 
 // Генерация задач из встречи ПО ЯВНОМУ действию пользователя (кнопка), не автоматически.
 // Превью (POST /tasks/extract { save:false }) → правка/удаление → добавить себе / в общие.
@@ -146,7 +147,7 @@ export function TasksFromMeeting({
                         className="inline-flex items-center font-semibold text-ink-soft bg-surface-2 border border-line-2"
                         style={{ fontSize: 10.5, borderRadius: 6, padding: "1px 6px" }}
                       >
-                        {t.country}
+                        {countryCode(t.country)}
                       </span>
                     )}
                     {t.due_date && (

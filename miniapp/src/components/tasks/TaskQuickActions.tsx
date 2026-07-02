@@ -4,7 +4,7 @@
 // сразу шлёт PATCH (updateTask) и просит родителя перезагрузить список (onChanged = r.reload).
 import { DatePicker } from "@/components/ui/DatePicker";
 import { QuickPickPopover, type PickOption } from "@/components/tasks/QuickPickPopover";
-import { COUNTRY_NAMES, countryName } from "@/lib/countries";
+import { COUNTRY_NAMES, countryName, countryCode } from "@/lib/countries";
 import { updateTask, type UpdateTaskInput } from "@/lib/api";
 import { displayName } from "@/lib/utils";
 import type { Task, User } from "@/types";
@@ -17,7 +17,7 @@ export function TaskQuickActions({ task, users, markets, onChanged }: { task: Ta
   // в списке рынков (легаси-значение), чтобы выбор подсветился и не «потерялся».
   const codes = markets.length ? [...markets] : Object.keys(COUNTRY_NAMES);
   if (task.country && !codes.includes(task.country)) codes.push(task.country);
-  const countryOpts: PickOption[] = codes.map((code) => ({ id: code, label: countryName(code), sub: code }));
+  const countryOpts: PickOption[] = codes.map((code) => ({ id: code, label: countryCode(code), sub: countryName(code) }));
 
   const commit = async (fields: UpdateTaskInput) => {
     try { await updateTask(task.id, fields); } finally { onChanged(); }

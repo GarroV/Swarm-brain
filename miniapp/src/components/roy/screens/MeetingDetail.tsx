@@ -8,7 +8,7 @@ import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { TasksFromMeeting } from "../TasksFromMeeting";
 import { fetchMeeting, patchMeeting, deleteMeeting, fetchTasks, resummarizeMeetingEntry, fetchConfig } from "@/lib/api";
-import { countryName } from "@/lib/countries";
+import { countryCode } from "@/lib/countries";
 import type { Entry, Task } from "@/types";
 
 function fmtDate(iso: string | null): string {
@@ -180,7 +180,7 @@ export function MeetingDetail({ id }: { id: string }) {
                         className={`rounded-full border px-2.5 py-1 transition-colors ${on ? "bg-primary text-white border-primary" : "text-ink-soft border-line-2 hover:bg-surface-2"}`}
                         style={{ fontSize: 12 }}
                       >
-                        {countryName(code)}
+                        {countryCode(code)}
                       </button>
                     );
                   })}

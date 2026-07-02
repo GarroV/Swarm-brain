@@ -7,7 +7,7 @@ import { DashTaskRow } from "../dash/shared";
 import { useIsDesktop } from "../useIsDesktop";
 import { deriveEntryTitle } from "../entry";
 import { fetchMeetings, fetchTasks, deleteMeeting, fetchConfig } from "@/lib/api";
-import { countryName } from "@/lib/countries";
+import { countryCode } from "@/lib/countries";
 import { AgentReviewQueue } from "@/components/AgentReviewQueue";
 import type { Entry, Task } from "@/types";
 
@@ -181,7 +181,7 @@ export function RoyMeetingsScreen() {
     const out: [string, number][] = [];
     let other = 0;
     for (const [code, n] of rawCountry) {
-      if (marketSet.has(code)) out.push([countryName(code), n]);
+      if (marketSet.has(code)) out.push([countryCode(code), n]);
       else other += n;
     }
     out.sort((a, b) => b[1] - a[1]);
