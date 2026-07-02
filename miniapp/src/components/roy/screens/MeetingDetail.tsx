@@ -7,7 +7,8 @@ import { RoyIcon } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { TasksFromMeeting } from "../TasksFromMeeting";
-import { fetchMeeting, patchMeeting, deleteMeeting, fetchTasks, resummarizeMeetingEntry } from "@/lib/api";
+import { fetchMeeting, patchMeeting, deleteMeeting, fetchTasks, resummarizeMeetingEntry, fetchConfig } from "@/lib/api";
+import { countryName } from "@/lib/countries";
 import type { Entry, Task } from "@/types";
 
 function fmtDate(iso: string | null): string {
@@ -29,6 +30,9 @@ export function MeetingDetail({ id }: { id: string }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [reproc, setReproc] = useState(false);
+  const [editingCountries, setEditingCountries] = useState(false);
+  const [selCountries, setSelCountries] = useState<string[]>([]);
+  const [allowedMarkets, setAllowedMarkets] = useState<string[]>([]);
 
   // Переобработать тезисы текущим ИИ-промптом из транскрипта (доступно для встреч рекордера).
   const reprocess = async () => {
@@ -89,6 +93,29 @@ export function MeetingDetail({ id }: { id: string }) {
     }
     setBusy(false);
   };
+  // Редактура стран встречи: мультивыбор рынков воркспейса (авто-теги часто неполные/неточные).
+  const openCountriesEdit = async () => {
+    setMenu(false);
+    if (!allowedMarkets.length) {
+      try { const c = await fetchConfig(); setAllowedMarkets(c.allowed_markets); } catch { /* оставим пустым */ }
+    }
+    setSelCountries((e?.countries ?? []).filter((c) => c !== "General"));
+    setEditingCountries(true);
+  };
+  const toggleCountry = (code: string) =>
+    setSelCountries((prev) => prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code]);
+  const saveCountries = async () => {
+    setBusy(true);
+    try {
+      const u = await patchMeeting(id, { countries: selCountries });
+      setE(u);
+      setEditingCountries(false);
+      toast("Страны обновлены");
+    } catch {
+      toast("Не удалось");
+    }
+    setBusy(false);
+  };
   const del = async () => {
     setMenu(false);
     try {
@@ -110,6 +137,9 @@ export function MeetingDetail({ id }: { id: string }) {
             <button type="button" aria-label="Изменить тезисы" onClick={() => { setMenu(false); setDraft(e?.summary ?? ""); setEditing(true); }} className="flex items-center justify-center rounded-[10px] p-2.5 transition-colors hover:bg-accent-soft active:scale-[0.94]" style={{ color: "var(--accent-ink)" }}>
               <RoyIcon name="pencil" size={20} strokeWidth={1.9} />
             </button>
+            <button type="button" aria-label="Изменить страны" onClick={openCountriesEdit} className="flex items-center justify-center rounded-[10px] p-2.5 transition-colors hover:bg-accent-soft active:scale-[0.94]" style={{ color: "var(--accent-ink)" }}>
+              <RoyIcon name="globe" size={20} strokeWidth={1.9} />
+            </button>
             <button type="button" aria-label="Удалить" onClick={del} className="flex items-center justify-center rounded-[10px] p-2.5 transition-colors active:scale-[0.94]" style={{ color: "var(--pri-high)" }}>
               <RoyIcon name="trash" size={20} strokeWidth={1.9} />
             </button>
@@ -125,7 +155,7 @@ export function MeetingDetail({ id }: { id: string }) {
                 <RoyIcon name="meet" size={12} strokeWidth={1.9} />
                 {sourceLabel(e.source)}
               </span>
-              <Market code={e.countries?.[0]} />
+              {(e.countries ?? []).filter((c) => c !== "General").map((c) => <Market key={c} code={c} />)}
               {fmtDate(e.entry_date || e.created_at) && (
                 <span className="text-ink-mute" style={{ fontSize: 12 }}>
                   {fmtDate(e.entry_date || e.created_at)}
@@ -135,6 +165,36 @@ export function MeetingDetail({ id }: { id: string }) {
             <h1 className="mb-4 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
               {deriveEntryTitle(e)}
             </h1>
+
+            {editingCountries && (
+              <div className="mb-4 rounded-[14px] border border-line-2 bg-surface p-4">
+                <SectionLabel>Страны встречи</SectionLabel>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {allowedMarkets.map((code) => {
+                    const on = selCountries.includes(code);
+                    return (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => toggleCountry(code)}
+                        className={`rounded-full border px-2.5 py-1 transition-colors ${on ? "bg-primary text-white border-primary" : "text-ink-soft border-line-2 hover:bg-surface-2"}`}
+                        style={{ fontSize: 12 }}
+                      >
+                        {countryName(code)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button type="button" onClick={saveCountries} disabled={busy} className="flex-1 rounded-[12px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
+                    Сохранить
+                  </button>
+                  <button type="button" onClick={() => setEditingCountries(false)} className="rounded-[12px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            )}
 
             {editing ? (
               <div className="mb-4">
