@@ -6,6 +6,7 @@ import { getReadAiToken } from "./lib/readai.ts";
 import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
 import { handleVoice, handleDocument, handlePhoto, handleUrl } from "./handlers/media.ts";
 import { classifyEntryCommand, parseManageCommand, extractUrl, parseSaveCommand, parseCreateTaskCommand } from "./lib/intent.ts";
+import { ENTRY_MEETING_SOURCES } from "../_shared/sources.ts";
 import { handleEntryCommand, handleManageCallbacks, handleManageSessionInput } from "./handlers/manage.ts";
 import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput, handleQuickCreateTask } from "./tasks/index.ts";
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
@@ -440,7 +441,7 @@ Deno.serve(async (req: Request) => {
         .from("entries")
         .select("id, metadata, created_at, source")
         .eq("group_id", groupId)
-        .in("source", ["read_ai", "granola"])
+        .in("source", ENTRY_MEETING_SOURCES)
         .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false")
         .order("created_at", { ascending: false })
         .limit(20);
@@ -624,9 +625,9 @@ Deno.serve(async (req: Request) => {
         { count: openTasks },
         { count: overdueTasks },
       ] = await Promise.all([
-        supabase.from("entries").select("*", { count: "exact", head: true }).eq("group_id", groupId).in("source", ["read_ai", "granola"]),
+        supabase.from("entries").select("*", { count: "exact", head: true }).eq("group_id", groupId).in("source", ENTRY_MEETING_SOURCES),
         supabase.from("entries").select("id, metadata, created_at").eq("group_id", groupId).eq("source", "read_ai").eq("metadata->>confirmed", "false").order("created_at", { ascending: false }),
-        supabase.from("entries").select("metadata, created_at, source").eq("group_id", groupId).in("source", ["read_ai", "granola"]).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("entries").select("metadata, created_at, source").eq("group_id", groupId).in("source", ENTRY_MEETING_SOURCES).order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open").eq("is_private", false),
         supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open").eq("is_private", false).lt("due_date", new Date().toISOString().split("T")[0]),
       ]);

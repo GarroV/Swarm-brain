@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, TASK_TOOL_DEFINITIONS } from "./tasks/tools.ts";
 import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../_shared/countries.ts";
 import { matchEntries } from "../_shared/search.ts";
+import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -327,7 +328,7 @@ async function toolGetMeetings(args: { limit?: number; requesting_user_id?: numb
   let query = supabase
     .from("entries")
     .select("content, metadata, created_at")
-    .in("source", ["read_ai", "granola", "desktop-agent"])
+    .in("source", ALL_MEETING_SOURCES)
     .order("created_at", { ascending: false })
     .limit(args.limit ?? 10);
   if (groupId) query = query.eq("group_id", groupId);
