@@ -6,9 +6,10 @@ import type { Task, Me } from "@/types";
 import type { RoyIconName } from "@/components/roy/icons";
 
 export type SmartListId = "today" | "upcoming" | "all" | "done";
-// Линза = ось «как смотреть»: по владельцу (mine/team/all) ИЛИ группировкой по рынку (market).
-// «market» — не фильтр владельца, а режим отображения (все владельцы, сгруппировано по странам).
-export type Lens = "mine" | "team" | "all" | "market";
+// Линза = ось «как смотреть»: по владельцу (mine/team/all) ИЛИ группировкой (market — по рынку,
+// staff — по исполнителю). «market»/«staff» — не фильтр владельца, а режимы отображения
+// (все владельцы, сгруппировано). «staff» — админский вид «все сотрудники» (кто чем занят).
+export type Lens = "mine" | "team" | "all" | "market" | "staff";
 
 export type SmartListDef = { id: SmartListId; label: string; icon: RoyIconName };
 
@@ -49,8 +50,8 @@ export function isOverdue(task: Task, now: Date = new Date()): boolean {
 }
 
 function matchesLens(task: Task, lens: Lens, me: Me | null): boolean {
-  // «Все» и «По рынкам» не фильтруют по владельцу (market фильтрует группировкой, не отбором).
-  if (lens === "all" || lens === "market") return true;
+  // «Все», «По рынкам» и «Все сотрудники» не фильтруют по владельцу (группируют, не отбирают).
+  if (lens === "all" || lens === "market" || lens === "staff") return true;
   if (lens === "team") return !(me && (task.assignee_telegram_ids?.includes(me.telegram_id) ?? false));
   if (!me) return false;
   return task.assignee_telegram_ids?.includes(me.telegram_id) ?? false;
@@ -142,6 +143,34 @@ export function groupByMarket(tasks: Task[], listId: SmartListId, me: Me | null,
     .sort((a, b) => {
       if (a.country === null) return 1;
       if (b.country === null) return -1;
+      if (b.tasks.length !== a.tasks.length) return b.tasks.length - a.tasks.length;
+      return a.label.localeCompare(b.label);
+    });
+}
+
+export type StaffGroup = { name: string; label: string; tasks: Task[] };
+
+// Группировка задач АКТИВНОГО смарт-списка по ИСПОЛНИТЕЛЮ — все владельцы (админский вид «все сотрудники»).
+// Задача с несколькими исполнителями попадает в секцию каждого (полная картина «у кого что»).
+// Без исполнителя → «Без исполнителя», в конец. Группы по убыванию размера, затем по имени.
+export function groupByAssignee(tasks: Task[], listId: SmartListId, me: Me | null, now: Date = new Date()): StaffGroup[] {
+  const inScope = filterTasks(tasks, listId, "all", me, now);
+  const NONE = " none";
+  const map = new Map<string, Task[]>();
+  for (const t of inScope) {
+    const names = (t.assignees ?? []).filter(Boolean);
+    const keys = names.length ? names : [NONE];
+    for (const k of keys) {
+      const bucket = map.get(k);
+      if (bucket) bucket.push(t);
+      else map.set(k, [t]);
+    }
+  }
+  return [...map.entries()]
+    .map(([name, list]) => ({ name, label: name === NONE ? "Без исполнителя" : name, tasks: list }))
+    .sort((a, b) => {
+      if (a.name === NONE) return 1;
+      if (b.name === NONE) return -1;
       if (b.tasks.length !== a.tasks.length) return b.tasks.length - a.tasks.length;
       return a.label.localeCompare(b.label);
     });

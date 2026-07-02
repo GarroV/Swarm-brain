@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchMe, fetchTasks, updateTask, deleteTask, createTask } from "@/lib/api";
 import type { Me, Task } from "@/types";
 import {
-  filterTasks, countLists, groupByMarket, isDone,
-  type SmartListId, type Lens, type MarketGroup,
+  filterTasks, countLists, groupByMarket, groupByAssignee, isDone,
+  type SmartListId, type Lens, type MarketGroup, type StaffGroup,
 } from "@/lib/smartLists";
 
 function todayISO(now: Date): string {
@@ -69,6 +69,17 @@ export function useReminderTasks() {
     [lens, activeList, list, me, now, matchesQuery],
   );
 
+  // Линза «Все сотрудники» (админ): группируем задачи активного списка по исполнителю.
+  const staffGroups: StaffGroup[] = useMemo(
+    () =>
+      lens === "staff"
+        ? groupByAssignee(list, activeList, me, now)
+            .map((g) => ({ ...g, tasks: g.tasks.filter(matchesQuery) }))
+            .filter((g) => g.tasks.length > 0)
+        : [],
+    [lens, activeList, list, me, now, matchesQuery],
+  );
+
   const toggle = useCallback(async (t: Task) => {
     const next = isDone(t) ? "open" : "done";
     setTasks((prev) => prev?.map((x) => (x.id === t.id ? { ...x, status: next } : x)) ?? null);
@@ -106,7 +117,7 @@ export function useReminderTasks() {
   return {
     tasks, me, loading: tasks === null,
     activeList, setActiveList, lens, setLens, query, setQuery,
-    counts, visible, marketGroups, now,
+    counts, visible, marketGroups, staffGroups, now,
     toggle, remove, quickAdd, reload: load,
   };
 }

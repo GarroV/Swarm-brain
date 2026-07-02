@@ -34,8 +34,12 @@ export function RemindersTasks() {
 
   const activeDef = SMART_LISTS.find((s) => s.id === r.activeList)!;
   const byMarket = r.lens === "market";
-  const total = byMarket ? r.marketGroups.reduce((n, g) => n + g.tasks.length, 0) : r.visible.length;
-  const showAssignee = r.lens !== "mine";
+  const byStaff = r.lens === "staff";
+  const grouped = byMarket || byStaff;
+  const groups: { label: string; tasks: Task[] }[] = byStaff ? r.staffGroups : r.marketGroups;
+  const total = grouped ? groups.reduce((n, g) => n + g.tasks.length, 0) : r.visible.length;
+  // В группировке по сотруднику исполнитель — заголовок секции, в строке его не дублируем.
+  const showAssignee = r.lens !== "mine" && !byStaff;
 
   const submitDraft = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter") return;
@@ -81,8 +85,8 @@ export function RemindersTasks() {
         onSelect={r.setActiveList}
         query={r.query}
         onQuery={r.setQuery}
-        allStaffActive={r.lens === "all"}
-        onAllStaff={r.me?.is_admin ? () => { r.setLens("all"); r.setActiveList("all"); } : undefined}
+        allStaffActive={r.lens === "staff"}
+        onAllStaff={r.me?.is_admin ? () => { r.setLens("staff"); r.setActiveList("all"); } : undefined}
       />
 
       <div className="flex min-h-0 flex-1 flex-col">
@@ -114,11 +118,11 @@ export function RemindersTasks() {
             </p>
           )}
 
-          {!r.loading && byMarket &&
-            r.marketGroups.map((g) => (
+          {!r.loading && grouped &&
+            groups.map((g) => (
               <section key={g.label} className="mb-4">
                 <div className="mb-1 flex items-center gap-2 pt-2">
-                  <RoyIcon name="globe" size={13} className="text-ink-mute" />
+                  <RoyIcon name={byStaff ? "team" : "globe"} size={13} className="text-ink-mute" />
                   <span className="font-mono font-semibold uppercase text-ink-mute" style={{ fontSize: 11, letterSpacing: "0.08em" }}>{g.label}</span>
                   <span className="font-mono text-ink-mute" style={{ fontSize: 11 }}>{g.tasks.length}</span>
                 </div>
@@ -126,7 +130,7 @@ export function RemindersTasks() {
               </section>
             ))}
 
-          {!r.loading && !byMarket && r.visible.map(renderRow)}
+          {!r.loading && !grouped && r.visible.map(renderRow)}
 
           {/* Инлайн быстрое добавление */}
           {!r.loading && r.activeList !== "done" && (
