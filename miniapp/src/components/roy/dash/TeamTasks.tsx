@@ -9,7 +9,7 @@ import type { DashboardData } from "./useDashboardData";
 // Источник: splitByOwner().team. Показываем только незавершённые — то, что в работе.
 
 export function TeamTasks({ data, className }: { data: DashboardData; className?: string }) {
-  const { setTab } = useRoyNav();
+  const { openTasks } = useRoyNav();
   const { loading, team } = data;
   // Активные задачи команды: незавершённые требуют внимания.
   const active = team.filter((t) => norm(t.status) !== "done");
@@ -23,7 +23,7 @@ export function TeamTasks({ data, className }: { data: DashboardData; className?
       loading={loading}
       empty={active.length === 0}
       emptyText="Активных задач команды нет"
-      onHead={() => setTab("task")}
+      onHead={() => openTasks("team", "all")}
       className={className}
     >
       {active.map((t) => (

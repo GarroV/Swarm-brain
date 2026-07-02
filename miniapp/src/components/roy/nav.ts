@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useContext } from "react";
 import type { Me, Task } from "@/types";
+import type { Lens, SmartListId } from "@/lib/smartLists";
 
 // Навигация в стиле прототипа: 4 корневых таба + push-стек детальных/создающих экранов.
 // Вынесено в отдельный модуль, чтобы RoyApp и экраны не образовывали циклический импорт.
@@ -40,6 +41,11 @@ export type RoyNav = {
   tasksVersion: number;
   // Бампнуть tasksVersion вручную (например, после inline-чекбокса на дашборде).
   bumpTasks: () => void;
+  // Открыть доску задач с заданной стартовой линзой/списком (вход из панелей дашборда
+  // «Мои задачи»/«Задачи команды»). Применяется один раз при монтировании доски, затем
+  // обычный setTab сбрасывает в null (дефолт). null → доска открывается с дефолтом (mine/today).
+  taskView: { lens: Lens; list?: SmartListId } | null;
+  openTasks: (lens: Lens, list?: SmartListId) => void;
 };
 
 export const RoyNavContext = createContext<RoyNav | null>(null);

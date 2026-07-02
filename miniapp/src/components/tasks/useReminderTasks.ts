@@ -6,6 +6,7 @@ import {
   filterTasks, countLists, groupByMarket, groupByAssignee, isDone,
   type SmartListId, type Lens, type MarketGroup, type StaffGroup,
 } from "@/lib/smartLists";
+import { useRoyNav } from "@/components/roy/nav";
 
 function todayISO(now: Date): string {
   const y = now.getFullYear();
@@ -22,6 +23,16 @@ export function useReminderTasks() {
   const [activeList, setActiveList] = useState<SmartListId>("today");
   const [lens, setLens] = useState<Lens>("mine");
   const [query, setQuery] = useState("");
+  const { taskView } = useRoyNav();
+
+  // Стартовая линза от входа с дашборда (Мои/Команда) — применяем один раз при монтировании.
+  useEffect(() => {
+    if (taskView) {
+      setLens(taskView.lens);
+      if (taskView.list) setActiveList(taskView.list);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = useCallback(async () => {
     try {

@@ -10,7 +10,7 @@ import type { DashboardData } from "./useDashboardData";
 // Строки рисуются общим `DashTaskRow` (= тот же `TaskRow`, что и на доске) — единый вид.
 
 export function PersonalTasks({ data, className }: { data: DashboardData; className?: string }) {
-  const { setTab } = useRoyNav();
+  const { openTasks } = useRoyNav();
   const { loading, today, week, mine } = data;
 
   // Только активные — завершённые на дашборде не показываем (для них есть список «Готовые»).
@@ -35,7 +35,7 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
       loading={loading}
       empty={empty}
       emptyText="Личных задач нет"
-      onHead={() => setTab("task")}
+      onHead={() => openTasks("mine", "today")}
       className={className}
     >
       <SubHead count={tier.tasks.length}>{tier.label}</SubHead>
@@ -43,7 +43,7 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
       {moreCount > 0 && (
         <button
           type="button"
-          onClick={() => setTab("task")}
+          onClick={() => openTasks("mine", "all")}
           className="mt-2 block w-full rounded-[10px] py-2 text-center font-medium text-ink-mute transition-colors hover:bg-surface-2"
           style={{ fontSize: 12 }}
         >

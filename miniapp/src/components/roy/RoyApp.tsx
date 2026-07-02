@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId } from "@/lib/telegram";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { RoyNavContext, useRoyNav, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
+import type { Lens, SmartListId } from "@/lib/smartLists";
 import { RoyTabBar, NavHeader, Avatar, ROY_TABS } from "./ui";
 import { initials } from "./dash/shared";
 import { useIsDesktop } from "./useIsDesktop";
@@ -43,16 +44,26 @@ export function RoyApp({ me }: { me: Me | null }) {
   const [tasksVersion, setTasksVersion] = useState(0);
   // Контекстное окно ответа (десктоп). На мобайле openAnswer уходит в push (см. ниже).
   const [answerQuery, setAnswerQuery] = useState<string | null>(null);
+  // Стартовая линза доски задач при входе из панелей дашборда (Мои/Команда). null = дефолт.
+  const [taskView, setTaskView] = useState<{ lens: Lens; list?: SmartListId } | null>(null);
   const openTask = useCallback((t: Task) => setTaskModalTask(t), []);
   const isDesktop = useIsDesktop();
   // Стек восстановлен из sessionStorage? До этого не персистим, иначе начальный [] затрёт сохранённый.
   const hydrated = useRef(false);
 
   const setTab = useCallback((t: RoyTab) => {
+    setTaskView(null);   // обычный переход по табу → доска задач с дефолтной линзой
     setStack([]);
     setTabState(t);
     // Запоминаем вкладку, чтобы рефреш страницы не сбрасывал на «Поиск».
     try { sessionStorage.setItem("roy_tab", t); } catch { /* приватный режим */ }
+  }, []);
+  // Открыть доску задач с заданной линзой (из панелей «Мои»/«Команда» дашборда).
+  const openTasks = useCallback((lens: Lens, list?: SmartListId) => {
+    setTaskView({ lens, list });
+    setStack([]);
+    setTabState("task");
+    try { sessionStorage.setItem("roy_tab", "task"); } catch { /* приватный режим */ }
   }, []);
   const push = useCallback((r: RoyRoute) => setStack((s) => [...s, r]), []);
   // Десктоп — ответ контекстным окном поверх дашборда; мобайл — полноэкранный push.
@@ -136,7 +147,7 @@ export function RoyApp({ me }: { me: Me | null }) {
     return () => window.removeEventListener(OPEN_MEETING_EVENT, handler);
   }, [openMeeting]);
 
-  const nav: RoyNav = { me, tab, setTab, push, pop, toast, openTask, openAnswer, tasksVersion, bumpTasks: () => setTasksVersion((v) => v + 1) };
+  const nav: RoyNav = { me, tab, setTab, push, pop, toast, openTask, openAnswer, tasksVersion, bumpTasks: () => setTasksVersion((v) => v + 1), taskView, openTasks };
   const top = stack[stack.length - 1];
   // На десктопе домашняя вкладка («Поиск») — бенто-дашборд во всю ширину; на мобайле и в
   // push-стеке остаётся центрированная колонка.
