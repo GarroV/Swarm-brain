@@ -8,6 +8,7 @@ import { findDuplicateMeeting, parseMeetingContent, type MeetingAttendee } from 
 import type { TgCallbackQuery } from "../lib/types.ts";
 
 const GRANOLA_API = "https://public-api.granola.ai/v1";
+const WEB_URL = "https://swarm-brain.pages.dev";
 
 // Единый промпт тезисов — общий канон из _shared/tezisy-prompt.ts (DRY с рекордером/read-ai),
 // чтобы тезисы выглядели одинаково независимо от точки входа.
@@ -87,9 +88,12 @@ function buildNoteContent(note: Record<string, unknown>): string {
 }
 
 async function getProcessedIds(telegramId: number): Promise<Set<string>> {
-  const [savedRes, integrationRes] = await Promise.all([
+  const [savedRes, pendingRes, integrationRes] = await Promise.all([
+    // Опубликованные (legacy pending + опубликованные) в entries — по granola_note_id.
     supabase.from("entries").select("metadata").eq("source", "granola")
       .eq("metadata->>added_by_telegram_id", String(telegramId)),
+    // Pending в приёмной meetings (новый путь): identity_key = "granola:<note_id>".
+    supabase.from("meetings").select("identity_key").eq("source", "granola"),
     supabase.from("user_integrations").select("skipped_note_ids")
       .eq("telegram_id", telegramId).eq("service", "granola").maybeSingle(),
   ]);
@@ -99,6 +103,11 @@ async function getProcessedIds(telegramId: number): Promise<Set<string>> {
       .map((e: { metadata: Record<string, unknown> }) => e.metadata?.granola_note_id as string)
       .filter(Boolean)
   );
+
+  for (const m of (pendingRes.data ?? []) as Array<{ identity_key?: string }>) {
+    const key = m.identity_key ?? "";
+    if (key.startsWith("granola:")) saved.add(key.slice("granola:".length));
+  }
 
   const skipped: string[] = integrationRes.data?.skipped_note_ids ?? [];
   skipped.forEach((id) => saved.add(id));
@@ -237,51 +246,52 @@ async function saveGranolaNote(
     await sendMessage(chatId, "Ошибка: пользователь не привязан к воркспейсу.");
     return false;
   }
-  await sendMessage(chatId, "Сохраняю в базу знаний...");
+  await sendMessage(chatId, "Импортирую встречу…");
 
   const prepared = await prepareGranolaEntry(noteId, telegramId, cached);
   if (!prepared) {
     await sendMessage(chatId, "Не удалось получить заметку из Granola.");
     return false;
   }
-  const { title, content, tezises, entryDate, startTime, attendees, countries, embedding } = prepared;
+  const { title, tezises, entryDate, startTime, attendees } = prepared;
+  void username; void isPrivate; // приватность решается при публикации; в вычитку все — единообразно
 
-  // Эта встреча уже в базе (другой участник / рекордер / повторное сохранение)? Не дублируем.
+  // Эта встреча уже опубликована в базе (другой участник / рекордер / повторно)? Не дублируем.
   const dup = await findDuplicateMeeting(supabase, { groupId, entryDate, startedAt: startTime, attendees });
   if (dup) {
     await markSkipped(telegramId, noteId);
-    await sendMessage(chatId, `Эта встреча уже в базе: <b>${dup.title}</b> — повторно не сохраняю.`);
+    await sendMessage(chatId, `Эта встреча уже в базе: <b>${dup.title}</b> — повторно не импортирую.`);
     return false;
   }
 
-  const { error } = await supabase.from("entries").insert({
-    content,
-    summary: tezises,
-    embedding,
-    added_by: username,
+  // Ручная выгрузка «не жди бота» — импорт СЕЙЧАС в общую приёмную (очередь вычитки), не сразу
+  // в базу: единый флоу для всех источников. started_at собираем из даты+времени тезисов.
+  const nowIso = new Date().toISOString();
+  const startedIso = entryDate ? `${entryDate}T${startTime ?? "00:00"}:00` : null;
+  const { error } = await supabase.from("meetings").insert({
     source: "granola",
-    metadata: {
-      granola_note_id: noteId,
-      title,
-      entry_date: entryDate,
-      confirmed: true,
-      added_by_telegram_id: telegramId,
-    },
-    countries,
-    entry_type: "meeting", // Granola-импорт — всегда встреча
-    entry_date: entryDate,
-    is_private: isPrivate,
-    owner_id: isPrivate ? telegramId : null,
+    identity_kind: "external",
+    identity_key: `granola:${noteId}`,
+    title,
+    started_at: startedIso,
+    attendees,
     group_id: groupId,
+    draft_notes_md: tezises,
+    status: "awaiting_review",
+    recorders: [{ telegram_id: telegramId, claimed_at: nowIso, role: "transcribe" }],
   });
 
   if (error) {
-    await sendMessage(chatId, `Ошибка сохранения: ${error.message}`);
+    if ((error as { code?: string }).code === "23505") {
+      await markSkipped(telegramId, noteId);
+      await sendMessage(chatId, `Уже в очереди вычитки: <b>${title}</b>.`);
+      return true;
+    }
+    await sendMessage(chatId, `Ошибка импорта: ${error.message}`);
     return false;
   }
 
-  const label = isPrivate ? "🔒 Сохранено в личное хранилище" : "✅ Сохранено в базу знаний";
-  await sendMessage(chatId, `${label}: <b>${title}</b>`);
+  await sendMessage(chatId, `✅ В очереди вычитки: <b>${title}</b>\nОткрой <a href="${WEB_URL}">Swarm Brain</a> → Встречи → «на вычитке», проверь и опубликуй.`);
   return true;
 }
 
@@ -406,10 +416,10 @@ async function ingestNewGranolaNotesForUser(integration: {
   for (const note of newNotes) {
     const prepared = await prepareGranolaEntry(note.id, integration.telegram_id);
     if (!prepared) continue;
-    const { title, content, tezises, entryDate, startTime, attendees, countries, embedding } = prepared;
+    const { title, tezises, entryDate, startTime, attendees } = prepared;
 
-    // Кросс-источниковый дедуп: эта встреча уже в базе (другой участник Granola / рекордер)?
-    // Если да — не плодим запись в очереди ревью, помечаем заметку обработанной.
+    // Кросс-источниковый дедуп: эта встреча уже опубликована в базе (другой участник / рекордер)?
+    // Если да — не плодим черновик, помечаем заметку обработанной.
     const dup = await findDuplicateMeeting(supabase, {
       groupId, entryDate, startedAt: startTime, attendees,
     });
@@ -419,36 +429,36 @@ async function ingestNewGranolaNotesForUser(integration: {
       continue;
     }
 
-    const { data: inserted, error } = await supabase.from("entries").insert({
-      content,
-      summary: tezises,
-      embedding,
-      added_by: "granola",
+    // Единая приёмная meetings (как рекордер), НЕ entries. Тезисы готовы из Granola →
+    // draft_notes_md, транскрибация не нужна. Импортёр в recorders → увидит встречу в своей
+    // очереди вычитки (agent-meetings own-scoped). Публикация — общий POST /agent-meetings/:id/publish.
+    const nowIso = new Date().toISOString();
+    const startedIso = note.calendar_event?.scheduled_start_time ?? note.created_at ?? null;
+    const meetingAttendees: MeetingAttendee[] = (note.attendees ?? []).map((a) => ({ name: a.name, email: a.email }));
+
+    const { data: inserted, error } = await supabase.from("meetings").insert({
       source: "granola",
-      metadata: {
-        granola_note_id: note.id,
-        title,
-        entry_date: entryDate,
-        confirmed: false,
-        added_by_telegram_id: integration.telegram_id,
-      },
-      countries,
-      entry_type: "meeting",
-      entry_date: entryDate,
-      // Авто-импорт «на согласовании» виден только загрузившему пользователю,
-      // пока он его не подтвердит (publish → is_private:false). Контракт видимости:
-      // pending = is_private:true + owner_id = telegram_id импортирующего пользователя.
-      is_private: true,
-      owner_id: integration.telegram_id,
+      identity_kind: "external",
+      identity_key: `granola:${note.id}`,
+      title,
+      started_at: startedIso,
+      attendees: meetingAttendees,
       group_id: groupId,
+      draft_notes_md: tezises,
+      status: "awaiting_review",
+      recorders: [{ telegram_id: integration.telegram_id, claimed_at: nowIso, role: "transcribe" }],
     }).select("id").single();
     if (error || !inserted) {
+      // Повторный импорт того же note (unique identity_key) → 23505: помечаем обработанным.
+      if ((error as { code?: string } | null)?.code === "23505") {
+        await markSkipped(integration.telegram_id, note.id);
+        continue;
+      }
       console.error("granola ingest insert error", integration.telegram_id, note.id, error?.message);
       continue;
     }
     created++;
 
-    const entryId = (inserted as { id: string }).id;
     const ts = note.calendar_event?.scheduled_start_time ?? note.created_at;
     const date = new Date(ts).toLocaleString("ru-RU", {
       day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
@@ -457,15 +467,8 @@ async function ingestNewGranolaNotesForUser(integration: {
       .map((a) => a.name || a.email || "").filter(Boolean).slice(0, 4).join(", ");
     let text = `📓 <b>Новая встреча Granola</b>\n<b>${title}</b>\n📅 ${date}`;
     if (attendeeNames) text += `\n👥 ${attendeeNames}`;
-    text += `\n\nДобавлена в «на согласовании». Проверьте и подтвердите:`;
-    await sendInlineMessage(integration.telegram_id, text, [
-      [
-        { text: "✅ Сохранить", callback_data: `mc_${entryId}` },
-        { text: "✏️ Название", callback_data: `met_${entryId}` },
-        { text: "📅 Дата", callback_data: `med_${entryId}` },
-      ],
-      [{ text: "🗑 Удалить", callback_data: `md_${entryId}` }],
-    ]);
+    text += `\n\nДобавлена в очередь вычитки. Открой <a href="${WEB_URL}">Swarm Brain</a> → Встречи → «на вычитке», проверь тезисы и опубликуй.`;
+    await sendMessage(integration.telegram_id, text);
   }
 
   return created;

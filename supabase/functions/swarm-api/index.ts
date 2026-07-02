@@ -1289,7 +1289,7 @@ Deno.serve(async (req: Request) => {
         summary: draft,
         embedding,
         added_by: String(telegram_id),
-        source: "desktop-agent",
+        source: (meeting.source as string) ?? "desktop-agent",  // рекордер/granola/… — сохраняем провенанс
         entry_type: "meeting",
         // attendees из календаря (meetings.attendees, собран рекордером при claim) — несём в запись,
         // чтобы участники были видны и после публикации (UI: блок «Участники»).
