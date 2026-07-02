@@ -32,7 +32,7 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
   const showMeta = !done && (Boolean(task.country || due || high) || fromMeeting || hasAssignee);
 
   return (
-    <div className="flex items-start gap-3 px-3 py-3">
+    <div className="flex items-start gap-2.5 px-3 py-2">
       <button
         type="button"
         role="checkbox"
@@ -40,15 +40,15 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
         aria-label={done ? "Снять отметку" : "Отметить выполненной"}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e: MouseEvent) => { e.stopPropagation(); onToggle(); }}
-        className="mt-0.5 flex shrink-0 items-center justify-center rounded-full border-2 transition-colors"
+        className="mt-px flex shrink-0 items-center justify-center rounded-full border-2 transition-colors"
         style={{
-          width: 22,
-          height: 22,
+          width: 19,
+          height: 19,
           borderColor: done ? "var(--status-done)" : "var(--line-2)",
           background: done ? "var(--status-done)" : "transparent",
         }}
       >
-        {done && <RoyIcon name="check" size={13} strokeWidth={2.4} className="text-white" />}
+        {done && <RoyIcon name="check" size={11} strokeWidth={2.4} className="text-white" />}
       </button>
 
       <div className="min-w-0 flex-1">
@@ -57,7 +57,7 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
           <span
             className="truncate font-semibold text-ink"
             style={{
-              fontSize: 14.5,
+              fontSize: 14,
               letterSpacing: "-0.01em",
               textDecoration: done ? "line-through" : "none",
               opacity: done ? 0.5 : 1,
@@ -68,35 +68,35 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
         </div>
         {showMeta ? (
           // Есть чипы (дата/рынок/важное) — кнопки изменить/удалить встают в тот же ряд, рядом с датой.
-          <div className="mt-1 flex flex-wrap items-center gap-2">
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
             {hasAssignee && (
               // Чья задача — ИМЕНЕМ, а не только аватаром-инициалами (видно в линзах «Команда»/«Все»).
-              <span className="inline-flex items-center gap-1 font-semibold text-ink-soft bg-surface-2 border border-line-2" style={{ fontSize: 11, borderRadius: 7, padding: "2px 7px" }}>
-                <RoyIcon name="team" size={11} />
+              <span className="inline-flex items-center gap-1 font-semibold text-ink-soft bg-surface-2 border border-line-2" style={{ fontSize: 10.5, borderRadius: 6, padding: "1px 6px" }}>
+                <RoyIcon name="team" size={10} />
                 {task.assignees[0]}{task.assignees.length > 1 ? ` +${task.assignees.length - 1}` : ""}
               </span>
             )}
             {fromMeeting && (
-              <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 7, padding: "2px 7px" }}>
-                <RoyIcon name="meet" size={11} /> Встреча
+              <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 10.5, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 6, padding: "1px 6px" }}>
+                <RoyIcon name="meet" size={10} /> Встреча
               </span>
             )}
             <Market code={task.country} />
             {due && (
               <span
                 className="inline-flex items-center gap-1"
-                style={{ fontSize: 12, color: overdue ? "var(--pri-high)" : "var(--ink-soft)", fontWeight: overdue ? 600 : 400 }}
+                style={{ fontSize: 11.5, color: overdue ? "var(--pri-high)" : "var(--ink-soft)", fontWeight: overdue ? 600 : 400 }}
               >
-                <RoyIcon name="cal" size={12} />
+                <RoyIcon name="cal" size={11} />
                 {due}
               </span>
             )}
             {high && (
               <span
                 className="inline-flex items-center gap-1 font-semibold"
-                style={{ fontSize: 11, color: "var(--pri-high)", background: "color-mix(in srgb, var(--pri-high) 12%, transparent)", borderRadius: 7, padding: "2px 7px" }}
+                style={{ fontSize: 10.5, color: "var(--pri-high)", background: "color-mix(in srgb, var(--pri-high) 12%, transparent)", borderRadius: 6, padding: "1px 6px" }}
               >
-                <RoyIcon name="flag" size={11} />
+                <RoyIcon name="flag" size={10} />
                 Важное
               </span>
             )}
@@ -108,7 +108,7 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
         ) : null}
       </div>
 
-      {showAssignee && task.assignees?.length > 0 && <AvatarStack names={task.assignees} size={26} />}
+      {showAssignee && task.assignees?.length > 0 && <AvatarStack names={task.assignees} size={22} />}
     </div>
   );
 }

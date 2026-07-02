@@ -74,7 +74,7 @@ export function Market({ code }: { code?: string | null }) {
   return (
     <span
       className="inline-flex items-center font-semibold whitespace-nowrap uppercase tracking-wide text-ink-soft bg-surface-2 border border-line-2"
-      style={{ fontSize: 11, borderRadius: 7, padding: "2px 7px" }}
+      style={{ fontSize: 10.5, borderRadius: 6, padding: "1px 6px" }}
     >
       {countryCode(code)}
     </span>
