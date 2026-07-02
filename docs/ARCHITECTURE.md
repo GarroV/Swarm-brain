@@ -558,7 +558,7 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 **Механизм:**
 - `allowed_users.claude_mcp_token_hash TEXT` — sha256(token) в hex; plaintext никогда не хранится
 - `allowed_users.claude_mcp_token_expires_at timestamptz` — срок жизни токена. **MCP-токен бессрочный**: `mintMcpToken` пишет `null`, а `swarm-mcp`/`agent-auth` трактуют `null` как «без срока» (проверка `expires_at && expires_at < now()` короткозамыкается). Колонка остаётся для рекордера и на случай возврата TTL
-- `allowed_users.recorder_token_hash`/`recorder_token_expires_at` — **отдельный токен рекордера** (`/recordertoken`, 365 дней), независимый от MCP-токена: перевыпуск `/mytoken` в Claude Desktop не ломает рекордер. `agent-auth` (meeting-claim/ingest) принимает claude_mcp_token_hash **ИЛИ** recorder_token_hash
+- `allowed_users.recorder_token_hash`/`recorder_token_expires_at` — **отдельный токен рекордера** (`/recordertoken`, 365 дней), независимый от MCP-токена: перевыпуск `/mytoken` в Claude Desktop не ломает рекордер. `agent-auth` (meeting-claim/ingest) принимает claude_mcp_token_hash **ИЛИ** recorder_token_hash. Минт/статус токена — общий модуль `_shared/recorder-token.ts` (бот `/recordertoken` и веб `Настройки → Рекордер` = тонкие двери над ним)
 - Claude Desktop / коннектор claude.ai отправляет `Authorization: Bearer smcp_<uuid>` с каждым запросом
 - `swarm-mcp/index.ts` — токен **разбирается** сразу после тела запроса, но контроль доступа применяется **точечно к `tools/call`**, НЕ к хендшейку:
   1. sha256(token) → lookup по `claude_mcp_token_hash` → `verifiedTelegramId`; если токен передан, но не найден/протух → запоминается `tokenError` (без раннего отказа)
@@ -680,6 +680,8 @@ _Профиль / воркспейс:_
 | `GET` | `/me` | `{ telegram_id, name, group_id, language, role, markets, is_admin }` |
 | `PATCH` | `/me` | Правка профиля текущего пользователя: `role`, `markets` (нормализуются) в `user_profiles`; 204 |
 | `GET` | `/config` | `{ allowed_markets: string[] }` — ISO коды рынков воркспейса (из `workspaces.allowed_markets`, или глобальный список) |
+| `GET` | `/recorder/setup` | `{ active, expiresAt }` — статус токена рекордера (для секции «Рекордер встреч» в вебе). Хелперы — `_shared/recorder-token.ts` |
+| `POST` | `/recorder/token` | Минт/перевыпуск токена рекордера → `{ oneLiner, expiresAt }`; токен ОТДЕЛЬНЫЙ от MCP, доступно всем участникам |
 | `GET` | `/users` | Участники воркспейса с профилями |
 
 _Задачи / спринты / зависимости:_

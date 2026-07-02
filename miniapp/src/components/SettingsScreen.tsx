@@ -5,6 +5,7 @@ import {
   googleConnectUrl, disconnectGoogle,
   fetchGranolaUnprocessed, previewGranolaNote, importGranolaNote, skipGranolaNote,
   sendFeedback, generateDigest, uploadFile, logout,
+  fetchRecorderSetup, mintRecorderToken,
 } from "@/lib/api";
 import { getInitData } from "@/lib/telegram";
 import { countryName } from "@/lib/countries";
@@ -539,6 +540,81 @@ function GoogleCalendarSection() {
   );
 }
 
+// ── Recorder section (Mac) ──────────────────────────────────────────────────────
+// Зеркало бот-команды /recordertoken: минт отдельного токена рекордера + однострочник
+// установки для Терминала. Токен НЕ Claude-Desktop MCP (/mytoken) — отдельный, на год.
+
+function RecorderSection() {
+  const [setup, setSetup] = useState<{ active: boolean; expiresAt: string | null } | null>(null);
+  const [oneLiner, setOneLiner] = useState<string | null>(null);
+  const [minting, setMinting] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    fetchRecorderSetup().then(setSetup).catch(() => setSetup({ active: false, expiresAt: null }));
+  }, []);
+
+  const getCommand = async (reissue: boolean) => {
+    if (reissue && !window.confirm("Перевыпустить токен рекордера? Старый перестанет работать — рекордер нужно будет переустановить командой ниже.")) return;
+    setMinting(true);
+    try {
+      const { oneLiner: cmd, expiresAt } = await mintRecorderToken();
+      setOneLiner(cmd);
+      setSetup({ active: true, expiresAt });
+    } finally {
+      setMinting(false);
+    }
+  };
+
+  const copy = async () => {
+    if (!oneLiner) return;
+    try {
+      await navigator.clipboard.writeText(oneLiner);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard недоступен — пользователь скопирует вручную */ }
+  };
+
+  const expStr = setup?.expiresAt
+    ? new Date(setup.expiresAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })
+    : null;
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Рекордер пишет звук созвона на Mac, сервер делает расшифровку и тезисы — готовая встреча приходит во «Встречи» сама. Токен рекордера отдельный от Claude Desktop.
+      </p>
+
+      {setup?.active && expStr && !oneLiner && (
+        <p className="text-sm text-status-done">✓ Подключён · токен действует до {expStr}</p>
+      )}
+
+      {!oneLiner ? (
+        <Button size="sm" onClick={() => getCommand(setup?.active ?? false)} disabled={minting || setup === null} className="w-full">
+          {minting ? "Готовлю…" : setup?.active ? "Перевыпустить команду установки" : "Получить команду установки"}
+        </Button>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">1. Открой Терминал (⌘+Пробел → «Терминал»), вставь строку и нажми Enter:</p>
+          <div className="rounded-lg border bg-muted/50 p-2.5">
+            <code className="block break-all text-xs">{oneLiner}</code>
+          </div>
+          <Button size="sm" variant="secondary" onClick={copy} className="w-full">
+            {copied ? "✓ Скопировано" : "Скопировать команду"}
+          </Button>
+          <p className="text-xs text-muted-foreground">2. Скрипт поставит приложение и откроет его.</p>
+          <p className="text-xs text-muted-foreground">
+            3. Выдай разрешение: <b>System Settings → Privacy &amp; Security → Screen &amp; System Audio Recording</b> → включи SwarmRecorder → перезапусти (⌘Q и открой заново).
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Токен личный, никому не пересылай. Для авто-предложения записи нужен подключённый Google-календарь (секция выше).
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function SettingsScreen() {
@@ -559,6 +635,9 @@ export function SettingsScreen() {
         </Section>
         <Section icon="cal" title="Google-календарь">
           <GoogleCalendarSection />
+        </Section>
+        <Section icon="mic" title="Рекордер встреч (Mac)">
+          <RecorderSection />
         </Section>
         <Section icon="note" title="Дайджест">
           <DigestSection />

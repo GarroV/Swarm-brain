@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
 import { verifyJWT, signJWT } from "../_shared/jwt.ts";
+import { getRecorderTokenStatus, mintRecorderToken, buildRecorderSetupOneLiner } from "../_shared/recorder-token.ts";
 import {
   EntryAccessError,
   buildEntriesQuery,
@@ -342,6 +343,20 @@ Deno.serve(async (req: Request) => {
     const allowedMarkets = (ws as { allowed_markets: string[] | null } | null)?.allowed_markets;
     const markets = allowedMarkets ?? Object.keys(COUNTRY_NAMES);
     return json({ allowed_markets: markets }, 200, origin);
+  }
+
+  // GET /recorder/setup — статус токена рекордера (активен ли + до когда) для секции «Рекордер» в вебе.
+  if (req.method === "GET" && routePath === "/recorder/setup") {
+    const st = await getRecorderTokenStatus(supabase, telegram_id);
+    return json(st, 200, origin);
+  }
+
+  // POST /recorder/token — минт/перевыпуск токена рекордера → { oneLiner, expiresAt }.
+  // Токен ОТДЕЛЬНЫЙ от Claude-Desktop MCP-токена; доступно всем участникам (не только админ).
+  if (req.method === "POST" && routePath === "/recorder/token") {
+    const minted = await mintRecorderToken(supabase, telegram_id);
+    if (!minted) return apiErr(500, "Не удалось создать токен рекордера", origin);
+    return json({ oneLiner: buildRecorderSetupOneLiner(minted.token), expiresAt: minted.expiresAt.toISOString() }, 200, origin);
   }
 
   // GET /users

@@ -236,6 +236,15 @@ export async function fetchConfig(): Promise<{ allowed_markets: string[] }> {
   return apiFetch<{ allowed_markets: string[] }>("/config");
 }
 
+// Рекордер встреч (Mac): статус токена и минт/перевыпуск однострочника установки.
+export async function fetchRecorderSetup(): Promise<{ active: boolean; expiresAt: string | null }> {
+  if (DEV_MODE) return { active: false, expiresAt: null };
+  return apiFetch<{ active: boolean; expiresAt: string | null }>("/recorder/setup");
+}
+export async function mintRecorderToken(): Promise<{ oneLiner: string; expiresAt: string }> {
+  return apiFetch<{ oneLiner: string; expiresAt: string }>("/recorder/token", { method: "POST" });
+}
+
 export async function patchMe(fields: UpdateMeInput): Promise<void> {
   if (DEV_MODE) return;
   return apiFetch<void>("/me", { method: "PATCH", body: JSON.stringify(fields) });
