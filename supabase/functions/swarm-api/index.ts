@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
 import { verifyJWT, signJWT } from "../_shared/jwt.ts";
 import { getRecorderTokenStatus, mintRecorderToken, buildRecorderSetupOneLiner } from "../_shared/recorder-token.ts";
+import { getMcpTokenStatus, mintMcpToken, buildSetupOneLiner } from "../_shared/mcp-token.ts";
 import {
   EntryAccessError,
   buildEntriesQuery,
@@ -357,6 +358,20 @@ Deno.serve(async (req: Request) => {
     const minted = await mintRecorderToken(supabase, telegram_id);
     if (!minted) return apiErr(500, "Не удалось создать токен рекордера", origin);
     return json({ oneLiner: buildRecorderSetupOneLiner(minted.token), expiresAt: minted.expiresAt.toISOString() }, 200, origin);
+  }
+
+  // GET /mcp/setup — статус MCP-токена (Claude Desktop) для секции «Claude Desktop» в вебе.
+  if (req.method === "GET" && routePath === "/mcp/setup") {
+    const st = await getMcpTokenStatus(supabase, telegram_id);
+    return json(st, 200, origin);
+  }
+
+  // POST /mcp/token — минт/перевыпуск MCP-токена → { oneLiner } (команда установки Claude Desktop).
+  // Токен бессрочный; доступно всем участникам.
+  if (req.method === "POST" && routePath === "/mcp/token") {
+    const minted = await mintMcpToken(supabase, telegram_id);
+    if (!minted) return apiErr(500, "Не удалось создать токен", origin);
+    return json({ oneLiner: buildSetupOneLiner(minted.token) }, 200, origin);
   }
 
   // GET /users

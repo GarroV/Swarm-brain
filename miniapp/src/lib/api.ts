@@ -245,6 +245,15 @@ export async function mintRecorderToken(): Promise<{ oneLiner: string; expiresAt
   return apiFetch<{ oneLiner: string; expiresAt: string }>("/recorder/token", { method: "POST" });
 }
 
+// Claude Desktop (MCP): статус токена и минт/перевыпуск однострочника установки.
+export async function fetchMcpSetup(): Promise<{ active: boolean; expiresAt: string | null }> {
+  if (DEV_MODE) return { active: false, expiresAt: null };
+  return apiFetch<{ active: boolean; expiresAt: string | null }>("/mcp/setup");
+}
+export async function mintMcpToken(): Promise<{ oneLiner: string }> {
+  return apiFetch<{ oneLiner: string }>("/mcp/token", { method: "POST" });
+}
+
 export async function patchMe(fields: UpdateMeInput): Promise<void> {
   if (DEV_MODE) return;
   return apiFetch<void>("/me", { method: "PATCH", body: JSON.stringify(fields) });

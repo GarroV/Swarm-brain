@@ -6,6 +6,7 @@ import {
   fetchGranolaUnprocessed, previewGranolaNote, importGranolaNote, skipGranolaNote,
   sendFeedback, generateDigest, uploadFile, logout,
   fetchRecorderSetup, mintRecorderToken,
+  fetchMcpSetup, mintMcpToken,
 } from "@/lib/api";
 import { getInitData } from "@/lib/telegram";
 import { countryCode } from "@/lib/countries";
@@ -615,6 +616,70 @@ function RecorderSection() {
   );
 }
 
+// ── Claude Desktop section ──────────────────────────────────────────────────────
+// Зеркало бот-команды /setup: минт MCP-токена (Claude Desktop) + однострочник установки.
+// Токен отдельный от рекордера, бессрочный.
+
+function ClaudeDesktopSection() {
+  const [active, setActive] = useState<boolean | null>(null);
+  const [oneLiner, setOneLiner] = useState<string | null>(null);
+  const [minting, setMinting] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    fetchMcpSetup().then((s) => setActive(s.active)).catch(() => setActive(false));
+  }, []);
+
+  const getCommand = async (reissue: boolean) => {
+    if (reissue && !window.confirm("Перевыпустить токен Claude Desktop? Старый конфиг перестанет работать — переустанови командой ниже.")) return;
+    setMinting(true);
+    try {
+      const { oneLiner: cmd } = await mintMcpToken();
+      setOneLiner(cmd);
+      setActive(true);
+    } finally {
+      setMinting(false);
+    }
+  };
+
+  const copy = async () => {
+    if (!oneLiner) return;
+    try {
+      await navigator.clipboard.writeText(oneLiner);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard недоступен */ }
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Claude Desktop получает доступ к базе знаний, встречам и задачам — ищет и отвечает по делу прямо на твоём Mac. Токен отдельный от рекордера, бессрочный.
+      </p>
+
+      {active && !oneLiner && <p className="text-sm text-status-done">✓ Подключён</p>}
+
+      {!oneLiner ? (
+        <Button size="sm" onClick={() => getCommand(active ?? false)} disabled={minting || active === null} className="w-full">
+          {minting ? "Готовлю…" : active ? "Перевыпустить команду установки" : "Получить команду установки"}
+        </Button>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">1. Открой Терминал (⌘+Пробел → «Терминал»), вставь строку и нажми Enter:</p>
+          <div className="rounded-lg border bg-muted/50 p-2.5">
+            <code className="block break-all text-xs">{oneLiner}</code>
+          </div>
+          <Button size="sm" variant="secondary" onClick={copy} className="w-full">
+            {copied ? "✓ Скопировано" : "Скопировать команду"}
+          </Button>
+          <p className="text-xs text-muted-foreground">2. Скрипт поставит Node (если нужно), пропишет коннектор и перезапустит Claude Desktop.</p>
+          <p className="text-xs text-muted-foreground">3. В Claude Desktop появится сервер <b>swarm-brain</b> с инструментами. Токен личный — никому не пересылай.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function SettingsScreen() {
@@ -638,6 +703,9 @@ export function SettingsScreen() {
         </Section>
         <Section icon="mic" title="Рекордер встреч (Mac)">
           <RecorderSection />
+        </Section>
+        <Section icon="spark" title="Claude Desktop">
+          <ClaudeDesktopSection />
         </Section>
         <Section icon="note" title="Дайджест">
           <DigestSection />
