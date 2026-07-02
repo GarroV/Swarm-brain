@@ -1,7 +1,7 @@
 "use client";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { cn, displayName } from "@/lib/utils";
-import { countryName } from "@/lib/countries";
+import { countryCode } from "@/lib/countries";
 import { RoyIcon, type RoyIconName } from "./icons";
 
 // Примитивы дизайн-системы из design_handoff_roy (mobile-proto-ui.jsx), портированные
@@ -67,17 +67,16 @@ export function TypeTag({ type, small }: { type: RoyTypeKey; small?: boolean }) 
 }
 
 // ── Market (рынок) ───────────────────────────────────────────────────────────
-// Показываем человекочитаемое имя: код «SI» → «Словения» (countryName); незнакомое значение
-// (легаси-имя «Bulgaria» и т.п.) рендерится как есть (fallback). Так чипы рынка единообразны
-// независимо от того, хранится код или имя.
+// Тег рынка — короткий ISO-код (alpha-2, uppercase): «Словения»/«SI» → «SI». `countryCode`
+// приводит и код, и легаси-имя к коду единообразно. Компактно и общепринято.
 export function Market({ code }: { code?: string | null }) {
   if (!code || code === "—") return null;
   return (
     <span
-      className="inline-flex items-center font-semibold whitespace-nowrap text-ink-soft bg-surface-2 border border-line-2"
+      className="inline-flex items-center font-semibold whitespace-nowrap uppercase tracking-wide text-ink-soft bg-surface-2 border border-line-2"
       style={{ fontSize: 11, borderRadius: 7, padding: "2px 7px" }}
     >
-      {countryName(code)}
+      {countryCode(code)}
     </span>
   );
 }
