@@ -41,6 +41,9 @@ const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const MINIAPP_ORIGIN = Deno.env.get("MINIAPP_ORIGIN") ?? "*";
 const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
 const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — единый суперадмин
+// Demo-сессия для показа заказчику (секретная ссылка → JWT с этим telegram_id). Жёстко
+// изолирована в воркспейс 'demo': не админ, не видит рабочие данные, не минтит токены.
+const DEMO_USER_ID = 900000001;
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET"); // подпись веб-сессий (Login Widget, B+)
 
 const supabase = createClient(
@@ -305,13 +308,15 @@ Deno.serve(async (req: Request) => {
   if (!userRow) {
     return apiErr(401, "User not in allowed list", origin);
   }
-  const groupId = (userRow as { group_id: string | null }).group_id;
+  // Demo-сессия (секретная ссылка, telegram_id === DEMO_USER_ID): жёсткая изоляция.
+  // Группа форсится в 'demo' (НЕ из БД), админ-права запрещены. Барьер «нет дыр в рабочие»:
+  // все data-запросы фильтруются по этому group_id, admin-роуты недоступны (isAdmin=false).
+  const isDemo = telegram_id === DEMO_USER_ID;
+  const groupId = isDemo ? "demo" : (userRow as { group_id: string | null }).group_id;
   if (!groupId) {
     return apiErr(403, "No workspace assigned", origin);
   }
-  // Админ = зашитый суперадмин-разработчик (ADMIN_USER_ID, fail-safe) ЛИБО флаг allowed_users.is_admin
-  // (руководитель — «видит ВСЁ»). Единое определение админ-прав для всего swarm-api.
-  const isAdmin = telegram_id === ADMIN_USER_ID || (userRow as { is_admin?: boolean }).is_admin === true;
+  const isAdmin = !isDemo && (telegram_id === ADMIN_USER_ID || (userRow as { is_admin?: boolean }).is_admin === true);
 
   // ── Routing ──────────────────────────────────────────────────────────────
   const url = new URL(req.url);
@@ -355,6 +360,7 @@ Deno.serve(async (req: Request) => {
   // POST /recorder/token — минт/перевыпуск токена рекордера → { oneLiner, expiresAt }.
   // Токен ОТДЕЛЬНЫЙ от Claude-Desktop MCP-токена; доступно всем участникам (не только админ).
   if (req.method === "POST" && routePath === "/recorder/token") {
+    if (isDemo) return apiErr(403, "Демо: выпуск токенов недоступен", origin);
     const minted = await mintRecorderToken(supabase, telegram_id);
     if (!minted) return apiErr(500, "Не удалось создать токен рекордера", origin);
     return json({ oneLiner: buildRecorderSetupOneLiner(minted.token), expiresAt: minted.expiresAt.toISOString() }, 200, origin);
@@ -369,6 +375,7 @@ Deno.serve(async (req: Request) => {
   // POST /mcp/token — минт/перевыпуск MCP-токена → { oneLiner } (команда установки Claude Desktop).
   // Токен бессрочный; доступно всем участникам.
   if (req.method === "POST" && routePath === "/mcp/token") {
+    if (isDemo) return apiErr(403, "Демо: выпуск токенов недоступен", origin);
     const minted = await mintMcpToken(supabase, telegram_id);
     if (!minted) return apiErr(500, "Не удалось создать токен", origin);
     return json({ oneLiner: buildSetupOneLiner(minted.token) }, 200, origin);
