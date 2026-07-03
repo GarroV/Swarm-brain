@@ -18,10 +18,10 @@
 |-------------|--------|----------------|
 | Telegram-бот | команды и сообщения в чате | `swarm-bot` |
 | Веб / Mini App «Рой» | в Telegram (`initData`) или браузер (Login Widget → JWT) | `swarm-api` |
-| Claude Desktop (MCP) | MCP-сервер по токену из `/setup` | `swarm-mcp` |
-| SwarmRecorder | macOS меню-бар приложение по токену из `/recordertoken` | `meeting-claim`, `meeting-ingest` |
-| Read.ai | OAuth2 + webhook (завершённые встречи) | `read-ai-auth`, `read-ai-webhook` |
-| Granola | API-ключ на пользователя (`/connect granola`), часовой поллинг | `swarm-bot` (`granola_poll`) |
+| Claude Desktop (MCP) | токен + команда установки из `/setup` в боте **или веб → Настройки → Claude Desktop** | `swarm-mcp` |
+| SwarmRecorder | macOS меню-бар; установка из `/recordertoken` **или веб → Настройки → Рекордер** | `meeting-claim`, `meeting-ingest`, `meeting-process` |
+| Granola | API-ключ на пользователя (`/connect granola`), часовой поллинг → единая приёмная встреч (`meetings`) | `swarm-bot` (`granola_poll`) |
+| Read.ai | OAuth2 + webhook — **отключается** (`READ_AI_ENABLED` off, не развивается) | `read-ai-auth`, `read-ai-webhook` |
 
 ---
 
@@ -81,15 +81,13 @@ supabase/
 │   ├── swarm-mcp/              # MCP-сервер для Claude Desktop (JSON-RPC)
 │   ├── swarm-api/              # REST API для веб/Mini App (поверх той же логики, что и бот)
 │   ├── meeting-claim/          # Рекордер: claim/lease встречи до транскрибации
-│   ├── meeting-ingest/         # Рекордер: приём аудио → Whisper → тезисы
-│   ├── granola-poller/         # LEGACY / DEPRECATED: standalone-поллер, выведен из крона (только слал уведомление, ничего не клал в БД). Поллинг Granola теперь внутри swarm-bot — см. ingestNewGranolaNotesAllUsers
-│   ├── read-ai-auth/           # OAuth2 авторизация Read.ai
-│   └── read-ai-webhook/        # Вебхук: приём встреч из Read.ai → /meetings
-└── migrations/
-    ├── 20260519_tasks_columns.sql
-    ├── 20260521_app_settings.sql
-    ├── 20260522_user_integrations.sql
-    └── 20260525_private_space.sql
+│   ├── meeting-ingest/         # Рекордер: приём аудио → Storage → durable-обработка
+│   ├── meeting-process/        # Рекордер: cron durable-обработки (транскрибация по кускам + тезисы)
+│   ├── granola-poller/         # LEGACY: standalone-поллер, выведен из крона. Поллинг Granola — внутри swarm-bot (ingestNewGranolaNotesAllUsers)
+│   ├── read-ai-auth/           # OAuth2 авторизации Read.ai (отключается)
+│   ├── read-ai-webhook/        # Вебхук Read.ai (отключается, READ_AI_ENABLED off)
+│   └── _shared/                # общий код: sources (реестр источников), mcp-token, recorder-token, meeting-processor, meeting-dedup, tasks, search, countries
+└── migrations/                 # инкрементальные миграции; старт с нуля — supabase/schema/00_base_schema.sql
 
 miniapp/                        # Веб / Telegram Mini App «Рой» (Next.js 16 → статический экспорт → Cloudflare Pages)
 └── src/                        # Поиск/RAG, доска задач, база знаний, вычитка встреч
@@ -151,28 +149,21 @@ recorder/                       # SwarmRecorder — macOS меню-бар рек
 - **Автообработка** — голос → Whisper → текст, фото → Vision → описание, URL → парсинг страницы
 - **Приватные записи** — `is_private: true` + `owner_id`: видны только владельцу. Работает в Telegram и Claude Desktop
 
-### /meetings — единый инбокс встреч
-- Все встречи из Read.ai и Granola попадают сюда с `confirmed: false`
-- Список неподтверждённых встреч с датами и источниками (📹 Read.ai / 📓 Granola)
-- По каждой встрече: тезисы, ✅ Подтвердить, ✏️ Тезисы, ✏️ Название, 📄 Транскрипт (отправляется `.txt` файлом), 🌍 Теги, 👤 Участники, 🗑 Удалить
+### Встречи — единый флоу (захват → вычитка → публикация)
 
-### Встречи — Read.ai
-- Вебхук `read-ai-webhook`: как только встреча завершается → сохраняется в `entries` с `confirmed: false`
-- Telegram-уведомление с кнопками: ✅ Подтвердить / ✏️ Название / 📅 Дата / 🗑 Удалить
-- OAuth2 токен обновляется по крону (`readai_token_refresh`), при отсутствии встреч >72ч — алерт админу
+Все источники ведут в одну приёмную `meetings` (`status=awaiting_review`) → вычитка → публикация в базу знаний (`entries`, финальный артефакт). Источник влияет только на метку. Унификация в процессе — дизайн в `docs/superpowers/specs/2026-07-02-unified-transcriber-contract-design.md`; Read.ai отключается.
 
-### Встречи — Granola
-- Каждый пользователь подключает **свой** аккаунт: `/connect granola <API-ключ>`
-- Поллинг раз в час: cron бьёт в `swarm-bot` с `{"granola_poll": true}` → `ingestNewGranolaNotesAllUsers` импортирует новые заметки всех пользователей в `entries` и шлёт Telegram-уведомление → `gc_` / `gcp_` / `gd_`. (Standalone-функция `granola-poller` устарела и выведена из крона — она только слала уведомление, не сохраняя в БД.)
-- `/granola` — ручной импорт: выбор периода → список заметок → `[🔍 Тезисы] [🗑 Пропустить]`
-- Тезисы генерируются при просмотре и кэшируются в сессии; при сохранении повторный вызов API не нужен
-- Сохранение через `/meetings`, `/granola` не фигурирует в командном меню (только в /help)
+- **SwarmRecorder** — двухшаговый durable-протокол (`meeting-claim` → `meeting-ingest` → cron `meeting-process`): транскрибация по кускам (переживает лимиты воркера) + тезисы. Черновик в `meetings.draft_notes_md`.
+- **Granola** — каждый подключает свой аккаунт (`/connect granola <ключ>`); поллинг раз в час (`swarm-bot`, `{"granola_poll":true}` → `ingestNewGranolaNotesAllUsers`) кладёт встречи в приёмную с готовыми тезисами. **Ручная выгрузка «не жди бота»** — `/granola` (выбор заметки → импорт в очередь вычитки сейчас). Standalone `granola-poller` — legacy, выведен из крона.
+- **Вычитка и публикация** — в вебе (Встречи → «на вычитке»): проверить тезисы / название / страны / участников → опубликовать. Единый эндпоинт `POST /agent-meetings/:id/publish` (провенанс источника сохраняется).
+- **Дедуп** — кросс-источниковый `findDuplicateMeeting` (одна встреча из Granola и рекордера не двоится).
+- **Read.ai** (отключается, `READ_AI_ENABLED` off): вебхук `read-ai-webhook` писал в `entries` (`confirmed:false`); legacy-встречи «на согласовании» доживают старым путём (бот-кнопки `mc_`/`met_`/`med_`/`md_`).
 
 ### Задачи
 - `/tasks` — активные задачи; `/tasks [имя]` / `/tasks [страна]` — фильтры
-- `/addtask` — пошаговое создание: название → описание → исполнитель → страна → дедлайн
+- `/addtask` — пошаговое создание; **свободным текстом** — «добавь/создай/поставь [кому] задачу: …» (`parseCreateTaskCommand`, создаёт сразу, отделено от поиска)
 - Статусы: `open → in_progress → done / cancelled`, просроченные помечаются
-- Задачи автоматически создаются из встреч Read.ai (из action_items транскрипта)
+- **Из встречи** — по кнопке «Сгенерировать задачи» на экране вычитки (preview → добавить, привязка `meeting_id`); авто-извлечение из транскрипта в боте (`analyzeAndCreateTasks`)
 - Смарт-поиск: если вопрос содержит TASK_KEYWORDS — сначала ищет в задачах
 
 ### Роли пользователей и назначение задач
@@ -183,7 +174,7 @@ recorder/                       # SwarmRecorder — macOS меню-бар рек
 Несколько исполнителей в стране — задача назначается всем. Редактируется через админку профилей.
 
 ### MCP-сервер (Claude Desktop)
-Подключение: Settings → Developer → Add MCP Server → URL из `/help`
+Подключение: `/setup` в боте (one-liner для терминала) **или** веб → Настройки → Claude Desktop (та же команда установки). Токен бессрочный, отдельный от токена рекордера. Хелперы токена — `_shared/mcp-token.ts` (бот и веб — тонкие двери).
 
 | Инструмент | Описание |
 |---|---|
@@ -207,9 +198,12 @@ recorder/                       # SwarmRecorder — macOS меню-бар рек
 - **Стек:** Next.js 16 + React 19 + Tailwind + shadcn; статический экспорт, хостинг — Cloudflare Pages (`swarm-brain.pages.dev`)
 - **Бэкенд:** edge-функция `swarm-api` — REST поверх той же бизнес-логики, что и бот (новой логики нет, только маршруты)
 - **Два режима входа:** в Telegram — по `initData` (подпись бота); в браузере — Telegram Login Widget → JWT в httpOnly-cookie
-- **Экраны:** поиск + AI-ответ (RAG со сносками на источники), доска задач (на десктопе — виды Доска / Таймлайн / Спринт / Граф), база знаний, встречи + вычитка тезисов и публикация. Адаптив: мобайл — нижний таб-бар, десктоп — бенто-дашборд
-- **Приватность («Рой»):** приватные задачи и записи видны только владельцу — командный бот их не показывает
-- Детали — `docs/ARCHITECTURE.md` (swarm-api + miniapp), `docs/MINIAPP_EXPANSION.md`
+- **Экраны:** поиск + AI-ответ (RAG со сносками), доска задач (десктоп — виды Список / Таймлайн / Спринт / Граф; линзы Мои / Команда / Все; для админа — «Все сотрудники» с группировкой по исполнителю), база знаний, встречи + вычитка и публикация. Адаптив: мобайл — таб-бар, десктоп — бенто-дашборд
+- **Настройки** («Ещё»): профиль/рынки, Granola, Google-календарь, дайджест, загрузка файла, фидбек, **Рекордер** и **Claude Desktop** — установка из веба (зеркало `/recordertoken` и `/setup`)
+- **Админка** (для админов): воркспейсы (создать/переименовать), пользователи (добавить/переместить/удалить, правка профилей), broadcast, сводка «на вычитке по участникам» — паритет с бот-суперадмином
+- **Админ = суперадмин:** `isAdmin = зашитый ADMIN_USER_ID ИЛИ флаг allowed_users.is_admin` (мультиадмин); админ видит все данные воркспейса
+- **Приватность («Рой»):** приватные задачи и записи видны только владельцу — командный бот их не показывает; страны отображаются короткими ISO-кодами (GE / TR / …)
+- Детали — `docs/ARCHITECTURE.md` (swarm-api + miniapp), `docs/MINIAPP_ARCHITECTURE.md`
 
 ### Рекордер встреч — SwarmRecorder (macOS)
 
@@ -218,7 +212,8 @@ recorder/                       # SwarmRecorder — macOS меню-бар рек
 - **Две дорожки звука:** системный звук собеседников (ScreenCaptureKit) + микрофон (AVAudioRecorder) → сервер транскрибирует каждую (Whisper) и сводит по таймстампам с метками «я» / «собеседник»
 - **Клиент «тупой»:** никакой LLM на машине — транскрибация и тезисы целиком на сервере (`meeting-claim` → `meeting-ingest`)
 - **Без календаря:** дедуп встречи — по комнате из ссылки звонка (Meet / Контур.Толк); авто-детект звонка — по занятости микрофона **с явным согласием** (молча не пишет)
-- **Распространение:** без платного Apple-аккаунта (`recorder/install.sh`); токен вставляется через меню приложения
+- **Durable-обработка:** длинные встречи режутся на куски, транскрибируются cron-воркером `meeting-process` (переживает лимиты воркера); тезисы — по готовности
+- **Установка:** команда из `/recordertoken` в боте **или** веб → Настройки → Рекордер (`curl … | bash`, ставит `.app` в /Applications без платного Apple-аккаунта); токен — отдельный от Claude Desktop, на год
 - Подробности и сборка — **[recorder/README.md](recorder/README.md)**
 
 ---
@@ -230,9 +225,10 @@ recorder/                       # SwarmRecorder — macOS меню-бар рек
 supabase functions deploy swarm-bot --no-verify-jwt
 supabase functions deploy swarm-mcp --no-verify-jwt
 supabase functions deploy swarm-api --no-verify-jwt          # бэкенд веб/Mini App
-supabase functions deploy meeting-claim --no-verify-jwt       # рекордер
-supabase functions deploy meeting-ingest --no-verify-jwt      # рекордер
-supabase functions deploy read-ai-webhook --no-verify-jwt
+supabase functions deploy meeting-claim --no-verify-jwt       # рекордер: claim/lease
+supabase functions deploy meeting-ingest --no-verify-jwt      # рекордер: приём аудио
+supabase functions deploy meeting-process --no-verify-jwt     # рекордер: cron durable-обработки
+supabase functions deploy read-ai-webhook --no-verify-jwt     # Read.ai (отключается)
 # granola-poller — LEGACY, выведен из крона; деплоить не нужно. Поллинг Granola идёт через swarm-bot ({"granola_poll":true}, см. Шаг 12 в docs/SETUP.md)
 
 # Веб/Mini App — статический экспорт → Cloudflare Pages
