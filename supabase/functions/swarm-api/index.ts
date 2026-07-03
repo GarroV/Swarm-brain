@@ -336,7 +336,7 @@ Deno.serve(async (req: Request) => {
     const p = profile as { first_name?: string; last_name?: string; role?: string; markets?: string[] } | null;
     const username = (allowedUser as { username?: string } | null)?.username ?? null;
     const name = (p ? [p.first_name, p.last_name].filter(Boolean).join(" ") : null) || username || String(telegram_id);
-    return json({ telegram_id, name, username, group_id: groupId, language: language_code, role: p?.role ?? null, markets: p?.markets ?? [], is_admin: isAdmin }, 200, origin);
+    return json({ telegram_id, name, username, group_id: groupId, language: language_code, role: p?.role ?? null, markets: p?.markets ?? [], is_admin: isAdmin, is_demo: isDemo }, 200, origin);
   }
 
   // GET /config

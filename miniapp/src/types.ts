@@ -65,6 +65,7 @@ export type Me = {
   role: string | null;
   markets: string[];
   is_admin: boolean;
+  is_demo?: boolean;
 };
 
 export type AdminWorkspace = {

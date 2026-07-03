@@ -4,6 +4,7 @@ import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId } from "@/lib/telegram";
+import { logout } from "@/lib/api";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { RoyNavContext, useRoyNav, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
 import type { Lens, SmartListId } from "@/lib/smartLists";
@@ -155,8 +156,22 @@ export function RoyApp({ me }: { me: Me | null }) {
 
   return (
     <RoyNavContext.Provider value={nav}>
-      <div className="flex h-[100dvh] bg-background text-foreground dark:bg-transparent">
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex flex-col h-[100dvh] bg-background text-foreground dark:bg-transparent">
+        {me?.is_demo && (
+          <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-4 py-1.5 text-white" style={{ fontSize: 13 }}>
+            <span className="font-semibold">🎬 Демо-режим</span>
+            <span className="hidden opacity-90 sm:inline">— витрина Swarm Brain, не рабочее окружение</span>
+            <button
+              type="button"
+              onClick={async () => { try { await logout(); } finally { window.location.href = "/login"; } }}
+              className="rounded-full bg-white/20 px-3 py-0.5 font-semibold transition-colors hover:bg-white/30"
+            >
+              Выйти из демо
+            </button>
+          </div>
+        )}
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <div
             className={cn(
               "relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden",
@@ -209,6 +224,7 @@ export function RoyApp({ me }: { me: Me | null }) {
               в углу с inline-секциями Настройки/Команда/Админ, без перехода на страницу.
               На мобайле — аватар в шапке + таб-бар. */}
           {isDesktop && <ProfileMenu />}
+        </div>
         </div>
       </div>
 
