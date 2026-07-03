@@ -521,6 +521,7 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 - **Админ** = `telegram_id === ADMIN_USER_ID` (зашитый суперадмин-разработчик, `lib/supabase.ts`, fail-safe) **ЛИБО** `allowed_users.is_admin=true` (напр. руководитель — «видит ВСЁ»). Единый признак: swarm-api считает `isAdmin` в резолве пользователя (`index.ts`, флаг тянется из `allowed_users`), бот — хелпер `isAdminUser()` (`lib/supabase.ts`). Админ видит все данные воркспейса (showAll задач/встреч, `/admin/*`-роуты, `canViewTask`) и управляет воркспейсами/пользователями. Защита самого суперадмина от удаления привязана к зашитому `ADMIN_USER_ID`.
 - Все запросы через `SERVICE_ROLE_KEY` — RLS не работает, фильтрация только в коде
 - Workspace-изоляция: все запросы к `entries` и `tasks` фильтруются по `group_id` пользователя — пользователь видит только данные своего воркспейса
+- **Demo-сессия** (`telegram_id === DEMO_USER_ID` 900000001, вход по секретной ссылке `/api/auth/demo?key=<DEMO_ACCESS_KEY>`): барьер `isDemo` в `swarm-api` форсит `group_id='demo'` (НЕ из БД), `isAdmin=false`, 403 на токен-минт. Admin-роуты недоступны (они НЕ group-scoped — broadcast шлёт всем, workspaces/:id/users по любому id — были бы дырами). Данные изолированы тем же `group_id`-фильтром, что `cee`↔`other`. Наполнение — `supabase/demo-seed.sql` (идемпотентный ресет к эталону)
 
 ## Воркспейсы
 
