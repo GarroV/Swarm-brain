@@ -63,6 +63,12 @@ export function TasksFromMeeting({
     setTasks((prev) => prev?.filter((t) => t._key !== key) ?? null);
   };
 
+  // Своя задача вручную (не из GPT) — пустая карточка в тот же список: вписать название → Себе/В общие.
+  const addOwnRow = () => {
+    const row: DraftTask = { title: "", _key: `own-${Date.now()}` };
+    setTasks((prev) => [...(prev ?? []), row]);
+  };
+
   const addTask = async (task: DraftTask, target: TaskTarget) => {
     if (addingKey) return;
     const title = task.title.trim();
@@ -95,16 +101,27 @@ export function TasksFromMeeting({
         <span className="font-bold uppercase text-ink-mute" style={{ fontSize: 12, letterSpacing: "0.05em" }}>
           Задачи из встречи
         </span>
-        <button
-          type="button"
-          disabled={loading || !hasContent}
-          onClick={extract}
-          className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,opacity,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
-          style={{ padding: "6px 12px", fontSize: 12 }}
-        >
-          <RoyIcon name="spark" size={13} strokeWidth={1.9} />
-          {loading ? "Генерируем…" : "Сгенерировать задачи"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={addOwnRow}
+            className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
+            style={{ padding: "6px 12px", fontSize: 12 }}
+          >
+            <RoyIcon name="plus" size={13} strokeWidth={2.1} />
+            Своя
+          </button>
+          <button
+            type="button"
+            disabled={loading || !hasContent}
+            onClick={extract}
+            className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,opacity,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
+            style={{ padding: "6px 12px", fontSize: 12 }}
+          >
+            <RoyIcon name="spark" size={13} strokeWidth={1.9} />
+            {loading ? "Генерируем…" : "Сгенерировать"}
+          </button>
+        </div>
       </div>
 
       {!hasContent && (
@@ -126,7 +143,9 @@ export function TasksFromMeeting({
                     value={t.title}
                     onChange={(e) => setTitle(t._key, e.target.value)}
                     disabled={busy}
-                    className="min-w-0 flex-1 rounded-[9px] border border-line bg-surface text-ink font-medium outline-none focus:border-[var(--accent-ink)] disabled:opacity-50"
+                    placeholder="Название задачи"
+                    autoFocus={t._key.startsWith("own-")}
+                    className="min-w-0 flex-1 rounded-[9px] border border-line bg-surface text-ink font-medium outline-none focus:border-[var(--accent-ink)] disabled:opacity-50 placeholder:text-ink-mute"
                     style={{ fontSize: 13, padding: "6px 9px" }}
                   />
                   <button
