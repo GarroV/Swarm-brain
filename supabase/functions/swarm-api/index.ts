@@ -1604,16 +1604,24 @@ Deno.serve(async (req: Request) => {
       .not("source", "eq", "digest")
       .or(`is_private.eq.false,and(is_private.eq.true,owner_id.eq.${telegram_id})`)
       .order("created_at", { ascending: false })
-      .limit(50);
-    // Строго по странам пользователя И без пан-компанийных записей (тег General / широкий
-    // охват вроде «Happy Restaurant» на 17 стран) — иначе общая инфа протекает как «ахинея».
-    if (countryVariants.length) q = q.overlaps("countries", countryVariants).not("countries", "cs", "{General}");
+      .limit(80);
+    // Охват: НЕ-админ — строго по своим рынкам (markets); АДМИН видит весь воркспейс (все страны).
+    // Тег General НЕ дисквалифицирует запись — он есть почти у всех записей рядом с конкретными
+    // странами. Раньше `.not(countries cs General)` выкидывал легитимные рыночные записи
+    // (напр. [ME,SI,HR,RS,BG,General]) → дайджест схлопывался до 1–2 стран. Фильтр «пан-компанийного
+    // шума» ниже смотрит на КОНКРЕТНЫЕ страны (без General), а не на наличие General.
+    if (!isAdmin && countryVariants.length) q = q.overlaps("countries", countryVariants);
     const { data: entriesRaw } = await q;
-    // Отсечь пан-компанийные записи, помеченные слишком многими странами (>6 = не рыночная новость).
-    const entries = (entriesRaw ?? []).filter((e: { countries?: string[] }) => !e.countries || e.countries.length <= 6);
+    // Пан-компанийный шум (не рыночная новость, давал «ахинею»): нет ни одной конкретной страны
+    // ЛИБО охват >6 стран (широкое объявление на всю сеть). В персональный дайджест не берём.
+    const meaningfulCountries = (cs?: string[]): string[] => (cs ?? []).filter((c) => c !== "General");
+    const entries = (entriesRaw ?? []).filter((e: { countries?: string[] }) => {
+      const m = meaningfulCountries(e.countries);
+      return m.length >= 1 && m.length <= 6;
+    });
 
     if (!entries?.length) {
-      const msg = markets.length
+      const msg = (!isAdmin && markets.length)
         ? `За этот период нет записей по вашим странам (${markets.map((m) => COUNTRY_NAMES[m] ?? m).join(", ")}).`
         : "За указанный период нет записей.";
       return json({ text: msg }, 200, origin);
@@ -1634,7 +1642,7 @@ Deno.serve(async (req: Request) => {
     };
     const entriesText = (entries as EntryRow[]).map((e) => {
       const date = new Date(e.created_at).toLocaleDateString("ru-RU");
-      return `[${entryCountryLabel(e.countries)} · ${date}] ${(e.summary ?? e.content).slice(0, 320)}`;
+      return `[${entryCountryLabel(e.countries)} · ${date}] ${(e.summary ?? e.content).slice(0, 500)}`;
     }).join("\n\n---\n\n");
 
     const marketNames = markets.map((m) => COUNTRY_NAMES[m] ?? m).join(", ");
@@ -1646,10 +1654,10 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: `Ты аналитик команды. Составь персональный дайджест за ${periodLabel} для сотрудника (${contextLine}).\n\nГЛАВНОЕ: сгруппируй СТРОГО ПО СТРАНАМ. Каждая запись помечена страной в начале — [Страна · дата]. Для КАЖДОЙ страны, по которой есть записи, сделай отдельный блок строго в формате:\n## <Страна>\n- пункт (что обсуждали / сделали / проблема / план по этой стране)\n2–5 пунктов на страну. Страны без записей НЕ упоминай. Не смешивай разные страны в один блок.\n\nБЕЗ ДУБЛЕЙ: каждую запись используй РОВНО в ОДНОМ страновом блоке (по её метке) — НЕ повторяй один и тот же факт/пункт в разных странах.\n\nЖЁСТКО: используй ТОЛЬКО факты из записей. НЕ придумывай цифры, названия компаний, ИМЕНА людей, события, сроки. Если ответственный/имя не указаны в записи — не пиши их. Не пиши вводных абзацев и итогов — только блоки по странам. Отвечай на русском.` },
-          { role: "user", content: entriesText.slice(0, 9000) },
+          { role: "system", content: `Ты аналитик команды. Составь персональный дайджест за ${periodLabel} для сотрудника (${contextLine}).\n\nГЛАВНОЕ: сгруппируй СТРОГО ПО СТРАНАМ. Каждая запись помечена страной в начале — [Страна · дата]. Для КАЖДОЙ страны, по которой есть записи, сделай отдельный блок строго в формате:\n## <Страна>\n- пункт (что обсуждали / сделали / проблема / план по этой стране)\n3–7 пунктов на страну — не жалей деталей: конкретные факты, числа, решения, проблемы, планы, открытые вопросы. Страны без записей НЕ упоминай. Не смешивай разные страны в один блок.\n\nБЕЗ ДУБЛЕЙ: каждую запись используй РОВНО в ОДНОМ страновом блоке (по её метке) — НЕ повторяй один и тот же факт/пункт в разных странах.\n\nЖЁСТКО: используй ТОЛЬКО факты из записей. НЕ придумывай цифры, названия компаний, ИМЕНА людей, события, сроки. Если ответственный/имя не указаны в записи — не пиши их. Не пиши вводных абзацев и итогов — только блоки по странам. Отвечай на русском.` },
+          { role: "user", content: entriesText.slice(0, 13000) },
         ],
-        max_tokens: 1500,
+        max_tokens: 2600,
       }),
     });
     if (!gptRes.ok) return apiErr(500, "GPT error", origin);
