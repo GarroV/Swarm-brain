@@ -22,6 +22,8 @@ import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
+// Эндпоинт MCP-сервера для ручного подключения (веб-коннектор claude.ai: URL + Bearer-токен).
+const SWARM_MCP_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp";
 
 // ── Background runner — returns 200 to Telegram immediately, processes async ──
 
@@ -596,12 +598,18 @@ Deno.serve(async (req: Request) => {
       await sendMessage(chatId, rvErr ? "❌ Не удалось отозвать." : "🔒 <b>Токен рекордера отозван.</b> Новый — через /recordertoken.");
     } else if (command === "/connect_claude") {
       await sendMessage(chatId,
-        `<b>🖥 Как подключить Claude Desktop</b>\n\n` +
-        `<b>Самый простой способ (macOS)</b> — команда /setup: пришлёт одну строчку для Терминала, которая поставит и настроит всё сама. Ничего вручную трогать не нужно.\n\n` +
-        `После подключения создай проект:\n` +
+        `<b>🖥 Как подключить Claude к базе знаний</b>\n\n` +
+        `<b>Вариант A — Claude Desktop (приложение на Mac)</b>\n` +
+        `Команда /setup пришлёт одну строчку для Терминала — она поставит и настроит всё сама. Ничего вручную трогать не нужно.\n\n` +
+        `<b>Вариант B — Claude в браузере (claude.ai)</b>\n` +
+        `1️⃣ Возьми токен: /mytoken\n` +
+        `2️⃣ На claude.ai: Settings → Connectors → Add custom connector\n` +
+        `3️⃣ URL: <code>${SWARM_MCP_URL}</code>\n` +
+        `4️⃣ Authentication → Bearer token → вставь свой токен\n` +
+        `5️⃣ Save. Готово.\n\n` +
+        `После подключения (любой вариант) создай проект:\n` +
         `Projects → New Project → вставь инструкции из /claude в поле Instructions.\n\n` +
-        `Всё. Можно кидать транскрипты и задавать вопросы по базе знаний.\n\n` +
-        `<i>Хочешь настроить вручную — /mytoken даст токен для своего config.json.</i>`
+        `<i>Токен протух / «Invalid token»? Он не истекает по времени — обычно это старый токен в настройках. Возьми свежий: /mytoken (или /setup на Mac) и обнови его в коннекторе.</i>`
       );
     } else if (command === "/claude") {
       const instructions =
