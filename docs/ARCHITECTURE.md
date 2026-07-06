@@ -489,10 +489,14 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 | `fb_done` | Пропустить скриншот, сохранить фидбек без фото |
 | `fb_read_<feedbackId>` | Кнопка "Прочитано" в канале — удалить из БД и убрать сообщение |
 
-### MCP-токен (`/mytoken`)
+### MCP/рекордер-токен — подтверждение перевыпуска (`/mytoken`, `/setup`, `/recordertoken`)
 | Код | Действие |
 |----|---------|
-| `mtk_reissue` | Подтвердить экстренный перевыпуск MCP-токена, когда живой уже есть (обработка `swarm-bot/index.ts`); см. §MCP-аутентификация |
+| `mtk_reissue` | Подтвердить перевыпуск MCP-токена (`/mytoken`), когда живой уже есть |
+| `setup_reissue` | Подтвердить переподключение Claude Desktop (`/setup`), когда токен уже активен |
+| `rtk_reissue` | Подтвердить перевыпуск токена рекордера (`/recordertoken`), когда живой уже есть |
+
+_Все три: перевыпуск **убивает старый токен**, поэтому без явного подтверждения молчаливый минт рвал бы рабочий config.json/коннектор. Обработка — `swarm-bot/index.ts`; см. §MCP-аутентификация._
 
 ---
 
@@ -568,8 +572,10 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
   2. **Протокольные методы (`initialize` / `tools/list` / `notifications/initialized`) отвечают ВСЕГДА**, независимо от токена — иначе устаревший/неверный Bearer в коннекторе claude.ai роняет весь хендшейк (`-32001` на `initialize`) и коннектор молча «отваливается» целиком (подтверждено репродукцией офиц. MCP SDK: `connect()` падал на `-32001`; fix 2026-07-01). Раскрываются только имена/описания инструментов — не данные
   3. На `tools/call`: `tokenError` → отказ с подсказкой (`Invalid token`/`Token expired — run /mytoken`); в strict-режиме без валидного токена → отказ; иначе `verifiedTelegramId` инжектируется в `args.requesting_user_id` (значение из тела игнорируется)
   4. `MCP_AUTH_REQUIRED=true` → строгий режим (без валидного токена `tools/call` — отказ; хендшейк по-прежнему проходит)
-- Выдача: `/setup` в боте (минтит токен + даёт команду авто-установки, см. `swarm-setup`), `/mytoken` (ручной токен для своего config.json) или `SELECT generate_mcp_token(<telegram_id>)` в SQL. Plaintext единожды. Логика минта — общий хелпер `swarm-bot/lib/mcp-setup.ts` (`mintMcpToken`)
-- ⚠️ **`/mytoken` не перевыпускает молча**: если живой токен уже есть (`hasActiveMcpToken`), бот предупреждает и просит подтверждения кнопкой `mtk_reissue` (callback, обрабатывается в `swarm-bot/index.ts` ~134; кнопка генерится ~417) — экстренный перевыпуск токена, иначе случайный `/mytoken` убил бы рабочий `config.json`. `/setup` минтит всегда (ему нужен plaintext для команды) и сам же переписывает config, поэтому самосогласован
+- Выдача: `/setup` в боте (минтит токен + даёт команду авто-установки, см. `swarm-setup`), `/mytoken` (голый токен — для ручного config.json ИЛИ веб-коннектора) или `SELECT generate_mcp_token(<telegram_id>)` в SQL. Plaintext единожды. Логика минта — общий хелпер `swarm-bot/lib/mcp-setup.ts` (`mintMcpToken`)
+- **Два пути подключения** (инструкция для пользователя — `/connect_claude`): **(A) Claude Desktop на Mac** — `/setup` ставит мост `mcp-remote` + пишет `config.json` (только stdio-форма); **(B) claude.ai в браузере** — `/mytoken` даёт голый токен, пользователь вставляет вручную в Settings → Connectors (URL `swarm-mcp` + Bearer). Оба шлют тот же `Authorization: Bearer smcp_…`
+- ⚠️ **Ни `/setup`, ни `/mytoken`, ни `/recordertoken` НЕ перевыпускают токен молча.** Перевыпуск **убивает старый токен** (`mintMcpToken` перезаписывает hash → прежний мгновенно мёртв). Если живой токен уже есть (`hasActiveMcpToken`/`hasActiveRecorderToken`), бот предупреждает и просит подтверждения кнопкой: `mtk_reissue` (/mytoken), `setup_reissue` (/setup), `rtk_reissue` (рекордер) — callbacks в `swarm-bot/index.ts`. Молчаливый минт — **только при первом подключении** (активного токена ещё нет). До fix 2026-07-06 `/setup` минтил безусловно → повторный `/setup` рвал рабочий config.json/коннектор — это была частая причина жалоб «токен протух»
+- 🔍 **«Токен протух» / `Invalid token` почти всегда = рассинхрон, НЕ истечение.** MCP-токен бессрочный (`expires_at=null`) — по времени не умирает. Ошибка значит: клиент (config.json Desktop или Bearer в коннекторе claude.ai) шлёт СТАРЫЙ токен, которого уже нет в БД. Диагностика: `SELECT claude_mcp_token_hash IS NOT NULL AS has, claude_mcp_token_expires_at FROM allowed_users WHERE telegram_id=<id>` — если `has=true` и `expires_at=null`, токен в БД жив → чинить КЛИЕНТА. Починка: `/mytoken` → «Всё равно перевыпустить» → свежий токен → обновить в коннекторе; или `/setup` (Mac) → переустановит config
 - Отзыв: `/revoketoken` в боте или `SELECT revoke_mcp_token(<telegram_id>)` (гасит хэш + срок)
 - ⚠️ В `claude_desktop_config.json` использовать только stdio-форму (`command`+`mcp-remote`); поле `url`/`type:http` Claude Desktop молча затирает весь `mcpServers` (anthropics/claude-code#37286)
 
