@@ -50,6 +50,27 @@ async function sendMyToken(chatId: number, userId: number): Promise<void> {
   );
 }
 
+// Минтит MCP-токен и присылает однострочник установки Claude Desktop (общий путь для /setup
+// и подтверждённого переподключения setup_reissue). Перевыпуск УБИВАЕТ старый токен — поэтому
+// /setup зовёт это молча только при ПЕРВОМ подключении (когда активного токена ещё нет).
+async function sendSetupOneLiner(chatId: number, userId: number): Promise<void> {
+  const minted = await mintMcpToken(userId);
+  if (!minted) {
+    await sendMessage(chatId, "❌ Не удалось подготовить подключение. Попробуй позже или напиши администратору.");
+    return;
+  }
+  await sendMessage(chatId,
+    `<b>🖥 Подключаем Claude Desktop за один шаг</b> (macOS)\n\n` +
+    `1️⃣ Открой приложение <b>Терминал</b>\n` +
+    `<i>(⌘+Пробел → набери «Терминал» → Enter)</i>\n\n` +
+    `2️⃣ Вставь эту команду (⌘+V) и нажми Enter:\n\n` +
+    `<code>${buildSetupOneLiner(minted.token)}</code>\n\n` +
+    `3️⃣ Подожди — скрипт сам поставит всё нужное и перезапустит Claude. Готово ✅\n\n` +
+    `<i>В команде твой личный токен (бессрочный). Никому не пересылай. Отозвать: /revoketoken.</i>\n\n` +
+    `Текст инструкций для проекта Claude → /claude`
+  );
+}
+
 // Минтит токен рекордера и присылает готовый однострочник установки (общий путь для
 // /recordertoken и подтверждённого перевыпуска rtk_reissue). Мгновенный сетап как у /setup:
 // одна команда в Терминале — поставит и настроит рекордер сам.
@@ -226,6 +247,11 @@ Deno.serve(async (req: Request) => {
     try {
       if (cb.data === "mtk_reissue") {
         await sendMyToken(chatId, userId);
+        return new Response("OK", { status: 200 });
+      }
+
+      if (cb.data === "setup_reissue") {
+        await sendSetupOneLiner(chatId, userId);
         return new Response("OK", { status: 200 });
       }
 
@@ -507,20 +533,19 @@ Deno.serve(async (req: Request) => {
     } else if (command === "/digest") {
       bgRun(generatePersonalDigest(chatId, userId, 7, groupId), chatId);
     } else if (command === "/setup") {
-      const minted = await mintMcpToken(userId);
-      if (!minted) {
-        await sendMessage(chatId, "❌ Не удалось подготовить подключение. Попробуй позже или напиши администратору.");
-      } else {
-        await sendMessage(chatId,
-          `<b>🖥 Подключаем Claude Desktop за один шаг</b> (macOS)\n\n` +
-          `1️⃣ Открой приложение <b>Терминал</b>\n` +
-          `<i>(⌘+Пробел → набери «Терминал» → Enter)</i>\n\n` +
-          `2️⃣ Вставь эту команду (⌘+V) и нажми Enter:\n\n` +
-          `<code>${buildSetupOneLiner(minted.token)}</code>\n\n` +
-          `3️⃣ Подожди — скрипт сам поставит всё нужное и перезапустит Claude. Готово ✅\n\n` +
-          `<i>В команде твой личный токен (бессрочный). Никому не пересылай. Отозвать: /revoketoken.</i>\n\n` +
-          `Текст инструкций для проекта Claude → /claude`
+      // Уже подключён? НЕ перевыпускаем молча — новый токен убьёт рабочий config.json на
+      // другом Mac. Это была частая причина «токен протух»: повторный /setup рвал живое
+      // подключение. Просим подтверждение — как /mytoken и /recordertoken.
+      if (await hasActiveMcpToken(userId)) {
+        await sendInlineMessage(chatId,
+          `🖥 <b>Claude Desktop уже подключён.</b>\n\n` +
+          `Если он работает — <b>ничего делать не нужно</b>.\n\n` +
+          `Переподключение нужно, только если ставишь на <b>новый Mac</b> или потерял токен. ` +
+          `Оно <b>убьёт старое подключение</b>: прежний Mac перестанет видеть базу, пока не переустановишь командой.`,
+          [[{ text: "🔄 Всё равно переподключить", callback_data: "setup_reissue" }]]
         );
+      } else {
+        await sendSetupOneLiner(chatId, userId);
       }
     } else if (command === "/mytoken") {
       // Ручной токен (для тех, кто настраивает config сам). Авто-путь — /setup.
