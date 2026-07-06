@@ -319,26 +319,33 @@ function GranolaSection() {
 
 // ── Digest section ────────────────────────────────────────────────────────────
 
-function DigestSection() {
+function DigestSection({ isAdmin }: { isAdmin: boolean }) {
   const [days, setDays] = useState(7);
+  const [allCountries, setAllCountries] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
-  // Период сохраняется и используется секцией дайджеста на главной (см. dash/PersonalDigest).
+  // Период и охват сохраняются и используются секцией дайджеста на главной (см. dash/PersonalDigest).
   useEffect(() => {
     const v = Number(localStorage.getItem("roy_digest_days"));
     if (v === 14 || v === 30) setDays(v);
+    setAllCountries(localStorage.getItem("roy_digest_all_countries") === "1");
   }, []);
   const chooseDays = (d: number) => {
     setDays(d);
     try { localStorage.setItem("roy_digest_days", String(d)); } catch { /* приватный режим */ }
+  };
+  const toggleAllCountries = () => {
+    const v = !allCountries;
+    setAllCountries(v);
+    try { localStorage.setItem("roy_digest_all_countries", v ? "1" : "0"); } catch { /* приватный режим */ }
   };
 
   const handleGenerate = async () => {
     setGenerating(true);
     setResult(null);
     try {
-      const { text } = await generateDigest(days);
+      const { text } = await generateDigest(days, allCountries);
       setResult(text);
     } finally {
       setGenerating(false);
@@ -360,6 +367,21 @@ function DigestSection() {
         ))}
       </div>
       <p className="text-xs text-ink-soft">Этот период используется для дайджеста на главной.</p>
+      {isAdmin && (
+        <button
+          type="button"
+          onClick={toggleAllCountries}
+          className="flex w-full items-center gap-2.5 rounded-lg border border-line bg-surface px-3 py-2 text-left transition-colors hover:border-line-2"
+        >
+          <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border transition-colors ${allCountries ? "border-primary bg-primary text-primary-foreground" : "border-line-2"}`}>
+            {allCountries && <RoyIcon name="check" size={13} strokeWidth={2.4} />}
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-ink">Все страны воркспейса</span>
+            <span className="block text-xs text-ink-soft">По умолчанию дайджест — по вашим рынкам. Включите, чтобы видеть обзор по всем рынкам команды.</span>
+          </span>
+        </button>
+      )}
       <Button onClick={handleGenerate} disabled={generating} className="w-full">
         {generating ? "Генерирую (~10 сек)…" : "Сгенерировать дайджест"}
       </Button>
@@ -708,7 +730,7 @@ export function SettingsScreen() {
           <ClaudeDesktopSection />
         </Section>
         <Section icon="note" title="Дайджест">
-          <DigestSection />
+          <DigestSection isAdmin={!!me?.is_admin} />
         </Section>
         <Section icon="doc" title="Загрузить файл">
           <UploadSection />

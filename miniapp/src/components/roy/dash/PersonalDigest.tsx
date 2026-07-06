@@ -13,9 +13,16 @@ export function readDigestDays(): number {
 }
 export const digestPeriodLabel = (d: number) => (d === 14 ? "за 2 недели" : d === 30 ? "за месяц" : "за неделю");
 
+// Админ-опция «весь воркспейс» (чекбокс в Настройки → Дайджест, localStorage). Для не-админа
+// сервер игнорирует флаг. Дефолт выкл — дайджест строго по своим рынкам, как у всех.
+export function readDigestAllCountries(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem("roy_digest_all_countries") === "1";
+}
+
 // Кэш последнего дайджеста, чтобы показывать сразу и авто-обновлять раз в день.
 const CACHE_KEY = "roy_digest_cache_v3"; // bump → сброс старого кэша при смене структуры дайджеста (v3: без дублей стран + без выдуманных имён)
-type DigestCache = { text: string; at: string; days: number };
+type DigestCache = { text: string; at: string; days: number; all: boolean };
 function loadCache(): DigestCache | null {
   if (typeof window === "undefined") return null;
   try { return JSON.parse(window.localStorage.getItem(CACHE_KEY) || "null"); } catch { return null; }
@@ -45,11 +52,12 @@ export function PersonalDigest({ className }: { className?: string }) {
   const run = useCallback(async (d: number) => {
     setGenerating(true);
     try {
-      const r = await generateDigest(d);
+      const all = readDigestAllCountries();
+      const r = await generateDigest(d, all);
       const now = new Date().toISOString();
       setText(r.text);
       setAt(now);
-      try { window.localStorage.setItem(CACHE_KEY, JSON.stringify({ text: r.text, at: now, days: d })); } catch { /* приватный режим */ }
+      try { window.localStorage.setItem(CACHE_KEY, JSON.stringify({ text: r.text, at: now, days: d, all })); } catch { /* приватный режим */ }
     } catch {
       if (!text) setText("Не удалось обновить дайджест. Попробуйте «Обновить».");
     } finally {
@@ -62,8 +70,8 @@ export function PersonalDigest({ className }: { className?: string }) {
     setDays(d);
     const cache = loadCache();
     if (cache) { setText(cache.text); setAt(cache.at); }
-    // Устарел, если кэша нет, сменился период, или последний прогон был до сегодняшних 8:00.
-    const stale = !cache || cache.days !== d || new Date(cache.at).getTime() < freshnessBoundary();
+    // Устарел, если кэша нет, сменился период/охват, или последний прогон был до сегодняшних 8:00.
+    const stale = !cache || cache.days !== d || cache.all !== readDigestAllCountries() || new Date(cache.at).getTime() < freshnessBoundary();
     if (stale) run(d);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

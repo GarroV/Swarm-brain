@@ -766,9 +766,11 @@ export async function sendFeedback(text: string): Promise<void> {
   return apiFetch<void>("/feedback", { method: "POST", body: JSON.stringify({ text }) });
 }
 
-export async function generateDigest(days = 7): Promise<{ text: string }> {
+// allCountries — админ-опция «весь воркспейс» (иначе дайджест строго по своим рынкам). Сервер
+// применяет флаг только для админа (гейт isAdmin), не-админу игнорирует.
+export async function generateDigest(days = 7, allCountries = false): Promise<{ text: string }> {
   if (DEV_MODE) return { text: "**Дайджест за 7 дней**\n\n• Встреча с партнёром в Варшаве\n• Обсуждение стратегии Q3\n• Запуск локализации для KZ" };
-  return apiFetch<{ text: string }>("/digest", { method: "POST", body: JSON.stringify({ days }) });
+  return apiFetch<{ text: string }>("/digest", { method: "POST", body: JSON.stringify({ days, all_countries: allCountries }) });
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

@@ -1576,6 +1576,10 @@ Deno.serve(async (req: Request) => {
     try { body = await req.json(); } catch { body = {}; }
     const daysBack = typeof body.days === "number" ? body.days : 7;
     const since = new Date(Date.now() - daysBack * 86400000).toISOString();
+    // Опция «весь воркспейс» — чекбокс в настройках дайджеста, ТОЛЬКО для админа (руководителю
+    // нужен обзор по всем рынкам). Дефолт выкл: даже админ видит дайджест по своим markets, как все.
+    // Гейт `isAdmin &&` — чтобы не-админ не мог снять фильтр рынков, подделав флаг в теле.
+    const allCountries = isAdmin && body.all_countries === true;
 
     const { data: profile } = await supabase.from("user_profiles")
       .select("first_name, last_name, role, markets").eq("telegram_id", telegram_id).maybeSingle();
@@ -1605,12 +1609,13 @@ Deno.serve(async (req: Request) => {
       .or(`is_private.eq.false,and(is_private.eq.true,owner_id.eq.${telegram_id})`)
       .order("created_at", { ascending: false })
       .limit(80);
-    // Охват: НЕ-админ — строго по своим рынкам (markets); АДМИН видит весь воркспейс (все страны).
+    // Охват: по умолчанию строго по своим рынкам (markets) — для всех, включая админа. Админ может
+    // включить «весь воркспейс» чекбордом (allCountries) → фильтр рынков снимается.
     // Тег General НЕ дисквалифицирует запись — он есть почти у всех записей рядом с конкретными
     // странами. Раньше `.not(countries cs General)` выкидывал легитимные рыночные записи
     // (напр. [ME,SI,HR,RS,BG,General]) → дайджест схлопывался до 1–2 стран. Фильтр «пан-компанийного
     // шума» ниже смотрит на КОНКРЕТНЫЕ страны (без General), а не на наличие General.
-    if (!isAdmin && countryVariants.length) q = q.overlaps("countries", countryVariants);
+    if (!allCountries && countryVariants.length) q = q.overlaps("countries", countryVariants);
     const { data: entriesRaw } = await q;
     // Пан-компанийный шум (не рыночная новость, давал «ахинею»): нет ни одной конкретной страны
     // ЛИБО охват >6 стран (широкое объявление на всю сеть). В персональный дайджест не берём.
@@ -1621,7 +1626,7 @@ Deno.serve(async (req: Request) => {
     });
 
     if (!entries?.length) {
-      const msg = (!isAdmin && markets.length)
+      const msg = (!allCountries && markets.length)
         ? `За этот период нет записей по вашим странам (${markets.map((m) => COUNTRY_NAMES[m] ?? m).join(", ")}).`
         : "За указанный период нет записей.";
       return json({ text: msg }, 200, origin);
