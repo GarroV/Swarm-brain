@@ -292,13 +292,28 @@ function parseTezisy(src: string): TezisyBlock[] {
 
 // Инлайн-markdown: **жирный** → <strong> (срезаем звёздочки). GPT-дайджест шлёт **...**,
 // а tezisy встреч иногда тоже — иначе видны сырые звёздочки.
-function renderInline(text: string): ReactNode {
-  const parts = text.split(/(\*\*[^*]+?\*\*)/g);
-  return parts.map((p, i) =>
-    p.length > 4 && p.startsWith("**") && p.endsWith("**")
-      ? <strong key={i} className="font-semibold text-ink">{p.slice(2, -2)}</strong>
-      : p,
-  );
+function renderInline(text: string, onSource?: (n: number) => void): ReactNode {
+  // Разбиваем по **bold** и сноскам [n]. Сноска → верхний индекс; кликабельный, если задан onSource
+  // (клик открывает исходную запись — используется в дайджесте, где пункт привязан к источнику).
+  const parts = text.split(/(\*\*[^*]+?\*\*|\[\d+\])/g);
+  return parts.map((p, i) => {
+    if (p.length > 4 && p.startsWith("**") && p.endsWith("**")) {
+      return <strong key={i} className="font-semibold text-ink">{p.slice(2, -2)}</strong>;
+    }
+    const ref = p.match(/^\[(\d+)\]$/);
+    if (ref) {
+      const n = Number(ref[1]);
+      if (onSource) {
+        return (
+          <button key={i} type="button" onClick={() => onSource(n)} title="Открыть источник"
+            className="align-super rounded font-bold text-accent-ink transition-opacity hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            style={{ fontSize: 11 }}>{n}</button>
+        );
+      }
+      return <sup key={i} className="text-accent-ink font-bold" style={{ fontSize: 11 }}>{n}</sup>;
+    }
+    return p;
+  });
 }
 
 // Цветные эмодзи-заголовки дайджеста (🌍 ✅ 🔥 📋…) чужеродны лайн-арт-стилю → меняем на
@@ -317,7 +332,7 @@ function leadEmoji(text: string): { icon: RoyIconName | null; rest: string; had:
   return { icon: EMOJI_ICON[m[1]] ?? null, rest: text.slice(m[0].length), had: true };
 }
 
-export function TezisyBlocks({ text, className, onDeepen }: { text: string; className?: string; onDeepen?: (topic: string) => void }) {
+export function TezisyBlocks({ text, className, onDeepen, onSource }: { text: string; className?: string; onDeepen?: (topic: string) => void; onSource?: (n: number) => void }) {
   const blocks = parseTezisy(text);
   if (blocks.length === 0) return null;
   return (
@@ -338,18 +353,30 @@ export function TezisyBlocks({ text, className, onDeepen }: { text: string; clas
               {b.items.map((it, j) => (
                 <li key={j} className="group/deep flex items-start text-ink leading-relaxed" style={{ fontSize: 14, gap: 8 }}>
                   <span className="text-ink-mute select-none" style={{ marginTop: 1 }}>•</span>
-                  <span className="flex-1">{renderInline(it)}</span>
-                  {onDeepen && (
-                    <button
-                      type="button"
-                      onClick={() => onDeepen(it)}
-                      aria-label="Углубиться в тему"
-                      title="Углубиться в тему"
-                      className="mt-0.5 shrink-0 text-ink-mute opacity-0 transition-opacity hover:text-primary focus-visible:opacity-100 focus-visible:outline-none group-hover/deep:opacity-100"
-                    >
-                      <RoyIcon name="search" size={14} strokeWidth={1.9} />
-                    </button>
-                  )}
+                  <span className="flex-1">{renderInline(it, onSource)}</span>
+                  {(() => {
+                    // Есть источник (сноска [n]) → лупа открывает исходную запись этого пункта.
+                    // Иначе, если задан onDeepen → лупа углубляет тему через поиск (тезисы встреч).
+                    const ref = onSource ? it.match(/\[(\d+)\]/) : null;
+                    if (ref && onSource) {
+                      const n = Number(ref[1]);
+                      return (
+                        <button type="button" onClick={() => onSource(n)} aria-label="Открыть источник" title="Открыть источник"
+                          className="mt-0.5 shrink-0 text-ink-mute opacity-0 transition-opacity hover:text-primary focus-visible:opacity-100 focus-visible:outline-none group-hover/deep:opacity-100">
+                          <RoyIcon name="search" size={14} strokeWidth={1.9} />
+                        </button>
+                      );
+                    }
+                    if (onDeepen) {
+                      return (
+                        <button type="button" onClick={() => onDeepen(it)} aria-label="Углубиться в тему" title="Углубиться в тему"
+                          className="mt-0.5 shrink-0 text-ink-mute opacity-0 transition-opacity hover:text-primary focus-visible:opacity-100 focus-visible:outline-none group-hover/deep:opacity-100">
+                          <RoyIcon name="search" size={14} strokeWidth={1.9} />
+                        </button>
+                      );
+                    }
+                    return null;
+                  })()}
                 </li>
               ))}
             </ul>

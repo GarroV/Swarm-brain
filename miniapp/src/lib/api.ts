@@ -768,9 +768,11 @@ export async function sendFeedback(text: string): Promise<void> {
 
 // allCountries — админ-опция «весь воркспейс» (иначе дайджест строго по своим рынкам). Сервер
 // применяет флаг только для админа (гейт isAdmin), не-админу игнорирует.
-export async function generateDigest(days = 7, allCountries = false): Promise<{ text: string }> {
-  if (DEV_MODE) return { text: "**Дайджест за 7 дней**\n\n• Встреча с партнёром в Варшаве\n• Обсуждение стратегии Q3\n• Запуск локализации для KZ" };
-  return apiFetch<{ text: string }>("/digest", { method: "POST", body: JSON.stringify({ days, all_countries: allCountries }) });
+// sources — записи-источники (формат AskSource, как в RAG): клик по сноске [n] открывает исходник.
+export async function generateDigest(days = 7, allCountries = false): Promise<{ text: string; sources: AskSource[] }> {
+  if (DEV_MODE) return { text: "**Сербия**\n\n• Обсуждение стратегии Q3 [1]", sources: [] };
+  const r = await apiFetch<{ text: string; sources?: AskSource[] }>("/digest", { method: "POST", body: JSON.stringify({ days, all_countries: allCountries }) });
+  return { text: r.text, sources: r.sources ?? [] };
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

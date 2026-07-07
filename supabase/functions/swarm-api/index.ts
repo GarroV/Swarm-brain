@@ -1588,7 +1588,7 @@ Deno.serve(async (req: Request) => {
     const markets: string[] = p?.markets ?? [];
     const role: string = p?.role ?? "";
 
-    type EntryRow = { summary: string | null; content: string; source: string; created_at: string; countries?: string[] };
+    type EntryRow = { id: string; summary: string | null; content: string; source: string; created_at: string; countries?: string[]; metadata: Record<string, unknown>; entry_type: string };
 
     // Варианты стран для матчинга: код + русское имя (entries.countries может хранить любой формат).
     const NAME_TO_CODE: Record<string, string> = Object.fromEntries(
@@ -1602,7 +1602,7 @@ Deno.serve(async (req: Request) => {
     // Персональный дайджест — СТРОГО по странам пользователя (entries.countries ∩ markets),
     // если рынки заданы. Без рынков — по всему воркспейсу.
     let q = supabase.from("entries")
-      .select("summary, content, source, created_at, countries")
+      .select("id, summary, content, source, created_at, countries, metadata, entry_type")
       .gte("created_at", since)
       .eq("group_id", groupId)
       .not("source", "eq", "digest")
@@ -1645,10 +1645,22 @@ Deno.serve(async (req: Request) => {
       // (была ошибка: одна встреча RS+BG → два одинаковых блока Сербия/Болгария).
       return use.length ? (COUNTRY_NAMES[use[0]] ?? use[0]) : "Общее";
     };
-    const entriesText = (entries as EntryRow[]).map((e) => {
+    const entriesText = (entries as EntryRow[]).map((e, i) => {
       const date = new Date(e.created_at).toLocaleDateString("ru-RU");
-      return `[${entryCountryLabel(e.countries)} · ${date}] ${(e.summary ?? e.content).slice(0, 500)}`;
+      return `[источник ${i + 1}] [${entryCountryLabel(e.countries)} · ${date}] ${(e.summary ?? e.content).slice(0, 500)}`;
     }).join("\n\n---\n\n");
+    // Источники дайджеста (формат совместим с RAG /ask): клик по сноске [n] в пункте открывает
+    // исходную запись. Порядок = нумерация «[источник N]» в тексте выше.
+    const sources = (entries as EntryRow[]).map((e, i) => ({
+      n: i + 1,
+      id: e.id,
+      tag: entryTagKey(e.entry_type, e.metadata),
+      entry_type: e.entry_type,
+      title: deriveEntryTitle(e),
+      market: (e.countries && e.countries.find((c) => c !== "General")) || null,
+      snippet: (e.summary || e.content || "").replace(/\s+/g, " ").trim().slice(0, 220),
+      similarity: 1, // поле для совместимости с AskSource на фронте (у дайджеста нет ранга)
+    }));
 
     const marketNames = markets.map((m) => COUNTRY_NAMES[m] ?? m).join(", ");
     const contextLine = [marketNames ? `Рынки: ${marketNames}` : "", role ? `Роль: ${role}` : "", userName ? `Имя: ${userName}` : ""].filter(Boolean).join(" | ");
@@ -1659,7 +1671,7 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: `Ты аналитик команды. Составь персональный дайджест за ${periodLabel} для сотрудника (${contextLine}).\n\nГЛАВНОЕ: сгруппируй СТРОГО ПО СТРАНАМ. Каждая запись помечена страной в начале — [Страна · дата]. Для КАЖДОЙ страны, по которой есть записи, сделай отдельный блок строго в формате:\n## <Страна>\n- пункт (что обсуждали / сделали / проблема / план по этой стране)\n3–7 пунктов на страну — не жалей деталей: конкретные факты, числа, решения, проблемы, планы, открытые вопросы. Страны без записей НЕ упоминай. Не смешивай разные страны в один блок.\n\nБЕЗ ДУБЛЕЙ: каждую запись используй РОВНО в ОДНОМ страновом блоке (по её метке) — НЕ повторяй один и тот же факт/пункт в разных странах.\n\nЖЁСТКО: используй ТОЛЬКО факты из записей. НЕ придумывай цифры, названия компаний, ИМЕНА людей, события, сроки. Если ответственный/имя не указаны в записи — не пиши их. Не пиши вводных абзацев и итогов — только блоки по странам. Отвечай на русском.` },
+          { role: "system", content: `Ты аналитик команды. Составь персональный дайджест за ${periodLabel} для сотрудника (${contextLine}).\n\nГЛАВНОЕ: сгруппируй СТРОГО ПО СТРАНАМ. Каждая запись помечена страной в начале — [Страна · дата]. Для КАЖДОЙ страны, по которой есть записи, сделай отдельный блок строго в формате:\n## <Страна>\n- пункт (что обсуждали / сделали / проблема / план по этой стране) [N]\nВ КОНЦЕ каждого пункта ставь сноску [N] — номер источника, из которого взят факт (номер указан в начале каждой записи как «[источник N]»). Ровно ОДИН номер на пункт — та запись, откуда факт.\n3–7 пунктов на страну — не жалей деталей: конкретные факты, числа, решения, проблемы, планы, открытые вопросы. Страны без записей НЕ упоминай. Не смешивай разные страны в один блок.\n\nБЕЗ ДУБЛЕЙ: каждую запись используй РОВНО в ОДНОМ страновом блоке (по её метке) — НЕ повторяй один и тот же факт/пункт в разных странах.\n\nЖЁСТКО: используй ТОЛЬКО факты из записей. НЕ придумывай цифры, названия компаний, ИМЕНА людей, события, сроки. Если ответственный/имя не указаны в записи — не пиши их. Не пиши вводных абзацев и итогов — только блоки по странам. Отвечай на русском.` },
           { role: "user", content: entriesText.slice(0, 13000) },
         ],
         max_tokens: 2600,
@@ -1667,7 +1679,7 @@ Deno.serve(async (req: Request) => {
     });
     if (!gptRes.ok) return apiErr(500, "GPT error", origin);
     const text = (await gptRes.json()).choices[0].message.content;
-    return json({ text }, 200, origin);
+    return json({ text, sources }, 200, origin);
   }
 
   // ── POST /tasks/extract ───────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { generateDigest } from "@/lib/api";
+import { generateDigest, type AskSource } from "@/lib/api";
 import { useRoyNav } from "../nav";
 import { RoyCard, TezisyBlocks } from "../ui";
 import { RoyIcon } from "../icons";
@@ -21,8 +21,8 @@ export function readDigestAllCountries(): boolean {
 }
 
 // Кэш последнего дайджеста, чтобы показывать сразу и авто-обновлять раз в день.
-const CACHE_KEY = "roy_digest_cache_v3"; // bump → сброс старого кэша при смене структуры дайджеста (v3: без дублей стран + без выдуманных имён)
-type DigestCache = { text: string; at: string; days: number; all: boolean };
+const CACHE_KEY = "roy_digest_cache_v4"; // bump → сброс старого кэша при смене структуры дайджеста (v4: + sources для кликабельных сносок)
+type DigestCache = { text: string; at: string; days: number; all: boolean; sources: AskSource[] };
 function loadCache(): DigestCache | null {
   if (typeof window === "undefined") return null;
   try { return JSON.parse(window.localStorage.getItem(CACHE_KEY) || "null"); } catch { return null; }
@@ -43,9 +43,10 @@ function fmtUpdated(iso: string): string {
 // (при первом открытии после 8:00) — инфа всегда свежая без ручной кнопки. Строго по странам
 // пользователя (фильтрует /digest на сервере).
 export function PersonalDigest({ className }: { className?: string }) {
-  const { openAnswer } = useRoyNav();
+  const { openAnswer, push } = useRoyNav();
   const [days, setDays] = useState(7);
   const [text, setText] = useState<string | null>(null);
+  const [sources, setSources] = useState<AskSource[]>([]);
   const [at, setAt] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
 
@@ -56,8 +57,9 @@ export function PersonalDigest({ className }: { className?: string }) {
       const r = await generateDigest(d, all);
       const now = new Date().toISOString();
       setText(r.text);
+      setSources(r.sources);
       setAt(now);
-      try { window.localStorage.setItem(CACHE_KEY, JSON.stringify({ text: r.text, at: now, days: d, all })); } catch { /* приватный режим */ }
+      try { window.localStorage.setItem(CACHE_KEY, JSON.stringify({ text: r.text, at: now, days: d, all, sources: r.sources })); } catch { /* приватный режим */ }
     } catch {
       if (!text) setText("Не удалось обновить дайджест. Попробуйте «Обновить».");
     } finally {
@@ -65,11 +67,17 @@ export function PersonalDigest({ className }: { className?: string }) {
     }
   }, [text]);
 
+  // Клик по сноске [n] в пункте → открыть исходную запись этого пункта (не новый поиск).
+  const openSource = useCallback((n: number) => {
+    const s = sources.find((x) => x.n === n);
+    if (s) push({ view: "record", params: { id: s.id } });
+  }, [sources, push]);
+
   useEffect(() => {
     const d = readDigestDays();
     setDays(d);
     const cache = loadCache();
-    if (cache) { setText(cache.text); setAt(cache.at); }
+    if (cache) { setText(cache.text); setAt(cache.at); setSources(cache.sources ?? []); }
     // Устарел, если кэша нет, сменился период/охват, или последний прогон был до сегодняшних 8:00.
     const stale = !cache || cache.days !== d || cache.all !== readDigestAllCountries() || new Date(cache.at).getTime() < freshnessBoundary();
     if (stale) run(d);
@@ -92,7 +100,7 @@ export function PersonalDigest({ className }: { className?: string }) {
         {text ? (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-              <TezisyBlocks text={text} onDeepen={(topic) => openAnswer(`Расскажи подробнее: ${topic}`)} />
+              <TezisyBlocks text={text} onSource={openSource} onDeepen={(topic) => openAnswer(`Расскажи подробнее: ${topic}`)} />
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <button onClick={() => run(days)} disabled={generating} className="font-semibold text-primary transition-opacity hover:opacity-80 disabled:opacity-60" style={{ fontSize: 12.5 }}>
