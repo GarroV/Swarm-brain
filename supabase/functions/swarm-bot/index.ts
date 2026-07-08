@@ -213,6 +213,12 @@ Deno.serve(async (req: Request) => {
   }
 
   if (body.readai_token_refresh === true) {
+    // Read.ai отключается (READ_AI_ENABLED off, не развивается). Когда фича выключена — cron
+    // no-op: не рефрешим токен и НЕ шлём watchdog-алерт «встречи не поступают / проверь вебхук
+    // Read.ai» (он ложный — Read.ai-встреч и не должно быть). Вернуть фичу → снять этот гейт.
+    if (Deno.env.get("READ_AI_ENABLED") !== "true") {
+      return new Response("OK: read.ai disabled, skipped", { status: 200 });
+    }
     await getReadAiToken();
     // Check if meetings are still coming in — alert if last one is >3 days ago
     const { data: lastMeeting } = await supabase
