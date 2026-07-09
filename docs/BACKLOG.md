@@ -528,11 +528,25 @@
 
 > Дизайн: `docs/superpowers/specs/2026-06-02-time-buildin-integration-design.md`
 
-### ⚠️ Открытый архитектурный вопрос — нужно решить перед реализацией
+### 🔎 Ресёрч AI Hub (2026-07-09) — коннекторы готовы, но это плагины для AI-агента
 
-IT-команда разрабатывает **AI Hub** (`https://github.com/sagos95/ai-hub`) — набор интеграций с Mattermost (Time), Buildin, Kaiten и др. Они рекомендуют подключить его как **git subtree** в наш репо, чтобы получать обновления.
+Репо переехал: **`dodobrands/ai-hub`** (не `sagos95`). Это **marketplace-плагины** для Claude Code / Claude Desktop / Copilot / Cursor (`claude /plugin marketplace add dodobrands/ai-hub`). 12 плагинов: `time`, `buildin`, `buildin-bot-api`, `kaiten`, `genie`, `holst`, `code-review`, `discovery`, `spike`, `test-factory`, `testops`, `hub-meta`.
 
-**Проблема:** AI Hub — это bash-скрипты для локального запуска (Claude Code, Copilot). Они не работают внутри Deno Edge Functions (swarm-bot, swarm-api).
+**Коннекторы РЕАЛЬНО настроены и работают** — но исполняются в среде AI-агента (bash + curl + python + браузерный MCP для SSO-логина), НЕ в Deno Edge Functions:
+- **Time (Mattermost API v4):** `integrations/time/scripts/time.sh` — HTTP-клиент, dual auth: `TIME_BOT_TOKEN` (бот) ИЛИ `TIME_TOKEN` (личный — Google SSO / cookie / email-пароль). Каналы, сообщения, permalink-парсинг. Base URL Dodo — `*.time-messenger.ru`. Токены в `.env`, НЕ через LLM.
+- **Buildin:** `integrations/buildin/scripts/buildin.sh` — Bearer JWT (UI API), CRUD страниц, markdown→blocks, поиск, shadow-индекс.
+
+**Что это даёт нам (снимает часть вопросов дизайна):**
+- **(B) Команда на Claude Desktop/Code** → просто поставить плагины ai-hub. **Ноль работы на стороне Swarm.** Самый быстрый путь дать команде Time/Buildin. git subtree даже не нужен — marketplace.
+- **(A/C) `/time` в Telegram-боте Swarm (Deno)** → плагины напрямую не работают (bash/браузерный MCP не запустить в Edge Function). НО **bot-режим тривиально портируется на Deno** (`TIME_BOT_TOKEN` + Mattermost API v4 через `fetch`); `time.sh` = готовый референс endpoints/auth. **Снимает прежний открытый вопрос «можно ли получить `TIME_BOT_TOKEN`»** — bot-режим штатно поддерживается (Time → Integrations → Bot Accounts).
+
+**Осталось решить (владелец):** нужен ли `/time` именно в Telegram-боте, или команде достаточно Claude-плагинов (тогда Swarm не трогаем — просто сказать команде поставить ai-hub).
+
+### ⚠️ Открытый архитектурный вопрос (исходный, до ресёрча выше)
+
+IT-команда разрабатывает **AI Hub** — набор интеграций с Mattermost (Time), Buildin, Kaiten и др. Рекомендовали подключить как **git subtree** (ресёрч выше показал: для команды на Claude достаточно marketplace, subtree не обязателен).
+
+**Проблема (подтверждена):** AI Hub — bash-скрипты/плагины для локального запуска в AI-агенте. Не работают внутри Deno Edge Functions (swarm-bot, swarm-api) — но bot-режим Time портируется (см. выше).
 
 **Нужно обсудить с IT-командой:**
 1. **Сценарий использования Time**: `/time` в Telegram-боте (сервер-side Deno) — или только через Claude Desktop/Code локально?
