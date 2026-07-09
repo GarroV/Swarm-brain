@@ -9,9 +9,10 @@
 // Деплой: supabase functions deploy swarm-recorder-version --no-verify-jwt (публичный GET, без секретов).
 
 // Держать в синхроне с recorder/VERSION (ветка sandbox_vas). Поднимать ПОСЛЕ мёрджа+проверки сборки.
-// build 3 (2026-06-30): бэкап аудио держится до публикации в базу (был — до summary done) + потолок
-// 3 суток (был 24ч). Тег recorder-build-3, собирается (build-app.sh ✅).
-const LATEST_BUILD = 3;
+// build 4 (2026-07-09): heartbeat-мониторинг рекордера (SwarmClient.heartbeat → meeting-heartbeat;
+// сервер ловит оборванную запись / истечение токена). Тег recorder-build-4, build-app.sh ✅ (подпись валидна).
+// build 3 (2026-06-30): бэкап аудио держится до публикации в базу + потолок 3 суток. Тег recorder-build-3.
+const LATEST_BUILD = 4;
 
 Deno.serve((req: Request) => {
   if (req.method === "OPTIONS") {
