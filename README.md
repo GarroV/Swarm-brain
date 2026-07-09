@@ -118,6 +118,7 @@ supabase/
 │   ├── meeting-claim/          # Рекордер: claim/lease встречи до транскрибации
 │   ├── meeting-ingest/         # Рекордер: приём аудио → Storage → durable-обработка
 │   ├── meeting-process/        # Рекордер: cron durable-обработки (транскрибация по кускам + тезисы)
+│   ├── meeting-heartbeat/      # Рекордер: heartbeat-мониторинг (watchdog checkRecorderHealth в swarm-bot)
 │   ├── granola-poller/         # LEGACY: standalone-поллер, выведен из крона. Поллинг Granola — внутри swarm-bot (ingestNewGranolaNotesAllUsers)
 │   ├── read-ai-auth/           # OAuth2 авторизации Read.ai (отключается)
 │   ├── read-ai-webhook/        # Вебхук Read.ai (отключается, READ_AI_ENABLED off)
@@ -263,6 +264,7 @@ supabase functions deploy swarm-api --no-verify-jwt          # бэкенд ве
 supabase functions deploy meeting-claim --no-verify-jwt       # рекордер: claim/lease
 supabase functions deploy meeting-ingest --no-verify-jwt      # рекордер: приём аудио
 supabase functions deploy meeting-process --no-verify-jwt     # рекордер: cron durable-обработки
+supabase functions deploy meeting-heartbeat --no-verify-jwt   # рекордер: heartbeat-мониторинг (алерт при обрыве записи / истечении токена)
 supabase functions deploy read-ai-webhook --no-verify-jwt     # Read.ai (отключается)
 # granola-poller — LEGACY, выведен из крона; деплоить не нужно. Поллинг Granola идёт через swarm-bot ({"granola_poll":true}, см. Шаг 12 в docs/SETUP.md)
 

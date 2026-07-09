@@ -2,6 +2,13 @@
 
 > Этот файл ведётся **вручную**: открытые задачи, технический долг, идеи. Это НЕ автогенерируемый `CHANGELOG.md` (тот собирается из git-коммитов).
 
+## ✅ Уведомления встреч: Read.ai-watchdog убран, рекордер heartbeat — СДЕЛАНО (2026-07-09)
+
+> Поставлено владельцем (скрин ежедневных алертов «Встречи не поступают — проверь вебхук Read.ai»). Read.ai отключается → уведомления не нужны; для рекордера решили сделать осмысленный мониторинг (не «давно не было встреч» — это ложный шум: нет созвонов ≠ поломка).
+
+- **Read.ai-watchdog отключён:** cron `readai_token_refresh` — no-op при `READ_AI_ENABLED` off (не рефрешит токен, не шлёт ложный алерт); pg_cron джоб `readai-token-refresh` удалён (`cron.unschedule`). Вернуть фичу → снять гейт + пересоздать джоб.
+- **Рекордер heartbeat (замена ложному watchdog):** алерт на АНОМАЛИЮ, не на тишину. Два сигнала: (1) оборванная запись (`recording=true` + молчит >20 мин = краш во время записи) → алерт записавшему; (2) токен истекает <7 дней → «переустанови» (дедуп `recorder_expiry_warned`). Компоненты: миграция `20260708120000` (`allowed_users.recorder_last_*`), Edge Function `meeting-heartbeat`, `checkRecorderHealth` в swarm-bot (из `sweepStuckMeetings`-cron, ежечасно через `granola_poll`), Swift `SwarmClient.heartbeat` + `AppDelegate.sendHeartbeat` (maintenanceTick 15м / setState / старт). Дизайн: `docs/superpowers/specs/2026-07-08-recorder-heartbeat-design.md`. Проверено: `deno check`, `swift build`, деплой, смоук 401.
+
 ## ⏳ Техдолг: разбить раздутые сервисы на роут-модули (swarm-api 1694, swarm-mcp 938)
 
 > Поставлено 2026-07-06 (владелец, увидел ссылку «стр. 1598–1610» в `swarm-api/index.ts`): «какие полторы тысячи строк? договаривались что весь проект на микросервисах».
