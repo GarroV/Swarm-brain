@@ -31,7 +31,8 @@ export async function mintRecorderToken(
   const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
   const { error } = await supabase
     .from("allowed_users")
-    .update({ recorder_token_hash: hashHex, recorder_token_expires_at: expiresAt.toISOString() })
+    // recorder_expiry_warned сброс: новый токен → снова можно предупредить перед ЕГО истечением.
+    .update({ recorder_token_hash: hashHex, recorder_token_expires_at: expiresAt.toISOString(), recorder_expiry_warned: false })
     .eq("telegram_id", telegramId);
   if (error) return null;
   return { token, expiresAt };

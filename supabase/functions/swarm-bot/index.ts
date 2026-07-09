@@ -158,6 +158,53 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
   return swept;
 }
 
+// ── Watchdog рекордера: алерт на АНОМАЛИЮ, не на тишину ───────────────────────────
+// Read.ai-watchdog («давно не было встреч») убран как ложный шум: нет созвонов ≠ поломка.
+// Здесь — только сигналы, где молчание = реальная проблема. Данные пишет meeting-heartbeat.
+const RECORDER_STALE_MIN = 20; // тик heartbeat = 15 мин → живой рекордер всегда свежее 20
+async function checkRecorderHealth(): Promise<void> {
+  const staleIso = new Date(Date.now() - RECORDER_STALE_MIN * 60_000).toISOString();
+
+  // (1) Оборванная запись: рекордер писал (recording=true), но перестал пинговать >STALE.
+  //     При штатной остановке пришёл бы heartbeat recording=false → застрявший true = краш
+  //     приложения во время записи (аудио, скорее всего, не загрузилось). Сброс флага = дедуп.
+  const { data: crashed } = await supabase
+    .from("allowed_users")
+    .select("telegram_id")
+    .eq("recorder_last_recording", true)
+    .lt("recorder_last_seen", staleIso);
+  for (const u of (crashed ?? []) as { telegram_id: number }[]) {
+    await supabase.from("allowed_users").update({ recorder_last_recording: false }).eq("telegram_id", u.telegram_id);
+    try {
+      await sendMessage(u.telegram_id,
+        "⚠️ <b>Похоже, запись встречи прервалась</b> — рекордер писал встречу, но перестал отвечать " +
+        "(возможно, приложение закрылось). Проверь, что SwarmRecorder запущен, и при необходимости запиши заново.");
+    } catch (e) { console.error(`checkRecorderHealth signal1 ${u.telegram_id}:`, e); }
+  }
+
+  // (2) Токен рекордера истекает <7 дней и ещё не предупреждали (дедуп через recorder_expiry_warned,
+  //     сброс при перевыпуске в mintRecorderToken). Детерминированно, без ложных срабатываний.
+  const soonIso = new Date(Date.now() + 7 * 86_400_000).toISOString();
+  const nowIso = new Date().toISOString();
+  const { data: expiring } = await supabase
+    .from("allowed_users")
+    .select("telegram_id, recorder_token_expires_at")
+    .eq("recorder_expiry_warned", false)
+    .not("recorder_token_hash", "is", null)
+    .not("recorder_token_expires_at", "is", null)
+    .lt("recorder_token_expires_at", soonIso)
+    .gt("recorder_token_expires_at", nowIso);
+  for (const u of (expiring ?? []) as { telegram_id: number; recorder_token_expires_at: string }[]) {
+    const days = Math.max(1, Math.ceil((new Date(u.recorder_token_expires_at).getTime() - Date.now()) / 86_400_000));
+    await supabase.from("allowed_users").update({ recorder_expiry_warned: true }).eq("telegram_id", u.telegram_id);
+    try {
+      await sendMessage(u.telegram_id,
+        `🎙 <b>Токен рекордера истекает через ${days} дн.</b> Чтобы запись встреч не прервалась — ` +
+        `переустанови рекордер: /recordertoken.`);
+    } catch (e) { console.error(`checkRecorderHealth signal2 ${u.telegram_id}:`, e); }
+  }
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -204,11 +251,13 @@ Deno.serve(async (req: Request) => {
   if (body.granola_poll === true) {
     const count = await ingestNewGranolaNotesAllUsers();
     await sweepStuckMeetings();
+    await checkRecorderHealth();
     return new Response(`OK: ${count} new granola meetings`, { status: 200 });
   }
 
   if (body.meetings_watchdog === true) {
     const n = await sweepStuckMeetings();
+    await checkRecorderHealth();
     return new Response(JSON.stringify({ ok: true, swept: n }), { status: 200 });
   }
 

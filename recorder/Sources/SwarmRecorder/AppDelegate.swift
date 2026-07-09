@@ -156,12 +156,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // Проверка обновления вскоре после старта (даём приложению осесть и подняться сети).
         DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in self?.checkForUpdate() }
+
+        // Heartbeat вскоре после старта (сеть уже поднялась) — сервер знает, что рекордер жив.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in self?.sendHeartbeat() }
     }
 
     @objc private func maintenanceTick() {
         guard let cfg = config, configError == nil else { return }
         Task { await UploadQueue.shared.drain(config: cfg); await refreshQueueBadge() }
         checkForUpdate()
+        sendHeartbeat()
+    }
+
+    // Heartbeat серверу: «рекордер жив» + пишем ли сейчас + версия сборки. Best-effort. Шлётся из
+    // maintenanceTick (15 мин), при смене статуса записи (setState — сервер сразу видит старт/стоп,
+    // без этого была бы ложная тревога «запись прервалась») и разово на старте.
+    private func sendHeartbeat() {
+        guard let cfg = config, configError == nil else { return }
+        let recording = isRecording
+        Task { await SwarmClient(config: cfg).heartbeat(recording: recording, version: Updater.currentBuild) }
     }
 
     // Тихий авто-апдейт: только в простое (запись/отправку не рвём) и один раз за сессию (после
@@ -498,6 +511,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         case .recording, .sending: Updater.setRecordingLock(true)
         default: Updater.setRecordingLock(false)
         }
+        sendHeartbeat() // сервер сразу знает старт/стоп записи → recording=false при остановке снимает ложное «прервалась»
         DispatchQueue.main.async { self.rebuildMenu() }
     }
 

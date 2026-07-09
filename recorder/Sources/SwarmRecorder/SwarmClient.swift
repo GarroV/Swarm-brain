@@ -101,6 +101,18 @@ struct SwarmClient {
         return try decoder.decode(ClaimResponse.self, from: data)
     }
 
+    // POST /meeting-heartbeat — «рекордер жив» + статус записи + версия сборки. Для серверного
+    // watchdog (оборванная запись / истечение токена). Best-effort: ошибки глотаем — heartbeat
+    // не критичен и не должен мешать записи/отправке.
+    func heartbeat(recording: Bool, version: Int) async {
+        var req = URLRequest(url: url("/meeting-heartbeat"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        authed(&req)
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["recording": recording, "version": version])
+        _ = try? await Self.session.data(for: req)
+    }
+
     // GET /meeting-current — идущая/ближайшая встреча из Google Calendar (на сервере).
     // nil, если Google не подключён / событий нет / сетевой сбой.
     func currentMeeting() async throws -> MeetingIdentity.Info? {
