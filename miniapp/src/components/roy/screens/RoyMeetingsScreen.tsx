@@ -9,6 +9,7 @@ import { deriveEntryTitle } from "../entry";
 import { fetchMeetings, fetchTasks, deleteMeeting, fetchConfig } from "@/lib/api";
 import { countryCode } from "@/lib/countries";
 import { AgentReviewQueue } from "@/components/AgentReviewQueue";
+import { useConfirm } from "@/components/ui/confirm";
 import type { Entry, Task } from "@/types";
 
 const SEGS = [
@@ -132,6 +133,7 @@ function CountsPanel({ title, counts }: { title: string; counts: [string, number
 
 export function RoyMeetingsScreen() {
   const { push, toast } = useRoyNav();
+  const confirm = useConfirm();
   const isDesktop = useIsDesktop();
   const [meetings, setMeetings] = useState<Entry[] | null>(null);
   const [markets, setMarkets] = useState<string[] | null>(null);
@@ -155,7 +157,7 @@ export function RoyMeetingsScreen() {
 
   const open = (id: string) => push({ view: "meetingDetail", params: { id } });
   const remove = async (e: Entry) => {
-    if (typeof window !== "undefined" && !window.confirm(`Удалить встречу «${deriveEntryTitle(e)}»? Это удалит и расшифровку.`)) return;
+    if (!(await confirm({ title: `Удалить встречу «${deriveEntryTitle(e)}»?`, description: "Встреча и её расшифровка будут удалены без возможности восстановления." }))) return;
     setMeetings((prev) => prev?.filter((x) => x.id !== e.id) ?? null);
     try {
       await deleteMeeting(e.id);

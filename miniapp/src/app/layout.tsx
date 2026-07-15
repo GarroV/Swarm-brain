@@ -4,6 +4,7 @@ import "./globals.css";
 import { TelegramProvider } from "@/components/TelegramProvider";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { SingleTabGate } from "@/components/SingleTabGate";
+import { ConfirmProvider } from "@/components/ui/confirm";
 import { GalaxyBackground } from "@/components/roy/GalaxyBackground";
 
 // Golos Text — весь UI, заголовки И метаданные (эталонная кириллица; дизайн-хендофф
@@ -44,7 +45,9 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <GalaxyBackground />
         <TelegramProvider>
-          <SingleTabGate>{children}</SingleTabGate>
+          <ConfirmProvider>
+            <SingleTabGate>{children}</SingleTabGate>
+          </ConfirmProvider>
         </TelegramProvider>
         <ServiceWorkerRegister />
       </body>

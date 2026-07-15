@@ -4,6 +4,7 @@ import { fetchAgentMeetings, deleteAgentMeeting } from "@/lib/api";
 import type { AgentMeeting } from "@/types";
 import { RoyIcon } from "@/components/roy/icons";
 import { useRoyNav } from "@/components/roy/nav";
+import { useConfirm } from "@/components/ui/confirm";
 
 type Props = { onOpen: (id: string) => void };
 
@@ -12,6 +13,7 @@ type Props = { onOpen: (id: string) => void };
 // просто не показывается, остальное приложение работает). Это намеренная деградация.
 export function AgentReviewQueue({ onOpen }: Props) {
   const { toast } = useRoyNav();
+  const confirm = useConfirm();
   const [items, setItems] = useState<AgentMeeting[]>([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -28,7 +30,7 @@ export function AgentReviewQueue({ onOpen }: Props) {
   useEffect(() => { load(); }, [load]);
 
   const remove = async (m: AgentMeeting) => {
-    if (typeof window !== "undefined" && !window.confirm(`Удалить черновик «${m.title ?? "Встреча"}»? Это удалит расшифровку и тезисы.`)) return;
+    if (!(await confirm({ title: `Удалить черновик «${m.title ?? "Встреча"}»?`, description: "Расшифровка и тезисы будут удалены без возможности восстановления." }))) return;
     setItems((prev) => prev.filter((x) => x.id !== m.id));
     try {
       await deleteAgentMeeting(m.id);

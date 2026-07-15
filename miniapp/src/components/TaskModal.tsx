@@ -12,6 +12,7 @@ import {
   fetchUsers,
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { useConfirm } from "@/components/ui/confirm";
 import { Segmented } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
 
@@ -45,6 +46,7 @@ interface TaskModalProps {
 
 export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
   const isEdit = !!task;
+  const confirm = useConfirm();
 
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState("open");
@@ -126,7 +128,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
 
   const handleDelete = async () => {
     if (!task) return;
-    if (typeof window !== "undefined" && !window.confirm(`Удалить «${task.title}»?`)) return;
+    if (!(await confirm({ title: `Удалить «${task.title}»?`, description: "Задача будет удалена без возможности восстановления." }))) return;
     setDeleting(true);
     setError(null);
     try {

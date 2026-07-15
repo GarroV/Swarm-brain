@@ -1,6 +1,8 @@
 "use client";
+import { useState } from "react";
 import { useRoyNav } from "../nav";
 import { DashBlock, SubHead, DashTaskRow, norm } from "./shared";
+import { TaskModal } from "@/components/TaskModal";
 import type { DashboardData } from "./useDashboardData";
 
 // Левая колонка главного экрана: личные задачи текущего пользователя.
@@ -10,7 +12,8 @@ import type { DashboardData } from "./useDashboardData";
 // Строки рисуются общим `DashTaskRow` (= тот же `TaskRow`, что и на доске) — единый вид.
 
 export function PersonalTasks({ data, className }: { data: DashboardData; className?: string }) {
-  const { openTasks } = useRoyNav();
+  const { openTasks, bumpTasks } = useRoyNav();
+  const [creating, setCreating] = useState(false);
   const { loading, today, week, mine } = data;
 
   // Только активные — завершённые на дашборде не показываем (для них есть список «Готовые»).
@@ -27,29 +30,36 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
   const empty = aMine.length === 0;
 
   return (
-    <DashBlock
-      title="Мои задачи"
-      icon="task"
-      tint="var(--accent-ink)"
-      headAction="Доска"
-      loading={loading}
-      empty={empty}
-      emptyText="Личных задач нет"
-      onHead={() => openTasks("mine", "today")}
-      className={className}
-    >
-      <SubHead count={tier.tasks.length}>{tier.label}</SubHead>
-      {tier.tasks.map((t) => <DashTaskRow key={t.id} task={t} />)}
-      {moreCount > 0 && (
-        <button
-          type="button"
-          onClick={() => openTasks("mine", "all")}
-          className="mt-2 block w-full rounded-[10px] py-2 text-center font-medium text-ink-mute transition-colors hover:bg-surface-2"
-          style={{ fontSize: 12 }}
-        >
-          + ещё {moreCount}
-        </button>
-      )}
-    </DashBlock>
+    <>
+      <DashBlock
+        title="Мои задачи"
+        icon="task"
+        tint="var(--accent-ink)"
+        headAction="Доска"
+        loading={loading}
+        empty={empty}
+        emptyText="Личных задач нет"
+        onHead={() => openTasks("mine", "today")}
+        onAdd={() => setCreating(true)}
+        addLabel="Новая задача"
+        className={className}
+      >
+        <SubHead count={tier.tasks.length}>{tier.label}</SubHead>
+        {tier.tasks.map((t) => <DashTaskRow key={t.id} task={t} />)}
+        {moreCount > 0 && (
+          <button
+            type="button"
+            onClick={() => openTasks("mine", "all")}
+            className="mt-2 block w-full rounded-[10px] py-2 text-center font-medium text-ink-mute transition-colors hover:bg-surface-2"
+            style={{ fontSize: 12 }}
+          >
+            + ещё {moreCount}
+          </button>
+        )}
+      </DashBlock>
+      {/* Быстрое создание задачи прямо с дашборда — модал-оверлей, без ухода на доску.
+          onSaved → bumpTasks: карточка «Мои задачи» перезапросит список и покажет новую. */}
+      <TaskModal open={creating} onClose={() => setCreating(false)} onSaved={bumpTasks} />
+    </>
   );
 }

@@ -10,6 +10,7 @@ import { fetchUsers, fetchConfig } from "@/lib/api";
 import type { Task, User } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { RoyIcon } from "@/components/roy/icons";
+import { useConfirm } from "@/components/ui/confirm";
 
 function plural(n: number): string {
   const m10 = n % 10;
@@ -22,6 +23,7 @@ function plural(n: number): string {
 // Десктопный Reminders-вид «Список»: рельс смарт-списков слева + спокойный чек-лист справа.
 export function RemindersTasks() {
   const r = useReminderTasks();
+  const confirm = useConfirm();
   const [modalTask, setModalTask] = useState<Task | "new" | null>(null);
   const [draft, setDraft] = useState("");
   // Свёрнутые секции группировки (по label): клик по заголовку прячет/раскрывает задачи.
@@ -58,7 +60,7 @@ export function RemindersTasks() {
   };
 
   const onDelete = async (t: Task) => {
-    if (!window.confirm(`Удалить «${t.title}»?`)) return;
+    if (!(await confirm({ title: `Удалить «${t.title}»?`, description: "Задача будет удалена без возможности восстановления." }))) return;
     try { await r.remove(t); } catch { /* hook сделает reload */ }
   };
 

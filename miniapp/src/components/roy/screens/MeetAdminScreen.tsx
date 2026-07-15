@@ -20,6 +20,7 @@ import type { Entry, AgentMeeting, TranscriptSegment } from "@/types";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { TasksFromMeeting } from "../TasksFromMeeting";
 import { MarkdownTextarea } from "../MarkdownTextarea";
+import { useConfirm } from "@/components/ui/confirm";
 
 // ── Типы объединённого списка ────────────────────────────────────────────────
 
@@ -827,6 +828,7 @@ function ActionsPanel({
 
 export function MeetAdminScreen() {
   const { pop, toast } = useRoyNav();
+  const confirm = useConfirm();
 
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [agentMeetings, setAgentMeetings] = useState<AgentMeeting[] | null>(null);
@@ -911,12 +913,12 @@ export function MeetAdminScreen() {
 
   const handleReject = async (item: MeetItem) => {
     if (item.kind === "entry") {
-      if (typeof window !== "undefined" && !window.confirm(`Удалить встречу «${itemTitle(item)}»? Это удалит и расшифровку.`)) return;
+      if (!(await confirm({ title: `Удалить встречу «${itemTitle(item)}»?`, description: "Встреча и её расшифровка будут удалены без возможности восстановления." }))) return;
       await deleteMeeting(item.data.id);
       toast("Встреча удалена");
       await animateRemove(item.data.id);
     } else {
-      if (typeof window !== "undefined" && !window.confirm(`Удалить черновик «${itemTitle(item)}»? Это удалит расшифровку и тезисы.`)) return;
+      if (!(await confirm({ title: `Удалить черновик «${itemTitle(item)}»?`, description: "Расшифровка и тезисы будут удалены без возможности восстановления." }))) return;
       await deleteAgentMeeting(item.data.id);
       toast("Черновик удалён");
       await animateRemove(item.data.id);

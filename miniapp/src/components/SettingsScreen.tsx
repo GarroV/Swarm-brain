@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 
 // ── Profile section ───────────────────────────────────────────────────────────
@@ -185,6 +186,7 @@ function GranolaNoteModal({
 // ── Granola section ───────────────────────────────────────────────────────────
 
 function GranolaSection() {
+  const confirm = useConfirm();
   const [integration, setIntegration] = useState<Integration | null>(null);
   const [loading, setLoading] = useState(true);
   const [apiKey, setApiKey] = useState("");
@@ -224,7 +226,7 @@ function GranolaSection() {
   };
 
   const handleDisconnect = async () => {
-    if (!window.confirm("Отключить Granola?")) return;
+    if (!(await confirm({ title: "Отключить Granola?", description: "Импорт заметок из Granola остановится. Подключить снова можно в любой момент.", confirmText: "Отключить" }))) return;
     await disconnectGranola();
     setIntegration(null);
     setNotes([]);
@@ -500,10 +502,11 @@ function Section({ title, icon, children, defaultOpen = false }: { title: string
 // Браузерная сессия (httpOnly cookie). Внутри Telegram Mini App initData непустой —
 // там аккаунт определяется тем, кто открыл бота, сменить его из приложения нельзя.
 function AccountSection() {
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
 
   const handleLogout = async () => {
-    if (!window.confirm("Выйти и войти под другим аккаунтом?")) return;
+    if (!(await confirm({ title: "Выйти из аккаунта?", description: "Сессия в браузере завершится. Войти снова — через Telegram, можно другим аккаунтом.", confirmText: "Выйти" }))) return;
     setBusy(true);
     try {
       await logout();
@@ -528,6 +531,7 @@ function AccountSection() {
 // ── Google Calendar section ────────────────────────────────────────────────────
 
 function GoogleCalendarSection() {
+  const confirm = useConfirm();
   const [connected, setConnected] = useState<boolean | null>(null);
   useEffect(() => {
     fetchIntegrations()
@@ -541,7 +545,7 @@ function GoogleCalendarSection() {
     else window.open(url, "_blank");
   };
   const disconnect = async () => {
-    if (!window.confirm("Отключить Google-календарь?")) return;
+    if (!(await confirm({ title: "Отключить Google-календарь?", description: "Рекордер перестанет предлагать записи по календарю, а тезисы — получать название и участников.", confirmText: "Отключить" }))) return;
     await disconnectGoogle();
     setConnected(false);
   };
@@ -568,6 +572,7 @@ function GoogleCalendarSection() {
 // установки для Терминала. Токен НЕ Claude-Desktop MCP (/mytoken) — отдельный, на год.
 
 function RecorderSection() {
+  const confirm = useConfirm();
   const [setup, setSetup] = useState<{ active: boolean; expiresAt: string | null } | null>(null);
   const [oneLiner, setOneLiner] = useState<string | null>(null);
   const [minting, setMinting] = useState(false);
@@ -578,7 +583,7 @@ function RecorderSection() {
   }, []);
 
   const getCommand = async (reissue: boolean) => {
-    if (reissue && !window.confirm("Перевыпустить токен рекордера? Старый перестанет работать — рекордер нужно будет переустановить командой ниже.")) return;
+    if (reissue && !(await confirm({ title: "Перевыпустить токен рекордера?", description: "Старый токен перестанет работать — рекордер нужно будет переустановить командой ниже.", confirmText: "Перевыпустить" }))) return;
     setMinting(true);
     try {
       const { oneLiner: cmd, expiresAt } = await mintRecorderToken();
@@ -643,6 +648,7 @@ function RecorderSection() {
 // Токен отдельный от рекордера, бессрочный.
 
 function ClaudeDesktopSection() {
+  const confirm = useConfirm();
   const [active, setActive] = useState<boolean | null>(null);
   const [oneLiner, setOneLiner] = useState<string | null>(null);
   const [minting, setMinting] = useState(false);
@@ -653,7 +659,7 @@ function ClaudeDesktopSection() {
   }, []);
 
   const getCommand = async (reissue: boolean) => {
-    if (reissue && !window.confirm("Перевыпустить токен Claude Desktop? Старый конфиг перестанет работать — переустанови командой ниже.")) return;
+    if (reissue && !(await confirm({ title: "Перевыпустить токен Claude Desktop?", description: "Старый конфиг перестанет работать — переустанови командой ниже.", confirmText: "Перевыпустить" }))) return;
     setMinting(true);
     try {
       const { oneLiner: cmd } = await mintMcpToken();

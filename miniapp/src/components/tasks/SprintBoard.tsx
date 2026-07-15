@@ -9,6 +9,7 @@ import { TaskModal } from "@/components/TaskModal";
 import { statusColor } from "@/lib/timeline";
 import { Button } from "@/components/ui/button";
 import { RoyIcon } from "@/components/roy/icons";
+import { useConfirm } from "@/components/ui/confirm";
 
 // Дата срока в ru-RU (как в TaskRow), вместо сырой ISO-строки.
 function fmtDay(iso: string | null): string | null {
@@ -31,6 +32,7 @@ function initials(names: string[]): string {
 }
 
 export function SprintBoard() {
+  const confirm = useConfirm();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [selected, setSelected] = useState<string>(BACKLOG);
@@ -102,7 +104,7 @@ export function SprintBoard() {
     if (selected === BACKLOG || deletingSprint) return;
     const sprint = sprints.find((s) => s.id === selected);
     if (!sprint) return;
-    if (!window.confirm(`Удалить спринт «${sprint.name}»? Задачи вернутся в бэклог.`)) return;
+    if (!(await confirm({ title: `Удалить спринт «${sprint.name}»?`, description: "Задачи спринта вернутся в бэклог — они не будут удалены.", confirmText: "Удалить спринт" }))) return;
     setDeletingSprint(true);
     try {
       // Сначала возвращаем задачи в бэклог (deleteSprint их не переназначает) — иначе осиротеют.

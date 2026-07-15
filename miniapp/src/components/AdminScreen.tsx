@@ -10,6 +10,7 @@ import type { AdminWorkspace, AdminUser } from "@/types";
 import { countryCode, COUNTRY_NAMES } from "@/lib/countries";
 import { Segmented } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
+import { useConfirm } from "@/components/ui/confirm";
 
 const fieldCls =
   "w-full rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute";
@@ -86,6 +87,7 @@ function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => void })
 
 // ── Пользователи воркспейса ───────────────────────────────────────────────────
 function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: AdminWorkspace[] }) {
+  const confirm = useConfirm();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [addInput, setAddInput] = useState("");
@@ -122,7 +124,7 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
   };
 
   const handleRemove = async (userId: number) => {
-    if (!window.confirm("Удалить пользователя из воркспейса?")) return;
+    if (!(await confirm({ title: "Удалить пользователя из воркспейса?", description: "Пользователь потеряет доступ к этому воркспейсу. Его можно будет добавить снова.", confirmText: "Удалить" }))) return;
     await removeUserFromWorkspace(wsId, userId);
     load();
   };
@@ -385,6 +387,7 @@ function WorkspaceDetail({ ws, onBack }: { ws: AdminWorkspace; onBack: () => voi
 
 // ── Рассылка всем пользователям ───────────────────────────────────────────────
 function BroadcastBlock() {
+  const confirm = useConfirm();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -393,7 +396,7 @@ function BroadcastBlock() {
   const send = async () => {
     const t = text.trim();
     if (!t) return;
-    if (typeof window !== "undefined" && !window.confirm(`Отправить сообщение ВСЕМ пользователям системы в Telegram?\n\n«${t.slice(0, 140)}${t.length > 140 ? "…" : ""}»`)) return;
+    if (!(await confirm({ title: "Отправить сообщение всем пользователям?", description: `Сообщение уйдёт в Telegram каждому пользователю системы:\n\n«${t.slice(0, 140)}${t.length > 140 ? "…" : ""}»`, confirmText: "Отправить всем" }))) return;
     setSending(true); setResult(null);
     try {
       const r = await broadcastMessage(t);

@@ -48,7 +48,7 @@ export const norm = (s: string): string => (s === "progress" ? "in_progress" : s
 
 // ── Панель: шапка-кнопка (раскрыть) + скроллируемое тело ─────────────────────────
 export function DashBlock({
-  title, icon, tint, badge, headAction, loading, empty, emptyText, onHead, children, className,
+  title, icon, tint, badge, headAction, loading, empty, emptyText, onHead, onAdd, addLabel, children, className,
 }: {
   title: string;
   icon: RoyIconName;
@@ -61,36 +61,77 @@ export function DashBlock({
   empty: boolean;
   emptyText: string;
   onHead: () => void;
+  /** Быстрое «+» в шапке (например создать задачу, не уходя с дашборда). */
+  onAdd?: () => void;
+  /** aria-label/подсказка кнопки «+». */
+  addLabel?: string;
   children: ReactNode;
   className?: string;
 }) {
+  // Левая часть шапки (иконка + заголовок + бейдж) — общая для обоих вариантов шапки.
+  const headLeft = (
+    <div className="flex min-w-0 items-center gap-2.5">
+      <span
+        className="inline-flex shrink-0 items-center justify-center rounded-[9px]"
+        style={{ width: 28, height: 28, color: tint, backgroundColor: `color-mix(in srgb, ${tint} 14%, transparent)` }}
+      >
+        <RoyIcon name={icon} size={16} strokeWidth={2} />
+      </span>
+      <span className="truncate font-bold text-ink" style={{ fontSize: 15.5, letterSpacing: "-0.01em" }}>
+        {title}
+      </span>
+      {badge}
+    </div>
+  );
+
   return (
     <RoyCard className={`flex min-h-0 flex-col overflow-hidden p-0 ${className ?? ""}`}>
-      <button
-        type="button"
-        onClick={onHead}
-        className="group flex shrink-0 items-center justify-between border-b border-line px-4 py-3 text-left transition-colors hover:bg-surface-2"
-      >
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span
-            className="inline-flex shrink-0 items-center justify-center rounded-[9px]"
-            style={{ width: 28, height: 28, color: tint, backgroundColor: `color-mix(in srgb, ${tint} 14%, transparent)` }}
+      {onAdd ? (
+        // Шапка с быстрым «+»: title-область и «Доска ›» — отдельные кнопки (вложенные
+        // <button> невалидны), между ними — иконка добавления.
+        <div className="flex shrink-0 items-stretch border-b border-line">
+          <button
+            type="button"
+            onClick={onHead}
+            className="group flex min-w-0 flex-1 items-center px-4 py-3 text-left transition-colors hover:bg-surface-2"
           >
-            <RoyIcon name={icon} size={16} strokeWidth={2} />
-          </span>
-          <span className="truncate font-bold text-ink" style={{ fontSize: 15.5, letterSpacing: "-0.01em" }}>
-            {title}
-          </span>
-          {badge}
+            {headLeft}
+          </button>
+          <button
+            type="button"
+            onClick={onAdd}
+            aria-label={addLabel ?? "Добавить"}
+            title={addLabel ?? "Добавить"}
+            className="flex shrink-0 items-center justify-center px-2.5 text-ink-mute transition-colors hover:bg-surface-2 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]"
+          >
+            <RoyIcon name="plus" size={18} strokeWidth={2.2} />
+          </button>
+          <button
+            type="button"
+            onClick={onHead}
+            className="group flex shrink-0 items-center gap-0.5 py-3 pr-4 pl-1.5 font-semibold text-ink-mute transition-colors hover:text-primary"
+            style={{ fontSize: 12.5 }}
+          >
+            {headAction ?? "Открыть"}
+            <RoyIcon name="cright" size={14} strokeWidth={2} />
+          </button>
         </div>
-        <span
-          className="inline-flex shrink-0 items-center gap-0.5 font-semibold text-ink-mute transition-colors group-hover:text-primary"
-          style={{ fontSize: 12.5 }}
+      ) : (
+        <button
+          type="button"
+          onClick={onHead}
+          className="group flex shrink-0 items-center justify-between border-b border-line px-4 py-3 text-left transition-colors hover:bg-surface-2"
         >
-          {headAction ?? "Открыть"}
-          <RoyIcon name="cright" size={14} strokeWidth={2} />
-        </span>
-      </button>
+          {headLeft}
+          <span
+            className="inline-flex shrink-0 items-center gap-0.5 font-semibold text-ink-mute transition-colors group-hover:text-primary"
+            style={{ fontSize: 12.5 }}
+          >
+            {headAction ?? "Открыть"}
+            <RoyIcon name="cright" size={14} strokeWidth={2} />
+          </span>
+        </button>
+      )}
       <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2.5 py-2">
         {loading && [0, 1, 2, 3].map((i) => <div key={i} className="roy-shim" style={{ height: 52, borderRadius: 12 }} />)}
         {!loading && empty && <div className="py-10 text-center text-sm text-ink-soft">{emptyText}</div>}
