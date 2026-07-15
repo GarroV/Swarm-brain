@@ -9,10 +9,14 @@
 // Деплой: supabase functions deploy swarm-recorder-version --no-verify-jwt (публичный GET, без секретов).
 
 // Держать в синхроне с recorder/VERSION (ветка sandbox_vas). Поднимать ПОСЛЕ мёрджа+проверки сборки.
+// build 5 (2026-07-15): надёжность записи собеседника (Фаза 1) — устранён самодедлок AudioDeviceStop
+// (разделены очереди IOProc/HAL + таймаут на стоп), watchdog нулей с пересборкой и детектом смены
+// формата устройства (BT-профиль) + честный сигнал «собеседник не пишется», сняты триггеры build 4.
+// Тег recorder-build-5, build-app.sh + смоук --selftest ✅. Обкатано на реальной встрече (AirPods, 7+ мин).
 // build 4 (2026-07-09): heartbeat-мониторинг рекордера (SwarmClient.heartbeat → meeting-heartbeat;
 // сервер ловит оборванную запись / истечение токена). Тег recorder-build-4, build-app.sh ✅ (подпись валидна).
 // build 3 (2026-06-30): бэкап аудио держится до публикации в базу + потолок 3 суток. Тег recorder-build-3.
-const LATEST_BUILD = 4;
+const LATEST_BUILD = 5;
 
 Deno.serve((req: Request) => {
   if (req.method === "OPTIONS") {
