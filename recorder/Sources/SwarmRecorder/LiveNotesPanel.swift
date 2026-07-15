@@ -47,7 +47,9 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         startedAt = Date()
         ensurePanel()
         setSystemAudioWarning(false)   // новая запись — сбросить метку «собеседник не пишется»
-        titleField?.stringValue = initialTitle ?? ""
+        // Название сразу в поле: реальное (календарь/комната) → иначе дефолт «Встреча <юзер> · <дата>»,
+        // чтобы встреча не уходила безымянной. Пользователь может переписать на ходу (уйдёт в claim).
+        titleField?.stringValue = Self.resolvedTitle(initialTitle)
         clearNotes()
         showExpanded()
     }
@@ -302,6 +304,18 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         notesStack?.arrangedSubviews.forEach { $0.removeFromSuperview() }
     }
     private func fmt(_ s: Int) -> String { String(format: "%02d:%02d", s / 60, s % 60) }
+
+    // Название встречи для поля: реальное (с сервера/из комнаты) если есть, иначе дефолт
+    // «Встреча <имя пользователя macOS> · <дата, время>» — встреча не остаётся безымянной.
+    private static func resolvedTitle(_ initial: String?) -> String {
+        if let t = initial?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty { return t }
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "ru_RU")
+        df.dateFormat = "d MMMM, HH:mm"
+        let who = NSFullUserName().trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = who.isEmpty ? "" : "\(who) · "
+        return "Встреча \(name)\(df.string(from: Date()))"
+    }
 
     private func isTitle(_ obj: Notification) -> Bool { (obj.object as AnyObject) === titleField }
     func controlTextDidBeginEditing(_ obj: Notification) {
