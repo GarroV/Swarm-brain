@@ -279,7 +279,7 @@ final class RecorderWidget {
         stopLevelMeter()
         lastLevel = 0
         lastSysLevel = 0
-        let t = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(tickLevel), userInfo: nil, repeats: true)
+        let t = Timer.scheduledTimer(timeInterval: 0.2, target: self, selector: #selector(tickLevel), userInfo: nil, repeats: true)
         RunLoop.main.add(t, forMode: .common)
         levelTimer = t
     }

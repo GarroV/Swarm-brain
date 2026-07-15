@@ -22,6 +22,10 @@ final class AudioRecorder: NSObject {
         let systemSegments: [(url: URL, offset: Double)]
     }
 
+    // Сигнал «собеседник не пишется / снова пишется» из системного захвата (watchdog нулей).
+    // Ставит AppDelegate; прокидывается в capturer на старте. true — не пишется, false — вернулось.
+    var onSystemStalled: ((Bool) -> Void)?
+
     private var systemCapturer: SystemAudioCapturer?
     private var micRecorder: AVAudioRecorder?
     private var systemURL: URL?
@@ -66,6 +70,7 @@ final class AudioRecorder: NSObject {
 
         // 1) Система первой. Бросит → запись не началась, mic не трогали.
         let cap = makeSystemCapturer()
+        cap.onSystemStalled = onSystemStalled   // прокинуть сигнал watchdog нулей наружу
         try await cap.start(systemURL: systemURL)
         self.systemCapturer = cap
 
@@ -80,7 +85,15 @@ final class AudioRecorder: NSObject {
         // Якорь первого системного сэмпла снимаем ДО stop() (capturer ещё жив).
         let systemFirst = systemCapturer?.firstSampleUptime
         // Системная дорожка — финализируется внутри capturer (best-effort, не бросает).
-        await systemCapturer?.stop()
+        // ВАЖНО (инцидент 2026-07-15): AudioDeviceStop в CoreAudio HAL может зависнуть НАМЕРТВО
+        // на BT-агрегатном устройстве (__psynch_mutexwait) — обычный `await` повесил бы весь стоп
+        // навсегда: mic не финализируется, claim/flush/скрытие панели не наступают, UI держит
+        // «Отправку», встреча теряется. Останавливаем с жёстким потолком по времени: возвращаемся
+        // по первому из двух — завершение teardown ИЛИ таймаут. Зависший teardown-поток при
+        // таймауте утечёт (процесс живёт), но стоп продолжится и запись не потеряется.
+        if let cap = systemCapturer {
+            await Self.stopWithTimeout(cap, seconds: Self.systemStopTimeout)
+        }
         // extraSegments читаем ПОСЛЕ stop() — финализация дописывает последний сегмент.
         let extraSegments = systemCapturer?.extraSegments ?? []
         systemCapturer = nil
@@ -137,5 +150,41 @@ final class AudioRecorder: NSObject {
         } catch {
             NSLog("SwarmRecorder: микрофон недоступен (\(error)) — пишем только систему")
         }
+    }
+
+    // ── Остановка системного тапа с потолком по времени ──────────────────────────
+    // Потолок ожидания teardown системного тапа. AudioDeviceStop в CoreAudio HAL умеет виснуть
+    // намертво на BT-агрегате (инцидент 2026-07-15) — дольше ждать смысла нет, всё равно не
+    // разморозится, а стоп должен завершиться (финализировать mic, дать claim/flush случиться).
+    private static let systemStopTimeout: Double = 4.0
+
+    // Останавливает capturer, не блокируясь дольше `seconds`. teardown идёт в unstructured-Task;
+    // continuation резюмится по первому из двух событий — его завершение ИЛИ таймаут. Если HAL
+    // завис, Task утечёт (процесс живёт), но вызывающий стоп продолжится и запись не потеряется.
+    private static func stopWithTimeout(_ cap: SystemAudioCapturer, seconds: Double) async {
+        let once = ResumeOnce()
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            once.attach(cont)
+            Task { await cap.stop(); once.fire() }
+            DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { once.fire() }
+        }
+    }
+}
+
+// Одноразовый резюмер continuation из гонки двух источников (завершение teardown vs таймаут):
+// гарантирует ровно один resume. Foundation-only (NSLock), вызывается редко (раз на стоп).
+private final class ResumeOnce {
+    private let lock = NSLock()
+    private var done = false
+    private var cont: CheckedContinuation<Void, Never>?
+    func attach(_ c: CheckedContinuation<Void, Never>) {
+        lock.lock(); cont = c; lock.unlock()
+    }
+    func fire() {
+        lock.lock()
+        let c = done ? nil : cont
+        done = true; cont = nil
+        lock.unlock()
+        c?.resume()
     }
 }

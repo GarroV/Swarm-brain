@@ -42,9 +42,11 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     func show(config: SwarmConfig, initialTitle: String?, micLevel: @escaping () -> Float, systemLevel: @escaping () -> Float, onStop: @escaping () -> Void, onCollapse: @escaping () -> Void) {
         self.micLevel = micLevel; self.sysLevel = systemLevel; self.onStop = onStop; self.onCollapse = onCollapse
         buffer.removeAll()
+        clearPersistedNotes()   // новая запись — прошлый персист пометок больше не актуален
         editedTitle = nil
         startedAt = Date()
         ensurePanel()
+        setSystemAudioWarning(false)   // новая запись — сбросить метку «собеседник не пишется»
         titleField?.stringValue = initialTitle ?? ""
         clearNotes()
         showExpanded()
@@ -273,7 +275,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         stopTimers()
         let t = Timer.scheduledTimer(timeInterval: 1, target: self, selector: #selector(tickTimer), userInfo: nil, repeats: true)
         RunLoop.main.add(t, forMode: .common); timer = t; tickTimer()
-        let lt = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(tickLevels), userInfo: nil, repeats: true)
+        let lt = Timer.scheduledTimer(timeInterval: 0.2, target: self, selector: #selector(tickLevels), userInfo: nil, repeats: true)
         RunLoop.main.add(lt, forMode: .common); levelTimer = lt
     }
     private func stopTimers() { timer?.invalidate(); timer = nil; levelTimer?.invalidate(); levelTimer = nil }
@@ -287,6 +289,13 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         fill.frame = CGRect(x: 0, y: 0, width: max(0, min(1, lvl)) * t.bounds.width, height: 3)
         CATransaction.commit()
+    }
+
+    /// Метка «собеседник не пишется»: системная полоса краснеет + подсказка. Снимается при возврате
+    /// звука. Ставит AppDelegate по сигналу watchdog нулей (инцидент 2026-07-15).
+    func setSystemAudioWarning(_ on: Bool) {
+        sysFill.backgroundColor = (on ? Self.rec : Self.amberHi).cgColor
+        sysTrack?.toolTip = on ? "Собеседник не пишется — проверь вывод звука (наушники?)" : nil
     }
 
     private func clearNotes() {
@@ -318,6 +327,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         guard !t.isEmpty else { return }
         let offset = Int(max(0, Date().timeIntervalSince(startedAt ?? Date())))
         buffer.append(Buffered(offset: offset, text: t))
+        persistBuffer()   // на диск сразу — переживёт краш/зависание процесса
         appendNoteRow(offset: offset, text: t)
         field.stringValue = ""; panel?.makeFirstResponder(field)
     }
@@ -357,7 +367,8 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         let pending = buffer
         guard !pending.isEmpty else { hide(); return }
         guard let jwt = await fetchWebToken(config: config) else {
-            NSLog("SwarmRecorder: live-пометки не слиты — нет web-JWT (\(pending.count) шт.)"); return
+            // Нет web-JWT: панель всё равно прячем (буфер и его копия на диске остаются для разбора).
+            NSLog("SwarmRecorder: live-пометки не слиты — нет web-JWT (\(pending.count) шт.)"); hide(); return
         }
         let api = config.ingestBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             + "/swarm-api/agent-meetings/\(meetingId)/notes"
@@ -373,7 +384,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
                let code = (resp as? HTTPURLResponse)?.statusCode, code == 200 || code == 201 { sent += 1 }
         }
         NSLog("SwarmRecorder: live-пометки слиты \(sent)/\(pending.count) → встреча \(meetingId)")
-        if sent == pending.count { buffer.removeAll() }
+        if sent == pending.count { buffer.removeAll(); clearPersistedNotes() }
         hide()
     }
 
@@ -389,6 +400,25 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
                   let jwt = obj["jwt"] as? String else { return nil }
             return jwt
         } catch { NSLog("SwarmRecorder: meeting-webtoken не удался: \(error)"); return nil }
+    }
+
+    // ── Персист live-пометок на диск ─────────────────────────────────────────────
+    // Буфер пометок пишем на диск по ходу, чтобы краш/зависание процесса не съедали их (инцидент
+    // 2026-07-15: пометки жили только в памяти и пропали при принудительном перезапуске). Файл
+    // чистится на успешном flush и при старте новой записи.
+    private static var notesFileURL: URL {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/SwarmRecorder", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("live-notes-current.json")
+    }
+    private func persistBuffer() {
+        let arr = buffer.map { ["offset": $0.offset, "text": $0.text] as [String: Any] }
+        guard let data = try? JSONSerialization.data(withJSONObject: arr, options: [.prettyPrinted]) else { return }
+        try? data.write(to: Self.notesFileURL, options: .atomic)
+    }
+    private func clearPersistedNotes() {
+        try? FileManager.default.removeItem(at: Self.notesFileURL)
     }
 }
 

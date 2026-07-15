@@ -121,6 +121,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         widget.levelProvider = { [weak self] in self?.recorder.currentMicLevel() ?? 0 }
         // Вторая полоса — уровень системной дорожки (собеседники/коллеги), видно живой захват.
         widget.systemLevelProvider = { [weak self] in self?.recorder.currentSystemLevel() ?? 0 }
+        // Честный сигнал «собеседник не пишется» из watchdog нулей (вызывается с control-queue →
+        // прыгаем на main). Не терять собеседника молча (инцидент 2026-07-15).
+        recorder.onSystemStalled = { [weak self] stalled in
+            DispatchQueue.main.async { self?.handleSystemAudioStalled(stalled) }
+        }
 
         setupNotifications()
         startWatching()
@@ -511,7 +516,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         case .recording, .sending: Updater.setRecordingLock(true)
         default: Updater.setRecordingLock(false)
         }
-        sendHeartbeat() // сервер сразу знает старт/стоп записи → recording=false при остановке снимает ложное «прервалась»
+        // Heartbeat: сервер должен знать старт/стоп записи (recording=false при остановке снимает
+        // ложное «прервалась»). Но в моменты .recording/.sending НЕ шлём синхронно — это самые
+        // хрупкие точки жизненного цикла тапа (start/stop), не добавляем туда конкурентный сетевой
+        // Task (инцидент 2026-07-15). Небольшая задержка выносит его из критического окна.
+        switch s {
+        case .recording, .sending:
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.sendHeartbeat() }
+        default:
+            sendHeartbeat()
+        }
         DispatchQueue.main.async { self.rebuildMenu() }
     }
 
@@ -650,11 +664,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 sysURL = sys; micURL = mic
                 recordStartedAt = startedAt
                 identity = id
+                // notesExpanded ДО setState(.recording): иначе syncWidget сначала покажет виджет с
+                // его level-таймером, а затем панель заведёт ВТОРОЙ 10-Гц таймер (дефект build 4 →
+                // лишняя нагрузка на планировщик во время записи). Ставим флаг заранее — при наличии
+                // панели виджет сразу скрыт, работает только один индикатор уровней.
+                self.notesExpanded = (self.config != nil)
                 setState(.recording)
                 // Granola-режим: на старте — блокнот (LiveNotesPanel). Клик по марке сворачивает в
                 // вертикальную пилюлю (виджет рекордера), клик по марке пилюли — обратно в блокнот.
                 if let cfg = self.config {
-                    self.notesExpanded = true
                     await LiveNotesPanel.shared.show(
                         config: cfg,
                         initialTitle: id?.title,
@@ -768,10 +786,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "callend-\(Int(Date().timeIntervalSince1970))", content: content, trigger: nil))
     }
 
+    // Watchdog нулей: собеседник не пишется (авто-пересборка тапа не помогла) / звук вернулся.
+    // На «не пишется» — честно предупреждаем (микрофон при этом пишется). «Вернулось» — молча.
+    private func handleSystemAudioStalled(_ stalled: Bool) {
+        guard case .recording = state else { return }
+        Task { @MainActor in LiveNotesPanel.shared.setSystemAudioWarning(stalled) }   // метка в панели
+        guard stalled else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "⚠️ Собеседник не пишется"
+        content.body = "Звук собеседника сейчас не захватывается (частая причина — Bluetooth-наушники переключили режим на звонке). Твой микрофон пишется. Помогает: переключить вывод звука на встроенные динамики."
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "sysstall-\(Int(Date().timeIntervalSince1970))", content: content, trigger: nil))
+    }
+
     @objc private func stopTapped() {
         guard config != nil else { return }
         stopCallEndWatch()
         armSending()
+        // Крестик = мгновенная реакция: убираем панель заметок СРАЗУ, не дожидаясь цепочки
+        // stop→claim→flush (инцидент 2026-07-15: раньше панель висела, пока стоп зависал в HAL).
+        // Буфер пометок сохраняется в LiveNotesPanel и уйдёт во flush(), когда появится meetingId.
+        Task { @MainActor in LiveNotesPanel.shared.hide() }
         let info = identity
         let started = recordStartedAt ?? Date()
         Task {

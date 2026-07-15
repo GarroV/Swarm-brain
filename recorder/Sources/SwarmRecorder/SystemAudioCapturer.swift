@@ -33,6 +33,10 @@ protocol SystemAudioCapturer: AnyObject {
     // 0, если захват не идёт или буферов ещё нет. Используется: (1) живой индикатор в виджете,
     // (2) детект конца браузерного звонка по затяжной тишине системной дорожки.
     func currentLevel() -> Float
+
+    // Сигнал наружу: true — собеседник не пишется и авто-пересборки не помогли; false — звук
+    // вернулся. Даёт честно предупредить пользователя (не терять собеседника молча). Опционально.
+    var onSystemStalled: ((Bool) -> Void)? { get set }
 }
 
 extension SystemAudioCapturer {
@@ -151,6 +155,8 @@ final class ScreenCaptureKitRecorder: NSObject, SystemAudioCapturer, SCStreamOut
     private let levelTracker = SystemLevelTracker()
     var firstSampleUptime: Double? { queue.sync { _firstSampleUptime } }
     func currentLevel() -> Float { levelTracker.current() }
+    // SCK-путь (fallback для <14.4) не имеет watchdog нулей — свойство для соответствия протоколу.
+    var onSystemStalled: ((Bool) -> Void)?
 
     func start(systemURL url: URL) async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
@@ -260,6 +266,29 @@ private extension AudioObjectID {
         return cf as String
     }
 
+    // Номинальная частота дефолтного устройства вывода. Меняется, когда Bluetooth-гарнитура
+    // переключает профиль на звонке (A2DP 44.1/48к → HFP 16к) — при этом UID устройства НЕ
+    // меняется, поэтому смену ловим по частоте, а не по listener'у смены устройства.
+    static func defaultOutputNominalSampleRate() throws -> Double {
+        var devAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var dev = AudioDeviceID(kAudioObjectUnknown)
+        var dsz = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(.system, &devAddr, 0, nil, &dsz, &dev) == noErr else {
+            throw SwarmError.transport("default output device (sr)")
+        }
+        var srAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var sr: Float64 = 0
+        var ssz = UInt32(MemoryLayout<Float64>.size)
+        guard AudioObjectGetPropertyData(dev, &srAddr, 0, nil, &ssz, &sr) == noErr else {
+            throw SwarmError.transport("output nominal sample rate")
+        }
+        return sr
+    }
+
     func tapStreamASBD() throws -> AudioStreamBasicDescription {
         var addr = AudioObjectPropertyAddress(
             mSelector: kAudioTapPropertyFormat,
@@ -280,9 +309,17 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
     private var aggID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
     private var file: AVAudioFile?
-    // Все блокирующие HAL-вызовы (create/destroy tap+aggregate, IOProc start/stop) и доступ к
-    // изменяемому состоянию — строго на этой очереди. IOProc-блок звука тоже шлёт на неё.
-    private let queue = DispatchQueue(label: "swarm.systemtap", qos: .userInitiated)
+    // Управляющая очередь: все блокирующие HAL-вызовы (create/destroy tap+aggregate, Start/Stop),
+    // device-listener, silence-watchdog и мутация управляющего состояния — строго на ней.
+    private let queue = DispatchQueue(label: "swarm.systemtap.control", qos: .userInitiated)
+    // IOProc-доставка звука идёт на ОТДЕЛЬНОЙ очереди, НЕ на управляющей. Иначе AudioDeviceStop
+    // (на queue) вешает in-flight IOProc в той же serial-очереди → самодедлок HAL (инцидент
+    // 2026-07-15: __psynch_mutexwait). С раздельными очередями Stop дожидается колбэка без
+    // взаимной блокировки: колбэк доигрывает на ioQueue, Stop ждёт его с queue.
+    private let ioQueue = DispatchQueue(label: "swarm.systemtap.io", qos: .userInitiated)
+    // Якоря, которые пишет IOProc (ioQueue) и читает управляющая сторона (queue) — под свой lock
+    // (раньше синхронизация шла через общую очередь, теперь очередей две).
+    private var ioLock = os_unfair_lock()
 
     // Целевой выходной файл сессии (первый сегмент) и его директория/база для доп.сегментов.
     private var baseURL: URL?
@@ -292,6 +329,9 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
     private var segmentIndex = 0
     private var rebuilding = false
     private var stopped = false
+    // Частота устройства вывода на момент сборки тапа. Если она меняется (BT-профиль A2DP↔HFP на
+    // звонке) — тап начинает отдавать нули → превентивно пересобираем (см. watchdog). 0 = не собран.
+    private var builtDeviceSampleRate: Double = 0
 
     // Слушатель смены дефолтного устройства вывода (наушники↔динамики↔гарнитура): на смену
     // надо пересоздать тап+агрегат вокруг нового устройства, иначе тап молча даёт тишину.
@@ -306,13 +346,27 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
     private var lastNonSilentUptime: Double = 0
     private static let silenceRebuildSeconds: Double = 8.0   // 0.0-сигнал дольше → пересборка
 
+    // Honest-signal наружу (AppDelegate): true — собеседник не пишется и авто-пересборки не
+    // помогли; false — звук вернулся. Чтобы «не терять собеседника молча» (инцидент 2026-07-15).
+    var onSystemStalled: ((Bool) -> Void)?
+    private var stalledSignaled = false
+    private var consecutiveSilentRebuilds = 0
+    private static let rebuildsBeforeStallSignal = 2   // столько пересборок без звука → сигнал
+    private static let stallLevelEpsilon: Float = 0.001   // выше — считаем, что звук реально идёт
+
     // Уровень системной дорожки (собеседники). Обновляется в IOProc-блоке (off-main), читается
     // из main (виджет/детект тишины) под собственным lock — не блокирует аудио-очередь.
     private let levelTracker = SystemLevelTracker()
 
-    var firstSampleUptime: Double? { queue.sync { _firstSampleUptime } }
+    var firstSampleUptime: Double? { withIOLock { _firstSampleUptime } }
     var extraSegments: [(url: URL, offset: Double)] { queue.sync { _extraSegments } }
     func currentLevel() -> Float { levelTracker.current() }
+
+    // Доступ к якорям, разделяемым между IOProc (ioQueue) и управляющей стороной (queue).
+    private func withIOLock<T>(_ body: () -> T) -> T {
+        os_unfair_lock_lock(&ioLock); defer { os_unfair_lock_unlock(&ioLock) }
+        return body()
+    }
 
     func start(systemURL: URL) async throws {
         // Блокирующая инициализация HAL — на dedicated queue (не на вызывающем потоке).
@@ -320,7 +374,7 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
             self.baseURL = systemURL
             self.stopped = false
             self.sessionStartUptime = ProcessInfo.processInfo.systemUptime
-            self.lastNonSilentUptime = self.sessionStartUptime ?? 0
+            self.withIOLock { self.lastNonSilentUptime = self.sessionStartUptime ?? 0 }
             try self.buildTapLocked(outURL: systemURL)
         }
         installDeviceListener()
@@ -371,6 +425,8 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
 
         // 4. приватный агрегат вокруг дефолтного output + наш tap
         let outUID = try AudioObjectID.defaultSystemOutputUID()
+        // Зафиксировать частоту устройства — watchdog сверяет с ней и пересобирает при смене (BT-профиль).
+        builtDeviceSampleRate = (try? AudioObjectID.defaultOutputNominalSampleRate()) ?? 0
         let dict: [String: Any] = [
             kAudioAggregateDeviceNameKey: "Swarm-Tap",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
@@ -403,17 +459,21 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
             commonFormat: .pcmFormatFloat32,
             interleaved: inFmt.isInterleaved)
 
-        // 6. IOProc + старт. Блок звука: считаем RMS/peak (watchdog тишины) и пишем в файл.
+        // 6. IOProc + старт. Блок звука доставляется на ioQueue (НЕ на управляющей queue — иначе
+        // Stop самодедлочится). Считаем peak (watchdog тишины) и пишем в файл.
         var p: AudioDeviceIOProcID?
-        let err = AudioDeviceCreateIOProcIDWithBlock(&p, aggID, queue) { [weak self] _, inData, _, _, _ in
+        let err = AudioDeviceCreateIOProcIDWithBlock(&p, aggID, ioQueue) { [weak self] _, inData, _, _, _ in
             guard let self else { return }
-            // Якорь первого сэмпла сессии (один раз за всю запись).
-            if self._firstSampleUptime == nil { self._firstSampleUptime = ProcessInfo.processInfo.systemUptime }
+            // Якорь первого сэмпла сессии (один раз за всю запись) — под ioLock (читает queue-сторона).
+            self.withIOLock { if self._firstSampleUptime == nil { self._firstSampleUptime = ProcessInfo.processInfo.systemUptime } }
+            // self.file ставится в buildTapLocked ДО AudioDeviceStart и обнуляется в teardownLocked
+            // ПОСЛЕ AudioDeviceStop — Core Audio гарантирует, что IOProc не вызывается вне [Start, Stop],
+            // поэтому доступ к file здесь безопасен без отдельного lock.
             guard let f = self.file,
                   let buf = AVAudioPCMBuffer(pcmFormat: inFmt, bufferListNoCopy: inData, deallocator: nil) else { return }
             let peak = SystemLevelTracker.bufferPeak(buf)
             self.levelTracker.update(rawPeak: peak)   // живой уровень собеседников
-            if peak > 0 { self.lastNonSilentUptime = ProcessInfo.processInfo.systemUptime }
+            if peak > 0 { self.withIOLock { self.lastNonSilentUptime = ProcessInfo.processInfo.systemUptime } }
             try? f.write(from: buf)
         }
         guard err == noErr, let proc = p else { throw SwarmError.transport("AudioDeviceCreateIOProcIDWithBlock \(err)") }
@@ -448,7 +508,7 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
         do {
             try buildTapLocked(outURL: seg)
             _extraSegments.append((url: seg, offset: max(0, offset)))
-            lastNonSilentUptime = ProcessInfo.processInfo.systemUptime  // не пересобирать сразу снова
+            withIOLock { lastNonSilentUptime = ProcessInfo.processInfo.systemUptime }  // не пересобирать сразу снова
         } catch {
             NSLog("SwarmRecorder: пересборка тапа не удалась (\(error)) — сегмент \(segmentIndex) пропущен")
         }
@@ -477,10 +537,38 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
         t.schedule(deadline: .now() + 2, repeating: 2)
         t.setEventHandler { [weak self] in
             guard let self, !self.stopped, !self.rebuilding else { return }
-            let silentFor = ProcessInfo.processInfo.systemUptime - self.lastNonSilentUptime
-            // Только при РЕАЛЬНОМ созвоне: тишина в простое — норма, пересобирать не надо.
+
+            // (0) Реальный звук собеседника идёт → всё здорово: сбросить счётчики; если раньше
+            // сигналили «не пишется» — снять сигнал (звук вернулся).
+            if self.levelTracker.current() > Self.stallLevelEpsilon {
+                self.consecutiveSilentRebuilds = 0
+                if self.stalledSignaled { self.stalledSignaled = false; self.onSystemStalled?(false) }
+                return
+            }
+
+            // (1) Смена формата устройства (BT-профиль A2DP↔HFP) → превентивная пересборка, не
+            // дожидаясь нулей: тап на старом формате всё равно скоро отдаст тишину. UID при этом
+            // не меняется, поэтому обычный device-listener это не ловит.
+            if self.builtDeviceSampleRate > 0,
+               let cur = try? AudioObjectID.defaultOutputNominalSampleRate(),
+               abs(cur - self.builtDeviceSampleRate) > 1 {
+                self.rebuildLocked(reason: "смена формата устройства \(Int(self.builtDeviceSampleRate))→\(Int(cur))Гц")
+                return
+            }
+
+            // (2) Тишина дольше порога при РЕАЛЬНОМ созвоне (в простое тишина — норма) → тап,
+            // вероятно, завис/умер → полная пересборка (попытка авто-восстановления).
+            let last = self.withIOLock { self.lastNonSilentUptime }
+            let silentFor = ProcessInfo.processInfo.systemUptime - last
             guard silentFor >= Self.silenceRebuildSeconds, CallDetector.realCallActive() else { return }
             self.rebuildLocked(reason: "тишина \(Int(silentFor))с при активном созвоне")
+            self.consecutiveSilentRebuilds += 1
+
+            // (3) Пересборки подряд не вернули звук → честно сигналим пользователю (один раз).
+            if self.consecutiveSilentRebuilds >= Self.rebuildsBeforeStallSignal, !self.stalledSignaled {
+                self.stalledSignaled = true
+                self.onSystemStalled?(true)
+            }
         }
         t.resume()
         silenceTimer = t
