@@ -136,20 +136,48 @@ function dominantLang(parts: Part[]): string {
   return best || "unknown";
 }
 
-async function chatComplete(system: string, user: string, temperature?: number): Promise<string> {
-  const res = await openaiFetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      messages: [{ role: "system", content: system }, { role: "user", content: user }],
-      max_tokens: 3000,
-      ...(temperature !== undefined ? { temperature } : {}),
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
-  return (data as { choices: Array<{ message: { content: string } }> }).choices[0].message.content;
+// Модель тезисов — gpt-5.6-terra: на реальных встречах даёт заметно более конкретные тезисы, чем
+// gpt-4o (тот на содержательных встречах иногда ошибочно возвращал НЕТ_ТЕЗИСОВ, теряя запись).
+// GPT-5 в chat/completions требует max_completion_tokens (не max_tokens) и НЕ принимает temperature.
+const TEZIS_MODEL = "gpt-5.6-terra";
+// Фолбэк, если основная модель недоступна (напр. 403 insufficient permissions под нагрузкой):
+// openaiFetch ретраит только 429/5xx, поэтому такую ошибку страхуем здесь — тезисы не должны
+// теряться из-за проблем с одной моделью.
+const TEZIS_FALLBACK_MODEL = "gpt-4o";
+const isGpt5 = (model: string): boolean => /^gpt-5/.test(model);
+
+interface ChatOpts { temperature?: number; model?: string; maxTokens?: number }
+
+async function chatComplete(system: string, user: string, opts: ChatOpts = {}): Promise<string> {
+  const maxTokens = opts.maxTokens ?? 4000;
+  const messages = [{ role: "system", content: system }, { role: "user", content: user }];
+
+  const callModel = async (model: string): Promise<string> => {
+    // GPT-5 — max_completion_tokens + без temperature; старые модели — max_tokens (+ temperature).
+    const body: Record<string, unknown> = isGpt5(model)
+      ? { model, messages, max_completion_tokens: maxTokens }
+      : { model, messages, max_tokens: maxTokens, ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}) };
+    const res = await openaiFetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
+    return (data as { choices: Array<{ message: { content: string } }> }).choices[0].message.content;
+  };
+
+  const model = opts.model ?? TEZIS_MODEL;
+  try {
+    return await callModel(model);
+  } catch (e) {
+    // Основная модель упала — не теряем тезисы: пробуем запасную (только если основная была gpt-5).
+    if (isGpt5(model) && TEZIS_FALLBACK_MODEL !== model) {
+      console.error(`meeting-processor: тезисы на ${model} упали (${e}), фолбэк на ${TEZIS_FALLBACK_MODEL}`);
+      return await callModel(TEZIS_FALLBACK_MODEL);
+    }
+    throw e;
+  }
 }
 
 async function sendTelegram(chatId: number, text: string, keyboard?: InlineButton[][]): Promise<void> {
@@ -281,7 +309,7 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
     const raw = (await chatComplete(
       TEZIS_SYSTEM,
       `Встреча: ${m.title ?? "без названия"}\n\nСтенограмма (реплики помечены «собеседник» — другие участники, «я» — владелец записи):\n${transcriptText}`,
-      0.3, // ниже дефолта (1.0): меньше воды, держится фактов из стенограммы
+      { temperature: 0.3 }, // применяется к фолбэк-gpt-4o; terra (GPT-5) температуру игнорирует
     )).trim();
     tezisi = /^НЕТ[_\s]?ТЕЗИСОВ/i.test(raw) ? NO_TEZISY_NOTE : raw;
   }
@@ -297,6 +325,7 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
         const t = (await chatComplete(
           "Придумай короткое название встречи на русском: 3–6 слов, по сути обсуждения, без даты, кавычек и префиксов. Верни ТОЛЬКО название.",
           tezisi.slice(0, 2000),
+          { model: "gpt-4o-mini", maxTokens: 60 }, // заголовок — дешёвая быстрая модель, не terra
         )).trim().replace(/^["«»\s]+|["«»\s]+$/g, "").slice(0, 120);
         if (t) finalTitle = t;
       } catch { /* оставляем исходный заголовок */ }
@@ -332,7 +361,7 @@ export async function resummarizeFromTranscript(supabase: SupabaseClient, meetin
   const raw = (await chatComplete(
     TEZIS_SYSTEM,
     `Встреча: ${row?.title ?? "без названия"}\n\nСтенограмма (реплики помечены «собеседник» — другие участники, «я» — владелец записи):\n${transcriptText}`,
-    0.3,
+    { temperature: 0.3 },
   )).trim();
   const tezisi = /^НЕТ[_\s]?ТЕЗИСОВ/i.test(raw) ? NO_TEZISY_NOTE : raw;
   await supabase.from("meetings").update({ draft_notes_md: tezisi, updated_at: new Date().toISOString() }).eq("id", meetingId);
