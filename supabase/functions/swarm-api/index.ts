@@ -36,9 +36,10 @@ import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 import { handleAdminRoutes } from "./admin.ts";
+import { corsHeaders, json, apiErr } from "./http.ts";
+import { handleTaskLabelRoutes } from "./task-labels.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
-const MINIAPP_ORIGIN = Deno.env.get("MINIAPP_ORIGIN") ?? "*";
 const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
 const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — единый суперадмин
 // Demo-сессия для показа заказчику (секретная ссылка → JWT с этим telegram_id). Жёстко
@@ -52,29 +53,7 @@ const supabase = createClient(
 );
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function corsHeaders(origin: string): Record<string, string> {
-  const allowOrigin =
-    MINIAPP_ORIGIN === "*" ? "*"
-    : origin === MINIAPP_ORIGIN ? origin
-    : MINIAPP_ORIGIN;
-  return {
-    "Access-Control-Allow-Origin": allowOrigin,
-    "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  };
-}
-
-function json(data: unknown, status = 200, origin = ""): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
-  });
-}
-
-function apiErr(status: number, message: string, origin = ""): Response {
-  return json({ error: message }, status, origin);
-}
+// corsHeaders / json / apiErr вынесены в ./http.ts (общие с доменными роут-модулями).
 
 // Wrap any async handler that calls getEntrySecure / buildEntriesQuery.
 // Converts EntryAccessError into the correct 404/403 response automatically.
@@ -426,6 +405,10 @@ Deno.serve(async (req: Request) => {
 
     return json(result, 200, origin);
   }
+
+  // Персональные смарт-метки задач (/task-labels*) — доступ строго свой (owner_id).
+  const labelResp = await handleTaskLabelRoutes(supabase, req, routePath, telegram_id, groupId, origin);
+  if (labelResp) return labelResp;
 
   // GET /tasks or POST /tasks
   if (routePath === "/tasks") {
