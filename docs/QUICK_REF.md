@@ -66,6 +66,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 |---|---|---|
 | CRUD/спринты/зависимости/типы | `_shared/tasks/{db,sprints,dependencies,types}.ts` | spoke [SHARED_TASKS_ENGINE.md](SHARED_TASKS_ENGINE.md) |
 | Бот-обёртка / MCP-прослойка / fuzzy-assignee | `swarm-bot/tasks/{db,handlers,matcher}.ts`, `swarm-mcp/tasks/tools.ts` | §Движок задач |
+| 🔒 **Видимость/приватность — кто что видит** (задачи И встречи/записи: приватное `is_private=true` — только владелец `owner_id`; админ/руководитель — ВСЁ в воркспейсе, вкл. чужое личное; изоляция по `group_id`) | задачи → `_shared/tasks/db.ts` (`listTasks`); встречи=записи → `swarm-api/entries-guard.ts` (`getEntrySecure`/`buildEntriesQuery`) | **[ARCHITECTURE.md](ARCHITECTURE.md) §Контроль доступа — единый канон** (`visibilityFilter`, админ-байпас) |
 
 ### Поиск / записи / страны
 | Concern | Файлы | Детали |
