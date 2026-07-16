@@ -148,7 +148,8 @@ export async function saveEntry(
         const memb = await getEmbedding([midx.summary ?? merged, msp.length ? `Страны: ${msp.join(", ")}` : "", midx.keywords ? `Ключевые слова: ${midx.keywords}` : ""].filter(Boolean).join("\n").slice(0, 8000));
         await supabase.from("entries").update({
           content: merged, summary: midx.summary, embedding: memb,
-          countries: mc, entry_type: midx.entry_type, entry_date: midx.entry_date,
+          // source=telegram → всегда note (см. ниже): текст в бота не идёт в ревью встреч.
+          countries: mc, entry_type: "note", entry_date: midx.entry_date,
         }).eq("id", frag.id);
         return { id: frag.id, summary: midx.summary, merged: true };
       }
@@ -161,6 +162,13 @@ export async function saveEntry(
     index = { summary: summary ?? null, countries: [], entry_type: "note", entry_date: null, keywords: "" };
   } else {
     index = await buildEntryIndex(content, summary);
+  }
+
+  // Текст, присланный в бота (набранный/пересланный, source=telegram), — ВСЕГДА обычная запись,
+  // а не «встреча»: ревью встреч предназначено только для авто-транскриптов (Granola/рекордер/
+  // Read.ai). Иначе заметка вида «прошла встреча…» ошибочно попадала в очередь согласования встреч.
+  if (source === "telegram" && index.entry_type === "meeting") {
+    index = { ...index, entry_type: "note" };
   }
 
   // General tag: entries with no specific country or broad coverage (3+ countries).
