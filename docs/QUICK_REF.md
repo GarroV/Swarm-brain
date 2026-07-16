@@ -59,6 +59,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | **Доступ к `entries`** (приватность+воркспейс) — НЕ грепать напрямую | `swarm-api/entries-guard.ts` | §Контроль доступа |
 | Админка (воркспейсы/бродкаст/профили) | `swarm-api/admin.ts` | §swarm-api |
 | Auth (initData / agent-токен / web-JWT) | `swarm-api/auth.ts`, `_shared/agent-auth.ts`, `_shared/jwt.ts` | §MCP-аутентификация |
+| 🔍 Веб-логин отбивается (вход через Telegram-виджет → возврат на `/login`, 401 на `/api/me`) | **Рассинхрон `WEB_JWT_SECRET`**: Cloudflare Pages подписывает cookie `roj_session`, а swarm-api проверяет своим значением — если они разные, `verifyJWT`→null→401. Реализации JWT (`_lib/jwt.ts` CF ⟷ `_shared/jwt.ts`) идентичны, дело только в ключе. Починка: единый ключ в ОБА места — `printf %s $S \| wrangler pages secret put WEB_JWT_SECRET --project-name swarm-brain` + `supabase secrets set WEB_JWT_SECRET=$S`, затем передеплой `swarm-api`/`meeting-webtoken`/`google-oauth` и retrigger CF Pages. Вход через Telegram Mini App (tma initData) этим НЕ затронут — отсюда «у владельца работает, у веб-юзера нет». | §MCP-аутентификация |
 
 ### Задачи (общий движок) — `_shared/tasks/`
 | Concern | Файлы | Детали |
