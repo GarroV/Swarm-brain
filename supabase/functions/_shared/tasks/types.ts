@@ -24,6 +24,7 @@ export type Task = {
   start_date: string | null;
   timeline_position: number | null;
   sprint_id: string | null;
+  label_ids: string[];
 };
 
 export type TaskInput = {
@@ -48,6 +49,7 @@ export type TaskInput = {
   start_date?: string | null;
   timeline_position?: number | null;
   sprint_id?: string | null;
+  label_ids?: string[];
 };
 
 // ── Спринты ───────────────────────────────────────────────────────────────────

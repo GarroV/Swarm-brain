@@ -28,6 +28,7 @@ export async function createTask(input: TaskInput, groupId?: string): Promise<Ta
     start_date: input.start_date ?? null,
     timeline_position: input.timeline_position ?? null,
     sprint_id: input.sprint_id ?? null,
+    label_ids: input.label_ids ?? [],
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Task;
@@ -53,6 +54,7 @@ export async function listTasks(filters: {
   isAdmin?: boolean;        // админ видит все приватные
   sprintId?: string;
   tags?: string[];          // ANY-совпадение (overlaps)
+  labelIds?: string[];      // ANY-совпадение (overlaps по label_ids)
   startDateFrom?: string;
   startDateTo?: string;
   dueDateFrom?: string;
@@ -84,6 +86,7 @@ export async function listTasks(filters: {
   if (filters.createdBy !== undefined) q = q.eq("created_by_telegram_id", filters.createdBy);
   if (filters.sprintId) q = q.eq("sprint_id", filters.sprintId);
   if (filters.tags && filters.tags.length > 0) q = q.overlaps("tags", filters.tags);
+  if (filters.labelIds && filters.labelIds.length > 0) q = q.overlaps("label_ids", filters.labelIds);
   if (filters.startDateFrom) q = q.gte("start_date", filters.startDateFrom);
   if (filters.startDateTo) q = q.lte("start_date", filters.startDateTo);
   if (filters.dueDateFrom) q = q.gte("due_date", filters.dueDateFrom);
