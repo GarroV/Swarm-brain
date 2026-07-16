@@ -65,7 +65,12 @@ export function RemindersTasks() {
   };
 
   const rowTrailing = (t: Task) => (
-    <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+    // stopPropagation на всём блоке действий: клики по быстрому меню (срок/исполнитель/страна)
+    // и кнопкам НЕ должны всплывать на строку — иначе после выбора открывается карточка правки.
+    <span
+      onClick={(e) => e.stopPropagation()}
+      className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+    >
       {/* Быстро задать срок / исполнителя / страну, не открывая карточку */}
       <TaskQuickActions task={t} users={users} markets={markets} onChanged={r.reload} />
       <IconBtn label="Изменить" color="var(--accent-ink)" onClick={(e) => { e.stopPropagation(); setModalTask(t); }}>
