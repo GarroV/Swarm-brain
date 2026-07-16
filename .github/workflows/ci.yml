@@ -1,0 +1,43 @@
+name: CI
+
+# Робот-проверяльщик: на каждый push и PR собирает и проверяет код ДО того, как он
+# доберётся до пользователей. Зелёная галочка = безопасно, красный крест = поймана поломка.
+# Веб (miniapp) выкатывается в прод авто на push в sandbox_vas — этот CI ловит регрессии
+# параллельно (сборка + типы + тесты). Рекордер проверяется отдельно (.github/workflows/recorder.yml).
+
+on:
+  push:
+    branches: [sandbox_vas]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  edge:
+    name: Edge Functions (Deno) — типы + тесты
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: deno check (все edge-функции)
+        run: deno check $(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts)
+      - name: deno test
+        run: deno test -A supabase/functions/
+
+  miniapp:
+    name: Mini App (Next.js) — сборка + типы
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: miniapp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: miniapp/package-lock.json
+      - run: npm ci
+      # next build проверяет и типы, и сборку — то же, что делает Cloudflare Pages, но ДО прода.
+      - run: npm run build

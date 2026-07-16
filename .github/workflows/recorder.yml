@@ -1,0 +1,25 @@
+name: CI (recorder)
+
+# Рекордер (Swift, macOS) — отдельный workflow: macOS-раннер дорогой, поэтому гоняем
+# ТОЛЬКО когда меняется код рекордера. Ловит поломку сборки до тега релиза recorder-build-N
+# («плохую сборку не пушим — сломает всю команду», см. recorder/README.md).
+
+on:
+  push:
+    branches: [sandbox_vas]
+    paths: ['recorder/**']
+  pull_request:
+    paths: ['recorder/**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: SwarmRecorder — сборка (Swift)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: recorder
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift build -c release
+        run: swift build -c release
