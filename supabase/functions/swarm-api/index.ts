@@ -595,6 +595,23 @@ Deno.serve(async (req: Request) => {
         fields.owner_id = body.is_private ? (task.owner_id ?? telegram_id) : null;
       }
 
+      // Персональные смарт-метки: только на своей личной задаче (учитываем смену is_private в этом же PATCH).
+      if (Array.isArray(body.label_ids)) {
+        const effPrivate = typeof fields.is_private === "boolean" ? fields.is_private : task.is_private;
+        const effOwner = "owner_id" in fields ? fields.owner_id : task.owner_id;
+        if (!(effPrivate === true && effOwner === telegram_id)) {
+          return apiErr(400, "Метки доступны только на личных задачах", origin);
+        }
+        const ids = (body.label_ids as unknown[]).filter((x): x is string => typeof x === "string");
+        if (ids.length > 0) {
+          const { data: mine } = await supabase
+            .from("task_labels").select("id").eq("owner_id", telegram_id).in("id", ids);
+          const valid = new Set(((mine ?? []) as Array<{ id: string }>).map((r) => r.id));
+          if (ids.some((id) => !valid.has(id))) return apiErr(400, "Неизвестная метка", origin);
+        }
+        fields.label_ids = ids;
+      }
+
       // Привязка к спринту (с проверкой воркспейса; null — отвязать)
       if ("sprint_id" in body) {
         const sid = body.sprint_id as string | null;
