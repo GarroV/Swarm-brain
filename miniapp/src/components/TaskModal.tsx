@@ -118,12 +118,16 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
         // назначение, которое нельзя было префиллить (имя без telegram_id).
         const fields: UpdateTaskInput = { ...base, status };
         if (assigneeId !== initialAssignee) fields.assignee_telegram_id = assigneeValue;
-        // Метки применимы только к личной задаче (сервер иначе вернёт 400).
-        if (task.is_private) fields.label_ids = labelIds;
+        // Списки — личные: выбор списка делает задачу личной (метки живут только на личных задачах).
+        if (labelIds.length > 0 && !task.is_private) fields.is_private = true;
+        if (task.is_private || labelIds.length > 0) fields.label_ids = labelIds;
         await updateTask(task.id, fields);
       } else {
         const fields: CreateTaskInput = { ...base, assignee_telegram_id: assigneeValue };
-        await createTask(fields);
+        if (labelIds.length > 0) fields.is_private = true;
+        const created = await createTask(fields);
+        // POST /tasks не принимает label_ids — вешаем метки вторым шагом на уже личную задачу.
+        if (labelIds.length > 0) await updateTask(created.id, { label_ids: labelIds });
       }
       onSaved();
       onClose();
@@ -240,8 +244,8 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
                 </select>
               </div>
 
-              {/* Персональные списки-метки: только для личной задачи (сервер иначе вернёт 400). */}
-              {isEdit && task?.is_private && labels.length > 0 && (
+              {/* Персональные списки-метки. Видны всегда; выбор списка делает задачу личной. */}
+              {labels.length > 0 && (
                 <div>
                   <span className={labelCls} style={{ fontSize: 12.5 }}>Списки</span>
                   <div className="flex flex-wrap gap-1.5">
@@ -261,6 +265,11 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
                       );
                     })}
                   </div>
+                  {labelIds.length > 0 && !task?.is_private && (
+                    <p className="mt-1.5 text-ink-mute" style={{ fontSize: 11.5 }}>
+                      Список личный — задача станет видна только тебе.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
