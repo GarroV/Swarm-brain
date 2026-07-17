@@ -15,26 +15,40 @@ function todayISO(now: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+// Последний выбранный вид доски — переживает рефреш (localStorage). Читаем в ленивом
+// инициализаторе useState, а НЕ в эффекте: эффект-сохранение на маунте затирал бы значение
+// дефолтом раньше, чем restore применится (в dev StrictMode эффекты ещё и сдваиваются).
+type SavedTasksView = { activeList?: SmartListId; activeLabelId?: string | null; lens?: Lens };
+function readSavedView(): SavedTasksView | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const raw = window.localStorage.getItem("roy_tasks_view");
+    return raw ? (JSON.parse(raw) as SavedTasksView) : null;
+  } catch { return null; }
+}
+
 // Общее состояние Reminders-списка для десктопа и мобайла: загрузка, линза, активный
 // смарт-список, локальный поиск, оптимистичные мутации (toggle/удаление/быстрое добавление).
 export function useReminderTasks() {
+  const { taskView } = useRoyNav();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [me, setMe] = useState<Me | null>(null);
-  const [activeList, setActiveList] = useState<SmartListId>("today");
-  const [lens, setLens] = useState<Lens>("mine");
+  // Начальный вид: приоритет — вход с дашборда (taskView), иначе сохранённый в localStorage
+  // (чтобы рефреш НЕ сбрасывал на «Сегодня»). Дашбордный вход — без активной метки.
+  const [activeList, setActiveList] = useState<SmartListId>(() => taskView?.list ?? readSavedView()?.activeList ?? "today");
+  const [lens, setLens] = useState<Lens>(() => taskView?.lens ?? readSavedView()?.lens ?? "mine");
   const [query, setQuery] = useState("");
   const [labels, setLabels] = useState<TaskLabel[]>([]);
-  const [activeLabelId, setActiveLabelId] = useState<string | null>(null);
-  const { taskView } = useRoyNav();
+  const [activeLabelId, setActiveLabelId] = useState<string | null>(() => (taskView ? null : readSavedView()?.activeLabelId ?? null));
 
-  // Стартовая линза от входа с дашборда (Мои/Команда) — применяем один раз при монтировании.
+  // Сохраняем выбранный вид (список/метка/линза), чтобы он пережил рефреш страницы.
   useEffect(() => {
-    if (taskView) {
-      setLens(taskView.lens);
-      if (taskView.list) setActiveList(taskView.list);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("roy_tasks_view", JSON.stringify({ activeList, activeLabelId, lens }));
+      }
+    } catch { /* storage недоступен — игнор */ }
+  }, [activeList, activeLabelId, lens]);
 
   const load = useCallback(async () => {
     try {
