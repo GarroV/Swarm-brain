@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchMe, fetchTasks, updateTask, deleteTask, createTask, fetchTaskLabels, type TaskLabel, type CreateTaskInput } from "@/lib/api";
 import type { Me, Task } from "@/types";
 import {
@@ -50,16 +50,32 @@ export function useReminderTasks() {
     } catch { /* storage недоступен — игнор */ }
   }, [activeList, activeLabelId, lens]);
 
+  // Оптимистично добавленные задачи (по реальному id из ответа POST/PATCH). Держим их поверх
+  // серверной выборки, пока сервер не вернёт их в списке — иначе фоновый поллинг «моргает»
+  // только что добавленной задачей (GET, стартовавший за миг до коммита, вернёт список без неё).
+  const pendingRef = useRef<Map<string, Task>>(new Map());
+  const mergePending = useCallback((server: Task[]): Task[] => {
+    const pend = pendingRef.current;
+    if (pend.size === 0) return server;
+    const ids = new Set(server.map((t) => t.id));
+    const extra: Task[] = [];
+    for (const [id, task] of pend) {
+      if (ids.has(id)) pend.delete(id); // сервер подтвердил — снимаем оптимистичную
+      else extra.push(task);            // ещё не в выборке — держим
+    }
+    return extra.length ? [...extra, ...server] : server;
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const [t, m, l] = await Promise.all([fetchTasks(), fetchMe(), fetchTaskLabels()]);
-      setTasks(t);
+      setTasks(mergePending(t));
       setMe(m);
       setLabels(l);
     } catch {
       /* сохраняем текущее при ошибке поллинга */
     }
-  }, []);
+  }, [mergePending]);
   const reloadLabels = useCallback(() => { fetchTaskLabels().then(setLabels).catch(() => {}); }, []);
 
   useEffect(() => {
@@ -151,7 +167,14 @@ export function useReminderTasks() {
     if (labelId) input.is_private = true;
     try {
       const created = await createTask(input);
-      if (labelId) await updateTask(created.id, { label_ids: [labelId] });
+      let finalTask = created;
+      if (labelId) {
+        try { finalTask = await updateTask(created.id, { label_ids: [labelId] }); }
+        catch { /* задача создана; метка не проставилась — не критично */ }
+      }
+      // Показываем созданную задачу сразу и держим поверх поллинга до подтверждения сервером.
+      pendingRef.current.set(finalTask.id, finalTask);
+      setTasks((prev) => [finalTask, ...(prev ?? []).filter((x) => x.id !== finalTask.id)]);
     } finally {
       load();
     }
