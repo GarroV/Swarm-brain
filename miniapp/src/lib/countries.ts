@@ -39,3 +39,11 @@ export function countryCode(value: string): string {
   const low = value.toLowerCase();
   return NAME_TO_CODE[low] ?? ENGLISH_TO_CODE[low] ?? value;
 }
+
+// Эмодзи-флаг из ISO alpha-2 (регионально-индикаторные символы). Незнакомый код → "".
+export function countryFlag(value: string): string {
+  const code = countryCode(value).toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return "";
+  const A = 0x1f1e6;
+  return String.fromCodePoint(A + code.charCodeAt(0) - 65, A + code.charCodeAt(1) - 65);
+}

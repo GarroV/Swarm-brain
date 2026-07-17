@@ -6,15 +6,17 @@ import { DatePicker } from "@/components/ui/DatePicker";
 import {
   type CreateTaskInput,
   type UpdateTaskInput,
+  type TaskLabel,
   createTask,
   updateTask,
   deleteTask,
   fetchUsers,
+  fetchTaskLabels,
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm";
 import { Segmented } from "@/components/roy/ui";
-import { RoyIcon } from "@/components/roy/icons";
+import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 
 const TASK_ROLES = [
   { value: "marketing", label: "Marketing" },
@@ -58,6 +60,8 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
   // Исходный исполнитель: чтобы при правке других полей не затирать его (PATCH шлём только при изменении).
   const [initialAssignee, setInitialAssignee] = useState(NONE);
   const [users, setUsers] = useState<User[]>([]);
+  const [labels, setLabels] = useState<TaskLabel[]>([]);
+  const [labelIds, setLabelIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,8 +78,10 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
     const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
     setAssigneeId(cur);
     setInitialAssignee(cur);
+    setLabelIds(task?.label_ids ?? []);
     setError(null);
     fetchUsers().then(setUsers).catch(() => {});
+    fetchTaskLabels().then(setLabels).catch(() => {});
   }, [open, task]);
 
   // Опции исполнителя = пользователи воркспейса + текущий исполнитель, если его нет в списке
@@ -112,6 +118,8 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
         // назначение, которое нельзя было префиллить (имя без telegram_id).
         const fields: UpdateTaskInput = { ...base, status };
         if (assigneeId !== initialAssignee) fields.assignee_telegram_id = assigneeValue;
+        // Метки применимы только к личной задаче (сервер иначе вернёт 400).
+        if (task.is_private) fields.label_ids = labelIds;
         await updateTask(task.id, fields);
       } else {
         const fields: CreateTaskInput = { ...base, assignee_telegram_id: assigneeValue };
@@ -231,6 +239,30 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
                   ))}
                 </select>
               </div>
+
+              {/* Персональные списки-метки: только для личной задачи (сервер иначе вернёт 400). */}
+              {isEdit && task?.is_private && labels.length > 0 && (
+                <div>
+                  <span className={labelCls} style={{ fontSize: 12.5 }}>Списки</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {labels.map((l) => {
+                      const on = labelIds.includes(l.id);
+                      return (
+                        <button
+                          key={l.id}
+                          type="button"
+                          onClick={() => setLabelIds((prev) => (prev.includes(l.id) ? prev.filter((x) => x !== l.id) : [...prev, l.id]))}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold transition-colors ${on ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
+                          style={{ fontSize: 12 }}
+                        >
+                          <RoyIcon name={((l.icon as RoyIconName) || "tag")} size={13} strokeWidth={1.9} />
+                          {l.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
