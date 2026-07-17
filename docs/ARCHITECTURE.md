@@ -143,10 +143,11 @@ supabase/functions/swarm-bot/
 |---------|-----------|---------------|
 | `workspaces` | Воркспейсы (тенанты) | `id` (TEXT PK), `name` TEXT, `allowed_markets text[]` (NULL = глобальный список), `created_at` |
 | `entries` | База знаний — все записи | `id`, `content`, `summary`, `embedding`, `source` (канал: `telegram`\|`granola`\|`read_ai`\|`desktop-agent`\|`link`\|`note`\|`voice`\|`file`\|…), `added_by`, `metadata` (jsonb), `countries` (включает `"General"` для общекомандных/многострановых записей), `entry_type` **CHECK `meeting`\|`note`** — два типа: встреча (транскрипт/тезисы созвона) и заметка (всё остальное). Ссылка/файл — это **фасеты заметки** через `metadata` (`url` / `file_name`+`file_type`), НЕ отдельные типы. Граница встреча↔заметка — по `entry_type`, не по source. `entry_date`, `is_private`, `owner_id`, `group_id` (FK → `workspaces.id`). Старый тип до миграции — в `metadata.legacy_entry_type` |
-| `tasks` | Задачи команды + личные (Рой) | `id`, `title`, `assignees`, `due_date`, `status` (`text not null default 'open'`, **БЕЗ CHECK** — см. ниже), `tags`, `meeting_id`, `created_by`, `created_by_telegram_id`, `priority` (NULL\|`high`\|`med`\|`low`, **CHECK** `priority is null or priority in ('high','med','low')`, миграция `20260615000000`), `task_role` (NULL\|`marketing`\|`bd`\|`rnd`, **CHECK**, миграция `20260528120000`), `group_id` (FK → `workspaces.id`); модуль Рой: `is_private`, `owner_id` (FK → `allowed_users`), `start_date`, `timeline_position`, `sprint_id` (FK → `sprints`). ⚠️ `created_by_name` — **НЕ колонка**: вычисляется в слое `swarm-api` (`GET /tasks`) из `created_by_telegram_id` через `creatorMap` |
+| `tasks` | Задачи команды + личные (Рой) | `id`, `title`, `assignees`, `due_date`, `status` (`text not null default 'open'`, **БЕЗ CHECK** — см. ниже), `tags`, `meeting_id`, `created_by`, `created_by_telegram_id`, `priority` (NULL\|`high`\|`med`\|`low`, **CHECK** `priority is null or priority in ('high','med','low')`, миграция `20260615000000`), `task_role` (NULL\|`marketing`\|`bd`\|`rnd`, **CHECK**, миграция `20260528120000`), `group_id` (FK → `workspaces.id`); модуль Рой: `is_private`, `owner_id` (FK → `allowed_users`), `start_date`, `timeline_position`, `sprint_id` (FK → `sprints`), `label_ids uuid[]` (персональные смарт-метки — членство в личных списках; только на личных задачах владельца; миграция `20260716120000`, GIN-индекс). ⚠️ `created_by_name` — **НЕ колонка**: вычисляется в слое `swarm-api` (`GET /tasks`) из `created_by_telegram_id` через `creatorMap` |
 | `sprints` | Спринты (Рой) | `id`, `group_id` (FK → `workspaces.id`), `name`, `start_date`, `end_date`, `status` (`planned`\|`active`\|`completed`), CHECK `start_date<=end_date` |
 | `task_dependencies` | Зависимости задач (Рой) | `id`, `task_id`, `depends_on_id` (оба FK → `tasks`), `dependency_type` (`blocks`\|`relates_to`\|`duplicates`); цикл-детекция через `get_all_dependencies()` |
 | `task_history` | История изменений задач | `id`, `task_id` (FK → `tasks`, ON DELETE CASCADE), `changed_by`, `old_status`, `new_status`, `note`, `created_at` |
+| `task_labels` | Персональные смарт-метки (личные списки) задач | `id`, `owner_id` (**NOT NULL**, FK → `allowed_users.telegram_id` — метка всегда чья-то личная), `group_id` (FK → `workspaces.id`, зарезервирован под будущие общие списки), `name`, `icon` (имя из набора RoyIcon, дефолт `tag`), `color`, `sort_order`, `created_at`. Членство хранится в `tasks.label_ids`. Миграция `20260716120000` |
 | `meetings` | Swarm Meetings — источник истины о встрече (НЕ путать с `entries`) | `id`, `source` (`desktop-agent`), `identity_kind` (**CHECK** `identity_kind in ('calendar','room','manual')`)/`identity_key` (дедуп; UNIQUE кроме manual), `transcript` (jsonb), `draft_notes_md` (черновик тезисов до публикации), `notes_edited_at`, `entry_id` (FK → `entries`, при публикации), `recorders` (jsonb — кто записал), `attendees` (jsonb `[{name,email}]` — участники из календаря, собраны рекордером при claim; при публикации несутся в `entry.metadata.attendees`, показываются блоком «Участники». Аудио-диаризации нет — кто говорил, не различаем; для ручных записей без события пусто), `claim_owner`/`lease_expires_at` (право транскрибации), `status` (`awaiting_review`\|`in_base` — публикация), `summary_status` (`processing`\|`done`\|`failed` — фоновая транскрибация+тезисы, отдельно от `status`), `mic_start_offset` (double precision — сдвиг старта mic-дорожки относительно system в секундах, может быть <0; миграция `20260624120000` ✅ применена), `process_state` (jsonb — durable-обработка: манифест частей в Storage + накопленные сегменты + стадия `transcribe`/`summarize`), `last_progress_at` (timestamptz — heartbeat: watchdog валит в `failed` только по застою), `processing_lease` (timestamptz — лиз durable-воркера; миграция `20260626120000`), `group_id` (FK → `workspaces.id`). Личные пометки участников — отдельные приватные `entries` с `metadata.meeting_id` |
 | `sessions` | Состояние диалога бота | `chat_id` (PK), `action`, `context` (jsonb), `updated_at` (TTL 30 мин) |
 | `allowed_users` | Белый список | `telegram_id`, `username`, `is_admin`, `group_id` (FK → `workspaces.id`); токены (см. [MCP-аутентификация](#mcp-аутентификация)): `claude_mcp_token_hash`, `claude_mcp_token_expires_at` (MCP/Claude Desktop, бессрочный → `null`), `recorder_token_hash`, `recorder_token_expires_at` (отдельный токен рекордера, миграция `20260617120000`); heartbeat-мониторинг рекордера: `recorder_last_seen`, `recorder_last_recording`, `recorder_last_version`, `recorder_expiry_warned` (миграция `20260708120000`) |
@@ -700,16 +701,20 @@ _Задачи / спринты / зависимости:_
 
 | Метод | Путь | Что делает |
 |-------|------|-----------|
-| `GET` | `/tasks` | Список задач. Фильтры: `status`, `country`, `assignee`, `mine`, `limit`, `confirmed`, `sprint_id`, `tags` (csv, ANY), `start_date_from/to`, `due_date_from/to`. **Приватность:** приватные задачи видны только владельцу (админ — все). Дополняется вычисляемым `created_by_name` (из `created_by_telegram_id`) |
+| `GET` | `/tasks` | Список задач. Фильтры: `status`, `country`, `assignee`, `mine`, `limit`, `confirmed`, `sprint_id`, `tags` (csv, ANY), `label_id`, `start_date_from/to`, `due_date_from/to`. Отдаёт `label_ids`. **Приватность:** приватные задачи видны только владельцу (админ — все). Дополняется вычисляемым `created_by_name` (из `created_by_telegram_id`) |
 | `GET` | `/tasks/:id` | Одна задача. Приватная чужая → 404 |
 | `POST` | `/tasks` | Создать (`assignee_telegram_id` → имя); поля Роя: `is_private` (→`owner_id`), `start_date`, `sprint_id`, `tags`, `timeline_position`; валидация `start_date<=due_date` и принадлежности спринта воркспейсу; `confirmed=true` |
-| `PATCH` | `/tasks/:id` | Частичный апдейт. Приватную чужую → 404, мутация приватной не владельцем → 403. Поддержаны новые поля + смена `is_private`, привязка к спринту |
+| `PATCH` | `/tasks/:id` | Частичный апдейт. Приватную чужую → 404, мутация приватной не владельцем → 403. Поддержаны новые поля + смена `is_private`, привязка к спринту. `label_ids` (смарт-метки) принимаются **только** для своей личной задачи (`is_private && owner_id === вызывающий`) и только если все id — метки вызывающего, иначе **400** |
 | `DELETE` | `/tasks/:id` | Удалить (204). Приватную чужую → 404/403 |
 | `POST` | `/tasks/extract` | Извлечь задачи из текста через GPT-4o-mini. `{ save:false }` → **preview**: вернуть предложенные задачи БЕЗ создания (≤10, ревью на экране встреч). Без `save:false` (по умолчанию) — старое поведение: создать задачи и вернуть |
 | `GET` | `/dependencies` | Bulk: все рёбра зависимостей воркспейса одним запросом (граф, без N+1). Изоляция+приватность: ребро видно только если оба конца видимы вызывающему |
 | `GET` | `/tasks/:id/dependencies` | Зависимости задачи (incoming + outgoing) |
 | `POST` | `/tasks/:id/dependencies` | Создать `{ depends_on_id, dependency_type }`; self→400, цикл→422, дубль→409 |
 | `DELETE` | `/tasks/:id/dependencies/:depId` | Удалить зависимость (204) |
+| `GET` | `/task-labels` | Персональные смарт-метки вызывающего (`owner_id = telegram_id`) + счётчик задач в каждой |
+| `POST` | `/task-labels` | Создать метку `{ name, icon?, color? }` |
+| `PATCH` | `/task-labels/:id` | Обновить `{ name?, icon?, color?, sort_order? }` — только владелец метки (иначе 404/403) |
+| `DELETE` | `/task-labels/:id` | Удалить метку + вычистить её id из `tasks.label_ids` владельца — только владелец |
 | `GET` | `/sprints` | Спринты воркспейса (все участники) |
 | `POST` | `/sprints` | Создать спринт (`name`, `start_date`, `end_date`, `status`) — **только admin** |
 | `PATCH` | `/sprints/:id` | Обновить спринт — только admin |
@@ -813,10 +818,11 @@ supabase/functions/swarm-mcp/
 | `get_meetings` | Список встреч |
 | `get_storage_stats` | Статистика хранилища |
 | `get_users` | Список пользователей воркспейса |
-| `add_task` | Создать задачу (с fuzzy-матчингом исполнителя) |
-| `update_task` | Обновить задачу |
+| `add_task` | Создать задачу (с fuzzy-матчингом исполнителя). Параметр `labels` (имена личных смарт-меток) — резолв/авто-создание меток владельца, задача становится личной |
+| `update_task` | Обновить задачу. Параметр `labels` — только для своей личной задачи |
 | `delete_task` | Удалить задачу |
-| `get_tasks` | Список задач с фильтрами |
+| `get_tasks` | Список задач с фильтрами (в т.ч. `label` — имя личной смарт-метки) |
+| `list_task_labels` | Список личных смарт-меток вызывающего (имя + id) |
 
 Все инструменты принимают `requesting_user_id` (Telegram ID) для резолва воркспейса.
 
