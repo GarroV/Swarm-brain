@@ -79,7 +79,7 @@ export function RemindersTasks() {
       className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
     >
       {/* Быстро задать срок / исполнителя / страну, не открывая карточку */}
-      <TaskQuickActions task={t} users={users} markets={markets} labels={r.labels} onChanged={r.reload} />
+      <TaskQuickActions task={t} users={users} markets={markets} labels={r.labels} onPatch={(patch) => r.patchTask(t.id, patch)} onChanged={r.reload} />
       <IconBtn label="Изменить" color="var(--accent-ink)" onClick={(e) => { e.stopPropagation(); setModalTask(t); }}>
         <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
       </IconBtn>

@@ -66,30 +66,45 @@ export function useReminderTasks() {
     return extra.length ? [...extra, ...server] : server;
   }, []);
 
-  const load = useCallback(async () => {
+  // Момент последней мутации: фон делает паузу ~4с после действия, чтобы не «откатить» только
+  // что изменённое (запись успевает закоммититься до следующего фонового GET).
+  const lastMutationRef = useRef(0);
+  const markMutation = useCallback(() => { lastMutationRef.current = Date.now(); }, []);
+
+  // Фон каждые 10с тянет ТОЛЬКО задачи (они меняются). Профиль и метки — редкие: грузим на
+  // маунте и при возврате фокуса, а не в поллинге (меньше вызовов Edge Function, меньше «дыхания»).
+  const loadTasks = useCallback(async () => {
+    try { setTasks(mergePending(await fetchTasks())); } catch { /* оставляем текущее при ошибке */ }
+  }, [mergePending]);
+  const loadMeta = useCallback(async () => {
     try {
-      const [t, m, l] = await Promise.all([fetchTasks(), fetchMe(), fetchTaskLabels()]);
-      setTasks(mergePending(t));
+      const [m, l] = await Promise.all([fetchMe(), fetchTaskLabels()]);
       setMe(m);
       setLabels(l);
-    } catch {
-      /* сохраняем текущее при ошибке поллинга */
-    }
-  }, [mergePending]);
+    } catch { /* оставляем текущее */ }
+  }, []);
+  const load = useCallback(async () => { await Promise.all([loadTasks(), loadMeta()]); }, [loadTasks, loadMeta]);
   const reloadLabels = useCallback(() => { fetchTaskLabels().then(setLabels).catch(() => {}); }, []);
+  // Рефетч после мутации (модалка/строка): помечаем мутацию (пауза фона) + тянем задачи.
+  const reload = useCallback(() => { markMutation(); return loadTasks(); }, [markMutation, loadTasks]);
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 10_000);
+    const interval = setInterval(() => {
+      if (Date.now() - lastMutationRef.current < 4_000) return; // пауза после действия — фон не моргает
+      loadTasks();
+    }, 10_000);
     const onVisibility = () => { if (document.visibilityState === "visible") load(); };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [load]);
+  }, [load, loadTasks]);
 
-  const now = new Date();
+  // now фиксируем по данным, а не пересоздаём каждый рендер — иначе useMemo ниже (counts/visible/
+  // группы) инвалидируются на каждый ввод/ховер. Меняется вместе с задачами (поллинг раз в 10с).
+  const now = useMemo(() => new Date(), [tasks]);
   const list = tasks ?? [];
   const counts = useMemo(() => countLists(list, lens, me, now), [list, lens, me, now]);
 
@@ -138,15 +153,17 @@ export function useReminderTasks() {
 
   const toggle = useCallback(async (t: Task) => {
     const next = isDone(t) ? "open" : "done";
+    markMutation();
     setTasks((prev) => prev?.map((x) => (x.id === t.id ? { ...x, status: next } : x)) ?? null);
     try {
       await updateTask(t.id, { status: next });
     } catch {
       load();
     }
-  }, [load]);
+  }, [load, markMutation]);
 
   const remove = useCallback(async (t: Task) => {
+    markMutation();
     setTasks((prev) => prev?.filter((x) => x.id !== t.id) ?? null);
     try {
       await deleteTask(t.id);
@@ -154,13 +171,21 @@ export function useReminderTasks() {
       load();
       throw new Error("delete failed");
     }
-  }, [load]);
+  }, [load, markMutation]);
+
+  // Оптимистичный локальный патч задачи (быстрые действия в строке): применяем мгновенно,
+  // персист делает вызывающий; фон на паузе (markMutation) не откатит до подтверждения сервером.
+  const patchTask = useCallback((id: string, patch: Partial<Task>) => {
+    markMutation();
+    setTasks((prev) => prev?.map((x) => (x.id === id ? { ...x, ...patch } : x)) ?? null);
+  }, [markMutation]);
 
   // Быстрое добавление в духе Reminders: контекстно по активному списку/метке.
   // При активной метке задача создаётся личной и сразу получает метку.
   const quickAdd = useCallback(async (title: string, labelId?: string) => {
     const trimmed = title.trim();
     if (!trimmed) return;
+    markMutation();
     const input: CreateTaskInput = { title: trimmed };
     if (me) input.assignee_telegram_id = me.telegram_id;
     if (activeList === "today" && !labelId) input.due_date = todayISO(new Date());
@@ -176,15 +201,15 @@ export function useReminderTasks() {
       pendingRef.current.set(finalTask.id, finalTask);
       setTasks((prev) => [finalTask, ...(prev ?? []).filter((x) => x.id !== finalTask.id)]);
     } finally {
-      load();
+      loadTasks();
     }
-  }, [me, activeList, load]);
+  }, [me, activeList, loadTasks, markMutation]);
 
   return {
     tasks, me, loading: tasks === null,
     activeList, setActiveList, lens, setLens, query, setQuery,
     counts, visible, marketGroups, staffGroups, now,
     labels, activeLabelId, setActiveLabelId, labelCounts, visibleByLabel, reloadLabels,
-    toggle, remove, quickAdd, reload: load,
+    toggle, remove, quickAdd, patchTask, reload,
   };
 }
