@@ -175,3 +175,15 @@ export function groupByAssignee(tasks: Task[], listId: SmartListId, me: Me | nul
       return a.label.localeCompare(b.label);
     });
 }
+
+// ── Персональные смарт-метки (личные списки) ────────────────────────────────
+// Список метки авто-собирает незавершённые задачи с этой меткой. Сортировка — как today/upcoming/all.
+export function filterByLabel(tasks: Task[], labelId: string): Task[] {
+  return tasks
+    .filter((t) => !isDone(t) && (t.label_ids?.includes(labelId) ?? false))
+    .sort(chain(byDueAsc, byPriorityDesc, byCreatedDesc));
+}
+
+export function countByLabel(tasks: Task[], labelId: string): number {
+  return tasks.filter((t) => !isDone(t) && (t.label_ids?.includes(labelId) ?? false)).length;
+}
