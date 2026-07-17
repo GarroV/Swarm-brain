@@ -91,14 +91,17 @@ async function openaiFetch(url: string, init: RequestInit, attempts = 4): Promis
   return res;
 }
 
-async function transcribeAudio(audio: Blob, filename: string): Promise<{ segments: Segment[]; language?: string }> {
+async function transcribeAudio(audio: Blob, filename: string, languageHint?: string): Promise<{ segments: Segment[]; language?: string }> {
   const form = new FormData();
   form.append("file", audio, filename);
   form.append("model", "whisper-1");
   form.append("response_format", "verbose_json");
-  // Язык НЕ форсим: Whisper сам определяет язык встречи и транскрибирует ДОСЛОВНО на нём.
-  // Раньше тут стояло language="ru" → встречи на других языках принудительно переводились на
-  // русский. Транскрипт держим на языке встречи; тезисы (GPT, ниже) выводятся на русском отдельно.
+  // Глобально язык НЕ форсим (иноязычные встречи должны оставаться на своём языке; раньше стоял
+  // language="ru" → переводил всё на русский). НО для дорожки МИКРОФОНА передаём languageHint —
+  // язык встречи, уже определённый по системной дорожке (реальная речь собеседника). Иначе тихий
+  // /молчащий микрофон Whisper авто-детектит как английский и генерит галлюцинации-«аутро»
+  // («Thank you for coming», «listening to the voiceover»). Пин = язык встречи (ISO-639-1), не хардкод.
+  if (languageHint) form.append("language", languageHint);
   const res = await openaiFetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
@@ -134,6 +137,31 @@ function dominantLang(parts: Part[]): string {
   let best = "", bestN = 0;
   for (const [lang, n] of weight) if (n > bestN) { best = lang; bestN = n; }
   return best || "unknown";
+}
+
+// Whisper возвращает язык ИМЕНЕМ ("russian"/"english"), а параметр transcription.language ждёт
+// ISO-639-1 ("ru"/"en"). Мапим известные; неизвестное имя → undefined (тогда пин не ставим, как раньше).
+const LANG_NAME_TO_CODE: Record<string, string> = {
+  russian: "ru", english: "en", ukrainian: "uk", belarusian: "be", kazakh: "kk",
+  uzbek: "uz", german: "de", french: "fr", spanish: "es", italian: "it",
+  portuguese: "pt", polish: "pl", turkish: "tr", arabic: "ar", chinese: "zh",
+};
+function langCode(name?: string): string | undefined {
+  return name ? LANG_NAME_TO_CODE[name.toLowerCase()] : undefined;
+}
+
+// Язык-якорь встречи = доминирующий среди ГОТОВЫХ системных частей (речь собеседника — надёжный
+// сигнал; галлюцинации тихого микрофона на него не влияют). К нему пинуется микрофон и по нему же
+// отбраковываются mic-части чужого языка. Пусто → нет готовой sys-части (или нет системной дорожки).
+function anchorSysLang(parts: Part[]): string | undefined {
+  const weight = new Map<string, number>();
+  for (const p of parts) {
+    if (p.track !== "sys" || !p.done || !p.lang) continue;
+    weight.set(p.lang, (weight.get(p.lang) ?? 0) + (p.segments?.length ?? 1));
+  }
+  let best: string | undefined, bestN = 0;
+  for (const [lang, n] of weight) if (n > bestN) { best = lang; bestN = n; }
+  return best;
 }
 
 // Модель тезисов — gpt-5.6-terra: на реальных встречах даёт заметно более конкретные тезисы, чем
@@ -285,9 +313,15 @@ async function markFailed(supabase: SupabaseClient, m: MeetingRow): Promise<void
 // ── Финал: сводим транскрипт → тезисы → done → уведомляем → чистим Storage ──────
 async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state: ProcessState): Promise<void> {
   const micOffset = typeof m.mic_start_offset === "number" && Number.isFinite(m.mic_start_offset) ? m.mic_start_offset : 0;
+  // Язык встречи по системной дорожке — и якорь пина микрофона, и защита от галлюцинаций (ниже).
+  const anchor = anchorSysLang(state.parts);
   const segments: Segment[] = [];
   for (const p of state.parts) {
     if (!p.done || !p.segments) continue;
+    // Подстраховка: mic-часть, чей язык ≠ языку встречи (по sys), — галлюцинация тихого микрофона
+    // (напр. английские «аутро» в русской встрече). Отбрасываем целиком. Срабатывает только при
+    // надёжном якоре (есть готовая sys-часть) — записи без системной дорожки не трогает.
+    if (p.track === "mic" && anchor && p.lang && p.lang !== anchor) continue;
     const speaker = p.track === "sys" ? "собеседник" : "я";
     // Глобальный сдвиг mic↔system добавляем тут (per-part offset уже учтён при транскрибации).
     const shift = p.track === "mic" ? micOffset : 0;
@@ -296,7 +330,7 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
   segments.sort((a, b) => a.start - b.start);
 
   const hasMic = state.parts.some((p) => p.track === "mic" && p.done);
-  const transcript = { language: dominantLang(state.parts), model: hasMic ? "whisper-1+mic" : "whisper-1", segments };
+  const transcript = { language: anchor ?? dominantLang(state.parts), model: hasMic ? "whisper-1+mic" : "whisper-1", segments };
   await supabase.from("meetings").update({ transcript, updated_at: new Date().toISOString() }).eq("id", m.id);
 
   const transcriptText = segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n").slice(0, 100000);
@@ -394,13 +428,21 @@ export async function runMeetingStep(
 
     if (state.stage === "transcribe") {
       while (Date.now() - startedAt < budgetMs) {
-        const pending = state.parts.filter((p) => !p.done && p.attempts < MAX_PART_ATTEMPTS);
-        if (pending.length === 0) break;
+        const pendingAll = state.parts.filter((p) => !p.done && p.attempts < MAX_PART_ATTEMPTS);
+        if (pendingAll.length === 0) break;
+        // Сначала ПОЛНОСТЬЮ системные части — они задают язык встречи; только потом микрофон, уже
+        // с пином этого языка (иначе тихий микрофон галлюцинирует по-английски). Пока есть pending
+        // sys — берём только их; система закончилась → переходим к микрофону с готовым языком-якорем.
+        const pendingSys = pendingAll.filter((p) => p.track === "sys");
+        const pending = pendingSys.length > 0 ? pendingSys : pendingAll;
+        const micHint = pendingSys.length > 0 ? undefined : langCode(anchorSysLang(state.parts));
         const batch = pending.slice(0, TRANSCRIBE_CONCURRENCY);
         await mapLimit(batch, TRANSCRIBE_CONCURRENCY, async (p) => {
           try {
             const blob = await downloadPart(supabase, p.path);
-            const { segments: segs, language } = await transcribeAudio(blob, p.name);
+            // Микрофон пинуем на язык встречи (из готовых sys-частей); систему — как есть (автодетект).
+            const hint = p.track === "mic" ? micHint : undefined;
+            const { segments: segs, language } = await transcribeAudio(blob, p.name, hint);
             // per-part offset (старт части в таймлайне дорожки) добавляем сразу; глобальный mic-сдвиг — в summarize.
             p.segments = segs.map((s) => ({ start: s.start + p.offset, end: s.end + p.offset, text: s.text }));
             if (language) p.lang = language;
