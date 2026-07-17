@@ -29,6 +29,36 @@ async function resolveGroupId(telegramId: number): Promise<string | null> {
   return (data as { group_id: string | null } | null)?.group_id ?? null;
 }
 
+// Имена личных смарт-меток → id меток владельца. createMissing=true — недостающие авто-создаются.
+async function resolveLabelIds(ownerId: number, names: string[], createMissing: boolean): Promise<string[]> {
+  const { data: existing } = await supabase
+    .from("task_labels").select("id,name").eq("owner_id", ownerId);
+  const byName = new Map<string, string>();
+  for (const r of (existing ?? []) as Array<{ id: string; name: string }>) byName.set(r.name.toLowerCase(), r.id);
+  const groupId = await resolveGroupId(ownerId);
+  const ids: string[] = [];
+  for (const raw of names) {
+    const name = raw.trim();
+    if (!name) continue;
+    const hit = byName.get(name.toLowerCase());
+    if (hit) { ids.push(hit); continue; }
+    if (!createMissing) continue;
+    const { data } = await supabase
+      .from("task_labels").insert({ owner_id: ownerId, group_id: groupId, name, icon: "tag" })
+      .select("id").single();
+    if (data) { const id = (data as { id: string }).id; byName.set(name.toLowerCase(), id); ids.push(id); }
+  }
+  return ids;
+}
+
+export async function toolListTaskLabels(args: { requesting_user_id: number }): Promise<string> {
+  const { data } = await supabase
+    .from("task_labels").select("id,name").eq("owner_id", args.requesting_user_id).order("sort_order");
+  const rows = (data ?? []) as Array<{ id: string; name: string }>;
+  if (!rows.length) return "У тебя пока нет меток.";
+  return rows.map((r) => `• ${r.name} (id: ${r.id})`).join("\n");
+}
+
 async function matchAssignee(name: string): Promise<{ telegram_id: number; display_name: string } | null> {
   // username — в allowed_users (НЕ в user_profiles). Раньше селект username из user_profiles
   // падал → data=null → matchAssignee всегда возвращал null (резолв исполнителя в MCP не работал).
@@ -81,6 +111,7 @@ export async function toolAddTask(args: {
   task_role?: string;
   source: string;
   context_id?: string;
+  labels?: string[];
   requesting_user_id?: number;
 }): Promise<string> {
   const assignees: string[] = [];
@@ -100,6 +131,11 @@ export async function toolAddTask(args: {
 
   const groupId = args.requesting_user_id ? await resolveGroupId(args.requesting_user_id) : null;
 
+  // Смарт-метки: только на личной задаче владельца. Наличие меток делает задачу личной.
+  const labelIds = args.labels?.length && args.requesting_user_id
+    ? await resolveLabelIds(args.requesting_user_id, args.labels, true)
+    : [];
+
   try {
     const task = await createTask({
       title: args.title,
@@ -115,6 +151,9 @@ export async function toolAddTask(args: {
       tags: [],
       confirmed: false,
       created_by_telegram_id: args.requesting_user_id ?? null,
+      label_ids: labelIds,
+      is_private: labelIds.length > 0 ? true : undefined,
+      owner_id: labelIds.length > 0 ? (args.requesting_user_id ?? null) : undefined,
     }, groupId ?? undefined);
     if (args.requesting_user_id) {
       await notifyCreator(args.requesting_user_id, args.title);
@@ -134,6 +173,7 @@ export async function toolUpdateTask(args: {
   due_date?: string | null;
   status?: string;
   task_role?: string;
+  labels?: string[];
   requesting_user_id: number;
 }): Promise<string> {
   const task = await getTask(args.id);
@@ -142,6 +182,14 @@ export async function toolUpdateTask(args: {
   if (!groupId || task.group_id !== groupId) return `Нет доступа: задача не принадлежит твоему воркспейсу.`;
 
   const fields: Record<string, unknown> = {};
+
+  // Смарт-метки: только на своей личной задаче.
+  if (args.labels !== undefined) {
+    if (!(task.is_private && task.owner_id === args.requesting_user_id)) {
+      return "Метки доступны только на твоих личных задачах.";
+    }
+    fields.label_ids = await resolveLabelIds(args.requesting_user_id, args.labels, true);
+  }
 
   if (args.title !== undefined) fields.title = args.title;
   if (args.description !== undefined) fields.description = args.description;
@@ -192,16 +240,21 @@ export async function toolGetTasks(args: {
   country?: string;
   status?: string;
   period?: string;
+  label?: string;
   requesting_user_id: number;
 }): Promise<string> {
   const groupId = await resolveGroupId(args.requesting_user_id);
   if (!groupId) return "Ошибка: пользователь не найден в системе.";
+
+  const labelIds = args.label ? await resolveLabelIds(args.requesting_user_id, [args.label], false) : [];
 
   const tasks = await listTasks({
     status: args.status,
     country: args.country,
     period: args.period,
     assigneeText: args.assignee,
+    labelIds: labelIds.length ? labelIds : undefined,
+    viewerId: args.requesting_user_id,
     limit: 30,
   }, groupId);
 
@@ -234,6 +287,7 @@ export const TASK_TOOL_DEFINITIONS = [
           enum: ["marketing", "bd", "rnd"],
           description: "Роль исполнителя: marketing — маркетинг, rnd — продукт/разработка, bd — всё остальное (операционка, бизнес)",
         },
+        labels: { type: "array", items: { type: "string" }, description: "Имена личных смарт-меток (папок). Задача с метками становится личной." },
       },
       required: ["title", "source"],
     },
@@ -251,6 +305,7 @@ export const TASK_TOOL_DEFINITIONS = [
         country: { type: "string" },
         due_date: { type: ["string", "null"], description: "YYYY-MM-DD или null чтобы убрать" },
         status: { type: "string", enum: ["open", "in_progress", "done", "cancelled"] },
+        labels: { type: "array", items: { type: "string" }, description: "Имена личных смарт-меток. Работает только на твоих личных задачах." },
         task_role: {
           type: "string",
           enum: ["marketing", "bd", "rnd"],
@@ -271,6 +326,18 @@ export const TASK_TOOL_DEFINITIONS = [
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
       },
       required: ["id", "requesting_user_id"],
+    },
+  },
+];
+
+export const LABEL_TOOL_DEFINITIONS = [
+  {
+    name: "list_task_labels",
+    description: "Показать твои личные смарт-метки (папки) задач: имя + id.",
+    inputSchema: {
+      type: "object",
+      properties: { requesting_user_id: { type: "number", description: "Твой Telegram user ID" } },
+      required: ["requesting_user_id"],
     },
   },
 ];

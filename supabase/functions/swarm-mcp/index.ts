@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, TASK_TOOL_DEFINITIONS } from "./tasks/tools.ts";
+import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolListTaskLabels, TASK_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS } from "./tasks/tools.ts";
 import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../_shared/countries.ts";
 import { matchEntries } from "../_shared/search.ts";
 import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
@@ -152,12 +152,14 @@ const TOOLS = [
         country: { type: "string", description: "Страна или рынок" },
         status: { type: "string", enum: ["open", "in_progress", "done", "cancelled"] },
         period: { type: "string", enum: ["week"], description: "Задачи на этой неделе" },
+        label: { type: "string", description: "Имя личной смарт-метки для фильтра" },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу" },
       },
       required: ["requesting_user_id"],
     },
   },
   ...TASK_TOOL_DEFINITIONS,
+  ...LABEL_TOOL_DEFINITIONS,
   {
     name: "get_meetings",
     description: "Получить последние встречи из Read.ai сохранённые в базе знаний.",
@@ -897,11 +899,13 @@ Deno.serve(async (req: Request) => {
       if (name === "search_knowledge") {
         result = await toolSearchKnowledge(args as { query: string; limit?: number; requesting_user_id?: number });
       } else if (name === "get_tasks") {
-        result = await toolGetTasksMcp(args as { assignee?: string; country?: string; status?: string; period?: string; requesting_user_id: number });
+        result = await toolGetTasksMcp(args as { assignee?: string; country?: string; status?: string; period?: string; label?: string; requesting_user_id: number });
       } else if (name === "add_task") {
-        result = await toolAddTask(args as { title: string; description?: string; assignee_name?: string; country?: string; due_date?: string; source: string; context_id?: string; requesting_user_id?: number });
+        result = await toolAddTask(args as { title: string; description?: string; assignee_name?: string; country?: string; due_date?: string; source: string; context_id?: string; labels?: string[]; requesting_user_id?: number });
       } else if (name === "update_task") {
-        result = await toolUpdateTask(args as { id: string; title?: string; description?: string; assignee_name?: string; country?: string; due_date?: string | null; status?: string; task_role?: string; requesting_user_id: number });
+        result = await toolUpdateTask(args as { id: string; title?: string; description?: string; assignee_name?: string; country?: string; due_date?: string | null; status?: string; task_role?: string; labels?: string[]; requesting_user_id: number });
+      } else if (name === "list_task_labels") {
+        result = await toolListTaskLabels(args as { requesting_user_id: number });
       } else if (name === "delete_task") {
         result = await toolDeleteTask(args as { id: string; requesting_user_id: number });
       } else if (name === "get_meetings") {
