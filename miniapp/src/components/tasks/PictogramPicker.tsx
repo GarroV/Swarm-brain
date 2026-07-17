@@ -21,7 +21,7 @@ const W = 248, H = 320;
 
 export function PictogramPicker({ triggerIcon, ariaLabel, options, selected, multi, onToggle, footer }: Props) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; maxH: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const has = (id: string) => selected.includes(id);
@@ -29,10 +29,16 @@ export function PictogramPicker({ triggerIcon, ariaLabel, options, selected, mul
   const place = useCallback(() => {
     const r = btnRef.current?.getBoundingClientRect();
     if (!r) return;
-    const left = Math.min(r.left, window.innerWidth - W - 8);
-    const below = r.bottom + 6;
-    const top = below + H > window.innerHeight - 8 && r.top > H ? r.top - H - 6 : below;
-    setPos({ left: Math.max(8, left), top });
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - W - 8));
+    const spaceBelow = window.innerHeight - r.bottom - 8;
+    const spaceAbove = r.top - 8;
+    // Флип вверх — только если снизу мало места И сверху его больше. При флипе якорим НИЖНИЙ
+    // край попапа к триггеру (bottom), чтобы он рос по контенту, а не отлетал на всю высоту H.
+    if (spaceBelow < Math.min(H, 220) && spaceAbove > spaceBelow) {
+      setPos({ left, bottom: window.innerHeight - r.top + 6, maxH: Math.max(80, spaceAbove - 6) });
+    } else {
+      setPos({ left, top: r.bottom + 6, maxH: Math.max(80, spaceBelow - 6) });
+    }
   }, []);
 
   useLayoutEffect(() => { if (open) place(); }, [open, place]);
@@ -78,7 +84,7 @@ export function PictogramPicker({ triggerIcon, ariaLabel, options, selected, mul
         <div
           ref={popRef}
           onPointerDown={(e) => e.stopPropagation()}
-          style={{ position: "fixed", left: pos.left, top: pos.top, width: W, maxHeight: H }}
+          style={{ position: "fixed", left: pos.left, width: W, maxHeight: pos.maxH, ...(pos.top !== undefined ? { top: pos.top } : { bottom: pos.bottom }) }}
           className="z-[100] flex flex-col overflow-hidden rounded-xl border border-line bg-card shadow-xl dark:backdrop-blur-lg"
         >
           <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
