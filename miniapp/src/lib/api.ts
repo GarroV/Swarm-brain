@@ -17,6 +17,7 @@ export type CreateTaskInput = {
   sprint_id?: string | null;
   tags?: string[];
   timeline_position?: number | null;
+  label_ids?: string[];
 };
 
 export type UpdateTaskInput = Partial<CreateTaskInput> & { status?: string };
@@ -25,6 +26,7 @@ export type TaskFilters = {
   status?: string;
   sprint_id?: string;
   tags?: string[];
+  label_id?: string;
   start_date_from?: string;
   start_date_to?: string;
   due_date_from?: string;
@@ -107,7 +109,7 @@ let mockTasks: Task[] = [
     tags: [], country: "KZ", task_role: "bd", priority: "high", source: "mini_app", status: "open",
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
     created_by_name: "Dev User",
-    is_private: false, owner_id: null, start_date: "2026-06-10", timeline_position: null, sprint_id: null,
+    is_private: false, owner_id: null, start_date: "2026-06-10", timeline_position: null, sprint_id: null, label_ids: [],
   },
   {
     id: "2", title: "Design landing page", description: null,
@@ -115,7 +117,7 @@ let mockTasks: Task[] = [
     tags: [], country: "PL", task_role: "marketing", priority: "med", source: "mini_app", status: "in_progress",
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
     created_by_name: "Alice Smith",
-    is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null,
+    is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null, label_ids: [],
   },
   {
     id: "3", title: "Review contracts", description: null,
@@ -123,7 +125,7 @@ let mockTasks: Task[] = [
     tags: [], country: null, task_role: "rnd", priority: "low", source: "mini_app", status: "done",
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
     created_by_name: null,
-    is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null,
+    is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null, label_ids: [],
   },
 ];
 
@@ -271,12 +273,14 @@ export async function fetchTasks(filters?: string | TaskFilters): Promise<Task[]
     if (f.status) r = r.filter((t) => t.status === f.status);
     if (f.sprint_id) r = r.filter((t) => t.sprint_id === f.sprint_id);
     if (f.tags?.length) r = r.filter((t) => f.tags!.some((tag) => t.tags.includes(tag)));
+    if (f.label_id) r = r.filter((t) => t.label_ids?.includes(f.label_id!));
     return r;
   }
   const params = new URLSearchParams();
   if (f.status) params.set("status", f.status);
   if (f.sprint_id) params.set("sprint_id", f.sprint_id);
   if (f.tags?.length) params.set("tags", f.tags.join(","));
+  if (f.label_id) params.set("label_id", f.label_id);
   if (f.start_date_from) params.set("start_date_from", f.start_date_from);
   if (f.start_date_to) params.set("start_date_to", f.start_date_to);
   if (f.due_date_from) params.set("due_date_from", f.due_date_from);
@@ -312,7 +316,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       created_by_name: MOCK_ME.name,
       is_private: input.is_private ?? false, owner_id: input.is_private ? MOCK_ME.telegram_id : null,
       start_date: input.start_date ?? null, timeline_position: input.timeline_position ?? null,
-      sprint_id: input.sprint_id ?? null,
+      sprint_id: input.sprint_id ?? null, label_ids: input.label_ids ?? [],
     };
     mockTasks.push(newTask);
     return newTask;
@@ -334,6 +338,7 @@ export async function updateTask(id: string, fields: UpdateTaskInput): Promise<T
     if (fields.start_date !== undefined) task.start_date = fields.start_date ?? null;
     if (fields.sprint_id !== undefined) task.sprint_id = fields.sprint_id ?? null;
     if (fields.tags !== undefined) task.tags = fields.tags ?? [];
+    if (fields.label_ids !== undefined) task.label_ids = fields.label_ids ?? [];
     if (fields.timeline_position !== undefined) task.timeline_position = fields.timeline_position ?? null;
     if (fields.is_private !== undefined) {
       task.is_private = fields.is_private;
@@ -351,6 +356,41 @@ export async function updateTask(id: string, fields: UpdateTaskInput): Promise<T
 export async function deleteTask(id: string): Promise<void> {
   if (DEV_MODE) { mockTasks = mockTasks.filter((t) => t.id !== id); return; }
   return apiFetch<void>(`/tasks/${id}`, { method: "DELETE" });
+}
+
+// ── Персональные смарт-метки задач ──────────────────────────────────────────
+export type TaskLabel = { id: string; name: string; icon: string; color: string | null; sort_order: number; count: number };
+
+let MOCK_LABELS: TaskLabel[] = [
+  { id: "l-it", name: "Айти", icon: "task", color: null, sort_order: 0, count: 0 },
+];
+
+export async function fetchTaskLabels(): Promise<TaskLabel[]> {
+  if (DEV_MODE) return MOCK_LABELS;
+  return apiFetch<TaskLabel[]>("/task-labels");
+}
+
+export async function createTaskLabel(input: { name: string; icon?: string; color?: string | null }): Promise<TaskLabel> {
+  if (DEV_MODE) {
+    const l: TaskLabel = { id: `l-${Date.now()}`, name: input.name, icon: input.icon ?? "tag", color: input.color ?? null, sort_order: MOCK_LABELS.length, count: 0 };
+    MOCK_LABELS.push(l);
+    return l;
+  }
+  return apiFetch<TaskLabel>("/task-labels", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function updateTaskLabel(id: string, fields: Partial<{ name: string; icon: string; color: string | null; sort_order: number }>): Promise<TaskLabel> {
+  if (DEV_MODE) {
+    const l = MOCK_LABELS.find((x) => x.id === id)!;
+    Object.assign(l, fields);
+    return l;
+  }
+  return apiFetch<TaskLabel>(`/task-labels/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+}
+
+export async function deleteTaskLabel(id: string): Promise<void> {
+  if (DEV_MODE) { MOCK_LABELS = MOCK_LABELS.filter((x) => x.id !== id); return; }
+  await apiFetch<void>(`/task-labels/${id}`, { method: "DELETE" });
 }
 
 export async function extractTasks(text: string): Promise<Task[]> {
