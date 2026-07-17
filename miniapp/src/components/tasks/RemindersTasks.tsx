@@ -5,8 +5,9 @@ import { TaskRow } from "./TaskRow";
 import { LensToggle } from "./LensToggle";
 import { TaskQuickActions } from "./TaskQuickActions";
 import { useReminderTasks } from "./useReminderTasks";
+import { LabelEditor } from "./LabelEditor";
 import { SMART_LISTS } from "@/lib/smartLists";
-import { fetchUsers, fetchConfig } from "@/lib/api";
+import { fetchUsers, fetchConfig, type TaskLabel } from "@/lib/api";
 import type { Task, User } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { RoyIcon } from "@/components/roy/icons";
@@ -26,6 +27,7 @@ export function RemindersTasks() {
   const confirm = useConfirm();
   const [modalTask, setModalTask] = useState<Task | "new" | null>(null);
   const [draft, setDraft] = useState("");
+  const [labelEditor, setLabelEditor] = useState<TaskLabel | "new" | null>(null);
   // Свёрнутые секции группировки (по label): клик по заголовку прячет/раскрывает задачи.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggleGroup = (label: string) =>
@@ -44,19 +46,24 @@ export function RemindersTasks() {
   }, []);
 
   const activeDef = SMART_LISTS.find((s) => s.id === r.activeList)!;
-  const byMarket = r.lens === "market";
-  const byStaff = r.lens === "staff";
+  // Активная персональная метка перебивает смарт-список и группировки.
+  const activeLabel = r.activeLabelId ? r.labels.find((l) => l.id === r.activeLabelId) ?? null : null;
+  const isLabelView = !!activeLabel;
+  const byMarket = !isLabelView && r.lens === "market";
+  const byStaff = !isLabelView && r.lens === "staff";
   const grouped = byMarket || byStaff;
   const groups: { label: string; tasks: Task[] }[] = byStaff ? r.staffGroups : r.marketGroups;
-  const total = grouped ? groups.reduce((n, g) => n + g.tasks.length, 0) : r.visible.length;
+  const visibleRows = isLabelView ? r.visibleByLabel : r.visible;
+  const total = grouped ? groups.reduce((n, g) => n + g.tasks.length, 0) : visibleRows.length;
+  const headerTitle = isLabelView ? activeLabel!.name : activeDef.label;
   // В группировке по сотруднику исполнитель — заголовок секции, в строке его не дублируем.
-  const showAssignee = r.lens !== "mine" && !byStaff;
+  const showAssignee = !isLabelView && r.lens !== "mine" && !byStaff;
 
   const submitDraft = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter") return;
     const v = draft;
     setDraft("");
-    r.quickAdd(v);
+    r.quickAdd(v, r.activeLabelId ?? undefined);
   };
 
   const onDelete = async (t: Task) => {
@@ -72,7 +79,7 @@ export function RemindersTasks() {
       className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
     >
       {/* Быстро задать срок / исполнителя / страну, не открывая карточку */}
-      <TaskQuickActions task={t} users={users} markets={markets} onChanged={r.reload} />
+      <TaskQuickActions task={t} users={users} markets={markets} labels={r.labels} myId={r.me?.telegram_id ?? null} onChanged={r.reload} />
       <IconBtn label="Изменить" color="var(--accent-ink)" onClick={(e) => { e.stopPropagation(); setModalTask(t); }}>
         <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
       </IconBtn>
@@ -98,17 +105,22 @@ export function RemindersTasks() {
         variant="rail"
         active={r.activeList}
         counts={r.counts}
-        onSelect={r.setActiveList}
+        onSelect={(id) => { r.setActiveLabelId(null); r.setActiveList(id); }}
         query={r.query}
         onQuery={r.setQuery}
         allStaffActive={r.lens === "staff"}
-        onAllStaff={r.me?.is_admin ? () => { r.setLens("staff"); r.setActiveList("all"); } : undefined}
+        onAllStaff={r.me?.is_admin ? () => { r.setActiveLabelId(null); r.setLens("staff"); r.setActiveList("all"); } : undefined}
+        labels={r.labels}
+        labelCounts={r.labelCounts}
+        activeLabelId={r.activeLabelId}
+        onSelectLabel={(id) => r.setActiveLabelId(id)}
+        onCreateLabel={() => setLabelEditor("new")}
       />
 
       <div className="flex min-h-0 flex-1 flex-col">
         <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2 px-6 pt-5 pb-3">
           <div className="flex min-w-0 items-baseline gap-2.5">
-            <h1 className="truncate font-bold text-accent-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>{activeDef.label}</h1>
+            <h1 className="truncate font-bold text-accent-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>{headerTitle}</h1>
             <span className="shrink-0 text-ink-mute" style={{ fontSize: 13 }}>{total} {plural(total)}</span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -155,10 +167,10 @@ export function RemindersTasks() {
               );
             })}
 
-          {!r.loading && !grouped && r.visible.map(renderRow)}
+          {!r.loading && !grouped && visibleRows.map(renderRow)}
 
           {/* Инлайн быстрое добавление */}
-          {!r.loading && r.activeList !== "done" && (
+          {!r.loading && (isLabelView || r.activeList !== "done") && (
             <label className="mt-1 flex items-center gap-3 px-1 py-3 text-ink-soft">
               <span className="flex size-[22px] shrink-0 items-center justify-center rounded-full border-2 border-primary text-primary">
                 <RoyIcon name="plus" size={13} strokeWidth={2.4} />
@@ -182,6 +194,10 @@ export function RemindersTasks() {
         onClose={() => setModalTask(null)}
         onSaved={r.reload}
       />
+
+      {labelEditor && (
+        <LabelEditor label={labelEditor} open onClose={() => setLabelEditor(null)} onSaved={r.reloadLabels} />
+      )}
     </div>
   );
 }

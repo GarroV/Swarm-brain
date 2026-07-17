@@ -1,9 +1,9 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchMe, fetchTasks, updateTask, deleteTask, createTask } from "@/lib/api";
+import { fetchMe, fetchTasks, updateTask, deleteTask, createTask, fetchTaskLabels, type TaskLabel, type CreateTaskInput } from "@/lib/api";
 import type { Me, Task } from "@/types";
 import {
-  filterTasks, countLists, groupByMarket, groupByAssignee, isDone,
+  filterTasks, countLists, groupByMarket, groupByAssignee, isDone, filterByLabel, countByLabel,
   type SmartListId, type Lens, type MarketGroup, type StaffGroup,
 } from "@/lib/smartLists";
 import { useRoyNav } from "@/components/roy/nav";
@@ -23,6 +23,8 @@ export function useReminderTasks() {
   const [activeList, setActiveList] = useState<SmartListId>("today");
   const [lens, setLens] = useState<Lens>("mine");
   const [query, setQuery] = useState("");
+  const [labels, setLabels] = useState<TaskLabel[]>([]);
+  const [activeLabelId, setActiveLabelId] = useState<string | null>(null);
   const { taskView } = useRoyNav();
 
   // Стартовая линза от входа с дашборда (Мои/Команда) — применяем один раз при монтировании.
@@ -36,13 +38,15 @@ export function useReminderTasks() {
 
   const load = useCallback(async () => {
     try {
-      const [t, m] = await Promise.all([fetchTasks(), fetchMe()]);
+      const [t, m, l] = await Promise.all([fetchTasks(), fetchMe(), fetchTaskLabels()]);
       setTasks(t);
       setMe(m);
+      setLabels(l);
     } catch {
       /* сохраняем текущее при ошибке поллинга */
     }
   }, []);
+  const reloadLabels = useCallback(() => { fetchTaskLabels().then(setLabels).catch(() => {}); }, []);
 
   useEffect(() => {
     load();
@@ -67,6 +71,17 @@ export function useReminderTasks() {
   const visible: Task[] = useMemo(
     () => filterTasks(list, activeList, lens, me, now).filter(matchesQuery),
     [list, activeList, lens, me, now, matchesQuery],
+  );
+
+  // Персональные списки-метки: счётчики по всем меткам + задачи активной метки.
+  const labelCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const l of labels) m[l.id] = countByLabel(list, l.id);
+    return m;
+  }, [labels, list]);
+  const visibleByLabel: Task[] = useMemo(
+    () => (activeLabelId ? filterByLabel(list, activeLabelId).filter(matchesQuery) : []),
+    [activeLabelId, list, matchesQuery],
   );
 
   // Линза «По рынкам» накладывается на активный смарт-список: группируем его задачи по странам.
@@ -111,15 +126,18 @@ export function useReminderTasks() {
     }
   }, [load]);
 
-  // Быстрое добавление в духе Reminders: контекстно по активному списку.
-  const quickAdd = useCallback(async (title: string) => {
+  // Быстрое добавление в духе Reminders: контекстно по активному списку/метке.
+  // При активной метке задача создаётся личной и сразу получает метку.
+  const quickAdd = useCallback(async (title: string, labelId?: string) => {
     const trimmed = title.trim();
     if (!trimmed) return;
-    const input: { title: string; assignee_telegram_id?: number; due_date?: string; priority?: string } = { title: trimmed };
+    const input: CreateTaskInput = { title: trimmed };
     if (me) input.assignee_telegram_id = me.telegram_id;
-    if (activeList === "today") input.due_date = todayISO(new Date());
+    if (activeList === "today" && !labelId) input.due_date = todayISO(new Date());
+    if (labelId) input.is_private = true;
     try {
-      await createTask(input);
+      const created = await createTask(input);
+      if (labelId) await updateTask(created.id, { label_ids: [labelId] });
     } finally {
       load();
     }
@@ -129,6 +147,7 @@ export function useReminderTasks() {
     tasks, me, loading: tasks === null,
     activeList, setActiveList, lens, setLens, query, setQuery,
     counts, visible, marketGroups, staffGroups, now,
+    labels, activeLabelId, setActiveLabelId, labelCounts, visibleByLabel, reloadLabels,
     toggle, remove, quickAdd, reload: load,
   };
 }
