@@ -33,6 +33,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var lastRecordIdentity: MeetingIdentity.Info?
     private var sysURL: URL?
     private var micURL: URL?
+    // Чекпоинты (crash-safe): durable-папка текущей записи, индекс след. sys-сегмента, тик-счётчик ротации.
+    private var currentRecDir: URL?
+    private var currentRecBase: String?
+    private var nextSysIndex = 1
+    private var recTickCount = 0
+    private static let rotateEveryTicks = 60   // 60 × 5с = 5 мин между чекпоинт-ротациями системной дорожки
     private var recordStartedAt: Date?
     private var identity: MeetingIdentity.Info?
     // Сколько записей ждёт дозагрузки (UploadQueue) — показываем «N в очереди» в меню.
@@ -145,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // в pending/, заливаем их сейчас (meetingId переиспользуется, claim не повторяем).
         if let cfg = config, configError == nil {
             Task { await UploadQueue.shared.drain(config: cfg); await refreshQueueBadge() }
+            recoverInterruptedRecordings()   // подобрать записи, прерванные крашем/ребутом → дослать
         }
     }
 
@@ -673,14 +680,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         callActive = false
         let startedAt = Date()
         let base = UUID().uuidString
-        let sys = FileManager.default.temporaryDirectory.appendingPathComponent("swarm-\(base)-sys.m4a")
-        let mic = FileManager.default.temporaryDirectory.appendingPathComponent("swarm-\(base)-mic.m4a")
+        // Чекпоинты: пишем в DURABLE-папку (App Support переживает ребут), НЕ в temp (стирается).
+        // Ротация системных сегментов по ходу + восстановление при запуске спасают собеседника при краше.
+        let recDir = recordingDir(base)
+        try? FileManager.default.createDirectory(at: recDir, withIntermediateDirectories: true)
+        let sys = recDir.appendingPathComponent("sys0.m4a")
+        let mic = recDir.appendingPathComponent("mic.m4a")
         Task {
             do {
                 try await recorder.start(systemURL: sys, micURL: mic)
                 sysURL = sys; micURL = mic
                 recordStartedAt = startedAt
                 identity = id
+                currentRecDir = recDir; currentRecBase = base; nextSysIndex = 1; recTickCount = 0
+                writeRecordingMeta(dir: recDir, base: base, startedAt: startedAt, identity: id)
                 // Плановый конец из Google Calendar → авто-стоп по нему. Если старт уже календарный —
                 // берём endISO сразу; иначе (ручной старт / по комнате) дозапрашиваем meeting-current,
                 // чтобы стоп по концу работал при ЛЮБОМ способе старта, если идёт календарная встреча.
@@ -751,6 +764,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc private func recWatchTick() {
         guard case .recording = state else { stopCallEndWatch(); return }
         let elapsed = Date().timeIntervalSince(recordStartedAt ?? Date())
+
+        // Чекпоинт: раз в ~5 мин финализируем текущий системный сегмент и продолжаем в новый файл →
+        // при краше/ребуте готовые куски собеседника (суть встречи) переживают. Тап НЕ трогаем.
+        // Микрофон пока не ротируем (клиентский upload шлёт mic одним файлом; mic_parts — отдельно).
+        recTickCount += 1
+        if recTickCount % Self.rotateEveryTicks == 0, let dir = currentRecDir, let base = currentRecBase {
+            let segURL = dir.appendingPathComponent("sys\(nextSysIndex).m4a")
+            nextSysIndex += 1
+            Task { [weak self] in
+                guard let self else { return }
+                await self.recorder.rotateSystem(to: segURL)
+                await MainActor.run {
+                    guard case .recording = self.state else { return }
+                    self.writeRecordingMeta(dir: dir, base: base, startedAt: self.recordStartedAt ?? Date(), identity: self.identity)
+                }
+            }
+        }
 
         // Уровень СИСТЕМНОЙ дорожки (собеседники). Считаем тихие тики ВСЕГДА, независимо от
         // mic-детекта: при браузерном звонке браузер держит мик непрерывно, и mic-правило ниже
@@ -942,6 +972,101 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // Отправка снятой записи: claim → перенос в pending/ → дозагрузка. При сбое НЕ теряем аудио —
     // pendingSend остаётся, «Повторить» пере-отправит. При успехе/отказе сервера очищаем pendingSend.
+    // ── Чекпоинты записи: durable-папка, meta, восстановление после краша ────────
+    private struct RecordingMeta: Codable {
+        let base: String
+        let startISO: String            // старт сессии (fallback для claim)
+        let identityKind: String?       // "calendar"/"room"/"manual"
+        let identityKey: String?
+        let title: String?
+        let calStartISO: String?        // identity.startISO (calendar)
+        let calEndISO: String?          // identity.endISO (calendar)
+        var systemSegments: [Seg]
+        struct Seg: Codable { let path: String; let offset: Double }
+    }
+
+    private func recordingRootDir() -> URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("SwarmRecorder", isDirectory: true)
+            .appendingPathComponent("recording", isDirectory: true)
+    }
+    private func recordingDir(_ base: String) -> URL { recordingRootDir().appendingPathComponent(base, isDirectory: true) }
+
+    // Атомарно пишет meta.json папки записи: идентичность (для claim при восстановлении) + список
+    // системных сегментов. Вызывается на старте и после каждой чекпоинт-ротации.
+    private func writeRecordingMeta(dir: URL, base: String, startedAt: Date, identity id: MeetingIdentity.Info?) {
+        let iso = ISO8601DateFormatter()
+        let segs = recorder.currentSystemSegments().map {
+            RecordingMeta.Seg(path: $0.url.lastPathComponent, offset: $0.offset)
+        }
+        let meta = RecordingMeta(base: base, startISO: iso.string(from: startedAt),
+                                 identityKind: id?.kind.rawValue, identityKey: id?.key, title: id?.title,
+                                 calStartISO: id?.startISO, calEndISO: id?.endISO, systemSegments: segs)
+        if let data = try? JSONEncoder().encode(meta) {
+            try? data.write(to: dir.appendingPathComponent("meta.json"), options: .atomic)
+        }
+    }
+
+    // На старте: подобрать записи, прерванные крашем/ребутом, и дослать. Только системная дорожка
+    // (собеседник) — микрофон без mic_parts пока не спасаем. Последний (по offset) сегмент отбрасываем:
+    // он активный на момент краша → вероятно без moov (не финализирован).
+    private func recoverInterruptedRecordings() {
+        guard let cfg = config, configError == nil else { return }
+        let root = recordingRootDir()
+        guard let dirs = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+        for dir in dirs where (try? dir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+            if dir.lastPathComponent == currentRecBase { continue }   // текущая живая сессия — не трогаем
+            guard let data = try? Data(contentsOf: dir.appendingPathComponent("meta.json")),
+                  let meta = try? JSONDecoder().decode(RecordingMeta.self, from: data) else {
+                try? FileManager.default.removeItem(at: dir); continue   // нет валидной meta → мусор
+            }
+            Task { await self.recoverOne(dir: dir, meta: meta, config: cfg) }
+        }
+    }
+
+    private func recoverOne(dir: URL, meta: RecordingMeta, config cfg: SwarmConfig) async {
+        let iso = ISO8601DateFormatter()
+        let sorted = meta.systemSegments.sorted { $0.offset < $1.offset }
+        let segs: [(url: URL, offset: Double)] = sorted.dropLast().map {
+            (url: dir.appendingPathComponent($0.path), offset: $0.offset)
+        }.filter { seg in
+            FileManager.default.fileExists(atPath: seg.url.path)
+                && ((try? seg.url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 1024
+        }
+        guard !segs.isEmpty else { try? FileManager.default.removeItem(at: dir); return }   // нечего спасать
+        let client = SwarmClient(config: cfg)
+        let kind = IdentityKind(rawValue: meta.identityKind ?? "manual") ?? .manual
+        let req = ClaimRequest(
+            identityKind: kind,
+            identityKey: meta.identityKey ?? "manual:\(meta.base)",
+            title: meta.title ?? "Восстановленная запись",
+            startedAt: meta.calStartISO ?? meta.startISO,
+            endedAt: meta.calEndISO ?? iso.string(from: Date()),
+            agentVersion: "0.1.0")
+        do {
+            let claim = try await withRetry { try await client.claim(req) }
+            if claim.shouldTranscribe {
+                try await UploadQueue.shared.enqueue(
+                    meetingId: claim.meetingId, systemSegments: segs, micURL: nil,
+                    micStartOffset: nil, startISO: req.startedAt ?? meta.startISO,
+                    endISO: req.endedAt ?? iso.string(from: Date()))
+                await UploadQueue.shared.drain(config: cfg)
+                await MainActor.run { self.notifyRecovered() }
+            }
+            try? FileManager.default.removeItem(at: dir)   // enqueue перенёс файлы → папка не нужна
+        } catch {
+            NSLog("SwarmRecorder: восстановление \(meta.base) не удалось (\(error)) — оставляю для ретрая")
+        }
+    }
+
+    private func notifyRecovered() {
+        let c = UNMutableNotificationContent()
+        c.title = "Восстановлена прерванная запись"
+        c.body = "Нашла запись, прерванную сбоем/перезапуском — отправила в обработку. Тезисы придут в Telegram."
+        c.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "recovered-\(Int(Date().timeIntervalSince1970))", content: c, trigger: nil))
+    }
+
     private func performSend(_ p: PendingSend) async {
         guard let cfg = config else { return }
         let client = SwarmClient(config: cfg)
@@ -997,6 +1122,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // decision=defer — транскрибирует другой участник; наши файлы не нужны.
                 for s in p.res.systemSegments { try? FileManager.default.removeItem(at: s.url) }
                 if let m = p.res.mic { try? FileManager.default.removeItem(at: m) }
+            }
+            // Файлы перенесены в pending/ (или сервер отказался) → чистим durable-папку ИМЕННО этой
+            // записи (выводим из её же сегментов, не из глобального стейта — иначе «Повторить» после
+            // старта новой записи снёс бы чужую папку).
+            if let seg = p.res.systemSegments.first {
+                try? FileManager.default.removeItem(at: seg.url.deletingLastPathComponent())
             }
             pendingSend = nil   // отправлено в очередь (или сервер отказался) — повторять нечего
             setState(.idle)

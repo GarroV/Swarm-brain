@@ -52,6 +52,16 @@ final class AudioRecorder: NSObject {
         systemCapturer?.currentLevel() ?? 0
     }
 
+    // ── Чекпоинт: мягкая ротация системного сегмента ────────────────────────────
+    // Финализирует текущий системный файл и продолжает запись в новый (тап живёт). Микрофон пока
+    // НЕ ротируем — клиентский upload-путь шлёт mic одним файлом (mic_parts — отдельная задача).
+    func rotateSystem(to url: URL) async { await systemCapturer?.rotateFile(to: url) }
+    // Текущие системные сегменты (для meta чекпоинтов): база (offset 0) + доп. сегменты пересборок/ротаций.
+    func currentSystemSegments() -> [(url: URL, offset: Double)] {
+        guard let sys = systemURL else { return [] }
+        return [(url: sys, offset: 0.0)] + (systemCapturer?.extraSegments ?? [])
+    }
+
     // Монотонные якоря первого РЕАЛЬНОГО сэмпла каждой дорожки (один источник времени —
     // ProcessInfo.systemUptime, не настенные часы; невосприимчив к коррекции NTP/сна).
     //   • mic   — берём сразу после успешного rec.record()==true (AVAudioRecorder начинает писать).

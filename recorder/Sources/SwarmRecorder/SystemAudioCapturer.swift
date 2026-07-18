@@ -21,6 +21,11 @@ protocol SystemAudioCapturer: AnyObject {
     func start(systemURL: URL) async throws
     func stop() async
 
+    // Мягкая ротация: финализировать текущий файл (moov) и продолжить запись в новый сегмент `url`,
+    // НЕ трогая тап (без HAL-teardown → без риска зависания на BT). Для crash-safe чекпоинтов:
+    // финализированные куски переживают краш/ребут. Новый сегмент попадёт в extraSegments. No-op у SCK.
+    func rotateFile(to url: URL) async
+
     // Монотонный (ProcessInfo.systemUptime) момент первого реального сэмпла системной дорожки.
     // nil, если ни одного буфера так и не пришло. Нужен AudioRecorder для micStartOffset.
     var firstSampleUptime: Double? { get }
@@ -41,6 +46,7 @@ protocol SystemAudioCapturer: AnyObject {
 
 extension SystemAudioCapturer {
     var extraSegments: [(url: URL, offset: Double)] { [] }
+    func rotateFile(to url: URL) async {}   // дефолт: SCK-путь (<14.4) ротацию не делает
 }
 
 func makeSystemCapturer() -> SystemAudioCapturer {
@@ -309,6 +315,16 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
     private var aggID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
     private var file: AVAudioFile?
+    // Доступ к `file` под fileLock: мягкая ротация (rotateFileLocked, на control-queue) меняет file,
+    // пока IOProc (ioQueue) в него пишет. Ротация НЕ трогает тап/aggregate (в отличие от rebuildLocked
+    // с HAL-teardown) → без риска зависания на BT. Настройки/формат храним, чтобы открыть новый сегмент.
+    private var fileLock = os_unfair_lock()
+    private var currentFileSettings: [String: Any]?
+    private var currentInFmt: AVAudioFormat?
+    private func withFileLock<T>(_ body: () -> T) -> T {
+        os_unfair_lock_lock(&fileLock); defer { os_unfair_lock_unlock(&fileLock) }
+        return body()
+    }
     // Управляющая очередь: все блокирующие HAL-вызовы (create/destroy tap+aggregate, Start/Stop),
     // device-listener, silence-watchdog и мутация управляющего состояния — строго на ней.
     private let queue = DispatchQueue(label: "swarm.systemtap.control", qos: .userInitiated)
@@ -395,6 +411,24 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
         }
     }
 
+    // Мягкая ротация файла-сегмента (чекпоинт): финализировать текущий, писать в новый. Тап живёт.
+    func rotateFile(to url: URL) async {
+        await withQueueNoThrow { self.rotateFileLocked(to: url) }
+    }
+    private func rotateFileLocked(to url: URL) {
+        guard !stopped, let start = sessionStartUptime,
+              let settings = currentFileSettings, let inFmt = currentInFmt else { return }
+        let offset = ProcessInfo.processInfo.systemUptime - start
+        guard let nf = try? AVAudioFile(forWriting: url, settings: settings,
+                                        commonFormat: .pcmFormatFloat32, interleaved: inFmt.isInterleaved) else {
+            NSLog("SwarmRecorder: ротация сегмента не удалась — продолжаю в текущий файл"); return
+        }
+        // Свап под fileLock: IOProc допишет текущий буфер в старый файл, следующий — уже в новый.
+        // Старый AVAudioFile финализируется (moov) при освобождении ссылки.
+        withFileLock { self.file = nf }
+        withIOLock { _extraSegments.append((url: url, offset: max(0, offset))) }
+    }
+
     deinit {
         // Аварийный путь (объект уничтожен без stop()): синхронный teardown на queue.
         queue.sync { self.teardownLocked() }
@@ -450,35 +484,32 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
         }
         aggID = a
 
-        // 5. AAC m4a — тот же выход, что у SCK-ветки. Битрейт см. ниже.
-        file = try AVAudioFile(
-            forWriting: outURL,
-            settings: [
-                AVFormatIDKey: kAudioFormatMPEG4AAC,
-                AVSampleRateKey: inFmt.sampleRate,
-                AVNumberOfChannelsKey: inFmt.channelCount,
-                // AAC @ 48кГц требует ≥32 kbps/канал (см. историю): стерео@<32k роняло AVAudioFile.
-                AVEncoderBitRateKey: max(32_000, Int(inFmt.channelCount) * 32_000),
-            ],
-            commonFormat: .pcmFormatFloat32,
-            interleaved: inFmt.isInterleaved)
+        // 5. AAC m4a — тот же выход, что у SCK-ветки. Настройки храним для мягкой ротации сегментов.
+        let fileSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: inFmt.sampleRate,
+            AVNumberOfChannelsKey: inFmt.channelCount,
+            // AAC @ 48кГц требует ≥32 kbps/канал (см. историю): стерео@<32k роняло AVAudioFile.
+            AVEncoderBitRateKey: max(32_000, Int(inFmt.channelCount) * 32_000),
+        ]
+        file = try AVAudioFile(forWriting: outURL, settings: fileSettings,
+                               commonFormat: .pcmFormatFloat32, interleaved: inFmt.isInterleaved)
+        currentFileSettings = fileSettings
+        currentInFmt = inFmt
 
         // 6. IOProc + старт. Блок звука доставляется на ioQueue (НЕ на управляющей queue — иначе
-        // Stop самодедлочится). Считаем peak (watchdog тишины) и пишем в файл.
+        // Stop самодедлочится). Считаем peak (watchdog тишины) и пишем в файл ПОД fileLock (мягкая
+        // ротация меняет self.file с control-queue параллельно — без блока была бы гонка).
         var p: AudioDeviceIOProcID?
         let err = AudioDeviceCreateIOProcIDWithBlock(&p, aggID, ioQueue) { [weak self] _, inData, _, _, _ in
             guard let self else { return }
             // Якорь первого сэмпла сессии (один раз за всю запись) — под ioLock (читает queue-сторона).
             self.withIOLock { if self._firstSampleUptime == nil { self._firstSampleUptime = ProcessInfo.processInfo.systemUptime } }
-            // self.file ставится в buildTapLocked ДО AudioDeviceStart и обнуляется в teardownLocked
-            // ПОСЛЕ AudioDeviceStop — Core Audio гарантирует, что IOProc не вызывается вне [Start, Stop],
-            // поэтому доступ к file здесь безопасен без отдельного lock.
-            guard let f = self.file,
-                  let buf = AVAudioPCMBuffer(pcmFormat: inFmt, bufferListNoCopy: inData, deallocator: nil) else { return }
+            guard let buf = AVAudioPCMBuffer(pcmFormat: inFmt, bufferListNoCopy: inData, deallocator: nil) else { return }
             let peak = SystemLevelTracker.bufferPeak(buf)
             self.levelTracker.update(rawPeak: peak)   // живой уровень собеседников
             if peak > 0 { self.withIOLock { self.lastNonSilentUptime = ProcessInfo.processInfo.systemUptime } }
-            try? f.write(from: buf)
+            self.withFileLock { try? self.file?.write(from: buf) }
         }
         guard err == noErr, let proc = p else { throw SwarmError.transport("AudioDeviceCreateIOProcIDWithBlock \(err)") }
         procID = proc
