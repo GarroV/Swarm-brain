@@ -87,6 +87,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Сколько тихих тиков (5с каждый) системной дорожки = конец звонка. 36 ≈ 3 мин непрерывной
     // тишины — в живом созвоне такое почти не встречается; компромисс ради фикса runaway-записей.
     private static let systemSilenceTicksToStop = 36
+    // Тики подряд с ПОДТВЕРЖДЁННО закрытой вкладкой встречи (Meet/Контур) → быстрый конец созвона.
+    private var roomGoneTicks = 0
+    private static let roomGoneTicksToStop = 4   // 4 × 5с ≈ 20с закрытой вкладки → авто-стоп
+    // Не-тихие тики подряд: сброс счётчика тишины только при 2+ подряд (устойчивость к «блипам»).
+    private var loudStreak = 0
     // Дефолтный стоп: если активный созвон не детектится, запись не идёт дольше этого лимита.
     // Бэкстоп от runaway-записи (когда детект созвона молчит — напр. ручной старт без звонка).
     private static let maxNoCallSeconds: TimeInterval = 75 * 60   // 1ч15м
@@ -699,6 +704,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         callSeenDuringRec = false
         silentTicks = 0
         systemSilentTicks = 0
+        roomGoneTicks = 0
+        loudStreak = 0
         recWatchTimer?.invalidate()
         let t = Timer.scheduledTimer(timeInterval: 5, target: self, selector: #selector(recWatchTick), userInfo: nil, repeats: true)
         RunLoop.main.add(t, forMode: .common)
@@ -718,7 +725,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // mic-детекта: при браузерном звонке браузер держит мик непрерывно, и mic-правило ниже
         // не сработает — поэтому тишина системной дорожки тут единственный надёжный сигнал конца.
         let systemLevel = recorder.currentSystemLevel()
-        if systemLevel < Self.systemSilenceLevel { systemSilentTicks += 1 } else { systemSilentTicks = 0 }
+        // Устойчивость к «блипам»: одиночный всплеск (уведомление, звук выхода из звонка) НЕ
+        // сбрасывает счётчик тишины — сброс только на 2 не-тихих тиках подряд.
+        if systemLevel < Self.systemSilenceLevel {
+            systemSilentTicks += 1; loudStreak = 0
+        } else {
+            loudStreak += 1
+            if loudStreak >= 2 { systemSilentTicks = 0 }
+        }
 
         // Реальный созвон = кто-то, КРОМЕ нас и системных демонов (CoreSpeech), держит мик.
         // На macOS <14 per-process детекта нет → realCall всегда false, работает только лимит ниже.
@@ -726,7 +740,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if #available(macOS 14.0, *) {
             let info = CallDetector.othersUsingMicInfo()
             realCall = !info.isEmpty
-            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks) sysLevel=\(String(format: "%.3f", systemLevel)) sysSilent=\(systemSilentTicks) elapsed=\(Int(elapsed))s")
+            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks) sysLevel=\(String(format: "%.3f", systemLevel)) sysSilent=\(systemSilentTicks) roomGone=\(roomGoneTicks) elapsed=\(Int(elapsed))s")
+        }
+
+        // (Сигнал вкладки) Быстрый конец БРАУЗЕРНОГО созвона: вкладка комнаты (Meet/Контур) закрыта
+        // /ушла ~20с подряд → «ты вышел». Прямее и быстрее «3 минут тишины». Только для room-встреч
+        // и когда созвон был замечен; ошибка чтения вкладок = «не уверены» (roomGone не копится, не стопаем).
+        if callSeenDuringRec, let room = identity, room.kind == .room {
+            switch MeetingIdentity.roomPresence(key: room.key) {
+            case .open: roomGoneTicks = 0
+            case .gone: roomGoneTicks += 1
+            case .unknown: break
+            }
+            if roomGoneTicks >= Self.roomGoneTicksToStop {
+                autoStop(reason: "встреча закрыта")
+                return
+            }
+        } else {
+            roomGoneTicks = 0
         }
 
         // (0) Конец БРАУЗЕРНОГО звонка по тишине системной дорожки. Срабатывает ДАЖЕ когда
