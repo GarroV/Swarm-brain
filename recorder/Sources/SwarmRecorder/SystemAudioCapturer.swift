@@ -359,7 +359,11 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
     private let levelTracker = SystemLevelTracker()
 
     var firstSampleUptime: Double? { withIOLock { _firstSampleUptime } }
-    var extraSegments: [(url: URL, offset: Double)] { queue.sync { _extraSegments } }
+    // ВАЖНО: читаем под ioLock, НЕ через queue.sync. Финализация в AudioRecorder.stop() дёргает
+    // extraSegments СРАЗУ после stopWithTimeout; если teardown завис на управляющей `queue` (HAL на
+    // BT-агрегате), queue.sync повесил бы стоп намертво — в обход только что отработавшего таймаута.
+    // ioLock от зависшего HAL не зависит (teardownLocked его не берёт, IOProc держит микросекунды).
+    var extraSegments: [(url: URL, offset: Double)] { withIOLock { _extraSegments } }
     func currentLevel() -> Float { levelTracker.current() }
 
     // Доступ к якорям, разделяемым между IOProc (ioQueue) и управляющей стороной (queue).
@@ -507,7 +511,7 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
         let offset = ProcessInfo.processInfo.systemUptime - start
         do {
             try buildTapLocked(outURL: seg)
-            _extraSegments.append((url: seg, offset: max(0, offset)))
+            withIOLock { _extraSegments.append((url: seg, offset: max(0, offset))) }
             withIOLock { lastNonSilentUptime = ProcessInfo.processInfo.systemUptime }  // не пересобирать сразу снова
         } catch {
             NSLog("SwarmRecorder: пересборка тапа не удалась (\(error)) — сегмент \(segmentIndex) пропущен")
