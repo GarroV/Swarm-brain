@@ -18,7 +18,7 @@
 // build 4 (2026-07-09): heartbeat-мониторинг рекордера (SwarmClient.heartbeat → meeting-heartbeat;
 // сервер ловит оборванную запись / истечение токена). Тег recorder-build-4, build-app.sh ✅ (подпись валидна).
 // build 3 (2026-06-30): бэкап аудио держится до публикации в базу + потолок 3 суток. Тег recorder-build-3.
-const LATEST_BUILD = 6;
+const LATEST_BUILD = 9;
 
 Deno.serve((req: Request) => {
   if (req.method === "OPTIONS") {
