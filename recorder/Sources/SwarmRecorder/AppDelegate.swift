@@ -224,7 +224,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc private func watchTick() {
         guard let cfg = config, configError == nil else { return }
         Task {
-            let meeting = (try? await SwarmClient(config: cfg).currentMeeting()) ?? nil
+            let lookup = try? await SwarmClient(config: cfg).currentMeeting()
+            if lookup?.tokenDead == true {
+                await MainActor.run { self.notifyGoogleReconnect() }
+            } else if lookup != nil {
+                await MainActor.run { self.googleReconnectWarned = false }   // связь ок → снова разрешаем предупредить
+            }
+            let meeting = lookup?.meeting ?? nil
             // Реальный созвон, а не просто занятый микрофон: фильтруем системные демоны
             // (CoreSpeech), иначе «звонок» виден всегда и сыпались бы ложные предложения записи.
             let micOn = CallDetector.realCallActive()
@@ -685,7 +691,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     if let cfg = self.config {
                         Task { [weak self] in
                             let cal = try? await SwarmClient(config: cfg).currentMeeting()
-                            guard let info = cal ?? nil, let endISO = info.endISO,
+                            guard let info = cal?.meeting, let endISO = info.endISO,
                                   let end = ISO8601DateFormatter().date(from: endISO) else { return }
                             await MainActor.run {
                                 guard let self, case .recording = self.state else { return }
@@ -847,6 +853,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         } else {
             try? data.write(to: url)
         }
+    }
+
+    // Разовое уведомление: Google-токен умер (был подключён, refresh не прошёл). Молчаливый отказ
+    // прятал отвал календаря (авто-название/авто-стоп по расписанию тихо переставали работать).
+    private var googleReconnectWarned = false
+    private func notifyGoogleReconnect() {
+        guard !googleReconnectWarned else { return }
+        googleReconnectWarned = true
+        let content = UNMutableNotificationContent()
+        content.title = "Переподключи Google-календарь"
+        content.body = "Доступ к Google-календарю отвалился — авто-название и авто-стоп встреч по расписанию не работают. Открой Swarm в вебе → Настройки → Google-календарь и подключи заново."
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "google-reconnect", content: content, trigger: nil))
     }
 
     private func postCallEndedNotification(body: String = "Звонок завершён — сохраняю встречу.") {

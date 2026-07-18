@@ -91,8 +91,10 @@ enum Updater {
         # Клонируем ПИНОВАННЫЙ тег релиза (не HEAD дев-ветки). Нет тега → падаем → остаёмся как есть.
         if ! git clone --depth 1 --branch "$TAG" "$REPO" "$TMP/src" >/dev/null 2>&1; then log "clone tag $TAG failed (нет тега? нет сети?); keep current"; exit 0; fi
         cd "$TMP/src/recorder" || { log "no recorder/ dir"; exit 0; }
-        NEW="$(tr -dc '0-9' < VERSION 2>/dev/null || echo 0)"
-        if [ -z "$NEW" ] || [ "$NEW" -le "$CUR" ]; then log "not newer (repo VERSION=$NEW <= $CUR); skip"; exit 0; fi
+        # Робастно и set -u-safe: дефолт 0, читаем только если файл доступен, пустой → 0.
+        # (Старый `$(... || echo 0)` не ловил ПУСТОЙ успех tr → под set -u падало «NEW: unbound».)
+        NEW="0"; [ -r VERSION ] && NEW="$(tr -cd '0-9' < VERSION 2>/dev/null)"; [ -n "${NEW:-}" ] || NEW="0"
+        if [ "$NEW" -le "$CUR" ]; then log "not newer (repo VERSION=$NEW <= $CUR); skip"; exit 0; fi
         # Стабильный cert обязателен — иначе подпись схлопнется в ad-hoc и грант на запись слетит.
         if ! security find-identity -p codesigning 2>/dev/null | grep -q "SwarmRecorder Self-Signed"; then log "no signing cert; skip (would break TCC)"; exit 0; fi
         log "building build $NEW…"

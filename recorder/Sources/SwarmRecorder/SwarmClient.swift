@@ -115,11 +115,17 @@ struct SwarmClient {
 
     // GET /meeting-current — идущая/ближайшая встреча из Google Calendar (на сервере).
     // nil, если Google не подключён / событий нет / сетевой сбой.
-    func currentMeeting() async throws -> MeetingIdentity.Info? {
+    // Результат: встреча (или nil) + флаг «Google-токен сдох» (reason=token_refresh_failed).
+    // tokenDead=true ТОЛЬКО когда был подключён и refresh не прошёл (не путать с
+    // google_not_connected — тогда не дёргаем, юзер просто не подключал). Молчаливый отказ = плохо.
+    struct MeetingLookup { let meeting: MeetingIdentity.Info?; let tokenDead: Bool }
+    func currentMeeting() async throws -> MeetingLookup {
         var req = URLRequest(url: url("/meeting-current"))
         authed(&req)
         let (data, resp) = try await Self.session.data(for: req)
-        guard (200...299).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else { return nil }
+        guard (200...299).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else {
+            return MeetingLookup(meeting: nil, tokenDead: false)
+        }
         struct M: Decodable {
             let identityKey: String
             let title: String?
@@ -127,10 +133,13 @@ struct SwarmClient {
             let startedAt: String?
             let endedAt: String?
         }
-        struct Resp: Decodable { let meeting: M? }
-        guard let m = try decoder.decode(Resp.self, from: data).meeting else { return nil }
-        return MeetingIdentity.Info(kind: .calendar, key: m.identityKey, title: m.title,
-                                    attendees: m.attendees ?? [], startISO: m.startedAt, endISO: m.endedAt)
+        struct Resp: Decodable { let meeting: M?; let reason: String? }
+        let r = try decoder.decode(Resp.self, from: data)
+        let dead = (r.reason == "token_refresh_failed")
+        guard let m = r.meeting else { return MeetingLookup(meeting: nil, tokenDead: dead) }
+        let info = MeetingIdentity.Info(kind: .calendar, key: m.identityKey, title: m.title,
+                                        attendees: m.attendees ?? [], startISO: m.startedAt, endISO: m.endedAt)
+        return MeetingLookup(meeting: info, tokenDead: false)
     }
 
     // GET /meeting-status?ids=a,b,c → [meetingId: summary_status]. Нужно UploadQueue: локальный

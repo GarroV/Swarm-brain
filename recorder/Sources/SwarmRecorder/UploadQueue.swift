@@ -134,7 +134,7 @@ actor UploadQueue {
         draining = true
         defer { draining = false }
 
-        // (1) 24ч-потолок: всё старше суток (pending/ и failed/) сметаем — бэкап «в рамках суток».
+        // (1) Потолок бэкапа: всё старше `backupTTLSec` (= 3 суток) в pending/ и failed/ сметаем.
         sweepExpired()
 
         // (2) Грузим ещё не залитые; залитые собираем для опроса статуса.
