@@ -675,11 +675,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 sysURL = sys; micURL = mic
                 recordStartedAt = startedAt
                 identity = id
-                // Плановый конец из Google Calendar (только calendar-встречи) → авто-стоп по нему.
+                // Плановый конец из Google Calendar → авто-стоп по нему. Если старт уже календарный —
+                // берём endISO сразу; иначе (ручной старт / по комнате) дозапрашиваем meeting-current,
+                // чтобы стоп по концу работал при ЛЮБОМ способе старта, если идёт календарная встреча.
                 if id?.kind == .calendar, let endISO = id?.endISO {
                     scheduledEndAt = ISO8601DateFormatter().date(from: endISO)
                 } else {
                     scheduledEndAt = nil
+                    if let cfg = self.config {
+                        Task { [weak self] in
+                            let cal = try? await SwarmClient(config: cfg).currentMeeting()
+                            guard let info = cal ?? nil, let endISO = info.endISO,
+                                  let end = ISO8601DateFormatter().date(from: endISO) else { return }
+                            await MainActor.run {
+                                guard let self, case .recording = self.state else { return }
+                                self.scheduledEndAt = end
+                            }
+                        }
+                    }
                 }
                 // notesExpanded ДО setState(.recording): иначе syncWidget сначала покажет виджет с
                 // его level-таймером, а затем панель заведёт ВТОРОЙ 10-Гц таймер (дефект build 4 →
