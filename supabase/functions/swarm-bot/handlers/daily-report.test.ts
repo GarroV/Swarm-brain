@@ -1,7 +1,7 @@
 // supabase/functions/swarm-bot/handlers/daily-report.test.ts
 // Запуск: deno test supabase/functions/swarm-bot/handlers/daily-report.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { aggregateActivity, type EntryRow, yesterdayWindow } from "./daily-report.ts";
+import { aggregateActivity, formatReport, type EntryRow, yesterdayWindow } from "./daily-report.ts";
 
 Deno.test("yesterdayWindow: лето (CEST, UTC+2) — вчерашние локальные сутки в UTC", () => {
   // now = 2026-07-18 07:30 по Белграду (05:30 UTC). Вчера = 2026-07-17.
@@ -35,4 +35,33 @@ Deno.test("aggregateActivity: неизвестный source заметки → �
   ]);
   assertEquals(r.notes.bySource, { "📦 прочее": 1 });
   assertEquals(r.notes.byWorkspace, { "Без воркспейса": 1 });
+});
+
+Deno.test("formatReport: штатный день — обе секции с разбивкой", () => {
+  const data = aggregateActivity([
+    { entry_type: "meeting", source: "desktop-agent", group_id: "cee" },
+    { entry_type: "note", source: "telegram", group_id: "cee" },
+    { entry_type: "note", source: "link", group_id: "other" },
+  ]);
+  const s = formatReport(data, "18.07");
+  assertEquals(s.includes("Встречи: 1"), true);
+  assertEquals(s.includes("Новые данные: 2"), true);
+  assertEquals(s.includes("CEE 1"), true);
+  assertEquals(s.includes("🔗 ссылки 1"), true);
+});
+
+Deno.test("formatReport: секция с нулём — без подстрок", () => {
+  const data = aggregateActivity([
+    { entry_type: "note", source: "telegram", group_id: "cee" },
+  ]);
+  const s = formatReport(data, "18.07");
+  assertEquals(s.includes("Встречи: 0"), true);
+  // после «Встречи: 0» сразу идёт секция «Новые данные» — подстрок у нуля нет
+  assertEquals(/Встречи: 0<\/b>\n\n/.test(s), true);
+});
+
+Deno.test("formatReport: тихий день — плашка, без секций", () => {
+  const s = formatReport(aggregateActivity([]), "18.07");
+  assertEquals(s.includes("тихий день"), true);
+  assertEquals(s.includes("Встречи:"), false);
 });

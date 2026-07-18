@@ -102,3 +102,31 @@ export function aggregateActivity(rows: EntryRow[]): ReportData {
   }
   return { meetings, notes };
 }
+
+function subLine(counts: Record<string, number>): string {
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `${k} ${v}`)
+    .join(" · ");
+}
+
+function renderSection(emoji: string, title: string, c: SectionCounts): string {
+  let out = `${emoji} <b>${title}: ${c.total}</b>`;
+  if (c.total > 0) {
+    out += `\n   ${subLine(c.byWorkspace)}`;
+    out += `\n   ${subLine(c.bySource)}`;
+  }
+  return out;
+}
+
+export function formatReport(data: ReportData, dateLabel: string): string {
+  const header = `📊 <b>Свод за ${dateLabel}</b> (вчера)`;
+  if (data.meetings.total === 0 && data.notes.total === 0) {
+    return `${header}\n\nЗа вчера ничего не добавили — тихий день.`;
+  }
+  return [
+    header,
+    renderSection("🎙", "Встречи", data.meetings),
+    renderSection("📝", "Новые данные", data.notes),
+  ].join("\n\n");
+}
