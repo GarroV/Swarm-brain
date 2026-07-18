@@ -16,7 +16,7 @@ import { handleFeedbackCommand, handleFeedbackCallbacks, handleFeedbackPhoto, ha
 import { handleWorkspace } from "./handlers/workspace.ts";
 import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
 import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
-import { sendDailyReport } from "./handlers/daily-report.ts";
+import { sendDailyReport } from "./handlers/daily-report-send.ts";
 import { getHelpText, helpKeyboard, guideMenu, guideStep } from "./handlers/help.ts";
 import { mintMcpToken, buildSetupOneLiner, hasActiveMcpToken, mintRecorderToken, buildRecorderSetupOneLiner, hasActiveRecorderToken } from "./lib/mcp-setup.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
