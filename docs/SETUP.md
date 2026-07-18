@@ -11,7 +11,7 @@
 | Supabase аккаунт | https://supabase.com |
 | Telegram Bot Token | @BotFather в Telegram |
 | OpenAI API Key | https://platform.openai.com/api-keys |
-| Cloudflare Pages (опционально) | https://pages.cloudflare.com — для Mini App |
+| Cloudflare Pages (опционально) | https://pages.cloudflare.com — для веб-интерфейса |
 
 ---
 
@@ -94,14 +94,14 @@ supabase secrets set MINIAPP_ORIGIN=<URL_минипрложения_или_*>
 | `TELEGRAM_BOT_TOKEN` | Токен бота от @BotFather | ✅ |
 | `OPENAI_API_KEY` | Ключ OpenAI | ✅ |
 | `CRON_SECRET` | Любая строка — защищает cron-эндпоинты | ✅ |
-| `MINIAPP_ORIGIN` | URL Mini App (для CORS). Используй `*` для начала | рекомендуется |
+| `MINIAPP_ORIGIN` | URL веб-интерфейса (для CORS). Используй `*` для начала | рекомендуется |
 | `INITDATA_MAX_AGE` | Срок жизни initData Telegram в секундах (по умолчанию 86400) | опционально |
 | `BOT_NAME` | Имя бота в подписи фидбека (по умолчанию `bot`) | опционально |
 | `MCP_AUTH_REQUIRED` | `true` — строгая авторизация в swarm-mcp (по умолчанию soft) | опционально |
 
 `SUPABASE_URL` и `SUPABASE_SERVICE_ROLE_KEY` Edge Functions получают автоматически — вручную устанавливать не нужно.
 
-### 7.2 Веб / Mini App auth (нужно, если используешь веб-логин и связку Google)
+### 7.2 Веб-интерфейс auth (нужно, если используешь веб-логин и связку Google)
 
 ```bash
 supabase secrets set WEB_JWT_SECRET=<любая_длинная_случайная_строка>
@@ -228,7 +228,9 @@ VALUES ('feedback_channel_id', '"<CHAT_ID>"');
 
 ---
 
-## Шаг 11 — Mini App (опционально)
+## Шаг 11 — Веб-интерфейс «Рой» (опционально)
+
+> Это обычный веб-сайт/PWA в браузере. Вход как **Telegram Mini App внутри Telegram отключён** — настраивать Mini App в @BotFather не нужно.
 
 1. Переименуй `.env.local.example` → `.env.local` в папке `miniapp/`:
 
@@ -246,7 +248,7 @@ npm run build
 # Содержимое out/ → задеплоить на Cloudflare Pages или любой статик-хостинг
 ```
 
-3. В @BotFather настрой Mini App: `/newapp` → укажи URL деплоя.
+3. ~~В @BotFather настрой Mini App `/newapp`~~ — **не нужно** (вход как Telegram Mini App отключён). Вместо этого пропиши домен деплоя в @BotFather `/setdomain` — это нужно для браузерного входа через Telegram Login Widget.
 
 4. Обнови `MINIAPP_ORIGIN` в secrets на реальный URL.
 
@@ -322,6 +324,6 @@ select cron.schedule(
 - Проверь что `CRON_SECRET` в headers совпадает с secrets
 - Включи расширение `pg_net` для HTTP-запросов из pg_cron
 
-**Mini App не открывается:**
+**Веб-интерфейс не открывается:**
 - Проверь `MINIAPP_ORIGIN` в secrets — должен совпадать с URL деплоя
 - В режиме разработки используй `NEXT_PUBLIC_DEV_MODE=true`

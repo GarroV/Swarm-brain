@@ -1,13 +1,15 @@
-# Mini App — Архитектура
+# Веб-интерфейс «Рой» — Архитектура
 
-> Статус: **swarm-api готов** (2026-05-31). Следующий шаг — фронтенд Mini App.
+> ⚠️ **Терминология (важно):** это **веб-интерфейс** — обычный сайт/PWA в браузере (`swarm-brain.pages.dev`), НЕ «Mini App». Вход как **Telegram Mini App внутри Telegram отключён** (~2026-07-15, коммит `53bd3ae` — бот ведёт на PWA). Слова «Mini App» ниже по тексту — это (а) историческое имя папки `miniapp/` и (б) спящий путь `initData`/`tma`, который ещё есть в коде, но точки входа не имеет (на удаление — см. `docs/BACKLOG.md`). **Живой вход — Telegram Login Widget → JWT-cookie в браузере.** Поверхностей у продукта три: веб-интерфейс, Telegram-бот, MCP.
+>
+> Статус: фронтенд реализован (2026-06-01), в проде на Cloudflare Pages (авто-деплой с `sandbox_vas`).
 
 ---
 
 ## Реализованный стек
 
 ```
-Telegram Mini App (фронтенд — следующий этап)
+Telegram Mini App (⚠️ СПЯЩИЙ — вход отключён; живой путь — Login Widget ниже)
         │
         │  Authorization: tma <initData>
         ▼
@@ -42,14 +44,14 @@ Supabase DB (service_role_key, фильтр по group_id)
 
 | Контекст | Способ | Поток |
 |----------|--------|-------|
-| Telegram Mini App | `Authorization: tma <initData>` | фронт → `/api/*` (прокси) → swarm-api проверяет initData |
+| Telegram Mini App **(⚠️ СПЯЩИЙ — вход отключён)** | `Authorization: tma <initData>` | код остался, но точки входа нет (Mini App выключен ~2026-07-15); живой путь — только строка ниже |
 | Браузер / PWA (вариант B+) | httpOnly cookie `roj_session` (JWT) | `/login` → Telegram Login Widget → CF Function `auth/telegram` проверяет подпись → JWT в httpOnly cookie → прокси `/api/[[path]]` перекладывает cookie в `Authorization: Bearer` → swarm-api проверяет JWT |
 
 **Почему прокси (B+):** miniapp — статика на Cloudflare Pages (нет Next API routes/middleware). httpOnly-cookie недоступна JS (защита от XSS) и не уходит cross-origin на `*.supabase.co`, поэтому CF Pages Function `functions/api/[[path]].ts` форвардит запросы на swarm-api server-side, перекладывая cookie → `Bearer`. JWT: HS256, секрет `WEB_JWT_SECRET` (общий у CF и Supabase). Login Widget подписывает данные секретом `SHA256(bot_token)` (иначе, чем Mini App).
 
 Авторизация в обоих случаях одинакова: `telegram_id` → `allowed_users` → `group_id`. Виджет лишь подтверждает личность; доступ по-прежнему гейтится белым списком.
 
-**`recorder_token` Mini App НЕ использует.** Персональный токен рекордера (`recorder_token_hash`, `/recordertoken`) — только для desktop-agent (`meeting-claim`/`meeting-ingest`, auth через `_shared/agent-auth.ts`). Mini App всегда ходит либо через Telegram `initData` (`tma`), либо через браузерный JWT (`Bearer`) — никогда через токен рекордера.
+**`recorder_token` веб-интерфейс НЕ использует.** Персональный токен рекордера (`recorder_token_hash`, `/recordertoken`) — только для desktop-agent (`meeting-claim`/`meeting-ingest`, auth через `_shared/agent-auth.ts`). Веб-интерфейс ходит через браузерный JWT (`Bearer`) (спящий путь `tma`/`initData` — тоже не рекордерный токен) — никогда через токен рекордера.
 
 ## Безопасность
 
@@ -66,7 +68,7 @@ Supabase DB (service_role_key, фильтр по group_id)
 | Переменная | Обязательная | Описание |
 |-----------|-------------|----------|
 | `TELEGRAM_BOT_TOKEN` | да | уже есть (Supabase + CF Pages) |
-| `MINIAPP_ORIGIN` | рекомендуется | CORS origin Mini App (напр. `https://t.me`) |
+| `MINIAPP_ORIGIN` | рекомендуется | CORS origin веб-интерфейса (напр. `https://swarm-brain.pages.dev`) |
 | `INITDATA_MAX_AGE` | нет | свежесть initData в секундах (дефолт 86400) |
 | `WEB_JWT_SECRET` | для веб-входа | подпись веб-сессий (одинаковый в Supabase secrets и CF Pages env) |
 | `SWARM_API_URL` | CF Pages | цель прокси `functions/api/[[path]]` → swarm-api |
@@ -84,7 +86,7 @@ supabase functions deploy swarm-api --no-verify-jwt
 
 ---
 
-## Фронтенд Mini App — реализован (2026-06-01)
+## Фронтенд веб-интерфейса — реализован (2026-06-01)
 
 **Расположение:** `miniapp/`
 **Деплой:** Cloudflare Pages — build command `npm run build`, output dir `out`
@@ -166,8 +168,9 @@ gridTemplateColumns: minmax(260px,288px)  minmax(0,1fr)  minmax(300px,344px)
 **Автор записи для аватара:** берётся из `Entry.added_by` (строка-имя). Если там сырой `telegram_id` (только цифры) или пусто — аватар не показываем (graceful, отдельного поля автора в `Entry` нет).
 
 ### Финальная проверка авторизации
-DEV_MODE проверяет только UI/логику. Реальный `initData` и авторизацию
-проверяй только открыв приложение из Telegram.
+DEV_MODE проверяет только UI/логику. Реальную авторизацию проверяй **в браузере**
+(`swarm-brain.pages.dev` → Telegram Login Widget → JWT-cookie). Вход из Telegram
+(Mini App / `initData`) отключён — там проверять нечего.
 
 ---
 

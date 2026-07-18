@@ -52,14 +52,14 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Telegram helpers / новый хендлер | `swarm-bot/lib/telegram.ts`, `handlers/<name>.ts` | §swarm-bot |
 | `ADMIN_USER_ID` (зашит) | `swarm-bot/lib/supabase.ts` → `744230399` | §Контроль доступа |
 
-### Mini App backend — `swarm-api/`
+### Веб-бэкенд (веб-интерфейс) — `swarm-api/`
 | Concern | Файлы | Детали |
 |---|---|---|
 | Все HTTP-эндпоинты (задачи/entries/встречи/поиск/дайджест) | `swarm-api/index.ts` | §swarm-api (канон эндпоинтов) |
 | **Доступ к `entries`** (приватность+воркспейс) — НЕ грепать напрямую | `swarm-api/entries-guard.ts` | §Контроль доступа |
 | Админка (воркспейсы/бродкаст/профили) | `swarm-api/admin.ts` | §swarm-api |
 | Auth (initData / agent-токен / web-JWT) | `swarm-api/auth.ts`, `_shared/agent-auth.ts`, `_shared/jwt.ts` | §MCP-аутентификация |
-| 🔍 Веб-логин отбивается (вход через Telegram-виджет → возврат на `/login`, 401 на `/api/me`) | **Рассинхрон `WEB_JWT_SECRET`**: Cloudflare Pages подписывает cookie `roj_session`, а swarm-api проверяет своим значением — если они разные, `verifyJWT`→null→401. Реализации JWT (`_lib/jwt.ts` CF ⟷ `_shared/jwt.ts`) идентичны, дело только в ключе. Починка: единый ключ в ОБА места — `printf %s $S \| wrangler pages secret put WEB_JWT_SECRET --project-name swarm-brain` + `supabase secrets set WEB_JWT_SECRET=$S`, затем передеплой `swarm-api`/`meeting-webtoken`/`google-oauth` и retrigger CF Pages. Вход через Telegram Mini App (tma initData) этим НЕ затронут — отсюда «у владельца работает, у веб-юзера нет». | §MCP-аутентификация |
+| 🔍 Веб-логин отбивается (вход через Telegram-виджет → возврат на `/login`, 401 на `/api/me`) | **Рассинхрон `WEB_JWT_SECRET`**: Cloudflare Pages подписывает cookie `roj_session`, а swarm-api проверяет своим значением — если они разные, `verifyJWT`→null→401. Реализации JWT (`_lib/jwt.ts` CF ⟷ `_shared/jwt.ts`) идентичны, дело только в ключе. Починка: единый ключ в ОБА места — `printf %s $S \| wrangler pages secret put WEB_JWT_SECRET --project-name swarm-brain` + `supabase secrets set WEB_JWT_SECRET=$S`, затем передеплой `swarm-api`/`meeting-webtoken`/`google-oauth` и retrigger CF Pages. _(Исторически: вход через Telegram Mini App (tma initData) этим НЕ затрагивался — отсюда старое «у владельца работает, у веб-юзера нет». Mini App-вход **отключён** ~2026-07-15; сейчас ВСЕ ходят через браузерный JWT, так что рассинхрон `WEB_JWT_SECRET` теперь бьёт по всем без исключения.)_ | §MCP-аутентификация |
 
 ### Задачи (общий движок) — `_shared/tasks/`
 | Concern | Файлы | Детали |
@@ -92,7 +92,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Жизненный цикл/виджет/аплоад/нарезка/бэкап | `recorder/Sources/SwarmRecorder/**` (`AppDelegate`,`RecorderWidget`,`UploadQueue`,`Segmenter`,`SwarmClient`) | spoke [recorder/README.md](../recorder/README.md) |
 | Релиз новой сборки (тег `recorder-build-N`) | `swarm-recorder-version/index.ts` (`LATEST_BUILD`) | recorder/README.md (runbook) |
 
-### Frontend «Рой» (Mini App) — `miniapp/src/components/roy/`
+### Frontend «Рой» (веб-интерфейс, браузер/PWA) — `miniapp/src/components/roy/`
 | Concern | Файлы | Детали |
 |---|---|---|
 | Экраны/панели/дизайн-система/навигация | `miniapp/src/components/roy/**` (app/layout/screens); переиспользуемые компоненты задач — `miniapp/src/components/tasks/**` (напр. `TaskRow.tsx`) | spoke [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md) |

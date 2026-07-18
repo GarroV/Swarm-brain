@@ -17,7 +17,7 @@
 | Поверхность | Технология | Для чего | Бэкенд |
 |---|---|---|---|
 | **Telegram-бот** | Deno Edge Function | Быстрый ввод и поиск, встречи, задачи, фидбек, админка — прямо там, где команда общается | `swarm-bot` |
-| **Веб Mini App «Рой»** | Next.js (static export) → Cloudflare Pages | Доска задач (Список/Таймлайн/Спринты/Граф), RAG-поиск, вычитка встреч | `swarm-api` |
+| **Веб-интерфейс «Рой»** | Next.js (static export) → Cloudflare Pages, браузер/PWA | Доска задач (Список/Таймлайн/Спринты/Граф), RAG-поиск, вычитка встреч | `swarm-api` |
 | **Claude Desktop (MCP)** | MCP-сервер | Та же база + инструменты внутри Claude Desktop (большие тексты, с проверкой человеком) | `swarm-mcp` |
 | **SwarmRecorder** | macOS-приложение (Swift) | Запись звука онлайн-встреч → облачная транскрибация → тезисы в базу | `meeting-claim`, `meeting-ingest`, `meeting-process`, `meeting-status` |
 
@@ -31,7 +31,7 @@
 
 ## Глоссарий
 
-- **«Рой»** (Swarm по-русски) — веб / Mini App фронтенд продукта.
+- **«Рой»** (Swarm по-русски) — веб-интерфейс продукта (браузер/PWA). Папка `miniapp/` — историческое имя каталога; вход как **Telegram Mini App отключён** (~2026-07-15, коммит `53bd3ae` — бот ведёт на PWA). Не называть веб «mini app».
 - **Воркспейс** (workspace, поле `group_id`) — тенант, единица изоляции данных; маппится на группу рынков (`cee` / `other`).
 - **entry** — запись базы знаний (таблица `entries`). **meeting** — источник истины о встрече рекордера (таблица `meetings`). Это разные сущности, не путать.
 - **`/meetings`** — подтверждённые записи-встречи в `entries`; **`/agent-meetings`** — черновики рекордера в `meetings` до публикации.
@@ -42,7 +42,7 @@
 
 - Разработка только в ветке **`sandbox_vas`**; в `main` не коммитим.
 - Edge Functions: `supabase functions deploy <name> --no-verify-jwt`. **Инвариант:** `verify_jwt = false` закреплён для всех функций в `supabase/config.toml` (`[functions.<name>]`) — деплой не должен молча терять публичность шлюза. **Никогда не ставить `verify_jwt = true`**: все функции делают свою авторизацию в коде (recorder/MCP-токен, сессионный JWT, вебхук-секрет) и шлют не-JWT `Bearer`, который шлюз с verify_jwt отобьёт 401 `INVALID_JWT_FORMAT` ещё до функции (так 2026-06-30 молча падали ВСЕ загрузки рекордера — разбор в QUICK_REF/BACKLOG).
-- Mini App: `cd miniapp && npm run build` → `out/` → Cloudflare Pages.
+- Веб-интерфейс: `cd miniapp && npm run build` → `out/` → Cloudflare Pages.
 - Прод project-ref: `vbqglndbxkpmreccpqmr` (развёртывание Dodo Brands). `ADMIN_USER_ID = 744230399` зашит в `swarm-bot/lib/supabase.ts`.
 
 ## Стек
@@ -75,7 +75,7 @@
 | `meeting-current` | HTTP GET (desktop-agent) | Swarm Meetings: «какая встреча идёт сейчас» для рекордера. Agent-токен (`smcp_`) → `telegram_id` → `refresh_token` из `user_integrations(service='google_calendar')` → Google Calendar API (события now±30мин) → идущее событие + идентичность для claim. Рекордеру не нужен локальный доступ к календарю |
 | `meeting-heartbeat` | HTTP POST (desktop-agent) | Heartbeat рекордера: раз в ~15 мин + при старте/смене статуса записи (`recording:true/false`) пишет `allowed_users.recorder_last_{seen,recording,version}`. Читается watchdog'ом `checkRecorderHealth` (swarm-bot, из `sweepStuckMeetings`-cron) для 2 сигналов: **оборванная запись** (`recording=true` + молчит >20 мин = краш во время записи → алерт записавшему) и **истечение токена** (<7 дней → алерт `/recordertoken`). Заменил ложный Read.ai-watchdog «встречи не поступают». Auth — персональный токен |
 | `google-oauth` | HTTP redirect (OAuth) | Серверная Google Calendar-интеграция для рекордера (как Granola/Read.ai). `/start` редиректит на consent Google (scope `calendar.events.readonly`), `/callback` меняет код на токены и кладёт `refresh_token` в `user_integrations(service='google_calendar')`. State — подписанный JWT с `telegram_id` (выдаёт `swarm-api` `/google/connect-url`). Секреты `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` |
-| `swarm-api` | HTTP (Mini App / веб) | REST API для Telegram Mini App «Рой» и браузера: задачи, спринты, зависимости, entries CRUD, поиск/RAG, встречи (`/meetings` + `/agent-meetings`), интеграции (Granola/Google), дайджест, фидбек, админка. Третий клиент поверх `_shared/tasks/db.ts`. Полный список эндпоинтов — в разделе [swarm-api — Mini App backend](#swarm-api--mini-app-backend) (канон) |
+| `swarm-api` | HTTP (веб-интерфейс) | REST API для веб-интерфейса «Рой» (браузер/PWA): задачи, спринты, зависимости, entries CRUD, поиск/RAG, встречи (`/meetings` + `/agent-meetings`), интеграции (Granola/Google), дайджест, фидбек, админка. Третий клиент поверх `_shared/tasks/db.ts`. Полный список эндпоинтов — в разделе [swarm-api — бэкенд веб-интерфейса](#swarm-api--бэкенд-веб-интерфейса) (канон) |
 
 **Деплой:** `supabase functions deploy <name> --no-verify-jwt` (обязательно `--no-verify-jwt` для Telegram webhook)
 
@@ -315,11 +315,11 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 ```
 **Живые пометки на полях (Granola-режим, нативная панель рекордера).** Во время записи рекордер показывает **единое окно** `LiveNotesPanel` (Swift/AppKit, `recorder/Sources/SwarmRecorder/LiveNotesPanel.swift`): один морф-объект — компактная пилюля-шапка (контролы: марка-toggle · REC+таймер · полоски уровня я/собеседники · ✕ стоп · **редактируемое название встречи**) ⇄ развёрнутый блокнот (та же шапка + лента пометок). Клик по марке «Рой» морфит высоту. Отдельного виджета во время записи нет (`syncWidget` прячет `RecorderWidget`). Пользователь пишет пометки по ходу — они копятся в локальный буфер с таймстампом-офсетом (meetingId появляется только на стопе при claim); **название встречи правится на ходу** и переопределяет дефолт (календарь/«Запись …») — уходит в `meetings.title` через `title` в claim ([meeting-claim](#)). На стопе: claim создаёт meeting → `flush()` меняет рекордер-токен на короткоживущий **web-JWT** через edge-fn `meeting-webtoken` (HS256 `{telegram_id}`, секрет `WEB_JWT_SECRET`) → POST каждой пометки `Bearer`-ом в `swarm-api` `POST /agent-meetings/:id/notes` → строки в таблице `meeting_live_notes` (`meeting_id`, `offset_sec`, `text`, `owner_id`; миграция `20260628120000`). Веб-экран `/live` рендерит то же (демо без параметра / реальная встреча по `?m=<id>`). Слияние пометок с тезисами в ревью по времени — **TODO** (Фаза 2d).
 
-**Эндпоинты swarm-api (вызывает веб/Mini App, auth — сессия роя):** `GET /agent-meetings?status=` (очередь вычитки/опубликованные; видны записавшим или админу), `GET /agent-meetings/:id` (черновик + транскрипт), `PATCH /agent-meetings/:id` (правка `draft_notes_md` → `notes_edited_at`), `POST /agent-meetings/:id/publish` (`{base: workspace|personal}` → создать entries, привязать, идемпотентно), `GET/POST /agent-meetings/:id/notes` (живые пометки: список / добавление в `meeting_live_notes`, auth — web-JWT от `meeting-webtoken`).
+**Эндпоинты swarm-api (вызывает веб-интерфейс, auth — сессия роя):** `GET /agent-meetings?status=` (очередь вычитки/опубликованные; видны записавшим или админу), `GET /agent-meetings/:id` (черновик + транскрипт), `PATCH /agent-meetings/:id` (правка `draft_notes_md` → `notes_edited_at`), `POST /agent-meetings/:id/publish` (`{base: workspace|personal}` → создать entries, привязать, идемпотентно), `GET/POST /agent-meetings/:id/notes` (живые пометки: список / добавление в `meeting_live_notes`, auth — web-JWT от `meeting-webtoken`).
 
 Дедуп нескольких записавших — по `meetings.identity_key` (calendar/room; manual без дедупа, дубли — ручным «объединить»); при публикации поверх работает кросс-источниковый дедуп (§Дедуп встреч) — если встреча уже в базе (напр. из Granola), `meeting` привязывается к существующей записи, а не плодит вторую. Аутентификация агента — персональный токен (`_shared/agent-auth.ts`, личность из токена, не из payload). Фильтры источников включают `desktop-agent` (swarm-api `GET /meetings`, MCP `get_meetings`, бот `rai_saved`).
 
-**Веб (miniapp):** `MeetingReview` — страница вычитки одной встречи (тезисы редактируются, транскрипт под спойлером, участники, публикация с выбором базы команда/личное); `AgentReviewQueue` — очередь «на вычитке» в разделе Встречи (невидима без черновиков). Deep-link из уведомления: `?meeting=<id>` (браузер) / `startapp=meeting_<id>` (Mini App) → `getDeepLinkMeetingId()` в `lib/telegram.ts` открывает вычитку. **Дедуп вкладок/окон** (Telegram Desktop открывает ссылку новой вкладкой каждый раз): `lib/single-tab.ts` + `SingleTabGate` (в `layout.tsx`) — новая вкладка с `?meeting=` через `BroadcastChannel` + `navigator.locks` (лидер `swarm-leader`) отдаёт встречу уже открытой вкладке и закрывается; установленный PWA через `launch_handler: focus-existing` + `handle_links` в манифесте ловит ссылку в существующее окно (`window.launchQueue`). Обе ветки → событие `roy:open-meeting` → `openMeeting(id)` в `RoyApp`. Спек: `docs/superpowers/specs/2026-06-17-single-tab-reuse-design.md`.
+**Веб (miniapp):** `MeetingReview` — страница вычитки одной встречи (тезисы редактируются, транскрипт под спойлером, участники, публикация с выбором базы команда/личное); `AgentReviewQueue` — очередь «на вычитке» в разделе Встречи (невидима без черновиков). Deep-link из уведомления: `?meeting=<id>` (браузер) / `startapp=meeting_<id>` (спящий Mini App-deeplink) → `getDeepLinkMeetingId()` в `lib/telegram.ts` открывает вычитку. **Дедуп вкладок/окон** (Telegram Desktop открывает ссылку новой вкладкой каждый раз): `lib/single-tab.ts` + `SingleTabGate` (в `layout.tsx`) — новая вкладка с `?meeting=` через `BroadcastChannel` + `navigator.locks` (лидер `swarm-leader`) отдаёт встречу уже открытой вкладке и закрывается; установленный PWA через `launch_handler: focus-existing` + `handle_links` в манифесте ловит ссылку в существующее окно (`window.launchQueue`). Обе ветки → событие `roy:open-meeting` → `openMeeting(id)` в `RoyApp`. Спек: `docs/superpowers/specs/2026-06-17-single-tab-reuse-design.md`.
 
 **Статус:** **задеплоено на прод** (`vbqglndbxkpmreccpqmr`) — таблица `meetings` (через `apply_migration`: `supabase db push` нельзя, история миграций дрифтит — локальные файлы и remote-записи расходятся по таймстампам) + функции `meeting-claim`/`meeting-ingest`/`swarm-api`/`swarm-mcp`/`swarm-bot`. Smoke-тест auth зелёный (нет/невалидный токен → 401). Осталось: ~~`WEB_BASE_URL`~~ ✅ выставлен (`https://swarm-brain.pages.dev`) — в уведомлении «тезисы готовы» теперь есть кнопка «Открыть» на `/?meeting=<id>`; веб-страница уезжает на прод через Cloudflare Pages (зависит от ветки CF — push в `sandbox_vas` сделан); полный e2e с реальным `smcp_`-токеном; экстракция задач при публикации **убрана** (2026-06-29): задачи больше не генерятся автоматически — только по кнопке «Сгенерировать задачи» (`TasksFromMeeting`, preview → добавить, привязка `meeting_id = entry.id`); агент — **свой лёгкий рекордер** (Swift/ScreenCaptureKit) — **написан** (`recorder/`, собирается `swift build -c release`): двухдорожечный захват, `UploadQueue` (персист+ретрай, защита от потери записи), silence-watchdog, jitter/Retry-After, живой уровень звука. **Установка одной командой из бота:** `/recordertoken` → `curl … | bash` (edge-fn `swarm-recorder-setup` + `recorder/setup-signing.sh` для стабильного TCC; клон `--branch sandbox_vas`). Задеплоено: `swarm-recorder-setup`, `swarm-bot`, `meeting-claim`, `meeting-ingest`, `meeting-process`. **Durable-обработка длинных встреч** ✅: аудио-части в Storage (`meeting-audio`), cron `meeting-process` (каждую минуту) транскрибирует по куску и переживает wall-clock воркера; рекордер режет дорожки ≤15 мин; watchdog валит в `failed` только по застою `last_progress_at` (миграция `20260626120000`: `process_state`/`last_progress_at`/`processing_lease`). Миграция `mic_start_offset` (`20260624120000`) ✅ применена. Авто-стоп рекордера по концу созвона (тишина системной дорожки) ✅. Транскрибация/тезисы — облако OpenAI. Остаётся: e2e-приёмка реального длинного звонка после реинстала рекордера.
 
@@ -592,7 +592,7 @@ _Все три: перевыпуск **убивает старый токен**,
 
 ## Переменные окружения
 
-Канонический список — таблица ниже. Покрывает Supabase Edge Functions (секреты `supabase secrets set`), Cloudflare Pages Functions (`miniapp/functions/*`, задаются в дашборде CF) и сборочные `NEXT_PUBLIC_*` Mini App. Потребители выверены `grep` по `Deno.env.get(...)` / `env.*` / `NEXT_PUBLIC_*`.
+Канонический список — таблица ниже. Покрывает Supabase Edge Functions (секреты `supabase secrets set`), Cloudflare Pages Functions (`miniapp/functions/*`, задаются в дашборде CF) и сборочные `NEXT_PUBLIC_*` веб-интерфейса. Потребители выверены `grep` по `Deno.env.get(...)` / `env.*` / `NEXT_PUBLIC_*`.
 
 ### Supabase Edge Functions (секреты)
 
@@ -601,12 +601,12 @@ _Все три: перевыпуск **убивает старый токен**,
 | `SUPABASE_URL` | все функции (через `_shared`) | да | URL проекта Supabase для клиента |
 | `SUPABASE_SERVICE_ROLE_KEY` | все функции (через `_shared`) | да | Service-role ключ; RLS обходится, фильтрация в коде |
 | `OPENAI_API_KEY` | swarm-bot, swarm-mcp, swarm-api, meeting-claim, meeting-ingest, meeting-process, read-ai-webhook | да | OpenAI: chat (GPT-4o-mini), embeddings, Whisper-транскрибация |
-| `TELEGRAM_BOT_TOKEN` | swarm-bot, swarm-api, swarm-mcp, meeting-ingest, meeting-process, read-ai-webhook, granola-poller (legacy) | да | Telegram Bot API: отправка сообщений/уведомлений; проверка подписи Mini App initData (swarm-api) |
+| `TELEGRAM_BOT_TOKEN` | swarm-bot, swarm-api, swarm-mcp, meeting-ingest, meeting-process, read-ai-webhook, granola-poller (legacy) | да | Telegram Bot API: отправка сообщений/уведомлений; проверка подписи Login Widget (веб) и спящей Mini App initData (swarm-api) |
 | `BOT_NAME` | swarm-bot (feedback) | нет, дефолт `"bot"` | Префикс `[BOT_NAME]` в пересланном фидбеке (одна группа на несколько ботов) |
 | `MCP_AUTH_REQUIRED` | swarm-mcp | нет | `true` = жёсткий режим (без валидного `smcp_`-токена — отказ); не выставлен = soft-режим на доверии. **Перед орг-публикацией обязательно `true`** |
 | `CRON_SECRET` | swarm-bot, meeting-process, granola-poller (legacy) | нет | Общий секрет для авторизации cron-вызовов (`X-Cron-Secret`): Granola-поллинг/watchdog (swarm-bot), durable-обработка встреч (meeting-process) |
-| `INITDATA_MAX_AGE` | swarm-api | нет, дефолт 24ч | TTL свежести `auth_date` в Telegram Mini App initData (секунды) |
-| `MINIAPP_ORIGIN` | swarm-api | нет | Разрешённый Origin для CORS Mini App |
+| `INITDATA_MAX_AGE` | swarm-api | нет, дефолт 24ч | TTL свежести `auth_date` в Telegram Mini App initData (секунды). ⚠️ Спящий путь — вход как Mini App отключён |
+| `MINIAPP_ORIGIN` | swarm-api | нет | Разрешённый Origin для CORS веб-интерфейса |
 | `WEB_JWT_SECRET` | swarm-api, google-oauth | да (для веб-режима/Google) | HS256-секрет: проверка `Bearer`-JWT браузерной сессии (swarm-api) и подписанного OAuth-state (google-oauth `/google/connect-url`). Должен совпадать с CF Pages |
 | `WEB_BASE_URL` | google-oauth, meeting-ingest, meeting-process | да (для deep-link/OAuth-redirect) | База веб-фронта (`https://swarm-brain.pages.dev`): кнопка «Открыть» `?meeting=<id>` в уведомлении (meeting-process/ingest), redirect после Google OAuth (google-oauth) |
 | `GOOGLE_CLIENT_ID` | google-oauth, meeting-current | да (для Google Calendar рекордера) | OAuth client id серверной Google Calendar-интеграции |
@@ -628,7 +628,7 @@ _Все три: перевыпуск **убивает старый токен**,
 | `WEB_JWT_SECRET` | `api/auth/telegram.ts`, `_lib/jwt.ts` | да | HS256-секрет выдачи/проверки браузерного JWT (тот же, что в Supabase) |
 | `TELEGRAM_BOT_TOKEN` | `api/auth/telegram.ts` | да | Проверка подписи Telegram Login Widget (тот же, что в Supabase) |
 
-### Mini App build-time (`NEXT_PUBLIC_*`)
+### Веб-интерфейс build-time (`NEXT_PUBLIC_*`)
 
 | Переменная | Значение | Назначение |
 |-----------|---------|-----------|
@@ -638,17 +638,17 @@ _Все три: перевыпуск **убивает старый токен**,
 
 ---
 
-## swarm-api — Mini App backend
+## swarm-api — бэкенд веб-интерфейса
 
 ```
 supabase/functions/swarm-api/
 ├── index.ts        # Router + все эндпоинты
-├── auth.ts         # verifyInitData() — утилита проверки Telegram initData
+├── auth.ts         # verifyInitData() — проверка Telegram initData (спящий путь Mini App) + проверка веб-JWT
 ├── admin.ts        # /admin/* роуты (админы: telegram_id 744230399 или is_admin)
 └── entries-guard.ts  # Обязательный слой безопасности для всех endpoints с entries
 ```
 
-**Назначение:** REST API для Telegram Mini App (доска задач). Третий клиент поверх `_shared/tasks/db.ts`.
+**Назначение:** REST API для веб-интерфейса «Рой» (браузер/PWA). Третий клиент поверх `_shared/tasks/db.ts`.
 
 **Безопасность entries — `entries-guard.ts`:**
 
@@ -669,7 +669,7 @@ supabase/functions/swarm-api/
 
 **Аутентификация (два режима, оба резолвятся в `telegram_id`):**
 
-1. **Telegram Mini App** — `Authorization: tma <initData>`
+1. **Telegram Mini App — ⚠️ СПЯЩИЙ (вход отключён)** — `Authorization: tma <initData>`. Код проверки остался, но точки входа нет: Mini App выключен ~2026-07-15 (коммит `53bd3ae`, бот ведёт на PWA). Живой путь — только браузерный JWT (п.2). На удаление — см. `docs/BACKLOG.md`.
    - Проверка подписи: `secret_key = HMAC("WebAppData", BOT_TOKEN)`, `hash = HMAC(secret_key, data-check-string)`
    - Свежесть `auth_date` (дефолт 24ч, `INITDATA_MAX_AGE`)
    - `telegram_id` из `user` в initData
@@ -837,7 +837,7 @@ supabase/functions/swarm-mcp/
 
 ---
 
-## Mini App frontend — miniapp/
+## Веб-интерфейс frontend — miniapp/
 
 Next.js 16, `output: "export"` (статический HTML/CSS/JS в `miniapp/out/`, без сервера) → Cloudflare Pages, **авто-деплой с `sandbox_vas`** (см. [QUICK_REF → Деплой](QUICK_REF.md)). Монорепо, полностью отдельно от Deno Edge Functions. Дизайн-система «Рой» (`src/components/roy/`) под хендофф `design_handoff_roy`. Разработка: `cd miniapp && npm run build`.
 
@@ -850,5 +850,5 @@ Next.js 16, `output: "export"` (статический HTML/CSS/JS в `miniapp/o
 - Ветка: `sandbox_vas` → всегда разрабатывать здесь, в `main` не коммитить
 - Деплой Edge Functions: `supabase functions deploy swarm-bot --no-verify-jwt`
 - ⚠️ `granola-poller` — legacy, **не деплоить** как обычный шаг: standalone-функция выведена из крона. Поллинг Granola идёт внутри `swarm-bot` (часовой крон с `{granola_poll:true}` → `ingestNewGranolaNotesAllUsers`). См. таблицу Edge Functions выше.
-- Деплой Mini App: `cd miniapp && npm run build` → `out/` → Cloudflare Pages
+- Деплой веб-интерфейса: `cd miniapp && npm run build` → `out/` → Cloudflare Pages
 - После каждого изменения функционала: обновить этот файл (ARCHITECTURE) + `docs/BACKLOG.md`. **Changelog руками не вести** — генерируется из git (`scripts/changelog.sh`); источник истины — conventional commit-сообщения.

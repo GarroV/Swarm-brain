@@ -2,6 +2,17 @@
 
 > Этот файл ведётся **вручную**: открытые задачи, технический долг, идеи. Это НЕ автогенерируемый `CHANGELOG.md` (тот собирается из git-коммитов).
 
+## 🧹 [ОТКРЫТО 2026-07-18] Удалить спящий Mini App-путь (initData/tma) + доки-дрифт «Mini App»
+
+Telegram Mini App-вход **отключён** (~2026-07-15, коммит `53bd3ae` — бот ведёт на PWA `swarm-brain.pages.dev`). Живой вход в веб-интерфейс — **только** Telegram Login Widget → JWT-cookie в браузере. Но следы остались:
+
+- **[СДЕЛАНО 2026-07-18] Доки почищены** от вранья «веб = Telegram Mini App» в канон-файлах: `README.md`, `docs/ARCHITECTURE.md`, `docs/QUICK_REF.md`, `docs/MINIAPP_ARCHITECTURE.md`, `docs/SETUP.md`. Терминология: три поверхности — **веб-интерфейс, Telegram-бот, MCP** (+ SwarmRecorder как источник встреч). Историч. планы `docs/superpowers/plans/*`, `transcribator/*`, `docs/CHANGELOG.md` — архив, НЕ трогаем. Папка `miniapp/` — историческое имя каталога, остаётся.
+- **[ОСТАЁТСЯ] Удалить спящий код** пути Mini App (это auth-код — аккуратно, после удаления передеплой `swarm-api` + смоук браузерного входа):
+  - `swarm-api/auth.ts` — `verifyInitData()`; приём `Authorization: tma <initData>` в `swarm-api/index.ts`.
+  - `miniapp/src/lib/telegram.ts` — `getInitData`; зависимость `@twa-dev/sdk`; ветка `!getInitData()` в `miniapp/src/app/page.tsx`.
+  - env `INITDATA_MAX_AGE`, происхождение `MINIAPP_ORIGIN` (пересмотреть: origin теперь `swarm-brain.pages.dev`, не `t.me`).
+- **Причина дрифта:** при отключении Mini App (`53bd3ae`) код-точку убрали, а доки/термины — нет. Урок: смена поверхности = чистка доков тем же заходом (DoD).
+
 ## 🔧 [ОТКРЫТО 2026-07-18] Google Calendar + рекордер: авто-стоп и надёжность токена
 
 > Из сессии по авто-стопу рекордера. Google Calendar даёт рекордеру плановый конец встречи — сильный сигнал конца (модель Granola). Раскатано в recorder **build 9**.

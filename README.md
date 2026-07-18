@@ -52,7 +52,7 @@ Granola и Read.ai — альтернативные источники встр�
 | Поверхность | Доступ | Бэкенд-функция |
 |-------------|--------|----------------|
 | Telegram-бот | команды и сообщения в чате | `swarm-bot` |
-| Веб / Mini App «Рой» | в Telegram (`initData`) или браузер (Login Widget → JWT) | `swarm-api` |
+| Веб-интерфейс «Рой» | браузер: Telegram Login Widget → JWT (вход как Telegram Mini App отключён) | `swarm-api` |
 | Claude Desktop (MCP) | токен + команда установки из `/setup` в боте **или веб → Настройки → Claude Desktop** | `swarm-mcp` |
 | SwarmRecorder | macOS меню-бар; установка из `/recordertoken` **или веб → Настройки → Рекордер** | `meeting-claim`, `meeting-ingest`, `meeting-process` |
 | Granola | API-ключ на пользователя (`/connect granola`), часовой поллинг → единая приёмная встреч (`meetings`) | `swarm-bot` (`granola_poll`) |
@@ -76,7 +76,7 @@ Granola и Read.ai — альтернативные источники встр�
 | База данных | Supabase (PostgreSQL + pgvector) |
 | Хранилище файлов | Supabase Storage (bucket: `swarm_drive`) |
 | AI | OpenAI GPT-4o-mini, Whisper, text-embedding-3-small |
-| Интерфейс | Telegram Bot API + веб/Mini App (Next.js 16, React 19) |
+| Интерфейс | Telegram Bot API + веб-интерфейс (Next.js 16, React 19) |
 | Веб-бэкенд | `swarm-api` (REST поверх Edge Functions), хостинг Cloudflare Pages |
 | Рекордер | macOS, Swift + ScreenCaptureKit + AVFoundation (меню-бар приложение) |
 | Митинги | Read.ai (OAuth2 + webhook), Granola (API key per user), SwarmRecorder (свой macOS-рекордер) |
@@ -114,7 +114,7 @@ supabase/
 │   │       ├── types.ts        # Task types
 │   │       └── tools.ts        # MCP-совместимые инструменты задач
 │   ├── swarm-mcp/              # MCP-сервер для Claude Desktop (JSON-RPC)
-│   ├── swarm-api/              # REST API для веб/Mini App (поверх той же логики, что и бот)
+│   ├── swarm-api/              # REST API для веб-интерфейса (поверх той же логики, что и бот)
 │   ├── meeting-claim/          # Рекордер: claim/lease встречи до транскрибации
 │   ├── meeting-ingest/         # Рекордер: приём аудио → Storage → durable-обработка
 │   ├── meeting-process/        # Рекордер: cron durable-обработки (транскрибация по кускам + тезисы)
@@ -125,7 +125,7 @@ supabase/
 │   └── _shared/                # общий код: sources (реестр источников), mcp-token, recorder-token, meeting-processor, meeting-dedup, tasks, search, countries
 └── migrations/                 # инкрементальные миграции; старт с нуля — supabase/schema/00_base_schema.sql
 
-miniapp/                        # Веб / Telegram Mini App «Рой» (Next.js 16 → статический экспорт → Cloudflare Pages)
+miniapp/                        # Веб-интерфейс «Рой» (Next.js 16 → статический экспорт → Cloudflare Pages; имя папки историческое — это обычный сайт/PWA, НЕ Telegram Mini App)
 └── src/                        # Поиск/RAG, доска задач, база знаний, вычитка встреч
 
 recorder/                       # SwarmRecorder — macOS меню-бар рекордер встреч (Swift)
@@ -227,13 +227,13 @@ recorder/                       # SwarmRecorder — macOS меню-бар рек
 | `get_meetings` | Последние встречи из Read.ai |
 | `get_users` | Команда с профилями, фильтр по market |
 
-### Веб-интерфейс — Mini App «Рой»
+### Веб-интерфейс «Рой»
 
-Весь функционал бота доступен и в графическом UI — как **Telegram Mini App**, и как **обычный сайт** (PWA). Кодовое имя — «Рой».
+Весь функционал бота доступен и в графическом UI — **обычный веб-сайт (PWA)** в браузере. Кодовое имя — «Рой». _(Раньше открывался и как Telegram Mini App внутри Telegram — этот вход **отключён**, бот теперь ведёт на PWA. Папка `miniapp/` — историческое имя каталога.)_
 
 - **Стек:** Next.js 16 + React 19 + Tailwind + shadcn; статический экспорт, хостинг — Cloudflare Pages (`swarm-brain.pages.dev`)
 - **Бэкенд:** edge-функция `swarm-api` — REST поверх той же бизнес-логики, что и бот (новой логики нет, только маршруты)
-- **Два режима входа:** в Telegram — по `initData` (подпись бота); в браузере — Telegram Login Widget → JWT в httpOnly-cookie
+- **Вход:** в браузере — Telegram Login Widget → JWT в httpOnly-cookie. _(Спящий путь `initData`/`tma` для Mini App ещё есть в коде `swarm-api`, но точки входа нет — на удаление, см. `docs/BACKLOG.md`.)_
 - **Экраны:** поиск + AI-ответ (RAG со сносками), доска задач (десктоп — виды Список / Таймлайн / Спринт / Граф; линзы Мои / Команда / Все; для админа — «Все сотрудники» с группировкой по исполнителю), база знаний, встречи + вычитка и публикация. Адаптив: мобайл — таб-бар, десктоп — бенто-дашборд
 - **Настройки** («Ещё»): профиль/рынки, Granola, Google-календарь, дайджест, загрузка файла, фидбек, **Рекордер** и **Claude Desktop** — установка из веба (зеркало `/recordertoken` и `/setup`)
 - **Админка** (для админов): воркспейсы (создать/переименовать), пользователи (добавить/переместить/удалить, правка профилей), broadcast, сводка «на вычитке по участникам» — паритет с бот-суперадмином
@@ -260,7 +260,7 @@ recorder/                       # SwarmRecorder — macOS меню-бар рек
 # Edge Functions — всегда с --no-verify-jwt, иначе Telegram/клиент получает 401
 supabase functions deploy swarm-bot --no-verify-jwt
 supabase functions deploy swarm-mcp --no-verify-jwt
-supabase functions deploy swarm-api --no-verify-jwt          # бэкенд веб/Mini App
+supabase functions deploy swarm-api --no-verify-jwt          # бэкенд веб-интерфейса
 supabase functions deploy meeting-claim --no-verify-jwt       # рекордер: claim/lease
 supabase functions deploy meeting-ingest --no-verify-jwt      # рекордер: приём аудио
 supabase functions deploy meeting-process --no-verify-jwt     # рекордер: cron durable-обработки
@@ -268,7 +268,7 @@ supabase functions deploy meeting-heartbeat --no-verify-jwt   # рекордер
 supabase functions deploy read-ai-webhook --no-verify-jwt     # Read.ai (отключается)
 # granola-poller — LEGACY, выведен из крона; деплоить не нужно. Поллинг Granola идёт через swarm-bot ({"granola_poll":true}, см. Шаг 12 в docs/SETUP.md)
 
-# Веб/Mini App — статический экспорт → Cloudflare Pages
+# Веб-интерфейс — статический экспорт → Cloudflare Pages
 cd miniapp && npm run build                                   # → miniapp/out/
 
 # Рекордер — сборка .app без платного Apple-аккаунта
