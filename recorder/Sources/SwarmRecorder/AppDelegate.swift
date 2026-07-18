@@ -92,6 +92,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private static let roomGoneTicksToStop = 4   // 4 × 5с ≈ 20с закрытой вкладки → авто-стоп
     // Не-тихие тики подряд: сброс счётчика тишины только при 2+ подряд (устойчивость к «блипам»).
     private var loudStreak = 0
+    // Плановый конец встречи из Google Calendar (kind == .calendar) — сильный сигнал конца, как у
+    // Granola. nil для room/manual. Наступил конец + короткая тишина → стоп; переработку не рубим,
+    // но с жёстким потолком.
+    private var scheduledEndAt: Date?
+    private static let postScheduledEndSilenceTicks = 6                    // 6 × 5с = 30с тишины после конца
+    private static let scheduledOverrunCapSeconds: TimeInterval = 30 * 60  // потолок переработки
     // Дефолтный стоп: если активный созвон не детектится, запись не идёт дольше этого лимита.
     // Бэкстоп от runaway-записи (когда детект созвона молчит — напр. ручной старт без звонка).
     private static let maxNoCallSeconds: TimeInterval = 75 * 60   // 1ч15м
@@ -669,6 +675,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 sysURL = sys; micURL = mic
                 recordStartedAt = startedAt
                 identity = id
+                // Плановый конец из Google Calendar (только calendar-встречи) → авто-стоп по нему.
+                if id?.kind == .calendar, let endISO = id?.endISO {
+                    scheduledEndAt = ISO8601DateFormatter().date(from: endISO)
+                } else {
+                    scheduledEndAt = nil
+                }
                 // notesExpanded ДО setState(.recording): иначе syncWidget сначала покажет виджет с
                 // его level-таймером, а затем панель заведёт ВТОРОЙ 10-Гц таймер (дефект build 4 →
                 // лишняя нагрузка на планировщик во время записи). Ставим флаг заранее — при наличии
@@ -758,6 +770,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         } else {
             roomGoneTicks = 0
+        }
+
+        // (Календарь) Плановый конец встречи из Google Calendar — сильный сигнал (как у Granola).
+        // После планового конца достаточно короткой тишины (30с) → стоп; переработку (ещё говорят)
+        // не рубим, но с жёстким потолком end+30мин от runaway.
+        if let end = scheduledEndAt {
+            let over = Date().timeIntervalSince(end)
+            if over >= 0 && systemSilentTicks >= Self.postScheduledEndSilenceTicks {
+                autoStop(reason: "встреча завершилась (по календарю)")
+                return
+            }
+            if over >= Self.scheduledOverrunCapSeconds {
+                autoStop(reason: "плановый конец + переработка — стоп")
+                return
+            }
         }
 
         // (0) Конец БРАУЗЕРНОГО звонка по тишине системной дорожки. Срабатывает ДАЖЕ когда
