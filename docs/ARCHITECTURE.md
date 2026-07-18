@@ -583,7 +583,7 @@ _Все три: перевыпуск **убивает старый токен**,
 
 **Доступ при выходе коннектора в орг-список Claude:**
 Орг-список управляет только видимостью коннектора, не доступом к данным. Шлюз — токен:
-- В soft-режиме (`MCP_AUTH_REQUIRED` не выставлен) `requesting_user_id` берётся из аргументов **на доверии** → любой член орга читает всё. **Перед публикацией в орг обязательно `MCP_AUTH_REQUIRED=true`.**
+- В soft-режиме (`MCP_AUTH_REQUIRED` не выставлен) `requesting_user_id` берётся из аргументов **на доверии** → любой член орга читает всё. **✅ В проде `MCP_AUTH_REQUIRED=true` выставлен (2026-07-19) — soft-режим ВЫКЛЮЧЕН.**
 - В strict-режиме доступ есть только у владельцев валидного `smcp_`-токена; нежелательные члены орга получают `401`. Даже владелец токена видит лишь свой `group_id` и свои приватные записи.
 
 Ошибка при невалидном/отсутствующем токене: JSON-RPC -32001 — возвращается **на `tools/call`**, а не на хендшейке (коннектор при этом остаётся подключённым, инструменты видны).
@@ -603,7 +603,7 @@ _Все три: перевыпуск **убивает старый токен**,
 | `OPENAI_API_KEY` | swarm-bot, swarm-mcp, swarm-api, meeting-claim, meeting-ingest, meeting-process, read-ai-webhook | да | OpenAI: chat (GPT-4o-mini), embeddings, Whisper-транскрибация |
 | `TELEGRAM_BOT_TOKEN` | swarm-bot, swarm-api, swarm-mcp, meeting-ingest, meeting-process, read-ai-webhook, granola-poller (legacy) | да | Telegram Bot API: отправка сообщений/уведомлений; проверка подписи Login Widget (веб) и спящей Mini App initData (swarm-api) |
 | `BOT_NAME` | swarm-bot (feedback) | нет, дефолт `"bot"` | Префикс `[BOT_NAME]` в пересланном фидбеке (одна группа на несколько ботов) |
-| `MCP_AUTH_REQUIRED` | swarm-mcp | нет | `true` = жёсткий режим (без валидного `smcp_`-токена — отказ); не выставлен = soft-режим на доверии. **Перед орг-публикацией обязательно `true`** |
+| `MCP_AUTH_REQUIRED` | swarm-mcp | нет | `true` = жёсткий режим (без валидного `smcp_`-токена — отказ); не выставлен = soft-режим на доверии. **В проде выставлен `true` (2026-07-19)** |
 | `CRON_SECRET` | swarm-bot, meeting-process, granola-poller (legacy) | нет | Общий секрет для авторизации cron-вызовов (`X-Cron-Secret`): Granola-поллинг/watchdog (swarm-bot), durable-обработка встреч (meeting-process) |
 | `INITDATA_MAX_AGE` | swarm-api | нет, дефолт 24ч | TTL свежести `auth_date` в Telegram Mini App initData (секунды). ⚠️ Спящий путь — вход как Mini App отключён |
 | `MINIAPP_ORIGIN` | swarm-api | нет | Разрешённый Origin для CORS веб-интерфейса |

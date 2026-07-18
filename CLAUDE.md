@@ -73,7 +73,7 @@
 
 ### Известные архитектурные риски (не чинить без обсуждения, просто знать)
 - Файлы в `swarm_drive` Storage отдаются по публичным URL без авторизации
-- `requesting_user_id` в MCP передаётся вызывающим на доверии — нет JWT-верификации
+- ~~`requesting_user_id` в MCP на доверии~~ ✅ **закрыто 2026-07-19**: `MCP_AUTH_REQUIRED=true` выставлен в проде → без валидного `smcp_`-токена MCP отбивает (Unauthorized), личность форсится из токена, подмена `requesting_user_id` невозможна (проверено: токенлесс → -32001)
 - Granola API-ключи хранятся plaintext в `user_integrations`
 - ~~Начальная схема БД не в `supabase/migrations/`~~ ✅ `supabase/schema/00_base_schema.sql` поднимает проект с нуля
 
