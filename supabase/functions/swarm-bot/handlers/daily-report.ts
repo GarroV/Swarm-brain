@@ -41,3 +41,64 @@ export function yesterdayWindow(tz: string = REPORT_TZ, now: Date = new Date()):
     dateLabel: `${dd}.${mm}`,
   };
 }
+
+export interface EntryRow {
+  entry_type: string;
+  source: string;
+  group_id: string | null;
+}
+
+export interface SectionCounts {
+  total: number;
+  byWorkspace: Record<string, number>;
+  bySource: Record<string, number>;
+}
+
+export interface ReportData {
+  meetings: SectionCounts;
+  notes: SectionCounts;
+}
+
+const MEETING_SOURCE_LABEL: Record<string, string> = {
+  "desktop-agent": "рекордер",
+  granola: "granola",
+  read_ai: "read.ai",
+};
+
+const NOTE_SOURCE_LABEL: Record<string, string> = {
+  telegram: "💬 чат",
+  note: "💬 чат",
+  link: "🔗 ссылки",
+  voice: "🎤 голосовые",
+  document: "📄 файлы",
+  file: "📄 файлы",
+};
+
+function wsLabel(groupId: string | null): string {
+  return groupId ? groupId.toUpperCase() : "Без воркспейса";
+}
+
+function bump(rec: Record<string, number>, key: string): void {
+  rec[key] = (rec[key] ?? 0) + 1;
+}
+
+function emptySection(): SectionCounts {
+  return { total: 0, byWorkspace: {}, bySource: {} };
+}
+
+export function aggregateActivity(rows: EntryRow[]): ReportData {
+  const meetings = emptySection();
+  const notes = emptySection();
+  for (const r of rows) {
+    if (r.entry_type === "meeting") {
+      meetings.total++;
+      bump(meetings.byWorkspace, wsLabel(r.group_id));
+      bump(meetings.bySource, MEETING_SOURCE_LABEL[r.source] ?? r.source);
+    } else if (r.entry_type === "note") {
+      notes.total++;
+      bump(notes.byWorkspace, wsLabel(r.group_id));
+      bump(notes.bySource, NOTE_SOURCE_LABEL[r.source] ?? "📦 прочее");
+    }
+  }
+  return { meetings, notes };
+}
