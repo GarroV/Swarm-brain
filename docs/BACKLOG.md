@@ -2,6 +2,15 @@
 
 > Этот файл ведётся **вручную**: открытые задачи, технический долг, идеи. Это НЕ автогенерируемый `CHANGELOG.md` (тот собирается из git-коммитов).
 
+## 🔧 [ОТКРЫТО 2026-07-19] Пред-прод / staging (self-hosted Supabase на MUSPELHEIM)
+
+> Построено этой сессией. Дизайн: `docs/superpowers/specs/2026-07-19-preprod-staging-design.md`. Рунбук: `docs/DEPLOY.md`. Конфиг: репо `GarroV/muspelheim-infra` → `swarm-staging/`.
+
+- **[СДЕЛАНО]** staging LIVE: self-hosted Supabase на MUSPELHEIM (Tailscale, kong `:8020`, БД `:5433`), полная схема (ядро+встречи+recorder), 19 функций отдаются, БД+auth работают. Обвязка: `scripts/smoke.sh` + `Makefile` (`smoke-staging/-prod`, `staging-sync-functions`, `staging-migrate`, `staging-psql/-ps/-up/-down`) + `docs/DEPLOY.md`. `MCP_AUTH_REQUIRED=true` (зеркалит прод). Конфиг версионирован в muspelheim-infra. sshd-watchdog (issue #7, closed).
+- **[ОТКРЫТО — нужны твои значения] staging-секреты.** Положить в `~/.swarm/staging.secrets`: `OPENAI_API_KEY` (reuse прод-ключ), `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (reuse OAuth-app «Swarm Recorder» + добавить staging-redirect URI в консоли), `TELEGRAM_BOT_TOKEN` (**НОВЫЙ** тест-бот). → я впишу в `docker-compose.override.yml` на MUSPELHEIM + рестарт functions. Без них: миграции/edge-логика/БД/auth **уже работают**; MCP на staging падает `-32603` (не хватает `OPENAI_API_KEY` на старте) — исчезнет с ключом. Reuse-нюанс: секреты Supabase write-only, значения не выгружаются → нужен разовый дроп.
+- **[ИДЕЯ] Общий секрет-менеджер** (Doppler/Infisical/Vault) как единый источник env для прода И staging — тогда «одна переменная на оба контура» (запрос «привязаться к тем же переменным»). Сейчас у прода (Supabase Cloud secrets) и staging (docker-env MUSPELHEIM) — разные стораджи. Оверкилл ради одного staging; при росте числа контуров/секретов — стоит.
+- **[ИДЕЯ] Supabase Pro → Branching** — при бюджете: эфемерные превью-контуры на ветку/PR вместо ручного staging (лучше для edge+БД+web).
+
 ## ✅ [СДЕЛАНО 2026-07-19] Ежедневный отчёт активности админу
 
 Cron `daily_report_cron` + команда `/report` (`swarm-bot/handlers/daily-report.ts`): счёт `entries` за вчерашние сутки (Europe/Belgrade) по `entry_type` (meeting/note), разбивка cee/other + источники, пуш владельцу. Спека/план: `docs/superpowers/specs/2026-07-19-daily-activity-report-design.md`, `docs/superpowers/plans/2026-07-19-daily-activity-report.md`.
