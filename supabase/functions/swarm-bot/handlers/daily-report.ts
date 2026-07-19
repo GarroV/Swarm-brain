@@ -65,14 +65,27 @@ const MEETING_SOURCE_LABEL: Record<string, string> = {
   read_ai: "read.ai",
 };
 
-const NOTE_SOURCE_LABEL: Record<string, string> = {
-  telegram: "💬 чат",
-  note: "💬 чат",
-  link: "🔗 ссылки",
-  voice: "🎤 голосовые",
-  document: "📄 файлы",
-  file: "📄 файлы",
-};
+// Ярлык источника встречи. Новые встречи — desktop-agent/granola/read_ai.
+// Легаси-встречи иногда несут в `source` заголовок/имя файла — сводим в «📦 прочее»,
+// а не печатаем сырьё.
+function meetingSourceLabel(source: string): string {
+  return MEETING_SOURCE_LABEL[source] ?? "📦 прочее";
+}
+
+// Источник заметки НЕ enum: бот/веб пишут в `source` то канал (telegram/note/link/mini_app),
+// то медиа-тип (pdf/image/file/document), то само ИМЯ ФАЙЛА (напр. "IMF_Analytics.xlsx").
+// Поэтому классифицируем, а не матчим точно.
+const NOTE_CHAT_SOURCES = new Set(["telegram", "note", "mini_app"]);
+const NOTE_FILE_SOURCES = new Set(["pdf", "image", "file", "document"]);
+const FILE_EXT_RE = /\.[a-z0-9]{2,6}$/i; // "….pptx"/"….xlsx"/"….pdf" → файл
+
+function noteSourceLabel(source: string): string {
+  if (source === "link") return "🔗 ссылки";
+  if (source === "voice") return "🎤 голосовые";
+  if (NOTE_CHAT_SOURCES.has(source)) return "💬 чат";
+  if (NOTE_FILE_SOURCES.has(source) || FILE_EXT_RE.test(source)) return "📄 файлы";
+  return "📦 прочее";
+}
 
 function wsLabel(groupId: string | null): string {
   return groupId ? groupId.toUpperCase() : "Без воркспейса";
@@ -93,11 +106,11 @@ export function aggregateActivity(rows: EntryRow[]): ReportData {
     if (r.entry_type === "meeting") {
       meetings.total++;
       bump(meetings.byWorkspace, wsLabel(r.group_id));
-      bump(meetings.bySource, MEETING_SOURCE_LABEL[r.source] ?? r.source);
+      bump(meetings.bySource, meetingSourceLabel(r.source));
     } else if (r.entry_type === "note") {
       notes.total++;
       bump(notes.byWorkspace, wsLabel(r.group_id));
-      bump(notes.bySource, NOTE_SOURCE_LABEL[r.source] ?? "📦 прочее");
+      bump(notes.bySource, noteSourceLabel(r.source));
     }
   }
   return { meetings, notes };

@@ -35,6 +35,43 @@ Deno.test("aggregateActivity: неизвестный source заметки → �
   ]);
   assertEquals(r.notes.bySource, { "📦 прочее": 1 });
   assertEquals(r.notes.byWorkspace, { "Без воркспейса": 1 });
+  assertEquals(r.notes.total, 1);
+});
+
+Deno.test("aggregateActivity: заметки — файлы по имени/типу, mini_app→чат, unknown→прочее", () => {
+  const r = aggregateActivity([
+    { entry_type: "note", source: "IMF_Analytics.xlsx", group_id: "cee" },
+    { entry_type: "note", source: "pdf", group_id: "cee" },
+    { entry_type: "note", source: "image", group_id: "other" },
+    { entry_type: "note", source: "mini_app", group_id: "cee" },
+    { entry_type: "note", source: "link", group_id: "cee" },
+    { entry_type: "note", source: "voice", group_id: "cee" },
+    { entry_type: "note", source: "pyrus_ticket_bulgaria", group_id: "other" },
+  ]);
+  assertEquals(r.notes.total, 7);
+  assertEquals(r.notes.bySource, {
+    "📄 файлы": 3,
+    "💬 чат": 1,
+    "🔗 ссылки": 1,
+    "🎤 голосовые": 1,
+    "📦 прочее": 1,
+  });
+});
+
+Deno.test("aggregateActivity: неизвестный источник встречи → 📦 прочее (не сырьё)", () => {
+  const r = aggregateActivity([
+    { entry_type: "meeting", source: "Встреча Сербия 06.05", group_id: "cee" },
+    { entry_type: "meeting", source: "granola", group_id: "cee" },
+  ]);
+  assertEquals(r.meetings.bySource, { "📦 прочее": 1, granola: 1 });
+});
+
+Deno.test("yesterdayWindow: осенний переход (fall-back, 25-часовые сутки)", () => {
+  // now = 2026-10-26 09:00 UTC (после fall-back). Вчера = 2026-10-25 (25ч).
+  const w = yesterdayWindow("Europe/Belgrade", new Date("2026-10-26T09:00:00Z"));
+  assertEquals(w.sinceISO, "2026-10-24T22:00:00.000Z"); // 25 окт 00:00 CEST(+02)
+  assertEquals(w.untilISO, "2026-10-25T23:00:00.000Z"); // 26 окт 00:00 CET(+01) — окно 25ч
+  assertEquals(w.dateLabel, "25.10");
 });
 
 Deno.test("formatReport: штатный день — обе секции с разбивкой", () => {

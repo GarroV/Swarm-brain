@@ -10,7 +10,8 @@ export async function sendDailyReport(): Promise<void> {
     .gte("created_at", sinceISO)
     .lt("created_at", untilISO)
     .neq("source", "digest")
-    .in("entry_type", ["meeting", "note"]);
+    .in("entry_type", ["meeting", "note"])
+    .limit(5000);
   if (error) {
     await sendMessage(ADMIN_USER_ID, `⚠️ Свод за ${dateLabel}: ошибка запроса — ${error.message}`);
     return;
