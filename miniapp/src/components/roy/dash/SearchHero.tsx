@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useRoyNav } from "../nav";
+import { useRoyNav, useDt } from "../nav";
 import { RoyIcon } from "../icons";
 import { RoyCard } from "../ui";
 import { saveRecent } from "../screens/SearchScreen";
@@ -10,6 +10,7 @@ import { saveRecent } from "../screens/SearchScreen";
 
 export function SearchHero() {
   const { openAnswer } = useRoyNav();
+  const dt = useDt();
   const [q, setQ] = useState("");
 
   const go = (query: string) => {
@@ -23,10 +24,10 @@ export function SearchHero() {
     <RoyCard className="flex shrink-0 flex-col items-center justify-center gap-5 px-8 py-9">
       <div className="text-center">
         <h2 className="font-bold text-ink" style={{ fontSize: 30, letterSpacing: "-0.025em" }}>
-          Спросите Swarm Brain
+          {dt("Спросите Swarm Brain", "Ask Swarm Brain")}
         </h2>
         <p className="mt-1 text-ink-soft" style={{ fontSize: 13.5 }}>
-          Ответ по базе знаний, чатам и расшифровкам встреч
+          {dt("Ответ по базе знаний, чатам и расшифровкам встреч", "Answers from your knowledge base, chats and meeting transcripts")}
         </p>
       </div>
 
@@ -39,7 +40,7 @@ export function SearchHero() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Спросить или найти по базе знаний…"
+            placeholder={dt("Спросить или найти по базе знаний…", "Ask or search your knowledge base…")}
             enterKeyHint="search"
             className="flex-1 bg-transparent text-ink outline-none placeholder:text-ink-mute"
             style={{ fontSize: 16 }}

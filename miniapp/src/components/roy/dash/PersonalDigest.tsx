@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { generateDigest, type AskSource } from "@/lib/api";
-import { useRoyNav } from "../nav";
+import { useRoyNav, useDt } from "../nav";
 import { RoyCard, TezisyBlocks } from "../ui";
 import { RoyIcon } from "../icons";
 
@@ -34,9 +34,9 @@ function freshnessBoundary(): number {
   today8.setHours(8, 0, 0, 0);
   return now.getTime() >= today8.getTime() ? today8.getTime() : today8.getTime() - 86_400_000;
 }
-function fmtUpdated(iso: string): string {
+function fmtUpdated(iso: string, locale: string = "ru-RU"): string {
   const d = new Date(iso);
-  return isNaN(d.getTime()) ? "" : d.toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return isNaN(d.getTime()) ? "" : d.toLocaleString(locale, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 // Секция персонального дайджеста на главной (под поиском). Авто-обновляется раз в день
@@ -44,6 +44,9 @@ function fmtUpdated(iso: string): string {
 // пользователя (фильтрует /digest на сервере).
 export function PersonalDigest({ className }: { className?: string }) {
   const { openAnswer, push } = useRoyNav();
+  const dt = useDt();
+  // Английская форма периода для демо (RU-хелпер digestPeriodLabel не трогаем — он общий).
+  const plabel = (d: number) => dt(digestPeriodLabel(d), d === 14 ? "past 2 weeks" : d === 30 ? "past month" : "past week");
   const [days, setDays] = useState(7);
   const [text, setText] = useState<string | null>(null);
   const [sources, setSources] = useState<AskSource[]>([]);
@@ -61,7 +64,7 @@ export function PersonalDigest({ className }: { className?: string }) {
       setAt(now);
       try { window.localStorage.setItem(CACHE_KEY, JSON.stringify({ text: r.text, at: now, days: d, all, sources: r.sources })); } catch { /* приватный режим */ }
     } catch {
-      if (!text) setText("Не удалось обновить дайджест. Попробуйте «Обновить».");
+      if (!text) setText(dt("Не удалось обновить дайджест. Попробуйте «Обновить».", "Couldn't refresh the digest. Try “Refresh”."));
     } finally {
       setGenerating(false);
     }
@@ -91,33 +94,33 @@ export function PersonalDigest({ className }: { className?: string }) {
           <span className="inline-flex shrink-0 items-center justify-center rounded-[9px]" style={{ width: 28, height: 28, color: "var(--accent-ink)", background: "color-mix(in srgb, var(--accent-ink) 14%, transparent)" }}>
             <RoyIcon name="note" size={16} strokeWidth={2} />
           </span>
-          <span className="font-bold text-ink" style={{ fontSize: 15.5, letterSpacing: "-0.01em" }}>Персональный дайджест</span>
+          <span className="font-bold text-ink" style={{ fontSize: 15.5, letterSpacing: "-0.01em" }}>{dt("Персональный дайджест", "Personal digest")}</span>
         </span>
-        <span className="font-mono uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.08em" }}>{digestPeriodLabel(days)}</span>
+        <span className="font-mono uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.08em" }}>{plabel(days)}</span>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 px-4 py-3">
         {text ? (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-              <TezisyBlocks text={text} onSource={openSource} onDeepen={(topic) => openAnswer(`Расскажи подробнее: ${topic}`)} />
+              <TezisyBlocks text={text} onSource={openSource} onDeepen={(topic) => openAnswer(dt(`Расскажи подробнее: ${topic}`, `Tell me more: ${topic}`))} />
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <button onClick={() => run(days)} disabled={generating} className="font-semibold text-primary transition-opacity hover:opacity-80 disabled:opacity-60" style={{ fontSize: 12.5 }}>
-                {generating ? "Обновляю…" : "↻ Обновить"}
+                {generating ? dt("Обновляю…", "Refreshing…") : dt("↻ Обновить", "↻ Refresh")}
               </button>
-              {at && !generating && <span className="font-mono text-ink-mute" style={{ fontSize: 10.5 }}>обновлено {fmtUpdated(at)}</span>}
+              {at && !generating && <span className="font-mono text-ink-mute" style={{ fontSize: 10.5 }}>{dt("обновлено", "updated")} {fmtUpdated(at, dt("ru-RU", "en-US"))}</span>}
             </div>
           </>
         ) : generating ? (
-          <p className="py-3 text-center text-sm text-ink-soft">Готовлю дайджест {digestPeriodLabel(days)}…</p>
+          <p className="py-3 text-center text-sm text-ink-soft">{dt("Готовлю дайджест", "Preparing digest")} {plabel(days)}…</p>
         ) : (
           <button
             onClick={() => run(days)}
             className="w-full rounded-[12px] bg-primary py-2.5 font-semibold text-white transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             style={{ fontSize: 14 }}
           >
-            Сгенерировать дайджест {digestPeriodLabel(days)}
+            {dt("Сгенерировать дайджест", "Generate digest")} {plabel(days)}
           </button>
         )}
       </div>

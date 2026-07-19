@@ -2,13 +2,16 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { RoyIcon } from "../icons";
+import { useDt } from "../nav";
 
 // Иконка-чип «Карта проекта» в шапке дашборда справа (зеркало бренд-марки Swarm слева) →
 // полноэкранный оверлей с интерактивной картой системы (статический /system-map.html в iframe).
 // Self-contained: своё состояние open + портал в body, не трогает RoyApp/nav.
 const SIZE = 36; // ≈ размер RoyMark в шапке (32), чуть крупнее под клик
 export function ProjectMapButton() {
+  const dt = useDt();
   const [open, setOpen] = useState(false);
+  const mapLabel = dt("Карта проекта", "Project map");
 
   useEffect(() => {
     if (!open) return;
@@ -24,11 +27,11 @@ export function ProjectMapButton() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="Карта проекта"
-        title="Карта проекта"
+        aria-label={mapLabel}
+        title={mapLabel}
         className="group inline-flex shrink-0 items-center gap-2.5 rounded-[14px] transition-transform active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
       >
-        <span className="font-bold text-ink" style={{ fontSize: 15, letterSpacing: "-0.01em" }}>Карта проекта</span>
+        <span className="font-bold text-ink" style={{ fontSize: 15, letterSpacing: "-0.01em" }}>{mapLabel}</span>
         <span
           className="inline-flex shrink-0 items-center justify-center bg-primary text-white transition-[filter] group-hover:brightness-110"
           style={{ width: SIZE, height: SIZE, borderRadius: Math.round(SIZE * 0.31) }}
@@ -42,19 +45,19 @@ export function ProjectMapButton() {
           <div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-2.5">
             <span className="flex items-center gap-2 font-bold text-ink" style={{ fontSize: 15 }}>
               <span className="inline-flex items-center justify-center" style={{ color: "var(--accent-ink)" }}><MapGlyph /></span>
-              Карта проекта
+              {mapLabel}
             </span>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              aria-label="Закрыть карту"
+              aria-label={dt("Закрыть карту", "Close map")}
               className="flex items-center justify-center rounded-[10px] border border-line-2 bg-surface px-2.5 py-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             >
               <RoyIcon name="x" size={18} />
-              <span className="ml-1.5 font-semibold" style={{ fontSize: 13 }}>Закрыть</span>
+              <span className="ml-1.5 font-semibold" style={{ fontSize: 13 }}>{dt("Закрыть", "Close")}</span>
             </button>
           </div>
-          <iframe src="/system-map.html" title="Карта проекта" className="min-h-0 w-full flex-1 border-0" />
+          <iframe src="/system-map.html" title={mapLabel} className="min-h-0 w-full flex-1 border-0" />
         </div>,
         document.body,
       )}

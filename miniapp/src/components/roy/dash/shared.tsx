@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { RoyCard } from "../ui";
 import { RoyIcon, type RoyIconName } from "../icons";
-import { useRoyNav } from "../nav";
+import { useRoyNav, useDt } from "../nav";
 import { TaskRow } from "@/components/tasks/TaskRow";
 import { isDone } from "@/lib/smartLists";
 import { updateTask } from "@/lib/api";
@@ -14,10 +14,10 @@ import type { Task } from "@/types";
 // loading (roy-shim) и empty-состояние. Flat, тонкие границы — без бенто-визуала.
 
 // ── Форматирование даты «Рой» (ru, day + short month) ───────────────────────────
-export function fmtDate(iso: string | null): string | null {
+export function fmtDate(iso: string | null, locale: string = "ru-RU"): string | null {
   if (!iso) return null;
   try {
-    return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+    return new Date(iso).toLocaleDateString(locale, { day: "numeric", month: "short" });
   } catch {
     return null;
   }
@@ -171,12 +171,13 @@ export function Row({ onClick, children }: { onClick: () => void; children: Reac
 // TaskRow уже есть button-чекбокс (вложенные button невалидны).
 export function DashTaskRow({ task, showAssignee = false }: { task: Task; showAssignee?: boolean }) {
   const { openTask, toast, bumpTasks } = useRoyNav();
+  const dt = useDt();
   const toggle = async () => {
     try {
       await updateTask(task.id, { status: isDone(task) ? "open" : "done" });
       bumpTasks();
     } catch {
-      toast("Не удалось обновить");
+      toast(dt("Не удалось обновить", "Couldn't update"));
     }
   };
   return (

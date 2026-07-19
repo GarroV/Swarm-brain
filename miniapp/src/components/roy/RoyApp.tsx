@@ -159,14 +159,14 @@ export function RoyApp({ me }: { me: Me | null }) {
       <div className="flex flex-col h-[100dvh] bg-background text-foreground dark:bg-transparent">
         {me?.is_demo && (
           <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-4 py-1.5 text-white" style={{ fontSize: 13 }}>
-            <span className="font-semibold">🎬 Демо-режим</span>
-            <span className="hidden opacity-90 sm:inline">— витрина Swarm Brain, не рабочее окружение</span>
+            <span className="font-semibold">🎬 Demo mode</span>
+            <span className="hidden opacity-90 sm:inline">— a Swarm Brain showcase, not a real workspace</span>
             <button
               type="button"
               onClick={async () => { try { await logout(); } finally { window.location.href = "/login"; } }}
               className="rounded-full bg-white/20 px-3 py-0.5 font-semibold transition-colors hover:bg-white/30"
             >
-              Выйти из демо
+              Exit demo
             </button>
           </div>
         )}

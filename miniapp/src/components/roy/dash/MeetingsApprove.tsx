@@ -1,5 +1,5 @@
 "use client";
-import { useRoyNav } from "../nav";
+import { useRoyNav, useDt } from "../nav";
 import { RoyIcon } from "../icons";
 import { Market } from "../ui";
 import { deriveEntryTitle } from "../entry";
@@ -15,6 +15,7 @@ import type { Entry } from "@/types";
 const isConfirmed = (e: Entry) => e.metadata?.confirmed === true;
 
 function MeetingRow({ e, onOpen }: { e: Entry; onOpen: () => void }) {
+  const dt = useDt();
   const pending = !isConfirmed(e);
   return (
     <Row onClick={onOpen}>
@@ -34,15 +35,15 @@ function MeetingRow({ e, onOpen }: { e: Entry; onOpen: () => void }) {
               className="inline-flex items-center font-semibold"
               style={{ fontSize: 10.5, color: "var(--status-open)", background: "color-mix(in srgb, var(--status-open) 12%, transparent)", borderRadius: 6, padding: "1px 6px" }}
             >
-              На согласовании
+              {dt("На согласовании", "Pending review")}
             </span>
           )}
           <span className="font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)" }}>
-            {sourceLabel(e.source)}
+            {(() => { const s = sourceLabel(e.source); return dt(s, s === "Рекордер" ? "Recorder" : s === "Встреча" ? "Meeting" : s); })()}
           </span>
           <Market code={e.countries?.[0]} />
-          {fmtDate(e.entry_date || e.created_at) && (
-            <span className="text-ink-mute" style={{ fontSize: 11 }}>{fmtDate(e.entry_date || e.created_at)}</span>
+          {fmtDate(e.entry_date || e.created_at, dt("ru-RU", "en-US")) && (
+            <span className="text-ink-mute" style={{ fontSize: 11 }}>{fmtDate(e.entry_date || e.created_at, dt("ru-RU", "en-US"))}</span>
           )}
         </div>
       </div>
@@ -52,6 +53,7 @@ function MeetingRow({ e, onOpen }: { e: Entry; onOpen: () => void }) {
 
 export function MeetingsApprove({ data, className }: { data: DashboardData; className?: string }) {
   const { push, setTab } = useRoyNav();
+  const dt = useDt();
   const { loading, pendingList, recentMeetings, pendingMeetings, reviewCount } = data;
   const approvalCount = pendingMeetings + reviewCount;
   // Превью в карточке: pending — что требует решения, recent — недавно опубликованные.
@@ -62,20 +64,20 @@ export function MeetingsApprove({ data, className }: { data: DashboardData; clas
 
   return (
     <DashBlock
-      title="Встречи"
+      title={dt("Встречи", "Meetings")}
       icon="cal"
       tint="var(--meet-ink)"
-      badge={approvalCount > 0 ? <AccentBadge>{approvalCount} на согласовании</AccentBadge> : undefined}
-      headAction="Ревью"
+      badge={approvalCount > 0 ? <AccentBadge>{approvalCount} {dt("на согласовании", "pending")}</AccentBadge> : undefined}
+      headAction={dt("Ревью", "Review")}
       loading={loading}
       empty={pendingList.length === 0 && recentMeetings.length === 0}
-      emptyText="Встреч нет"
+      emptyText={dt("Встреч нет", "No meetings")}
       onHead={() => push({ view: "meetAdmin" })}
       className={className}
     >
       {pendingShown.length > 0 && (
         <>
-          <SubHead count={pendingMeetings}>Требуют решения</SubHead>
+          <SubHead count={pendingMeetings}>{dt("Требуют решения", "Need a decision")}</SubHead>
           {pendingShown.map((e) => (
             <MeetingRow key={e.id} e={e} onOpen={() => open(e.id)} />
           ))}
@@ -83,7 +85,7 @@ export function MeetingsApprove({ data, className }: { data: DashboardData; clas
       )}
       {recentShown.length > 0 && (
         <>
-          <SubHead>Недавние</SubHead>
+          <SubHead>{dt("Недавние", "Recent")}</SubHead>
           {recentShown.map((e) => (
             <MeetingRow key={e.id} e={e} onOpen={() => open(e.id)} />
           ))}
@@ -97,7 +99,7 @@ export function MeetingsApprove({ data, className }: { data: DashboardData; clas
         className="mt-1 block w-full rounded-[10px] py-2 text-center font-semibold text-ink-mute transition-colors hover:bg-surface-2 hover:text-primary"
         style={{ fontSize: 12 }}
       >
-        Все встречи →
+        {dt("Все встречи →", "All meetings →")}
       </button>
     </DashBlock>
   );

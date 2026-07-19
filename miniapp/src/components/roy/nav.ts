@@ -55,3 +55,12 @@ export function useRoyNav(): RoyNav {
   if (!ctx) throw new Error("useRoyNav must be used within RoyApp");
   return ctx;
 }
+
+// Демо-онли i18n: демо-сессия (me.is_demo) рендерится по-английски — витрина для
+// портфолио garrov.github.io (встраивается в iframe на англоязычной странице).
+// Лёгкий инлайновый вариант без словаря: dt("русский", "english"). Вне демо — RU.
+export function useDt(): (ru: string, en: string) => string {
+  const ctx = useContext(RoyNavContext);
+  const demo = !!ctx?.me?.is_demo;
+  return (ru, en) => (demo ? en : ru);
+}

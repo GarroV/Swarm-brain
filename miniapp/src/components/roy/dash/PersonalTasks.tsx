@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useRoyNav } from "../nav";
+import { useRoyNav, useDt } from "../nav";
 import { DashBlock, SubHead, DashTaskRow, norm } from "./shared";
 import { TaskModal } from "@/components/TaskModal";
 import type { DashboardData } from "./useDashboardData";
@@ -13,6 +13,7 @@ import type { DashboardData } from "./useDashboardData";
 
 export function PersonalTasks({ data, className }: { data: DashboardData; className?: string }) {
   const { openTasks, bumpTasks } = useRoyNav();
+  const dt = useDt();
   const [creating, setCreating] = useState(false);
   const { loading, today, week, mine } = data;
 
@@ -23,25 +24,25 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
   const aMine = active(mine);
 
   const tier =
-    aToday.length > 0 ? { label: "Сегодня", tasks: aToday } :
-    aWeek.length > 0 ? { label: "Ближайшие", tasks: aWeek } :
-    { label: "Все", tasks: aMine };
+    aToday.length > 0 ? { label: dt("Сегодня", "Today"), tasks: aToday } :
+    aWeek.length > 0 ? { label: dt("Ближайшие", "Upcoming"), tasks: aWeek } :
+    { label: dt("Все", "All"), tasks: aMine };
   const moreCount = aMine.length - tier.tasks.length; // не вошедшие в показанный ярус
   const empty = aMine.length === 0;
 
   return (
     <>
       <DashBlock
-        title="Мои задачи"
+        title={dt("Мои задачи", "My tasks")}
         icon="task"
         tint="var(--accent-ink)"
-        headAction="Доска"
+        headAction={dt("Доска", "Board")}
         loading={loading}
         empty={empty}
-        emptyText="Личных задач нет"
+        emptyText={dt("Личных задач нет", "No personal tasks")}
         onHead={() => openTasks("mine", "today")}
         onAdd={() => setCreating(true)}
-        addLabel="Новая задача"
+        addLabel={dt("Новая задача", "New task")}
         className={className}
       >
         <SubHead count={tier.tasks.length}>{tier.label}</SubHead>
@@ -53,7 +54,7 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
             className="mt-2 block w-full rounded-[10px] py-2 text-center font-medium text-ink-mute transition-colors hover:bg-surface-2"
             style={{ fontSize: 12 }}
           >
-            + ещё {moreCount}
+            {dt("+ ещё", "+ more")} {moreCount}
           </button>
         )}
       </DashBlock>

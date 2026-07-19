@@ -1,5 +1,5 @@
 "use client";
-import { useRoyNav } from "../nav";
+import { useRoyNav, useDt } from "../nav";
 import { DashBlock, DashTaskRow, norm } from "./shared";
 import type { DashboardData } from "./useDashboardData";
 
@@ -10,19 +10,20 @@ import type { DashboardData } from "./useDashboardData";
 
 export function TeamTasks({ data, className }: { data: DashboardData; className?: string }) {
   const { openTasks } = useRoyNav();
+  const dt = useDt();
   const { loading, team } = data;
   // Активные задачи команды: незавершённые требуют внимания.
   const active = team.filter((t) => norm(t.status) !== "done");
 
   return (
     <DashBlock
-      title="Задачи команды"
+      title={dt("Задачи команды", "Team tasks")}
       icon="team"
       tint="var(--tag-link)"
-      headAction="Доска"
+      headAction={dt("Доска", "Board")}
       loading={loading}
       empty={active.length === 0}
-      emptyText="Активных задач команды нет"
+      emptyText={dt("Активных задач команды нет", "No active team tasks")}
       onHead={() => openTasks("team", "all")}
       className={className}
     >
