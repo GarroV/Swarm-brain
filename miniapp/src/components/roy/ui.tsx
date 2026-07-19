@@ -3,6 +3,7 @@ import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { cn, displayName } from "@/lib/utils";
 import { countryCode } from "@/lib/countries";
 import { RoyIcon, type RoyIconName } from "./icons";
+import { useDt } from "./nav";
 
 // Примитивы дизайн-системы из design_handoff_roy (mobile-proto-ui.jsx), портированные
 // в идиому miniapp: Tailwind + семантические токены хендоффа (см. globals.css). Значения,
@@ -292,7 +293,7 @@ function parseTezisy(src: string): TezisyBlock[] {
 
 // Инлайн-markdown: **жирный** → <strong> (срезаем звёздочки). GPT-дайджест шлёт **...**,
 // а tezisy встреч иногда тоже — иначе видны сырые звёздочки.
-function renderInline(text: string, onSource?: (n: number) => void): ReactNode {
+function renderInline(text: string, onSource?: (n: number) => void, dt: (ru: string, en: string) => string = (ru) => ru): ReactNode {
   // Разбиваем по **bold** и сноскам [n]. Сноска → верхний индекс; кликабельный, если задан onSource
   // (клик открывает исходную запись — используется в дайджесте, где пункт привязан к источнику).
   const parts = text.split(/(\*\*[^*]+?\*\*|\[\d+\])/g);
@@ -305,7 +306,7 @@ function renderInline(text: string, onSource?: (n: number) => void): ReactNode {
       const n = Number(ref[1]);
       if (onSource) {
         return (
-          <button key={i} type="button" onClick={() => onSource(n)} title="Открыть источник"
+          <button key={i} type="button" onClick={() => onSource(n)} title={dt("Открыть источник", "Open source")}
             className="align-super rounded font-bold text-accent-ink transition-opacity hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             style={{ fontSize: 11 }}>{n}</button>
         );
@@ -333,6 +334,7 @@ function leadEmoji(text: string): { icon: RoyIconName | null; rest: string; had:
 }
 
 export function TezisyBlocks({ text, className, onDeepen, onSource }: { text: string; className?: string; onDeepen?: (topic: string) => void; onSource?: (n: number) => void }) {
+  const dt = useDt();
   const blocks = parseTezisy(text);
   if (blocks.length === 0) return null;
   return (
@@ -343,7 +345,7 @@ export function TezisyBlocks({ text, className, onDeepen, onSource }: { text: st
           return (
             <div key={i} className="flex items-center gap-2 font-semibold text-ink" style={{ fontSize: 14, letterSpacing: "-0.01em", marginTop: i === 0 ? 0 : 5 }}>
               {icon && <RoyIcon name={icon} size={15} strokeWidth={1.9} className="shrink-0 text-accent-ink" />}
-              <span>{renderInline(rest)}</span>
+              <span>{renderInline(rest, undefined, dt)}</span>
             </div>
           );
         }
@@ -353,7 +355,7 @@ export function TezisyBlocks({ text, className, onDeepen, onSource }: { text: st
               {b.items.map((it, j) => (
                 <li key={j} className="group/deep flex items-start text-ink leading-relaxed" style={{ fontSize: 14, gap: 8 }}>
                   <span className="text-ink-mute select-none" style={{ marginTop: 1 }}>•</span>
-                  <span className="flex-1">{renderInline(it, onSource)}</span>
+                  <span className="flex-1">{renderInline(it, onSource, dt)}</span>
                   {(() => {
                     // Есть источник (сноска [n]) → лупа открывает исходную запись этого пункта.
                     // Иначе, если задан onDeepen → лупа углубляет тему через поиск (тезисы встреч).
@@ -361,7 +363,7 @@ export function TezisyBlocks({ text, className, onDeepen, onSource }: { text: st
                     if (ref && onSource) {
                       const n = Number(ref[1]);
                       return (
-                        <button type="button" onClick={() => onSource(n)} aria-label="Открыть источник" title="Открыть источник"
+                        <button type="button" onClick={() => onSource(n)} aria-label={dt("Открыть источник", "Open source")} title={dt("Открыть источник", "Open source")}
                           className="mt-0.5 shrink-0 text-ink-mute opacity-0 transition-opacity hover:text-primary focus-visible:opacity-100 focus-visible:outline-none group-hover/deep:opacity-100">
                           <RoyIcon name="search" size={14} strokeWidth={1.9} />
                         </button>
@@ -369,7 +371,7 @@ export function TezisyBlocks({ text, className, onDeepen, onSource }: { text: st
                     }
                     if (onDeepen) {
                       return (
-                        <button type="button" onClick={() => onDeepen(it)} aria-label="Углубиться в тему" title="Углубиться в тему"
+                        <button type="button" onClick={() => onDeepen(it)} aria-label={dt("Углубиться в тему", "Dive deeper")} title={dt("Углубиться в тему", "Dive deeper")}
                           className="mt-0.5 shrink-0 text-ink-mute opacity-0 transition-opacity hover:text-primary focus-visible:opacity-100 focus-visible:outline-none group-hover/deep:opacity-100">
                           <RoyIcon name="search" size={14} strokeWidth={1.9} />
                         </button>
@@ -389,14 +391,14 @@ export function TezisyBlocks({ text, className, onDeepen, onSource }: { text: st
             return (
               <div key={i} className="flex items-center gap-2 font-semibold text-ink" style={{ fontSize: 14, letterSpacing: "-0.01em", marginTop: i === 0 ? 0 : 5 }}>
                 {icon && <RoyIcon name={icon} size={15} strokeWidth={1.9} className="shrink-0 text-accent-ink" />}
-                <span>{renderInline(rest)}</span>
+                <span>{renderInline(rest, undefined, dt)}</span>
               </div>
             );
           }
         }
         return (
           <p key={i} className="text-ink leading-relaxed whitespace-pre-wrap" style={{ fontSize: 14 }}>
-            {renderInline(b.text)}
+            {renderInline(b.text, undefined, dt)}
           </p>
         );
       })}
