@@ -30,7 +30,11 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
     status: 302,
     headers: {
       Location: "/",
-      "Set-Cookie": `roj_session=${jwt}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`,
+      // SameSite=None (не Lax): демо встраивается в <iframe> портфолио garrov.github.io —
+      // кросс-сайт контексту нужна None;Secure, иначе браузер не шлёт сессию и демо
+      // выпадает на /login. Безопасно: demo-сессия изолирована в swarm-api (isDemo →
+      // group_id='demo', не админ, токены не минтит). Реальный логин (telegram.ts) остаётся Lax.
+      "Set-Cookie": `roj_session=${jwt}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${maxAge}`,
     },
   });
 }
