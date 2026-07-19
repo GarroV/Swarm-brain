@@ -61,6 +61,7 @@
 |---------|---------|-----------|
 | `swarm-bot` | Telegram webhook POST | Главный бот — весь пользовательский флоу |
 | `swarm-bot` (`granola_poll`) | Cron (каждый час) | Импортирует новые заметки Granola как черновики `confirmed:false` (видны в вебе «на согласовании» + Telegram-ревью). Заменил standalone `granola-poller` |
+| `swarm-bot` (`daily_report_cron`) | Cron (раз в сутки, ~06:00 UTC) | Ежедневный отчёт активности админу: счёт `entries` за вчерашние сутки (Europe/Belgrade) по `entry_type` (meeting/note), разбивка воркспейс/источник → `sendMessage(ADMIN_USER_ID)`. Тот же флоу дублирует команда `/report`. Хендлеры `handlers/daily-report.ts` (чистое ядро — `yesterdayWindow`/`aggregateActivity`/`formatReport`) + `handlers/daily-report-send.ts` (I/O `sendDailyReport()` — запрос + отправка) |
 | `granola-poller` | ⚠️ выведен из крона | Устаревшая standalone-функция: только слала уведомление в Telegram, в БД ничего не клала. Логика переехала в `swarm-bot` (`ingestNewGranolaNotesAllUsers`) |
 | `read-ai-webhook` | Webhook от Read.ai | Принимает завершённые встречи, сохраняет в `entries`, уведомляет бота |
 | `read-ai-auth` | HTTP redirect (OAuth) | OAuth callback для авторизации Read.ai, сохраняет токен в `app_settings` |
@@ -111,6 +112,8 @@ supabase/functions/swarm-bot/
 │   ├── manage.ts            # Правка/удаление записей из чата (поиск→подтверждение→действие, kb*-коллбеки)
 │   ├── media.ts             # Голос, документы, фото, URL — парсинг и сохранение
 │   ├── digest.ts            # /digest — персональный дайджест за период
+│   ├── daily-report.ts      # /report (админ) + cron daily_report_cron — чистое ядро: yesterdayWindow/aggregateActivity/formatReport
+│   ├── daily-report-send.ts # sendDailyReport() — I/O поверх ядра: запрос entries + отправка ADMIN_USER_ID
 │   ├── users.ts             # /users — управление командой (allow/block)
 │   ├── workspace.ts         # /workspace — управление воркспейсами (суперадмин, CLI)
 │   ├── superadmin.ts        # /superadmin — интерактивная inline-панель (админы: ADMIN_USER_ID или is_admin)

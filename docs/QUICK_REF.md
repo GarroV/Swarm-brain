@@ -17,6 +17,7 @@ supabase functions deploy meeting-status --no-verify-jwt     # статус вс
 supabase functions deploy meeting-heartbeat --no-verify-jwt  # heartbeat рекордера → watchdog checkRecorderHealth (оборванная запись / истечение токена)
 supabase functions deploy meeting-webtoken --no-verify-jwt   # обмен recorder-токена на web-JWT (cookie roj_session) для панели /live в WKWebView рекордера
 # granola-poller — legacy, НЕ деплоить: поллинг Granola внутри swarm-bot ({granola_poll:true} крон)
+# daily_report_cron — ежедневный отчёт активности админу (pg_cron '0 6 * * *' → swarm-bot {"daily_report_cron":true})
 supabase secrets set BOT_NAME=swarm-bot                       # env-переменные
 ```
 

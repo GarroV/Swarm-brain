@@ -285,6 +285,19 @@ select cron.schedule(
     );
   $$
 );
+
+-- Ежедневный отчёт активности админу — вчерашние сутки, ~06:00 UTC (≈07–08:00 Europe/Belgrade)
+select cron.schedule(
+  'daily-report',
+  '0 6 * * *',
+  $$
+    select net.http_post(
+      url := 'https://<YOUR_PROJECT_REF>.supabase.co/functions/v1/swarm-bot',
+      headers := '{"Content-Type":"application/json","X-Cron-Secret":"<CRON_SECRET>"}',
+      body := '{"daily_report_cron":true}'
+    );
+  $$
+);
 ```
 
 > Для pg_cron требуется расширение `pg_net`. Включить в Supabase Dashboard → Database → Extensions.

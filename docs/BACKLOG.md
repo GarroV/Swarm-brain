@@ -2,6 +2,12 @@
 
 > Этот файл ведётся **вручную**: открытые задачи, технический долг, идеи. Это НЕ автогенерируемый `CHANGELOG.md` (тот собирается из git-коммитов).
 
+## ✅ [СДЕЛАНО 2026-07-19] Ежедневный отчёт активности админу
+
+Cron `daily_report_cron` + команда `/report` (`swarm-bot/handlers/daily-report.ts`): счёт `entries` за вчерашние сутки (Europe/Belgrade) по `entry_type` (meeting/note), разбивка cee/other + источники, пуш владельцу. Спека/план: `docs/superpowers/specs/2026-07-19-daily-activity-report-design.md`, `docs/superpowers/plans/2026-07-19-daily-activity-report.md`.
+
+**Будущее расширение (не в MVP):** считать и захваченные рекордером встречи, ещё не опубликованные (таблица `meetings`, `status='awaiting_review'`) — сейчас в счёт входят только попавшие в `entries`.
+
 ## 🧹 [ОТКРЫТО 2026-07-18] Удалить спящий Mini App-путь (initData/tma) + доки-дрифт «Mini App»
 
 Telegram Mini App-вход **отключён** (~2026-07-15, коммит `53bd3ae` — бот ведёт на PWA `swarm-brain.pages.dev`). Живой вход в веб-интерфейс — **только** Telegram Login Widget → JWT-cookie в браузере. Но следы остались:
