@@ -256,7 +256,7 @@ npm run build
 
 ## Шаг 12 — Настройка cron-jobs (опционально)
 
-Для автоматического дайджеста и поллинга Granola настрой cron через Supabase Dashboard → Edge Functions → Schedule или через pg_cron:
+Для автоматического дайджеста, поллинга Granola и ежедневного отчёта активности настрой cron через Supabase Dashboard → Edge Functions → Schedule или через pg_cron:
 
 ```sql
 -- Дайджест каждый понедельник в 9:00 UTC

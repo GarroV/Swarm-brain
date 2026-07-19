@@ -13,9 +13,17 @@
 
 ## ✅ [СДЕЛАНО 2026-07-19] Ежедневный отчёт активности админу
 
-Cron `daily_report_cron` + команда `/report` (`swarm-bot/handlers/daily-report.ts`): счёт `entries` за вчерашние сутки (Europe/Belgrade) по `entry_type` (meeting/note), разбивка cee/other + источники, пуш владельцу. Спека/план: `docs/superpowers/specs/2026-07-19-daily-activity-report-design.md`, `docs/superpowers/plans/2026-07-19-daily-activity-report.md`.
+Cron `daily_report_cron` (pg_cron `daily-report`, **06:00 UTC ежедневно**, задеплоен на прод, jobid 5) + админ-команда `/report` — оба зовут `sendDailyReport()`. Считает `entries` за вчерашние календарные сутки (TZ `Europe/Belgrade`, DST-safe) по `entry_type` (meeting/note), разбивка cee/other + источники, пуш владельцу (`ADMIN_USER_ID`) в Telegram; тихий день → короткая плашка.
 
-**Будущее расширение (не в MVP):** считать и захваченные рекордером встречи, ещё не опубликованные (таблица `meetings`, `status='awaiting_review'`) — сейчас в счёт входят только попавшие в `entries`.
+- **Файлы:** `swarm-bot/handlers/daily-report.ts` (чистое ядро без I/O: `yesterdayWindow`/`aggregateActivity`/`formatReport`; тесты `daily-report.test.ts` env-free, 9/9) + `swarm-bot/handlers/daily-report-send.ts` (I/O `sendDailyReport` — запрос+отправка). Провод в `swarm-bot/index.ts` (крон-гард+диспатч, `/report` за `isAdminUser`).
+- **Источник заметки — классификатор, не словарь** (`noteSourceLabel`): `source` не enum (в проде файлы лежат под именем файла, есть `pdf`/`image`/`mini_app`) → файлы ловятся по расширению/медиа-типу, иначе «прочее». Выверено на prod-данных.
+- Спека/план: `docs/superpowers/specs/2026-07-19-daily-activity-report-design.md`, `docs/superpowers/plans/2026-07-19-daily-activity-report.md`. Собрано subagent-driven (per-task ревью + финальное whole-branch на opus).
+
+**Остаётся (не блокеры, из финального ревью):**
+- **Будущее расширение:** считать и захваченные рекордером встречи, ещё не опубликованные (таблица `meetings`, `status='awaiting_review'`) — сейчас в счёт входят только попавшие в `entries`. Потребует +запрос к `meetings` и отдельную строку отчёта.
+- **Покрытие тестами (nice-to-have):** ярлык `read_ai`→«read.ai», пустой `group_id` («Без воркспейса»), игнор `entry_type` ≠ meeting/note, `formatReport` при неравных счётах (убывающая сортировка подстроки).
+- **Дрейф ярлыков источника:** `MEETING_SOURCE_LABEL` держит компактные строчные `рекордер`/`granola`/`read.ai` — второй ручной экземпляр факта source→label (канон — `_shared/sources.ts`: `Рекордер`/`Granola`/`Read.ai`). Свести в общий хелпер, если начнёт расходиться.
+- **Рассмотрено, оставлено как есть:** `console.error` в error-пути `sendDailyReport` не добавляли — ошибка запроса и так уходит владельцу в DM (для этой фичи виднее лога).
 
 ## 🧹 [ОТКРЫТО 2026-07-18] Удалить спящий Mini App-путь (initData/tma) + доки-дрифт «Mini App»
 
