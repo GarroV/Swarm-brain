@@ -12,6 +12,8 @@
 
 Staging использует **демо-ключи** Supabase (ANON/SERVICE/JWT из `.env.example`) — ок, т.к. контур приватный (только tailnet, личное использование). Порты сдвинуты (kong `8020`, БД `5433`), чтобы не конфликтовать с n8n/template-postgres на MUSPELHEIM.
 
+**Пароль staging-БД — НЕ в git.** Makefile читает его из `~/.swarm/staging_pgpw` (git-ignored, вне репо). Инициализация на своей машине: `mkdir -p ~/.swarm && printf 'your-super-secret-and-long-postgres-password' > ~/.swarm/staging_pgpw && chmod 600 ~/.swarm/staging_pgpw` (дефолт = демо-пароль Supabase; при желании поставь свой на staging-БД и обнови файл).
+
 ## Поток по поверхностям
 
 | Поверхность | Пред-прод |

@@ -6,7 +6,9 @@ STAGING_FN := http://100.64.116.67:8020/functions/v1
 PROD_FN    := https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1
 MUSPEL     := muspelheim
 SB         := C:/projects/swarm-staging
-STAGING_PGPW := your-super-secret-and-long-postgres-password
+# Пароль staging-БД НЕ в git — читаем из ~/.swarm/staging_pgpw (git-ignored, вне репо).
+# Инициализация (демо-дефолт Supabase для приватного staging): см. docs/DEPLOY.md.
+STAGING_PGPW := $(shell cat $(HOME)/.swarm/staging_pgpw 2>/dev/null)
 
 .PHONY: help smoke-staging smoke-prod staging-sync-functions staging-migrate staging-psql staging-ps staging-up staging-down
 
@@ -33,10 +35,12 @@ staging-sync-functions:
 # Накатить один SQL-файл на staging-БД. Пример: make staging-migrate FILE=supabase/migrations/2026...sql
 staging-migrate:
 	@test -n "$(FILE)" || (echo "нужно FILE=<путь к .sql>"; exit 1)
+	@test -n "$(STAGING_PGPW)" || (echo "нет пароля staging-БД — положи в ~/.swarm/staging_pgpw (см. docs/DEPLOY.md)"; exit 1)
 	cat $(FILE) | ssh $(MUSPEL) "docker exec -e PGPASSWORD=$(STAGING_PGPW) -i supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1"
 
 # psql в staging-БД: echo "SELECT ..." | make staging-psql
 staging-psql:
+	@test -n "$(STAGING_PGPW)" || (echo "нет пароля staging-БД — положи в ~/.swarm/staging_pgpw (см. docs/DEPLOY.md)"; exit 1)
 	ssh $(MUSPEL) "docker exec -e PGPASSWORD=$(STAGING_PGPW) -i supabase-db psql -U postgres -d postgres"
 
 staging-ps:
