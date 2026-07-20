@@ -8,18 +8,21 @@ import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 export type PictoOption = { id: string; label: string; icon?: RoyIconName; flag?: string };
 
 type Props = {
-  triggerIcon: RoyIconName;
+  triggerIcon?: RoyIconName;
   ariaLabel: string;
   options: PictoOption[];
   selected: string[];
   multi: boolean;
   onToggle: (id: string) => void;
   footer?: ReactNode;
+  // Кастомный триггер-элемент (напр. поле формы флаг+название). Если задан — рендерится
+  // вместо иконки-кнопки по triggerIcon. Обёртка сама вешает ref/onClick/aria.
+  trigger?: ReactNode;
 };
 
 const W = 248, H = 320;
 
-export function PictogramPicker({ triggerIcon, ariaLabel, options, selected, multi, onToggle, footer }: Props) {
+export function PictogramPicker({ triggerIcon, ariaLabel, options, selected, multi, onToggle, footer, trigger }: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; maxH: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -66,19 +69,34 @@ export function PictogramPicker({ triggerIcon, ariaLabel, options, selected, mul
 
   return (
     <>
-      <button
-        ref={btnRef}
-        type="button"
-        aria-label={ariaLabel}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-        className="flex items-center justify-center rounded-[9px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-        style={{ width: 26, height: 26, color: selected.length ? "var(--accent-ink)" : "var(--ink-soft)" }}
-      >
-        <RoyIcon name={triggerIcon} size={15} strokeWidth={1.9} />
-      </button>
+      {trigger ? (
+        <button
+          ref={btnRef}
+          type="button"
+          aria-label={ariaLabel}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+          className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-[12px]"
+        >
+          {trigger}
+        </button>
+      ) : (
+        <button
+          ref={btnRef}
+          type="button"
+          aria-label={ariaLabel}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+          className="flex items-center justify-center rounded-[9px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          style={{ width: 26, height: 26, color: selected.length ? "var(--accent-ink)" : "var(--ink-soft)" }}
+        >
+          <RoyIcon name={triggerIcon ?? "globe"} size={15} strokeWidth={1.9} />
+        </button>
+      )}
 
       {open && pos && createPortal(
         <div
