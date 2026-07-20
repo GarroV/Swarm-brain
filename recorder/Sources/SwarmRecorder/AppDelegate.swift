@@ -145,6 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         setupNotifications()
+        setupPowerNotifications()
         startWatching()
 
         // Дозагрузка на старте: если в прошлый раз приложение закрыли/упало с висящими записями
@@ -163,6 +164,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let cat = UNNotificationCategory(identifier: notifyCategory, actions: [record], intentIdentifiers: [], options: [])
         center.setNotificationCategories([cat])
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
+    // ── Сон/пробуждение ноутбука ──────────────────────────────────────────────────
+    // macOS ЗАМОРАЖИВАЕТ таймеры (recWatchTick/maintenanceTick) на время сна. Закрыл крышку
+    // посреди записи → авто-стоп по концу созвона и потолок «конец+30мин» не могут сработать:
+    // запись висит открытой всё время сна и режется лишь при пробуждении (инцидент 2026-07-20 —
+    // созвон 103 мин растянулся на 5.5ч wall-clock, стоп сработал только на wake). Поэтому:
+    //   • на засыпании — штатно закрываем встречу («закрыл ноут = закончил»);
+    //   • на пробуждении — дозагружаем бэкапы (во сне 15-мин maintenanceTick тоже стоял).
+    // Наблюдатели — на NSWorkspace.shared.notificationCenter (НЕ .default: sleep/wake постятся
+    // только сюда). Только willSleep (реальный сон системы) — screensDidSleep (гашение экрана при
+    // простое) НЕ трогаем, иначе долгий созвон без движения мыши оборвётся на потухшем экране.
+    private func setupPowerNotifications() {
+        let center = NSWorkspace.shared.notificationCenter
+        center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.handleWillSleep()
+        }
+        center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.handleDidWake()
+        }
+    }
+
+    private func handleWillSleep() {
+        guard case .recording = state else { return }
+        dbg("WILL-SLEEP во время записи → авто-стоп")
+        // Штатный авто-стоп: финализирует сегменты на диск + claim + отправка. macOS ЗАМОРАЖИВАЕТ
+        // (не убивает) процесс, и мы НЕ держим сон (нет IOPMAssertion) → async-цепочка stopTapped не
+        // успевает до сна, а резюмится и ДОигрывает на ПРОБУЖДЕНИИ: тап останавливается там же, claim+
+        // upload идут на wake, handleDidWake дополнительно дренает. Метку конца (endedAt) фиксируем
+        // СИНХРОННО в stopTapped до Task — иначе она уехала бы на время wake (см. там).
+        // Нюансы (осознанный компромисс, не баги):
+        //  • willSleep приходит и на idle-sleep, не только на крышку — но активный созвон обычно держит
+        //    sleep-assertion (Zoom/Meet/Chrome), так что на практике это почти всегда закрытие крышки.
+        //  • heartbeat recording=false до сна НЕ доходит (setState шлёт его с задержкой 3с, а сеть уже
+        //    снимается) → сервер может кинуть ложное «запись прервалась» на снах >20 мин; на wake флаг
+        //    чистится sendHeartbeat. Полное устранение ложной тревоги — на стороне сервера (см. BACKLOG).
+        autoStop(reason: "ноутбук уснул — встреча сохранена")
+    }
+
+    private func handleDidWake() {
+        guard let cfg = config, configError == nil else { return }
+        dbg("DID-WAKE → дренаю бэкапы + heartbeat")
+        // Дозагрузка недосланного (в т.ч. встречи, остановленной на засыпании) и подчистка бэкапов
+        // done-встреч, которые не убрал замороженный во сне maintenanceTick. recoverInterruptedRecordings
+        // тут НЕ зовём — резюмящийся Task из stopTapped уже финализирует текущую запись (иначе гонка);
+        // орфаны от жёсткого выключения подберёт recovery на следующем старте.
+        Task { await UploadQueue.shared.drain(config: cfg); await refreshQueueBadge() }
+        sendHeartbeat()
     }
 
     private func startWatching() {
@@ -929,6 +978,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Task { @MainActor in LiveNotesPanel.shared.hide() }
         let info = identity
         let started = recordStartedAt ?? Date()
+        // Метку конца фиксируем СИНХРОННО, до Task: в сон-кейсе (willSleep→autoStop) Task резюмится
+        // на ПРОБУЖДЕНИИ, и Date() внутри него дал бы время wake → endedAt раздулся бы на весь сон
+        // (для room/manual, где нет calEndISO и берётся p.ended). Здесь это момент нажатия/засыпания.
+        let ended = Date()
         Task {
             // Финализация записи (внутри — best-effort stop системного тапа). Если зависнет —
             // её НЕ убить отменой, но watchdog (armSending) выведет UI из .sending сам.
@@ -945,7 +998,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if let info { dismissedKeys.insert(info.key) }
             identity = nil
             let captured = PendingSend(res: res, identity: info, started: started,
-                                       ended: Date(), manualKey: "manual:\(UUID().uuidString)")
+                                       ended: ended, manualKey: "manual:\(UUID().uuidString)")
             pendingSend = captured
             await performSend(captured)
         }
