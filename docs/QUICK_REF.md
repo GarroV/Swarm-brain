@@ -68,6 +68,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | CRUD/спринты/зависимости/типы | `_shared/tasks/{db,sprints,dependencies,types}.ts` | spoke [SHARED_TASKS_ENGINE.md](SHARED_TASKS_ENGINE.md) |
 | Бот-обёртка / MCP-прослойка / fuzzy-assignee | `swarm-bot/tasks/{db,handlers,matcher}.ts`, `swarm-mcp/tasks/tools.ts` | §Движок задач |
 | Персональные смарт-метки (личные списки) | БД `task_labels` + `tasks.label_ids`; API `swarm-api/task-labels.ts` (+`http.ts`); MCP `swarm-mcp/tasks/tools.ts` (`list_task_labels`, `labels`); веб `miniapp/src/components/tasks/{PictogramPicker,LabelEditor}.tsx`, `lib/smartLists.ts` (`filterByLabel`) | §Таблицы БД, §swarm-api, §swarm-mcp |
+| Комментарии задач | `swarm-api/task-comments.ts`, `swarm-mcp/tasks/tools.ts` (`get_task_comments`/`add_task_comment`), веб `miniapp/.../screens/TaskDetail.tsx` + `lib/api.ts`; валидатор `_shared/tasks/comments.ts` | §Таблицы БД, §swarm-api, §swarm-mcp |
 | 🔒 **Видимость/приватность — кто что видит** (задачи И встречи/записи: приватное `is_private=true` — только владелец `owner_id`; админ/руководитель — ВСЁ в воркспейсе, вкл. чужое личное; изоляция по `group_id`) | задачи → `_shared/tasks/db.ts` (`listTasks`); встречи=записи → `swarm-api/entries-guard.ts` (`getEntrySecure`/`buildEntriesQuery`) | **[ARCHITECTURE.md](ARCHITECTURE.md) §Контроль доступа — единый канон** (`visibilityFilter`, админ-байпас) |
 
 ### Поиск / записи / страны

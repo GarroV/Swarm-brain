@@ -2,15 +2,12 @@
 
 > Этот файл ведётся **вручную**: открытые задачи, технический долг, идеи. Это НЕ автогенерируемый `CHANGELOG.md` (тот собирается из git-коммитов).
 
-## 📋 [ГОТОВО К РЕАЛИЗАЦИИ 2026-07-21] Пикер страны в форме задачи + комментарии к задачам
+## ✅ [СДЕЛАНО 2026-07-21] Пикер страны в форме задачи + комментарии к задачам
 
-> Спроектировано и распланировано, **код не начат** (отложено владельцем — «продолжим позже»). Спека: `docs/superpowers/specs/2026-07-21-task-country-picker-and-comments-design.md`. План (TDD, 9 задач): `docs/superpowers/plans/2026-07-21-task-country-picker-and-comments.md`. Исполнять через subagent-driven-development.
+- Пикер страны (рынки воркспейса, флаги) в `TaskModal` вместо свободного поля — `PictogramPicker` c кастомным триггером; бэкенд не менялся.
+- Комментарии к задачам (веб + MCP): таблица `task_comments` доведена (FK/индекс/`added_by_telegram_id`), swarm-api `task-comments.ts` (`/tasks/:id/comments`), MCP `get_task_comments`/`add_task_comment`, секция в `TaskDetail`. Автор резолвится на чтении. Спека/план: `docs/superpowers/specs/2026-07-21-task-country-picker-and-comments-design.md`, `docs/superpowers/plans/2026-07-21-task-country-picker-and-comments.md`.
 
-**Часть A — пикер страны (фронт, без бэкенда).** В `miniapp/src/components/TaskModal.tsx` «Страна» — свободный `<input>`; заменить на **поповер с флагами** (`PictogramPicker` + доп. проп `trigger` для field-style; опции из `fetchConfig().allowed_markets`, `countryName`/`countryFlag`). `task.country: string|null` не меняется. Мобильная `NewTask.tsx` уже делает правильно — это выравнивание десктопа.
-
-**Часть B — комментарии к задачам (веб + MCP).** Таблица `task_comments` есть, но пустая/недоделана → миграция (FK+cascade, индекс, `added_by_telegram_id`, drop not null). Модуль `swarm-api/task-comments.ts` (`GET/POST/DELETE /tasks/:id/comments`, гейт = видимость задачи, удаление автор/админ, контент ≤4000), MCP-тулзы `get_task_comments`/`add_task_comment`, секция в `TaskDetail.tsx`, валидатор `_shared/tasks/comments.ts`. Автор — `added_by_telegram_id`, имя резолвится на чтении.
-
-**Решения (зафиксированы, не переоткрывать):** страна — поповер с флагами; комментарии — **без уведомлений**, **без редактирования**; поверхности — **веб + MCP** (бот отложен: бейдж «💬 N» + deep-link позже); удаление — автор свой / админ любой.
+**Отложено (не в этой итерации):** комментарии в Telegram-боте (бейдж «💬 N» + deep-link в веб); уведомления о новых комментах; редактирование комментов; удаление комментов через MCP.
 
 ## 🔧 [КОД ГОТОВ · РАСКАТКА ПРИДЕРЖАНА 2026-07-21] Рекордер: авто-стоп при закрытии крышки / сне (build 13)
 

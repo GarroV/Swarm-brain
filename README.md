@@ -146,7 +146,7 @@ recorder/                       # SwarmRecorder — macOS меню-бар рек
 | `sprints` | Спринты (Рой) |
 | `task_dependencies` | Зависимости задач (Рой) |
 | `task_history` | История изменений задач |
-| `task_comments` | Комментарии к задачам (таблица есть, код не использует) |
+| `task_comments` | Комментарии-апдейты к задачам (веб + MCP) |
 | `meetings` | Swarm Meetings — источник истины о встрече рекордера (НЕ путать с `entries`) |
 | `sessions` | Состояние диалога бота (TTL 30 мин) |
 | `allowed_users` | Белый список Telegram-аккаунтов + токены MCP/рекордера |
@@ -226,6 +226,8 @@ recorder/                       # SwarmRecorder — macOS меню-бар рек
 | `add_task` / `update_task` / `delete_task` | CRUD задач |
 | `get_meetings` | Последние встречи из Read.ai |
 | `get_users` | Команда с профилями, фильтр по market |
+| `get_task_comments` | Комментарии-апдейты к задаче по её ID |
+| `add_task_comment` | Добавить комментарий-апдейт к задаче от своего лица |
 
 ### Веб-интерфейс «Рой»
 

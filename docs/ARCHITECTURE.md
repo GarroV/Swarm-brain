@@ -159,7 +159,7 @@ supabase/functions/swarm-bot/
 | `app_settings` | Глобальные настройки | `key`, `value` — хранит `feedback_channel_id` |
 | `oauth_tokens` | OAuth токены интеграций | `service` (`read_ai`), `client_id`, `access_token`, `refresh_token`, `expires_at`, `updated_at` |
 | `oauth_state` | Временный PKCE state для OAuth | `state`, `client_id`, `code_verifier` — создаётся при старте OAuth, удаляется после callback |
-| `task_comments` | Комментарии к задачам | Таблица существует, код не использует — не задействована |
+| `task_comments` | Комментарии-апдейты к задаче (веб + MCP) | `task_id` (FK → `tasks`, ON DELETE CASCADE, индекс `idx_task_comments_task_id`), `content`, `added_by_telegram_id` (bigint; имя резолвится на чтении), `added_by` (legacy, nullable), `created_at` |
 
 ### `tasks.status` — значения и целостность
 
@@ -718,6 +718,9 @@ _Задачи / спринты / зависимости:_
 | `POST` | `/task-labels` | Создать метку `{ name, icon?, color? }` |
 | `PATCH` | `/task-labels/:id` | Обновить `{ name?, icon?, color?, sort_order? }` — только владелец метки (иначе 404/403) |
 | `DELETE` | `/task-labels/:id` | Удалить метку + вычистить её id из `tasks.label_ids` владельца — только владелец |
+| `GET` | `/tasks/:id/comments` | Комментарии к задаче (старые→новые), с резолвом имени автора. Гейт = видимость задачи (`group_id` + приватность). Модуль `swarm-api/task-comments.ts` |
+| `POST` | `/tasks/:id/comments` | Добавить комментарий `{content}` (≤4000 символов, валидатор `_shared/tasks/comments.ts`). Автор — вызывающий (`added_by_telegram_id`) |
+| `DELETE` | `/tasks/:id/comments/:cid` | Удалить комментарий — только автор или админ |
 | `GET` | `/sprints` | Спринты воркспейса (все участники) |
 | `POST` | `/sprints` | Создать спринт (`name`, `start_date`, `end_date`, `status`) — **только admin** |
 | `PATCH` | `/sprints/:id` | Обновить спринт — только admin |
@@ -826,8 +829,10 @@ supabase/functions/swarm-mcp/
 | `delete_task` | Удалить задачу |
 | `get_tasks` | Список задач с фильтрами (в т.ч. `label` — имя личной смарт-метки) |
 | `list_task_labels` | Список личных смарт-меток вызывающего (имя + id) |
+| `get_task_comments` | Комментарии-апдейты к задаче по её ID (если задача доступна вызывающему) |
+| `add_task_comment` | Добавить комментарий-апдейт к задаче по её ID от лица вызывающего |
 
-Все инструменты принимают `requesting_user_id` (Telegram ID) для резолва воркспейса.
+Все инструменты принимают `requesting_user_id` (Telegram ID) для резолва воркспейса и приватности.
 
 ---
 
