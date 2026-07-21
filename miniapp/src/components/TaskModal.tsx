@@ -19,7 +19,7 @@ import { useConfirm } from "@/components/ui/confirm";
 import { Segmented } from "@/components/roy/ui";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { PictogramPicker, type PictoOption } from "@/components/tasks/PictogramPicker";
-import { COUNTRY_NAMES, countryName, countryFlag } from "@/lib/countries";
+import { COUNTRY_NAMES, countryName, countryFlag, countryCode } from "@/lib/countries";
 
 const TASK_ROLES = [
   { value: "marketing", label: "Marketing" },
@@ -104,8 +104,21 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
 
   // Опции страны: рынки воркспейса + «Global» (пусто) + легаси-фолбэк (страна задачи вне
   // текущего allowed_markets — чтобы при редактировании не потерять её).
+  // Дедуп сверяем через ту же нормализацию, что countryName/countryFlag (countryCode()),
+  // иначе легаси-значение вроде "kz" или "Kazakhstan" не матчится с каноническим "KZ"
+  // и попадает в список вторым, дублирующим пунктом.
   const countryCodes = markets.length ? [...markets] : Object.keys(COUNTRY_NAMES);
-  if (country && !countryCodes.includes(country)) countryCodes.push(country);
+  let selectedCountryId = country;
+  if (country) {
+    const normalizedCountry = countryCode(country);
+    const matchedCode = countryCodes.find((code) => countryCode(code) === normalizedCountry);
+    if (matchedCode) {
+      // Уже есть канонический пункт для этой страны — подсвечиваем его, а не легаси-значение.
+      selectedCountryId = matchedCode;
+    } else {
+      countryCodes.push(country);
+    }
+  }
   const countryOptions: PictoOption[] = [
     { id: "", label: "Global", icon: "globe" },
     ...countryCodes.map((code) => ({ id: code, label: countryName(code), flag: countryFlag(code) })),
@@ -249,7 +262,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
                   ariaLabel="Страна"
                   multi={false}
                   options={countryOptions}
-                  selected={country ? [country] : [""]}
+                  selected={selectedCountryId ? [selectedCountryId] : [""]}
                   onToggle={(code) => setCountry(code)}
                   trigger={
                     <span className={`${fieldCls} flex items-center justify-between`}>
