@@ -2,12 +2,15 @@
 
 > Этот файл ведётся **вручную**: открытые задачи, технический долг, идеи. Это НЕ автогенерируемый `CHANGELOG.md` (тот собирается из git-коммитов).
 
-## ✅ [СДЕЛАНО 2026-07-21] Пикер страны в форме задачи + комментарии к задачам
+## 🔧 [КОД ГОТОВ · РАСКАТКА ЖДЁТ 2026-07-21] Пикер страны в форме задачи + комментарии к задачам
 
-- Пикер страны (рынки воркспейса, флаги) в `TaskModal` вместо свободного поля — `PictogramPicker` c кастомным триггером; бэкенд не менялся.
-- Комментарии к задачам (веб + MCP): таблица `task_comments` доведена (FK/индекс/`added_by_telegram_id`), swarm-api `task-comments.ts` (`/tasks/:id/comments`), MCP `get_task_comments`/`add_task_comment`, секция в `TaskDetail`. Автор резолвится на чтении. Спека/план: `docs/superpowers/specs/2026-07-21-task-country-picker-and-comments-design.md`, `docs/superpowers/plans/2026-07-21-task-country-picker-and-comments.md`.
+> Реализовано через subagent-driven-development (ultracode Workflow: последовательная реализация + adversarial многолинзовое ревью по риску + fix-цикл + финальное whole-branch ревью на opus). Спека/план: `docs/superpowers/specs/2026-07-21-task-country-picker-and-comments-design.md`, `docs/superpowers/plans/2026-07-21-task-country-picker-and-comments.md`.
 
-**Отложено (не в этой итерации):** комментарии в Telegram-боте (бейдж «💬 N» + deep-link в веб); уведомления о новых комментах; редактирование комментов; удаление комментов через MCP.
+- **[⏸ КОД ГОТОВ+ПРОВЕРЕН, НЕ ЗАДЕПЛОЕН/НЕ ЗАПУШЕН]** 13 коммитов на `sandbox_vas` (`ff4abd1`..`69603fa`), **push не делали**. Проверено локально: `deno check` swarm-api+swarm-mcp = 0, `deno test` валидатора 3/3, `npm run build` miniapp зелёный, финальное ревью opus = merge-ready (только Minor, все либо исправлены полировкой, либо отложены). **Осталось раскатать (Task 9, нужно решение владельца):** применить миграцию `20260721120000_task_comments_fk.sql` (staging → прод), `supabase functions deploy swarm-api swarm-mcp --no-verify-jwt`, смоук цикла коммента, `git push origin sandbox_vas` (веб авто-деплоится CF Pages на пуш).
+- Пикер страны (рынки воркспейса, флаги) в `TaskModal` вместо свободного поля — `PictogramPicker` c кастомным триггером; бэкенд не менялся (`task.country: string|null`).
+- Комментарии к задачам (веб + MCP): таблица `task_comments` доведена (FK+cascade/индекс `idx_task_comments_task_id`/`added_by_telegram_id`, `added_by` nullable, база-схема синхронизирована), swarm-api `task-comments.ts` (`GET/POST/DELETE /tasks/:id/comments`, гейт = видимость задачи, удаление автор/админ, контент ≤4000 через общий `_shared/tasks/comments.ts`), MCP `get_task_comments`/`add_task_comment` (без admin-байпаса), секция в `TaskDetail`. Автор резолвится на чтении.
+
+**Отложено (не в этой итерации):** комментарии в Telegram-боте (бейдж «💬 N» + deep-link в веб); уведомления о новых комментах; редактирование комментов; удаление комментов через MCP; иконка-дисклоужер пикера страны — сейчас `cright` (в наборе `RoyIconName` нет нисходящего шеврона `cdown`), при желании добавить его в `icons.tsx`.
 
 ## 🔧 [КОД ГОТОВ · РАСКАТКА ПРИДЕРЖАНА 2026-07-21] Рекордер: авто-стоп при закрытии крышки / сне (build 13)
 
