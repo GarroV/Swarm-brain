@@ -32,9 +32,14 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "";
 // Язык-фолбэк последней инстанции для пина микрофона, когда ни sys-якорь, ни большинство по всем
-// частям язык не дали (офлайн-встреча без sys-дорожки). ISO-639-1; безопасный дефолт "ru" для
-// этого деплоя (команда пишет по-русски). Пин — мягкий хинт Whisper, НЕ перевод: иноязычную речь
-// он не искажает (см. transcribeAudio), поэтому дефолт безопасен даже для англоязычной встречи.
+// частям язык не дали (офлайн-встреча без sys-дорожки). ISO-639-1; дефолт "ru" для этого деплоя
+// (команда пишет по-русски). ВНИМАНИЕ: `language` на whisper-1 — НЕ перевод (перевод лишь на
+// /translations, всегда только в английский), НО и НЕ безобидный хинт: он пинит декодер, а
+// verbose_json.language возвращает ЗАДАННЫЙ код. Следствие: офлайн-встреча, где владелец реально
+// говорит по-английски, декодируется под ru-токеном (искажённо) и метится "russian" — и само НЕ
+// вылечивается (все части вернут lang="russian" → рассинхрона нет → ре-транскрибации нет). Это
+// осознанно принято под RU-деплой (spec §Risk): кейс «RU-владелец говорит по-английски в офлайне»
+// много реже целевого silent-sys-RU. Для не-RU деплоя — пересмотреть DEFAULT_MEETING_LANG.
 const DEFAULT_MEETING_LANG_CODE = (Deno.env.get("DEFAULT_MEETING_LANG") || "ru").toLowerCase();
 const DEFAULT_MEETING_LANG_NAME = CODE_TO_LANG_NAME[DEFAULT_MEETING_LANG_CODE] ?? "russian";
 
