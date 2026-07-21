@@ -160,12 +160,14 @@ create index if not exists idx_task_history_task_id on public.task_history (task
 
 -- ── task_comments ───────────────────────────────────────────────────────────
 create table if not exists public.task_comments (
-  id         uuid primary key default gen_random_uuid(),
-  task_id    uuid not null,
-  content    text not null,
-  added_by   text not null,
-  created_at timestamptz default now()
+  id                   uuid primary key default gen_random_uuid(),
+  task_id              uuid not null references public.tasks(id) on delete cascade,
+  content              text not null,
+  added_by             text,
+  added_by_telegram_id bigint,
+  created_at           timestamptz default now()
 );
+create index if not exists idx_task_comments_task_id on public.task_comments (task_id);
 
 -- ── task_dependencies (blocks / relates_to / duplicates) ─────────────────────
 create table if not exists public.task_dependencies (
