@@ -38,6 +38,7 @@ import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-d
 import { handleAdminRoutes } from "./admin.ts";
 import { corsHeaders, json, apiErr } from "./http.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
+import { handleTaskCommentRoutes } from "./task-comments.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
@@ -74,7 +75,7 @@ async function withEntries(
 // username — в allowed_users (НЕ в user_profiles). Раньше код селектил username прямо из
 // user_profiles → PostgREST падал на несуществующей колонке → data=null → имена не
 // резолвились (в UI «#744230399»). Берём first+last, фолбэк на @username, затем «#id».
-async function resolveNames(ids: number[]): Promise<Map<number, string>> {
+export async function resolveNames(ids: number[]): Promise<Map<number, string>> {
   const out = new Map<number, string>();
   if (ids.length === 0) return out;
   const [{ data: profs }, { data: aus }] = await Promise.all([
@@ -409,6 +410,10 @@ Deno.serve(async (req: Request) => {
   // Персональные смарт-метки задач (/task-labels*) — доступ строго свой (owner_id).
   const labelResp = await handleTaskLabelRoutes(supabase, req, routePath, telegram_id, groupId, origin);
   if (labelResp) return labelResp;
+
+  // Комментарии к задачам (/tasks/:id/comments) — доступ по видимости задачи.
+  const commentResp = await handleTaskCommentRoutes(supabase, req, routePath, telegram_id, groupId, isAdmin, origin, resolveNames);
+  if (commentResp) return commentResp;
 
   // GET /tasks or POST /tasks
   if (routePath === "/tasks") {
