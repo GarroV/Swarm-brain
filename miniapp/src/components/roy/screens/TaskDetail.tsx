@@ -107,11 +107,23 @@ export function TaskDetail({ id }: { id: string }) {
     const text = draft.trim();
     if (!text || sending) return;
     setSending(true);
+    // Оптимистично добавляем комментарий с временным id, затем заменяем ответом сервера.
+    const tempId = `temp-${Date.now()}`;
+    const optimistic: TaskComment = {
+      id: tempId,
+      content: text,
+      author_name: me?.name ?? "",
+      author_telegram_id: me?.telegram_id ?? null,
+      created_at: new Date().toISOString(),
+    };
+    setComments((prev) => [...prev, optimistic]);
+    setDraft("");
     try {
       const created = await addTaskComment(id, text);
-      setComments((prev) => [...prev, created]);
-      setDraft("");
+      setComments((prev) => prev.map((c) => (c.id === tempId ? created : c)));
     } catch {
+      setComments((prev) => prev.filter((c) => c.id !== tempId));
+      setDraft(text);
       toast("Не удалось отправить");
     } finally {
       setSending(false);
@@ -119,12 +131,15 @@ export function TaskDetail({ id }: { id: string }) {
   };
 
   const removeComment = async (commentId: string) => {
-    const prev = comments;
+    const removed = comments.find((c) => c.id === commentId);
+    if (!removed) return;
     setComments((cs) => cs.filter((c) => c.id !== commentId));
     try {
       await deleteTaskComment(id, commentId);
     } catch {
-      setComments(prev);
+      // Откат точечный: возвращаем только этот комментарий на его место по времени,
+      // чтобы не воскресить уже успешно удалённые (гонка параллельных удалений).
+      setComments((cs) => [...cs, removed].sort((a, b) => a.created_at.localeCompare(b.created_at)));
       toast("Не удалось удалить");
     }
   };
