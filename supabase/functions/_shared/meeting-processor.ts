@@ -20,7 +20,6 @@ import {
   WHISPER_HALLUCINATION_RE,
 } from "./whisper-hallucinations.ts";
 import {
-  CODE_TO_LANG_NAME,
   langCode,
   type LangVotePart,
   partsNeedingRetranscribe,
@@ -31,17 +30,6 @@ import { TEZISY_CORE } from "./tezisy-prompt.ts";
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "";
-// Язык-фолбэк последней инстанции для пина микрофона, когда ни sys-якорь, ни большинство по всем
-// частям язык не дали (офлайн-встреча без sys-дорожки). ISO-639-1; дефолт "ru" для этого деплоя
-// (команда пишет по-русски). ВНИМАНИЕ: `language` на whisper-1 — НЕ перевод (перевод лишь на
-// /translations, всегда только в английский), НО и НЕ безобидный хинт: он пинит декодер, а
-// verbose_json.language возвращает ЗАДАННЫЙ код. Следствие: офлайн-встреча, где владелец реально
-// говорит по-английски, декодируется под ru-токеном (искажённо) и метится "russian" — и само НЕ
-// вылечивается (все части вернут lang="russian" → рассинхрона нет → ре-транскрибации нет). Это
-// осознанно принято под RU-деплой (spec §Risk): кейс «RU-владелец говорит по-английски в офлайне»
-// много реже целевого silent-sys-RU. Для не-RU деплоя — пересмотреть DEFAULT_MEETING_LANG.
-const DEFAULT_MEETING_LANG_CODE = (Deno.env.get("DEFAULT_MEETING_LANG") || "ru").toLowerCase();
-const DEFAULT_MEETING_LANG_NAME = CODE_TO_LANG_NAME[DEFAULT_MEETING_LANG_CODE] ?? "russian";
 
 export const AUDIO_BUCKET = "meeting-audio";
 // Параллелизм транскрибации частей в одном шаге. Whisper-вызовы — сетевой I/O (не жрут CPU-лимит),
@@ -155,14 +143,14 @@ async function transcribeAudio(audio: Blob, filename: string, languageHint?: str
   return { segments, language: typeof d.language === "string" ? d.language : undefined, viaFallback };
 }
 
-// Проекция частей для чистой логики резолвинга языка (см. _shared/meeting-lang.ts). segmentCount —
-// число РЕАЛЬНЫХ сегментов (после фильтра галлюцинаций); viaFallback — сегмент из d.text-фолбэка.
+// Проекция частей для чистой логики резолвинга языка (см. _shared/meeting-lang.ts). charCount —
+// объём РЕАЛЬНОЙ речи (сумма длин текста сегментов после фильтра галлюцинаций); viaFallback —
+// сегмент только из d.text-фолбэка (не голосует).
 function toVoteParts(parts: Part[]): LangVotePart[] {
   return parts.map((p) => ({
-    track: p.track,
     done: p.done,
     lang: p.lang,
-    segmentCount: p.segments?.length ?? 0,
+    charCount: (p.segments ?? []).reduce((n, s) => n + s.text.length, 0),
     viaFallback: p.viaFallback,
   }));
 }
@@ -328,15 +316,17 @@ async function markFailed(supabase: SupabaseClient, m: MeetingRow): Promise<void
 // ── Финал: сводим транскрипт → тезисы → done → уведомляем → чистим Storage ──────
 async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state: ProcessState): Promise<void> {
   const micOffset = typeof m.mic_start_offset === "number" && Number.isFinite(m.mic_start_offset) ? m.mic_start_offset : 0;
-  // Язык встречи по цепочке фолбэков (sys-якорь → большинство по всем частям → дефолт). Никогда не
-  // бывает пустым, так что офлайн-RU (без sys-дорожки) остаётся русским, а не сваливается в английский.
-  const resolved = resolveMeetingLang(toVoteParts(state.parts), DEFAULT_MEETING_LANG_NAME);
+  // Язык встречи — язык-нейтральный автодетект, взвешенный по объёму РЕАЛЬНОЙ речи по всем частям
+  // (см. _shared/meeting-lang.ts). Русская встреча → russian, английская → english. Нет реальной
+  // речи → undefined (пина нет, каждый чанк остаётся на своём автодетекте Whisper — без форс-ru).
+  const resolved = resolveMeetingLang(toVoteParts(state.parts));
 
   // Части, чей детект языка ≠ языку встречи, — ПЕРЕтранскрибируем с пином языка встречи (а НЕ
   // выбрасываем: дропать реальный транскрипт владельца хуже болезни). Только рассинхронные, не
-  // блэнкет-двойной проход. Пин ставим лишь если язык мапится в ISO; аудио ещё в Storage (чистим ниже).
-  const pin = langCode(resolved);
-  if (pin) {
+  // блэнкет-двойной проход. Пин ставим лишь если язык резолвился и мапится в ISO; аудио ещё в
+  // Storage (чистим ниже).
+  const pin = resolved ? langCode(resolved) : undefined;
+  if (resolved && pin) {
     const idxs = partsNeedingRetranscribe(toVoteParts(state.parts), resolved);
     for (const i of idxs) {
       try {
@@ -468,12 +458,13 @@ export async function runMeetingStep(
         // sys — берём только их; система закончилась → переходим к микрофону с языком встречи.
         const pendingSys = pendingAll.filter((p) => p.track === "sys");
         const pending = pendingSys.length > 0 ? pendingSys : pendingAll;
-        // Пин микрофона = язык встречи по цепочке фолбэков (sys-якорь → большинство по всем частям →
-        // дефолт). В отличие от прежнего sys-only якоря, НИКОГДА не пустой: офлайн-RU без sys-дорожки
-        // пинуется в дефолт (ru), а не авто-детектится тихим микрофоном как английский.
+        // Пин микрофона = язык встречи, взвешенный по объёму реальной речи по всем готовым частям
+        // (язык-нейтрально). Пока речи мало (первые чанки тишины) — undefined → микрофон на
+        // автодетекте Whisper; по мере накопления реальных символов пин сходится к языку встречи, а
+        // ранние флипнутые чанки чинятся ре-транскрибацией на сведении. Форс-ru нет.
         const micHint = pendingSys.length > 0
           ? undefined
-          : langCode(resolveMeetingLang(toVoteParts(state.parts), DEFAULT_MEETING_LANG_NAME));
+          : langCode(resolveMeetingLang(toVoteParts(state.parts)));
         const batch = pending.slice(0, TRANSCRIBE_CONCURRENCY);
         await mapLimit(batch, TRANSCRIBE_CONCURRENCY, async (p) => {
           try {

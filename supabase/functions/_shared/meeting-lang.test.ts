@@ -1,5 +1,5 @@
-// Тесты резолвинга языка встречи (цепочка фолбэков) и решения о ре-транскрибации.
-// Запуск: deno test supabase/functions/_shared/meeting-lang.test.ts
+// Тесты резолвинга языка встречи (язык-нейтральный, взвешенный по РЕАЛЬНОЙ речи) и решения о
+// ре-транскрибации. Запуск: deno test supabase/functions/_shared/meeting-lang.test.ts
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   langCode,
@@ -8,95 +8,141 @@ import {
   resolveMeetingLang,
 } from "./meeting-lang.ts";
 
-const sys = (lang: string | undefined, segmentCount: number, viaFallback = false): LangVotePart => ({
-  track: "sys",
-  done: true,
+// charCount — сумма длин текста реальных сегментов (после фильтра галлюцинаций).
+const part = (
+  lang: string | undefined,
+  charCount: number,
+  opts: { viaFallback?: boolean; done?: boolean } = {},
+): LangVotePart => ({
+  done: opts.done ?? true,
   lang,
-  segmentCount,
-  viaFallback,
-});
-const mic = (lang: string | undefined, segmentCount: number, viaFallback = false): LangVotePart => ({
-  track: "mic",
-  done: true,
-  lang,
-  segmentCount,
-  viaFallback,
+  charCount,
+  viaFallback: opts.viaFallback ?? false,
 });
 
 Deno.test("langCode — известные имена → ISO, мусор → undefined", () => {
   assertEquals(langCode("russian"), "ru");
   assertEquals(langCode("English"), "en");
   assertEquals(langCode("dutch"), "nl"); // расширенная таблица
-  assertEquals(langCode("welsh"), "cy"); // раньше молча дропалось → undefined
+  assertEquals(langCode("welsh"), "cy");
   assertEquals(langCode("qwerty"), undefined);
   assertEquals(langCode(undefined), undefined);
 });
 
-Deno.test("resolveMeetingLang — офлайн RU: тихая sys + русский mic → russian", () => {
-  // sys — галлюцинация тишины: 0 реальных сегментов (после фильтра), язык мог остаться "welsh".
-  // mic — 785 реальных русских сегментов. Ожидаем russian (шаг 2 цепочки — большинство по всем).
+Deno.test("resolveMeetingLang — RU остаётся RU: русская речь + один флипнутый low-char english", () => {
+  // Тихий чанк мис-детектнулся как english, но несёт мало реальных символов → не может
+  // перебить чанки, где реально говорили по-русски. Побеждает язык с бОльшим объёмом речи.
   const parts: LangVotePart[] = [
-    sys("welsh", 0),
-    mic("russian", 400),
-    mic("russian", 385),
+    part("russian", 4200),
+    part("russian", 3800),
+    part("english", 30), // флипнутая тишина, крохи
   ];
-  assertEquals(resolveMeetingLang(parts, "russian"), "russian");
+  assertEquals(resolveMeetingLang(parts), "russian");
 });
 
-Deno.test("resolveMeetingLang — sys только через d.text-фолбэк не якорит", () => {
+Deno.test("resolveMeetingLang — EN остаётся EN: английская речь + мелкий русский чанк (НЕ форсим ru)", () => {
   const parts: LangVotePart[] = [
-    sys("english", 1, /*viaFallback*/ true),
-    mic("russian", 100),
+    part("english", 5000),
+    part("english", 4200),
+    part("russian", 40), // мелкий флипнутый чанк
   ];
-  assertEquals(resolveMeetingLang(parts, "russian"), "russian");
+  const r = resolveMeetingLang(parts);
+  assertEquals(r, "english");
+  assert(r !== "russian"); // КЛЮЧЕВОЕ: никакого форс-ru байаса
 });
 
-Deno.test("resolveMeetingLang — реальный английский sys якорит поверх шумного mic", () => {
+Deno.test("resolveMeetingLang — взвешивание по речи: пачка крохотных english не перебивает один большой russian", () => {
   const parts: LangVotePart[] = [
-    sys("english", 60),
-    sys("english", 40),
-    mic("russian", 10), // ложный детект короткого mic
+    part("russian", 6000),
+    part("english", 25),
+    part("english", 22),
+    part("english", 28),
   ];
-  assertEquals(resolveMeetingLang(parts, "russian"), "english");
+  assertEquals(resolveMeetingLang(parts), "russian");
 });
 
-Deno.test("resolveMeetingLang — всё пусто/флипнуто → дефолт", () => {
+Deno.test("resolveMeetingLang — нет реальной речи → undefined (НЕ ru, без пина)", () => {
+  // Все части — галлюцинация тишины (0 реальных символов после фильтра) либо без языка.
   const parts: LangVotePart[] = [
-    sys("welsh", 0),
-    mic("english", 0),
+    part("welsh", 0),
+    part("english", 0),
+    part(undefined, 0),
   ];
-  assertEquals(resolveMeetingLang(parts, "russian"), "russian");
-  assertEquals(resolveMeetingLang([], "english"), "english");
+  assertEquals(resolveMeetingLang(parts), undefined);
+  assertEquals(resolveMeetingLang([]), undefined);
 });
 
-Deno.test("resolveMeetingLang — минимум сегментов: одиночный сегмент не якорит sys", () => {
-  // sys с единственным сегментом (ниже MIN_ANCHOR_SEGMENTS) не должен перекрывать реальный mic.
+Deno.test("resolveMeetingLang — смешанная 60/40 → язык большинства речи", () => {
   const parts: LangVotePart[] = [
-    sys("english", 1),
-    mic("russian", 50),
+    part("russian", 600),
+    part("english", 400),
   ];
-  assertEquals(resolveMeetingLang(parts, "russian"), "russian");
+  assertEquals(resolveMeetingLang(parts), "russian");
+});
+
+Deno.test("resolveMeetingLang — онлайн RU-звонок с реальным собеседником резолвится RU", () => {
+  // Речь есть на обеих дорожках (трек больше не важен для голоса) — побеждает russian по объёму.
+  const parts: LangVotePart[] = [
+    part("russian", 3000), // собеседник (sys)
+    part("russian", 2500), // владелец (mic)
+  ];
+  assertEquals(resolveMeetingLang(parts), "russian");
+});
+
+Deno.test("resolveMeetingLang — реальный английский собеседник резолвится EN поверх шумного мелкого mic", () => {
+  const parts: LangVotePart[] = [
+    part("english", 3000),
+    part("english", 2000),
+    part("russian", 40), // ложный детект короткого mic
+  ];
+  assertEquals(resolveMeetingLang(parts), "english");
+});
+
+Deno.test("resolveMeetingLang — d.text-фолбэк не голосует (ненадёжная речь)", () => {
+  const parts: LangVotePart[] = [
+    part("english", 500, { viaFallback: true }), // фолбэк d.text — исключён из голоса
+    part("russian", 100),
+  ];
+  assertEquals(resolveMeetingLang(parts), "russian");
+});
+
+Deno.test("resolveMeetingLang — near-empty часть ниже порога не голосует", () => {
+  const parts: LangVotePart[] = [
+    part("english", 5), // ниже MIN_REAL_CHARS
+    part("russian", 100),
+  ];
+  assertEquals(resolveMeetingLang(parts), "russian");
+  // одинокая под-пороговая часть → нечего пинить
+  assertEquals(resolveMeetingLang([part("english", 5)]), undefined);
+});
+
+Deno.test("resolveMeetingLang — незавершённая часть не голосует", () => {
+  const parts: LangVotePart[] = [
+    part("english", 5000, { done: false }),
+    part("russian", 100),
+  ];
+  assertEquals(resolveMeetingLang(parts), "russian");
 });
 
 Deno.test("partsNeedingRetranscribe — только реальные части с чужим языком", () => {
   const parts: LangVotePart[] = [
-    sys("russian", 30), // совпадает
-    mic("english", 20), // чужой → ре-транскрибация (idx 1)
-    mic("russian", 40), // совпадает
-    mic("english", 0), // пусто → нечего чинить
+    part("russian", 300), // совпадает
+    part("english", 200), // чужой → ре-транскрибация (idx 1)
+    part("russian", 400), // совпадает
+    part("english", 0), // пусто → нечего чинить
   ];
   assertEquals(partsNeedingRetranscribe(parts, "russian"), [1]);
 });
 
 Deno.test("partsNeedingRetranscribe — незавершённые и безъязыкие пропускаются", () => {
   const parts: LangVotePart[] = [
-    { track: "mic", done: false, lang: "english", segmentCount: 10 },
-    { track: "mic", done: true, lang: undefined, segmentCount: 10 },
+    { done: false, lang: "english", charCount: 100 },
+    { done: true, lang: undefined, charCount: 100 },
   ];
   assertEquals(partsNeedingRetranscribe(parts, "russian"), []);
 });
 
 Deno.test("partsNeedingRetranscribe — совпадающий язык не трогаем", () => {
-  const parts: LangVotePart[] = [mic("russian", 10), sys("russian", 10)];
+  const parts: LangVotePart[] = [part("russian", 100), part("russian", 100)];
   assertEquals(partsNeedingRetranscribe(parts, "russian"), []);
 });

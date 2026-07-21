@@ -1,19 +1,23 @@
 // Резолвинг языка встречи для транскрибации — чистая логика (без сети/БД, тестируется отдельно).
 //
-// Проблема: язык дорожки МИКРОФОНА раньше пинился ТОЛЬКО по системной дорожке (речь собеседника).
-// В офлайн-встрече (один микрофон, sys-дорожки нет by design) якоря нет → Whisper авто-детектит
-// тихий/русский микрофон как английский и транскрибирует по-английски (инцидент b8b7a609).
+// ЯЗЫК-НЕЙТРАЛЬНО и БЕЗ БАЙАСА: язык встречи выводится из САМОГО аудио, а не из дефолта.
+// Русская встреча → русский, английская → английский — решает то, на каком языке РЕАЛЬНО
+// говорили дольше всего.
 //
-// Цепочка фолбэков (миграция БД НЕ нужна):
-//   1. Надёжный sys-якорь — большинство языка по РЕАЛЬНЫМ sys-частям (не d.text-фолбэк,
-//      не галлюцинация-only, не меньше MIN_ANCHOR_SEGMENTS сегментов). Тихая sys НЕ якорит.
-//   2. Иначе — большинство по ВСЕМ реальным частям (sys+mic), взвешенно по числу сегментов.
-//      Для офлайн-RU большинство mic-частей = russian → встреча остаётся русской.
-//   3. Иначе — дефолт (env DEFAULT_MEETING_LANG, безопасно "ru" для этого деплоя).
+// Проблема, которую это чинит: Whisper определяет язык по первым ~30с КАЖДОГО чанка. Офлайн-записи
+// часто начинаются с тишины → такой чанк авто-детектится как английский (дефолт Whisper на
+// неоднозначном входе) и транскрибирует иноязычную речь по-английски. Чанки с реальной речью
+// детектятся правильно.
+//
+// Решение — голосование, ВЗВЕШЕННОЕ ПО ОБЪЁМУ РЕАЛЬНОЙ РЕЧИ (число символов транскрипта), по ВСЕМ
+// частям (mic+sys). Чанк-тишина, мис-детектнутый как английский (или галлюцинация-«аутро»), несёт
+// почти ноль реальных символов → не может перебить чанки, где реально говорили. Побеждает язык с
+// наибольшим числом символов реальной речи. Никакого форс-дефолта: если реальной речи нет вообще —
+// возвращаем undefined (пина нет, отдаём Whisper его собственный по-чанковый автодетект).
 
 // Whisper возвращает язык ИМЕНЕМ ("russian"/"english"), а параметр transcription.language ждёт
-// ISO-639-1 ("ru"/"en"). Таблица расширена (не 15 строк, как раньше): реальный детект не должен
-// молча дропаться в undefined только потому, что имя не в списке (тогда бы пин не ставился).
+// ISO-639-1 ("ru"/"en"). Таблица широкая: реальный детект не должен молча дропаться в undefined
+// только потому, что имя не в списке (тогда бы пин не ставился).
 export const LANG_NAME_TO_CODE: Record<string, string> = {
   russian: "ru", english: "en", ukrainian: "uk", belarusian: "be", kazakh: "kk",
   uzbek: "uz", german: "de", french: "fr", spanish: "es", italian: "it",
@@ -27,62 +31,54 @@ export const LANG_NAME_TO_CODE: Record<string, string> = {
   catalan: "ca", galician: "gl", tamil: "ta", urdu: "ur", tagalog: "tl",
 };
 
-// Обратная таблица ISO → имя (для дефолтного языка из env, заданного кодом).
-export const CODE_TO_LANG_NAME: Record<string, string> = Object.fromEntries(
-  Object.entries(LANG_NAME_TO_CODE).map(([name, code]) => [code, name]),
-);
-
 export function langCode(name?: string): string | undefined {
   return name ? LANG_NAME_TO_CODE[name.toLowerCase()] : undefined;
 }
 
-// Минимум РЕАЛЬНЫХ сегментов, чтобы язык части учитывался в голосовании за язык встречи.
-// Отсекает одиночный d.text-фолбэк и слишком короткие/ненадёжные части.
-export const MIN_ANCHOR_SEGMENTS = 2;
+// Минимум РЕАЛЬНЫХ символов речи, чтобы язык части учитывался в голосовании. Отсекает near-empty
+// части (крохи после фильтра галлюцинаций / одиночный короткий d.text-фолбэк). Основной рычаг —
+// само взвешивание по символам; это лишь пол, чтобы негодная кроха не голосовала.
+export const MIN_REAL_CHARS = 20;
 
-// Голосующая проекция части (минимум для чистой логики; в проде — из Part).
+// Голосующая проекция части (минимум для чистой логики; в проде — из Part). Трек (mic/sys) в голосе
+// НЕ участвует — голосование язык-нейтрально по объёму речи; собеседник (sys) с реальной речью и так
+// побеждает по символам, а тихий/галлюцинированный sys исключён порогом и viaFallback.
 export interface LangVotePart {
-  track: "sys" | "mic";
   done: boolean;
   lang?: string; // имя языка от Whisper ("russian"/"english"/…)
-  segmentCount: number; // число РЕАЛЬНЫХ сегментов после фильтра галлюцинаций
-  viaFallback?: boolean; // сегменты пришли только из d.text-фолбэка (не настоящая речь)
+  charCount: number; // сумма длин текста РЕАЛЬНЫХ сегментов (после фильтра галлюцинаций)
+  viaFallback?: boolean; // сегменты пришли только из d.text-фолбэка (не настоящая речь) → не голосует
 }
 
-// Часть даёт надёжный голос за язык только если реально произвела речь.
-function isReliable(p: LangVotePart): boolean {
-  return p.done && !!p.lang && !p.viaFallback && p.segmentCount >= MIN_ANCHOR_SEGMENTS;
+// Часть даёт голос за язык только если реально произвела речь: завершена, с языком, не через
+// d.text-фолбэк и с достаточным объёмом символов.
+function hasRealSpeech(p: LangVotePart): boolean {
+  return p.done && !!p.lang && !p.viaFallback && p.charCount >= MIN_REAL_CHARS;
 }
 
-// Большинство языка среди надёжных частей, взвешенно по числу сегментов. Пусто → undefined.
-function majorityLang(parts: LangVotePart[]): string | undefined {
+// Язык встречи = язык с наибольшим объёмом РЕАЛЬНОЙ речи (символов) среди всех частей. Нет реальной
+// речи → undefined (пина нет; каждый чанк остаётся на собственном автодетекте Whisper — сегодняшнее
+// поведение). Форс-дефолта НЕТ: он исказил бы реально не-русскую встречу, а при отсутствии речи и
+// пинить нечего.
+export function resolveMeetingLang(parts: LangVotePart[]): string | undefined {
   const weight = new Map<string, number>();
   for (const p of parts) {
-    if (!isReliable(p)) continue;
-    weight.set(p.lang!, (weight.get(p.lang!) ?? 0) + p.segmentCount);
+    if (!hasRealSpeech(p)) continue;
+    weight.set(p.lang!, (weight.get(p.lang!) ?? 0) + p.charCount);
   }
   let best: string | undefined, bestN = 0;
   for (const [lang, n] of weight) if (n > bestN) { best = lang; bestN = n; }
   return best;
 }
 
-// Цепочка фолбэков (см. шапку). Возвращает ИМЯ языка (не ISO); дефолт — тоже имя.
-export function resolveMeetingLang(parts: LangVotePart[], defaultLang: string): string {
-  const sysAnchor = majorityLang(parts.filter((p) => p.track === "sys"));
-  if (sysAnchor) return sysAnchor;
-  const allMajority = majorityLang(parts);
-  if (allMajority) return allMajority;
-  return defaultLang;
-}
-
-// Какие части надо ПЕРЕтранскрибировать: реальные (есть сегменты), с языком, отличным от языка
+// Какие части надо ПЕРЕтранскрибировать: реальные (есть символы), с языком, отличным от языка
 // встречи. Возвращает индексы. Пустые/незавершённые/безъязыкие/совпадающие — пропускаются.
 // Мы ПЕРЕтранскрибируем с пином языка встречи, а НЕ выбрасываем часть (дропать реальный транскрипт
-// владельца хуже болезни).
+// владельца хуже болезни). Это и есть то, что чинит флипнутые чанки.
 export function partsNeedingRetranscribe(parts: LangVotePart[], resolvedLang: string): number[] {
   const out: number[] = [];
   parts.forEach((p, i) => {
-    if (!p.done || !p.lang || p.segmentCount === 0) return;
+    if (!p.done || !p.lang || p.charCount === 0) return;
     if (p.lang !== resolvedLang) out.push(i);
   });
   return out;
