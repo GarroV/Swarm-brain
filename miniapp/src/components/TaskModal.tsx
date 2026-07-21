@@ -12,11 +12,14 @@ import {
   deleteTask,
   fetchUsers,
   fetchTaskLabels,
+  fetchConfig,
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm";
 import { Segmented } from "@/components/roy/ui";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
+import { PictogramPicker, type PictoOption } from "@/components/tasks/PictogramPicker";
+import { COUNTRY_NAMES, countryName, countryFlag } from "@/lib/countries";
 
 const TASK_ROLES = [
   { value: "marketing", label: "Marketing" },
@@ -60,6 +63,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
   // Исходный исполнитель: чтобы при правке других полей не затирать его (PATCH шлём только при изменении).
   const [initialAssignee, setInitialAssignee] = useState(NONE);
   const [users, setUsers] = useState<User[]>([]);
+  const [markets, setMarkets] = useState<string[]>([]);
   const [labels, setLabels] = useState<TaskLabel[]>([]);
   const [labelIds, setLabelIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -82,6 +86,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
     setError(null);
     fetchUsers().then(setUsers).catch(() => {});
     fetchTaskLabels().then(setLabels).catch(() => {});
+    fetchConfig().then((c) => setMarkets(c.allowed_markets ?? [])).catch(() => {});
   }, [open, task]);
 
   // Опции исполнителя = пользователи воркспейса + текущий исполнитель, если его нет в списке
@@ -97,6 +102,15 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
     });
   }
 
+  // Опции страны: рынки воркспейса + «Global» (пусто) + легаси-фолбэк (страна задачи вне
+  // текущего allowed_markets — чтобы при редактировании не потерять её).
+  const countryCodes = markets.length ? [...markets] : Object.keys(COUNTRY_NAMES);
+  if (country && !countryCodes.includes(country)) countryCodes.push(country);
+  const countryOptions: PictoOption[] = [
+    { id: "", label: "Global", icon: "globe" },
+    ...countryCodes.map((code) => ({ id: code, label: countryName(code), flag: countryFlag(code) })),
+  ];
+
   const handleSave = async () => {
     if (!title.trim()) {
       setError("Нужно название");
@@ -109,7 +123,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
         title: title.trim(),
         description: description.trim() || null,
         due_date: dueDate || null,
-        country: country.trim() || null,
+        country: country || null,
         task_role: taskRole === NONE ? null : taskRole,
       };
       const assigneeValue = assigneeId === NONE ? null : parseInt(assigneeId, 10);
@@ -230,8 +244,23 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
               </div>
 
               <div>
-                <label htmlFor="modal-country" className={labelCls} style={{ fontSize: 12.5 }}>Страна</label>
-                <input id="modal-country" className={fieldCls} value={country} onChange={(e) => setCountry(e.target.value)} placeholder="напр. KZ, PL" />
+                <span className={labelCls} style={{ fontSize: 12.5 }}>Страна</span>
+                <PictogramPicker
+                  ariaLabel="Страна"
+                  multi={false}
+                  options={countryOptions}
+                  selected={country ? [country] : [""]}
+                  onToggle={(code) => setCountry(code)}
+                  trigger={
+                    <span className={`${fieldCls} flex items-center justify-between`}>
+                      <span className="flex items-center gap-2 truncate">
+                        <span style={{ fontSize: 15 }}>{country ? countryFlag(country) : "🌐"}</span>
+                        <span className="truncate">{country ? countryName(country) : "Global"}</span>
+                      </span>
+                      <RoyIcon name="cright" size={16} strokeWidth={1.9} className="shrink-0 text-ink-soft" />
+                    </span>
+                  }
+                />
               </div>
 
               <div>
