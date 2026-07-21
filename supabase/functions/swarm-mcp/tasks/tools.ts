@@ -284,9 +284,13 @@ async function commentTaskGuard(taskId: string, requestingUserId: number): Promi
 export async function toolGetTaskComments(args: { task_id: string; requesting_user_id: number }): Promise<string> {
   const guard = await commentTaskGuard(args.task_id, args.requesting_user_id);
   if (!guard.ok) return guard.msg;
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("task_comments").select("content, added_by_telegram_id, created_at")
     .eq("task_id", args.task_id).order("created_at", { ascending: true });
+  if (error) {
+    console.error("task_comments list failed:", error);
+    return "Ошибка: не удалось загрузить комментарии.";
+  }
   const rows = (data ?? []) as Array<{ content: string; added_by_telegram_id: number | null; created_at: string }>;
   if (!rows.length) return "Комментариев пока нет.";
   const ids = [...new Set(rows.map((r) => r.added_by_telegram_id).filter((x): x is number => !!x))];

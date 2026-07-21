@@ -42,11 +42,15 @@ export async function handleTaskCommentRoutes(
 
   // GET /tasks/:id/comments — лента (старые→новые)
   if (listMatch && req.method === "GET") {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("task_comments")
       .select("id, content, added_by_telegram_id, created_at")
       .eq("task_id", taskId)
       .order("created_at", { ascending: true });
+    if (error) {
+      console.error("task_comments list failed:", error);
+      return json({ error: "Не удалось загрузить комментарии" }, 500, origin);
+    }
     const rows = (data ?? []) as CommentRow[];
     const names = await resolveNames(rows.map((r) => r.added_by_telegram_id).filter((x): x is number => !!x));
     return json(rows.map((r) => ({
@@ -67,7 +71,10 @@ export async function handleTaskCommentRoutes(
       .from("task_comments")
       .insert({ task_id: taskId, content: v.value, added_by_telegram_id: telegramId })
       .select("id, content, added_by_telegram_id, created_at").single();
-    if (error) return json({ error: error.message }, 500, origin);
+    if (error) {
+      console.error("task_comments insert failed:", error);
+      return json({ error: "Не удалось добавить комментарий" }, 500, origin);
+    }
     const row = data as CommentRow;
     const names = await resolveNames([telegramId]);
     return json({
@@ -87,7 +94,11 @@ export async function handleTaskCommentRoutes(
     if (!c) return json({ error: "Комментарий не найден" }, 404, origin);
     const owns = (c as { added_by_telegram_id: number | null }).added_by_telegram_id === telegramId;
     if (!owns && !isAdmin) return json({ error: "Нельзя удалить чужой комментарий" }, 403, origin);
-    await supabase.from("task_comments").delete().eq("id", commentId);
+    const { error } = await supabase.from("task_comments").delete().eq("id", commentId);
+    if (error) {
+      console.error("task_comments delete failed:", error);
+      return json({ error: "Не удалось удалить комментарий" }, 500, origin);
+    }
     return json({ ok: true }, 200, origin);
   }
 
