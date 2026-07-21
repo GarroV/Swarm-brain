@@ -4,7 +4,7 @@ import { useRoyNav } from "../nav";
 import { NavHeader, Segmented, RoyCard, PriDot, Market, AvatarStack, SectionLabel, IconBtn, TypeTag } from "../ui";
 import { RoyIcon } from "../icons";
 import { entryTagKey, deriveEntryTitle } from "../entry";
-import { fetchTask, updateTask, deleteTask, fetchMeeting } from "@/lib/api";
+import { fetchTask, updateTask, deleteTask, fetchMeeting, fetchTaskComments, addTaskComment, deleteTaskComment, type TaskComment } from "@/lib/api";
 import { displayName } from "@/lib/utils";
 import type { Task, Entry } from "@/types";
 
@@ -54,11 +54,14 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export function TaskDetail({ id }: { id: string }) {
-  const { pop, push, toast } = useRoyNav();
+  const { pop, push, toast, me } = useRoyNav();
   const [t, setT] = useState<Task | null>(null);
   const [meeting, setMeeting] = useState<Entry | null>(null);
   const [err, setErr] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [comments, setComments] = useState<TaskComment[]>([]);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -73,6 +76,7 @@ export function TaskDetail({ id }: { id: string }) {
         }
       })
       .catch(() => alive && setErr(true));
+    fetchTaskComments(id).then((c) => alive && setComments(c)).catch(() => {});
     return () => {
       alive = false;
     };
@@ -95,6 +99,32 @@ export function TaskDetail({ id }: { id: string }) {
       toast("Задача удалена");
       pop();
     } catch {
+      toast("Не удалось удалить");
+    }
+  };
+
+  const submitComment = async () => {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      const created = await addTaskComment(id, text);
+      setComments((prev) => [...prev, created]);
+      setDraft("");
+    } catch {
+      toast("Не удалось отправить");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const removeComment = async (commentId: string) => {
+    const prev = comments;
+    setComments((cs) => cs.filter((c) => c.id !== commentId));
+    try {
+      await deleteTaskComment(id, commentId);
+    } catch {
+      setComments(prev);
       toast("Не удалось удалить");
     }
   };
@@ -185,6 +215,54 @@ export function TaskDetail({ id }: { id: string }) {
                 </button>
               </div>
             )}
+            <div className="mt-5">
+              <SectionLabel>Комментарии</SectionLabel>
+              {comments.length === 0 ? (
+                <p className="text-ink-soft" style={{ fontSize: 13 }}>Пока нет комментариев.</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {comments.map((c) => {
+                    const mine = c.author_telegram_id != null && c.author_telegram_id === me?.telegram_id;
+                    const canDelete = mine || !!me?.is_admin;
+                    return (
+                      <RoyCard key={c.id} className="px-4 py-3">
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="font-semibold text-ink" style={{ fontSize: 13 }}>{displayName(c.author_name)}</span>
+                          <span className="flex items-center gap-2">
+                            <span className="text-ink-mute" style={{ fontSize: 12 }}>{fmtDate(c.created_at)}</span>
+                            {canDelete && (
+                              <button type="button" aria-label="Удалить комментарий" onClick={() => removeComment(c.id)} className="text-ink-soft transition-colors hover:text-[var(--pri-high)]">
+                                <RoyIcon name="x" size={14} strokeWidth={2} />
+                              </button>
+                            )}
+                          </span>
+                        </div>
+                        <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 14, lineHeight: 1.5 }}>{c.content}</p>
+                      </RoyCard>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="mt-2.5 flex flex-col gap-2">
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  placeholder="Написать апдейт…"
+                  rows={2}
+                  className="w-full resize-y rounded-[12px] border border-line bg-surface px-3 py-2.5 text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute"
+                  style={{ fontSize: 14, lineHeight: 1.5 }}
+                />
+                <button
+                  type="button"
+                  onClick={submitComment}
+                  disabled={!draft.trim() || sending}
+                  className="self-end rounded-[12px] bg-primary px-4 py-2 font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-60"
+                  style={{ fontSize: 14 }}
+                >
+                  {sending ? "Отправка…" : "Отправить"}
+                </button>
+              </div>
+            </div>
           </>
         )}
       </div>

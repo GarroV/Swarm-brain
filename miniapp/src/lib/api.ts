@@ -475,6 +475,32 @@ export async function deleteDependency(taskId: string, depId: string): Promise<v
   return apiFetch<void>(`/tasks/${taskId}/dependencies/${depId}`, { method: "DELETE" });
 }
 
+// ── Task comments (апдейты) ─────────────────────────────────────────────────────
+export type TaskComment = {
+  id: string;
+  content: string;
+  author_name: string;
+  author_telegram_id: number | null;
+  created_at: string;
+};
+
+export async function fetchTaskComments(taskId: string): Promise<TaskComment[]> {
+  if (DEV_MODE) return [
+    { id: "c1", content: "Начал, жду данные от партнёра.", author_name: "Dev User", author_telegram_id: 123456, created_at: new Date().toISOString() },
+  ];
+  return apiFetch<TaskComment[]>(`/tasks/${taskId}/comments`);
+}
+
+export async function addTaskComment(taskId: string, content: string): Promise<TaskComment> {
+  if (DEV_MODE) return { id: Date.now().toString(), content, author_name: "Dev User", author_telegram_id: 123456, created_at: new Date().toISOString() };
+  return apiFetch<TaskComment>(`/tasks/${taskId}/comments`, { method: "POST", body: JSON.stringify({ content }) });
+}
+
+export async function deleteTaskComment(taskId: string, commentId: string): Promise<void> {
+  if (DEV_MODE) return;
+  return apiFetch<void>(`/tasks/${taskId}/comments/${commentId}`, { method: "DELETE" });
+}
+
 // ── Entries ───────────────────────────────────────────────────────────────────
 
 export async function fetchEntries(filters?: { source?: string; type?: string; date_from?: string; date_to?: string }): Promise<Entry[]> {
