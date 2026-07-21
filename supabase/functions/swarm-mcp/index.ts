@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolListTaskLabels, TASK_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS } from "./tasks/tools.ts";
+import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolListTaskLabels, toolGetTaskComments, toolAddTaskComment, TASK_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS, COMMENT_TOOL_DEFINITIONS } from "./tasks/tools.ts";
 import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../_shared/countries.ts";
 import { matchEntries } from "../_shared/search.ts";
 import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
@@ -160,6 +160,7 @@ const TOOLS = [
   },
   ...TASK_TOOL_DEFINITIONS,
   ...LABEL_TOOL_DEFINITIONS,
+  ...COMMENT_TOOL_DEFINITIONS,
   {
     name: "get_meetings",
     description: "Получить последние встречи из Read.ai сохранённые в базе знаний.",
@@ -908,6 +909,10 @@ Deno.serve(async (req: Request) => {
         result = await toolListTaskLabels(args as { requesting_user_id: number });
       } else if (name === "delete_task") {
         result = await toolDeleteTask(args as { id: string; requesting_user_id: number });
+      } else if (name === "get_task_comments") {
+        result = await toolGetTaskComments(args as { task_id: string; requesting_user_id: number });
+      } else if (name === "add_task_comment") {
+        result = await toolAddTaskComment(args as { task_id: string; content: string; requesting_user_id: number });
       } else if (name === "get_meetings") {
         result = await toolGetMeetings(args as { limit?: number; requesting_user_id?: number });
       } else if (name === "get_users") {

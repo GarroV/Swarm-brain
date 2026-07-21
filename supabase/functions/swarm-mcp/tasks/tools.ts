@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createTask, getTask, listTasks, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
+import { validateCommentContent } from "../../_shared/tasks/comments.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 
@@ -268,6 +269,50 @@ export async function toolGetTasks(args: {
   }).join("\n\n");
 }
 
+// ── Комментарии к задачам (апдейты) ────────────────────────────────────────────
+
+async function commentTaskGuard(taskId: string, requestingUserId: number): Promise<{ ok: true } | { ok: false; msg: string }> {
+  const task = await getTask(taskId);
+  if (!task) return { ok: false, msg: `Задача ${taskId} не найдена.` };
+  const groupId = await resolveGroupId(requestingUserId);
+  if (!groupId || task.group_id !== groupId) return { ok: false, msg: "Нет доступа: задача не в твоём воркспейсе." };
+  // Приватную задачу видит только владелец (в MCP админ-байпас не применяем — чистка в вебе).
+  if (task.is_private && task.owner_id !== requestingUserId) return { ok: false, msg: "Нет доступа: задача приватная." };
+  return { ok: true };
+}
+
+export async function toolGetTaskComments(args: { task_id: string; requesting_user_id: number }): Promise<string> {
+  const guard = await commentTaskGuard(args.task_id, args.requesting_user_id);
+  if (!guard.ok) return guard.msg;
+  const { data } = await supabase
+    .from("task_comments").select("content, added_by_telegram_id, created_at")
+    .eq("task_id", args.task_id).order("created_at", { ascending: true });
+  const rows = (data ?? []) as Array<{ content: string; added_by_telegram_id: number | null; created_at: string }>;
+  if (!rows.length) return "Комментариев пока нет.";
+  const ids = [...new Set(rows.map((r) => r.added_by_telegram_id).filter((x): x is number => !!x))];
+  const { data: profs } = await supabase.from("user_profiles").select("telegram_id, first_name, last_name").in("telegram_id", ids.length ? ids : [0]);
+  const nameById = new Map<number, string>();
+  for (const p of (profs ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string }>) {
+    nameById.set(p.telegram_id, [p.first_name, p.last_name].filter(Boolean).join(" ") || String(p.telegram_id));
+  }
+  return rows.map((r) => {
+    const who = r.added_by_telegram_id ? (nameById.get(r.added_by_telegram_id) ?? String(r.added_by_telegram_id)) : "—";
+    const when = r.created_at.slice(0, 10);
+    return `• [${when}] ${who}: ${r.content}`;
+  }).join("\n\n");
+}
+
+export async function toolAddTaskComment(args: { task_id: string; content: string; requesting_user_id: number }): Promise<string> {
+  const guard = await commentTaskGuard(args.task_id, args.requesting_user_id);
+  if (!guard.ok) return guard.msg;
+  const v = validateCommentContent(args.content);
+  if (!v.ok) return `Ошибка: ${v.error}`;
+  const { error } = await supabase
+    .from("task_comments").insert({ task_id: args.task_id, content: v.value, added_by_telegram_id: args.requesting_user_id });
+  if (error) return `Ошибка: ${error.message}`;
+  return "✅ Комментарий добавлен.";
+}
+
 export const TASK_TOOL_DEFINITIONS = [
   {
     name: "add_task",
@@ -338,6 +383,34 @@ export const LABEL_TOOL_DEFINITIONS = [
       type: "object",
       properties: { requesting_user_id: { type: "number", description: "Твой Telegram user ID" } },
       required: ["requesting_user_id"],
+    },
+  },
+];
+
+export const COMMENT_TOOL_DEFINITIONS = [
+  {
+    name: "get_task_comments",
+    description: "Показать комментарии-апдейты к задаче по её ID (если задача доступна тебе).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task_id: { type: "string", description: "ID задачи" },
+        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
+      },
+      required: ["task_id", "requesting_user_id"],
+    },
+  },
+  {
+    name: "add_task_comment",
+    description: "Добавить комментарий-апдейт к задаче по её ID от твоего лица.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task_id: { type: "string", description: "ID задачи" },
+        content: { type: "string", description: "Текст комментария" },
+        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен" },
+      },
+      required: ["task_id", "content", "requesting_user_id"],
     },
   },
 ];
