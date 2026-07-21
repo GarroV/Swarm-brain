@@ -76,7 +76,18 @@ export function TaskDetail({ id }: { id: string }) {
         }
       })
       .catch(() => alive && setErr(true));
-    fetchTaskComments(id).then((c) => alive && setComments(c)).catch(() => {});
+    fetchTaskComments(id)
+      .then((c) => {
+        if (!alive) return;
+        // Не затираем коммент, добавленный до того как загрузился список (union по id, серверный порядок первым).
+        setComments((prev) => {
+          const ids = new Set(c.map((x) => x.id));
+          return [...c, ...prev.filter((p) => !ids.has(p.id))];
+        });
+      })
+      .catch(() => {
+        if (alive) toast("Не удалось загрузить комментарии");
+      });
     return () => {
       alive = false;
     };
@@ -238,7 +249,8 @@ export function TaskDetail({ id }: { id: string }) {
                 <div className="flex flex-col gap-2">
                   {comments.map((c) => {
                     const mine = c.author_telegram_id != null && c.author_telegram_id === me?.telegram_id;
-                    const canDelete = mine || !!me?.is_admin;
+                    // temp-* — оптимистичный коммент, ещё не подтверждён сервером; удаление 404-ит.
+                    const canDelete = (mine || !!me?.is_admin) && !c.id.startsWith("temp-");
                     return (
                       <RoyCard key={c.id} className="px-4 py-3">
                         <div className="mb-1 flex items-center justify-between gap-2">
@@ -262,6 +274,7 @@ export function TaskDetail({ id }: { id: string }) {
                 <textarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
+                  aria-label="Комментарий"
                   placeholder="Написать апдейт…"
                   rows={2}
                   className="w-full resize-y rounded-[12px] border border-line bg-surface px-3 py-2.5 text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute"
