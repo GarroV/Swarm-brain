@@ -489,9 +489,10 @@ function AgentMeetingDetail({
     };
   }, [meeting]);
 
-  // Поллинг, пока тезисы готовятся (нет draft_notes_md) и обработка не упала.
+  // Поллинг, пока идёт обработка: нет тезисов И статус не терминальный (done/failed).
+  // Раньше стоп был только на draft_notes_md||failed → done с пустыми тезисами крутил вечно.
   useEffect(() => {
-    if (m.draft_notes_md || m.summary_status === "failed") return;
+    if (m.draft_notes_md || m.summary_status === "done" || m.summary_status === "failed") return;
     const id = setInterval(() => {
       setPollCount((c) => c + 1);
       fetchAgentMeeting(m.id)
@@ -505,10 +506,25 @@ function AgentMeetingDetail({
 
   // Подсказка, что обработка затянулась: всё ещё processing, тезисов нет, опросов накопилось много.
   const isTakingTooLong =
-    !m.draft_notes_md && m.summary_status !== "failed" && pollCount >= AGENT_SLOW_POLL_COUNT;
+    !m.draft_notes_md && m.summary_status !== "failed" && m.summary_status !== "done" && pollCount >= AGENT_SLOW_POLL_COUNT;
 
   const segments = m.transcript?.segments ?? [];
   const hasTranscript = segments.length > 0;
+
+  // Кнопка «Переобработать» переиспользуется в блоке тезисов И в терминальных состояниях
+  // без тезисов (done с пустым draft_notes_md / failed) — иначе восстановление недостижимо.
+  const reprocessBtn = (
+    <button
+      type="button"
+      onClick={reprocess}
+      disabled={reprocessing || !hasTranscript}
+      title="Пересобрать тезисы текущим ИИ-промптом из транскрипта"
+      className="inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
+      style={{ padding: "5px 11px", fontSize: 12 }}
+    >
+      <RoyIcon name="spark" size={13} strokeWidth={1.9} /> {reprocessing ? "Обрабатываю…" : "Переобработать"}
+    </button>
+  );
 
   return (
     // Панель — flex-колонка во всю высоту: шапка фиксирована, контент скроллится в своём контейнере.
@@ -584,16 +600,7 @@ function AgentMeetingDetail({
               <SectionLabel>Тезисы</SectionLabel>
               {!editingNotes && (
                 <div className="-mt-1.5 flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={reprocess}
-                    disabled={reprocessing || !hasTranscript}
-                    title="Пересобрать тезисы текущим ИИ-промптом из транскрипта"
-                    className="inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
-                    style={{ padding: "5px 11px", fontSize: 12 }}
-                  >
-                    <RoyIcon name="spark" size={13} strokeWidth={1.9} /> {reprocessing ? "Обрабатываю…" : "Переобработать"}
-                  </button>
+                  {reprocessBtn}
                   <button
                     type="button"
                     onClick={() => { setNotesDraft(m.draft_notes_md ?? ""); setEditingNotes(true); }}
@@ -621,10 +628,21 @@ function AgentMeetingDetail({
               <TezisyBlocks text={m.draft_notes_md} />
             )}
           </div>
-        ) : m.summary_status === "failed" ? (
-          <p className="text-ink-soft" style={{ fontSize: 13 }}>
-            ⚠️ Не удалось обработать запись — попробуй записать заново.
-          </p>
+        ) : m.summary_status === "done" || m.summary_status === "failed" ? (
+          // Терминальный статус без тезисов: пусто (done, модель не дала пунктов) или сбой (failed).
+          // Всегда даём «Переобработать» (если есть транскрипт) — иначе восстановление недостижимо
+          // и экран навсегда застревает на «готовятся…».
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <SectionLabel>Тезисы</SectionLabel>
+              {hasTranscript && <div className="-mt-1.5">{reprocessBtn}</div>}
+            </div>
+            <p className="text-ink-soft mt-1" style={{ fontSize: 13 }}>
+              {m.summary_status === "failed"
+                ? "⚠️ Не удалось обработать запись. Переобработай из транскрипта ниже или переснимай."
+                : "Тезисы не сформированы — модель не нашла содержательных пунктов. Можно переобработать из транскрипта ниже."}
+            </p>
+          </div>
         ) : (
           <div>
             <p className="text-ink-mute" style={{ fontSize: 13 }}>Тезисы готовятся…</p>
