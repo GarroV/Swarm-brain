@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { fetchAgentMeeting, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting } from "@/lib/api";
+import { fetchAgentMeeting, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting } from "@/lib/api";
 import type { AgentMeeting } from "@/types";
 import { TezisyBlocks, Segmented } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
@@ -39,6 +39,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
   const [base, setBase] = useState<"workspace" | "personal">("workspace");
   const [showTranscript, setShowTranscript] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -60,6 +61,21 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  const reprocess = async () => {
+    if (reprocessing) return;
+    setReprocessing(true);
+    try {
+      const m = await resummarizeAgentMeeting(id);
+      setMeeting(m);
+      setDraft(m.draft_notes_md ?? "");
+      onChanged?.();
+    } catch {
+      /* оставляем текущее состояние при ошибке */
+    } finally {
+      setReprocessing(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -136,7 +152,10 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const published = meeting.status === "in_base";
   const recorders = meeting.recorders ?? [];
   const segments = meeting.transcript?.segments ?? [];
-  const notesReady = meeting.draft_notes_md !== null;
+  const hasTranscript = segments.length > 0;
+  // Пустая строка тезисов = НЕ готово (модель вернула пусто). Раньше `!== null` считал "" готовым → голый «—».
+  const notesReady = !!meeting.draft_notes_md;
+  const summaryTerminal = meeting.summary_status === "done" || meeting.summary_status === "failed";
 
   return (
     <div className="flex flex-col h-full">
@@ -161,24 +180,39 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
               <button onClick={() => setEditing(true)} className="text-xs font-semibold text-primary">Редактировать</button>
             )}
           </div>
-          {!notesReady ? (
-            <p className="text-sm text-ink-soft">Готовим тезисы…</p>
-          ) : editing ? (
-            <div className="space-y-2">
-              <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                className="w-full min-h-[220px] resize-none rounded-[12px] border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)]"
-              />
-              <div className="flex gap-2">
-                <button onClick={handleSave} disabled={saving} className={`${btnPrimary} flex-1`} style={{ fontSize: 14 }}>{saving ? "…" : "Сохранить"}</button>
-                <button onClick={() => { setDraft(meeting.draft_notes_md ?? ""); setEditing(false); }} className={btnOutline} style={{ fontSize: 14 }}>Отмена</button>
+          {notesReady ? (
+            editing ? (
+              <div className="space-y-2">
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  className="w-full min-h-[220px] resize-none rounded-[12px] border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)]"
+                />
+                <div className="flex gap-2">
+                  <button onClick={handleSave} disabled={saving} className={`${btnPrimary} flex-1`} style={{ fontSize: 14 }}>{saving ? "…" : "Сохранить"}</button>
+                  <button onClick={() => { setDraft(meeting.draft_notes_md ?? ""); setEditing(false); }} className={btnOutline} style={{ fontSize: 14 }}>Отмена</button>
+                </div>
               </div>
+            ) : (
+              <TezisyBlocks text={meeting.draft_notes_md ?? ""} />
+            )
+          ) : summaryTerminal ? (
+            // Обработка завершена, но тезисов нет (пусто/сбой) — даём «Переобработать» из транскрипта,
+            // а не молчаливый «—» без выхода.
+            <div className="space-y-2">
+              <p className="text-sm text-ink-soft">
+                {meeting.summary_status === "failed"
+                  ? "⚠️ Не удалось обработать запись. Переобработай из транскрипта ниже или переснимай."
+                  : "Тезисы не сформированы — модель не нашла содержательных пунктов. Можно переобработать из транскрипта ниже."}
+              </p>
+              {hasTranscript && (
+                <button onClick={reprocess} disabled={reprocessing} className={btnOutline} style={{ fontSize: 14 }}>
+                  <span className="inline-flex items-center gap-1.5"><RoyIcon name="spark" size={13} strokeWidth={1.9} /> {reprocessing ? "Обрабатываю…" : "Переобработать"}</span>
+                </button>
+              )}
             </div>
-          ) : meeting.draft_notes_md ? (
-            <TezisyBlocks text={meeting.draft_notes_md} />
           ) : (
-            <p className="text-sm text-ink-soft">—</p>
+            <p className="text-sm text-ink-soft">Готовим тезисы…</p>
           )}
         </div>
 
