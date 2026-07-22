@@ -82,7 +82,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 |---|---|---|
 | Durable-обработка (транскрибация по куску) | `_shared/meeting-processor.ts`, `meeting-ingest/`, `meeting-process/` (cron); watchdog `swarm-bot/index.ts` `sweepStuckMeetings` | §Флоу встреч |
 | Мониторинг рекордера (heartbeat, алерты) | `meeting-heartbeat/`, `swarm-bot/index.ts` `checkRecorderHealth`; Swift `SwarmClient.heartbeat`/`AppDelegate.sendHeartbeat`; поля `allowed_users.recorder_last_*` | §Edge Functions |
-| Промпт тезисов (канон, DRY) | `_shared/tezisy-prompt.ts` | §Флоу встреч |
+| Промпт тезисов (канон, DRY) + guard пустого ответа GPT-5 (reasoning-burn → фолбэк) | `_shared/tezisy-prompt.ts`, `_shared/openai-chat.ts` (+ `.test.ts`) | §Флоу встреч |
 | Язык встречи / пин микрофона (язык-нейтральный автодетект, взвешенный по объёму реальной речи по всем частям; нет речи → без пина, без форс-ru) + галлюцинации Whisper (чёрный список фраз + повтор-детектор) | `_shared/meeting-lang.ts` (+ `.test.ts`), `_shared/whisper-hallucinations.ts` (+ `.test.ts`); вызов в `_shared/meeting-processor.ts` | §Флоу встреч |
 | Ревью/правка/публикация/переобработка | `swarm-api` (`/agent-meetings*`,`/meetings*`), `miniapp .../screens/MeetAdminScreen.tsx`,`MeetingDetail.tsx` | §swarm-api, spoke [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md) |
 | Granola импорт / Read.ai / статус-бэкап | `swarm-bot/handlers/granola.ts`, `read-ai-webhook/`, `meeting-status/` | §Флоу встреч |
