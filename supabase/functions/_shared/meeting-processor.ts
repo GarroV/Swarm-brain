@@ -26,6 +26,7 @@ import {
   resolveMeetingLang,
 } from "./meeting-lang.ts";
 import { TEZISY_CORE } from "./tezisy-prompt.ts";
+import { extractChatContent } from "./openai-chat.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -176,6 +177,11 @@ const TEZIS_MODEL = "gpt-5.6-terra";
 // теряться из-за проблем с одной моделью.
 const TEZIS_FALLBACK_MODEL = "gpt-4o";
 const isGpt5 = (model: string): boolean => /^gpt-5/.test(model);
+// GPT-5 списывает reasoning-токены из max_completion_tokens. На длинной стенограмме reasoning
+// съедал весь бюджет 4000 → content="" (finish=length) → пустые тезисы записывались как готовые
+// (инцидент 2026-07-21, af86df08). Держим maxTokens как бюджет СОДЕРЖИМОГО, а reasoning
+// оплачиваем сверху; остаточные пустые ответы ловит extractChatContent → фолбэк на gpt-4o.
+const GPT5_REASONING_HEADROOM = 8000;
 
 interface ChatOpts { temperature?: number; model?: string; maxTokens?: number }
 
@@ -186,7 +192,7 @@ async function chatComplete(system: string, user: string, opts: ChatOpts = {}): 
   const callModel = async (model: string): Promise<string> => {
     // GPT-5 — max_completion_tokens + без temperature; старые модели — max_tokens (+ temperature).
     const body: Record<string, unknown> = isGpt5(model)
-      ? { model, messages, max_completion_tokens: maxTokens }
+      ? { model, messages, max_completion_tokens: maxTokens + GPT5_REASONING_HEADROOM }
       : { model, messages, max_tokens: maxTokens, ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}) };
     const res = await openaiFetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -195,7 +201,7 @@ async function chatComplete(system: string, user: string, opts: ChatOpts = {}): 
     });
     const data = await res.json();
     if (!res.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
-    return (data as { choices: Array<{ message: { content: string } }> }).choices[0].message.content;
+    return extractChatContent(data, model);
   };
 
   const model = opts.model ?? TEZIS_MODEL;
