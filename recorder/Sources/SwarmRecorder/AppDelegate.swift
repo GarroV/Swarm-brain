@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Foundation
 import UserNotifications
 
@@ -768,6 +769,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 // панели виджет сразу скрыт, работает только один индикатор уровней.
                 self.notesExpanded = (self.config != nil)
                 setState(.recording)
+                // Сторож конца звонка — ДО показа панели. Инцидент 2026-07-21: await show()
+                // не вернулся → recWatchTick так и не заармился → ни авто-стопа, ни чекпоинт-
+                // ротаций, ни dbg-лога на всю запись. Сторож не должен зависеть от UI-панели.
+                startCallEndWatch()
                 // Granola-режим: на старте — блокнот (LiveNotesPanel). Клик по марке сворачивает в
                 // вертикальную пилюлю (виджет рекордера), клик по марке пилюли — обратно в блокнот.
                 if let cfg = self.config {
@@ -779,7 +784,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         onStop: { [weak self] in self?.stopTapped() },
                         onCollapse: { [weak self] in self?.collapseNotes() })
                 }
-                startCallEndWatch()
             } catch {
                 // Сбой старта захвата системного звука = нет нужного TCC-разрешения. На 14.4+ это
                 // «System Audio Recording», ниже — «Screen Recording»; ведём пользователя точно туда.
@@ -819,6 +823,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Микрофон пока не ротируем (клиентский upload шлёт mic одним файлом; mic_parts — отдельно).
         recTickCount += 1
         if recTickCount % Self.rotateEveryTicks == 0, let dir = currentRecDir, let base = currentRecBase {
+            // Мета — СИНХРОННО на триггере (currentSystemSegments берёт ioLock, зависшая HAL-очередь
+            // не мешает): подхватывает и segN-пересборки watchdog'а. Инцидент 2026-07-21: мета
+            // писалась только ПОСЛЕ await rotateSystem → при клине тапа не обновлялась вовсе →
+            // recovery видел один sys0. Пост-ротационная запись ниже остаётся (уточняет офсеты).
+            writeRecordingMeta(dir: dir, base: base, startedAt: recordStartedAt ?? Date(), identity: identity)
             let segURL = dir.appendingPathComponent("sys\(nextSysIndex).m4a")
             nextSysIndex += 1
             Task { [weak self] in
@@ -1071,7 +1080,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if dir.lastPathComponent == currentRecBase { continue }   // текущая живая сессия — не трогаем
             guard let data = try? Data(contentsOf: dir.appendingPathComponent("meta.json")),
                   let meta = try? JSONDecoder().decode(RecordingMeta.self, from: data) else {
-                try? FileManager.default.removeItem(at: dir); continue   // нет валидной meta → мусор
+                quarantineOrRemove(dir: dir); continue   // битая meta: аудио есть → в failed/, мусор → удалить
             }
             Task { await self.recoverOne(dir: dir, meta: meta, config: cfg) }
         }
@@ -1080,13 +1089,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func recoverOne(dir: URL, meta: RecordingMeta, config cfg: SwarmConfig) async {
         let iso = ISO8601DateFormatter()
         let sorted = meta.systemSegments.sorted { $0.offset < $1.offset }
-        let segs: [(url: URL, offset: Double)] = sorted.dropLast().map {
+        // НЕ dropLast вслепую (терял финализированный хвост — инцидент 2026-07-21, seg10 был цел):
+        // берём все существующие сегменты, читаемость проверяет AVAudioFile — активный на момент
+        // краша файл без moov просто не откроется и отпадёт сам.
+        let segs: [(url: URL, offset: Double)] = sorted.map {
             (url: dir.appendingPathComponent($0.path), offset: $0.offset)
         }.filter { seg in
-            FileManager.default.fileExists(atPath: seg.url.path)
-                && ((try? seg.url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 1024
+            guard FileManager.default.fileExists(atPath: seg.url.path),
+                  ((try? seg.url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 1024
+            else { return false }
+            return (try? AVAudioFile(forReading: seg.url)) != nil
         }
-        guard !segs.isEmpty else { try? FileManager.default.removeItem(at: dir); return }   // нечего спасать
+        // «Нечего спасать» по мете ≠ можно стирать: мета могла отстать от реальных файлов
+        // (инцидент 2026-07-21 — в мете один sys0, на диске 11 валидных сегментов).
+        guard !segs.isEmpty else { quarantineOrRemove(dir: dir); return }
         let client = SwarmClient(config: cfg)
         let kind = IdentityKind(rawValue: meta.identityKind ?? "manual") ?? .manual
         let req = ClaimRequest(
@@ -1109,6 +1125,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             try? FileManager.default.removeItem(at: dir)   // enqueue перенёс файлы → папка не нужна
         } catch {
             NSLog("SwarmRecorder: восстановление \(meta.base) не удалось (\(error)) — оставляю для ретрая")
+        }
+    }
+
+    // Папка записи, которую recovery не смог разобрать. Есть аудио >1КБ → переносим в failed/
+    // (ручной разбор возможен; диск чистит 3-суточный потолок sweepExpired), иначе мусор → удалить.
+    // Появилось после инцидента 2026-07-21: ветка «нечего спасать» стирала папку с 26 МБ живого аудио.
+    private func quarantineOrRemove(dir: URL) {
+        let fm = FileManager.default
+        let hasAudio = ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey])) ?? [])
+            .contains { $0.pathExtension == "m4a" && (((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 1024) }
+        guard hasAudio else { try? fm.removeItem(at: dir); return }
+        let failedRoot = recordingRootDir().deletingLastPathComponent()
+            .appendingPathComponent("failed", isDirectory: true)
+        try? fm.createDirectory(at: failedRoot, withIntermediateDirectories: true)
+        let dst = failedRoot.appendingPathComponent("recovered-" + dir.lastPathComponent, isDirectory: true)
+        try? fm.removeItem(at: dst)
+        do {
+            try fm.moveItem(at: dir, to: dst)
+            NSLog("SwarmRecorder: recovery не разобрал \(dir.lastPathComponent) — аудио сохранено в failed/, НЕ удалено")
+        } catch {
+            NSLog("SwarmRecorder: карантин \(dir.lastPathComponent) не удался (\(error)) — папка оставлена на месте")
         }
     }
 

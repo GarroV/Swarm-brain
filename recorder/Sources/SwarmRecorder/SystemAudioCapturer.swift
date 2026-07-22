@@ -328,6 +328,14 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
     // Управляющая очередь: все блокирующие HAL-вызовы (create/destroy tap+aggregate, Start/Stop),
     // device-listener, silence-watchdog и мутация управляющего состояния — строго на ней.
     private let queue = DispatchQueue(label: "swarm.systemtap.control", qos: .userInitiated)
+    // Метка «мы сейчас на управляющей очереди» — для deinit: dispatch_sync на свою же очередь
+    // трапается libdispatch'ем (EXC_BREAKPOINT, инцидент 2026-07-21 — последний release случился
+    // в блоке, дренирующемся на `queue`).
+    private static let queueKey = DispatchSpecificKey<UInt8>()
+
+    init() {
+        queue.setSpecific(key: Self.queueKey, value: 1)
+    }
     // IOProc-доставка звука идёт на ОТДЕЛЬНОЙ очереди, НЕ на управляющей. Иначе AudioDeviceStop
     // (на queue) вешает in-flight IOProc в той же serial-очереди → самодедлок HAL (инцидент
     // 2026-07-15: __psynch_mutexwait). С раздельными очередями Stop дожидается колбэка без
@@ -430,8 +438,17 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
     }
 
     deinit {
-        // Аварийный путь (объект уничтожен без stop()): синхронный teardown на queue.
-        queue.sync { self.teardownLocked() }
+        // Штатный путь: stop() уже разобрал тап — HAL трогать нечего. (В deinit конкуренции нет —
+        // последняя ссылка; читать stopped без замка безопасно.)
+        if stopped { return }
+        // Аварийный путь (объект уничтожен без stop()). НЕ dispatch_sync на свою же очередь:
+        // если последний release случился в блоке на `queue`, sync мгновенно самодедлочится и
+        // libdispatch трапает процесс (EXC_BREAKPOINT — краш 2026-07-21 на стопе записи).
+        if DispatchQueue.getSpecific(key: Self.queueKey) != nil {
+            teardownLocked()
+        } else {
+            queue.sync { self.teardownLocked() }
+        }
     }
 
     // ── Построение/разрушение тапа (всё на queue) ─────────────────────────────
