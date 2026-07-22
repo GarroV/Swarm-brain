@@ -157,3 +157,13 @@ export type AgentMeeting = {
   entry_id: string | null;
   created_at: string;
 };
+
+// Живая пометка «на полях», сделанная в виджете рекордера во время записи (таблица
+// meeting_live_notes). offset_sec — смещение от старта записи, когда пометку набрали.
+export type MeetingLiveNote = {
+  id: string;
+  offset_sec: number;
+  text: string;
+  author_id: number;
+  created_at: string;
+};

@@ -8,6 +8,7 @@ import {
   fetchMeetings,
   fetchAgentMeetings,
   fetchAgentMeeting,
+  fetchAgentMeetingNotes,
   patchMeeting,
   patchAgentMeetingDraft,
   renameAgentMeeting,
@@ -16,7 +17,7 @@ import {
   deleteAgentMeeting,
   publishAgentMeeting,
 } from "@/lib/api";
-import type { Entry, AgentMeeting, TranscriptSegment } from "@/types";
+import type { Entry, AgentMeeting, TranscriptSegment, MeetingLiveNote } from "@/types";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { TasksFromMeeting } from "../TasksFromMeeting";
 import { MarkdownTextarea } from "../MarkdownTextarea";
@@ -397,6 +398,15 @@ function transcriptLine(seg: TranscriptSegment): string {
   return speaker ? `${speaker}: ${seg.text}` : seg.text;
 }
 
+// Смещение пометки от старта записи (сек) → «мм:сс» (или «ч:мм:сс» для длинных встреч).
+function formatOffset(sec: number): string {
+  const s = Math.max(0, Math.floor(sec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+}
+
 function AgentMeetingDetail({
   meeting,
   title,
@@ -415,6 +425,9 @@ function AgentMeetingDetail({
   const [m, setM] = useState<AgentMeeting>(meeting);
   // Счётчик опросов: после AGENT_SLOW_POLL_COUNT показываем подсказку «обработка затянулась».
   const [pollCount, setPollCount] = useState(0);
+  // Живые пометки «на полях» из виджета рекордера (meeting_live_notes) — грузятся отдельным
+  // запросом при выборе встречи (в GET /agent-meetings/:id они не входят).
+  const [liveNotes, setLiveNotes] = useState<MeetingLiveNote[]>([]);
 
   // Инлайн-правка названия и тезисов черновика (до публикации). Сброс при смене встречи.
   const [editingTitle, setEditingTitle] = useState(false);
@@ -473,6 +486,7 @@ function AgentMeetingDetail({
   useEffect(() => {
     setM(meeting);
     setPollCount(0);
+    setLiveNotes([]);
     let alive = true;
     fetchAgentMeeting(meeting.id)
       .then((full) => {
@@ -480,6 +494,13 @@ function AgentMeetingDetail({
       })
       .catch(() => {
         /* оставляем данные из списка при ошибке догрузки */
+      });
+    fetchAgentMeetingNotes(meeting.id)
+      .then((notes) => {
+        if (alive) setLiveNotes(notes);
+      })
+      .catch(() => {
+        /* пометки не критичны — при ошибке просто не показываем секцию */
       });
     return () => {
       alive = false;
@@ -648,6 +669,28 @@ function AgentMeetingDetail({
                 Обработка затянулась — возможно, запись слишком длинная. Можно подождать ещё или переснять покороче.
               </p>
             )}
+          </div>
+        )}
+
+        {/* Пометки «на полях» из виджета рекордера — то, что владелец печатал по ходу встречи. */}
+        {liveNotes.length > 0 && (
+          <div className="border-t border-line pt-3">
+            <SectionLabel>Пометки на полях</SectionLabel>
+            <div className="mt-2 flex flex-col gap-1.5">
+              {liveNotes.map((n) => (
+                <div key={n.id} className="flex items-start gap-2.5">
+                  <span
+                    className="mt-0.5 shrink-0 tabular-nums font-semibold text-ink-mute"
+                    style={{ fontSize: 12 }}
+                  >
+                    {formatOffset(n.offset_sec)}
+                  </span>
+                  <span className="text-ink-soft leading-relaxed whitespace-pre-wrap" style={{ fontSize: 13 }}>
+                    {n.text}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

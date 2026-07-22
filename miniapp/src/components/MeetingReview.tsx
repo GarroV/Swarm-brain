@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { fetchAgentMeeting, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting } from "@/lib/api";
-import type { AgentMeeting } from "@/types";
+import { fetchAgentMeeting, fetchAgentMeetingNotes, patchAgentMeetingDraft, renameAgentMeeting, publishAgentMeeting, resummarizeAgentMeeting } from "@/lib/api";
+import type { AgentMeeting, MeetingLiveNote } from "@/types";
 import { TezisyBlocks, Segmented } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
 
@@ -42,6 +42,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const [reprocessing, setReprocessing] = useState(false);
   const [base, setBase] = useState<"workspace" | "personal">("workspace");
   const [showTranscript, setShowTranscript] = useState(false);
+  const [liveNotes, setLiveNotes] = useState<MeetingLiveNote[]>([]);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
@@ -61,6 +62,15 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Живые пометки «на полях» из виджета рекордера — отдельным запросом (в GET /:id не входят).
+  useEffect(() => {
+    let alive = true;
+    fetchAgentMeetingNotes(id)
+      .then((notes) => { if (alive) setLiveNotes(notes); })
+      .catch(() => { /* пометки не критичны — при ошибке секцию не показываем */ });
+    return () => { alive = false; };
+  }, [id]);
 
   const reprocess = async () => {
     if (reprocessing) return;
@@ -215,6 +225,20 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
             <p className="text-sm text-ink-soft">Готовим тезисы…</p>
           )}
         </div>
+
+        {liveNotes.length > 0 && (
+          <div>
+            <p className="text-xs text-ink-soft mb-1">Пометки на полях</p>
+            <div className="space-y-1.5">
+              {liveNotes.map((n) => (
+                <div key={n.id} className="flex gap-2.5 text-sm">
+                  <span className="font-mono text-xs text-ink-mute shrink-0 tabular-nums">{fmtTs(n.offset_sec)}</span>
+                  <span className="flex-1 text-ink whitespace-pre-wrap">{n.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {segments.length > 0 && (
           <div>

@@ -1,5 +1,5 @@
 import { getInitData } from "./telegram";
-import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, TaskDependency, DependencyType, AgentMeeting } from "@/types";
+import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, TaskDependency, DependencyType, AgentMeeting, MeetingLiveNote } from "@/types";
 
 export type CreateTaskInput = {
   title: string;
@@ -707,6 +707,12 @@ export async function fetchAgentMeeting(id: string): Promise<AgentMeeting> {
     return m;
   }
   return apiFetch<AgentMeeting>(`/agent-meetings/${id}`);
+}
+
+// Живые пометки «на полях» встречи (виджет рекордера → meeting_live_notes), по возрастанию offset_sec.
+export async function fetchAgentMeetingNotes(id: string): Promise<MeetingLiveNote[]> {
+  if (DEV_MODE) return [];
+  return apiFetch<MeetingLiveNote[]>(`/agent-meetings/${id}/notes`);
 }
 
 export async function patchAgentMeetingDraft(id: string, draft_notes_md: string): Promise<AgentMeeting> {
