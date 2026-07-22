@@ -9,6 +9,13 @@
 // Деплой: supabase functions deploy swarm-recorder-version --no-verify-jwt (публичный GET, без секретов).
 
 // Держать в синхроне с recorder/VERSION (ветка sandbox_vas). Поднимать ПОСЛЕ мёрджа+проверки сборки.
+// build 14 (2026-07-23): фикс краша на стопе (deinit-deadlock ProcessTapSystemRecorder — EXC_BREAKPOINT),
+// сторож конца звонка армится ДО показа панели (иначе не было авто-стопа/ротаций/меты), meta.json
+// пишется синхронно на триггере ротации (recovery видит актуальные сегменты), recovery валидирует
+// сегменты через AVAudioFile вместо слепого dropLast + карантин в failed/ вместо удаления аудио.
+// Включает build 12 (чекпоинты) и build 13 (авто-стоп на сон/крышку). Тег recorder-build-14.
+// Проверено: чистая сборка тега, --selftest (claim→upload→done), heartbeat=14, живой тест quarantine
+// (папка с аудио НЕ удаляется), адверсариал-верификация раскатки (3 линзы) → GO, 0 блокеров.
 // build 6 (2026-07-15): название встречи сразу в поле панели — реальное (календарь/комната) или
 // дефолт «Встреча <имя пользователя macOS> · <дата, время>» вместо пустого плейсхолдера. Тег recorder-build-6.
 // build 5 (2026-07-15): надёжность записи собеседника (Фаза 1) — устранён самодедлок AudioDeviceStop
@@ -18,7 +25,7 @@
 // build 4 (2026-07-09): heartbeat-мониторинг рекордера (SwarmClient.heartbeat → meeting-heartbeat;
 // сервер ловит оборванную запись / истечение токена). Тег recorder-build-4, build-app.sh ✅ (подпись валидна).
 // build 3 (2026-06-30): бэкап аудио держится до публикации в базу + потолок 3 суток. Тег recorder-build-3.
-const LATEST_BUILD = 11;
+const LATEST_BUILD = 14;
 
 Deno.serve((req: Request) => {
   if (req.method === "OPTIONS") {
