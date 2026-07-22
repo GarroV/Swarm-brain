@@ -364,6 +364,16 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
       `Встреча: ${m.title ?? "без названия"}\n\nСтенограмма (реплики помечены «собеседник» — другие участники, «я» — владелец записи):\n${transcriptText}`,
       { temperature: 0.3 }, // применяется к фолбэк-gpt-4o; terra (GPT-5) температуру игнорирует
     )).trim();
+    // Пустой ответ модели при СОДЕРЖАТЕЛЬНОМ транскрипте — это сбой сводки, а НЕ пустая встреча.
+    // Раньше "" сохранялось с summary_status="done" → ревью вечно «Тезисы готовятся…» без кнопки.
+    // Транскрипт уже сохранён выше; метим failed → на ревью доступно «Переобработать».
+    if (!raw) {
+      console.error(`meeting-processor: пустая сводка от модели для ${m.id} при непустом транскрипте (${transcriptText.length} симв) — mark failed`);
+      await supabase.from("meetings")
+        .update({ summary_status: "failed", last_progress_at: new Date().toISOString(), processing_lease: null, updated_at: new Date().toISOString() })
+        .eq("id", m.id);
+      return;
+    }
     tezisi = /^НЕТ[_\s]?ТЕЗИСОВ/i.test(raw) ? NO_TEZISY_NOTE : raw;
   }
   const noContent = tezisi === NO_TEZISY_NOTE;
@@ -416,6 +426,9 @@ export async function resummarizeFromTranscript(supabase: SupabaseClient, meetin
     `Встреча: ${row?.title ?? "без названия"}\n\nСтенограмма (реплики помечены «собеседник» — другие участники, «я» — владелец записи):\n${transcriptText}`,
     { temperature: 0.3 },
   )).trim();
+  // Пустой ответ модели — не затираем существующие тезисы пустой строкой и не метим done;
+  // бросаем, чтобы swarm-api вернул ошибку, а кнопка «Переобработать» осталась для повторной попытки.
+  if (!raw) throw new Error("Модель вернула пустые тезисы — попробуй ещё раз");
   const tezisi = /^НЕТ[_\s]?ТЕЗИСОВ/i.test(raw) ? NO_TEZISY_NOTE : raw;
   // Успешно записали тезисы → приводим summary_status в согласованность: встреча, ранее упавшая в
   // "failed", после успешной переобработки не должна оставаться "failed" (иначе UI врёт про статус).
