@@ -1,11 +1,11 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { RoyHeader, Segmented, RoyCard, Market, SectionLabel } from "../ui";
+import { RoyHeader, Segmented, RoyCard, Market, SectionLabel, StorageBadge } from "../ui";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { DashTaskRow } from "../dash/shared";
 import { useIsDesktop } from "../useIsDesktop";
-import { deriveEntryTitle } from "../entry";
+import { deriveEntryTitle, entryImporterName } from "../entry";
 import { fetchMeetings, fetchTasks, deleteMeeting, fetchConfig } from "@/lib/api";
 import { countryCode } from "@/lib/countries";
 import { AgentReviewQueue } from "@/components/AgentReviewQueue";
@@ -55,6 +55,7 @@ function ActionIcon({ name, label, color, onClick }: { name: RoyIconName; label:
 }
 
 function MeetingCard({ e, onOpen, onRemove }: { e: Entry; onOpen: () => void; onRemove: () => void }) {
+  const who = entryImporterName(e);
   return (
     <div className="relative">
       <button type="button" onClick={onOpen} className="block w-full text-left transition-transform active:scale-[0.99]">
@@ -70,14 +71,15 @@ function MeetingCard({ e, onOpen, onRemove }: { e: Entry; onOpen: () => void; on
               <span className="inline-flex items-center font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 7, padding: "1px 7px" }}>
                 {sourceLabel(e.source)}
               </span>
+              {isConfirmed(e) && <StorageBadge isPrivate={e.is_private} />}
               <Market code={e.countries?.[0]} />
               {fmtDate(e.entry_date || e.created_at) && (
                 <span className="text-ink-mute" style={{ fontSize: 11 }}>
                   {fmtDate(e.entry_date || e.created_at)}
                 </span>
               )}
-              {e.added_by && (
-                <span className="text-ink-mute" style={{ fontSize: 11 }}>· {e.added_by}</span>
+              {who && (
+                <span className="text-ink-mute" style={{ fontSize: 11 }}>· {who}</span>
               )}
             </div>
           </div>

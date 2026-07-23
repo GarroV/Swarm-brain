@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
 import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks, Participants } from "../ui";
 import { RoyIcon } from "../icons";
-import { deriveEntryTitle } from "../entry";
+import { deriveEntryTitle, entryImporterName } from "../entry";
 import {
   fetchMeetings,
   fetchAgentMeetings,
@@ -58,15 +58,12 @@ function itemSource(it: MeetItem): string {
   return sourceLabel(it.data.source);
 }
 
-// Кто принёс запись: для entry — added_by (granola/read.ai), для рекордера —
-// имена записавших (recorder_names с сервера). null, если неизвестно.
+// Кто принёс запись: для entry — резолвнутое имя импортёра через общий хелпер (прячет системные
+// источники и голый telegram_id); для рекордера — имена записавших (recorder_names с сервера).
+// null, если неизвестно.
 function itemRecorder(it: MeetItem): string | null {
   if (it.kind === "entry") {
-    // Кто вкинул встречу: резолвнутое имя импортёра; иначе added_by, но НЕ источник "granola"
-    // (это не человек) → тогда ничего.
-    if (it.data.importer_name) return it.data.importer_name;
-    const a = it.data.added_by;
-    return a && a !== "granola" && a !== "read_ai" ? a : null;
+    return entryImporterName(it.data) || null;
   }
   const names = it.data.recorder_names?.filter(Boolean) ?? [];
   return names.length ? names.join(", ") : null;

@@ -40,6 +40,20 @@ export function deriveEntryTitle(e: { content: string; metadata: Record<string, 
   return fl.length > 80 ? fl.slice(0, 77) + "…" : fl;
 }
 
+// Источники, где added_by — это система, а не человек (импортёр не резолвится в имя).
+const SYSTEM_ADDED_BY = new Set(["granola", "read_ai", "claude_desktop", "desktop-agent", "swarm-recorder"]);
+
+// Имя загрузившего запись для показа в UI. Приоритет — резолвнутое сервером importer_name
+// (GET /meetings кладёт его из user_profiles). Иначе added_by, но НЕ показываем ни системный
+// источник (это не человек), ни голый числовой telegram_id (в UI он выглядел как «744230399» —
+// собственно, на это и жаловался владелец). Пусто → атрибуцию просто не рисуем.
+export function entryImporterName(e: { importer_name?: string | null; added_by?: string | null }): string {
+  if (e.importer_name) return e.importer_name;
+  const ab = (e.added_by ?? "").trim();
+  if (!ab || SYSTEM_ADDED_BY.has(ab) || /^\d+$/.test(ab)) return "";
+  return ab;
+}
+
 // summary как «поисковый индекс» (синонимы/ключевые слова для recall), не реальные тезисы:
 // так бэкенд обогащает короткие заметки и ссылки (swarm-bot knowledge.ts / media.ts). Не показываем.
 export function isSearchIndexSummary(e: { source: string; summary: string | null }): boolean {

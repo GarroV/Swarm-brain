@@ -167,6 +167,24 @@ export const STATUS_META: Record<string, { color: string; label: string }> = {
   done: { color: "var(--status-done)", label: "Готово" },
 };
 
+// ── StorageBadge (личное/общее хранилище встречи) ────────────────────────────
+// Личное = замок в акцентном (янтарном) тоне; общее = «команда» в нейтральном.
+// Показывать только для ПОДТВЕРЖДЁННЫХ встреч: у «ожидающих» приватность ещё не выбрана.
+export function StorageBadge({ isPrivate }: { isPrivate: boolean }) {
+  const style: CSSProperties = isPrivate
+    ? { color: "var(--accent-ink)", background: "var(--accent-soft)", border: "1px solid var(--accent-line)" }
+    : { color: "var(--ink-soft)", background: "var(--surface-2)", border: "1px solid var(--line-2)" };
+  return (
+    <span
+      className="inline-flex items-center gap-1 font-semibold"
+      style={{ fontSize: 11, borderRadius: 7, padding: "1px 7px", ...style }}
+    >
+      <RoyIcon name={isPrivate ? "lock" : "team"} size={11} strokeWidth={1.9} />
+      {isPrivate ? "Личное" : "Общее"}
+    </span>
+  );
+}
+
 // ── Chip (фильтр/выбор) ──────────────────────────────────────────────────────
 export function Chip({ children, active, onClick, leading }: { children: ReactNode; active?: boolean; onClick?: () => void; leading?: ReactNode }) {
   return (

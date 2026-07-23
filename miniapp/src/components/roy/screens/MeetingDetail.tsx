@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { NavHeader, Market, SectionLabel, IconBtn, TezisyBlocks, Segmented } from "../ui";
+import { NavHeader, Market, SectionLabel, IconBtn, TezisyBlocks, Segmented, StorageBadge } from "../ui";
 import { DashTaskRow } from "../dash/shared";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle } from "../entry";
@@ -150,11 +150,12 @@ export function MeetingDetail({ id }: { id: string }) {
         {err && <div className="py-8 text-center text-sm text-ink-soft">Не удалось загрузить встречу.</div>}
         {e && (
           <>
-            <div className="mb-2 flex items-center gap-2 pt-1">
+            <div className="mb-2 flex flex-wrap items-center gap-2 pt-1">
               <span className="inline-flex items-center gap-1.5 font-semibold" style={{ fontSize: 12, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 8, padding: "3px 9px" }}>
                 <RoyIcon name="meet" size={12} strokeWidth={1.9} />
                 {sourceLabel(e.source)}
               </span>
+              {confirmed && <StorageBadge isPrivate={e.is_private} />}
               {(e.countries ?? []).filter((c) => c !== "General").map((c) => <Market key={c} code={c} />)}
               {fmtDate(e.entry_date || e.created_at) && (
                 <span className="text-ink-mute" style={{ fontSize: 12 }}>

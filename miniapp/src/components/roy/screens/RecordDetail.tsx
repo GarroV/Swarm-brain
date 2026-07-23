@@ -4,7 +4,7 @@ import { useRoyNav } from "../nav";
 import { NavHeader, TypeTag, Market, SectionLabel, TezisyBlocks, Participants } from "../ui";
 import type { Attendee } from "@/types";
 import { RoyIcon } from "../icons";
-import { entryTagKey, deriveEntryTitle, isSearchIndexSummary } from "../entry";
+import { entryTagKey, deriveEntryTitle, isSearchIndexSummary, entryImporterName } from "../entry";
 import { fetchEntry, createTask } from "@/lib/api";
 import type { Entry } from "@/types";
 
@@ -24,18 +24,11 @@ const SOURCE_LABEL: Record<string, string> = {
   claude_desktop: "Claude Desktop", manual: "Вручную", digest: "Дайджест",
 };
 function sourceLabel(s: string): string { return SOURCE_LABEL[s] ?? (s || "—"); }
-// Кто добавил: импортёр (резолв с сервера) → иначе username (added_by), если это не системный источник.
-function addedByName(e: Entry): string {
-  if (e.importer_name) return e.importer_name;
-  const ab = e.added_by || "";
-  if (["granola", "read_ai", "claude_desktop", "desktop-agent", "swarm-recorder"].includes(ab)) return "";
-  return ab;
-}
 
 // Содержимое записи + обязательная строка источника. Переиспользуется push-экраном RecordDetail
 // и контекстным окном ответа (AnswerModal).
 export function RecordBody({ entry: e }: { entry: Entry }) {
-  const who = addedByName(e);
+  const who = entryImporterName(e);
   const date = fmtDate(e.entry_date || e.created_at);
   // Участники из календаря — кладутся в metadata.attendees при публикации встречи рекордера.
   const attendees = (e.metadata?.attendees as Attendee[] | undefined) ?? [];

@@ -2,7 +2,7 @@
 import { useRoyNav } from "../nav";
 import { Avatar, TypeTag, TYPE_TAG } from "../ui";
 import { RoyIcon } from "../icons";
-import { entryTagKey, deriveEntryTitle } from "../entry";
+import { entryTagKey, deriveEntryTitle, entryImporterName } from "../entry";
 import { DashBlock, Row, AccentBadge, relTime, initials } from "./shared";
 import type { DashboardData } from "./useDashboardData";
 import type { Entry } from "@/types";
@@ -11,17 +11,11 @@ import type { Entry } from "@/types";
 // (recentEntries), от новых к старым. Строка: иконка типа записи, заголовок, лейбл типа,
 // аватар автора (если имя есть — иначе без), относительное время. Тап → деталь записи.
 
-// Имя автора показываем только если это человеческое имя (не сырой telegram_id и не пусто).
-function authorName(e: Entry): string | null {
-  const raw = e.added_by?.trim();
-  if (!raw || /^\d+$/.test(raw)) return null;
-  return raw;
-}
-
 function MaterialRow({ e, now, onOpen }: { e: Entry; now: number; onOpen: () => void }) {
   const tagKey = entryTagKey(e);
   const tag = TYPE_TAG[tagKey] ?? TYPE_TAG.doc;
-  const author = authorName(e);
+  // Имя автора-человека (общий хелпер: прячет системные источники и голый telegram_id).
+  const author = entryImporterName(e);
   return (
     <Row onClick={onOpen}>
       <span
