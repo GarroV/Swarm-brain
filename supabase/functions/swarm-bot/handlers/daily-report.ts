@@ -116,22 +116,9 @@ export function aggregateActivity(rows: EntryRow[]): ReportData {
   return { meetings, notes };
 }
 
-function subLine(counts: Record<string, number>): string {
-  return Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([k, v]) => `${k} ${v}`)
-    .join(" · ");
-}
-
-function renderSection(emoji: string, title: string, c: SectionCounts): string {
-  let out = `${emoji} <b>${title}: ${c.total}</b>`;
-  if (c.total > 0) {
-    out += `\n   ${subLine(c.byWorkspace)}`;
-    out += `\n   ${subLine(c.bySource)}`;
-  }
-  return out;
-}
-
+// Формат по решению владельца 2026-07-24: только два счётчика добавленного за вчера,
+// без разбивок по воркспейсам/источникам («на этом пока всё»). Разбивки продолжает
+// считать aggregateActivity — вернуть в вывод при желании дёшево.
 export function formatReport(data: ReportData, dateLabel: string): string {
   const header = `📊 <b>Свод за ${dateLabel}</b> (вчера)`;
   if (data.meetings.total === 0 && data.notes.total === 0) {
@@ -139,7 +126,6 @@ export function formatReport(data: ReportData, dateLabel: string): string {
   }
   return [
     header,
-    renderSection("🎙", "Встречи", data.meetings),
-    renderSection("📝", "Новые данные", data.notes),
+    `🎙 Встреч добавлено: <b>${data.meetings.total}</b>\n📝 Записей добавлено: <b>${data.notes.total}</b>`,
   ].join("\n\n");
 }

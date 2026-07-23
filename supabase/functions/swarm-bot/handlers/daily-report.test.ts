@@ -74,31 +74,31 @@ Deno.test("yesterdayWindow: осенний переход (fall-back, 25-час�
   assertEquals(w.dateLabel, "25.10");
 });
 
-Deno.test("formatReport: штатный день — обе секции с разбивкой", () => {
+Deno.test("formatReport: штатный день — две строки счётчиков, без разбивок", () => {
   const data = aggregateActivity([
     { entry_type: "meeting", source: "desktop-agent", group_id: "cee" },
     { entry_type: "note", source: "telegram", group_id: "cee" },
     { entry_type: "note", source: "link", group_id: "other" },
   ]);
   const s = formatReport(data, "18.07");
-  assertEquals(s.includes("Встречи: 1"), true);
-  assertEquals(s.includes("Новые данные: 2"), true);
-  assertEquals(s.includes("CEE 1"), true);
-  assertEquals(s.includes("🔗 ссылки 1"), true);
+  assertEquals(s.includes("Встреч добавлено: <b>1</b>"), true);
+  assertEquals(s.includes("Записей добавлено: <b>2</b>"), true);
+  // решение владельца 2026-07-24: только счётчики, никаких разбивок по воркспейсам/источникам
+  assertEquals(s.includes("CEE"), false);
+  assertEquals(s.includes("ссылки"), false);
 });
 
-Deno.test("formatReport: секция с нулём — без подстрок", () => {
+Deno.test("formatReport: частично пустой день — ноль печатается", () => {
   const data = aggregateActivity([
     { entry_type: "note", source: "telegram", group_id: "cee" },
   ]);
   const s = formatReport(data, "18.07");
-  assertEquals(s.includes("Встречи: 0"), true);
-  // после «Встречи: 0» сразу идёт секция «Новые данные» — подстрок у нуля нет
-  assertEquals(/Встречи: 0<\/b>\n\n/.test(s), true);
+  assertEquals(s.includes("Встреч добавлено: <b>0</b>"), true);
+  assertEquals(s.includes("Записей добавлено: <b>1</b>"), true);
 });
 
-Deno.test("formatReport: тихий день — плашка, без секций", () => {
+Deno.test("formatReport: тихий день — плашка, без счётчиков", () => {
   const s = formatReport(aggregateActivity([]), "18.07");
   assertEquals(s.includes("тихий день"), true);
-  assertEquals(s.includes("Встречи:"), false);
+  assertEquals(s.includes("добавлено"), false);
 });
