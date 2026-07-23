@@ -47,9 +47,14 @@ interface TaskModalProps {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
+  // Создание с префиллом (напр. задача из встречи): начальные значения формы. Игнорируются
+  // в режиме правки (когда передан task). assignee не префиллим — GPT даёт имя, не telegram_id.
+  prefill?: { title?: string; description?: string | null; country?: string | null; due_date?: string | null };
+  // Привязка создаваемой задачи к встрече-источнику (entry.id) → попадает в блок «Задачи из встречи».
+  meetingId?: string | null;
 }
 
-export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
+export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId }: TaskModalProps) {
   const isEdit = !!task;
   const confirm = useConfirm();
 
@@ -73,11 +78,11 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
   // Reset form whenever the dialog opens or the task changes
   useEffect(() => {
     if (!open) return;
-    setTitle(task?.title ?? "");
+    setTitle(task?.title ?? prefill?.title ?? "");
     setStatus(normStatus(task?.status));
-    setDescription(task?.description ?? "");
-    setDueDate(task?.due_date ?? "");
-    setCountry(task?.country ?? "");
+    setDescription(task?.description ?? prefill?.description ?? "");
+    setDueDate(task?.due_date ?? prefill?.due_date ?? "");
+    setCountry(task?.country ?? prefill?.country ?? "");
     setTaskRole(task?.task_role ?? NONE);
     const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
     setAssigneeId(cur);
@@ -151,6 +156,7 @@ export function TaskModal({ task, open, onClose, onSaved }: TaskModalProps) {
         await updateTask(task.id, fields);
       } else {
         const fields: CreateTaskInput = { ...base, assignee_telegram_id: assigneeValue };
+        if (meetingId) fields.meeting_id = meetingId;
         if (labelIds.length > 0) fields.is_private = true;
         const created = await createTask(fields);
         // POST /tasks не принимает label_ids — вешаем метки вторым шагом на уже личную задачу.

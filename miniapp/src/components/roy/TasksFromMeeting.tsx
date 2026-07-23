@@ -3,14 +3,16 @@ import { useEffect, useState } from "react";
 import { useRoyNav } from "./nav";
 import { RoyCard } from "./ui";
 import { RoyIcon } from "./icons";
-import { extractTasksPreview, createTask } from "@/lib/api";
+import { extractTasksPreview } from "@/lib/api";
 import type { ProposedTask } from "@/lib/api";
+import { TaskModal } from "@/components/TaskModal";
 import { countryCode } from "@/lib/countries";
 
 // Генерация задач из встречи ПО ЯВНОМУ действию пользователя (кнопка), не автоматически.
-// Превью (POST /tasks/extract { save:false }) → правка/удаление → добавить себе / в общие.
-// Добавленные задачи привязываются к встрече (meeting_id = entry.id), поэтому затем видны
-// в блоке «Задачи из встречи». Используется и в ревью встреч, и на экране самой встречи.
+// Превью (POST /tasks/extract { save:false }) → клик по строке (или «Своя») открывает тот же
+// редактор задач, что в разделе задач (TaskModal): исполнитель/срок/страна с флагами/списки/описание.
+// Созданная задача привязывается к встрече (meeting_id = entry.id) → видна в блоке «Задачи из встречи».
+// Используется и в ревью встреч, и на экране самой встречи.
 
 function fmtDate(iso: string | null): string | null {
   if (!iso) return null;
@@ -22,7 +24,6 @@ function fmtDate(iso: string | null): string | null {
 }
 
 type DraftTask = ProposedTask & { _key: string };
-type TaskTarget = "personal" | "shared";
 
 // text — источник для извлечения (entry.content или draft_notes_md черновика рекордера).
 // meetingId — entry.id для привязки задач (у agent-черновика записи ещё нет → undefined,
@@ -33,13 +34,14 @@ export function TasksFromMeeting({
   const { toast } = useRoyNav();
   const [tasks, setTasks] = useState<DraftTask[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [addingKey, setAddingKey] = useState<string | null>(null);
+  // Открытый в редакторе черновик: строка-предложение (доводка) или пустой (кнопка «Своя»).
+  const [editing, setEditing] = useState<DraftTask | null>(null);
 
-  // Смена выбранной записи сбрасывает локальный список предложенных задач.
+  // Смена выбранной записи сбрасывает локальный список предложенных задач и закрывает редактор.
   useEffect(() => {
     setTasks(null);
     setLoading(false);
-    setAddingKey(null);
+    setEditing(null);
   }, [resetKey]);
 
   const extract = async () => {
@@ -55,42 +57,16 @@ export function TasksFromMeeting({
     }
   };
 
-  const setTitle = (key: string, title: string) => {
-    setTasks((prev) => prev?.map((t) => (t._key === key ? { ...t, title } : t)) ?? null);
-  };
-
   const removeRow = (key: string) => {
     setTasks((prev) => prev?.filter((t) => t._key !== key) ?? null);
   };
 
-  // Своя задача вручную (не из GPT) — пустая карточка в тот же список: вписать название → Себе/В общие.
-  const addOwnRow = () => {
-    const row: DraftTask = { title: "", _key: `own-${Date.now()}` };
-    setTasks((prev) => [...(prev ?? []), row]);
-  };
-
-  const addTask = async (task: DraftTask, target: TaskTarget) => {
-    if (addingKey) return;
-    const title = task.title.trim();
-    if (!title) return;
-    setAddingKey(task._key);
-    try {
-      await createTask({
-        title,
-        description: task.description ?? null,
-        country: task.country ?? null,
-        due_date: task.due_date ?? null,
-        meeting_id: meetingId ?? null,
-        is_private: target === "personal",
-      });
-      removeRow(task._key);
-      toast("Задача добавлена");
-      onAdded?.();
-    } catch {
-      toast("Не удалось добавить задачу");
-    } finally {
-      setAddingKey(null);
-    }
+  // Задача сохранена через TaskModal → убираем строку-предложение из списка (пустой «Своя»-ключ
+  // в списке отсутствует — filter просто ничего не найдёт) и уведомляем родителя.
+  const handleSaved = () => {
+    if (editing) removeRow(editing._key);
+    toast("Задача добавлена");
+    onAdded?.();
   };
 
   const hasContent = Boolean(text?.trim());
@@ -104,7 +80,7 @@ export function TasksFromMeeting({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={addOwnRow}
+            onClick={() => setEditing({ title: "", _key: `own-${Date.now()}` })}
             className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
             style={{ padding: "6px 12px", fontSize: 12 }}
           >
@@ -134,73 +110,65 @@ export function TasksFromMeeting({
 
       {tasks && tasks.length > 0 && (
         <div className="flex flex-col gap-2">
-          {tasks.map((t) => {
-            const busy = addingKey === t._key;
-            return (
-              <RoyCard key={t._key} className="px-3 py-2.5 transition-colors hover:border-line-2">
-                <div className="flex items-start gap-2">
-                  <input
-                    value={t.title}
-                    onChange={(e) => setTitle(t._key, e.target.value)}
-                    disabled={busy}
-                    placeholder="Название задачи"
-                    autoFocus={t._key.startsWith("own-")}
-                    className="min-w-0 flex-1 rounded-[9px] border border-line bg-surface text-ink font-medium outline-none focus:border-[var(--accent-ink)] disabled:opacity-50 placeholder:text-ink-mute"
-                    style={{ fontSize: 13, padding: "6px 9px" }}
-                  />
-                  <button
-                    type="button"
-                    aria-label="Удалить предложенную задачу"
-                    disabled={busy}
-                    onClick={() => removeRow(t._key)}
-                    className="inline-flex shrink-0 items-center justify-center rounded-[9px] border border-line bg-surface text-ink-mute transition-opacity disabled:opacity-50"
-                    style={{ width: 30, height: 30 }}
-                  >
-                    <RoyIcon name="x" size={14} strokeWidth={1.9} />
-                  </button>
-                </div>
-                {(t.country || t.due_date) && (
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 px-0.5">
-                    {t.country && (
-                      <span
-                        className="inline-flex items-center font-semibold text-ink-soft bg-surface-2 border border-line-2"
-                        style={{ fontSize: 10.5, borderRadius: 6, padding: "1px 6px" }}
-                      >
-                        {countryCode(t.country)}
-                      </span>
-                    )}
-                    {t.due_date && (
-                      <span className="text-ink-mute" style={{ fontSize: 11 }}>
-                        до {fmtDate(t.due_date) ?? t.due_date}
-                      </span>
-                    )}
+          {tasks.map((t) => (
+            <RoyCard key={t._key} className="px-1.5 py-1 transition-colors hover:border-line-2">
+              <div className="flex items-center gap-1">
+                {/* Клик по строке открывает полноценный редактор задачи (TaskModal) с префиллом. */}
+                <button
+                  type="button"
+                  onClick={() => setEditing(t)}
+                  className="min-w-0 flex-1 rounded-[9px] px-2 py-1.5 text-left transition-colors hover:bg-surface-2"
+                >
+                  <div className="truncate font-medium text-ink" style={{ fontSize: 13 }}>
+                    {t.title || "Без названия — открыть и заполнить"}
                   </div>
-                )}
-                <div className="mt-2 flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => addTask(t, "personal")}
-                    className="flex-1 rounded-[10px] border border-line bg-surface font-semibold text-ink transition-[transform,opacity,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
-                    style={{ padding: "6px 10px", fontSize: 12.5 }}
-                  >
-                    Себе
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => addTask(t, "shared")}
-                    className="flex-1 rounded-[10px] border-0 font-semibold transition-[transform,opacity,filter] duration-150 hover:scale-[1.03] hover:brightness-105 active:scale-[0.97] disabled:opacity-50"
-                    style={{ padding: "7px 10px", fontSize: 12.5, background: "var(--accent-ink)", color: "var(--card)" }}
-                  >
-                    В общие
-                  </button>
-                </div>
-              </RoyCard>
-            );
-          })}
+                  {(t.country || t.due_date) && (
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      {t.country && (
+                        <span
+                          className="inline-flex items-center font-semibold text-ink-soft bg-surface-2 border border-line-2"
+                          style={{ fontSize: 10.5, borderRadius: 6, padding: "1px 6px" }}
+                        >
+                          {countryCode(t.country)}
+                        </span>
+                      )}
+                      {t.due_date && (
+                        <span className="text-ink-mute" style={{ fontSize: 11 }}>
+                          до {fmtDate(t.due_date) ?? t.due_date}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  aria-label="Убрать предложенную задачу"
+                  onClick={() => removeRow(t._key)}
+                  className="inline-flex shrink-0 items-center justify-center rounded-[9px] border border-line bg-surface text-ink-mute transition-opacity hover:opacity-70"
+                  style={{ width: 30, height: 30 }}
+                >
+                  <RoyIcon name="x" size={14} strokeWidth={1.9} />
+                </button>
+              </div>
+            </RoyCard>
+          ))}
         </div>
       )}
+
+      {/* Тот же редактор задачи, что в разделе задач. Открывается кликом по предложению / «Своя».
+          Приватность/командность и списки — штатными средствами TaskModal. */}
+      <TaskModal
+        open={!!editing}
+        prefill={editing ? {
+          title: editing.title,
+          description: editing.description ?? null,
+          country: editing.country ?? null,
+          due_date: editing.due_date ?? null,
+        } : undefined}
+        meetingId={meetingId ?? null}
+        onClose={() => setEditing(null)}
+        onSaved={handleSaved}
+      />
     </div>
   );
 }
