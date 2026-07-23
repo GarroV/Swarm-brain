@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { cn, displayName } from "@/lib/utils";
 import { countryCode } from "@/lib/countries";
@@ -85,15 +86,31 @@ export function Market({ code }: { code?: string | null }) {
 // ── Участники встречи (из календаря) ─────────────────────────────────────────
 // Показывает имена (или email-фолбэк) участников. Это календарный список, НЕ диаризация
 // аудио — кто именно говорил, мы не различаем. Пусто → ничего не рендерим.
+// Список участников встречи. Свёрнут по умолчанию (первые PARTICIPANTS_LIMIT + «+N ещё»), иначе
+// длинный список email превращается в нечитаемую стену на весь экран (жалоба владельца 2026-07-23).
+const PARTICIPANTS_LIMIT = 6;
 export function Participants({ attendees }: { attendees?: Array<{ name?: string; email?: string }> | null }) {
+  const [expanded, setExpanded] = useState(false);
   const names = (attendees ?? [])
     .map((a) => (a.name?.trim() || a.email?.trim() || ""))
     .filter(Boolean);
   if (names.length === 0) return null;
+  const overflow = names.length > PARTICIPANTS_LIMIT;
+  const shown = expanded || !overflow ? names : names.slice(0, PARTICIPANTS_LIMIT);
   return (
-    <span className="inline-flex items-center gap-1.5 text-ink-soft" style={{ fontSize: 12 }}>
-      <RoyIcon name="team" size={13} className="text-ink-mute" />
-      Участники: <span className="text-ink">{names.join(", ")}</span>
+    <span className="inline-flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-ink-soft" style={{ fontSize: 12 }}>
+      <RoyIcon name="team" size={13} className="text-ink-mute self-center" />
+      <span className="text-ink-mute">Участники ({names.length}):</span>
+      <span className="text-ink">{shown.join(", ")}</span>
+      {overflow && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="font-semibold text-accent-ink transition-opacity hover:opacity-80"
+        >
+          {expanded ? "свернуть" : `+${names.length - PARTICIPANTS_LIMIT} ещё`}
+        </button>
+      )}
     </span>
   );
 }
