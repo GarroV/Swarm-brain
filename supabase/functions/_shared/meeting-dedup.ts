@@ -73,6 +73,13 @@ export type DedupIncoming = {
   startedAt?: string | null;
   /** Участники встречи (структурно из источника). */
   attendees: MeetingAttendee[];
+  /**
+   * Стабильный ключ идентичности встречи (meetings.identity_key: календарное событие + день).
+   * Если задан И у входящей, И у кандидата (metadata.identity_key) — решает однозначно:
+   * равны → одна встреча (дубль); различаются → РАЗНЫЕ встречи (не склеивать, даже при
+   * полном совпадении состава). Без ключа хотя бы у одной стороны — эвристика по составу+времени.
+   */
+  identityKey?: string | null;
   /** Не считать дублем эту запись (например, при перепроверке самой себя). */
   excludeId?: string;
 };
@@ -92,13 +99,15 @@ type Candidate = {
   source: string | null;
   is_private: boolean | null;
   owner_id: number | null;
-  metadata: (Record<string, unknown> & { attendees?: MeetingAttendee[]; title?: string }) | null;
+  metadata: (Record<string, unknown> & { attendees?: MeetingAttendee[]; title?: string; identity_key?: string }) | null;
 };
 
 /**
- * Ищет уже существующую запись-встречу того же дня с пересечением участников и близким временем.
- * Возвращает первое совпадение или null. Консервативен: без даты или без участников у входящей —
- * не дедупит (риск ложно склеить важную новую встречу выше риска дубля).
+ * Ищет уже существующую запись-встречу того же дня.
+ * Сначала — гейт по identity_key (см. DedupIncoming.identityKey): если ключ есть у обеих сторон,
+ * он решает однозначно (равны → дубль, различаются → разные встречи). Если ключа нет — эвристика:
+ * пересечение участников + близкое время. Возвращает первое совпадение или null. Консервативен:
+ * без даты или без участников у входящей — не дедупит (риск ложно склеить новую встречу выше риска дубля).
  */
 export async function findDuplicateMeeting(
   supabase: SupabaseClient,
@@ -108,6 +117,7 @@ export async function findDuplicateMeeting(
   if (!inc.entryDate || incAtt.length === 0) return null;
   const incSet = new Set(incAtt);
   const incMin = toMinutes(inc.startedAt);
+  const incKey = inc.identityKey || null;
 
   const { data, error } = await supabase
     .from("entries")
@@ -128,6 +138,19 @@ export async function findDuplicateMeeting(
 
   for (const c of data as Candidate[]) {
     if (inc.excludeId && c.id === inc.excludeId) continue;
+
+    // Гейт по identity_key — сильнейший сигнал для встреч с календарным событием (рекордер).
+    // Тот же event в тот же день у двух рекордеров → ИДЕНТИЧНЫЙ ключ → одна встреча (дубль).
+    // Разные события того же дня (даже с идентичным составом — регулярные командные созвоны)
+    // → РАЗНЫЕ ключи → РАЗНЫЕ встречи, склеивать нельзя. Именно отсутствие этого гейта
+    // схлопнуло 4 разные встречи IMF BD 23.07 в одну запись: у записей рекордера в content
+    // нет строки "Дата: …, HH:MM", гейт по времени отваливался, и дедуп склеивал по одному
+    // пересечению состава. Ключ есть только у обеих сторон — иначе падаем в эвристику ниже.
+    const candKey = (c.metadata?.identity_key as string | undefined) || null;
+    if (incKey && candKey) {
+      if (incKey === candKey) return toMatch(c);
+      continue;
+    }
 
     const parsed = parseMeetingContent(c.content);
     const metaAtt = attendeeNames(c.metadata?.attendees);
