@@ -4,6 +4,7 @@ import { setSession, clearSession } from "../lib/storage.ts";
 import type { Task, TgCallbackQuery } from "../lib/types.ts";
 import { sendTaskCard } from "../tasks/index.ts";
 import { generateNameAliases } from "../lib/name-aliases.ts";
+import { assignUserToWorkspace } from "../lib/workspace.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -57,23 +58,17 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
 
   if (sub === "add") {
     if (!targetArg) { await sendMessage(chatId, "Использование: /users add [telegram_id или @username]"); return; }
-    if (targetArg.startsWith("@")) {
-      const uname = targetArg.slice(1);
-      const { error } = await supabase.from("allowed_users").insert({ telegram_id: null, username: uname, added_by: adminId, group_id: groupId });
-      if (error) {
-        await sendMessage(chatId, error.code === "23505" ? `@${uname} уже в списке.` : `Ошибка: ${error.message}`);
-        return;
-      }
-      await sendMessage(chatId, `@${uname} добавлен. ID подтянется автоматически когда напишет боту.`);
-    } else {
-      if (isNaN(Number(targetArg))) { await sendMessage(chatId, "Использование: /users add [telegram_id или @username]"); return; }
-      const { error } = await supabase.from("allowed_users").insert({ telegram_id: Number(targetArg), added_by: adminId, group_id: groupId });
-      if (error) {
-        await sendMessage(chatId, error.code === "23505" ? `Пользователь ${targetArg} уже в списке.` : `Ошибка: ${error.message}`);
-        return;
-      }
-      await sendMessage(chatId, `Пользователь ${targetArg} добавлен.`);
+    // Единый путь для бота и веба — _shared/users/membership.ts (по id: move/insert; по @username:
+    // регистронезависимый find-or-insert ожидающей строки). added_by = ADMIN_USER_ID (как в superadmin/web).
+    const numeric = /^\d+$/.test(targetArg);
+    const result = await assignUserToWorkspace(numeric ? Number(targetArg) : null, numeric ? null : targetArg, groupId);
+    if (result !== "ok") {
+      await sendMessage(chatId, result === "workspace_not_found" ? "Спейс не найден." : "Использование: /users add [telegram_id или @username]");
+      return;
     }
+    await sendMessage(chatId, numeric
+      ? `Пользователь ${targetArg} добавлен.`
+      : `@${targetArg.replace(/^@/, "")} добавлен. ID подтянется автоматически, когда напишет боту.`);
     return;
   }
 

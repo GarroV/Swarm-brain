@@ -1,4 +1,5 @@
 import { supabase, ADMIN_USER_ID } from "./supabase.ts";
+import { addUserToWorkspace } from "../../_shared/users/membership.ts";
 
 export async function getUserGroupId(userId: number): Promise<string | null> {
   const { data } = await supabase
@@ -84,48 +85,13 @@ export async function createWorkspace(id: string, name: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+// Тонкая обёртка над каноном `_shared/users/membership.ts` (единая логика для бота и веба).
+// Сигнатуру и строковый результат сохраняем — существующие вызовы (superadmin/workspace) не трогаем.
 export async function assignUserToWorkspace(
   telegramId: number | null,
   username: string | null,
   workspaceId: string,
 ): Promise<"ok" | "not_found" | "workspace_not_found"> {
-  // Verify workspace exists
-  const { data: ws, error: wsErr } = await supabase
-    .from("workspaces").select("id").eq("id", workspaceId).maybeSingle();
-  if (wsErr) throw new Error(wsErr.message);
-  if (!ws) return "workspace_not_found";
-
-  if (telegramId !== null) {
-    const { data: existing } = await supabase
-      .from("allowed_users").select("id").eq("telegram_id", telegramId).maybeSingle();
-    if (existing) {
-      const { error } = await supabase
-        .from("allowed_users")
-        .update({ group_id: workspaceId })
-        .eq("telegram_id", telegramId);
-      if (error) throw new Error(error.message);
-    } else {
-      const { error } = await supabase
-        .from("allowed_users")
-        .insert({ telegram_id: telegramId, group_id: workspaceId, added_by: ADMIN_USER_ID });
-      if (error) throw new Error(error.message);
-    }
-    return "ok";
-  }
-
-  if (username) {
-    // May already be pending (no telegram_id yet)
-    const { data: existing } = await supabase
-      .from("allowed_users").select("id").eq("username", username).maybeSingle();
-    if (existing) {
-      const { error } = await supabase.from("allowed_users").update({ group_id: workspaceId }).eq("username", username);
-      if (error) throw new Error(error.message);
-    } else {
-      const { error } = await supabase.from("allowed_users").insert({ username, group_id: workspaceId, added_by: ADMIN_USER_ID });
-      if (error) throw new Error(error.message);
-    }
-    return "ok";
-  }
-
-  return "not_found";
+  const r = await addUserToWorkspace(supabase, { telegramId, username, workspaceId, addedBy: ADMIN_USER_ID });
+  return r.status === "bad_input" ? "not_found" : r.status;
 }

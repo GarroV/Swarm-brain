@@ -1,5 +1,6 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeCountries } from "../_shared/countries.ts";
+import { addUserToWorkspace } from "../_shared/users/membership.ts";
 
 const ADMIN_TELEGRAM_ID = 744230399;
 
@@ -201,37 +202,20 @@ export async function handleAdminRoutes(
       let body: Record<string, unknown>;
       try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
 
-      const telegramIdToAdd = body.telegram_id as number | undefined;
-      const usernameToAdd = (body.username as string | undefined)?.replace(/^@/, "").trim();
-      if (!telegramIdToAdd && !usernameToAdd) return apiErr(400, "telegram_id or username required", origin);
-
-      if (telegramIdToAdd) {
-        // telegram_id — есть уникальный индекс → upsert безопасен.
-        const { error } = await supabase.from("allowed_users").upsert(
-          { telegram_id: telegramIdToAdd, group_id: wsId, added_by: ADMIN_TELEGRAM_ID },
-          { onConflict: "telegram_id" }
-        );
-        if (error) return apiErr(500, error.message, origin);
-        return json({ ok: true, pending: false }, 200, origin);
+      // Единый канон добавления (тот же, что у бота) — _shared/users/membership.ts.
+      try {
+        const r = await addUserToWorkspace(supabase, {
+          telegramId: (body.telegram_id as number | undefined) ?? null,
+          username: (body.username as string | undefined) ?? null,
+          workspaceId: wsId,
+          addedBy: ADMIN_TELEGRAM_ID,
+        });
+        if (r.status === "workspace_not_found") return apiErr(404, "Workspace not found", origin);
+        if (r.status === "bad_input") return apiErr(400, "telegram_id or username required", origin);
+        return json({ ok: true, pending: r.pending }, 200, origin);
+      } catch (e) {
+        return apiErr(500, e instanceof Error ? e.message : "add failed", origin);
       }
-
-      // По @username: уникального индекса на username НЕТ, поэтому onConflict:"username" РАНЬШЕ
-      // падал (42P10), а ошибка молча глоталась → «добавлено», но в базе пусто (баг 2026-07-23).
-      // Правильно: если строка с таким username уже есть (в т.ч. уже привязанная) — обновляем
-      // group_id; иначе вставляем ОЖИДАЮЩУЮ строку (telegram_id=NULL) — она привяжется к telegram_id
-      // при первом сообщении пользователя боту (см. checkAllowed). Всегда проверяем error.
-      const uname = usernameToAdd!;
-      const { data: existing, error: selErr } = await supabase
-        .from("allowed_users").select("id").eq("username", uname).limit(1).maybeSingle();
-      if (selErr) return apiErr(500, selErr.message, origin);
-      if (existing) {
-        const { error } = await supabase.from("allowed_users").update({ group_id: wsId }).eq("id", (existing as { id: string }).id);
-        if (error) return apiErr(500, error.message, origin);
-      } else {
-        const { error } = await supabase.from("allowed_users").insert({ username: uname, group_id: wsId, added_by: ADMIN_TELEGRAM_ID });
-        if (error) return apiErr(500, error.message, origin);
-      }
-      return json({ ok: true, pending: true }, 200, origin);
     }
   }
 
