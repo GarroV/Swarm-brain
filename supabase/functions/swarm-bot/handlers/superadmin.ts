@@ -344,27 +344,12 @@ export async function handleSuperadminSession(
 
       let result: "ok" | "not_found" | "workspace_not_found";
 
+      // Единый путь: по числу — telegram_id, иначе — @username (канон _shared/users/membership.ts
+      // сам нормализует @/регистр и резолвит существующего юзера или заводит ожидающую строку).
       if (/^\d+$/.test(input)) {
-        // Pure numeric → telegram ID
-        const tgId = Number(input);
-        result = await assignUserToWorkspace(tgId, null, wsId);
+        result = await assignUserToWorkspace(Number(input), null, wsId);
       } else {
-        // Username (strip leading @)
-        const username = input.startsWith("@") ? input.slice(1) : input;
-
-        // Try to find existing user by username (username хранится в allowed_users)
-        const { data: profileRow } = await supabase
-          .from("allowed_users")
-          .select("telegram_id")
-          .ilike("username", username)
-          .maybeSingle();
-
-        if (profileRow && (profileRow as { telegram_id: number }).telegram_id) {
-          const tgId = (profileRow as { telegram_id: number }).telegram_id;
-          result = await assignUserToWorkspace(tgId, null, wsId);
-        } else {
-          result = await assignUserToWorkspace(null, username, wsId);
-        }
+        result = await assignUserToWorkspace(null, input, wsId);
       }
 
       if (result === "workspace_not_found") {
