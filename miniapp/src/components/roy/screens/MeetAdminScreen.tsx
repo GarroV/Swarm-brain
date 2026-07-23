@@ -748,6 +748,14 @@ function ActionsPanel({
   const [storage, setStorage] = useState<Storage>("shared");
   const isAgent = item.kind === "agent";
 
+  // Источник для извлечения задач у agent-черновика: тезисы, а если их нет (пустые/плашка «нет
+  // содержания» / ещё в обработке) — фолбэк на транскрипт. Иначе встреча без тезисов не давала бы
+  // даже кнопки «Сгенерировать», хотя задачи есть в стенограмме (баг охвата 2026-07-23).
+  const agentTaskText =
+    item.kind === "agent"
+      ? (item.data.draft_notes_md?.trim() || (item.data.transcript?.segments ?? []).map((s) => s.text).join("\n"))
+      : "";
+
   // Смена выбранной записи — вернуть хранилище к дефолту.
   useEffect(() => {
     setStorage("shared");
@@ -856,15 +864,16 @@ function ActionsPanel({
 
       {/* Сгенерировать задачи из встречи — в правой панели под кнопками решения.
           entry: привязываем к записи (meeting_id). agent-черновик: записи ещё нет (entry_id
-          появится при публикации) → задачи автономные; извлекаем из draft_notes_md, когда готовы. */}
+          появится при публикации) → задачи автономные; извлекаем из тезисов, а при их отсутствии —
+          из транскрипта (фолбэк), чтобы блок был доступен для ЛЮБОЙ встречи с содержанием. */}
       {item.kind === "entry" && (
         <div className="mt-1 border-t border-line pt-3">
           <TasksFromMeeting text={item.data.content} meetingId={item.data.id} resetKey={item.data.id} />
         </div>
       )}
-      {item.kind === "agent" && item.data.draft_notes_md && (
+      {item.kind === "agent" && agentTaskText.trim().length > 0 && (
         <div className="mt-1 border-t border-line pt-3">
-          <TasksFromMeeting text={item.data.draft_notes_md} resetKey={item.data.id} />
+          <TasksFromMeeting text={agentTaskText} resetKey={item.data.id} />
         </div>
       )}
 
