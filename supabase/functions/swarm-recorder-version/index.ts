@@ -9,6 +9,11 @@
 // Деплой: supabase functions deploy swarm-recorder-version --no-verify-jwt (публичный GET, без секретов).
 
 // Держать в синхроне с recorder/VERSION (ветка sandbox_vas). Поднимать ПОСЛЕ мёрджа+проверки сборки.
+// build 15 (2026-07-23): ФИКС РЕГРЕССА build 14 — recWatchTick снова тикает. В 14 startCallEndWatch
+// вызывался из Task без @MainActor (после await recorder.start()) → на фоновом потоке; Timer.scheduledTimer
+// садился на мёртвый фоновый run loop → авто-стоп (тишина/календарь/крышка) и чекпоинт-ротации МОЛЧАЛИ.
+// Фикс: Timer(timeInterval:)+RunLoop.main.add внутри DispatchQueue.main.async — таймер всегда на main.
+// Проверено ВЖИВУЮ: строки `tick` в /tmp/swarm-calldetect.log каждые 5с на реальной записи. Тег recorder-build-15.
 // build 14 (2026-07-23): фикс краша на стопе (deinit-deadlock ProcessTapSystemRecorder — EXC_BREAKPOINT),
 // сторож конца звонка армится ДО показа панели (иначе не было авто-стопа/ротаций/меты), meta.json
 // пишется синхронно на триггере ротации (recovery видит актуальные сегменты), recovery валидирует
@@ -25,7 +30,7 @@
 // build 4 (2026-07-09): heartbeat-мониторинг рекордера (SwarmClient.heartbeat → meeting-heartbeat;
 // сервер ловит оборванную запись / истечение токена). Тег recorder-build-4, build-app.sh ✅ (подпись валидна).
 // build 3 (2026-06-30): бэкап аудио держится до публикации в базу + потолок 3 суток. Тег recorder-build-3.
-const LATEST_BUILD = 14;
+const LATEST_BUILD = 15;
 
 Deno.serve((req: Request) => {
   if (req.method === "OPTIONS") {
