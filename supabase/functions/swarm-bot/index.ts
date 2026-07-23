@@ -1,5 +1,6 @@
 import { supabase, ADMIN_USER_ID, isAdminUser } from "./lib/supabase.ts";
-import { sendMessage, sendInlineMessage, editInlineMessage, buildKeyboard, answerCallback } from "./lib/telegram.ts";
+import { sendMessage, sendInlineMessage, editInlineMessage, buildKeyboard, answerCallback, getBotUsername } from "./lib/telegram.ts";
+import { gateGroupMessage } from "./lib/group-gate.ts";
 import { autoSyncProfile, getSession, clearSession } from "./lib/storage.ts";
 import { checkAllowedWithGroup } from "./lib/workspace.ts";
 import { getReadAiToken } from "./lib/readai.ts";
@@ -373,6 +374,16 @@ Deno.serve(async (req: Request) => {
   const userId = message.from?.id ?? 0;
   const username = message.from?.username ?? String(userId);
 
+  // ── Группы: без явного обращения не отвечаем ──────────────────────────────
+  // В группе/супергруппе обрабатываем только команду или @упоминание бота (гейт
+  // вырезает упоминание из текста); медиа и болтовня игнорируются молча. Личка — как раньше.
+  let gatedText: string | undefined;
+  if (message.chat.type && message.chat.type !== "private") {
+    const verdict = gateGroupMessage(message.text, await getBotUsername());
+    if (!verdict.process) return new Response("OK", { status: 200 });
+    gatedText = verdict.text;
+  }
+
   const { allowed, groupId } = await checkAllowedWithGroup(userId, message.from?.username);
   if (!allowed) {
     await sendMessage(chatId, "Доступ запрещён. Обратитесь к администратору.");
@@ -395,7 +406,7 @@ Deno.serve(async (req: Request) => {
       return new Response("OK", { status: 200 });
     }
 
-    const text = message.text?.trim();
+    const text = (gatedText ?? message.text)?.trim();
     if (!text) return new Response("OK", { status: 200 });
 
     const BUTTON_LABELS = new Set(["📥 Добавить", "❓ Спросить", "📋 Задачи", "ℹ️ Помощь", "👥 Пользователи", "🎙 Встречи", "🎙 Read.ai"]);

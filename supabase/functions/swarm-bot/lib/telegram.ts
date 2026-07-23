@@ -1,5 +1,21 @@
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
+// Username бота (без @) — нужен гейту групповых чатов для детекта явного обращения.
+// getMe дёргается раз на инстанс и кэшируется; при ошибке вернём null (гейт тогда
+// пропускает только голые команды, mention-детект недоступен).
+let cachedBotUsername: string | null = null;
+export async function getBotUsername(): Promise<string | null> {
+  if (cachedBotUsername) return cachedBotUsername;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`);
+    const json = await res.json() as { result?: { username?: string } };
+    cachedBotUsername = json.result?.username ?? null;
+  } catch {
+    cachedBotUsername = null;
+  }
+  return cachedBotUsername;
+}
+
 export async function answerCallback(callbackId: string): Promise<void> {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
     method: "POST",

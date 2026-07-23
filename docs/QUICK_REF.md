@@ -47,6 +47,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Concern | Файлы | Детали |
 |---|---|---|
 | Команды, роутинг входящего (сохранить vs искать) | `swarm-bot/index.ts`, `lib/intent.ts` | §swarm-bot, §Роутинг входящего |
+| Гейт групповых чатов (в группе — только по команде/@упоминанию) | `swarm-bot/lib/group-gate.ts`, `lib/telegram.ts` (`getBotUsername`) | §Роутинг входящего |
 | Сохранение записи (saveEntry/индекс), сессии, доступ | `swarm-bot/lib/storage.ts` | §Флоу сохранения, §Сессионный механизм |
 | Правка/удаление записей из чата | `swarm-bot/handlers/manage.ts` | §Управление записями |
 | Воркспейсы | `swarm-bot/lib/workspace.ts` | §Воркспейсы |
