@@ -81,6 +81,7 @@ interface MeetingRow {
   id: string;
   title: string | null;
   recorders: RecorderEntry[] | null;
+  claim_owner: number | null;
   mic_start_offset: number | null;
   summary_status: string | null;
   process_state: ProcessState | null;
@@ -319,6 +320,39 @@ async function markFailed(supabase: SupabaseClient, m: MeetingRow): Promise<void
   }
 }
 
+// telegram_id владельца микрофонной дорожки («я» в стенограмме). Авторитетный источник —
+// meetings.claim_owner: mic-дорожку заливает ТОЛЬКО claim_owner (meeting-ingest отбивает 403 на
+// чужой аплоад), поэтому claim_owner === владелец «я» по построению, даже после перехвата протухшей
+// брони (recorders[0] в этом случае — уже НЕ тот, кто записал). recorders[0] оставляем лишь как
+// фолбэк для легаси-строк без claim_owner.
+function micOwnerId(claimOwner: number | null, recorders: RecorderEntry[] | null): number | null {
+  if (typeof claimOwner === "number") return claimOwner;
+  return (recorders ?? []).map((r) => r?.telegram_id).find((n): n is number => typeof n === "number") ?? null;
+}
+
+// Имя владельца записи для легенды спикеров тезисов: telegram_id → user_profiles(first/last) →
+// фолбэк @username из allowed_users. null, если не резолвится (легенда останется обезличенной).
+async function resolveOwnerName(supabase: SupabaseClient, telegramId: number | null): Promise<string | null> {
+  if (telegramId == null) return null;
+  const [{ data: prof }, { data: au }] = await Promise.all([
+    supabase.from("user_profiles").select("first_name, last_name").eq("telegram_id", telegramId).maybeSingle(),
+    supabase.from("allowed_users").select("username").eq("telegram_id", telegramId).maybeSingle(),
+  ]);
+  const p = prof as { first_name?: string | null; last_name?: string | null } | null;
+  const full = [p?.first_name, p?.last_name].filter(Boolean).join(" ").trim();
+  if (full) return full;
+  const uname = (au as { username?: string | null } | null)?.username;
+  return uname ? `@${uname}` : null;
+}
+
+// Легенда спикеров для промпта тезисов. Если владелец записи известен — называем его по имени,
+// чтобы модель атрибутировала реплики «я» именно ему, а не делала «главным героем» собеседника,
+// чьё имя всплывает в разговоре (корневая причина жалобы владельца на перекос атрибуции).
+function speakerLegend(ownerName: string | null): string {
+  const me = ownerName ? `«я» — это ${ownerName} (владелец записи)` : "«я» — владелец записи";
+  return `Стенограмма (реплики помечены «собеседник» — другие участники, ${me}):`;
+}
+
 // ── Финал: сводим транскрипт → тезисы → done → уведомляем → чистим Storage ──────
 async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state: ProcessState): Promise<void> {
   const micOffset = typeof m.mic_start_offset === "number" && Number.isFinite(m.mic_start_offset) ? m.mic_start_offset : 0;
@@ -365,9 +399,10 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
   if (!transcriptText.trim()) {
     tezisi = NO_TEZISY_NOTE;
   } else {
+    const ownerName = await resolveOwnerName(supabase, micOwnerId(m.claim_owner, m.recorders));
     const raw = (await chatComplete(
       TEZIS_SYSTEM,
-      `Встреча: ${m.title ?? "без названия"}\n\nСтенограмма (реплики помечены «собеседник» — другие участники, «я» — владелец записи):\n${transcriptText}`,
+      `Встреча: ${m.title ?? "без названия"}\n\n${speakerLegend(ownerName)}\n${transcriptText}`,
       { temperature: 0.3 }, // применяется к фолбэк-gpt-4o; terra (GPT-5) температуру игнорирует
     )).trim();
     // Пустой ответ модели при СОДЕРЖАТЕЛЬНОМ транскрипте — это сбой сводки, а НЕ пустая встреча.
@@ -422,14 +457,15 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
 // Тот же путь, что и при первичной сводке (TEZIS_SYSTEM, temp 0.3) — один источник правды.
 // Заголовок НЕ трогаем (мог быть отредактирован вручную). Возвращает новые тезисы.
 export async function resummarizeFromTranscript(supabase: SupabaseClient, meetingId: string): Promise<string> {
-  const { data } = await supabase.from("meetings").select("id, title, transcript").eq("id", meetingId).single();
-  const row = data as { title: string | null; transcript: { segments?: Segment[] } | null } | null;
+  const { data } = await supabase.from("meetings").select("id, title, transcript, recorders, claim_owner").eq("id", meetingId).single();
+  const row = data as { title: string | null; transcript: { segments?: Segment[] } | null; recorders: RecorderEntry[] | null; claim_owner: number | null } | null;
   const segments = row?.transcript?.segments ?? [];
   const transcriptText = segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n").slice(0, 100000);
   if (!transcriptText.trim()) return NO_TEZISY_NOTE;
+  const ownerName = await resolveOwnerName(supabase, micOwnerId(row?.claim_owner ?? null, row?.recorders ?? null));
   const raw = (await chatComplete(
     TEZIS_SYSTEM,
-    `Встреча: ${row?.title ?? "без названия"}\n\nСтенограмма (реплики помечены «собеседник» — другие участники, «я» — владелец записи):\n${transcriptText}`,
+    `Встреча: ${row?.title ?? "без названия"}\n\n${speakerLegend(ownerName)}\n${transcriptText}`,
     { temperature: 0.3 },
   )).trim();
   // Пустой ответ модели — не затираем существующие тезисы пустой строкой и не метим done;
@@ -459,7 +495,7 @@ export async function runMeetingStep(
   try {
     const { data } = await supabase
       .from("meetings")
-      .select("id, title, recorders, mic_start_offset, summary_status, process_state")
+      .select("id, title, recorders, claim_owner, mic_start_offset, summary_status, process_state")
       .eq("id", meetingId)
       .maybeSingle();
     const m = data as MeetingRow | null;
