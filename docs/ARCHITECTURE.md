@@ -698,6 +698,7 @@ _Профиль / воркспейс:_
 | `POST` | `/recorder/token` | Минт/перевыпуск токена рекордера → `{ oneLiner, expiresAt }`; токен ОТДЕЛЬНЫЙ от MCP, доступно всем участникам |
 | `GET` | `/mcp/setup` | `{ active, expiresAt }` — статус MCP-токена Claude Desktop (для секции «Claude Desktop» в вебе). Хелперы — `_shared/mcp-token.ts` |
 | `POST` | `/mcp/token` | Минт/перевыпуск MCP-токена → `{ oneLiner }` (команда установки `/setup`); токен бессрочный, доступно всем участникам |
+| `GET` | `/mcp/instructions` | `{ instructions }` — текст инструкций для проекта Claude Desktop (поле Instructions), персонализирован Telegram ID. Зеркало бот-команды `/claude`; единый источник — `_shared/claude-project-prompt.ts` (кнопка «Инструкции для проекта» в секции «Claude Desktop» веба) |
 | `GET` | `/users` | Участники воркспейса с профилями |
 
 _Задачи / спринты / зависимости:_

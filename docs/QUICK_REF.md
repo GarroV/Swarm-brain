@@ -107,6 +107,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | MCP-инструменты (Claude Desktop) | `swarm-mcp/index.ts`, `swarm-mcp/tasks/tools.ts` | §swarm-mcp |
 | Авто-сетап Claude Desktop (`/setup`) | `swarm-setup/script.ts`, `swarm-bot/lib/mcp-setup.ts` | §swarm-mcp |
 | Подключение Claude — оба пути (Desktop + веб-коннектор claude.ai) | `swarm-bot/index.ts` (`/connect_claude`, `/setup`, `/mytoken`), `_shared/mcp-token.ts` | §MCP-аутентификация |
+| Промт-инструкции для проекта Claude Desktop (поле Instructions) | единый источник `_shared/claude-project-prompt.ts` → бот `/claude` + swarm-api `GET /mcp/instructions` (кнопка в вебе `SettingsScreen.tsx` `ClaudeDesktopSection`) | §swarm-api |
 | 🔍 «Токен протух» / `Invalid token` (диагностика) | токен **бессрочный** → это рассинхрон клиента, НЕ истечение. `_shared/mcp-token.ts`, `swarm-mcp/index.ts` (token check ~843), БД `allowed_users.claude_mcp_token_hash`. Проверка: `has_token=true, expires_at=null` → чинить клиента (`/mytoken`) | §MCP-аутентификация |
 | Установка рекордера (`/recordertoken`) | `swarm-recorder-setup/script.ts`, `recorder/setup-signing.sh`, `swarm-bot/lib/mcp-setup.ts` | recorder/README.md |
 

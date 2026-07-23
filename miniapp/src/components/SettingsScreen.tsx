@@ -6,7 +6,7 @@ import {
   fetchGranolaUnprocessed, previewGranolaNote, importGranolaNote, skipGranolaNote,
   sendFeedback, generateDigest, uploadFile, logout,
   fetchRecorderSetup, mintRecorderToken,
-  fetchMcpSetup, mintMcpToken,
+  fetchMcpSetup, mintMcpToken, fetchClaudeInstructions,
 } from "@/lib/api";
 import { getInitData } from "@/lib/telegram";
 import { countryCode } from "@/lib/countries";
@@ -653,10 +653,29 @@ function ClaudeDesktopSection() {
   const [oneLiner, setOneLiner] = useState<string | null>(null);
   const [minting, setMinting] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Инструкции для проекта Claude Desktop (зеркало /claude): грузятся по клику, сразу в буфер.
+  const [instructions, setInstructions] = useState<string | null>(null);
+  const [loadingInstr, setLoadingInstr] = useState(false);
+  const [copiedInstr, setCopiedInstr] = useState(false);
 
   useEffect(() => {
     fetchMcpSetup().then((s) => setActive(s.active)).catch(() => setActive(false));
   }, []);
+
+  const getInstructions = async () => {
+    setLoadingInstr(true);
+    try {
+      const { instructions: text } = await fetchClaudeInstructions();
+      setInstructions(text);
+      try {
+        await navigator.clipboard.writeText(text);
+        setCopiedInstr(true);
+        setTimeout(() => setCopiedInstr(false), 2000);
+      } catch { /* clipboard недоступен — пользователь скопирует из блока ниже вручную */ }
+    } finally {
+      setLoadingInstr(false);
+    }
+  };
 
   const getCommand = async (reissue: boolean) => {
     if (reissue && !(await confirm({ title: "Перевыпустить токен Claude Desktop?", description: "Старый конфиг перестанет работать — переустанови командой ниже.", confirmText: "Перевыпустить" }))) return;
@@ -704,6 +723,20 @@ function ClaudeDesktopSection() {
           <p className="text-xs text-muted-foreground">3. В Claude Desktop появится сервер <b>swarm-brain</b> с инструментами. Токен личный — никому не пересылай.</p>
         </div>
       )}
+
+      <div className="space-y-2 border-t pt-3">
+        <p className="text-xs text-muted-foreground">
+          После установки в Claude Desktop: <b>Projects → New Project</b> → вставь эти инструкции в поле <b>Instructions</b>. Claude будет искать и сохранять по правилам команды.
+        </p>
+        <Button size="sm" variant="secondary" onClick={getInstructions} disabled={loadingInstr} className="w-full">
+          {loadingInstr ? "Готовлю…" : copiedInstr ? "✓ Скопировано" : instructions ? "Скопировать ещё раз" : "Инструкции для проекта"}
+        </Button>
+        {instructions && (
+          <div className="max-h-40 overflow-y-auto rounded-lg border bg-muted/50 p-2.5">
+            <code className="block whitespace-pre-wrap break-words text-xs">{instructions}</code>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { verifyInitData } from "./auth.ts";
 import { verifyJWT, signJWT } from "../_shared/jwt.ts";
 import { getRecorderTokenStatus, mintRecorderToken, buildRecorderSetupOneLiner } from "../_shared/recorder-token.ts";
 import { getMcpTokenStatus, mintMcpToken, buildSetupOneLiner } from "../_shared/mcp-token.ts";
+import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
 import {
   EntryAccessError,
   buildEntriesQuery,
@@ -350,6 +351,12 @@ Deno.serve(async (req: Request) => {
   if (req.method === "GET" && routePath === "/mcp/setup") {
     const st = await getMcpTokenStatus(supabase, telegram_id);
     return json(st, 200, origin);
+  }
+
+  // GET /mcp/instructions — текст инструкций для проекта Claude Desktop (зеркало бот-команды
+  // /claude), персонализирован Telegram ID. Кнопка «инструкции для проекта» в секции miniapp.
+  if (req.method === "GET" && routePath === "/mcp/instructions") {
+    return json({ instructions: buildClaudeProjectPrompt(telegram_id) }, 200, origin);
   }
 
   // POST /mcp/token — минт/перевыпуск MCP-токена → { oneLiner } (команда установки Claude Desktop).

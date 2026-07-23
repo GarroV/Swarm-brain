@@ -255,6 +255,12 @@ export async function fetchMcpSetup(): Promise<{ active: boolean; expiresAt: str
 export async function mintMcpToken(): Promise<{ oneLiner: string }> {
   return apiFetch<{ oneLiner: string }>("/mcp/token", { method: "POST" });
 }
+// Текст инструкций для проекта Claude Desktop (то, что вставляют в поле Instructions).
+// Персонализируется Telegram ID на сервере — зеркало бот-команды /claude.
+export async function fetchClaudeInstructions(): Promise<{ instructions: string }> {
+  if (DEV_MODE) return { instructions: "Ты работаешь с командной базой знаний Swarm Brain…\n\nМой Telegram ID: 123456\n(dev-заглушка инструкций для проекта Claude Desktop)" };
+  return apiFetch<{ instructions: string }>("/mcp/instructions");
+}
 
 export async function patchMe(fields: UpdateMeInput): Promise<void> {
   if (DEV_MODE) return;

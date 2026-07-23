@@ -7,6 +7,7 @@ import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
 import { handleVoice, handleDocument, handlePhoto, handleUrl } from "./handlers/media.ts";
 import { classifyEntryCommand, parseManageCommand, extractUrl, parseSaveCommand, parseCreateTaskCommand } from "./lib/intent.ts";
 import { ENTRY_MEETING_SOURCES } from "../_shared/sources.ts";
+import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
 import { handleEntryCommand, handleManageCallbacks, handleManageSessionInput } from "./handlers/manage.ts";
 import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput, handleQuickCreateTask } from "./tasks/index.ts";
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
@@ -681,37 +682,7 @@ Deno.serve(async (req: Request) => {
         `<i>Токен протух / «Invalid token»? Он не истекает по времени — обычно это старый токен в настройках. Возьми свежий: /mytoken (или /setup на Mac) и обнови его в коннекторе.</i>`
       );
     } else if (command === "/claude") {
-      const instructions =
-        `Ты работаешь с командной базой знаний Swarm Brain — инструментом для хранения встреч, решений и задач команды международного бизнеса (пиццерии Додо в Сербии, Болгарии, Хорватии, Венгрии, Молдове, Румынии и других странах).\n\n` +
-        `Мой Telegram ID: ${userId}\n` +
-        `Передавай его как requesting_user_id во все инструменты которые его принимают (search_knowledge, list_entries, get_entry, get_tasks, get_meetings).\n\n` +
-        `## Сохранение текста\n\n` +
-        `Когда пользователь передаёт транскрипт, заметки, документ или любой текст:\n` +
-        `1. Сгенерируй детальные тезисы: конкретные факты, числа, имена — не общие фразы. Группировка по темам. Статусы, решения, открытые вопросы.\n` +
-        `2. Покажи тезисы: "Проверь тезисы. Можешь отредактировать. Когда готово — подтверди."\n` +
-        `3. Дождись подтверждения ("ок", "да", "сохрани", "грузи", "давай" и т.п.)\n` +
-        `4. Вызови add_knowledge: content = полный оригинальный текст, summary = финальные тезисы, source = тип контента\n` +
-        `Никогда не сохраняй без подтверждения.\n\n` +
-        `## Сохранение файлов\n\n` +
-        `Когда пользователь прикрепляет файл:\n` +
-        `- Читай, анализируй, отвечай на вопросы — не сохраняй автоматически\n` +
-        `- Если просит сохранить ("сохрани", "добавь в базу", "запомни"):\n` +
-        `  1. Сгенерируй тезисы → покажи → дождись подтверждения\n` +
-        `  2. Вызови upload_file: file_name, file_content_base64, summary, source\n\n` +
-        `## Поиск и вопросы\n\n` +
-        `При любом вопросе про встречи, решения, задачи, проекты, страны:\n` +
-        `- Используй search_knowledge (передавай requesting_user_id: ${userId})\n` +
-        `- Уточняй через get_entry если нужен полный текст записи\n` +
-        `- get_tasks — для задач (фильтры: имя, страна, статус)\n` +
-        `- get_meetings — для последних встреч\n` +
-        `- Не отвечай по памяти — только из базы. Если нет — честно скажи.\n\n` +
-        `## Управление базой\n\n` +
-        `Перед удалением ВСЕГДА показывай что именно будет удалено и жди подтверждения.\n` +
-        `Для правок — update_entry. Для ревизии — list_entries с фильтрами.\n\n` +
-        `## Личное хранилище\n\n` +
-        `"Закинь в личное" / "только для меня" / "приватно" → add_knowledge с is_private: true, owner_telegram_id: ${userId}\n\n` +
-        `## Язык\n\n` +
-        `Всегда отвечай на русском, даже если источник на другом языке.`;
+      const instructions = buildClaudeProjectPrompt(userId);
 
       await sendMessage(chatId,
         `<b>🖥 Claude Desktop — инструкции для проекта</b>\n\n` +
