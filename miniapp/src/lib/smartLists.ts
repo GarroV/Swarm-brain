@@ -6,9 +6,9 @@ import type { Task, Me } from "@/types";
 import type { RoyIconName } from "@/components/roy/icons";
 
 export type SmartListId = "today" | "upcoming" | "all" | "done";
-// Линза = ось «как смотреть»: по владельцу (mine/team/all) ИЛИ группировкой (market — по рынку,
-// staff — по исполнителю). «market»/«staff» — не фильтр владельца, а режимы отображения
-// (все владельцы, сгруппировано). «staff» — админский вид «все сотрудники» (кто чем занят).
+// Линза = ось «как смотреть»: «mine» — назначенные на меня; «team» — ОБЩИЕ (не приватные, без
+// конкретного исполнителя); «all» — все; ИЛИ группировкой (market — по рынку, staff — по
+// исполнителю, все владельцы, сгруппировано). «staff» — админский вид «все сотрудники».
 export type Lens = "mine" | "team" | "all" | "market" | "staff";
 
 export type SmartListDef = { id: SmartListId; label: string; icon: RoyIconName };
@@ -52,7 +52,11 @@ export function isOverdue(task: Task, now: Date = new Date()): boolean {
 function matchesLens(task: Task, lens: Lens, me: Me | null): boolean {
   // «Все», «По рынкам» и «Все сотрудники» не фильтруют по владельцу (группируют, не отбирают).
   if (lens === "all" || lens === "market" || lens === "staff") return true;
-  if (lens === "team") return !(me && (task.assignee_telegram_ids?.includes(me.telegram_id) ?? false));
+  // «Команда» = ОБЩИЕ задачи: не приватные И без конкретного исполнителя (формулировка владельца —
+  // «командная задача = общая, у которой нет определённого юзера»). Приватные и назначенные на
+  // кого-либо (в т.ч. на меня) сюда НЕ попадают — назначенные живут в «Мои»/«Все». Общую задачу
+  // создаёшь, выбрав в исполнителе «Общие» (без конкретного человека).
+  if (lens === "team") return !task.is_private && (task.assignee_telegram_ids?.length ?? 0) === 0;
   if (!me) return false;
   return task.assignee_telegram_ids?.includes(me.telegram_id) ?? false;
 }

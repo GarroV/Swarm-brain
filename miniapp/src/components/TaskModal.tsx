@@ -285,7 +285,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId }: 
               <div>
                 <label htmlFor="modal-assignee" className={labelCls} style={{ fontSize: 12.5 }}>Исполнитель</label>
                 <select id="modal-assignee" className={fieldCls} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
-                  <option value={NONE}>— Нет —</option>
+                  {/* «Общие» = без конкретного исполнителя → командная задача (видна во вкладке «Команда»). */}
+                  <option value={NONE}>Общие (вся команда)</option>
                   {assigneeOptions.map((o) => (
                     <option key={o.id} value={o.id}>{o.name}</option>
                   ))}
