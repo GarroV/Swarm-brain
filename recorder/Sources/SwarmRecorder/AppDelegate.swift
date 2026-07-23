@@ -803,10 +803,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         systemSilentTicks = 0
         roomGoneTicks = 0
         loudStreak = 0
-        recWatchTimer?.invalidate()
-        let t = Timer.scheduledTimer(timeInterval: 5, target: self, selector: #selector(recWatchTick), userInfo: nil, repeats: true)
-        RunLoop.main.add(t, forMode: .common)
-        recWatchTimer = t
+        // Таймер планируем СТРОГО на main-run-loop. startCallEndWatch зовётся из Task без @MainActor
+        // (после `await recorder.start()`) → на фоновом потоке. Timer.scheduledTimer там сел бы на
+        // мёртвый фоновый run loop, а RunLoop.main.add уже-запланированного таймера его на main НЕ
+        // перевешивает → recWatchTick не тикал (регресс build 14: авто-стоп/чекпоинт-ротации молчали).
+        // Timer(timeInterval:) + RunLoop.main.add ВНУТРИ DispatchQueue.main.async = таймер всегда на main.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.recWatchTimer?.invalidate()
+            let t = Timer(timeInterval: 5, target: self, selector: #selector(self.recWatchTick), userInfo: nil, repeats: true)
+            RunLoop.main.add(t, forMode: .common)
+            self.recWatchTimer = t
+        }
     }
 
     private func stopCallEndWatch() {
