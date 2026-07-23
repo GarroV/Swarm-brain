@@ -15,8 +15,9 @@ export const MEETING_SOURCES: Record<string, { label: string; kind: SourceKind }
 export const ALL_MEETING_SOURCES: string[] = Object.keys(MEETING_SOURCES);
 
 // Внешние источники, которые СЕЙЧАС пишут встречи прямо в `entries` (в отличие от рекордера,
-// держащего pending в таблице `meetings`). До унификации фильтры pending/статистики entries
-// используют именно этот список.
+// держащего pending в таблице `meetings`). До унификации pending-фильтры entries используют
+// именно этот список; статистика/«последняя встреча» — ALL_MEETING_SOURCES (опубликованные
+// рекордерные встречи тоже лежат в entries, source `desktop-agent`).
 export const ENTRY_MEETING_SOURCES: string[] = Object.entries(MEETING_SOURCES)
   .filter(([, v]) => v.kind === "external")
   .map(([k]) => k);

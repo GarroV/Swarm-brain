@@ -7,7 +7,7 @@ import { getReadAiToken } from "./lib/readai.ts";
 import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
 import { handleVoice, handleDocument, handlePhoto, handleUrl } from "./handlers/media.ts";
 import { classifyEntryCommand, parseManageCommand, extractUrl, parseSaveCommand, parseCreateTaskCommand } from "./lib/intent.ts";
-import { ENTRY_MEETING_SOURCES } from "../_shared/sources.ts";
+import { ALL_MEETING_SOURCES, ENTRY_MEETING_SOURCES, sourceLabel } from "../_shared/sources.ts";
 import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
 import { handleEntryCommand, handleManageCallbacks, handleManageSessionInput } from "./handlers/manage.ts";
 import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput, handleQuickCreateTask } from "./tasks/index.ts";
@@ -709,9 +709,11 @@ Deno.serve(async (req: Request) => {
         { count: openTasks },
         { count: overdueTasks },
       ] = await Promise.all([
-        supabase.from("entries").select("*", { count: "exact", head: true }).eq("group_id", groupId).in("source", ENTRY_MEETING_SOURCES),
+        // Статистика — по ВСЕМ источникам встреч (вкл. опубликованные рекордерные `desktop-agent`);
+        // pending-фильтр ниже — только внешние (рекордерные pending живут в таблице `meetings`).
+        supabase.from("entries").select("*", { count: "exact", head: true }).eq("group_id", groupId).in("source", ALL_MEETING_SOURCES),
         supabase.from("entries").select("id, metadata, created_at").eq("group_id", groupId).eq("source", "read_ai").eq("metadata->>confirmed", "false").order("created_at", { ascending: false }),
-        supabase.from("entries").select("metadata, created_at, source").eq("group_id", groupId).in("source", ENTRY_MEETING_SOURCES).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("entries").select("metadata, created_at, source").eq("group_id", groupId).in("source", ALL_MEETING_SOURCES).order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open").eq("is_private", false),
         supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open").eq("is_private", false).lt("due_date", new Date().toISOString().split("T")[0]),
       ]);
@@ -737,7 +739,7 @@ Deno.serve(async (req: Request) => {
       if (lastMeeting) {
         const hoursAgo = Math.round((Date.now() - new Date((lastMeeting as { created_at: string }).created_at).getTime()) / 3_600_000);
         const title = ((lastMeeting as { metadata: Record<string, unknown> }).metadata?.title as string) ?? "Без названия";
-        const src = (lastMeeting as { source: string }).source === "granola" ? "Granola" : "Read.ai";
+        const src = sourceLabel((lastMeeting as { source: string }).source);
         const freshness = hoursAgo < 24 ? `${hoursAgo} ч назад` : `${Math.round(hoursAgo / 24)} дн назад`;
         statusMsg += `Последняя: <b>${title}</b> · ${src} · ${freshness}\n`;
       }
