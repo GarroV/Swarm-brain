@@ -876,9 +876,10 @@ export async function addUserToWorkspace(wsId: string, ref: { telegramId?: numbe
   return apiFetch<void>(`/admin/workspaces/${wsId}/users`, { method: "POST", body: JSON.stringify(body) });
 }
 
-export async function removeUserFromWorkspace(wsId: string, userId: number): Promise<void> {
+// userId — telegram_id (реальный юзер) ЛИБО username (ожидающее приглашение без telegram_id).
+export async function removeUserFromWorkspace(wsId: string, userId: number | string): Promise<void> {
   if (DEV_MODE) return;
-  return apiFetch<void>(`/admin/workspaces/${wsId}/users/${userId}`, { method: "DELETE" });
+  return apiFetch<void>(`/admin/workspaces/${wsId}/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
 }
 
 export async function patchAdminWorkspace(wsId: string, fields: { name?: string; allowed_markets?: string[] | null }): Promise<AdminWorkspace> {

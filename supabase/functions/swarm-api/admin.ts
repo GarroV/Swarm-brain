@@ -150,7 +150,7 @@ export async function handleAdminRoutes(
     if (req.method === "GET") {
       const { data: users } = await supabase
         .from("allowed_users")
-        .select("telegram_id, username, is_admin, created_at")
+        .select("id, telegram_id, username, is_admin, created_at")
         .eq("group_id", wsId);
 
       const ids = (users ?? [])
@@ -165,14 +165,20 @@ export async function handleAdminRoutes(
         (profiles ?? []).map((p: Record<string, unknown>) => [p.telegram_id, p])
       );
 
+      // Строки без telegram_id — ОЖИДАЮЩИЕ приглашения (добавлены по @username, привяжутся к
+      // telegram_id при первом входе в бота). Раньше их отфильтровывали → админ не видел, что
+      // добавление сработало, и жал «добавить» снова (баг 2026-07-23). Теперь показываем c pending.
       const result = (users ?? [])
-        .filter((u: Record<string, unknown>) => u.telegram_id != null)
         .map((u: Record<string, unknown>) => {
-          const p = profileMap[u.telegram_id as number] as Record<string, unknown> | undefined;
+          const tid = u.telegram_id as number | null;
+          const p = tid != null ? (profileMap[tid] as Record<string, unknown> | undefined) : undefined;
           const fullName = p ? [p.first_name, p.last_name].filter(Boolean).join(" ") : null;
+          const pending = tid == null;
           return {
-            telegram_id: u.telegram_id,
-            name: fullName || u.username || String(u.telegram_id),
+            id: u.id,
+            telegram_id: tid,
+            pending,
+            name: fullName || (u.username ? `@${u.username}` : null) || (tid != null ? String(tid) : "?"),
             username: u.username ?? null,
             is_admin: u.is_admin ?? false,
             role: p?.role ?? null,
@@ -184,7 +190,9 @@ export async function handleAdminRoutes(
             notes: p?.notes ?? null,
             created_at: u.created_at,
           };
-        });
+        })
+        // Реальные юзеры выше, ожидающие — в конце (свежие приглашения — сверху среди своих).
+        .sort((a, b) => (a.pending === b.pending ? 0 : a.pending ? 1 : -1));
 
       return json(result, 200, origin);
     }
@@ -194,21 +202,36 @@ export async function handleAdminRoutes(
       try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
 
       const telegramIdToAdd = body.telegram_id as number | undefined;
-      const usernameToAdd = body.username as string | undefined;
+      const usernameToAdd = (body.username as string | undefined)?.replace(/^@/, "").trim();
       if (!telegramIdToAdd && !usernameToAdd) return apiErr(400, "telegram_id or username required", origin);
 
       if (telegramIdToAdd) {
-        await supabase.from("allowed_users").upsert(
+        // telegram_id — есть уникальный индекс → upsert безопасен.
+        const { error } = await supabase.from("allowed_users").upsert(
           { telegram_id: telegramIdToAdd, group_id: wsId, added_by: ADMIN_TELEGRAM_ID },
           { onConflict: "telegram_id" }
         );
-      } else {
-        await supabase.from("allowed_users").upsert(
-          { username: usernameToAdd, group_id: wsId, added_by: ADMIN_TELEGRAM_ID },
-          { onConflict: "username" }
-        );
+        if (error) return apiErr(500, error.message, origin);
+        return json({ ok: true, pending: false }, 200, origin);
       }
-      return json({ ok: true }, 200, origin);
+
+      // По @username: уникального индекса на username НЕТ, поэтому onConflict:"username" РАНЬШЕ
+      // падал (42P10), а ошибка молча глоталась → «добавлено», но в базе пусто (баг 2026-07-23).
+      // Правильно: если строка с таким username уже есть (в т.ч. уже привязанная) — обновляем
+      // group_id; иначе вставляем ОЖИДАЮЩУЮ строку (telegram_id=NULL) — она привяжется к telegram_id
+      // при первом сообщении пользователя боту (см. checkAllowed). Всегда проверяем error.
+      const uname = usernameToAdd!;
+      const { data: existing, error: selErr } = await supabase
+        .from("allowed_users").select("id").eq("username", uname).limit(1).maybeSingle();
+      if (selErr) return apiErr(500, selErr.message, origin);
+      if (existing) {
+        const { error } = await supabase.from("allowed_users").update({ group_id: wsId }).eq("id", (existing as { id: string }).id);
+        if (error) return apiErr(500, error.message, origin);
+      } else {
+        const { error } = await supabase.from("allowed_users").insert({ username: uname, group_id: wsId, added_by: ADMIN_TELEGRAM_ID });
+        if (error) return apiErr(500, error.message, origin);
+      }
+      return json({ ok: true, pending: true }, 200, origin);
     }
   }
 
@@ -216,10 +239,22 @@ export async function handleAdminRoutes(
   const wsUserMatch = routePath.match(/^\/admin\/workspaces\/([^/]+)\/users\/([^/]+)$/);
   if (wsUserMatch && req.method === "DELETE") {
     const [, wsId, userId] = wsUserMatch;
-    if (Number(userId) === ADMIN_TELEGRAM_ID) return apiErr(400, "Cannot remove super admin", origin);
-    await supabase.from("allowed_users").delete()
-      .eq("telegram_id", Number(userId))
-      .eq("group_id", wsId);
+    // Числовой сегмент → telegram_id (реальный юзер). Нечисловой → username (ОЖИДАЮЩАЯ строка,
+    // telegram_id=NULL): добавлена по @username, ещё не вошла в бота — удаляется по username.
+    if (/^\d+$/.test(userId)) {
+      if (Number(userId) === ADMIN_TELEGRAM_ID) return apiErr(400, "Cannot remove super admin", origin);
+      const { error } = await supabase.from("allowed_users").delete()
+        .eq("telegram_id", Number(userId))
+        .eq("group_id", wsId);
+      if (error) return apiErr(500, error.message, origin);
+    } else {
+      const uname = decodeURIComponent(userId).replace(/^@/, "");
+      const { error } = await supabase.from("allowed_users").delete()
+        .eq("username", uname)
+        .is("telegram_id", null)
+        .eq("group_id", wsId);
+      if (error) return apiErr(500, error.message, origin);
+    }
     return new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": origin } });
   }
 

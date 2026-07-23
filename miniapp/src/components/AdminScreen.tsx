@@ -123,9 +123,10 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
     finally { setAdding(false); }
   };
 
-  const handleRemove = async (userId: number) => {
+  // Реальный юзер удаляется по telegram_id, ожидающий (pending) — по username (у него нет telegram_id).
+  const handleRemove = async (u: AdminUser) => {
     if (!(await confirm({ title: "Удалить пользователя из воркспейса?", description: "Пользователь потеряет доступ к этому воркспейсу. Его можно будет добавить снова.", confirmText: "Удалить" }))) return;
-    await removeUserFromWorkspace(wsId, userId);
+    await removeUserFromWorkspace(wsId, u.pending ? (u.username ?? "") : u.telegram_id!);
     load();
   };
 
@@ -186,29 +187,32 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
       ) : (
         <div className="space-y-2">
           {users.map((u) => (
-            <div key={u.telegram_id} className="rounded-[14px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
+            <div key={u.telegram_id ?? u.username ?? u.id} className="rounded-[14px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
               <div className="flex items-center gap-2">
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-1.5 truncate font-semibold text-ink" style={{ fontSize: 13.5 }}>
                     {u.name}
                     {u.is_admin && <span className="rounded-[6px] px-1.5 py-0.5 font-mono uppercase" style={{ fontSize: 9, color: "var(--accent-ink)", background: "var(--accent-soft)" }}>admin</span>}
+                    {u.pending && <span className="rounded-[6px] px-1.5 py-0.5 font-semibold" style={{ fontSize: 9, color: "var(--status-open)", background: "color-mix(in srgb, var(--status-open) 12%, transparent)" }}>ждёт входа</span>}
                   </p>
                   <p className="font-mono text-ink-mute" style={{ fontSize: 11 }}>
-                    {u.username ? `@${u.username} · ` : ""}{u.telegram_id}
+                    {u.username ? `@${u.username}` : ""}{u.telegram_id != null ? `${u.username ? " · " : ""}${u.telegram_id}` : (u.username ? "" : "?")}
                   </p>
                   {u.role && <p className="text-ink-soft" style={{ fontSize: 11 }}>{u.role}</p>}
                 </div>
                 {u.markets.length > 0 && (
                   <span className="shrink-0 text-ink-soft" style={{ fontSize: 11 }}>{u.markets.map(countryCode).join(", ")}</span>
                 )}
-                <button onClick={() => startEdit(u)} aria-label="Редактировать профиль" className="shrink-0 transition-colors hover:opacity-80 active:scale-[0.92]" style={{ color: "var(--accent-ink)" }}>
-                  <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
-                </button>
-                <button onClick={() => handleRemove(u.telegram_id)} aria-label="Удалить" className="shrink-0 transition-colors hover:opacity-80 active:scale-[0.92]" style={{ color: "var(--pri-high)" }}>
+                {!u.pending && (
+                  <button onClick={() => startEdit(u)} aria-label="Редактировать профиль" className="shrink-0 transition-colors hover:opacity-80 active:scale-[0.92]" style={{ color: "var(--accent-ink)" }}>
+                    <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
+                  </button>
+                )}
+                <button onClick={() => handleRemove(u)} aria-label="Удалить" className="shrink-0 transition-colors hover:opacity-80 active:scale-[0.92]" style={{ color: "var(--pri-high)" }}>
                   <RoyIcon name="trash" size={16} strokeWidth={1.9} />
                 </button>
               </div>
-              {editId === u.telegram_id ? (
+              {editId != null && editId === u.telegram_id ? (
                 <div className="mt-2.5 space-y-2 border-t border-line pt-2.5">
                   <div className="flex gap-2">
                     <div className="flex-1"><Lbl t="Имя" /><input value={editFirst} onChange={(e) => setEditFirst(e.target.value)} placeholder="Имя" className={fieldCls} /></div>
@@ -245,10 +249,10 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
                     <button onClick={() => setEditId(null)} className="rounded-[12px] border border-line bg-surface px-3 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97]" style={{ fontSize: 13 }}>Отмена</button>
                   </div>
                 </div>
-              ) : others.length > 0 ? (
+              ) : !u.pending && others.length > 0 ? (
                 <select
                   defaultValue=""
-                  onChange={(e) => { handleMove(u.telegram_id, e.target.value); e.currentTarget.value = ""; }}
+                  onChange={(e) => { handleMove(u.telegram_id!, e.target.value); e.currentTarget.value = ""; }}
                   className="mt-2 w-full rounded-[10px] border border-line bg-surface-2 px-2 py-1 text-ink-soft outline-none focus:border-[var(--accent-ink)]"
                   style={{ fontSize: 11.5 }}
                 >

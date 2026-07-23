@@ -77,7 +77,11 @@ export type AdminWorkspace = {
 };
 
 export type AdminUser = {
-  telegram_id: number;
+  // Ожидающие приглашения (добавлены по @username, ещё не вошли в бота) имеют telegram_id=null
+  // и pending=true; удаляются по username. id — PK строки allowed_users.
+  id?: string;
+  telegram_id: number | null;
+  pending?: boolean;
   name: string;
   username: string | null;
   is_admin: boolean;
