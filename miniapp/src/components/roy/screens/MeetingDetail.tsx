@@ -211,6 +211,19 @@ export function MeetingDetail({ id }: { id: string }) {
               <ActionChip icon="trash" label="Удалить" onClick={del} danger />
             </div>
 
+            {/* Задачи из встречи — на виду, сразу под действиями (генерация из тезисов/транскрипта
+                или своя). Берём content||summary, чтобы блок не исчезал у встреч с пустым content. */}
+            {(e.content || e.summary) && (
+              <div className="mb-4">
+                <TasksFromMeeting text={e.content || e.summary || ""} meetingId={e.id} resetKey={e.id} onAdded={loadTasks} />
+                {tasks.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {tasks.map((t) => <DashTaskRow key={t.id} task={t} showAssignee />)}
+                  </div>
+                )}
+              </div>
+            )}
+
             {editingCountries && (
               <div className="mb-4 rounded-[14px] border border-line-2 bg-surface p-4">
                 <SectionLabel>Страны встречи</SectionLabel>
@@ -275,17 +288,6 @@ export function MeetingDetail({ id }: { id: string }) {
                 <TezisyBlocks text={e.summary} />
               </div>
             ) : null}
-
-            {e.content?.trim() && (
-              <div className="mb-4">
-                <TasksFromMeeting text={e.content} meetingId={e.id} resetKey={e.id} onAdded={loadTasks} />
-                {tasks.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {tasks.map((t) => <DashTaskRow key={t.id} task={t} showAssignee />)}
-                  </div>
-                )}
-              </div>
-            )}
 
             <SectionLabel>Запись</SectionLabel>
             <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 14.5, lineHeight: 1.65 }}>
