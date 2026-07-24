@@ -784,7 +784,7 @@ _Поиск / RAG / прочее:_
 
 | Метод | Путь | Что делает |
 |-------|------|-----------|
-| `GET` | `/search?q=` | Гибридный поиск по `entries` (`match_entries_hybrid`: русский full-text + вектор через RRF, буст по стране и свежести; страна детектится из текста запроса — `detectQueryCountry`) → `Entry[]` |
+| `GET` | `/search?q=` | Гибридный поиск по `entries` (`match_entries_hybrid`: русский full-text + вектор через RRF, буст по стране + окно свежести — сначала ≤2 нед, добор старых при <5 источников, ступенчатый буст recency; страна детектится из текста запроса — `detectQueryCountry`) → `Entry[]` |
 | `POST` | `/ask` | RAG-ответ (экран Answer редизайна): embed → `matchEntries` (топ-8, приватность+воркспейс в RPC) → GPT-4o-mini синтез строго по источникам со сносками `[n]` → `{ query, answer, sources[], followups[] }`. Пусто → без GPT; сбой синтеза → деградация до источников |
 | `POST` | `/digest` | Персональный дайджест за период (`{ days }`, дефолт 7): GPT-сводка по `entries` воркспейса (приватность учтена); пусто → текстовая заглушка |
 | `POST` | `/feedback` | Сохранить фидбек (`text`) в `feedback` (username из `allowed_users`) + переслать в Telegram-канал `feedback_channel_id`; 204 |

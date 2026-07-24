@@ -298,8 +298,10 @@ create or replace function public.match_entries_hybrid(
   full_text_weight float default 1.0,
   semantic_weight float default 1.0,
   country_weight float default 1.5,
-  recency_weight float default 0.6,
-  rrf_k int default 50
+  recency_weight float default 1.0,
+  rrf_k int default 50,
+  fresh_days int default 14,
+  min_fresh int default 5
 )
 returns table(
   id uuid, content text, summary text, source text, metadata jsonb,
@@ -337,19 +339,34 @@ semantic as (
   order by e.embedding <=> (select qe from params)
   limit least(match_count, 30) * 2
 )
-select
-  e.id, e.content, e.summary, e.source, e.metadata, e.countries, e.entry_type, e.entry_date, e.group_id,
-  (1 - (e.embedding <=> (select qe from params)))::double precision as similarity
-from full_text
-full outer join semantic on full_text.id = semantic.id
-join public.entries e on e.id = coalesce(full_text.id, semantic.id)
-order by
-  coalesce(1.0 / (rrf_k + full_text.rank_ix), 0.0) * full_text_weight
-  + coalesce(1.0 / (rrf_k + semantic.rank_ix), 0.0) * semantic_weight
-  + (case when filter_country is not null and e.countries && array[filter_country]
-          then country_weight / rrf_k else 0.0 end)
-  + coalesce((recency_weight / rrf_k) * (1.0 / (1 + greatest(0, (current_date - e.entry_date)) / 30.0)), 0.0)
-  desc
+fused as (
+  select
+    e.id, e.content, e.summary, e.source, e.metadata, e.countries, e.entry_type, e.entry_date, e.group_id,
+    (1 - (e.embedding <=> (select qe from params)))::double precision as similarity,
+    coalesce(1.0 / (rrf_k + full_text.rank_ix), 0.0) * full_text_weight
+    + coalesce(1.0 / (rrf_k + semantic.rank_ix), 0.0) * semantic_weight
+    + (case when filter_country is not null and e.countries && array[filter_country]
+            then country_weight / rrf_k else 0.0 end) as base_score,
+    -- Ступенчатый буст свежести: чем свежее — тем больше (сильный скачок в окне fresh_days).
+    (recency_weight / rrf_k) * (case
+      when e.entry_date is null then 0.0
+      when e.entry_date >= current_date - fresh_days     then 3.0
+      when e.entry_date >= current_date - fresh_days * 2 then 1.5
+      when e.entry_date >= current_date - fresh_days * 6 then 0.6
+      else 0.0 end) as recency_bonus,
+    (e.entry_date is not null and e.entry_date >= current_date - fresh_days) as is_fresh
+  from full_text
+  full outer join semantic on full_text.id = semantic.id
+  join public.entries e on e.id = coalesce(full_text.id, semantic.id)
+),
+flagged as (
+  select *, count(*) filter (where is_fresh) over () as fresh_count from fused
+)
+select id, content, summary, source, metadata, countries, entry_type, entry_date, group_id, similarity
+from flagged
+-- Окно свежести: если в окне fresh_days есть ≥ min_fresh кандидатов — только они; иначе добираем и старые.
+where (fresh_count >= min_fresh and is_fresh) or (fresh_count < min_fresh)
+order by base_score + recency_bonus desc
 limit least(match_count, 30);
 $function$;
 
