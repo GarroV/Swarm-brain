@@ -101,6 +101,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Сколько тихих тиков (5с каждый) ОБЕИХ дорожек = конец звонка. 36 ≈ 3 мин непрерывной
     // тишины — в живом созвоне такое почти не встречается; компромисс ради фикса runaway-записей.
     private static let systemSilenceTicksToStop = 36
+    // Бэкстоп от «шумного мика»: фоновый шум комнаты (улица/вентилятор/клавиатура) может держать
+    // mic-пик выше порога и бесконечно отодвигать общий стоп по тишине. Отдельный счётчик ТОЛЬКО
+    // по системной дорожке: 15 мин без ЕДИНОГО звука собеседников (пиками за интервал) → звонка
+    // нет, мик не спасает. Сброс на ЛЮБОМ громком тике (без анти-блипа): тап пишет только процесс
+    // встречи, случайный «блип» там = реальный звук с той стороны.
+    private var systemOnlySilentTicks = 0
+    private static let systemOnlySilenceTicksToStop = 180   // 180 × 5с = 15 мин
     // Пик своего микрофона между тиками recWatchTick: копится 1с-сэмплером micPeakTimer (у
     // AVAudioRecorder метринг pull-based — колбэка нет, аккумулируем опросом), читается и
     // сбрасывается в recWatchTick. Всё на main — без локов.
@@ -813,6 +820,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         callSeenDuringRec = false
         silentTicks = 0
         systemSilentTicks = 0
+        systemOnlySilentTicks = 0
         roomGoneTicks = 0
         loudStreak = 0
         micPeakSinceTick = 0
@@ -892,6 +900,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             loudStreak += 1
             if loudStreak >= 2 { systemSilentTicks = 0 }
         }
+        // Бэкстоп только по собеседникам (мик не участвует) — см. объявление счётчика.
+        if systemPeak < Self.systemSilenceLevel {
+            systemOnlySilentTicks += 1
+        } else {
+            systemOnlySilentTicks = 0
+        }
 
         // Реальный созвон = кто-то, КРОМЕ нас и системных демонов (CoreSpeech), держит мик.
         // На macOS <14 per-process детекта нет → realCall всегда false, работает только лимит ниже.
@@ -899,7 +913,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if #available(macOS 14.0, *) {
             let info = CallDetector.othersUsingMicInfo()
             realCall = !info.isEmpty
-            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks) sysPeak=\(String(format: "%.3f", systemPeak)) micPeak=\(String(format: "%.3f", micPeak)) sysSilent=\(systemSilentTicks) roomGone=\(roomGoneTicks) elapsed=\(Int(elapsed))s")
+            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks) sysPeak=\(String(format: "%.3f", systemPeak)) micPeak=\(String(format: "%.3f", micPeak)) sysSilent=\(systemSilentTicks) sysOnly=\(systemOnlySilentTicks) roomGone=\(roomGoneTicks) elapsed=\(Int(elapsed))s")
         }
 
         // (Сигнал вкладки) Быстрый конец БРАУЗЕРНОГО созвона: вкладка комнаты (Meet/Контур) закрыта
@@ -934,11 +948,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
 
-        // (0) Конец БРАУЗЕРНОГО звонка по тишине системной дорожки. Срабатывает ДАЖЕ когда
+        // (0) Конец БРАУЗЕРНОГО звонка по тишине ОБЕИХ дорожек. Срабатывает ДАЖЕ когда
         // mic-холдер (браузер) всё ещё держит мик — НЕ гейтим на realCall==false. Требуем, чтобы
         // звонок хоть раз был замечен (callSeenDuringRec), чтобы не стопать «пустой» ручной старт.
         if callSeenDuringRec && systemSilentTicks >= Self.systemSilenceTicksToStop {
             autoStop(reason: "звонок завершён (тишина)")
+            return
+        }
+        // (0б) Бэкстоп: собеседников не слышно 15 мин подряд — стоп независимо от мика (шумный
+        // мик не должен держать запись вечно). Любой звук с той стороны сбрасывает счётчик.
+        if callSeenDuringRec && systemOnlySilentTicks >= Self.systemOnlySilenceTicksToStop {
+            autoStop(reason: "собеседников не слышно 15 мин")
             return
         }
 
