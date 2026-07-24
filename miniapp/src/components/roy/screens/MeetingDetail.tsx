@@ -1,9 +1,9 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRoyNav } from "../nav";
-import { NavHeader, Market, SectionLabel, IconBtn, TezisyBlocks, Segmented, StorageBadge } from "../ui";
+import { NavHeader, Market, SectionLabel, TezisyBlocks, Segmented, StorageBadge } from "../ui";
 import { DashTaskRow } from "../dash/shared";
-import { RoyIcon } from "../icons";
+import { RoyIcon, type RoyIconName } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { TasksFromMeeting } from "../TasksFromMeeting";
@@ -20,14 +20,30 @@ function fmtDate(iso: string | null): string {
   }
 }
 
+// Видимая кнопка-действие (иконка + подпись). Раньше действия были спрятаны в меню «...».
+function ActionChip({ icon, label, onClick, danger }: { icon: RoyIconName; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 rounded-[11px] border px-3 py-2 font-semibold transition-transform active:scale-[0.96]"
+      style={{ fontSize: 13, borderColor: "var(--line-2)", color: danger ? "var(--pri-high)" : "var(--accent-ink)" }}
+    >
+      <RoyIcon name={icon} size={16} strokeWidth={1.9} />
+      {label}
+    </button>
+  );
+}
+
 export function MeetingDetail({ id }: { id: string }) {
   const { pop, toast, tasksVersion } = useRoyNav();
   const [e, setE] = useState<Entry | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [err, setErr] = useState(false);
-  const [menu, setMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [reproc, setReproc] = useState(false);
   const [editingCountries, setEditingCountries] = useState(false);
@@ -81,6 +97,27 @@ export function MeetingDetail({ id }: { id: string }) {
     }
     setBusy(false);
   };
+  // Правка названия встречи (бэкенд PATCH /meetings/:id принимает title → metadata.title).
+  const startTitleEdit = () => {
+    if (!e) return;
+    setTitleDraft(deriveEntryTitle(e));
+    setEditingTitle(true);
+  };
+  const saveTitle = async () => {
+    const t = titleDraft.trim();
+    if (!t) { setEditingTitle(false); return; }
+    setBusy(true);
+    try {
+      const u = await patchMeeting(id, { title: t });
+      setE(u);
+      setEditingTitle(false);
+      toast("Название обновлено");
+    } catch {
+      toast("Не удалось");
+    }
+    setBusy(false);
+  };
+  const startSummaryEdit = () => { setDraft(e?.summary ?? ""); setEditing(true); };
   const saveSummary = async () => {
     setBusy(true);
     try {
@@ -95,7 +132,6 @@ export function MeetingDetail({ id }: { id: string }) {
   };
   // Редактура стран встречи: мультивыбор рынков воркспейса (авто-теги часто неполные/неточные).
   const openCountriesEdit = async () => {
-    setMenu(false);
     if (!allowedMarkets.length) {
       try { const c = await fetchConfig(); setAllowedMarkets(c.allowed_markets); } catch { /* оставим пустым */ }
     }
@@ -117,7 +153,6 @@ export function MeetingDetail({ id }: { id: string }) {
     setBusy(false);
   };
   const del = async () => {
-    setMenu(false);
     try {
       await deleteMeeting(id);
       toast("Встреча удалена");
@@ -129,23 +164,7 @@ export function MeetingDetail({ id }: { id: string }) {
 
   return (
     <div className="roy-pop flex h-full flex-col">
-      <NavHeader onBack={pop} title="Встреча" right={<IconBtn name="dots" aria-label="Действия" onClick={() => setMenu((v) => !v)} />} />
-      {menu && (
-        <>
-          <button type="button" aria-label="Закрыть меню" className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
-          <div className="roy-pop absolute right-4 top-14 z-50 flex gap-1 rounded-[14px] border border-line bg-surface p-1.5 shadow-[0_10px_30px_rgba(0,0,0,.18)]">
-            <button type="button" aria-label="Изменить тезисы" onClick={() => { setMenu(false); setDraft(e?.summary ?? ""); setEditing(true); }} className="flex items-center justify-center rounded-[10px] p-2.5 transition-colors hover:bg-accent-soft active:scale-[0.94]" style={{ color: "var(--accent-ink)" }}>
-              <RoyIcon name="pencil" size={20} strokeWidth={1.9} />
-            </button>
-            <button type="button" aria-label="Изменить страны" onClick={openCountriesEdit} className="flex items-center justify-center rounded-[10px] p-2.5 transition-colors hover:bg-accent-soft active:scale-[0.94]" style={{ color: "var(--accent-ink)" }}>
-              <RoyIcon name="globe" size={20} strokeWidth={1.9} />
-            </button>
-            <button type="button" aria-label="Удалить" onClick={del} className="flex items-center justify-center rounded-[10px] p-2.5 transition-colors active:scale-[0.94]" style={{ color: "var(--pri-high)" }}>
-              <RoyIcon name="trash" size={20} strokeWidth={1.9} />
-            </button>
-          </div>
-        </>
-      )}
+      <NavHeader onBack={pop} title="Встреча" />
       <div className="flex-1 overflow-y-auto px-5 pb-28">
         {err && <div className="py-8 text-center text-sm text-ink-soft">Не удалось загрузить встречу.</div>}
         {e && (
@@ -163,9 +182,47 @@ export function MeetingDetail({ id }: { id: string }) {
                 </span>
               )}
             </div>
-            <h1 className="mb-4 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
-              {deriveEntryTitle(e)}
-            </h1>
+
+            {editingTitle ? (
+              <div className="mb-4">
+                <input
+                  value={titleDraft}
+                  onChange={(ev) => setTitleDraft(ev.target.value)}
+                  autoFocus
+                  className="w-full rounded-[12px] border border-line-2 bg-surface px-3.5 py-2.5 font-bold text-ink outline-none focus:border-primary"
+                  style={{ fontSize: 20, letterSpacing: "-0.01em" }}
+                />
+                <div className="mt-2 flex gap-2">
+                  <button type="button" onClick={saveTitle} disabled={busy} className="flex-1 rounded-[12px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>Сохранить</button>
+                  <button type="button" onClick={() => setEditingTitle(false)} className="rounded-[12px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>Отмена</button>
+                </div>
+              </div>
+            ) : (
+              <h1 className="mb-3 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
+                {deriveEntryTitle(e)}
+              </h1>
+            )}
+
+            {/* Видимая панель действий (раньше была спрятана в меню «...»). */}
+            <div className="mb-4 flex flex-wrap gap-2">
+              <ActionChip icon="pencil" label="Название" onClick={startTitleEdit} />
+              <ActionChip icon="pencil" label="Тезисы" onClick={startSummaryEdit} />
+              <ActionChip icon="globe" label="Страны" onClick={openCountriesEdit} />
+              <ActionChip icon="trash" label="Удалить" onClick={del} danger />
+            </div>
+
+            {/* Задачи из встречи — на виду, сразу под действиями (генерация из тезисов/транскрипта
+                или своя). Берём content||summary, чтобы блок не исчезал у встреч с пустым content. */}
+            {(e.content || e.summary) && (
+              <div className="mb-4">
+                <TasksFromMeeting text={e.content || e.summary || ""} meetingId={e.id} resetKey={e.id} onAdded={loadTasks} />
+                {tasks.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {tasks.map((t) => <DashTaskRow key={t.id} task={t} showAssignee />)}
+                  </div>
+                )}
+              </div>
+            )}
 
             {editingCountries && (
               <div className="mb-4 rounded-[14px] border border-line-2 bg-surface p-4">
@@ -232,17 +289,6 @@ export function MeetingDetail({ id }: { id: string }) {
               </div>
             ) : null}
 
-            {e.content?.trim() && (
-              <div className="mb-4">
-                <TasksFromMeeting text={e.content} meetingId={e.id} resetKey={e.id} onAdded={loadTasks} />
-                {tasks.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {tasks.map((t) => <DashTaskRow key={t.id} task={t} showAssignee />)}
-                  </div>
-                )}
-              </div>
-            )}
-
             <SectionLabel>Запись</SectionLabel>
             <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 14.5, lineHeight: 1.65 }}>
               {e.content}
@@ -250,7 +296,7 @@ export function MeetingDetail({ id }: { id: string }) {
           </>
         )}
       </div>
-      {e && !confirmed && !editing && (
+      {e && !confirmed && !editing && !editingTitle && (
         <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
           <div className="mb-2.5">
             <Segmented

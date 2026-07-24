@@ -75,7 +75,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 ### Поиск / записи / страны
 | Concern | Файлы | Детали |
 |---|---|---|
-| RAG / семантический поиск / matchEntries | `_shared/search.ts` (+ `swarm-api` `/search`,`/ask`,`/digest`) | §swarm-api |
+| RAG / гибридный поиск (full-text+вектор RRF, буст страны/свежести) / matchEntries → RPC `match_entries_hybrid` | `_shared/search.ts` (+ `swarm-api` `/search`,`/ask`,`/digest`); детект страны `_shared/countries.ts` `detectQueryCountry` | §swarm-api |
 | Классификация стран | `_shared/countries.ts` | §Флоу сохранения |
 
 ### Встречи — запись → транскрибация → тезисы → ревью

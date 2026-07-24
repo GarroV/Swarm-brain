@@ -76,6 +76,21 @@ export function normalizeCountries(raw: string[]): string[] {
   return [...new Set(raw.map(normalizeCountry).filter((c): c is string => c !== null))];
 }
 
+// Детект страны в свободном тексте запроса → ISO (первое/самое длинное совпадение) или null.
+// Тот же словарь, что при ингесте → термин в запросе («Болгария»/«Bulgaria») маппится в тот же
+// тег, что стоит на записях. Используется поиском для буста по стране (см. match_entries_hybrid).
+export function detectQueryCountry(text: string): string | null {
+  const t = (text ?? "").toLowerCase();
+  // Длинные алиасы первыми: «united arab emirates» раньше «uae».
+  const aliases = Object.keys(ALIASES).sort((a, b) => b.length - a.length);
+  for (const alias of aliases) {
+    const esc = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Границы по буквам (Unicode) — чтобы «рос» не ловил «россия», а «россия» ловилось целиком.
+    if (new RegExp(`(?<![\\p{L}])${esc}(?![\\p{L}])`, "iu").test(t)) return ALIASES[alias];
+  }
+  return null;
+}
+
 // ── Правила промпта-классификатора (DRY) ───────────────────────────────────────
 // Один источник для всех GPT write-путей (swarm-bot, swarm-mcp, swarm-api). Раньше
 // промпт дублировался в 5+ местах и расходился, из-за чего баг (страна-галлюцинация,
