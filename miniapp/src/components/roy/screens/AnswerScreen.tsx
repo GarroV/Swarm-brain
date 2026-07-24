@@ -25,6 +25,12 @@ function AnswerText({ text }: { text: string }) {
   );
 }
 
+// entry_date (YYYY-MM-DD) → компактно «дд.мм.гг»; null / нераспознанное → null.
+function fmtShortDate(d?: string | null): string | null {
+  const m = (d ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}.${m[2]}.${m[1].slice(2)}` : null;
+}
+
 function Loading() {
   return (
     <div className="space-y-4">
@@ -91,6 +97,9 @@ export function AnswerBody({ query, onFollowup, onOpenRecord }: { query: string;
                         <span className="inline-flex items-center justify-center rounded-full bg-accent-soft text-accent-ink font-bold shrink-0" style={{ width: 20, height: 20, fontSize: 11 }}>{s.n}</span>
                         <TypeTag type={s.tag as RoyTypeKey} small />
                         <Market code={s.market} />
+                        {fmtShortDate(s.date) && (
+                          <span className="text-ink-mute ml-auto tabular-nums" style={{ fontSize: 11 }}>{fmtShortDate(s.date)}</span>
+                        )}
                       </div>
                       <div className="font-semibold text-ink mb-0.5" style={{ fontSize: 14.5, letterSpacing: "-0.01em" }}>{s.title}</div>
                       <div className="text-ink-soft line-clamp-2" style={{ fontSize: 13 }}>{s.snippet}</div>

@@ -559,6 +559,7 @@ export type AskSource = {
   title: string;
   snippet: string;
   market: string | null;
+  date: string | null; // entry_date (YYYY-MM-DD) — для показа и предпочтения свежих
   similarity: number;
 };
 export type AskResult = {
@@ -579,6 +580,7 @@ export async function ask(q: string): Promise<AskResult> {
       title: (e.summary ?? e.content).slice(0, 56),
       snippet: (e.summary ?? e.content).slice(0, 200),
       market: e.countries?.[0] ?? null,
+      date: (e as { entry_date?: string | null }).entry_date ?? null,
       similarity: 0.82 - i * 0.1,
     }));
     return { query: q, answer: `Демо-ответ на «${q}» по источникам [1][2].`, sources, followups: ["Уточнить по рынку?", "Какие задачи связаны?"] };
