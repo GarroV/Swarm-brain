@@ -1297,6 +1297,9 @@ Deno.serve(async (req: Request) => {
       // (не привязываемся к ним и не раскрываем) — тогда публикуем как обычно.
       const dup = await findDuplicateMeeting(supabase, {
         groupId, entryDate, startedAt, attendees: mAttendees,
+        // identity_key (календарное событие+день) — решающий сигнал: тот же ключ → дубль,
+        // разный → РАЗНАЯ встреча, не склеиваем (без него 4 встречи IMF BD 23.07 слиплись в одну).
+        identityKey: (meeting.identity_key as string | null) ?? null,
       });
       if (dup && (!dup.isPrivate || String(dup.ownerId ?? "") === String(telegram_id))) {
         await supabase.from("meetings")
@@ -1316,7 +1319,9 @@ Deno.serve(async (req: Request) => {
         entry_type: "meeting",
         // attendees из календаря (meetings.attendees, собран рекордером при claim) — несём в запись,
         // чтобы участники были видны и после публикации (UI: блок «Участники»).
-        metadata: { meeting_id: mId, title: meeting.title ?? null, confirmed: true, attendees: (meeting as { attendees?: unknown }).attendees ?? [] },
+        // identity_key несём в запись, чтобы будущий дедуп мог отличить разные встречи одного дня
+        // с тем же составом (регулярные командные созвоны) от повторной записи той же встречи.
+        metadata: { meeting_id: mId, title: meeting.title ?? null, confirmed: true, attendees: (meeting as { attendees?: unknown }).attendees ?? [], identity_key: (meeting.identity_key as string | null) ?? null },
         countries,
         entry_date: entryDate,
         group_id: groupId,
