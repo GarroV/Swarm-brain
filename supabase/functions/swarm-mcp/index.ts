@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolListTaskLabels, toolGetTaskComments, toolAddTaskComment, TASK_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS, COMMENT_TOOL_DEFINITIONS } from "./tasks/tools.ts";
-import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../_shared/countries.ts";
+import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, detectQueryCountry } from "../_shared/countries.ts";
 import { matchEntries } from "../_shared/search.ts";
 import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
 
@@ -309,8 +309,9 @@ async function toolSearchKnowledge(args: { query: string; limit?: number; reques
     data = await matchEntries(supabase, embedding, {
       groupId,
       requestingUserId: args.requesting_user_id ?? null,
-      threshold: 0.35,
       limit: Math.min(args.limit ?? 5, 20),
+      queryText: args.query,
+      country: detectQueryCountry(args.query),
     });
   } catch (e) {
     return `Ошибка: ${e instanceof Error ? e.message : String(e)}`;

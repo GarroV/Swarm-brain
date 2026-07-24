@@ -17,39 +17,46 @@ export type MatchedEntry = {
 export type MatchOptions = {
   groupId?: string | null;
   requestingUserId?: number | null;
+  /** @deprecated — RRF ранжирует, порог по косинусу больше не применяется (принимаем для совместимости). */
   threshold?: number;
   limit?: number;
   /** Restrict to a single entry source (e.g. "note", "link"). */
-  source?: string;
+  source?: string | null;
+  /** Текст запроса → включает лексический (full-text) сигнал в гибриде. Без него — чистая семантика. */
+  queryText?: string | null;
+  /** ISO-код страны из запроса → буст записей с этим тегом (линза, не жёсткий фильтр). */
+  country?: string | null;
 };
 
 /**
- * Semantic search over `entries` via the `match_entries` RPC.
+ * Гибридный поиск по `entries` через RPC `match_entries_hybrid`:
+ *   • семантика (pgvector cosine) — всегда;
+ *   • full-text (русский tsvector) — если передан `queryText`;
+ *   • сливаются через RRF; буст по стране (`country`) и свежести (entry_date).
+ * Без `queryText` ведёт себя как прежняя чистая семантика (обратная совместимость).
  *
- * Single source of truth for three things that previously diverged across
- * swarm-bot, swarm-mcp and swarm-api — and whose drift silently broke search:
- *   1. the pgvector literal format (`[a,b,c]` string, NOT a JS array);
- *   2. the workspace-isolation filter (`.eq("group_id", …)`);
- *   3. the private-entry visibility rule (handled inside the RPC via
- *      `requesting_user_id`).
+ * Единый источник для трёх вещей, которые раньше расходились по swarm-bot/mcp/api:
+ *   1. формат pgvector-литерала (`[a,b,c]`, НЕ JS-массив);
+ *   2. воркспейс-изоляция + фильтр источника — теперь ВНУТРИ RPC (не внешним `.eq`,
+ *      иначе пул кандидатов мог недобираться и терять целевой воркспейс);
+ *   3. приватность (`requesting_user_id`).
  *
- * Throws on RPC error so callers decide how to surface it.
+ * Бросает при ошибке RPC — вызывающий решает, как показать.
  */
 export async function matchEntries(
   supabase: SupabaseClient,
   embedding: number[],
-  { groupId = null, requestingUserId = null, threshold = 0.3, limit = 15, source }: MatchOptions = {},
+  { groupId = null, requestingUserId = null, limit = 15, source = null, queryText = null, country = null }: MatchOptions = {},
 ): Promise<MatchedEntry[]> {
-  let query = supabase.rpc("match_entries", {
+  const { data, error } = await supabase.rpc("match_entries_hybrid", {
     query_embedding: `[${embedding.join(",")}]`,
-    match_threshold: threshold,
+    query_text: queryText ?? null,
     match_count: limit,
     requesting_user_id: requestingUserId ?? null,
+    filter_group_id: groupId ?? null,
+    filter_country: country ?? null,
+    filter_source: source ?? null,
   });
-  if (groupId) query = query.eq("group_id", groupId);
-  if (source) query = query.eq("source", source);
-
-  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return (data ?? []) as MatchedEntry[];
 }

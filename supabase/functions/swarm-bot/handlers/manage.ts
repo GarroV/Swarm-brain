@@ -5,6 +5,7 @@
 import { supabase } from "../lib/supabase.ts";
 import { getEmbedding } from "../lib/openai.ts";
 import { matchEntries } from "../../_shared/search.ts";
+import { detectQueryCountry } from "../../_shared/countries.ts";
 import {
   EntryAccessError,
   getManageableEntry,
@@ -57,7 +58,7 @@ async function searchCandidates(query: string, userId: number, groupId: string):
   const emb = await getEmbedding(query).catch(() => null);
   if (emb) {
     const vec = await matchEntries(supabase, emb, {
-      groupId, requestingUserId: userId, threshold: 0.4, limit: MAX_RESULTS * 3,
+      groupId, requestingUserId: userId, limit: MAX_RESULTS * 3, queryText: query, country: detectQueryCountry(query),
     }).catch(() => []);
     for (const e of vec) {
       const title = titleOf(e.metadata, e.summary, e.content);

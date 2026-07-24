@@ -31,7 +31,7 @@ import {
   deleteDependency,
 } from "../_shared/tasks/dependencies.ts";
 import type { DependencyType } from "../_shared/tasks/types.ts";
-import { normalizeCountries, COUNTRY_NAMES } from "../_shared/countries.ts";
+import { normalizeCountries, COUNTRY_NAMES, detectQueryCountry } from "../_shared/countries.ts";
 import { extractEntryMeta, applyGeneralSentinel, buildEmbeddingInput, embed } from "../_shared/meta-extract.ts";
 import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
@@ -971,8 +971,9 @@ Deno.serve(async (req: Request) => {
       const results = await matchEntries(supabase, embedding, {
         groupId,
         requestingUserId: telegram_id,
-        threshold: 0.3,
         limit: 20,
+        queryText: q,                       // лексический сигнал (full-text)
+        country: detectQueryCountry(q),     // буст по стране, если она названа в запросе
       });
       return json(results, 200, origin);
     } catch (e) {
@@ -998,7 +999,7 @@ Deno.serve(async (req: Request) => {
     // 2) retrieve (воркспейс-изоляция и приватность — внутри matchEntries/RPC)
     let matched: MatchedEntry[];
     try {
-      matched = await matchEntries(supabase, embedding, { groupId, requestingUserId: telegram_id, threshold: 0.3, limit: 8 });
+      matched = await matchEntries(supabase, embedding, { groupId, requestingUserId: telegram_id, limit: 8, queryText: q, country: detectQueryCountry(q) });
     } catch (e) {
       return apiErr(500, e instanceof Error ? e.message : "Search failed", origin);
     }
@@ -1010,6 +1011,7 @@ Deno.serve(async (req: Request) => {
       title: deriveEntryTitle(e),
       snippet: (e.summary || e.content || "").replace(/\s+/g, " ").trim().slice(0, 220),
       market: (e.countries && e.countries[0]) || null,
+      date: e.entry_date,
       similarity: e.similarity,
     }));
     // 3) пусто — без вызова GPT
@@ -1017,7 +1019,7 @@ Deno.serve(async (req: Request) => {
       return json({ query: q, answer: "По базе, встречам и задачам ничего релевантного не нашлось. Попробуй переформулировать запрос.", sources: [], followups: [] }, 200, origin);
     }
     // 4) синтез ответа строго по источникам
-    const ctx = sources.map((s) => `[${s.n}] (${s.entry_type}${s.market ? ", " + s.market : ""}) ${s.title} — ${s.snippet}`).join("\n");
+    const ctx = sources.map((s) => `[${s.n}] (${s.entry_type}${s.market ? ", " + s.market : ""}${s.date ? ", " + s.date : ""}) ${s.title} — ${s.snippet}`).join("\n");
     const askRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
@@ -1027,7 +1029,7 @@ Deno.serve(async (req: Request) => {
         messages: [
           { role: "system", content: isDemo
             ? 'You are the Dodo CEE team assistant. Answer the question ONLY from the numbered sources, in English. Put a footnote [n] on every statement (you may use [1][3]).\nIMPORTANT: if the sources concern DIFFERENT meetings / topics / countries — do NOT glue them into one artificial paragraph and do NOT invent shared trends/conclusions («revenue drop», «overall we see…») that aren\'t in the sources. In that case give a SHORT list: one «- » point per meeting/topic with the key fact and a footnote [n]. If the question is narrow and the sources are on one topic — answer coherently in 2–4 sentences.\nDon\'t invent facts, numbers or generalizations. If there\'s little data — say so honestly. Return STRICTLY JSON: {"answer":"...","followups":["...","..."]}. In answer you may use line breaks and «- » points. followups — 2–3 short clarifying questions.'
-            : 'Ты — ассистент команды Dodo CEE. Отвечай на вопрос ТОЛЬКО на основе пронумерованных источников, по-русски. Ставь сноску [n] на каждое утверждение (можно [1][3]).\nВАЖНО: если источники относятся к РАЗНЫМ встречам / темам / странам — НЕ склеивай их в один искусственный абзац и НЕ выдумывай общие тренды/выводы («падение выручки», «в целом наблюдается…»), которых нет в источниках. В этом случае дай КОРОТКИЙ список: по одному пункту «- » на встречу/тему с ключевым фактом и сноской [n]. Если вопрос узкий и источники об одной теме — ответь связно в 2–4 предложения.\nНе выдумывай факты, цифры и обобщения. Если данных мало — скажи честно. Верни СТРОГО JSON: {"answer":"...","followups":["...","..."]}. В answer можно использовать переносы строк и пункты «- ». followups — 2–3 коротких уточняющих вопроса.' },
+            : 'Ты — ассистент команды Dodo CEE. Отвечай на вопрос ТОЛЬКО на основе пронумерованных источников, по-русски. Ставь сноску [n] на каждое утверждение (можно [1][3]).\nВАЖНО: если источники относятся к РАЗНЫМ встречам / темам / странам — НЕ склеивай их в один искусственный абзац и НЕ выдумывай общие тренды/выводы («падение выручки», «в целом наблюдается…»), которых нет в источниках. В этом случае дай КОРОТКИЙ список: по одному пункту «- » на встречу/тему с ключевым фактом и сноской [n]. Если вопрос узкий и источники об одной теме — ответь связно в 2–4 предложения.\nНе выдумывай факты, цифры и обобщения. Если данных мало — скажи честно. Даты источников указаны в скобках — при вопросе о «последнем/недавнем» или если источники разных дат, предпочитай более свежие и называй даты. Верни СТРОГО JSON: {"answer":"...","followups":["...","..."]}. В answer можно использовать переносы строк и пункты «- ». followups — 2–3 коротких уточняющих вопроса.' },
           { role: "user", content: isDemo ? `Question: ${q}\n\nSources:\n${ctx}` : `Вопрос: ${q}\n\nИсточники:\n${ctx}` },
         ],
         max_tokens: 700,

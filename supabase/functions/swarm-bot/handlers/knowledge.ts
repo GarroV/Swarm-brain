@@ -4,7 +4,7 @@ import { saveEntry, visibilityFilter, generateSummary, getSession, setSession, c
 import { sendMessage } from "../lib/telegram.ts";
 import type { KbEntry } from "../lib/types.ts";
 import { TASK_KEYWORDS, smartTaskSearch } from "../tasks/index.ts";
-import { normalizeCountry } from "../../_shared/countries.ts";
+import { normalizeCountry, detectQueryCountry } from "../../_shared/countries.ts";
 import { matchEntries } from "../../_shared/search.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
@@ -243,8 +243,9 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
           .then(emb => matchEntries(supabase, emb, {
             groupId,
             requestingUserId: userId || null,
-            threshold: 0.1,
             limit: 8,
+            queryText: query,
+            country: detectQueryCountry(query),
           }))
           .catch(() => [] as KbEntry[]);
 
@@ -304,7 +305,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const [vecNotes, kwNotes] = await Promise.all([
           getEmbedding(query)
             .then(emb => matchEntries(supabase, emb, {
-              groupId, requestingUserId: userId || null, threshold: 0.1, limit: 10, source: "note",
+              groupId, requestingUserId: userId || null, limit: 10, source: "note", queryText: query, country: detectQueryCountry(query),
             }) as Promise<KbEntry[]>)
             .catch(() => [] as KbEntry[]),
 
@@ -338,7 +339,7 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         const [vecLinks, kwLinks] = await Promise.all([
           getEmbedding(query)
             .then(emb => matchEntries(supabase, emb, {
-              groupId, requestingUserId: userId || null, threshold: 0.1, limit: 10, source: "link",
+              groupId, requestingUserId: userId || null, limit: 10, source: "link", queryText: query, country: detectQueryCountry(query),
             }) as Promise<KbEntry[]>)
             .catch(() => [] as KbEntry[]),
 
