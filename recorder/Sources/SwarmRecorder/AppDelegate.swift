@@ -85,15 +85,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var recWatchTimer: Timer?
     private var callSeenDuringRec = false
     private var silentTicks = 0
-    // Тики подряд с «тихой» СИСТЕМНОЙ дорожкой (собеседники молчат). Считается независимо от
-    // mic-детекта: ловит конец БРАУЗЕРНОГО звонка (Google Meet / Контур.Толк во вкладке), где
-    // браузер держит микрофон непрерывно даже после выхода → realCall никогда не гаснет.
+    // Тики подряд, когда НИКТО не звучит: ни системная дорожка (собеседники), ни СВОЙ микрофон.
+    // Считается независимо от mic-детекта занятости: ловит конец БРАУЗЕРНОГО звонка (Google Meet /
+    // Контур.Толк во вкладке), где браузер держит микрофон непрерывно даже после выхода.
+    // Инцидент 2026-07-24: правило слушало ТОЛЬКО собеседников → монолог владельца (собеседники
+    // молча слушают) выглядел как «тишина» и рубил запись посреди созвона. Теперь «тихий тик» =
+    // тихи ОБЕ дорожки, и уровни берутся пиком за интервал (не точечным сэмплом раз в 5с).
     private var systemSilentTicks = 0
     // Порог «тишины» системной дорожки 0…1: ниже него считаем, что собеседников не слышно.
     private static let systemSilenceLevel: Float = 0.02
-    // Сколько тихих тиков (5с каждый) системной дорожки = конец звонка. 36 ≈ 3 мин непрерывной
+    // Порог «тишины» СВОЕГО микрофона 0…1 (currentMicLevel: averagePower, пол −50дБ). Выше
+    // системного: мик физически рядом и ловит фоновый шум комнаты; калибровка — по dbg-логу
+    // живого прогона (micPeak в тиках).
+    private static let micSilenceLevel: Float = 0.12
+    // Сколько тихих тиков (5с каждый) ОБЕИХ дорожек = конец звонка. 36 ≈ 3 мин непрерывной
     // тишины — в живом созвоне такое почти не встречается; компромисс ради фикса runaway-записей.
     private static let systemSilenceTicksToStop = 36
+    // Пик своего микрофона между тиками recWatchTick: копится 1с-сэмплером micPeakTimer (у
+    // AVAudioRecorder метринг pull-based — колбэка нет, аккумулируем опросом), читается и
+    // сбрасывается в recWatchTick. Всё на main — без локов.
+    private var micPeakTimer: Timer?
+    private var micPeakSinceTick: Float = 0
     // Тики подряд с ПОДТВЕРЖДЁННО закрытой вкладкой встречи (Meet/Контур) → быстрый конец созвона.
     private var roomGoneTicks = 0
     private static let roomGoneTicksToStop = 4   // 4 × 5с ≈ 20с закрытой вкладки → авто-стоп
@@ -803,6 +815,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         systemSilentTicks = 0
         roomGoneTicks = 0
         loudStreak = 0
+        micPeakSinceTick = 0
         // Таймер планируем СТРОГО на main-run-loop. startCallEndWatch зовётся из Task без @MainActor
         // (после `await recorder.start()`) → на фоновом потоке. Timer.scheduledTimer там сел бы на
         // мёртвый фоновый run loop, а RunLoop.main.add уже-запланированного таймера его на main НЕ
@@ -814,12 +827,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let t = Timer(timeInterval: 5, target: self, selector: #selector(self.recWatchTick), userInfo: nil, repeats: true)
             RunLoop.main.add(t, forMode: .common)
             self.recWatchTimer = t
+            // Мик-сэмплер (1с): AVAudioRecorder-метринг pull-based, колбэка нет — копим пик
+            // своего микрофона между 5с-тиками опросом. Дёшево (updateMeters раз в секунду).
+            self.micPeakTimer?.invalidate()
+            let mt = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                let lvl = self.recorder.currentMicLevel()
+                if lvl > self.micPeakSinceTick { self.micPeakSinceTick = lvl }
+            }
+            RunLoop.main.add(mt, forMode: .common)
+            self.micPeakTimer = mt
         }
     }
 
     private func stopCallEndWatch() {
         recWatchTimer?.invalidate()
         recWatchTimer = nil
+        micPeakTimer?.invalidate()
+        micPeakTimer = nil
     }
 
     @objc private func recWatchTick() {
@@ -848,13 +873,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
 
-        // Уровень СИСТЕМНОЙ дорожки (собеседники). Считаем тихие тики ВСЕГДА, независимо от
-        // mic-детекта: при браузерном звонке браузер держит мик непрерывно, и mic-правило ниже
-        // не сработает — поэтому тишина системной дорожки тут единственный надёжный сигнал конца.
-        let systemLevel = recorder.currentSystemLevel()
+        // «Кто-нибудь звучит?» — пик ОБЕИХ дорожек за интервал тика: системной (собеседники,
+        // peakSinceLastRead из аудио-колбэков) и своего микрофона (micPeakSinceTick, 1с-сэмплер).
+        // Тихие тики считаем ВСЕГДА, независимо от mic-детекта занятости: при браузерном звонке
+        // браузер держит мик непрерывно, и mic-правило ниже не сработает — тишина дорожек тут
+        // единственный сигнал конца. Пики за интервал (а не точечный сэмпл раз в 5с) — иначе
+        // живая речь ловится с дырами и копит ложную «тишину» (инцидент 2026-07-24).
+        let systemPeak = recorder.systemPeakSinceLastRead()
+        let micPeak = micPeakSinceTick
+        micPeakSinceTick = 0
+        let anyoneAudible = systemPeak >= Self.systemSilenceLevel || micPeak >= Self.micSilenceLevel
         // Устойчивость к «блипам»: одиночный всплеск (уведомление, звук выхода из звонка) НЕ
-        // сбрасывает счётчик тишины — сброс только на 2 не-тихих тиках подряд.
-        if systemLevel < Self.systemSilenceLevel {
+        // сбрасывает счётчик тишины — сброс только на 2 не-тихих тиках подряд. В живой речи
+        // пиковые тики идут подряд, так что сброс срабатывает надёжно.
+        if !anyoneAudible {
             systemSilentTicks += 1; loudStreak = 0
         } else {
             loudStreak += 1
@@ -867,7 +899,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if #available(macOS 14.0, *) {
             let info = CallDetector.othersUsingMicInfo()
             realCall = !info.isEmpty
-            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks) sysLevel=\(String(format: "%.3f", systemLevel)) sysSilent=\(systemSilentTicks) roomGone=\(roomGoneTicks) elapsed=\(Int(elapsed))s")
+            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks) sysPeak=\(String(format: "%.3f", systemPeak)) micPeak=\(String(format: "%.3f", micPeak)) sysSilent=\(systemSilentTicks) roomGone=\(roomGoneTicks) elapsed=\(Int(elapsed))s")
         }
 
         // (Сигнал вкладки) Быстрый конец БРАУЗЕРНОГО созвона: вкладка комнаты (Meet/Контур) закрыта

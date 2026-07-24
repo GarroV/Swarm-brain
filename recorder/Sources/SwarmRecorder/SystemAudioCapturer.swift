@@ -35,9 +35,14 @@ protocol SystemAudioCapturer: AnyObject {
 
     // Текущий уровень СИСТЕМНОЙ дорожки (собеседники), нормализованный в 0…1, слегка сглажен.
     // Считается из тех же буферов, что пишутся в файл. Потокобезопасно (аудио-колбэк не на main).
-    // 0, если захват не идёт или буферов ещё нет. Используется: (1) живой индикатор в виджете,
-    // (2) детект конца браузерного звонка по затяжной тишине системной дорожки.
+    // 0, если захват не идёт или буферов ещё нет. Используется: живой индикатор в виджете.
     func currentLevel() -> Float
+
+    // Пик системной дорожки ЗА ИНТЕРВАЛ с прошлого вызова (и сброс). Для детекта тишины:
+    // сглаженный currentLevel() спадает за ~1с → точечный опрос раз в 5с в живой речи часто
+    // даёт 0.000 и копит ложную «тишину» (инцидент 2026-07-24). Единственный потребитель —
+    // recWatchTick в AppDelegate.
+    func peakSinceLastRead() -> Float
 
     // Сигнал наружу: true — собеседник не пишется и авто-пересборки не помогли; false — звук
     // вернулся. Даёт честно предупредить пользователя (не терять собеседника молча). Опционально.
@@ -61,12 +66,18 @@ func makeSystemCapturer() -> SystemAudioCapturer {
 final class SystemLevelTracker {
     private var lock = os_unfair_lock()
     private var smoothed: Float = 0
+    // Пик с момента последнего peakSinceRead(). Сглаженный current() спадает за ~1с после фразы →
+    // точечный опрос раз в 5с в живой речи часто ловит 0.000 (инцидент 2026-07-24: ложный
+    // авто-стоп «тишина» при непрерывном разговоре). Детект тишины должен читать пик за ВЕСЬ
+    // интервал между тиками, а не мгновенное значение.
+    private var peakSinceRead: Float = 0
 
     func update(rawPeak: Float) {
         let clamped = max(0, min(1, rawPeak))
         os_unfair_lock_lock(&lock)
         // Рост — мгновенно (видеть собеседника сразу), спад — плавно.
         smoothed = clamped > smoothed ? clamped : smoothed * 0.6 + clamped * 0.4
+        if clamped > peakSinceRead { peakSinceRead = clamped }
         os_unfair_lock_unlock(&lock)
     }
 
@@ -77,9 +88,19 @@ final class SystemLevelTracker {
         return v
     }
 
+    // Пик за интервал с прошлого чтения; читать ровно один потребитель (детект тишины).
+    func peakAndReset() -> Float {
+        os_unfair_lock_lock(&lock)
+        let v = peakSinceRead
+        peakSinceRead = 0
+        os_unfair_lock_unlock(&lock)
+        return v
+    }
+
     func reset() {
         os_unfair_lock_lock(&lock)
         smoothed = 0
+        peakSinceRead = 0
         os_unfair_lock_unlock(&lock)
     }
 
@@ -161,6 +182,7 @@ final class ScreenCaptureKitRecorder: NSObject, SystemAudioCapturer, SCStreamOut
     private let levelTracker = SystemLevelTracker()
     var firstSampleUptime: Double? { queue.sync { _firstSampleUptime } }
     func currentLevel() -> Float { levelTracker.current() }
+    func peakSinceLastRead() -> Float { levelTracker.peakAndReset() }
     // SCK-путь (fallback для <14.4) не имеет watchdog нулей — свойство для соответствия протоколу.
     var onSystemStalled: ((Bool) -> Void)?
 
@@ -389,6 +411,7 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
     // ioLock от зависшего HAL не зависит (teardownLocked его не берёт, IOProc держит микросекунды).
     var extraSegments: [(url: URL, offset: Double)] { withIOLock { _extraSegments } }
     func currentLevel() -> Float { levelTracker.current() }
+    func peakSinceLastRead() -> Float { levelTracker.peakAndReset() }
 
     // Доступ к якорям, разделяемым между IOProc (ioQueue) и управляющей стороной (queue).
     private func withIOLock<T>(_ body: () -> T) -> T {
