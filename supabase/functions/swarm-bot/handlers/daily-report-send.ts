@@ -17,14 +17,13 @@ export async function sendDailyReport(): Promise<void> {
     await sendMessage(ADMIN_USER_ID, `⚠️ Свод за ${dateLabel}: ошибка запроса — ${error.message}`);
     return;
   }
-  // На вычитке: встречи, записанные вчера и ещё не опубликованные (status=awaiting_review).
+  // На вычитке: ВСЯ текущая очередь невычитанных встреч (status=awaiting_review), не только
+  // вчерашние — стоячее напоминание «есть что подтвердить» (запрос владельца 2026-07-25).
   // Не роняем весь свод, если этот запрос упал — добавленное всё равно ценно (reviewCount=0).
   const { count: reviewCount, error: reviewError } = await supabase
     .from("meetings")
     .select("id", { count: "exact", head: true })
-    .eq("status", "awaiting_review")
-    .gte("created_at", sinceISO)
-    .lt("created_at", untilISO);
+    .eq("status", "awaiting_review");
   if (reviewError) {
     await sendMessage(ADMIN_USER_ID, `⚠️ Свод за ${dateLabel}: не удалось посчитать очередь вычитки — ${reviewError.message}`);
   }
