@@ -544,6 +544,8 @@ Deno.serve(async (req: Request) => {
         .eq("group_id", groupId)
         .in("source", ENTRY_MEETING_SOURCES)
         .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false")
+        // Видимость: только свои + не-приватные (чужие приватные встречи не показываем).
+        .or(`is_private.eq.false,owner_id.eq.${userId}`)
         .order("created_at", { ascending: false })
         .limit(20);
       if (!meetings?.length) {
