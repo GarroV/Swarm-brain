@@ -7,7 +7,7 @@ import Foundation
 // экрана НЕ слетает. По сути — автоматизация install.sh, запускаемая самим приложением.
 enum Updater {
     static let repoURL = "https://github.com/GarroV/Swarm-brain"
-    // Обновляемся ТОЛЬКО на пинованный тег recorder-build-<N> (а не на HEAD дев-ветки sandbox_vas) —
+    // Обновляемся ТОЛЬКО на пинованный тег recorder-build-<N> (а не на HEAD дев-ветки main) —
     // иначе авто-апдейт мог бы притащить недоделанный код в простой коммит маркетологам. Тег = ровно
     // протестированная сборка. Нет тега → clone падает → тихо остаёмся на текущей версии.
     static func releaseTag(_ build: Int) -> String { "recorder-build-\(build)" }

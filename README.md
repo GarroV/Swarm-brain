@@ -279,7 +279,7 @@ cd recorder && ./install.sh                                   # подробно
 
 В копи-паст примерах (URL вида `https://<YOUR_PROJECT_REF>.supabase.co/...`) подставляй свой project-ref. Прод-реф Dodo Brands — `vbqglndbxkpmreccpqmr`.
 
-Рабочая ветка: **`sandbox_vas`**. В `main` не коммитить.
+Рабочая ветка: **`main`** (дефолтная на GitHub; переименована из `sandbox_vas` 2026-07-25).
 
 ---
 

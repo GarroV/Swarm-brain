@@ -206,7 +206,7 @@ Edge-функция: `supabase/functions/swarm-recorder-setup` (публичны
 > Это рубильник раскатки на ВСЮ команду. Плохую сборку не пушим — сломает всех.
 
 1. Внести изменения в `recorder/`, **поднять `recorder/VERSION`** (напр. `2` → `3`).
-2. Закоммитить и смёржить в `sandbox_vas`. **Проверить, что собирается** (`./build-app.sh`).
+2. Закоммитить и смёржить в `main`. **Проверить, что собирается** (`./build-app.sh`).
 3. Поставить тег на этот коммит и запушить: `git tag recorder-build-3 && git push origin recorder-build-3`.
 4. Поднять `LATEST_BUILD` в `supabase/functions/swarm-recorder-version/index.ts` до `3`, задеплоить:
    `supabase functions deploy swarm-recorder-version --no-verify-jwt`.

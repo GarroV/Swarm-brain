@@ -25,17 +25,17 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 
 ### Веб (miniapp) — Cloudflare Pages, АВТО (руками НЕ деплоить)
 
-> Проверено 2026-06-28 через CF API. Веб «Рой» выкатывается **сам** на каждый push в `sandbox_vas` — отдельный ручной шаг НЕ нужен (в отличие от edge-функций выше).
+> Проверено 2026-06-28 через CF API. Веб «Рой» выкатывается **сам** на каждый push в `main` — отдельный ручной шаг НЕ нужен (в отличие от edge-функций выше).
 
-- **Проект:** `swarm-brain` → `https://swarm-brain.pages.dev`, git-привязка к `GarroV/Swarm-brain`, **production branch = `sandbox_vas`**.
+- **Проект:** `swarm-brain` → `https://swarm-brain.pages.dev`, git-привязка к `GarroV/Swarm-brain`, **production branch = `main`** (переключено в дашборде CF при ренейме 2026-07-25).
 - **Build:** root dir `miniapp`, command `npm run build`, output `out`. Pages Functions из `miniapp/functions/` (прокси авторизации `/api/*`) деплоятся вместе.
-- **Цикл:** push в `sandbox_vas` → авто-сборка CF → прод за ~1–3 мин (проверено: последние деплои `deploy/success`).
+- **Цикл:** push в `main` → авто-сборка CF → прод за ~1–3 мин (проверено: последние деплои `deploy/success`).
 - **Env** (живут в дашборде CF Pages → Settings → Variables, НЕ в репо): `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_BOT_USERNAME`, `NEXT_PUBLIC_DEV_MODE`, `SWARM_API_URL`, `TELEGRAM_BOT_TOKEN`, `WEB_JWT_SECRET`.
 - Конфиг живёт **только в дашборде CF** (в репо нет `wrangler`/`.github/workflows` — и не нужно, git-интеграция сама собирает).
 - **Нюанс URL:** CF Pages срезает `.html` → `/foo.html` отдаёт 308 на `/foo` (напр. `/system-map.html` → `/system-map`). Ссылки лучше без `.html`.
 - **«В проде старая версия»?** Это НЕ деплой (он работает), а залипший клиентский **service worker / PWA-кэш** → ⌘⇧R / Unregister SW / перезапуск PWA. См. `BACKLOG.md` → «Веб (miniapp): деплой РАБОТАЕТ».
 
-**Ветка:** `sandbox_vas` — только здесь. В `main` не коммитить.
+**Ветка:** `main` (дефолтная) — разработка здесь.
 
 ---
 
@@ -191,7 +191,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 1. **Новая фича? Сначала ресёрч** (как решают другие: GitHub / доки) — глобальный принцип №1; на багфикс не разводить.
 2. Обновить `ARCHITECTURE.md` (флоу/таблица/callback/сессия) и `BACKLOG.md` (закрыл/завёл долг).
 3. **Changelog НЕ вести руками** — генерируется из git (`scripts/changelog.sh`); commit-сообщения = источник истины (conventional).
-4. Закоммитить (`sandbox_vas`) + сразу `git push`.
+4. Закоммитить (`main`) + сразу `git push`.
 5. Задеплоить (`--no-verify-jwt`).
 6. **Проверить, что не отвалилось** (принцип №2): `deno check` + смоук реального флоу; что не проверил — сказать прямо.
 

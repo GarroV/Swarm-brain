@@ -20,7 +20,8 @@ export const SETUP_SCRIPT = `#!/bin/bash
 set -u
 
 REPO_URL="${REPO_URL}"
-REPO_BRANCH="sandbox_vas"
+REPO_BRANCH="main"
+REPO_BRANCH_FALLBACK="sandbox_vas"   # переходный fallback на старое имя ветки (до ренейма sandbox_vas → main)
 INGEST_BASE_URL="${INGEST_BASE_URL}"
 CONFIG_DIR="$HOME/Library/Application Support/SwarmRecorder"
 CONFIG="$CONFIG_DIR/config.json"
@@ -114,7 +115,10 @@ command -v swift >/dev/null 2>&1 || die "swift не найден (нужны Com
 step "Скачиваю исходники"
 TMP="$(mktemp -d)"
 if ! git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$TMP/src" >/dev/null 2>&1; then
-  die "Не удалось склонировать репозиторий (нет интернета или блокирует прокси): $REPO_URL"
+  # ветки main нет (ещё не переименована) → пробуем старое имя
+  if ! git clone --depth 1 --branch "$REPO_BRANCH_FALLBACK" "$REPO_URL" "$TMP/src" >/dev/null 2>&1; then
+    die "Не удалось склонировать репозиторий (нет интернета или блокирует прокси): $REPO_URL"
+  fi
 fi
 RECORDER_DIR="$TMP/src/recorder"
 [ -d "$RECORDER_DIR" ] || die "В репозитории нет папки recorder/ — структура изменилась?"

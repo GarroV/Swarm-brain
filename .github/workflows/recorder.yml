@@ -6,7 +6,7 @@ name: CI (recorder)
 
 on:
   push:
-    branches: [sandbox_vas]
+    branches: [main]
     paths: ['recorder/**']
   pull_request:
     paths: ['recorder/**']

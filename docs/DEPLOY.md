@@ -21,7 +21,7 @@ Staging использует **демо-ключи** Supabase (ANON/SERVICE/JWT 
 | Edge-функции | `supabase functions serve` локально → `make staging-sync-functions` + `make smoke-staging` → прод + `make smoke-prod` |
 | БД / миграции | `supabase db reset` локально → `make staging-migrate FILE=…` → прод |
 | Бот / MCP | локалка + curl синтетического апдейта; strict/тулзы — `make smoke-staging` |
-| Web (miniapp) | CF preview на ветку (авто) → мёрж в `sandbox_vas` |
+| Web (miniapp) | CF preview на ветку (авто) → мёрж в `main` |
 | Рекордер | локал-сборка → тег `recorder-build-N` → `LATEST_BUILD`-гейт (см. `recorder/README.md`) |
 
 ## Рабочий цикл (edge + миграция)
