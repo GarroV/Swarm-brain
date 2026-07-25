@@ -74,31 +74,35 @@ Deno.test("yesterdayWindow: осенний переход (fall-back, 25-час�
   assertEquals(w.dateLabel, "25.10");
 });
 
-Deno.test("formatReport: штатный день — две строки счётчиков, без разбивок", () => {
+Deno.test("formatReport: штатный день — «Добавлено в базу» N + список названий + «На вычитке»", () => {
   const data = aggregateActivity([
-    { entry_type: "meeting", source: "desktop-agent", group_id: "cee" },
-    { entry_type: "note", source: "telegram", group_id: "cee" },
-    { entry_type: "note", source: "link", group_id: "other" },
+    { entry_type: "meeting", source: "desktop-agent", group_id: "cee", metadata: { title: "Dodo Pizza Bulgaria" } },
+    { entry_type: "note", source: "telegram", group_id: "cee", metadata: { title: "Заметка по РКО" } },
   ]);
-  const s = formatReport(data, "18.07");
-  assertEquals(s.includes("Встреч добавлено: <b>1</b>"), true);
-  assertEquals(s.includes("Записей добавлено: <b>2</b>"), true);
-  // решение владельца 2026-07-24: только счётчики, никаких разбивок по воркспейсам/источникам
-  assertEquals(s.includes("CEE"), false);
-  assertEquals(s.includes("ссылки"), false);
+  const s = formatReport(data, "24.07", 12);
+  assertEquals(s.includes("Добавлено в базу: <b>2</b>"), true);
+  assertEquals(s.includes("• Dodo Pizza Bulgaria"), true);
+  assertEquals(s.includes("• Заметка по РКО"), true);
+  assertEquals(s.includes("На вычитке: <b>12</b>"), true);
 });
 
-Deno.test("formatReport: частично пустой день — ноль печатается", () => {
-  const data = aggregateActivity([
-    { entry_type: "note", source: "telegram", group_id: "cee" },
-  ]);
-  const s = formatReport(data, "18.07");
-  assertEquals(s.includes("Встреч добавлено: <b>0</b>"), true);
-  assertEquals(s.includes("Записей добавлено: <b>1</b>"), true);
+Deno.test("formatReport: 0 добавлено, но есть на вычитке — НЕ тихий день (кейс 24.07)", () => {
+  const s = formatReport(aggregateActivity([]), "24.07", 12);
+  assertEquals(s.includes("тихий день"), false);
+  assertEquals(s.includes("Добавлено в базу: <b>0</b>"), true);
+  assertEquals(s.includes("На вычитке: <b>12</b>"), true);
 });
 
-Deno.test("formatReport: тихий день — плашка, без счётчиков", () => {
-  const s = formatReport(aggregateActivity([]), "18.07");
+Deno.test("formatReport: тихий день — и добавлено, и на вычитке ноль", () => {
+  const s = formatReport(aggregateActivity([]), "18.07", 0);
   assertEquals(s.includes("тихий день"), true);
-  assertEquals(s.includes("добавлено"), false);
+  assertEquals(s.includes("Добавлено"), false);
+});
+
+Deno.test("formatReport: название из первой строки content, если нет metadata.title", () => {
+  const data = aggregateActivity([
+    { entry_type: "meeting", source: "desktop-agent", group_id: "cee", content: "### Обучение в странах\n\nтекст…" },
+  ]);
+  const s = formatReport(data, "24.07", 0);
+  assertEquals(s.includes("• Обучение в странах"), true);
 });
