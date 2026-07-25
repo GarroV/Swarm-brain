@@ -540,7 +540,7 @@ Deno.serve(async (req: Request) => {
       await pollGranolaForUser(chatId, userId);
       const { data: meetings } = await supabase
         .from("entries")
-        .select("id, metadata, created_at, source")
+        .select("id, metadata, created_at, source, owner_id")
         .eq("group_id", groupId)
         .in("source", ENTRY_MEETING_SOURCES)
         .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false")
@@ -550,12 +550,34 @@ Deno.serve(async (req: Request) => {
         await sendMessage(chatId, "✅ Все встречи подтверждены, новых нет.");
       } else {
         await sendMessage(chatId, `<b>📋 Встречи — ожидают проверки (${meetings.length})</b>\nОткрой каждую, проверь тезисы и подтверди:`);
-        for (const m of (meetings as Array<{ id: string; metadata: Record<string, unknown>; created_at: string; source: string }>)) {
+        const rows = meetings as Array<{ id: string; metadata: Record<string, unknown>; created_at: string; source: string; owner_id: number | null }>;
+        // Имена владельцев (owner_id → имя) одним батчем — пометка «от кого пришла запись».
+        const ownerIds = [...new Set(rows.map((m) => m.owner_id).filter((x): x is number => typeof x === "number"))];
+        const nameById = new Map<number, string>();
+        if (ownerIds.length) {
+          const [{ data: profs }, { data: aus }] = await Promise.all([
+            supabase.from("user_profiles").select("telegram_id, first_name, last_name").in("telegram_id", ownerIds),
+            supabase.from("allowed_users").select("telegram_id, username").in("telegram_id", ownerIds),
+          ]);
+          const unameById = new Map<number, string>(
+            ((aus ?? []) as Array<{ telegram_id: number; username: string | null }>)
+              .filter((u) => u.username).map((u) => [u.telegram_id, u.username as string]),
+          );
+          for (const p of (profs ?? []) as Array<{ telegram_id: number; first_name: string | null; last_name: string | null }>) {
+            const full = [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
+            if (full) nameById.set(p.telegram_id, full);
+          }
+          for (const id of ownerIds) {
+            if (!nameById.has(id) && unameById.has(id)) nameById.set(id, `@${unameById.get(id)}`);
+          }
+        }
+        for (const m of rows) {
           const title = (m.metadata?.title as string) ?? "Без названия";
           const entryDate = (m.metadata?.entry_date as string) ?? m.created_at.split("T")[0];
           const dateStr = new Date(`${entryDate}T12:00:00`).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
           const src = m.source === "granola" ? "📓" : "📹";
-          await sendInlineMessage(chatId, `${src} <b>${title}</b>\n📅 ${dateStr}`, [[
+          const owner = m.owner_id != null ? (nameById.get(m.owner_id) ?? "неизвестно") : null;
+          await sendInlineMessage(chatId, `${src} <b>${title}</b>\n📅 ${dateStr}${owner ? ` · 🧑 ${owner}` : ""}`, [[
             { text: "🔍 Тезисы", callback_data: `mr_${m.id}` },
             { text: "🗑", callback_data: `md_${m.id}` },
           ]]);
