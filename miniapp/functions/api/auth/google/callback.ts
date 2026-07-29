@@ -27,13 +27,16 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
 
   // 1) обмен кода на токены
   const redirectUri = `${origin}/api/auth/google/callback`;
+  // Устойчивость к опечаткам в CF-env: нормализуем client_id (случайный http://), тримим secret.
+  const clientId = (env.GOOGLE_CLIENT_ID ?? "").trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  const clientSecret = (env.GOOGLE_CLIENT_SECRET ?? "").trim();
   const tokRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code,
-      client_id: env.GOOGLE_CLIENT_ID,
-      client_secret: env.GOOGLE_CLIENT_SECRET,
+      client_id: clientId,
+      client_secret: clientSecret,
       redirect_uri: redirectUri,
       grant_type: "authorization_code",
     }),

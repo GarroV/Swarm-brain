@@ -15,9 +15,11 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   const url = new URL(request.url);
   const next = url.searchParams.get("next") ?? "/";
   const redirectUri = `${url.origin}/api/auth/google/callback`;
+  // Устойчивость к опечаткам в CF-env: срезаем случайный http(s):// и хвостовые слэши/пробелы.
+  const clientId = (env.GOOGLE_CLIENT_ID ?? "").trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
 
   const auth = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  auth.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
+  auth.searchParams.set("client_id", clientId);
   auth.searchParams.set("redirect_uri", redirectUri);
   auth.searchParams.set("response_type", "code");
   auth.searchParams.set("scope", "openid email profile");
