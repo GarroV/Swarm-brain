@@ -63,6 +63,7 @@
 | `swarm-bot` (`granola_poll`) | Cron (каждый час) | Импортирует новые заметки Granola как черновики `confirmed:false` (видны в вебе «на согласовании» + Telegram-ревью). Заменил standalone `granola-poller` |
 | `swarm-bot` (`daily_report_cron`) | Cron (раз в сутки, ~06:00 UTC) | Ежедневный отчёт активности админу: счёт `entries` за вчерашние сутки (Europe/Belgrade) по `entry_type` (meeting/note) → `sendMessage(ADMIN_USER_ID)`. Вывод (переделан 2026-07-25): «📥 Добавлено в базу: N» + список названий (встречи+документы, из `metadata.title`/первой строки) + «📋 На вычитке: M» (вся очередь `meetings.status=awaiting_review`); «тихий день» — только когда оба ноль. Тот же флоу дублирует команда `/report`. Хендлеры `handlers/daily-report.ts` (чистое ядро — `yesterdayWindow`/`aggregateActivity`/`formatReport`) + `handlers/daily-report-send.ts` (I/O `sendDailyReport()` — запрос + отправка) |
 | `swarm-bot` (`review_reminders_cron`) | Cron (почасовой, pg_cron `review-reminders-hourly`; гейт рабочих часов Белграда — будни 9–19 — в коде) | Напоминалка **владельцу** про его невычитанные встречи-записи (`entries` `confirmed!=true`) старше 48ч: сообщение с кнопкой в веб (`/?meeting=<id>`), дальше каждые 24ч до вычитки. Антиспам — `entries.last_review_reminded_at`. Уводит из Telegram в веб (решение владельца 2026-07-25). Хендлеры `handlers/review-reminders.ts` (ядро: `isWorkingHours`/`selectDueReminders`/`formatReminder`) + `handlers/review-reminders-send.ts` (I/O `sendReviewReminders()`) |
+| `swarm-bot` (`feedback_retention_cron`) | Cron (раз в сутки; требует `X-Cron-Secret`) | Чистка Storage: удаляет закрытый фидбек (`status` done/wontfix, `resolved_at` старше 90 дней) вместе со скринами в `swarm_drive`. Незакрытый (`new`/`triaged`) не трогает. Хендлер — `handlers/feedback.ts` `cleanupOldFeedback()` |
 | `granola-poller` | ⚠️ выведен из крона | Устаревшая standalone-функция: только слала уведомление в Telegram, в БД ничего не клала. Логика переехала в `swarm-bot` (`ingestNewGranolaNotesAllUsers`) |
 | `read-ai-webhook` | Webhook от Read.ai | Принимает завершённые встречи, сохраняет в `entries`, уведомляет бота |
 | `read-ai-auth` | HTTP redirect (OAuth) | OAuth callback для авторизации Read.ai, сохраняет токен в `app_settings` |
@@ -355,6 +356,7 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 | `meeting_rename_<entryId>` | meetings.ts | Ожидание переименования встречи |
 | `meeting_tag_<meetingId>` | meetings.ts | Ожидание тегов/стран |
 | `feedback_text` | feedback.ts | Ожидание текста фидбека |
+| `feedback_category` | feedback.ts | Ожидание выбора раздела (клавиатура `fbcat_`) |
 | `feedback_photo` | feedback.ts | Ожидание скриншота или кнопки "Готово" |
 | `addtask_title` | tasks/handlers.ts | Wizard `/addtask`: ожидание названия задачи |
 | `addtask_due` | tasks/handlers.ts | Wizard `/addtask`: ожидание дедлайна (по завершении — `confirmed:true` + `broadcastTaskAssigned`) |
@@ -499,8 +501,9 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 ### Feedback
 | Код | Действие |
 |----|---------|
+| `fbcat_<category>` | Выбор раздела фидбека (recorder/meetings/search/… — канон `_shared/feedback-categories.ts`) → шаг скриншота |
 | `fb_done` | Пропустить скриншот, сохранить фидбек без фото |
-| `fb_read_<feedbackId>` | Кнопка "Прочитано" в канале — удалить из БД и убрать сообщение |
+| `fb_read_<feedbackId>` | **Legacy** (в новых постах канала кнопки нет): помечает фидбек `status='read'` (раньше — удалял из БД; разрушающий delete убран) |
 
 ### MCP/рекордер-токен — подтверждение перевыпуска (`/mytoken`, `/setup`, `/recordertoken`)
 | Код | Действие |
@@ -521,10 +524,16 @@ _Все три: перевыпуск **убивает старый токен**,
 | `telegram_id` | bigint | Кто отправил |
 | `username` | text | Telegram username |
 | `text` | text NOT NULL | Текст фидбека |
-| `photo_file_id` | text | file_id скриншота (null если нет) |
+| `photo_file_id` | text | Telegram file_id (legacy; канон скрина — `screenshot_url`) |
+| `screenshot_url` | text | Durable URL скрина в `swarm_drive` (виден вне Telegram) |
+| `status` | text | `new` → `triaged` → `done` / `wontfix` (дефолт `new`) |
+| `category` | text | Раздел (дефолт `other`); канон enum — `_shared/feedback-categories.ts` |
+| `source` | text | `bot` / `web` (дефолт `bot`) |
+| `task_id` | uuid | Линк на задачу, если фидбек в неё превращён |
+| `resolved_at` | timestamptz | Когда закрыт (done/wontfix) |
 | `created_at` | timestamptz | |
 
-Канал для пересылки: `app_settings.feedback_channel_id` (chat_id группы/канала). Если не задан — фидбек только в БД.
+**Модель:** persistent inbox — фидбек НЕ удаляется при прочтении, копится со статусом. Разбор — через MCP (`get_feedback`/`resolve_feedback`, владелец-only) или SQL. Канал `app_settings.feedback_channel_id` — пассивный пинг (текст + скрин, без кнопок); если не задан — фидбек только в БД. Чистка — cron `feedback_retention_cron` (закрытое старше 90 дней + скрины).
 
 Формат сообщения в канале: `[BOT_NAME] 🐛 @username · дата\n\nтекст`. Имя бота берётся из env-переменной `BOT_NAME` (по умолчанию `"bot"`). Позволяет использовать одну общую группу для нескольких ботов.
 
@@ -790,7 +799,7 @@ _Поиск / RAG / прочее:_
 | `GET` | `/search?q=` | Гибридный поиск по `entries` (`match_entries_hybrid`: русский full-text + вектор через RRF, буст по стране + окно свежести — сначала ≤2 нед, добор старых при <5 источников, ступенчатый буст recency; страна детектится из текста запроса — `detectQueryCountry`) → `Entry[]` |
 | `POST` | `/ask` | RAG-ответ (экран Answer редизайна): embed → `matchEntries` (топ-8, приватность+воркспейс в RPC) → GPT-4o-mini синтез строго по источникам со сносками `[n]` → `{ query, answer, sources[], followups[] }`. Пусто → без GPT; сбой синтеза → деградация до источников |
 | `POST` | `/digest` | Персональный дайджест за период (`{ days }`, дефолт 7): GPT-сводка по `entries` воркспейса (приватность учтена); пусто → текстовая заглушка |
-| `POST` | `/feedback` | Сохранить фидбек (`text`) в `feedback` (username из `allowed_users`) + переслать в Telegram-канал `feedback_channel_id`; 204 |
+| `POST` | `/feedback` | **multipart/form-data**: `text` (обяз.) + `category` + опц. `screenshot` (файл → `swarm_drive`). Сохраняет в `feedback` (`source='web'`, username из `allowed_users`) + пинг в канал `feedback_channel_id` (без кнопок); 204 |
 
 _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_admin=true`):_
 
@@ -833,6 +842,8 @@ supabase/functions/swarm-mcp/
 | `get_meetings` | Список встреч |
 | `get_storage_stats` | Статистика хранилища |
 | `get_users` | Список пользователей воркспейса |
+| `get_feedback` | Фидбек пользователей (баги/идеи), фильтры `status`/`category`; **владелец-only**, по умолчанию незакрытые |
+| `resolve_feedback` | Пометить фидбек `triaged`/`done`/`wontfix` (+ опц. `task_id`); **владелец-only** |
 | `add_task` | Создать задачу (с fuzzy-матчингом исполнителя). Параметр `labels` (имена личных смарт-меток) — резолв/авто-создание меток владельца, задача становится личной |
 | `update_task` | Обновить задачу. Параметр `labels` — только для своей личной задачи |
 | `delete_task` | Удалить задачу |

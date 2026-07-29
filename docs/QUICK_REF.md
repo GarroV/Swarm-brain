@@ -19,6 +19,7 @@ supabase functions deploy meeting-webtoken --no-verify-jwt   # обмен record
 # granola-poller — legacy, НЕ деплоить: поллинг Granola внутри swarm-bot ({granola_poll:true} крон)
 # daily_report_cron — ежедневный отчёт активности админу (pg_cron '0 6 * * *' → swarm-bot {"daily_report_cron":true})
 # review_reminders_cron — напоминалка владельцу про невычитанные встречи >48ч, кнопка в веб (pg_cron 'review-reminders-hourly' почасовой, гейт рабочих часов Белграда в коде → swarm-bot {"review_reminders_cron":true})
+# feedback_retention_cron — чистка закрытого фидбека (done/wontfix >90 дней) + скрины в swarm_drive (pg_cron раз в сутки → swarm-bot {"feedback_retention_cron":true}; регистрация pg_cron — вручную в проде, как остальные)
 supabase secrets set BOT_NAME=swarm-bot                       # env-переменные
 ```
 
@@ -52,6 +53,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Сохранение записи (saveEntry/индекс), сессии, доступ | `swarm-bot/lib/storage.ts` | §Флоу сохранения, §Сессионный механизм |
 | Правка/удаление записей из чата | `swarm-bot/handlers/manage.ts` | §Управление записями |
 | Воркспейсы | `swarm-bot/lib/workspace.ts` | §Воркспейсы |
+| Фидбек (приём бот+веб, категории, скрины, разбор) | бот `swarm-bot/handlers/feedback.ts`; веб `swarm-api` `POST /feedback` + `miniapp/.../roy/{FeedbackForm,FeedbackFab}.tsx`; разбор `swarm-mcp` (`get_feedback`/`resolve_feedback`); канон категорий `_shared/feedback-categories.ts` | §Таблица feedback |
 | Telegram helpers / новый хендлер | `swarm-bot/lib/telegram.ts`, `handlers/<name>.ts` | §swarm-bot |
 | `ADMIN_USER_ID` (зашит) | `swarm-bot/lib/supabase.ts` → `744230399` | §Контроль доступа |
 
@@ -133,7 +135,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | `mr_`, `mc_`, `mctry_`, `mctog_`, `mctry_done_`, `medit_`, `mrename_`, `mtr_`, `mtag_`, `massign_`, `md_`, `met_`, `med_`, `rai_`, `meeting_`, `mau_`, `mexp_` | meetings.ts (`mctry_/mctog_` — пикер рынков; не коллизят с `mc_`: после `mc` идёт `t`) |
 | `sa_` | superadmin.ts |
 | `tk_` | tasks/handlers.ts |
-| `fb_` | handlers/feedback.ts |
+| `fb_`, `fbcat_` | handlers/feedback.ts (`fbcat_<cat>` — выбор раздела; `fb_read_` — legacy) |
 | `kbpick_`, `kbdo_`, `kbask_`, `kbno` | handlers/manage.ts |
 | `guide_open`, `guide_menu`, `guide_s1/2/3` | help.ts (мастер настройки — диспатч в index.ts) |
 
@@ -148,7 +150,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | `waiting_add`, `waiting_ask` | index.ts |
 | `granola_*` | granola.ts |
 | `meeting_*` | meetings.ts |
-| `feedback_text`, `feedback_photo` | feedback.ts |
+| `feedback_text`, `feedback_category`, `feedback_photo` | feedback.ts |
 | `task_*` | tasks/handlers.ts |
 | `user_*` | users.ts |
 | `sa_*` | superadmin.ts |
