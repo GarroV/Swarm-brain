@@ -3,12 +3,16 @@ import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTas
 import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, detectQueryCountry } from "../_shared/countries.ts";
 import { matchEntries } from "../_shared/search.ts";
 import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
+import { isFeedbackStatus } from "../_shared/feedback-categories.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+// Владелец (админ) — единственный, кому доступна поверхность фидбека. Совпадает с ADMIN_USER_ID в боте.
+const ADMIN_USER_ID = 744230399;
 
 async function getUserGroupId(telegramId: number): Promise<string | null> {
   const { data } = await supabase
@@ -184,6 +188,33 @@ const TOOLS = [
     },
   },
   {
+    name: "get_feedback",
+    description: "Фидбек пользователей (баги/идеи) из бота и веба. Только для владельца. По умолчанию — незакрытые (new/triaged). Фильтры: status, category.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["new", "triaged", "done", "wontfix"], description: "Фильтр по статусу (по умолчанию — незакрытые)" },
+        category: { type: "string", description: "Раздел: recorder|meetings|search|tasks|knowledge|digest|auth|integrations|claude|ui|other" },
+        limit: { type: "number", description: "Сколько вернуть (по умолчанию 30, макс 100)" },
+        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен (только владелец)" },
+      },
+    },
+  },
+  {
+    name: "resolve_feedback",
+    description: "Пометить фидбек статусом (triaged/done/wontfix) и опционально привязать к задаче (task_id). Только для владельца.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "ID фидбека из get_feedback" },
+        status: { type: "string", enum: ["new", "triaged", "done", "wontfix"], description: "Новый статус (по умолчанию done)" },
+        task_id: { type: "string", description: "ID задачи, если фидбек превращён в задачу" },
+        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен (только владелец)" },
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "get_entry",
     description: "Получить полный текст записи из базы знаний по ID. Используй когда search_knowledge вернул обрезанный текст.",
     inputSchema: {
@@ -356,7 +387,7 @@ async function toolGetUsers(args: { market?: string; requesting_user_id?: number
   let query = supabase
     .from("allowed_users")
     .select("telegram_id, username")
-    .neq("telegram_id", 744230399);
+    .neq("telegram_id", ADMIN_USER_ID);
   if (groupId) query = query.eq("group_id", groupId);
 
   const { data: users, error } = await query;
@@ -379,6 +410,52 @@ async function toolGetUsers(args: { market?: string; requesting_user_id?: number
     const email = p?.email ? `\n  Email: ${p.email}` : "";
     return `• ${name}${role}${markets}${phone}${email}`;
   }).join("\n\n");
+}
+
+async function toolGetFeedback(
+  args: { status?: string; category?: string; limit?: number; requesting_user_id?: number },
+): Promise<string> {
+  if (args.requesting_user_id !== ADMIN_USER_ID) return "Доступно только владельцу.";
+  const limit = Math.min(Math.max(args.limit ?? 30, 1), 100);
+
+  let query = supabase
+    .from("feedback")
+    .select("id, text, category, source, username, status, screenshot_url, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  // По умолчанию — незакрытые (то, что ещё требует разбора).
+  if (args.status) query = query.eq("status", args.status);
+  else query = query.not("status", "in", "(done,wontfix)");
+  if (args.category) query = query.eq("category", args.category);
+
+  const { data, error } = await query;
+  if (error) return `Ошибка: ${error.message}`;
+  if (!data?.length) return "Фидбека нет.";
+
+  return data.map((f: Record<string, unknown>) => {
+    const date = new Date(f.created_at as string).toLocaleString("ru-RU", {
+      day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+    });
+    const shot = f.screenshot_url ? `\n  Скрин: ${f.screenshot_url}` : "";
+    return `• [${f.category}] (${f.source}, ${f.status}) @${f.username ?? "?"} · ${date}\n  ${f.text}${shot}\n  id: ${f.id}`;
+  }).join("\n\n");
+}
+
+async function toolResolveFeedback(
+  args: { id: string; status?: string; task_id?: string; requesting_user_id?: number },
+): Promise<string> {
+  if (args.requesting_user_id !== ADMIN_USER_ID) return "Доступно только владельцу.";
+  if (!args.id) return "Нужен id фидбека.";
+  const status = args.status ?? "done";
+  if (!isFeedbackStatus(status)) return `Недопустимый статус: ${status}`;
+
+  const update: Record<string, unknown> = { status };
+  if (status === "done" || status === "wontfix") update.resolved_at = new Date().toISOString();
+  if (args.task_id) update.task_id = args.task_id;
+
+  const { error } = await supabase.from("feedback").update(update).eq("id", args.id);
+  if (error) return `Ошибка: ${error.message}`;
+  return `Фидбек ${args.id} → ${status}${args.task_id ? ` (задача ${args.task_id})` : ""}.`;
 }
 
 async function toolGetEntry(args: { id: string; requesting_user_id?: number }): Promise<string> {
@@ -934,6 +1011,10 @@ Deno.serve(async (req: Request) => {
         result = await toolUploadFile(args as { file_name: string; file_content_base64: string; mime_type?: string; summary: string; source?: string; requesting_user_id?: number });
       } else if (name === "get_storage_stats") {
         result = await toolGetStorageStats(args as { requesting_user_id?: number });
+      } else if (name === "get_feedback") {
+        result = await toolGetFeedback(args as { status?: string; category?: string; limit?: number; requesting_user_id?: number });
+      } else if (name === "resolve_feedback") {
+        result = await toolResolveFeedback(args as { id: string; status?: string; task_id?: string; requesting_user_id?: number });
       } else {
         return err(id, -32601, `Unknown tool: ${name}`);
       }
