@@ -28,6 +28,7 @@ create table if not exists public.allowed_users (
   id                    bigserial primary key,
   telegram_id           bigint unique,
   username              text,
+  email                 text,  -- ключ веб-входа через Google Sign-In (уникальный по lower ниже)
   added_by              bigint not null,
   created_at            timestamptz not null default now(),
   is_admin              boolean not null default false,
@@ -35,6 +36,8 @@ create table if not exists public.allowed_users (
   claude_mcp_token_hash text,
   claude_mcp_token_expires_at timestamptz
 );
+create unique index if not exists allowed_users_email_lower_uq
+  on public.allowed_users (lower(email)) where email is not null;
 create index if not exists allowed_users_mcp_token_hash_idx
   on public.allowed_users (claude_mcp_token_hash)
   where claude_mcp_token_hash is not null;
