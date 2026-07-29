@@ -119,11 +119,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Не-тихие тики подряд: сброс счётчика тишины только при 2+ подряд (устойчивость к «блипам»).
     private var loudStreak = 0
     // Плановый конец встречи из Google Calendar (kind == .calendar) — сильный сигнал конца, как у
-    // Granola. nil для room/manual. Наступил конец + короткая тишина → стоп; переработку не рубим,
-    // но с жёстким потолком.
+    // Granola. nil для room/manual. БОЛЬШЕ НЕ стоп-триггер (2026-07-29): календарный конец НЕ рубит
+    // активный звонок (событие может быть заглушкой/не про этот созвон) — конец определяем только по
+    // тишине дорожек (см. recWatchTick). Оставлен присвоенным для контекста/логов.
     private var scheduledEndAt: Date?
-    private static let postScheduledEndSilenceTicks = 6                    // 6 × 5с = 30с тишины после конца
-    private static let scheduledOverrunCapSeconds: TimeInterval = 30 * 60  // потолок переработки
     // Дефолтный стоп: если активный созвон не детектится, запись не идёт дольше этого лимита.
     // Бэкстоп от runaway-записи (когда детект созвона молчит — напр. ручной старт без звонка).
     private static let maxNoCallSeconds: TimeInterval = 75 * 60   // 1ч15м
@@ -933,20 +932,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             roomGoneTicks = 0
         }
 
-        // (Календарь) Плановый конец встречи из Google Calendar — сильный сигнал (как у Granola).
-        // После планового конца достаточно короткой тишины (30с) → стоп; переработку (ещё говорят)
-        // не рубим, но с жёстким потолком end+30мин от runaway.
-        if let end = scheduledEndAt {
-            let over = Date().timeIntervalSince(end)
-            if over >= 0 && systemSilentTicks >= Self.postScheduledEndSilenceTicks {
-                autoStop(reason: "встреча завершилась (по календарю)")
-                return
-            }
-            if over >= Self.scheduledOverrunCapSeconds {
-                autoStop(reason: "плановый конец + переработка — стоп")
-                return
-            }
-        }
+        // (Календарь) Плановый конец из Google Calendar НЕ останавливает запись, пока идёт звук
+        // (решение владельца 2026-07-29). Причина: календарное событие может быть заглушкой / не про
+        // этот звонок (напр. личный созвон в другом браузере при рабочем событии в календаре), а живой
+        // диалог важнее расписания. Был баг: активный звонок рубился на `плановый конец + 30 мин`
+        // (scheduledOverrunCapSeconds) — ровно час записи вместо продолжения. Конец созвона определяем
+        // ТОЛЬКО по тишине дорожек: правила ниже (3 мин тишины / 15 мин без собеседника / закрытая
+        // вкладка / лимит без активного созвона). `scheduledEndAt` — больше не стоп-триггер.
 
         // (0) Конец БРАУЗЕРНОГО звонка по тишине ОБЕИХ дорожек. Срабатывает ДАЖЕ когда
         // mic-холдер (браузер) всё ещё держит мик — НЕ гейтим на realCall==false. Требуем, чтобы
