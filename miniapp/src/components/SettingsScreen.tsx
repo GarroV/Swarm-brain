@@ -4,7 +4,7 @@ import {
   fetchMe, patchMe, fetchConfig, fetchIntegrations, connectGranola, disconnectGranola,
   googleConnectUrl, disconnectGoogle,
   fetchGranolaUnprocessed, previewGranolaNote, importGranolaNote, skipGranolaNote,
-  sendFeedback, generateDigest, uploadFile, logout,
+  generateDigest, uploadFile, logout,
   fetchRecorderSetup, mintRecorderToken,
   fetchMcpSetup, mintMcpToken, fetchClaudeInstructions,
 } from "@/lib/api";
@@ -13,8 +13,8 @@ import { countryCode } from "@/lib/countries";
 import type { Me, Integration, GranolaNote } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { FeedbackForm } from "@/components/roy/FeedbackForm";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -444,36 +444,7 @@ function UploadSection() {
 // ── Feedback section ──────────────────────────────────────────────────────────
 
 function FeedbackSection() {
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-
-  const handleSend = async () => {
-    if (!text.trim()) return;
-    setSending(true);
-    try {
-      await sendFeedback(text.trim());
-      setText("");
-      setSent(true);
-      setTimeout(() => setSent(false), 3000);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      <Textarea
-        placeholder="Опишите проблему или предложение…"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        className="text-sm min-h-[100px]"
-      />
-      <Button onClick={handleSend} disabled={sending || !text.trim()} className="w-full">
-        {sending ? "Отправляю…" : sent ? "✓ Отправлено" : "Отправить"}
-      </Button>
-    </div>
-  );
+  return <FeedbackForm />;
 }
 
 // ── Collapsible section wrapper ───────────────────────────────────────────────

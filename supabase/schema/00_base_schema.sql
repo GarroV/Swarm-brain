@@ -221,12 +221,18 @@ create table if not exists public.app_settings (
 
 -- ── feedback ────────────────────────────────────────────────────────────────
 create table if not exists public.feedback (
-  id            uuid primary key default gen_random_uuid(),
-  telegram_id   bigint not null,
-  username      text,
-  text          text not null,
-  photo_file_id text,
-  created_at    timestamptz not null default now()
+  id             uuid primary key default gen_random_uuid(),
+  telegram_id    bigint not null,
+  username       text,
+  text           text not null,
+  photo_file_id  text,
+  screenshot_url text,                                      -- durable URL в swarm_drive (канон скрина)
+  status         text not null default 'new',               -- new → triaged → done / wontfix
+  category       text not null default 'other',             -- recorder|meetings|search|tasks|knowledge|digest|auth|integrations|claude|ui|other
+  source         text not null default 'bot',               -- bot | web
+  task_id        uuid,                                      -- если превращён в задачу
+  resolved_at    timestamptz,
+  created_at     timestamptz not null default now()
 );
 
 -- ── user_integrations (Granola etc.) ────────────────────────────────────────
