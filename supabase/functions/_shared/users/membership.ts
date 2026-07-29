@@ -10,18 +10,25 @@
 // плодил дубли и не умел перемещать по id). Теперь одна.
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-export type AddUserResult = { status: "ok" | "bad_input" | "workspace_not_found"; pending: boolean };
+export type AddUserResult = { status: "ok" | "bad_input" | "workspace_not_found" | "email_taken"; pending: boolean };
 
 export function normalizeUsername(raw: string): string {
   return raw.replace(/^@/, "").trim().toLowerCase();
 }
 
+// Уникальное нарушение (email уже за кем-то) — allowed_users.email UNIQUE по lower(email).
+function isUniqueViolation(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === "23505";
+}
+
 export async function addUserToWorkspace(
   supabase: SupabaseClient,
-  opts: { telegramId?: number | null; username?: string | null; workspaceId: string; addedBy: number },
+  opts: { telegramId?: number | null; username?: string | null; email?: string | null; workspaceId: string; addedBy: number },
 ): Promise<AddUserResult> {
   const telegramId = opts.telegramId ?? null;
   const username = opts.username ? normalizeUsername(opts.username) : "";
+  // email — КАНОН веб-входа (allowed_users.email, уникальный по lower). Пусто → не трогаем.
+  const email = opts.email && opts.email.trim() ? opts.email.trim().toLowerCase() : null;
   if (telegramId == null && !username) return { status: "bad_input", pending: false };
 
   // Воркспейс должен существовать (иначе создавали бы висячие allowed_users с чужим group_id).
@@ -32,10 +39,10 @@ export async function addUserToWorkspace(
 
   if (telegramId != null) {
     const { error } = await supabase.from("allowed_users").upsert(
-      { telegram_id: telegramId, group_id: opts.workspaceId, added_by: opts.addedBy },
+      { telegram_id: telegramId, group_id: opts.workspaceId, added_by: opts.addedBy, ...(email ? { email } : {}) },
       { onConflict: "telegram_id" },
     );
-    if (error) throw new Error(error.message);
+    if (error) { if (isUniqueViolation(error)) return { status: "email_taken", pending: false }; throw new Error(error.message); }
     return { status: "ok", pending: false };
   }
 
@@ -46,12 +53,12 @@ export async function addUserToWorkspace(
   if (selErr) throw new Error(selErr.message);
   if (existing) {
     const row = existing as { id: string; telegram_id: number | null };
-    const { error } = await supabase.from("allowed_users").update({ group_id: opts.workspaceId }).eq("id", row.id);
-    if (error) throw new Error(error.message);
+    const { error } = await supabase.from("allowed_users").update({ group_id: opts.workspaceId, ...(email ? { email } : {}) }).eq("id", row.id);
+    if (error) { if (isUniqueViolation(error)) return { status: "email_taken", pending: false }; throw new Error(error.message); }
     return { status: "ok", pending: row.telegram_id == null };
   }
   const { error } = await supabase.from("allowed_users")
-    .insert({ username, group_id: opts.workspaceId, added_by: opts.addedBy });
-  if (error) throw new Error(error.message);
+    .insert({ username, group_id: opts.workspaceId, added_by: opts.addedBy, ...(email ? { email } : {}) });
+  if (error) { if (isUniqueViolation(error)) return { status: "email_taken", pending: false }; throw new Error(error.message); }
   return { status: "ok", pending: true };
 }

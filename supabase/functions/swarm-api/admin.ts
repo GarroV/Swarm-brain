@@ -207,11 +207,13 @@ export async function handleAdminRoutes(
         const r = await addUserToWorkspace(supabase, {
           telegramId: (body.telegram_id as number | undefined) ?? null,
           username: (body.username as string | undefined) ?? null,
+          email: (body.email as string | undefined) ?? null,   // канон веб-входа (Google)
           workspaceId: wsId,
           addedBy: ADMIN_TELEGRAM_ID,
         });
         if (r.status === "workspace_not_found") return apiErr(404, "Workspace not found", origin);
         if (r.status === "bad_input") return apiErr(400, "telegram_id or username required", origin);
+        if (r.status === "email_taken") return apiErr(409, "Этот email уже привязан к другому пользователю", origin);
         return json({ ok: true, pending: r.pending }, 200, origin);
       } catch (e) {
         return apiErr(500, e instanceof Error ? e.message : "add failed", origin);
@@ -280,6 +282,15 @@ export async function handleAdminRoutes(
     }
     const { error } = await supabase.from("user_profiles").upsert(fields, { onConflict: "telegram_id" });
     if (error) return apiErr(500, error.message, origin);
+    // Синк email в allowed_users.email — КАНОНИЧНЫЙ ключ веб-входа (Google); user_profiles.email — зеркало.
+    if ("email" in body) {
+      const email = body.email == null || body.email === "" ? null : String(body.email).trim().toLowerCase();
+      const { error: auErr } = await supabase.from("allowed_users").update({ email }).eq("telegram_id", targetId);
+      if (auErr) {
+        if ((auErr as { code?: string }).code === "23505") return apiErr(409, "Этот email уже привязан к другому пользователю", origin);
+        return apiErr(500, auErr.message, origin);
+      }
+    }
     const { data } = await supabase.from("user_profiles").select("*").eq("telegram_id", targetId).single();
     return json(data, 200, origin);
   }

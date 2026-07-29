@@ -93,5 +93,6 @@ export async function assignUserToWorkspace(
   workspaceId: string,
 ): Promise<"ok" | "not_found" | "workspace_not_found"> {
   const r = await addUserToWorkspace(supabase, { telegramId, username, workspaceId, addedBy: ADMIN_USER_ID });
-  return r.status === "bad_input" ? "not_found" : r.status;
+  // email_taken недостижим (бот email не передаёт), но закрываем тип: маппим в not_found.
+  return r.status === "bad_input" || r.status === "email_taken" ? "not_found" : r.status;
 }
