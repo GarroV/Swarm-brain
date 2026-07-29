@@ -2,19 +2,17 @@
 
 > Этот файл ведётся **вручную**: открытые задачи, технический долг, идеи. Это НЕ автогенерируемый `CHANGELOG.md` (тот собирается из git-коммитов).
 
-## 🟡 [ГОТОВО В ВЕТКЕ 2026-07-29 · ждёт раскатки] Feedback Inbox v2 — фидбек копится, разбор через Claude
+## 🔴 [СРОЧНО 2026-07-30] Feedback Inbox v2 — раскатано, ПОДТВЕРДИТЬ живой веб-флоу
 
-> Ветка `feat/feedback-inbox-v2`. Спека `docs/superpowers/specs/2026-07-29-feedback-inbox-v2-design.md`.
+> Спека `docs/superpowers/specs/2026-07-29-feedback-inbox-v2-design.md`. Слито в `main` (PR #2).
 > Была проблема: кнопка «Прочитано» **удаляла** фидбек из БД → ничего не копилось; таблица плоская; скрины в Telegram `file_id` невидимы вне бота; в вебе скринов не было.
 
-**Сделано (код, `deno check` ✓, `tsc --noEmit` веба ✓):** миграция `feedback` (+`status`/`category`/`source`/`screenshot_url`/`task_id`/`resolved_at`); бот — выбор раздела (`fbcat_`) + скрин в `swarm_drive` + кнопка→`status='read'` вместо delete; веб — плавающая кнопка «?» + форма (категория+файл) + `/feedback` мультипарт; MCP `get_feedback`/`resolve_feedback` (владелец-only); retention-крон `feedback_retention_cron`.
+**✅ Раскатано на прод 2026-07-30:** миграция `feedback` (+6 колонок) применена; `swarm-bot`/`swarm-api`/`swarm-mcp` задеплоены (логи 200); retention-крон `feedback_retention_cron` зарегистрирован (pg_cron jobid 7, 03:17); веб слит в `main` → CF Pages. Проверено: логи функций чистые, синтетический insert/delete в `feedback` с новыми колонками ок. **Бот и MCP (`get_feedback`/`resolve_feedback`) — живые.**
 
-**Осталось раскатать на прод** (в сессии сборки Supabase MCP не был авторизован):
-1. Применить миграцию `20260729173321_feedback_inbox_v2.sql` (`ADD COLUMN` — безопасно).
-2. Задеплоить `swarm-bot`, `swarm-api`, `swarm-mcp` (`--no-verify-jwt`).
-3. Веб — сам на CF Pages при мёрже в `main`.
-4. Зарегистрировать pg_cron `feedback_retention_cron` (раз в сутки → swarm-bot с `X-Cron-Secret`), как остальные кроны.
-5. Смоук: `/feedback` в боте (категория+скрин) + плавающая кнопка в вебе → строка в `feedback` (status/category/source/screenshot_url) + пост в канал без кнопки → `get_feedback` в Claude Desktop.
+**🔴 НЕ подтверждён живой веб-флоу** (осталось от раскатки):
+- Открыть прод-веб из авторизованной сессии → плавающая «?» справа-снизу → форма (раздел + файл) → отправить → убедиться, что легла строка `feedback` с `source='web'`, верным `category` и `screenshot_url` (проверка через MCP `execute_sql`).
+- **Учесть залипание PWA/service-worker кэша** (известная болячка): у части команды старый бандл → форсить ⌘⇧R / unregister SW. До этого «?» может не появиться.
+- Пока веб-флоу не подтверждён вручную — раскатку считать незавершённой.
 
 Частично закрывает идею «алерт-кнопка для пользователей» (ниже): плавающая кнопка есть, но **снимок контекста** (экран/последний запрос/версия) пока НЕ делаем.
 
