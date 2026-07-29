@@ -6,6 +6,7 @@
 // Деплой: supabase functions deploy meeting-current --no-verify-jwt (хитит рекордер с Bearer smcp_).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyAgentToken, AgentAuthError } from "../_shared/agent-auth.ts";
+import { type GEvent, pickCurrentEvent } from "./select.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID") ?? "";
@@ -52,19 +53,10 @@ Deno.serve(async (req: Request) => {
   });
   if (!calRes.ok) return json({ meeting: null, reason: "calendar_api_error" });
 
-  type GEvent = {
-    id: string; iCalUID?: string; summary?: string;
-    start?: { dateTime?: string }; end?: { dateTime?: string };
-    attendees?: Array<{ displayName?: string; email?: string }>;
-  };
   const items = ((await calRes.json()).items ?? []) as GEvent[];
-  const timed = items.filter((e) => e.start?.dateTime && e.end?.dateTime);
-  // Идущее сейчас; иначе ближайшее предстоящее (в окне) — для упреждающего уведомления.
-  const ongoing = timed.find((e) => new Date(e.start!.dateTime!) <= now && now <= new Date(e.end!.dateTime!));
-  const upcoming = timed
-    .filter((e) => new Date(e.start!.dateTime!) > now)
-    .sort((a, b) => new Date(a.start!.dateTime!).getTime() - new Date(b.start!.dateTime!).getTime())[0];
-  const ev = ongoing ?? upcoming;
+  // Выбор события среди перекрывающихся — скоринг по RSVP/организатору/плотности (см. select.ts).
+  // Фаза B (привязка по ссылке комнаты) ляжет поверх коротким замыканием при room-match.
+  const ev = pickCurrentEvent(items, now.getTime());
   if (!ev) return json({ meeting: null, reason: "no_ongoing_event" });
 
   const uid = ev.iCalUID ?? ev.id;
