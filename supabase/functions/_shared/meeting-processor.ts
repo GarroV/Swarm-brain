@@ -15,7 +15,9 @@
 
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  dropConsecutiveRuns,
   isRepeatedFiller,
+  isSingleTokenSpam,
   isWhisperHallucination,
   WHISPER_HALLUCINATION_RE,
 } from "./whisper-hallucinations.ts";
@@ -132,10 +134,15 @@ async function transcribeAudio(audio: Blob, filename: string, languageHint?: str
   const kept: Segment[] = (d.segments ?? [])
     .filter((s) => !isWhisperHallucination(s.text ?? "", s.no_speech_prob ?? 0, s.avg_logprob ?? 0))
     .map((s) => ({ start: s.start, end: s.end, text: s.text.trim() }));
-  // Язык-независимо: если часть — это одна фраза-«аутро», повторённая по всем сегментам (классика
-  // тишины, любой язык), дропаем ВСЁ и НЕ подставляем d.text (это тот же повторённый мусор).
-  const filler = isRepeatedFiller(kept.map((s) => s.text));
-  const segments: Segment[] = filler ? [] : kept;
+  // Схлопываем подряд идущие одинаковые короткие сегменты — петля Whisper на тишине
+  // (напр. «sviđanje»×77 по 5с на молчащем микрофоне), язык-независимо, ДО проверки доминирования.
+  const collapsed = dropConsecutiveRuns(kept, (s) => s.text);
+  const texts = collapsed.map((s) => s.text);
+  // Часть — мусор, если это одна фраза-«аутро» по всем сегментам (isRepeatedFiller) ИЛИ сплошной
+  // спам одиночных токенов (тихий микрофон: смесь двух петель держит любой токен под порогом
+  // доминирования). В обоих случаях дропаем ВСЁ и НЕ подставляем d.text (тот же повторённый мусор).
+  const filler = isRepeatedFiller(texts) || isSingleTokenSpam(texts);
+  const segments: Segment[] = filler ? [] : collapsed;
   let viaFallback = false;
   // Фолбэк на d.text — только если он сам не галлюцинация и часть не признана повтором-мусором.
   if (!filler && segments.length === 0 && d.text && !WHISPER_HALLUCINATION_RE.test(d.text)) {

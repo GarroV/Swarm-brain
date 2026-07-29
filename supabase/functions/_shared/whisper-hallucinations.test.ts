@@ -2,10 +2,14 @@
 // Запуск: deno test supabase/functions/_shared/whisper-hallucinations.test.ts
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  dropConsecutiveRuns,
   isRepeatedFiller,
+  isSingleTokenSpam,
   isWhisperHallucination,
   WHISPER_HALLUCINATION_RE,
 } from "./whisper-hallucinations.ts";
+
+const id = (s: string) => s;
 
 Deno.test("regex — валлийское «аутро» и мультиязычные варианты ловятся", () => {
   assert(WHISPER_HALLUCINATION_RE.test("Diolch yn fawr am wylio'r fideo!"), "welsh");
@@ -62,4 +66,73 @@ Deno.test("isRepeatedFiller — мало сегментов → не сраба�
 
 Deno.test("isWhisperHallucination — валлийский аутро теперь ловится чёрным списком", () => {
   assert(isWhisperHallucination("Diolch yn fawr am wylio'r fideo!"));
+});
+
+// ── dropConsecutiveRuns (петля одинаковых токенов) ──────────────────────────────
+
+Deno.test("dropConsecutiveRuns — петля «sviđanje»×77 вырезается целиком (инцидент 564c2f73)", () => {
+  const segs = Array(77).fill("sviđanje");
+  assertEquals(dropConsecutiveRuns(segs, id).length, 0);
+});
+
+Deno.test("dropConsecutiveRuns — петля «ne»×9 вырезается", () => {
+  assertEquals(dropConsecutiveRuns(Array(9).fill("ne"), id).length, 0);
+});
+
+Deno.test("dropConsecutiveRuns — реальная речь вокруг петли сохраняется, петля вырезана", () => {
+  const segs = [
+    "Давайте начнём созвон.",
+    ...Array(30).fill("sviđanje"),
+    "Хорошо, тогда до завтра.",
+  ];
+  const out = dropConsecutiveRuns(segs, id);
+  assertEquals(out, ["Давайте начнём созвон.", "Хорошо, тогда до завтра."]);
+});
+
+Deno.test("dropConsecutiveRuns — живой обмен «Да.»×4 НЕ трогаем (ниже RUN_MIN=6)", () => {
+  const segs = ["Да.", "Да.", "Да.", "Да."];
+  assertEquals(dropConsecutiveRuns(segs, id), segs);
+});
+
+Deno.test("dropConsecutiveRuns — длинная фраза, повторённая ≥6 раз, НЕ вырезается (>REPEAT_MAX_LEN)", () => {
+  const longLine =
+    "Нам нужно закрыть задачу по миграции базы данных до конца квартала, иначе поедут все остальные сроки в проекте и мы не успеем к релизу вовремя.";
+  assert(longLine.length > 120);
+  assertEquals(dropConsecutiveRuns(Array(6).fill(longLine), id).length, 6);
+});
+
+Deno.test("dropConsecutiveRuns — работает над объектами-сегментами через аксессор", () => {
+  const segs = [
+    { start: 0, end: 1, text: "ок" },
+    ...Array(6).fill(0).map((_, i) => ({ start: i, end: i + 1, text: "sviđanje" })),
+    { start: 9, end: 10, text: "поехали" },
+  ];
+  const out = dropConsecutiveRuns(segs, (s) => s.text);
+  assertEquals(out.map((s) => s.text), ["ок", "поехали"]);
+});
+
+// ── isSingleTokenSpam (сплошной спам одиночных токенов) ─────────────────────────
+
+Deno.test("isSingleTokenSpam — двух-токенная смесь, обойдённая доминированием, ловится", () => {
+  // Точный слепок инцидента 564c2f73: 100 mic-сегментов = 77 «sviđanje» + 13 «ne» + 10 обрывков.
+  // «sviđanje» = 77/100 = 0.77 < REPEAT_DOMINANCE(0.8) → isRepeatedFiller слеп; ловит isSingleTokenSpam.
+  const scattered = ["moš", "jel", "je", "pa", "nije", "nezadovoljstvu", "ni", "je", "ne", "pa"];
+  const texts = [...Array(77).fill("sviđanje"), ...Array(13).fill("ne"), ...scattered];
+  assertEquals(texts.length, 100);
+  assertEquals(isRepeatedFiller(texts), false, "isRepeatedFiller тут слеп (0.77 < 0.8)");
+  assert(isSingleTokenSpam(texts), "isSingleTokenSpam должен поймать сплошной односложный спам");
+});
+
+Deno.test("isSingleTokenSpam — часть с реальной многословной репликой НЕ дропается", () => {
+  const texts = [...Array(20).fill("ok"), "давайте перейдём к следующему пункту повестки"];
+  assertEquals(isSingleTokenSpam(texts), false);
+});
+
+Deno.test("isSingleTokenSpam — живой короткий обмен НЕ дропается (есть ≥3-словные реплики)", () => {
+  const real = ["Да.", "Согласен полностью с этим.", "Ок.", "Проверим на стейдже завтра утром.", "Договорились."];
+  assertEquals(isSingleTokenSpam(real), false);
+});
+
+Deno.test("isSingleTokenSpam — мало сегментов → не срабатывает", () => {
+  assertEquals(isSingleTokenSpam(["ne", "ne", "ne"]), false);
 });

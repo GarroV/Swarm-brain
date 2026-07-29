@@ -1,7 +1,13 @@
 import { saveEntry, generateSummary, uploadToStorage } from "../lib/storage.ts"; // generateSummary used for multi-chunk docs only
 import { sendMessage, getTelegramFileUrl } from "../lib/telegram.ts";
 import { TgMessage } from "../lib/types.ts";
-import { isWhisperHallucination, WHISPER_HALLUCINATION_RE } from "../../_shared/whisper-hallucinations.ts";
+import {
+  dropConsecutiveRuns,
+  isRepeatedFiller,
+  isSingleTokenSpam,
+  isWhisperHallucination,
+  WHISPER_HALLUCINATION_RE,
+} from "../../_shared/whisper-hallucinations.ts";
 // @ts-ignore - esm.sh module
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
@@ -27,11 +33,12 @@ async function transcribeAudio(fileId: string): Promise<string> {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message ?? "Whisper error");
   const segments = (data.segments ?? []) as Array<{ text: string; no_speech_prob?: number; avg_logprob?: number }>;
-  const clean = segments
-    .filter((s) => !isWhisperHallucination(s.text ?? "", s.no_speech_prob ?? 0, s.avg_logprob ?? 0))
-    .map((s) => s.text.trim())
-    .join(" ")
-    .trim();
+  const kept = segments.filter((s) => !isWhisperHallucination(s.text ?? "", s.no_speech_prob ?? 0, s.avg_logprob ?? 0));
+  // Тот же анти-галлюцинационный слой, что и у встреч: схлопнуть петли одинаковых токенов,
+  // затем отбросить всё, если это повтор-«аутро» или сплошной спам одиночных токенов (тишина).
+  const collapsed = dropConsecutiveRuns(kept, (s) => s.text);
+  const texts = collapsed.map((s) => s.text.trim());
+  const clean = (isRepeatedFiller(texts) || isSingleTokenSpam(texts)) ? "" : texts.join(" ").trim();
   if (clean) return clean;
   // Сегментов не было/всё вычищено — фолбэк на плоский text, но не если он сам галлюцинация.
   const flat = (data.text ?? "").trim();

@@ -50,3 +50,46 @@ export function isRepeatedFiller(texts: string[]): boolean {
   if (topText.length > REPEAT_MAX_LEN) return false;
   return true;
 }
+
+// ── Схлопывание подряд идущих одинаковых коротких сегментов ─────────────────────
+// Whisper на тишине залипает и штампует ОДИН токен подряд десятками на фикс. сетке
+// (инцидент 564c2f73: «sviđanje»×77 по 5.00с, «ne»×9/×4 по 2.00с на молчащем микрофоне).
+// isRepeatedFiller это не всегда ловит: смесь двух петель («sviđanje» 0.77 + «ne») держит
+// любой одиночный токен под REPEAT_DOMINANCE. Здесь режем адресно — ЛЮБОЙ ран из ≥RUN_MIN
+// подряд идущих сегментов с идентичным нормализованным коротким текстом. Реальная речь так
+// не выглядит (человек не выдаёт 6+ идентичных односложных реплик подряд на ровной сетке),
+// поэтому риск выкосить живое — околонулевой. Дженерик по тексту-аксессору: работает и над
+// {start,end,text} (встречи), и над сырыми сегментами Whisper (голосовые бота).
+export const RUN_MIN = 6;
+export function dropConsecutiveRuns<T>(items: T[], getText: (x: T) => string): T[] {
+  const out: T[] = [];
+  let i = 0;
+  while (i < items.length) {
+    const key = getText(items[i]).trim().toLowerCase();
+    let j = i + 1;
+    while (j < items.length && getText(items[j]).trim().toLowerCase() === key) j++;
+    const runLen = j - i;
+    const isShortRun = key.length > 0 && key.length <= REPEAT_MAX_LEN && runLen >= RUN_MIN;
+    if (!isShortRun) for (let k = i; k < j; k++) out.push(items[k]);
+    i = j;
+  }
+  return out;
+}
+
+// ── Спам одиночных токенов по всей части ────────────────────────────────────────
+// Тихий микрофон целиком галлюцинирует короткими односложными обрывками (инцидент 564c2f73:
+// 100 mic-сегментов, ВСЕ односложные, ни одного из ≥3 слов). isRepeatedFiller это пропускает
+// (двух-токенная смесь ниже порога доминирования). Дропаем часть целиком, если: сегментов
+// ≥REPEAT_MIN, доля одиночных токенов ≥SINGLE_TOKEN_SPAM_SHARE, И НЕТ ни одного сегмента из
+// ≥3 слов. Последнее — жёсткий предохранитель: в любой части с настоящим разговором есть хотя
+// бы одна многословная реплика, поэтому реально говорящий микрофон целиком не выпадет.
+export const SINGLE_TOKEN_MAX_LEN = 20;
+export const SINGLE_TOKEN_SPAM_SHARE = 0.85;
+export function isSingleTokenSpam(texts: string[]): boolean {
+  const norm = texts.map((t) => t.trim()).filter(Boolean);
+  if (norm.length < REPEAT_MIN) return false;
+  // Есть хоть одна многословная реплика (≥3 слова) → это не сплошной спам, не трогаем часть.
+  if (norm.some((t) => t.split(/\s+/).length >= 3)) return false;
+  const singles = norm.filter((t) => !/\s/.test(t) && t.length <= SINGLE_TOKEN_MAX_LEN).length;
+  return singles / norm.length >= SINGLE_TOKEN_SPAM_SHARE;
+}
