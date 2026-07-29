@@ -22,6 +22,7 @@ import { NewEntry } from "./screens/NewEntry";
 import { RoyMeetingsScreen } from "./screens/RoyMeetingsScreen";
 import { MeetingDetail } from "./screens/MeetingDetail";
 import { RoyDashboard } from "./RoyDashboard";
+import { FeedbackFab } from "./FeedbackFab";
 import { RoyMark } from "./RoyMark";
 import { MeetingReview } from "@/components/MeetingReview";
 import { TasksScreen } from "@/components/tasks/TasksScreen";
@@ -237,6 +238,7 @@ export function RoyApp({ me }: { me: Me | null }) {
         onSaved={() => setTasksVersion((v) => v + 1)}
       />
       {answerQuery !== null && <AnswerModal query={answerQuery} onClose={() => setAnswerQuery(null)} />}
+      <FeedbackFab />
     </RoyNavContext.Provider>
   );
 }

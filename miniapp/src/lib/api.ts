@@ -841,9 +841,17 @@ export async function skipGranolaNote(id: string): Promise<void> {
 
 // ── Feedback & Digest ─────────────────────────────────────────────────────────
 
-export async function sendFeedback(text: string): Promise<void> {
-  if (DEV_MODE) { console.log("DEV feedback:", text); return; }
-  return apiFetch<void>("/feedback", { method: "POST", body: JSON.stringify({ text }) });
+export async function sendFeedback(
+  text: string,
+  category: string,
+  screenshot?: File | null,
+): Promise<void> {
+  if (DEV_MODE) { console.log("DEV feedback:", { text, category, screenshot: screenshot?.name }); return; }
+  const form = new FormData();
+  form.append("text", text);
+  form.append("category", category);
+  if (screenshot) form.append("screenshot", screenshot);
+  return apiFetchNoContentType<void>("/feedback", { method: "POST", body: form });
 }
 
 // allCountries — админ-опция «весь воркспейс» (иначе дайджест строго по своим рынкам). Сервер

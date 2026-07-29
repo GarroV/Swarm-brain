@@ -4,6 +4,7 @@ import { verifyJWT, signJWT } from "../_shared/jwt.ts";
 import { getRecorderTokenStatus, mintRecorderToken, buildRecorderSetupOneLiner } from "../_shared/recorder-token.ts";
 import { getMcpTokenStatus, mintMcpToken, buildSetupOneLiner } from "../_shared/mcp-token.ts";
 import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
+import { feedbackCategoryLabel, isFeedbackCategory } from "../_shared/feedback-categories.ts";
 import {
   EntryAccessError,
   buildEntriesQuery,
@@ -1568,18 +1569,39 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── POST /feedback ────────────────────────────────────────────────────────────
+  // Мультипарт: text (обяз.) + category + опциональный скрин (screenshot → swarm_drive).
   if (req.method === "POST" && routePath === "/feedback") {
-    let body: Record<string, unknown>;
-    try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
-    if (!body.text || typeof body.text !== "string") return apiErr(400, "text required", origin);
+    let form: FormData;
+    try { form = await req.formData(); } catch { return apiErr(400, "Invalid form data", origin); }
+
+    const rawText = form.get("text");
+    if (typeof rawText !== "string" || !rawText.trim()) return apiErr(400, "text required", origin);
+    const text = rawText.trim();
+
+    const rawCat = form.get("category");
+    const category = isFeedbackCategory(rawCat) ? rawCat : "other";
 
     // username — в allowed_users (не в user_profiles), иначе селект падал и было всегда «#id».
     const { data: au } = await supabase.from("allowed_users")
       .select("username").eq("telegram_id", telegram_id).maybeSingle();
     const username = (au as { username?: string } | null)?.username ?? String(telegram_id);
 
+    // Скрин — durable URL в swarm_drive (единственный способ увидеть его вне Telegram).
+    let screenshotUrl: string | null = null;
+    const screenshot = form.get("screenshot");
+    if (screenshot instanceof File && screenshot.size > 0) {
+      const buf = await screenshot.arrayBuffer();
+      const date = new Date().toISOString().slice(0, 10);
+      const safeName = (screenshot.name || "screenshot.png").replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      const path = `feedback/${date}_${crypto.randomUUID().slice(0, 8)}_${safeName}`;
+      const { error: upErr } = await supabase.storage
+        .from("swarm_drive")
+        .upload(path, buf, { contentType: screenshot.type || "image/png", upsert: true });
+      if (!upErr) screenshotUrl = supabase.storage.from("swarm_drive").getPublicUrl(path).data.publicUrl;
+    }
+
     const { data: feedbackRow } = await supabase.from("feedback")
-      .insert({ telegram_id, username, text: body.text as string })
+      .insert({ telegram_id, username, text, category, source: "web", screenshot_url: screenshotUrl })
       .select("id").single();
 
     const { data: channelRow } = await supabase.from("app_settings")
@@ -1587,11 +1609,15 @@ Deno.serve(async (req: Request) => {
     const channelId = (channelRow as { value?: string } | null)?.value;
     if (channelId && feedbackRow) {
       const date = new Date().toLocaleDateString("ru-RU");
-      const text = `<b>[Mini App]</b> 🐛 @${username} · ${date}\n\n${body.text}`;
-      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      const caption = `<b>[Веб]</b> 🐛 ${feedbackCategoryLabel(category)} · @${username} · ${date}\n\n${text}`;
+      const method = screenshotUrl ? "sendPhoto" : "sendMessage";
+      const payload = screenshotUrl
+        ? { chat_id: channelId, photo: screenshotUrl, caption, parse_mode: "HTML" }
+        : { chat_id: channelId, text: caption, parse_mode: "HTML" };
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: channelId, text, parse_mode: "HTML" }),
+        body: JSON.stringify(payload),
       });
     }
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
