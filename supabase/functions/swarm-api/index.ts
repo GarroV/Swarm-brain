@@ -1569,17 +1569,32 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── POST /feedback ────────────────────────────────────────────────────────────
-  // Мультипарт: text (обяз.) + category + опциональный скрин (screenshot → swarm_drive).
+  // Принимает ОБА формата (backward-compat на время раскатки со старым кэш-бандлом):
+  //   • multipart/form-data — новый веб: text + category + опц. screenshot (→ swarm_drive)
+  //   • application/json    — legacy-клиент (старый service-worker кэш): только { text, category? }
   if (req.method === "POST" && routePath === "/feedback") {
-    let form: FormData;
-    try { form = await req.formData(); } catch { return apiErr(400, "Invalid form data", origin); }
+    let text = "";
+    let category = "other";
+    let screenshotFile: File | null = null;
 
-    const rawText = form.get("text");
-    if (typeof rawText !== "string" || !rawText.trim()) return apiErr(400, "text required", origin);
-    const text = rawText.trim();
-
-    const rawCat = form.get("category");
-    const category = isFeedbackCategory(rawCat) ? rawCat : "other";
+    const contentType = req.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      let body: Record<string, unknown>;
+      try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
+      if (typeof body.text !== "string" || !body.text.trim()) return apiErr(400, "text required", origin);
+      text = body.text.trim();
+      if (isFeedbackCategory(body.category)) category = body.category;
+    } else {
+      let form: FormData;
+      try { form = await req.formData(); } catch { return apiErr(400, "Invalid form data", origin); }
+      const rawText = form.get("text");
+      if (typeof rawText !== "string" || !rawText.trim()) return apiErr(400, "text required", origin);
+      text = rawText.trim();
+      const rawCat = form.get("category");
+      if (isFeedbackCategory(rawCat)) category = rawCat;
+      const screenshot = form.get("screenshot");
+      if (screenshot instanceof File && screenshot.size > 0) screenshotFile = screenshot;
+    }
 
     // username — в allowed_users (не в user_profiles), иначе селект падал и было всегда «#id».
     const { data: au } = await supabase.from("allowed_users")
@@ -1588,15 +1603,14 @@ Deno.serve(async (req: Request) => {
 
     // Скрин — durable URL в swarm_drive (единственный способ увидеть его вне Telegram).
     let screenshotUrl: string | null = null;
-    const screenshot = form.get("screenshot");
-    if (screenshot instanceof File && screenshot.size > 0) {
-      const buf = await screenshot.arrayBuffer();
+    if (screenshotFile) {
+      const buf = await screenshotFile.arrayBuffer();
       const date = new Date().toISOString().slice(0, 10);
-      const safeName = (screenshot.name || "screenshot.png").replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      const safeName = (screenshotFile.name || "screenshot.png").replace(/[^a-zA-Z0-9.\-_]/g, "_");
       const path = `feedback/${date}_${crypto.randomUUID().slice(0, 8)}_${safeName}`;
       const { error: upErr } = await supabase.storage
         .from("swarm_drive")
-        .upload(path, buf, { contentType: screenshot.type || "image/png", upsert: true });
+        .upload(path, buf, { contentType: screenshotFile.type || "image/png", upsert: true });
       if (!upErr) screenshotUrl = supabase.storage.from("swarm_drive").getPublicUrl(path).data.publicUrl;
     }
 
