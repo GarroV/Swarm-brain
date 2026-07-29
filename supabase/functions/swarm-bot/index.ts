@@ -14,7 +14,7 @@ import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput
 import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
 import { handleUsers, handleUserCallbacks, handleUserSessionInput, handleBroadcast } from "./handlers/users.ts";
 import { handleGranolaCallbacks, handleGranolaCommand, handleGranolaSessionInput, pollGranolaForUser, ingestNewGranolaNotesAllUsers } from "./handlers/granola.ts";
-import { handleFeedbackCommand, handleFeedbackCallbacks, handleFeedbackPhoto, handleFeedbackSessionInput } from "./handlers/feedback.ts";
+import { handleFeedbackCommand, handleFeedbackCallbacks, handleFeedbackPhoto, handleFeedbackSessionInput, cleanupOldFeedback } from "./handlers/feedback.ts";
 import { handleWorkspace } from "./handlers/workspace.ts";
 import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
 import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
@@ -218,7 +218,7 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { return new Response("Bad Request", { status: 400 }); }
 
   // ── Cron triggers (требуют X-Cron-Secret) ────────────────────────────────────
-  if (body.setup_commands === true || body.digest_cron === true || body.daily_report_cron === true || body.review_reminders_cron === true || body.readai_token_refresh === true || body.granola_poll === true || body.meetings_watchdog === true) {
+  if (body.setup_commands === true || body.digest_cron === true || body.daily_report_cron === true || body.review_reminders_cron === true || body.feedback_retention_cron === true || body.readai_token_refresh === true || body.granola_poll === true || body.meetings_watchdog === true) {
     if (!CRON_SECRET || req.headers.get("X-Cron-Secret") !== CRON_SECRET) {
       return new Response("Forbidden", { status: 403 });
     }
@@ -260,6 +260,11 @@ Deno.serve(async (req: Request) => {
   if (body.review_reminders_cron === true) {
     await sendReviewReminders();
     return new Response("OK", { status: 200 });
+  }
+
+  if (body.feedback_retention_cron === true) {
+    const removed = await cleanupOldFeedback();
+    return new Response(`OK: ${removed} old feedback purged`, { status: 200 });
   }
 
   if (body.granola_poll === true) {

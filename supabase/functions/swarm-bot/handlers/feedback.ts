@@ -193,6 +193,33 @@ export async function handleFeedbackPhoto(
   }
 }
 
+/**
+ * Retention: удалить давно закрытый фидбек (done/wontfix старше N дней) вместе со
+ * скринами в swarm_drive. Незакрытый (new/triaged) НЕ трогаем. Дёргается pg_cron
+ * через {feedback_retention_cron:true}. Возвращает число удалённых строк.
+ */
+const FEEDBACK_RETENTION_DAYS = 90;
+export async function cleanupOldFeedback(): Promise<number> {
+  const cutoff = new Date(Date.now() - FEEDBACK_RETENTION_DAYS * 86400000).toISOString();
+  const { data, error } = await supabase
+    .from("feedback")
+    .select("id, screenshot_url")
+    .in("status", ["done", "wontfix"])
+    .lt("resolved_at", cutoff);
+  if (error || !data?.length) return 0;
+
+  const paths = (data as Array<{ screenshot_url: string | null }>)
+    .map((f) => f.screenshot_url)
+    .filter((u): u is string => Boolean(u))
+    .map((u) => u.split("/swarm_drive/")[1])
+    .filter((p): p is string => Boolean(p));
+  if (paths.length) await supabase.storage.from("swarm_drive").remove(paths);
+
+  const ids = (data as Array<{ id: string }>).map((f) => f.id);
+  await supabase.from("feedback").delete().in("id", ids);
+  return ids.length;
+}
+
 export async function handleFeedbackSessionInput(
   chatId: number,
   action: string,
