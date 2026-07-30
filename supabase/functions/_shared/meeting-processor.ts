@@ -28,6 +28,7 @@ import {
   resolveMeetingLang,
 } from "./meeting-lang.ts";
 import { TEZISY_PROMPT } from "./tezisy-prompt.ts";
+import { glossaryWhisperHint } from "./glossary.ts";
 import { extractChatContent } from "./openai-chat.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
@@ -111,6 +112,9 @@ async function transcribeAudio(audio: Blob, filename: string, languageHint?: str
   form.append("file", audio, filename);
   form.append("model", "whisper-1");
   form.append("response_format", "verbose_json");
+  // Хинт написания имён собственных (Wolt/Београд/Нови Сад…) — снижает мишеринг Whisper.
+  // best-effort: `prompt` в Whisper только смещает распознавание, не гарантирует.
+  form.append("prompt", glossaryWhisperHint());
   // languageHint (ISO-639-1) — пин языка встречи для дорожки, чей автодетект ненадёжен (тихий/
   // молчащий микрофон Whisper иначе детектит как английский и генерит галлюцинации-«аутро»).
   // ВАЖНО: на hosted OpenAI API `language` — это ТОЛЬКО хинт распознавания, он НИКОГДА не переводит
