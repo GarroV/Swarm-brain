@@ -1,0 +1,51 @@
+// Словарь имён собственных для тезисов встреч (лёгкое ядро, в коде — не в БД).
+// Причина: Whisper мишерит бренды/топонимы фонетикой («вольт», «билбрайд»),
+// а LLM тезисов транслитерирует их в кривую латиницу («Volt», «Billbride»).
+// Словарь нормализует известные имена и запрещает выдумывать латиницу.
+// Единый источник для промпта тезисов (_shared/tezisy-prompt.ts) и Whisper-хинта
+// (_shared/meeting-processor.ts). Сид подтверждён владельцем 2026-07-30.
+export interface GlossaryEntry {
+  canonical: string;   // как писать в тезисах
+  aliases: string[];   // как звучит искажённо в стенограмме (lowercase)
+  note?: string;       // короткий контекст для модели
+}
+
+export const MEETING_GLOSSARY: GlossaryEntry[] = [
+  { canonical: "Wolt", aliases: ["вольт", "volt"], note: "агрегатор доставки (работает в Сербии)" },
+  { canonical: "Wolt Drive", aliases: ["вольт-драйв", "вольт драйв", "volt drive"], note: "курьеры по запросу от Wolt" },
+  { canonical: "Београд", aliases: ["билбрайд"], note: "город; пиццерии называются «Београд ‹номер›»" },
+  { canonical: "Нови Сад", aliases: ["новейсайд", "нови сайд"], note: "город; пиццерии называются «Нови Сад ‹номер›»" },
+  { canonical: "Dodo", aliases: ["додо"], note: "бренд" },
+];
+
+// Правило приоритета словаря над «знаниями» модели. Отдельная константа — чтобы
+// тест мог проверить её наличие независимо от списка.
+export const GLOSSARY_NAMING_RULE =
+  "ПРАВИЛО ПО ИМЕНАМ СОБСТВЕННЫМ: НЕ придумывай английское/латинское написание названий. " +
+  "Если название есть в СЛОВАРЕ выше — пиши строго по словарю, ДАЖЕ если кажется, что знаешь бренд " +
+  "лучше (в речи «вольт» → пиши Wolt, НЕ Volt). Если названия нет в словаре — оставь его КАК В " +
+  "СТЕНОГРАММЕ (кириллицей), не транслитерируй наугад. Номер при названии пиццерии сохраняй: " +
+  "«билбрайд 2» → «Београд 2».";
+
+// Секция словаря для системного промпта тезисов: список + правило.
+export function glossaryPromptBlock(entries: GlossaryEntry[] = MEETING_GLOSSARY): string {
+  const lines = entries.map((e) => {
+    const heard = e.aliases.length
+      ? ` (в речи: ${e.aliases.map((a) => `«${a}»`).join(", ")})`
+      : "";
+    const note = e.note ? ` — ${e.note}` : "";
+    return `- ${e.canonical}${heard}${note}`;
+  });
+  return [
+    "СЛОВАРЬ ИМЁН СОБСТВЕННЫХ — пиши ИМЕННО так (в стенограмме Whisper мог записать их искажённо, кириллицей):",
+    ...lines,
+    "",
+    GLOSSARY_NAMING_RULE,
+  ].join("\n");
+}
+
+// Строка канонических имён для Whisper-параметра `prompt` (best-effort хинт написания).
+// Заведомо коротко (≪ 224 токена — лимит Whisper).
+export function glossaryWhisperHint(entries: GlossaryEntry[] = MEETING_GLOSSARY): string {
+  return entries.map((e) => e.canonical).join(", ");
+}
