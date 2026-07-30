@@ -27,7 +27,7 @@ import {
   partsNeedingRetranscribe,
   resolveMeetingLang,
 } from "./meeting-lang.ts";
-import { TEZISY_CORE } from "./tezisy-prompt.ts";
+import { TEZISY_PROMPT } from "./tezisy-prompt.ts";
 import { extractChatContent } from "./openai-chat.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
@@ -48,7 +48,7 @@ const OPENAI_AUDIO_MAX_BYTES = 25 * 1024 * 1024;
 // Канон тезисов — в _shared/tezisy-prompt.ts (DRY с granola/read-ai). Здесь добавляем только
 // спец-обработку пустой записи (НЕТ_ТЕЗИСОВ → плашка ниже).
 const TEZIS_SYSTEM =
-  TEZISY_CORE + "\n" +
+  TEZISY_PROMPT + "\n" +
   "НЕТ_ТЕЗИСОВ возвращай ТОЛЬКО для реально пустой записи: тест связи/микрофона, тишина, " +
   "пара бессвязных обрывков. Если в разговоре есть ХОТЬ КАКОЕ-ТО предметное содержание " +
   "(работа, планы, проблемы, договорённости) — пусть вперемешку с болтовнёй и на любом языке — " +

@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeCountries, COUNTRY_PROMPT_RULE } from "../_shared/countries.ts";
 import { applyGeneralSentinel } from "../_shared/meta-extract.ts";
-import { TEZISY_CORE } from "../_shared/tezisy-prompt.ts";
+import { TEZISY_PROMPT } from "../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -258,7 +258,7 @@ Deno.serve(async (req: Request) => {
 
     // Generate structured tezises + extract metadata + embedding + tasks in parallel
     const [tezises, embedding, taskCount, countries] = await Promise.all([
-      chatComplete(TEZISY_CORE, tezisSource),
+      chatComplete(TEZISY_PROMPT, tezisSource),
       getEmbedding(fullContent),
       extractAndSaveTasks(fullContent, meetingId),
       extractCountries(fullContent),

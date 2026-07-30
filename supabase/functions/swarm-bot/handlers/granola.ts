@@ -3,7 +3,7 @@ import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession, getSession, extractEntryMeta } from "../lib/storage.ts";
 import { getUserGroupId } from "../lib/workspace.ts";
-import { TEZISY_CORE } from "../../_shared/tezisy-prompt.ts";
+import { TEZISY_PROMPT } from "../../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, parseMeetingContent, type MeetingAttendee } from "../../_shared/meeting-dedup.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
@@ -12,7 +12,7 @@ const WEB_URL = "https://swarm-brain.pages.dev";
 
 // Единый промпт тезисов — общий канон из _shared/tezisy-prompt.ts (DRY с рекордером/read-ai),
 // чтобы тезисы выглядели одинаково независимо от точки входа.
-const GRANOLA_TEZISY_PROMPT = TEZISY_CORE;
+const GRANOLA_TEZISY_PROMPT = TEZISY_PROMPT;
 
 type GranolaNote = {
   id: string;
