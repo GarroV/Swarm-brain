@@ -1,6 +1,7 @@
 import { supabase, ADMIN_USER_ID } from "./supabase.ts";
 import { getEmbedding, chatComplete } from "./openai.ts";
 import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../../_shared/countries.ts";
+import { applyGeneralSentinel, specificCountries } from "../../_shared/meta-extract.ts";
 
 
 export function visibilityFilter(userId: number): string {
@@ -142,9 +143,8 @@ export async function saveEntry(
       if (frag) {
         const merged = `${frag.content}\n\n${content}`;
         const midx = await buildEntryIndex(merged);
-        const mc = [...midx.countries];
-        const msp = mc.filter((x) => x !== "General");
-        if (msp.length === 0 || msp.length >= 3) { if (!mc.includes("General")) mc.push("General"); }
+        const msp = specificCountries(midx.countries);
+        const mc = applyGeneralSentinel(midx.countries);
         const memb = await getEmbedding([midx.summary ?? merged, msp.length ? `Страны: ${msp.join(", ")}` : "", midx.keywords ? `Ключевые слова: ${midx.keywords}` : ""].filter(Boolean).join("\n").slice(0, 8000));
         await supabase.from("entries").update({
           content: merged, summary: midx.summary, embedding: memb,
@@ -171,12 +171,9 @@ export async function saveEntry(
     index = { ...index, entry_type: "note" };
   }
 
-  // General tag: entries with no specific country or broad coverage (3+ countries).
-  const countries = [...index.countries];
-  const specific = countries.filter(c => c !== "General");
-  if (specific.length === 0 || specific.length >= 3) {
-    if (!countries.includes("General")) countries.push("General");
-  }
+  // Кросс-маркет (0 или 3+ рынка) → ровно ["General"]; 1–2 → как есть (единый applyGeneralSentinel).
+  const specific = specificCountries(index.countries);
+  const countries = applyGeneralSentinel(index.countries);
 
   // Enriched embedding: (searchText | summary | content) + countries + keywords.
   // searchText эмбеддится тем же текстом, что раньше лежал в summary → recall не меняется,
@@ -256,11 +253,8 @@ export async function updateEntryContent(
   metadataPatch?: Record<string, unknown>,
 ): Promise<void> {
   const index = await buildEntryIndex(newContent);
-  const countries = [...index.countries];
-  const specific = countries.filter((c) => c !== "General");
-  if (specific.length === 0 || specific.length >= 3) {
-    if (!countries.includes("General")) countries.push("General");
-  }
+  const specific = specificCountries(index.countries);
+  const countries = applyGeneralSentinel(index.countries);
   const embeddingParts = [
     index.summary ?? newContent,
     specific.length > 0 ? `Страны: ${specific.join(", ")}` : "",

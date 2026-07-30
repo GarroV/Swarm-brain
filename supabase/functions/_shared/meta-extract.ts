@@ -15,18 +15,17 @@ export type EntryMeta = { countries: string[]; entry_type: "meeting" | "note"; e
 
 // Тег "General" — сентинел «нет конкретного рынка / широкий охват», НЕ страна.
 // digest_cron исключает General из персонального дайджеста, MCP-вывод его прячет.
-// Правило (единое с saveEntry/granola): specific==0 ИЛИ specific>=3 → дописать General.
+// Правило: нет рынка (0) ИЛИ широкий охват (3+) → запись КРОСС-МАРКЕТ = РОВНО ["General"]
+// (схлопываем, НЕ «список + General»: иначе такая запись всплывает в выдаче/дайджесте КАЖДОЙ
+// из перечисленных стран — это и был баг перетега). 1–2 рынка оставляем как есть.
 export function specificCountries(countries: readonly string[]): string[] {
   return countries.filter((c) => c !== "General");
 }
 
 export function applyGeneralSentinel(countries: readonly string[]): string[] {
-  const out = [...countries];
-  const specific = specificCountries(out);
-  if (specific.length === 0 || specific.length >= 3) {
-    if (!out.includes("General")) out.push("General");
-  }
-  return out;
+  const specific = specificCountries(countries);
+  if (specific.length === 0 || specific.length >= 3) return ["General"];
+  return specific;
 }
 
 // Текст для эмбеддинга: база + «Страны: …» + опц. ключевые слова (как в saveEntry/granola).
