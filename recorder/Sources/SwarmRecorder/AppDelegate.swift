@@ -73,7 +73,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // Календарное предложение.
     private var pendingMeeting: MeetingIdentity.Info?
-    private var dismissedKeys: Set<String> = []   // «не записывать» / уже записали
+    // Ключ встречи → докуда НЕ предлагать её снова. Раньше был Set без срока → однажды записанная
+    // (даже 5-сек тест) встреча подавлялась НАВСЕГДА до перезапуска рекордера: тот же созвон потом
+    // не предлагался и терял календарное название. Теперь у подавления есть срок (см. isMeetingDismissed).
+    private var dismissedUntil: [String: Date] = [:]
+    private let recordedSuppressSeconds: TimeInterval = 20 * 60   // «уже записал» — короткий кулдаун (дозапись/рестарт того же созвона снова предложатся)
+    private let dismissMeetingSeconds: TimeInterval = 3 * 3600    // «Не записывать» без известного конца события — на несколько часов
     private var notifiedKeys: Set<String> = []     // по каким уже слали уведомление
     // Микрофонный запасной детект.
     private var callActive = false
@@ -313,13 +318,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    // Подавлена ли встреча сейчас (с учётом срока). Истёкшие ключи чистим на месте, чтобы
+    // множество не копилось и встреча снова предлагалась после кулдауна.
+    private func isMeetingDismissed(_ key: String) -> Bool {
+        guard let until = dismissedUntil[key] else { return false }
+        if Date() < until { return true }
+        dismissedUntil.removeValue(forKey: key)
+        return false
+    }
+
     private func handleDetection(meeting: MeetingIdentity.Info?, micActive: Bool) {
         let wasActive = micWasActive
         micWasActive = micActive
         guard case .idle = state else { return }
 
         // Календарь — приоритет (богаче: название, участники, упреждение).
-        if let m = meeting, !dismissedKeys.contains(m.key) {
+        if let m = meeting, !isMeetingDismissed(m.key) {
             callActive = false
             if pendingMeeting?.key != m.key {
                 pendingMeeting = m
@@ -719,7 +733,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc private func dismissMeetingTapped() {
-        if let m = pendingMeeting { dismissedKeys.insert(m.key) }
+        if let m = pendingMeeting {
+            // «Не записывать»: подавляем до конца события (если известен) + буфер, иначе на несколько часов.
+            let end = m.endISO.flatMap { ISO8601DateFormatter().date(from: $0) }?.addingTimeInterval(30 * 60)
+            dismissedUntil[m.key] = end ?? Date().addingTimeInterval(dismissMeetingSeconds)
+        }
         pendingMeeting = nil
         rebuildMenu()
     }
@@ -1056,7 +1074,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             // Записанную встречу больше не предлагать; снятую запись сохраняем для возможного
             // повтора отправки (claim/enqueue ниже могут не пройти — аудио не должно потеряться).
-            if let info { dismissedKeys.insert(info.key) }
+            // Уже записанную встречу временно не предлагаем — короткий кулдаун, НЕ навсегда:
+            // дозапись/рестарт того же созвона позже снова предложатся (раньше висело до перезапуска).
+            if let info { dismissedUntil[info.key] = Date().addingTimeInterval(recordedSuppressSeconds) }
             identity = nil
             let captured = PendingSend(res: res, identity: info, started: started,
                                        ended: ended, manualKey: "manual:\(UUID().uuidString)")
