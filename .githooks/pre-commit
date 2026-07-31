@@ -4,6 +4,18 @@
 # Обойти осознанно: git commit --no-verify
 set -euo pipefail
 
+# ── Doc-drift reminder (мягкое, НЕ блокирует) ────────────────────────────────────
+# Правило (CLAUDE.md §2): доки — часть DoD, в ТОМ ЖЕ коммите. Менялся код в
+# supabase/functions/ или miniapp/src/, но docs/ARCHITECTURE.md / QUICK_REF.md не
+# тронуты → напоминаем свериться (чтобы находить «где что лежит»). Коммит продолжается.
+all_staged=$(git diff --cached --name-only --diff-filter=ACM || true)
+code_touched=$(echo "$all_staged" | grep -E '^(supabase/functions/|miniapp/src/).*\.(ts|tsx)$' | grep -v '\.test\.' || true)
+docs_touched=$(echo "$all_staged" | grep -E '^docs/(ARCHITECTURE|QUICK_REF)\.md$' || true)
+if [ -n "$code_touched" ] && [ -z "$docs_touched" ]; then
+  echo "[pre-commit] 📝 напоминание: менялся код, но docs/ARCHITECTURE.md / QUICK_REF.md не тронуты." >&2
+  echo "             Дока — часть DoD, в ТОМ ЖЕ коммите. Сверься; если не требуется — коммить дальше (не блокирует)." >&2
+fi
+
 staged=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^supabase/functions/.*\.ts$' || true)
 if [ -z "$staged" ]; then
   exit 0
