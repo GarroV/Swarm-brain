@@ -19,6 +19,7 @@ import { useConfirm } from "@/components/ui/confirm";
 import { Segmented } from "@/components/roy/ui";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { PictogramPicker, type PictoOption } from "@/components/tasks/PictogramPicker";
+import { TaskComments } from "@/components/tasks/TaskComments";
 import { COUNTRY_NAMES, countryName, countryFlag, countryCode } from "@/lib/countries";
 
 const TASK_ROLES = [
@@ -323,6 +324,12 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId }: 
               )}
             </div>
           </div>
+
+          {isEdit && task && (
+            <div className="mt-1 border-t border-line pt-4">
+              <TaskComments taskId={task.id} />
+            </div>
+          )}
 
           {error && <p className="mt-3 font-semibold" style={{ fontSize: 13, color: "var(--pri-high)" }}>{error}</p>}
         </div>
