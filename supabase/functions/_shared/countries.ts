@@ -79,14 +79,35 @@ export function normalizeCountries(raw: string[]): string[] {
 // Детект страны в свободном тексте запроса → ISO (первое/самое длинное совпадение) или null.
 // Тот же словарь, что при ингесте → термин в запросе («Болгария»/«Bulgaria») маппится в тот же
 // тег, что стоит на записях. Используется поиском для буста по стране (см. match_entries_hybrid).
+// Русские названия СКЛОНЯЮТСЯ (Сербия → Сербии/Сербией/Сербию), а точное сравнение их не ловило
+// → страна в запросе не детектилась → фильтр/буст по стране молчал на нормальных запросах
+// («дай встречу с Сербией»). Поэтому кириллический алиас матчим по СТЕМУ (без финальной гласной) +
+// падежное окончание из ЗАКРЫТОГО набора: ловит все склонения, но «индикатор»/«грузить» НЕ ловятся
+// (их хвост — не падежное окончание). Латиница не склоняется → префикс (serbia→serbian). Стем ≥4.
+const RU_CASE_END = "(?:ами|ями|ей|ой|ом|ем|ах|ях|ам|ям|ов|а|я|ы|и|е|у|ю)?";
+const RU_VOWEL_END = /[аеёиоуыэюя]$/;
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function queryCountryRegex(alias: string): RegExp {
+  if (/[а-яё]/.test(alias)) {
+    const stem = RU_VOWEL_END.test(alias) ? alias.slice(0, -1) : alias;
+    // Короткий стем (<4) склоняем не пытаемся — риск ложных совпадений; точное сравнение с границами.
+    if (stem.length >= 4) {
+      return new RegExp(`(?<![\\p{L}])${escapeRe(stem)}${RU_CASE_END}(?![\\p{L}])`, "iu");
+    }
+    return new RegExp(`(?<![\\p{L}])${escapeRe(alias)}(?![\\p{L}])`, "iu");
+  }
+  // латиница: префикс (serbia → serbian/serbias), левая граница по букве
+  return new RegExp(`(?<![\\p{L}])${escapeRe(alias)}[a-z]*`, "iu");
+}
+
 export function detectQueryCountry(text: string): string | null {
   const t = (text ?? "").toLowerCase();
-  // Длинные алиасы первыми: «united arab emirates» раньше «uae».
+  // Длинные алиасы первыми: «united arab emirates» раньше «uae»; «индонезия» раньше «индия».
   const aliases = Object.keys(ALIASES).sort((a, b) => b.length - a.length);
   for (const alias of aliases) {
-    const esc = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Границы по буквам (Unicode) — чтобы «рос» не ловил «россия», а «россия» ловилось целиком.
-    if (new RegExp(`(?<![\\p{L}])${esc}(?![\\p{L}])`, "iu").test(t)) return ALIASES[alias];
+    if (queryCountryRegex(alias).test(t)) return ALIASES[alias];
   }
   return null;
 }
