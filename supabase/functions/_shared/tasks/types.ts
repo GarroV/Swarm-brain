@@ -25,6 +25,8 @@ export type Task = {
   timeline_position: number | null;
   sprint_id: string | null;
   label_ids: string[];
+  project_id: string | null;
+  project_linked: boolean;
 };
 
 export type TaskInput = {
@@ -50,6 +52,8 @@ export type TaskInput = {
   timeline_position?: number | null;
   sprint_id?: string | null;
   label_ids?: string[];
+  project_id?: string | null;
+  project_linked?: boolean;
 };
 
 // ── Спринты ───────────────────────────────────────────────────────────────────
@@ -81,4 +85,21 @@ export type TaskDependency = {
   depends_on_id: string;
   dependency_type: DependencyType;
   created_at: string;
+};
+
+// ── Проекты (Project Space) ─────────────────────────────────────────────────────
+export type Project = {
+  id: string;
+  group_id: string;
+  name: string;
+  color: string | null;
+  emoji: string | null;
+  created_by: number | null;
+  created_at: string;
+};
+
+export type ProjectInput = {
+  name: string;
+  color?: string | null;
+  emoji?: string | null;
 };
