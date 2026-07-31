@@ -72,14 +72,14 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | CRUD/спринты/зависимости/типы | `_shared/tasks/{db,sprints,dependencies,types}.ts` | spoke [SHARED_TASKS_ENGINE.md](SHARED_TASKS_ENGINE.md) |
 | Бот-обёртка / MCP-прослойка / fuzzy-assignee | `swarm-bot/tasks/{db,handlers,matcher}.ts`, `swarm-mcp/tasks/tools.ts` | §Движок задач |
 | Персональные смарт-метки (личные списки) | БД `task_labels` + `tasks.label_ids`; API `swarm-api/task-labels.ts` (+`http.ts`); MCP `swarm-mcp/tasks/tools.ts` (`list_task_labels`, `labels`); веб `miniapp/src/components/tasks/{PictogramPicker,LabelEditor}.tsx`, `lib/smartLists.ts` (`filterByLabel`) | §Таблицы БД, §swarm-api, §swarm-mcp |
-| Комментарии задач | `swarm-api/task-comments.ts`, `swarm-mcp/tasks/tools.ts` (`get_task_comments`/`add_task_comment`), веб `miniapp/.../screens/TaskDetail.tsx` + `lib/api.ts`; валидатор `_shared/tasks/comments.ts` | §Таблицы БД, §swarm-api, §swarm-mcp |
+| Комментарии задач (история + добавление, кликабельные ссылки) | API `swarm-api/task-comments.ts`; MCP `swarm-mcp/tasks/tools.ts` (`get_task_comments`/`add_task_comment`); валидатор `_shared/tasks/comments.ts`; **веб — переиспользуемый `miniapp/src/components/tasks/TaskComments.tsx`** (встроен в `TaskModal.tsx` для существующей задачи И в `screens/TaskDetail.tsx`), ссылки `miniapp/src/lib/linkify.tsx` (только http/https, без `dangerouslySetInnerHTML`); `lib/api.ts` | §Таблицы БД, §swarm-api, §swarm-mcp |
 | 🔒 **Видимость/приватность — кто что видит** (задачи И встречи/записи: приватное `is_private=true` — только владелец `owner_id`; админ/руководитель — ВСЁ в воркспейсе, вкл. чужое личное; изоляция по `group_id`) | задачи → `_shared/tasks/db.ts` (`listTasks`); встречи=записи → `swarm-api/entries-guard.ts` (`getEntrySecure`/`buildEntriesQuery`) | **[ARCHITECTURE.md](ARCHITECTURE.md) §Контроль доступа — единый канон** (`visibilityFilter`, админ-байпас) |
 
 ### Поиск / записи / страны
 | Concern | Файлы | Детали |
 |---|---|---|
-| RAG / гибридный поиск (full-text+вектор RRF, буст страны/свежести) / matchEntries → RPC `match_entries_hybrid` | `_shared/search.ts` (+ `swarm-api` `/search`,`/ask`,`/digest`); детект страны `_shared/countries.ts` `detectQueryCountry` | §swarm-api |
-| Классификация стран | `_shared/countries.ts` | §Флоу сохранения |
+| RAG / гибридный поиск (full-text+вектор RRF; **страна = ФИЛЬТР** когда названа в запросе — только её записи + `General`, чужие отсекаются; + буст свежести) / matchEntries → RPC `match_entries_hybrid` (миграция `20260730120000`) | `_shared/search.ts` (+ `swarm-api` `/search`,`/ask`,`/digest`); детект страны `_shared/countries.ts` `detectQueryCountry` | §swarm-api |
+| Классификация стран (правило + **схлопывание** кросс-маркета 3+/0 → `General`) | `_shared/countries.ts` (`COUNTRY_PROMPT_RULE`), `_shared/meta-extract.ts` (`applyGeneralSentinel`) | §Флоу сохранения |
 
 ### Встречи — запись → транскрибация → тезисы → ревью
 | Concern | Файлы | Детали |
