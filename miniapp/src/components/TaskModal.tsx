@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import type { Task, User } from "@/types";
+import type { Task, User, Project } from "@/types";
 import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
 import {
@@ -13,6 +13,7 @@ import {
   fetchUsers,
   fetchTaskLabels,
   fetchConfig,
+  fetchProjects,
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm";
@@ -21,6 +22,7 @@ import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { PictogramPicker, type PictoOption } from "@/components/tasks/PictogramPicker";
 import { TaskComments } from "@/components/tasks/TaskComments";
 import { COUNTRY_NAMES, countryName, countryFlag, countryCode } from "@/lib/countries";
+import { useDt } from "@/components/roy/nav";
 
 const TASK_ROLES = [
   { value: "marketing", label: "Marketing" },
@@ -53,11 +55,14 @@ interface TaskModalProps {
   prefill?: { title?: string; description?: string | null; country?: string | null; due_date?: string | null };
   // Привязка создаваемой задачи к встрече-источнику (entry.id) → попадает в блок «Задачи из встречи».
   meetingId?: string | null;
+  // Префилл проекта при создании (напр. из карточки/облака проекта). Игнорируется в режиме правки.
+  projectId?: string | null;
 }
 
-export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId }: TaskModalProps) {
+export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, projectId }: TaskModalProps) {
   const isEdit = !!task;
   const confirm = useConfirm();
+  const dt = useDt();
 
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState("open");
@@ -72,6 +77,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId }: 
   const [markets, setMarkets] = useState<string[]>([]);
   const [labels, setLabels] = useState<TaskLabel[]>([]);
   const [labelIds, setLabelIds] = useState<string[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selProject, setSelProject] = useState<string | null>(task?.project_id ?? projectId ?? null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,11 +96,17 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId }: 
     setAssigneeId(cur);
     setInitialAssignee(cur);
     setLabelIds(task?.label_ids ?? []);
+    setSelProject(task?.project_id ?? projectId ?? null);
     setError(null);
     fetchUsers().then(setUsers).catch(() => {});
     fetchTaskLabels().then(setLabels).catch(() => {});
     fetchConfig().then((c) => setMarkets(c.allowed_markets ?? [])).catch(() => {});
-  }, [open, task]);
+  }, [open, task, projectId]);
+
+  // Список проектов для селекта — грузим один раз при монтировании модалки.
+  useEffect(() => {
+    void fetchProjects().then(setProjects);
+  }, []);
 
   // Опции исполнителя = пользователи воркспейса + текущий исполнитель, если его нет в списке
   // (иначе select не показал бы его, а сохранение затёрло бы назначение).
@@ -149,14 +162,14 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId }: 
       if (isEdit && task) {
         // Исполнителя шлём только если поменяли — иначе правка других полей затёрла бы
         // назначение, которое нельзя было префиллить (имя без telegram_id).
-        const fields: UpdateTaskInput = { ...base, status };
+        const fields: UpdateTaskInput = { ...base, status, project_id: selProject };
         if (assigneeId !== initialAssignee) fields.assignee_telegram_id = assigneeValue;
         // Списки — личные: выбор списка делает задачу личной (метки живут только на личных задачах).
         if (labelIds.length > 0 && !task.is_private) fields.is_private = true;
         if (task.is_private || labelIds.length > 0) fields.label_ids = labelIds;
         await updateTask(task.id, fields);
       } else {
-        const fields: CreateTaskInput = { ...base, assignee_telegram_id: assigneeValue };
+        const fields: CreateTaskInput = { ...base, assignee_telegram_id: assigneeValue, project_id: selProject };
         if (meetingId) fields.meeting_id = meetingId;
         if (labelIds.length > 0) fields.is_private = true;
         const created = await createTask(fields);
@@ -251,6 +264,21 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId }: 
               <div>
                 <label htmlFor="modal-due" className={labelCls} style={{ fontSize: 12.5 }}>Срок</label>
                 <DatePicker value={dueDate} onChange={setDueDate} className={fieldCls} placeholder="Срок" />
+              </div>
+
+              <div>
+                <label htmlFor="modal-project" className={labelCls} style={{ fontSize: 12.5 }}>{dt("Проект", "Project")}</label>
+                <select
+                  id="modal-project"
+                  className={fieldCls}
+                  value={selProject ?? NONE}
+                  onChange={(e) => setSelProject(e.target.value === NONE ? null : e.target.value)}
+                >
+                  <option value={NONE}>—</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div>

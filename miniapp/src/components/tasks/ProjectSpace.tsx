@@ -74,11 +74,9 @@ export function ProjectSpace({ project, onBack }: Props) {
         <TaskModal
           open
           prefill={{}}
+          projectId={project.id}
           onClose={() => setCreating(false)}
           onSaved={() => { setCreating(false); void load(); }}
-          // projectId — подключится в Task 10 (TaskModal получит проп projectId и
-          // проставит project_id/project_linked=false при создании). Пока «идея»
-          // создаётся как обычная задача без префилла проекта.
         />
       )}
     </div>
