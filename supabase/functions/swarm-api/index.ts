@@ -442,6 +442,7 @@ Deno.serve(async (req: Request) => {
       const confirmedParam = url.searchParams.get("confirmed");
       const confirmedFilter = confirmedParam === "true" ? true : confirmedParam === "false" ? false : undefined;
       const sprintId = url.searchParams.get("sprint_id") ?? undefined;
+      const projectId = url.searchParams.get("project_id") ?? undefined;
       const tagsParam = url.searchParams.get("tags");
       const tags = tagsParam ? tagsParam.split(",").map(t => t.trim()).filter(Boolean) : undefined;
       const startDateFrom = url.searchParams.get("start_date_from") ?? undefined;
@@ -461,6 +462,7 @@ Deno.serve(async (req: Request) => {
           viewerId: telegram_id,
           isAdmin,
           sprintId,
+          projectId,
           tags,
           startDateFrom,
           startDateTo,
@@ -524,6 +526,11 @@ Deno.serve(async (req: Request) => {
         return apiErr(400, "sprint_id не найден в этом воркспейсе", origin);
       }
 
+      const projectId = (body.project_id as string | null) ?? null;
+      if (projectId && !(await projectInWorkspace(projectId, groupId))) {
+        return apiErr(400, "project_id не найден в этом воркспейсе", origin);
+      }
+
       // IDOR-guard: meeting_id — это entry.id. Принимаем, только если эта запись видна
       // запросившему (воркспейс + приватность через getEntrySecure), иначе задачу можно
       // подцепить к чужой/приватной встрече и засветить её в чужом блоке «Задачи из встречи».
@@ -556,6 +563,8 @@ Deno.serve(async (req: Request) => {
         owner_id: isPrivate ? telegram_id : null,
         start_date: startDate,
         sprint_id: sprintId,
+        project_id: projectId,
+        project_linked: body.project_linked === true,
         timeline_position: typeof body.timeline_position === "number" ? body.timeline_position : null,
         tags: Array.isArray(body.tags) ? (body.tags as string[]) : undefined,
       };
@@ -639,6 +648,25 @@ Deno.serve(async (req: Request) => {
           return apiErr(400, "sprint_id не найден в этом воркспейсе", origin);
         }
         fields.sprint_id = sid;
+      }
+
+      // Привязка к проекту (с проверкой воркспейса; null — открепить).
+      if ("project_id" in body) {
+        const pid = body.project_id as string | null;
+        if (pid && !(await projectInWorkspace(pid, groupId))) {
+          return apiErr(400, "project_id не найден в этом воркспейсе", origin);
+        }
+        fields.project_id = pid;
+        // Открепление от проекта сбрасывает связь линией.
+        if (!pid) fields.project_linked = false;
+      }
+      // Связать/отвязать линией (drag-to-connect). Осмысленно только у задачи с проектом.
+      if (typeof body.project_linked === "boolean") {
+        const effProject = "project_id" in fields ? fields.project_id : task.project_id;
+        if (!effProject && body.project_linked) {
+          return apiErr(400, "project_linked требует project_id", origin);
+        }
+        fields.project_linked = body.project_linked;
       }
 
       // Валидация дат с учётом итогового состояния (новое значение или текущее)
