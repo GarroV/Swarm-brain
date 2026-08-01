@@ -134,7 +134,16 @@ export function useProjectCanvas(
         if (nowLinked !== dragNode.task.project_linked) {
           p.current.onToggleLink(dragNode.task.id, nowLinked);
         }
-        layout(); // вернуть на кольцо по новому статусу
+        // Раскладку НЕ пересчитываем здесь синхронно (убран вызов layout()).
+        // onToggleLink делает оптимистичный setState в вызывающем компоненте →
+        // tasks меняется → deps эффекта меняются → эффект пересоздаётся → layout()
+        // выше (в setup) вызовется уже с НОВЫМ project_linked. Синхронный layout()
+        // тут читал бы старый project_linked из p.current (ref ещё не обновлён к
+        // моменту этого колбэка) и на 1 кадр откатывал бы узел на старое кольцо —
+        // визуальный flicker перед корректирующим ре-рендером. Побочный эффект:
+        // если статус НЕ поменялся (drop без пересечения зоны хаба), узел остаётся
+        // там, где его бросили, до следующего ре-рендера/пересоздания эффекта —
+        // приемлемо (per task-9 brief).
       }
       dragNode = null; panning = false;
     }

@@ -4,14 +4,15 @@ import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { RemindersTasks } from "@/components/tasks/RemindersTasks";
 import { TimelineView } from "@/components/tasks/TimelineView";
 import { SprintBoard } from "@/components/tasks/SprintBoard";
+import { ProjectsGrid } from "@/components/tasks/ProjectsGrid";
 
-type View = "list" | "timeline" | "sprint" | "graph";
+type View = "list" | "timeline" | "sprint" | "projects";
 
 const VIEWS: Array<{ id: View; label: string; icon: RoyIconName }> = [
   { id: "list", label: "Список", icon: "task" },
   { id: "timeline", label: "Таймлайн", icon: "timeline" },
   { id: "sprint", label: "Спринт", icon: "board" },
-  { id: "graph", label: "Граф", icon: "graph" },
+  { id: "projects", label: "Проекты", icon: "graph" },
 ];
 
 export function TasksScreen() {
@@ -44,6 +45,7 @@ export function TasksScreen() {
         {view === "list" && <RemindersTasks />}
         {view === "timeline" && <TimelineView />}
         {view === "sprint" && <SprintBoard />}
+        {view === "projects" && <ProjectsGrid />}
       </div>
     </div>
   );
