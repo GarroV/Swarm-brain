@@ -17,7 +17,7 @@
 | Поверхность | Технология | Для чего | Бэкенд |
 |---|---|---|---|
 | **Telegram-бот** | Deno Edge Function | Быстрый ввод и поиск, встречи, задачи, фидбек, админка — прямо там, где команда общается | `swarm-bot` |
-| **Веб-интерфейс «Рой»** | Next.js (static export) → Cloudflare Pages, браузер/PWA | Доска задач (Список/Таймлайн/Спринты/Граф), RAG-поиск, вычитка встреч | `swarm-api` |
+| **Веб-интерфейс «Рой»** | Next.js (static export) → Cloudflare Pages, браузер/PWA | Доска задач (Список/Таймлайн/Спринты/Проекты), RAG-поиск, вычитка встреч | `swarm-api` |
 | **Claude Desktop (MCP)** | MCP-сервер | Та же база + инструменты внутри Claude Desktop (большие тексты, с проверкой человеком) | `swarm-mcp` |
 | **SwarmRecorder** | macOS-приложение (Swift) | Запись звука онлайн-встреч → облачная транскрибация → тезисы в базу | `meeting-claim`, `meeting-ingest`, `meeting-process`, `meeting-status` |
 
