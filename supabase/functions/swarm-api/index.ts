@@ -17,7 +17,7 @@ import {
   updateTask,
   deleteTask,
 } from "../_shared/tasks/db.ts";
-import type { TaskInput, SprintInput } from "../_shared/tasks/types.ts";
+import type { TaskInput, SprintInput, ProjectInput } from "../_shared/tasks/types.ts";
 import {
   listSprints,
   createSprint,
@@ -25,6 +25,13 @@ import {
   deleteSprint,
   setTasksSprint,
 } from "../_shared/tasks/sprints.ts";
+import {
+  listProjects,
+  createProject,
+  updateProject,
+  deleteProject,
+  projectInWorkspace,
+} from "../_shared/tasks/projects.ts";
 import {
   listDependencies,
   listWorkspaceDependencies,
@@ -801,6 +808,49 @@ Deno.serve(async (req: Request) => {
       const n = await setTasksSprint(taskIds, null, groupId);
       return json({ updated: n }, 200, origin);
     }
+  }
+
+  // ── Projects (Project Space) ────────────────────────────────────────────────
+  if (routePath === "/projects") {
+    if (req.method === "GET") {
+      return json(await listProjects(groupId), 200, origin);
+    }
+    if (req.method === "POST") {
+      let body: Record<string, unknown>;
+      try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
+      if (typeof body.name !== "string" || !body.name.trim()) {
+        return apiErr(400, "name обязателен", origin);
+      }
+      const input: ProjectInput = {
+        name: body.name.trim(),
+        color: (body.color as string | null) ?? null,
+        emoji: (body.emoji as string | null) ?? null,
+      };
+      return json(await createProject(input, groupId, telegram_id ?? null), 201, origin);
+    }
+    return apiErr(405, "Method not allowed", origin);
+  }
+
+  const projectMatch = routePath.match(/^\/projects\/([^/]+)$/);
+  if (projectMatch) {
+    const projectId = projectMatch[1];
+    if (req.method === "PATCH") {
+      let body: Record<string, unknown>;
+      try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
+      const fields: Partial<ProjectInput> = {};
+      if (typeof body.name === "string") fields.name = body.name.trim();
+      if ("color" in body) fields.color = body.color as string | null;
+      if ("emoji" in body) fields.emoji = body.emoji as string | null;
+      const updated = await updateProject(projectId, fields, groupId);
+      if (!updated) return apiErr(404, "Not found", origin);
+      return json(updated, 200, origin);
+    }
+    if (req.method === "DELETE") {
+      const ok = await deleteProject(projectId, groupId);
+      if (!ok) return apiErr(404, "Not found", origin);
+      return json({ ok: true }, 200, origin);
+    }
+    return apiErr(405, "Method not allowed", origin);
   }
 
   // ── PATCH /me ────────────────────────────────────────────────────────────────
