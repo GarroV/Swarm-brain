@@ -129,9 +129,24 @@ function ProjectTreeInner({ project, onBack }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const posRef = useRef<Map<string, { x: number; y: number }>>(new Map()); // ручные позиции (сессия)
+  // «сейчас-связался/сейчас-отвязался» — узел/ребро на секунду подсвечивается CSS-анимацией.
+  const flashNodeRef = useRef<Map<string, "rf-pop" | "rf-off">>(new Map());
+  const flashEdgeRef = useRef<Set<string>>(new Set());
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
+  const flash = useCallback((nodeId: string, cls: "rf-pop" | "rf-off", edgeId?: string) => {
+    flashNodeRef.current.set(nodeId, cls);
+    if (edgeId) flashEdgeRef.current.add(edgeId);
+    setTimeout(() => {
+      flashNodeRef.current.delete(nodeId);
+      if (edgeId) flashEdgeRef.current.delete(edgeId);
+      // снять класс точечно (без полной пересборки — данные задач уже стабильны к этому моменту)
+      setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, className: undefined } : n)));
+      if (edgeId) setEdges((prev) => prev.map((e) => (e.id === edgeId ? { ...e, className: undefined } : e)));
+    }, 560);
+  }, [setNodes, setEdges]);
 
   const load = useCallback(async () => setTasks(await fetchTasks({ project_id: project.id })), [project.id]);
   useEffect(() => { void load(); }, [load]);
@@ -146,16 +161,18 @@ function ProjectTreeInner({ project, onBack }: Props) {
     backlog.forEach((t, i) => { if (!pos.has(t.id)) pos.set(t.id, { x: maxX + 260, y: i * 60 - (backlog.length - 1) * 30 }); });
     posRef.current = pos;
 
+    const cls = (id: string) => flashNodeRef.current.get(id);
     const ns: Node[] = [{ id: ROOT_ID, type: "hud", position: pos.get(ROOT_ID)!, draggable: true,
-      data: { label: project.name, kind: "root", state: "active" } }];
-    linked.forEach((t) => ns.push({ id: t.id, type: "hud", position: pos.get(t.id)!, data: { label: t.title, kind: "task", state: stateOf(t) } }));
-    backlog.forEach((t) => ns.push({ id: t.id, type: "hud", position: pos.get(t.id)!, data: { label: t.title, kind: "task", state: "backlog" } }));
+      className: cls(ROOT_ID), data: { label: project.name, kind: "root", state: "active" } }];
+    linked.forEach((t) => ns.push({ id: t.id, type: "hud", position: pos.get(t.id)!, className: cls(t.id), data: { label: t.title, kind: "task", state: stateOf(t) } }));
+    backlog.forEach((t) => ns.push({ id: t.id, type: "hud", position: pos.get(t.id)!, className: cls(t.id), data: { label: t.title, kind: "task", state: "backlog" } }));
     setNodes(ns);
 
     const es: Edge[] = [];
     linked.forEach((t) => {
       const pid = t.parent_id && linked.some((x) => x.id === t.parent_id) ? t.parent_id : ROOT_ID;
-      es.push({ id: `e-${pid}-${t.id}`, source: pid, target: t.id, type: "hud", data: { state: stateOf(t) } });
+      const eid = `e-${pid}-${t.id}`;
+      es.push({ id: eid, source: pid, target: t.id, type: "hud", className: flashEdgeRef.current.has(eid) ? "rf-edge-in" : undefined, data: { state: stateOf(t) } });
     });
     setEdges(es);
   }, [tasks, project, setNodes, setEdges]);
@@ -216,13 +233,15 @@ function ProjectTreeInner({ project, onBack }: Props) {
     if (near) {
       const parent_id = near.id === ROOT_ID ? null : near.id;
       if (cur.project_linked && (cur.parent_id ?? null) === parent_id) return;
+      flash(node.id, "rf-pop", `e-${near.id}-${node.id}`);
       setTasks((prev) => prev.map((t) => (t.id === node.id ? { ...t, project_linked: true, parent_id } : t)));
       updateTask(node.id, { project_linked: true, parent_id }).then(load).catch(load);
     } else if (cur.project_linked) {
+      flash(node.id, "rf-off");
       setTasks((prev) => prev.map((t) => (t.id === node.id ? { ...t, project_linked: false, parent_id: null } : t)));
       updateTask(node.id, { project_linked: false, parent_id: null }).then(load).catch(load);
     }
-  }, [closest, tasks, load, setEdges]);
+  }, [closest, tasks, load, setEdges, flash]);
 
   // групповое перетаскивание (выделенная рамкой группа) — сохранить позиции всех
   const onSelectionDragStop = useCallback((_e: React.MouseEvent, dragged: Node[]) => {
@@ -235,9 +254,10 @@ function ProjectTreeInner({ project, onBack }: Props) {
     const child = c.target;
     const parent_id = c.source === ROOT_ID ? null : c.source;
     if (parent_id && isDescendant(parent_id, child)) return;
+    flash(child, "rf-pop", `e-${c.source}-${child}`);
     setTasks((prev) => prev.map((t) => (t.id === child ? { ...t, project_linked: true, parent_id } : t)));
     updateTask(child, { project_linked: true, parent_id }).then(load).catch(load);
-  }, [isDescendant, load]);
+  }, [isDescendant, load, flash]);
 
   const openTask = tasks.find((t) => t.id === openId);
 
