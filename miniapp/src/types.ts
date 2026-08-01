@@ -24,6 +24,8 @@ export type Task = {
   timeline_position: number | null;
   sprint_id: string | null;
   label_ids: string[];
+  project_id: string | null;
+  project_linked: boolean;
 };
 
 export type SprintStatus = "planned" | "active" | "completed";
@@ -38,15 +40,17 @@ export type Sprint = {
   created_at: string;
 };
 
-export type DependencyType = "blocks" | "relates_to" | "duplicates";
-
-export type TaskDependency = {
+export type Project = {
   id: string;
-  task_id: string;
-  depends_on_id: string;
-  dependency_type: DependencyType;
+  group_id: string;
+  name: string;
+  color: string | null;
+  emoji: string | null;
+  created_by: number | null;
   created_at: string;
-  direction?: "outgoing" | "incoming";
+  // Отдаётся из GET /projects (агрегаты):
+  task_count?: number;
+  backlog_count?: number;
 };
 
 export type User = {

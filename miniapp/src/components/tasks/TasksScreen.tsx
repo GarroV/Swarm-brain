@@ -4,7 +4,6 @@ import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { RemindersTasks } from "@/components/tasks/RemindersTasks";
 import { TimelineView } from "@/components/tasks/TimelineView";
 import { SprintBoard } from "@/components/tasks/SprintBoard";
-import { DependencyGraph } from "@/components/tasks/DependencyGraph";
 
 type View = "list" | "timeline" | "sprint" | "graph";
 
@@ -45,7 +44,6 @@ export function TasksScreen() {
         {view === "list" && <RemindersTasks />}
         {view === "timeline" && <TimelineView />}
         {view === "sprint" && <SprintBoard />}
-        {view === "graph" && <DependencyGraph />}
       </div>
     </div>
   );

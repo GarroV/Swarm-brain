@@ -1,5 +1,5 @@
 import { getInitData } from "./telegram";
-import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, TaskDependency, DependencyType, AgentMeeting, MeetingLiveNote } from "@/types";
+import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, Project, AgentMeeting, MeetingLiveNote } from "@/types";
 
 export type CreateTaskInput = {
   title: string;
@@ -18,9 +18,10 @@ export type CreateTaskInput = {
   tags?: string[];
   timeline_position?: number | null;
   label_ids?: string[];
+  project_id?: string | null;
 };
 
-export type UpdateTaskInput = Partial<CreateTaskInput> & { status?: string };
+export type UpdateTaskInput = Partial<CreateTaskInput> & { status?: string; project_linked?: boolean };
 
 export type TaskFilters = {
   status?: string;
@@ -32,6 +33,7 @@ export type TaskFilters = {
   due_date_from?: string;
   due_date_to?: string;
   mine?: boolean;
+  project_id?: string;
 };
 
 export type CreateEntryInput = {
@@ -110,6 +112,7 @@ let mockTasks: Task[] = [
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
     created_by_name: "Dev User",
     is_private: false, owner_id: null, start_date: "2026-06-10", timeline_position: null, sprint_id: null, label_ids: [],
+    project_id: null, project_linked: false,
   },
   {
     id: "2", title: "Design landing page", description: null,
@@ -118,6 +121,7 @@ let mockTasks: Task[] = [
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
     created_by_name: "Alice Smith",
     is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null, label_ids: [],
+    project_id: null, project_linked: false,
   },
   {
     id: "3", title: "Review contracts", description: null,
@@ -126,6 +130,7 @@ let mockTasks: Task[] = [
     created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
     created_by_name: null,
     is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null, label_ids: [],
+    project_id: null, project_linked: false,
   },
 ];
 
@@ -280,6 +285,7 @@ export async function fetchTasks(filters?: string | TaskFilters): Promise<Task[]
     if (f.sprint_id) r = r.filter((t) => t.sprint_id === f.sprint_id);
     if (f.tags?.length) r = r.filter((t) => f.tags!.some((tag) => t.tags.includes(tag)));
     if (f.label_id) r = r.filter((t) => t.label_ids?.includes(f.label_id!));
+    if (f.project_id) r = r.filter((t) => t.project_id === f.project_id);
     return r;
   }
   const params = new URLSearchParams();
@@ -287,6 +293,7 @@ export async function fetchTasks(filters?: string | TaskFilters): Promise<Task[]
   if (f.sprint_id) params.set("sprint_id", f.sprint_id);
   if (f.tags?.length) params.set("tags", f.tags.join(","));
   if (f.label_id) params.set("label_id", f.label_id);
+  if (f.project_id) params.set("project_id", f.project_id);
   if (f.start_date_from) params.set("start_date_from", f.start_date_from);
   if (f.start_date_to) params.set("start_date_to", f.start_date_to);
   if (f.due_date_from) params.set("due_date_from", f.due_date_from);
@@ -323,6 +330,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       is_private: input.is_private ?? false, owner_id: input.is_private ? MOCK_ME.telegram_id : null,
       start_date: input.start_date ?? null, timeline_position: input.timeline_position ?? null,
       sprint_id: input.sprint_id ?? null, label_ids: input.label_ids ?? [],
+      project_id: input.project_id ?? null, project_linked: false,
     };
     mockTasks.push(newTask);
     return newTask;
@@ -346,6 +354,8 @@ export async function updateTask(id: string, fields: UpdateTaskInput): Promise<T
     if (fields.tags !== undefined) task.tags = fields.tags ?? [];
     if (fields.label_ids !== undefined) task.label_ids = fields.label_ids ?? [];
     if (fields.timeline_position !== undefined) task.timeline_position = fields.timeline_position ?? null;
+    if (fields.project_id !== undefined) task.project_id = fields.project_id ?? null;
+    if ((fields as { project_linked?: boolean }).project_linked !== undefined) task.project_linked = (fields as { project_linked?: boolean }).project_linked!;
     if (fields.is_private !== undefined) {
       task.is_private = fields.is_private;
       task.owner_id = fields.is_private ? MOCK_ME.telegram_id : null;
@@ -459,26 +469,37 @@ export async function removeTasksFromSprint(sprintId: string, taskIds: string[])
   await apiFetch<{ updated: number }>(`/sprints/${sprintId}/tasks`, { method: "DELETE", body: JSON.stringify({ task_ids: taskIds }) });
 }
 
-// ── Task dependencies (Рой) ───────────────────────────────────────────────────────
-export async function fetchDependencies(taskId: string): Promise<TaskDependency[]> {
-  if (DEV_MODE) return [];
-  return apiFetch<TaskDependency[]>(`/tasks/${taskId}/dependencies`);
+// ── Projects (Project Space) ────────────────────────────────────────────────────
+let mockProjects: Project[] = [
+  { id: "pr1", group_id: "cee", name: "Swarm Brain", color: "#5b8def", emoji: null, created_by: null, created_at: new Date().toISOString(), task_count: 0, backlog_count: 0 },
+];
+
+export async function fetchProjects(): Promise<Project[]> {
+  if (DEV_MODE) return mockProjects;
+  return apiFetch<Project[]>("/projects");
 }
 
-// Все рёбра зависимостей воркспейса одним запросом (граф — без N+1 по задачам).
-export async function fetchAllDependencies(): Promise<TaskDependency[]> {
-  if (DEV_MODE) return [];
-  return apiFetch<TaskDependency[]>(`/dependencies`);
+export async function createProject(input: { name: string; color?: string | null; emoji?: string | null }): Promise<Project> {
+  if (DEV_MODE) {
+    const p: Project = { id: Date.now().toString(), group_id: "cee", name: input.name, color: input.color ?? null, emoji: input.emoji ?? null, created_by: null, created_at: new Date().toISOString(), task_count: 0, backlog_count: 0 };
+    mockProjects.push(p);
+    return p;
+  }
+  return apiFetch<Project>("/projects", { method: "POST", body: JSON.stringify(input) });
 }
 
-export async function createDependency(taskId: string, dependsOnId: string, type: DependencyType = "blocks"): Promise<TaskDependency> {
-  if (DEV_MODE) return { id: Date.now().toString(), task_id: taskId, depends_on_id: dependsOnId, dependency_type: type, created_at: new Date().toISOString() };
-  return apiFetch<TaskDependency>(`/tasks/${taskId}/dependencies`, { method: "POST", body: JSON.stringify({ depends_on_id: dependsOnId, dependency_type: type }) });
+export async function updateProject(id: string, fields: Partial<{ name: string; color: string | null; emoji: string | null }>): Promise<Project> {
+  if (DEV_MODE) {
+    const i = mockProjects.findIndex((p) => p.id === id);
+    if (i !== -1) mockProjects[i] = { ...mockProjects[i], ...fields };
+    return mockProjects[i];
+  }
+  return apiFetch<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
 }
 
-export async function deleteDependency(taskId: string, depId: string): Promise<void> {
-  if (DEV_MODE) return;
-  return apiFetch<void>(`/tasks/${taskId}/dependencies/${depId}`, { method: "DELETE" });
+export async function deleteProject(id: string): Promise<void> {
+  if (DEV_MODE) { mockProjects = mockProjects.filter((p) => p.id !== id); return; }
+  await apiFetch<{ ok: boolean }>(`/projects/${id}`, { method: "DELETE" });
 }
 
 // ── Task comments (апдейты) ─────────────────────────────────────────────────────
