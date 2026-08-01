@@ -249,3 +249,4 @@
 .rf-hud:hover { transform: translateY(-2px); }
 .react-flow__attribution { display: none; }
 @media (prefers-reduced-motion: reduce) { .rf-flow { animation: none; } }
+.rf-preview path { stroke-width: 2px !important; opacity: 0.95; }

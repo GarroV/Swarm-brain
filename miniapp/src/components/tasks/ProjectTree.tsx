@@ -1,9 +1,9 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ReactFlow, Background, BackgroundVariant, Controls, Panel,
+  ReactFlow, ReactFlowProvider, Background, BackgroundVariant, Controls, Panel,
   Handle, Position, getStraightPath, useNodesState, useEdgesState,
-  useInternalNode, ConnectionMode,
+  useInternalNode, useReactFlow, ConnectionMode,
   type Node, type Edge, type NodeProps, type EdgeProps, type NodeMouseHandler,
   type Connection, type OnNodeDrag, type InternalNode,
 } from "@xyflow/react";
@@ -117,7 +117,12 @@ function seedPositions(project: Project, linked: Task[], saved: Map<string, { x:
 
 type Props = { project: Project; onBack: () => void };
 
-export function ProjectTree({ project, onBack }: Props) {
+// useReactFlow/useInternalNode требуют контекст ReactFlowProvider — оборачиваем.
+export function ProjectTree(props: Props) {
+  return <ReactFlowProvider><ProjectTreeInner {...props} /></ReactFlowProvider>;
+}
+
+function ProjectTreeInner({ project, onBack }: Props) {
   const dt = useDt();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -154,24 +159,75 @@ export function ProjectTree({ project, onBack }: Props) {
     setEdges(es);
   }, [tasks, project, setNodes, setEdges]);
 
-  const onNodeClick: NodeMouseHandler = useCallback((_e, node) => { if (node.id !== ROOT_ID) setOpenId(node.id); }, []);
-  const onNodeDragStop: OnNodeDrag = useCallback((_e, node) => { posRef.current.set(node.id, node.position); }, []);
+  const rf = useReactFlow();
+  const PROX = 128; // порог «магнита»: дистанция между центрами карточек
 
-  // связать: протянул от родителя (source) к ребёнку (target) → target становится подзадачей source
+  // нельзя привязать к своему потомку (защита от цикла)
+  const isDescendant = useCallback((a: string, of: string): boolean => {
+    const kid = tasks.find((t) => t.id === a);
+    if (!kid || !kid.parent_id) return false;
+    return kid.parent_id === of || isDescendant(kid.parent_id, of);
+  }, [tasks]);
+
+  // ближайший узел к перетаскиваемому в зоне PROX (центр-центр), с учётом запрета цикла
+  const closest = useCallback((dragId: string, pos: { x: number; y: number }): Node | null => {
+    let best: Node | null = null, bestD = PROX * PROX;
+    for (const o of rf.getNodes()) {
+      if (o.id === dragId) continue;
+      if ((o.data as TData).state === "backlog") continue; // цель — только узел в дереве
+      if (o.id !== ROOT_ID && isDescendant(o.id, dragId)) continue;
+      const ox = o.position.x + (o.measured?.width ?? 0) / 2, oy = o.position.y + (o.measured?.height ?? 0) / 2;
+      const cx = pos.x + (rf.getNode(dragId)?.measured?.width ?? 0) / 2, cy = pos.y + (rf.getNode(dragId)?.measured?.height ?? 0) / 2;
+      const dx = ox - cx, dy = oy - cy, d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = o; }
+    }
+    return best;
+  }, [rf, isDescendant]);
+
+  const onNodeClick: NodeMouseHandler = useCallback((_e, node) => { if (node.id !== ROOT_ID) setOpenId(node.id); }, []);
+
+  // во время перетаскивания — превью-связь к ближайшему
+  const onNodeDrag: OnNodeDrag = useCallback((_e, node) => {
+    if (node.id === ROOT_ID) return;
+    const near = closest(node.id, node.position);
+    const cur = tasks.find((t) => t.id === node.id);
+    const parentId = near ? (near.id === ROOT_ID ? null : near.id) : undefined;
+    const already = cur && cur.project_linked && parentId !== undefined && (cur.parent_id ?? null) === parentId;
+    setEdges((prev) => {
+      const base = prev.filter((e) => e.id !== "__preview__");
+      if (near && !already) base.push({ id: "__preview__", source: near.id, target: node.id, type: "hud", data: { state: "active" }, className: "rf-preview" });
+      return base;
+    });
+  }, [closest, tasks, setEdges]);
+
+  // отпустил: близко к узлу → коннект (подзадача); в пустоте → разрыв (в бэклог)
+  const onNodeDragStop: OnNodeDrag = useCallback((_e, node) => {
+    posRef.current.set(node.id, node.position);
+    setEdges((prev) => prev.filter((e) => e.id !== "__preview__"));
+    if (node.id === ROOT_ID) return;
+    const cur = tasks.find((t) => t.id === node.id);
+    if (!cur) return;
+    const near = closest(node.id, node.position);
+    if (near) {
+      const parent_id = near.id === ROOT_ID ? null : near.id;
+      if (cur.project_linked && (cur.parent_id ?? null) === parent_id) return;
+      setTasks((prev) => prev.map((t) => (t.id === node.id ? { ...t, project_linked: true, parent_id } : t)));
+      updateTask(node.id, { project_linked: true, parent_id }).then(load).catch(load);
+    } else if (cur.project_linked) {
+      setTasks((prev) => prev.map((t) => (t.id === node.id ? { ...t, project_linked: false, parent_id: null } : t)));
+      updateTask(node.id, { project_linked: false, parent_id: null }).then(load).catch(load);
+    }
+  }, [closest, tasks, load, setEdges]);
+
+  // ручное связывание: протянул от узла к узлу (край) → target становится подзадачей source
   const onConnect = useCallback((c: Connection) => {
     if (!c.source || !c.target || c.source === c.target) return;
     const child = c.target;
     const parent_id = c.source === ROOT_ID ? null : c.source;
-    // защита от простого цикла: нельзя привязать к своему потомку
-    const isDescendant = (a: string, of: string): boolean => {
-      const kid = tasks.find((t) => t.id === a);
-      if (!kid || !kid.parent_id) return false;
-      return kid.parent_id === of || isDescendant(kid.parent_id, of);
-    };
     if (parent_id && isDescendant(parent_id, child)) return;
     setTasks((prev) => prev.map((t) => (t.id === child ? { ...t, project_linked: true, parent_id } : t)));
     updateTask(child, { project_linked: true, parent_id }).then(load).catch(load);
-  }, [tasks, load]);
+  }, [isDescendant, load]);
 
   const openTask = tasks.find((t) => t.id === openId);
   const hasBacklog = useMemo(() => tasks.some((t) => !t.project_linked), [tasks]);
@@ -190,7 +246,7 @@ export function ProjectTree({ project, onBack }: Props) {
         <ReactFlow
           nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
           onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
-          onNodeClick={onNodeClick} onNodeDragStop={onNodeDragStop} onConnect={onConnect}
+          onNodeClick={onNodeClick} onNodeDrag={onNodeDrag} onNodeDragStop={onNodeDragStop} onConnect={onConnect}
           connectionMode={ConnectionMode.Loose}
           fitView fitViewOptions={{ padding: 0.3 }} minZoom={0.3} maxZoom={2.6}
           proOptions={{ hideAttribution: true }} connectionLineStyle={{ stroke: AMBER, strokeWidth: 1.5 }}
