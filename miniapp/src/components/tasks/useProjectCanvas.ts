@@ -27,6 +27,11 @@ export function useProjectCanvas(
   const p = useRef(params);
   p.current = params;
 
+  // Камера (пан/зум) переживает пересоздания эффекта ниже — иначе drag-to-connect
+  // (который меняет tasks → deps эффекта → эффект пересоздаётся) сбрасывал бы
+  // пользовательский пан/зум обратно в центр/100% на каждый линк/анлинк.
+  const camRef = useRef<{ tx: number; ty: number; s: number } | null>(null);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -35,20 +40,33 @@ export function useProjectCanvas(
     const dpr = window.devicePixelRatio || 1;
 
     let W = 0, H = 0;
-    const cam = { tx: 0, ty: 0, s: 1 };
+    // Камера персистится в camRef между пересозданиями эффекта (см. deps ниже) —
+    // иначе drag-to-connect/сохранение модалки меняют tasks → deps меняются →
+    // эффект пересоздаётся → локальный cam слетал бы к центру/100% на resize().
+    // isFirstInit фиксируем ДО присвоения дефолта — иначе он всегда был бы truthy.
+    const isFirstInit = camRef.current === null;
+    if (camRef.current === null) camRef.current = { tx: 0, ty: 0, s: 1 };
+    const cam = camRef.current;
     let nodes: Node[] = [];
     let dragNode: Node | null = null;
     let panning = false;
     let moved = false;
     let downX = 0, downY = 0, lastX = 0, lastY = 0;
     let raf = 0;
+    let didCenterOnce = false;
 
     function resize() {
       const rect = canvas!.parentElement!.getBoundingClientRect();
       W = rect.width; H = rect.height;
       canvas!.width = W * dpr; canvas!.height = H * dpr;
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
-      cam.tx = W / 2; cam.ty = H / 2; // центр = хаб в мировых (0,0)
+      // Центрируем камеру только на самый первый маунт (когда ref ещё не создан) —
+      // на пересоздания эффекта (drag-to-connect/сохранение модалки) и на обычный
+      // resize (ResizeObserver) пан/зум пользователя сохраняются.
+      if (isFirstInit && !didCenterOnce) {
+        cam.tx = W / 2; cam.ty = H / 2; // центр = хаб в мировых (0,0)
+        didCenterOnce = true;
+      }
     }
 
     // Раскладка: хаб в (0,0); связанные — внутреннее кольцо, плавающие — внешнее.

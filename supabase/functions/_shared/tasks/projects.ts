@@ -11,18 +11,32 @@ const supabase = createClient(
 export type ProjectWithCounts = Project & { task_count: number; backlog_count: number };
 
 // Проекты воркспейса + счётчики: всего задач в проекте и из них в бэклоге (project_linked=false).
-export async function listProjects(groupId: string): Promise<ProjectWithCounts[]> {
+// Счётчики обязаны уважать приватность задач (та же видимость, что у listTasks) — иначе
+// приватная задача чужого юзера, привязанная к проекту, невидима как узел (GET /tasks её
+// отфильтрует), но продолжает утекать числом в task_count/backlog_count карточки проекта.
+export async function listProjects(
+  groupId: string,
+  opts: { viewerId?: number; isAdmin?: boolean } = {},
+): Promise<ProjectWithCounts[]> {
   const { data: projects } = await supabase
     .from("projects").select("*").eq("group_id", groupId)
     .order("created_at", { ascending: true });
   const list = (projects ?? []) as Project[];
   if (list.length === 0) return [];
 
-  // Считаем задачи по проектам одним запросом (без N+1).
-  const { data: tasks } = await supabase
+  // Считаем задачи по проектам одним запросом (без N+1), с той же visibility-фильтрацией,
+  // что применяет listTasks: приватная задача видна только владельцу (админ — все).
+  // Безопасный дефолт без viewerId — как в listTasks: считаем только публичные.
+  let tasksQuery = supabase
     .from("tasks").select("project_id, project_linked")
     .eq("group_id", groupId)
     .in("project_id", list.map((p) => p.id));
+  if (!opts.isAdmin) {
+    tasksQuery = opts.viewerId !== undefined
+      ? tasksQuery.or(`is_private.eq.false,owner_id.eq.${opts.viewerId}`)
+      : tasksQuery.eq("is_private", false);
+  }
+  const { data: tasks } = await tasksQuery;
   const counts = new Map<string, { total: number; backlog: number }>();
   ((tasks ?? []) as Array<{ project_id: string | null; project_linked: boolean }>).forEach((t) => {
     if (!t.project_id) return;
