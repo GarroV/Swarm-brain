@@ -1,10 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { Project } from "@/types";
+import dynamic from "next/dynamic";
 import { fetchProjects, createProject } from "@/lib/api";
-import { ProjectSpace } from "@/components/tasks/ProjectSpace";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
+
+// react-flow — только на клиенте (SSR/static export не рендерит canvas-измерения)
+const ProjectTree = dynamic(() => import("@/components/tasks/ProjectTree").then((m) => m.ProjectTree), { ssr: false });
 
 export function ProjectsGrid() {
   const dt = useDt();
@@ -25,7 +28,17 @@ export function ProjectsGrid() {
     setActive(p);
   };
 
-  if (active) return <ProjectSpace project={active} onBack={() => { setActive(null); void load(); }} />;
+  if (active) return (
+    <div className="relative flex-1 min-h-0">
+      <button
+        onClick={() => { setActive(null); void load(); }}
+        className="absolute left-3 top-3 z-10 flex items-center gap-1 rounded-full bg-surface border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-surface-2"
+      >
+        <RoyIcon name="cleft" size={14} /> {dt("Проекты", "Projects")}
+      </button>
+      <ProjectTree />
+    </div>
+  );
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-3">
