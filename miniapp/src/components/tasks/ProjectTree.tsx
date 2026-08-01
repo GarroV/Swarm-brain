@@ -179,6 +179,11 @@ function ProjectTreeInner({ project, onBack }: Props) {
 
   const rf = useReactFlow();
   const PROX = 128; // порог «магнита»: дистанция между центрами карточек
+  // Скорость движения в момент отпускания — просто отодвинуть карточку (медленно) НЕ рвёт связь,
+  // рвёт только резкий рывок наружу. Иначе обычная перестановка вдалеке от родителя всё время отвязывала.
+  const YANK_SPEED = 1.15; // px/мс — примерно «быстрый мазок», подобрано на глаз
+  const speedRef = useRef(0);
+  const lastSampleRef = useRef<{ x: number; y: number; t: number } | null>(null);
 
   // нельзя привязать к своему потомку (защита от цикла)
   const isDescendant = useCallback((a: string, of: string): boolean => {
@@ -206,8 +211,17 @@ function ProjectTreeInner({ project, onBack }: Props) {
 
   const multiSelected = useCallback(() => rf.getNodes().filter((n) => n.selected).length > 1, [rf]);
 
-  // во время перетаскивания — превью-связь к ближайшему (только для одиночного узла)
+  // во время перетаскивания — превью-связь к ближайшему (только для одиночного узла) + скорость движения
   const onNodeDrag: OnNodeDrag = useCallback((_e, node) => {
+    const now = performance.now();
+    const prev = lastSampleRef.current;
+    if (prev) {
+      const dt = Math.max(1, now - prev.t);
+      const inst = Math.hypot(node.position.x - prev.x, node.position.y - prev.y) / dt;
+      speedRef.current = speedRef.current * 0.5 + inst * 0.5; // сглаживаем — не реагируем на дрожь одного кадра
+    }
+    lastSampleRef.current = { x: node.position.x, y: node.position.y, t: now };
+
     if (node.id === ROOT_ID || multiSelected()) return;
     const near = closest(node.id, node.position);
     const cur = tasks.find((t) => t.id === node.id);
@@ -230,13 +244,19 @@ function ProjectTreeInner({ project, onBack }: Props) {
     const cur = tasks.find((t) => t.id === node.id);
     if (!cur) return;
     const near = closest(node.id, node.position);
+    const speed = speedRef.current;
+    speedRef.current = 0; lastSampleRef.current = null; // сброс для следующего жеста
     if (near) {
+      // связать — всегда охотно, без порога скорости (это желаемое действие, не защищаемое от случайности)
       const parent_id = near.id === ROOT_ID ? null : near.id;
       if (cur.project_linked && (cur.parent_id ?? null) === parent_id) return;
       flash(node.id, "rf-pop", `e-${near.id}-${node.id}`);
       setTasks((prev) => prev.map((t) => (t.id === node.id ? { ...t, project_linked: true, parent_id } : t)));
       updateTask(node.id, { project_linked: true, parent_id }).then(load).catch(load);
     } else if (cur.project_linked) {
+      // не рядом ни с кем: рвём связь ТОЛЬКО на резком движении (рывок). Медленно отставил подальше
+      // просто переставить карточку — связь держится, ребро тянется следом.
+      if (speed < YANK_SPEED) return;
       flash(node.id, "rf-off");
       setTasks((prev) => prev.map((t) => (t.id === node.id ? { ...t, project_linked: false, parent_id: null } : t)));
       updateTask(node.id, { project_linked: false, parent_id: null }).then(load).catch(load);
