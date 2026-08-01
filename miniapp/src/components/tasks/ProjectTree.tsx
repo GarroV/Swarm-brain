@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant, Controls, Panel,
   Handle, Position, getStraightPath, useNodesState, useEdgesState,
@@ -30,8 +30,9 @@ function HudNode({ data, selected }: NodeProps) {
   const accent = backlog ? STONE : done ? DONE : AMBER;
   const accentHi = backlog ? "#b7ae9e" : done ? DONE_HI : AMBER_HI;
   // хэндлы на 4 сторонах: связь можно начать/принять с любой стороны (ConnectionMode.Loose);
-  // floating-ребро само выберет ближнюю грань. Мелкие точки на границе, тело остаётся тащимым.
-  const hs = { width: 8, height: 8, background: accent, border: "none", opacity: 0.5 } as const;
+  // floating-ребро само выберет ближнюю грань. Невидимые (прозрачные) — без визуального мусора,
+  // но остаются кликабельной зоной для ручного коннекта; основной способ — магнит-близость.
+  const hs = { width: 10, height: 10, background: "transparent", border: "none", opacity: 0, minWidth: 0, minHeight: 0 } as const;
   const sides: Array<[string, Position]> = [["t", Position.Top], ["r", Position.Right], ["b", Position.Bottom], ["l", Position.Left]];
   return (
     <div
@@ -186,9 +187,11 @@ function ProjectTreeInner({ project, onBack }: Props) {
 
   const onNodeClick: NodeMouseHandler = useCallback((_e, node) => { if (node.id !== ROOT_ID) setOpenId(node.id); }, []);
 
-  // во время перетаскивания — превью-связь к ближайшему
+  const multiSelected = useCallback(() => rf.getNodes().filter((n) => n.selected).length > 1, [rf]);
+
+  // во время перетаскивания — превью-связь к ближайшему (только для одиночного узла)
   const onNodeDrag: OnNodeDrag = useCallback((_e, node) => {
-    if (node.id === ROOT_ID) return;
+    if (node.id === ROOT_ID || multiSelected()) return;
     const near = closest(node.id, node.position);
     const cur = tasks.find((t) => t.id === node.id);
     const parentId = near ? (near.id === ROOT_ID ? null : near.id) : undefined;
@@ -202,8 +205,10 @@ function ProjectTreeInner({ project, onBack }: Props) {
 
   // отпустил: близко к узлу → коннект (подзадача); в пустоте → разрыв (в бэклог)
   const onNodeDragStop: OnNodeDrag = useCallback((_e, node) => {
-    posRef.current.set(node.id, node.position);
     setEdges((prev) => prev.filter((e) => e.id !== "__preview__"));
+    // групповое перемещение — только сохранить позиции, без магнита
+    if (multiSelected()) { rf.getNodes().forEach((n) => { if (n.selected) posRef.current.set(n.id, n.position); }); return; }
+    posRef.current.set(node.id, node.position);
     if (node.id === ROOT_ID) return;
     const cur = tasks.find((t) => t.id === node.id);
     if (!cur) return;
@@ -219,6 +224,11 @@ function ProjectTreeInner({ project, onBack }: Props) {
     }
   }, [closest, tasks, load, setEdges]);
 
+  // групповое перетаскивание (выделенная рамкой группа) — сохранить позиции всех
+  const onSelectionDragStop = useCallback((_e: React.MouseEvent, dragged: Node[]) => {
+    dragged.forEach((n) => posRef.current.set(n.id, n.position));
+  }, []);
+
   // ручное связывание: протянул от узла к узлу (край) → target становится подзадачей source
   const onConnect = useCallback((c: Connection) => {
     if (!c.source || !c.target || c.source === c.target) return;
@@ -230,7 +240,6 @@ function ProjectTreeInner({ project, onBack }: Props) {
   }, [isDescendant, load]);
 
   const openTask = tasks.find((t) => t.id === openId);
-  const hasBacklog = useMemo(() => tasks.some((t) => !t.project_linked), [tasks]);
 
   return (
     <div className="relative flex-1 min-h-0">
@@ -246,16 +255,16 @@ function ProjectTreeInner({ project, onBack }: Props) {
         <ReactFlow
           nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
           onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
-          onNodeClick={onNodeClick} onNodeDrag={onNodeDrag} onNodeDragStop={onNodeDragStop} onConnect={onConnect}
+          onNodeClick={onNodeClick} onNodeDrag={onNodeDrag} onNodeDragStop={onNodeDragStop}
+          onSelectionDragStop={onSelectionDragStop} onConnect={onConnect}
           connectionMode={ConnectionMode.Loose}
+          panOnScroll zoomOnScroll={false} selectionOnDrag panOnDrag={[1, 2]}
           fitView fitViewOptions={{ padding: 0.3 }} minZoom={0.3} maxZoom={2.6}
           proOptions={{ hideAttribution: true }} connectionLineStyle={{ stroke: AMBER, strokeWidth: 1.5 }}
         >
           <Background variant={BackgroundVariant.Lines} gap={44} color="rgba(235,211,162,0.05)" />
           <Controls showInteractive={false} />
-          {hasBacklog && (
-            <Panel position="top-center"><span style={{ fontSize: 11, color: "#A89F90" }}>{dt("Тащи узлы как хочешь · протяни от узла к узлу — сделать подзадачей", "Drag nodes freely · pull from one node to another to make a subtask")}</span></Panel>
-          )}
+          <Panel position="top-center"><span style={{ fontSize: 11, color: "#A89F90" }}>{dt("Поднеси узел к узлу — связать · рамкой выдели группу · два пальца — панорама", "Bring a node close to link · drag a box to select · two fingers to pan")}</span></Panel>
         </ReactFlow>
       </div>
 
