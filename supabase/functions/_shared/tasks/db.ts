@@ -29,6 +29,8 @@ export async function createTask(input: TaskInput, groupId?: string): Promise<Ta
     timeline_position: input.timeline_position ?? null,
     sprint_id: input.sprint_id ?? null,
     label_ids: input.label_ids ?? [],
+    project_id: input.project_id ?? null,
+    project_linked: input.project_linked ?? false,
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Task;
@@ -55,6 +57,7 @@ export async function listTasks(filters: {
   sprintId?: string;
   tags?: string[];          // ANY-совпадение (overlaps)
   labelIds?: string[];      // ANY-совпадение (overlaps по label_ids)
+  projectId?: string;
   startDateFrom?: string;
   startDateTo?: string;
   dueDateFrom?: string;
@@ -85,6 +88,7 @@ export async function listTasks(filters: {
   if (filters.country) q = q.ilike("country", `%${filters.country}%`);
   if (filters.createdBy !== undefined) q = q.eq("created_by_telegram_id", filters.createdBy);
   if (filters.sprintId) q = q.eq("sprint_id", filters.sprintId);
+  if (filters.projectId) q = q.eq("project_id", filters.projectId);
   if (filters.tags && filters.tags.length > 0) q = q.overlaps("tags", filters.tags);
   if (filters.labelIds && filters.labelIds.length > 0) q = q.overlaps("label_ids", filters.labelIds);
   if (filters.startDateFrom) q = q.gte("start_date", filters.startDateFrom);
