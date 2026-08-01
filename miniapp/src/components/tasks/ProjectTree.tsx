@@ -3,8 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow, Background, BackgroundVariant, Controls, Panel,
   Handle, Position, getStraightPath, useNodesState, useEdgesState,
+  useInternalNode, ConnectionMode,
   type Node, type Edge, type NodeProps, type EdgeProps, type NodeMouseHandler,
-  type Connection, type OnNodeDrag,
+  type Connection, type OnNodeDrag, type InternalNode,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { stratify, tree, type HierarchyPointNode } from "d3-hierarchy";
@@ -28,7 +29,10 @@ function HudNode({ data, selected }: NodeProps) {
   const done = d.state === "done";
   const accent = backlog ? STONE : done ? DONE : AMBER;
   const accentHi = backlog ? "#b7ae9e" : done ? DONE_HI : AMBER_HI;
-  const hstyle = { width: 7, height: 7, background: accent, border: "none", opacity: 0.55 } as const;
+  // хэндлы на 4 сторонах: связь можно начать/принять с любой стороны (ConnectionMode.Loose);
+  // floating-ребро само выберет ближнюю грань. Мелкие точки на границе, тело остаётся тащимым.
+  const hs = { width: 8, height: 8, background: accent, border: "none", opacity: 0.5 } as const;
+  const sides: Array<[string, Position]> = [["t", Position.Top], ["r", Position.Right], ["b", Position.Bottom], ["l", Position.Left]];
   return (
     <div
       className="rf-hud"
@@ -46,21 +50,42 @@ function HudNode({ data, selected }: NodeProps) {
         transition: "box-shadow .16s",
       }}
     >
-      <Handle type="target" position={Position.Top} style={hstyle} />
       {done ? (
         <svg width="12" height="12" viewBox="0 0 15 15" style={{ flex: "none" }}><path d="M2.5 8 l3 3.5 l7 -8" fill="none" stroke={DONE_HI} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
       ) : (
         <span style={{ width: 6, height: 6, borderRadius: 2, background: accentHi, boxShadow: backlog ? "none" : `0 0 6px ${accentHi}`, flex: "none" }} />
       )}
       <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{d.label}</span>
-      <Handle type="source" position={Position.Bottom} style={hstyle} />
+      {sides.map(([id, pos]) => (
+        <Handle key={id} id={id} type="source" position={pos} style={hs} isConnectableStart isConnectableEnd />
+      ))}
     </div>
   );
 }
 
-// ── прямое ребро-жила ──
-function HudEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProps) {
-  const [path] = getStraightPath({ sourceX, sourceY, targetX, targetY });
+// ── floating-геометрия: точка пересечения линии центров с границей узла ──
+function nodeCenter(n: InternalNode) {
+  const p = n.internals.positionAbsolute;
+  return { x: p.x + (n.measured?.width ?? 0) / 2, y: p.y + (n.measured?.height ?? 0) / 2 };
+}
+function intersect(n: InternalNode, other: InternalNode) {
+  const w = (n.measured?.width ?? 0) / 2, h = (n.measured?.height ?? 0) / 2;
+  if (!w || !h) return nodeCenter(n);
+  const c = nodeCenter(n), o = nodeCenter(other);
+  const x1 = (o.x - c.x) / (2 * w) - (o.y - c.y) / (2 * h);
+  const y1 = (o.x - c.x) / (2 * w) + (o.y - c.y) / (2 * h);
+  const a = 1 / (Math.abs(x1) + Math.abs(y1) || 1);
+  const xx = a * x1, yy = a * y1;
+  return { x: w * (xx + yy) + c.x, y: h * (-xx + yy) + c.y };
+}
+
+// ── прямое floating ребро-жила (выходит с ближней грани) ──
+function HudEdge({ source, target, data }: EdgeProps) {
+  const s = useInternalNode(source);
+  const t = useInternalNode(target);
+  if (!s || !t) return null;
+  const a = intersect(s, t), b = intersect(t, s);
+  const [path] = getStraightPath({ sourceX: a.x, sourceY: a.y, targetX: b.x, targetY: b.y });
   const done = (data as { state?: string } | undefined)?.state === "done";
   const col = done ? DONE : AMBER;
   return (
@@ -166,6 +191,7 @@ export function ProjectTree({ project, onBack }: Props) {
           nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
           onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
           onNodeClick={onNodeClick} onNodeDragStop={onNodeDragStop} onConnect={onConnect}
+          connectionMode={ConnectionMode.Loose}
           fitView fitViewOptions={{ padding: 0.3 }} minZoom={0.3} maxZoom={2.6}
           proOptions={{ hideAttribution: true }} connectionLineStyle={{ stroke: AMBER, strokeWidth: 1.5 }}
         >
