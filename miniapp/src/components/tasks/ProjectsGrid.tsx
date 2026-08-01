@@ -28,17 +28,7 @@ export function ProjectsGrid() {
     setActive(p);
   };
 
-  if (active) return (
-    <div className="relative flex-1 min-h-0">
-      <button
-        onClick={() => { setActive(null); void load(); }}
-        className="absolute left-3 top-3 z-10 flex items-center gap-1 rounded-full bg-surface border border-line px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-surface-2"
-      >
-        <RoyIcon name="cleft" size={14} /> {dt("Проекты", "Projects")}
-      </button>
-      <ProjectTree />
-    </div>
-  );
+  if (active) return <ProjectTree project={active} onBack={() => { setActive(null); void load(); }} />;
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-3">

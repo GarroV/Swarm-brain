@@ -26,6 +26,7 @@ export type Task = {
   label_ids: string[];
   project_id: string | null;
   project_linked: boolean;
+  parent_id: string | null;
 };
 
 export type SprintStatus = "planned" | "active" | "completed";

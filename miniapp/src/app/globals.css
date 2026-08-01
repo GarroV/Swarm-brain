@@ -242,3 +242,10 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Project Tree (react-flow warm tech-HUD) */
+@keyframes rf-dash { to { stroke-dashoffset: -20; } }
+.rf-flow { animation: rf-dash 1.1s linear infinite; }
+.rf-hud:hover { transform: translateY(-2px); }
+.react-flow__attribution { display: none; }
+@media (prefers-reduced-motion: reduce) { .rf-flow { animation: none; } }
