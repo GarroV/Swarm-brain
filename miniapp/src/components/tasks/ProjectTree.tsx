@@ -21,7 +21,9 @@ const stateOf = (t: Task): "done" | "active" => (t.status === "done" ? "done" : 
 
 type TData = { label: string; kind: "root" | "task"; state: "done" | "active" | "backlog" };
 
-// ── компактный узел-модуль ──
+// ── узел-модуль в духе нод-редактора DaVinci/Fusion: rounded-rect карточка,
+// цветная акцент-полоса слева (категория/статус) вместо обвода-рамки и центрированной точки,
+// чистое компактное тело. Прямые floating-рёбра (ниже) остаются — это отдельная, уже сведённая ось. ──
 function HudNode({ data, selected }: NodeProps) {
   const d = data as TData;
   const root = d.kind === "root";
@@ -30,33 +32,42 @@ function HudNode({ data, selected }: NodeProps) {
   const accent = backlog ? STONE : done ? DONE : AMBER;
   const accentHi = backlog ? "#b7ae9e" : done ? DONE_HI : AMBER_HI;
   // хэндлы на 4 сторонах: связь можно начать/принять с любой стороны (ConnectionMode.Loose);
-  // floating-ребро само выберет ближнюю грань. Невидимые (прозрачные) — без визуального мусора,
+  // floating-ребро само выберет ближнюю грань. Невидимые — без визуального мусора,
   // но остаются кликабельной зоной для ручного коннекта; основной способ — магнит-близость.
   const hs = { width: 10, height: 10, background: "transparent", border: "none", opacity: 0, minWidth: 0, minHeight: 0 } as const;
   const sides: Array<[string, Position]> = [["t", Position.Top], ["r", Position.Right], ["b", Position.Bottom], ["l", Position.Left]];
+  const barW = root ? 4 : 3;
   return (
     <div
       className="rf-hud"
       style={{
         position: "relative",
-        maxWidth: 168,
-        padding: root ? "6px 11px" : "5px 9px",
-        borderRadius: 8,
-        background: backlog ? "rgba(34,26,16,0.72)" : "#221a10",
-        border: `${root ? 1.8 : 1.3}px ${backlog ? "dashed" : "solid"} ${accent}`,
-        color: backlog ? "#cbc2b1" : "#F2EDE3",
-        font: `${root ? 700 : 600} ${root ? 12.5 : 11}px -apple-system,system-ui,sans-serif`,
-        boxShadow: backlog ? "none" : `0 0 ${root ? 14 : 9}px ${accentHi}${selected ? "99" : "44"}`,
-        display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
+        maxWidth: 176,
+        borderRadius: 7,
+        background: backlog ? "rgba(28,22,14,0.7)" : "#1c1610",
+        border: `1px solid ${backlog ? "rgba(140,132,117,0.45)" : "rgba(0,0,0,0.5)"}`,
+        boxShadow: selected
+          ? `0 0 0 1.5px ${accentHi}, 0 2px 10px rgba(0,0,0,.45), 0 0 ${root ? 16 : 10}px ${accentHi}66`
+          : `0 2px 8px rgba(0,0,0,.4)${backlog ? "" : `, 0 0 ${root ? 12 : 7}px ${accentHi}2e`}`,
+        display: "flex", alignItems: "stretch", overflow: "hidden",
         transition: "box-shadow .16s",
       }}
     >
-      {done ? (
-        <svg width="12" height="12" viewBox="0 0 15 15" style={{ flex: "none" }}><path d="M2.5 8 l3 3.5 l7 -8" fill="none" stroke={DONE_HI} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
-      ) : (
-        <span style={{ width: 6, height: 6, borderRadius: 2, background: accentHi, boxShadow: backlog ? "none" : `0 0 6px ${accentHi}`, flex: "none" }} />
-      )}
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{d.label}</span>
+      {/* акцент-полоса: категория/статус — фирменный приём Fusion-нод */}
+      <div style={{ width: barW, flex: "none", background: accent, opacity: backlog ? 0.55 : 1, backgroundImage: backlog ? "repeating-linear-gradient(180deg, transparent 0 4px, rgba(0,0,0,.5) 4px 6px)" : undefined }} />
+      <div style={{
+        display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
+        padding: root ? "6px 10px 6px 8px" : "5px 8px 5px 7px",
+        color: backlog ? "#a89f90" : "#F2EDE3",
+        font: `${root ? 700 : 600} ${root ? "12.5px" : "11px"} -apple-system,system-ui,sans-serif`,
+      }}>
+        {done ? (
+          <svg width="11" height="11" viewBox="0 0 15 15" style={{ flex: "none" }}><path d="M2.5 8 l3 3.5 l7 -8" fill="none" stroke={DONE_HI} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        ) : !backlog ? (
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: accentHi, boxShadow: `0 0 5px ${accentHi}`, flex: "none" }} />
+        ) : null}
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{d.label}</span>
+      </div>
       {sides.map(([id, pos]) => (
         <Handle key={id} id={id} type="source" position={pos} style={hs} isConnectableStart isConnectableEnd />
       ))}
@@ -178,12 +189,13 @@ function ProjectTreeInner({ project, onBack }: Props) {
   }, [tasks, project, setNodes, setEdges]);
 
   const rf = useReactFlow();
-  const PROX = 128; // порог «магнита»: дистанция между центрами карточек
   // Скорость движения в момент отпускания — просто отодвинуть карточку (медленно) НЕ рвёт связь,
   // рвёт только резкий рывок наружу. Иначе обычная перестановка вдалеке от родителя всё время отвязывала.
-  const YANK_SPEED = 1.15; // px/мс — примерно «быстрый мазок», подобрано на глаз
+  const GAP_PX = 46; // порог «магнита»: зазор между ГРАНЯМИ карточек (не центрами — иначе крупный корень чувствуется «нерабочим»)
+  const YANK_SPEED = 1.15; // px/мс, усреднённая по окну — см. onNodeDrag
+  const VELOCITY_WINDOW_MS = 130; // окно усреднения скорости: гасит джиттер трекпада в последнем кадре перед отпусканием
   const speedRef = useRef(0);
-  const lastSampleRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const sampleBufRef = useRef<Array<{ x: number; y: number; t: number }>>([]);
 
   // нельзя привязать к своему потомку (защита от цикла)
   const isDescendant = useCallback((a: string, of: string): boolean => {
@@ -192,35 +204,42 @@ function ProjectTreeInner({ project, onBack }: Props) {
     return kid.parent_id === of || isDescendant(kid.parent_id, of);
   }, [tasks]);
 
-  // ближайший узел к перетаскиваемому в зоне PROX (центр-центр), с учётом запрета цикла
+  // «радиус» карточки для нормализации магнита по размеру (корень заметно крупнее задач)
+  const approxRadius = useCallback((n: Node) => Math.max(n.measured?.width ?? 130, n.measured?.height ?? 34) / 2, []);
+
+  // ближайший узел к перетаскиваемому, по ЗАЗОРУ между гранями (не центр-центр), с учётом запрета цикла
   const closest = useCallback((dragId: string, pos: { x: number; y: number }): Node | null => {
-    let best: Node | null = null, bestD = PROX * PROX;
+    const dragNode = rf.getNode(dragId);
+    const dragR = dragNode ? approxRadius(dragNode) : 65;
+    const cx = pos.x + (dragNode?.measured?.width ?? 0) / 2, cy = pos.y + (dragNode?.measured?.height ?? 0) / 2;
+    let best: Node | null = null, bestGap = GAP_PX;
     for (const o of rf.getNodes()) {
       if (o.id === dragId) continue;
       if ((o.data as TData).state === "backlog") continue; // цель — только узел в дереве
       if (o.id !== ROOT_ID && isDescendant(o.id, dragId)) continue;
       const ox = o.position.x + (o.measured?.width ?? 0) / 2, oy = o.position.y + (o.measured?.height ?? 0) / 2;
-      const cx = pos.x + (rf.getNode(dragId)?.measured?.width ?? 0) / 2, cy = pos.y + (rf.getNode(dragId)?.measured?.height ?? 0) / 2;
-      const dx = ox - cx, dy = oy - cy, d = dx * dx + dy * dy;
-      if (d < bestD) { bestD = d; best = o; }
+      const centerDist = Math.hypot(ox - cx, oy - cy);
+      const gap = centerDist - dragR - approxRadius(o); // ~0 = карточки соприкасаются, отрицательное = уже перекрылись
+      if (gap < bestGap) { bestGap = gap; best = o; }
     }
     return best;
-  }, [rf, isDescendant]);
+  }, [rf, isDescendant, approxRadius]);
 
   const onNodeClick: NodeMouseHandler = useCallback((_e, node) => { if (node.id !== ROOT_ID) setOpenId(node.id); }, []);
 
   const multiSelected = useCallback(() => rf.getNodes().filter((n) => n.selected).length > 1, [rf]);
 
-  // во время перетаскивания — превью-связь к ближайшему (только для одиночного узла) + скорость движения
+  // во время перетаскивания — превью-связь к ближайшему (только для одиночного узла) + окно скорости
   const onNodeDrag: OnNodeDrag = useCallback((_e, node) => {
     const now = performance.now();
-    const prev = lastSampleRef.current;
-    if (prev) {
-      const dt = Math.max(1, now - prev.t);
-      const inst = Math.hypot(node.position.x - prev.x, node.position.y - prev.y) / dt;
-      speedRef.current = speedRef.current * 0.5 + inst * 0.5; // сглаживаем — не реагируем на дрожь одного кадра
+    const buf = sampleBufRef.current;
+    buf.push({ x: node.position.x, y: node.position.y, t: now });
+    while (buf.length > 1 && now - buf[0].t > VELOCITY_WINDOW_MS) buf.shift(); // храним только последние ~130мс
+    if (buf.length > 1) {
+      const first = buf[0];
+      const dt = Math.max(8, now - first.t); // ← окно, не последний кадр: гасит единичный джиттер-скачок
+      speedRef.current = Math.hypot(node.position.x - first.x, node.position.y - first.y) / dt;
     }
-    lastSampleRef.current = { x: node.position.x, y: node.position.y, t: now };
 
     if (node.id === ROOT_ID || multiSelected()) return;
     const near = closest(node.id, node.position);
@@ -245,7 +264,7 @@ function ProjectTreeInner({ project, onBack }: Props) {
     if (!cur) return;
     const near = closest(node.id, node.position);
     const speed = speedRef.current;
-    speedRef.current = 0; lastSampleRef.current = null; // сброс для следующего жеста
+    speedRef.current = 0; sampleBufRef.current = []; // сброс для следующего жеста
     if (near) {
       // связать — всегда охотно, без порога скорости (это желаемое действие, не защищаемое от случайности)
       const parent_id = near.id === ROOT_ID ? null : near.id;
@@ -299,7 +318,11 @@ function ProjectTreeInner({ project, onBack }: Props) {
           onSelectionDragStop={onSelectionDragStop} onConnect={onConnect}
           connectionMode={ConnectionMode.Loose}
           panOnScroll zoomOnScroll={false} selectionOnDrag panOnDrag={[1, 2]}
-          fitView fitViewOptions={{ padding: 0.3 }} minZoom={0.3} maxZoom={2.6}
+          // fitView сам подбирает зум под bounding box дерева — на маленьком/компактном дереве
+          // он лупит почти в упор (maxZoom по умолчанию не ограничен снизу разумно). Кэпим ЗАХОД
+          // на разумном максимуме (1x), чтобы все связи были видно сразу; ручной зум колесом/пинчем
+          // (maxZoom=2.6 ниже) не трогаем — им можно приблизить, если захочется.
+          fitView fitViewOptions={{ padding: 0.35, maxZoom: 1 }} minZoom={0.3} maxZoom={2.6}
           proOptions={{ hideAttribution: true }} connectionLineStyle={{ stroke: AMBER, strokeWidth: 1.5 }}
         >
           <Background variant={BackgroundVariant.Lines} gap={44} color="rgba(235,211,162,0.05)" />
