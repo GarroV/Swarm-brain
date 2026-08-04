@@ -14,15 +14,20 @@ import {
   fetchTaskLabels,
   fetchConfig,
   fetchProjects,
+  fetchMe,
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm";
 import { Segmented } from "@/components/roy/ui";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
-import { PictogramPicker, type PictoOption } from "@/components/tasks/PictogramPicker";
 import { TaskComments } from "@/components/tasks/TaskComments";
 import { COUNTRY_NAMES, countryName, countryFlag, countryCode } from "@/lib/countries";
+import { linkify } from "@/lib/linkify";
 import { useDt } from "@/components/roy/nav";
+
+// Функционал ролей пока не используется командой — поле скрыто в UI, но не удалено
+// (данные task_role продолжают сохраняться на уже размеченных задачах).
+const SHOW_TASK_ROLE = false;
 
 const TASK_ROLES = [
   { value: "marketing", label: "Marketing" },
@@ -67,6 +72,9 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState("open");
   const [description, setDescription] = useState("");
+  // Пока в описании есть сохранённый текст — показываем его как read-only с кликабельными
+  // ссылками (linkify); textarea появляется по клику. Пустое описание — сразу editable.
+  const [descEditing, setDescEditing] = useState(true);
   const [dueDate, setDueDate] = useState("");
   const [country, setCountry] = useState("");
   const [taskRole, setTaskRole] = useState(NONE);
@@ -88,7 +96,9 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     if (!open) return;
     setTitle(task?.title ?? prefill?.title ?? "");
     setStatus(normStatus(task?.status));
-    setDescription(task?.description ?? prefill?.description ?? "");
+    const initialDescription = task?.description ?? prefill?.description ?? "";
+    setDescription(initialDescription);
+    setDescEditing(!initialDescription.trim());
     setDueDate(task?.due_date ?? prefill?.due_date ?? "");
     setCountry(task?.country ?? prefill?.country ?? "");
     setTaskRole(task?.task_role ?? NONE);
@@ -101,6 +111,10 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     fetchUsers().then(setUsers).catch(() => {});
     fetchTaskLabels().then(setLabels).catch(() => {});
     fetchConfig().then((c) => setMarkets(c.allowed_markets ?? [])).catch(() => {});
+    // Новая задача — по умолчанию исполнитель = текущий пользователь (обычно чаще правит своё же).
+    if (!task) {
+      fetchMe().then((me) => setAssigneeId(me.telegram_id.toString())).catch(() => {});
+    }
   }, [open, task, projectId]);
 
   // Список проектов для селекта — грузим один раз при монтировании модалки.
@@ -138,11 +152,6 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
       countryCodes.push(country);
     }
   }
-  const countryOptions: PictoOption[] = [
-    { id: "", label: "Global", icon: "globe" },
-    ...countryCodes.map((code) => ({ id: code, label: countryName(code), flag: countryFlag(code) })),
-  ];
-
   const handleSave = async () => {
     if (!title.trim()) {
       setError("Нужно название");
@@ -241,14 +250,35 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
               </div>
               <div className="flex min-h-0 flex-1 flex-col">
                 <label htmlFor="modal-desc" className={labelCls} style={{ fontSize: 12.5 }}>Описание</label>
-                <textarea
-                  id="modal-desc"
-                  className={`${fieldCls} flex-1 resize-y`}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Подробности, контекст, что именно сделать…"
-                  style={{ minHeight: 280, lineHeight: 1.6 }}
-                />
+                {descEditing ? (
+                  <textarea
+                    id="modal-desc"
+                    autoFocus={isEdit}
+                    className={`${fieldCls} flex-1 resize-y`}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    onBlur={() => { if (description.trim()) setDescEditing(false); }}
+                    placeholder="Подробности, контекст, что именно сделать…"
+                    style={{ minHeight: 140, lineHeight: 1.6 }}
+                  />
+                ) : (
+                  <div
+                    id="modal-desc"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setDescEditing(true)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setDescEditing(true);
+                      }
+                    }}
+                    className={`${fieldCls} flex-1 cursor-text overflow-y-auto whitespace-pre-wrap`}
+                    style={{ minHeight: 140, lineHeight: 1.6 }}
+                  >
+                    {linkify(description)}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -281,34 +311,48 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                 </select>
               </div>
 
-              <div>
-                <label htmlFor="modal-role" className={labelCls} style={{ fontSize: 12.5 }}>Роль</label>
-                <select id="modal-role" className={fieldCls} value={taskRole} onChange={(e) => setTaskRole(e.target.value)}>
-                  <option value={NONE}>— Нет —</option>
-                  {TASK_ROLES.map((r) => (
-                    <option key={r.value} value={r.value}>{r.label}</option>
-                  ))}
-                </select>
-              </div>
+              {SHOW_TASK_ROLE && (
+                <div>
+                  <label htmlFor="modal-role" className={labelCls} style={{ fontSize: 12.5 }}>Роль</label>
+                  <select id="modal-role" className={fieldCls} value={taskRole} onChange={(e) => setTaskRole(e.target.value)}>
+                    <option value={NONE}>— Нет —</option>
+                    {TASK_ROLES.map((r) => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <span className={labelCls} style={{ fontSize: 12.5 }}>Страна</span>
-                <PictogramPicker
-                  ariaLabel="Страна"
-                  multi={false}
-                  options={countryOptions}
-                  selected={selectedCountryId ? [selectedCountryId] : [""]}
-                  onToggle={(code) => setCountry(code)}
-                  trigger={
-                    <span className={`${fieldCls} flex items-center justify-between`}>
-                      <span className="flex items-center gap-2 truncate">
-                        <span style={{ fontSize: 15 }}>{country ? countryFlag(country) : "🌐"}</span>
-                        <span className="truncate">{country ? countryName(country) : "Global"}</span>
-                      </span>
-                      <RoyIcon name="cright" size={16} strokeWidth={1.9} className="shrink-0 text-ink-soft" />
-                    </span>
-                  }
-                />
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setCountry("")}
+                    title="Global"
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-semibold transition-colors ${!country ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
+                    style={{ fontSize: 12 }}
+                  >
+                    <RoyIcon name="globe" size={13} strokeWidth={1.9} />
+                    Global
+                  </button>
+                  {countryCodes.map((code) => {
+                    const on = selectedCountryId === code;
+                    return (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => setCountry(code)}
+                        title={countryName(code)}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 font-semibold transition-colors ${on ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
+                        style={{ fontSize: 12 }}
+                      >
+                        <span style={{ fontSize: 12 }}>{countryFlag(code)}</span>
+                        {countryCode(code)}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div>
