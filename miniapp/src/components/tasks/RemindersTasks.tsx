@@ -115,6 +115,10 @@ export function RemindersTasks() {
         activeLabelId={r.activeLabelId}
         onSelectLabel={(id) => r.setActiveLabelId(id)}
         onCreateLabel={() => setLabelEditor("new")}
+        onEditLabel={(l) => {
+          const full = r.labels.find((x) => x.id === l.id);
+          if (full) setLabelEditor(full);
+        }}
       />
 
       <div className="flex min-h-0 flex-1 flex-col">

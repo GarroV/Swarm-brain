@@ -20,10 +20,12 @@ type SmartListNavProps = {
   activeLabelId?: string | null;
   onSelectLabel?: (id: string) => void;
   onCreateLabel?: () => void;
+  /** Только rail: открыть редактор списка (переименовать/удалить). */
+  onEditLabel?: (label: { id: string; name: string; icon: string }) => void;
 };
 
 // Навигация по смарт-спискам: вертикальный рельс (десктоп) или горизонтальные чипы (мобайл).
-export function SmartListNav({ variant, active, counts, onSelect, query, onQuery, allStaffActive, onAllStaff, labels, labelCounts, activeLabelId, onSelectLabel, onCreateLabel }: SmartListNavProps) {
+export function SmartListNav({ variant, active, counts, onSelect, query, onQuery, allStaffActive, onAllStaff, labels, labelCounts, activeLabelId, onSelectLabel, onCreateLabel, onEditLabel }: SmartListNavProps) {
   if (variant === "chips") {
     return (
       <div className="flex gap-1.5 overflow-x-auto px-5 pb-3">
@@ -99,23 +101,35 @@ export function SmartListNav({ variant, active, counts, onSelect, query, onQuery
           <div className="px-2.5 pb-1 font-mono uppercase text-ink-mute" style={{ fontSize: 10, letterSpacing: "0.08em" }}>Мои списки</div>
           {labels.map((l) => {
             const on = activeLabelId === l.id;
+            const count = labelCounts?.[l.id] ?? 0;
             return (
-              <button
-                key={l.id}
-                type="button"
-                onClick={() => onSelectLabel(l.id)}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 font-semibold transition-colors",
-                  on ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:bg-surface",
+              <div key={l.id} className="group/row flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onSelectLabel(l.id)}
+                  className={cn(
+                    "flex min-w-0 flex-1 items-center gap-2.5 rounded-[10px] px-2.5 py-2 font-semibold transition-colors",
+                    on ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:bg-surface",
+                  )}
+                  style={{ fontSize: 13.5 }}
+                >
+                  <RoyIcon name={((l.icon as RoyIconName) || "tag")} size={16} strokeWidth={on ? 2.1 : 1.8} />
+                  <span className="flex-1 truncate text-left">{l.name}</span>
+                  {count > 0 && (
+                    <span className={`shrink-0 font-mono ${on ? "text-accent-ink" : "text-ink-mute"}`} style={{ fontSize: 11.5 }}>{count}</span>
+                  )}
+                </button>
+                {onEditLabel && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onEditLabel(l); }}
+                    aria-label={`Редактировать список «${l.name}»`}
+                    className="flex shrink-0 items-center justify-center rounded-[8px] p-1.5 text-ink-mute opacity-0 transition-opacity hover:bg-surface-2 hover:text-ink-soft group-hover/row:opacity-100"
+                  >
+                    <RoyIcon name="dots" size={15} strokeWidth={1.9} />
+                  </button>
                 )}
-                style={{ fontSize: 13.5 }}
-              >
-                <RoyIcon name={((l.icon as RoyIconName) || "tag")} size={16} strokeWidth={on ? 2.1 : 1.8} />
-                <span className="flex-1 text-left">{l.name}</span>
-                {(labelCounts?.[l.id] ?? 0) > 0 && (
-                  <span className={`font-mono ${on ? "text-accent-ink" : "text-ink-mute"}`} style={{ fontSize: 11.5 }}>{labelCounts![l.id]}</span>
-                )}
-              </button>
+              </div>
             );
           })}
           {onCreateLabel && (
