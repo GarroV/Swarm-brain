@@ -18,7 +18,6 @@ import {
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm";
-import { Segmented } from "@/components/roy/ui";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
 import { COUNTRY_NAMES, countryName, countryFlag, countryCode } from "@/lib/countries";
@@ -35,10 +34,12 @@ const TASK_ROLES = [
   { value: "rnd", label: "R&D" },
 ];
 
-const STATUSES = [
-  { id: "open", label: "Открыто" },
-  { id: "in_progress", label: "В работе" },
-  { id: "done", label: "Готово" },
+// Статусы пиктограммами: открыто — пустой круг, в работе — часы, готово — галочка.
+// Иконка "circle" рисуется CSS-бордером (в наборе RoyIcon кружка нет).
+const STATUSES: { id: string; label: string; icon: RoyIconName | "circle" }[] = [
+  { id: "open", label: "Открыто", icon: "circle" },
+  { id: "in_progress", label: "В работе", icon: "clock" },
+  { id: "done", label: "Готово", icon: "check" },
 ];
 const normStatus = (s?: string | null) => (s === "progress" ? "in_progress" : (s ?? "open"));
 
@@ -75,6 +76,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
   // Пока в описании есть сохранённый текст — показываем его как read-only с кликабельными
   // ссылками (linkify); textarea появляется по клику. Пустое описание — сразу editable.
   const [descEditing, setDescEditing] = useState(true);
+  // Блок стран свёрнут по умолчанию (компактный триггер); грид чипов раскрывается по клику.
+  const [countryOpen, setCountryOpen] = useState(false);
   const [dueDate, setDueDate] = useState("");
   const [country, setCountry] = useState("");
   const [taskRole, setTaskRole] = useState(NONE);
@@ -101,6 +104,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     setDescEditing(!initialDescription.trim());
     setDueDate(task?.due_date ?? prefill?.due_date ?? "");
     setCountry(task?.country ?? prefill?.country ?? "");
+    setCountryOpen(false);
     setTaskRole(task?.task_role ?? NONE);
     const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
     setAssigneeId(cur);
@@ -235,7 +239,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
 
         {/* Поля — две колонки: слева название + большое поле редактуры, справа настройки */}
         <div className="max-h-[74vh] overflow-y-auto px-5 py-4">
-          <div className="grid gap-x-5 gap-y-4 sm:grid-cols-[1.4fr_1fr]">
+          <div className="grid items-start gap-x-5 gap-y-4 sm:grid-cols-[1.4fr_1fr]">
             {/* Левая колонка: название + редактура */}
             <div className="flex flex-col gap-3.5">
               <div>
@@ -248,18 +252,18 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                   placeholder="Название задачи"
                 />
               </div>
-              <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex flex-col">
                 <label htmlFor="modal-desc" className={labelCls} style={{ fontSize: 12.5 }}>Описание</label>
                 {descEditing ? (
                   <textarea
                     id="modal-desc"
                     autoFocus={isEdit}
-                    className={`${fieldCls} flex-1 resize-y`}
+                    className={`${fieldCls} resize-y`}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     onBlur={() => { if (description.trim()) setDescEditing(false); }}
                     placeholder="Подробности, контекст, что именно сделать…"
-                    style={{ minHeight: 140, lineHeight: 1.6 }}
+                    style={{ height: 120, minHeight: 88, lineHeight: 1.6 }}
                   />
                 ) : (
                   <div
@@ -273,8 +277,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                         setDescEditing(true);
                       }
                     }}
-                    className={`${fieldCls} flex-1 cursor-text overflow-y-auto whitespace-pre-wrap`}
-                    style={{ minHeight: 140, lineHeight: 1.6 }}
+                    className={`${fieldCls} max-h-[220px] cursor-text overflow-y-auto whitespace-pre-wrap`}
+                    style={{ minHeight: 88, lineHeight: 1.6 }}
                   >
                     {linkify(description)}
                   </div>
@@ -287,28 +291,52 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
               {isEdit && (
                 <div>
                   <span className={labelCls} style={{ fontSize: 12.5 }}>Статус</span>
-                  <Segmented items={STATUSES} value={status} onChange={setStatus} />
+                  <div className="flex gap-[3px] rounded-[12px] border border-line bg-surface-2 p-[3px]">
+                    {STATUSES.map((s) => {
+                      const on = s.id === status;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setStatus(s.id)}
+                          aria-label={s.label}
+                          aria-pressed={on}
+                          title={s.label}
+                          className={`flex flex-1 items-center justify-center gap-1.5 rounded-[9px] py-2 font-semibold transition-colors active:scale-[0.97] ${on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(80,60,20,.1)]" : "bg-transparent text-ink-soft hover:text-ink"}`}
+                          style={{ fontSize: 13 }}
+                        >
+                          {s.icon === "circle" ? (
+                            <span className="rounded-full border-2 border-current" style={{ width: 13, height: 13 }} />
+                          ) : (
+                            <RoyIcon name={s.icon} size={15} strokeWidth={2} />
+                          )}
+                          {on && <span>{s.label}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
-              <div>
-                <label htmlFor="modal-due" className={labelCls} style={{ fontSize: 12.5 }}>Срок</label>
-                <DatePicker value={dueDate} onChange={setDueDate} className={fieldCls} placeholder="Срок" />
-              </div>
-
-              <div>
-                <label htmlFor="modal-project" className={labelCls} style={{ fontSize: 12.5 }}>{dt("Проект", "Project")}</label>
-                <select
-                  id="modal-project"
-                  className={fieldCls}
-                  value={selProject ?? NONE}
-                  onChange={(e) => setSelProject(e.target.value === NONE ? null : e.target.value)}
-                >
-                  <option value={NONE}>—</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="modal-due" className={labelCls} style={{ fontSize: 12.5 }}>Срок</label>
+                  <DatePicker value={dueDate} onChange={setDueDate} className={fieldCls} placeholder="Срок" />
+                </div>
+                <div>
+                  <label htmlFor="modal-project" className={labelCls} style={{ fontSize: 12.5 }}>{dt("Проект", "Project")}</label>
+                  <select
+                    id="modal-project"
+                    className={fieldCls}
+                    value={selProject ?? NONE}
+                    onChange={(e) => setSelProject(e.target.value === NONE ? null : e.target.value)}
+                  >
+                    <option value={NONE}>—</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {SHOW_TASK_ROLE && (
@@ -325,34 +353,59 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
 
               <div>
                 <span className={labelCls} style={{ fontSize: 12.5 }}>Страна</span>
-                <div className="flex flex-wrap gap-1.5">
+                {countryOpen ? (
+                  // Раскрытый грид: выбор чипа сразу выбирает страну и сворачивает блок.
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => { setCountry(""); setCountryOpen(false); }}
+                      title="Global"
+                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-semibold transition-colors ${!country ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
+                      style={{ fontSize: 12 }}
+                    >
+                      <RoyIcon name="globe" size={13} strokeWidth={1.9} />
+                      Global
+                    </button>
+                    {countryCodes.map((code) => {
+                      const on = selectedCountryId === code;
+                      return (
+                        <button
+                          key={code}
+                          type="button"
+                          onClick={() => { setCountry(code); setCountryOpen(false); }}
+                          title={countryName(code)}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 font-semibold transition-colors ${on ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
+                          style={{ fontSize: 12 }}
+                        >
+                          <span style={{ fontSize: 12 }}>{countryFlag(code)}</span>
+                          {countryCode(code)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  // Свёрнутый триггер: текущий выбор одним чипом; клик раскрывает грид.
                   <button
                     type="button"
-                    onClick={() => setCountry("")}
-                    title="Global"
-                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-semibold transition-colors ${!country ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
-                    style={{ fontSize: 12 }}
+                    onClick={() => setCountryOpen(true)}
+                    className={`${fieldCls} flex items-center justify-between`}
                   >
-                    <RoyIcon name="globe" size={13} strokeWidth={1.9} />
-                    Global
+                    <span className="flex items-center gap-1.5 truncate">
+                      {country ? (
+                        <>
+                          <span style={{ fontSize: 14 }}>{countryFlag(country)}</span>
+                          <span className="truncate">{countryName(country)}</span>
+                        </>
+                      ) : (
+                        <>
+                          <RoyIcon name="globe" size={14} strokeWidth={1.9} />
+                          <span>Global</span>
+                        </>
+                      )}
+                    </span>
+                    <RoyIcon name="cright" size={15} strokeWidth={1.9} className="shrink-0 text-ink-soft" />
                   </button>
-                  {countryCodes.map((code) => {
-                    const on = selectedCountryId === code;
-                    return (
-                      <button
-                        key={code}
-                        type="button"
-                        onClick={() => setCountry(code)}
-                        title={countryName(code)}
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 font-semibold transition-colors ${on ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
-                        style={{ fontSize: 12 }}
-                      >
-                        <span style={{ fontSize: 12 }}>{countryFlag(code)}</span>
-                        {countryCode(code)}
-                      </button>
-                    );
-                  })}
-                </div>
+                )}
               </div>
 
               <div>
