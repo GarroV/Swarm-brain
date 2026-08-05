@@ -185,10 +185,18 @@ function ProjectTreeInner({ project, onBack }: Props) {
   useEffect(() => {
     const linked = tasks.filter((t) => t.project_linked);
     const backlog = tasks.filter((t) => !t.project_linked);
+    // Бэклог НЕ хранит ручных позиций — всегда аккуратная стопка в фикс. лотке слева от дерева
+    // (иначе новые идеи уползали всё правее). Удаляем их из saved до сида дерева.
+    backlog.forEach((t) => posRef.current.delete(t.id));
     const pos = seedPositions(project, linked, posRef.current);
-    // бэклог — колонка справа, если ещё без позиции
-    const maxX = Math.max(0, ...[...pos.values()].map((p) => p.x));
-    backlog.forEach((t, i) => { if (!pos.has(t.id)) pos.set(t.id, { x: maxX + 260, y: i * 60 - (backlog.length - 1) * 30 }); });
+    // лоток бэклога: якорим слева от bbox дерева, стопка по 10 сверху-вниз, дальше — колонка левее
+    const xs = [...pos.values()].map((p) => p.x), ys = [...pos.values()].map((p) => p.y);
+    const minX = xs.length ? Math.min(...xs) : 0, minY = ys.length ? Math.min(...ys) : 0;
+    const TRAY_X = minX - 210, GAP = 54, PER_COL = 10, COL_W = 190;
+    backlog.forEach((t, i) => {
+      const col = Math.floor(i / PER_COL), row = i % PER_COL;
+      pos.set(t.id, { x: TRAY_X - col * COL_W, y: minY + row * GAP });
+    });
     posRef.current = pos;
 
     const cls = (id: string) => flashNodeRef.current.get(id);
