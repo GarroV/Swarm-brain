@@ -263,3 +263,9 @@
 @keyframes rf-edge-flash { 0%{opacity:.2; stroke-width:.5px} 35%{opacity:1; stroke-width:3.5px} 100%{opacity:1; stroke-width:1.5px} }
 .rf-edge-in path:last-child { animation: rf-edge-flash .56s ease-out; }
 @media (prefers-reduced-motion: reduce) { .rf-edge-in path:last-child { animation: none; } }
+
+/* Project Tree: «вес»/инерция — узел плавно оседает при смене позиции (коннект/раскладка),
+   но во время активного перетаскивания следует за курсором 1:1 (RF вешает .dragging). */
+.react-flow__node { transition: transform 190ms cubic-bezier(0.22, 1, 0.36, 1); }
+.react-flow__node.dragging { transition: none; }
+@media (prefers-reduced-motion: reduce) { .react-flow__node { transition: none; } }

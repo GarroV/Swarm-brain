@@ -178,6 +178,8 @@ function ProjectTreeInner({ project, onBack }: Props) {
     }, 560);
   }, [setNodes, setEdges]);
 
+  const rf = useReactFlow();
+
   const load = useCallback(async () => setTasks(await fetchTasks({ project_id: project.id })), [project.id]);
   useEffect(() => { void load(); }, [load]);
 
@@ -188,6 +190,11 @@ function ProjectTreeInner({ project, onBack }: Props) {
     // Бэклог НЕ хранит ручных позиций — всегда аккуратная стопка в фикс. лотке слева от дерева
     // (иначе новые идеи уползали всё правее). Удаляем их из saved до сида дерева.
     backlog.forEach((t) => posRef.current.delete(t.id));
+    // Уже отрисованные узлы дерева НЕ двигаем: берём их живую позицию из RF в saved до сида.
+    // Иначе при смене структуры (коннект) пересборка массива на 1 кадр давала «прыжок в сторону
+    // и возврат» — d3-сид присваивал узлу слот, пока не подхватывалась сохранённая позиция.
+    const backlogIds = new Set(backlog.map((t) => t.id));
+    rf.getNodes().forEach((n) => { if (!backlogIds.has(n.id)) posRef.current.set(n.id, n.position); });
     const pos = seedPositions(project, linked, posRef.current);
     // лоток бэклога: якорим слева от bbox дерева, стопка по 10 сверху-вниз, дальше — колонка левее
     const xs = [...pos.values()].map((p) => p.x), ys = [...pos.values()].map((p) => p.y);
@@ -213,9 +220,8 @@ function ProjectTreeInner({ project, onBack }: Props) {
       es.push({ id: eid, source: pid, target: t.id, type: "hud", className: flashEdgeRef.current.has(eid) ? "rf-edge-in" : undefined, data: { state: stateOf(t) } });
     });
     setEdges(es);
-  }, [tasks, project, setNodes, setEdges]);
+  }, [tasks, project, setNodes, setEdges, rf]);
 
-  const rf = useReactFlow();
   // Скорость движения в момент отпускания — просто отодвинуть карточку (медленно) НЕ рвёт связь,
   // рвёт только резкий рывок наружу. Иначе обычная перестановка вдалеке от родителя всё время отвязывала.
   const GAP_PX = 46; // порог «магнита»: зазор между ГРАНЯМИ карточек (не центрами — иначе крупный корень чувствуется «нерабочим»)
