@@ -9,6 +9,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { stratify, tree, type HierarchyPointNode } from "d3-hierarchy";
+import { edgeGap, windowedSpeed, type Rect } from "@/components/tasks/treeGeom";
 import type { Project, Task } from "@/types";
 import { fetchTasks, updateTask } from "@/lib/api";
 import { TaskModal } from "@/components/TaskModal";
@@ -204,26 +205,20 @@ function ProjectTreeInner({ project, onBack }: Props) {
     return kid.parent_id === of || isDescendant(kid.parent_id, of);
   }, [tasks]);
 
-  // «радиус» карточки для нормализации магнита по размеру (корень заметно крупнее задач)
-  const approxRadius = useCallback((n: Node) => Math.max(n.measured?.width ?? 130, n.measured?.height ?? 34) / 2, []);
-
-  // ближайший узел к перетаскиваемому, по ЗАЗОРУ между гранями (не центр-центр), с учётом запрета цикла
+  // ближайший узел к перетаскиваемому, по ЗАЗОРУ между гранями (edgeGap), с учётом запрета цикла
   const closest = useCallback((dragId: string, pos: { x: number; y: number }): Node | null => {
     const dragNode = rf.getNode(dragId);
-    const dragR = dragNode ? approxRadius(dragNode) : 65;
-    const cx = pos.x + (dragNode?.measured?.width ?? 0) / 2, cy = pos.y + (dragNode?.measured?.height ?? 0) / 2;
+    const dragRect: Rect = { x: pos.x, y: pos.y, w: dragNode?.measured?.width ?? 130, h: dragNode?.measured?.height ?? 34 };
     let best: Node | null = null, bestGap = GAP_PX;
     for (const o of rf.getNodes()) {
       if (o.id === dragId) continue;
       if ((o.data as TData).state === "backlog") continue; // цель — только узел в дереве
       if (o.id !== ROOT_ID && isDescendant(o.id, dragId)) continue;
-      const ox = o.position.x + (o.measured?.width ?? 0) / 2, oy = o.position.y + (o.measured?.height ?? 0) / 2;
-      const centerDist = Math.hypot(ox - cx, oy - cy);
-      const gap = centerDist - dragR - approxRadius(o); // ~0 = карточки соприкасаются, отрицательное = уже перекрылись
+      const gap = edgeGap(dragRect, { x: o.position.x, y: o.position.y, w: o.measured?.width ?? 130, h: o.measured?.height ?? 34 });
       if (gap < bestGap) { bestGap = gap; best = o; }
     }
     return best;
-  }, [rf, isDescendant, approxRadius]);
+  }, [rf, isDescendant]);
 
   const onNodeClick: NodeMouseHandler = useCallback((_e, node) => { if (node.id !== ROOT_ID) setOpenId(node.id); }, []);
 
@@ -235,11 +230,7 @@ function ProjectTreeInner({ project, onBack }: Props) {
     const buf = sampleBufRef.current;
     buf.push({ x: node.position.x, y: node.position.y, t: now });
     while (buf.length > 1 && now - buf[0].t > VELOCITY_WINDOW_MS) buf.shift(); // храним только последние ~130мс
-    if (buf.length > 1) {
-      const first = buf[0];
-      const dt = Math.max(8, now - first.t); // ← окно, не последний кадр: гасит единичный джиттер-скачок
-      speedRef.current = Math.hypot(node.position.x - first.x, node.position.y - first.y) / dt;
-    }
+    speedRef.current = windowedSpeed(buf, VELOCITY_WINDOW_MS);
 
     if (node.id === ROOT_ID || multiSelected()) return;
     const near = closest(node.id, node.position);
