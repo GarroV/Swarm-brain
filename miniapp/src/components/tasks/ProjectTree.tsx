@@ -22,9 +22,22 @@ const stateOf = (t: Task): "done" | "active" => (t.status === "done" ? "done" : 
 
 type TData = { label: string; kind: "root" | "task"; state: "done" | "active" | "backlog" };
 
-// ── узел-модуль в духе нод-редактора DaVinci/Fusion: rounded-rect карточка,
-// цветная акцент-полоса слева (категория/статус) вместо обвода-рамки и центрированной точки,
-// чистое компактное тело. Прямые floating-рёбра (ниже) остаются — это отдельная, уже сведённая ось. ──
+// иконка-глиф в хедере карточки (инлайн SVG, тонкий лайн-арт под тёплую палитру)
+function NodeGlyph({ kind, color }: { kind: "root" | "active" | "done" | "backlog"; color: string }) {
+  const p = { fill: "none", stroke: color, strokeWidth: 1.6, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" style={{ flex: "none" }} aria-hidden>
+      {kind === "root" && (<><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1" {...p} /><rect x="9" y="2.5" width="4.5" height="4.5" rx="1" {...p} /><rect x="2.5" y="9" width="4.5" height="4.5" rx="1" {...p} /><rect x="9" y="9" width="4.5" height="4.5" rx="1" {...p} /></>)}
+      {kind === "active" && (<><circle cx="8" cy="8" r="5.5" {...p} /><path d="M8 5.2 v3 l2 1.4" {...p} /></>)}
+      {kind === "done" && (<path d="M3 8.4 l3.2 3.4 l6.8 -7.6" {...p} strokeWidth={2} />)}
+      {kind === "backlog" && (<><path d="M8 2.4 a4.4 4.4 0 0 1 2.6 7.9 c-.5.4-.7.8-.7 1.4 h-3.8 c0-.6-.2-1-.7-1.4 A4.4 4.4 0 0 1 8 2.4Z" {...p} /><path d="M6.4 13.4 h3.2 M7 14.6 h2" {...p} /></>)}
+    </svg>
+  );
+}
+
+// ── узел-карточка в стилистике инфографики CLAUDE CORE: цветной ХЕДЕР-БАР сверху
+// (иконка + короткая категория), тёмное тело с названием; корень — крупный акцентный хаб.
+// Прямые floating-рёбра (ниже) — отдельная, уже сведённая ось, их не трогаем. ──
 function HudNode({ data, selected }: NodeProps) {
   const d = data as TData;
   const root = d.kind === "root";
@@ -32,42 +45,47 @@ function HudNode({ data, selected }: NodeProps) {
   const done = d.state === "done";
   const accent = backlog ? STONE : done ? DONE : AMBER;
   const accentHi = backlog ? "#b7ae9e" : done ? DONE_HI : AMBER_HI;
-  // хэндлы на 4 сторонах: связь можно начать/принять с любой стороны (ConnectionMode.Loose);
-  // floating-ребро само выберет ближнюю грань. Невидимые — без визуального мусора,
-  // но остаются кликабельной зоной для ручного коннекта; основной способ — магнит-близость.
+  const glyph: "root" | "active" | "done" | "backlog" = root ? "root" : backlog ? "backlog" : done ? "done" : "active";
+  const cat = root ? "ПРОЕКТ" : backlog ? "ИДЕЯ" : done ? "ГОТОВО" : "ЗАДАЧА";
+  // хэндлы на 4 сторонах, невидимые (магнит-близость — основной способ; ручной коннект — с края).
   const hs = { width: 10, height: 10, background: "transparent", border: "none", opacity: 0, minWidth: 0, minHeight: 0 } as const;
   const sides: Array<[string, Position]> = [["t", Position.Top], ["r", Position.Right], ["b", Position.Bottom], ["l", Position.Left]];
-  const barW = root ? 4 : 3;
   return (
     <div
       className="rf-hud"
       style={{
         position: "relative",
-        maxWidth: 176,
-        borderRadius: 7,
-        background: backlog ? "rgba(28,22,14,0.7)" : "#1c1610",
-        border: `1px solid ${backlog ? "rgba(140,132,117,0.45)" : "rgba(0,0,0,0.5)"}`,
+        width: root ? 176 : 150,
+        borderRadius: 9,
+        background: backlog ? "rgba(24,19,12,0.82)" : "#17120b",
+        border: `1px solid ${backlog ? "rgba(140,132,117,0.4)" : "rgba(0,0,0,0.55)"}`,
         boxShadow: selected
-          ? `0 0 0 1.5px ${accentHi}, 0 2px 10px rgba(0,0,0,.45), 0 0 ${root ? 16 : 10}px ${accentHi}66`
-          : `0 2px 8px rgba(0,0,0,.4)${backlog ? "" : `, 0 0 ${root ? 12 : 7}px ${accentHi}2e`}`,
-        display: "flex", alignItems: "stretch", overflow: "hidden",
+          ? `0 0 0 1.5px ${accentHi}, 0 4px 14px rgba(0,0,0,.5), 0 0 ${root ? 20 : 12}px ${accentHi}66`
+          : `0 3px 10px rgba(0,0,0,.45)${backlog ? "" : `, 0 0 ${root ? 14 : 8}px ${accentHi}26`}`,
+        overflow: "hidden",
         transition: "box-shadow .16s",
       }}
     >
-      {/* акцент-полоса: категория/статус — фирменный приём Fusion-нод */}
-      <div style={{ width: barW, flex: "none", background: accent, opacity: backlog ? 0.55 : 1, backgroundImage: backlog ? "repeating-linear-gradient(180deg, transparent 0 4px, rgba(0,0,0,.5) 4px 6px)" : undefined }} />
+      {/* цветной хедер-бар: иконка + категория (приём инфографики-референса) */}
       <div style={{
-        display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
-        padding: root ? "6px 10px 6px 8px" : "5px 8px 5px 7px",
-        color: backlog ? "#a89f90" : "#F2EDE3",
-        font: `${root ? 700 : 600} ${root ? "12.5px" : "11px"} -apple-system,system-ui,sans-serif`,
+        display: "flex", alignItems: "center", gap: 6,
+        padding: root ? "5px 10px" : "4px 9px",
+        background: backlog
+          ? "repeating-linear-gradient(135deg, rgba(140,132,117,0.14) 0 6px, rgba(140,132,117,0.06) 6px 12px)"
+          : `linear-gradient(180deg, ${accent}38, ${accent}1c)`,
+        borderBottom: `1px solid ${accent}${backlog ? "44" : "66"}`,
       }}>
-        {done ? (
-          <svg width="11" height="11" viewBox="0 0 15 15" style={{ flex: "none" }}><path d="M2.5 8 l3 3.5 l7 -8" fill="none" stroke={DONE_HI} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-        ) : !backlog ? (
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: accentHi, boxShadow: `0 0 5px ${accentHi}`, flex: "none" }} />
-        ) : null}
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{d.label}</span>
+        <NodeGlyph kind={glyph} color={accentHi} />
+        <span style={{ font: `700 ${root ? "9.5px" : "8.5px"} -apple-system,system-ui,sans-serif`, letterSpacing: "0.09em", color: accentHi, textTransform: "uppercase" }}>{cat}</span>
+      </div>
+      {/* тело: название */}
+      <div style={{
+        padding: root ? "7px 11px 8px" : "6px 10px 7px",
+        color: backlog ? "#a89f90" : "#F2EDE3",
+        font: `${root ? 700 : 600} ${root ? "13px" : "11.5px"} -apple-system,system-ui,sans-serif`,
+        lineHeight: 1.25, whiteSpace: "normal", wordBreak: "break-word",
+      }}>
+        {d.label}
       </div>
       {sides.map(([id, pos]) => (
         <Handle key={id} id={id} type="source" position={pos} style={hs} isConnectableStart isConnectableEnd />
