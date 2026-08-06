@@ -2,12 +2,14 @@
 
 > Дизайн: [specs/2026-07-19-preprod-staging-design.md](superpowers/specs/2026-07-19-preprod-staging-design.md). Принцип — пред-прод **по поверхностям** (не один монолит): у каждой свой контур по риску.
 
+> ⚠️ **СТАТУС 06.08.2026: staging на MUSPELHEIM ПОГАШЕН** (`docker compose down`). Так и не наполнили тест-секретами с 19.07 (весь `.env` остался на демо-плейсхолдерах), рабочие флоу не поднимались, им не пользовались — заглушён, чтобы не жёг ресурсы/порты. **Данные и конфиг сохранены** (`volumes\db\data` + дампы `C:\backups\supabase-db\`), поднять обратно — `swarm-staging/README.md` в `muspelheim-infra`. **Пока стенд не поднят: пред-прод = local (`supabase start`) → прод.** Раздел про staging ниже актуален для случая, когда стенд вернут.
+
 ## Контуры
 
 | Контур | Что | Base URL функций | БД |
 |---|---|---|---|
 | **local** | `supabase start` на Маке (Docker) | `http://127.0.0.1:54321/functions/v1` | локальный |
-| **staging** | self-hosted Supabase на **MUSPELHEIM** (Tailscale, приватно) | `http://100.64.116.67:8020/functions/v1` | `100.64.116.67:5433` |
+| **staging** 🔻 _погашен 06.08.2026 (см. баннер)_ | self-hosted Supabase на **MUSPELHEIM** (Tailscale, приватно) | `http://100.64.116.67:8020/functions/v1` | `100.64.116.67:5433` |
 | **prod** | Supabase cloud `vbqglndbxkpmreccpqmr` | `https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1` | cloud |
 
 Staging использует **демо-ключи** Supabase (ANON/SERVICE/JWT из `.env.example`) — ок, т.к. контур приватный (только tailnet, личное использование). Порты сдвинуты (kong `8020`, БД `5433`), чтобы не конфликтовать с n8n/template-postgres на MUSPELHEIM.
@@ -48,6 +50,7 @@ make staging-migrate FILE=supabase/migrations/2026….sql   # 2. на staging п
 - `make staging-psql` — psql в staging-БД (стдин). `make staging-ps/-up/-down` — статус/подъём/останов стека.
 
 ## Staging на MUSPELHEIM — устройство
+> 🔻 Стенд **погашен 06.08.2026** (`docker compose down`) — ниже описано устройство на момент, когда он работал; при возврате актуально снова.
 - `C:\projects\swarm-staging` — официальный `supabase/docker` compose. 11 контейнеров (db, kong, rest, auth, storage, edge-functions, realtime, studio, meta, pooler, imgproxy).
 - Функции — в `volumes/functions/` (роутер `main` отдаёт соседние папки под `/functions/v1/<name>`). `_shared` рядом.
 - Studio: `http://100.64.116.67:8020` (kong), логин из `.env` (`DASHBOARD_USERNAME/PASSWORD`).
