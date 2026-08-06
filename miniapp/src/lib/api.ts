@@ -19,6 +19,9 @@ export type CreateTaskInput = {
   timeline_position?: number | null;
   label_ids?: string[];
   project_id?: string | null;
+  parent_id?: string | null;
+  tree_x?: number | null;
+  tree_y?: number | null;
 };
 
 export type UpdateTaskInput = Partial<CreateTaskInput> & { status?: string; project_linked?: boolean };
@@ -104,34 +107,34 @@ const MOCK_USERS: User[] = [
   { telegram_id: 345678, name: "Bob Jones", username: "bob", role: "rnd", markets: ["RS", "ME"] },
 ];
 
+// Демо-фабрика задачи (моки DEV_MODE) — сокращает шум при наполнении дерева.
+function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
+  return {
+    id: o.id, title: o.title, description: o.description ?? null,
+    assignees: o.assignees ?? [], assignee_telegram_ids: o.assignee_telegram_ids ?? [],
+    due_date: o.due_date ?? null, tags: o.tags ?? [], country: o.country ?? null,
+    task_role: o.task_role ?? null, priority: o.priority ?? null, source: "mini_app",
+    status: o.status ?? "open", created_at: new Date().toISOString(), updated_at: null,
+    meeting_id: null, url: null, group_id: "cee", created_by_name: o.created_by_name ?? "Dev User",
+    is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null,
+    label_ids: [], project_id: o.project_id ?? null, project_linked: o.project_linked ?? false,
+    parent_id: o.parent_id ?? null, tree_x: o.tree_x ?? null, tree_y: o.tree_y ?? null,
+  };
+}
 let mockTasks: Task[] = [
-  {
-    id: "1", title: "Prepare Q2 report", description: "Collect metrics and draft slides",
-    assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: "2026-06-15",
-    tags: [], country: "KZ", task_role: "bd", priority: "high", source: "mini_app", status: "open",
-    created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
-    created_by_name: "Dev User",
-    is_private: false, owner_id: null, start_date: "2026-06-10", timeline_position: null, sprint_id: null, label_ids: [],
-    project_id: null, project_linked: false,
-  },
-  {
-    id: "2", title: "Design landing page", description: null,
-    assignees: ["Alice Smith"], assignee_telegram_ids: [789012], due_date: null,
-    tags: [], country: "PL", task_role: "marketing", priority: "med", source: "mini_app", status: "in_progress",
-    created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
-    created_by_name: "Alice Smith",
-    is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null, label_ids: [],
-    project_id: null, project_linked: false,
-  },
-  {
-    id: "3", title: "Review contracts", description: null,
-    assignees: [], assignee_telegram_ids: [], due_date: "2026-05-30",
-    tags: [], country: null, task_role: "rnd", priority: "low", source: "mini_app", status: "done",
-    created_at: new Date().toISOString(), updated_at: null, meeting_id: null, url: null, group_id: "cee",
-    created_by_name: null,
-    is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null, label_ids: [],
-    project_id: null, project_linked: false,
-  },
+  mkMock({ id: "1", title: "Prepare Q2 report", description: "Collect metrics and draft slides", due_date: "2026-06-15", country: "KZ", task_role: "bd", priority: "high" }),
+  mkMock({ id: "2", title: "Design landing page", country: "PL", task_role: "marketing", priority: "med", status: "in_progress", created_by_name: "Alice Smith" }),
+  mkMock({ id: "3", title: "Review contracts", due_date: "2026-05-30", task_role: "rnd", priority: "low", status: "done", created_by_name: null }),
+  // ── демо-дерево проекта pr1 «Swarm Brain» (для локального просмотра v2) ──
+  mkMock({ id: "p_onb", title: "Онбординг", project_id: "pr1", project_linked: true }),
+  mkMock({ id: "p_search", title: "Поиск по базе", project_id: "pr1", project_linked: true, status: "in_progress" }),
+  mkMock({ id: "p_rec", title: "Рекордер", project_id: "pr1", project_linked: true }),
+  mkMock({ id: "p_dig", title: "Дайджест", project_id: "pr1", project_linked: true, status: "done" }),
+  mkMock({ id: "p_s_country", title: "Страновой фильтр", project_id: "pr1", project_linked: true, status: "done", parent_id: "p_search" }),
+  mkMock({ id: "p_s_hybrid", title: "Гибрид-ранжирование", project_id: "pr1", project_linked: true, parent_id: "p_search" }),
+  mkMock({ id: "p_s_heart", title: "Хартбит", project_id: "pr1", project_linked: true, status: "in_progress", parent_id: "p_rec" }),
+  mkMock({ id: "p_b_csv", title: "Экспорт CSV", project_id: "pr1", project_linked: false }),
+  mkMock({ id: "p_b_i18n", title: "i18n переключатель", project_id: "pr1", project_linked: false }),
 ];
 
 let mockEntries: Entry[] = [
@@ -330,7 +333,8 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       is_private: input.is_private ?? false, owner_id: input.is_private ? MOCK_ME.telegram_id : null,
       start_date: input.start_date ?? null, timeline_position: input.timeline_position ?? null,
       sprint_id: input.sprint_id ?? null, label_ids: input.label_ids ?? [],
-      project_id: input.project_id ?? null, project_linked: false,
+      project_id: input.project_id ?? null, project_linked: input.parent_id ? true : false,
+      parent_id: input.parent_id ?? null, tree_x: input.tree_x ?? null, tree_y: input.tree_y ?? null,
     };
     mockTasks.push(newTask);
     return newTask;
@@ -355,6 +359,9 @@ export async function updateTask(id: string, fields: UpdateTaskInput): Promise<T
     if (fields.label_ids !== undefined) task.label_ids = fields.label_ids ?? [];
     if (fields.timeline_position !== undefined) task.timeline_position = fields.timeline_position ?? null;
     if (fields.project_id !== undefined) task.project_id = fields.project_id ?? null;
+    if (fields.parent_id !== undefined) task.parent_id = fields.parent_id ?? null;
+    if (fields.tree_x !== undefined) task.tree_x = fields.tree_x ?? null;
+    if (fields.tree_y !== undefined) task.tree_y = fields.tree_y ?? null;
     if ((fields as { project_linked?: boolean }).project_linked !== undefined) task.project_linked = (fields as { project_linked?: boolean }).project_linked!;
     if (fields.is_private !== undefined) {
       task.is_private = fields.is_private;

@@ -1,10 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { Project } from "@/types";
+import dynamic from "next/dynamic";
 import { fetchProjects, createProject } from "@/lib/api";
-import { ProjectSpace } from "@/components/tasks/ProjectSpace";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
+
+// react-flow — только на клиенте (SSR/static export не рендерит canvas-измерения)
+const ProjectTree = dynamic(() => import("@/components/tasks/ProjectTree").then((m) => m.ProjectTree), { ssr: false });
 
 export function ProjectsGrid() {
   const dt = useDt();
@@ -25,7 +28,7 @@ export function ProjectsGrid() {
     setActive(p);
   };
 
-  if (active) return <ProjectSpace project={active} onBack={() => { setActive(null); void load(); }} />;
+  if (active) return <ProjectTree project={active} onBack={() => { setActive(null); void load(); }} />;
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-3">
