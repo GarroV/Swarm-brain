@@ -98,6 +98,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Concern | Файлы | Детали |
 |---|---|---|
 | Жизненный цикл/виджет/аплоад/нарезка/бэкап | `recorder/Sources/SwarmRecorder/**` (`AppDelegate`,`RecorderWidget`,`UploadQueue`,`Segmenter`,`SwarmClient`) | spoke [recorder/README.md](../recorder/README.md) |
+| **Обрезка тишины перед Whisper** (речевые блоки, offset реального старта → −~60% Whisper-минут; env `SWARM_VAD_DB`/`SWARM_VAD_CUT`) | `recorder/Sources/SwarmRecorder/SilenceTrimmer.swift` + `Segmenter.segment(allowEmpty:)` | §Флоу встреч (meeting-ingest) |
 | Релиз новой сборки (тег `recorder-build-N`) | `swarm-recorder-version/index.ts` (`LATEST_BUILD`) | recorder/README.md (runbook) |
 
 ### Frontend «Рой» (веб-интерфейс, браузер/PWA) — `miniapp/src/components/roy/`

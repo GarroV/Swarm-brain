@@ -48,9 +48,54 @@ enum Segmenter {
         return out
     }
 
-    static func segment(_ url: URL) async throws -> [AudioPart] {
-        let size = fileSize(url)
+    // Обрезка тишины перед нарезкой. allowEmpty=true (mic): дорожка-тишина → пусто (не грузим её
+    // вовсе). allowEmpty=false (sys): пусто/сбой анализа → весь файл как есть (не рискуем потерять
+    // речь собеседников). Порядок реплик держит offset каждого блока — сервер прибавит его к
+    // таймстампам Whisper, серверную склейку не трогаем. См. SilenceTrimmer.
+    static func segment(_ url: URL, allowEmpty: Bool = false) async throws -> [AudioPart] {
+        guard fileSize(url) > 1024 else { return [] }
         let asset = AVURLAsset(url: url)
+        let fullDuration = (try? await asset.load(.duration).seconds) ?? 0
+
+        guard let blocks = await SilenceTrimmer.speechBlocks(url) else {
+            // Анализ не удался — старое поведение (весь файл), аудио не теряем.
+            return try await segmentBySize(url, asset: asset)
+        }
+        if blocks.isEmpty {
+            return allowEmpty ? [] : try await segmentBySize(url, asset: asset)
+        }
+        // Речь покрывает почти весь файл (плотная дорожка, sys) — не ре-экспортируем зря.
+        let speechDur = blocks.reduce(0.0) { $0 + ($1.end - $1.start) }
+        if fullDuration > 0, speechDur >= fullDuration * 0.95 {
+            return try await segmentBySize(url, asset: asset)
+        }
+        // Каждый речевой блок — отдельная часть (offset = реальный старт), длинный блок до-режем по
+        // времени (лимит wall-clock одного whisper-вызова).
+        let base = url.deletingPathExtension().lastPathComponent
+        let dir = url.deletingLastPathComponent()
+        var out: [AudioPart] = []
+        var idx = 0
+        for b in blocks {
+            let blockDur = b.end - b.start
+            if blockDur < 0.2 { continue }
+            let subCount = max(1, Int((blockDur / maxPartSeconds).rounded(.up)))
+            let subLen = blockDur / Double(subCount)
+            for j in 0 ..< subCount {
+                let s = b.start + Double(j) * subLen
+                let e = min(b.start + Double(j + 1) * subLen, b.end)
+                if e - s < 0.1 { continue }
+                let outURL = dir.appendingPathComponent("\(base).vad\(idx).m4a")
+                idx += 1
+                try await export(asset, start: s, end: e, out: outURL)
+                out.append(AudioPart(url: outURL, offset: s))
+            }
+        }
+        return out.isEmpty ? try await segmentBySize(url, asset: asset) : out
+    }
+
+    // Прежняя нарезка по размеру/времени БЕЗ обрезки тишины (fallback + плотные дорожки).
+    static func segmentBySize(_ url: URL, asset: AVURLAsset) async throws -> [AudioPart] {
+        let size = fileSize(url)
         var duration = (try? await asset.load(.duration).seconds) ?? 0
         if !duration.isFinite || duration <= 0 {
             // Длительность не прочиталась (битый moov?) — оцениваем по размеру и битрейту,

@@ -9,6 +9,12 @@
 // Деплой: supabase functions deploy swarm-recorder-version --no-verify-jwt (публичный GET, без секретов).
 
 // Держать в синхроне с recorder/VERSION (ветка main). Поднимать ПОСЛЕ мёрджа+проверки сборки.
+// build 19 (2026-08-06): ОБРЕЗКА ТИШИНЫ перед Whisper (SilenceTrimmer): mic-дорожка ~85% тишины →
+// −~60% Whisper-минут. Речевые блоки с offset реального старта (порядок реплик sys/mic цел, сервер
+// не трогаем), fallback на весь файл при сбое/плотной дорожке, пустой mic не грузится. Проверено на
+// проде: реальный бэкап 45 мин вместо 112, порядок реплик цел, тезисы качественные; живой --selftest ✅.
+// ВКЛЮЧАЕТ ранее не раскатанные build 17 (календарный конец НЕ рубит активный звонок — стоп только
+// по тишине) и build 18 (dismissedKeys с TTL вместо «навсегда»). Тег recorder-build-19.
 // build 15 (2026-07-23): ФИКС РЕГРЕССА build 14 — recWatchTick снова тикает. В 14 startCallEndWatch
 // вызывался из Task без @MainActor (после await recorder.start()) → на фоновом потоке; Timer.scheduledTimer
 // садился на мёртвый фоновый run loop → авто-стоп (тишина/календарь/крышка) и чекпоинт-ротации МОЛЧАЛИ.
@@ -30,7 +36,7 @@
 // build 4 (2026-07-09): heartbeat-мониторинг рекордера (SwarmClient.heartbeat → meeting-heartbeat;
 // сервер ловит оборванную запись / истечение токена). Тег recorder-build-4, build-app.sh ✅ (подпись валидна).
 // build 3 (2026-06-30): бэкап аудио держится до публикации в базу + потолок 3 суток. Тег recorder-build-3.
-const LATEST_BUILD = 16;
+const LATEST_BUILD = 19;
 
 Deno.serve((req: Request) => {
   if (req.method === "OPTIONS") {
