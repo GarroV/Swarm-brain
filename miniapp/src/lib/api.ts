@@ -483,7 +483,7 @@ let mockProjects: Project[] = [
 ];
 
 export async function fetchProjects(): Promise<Project[]> {
-  if (DEV_MODE) return mockProjects;
+  if (DEV_MODE) return [...mockProjects]; // копия: иначе оптимистичный append в UI дублирует (общая ссылка)
   return apiFetch<Project[]>("/projects");
 }
 

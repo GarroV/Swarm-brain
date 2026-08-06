@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   fetchTasks, updateTask, fetchSprints, createSprint, fetchMe,
   addTasksToSprint, removeTasksFromSprint, deleteSprint,
-  fetchProjects, createProject, createTask,
+  fetchProjects, createProject, createTask, updateProject, deleteProject,
 } from "@/lib/api";
 import type { Task, Sprint, Project } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
@@ -52,6 +52,7 @@ export function SprintBoard() {
   // добавление секции (= проекта)
   const [addingSection, setAddingSection] = useState(false);
   const [sectionName, setSectionName] = useState("");
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   // быстрый ввод задачи: ключ `${sectionId}` → черновик заголовка
   const [quickAdd, setQuickAdd] = useState<{ section: string; title: string } | null>(null);
   const drag = useState<DragInfo>(null); const dragRef = drag[0]; const setDrag = drag[1];
@@ -94,6 +95,20 @@ export function SprintBoard() {
     if (!name) return;
     setSectionName(""); setAddingSection(false);
     try { const p = await createProject({ name }); setProjects((prev) => [...prev, p]); } catch { load(); }
+  }
+
+  async function renameSection(id: string, name: string) {
+    const n = name.trim(); setRenaming(null);
+    if (!n) return;
+    setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, name: n } : p)));
+    try { await updateProject(id, { name: n }); } catch { load(); }
+  }
+
+  async function removeSection(id: string, name: string) {
+    if (!(await confirm({ title: `Удалить секцию «${name}»?`, description: "Задачи секции не удалятся — они уйдут в «Без секции».", confirmText: "Удалить секцию" }))) return;
+    setProjects((prev) => prev.filter((p) => p.id !== id));
+    setTasks((prev) => prev.map((t) => (t.project_id === id ? { ...t, project_id: null } : t)));
+    try { await deleteProject(id); } catch { load(); }
   }
 
   async function addTask(sectionId: string, title: string) {
@@ -194,11 +209,31 @@ export function SprintBoard() {
             <section key={sec.id} className="rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
               <div className="flex items-center gap-2 px-3 py-2 border-b border-line">
                 <RoyIcon name="board" size={14} strokeWidth={1.9} />
-                <span className="text-sm font-bold text-ink">{sec.name}</span>
+                {renaming?.id === sec.id ? (
+                  <input autoFocus value={renaming.name}
+                    onChange={(e) => setRenaming({ id: sec.id, name: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === "Enter") renameSection(sec.id, renaming.name); if (e.key === "Escape") setRenaming(null); }}
+                    onBlur={() => renameSection(sec.id, renaming.name)}
+                    className="text-sm font-bold text-ink bg-card border border-line rounded px-2 py-0.5 outline-none focus:border-primary/50" />
+                ) : (
+                  <span className="text-sm font-bold text-ink">{sec.name}</span>
+                )}
                 <span className="text-xs text-ink-soft">{secTasks.length}</span>
-                <button onClick={() => setQuickAdd({ section: sec.id, title: "" })} className="ml-auto rounded-full p-1 text-ink-soft hover:bg-surface-2" title="Добавить задачу в бэклог секции">
-                  <RoyIcon name="plus" size={14} strokeWidth={2} />
-                </button>
+                <div className="ml-auto flex items-center gap-0.5">
+                  <button onClick={() => setQuickAdd({ section: sec.id, title: "" })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title="Добавить задачу в бэклог секции">
+                    <RoyIcon name="plus" size={14} strokeWidth={2} />
+                  </button>
+                  {sec.real && (
+                    <>
+                      <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title="Переименовать секцию">
+                        <RoyIcon name="pencil" size={13} />
+                      </button>
+                      <button onClick={() => removeSection(sec.id, sec.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title="Удалить секцию">
+                        <RoyIcon name="trash" size={13} />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
               <div className="flex gap-3 p-3 overflow-x-auto">
                 {COLUMNS.map((col) => {
