@@ -20,7 +20,8 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
-import { COUNTRY_NAMES, countryName, countryFlag, countryCode } from "@/lib/countries";
+import { COUNTRY_NAMES, countryCode } from "@/lib/countries";
+import { CountryPopover } from "@/components/tasks/CountryPopover";
 import { linkify } from "@/lib/linkify";
 import { useDt } from "@/components/roy/nav";
 
@@ -76,8 +77,6 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
   // Пока в описании есть сохранённый текст — показываем его как read-only с кликабельными
   // ссылками (linkify); textarea появляется по клику. Пустое описание — сразу editable.
   const [descEditing, setDescEditing] = useState(true);
-  // Блок стран свёрнут по умолчанию (компактный триггер); грид чипов раскрывается по клику.
-  const [countryOpen, setCountryOpen] = useState(false);
   const [dueDate, setDueDate] = useState("");
   const [country, setCountry] = useState("");
   const [taskRole, setTaskRole] = useState(NONE);
@@ -104,7 +103,6 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     setDescEditing(!initialDescription.trim());
     setDueDate(task?.due_date ?? prefill?.due_date ?? "");
     setCountry(task?.country ?? prefill?.country ?? "");
-    setCountryOpen(false);
     setTaskRole(task?.task_role ?? NONE);
     const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
     setAssigneeId(cur);
@@ -353,59 +351,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
 
               <div>
                 <span className={labelCls} style={{ fontSize: 12.5 }}>Страна</span>
-                {countryOpen ? (
-                  // Раскрытый грид: выбор чипа сразу выбирает страну и сворачивает блок.
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => { setCountry(""); setCountryOpen(false); }}
-                      title="Global"
-                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-semibold transition-colors ${!country ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
-                      style={{ fontSize: 12 }}
-                    >
-                      <RoyIcon name="globe" size={13} strokeWidth={1.9} />
-                      Global
-                    </button>
-                    {countryCodes.map((code) => {
-                      const on = selectedCountryId === code;
-                      return (
-                        <button
-                          key={code}
-                          type="button"
-                          onClick={() => { setCountry(code); setCountryOpen(false); }}
-                          title={countryName(code)}
-                          className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 font-semibold transition-colors ${on ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
-                          style={{ fontSize: 12 }}
-                        >
-                          <span style={{ fontSize: 12 }}>{countryFlag(code)}</span>
-                          {countryCode(code)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  // Свёрнутый триггер: текущий выбор одним чипом; клик раскрывает грид.
-                  <button
-                    type="button"
-                    onClick={() => setCountryOpen(true)}
-                    className={`${fieldCls} flex items-center justify-between`}
-                  >
-                    <span className="flex items-center gap-1.5 truncate">
-                      {country ? (
-                        <>
-                          <span style={{ fontSize: 14 }}>{countryFlag(country)}</span>
-                          <span className="truncate">{countryName(country)}</span>
-                        </>
-                      ) : (
-                        <>
-                          <RoyIcon name="globe" size={14} strokeWidth={1.9} />
-                          <span>Global</span>
-                        </>
-                      )}
-                    </span>
-                    <RoyIcon name="cright" size={15} strokeWidth={1.9} className="shrink-0 text-ink-soft" />
-                  </button>
-                )}
+                {/* Выбор страны — контекстное меню: чип-триггер + портал-поповер с сеткой флагов. */}
+                <CountryPopover value={selectedCountryId} codes={countryCodes} onChange={setCountry} />
               </div>
 
               <div>
