@@ -15,16 +15,18 @@ export type EntryMeta = { countries: string[]; entry_type: "meeting" | "note"; e
 
 // Тег "General" — сентинел «нет конкретного рынка / широкий охват», НЕ страна.
 // digest_cron исключает General из персонального дайджеста, MCP-вывод его прячет.
-// Правило: нет рынка (0) ИЛИ широкий охват (3+) → запись КРОСС-МАРКЕТ = РОВНО ["General"]
-// (схлопываем, НЕ «список + General»: иначе такая запись всплывает в выдаче/дайджесте КАЖДОЙ
-// из перечисленных стран — это и был баг перетега). 1–2 рынка оставляем как есть.
+// Правило (порог схлопывания 2+, решение владельца 2026-08-06): РОВНО 1 явный рынок →
+// тег; 0 ИЛИ ≥2 → запись КРОСС-МАРКЕТ = РОВНО ["General"]. Схлопываем, НЕ «список + General»:
+// иначе запись всплывает в выдаче/дайджесте КАЖДОЙ из перечисленных стран — это и был баг
+// перетега. Двойной тег ([SI,RS]/[ES,HU]) редко реально про ДВА рынка → в General, правится
+// при вычитке. Подробно: docs/superpowers/specs/2026-08-06-country-attribution-consolidated.md
 export function specificCountries(countries: readonly string[]): string[] {
   return countries.filter((c) => c !== "General");
 }
 
 export function applyGeneralSentinel(countries: readonly string[]): string[] {
   const specific = specificCountries(countries);
-  if (specific.length === 0 || specific.length >= 3) return ["General"];
+  if (specific.length !== 1) return ["General"];
   return specific;
 }
 

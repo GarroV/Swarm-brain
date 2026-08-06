@@ -171,7 +171,7 @@ export async function saveEntry(
     index = { ...index, entry_type: "note" };
   }
 
-  // Кросс-маркет (0 или 3+ рынка) → ровно ["General"]; 1–2 → как есть (единый applyGeneralSentinel).
+  // Кросс-маркет (0 или ≥2 рынка) → ровно ["General"]; ровно 1 → как есть (единый applyGeneralSentinel, порог 2+).
   const specific = specificCountries(index.countries);
   const countries = applyGeneralSentinel(index.countries);
 
