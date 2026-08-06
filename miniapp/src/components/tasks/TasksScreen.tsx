@@ -12,7 +12,10 @@ const VIEWS: Array<{ id: View; label: string; icon: RoyIconName }> = [
   { id: "list", label: "Задачи", icon: "task" },
   { id: "timeline", label: "Таймлайн", icon: "timeline" },
   { id: "sprint", label: "Спринт", icon: "board" },
-  { id: "projects", label: "Проекты", icon: "graph" },
+  // Вкладка «Проекты» (react-flow дерево) временно отключена по решению владельца 2026-08-06 —
+  // код (ProjectsGrid/ProjectTree/treeGeom) оставлен для возможного возврата. Работа по проектам
+  // теперь ведётся секциями на доске «Спринт». Чтобы вернуть: раскомментировать строку ниже.
+  // { id: "projects", label: "Проекты", icon: "graph" },
 ];
 
 export function TasksScreen() {

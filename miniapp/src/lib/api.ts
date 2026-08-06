@@ -4,6 +4,7 @@ import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, A
 export type CreateTaskInput = {
   title: string;
   description?: string | null;
+  status?: string;
   due_date?: string | null;
   assignee_telegram_id?: number | null;
   country?: string | null;
@@ -327,7 +328,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       id: Date.now().toString(), title: input.title, description: input.description ?? null,
       assignees: [], assignee_telegram_ids: input.assignee_telegram_id ? [input.assignee_telegram_id] : [],
       due_date: input.due_date ?? null, tags: input.tags ?? [], country: input.country ?? null,
-      task_role: input.task_role ?? null, priority: input.priority ?? null, source: "mini_app", status: "open",
+      task_role: input.task_role ?? null, priority: input.priority ?? null, source: "mini_app", status: input.status ?? "open",
       created_at: new Date().toISOString(), updated_at: null, meeting_id: input.meeting_id ?? null, url: null, group_id: "cee",
       created_by_name: MOCK_ME.name,
       is_private: input.is_private ?? false, owner_id: input.is_private ? MOCK_ME.telegram_id : null,
