@@ -21,6 +21,11 @@ function plural(n: number): string {
   return "задач";
 }
 
+// Инлайн быстрое добавление («Новое напоминание» внизу списка) временно скрыто по просьбе
+// владельца (2026-08-06): функционал заметок вернётся позже. Флаг сохраняет весь код готовым
+// к возврату — включить = поставить true.
+const SHOW_INLINE_QUICK_ADD = false;
+
 // Десктопный Reminders-вид «Список»: рельс смарт-списков слева + спокойный чек-лист справа.
 export function RemindersTasks() {
   const r = useReminderTasks();
@@ -173,8 +178,8 @@ export function RemindersTasks() {
 
           {!r.loading && !grouped && visibleRows.map(renderRow)}
 
-          {/* Инлайн быстрое добавление */}
-          {!r.loading && (isLabelView || r.activeList !== "done") && (
+          {/* Инлайн быстрое добавление (временно скрыто, см. SHOW_INLINE_QUICK_ADD) */}
+          {SHOW_INLINE_QUICK_ADD && !r.loading && (isLabelView || r.activeList !== "done") && (
             <label className="mt-1 flex items-center gap-3 px-1 py-3 text-ink-soft">
               <span className="flex size-[22px] shrink-0 items-center justify-center rounded-full border-2 border-primary text-primary">
                 <RoyIcon name="plus" size={13} strokeWidth={2.4} />

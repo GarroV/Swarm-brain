@@ -9,7 +9,7 @@ import { ProjectsGrid } from "@/components/tasks/ProjectsGrid";
 type View = "list" | "timeline" | "sprint" | "projects";
 
 const VIEWS: Array<{ id: View; label: string; icon: RoyIconName }> = [
-  { id: "list", label: "Список", icon: "task" },
+  { id: "list", label: "Задачи", icon: "task" },
   { id: "timeline", label: "Таймлайн", icon: "timeline" },
   { id: "sprint", label: "Спринт", icon: "board" },
   { id: "projects", label: "Проекты", icon: "graph" },
