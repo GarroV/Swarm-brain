@@ -115,10 +115,28 @@ export function SprintBoard() {
     const t = title.trim();
     if (!t) { setQuickAdd(null); return; }
     setQuickAdd(null);
-    const project_id = sectionId === NO_SECTION ? undefined : sectionId;
-    const sprint_id = selected === BACKLOG ? undefined : selected;
-    try { await createTask({ title: t, status: "backlog", project_id, sprint_id }); await load(); }
-    catch { load(); }
+    const project_id = sectionId === NO_SECTION ? null : sectionId;
+    const sprint_id = selected === BACKLOG ? null : selected;
+    // Оптимистично: карточка появляется МГНОВЕННО (без ожидания сети), createTask — в фоне,
+    // ответом заменяем временную на реальную; при ошибке — откат. Раньше ждали create+полный
+    // рефетч → задержка появления.
+    const tempId = "temp-" + Date.now();
+    const optimistic: Task = {
+      id: tempId, title: t, description: null, assignees: [], assignee_telegram_ids: [],
+      due_date: null, tags: [], country: null, task_role: null, priority: null, source: "mini_app",
+      status: "backlog", created_at: new Date().toISOString(), updated_at: null, meeting_id: null,
+      url: null, group_id: null, created_by_name: null, is_private: false, owner_id: null,
+      start_date: null, timeline_position: null, sprint_id, label_ids: [], project_id,
+      project_linked: false, parent_id: null, tree_x: null, tree_y: null,
+    };
+    setTasks((prev) => [optimistic, ...prev]);
+    try {
+      const created = await createTask({ title: t, status: "backlog", project_id: project_id ?? undefined, sprint_id: sprint_id ?? undefined });
+      // заменяем временную на реальную; фильтруем и temp, и возможный дубль created.id (страховка)
+      setTasks((prev) => [created, ...prev.filter((x) => x.id !== tempId && x.id !== created.id)]);
+    } catch {
+      setTasks((prev) => prev.filter((x) => x.id !== tempId)); // откат
+    }
   }
 
   async function submitSprint() {
