@@ -183,6 +183,18 @@ function ProjectTreeInner({ project, onBack }: Props) {
   const load = useCallback(async () => setTasks(await fetchTasks({ project_id: project.id })), [project.id]);
   useEffect(() => { void load(); }, [load]);
 
+  // Добавилась задача (создали идею) → показать её: авто-fitView, иначе новый бэклог-узел
+  // кладётся в лоток слева и оказывается за краем текущего (приближённого) вида — «не появляется».
+  const prevCount = useRef(0);
+  useEffect(() => {
+    if (prevCount.current > 0 && tasks.length > prevCount.current) {
+      const id = setTimeout(() => rf.fitView({ duration: 400, padding: 0.25 }), 90);
+      prevCount.current = tasks.length;
+      return () => clearTimeout(id);
+    }
+    prevCount.current = tasks.length;
+  }, [tasks, rf]);
+
   // строим узлы/рёбра из задач, сохраняя ручные позиции
   useEffect(() => {
     const linked = tasks.filter((t) => t.project_linked);
