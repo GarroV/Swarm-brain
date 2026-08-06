@@ -1,12 +1,14 @@
 "use client";
 // Быстрые действия в строке задачи: СРОК / ИСПОЛНИТЕЛЬ / РЫНОК / СПИСКИ без открытия карточки.
-// Срок — DatePicker (compact); исполнитель — QuickPickPopover; рынок — пиктограммы-флаги
-// (PictogramPicker, single, «Global» = пусто); списки — пиктограммы-метки (PictogramPicker, multi).
+// Срок — DatePicker (compact); исполнитель — QuickPickPopover; страна — CountryPopover
+// (variant="icon", сетка флагов, единый компонент с формой TaskModal); списки — пиктограммы-метки
+// (PictogramPicker, multi).
 // Каждый выбор МГНОВЕННО патчит задачу локально (onPatch) и уже фоном шлёт PATCH + reload.
 import { DatePicker } from "@/components/ui/DatePicker";
 import { QuickPickPopover } from "@/components/tasks/QuickPickPopover";
-import { PictogramPicker, type PictoOption } from "@/components/tasks/PictogramPicker";
-import { COUNTRY_NAMES, countryName, countryFlag } from "@/lib/countries";
+import { PictogramPicker } from "@/components/tasks/PictogramPicker";
+import { CountryPopover } from "@/components/tasks/CountryPopover";
+import { COUNTRY_NAMES } from "@/lib/countries";
 import { updateTask, type UpdateTaskInput, type TaskLabel } from "@/lib/api";
 import { displayName } from "@/lib/utils";
 import type { RoyIconName } from "@/components/roy/icons";
@@ -19,10 +21,6 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
   // Текущий рынок задачи добавляется, если его нет в списке (легаси-значение), чтобы выбор не «потерялся».
   const codes = markets.length ? [...markets] : Object.keys(COUNTRY_NAMES);
   if (task.country && !codes.includes(task.country)) codes.push(task.country);
-  const marketOpts: PictoOption[] = [
-    { id: "", label: "Global", icon: "globe" },
-    ...codes.map((code) => ({ id: code, label: countryName(code), flag: countryFlag(code) })),
-  ];
 
   // Оптимистично: сразу патчим строку локально, затем персист + сверка (reload).
   const commit = async (fields: UpdateTaskInput, patch: Partial<Task>) => {
@@ -47,13 +45,11 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
         options={users.map((u) => ({ id: String(u.telegram_id), label: displayName(u.name) }))}
         onPick={(id) => commit({ assignee_telegram_id: id ? Number(id) : null }, { assignee_telegram_ids: id ? [Number(id)] : [] })}
       />
-      <PictogramPicker
-        triggerIcon="globe"
-        ariaLabel="Рынок"
-        multi={false}
-        options={marketOpts}
-        selected={task.country ? [task.country] : [""]}
-        onToggle={(code) => commit({ country: code || null }, { country: code || null })}
+      <CountryPopover
+        variant="icon"
+        value={task.country ?? ""}
+        codes={codes}
+        onChange={(code) => commit({ country: code || null }, { country: code || null })}
       />
       {labels.length > 0 && (
         <PictogramPicker

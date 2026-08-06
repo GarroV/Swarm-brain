@@ -12,11 +12,14 @@ type Props = {
   value: string;                 // id выбранной страны ("" = Global)
   codes: string[];               // коды стран для сетки (рынки воркспейса)
   onChange: (id: string) => void;
+  // Триггер: "chip" — чип с текущей страной (форма); "icon" — компактная иконка-глобус
+  // (плотная строка задачи). Тело поповера (сетка флагов) одинаково в обоих случаях.
+  variant?: "chip" | "icon";
 };
 
 const W = 288, H = 300;
 
-export function CountryPopover({ value, codes, onChange }: Props) {
+export function CountryPopover({ value, codes, onChange, variant = "chip" }: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -53,46 +56,66 @@ export function CountryPopover({ value, codes, onChange }: Props) {
   }, [open, place]);
 
   const pick = (id: string) => { onChange(id); setOpen(false); };
+  // stopPropagation: в строке задачи клик не должен всплывать в открытие карточки / съедаться свайпом.
+  const toggle = (e: { stopPropagation: () => void }) => { e.stopPropagation(); setOpen((o) => !o); };
 
   return (
     <>
-      {/* Чип-триггер: текущая страна одной строкой; клик открывает сетку */}
-      <button
-        ref={btnRef}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-1.5 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
-          value
-            ? "border-primary bg-accent-soft text-accent-ink"
-            : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"
-        }`}
-        style={{ fontSize: 13 }}
-      >
-        {value ? (
-          <>
-            <span style={{ fontSize: 15 }}>{countryFlag(value)}</span>
-            <span className="truncate">{countryName(value)}</span>
-          </>
-        ) : (
-          <>
-            <RoyIcon name="globe" size={14} strokeWidth={1.9} />
-            <span>Global</span>
-          </>
-        )}
-        <RoyIcon
-          name="cright"
-          size={13}
-          strokeWidth={1.9}
-          className={`shrink-0 text-ink-mute transition-transform ${open ? "-rotate-90" : "rotate-90"}`}
-        />
-      </button>
+      {variant === "icon" ? (
+        // Иконка-триггер (плотная строка задачи): глобус, подсвечен при выбранной стране.
+        <button
+          ref={btnRef}
+          type="button"
+          aria-label="Страна"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={toggle}
+          className="flex items-center justify-center rounded-[9px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          style={{ width: 26, height: 26, color: value ? "var(--accent-ink)" : "var(--ink-soft)" }}
+        >
+          {value ? <span style={{ fontSize: 15 }}>{countryFlag(value)}</span> : <RoyIcon name="globe" size={15} strokeWidth={1.9} />}
+        </button>
+      ) : (
+        // Чип-триггер (форма): текущая страна одной строкой; клик открывает сетку.
+        <button
+          ref={btnRef}
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={toggle}
+          className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-1.5 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+            value
+              ? "border-primary bg-accent-soft text-accent-ink"
+              : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"
+          }`}
+          style={{ fontSize: 13 }}
+        >
+          {value ? (
+            <>
+              <span style={{ fontSize: 15 }}>{countryFlag(value)}</span>
+              <span className="truncate">{countryName(value)}</span>
+            </>
+          ) : (
+            <>
+              <RoyIcon name="globe" size={14} strokeWidth={1.9} />
+              <span>Global</span>
+            </>
+          )}
+          <RoyIcon
+            name="cright"
+            size={13}
+            strokeWidth={1.9}
+            className={`shrink-0 text-ink-mute transition-transform ${open ? "-rotate-90" : "rotate-90"}`}
+          />
+        </button>
+      )}
 
       {open && pos && createPortal(
         <div
           ref={popRef}
           role="menu"
+          onPointerDown={(e) => e.stopPropagation()}
           style={{ position: "fixed", left: pos.left, top: pos.top, width: W, maxHeight: H }}
           className="z-[100] flex flex-col overflow-hidden rounded-xl border border-line bg-card shadow-xl dark:backdrop-blur-lg"
         >
