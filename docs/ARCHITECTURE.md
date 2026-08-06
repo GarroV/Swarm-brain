@@ -237,9 +237,10 @@ content + [existingSummary?]
       правила страны/типа — из _shared/countries.ts (COUNTRY_PROMPT_RULE / ENTRY_TYPE_PROMPT_RULE),
       единый источник для swarm-bot/swarm-mcp/swarm-api (детерминизм, без якоря на одну страну)
   → General tag (applyGeneralSentinel, _shared/meta-extract.ts — единый для swarm-bot/swarm-api/read-ai):
-      0 ИЛИ >= 3 рынка (кросс-маркет/HQ/1:1) → РОВНО ["General"] (СХЛОПЫВАЕМ, НЕ список+General:
-      иначе запись всплывала в выдаче/дайджесте КАЖДОЙ перечисленной страны — баг перетега, чинён 2026-07-31);
-      1–2 рынка → как есть
+      РОВНО 1 рынок → тег; 0 ИЛИ >= 2 рынка (кросс-маркет/HQ/1:1) → РОВНО ["General"] (СХЛОПЫВАЕМ, НЕ список+General:
+      иначе запись всплывала в выдаче/дайджесте КАЖДОЙ перечисленной страны — баг перетега, чинён 2026-07-31;
+      порог 3→2 — решение владельца 2026-08-06, двойные теги тоже схлопываются, см.
+      docs/superpowers/specs/2026-08-06-country-attribution-consolidated.md)
   → embedding на обогащённом тексте:
       "${summary}\nСтраны: ${specific}\nКлючевые слова: ${keywords}"
   → INSERT entries

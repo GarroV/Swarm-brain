@@ -80,7 +80,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Concern | Файлы | Детали |
 |---|---|---|
 | RAG / гибридный поиск (full-text+вектор RRF; **страна = ФИЛЬТР** когда названа в запросе — только её записи + `General`, чужие отсекаются; + буст свежести) / matchEntries → RPC `match_entries_hybrid` (миграция `20260730120000`) | `_shared/search.ts` (+ `swarm-api` `/search`,`/ask`,`/digest`); детект страны `_shared/countries.ts` `detectQueryCountry` (понимает русские склонения: «Сербии»/«Сербией», без ложных «индикатор»/«грузить») | §swarm-api |
-| Классификация стран (правило + **схлопывание** кросс-маркета 3+/0 → `General`) | `_shared/countries.ts` (`COUNTRY_PROMPT_RULE`), `_shared/meta-extract.ts` (`applyGeneralSentinel`) | §Флоу сохранения |
+| Классификация стран (правило + **схлопывание** кросс-маркета: ровно 1 рынок → тег, 0 или **2+** → `General`; порог 3→2 с 2026-08-06) | `_shared/countries.ts` (`COUNTRY_PROMPT_RULE`), `_shared/meta-extract.ts` (`applyGeneralSentinel`); дизайн `docs/superpowers/specs/2026-08-06-country-attribution-consolidated.md` | §Флоу сохранения |
 
 ### Встречи — запись → транскрибация → тезисы → ревью
 | Concern | Файлы | Детали |
