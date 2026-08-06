@@ -20,6 +20,8 @@ export type CreateTaskInput = {
   label_ids?: string[];
   project_id?: string | null;
   parent_id?: string | null;
+  tree_x?: number | null;
+  tree_y?: number | null;
 };
 
 export type UpdateTaskInput = Partial<CreateTaskInput> & { status?: string; project_linked?: boolean };
@@ -116,7 +118,7 @@ function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
     meeting_id: null, url: null, group_id: "cee", created_by_name: o.created_by_name ?? "Dev User",
     is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null,
     label_ids: [], project_id: o.project_id ?? null, project_linked: o.project_linked ?? false,
-    parent_id: o.parent_id ?? null,
+    parent_id: o.parent_id ?? null, tree_x: o.tree_x ?? null, tree_y: o.tree_y ?? null,
   };
 }
 let mockTasks: Task[] = [
@@ -332,7 +334,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       start_date: input.start_date ?? null, timeline_position: input.timeline_position ?? null,
       sprint_id: input.sprint_id ?? null, label_ids: input.label_ids ?? [],
       project_id: input.project_id ?? null, project_linked: input.parent_id ? true : false,
-      parent_id: input.parent_id ?? null,
+      parent_id: input.parent_id ?? null, tree_x: input.tree_x ?? null, tree_y: input.tree_y ?? null,
     };
     mockTasks.push(newTask);
     return newTask;
@@ -358,6 +360,8 @@ export async function updateTask(id: string, fields: UpdateTaskInput): Promise<T
     if (fields.timeline_position !== undefined) task.timeline_position = fields.timeline_position ?? null;
     if (fields.project_id !== undefined) task.project_id = fields.project_id ?? null;
     if (fields.parent_id !== undefined) task.parent_id = fields.parent_id ?? null;
+    if (fields.tree_x !== undefined) task.tree_x = fields.tree_x ?? null;
+    if (fields.tree_y !== undefined) task.tree_y = fields.tree_y ?? null;
     if ((fields as { project_linked?: boolean }).project_linked !== undefined) task.project_linked = (fields as { project_linked?: boolean }).project_linked!;
     if (fields.is_private !== undefined) {
       task.is_private = fields.is_private;

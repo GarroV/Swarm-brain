@@ -190,6 +190,9 @@ function ProjectTreeInner({ project, onBack }: Props) {
     // Бэклог НЕ хранит ручных позиций — всегда аккуратная стопка в фикс. лотке слева от дерева
     // (иначе новые идеи уползали всё правее). Удаляем их из saved до сида дерева.
     backlog.forEach((t) => posRef.current.delete(t.id));
+    // Сохранённые в БД позиции (tree_x/tree_y) — восстанавливают раскладку после перезагрузки,
+    // если узел ещё не двигали локально в этой сессии.
+    linked.forEach((t) => { if (t.tree_x != null && t.tree_y != null && !posRef.current.has(t.id)) posRef.current.set(t.id, { x: t.tree_x, y: t.tree_y }); });
     // Уже отрисованные узлы дерева НЕ двигаем: берём их живую позицию из RF в saved до сида.
     // Иначе при смене структуры (коннект) пересборка массива на 1 кадр давала «прыжок в сторону
     // и возврат» — d3-сид присваивал узлу слот, пока не подхватывалась сохранённая позиция.
@@ -276,29 +279,33 @@ function ProjectTreeInner({ project, onBack }: Props) {
     });
   }, [closest, tasks, setEdges]);
 
-  // отпустил: близко к узлу → коннект (подзадача); в пустоте → разрыв (в бэклог)
+  // отпустил: близко к узлу → коннект (подзадача); в пустоте → разрыв (в бэклог); позицию — в БД (tree_x/tree_y)
   const onNodeDragStop: OnNodeDrag = useCallback((_e, node) => {
     setEdges((prev) => prev.filter((e) => e.id !== "__preview__"));
-    // групповое перемещение — только сохранить позиции, без магнита
-    if (multiSelected()) { rf.getNodes().forEach((n) => { if (n.selected) posRef.current.set(n.id, n.position); }); return; }
+    // групповое перемещение — сохранить позиции всех выделенных (локально + в БД)
+    if (multiSelected()) {
+      rf.getNodes().forEach((n) => { if (n.selected) { posRef.current.set(n.id, n.position); if (n.id !== ROOT_ID) void updateTask(n.id, { tree_x: n.position.x, tree_y: n.position.y }); } });
+      return;
+    }
     posRef.current.set(node.id, node.position);
     if (node.id === ROOT_ID) return;
     const cur = tasks.find((t) => t.id === node.id);
     if (!cur) return;
+    const savePos = { tree_x: node.position.x, tree_y: node.position.y };
     const near = closest(node.id, node.position);
     const speed = speedRef.current;
     speedRef.current = 0; sampleBufRef.current = []; // сброс для следующего жеста
     if (near) {
-      // связать — всегда охотно, без порога скорости (это желаемое действие, не защищаемое от случайности)
+      // связать — всегда охотно, без порога скорости (желаемое действие, не защищаемое от случайности)
       const parent_id = near.id === ROOT_ID ? null : near.id;
-      if (cur.project_linked && (cur.parent_id ?? null) === parent_id) return;
+      if (cur.project_linked && (cur.parent_id ?? null) === parent_id) { void updateTask(node.id, savePos); return; }
       flash(node.id, "rf-pop", `e-${near.id}-${node.id}`);
       setTasks((prev) => prev.map((t) => (t.id === node.id ? { ...t, project_linked: true, parent_id } : t)));
-      updateTask(node.id, { project_linked: true, parent_id }).then(load).catch(load);
+      updateTask(node.id, { project_linked: true, parent_id, ...savePos }).then(load).catch(load);
     } else if (cur.project_linked) {
-      // не рядом ни с кем: рвём связь ТОЛЬКО на резком движении (рывок). Медленно отставил подальше
-      // просто переставить карточку — связь держится, ребро тянется следом.
-      if (speed < YANK_SPEED) return;
+      // не рядом ни с кем: рвём связь ТОЛЬКО на резком движении (рывок). Медленно отставил подальше —
+      // просто переставить карточку: связь держится, позиция сохраняется.
+      if (speed < YANK_SPEED) { void updateTask(node.id, savePos); return; }
       flash(node.id, "rf-off");
       setTasks((prev) => prev.map((t) => (t.id === node.id ? { ...t, project_linked: false, parent_id: null } : t)));
       updateTask(node.id, { project_linked: false, parent_id: null }).then(load).catch(load);
@@ -307,7 +314,7 @@ function ProjectTreeInner({ project, onBack }: Props) {
 
   // групповое перетаскивание (выделенная рамкой группа) — сохранить позиции всех
   const onSelectionDragStop = useCallback((_e: React.MouseEvent, dragged: Node[]) => {
-    dragged.forEach((n) => posRef.current.set(n.id, n.position));
+    dragged.forEach((n) => { posRef.current.set(n.id, n.position); if (n.id !== ROOT_ID) void updateTask(n.id, { tree_x: n.position.x, tree_y: n.position.y }); });
   }, []);
 
   // ручное связывание: протянул от узла к узлу (край) → target становится подзадачей source
