@@ -27,6 +27,9 @@ export type Task = {
   label_ids: string[];
   project_id: string | null;
   project_linked: boolean;
+  parent_id: string | null;
+  tree_x: number | null;
+  tree_y: number | null;
 };
 
 export type TaskInput = {
@@ -54,6 +57,9 @@ export type TaskInput = {
   label_ids?: string[];
   project_id?: string | null;
   project_linked?: boolean;
+  parent_id?: string | null;
+  tree_x?: number | null;
+  tree_y?: number | null;
 };
 
 // ── Спринты ───────────────────────────────────────────────────────────────────

@@ -31,6 +31,9 @@ export async function createTask(input: TaskInput, groupId?: string): Promise<Ta
     label_ids: input.label_ids ?? [],
     project_id: input.project_id ?? null,
     project_linked: input.project_linked ?? false,
+    parent_id: input.parent_id ?? null,
+    tree_x: input.tree_x ?? null,
+    tree_y: input.tree_y ?? null,
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Task;

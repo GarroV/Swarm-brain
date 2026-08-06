@@ -530,6 +530,12 @@ Deno.serve(async (req: Request) => {
       if (projectId && !(await projectInWorkspace(projectId, groupId))) {
         return apiErr(400, "project_id не найден в этом воркспейсе", origin);
       }
+      // parent_id при создании (подзадача): родитель того же воркспейса. Если задан — форсим project_linked.
+      const parentId = (body.parent_id as string | null) ?? null;
+      if (parentId) {
+        const { data: par } = await supabase.from("tasks").select("id, project_id, group_id").eq("id", parentId).maybeSingle();
+        if (!par || par.group_id !== groupId) return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
+      }
 
       // IDOR-guard: meeting_id — это entry.id. Принимаем, только если эта запись видна
       // запросившему (воркспейс + приватность через getEntrySecure), иначе задачу можно
@@ -564,7 +570,10 @@ Deno.serve(async (req: Request) => {
         start_date: startDate,
         sprint_id: sprintId,
         project_id: projectId,
-        project_linked: body.project_linked === true,
+        project_linked: body.project_linked === true || !!parentId,
+        parent_id: parentId,
+        tree_x: typeof body.tree_x === "number" ? body.tree_x : null,
+        tree_y: typeof body.tree_y === "number" ? body.tree_y : null,
         timeline_position: typeof body.timeline_position === "number" ? body.timeline_position : null,
         tags: Array.isArray(body.tags) ? (body.tags as string[]) : undefined,
       };
@@ -667,7 +676,31 @@ Deno.serve(async (req: Request) => {
           return apiErr(400, "project_linked требует project_id", origin);
         }
         fields.project_linked = body.project_linked;
+        if (!body.project_linked) fields.parent_id = null; // ушла из дерева → без родителя
       }
+
+      // parent_id (подзадача) + защита от цикла
+      if ("parent_id" in body) {
+        const rawParent = body.parent_id as string | null;
+        if (rawParent) {
+          if (rawParent === taskId) return apiErr(400, "задача не может быть подзадачей самой себя", origin);
+          const { data: par } = await supabase.from("tasks").select("id, group_id").eq("id", rawParent).maybeSingle();
+          if (!par || par.group_id !== groupId) return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
+          // цикл: rawParent не должен быть потомком текущей задачи (идём вверх по parent_id)
+          const { data: proj } = await supabase.from("tasks").select("id, parent_id").eq("group_id", groupId).eq("project_id", task.project_id ?? " ");
+          const parents = new Map(((proj ?? []) as Array<{ id: string; parent_id: string | null }>).map((t) => [t.id, t.parent_id]));
+          let cur: string | null = rawParent, guard = 0;
+          while (cur && guard++ < 1000) { if (cur === taskId) return apiErr(400, "нельзя привязать к своему потомку (цикл)", origin); cur = parents.get(cur) ?? null; }
+          fields.parent_id = rawParent;
+          fields.project_linked = true; // подзадача всегда в дереве
+        } else {
+          fields.parent_id = null;
+        }
+      }
+
+      // ручные координаты узла в дереве
+      if (typeof body.tree_x === "number") fields.tree_x = body.tree_x;
+      if (typeof body.tree_y === "number") fields.tree_y = body.tree_y;
 
       // Валидация дат с учётом итогового состояния (новое значение или текущее)
       const effStart = "start_date" in fields ? fields.start_date : task.start_date;
@@ -690,6 +723,18 @@ Deno.serve(async (req: Request) => {
 
       try {
         await updateTask(taskId, fields);
+        // Каскад: если задача ушла из дерева (project_linked=false) — её поддерево тоже в бэклог
+        // (иначе висели бы подзадачи с родителем-в-бэклоге, нарушая инвариант дерева).
+        if (fields.project_linked === false) {
+          const { data: proj } = await supabase.from("tasks").select("id, parent_id").eq("group_id", groupId).eq("project_id", task.project_id ?? " ");
+          const kids = new Map<string, string[]>();
+          ((proj ?? []) as Array<{ id: string; parent_id: string | null }>).forEach((t) => { if (t.parent_id) { const a = kids.get(t.parent_id) ?? []; a.push(t.id); kids.set(t.parent_id, a); } });
+          const subtree: string[] = []; const stack = [taskId];
+          while (stack.length) { const id = stack.pop()!; for (const c of kids.get(id) ?? []) { subtree.push(c); stack.push(c); } }
+          if (subtree.length) {
+            await supabase.from("tasks").update({ project_linked: false, parent_id: null, updated_at: new Date().toISOString() }).in("id", subtree).eq("group_id", groupId);
+          }
+        }
         const updated = await getTask(taskId);
         return json(updated, 200, origin);
       } catch (e) {
