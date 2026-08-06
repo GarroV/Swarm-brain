@@ -1,0 +1,105 @@
+# Расширенные geo-синонимы (название страны + национальность) для keys_all.yaml.
+# Готовы заменить блок strong.geo в каждой стране.
+#
+# ПРАВИЛА, чтобы не раздувать зря:
+# - Русские СКЛОНЕНИЯ не перечисляем — их добирает stem() в match2.py
+#   («Венгрия» ловит «Венгрии/Венгрией», «венгерский» → «венгерская/венгерские»).
+#   Поэтому здесь только БАЗОВЫЕ формы.
+# - Голые ISO-коды (HU, RS, PL) СЮДА НЕ кладём — в теле текста дадут ложные срабатывания
+#   («HUb», «ROI»). Код в ЗАГОЛОВКЕ ловится отдельным title-правилом (сильный сигнал).
+# - Классы помечены комментарием: [RU] [эндоним] [EN] [translit/искажение] [экзоним].
+#   translit/экзонимы сейчас скорее всего 0 попаданий (база — чистая русская речь одного
+#   спикера) — это страховка на будущие искажения STT и встречи коллег. Отчёт «попадания
+#   на ключ» по живой базе покажет, какие реально стреляют.
+# - Всё это geo (вес 2). Коллизий между странами в этих формах нет.
+
+RS:  # Сербия
+  geo: [Сербия, сербский, серб, сербы, сербка,                       # [RU]
+        Србија, Srbija, српски, srpski, Srbin, Srbi,                 # [эндоним]
+        Serbia, Serbian, Serbs,                                      # [EN]
+        Сербиа, Србия, Сербья,                                       # [translit/искажение]
+        Serbien, Sırbistan, Serbie]                                  # [экзоним: de/tr/fr]
+
+SI:  # Словения
+  geo: [Словения, словенский, словенец, словенцы, словенка,          # [RU]
+        Slovenija, slovenski, Slovenec, Slovenci,                    # [эндоним]
+        Slovenia, Slovenian, Slovene,                                # [EN]
+        Словениа, Словенья, Слувения,                                # [translit/искажение]
+        Slowenien, Slovénie]                                         # [экзоним: de/fr]
+
+HR:  # Хорватия
+  geo: [Хорватия, хорватский, хорват, хорваты, хорватка,             # [RU]
+        Hrvatska, hrvatski, Hrvat, Hrvati,                           # [эндоним]
+        Croatia, Croatian, Croat, Croats,                            # [EN]
+        Хрватска, Кроатия, Хорватья,                                 # [translit/искажение]
+        Kroatien, Croatie]                                           # [экзоним: de/fr]
+
+ME:  # Черногория
+  geo: [Черногория, черногорский, черногорец, черногорцы,            # [RU]
+        "Crna Gora", "Црна Гора", crnogorski, Crnogorac,             # [эндоним]
+        Montenegro, Montenegrin, Montenegrins,                       # [EN]
+        Монтенегро, "Черна Гора", Черногориа,                        # [translit/искажение]
+        Montenegró, Monténégro]                                      # [экзоним: hu/fr]
+
+EE:  # Эстония
+  geo: [Эстония, эстонский, эстонец, эстонцы, эстонка,               # [RU]
+        Eesti, eestlane, eesti,                                      # [эндоним]
+        Estonia, Estonian, Estonians,                                # [EN]
+        Эстониа, Ээсти, Эстонья,                                     # [translit/искажение]
+        Estland, Estonie]                                            # [экзоним: de/fr]
+
+LT:  # Литва
+  geo: [Литва, литовский, литовец, литовцы, литовка,                 # [RU]
+        Lietuva, lietuvis, lietuvių, lietuviškas,                    # [эндоним]
+        Lithuania, Lithuanian, Lithuanians,                          # [EN]
+        Литуания, Лиетува, Литвания,                                 # [translit/искажение]
+        Litauen, Lituanie]                                           # [экзоним: de/fr]
+
+PL:  # Польша
+  geo: [Польша, польский, поляк, поляки, полька,                     # [RU]
+        Polska, polski, Polak, Polacy,                               # [эндоним]
+        Poland, Polish, Poles, Pole,                                 # [EN]
+        Полска, Поланд, Польща,                                      # [translit/искажение]
+        Polen, Pologne]                                              # [экзоним: de/fr]
+
+RO:  # Румыния
+  geo: [Румыния, румынский, румын, румыны, румынка,                  # [RU]
+        România, român, Român, români, românesc,                    # [эндоним]
+        Romania, Romanian, Romanians,                                # [EN]
+        Романия, Ромыния, Румыниа,                                   # [translit/искажение]
+        Rumänien, Roumanie]                                          # [экзоним: de/fr]
+
+BG:  # Болгария
+  geo: [Болгария, болгарский, болгарин, болгары, болгарка,           # [RU]
+        България, български, bulgarski, българин,                    # [эндоним]
+        Bulgaria, Bulgarian, Bulgarians,                             # [EN]
+        Булгария, Балгария, Болгариа,                                # [translit/искажение]
+        Bulgarien, Bulgarie]                                         # [экзоним: de/fr]
+
+CY:  # Кипр
+  geo: [Кипр, кипрский, киприот, киприоты, кипрская,                 # [RU]
+        Κύπρος, Kypros, κυπριακός, Kıbrıs,                           # [эндоним: gr/tr]
+        Cyprus, Cypriot, Cypriots,                                   # [EN]
+        Сайпрус, Кипрос, Киприэт,                                    # [translit/искажение]
+        Zypern, Chypre]                                              # [экзоним: de/fr]
+
+ES:  # Испания
+  geo: [Испания, испанский, испанец, испанцы, испанка,               # [RU]
+        España, Espana, español, espanol, españoles,                # [эндоним]
+        Spain, Spanish, Spaniard, Spaniards,                         # [EN]
+        Эспания, Спейн, Испаниа,                                     # [translit/искажение]
+        Spanien, Espagne, Espagnol]                                  # [экзоним: de/fr]
+
+HU:  # Венгрия
+  geo: [Венгрия, венгерский, венгр, венгры, венгерка,                # [RU]
+        Magyarország, magyar, Magyar, magyarok, magyarul,            # [эндоним]
+        Hungary, Hungarian, Hungarians,                              # [EN]
+        Мадьяр, Мадьярия, мадьярский, Хунгари, Хунгария, Хангари,    # [translit/искажение]
+        Ungarn, Hongrie, Hungría]                                    # [экзоним: de/fr/es]
+
+MD:  # Молдова
+  geo: [Молдова, Молдавия, молдавский, молдаванин, молдаване, молдаванка,  # [RU]
+        Moldova, moldovenesc, moldovean, moldoveni,                        # [эндоним]
+        Moldovan, Moldovans, Moldavia,                                     # [EN]
+        Молдовэ, Молдовиа, Молдаваниа,                                     # [translit/искажение]
+        Moldawien, Moldavie]                                               # [экзоним: de/fr]
