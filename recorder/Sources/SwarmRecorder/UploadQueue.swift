@@ -236,7 +236,7 @@ actor UploadQueue {
             // Per-part offset — только внутри mic-дорожки (нарезка Segmenter'ом). Глобальный
             // сдвиг mic↔system (micStartOffset) применяет СЕРВЕР при сведении (он пришёл в claim),
             // здесь его НЕ прибавляем — иначе сдвиг учтётся дважды.
-            micParts = try await Segmenter.segment(micURL)
+            micParts = try await Segmenter.segment(micURL, allowEmpty: true)
         }
 
         let client = SwarmClient(config: config)
