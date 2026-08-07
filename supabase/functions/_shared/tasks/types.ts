@@ -102,10 +102,12 @@ export type Project = {
   emoji: string | null;
   created_by: number | null;
   created_at: string;
+  parent_id: string | null;
 };
 
 export type ProjectInput = {
   name: string;
   color?: string | null;
   emoji?: string | null;
+  parent_id?: string | null;
 };
