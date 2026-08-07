@@ -12,10 +12,10 @@ const VIEWS: Array<{ id: View; label: string; icon: RoyIconName }> = [
   { id: "list", label: "Задачи", icon: "task" },
   { id: "timeline", label: "Таймлайн", icon: "timeline" },
   { id: "sprint", label: "Проекты", icon: "board" },
-  // Вкладка «Проекты» (react-flow дерево) временно отключена по решению владельца 2026-08-06 —
+  // Старые проекты (react-flow дерево) временно отключены по решению владельца 2026-08-06 —
   // код (ProjectsGrid/ProjectTree/treeGeom) оставлен для возможного возврата. Работа по проектам
-  // теперь ведётся секциями на доске «Спринт». Чтобы вернуть: раскомментировать строку ниже.
-  // { id: "projects", label: "Проекты", icon: "graph" },
+  // теперь ведётся секциями на доске «Проекты» (таб выше). Чтобы вернуть: раскомментировать строку ниже.
+  // { id: "projects", label: "Старые проекты", icon: "graph" },
 ];
 
 export function TasksScreen() {
