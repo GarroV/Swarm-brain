@@ -1175,25 +1175,16 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── GET /meetings ─────────────────────────────────────────────────────────────
-  // Видимость: по умолчанию (без ?all) — только свои встречи (через privacy-фильтр
-  // buildEntriesQuery, где pending = is_private/owner_id). Это касается всех, включая
-  // админа. Override ?all=true работает ТОЛЬКО для админа и показывает все встречи
-  // воркспейса (минуя privacy-фильтр).
+  // Видимость: ТОЛЬКО свои встречи (публичные воркспейса + свои приватные) через
+  // privacy-фильтр buildEntriesQuery — для ВСЕХ, включая админа. Прежний admin-override
+  // ?all=true (показывал чужие приватные) убран (решение владельца 2026-08-07): приватное
+  // видит только владелец. Оверсайт-исключение осталось лишь для задач, не для встреч.
   if (req.method === "GET" && routePath === "/meetings") {
     const confirmedParam = url.searchParams.get("confirmed");
-    const showAll = url.searchParams.get("all") === "true";
-    let q = (showAll && isAdmin)
-      ? supabase
-          .from("entries")
-          .select("*")
-          .eq("group_id", groupId)
-          .eq("entry_type", "meeting")
-          .order("created_at", { ascending: false })
-          .limit(50)
-      : buildEntriesQuery(supabase, "*", { groupId, telegramId: telegram_id })
-          .eq("entry_type", "meeting")
-          .order("created_at", { ascending: false })
-          .limit(50);
+    let q = buildEntriesQuery(supabase, "*", { groupId, telegramId: telegram_id })
+      .eq("entry_type", "meeting")
+      .order("created_at", { ascending: false })
+      .limit(50);
     if (confirmedParam === "true") q = q.eq("metadata->>confirmed", "true");
     if (confirmedParam === "false") q = q.or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false");
     const { data, error } = await q;
@@ -1207,7 +1198,7 @@ Deno.serve(async (req: Request) => {
   const meetingResummarizeMatch = routePath.match(/^\/meetings\/([^/]+)\/resummarize$/);
   if (meetingResummarizeMatch && req.method === "POST") {
     return withEntries(origin, async () => {
-      const entry = await getEntrySecure(supabase, meetingResummarizeMatch[1], { groupId, telegramId: telegram_id, isAdmin });
+      const entry = await getEntrySecure(supabase, meetingResummarizeMatch[1], { groupId, telegramId: telegram_id });
       const meetingRowId = (entry.metadata as { meeting_id?: string } | null)?.meeting_id;
       if (!meetingRowId) return apiErr(400, "У записи нет транскрипта встречи — переобработка недоступна", origin);
       const tezisi = await resummarizeFromTranscript(supabase, meetingRowId);
@@ -1236,11 +1227,11 @@ Deno.serve(async (req: Request) => {
     const meetingId = meetingMatch[1];
     return withEntries(origin, async () => {
       if (req.method === "GET") {
-        const entry = await getEntrySecure(supabase, meetingId, { groupId, telegramId: telegram_id, isAdmin });
+        const entry = await getEntrySecure(supabase, meetingId, { groupId, telegramId: telegram_id });
         return json(entry, 200, origin);
       }
       if (req.method === "PATCH") {
-        const entry = await getEntrySecure(supabase, meetingId, { groupId, telegramId: telegram_id, isAdmin });
+        const entry = await getEntrySecure(supabase, meetingId, { groupId, telegramId: telegram_id });
         let body: Record<string, unknown>;
         try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
         const fields: Record<string, unknown> = {};
@@ -1274,7 +1265,7 @@ Deno.serve(async (req: Request) => {
         return json(data, 200, origin);
       }
       if (req.method === "DELETE") {
-        await getEntrySecure(supabase, meetingId, { groupId, telegramId: telegram_id, isAdmin });
+        await getEntrySecure(supabase, meetingId, { groupId, telegramId: telegram_id });
         await supabase.from("entries").delete().eq("id", meetingId);
         return new Response(null, { status: 204, headers: corsHeaders(origin) });
       }
