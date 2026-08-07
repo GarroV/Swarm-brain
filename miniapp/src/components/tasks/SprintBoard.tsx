@@ -10,6 +10,7 @@ import { TaskModal } from "@/components/TaskModal";
 import { Button } from "@/components/ui/button";
 import { RoyIcon } from "@/components/roy/icons";
 import { useConfirm } from "@/components/ui/confirm";
+import { useDt } from "@/components/roy/nav";
 
 function fmtDay(iso: string | null): string | null {
   if (!iso) return null;
@@ -37,6 +38,7 @@ type DragInfo = { id: string } | null;
 
 export function SprintBoard() {
   const confirm = useConfirm();
+  const dt = useDt();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -56,6 +58,10 @@ export function SprintBoard() {
   // быстрый ввод задачи: ключ `${sectionId}` → черновик заголовка
   const [quickAdd, setQuickAdd] = useState<{ section: string; title: string } | null>(null);
   const drag = useState<DragInfo>(null); const dragRef = drag[0]; const setDrag = drag[1];
+  // рамка-группа (проект с подпроектами): свёрнутые группы; добавление подпроекта в группу
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [addingSubOf, setAddingSubOf] = useState<string | null>(null);
+  const [subName, setSubName] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -69,11 +75,12 @@ export function SprintBoard() {
   const inScope = tasks.filter((t) => (selected === BACKLOG ? !t.sprint_id : t.sprint_id === selected));
   const doneCount = inScope.filter((t) => t.status === "done").length;
 
-  // Секции = пользовательские проекты (владелец задаёт сам) + «Без секции» (если есть неразложенные).
-  const sections: Array<{ id: string; name: string; real: boolean }> = [
-    ...projects.map((p) => ({ id: p.id, name: p.name, real: true })),
-  ];
-  if (inScope.some((t) => !t.project_id)) sections.push({ id: NO_SECTION, name: "Без секции", real: false });
+  // Дерево секций: верхний уровень = проекты без parent_id, у каждого — свои подпроекты (Task 5/6).
+  // Проект без детей рендерится как обычная секция; проект с детьми — рамка-группа с рядами-подпроектами.
+  const topLevel = projects.filter((p) => !p.parent_id);
+  const childrenOf = (id: string) => projects.filter((p) => p.parent_id === id);
+  const hasNoSection = inScope.some((t) => !t.project_id);
+  const boardEmpty = topLevel.length === 0 && !hasNoSection;
 
   async function applyDrop(taskId: string, sectionId: string, status: string) {
     const project_id = sectionId === NO_SECTION ? null : sectionId;
@@ -97,6 +104,21 @@ export function SprintBoard() {
     try { const p = await createProject({ name }); setProjects((prev) => [...prev, p]); } catch { load(); }
   }
 
+  async function submitSubproject(parentId: string) {
+    const name = subName.trim();
+    if (!name) return;
+    setSubName(""); setAddingSubOf(null);
+    try { const p = await createProject({ name, parent_id: parentId }); setProjects((prev) => [...prev, p]); } catch { load(); }
+  }
+
+  function toggleGroupCollapsed(id: string) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
   async function renameSection(id: string, name: string) {
     const n = name.trim(); setRenaming(null);
     if (!n) return;
@@ -106,7 +128,9 @@ export function SprintBoard() {
 
   async function removeSection(id: string, name: string) {
     if (!(await confirm({ title: `Удалить секцию «${name}»?`, description: "Задачи секции не удалятся — они уйдут в «Без секции».", confirmText: "Удалить секцию" }))) return;
-    setProjects((prev) => prev.filter((p) => p.id !== id));
+    // Дети группы промоутятся в верхний уровень (совпадает с ON DELETE SET NULL на FK в БД);
+    // без этого локально они бы «пропали» до полного reload — parent_id указывал бы на удалённый id.
+    setProjects((prev) => prev.filter((p) => p.id !== id).map((p) => (p.parent_id === id ? { ...p, parent_id: null } : p)));
     setTasks((prev) => prev.map((t) => (t.project_id === id ? { ...t, project_id: null } : t)));
     try { await deleteProject(id); } catch { load(); }
   }
@@ -165,6 +189,91 @@ export function SprintBoard() {
     } catch { load(); } finally { setDeletingSprint(false); }
   }
 
+  // Один ряд «4 колонки для набора задач» — переиспользуется для обычной секции, ряда
+  // подпроекта и ряда «Общее»/«General». sectionId — id (под)проекта или NO_SECTION,
+  // на нём завязаны applyDrop/quickAdd/renaming (как и раньше). real=false скрывает
+  // переименовать/удалить (для «Общее» и «Без секции» — это не отдельная сущность-проект).
+  function renderKanbanRow(sectionId: string, label: string, secTasks: Task[], real: boolean, withTopDivider: boolean) {
+    return (
+      <div key={sectionId} className={withTopDivider ? "border-t border-line" : ""}>
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-line">
+          <RoyIcon name="board" size={14} strokeWidth={1.9} />
+          {real && renaming?.id === sectionId ? (
+            <input autoFocus value={renaming.name}
+              onChange={(e) => setRenaming({ id: sectionId, name: e.target.value })}
+              onKeyDown={(e) => { if (e.key === "Enter") renameSection(sectionId, renaming.name); if (e.key === "Escape") setRenaming(null); }}
+              onBlur={() => renameSection(sectionId, renaming.name)}
+              className="text-sm font-bold text-ink bg-card border border-line rounded px-2 py-0.5 outline-none focus:border-primary/50" />
+          ) : (
+            <span className="text-sm font-bold text-ink">{label}</span>
+          )}
+          <span className="text-xs text-ink-soft">{secTasks.length}</span>
+          <div className="ml-auto flex items-center gap-0.5">
+            <button onClick={() => setQuickAdd({ section: sectionId, title: "" })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title="Добавить задачу в бэклог секции">
+              <RoyIcon name="plus" size={14} strokeWidth={2} />
+            </button>
+            {real && (
+              <>
+                <button onClick={() => setRenaming({ id: sectionId, name: label })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title="Переименовать секцию">
+                  <RoyIcon name="pencil" size={13} />
+                </button>
+                <button onClick={() => removeSection(sectionId, label)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title="Удалить секцию">
+                  <RoyIcon name="trash" size={13} />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-3 p-3 overflow-x-auto">
+          {COLUMNS.map((col) => {
+            const colTasks = secTasks.filter((t) => (col.status === "backlog" ? (t.status === "backlog" || (t.status !== "open" && t.status !== "in_progress" && t.status !== "done")) : t.status === col.status));
+            return (
+              <div key={col.status}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); if (dragRef) { applyDrop(dragRef.id, sectionId, col.status); setDrag(null); } }}
+                className="w-64 shrink-0 flex flex-col rounded-xl bg-surface-2 border border-line p-2 dark:backdrop-blur-lg">
+                <div className="flex items-center gap-2 px-2 py-1.5">
+                  <span className="size-2.5 rounded-full" style={{ background: col.bar }} />
+                  <span className="text-xs font-semibold text-ink">{col.label}</span>
+                  <span className="ml-auto text-xs text-ink-soft">{colTasks.length}</span>
+                </div>
+                {/* быстрый ввод — в колонке Бэклог */}
+                {col.status === "backlog" && quickAdd?.section === sectionId && (
+                  <input autoFocus value={quickAdd.title}
+                    onChange={(e) => setQuickAdd({ section: sectionId, title: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === "Enter") addTask(sectionId, quickAdd.title); if (e.key === "Escape") setQuickAdd(null); }}
+                    onBlur={() => addTask(sectionId, quickAdd.title)}
+                    placeholder="Новая задача, Enter"
+                    className="mx-1 mb-1 rounded-md border border-line bg-card px-2 py-1.5 text-sm text-ink outline-none focus:border-primary/50" />
+                )}
+                <div className="flex-1 overflow-y-auto space-y-2 pt-1 min-h-[40px]">
+                  {colTasks.map((t) => (
+                    <div key={t.id} draggable
+                      onDragStart={(e) => { setDrag({ id: t.id }); e.dataTransfer.effectAllowed = "move"; }}
+                      onDragEnd={() => setDrag(null)}
+                      onClick={() => setEditing(t)}
+                      className="rounded-lg bg-card border border-line shadow-sm p-2.5 cursor-pointer hover:border-primary/40 active:cursor-grabbing dark:backdrop-blur-sm">
+                      <p className="text-sm font-medium leading-snug text-ink">{t.title}</p>
+                      <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-soft">
+                        {t.due_date && <span className="inline-flex items-center gap-1"><RoyIcon name="cal" size={11} /> {fmtDay(t.due_date)}</span>}
+                        {t.assignees.length > 0 && <span className="ml-auto font-bold">{initials(t.assignees)}</span>}
+                      </div>
+                      <select value={t.sprint_id ?? BACKLOG} onChange={(e) => moveToSprint(t.id, e.target.value)} onClick={(e) => e.stopPropagation()}
+                        className="mt-2 w-full text-[11px] bg-transparent text-ink-soft border-t border-line pt-1.5 outline-none">
+                        <option value={BACKLOG}>Вне спринта</option>
+                        {sprints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   if (loading) return <p className="text-center text-ink-soft py-12 text-sm">Загрузка…</p>;
 
   return (
@@ -218,14 +327,34 @@ export function SprintBoard() {
 
       {/* Доска: секции (проекты) по вертикали × колонки статусов по горизонтали */}
       <div className="flex-1 overflow-auto px-4 pb-4 space-y-4">
-        {sections.length === 0 && (
+        {boardEmpty && (
           <p className="text-center text-sm text-ink-soft/70 py-10">Секций пока нет. Добавьте секцию (проект) кнопкой ниже и накидывайте в неё задачи.</p>
         )}
-        {sections.map((sec) => {
-          const secTasks = inScope.filter((t) => (sec.id === NO_SECTION ? !t.project_id : t.project_id === sec.id));
+        {topLevel.map((sec) => {
+          const kids = childrenOf(sec.id);
+          const secDirectTasks = inScope.filter((t) => t.project_id === sec.id);
+
+          // Проект без подпроектов — обычная секция, как и раньше.
+          if (kids.length === 0) {
+            return (
+              <section key={sec.id} className="rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
+                {renderKanbanRow(sec.id, sec.name, secDirectTasks, true, false)}
+              </section>
+            );
+          }
+
+          // Проект с подпроектами — рамка-группа: заголовок + «Общее» (если есть прямые
+          // задачи) + ряд на каждый подпроект. Единая внешняя рамка, подпроекты — без своей.
+          const kidsWithTasks = kids.map((kid) => ({ kid, tasks: inScope.filter((t) => t.project_id === kid.id) }));
+          const total = secDirectTasks.length + kidsWithTasks.reduce((sum, k) => sum + k.tasks.length, 0);
+          const isCollapsed = collapsedGroups.has(sec.id);
+
           return (
             <section key={sec.id} className="rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
               <div className="flex items-center gap-2 px-3 py-2 border-b border-line">
+                <button onClick={() => toggleGroupCollapsed(sec.id)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={isCollapsed ? dt("Развернуть", "Expand") : dt("Свернуть", "Collapse")}>
+                  <RoyIcon name="cright" size={12} style={{ transform: isCollapsed ? undefined : "rotate(90deg)" }} />
+                </button>
                 <RoyIcon name="board" size={14} strokeWidth={1.9} />
                 {renaming?.id === sec.id ? (
                   <input autoFocus value={renaming.name}
@@ -236,72 +365,53 @@ export function SprintBoard() {
                 ) : (
                   <span className="text-sm font-bold text-ink">{sec.name}</span>
                 )}
-                <span className="text-xs text-ink-soft">{secTasks.length}</span>
+                <span className="text-xs text-ink-soft">{total}</span>
                 <div className="ml-auto flex items-center gap-0.5">
-                  <button onClick={() => setQuickAdd({ section: sec.id, title: "" })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title="Добавить задачу в бэклог секции">
+                  <button onClick={() => setAddingSubOf(sec.id)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Добавить подпроект", "Add subproject")}>
                     <RoyIcon name="plus" size={14} strokeWidth={2} />
                   </button>
-                  {sec.real && (
-                    <>
-                      <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title="Переименовать секцию">
-                        <RoyIcon name="pencil" size={13} />
-                      </button>
-                      <button onClick={() => removeSection(sec.id, sec.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title="Удалить секцию">
-                        <RoyIcon name="trash" size={13} />
-                      </button>
-                    </>
-                  )}
+                  <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title="Переименовать секцию">
+                    <RoyIcon name="pencil" size={13} />
+                  </button>
+                  <button onClick={() => removeSection(sec.id, sec.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title="Удалить секцию">
+                    <RoyIcon name="trash" size={13} />
+                  </button>
                 </div>
               </div>
-              <div className="flex gap-3 p-3 overflow-x-auto">
-                {COLUMNS.map((col) => {
-                  const colTasks = secTasks.filter((t) => (col.status === "backlog" ? (t.status === "backlog" || (t.status !== "open" && t.status !== "in_progress" && t.status !== "done")) : t.status === col.status));
-                  return (
-                    <div key={col.status}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => { e.preventDefault(); if (dragRef) { applyDrop(dragRef.id, sec.id, col.status); setDrag(null); } }}
-                      className="w-64 shrink-0 flex flex-col rounded-xl bg-surface-2 border border-line p-2 dark:backdrop-blur-lg">
-                      <div className="flex items-center gap-2 px-2 py-1.5">
-                        <span className="size-2.5 rounded-full" style={{ background: col.bar }} />
-                        <span className="text-xs font-semibold text-ink">{col.label}</span>
-                        <span className="ml-auto text-xs text-ink-soft">{colTasks.length}</span>
-                      </div>
-                      {/* быстрый ввод — в колонке Бэклог */}
-                      {col.status === "backlog" && quickAdd?.section === sec.id && (
-                        <input autoFocus value={quickAdd.title}
-                          onChange={(e) => setQuickAdd({ section: sec.id, title: e.target.value })}
-                          onKeyDown={(e) => { if (e.key === "Enter") addTask(sec.id, quickAdd.title); if (e.key === "Escape") setQuickAdd(null); }}
-                          onBlur={() => addTask(sec.id, quickAdd.title)}
-                          placeholder="Новая задача, Enter"
-                          className="mx-1 mb-1 rounded-md border border-line bg-card px-2 py-1.5 text-sm text-ink outline-none focus:border-primary/50" />
-                      )}
-                      <div className="flex-1 overflow-y-auto space-y-2 pt-1 min-h-[40px]">
-                        {colTasks.map((t) => (
-                          <div key={t.id} draggable
-                            onDragStart={(e) => { setDrag({ id: t.id }); e.dataTransfer.effectAllowed = "move"; }}
-                            onDragEnd={() => setDrag(null)}
-                            onClick={() => setEditing(t)}
-                            className="rounded-lg bg-card border border-line shadow-sm p-2.5 cursor-pointer hover:border-primary/40 active:cursor-grabbing dark:backdrop-blur-sm">
-                            <p className="text-sm font-medium leading-snug text-ink">{t.title}</p>
-                            <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-soft">
-                              {t.due_date && <span className="inline-flex items-center gap-1"><RoyIcon name="cal" size={11} /> {fmtDay(t.due_date)}</span>}
-                              {t.assignees.length > 0 && <span className="ml-auto font-bold">{initials(t.assignees)}</span>}
-                            </div>
-                            <select value={t.sprint_id ?? BACKLOG} onChange={(e) => moveToSprint(t.id, e.target.value)} onClick={(e) => e.stopPropagation()}
-                              className="mt-2 w-full text-[11px] bg-transparent text-ink-soft border-t border-line pt-1.5 outline-none">
-                              <option value={BACKLOG}>Вне спринта</option>
-                              {sprints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>
-                          </div>
-                        ))}
-                      </div>
+
+              {!isCollapsed && (
+                <div>
+                  {secDirectTasks.length > 0 && renderKanbanRow(sec.id, dt("Общее", "General"), secDirectTasks, false, false)}
+                  {kidsWithTasks.map(({ kid, tasks: kidTasks }, idx) =>
+                    renderKanbanRow(kid.id, kid.name, kidTasks, true, idx > 0 || secDirectTasks.length > 0)
+                  )}
+                  {addingSubOf === sec.id ? (
+                    <div className="flex items-center gap-2 p-3 border-t border-line">
+                      <input autoFocus value={subName} onChange={(e) => setSubName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") submitSubproject(sec.id); if (e.key === "Escape") { setAddingSubOf(null); setSubName(""); } }}
+                        placeholder={dt("Название подпроекта", "Subproject name")}
+                        className="flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-primary/50" />
+                      <Button size="sm" className="h-9 text-xs" onClick={() => submitSubproject(sec.id)}>{dt("Добавить", "Add")}</Button>
+                      <button onClick={() => { setAddingSubOf(null); setSubName(""); }} className="text-xs text-ink-soft px-2">{dt("Отмена", "Cancel")}</button>
                     </div>
-                  );
-                })}
-              </div>
+                  ) : (
+                    <div className="border-t border-line p-2">
+                      <button onClick={() => setAddingSubOf(sec.id)} className="flex items-center gap-1.5 rounded-full bg-surface border border-dashed border-line-2 px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-surface-2">
+                        <RoyIcon name="plus" size={13} strokeWidth={2} /> {dt("Подпроект", "Subproject")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
           );
         })}
+
+        {hasNoSection && (
+          <section className="rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
+            {renderKanbanRow(NO_SECTION, "Без секции", inScope.filter((t) => !t.project_id), false, false)}
+          </section>
+        )}
 
         {/* Добавить секцию (= проект), задаёт владелец */}
         {addingSection ? (

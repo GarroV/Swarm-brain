@@ -898,8 +898,13 @@ Deno.serve(async (req: Request) => {
         name: body.name.trim(),
         color: (body.color as string | null) ?? null,
         emoji: (body.emoji as string | null) ?? null,
+        parent_id: (body.parent_id as string | null) ?? null,
       };
-      return json(await createProject(input, groupId, telegram_id ?? null), 201, origin);
+      try {
+        return json(await createProject(input, groupId, telegram_id ?? null), 201, origin);
+      } catch (e) {
+        return apiErr(400, e instanceof Error ? e.message : "invalid parent", origin);
+      }
     }
     return apiErr(405, "Method not allowed", origin);
   }
@@ -914,7 +919,13 @@ Deno.serve(async (req: Request) => {
       if (typeof body.name === "string") fields.name = body.name.trim();
       if ("color" in body) fields.color = body.color as string | null;
       if ("emoji" in body) fields.emoji = body.emoji as string | null;
-      const updated = await updateProject(projectId, fields, groupId);
+      if ("parent_id" in body) fields.parent_id = (body.parent_id as string | null) ?? null;
+      let updated;
+      try {
+        updated = await updateProject(projectId, fields, groupId);
+      } catch (e) {
+        return apiErr(400, e instanceof Error ? e.message : "invalid parent", origin);
+      }
       if (!updated) return apiErr(404, "Not found", origin);
       return json(updated, 200, origin);
     }

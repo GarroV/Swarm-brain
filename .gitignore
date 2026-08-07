@@ -13,3 +13,6 @@ exports/
 
 # graphify knowledge-graph output (генерируется локально, регенерится по требованию)
 graphify-out/
+
+# SDD scratch (subagent-driven-development ledger/workspace)
+.superpowers/
