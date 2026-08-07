@@ -128,7 +128,9 @@ export function SprintBoard() {
 
   async function removeSection(id: string, name: string) {
     if (!(await confirm({ title: `Удалить секцию «${name}»?`, description: "Задачи секции не удалятся — они уйдут в «Без секции».", confirmText: "Удалить секцию" }))) return;
-    setProjects((prev) => prev.filter((p) => p.id !== id));
+    // Дети группы промоутятся в верхний уровень (совпадает с ON DELETE SET NULL на FK в БД);
+    // без этого локально они бы «пропали» до полного reload — parent_id указывал бы на удалённый id.
+    setProjects((prev) => prev.filter((p) => p.id !== id).map((p) => (p.parent_id === id ? { ...p, parent_id: null } : p)));
     setTasks((prev) => prev.map((t) => (t.project_id === id ? { ...t, project_id: null } : t)));
     try { await deleteProject(id); } catch { load(); }
   }
