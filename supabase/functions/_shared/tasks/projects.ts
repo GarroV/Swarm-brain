@@ -78,11 +78,19 @@ export async function createProject(
   groupId: string,
   createdBy: number | null,
 ): Promise<Project> {
+  const parentId = input.parent_id ?? null;
+  if (parentId !== null) {
+    const { data: refs } = await supabase
+      .from("projects").select("id, parent_id").eq("group_id", groupId);
+    const v = validateParent({ projectId: null, parentId, all: (refs ?? []) as ProjectRef[] });
+    if (!v.ok) throw new Error(v.error);
+  }
   const { data, error } = await supabase.from("projects").insert({
     group_id: groupId,
     name: input.name,
     color: input.color ?? null,
     emoji: input.emoji ?? null,
+    parent_id: parentId,
     created_by: createdBy,
   }).select().single();
   if (error) throw new Error(error.message);
@@ -95,6 +103,12 @@ export async function updateProject(
   fields: Partial<ProjectInput>,
   groupId: string,
 ): Promise<Project | null> {
+  if ("parent_id" in fields) {
+    const { data: refs } = await supabase
+      .from("projects").select("id, parent_id").eq("group_id", groupId);
+    const v = validateParent({ projectId: id, parentId: fields.parent_id ?? null, all: (refs ?? []) as ProjectRef[] });
+    if (!v.ok) throw new Error(v.error);
+  }
   const { data } = await supabase.from("projects")
     .update(fields)
     .eq("id", id).eq("group_id", groupId)
