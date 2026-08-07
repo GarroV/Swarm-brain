@@ -274,6 +274,31 @@ export function SprintBoard() {
     );
   }
 
+  // Блок «+ Подпроект» (кнопка + инлайн-инпут). Один и тот же у обычной секции (создать
+  // ПЕРВЫЙ подпроект → секция становится группой) и у уже-группы — DRY, чтобы вход в
+  // подпроекты был доступен всегда, а не только когда дети уже есть.
+  function renderAddSubproject(secId: string) {
+    if (addingSubOf === secId) {
+      return (
+        <div className="flex items-center gap-2 p-3 border-t border-line">
+          <input autoFocus value={subName} onChange={(e) => setSubName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") submitSubproject(secId); if (e.key === "Escape") { setAddingSubOf(null); setSubName(""); } }}
+            placeholder={dt("Название подпроекта", "Subproject name")}
+            className="flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-primary/50" />
+          <Button size="sm" className="h-9 text-xs" onClick={() => submitSubproject(secId)}>{dt("Добавить", "Add")}</Button>
+          <button onClick={() => { setAddingSubOf(null); setSubName(""); }} className="text-xs text-ink-soft px-2">{dt("Отмена", "Cancel")}</button>
+        </div>
+      );
+    }
+    return (
+      <div className="border-t border-line p-2">
+        <button onClick={() => setAddingSubOf(secId)} className="flex items-center gap-1.5 rounded-full bg-surface border border-dashed border-line-2 px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-surface-2">
+          <RoyIcon name="plus" size={13} strokeWidth={2} /> {dt("Подпроект", "Subproject")}
+        </button>
+      </div>
+    );
+  }
+
   if (loading) return <p className="text-center text-ink-soft py-12 text-sm">Загрузка…</p>;
 
   return (
@@ -339,6 +364,7 @@ export function SprintBoard() {
             return (
               <section key={sec.id} className="rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
                 {renderKanbanRow(sec.id, sec.name, secDirectTasks, true, false)}
+                {renderAddSubproject(sec.id)}
               </section>
             );
           }
@@ -385,22 +411,7 @@ export function SprintBoard() {
                   {kidsWithTasks.map(({ kid, tasks: kidTasks }, idx) =>
                     renderKanbanRow(kid.id, kid.name, kidTasks, true, idx > 0 || secDirectTasks.length > 0)
                   )}
-                  {addingSubOf === sec.id ? (
-                    <div className="flex items-center gap-2 p-3 border-t border-line">
-                      <input autoFocus value={subName} onChange={(e) => setSubName(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") submitSubproject(sec.id); if (e.key === "Escape") { setAddingSubOf(null); setSubName(""); } }}
-                        placeholder={dt("Название подпроекта", "Subproject name")}
-                        className="flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-primary/50" />
-                      <Button size="sm" className="h-9 text-xs" onClick={() => submitSubproject(sec.id)}>{dt("Добавить", "Add")}</Button>
-                      <button onClick={() => { setAddingSubOf(null); setSubName(""); }} className="text-xs text-ink-soft px-2">{dt("Отмена", "Cancel")}</button>
-                    </div>
-                  ) : (
-                    <div className="border-t border-line p-2">
-                      <button onClick={() => setAddingSubOf(sec.id)} className="flex items-center gap-1.5 rounded-full bg-surface border border-dashed border-line-2 px-3 py-1.5 text-xs font-semibold text-ink-soft hover:bg-surface-2">
-                        <RoyIcon name="plus" size={13} strokeWidth={2} /> {dt("Подпроект", "Subproject")}
-                      </button>
-                    </div>
-                  )}
+                  {renderAddSubproject(sec.id)}
                 </div>
               )}
             </section>
