@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { validateParent } from "./projects.ts";
+import { validateParent } from "./project-nesting.ts";
 
 const A = { id: "a", parent_id: null };          // группа-кандидат (верхний уровень)
 const B = { id: "b", parent_id: null };          // обычный проект (верхний уровень)
