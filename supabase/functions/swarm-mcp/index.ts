@@ -365,6 +365,10 @@ async function toolGetMeetings(args: { limit?: number; requesting_user_id?: numb
     .from("entries")
     .select("content, metadata, created_at")
     .in("source", ALL_MEETING_SOURCES)
+    // Приватность: чужие личные встречи невидимы. Только публичные ИЛИ свои приватные
+    // (owner_id = requesting_user_id). Без requesting_user_id — только публичные.
+    // Без admin-байпаса: приватное видит ТОЛЬКО владелец.
+    .or(args.requesting_user_id ? visibilityFilter(args.requesting_user_id) : "is_private.eq.false")
     .order("created_at", { ascending: false })
     .limit(args.limit ?? 10);
   if (groupId) query = query.eq("group_id", groupId);
@@ -620,6 +624,9 @@ async function toolGetStorageStats(args: { requesting_user_id?: number } = {}): 
   let query = supabase
     .from("entries")
     .select("entry_type, source, created_at, metadata")
+    // Статистика считает только видимые записи: чужие приватные не попадают в счётчики
+    // (та же приватность, что в list_entries/get_meetings).
+    .or(args.requesting_user_id ? visibilityFilter(args.requesting_user_id) : "is_private.eq.false")
     .order("created_at", { ascending: false })
     .limit(2000);
   if (groupId) query = query.eq("group_id", groupId);
