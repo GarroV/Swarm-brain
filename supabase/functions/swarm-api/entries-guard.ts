@@ -49,8 +49,7 @@ export async function getEntrySecure(
     groupId,
     telegramId,
     requireOwner = false,
-    isAdmin = false,
-  }: { groupId: string; telegramId: number; requireOwner?: boolean; isAdmin?: boolean },
+  }: { groupId: string; telegramId: number; requireOwner?: boolean },
 ): Promise<EntryRow> {
   const { data } = await supabase
     .from("entries")
@@ -58,17 +57,14 @@ export async function getEntrySecure(
     .eq("id", id)
     .maybeSingle();
 
-  // Layer 1: workspace isolation — ВСЕГДА, даже для админа (кросс-воркспейс доступа нет).
+  // Layer 1: workspace isolation — ВСЕГДА (кросс-воркспейс доступа нет).
   if (!data || data.group_id !== groupId) {
     throw new EntryAccessError(404, "Not found");
   }
 
-  // Админ — ревьюер-суперюзер СВОЕГО воркспейса: видит и правит любые записи воркспейса.
-  // Нужно для очереди «Ревью встреч»: согласовать/отклонить чужие pending-импорты Granola,
-  // которые скоупятся is_private=true,owner=импортёр (иначе админ их видит через ?all, но
-  // PATCH/DELETE падал в 404 на Layer 2). Согласуется с admin-?all в GET-списках.
-  if (isAdmin) return data as EntryRow;
-
+  // Приватность — БЕЗ admin-байпаса (решение владельца 2026-08-07): личная запись видна
+  // ТОЛЬКО владельцу, даже админу/руководителю. Оверсайт-исключение оставлено лишь для ЗАДАЧ
+  // (см. canViewTask в swarm-api), не для записей/встреч.
   // Layer 2: visibility — private entries invisible to non-owners
   if (data.is_private && data.owner_id !== telegramId) {
     throw new EntryAccessError(404, "Not found");
