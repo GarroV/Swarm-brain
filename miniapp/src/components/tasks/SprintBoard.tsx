@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import {
-  fetchTasks, updateTask, fetchSprints, createSprint, fetchMe,
+  fetchTasks, updateTask, fetchSprints, createSprint,
   addTasksToSprint, removeTasksFromSprint, deleteSprint,
   fetchProjects, createProject, createTask, updateProject, deleteProject,
 } from "@/lib/api";
@@ -30,7 +30,8 @@ const COLUMNS = [
 const WORK_COLUMNS = COLUMNS.filter((c) => c.status !== "backlog");
 const isBacklogStatus = (s: string) => s !== "open" && s !== "in_progress" && s !== "done";
 
-const BACKLOG = "backlog";        // sprint-селектор: задачи вне спринтов
+const BACKLOG = "backlog";        // значение «вне вкладки» в селекторе задачи (sprint_id=null)
+const ALL = "__all__";            // селектор вкладок: показать ВСЕ задачи (без фильтра по вкладке)
 const NO_SECTION = "__none__";    // секция для задач без проекта
 
 function initials(names: string[]): string {
@@ -46,8 +47,7 @@ export function SprintBoard() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selected, setSelected] = useState<string>(BACKLOG);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [selected, setSelected] = useState<string>(ALL);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -69,14 +69,15 @@ export function SprintBoard() {
 
   const load = useCallback(async () => {
     try {
-      const [t, s, me, p] = await Promise.all([fetchTasks(), fetchSprints(), fetchMe(), fetchProjects()]);
-      setTasks(t); setSprints(s); setIsAdmin(me.is_admin); setProjects(p);
-      setSelected((cur) => (cur === BACKLOG && s.some((x) => x.status === "active") ? s.find((x) => x.status === "active")!.id : cur));
+      const [t, s, p] = await Promise.all([fetchTasks(), fetchSprints(), fetchProjects()]);
+      setTasks(t); setSprints(s); setProjects(p);
     } catch { /* keep */ } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const inScope = tasks.filter((t) => (selected === BACKLOG ? !t.sprint_id : t.sprint_id === selected));
+  // Без выбранной вкладки (ALL) — показываем ВСЕ задачи (ничего не прячем; «Бэклог»-вкладку убрали).
+  // Выбрана вкладка → фильтр по sprint_id. На доску всё равно попадают только задачи с проектом.
+  const inScope = tasks.filter((t) => (selected === ALL ? true : t.sprint_id === selected));
   const doneCount = inScope.filter((t) => t.status === "done").length;
 
   // Дерево секций: верхний уровень = проекты без parent_id, у каждого — свои подпроекты (Task 5/6).
@@ -145,7 +146,7 @@ export function SprintBoard() {
     if (!t) { setQuickAdd(null); return; }
     setQuickAdd(null);
     const project_id = sectionId === NO_SECTION ? null : sectionId;
-    const sprint_id = selected === BACKLOG ? null : selected;
+    const sprint_id = selected === ALL ? null : selected;
     // Оптимистично: карточка появляется МГНОВЕННО (без ожидания сети), createTask — в фоне,
     // ответом заменяем временную на реальную; при ошибке — откат. Раньше ждали create+полный
     // рефетч → задержка появления.
@@ -182,15 +183,15 @@ export function SprintBoard() {
   }
 
   async function handleDeleteSprint() {
-    if (selected === BACKLOG || deletingSprint) return;
+    if (selected === ALL || deletingSprint) return;
     const sprint = sprints.find((s) => s.id === selected);
     if (!sprint) return;
-    if (!(await confirm({ title: `Удалить спринт «${sprint.name}»?`, description: "Задачи спринта вернутся в бэклог — они не будут удалены.", confirmText: "Удалить спринт" }))) return;
+    if (!(await confirm({ title: `Удалить вкладку «${sprint.name}»?`, description: "Задачи из вкладки не удалятся — они просто выйдут из неё.", confirmText: "Удалить вкладку" }))) return;
     setDeletingSprint(true);
     try {
       const ids = tasks.filter((t) => t.sprint_id === selected).map((t) => t.id);
       if (ids.length) await removeTasksFromSprint(selected, ids);
-      await deleteSprint(selected); setSelected(BACKLOG); await load();
+      await deleteSprint(selected); setSelected(ALL); await load();
     } catch { load(); } finally { setDeletingSprint(false); }
   }
 
@@ -265,7 +266,7 @@ export function SprintBoard() {
                       </div>
                       <select value={t.sprint_id ?? BACKLOG} onChange={(e) => moveToSprint(t.id, e.target.value)} onClick={(e) => e.stopPropagation()}
                         className="mt-2 w-full text-[11px] bg-transparent text-ink-soft border-t border-line pt-1.5 outline-none">
-                        <option value={BACKLOG}>Вне спринта</option>
+                        <option value={BACKLOG}>{dt("Вне вкладки", "No tab")}</option>
                         {sprints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                     </div>
@@ -348,7 +349,7 @@ export function SprintBoard() {
                 </div>
                 <select value={t.sprint_id ?? BACKLOG} onChange={(e) => moveToSprint(t.id, e.target.value)} onClick={(e) => e.stopPropagation()}
                   className="mt-2 w-full text-[11px] bg-transparent text-ink-soft border-t border-line pt-1.5 outline-none">
-                  <option value={BACKLOG}>Вне спринта</option>
+                  <option value={BACKLOG}>{dt("Вне вкладки", "No tab")}</option>
                   {sprints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
@@ -364,27 +365,26 @@ export function SprintBoard() {
   return (
     <div className="flex flex-col h-full">
       <header className="px-5 pt-4 pb-2">
-        <h1 className="font-bold leading-[1.1] text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>Спринты</h1>
+        <h1 className="font-bold leading-[1.1] text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>{dt("Проекты", "Projects")}</h1>
       </header>
 
-      {/* Селектор спринтов */}
+      {/* Вкладки (общие; создавать может любой). Дефолтной «Бэклог»-вкладки нет — без выбора видно всё;
+          клик по активной вкладке снимает фильтр (снова все задачи). */}
       <div className="flex gap-1.5 px-4 pb-2 overflow-x-auto shrink-0 items-center">
-        {[{ id: BACKLOG, name: "Бэклог", isActive: false }, ...sprints.map((s) => ({ id: s.id, name: s.name, isActive: s.status === "active" }))].map((chip) => {
-          const active = selected === chip.id;
+        {sprints.map((s) => {
+          const active = selected === s.id;
           return (
-            <button key={chip.id} onClick={() => setSelected(chip.id)}
+            <button key={s.id} onClick={() => setSelected(active ? ALL : s.id)}
               className={`rounded-full px-3 py-1 text-xs font-semibold whitespace-nowrap transition-colors ${active ? "bg-primary text-primary-foreground" : "bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm"}`}>
-              {chip.name}{chip.isActive ? " ·" : ""}
+              {s.name}{s.status === "active" ? " ·" : ""}
             </button>
           );
         })}
-        {isAdmin && (
-          <button onClick={() => setCreating((v) => !v)} className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm shrink-0" title="Новый спринт">
-            <RoyIcon name="plus" size={14} strokeWidth={2} />
-          </button>
-        )}
-        {isAdmin && selected !== BACKLOG && (
-          <button onClick={handleDeleteSprint} disabled={deletingSprint} title="Удалить спринт"
+        <button onClick={() => setCreating((v) => !v)} className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm shrink-0" title={dt("Новая вкладка", "New tab")}>
+          <RoyIcon name="plus" size={14} strokeWidth={2} />
+        </button>
+        {selected !== ALL && (
+          <button onClick={handleDeleteSprint} disabled={deletingSprint} title={dt("Удалить вкладку", "Delete tab")}
             className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 hover:text-destructive disabled:opacity-50 dark:backdrop-blur-sm shrink-0">
             <RoyIcon name="trash" size={14} />
           </button>
@@ -393,17 +393,17 @@ export function SprintBoard() {
 
       {creating && (
         <div className="mx-4 mb-2 p-3 rounded-lg border border-line space-y-2">
-          <input className="w-full text-sm bg-transparent border-b border-line py-1 outline-none" placeholder="Название спринта" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <input className="w-full text-sm bg-transparent border-b border-line py-1 outline-none" placeholder={dt("Название вкладки", "Tab name")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <div className="flex gap-2">
             <input type="date" className="flex-1 text-sm bg-transparent border-b border-line py-1 outline-none" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
             <input type="date" className="flex-1 text-sm bg-transparent border-b border-line py-1 outline-none" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
           </div>
           {formErr && <p className="text-xs text-destructive">{formErr}</p>}
-          <Button size="sm" className="w-full h-8 text-xs" onClick={submitSprint} disabled={saving}>{saving ? "Создание…" : "Создать спринт"}</Button>
+          <Button size="sm" className="w-full h-8 text-xs" onClick={submitSprint} disabled={saving}>{saving ? "Создание…" : dt("Создать вкладку", "Create tab")}</Button>
         </div>
       )}
 
-      {selected !== BACKLOG && inScope.length > 0 && (
+      {selected !== ALL && inScope.length > 0 && (
         <div className="px-5 pb-2">
           <div className="flex justify-between text-xs text-ink-soft mb-1"><span>Прогресс</span><span className="font-semibold">{doneCount}/{inScope.length}</span></div>
           <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: `${(doneCount / inScope.length) * 100}%`, background: "var(--status-done)" }} /></div>
