@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolListTaskLabels, toolGetTaskComments, toolAddTaskComment, TASK_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS, COMMENT_TOOL_DEFINITIONS } from "./tasks/tools.ts";
 import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, detectQueryCountry } from "../_shared/countries.ts";
+import { applyGeneralSentinel, specificCountries } from "../_shared/meta-extract.ts";
 import { matchEntries } from "../_shared/search.ts";
 import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
 import { isFeedbackStatus } from "../_shared/feedback-categories.ts";
@@ -520,7 +521,7 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
     added_by: "claude_desktop",
     source,
     metadata: chunkGroupId ? { total_chunks: chunks.length, chunk: 1, chunk_group_id: chunkGroupId } : {},
-    countries: entryMeta.countries,
+    countries: applyGeneralSentinel(entryMeta.countries),
     entry_type: entryMeta.entry_type,
     entry_date: entryMeta.entry_date,
     group_id: workspaceGroupId,
@@ -541,7 +542,7 @@ async function toolAddKnowledge(args: { content?: string; summary: string; sourc
           added_by: "claude_desktop",
           source,
           metadata: { total_chunks: chunks.length, chunk: i + 2, chunk_group_id: chunkGroupId },
-          countries: entryMeta.countries,
+          countries: applyGeneralSentinel(entryMeta.countries),
           entry_type: entryMeta.entry_type,
           entry_date: entryMeta.entry_date,
           group_id: workspaceGroupId,
@@ -597,7 +598,7 @@ async function toolUploadFile(args: {
       mime_type: mimeType,
       file_size_bytes: uploadResult.fileSizeBytes,
     },
-    countries: entryMeta.countries,
+    countries: applyGeneralSentinel(entryMeta.countries),
     entry_type: entryMeta.entry_type,
     entry_date: entryMeta.entry_date,
     group_id: workspaceGroupId,
@@ -846,11 +847,9 @@ async function toolReindexEntry(args: { id: string; summary?: string }): Promise
 
   const newSummary = hasSummary ? existingSummary! : (typeof parsed.summary === "string" ? parsed.summary : e.summary);
   const rawCountries = Array.isArray(parsed.countries) ? parsed.countries.filter((c): c is string => typeof c === "string") : [];
-  const countries = normalizeCountries(rawCountries);
-  const specific = countries.filter(c => c !== "General");
-  if (specific.length === 0 || specific.length >= 3) {
-    if (!countries.includes("General")) countries.push("General");
-  }
+  // Единый санитайзер (порог 2+, схлоп в ["General"], без микса) — как в storage/read-ai/granola.
+  const countries = applyGeneralSentinel(normalizeCountries(rawCountries));
+  const specific = specificCountries(countries);
 
   const keywords = typeof parsed.keywords === "string" ? parsed.keywords : "";
   const embeddingText = [

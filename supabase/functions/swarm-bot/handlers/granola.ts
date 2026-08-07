@@ -2,6 +2,7 @@ import { supabase } from "../lib/supabase.ts";
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession, getSession, extractEntryMeta } from "../lib/storage.ts";
+import { applyGeneralSentinel, specificCountries } from "../../_shared/meta-extract.ts";
 import { getUserGroupId } from "../lib/workspace.ts";
 import { TEZISY_PROMPT } from "../../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, parseMeetingContent, type MeetingAttendee } from "../../_shared/meeting-dedup.ts";
@@ -216,12 +217,11 @@ async function prepareGranolaEntry(
   const startTime = timeMatch ? timeMatch[1] : null;
   const attendees: MeetingAttendee[] = parseMeetingContent(content).attendees.map((name) => ({ name }));
 
-  // General tag: no specific country or broad multi-country coverage
-  const countries = [...entryMeta.countries];
-  const specific = countries.filter((c) => c !== "General");
-  if (specific.length === 0 || specific.length >= 3) {
-    countries.push("General");
-  }
+  // Единый санитайзер (порог 2+, схлоп в РОВНО ["General"], без микса [A,B,General]) —
+  // общий applyGeneralSentinel, как в storage/read-ai. Раньше здесь была инлайн-копия со
+  // старым порогом >=3 и countries.push("General") → granola хранила миксы и двойные теги.
+  const countries = applyGeneralSentinel(entryMeta.countries);
+  const specific = specificCountries(countries);
 
   // Embed tezisy + countries (not raw 10k content) — same strategy as saveEntry
   const embeddingText = [
