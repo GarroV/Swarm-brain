@@ -136,6 +136,10 @@ let mockTasks: Task[] = [
   mkMock({ id: "p_s_heart", title: "Хартбит", project_id: "pr1", project_linked: true, status: "in_progress", parent_id: "p_rec" }),
   mkMock({ id: "p_b_csv", title: "Экспорт CSV", project_id: "pr1", project_linked: false }),
   mkMock({ id: "p_b_i18n", title: "i18n переключатель", project_id: "pr1", project_linked: false }),
+  // ── демо-подпроекты для вложенной структуры ──
+  mkMock({ id: "p_bot_main", title: "Основное ядро бота", project_id: "pr1a", project_linked: true, status: "in_progress" }),
+  mkMock({ id: "p_bot_api", title: "Интеграция с API", project_id: "pr1a", project_linked: true }),
+  mkMock({ id: "p_design_ui", title: "UI компоненты", project_id: "pr1b", project_linked: true, status: "done" }),
 ];
 
 let mockEntries: Entry[] = [
@@ -479,7 +483,11 @@ export async function removeTasksFromSprint(sprintId: string, taskIds: string[])
 
 // ── Projects (Project Space) ────────────────────────────────────────────────────
 let mockProjects: Project[] = [
-  { id: "pr1", group_id: "cee", name: "Swarm Brain", color: "#5b8def", emoji: null, created_by: null, created_at: new Date().toISOString(), task_count: 0, backlog_count: 0 },
+  { id: "pr1", group_id: "cee", name: "Swarm Brain", color: "#5b8def", emoji: null, parent_id: null, created_by: null, created_at: new Date().toISOString(), task_count: 0, backlog_count: 0 },
+  { id: "prg1", group_id: "cee", name: "Вайб код проекты", color: null, emoji: null, parent_id: null, created_by: null, created_at: new Date().toISOString(), task_count: 3, backlog_count: 1 },
+  { id: "pr1a", group_id: "cee", name: "Бот по стройкам", color: null, emoji: null, parent_id: "prg1", created_by: null, created_at: new Date().toISOString(), task_count: 2, backlog_count: 1 },
+  { id: "pr1b", group_id: "cee", name: "Дизайн-терминал", color: null, emoji: null, parent_id: "prg1", created_by: null, created_at: new Date().toISOString(), task_count: 1, backlog_count: 0 },
+  { id: "pr2", group_id: "cee", name: "тест-2", color: null, emoji: null, parent_id: null, created_by: null, created_at: new Date().toISOString(), task_count: 0, backlog_count: 0 },
 ];
 
 export async function fetchProjects(): Promise<Project[]> {
@@ -487,16 +495,16 @@ export async function fetchProjects(): Promise<Project[]> {
   return apiFetch<Project[]>("/projects");
 }
 
-export async function createProject(input: { name: string; color?: string | null; emoji?: string | null }): Promise<Project> {
+export async function createProject(input: { name: string; color?: string | null; emoji?: string | null; parent_id?: string | null }): Promise<Project> {
   if (DEV_MODE) {
-    const p: Project = { id: Date.now().toString(), group_id: "cee", name: input.name, color: input.color ?? null, emoji: input.emoji ?? null, created_by: null, created_at: new Date().toISOString(), task_count: 0, backlog_count: 0 };
+    const p: Project = { id: Date.now().toString(), group_id: "cee", name: input.name, color: input.color ?? null, emoji: input.emoji ?? null, parent_id: input.parent_id ?? null, created_by: null, created_at: new Date().toISOString(), task_count: 0, backlog_count: 0 };
     mockProjects.push(p);
     return p;
   }
   return apiFetch<Project>("/projects", { method: "POST", body: JSON.stringify(input) });
 }
 
-export async function updateProject(id: string, fields: Partial<{ name: string; color: string | null; emoji: string | null }>): Promise<Project> {
+export async function updateProject(id: string, fields: Partial<{ name: string; color: string | null; emoji: string | null; parent_id: string | null }>): Promise<Project> {
   if (DEV_MODE) {
     const i = mockProjects.findIndex((p) => p.id === id);
     if (i !== -1) mockProjects[i] = { ...mockProjects[i], ...fields };
