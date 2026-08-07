@@ -198,7 +198,7 @@ export function SprintBoard() {
       <div key={sectionId} className={withTopDivider ? "border-t border-line" : ""}>
         <div className="flex items-center gap-2 px-3 py-2 border-b border-line">
           <RoyIcon name="board" size={14} strokeWidth={1.9} />
-          {renaming?.id === sectionId ? (
+          {real && renaming?.id === sectionId ? (
             <input autoFocus value={renaming.name}
               onChange={(e) => setRenaming({ id: sectionId, name: e.target.value })}
               onKeyDown={(e) => { if (e.key === "Enter") renameSection(sectionId, renaming.name); if (e.key === "Escape") setRenaming(null); }}
