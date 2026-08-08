@@ -11,7 +11,7 @@
 // валлийское "Diolch yn fawr" из инцидента b8b7a609). Это defence-in-depth; язык-НЕЗАВИСИМЫЙ фикс —
 // детектор повторов isRepeatedFiller ниже (ловит любой переведённый аутро без ведения списка).
 export const WHISPER_HALLUCINATION_RE =
-  /субтитр|продолжение следует|спасибо за просмотр|подписывайтесь|подпиш[иеё]тесь|подпишись на канал|до новых встреч|dimatorzok|amara\.org|thank you for watching|thanks for watching|please subscribe|subscribe to (my|the|our) channel|subtitles by|diolch yn fawr|gracias por ver|obrigado por assistir|grazie per (aver )?guard|merci d'avoir regardé|danke f[üu]rs? zuschauen|untertitel|시청해 주셔서|ご視聴ありがとう|感谢观看|谢谢观看/i;
+  /субтитр|продолжение следует|спасибо за просмотр|подписывайтесь|подпиш[иеё]тесь|подпишись на канал|добро пожаловать на наш канал|до новых встреч|dimatorzok|amara\.org|thank you for watching|thanks for watching|please subscribe|subscribe to (my|the|our) channel|welcome to (my|the|our) channel|subtitles by|diolch yn fawr|gracias por ver|obrigado por assistir|grazie per (aver )?guard|merci d'avoir regardé|danke f[üu]rs? zuschauen|untertitel|시청해 주셔서|ご視聴ありがとう|感谢观看|谢谢观看/i;
 
 // Сегмент — галлюцинация, если пуст, матчит чёрный список фраз, ИЛИ это явная тишина
 // (высокий no_speech_prob + низкий avg_logprob). Пороги консервативные: одни они «уверенные»
@@ -21,8 +21,31 @@ export function isWhisperHallucination(text: string, noSpeechProb = 0, avgLogpro
   const t = text.trim();
   if (!t) return true;
   if (WHISPER_HALLUCINATION_RE.test(t)) return true;
+  if (hasExcessiveInternalRepeat(t)) return true;
   if (noSpeechProb > 0.8 && avgLogprob < -0.5) return true;
   return false;
+}
+
+// ── Внутрисегментный повтор одной фразы ─────────────────────────────────────────
+// Whisper на тишине/музыке иногда возвращает ОДИН сегмент, где короткая фраза повторена
+// десятками раз («Добро пожаловать на наш канал!» ×69 в одном сегменте — инцидент
+// 99d4e644). isRepeatedFiller (по массиву сегментов) и dropConsecutiveRuns (по ≥6 подряд
+// идущим сегментам) это не ловят: тут ВСЁ внутри одного text-поля. Ловим язык-независимо:
+// разбиваем сегмент на фразы (по . ! ? и переносам) и, если одна короткая фраза повторена
+// ≥INTRA_REPEAT_MIN раз И доминирует (≥REPEAT_DOMINANCE), считаем сегмент галлюцинацией.
+// Реальная речь так не выглядит (человек не повторяет одну фразу дословно 4+ раза подряд).
+export const INTRA_REPEAT_MIN = 4;
+export function hasExcessiveInternalRepeat(text: string): boolean {
+  const parts = text.split(/[.!?\n]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+  if (parts.length < INTRA_REPEAT_MIN) return false;
+  const counts = new Map<string, number>();
+  for (const p of parts) counts.set(p, (counts.get(p) ?? 0) + 1);
+  let topText = "", top = 0;
+  for (const [p, n] of counts) if (n > top) { top = n; topText = p; }
+  if (top < INTRA_REPEAT_MIN) return false;
+  if (top / parts.length < REPEAT_DOMINANCE) return false;
+  if (topText.length > REPEAT_MAX_LEN) return false;
+  return true;
 }
 
 // ── Язык-независимый детектор повторяющегося «аутро» тишины ─────────────────────
