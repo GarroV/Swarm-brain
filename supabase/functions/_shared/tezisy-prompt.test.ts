@@ -4,7 +4,7 @@ import { assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.t
 import { TEZISY_CORE, TEZISY_PROMPT } from "./tezisy-prompt.ts";
 
 Deno.test("TEZISY_PROMPT — включает ядро", () => {
-  assertStringIncludes(TEZISY_PROMPT, "Сделай тезисы встречи");
+  assertStringIncludes(TEZISY_PROMPT, "Ты помощник команды");
 });
 
 Deno.test("TEZISY_PROMPT — включает блок словаря и пример Wolt", () => {

@@ -3,6 +3,7 @@
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   dropConsecutiveRuns,
+  hasExcessiveInternalRepeat,
   isRepeatedFiller,
   isSingleTokenSpam,
   isWhisperHallucination,
@@ -66,6 +67,39 @@ Deno.test("isRepeatedFiller — мало сегментов → не сраба�
 
 Deno.test("isWhisperHallucination — валлийский аутро теперь ловится чёрным списком", () => {
   assert(isWhisperHallucination("Diolch yn fawr am wylio'r fideo!"));
+});
+
+// ── «Добро пожаловать на наш канал» (ютуб-интро) + внутрисегментный повтор ──────
+Deno.test("regex — «Добро пожаловать на наш канал» ловится (инцидент 99d4e644)", () => {
+  assert(WHISPER_HALLUCINATION_RE.test("Добро пожаловать на наш канал!"), "ru intro");
+  assert(WHISPER_HALLUCINATION_RE.test("Добро пожаловать на наш канал, с вами я, Сергей Трофимов."), "ru intro + имя");
+  assert(WHISPER_HALLUCINATION_RE.test("Welcome to our channel"), "en intro");
+});
+
+Deno.test("hasExcessiveInternalRepeat — одна фраза ×69 в одном сегменте = галлюцинация", () => {
+  const wall = Array(69).fill("Добро пожаловать на наш канал!").join(" ");
+  assert(hasExcessiveInternalRepeat(wall));
+  assert(isWhisperHallucination(wall), "и через isWhisperHallucination тоже");
+});
+
+Deno.test("hasExcessiveInternalRepeat — короткий повтор ×4 доминирующий ловится", () => {
+  assert(hasExcessiveInternalRepeat("Ага. Ага. Ага. Ага."));
+});
+
+Deno.test("hasExcessiveInternalRepeat — живая речь из разных фраз НЕ ловится", () => {
+  assertEquals(hasExcessiveInternalRepeat("Давайте обсудим план. Согласен. Проверим на стейдже завтра."), false);
+});
+
+Deno.test("hasExcessiveInternalRepeat — 3 повтора ниже порога НЕ ловятся", () => {
+  assertEquals(hasExcessiveInternalRepeat("Да. Да. Да."), false);
+});
+
+Deno.test("hasExcessiveInternalRepeat — длинная фраза, повторённая, НЕ ловится (>REPEAT_MAX_LEN)", () => {
+  // Без завершающей пунктуации (её срезает split) фраза остаётся длиннее REPEAT_MAX_LEN=120.
+  const longLine =
+    "Нам нужно закрыть задачу по миграции базы данных до конца квартала иначе поедут все остальные сроки в проекте и мы точно не успеем к запланированному релизу";
+  assert(longLine.length > 120);
+  assertEquals(hasExcessiveInternalRepeat(Array(5).fill(longLine).join(". ")), false);
 });
 
 // ── dropConsecutiveRuns (петля одинаковых токенов) ──────────────────────────────
