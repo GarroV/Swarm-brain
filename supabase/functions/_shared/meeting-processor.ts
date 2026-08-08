@@ -467,16 +467,21 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
 // без повторной транскрибации. Для кнопки «Переобработать тезисы» на ревью (вызывается из swarm-api).
 // Тот же путь, что и при первичной сводке (TEZIS_SYSTEM, temp 0.3) — один источник правды.
 // Заголовок НЕ трогаем (мог быть отредактирован вручную). Возвращает новые тезисы.
-export async function resummarizeFromTranscript(supabase: SupabaseClient, meetingId: string): Promise<string> {
+export async function resummarizeFromTranscript(supabase: SupabaseClient, meetingId: string, note = ""): Promise<string> {
   const { data } = await supabase.from("meetings").select("id, title, transcript, recorders, claim_owner").eq("id", meetingId).single();
   const row = data as { title: string | null; transcript: { segments?: Segment[] } | null; recorders: RecorderEntry[] | null; claim_owner: number | null } | null;
   const segments = row?.transcript?.segments ?? [];
   const transcriptText = segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n").slice(0, 100000);
   if (!transcriptText.trim()) return NO_TEZISY_NOTE;
   const ownerName = await resolveOwnerName(supabase, micOwnerId(row?.claim_owner ?? null, row?.recorders ?? null));
+  // Пожелание пользователя к этой переработке (из кнопки «Переработать»: короче/подробнее/акцент/…) —
+  // добавляем в конец user-сообщения как приоритетную инструкцию поверх общего промпта.
+  const noteBlock = note.trim()
+    ? `\n\nПОЖЕЛАНИЕ пользователя к ЭТОЙ переработке тезисов — учти его в ПЕРВУЮ очередь: ${note.trim()}`
+    : "";
   const raw = (await chatComplete(
     TEZIS_SYSTEM,
-    `Встреча: ${row?.title ?? "без названия"}\n\n${speakerLegend(ownerName)}\n${transcriptText}`,
+    `Встреча: ${row?.title ?? "без названия"}\n\n${speakerLegend(ownerName)}\n${transcriptText}${noteBlock}`,
     { temperature: 0.3 },
   )).trim();
   // Пустой ответ модели — не затираем существующие тезисы пустой строкой и не метим done;
