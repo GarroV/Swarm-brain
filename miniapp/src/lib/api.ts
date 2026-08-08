@@ -781,13 +781,17 @@ export async function renameAgentMeeting(id: string, title: string): Promise<Age
 }
 
 // Пере-сводка тезисов текущим промптом из сохранённого транскрипта (без ре-транскрибации).
-export async function resummarizeAgentMeeting(id: string): Promise<AgentMeeting> {
+export async function resummarizeAgentMeeting(id: string, note?: string): Promise<AgentMeeting> {
   if (DEV_MODE) {
     const idx = mockAgentMeetings.findIndex((x) => x.id === id);
     if (idx === -1) throw new ApiError(404, "Not found");
     return mockAgentMeetings[idx];
   }
-  return apiFetch<AgentMeeting>(`/agent-meetings/${id}/resummarize`, { method: "POST" });
+  // note — необязательное пожелание к переработке (короче/подробнее/акцент/свой текст).
+  return apiFetch<AgentMeeting>(`/agent-meetings/${id}/resummarize`, {
+    method: "POST",
+    body: JSON.stringify(note?.trim() ? { note: note.trim() } : {}),
+  });
 }
 
 // То же для УЖЕ опубликованной встречи (entry): пересобрать тезисы текущим промптом.

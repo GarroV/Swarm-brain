@@ -1328,7 +1328,9 @@ Deno.serve(async (req: Request) => {
     // (без повторной транскрибации). Только до публикации; заголовок не трогаем.
     if (agentResummarizeMatch && req.method === "POST") {
       if (meeting.status === "in_base") return apiErr(409, "Уже опубликовано — правьте запись в базе", origin);
-      await resummarizeFromTranscript(supabase, mId);
+      let note = "";
+      try { const b = await req.json() as { note?: unknown }; note = typeof b?.note === "string" ? b.note.slice(0, 500) : ""; } catch { /* тело необязательно */ }
+      await resummarizeFromTranscript(supabase, mId, note);
       const { data } = await supabase.from("meetings").select("*").eq("id", mId).single();
       const [enriched] = await withRecorderNames([(data ?? {}) as { recorders?: unknown }]);
       return json(enriched, 200, origin);
