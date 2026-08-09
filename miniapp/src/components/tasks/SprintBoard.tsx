@@ -32,6 +32,7 @@ const isBacklogStatus = (s: string) => s !== "open" && s !== "in_progress" && s 
 
 const BACKLOG = "backlog";        // значение «вне вкладки» в селекторе задачи (sprint_id=null)
 const ALL = "__all__";            // селектор вкладок: показать ВСЕ задачи (без фильтра по вкладке)
+const EXPANDED_KEY = "swarm.board.expandedProjects"; // localStorage: какие проекты раскрыты (персонально)
 const NO_SECTION = "__none__";    // секция для задач без проекта
 
 function initials(names: string[]): string {
@@ -60,10 +61,14 @@ export function SprintBoard() {
   const [sectionName, setSectionName] = useState("");
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   // быстрый ввод задачи: ключ `${sectionId}` → черновик заголовка
-  const [quickAdd, setQuickAdd] = useState<{ section: string; title: string } | null>(null);
+  const [quickAdd, setQuickAdd] = useState<{ section: string; status: string; title: string } | null>(null);
   const drag = useState<DragInfo>(null); const dragRef = drag[0]; const setDrag = drag[1];
-  // рамка-группа (проект с подпроектами): свёрнутые группы; добавление подпроекта в группу
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  // Проекты — плитки: по умолчанию свёрнуты, двойной клик разворачивает. Состояние ПЕРСОНАЛЬНОЕ
+  // (localStorage, не общее): раскрыл проект у себя — у других он остаётся свёрнутым.
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try { return new Set(JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? "[]") as string[]); } catch { return new Set(); }
+  });
   const [addingSubOf, setAddingSubOf] = useState<string | null>(null);
   const [subName, setSubName] = useState("");
 
@@ -117,10 +122,11 @@ export function SprintBoard() {
     try { const p = await createProject({ name, parent_id: parentId }); setProjects((prev) => [...prev, p]); } catch { load(); }
   }
 
-  function toggleGroupCollapsed(id: string) {
-    setCollapsedGroups((prev) => {
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
+      try { localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next])); } catch { /* приватный режим/квота — не критично */ }
       return next;
     });
   }
@@ -133,7 +139,7 @@ export function SprintBoard() {
   }
 
   async function removeSection(id: string, name: string) {
-    if (!(await confirm({ title: `Удалить секцию «${name}»?`, description: "Задачи секции не удалятся — они уйдут в «Без секции».", confirmText: "Удалить секцию" }))) return;
+    if (!(await confirm({ title: `Удалить проект «${name}»?`, description: "Задачи проекта не удалятся — просто останутся без проекта.", confirmText: "Удалить проект" }))) return;
     // Дети группы промоутятся в верхний уровень (совпадает с ON DELETE SET NULL на FK в БД);
     // без этого локально они бы «пропали» до полного reload — parent_id указывал бы на удалённый id.
     setProjects((prev) => prev.filter((p) => p.id !== id).map((p) => (p.parent_id === id ? { ...p, parent_id: null } : p)));
@@ -141,7 +147,7 @@ export function SprintBoard() {
     try { await deleteProject(id); } catch { load(); }
   }
 
-  async function addTask(sectionId: string, title: string) {
+  async function addTask(sectionId: string, status: string, title: string) {
     const t = title.trim();
     if (!t) { setQuickAdd(null); return; }
     setQuickAdd(null);
@@ -154,14 +160,14 @@ export function SprintBoard() {
     const optimistic: Task = {
       id: tempId, title: t, description: null, assignees: [], assignee_telegram_ids: [],
       due_date: null, tags: [], country: null, task_role: null, priority: null, source: "mini_app",
-      status: "backlog", created_at: new Date().toISOString(), updated_at: null, meeting_id: null,
+      status, created_at: new Date().toISOString(), updated_at: null, meeting_id: null,
       url: null, group_id: null, created_by_name: null, is_private: false, owner_id: null,
       start_date: null, timeline_position: null, sprint_id, label_ids: [], project_id,
       project_linked: false, parent_id: null, tree_x: null, tree_y: null,
     };
     setTasks((prev) => [optimistic, ...prev]);
     try {
-      const created = await createTask({ title: t, status: "backlog", project_id: project_id ?? undefined, sprint_id: sprint_id ?? undefined });
+      const created = await createTask({ title: t, status, project_id: project_id ?? undefined, sprint_id: sprint_id ?? undefined });
       // заменяем временную на реальную; фильтруем и temp, и возможный дубль created.id (страховка)
       setTasks((prev) => [created, ...prev.filter((x) => x.id !== tempId && x.id !== created.id)]);
     } catch {
@@ -170,15 +176,16 @@ export function SprintBoard() {
   }
 
   async function submitSprint() {
-    if (!form.name.trim()) { setFormErr("Введите название спринта"); return; }
-    if (!form.start_date || !form.end_date) { setFormErr("Укажите даты начала и конца"); return; }
-    if (form.start_date > form.end_date) { setFormErr("Дата начала позже даты конца"); return; }
+    if (!form.name.trim()) { setFormErr("Введите название вкладки"); return; }
     setSaving(true); setFormErr(null);
+    // Вкладка — просто именованный фильтр; даты не нужны, но схема спринта их требует —
+    // подставляем сегодняшнюю (пользователь их не видит).
+    const today = new Date().toISOString().slice(0, 10);
     try {
-      const created = await createSprint(form);
+      const created = await createSprint({ name: form.name.trim(), start_date: today, end_date: today });
       setForm({ name: "", start_date: "", end_date: "" }); setCreating(false);
       await load(); setSelected(created.id);
-    } catch (e) { setFormErr(e instanceof Error ? e.message : "Не удалось создать спринт"); }
+    } catch (e) { setFormErr(e instanceof Error ? e.message : "Не удалось создать вкладку"); }
     finally { setSaving(false); }
   }
 
@@ -199,83 +206,15 @@ export function SprintBoard() {
   // подпроекта и ряда «Общее»/«General». sectionId — id (под)проекта или NO_SECTION,
   // на нём завязаны applyDrop/quickAdd/renaming (как и раньше). real=false скрывает
   // переименовать/удалить (для «Общее» и «Без секции» — это не отдельная сущность-проект).
-  function renderKanbanRow(sectionId: string, label: string, secTasks: Task[], real: boolean, withTopDivider: boolean) {
+  // 4 колонки статусов (Бэклог/Открыто/В работе/Готово) для набора задач одного (под)проекта.
+  // Заголовок проекта — снаружи (плитка), поэтому здесь только колонки. Клик по колонке добавляет задачу.
+  function renderColumns(projectId: string, tasks: Task[]) {
     return (
-      <div key={sectionId} className={withTopDivider ? "border-t border-line" : ""}>
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-line">
-          <RoyIcon name="board" size={14} strokeWidth={1.9} />
-          {real && renaming?.id === sectionId ? (
-            <input autoFocus value={renaming.name}
-              onChange={(e) => setRenaming({ id: sectionId, name: e.target.value })}
-              onKeyDown={(e) => { if (e.key === "Enter") renameSection(sectionId, renaming.name); if (e.key === "Escape") setRenaming(null); }}
-              onBlur={() => renameSection(sectionId, renaming.name)}
-              className="text-sm font-bold text-ink bg-card border border-line rounded px-2 py-0.5 outline-none focus:border-primary/50" />
-          ) : (
-            <span className="text-sm font-bold text-ink">{label}</span>
-          )}
-          <span className="text-xs text-ink-soft">{secTasks.length}</span>
-          <div className="ml-auto flex items-center gap-0.5">
-            <button onClick={() => setQuickAdd({ section: sectionId, title: "" })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title="Добавить задачу в бэклог секции">
-              <RoyIcon name="plus" size={14} strokeWidth={2} />
-            </button>
-            {real && (
-              <>
-                <button onClick={() => setRenaming({ id: sectionId, name: label })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title="Переименовать секцию">
-                  <RoyIcon name="pencil" size={13} />
-                </button>
-                <button onClick={() => removeSection(sectionId, label)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title="Удалить секцию">
-                  <RoyIcon name="trash" size={13} />
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-        <div className="flex gap-3 p-3 overflow-x-auto">
-          {COLUMNS.map((col) => {
-            const colTasks = secTasks.filter((t) => (col.status === "backlog" ? (t.status === "backlog" || (t.status !== "open" && t.status !== "in_progress" && t.status !== "done")) : t.status === col.status));
-            return (
-              <div key={col.status}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => { e.preventDefault(); if (dragRef) { applyDrop(dragRef.id, sectionId, col.status); setDrag(null); } }}
-                className="w-64 shrink-0 flex flex-col rounded-xl bg-surface-2 border border-line p-2 dark:backdrop-blur-lg">
-                <div className="flex items-center gap-2 px-2 py-1.5">
-                  <span className="size-2.5 rounded-full" style={{ background: col.bar }} />
-                  <span className="text-xs font-semibold text-ink">{col.label}</span>
-                  <span className="ml-auto text-xs text-ink-soft">{colTasks.length}</span>
-                </div>
-                {/* быстрый ввод — в колонке Бэклог */}
-                {col.status === "backlog" && quickAdd?.section === sectionId && (
-                  <input autoFocus value={quickAdd.title}
-                    onChange={(e) => setQuickAdd({ section: sectionId, title: e.target.value })}
-                    onKeyDown={(e) => { if (e.key === "Enter") addTask(sectionId, quickAdd.title); if (e.key === "Escape") setQuickAdd(null); }}
-                    onBlur={() => addTask(sectionId, quickAdd.title)}
-                    placeholder="Новая задача, Enter"
-                    className="mx-1 mb-1 rounded-md border border-line bg-card px-2 py-1.5 text-sm text-ink outline-none focus:border-primary/50" />
-                )}
-                <div className="flex-1 overflow-y-auto space-y-2 pt-1 min-h-[40px]">
-                  {colTasks.map((t) => (
-                    <div key={t.id} draggable
-                      onDragStart={(e) => { setDrag({ id: t.id }); e.dataTransfer.effectAllowed = "move"; }}
-                      onDragEnd={() => setDrag(null)}
-                      onClick={() => setEditing(t)}
-                      className="rounded-lg bg-card border border-line shadow-sm p-2.5 cursor-pointer hover:border-primary/40 active:cursor-grabbing dark:backdrop-blur-sm">
-                      <p className="text-sm font-medium leading-snug text-ink">{t.title}</p>
-                      <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-soft">
-                        {t.due_date && <span className="inline-flex items-center gap-1"><RoyIcon name="cal" size={11} /> {fmtDay(t.due_date)}</span>}
-                        {t.assignees.length > 0 && <span className="ml-auto font-bold">{initials(t.assignees)}</span>}
-                      </div>
-                      <select value={t.sprint_id ?? BACKLOG} onChange={(e) => moveToSprint(t.id, e.target.value)} onClick={(e) => e.stopPropagation()}
-                        className="mt-2 w-full text-[11px] bg-transparent text-ink-soft border-t border-line pt-1.5 outline-none">
-                        <option value={BACKLOG}>{dt("Вне вкладки", "No tab")}</option>
-                        {sprints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      <div className="flex gap-3 p-3 overflow-x-auto">
+        {COLUMNS.map((col) => renderStatusColumn(
+          projectId, col,
+          col.status === "backlog" ? tasks.filter((t) => isBacklogStatus(t.status)) : tasks.filter((t) => t.status === col.status),
+        ))}
       </div>
     );
   }
@@ -305,15 +244,15 @@ export function SprintBoard() {
     );
   }
 
-  // Одна статус-колонка: заголовок + (для backlog) быстрый ввод + drop-зона + карточки.
-  // badgeFor — необязательный бейдж на карточке (имя подпроекта в общем бэклоге группы).
+  // Одна статус-колонка: заголовок + быстрый ввод + drop-зона + карточки. Клик по пустому полю
+  // колонки создаёт карточку задачи В ЭТОЙ колонке (её статус). badgeFor — бейдж подпроекта.
   function renderStatusColumn(
     projectId: string,
     col: { status: string; label: string; bar: string },
     colTasks: Task[],
-    showQuickAdd: boolean,
     badgeFor?: (t: Task) => string | undefined,
   ) {
+    const adding = quickAdd?.section === projectId && quickAdd?.status === col.status;
     return (
       <div key={col.status}
         onDragOver={(e) => e.preventDefault()}
@@ -324,22 +263,24 @@ export function SprintBoard() {
           <span className="text-xs font-semibold text-ink">{col.label}</span>
           <span className="ml-auto text-xs text-ink-soft">{colTasks.length}</span>
         </div>
-        {showQuickAdd && col.status === "backlog" && quickAdd?.section === projectId && (
-          <input autoFocus value={quickAdd.title}
-            onChange={(e) => setQuickAdd({ section: projectId, title: e.target.value })}
-            onKeyDown={(e) => { if (e.key === "Enter") addTask(projectId, quickAdd.title); if (e.key === "Escape") setQuickAdd(null); }}
-            onBlur={() => addTask(projectId, quickAdd.title)}
+        {adding && (
+          <input autoFocus value={quickAdd!.title}
+            onChange={(e) => setQuickAdd({ section: projectId, status: col.status, title: e.target.value })}
+            onKeyDown={(e) => { if (e.key === "Enter") addTask(projectId, col.status, quickAdd!.title); if (e.key === "Escape") setQuickAdd(null); }}
+            onBlur={() => addTask(projectId, col.status, quickAdd!.title)}
             placeholder="Новая задача, Enter"
             className="mx-1 mb-1 rounded-md border border-line bg-card px-2 py-1.5 text-sm text-ink outline-none focus:border-primary/50" />
         )}
-        <div className="flex-1 overflow-y-auto space-y-2 pt-1 min-h-[40px]">
+        <div className="flex-1 overflow-y-auto space-y-2 pt-1 min-h-[56px] cursor-text"
+          onClick={(e) => { if (e.target === e.currentTarget && !adding) setQuickAdd({ section: projectId, status: col.status, title: "" }); }}
+          title="Кликни по пустому полю — добавить задачу">
           {colTasks.map((t) => {
             const badge = badgeFor?.(t);
             return (
               <div key={t.id} draggable
                 onDragStart={(e) => { setDrag({ id: t.id }); e.dataTransfer.effectAllowed = "move"; }}
                 onDragEnd={() => setDrag(null)}
-                onClick={() => setEditing(t)}
+                onClick={(e) => { e.stopPropagation(); setEditing(t); }}
                 className="rounded-lg bg-card border border-line shadow-sm p-2.5 cursor-pointer hover:border-primary/40 active:cursor-grabbing dark:backdrop-blur-sm">
                 {badge && <span className="inline-block mb-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-ink-soft bg-surface-2 border border-line">{badge}</span>}
                 <p className="text-sm font-medium leading-snug text-ink">{t.title}</p>
@@ -393,11 +334,10 @@ export function SprintBoard() {
 
       {creating && (
         <div className="mx-4 mb-2 p-3 rounded-lg border border-line space-y-2">
-          <input className="w-full text-sm bg-transparent border-b border-line py-1 outline-none" placeholder={dt("Название вкладки", "Tab name")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <div className="flex gap-2">
-            <input type="date" className="flex-1 text-sm bg-transparent border-b border-line py-1 outline-none" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
-            <input type="date" className="flex-1 text-sm bg-transparent border-b border-line py-1 outline-none" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
-          </div>
+          <input autoFocus className="w-full text-sm bg-transparent border-b border-line py-1 outline-none"
+            placeholder={dt("Название вкладки", "Tab name")} value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            onKeyDown={(e) => { if (e.key === "Enter") submitSprint(); if (e.key === "Escape") setCreating(false); }} />
           {formErr && <p className="text-xs text-destructive">{formErr}</p>}
           <Button size="sm" className="w-full h-8 text-xs" onClick={submitSprint} disabled={saving}>{saving ? "Создание…" : dt("Создать вкладку", "Create tab")}</Button>
         </div>
@@ -413,37 +353,28 @@ export function SprintBoard() {
       {/* Доска: секции (проекты) по вертикали × колонки статусов по горизонтали */}
       <div className="flex-1 overflow-auto px-4 pb-4 space-y-4">
         {boardEmpty && (
-          <p className="text-center text-sm text-ink-soft/70 py-10">Секций пока нет. Добавьте секцию (проект) кнопкой ниже и накидывайте в неё задачи.</p>
+          <p className="text-center text-sm text-ink-soft/70 py-10">Проектов пока нет. Добавьте проект кнопкой ниже и накидывайте в него задачи.</p>
         )}
         {topLevel.map((sec) => {
           const kids = childrenOf(sec.id);
           const secDirectTasks = inScope.filter((t) => t.project_id === sec.id);
-
-          // Проект без подпроектов — обычная секция, как и раньше.
-          if (kids.length === 0) {
-            return (
-              <section key={sec.id} className="rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
-                {renderKanbanRow(sec.id, sec.name, secDirectTasks, true, false)}
-                {renderAddSubproject(sec.id)}
-              </section>
-            );
-          }
-
-          // Проект с подпроектами — рамка-группа: заголовок + «Общее» (если есть прямые
-          // задачи) + ряд на каждый подпроект. Единая внешняя рамка, подпроекты — без своей.
           const kidsWithTasks = kids.map((kid) => ({ kid, tasks: inScope.filter((t) => t.project_id === kid.id) }));
           const total = secDirectTasks.length + kidsWithTasks.reduce((sum, k) => sum + k.tasks.length, 0);
-          const isCollapsed = collapsedGroups.has(sec.id);
+          const open = expanded.has(sec.id);
 
           return (
             <section key={sec.id} className="rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
-              <div className="flex items-center gap-2 px-3 py-2 border-b border-line">
-                <button onClick={() => toggleGroupCollapsed(sec.id)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={isCollapsed ? dt("Развернуть", "Expand") : dt("Свернуть", "Collapse")}>
-                  <RoyIcon name="cright" size={12} style={{ transform: isCollapsed ? undefined : "rotate(90deg)" }} />
+              {/* Плитка-заголовок проекта. Двойной клик — развернуть/свернуть (персонально, localStorage). */}
+              <div onDoubleClick={() => toggleExpanded(sec.id)}
+                className={`flex items-center gap-2 px-3 py-2 select-none cursor-pointer ${open ? "border-b border-line" : ""}`}
+                title={dt("Двойной клик — развернуть/свернуть", "Double-click to expand/collapse")}>
+                <button onClick={(e) => { e.stopPropagation(); toggleExpanded(sec.id); }} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={open ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
+                  <RoyIcon name="cright" size={12} style={{ transform: open ? "rotate(90deg)" : undefined }} />
                 </button>
                 <RoyIcon name="board" size={14} strokeWidth={1.9} />
                 {renaming?.id === sec.id ? (
                   <input autoFocus value={renaming.name}
+                    onClick={(e) => e.stopPropagation()}
                     onChange={(e) => setRenaming({ id: sec.id, name: e.target.value })}
                     onKeyDown={(e) => { if (e.key === "Enter") renameSection(sec.id, renaming.name); if (e.key === "Escape") setRenaming(null); }}
                     onBlur={() => renameSection(sec.id, renaming.name)}
@@ -452,26 +383,30 @@ export function SprintBoard() {
                   <span className="text-sm font-bold text-ink">{sec.name}</span>
                 )}
                 <span className="text-xs text-ink-soft">{total}</span>
-                <div className="ml-auto flex items-center gap-0.5">
-                  <button onClick={() => setAddingSubOf(sec.id)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Добавить подпроект", "Add subproject")}>
+                <div className="ml-auto flex items-center gap-0.5" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => { if (!open) toggleExpanded(sec.id); setAddingSubOf(sec.id); }} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Добавить подпроект", "Add subproject")}>
                     <RoyIcon name="plus" size={14} strokeWidth={2} />
                   </button>
-                  <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title="Переименовать секцию">
+                  <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Переименовать проект", "Rename project")}>
                     <RoyIcon name="pencil" size={13} />
                   </button>
-                  <button onClick={() => removeSection(sec.id, sec.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title="Удалить секцию">
+                  <button onClick={() => removeSection(sec.id, sec.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Удалить проект", "Delete project")}>
                     <RoyIcon name="trash" size={13} />
                   </button>
                 </div>
               </div>
 
-              {!isCollapsed && (
+              {open && (kids.length === 0 ? (
+                <div>
+                  {renderColumns(sec.id, secDirectTasks)}
+                  {renderAddSubproject(sec.id)}
+                </div>
+              ) : (
                 <div className="flex gap-3 p-3 overflow-x-auto">
                   {/* Общий бэклог проекта: backlog-задачи группы И подпроектов (с бейджем подпроекта). */}
                   {renderStatusColumn(
                     sec.id, COLUMNS[0],
                     [...secDirectTasks, ...kidsWithTasks.flatMap((k) => k.tasks)].filter((t) => isBacklogStatus(t.status)),
-                    true,
                     (t) => (t.project_id !== sec.id ? kids.find((k) => k.id === t.project_id)?.name : undefined),
                   )}
                   {/* Пространства подпроектов: у каждого только рабочие колонки. */}
@@ -495,14 +430,14 @@ export function SprintBoard() {
                           </div>
                         </div>
                         <div className="flex gap-3 overflow-x-auto">
-                          {WORK_COLUMNS.map((col) => renderStatusColumn(kid.id, col, kidTasks.filter((t) => t.status === col.status), false))}
+                          {WORK_COLUMNS.map((col) => renderStatusColumn(kid.id, col, kidTasks.filter((t) => t.status === col.status)))}
                         </div>
                       </div>
                     ))}
                     {renderAddSubproject(sec.id)}
                   </div>
                 </div>
-              )}
+              ))}
             </section>
           );
         })}
@@ -512,14 +447,14 @@ export function SprintBoard() {
           <div className="flex items-center gap-2 max-w-sm">
             <input autoFocus value={sectionName} onChange={(e) => setSectionName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") addSection(); if (e.key === "Escape") setAddingSection(false); }}
-              placeholder="Название секции (напр. «Бот по стройкам»)"
+              placeholder="Название проекта (напр. «Vibe Coding»)"
               className="flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-primary/50" />
             <Button size="sm" className="h-9 text-xs" onClick={addSection}>Добавить</Button>
             <button onClick={() => setAddingSection(false)} className="text-xs text-ink-soft px-2">Отмена</button>
           </div>
         ) : (
           <button onClick={() => setAddingSection(true)} className="flex items-center gap-1.5 rounded-full bg-surface border border-dashed border-line-2 px-4 py-2 text-xs font-semibold text-ink-soft hover:bg-surface-2">
-            <RoyIcon name="plus" size={14} strokeWidth={2} /> Секция
+            <RoyIcon name="plus" size={14} strokeWidth={2} /> Проект
           </button>
         )}
       </div>
