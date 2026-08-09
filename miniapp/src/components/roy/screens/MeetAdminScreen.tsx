@@ -360,7 +360,7 @@ function DetailPanel({
             </span>
             {date && <span className="text-ink-mute" style={{ fontSize: 12 }}>{date}</span>}
             {itemRecorder(item) && (
-              <span className="text-ink-mute" style={{ fontSize: 12 }}>· Импортировал: {itemRecorder(item)}</span>
+              <span className="text-ink-mute" style={{ fontSize: 12 }}>· Добавлено: {itemRecorder(item)}</span>
             )}
             {e.countries?.[0] && (
               <span
@@ -634,7 +634,7 @@ function AgentMeetingDetail({
           {date && <span className="text-ink-mute" style={{ fontSize: 12 }}>{date}</span>}
           {m.recorder_names && m.recorder_names.length > 0 && (
             <span className="text-ink-mute" style={{ fontSize: 12 }}>
-              · Записал: {m.recorder_names.join(", ")}
+              · Добавлено: {m.recorder_names.join(", ")}
             </span>
           )}
         </div>

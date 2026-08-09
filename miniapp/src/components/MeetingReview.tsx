@@ -179,8 +179,8 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
             ? <span className="inline-flex items-center gap-1" style={{ color: "var(--status-done)" }}><RoyIcon name="check" size={13} strokeWidth={2.2} /> В базе</span>
             : <span className="inline-flex items-center gap-1" style={{ color: "var(--status-open)" }}><RoyIcon name="clock" size={13} strokeWidth={1.9} /> На вычитке</span>}
           {meeting.recorder_names?.length
-            ? <span>· Записал: {meeting.recorder_names.join(", ")}</span>
-            : recorders.length > 0 && <span>· записали: {recorders.length}</span>}
+            ? <span>· Добавлено: {meeting.recorder_names.join(", ")}</span>
+            : recorders.length > 0 && <span>· добавили: {recorders.length}</span>}
         </div>
 
         <div>
