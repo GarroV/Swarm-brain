@@ -103,6 +103,9 @@ export type Project = {
   created_by: number | null;
   created_at: string;
   parent_id: string | null;
+  // Вкладка-владелец проекта (sprints.id). Проект принадлежит одной вкладке; подпроект наследует
+  // вкладку родителя. null — проект вне вкладок (легаси/после удаления вкладки: ON DELETE SET NULL).
+  sprint_id: string | null;
 };
 
 export type ProjectInput = {
@@ -110,4 +113,5 @@ export type ProjectInput = {
   color?: string | null;
   emoji?: string | null;
   parent_id?: string | null;
+  sprint_id?: string | null;
 };

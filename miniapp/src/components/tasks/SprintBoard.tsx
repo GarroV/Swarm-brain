@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   fetchTasks, updateTask, fetchSprints, createSprint,
-  addTasksToSprint, removeTasksFromSprint, deleteSprint,
+  removeTasksFromSprint, deleteSprint,
   fetchProjects, createProject, createTask, updateProject, deleteProject,
 } from "@/lib/api";
 import type { Task, Sprint, Project } from "@/types";
@@ -30,8 +30,7 @@ const COLUMNS = [
 const WORK_COLUMNS = COLUMNS.filter((c) => c.status !== "backlog");
 const isBacklogStatus = (s: string) => s !== "open" && s !== "in_progress" && s !== "done";
 
-const BACKLOG = "backlog";        // значение «вне вкладки» в селекторе задачи (sprint_id=null)
-const ALL = "__all__";            // селектор вкладок: показать ВСЕ задачи (без фильтра по вкладке)
+const ALL = "__all__";            // селектор вкладок: показать проекты ВСЕХ вкладок (обзор)
 const EXPANDED_KEY = "swarm.board.expandedProjects"; // localStorage: какие проекты раскрыты (персонально)
 const NO_SECTION = "__none__";    // секция для задач без проекта
 
@@ -80,15 +79,18 @@ export function SprintBoard() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  // Без выбранной вкладки (ALL) — показываем ВСЕ задачи (ничего не прячем; «Бэклог»-вкладку убрали).
-  // Выбрана вкладка → фильтр по sprint_id. На доску всё равно попадают только задачи с проектом.
-  const inScope = tasks.filter((t) => (selected === ALL ? true : t.sprint_id === selected));
-  const doneCount = inScope.filter((t) => t.status === "done").length;
-
-  // Дерево секций: верхний уровень = проекты без parent_id, у каждого — свои подпроекты (Task 5/6).
-  // Проект без детей рендерится как обычная секция; проект с детьми — рамка-группа с рядами-подпроектами.
-  const topLevel = projects.filter((p) => !p.parent_id);
+  // Вкладка ВЛАДЕЕТ проектами (решение владельца 2026-08-09): выбранная вкладка → её проекты
+  // (project.sprint_id === selected), а задача принадлежит вкладке ЧЕРЕЗ свой проект. ALL — обзор
+  // проектов всех вкладок. Дерево: верхний уровень = проекты без parent_id; подпроект наследует вкладку.
+  const topLevel = projects.filter((p) => !p.parent_id && (selected === ALL || p.sprint_id === selected));
   const childrenOf = (id: string) => projects.filter((p) => p.parent_id === id);
+
+  // inScope — задачи выбранной вкладки (через проекты вкладки): нужны для прогресс-бара.
+  const tabProjectIds = new Set(
+    (selected === ALL ? projects : projects.filter((p) => p.sprint_id === selected)).map((p) => p.id),
+  );
+  const inScope = tasks.filter((t) => t.project_id != null && tabProjectIds.has(t.project_id));
+  const doneCount = inScope.filter((t) => t.status === "done").length;
   // Доска показывает ТОЛЬКО задачи с проектом (решение владельца 2026-08-07): задачи без
   // проекта на спринт-доску не сыпятся — проект задаче назначается в её карточке.
   const boardEmpty = topLevel.length === 0;
@@ -99,27 +101,22 @@ export function SprintBoard() {
     try { await updateTask(taskId, { status, project_id }); } catch { load(); }
   }
 
-  async function moveToSprint(taskId: string, sprintId: string) {
-    const target = sprintId === BACKLOG ? null : sprintId;
-    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, sprint_id: target } : t)));
-    try {
-      if (target) await addTasksToSprint(target, [taskId]);
-      else { const cur = tasks.find((t) => t.id === taskId)?.sprint_id; if (cur) await removeTasksFromSprint(cur, [taskId]); }
-    } catch { load(); }
-  }
-
   async function addSection() {
     const name = sectionName.trim();
     if (!name) return;
     setSectionName(""); setAddingSection(false);
-    try { const p = await createProject({ name }); setProjects((prev) => [...prev, p]); } catch { load(); }
+    // Проект создаётся в ТЕКУЩЕЙ вкладке; на ALL кнопка «+ Проект» скрыта (нужен выбор вкладки).
+    if (selected === ALL) return;
+    try { const p = await createProject({ name, sprint_id: selected }); setProjects((prev) => [...prev, p]); } catch { load(); }
   }
 
   async function submitSubproject(parentId: string) {
     const name = subName.trim();
     if (!name) return;
     setSubName(""); setAddingSubOf(null);
-    try { const p = await createProject({ name, parent_id: parentId }); setProjects((prev) => [...prev, p]); } catch { load(); }
+    // Подпроект наследует вкладку родителя.
+    const parentSprint = projects.find((p) => p.id === parentId)?.sprint_id ?? (selected === ALL ? null : selected);
+    try { const p = await createProject({ name, parent_id: parentId, sprint_id: parentSprint }); setProjects((prev) => [...prev, p]); } catch { load(); }
   }
 
   function toggleExpanded(id: string) {
@@ -288,11 +285,6 @@ export function SprintBoard() {
                   {t.due_date && <span className="inline-flex items-center gap-1"><RoyIcon name="cal" size={11} /> {fmtDay(t.due_date)}</span>}
                   {t.assignees.length > 0 && <span className="ml-auto font-bold">{initials(t.assignees)}</span>}
                 </div>
-                <select value={t.sprint_id ?? BACKLOG} onChange={(e) => moveToSprint(t.id, e.target.value)} onClick={(e) => e.stopPropagation()}
-                  className="mt-2 w-full text-[11px] bg-transparent text-ink-soft border-t border-line pt-1.5 outline-none">
-                  <option value={BACKLOG}>{dt("Вне вкладки", "No tab")}</option>
-                  {sprints.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
               </div>
             );
           })}
@@ -351,12 +343,17 @@ export function SprintBoard() {
           занимает всю ширину (w-full → своя строка), остальные плитки съезжают ниже. */}
       <div className="flex-1 overflow-auto px-4 pb-4 flex flex-wrap gap-3 content-start">
         {boardEmpty && (
-          <p className="w-full text-center text-sm text-ink-soft/70 py-10">Проектов пока нет. Добавьте проект кнопкой ниже и накидывайте в него задачи.</p>
+          <p className="w-full text-center text-sm text-ink-soft/70 py-10">
+            {selected === ALL
+              ? "Проектов пока нет. Выберите вкладку сверху (или создайте) и добавьте в неё проект."
+              : "В этой вкладке проектов пока нет. Добавьте проект кнопкой ниже и накидывайте в него задачи."}
+          </p>
         )}
         {topLevel.map((sec) => {
           const kids = childrenOf(sec.id);
-          const secDirectTasks = inScope.filter((t) => t.project_id === sec.id);
-          const kidsWithTasks = kids.map((kid) => ({ kid, tasks: inScope.filter((t) => t.project_id === kid.id) }));
+          // Проект целиком принадлежит вкладке → берём ВСЕ его задачи по project_id (без фильтра по вкладке).
+          const secDirectTasks = tasks.filter((t) => t.project_id === sec.id);
+          const kidsWithTasks = kids.map((kid) => ({ kid, tasks: tasks.filter((t) => t.project_id === kid.id) }));
           const total = secDirectTasks.length + kidsWithTasks.reduce((sum, k) => sum + k.tasks.length, 0);
           const open = expanded.has(sec.id);
 
@@ -460,9 +457,12 @@ export function SprintBoard() {
           );
         })}
 
-        {/* Добавить проект — на своей строке (w-full в flex-wrap контейнере). */}
+        {/* Добавить проект — на своей строке (w-full в flex-wrap контейнере). Проект создаётся
+            в ВЫБРАННОЙ вкладке; на ALL просим сначала выбрать вкладку сверху. */}
         <div className="w-full">
-        {addingSection ? (
+        {selected === ALL ? (
+          <p className="text-xs text-ink-soft/70">{dt("Выберите вкладку сверху, чтобы создать в ней проект", "Pick a tab above to create a project in it")}</p>
+        ) : addingSection ? (
           <div className="flex items-center gap-2 max-w-sm">
             <input autoFocus value={sectionName} onChange={(e) => setSectionName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") addSection(); if (e.key === "Escape") setAddingSection(false); }}

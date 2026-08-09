@@ -894,11 +894,16 @@ Deno.serve(async (req: Request) => {
       if (typeof body.name !== "string" || !body.name.trim()) {
         return apiErr(400, "name обязателен", origin);
       }
+      const sprintId = (body.sprint_id as string | null) ?? null;
+      if (sprintId && !(await sprintInWorkspace(sprintId, groupId))) {
+        return apiErr(400, "sprint_id не найден в этом воркспейсе", origin);
+      }
       const input: ProjectInput = {
         name: body.name.trim(),
         color: (body.color as string | null) ?? null,
         emoji: (body.emoji as string | null) ?? null,
         parent_id: (body.parent_id as string | null) ?? null,
+        sprint_id: sprintId,
       };
       try {
         return json(await createProject(input, groupId, telegram_id ?? null), 201, origin);
@@ -920,6 +925,13 @@ Deno.serve(async (req: Request) => {
       if ("color" in body) fields.color = body.color as string | null;
       if ("emoji" in body) fields.emoji = body.emoji as string | null;
       if ("parent_id" in body) fields.parent_id = (body.parent_id as string | null) ?? null;
+      if ("sprint_id" in body) {
+        const sid = (body.sprint_id as string | null) ?? null;
+        if (sid && !(await sprintInWorkspace(sid, groupId))) {
+          return apiErr(400, "sprint_id не найден в этом воркспейсе", origin);
+        }
+        fields.sprint_id = sid;
+      }
       let updated;
       try {
         updated = await updateProject(projectId, fields, groupId);
