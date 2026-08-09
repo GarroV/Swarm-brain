@@ -311,7 +311,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent
         showCloseButton={false}
-        className="gap-0 rounded-[20px] border border-line bg-[var(--popover)] p-0 sm:max-w-3xl dark:backdrop-blur-xl"
+        className="gap-0 rounded-[20px] border border-line bg-[var(--popover)] p-0 sm:max-w-5xl dark:backdrop-blur-xl"
       >
         {/* Шапка: заголовок + индикатор автосейва (edit) + удалить (edit) + закрыть */}
         <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
@@ -378,7 +378,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                     onChange={(e) => setDescription(e.target.value)}
                     onBlur={() => { if (description.trim()) setDescEditing(false); }}
                     placeholder="Подробности, контекст, что именно сделать…"
-                    style={{ height: 84, minHeight: 60, lineHeight: 1.55 }}
+                    style={{ height: 160, minHeight: 100, lineHeight: 1.55 }}
                   />
                 ) : (
                   <div
@@ -392,8 +392,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                         setDescEditing(true);
                       }
                     }}
-                    className={`${fieldCls} max-h-[180px] cursor-text overflow-y-auto whitespace-pre-wrap`}
-                    style={{ minHeight: 60, lineHeight: 1.55 }}
+                    className={`${fieldCls} max-h-[320px] cursor-text overflow-y-auto whitespace-pre-wrap`}
+                    style={{ minHeight: 100, lineHeight: 1.55 }}
                   >
                     {linkify(description)}
                   </div>
