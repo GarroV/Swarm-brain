@@ -107,6 +107,9 @@ function ListRow({
   const title = itemTitle(item);
   const date = fmtDate(itemDate(item));
   const src = itemSource(item);
+  // Согласованная встреча (в базе) — не показываем статус-бейдж «На согласовании» (важно в режиме
+  // «Все встречи», где список включает уже опубликованные). Черновик агента всегда «На вычитке».
+  const confirmedEntry = item.kind === "entry" && (item.data.metadata as Record<string, unknown> | undefined)?.confirmed === true;
 
   return (
     <button
@@ -138,18 +141,20 @@ function ListRow({
               {title}
             </div>
             <div className="mt-0.5 flex items-center gap-2 flex-wrap">
-              <span
-                className="inline-flex items-center font-semibold"
-                style={{
-                  fontSize: 10,
-                  color: isAgent ? "var(--status-open)" : "var(--meet-ink)",
-                  background: isAgent ? "color-mix(in srgb, var(--status-open) 10%, transparent)" : "var(--meet-soft)",
-                  borderRadius: 6,
-                  padding: "1px 6px",
-                }}
-              >
-                {isAgent ? "На вычитке" : "На согласовании"}
-              </span>
+              {!confirmedEntry && (
+                <span
+                  className="inline-flex items-center font-semibold"
+                  style={{
+                    fontSize: 10,
+                    color: isAgent ? "var(--status-open)" : "var(--meet-ink)",
+                    background: isAgent ? "color-mix(in srgb, var(--status-open) 10%, transparent)" : "var(--meet-soft)",
+                    borderRadius: 6,
+                    padding: "1px 6px",
+                  }}
+                >
+                  {isAgent ? "На вычитке" : "На согласовании"}
+                </span>
+              )}
               <span className="text-ink-mute font-medium" style={{ fontSize: 11 }}>
                 {src}
               </span>

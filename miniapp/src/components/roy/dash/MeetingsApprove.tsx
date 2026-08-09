@@ -68,7 +68,7 @@ export function MeetingsApprove({ data, className }: { data: DashboardData; clas
       icon="cal"
       tint="var(--meet-ink)"
       badge={approvalCount > 0 ? <AccentBadge>{approvalCount} {dt("на согласовании", "pending")}</AccentBadge> : undefined}
-      headAction={dt("Ревью", "Review")}
+      headAction={dt("Доска встреч", "Board")}
       loading={loading}
       empty={pendingList.length === 0 && recentMeetings.length === 0}
       emptyText={dt("Встреч нет", "No meetings")}
@@ -91,16 +91,6 @@ export function MeetingsApprove({ data, className }: { data: DashboardData; clas
           ))}
         </>
       )}
-      {/* Обе кнопки ведут на доску встреч (meetAdmin), как у задач: шапка «Ревью» — очередь на
-          решение, футер «Все встречи» — весь доступный список (переключатель слева на доске). */}
-      <button
-        type="button"
-        onClick={() => push({ view: "meetAdmin", params: { mode: "all" } })}
-        className="mt-1 block w-full rounded-[10px] py-2 text-center font-semibold text-ink-mute transition-colors hover:bg-surface-2 hover:text-primary"
-        style={{ fontSize: 12 }}
-      >
-        {dt("Все встречи →", "All meetings →")}
-      </button>
     </DashBlock>
   );
 }

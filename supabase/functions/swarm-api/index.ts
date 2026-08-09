@@ -1204,10 +1204,13 @@ Deno.serve(async (req: Request) => {
   // видит только владелец. Оверсайт-исключение осталось лишь для задач, не для встреч.
   if (req.method === "GET" && routePath === "/meetings") {
     const confirmedParam = url.searchParams.get("confirmed");
+    // Лимит настраиваемый (?limit=), дефолт 500 — прежний хардкод 50 обрезал список «Все встречи»
+    // (у команды уже 60+ встреч только за 2 недели). Потолок 2000 — защита от гигантского payload.
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") ?? "500", 10) || 500, 1), 2000);
     let q = buildEntriesQuery(supabase, "*", { groupId, telegramId: telegram_id })
       .eq("entry_type", "meeting")
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(limit);
     if (confirmedParam === "true") q = q.eq("metadata->>confirmed", "true");
     if (confirmedParam === "false") q = q.or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false");
     const { data, error } = await q;
