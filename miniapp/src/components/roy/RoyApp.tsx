@@ -256,7 +256,7 @@ function PushScreen({ route }: { route: RoyRoute }) {
   if (route.view === "settings") return <Wrapped title="Настройки"><SettingsScreen /></Wrapped>;
   if (route.view === "team") return <Wrapped title="Команда"><TeamScreen /></Wrapped>;
   if (route.view === "admin") return <Wrapped title="Админ"><AdminScreen /></Wrapped>;
-  if (route.view === "meetAdmin") return <MeetAdminScreen />;
+  if (route.view === "meetAdmin") return <MeetAdminScreen initialMode={route.params?.mode} />;
   return null;
 }
 

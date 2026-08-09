@@ -21,7 +21,7 @@ export type RoyRoute =
   | { view: "admin" }
   | { view: "more" }
   | { view: "map" }
-  | { view: "meetAdmin" };
+  | { view: "meetAdmin"; params?: { mode?: "review" | "all" } };
 
 export type RoyNav = {
   me: Me | null;

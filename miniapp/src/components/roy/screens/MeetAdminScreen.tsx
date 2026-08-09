@@ -924,12 +924,22 @@ function ActionsPanel({
 // непубликованные встречи приватны, в них не копаемся. Сводка «сколько у кого на вычитке» —
 // отдельным агрегированным счётчиком в админ-панели (без доступа к чужому контенту).
 
-export function MeetAdminScreen() {
+// Режимы левой колонки: «Ревью» — очередь на решение (черновики агента + неподтверждённые
+// встречи), «Все встречи» — весь доступный пользователю список (fetchMeetings, приватность на бэке).
+const MODE_SEGS = [
+  { id: "review", label: "Ревью" },
+  { id: "all", label: "Все встречи" },
+];
+
+export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "review" | "all" } = {}) {
   const { pop, toast } = useRoyNav();
   const confirm = useConfirm();
 
+  const [mode, setMode] = useState<"review" | "all">(initialMode);
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [agentMeetings, setAgentMeetings] = useState<AgentMeeting[] | null>(null);
+  // «Все встречи» — грузятся лениво при первом переключении в этот режим.
+  const [allMeetings, setAllMeetings] = useState<Entry[] | null>(null);
   const [selected, setSelected] = useState<MeetItem | null>(null);
 
   const load = useCallback(async () => {
@@ -949,16 +959,28 @@ export function MeetAdminScreen() {
     load();
   }, [load]);
 
-  // Объединяем: черновики агента первыми (аппрув-нужные), потом неподтверждённые встречи
-  const items: MeetItem[] = [
+  // «Все встречи» — весь доступный список (fetchMeetings без фильтра; приватность на бэке).
+  useEffect(() => {
+    if (mode === "all" && allMeetings === null) {
+      fetchMeetings().then(setAllMeetings).catch(() => setAllMeetings([]));
+    }
+  }, [mode, allMeetings]);
+
+  const switchMode = (m: string) => { setSelected(null); setMode(m as "review" | "all"); };
+
+  // Список зависит от режима: Ревью — очередь (черновики + неподтверждённые), Все — весь доступный.
+  const reviewItems: MeetItem[] = [
     ...(agentMeetings ?? []).map((m): MeetItem => ({ kind: "agent", data: m })),
     ...(entries ?? []).map((e): MeetItem => ({ kind: "entry", data: e })),
   ];
+  const allItems: MeetItem[] = (allMeetings ?? []).map((e): MeetItem => ({ kind: "entry", data: e }));
+  const items: MeetItem[] = mode === "all" ? allItems : reviewItems;
 
 
   const removeFromList = (id: string) => {
     setEntries((prev) => prev?.filter((e) => e.id !== id) ?? null);
     setAgentMeetings((prev) => prev?.filter((m) => m.id !== id) ?? null);
+    setAllMeetings((prev) => prev?.filter((e) => e.id !== id) ?? null);
     setSelected((prev) => (prev && prev.data.id === id ? null : prev));
   };
 
@@ -978,6 +1000,7 @@ export function MeetAdminScreen() {
   // Иммутабельно заменяет запись в списке встреч и в выбранной (если совпадает id).
   const onEntryUpdated = (updated: Entry) => {
     setEntries((prev) => prev?.map((e) => (e.id === updated.id ? updated : e)) ?? null);
+    setAllMeetings((prev) => prev?.map((e) => (e.id === updated.id ? updated : e)) ?? null);
     setSelected((prev) =>
       prev && prev.kind === "entry" && prev.data.id === updated.id
         ? { kind: "entry", data: updated }
@@ -1031,13 +1054,13 @@ export function MeetAdminScreen() {
     await animateRemove(item.data.id);
   };
 
-  const isLoading = entries === null || agentMeetings === null;
+  const isLoading = mode === "all" ? allMeetings === null : (entries === null || agentMeetings === null);
 
   return (
     // flex-1 + min-h-0 (а не h-full): надёжно занимает высоту flex-родителя без капризов
     // процентной высоты → внутренние overflow-y-auto колонки реально скроллятся.
     <div className="roy-pop flex min-h-0 flex-1 flex-col overflow-hidden">
-      <NavHeader onBack={pop} title="Ревью встреч" />
+      <NavHeader onBack={pop} title="Встречи" />
 
       {/* ── Трёхколоночный master-detail ─────────────────────────────────────── */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -1047,14 +1070,17 @@ export function MeetAdminScreen() {
           className="flex flex-col border-r border-line shrink-0 min-h-0"
           style={{ width: 300 }}
         >
-          {/* Только свои встречи к вычитке (объединяет Granola/Read.ai/рекордер). Чужого тут нет. */}
-          <div className="flex gap-2 px-3 py-3">
-            <StatChip label="требуют решения" value={items.length} accent />
+          {/* Переключатель: Ревью (очередь на решение) / Все встречи (весь доступный список). */}
+          <div className="px-3 pt-3 pb-1">
+            <Segmented items={MODE_SEGS} value={mode} onChange={switchMode} />
+          </div>
+          <div className="flex gap-2 px-3 py-2">
+            <StatChip label={mode === "all" ? "всего встреч" : "требуют решения"} value={items.length} accent={mode !== "all"} />
           </div>
 
           {/* Метка секции */}
           <div className="px-3 pb-1">
-            <SectionLabel>Требуют решения</SectionLabel>
+            <SectionLabel>{mode === "all" ? "Все встречи" : "Требуют решения"}</SectionLabel>
           </div>
 
           {/* Список */}
@@ -1068,7 +1094,7 @@ export function MeetAdminScreen() {
             )}
             {!isLoading && items.length === 0 && (
               <div className="py-8 text-center text-ink-mute" style={{ fontSize: 13 }}>
-                Всё согласовано
+                {mode === "all" ? "Встреч нет" : "Всё согласовано"}
               </div>
             )}
             {items.map((item) => (
