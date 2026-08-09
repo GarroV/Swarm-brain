@@ -129,13 +129,17 @@ async function withRecorderNames<T extends { recorders?: unknown }>(
 // metadata.added_by_telegram_id (кладут оба пути сохранения), фолбэк owner_id (для pending =
 // импортёр). Резолв в user_profiles. importer_name=null, если не из профилей. added_by="granola"
 // (источник) на фронте больше не путаем с человеком.
-async function withImporterNames<T extends { owner_id?: number | null; metadata?: unknown }>(
+async function withImporterNames<T extends { id?: string; owner_id?: number | null; metadata?: unknown }>(
   rows: T[],
+  fallbackById?: Map<string, number>,
 ): Promise<Array<T & { importer_name: string | null }>> {
   const idOf = (r: T): number | null => {
     const raw = (r.metadata as Record<string, unknown> | null)?.added_by_telegram_id;
     const fromMeta = typeof raw === "number" ? raw : (typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : null);
-    return fromMeta ?? (typeof r.owner_id === "number" ? r.owner_id : null);
+    const own = typeof r.owner_id === "number" ? r.owner_id : null;
+    // Фолбэк — кто записал/импортировал (из meetings.recorders), если в самой записи атрибуции нет.
+    const fb = (fallbackById && r.id) ? (fallbackById.get(r.id) ?? null) : null;
+    return fromMeta ?? own ?? fb;
   };
   const names = await resolveNames([...new Set(rows.map(idOf).filter((n): n is number => n !== null))]);
   return rows.map((r) => {
@@ -1215,7 +1219,21 @@ Deno.serve(async (req: Request) => {
     if (confirmedParam === "false") q = q.or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false");
     const { data, error } = await q;
     if (error) return apiErr(500, error.message, origin);
-    return json(await withImporterNames((data ?? []) as Array<{ owner_id?: number | null; metadata?: unknown }>), 200, origin);
+    const rows = (data ?? []) as unknown as Array<{ id: string; owner_id?: number | null; metadata?: unknown }>;
+    // «Кто записал» часто не продублирован в metadata записи, но есть в связанной строке meetings
+    // (recorders — источник истины). Подтягиваем как фолбэк атрибуции для ВСЕХ встреч (прошлых и новых).
+    const recMap = new Map<string, number>();
+    if (rows.length) {
+      const { data: mrows } = await supabase
+        .from("meetings").select("entry_id, recorders")
+        .in("entry_id", rows.map((r) => r.id));
+      for (const m of (mrows ?? []) as Array<{ entry_id: string | null; recorders: Array<{ telegram_id?: number | string }> | null }>) {
+        const raw = m.recorders?.[0]?.telegram_id;
+        const tg = typeof raw === "number" ? raw : (typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : null);
+        if (m.entry_id && tg !== null) recMap.set(m.entry_id, tg);
+      }
+    }
+    return json(await withImporterNames(rows, recMap), 200, origin);
   }
 
   // ── POST /meetings/:id/resummarize — пересобрать тезисы УЖЕ опубликованной встречи ──
