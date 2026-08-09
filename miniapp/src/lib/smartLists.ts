@@ -4,6 +4,7 @@
 
 import type { Task, Me } from "@/types";
 import type { RoyIconName } from "@/components/roy/icons";
+import { countryCode } from "@/lib/countries";
 
 export type SmartListId = "today" | "upcoming" | "all" | "done";
 // Линза = ось «как смотреть»: «mine» — назначенные на меня; «team» — ОБЩИЕ (не приватные, без
@@ -137,7 +138,9 @@ export function groupByMarket(tasks: Task[], listId: SmartListId, me: Me | null,
   const inScope = filterTasks(tasks, listId, "all", me, now);
   const map = new Map<string | null, Task[]>();
   for (const t of inScope) {
-    const key = t.country && t.country !== "—" ? t.country : null;
+    // Нормализуем страну к ISO-коду (countryCode): иначе «SI» и «Словения» (или «RS»/«Сербия»)
+    // попадают в РАЗНЫЕ группы — один рынок задваивается. Код объединяет любые формы записи.
+    const key = t.country && t.country !== "—" ? countryCode(t.country) : null;
     const bucket = map.get(key);
     if (bucket) bucket.push(t);
     else map.set(key, [t]);
