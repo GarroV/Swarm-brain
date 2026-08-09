@@ -72,6 +72,7 @@ export async function createProject(
     emoji: input.emoji ?? null,
     parent_id: parentId,
     created_by: createdBy,
+    sprint_id: input.sprint_id ?? null,
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Project;

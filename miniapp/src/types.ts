@@ -50,6 +50,8 @@ export type Project = {
   color: string | null;
   emoji: string | null;
   parent_id: string | null;
+  // Вкладка-владелец проекта (Sprint.id). Проект принадлежит одной вкладке; подпроект — вкладке родителя.
+  sprint_id: string | null;
   created_by: number | null;
   created_at: string;
   // Отдаётся из GET /projects (агрегаты):
