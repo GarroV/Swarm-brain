@@ -17,6 +17,7 @@ import {
   fetchMe,
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
@@ -54,6 +55,9 @@ const AUTOSAVE_DELAY = 550;
 const fieldCls =
   "w-full rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute dark:backdrop-blur-sm";
 const labelCls = "mb-1 block font-semibold text-ink-soft";
+// Триггер кастомного Select (в теме проекта) — под общий вид полей (fieldCls): полная ширина,
+// та же линия/фон/скругление. Нативный <select> заменён, чтобы выпадашка была не системной.
+const selectTriggerCls = "w-full h-auto rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink";
 
 interface TaskModalProps {
   task?: Task;
@@ -439,18 +443,18 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                   <DatePicker value={dueDate} onChange={setDueDate} className={fieldCls} placeholder="Срок" />
                 </div>
                 <div>
-                  <label htmlFor="modal-project" className={labelCls} style={{ fontSize: 12 }}>{dt("Проект", "Project")}</label>
-                  <select
-                    id="modal-project"
-                    className={fieldCls}
-                    value={selProject ?? NONE}
-                    onChange={(e) => setSelProject(e.target.value === NONE ? null : e.target.value)}
-                  >
-                    <option value={NONE}>—</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
+                  <span className={labelCls} style={{ fontSize: 12 }}>{dt("Проект", "Project")}</span>
+                  <Select value={selProject ?? NONE} onValueChange={(v) => setSelProject(v === NONE ? null : v)}>
+                    <SelectTrigger id="modal-project" className={selectTriggerCls}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>—</SelectItem>
+                      {projects.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -474,14 +478,19 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                   <CountryPopover value={selectedCountryId} codes={countryCodes} onChange={setCountry} />
                 </div>
                 <div>
-                  <label htmlFor="modal-assignee" className={labelCls} style={{ fontSize: 12 }}>Исполнитель</label>
-                  <select id="modal-assignee" className={fieldCls} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
-                    {/* «Общие» = без конкретного исполнителя → командная задача (видна во вкладке «Команда»). */}
-                    <option value={NONE}>Общие (вся команда)</option>
-                    {assigneeOptions.map((o) => (
-                      <option key={o.id} value={o.id}>{o.name}</option>
-                    ))}
-                  </select>
+                  <span className={labelCls} style={{ fontSize: 12 }}>Исполнитель</span>
+                  {/* «Общие» = без конкретного исполнителя → командная задача (видна во вкладке «Команда»). */}
+                  <Select value={assigneeId} onValueChange={setAssigneeId}>
+                    <SelectTrigger id="modal-assignee" className={selectTriggerCls}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>Общие (вся команда)</SelectItem>
+                      {assigneeOptions.map((o) => (
+                        <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
