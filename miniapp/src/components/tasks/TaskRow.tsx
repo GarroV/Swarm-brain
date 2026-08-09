@@ -1,8 +1,9 @@
 "use client";
 import type { MouseEvent, ReactNode } from "react";
 import type { Task } from "@/types";
+import type { TaskLabel } from "@/lib/api";
 import { PriDot, Market, AvatarStack } from "@/components/roy/ui";
-import { RoyIcon } from "@/components/roy/icons";
+import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { isDone, isOverdue } from "@/lib/smartLists";
 
@@ -19,11 +20,13 @@ type TaskRowProps = {
   now?: Date;
   /** Десктоп: кнопки изменить/удалить в мета-ряду (рядом с датой), показываются по hover строки (group). */
   trailing?: ReactNode;
+  /** Все метки воркспейса — из них показываем те, в чьих списках состоит задача (task.label_ids). */
+  labels?: TaskLabel[];
 };
 
 // Строка задачи в стиле macOS Reminders: крупный круглый чекбокс, заголовок, чипы (рынок/срок/важное),
 // аватар исполнителя. Непрозрачный фон — чтобы корректно работать внутри SwipeRow на мобайле.
-export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(), trailing }: TaskRowProps) {
+export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(), trailing, labels = [] }: TaskRowProps) {
   const dt = useDt();
   const done = isDone(task);
   const overdue = isOverdue(task, now);
@@ -31,7 +34,8 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
   const high = task.priority === "high";
   const fromMeeting = Boolean(task.meeting_id);
   const hasAssignee = showAssignee && (task.assignees?.length ?? 0) > 0;
-  const showMeta = !done && (Boolean(task.country || due || high) || fromMeeting || hasAssignee);
+  // Списки, в которых состоит задача (личные смарт-метки) — показываем чипами на карточке.
+  const taskLabels = done ? [] : labels.filter((l) => task.label_ids?.includes(l.id));
 
   return (
     <div className="flex items-start gap-2.5 px-3 py-2">
@@ -68,46 +72,43 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
             {task.title}
           </span>
         </div>
-        {showMeta ? (
-          // Есть чипы (дата/рынок/важное) — кнопки изменить/удалить встают в тот же ряд, рядом с датой.
-          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-            {hasAssignee && (
-              // Чья задача — ИМЕНЕМ, а не только аватаром-инициалами (видно в линзах «Команда»/«Все»).
-              <span className="inline-flex items-center gap-1 font-semibold text-ink-soft bg-surface-2 border border-line-2" style={{ fontSize: 10.5, borderRadius: 6, padding: "1px 6px" }}>
-                <RoyIcon name="team" size={10} />
-                {task.assignees[0]}{task.assignees.length > 1 ? ` +${task.assignees.length - 1}` : ""}
-              </span>
-            )}
-            {fromMeeting && (
-              <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 10.5, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 6, padding: "1px 6px" }}>
-                <RoyIcon name="meet" size={10} /> {dt("Встреча", "Meeting")}
-              </span>
-            )}
-            <Market code={task.country} />
-            {due && (
-              <span
-                className="inline-flex items-center gap-1"
-                style={{ fontSize: 11.5, color: overdue ? "var(--pri-high)" : "var(--ink-soft)", fontWeight: overdue ? 600 : 400 }}
-              >
-                <RoyIcon name="cal" size={11} />
-                {due}
-              </span>
-            )}
-            {high && (
-              <span
-                className="inline-flex items-center gap-1 font-semibold"
-                style={{ fontSize: 10.5, color: "var(--pri-high)", background: "color-mix(in srgb, var(--pri-high) 12%, transparent)", borderRadius: 6, padding: "1px 6px" }}
-              >
-                <RoyIcon name="flag" size={10} />
-                {dt("Важное", "Important")}
-              </span>
-            )}
-            {trailing}
-          </div>
-        ) : trailing ? (
-          // Чипов нет — не держим пустой ряд: кнопки появляются отдельной строкой только по hover.
-          <div className="mt-1 hidden items-center gap-2 group-hover:flex">{trailing}</div>
-        ) : null}
+        {/* Мета-ряд рендерится ВСЕГДА (даже без чипов) с фикс. min-height — чтобы hover-действия
+            (trailing, opacity-0→hover) не «выпадали» новой строкой и список не дёргался: место под
+            них зарезервировано, ряды одинаковой высоты. */}
+        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 min-h-[20px]">
+          {hasAssignee && (
+            // Чья задача — ИМЕНЕМ, а не только аватаром-инициалами (видно в линзах «Команда»/«Все»).
+            <span className="inline-flex items-center gap-1 font-semibold text-ink-soft bg-surface-2 border border-line-2" style={{ fontSize: 10.5, borderRadius: 6, padding: "1px 6px" }}>
+              <RoyIcon name="team" size={10} />
+              {task.assignees[0]}{task.assignees.length > 1 ? ` +${task.assignees.length - 1}` : ""}
+            </span>
+          )}
+          {fromMeeting && (
+            <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 10.5, color: "var(--meet-ink)", background: "var(--meet-soft)", borderRadius: 6, padding: "1px 6px" }}>
+              <RoyIcon name="meet" size={10} /> {dt("Встреча", "Meeting")}
+            </span>
+          )}
+          <Market code={task.country} />
+          {/* Списки задачи (личные смарт-метки) — как выбранные на карточке. */}
+          {taskLabels.map((l) => (
+            <span key={l.id} className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 10.5, borderRadius: 6, padding: "1px 6px", color: l.color ?? "var(--ink-soft)", background: l.color ? `color-mix(in srgb, ${l.color} 14%, transparent)` : "var(--surface-2)", border: `1px solid ${l.color ? `color-mix(in srgb, ${l.color} 35%, transparent)` : "var(--line-2)"}` }}>
+              <RoyIcon name={l.icon as RoyIconName} size={10} /> {l.name}
+            </span>
+          ))}
+          {due && (
+            <span className="inline-flex items-center gap-1" style={{ fontSize: 11.5, color: overdue ? "var(--pri-high)" : "var(--ink-soft)", fontWeight: overdue ? 600 : 400 }}>
+              <RoyIcon name="cal" size={11} />
+              {due}
+            </span>
+          )}
+          {!done && high && (
+            <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 10.5, color: "var(--pri-high)", background: "color-mix(in srgb, var(--pri-high) 12%, transparent)", borderRadius: 6, padding: "1px 6px" }}>
+              <RoyIcon name="flag" size={10} />
+              {dt("Важное", "Important")}
+            </span>
+          )}
+          {trailing}
+        </div>
       </div>
 
       {showAssignee && task.assignees?.length > 0 && <AvatarStack names={task.assignees} size={22} />}

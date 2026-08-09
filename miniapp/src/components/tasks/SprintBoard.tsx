@@ -305,13 +305,10 @@ export function SprintBoard() {
 
   return (
     <div className="flex flex-col h-full">
-      <header className="px-5 pt-4 pb-2">
-        <h1 className="font-bold leading-[1.1] text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>{dt("Проекты", "Projects")}</h1>
-      </header>
-
+      {/* Заголовок-h1 убран — таб навигации уже называется «Проекты» (дубль не нужен). */}
       {/* Вкладки (общие; создавать может любой). Дефолтной «Бэклог»-вкладки нет — без выбора видно всё;
           клик по активной вкладке снимает фильтр (снова все задачи). */}
-      <div className="flex gap-1.5 px-4 pb-2 overflow-x-auto shrink-0 items-center">
+      <div className="flex gap-1.5 px-4 pt-3 pb-2 overflow-x-auto shrink-0 items-center">
         {sprints.map((s) => {
           const active = selected === s.id;
           return (
@@ -350,10 +347,11 @@ export function SprintBoard() {
         </div>
       )}
 
-      {/* Доска: секции (проекты) по вертикали × колонки статусов по горизонтали */}
-      <div className="flex-1 overflow-auto px-4 pb-4 space-y-4">
+      {/* Доска проектов: свёрнутые проекты — плитки (flex-wrap, несколько в ряд); раскрытый проект
+          занимает всю ширину (w-full → своя строка), остальные плитки съезжают ниже. */}
+      <div className="flex-1 overflow-auto px-4 pb-4 flex flex-wrap gap-3 content-start">
         {boardEmpty && (
-          <p className="text-center text-sm text-ink-soft/70 py-10">Проектов пока нет. Добавьте проект кнопкой ниже и накидывайте в него задачи.</p>
+          <p className="w-full text-center text-sm text-ink-soft/70 py-10">Проектов пока нет. Добавьте проект кнопкой ниже и накидывайте в него задачи.</p>
         )}
         {topLevel.map((sec) => {
           const kids = childrenOf(sec.id);
@@ -362,12 +360,32 @@ export function SprintBoard() {
           const total = secDirectTasks.length + kidsWithTasks.reduce((sum, k) => sum + k.tasks.length, 0);
           const open = expanded.has(sec.id);
 
+          // Свёрнутый проект — компактная ПЛИТКА-карточка (двойной клик открывает).
+          if (!open) {
+            return (
+              <button key={sec.id} type="button" onDoubleClick={() => toggleExpanded(sec.id)}
+                className="w-56 shrink-0 self-start rounded-2xl border border-line bg-surface/40 p-3 text-left select-none cursor-pointer transition-colors hover:border-line-2 dark:backdrop-blur-sm"
+                title={dt("Двойной клик — открыть проект", "Double-click to open")}>
+                <div className="flex items-center gap-2">
+                  <RoyIcon name="board" size={15} strokeWidth={1.9} />
+                  <span className="flex-1 truncate text-sm font-bold text-ink">{sec.name}</span>
+                  <RoyIcon name="cright" size={12} className="text-ink-soft" />
+                </div>
+                <div className="mt-2 flex items-center gap-2 text-xs text-ink-soft">
+                  <span>{total} {dt("задач", "tasks")}</span>
+                  {kids.length > 0 && <span>· {kids.length} {dt("подпр.", "sub")}</span>}
+                </div>
+              </button>
+            );
+          }
+
+          // Раскрытый проект — на всю ширину (w-full → своя строка в flex-wrap).
           return (
-            <section key={sec.id} className="rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
-              {/* Плитка-заголовок проекта. Двойной клик — развернуть/свернуть (персонально, localStorage). */}
+            <section key={sec.id} className="w-full rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
+              {/* Заголовок раскрытого проекта. Двойной клик — свернуть обратно в плитку. */}
               <div onDoubleClick={() => toggleExpanded(sec.id)}
-                className={`flex items-center gap-2 px-3 py-2 select-none cursor-pointer ${open ? "border-b border-line" : ""}`}
-                title={dt("Двойной клик — развернуть/свернуть", "Double-click to expand/collapse")}>
+                className="flex items-center gap-2 px-3 py-2 select-none cursor-pointer border-b border-line"
+                title={dt("Двойной клик — свернуть", "Double-click to collapse")}>
                 <button onClick={(e) => { e.stopPropagation(); toggleExpanded(sec.id); }} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={open ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
                   <RoyIcon name="cright" size={12} style={{ transform: open ? "rotate(90deg)" : undefined }} />
                 </button>
@@ -442,7 +460,8 @@ export function SprintBoard() {
           );
         })}
 
-        {/* Добавить секцию (= проект), задаёт владелец */}
+        {/* Добавить проект — на своей строке (w-full в flex-wrap контейнере). */}
+        <div className="w-full">
         {addingSection ? (
           <div className="flex items-center gap-2 max-w-sm">
             <input autoFocus value={sectionName} onChange={(e) => setSectionName(e.target.value)}
@@ -457,6 +476,7 @@ export function SprintBoard() {
             <RoyIcon name="plus" size={14} strokeWidth={2} /> Проект
           </button>
         )}
+        </div>
       </div>
 
       <TaskModal task={editing ?? undefined} open={!!editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />

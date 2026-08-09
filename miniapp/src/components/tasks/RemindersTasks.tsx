@@ -100,7 +100,7 @@ export function RemindersTasks() {
       onClick={() => setModalTask(t)}
       className="group flex cursor-pointer border-b border-line transition-colors hover:bg-surface-2"
     >
-      <TaskRow task={t} now={r.now} showAssignee={showAssignee} onToggle={() => r.toggle(t)} trailing={rowTrailing(t)} />
+      <TaskRow task={t} now={r.now} showAssignee={showAssignee} onToggle={() => r.toggle(t)} trailing={rowTrailing(t)} labels={r.labels} />
     </div>
   );
 
