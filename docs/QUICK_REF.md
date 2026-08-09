@@ -85,6 +85,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 ### Встречи — запись → транскрибация → тезисы → ревью
 | Concern | Файлы | Детали |
 |---|---|---|
+| Экран встреч (доска, master-detail): левый переключатель **Ревью** (очередь на решение — черновики агента + неподтверждённые) / **Все встречи** (весь доступный пользователю список, `fetchMeetings()`, приватность на бэке). Режим приходит из `meetAdmin.params.mode` (`review`\|`all`). С главной карточка «Встречи» → «Ревью» (шапка) и «Все встречи» (футер) ведут на эту доску (как задачи), а не в отдельный таб | `roy/screens/MeetAdminScreen.tsx`, карточка `roy/dash/MeetingsApprove.tsx`; таб «cal» `roy/screens/RoyMeetingsScreen.tsx` (лента, остался в нижней навигации) | §Флоу встреч |
 | Durable-обработка (транскрибация по куску) | `_shared/meeting-processor.ts`, `meeting-ingest/`, `meeting-process/` (cron); watchdog `swarm-bot/index.ts` `sweepStuckMeetings` | §Флоу встреч |
 | Мониторинг рекордера (heartbeat, алерты) | `meeting-heartbeat/`, `swarm-bot/index.ts` `checkRecorderHealth`; Swift `SwarmClient.heartbeat`/`AppDelegate.sendHeartbeat`; поля `allowed_users.recorder_last_*` | §Edge Functions |
 | Промпт тезисов (канон, DRY) + словарь имён собственных (нормализация Wolt/Београд/Нови Сад…) + guard пустого ответа GPT-5 (reasoning-burn → фолбэк) | `_shared/tezisy-prompt.ts`, `_shared/glossary.ts`, `_shared/openai-chat.ts` (+ `.test.ts`) | §Флоу встреч |
