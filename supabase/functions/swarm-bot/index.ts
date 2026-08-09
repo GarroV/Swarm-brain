@@ -228,19 +228,23 @@ Deno.serve(async (req: Request) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ commands: [
-        { command: "start", description: "Главное меню" },
+        // Бот — точка быстрого доступа: в МЕНЮ команд оставлены только «Добавить» и «Спросить»
+        // (решение владельца 2026-08-09). Остальные команды СКРЫТЫ из меню, но их обработчики
+        // живы дальше по файлу — работают при ручном вводе и вернутся в меню позже.
+        // Чтобы вернуть команду в меню — раскомментировать её строку.
         { command: "add", description: "Добавить запись в базу знаний" },
         { command: "ask", description: "Задать вопрос" },
-        { command: "tasks", description: "Задачи команды" },
-        { command: "addtask", description: "Добавить задачу" },
-        { command: "meetings", description: "Встречи на подтверждение" },
-        { command: "status", description: "Состояние базы знаний" },
-        { command: "digest", description: "Личный дайджест" },
-        { command: "setup", description: "Подключить Claude Desktop (авто)" },
-        { command: "recordertoken", description: "🎙 Рекордер встреч (Mac) — установка" },
-        { command: "help", description: "Справка" },
-        { command: "feedback", description: "Отправить фидбек" },
-        { command: "reset", description: "Сбросить состояние бота" },
+        // { command: "start", description: "Главное меню" },
+        // { command: "tasks", description: "Задачи команды" },
+        // { command: "addtask", description: "Добавить задачу" },
+        // { command: "meetings", description: "Встречи на подтверждение" },
+        // { command: "status", description: "Состояние базы знаний" },
+        // { command: "digest", description: "Личный дайджест" },
+        // { command: "setup", description: "Подключить Claude Desktop (авто)" },
+        // { command: "recordertoken", description: "🎙 Рекордер встреч (Mac) — установка" },
+        // { command: "help", description: "Справка" },
+        // { command: "feedback", description: "Отправить фидбек" },
+        // { command: "reset", description: "Сбросить состояние бота" },
       ]}),
     });
     const json = await res.json();
