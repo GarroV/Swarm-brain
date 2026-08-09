@@ -2,7 +2,7 @@
 import type { MouseEvent, ReactNode } from "react";
 import type { Task } from "@/types";
 import type { TaskLabel } from "@/lib/api";
-import { PriDot, Market, AvatarStack } from "@/components/roy/ui";
+import { PriDot, Market } from "@/components/roy/ui";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { isDone, isOverdue } from "@/lib/smartLists";
@@ -111,8 +111,6 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
           {trailing}
         </div>
       </div>
-
-      {showAssignee && task.assignees?.length > 0 && <AvatarStack names={task.assignees} size={22} />}
     </div>
   );
 }
