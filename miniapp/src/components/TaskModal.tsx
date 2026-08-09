@@ -480,7 +480,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                 <div>
                   <span className={labelCls} style={{ fontSize: 12 }}>Исполнитель</span>
                   {/* «Общие» = без конкретного исполнителя → командная задача (видна во вкладке «Команда»). */}
-                  <Select value={assigneeId} onValueChange={setAssigneeId}>
+                  <Select value={assigneeId} onValueChange={(v) => setAssigneeId(v ?? NONE)}>
                     <SelectTrigger id="modal-assignee" className={selectTriggerCls}>
                       <SelectValue />
                     </SelectTrigger>
