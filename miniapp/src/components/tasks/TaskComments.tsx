@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { useRoyNav } from "@/components/roy/nav";
 import { RoyCard, SectionLabel } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
@@ -71,6 +71,14 @@ export function TaskComments({ taskId }: { taskId: string }) {
     }
   };
 
+  // Enter отправляет, Shift+Enter — перенос строки.
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void submitComment();
+    }
+  };
+
   const removeComment = async (commentId: string) => {
     const removed = comments.find((c) => c.id === commentId);
     if (!removed) return;
@@ -85,55 +93,60 @@ export function TaskComments({ taskId }: { taskId: string }) {
   };
 
   return (
-    <div className="mt-5">
+    <div className="mt-4">
       <SectionLabel>Комментарии</SectionLabel>
+
+      {/* Ввод — сверху: Enter отправляет, новый апдейт появляется первым в ленте (новые сверху). */}
+      <div className="mt-1.5 flex items-end gap-2">
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={onKeyDown}
+          aria-label="Комментарий"
+          placeholder="Написать апдейт…  (Enter — отправить)"
+          rows={1}
+          className="max-h-28 min-h-[38px] w-full resize-none rounded-[11px] border border-line bg-surface px-3 py-2 text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute"
+          style={{ fontSize: 13.5, lineHeight: 1.45 }}
+        />
+        <button
+          type="button"
+          onClick={() => void submitComment()}
+          disabled={!draft.trim() || sending}
+          aria-label="Отправить"
+          title="Отправить (Enter)"
+          className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[11px] bg-primary text-white transition-transform active:scale-[0.94] disabled:opacity-40"
+        >
+          <RoyIcon name="arrow" size={16} strokeWidth={2.2} />
+        </button>
+      </div>
+
       {comments.length === 0 ? (
-        <p className="text-ink-soft" style={{ fontSize: 13 }}>Пока нет комментариев.</p>
+        <p className="mt-2 text-ink-soft" style={{ fontSize: 12.5 }}>Пока нет комментариев.</p>
       ) : (
-        <div className="flex flex-col gap-2">
-          {comments.map((c) => {
+        <div className="mt-2 flex flex-col gap-1.5">
+          {[...comments].reverse().map((c) => {
             const mine = c.author_telegram_id != null && c.author_telegram_id === me?.telegram_id;
             // temp-* — оптимистичный коммент, ещё не подтверждён сервером; удаление 404-ит.
             const canDelete = (mine || !!me?.is_admin) && !c.id.startsWith("temp-");
             return (
-              <RoyCard key={c.id} className="px-4 py-3">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <span className="font-semibold text-ink" style={{ fontSize: 13 }}>{displayName(c.author_name)}</span>
+              <RoyCard key={c.id} className="px-3 py-2">
+                <div className="mb-0.5 flex items-center justify-between gap-2">
+                  <span className="font-semibold text-ink" style={{ fontSize: 12.5 }}>{displayName(c.author_name)}</span>
                   <span className="flex items-center gap-2">
-                    <span className="text-ink-mute" style={{ fontSize: 12 }}>{fmtDate(c.created_at)}</span>
+                    <span className="text-ink-mute" style={{ fontSize: 11.5 }}>{fmtDate(c.created_at)}</span>
                     {canDelete && (
                       <button type="button" aria-label="Удалить комментарий" onClick={() => removeComment(c.id)} className="text-ink-soft transition-colors hover:text-[var(--pri-high)]">
-                        <RoyIcon name="x" size={14} strokeWidth={2} />
+                        <RoyIcon name="x" size={13} strokeWidth={2} />
                       </button>
                     )}
                   </span>
                 </div>
-                <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 14, lineHeight: 1.5 }}>{linkify(c.content)}</p>
+                <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 13.5, lineHeight: 1.45 }}>{linkify(c.content)}</p>
               </RoyCard>
             );
           })}
         </div>
       )}
-      <div className="mt-2.5 flex flex-col gap-2">
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          aria-label="Комментарий"
-          placeholder="Написать апдейт…"
-          rows={2}
-          className="w-full resize-y rounded-[12px] border border-line bg-surface px-3 py-2.5 text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute"
-          style={{ fontSize: 14, lineHeight: 1.5 }}
-        />
-        <button
-          type="button"
-          onClick={submitComment}
-          disabled={!draft.trim() || sending}
-          className="self-end rounded-[12px] bg-primary px-4 py-2 font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-60"
-          style={{ fontSize: 14 }}
-        >
-          {sending ? "Отправка…" : "Отправить"}
-        </button>
-      </div>
     </div>
   );
 }

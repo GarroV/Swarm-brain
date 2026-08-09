@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { Task, User, Project } from "@/types";
 import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
@@ -47,10 +47,13 @@ const normStatus = (s?: string | null) => (s === "progress" ? "in_progress" : (s
 // Sentinel for the assignee/role selects — empty string is not a valid select value
 const NONE = "__none__";
 
+// Автосохранение правок (edit-режим): debounce после остановки ввода — кнопки «Сохранить» нет.
+const AUTOSAVE_DELAY = 550;
+
 // Roy-стилизованные нативные контролы (без shadcn): стекло + линия + янтарный фокус.
 const fieldCls =
-  "w-full rounded-[12px] border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute dark:backdrop-blur-sm";
-const labelCls = "mb-1.5 block font-semibold text-ink-soft";
+  "w-full rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute dark:backdrop-blur-sm";
+const labelCls = "mb-1 block font-semibold text-ink-soft";
 
 interface TaskModalProps {
   task?: Task;
@@ -65,6 +68,8 @@ interface TaskModalProps {
   // Префилл проекта при создании (напр. из карточки/облака проекта). Игнорируется в режиме правки.
   projectId?: string | null;
 }
+
+type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, projectId }: TaskModalProps) {
   const isEdit = !!task;
@@ -89,27 +94,53 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
   const [labelIds, setLabelIds] = useState<string[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selProject, setSelProject] = useState<string | null>(task?.project_id ?? projectId ?? null);
-  const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
+  // Снапшот последних сохранённых значений формы (JSON) — чтобы автосейв слал PATCH только при реальном изменении.
+  const savedSnapRef = useRef("");
 
   // Reset form whenever the dialog opens or the task changes
   useEffect(() => {
     if (!open) return;
-    setTitle(task?.title ?? prefill?.title ?? "");
-    setStatus(normStatus(task?.status));
+    const initialTitle = task?.title ?? prefill?.title ?? "";
     const initialDescription = task?.description ?? prefill?.description ?? "";
+    const initialStatus = normStatus(task?.status);
+    const initialDue = task?.due_date ?? prefill?.due_date ?? "";
+    const initialCountry = task?.country ?? prefill?.country ?? "";
+    const initialRole = task?.task_role ?? NONE;
+    const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
+    const initialLabels = task?.label_ids ?? [];
+    const initialProject = task?.project_id ?? projectId ?? null;
+
+    setTitle(initialTitle);
+    setStatus(initialStatus);
     setDescription(initialDescription);
     setDescEditing(!initialDescription.trim());
-    setDueDate(task?.due_date ?? prefill?.due_date ?? "");
-    setCountry(task?.country ?? prefill?.country ?? "");
-    setTaskRole(task?.task_role ?? NONE);
-    const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
+    setDueDate(initialDue);
+    setCountry(initialCountry);
+    setTaskRole(initialRole);
     setAssigneeId(cur);
     setInitialAssignee(cur);
-    setLabelIds(task?.label_ids ?? []);
-    setSelProject(task?.project_id ?? projectId ?? null);
+    setLabelIds(initialLabels);
+    setSelProject(initialProject);
+    setSaveState("idle");
     setError(null);
+    // Снапшот исходных значений — ключи ДОЛЖНЫ совпадать с formSnapshot(), иначе автосейв
+    // сработает вхолостую сразу при открытии.
+    savedSnapRef.current = JSON.stringify({
+      title: initialTitle,
+      description: initialDescription,
+      status: initialStatus,
+      dueDate: initialDue,
+      country: initialCountry,
+      taskRole: initialRole,
+      assigneeId: cur,
+      selProject: initialProject,
+      labelIds: initialLabels,
+    });
+
     fetchUsers().then(setUsers).catch(() => {});
     fetchTaskLabels().then(setLabels).catch(() => {});
     fetchConfig().then((c) => setMarkets(c.allowed_markets ?? [])).catch(() => {});
@@ -139,27 +170,90 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
 
   // Опции страны: рынки воркспейса + «Global» (пусто) + легаси-фолбэк (страна задачи вне
   // текущего allowed_markets — чтобы при редактировании не потерять её).
-  // Дедуп сверяем через ту же нормализацию, что countryName/countryFlag (countryCode()),
-  // иначе легаси-значение вроде "kz" или "Kazakhstan" не матчится с каноническим "KZ"
-  // и попадает в список вторым, дублирующим пунктом.
   const countryCodes = markets.length ? [...markets] : Object.keys(COUNTRY_NAMES);
   let selectedCountryId = country;
   if (country) {
     const normalizedCountry = countryCode(country);
     const matchedCode = countryCodes.find((code) => countryCode(code) === normalizedCountry);
     if (matchedCode) {
-      // Уже есть канонический пункт для этой страны — подсвечиваем его, а не легаси-значение.
       selectedCountryId = matchedCode;
     } else {
       countryCodes.push(country);
     }
   }
-  const handleSave = async () => {
+
+  // Текущий снапшот формы (для сравнения с сохранённым) — те же ключи, что в useEffect open.
+  const formSnapshot = () =>
+    JSON.stringify({ title, description, status, dueDate, country, taskRole, assigneeId, selProject, labelIds });
+
+  // Собрать PATCH из текущих значений формы. null → сохранять нечего/нельзя (пустое название).
+  const buildPatch = (): UpdateTaskInput | null => {
+    if (!task) return null;
+    const t = title.trim();
+    if (!t) return null;
+    const patch: UpdateTaskInput = {
+      title: t,
+      description: description.trim() || null,
+      due_date: dueDate || null,
+      country: country || null,
+      task_role: taskRole === NONE ? null : taskRole,
+      status,
+      project_id: selProject,
+    };
+    // Исполнителя шлём только если поменяли — иначе правка других полей затёрла бы назначение,
+    // которое нельзя было префиллить (имя без telegram_id).
+    if (assigneeId !== initialAssignee) patch.assignee_telegram_id = assigneeId === NONE ? null : parseInt(assigneeId, 10);
+    // Списки — личные: выбор списка делает задачу личной (метки живут только на личных задачах).
+    if (labelIds.length > 0 && !task.is_private) patch.is_private = true;
+    if (task.is_private || labelIds.length > 0) patch.label_ids = labelIds;
+    return patch;
+  };
+
+  // Автосохранение (edit): при любом изменении формы — debounce → PATCH. Кнопки «Сохранить» нет.
+  useEffect(() => {
+    if (!open || !isEdit || !task) return;
+    const snap = formSnapshot();
+    if (snap === savedSnapRef.current) return; // ничего не менялось
+    if (!title.trim()) return; // пустое название не сохраняем (обязательное поле)
+    const patch = buildPatch();
+    if (!patch) return;
+    const h = setTimeout(async () => {
+      setSaveState("saving");
+      try {
+        await updateTask(task.id, patch);
+        savedSnapRef.current = snap;
+        setSaveState("saved");
+        onSaved();
+      } catch {
+        setSaveState("error");
+      }
+    }, AUTOSAVE_DELAY);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isEdit, title, description, status, dueDate, country, taskRole, assigneeId, selProject, labelIds]);
+
+  // Закрытие: досрочно сохраняем pending-изменения (пока debounce не успел сработать).
+  const handleClose = () => {
+    if (isEdit && task && title.trim()) {
+      const snap = formSnapshot();
+      if (snap !== savedSnapRef.current) {
+        const patch = buildPatch();
+        if (patch) {
+          savedSnapRef.current = snap;
+          updateTask(task.id, patch).then(onSaved).catch(() => {});
+        }
+      }
+    }
+    onClose();
+  };
+
+  // Создание новой задачи — единственная точка с явной кнопкой (в edit сохранение автоматом).
+  const handleCreate = async () => {
     if (!title.trim()) {
       setError("Нужно название");
       return;
     }
-    setSaving(true);
+    setCreating(true);
     setError(null);
     try {
       const base = {
@@ -170,29 +264,18 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
         task_role: taskRole === NONE ? null : taskRole,
       };
       const assigneeValue = assigneeId === NONE ? null : parseInt(assigneeId, 10);
-      if (isEdit && task) {
-        // Исполнителя шлём только если поменяли — иначе правка других полей затёрла бы
-        // назначение, которое нельзя было префиллить (имя без telegram_id).
-        const fields: UpdateTaskInput = { ...base, status, project_id: selProject };
-        if (assigneeId !== initialAssignee) fields.assignee_telegram_id = assigneeValue;
-        // Списки — личные: выбор списка делает задачу личной (метки живут только на личных задачах).
-        if (labelIds.length > 0 && !task.is_private) fields.is_private = true;
-        if (task.is_private || labelIds.length > 0) fields.label_ids = labelIds;
-        await updateTask(task.id, fields);
-      } else {
-        const fields: CreateTaskInput = { ...base, assignee_telegram_id: assigneeValue, project_id: selProject };
-        if (meetingId) fields.meeting_id = meetingId;
-        if (labelIds.length > 0) fields.is_private = true;
-        const created = await createTask(fields);
-        // POST /tasks не принимает label_ids — вешаем метки вторым шагом на уже личную задачу.
-        if (labelIds.length > 0) await updateTask(created.id, { label_ids: labelIds });
-      }
+      const fields: CreateTaskInput = { ...base, assignee_telegram_id: assigneeValue, project_id: selProject };
+      if (meetingId) fields.meeting_id = meetingId;
+      if (labelIds.length > 0) fields.is_private = true;
+      const created = await createTask(fields);
+      // POST /tasks не принимает label_ids — вешаем метки вторым шагом на уже личную задачу.
+      if (labelIds.length > 0) await updateTask(created.id, { label_ids: labelIds });
       onSaved();
       onClose();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Не удалось сохранить");
+      setError(err instanceof Error ? err.message : "Не удалось создать");
     } finally {
-      setSaving(false);
+      setCreating(false);
     }
   };
 
@@ -212,36 +295,70 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     }
   };
 
-  const busy = saving || deleting;
+  const titleMissing = isEdit && !title.trim();
+  const saveHint = titleMissing
+    ? "Нужно название"
+    : saveState === "saving"
+      ? "Сохранение…"
+      : saveState === "error"
+        ? "Не сохранилось"
+        : saveState === "saved"
+          ? "Сохранено"
+          : "";
+  const saveHintDanger = titleMissing || saveState === "error";
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent
         showCloseButton={false}
         className="gap-0 rounded-[20px] border border-line bg-[var(--popover)] p-0 sm:max-w-3xl dark:backdrop-blur-xl"
       >
-        {/* Шапка */}
-        <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
-          <h2 className="font-bold text-ink" style={{ fontSize: 18, letterSpacing: "-0.01em" }}>
-            {isEdit ? "Изменить задачу" : "Новая задача"}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть"
-            className="flex items-center justify-center rounded-[10px] p-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-          >
-            <RoyIcon name="x" size={18} />
-          </button>
+        {/* Шапка: заголовок + индикатор автосейва (edit) + удалить (edit) + закрыть */}
+        <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
+          <div className="flex min-w-0 items-baseline gap-2.5">
+            <h2 className="shrink-0 font-bold text-ink" style={{ fontSize: 17, letterSpacing: "-0.01em" }}>
+              {isEdit ? "Изменить задачу" : "Новая задача"}
+            </h2>
+            {isEdit && saveHint && (
+              <span
+                className="truncate"
+                style={{ fontSize: 12, color: saveHintDanger ? "var(--pri-high)" : "var(--ink-mute)" }}
+              >
+                {saveHint}
+              </span>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {isEdit && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                aria-label="Удалить задачу"
+                title="Удалить задачу"
+                className="flex items-center justify-center rounded-[10px] p-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              >
+                <RoyIcon name="trash" size={17} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleClose}
+              aria-label="Закрыть"
+              className="flex items-center justify-center rounded-[10px] p-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            >
+              <RoyIcon name="x" size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Поля — две колонки: слева название + большое поле редактуры, справа настройки */}
-        <div className="max-h-[74vh] overflow-y-auto px-5 py-4">
-          <div className="grid items-start gap-x-5 gap-y-4 sm:grid-cols-[1.4fr_1fr]">
+        <div className="max-h-[80vh] overflow-y-auto px-5 py-3">
+          <div className="grid items-start gap-x-5 gap-y-3 sm:grid-cols-[1.4fr_1fr]">
             {/* Левая колонка: название + редактура */}
-            <div className="flex flex-col gap-3.5">
+            <div className="flex flex-col gap-2.5">
               <div>
-                <label htmlFor="modal-title" className={labelCls} style={{ fontSize: 12.5 }}>Название *</label>
+                <label htmlFor="modal-title" className={labelCls} style={{ fontSize: 12 }}>Название *</label>
                 <input
                   id="modal-title"
                   className={fieldCls}
@@ -251,7 +368,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                 />
               </div>
               <div className="flex flex-col">
-                <label htmlFor="modal-desc" className={labelCls} style={{ fontSize: 12.5 }}>Описание</label>
+                <label htmlFor="modal-desc" className={labelCls} style={{ fontSize: 12 }}>Описание</label>
                 {descEditing ? (
                   <textarea
                     id="modal-desc"
@@ -261,7 +378,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                     onChange={(e) => setDescription(e.target.value)}
                     onBlur={() => { if (description.trim()) setDescEditing(false); }}
                     placeholder="Подробности, контекст, что именно сделать…"
-                    style={{ height: 120, minHeight: 88, lineHeight: 1.6 }}
+                    style={{ height: 84, minHeight: 60, lineHeight: 1.55 }}
                   />
                 ) : (
                   <div
@@ -275,8 +392,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                         setDescEditing(true);
                       }
                     }}
-                    className={`${fieldCls} max-h-[220px] cursor-text overflow-y-auto whitespace-pre-wrap`}
-                    style={{ minHeight: 88, lineHeight: 1.6 }}
+                    className={`${fieldCls} max-h-[180px] cursor-text overflow-y-auto whitespace-pre-wrap`}
+                    style={{ minHeight: 60, lineHeight: 1.55 }}
                   >
                     {linkify(description)}
                   </div>
@@ -285,10 +402,10 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
             </div>
 
             {/* Правая колонка: настройки */}
-            <div className="flex flex-col gap-3.5">
+            <div className="flex flex-col gap-2.5">
               {isEdit && (
                 <div>
-                  <span className={labelCls} style={{ fontSize: 12.5 }}>Статус</span>
+                  <span className={labelCls} style={{ fontSize: 12 }}>Статус</span>
                   <div className="flex gap-[3px] rounded-[12px] border border-line bg-surface-2 p-[3px]">
                     {STATUSES.map((s) => {
                       const on = s.id === status;
@@ -300,8 +417,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                           aria-label={s.label}
                           aria-pressed={on}
                           title={s.label}
-                          className={`flex flex-1 items-center justify-center gap-1.5 rounded-[9px] py-2 font-semibold transition-colors active:scale-[0.97] ${on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(80,60,20,.1)]" : "bg-transparent text-ink-soft hover:text-ink"}`}
-                          style={{ fontSize: 13 }}
+                          className={`flex flex-1 items-center justify-center gap-1.5 rounded-[9px] py-1.5 font-semibold transition-colors active:scale-[0.97] ${on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(80,60,20,.1)]" : "bg-transparent text-ink-soft hover:text-ink"}`}
+                          style={{ fontSize: 12.5 }}
                         >
                           {s.icon === "circle" ? (
                             <span className="rounded-full border-2 border-current" style={{ width: 13, height: 13 }} />
@@ -318,11 +435,11 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="modal-due" className={labelCls} style={{ fontSize: 12.5 }}>Срок</label>
+                  <label htmlFor="modal-due" className={labelCls} style={{ fontSize: 12 }}>Срок</label>
                   <DatePicker value={dueDate} onChange={setDueDate} className={fieldCls} placeholder="Срок" />
                 </div>
                 <div>
-                  <label htmlFor="modal-project" className={labelCls} style={{ fontSize: 12.5 }}>{dt("Проект", "Project")}</label>
+                  <label htmlFor="modal-project" className={labelCls} style={{ fontSize: 12 }}>{dt("Проект", "Project")}</label>
                   <select
                     id="modal-project"
                     className={fieldCls}
@@ -339,7 +456,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
 
               {SHOW_TASK_ROLE && (
                 <div>
-                  <label htmlFor="modal-role" className={labelCls} style={{ fontSize: 12.5 }}>Роль</label>
+                  <label htmlFor="modal-role" className={labelCls} style={{ fontSize: 12 }}>Роль</label>
                   <select id="modal-role" className={fieldCls} value={taskRole} onChange={(e) => setTaskRole(e.target.value)}>
                     <option value={NONE}>— Нет —</option>
                     {TASK_ROLES.map((r) => (
@@ -349,27 +466,29 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                 </div>
               )}
 
-              <div>
-                <span className={labelCls} style={{ fontSize: 12.5 }}>Страна</span>
-                {/* Выбор страны — контекстное меню: чип-триггер + портал-поповер с сеткой флагов. */}
-                <CountryPopover value={selectedCountryId} codes={countryCodes} onChange={setCountry} />
-              </div>
-
-              <div>
-                <label htmlFor="modal-assignee" className={labelCls} style={{ fontSize: 12.5 }}>Исполнитель</label>
-                <select id="modal-assignee" className={fieldCls} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
-                  {/* «Общие» = без конкретного исполнителя → командная задача (видна во вкладке «Команда»). */}
-                  <option value={NONE}>Общие (вся команда)</option>
-                  {assigneeOptions.map((o) => (
-                    <option key={o.id} value={o.id}>{o.name}</option>
-                  ))}
-                </select>
+              {/* Страна + Исполнитель в один ряд — экономим вертикаль. */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className={labelCls} style={{ fontSize: 12 }}>Страна</span>
+                  {/* Выбор страны — контекстное меню: чип-триггер + портал-поповер с сеткой флагов. */}
+                  <CountryPopover value={selectedCountryId} codes={countryCodes} onChange={setCountry} />
+                </div>
+                <div>
+                  <label htmlFor="modal-assignee" className={labelCls} style={{ fontSize: 12 }}>Исполнитель</label>
+                  <select id="modal-assignee" className={fieldCls} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+                    {/* «Общие» = без конкретного исполнителя → командная задача (видна во вкладке «Команда»). */}
+                    <option value={NONE}>Общие (вся команда)</option>
+                    {assigneeOptions.map((o) => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {/* Персональные списки-метки. Видны всегда; выбор списка делает задачу личной. */}
               {labels.length > 0 && (
                 <div>
-                  <span className={labelCls} style={{ fontSize: 12.5 }}>Списки</span>
+                  <span className={labelCls} style={{ fontSize: 12 }}>Списки</span>
                   <div className="flex flex-wrap gap-1.5">
                     {labels.map((l) => {
                       const on = labelIds.includes(l.id);
@@ -398,7 +517,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
           </div>
 
           {isEdit && task && (
-            <div className="mt-1 border-t border-line pt-4">
+            <div className="mt-1 border-t border-line pt-3">
               <TaskComments taskId={task.id} />
             </div>
           )}
@@ -406,26 +525,13 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
           {error && <p className="mt-3 font-semibold" style={{ fontSize: 13, color: "var(--pri-high)" }}>{error}</p>}
         </div>
 
-        {/* Действия */}
-        <div className="flex items-center justify-between gap-2 border-t border-line px-5 py-3.5">
-          {isEdit ? (
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={busy}
-              className="rounded-[12px] px-3 py-2 font-semibold transition-transform active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              style={{ fontSize: 14, color: "var(--pri-high)" }}
-            >
-              {deleting ? "Удаление…" : "Удалить"}
-            </button>
-          ) : (
-            <span />
-          )}
-          <div className="flex gap-2">
+        {/* Нижняя панель действий — только при создании (в edit сохранение автоматическое). */}
+        {!isEdit && (
+          <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
             <button
               type="button"
               onClick={onClose}
-              disabled={busy}
+              disabled={creating}
               className="rounded-[12px] border border-line bg-surface px-4 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               style={{ fontSize: 14 }}
             >
@@ -433,15 +539,15 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
             </button>
             <button
               type="button"
-              onClick={handleSave}
-              disabled={busy}
+              onClick={handleCreate}
+              disabled={creating}
               className="rounded-[12px] bg-primary px-4 py-2 font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               style={{ fontSize: 14 }}
             >
-              {saving ? "Сохранение…" : "Сохранить"}
+              {creating ? "Создание…" : "Создать"}
             </button>
           </div>
-        </div>
+        )}
       </DialogContent>
     </Dialog>
   );
