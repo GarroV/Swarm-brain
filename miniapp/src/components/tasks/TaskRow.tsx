@@ -76,6 +76,13 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
             (trailing, opacity-0→hover) не «выпадали» новой строкой и список не дёргался: место под
             них зарезервировано, ряды одинаковой высоты. */}
         <div className="mt-0.5 flex flex-wrap items-center gap-1.5 min-h-[20px]">
+          {/* Дата — у левого края (первой), затем остальные чипы. */}
+          {due && (
+            <span className="inline-flex items-center gap-1" style={{ fontSize: 11.5, color: overdue ? "var(--pri-high)" : "var(--ink-soft)", fontWeight: overdue ? 600 : 400 }}>
+              <RoyIcon name="cal" size={11} />
+              {due}
+            </span>
+          )}
           {hasAssignee && (
             // Чья задача — ИМЕНЕМ, а не только аватаром-инициалами (видно в линзах «Команда»/«Все»).
             <span className="inline-flex items-center gap-1 font-semibold text-ink-soft bg-surface-2 border border-line-2" style={{ fontSize: 10.5, borderRadius: 6, padding: "1px 6px" }}>
@@ -95,12 +102,6 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
               <RoyIcon name={l.icon as RoyIconName} size={10} /> {l.name}
             </span>
           ))}
-          {due && (
-            <span className="inline-flex items-center gap-1" style={{ fontSize: 11.5, color: overdue ? "var(--pri-high)" : "var(--ink-soft)", fontWeight: overdue ? 600 : 400 }}>
-              <RoyIcon name="cal" size={11} />
-              {due}
-            </span>
-          )}
           {!done && high && (
             <span className="inline-flex items-center gap-1 font-semibold" style={{ fontSize: 10.5, color: "var(--pri-high)", background: "color-mix(in srgb, var(--pri-high) 12%, transparent)", borderRadius: 6, padding: "1px 6px" }}>
               <RoyIcon name="flag" size={10} />
