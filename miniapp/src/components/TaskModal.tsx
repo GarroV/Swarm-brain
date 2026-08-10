@@ -446,7 +446,10 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                   <span className={labelCls} style={{ fontSize: 12 }}>{dt("Проект", "Project")}</span>
                   <Select value={selProject ?? NONE} onValueChange={(v) => setSelProject(v === NONE ? null : v)}>
                     <SelectTrigger id="modal-project" className={selectTriggerCls}>
-                      <SelectValue />
+                      {/* base-ui рисует сырое значение (UUID) без render-функции — маппим в имя проекта. */}
+                      <SelectValue>
+                        {(v) => (!v || v === NONE ? "—" : (projects.find((p) => p.id === v)?.name ?? "—"))}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NONE}>—</SelectItem>
@@ -482,7 +485,9 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                   {/* «Общие» = без конкретного исполнителя → командная задача (видна во вкладке «Команда»). */}
                   <Select value={assigneeId} onValueChange={(v) => setAssigneeId(v ?? NONE)}>
                     <SelectTrigger id="modal-assignee" className={selectTriggerCls}>
-                      <SelectValue />
+                      <SelectValue>
+                        {(v) => (!v || v === NONE ? "Общие (вся команда)" : (assigneeOptions.find((o) => o.id === v)?.name ?? `#${v}`))}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NONE}>Общие (вся команда)</SelectItem>

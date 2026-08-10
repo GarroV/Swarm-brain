@@ -479,7 +479,10 @@ export function SprintBoard() {
         </div>
       </div>
 
-      <TaskModal task={editing ?? undefined} open={!!editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+      {/* onSaved — ТОЛЬКО обновление списка, БЕЗ закрытия: автосейв дёргает onSaved на каждый тик,
+          и setEditing(null) здесь схлопывал бы карточку прямо во время печати. Закрытие — через onClose
+          (крестик) и внутри модалки после создания/удаления. */}
+      <TaskModal task={editing ?? undefined} open={!!editing} onClose={() => setEditing(null)} onSaved={load} />
     </div>
   );
 }

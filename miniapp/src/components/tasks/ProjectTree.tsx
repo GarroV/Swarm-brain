@@ -373,7 +373,7 @@ function ProjectTreeInner({ project, onBack }: Props) {
         </ReactFlow>
       </div>
 
-      {openTask && <TaskModal task={openTask} open onClose={() => setOpenId(null)} onSaved={() => { setOpenId(null); void load(); }} />}
+      {openTask && <TaskModal task={openTask} open onClose={() => setOpenId(null)} onSaved={() => { void load(); }} />}
       {creating && <TaskModal open prefill={{}} projectId={project.id} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); void load(); }} />}
     </div>
   );
