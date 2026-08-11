@@ -94,6 +94,36 @@ install_clt_fallback() {
   done
 }
 
+# Реально ли тулчейн СОБИРАЕТ пакет? have_clt подтверждает лишь наличие swift, но НЕ способность
+# собрать: на битых/устаревших CLT манифест Package.swift не линкуется с PackageDescription под arm64
+# (реальный кейс 2026-08-11). Пробуем собрать крошечный пакет — ловим проблему ДО клона и даём действие.
+toolchain_can_build() {
+  local d
+  d="$(mktemp -d)" || return 1
+  mkdir -p "$d/Sources/probe"
+  printf '// swift-tools-version:5.9\\nimport PackageDescription\\nlet package = Package(name: "probe", targets: [.executableTarget(name: "probe")])\\n' > "$d/Package.swift"
+  printf 'print("ok")\\n' > "$d/Sources/probe/main.swift"
+  if ( cd "$d" && swift build >/dev/null 2>&1 ); then rm -rf "$d"; return 0; fi
+  rm -rf "$d"
+  return 1
+}
+
+# Переустановка CLT — ТОЛЬКО если xcode-select смотрит на CommandLineTools (не на полноценный Xcode.app),
+# иначе rm -rf порвёт связку с Xcode. Возвращает 0, если после переустановки swift снова на месте.
+repair_clt() {
+  local dev
+  dev="$(xcode-select -p 2>/dev/null || true)"
+  case "$dev" in
+    */CommandLineTools*) ;;
+    *) return 1 ;;
+  esac
+  say "⟳ Переустанавливаю Command Line Tools (текущие не собирают проект)…"
+  sudo rm -rf /Library/Developer/CommandLineTools 2>/dev/null || true
+  install_clt_headless
+  have_clt || install_clt_fallback
+  have_clt
+}
+
 if have_clt; then
   say "✓ Command Line Tools уже установлены"
 else
@@ -110,6 +140,20 @@ fi
 # git/swift нужны для сборки
 command -v git   >/dev/null 2>&1 || die "git не найден (нужны Command Line Tools)."
 command -v swift >/dev/null 2>&1 || die "swift не найден (нужны Command Line Tools)."
+
+# ── 1b. Тулчейн реально СОБИРАЕТ? (не только «swift есть») ───────────────────────
+if ! toolchain_can_build; then
+  say "⚠ Command Line Tools есть, но не собирают Swift-проект (повреждены/устарели)."
+  if repair_clt && toolchain_can_build; then
+    say "✓ Command Line Tools восстановлены"
+  else
+    die "Command Line Tools повреждены и не собирают Swift-проект. Почини вручную и запусти команду снова:
+  sudo rm -rf /Library/Developer/CommandLineTools
+  sudo xcode-select --install
+(нажми «Установить», дождись конца установки). Если на маке стоит полноценный Xcode:
+  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+  fi
+fi
 
 # ── 2. Клон публичного репозитория ──────────────────────────────────────────────
 step "Скачиваю исходники"
