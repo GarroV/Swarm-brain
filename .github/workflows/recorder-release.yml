@@ -1,0 +1,44 @@
+name: recorder-release
+
+# Собирает ПРЕДсобранный SwarmRecorder.app в CI (macOS-раннер, контролируемый SDK) и публикует
+# его как asset релиза recorder-build-<VERSION>. Установщик и апдейтер качают этот .app —
+# сборки из исходников на машинах пользователей больше нет (issue #19).
+#
+# Как раскатить новую сборку рекордера:
+#   1) поднять recorder/VERSION (+ код), смёржить в main, проверить сборку;
+#   2) создать и запушить тег recorder-build-<N> (N = VERSION) — CI соберёт и опубликует asset;
+#   3) поднять LATEST_BUILD в supabase/functions/swarm-recorder-version → все рекордеры обновятся.
+
+on:
+  push:
+    tags:
+      - 'recorder-build-*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14   # SDK macOS 14 → бинарь с minos 13.0 запускается на 13/14/15+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build prebuilt .app (universal, macOS 13+)
+        run: bash ./recorder/build-app-ci.sh
+
+      - name: Read build number from recorder/VERSION
+        id: v
+        run: echo "build=$(tr -dc '0-9' < recorder/VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: recorder-build-${{ steps.v.outputs.build }}
+          name: SwarmRecorder build ${{ steps.v.outputs.build }} (prebuilt)
+          body: >-
+            Предсобранный SwarmRecorder.app (universal arm64+x86_64, minos 13.0) для установки
+            без Xcode/Command Line Tools. Установщик скачивает этот .app и локально переподписывает
+            per-machine сертификатом (issue #19).
+          files: recorder/SwarmRecorder-${{ steps.v.outputs.build }}.zip
+          fail_on_unmatched_files: true
