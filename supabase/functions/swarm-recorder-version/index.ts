@@ -37,6 +37,9 @@
 // сервер ловит оборванную запись / истечение токена). Тег recorder-build-4, build-app.sh ✅ (подпись валидна).
 // build 3 (2026-06-30): бэкап аудио держится до публикации в базу + потолок 3 суток. Тег recorder-build-3.
 const LATEST_BUILD = 19;
+// URL предсобранного .app (GitHub Release asset). Установщик и апдейтер качают отсюда — сборки
+// из исходников на машине юзера больше нет (issue #19). Держать имя ассета в синхроне с CI/релизом.
+const ASSET_URL = `https://github.com/GarroV/Swarm-brain/releases/download/recorder-build-${LATEST_BUILD}/SwarmRecorder-${LATEST_BUILD}.zip`;
 
 Deno.serve((req: Request) => {
   if (req.method === "OPTIONS") {
@@ -50,7 +53,7 @@ Deno.serve((req: Request) => {
   if (req.method !== "GET") {
     return new Response("Method Not Allowed", { status: 405, headers: { "Allow": "GET, OPTIONS", "Access-Control-Allow-Origin": "*" } });
   }
-  return new Response(JSON.stringify({ build: LATEST_BUILD }), {
+  return new Response(JSON.stringify({ build: LATEST_BUILD, url: ASSET_URL }), {
     status: 200,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
