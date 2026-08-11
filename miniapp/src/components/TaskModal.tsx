@@ -17,7 +17,7 @@ import {
   fetchMe,
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
@@ -446,10 +446,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                   <span className={labelCls} style={{ fontSize: 12 }}>{dt("Проект", "Project")}</span>
                   <Select value={selProject ?? NONE} onValueChange={(v) => setSelProject(v === NONE ? null : v)}>
                     <SelectTrigger id="modal-project" className={selectTriggerCls}>
-                      {/* base-ui рисует сырое значение (UUID) без render-функции — маппим в имя проекта. */}
-                      <SelectValue>
-                        {(v) => (!v || v === NONE ? "—" : (projects.find((p) => p.id === v)?.name ?? "—"))}
-                      </SelectValue>
+                      {/* Подпись считаем САМИ (base-ui Value в этой версии рисует сырое значение/UUID). */}
+                      <span className="truncate">{!selProject || selProject === NONE ? "—" : (projects.find((p) => p.id === selProject)?.name ?? "—")}</span>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NONE}>—</SelectItem>
@@ -485,9 +483,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                   {/* «Общие» = без конкретного исполнителя → командная задача (видна во вкладке «Команда»). */}
                   <Select value={assigneeId} onValueChange={(v) => setAssigneeId(v ?? NONE)}>
                     <SelectTrigger id="modal-assignee" className={selectTriggerCls}>
-                      <SelectValue>
-                        {(v) => (!v || v === NONE ? "Общие (вся команда)" : (assigneeOptions.find((o) => o.id === v)?.name ?? `#${v}`))}
-                      </SelectValue>
+                      <span className="truncate">{assigneeId === NONE ? "Общие (вся команда)" : (assigneeOptions.find((o) => o.id === assigneeId)?.name ?? `#${assigneeId}`)}</span>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NONE}>Общие (вся команда)</SelectItem>
