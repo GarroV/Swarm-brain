@@ -9,6 +9,7 @@ import {
   fetchAgentMeetings,
   fetchAgentMeeting,
   fetchAgentMeetingNotes,
+  fetchConfig,
   patchMeeting,
   patchAgentMeetingDraft,
   renameAgentMeeting,
@@ -19,6 +20,57 @@ import {
 } from "@/lib/api";
 import type { Entry, AgentMeeting, TranscriptSegment, MeetingLiveNote } from "@/types";
 import { sourceLabel } from "./RoyMeetingsScreen";
+import { countryCode } from "@/lib/countries";
+
+// Статистика по «Все встречи»: сортированный подсчёт (по убыванию).
+function tally(keys: string[]): [string, number][] {
+  const m = new Map<string, number>();
+  keys.forEach((k) => m.set(k, (m.get(k) ?? 0) + 1));
+  return [...m.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function CountsCard({ title, counts }: { title: string; counts: [string, number][] }) {
+  if (counts.length === 0) return null;
+  return (
+    <RoyCard className="px-3.5 py-3">
+      <SectionLabel className="!mb-2">{title}</SectionLabel>
+      <div className="space-y-1.5">
+        {counts.map(([k, n]) => (
+          <div key={k} className="flex items-center justify-between gap-2" style={{ fontSize: 13 }}>
+            <span className="truncate text-ink-soft">{k}</span>
+            <span className="shrink-0 font-bold text-ink">{n}</span>
+          </div>
+        ))}
+      </div>
+    </RoyCard>
+  );
+}
+
+// Правый сайдбар статистики «Все встречи»: По странам (рынки воркспейса, прочее → «Другие») + Источники.
+function MeetingsStats({ meetings, markets }: { meetings: Entry[]; markets: string[] | null }) {
+  const marketSet = new Set((markets ?? []).map(countryCode));
+  const rawCountry = tally(meetings.flatMap((e) => (e.countries?.length ? e.countries.map(countryCode) : ["—"])));
+  const countryCounts: [string, number][] = (() => {
+    if (marketSet.size === 0) return rawCountry;
+    const out: [string, number][] = [];
+    let other = 0;
+    for (const [code, n] of rawCountry) {
+      if (code !== "—" && marketSet.has(code)) out.push([code, n]);
+      else other += n;
+    }
+    out.sort((a, b) => b[1] - a[1]);
+    if (other) out.push(["Другие", other]);
+    return out;
+  })();
+  const sourceCounts = tally(meetings.map((e) => sourceLabel(e.source)));
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-3">
+      <div className="px-1 text-ink-mute" style={{ fontSize: 12 }}>Всего: {meetings.length}</div>
+      <CountsCard title="По странам" counts={countryCounts} />
+      <CountsCard title="Источники" counts={sourceCounts} />
+    </div>
+  );
+}
 import { TasksFromMeeting } from "../TasksFromMeeting";
 import { MarkdownTextarea } from "../MarkdownTextarea";
 import { useConfirm } from "@/components/ui/confirm";
@@ -945,7 +997,13 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
   const [agentMeetings, setAgentMeetings] = useState<AgentMeeting[] | null>(null);
   // «Все встречи» — грузятся лениво при первом переключении в этот режим.
   const [allMeetings, setAllMeetings] = useState<Entry[] | null>(null);
+  const [markets, setMarkets] = useState<string[] | null>(null);
   const [selected, setSelected] = useState<MeetItem | null>(null);
+
+  // Рынки воркспейса — для статистики «По странам» (прочее сворачиваем в «Другие»).
+  useEffect(() => {
+    fetchConfig().then((c) => setMarkets(c.allowed_markets ?? null)).catch(() => setMarkets(null));
+  }, []);
 
   const load = useCallback(async () => {
     const [ents, agents] = await Promise.allSettled([
@@ -1166,6 +1224,9 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
                 />
               </div>
             </>
+          ) : mode === "all" && allMeetings ? (
+            // «Все встречи» без выбора — статистика (По странам / Источники), как на старом экране.
+            <MeetingsStats meetings={allMeetings} markets={markets} />
           ) : (
             <div className="flex h-full items-center justify-center px-4">
               <p className="text-center text-ink-mute" style={{ fontSize: 12 }}>
