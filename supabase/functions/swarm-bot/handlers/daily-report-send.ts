@@ -17,13 +17,17 @@ export async function sendDailyReport(): Promise<void> {
     await sendMessage(ADMIN_USER_ID, `⚠️ Свод за ${dateLabel}: ошибка запроса — ${error.message}`);
     return;
   }
-  // На вычитке: ВСЯ текущая очередь невычитанных встреч (status=awaiting_review), не только
-  // вчерашние — стоячее напоминание «есть что подтвердить» (запрос владельца 2026-07-25).
+  // На вычитке: очередь невычитанных встреч (status=awaiting_review) — стоячее напоминание
+  // «есть что подтвердить». Считаем ТОЛЬКО то, что получатель (админ) реально увидит в вебе:
+  // его записи (recorders содержит его telegram_id), а не ВСЕ черновики глобально — иначе
+  // «На вычитке: N» расходится с пустой «Доской встреч» (админ-байпаса для встреч нет; issue #20).
+  // .contains с JSON-СТРОКОЙ → корректный jsonb-containment cs.[{"telegram_id":N}] (как в /agent-meetings).
   // Не роняем весь свод, если этот запрос упал — добавленное всё равно ценно (reviewCount=0).
   const { count: reviewCount, error: reviewError } = await supabase
     .from("meetings")
     .select("id", { count: "exact", head: true })
-    .eq("status", "awaiting_review");
+    .eq("status", "awaiting_review")
+    .contains("recorders", JSON.stringify([{ telegram_id: ADMIN_USER_ID }]));
   if (reviewError) {
     await sendMessage(ADMIN_USER_ID, `⚠️ Свод за ${dateLabel}: не удалось посчитать очередь вычитки — ${reviewError.message}`);
   }
