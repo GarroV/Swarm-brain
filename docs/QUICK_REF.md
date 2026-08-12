@@ -69,7 +69,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 ### Задачи (общий движок) — `_shared/tasks/`
 | Concern | Файлы | Детали |
 |---|---|---|
-| CRUD/спринты/зависимости/типы | `_shared/tasks/{db,sprints,dependencies,types}.ts` | spoke [SHARED_TASKS_ENGINE.md](SHARED_TASKS_ENGINE.md) |
+| CRUD/спринты/типы | `_shared/tasks/{db,sprints,types}.ts` | spoke [SHARED_TASKS_ENGINE.md](SHARED_TASKS_ENGINE.md) |
 | Бот-обёртка / MCP-прослойка / fuzzy-assignee | `swarm-bot/tasks/{db,handlers,matcher}.ts`, `swarm-mcp/tasks/tools.ts` | §Движок задач |
 | Персональные смарт-метки (личные списки) | БД `task_labels` + `tasks.label_ids`; API `swarm-api/task-labels.ts` (+`http.ts`); MCP `swarm-mcp/tasks/tools.ts` (`list_task_labels`, `labels`); веб `miniapp/src/components/tasks/{PictogramPicker,LabelEditor}.tsx`, `lib/smartLists.ts` (`filterByLabel`) | §Таблицы БД, §swarm-api, §swarm-mcp |
 | Комментарии задач (история + добавление, кликабельные ссылки) | API `swarm-api/task-comments.ts`; MCP `swarm-mcp/tasks/tools.ts` (`get_task_comments`/`add_task_comment`); валидатор `_shared/tasks/comments.ts`; **веб — переиспользуемый `miniapp/src/components/tasks/TaskComments.tsx`** (встроен в `TaskModal.tsx` для существующей задачи И в `screens/TaskDetail.tsx`), ссылки `miniapp/src/lib/linkify.tsx` (только http/https, без `dangerouslySetInnerHTML`); `lib/api.ts` | §Таблицы БД, §swarm-api, §swarm-mcp |
