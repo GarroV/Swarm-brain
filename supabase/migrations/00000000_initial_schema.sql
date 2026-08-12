@@ -69,7 +69,14 @@ create table if not exists entries (
   owner_id   bigint references allowed_users(telegram_id)
 );
 
-create index if not exists entries_embedding_idx on entries using hnsw (embedding vector_cosine_ops);
+-- hnsw требует pgvector >= 0.5.0; локальный образ Supabase CLI может быть старее → reset падал
+-- (issue #11). try/catch: локально пропускаем (семантика full-scan'ом), прод (новый pgvector) не задет.
+do $$
+begin
+  create index if not exists entries_embedding_idx on entries using hnsw (embedding vector_cosine_ops);
+exception when others then
+  raise notice 'entries_embedding_idx (hnsw) skipped: % — likely pgvector < 0.5.0 (local image)', sqlerrm;
+end $$;
 create index if not exists entries_metadata_idx  on entries using gin  (metadata);
 create index if not exists entries_owner_id_idx  on entries(owner_id);
 create index if not exists idx_entries_countries on entries using gin  (countries);

@@ -76,7 +76,16 @@ create table if not exists public.entries (
   -- Полнотекстовый вектор (русская конфигурация) для гибридного поиска (см. match_entries_hybrid).
   fts        tsvector generated always as (to_tsvector('russian', coalesce(content, ''))) stored
 );
-create index if not exists entries_embedding_idx on public.entries using hnsw (embedding vector_cosine_ops);
+-- ANN-индекс семантического поиска. hnsw требует pgvector >= 0.5.0; локальный образ Supabase CLI
+-- может тянуть более старый pgvector без hnsw → reset падал (issue #11). Оборачиваем в try/catch:
+-- на старом pgvector индекс не создаётся (семантика работает full-scan'ом — для локали достаточно),
+-- прод (новый pgvector) уже имеет hnsw-индекс, `if not exists` там = no-op.
+do $$
+begin
+  create index if not exists entries_embedding_idx on public.entries using hnsw (embedding vector_cosine_ops);
+exception when others then
+  raise notice 'entries_embedding_idx (hnsw) skipped: % — likely pgvector < 0.5.0 (local image)', sqlerrm;
+end $$;
 create index if not exists entries_metadata_idx  on public.entries using gin (metadata);
 create index if not exists entries_owner_id_idx   on public.entries (owner_id);
 create index if not exists idx_entries_countries  on public.entries using gin (countries);
