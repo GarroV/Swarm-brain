@@ -399,6 +399,11 @@ export function SprintBoard() {
                 )}
                 <span className="text-xs text-ink-soft">{total}</span>
                 <div className="ml-auto flex items-center gap-0.5" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+                  {/* Прямая задача проекта/группы (project_id = sec.id) в бэклог — иначе у группы
+                      с подпроектами и без прямых задач не было точки создания первой (issue #12). */}
+                  <button onClick={() => { if (!open) toggleExpanded(sec.id); setQuickAdd({ section: sec.id, status: "backlog", title: "" }); }} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Добавить задачу в проект", "Add task to project")}>
+                    <RoyIcon name="task" size={14} strokeWidth={1.9} />
+                  </button>
                   <button onClick={() => { if (!open) toggleExpanded(sec.id); setAddingSubOf(sec.id); }} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Добавить подпроект", "Add subproject")}>
                     <RoyIcon name="plus" size={14} strokeWidth={2} />
                   </button>
