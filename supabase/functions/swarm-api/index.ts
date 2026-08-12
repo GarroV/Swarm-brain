@@ -691,7 +691,8 @@ Deno.serve(async (req: Request) => {
           const { data: par } = await supabase.from("tasks").select("id, group_id").eq("id", rawParent).maybeSingle();
           if (!par || par.group_id !== groupId) return apiErr(400, "parent_id не найден в этом воркспейсе", origin);
           // цикл: rawParent не должен быть потомком текущей задачи (идём вверх по parent_id)
-          const { data: proj } = await supabase.from("tasks").select("id, parent_id").eq("group_id", groupId).eq("project_id", task.project_id ?? " ");
+          const sibQ = supabase.from("tasks").select("id, parent_id").eq("group_id", groupId);
+          const { data: proj } = await (task.project_id ? sibQ.eq("project_id", task.project_id) : sibQ.is("project_id", null));
           const parents = new Map(((proj ?? []) as Array<{ id: string; parent_id: string | null }>).map((t) => [t.id, t.parent_id]));
           let cur: string | null = rawParent, guard = 0;
           while (cur && guard++ < 1000) { if (cur === taskId) return apiErr(400, "нельзя привязать к своему потомку (цикл)", origin); cur = parents.get(cur) ?? null; }
@@ -730,7 +731,8 @@ Deno.serve(async (req: Request) => {
         // Каскад: если задача ушла из дерева (project_linked=false) — её поддерево тоже в бэклог
         // (иначе висели бы подзадачи с родителем-в-бэклоге, нарушая инвариант дерева).
         if (fields.project_linked === false) {
-          const { data: proj } = await supabase.from("tasks").select("id, parent_id").eq("group_id", groupId).eq("project_id", task.project_id ?? " ");
+          const sibQ = supabase.from("tasks").select("id, parent_id").eq("group_id", groupId);
+          const { data: proj } = await (task.project_id ? sibQ.eq("project_id", task.project_id) : sibQ.is("project_id", null));
           const kids = new Map<string, string[]>();
           ((proj ?? []) as Array<{ id: string; parent_id: string | null }>).forEach((t) => { if (t.parent_id) { const a = kids.get(t.parent_id) ?? []; a.push(t.id); kids.set(t.parent_id, a); } });
           const subtree: string[] = []; const stack = [taskId];
