@@ -26,6 +26,9 @@ export type MatchOptions = {
   queryText?: string | null;
   /** ISO-код страны из запроса → буст записей с этим тегом (линза, не жёсткий фильтр). */
   country?: string | null;
+  /** ISO-дата (YYYY-MM-DD): ЖЁСТКИЙ фильтр свежести для временных запросов («за 2 недели») —
+   * кандидаты набираются только из окна, иначе свежие записи не попадают в top-N (issue #17). */
+  since?: string | null;
 };
 
 /**
@@ -46,7 +49,7 @@ export type MatchOptions = {
 export async function matchEntries(
   supabase: SupabaseClient,
   embedding: number[],
-  { groupId = null, requestingUserId = null, limit = 15, source = null, queryText = null, country = null }: MatchOptions = {},
+  { groupId = null, requestingUserId = null, limit = 15, source = null, queryText = null, country = null, since = null }: MatchOptions = {},
 ): Promise<MatchedEntry[]> {
   const { data, error } = await supabase.rpc("match_entries_hybrid", {
     query_embedding: `[${embedding.join(",")}]`,
@@ -56,6 +59,7 @@ export async function matchEntries(
     filter_group_id: groupId ?? null,
     filter_country: country ?? null,
     filter_source: source ?? null,
+    filter_since: since ?? null,
   });
   if (error) throw new Error(error.message);
   return (data ?? []) as MatchedEntry[];

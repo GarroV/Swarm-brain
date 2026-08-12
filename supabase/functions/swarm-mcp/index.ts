@@ -3,6 +3,7 @@ import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTas
 import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, detectQueryCountry } from "../_shared/countries.ts";
 import { applyGeneralSentinel, specificCountries } from "../_shared/meta-extract.ts";
 import { matchEntries } from "../_shared/search.ts";
+import { detectQuerySince } from "../_shared/query-time.ts";
 import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
 import { isFeedbackStatus } from "../_shared/feedback-categories.ts";
 
@@ -344,6 +345,7 @@ async function toolSearchKnowledge(args: { query: string; limit?: number; reques
       limit: Math.min(args.limit ?? 5, 20),
       queryText: args.query,
       country: detectQueryCountry(args.query),
+      since: detectQuerySince(args.query),
     });
   } catch (e) {
     return `Ошибка: ${e instanceof Error ? e.message : String(e)}`;

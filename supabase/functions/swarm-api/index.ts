@@ -42,6 +42,7 @@ import type { DependencyType } from "../_shared/tasks/types.ts";
 import { normalizeCountries, COUNTRY_NAMES, detectQueryCountry } from "../_shared/countries.ts";
 import { extractEntryMeta, applyGeneralSentinel, buildEmbeddingInput, embed } from "../_shared/meta-extract.ts";
 import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
+import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 import { handleAdminRoutes } from "./admin.ts";
@@ -1127,6 +1128,7 @@ Deno.serve(async (req: Request) => {
         limit: 20,
         queryText: q,                       // лексический сигнал (full-text)
         country: detectQueryCountry(q),     // буст по стране, если она названа в запросе
+        since: detectQuerySince(q),         // жёсткое окно для временных запросов («за 2 недели»)
       });
       return json(results, 200, origin);
     } catch (e) {
@@ -1152,7 +1154,7 @@ Deno.serve(async (req: Request) => {
     // 2) retrieve (воркспейс-изоляция и приватность — внутри matchEntries/RPC)
     let matched: MatchedEntry[];
     try {
-      matched = await matchEntries(supabase, embedding, { groupId, requestingUserId: telegram_id, limit: 8, queryText: q, country: detectQueryCountry(q) });
+      matched = await matchEntries(supabase, embedding, { groupId, requestingUserId: telegram_id, limit: 8, queryText: q, country: detectQueryCountry(q), since: detectQuerySince(q) });
     } catch (e) {
       return apiErr(500, e instanceof Error ? e.message : "Search failed", origin);
     }
