@@ -32,13 +32,6 @@ import {
   deleteProject,
   projectInWorkspace,
 } from "../_shared/tasks/projects.ts";
-import {
-  listDependencies,
-  listWorkspaceDependencies,
-  createDependency,
-  deleteDependency,
-} from "../_shared/tasks/dependencies.ts";
-import type { DependencyType } from "../_shared/tasks/types.ts";
 import { normalizeCountries, COUNTRY_NAMES, detectQueryCountry } from "../_shared/countries.ts";
 import { extractEntryMeta, applyGeneralSentinel, buildEmbeddingInput, embed } from "../_shared/meta-extract.ts";
 import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
@@ -763,61 +756,10 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  // ── Task dependencies (Рой) ─────────────────────────────────────────────────
-  // Bulk: все рёбра воркспейса одним запросом (граф зависимостей, без N+1).
-  if (routePath === "/dependencies" && req.method === "GET") {
-    return json(await listWorkspaceDependencies(groupId, telegram_id, isAdmin), 200, origin);
-  }
-
-  // GET список; POST создать (с цикл-детекцией); DELETE удалить.
-  const depsMatch = routePath.match(/^\/tasks\/([^/]+)\/dependencies$/);
-  if (depsMatch) {
-    const taskId = depsMatch[1];
-    const task = await getTask(taskId);
-    if (!task || task.group_id !== groupId || !canViewTask(task, telegram_id, isAdmin)) {
-      return apiErr(404, "Not found", origin);
-    }
-
-    if (req.method === "GET") {
-      return json(await listDependencies(taskId), 200, origin);
-    }
-
-    if (req.method === "POST") {
-      let body: Record<string, unknown>;
-      try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
-      const dependsOnId = body.depends_on_id as string | undefined;
-      if (!dependsOnId) return apiErr(400, "depends_on_id is required", origin);
-      if (dependsOnId === taskId) return apiErr(400, "Задача не может зависеть от себя", origin);
-
-      const depTask = await getTask(dependsOnId);
-      if (!depTask || depTask.group_id !== groupId || !canViewTask(depTask, telegram_id, isAdmin)) {
-        return apiErr(404, "depends_on задача не найдена", origin);
-      }
-
-      const allowed: DependencyType[] = ["blocks", "relates_to", "duplicates"];
-      const type = allowed.includes(body.dependency_type as DependencyType)
-        ? (body.dependency_type as DependencyType) : "blocks";
-
-      const result = await createDependency(taskId, dependsOnId, type);
-      if (!result.ok) {
-        if (result.reason === "cycle") return apiErr(422, "Нельзя создать зависимость: образует цикл", origin);
-        return apiErr(409, "Такая зависимость уже существует", origin);
-      }
-      return json(result.dependency, 201, origin);
-    }
-  }
-
-  const depItemMatch = routePath.match(/^\/tasks\/([^/]+)\/dependencies\/([^/]+)$/);
-  if (depItemMatch && req.method === "DELETE") {
-    const [, taskId, depId] = depItemMatch;
-    const task = await getTask(taskId);
-    if (!task || task.group_id !== groupId || !canViewTask(task, telegram_id, isAdmin)) {
-      return apiErr(404, "Not found", origin);
-    }
-    const ok = await deleteDependency(taskId, depId);
-    if (!ok) return apiErr(404, "Not found", origin);
-    return new Response(null, { status: 204, headers: corsHeaders(origin) });
-  }
+  // Эндпоинты зависимостей задач (/dependencies, /tasks/:id/dependencies) СНЕСЕНЫ 2026-08-12
+  // (issue #4): фронтовый потребитель (вкладка «Граф»/DependencyGraph) удалён при замене на
+  // «Проекты», потребителей в web/MCP/боте не осталось. Таблица `task_dependencies` + RPC
+  // `get_all_dependencies` дропаются отдельной миграцией ПОСЛЕ этого деплоя (2-шаговый снос схемы).
 
   // ── Sprints (Рой) ──────────────────────────────────────────────────────────
   // Чтение — любой в воркспейсе; создание/изменение/удаление — только админ.
