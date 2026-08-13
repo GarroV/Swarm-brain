@@ -151,7 +151,7 @@ export async function handleAdminRoutes(
     if (req.method === "GET") {
       const { data: users } = await supabase
         .from("allowed_users")
-        .select("id, telegram_id, username, is_admin, created_at")
+        .select("id, telegram_id, username, is_admin, created_at, email")
         .eq("group_id", wsId);
 
       const ids = (users ?? [])
@@ -179,14 +179,15 @@ export async function handleAdminRoutes(
             id: u.id,
             telegram_id: tid,
             pending,
-            name: fullName || (u.username ? `@${u.username}` : null) || (tid != null ? String(tid) : "?"),
+            // email-only приглашение (без Telegram): нет имени/username → показываем сам email.
+            name: fullName || (u.username ? `@${u.username}` : null) || (u.email as string | null) || (tid != null ? String(tid) : "?"),
             username: u.username ?? null,
             is_admin: u.is_admin ?? false,
             role: p?.role ?? null,
             markets: p?.markets ?? [],
             first_name: p?.first_name ?? null,
             last_name: p?.last_name ?? null,
-            email: p?.email ?? null,
+            email: (p?.email as string | null) ?? (u.email as string | null) ?? null,
             phone: p?.phone ?? null,
             notes: p?.notes ?? null,
             created_at: u.created_at,
@@ -231,6 +232,14 @@ export async function handleAdminRoutes(
       if (Number(userId) === ADMIN_TELEGRAM_ID) return apiErr(400, "Cannot remove super admin", origin);
       const { error } = await supabase.from("allowed_users").delete()
         .eq("telegram_id", Number(userId))
+        .eq("group_id", wsId);
+      if (error) return apiErr(500, error.message, origin);
+    } else if (/@.+\./.test(decodeURIComponent(userId))) {
+      // email-only ОЖИДАЮЩЕЕ приглашение (telegram_id=NULL): удаляем по email.
+      const em = decodeURIComponent(userId).trim().toLowerCase();
+      const { error } = await supabase.from("allowed_users").delete()
+        .eq("email", em)
+        .is("telegram_id", null)
         .eq("group_id", wsId);
       if (error) return apiErr(500, error.message, origin);
     } else {

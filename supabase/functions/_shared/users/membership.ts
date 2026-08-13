@@ -29,7 +29,8 @@ export async function addUserToWorkspace(
   const username = opts.username ? normalizeUsername(opts.username) : "";
   // email — КАНОН веб-входа (allowed_users.email, уникальный по lower). Пусто → не трогаем.
   const email = opts.email && opts.email.trim() ? opts.email.trim().toLowerCase() : null;
-  if (telegramId == null && !username) return { status: "bad_input", pending: false };
+  // Добавить можно по telegram_id, @username ИЛИ только по email (веб-вход через Google, без Telegram).
+  if (telegramId == null && !username && !email) return { status: "bad_input", pending: false };
 
   // Воркспейс должен существовать (иначе создавали бы висячие allowed_users с чужим group_id).
   const { data: ws, error: wsErr } = await supabase
@@ -44,6 +45,24 @@ export async function addUserToWorkspace(
     );
     if (error) { if (isUniqueViolation(error)) return { status: "email_taken", pending: false }; throw new Error(error.message); }
     return { status: "ok", pending: false };
+  }
+
+  // email-only приглашение (без Telegram): строка с email, telegram_id=NULL, username=NULL —
+  // auth-resolve находит её по email при Google-входе. Find-or-move: email уникален по lower(email).
+  if (!username && email) {
+    const { data: existing, error: selErr } = await supabase
+      .from("allowed_users").select("id, telegram_id").eq("email", email).limit(1).maybeSingle();
+    if (selErr) throw new Error(selErr.message);
+    if (existing) {
+      const row = existing as { id: string; telegram_id: number | null };
+      const { error } = await supabase.from("allowed_users").update({ group_id: opts.workspaceId }).eq("id", row.id);
+      if (error) throw new Error(error.message);
+      return { status: "ok", pending: row.telegram_id == null };
+    }
+    const { error } = await supabase.from("allowed_users")
+      .insert({ email, group_id: opts.workspaceId, added_by: opts.addedBy });
+    if (error) { if (isUniqueViolation(error)) return { status: "email_taken", pending: false }; throw new Error(error.message); }
+    return { status: "ok", pending: true };
   }
 
   // username: нет уникального индекса → onConflict нельзя, делаем find-or-insert без регистра.

@@ -42,5 +42,34 @@ Deno.serve(async (req: Request) => {
   if (error) return json({ error: "db" }, 500);
   if (!data) return json({ found: false });
   const row = data as { id: number; telegram_id: number | null; group_id: string | null };
-  return json({ found: true, id: row.id, telegram_id: row.telegram_id, group_id: row.group_id });
+
+  // email-only приглашение (админ добавил почту, без Telegram): у строки telegram_id=NULL.
+  // Веб/апп всё идентифицирует по telegram_id, поэтому выдаём ДЕТЕРМИНИРОВАННУЮ синтетическую
+  // идентичность = -id (реальные Telegram id положительные → коллизий нет; без последовательностей).
+  // Присваиваем атомарно (update ... where telegram_id is null) — идемпотентно и без гонки; заводим
+  // минимальный профиль (имя = локальная часть email), не перетирая существующий.
+  let telegramId = row.telegram_id;
+  if (telegramId == null) {
+    const synthetic = -row.id;
+    const { data: upd } = await supabase
+      .from("allowed_users")
+      .update({ telegram_id: synthetic })
+      .eq("id", row.id).is("telegram_id", null)
+      .select("telegram_id").maybeSingle();
+    telegramId = (upd as { telegram_id: number | null } | null)?.telegram_id ?? null;
+    if (telegramId == null) {
+      // гонка: кто-то присвоил первым — перечитываем актуальный telegram_id
+      const { data: re } = await supabase
+        .from("allowed_users").select("telegram_id").eq("id", row.id).maybeSingle();
+      telegramId = (re as { telegram_id: number | null } | null)?.telegram_id ?? null;
+    }
+    if (telegramId != null) {
+      await supabase.from("user_profiles").upsert(
+        { telegram_id: telegramId, first_name: email.split("@")[0] },
+        { onConflict: "telegram_id", ignoreDuplicates: true },
+      );
+    }
+  }
+
+  return json({ found: true, id: row.id, telegram_id: telegramId, group_id: row.group_id });
 });

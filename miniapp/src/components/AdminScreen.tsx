@@ -112,21 +112,25 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
 
   useEffect(() => { load(); }, [load]);
 
-  // Принимаем «@username», «username» или числовой Telegram ID — автоопределение.
+  // Принимаем e-mail (веб-вход через Google, без Telegram), «@username», «username» или числовой
+  // Telegram ID — автоопределение. Порядок: цифры → telegram_id; похоже на email → email; иначе username.
   const handleAdd = async () => {
     const raw = addInput.trim();
     if (!raw) return;
-    const ref = /^\d+$/.test(raw) ? { telegramId: Number(raw) } : { username: raw.replace(/^@/, "") };
+    const ref = /^\d+$/.test(raw) ? { telegramId: Number(raw) }
+      : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) ? { email: raw.toLowerCase() }
+      : { username: raw.replace(/^@/, "") };
     setAdding(true); setErr(null);
     try { await addUserToWorkspace(wsId, ref); setAddInput(""); load(); }
     catch (e) { setErr(e instanceof Error ? e.message : "Не удалось добавить"); }
     finally { setAdding(false); }
   };
 
-  // Реальный юзер удаляется по telegram_id, ожидающий (pending) — по username (у него нет telegram_id).
+  // Реальный юзер удаляется по telegram_id; ожидающий (pending) — по username, а email-only
+  // приглашение (без username) — по email (бэкенд сам различает по формату).
   const handleRemove = async (u: AdminUser) => {
     if (!(await confirm({ title: "Удалить пользователя из воркспейса?", description: "Пользователь потеряет доступ к этому воркспейсу. Его можно будет добавить снова.", confirmText: "Удалить" }))) return;
-    await removeUserFromWorkspace(wsId, u.pending ? (u.username ?? "") : u.telegram_id!);
+    await removeUserFromWorkspace(wsId, u.pending ? (u.username ?? u.email ?? "") : u.telegram_id!);
     load();
   };
 
@@ -170,7 +174,7 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
     <div className="space-y-3">
       <div className="flex gap-2">
         <input
-          placeholder="Telegram ID или @username"
+          placeholder="E-mail, @username или Telegram ID"
           value={addInput}
           onChange={(e) => setAddInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
