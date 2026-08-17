@@ -35,6 +35,24 @@ struct PendingUpload: Codable {
     let endISO: String
     var attempts: Int
     var uploaded: Bool?             // true после успешного 202; бэкап ждёт публикации в базу (in_base) или 3 суток
+    // true — сервер отдал транскрибацию другому участнику (decision=defer). Такая запись лежит
+    // в failed/ как бэкап (те же 3 суток) и НЕ грузится сама: аудио сохраняем, но не навязываем.
+    // Пользователь может дослать её вручную — тогда флаг снимается и папка едет обратно в pending/.
+    var deferred: Bool?
+    // Чем повторно заявиться на встречу при «дослать». Без этого дозагрузка идёт сразу в ingest
+    // (meetingId переиспользуется, claim не повторяется), а он отбивает 403 «not the transcription
+    // owner» — право-то у другого участника. Поэтому для отклонённых записей храним заявку и
+    // ПЕРЕЗАЯВЛЯЕМСЯ: арбитраж по длительности отдаст нам право, если наша запись действительно полнее.
+    var claimRetry: ClaimRetry?
+
+    struct ClaimRetry: Codable {
+        let identityKind: String        // calendar | room | manual
+        let identityKey: String
+        let title: String?
+        let startedAt: String?
+        let endedAt: String?
+        let recordedSeconds: Double?
+    }
 
     struct Segment: Codable {
         let path: String            // относительный путь файла внутри папки meetingId
@@ -90,7 +108,47 @@ actor UploadQueue {
         startISO: String,
         endISO: String
     ) throws {
-        let dir = meetingDir(meetingId)
+        try stage(into: meetingDir(meetingId), meetingId: meetingId, systemSegments: systemSegments,
+                  micURL: micURL, micStartOffset: micStartOffset,
+                  startISO: startISO, endISO: endISO, deferred: false)
+    }
+
+    // ── Карантин отклонённой записи ───────────────────────────────────────────
+    // Сервер отдал транскрибацию другому (decision=defer). Раньше клиент тут же УДАЛЯЛ файлы —
+    // и трёхсуточный бэкап, который покрывает pending/ и failed/, до них не доходил вовсе:
+    // они лежали в durable-папке recording/, минуя очередь. Так 17.08.2026 испарилась запись на
+    // 2ч26м (инцидент #24). Теперь аудио переезжает в failed/<meetingId>/ с обычным сайдкаром:
+    // тот же sweepExpired даёт 3 суток, дрейн такие папки не трогает (deferred=true),
+    // а пользователь может дослать запись вручную (resendDeferred).
+    func quarantineDeferred(
+        meetingId: String,
+        systemSegments: [(url: URL, offset: Double)],
+        micURL: URL?,
+        micStartOffset: Double?,
+        startISO: String,
+        endISO: String,
+        claimRetry: PendingUpload.ClaimRetry?
+    ) throws {
+        try fm.createDirectory(at: deadLetterDir, withIntermediateDirectories: true)
+        try stage(into: deadLetterDir.appendingPathComponent(meetingId, isDirectory: true),
+                  meetingId: meetingId, systemSegments: systemSegments,
+                  micURL: micURL, micStartOffset: micStartOffset,
+                  startISO: startISO, endISO: endISO, deferred: true, claimRetry: claimRetry)
+    }
+
+    // Перенос файлов записи в папку очереди + сайдкар. Общая часть enqueue/quarantineDeferred:
+    // отличаются только целевой папкой и флагом deferred.
+    private func stage(
+        into dir: URL,
+        meetingId: String,
+        systemSegments: [(url: URL, offset: Double)],
+        micURL: URL?,
+        micStartOffset: Double?,
+        startISO: String,
+        endISO: String,
+        deferred: Bool,
+        claimRetry: PendingUpload.ClaimRetry? = nil
+    ) throws {
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
 
         var segs: [PendingUpload.Segment] = []
@@ -102,7 +160,7 @@ actor UploadQueue {
             try fm.moveItem(at: s.url, to: dst)
             segs.append(PendingUpload.Segment(path: name, offset: s.offset))
         }
-        guard !segs.isEmpty else { throw SwarmError.transport("enqueue: no system segments") }
+        guard !segs.isEmpty else { throw SwarmError.transport("stage: no system segments") }
 
         var micName: String?
         if let micURL, fm.fileExists(atPath: micURL.path) {
@@ -121,9 +179,83 @@ actor UploadQueue {
             startISO: startISO,
             endISO: endISO,
             attempts: 0,
-            uploaded: false
+            uploaded: false,
+            deferred: deferred ? true : nil,
+            claimRetry: claimRetry
         )
-        try writeMeta(pending)
+        try writeMetaAt(dir: dir, pending)
+    }
+
+    // Сколько отклонённых записей лежит в карантине и ещё не истекло — для пункта меню
+    // «Дослать мою запись». Считаем по сайдкару, а не по имени папки: в failed/ попадают и
+    // записи, исчерпавшие ретраи (у них deferred не выставлен).
+    func deferredIds() -> [String] {
+        guard let entries = try? fm.contentsOfDirectory(at: deadLetterDir, includingPropertiesForKeys: nil) else { return [] }
+        return entries.compactMap { entry in
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: entry.path, isDirectory: &isDir), isDir.boolValue,
+                  let data = try? Data(contentsOf: entry.appendingPathComponent("meta.json")),
+                  let p = try? JSONDecoder().decode(PendingUpload.self, from: data),
+                  p.deferred == true
+            else { return nil }
+            return p.meetingId
+        }
+    }
+
+    // Итог попытки дослать отклонённую запись — чтобы UI сказал правду, а не промолчал.
+    enum ResendOutcome {
+        case sent                       // право получено, запись ушла в дрейн
+        case stillDeferred(String?)     // сервер снова отказал (в скобках — кто держит право)
+        case failed(String)             // не дошли до решения (сеть/диск)
+    }
+
+    // «Дослать всё равно». ВАЖНО: сначала ПЕРЕЗАЯВКА (claim) с длительностью нашей записи, и лишь
+    // потом заливка. Обычный дрейн claim не повторяет (meetingId переиспользуется), поэтому без
+    // перезаявки ingest отбил бы 403 «not the transcription owner» — право у другого участника.
+    // Арбитраж в meeting-claim отдаст право, только если наша запись заметно полнее; при отказе
+    // папка остаётся в карантине (аудио не теряем и в pending/ не мусорим).
+    func resendDeferred(_ meetingId: String, config: SwarmConfig) async -> ResendOutcome {
+        let src = deadLetterDir.appendingPathComponent(meetingId, isDirectory: true)
+        guard let data = try? Data(contentsOf: src.appendingPathComponent("meta.json")),
+              var pending = try? JSONDecoder().decode(PendingUpload.self, from: data) else {
+            return .failed("сайдкар записи не читается")
+        }
+
+        var targetId = meetingId
+        if let retry = pending.claimRetry {
+            let req = ClaimRequest(
+                identityKind: IdentityKind(rawValue: retry.identityKind) ?? .manual,
+                identityKey: retry.identityKey,
+                title: retry.title,
+                startedAt: retry.startedAt,
+                endedAt: retry.endedAt,
+                agentVersion: "0.1.0",
+                micStartOffset: pending.micStartOffset,
+                recordedSeconds: retry.recordedSeconds,
+            )
+            do {
+                let claim = try await SwarmClient(config: config).claim(req)
+                guard claim.shouldTranscribe else { return .stillDeferred(claim.heldByName) }
+                targetId = claim.meetingId
+            } catch {
+                return .failed("\(error)")
+            }
+        }
+
+        let dst = meetingDir(targetId)
+        try? fm.createDirectory(at: rootDir, withIntermediateDirectories: true)
+        try? fm.removeItem(at: dst)
+        do { try fm.moveItem(at: src, to: dst) }
+        catch { return .failed("возврат из карантина не удался: \(error)") }
+        // Сервер мог вернуть другой meetingId (напр. строку пересоздали) — идём с актуальным,
+        // иначе ingest ушёл бы по мёртвому id.
+        pending = PendingUpload(
+            meetingId: targetId, systemSegments: pending.systemSegments, micPath: pending.micPath,
+            micStartOffset: pending.micStartOffset, startISO: pending.startISO, endISO: pending.endISO,
+            attempts: 0, uploaded: false, deferred: nil, claimRetry: nil)
+        try? writeMeta(pending)
+        await drain(config: config)
+        return .sent
     }
 
     // ── Дрейн ───────────────────────────────────────────────────────────────
@@ -266,9 +398,13 @@ actor UploadQueue {
 
     // Атомарная запись сайдкара: tmp → replaceItem (не оставляем полу-JSON при сбое).
     private func writeMeta(_ pending: PendingUpload) throws {
-        let dir = meetingDir(pending.meetingId)
+        try writeMetaAt(dir: meetingDir(pending.meetingId), pending)
+    }
+
+    // То же, но в произвольную папку очереди (pending/ или карантин failed/).
+    private func writeMetaAt(dir: URL, _ pending: PendingUpload) throws {
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        let dst = metaURL(pending.meetingId)
+        let dst = dir.appendingPathComponent("meta.json")
         let tmp = dir.appendingPathComponent("meta.json.tmp")
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted]

@@ -62,6 +62,107 @@ func runSelfTest() {
     RunLoop.main.run()
 }
 
+// Режим --selftest-quarantine: смоук спасательного пути для ОТКЛОНЁННОЙ записи (decision=defer).
+// До 17.08.2026 такая запись просто удалялась с диска (инцидент: испарилось 2ч26м), поэтому путь
+// «отказ → карантин → дослать вручную» обязан быть проверяемым, а не «по коду должно работать».
+// Гоняет НАСТОЯЩИЙ UploadQueue на синтетических файлах и убирает за собой.
+func runQuarantineSelfTest() {
+    Task {
+        let fm = FileManager.default
+        let meetingId = "selftest-\(UUID().uuidString)"
+        let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("SwarmRecorder", isDirectory: true)
+        // Имитируем durable-папку записи: два системных сегмента + микрофон.
+        let recDir = support.appendingPathComponent("recording", isDirectory: true)
+            .appendingPathComponent(meetingId, isDirectory: true)
+        try? fm.createDirectory(at: recDir, withIntermediateDirectories: true)
+        let payload = Data(repeating: 0x41, count: 4096)
+        let segs: [(url: URL, offset: Double)] = [
+            (recDir.appendingPathComponent("sys0.m4a"), 0),
+            (recDir.appendingPathComponent("sys1.m4a"), 300),
+        ]
+        for s in segs { try? payload.write(to: s.url) }
+        let mic = recDir.appendingPathComponent("mic.m4a")
+        try? payload.write(to: mic)
+
+        let iso = ISO8601DateFormatter().string(from: Date())
+        var failures = 0
+        func check(_ cond: Bool, _ what: String) {
+            print("\(cond ? "  ok  " : "  FAIL") \(what)")
+            if !cond { failures += 1 }
+        }
+
+        do {
+            try await UploadQueue.shared.quarantineDeferred(
+                meetingId: meetingId, systemSegments: segs, micURL: mic,
+                micStartOffset: 0.01, startISO: iso, endISO: iso,
+                // Ключ встречи для перезаявки. SWARM_SELFTEST_KEY (календарный ключ, заранее
+                // занятый короткой записью) даёт проверить именно ПЕРЕХВАТ; без него — manual,
+                // который дедупа не знает и перехват не проверяет.
+                claimRetry: PendingUpload.ClaimRetry(
+                    identityKind: ProcessInfo.processInfo.environment["SWARM_SELFTEST_KEY"] != nil ? "calendar" : "manual",
+                    identityKey: ProcessInfo.processInfo.environment["SWARM_SELFTEST_KEY"] ?? "manual:\(meetingId)",
+                    title: "Selftest карантин", startedAt: iso, endedAt: iso, recordedSeconds: 8785))
+        } catch {
+            print("  FAIL карантин бросил: \(error)"); exit(1)
+        }
+        let failedDir = support.appendingPathComponent("failed", isDirectory: true)
+            .appendingPathComponent(meetingId, isDirectory: true)
+        check(fm.fileExists(atPath: failedDir.appendingPathComponent("sys0.m4a").path)
+              && fm.fileExists(atPath: failedDir.appendingPathComponent("sys1.m4a").path)
+              && fm.fileExists(atPath: failedDir.appendingPathComponent("mic.m4a").path),
+              "аудио переехало в failed/<id>/ (а не удалено)")
+        check(fm.fileExists(atPath: failedDir.appendingPathComponent("meta.json").path),
+              "сайдкар meta.json на месте (иначе sweepExpired и дослать не смогут)")
+        check(!fm.fileExists(atPath: segs[0].url.path), "исходники из durable-папки убраны (не дубль)")
+        let listed = await UploadQueue.shared.deferredIds()
+        check(listed.contains(meetingId), "запись видна в deferredIds() → пункт меню «Дослать мою запись»")
+
+        // Дослать при мёртвой сети: перезаявка не проходит → аудио ОБЯЗАНО остаться в карантине.
+        // Раньше файлы переезжали в pending/ до получения права — а ingest без claim отбивает 403,
+        // и запись зависала в очереди навсегда.
+        let deadCfg = SwarmConfig(token: "selftest", ingestBaseURL: "http://127.0.0.1:1", webBaseURL: "")
+        let pendingDir = support.appendingPathComponent("pending", isDirectory: true)
+            .appendingPathComponent(meetingId, isDirectory: true)
+        switch await UploadQueue.shared.resendDeferred(meetingId, config: deadCfg) {
+        case .failed: check(true, "сеть недоступна → честный .failed (не молчаливый успех)")
+        case .sent: check(false, "заявила об отправке при мёртвой сети")
+        case .stillDeferred: check(false, "перепутала отказ сервера с отказом сети")
+        }
+        check(fm.fileExists(atPath: failedDir.appendingPathComponent("sys0.m4a").path),
+              "аудио осталось в карантине (не переехало в pending/ без полученного права)")
+        check(await UploadQueue.shared.deferredIds().contains(meetingId),
+              "флаг deferred на месте → пункт меню не исчез, можно повторить позже")
+
+        // Полный путь «отказ → перехват → отправка» проверяется против ЖИВОГО сервера, когда он
+        // задан: SWARM_SELFTEST_URL + SWARM_SELFTEST_TOKEN (локальный контур из test-claim.sh).
+        let env = ProcessInfo.processInfo.environment
+        if let liveURL = env["SWARM_SELFTEST_URL"], let liveToken = env["SWARM_SELFTEST_TOKEN"] {
+            let liveCfg = SwarmConfig(token: liveToken, ingestBaseURL: liveURL, webBaseURL: "")
+            let outcome = await UploadQueue.shared.resendDeferred(meetingId, config: liveCfg)
+            switch outcome {
+            case .sent, .failed:
+                // .failed допустим: локально выключен storage, ingest падает на записи файлов.
+                // Важно другое — что перезаявка ПРОШЛА и папка уехала из карантина.
+                check(!(await UploadQueue.shared.deferredIds().contains(meetingId)),
+                      "живой сервер: право получено, запись вышла из карантина")
+            case .stillDeferred(let holder):
+                check(false, "живой сервер отказал (держит \(holder ?? "?")) — перехват не сработал")
+            }
+        } else {
+            print("  skip живой прогон перезаявки (нет SWARM_SELFTEST_URL/SWARM_SELFTEST_TOKEN)")
+        }
+
+        // Уборка за собой.
+        try? fm.removeItem(at: pendingDir)
+        try? fm.removeItem(at: failedDir)
+        try? fm.removeItem(at: recDir)
+        print(failures == 0 ? "SELFTEST_QUARANTINE OK" : "SELFTEST_QUARANTINE FAILED (\(failures))")
+        exit(failures == 0 ? 0 : 1)
+    }
+    RunLoop.main.run()
+}
+
 // Режим --analyze <file.m4a…>: печатает речевые блоки SilenceTrimmer и % экономии Whisper-минут.
 // Временный debug для калибровки на реальных записях (сверка со ссылочным ffmpeg-замером).
 func runAnalyze(_ files: [String]) {
@@ -85,6 +186,8 @@ func runAnalyze(_ files: [String]) {
 
 if let ai = CommandLine.arguments.firstIndex(of: "--analyze") {
     runAnalyze(Array(CommandLine.arguments[(ai + 1)...]))
+} else if CommandLine.arguments.contains("--selftest-quarantine") {
+    runQuarantineSelfTest()   // не возвращается (RunLoop) до exit()
 } else if CommandLine.arguments.contains("--selftest") {
     runSelfTest()   // не возвращается (RunLoop) до exit()
 } else {

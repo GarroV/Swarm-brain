@@ -61,6 +61,10 @@ struct ClaimRequest: Encodable {
     // по-разному); без сдвига сервер сводит реплики «я» и «собеседник» с рассинхроном.
     // Кодируется как mic_start_offset (snake_case). nil → дорожки считаем синхронными.
     var micStartOffset: Double? = nil
+    // Длительность НАШЕЙ записи (сек) — основа арбитража на сервере: право транскрибации
+    // достаётся заметно более полной записи, а не тому, кто раньше нажал стоп. Без этого поля
+    // побеждала самая короткая запись (инцидент 17.08.2026 — 3 минуты вместо 2ч26м).
+    var recordedSeconds: Double? = nil
     // user_notes опускаем в MVP (окно пометок — следующая итерация)
 }
 
@@ -68,6 +72,9 @@ struct ClaimResponse: Decodable {
     let meetingId: String
     let decision: String        // "transcribe" | "defer"
     let leaseTtlSec: Int?
+    // Кто держит право транскрибации, когда нам отказали (для честного сообщения пользователю).
+    let heldBy: Int?
+    let heldByName: String?
 
     var shouldTranscribe: Bool { decision == "transcribe" }
 }

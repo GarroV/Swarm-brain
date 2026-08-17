@@ -44,6 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var identity: MeetingIdentity.Info?
     // Сколько записей ждёт дозагрузки (UploadQueue) — показываем «N в очереди» в меню.
     private var queuedCount = 0
+    // Записи, отклонённые сервером (decision=defer) и лежащие в карантине failed/ — их можно
+    // дослать руками, пока не истёк трёхсуточный потолок. Меняется только на главном потоке.
+    private var deferredMeetingIds: [String] = []
 
     // ── Сигнал «встреча в обработке» (виджет + уведомление) ──────────────────────
     // Встречи, отправленные на сервер и ещё не подтверждённые как done. Пока непусто —
@@ -497,6 +500,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if queuedCount > 0 {
                 menu.addItem(NSMenuItem(title: "⏳ \(queuedCount) в очереди", action: #selector(drainQueueTapped), keyEquivalent: ""))
             }
+            // Отклонённые сервером записи лежат в карантине 3 суток — даём дослать их руками.
+            // Без этого пункта карантин был бы бесполезен: файлы есть, а достать их некому.
+            if !deferredMeetingIds.isEmpty {
+                let n = deferredMeetingIds.count
+                menu.addItem(NSMenuItem(title: "📦 Дослать мою запись\(n > 1 ? " (\(n))" : "")", action: #selector(resendDeferredTapped), keyEquivalent: ""))
+            }
             if let web = config?.webBaseURL, !web.isEmpty {
                 menu.addItem(NSMenuItem(title: "Открыть Рой", action: #selector(openWeb), keyEquivalent: ""))
             }
@@ -683,6 +692,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             await UploadQueue.shared.drain(config: cfg)
             await refreshQueueBadge()
         }
+    }
+
+    // Дослать записи, которым сервер отказал (decision=defer). Сервер примет их, только если наша
+    // запись реально полнее (арбитраж по длительности в meeting-claim) — иначе отобьёт и папка
+    // вернётся в карантин. Кнопка нужна для случая «я знаю, что моя запись полная, а в базе обрубок».
+    @objc private func resendDeferredTapped() {
+        guard let cfg = config else { return }
+        let ids = deferredMeetingIds
+        Task {
+            var sent = 0
+            var refused: String? = nil
+            var error: String? = nil
+            for id in ids {
+                switch await UploadQueue.shared.resendDeferred(id, config: cfg) {
+                case .sent: sent += 1
+                case .stillDeferred(let holder): refused = holder ?? "другой участник"
+                case .failed(let why): error = why
+                }
+            }
+            await refreshQueueBadge()
+            // Итог обязателен: «нажал и ничего не произошло» — та же молчаливая потеря,
+            // из-за которой инцидент 17.08.2026 заметили только через сутки.
+            await MainActor.run { self.notifyResendOutcome(sent: sent, refused: refused, error: error) }
+        }
+    }
+
+    private func notifyResendOutcome(sent: Int, refused: String?, error: String?) {
+        let c = UNMutableNotificationContent()
+        if sent > 0 {
+            c.title = "Запись отправлена"
+            c.body = "Твоя запись принята — она полнее той, что была в базе. Тезисы перегенерируются и придут в Telegram."
+        } else if let refused {
+            c.title = "Сервер снова отказал"
+            c.body = "Право транскрибации держит \(refused.hasPrefix("@") ? refused : "@\(refused)"): его запись не короче твоей. Аудио осталось в бэкапе."
+        } else {
+            c.title = "Не удалось дослать запись"
+            c.body = "\(error ?? "неизвестная ошибка"). Аудио на месте — попробуй позже."
+        }
+        c.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "resend-\(Int(Date().timeIntervalSince1970))", content: c, trigger: nil))
     }
 
     @objc private func pasteTokenTapped() {
@@ -1221,6 +1270,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    // Запись отклонена сервером (транскрибирует другой участник). Раньше этот исход был НЕОТЛИЧИМ
+    // от успеха: файлы стирались, индикатор гас, показывалось штатное «сохраняю встречу».
+    // Теперь говорим прямо — пока аудио ещё живо в карантине и решение можно откатить.
+    private func notifyDeferred(holder: String?, seconds: Double) {
+        let who = holder.map { "@\($0)" } ?? "другой участник"
+        let c = UNMutableNotificationContent()
+        c.title = "Твоя запись не пошла в обработку"
+        c.body = "Эту встречу транскрибирует \(who). Твоя запись (\(Self.humanDuration(seconds))) сохранена на 3 суток — если она полнее, дошли её через меню: «Дослать мою запись»."
+        c.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "deferred-\(Int(Date().timeIntervalSince1970))", content: c, trigger: nil))
+    }
+
+    // Длительность по-человечески: «2 ч 26 мин» / «3 мин 16 с». Нужна в тексте про отклонённую
+    // запись — «2ч26м против 3 минут» сразу объясняет, почему это важно.
+    static func humanDuration(_ seconds: Double) -> String {
+        let total = Int(max(0, seconds.rounded()))
+        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
+        if h > 0 { return "\(h) ч \(m) мин" }
+        if m > 0 { return "\(m) мин \(s) с" }
+        return "\(s) с"
+    }
+
     private func notifyRecovered() {
         let c = UNMutableNotificationContent()
         c.title = "Восстановлена прерванная запись"
@@ -1235,6 +1306,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let iso = ISO8601DateFormatter()
         // Название, поправленное пользователем в панели на ходу, побеждает дефолт (календарь/«Запись …»).
         let titleOverride = await LiveNotesPanel.shared.currentTitleOverride()
+        // Длительность НАШЕЙ записи — по фактическим границам сессии, а не по календарю: сервер
+        // отдаёт транскрибацию более полной записи, и календарные startISO/endISO (плановые, у всех
+        // участников одинаковые) для этого сравнения бесполезны.
+        let recordedSeconds = max(0, p.ended.timeIntervalSince(p.started))
         let req: ClaimRequest
         if let info = p.identity {
             req = ClaimRequest(
@@ -1246,6 +1321,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 attendees: info.attendees.isEmpty ? nil : info.attendees,
                 agentVersion: "0.1.0",
                 micStartOffset: p.res.micStartOffset,
+                recordedSeconds: recordedSeconds,
             )
         } else {
             req = ClaimRequest(
@@ -1256,8 +1332,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 endedAt: iso.string(from: p.ended),
                 agentVersion: "0.1.0",
                 micStartOffset: p.res.micStartOffset,
+                recordedSeconds: recordedSeconds,
             )
         }
+        // Переехали ли файлы в очередь (pending/ или карантин failed/). Пока false — durable-папку
+        // записи трогать нельзя: в ней лежит единственная копия аудио.
+        var staged = true
         do {
             // Claim (с ретраем). meetingId переиспользуется очередью при дозагрузке.
             let claim = try await withRetry { try await client.claim(req) }
@@ -1281,14 +1361,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     if self?.processingIds.remove(mid) != nil { self?.rebuildMenu() }
                 }
             } else {
-                // decision=defer — транскрибирует другой участник; наши файлы не нужны.
-                for s in p.res.systemSegments { try? FileManager.default.removeItem(at: s.url) }
-                if let m = p.res.mic { try? FileManager.default.removeItem(at: m) }
+                // decision=defer — транскрибирует другой участник. НЕ удаляем: наша запись может
+                // оказаться единственной полной (инцидент 17.08.2026 — стёрли 2ч26м, потому что
+                // коллега остановила свою на 3-й минуте и заявилась первой). Кладём в карантин
+                // failed/ под общий трёхсуточный потолок и ГОВОРИМ об этом вслух: молчание тут
+                // недопустимо — это единственный момент, когда потерю ещё можно откатить.
+                do {
+                    try await UploadQueue.shared.quarantineDeferred(
+                        meetingId: claim.meetingId,
+                        systemSegments: p.res.systemSegments,
+                        micURL: p.res.mic,
+                        micStartOffset: p.res.micStartOffset,
+                        startISO: iso.string(from: p.started),
+                        endISO: iso.string(from: p.ended),
+                        claimRetry: PendingUpload.ClaimRetry(
+                            identityKind: req.identityKind.rawValue,
+                            identityKey: req.identityKey,
+                            title: req.title,
+                            startedAt: req.startedAt,
+                            endedAt: req.endedAt,
+                            recordedSeconds: recordedSeconds)
+                    )
+                    await MainActor.run {
+                        self.notifyDeferred(holder: claim.heldByName, seconds: recordedSeconds)
+                    }
+                } catch {
+                    staged = false
+                    NSLog("SwarmRecorder: карантин отклонённой записи не удался (\(error)) — файлы оставлены в durable-папке")
+                }
             }
-            // Файлы перенесены в pending/ (или сервер отказался) → чистим durable-папку ИМЕННО этой
-            // записи (выводим из её же сегментов, не из глобального стейта — иначе «Повторить» после
-            // старта новой записи снёс бы чужую папку).
-            if let seg = p.res.systemSegments.first {
+            // Файлы перенесены в pending/ или в карантин failed/ → durable-папка ИМЕННО этой записи
+            // больше не нужна (выводим из её же сегментов, не из глобального стейта — иначе
+            // «Повторить» после старта новой записи снёс бы чужую папку).
+            // ВАЖНО: только если перенос РЕАЛЬНО состоялся. Иначе здесь удалялось бы единственное
+            // оставшееся аудио — ровно тот класс молчаливой потери, ради которого всё это чинится.
+            if staged, let seg = p.res.systemSegments.first {
                 try? FileManager.default.removeItem(at: seg.url.deletingLastPathComponent())
             }
             pendingSend = nil   // отправлено в очередь (или сервер отказался) — повторять нечего
@@ -1315,6 +1422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Подтянуть счётчик очереди и перерисовать меню (вызывать с любого потока).
     private func refreshQueueBadge() async {
         let n = await UploadQueue.shared.pendingCount()
-        await MainActor.run { self.queuedCount = n; self.rebuildMenu() }
+        let deferred = await UploadQueue.shared.deferredIds()
+        await MainActor.run { self.queuedCount = n; self.deferredMeetingIds = deferred; self.rebuildMenu() }
     }
 }

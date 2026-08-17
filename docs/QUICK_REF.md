@@ -100,6 +100,8 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 |---|---|---|
 | Жизненный цикл/виджет/аплоад/нарезка/бэкап | `recorder/Sources/SwarmRecorder/**` (`AppDelegate`,`RecorderWidget`,`UploadQueue`,`Segmenter`,`SwarmClient`) | spoke [recorder/README.md](../recorder/README.md) |
 | **Обрезка тишины перед Whisper** (речевые блоки, offset реального старта → −~60% Whisper-минут; env `SWARM_VAD_DB`/`SWARM_VAD_CUT`) | `recorder/Sources/SwarmRecorder/SilenceTrimmer.swift` + `Segmenter.segment(allowEmpty:)` | §Флоу встреч (meeting-ingest) |
+| **Кто из участников транскрибирует** — арбитраж по длительности записи (побеждает БОЛЕЕ ПОЛНАЯ, не «кто первый нажал стоп»: issue #23) | сервер `meeting-claim/index.ts` (`TAKEOVER_MIN_RATIO`/`TAKEOVER_MIN_EXTRA_SEC`, `heldSeconds`), колонка `meetings.recorded_seconds`; клиент `SwarmTypes.swift` (`ClaimRequest.recordedSeconds`) | §Флоу встреч |
+| **Отклонённая запись (`decision=defer`) НЕ удаляется** — карантин `failed/<id>/` на 3 суток + уведомление + пункт меню «Дослать мою запись» (перезаявка, не просто ingest: issue #24) | `UploadQueue.swift` (`quarantineDeferred`,`deferredIds`,`resendDeferred`), `AppDelegate.swift` (`notifyDeferred`,`resendDeferredTapped`) | смоук: `SwarmRecorder --selftest-quarantine` |
 | Релиз новой сборки (тег `recorder-build-N`) | `swarm-recorder-version/index.ts` (`LATEST_BUILD`) | recorder/README.md (runbook) |
 
 ### Frontend «Рой» (веб-интерфейс, браузер/PWA) — `miniapp/src/components/roy/`
