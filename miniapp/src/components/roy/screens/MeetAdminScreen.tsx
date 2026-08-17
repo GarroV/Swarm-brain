@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoyNav } from "../nav";
 import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks, Participants } from "../ui";
 import { RoyIcon } from "../icons";
@@ -496,7 +496,24 @@ function AgentMeetingDetail({
   const [reprocessing, setReprocessing] = useState(false);
   const [reprocMenu, setReprocMenu] = useState(false);   // открыто меню-уточнение «Переобработать»
   const [reprocNote, setReprocNote] = useState("");      // своё пожелание к переработке
+  const reprocRef = useRef<HTMLDivElement | null>(null); // обёртка «кнопка + меню» — для клика вне
   useEffect(() => { setEditingTitle(false); setEditingNotes(false); setSaving(false); setCopied(false); setReprocessing(false); setReprocMenu(false); setReprocNote(""); }, [meeting.id]);
+
+  // Меню «Переобработать» закрывается кликом по свободному месту и Escape (паттерн как в
+  // CountryPopover/QuickPickPopover). Без этого меню висело, пока не выберешь пункт.
+  useEffect(() => {
+    if (!reprocMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (!reprocRef.current?.contains(e.target as Node)) setReprocMenu(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setReprocMenu(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [reprocMenu]);
 
   // Переобработать тезисы текущим промптом (из сохранённого транскрипта, без ре-транскрибации).
   // note — необязательное пожелание («короче»/«подробнее»/«акцент на решениях»/свой текст),
@@ -600,7 +617,7 @@ function AgentMeetingDetail({
     { label: "Акцент на решениях", note: "Сделай акцент на решениях и изменениях — что реально поменялось, о чём договорились." },
   ];
   const reprocessBtn = (
-    <div className="relative inline-block">
+    <div ref={reprocRef} className="relative inline-block">
       <button
         type="button"
         onClick={() => setReprocMenu((v) => !v)}
@@ -622,7 +639,7 @@ function AgentMeetingDetail({
             <input
               value={reprocNote}
               onChange={(e) => setReprocNote(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && reprocNote.trim()) reprocess(reprocNote.trim()); if (e.key === "Escape") setReprocMenu(false); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && reprocNote.trim()) reprocess(reprocNote.trim()); }}
               placeholder="Своё пожелание, Enter"
               className="w-full rounded-md border border-line bg-surface px-2 py-1.5 text-xs text-ink outline-none focus:border-primary/50"
             />
