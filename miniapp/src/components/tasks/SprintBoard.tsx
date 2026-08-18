@@ -32,6 +32,9 @@ const isBacklogStatus = (s: string) => s !== "open" && s !== "in_progress" && s 
 
 const ALL = "__all__";            // селектор вкладок: показать проекты ВСЕХ вкладок (обзор)
 const EXPANDED_KEY = "swarm.board.expandedProjects"; // localStorage: какие проекты раскрыты (персонально)
+// Подпроекты по умолчанию РАЗВЁРНУТЫ (обратная полярность к EXPANDED_KEY — так поведение для
+// уже существующих пользователей не меняется молча: пустой localStorage = как раньше, всё видно).
+const COLLAPSED_SUBS_KEY = "swarm.board.collapsedSubprojects";
 const NO_SECTION = "__none__";    // секция для задач без проекта
 
 function initials(names: string[]): string {
@@ -70,6 +73,15 @@ export function SprintBoard() {
   });
   const [addingSubOf, setAddingSubOf] = useState<string | null>(null);
   const [subName, setSubName] = useState("");
+  // Подпроекты — своё персональное сворачивание, отдельное от EXPANDED_KEY (см. коммент выше).
+  const [collapsedSubs, setCollapsedSubs] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try { return new Set(JSON.parse(localStorage.getItem(COLLAPSED_SUBS_KEY) ?? "[]") as string[]); } catch { return new Set(); }
+  });
+  // Drag подпроекта между проектами верхнего уровня (reparent) — отдельно от drag задачи (dragRef),
+  // чтобы drop-зоны колонок и drop-зоны заголовков проектов не путали события друг друга.
+  const [dragProj, setDragProj] = useState<string | null>(null);
+  const [dragOverProject, setDragOverProject] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -126,6 +138,29 @@ export function SprintBoard() {
       try { localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next])); } catch { /* приватный режим/квота — не критично */ }
       return next;
     });
+  }
+
+  function toggleCollapsedSub(id: string) {
+    setCollapsedSubs((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      try { localStorage.setItem(COLLAPSED_SUBS_KEY, JSON.stringify([...next])); } catch { /* приватный режим/квота — не критично */ }
+      return next;
+    });
+  }
+
+  // Перенос подпроекта в другой проект верхнего уровня (drag-n-drop). Бэкенд уже валидирует
+  // вложенность (validateParent: не глубже 2 уровней, нельзя подпроектом сделать проект со
+  // своими детьми) — здесь только очевидные короткие замыкания + синхронизация sprint_id
+  // (подпроект наследует вкладку НОВОГО родителя — тот же инвариант, что и при создании).
+  async function moveSubproject(kidId: string, newParentId: string) {
+    const kid = projects.find((p) => p.id === kidId);
+    const newParent = projects.find((p) => p.id === newParentId);
+    if (!kid || !newParent || kid.id === newParentId || kid.parent_id === newParentId) return;
+    if (newParent.parent_id) return; // цель сама подпроект — нельзя вкладывать глубже 2 уровней
+    const sprint_id = newParent.sprint_id;
+    setProjects((prev) => prev.map((p) => (p.id === kidId ? { ...p, parent_id: newParentId, sprint_id } : p)));
+    try { await updateProject(kidId, { parent_id: newParentId, sprint_id }); } catch { load(); }
   }
 
   async function renameSection(id: string, name: string) {
@@ -358,10 +393,14 @@ export function SprintBoard() {
           const open = expanded.has(sec.id);
 
           // Свёрнутый проект — компактная ПЛИТКА-карточка (двойной клик открывает).
+          // Тоже drop-зона для переноса подпроекта (#30) — раскрывать цель не нужно.
           if (!open) {
             return (
               <button key={sec.id} type="button" onDoubleClick={() => toggleExpanded(sec.id)}
-                className="w-56 shrink-0 self-start rounded-2xl border border-line bg-surface/40 p-3 text-left select-none cursor-pointer transition-colors hover:border-line-2 dark:backdrop-blur-sm"
+                onDragOver={(e) => { if (dragProj) { e.preventDefault(); setDragOverProject(sec.id); } }}
+                onDragLeave={() => setDragOverProject((p) => (p === sec.id ? null : p))}
+                onDrop={(e) => { if (dragProj) { e.preventDefault(); moveSubproject(dragProj, sec.id); setDragProj(null); setDragOverProject(null); } }}
+                className={`w-56 shrink-0 self-start rounded-2xl border p-3 text-left select-none cursor-pointer transition-colors dark:backdrop-blur-sm ${dragOverProject === sec.id ? "border-primary bg-primary/10" : "border-line bg-surface/40 hover:border-line-2"}`}
                 title={dt("Двойной клик — открыть проект", "Double-click to open")}>
                 <div className="flex items-center gap-2">
                   <RoyIcon name="board" size={15} strokeWidth={1.9} />
@@ -379,9 +418,13 @@ export function SprintBoard() {
           // Раскрытый проект — на всю ширину (w-full → своя строка в flex-wrap).
           return (
             <section key={sec.id} className="w-full rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
-              {/* Заголовок раскрытого проекта. Двойной клик — свернуть обратно в плитку. */}
+              {/* Заголовок раскрытого проекта. Двойной клик — свернуть обратно в плитку.
+                  Тоже drop-зона для переноса подпроекта (#30). */}
               <div onDoubleClick={() => toggleExpanded(sec.id)}
-                className="flex items-center gap-2 px-3 py-2 select-none cursor-pointer border-b border-line"
+                onDragOver={(e) => { if (dragProj) { e.preventDefault(); setDragOverProject(sec.id); } }}
+                onDragLeave={() => setDragOverProject((p) => (p === sec.id ? null : p))}
+                onDrop={(e) => { if (dragProj) { e.preventDefault(); moveSubproject(dragProj, sec.id); setDragProj(null); setDragOverProject(null); } }}
+                className={`flex items-center gap-2 px-3 py-2 select-none cursor-pointer border-b ${dragOverProject === sec.id ? "border-primary bg-primary/10" : "border-line"}`}
                 title={dt("Двойной клик — свернуть", "Double-click to collapse")}>
                 <button onClick={(e) => { e.stopPropagation(); toggleExpanded(sec.id); }} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={open ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
                   <RoyIcon name="cright" size={12} style={{ transform: open ? "rotate(90deg)" : undefined }} />
@@ -431,9 +474,19 @@ export function SprintBoard() {
                   )}
                   {/* Пространства подпроектов: у каждого только рабочие колонки. */}
                   <div className="flex-1 min-w-0 space-y-3">
-                    {kidsWithTasks.map(({ kid, tasks: kidTasks }) => (
+                    {kidsWithTasks.map(({ kid, tasks: kidTasks }) => {
+                      const subOpen = !collapsedSubs.has(kid.id);
+                      return (
                       <div key={kid.id}>
-                        <div className="flex items-center gap-2 px-1 pb-1.5">
+                        {/* Заголовок подпроекта: draggable (перенос в другой проект, #30) +
+                            сворачивание (#29, та же семантика, что у проекта верхнего уровня). */}
+                        <div draggable={renaming?.id !== kid.id}
+                          onDragStart={(e) => { setDragProj(kid.id); e.dataTransfer.effectAllowed = "move"; }}
+                          onDragEnd={() => { setDragProj(null); setDragOverProject(null); }}
+                          className="flex items-center gap-2 px-1 pb-1.5 cursor-grab active:cursor-grabbing">
+                          <button onClick={() => toggleCollapsedSub(kid.id)} className="rounded-full p-0.5 text-ink-soft hover:bg-surface-2" title={subOpen ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
+                            <RoyIcon name="cright" size={11} style={{ transform: subOpen ? "rotate(90deg)" : undefined }} />
+                          </button>
                           {renaming?.id === kid.id ? (
                             <input autoFocus value={renaming.name}
                               onChange={(e) => setRenaming({ id: kid.id, name: e.target.value })}
@@ -449,11 +502,14 @@ export function SprintBoard() {
                             <button onClick={() => removeSection(kid.id, kid.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Удалить", "Delete")}><RoyIcon name="trash" size={12} /></button>
                           </div>
                         </div>
-                        <div className="flex gap-3 overflow-x-auto">
-                          {WORK_COLUMNS.map((col) => renderStatusColumn(kid.id, col, kidTasks.filter((t) => t.status === col.status)))}
-                        </div>
+                        {subOpen && (
+                          <div className="flex gap-3 overflow-x-auto">
+                            {WORK_COLUMNS.map((col) => renderStatusColumn(kid.id, col, kidTasks.filter((t) => t.status === col.status)))}
+                          </div>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                     {renderAddSubproject(sec.id)}
                   </div>
                 </div>
