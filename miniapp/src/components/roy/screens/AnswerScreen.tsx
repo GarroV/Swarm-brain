@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRoyNav } from "../nav";
+import { useRoyNav, openSourceRoute } from "../nav";
 import { NavHeader, SectionLabel, RoyCard, TypeTag, Market, Chip, type RoyTypeKey } from "../ui";
 import { RoyIcon } from "../icons";
-import { ask, type AskResult } from "@/lib/api";
+import { ask, type AskResult, type AskSource } from "@/lib/api";
 
 // Ответ с верхними индексами-сносками [n] → accent-ink.
 function AnswerText({ text }: { text: string }) {
@@ -51,7 +51,7 @@ function Loading() {
 // Тело ответа (запрос + ответ + источники + уточнения) — переиспользуется push-экраном
 // AnswerScreen (мобайл) и AnswerModal (десктоп, контекстное окно). Колбэки определяют,
 // куда вести уточнение/источник в каждом контексте.
-export function AnswerBody({ query, onFollowup, onOpenRecord }: { query: string; onFollowup: (q: string) => void; onOpenRecord: (id: string) => void }) {
+export function AnswerBody({ query, onFollowup, onOpenRecord }: { query: string; onFollowup: (q: string) => void; onOpenRecord: (source: AskSource) => void }) {
   const [data, setData] = useState<AskResult | null>(null);
   const [err, setErr] = useState(false);
 
@@ -91,7 +91,7 @@ export function AnswerBody({ query, onFollowup, onOpenRecord }: { query: string;
               <SectionLabel>Источники</SectionLabel>
               <div className="space-y-2.5">
                 {data.sources.map((s) => (
-                  <button key={s.id} type="button" onClick={() => onOpenRecord(s.id)} className="w-full text-left transition-transform active:scale-[0.99]">
+                  <button key={s.id} type="button" onClick={() => onOpenRecord(s)} className="w-full text-left transition-transform active:scale-[0.99]">
                     <RoyCard className="px-4 py-3.5">
                       <div className="flex items-center gap-2 mb-1.5">
                         <span className="inline-flex items-center justify-center rounded-full bg-accent-soft text-accent-ink font-bold shrink-0" style={{ width: 20, height: 20, fontSize: 11 }}>{s.n}</span>
@@ -136,7 +136,7 @@ export function AnswerScreen({ query }: { query: string }) {
         <AnswerBody
           query={query}
           onFollowup={(q) => push({ view: "answer", params: { query: q } })}
-          onOpenRecord={(id) => push({ view: "record", params: { id } })}
+          onOpenRecord={openSourceRoute(push)}
         />
       </div>
     </div>

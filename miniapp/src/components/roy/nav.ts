@@ -48,6 +48,18 @@ export type RoyNav = {
   openTasks: (lens: Lens, list?: SmartListId) => void;
 };
 
+// Источник /ask или /digest (AskSource) может быть встречей (entry_type="meeting") — тогда
+// нужен полноценный MeetingDetail, а не общая RecordDetail. Раньше «Ответ»/дайджест всегда
+// вели на record независимо от типа, хотя entry_type уже был в ответе — теряли транскрипт/
+// reprocess/задачи для встреч (владелец: «почему у нас открывается разное окно…»). Общий
+// хелпер — чтобы все потребители AskSource (AnswerScreen/AnswerModal/PersonalDigest) решали
+// одинаково, не дублируя ветвление.
+export function openSourceRoute(push: (r: RoyRoute) => void) {
+  return (source: { id: string; entry_type: string }) => {
+    push(source.entry_type === "meeting" ? { view: "meetingDetail", params: { id: source.id } } : { view: "record", params: { id: source.id } });
+  };
+}
+
 export const RoyNavContext = createContext<RoyNav | null>(null);
 
 export function useRoyNav(): RoyNav {

@@ -4,7 +4,8 @@ import { createPortal } from "react-dom";
 import { AnswerBody } from "./screens/AnswerScreen";
 import { RecordBody } from "./screens/RecordDetail";
 import { RoyIcon } from "./icons";
-import { fetchEntry } from "@/lib/api";
+import { useRoyNav } from "./nav";
+import { fetchEntry, type AskSource } from "@/lib/api";
 import type { Entry } from "@/types";
 
 // Запись внутри окна (источник из ответа) — НЕ уводим на отдельный экран, чтобы «Назад»
@@ -26,8 +27,18 @@ function ModalRecord({ id }: { id: string }) {
 // Контекстное окно ответа (десктоп) поверх дашборда. Уточнения переспрашивают внутри окна,
 // источник раскрывается внутри окна же (с «Назад» к ответу) — без прыжка на главную.
 export function AnswerModal({ query, onClose }: { query: string; onClose: () => void }) {
+  const { push } = useRoyNav();
   const [q, setQ] = useState(query);
   const [recordId, setRecordId] = useState<string | null>(null);
+
+  // Источник-встреча (entry_type="meeting") не умеет открываться ВНУТРИ окна — MeetingDetail
+  // рассчитан на пуш-стек (свой NavHeader/pop), а не на встраивание как ModalRecord/RecordBody.
+  // Поэтому для встречи закрываем окно и ведём на полноценный экран, а не показываем неполный/
+  // неверный контент (issue: «Ответ» всегда вёл на RecordDetail, теряя транскрипт/задачи).
+  const openSource = (source: AskSource) => {
+    if (source.entry_type === "meeting") { onClose(); push({ view: "meetingDetail", params: { id: source.id } }); }
+    else setRecordId(source.id);
+  };
 
   useEffect(() => { setQ(query); setRecordId(null); }, [query]);
   useEffect(() => {
@@ -67,7 +78,7 @@ export function AnswerModal({ query, onClose }: { query: string; onClose: () => 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {recordId
             ? <ModalRecord id={recordId} />
-            : <AnswerBody query={q} onFollowup={setQ} onOpenRecord={setRecordId} />}
+            : <AnswerBody query={q} onFollowup={setQ} onOpenRecord={openSource} />}
         </div>
       </div>
     </div>,
