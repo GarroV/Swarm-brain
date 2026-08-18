@@ -101,6 +101,24 @@ async function matchAssignee(name: string): Promise<{ telegram_id: number; displ
   };
 }
 
+// Имя проекта/подпроекта доски → id, в пределах воркспейса (issue #28: MCP не умел класть
+// задачи на доску — только в общий список). Точное совпадение по имени приоритетнее частичного;
+// при неоднозначности (несколько совпадений) — не гадаем, отдаём null + предупреждение вызывающему,
+// как и matchAssignee при неопознанном исполнителе.
+async function matchProject(groupId: string, name: string): Promise<{ id: string; ambiguous: boolean } | null> {
+  const { data } = await supabase.from("projects").select("id, name").eq("group_id", groupId);
+  const rows = (data ?? []) as Array<{ id: string; name: string }>;
+  if (!rows.length) return null;
+  const lower = name.trim().toLowerCase();
+  const exact = rows.filter((p) => p.name.toLowerCase() === lower);
+  if (exact.length === 1) return { id: exact[0].id, ambiguous: false };
+  if (exact.length > 1) return { id: exact[0].id, ambiguous: true };
+  const partial = rows.filter((p) => p.name.toLowerCase().includes(lower));
+  if (partial.length === 1) return { id: partial[0].id, ambiguous: false };
+  if (partial.length > 1) return { id: partial[0].id, ambiguous: true };
+  return null;
+}
+
 // ── Tool implementations (MCP prослойки — резолв + shared engine + форматирование) ──
 
 export async function toolAddTask(args: {
@@ -113,6 +131,7 @@ export async function toolAddTask(args: {
   source: string;
   context_id?: string;
   labels?: string[];
+  project_name?: string;
   requesting_user_id?: number;
 }): Promise<string> {
   const assignees: string[] = [];
@@ -131,6 +150,19 @@ export async function toolAddTask(args: {
   }
 
   const groupId = args.requesting_user_id ? await resolveGroupId(args.requesting_user_id) : null;
+
+  // Проект/подпроект доски (issue #28): без него задача создаётся, но на доску (SprintBoard)
+  // не попадёт — доска показывает только задачи с project_id.
+  let project_id: string | null = null;
+  if (args.project_name && groupId) {
+    const match = await matchProject(groupId, args.project_name);
+    if (match) {
+      project_id = match.id;
+      if (match.ambiguous) matchWarning += ` ⚠️ несколько проектов с похожим именем «${args.project_name}» — взят первый попавшийся, проверь на доске`;
+    } else {
+      matchWarning += ` ⚠️ проект «${args.project_name}» не найден — задача создана без проекта`;
+    }
+  }
 
   // Смарт-метки: только на личной задаче владельца. Наличие меток делает задачу личной.
   const labelIds = args.labels?.length && args.requesting_user_id
@@ -155,6 +187,7 @@ export async function toolAddTask(args: {
       label_ids: labelIds,
       is_private: labelIds.length > 0 ? true : undefined,
       owner_id: labelIds.length > 0 ? (args.requesting_user_id ?? null) : undefined,
+      project_id,
     }, groupId ?? undefined);
     if (args.requesting_user_id) {
       await notifyCreator(args.requesting_user_id, args.title);
@@ -175,6 +208,7 @@ export async function toolUpdateTask(args: {
   status?: string;
   task_role?: string;
   labels?: string[];
+  project_name?: string;
   requesting_user_id: number;
 }): Promise<string> {
   const task = await getTask(args.id);
@@ -183,6 +217,22 @@ export async function toolUpdateTask(args: {
   if (!groupId || task.group_id !== groupId) return `Нет доступа: задача не принадлежит твоему воркспейсу.`;
 
   const fields: Record<string, unknown> = {};
+  let matchWarning = "";
+
+  // Проект/подпроект доски (issue #28). Пустая строка — как у assignee_name — снимает проект.
+  if (args.project_name !== undefined) {
+    if (!args.project_name) {
+      fields.project_id = null;
+    } else {
+      const match = await matchProject(groupId, args.project_name);
+      if (match) {
+        fields.project_id = match.id;
+        if (match.ambiguous) matchWarning += ` ⚠️ несколько проектов с похожим именем «${args.project_name}» — взят первый попавшийся, проверь на доске`;
+      } else {
+        matchWarning += ` ⚠️ проект «${args.project_name}» не найден — project_id не менялся`;
+      }
+    }
+  }
 
   // Смарт-метки: только на своей личной задаче.
   if (args.labels !== undefined) {
@@ -217,7 +267,7 @@ export async function toolUpdateTask(args: {
 
   try {
     await updateTask(args.id, fields);
-    return `✅ Задача обновлена.`;
+    return `✅ Задача обновлена.${matchWarning}`;
   } catch (e) {
     return `Ошибка: ${e instanceof Error ? e.message : String(e)}`;
   }
@@ -242,12 +292,16 @@ export async function toolGetTasks(args: {
   status?: string;
   period?: string;
   label?: string;
+  project?: string;
   requesting_user_id: number;
 }): Promise<string> {
   const groupId = await resolveGroupId(args.requesting_user_id);
   if (!groupId) return "Ошибка: пользователь не найден в системе.";
 
   const labelIds = args.label ? await resolveLabelIds(args.requesting_user_id, [args.label], false) : [];
+  // Проект/подпроект доски (issue #28). Не найден — не роняем запрос, просто игнорируем фильтр
+  // (get_tasks и так best-effort по остальным фильтрам).
+  const projectMatch = args.project ? await matchProject(groupId, args.project) : null;
 
   const tasks = await listTasks({
     status: args.status,
@@ -255,6 +309,7 @@ export async function toolGetTasks(args: {
     period: args.period,
     assigneeText: args.assignee,
     labelIds: labelIds.length ? labelIds : undefined,
+    projectId: projectMatch?.id,
     viewerId: args.requesting_user_id,
     limit: 30,
   }, groupId);
@@ -337,6 +392,7 @@ export const TASK_TOOL_DEFINITIONS = [
           description: "Роль исполнителя: marketing — маркетинг, rnd — продукт/разработка, bd — всё остальное (операционка, бизнес)",
         },
         labels: { type: "array", items: { type: "string" }, description: "Имена личных смарт-меток (папок). Задача с метками становится личной." },
+        project_name: { type: "string", description: "Имя проекта или подпроекта доски (Проекты/SprintBoard) — без него задача на доску не попадёт, только в общий список. При неточном совпадении берётся ближайшее по имени; при отсутствии — предупреждение в ответе, задача всё равно создаётся." },
       },
       required: ["title", "source"],
     },
@@ -360,6 +416,7 @@ export const TASK_TOOL_DEFINITIONS = [
           enum: ["marketing", "bd", "rnd"],
           description: "Роль исполнителя: marketing — маркетинг, rnd — продукт/разработка, bd — всё остальное (операционка, бизнес)",
         },
+        project_name: { type: "string", description: "Имя проекта или подпроекта доски. Пустая строка — снять проект (задача уйдёт с доски в общий список)." },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
       },
       required: ["id", "requesting_user_id"],
