@@ -392,16 +392,18 @@ export function SprintBoard() {
           const total = secDirectTasks.length + kidsWithTasks.reduce((sum, k) => sum + k.tasks.length, 0);
           const open = expanded.has(sec.id);
 
-          // Свёрнутый проект — компактная ПЛИТКА-карточка (двойной клик открывает).
+          // Свёрнутый проект — компактная ПЛИТКА-карточка. Одиночный клик открывает (раньше был
+          // onDoubleClick — на тач-устройствах двойной тап ненадёжен и путает: стрелка-шеврон
+          // визуально обещает «нажми», а срабатывало только с двух касаний).
           // Тоже drop-зона для переноса подпроекта (#30) — раскрывать цель не нужно.
           if (!open) {
             return (
-              <button key={sec.id} type="button" onDoubleClick={() => toggleExpanded(sec.id)}
+              <button key={sec.id} type="button" onClick={() => toggleExpanded(sec.id)}
                 onDragOver={(e) => { if (dragProj) { e.preventDefault(); setDragOverProject(sec.id); } }}
                 onDragLeave={() => setDragOverProject((p) => (p === sec.id ? null : p))}
                 onDrop={(e) => { if (dragProj) { e.preventDefault(); moveSubproject(dragProj, sec.id); setDragProj(null); setDragOverProject(null); } }}
-                className={`w-56 shrink-0 self-start rounded-2xl border p-3 text-left select-none cursor-pointer transition-colors dark:backdrop-blur-sm ${dragOverProject === sec.id ? "border-primary bg-primary/10" : "border-line bg-surface/40 hover:border-line-2"}`}
-                title={dt("Двойной клик — открыть проект", "Double-click to open")}>
+                className={`roy-pop w-56 shrink-0 self-start rounded-2xl border p-3 text-left select-none cursor-pointer transition-colors dark:backdrop-blur-sm ${dragOverProject === sec.id ? "border-primary bg-primary/10" : "border-line bg-surface/40 hover:border-line-2"}`}
+                title={dt("Открыть проект", "Open project")}>
                 <div className="flex items-center gap-2">
                   <RoyIcon name="board" size={15} strokeWidth={1.9} />
                   <span className="flex-1 truncate text-sm font-bold text-ink">{sec.name}</span>
@@ -417,7 +419,7 @@ export function SprintBoard() {
 
           // Раскрытый проект — на всю ширину (w-full → своя строка в flex-wrap).
           return (
-            <section key={sec.id} className="w-full rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
+            <section key={sec.id} className="roy-pop w-full rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
               {/* Заголовок раскрытого проекта. Двойной клик — свернуть обратно в плитку.
                   Тоже drop-зона для переноса подпроекта (#30). */}
               <div onDoubleClick={() => toggleExpanded(sec.id)}
@@ -485,7 +487,7 @@ export function SprintBoard() {
                           onDragEnd={() => { setDragProj(null); setDragOverProject(null); }}
                           className="flex items-center gap-2 px-1 pb-1.5 cursor-grab active:cursor-grabbing">
                           <button onClick={() => toggleCollapsedSub(kid.id)} className="rounded-full p-0.5 text-ink-soft hover:bg-surface-2" title={subOpen ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
-                            <RoyIcon name="cright" size={11} style={{ transform: subOpen ? "rotate(90deg)" : undefined }} />
+                            <RoyIcon name="cright" size={11} className="transition-transform duration-200" style={{ transform: subOpen ? "rotate(90deg)" : undefined }} />
                           </button>
                           {renaming?.id === kid.id ? (
                             <input autoFocus value={renaming.name}
@@ -502,11 +504,16 @@ export function SprintBoard() {
                             <button onClick={() => removeSection(kid.id, kid.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Удалить", "Delete")}><RoyIcon name="trash" size={12} /></button>
                           </div>
                         </div>
-                        {subOpen && (
-                          <div className="flex gap-3 overflow-x-auto">
-                            {WORK_COLUMNS.map((col) => renderStatusColumn(kid.id, col, kidTasks.filter((t) => t.status === col.status)))}
+                        {/* Плавное сворачивание: grid-template-rows 0fr↔1fr — анимируемая высота
+                            без измерения scrollHeight, overflow-hidden клипует контент во время
+                            перехода (иначе колонки на миг просвечивали бы поверх соседей). */}
+                        <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: subOpen ? "1fr" : "0fr" }}>
+                          <div className="overflow-hidden">
+                            <div className="flex gap-3 overflow-x-auto">
+                              {WORK_COLUMNS.map((col) => renderStatusColumn(kid.id, col, kidTasks.filter((t) => t.status === col.status)))}
+                            </div>
                           </div>
-                        )}
+                        </div>
                       </div>
                       );
                     })}
