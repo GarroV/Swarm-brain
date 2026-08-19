@@ -13,7 +13,10 @@ cd "$(dirname "$0")"
 BUILD="$(tr -dc '0-9' < VERSION 2>/dev/null || true)"; [ -n "$BUILD" ] || BUILD="1"
 TARGET_MIN="13.0"
 
-echo "[ci] swift build arm64 + x86_64 (macosx$TARGET_MIN), build $BUILD…"
+# ${BUILD} в скобках ОБЯЗАТЕЛЬНО: дальше идёт «…» (U+2026), и bash на macos-раннере приклеивает
+# многобайтовый символ к имени переменной → «BUILD…: unbound variable», а set -u валит сборку
+# до первого swift build. Так молча не собрались релизы 20/21/22 (issue #40).
+echo "[ci] swift build arm64 + x86_64 (macosx${TARGET_MIN}), build ${BUILD}…"
 swift build -c release --arch arm64  -Xswiftc -target -Xswiftc "arm64-apple-macosx$TARGET_MIN"
 swift build -c release --arch x86_64 -Xswiftc -target -Xswiftc "x86_64-apple-macosx$TARGET_MIN"
 
