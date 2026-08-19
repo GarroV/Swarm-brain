@@ -456,7 +456,7 @@ export function SprintBoard() {
                   <span className="flex-1 truncate text-sm font-bold text-ink">{sec.name}</span>
                   {sec.is_private && (
                     <span className="shrink-0 text-ink-mute" title={dt("Скрыт из общего пула", "Hidden from the team")}>
-                      <RoyIcon name="lock" size={12} strokeWidth={1.9} />
+                      <RoyIcon name="eyeOff" size={12} strokeWidth={1.9} />
                     </span>
                   )}
                   <RoyIcon name="cright" size={12} className="text-ink-soft" />
@@ -496,7 +496,7 @@ export function SprintBoard() {
                 )}
                 {sec.is_private && (
                   <span className="shrink-0 text-ink-mute" title={dt("Скрыт из общего пула", "Hidden from the team")}>
-                    <RoyIcon name="lock" size={12} strokeWidth={1.9} />
+                    <RoyIcon name="eyeOff" size={12} strokeWidth={1.9} />
                   </span>
                 )}
                 <span className="text-xs text-ink-soft">{total}</span>
@@ -510,7 +510,7 @@ export function SprintBoard() {
                     className={`rounded-full p-1 transition-colors ${sec.is_private ? "bg-accent-soft text-accent-ink hover:bg-accent-soft" : "text-ink-soft hover:bg-surface-2"}`}
                     title={sec.is_private ? dt("Скрыт из общего пула — показать всем", "Hidden from the team — make visible to everyone") : dt("Виден всей команде — скрыть из общего пула", "Visible to the team — hide from the general pool")}
                   >
-                    <RoyIcon name="lock" size={13} strokeWidth={sec.is_private ? 2.1 : 1.8} />
+                    <RoyIcon name={sec.is_private ? "eyeOff" : "eye"} size={13} strokeWidth={sec.is_private ? 2.1 : 1.8} />
                   </button>
                   <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Переименовать проект", "Rename project")}>
                     <RoyIcon name="pencil" size={13} />
