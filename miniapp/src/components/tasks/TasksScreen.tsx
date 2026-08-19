@@ -10,7 +10,9 @@ type View = "list" | "timeline" | "sprint" | "projects";
 
 const VIEWS: Array<{ id: View; label: string; icon: RoyIconName }> = [
   { id: "list", label: "Задачи", icon: "task" },
-  { id: "timeline", label: "Таймлайн", icon: "timeline" },
+  // Таймлайн временно скрыт по решению владельца 2026-08-19 — интерфейс требует доработки.
+  // Код (TimelineView) оставлен для возможного возврата. Чтобы вернуть: раскомментировать строку ниже.
+  // { id: "timeline", label: "Таймлайн", icon: "timeline" },
   { id: "sprint", label: "Проекты", icon: "board" },
   // Старые проекты (react-flow дерево) временно отключены по решению владельца 2026-08-06 —
   // код (ProjectsGrid/ProjectTree/treeGeom) оставлен для возможного возврата. Работа по проектам
