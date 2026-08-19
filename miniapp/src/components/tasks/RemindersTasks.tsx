@@ -10,7 +10,7 @@ import { SMART_LISTS } from "@/lib/smartLists";
 import { fetchUsers, fetchConfig, type TaskLabel } from "@/lib/api";
 import type { Task, User } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
-import { RoyIcon } from "@/components/roy/icons";
+import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { useConfirm } from "@/components/ui/confirm";
 
 function plural(n: number): string {
@@ -54,15 +54,20 @@ export function RemindersTasks() {
   // Активная персональная метка перебивает смарт-список и группировки.
   const activeLabel = r.activeLabelId ? r.labels.find((l) => l.id === r.activeLabelId) ?? null : null;
   const isLabelView = !!activeLabel;
-  const byMarket = !isLabelView && r.lens === "market";
-  const byStaff = !isLabelView && r.lens === "staff";
+  // «По рынкам»/«Все сотрудники» — независимые тумблеры (не линза), применяются к текущему охвату.
+  // Оба разом → вложенная группировка (сотрудник → рынок), см. r.nestedGroups.
+  const byMarket = !isLabelView && r.byMarket;
+  const byStaff = !isLabelView && r.allStaff;
+  const both = byMarket && byStaff;
   const grouped = byMarket || byStaff;
-  const groups: { label: string; tasks: Task[] }[] = byStaff ? r.staffGroups : r.marketGroups;
+  const groups: { label: string; tasks: Task[] }[] = both ? [] : byStaff ? r.staffGroups : r.marketGroups;
   const visibleRows = isLabelView ? r.visibleByLabel : r.visible;
-  const total = grouped ? groups.reduce((n, g) => n + g.tasks.length, 0) : visibleRows.length;
+  const total = grouped
+    ? (both ? r.nestedGroups : groups).reduce((n, g) => n + g.tasks.length, 0)
+    : visibleRows.length;
   const headerTitle = isLabelView ? activeLabel!.name : activeDef.label;
   // В группировке по сотруднику исполнитель — заголовок секции, в строке его не дублируем.
-  const showAssignee = !isLabelView && r.lens !== "mine" && !byStaff;
+  const showAssignee = !isLabelView && !byStaff && r.effLens !== "mine";
 
   const submitDraft = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter") return;
@@ -113,8 +118,8 @@ export function RemindersTasks() {
         onSelect={(id) => { r.setActiveLabelId(null); r.setActiveList(id); }}
         query={r.query}
         onQuery={r.setQuery}
-        allStaffActive={r.lens === "staff"}
-        onAllStaff={r.me?.is_admin ? () => { r.setActiveLabelId(null); r.setLens("staff"); r.setActiveList("all"); } : undefined}
+        allStaffActive={r.allStaff}
+        onAllStaff={r.me?.is_admin ? () => { r.setActiveLabelId(null); r.setAllStaff((v) => !v); } : undefined}
         labels={r.labels}
         labelCounts={r.labelCounts}
         activeLabelId={r.activeLabelId}
@@ -133,7 +138,15 @@ export function RemindersTasks() {
             <span className="shrink-0 text-ink-mute" style={{ fontSize: 13 }}>{total} {plural(total)}</span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <LensToggle lens={r.lens} onChange={r.setLens} />
+            <LensToggle
+              lens={r.lens}
+              onChangeLens={r.setLens}
+              byMarket={r.byMarket}
+              onToggleMarket={() => r.setByMarket((v) => !v)}
+              allStaff={r.allStaff}
+              onToggleAllStaff={() => r.setAllStaff((v) => !v)}
+              showAllStaff={!!r.me?.is_admin}
+            />
             <button
               type="button"
               onClick={() => setModalTask("new")}
@@ -155,22 +168,32 @@ export function RemindersTasks() {
             </p>
           )}
 
-          {!r.loading && grouped &&
+          {!r.loading && both &&
+            r.nestedGroups.map((sg) => {
+              const open = !collapsed.has(sg.label);
+              return (
+                <section key={sg.label} className="mb-4">
+                  <GroupHeader label={sg.label} count={sg.tasks.length} icon="team" open={open} onClick={() => toggleGroup(sg.label)} />
+                  {open && sg.marketGroups.map((mg) => {
+                    const subKey = `${sg.label}::${mg.label}`;
+                    const subOpen = !collapsed.has(subKey);
+                    return (
+                      <div key={mg.label} className="ml-5">
+                        <GroupHeader label={mg.label} count={mg.tasks.length} icon="globe" open={subOpen} onClick={() => toggleGroup(subKey)} small />
+                        {subOpen && mg.tasks.map(renderRow)}
+                      </div>
+                    );
+                  })}
+                </section>
+              );
+            })}
+
+          {!r.loading && grouped && !both &&
             groups.map((g) => {
               const open = !collapsed.has(g.label);
               return (
                 <section key={g.label} className="mb-4">
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup(g.label)}
-                    className="mb-1 flex w-full items-center gap-2 pt-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-[8px]"
-                    aria-expanded={open}
-                  >
-                    <RoyIcon name="cright" size={12} strokeWidth={2.2} className={`text-ink-mute transition-transform ${open ? "rotate-90" : ""}`} />
-                    <RoyIcon name={byStaff ? "team" : "globe"} size={13} className="text-ink-mute" />
-                    <span className="font-mono font-semibold uppercase text-ink-mute" style={{ fontSize: 11, letterSpacing: "0.08em" }}>{g.label}</span>
-                    <span className="font-mono text-ink-mute" style={{ fontSize: 11 }}>{g.tasks.length}</span>
-                  </button>
+                  <GroupHeader label={g.label} count={g.tasks.length} icon={byStaff ? "team" : "globe"} open={open} onClick={() => toggleGroup(g.label)} />
                   {open && g.tasks.map(renderRow)}
                 </section>
               );
@@ -208,6 +231,23 @@ export function RemindersTasks() {
         <LabelEditor label={labelEditor} open onClose={() => setLabelEditor(null)} onSaved={r.reloadLabels} />
       )}
     </div>
+  );
+}
+
+// Заголовок секции группировки (по рынку / по сотруднику / вложенный подзаголовок рынка внутри сотрудника).
+function GroupHeader({ label, count, icon, open, onClick, small }: { label: string; count: number; icon: RoyIconName; open: boolean; onClick: () => void; small?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mb-1 flex w-full items-center gap-2 pt-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-[8px]"
+      aria-expanded={open}
+    >
+      <RoyIcon name="cright" size={12} strokeWidth={2.2} className={`text-ink-mute transition-transform ${open ? "rotate-90" : ""}`} />
+      <RoyIcon name={icon} size={small ? 12 : 13} className="text-ink-mute" />
+      <span className="font-mono font-semibold uppercase text-ink-mute" style={{ fontSize: small ? 10 : 11, letterSpacing: "0.08em" }}>{label}</span>
+      <span className="font-mono text-ink-mute" style={{ fontSize: small ? 10 : 11 }}>{count}</span>
+    </button>
   );
 }
 

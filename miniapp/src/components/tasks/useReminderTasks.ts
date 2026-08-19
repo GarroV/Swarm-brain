@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchMe, fetchTasks, updateTask, deleteTask, createTask, fetchTaskLabels, type TaskLabel, type CreateTaskInput } from "@/lib/api";
 import type { Me, Task } from "@/types";
 import {
-  filterTasks, countLists, groupByMarket, groupByAssignee, isDone, filterByLabel, countByLabel,
-  type SmartListId, type Lens, type MarketGroup, type StaffGroup,
+  filterTasks, countLists, groupByMarket, groupByAssignee, groupByAssigneeThenMarket, isDone, filterByLabel, countByLabel,
+  type SmartListId, type Lens, type MarketGroup, type StaffGroup, type NestedStaffGroup,
 } from "@/lib/smartLists";
 import { useRoyNav } from "@/components/roy/nav";
 
@@ -18,7 +18,7 @@ function todayISO(now: Date): string {
 // Последний выбранный вид доски — переживает рефреш (localStorage). Читаем в ленивом
 // инициализаторе useState, а НЕ в эффекте: эффект-сохранение на маунте затирал бы значение
 // дефолтом раньше, чем restore применится (в dev StrictMode эффекты ещё и сдваиваются).
-type SavedTasksView = { activeList?: SmartListId; activeLabelId?: string | null; lens?: Lens };
+type SavedTasksView = { activeList?: SmartListId; activeLabelId?: string | null; lens?: Lens; byMarket?: boolean; allStaff?: boolean };
 function readSavedView(): SavedTasksView | null {
   try {
     if (typeof window === "undefined") return null;
@@ -37,18 +37,24 @@ export function useReminderTasks() {
   // (чтобы рефреш НЕ сбрасывал на «Сегодня»). Дашбордный вход — без активной метки.
   const [activeList, setActiveList] = useState<SmartListId>(() => taskView?.list ?? readSavedView()?.activeList ?? "today");
   const [lens, setLens] = useState<Lens>(() => taskView?.lens ?? readSavedView()?.lens ?? "mine");
+  // «По рынкам» и «Все сотрудники» — независимые тумблеры (не значения lens), см. smartLists.ts.
+  // «Все сотрудники» переопределяет охват на «буквально все» независимо от lens (владелец
+  // 2026-08-19: «если включен тумблер всё сотрудники — подтягиваются задачи всех сотрудников»).
+  const [byMarket, setByMarket] = useState<boolean>(() => readSavedView()?.byMarket ?? false);
+  const [allStaff, setAllStaff] = useState<boolean>(() => readSavedView()?.allStaff ?? false);
+  const effLens: Lens = allStaff ? "all" : lens;
   const [query, setQuery] = useState("");
   const [labels, setLabels] = useState<TaskLabel[]>([]);
   const [activeLabelId, setActiveLabelId] = useState<string | null>(() => (taskView ? null : readSavedView()?.activeLabelId ?? null));
 
-  // Сохраняем выбранный вид (список/метка/линза), чтобы он пережил рефреш страницы.
+  // Сохраняем выбранный вид (список/метка/линза/тумблеры), чтобы он пережил рефреш страницы.
   useEffect(() => {
     try {
       if (typeof window !== "undefined") {
-        window.localStorage.setItem("roy_tasks_view", JSON.stringify({ activeList, activeLabelId, lens }));
+        window.localStorage.setItem("roy_tasks_view", JSON.stringify({ activeList, activeLabelId, lens, byMarket, allStaff }));
       }
     } catch { /* storage недоступен — игнор */ }
-  }, [activeList, activeLabelId, lens]);
+  }, [activeList, activeLabelId, lens, byMarket, allStaff]);
 
   // Оптимистично добавленные задачи (по реальному id из ответа POST/PATCH). Держим их поверх
   // серверной выборки, пока сервер не вернёт их в списке — иначе фоновый поллинг «моргает»
@@ -106,16 +112,22 @@ export function useReminderTasks() {
   // группы) инвалидируются на каждый ввод/ховер. Меняется вместе с задачами (поллинг раз в 10с).
   const now = useMemo(() => new Date(), [tasks]);
   const list = tasks ?? [];
-  const counts = useMemo(() => countLists(list, lens, me, now), [list, lens, me, now]);
+  // effLens — «Все сотрудники» расширяет охват до буквально всех независимо от Мои/Команда/Все
+  // (см. объявление effLens выше). Счётчики рельса тоже считаем по нему — иначе цифры в рельсе
+  // (Сегодня/Ближайшие/…) не совпадали бы с тем, что реально показано при включённом тумблере.
+  const counts = useMemo(() => countLists(list, effLens, me, now), [list, effLens, me, now]);
 
   const matchesQuery = useCallback(
     (t: Task) => !query.trim() || t.title.toLowerCase().includes(query.trim().toLowerCase()),
     [query],
   );
+  // Текстовый поиск — на исходном списке, ДО линзы/группировки: и плоский visible, и все виды
+  // группировки читают из queried, поэтому фильтр по тексту работает одинаково everywhere.
+  const queried = useMemo(() => list.filter(matchesQuery), [list, matchesQuery]);
 
   const visible: Task[] = useMemo(
-    () => filterTasks(list, activeList, lens, me, now).filter(matchesQuery),
-    [list, activeList, lens, me, now, matchesQuery],
+    () => filterTasks(queried, activeList, effLens, me, now),
+    [queried, activeList, effLens, me, now],
   );
 
   // Персональные списки-метки: счётчики по всем меткам + задачи активной метки.
@@ -125,30 +137,28 @@ export function useReminderTasks() {
     return m;
   }, [labels, list]);
   const visibleByLabel: Task[] = useMemo(
-    () => (activeLabelId ? filterByLabel(list, activeLabelId).filter(matchesQuery) : []),
-    [activeLabelId, list, matchesQuery],
+    () => (activeLabelId ? filterByLabel(queried, activeLabelId) : []),
+    [activeLabelId, queried],
   );
 
-  // Линза «По рынкам» накладывается на активный смарт-список: группируем его задачи по странам.
+  // Тумблер «По рынкам» (без «Все сотрудники»): группируем ТЕКУЩИЙ охват (Мои/Команда/Все) по
+  // рынку. С «Все сотрудники» одновременно — см. nestedGroups ниже (вложенная группировка).
   const marketGroups: MarketGroup[] = useMemo(
-    () =>
-      lens === "market"
-        ? groupByMarket(list, activeList, me, now)
-            .map((g) => ({ ...g, tasks: g.tasks.filter(matchesQuery) }))
-            .filter((g) => g.tasks.length > 0)
-        : [],
-    [lens, activeList, list, me, now, matchesQuery],
+    () => (byMarket && !allStaff ? groupByMarket(queried, activeList, effLens, me, now) : []),
+    [byMarket, allStaff, activeList, queried, effLens, me, now],
   );
 
-  // Линза «Все сотрудники» (админ): группируем задачи активного списка по исполнителю.
+  // Тумблер «Все сотрудники» (админ) без «По рынкам»: группируем по исполнителю.
   const staffGroups: StaffGroup[] = useMemo(
-    () =>
-      lens === "staff"
-        ? groupByAssignee(list, activeList, me, now)
-            .map((g) => ({ ...g, tasks: g.tasks.filter(matchesQuery) }))
-            .filter((g) => g.tasks.length > 0)
-        : [],
-    [lens, activeList, list, me, now, matchesQuery],
+    () => (allStaff && !byMarket ? groupByAssignee(queried, activeList, effLens, me, now) : []),
+    [allStaff, byMarket, activeList, queried, effLens, me, now],
+  );
+
+  // Оба тумблера разом: вложенная группировка — сотрудник → рынок (владелец: «группировка по
+  // сотруднику, а под ней — по рынкам», задача попадает в оба измерения без конфликта).
+  const nestedGroups: NestedStaffGroup[] = useMemo(
+    () => (allStaff && byMarket ? groupByAssigneeThenMarket(queried, activeList, effLens, me, now) : []),
+    [allStaff, byMarket, activeList, queried, effLens, me, now],
   );
 
   const toggle = useCallback(async (t: Task) => {
@@ -207,8 +217,9 @@ export function useReminderTasks() {
 
   return {
     tasks, me, loading: tasks === null,
-    activeList, setActiveList, lens, setLens, query, setQuery,
-    counts, visible, marketGroups, staffGroups, now,
+    activeList, setActiveList, lens, setLens, effLens, query, setQuery,
+    byMarket, setByMarket, allStaff, setAllStaff,
+    counts, visible, marketGroups, staffGroups, nestedGroups, now,
     labels, activeLabelId, setActiveLabelId, labelCounts, visibleByLabel, reloadLabels,
     toggle, remove, quickAdd, patchTask, reload,
   };
