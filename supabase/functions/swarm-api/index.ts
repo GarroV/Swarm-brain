@@ -768,7 +768,9 @@ Deno.serve(async (req: Request) => {
       return json(await listSprints(groupId), 200, origin);
     }
     if (req.method === "POST") {
-      if (!isAdmin) return apiErr(403, "Forbidden", origin);
+      // Создание вкладки — любой участник воркспейса (владелец 2026-08-19: юзер уткнулся в
+      // голый «Forbidden», фронт кнопку «+» показывает всем). Правка/удаление ниже остаются
+      // admin-only как и были с 09.06.2026 — не даём случайно/умышленно снести общую вкладку.
       let body: Record<string, unknown>;
       try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
       if (!body.name || typeof body.name !== "string") return apiErr(400, "name is required", origin);
@@ -853,6 +855,7 @@ Deno.serve(async (req: Request) => {
         emoji: (body.emoji as string | null) ?? null,
         parent_id: (body.parent_id as string | null) ?? null,
         sprint_id: sprintId,
+        is_private: typeof body.is_private === "boolean" ? body.is_private : false,
       };
       try {
         return json(await createProject(input, groupId, telegram_id ?? null), 201, origin);
@@ -874,6 +877,7 @@ Deno.serve(async (req: Request) => {
       if ("color" in body) fields.color = body.color as string | null;
       if ("emoji" in body) fields.emoji = body.emoji as string | null;
       if ("parent_id" in body) fields.parent_id = (body.parent_id as string | null) ?? null;
+      if (typeof body.is_private === "boolean") fields.is_private = body.is_private;
       if ("sprint_id" in body) {
         const sid = (body.sprint_id as string | null) ?? null;
         if (sid && !(await sprintInWorkspace(sid, groupId))) {
@@ -883,7 +887,7 @@ Deno.serve(async (req: Request) => {
       }
       let updated;
       try {
-        updated = await updateProject(projectId, fields, groupId);
+        updated = await updateProject(projectId, fields, groupId, { viewerId: telegram_id, isAdmin });
       } catch (e) {
         return apiErr(400, e instanceof Error ? e.message : "invalid parent", origin);
       }
@@ -891,7 +895,7 @@ Deno.serve(async (req: Request) => {
       return json(updated, 200, origin);
     }
     if (req.method === "DELETE") {
-      const ok = await deleteProject(projectId, groupId);
+      const ok = await deleteProject(projectId, groupId, { viewerId: telegram_id, isAdmin });
       if (!ok) return apiErr(404, "Not found", origin);
       return json({ ok: true }, 200, origin);
     }

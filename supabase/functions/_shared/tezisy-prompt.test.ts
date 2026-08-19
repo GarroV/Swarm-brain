@@ -1,7 +1,7 @@
 // Тест композиции промпта тезисов со словарём.
 // Запуск: deno test supabase/functions/_shared/tezisy-prompt.test.ts
 import { assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { TEZISY_CORE, TEZISY_PROMPT } from "./tezisy-prompt.ts";
+import { NO_INVENTED_LINKS_RULE, TEZISY_CORE, TEZISY_PROMPT } from "./tezisy-prompt.ts";
 
 Deno.test("TEZISY_PROMPT — включает ядро", () => {
   assertStringIncludes(TEZISY_PROMPT, "Ты помощник команды");
@@ -11,6 +11,14 @@ Deno.test("TEZISY_PROMPT — включает блок словаря и при�
   assertStringIncludes(TEZISY_PROMPT, "СЛОВАРЬ ИМЁН СОБСТВЕННЫХ");
   assertStringIncludes(TEZISY_PROMPT, "Wolt");
   assertStringIncludes(TEZISY_PROMPT, "Wolt, НЕ Volt");
+});
+
+// Регресс issue #22: ложная связка «двойные цены Болгарии ↔ Интак/НТАК» из соседних реплик.
+Deno.test("TEZISY_PROMPT — содержит запрет домысленных связей и правило про отсутствующий ответ", () => {
+  assertStringIncludes(TEZISY_PROMPT, NO_INVENTED_LINKS_RULE);
+  assertStringIncludes(TEZISY_PROMPT, "НЕ ВЫДУМЫВАЙ СВЯЗИ МЕЖДУ ТЕМАМИ");
+  assertStringIncludes(TEZISY_PROMPT, "РАЗНЫЕ НАЗВАНИЯ — РАЗНЫЕ СУЩНОСТИ");
+  assertStringIncludes(TEZISY_PROMPT, "ответа НЕТ");
 });
 
 Deno.test("TEZISY_CORE — ядро без блока словаря (композиция не мутировала ядро)", () => {

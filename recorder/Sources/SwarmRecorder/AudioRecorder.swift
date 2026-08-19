@@ -22,9 +22,12 @@ final class AudioRecorder: NSObject {
         let systemSegments: [(url: URL, offset: Double)]
     }
 
-    // Сигнал «собеседник не пишется / снова пишется» из системного захвата (watchdog нулей).
-    // Ставит AppDelegate; прокидывается в capturer на старте. true — не пишется, false — вернулось.
+    // Сигнал «собеседник не пишется / снова пишется» из системного захвата (watchdog нулей) —
+    // ТОЛЬКО для пассивного индикатора в панели, живой в обе стороны. Ставит AppDelegate;
+    // прокидывается в capturer на старте. true — не пишется, false — вернулось.
     var onSystemStalled: ((Bool) -> Void)?
+    // Разовое уведомление «не пишется» — максимум один раз за запись (не гаснет и не повторяется).
+    var onSystemStalledPersistent: (() -> Void)?
 
     private var systemCapturer: SystemAudioCapturer?
     private var micRecorder: AVAudioRecorder?
@@ -86,6 +89,7 @@ final class AudioRecorder: NSObject {
         // 1) Система первой. Бросит → запись не началась, mic не трогали.
         let cap = makeSystemCapturer()
         cap.onSystemStalled = onSystemStalled   // прокинуть сигнал watchdog нулей наружу
+        cap.onSystemStalledPersistent = onSystemStalledPersistent
         try await cap.start(systemURL: systemURL)
         self.systemCapturer = cap
 

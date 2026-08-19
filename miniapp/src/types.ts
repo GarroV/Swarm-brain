@@ -54,6 +54,9 @@ export type Project = {
   sprint_id: string | null;
   created_by: number | null;
   created_at: string;
+  // Тумблер приватности проекта ВЕРХНЕГО уровня — скрывает его из общего пула воркспейса
+  // (виден только created_by + админу). Подпроект и так приватен по умолчанию (parent_id≠null).
+  is_private: boolean;
   // Отдаётся из GET /projects (агрегаты):
   task_count?: number;
   backlog_count?: number;

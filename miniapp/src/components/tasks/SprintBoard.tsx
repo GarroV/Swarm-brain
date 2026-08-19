@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchTasks, updateTask, fetchSprints, createSprint,
   removeTasksFromSprint, deleteSprint,
@@ -10,7 +10,7 @@ import { TaskModal } from "@/components/TaskModal";
 import { Button } from "@/components/ui/button";
 import { RoyIcon } from "@/components/roy/icons";
 import { useConfirm } from "@/components/ui/confirm";
-import { useDt } from "@/components/roy/nav";
+import { useDt, useRoyNav } from "@/components/roy/nav";
 
 function fmtDay(iso: string | null): string | null {
   if (!iso) return null;
@@ -32,6 +32,9 @@ const isBacklogStatus = (s: string) => s !== "open" && s !== "in_progress" && s 
 
 const ALL = "__all__";            // селектор вкладок: показать проекты ВСЕХ вкладок (обзор)
 const EXPANDED_KEY = "swarm.board.expandedProjects"; // localStorage: какие проекты раскрыты (персонально)
+// Подпроекты по умолчанию РАЗВЁРНУТЫ (обратная полярность к EXPANDED_KEY — так поведение для
+// уже существующих пользователей не меняется молча: пустой localStorage = как раньше, всё видно).
+const COLLAPSED_SUBS_KEY = "swarm.board.collapsedSubprojects";
 const NO_SECTION = "__none__";    // секция для задач без проекта
 
 function initials(names: string[]): string {
@@ -44,6 +47,8 @@ type DragInfo = { id: string } | null;
 export function SprintBoard() {
   const confirm = useConfirm();
   const dt = useDt();
+  const { me } = useRoyNav();
+  const isAdmin = me?.is_admin ?? false;
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -70,6 +75,15 @@ export function SprintBoard() {
   });
   const [addingSubOf, setAddingSubOf] = useState<string | null>(null);
   const [subName, setSubName] = useState("");
+  // Подпроекты — своё персональное сворачивание, отдельное от EXPANDED_KEY (см. коммент выше).
+  const [collapsedSubs, setCollapsedSubs] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try { return new Set(JSON.parse(localStorage.getItem(COLLAPSED_SUBS_KEY) ?? "[]") as string[]); } catch { return new Set(); }
+  });
+  // Drag подпроекта между проектами верхнего уровня (reparent) — отдельно от drag задачи (dragRef),
+  // чтобы drop-зоны колонок и drop-зоны заголовков проектов не путали события друг друга.
+  const [dragProj, setDragProj] = useState<string | null>(null);
+  const [dragOverProject, setDragOverProject] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -77,7 +91,34 @@ export function SprintBoard() {
       setTasks(t); setSprints(s); setProjects(p);
     } catch { /* keep */ } finally { setLoading(false); }
   }, []);
-  useEffect(() => { load(); }, [load]);
+  // Доска раньше грузилась ТОЛЬКО один раз на маунте — долгоживущая вкладка (открыл с утра,
+  // работал часами в других тачах/окнах) молча расходилась с сервером: элемент, удалённый/
+  // перенесённый где-то ещё, продолжал жить в локальном React-state, пока не сделаешь честный
+  // F5. Симптом владельца 2026-08-19: «нажимаю удалить подпроект, он пропадает, но после
+  // рефреша всё на месте» — по логам swarm-api ни один запрос с id этого проекта вообще не
+  // долетал до сервера за 3 часа его жизни, то есть локальный вид разошёлся со стейтом сервера
+  // задолго до клика на «удалить». Тот же паттерн уже есть в useReminderTasks.ts (список задач) —
+  // переносим сюда: фоновый рефетч раз в 20с + при возврате фокуса на вкладку.
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 20_000);
+    const onVisibility = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [load]);
+
+  // Автовыбор первой вкладки при заходе на доску: на ALL кнопка «+ Проект» скрыта (нужен явный
+  // выбор вкладки — проект создаётся В неё), и без вкладок список выглядит как «кнопки нет».
+  // Один раз за жизнь компонента (autoSelectedRef) — дальше пользователь волен вернуться на «Все».
+  const autoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (autoSelectedRef.current || sprints.length === 0) return;
+    autoSelectedRef.current = true;
+    setSelected(sprints[0].id);
+  }, [sprints]);
 
   // Вкладка ВЛАДЕЕТ проектами (решение владельца 2026-08-09): выбранная вкладка → её проекты
   // (project.sprint_id === selected), а задача принадлежит вкладке ЧЕРЕЗ свой проект. ALL — обзор
@@ -85,12 +126,6 @@ export function SprintBoard() {
   const topLevel = projects.filter((p) => !p.parent_id && (selected === ALL || p.sprint_id === selected));
   const childrenOf = (id: string) => projects.filter((p) => p.parent_id === id);
 
-  // inScope — задачи выбранной вкладки (через проекты вкладки): нужны для прогресс-бара.
-  const tabProjectIds = new Set(
-    (selected === ALL ? projects : projects.filter((p) => p.sprint_id === selected)).map((p) => p.id),
-  );
-  const inScope = tasks.filter((t) => t.project_id != null && tabProjectIds.has(t.project_id));
-  const doneCount = inScope.filter((t) => t.status === "done").length;
   // Доска показывает ТОЛЬКО задачи с проектом (решение владельца 2026-08-07): задачи без
   // проекта на спринт-доску не сыпятся — проект задаче назначается в её карточке.
   const boardEmpty = topLevel.length === 0;
@@ -128,11 +163,43 @@ export function SprintBoard() {
     });
   }
 
+  function toggleCollapsedSub(id: string) {
+    setCollapsedSubs((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      try { localStorage.setItem(COLLAPSED_SUBS_KEY, JSON.stringify([...next])); } catch { /* приватный режим/квота — не критично */ }
+      return next;
+    });
+  }
+
+  // Перенос подпроекта в другой проект верхнего уровня (drag-n-drop). Бэкенд уже валидирует
+  // вложенность (validateParent: не глубже 2 уровней, нельзя подпроектом сделать проект со
+  // своими детьми) — здесь только очевидные короткие замыкания + синхронизация sprint_id
+  // (подпроект наследует вкладку НОВОГО родителя — тот же инвариант, что и при создании).
+  async function moveSubproject(kidId: string, newParentId: string) {
+    const kid = projects.find((p) => p.id === kidId);
+    const newParent = projects.find((p) => p.id === newParentId);
+    if (!kid || !newParent || kid.id === newParentId || kid.parent_id === newParentId) return;
+    if (newParent.parent_id) return; // цель сама подпроект — нельзя вкладывать глубже 2 уровней
+    const sprint_id = newParent.sprint_id;
+    setProjects((prev) => prev.map((p) => (p.id === kidId ? { ...p, parent_id: newParentId, sprint_id } : p)));
+    try { await updateProject(kidId, { parent_id: newParentId, sprint_id }); } catch { load(); }
+  }
+
   async function renameSection(id: string, name: string) {
     const n = name.trim(); setRenaming(null);
     if (!n) return;
     setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, name: n } : p)));
     try { await updateProject(id, { name: n }); } catch { load(); }
+  }
+
+  // Тумблер приватности проекта ВЕРХНЕГО уровня — скрывает его из общего пула воркспейса (виден
+  // только своему created_by + админу, тот же критерий, что у подпроектов). Владелец 2026-08-19:
+  // «нужно добавить пиктограмму приватности... чтобы этот конкретный проект скрыть из общего пула».
+  async function toggleProjectPrivacy(id: string, current: boolean) {
+    const next = !current;
+    setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, is_private: next } : p)));
+    try { await updateProject(id, { is_private: next }); } catch { load(); }
   }
 
   async function removeSection(id: string, name: string) {
@@ -255,10 +322,23 @@ export function SprintBoard() {
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); if (dragRef) { applyDrop(dragRef.id, projectId, col.status); setDrag(null); } }}
         className="w-64 shrink-0 flex flex-col rounded-xl bg-surface-2 border border-line p-2 dark:backdrop-blur-lg">
+        {/* «+» в заголовке — надёжный способ добавить задачу независимо от заполненности колонки:
+            клик по пустому полю ниже (title="Кликни по пустому полю…") требует, собственно, пустого
+            поля — забитая карточками колонка его не оставляет (владелец: «нереально тыкнуть по
+            пустому полю, значит и новую задачу не добавить»). Кнопка не заменяет клик по пустому
+            месту, а страхует его. */}
         <div className="flex items-center gap-2 px-2 py-1.5">
           <span className="size-2.5 rounded-full" style={{ background: col.bar }} />
           <span className="text-xs font-semibold text-ink">{col.label}</span>
           <span className="ml-auto text-xs text-ink-soft">{colTasks.length}</span>
+          <button
+            type="button"
+            onClick={() => { if (!adding) setQuickAdd({ section: projectId, status: col.status, title: "" }); }}
+            className="rounded-full p-0.5 text-ink-soft hover:bg-surface-2 hover:text-ink"
+            title={dt("Добавить задачу", "Add task")}
+          >
+            <RoyIcon name="plus" size={13} strokeWidth={2} />
+          </button>
         </div>
         {adding && (
           <input autoFocus value={quickAdd!.title}
@@ -313,7 +393,9 @@ export function SprintBoard() {
         <button onClick={() => setCreating((v) => !v)} className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm shrink-0" title={dt("Новая вкладка", "New tab")}>
           <RoyIcon name="plus" size={14} strokeWidth={2} />
         </button>
-        {selected !== ALL && (
+        {/* Удаление вкладки — только админ (backend тоже гейтит, PATCH/DELETE /sprints admin-only
+            с 09.06.2026). Создание («+» выше) — любой участник, только это открыли 19.08.2026. */}
+        {selected !== ALL && isAdmin && (
           <button onClick={handleDeleteSprint} disabled={deletingSprint} title={dt("Удалить вкладку", "Delete tab")}
             className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 hover:text-destructive disabled:opacity-50 dark:backdrop-blur-sm shrink-0">
             <RoyIcon name="trash" size={14} />
@@ -321,21 +403,21 @@ export function SprintBoard() {
         )}
       </div>
 
+      {/* Компактная строка (input + кнопка + отмена), тот же паттерн, что у «+ Проект» ниже —
+          раньше была отдельная карточка на всю ширину доски без max-width, растягивавшая
+          кнопку "Создать вкладку" во весь экран (владелец: «зачем на весь экран?»). */}
       {creating && (
-        <div className="mx-4 mb-2 p-3 rounded-lg border border-line space-y-2">
-          <input autoFocus className="w-full text-sm bg-transparent border-b border-line py-1 outline-none"
-            placeholder={dt("Название вкладки", "Tab name")} value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            onKeyDown={(e) => { if (e.key === "Enter") submitSprint(); if (e.key === "Escape") setCreating(false); }} />
-          {formErr && <p className="text-xs text-destructive">{formErr}</p>}
-          <Button size="sm" className="w-full h-8 text-xs" onClick={submitSprint} disabled={saving}>{saving ? "Создание…" : dt("Создать вкладку", "Create tab")}</Button>
-        </div>
-      )}
-
-      {selected !== ALL && inScope.length > 0 && (
-        <div className="px-5 pb-2">
-          <div className="flex justify-between text-xs text-ink-soft mb-1"><span>Прогресс</span><span className="font-semibold">{doneCount}/{inScope.length}</span></div>
-          <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: `${(doneCount / inScope.length) * 100}%`, background: "var(--status-done)" }} /></div>
+        <div className="mx-4 mb-2 max-w-sm">
+          <div className="flex items-center gap-2">
+            <input autoFocus value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onKeyDown={(e) => { if (e.key === "Enter") submitSprint(); if (e.key === "Escape") setCreating(false); }}
+              placeholder={dt("Название вкладки", "Tab name")}
+              className="flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-primary/50" />
+            <Button size="sm" className="h-9 text-xs" onClick={submitSprint} disabled={saving}>{saving ? dt("Создание…", "Creating…") : dt("Создать", "Create")}</Button>
+            <button onClick={() => setCreating(false)} className="text-xs text-ink-soft px-2">{dt("Отмена", "Cancel")}</button>
+          </div>
+          {formErr && <p className="mt-1 text-xs text-destructive">{formErr}</p>}
         </div>
       )}
 
@@ -357,15 +439,26 @@ export function SprintBoard() {
           const total = secDirectTasks.length + kidsWithTasks.reduce((sum, k) => sum + k.tasks.length, 0);
           const open = expanded.has(sec.id);
 
-          // Свёрнутый проект — компактная ПЛИТКА-карточка (двойной клик открывает).
+          // Свёрнутый проект — компактная ПЛИТКА-карточка. Одиночный клик открывает (раньше был
+          // onDoubleClick — на тач-устройствах двойной тап ненадёжен и путает: стрелка-шеврон
+          // визуально обещает «нажми», а срабатывало только с двух касаний).
+          // Тоже drop-зона для переноса подпроекта (#30) — раскрывать цель не нужно.
           if (!open) {
             return (
-              <button key={sec.id} type="button" onDoubleClick={() => toggleExpanded(sec.id)}
-                className="w-56 shrink-0 self-start rounded-2xl border border-line bg-surface/40 p-3 text-left select-none cursor-pointer transition-colors hover:border-line-2 dark:backdrop-blur-sm"
-                title={dt("Двойной клик — открыть проект", "Double-click to open")}>
+              <button key={sec.id} type="button" onClick={() => toggleExpanded(sec.id)}
+                onDragOver={(e) => { if (dragProj) { e.preventDefault(); setDragOverProject(sec.id); } }}
+                onDragLeave={() => setDragOverProject((p) => (p === sec.id ? null : p))}
+                onDrop={(e) => { if (dragProj) { e.preventDefault(); moveSubproject(dragProj, sec.id); setDragProj(null); setDragOverProject(null); } }}
+                className={`roy-pop w-56 shrink-0 self-start rounded-2xl border p-3 text-left select-none cursor-pointer transition-colors dark:backdrop-blur-sm ${dragOverProject === sec.id ? "border-primary bg-primary/10" : "border-line bg-surface/40 hover:border-line-2"}`}
+                title={dt("Открыть проект", "Open project")}>
                 <div className="flex items-center gap-2">
                   <RoyIcon name="board" size={15} strokeWidth={1.9} />
                   <span className="flex-1 truncate text-sm font-bold text-ink">{sec.name}</span>
+                  {sec.is_private && (
+                    <span className="shrink-0 text-ink-mute" title={dt("Скрыт из общего пула", "Hidden from the team")}>
+                      <RoyIcon name="eyeOff" size={12} strokeWidth={2.1} />
+                    </span>
+                  )}
                   <RoyIcon name="cright" size={12} className="text-ink-soft" />
                 </div>
                 <div className="mt-2 flex items-center gap-2 text-xs text-ink-soft">
@@ -378,10 +471,14 @@ export function SprintBoard() {
 
           // Раскрытый проект — на всю ширину (w-full → своя строка в flex-wrap).
           return (
-            <section key={sec.id} className="w-full rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
-              {/* Заголовок раскрытого проекта. Двойной клик — свернуть обратно в плитку. */}
+            <section key={sec.id} className="roy-pop w-full rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
+              {/* Заголовок раскрытого проекта. Двойной клик — свернуть обратно в плитку.
+                  Тоже drop-зона для переноса подпроекта (#30). */}
               <div onDoubleClick={() => toggleExpanded(sec.id)}
-                className="flex items-center gap-2 px-3 py-2 select-none cursor-pointer border-b border-line"
+                onDragOver={(e) => { if (dragProj) { e.preventDefault(); setDragOverProject(sec.id); } }}
+                onDragLeave={() => setDragOverProject((p) => (p === sec.id ? null : p))}
+                onDrop={(e) => { if (dragProj) { e.preventDefault(); moveSubproject(dragProj, sec.id); setDragProj(null); setDragOverProject(null); } }}
+                className={`flex items-center gap-2 px-3 py-2 select-none cursor-pointer border-b ${dragOverProject === sec.id ? "border-primary bg-primary/10" : "border-line"}`}
                 title={dt("Двойной клик — свернуть", "Double-click to collapse")}>
                 <button onClick={(e) => { e.stopPropagation(); toggleExpanded(sec.id); }} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={open ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
                   <RoyIcon name="cright" size={12} style={{ transform: open ? "rotate(90deg)" : undefined }} />
@@ -397,15 +494,23 @@ export function SprintBoard() {
                 ) : (
                   <span className="text-sm font-bold text-ink">{sec.name}</span>
                 )}
+                {sec.is_private && (
+                  <span className="shrink-0 text-ink-mute" title={dt("Скрыт из общего пула", "Hidden from the team")}>
+                    <RoyIcon name="eyeOff" size={12} strokeWidth={2.1} />
+                  </span>
+                )}
                 <span className="text-xs text-ink-soft">{total}</span>
+                {/* Добавить задачу (в каждой колонке уже есть свой «+», см. renderStatusColumn) и
+                    добавить подпроект (дублировано дальше в теле, см. renderAddSubproject) убраны
+                    отсюда — обе точки входа и так интуитивно доступны внутри поля (владелец
+                    2026-08-19). Вместо них — тумблер приватности. */}
                 <div className="ml-auto flex items-center gap-0.5" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
-                  {/* Прямая задача проекта/группы (project_id = sec.id) в бэклог — иначе у группы
-                      с подпроектами и без прямых задач не было точки создания первой (issue #12). */}
-                  <button onClick={() => { if (!open) toggleExpanded(sec.id); setQuickAdd({ section: sec.id, status: "backlog", title: "" }); }} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Добавить задачу в проект", "Add task to project")}>
-                    <RoyIcon name="task" size={14} strokeWidth={1.9} />
-                  </button>
-                  <button onClick={() => { if (!open) toggleExpanded(sec.id); setAddingSubOf(sec.id); }} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Добавить подпроект", "Add subproject")}>
-                    <RoyIcon name="plus" size={14} strokeWidth={2} />
+                  <button
+                    onClick={() => toggleProjectPrivacy(sec.id, sec.is_private)}
+                    className={`rounded-full p-1 transition-colors ${sec.is_private ? "bg-accent-soft text-accent-ink hover:bg-accent-soft" : "text-ink-soft hover:bg-surface-2"}`}
+                    title={sec.is_private ? dt("Скрыт из общего пула — показать всем", "Hidden from the team — make visible to everyone") : dt("Виден всей команде — скрыть из общего пула", "Visible to the team — hide from the general pool")}
+                  >
+                    <RoyIcon name={sec.is_private ? "eyeOff" : "eye"} size={13} strokeWidth={2.2} />
                   </button>
                   <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Переименовать проект", "Rename project")}>
                     <RoyIcon name="pencil" size={13} />
@@ -431,9 +536,19 @@ export function SprintBoard() {
                   )}
                   {/* Пространства подпроектов: у каждого только рабочие колонки. */}
                   <div className="flex-1 min-w-0 space-y-3">
-                    {kidsWithTasks.map(({ kid, tasks: kidTasks }) => (
+                    {kidsWithTasks.map(({ kid, tasks: kidTasks }) => {
+                      const subOpen = !collapsedSubs.has(kid.id);
+                      return (
                       <div key={kid.id}>
-                        <div className="flex items-center gap-2 px-1 pb-1.5">
+                        {/* Заголовок подпроекта: draggable (перенос в другой проект, #30) +
+                            сворачивание (#29, та же семантика, что у проекта верхнего уровня). */}
+                        <div draggable={renaming?.id !== kid.id}
+                          onDragStart={(e) => { setDragProj(kid.id); e.dataTransfer.effectAllowed = "move"; }}
+                          onDragEnd={() => { setDragProj(null); setDragOverProject(null); }}
+                          className="flex items-center gap-2 px-1 pb-1.5 cursor-grab active:cursor-grabbing">
+                          <button onClick={() => toggleCollapsedSub(kid.id)} className="rounded-full p-0.5 text-ink-soft hover:bg-surface-2" title={subOpen ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
+                            <RoyIcon name="cright" size={11} className="transition-transform duration-200" style={{ transform: subOpen ? "rotate(90deg)" : undefined }} />
+                          </button>
                           {renaming?.id === kid.id ? (
                             <input autoFocus value={renaming.name}
                               onChange={(e) => setRenaming({ id: kid.id, name: e.target.value })}
@@ -449,11 +564,31 @@ export function SprintBoard() {
                             <button onClick={() => removeSection(kid.id, kid.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Удалить", "Delete")}><RoyIcon name="trash" size={12} /></button>
                           </div>
                         </div>
-                        <div className="flex gap-3 overflow-x-auto">
-                          {WORK_COLUMNS.map((col) => renderStatusColumn(kid.id, col, kidTasks.filter((t) => t.status === col.status)))}
+                        {/* Плавное сворачивание: grid-template-rows 0fr↔1fr — анимируемая высота без
+                            измерения scrollHeight, overflow-hidden клипует контент во время перехода.
+                            Корень «дёргается» (проверено покадровой выборкой getComputedStyle в реальном
+                            браузере, не на глаз): ease-out на диапазоне ~100px сжимает ~55% высоты за
+                            первые ~50мс из 300, а весь остаток длительности — почти незаметный хвост
+                            (доли пикселя) — глаз читает это как рывок-и-замирание, а не движение. Кадры
+                            при этом НЕ проседают (60fps ровно, сама техника исправна) — дело только в
+                            форме кривой. ease-in-out распределяет заметное движение по всей длительности.
+                            Отдельно — opacity со сдвигом по времени (рецепт Chrome DevRel для этой
+                            техники): при открытии контент проявляется НЕМНОГО ПОЗЖЕ, чем растёт высота
+                            (не видно, как он «выпрыгивает» из сжатого состояния); при закрытии — гаснет
+                            СРАЗУ, до того как высота схлопнется (не видно обрезки на глаз). */}
+                        <div className="grid transition-[grid-template-rows] duration-[250ms] ease-linear" style={{ gridTemplateRows: subOpen ? "1fr" : "0fr" }}>
+                          <div className="overflow-hidden">
+                            <div
+                              className="flex gap-3 overflow-x-auto transition-opacity duration-200"
+                              style={{ opacity: subOpen ? 1 : 0, transitionDelay: subOpen ? "120ms" : "0ms" }}
+                            >
+                              {WORK_COLUMNS.map((col) => renderStatusColumn(kid.id, col, kidTasks.filter((t) => t.status === col.status)))}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                     {renderAddSubproject(sec.id)}
                   </div>
                 </div>

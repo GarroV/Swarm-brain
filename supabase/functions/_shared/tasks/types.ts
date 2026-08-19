@@ -106,6 +106,9 @@ export type Project = {
   // Вкладка-владелец проекта (sprints.id). Проект принадлежит одной вкладке; подпроект наследует
   // вкладку родителя. null — проект вне вкладок (легаси/после удаления вкладки: ON DELETE SET NULL).
   sprint_id: string | null;
+  // Явный тумблер приватности проекта ВЕРХНЕГО уровня — скрывает его из общего пула (виден только
+  // created_by + админу). Подпроект и так приватен по умолчанию (parent_id≠null) — см. listProjects.
+  is_private: boolean;
 };
 
 export type ProjectInput = {
@@ -114,4 +117,5 @@ export type ProjectInput = {
   emoji?: string | null;
   parent_id?: string | null;
   sprint_id?: string | null;
+  is_private?: boolean;
 };

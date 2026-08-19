@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { generateDigest, type AskSource } from "@/lib/api";
-import { useRoyNav, useDt } from "../nav";
+import { useRoyNav, useDt, openSourceRoute } from "../nav";
 import { RoyCard, TezisyBlocks } from "../ui";
 import { RoyIcon } from "../icons";
 
@@ -71,9 +71,11 @@ export function PersonalDigest({ className }: { className?: string }) {
   }, [text]);
 
   // Клик по сноске [n] в пункте → открыть исходную запись этого пункта (не новый поиск).
+  // Источник может быть встречей (entry_type="meeting") — тогда полноценный MeetingDetail,
+  // а не общая RecordDetail (openSourceRoute, см. nav.ts).
   const openSource = useCallback((n: number) => {
     const s = sources.find((x) => x.n === n);
-    if (s) push({ view: "record", params: { id: s.id } });
+    if (s) openSourceRoute(push)(s);
   }, [sources, push]);
 
   useEffect(() => {

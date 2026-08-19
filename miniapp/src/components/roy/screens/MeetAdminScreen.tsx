@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoyNav } from "../nav";
 import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks, Participants } from "../ui";
 import { RoyIcon } from "../icons";
@@ -444,6 +444,15 @@ function DetailPanel({
 // ── Деталь черновика агента (с поллингом тезисов) ─────────────────────────────
 
 const AGENT_POLL_MS = 10_000;
+
+// Шапка секции (заголовок + кнопки редактуры) липнет к верху скролл-контейнера — иначе
+// «Переобработать»/«Править» уезжали вверх на первом же прокруте длинных тезисов и владелец
+// не мог до них дотянуться, не отскроллив обратно (жалоба 2026-08-19).
+// Фон НЕПРОЗРАЧНЫЙ: с полупрозрачным (даже 92% + blur) проезжающий текст читался сквозь шапку
+// — тот же визуальный мусор, из-за которого и пришла жалоба. Канон проекта тот же (--popover
+// в тёмной теме 0.96 «почти непрозрачны (читаемость)»).
+const STICKY_HEAD = "sticky top-0 z-10 -mx-1 px-1 py-1.5";
+const STICKY_HEAD_BG = { background: "var(--background)" } as const;
 // После ~3 минут непрерывного поллинга (18 опросов по 10с) показываем подсказку,
 // что обработка затянулась — фоновая задача могла отвалиться на длинной записи.
 const AGENT_SLOW_POLL_COUNT = 18;
@@ -496,7 +505,24 @@ function AgentMeetingDetail({
   const [reprocessing, setReprocessing] = useState(false);
   const [reprocMenu, setReprocMenu] = useState(false);   // открыто меню-уточнение «Переобработать»
   const [reprocNote, setReprocNote] = useState("");      // своё пожелание к переработке
+  const reprocRef = useRef<HTMLDivElement | null>(null); // обёртка «кнопка + меню» — для клика вне
   useEffect(() => { setEditingTitle(false); setEditingNotes(false); setSaving(false); setCopied(false); setReprocessing(false); setReprocMenu(false); setReprocNote(""); }, [meeting.id]);
+
+  // Меню «Переобработать» закрывается кликом по свободному месту и Escape (паттерн как в
+  // CountryPopover/QuickPickPopover). Без этого меню висело, пока не выберешь пункт.
+  useEffect(() => {
+    if (!reprocMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (!reprocRef.current?.contains(e.target as Node)) setReprocMenu(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setReprocMenu(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [reprocMenu]);
 
   // Переобработать тезисы текущим промптом (из сохранённого транскрипта, без ре-транскрибации).
   // note — необязательное пожелание («короче»/«подробнее»/«акцент на решениях»/свой текст),
@@ -600,7 +626,7 @@ function AgentMeetingDetail({
     { label: "Акцент на решениях", note: "Сделай акцент на решениях и изменениях — что реально поменялось, о чём договорились." },
   ];
   const reprocessBtn = (
-    <div className="relative inline-block">
+    <div ref={reprocRef} className="relative inline-block">
       <button
         type="button"
         onClick={() => setReprocMenu((v) => !v)}
@@ -622,7 +648,7 @@ function AgentMeetingDetail({
             <input
               value={reprocNote}
               onChange={(e) => setReprocNote(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && reprocNote.trim()) reprocess(reprocNote.trim()); if (e.key === "Escape") setReprocMenu(false); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && reprocNote.trim()) reprocess(reprocNote.trim()); }}
               placeholder="Своё пожелание, Enter"
               className="w-full rounded-md border border-line bg-surface px-2 py-1.5 text-xs text-ink outline-none focus:border-primary/50"
             />
@@ -702,10 +728,10 @@ function AgentMeetingDetail({
         {/* Верх: тезисы / статус обработки */}
         {m.draft_notes_md ? (
           <div>
-            <div className="flex items-center justify-between gap-2">
-              <SectionLabel>Тезисы</SectionLabel>
+            <div className={`${STICKY_HEAD} flex items-center justify-between gap-2`} style={STICKY_HEAD_BG}>
+              <SectionLabel className="!mb-0">Тезисы</SectionLabel>
               {!editingNotes && (
-                <div className="-mt-1.5 flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5">
                   {reprocessBtn}
                   <button
                     type="button"
@@ -739,9 +765,9 @@ function AgentMeetingDetail({
           // Всегда даём «Переобработать» (если есть транскрипт) — иначе восстановление недостижимо
           // и экран навсегда застревает на «готовятся…».
           <div>
-            <div className="flex items-center justify-between gap-2">
-              <SectionLabel>Тезисы</SectionLabel>
-              {hasTranscript && <div className="-mt-1.5">{reprocessBtn}</div>}
+            <div className={`${STICKY_HEAD} flex items-center justify-between gap-2`} style={STICKY_HEAD_BG}>
+              <SectionLabel className="!mb-0">Тезисы</SectionLabel>
+              {hasTranscript && reprocessBtn}
             </div>
             <p className="text-ink-soft mt-1" style={{ fontSize: 13 }}>
               {m.summary_status === "failed"
@@ -785,12 +811,12 @@ function AgentMeetingDetail({
         {/* Низ: транскрипт — всегда видим (тезисы могут быть пустыми/в работе, а исходный текст нужен). */}
         {hasTranscript && (
           <div className="border-t border-line pt-3">
-            <div className="flex items-center justify-between gap-2">
-              <SectionLabel>Транскрипт</SectionLabel>
+            <div className={`${STICKY_HEAD} flex items-center justify-between gap-2`} style={STICKY_HEAD_BG}>
+              <SectionLabel className="!mb-0">Транскрипт</SectionLabel>
               <button
                 type="button"
                 onClick={copyTranscript}
-                className="-mt-1.5 inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
+                className="inline-flex items-center gap-1.5 rounded-[10px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
                 style={{ padding: "5px 11px", fontSize: 12 }}
               >
                 {copied && <RoyIcon name="check" size={13} strokeWidth={2.2} />}
@@ -1010,8 +1036,19 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
       fetchMeetings({ confirmed: false }),
       fetchAgentMeetings("awaiting_review"),
     ]);
-    setEntries(ents.status === "fulfilled" ? ents.value : []);
-    setAgentMeetings(agents.status === "fulfilled" ? agents.value : []);
+    const nextEntries = ents.status === "fulfilled" ? ents.value : [];
+    const nextAgents = agents.status === "fulfilled" ? agents.value : [];
+    setEntries(nextEntries);
+    setAgentMeetings(nextAgents);
+    // Выбранная встреча могла уйти из очереди, пока экран был открыт (обработана в другой
+    // вкладке/сессии) — снимаем выбор, если её больше нет ни в одном из списков.
+    setSelected((prev) => {
+      if (!prev) return prev;
+      const stillThere = prev.kind === "entry"
+        ? nextEntries.some((e) => e.id === prev.data.id)
+        : nextAgents.some((m) => m.id === prev.data.id);
+      return stillThere ? prev : null;
+    });
   }, []);
 
   // Смена области видимости перезагружает очередь и сбрасывает выбор (он мог исчезнуть из списка).
@@ -1020,6 +1057,28 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
     setAgentMeetings(null);
     setSelected(null);
     load();
+  }, [load]);
+
+  // Момент последней локальной мутации (согласование/удаление/реклассификация): фон делает
+  // паузу, чтобы не наступить на exit-анимацию только что убранной карточки.
+  const lastMutationRef = useRef(0);
+  const markMutation = () => { lastMutationRef.current = Date.now(); };
+
+  // Фон каждые 10с тихо перезапрашивает очередь + рефетч при возврате фокуса на вкладку —
+  // иначе карточка, обработанная в другой вкладке/сессии (или с телефона), зависает в списке
+  // до полного размонтирования экрана (владелец 2026-08-19: «опять задержка с пропаданием
+  // закрытых/обработанных элементов»). Тот же паттерн, что уже есть у задач (useReminderTasks).
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (Date.now() - lastMutationRef.current < 4_000) return;
+      load();
+    }, 10_000);
+    const onVisibility = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [load]);
 
   // «Все встречи» — весь доступный список (fetchMeetings без фильтра; приватность на бэке).
@@ -1052,6 +1111,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const animateRemove = (id: string): Promise<void> =>
     new Promise((resolve) => {
+      markMutation();
       setRemovingIds((s) => new Set(s).add(id));
       setTimeout(() => {
         removeFromList(id);

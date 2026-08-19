@@ -7,15 +7,17 @@ import type { RoyIconName } from "@/components/roy/icons";
 import { countryCode } from "@/lib/countries";
 
 export type SmartListId = "today" | "upcoming" | "all" | "done";
-// Линза = ось «как смотреть»: «mine» — назначенные на меня; «team» — ОБЩИЕ (не приватные, без
-// конкретного исполнителя); «all» — все; ИЛИ группировкой (market — по рынку, staff — по
-// исполнителю, все владельцы, сгруппировано). «staff» — админский вид «все сотрудники».
-export type Lens = "mine" | "team" | "all" | "market" | "staff";
+// Линза = ось «чьи задачи»: «mine» — назначенные на меня; «team» — ОБЩИЕ (не приватные, без
+// конкретного исполнителя); «all» — все. «По рынкам» и «Все сотрудники» — НЕ значения линзы, а
+// независимые тумблеры-модификаторы отображения (см. LensToggle/useReminderTasks) — применяются
+// К ТЕКУЩЕЙ линзе, группируя её результат, а не подменяя охват (решение владельца 2026-08-19:
+// «тумблер сортировки "по рынкам" не должен зависеть от того, в каком разделе сейчас юзер»).
+export type Lens = "mine" | "team" | "all";
 
 export type SmartListDef = { id: SmartListId; label: string; icon: RoyIconName };
 
 // Единый источник правды для порядка/подписей/иконок смарт-списков (время/статус).
-// «По рынкам» — НЕ смарт-список, а линза (см. Lens), накладывается на любой из этих списков.
+// «По рынкам»/«Все сотрудники» — НЕ смарт-списки, а независимые тумблеры (см. Lens), накладываются на любой из этих списков.
 export const SMART_LISTS: SmartListDef[] = [
   { id: "today", label: "Сегодня", icon: "clock" },
   { id: "upcoming", label: "Ближайшие", icon: "cal" },
@@ -51,8 +53,7 @@ export function isOverdue(task: Task, now: Date = new Date()): boolean {
 }
 
 function matchesLens(task: Task, lens: Lens, me: Me | null): boolean {
-  // «Все», «По рынкам» и «Все сотрудники» не фильтруют по владельцу (группируют, не отбирают).
-  if (lens === "all" || lens === "market" || lens === "staff") return true;
+  if (lens === "all") return true;
   // «Команда» = ОБЩИЕ задачи: не приватные И без конкретного исполнителя (формулировка владельца —
   // «командная задача = общая, у которой нет определённого юзера»). Приватные и назначенные на
   // кого-либо (в т.ч. на меня) сюда НЕ попадают — назначенные живут в «Мои»/«Все». Общую задачу
@@ -132,10 +133,9 @@ export function countLists(tasks: Task[], lens: Lens, me: Me | null, now: Date =
 
 export type MarketGroup = { country: string | null; label: string; tasks: Task[] };
 
-// Группировка задач АКТИВНОГО смарт-списка по рынку (страна) — все владельцы (линза market).
-// Без страны → «Без рынка», в конец. Группы по убыванию размера, затем по коду рынка.
-export function groupByMarket(tasks: Task[], listId: SmartListId, me: Me | null, now: Date = new Date()): MarketGroup[] {
-  const inScope = filterTasks(tasks, listId, "all", me, now);
+// Бакетирует УЖЕ отфильтрованный список по рынку — общий слой для groupByMarket (плоская
+// группировка) и groupByAssigneeThenMarket (вложенная, ниже) — DRY, своей фильтрации нет.
+function bucketByMarket(inScope: Task[]): MarketGroup[] {
   const map = new Map<string | null, Task[]>();
   for (const t of inScope) {
     // Нормализуем страну к ISO-коду (countryCode): иначе «SI» и «Словения» (или «RS»/«Сербия»)
@@ -155,13 +155,21 @@ export function groupByMarket(tasks: Task[], listId: SmartListId, me: Me | null,
     });
 }
 
+// Группировка задач АКТИВНОГО смарт-списка ПОД ТЕКУЩЕЙ линзой по рынку — тумблер "По рынкам"
+// (владелец 2026-08-19: должен группировать ТО, что уже выбрано, "Мои"/"Команда" тоже, не
+// только "Все"). Для "показать буквально всех" линзу переопределяет вызывающий (effectiveLens
+// в useReminderTasks, когда включён отдельный тумблер "Все сотрудники").
+export function groupByMarket(tasks: Task[], listId: SmartListId, lens: Lens, me: Me | null, now: Date = new Date()): MarketGroup[] {
+  return bucketByMarket(filterTasks(tasks, listId, lens, me, now));
+}
+
 export type StaffGroup = { name: string; label: string; tasks: Task[] };
 
 // Группировка задач АКТИВНОГО смарт-списка по ИСПОЛНИТЕЛЮ — все владельцы (админский вид «все сотрудники»).
 // Задача с несколькими исполнителями попадает в секцию каждого (полная картина «у кого что»).
 // Без исполнителя → «Без исполнителя», в конец. Группы по убыванию размера, затем по имени.
-export function groupByAssignee(tasks: Task[], listId: SmartListId, me: Me | null, now: Date = new Date()): StaffGroup[] {
-  const inScope = filterTasks(tasks, listId, "all", me, now);
+export function groupByAssignee(tasks: Task[], listId: SmartListId, lens: Lens, me: Me | null, now: Date = new Date()): StaffGroup[] {
+  const inScope = filterTasks(tasks, listId, lens, me, now);
   const NONE = " none";
   const map = new Map<string, Task[]>();
   for (const t of inScope) {
@@ -181,6 +189,16 @@ export function groupByAssignee(tasks: Task[], listId: SmartListId, me: Me | nul
       if (b.tasks.length !== a.tasks.length) return b.tasks.length - a.tasks.length;
       return a.label.localeCompare(b.label);
     });
+}
+
+export type NestedStaffGroup = StaffGroup & { marketGroups: MarketGroup[] };
+
+// Оба тумблера разом ("Все сотрудники" + "По рынкам"): сначала по сотруднику, внутри каждого -
+// по рынку (владелец: "группировка по сотруднику, а под ней - по рынкам"). Независимые измерения
+// одной и той же задачи - конфликта нет, задача просто попадает в [свой исполнитель][свой рынок].
+export function groupByAssigneeThenMarket(tasks: Task[], listId: SmartListId, lens: Lens, me: Me | null, now: Date = new Date()): NestedStaffGroup[] {
+  return groupByAssignee(tasks, listId, lens, me, now)
+    .map((sg) => ({ ...sg, marketGroups: bucketByMarket(sg.tasks) }));
 }
 
 // ── Персональные смарт-метки (личные списки) ────────────────────────────────
