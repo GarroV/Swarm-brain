@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { cn, displayName } from "@/lib/utils";
 import { countryCode } from "@/lib/countries";
@@ -86,32 +87,97 @@ export function Market({ code }: { code?: string | null }) {
 // ── Участники встречи (из календаря) ─────────────────────────────────────────
 // Показывает имена (или email-фолбэк) участников. Это календарный список, НЕ диаризация
 // аудио — кто именно говорил, мы не различаем. Пусто → ничего не рендерим.
-// Список участников встречи. Свёрнут по умолчанию (первые PARTICIPANTS_LIMIT + «+N ещё»), иначе
-// длинный список email превращается в нечитаемую стену на весь экран (жалоба владельца 2026-07-23).
-const PARTICIPANTS_LIMIT = 6;
+// Триггер — компактный чип в ОДНУ строку, список раскрывается выпадашкой (владелец 2026-08-19:
+// «список участников надо скрыть в выпадающий список»). Раньше имена печатались инлайн и
+// длинный список email занимал пол-экрана, наезжая на кнопки редактуры под ним.
+// Механика портала/placement/клик-вне/Escape зеркалит CountryPopover: шапка детали лежит в
+// контейнере со своим overflow, absolute-поповер там обрезался бы.
+const PARTICIPANTS_POP_W = 288, PARTICIPANTS_POP_H = 320;
 export function Participants({ attendees }: { attendees?: Array<{ name?: string; email?: string }> | null }) {
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+
+  const place = useCallback(() => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const left = Math.min(r.left, window.innerWidth - PARTICIPANTS_POP_W - 8);
+    const below = r.bottom + 6;
+    const top =
+      below + PARTICIPANTS_POP_H > window.innerHeight - 8 && r.top > PARTICIPANTS_POP_H
+        ? r.top - PARTICIPANTS_POP_H - 6
+        : below;
+    setPos({ left: Math.max(8, left), top });
+  }, []);
+
+  useLayoutEffect(() => { if (open) place(); }, [open, place]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!btnRef.current?.contains(t) && !popRef.current?.contains(t)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, place]);
+
   const names = (attendees ?? [])
     .map((a) => (a.name?.trim() || a.email?.trim() || ""))
     .filter(Boolean);
   if (names.length === 0) return null;
-  const overflow = names.length > PARTICIPANTS_LIMIT;
-  const shown = expanded || !overflow ? names : names.slice(0, PARTICIPANTS_LIMIT);
+
   return (
-    <span className="inline-flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-ink-soft" style={{ fontSize: 12 }}>
-      <RoyIcon name="team" size={13} className="text-ink-mute self-center" />
-      <span className="text-ink-mute">Участники ({names.length}):</span>
-      <span className="text-ink">{shown.join(", ")}</span>
-      {overflow && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="font-semibold text-accent-ink transition-opacity hover:opacity-80"
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-line bg-surface font-semibold text-ink-soft transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        style={{ fontSize: 12, padding: "3px 10px" }}
+      >
+        <RoyIcon name="team" size={13} strokeWidth={1.9} className="shrink-0 text-ink-mute" />
+        Участники ({names.length})
+        <RoyIcon
+          name="cright"
+          size={12}
+          strokeWidth={1.9}
+          className={`shrink-0 text-ink-mute transition-transform ${open ? "-rotate-90" : "rotate-90"}`}
+        />
+      </button>
+
+      {open && pos && createPortal(
+        <div
+          ref={popRef}
+          role="menu"
+          style={{ position: "fixed", left: pos.left, top: pos.top, width: PARTICIPANTS_POP_W, maxHeight: PARTICIPANTS_POP_H }}
+          className="z-[100] flex flex-col overflow-hidden rounded-xl border border-line bg-card shadow-xl dark:backdrop-blur-lg"
         >
-          {expanded ? "свернуть" : `+${names.length - PARTICIPANTS_LIMIT} ещё`}
-        </button>
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            <div className="flex flex-col gap-0.5">
+              {names.map((n, i) => (
+                <span key={`${n}-${i}`} className="break-all rounded-md px-2 py-1 text-ink" style={{ fontSize: 12.5 }}>
+                  {n}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
-    </span>
+    </>
   );
 }
 
