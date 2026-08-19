@@ -44,9 +44,12 @@ protocol SystemAudioCapturer: AnyObject {
     // recWatchTick в AppDelegate.
     func peakSinceLastRead() -> Float
 
-    // Сигнал наружу: true — собеседник не пишется и авто-пересборки не помогли; false — звук
-    // вернулся. Даёт честно предупредить пользователя (не терять собеседника молча). Опционально.
+    // Сигнал наружу: true — собеседник не пишется, false — звук вернулся. Пассивный индикатор
+    // (панель), живой в обе стороны. Опционально.
     var onSystemStalled: ((Bool) -> Void)? { get set }
+    // Разовое честное уведомление «собеседник не пишется» — максимум один раз за запись
+    // (не терять собеседника молча, но и не спамить). Опционально.
+    var onSystemStalledPersistent: (() -> Void)? { get set }
 }
 
 extension SystemAudioCapturer {
@@ -183,8 +186,9 @@ final class ScreenCaptureKitRecorder: NSObject, SystemAudioCapturer, SCStreamOut
     var firstSampleUptime: Double? { queue.sync { _firstSampleUptime } }
     func currentLevel() -> Float { levelTracker.current() }
     func peakSinceLastRead() -> Float { levelTracker.peakAndReset() }
-    // SCK-путь (fallback для <14.4) не имеет watchdog нулей — свойство для соответствия протоколу.
+    // SCK-путь (fallback для <14.4) не имеет watchdog нулей — свойства для соответствия протоколу.
     var onSystemStalled: ((Bool) -> Void)?
+    var onSystemStalledPersistent: (() -> Void)?
 
     func start(systemURL url: URL) async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
@@ -387,17 +391,32 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
         mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
 
     // Watchdog тишины: если входящие буферы строго 0.0 дольше этого порога, ПОКА идёт реальный
-    // созвон, тап завис → форсируем полную пересборку (как при смене устройства).
+    // созвон, тап завис → форсируем полную пересборку (как при смене устройства). Порог короткий
+    // и это НЕ проблема — пересборка дешёвая и невидимая пользователю, пусть чинит себя быстро.
     private var silenceTimer: DispatchSourceTimer?
     private var lastNonSilentUptime: Double = 0
-    private static let silenceRebuildSeconds: Double = 8.0   // 0.0-сигнал дольше → пересборка
+    private static let silenceRebuildSeconds: Double = 8.0   // 0.0-сигнал дольше → пересборка (тихо)
 
-    // Honest-signal наружу (AppDelegate): true — собеседник не пишется и авто-пересборки не
-    // помогли; false — звук вернулся. Чтобы «не терять собеседника молча» (инцидент 2026-07-15).
+    // Отдельные часы для УВЕДОМЛЕНИЯ пользователя — НЕ трогаются пересборкой (в отличие от
+    // lastNonSilentUptime, которую rebuildLocked сбрасывает на «сейчас», строка ниже). Раньше
+    // уведомление было фактически завязано на те же 8с (дважды подряд ⇒ ~16с), хотя дизайн-спека
+    // 2026-07-15 прямо требовала «порог подобрать так, чтобы не рвать на легитимной тишине —
+    // десятки секунд». Владелец (18.08.2026): «спамит... собеседник молчит... надо не таким
+    // назойливым, да и вообще есть ли смысл?» — смысл есть (инцидент 2026-07-15, тап завис
+    // насмерть, звук собеседника молча терялся всю встречу), но порог не соблюдал свою же спеку.
+    private var lastGenuineSoundUptime: Double = 0
+    private static let notifySilenceSeconds: Double = 50.0   // порог АКТИВНОГО уведомления — длиннее
+
+    // Пассивный индикатор в панели (LiveNotesPanel): живой, отражает ТЕКУЩЕЕ состояние обеих
+    // сторон — можно мигать/гаснуть свободно на короткой шкале, это дёшево и не раздражает.
     var onSystemStalled: ((Bool) -> Void)?
+    // Честный сигнал наружу (AppDelegate) — «собеседник не пишется» — но МАКСИМУМ ОДИН РАЗ за
+    // запись: не гаснет и не повторяется, даже если звук вернётся и снова пропадёт позже в этой
+    // же встрече (в отличие от stalledSignaled/onSystemStalled, которые обслуживают только
+    // индикатор в панели). Чтобы «не терять собеседника молча», но и не спамить.
+    var onSystemStalledPersistent: (() -> Void)?
     private var stalledSignaled = false
-    private var consecutiveSilentRebuilds = 0
-    private static let rebuildsBeforeStallSignal = 2   // столько пересборок без звука → сигнал
+    private var notifiedThisRecording = false
     private static let stallLevelEpsilon: Float = 0.001   // выше — считаем, что звук реально идёт
 
     // Уровень системной дорожки (собеседники). Обновляется в IOProc-блоке (off-main), читается
@@ -425,7 +444,10 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
             self.baseURL = systemURL
             self.stopped = false
             self.sessionStartUptime = ProcessInfo.processInfo.systemUptime
-            self.withIOLock { self.lastNonSilentUptime = self.sessionStartUptime ?? 0 }
+            self.withIOLock {
+                self.lastNonSilentUptime = self.sessionStartUptime ?? 0
+                self.lastGenuineSoundUptime = self.sessionStartUptime ?? 0
+            }
             try self.buildTapLocked(outURL: systemURL)
         }
         installDeviceListener()
@@ -548,7 +570,13 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
             guard let buf = AVAudioPCMBuffer(pcmFormat: inFmt, bufferListNoCopy: inData, deallocator: nil) else { return }
             let peak = SystemLevelTracker.bufferPeak(buf)
             self.levelTracker.update(rawPeak: peak)   // живой уровень собеседников
-            if peak > 0 { self.withIOLock { self.lastNonSilentUptime = ProcessInfo.processInfo.systemUptime } }
+            if peak > 0 {
+                self.withIOLock {
+                    let now = ProcessInfo.processInfo.systemUptime
+                    self.lastNonSilentUptime = now
+                    self.lastGenuineSoundUptime = now
+                }
+            }
             self.withFileLock { try? self.file?.write(from: buf) }
         }
         guard err == noErr, let proc = p else { throw SwarmError.transport("AudioDeviceCreateIOProcIDWithBlock \(err)") }
@@ -613,10 +641,10 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
         t.setEventHandler { [weak self] in
             guard let self, !self.stopped, !self.rebuilding else { return }
 
-            // (0) Реальный звук собеседника идёт → всё здорово: сбросить счётчики; если раньше
-            // сигналили «не пишется» — снять сигнал (звук вернулся).
+            // (0) Реальный звук собеседника идёт → всё здорово: если раньше сигналили «не пишется»
+            // индикатору в панели — снять сигнал (звук вернулся). notifiedThisRecording НЕ трогаем:
+            // разовое уведомление уже отправлено — не даём ему повториться позже в этой же записи.
             if self.levelTracker.current() > Self.stallLevelEpsilon {
-                self.consecutiveSilentRebuilds = 0
                 if self.stalledSignaled { self.stalledSignaled = false; self.onSystemStalled?(false) }
                 return
             }
@@ -631,18 +659,25 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
                 return
             }
 
-            // (2) Тишина дольше порога при РЕАЛЬНОМ созвоне (в простое тишина — норма) → тап,
-            // вероятно, завис/умер → полная пересборка (попытка авто-восстановления).
+            // (2) Тишина дольше короткого порога при РЕАЛЬНОМ созвоне (в простое тишина — норма)
+            // → тап, вероятно, завис/умер → тихая попытка самовосстановления (пересборка). Заодно
+            // зажигаем ТОЛЬКО пассивный индикатор в панели — дёшево, можно чаще и раньше.
             let last = self.withIOLock { self.lastNonSilentUptime }
             let silentFor = ProcessInfo.processInfo.systemUptime - last
-            guard silentFor >= Self.silenceRebuildSeconds, CallDetector.realCallActive() else { return }
-            self.rebuildLocked(reason: "тишина \(Int(silentFor))с при активном созвоне")
-            self.consecutiveSilentRebuilds += 1
+            if silentFor >= Self.silenceRebuildSeconds, CallDetector.realCallActive() {
+                self.rebuildLocked(reason: "тишина \(Int(silentFor))с при активном созвоне")
+                if !self.stalledSignaled { self.stalledSignaled = true; self.onSystemStalled?(true) }
+            }
 
-            // (3) Пересборки подряд не вернули звук → честно сигналим пользователю (один раз).
-            if self.consecutiveSilentRebuilds >= Self.rebuildsBeforeStallSignal, !self.stalledSignaled {
-                self.stalledSignaled = true
-                self.onSystemStalled?(true)
+            // (3) Активное уведомление — отдельный, куда более длинный порог (не сбрасывается
+            // пересборками из шага 2 — см. lastGenuineSoundUptime) и максимум один раз за запись.
+            // К этому моменту self-heal (шаг 2) уже пытался пересобрать тап несколько раз (~50с /
+            // 8с ≈ 6 попыток) — это не первая реакция, а действительно «сами не справились».
+            guard !self.notifiedThisRecording, CallDetector.realCallActive() else { return }
+            let genuineSilentFor = ProcessInfo.processInfo.systemUptime - self.withIOLock { self.lastGenuineSoundUptime }
+            if genuineSilentFor >= Self.notifySilenceSeconds {
+                self.notifiedThisRecording = true
+                self.onSystemStalledPersistent?()
             }
         }
         t.resume()

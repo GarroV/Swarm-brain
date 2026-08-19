@@ -163,9 +163,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Вторая полоса — уровень системной дорожки (собеседники/коллеги), видно живой захват.
         widget.systemLevelProvider = { [weak self] in self?.recorder.currentSystemLevel() ?? 0 }
         // Честный сигнал «собеседник не пишется» из watchdog нулей (вызывается с control-queue →
-        // прыгаем на main). Не терять собеседника молча (инцидент 2026-07-15).
+        // прыгаем на main). Не терять собеседника молча (инцидент 2026-07-15), но и не спамить
+        // (18.08.2026) — пассивная метка в панели (обе стороны, часто) отдельно от разового
+        // уведомления (макс. один раз за запись, после длинного порога, без звука).
         recorder.onSystemStalled = { [weak self] stalled in
             DispatchQueue.main.async { self?.handleSystemAudioStalled(stalled) }
+        }
+        recorder.onSystemStalledPersistent = { [weak self] in
+            DispatchQueue.main.async { self?.handleSystemAudioStalledPersistent() }
         }
 
         setupNotifications()
@@ -1034,16 +1039,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "callend-\(Int(Date().timeIntervalSince1970))", content: content, trigger: nil))
     }
 
-    // Watchdog нулей: собеседник не пишется (авто-пересборка тапа не помогла) / звук вернулся.
-    // На «не пишется» — честно предупреждаем (микрофон при этом пишется). «Вернулось» — молча.
+    // Watchdog нулей: пассивная метка в панели (LiveNotesPanel) — живая, обе стороны, ничего не
+    // стоит пользователю. Активное уведомление сюда НЕ входит — см. handleSystemAudioStalledPersistent.
     private func handleSystemAudioStalled(_ stalled: Bool) {
         guard case .recording = state else { return }
-        Task { @MainActor in LiveNotesPanel.shared.setSystemAudioWarning(stalled) }   // метка в панели
-        guard stalled else { return }
+        Task { @MainActor in LiveNotesPanel.shared.setSystemAudioWarning(stalled) }
+    }
+
+    // Разовое честное уведомление «собеседник не пишется» — максимум ОДИН РАЗ за запись, после
+    // ~50с суммарной тишины на системной дорожке при активном созвоне (порог живёт в
+    // SystemAudioCapturer.notifySilenceSeconds; несколько тихих само-пересборок уже были
+    // попробованы к этому моменту). Без звука (владелец 18.08.2026: «со звуком... назойливо») —
+    // баннер молча появится в Notification Center. Причину не называем конкретно (Bluetooth) —
+    // ветка смены аудио-формата обрабатывается отдельно и тихо, сюда попадает только «реальной
+    // тишины было слишком долго», Bluetooth тут почти никогда не при чём.
+    private func handleSystemAudioStalledPersistent() {
+        guard case .recording = state else { return }
         let content = UNMutableNotificationContent()
         content.title = "⚠️ Собеседник не пишется"
-        content.body = "Звук собеседника сейчас не захватывается (частая причина — Bluetooth-наушники переключили режим на звонке). Твой микрофон пишется. Помогает: переключить вывод звука на встроенные динамики."
-        content.sound = .default
+        content.body = "Звук собеседника не поступает уже больше минуты, хотя звонок идёт. Рекордер несколько раз пробовал переподключиться сам. Твой микрофон пишется нормально. Проверь вывод звука на компьютере — это сообщение не появится снова в этой записи."
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "sysstall-\(Int(Date().timeIntervalSince1970))", content: content, trigger: nil))
     }
 
