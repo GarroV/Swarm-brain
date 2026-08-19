@@ -231,7 +231,7 @@ actor UploadQueue {
                 endedAt: retry.endedAt,
                 agentVersion: "0.1.0",
                 micStartOffset: pending.micStartOffset,
-                recordedSeconds: retry.recordedSeconds,
+                recordedSeconds: retry.recordedSeconds
             )
             do {
                 let claim = try await SwarmClient(config: config).claim(req)

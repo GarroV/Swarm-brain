@@ -719,7 +719,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             await refreshQueueBadge()
             // Итог обязателен: «нажал и ничего не произошло» — та же молчаливая потеря,
             // из-за которой инцидент 17.08.2026 заметили только через сутки.
-            await MainActor.run { self.notifyResendOutcome(sent: sent, refused: refused, error: error) }
+            // Снимок в let: захват var'ов в @Sendable-замыкании — ошибка в Swift 6 language mode
+            // (CI-раннер собирает именно в нём, локальный 6.3 понижает до warning — issue #40).
+            let sentCount = sent, refusedBy = refused, failReason = error
+            await MainActor.run { self.notifyResendOutcome(sent: sentCount, refused: refusedBy, error: failReason) }
         }
     }
 
@@ -846,8 +849,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                             let cal = try? await SwarmClient(config: cfg).currentMeeting()
                             guard let info = cal?.meeting, let endISO = info.endISO,
                                   let end = ISO8601DateFormatter().date(from: endISO) else { return }
+                            guard let self else { return }
                             await MainActor.run {
-                                guard let self, case .recording = self.state else { return }
+                                guard case .recording = self.state else { return }
                                 self.scheduledEndAt = end
                             }
                         }
