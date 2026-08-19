@@ -22,7 +22,16 @@ export async function listProjects(
   const { data: projects } = await supabase
     .from("projects").select("*").eq("group_id", groupId)
     .order("created_at", { ascending: true });
-  const list = (projects ?? []) as Project[];
+  let list = (projects ?? []) as Project[];
+
+  // Подпроект видим только своему автору (+ админу) — проект верхнего уровня остаётся общим на
+  // весь воркспейс. Запрос владельца 2026-08-19: «чтобы Анна видела не все подпроекты, а только
+  // проект Vibe Coding и свои подпроекты» — рабочее пространство общее, подпроект внутри него —
+  // личная рабочая зона. created_by=null (легаси-строка/системное создание без юзера) НЕ прячем
+  // ни от кого — молча терять доступ к «ничейной» строке хуже, чем показать её лишний раз.
+  if (!opts.isAdmin) {
+    list = list.filter((p) => p.parent_id === null || p.created_by === null || p.created_by === opts.viewerId);
+  }
   if (list.length === 0) return [];
 
   // Считаем задачи по проектам одним запросом (без N+1), с той же visibility-фильтрацией,
@@ -78,11 +87,14 @@ export async function createProject(
   return data as Project;
 }
 
-// Обновляет только проект своего воркспейса. Возвращает обновлённый или null (не найден/чужой).
+// Обновляет только проект своего воркспейса. Возвращает обновлённый или null (не найден/чужой/
+// не свой подпроект — намеренно не различаем 404 от «нет доступа», как getEntrySecure для
+// entries: не палим существование чужой строки).
 export async function updateProject(
   id: string,
   fields: Partial<ProjectInput>,
   groupId: string,
+  opts: { viewerId?: number; isAdmin?: boolean } = {},
 ): Promise<Project | null> {
   if ("parent_id" in fields) {
     const { data: refs } = await supabase
@@ -90,6 +102,7 @@ export async function updateProject(
     const v = validateParent({ projectId: id, parentId: fields.parent_id ?? null, all: (refs ?? []) as ProjectRef[] });
     if (!v.ok) throw new Error(v.error);
   }
+  if (!(await canMutateProject(id, groupId, opts))) return null;
   const { data } = await supabase.from("projects")
     .update(fields)
     .eq("id", id).eq("group_id", groupId)
@@ -97,9 +110,23 @@ export async function updateProject(
   return (data as Project | null) ?? null;
 }
 
+// Подпроект правит/удаляет только автор (+ админ) — тот же критерий видимости, что в listProjects.
+// SERVICE_ROLE_KEY используется везде (RLS не защищает) — эта проверка ЕДИНСТВЕННАЯ преграда
+// между «Анна не видит чужой подпроект в списке» и «Анна может его переименовать/удалить, зная id
+// напрямую» (см. правило проекта: вся проверка доступа — только через код).
+async function canMutateProject(id: string, groupId: string, opts: { viewerId?: number; isAdmin?: boolean }): Promise<boolean> {
+  if (opts.isAdmin) return true;
+  const { data } = await supabase.from("projects").select("parent_id, created_by").eq("id", id).eq("group_id", groupId).maybeSingle();
+  if (!data) return false;
+  const row = data as { parent_id: string | null; created_by: number | null };
+  if (row.parent_id === null || row.created_by === null) return true;   // проект верхнего уровня / легаси-строка — общие
+  return row.created_by === opts.viewerId;
+}
+
 // Удаляет проект своего воркспейса. Задачи освобождаются (FK ON DELETE SET NULL для project_id),
 // а project_linked сбрасываем явно (FK его не трогает).
-export async function deleteProject(id: string, groupId: string): Promise<boolean> {
+export async function deleteProject(id: string, groupId: string, opts: { viewerId?: number; isAdmin?: boolean } = {}): Promise<boolean> {
+  if (!(await canMutateProject(id, groupId, opts))) return false;
   const { data } = await supabase.from("projects")
     .delete().eq("id", id).eq("group_id", groupId).select("id").maybeSingle();
   if (!data) return false;

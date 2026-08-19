@@ -883,7 +883,7 @@ Deno.serve(async (req: Request) => {
       }
       let updated;
       try {
-        updated = await updateProject(projectId, fields, groupId);
+        updated = await updateProject(projectId, fields, groupId, { viewerId: telegram_id, isAdmin });
       } catch (e) {
         return apiErr(400, e instanceof Error ? e.message : "invalid parent", origin);
       }
@@ -891,7 +891,7 @@ Deno.serve(async (req: Request) => {
       return json(updated, 200, origin);
     }
     if (req.method === "DELETE") {
-      const ok = await deleteProject(projectId, groupId);
+      const ok = await deleteProject(projectId, groupId, { viewerId: telegram_id, isAdmin });
       if (!ok) return apiErr(404, "Not found", origin);
       return json({ ok: true }, 200, origin);
     }
