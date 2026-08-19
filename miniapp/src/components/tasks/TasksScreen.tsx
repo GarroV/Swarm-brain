@@ -18,8 +18,28 @@ const VIEWS: Array<{ id: View; label: string; icon: RoyIconName }> = [
   // { id: "projects", label: "Старые проекты", icon: "graph" },
 ];
 
+// Запоминаем вкладку (Задачи/Таймлайн/Проекты), чтобы рефреш страницы не сбрасывал на «Задачи»
+// (владелец 2026-08-19: «рефреш скидывает на экран задач, надо оставаться там же»). Тот же
+// паттерн, что у верхней вкладки в RoyApp.tsx (roy_tab) — sessionStorage, не переживает закрытие
+// вкладки браузера, только рефреш.
+const VIEW_KEY = "roy_tasks_view";
+const VALID_VIEWS: readonly View[] = ["list", "timeline", "sprint", "projects"];
+
+function readInitialView(): View {
+  if (typeof window === "undefined") return "list";
+  try {
+    const saved = window.sessionStorage.getItem(VIEW_KEY);
+    if (VALID_VIEWS.includes(saved as View)) return saved as View;
+  } catch { /* приватный режим/квота — не критично */ }
+  return "list";
+}
+
 export function TasksScreen() {
-  const [view, setView] = useState<View>("list");
+  const [view, setViewState] = useState<View>(readInitialView);
+  const setView = (v: View) => {
+    setViewState(v);
+    try { window.sessionStorage.setItem(VIEW_KEY, v); } catch { /* приватный режим/квота — не критично */ }
+  };
 
   return (
     <div className="flex flex-col h-full">
