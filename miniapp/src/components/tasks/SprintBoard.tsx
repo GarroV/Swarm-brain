@@ -107,12 +107,6 @@ export function SprintBoard() {
   const topLevel = projects.filter((p) => !p.parent_id && (selected === ALL || p.sprint_id === selected));
   const childrenOf = (id: string) => projects.filter((p) => p.parent_id === id);
 
-  // inScope — задачи выбранной вкладки (через проекты вкладки): нужны для прогресс-бара.
-  const tabProjectIds = new Set(
-    (selected === ALL ? projects : projects.filter((p) => p.sprint_id === selected)).map((p) => p.id),
-  );
-  const inScope = tasks.filter((t) => t.project_id != null && tabProjectIds.has(t.project_id));
-  const doneCount = inScope.filter((t) => t.status === "done").length;
   // Доска показывает ТОЛЬКО задачи с проектом (решение владельца 2026-08-07): задачи без
   // проекта на спринт-доску не сыпятся — проект задаче назначается в её карточке.
   const boardEmpty = topLevel.length === 0;
@@ -394,13 +388,6 @@ export function SprintBoard() {
             <button onClick={() => setCreating(false)} className="text-xs text-ink-soft px-2">{dt("Отмена", "Cancel")}</button>
           </div>
           {formErr && <p className="mt-1 text-xs text-destructive">{formErr}</p>}
-        </div>
-      )}
-
-      {selected !== ALL && inScope.length > 0 && (
-        <div className="px-5 pb-2">
-          <div className="flex justify-between text-xs text-ink-soft mb-1"><span>Прогресс</span><span className="font-semibold">{doneCount}/{inScope.length}</span></div>
-          <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: `${(doneCount / inScope.length) * 100}%`, background: "var(--status-done)" }} /></div>
         </div>
       )}
 
