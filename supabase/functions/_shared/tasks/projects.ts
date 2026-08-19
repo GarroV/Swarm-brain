@@ -19,18 +19,28 @@ export async function listProjects(
   groupId: string,
   opts: { viewerId?: number; isAdmin?: boolean } = {},
 ): Promise<ProjectWithCounts[]> {
+  // В отличие от listTasks (predicate is_private/owner_id пушится в сам SQL-запрос + .limit(200)),
+  // тут тянем ВСЕ строки воркспейса и фильтруем приватность в JS ниже — осознанный трейдофф:
+  // проектов в воркспейсе на порядки меньше, чем задач/записей (обычно единицы-десятки, не тысячи).
+  // .limit(500) — просто защитный потолок, а не расчётный лимит: DB-гард глубины (migration
+  // 20260812140000) ограничивает вложенность (2 уровня), но НЕ число строк на group_id.
   const { data: projects } = await supabase
     .from("projects").select("*").eq("group_id", groupId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .limit(500);
   let list = (projects ?? []) as Project[];
 
-  // Подпроект видим только своему автору (+ админу) — проект верхнего уровня остаётся общим на
-  // весь воркспейс. Запрос владельца 2026-08-19: «чтобы Анна видела не все подпроекты, а только
-  // проект Vibe Coding и свои подпроекты» — рабочее пространство общее, подпроект внутри него —
-  // личная рабочая зона. created_by=null (легаси-строка/системное создание без юзера) НЕ прячем
+  // Приватна строка, если это подпроект (parent_id≠null, скрыт от чужих по умолчанию — запрос
+  // владельца 2026-08-19: «чтобы Анна видела не все подпроекты, а только проект Vibe Coding и свои
+  // подпроекты») ИЛИ явно помечена is_private (тумблер на проекте ВЕРХНЕГО уровня, тот же день:
+  // «скрыть этот конкретный проект из общего пула»). Приватная строка видна только своему
+  // created_by (+ админу). created_by=null (легаси-строка/системное создание без юзера) НЕ прячем
   // ни от кого — молча терять доступ к «ничейной» строке хуже, чем показать её лишний раз.
   if (!opts.isAdmin) {
-    list = list.filter((p) => p.parent_id === null || p.created_by === null || p.created_by === opts.viewerId);
+    list = list.filter((p) => {
+      const priv = p.parent_id !== null || p.is_private;
+      return !priv || p.created_by === null || p.created_by === opts.viewerId;
+    });
   }
   if (list.length === 0) return [];
 
@@ -82,6 +92,7 @@ export async function createProject(
     parent_id: parentId,
     created_by: createdBy,
     sprint_id: input.sprint_id ?? null,
+    is_private: input.is_private ?? false,
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Project;
@@ -110,16 +121,21 @@ export async function updateProject(
   return (data as Project | null) ?? null;
 }
 
-// Подпроект правит/удаляет только автор (+ админ) — тот же критерий видимости, что в listProjects.
+// Приватную строку (подпроект ИЛИ явный is_private на верхнем уровне) правит/удаляет только автор
+// (+ админ) — тот же критерий, что в listProjects. Публичный проект верхнего уровня по-прежнему
+// правит любой участник воркспейса (решение владельца 2026-07-01 — команда сама себе управляет
+// общими проектами); это распространяется и на сам тумблер is_private, пока проект публичный —
+// как только он станет приватным, дальнейшие правки (в т.ч. снять приватность) — только автору.
 // SERVICE_ROLE_KEY используется везде (RLS не защищает) — эта проверка ЕДИНСТВЕННАЯ преграда
-// между «Анна не видит чужой подпроект в списке» и «Анна может его переименовать/удалить, зная id
-// напрямую» (см. правило проекта: вся проверка доступа — только через код).
+// между «Анна не видит чужой приватный проект в списке» и «Анна может его переименовать/удалить,
+// зная id напрямую» (см. правило проекта: вся проверка доступа — только через код).
 async function canMutateProject(id: string, groupId: string, opts: { viewerId?: number; isAdmin?: boolean }): Promise<boolean> {
   if (opts.isAdmin) return true;
-  const { data } = await supabase.from("projects").select("parent_id, created_by").eq("id", id).eq("group_id", groupId).maybeSingle();
+  const { data } = await supabase.from("projects").select("parent_id, created_by, is_private").eq("id", id).eq("group_id", groupId).maybeSingle();
   if (!data) return false;
-  const row = data as { parent_id: string | null; created_by: number | null };
-  if (row.parent_id === null || row.created_by === null) return true;   // проект верхнего уровня / легаси-строка — общие
+  const row = data as { parent_id: string | null; created_by: number | null; is_private: boolean };
+  const priv = row.parent_id !== null || row.is_private;
+  if (!priv || row.created_by === null) return true;   // публичный проект верхнего уровня / легаси-строка — общие
   return row.created_by === opts.viewerId;
 }
 

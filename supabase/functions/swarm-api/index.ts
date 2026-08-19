@@ -855,6 +855,7 @@ Deno.serve(async (req: Request) => {
         emoji: (body.emoji as string | null) ?? null,
         parent_id: (body.parent_id as string | null) ?? null,
         sprint_id: sprintId,
+        is_private: typeof body.is_private === "boolean" ? body.is_private : false,
       };
       try {
         return json(await createProject(input, groupId, telegram_id ?? null), 201, origin);
@@ -876,6 +877,7 @@ Deno.serve(async (req: Request) => {
       if ("color" in body) fields.color = body.color as string | null;
       if ("emoji" in body) fields.emoji = body.emoji as string | null;
       if ("parent_id" in body) fields.parent_id = (body.parent_id as string | null) ?? null;
+      if (typeof body.is_private === "boolean") fields.is_private = body.is_private;
       if ("sprint_id" in body) {
         const sid = (body.sprint_id as string | null) ?? null;
         if (sid && !(await sprintInWorkspace(sid, groupId))) {

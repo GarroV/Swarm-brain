@@ -193,6 +193,15 @@ export function SprintBoard() {
     try { await updateProject(id, { name: n }); } catch { load(); }
   }
 
+  // Тумблер приватности проекта ВЕРХНЕГО уровня — скрывает его из общего пула воркспейса (виден
+  // только своему created_by + админу, тот же критерий, что у подпроектов). Владелец 2026-08-19:
+  // «нужно добавить пиктограмму приватности... чтобы этот конкретный проект скрыть из общего пула».
+  async function toggleProjectPrivacy(id: string, current: boolean) {
+    const next = !current;
+    setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, is_private: next } : p)));
+    try { await updateProject(id, { is_private: next }); } catch { load(); }
+  }
+
   async function removeSection(id: string, name: string) {
     if (!(await confirm({ title: `Удалить проект «${name}»?`, description: "Задачи проекта не удалятся — просто останутся без проекта.", confirmText: "Удалить проект" }))) return;
     // Дети группы промоутятся в верхний уровень (совпадает с ON DELETE SET NULL на FK в БД);
@@ -445,6 +454,11 @@ export function SprintBoard() {
                 <div className="flex items-center gap-2">
                   <RoyIcon name="board" size={15} strokeWidth={1.9} />
                   <span className="flex-1 truncate text-sm font-bold text-ink">{sec.name}</span>
+                  {sec.is_private && (
+                    <span className="shrink-0 text-ink-mute" title={dt("Скрыт из общего пула", "Hidden from the team")}>
+                      <RoyIcon name="lock" size={12} strokeWidth={1.9} />
+                    </span>
+                  )}
                   <RoyIcon name="cright" size={12} className="text-ink-soft" />
                 </div>
                 <div className="mt-2 flex items-center gap-2 text-xs text-ink-soft">
@@ -480,15 +494,23 @@ export function SprintBoard() {
                 ) : (
                   <span className="text-sm font-bold text-ink">{sec.name}</span>
                 )}
+                {sec.is_private && (
+                  <span className="shrink-0 text-ink-mute" title={dt("Скрыт из общего пула", "Hidden from the team")}>
+                    <RoyIcon name="lock" size={12} strokeWidth={1.9} />
+                  </span>
+                )}
                 <span className="text-xs text-ink-soft">{total}</span>
+                {/* Добавить задачу (в каждой колонке уже есть свой «+», см. renderStatusColumn) и
+                    добавить подпроект (дублировано дальше в теле, см. renderAddSubproject) убраны
+                    отсюда — обе точки входа и так интуитивно доступны внутри поля (владелец
+                    2026-08-19). Вместо них — тумблер приватности. */}
                 <div className="ml-auto flex items-center gap-0.5" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
-                  {/* Прямая задача проекта/группы (project_id = sec.id) в бэклог — иначе у группы
-                      с подпроектами и без прямых задач не было точки создания первой (issue #12). */}
-                  <button onClick={() => { if (!open) toggleExpanded(sec.id); setQuickAdd({ section: sec.id, status: "backlog", title: "" }); }} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Добавить задачу в проект", "Add task to project")}>
-                    <RoyIcon name="task" size={14} strokeWidth={1.9} />
-                  </button>
-                  <button onClick={() => { if (!open) toggleExpanded(sec.id); setAddingSubOf(sec.id); }} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Добавить подпроект", "Add subproject")}>
-                    <RoyIcon name="plus" size={14} strokeWidth={2} />
+                  <button
+                    onClick={() => toggleProjectPrivacy(sec.id, sec.is_private)}
+                    className={`rounded-full p-1 transition-colors ${sec.is_private ? "bg-accent-soft text-accent-ink hover:bg-accent-soft" : "text-ink-soft hover:bg-surface-2"}`}
+                    title={sec.is_private ? dt("Скрыт из общего пула — показать всем", "Hidden from the team — make visible to everyone") : dt("Виден всей команде — скрыть из общего пула", "Visible to the team — hide from the general pool")}
+                  >
+                    <RoyIcon name="lock" size={13} strokeWidth={sec.is_private ? 2.1 : 1.8} />
                   </button>
                   <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Переименовать проект", "Rename project")}>
                     <RoyIcon name="pencil" size={13} />
