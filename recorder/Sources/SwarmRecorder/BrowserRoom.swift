@@ -9,7 +9,7 @@ extension MeetingIdentity {
         "com.microsoft.edgemac": "Microsoft Edge",
         "com.brave.Browser": "Brave Browser",
         "company.thebrowser.Browser": "Arc",
-        "ru.yandex.desktop.yandex-browser": "Yandex",
+        "ru.yandex.desktop.yandex-browser": "Yandex"
     ]
     private static let safariBundle = "com.apple.Safari"
 

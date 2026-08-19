@@ -1339,7 +1339,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 attendees: info.attendees.isEmpty ? nil : info.attendees,
                 agentVersion: "0.1.0",
                 micStartOffset: p.res.micStartOffset,
-                recordedSeconds: recordedSeconds,
+                recordedSeconds: recordedSeconds
             )
         } else {
             req = ClaimRequest(
@@ -1350,7 +1350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 endedAt: iso.string(from: p.ended),
                 agentVersion: "0.1.0",
                 micStartOffset: p.res.micStartOffset,
-                recordedSeconds: recordedSeconds,
+                recordedSeconds: recordedSeconds
             )
         }
         // Переехали ли файлы в очередь (pending/ или карантин failed/). Пока false — durable-папку

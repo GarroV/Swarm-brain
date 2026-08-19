@@ -41,11 +41,11 @@ enum Permissions {
     static func openScreenRecordingSettings() {
         let audio = [
             "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AudioCapture",
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture"
         ]
         let screen = [
             "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture",
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
         ]
         // На 14.4+ нужен AudioCapture, на старых ОС — ScreenCapture; второй список как фолбэк.
         let anchors = usesSystemAudioCapture ? audio + screen : screen + audio
@@ -58,7 +58,7 @@ enum Permissions {
     static func openMicrophoneSettings() {
         let anchors = [
             "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone",
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
         ]
         for s in anchors {
             if let url = URL(string: s), NSWorkspace.shared.open(url) { return }

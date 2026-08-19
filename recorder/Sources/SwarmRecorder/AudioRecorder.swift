@@ -152,7 +152,7 @@ final class AudioRecorder: NSObject {
             AVNumberOfChannelsKey: 1,
             // 32 kbps вместо 24: на 16 кГц моно AAC@24k заметно «булькает» на тихой речи,
             // 32k даёт ощутимо чище разборчивость для транскрибации при том же 16 кГц/моно.
-            AVEncoderBitRateKey: 32_000,
+            AVEncoderBitRateKey: 32_000
         ]
         do {
             let rec = try AVAudioRecorder(url: url, settings: settings)

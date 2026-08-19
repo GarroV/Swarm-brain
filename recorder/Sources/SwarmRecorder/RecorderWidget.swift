@@ -198,7 +198,7 @@ final class RecorderWidget {
             card.addSubview(row)
             NSLayoutConstraint.activate([
                 row.centerXAnchor.constraint(equalTo: card.centerXAnchor),
-                row.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+                row.centerYAnchor.constraint(equalTo: card.centerYAnchor)
             ])
         }
         p.contentView = card

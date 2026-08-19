@@ -211,7 +211,7 @@ final class ScreenCaptureKitRecorder: NSObject, SystemAudioCapturer, SCStreamOut
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 16_000,
             AVNumberOfChannelsKey: 1,
-            AVEncoderBitRateKey: 24_000,
+            AVEncoderBitRateKey: 24_000
         ]
         let input = AVAssetWriterInput(mediaType: .audio, outputSettings: settings)
         input.expectsMediaDataInRealTime = true
@@ -537,8 +537,8 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
             kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: outUID]],
             kAudioAggregateDeviceTapListKey: [[
                 kAudioSubTapDriftCompensationKey: true,
-                kAudioSubTapUIDKey: desc.uuid.uuidString,
-            ]],
+                kAudioSubTapUIDKey: desc.uuid.uuidString
+            ]]
         ]
         var a = AudioObjectID(kAudioObjectUnknown)
         guard AudioHardwareCreateAggregateDevice(dict as CFDictionary, &a) == noErr, a.isValid else {
@@ -552,7 +552,7 @@ final class ProcessTapSystemRecorder: SystemAudioCapturer {
             AVSampleRateKey: inFmt.sampleRate,
             AVNumberOfChannelsKey: inFmt.channelCount,
             // AAC @ 48кГц требует ≥32 kbps/канал (см. историю): стерео@<32k роняло AVAudioFile.
-            AVEncoderBitRateKey: max(32_000, Int(inFmt.channelCount) * 32_000),
+            AVEncoderBitRateKey: max(32_000, Int(inFmt.channelCount) * 32_000)
         ]
         file = try AVAudioFile(forWriting: outURL, settings: fileSettings,
                                commonFormat: .pcmFormatFloat32, interleaved: inFmt.isInterleaved)

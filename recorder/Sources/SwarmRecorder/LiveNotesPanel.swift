@@ -197,7 +197,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
             stack.topAnchor.constraint(equalTo: doc.topAnchor),
             stack.leadingAnchor.constraint(equalTo: doc.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: doc.trailingAnchor),
-            stack.bottomAnchor.constraint(equalTo: doc.bottomAnchor),
+            stack.bottomAnchor.constraint(equalTo: doc.bottomAnchor)
         ])
 
         let pen = iconView("pencil", size: 15, color: Self.amber)
@@ -218,7 +218,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
             fieldRow.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 12),
             fieldRow.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -10),
             fieldRow.topAnchor.constraint(equalTo: box.topAnchor, constant: 9),
-            fieldRow.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -9),
+            fieldRow.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -9)
         ])
         fieldBox = box
 
@@ -244,7 +244,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
             outer.leadingAnchor.constraint(equalTo: vfx.leadingAnchor),
             outer.trailingAnchor.constraint(equalTo: vfx.trailingAnchor),
             outer.topAnchor.constraint(equalTo: vfx.topAnchor),
-            outer.bottomAnchor.constraint(equalTo: vfx.bottomAnchor),
+            outer.bottomAnchor.constraint(equalTo: vfx.bottomAnchor)
         ] + fw.map { $0.widthAnchor.constraint(equalTo: outer.widthAnchor, constant: -32) })
         scroll.setContentHuggingPriority(.defaultLow, for: .vertical)
 
@@ -368,7 +368,7 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
             inner.leadingAnchor.constraint(equalTo: rule.trailingAnchor, constant: 12),
             inner.trailingAnchor.constraint(equalTo: row.trailingAnchor),
             inner.topAnchor.constraint(equalTo: row.topAnchor),
-            inner.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+            inner.bottomAnchor.constraint(equalTo: row.bottomAnchor)
         ])
         stack.addArrangedSubview(row)
         row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true

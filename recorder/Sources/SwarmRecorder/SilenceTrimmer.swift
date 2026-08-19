@@ -45,7 +45,7 @@ enum SilenceTrimmer {
             AVLinearPCMBitDepthKey: 32,
             AVLinearPCMIsFloatKey: true,
             AVLinearPCMIsNonInterleaved: false,
-            AVNumberOfChannelsKey: 1,
+            AVNumberOfChannelsKey: 1
         ]
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
         output.alwaysCopiesSampleData = false

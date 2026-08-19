@@ -79,7 +79,7 @@ func runQuarantineSelfTest() {
         let payload = Data(repeating: 0x41, count: 4096)
         let segs: [(url: URL, offset: Double)] = [
             (recDir.appendingPathComponent("sys0.m4a"), 0),
-            (recDir.appendingPathComponent("sys1.m4a"), 300),
+            (recDir.appendingPathComponent("sys1.m4a"), 300)
         ]
         for s in segs { try? payload.write(to: s.url) }
         let mic = recDir.appendingPathComponent("mic.m4a")

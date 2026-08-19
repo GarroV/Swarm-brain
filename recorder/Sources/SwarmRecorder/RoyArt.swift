@@ -13,7 +13,7 @@ enum RoyArt {
             NSPoint(x: c.x - r / 2, y: c.y + h),
             NSPoint(x: c.x - r, y: c.y),
             NSPoint(x: c.x - r / 2, y: c.y - h),
-            NSPoint(x: c.x + r / 2, y: c.y - h),
+            NSPoint(x: c.x + r / 2, y: c.y - h)
         ]
         let p = NSBezierPath()
         p.move(to: pts[0])
@@ -34,7 +34,7 @@ enum RoyArt {
         let offsets = [
             NSPoint(x: 0, y: size * 0.13),
             NSPoint(x: -size * 0.11, y: -size * 0.07),
-            NSPoint(x: size * 0.11, y: -size * 0.07),
+            NSPoint(x: size * 0.11, y: -size * 0.07)
         ]
         for o in offsets {
             NSBezierPath(ovalIn: NSRect(x: c.x + o.x - dr, y: c.y + o.y - dr, width: dr * 2, height: dr * 2)).fill()
