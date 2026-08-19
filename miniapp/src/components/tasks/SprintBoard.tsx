@@ -91,7 +91,24 @@ export function SprintBoard() {
       setTasks(t); setSprints(s); setProjects(p);
     } catch { /* keep */ } finally { setLoading(false); }
   }, []);
-  useEffect(() => { load(); }, [load]);
+  // Доска раньше грузилась ТОЛЬКО один раз на маунте — долгоживущая вкладка (открыл с утра,
+  // работал часами в других тачах/окнах) молча расходилась с сервером: элемент, удалённый/
+  // перенесённый где-то ещё, продолжал жить в локальном React-state, пока не сделаешь честный
+  // F5. Симптом владельца 2026-08-19: «нажимаю удалить подпроект, он пропадает, но после
+  // рефреша всё на месте» — по логам swarm-api ни один запрос с id этого проекта вообще не
+  // долетал до сервера за 3 часа его жизни, то есть локальный вид разошёлся со стейтом сервера
+  // задолго до клика на «удалить». Тот же паттерн уже есть в useReminderTasks.ts (список задач) —
+  // переносим сюда: фоновый рефетч раз в 20с + при возврате фокуса на вкладку.
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 20_000);
+    const onVisibility = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [load]);
 
   // Автовыбор первой вкладки при заходе на доску: на ALL кнопка «+ Проект» скрыта (нужен явный
   // выбор вкладки — проект создаётся В неё), и без вкладок список выглядит как «кнопки нет».
