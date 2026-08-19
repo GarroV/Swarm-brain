@@ -300,10 +300,23 @@ export function SprintBoard() {
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); if (dragRef) { applyDrop(dragRef.id, projectId, col.status); setDrag(null); } }}
         className="w-64 shrink-0 flex flex-col rounded-xl bg-surface-2 border border-line p-2 dark:backdrop-blur-lg">
+        {/* «+» в заголовке — надёжный способ добавить задачу независимо от заполненности колонки:
+            клик по пустому полю ниже (title="Кликни по пустому полю…") требует, собственно, пустого
+            поля — забитая карточками колонка его не оставляет (владелец: «нереально тыкнуть по
+            пустому полю, значит и новую задачу не добавить»). Кнопка не заменяет клик по пустому
+            месту, а страхует его. */}
         <div className="flex items-center gap-2 px-2 py-1.5">
           <span className="size-2.5 rounded-full" style={{ background: col.bar }} />
           <span className="text-xs font-semibold text-ink">{col.label}</span>
           <span className="ml-auto text-xs text-ink-soft">{colTasks.length}</span>
+          <button
+            type="button"
+            onClick={() => { if (!adding) setQuickAdd({ section: projectId, status: col.status, title: "" }); }}
+            className="rounded-full p-0.5 text-ink-soft hover:bg-surface-2 hover:text-ink"
+            title={dt("Добавить задачу", "Add task")}
+          >
+            <RoyIcon name="plus" size={13} strokeWidth={2} />
+          </button>
         </div>
         {adding && (
           <input autoFocus value={quickAdd!.title}
