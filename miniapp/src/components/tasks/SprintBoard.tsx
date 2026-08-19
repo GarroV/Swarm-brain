@@ -379,14 +379,21 @@ export function SprintBoard() {
         )}
       </div>
 
+      {/* Компактная строка (input + кнопка + отмена), тот же паттерн, что у «+ Проект» ниже —
+          раньше была отдельная карточка на всю ширину доски без max-width, растягивавшая
+          кнопку "Создать вкладку" во весь экран (владелец: «зачем на весь экран?»). */}
       {creating && (
-        <div className="mx-4 mb-2 p-3 rounded-lg border border-line space-y-2">
-          <input autoFocus className="w-full text-sm bg-transparent border-b border-line py-1 outline-none"
-            placeholder={dt("Название вкладки", "Tab name")} value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            onKeyDown={(e) => { if (e.key === "Enter") submitSprint(); if (e.key === "Escape") setCreating(false); }} />
-          {formErr && <p className="text-xs text-destructive">{formErr}</p>}
-          <Button size="sm" className="w-full h-8 text-xs" onClick={submitSprint} disabled={saving}>{saving ? "Создание…" : dt("Создать вкладку", "Create tab")}</Button>
+        <div className="mx-4 mb-2 max-w-sm">
+          <div className="flex items-center gap-2">
+            <input autoFocus value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onKeyDown={(e) => { if (e.key === "Enter") submitSprint(); if (e.key === "Escape") setCreating(false); }}
+              placeholder={dt("Название вкладки", "Tab name")}
+              className="flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-primary/50" />
+            <Button size="sm" className="h-9 text-xs" onClick={submitSprint} disabled={saving}>{saving ? dt("Создание…", "Creating…") : dt("Создать", "Create")}</Button>
+            <button onClick={() => setCreating(false)} className="text-xs text-ink-soft px-2">{dt("Отмена", "Cancel")}</button>
+          </div>
+          {formErr && <p className="mt-1 text-xs text-destructive">{formErr}</p>}
         </div>
       )}
 
