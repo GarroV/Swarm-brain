@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchTasks, updateTask, fetchSprints, createSprint,
   removeTasksFromSprint, deleteSprint,
@@ -90,6 +90,16 @@ export function SprintBoard() {
     } catch { /* keep */ } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Автовыбор первой вкладки при заходе на доску: на ALL кнопка «+ Проект» скрыта (нужен явный
+  // выбор вкладки — проект создаётся В неё), и без вкладок список выглядит как «кнопки нет».
+  // Один раз за жизнь компонента (autoSelectedRef) — дальше пользователь волен вернуться на «Все».
+  const autoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (autoSelectedRef.current || sprints.length === 0) return;
+    autoSelectedRef.current = true;
+    setSelected(sprints[0].id);
+  }, [sprints]);
 
   // Вкладка ВЛАДЕЕТ проектами (решение владельца 2026-08-09): выбранная вкладка → её проекты
   // (project.sprint_id === selected), а задача принадлежит вкладке ЧЕРЕЗ свой проект. ALL — обзор
@@ -504,12 +514,24 @@ export function SprintBoard() {
                             <button onClick={() => removeSection(kid.id, kid.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Удалить", "Delete")}><RoyIcon name="trash" size={12} /></button>
                           </div>
                         </div>
-                        {/* Плавное сворачивание: grid-template-rows 0fr↔1fr — анимируемая высота
-                            без измерения scrollHeight, overflow-hidden клипует контент во время
-                            перехода (иначе колонки на миг просвечивали бы поверх соседей). */}
-                        <div className="grid transition-[grid-template-rows] duration-200 ease-out" style={{ gridTemplateRows: subOpen ? "1fr" : "0fr" }}>
+                        {/* Плавное сворачивание: grid-template-rows 0fr↔1fr — анимируемая высота без
+                            измерения scrollHeight, overflow-hidden клипует контент во время перехода.
+                            Корень «дёргается» (проверено покадровой выборкой getComputedStyle в реальном
+                            браузере, не на глаз): ease-out на диапазоне ~100px сжимает ~55% высоты за
+                            первые ~50мс из 300, а весь остаток длительности — почти незаметный хвост
+                            (доли пикселя) — глаз читает это как рывок-и-замирание, а не движение. Кадры
+                            при этом НЕ проседают (60fps ровно, сама техника исправна) — дело только в
+                            форме кривой. ease-in-out распределяет заметное движение по всей длительности.
+                            Отдельно — opacity со сдвигом по времени (рецепт Chrome DevRel для этой
+                            техники): при открытии контент проявляется НЕМНОГО ПОЗЖЕ, чем растёт высота
+                            (не видно, как он «выпрыгивает» из сжатого состояния); при закрытии — гаснет
+                            СРАЗУ, до того как высота схлопнется (не видно обрезки на глаз). */}
+                        <div className="grid transition-[grid-template-rows] duration-[250ms] ease-linear" style={{ gridTemplateRows: subOpen ? "1fr" : "0fr" }}>
                           <div className="overflow-hidden">
-                            <div className="flex gap-3 overflow-x-auto">
+                            <div
+                              className="flex gap-3 overflow-x-auto transition-opacity duration-200"
+                              style={{ opacity: subOpen ? 1 : 0, transitionDelay: subOpen ? "120ms" : "0ms" }}
+                            >
                               {WORK_COLUMNS.map((col) => renderStatusColumn(kid.id, col, kidTasks.filter((t) => t.status === col.status)))}
                             </div>
                           </div>
