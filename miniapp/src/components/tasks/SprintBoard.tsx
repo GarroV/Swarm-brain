@@ -10,7 +10,7 @@ import { TaskModal } from "@/components/TaskModal";
 import { Button } from "@/components/ui/button";
 import { RoyIcon } from "@/components/roy/icons";
 import { useConfirm } from "@/components/ui/confirm";
-import { useDt } from "@/components/roy/nav";
+import { useDt, useRoyNav } from "@/components/roy/nav";
 
 function fmtDay(iso: string | null): string | null {
   if (!iso) return null;
@@ -47,6 +47,8 @@ type DragInfo = { id: string } | null;
 export function SprintBoard() {
   const confirm = useConfirm();
   const dt = useDt();
+  const { me } = useRoyNav();
+  const isAdmin = me?.is_admin ?? false;
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -365,7 +367,9 @@ export function SprintBoard() {
         <button onClick={() => setCreating((v) => !v)} className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm shrink-0" title={dt("Новая вкладка", "New tab")}>
           <RoyIcon name="plus" size={14} strokeWidth={2} />
         </button>
-        {selected !== ALL && (
+        {/* Удаление вкладки — только админ (backend тоже гейтит, PATCH/DELETE /sprints admin-only
+            с 09.06.2026). Создание («+» выше) — любой участник, только это открыли 19.08.2026. */}
+        {selected !== ALL && isAdmin && (
           <button onClick={handleDeleteSprint} disabled={deletingSprint} title={dt("Удалить вкладку", "Delete tab")}
             className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 hover:text-destructive disabled:opacity-50 dark:backdrop-blur-sm shrink-0">
             <RoyIcon name="trash" size={14} />

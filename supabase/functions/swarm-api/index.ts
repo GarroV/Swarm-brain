@@ -768,7 +768,9 @@ Deno.serve(async (req: Request) => {
       return json(await listSprints(groupId), 200, origin);
     }
     if (req.method === "POST") {
-      if (!isAdmin) return apiErr(403, "Forbidden", origin);
+      // Создание вкладки — любой участник воркспейса (владелец 2026-08-19: юзер уткнулся в
+      // голый «Forbidden», фронт кнопку «+» показывает всем). Правка/удаление ниже остаются
+      // admin-only как и были с 09.06.2026 — не даём случайно/умышленно снести общую вкладку.
       let body: Record<string, unknown>;
       try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
       if (!body.name || typeof body.name !== "string") return apiErr(400, "name is required", origin);
