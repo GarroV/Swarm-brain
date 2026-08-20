@@ -25,9 +25,31 @@ say ""
 if [ -z "$SWARM_TOKEN" ]; then
   die "Нет токена. Возьми свежую команду в боте — она содержит токен (/setup)."
 fi
+# Чистим токен от пробелов и переносов: при копировании команды из мессенджера в конец легко
+# прилетает \\n или пробел, и тогда он уезжает в HTTP-заголовок — сервер отвечает «Parse error»,
+# а в Claude это выглядит как «Server disconnected». По формату (smcp_…) пробелов внутри нет,
+# поэтому чистка безопасна. Починить тут дешевле, чем объяснять человеку, где он щёлкнул мышкой.
+SWARM_TOKEN="$(printf '%s' "$SWARM_TOKEN" | tr -d '[:space:]')"
 case "$SWARM_TOKEN" in
   smcp_*) ;;
   *) die "Токен выглядит неправильно. Возьми свежую команду в боте (/setup).";;
+esac
+
+# ── 0. Токен реально принимается сервером? ──
+# Формы (smcp_*) недостаточно: при копировании команды прихватывается перенос строки или пробел,
+# и тогда установка «успешно» дописывает в конфиг битый токен, а пользователь видит в Claude
+# только «Server disconnected» без причины. Проверяем ДО записи конфига.
+# tools/call (не initialize и не tools/list — те отвечают и без авторизации).
+say "→ Проверяю токен на сервере…"
+PROBE="$(curl -fsS -X POST "$MCP_URL" \\
+  -H "Authorization: Bearer $SWARM_TOKEN" -H "Content-Type: application/json" \\
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_tasks","arguments":{}}}' 2>/dev/null || true)"
+case "$PROBE" in
+  *'"result"'*) say "✓ Токен принят сервером" ;;
+  *"Invalid token"*) die "Сервер не принял токен (устарел или скопирован не полностью). Возьми свежую команду в боте: /setup" ;;
+  *"Unauthorized"*) die "Сервер не увидел токен. Скопируй команду из бота ЦЕЛИКОМ, одной строкой (/setup)." ;;
+  "") die "Нет связи с сервером Swarm Brain ($MCP_URL). Проверь интернет/VPN и запусти снова." ;;
+  *) die "Неожиданный ответ сервера. Пришли это админу: $PROBE" ;;
 esac
 
 # ── 1. Node (берём системный; если нет — ставим в ~/.swarm-brain без sudo) ──
@@ -46,7 +68,10 @@ else
     x86_64) NARCH="darwin-x64";;
     *) die "Неизвестная архитектура: $ARCH";;
   esac
-  VER="$(curl -fsSL https://nodejs.org/dist/index.json | tr '{}' '\\n' | awk -F'"' '/"lts":"[A-Za-z]/{for(i=1;i<=NF;i++) if($i=="version"){print $(i+2); exit}}')"
+  # 2>/dev/null у curl: awk выходит по exit → SIGPIPE → curl печатает «(56) Failure writing
+  # output to destination». Версия при этом определяется верно, но пользователь видит «ошибку»
+  # посреди установки и решает, что всё сломалось.
+  VER="$(curl -fsSL https://nodejs.org/dist/index.json 2>/dev/null | tr '{}' '\\n' | awk -F'"' '/"lts":"[A-Za-z]/{for(i=1;i<=NF;i++) if($i=="version"){print $(i+2); exit}}')"
   if [ -z "$VER" ]; then die "Не удалось определить версию Node (нет интернета или блокирует прокси)."; fi
   TARBALL="node-$VER-$NARCH.tar.gz"
   TMP="$(mktemp -d)"
@@ -65,6 +90,33 @@ fi
 
 NPX_PATH="$(dirname "$NODE_BIN")/npx"
 if [ ! -e "$NPX_PATH" ]; then die "Рядом с node нет npx ($NPX_PATH)."; fi
+
+# ── 1.5. Мост к серверу: тянем mcp-remote ЗДЕСЬ, а не внутри Claude ──
+# Claude Desktop понимает в конфиге только stdio-форму, поэтому связь с нашим HTTP-эндпоинтом
+# держит прокси mcp-remote, которого качает npx. До этой правки первое скачивание происходило
+# УЖЕ ВНУТРИ Claude: если npm недоступен (корпоративная сеть/VPN/прокси), пользователь видел
+# только «Server disconnected» без причины — а установщик за минуту до этого рапортовал
+# «✅ Готово». Теперь непроходимая сеть выясняется здесь, с внятным текстом; заодно кэш прогрет
+# и первый запуск в Claude не ждёт сети.
+say "→ Готовлю мост к серверу (mcp-remote)…"
+# Проверяем с честным кодом возврата. Через npx с --version не проверить:
+# mcp-remote требует URL и на любой другой вызов падает «Invalid URL», хотя пакет скачивается.
+# Через фактический запуск прокси — тоже: это stdio-сервер, в фоне его stdin закрывается и он
+# выходит, давая ложную неудачу. Поэтому npm install во временную папку: он либо достаёт
+# пакет из registry (и наполняет общий кэш ~/.npm/_cacache, откуда npx возьмёт его в Claude
+# без сети), либо честно падает — а это и есть тот случай, который раньше всплывал в Claude
+# как «Server disconnected» без объяснений.
+NPM_PATH="$(dirname "$NODE_BIN")/npm"
+WARM_TMP="$(mktemp -d)"
+if ! "$NODE_BIN" "$NPM_PATH" install --no-save --no-audit --no-fund --prefix "$WARM_TMP" mcp-remote >"$WARM_TMP/npm.log" 2>&1; then
+  say ""
+  say "Лог попытки (последние строки):"
+  tail -5 "$WARM_TMP/npm.log" 2>/dev/null | sed 's/^/   /'
+  rm -rf "$WARM_TMP"
+  die "Не удалось получить mcp-remote из npm — почти всегда это корпоративная сеть/VPN/прокси. Проверь доступ к registry.npmjs.org и запусти снова."
+fi
+rm -rf "$WARM_TMP"
+say "✓ Мост готов"
 
 # ── 2. Папка конфига + бэкап ──
 if ! mkdir -p "$CONFIG_DIR"; then die "Не удалось создать папку конфигов Claude."; fi
