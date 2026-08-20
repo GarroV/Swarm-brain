@@ -725,13 +725,14 @@ supabase/functions/swarm-api/
    - Свежесть `auth_date` (дефолт 24ч, `INITDATA_MAX_AGE`)
    - `telegram_id` из `user` в initData
 2. **Браузер (веб, R-5 вариант B+)** — `Authorization: Bearer <JWT>` (HS256, `WEB_JWT_SECRET`)
-   - JWT выдаёт CF Pages Function `/api/auth/telegram` после проверки подписи Login Widget, кладёт в httpOnly-cookie `roj_session` (7 дней)
+   - JWT выдаёт CF Pages Function `/api/auth/telegram` после проверки подписи Login Widget, кладёт в httpOnly-cookie `roj_session` (**30 дней, скользящее окно** — см. ниже)
    - Прокси `/api/[[path]].ts` перекладывает cookie → `Bearer` при форварде в swarm-api (httpOnly недоступен JS и не уходит cross-origin)
    - Выход/смена аккаунта: `POST /api/auth/logout` гасит cookie (`Max-Age=0`) → редирект на `/login`. Кнопка в Настройках (`AccountSection`), показывается только в браузерной сессии (`!getInitData()`)
    - Кнопка Telegram на `/login` — своя (не iframe-виджет), через `Telegram.Login.auth` (bot_id) → редирект на тот же `/api/auth/telegram`. Вторичный способ; основной — Google (п.3).
 3. **Браузер — Google Sign-In (ОСНОВНОЙ, 2026-07-29)** — кнопка «Sign in with Google» на `/login`.
    - CF Pages `/api/auth/google/{start,callback}` (переиспользует OAuth-приложение календаря; `GOOGLE_CLIENT_ID/SECRET` в CF-env, нормализуются от случайного `http://`): scope `openid email profile`, `hd=dodobrands.io` + **серверная сверка домена** verified email = `dodobrands.io`. state — HMAC(next) на `WEB_JWT_SECRET`.
-   - Резолв verified email → личность: Supabase `auth-resolve` (авторизация вызова — HMAC(email) на `WEB_JWT_SECRET`, `SERVICE_ROLE` в CF не тащим) по **`allowed_users.email`** → `telegram_id` → та же `roj_session` cookie (7 дней), что и п.2.
+   - Резолв verified email → личность: Supabase `auth-resolve` (авторизация вызова — HMAC(email) на `WEB_JWT_SECRET`, `SERVICE_ROLE` в CF не тащим) по **`allowed_users.email`** → `telegram_id` → та же `roj_session` cookie (30 дней, скользящее окно), что и п.2.
+   - **Продление сессии (скользящее окно, issue #50):** срок один на все точки выдачи — `SESSION_TTL_SEC` в `miniapp/functions/_lib/jwt.ts` (**30 дней**; копия константы в `supabase/functions/_shared/jwt.ts` — обе правятся вместе). Прокси `/api/*` (`miniapp/functions/api/[[path]].ts`) при каждом запросе с валидной cookie старше `SESSION_REFRESH_AFTER_SEC` (сутки) переиздаёт её с новым `exp` → активный пользователь не разлогинивается никогда, брошенная сессия истекает через 30 дней после ПОСЛЕДНЕГО запроса. Переиздания нет, если апстрим ответил 401/403, подпись битая или срок вышел. `iat` в payload нет — момент выдачи считается как `exp - TTL`, поэтому старые 7-дневные токены переезжают на новое окно при первом же запросе, а не обрываются. До 2026-08-20 продления не было вовсе: сессия жила 7 дней от входа, и человек, работавший каждый день, всё равно вылетал раз в неделю.
    - Whitelist по email ведёт админ: `allowed_users.email` — **каноничный ключ входа** (синк из карточки профиля `PATCH /admin/users/:id` + приём `email` в `addUserToWorkspace`; `user_profiles.email` — зеркало). Нет email в whitelist → `?err=not_allowed`. **Email-only без `telegram_id` пока не поддержан** (MVP резолвит только строки с `telegram_id`; чистый email-only — отложенный рефактор, см. §BACKLOG i18n/auth).
 
 После аутентификации (любой режим):

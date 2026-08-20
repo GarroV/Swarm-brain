@@ -1,4 +1,4 @@
-import { signJWT, verifyTelegramWidget } from "../../_lib/jwt";
+import { signJWT, verifyTelegramWidget, SESSION_TTL_SEC } from "../../_lib/jwt";
 
 // Cloudflare Pages Function: GET /api/auth/telegram?id=&first_name=&hash=&auth_date=…
 // Telegram Login Widget редиректит сюда. Проверяем подпись → ставим httpOnly cookie с JWT.
@@ -17,7 +17,7 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   }
 
   const jwt = await signJWT({ telegram_id: verified.telegram_id }, env.WEB_JWT_SECRET);
-  const maxAge = 7 * 86400;
+  const maxAge = SESSION_TTL_SEC;
   // Возврат на исходный deep-link (?meeting=…). Защита от open-redirect: резолвим next
   // относительно своего origin и принимаем ТОЛЬКО same-origin путь — это отсекает //host,
   // /\host, scheme: и прочие обходы строковых проверок (браузер нормализует \ → /).

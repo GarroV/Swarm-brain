@@ -25,10 +25,35 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
   );
 }
 
+// ── Срок веб-сессии ────────────────────────────────────────────────────────────
+// Скользящее окно: прокси /api/* переиздаёт cookie, пока человек работает
+// (miniapp/functions/api/[[path]].ts), поэтому активный пользователь не вылетает никогда,
+// а брошенная сессия истекает сама через SESSION_TTL_SEC после ПОСЛЕДНЕГО запроса.
+// До 2026-08-20 было жёстко 7 дней от момента входа без всякого продления — вылетал даже
+// тот, кто заходил каждый день (issue #50).
+export const SESSION_TTL_SEC = 30 * 86400;
+
+// Переиздаём не на каждый запрос, а раз в сутки: экран дёргает /api десятки раз,
+// Set-Cookie на каждый вызов — трафик и лишние заголовки без всякой пользы.
+export const SESSION_REFRESH_AFTER_SEC = 86400;
+
+// Пора ли переиздать cookie. `iat` в payload нет (исторически), поэтому момент выдачи
+// восстанавливаем из exp и TTL. Токены, выданные со старым 7-дневным TTL, дают issuedAt
+// в прошлом → переиздаются при первом же запросе, то есть старые сессии сами переезжают
+// на новое окно, а не обрываются.
+export function shouldRefreshSession(
+  exp: number,
+  nowSec: number,
+  ttl = SESSION_TTL_SEC,
+  after = SESSION_REFRESH_AFTER_SEC,
+): boolean {
+  return nowSec - (exp - ttl) > after;
+}
+
 export async function signJWT(
   payload: { telegram_id: number },
   secret: string,
-  expSeconds = 7 * 86400,
+  expSeconds = SESSION_TTL_SEC,
 ): Promise<string> {
   const header = { alg: "HS256", typ: "JWT" };
   const body = { telegram_id: payload.telegram_id, exp: Math.floor(Date.now() / 1000) + expSeconds };
@@ -38,7 +63,7 @@ export async function signJWT(
   return `${data}.${b64urlEncode(sig)}`;
 }
 
-export async function verifyJWT(token: string, secret: string): Promise<{ telegram_id: number } | null> {
+export async function verifyJWT(token: string, secret: string): Promise<{ telegram_id: number; exp: number } | null> {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   const [h, p, s] = parts;
@@ -58,5 +83,5 @@ export async function verifyJWT(token: string, secret: string): Promise<{ telegr
   }
   if (!payload.exp || payload.exp < Date.now() / 1000) return null;
   if (typeof payload.telegram_id !== "number") return null;
-  return { telegram_id: payload.telegram_id };
+  return { telegram_id: payload.telegram_id, exp: payload.exp };
 }
