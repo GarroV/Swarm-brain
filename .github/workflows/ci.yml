@@ -11,10 +11,20 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Новый пуш в ту же ветку отменяет предыдущий прогон — устаревший коммит проверять незачем.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   edge:
     name: Edge Functions (Deno) — типы + тесты
     runs-on: ubuntu-latest
+    # Потолок на случай зависания (сеть, установка Deno, тест без своего таймаута): без него job
+    # висит до дефолтных 6 часов GitHub. В приватном репозитории такое трижды за день выбило
+    # месячную квоту аккаунта (GarroV/multa#148) — Swarm публичный и минуты бесплатны, но
+    # зависший прогон всё равно держит очередь и молча тормозит релиз. Норма здесь — 2-3 минуты.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
@@ -28,6 +38,7 @@ jobs:
   miniapp:
     name: Mini App (Next.js) — сборка + типы
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: miniapp

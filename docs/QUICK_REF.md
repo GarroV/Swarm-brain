@@ -33,9 +33,22 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 - **Build:** root dir `miniapp`, command `npm run build`, output `out`. Pages Functions из `miniapp/functions/` (прокси авторизации `/api/*`) деплоятся вместе.
 - **Цикл:** push в `main` → авто-сборка CF → прод за ~1–3 мин (проверено: последние деплои `deploy/success`).
 - **Env** (живут в дашборде CF Pages → Settings → Variables, НЕ в репо): `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_BOT_USERNAME`, `NEXT_PUBLIC_DEV_MODE`, `SWARM_API_URL`, `TELEGRAM_BOT_TOKEN`, `WEB_JWT_SECRET`.
-- Конфиг живёт **только в дашборде CF** (в репо нет `wrangler`/`.github/workflows` — и не нужно, git-интеграция сама собирает).
+- Конфиг живёт **только в дашборде CF** (в репо нет `wrangler` и нет workflow ДЛЯ ДЕПЛОЯ — git-интеграция собирает сама). `.github/workflows/` в репозитории есть, но это только проверки и сборка рекордера — см. §CI ниже.
 - **Нюанс URL:** CF Pages срезает `.html` → `/foo.html` отдаёт 308 на `/foo` (напр. `/system-map.html` → `/system-map`). Ссылки лучше без `.html`.
 - **«В проде старая версия»?** Это НЕ деплой (он работает), а залипший клиентский **service worker / PWA-кэш** → ⌘⇧R / Unregister SW / перезапуск PWA. См. `BACKLOG.md` → «Веб (miniapp): деплой РАБОТАЕТ».
+
+### CI / GitHub Actions — что робот делает и чего НЕ делает
+
+| Workflow | Когда | Что делает | Раннер / потолок |
+|---|---|---|---|
+| `ci.yml` | push в `main`, PR | `deno check` + `deno test` всех edge-функций; сборка + типы miniapp | `ubuntu-latest`, 10 / 15 мин |
+| `recorder.yml` | push/PR, ТОЛЬКО при изменениях в `recorder/**` | `swift build -c release` — ловит поломку до тега релиза | `macos-latest`, 25 мин |
+| `recorder-release.yml` | push тега `recorder-build-*` | собирает предсобранный `SwarmRecorder.app` и публикует **release-asset**, который качают установщик и апдейтер (issue #19) | `macos-14`, 30 мин |
+
+- **Ничего не деплоит.** Edge-функции — руками (`supabase functions deploy`), веб — Cloudflare Pages сам по push. Единственный workflow, который влияет на пользователей, — `recorder-release.yml`: без него `.app` придётся собирать локально и заливать в релиз вручную.
+- **`timeout-minutes` обязателен на каждом job** (добавлено 2026-08-20). Без него зависший job висит до дефолтных **6 часов** GitHub: в приватном `GarroV/multa` так трижды за день сгорела месячная квота Actions аккаунта (2000 мин) и Actions встали во всех приватных репозиториях ([multa#148](https://github.com/GarroV/multa/issues/148)). Swarm публичный, минуты бесплатны — но зависший прогон держит очередь и молча тормозит релиз, а с таймаутом он честно падает и присылает уведомление.
+- **`concurrency: cancel-in-progress`** в `ci.yml`/`recorder.yml` — новый пуш отменяет прогон устаревшего коммита. В `recorder-release.yml` его НЕТ намеренно: прогоны идут по тегам, каждый публикует свой ассет.
+- **Минуты Actions тратят только приватные репозитории.** Публичные (Swarm) — бесплатно на стандартных раннерах, включая macOS.
 
 **Ветка:** `main` (дефолтная) — разработка здесь.
 
