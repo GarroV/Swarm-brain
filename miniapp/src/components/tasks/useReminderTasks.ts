@@ -38,11 +38,17 @@ export function useReminderTasks() {
   const [activeList, setActiveList] = useState<SmartListId>(() => taskView?.list ?? readSavedView()?.activeList ?? "today");
   const [lens, setLens] = useState<Lens>(() => taskView?.lens ?? readSavedView()?.lens ?? "mine");
   // «По рынкам» и «Все сотрудники» — независимые тумблеры (не значения lens), см. smartLists.ts.
-  // «Все сотрудники» переопределяет охват на «буквально все» независимо от lens (владелец
-  // 2026-08-19: «если включен тумблер всё сотрудники — подтягиваются задачи всех сотрудников»).
+  // «Все сотрудники» (только админ) переопределяет охват на линзу «staff» = буквально все, включая
+  // чужие личные, независимо от lens (владелец 2026-08-19: «если включен тумблер всё сотрудники —
+  // подтягиваются задачи всех сотрудников»).
   const [byMarket, setByMarket] = useState<boolean>(() => readSavedView()?.byMarket ?? false);
-  const [allStaff, setAllStaff] = useState<boolean>(() => readSavedView()?.allStaff ?? false);
-  const effLens: Lens = allStaff ? "all" : lens;
+  const [allStaffRaw, setAllStaff] = useState<boolean>(() => readSavedView()?.allStaff ?? false);
+  // Гард «Все сотрудники» — ЗДЕСЬ, а не только в UI: спрятать чип недостаточно, состояние живёт в
+  // localStorage (`roy_tasks_view.allStaff`) и переживает потерю админства/правку хранилища вручную,
+  // а включённый тумблер даёт охват «staff» = чужие личные задачи. Пока личность неизвестна
+  // (`me == null`) считаем НЕ админом — fail-closed.
+  const allStaff = allStaffRaw && !!me?.is_admin;
+  const effLens: Lens = allStaff ? "staff" : lens;
   const [query, setQuery] = useState("");
   const [labels, setLabels] = useState<TaskLabel[]>([]);
   const [activeLabelId, setActiveLabelId] = useState<string | null>(() => (taskView ? null : readSavedView()?.activeLabelId ?? null));
@@ -51,10 +57,13 @@ export function useReminderTasks() {
   useEffect(() => {
     try {
       if (typeof window !== "undefined") {
-        window.localStorage.setItem("roy_tasks_view", JSON.stringify({ activeList, activeLabelId, lens, byMarket, allStaff }));
+        // allStaff сохраняем ЭФФЕКТИВНЫЙ (у не-админа протухший true вычищается из хранилища),
+        // но пока `me` не загрузился — оставляем как было, иначе первый рендер стёр бы выбор админа.
+        const staffToSave = me == null ? allStaffRaw : allStaff;
+        window.localStorage.setItem("roy_tasks_view", JSON.stringify({ activeList, activeLabelId, lens, byMarket, allStaff: staffToSave }));
       }
     } catch { /* storage недоступен — игнор */ }
-  }, [activeList, activeLabelId, lens, byMarket, allStaff]);
+  }, [activeList, activeLabelId, lens, byMarket, allStaff, allStaffRaw, me]);
 
   // Оптимистично добавленные задачи (по реальному id из ответа POST/PATCH). Держим их поверх
   // серверной выборки, пока сервер не вернёт их в списке — иначе фоновый поллинг «моргает»
@@ -112,7 +121,7 @@ export function useReminderTasks() {
   // группы) инвалидируются на каждый ввод/ховер. Меняется вместе с задачами (поллинг раз в 10с).
   const now = useMemo(() => new Date(), [tasks]);
   const list = tasks ?? [];
-  // effLens — «Все сотрудники» расширяет охват до буквально всех независимо от Мои/Команда/Все
+  // effLens — «Все сотрудники» (админ) расширяет охват до линзы «staff» независимо от Мои/Команда/Все
   // (см. объявление effLens выше). Счётчики рельса тоже считаем по нему — иначе цифры в рельсе
   // (Сегодня/Ближайшие/…) не совпадали бы с тем, что реально показано при включённом тумблере.
   const counts = useMemo(() => countLists(list, effLens, me, now), [list, effLens, me, now]);
