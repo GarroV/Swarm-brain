@@ -1,5 +1,5 @@
 import { verifyState, hmacSign } from "../../../_lib/oauth-state";
-import { signJWT } from "../../../_lib/jwt";
+import { signJWT, SESSION_TTL_SEC } from "../../../_lib/jwt";
 
 // CF Pages Function: GET /api/auth/google/callback — Google вернул code.
 // Обмен кода → userinfo → сверка verified email + домена → резолв личности через Supabase
@@ -69,7 +69,7 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
 
   // 4) сессия
   const jwt = await signJWT({ telegram_id: r.telegram_id }, env.WEB_JWT_SECRET);
-  const maxAge = 7 * 86400;
+  const maxAge = SESSION_TTL_SEC;
   return new Response(null, {
     status: 302,
     headers: {
