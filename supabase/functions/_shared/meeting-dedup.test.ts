@@ -184,15 +184,42 @@ Deno.test("identity_key только у входящей, кандидат бе�
   assertEquals(dup?.id, "granola"); // гейт пропущен → эвристика: время близко + overlap=2 → дубль
 });
 
-Deno.test("приватность: чужая личная запись помечена флагами для фильтра вызывающим", async () => {
-  const rows = [{
-    id: "priv", content: "Дата: 19.06.2026, 09:00\nУчастники: Анна, Борис", source: "granola",
-    is_private: true, owner_id: 999, metadata: { title: "Личная" },
-  }];
-  const dup = await findDuplicateMeeting(mockSupabase(rows), {
-    groupId: "cee", entryDate: "2026-06-19", startedAt: "2026-06-19T09:00:00Z",
-    attendees: [{ name: "Анна" }, { name: "Борис" }],
-  });
+// ── Приватность: фильтр ВНУТРИ, а не «на совести вызывающего» (issue #45) ──────
+// Раньше функция возвращала чужую личную встречу с флагами isPrivate/ownerId и полагалась на то,
+// что каждый вызывающий отфильтрует сам. Из четырёх мест фильтровало одно: заголовок чужой личной
+// встречи уходил в Telegram, id и title отдавались наружу, а входящая встреча из Read.ai молча
+// выбрасывалась как «дубль» того, чего вызывающий не имеет права видеть.
+
+const PRIVATE_ROW = [{
+  id: "priv", content: "Дата: 19.06.2026, 09:00\nУчастники: Анна, Борис", source: "granola",
+  is_private: true, owner_id: 999, metadata: { title: "Личная" },
+}];
+const SAME_MEETING = {
+  groupId: "cee", entryDate: "2026-06-19", startedAt: "2026-06-19T09:00:00Z",
+  attendees: [{ name: "Анна" }, { name: "Борис" }],
+};
+
+Deno.test("чужая личная встреча НЕ возвращается как дубль (утечка + потеря данных)", async () => {
+  const dup = await findDuplicateMeeting(mockSupabase(PRIVATE_ROW), { ...SAME_MEETING, viewerId: 111 });
+  assertEquals(dup, null);
+});
+
+Deno.test("своя личная встреча дублем считается (владелец её видит)", async () => {
+  const dup = await findDuplicateMeeting(mockSupabase(PRIVATE_ROW), { ...SAME_MEETING, viewerId: 999 });
+  assertEquals(dup?.id, "priv");
   assertEquals(dup?.isPrivate, true);
-  assertEquals(dup?.ownerId, 999);
+});
+
+Deno.test("без viewerId (системный вызов) приватные кандидаты отбрасываются — fail-closed", async () => {
+  const dup = await findDuplicateMeeting(mockSupabase(PRIVATE_ROW), SAME_MEETING);
+  assertEquals(dup, null);
+});
+
+Deno.test("командная встреча остаётся дублем для любого — фильтр не сломал дедуп", async () => {
+  const rows = [{
+    id: "team", content: "Дата: 19.06.2026, 09:00\nУчастники: Анна, Борис", source: "granola",
+    is_private: false, owner_id: null, metadata: { title: "Общая" },
+  }];
+  assertEquals((await findDuplicateMeeting(mockSupabase(rows), { ...SAME_MEETING, viewerId: 111 }))?.id, "team");
+  assertEquals((await findDuplicateMeeting(mockSupabase(rows), SAME_MEETING))?.id, "team");
 });

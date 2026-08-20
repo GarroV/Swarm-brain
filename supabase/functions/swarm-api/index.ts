@@ -38,6 +38,7 @@ import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
+import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
 import { handleAdminRoutes } from "./admin.ts";
 import { corsHeaders, json, apiErr } from "./http.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
@@ -224,23 +225,9 @@ function entryTagKey(entryType: string, metadata: Record<string, unknown>): stri
 
 // ── Task privacy / validation helpers (Рой) ────────────────────────────────────
 
-// Приватную задачу видит только владелец или админ; командную — любой в воркспейсе.
-function canViewTask(
-  task: { is_private: boolean; owner_id: number | null },
-  viewerId: number,
-  isAdmin: boolean,
-): boolean {
-  return !task.is_private || isAdmin || task.owner_id === viewerId;
-}
-
-// Мутировать приватную задачу может только владелец или админ.
-function canMutateTask(
-  task: { is_private: boolean; owner_id: number | null },
-  viewerId: number,
-  isAdmin: boolean,
-): boolean {
-  return !task.is_private || isAdmin || task.owner_id === viewerId;
-}
+// canViewTask / canMutateTask переехали в общий `_shared/tasks/access.ts` (issue #45): здесь
+// лежала одна из шести рукописных копий правила, и именно расхождение копий дало дыру в
+// swarm-mcp. Импорт — вверху файла; локальные определения удалены сознательно, не восстанавливать.
 
 // start_date не должен быть позже due_date. Возвращает текст ошибки или null.
 function validateTaskDates(start?: string | null, due?: string | null): string | null {
@@ -1413,8 +1400,11 @@ Deno.serve(async (req: Request) => {
         // identity_key (календарное событие+день) — решающий сигнал: тот же ключ → дубль,
         // разный → РАЗНАЯ встреча, не склеиваем (без него 4 встречи IMF BD 23.07 слиплись в одну).
         identityKey: (meeting.identity_key as string | null) ?? null,
+        viewerId: telegram_id,
       });
-      if (dup && (!dup.isPrivate || String(dup.ownerId ?? "") === String(telegram_id))) {
+      // Фильтр приватности теперь ВНУТРИ findDuplicateMeeting (issue #45) — чужое личное сюда
+      // не доходит; прежняя ручная проверка на этой строке была единственной из четырёх.
+      if (dup) {
         await supabase.from("meetings")
           .update({ entry_id: dup.id, status: "in_base", updated_at: new Date().toISOString() })
           .eq("id", mId)
@@ -1640,7 +1630,7 @@ Deno.serve(async (req: Request) => {
     // Кросс-источниковый дедуп: встреча уже в базе (другой участник / рекордер / повторный импорт)?
     // Помечаем заметку обработанной (чтобы ушла из очереди ревью) и не создаём дубль.
     const dup = await findDuplicateMeeting(supabase, {
-      groupId, entryDate, startedAt: ts ?? null, attendees,
+      groupId, entryDate, startedAt: ts ?? null, attendees, viewerId: telegram_id,
     });
     if (dup) {
       const current: string[] = (integration as { skipped_note_ids?: string[] }).skipped_note_ids ?? [];

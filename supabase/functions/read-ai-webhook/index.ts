@@ -238,6 +238,11 @@ Deno.serve(async (req: Request) => {
       name: (p.name ?? p.display_name) as string | undefined,
       email: p.email as string | undefined,
     }));
+    // viewerId НЕ передаём сознательно: вебхук приходит от сервиса, конкретного зрителя нет.
+    // Тогда findDuplicateMeeting отбрасывает ВСЕ приватные кандидаты (fail-closed) — раньше
+    // входящая встреча молча выбрасывалась как «дубль» чужой ЛИЧНОЙ записи, то есть терялась
+    // из-за того, чего мы не имеем права видеть (issue #45). Дубль общей встречи виден и
+    // убирается руками; потерянная встреча не восстанавливается.
     const meetingDup = await findDuplicateMeeting(supabase, {
       groupId: "cee",
       entryDate: startTime ? startTime.split("T")[0] : null,

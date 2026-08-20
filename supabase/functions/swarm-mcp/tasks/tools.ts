@@ -1,6 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createTask, getTask, listTasks, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
 import { validateCommentContent } from "../../_shared/tasks/comments.ts";
+import { taskAccessError } from "../../_shared/tasks/access.ts";
+
+// Админ (владелец) — оверсайт по задачам, как в swarm-api. Совпадает с ADMIN_USER_ID в index.ts.
+const ADMIN_USER_ID = 744230399;
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 
@@ -212,9 +216,17 @@ export async function toolUpdateTask(args: {
   requesting_user_id: number;
 }): Promise<string> {
   const task = await getTask(args.id);
-  if (!task) return `Задача ${args.id} не найдена.`;
   const groupId = await resolveGroupId(args.requesting_user_id);
-  if (!groupId || task.group_id !== groupId) return `Нет доступа: задача не принадлежит твоему воркспейсу.`;
+  // Воркспейс + приватность одним гардом (issue #45): раньше проверялся только воркспейс, и
+  // вызов без `labels` правил ЧУЖУЮ личную задачу. Отказ неотличим от «не найдена».
+  const denied = taskAccessError(
+    args.id, task, args.requesting_user_id,
+    args.requesting_user_id === ADMIN_USER_ID, groupId ?? null,
+  );
+  if (denied) return denied;
+  // Сужение для компилятора: гард уже вернул «не найдена» и при task=null, и при groupId=null
+  // (тогда task.group_id !== null). Строка недостижима, но без неё TS не знает о сужении.
+  if (!task || !groupId) return `Задача ${args.id} не найдена.`;
 
   const fields: Record<string, unknown> = {};
   let matchWarning = "";
@@ -275,9 +287,14 @@ export async function toolUpdateTask(args: {
 
 export async function toolDeleteTask(args: { id: string; requesting_user_id: number }): Promise<string> {
   const task = await getTask(args.id);
-  if (!task) return `Задача ${args.id} не найдена.`;
   const groupId = await resolveGroupId(args.requesting_user_id);
-  if (!groupId || task.group_id !== groupId) return `Нет доступа: задача не принадлежит твоему воркспейсу.`;
+  // Приватность не проверялась ВОВСЕ — участник воркспейса удалял чужую личную задачу (issue #45).
+  const denied = taskAccessError(
+    args.id, task, args.requesting_user_id,
+    args.requesting_user_id === ADMIN_USER_ID, groupId ?? null,
+  );
+  if (denied) return denied;
+  if (!task) return `Задача ${args.id} не найдена.`;   // сужение: гард уже отсёк null
   try {
     await deleteTask(args.id);
     return `✅ Задача «${task.title}» удалена.`;
@@ -328,11 +345,13 @@ export async function toolGetTasks(args: {
 
 async function commentTaskGuard(taskId: string, requestingUserId: number): Promise<{ ok: true } | { ok: false; msg: string }> {
   const task = await getTask(taskId);
-  if (!task) return { ok: false, msg: `Задача ${taskId} не найдена.` };
   const groupId = await resolveGroupId(requestingUserId);
-  if (!groupId || task.group_id !== groupId) return { ok: false, msg: "Нет доступа: задача не в твоём воркспейсе." };
-  // Приватную задачу видит только владелец (в MCP админ-байпас не применяем — чистка в вебе).
-  if (task.is_private && task.owner_id !== requestingUserId) return { ok: false, msg: "Нет доступа: задача приватная." };
+  // Приватную задачу видит только владелец — в MCP админ-байпас НЕ применяем (чистка в вебе),
+  // поэтому isAdmin=false намеренно. Тексты отказов сведены к одному «не найдена» (issue #45):
+  // раньше «задача приватная» и «не в твоём воркспейсе» отличались от «не найдена», и перебором
+  // id подтверждалось само существование чужой личной задачи.
+  const denied = taskAccessError(taskId, task, requestingUserId, false, groupId ?? null);
+  if (denied) return { ok: false, msg: denied };
   return { ok: true };
 }
 

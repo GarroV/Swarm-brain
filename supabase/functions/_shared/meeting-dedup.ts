@@ -82,6 +82,16 @@ export type DedupIncoming = {
   identityKey?: string | null;
   /** Не считать дублем эту запись (например, при перепроверке самой себя). */
   excludeId?: string;
+  /**
+   * Кто спрашивает (telegram_id). Чужие ЛИЧНЫЕ встречи в кандидаты не попадают — фильтр здесь,
+   * а не на совести вызывающего (issue #45: из четырёх мест фильтровало одно, остальные светили
+   * заголовок/id чужой личной встречи и выбрасывали входящую как «дубль» невидимого).
+   *
+   * `undefined` — системный вызов без конкретного пользователя (вебхук): отбрасываются ВСЕ
+   * приватные кандидаты. Fail-closed: лучше завести дубль общей встречи, чем потерять входящую
+   * или подтвердить существование чужой личной.
+   */
+  viewerId?: number | null;
 };
 
 export type DedupMatch = {
@@ -128,6 +138,13 @@ export async function findDuplicateMeeting(
     .limit(MAX_CANDIDATES);
   if (error || !data) return null;
 
+  // Чужое личное вообще не участвует в сопоставлении — ни как совпадение, ни как повод отбросить
+  // входящую встречу. Отбор здесь, до всей логики матчинга: так его нельзя «забыть» в очередном
+  // вызывающем, чем и был вызван issue #45.
+  const visible = (data as Candidate[]).filter(
+    (c) => !c.is_private || (inc.viewerId != null && c.owner_id === inc.viewerId),
+  );
+
   const toMatch = (c: Candidate): DedupMatch => ({
     id: c.id,
     title: (c.metadata?.title as string) || "Встреча",
@@ -136,7 +153,7 @@ export async function findDuplicateMeeting(
     ownerId: c.owner_id ?? null,
   });
 
-  for (const c of data as Candidate[]) {
+  for (const c of visible) {
     if (inc.excludeId && c.id === inc.excludeId) continue;
 
     // Гейт по identity_key — сильнейший сигнал для встреч с календарным событием (рекордер).

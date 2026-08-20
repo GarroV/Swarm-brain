@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { validateCommentContent } from "../_shared/tasks/comments.ts";
+import { canViewTask } from "../_shared/tasks/access.ts";
 
 // Роуты /tasks/:id/comments — комментарии-апдейты к задаче.
 // Доступ: задача того же воркспейса (group_id) + приватную видит только владелец/админ.
@@ -9,9 +10,9 @@ import { validateCommentContent } from "../_shared/tasks/comments.ts";
 type CommentRow = { id: string; content: string; added_by_telegram_id: number | null; created_at: string };
 type TaskRow = { id: string; group_id: string | null; is_private: boolean; owner_id: number | null };
 
-function canView(task: TaskRow, viewerId: number, isAdmin: boolean): boolean {
-  return !task.is_private || isAdmin || task.owner_id === viewerId;
-}
+// Правило приватности — общий гард `_shared/tasks/access.ts` (issue #45): локальная копия
+// здесь была ещё одной из шести, а расходятся они молча.
+const canView = canViewTask;
 
 async function loadTask(supabase: SupabaseClient, taskId: string): Promise<TaskRow | null> {
   const { data } = await supabase
