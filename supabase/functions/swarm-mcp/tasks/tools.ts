@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createTask, getTask, listTasks, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
 import { validateCommentContent } from "../../_shared/tasks/comments.ts";
 import { taskAccessError } from "../../_shared/tasks/access.ts";
+import { pickProjectByName, type ProjectNameRow } from "../../_shared/tasks/project-access.ts";
 
 // Админ (владелец) — оверсайт по задачам, как в swarm-api. Совпадает с ADMIN_USER_ID в index.ts.
 const ADMIN_USER_ID = 744230399;
@@ -109,18 +110,17 @@ async function matchAssignee(name: string): Promise<{ telegram_id: number; displ
 // задачи на доску — только в общий список). Точное совпадение по имени приоритетнее частичного;
 // при неоднозначности (несколько совпадений) — не гадаем, отдаём null + предупреждение вызывающему,
 // как и matchAssignee при неопознанном исполнителе.
-async function matchProject(groupId: string, name: string): Promise<{ id: string; ambiguous: boolean } | null> {
-  const { data } = await supabase.from("projects").select("id, name").eq("group_id", groupId);
-  const rows = (data ?? []) as Array<{ id: string; name: string }>;
-  if (!rows.length) return null;
-  const lower = name.trim().toLowerCase();
-  const exact = rows.filter((p) => p.name.toLowerCase() === lower);
-  if (exact.length === 1) return { id: exact[0].id, ambiguous: false };
-  if (exact.length > 1) return { id: exact[0].id, ambiguous: true };
-  const partial = rows.filter((p) => p.name.toLowerCase().includes(lower));
-  if (partial.length === 1) return { id: partial[0].id, ambiguous: false };
-  if (partial.length > 1) return { id: partial[0].id, ambiguous: true };
-  return null;
+async function matchProject(
+  groupId: string,
+  name: string,
+  viewerId: number | undefined,
+): Promise<{ id: string; ambiguous: boolean } | null> {
+  const { data } = await supabase.from("projects")
+    .select("id, name, parent_id, created_by, is_private").eq("group_id", groupId);
+  // Админский оверсайт — по тому же ADMIN_USER_ID, что и у задач в этом файле; флаг
+  // allowed_users.is_admin здесь намеренно не читаем: fail-closed, чужое приватное не
+  // резолвится, максимум придётся указать проект руками на доске.
+  return pickProjectByName((data ?? []) as ProjectNameRow[], name, viewerId, viewerId === ADMIN_USER_ID);
 }
 
 // ── Tool implementations (MCP prослойки — резолв + shared engine + форматирование) ──
@@ -159,7 +159,7 @@ export async function toolAddTask(args: {
   // не попадёт — доска показывает только задачи с project_id.
   let project_id: string | null = null;
   if (args.project_name && groupId) {
-    const match = await matchProject(groupId, args.project_name);
+    const match = await matchProject(groupId, args.project_name, args.requesting_user_id);
     if (match) {
       project_id = match.id;
       if (match.ambiguous) matchWarning += ` ⚠️ несколько проектов с похожим именем «${args.project_name}» — взят первый попавшийся, проверь на доске`;
@@ -236,7 +236,7 @@ export async function toolUpdateTask(args: {
     if (!args.project_name) {
       fields.project_id = null;
     } else {
-      const match = await matchProject(groupId, args.project_name);
+      const match = await matchProject(groupId, args.project_name, args.requesting_user_id);
       if (match) {
         fields.project_id = match.id;
         if (match.ambiguous) matchWarning += ` ⚠️ несколько проектов с похожим именем «${args.project_name}» — взят первый попавшийся, проверь на доске`;
@@ -318,7 +318,7 @@ export async function toolGetTasks(args: {
   const labelIds = args.label ? await resolveLabelIds(args.requesting_user_id, [args.label], false) : [];
   // Проект/подпроект доски (issue #28). Не найден — не роняем запрос, просто игнорируем фильтр
   // (get_tasks и так best-effort по остальным фильтрам).
-  const projectMatch = args.project ? await matchProject(groupId, args.project) : null;
+  const projectMatch = args.project ? await matchProject(groupId, args.project, args.requesting_user_id) : null;
 
   const tasks = await listTasks({
     status: args.status,
