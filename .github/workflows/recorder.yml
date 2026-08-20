@@ -12,10 +12,17 @@ on:
     paths: ['recorder/**']
   workflow_dispatch:
 
+concurrency:
+  group: ci-recorder-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: SwarmRecorder — сборка (Swift)
     runs-on: macos-latest
+    # macOS-раннер вне бесплатного лимита стоит ×10, поэтому потолок обязателен: зависшая сборка
+    # без него крутится 6 часов. Норма — 5-8 минут (см. GarroV/multa#148, чем это кончается).
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: recorder

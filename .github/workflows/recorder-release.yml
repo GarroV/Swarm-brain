@@ -20,7 +20,10 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14   # SDK macOS 14 → бинарь с minos 13.0 запускается на 13/14/15+
+    runs-on: macos-14
+    # Потолок на зависание. concurrency тут НЕ ставим: прогоны идут по тегу recorder-build-N,
+    # каждый публикует свой ассет — отменять предыдущий нельзя, релиз останется без файла.
+    timeout-minutes: 30   # SDK macOS 14 → бинарь с minos 13.0 запускается на 13/14/15+
     steps:
       - uses: actions/checkout@v4
 
