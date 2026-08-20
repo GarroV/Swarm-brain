@@ -5,6 +5,7 @@
  * входные массивы не мутируются — при необходимости делаем копию.
  */
 import type { Task, Entry } from "@/types";
+import { matchesLens, type Viewer } from "@/lib/smartLists";
 
 // ── Вспомогательные ──────────────────────────────────────────────────────────
 
@@ -18,23 +19,30 @@ const norm = (s: string): string => (s === "progress" ? "in_progress" : s);
 // ── Экспортируемые функции ────────────────────────────────────────────────────
 
 /**
- * Разделяет задачи на «мои» и «командные» по числовому telegram_id.
+ * Отбирает задачи для личных блоков главного экрана — по ТЕМ ЖЕ линзам, что доска задач
+ * (`matchesLens` в `lib/smartLists.ts`), без второй копии правила:
+ *  - `mine` — назначенные на меня (мой telegram_id в `assignee_telegram_ids`);
+ *  - `team` — ОБЩИЕ задачи команды: не приватные И без конкретного исполнителя.
  *
- * Владелец — тот, чей telegram_id присутствует в `assignee_telegram_ids`.
+ * Это НЕ раздел пополам: задача, назначенная на коллегу, не попадает ни в один блок — она
+ * личная для него, и на моём экране её быть не должно (жалоба владельца 2026-08-20: в блоке
+ * «Задачи команды» висели задачи Anna Leonova). Раньше здесь жило своё правило «team = всё, что
+ * назначено не мне», разошедшееся с доской после смены формулировки «команда = общая» 2026-08-19.
+ *
  * Не мутирует входной массив.
  *
  * @param tasks  Список задач (любой статус)
- * @param meId   telegram_id текущего пользователя (Me.telegram_id, number)
+ * @param me     Смотрящий (нужен только telegram_id); `null` → `mine` пуст, `team` как обычно
  */
-export function splitByOwner(
+export function splitByLens(
   tasks: Task[],
-  meId: number,
+  me: Viewer | null,
 ): { mine: Task[]; team: Task[] } {
   const mine: Task[] = [];
   const team: Task[] = [];
   for (const t of tasks) {
-    const owned = (t.assignee_telegram_ids ?? []).includes(meId);
-    (owned ? mine : team).push(t);
+    if (matchesLens(t, "mine", me)) mine.push(t);
+    if (matchesLens(t, "team", me)) team.push(t);
   }
   return { mine, team };
 }
@@ -49,7 +57,7 @@ export function splitByOwner(
  *
  * Не мутирует входной массив.
  *
- * @param mine      Только «мои» задачи (результат splitByOwner().mine)
+ * @param mine      Только «мои» задачи (результат splitByLens().mine)
  * @param todayISO  Сегодняшняя дата в ISO-формате YYYY-MM-DD (полночь)
  */
 export function groupMine(

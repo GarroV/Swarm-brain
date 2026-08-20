@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRoyNav } from "../nav";
 import { fetchTasks, fetchMeetings, fetchEntries, fetchAgentMeetings } from "@/lib/api";
-import { splitByOwner, groupMine, recentEntries } from "./myTasks";
+import { splitByLens, groupMine, recentEntries } from "./myTasks";
 import type { Task, Entry } from "@/types";
 
 // Единый источник данных desktop-главного экрана «Рой». Грузит tasks / meetings /
@@ -14,7 +14,7 @@ export type DashboardData = {
   loading: boolean;
   /** «мои» задачи (assignee = me) */
   mine: Task[];
-  /** задачи команды (assignee ≠ me, либо все — если me нет) */
+  /** ОБЩИЕ задачи команды: не приватные и без конкретного исполнителя (линза «team») */
   team: Task[];
   /** мои задачи с дедлайном сегодня/просрочено */
   today: Task[];
@@ -76,10 +76,10 @@ export function useDashboardData(): DashboardData {
   return useMemo<DashboardData>(() => {
     const loading = tasks == null || meetings == null || entries == null || reviewCount == null || pending == null;
 
-    // meId нет → все задачи в «команду», личные секции пусты (graceful).
-    const { mine, team } = meId == null
-      ? { mine: [] as Task[], team: tasks ?? [] }
-      : splitByOwner(tasks ?? [], meId);
+    // Линза «team» от личности не зависит (общая задача общая для всех), поэтому me = null
+    // просто оставляет личные секции пустыми — без прежнего фолбэка «всё в команду», который
+    // при неопознанном пользователе показывал ему ЛИЧНЫЕ задачи коллег.
+    const { mine, team } = splitByLens(tasks ?? [], meId == null ? null : { telegram_id: meId });
 
     const { today, week, noDate } = groupMine(mine, localTodayISO());
 
