@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Project, ProjectInput } from "./types.ts";
 import { validateParent, type ProjectRef } from "./project-nesting.ts";
+import { canViewProject, type ProjectAccessRow } from "./project-access.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -36,12 +37,7 @@ export async function listProjects(
   // «скрыть этот конкретный проект из общего пула»). Приватная строка видна только своему
   // created_by (+ админу). created_by=null (легаси-строка/системное создание без юзера) НЕ прячем
   // ни от кого — молча терять доступ к «ничейной» строке хуже, чем показать её лишний раз.
-  if (!opts.isAdmin) {
-    list = list.filter((p) => {
-      const priv = p.parent_id !== null || p.is_private;
-      return !priv || p.created_by === null || p.created_by === opts.viewerId;
-    });
-  }
+  list = list.filter((p) => canViewProject(p, opts.viewerId, opts.isAdmin));
   if (list.length === 0) return [];
 
   // Считаем задачи по проектам одним запросом (без N+1), с той же visibility-фильтрацией,
@@ -133,10 +129,8 @@ async function canMutateProject(id: string, groupId: string, opts: { viewerId?: 
   if (opts.isAdmin) return true;
   const { data } = await supabase.from("projects").select("parent_id, created_by, is_private").eq("id", id).eq("group_id", groupId).maybeSingle();
   if (!data) return false;
-  const row = data as { parent_id: string | null; created_by: number | null; is_private: boolean };
-  const priv = row.parent_id !== null || row.is_private;
-  if (!priv || row.created_by === null) return true;   // публичный проект верхнего уровня / легаси-строка — общие
-  return row.created_by === opts.viewerId;
+  // Критерий тот же, что в listProjects — один предикат на просмотр и на мутацию (project-access.ts).
+  return canViewProject(data as ProjectAccessRow, opts.viewerId, opts.isAdmin);
 }
 
 // Удаляет проект своего воркспейса. Задачи освобождаются (FK ON DELETE SET NULL для project_id),
