@@ -10,6 +10,7 @@ import type { AdminWorkspace, AdminUser } from "@/types";
 import { countryCode, COUNTRY_NAMES } from "@/lib/countries";
 import { Segmented } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
+import { useDt } from "@/components/roy/nav";
 import { useConfirm } from "@/components/ui/confirm";
 
 const fieldCls =
@@ -85,16 +86,25 @@ function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => void })
   );
 }
 
+// Чем адресуется строка в админских маршрутах: реальный юзер — telegram_id, ОЖИДАЮЩЕЕ
+// приглашение (telegram_id=null) — username, а email-only приглашение — сам email.
+// Бэкенд различает три формы сам (_shared/users/user-ref.ts).
+function userRef(u: AdminUser): string {
+  return u.telegram_id != null ? String(u.telegram_id) : (u.username ?? u.email ?? "");
+}
+
 // ── Пользователи воркспейса ───────────────────────────────────────────────────
 function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: AdminWorkspace[] }) {
   const confirm = useConfirm();
+  const dt = useDt();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [addInput, setAddInput] = useState("");
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // инлайн-редактор профиля (всё кроме telegram_id и Telegram-@username)
-  const [editId, setEditId] = useState<number | null>(null);
+  // инлайн-редактор профиля (всё кроме telegram_id и Telegram-@username).
+  // Ключ — userRef(u), а не telegram_id: у ОЖИДАЮЩЕГО приглашения его ещё нет.
+  const [editKey, setEditKey] = useState<string | null>(null);
   const [editFirst, setEditFirst] = useState("");
   const [editLast, setEditLast] = useState("");
   const [editRole, setEditRole] = useState("");
@@ -130,7 +140,7 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
   // приглашение (без username) — по email (бэкенд сам различает по формату).
   const handleRemove = async (u: AdminUser) => {
     if (!(await confirm({ title: "Удалить пользователя из воркспейса?", description: "Пользователь потеряет доступ к этому воркспейсу. Его можно будет добавить снова.", confirmText: "Удалить" }))) return;
-    await removeUserFromWorkspace(wsId, u.pending ? (u.username ?? u.email ?? "") : u.telegram_id!);
+    await removeUserFromWorkspace(wsId, userRef(u));
     load();
   };
 
@@ -141,7 +151,7 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
   };
 
   const startEdit = (u: AdminUser) => {
-    setEditId(u.telegram_id);
+    setEditKey(userRef(u));
     setEditFirst(u.first_name ?? "");
     setEditLast(u.last_name ?? "");
     setEditRole(u.role ?? "");
@@ -151,20 +161,29 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
     setEditMarkets(u.markets ?? []);
   };
   const toggleMarket = (code: string) => setEditMarkets((p) => p.includes(code) ? p.filter((c) => c !== code) : [...p, code]);
-  const saveEdit = async () => {
-    if (editId == null) return;
-    setSavingEdit(true);
+  // У ожидающего приглашения профиля ещё нет (user_profiles ссылается на telegram_id) — ему
+  // отправляем ТОЛЬКО email, иначе бэкенд честно ответит 400.
+  const saveEdit = async (u: AdminUser) => {
+    if (editKey == null) return;
+    setSavingEdit(true); setErr(null);
     try {
-      await patchAdminUser(editId, {
-        first_name: editFirst.trim() || null,
-        last_name: editLast.trim() || null,
-        role: editRole.trim() || null,
-        email: editEmail.trim() || null,
-        phone: editPhone.trim() || null,
-        notes: editNotes.trim() || null,
-        markets: editMarkets,
-      });
-      setEditId(null); load();
+      await patchAdminUser(
+        editKey,
+        u.pending
+          ? { email: editEmail.trim() || null }
+          : {
+              first_name: editFirst.trim() || null,
+              last_name: editLast.trim() || null,
+              role: editRole.trim() || null,
+              email: editEmail.trim() || null,
+              phone: editPhone.trim() || null,
+              notes: editNotes.trim() || null,
+              markets: editMarkets,
+            },
+      );
+      setEditKey(null); load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : dt("Не удалось сохранить", "Could not save"));
     } finally { setSavingEdit(false); }
   };
 
@@ -202,34 +221,46 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
                   <p className="font-mono text-ink-mute" style={{ fontSize: 11 }}>
                     {u.username ? `@${u.username}` : ""}{u.telegram_id != null ? `${u.username ? " · " : ""}${u.telegram_id}` : (u.username ? "" : "?")}
                   </p>
+                  {u.email && <p className="truncate text-ink-soft" style={{ fontSize: 11 }}>{u.email}</p>}
                   {u.role && <p className="text-ink-soft" style={{ fontSize: 11 }}>{u.role}</p>}
                 </div>
                 {u.markets.length > 0 && (
                   <span className="shrink-0 text-ink-soft" style={{ fontSize: 11 }}>{u.markets.map(countryCode).join(", ")}</span>
                 )}
-                {!u.pending && (
-                  <button onClick={() => startEdit(u)} aria-label="Редактировать профиль" className="shrink-0 transition-colors hover:opacity-80 active:scale-[0.92]" style={{ color: "var(--accent-ink)" }}>
-                    <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
-                  </button>
-                )}
+                <button onClick={() => startEdit(u)} aria-label={u.pending ? dt("Привязать email", "Link email") : dt("Редактировать профиль", "Edit profile")} className="shrink-0 transition-colors hover:opacity-80 active:scale-[0.92]" style={{ color: "var(--accent-ink)" }}>
+                  <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
+                </button>
                 <button onClick={() => handleRemove(u)} aria-label="Удалить" className="shrink-0 transition-colors hover:opacity-80 active:scale-[0.92]" style={{ color: "var(--pri-high)" }}>
                   <RoyIcon name="trash" size={16} strokeWidth={1.9} />
                 </button>
               </div>
-              {editId != null && editId === u.telegram_id ? (
+              {editKey === userRef(u) ? (
                 <div className="mt-2.5 space-y-2 border-t border-line pt-2.5">
-                  <div className="flex gap-2">
-                    <div className="flex-1"><Lbl t="Имя" /><input value={editFirst} onChange={(e) => setEditFirst(e.target.value)} placeholder="Имя" className={fieldCls} /></div>
-                    <div className="flex-1"><Lbl t="Фамилия" /><input value={editLast} onChange={(e) => setEditLast(e.target.value)} placeholder="Фамилия" className={fieldCls} /></div>
-                  </div>
-                  <div>
-                    <Lbl t="Роль" />
-                    <input value={editRole} onChange={(e) => setEditRole(e.target.value)} placeholder="напр. BD, Marketing" className={fieldCls} />
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="flex-1"><Lbl t="Email" /><input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="email@…" type="email" className={fieldCls} /></div>
-                    <div className="flex-1"><Lbl t="Телефон" /><input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="+…" className={fieldCls} /></div>
-                  </div>
+                  {!u.pending && (
+                    <>
+                      <div className="flex gap-2">
+                        <div className="flex-1"><Lbl t="Имя" /><input value={editFirst} onChange={(e) => setEditFirst(e.target.value)} placeholder="Имя" className={fieldCls} /></div>
+                        <div className="flex-1"><Lbl t="Фамилия" /><input value={editLast} onChange={(e) => setEditLast(e.target.value)} placeholder="Фамилия" className={fieldCls} /></div>
+                      </div>
+                      <div>
+                        <Lbl t="Роль" />
+                        <input value={editRole} onChange={(e) => setEditRole(e.target.value)} placeholder="напр. BD, Marketing" className={fieldCls} />
+                      </div>
+                    </>
+                  )}
+                  {u.pending ? (
+                    <div>
+                      <Lbl t={dt("Email (вход в веб через Google)", "Email (web sign-in via Google)")} />
+                      <input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="email@dodobrands.io" type="email" autoFocus className={fieldCls} />
+                      <p className="mt-1 text-ink-mute" style={{ fontSize: 10.5 }}>{dt("Имя, роль и рынки появятся после первого входа.", "Name, role and markets appear after the first sign-in.")}</p>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <div className="flex-1"><Lbl t="Email" /><input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="email@…" type="email" className={fieldCls} /></div>
+                      <div className="flex-1"><Lbl t="Телефон" /><input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="+…" className={fieldCls} /></div>
+                    </div>
+                  )}
+                  {!u.pending && (
                   <div>
                     <Lbl t="Рынки" />
                     <div className="flex max-h-[148px] flex-wrap gap-1.5 overflow-y-auto">
@@ -244,13 +275,16 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
                       })}
                     </div>
                   </div>
+                  )}
+                  {!u.pending && (
                   <div>
                     <Lbl t="Заметки" />
                     <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} placeholder="Заметки админа…" className={`${fieldCls} resize-none`} />
                   </div>
+                  )}
                   <div className="flex gap-2">
-                    <button onClick={saveEdit} disabled={savingEdit} className={`${btnPrimary} flex-1`} style={{ fontSize: 13 }}>{savingEdit ? "Сохраняю…" : "Сохранить профиль"}</button>
-                    <button onClick={() => setEditId(null)} className="rounded-[12px] border border-line bg-surface px-3 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97]" style={{ fontSize: 13 }}>Отмена</button>
+                    <button onClick={() => saveEdit(u)} disabled={savingEdit} className={`${btnPrimary} flex-1`} style={{ fontSize: 13 }}>{savingEdit ? dt("Сохраняю…", "Saving…") : u.pending ? dt("Привязать email", "Link email") : dt("Сохранить профиль", "Save profile")}</button>
+                    <button onClick={() => setEditKey(null)} className="rounded-[12px] border border-line bg-surface px-3 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97]" style={{ fontSize: 13 }}>Отмена</button>
                   </div>
                 </div>
               ) : !u.pending && others.length > 0 ? (

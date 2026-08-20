@@ -1,6 +1,7 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeCountries } from "../_shared/countries.ts";
 import { addUserToWorkspace } from "../_shared/users/membership.ts";
+import { parseUserRef } from "../_shared/users/user-ref.ts";
 
 const ADMIN_TELEGRAM_ID = 744230399;
 
@@ -226,28 +227,21 @@ export async function handleAdminRoutes(
   const wsUserMatch = routePath.match(/^\/admin\/workspaces\/([^/]+)\/users\/([^/]+)$/);
   if (wsUserMatch && req.method === "DELETE") {
     const [, wsId, userId] = wsUserMatch;
-    // Числовой сегмент → telegram_id (реальный юзер). Нечисловой → username (ОЖИДАЮЩАЯ строка,
-    // telegram_id=NULL): добавлена по @username, ещё не вошла в бота — удаляется по username.
-    if (/^\d+$/.test(userId)) {
-      if (Number(userId) === ADMIN_TELEGRAM_ID) return apiErr(400, "Cannot remove super admin", origin);
+    // Чем адресована строка (telegram_id / email / username) — единое правило parseUserRef.
+    // Ожидающие приглашения (telegram_id=NULL) удаляются по email или username.
+    const ref = parseUserRef(decodeURIComponent(userId));
+    if (ref.kind === "invalid") return apiErr(400, "Invalid user id", origin);
+    if (ref.kind === "telegram") {
+      if (ref.telegramId === ADMIN_TELEGRAM_ID) return apiErr(400, "Cannot remove super admin", origin);
       const { error } = await supabase.from("allowed_users").delete()
-        .eq("telegram_id", Number(userId))
-        .eq("group_id", wsId);
-      if (error) return apiErr(500, error.message, origin);
-    } else if (/@.+\./.test(decodeURIComponent(userId))) {
-      // email-only ОЖИДАЮЩЕЕ приглашение (telegram_id=NULL): удаляем по email.
-      const em = decodeURIComponent(userId).trim().toLowerCase();
-      const { error } = await supabase.from("allowed_users").delete()
-        .eq("email", em)
-        .is("telegram_id", null)
+        .eq("telegram_id", ref.telegramId)
         .eq("group_id", wsId);
       if (error) return apiErr(500, error.message, origin);
     } else {
-      const uname = decodeURIComponent(userId).replace(/^@/, "");
-      const { error } = await supabase.from("allowed_users").delete()
-        .eq("username", uname)
-        .is("telegram_id", null)
-        .eq("group_id", wsId);
+      const q = supabase.from("allowed_users").delete().is("telegram_id", null).eq("group_id", wsId);
+      const { error } = ref.kind === "email"
+        ? await q.eq("email", ref.email)
+        : await q.eq("username", ref.username);
       if (error) return apiErr(500, error.message, origin);
     }
     return new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": origin } });
@@ -274,13 +268,38 @@ export async function handleAdminRoutes(
     return json(data, 200, origin);
   }
 
-  // PATCH /admin/users/:telegramId — правка профиля пользователя (user_profiles)
+  // PATCH /admin/users/:ref — правка профиля пользователя (user_profiles).
+  // ref = telegram_id реального юзера ЛИБО email/username ОЖИДАЮЩЕГО приглашения (telegram_id=NULL).
   const userPatchMatch = routePath.match(/^\/admin\/users\/([^/]+)$/);
   if (userPatchMatch && req.method === "PATCH") {
-    const targetId = Number(userPatchMatch[1]);
-    if (!targetId) return apiErr(400, "Invalid user id", origin);
+    const ref = parseUserRef(decodeURIComponent(userPatchMatch[1]));
+    if (ref.kind === "invalid") return apiErr(400, "Invalid user id", origin);
     let body: Record<string, unknown>;
     try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
+
+    // ОЖИДАЮЩЕЕ приглашение: профиля ещё нет и быть не может — user_profiles.telegram_id ссылается
+    // на allowed_users.telegram_id, который тут NULL. Задать можно только email (канон веб-входа:
+    // auth-resolve найдёт по нему строку при первом Google-входе). Остальные поля — честная 400,
+    // а не молча проглоченный запрос.
+    if (ref.kind !== "telegram") {
+      const extra = ["first_name", "last_name", "role", "phone", "notes", "markets"].filter((k) => k in body);
+      if (extra.length) {
+        return apiErr(400, "До первого входа пользователю можно задать только email", origin);
+      }
+      if (!("email" in body)) return apiErr(400, "Нечего сохранять: ожидается email", origin);
+      const email = body.email == null || body.email === "" ? null : String(body.email).trim().toLowerCase();
+      const q = supabase.from("allowed_users").update({ email }).is("telegram_id", null);
+      const { data, error } = ref.kind === "email"
+        ? await q.eq("email", ref.email).select("id").maybeSingle()
+        : await q.eq("username", ref.username).select("id").maybeSingle();
+      if (error) {
+        if ((error as { code?: string }).code === "23505") return apiErr(409, "Этот email уже привязан к другому пользователю", origin);
+        return apiErr(500, error.message, origin);
+      }
+      if (!data) return apiErr(404, "Приглашение не найдено", origin);
+      return json({ ok: true, pending: true, email }, 200, origin);
+    }
+    const targetId = ref.telegramId;
 
     const fields: Record<string, unknown> = { telegram_id: targetId, updated_at: new Date().toISOString() };
     for (const k of ["first_name", "last_name", "role", "email", "phone", "notes"]) {
