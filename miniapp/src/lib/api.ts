@@ -922,7 +922,16 @@ export async function fetchAdminWorkspaces(): Promise<AdminWorkspace[]> {
 }
 
 export async function fetchAdminWorkspaceUsers(wsId: string): Promise<AdminUser[]> {
-  if (DEV_MODE) return MOCK_USERS.map(u => ({ ...u, is_admin: false, first_name: null, last_name: null, email: null, phone: null, notes: null, created_at: new Date().toISOString() }));
+  if (DEV_MODE) return [
+    ...MOCK_USERS.map(u => ({ ...u, is_admin: false, first_name: null, last_name: null, email: null, phone: null, notes: null, created_at: new Date().toISOString() })),
+    // Ожидающее приглашение (добавлен по @username, ещё не входил) — состояние, в котором админ
+    // привязывает почту. Без него локально не увидеть форму «Привязать email».
+    {
+      id: "99", telegram_id: null, pending: true, name: "@pending_invite", username: "pending_invite",
+      is_admin: false, role: null, markets: [], first_name: null, last_name: null,
+      email: null, phone: null, notes: null, created_at: new Date().toISOString(),
+    },
+  ];
   return apiFetch<AdminUser[]>(`/admin/workspaces/${wsId}/users`);
 }
 
@@ -970,10 +979,12 @@ export async function fetchReviewCounts(): Promise<ReviewCount[]> {
 }
 
 // Правка профиля пользователя (роль/рынки/имя/контакты) — user_profiles.
+// ref: telegram_id реального юзера ЛИБО username/email ОЖИДАЮЩЕГО приглашения (профиля у него ещё
+// нет — бэкенд для такой строки принимает ТОЛЬКО email, канон веб-входа через Google).
 export async function patchAdminUser(
-  telegramId: number,
+  ref: number | string,
   fields: { first_name?: string | null; last_name?: string | null; role?: string | null; email?: string | null; phone?: string | null; notes?: string | null; markets?: string[] },
 ): Promise<void> {
   if (DEV_MODE) return;
-  return apiFetch<void>(`/admin/users/${telegramId}`, { method: "PATCH", body: JSON.stringify(fields) });
+  return apiFetch<void>(`/admin/users/${encodeURIComponent(String(ref))}`, { method: "PATCH", body: JSON.stringify(fields) });
 }

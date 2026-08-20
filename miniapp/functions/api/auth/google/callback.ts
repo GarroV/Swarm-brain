@@ -65,7 +65,9 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   if (!rRes.ok) return loginErr(origin, "resolve");
   const r = await rRes.json() as { found?: boolean; telegram_id?: number | null; id?: number };
   if (!r.found) return loginErr(origin, "not_allowed");
-  if (r.telegram_id == null) return loginErr(origin, "link_telegram"); // email-only ждёт Ф3
+  // Обычно не наступает: email-only приглашению auth-resolve сам присваивает синтетический
+  // telegram_id (-id). Пустой id тут — сбой резолва (гонка/ошибка записи), а не «ждём Telegram».
+  if (r.telegram_id == null) return loginErr(origin, "link_telegram");
 
   // 4) сессия
   const jwt = await signJWT({ telegram_id: r.telegram_id }, env.WEB_JWT_SECRET);
