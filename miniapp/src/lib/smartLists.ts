@@ -14,6 +14,10 @@ export type SmartListId = "today" | "upcoming" | "all" | "done";
 // «тумблер сортировки "по рынкам" не должен зависеть от того, в каком разделе сейчас юзер»).
 export type Lens = "mine" | "team" | "all";
 
+// Линзе нужен только telegram_id смотрящего — поэтому принимаем узкий тип, а не весь `Me`:
+// главный экран держит в зависимостях useMemo примитивный `meId`, а не объект `me`.
+export type Viewer = Pick<Me, "telegram_id">;
+
 export type SmartListDef = { id: SmartListId; label: string; icon: RoyIconName };
 
 // Единый источник правды для порядка/подписей/иконок смарт-списков (время/статус).
@@ -52,7 +56,10 @@ export function isOverdue(task: Task, now: Date = new Date()): boolean {
   return due != null && !isDone(task) && due < midnight(now);
 }
 
-function matchesLens(task: Task, lens: Lens, me: Me | null): boolean {
+// ЕДИНЫЙ источник правды о линзе: экспортируется, потому что тем же правилом живёт главный экран
+// (dash/myTasks.ts → блоки «Мои задачи»/«Задачи команды»). Своя копия правила там разошлась с
+// этой и тащила в «команду» ЛИЧНЫЕ задачи коллег — не повторять, звать matchesLens.
+export function matchesLens(task: Task, lens: Lens, me: Viewer | null): boolean {
   if (lens === "all") return true;
   // «Команда» = ОБЩИЕ задачи: не приватные И без конкретного исполнителя (формулировка владельца —
   // «командная задача = общая, у которой нет определённого юзера»). Приватные и назначенные на

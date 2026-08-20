@@ -3,10 +3,12 @@ import { useRoyNav, useDt } from "../nav";
 import { DashBlock, DashTaskRow, norm } from "./shared";
 import type { DashboardData } from "./useDashboardData";
 
-// Право-низ главного экрана: задачи команды (assignee ≠ текущий пользователь).
+// Право-низ главного экрана: ОБЩИЕ задачи команды — не приватные и без конкретного исполнителя
+// (линза «team», то же правило, что на доске: `matchesLens` в lib/smartLists.ts). Личные задачи
+// коллег сюда НЕ попадают — они их личное дело, не «команда» (владелец, 2026-08-20).
 // Тот же `DashTaskRow` (= `TaskRow`), что и на доске/в «Моих» — единый вид; исполнитель
 // показывается аватаром (showAssignee). Шапка → вкладка «Задачи» (доска).
-// Источник: splitByOwner().team. Показываем только незавершённые — то, что в работе.
+// Источник: splitByLens().team. Показываем только незавершённые — то, что в работе.
 
 export function TeamTasks({ data, className }: { data: DashboardData; className?: string }) {
   const { openTasks } = useRoyNav();
