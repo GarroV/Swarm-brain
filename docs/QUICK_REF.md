@@ -55,7 +55,8 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
     | while read id; do gh api "repos/GarroV/Swarm-brain/check-runs/$id/annotations" --jq '.[].message'; done
   # → "The job was not started because recent account payments have failed or your spending limit needs to be increased"
   ```
-  Это аккаунт-уровневая блокировка: раннер не выделяется вообще, перезапуск не помогает (проверено, attempt 3). Лечится только в https://github.com/settings/billing (платёж / spending limit) либо сбросом квоты 1-го числа. Пока лежит — проверки гонять локально: `deno test -A supabase/functions/`, `deno check`, `tsc --noEmit`, `next build`. Cloudflare Pages от этого не зависит и деплоит веб как обычно.
+  Это аккаунт-уровневая блокировка: раннер не выделяется вообще, перезапуск не помогает (проверено, attempt 3). Пока лежит — проверки гонять локально: `deno test -A supabase/functions/`, `deno check`, `tsc --noEmit`, `next build` (pre-commit хук работает независимо). Cloudflare Pages от этого не зависит и деплоит веб как обычно; реально заблокирован только `recorder-release.yml` — новый `.app` в эти дни собирается вручную на Mac.
+- **Решение владельца 2026-08-20 — НЕ переоткрывать:** не платить (spending limit остаётся $0 — счёта не было и не будет, долга нет), **self-hosted раннер не ставить** («нет смысла привязываться»: неэфемерное окружение, зависимость от домашней машины, только для приватных репо, macOS всё равно не покрывает), **ждать сброса квоты 1 сентября**. Экономию делать не оплатой и не своим железом, а правкой расхода там, где он есть: [multa#151](https://github.com/GarroV/multa/issues/151) — 79% минут аккаунта. Штатный расход всех приватных репозиториев ~2850 мин/мес против 2000 бесплатных, так что без этой правки в сентябре упрёмся снова (~20-го числа).
 
 **Ветка:** `main` (дефолтная) — разработка здесь.
 
