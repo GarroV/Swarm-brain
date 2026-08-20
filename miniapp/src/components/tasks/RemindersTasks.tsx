@@ -118,8 +118,6 @@ export function RemindersTasks() {
         onSelect={(id) => { r.setActiveLabelId(null); r.setActiveList(id); }}
         query={r.query}
         onQuery={r.setQuery}
-        allStaffActive={r.allStaff}
-        onAllStaff={r.me?.is_admin ? () => { r.setActiveLabelId(null); r.setAllStaff((v) => !v); } : undefined}
         labels={r.labels}
         labelCounts={r.labelCounts}
         activeLabelId={r.activeLabelId}
@@ -144,7 +142,10 @@ export function RemindersTasks() {
               byMarket={r.byMarket}
               onToggleMarket={() => r.setByMarket((v) => !v)}
               allStaff={r.allStaff}
-              onToggleAllStaff={() => r.setAllStaff((v) => !v)}
+              // Сбрасываем активную метку — в режиме списка-метки группировка по сотрудникам
+              // подавлена (`byStaff = !isLabelView && …`), и без сброса нажатие выглядело бы
+              // «кнопка ничего не делает». Раньше это делал удалённый пункт в рельсе.
+              onToggleAllStaff={() => { r.setActiveLabelId(null); r.setAllStaff((v) => !v); }}
               showAllStaff={!!r.me?.is_admin}
             />
             <button
