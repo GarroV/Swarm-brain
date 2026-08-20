@@ -46,9 +46,16 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | `recorder-release.yml` | push тега `recorder-build-*` | собирает предсобранный `SwarmRecorder.app` и публикует **release-asset**, который качают установщик и апдейтер (issue #19) | `macos-14`, 30 мин |
 
 - **Ничего не деплоит.** Edge-функции — руками (`supabase functions deploy`), веб — Cloudflare Pages сам по push. Единственный workflow, который влияет на пользователей, — `recorder-release.yml`: без него `.app` придётся собирать локально и заливать в релиз вручную.
-- **`timeout-minutes` обязателен на каждом job** (добавлено 2026-08-20). Без него зависший job висит до дефолтных **6 часов** GitHub: в приватном `GarroV/multa` так трижды за день сгорела месячная квота Actions аккаунта (2000 мин) и Actions встали во всех приватных репозиториях ([multa#148](https://github.com/GarroV/multa/issues/148)). Swarm публичный, минуты бесплатны — но зависший прогон держит очередь и молча тормозит релиз, а с таймаутом он честно падает и присылает уведомление.
+- **`timeout-minutes` обязателен на каждом job** (добавлено 2026-08-20). Без него зависший job висит до дефолтных **6 часов** GitHub: в приватном `GarroV/multa` так трижды за день (19.08) сгорело **1080 минут** из месячной квоты аккаунта, после чего Actions встали во всех приватных репозиториях ([multa#148](https://github.com/GarroV/multa/issues/148)). С таймаутом зависший прогон честно падает и присылает уведомление, а не съедает квоту молча.
 - **`concurrency: cancel-in-progress`** в `ci.yml`/`recorder.yml` — новый пуш отменяет прогон устаревшего коммита. В `recorder-release.yml` его НЕТ намеренно: прогоны идут по тегам, каждый публикует свой ассет.
-- **Минуты Actions тратят только приватные репозитории.** Публичные (Swarm) — бесплатно на стандартных раннерах, включая macOS.
+- **Минуты Actions тратят приватные репозитории — а Swarm ПРИВАТНЫЙ** (с 20.08.2026, решение о приватности беклога). Прежнее «Swarm публичный, минуты бесплатны» больше не действует: прогоны Swarm расходуют общую квоту аккаунта, и **macOS-раннер считается ×10** (`recorder.yml`/`recorder-release.yml` — 25–30 мин потолка = до 300 минут квоты за прогон). Прежде чем добавлять/расширять workflow, считай расход.
+- **🔴 Как опознать «CI лежит по биллингу», а не по коду** (случилось 20.08.2026 ~13:00 UTC): job'ы падают **за 3–5 секунд с ПУСТЫМ списком шагов**, `gh run view --log-failed` отдаёт «log not found», а причина видна только в аннотации check-run:
+  ```bash
+  gh api repos/GarroV/Swarm-brain/actions/runs/<RUN_ID>/jobs --jq '.jobs[].id' \
+    | while read id; do gh api "repos/GarroV/Swarm-brain/check-runs/$id/annotations" --jq '.[].message'; done
+  # → "The job was not started because recent account payments have failed or your spending limit needs to be increased"
+  ```
+  Это аккаунт-уровневая блокировка: раннер не выделяется вообще, перезапуск не помогает (проверено, attempt 3). Лечится только в https://github.com/settings/billing (платёж / spending limit) либо сбросом квоты 1-го числа. Пока лежит — проверки гонять локально: `deno test -A supabase/functions/`, `deno check`, `tsc --noEmit`, `next build`. Cloudflare Pages от этого не зависит и деплоит веб как обычно.
 
 **Ветка:** `main` (дефолтная) — разработка здесь.
 
