@@ -39,6 +39,7 @@ import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
+import { canAccessDraftMeeting, draftMeetingsOwnScoped, type DraftMeetingRow } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
 import { corsHeaders, json, apiErr } from "./http.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
@@ -1265,7 +1266,6 @@ Deno.serve(async (req: Request) => {
   // GET /agent-meetings?status=awaiting_review|in_base — очередь вычитки / опубликованные
   if (req.method === "GET" && routePath === "/agent-meetings") {
     const status = url.searchParams.get("status") ?? "awaiting_review";
-    const showAll = url.searchParams.get("all") === "true";
     let q = supabase.from("meetings")
       .select("id, title, source, identity_kind, started_at, ended_at, status, draft_notes_md, recorders, entry_id, created_at")
       .eq("group_id", groupId)
@@ -1276,7 +1276,10 @@ Deno.serve(async (req: Request) => {
     // через .join(",") в Postgres-литерал cs.{[object Object]} → 400 (invalid json), и весь
     // запрос «Мои» падал (собственная запись не показывалась). Для jsonb-containment передаём
     // JSON-СТРОКУ → строковая ветка .contains даёт cs.[{"telegram_id":N}] (корректно).
-    if (!(showAll && isAdmin)) q = q.contains("recorders", JSON.stringify([{ telegram_id }]));
+    // ВСЕГДА только свои: черновик на вычитке — сырая запись чужого разговора, у админа тут
+    // оверсайта нет (решение владельца 2026-08-20). Прежний `?all=true` для админа убран;
+    // пригляд «у кого копится» — агрегат без контента GET /admin/review-counts.
+    q = q.contains("recorders", JSON.stringify(draftMeetingsOwnScoped(telegram_id)));
     const { data, error } = await q;
     if (error) return apiErr(500, error.message, origin);
     return json(await withRecorderNames((data ?? []) as Array<{ recorders?: unknown }>), 200, origin);
@@ -1292,11 +1295,12 @@ Deno.serve(async (req: Request) => {
     const mId = (agentMeetingMatch ?? agentPublishMatch ?? agentNotesMatch ?? agentResummarizeMatch)![1];
     const { data: mRow } = await supabase.from("meetings").select("*").eq("id", mId).maybeSingle();
     const meeting = mRow as Record<string, unknown> | null;
-    const recorders = (meeting?.recorders as Array<{ telegram_id: number }> | undefined) ?? [];
-    const isRecorder = recorders.some((r) => r.telegram_id === telegram_id);
-    if (!meeting || meeting.group_id !== groupId || (!isRecorder && !isAdmin)) {
+    // Черновик (в т.ч. правка, публикация, удаление) — только записавшему; админ НЕ исключение.
+    if (!canAccessDraftMeeting(meeting as DraftMeetingRow | null, telegram_id, isAdmin, groupId)) {
       return apiErr(404, "Not found", origin);
     }
+    // Сужение для компилятора: гард уже вернул 404 при meeting=null. Строка недостижима.
+    if (!meeting) return apiErr(404, "Not found", origin);
 
     // POST /:id/resummarize — пере-сводка тезисов ТЕКУЩИМ промптом из сохранённого транскрипта
     // (без повторной транскрибации). Только до публикации; заголовок не трогаем.
