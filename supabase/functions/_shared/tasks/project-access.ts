@@ -35,9 +35,7 @@ export function isProjectPrivate(row: ProjectAccessRow): boolean {
 export function canViewProject(
   row: ProjectAccessRow,
   viewerId: number | undefined,
-  isAdmin = false,
 ): boolean {
-  if (isAdmin) return true;
   if (!isProjectPrivate(row)) return true;
   if (row.created_by === null) return true;
   return row.created_by === viewerId;
@@ -56,9 +54,8 @@ export function pickProjectByName(
   rows: ProjectNameRow[],
   name: string,
   viewerId: number | undefined,
-  isAdmin: boolean,
 ): { id: string; ambiguous: boolean } | null {
-  const visible = rows.filter((p) => canViewProject(p, viewerId, isAdmin));
+  const visible = rows.filter((p) => canViewProject(p, viewerId));
   if (!visible.length) return null;
   const lower = name.trim().toLowerCase();
   const exact = visible.filter((p) => p.name.toLowerCase() === lower);

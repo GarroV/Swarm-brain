@@ -56,7 +56,6 @@ export async function listTasks(filters: {
   dueToday?: boolean;
   // Модуль задач (Рой):
   viewerId?: number;        // для visibility приватных задач
-  isAdmin?: boolean;        // админ видит все приватные
   sprintId?: string;
   tags?: string[];          // ANY-совпадение (overlaps)
   labelIds?: string[];      // ANY-совпадение (overlaps по label_ids)
@@ -71,9 +70,9 @@ export async function listTasks(filters: {
     .select("*")
     .order("due_date", { ascending: true, nullsFirst: false });
 
-  // Видимость приватных задач: приватная видна только владельцу (админ — все).
-  // Безопасный дефолт: без viewerId показываем только публичные.
-  if (!filters.isAdmin) {
+  // Видимость приватных задач: приватная видна ТОЛЬКО владельцу — админского обхода нет
+  // (решение владельца 2026-08-21). Безопасный дефолт: без viewerId показываем только публичные.
+  {
     if (filters.viewerId !== undefined) {
       q = q.or(`is_private.eq.false,owner_id.eq.${filters.viewerId}`);
     } else {
