@@ -6,11 +6,13 @@
 // устройству — всё ходит SERVICE_ROLE_KEY, RLS не механизм авторизации (см. миграцию
 // 20260819180000_rls_enable_remaining.sql), поэтому промах в проверке = сразу доступ к данным.
 //
-// Админского обхода здесь НЕТ (решение владельца 2026-08-21): личная задача видна и правится
-// ТОЛЬКО владельцем, как и приватные `entries` с 2026-08-07. Раньше `isAdmin` пропускал мимо
-// проверки — под флагом `allowed_users.is_admin` в проде было больше одного человека, то есть
-// «личное» на деле видели несколько аккаунтов. Параметр убран из сигнатур целиком, чтобы его
-// нельзя было вернуть незаметно одним аргументом.
+// ⛔ РЕШЕНИЕ ВЛАДЕЛЬЦА, НЕ ТЕХНИЧЕСКАЯ ДЕТАЛЬ — не снимать без явного «да» (см. docs/decisions/2026-08-21-admin-visibility.md).
+// У ЗАДАЧ админ имеет оверсайт: задача с исполнителем — личная задача сотрудника, и руководитель
+// специально может её видеть, чтобы понимать, что у человека происходит, и давать обратную связь.
+// Точка входа — тумблер «Все сотрудники» на доске (только у админа), по умолчанию выключен.
+// Это НЕ распространяется на записи, встречи и проекты: там обхода нет вовсе
+// (`swarm-api/entries-guard.ts`, `_shared/meeting-access.ts`, `_shared/tasks/project-access.ts`).
+// 21.08.2026 оверсайт сняли, приняв за забытую дыру, и пришлось возвращать — отсюда этот блок.
 
 export type TaskAccessRow = {
   is_private: boolean;
@@ -18,15 +20,15 @@ export type TaskAccessRow = {
   group_id?: string | null;
 };
 
-// Приватную задачу видит только владелец; командную — любой в воркспейсе.
-// owner_id = null у приватной задачи (осиротевшая) закрыта для всех: fail-closed.
-export function canViewTask(task: TaskAccessRow, viewerId: number): boolean {
-  return !task.is_private || task.owner_id === viewerId;
+// Приватную задачу видит только владелец или админ; командную — любой в воркспейсе.
+// owner_id = null у приватной задачи (осиротевшая) закрыта для всех, кроме админа: fail-closed.
+export function canViewTask(task: TaskAccessRow, viewerId: number, isAdmin: boolean): boolean {
+  return !task.is_private || isAdmin || task.owner_id === viewerId;
 }
 
-// Мутировать приватную задачу может только владелец.
-export function canMutateTask(task: TaskAccessRow, viewerId: number): boolean {
-  return !task.is_private || task.owner_id === viewerId;
+// Мутировать приватную задачу может только владелец или админ.
+export function canMutateTask(task: TaskAccessRow, viewerId: number, isAdmin: boolean): boolean {
+  return !task.is_private || isAdmin || task.owner_id === viewerId;
 }
 
 // Единый текст отказа для инструментов, отвечающих строкой (MCP).
@@ -40,11 +42,12 @@ export function taskAccessError(
   id: string,
   task: TaskAccessRow | null,
   viewerId: number,
+  isAdmin: boolean,
   viewerGroupId?: string | null,
 ): string | null {
   const notFound = `Задача ${id} не найдена.`;
   if (!task) return notFound;
   if (viewerGroupId !== undefined && task.group_id !== viewerGroupId) return notFound;
-  if (!canViewTask(task, viewerId)) return notFound;
+  if (!canViewTask(task, viewerId, isAdmin)) return notFound;
   return null;
 }
