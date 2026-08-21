@@ -21,6 +21,10 @@ import {
 import type { Entry, AgentMeeting, TranscriptSegment, MeetingLiveNote } from "@/types";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { countryCode } from "@/lib/countries";
+import {
+  applyMeetingsFilter, isFilterActive, isConfirmed, personOf,
+  EMPTY_FILTERS, type MeetingsFilterState, type PeriodId,
+} from "./meetingsFilter";
 
 // Статистика по «Все встречи»: сортированный подсчёт (по убыванию).
 function tally(keys: string[]): [string, number][] {
@@ -71,6 +75,160 @@ function MeetingsStats({ meetings, markets }: { meetings: Entry[]; markets: stri
     </div>
   );
 }
+
+// ── Панель фильтров «Все встречи» ────────────────────────────────────────────
+// Заменила собой блок статистики в правой колонке (сама статистика уехала под неё).
+// Чипы несут количество: видно, где густо, и клик по цифре сразу сужает список — то, ради чего
+// раньше приходилось глазами сверять список со сводкой.
+
+const PERIODS: Array<{ id: PeriodId; label: string }> = [
+  { id: "all", label: "Всё время" },
+  { id: "week", label: "Неделя" },
+  { id: "month", label: "Месяц" },
+  { id: "quarter", label: "Квартал" },
+  { id: "custom", label: "Свой" },
+];
+
+// Чип-переключатель с количеством. Активный — акцентной заливкой, как чипы стран в задачах.
+function FilterChip({ label, count, active, onClick }: { label: string; count?: number; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1 rounded-full border font-semibold transition-colors ${
+        active ? "border-primary bg-accent-soft text-accent-ink" : "border-line bg-surface text-ink-soft hover:bg-surface-2"
+      }`}
+      style={{ fontSize: 11.5, padding: "3px 9px" }}
+    >
+      {label}
+      {count !== undefined && <span className={active ? "text-accent-ink" : "text-ink-mute"}>{count}</span>}
+    </button>
+  );
+}
+
+function FilterGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <SectionLabel className="!mb-1.5">{title}</SectionLabel>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
+    </div>
+  );
+}
+
+function MeetingsFilters({
+  all, shown, markets, value, onChange,
+}: {
+  all: Entry[];
+  shown: number;
+  markets: string[] | null;
+  value: MeetingsFilterState;
+  onChange: (f: MeetingsFilterState) => void;
+}) {
+  const set = (patch: Partial<MeetingsFilterState>) => onChange({ ...value, ...patch });
+  // Переключение элемента множественного фильтра (страна/источник/человек).
+  const toggle = (key: "countries" | "sources" | "people", v: string) => {
+    const cur = value[key];
+    set({ [key]: cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v] } as Partial<MeetingsFilterState>);
+  };
+
+  // Счётчики считаем по ВСЕМ встречам, а не по отфильтрованным: иначе, сняв один фильтр,
+  // пользователь видит нули у остальных и не понимает, куда делись данные.
+  const countBy = (pick: (e: Entry) => string[]) => {
+    const m = new Map<string, number>();
+    all.forEach((e) => pick(e).forEach((k) => { if (k) m.set(k, (m.get(k) ?? 0) + 1); }));
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  };
+  const marketSet = new Set((markets ?? []).map(countryCode));
+  const countryCounts = countBy((e) => (e.countries ?? []).map(countryCode))
+    .filter(([c]) => marketSet.size === 0 || marketSet.has(c));
+  const sourceCounts = countBy((e) => [sourceLabel(e.source)]);
+  const peopleCounts = countBy((e) => [personOf(e)]);
+
+  const active = isFilterActive(value);
+
+  return (
+    <div className="space-y-3 border-b border-line p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold text-ink" style={{ fontSize: 12.5 }}>
+          {active ? <>Найдено: {shown} из {all.length}</> : <>Всего: {all.length}</>}
+        </span>
+        {active && (
+          <button
+            type="button"
+            onClick={() => onChange(EMPTY_FILTERS)}
+            className="font-semibold text-accent-ink transition-opacity hover:opacity-70"
+            style={{ fontSize: 11.5 }}
+          >
+            Сбросить
+          </button>
+        )}
+      </div>
+
+      <input
+        value={value.query}
+        onChange={(e) => set({ query: e.target.value })}
+        placeholder="Поиск по названию…"
+        className="w-full rounded-[10px] border border-line bg-surface px-2.5 py-1.5 text-ink outline-none focus:border-[var(--accent-ink)]"
+        style={{ fontSize: 12.5 }}
+      />
+
+      <FilterGroup title="Период">
+        {PERIODS.map((p) => (
+          <FilterChip key={p.id} label={p.label} active={value.period === p.id} onClick={() => set({ period: p.id })} />
+        ))}
+      </FilterGroup>
+      {value.period === "custom" && (
+        <div className="flex items-center gap-1.5">
+          <input type="date" value={value.from} onChange={(e) => set({ from: e.target.value })}
+            className="min-w-0 flex-1 rounded-[9px] border border-line bg-surface px-2 py-1 text-ink outline-none" style={{ fontSize: 11.5 }} />
+          <span className="text-ink-mute" style={{ fontSize: 11.5 }}>—</span>
+          <input type="date" value={value.to} onChange={(e) => set({ to: e.target.value })}
+            className="min-w-0 flex-1 rounded-[9px] border border-line bg-surface px-2 py-1 text-ink outline-none" style={{ fontSize: 11.5 }} />
+        </div>
+      )}
+
+      {countryCounts.length > 0 && (
+        <FilterGroup title="Страны">
+          {countryCounts.map(([c, n]) => (
+            <FilterChip key={c} label={c} count={n} active={value.countries.includes(c)}
+              onClick={() => toggle("countries", c)} />
+          ))}
+        </FilterGroup>
+      )}
+
+      {sourceCounts.length > 1 && (
+        <FilterGroup title="Источник">
+          {sourceCounts.map(([src, n]) => (
+            <FilterChip key={src} label={src} count={n} active={value.sources.includes(src)}
+              onClick={() => toggle("sources", src)} />
+          ))}
+        </FilterGroup>
+      )}
+
+      {peopleCounts.length > 1 && (
+        <FilterGroup title="Кто добавил">
+          {peopleCounts.map(([who, n]) => (
+            <FilterChip key={who} label={who} count={n} active={value.people.includes(who)}
+              onClick={() => toggle("people", who)} />
+          ))}
+        </FilterGroup>
+      )}
+
+      <FilterGroup title="Хранилище">
+        {([["any", "Любое"], ["shared", "Общее"], ["personal", "Личное"]] as const).map(([id, label]) => (
+          <FilterChip key={id} label={label} active={value.storage === id} onClick={() => set({ storage: id })} />
+        ))}
+      </FilterGroup>
+
+      <FilterGroup title="Статус">
+        {([["any", "Любой"], ["confirmed", "Согласовано"], ["pending", "На согласовании"]] as const).map(([id, label]) => (
+          <FilterChip key={id} label={label} active={value.status === id} onClick={() => set({ status: id })} />
+        ))}
+      </FilterGroup>
+    </div>
+  );
+}
+
 import { TasksFromMeeting } from "../TasksFromMeeting";
 import { MarkdownTextarea } from "../MarkdownTextarea";
 import { useConfirm } from "@/components/ui/confirm";
@@ -1047,6 +1205,8 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
   const [agentMeetings, setAgentMeetings] = useState<AgentMeeting[] | null>(null);
   // «Все встречи» — грузятся лениво при первом переключении в этот режим.
   const [allMeetings, setAllMeetings] = useState<Entry[] | null>(null);
+  // Фильтры режима «Все встречи» (владелец 2026-08-21: правый блок статистики → блок фильтров).
+  const [filters, setFilters] = useState<MeetingsFilterState>(EMPTY_FILTERS);
   const [markets, setMarkets] = useState<string[] | null>(null);
   const [selected, setSelected] = useState<MeetItem | null>(null);
 
@@ -1124,7 +1284,8 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
     ...(agentMeetings ?? []).map((m): MeetItem => ({ kind: "agent", data: m })),
     ...(entries ?? []).map((e): MeetItem => ({ kind: "entry", data: e })),
   ];
-  const allItems: MeetItem[] = (allMeetings ?? []).map((e): MeetItem => ({ kind: "entry", data: e }));
+  const allFiltered: Entry[] = applyMeetingsFilter(allMeetings ?? [], filters);
+  const allItems: MeetItem[] = allFiltered.map((e): MeetItem => ({ kind: "entry", data: e }));
   const items: MeetItem[] = mode === "all" ? allItems : reviewItems;
 
 
@@ -1315,7 +1476,16 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
             </>
           ) : mode === "all" && allMeetings ? (
             // «Все встречи» без выбора — статистика (По странам / Источники), как на старом экране.
-            <MeetingsStats meetings={allMeetings} markets={markets} />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <MeetingsFilters
+                all={allMeetings}
+                shown={allFiltered.length}
+                markets={markets}
+                value={filters}
+                onChange={setFilters}
+              />
+              <MeetingsStats meetings={allFiltered} markets={markets} />
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center px-4">
               <p className="text-center text-ink-mute" style={{ fontSize: 12 }}>
