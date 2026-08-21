@@ -463,12 +463,16 @@ Deno.serve(async (req: Request) => {
       )];
       const creatorMap = new Map<number, string>();
       if (creatorIds.length > 0) {
+        // Имя + фамилия: в карточке задачи автор стоит рядом с исполнителем, а тот показан
+        // полным именем («Vasiliy Garro»). Одно голое имя рядом с полным читается как разные
+        // люди. Фамилии может не быть — тогда остаётся имя.
         const { data: profiles } = await supabase
           .from("user_profiles")
-          .select("telegram_id, first_name")
+          .select("telegram_id, first_name, last_name")
           .in("telegram_id", creatorIds);
-        (profiles ?? []).forEach((p: { telegram_id: number; first_name: string | null }) => {
-          if (p.first_name) creatorMap.set(p.telegram_id, p.first_name);
+        (profiles ?? []).forEach((p: { telegram_id: number; first_name: string | null; last_name: string | null }) => {
+          const full = [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
+          if (full) creatorMap.set(p.telegram_id, full);
         });
       }
       const tasksWithCreator = (await withFreshAssignees(tasks)).map(t => ({
