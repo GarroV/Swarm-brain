@@ -861,6 +861,13 @@ function ActionsPanel({
   const [reclassState, setReclassState] = useState<ActionState>("idle");
   const [storage, setStorage] = useState<Storage>("shared");
   const isAgent = item.kind === "agent";
+  // Встреча уже согласована и лежит в базе (режим «Все встречи»). Решение по ней принято —
+  // выбор хранилища и «Согласовать» бессмысленны (владелец 2026-08-21: «почему на уже
+  // сохранённых встречах до сих пор доступен выбор сохранения в разные пространства?»).
+  // Вместо выбора показываем факт: куда сохранена.
+  const isConfirmed = item.kind === "entry"
+    && (item.data.metadata as Record<string, unknown> | undefined)?.confirmed === true;
+  const savedTo = item.kind === "entry" && item.data.is_private ? "Личное" : "Общее";
 
   // Источник для извлечения задач у agent-черновика: тезисы, а если их нет (пустые/плашка «нет
   // содержания» / ещё в обработке) — фолбэк на транскрипт. Иначе встреча без тезисов не давала бы
@@ -917,34 +924,47 @@ function ActionsPanel({
 
   return (
     <div className="flex flex-col gap-3 px-4 py-4">
-      <SectionLabel>Решение</SectionLabel>
+      <SectionLabel>{isConfirmed ? "Встреча в базе" : "Решение"}</SectionLabel>
 
-      {/* Выбор хранилища */}
-      <Segmented
-        items={[
-          { id: "shared", label: "Общее" },
-          { id: "personal", label: "Личное" },
-        ]}
-        value={storage}
-        onChange={(id) => setStorage(id as Storage)}
-      />
+      {isConfirmed ? (
+        /* Решение уже принято: показываем, куда сохранена, без органов управления. */
+        <div
+          className="flex items-center gap-2 rounded-[12px] border border-line bg-surface px-3 py-2.5 text-ink-soft"
+          style={{ fontSize: 13 }}
+        >
+          <RoyIcon name="check" size={15} strokeWidth={2.1} style={{ color: "var(--status-done)" }} />
+          <span>Согласована · <span className="font-semibold text-ink">{savedTo}</span></span>
+        </div>
+      ) : (
+        <>
+          {/* Выбор хранилища */}
+          <Segmented
+            items={[
+              { id: "shared", label: "Общее" },
+              { id: "personal", label: "Личное" },
+            ]}
+            value={storage}
+            onChange={(id) => setStorage(id as Storage)}
+          />
 
-      {/* Кнопка «Согласовать / Опубликовать» */}
-      <button
-        type="button"
-        disabled={confirmState !== "idle"}
-        onClick={handleConfirm}
-        className="flex w-full items-center justify-center gap-2 rounded-[13px] border-0 font-semibold transition-[transform,opacity,filter] duration-150 hover:scale-[1.02] hover:brightness-105 active:scale-[0.98] disabled:opacity-50"
-        style={{
-          padding: "10px 14px",
-          fontSize: 14,
-          background: "var(--accent-ink)",
-          color: "var(--card)",
-        }}
-      >
-        <RoyIcon name="check" size={16} strokeWidth={2.1} />
-        {confirmLabel}
-      </button>
+          {/* Кнопка «Согласовать / Опубликовать» */}
+          <button
+            type="button"
+            disabled={confirmState !== "idle"}
+            onClick={handleConfirm}
+            className="flex w-full items-center justify-center gap-2 rounded-[13px] border-0 font-semibold transition-[transform,opacity,filter] duration-150 hover:scale-[1.02] hover:brightness-105 active:scale-[0.98] disabled:opacity-50"
+            style={{
+              padding: "10px 14px",
+              fontSize: 14,
+              background: "var(--accent-ink)",
+              color: "var(--card)",
+            }}
+          >
+            <RoyIcon name="check" size={16} strokeWidth={2.1} />
+            {confirmLabel}
+          </button>
+        </>
+      )}
 
       {/* Кнопка «Отклонить» */}
       <button
@@ -1019,6 +1039,10 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
   const confirm = useConfirm();
 
   const [mode, setMode] = useState<"review" | "all">(initialMode);
+  // Актуальный режим для фонового load(): он создан один раз (useCallback без deps), поэтому
+  // замыкание на mode устарело бы. Ref читается в момент ответа, а не в момент создания.
+  const modeRef = useRef(mode);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [agentMeetings, setAgentMeetings] = useState<AgentMeeting[] | null>(null);
   // «Все встречи» — грузятся лениво при первом переключении в этот режим.
@@ -1041,7 +1065,12 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
     setEntries(nextEntries);
     setAgentMeetings(nextAgents);
     // Выбранная встреча могла уйти из очереди, пока экран был открыт (обработана в другой
-    // вкладке/сессии) — снимаем выбор, если её больше нет ни в одном из списков.
+    // вкладке/сессии) — тогда снимаем выбор.
+    // ТОЛЬКО в режиме «Ревью»: в «Все встречи» список свой (allMeetings) и этим поллингом не
+    // обновляется, поэтому согласованной встречи в nextEntries/nextAgents нет по определению —
+    // сверка «исчезла?» давала ложное срабатывание и закрывала открытую карточку каждые 10с
+    // (фидбек srgartemov 2026-08-21 «раздел встреча сам по себе закрывается»).
+    if (modeRef.current !== "review") return;
     setSelected((prev) => {
       if (!prev) return prev;
       const stillThere = prev.kind === "entry"
