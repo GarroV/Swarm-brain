@@ -446,7 +446,6 @@ Deno.serve(async (req: Request) => {
           confirmed: confirmedFilter,
           // Приватность: владелец видит свои личные задачи; админ — все
           viewerId: telegram_id,
-          isAdmin,
           sprintId,
           projectId,
           tags,
@@ -586,7 +585,7 @@ Deno.serve(async (req: Request) => {
       const task = await getTask(taskId);
       if (!task || task.group_id !== groupId) return apiErr(404, "Not found", origin);
       // Приватная задача чужого пользователя — 404 (не раскрываем существование)
-      if (!canViewTask(task, telegram_id, isAdmin)) return apiErr(404, "Not found", origin);
+      if (!canViewTask(task, telegram_id)) return apiErr(404, "Not found", origin);
       const [fresh] = await withFreshAssignees([task]);
       return json(fresh, 200, origin);
     }
@@ -601,9 +600,9 @@ Deno.serve(async (req: Request) => {
 
       const task = await getTask(taskId);
       if (!task || task.group_id !== groupId) return apiErr(404, "Not found", origin);
-      if (!canViewTask(task, telegram_id, isAdmin)) return apiErr(404, "Not found", origin);
+      if (!canViewTask(task, telegram_id)) return apiErr(404, "Not found", origin);
       // Мутировать приватную может только владелец/админ
-      if (!canMutateTask(task, telegram_id, isAdmin)) return apiErr(403, "Forbidden", origin);
+      if (!canMutateTask(task, telegram_id)) return apiErr(403, "Forbidden", origin);
 
       const fields: Partial<TaskInput> & { status?: string; due_date?: string | null } = {};
       if (body.title !== undefined) fields.title = body.title as string;
@@ -737,8 +736,8 @@ Deno.serve(async (req: Request) => {
     if (req.method === "DELETE") {
       const task = await getTask(taskId);
       if (!task || task.group_id !== groupId) return apiErr(404, "Not found", origin);
-      if (!canViewTask(task, telegram_id, isAdmin)) return apiErr(404, "Not found", origin);
-      if (!canMutateTask(task, telegram_id, isAdmin)) return apiErr(403, "Forbidden", origin);
+      if (!canViewTask(task, telegram_id)) return apiErr(404, "Not found", origin);
+      if (!canMutateTask(task, telegram_id)) return apiErr(403, "Forbidden", origin);
       try {
         await deleteTask(taskId);
         return new Response(null, { status: 204, headers: corsHeaders(origin) });
@@ -829,7 +828,7 @@ Deno.serve(async (req: Request) => {
   // ── Projects (Project Space) ────────────────────────────────────────────────
   if (routePath === "/projects") {
     if (req.method === "GET") {
-      return json(await listProjects(groupId, { viewerId: telegram_id, isAdmin }), 200, origin);
+      return json(await listProjects(groupId, { viewerId: telegram_id }), 200, origin);
     }
     if (req.method === "POST") {
       let body: Record<string, unknown>;
@@ -879,7 +878,7 @@ Deno.serve(async (req: Request) => {
       }
       let updated;
       try {
-        updated = await updateProject(projectId, fields, groupId, { viewerId: telegram_id, isAdmin });
+        updated = await updateProject(projectId, fields, groupId, { viewerId: telegram_id });
       } catch (e) {
         return apiErr(400, e instanceof Error ? e.message : "invalid parent", origin);
       }
@@ -887,7 +886,7 @@ Deno.serve(async (req: Request) => {
       return json(updated, 200, origin);
     }
     if (req.method === "DELETE") {
-      const ok = await deleteProject(projectId, groupId, { viewerId: telegram_id, isAdmin });
+      const ok = await deleteProject(projectId, groupId, { viewerId: telegram_id });
       if (!ok) return apiErr(404, "Not found", origin);
       return json({ ok: true }, 200, origin);
     }

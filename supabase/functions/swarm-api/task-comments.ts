@@ -37,7 +37,7 @@ export async function handleTaskCommentRoutes(
   const taskId = (listMatch ?? oneMatch)![1];
   const task = await loadTask(supabase, taskId);
   // 404 и на отсутствие, и на чужой воркспейс/приватность — не палим существование.
-  if (!task || task.group_id !== groupId || !canView(task, telegramId, isAdmin)) {
+  if (!task || task.group_id !== groupId || !canView(task, telegramId)) {
     return json({ error: "Задача не найдена" }, 404, origin);
   }
 

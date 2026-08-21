@@ -18,7 +18,7 @@ export type ProjectWithCounts = Project & { task_count: number; backlog_count: n
 // отфильтрует), но продолжает утекать числом в task_count/backlog_count карточки проекта.
 export async function listProjects(
   groupId: string,
-  opts: { viewerId?: number; isAdmin?: boolean } = {},
+  opts: { viewerId?: number } = {},
 ): Promise<ProjectWithCounts[]> {
   // В отличие от listTasks (predicate is_private/owner_id пушится в сам SQL-запрос + .limit(200)),
   // тут тянем ВСЕ строки воркспейса и фильтруем приватность в JS ниже — осознанный трейдофф:
@@ -37,21 +37,19 @@ export async function listProjects(
   // «скрыть этот конкретный проект из общего пула»). Приватная строка видна только своему
   // created_by (+ админу). created_by=null (легаси-строка/системное создание без юзера) НЕ прячем
   // ни от кого — молча терять доступ к «ничейной» строке хуже, чем показать её лишний раз.
-  list = list.filter((p) => canViewProject(p, opts.viewerId, opts.isAdmin));
+  list = list.filter((p) => canViewProject(p, opts.viewerId));
   if (list.length === 0) return [];
 
   // Считаем задачи по проектам одним запросом (без N+1), с той же visibility-фильтрацией,
-  // что применяет listTasks: приватная задача видна только владельцу (админ — все).
+  // что применяет listTasks: приватная задача видна только владельцу (обхода для админа нет).
   // Безопасный дефолт без viewerId — как в listTasks: считаем только публичные.
   let tasksQuery = supabase
     .from("tasks").select("project_id, project_linked")
     .eq("group_id", groupId)
     .in("project_id", list.map((p) => p.id));
-  if (!opts.isAdmin) {
-    tasksQuery = opts.viewerId !== undefined
-      ? tasksQuery.or(`is_private.eq.false,owner_id.eq.${opts.viewerId}`)
-      : tasksQuery.eq("is_private", false);
-  }
+  tasksQuery = opts.viewerId !== undefined
+    ? tasksQuery.or(`is_private.eq.false,owner_id.eq.${opts.viewerId}`)
+    : tasksQuery.eq("is_private", false);
   const { data: tasks } = await tasksQuery;
   const counts = new Map<string, { total: number; backlog: number }>();
   ((tasks ?? []) as Array<{ project_id: string | null; project_linked: boolean }>).forEach((t) => {
@@ -101,7 +99,7 @@ export async function updateProject(
   id: string,
   fields: Partial<ProjectInput>,
   groupId: string,
-  opts: { viewerId?: number; isAdmin?: boolean } = {},
+  opts: { viewerId?: number } = {},
 ): Promise<Project | null> {
   if ("parent_id" in fields) {
     const { data: refs } = await supabase
@@ -125,17 +123,16 @@ export async function updateProject(
 // SERVICE_ROLE_KEY используется везде (RLS не защищает) — эта проверка ЕДИНСТВЕННАЯ преграда
 // между «Анна не видит чужой приватный проект в списке» и «Анна может его переименовать/удалить,
 // зная id напрямую» (см. правило проекта: вся проверка доступа — только через код).
-async function canMutateProject(id: string, groupId: string, opts: { viewerId?: number; isAdmin?: boolean }): Promise<boolean> {
-  if (opts.isAdmin) return true;
+async function canMutateProject(id: string, groupId: string, opts: { viewerId?: number }): Promise<boolean> {
   const { data } = await supabase.from("projects").select("parent_id, created_by, is_private").eq("id", id).eq("group_id", groupId).maybeSingle();
   if (!data) return false;
   // Критерий тот же, что в listProjects — один предикат на просмотр и на мутацию (project-access.ts).
-  return canViewProject(data as ProjectAccessRow, opts.viewerId, opts.isAdmin);
+  return canViewProject(data as ProjectAccessRow, opts.viewerId);
 }
 
 // Удаляет проект своего воркспейса. Задачи освобождаются (FK ON DELETE SET NULL для project_id),
 // а project_linked сбрасываем явно (FK его не трогает).
-export async function deleteProject(id: string, groupId: string, opts: { viewerId?: number; isAdmin?: boolean } = {}): Promise<boolean> {
+export async function deleteProject(id: string, groupId: string, opts: { viewerId?: number } = {}): Promise<boolean> {
   if (!(await canMutateProject(id, groupId, opts))) return false;
   const { data } = await supabase.from("projects")
     .delete().eq("id", id).eq("group_id", groupId).select("id").maybeSingle();
