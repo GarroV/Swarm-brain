@@ -446,6 +446,7 @@ Deno.serve(async (req: Request) => {
           confirmed: confirmedFilter,
           // Приватность: владелец видит свои личные задачи; админ — все
           viewerId: telegram_id,
+          isAdmin,
           sprintId,
           projectId,
           tags,
@@ -585,7 +586,7 @@ Deno.serve(async (req: Request) => {
       const task = await getTask(taskId);
       if (!task || task.group_id !== groupId) return apiErr(404, "Not found", origin);
       // Приватная задача чужого пользователя — 404 (не раскрываем существование)
-      if (!canViewTask(task, telegram_id)) return apiErr(404, "Not found", origin);
+      if (!canViewTask(task, telegram_id, isAdmin)) return apiErr(404, "Not found", origin);
       const [fresh] = await withFreshAssignees([task]);
       return json(fresh, 200, origin);
     }
@@ -600,9 +601,9 @@ Deno.serve(async (req: Request) => {
 
       const task = await getTask(taskId);
       if (!task || task.group_id !== groupId) return apiErr(404, "Not found", origin);
-      if (!canViewTask(task, telegram_id)) return apiErr(404, "Not found", origin);
+      if (!canViewTask(task, telegram_id, isAdmin)) return apiErr(404, "Not found", origin);
       // Мутировать приватную может только владелец/админ
-      if (!canMutateTask(task, telegram_id)) return apiErr(403, "Forbidden", origin);
+      if (!canMutateTask(task, telegram_id, isAdmin)) return apiErr(403, "Forbidden", origin);
 
       const fields: Partial<TaskInput> & { status?: string; due_date?: string | null } = {};
       if (body.title !== undefined) fields.title = body.title as string;
@@ -736,8 +737,8 @@ Deno.serve(async (req: Request) => {
     if (req.method === "DELETE") {
       const task = await getTask(taskId);
       if (!task || task.group_id !== groupId) return apiErr(404, "Not found", origin);
-      if (!canViewTask(task, telegram_id)) return apiErr(404, "Not found", origin);
-      if (!canMutateTask(task, telegram_id)) return apiErr(403, "Forbidden", origin);
+      if (!canViewTask(task, telegram_id, isAdmin)) return apiErr(404, "Not found", origin);
+      if (!canMutateTask(task, telegram_id, isAdmin)) return apiErr(403, "Forbidden", origin);
       try {
         await deleteTask(taskId);
         return new Response(null, { status: 204, headers: corsHeaders(origin) });

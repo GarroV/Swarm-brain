@@ -4,6 +4,10 @@ import { validateCommentContent } from "../../_shared/tasks/comments.ts";
 import { taskAccessError } from "../../_shared/tasks/access.ts";
 import { pickProjectByName, type ProjectNameRow } from "../../_shared/tasks/project-access.ts";
 
+// Оверсайт руководителя по ЗАДАЧАМ — осознанное решение владельца, см. docs/decisions/2026-08-21-admin-visibility.md.
+// На проекты и записи он НЕ распространяется.
+const ADMIN_USER_ID = 744230399;
+
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 
@@ -218,7 +222,7 @@ export async function toolUpdateTask(args: {
   // вызов без `labels` правил ЧУЖУЮ личную задачу. Отказ неотличим от «не найдена».
   const denied = taskAccessError(
     args.id, task, args.requesting_user_id,
-    groupId ?? null,
+    args.requesting_user_id === ADMIN_USER_ID, groupId ?? null,
   );
   if (denied) return denied;
   // Сужение для компилятора: гард уже вернул «не найдена» и при task=null, и при groupId=null
@@ -288,7 +292,7 @@ export async function toolDeleteTask(args: { id: string; requesting_user_id: num
   // Приватность не проверялась ВОВСЕ — участник воркспейса удалял чужую личную задачу (issue #45).
   const denied = taskAccessError(
     args.id, task, args.requesting_user_id,
-    groupId ?? null,
+    args.requesting_user_id === ADMIN_USER_ID, groupId ?? null,
   );
   if (denied) return denied;
   if (!task) return `Задача ${args.id} не найдена.`;   // сужение: гард уже отсёк null
@@ -347,7 +351,7 @@ async function commentTaskGuard(taskId: string, requestingUserId: number): Promi
   // поэтому isAdmin=false намеренно. Тексты отказов сведены к одному «не найдена» (issue #45):
   // раньше «задача приватная» и «не в твоём воркспейсе» отличались от «не найдена», и перебором
   // id подтверждалось само существование чужой личной задачи.
-  const denied = taskAccessError(taskId, task, requestingUserId, groupId ?? null);
+  const denied = taskAccessError(taskId, task, requestingUserId, requestingUserId === ADMIN_USER_ID, groupId ?? null);
   if (denied) return { ok: false, msg: denied };
   return { ok: true };
 }
