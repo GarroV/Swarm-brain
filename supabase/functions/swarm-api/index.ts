@@ -8,6 +8,7 @@ import { feedbackCategoryLabel, isFeedbackCategory } from "../_shared/feedback-c
 import {
   EntryAccessError,
   buildEntriesQuery,
+  buildReviewQueueQuery,
   getEntrySecure,
 } from "./entries-guard.ts";
 import {
@@ -276,7 +277,7 @@ Deno.serve(async (req: Request) => {
   // ── Resolve workspace ────────────────────────────────────────────────────
   const { data: userRow } = await supabase
     .from("allowed_users")
-    .select("group_id, is_admin")
+    .select("group_id, is_admin, email")
     .eq("telegram_id", telegram_id)
     .maybeSingle();
 
@@ -292,6 +293,8 @@ Deno.serve(async (req: Request) => {
     return apiErr(403, "No workspace assigned", origin);
   }
   const isAdmin = !isDemo && (telegram_id === ADMIN_USER_ID || (userRow as { is_admin?: boolean }).is_admin === true);
+  // E-mail нужен очереди вычитки: причастность к встрече определяется по metadata.attendees.
+  const userEmail = isDemo ? null : ((userRow as { email?: string | null }).email ?? null);
 
   // ── Routing ──────────────────────────────────────────────────────────────
   const url = new URL(req.url);
@@ -1153,7 +1156,12 @@ Deno.serve(async (req: Request) => {
     // Лимит настраиваемый (?limit=), дефолт 500 — прежний хардкод 50 обрезал список «Все встречи»
     // (у команды уже 60+ встреч только за 2 недели). Потолок 2000 — защита от гигантского payload.
     const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") ?? "500", 10) || 500, 1), 2000);
-    let q = buildEntriesQuery(supabase, "*", { groupId, telegramId: telegram_id })
+    // Несогласованные (очередь вычитки) — по причастности: владелец ИЛИ участник встречи.
+    // Обычный фильтр видимости тут не годится: «ничья» неприватная встреча из read-ai висела
+    // бы в очереди у всего воркспейса (issue #66). Согласованные — обычное правило.
+    let q = (confirmedParam === "false"
+      ? buildReviewQueueQuery(supabase, "*", { groupId, telegramId: telegram_id, email: userEmail })
+      : buildEntriesQuery(supabase, "*", { groupId, telegramId: telegram_id }))
       .eq("entry_type", "meeting")
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -1223,11 +1231,19 @@ Deno.serve(async (req: Request) => {
         const fields: Record<string, unknown> = {};
         if ("confirmed" in body) {
           fields.metadata = { ...(entry.metadata as Record<string, unknown>), confirmed: body.confirmed };
-          // Confirm = публикация в воркспейс: pending-встреча становится видимой всем
-          // (снимаем приватность и владельца).
+          // Confirm = публикация: встреча становится видимой всему воркспейсу (is_private=false;
+          // ниже перезапишется, если пользователь выбрал «Личное»).
+          //
+          // Владельца при этом НЕ обнуляем. Раньше здесь стояло owner_id = null, и отсюда в базе
+          // 159 «ничьих» встреч — у записи не было автора, а несогласованная «ничья» встреча
+          // висела в очереди вычитки у всего воркспейса (issue #66). Решение владельца
+          // 2026-08-22: «не должно быть ничьих — вся информация принадлежит кому-то».
+          // Хозяин = тот, кто её принёс; если автор неизвестен (Read.ai пишет без владельца) —
+          // тот, кто согласовал: «сохранит тот, кто успеет».
+          // Видимость это не меняет: общую встречу по-прежнему видят все (is_private=false).
           if (body.confirmed === true) {
             fields.is_private = false;
-            fields.owner_id = null;
+            fields.owner_id = entry.owner_id ?? telegram_id;
           }
         }
         if ("summary" in body) fields.summary = body.summary;
@@ -1243,7 +1259,10 @@ Deno.serve(async (req: Request) => {
         // Смена приватности встречи-записи: владелец задаётся/снимается вместе с флагом (как у задач).
         if (typeof body.is_private === "boolean") {
           fields.is_private = body.is_private;
-          fields.owner_id = body.is_private ? (entry.owner_id ?? telegram_id) : null;
+          // Владелец остаётся и у общей встречи: is_private отвечает за ВИДИМОСТЬ, owner_id —
+          // за авторство. Прежнее `: null` обнуляло хозяина при выборе «Общее» и было вторым
+          // источником «ничьих» записей (первый — блок confirmed выше, issue #66).
+          fields.owner_id = entry.owner_id ?? telegram_id;
         }
         if ("countries" in body && Array.isArray(body.countries)) fields.countries = normalizeCountries(body.countries as string[]);
         await supabase.from("entries").update(fields).eq("id", entry.id);

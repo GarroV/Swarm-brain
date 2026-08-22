@@ -2,6 +2,7 @@ import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildEntriesQuery,
+  buildReviewQueueQuery,
   EntryAccessError,
   getEntrySecure,
 } from "./entries-guard.ts";
@@ -120,4 +121,32 @@ Deno.test("buildEntriesQuery — applies group isolation + visibility filter", (
     or?.args[0],
     "is_private.eq.false,and(is_private.eq.true,owner_id.eq.111)",
   );
+});
+
+// ── Очередь вычитки: несогласованную встречу видят только причастные ──────────
+// Решение владельца 2026-08-22: «не должно быть ничьих — вся информация принадлежит кому-то;
+// если встреча была общая, показывать на вычитке всем участникам, сохранит тот, кто успеет».
+// До этого несогласованная общая встреча (is_private=false, owner_id=NULL — так их создаёт
+// read-ai-webhook) проходила обычный фильтр видимости и висела в очереди у ВСЕГО воркспейса:
+// её мог согласовать или удалить человек, которого на встрече не было (issue #66).
+
+Deno.test("buildReviewQueueQuery — фильтр по причастности, а не по is_private", () => {
+  const { client, calls } = makeSupabase(null);
+  buildReviewQueueQuery(client, "*", { groupId: "cee", telegramId: 111, email: "me@dodo.io" });
+
+  const or = calls.find((c) => c.method === "or");
+  const cond = String(or?.args[0] ?? "");
+  // владелец записи ИЛИ участник встречи (по email в metadata.attendees)
+  assertEquals(cond.includes("owner_id.eq.111"), true);
+  assertEquals(cond.includes("me@dodo.io"), true);
+  // «видна всем, раз не приватная» здесь НЕ действует — иначе вернётся прежний баг
+  assertEquals(cond.includes("is_private.eq.false"), false);
+});
+
+Deno.test("buildReviewQueueQuery — без email фильтруем только по владельцу (fail-closed)", () => {
+  const { client, calls } = makeSupabase(null);
+  buildReviewQueueQuery(client, "*", { groupId: "cee", telegramId: 111, email: null });
+  const cond = String(calls.find((c) => c.method === "or")?.args[0] ?? "");
+  assertEquals(cond.includes("owner_id.eq.111"), true);
+  assertEquals(cond.includes("attendees"), false);
 });

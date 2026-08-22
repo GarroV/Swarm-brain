@@ -100,3 +100,43 @@ export function buildEntriesQuery(
     .eq("group_id", groupId)
     .or(`is_private.eq.false,and(is_private.eq.true,owner_id.eq.${telegramId})`);
 }
+
+/**
+ * Очередь ВЫЧИТКИ (несогласованные встречи) — отдельное правило видимости.
+ *
+ * Обычный `buildEntriesQuery` пускает всё, что «не приватное». Для несогласованной встречи это
+ * неверно: `read-ai-webhook` создаёт её без `is_private` и без `owner_id` (дефолт колонки —
+ * `false`, владелец пустой), поэтому она проходила фильтр У КАЖДОГО и висела в очереди всего
+ * воркспейса — согласовать или удалить её мог человек, которого на встрече не было (issue #66).
+ *
+ * Правило (решение владельца 2026-08-22): «не должно быть ничьих — вся информация принадлежит
+ * кому-то; если встреча была общая, показывать на вычитке всем участникам, сохранит тот, кто
+ * успеет». Значит причастность = владелец записи ЛИБО участник встречи.
+ *
+ * Участие определяем по e-mail в `metadata.attendees` — это надёжный ключ, в отличие от имён:
+ * на проде сматчились 27 встреч из 27, у которых участники вообще заполнены. Регистр в данных
+ * нижний (проверено), поэтому e-mail нормализуем к нижнему и сравниваем containment'ом.
+ *
+ * Нет e-mail у пользователя → остаётся только владение (fail-closed): лучше не показать свою
+ * встречу, чем показать чужую.
+ */
+export function buildReviewQueueQuery(
+  supabase: SupabaseClient,
+  select: string,
+  { groupId, telegramId, email }: { groupId: string; telegramId: number; email?: string | null },
+) {
+  const mine = `owner_id.eq.${telegramId}`;
+  const clean = (email ?? "").trim().toLowerCase();
+  // PostgREST: containment по jsonb-массиву объектов. Кавычки внутри значения экранируем, а
+  // сам e-mail пропускаем через простую валидацию — в фильтр не должно попасть ничего, кроме
+  // адреса (запятая или скобка сломали бы разбор всего условия .or()).
+  const safeEmail = /^[^\s,()"']+@[^\s,()"']+$/.test(clean) ? clean : "";
+  const cond = safeEmail
+    ? `${mine},metadata->attendees.cs.[{"email":"${safeEmail}"}]`
+    : mine;
+  return supabase
+    .from("entries")
+    .select(select)
+    .eq("group_id", groupId)
+    .or(cond);
+}
