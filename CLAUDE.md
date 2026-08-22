@@ -72,6 +72,7 @@
 |----------|--------|
 | Одиночный доступ (GET /:id, PATCH, DELETE) | `getEntrySecure(supabase, id, { groupId, telegramId, requireOwner? })` |
 | Список (GET /entries, GET /search) | `buildEntriesQuery(supabase, select, { groupId, telegramId })` |
+| **Очередь вычитки** (GET /meetings?confirmed=false) | `buildReviewQueueQuery(supabase, select, { groupId, telegramId, email })` — причастность (владелец ИЛИ участник встречи по e-mail), НЕ «раз не приватная, то всем» |
 
 Хелперы автоматически применяют два слоя защиты:
 1. **Воркспейс-изоляция** — `entry.group_id === groupId`
