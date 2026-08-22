@@ -6,9 +6,9 @@ import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId } from "@/lib/telegram";
 import { logout } from "@/lib/api";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
-import { RoyNavContext, useRoyNav, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
+import { RoyNavContext, useRoyNav, useDt, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
 import type { Lens, SmartListId } from "@/lib/smartLists";
-import { RoyTabBar, NavHeader, Avatar, ROY_TABS } from "./ui";
+import { RoyTabBar, NavHeader, RoyHeader, Avatar, SearchBtn, ROY_TABS } from "./ui";
 import { initials } from "./dash/shared";
 import { useIsDesktop } from "./useIsDesktop";
 import { SearchScreen } from "./screens/SearchScreen";
@@ -33,9 +33,13 @@ import { MeetAdminScreen } from "./screens/MeetAdminScreen";
 import { ProfileMenu } from "./ProfileMenu";
 import { AnswerModal } from "./AnswerModal";
 
-// Каркас «Рой» по дизайн-хендоффу: 4 корневых таба (Поиск/Задачи/База/Встречи) + push-стек.
-// Мобайл — нижний таб-бар; десктоп (lg+) — левый сайдбар. На десктопе вкладка «Задачи»
-// показывает полный TasksScreen с видами Доска/Таймлайн/Спринт/Граф; на мобайле — список.
+// Каркас «Рой»: корневые разделы + push-стек.
+// МОБАЙЛ (решение владельца 2026-08-22, docs/decisions/2026-08-22-mobile-nav.md): нижний таб-бар
+// «Задачи · Встречи · Ещё» (+ «Проекты» шагом 4), дом — задачи. Поиск не таб, а иконка в шапке
+// любого корневого экрана → push-роут `ask` (тот же SearchScreen/AnswerScreen). База — пункт
+// «Ещё» → push-роут `base`. Настройки/Команда/Админ/Карта живут в «Ещё» и потому доступны с
+// ЛЮБОГО таба (до этого — только из шапки «Поиска», т.е. с одного экрана из четырёх).
+// ДЕСКТОП (lg+) не менялся: дом — дашборд (`search`), «Задачи» — полный TasksScreen, база — `book`.
 
 export function RoyApp({ me }: { me: Me | null }) {
   const [tab, setTabState] = useState<RoyTab>("search");
@@ -107,7 +111,17 @@ export function RoyApp({ me }: { me: Me | null }) {
     }
     try {
       const saved = sessionStorage.getItem("roy_tab");
-      if (saved && ROY_TABS.some((t) => t.id === saved)) setTabState(saved as RoyTab);
+      // Валидируем по ПОЛНОМУ союзу, а не по ROY_TABS: в баре мобильные табы, а `search`/`book` —
+      // десктопные разделы. На мобайле сохранённые десктопные значения мигрируем, иначе человек с
+      // живой сессией после деплоя попал бы на экран, которого в баре нет (подсветки таба нет).
+      const valid = saved && (["search", "task", "book", "cal", "more"] as const).includes(saved as RoyTab)
+        ? (saved as RoyTab)
+        : null;
+      const desktop = window.matchMedia("(min-width: 1024px)").matches;
+      const initial: RoyTab = desktop
+        ? (valid ?? "search")
+        : valid === null || valid === "search" ? "task" : valid === "book" ? "more" : valid;
+      setTabState(initial);
       // Восстанавливаем и push-стек (открытую деталь), чтобы рефреш не сбрасывал на корень таба.
       // Валидируем не только view, но и ОБЯЗАТЕЛЬНЫЕ params (битый/усечённый storage → роут без id
       // ушёл бы в fetch(undefined) и белый экран). Любой невалидный роут → стек не восстанавливаем.
@@ -207,6 +221,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                   {tab === "task" && (isDesktop ? <TasksScreen /> : <RoyTasksScreen />)}
                   {tab === "book" && <RoyBaseScreen />}
                   {tab === "cal" && <RoyMeetingsScreen />}
+                  {tab === "more" && <MoreScreen root />}
                 </div>
                 <RoyTabBar active={tab} onChange={(id) => setTab(id as RoyTab)} className="lg:hidden" />
               </>
@@ -252,6 +267,8 @@ function PushScreen({ route }: { route: RoyRoute }) {
   if (route.view === "newEntry") return <NewEntry />;
   if (route.view === "meetingDetail") return <MeetingDetail id={route.params.id} />;
   if (route.view === "more") return <MoreScreen />;
+  if (route.view === "ask") return <AskScreen />;
+  if (route.view === "base") return <BaseScreen />;
   if (route.view === "map") return <MapScreen />;
   if (route.view === "settings") return <Wrapped title="Настройки"><SettingsScreen /></Wrapped>;
   if (route.view === "team") return <Wrapped title="Команда"><TeamScreen /></Wrapped>;
@@ -281,6 +298,19 @@ function MapScreen() {
   );
 }
 
+// Поиск как push-экран: таба «Поиск» на мобайле нет, вход — иконка в шапке (SearchBtn).
+// Тот же SearchScreen (поле, недавние запросы, «Продолжить»), только с «Назад» вместо лого.
+function AskScreen() {
+  const { pop } = useRoyNav();
+  return <SearchScreen onBack={pop} />;
+}
+
+// База как push-экран из «Ещё» — тот же RoyBaseScreen, с «Назад» вместо заголовка-хедера.
+function BaseScreen() {
+  const { pop } = useRoyNav();
+  return <RoyBaseScreen onBack={pop} />;
+}
+
 function Wrapped({ title, children }: { title: string; children: React.ReactNode }) {
   const { pop } = useRoyNav();
   return (
@@ -291,17 +321,31 @@ function Wrapped({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function MoreScreen() {
+// «Ещё» — корневой таб на мобайле (root) и push-экран на десктопе (из шапки дашборда).
+// Здесь живёт всё, что не заслужило таба: профиль, база, команда, настройки, админка, карта.
+// Именно это закрывает главный блокер навигации — раньше вход был только из шапки «Поиска».
+function MoreScreen({ root = false }: { root?: boolean }) {
   const { me, push, pop } = useRoyNav();
+  const dt = useDt();
   const rows: { label: string; route: RoyRoute }[] = [
-    { label: "Карта системы", route: { view: "map" } },
-    { label: "Настройки", route: { view: "settings" } },
-    { label: "Команда", route: { view: "team" } },
+    { label: dt("База", "Knowledge base"), route: { view: "base" } },
+    { label: dt("Команда", "Team"), route: { view: "team" } },
+    { label: dt("Настройки", "Settings"), route: { view: "settings" } },
+    { label: dt("Карта системы", "System map"), route: { view: "map" } },
   ];
-  if (me?.is_admin) rows.push({ label: "Админ", route: { view: "admin" } });
+  if (me?.is_admin) rows.push({ label: dt("Админ", "Admin"), route: { view: "admin" } });
   return (
     <div className="roy-pop flex h-full flex-col">
-      <NavHeader onBack={pop} title="Ещё" />
+      {root ? <RoyHeader title={dt("Ещё", "More")} /> : <NavHeader onBack={pop} title={dt("Ещё", "More")} />}
+      {me && (
+        <div className="flex shrink-0 items-center gap-3 px-4 pb-3">
+          <Avatar size={44}>{initials(me.name)}</Avatar>
+          <div className="min-w-0">
+            <div className="truncate font-semibold text-ink" style={{ fontSize: 15 }}>{me.name}</div>
+            {me.username && <div className="truncate text-ink-mute" style={{ fontSize: 13 }}>@{me.username}</div>}
+          </div>
+        </div>
+      )}
       <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
         {rows.map((r) => (
           <button

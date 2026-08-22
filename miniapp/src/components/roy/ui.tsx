@@ -339,6 +339,25 @@ export function RoyHeader({ title, right, sub }: { title: ReactNode; right?: Rea
   );
 }
 
+// Единственный вход в поиск на мобайле (таба «Поиск» больше нет): иконка в шапке любого
+// корневого экрана. Формулировка одна во всех точках входа — владелец 2026-08-22: «у нас поиск
+// в вебе один», два разных плейсхолдера читались как две функции. Тач-цель 40x40 (норма 44 —
+// с учётом padding шапки).
+export function SearchBtn({ onClick }: { onClick: () => void }) {
+  const dt = useDt();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={dt("Спросить или найти", "Ask or find")}
+      className={cn("inline-flex items-center justify-center shrink-0 rounded-full bg-surface border border-line-2 text-ink-soft", TAP)}
+      style={{ width: 40, height: 40 }}
+    >
+      <RoyIcon name="search" size={20} strokeWidth={1.9} />
+    </button>
+  );
+}
+
 // ── IconBtn (круглая кнопка-иконка в шапке) ──────────────────────────────────
 export function IconBtn({ name, onClick, className, "aria-label": ariaLabel }: { name: RoyIconName; onClick?: () => void; className?: string; "aria-label"?: string }) {
   return (
@@ -549,15 +568,18 @@ export function NavHeader({ onBack, title, right }: { onBack: () => void; title?
   );
 }
 
-// ── TabBar (4 корневых таба) ─────────────────────────────────────────────────
-export const ROY_TABS: { id: string; label: string; icon: RoyIconName }[] = [
-  { id: "search", label: "Поиск", icon: "search" },
-  { id: "task", label: "Задачи", icon: "task" },
-  { id: "book", label: "База", icon: "book" },
-  { id: "cal", label: "Встречи", icon: "cal" },
+// ── TabBar (мобильные корневые табы) ────────────────────────────────────────
+// Набор — решение владельца 2026-08-22: «задачи, проекты, встречи, еще». Поиск перестал быть
+// табом (иконка в шапке любого экрана), база уехала в «Ещё». Подписи двуязычные: правило
+// проекта №6 — новый пользовательский текст сразу EN+RU.
+export const ROY_TABS: { id: string; label: string; labelEn: string; icon: RoyIconName }[] = [
+  { id: "task", label: "Задачи", labelEn: "Tasks", icon: "task" },
+  { id: "cal", label: "Встречи", labelEn: "Meetings", icon: "cal" },
+  { id: "more", label: "Ещё", labelEn: "More", icon: "dots" },
 ];
 
 export function RoyTabBar({ active, onChange, className }: { active: string; onChange: (id: string) => void; className?: string }) {
+  const dt = useDt();
   return (
     <div className={cn("shrink-0 flex justify-around items-start bg-surface border-t border-line", className)} style={{ paddingTop: 9, paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
       {ROY_TABS.map((t) => {
@@ -572,7 +594,7 @@ export function RoyTabBar({ active, onChange, className }: { active: string; onC
           >
             <RoyIcon name={t.icon} size={23} strokeWidth={on ? 2.1 : 1.8} />
             <span style={{ fontSize: 10.5 }} className={on ? "font-bold" : "font-medium"}>
-              {t.label}
+              {dt(t.label, t.labelEn)}
             </span>
           </button>
         );

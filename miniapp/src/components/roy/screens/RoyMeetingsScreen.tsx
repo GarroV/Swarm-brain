@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { useRoyNav } from "../nav";
-import { RoyHeader, Segmented, RoyCard, Market, SectionLabel, StorageBadge } from "../ui";
+import { useDt, useRoyNav } from "../nav";
+import { RoyHeader, Segmented, RoyCard, Market, SectionLabel, StorageBadge, SearchBtn } from "../ui";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { DashTaskRow } from "../dash/shared";
 import { useIsDesktop } from "../useIsDesktop";
@@ -135,6 +135,7 @@ function CountsPanel({ title, counts }: { title: string; counts: [string, number
 
 export function RoyMeetingsScreen() {
   const { push, toast } = useRoyNav();
+  const dt = useDt();
   const confirm = useConfirm();
   const isDesktop = useIsDesktop();
   const [meetings, setMeetings] = useState<Entry[] | null>(null);
@@ -228,7 +229,7 @@ export function RoyMeetingsScreen() {
   return (
     <div className="relative h-full overflow-y-auto">
       <AgentReviewQueue onOpen={openReview} />
-      <RoyHeader title="Встречи" />
+      <RoyHeader title={dt("Встречи", "Meetings")} right={<SearchBtn onClick={() => push({ view: "ask" })} />} />
       <div className="px-5 pb-3">{segmented}</div>
       <div className="space-y-2.5 px-5 pb-28">
         {skeleton}

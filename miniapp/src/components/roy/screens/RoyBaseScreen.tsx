@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRoyNav } from "../nav";
-import { RoyHeader, RoyCard, TypeTag, Market, Chip, FAB } from "../ui";
+import { useDt, useRoyNav } from "../nav";
+import { RoyHeader, NavHeader, RoyCard, TypeTag, Market, Chip, FAB } from "../ui";
 import { RoyIcon } from "../icons";
 import { entryTagKey, entryFacet, deriveEntryTitle, entryPreview } from "../entry";
 import { fetchEntries } from "@/lib/api";
@@ -25,8 +25,9 @@ function fmtDate(iso: string | null): string | null {
   }
 }
 
-export function RoyBaseScreen() {
+export function RoyBaseScreen({ onBack }: { onBack?: () => void }) {
   const { push, openAnswer } = useRoyNav();
+  const dt = useDt();
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
@@ -45,7 +46,9 @@ export function RoyBaseScreen() {
 
   return (
     <div className="relative h-full overflow-y-auto">
-      <RoyHeader title="База" />
+      {/* На мобайле экран открывается из «Ещё» (push) — нужна кнопка «Назад»; на десктопе это
+          раздел (таб `book`), там прежняя шапка-заголовок. */}
+      {onBack ? <NavHeader onBack={onBack} title={dt("База", "Knowledge base")} /> : <RoyHeader title={dt("База", "Knowledge base")} />}
       <div className="px-5">
         <form onSubmit={(e) => { e.preventDefault(); go(q); }}>
           <div className="flex items-center gap-2.5 rounded-[15px] border border-line-2 bg-surface px-4 py-3">

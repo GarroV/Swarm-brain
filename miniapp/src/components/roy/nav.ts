@@ -6,7 +6,12 @@ import type { Lens, SmartListId } from "@/lib/smartLists";
 // Навигация в стиле прототипа: 4 корневых таба + push-стек детальных/создающих экранов.
 // Вынесено в отдельный модуль, чтобы RoyApp и экраны не образовывали циклический импорт.
 
-export type RoyTab = "search" | "task" | "book" | "cal";
+// Мобильный таб-бар (см. ROY_TABS в ui.tsx): Задачи · Встречи · Ещё (+ Проекты, шаг 4).
+// `search` и `book` остаются в союзе как ДЕСКТОПНЫЕ разделы: на десктопе `search` — дашборд-дом,
+// `book` — база. На мобайле их в таб-баре нет: поиск живёт иконкой в шапке (push-роут `ask`),
+// база — пунктом «Ещё» (push-роут `base`). Решение владельца 2026-08-22 (набор табов «задачи,
+// проекты, встречи, еще»), см. docs/decisions/2026-08-22-mobile-nav.md.
+export type RoyTab = "search" | "task" | "book" | "cal" | "more";
 
 export type RoyRoute =
   | { view: "answer"; params: { query: string } }
@@ -14,6 +19,8 @@ export type RoyRoute =
   | { view: "taskDetail"; params: { id: string } }
   | { view: "newTask"; params?: { id?: string } }
   | { view: "newEntry" }
+  | { view: "ask" }
+  | { view: "base" }
   | { view: "meetingDetail"; params: { id: string } }
   | { view: "meetingReview"; params: { id: string } }
   | { view: "settings" }

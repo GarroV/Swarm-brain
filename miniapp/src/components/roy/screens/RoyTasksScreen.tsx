@@ -1,6 +1,6 @@
 "use client";
-import { useRoyNav } from "../nav";
-import { RoyHeader, FAB } from "../ui";
+import { useDt, useRoyNav } from "../nav";
+import { RoyHeader, FAB, SearchBtn } from "../ui";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { SwipeRow } from "../SwipeRow";
 import { SmartListNav } from "@/components/tasks/SmartListNav";
@@ -13,6 +13,7 @@ import type { Task } from "@/types";
 // Мобильный Reminders-вид задач: чипы смарт-списков + спокойный чек-лист со свайпом.
 export function RoyTasksScreen() {
   const { push, toast, openTask } = useRoyNav();
+  const dt = useDt();
   const r = useReminderTasks();
   const activeDef = SMART_LISTS.find((s) => s.id === r.activeList)!;
   // «По рынкам»/«Все сотрудники» — независимые тумблеры (не линза), см. RemindersTasks.tsx (десктоп).
@@ -51,7 +52,9 @@ export function RoyTasksScreen() {
 
   return (
     <div className="relative h-full overflow-y-auto">
-      <RoyHeader title="Задачи" />
+      {/* Поиск — иконкой в шапке: таба «Поиск» на мобайле больше нет, а искать нужно с любого
+          экрана (решение владельца 2026-08-22). */}
+      <RoyHeader title={dt("Задачи", "Tasks")} right={<SearchBtn onClick={() => push({ view: "ask" })} />} />
       <div className="px-5 pb-2">
         <LensToggle
           lens={r.lens}
