@@ -35,6 +35,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 - **Env** (живут в дашборде CF Pages → Settings → Variables, НЕ в репо): `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_BOT_USERNAME`, `NEXT_PUBLIC_DEV_MODE`, `SWARM_API_URL`, `TELEGRAM_BOT_TOKEN`, `WEB_JWT_SECRET`.
 - Конфиг живёт **только в дашборде CF** (в репо нет `wrangler` и нет workflow ДЛЯ ДЕПЛОЯ — git-интеграция собирает сама). `.github/workflows/` в репозитории есть, но это только проверки и сборка рекордера — см. §CI ниже.
 - **Нюанс URL:** CF Pages срезает `.html` → `/foo.html` отдаёт 308 на `/foo` (напр. `/system-map.html` → `/system-map`). Ссылки лучше без `.html`.
+- **Экран показывает старые данные после сохранения?** Проверь, не кэшируется ли вызов: приватный API (`/api/*`) обязан идти мимо SW — правило в `miniapp/public/sw.js`, тест `deno test --allow-read miniapp/sw.test.ts` (issue #71).
 - **«В проде старая версия»?** Это НЕ деплой (он работает), а залипший клиентский **service worker / PWA-кэш** → ⌘⇧R / Unregister SW / перезапуск PWA. См. `BACKLOG.md` → «Веб (miniapp): деплой РАБОТАЕТ».
 
 ### CI / GitHub Actions — что робот делает и чего НЕ делает

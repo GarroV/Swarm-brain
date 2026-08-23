@@ -210,6 +210,9 @@ function authHeaders(): Record<string, string> {
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    // no-store: ответы приватного API не должны ни отдаваться из кэша, ни в него попадать.
+    // Второй слой защиты рядом с sw.js (issue #71 — экран показывал данные «на шаг назад»).
+    cache: "no-store",
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
@@ -226,6 +229,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 async function apiFetchNoContentType<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    cache: "no-store",
     credentials: "include",
     headers: {
       ...authHeaders(),
