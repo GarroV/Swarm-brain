@@ -72,6 +72,13 @@ export function SwipeRow({ children, actions, onTap }: { children: ReactNode; ac
 
   return (
     <div className="relative overflow-hidden rounded-[18px]">
+      {/* Слой действий существует, только когда шторка тронута. В покое он лежал под строкой и
+          пробивался наружу тонкой дугой на скруглённых углах (заметно на светлой теме): строка
+          поднята в композитор из-за transform, и клип контейнера ложится на слои с разным
+          антиалиасингом — ни radius у слоя действий, ни собственный композитный слой дугу не
+          убрали до конца, а условный рендер убирает саму возможность. Побочная польза: в покое
+          в DOM нет кнопок, до которых всё равно не дотянуться. */}
+      {(dx !== 0 || open) && (
       <div className="absolute inset-y-0 right-0 flex">
         {actions.map((a) => (
           <button
@@ -90,7 +97,9 @@ export function SwipeRow({ children, actions, onTap }: { children: ReactNode; ac
           </button>
         ))}
       </div>
+      )}
       <div
+        data-swipe-content
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}

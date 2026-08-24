@@ -202,11 +202,12 @@ export const bodyText = (page) => page.evaluate(() => document.body.innerText.re
 
 /** Строки списка, завёрнутые в SwipeRow (у внутреннего слоя есть translateX). */
 export const swipeRows = (page) => page.evaluate(() => {
-  const rows = [...document.querySelectorAll("div.relative.overflow-hidden")]
-    .filter((d) => /translateX/.test(d.children[1]?.style?.transform || ""));
-  return rows.map((r) => {
-    const b = r.getBoundingClientRect();
-    return { y: Math.round(b.y), h: Math.round(b.height), dx: r.children[1].style.transform, title: r.innerText.split("\n")[0].slice(0, 30) };
+  // Опора — [data-swipe-content] (сдвигаемый слой SwipeRow). По порядку детей искать нельзя:
+  // слой действий рендерится только при тронутой шторке.
+  return [...document.querySelectorAll("[data-swipe-content]")].map((content) => {
+    const row = content.parentElement;
+    const b = row.getBoundingClientRect();
+    return { y: Math.round(b.y), h: Math.round(b.height), dx: content.style.transform, title: row.innerText.split("\n")[0].slice(0, 30) };
   });
 });
 

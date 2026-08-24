@@ -209,9 +209,7 @@ const allErrors = [];
   await clickText(page, "Задачи");
   await wait(1200);
   const geom = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll("div.relative.overflow-hidden")]
-      .filter((d) => /translateX/.test(d.children[1]?.style?.transform || ""));
-    const first = rows[0]?.getBoundingClientRect();
+    const first = document.querySelector("[data-swipe-content]")?.parentElement?.getBoundingClientRect();
     const cb = document.querySelector('button[role="checkbox"]');
     const px = (v) => Math.abs(parseFloat(v) || 0);
     let hit = null;
