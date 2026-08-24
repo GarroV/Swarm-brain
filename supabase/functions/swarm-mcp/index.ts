@@ -6,6 +6,7 @@ import { matchEntries } from "../_shared/search.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
 import { isFeedbackStatus } from "../_shared/feedback-categories.ts";
+import { normalizeExtractedEventDate, todayIso } from "../_shared/llm-date.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -69,11 +70,12 @@ async function chatComplete(system: string, user: string, opts: { temperature?: 
 async function extractEntryMeta(text: string): Promise<{ countries: string[]; entry_type: string; entry_date: string | null }> {
   try {
     const raw = await chatComplete(
+      `Сегодня ${todayIso()}.\n` +
       "Проанализируй текст и верни JSON (только JSON):\n" +
       '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n' +
       COUNTRY_PROMPT_RULE + "\n" +
       ENTRY_TYPE_PROMPT_RULE + "\n" +
-      "entry_date — дата события из текста, null если нет.",
+      "entry_date — дата события из текста, null если нет. Год считай от сегодняшней даты, НИКОГДА не из головы.",
       text.slice(0, 2000),
       { temperature: 0, json: true }
     );
@@ -81,7 +83,8 @@ async function extractEntryMeta(text: string): Promise<{ countries: string[]; en
     return {
       countries: normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []),
       entry_type: parsed.entry_type === "meeting" ? "meeting" : "note",
-      entry_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date ?? "") ? parsed.entry_date : null,
+      // Слой 2 против выдуманного моделью года (см. _shared/llm-date.ts).
+      entry_date: normalizeExtractedEventDate(parsed.entry_date),
     };
   } catch { return { countries: [], entry_type: "note", entry_date: null }; }
 }
@@ -841,10 +844,12 @@ async function toolReindexEntry(args: { id: string; summary?: string }): Promise
     ? ""
     : "summary — 3-5 тезисов маркированным списком на русском: конкретные факты, имена, цифры.\n";
   const system =
+    `Сегодня ${todayIso()}.\n` +
     "Проанализируй текст и верни JSON (только JSON):\n" + reindexSchema + "\n" +
     reindexSummaryRule +
     COUNTRY_PROMPT_RULE + "\n" +
     ENTRY_TYPE_PROMPT_RULE + "\n" +
+    "entry_date — дата события из текста. Год считай от сегодняшней даты, НИКОГДА не из головы.\n" +
     "keywords — 5-8 ключевых слов и синонимов для поиска.";
 
   let parsed: { summary?: string; countries?: string[]; entry_type?: string; entry_date?: string; keywords?: string };
@@ -873,7 +878,8 @@ async function toolReindexEntry(args: { id: string; summary?: string }): Promise
   const updates: Record<string, unknown> = { countries, embedding };
   if (newSummary && newSummary !== e.summary) updates.summary = newSummary;
   if (parsed.entry_type) updates.entry_type = parsed.entry_type === "meeting" ? "meeting" : "note";
-  if (parsed.entry_date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date)) updates.entry_date = parsed.entry_date;
+  const reindexDate = normalizeExtractedEventDate(parsed.entry_date); // чиним год от модели
+  if (reindexDate) updates.entry_date = reindexDate;
 
   const { error: updErr } = await supabase.from("entries").update(updates).eq("id", args.id);
   if (updErr) return `Ошибка обновления: ${updErr.message}`;

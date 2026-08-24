@@ -2,6 +2,7 @@ import { supabase, ADMIN_USER_ID } from "./supabase.ts";
 import { getEmbedding, chatComplete } from "./openai.ts";
 import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../../_shared/countries.ts";
 import { applyGeneralSentinel, specificCountries } from "../../_shared/meta-extract.ts";
+import { normalizeExtractedEventDate, todayIso } from "../../_shared/llm-date.ts";
 
 
 export function visibilityFilter(userId: number): string {
@@ -28,12 +29,14 @@ async function buildEntryIndex(content: string, existingSummary?: string): Promi
   const summaryRule = hasSummary
     ? ""
     : "summary — 3-5 тезисов маркированным списком на русском: конкретные факты, имена, цифры, решения. Без общих фраз.\n";
+  const today = todayIso();
   const system =
+    `Сегодня ${today}.\n` +
     "Проанализируй текст и верни JSON (только JSON, без markdown):\n" + schema + "\n\n" +
     summaryRule +
     COUNTRY_PROMPT_RULE + "\n" +
     ENTRY_TYPE_PROMPT_RULE + "\n" +
-    "entry_date — дата события из текста (не сегодняшняя), null если нет.\n" +
+    "entry_date — дата события из текста (не сегодняшняя), null если нет. Год считай от сегодняшней даты: назван только день и месяц — бери ближайший подходящий год, НИКОГДА не из головы.\n" +
     "keywords — 5-8 ключевых слов и синонимов для поиска через запятую.";
   try {
     const raw = await chatComplete(system, content.slice(0, 5000), { temperature: 0, json: true });
@@ -42,7 +45,8 @@ async function buildEntryIndex(content: string, existingSummary?: string): Promi
       summary: hasSummary ? existingSummary! : (typeof parsed.summary === "string" ? parsed.summary : null),
       countries: normalizeCountries(Array.isArray(parsed.countries) ? (parsed.countries as unknown[]).filter((c): c is string => typeof c === "string") : []),
       entry_type: parsed.entry_type === "meeting" ? "meeting" : "note", // только два типа
-      entry_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date ?? "") ? parsed.entry_date : null,
+      // Слой 2 против выдуманного моделью года (см. _shared/llm-date.ts).
+      entry_date: normalizeExtractedEventDate(parsed.entry_date, today),
       keywords: typeof parsed.keywords === "string" ? parsed.keywords : "",
     };
   } catch {
@@ -57,11 +61,12 @@ export async function extractEntryMeta(text: string): Promise<{ countries: strin
   // Re-run without placeholder to get real meta-only result
   try {
     const raw = await chatComplete(
+      `Сегодня ${todayIso()}.\n` +
       "Проанализируй текст и верни JSON (только JSON, без markdown):\n" +
       '{"countries":["Spain","Bulgaria"],"entry_type":"meeting|note","entry_date":"YYYY-MM-DD или null"}\n\n' +
       COUNTRY_PROMPT_RULE + "\n" +
       ENTRY_TYPE_PROMPT_RULE + "\n" +
-      "entry_date — дата события из текста, null если нет.",
+      "entry_date — дата события из текста, null если нет. Год считай от сегодняшней даты, НИКОГДА не из головы.",
       text.slice(0, 4000),
       { temperature: 0, json: true }
     );
@@ -69,7 +74,7 @@ export async function extractEntryMeta(text: string): Promise<{ countries: strin
     return {
       countries: normalizeCountries(Array.isArray(parsed.countries) ? parsed.countries : []),
       entry_type: parsed.entry_type === "meeting" ? "meeting" : "note", // только два типа
-      entry_date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.entry_date ?? "") ? parsed.entry_date : null,
+      entry_date: normalizeExtractedEventDate(parsed.entry_date),
     };
   } catch { return { countries: idx.countries, entry_type: idx.entry_type, entry_date: idx.entry_date }; }
 }

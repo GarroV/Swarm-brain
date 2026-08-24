@@ -5,6 +5,7 @@ import { setSession, clearSession } from "../lib/storage.ts";
 import { dbGetTask, dbListTasks, dbCreateTask, dbUpdateTask, dbDeleteTask, dbListAllOpen, dbListPending, dbListToday } from "./db.ts";
 import { getProfilesForPrompt, buildProfileMap, buildDisplayNameMap, getAllUniqueMarkets, resolveAssignees, findUserByMention } from "./matcher.ts";
 import { sendTaskCard, sendPendingTaskCard, STATUS_LABEL, formatTaskLine } from "./formatter.ts";
+import { normalizeExtractedDueDate, todayIso } from "../../_shared/llm-date.ts";
 import type { Task } from "./types.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
@@ -164,8 +165,9 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, use
     markets: p.markets,
   })));
 
+  const today = todayIso();
   const raw = await chatComplete(
-    `Ты анализируешь текст командной базы знаний. Извлеки задачи — только конкретные поручения/действия.\n` +
+    `Сегодня ${today}. Ты анализируешь текст командной базы знаний. Извлеки задачи — только конкретные поручения/действия.\n` +
     `Члены команды (JSON): ${userList || "[]"}\n\n` +
     `Роли команды:\n` +
     `- "marketing" — задачи по маркетингу, рекламе, соцсетям\n` +
@@ -183,6 +185,7 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, use
     `description — 1 короткая фраза контекста задачи (зачем / какой результат / важная деталь из текста); НЕ повторяй заголовок; null если заголовок самодостаточен.\n` +
     `task_role — одно из: "marketing", "bd", "rnd", или null если неизвестно.\n` +
     `country — название страны или null. due_date — YYYY-MM-DD или null.\n` +
+    `due_date: год считай от сегодняшней даты. Если назван только день и месяц («до 17 августа») — подставь ближайший подходящий год, НИКОГДА не бери год из головы. Срок не назван — null.\n` +
     `Создавай задачи только с confidence >= 0.7. Если задач нет — {"tasks":[]}.`,
     content.slice(0, 6000),
     { temperature: 0, json: true }
@@ -227,7 +230,8 @@ export async function analyzeAndCreateTasks(content: string, chatId: number, use
       assignee_telegram_ids: finalTelegramIds,
       task_role,
       country: task.country ?? null,
-      due_date: task.due_date ?? null,
+      // Слой 2 против выдуманного моделью года (см. _shared/tasks/due-date.ts).
+      due_date: normalizeExtractedDueDate(task.due_date, today),
       source: "transcript",
       status: "pending",
       confirmed: false,

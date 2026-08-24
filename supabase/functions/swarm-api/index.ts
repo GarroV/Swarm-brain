@@ -41,6 +41,7 @@ import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
+import { normalizeExtractedDueDate, todayIso } from "../_shared/llm-date.ts";
 import { canAccessDraftMeeting, draftMeetingsOwnScoped, type DraftMeetingRow } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
 import { corsHeaders, json, apiErr } from "./http.ts";
@@ -180,13 +181,14 @@ type ExtractedTask = { title: string; description?: string; assignee?: string; d
 
 async function gptExtractTasks(text: string): Promise<ExtractedTask[]> {
   const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
+  const today = todayIso();
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
     body: JSON.stringify({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: 'Извлеки задачи из тезисов встречи. Верни JSON массив (только JSON, без markdown): [{"title":"короткая формулировка действия","description":"1 фраза контекста из обсуждения: зачем/какой ожидаемый результат/важная деталь. НЕ повторяй заголовок другими словами. null, если заголовок самодостаточен","assignee":"Полное имя или null","due_date":"YYYY-MM-DD или null","country":"... или null"}]. Бери только реальные поручения/действия с конкретным результатом. Если задач нет — пустой массив [].' },
+        { role: "system", content: `Сегодня ${today}. Извлеки задачи из тезисов встречи. Верни JSON массив (только JSON, без markdown): [{"title":"короткая формулировка действия","description":"1 фраза контекста из обсуждения: зачем/какой ожидаемый результат/важная деталь. НЕ повторяй заголовок другими словами. null, если заголовок самодостаточен","assignee":"Полное имя или null","due_date":"YYYY-MM-DD или null","country":"... или null"}]. Бери только реальные поручения/действия с конкретным результатом. Если задач нет — пустой массив [].\ndue_date: год считай от сегодняшней даты. Если в тексте назван только день и месяц («до 17 августа») — подставь ближайший подходящий год, НИКОГДА не бери год из головы. Если срок не назван — null.` },
         { role: "user", content: text.slice(0, 8000) },
       ],
       max_tokens: 1200,
@@ -196,7 +198,9 @@ async function gptExtractTasks(text: string): Promise<ExtractedTask[]> {
   try {
     const raw = (await res.json()).choices[0].message.content.replace(/```json\n?|\n?```/g, "").trim();
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // Слой 2: выдуманный моделью год чиним здесь — промпт можно проигнорировать, проверку нет.
+    return (parsed as ExtractedTask[]).map((t) => ({ ...t, due_date: normalizeExtractedDueDate(t.due_date, today) }));
   } catch {
     return [];
   }
