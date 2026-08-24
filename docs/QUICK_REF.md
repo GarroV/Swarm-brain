@@ -6,6 +6,16 @@
 
 ## Деплой
 
+> 🚦 **Раскатка — только по явному «да» владельца и в окно 09:00–10:00 будни (Белград);
+> миграции и рискованное — ночью.** Пуш в `main` тоже раскатка: Cloudflare Pages собирает веб
+> с `main` сам. Что накопилось — `make deploy-plan`, раскатать — `make deploy` (вне окна откажет,
+> `FORCE=1` — осознанный обход). Канон: [decisions/2026-08-24-deploy-window.md](decisions/2026-08-24-deploy-window.md).
+
+```bash
+make deploy-plan   # что готово, но НЕ раскатано (функции, веб, миграции, рекордер)
+make deploy        # раскатать накопленное + передвинуть метку prod-deployed
+```
+
 ```bash
 supabase functions deploy swarm-bot --no-verify-jwt          # всегда --no-verify-jwt
 supabase functions deploy swarm-setup --no-verify-jwt        # публичный GET, Claude Desktop installer

@@ -10,9 +10,11 @@ SB         := C:/projects/swarm-staging
 # Инициализация (демо-дефолт Supabase для приватного staging): см. docs/DEPLOY.md.
 STAGING_PGPW := $(shell cat $(HOME)/.swarm/staging_pgpw 2>/dev/null)
 
-.PHONY: help smoke-staging smoke-prod staging-sync-functions staging-migrate staging-psql staging-ps staging-up staging-down
+.PHONY: help smoke-staging smoke-prod staging-sync-functions staging-migrate staging-psql staging-ps staging-up staging-down deploy-plan deploy
 
 help:
+	@echo "deploy-plan            — что готово, но НЕ раскатано (накопитель; ничего не меняет)"
+	@echo "deploy                 — раскатать накопленное (окно: будни 09:00–09:59 Белград; нужно «да» владельца)"
 	@echo "smoke-staging          — смоук edge-функций на staging (MUSPELHEIM)"
 	@echo "smoke-prod             — смоук edge-функций на проде"
 	@echo "staging-sync-functions — залить supabase/functions на staging + рестарт edge-runtime"
@@ -51,3 +53,12 @@ staging-up:
 
 staging-down:
 	ssh $(MUSPEL) "powershell -NoProfile -Command \"cd $(SB); docker compose stop\""
+
+# ── Раскатка на прод ──────────────────────────────────────────────────────────
+# Раскатка — отдельное действие с отдельным «да» владельца и в согласованное окно
+# (docs/decisions/2026-08-24-deploy-window.md). deploy-plan только показывает.
+deploy-plan:
+	@./scripts/deploy-window.sh plan
+
+deploy:
+	@./scripts/deploy-window.sh go
