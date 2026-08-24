@@ -11,7 +11,7 @@ import type { Lens, SmartListId } from "@/lib/smartLists";
 // `book` — база. На мобайле их в таб-баре нет: поиск живёт иконкой в шапке (push-роут `ask`),
 // база — пунктом «Ещё» (push-роут `base`). Решение владельца 2026-08-22 (набор табов «задачи,
 // проекты, встречи, еще»), см. docs/decisions/2026-08-22-mobile-nav.md.
-export type RoyTab = "search" | "task" | "book" | "cal" | "more";
+export type RoyTab = "search" | "task" | "projects" | "book" | "cal" | "more";
 
 export type RoyRoute =
   | { view: "answer"; params: { query: string } }
@@ -21,6 +21,7 @@ export type RoyRoute =
   | { view: "newEntry" }
   | { view: "ask" }
   | { view: "base" }
+  | { view: "project"; params: { id: string } }
   | { view: "meetingDetail"; params: { id: string } }
   | { view: "meetingReview"; params: { id: string } }
   | { view: "settings" }

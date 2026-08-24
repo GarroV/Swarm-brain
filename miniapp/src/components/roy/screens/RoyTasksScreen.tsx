@@ -2,9 +2,8 @@
 import { useDt, useRoyNav } from "../nav";
 import { RoyHeader, FAB, SearchBtn } from "../ui";
 import { RoyIcon, type RoyIconName } from "../icons";
-import { SwipeRow } from "../SwipeRow";
+import { MobileTaskRow } from "../MobileTaskRow";
 import { SmartListNav } from "@/components/tasks/SmartListNav";
-import { TaskRow } from "@/components/tasks/TaskRow";
 import { LensToggle } from "@/components/tasks/LensToggle";
 import { useReminderTasks } from "@/components/tasks/useReminderTasks";
 import { SMART_LISTS } from "@/lib/smartLists";
@@ -36,18 +35,7 @@ export function RoyTasksScreen() {
   };
 
   const row = (t: Task) => (
-    <SwipeRow
-      key={t.id}
-      onTap={() => openTask(t)}
-      actions={[
-        { icon: "pencil", label: "Изменить", color: "var(--accent-ink)", onClick: () => push({ view: "newTask", params: { id: t.id } }) },
-        { icon: "trash", label: "Удалить", color: "var(--pri-high)", onClick: () => remove(t) },
-      ]}
-    >
-      <div className="bg-background px-3">
-        <TaskRow task={t} now={r.now} showAssignee={showAssignee} onToggle={() => r.toggle(t)} />
-      </div>
-    </SwipeRow>
+    <MobileTaskRow key={t.id} task={t} now={r.now} showAssignee={showAssignee} onToggle={() => r.toggle(t)} onRemove={() => remove(t)} />
   );
 
   return (

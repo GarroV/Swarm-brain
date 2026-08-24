@@ -574,6 +574,7 @@ export function NavHeader({ onBack, title, right }: { onBack: () => void; title?
 // проекта №6 — новый пользовательский текст сразу EN+RU.
 export const ROY_TABS: { id: string; label: string; labelEn: string; icon: RoyIconName }[] = [
   { id: "task", label: "Задачи", labelEn: "Tasks", icon: "task" },
+  { id: "projects", label: "Проекты", labelEn: "Projects", icon: "board" },
   { id: "cal", label: "Встречи", labelEn: "Meetings", icon: "cal" },
   { id: "more", label: "Ещё", labelEn: "More", icon: "dots" },
 ];

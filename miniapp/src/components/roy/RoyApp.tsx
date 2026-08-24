@@ -15,6 +15,8 @@ import { SearchScreen } from "./screens/SearchScreen";
 import { AnswerScreen } from "./screens/AnswerScreen";
 import { RecordDetail } from "./screens/RecordDetail";
 import { RoyTasksScreen } from "./screens/RoyTasksScreen";
+import { RoyProjectsScreen } from "./screens/RoyProjectsScreen";
+import { ProjectTasksScreen } from "./screens/ProjectTasksScreen";
 import { TaskDetail } from "./screens/TaskDetail";
 import { NewTask } from "./screens/NewTask";
 import { RoyBaseScreen } from "./screens/RoyBaseScreen";
@@ -114,7 +116,7 @@ export function RoyApp({ me }: { me: Me | null }) {
       // Валидируем по ПОЛНОМУ союзу, а не по ROY_TABS: в баре мобильные табы, а `search`/`book` —
       // десктопные разделы. На мобайле сохранённые десктопные значения мигрируем, иначе человек с
       // живой сессией после деплоя попал бы на экран, которого в баре нет (подсветки таба нет).
-      const valid = saved && (["search", "task", "book", "cal", "more"] as const).includes(saved as RoyTab)
+      const valid = saved && (["search", "task", "projects", "book", "cal", "more"] as const).includes(saved as RoyTab)
         ? (saved as RoyTab)
         : null;
       const desktop = window.matchMedia("(min-width: 1024px)").matches;
@@ -128,7 +130,7 @@ export function RoyApp({ me }: { me: Me | null }) {
       const rawStack = sessionStorage.getItem("roy_stack");
       if (rawStack) {
         const parsed = JSON.parse(rawStack);
-        const needsId = new Set(["record", "taskDetail", "meetingDetail", "meetingReview"]);
+        const needsId = new Set(["record", "taskDetail", "meetingDetail", "meetingReview", "project"]);
         const valid = (r: { view?: unknown; params?: { id?: unknown; query?: unknown } }) => {
           if (!r || typeof r.view !== "string") return false;
           if (r.view === "answer") return typeof r.params?.query === "string";
@@ -219,6 +221,9 @@ export function RoyApp({ me }: { me: Me | null }) {
                 <div className="min-h-0 flex-1 overflow-hidden">
                   {tab === "search" && (isDashboard ? <RoyDashboard /> : <SearchScreen />)}
                   {tab === "task" && (isDesktop ? <TasksScreen /> : <RoyTasksScreen />)}
+                  {/* Десктоп своей доской проектов уже владеет (TasksScreen → вид «Проекты»),
+                      мобильный экран — отдельный: список проектов → задачи внутри. */}
+                  {tab === "projects" && (isDesktop ? <TasksScreen /> : <RoyProjectsScreen />)}
                   {tab === "book" && <RoyBaseScreen />}
                   {tab === "cal" && <RoyMeetingsScreen />}
                   {tab === "more" && <MoreScreen root />}
@@ -269,6 +274,7 @@ function PushScreen({ route }: { route: RoyRoute }) {
   if (route.view === "more") return <MoreScreen />;
   if (route.view === "ask") return <AskScreen />;
   if (route.view === "base") return <BaseScreen />;
+  if (route.view === "project") return <ProjectTasksScreen id={route.params.id} />;
   if (route.view === "map") return <MapScreen />;
   if (route.view === "settings") return <Wrapped title="Настройки"><SettingsScreen /></Wrapped>;
   if (route.view === "team") return <Wrapped title="Команда"><TeamScreen /></Wrapped>;
