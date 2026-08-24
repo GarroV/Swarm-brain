@@ -131,7 +131,9 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const canRename = !!meeting && meeting.status !== "in_base";
   const header = (
     <div className="flex items-center gap-2 px-4 pt-4 pb-2 border-b border-line shrink-0 bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg">
-      <button onClick={onClose} aria-label="Назад" className="text-ink-soft transition-colors hover:text-ink">
+      {/* Тач-цели этого экрана были 17–20px при норме 44 (аудит мобилки 2026-08-24). Иконки
+          оставлены прежнего размера — растёт только зона нажатия. */}
+      <button onClick={onClose} aria-label="Назад" className="-ml-2 inline-flex items-center justify-center text-ink-soft transition-colors hover:text-ink" style={{ width: 40, height: 40 }}>
         <RoyIcon name="cleft" size={20} strokeWidth={2.2} />
       </button>
       {editingTitle ? (
@@ -144,14 +146,14 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
             placeholder="Название встречи"
             className="flex-1 rounded-md border border-line bg-surface px-2 py-1 text-base font-semibold text-ink outline-none focus:border-[var(--accent-ink)]"
           />
-          <button onClick={saveTitle} disabled={savingTitle} aria-label="Сохранить название" className="disabled:opacity-50" style={{ color: "var(--status-done)" }}><RoyIcon name="check" size={20} strokeWidth={2.2} /></button>
-          <button onClick={() => setEditingTitle(false)} aria-label="Отмена" className="text-ink-soft"><RoyIcon name="x" size={20} /></button>
+          <button onClick={saveTitle} disabled={savingTitle} aria-label="Сохранить название" className="inline-flex shrink-0 items-center justify-center disabled:opacity-50" style={{ color: "var(--status-done)", width: 40, height: 40 }}><RoyIcon name="check" size={20} strokeWidth={2.2} /></button>
+          <button onClick={() => setEditingTitle(false)} aria-label="Отмена" className="inline-flex shrink-0 items-center justify-center text-ink-soft" style={{ width: 40, height: 40 }}><RoyIcon name="x" size={20} /></button>
         </div>
       ) : (
         <>
           <h1 className="font-bold flex-1 truncate text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>{meeting?.title ?? "Встреча"}</h1>
           {canRename && (
-            <button onClick={() => { setTitleDraft(meeting!.title ?? ""); setEditingTitle(true); }} aria-label="Переименовать" className="transition-colors hover:opacity-80" style={{ color: "var(--accent-ink)" }}>
+            <button onClick={() => { setTitleDraft(meeting!.title ?? ""); setEditingTitle(true); }} aria-label="Переименовать" className="-mr-2 inline-flex shrink-0 items-center justify-center transition-colors hover:opacity-80" style={{ color: "var(--accent-ink)", width: 40, height: 40 }}>
               <RoyIcon name="pencil" size={17} strokeWidth={1.9} />
             </button>
           )}
@@ -195,7 +197,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
           <div className="flex items-center justify-between mb-1">
             <p className="text-xs text-ink-soft">Тезисы</p>
             {!published && notesReady && !editing && (
-              <button onClick={() => setEditing(true)} className="text-xs font-semibold text-primary">Редактировать</button>
+              <button onClick={() => setEditing(true)} className="-my-2 inline-flex items-center px-2 text-xs font-semibold text-primary" style={{ minHeight: 40 }}>Редактировать</button>
             )}
           </div>
           {notesReady ? (
@@ -250,7 +252,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
 
         {segments.length > 0 && (
           <div>
-            <button onClick={() => setShowTranscript((v) => !v)} className="flex items-center gap-1.5 text-xs text-ink-soft transition-colors hover:text-ink">
+            <button onClick={() => setShowTranscript((v) => !v)} className="flex w-full items-center gap-1.5 text-left text-xs text-ink-soft transition-colors hover:text-ink" style={{ minHeight: 40 }}>
               <RoyIcon name="cright" size={13} strokeWidth={2} className={showTranscript ? "rotate-90 transition-transform" : "transition-transform"} />
               Транскрипт ({segments.length})
             </button>

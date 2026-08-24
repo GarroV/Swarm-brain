@@ -279,7 +279,8 @@ export function Chip({ children, active, onClick, leading }: { children: ReactNo
         TAP,
         active ? "bg-ink text-surface border-ink" : "bg-surface text-ink-soft border-line-2",
       )}
-      style={{ fontSize: 13, padding: "7px 13px" }}
+      // Минимальная высота — тач-цель: было ~31px при норме 44 (аудит мобилки 2026-08-24).
+      style={{ fontSize: 13, padding: "7px 13px", minHeight: 40 }}
     >
       {leading}
       {children}
@@ -304,7 +305,7 @@ export function Segmented({ items, value, onChange }: { items: SegItem[]; value:
               TAP,
               on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(80,60,20,.1)]" : "bg-transparent text-ink-soft",
             )}
-            style={{ fontSize: 13.5, padding: "8px 6px", borderRadius: 9 }}
+            style={{ fontSize: 13.5, padding: "8px 6px", borderRadius: 9, minHeight: 40 }}
           >
             {it.label}
             {it.count != null && (
@@ -533,12 +534,16 @@ export function FAB({ onClick, className, "aria-label": ariaLabel = "Созда�
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
+      // fixed, а не absolute: экраны-списки сами являются скролл-контейнерами, и absolute-кнопка
+      // уезжала ВМЕСТЕ с содержимым — на прокрученном списке «+» оказывался поверх строк у
+      // верхнего края и съедал по ним тап и свайп (аудит мобилки 2026-08-24). Отступ снизу
+      // считается от таб-бара (69px) плюс безопасная зона.
       className={cn(
-        "absolute z-20 flex items-center justify-center rounded-[18px] bg-primary text-white border-0 shadow-[0_10px_24px_-6px_rgba(200,130,30,.6)]",
+        "fixed z-20 flex items-center justify-center rounded-[18px] bg-primary text-white border-0 shadow-[0_10px_24px_-6px_rgba(200,130,30,.6)]",
         TAP,
         className,
       )}
-      style={{ right: 18, bottom: 96, width: 56, height: 56 }}
+      style={{ right: 18, bottom: "calc(88px + env(safe-area-inset-bottom))", width: 56, height: 56 }}
     >
       <RoyIcon name="plus" size={26} strokeWidth={2.3} />
     </button>
@@ -553,7 +558,8 @@ export function NavHeader({ onBack, title, right }: { onBack: () => void; title?
         type="button"
         onClick={onBack}
         className={cn("inline-flex items-center gap-0.5 bg-transparent border-0 text-primary font-semibold", TAP)}
-        style={{ fontSize: 16, padding: "4px 4px 4px 0" }}
+        // Тач-цель: «Назад» стоит на каждом push-экране и была высотой 32px при норме 44.
+        style={{ fontSize: 16, padding: "4px 8px 4px 0", minHeight: 44 }}
       >
         <RoyIcon name="cleft" size={20} strokeWidth={2.2} />
         Назад

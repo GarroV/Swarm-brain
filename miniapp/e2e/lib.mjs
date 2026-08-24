@@ -211,6 +211,22 @@ export const swipeRows = (page) => page.evaluate(() => {
   });
 });
 
+/**
+ * Строки, положение которых устаканилось. После закрытия карточки задачи список перезапрашивается
+ * (bumpTasks → refetch) и строки уезжают: координата, снятая сразу после Escape, к моменту жеста
+ * уже врала — свайп попадал в промежуток между строками и «шторка не открывалась» на исправном коде.
+ */
+export async function stableRows(page, { timeout = 5000 } = {}) {
+  const until = Date.now() + timeout;
+  let prev = JSON.stringify(await swipeRows(page));
+  for (;;) {
+    await wait(300);
+    const now = JSON.stringify(await swipeRows(page));
+    if (now === prev || Date.now() > until) return JSON.parse(now);
+    prev = now;
+  }
+}
+
 export const dialogOpen = (page) => page.evaluate(() => !!document.querySelector('[role="dialog"]'));
 
 /** Нижний таб-бар: подписи кнопок (с бейджами) — по нему проверяем набор разделов. */

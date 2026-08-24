@@ -4,7 +4,7 @@
 // Запуск: node e2e/mobile-nav.mjs (см. e2e/README.md — нужен dev-сервер и Chrome с CDP).
 import {
   connect, freshLoad, wait, waitFor, tap, swipe, clickText, bodyText, swipeRows, dialogOpen, tabBar, assertTouchWorks,
-  reporter, shutdown, PHONE, PHONE_SHORT, DESKTOP,
+  reporter, shutdown, stableRows, PHONE, PHONE_SHORT, DESKTOP,
 } from "./lib.mjs";
 
 const r = reporter("mobile-nav");
@@ -39,7 +39,18 @@ const allErrors = [];
     });
     r.ok("вертикальный свайп скроллит и НЕ открывает задачу", !(await dialogOpen(page)) && scrolled > 10, `scrollTop=${scrolled}`);
 
-    const fresh = (await swipeRows(page)).find((x) => x.y > 60) ?? (await swipeRows(page))[0];
+    // Кнопка «+» должна остаться внизу справа: она была absolute ВНУТРИ скролл-контейнера и
+    // на прокрученном списке всплывала поверх строк, съедая по ним тап и свайп.
+    const fab = await page.evaluate(() => {
+      const b = document.querySelector('button[aria-label="Создать"]');
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return { top: Math.round(r.top), bottomGap: Math.round(window.innerHeight - r.bottom) };
+    });
+    r.ok("кнопка «+» не уезжает вверх при скролле списка", !!fab && fab.top > 215, JSON.stringify(fab) + " (экран 430px)");
+
+    const settled = await stableRows(page);
+    const fresh = settled.find((x) => x.y > 60) ?? settled[0];
     const y2 = fresh.y + fresh.h / 2;
     await tap(page, 195, y2);
     r.ok("тап по строке открывает карточку задачи", await dialogOpen(page));
@@ -51,7 +62,7 @@ const allErrors = [];
     r.ok("горизонтальный свайп открывает шторку действий", !!opened, opened?.dx);
     r.ok("горизонтальный свайп НЕ открывает задачу", !(await dialogOpen(page)));
     await tap(page, 120, y2);
-    const closed = (await swipeRows(page)).every((x) => /translateX\(0px\)/.test(x.dx) || !x.dx);
+    const closed = (await stableRows(page)).every((x) => /translateX\(0px\)/.test(x.dx) || !x.dx);
     r.ok("тап при открытой шторке закрывает её, а не открывает задачу", closed && !(await dialogOpen(page)));
   }
   allErrors.push(...errors);

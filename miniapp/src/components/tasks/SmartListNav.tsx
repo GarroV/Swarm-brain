@@ -50,7 +50,8 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
                 "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 font-semibold transition-colors",
                 on ? "bg-primary text-white" : "bg-secondary text-secondary-foreground hover:bg-secondary/70",
               )}
-              style={{ fontSize: 12.5 }}
+              // Тач-цель: чипы — основная навигация по списку, были 31px при норме 44.
+              style={{ fontSize: 12.5, minHeight: 40 }}
             >
               <RoyIcon name={icon} size={13} strokeWidth={2} />
               {label}

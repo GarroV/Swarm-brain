@@ -82,7 +82,8 @@ export function TasksFromMeeting({
             type="button"
             onClick={() => setEditing({ title: "", _key: `own-${Date.now()}` })}
             className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97]"
-            style={{ padding: "6px 12px", fontSize: 12 }}
+            // Тач-цель: кнопки были 32px при норме 44 (аудит мобилки 2026-08-24).
+            style={{ padding: "6px 12px", fontSize: 12, minHeight: 40 }}
           >
             <RoyIcon name="plus" size={13} strokeWidth={2.1} />
             Своя
@@ -92,7 +93,8 @@ export function TasksFromMeeting({
             disabled={loading || !hasContent}
             onClick={extract}
             className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,opacity,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
-            style={{ padding: "6px 12px", fontSize: 12 }}
+            // Тач-цель: кнопки были 32px при норме 44 (аудит мобилки 2026-08-24).
+            style={{ padding: "6px 12px", fontSize: 12, minHeight: 40 }}
           >
             <RoyIcon name="spark" size={13} strokeWidth={1.9} />
             {loading ? "Генерируем…" : "Сгенерировать"}
