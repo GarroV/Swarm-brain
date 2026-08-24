@@ -5,6 +5,8 @@ import { SMART_LISTS, type SmartListId } from "@/lib/smartLists";
 
 type SmartListNavProps = {
   variant: "rail" | "chips";
+  /** Только chips: без внешних отступов и с затуханием справа — для строки рядом с чипом линзы. */
+  compact?: boolean;
   active: SmartListId;
   counts: Record<SmartListId, number>;
   onSelect: (id: SmartListId) => void;
@@ -25,10 +27,18 @@ type SmartListNavProps = {
 };
 
 // Навигация по смарт-спискам: вертикальный рельс (десктоп) или горизонтальные чипы (мобайл).
-export function SmartListNav({ variant, active, counts, onSelect, query, onQuery, labels, labelCounts, activeLabelId, onSelectLabel, onCreateLabel, onEditLabel }: SmartListNavProps) {
+export function SmartListNav({ variant, compact, active, counts, onSelect, query, onQuery, labels, labelCounts, activeLabelId, onSelectLabel, onCreateLabel, onEditLabel }: SmartListNavProps) {
   if (variant === "chips") {
+    // Затухание справа (mask, не градиент-подложка) — единственный честный намёк, что чипы
+    // скроллятся: раньше четвёртый чип просто обрубался краем экрана и выглядел сломанным.
+    // Маска работает поверх любого фона, включая галактику тёмной темы.
     return (
-      <div className="flex gap-1.5 overflow-x-auto px-5 pb-3">
+      <div
+        className={cn(
+          "flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          compact ? "[mask-image:linear-gradient(to_right,black_calc(100%-22px),transparent)]" : "px-5 pb-3",
+        )}
+      >
         {SMART_LISTS.map(({ id, label, icon }) => {
           const on = id === active;
           return (

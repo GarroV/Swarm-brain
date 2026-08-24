@@ -4,7 +4,7 @@ import { RoyHeader, FAB, SearchBtn } from "../ui";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { MobileTaskRow } from "../MobileTaskRow";
 import { SmartListNav } from "@/components/tasks/SmartListNav";
-import { LensToggle } from "@/components/tasks/LensToggle";
+import { LensMenu } from "@/components/tasks/LensMenu";
 import { useReminderTasks } from "@/components/tasks/useReminderTasks";
 import { SMART_LISTS } from "@/lib/smartLists";
 import type { Task } from "@/types";
@@ -43,8 +43,10 @@ export function RoyTasksScreen() {
       {/* Поиск — иконкой в шапке: таба «Поиск» на мобайле больше нет, а искать нужно с любого
           экрана (решение владельца 2026-08-22). */}
       <RoyHeader title={dt("Задачи", "Tasks")} right={<SearchBtn onClick={() => push({ view: "ask" })} />} />
-      <div className="px-5 pb-2">
-        <LensToggle
+      {/* Одна строка управления: чип охвата/группировки + скроллящиеся смарт-списки.
+          Было три яруса (линза, «По рынкам», «Все сотрудники», чипы) = 199px до первой задачи. */}
+      <div className="flex items-center gap-2 px-5 pb-3">
+        <LensMenu
           lens={r.lens}
           onChangeLens={r.setLens}
           byMarket={r.byMarket}
@@ -53,8 +55,10 @@ export function RoyTasksScreen() {
           onToggleAllStaff={() => r.setAllStaff((v) => !v)}
           showAllStaff={!!r.me?.is_admin}
         />
+        <div className="min-w-0 flex-1">
+          <SmartListNav variant="chips" compact active={r.activeList} counts={r.counts} onSelect={r.setActiveList} />
+        </div>
       </div>
-      <SmartListNav variant="chips" active={r.activeList} counts={r.counts} onSelect={r.setActiveList} />
 
       <div className="px-5 pb-2 text-ink-mute" style={{ fontSize: 12.5 }}>
         {activeDef.label} · {total}
