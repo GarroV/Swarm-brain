@@ -11,7 +11,7 @@ import type { Task } from "@/types";
 // Общий каркас панелей desktop-главного экрана «Рой». Вынесено из RoyDashboard,
 // чтобы пять панелей (PersonalTasks/SearchHero/Materials/MeetingsApprove/TeamTasks)
 // делили один скелет: шапка-кнопка → раскрытие во вкладку/экран, скролл-тело,
-// loading (roy-shim) и empty-состояние. Flat, тонкие границы — без бенто-визуала.
+// loading (roy-shim), empty- и failed-состояние. Flat, тонкие границы — без бенто-визуала.
 
 // ── Форматирование даты «Рой» (ru, day + short month) ───────────────────────────
 export function fmtDate(iso: string | null, locale: string = "ru-RU"): string | null {
@@ -48,7 +48,7 @@ export const norm = (s: string): string => (s === "progress" ? "in_progress" : s
 
 // ── Панель: шапка-кнопка (раскрыть) + скроллируемое тело ─────────────────────────
 export function DashBlock({
-  title, icon, tint, badge, headAction, loading, empty, emptyText, onHead, onAdd, addLabel, children, className,
+  title, icon, tint, badge, headAction, loading, failed, errorText, retryText, onRetry, empty, emptyText, onHead, onAdd, addLabel, children, className,
 }: {
   title: string;
   icon: RoyIconName;
@@ -58,6 +58,12 @@ export function DashBlock({
   /** правый текст-действие шапки (например «Доска ›») */
   headAction?: ReactNode;
   loading: boolean;
+  /** Данные не пришли (таймаут/ошибка) — показываем «не загрузилось · повторить», а НЕ пустоту:
+   *  фальшивое «задач нет» врёт пользователю о состоянии его работы. */
+  failed?: boolean;
+  errorText?: string;
+  retryText?: string;
+  onRetry?: () => void;
   empty: boolean;
   emptyText: string;
   onHead: () => void;
@@ -134,8 +140,23 @@ export function DashBlock({
       )}
       <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2.5 py-2">
         {loading && [0, 1, 2, 3].map((i) => <div key={i} className="roy-shim" style={{ height: 52, borderRadius: 12 }} />)}
-        {!loading && empty && <div className="py-10 text-center text-sm text-ink-soft">{emptyText}</div>}
-        {!loading && !empty && children}
+        {!loading && failed && (
+          <div className="flex flex-col items-center gap-2 py-9 text-center">
+            <span className="text-sm text-ink-soft">{errorText ?? "Не загрузилось"}</span>
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="rounded-[10px] px-3 py-1.5 font-semibold text-ink-mute transition-colors hover:bg-surface-2 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                style={{ fontSize: 12.5 }}
+              >
+                {retryText ?? "Повторить"}
+              </button>
+            )}
+          </div>
+        )}
+        {!loading && !failed && empty && <div className="py-10 text-center text-sm text-ink-soft">{emptyText}</div>}
+        {!loading && !failed && !empty && children}
       </div>
     </RoyCard>
   );
