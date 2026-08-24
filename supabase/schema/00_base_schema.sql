@@ -356,7 +356,7 @@ semantic as (
     and (e.is_private = false or (requesting_user_id is not null and e.owner_id = requesting_user_id))
   order by e.embedding <=> (select qe from params)
   limit least(match_count, 30) * 2
-)
+),
 fused as (
   select
     e.id, e.content, e.summary, e.source, e.metadata, e.countries, e.entry_type, e.entry_date, e.group_id,
