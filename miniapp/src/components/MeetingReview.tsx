@@ -31,6 +31,14 @@ function fmtClock(startISO: string | null, sec: number): string {
   });
 }
 
+// Дата вычитки — тем же форматом, что в списках встреч и в очереди черновиков («12 июн.»).
+// ISO-срез на этом экране был третьим форматом даты в одном разделе.
+function fmtDay(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "" : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+
 export function MeetingReview({ id, onClose, onChanged }: Props) {
   const [meeting, setMeeting] = useState<AgentMeeting | null>(null);
   const [loading, setLoading] = useState(true);
@@ -174,7 +182,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         <div className="flex flex-wrap items-center gap-2 text-xs text-ink-soft">
           <span className="rounded-[7px] px-2 py-0.5 font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)" }}>Рекордер</span>
-          {meeting.started_at && <span className="font-mono">{meeting.started_at.slice(0, 10)}</span>}
+          {meeting.started_at && <span>{fmtDay(meeting.started_at)}</span>}
           {published
             ? <span className="inline-flex items-center gap-1" style={{ color: "var(--status-done)" }}><RoyIcon name="check" size={13} strokeWidth={2.2} /> В базе</span>
             : <span className="inline-flex items-center gap-1" style={{ color: "var(--status-open)" }}><RoyIcon name="clock" size={13} strokeWidth={1.9} /> На вычитке</span>}

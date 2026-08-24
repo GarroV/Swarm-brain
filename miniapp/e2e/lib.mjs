@@ -68,6 +68,30 @@ async function clearStuckTouch(page) {
   } catch { /* нечего снимать */ }
 }
 
+/**
+ * Проверка «браузер вообще принимает касания». Chrome накапливает битое состояние ввода после
+ * прогонов, убитых посреди жеста (и после гонок с Emulation-оверрайдами): Input.dispatchTouchEvent
+ * начинает висеть до таймаута на ЛЮБОМ жесте. Лечится только перезапуском браузера, поэтому
+ * падаем сразу и понятной строкой, а не стеком puppeteer посреди набора.
+ */
+export async function assertTouchWorks(page) {
+  try {
+    const h = await page.touchscreen.touchStart(5, 5);
+    await h.end();
+  } catch {
+    console.error(
+      "\nБраузер не принимает касания (Input.dispatchTouchEvent висит).\n" +
+      "Перезапусти Chrome с чистым профилем и повтори:\n" +
+      "  pkill -f 'remote-debugging-port=9333'\n" +
+      "  rm -rf /tmp/swarm-e2e-chrome\n" +
+      "  \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\" \\\n" +
+      "    --remote-debugging-port=9333 --user-data-dir=/tmp/swarm-e2e-chrome \\\n" +
+      "    --window-size=430,900 http://localhost:3111/\n",
+    );
+    process.exit(2);
+  }
+}
+
 export const wait = (ms = 900) => new Promise((r) => setTimeout(r, ms));
 
 /** Тап пальцем (touchStart/touchEnd), а не mouse.click — иначе жесты SwipeRow не проверяются. */

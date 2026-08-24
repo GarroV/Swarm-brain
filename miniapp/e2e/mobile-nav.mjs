@@ -3,7 +3,7 @@
 // доступны с одного экрана из четырёх, проектов на телефоне не было, созданная задача «пропадала».
 // Запуск: node e2e/mobile-nav.mjs (см. e2e/README.md — нужен dev-сервер и Chrome с CDP).
 import {
-  connect, freshLoad, wait, tap, swipe, clickText, bodyText, swipeRows, dialogOpen, tabBar,
+  connect, freshLoad, wait, tap, swipe, clickText, bodyText, swipeRows, dialogOpen, tabBar, assertTouchWorks,
   reporter, PHONE, PHONE_SHORT, DESKTOP,
 } from "./lib.mjs";
 
@@ -13,6 +13,7 @@ const allErrors = [];
 // ── 1. Жесты строки задачи: скролл НЕ открывает задачу ───────────────────────
 {
   const { browser, page, errors } = await connect(PHONE_SHORT);
+  await assertTouchWorks(page);
   await freshLoad(page);
   // Вид задаём заранее через сохранённое состояние (его читает useReminderTasks при монтировании):
   // на дефолте «Мои/Сегодня» в моках одна строка, и проверка «скроллит ли» прошла бы зелёной,
@@ -156,7 +157,25 @@ const allErrors = [];
     }
     return n;
   });
-  r.ok("кнопки удаления встреч спрятаны под строкой (только свайпом)", exposed <= 1, `открытых: ${exposed} (1 — очередь черновиков)`);
+  r.ok("ни одной открытой кнопки удаления в строках встреч (всё через свайп)", exposed === 0, `открытых: ${exposed}`);
+
+  // Очередь черновиков: тап по строке должен открывать вычитку (карандаш убран как дубль тапа).
+  const queueOpened = await page.evaluate(() => {
+    const row = [...document.querySelectorAll("button")].find((b) => /Синк по Болгарии/.test(b.innerText));
+    if (!row) return "нет черновика в моках";
+    row.click();
+    return "clicked";
+  });
+  await wait(1800);
+  const inReview = /Тезисы|Транскрипт|Сохранить/.test(await bodyText(page));
+  r.ok("тап по черновику открывает вычитку", queueOpened !== "clicked" || inReview, queueOpened);
+  r.ok("дата вычитки без ISO", !/\d{4}-\d{2}-\d{2}/.test(await bodyText(page)));
+  // Выход из вычитки — иконка без подписи, поэтому ищем по aria-label, а не по тексту.
+  if (queueOpened === "clicked") {
+    await page.evaluate(() => document.querySelector('button[aria-label="Назад"]')?.click());
+    await wait(1200);
+    r.ok("из вычитки есть выход назад", /На вычитке|Все|Ожидают/.test(await bodyText(page)));
+  }
 
   const rows = await swipeRows(page);
   if (rows.length) {
