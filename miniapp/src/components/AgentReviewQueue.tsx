@@ -8,6 +8,14 @@ import { useConfirm } from "@/components/ui/confirm";
 
 type Props = { onOpen: (id: string) => void };
 
+// Дата в очереди печаталась ISO-срезом (2026-06-12), а в списке ниже — «12 июн.»: один экран
+// с двумя форматами. Формат один — как в остальных списках встреч.
+function fmtDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "" : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+
 // Очередь черновиков desktop-agent «на вычитке». Невидима, пока черновиков нет
 // (в т.ч. до деплоя эндпоинта /agent-meetings — тогда fetch падает и очередь
 // просто не показывается, остальное приложение работает). Это намеренная деградация.
@@ -58,7 +66,7 @@ export function AgentReviewQueue({ onOpen }: Props) {
             >
               <p className="text-sm font-medium leading-snug line-clamp-1 text-ink">{m.title ?? "Встреча без названия"}</p>
               <p className="text-xs text-ink-soft mt-0.5">
-                {(m.started_at ?? m.created_at).slice(0, 10)}
+                {fmtDate(m.started_at ?? m.created_at)}
                 {m.draft_notes_md === null ? " · готовим тезисы…" : ""}
               </p>
             </button>
@@ -67,7 +75,7 @@ export function AgentReviewQueue({ onOpen }: Props) {
                 type="button"
                 aria-label="Изменить"
                 onClick={() => onOpen(m.id)}
-                className="flex h-8 w-8 items-center justify-center rounded-md border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
+                className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
                 style={{ color: "var(--accent-ink)" }}
               >
                 <RoyIcon name="pencil" size={15} strokeWidth={1.9} />
@@ -76,7 +84,7 @@ export function AgentReviewQueue({ onOpen }: Props) {
                 type="button"
                 aria-label="Удалить"
                 onClick={() => remove(m)}
-                className="flex h-8 w-8 items-center justify-center rounded-md border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
+                className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
                 style={{ color: "var(--pri-high)" }}
               >
                 <RoyIcon name="trash" size={15} strokeWidth={1.9} />

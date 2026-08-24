@@ -4,7 +4,7 @@ import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId } from "@/lib/telegram";
-import { logout } from "@/lib/api";
+import { fetchAgentMeetings, logout } from "@/lib/api";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { RoyNavContext, useRoyNav, useDt, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
 import type { Lens, SmartListId } from "@/lib/smartLists";
@@ -56,6 +56,10 @@ export function RoyApp({ me }: { me: Me | null }) {
   const [taskView, setTaskView] = useState<{ lens: Lens; list?: SmartListId } | null>(null);
   const openTask = useCallback((t: Task) => setTaskModalTask(t), []);
   const isDesktop = useIsDesktop();
+  // Сколько черновиков встреч ждёт вычитки — для бейджа на табе «Встречи». Ошибку глотаем:
+  // эндпоинт /agent-meetings может быть недоступен, и это не повод ронять каркас (та же
+  // намеренная деградация, что в AgentReviewQueue).
+  const [reviewCount, setReviewCount] = useState(0);
   // Стек восстановлен из sessionStorage? До этого не персистим, иначе начальный [] затрёт сохранённый.
   const hydrated = useRef(false);
 
@@ -95,6 +99,16 @@ export function RoyApp({ me }: { me: Me | null }) {
     setTabState("cal");
     setStack([{ view: "meetingReview", params: { id } }]);
   }, []);
+
+  // Бейдж «на вычитке»: считаем при монтировании и при каждой смене таба на «Встречи»
+  // (разобрал очередь → вернулся на другой таб → счётчик обновится при следующем заходе).
+  useEffect(() => {
+    let alive = true;
+    fetchAgentMeetings("awaiting_review")
+      .then((list) => { if (alive) setReviewCount(list.length); })
+      .catch(() => { if (alive) setReviewCount(0); });
+    return () => { alive = false; };
+  }, [tab, stack.length]);
 
   useEffect(() => {
     if (!toastMsg) return;
@@ -228,7 +242,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                   {tab === "cal" && <RoyMeetingsScreen />}
                   {tab === "more" && <MoreScreen root />}
                 </div>
-                <RoyTabBar active={tab} onChange={(id) => setTab(id as RoyTab)} className="lg:hidden" />
+                <RoyTabBar active={tab} onChange={(id) => setTab(id as RoyTab)} className="lg:hidden" badges={{ cal: reviewCount }} />
               </>
             )}
 

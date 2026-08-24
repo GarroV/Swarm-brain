@@ -579,7 +579,7 @@ export const ROY_TABS: { id: string; label: string; labelEn: string; icon: RoyIc
   { id: "more", label: "Ещё", labelEn: "More", icon: "dots" },
 ];
 
-export function RoyTabBar({ active, onChange, className }: { active: string; onChange: (id: string) => void; className?: string }) {
+export function RoyTabBar({ active, onChange, className, badges }: { active: string; onChange: (id: string) => void; className?: string; badges?: Record<string, number> }) {
   const dt = useDt();
   return (
     <div className={cn("shrink-0 flex justify-around items-start bg-surface border-t border-line", className)} style={{ paddingTop: 9, paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
@@ -593,7 +593,19 @@ export function RoyTabBar({ active, onChange, className }: { active: string; onC
             className={cn("flex flex-col items-center gap-1 bg-transparent border-0", TAP, on ? "text-primary" : "text-ink-mute")}
             style={{ padding: "2px 14px" }}
           >
-            <RoyIcon name={t.icon} size={23} strokeWidth={on ? 2.1 : 1.8} />
+            <span className="relative">
+              <RoyIcon name={t.icon} size={23} strokeWidth={on ? 2.1 : 1.8} />
+              {/* Счётчик неразобранного (сейчас — черновики встреч «на вычитке»): раздел уехал
+                  с первого экрана, поэтому о нём должно быть видно, не заходя внутрь. */}
+              {!!badges?.[t.id] && (
+                <span
+                  className="absolute -right-2 -top-1 inline-flex items-center justify-center rounded-full bg-primary font-bold text-white"
+                  style={{ minWidth: 16, height: 16, fontSize: 10, padding: "0 4px" }}
+                >
+                  {badges[t.id] > 9 ? "9+" : badges[t.id]}
+                </span>
+              )}
+            </span>
             <span style={{ fontSize: 10.5 }} className={on ? "font-bold" : "font-medium"}>
               {dt(t.label, t.labelEn)}
             </span>
