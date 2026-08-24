@@ -4,6 +4,7 @@ import { useRoyNav } from "../nav";
 import { RoyIcon } from "../icons";
 import { Avatar, SectionLabel, Chip, RoyCard, Market } from "../ui";
 import { RoyMark } from "../RoyMark";
+import { NotificationsBell } from "../NotificationsBell";
 import { fetchTasks, fetchMeetings } from "@/lib/api";
 import { deriveEntryTitle } from "../entry";
 import { fmtDate, norm } from "../dash/shared";
@@ -80,9 +81,12 @@ export function SearchScreen() {
             Swarm
           </span>
         </div>
-        <button type="button" onClick={() => push({ view: "more" })} aria-label="Меню" className="transition-transform active:scale-[0.95]">
-          <Avatar size={36}>{initials(me?.name)}</Avatar>
-        </button>
+        <div className="flex items-center gap-2">
+          <NotificationsBell />
+          <button type="button" onClick={() => push({ view: "more" })} aria-label="Меню" className="transition-transform active:scale-[0.95]">
+            <Avatar size={36}>{initials(me?.name)}</Avatar>
+          </button>
+        </div>
       </div>
 
       {/* поле поиска (герой) */}

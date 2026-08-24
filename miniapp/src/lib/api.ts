@@ -538,6 +538,45 @@ export type TaskComment = {
   created_at: string;
 };
 
+// Уведомление в колокольчике. Сейчас единственный тип — комментарий к задаче;
+// поле `type` заведено под назначения/смены статуса (беклог), UI на него уже смотрит.
+export type SwarmNotification = {
+  id: string;
+  type: "task_comment";
+  task_id: string | null;
+  task_title: string;
+  comment_id: string | null;
+  content: string;
+  actor_telegram_id: number | null;
+  actor_name: string;
+  read_at: string | null;
+  created_at: string;
+};
+
+export async function fetchNotifications(limit = 30): Promise<{ items: SwarmNotification[]; unread: number }> {
+  if (DEV_MODE) {
+    const items: SwarmNotification[] = [
+      { id: "n1", type: "task_comment", task_id: "1", task_title: "Раздельный НДС в Венгрии", comment_id: "c1",
+        content: "Юристы подтвердили схему, нужен твой апрув до пятницы.", actor_telegram_id: 555, actor_name: "Anna K.",
+        read_at: null, created_at: new Date(Date.now() - 12 * 60 * 1000).toISOString() },
+      { id: "n2", type: "task_comment", task_id: "2", task_title: "Апи Рецептов", comment_id: "c2",
+        content: "Выкатили на стенд, посмотри контракт.", actor_telegram_id: 556, actor_name: "Ivan P.",
+        read_at: new Date().toISOString(), created_at: new Date(Date.now() - 26 * 3600 * 1000).toISOString() },
+    ];
+    return { items, unread: items.filter((i) => !i.read_at).length };
+  }
+  return apiFetch<{ items: SwarmNotification[]; unread: number }>(`/notifications?limit=${limit}`);
+}
+
+// Без ids помечает прочитанным всё непрочитанное.
+export async function markNotificationsRead(ids?: string[]): Promise<void> {
+  if (DEV_MODE) return;
+  await apiFetch<{ ok: true }>("/notifications/read", {
+    method: "POST",
+    body: JSON.stringify(ids ? { ids } : {}),
+  });
+}
+
 export async function fetchTaskComments(taskId: string): Promise<TaskComment[]> {
   if (DEV_MODE) return [
     { id: "c1", content: "Начал, жду данные от партнёра.", author_name: "Dev User", author_telegram_id: 123456, created_at: new Date().toISOString() },

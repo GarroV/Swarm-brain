@@ -46,6 +46,7 @@ import { handleAdminRoutes } from "./admin.ts";
 import { corsHeaders, json, apiErr } from "./http.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
+import { handleNotificationRoutes } from "./notifications.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
@@ -419,6 +420,10 @@ Deno.serve(async (req: Request) => {
   // Комментарии к задачам (/tasks/:id/comments) — доступ по видимости задачи.
   const commentResp = await handleTaskCommentRoutes(supabase, req, routePath, telegram_id, groupId, isAdmin, origin, resolveNames);
   if (commentResp) return commentResp;
+
+  // Лента уведомлений (/notifications*) — строго свои: фильтр по recipient_telegram_id.
+  const notifResp = await handleNotificationRoutes(supabase, req, routePath, telegram_id, origin, resolveNames);
+  if (notifResp) return notifResp;
 
   // GET /tasks or POST /tasks
   if (routePath === "/tasks") {

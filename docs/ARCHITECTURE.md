@@ -167,6 +167,7 @@ supabase/functions/swarm-bot/
 | `oauth_tokens` | OAuth токены интеграций | `service` (`read_ai`), `client_id`, `access_token`, `refresh_token`, `expires_at`, `updated_at` |
 | `oauth_state` | Временный PKCE state для OAuth | `state`, `client_id`, `code_verifier` — создаётся при старте OAuth, удаляется после callback |
 | `task_comments` | Комментарии-апдейты к задаче (веб + MCP) | `task_id` (FK → `tasks`, ON DELETE CASCADE, индекс `idx_task_comments_task_id`), `content`, `added_by_telegram_id` (bigint; имя резолвится на чтении), `added_by` (legacy, nullable), `created_at` |
+| `notifications` | Лента колокольчика: событие «к твоей задаче написали» на КАЖДОГО получателя (миграция `20260824120000`) | `recipient_telegram_id` (FK → `allowed_users`, CASCADE), `group_id`, `type` (`check`: пока только `task_comment`), `task_id`/`comment_id` (FK, ON DELETE CASCADE — уведомление уходит вместе со своим поводом), `actor_telegram_id`, `read_at` (null = непрочитано), `created_at`. Индексы: `idx_notifications_recipient` (лента), `idx_notifications_unread` (частичный, счётчик бейджа) |
 
 ### `tasks.status` — значения и целостность
 
@@ -659,7 +660,7 @@ _Все три: перевыпуск **убивает старый токен**,
 | `MCP_AUTH_REQUIRED` | swarm-mcp | нет | `true` = жёсткий режим (без валидного `smcp_`-токена — отказ); не выставлен = soft-режим на доверии. **В проде выставлен `true` (2026-07-19)** |
 | `CRON_SECRET` | swarm-bot, meeting-process, granola-poller (legacy) | нет | Общий секрет для авторизации cron-вызовов (`X-Cron-Secret`): Granola-поллинг/watchdog (swarm-bot), durable-обработка встреч (meeting-process) |
 | `INITDATA_MAX_AGE` | swarm-api | нет, дефолт 24ч | TTL свежести `auth_date` в Telegram Mini App initData (секунды). ⚠️ Спящий путь — вход как Mini App отключён |
-| `MINIAPP_ORIGIN` | swarm-api | нет | Разрешённый Origin для CORS веб-интерфейса |
+| `MINIAPP_ORIGIN` | swarm-api | нет | Разрешённый Origin для CORS веб-интерфейса. Он же — база ссылки «Открыть задачу» в пуше о комментарии (`?task=<id>`, см. `swarm-api/notifications.ts`): не задан или `*` → пуш уходит без ссылки |
 | `WEB_JWT_SECRET` | swarm-api, google-oauth | да (для веб-режима/Google) | HS256-секрет: проверка `Bearer`-JWT браузерной сессии (swarm-api) и подписанного OAuth-state (google-oauth `/google/connect-url`). Должен совпадать с CF Pages |
 | `WEB_BASE_URL` | google-oauth, meeting-ingest, meeting-process | да (для deep-link/OAuth-redirect) | База веб-фронта (`https://swarm-brain.pages.dev`): кнопка «Открыть» `?meeting=<id>` в уведомлении (meeting-process/ingest), redirect после Google OAuth (google-oauth) |
 | `GOOGLE_CLIENT_ID` | google-oauth, meeting-current | да (для Google Calendar рекордера) | OAuth client id серверной Google Calendar-интеграции |
@@ -780,6 +781,8 @@ _Задачи / спринты / зависимости:_
 | `GET` | `/tasks/:id/comments` | Комментарии к задаче (старые→новые), с резолвом имени автора. Гейт = видимость задачи (`group_id` + приватность). Модуль `swarm-api/task-comments.ts` |
 | `POST` | `/tasks/:id/comments` | Добавить комментарий `{content}` (≤4000 символов, валидатор `_shared/tasks/comments.ts`). Автор — вызывающий (`added_by_telegram_id`) |
 | `DELETE` | `/tasks/:id/comments/:cid` | Удалить комментарий — только автор или админ |
+| `GET` | `/notifications` | Лента уведомлений вызывающего (новые сверху, `?limit=` ≤100, по умолчанию 30) + счётчик `unread`. Строго свои: фильтр по `recipient_telegram_id`. Задача, ставшая приватной ПОСЛЕ уведомления, из ленты выпадает (`canViewTask` на выдаче). Модуль `swarm-api/notifications.ts` |
+| `POST` | `/notifications/read` | Пометить прочитанным: `{ids}` — перечисленные, без тела — всё непрочитанное. Чужие не помечаются даже по точному id |
 | `GET` | `/sprints` | Спринты воркспейса (все участники) |
 | `POST` | `/sprints` | Создать спринт (`name`, `start_date`, `end_date`, `status`) — **только admin** |
 | `PATCH` | `/sprints/:id` | Обновить спринт — только admin |

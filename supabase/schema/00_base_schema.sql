@@ -212,6 +212,25 @@ as $$
   select id from deps;
 $$;
 
+-- ── notifications (лента «к твоей задаче написали») ──────────────────────────
+-- Типы событий расширяются через check: сейчас только 'task_comment'.
+-- Каскады снимают уведомление вместе с его поводом (задача/комментарий).
+create table if not exists public.notifications (
+  id                    uuid primary key default gen_random_uuid(),
+  recipient_telegram_id bigint not null references public.allowed_users(telegram_id) on delete cascade,
+  group_id              text references public.workspaces(id),
+  type                  text not null default 'task_comment' check (type in ('task_comment')),
+  task_id               uuid references public.tasks(id) on delete cascade,
+  comment_id            uuid references public.task_comments(id) on delete cascade,
+  actor_telegram_id     bigint,
+  read_at               timestamptz,
+  created_at            timestamptz not null default now()
+);
+create index if not exists idx_notifications_recipient on public.notifications (recipient_telegram_id, created_at desc);
+create index if not exists idx_notifications_unread    on public.notifications (recipient_telegram_id) where read_at is null;
+grant select, insert, update, delete on public.notifications to service_role;
+alter table public.notifications enable row level security;
+
 -- ── sessions (bot conversation state) ───────────────────────────────────────
 create table if not exists public.sessions (
   chat_id    bigint primary key,
