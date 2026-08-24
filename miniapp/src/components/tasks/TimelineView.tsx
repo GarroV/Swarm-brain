@@ -12,7 +12,10 @@ import {
 
 type DragMode = "move" | "left" | "right";
 type DragState = {
-  id: string; mode: DragMode; startClientX: number; origStart: string; origDue: string; moved: boolean;
+  id: string; mode: DragMode; startClientX: number;
+  startClientY: number;
+  decided: boolean;
+  horizontal: boolean; origStart: string; origDue: string; moved: boolean;
 };
 
 // Клик vs перетаскивание: меньше этого сдвига в px считаем кликом (→ открыть задачу).
@@ -95,14 +98,27 @@ export function TimelineView() {
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     const start = task.start_date ?? task.due_date!;
     const due = task.due_date ?? task.start_date!;
-    dragRef.current = { id: task.id, mode, startClientX: e.clientX, origStart: start, origDue: due, moved: false };
+    dragRef.current = { id: task.id, mode, startClientX: e.clientX, startClientY: e.clientY, origStart: start, origDue: due, moved: false, decided: false, horizontal: false };
   }
 
   function onPointerMove(e: React.PointerEvent) {
     const ds = dragRef.current;
     if (!ds) return;
-    if (Math.abs(e.clientX - ds.startClientX) > CLICK_SLOP) ds.moved = true;
-    const deltaDays = Math.round((e.clientX - ds.startClientX) / DAY_WIDTH);
+    const dX = e.clientX - ds.startClientX;
+    const dY = e.clientY - ds.startClientY;
+    // Направление решается ОДИН раз, как в SwipeRow. Раньше учитывался только X: вертикальный
+    // жест пальцем (попытка проскроллить таймлайн с бара) приходил в onPointerUp как «без
+    // сдвига» и открывал задачу, а оптимистичная перезапись дат уже была применена — веха
+    // молча превращалась в бар (start_date «материализовался»). Issue #69.
+    if (!ds.decided) {
+      if (Math.abs(dX) <= CLICK_SLOP && Math.abs(dY) <= CLICK_SLOP) return;
+      ds.decided = true;
+      ds.horizontal = Math.abs(dX) > Math.abs(dY);
+      ds.moved = true;
+    }
+    // Вертикальный жест — не наш: даты не трогаем вообще, браузер скроллит (touch-action: pan-y).
+    if (!ds.horizontal) return;
+    const deltaDays = Math.round(dX / DAY_WIDTH);
     setTasks((prev) => prev.map((t) => {
       if (t.id !== ds.id) return t;
       let ns = ds.origStart, nd = ds.origDue;
@@ -113,6 +129,14 @@ export function TimelineView() {
     }));
   }
 
+  // Браузер забрал жест себе (вертикальный скролл при touch-action: pan-y) — драг отменён.
+  // Тапом это НЕ считается; если успели что-то сдвинуть — возвращаем правду с сервера.
+  function onPointerCancel() {
+    const ds = dragRef.current;
+    dragRef.current = null;
+    if (ds?.horizontal) loadTasks();
+  }
+
   function onPointerUp() {
     const ds = dragRef.current;
     if (!ds) return;
@@ -121,6 +145,9 @@ export function TimelineView() {
     if (!t) return;
     // Клик без сдвига — открыть задачу, дату не трогаем.
     if (!ds.moved) { setModalTask(t); return; }
+    // Вертикальный жест ничего не менял — и сохранять нечего (иначе попытка проскроллить
+    // молча записывала бы задаче новые даты).
+    if (!ds.horizontal) return;
     updateTask(t.id, { start_date: t.start_date, due_date: t.due_date }).catch(() => loadTasks());
   }
 
@@ -227,7 +254,8 @@ export function TimelineView() {
                       onPointerDown={(e) => onPointerDown(e, t, "move")}
                       onPointerMove={onPointerMove}
                       onPointerUp={onPointerUp}
-                      className="size-[18px] rotate-45 rounded-[5px] shadow-md ring-2 ring-surface touch-none cursor-grab active:cursor-grabbing transition-transform hover:scale-110"
+                      onPointerCancel={onPointerCancel}
+                      className="size-[18px] rotate-45 rounded-[5px] shadow-md ring-2 ring-surface touch-pan-y cursor-grab active:cursor-grabbing transition-transform hover:scale-110"
                       style={{ background: bg }}
                       title={t.title}
                       aria-label={t.title}
@@ -245,11 +273,12 @@ export function TimelineView() {
               return (
                 <div
                   key={t.id}
-                  className="group absolute z-10 flex select-none items-center gap-1.5 rounded-[10px] px-2.5 shadow-md ring-1 ring-black/5 touch-none cursor-grab active:cursor-grabbing transition-shadow hover:shadow-lg"
+                  className="group absolute z-10 flex select-none items-center gap-1.5 rounded-[10px] px-2.5 shadow-md ring-1 ring-black/5 touch-pan-y cursor-grab active:cursor-grabbing transition-shadow hover:shadow-lg"
                   style={{ left: geo.x, top, width: geo.width, height: BAR_HEIGHT, background: bg }}
                   onPointerDown={(e) => onPointerDown(e, t, "move")}
                   onPointerMove={onPointerMove}
                   onPointerUp={onPointerUp}
+                      onPointerCancel={onPointerCancel}
                   title={t.title}
                 >
                   {/* ручка слева */}
@@ -257,6 +286,7 @@ export function TimelineView() {
                     onPointerDown={(e) => onPointerDown(e, t, "left")}
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
+                      onPointerCancel={onPointerCancel}
                     className="absolute left-0 top-0 bottom-0 w-2 rounded-l-[10px] cursor-ew-resize opacity-0 group-hover:opacity-100 bg-black/15"
                   />
                   {pri && <span className="shrink-0 rounded-full ring-2 ring-white/70" style={{ width: 8, height: 8, background: PRI_COLOR[pri] }} />}
@@ -272,6 +302,7 @@ export function TimelineView() {
                     onPointerDown={(e) => onPointerDown(e, t, "right")}
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
+                      onPointerCancel={onPointerCancel}
                     className="absolute right-0 top-0 bottom-0 w-2 rounded-r-[10px] cursor-ew-resize opacity-0 group-hover:opacity-100 bg-black/15"
                   />
                 </div>
