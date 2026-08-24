@@ -9,6 +9,7 @@ import { MeetingsApprove } from "./dash/MeetingsApprove";
 import { TeamTasks } from "./dash/TeamTasks";
 import { ProjectMapButton } from "./dash/ProjectMapButton";
 import { PersonalDigest } from "./dash/PersonalDigest";
+import { NotificationsBell } from "./NotificationsBell";
 
 // Desktop-главный экран «Рой» — 3-колоночная раскладка (только lg+, см. RoyApp `isDashboard`).
 // Лево (288px): личные задачи. Центр (1fr): поиск-герой + материалы за сутки. Право (344px):
@@ -29,7 +30,10 @@ export function RoyDashboard() {
             Swarm Brain
           </span>
         </div>
-        <ProjectMapButton />
+        <div className="flex items-center gap-2">
+          <NotificationsBell />
+          <ProjectMapButton />
+        </div>
       </div>
 
       {/* 3 колонки: лево / центр / право. minmax(0,1fr) — чтобы центр не распирал грид. */}
