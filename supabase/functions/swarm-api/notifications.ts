@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { canViewTask } from "../_shared/tasks/access.ts";
-import { commentRecipients, type NotifiableTask } from "../_shared/tasks/notify.ts";
+import { commentRecipients, isInvolvedInTask, type NotifiableTask } from "../_shared/tasks/notify.ts";
+import { loadSubscribers } from "./task-subscriptions.ts";
 
 // Лента уведомлений (колокольчик) + рассылка события «к твоей задаче написали комментарий».
 // Роуты: GET /notifications, POST /notifications/read.
@@ -59,14 +60,17 @@ export type CommentNotificationInput = {
   actorName: string;
 };
 
-// Fan-out по причастным к задаче + пуш в бота. Best-effort: и вставка, и пуш только
+// Fan-out по причастным к задаче И подписавшимся (issue #82) + пуш в бота. Best-effort: и вставка, и пуш только
 // логируются при сбое — уведомление не должно ронять сам комментарий (он уже сохранён,
 // а повторить POST пользователь не может — получился бы дубль в ленте задачи).
 export async function notifyTaskComment(
   supabase: SupabaseClient,
   { task, commentId, content, actorTelegramId, actorName }: CommentNotificationInput,
 ): Promise<void> {
-  const recipients = commentRecipients(task, actorTelegramId);
+  // Подписки — исключения из круга по умолчанию: добавляют непричастных (обычно админа,
+  // который ведёт людей и не может обходить карточки руками) и убирают отписавшихся.
+  const subscribers = await loadSubscribers(supabase, task.id);
+  const recipients = commentRecipients(task, actorTelegramId, subscribers);
   if (recipients.length === 0) return;
 
   const { error } = await supabase.from("notifications").insert(
@@ -88,7 +92,19 @@ export async function notifyTaskComment(
     `💬 <b>${escapeHtml(actorName)}</b> — комментарий к задаче «${escapeHtml(task.title)}»\n\n` +
     escapeHtml(truncate(content, PUSH_PREVIEW_MAX)) + link;
 
-  const results = await Promise.allSettled(recipients.map((rid) => sendTelegram(rid, text)));
+  // Пришло ПО ПОДПИСКЕ, а не потому что задача твоя → объясняем, откуда взялось, и куда идти
+  // отписываться. Иначе человек получает уведомления о задаче, к которой не причастен, и не
+  // понимает почему (решение владельца: подписывать с пометкой).
+  const subscribedOnly = new Set(
+    subscribers
+      .filter((sub) => sub.state === "subscribed" && !isInvolvedInTask(task, sub.telegram_id))
+      .map((sub) => sub.telegram_id),
+  );
+  const hint = "\n\n<i>Вы получаете это, потому что комментировали задачу. Отписаться — тумблером в её карточке.</i>";
+
+  const results = await Promise.allSettled(
+    recipients.map((rid) => sendTelegram(rid, subscribedOnly.has(rid) ? text + hint : text)),
+  );
   for (const r of results) {
     // Отписался от бота / заблокировал — норма, не ошибка приложения: в колокольчике уведомление уже лежит.
     if (r.status === "rejected") console.error("notification push failed:", r.reason);
@@ -102,6 +118,7 @@ export async function handleNotificationRoutes(
   req: Request,
   routePath: string,
   telegramId: number,
+  isAdmin: boolean,
   origin: string,
   resolveNames: (ids: number[]) => Promise<Map<number, string>>,
 ): Promise<Response | null> {
@@ -124,10 +141,13 @@ export async function handleNotificationRoutes(
     }
 
     // Задачу могли сделать приватной ПОСЛЕ уведомления — тогда её из ленты убираем
-    // (иначе заголовок утечёт задним числом). Права считаем как обычный участник:
-    // админский оверсайт здесь не применяем, см. _shared/tasks/notify.ts.
+    // (иначе заголовок утечёт задним числом). Оверсайт админа здесь УЧИТЫВАЕМ: доставку
+    // решает `commentRecipients` при отправке, и если строка уже есть, значит человек
+    // имел право её получить; прятать её потом от админа, который эту задачу и так видит
+    // на доске, смысла нет (решение владельца 2026-08-24,
+    // docs/decisions/2026-08-24-comment-subscription.md).
     const rows = (data ?? []) as unknown as NotificationRow[];
-    const visible = rows.filter((r) => r.tasks && canViewTask(r.tasks, telegramId, false));
+    const visible = rows.filter((r) => r.tasks && canViewTask(r.tasks, telegramId, isAdmin));
 
     const names = await resolveNames(
       visible.map((r) => r.actor_telegram_id).filter((x): x is number => !!x),
