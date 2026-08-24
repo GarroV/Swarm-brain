@@ -151,6 +151,14 @@ export type TranscriptSegment = { start: number; end: number; text: string; spea
 
 export type RecorderRef = { telegram_id: number; claimed_at: string; role: string };
 
+// Подсказка рынков на экране вычитки (GET /agent-meetings/:id/market-suggestion, issue #73).
+// source — откуда взялась: название встречи / общий рынок участников / классификатор по тезисам.
+// null + пустой список = сигналов не нашлось, человек решает с нуля («Общее»).
+export type MarketSuggestion = {
+  markets: string[];
+  source: "title" | "participants" | "notes" | null;
+};
+
 export type AgentMeeting = {
   id: string;
   title: string | null;

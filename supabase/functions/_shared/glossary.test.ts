@@ -37,3 +37,10 @@ Deno.test("MEETING_GLOSSARY — записи валидны (canonical непу�
     for (const a of e.aliases) assertEquals(a, a.toLowerCase(), `alias не lowercase: ${a}`);
   }
 });
+
+// Регресс issue #72: «ИСА-2» в записи — это «Нови Сад 2», а не «Београд 2».
+Deno.test("словарь знает ИСА-2 как Нови Сад 2", () => {
+  const block = glossaryPromptBlock();
+  assertStringIncludes(block, "Нови Сад 2");
+  assertStringIncludes(block, "иса-2");
+});

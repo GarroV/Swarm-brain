@@ -468,6 +468,19 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
 // Тот же путь, что и при первичной сводке (TEZIS_SYSTEM, temp 0.3) — один источник правды.
 // Заголовок НЕ трогаем (мог быть отредактирован вручную). Возвращает новые тезисы.
 export async function resummarizeFromTranscript(supabase: SupabaseClient, meetingId: string, note = ""): Promise<string> {
+  const tezisi = await buildTezisyFromTranscript(supabase, meetingId, note);
+  // Успешно записали тезисы → приводим summary_status в согласованность: встреча, ранее упавшая в
+  // "failed", после успешной переобработки не должна оставаться "failed" (иначе UI врёт про статус).
+  await supabase.from("meetings")
+    .update({ draft_notes_md: tezisi, summary_status: "done", updated_at: new Date().toISOString() })
+    .eq("id", meetingId);
+  return tezisi;
+}
+
+// Та же сводка, но БЕЗ записи в базу — «сухой прогон». Отделено от resummarizeFromTranscript,
+// чтобы промпт можно было проверить на реальной встрече, не затирая ни авто-тезисы, ни правки
+// человека (у половины встреч стоит notes_edited_at — там перезапись уничтожила бы его работу).
+export async function buildTezisyFromTranscript(supabase: SupabaseClient, meetingId: string, note = ""): Promise<string> {
   const { data } = await supabase.from("meetings").select("id, title, transcript, recorders, claim_owner").eq("id", meetingId).single();
   const row = data as { title: string | null; transcript: { segments?: Segment[] } | null; recorders: RecorderEntry[] | null; claim_owner: number | null } | null;
   const segments = row?.transcript?.segments ?? [];
@@ -487,13 +500,7 @@ export async function resummarizeFromTranscript(supabase: SupabaseClient, meetin
   // Пустой ответ модели — не затираем существующие тезисы пустой строкой и не метим done;
   // бросаем, чтобы swarm-api вернул ошибку, а кнопка «Переобработать» осталась для повторной попытки.
   if (!raw) throw new Error("Модель вернула пустые тезисы — попробуй ещё раз");
-  const tezisi = /^НЕТ[_\s]?ТЕЗИСОВ/i.test(raw) ? NO_TEZISY_NOTE : raw;
-  // Успешно записали тезисы → приводим summary_status в согласованность: встреча, ранее упавшая в
-  // "failed", после успешной переобработки не должна оставаться "failed" (иначе UI врёт про статус).
-  await supabase.from("meetings")
-    .update({ draft_notes_md: tezisi, summary_status: "done", updated_at: new Date().toISOString() })
-    .eq("id", meetingId);
-  return tezisi;
+  return /^НЕТ[_\s]?ТЕЗИСОВ/i.test(raw) ? NO_TEZISY_NOTE : raw;
 }
 
 // ── Главный шаг ─────────────────────────────────────────────────────────────
