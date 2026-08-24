@@ -11,7 +11,7 @@
 // валлийское "Diolch yn fawr" из инцидента b8b7a609). Это defence-in-depth; язык-НЕЗАВИСИМЫЙ фикс —
 // детектор повторов isRepeatedFiller ниже (ловит любой переведённый аутро без ведения списка).
 export const WHISPER_HALLUCINATION_RE =
-  /субтитр|продолжение следует|спасибо за просмотр|подписывайтесь|подпиш[иеё]тесь|подпишись на канал|добро пожаловать на наш канал|до новых встреч|dimatorzok|amara\.org|thank you for watching|thanks for watching|please subscribe|subscribe to (my|the|our) channel|welcome to (my|the|our) channel|subtitles by|diolch yn fawr|gracias por ver|obrigado por assistir|grazie per (aver )?guard|merci d'avoir regardé|danke f[üu]rs? zuschauen|untertitel|시청해 주셔서|ご視聴ありがとう|感谢观看|谢谢观看/i;
+  /субтитр|продолжение следует|спасибо за просмотр|подписывайтесь|подпиш[иеё]тесь|подпишись на канал|добро пожаловать на (наш )?канал|крошка антошка|до новых встреч|dimatorzok|amara\.org|thank you for watching|thanks for watching|please subscribe|subscribe to (my|the|our) channel|welcome to (my|the|our) channel|subtitles by|diolch yn fawr|gracias por ver|obrigado por assistir|grazie per (aver )?guard|merci d'avoir regardé|danke f[üu]rs? zuschauen|untertitel|시청해 주셔서|ご視聴ありがとう|感谢观看|谢谢观看/i;
 
 // Сегмент — галлюцинация, если пуст, матчит чёрный список фраз, ИЛИ это явная тишина
 // (высокий no_speech_prob + низкий avg_logprob). Пороги консервативные: одни они «уверенные»
