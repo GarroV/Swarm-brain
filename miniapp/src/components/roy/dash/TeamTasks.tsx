@@ -13,7 +13,7 @@ import type { DashboardData } from "./useDashboardData";
 export function TeamTasks({ data, className }: { data: DashboardData; className?: string }) {
   const { openTasks } = useRoyNav();
   const dt = useDt();
-  const { loading, team } = data;
+  const { tasksState, team } = data;
   // Активные задачи команды: незавершённые требуют внимания.
   const active = team.filter((t) => norm(t.status) !== "done");
 
@@ -23,7 +23,11 @@ export function TeamTasks({ data, className }: { data: DashboardData; className?
       icon="team"
       tint="var(--tag-link)"
       headAction={dt("Доска", "Board")}
-      loading={loading}
+      loading={tasksState.loading}
+      failed={tasksState.failed}
+      onRetry={tasksState.retry}
+      errorText={dt("Не загрузилось", "Failed to load")}
+      retryText={dt("Повторить", "Retry")}
       empty={active.length === 0}
       emptyText={dt("Активных задач команды нет", "No active team tasks")}
       onHead={() => openTasks("team", "all")}
