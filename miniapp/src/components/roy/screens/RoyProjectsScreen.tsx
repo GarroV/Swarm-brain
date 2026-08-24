@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useDt, useRoyNav } from "../nav";
-import { RoyHeader, RoyCard, SearchBtn } from "../ui";
+import { RoyHeader, RoyCard } from "../ui";
+import { HeaderActions } from "../HeaderActions";
 import { RoyIcon } from "../icons";
 import { fetchProjects, fetchTasks, createProject } from "@/lib/api";
 import type { Project, Task } from "@/types";
@@ -68,7 +69,7 @@ export function RoyProjectsScreen() {
 
   return (
     <div className="relative h-full overflow-y-auto">
-      <RoyHeader title={dt("Проекты", "Projects")} right={<SearchBtn onClick={() => push({ view: "ask" })} />} />
+      <RoyHeader title={dt("Проекты", "Projects")} right={<HeaderActions />} />
 
       <div className="space-y-2.5 px-5 pb-28">
         {projects === null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 76, borderRadius: 18 }} />)}

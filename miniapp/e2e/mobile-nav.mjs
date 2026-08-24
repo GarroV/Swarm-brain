@@ -3,8 +3,8 @@
 // доступны с одного экрана из четырёх, проектов на телефоне не было, созданная задача «пропадала».
 // Запуск: node e2e/mobile-nav.mjs (см. e2e/README.md — нужен dev-сервер и Chrome с CDP).
 import {
-  connect, freshLoad, wait, tap, swipe, clickText, bodyText, swipeRows, dialogOpen, tabBar, assertTouchWorks,
-  reporter, PHONE, PHONE_SHORT, DESKTOP,
+  connect, freshLoad, wait, waitFor, tap, swipe, clickText, bodyText, swipeRows, dialogOpen, tabBar, assertTouchWorks,
+  reporter, shutdown, PHONE, PHONE_SHORT, DESKTOP,
 } from "./lib.mjs";
 
 const r = reporter("mobile-nav");
@@ -68,10 +68,16 @@ const allErrors = [];
     JSON.stringify(tabs));
   r.ok("дом мобильного — задачи", (await page.evaluate(() => document.querySelector("h1")?.innerText)) === "Задачи");
 
-  for (const tab of ["Задачи", "Проекты", "Встречи"]) {
+  for (const tab of ["Задачи", "Проекты", "Встречи", "Ещё"]) {
     await clickText(page, tab);
     await wait(1100);
-    r.ok(`поиск доступен с таба «${tab}»`, await page.evaluate(() => !!document.querySelector('button[aria-label="Спросить или найти"]')));
+    const actions = await page.evaluate(() => ({
+      search: !!document.querySelector('button[aria-label="Спросить или найти"]'),
+      // Колокольчик уведомлений жил в шапке «Поиска» — экрана, который перестал быть домом.
+      // Проверяем, что он не уехал вглубь вместе с ним.
+      bell: [...document.querySelectorAll("button[aria-label]")].some((b) => /уведомлен|notification/i.test(b.getAttribute("aria-label") ?? "")),
+    }));
+    r.ok(`поиск и уведомления доступны с таба «${tab}»`, actions.search && actions.bell, JSON.stringify(actions));
   }
 
   await page.evaluate(() => document.querySelector('button[aria-label="Спросить или найти"]').click());
@@ -173,8 +179,10 @@ const allErrors = [];
   // Выход из вычитки — иконка без подписи, поэтому ищем по aria-label, а не по тексту.
   if (queueOpened === "clicked") {
     await page.evaluate(() => document.querySelector('button[aria-label="Назад"]')?.click());
-    await wait(1200);
-    r.ok("из вычитки есть выход назад", /На вычитке|Все|Ожидают/.test(await bodyText(page)));
+    // Ждём именно возврата в список, а не «немного»: иначе следующие проверки читают ещё
+    // экран вычитки и падают на исправном продукте.
+    const back = await waitFor(page, () => /Ожидают|Подтверждены/.test(document.body.innerText) && !/Транскрипт \(/.test(document.body.innerText));
+    r.ok("из вычитки есть выход назад", back);
   }
 
   const rows = await swipeRows(page);
@@ -265,4 +273,6 @@ const allErrors = [];
   await browser.disconnect();
 }
 
-process.exit(r.finish(allErrors) ? 0 : 1);
+const green = r.finish(allErrors);
+await shutdown();
+process.exit(green ? 0 : 1);

@@ -20,6 +20,21 @@ export function initApp(): void {
   }
 }
 
+// Deep-link из пуша «к твоей задаче написали комментарий».
+// Браузер: ?task=<id>. Telegram Mini App: startapp=task_<id> → start_param.
+export function getDeepLinkTaskId(): string | null {
+  if (typeof window === "undefined") return null;
+  const fromQuery = new URLSearchParams(window.location.search).get("task");
+  if (fromQuery) return fromQuery;
+  try {
+    const sp = (WebApp.initDataUnsafe as { start_param?: string } | undefined)?.start_param;
+    if (sp && sp.startsWith("task_")) return sp.slice("task_".length);
+  } catch {
+    // вне Telegram — start_param недоступен, это норм
+  }
+  return null;
+}
+
 // Deep-link из уведомления агента «тезисы готовы».
 // Браузер: ?meeting=<id>. Telegram Mini App: startapp=meeting_<id> → start_param.
 export function getDeepLinkMeetingId(): string | null {

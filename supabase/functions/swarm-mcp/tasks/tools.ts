@@ -403,7 +403,7 @@ export const TASK_TOOL_DEFINITIONS = [
         description: { type: "string", description: "Описание или детали (опционально)" },
         assignee_name: { type: "string", description: "Имя, фамилия или ник исполнителя (опционально)" },
         country: { type: "string", description: "Рынок/страна (опционально)" },
-        due_date: { type: "string", description: "Дедлайн в формате YYYY-MM-DD (опционально)" },
+        due_date: { type: "string", description: "Дедлайн в формате YYYY-MM-DD (опционально). Год — от текущей даты, не из головы" },
         source: { type: "string", enum: ["transcript", "claude", "manual"], description: "Источник задачи" },
         context_id: { type: "string", description: "ID записи в базе знаний (опционально)" },
         task_role: {

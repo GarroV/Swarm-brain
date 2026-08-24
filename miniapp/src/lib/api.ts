@@ -1,5 +1,5 @@
 import { getInitData } from "./telegram";
-import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, Project, AgentMeeting, MeetingLiveNote } from "@/types";
+import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote } from "@/types";
 
 export type CreateTaskInput = {
   title: string;
@@ -210,6 +210,9 @@ function authHeaders(): Record<string, string> {
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    // no-store: ответы приватного API не должны ни отдаваться из кэша, ни в него попадать.
+    // Второй слой защиты рядом с sw.js (issue #71 — экран показывал данные «на шаг назад»).
+    cache: "no-store",
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
@@ -226,6 +229,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 async function apiFetchNoContentType<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    cache: "no-store",
     credentials: "include",
     headers: {
       ...authHeaders(),
@@ -534,6 +538,45 @@ export type TaskComment = {
   created_at: string;
 };
 
+// Уведомление в колокольчике. Сейчас единственный тип — комментарий к задаче;
+// поле `type` заведено под назначения/смены статуса (беклог), UI на него уже смотрит.
+export type SwarmNotification = {
+  id: string;
+  type: "task_comment";
+  task_id: string | null;
+  task_title: string;
+  comment_id: string | null;
+  content: string;
+  actor_telegram_id: number | null;
+  actor_name: string;
+  read_at: string | null;
+  created_at: string;
+};
+
+export async function fetchNotifications(limit = 30): Promise<{ items: SwarmNotification[]; unread: number }> {
+  if (DEV_MODE) {
+    const items: SwarmNotification[] = [
+      { id: "n1", type: "task_comment", task_id: "1", task_title: "Раздельный НДС в Венгрии", comment_id: "c1",
+        content: "Юристы подтвердили схему, нужен твой апрув до пятницы.", actor_telegram_id: 555, actor_name: "Anna K.",
+        read_at: null, created_at: new Date(Date.now() - 12 * 60 * 1000).toISOString() },
+      { id: "n2", type: "task_comment", task_id: "2", task_title: "Апи Рецептов", comment_id: "c2",
+        content: "Выкатили на стенд, посмотри контракт.", actor_telegram_id: 556, actor_name: "Ivan P.",
+        read_at: new Date().toISOString(), created_at: new Date(Date.now() - 26 * 3600 * 1000).toISOString() },
+    ];
+    return { items, unread: items.filter((i) => !i.read_at).length };
+  }
+  return apiFetch<{ items: SwarmNotification[]; unread: number }>(`/notifications?limit=${limit}`);
+}
+
+// Без ids помечает прочитанным всё непрочитанное.
+export async function markNotificationsRead(ids?: string[]): Promise<void> {
+  if (DEV_MODE) return;
+  await apiFetch<{ ok: true }>("/notifications/read", {
+    method: "POST",
+    body: JSON.stringify(ids ? { ids } : {}),
+  });
+}
+
 export async function fetchTaskComments(taskId: string): Promise<TaskComment[]> {
   if (DEV_MODE) return [
     { id: "c1", content: "Начал, жду данные от партнёра.", author_name: "Dev User", author_telegram_id: 123456, created_at: new Date().toISOString() },
@@ -815,18 +858,30 @@ export async function deleteAgentMeeting(id: string): Promise<void> {
   return apiFetch<void>(`/agent-meetings/${id}`, { method: "DELETE" });
 }
 
-export async function publishAgentMeeting(id: string, base: "workspace" | "personal"): Promise<Entry> {
+// Подсказка рынков для чипов на вычитке. Отдельным вызовом (а не полем встречи), потому что
+// в редком случае считается классификатором по тезисам — незачем держать на этом весь GET.
+export async function fetchMarketSuggestion(id: string): Promise<MarketSuggestion> {
+  if (DEV_MODE) return { markets: ["BG"], source: "title" };
+  return apiFetch<MarketSuggestion>(`/agent-meetings/${id}/market-suggestion`);
+}
+
+// countries — то, что человек выставил чипами. Пустой массив = «Общее» (сервер запишет тег
+// General). undefined = поле не передаём вовсе → сервер оставит прежнее поведение классификатора.
+export async function publishAgentMeeting(id: string, base: "workspace" | "personal", countries?: string[]): Promise<Entry> {
   if (DEV_MODE) {
     const idx = mockAgentMeetings.findIndex((x) => x.id === id);
     if (idx !== -1) mockAgentMeetings[idx] = { ...mockAgentMeetings[idx], status: "in_base" };
     return {
       id: "mock-entry", content: "", summary: mockAgentMeetings[idx]?.draft_notes_md ?? "",
-      added_by: "", source: "desktop-agent", metadata: {}, countries: [], entry_type: "transcript",
+      added_by: "", source: "desktop-agent", metadata: {}, countries: countries ?? [], entry_type: "transcript",
       entry_date: null, group_id: null, is_private: base === "personal", owner_id: null,
       created_at: new Date().toISOString(),
     };
   }
-  return apiFetch<Entry>(`/agent-meetings/${id}/publish`, { method: "POST", body: JSON.stringify({ base }) });
+  return apiFetch<Entry>(`/agent-meetings/${id}/publish`, {
+    method: "POST",
+    body: JSON.stringify(countries === undefined ? { base } : { base, countries }),
+  });
 }
 
 // ── Integrations / Granola ────────────────────────────────────────────────────

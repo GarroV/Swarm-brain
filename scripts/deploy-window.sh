@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Накопитель раскатки: что готово, но ещё не на проде.
+#
+# Зачем: раскатка на Swarm — отдельное действие с отдельным «да» владельца и в согласованное
+# окно (решение 24.08.2026, docs/decisions/2026-08-24-deploy-window.md). Без списка «что
+# накопилось» одобренное теряется, а неодобренное уезжает вместе с соседним пушем.
+#
+#   ./scripts/deploy-window.sh plan   — показать, что накопилось с прошлой раскатки
+#   ./scripts/deploy-window.sh go     — раскатать edge-функции и передвинуть метку
+#   ./scripts/deploy-window.sh init   — поставить метку на текущий HEAD (первый раз)
+#
+# Окно: будни 09:00–09:59 по Белграду. Вне окна `go` отказывается — обойти осознанно:
+# FORCE=1 ./scripts/deploy-window.sh go (живой баг окно обгоняет, но «да» владельца нужно всё равно).
+set -euo pipefail
+
+TAG=prod-deployed
+PROJECT_REF=vbqglndbxkpmreccpqmr
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$REPO_ROOT"
+
+die() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
+head_() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+
+base_ref() {
+  git rev-parse -q --verify "refs/tags/$TAG" >/dev/null \
+    || die "Метки $TAG нет. Первый раз: ./scripts/deploy-window.sh init (ставит её на текущий HEAD)."
+  echo "$TAG"
+}
+
+# Изменённые edge-функции. Правка в _shared/ тянет за собой всех её потребителей —
+# иначе на проде окажется функция со старой копией общего модуля.
+changed_functions() {
+  local base=$1 direct shared_files consumers
+  direct=$(git diff --name-only "$base"..HEAD -- supabase/functions/ \
+    | awk -F/ '$3 != "" && $3 != "_shared" {print $3}' | sort -u | grep -v '^_' || true)
+  shared_files=$(git diff --name-only "$base"..HEAD -- supabase/functions/_shared/ \
+    | grep -v '\.test\.ts$' || true)
+  consumers=""
+  if [ -n "$shared_files" ]; then
+    for f in $shared_files; do
+      local bn; bn=$(basename "$f")
+      consumers+=$(grep -rl -- "$bn" supabase/functions --include='*.ts' 2>/dev/null \
+        | awk -F/ '$3 != "" && $3 != "_shared" {print $3}' || true)
+      consumers+=$'\n'
+    done
+  fi
+  printf '%s\n%s\n' "$direct" "$consumers" | sed '/^$/d' | sort -u
+}
+
+case "${1:-plan}" in
+  init)
+    git tag -f "$TAG" HEAD >/dev/null
+    git push -f origin "refs/tags/$TAG" >/dev/null 2>&1 || echo "(метка локальная — пуш не прошёл)"
+    echo "Метка $TAG стоит на $(git rev-parse --short HEAD). Дальше: ./scripts/deploy-window.sh plan"
+    ;;
+
+  plan|go)
+    BASE=$(base_ref)
+    FUNCS=$(changed_functions "$BASE")
+    WEB=$(git diff --name-only "$BASE"..HEAD -- miniapp/ | wc -l | tr -d ' ')
+    MIGR=$(git diff --name-only --diff-filter=A "$BASE"..HEAD -- supabase/migrations/ || true)
+    REC=$(git diff --name-only "$BASE"..HEAD -- recorder/ | wc -l | tr -d ' ')
+    COMMITS=$(git log --oneline "$BASE"..HEAD | wc -l | tr -d ' ')
+
+    head_ "Накопилось с прошлой раскатки ($(git rev-parse --short "$BASE"), $COMMITS коммит(ов))"
+    git log --oneline "$BASE"..HEAD | sed 's/^/  /'
+
+    head_ "Edge-функции к раскатке"
+    [ -n "$FUNCS" ] && echo "$FUNCS" | sed 's/^/  · /' || echo "  (нет)"
+
+    head_ "Веб (miniapp)"
+    if [ "$WEB" -gt 0 ]; then
+      echo "  $WEB файл(ов) — раскатается САМ при пуше в main (Cloudflare Pages), отдельной команды нет"
+    else
+      echo "  (нет)"
+    fi
+
+    head_ "Миграции БД"
+    [ -n "$MIGR" ] && { echo "$MIGR" | sed 's/^/  · /'; echo "  ⚠ накатывать вручную и НОЧЬЮ — тяжёлое идёт вне утреннего окна"; } || echo "  (нет)"
+
+    head_ "Рекордер"
+    [ "$REC" -gt 0 ] && echo "  $REC файл(ов) — отдельный runbook recorder/README.md (LATEST_BUILD)" || echo "  (нет)"
+
+    [ "${1:-plan}" = "plan" ] && exit 0
+
+    # ── go ──────────────────────────────────────────────────────────────────────
+    DOW=$(TZ=Europe/Belgrade date +%u); HOUR=$(TZ=Europe/Belgrade date +%H)
+    if [ "$DOW" -gt 5 ] || [ "$HOUR" != "09" ]; then
+      [ "${FORCE:-0}" = "1" ] || die "Сейчас $(TZ=Europe/Belgrade date '+%a %H:%M') по Белграду — вне окна раскатки (будни 09:00–09:59).
+Команда договорилась в этот час в Swarm не ходить, в остальное время там работают.
+Живой баг окно обгоняет — тогда: FORCE=1 ./scripts/deploy-window.sh go"
+      echo; echo "⚠ Вне окна, но FORCE=1 — раскатываю."
+    fi
+    [ -n "$FUNCS" ] || die "Нечего раскатывать: изменённых функций нет."
+
+    head_ "Раскатка"
+    # shellcheck disable=SC2086
+    supabase functions deploy $FUNCS --no-verify-jwt --project-ref "$PROJECT_REF"
+
+    git tag -f "$TAG" HEAD >/dev/null
+    git push -f origin "refs/tags/$TAG" >/dev/null 2>&1 || echo "(метка осталась локальной)"
+    head_ "Готово. Метка $TAG → $(git rev-parse --short HEAD)"
+    echo "Дальше по правилу: проверить на реальном окружении и отчитаться владельцу."
+    ;;
+
+  *) die "Использование: ./scripts/deploy-window.sh [plan|go|init]" ;;
+esac

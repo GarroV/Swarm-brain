@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useDt, useRoyNav } from "../nav";
-import { RoyHeader, Segmented, RoyCard, Market, SectionLabel, StorageBadge, SearchBtn } from "../ui";
+import { RoyHeader, Segmented, RoyCard, Market, SectionLabel, StorageBadge } from "../ui";
+import { HeaderActions } from "../HeaderActions";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { SwipeRow } from "../SwipeRow";
 import { DashTaskRow } from "../dash/shared";
@@ -248,7 +249,7 @@ export function RoyMeetingsScreen() {
   // ── Мобайл: стопкой (как было) ───────────────────────────────────────────────
   return (
     <div className="relative h-full overflow-y-auto">
-      <RoyHeader title={dt("Встречи", "Meetings")} right={<SearchBtn onClick={() => push({ view: "ask" })} />} />
+      <RoyHeader title={dt("Встречи", "Meetings")} right={<HeaderActions />} />
       {/* Очередь вычитки — ПОД заголовком экрана, а не над ним: блок «На вычитке» висел выше
           h1 и читался как отдельный экран без названия. */}
       <AgentReviewQueue onOpen={openReview} />

@@ -2,13 +2,18 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { validateCommentContent } from "../_shared/tasks/comments.ts";
 import { canViewTask } from "../_shared/tasks/access.ts";
+import { notifyTaskComment } from "./notifications.ts";
 
 // Роуты /tasks/:id/comments — комментарии-апдейты к задаче.
 // Доступ: задача того же воркспейса (group_id) + приватную видит только владелец/админ.
 // Возвращает null, если путь не про комментарии (index.ts идёт дальше).
 
 type CommentRow = { id: string; content: string; added_by_telegram_id: number | null; created_at: string };
-type TaskRow = { id: string; group_id: string | null; is_private: boolean; owner_id: number | null };
+type TaskRow = {
+  id: string; group_id: string | null; is_private: boolean; owner_id: number | null;
+  // Ниже — только для рассылки уведомлений (кому и с каким заголовком), см. notifications.ts.
+  title: string; assignee_telegram_ids: number[] | null; created_by_telegram_id: number | null;
+};
 
 // Правило приватности — общий гард `_shared/tasks/access.ts` (issue #45): локальная копия
 // здесь была ещё одной из шести, а расходятся они молча.
@@ -16,7 +21,9 @@ const canView = canViewTask;
 
 async function loadTask(supabase: SupabaseClient, taskId: string): Promise<TaskRow | null> {
   const { data } = await supabase
-    .from("tasks").select("id, group_id, is_private, owner_id").eq("id", taskId).maybeSingle();
+    .from("tasks")
+    .select("id, group_id, is_private, owner_id, title, assignee_telegram_ids, created_by_telegram_id")
+    .eq("id", taskId).maybeSingle();
   return (data as TaskRow | null) ?? null;
 }
 
@@ -78,11 +85,22 @@ export async function handleTaskCommentRoutes(
     }
     const row = data as CommentRow;
     const names = await resolveNames([telegramId]);
+    const actorName = names.get(telegramId) ?? String(telegramId);
+    // Уведомляем причастных к задаче. Ждём завершения (Edge-функция может быть убита
+    // сразу после ответа, и отложенный промис не досчитается), но сбой внутри не роняет
+    // ответ: notifyTaskComment ловит свои ошибки сам.
+    await notifyTaskComment(supabase, {
+      task,
+      commentId: row.id,
+      content: row.content,
+      actorTelegramId: telegramId,
+      actorName,
+    });
     return json({
       id: row.id,
       content: row.content,
       author_telegram_id: row.added_by_telegram_id,
-      author_name: names.get(telegramId) ?? String(telegramId),
+      author_name: actorName,
       created_at: row.created_at,
     }, 201, origin);
   }

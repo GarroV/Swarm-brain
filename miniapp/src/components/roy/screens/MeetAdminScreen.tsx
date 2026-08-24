@@ -17,10 +17,12 @@ import {
   deleteMeeting,
   deleteAgentMeeting,
   publishAgentMeeting,
+  fetchMarketSuggestion,
 } from "@/lib/api";
-import type { Entry, AgentMeeting, TranscriptSegment, MeetingLiveNote } from "@/types";
+import type { Entry, AgentMeeting, MarketSuggestion, TranscriptSegment, MeetingLiveNote } from "@/types";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { countryCode } from "@/lib/countries";
+import { MarketChips } from "../MarketChips";
 import {
   applyMeetingsFilter, isFilterActive, isConfirmed, personOf,
   EMPTY_FILTERS, type MeetingsFilterState, type PeriodId,
@@ -1005,19 +1007,32 @@ type ActionState = "idle" | "busy" | "done";
 
 function ActionsPanel({
   item,
+  markets,
   onConfirm,
   onReject,
   onReclassify,
+  onSaveCountries,
 }: {
   item: MeetItem;
-  onConfirm: (storage: Storage) => Promise<void>;
+  markets: string[] | null;
+  // countries === undefined — блок рынков не показан (список рынков не загрузился): решение
+  // уходит БЕЗ них, чтобы невидимый пустой выбор не затёр рынки записи на «Общее».
+  onConfirm: (storage: Storage, countries: string[] | undefined) => Promise<void>;
   onReject: () => Promise<void>;
   onReclassify: () => Promise<void>;
+  // Правка рынков у УЖЕ согласованной записи — сохраняется сразу по клику (решение принято,
+  // кнопки «Согласовать» тут нет). Для очереди не нужна: там рынки уезжают вместе с решением.
+  onSaveCountries: (countries: string[]) => Promise<void>;
 }) {
+  const { toast } = useRoyNav();
   const [confirmState, setConfirmState] = useState<ActionState>("idle");
   const [rejectState, setRejectState] = useState<ActionState>("idle");
   const [reclassState, setReclassState] = useState<ActionState>("idle");
   const [storage, setStorage] = useState<Storage>("shared");
+  // Рынки записи (issue #73). Пустой список = «Общее» — это сентинел, а не «не заполнено».
+  const [countries, setCountries] = useState<string[]>([]);
+  const [suggestSource, setSuggestSource] = useState<MarketSuggestion["source"]>(null);
+  const [savingCountries, setSavingCountries] = useState(false);
   const isAgent = item.kind === "agent";
   // Встреча уже согласована и лежит в базе (режим «Все встречи»). Решение по ней принято —
   // выбор хранилища и «Согласовать» бессмысленны (владелец 2026-08-21: «почему на уже
@@ -1043,11 +1058,68 @@ function ActionsPanel({
     setReclassState("idle");
   }, [item.data.id]);
 
+  // Рынки: у встречи-записи показываем уже проставленные, у черновика — подсказку сервера
+  // (мягкий нудж: предложенное предвыбрано, но публикация уйдёт с тем, что человек оставил).
+  // «General» — сентинел «конкретного рынка нет», в чипах это состояние «Общее» = пустой выбор.
+  const isAgentItem = item.kind === "agent";
+  const entryCountries = item.kind === "entry" ? (item.data.countries ?? []) : null;
+  useEffect(() => {
+    setSuggestSource(null);
+    setSavingCountries(false);
+    if (!isAgentItem) {
+      setCountries((entryCountries ?? []).map(countryCode).filter((c) => c !== "General"));
+      return;
+    }
+    setCountries([]);
+    let alive = true;
+    fetchMarketSuggestion(item.data.id)
+      .then((s) => { if (alive) { setCountries(s.markets); setSuggestSource(s.source); } })
+      .catch(() => { /* подсказка не пришла — чипы просто пустые, человек выберет сам */ });
+    return () => { alive = false; };
+    // entryCountries намеренно не в deps: массив пересоздаётся каждым рендером родителя,
+    // а меняется он только вместе с самой записью.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.data.id, isAgentItem]);
+
+  // Правка рынков уже согласованной записи — сразу в базу (оптимистично: чип красится
+  // мгновенно, откат при ошибке, иначе экран врёт о сохранённом).
+  const changeCountries = (next: string[]) => {
+    const prev = countries;
+    setCountries(next);
+    if (!isConfirmed) return;
+    setSavingCountries(true);
+    onSaveCountries(next)
+      .catch(() => { setCountries(prev); toast("Не удалось сохранить рынки"); })
+      .finally(() => setSavingCountries(false));
+  };
+
+  const SUGGEST_LABEL: Record<NonNullable<MarketSuggestion["source"]>, string> = {
+    title: "по названию встречи",
+    participants: "по рынкам участников",
+    notes: "по тезисам",
+  };
+
+  // Рынки показываем всегда, когда известен список воркспейса: и в очереди (до решения),
+  // и у уже согласованной записи (чтобы можно было исправить чужую страну в дайджесте).
+  const marketsBlock = markets && markets.length > 0 ? (
+    <div className="flex flex-col gap-1.5">
+      <SectionLabel className="!mb-0">
+        {savingCountries ? "Рынки · сохраняю…" : "Рынки"}
+      </SectionLabel>
+      <MarketChips codes={markets} value={countries} onChange={changeCountries} disabled={savingCountries} />
+      {suggestSource && (
+        <p className="text-ink-mute leading-snug" style={{ fontSize: 11 }}>
+          Предложено {SUGGEST_LABEL[suggestSource]} — поправьте, если не так.
+        </p>
+      )}
+    </div>
+  ) : null;
+
   const handleConfirm = async () => {
     if (confirmState !== "idle") return;
     setConfirmState("busy");
     try {
-      await onConfirm(storage);
+      await onConfirm(storage, marketsBlock ? countries : undefined);
       setConfirmState("done");
     } catch {
       setConfirmState("idle");
@@ -1093,7 +1165,13 @@ function ActionsPanel({
           <RoyIcon name="check" size={15} strokeWidth={2.1} style={{ color: "var(--status-done)" }} />
           <span>Согласована · <span className="font-semibold text-ink">{savedTo}</span></span>
         </div>
-      ) : (
+      ) : null}
+
+      {/* Рынки записи (issue #73). До решения — выбор человека уезжает вместе с публикацией;
+          после — правка сохраняется сразу (перетеганную запись иначе не починить). */}
+      {marketsBlock}
+
+      {isConfirmed ? null : (
         <>
           {/* Выбор хранилища */}
           <Segmented
@@ -1331,18 +1409,32 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
     );
   };
 
-  const handleConfirm = async (item: MeetItem, storage: Storage) => {
+  // countries — рынки, выставленные человеком чипами (issue #73). Пустой список = «Общее»,
+  // и в базе это тег General, а не отсутствие тега (иначе запись выпадет из дайджеста совсем).
+  const handleConfirm = async (item: MeetItem, storage: Storage, countries: string[] | undefined) => {
+    const marketTags = countries === undefined ? undefined : (countries.length > 0 ? countries : ["General"]);
     if (item.kind === "entry") {
       // Подтверждение встречи + выбор хранилища (личное/общее)
-      await patchMeeting(item.data.id, { confirmed: true, is_private: storage === "personal" });
+      await patchMeeting(item.data.id, {
+        confirmed: true,
+        is_private: storage === "personal",
+        ...(marketTags ? { countries: marketTags } : {}),
+      });
       toast(storage === "personal" ? "Согласовано в личное" : "Встреча согласована");
       await animateRemove(item.data.id);
     } else {
       // Публикация черновика агента в выбранную базу
-      await publishAgentMeeting(item.data.id, storage === "personal" ? "personal" : "workspace");
+      await publishAgentMeeting(item.data.id, storage === "personal" ? "personal" : "workspace", countries);
       toast(storage === "personal" ? "Опубликовано в личное" : "Черновик опубликован");
       await animateRemove(item.data.id);
     }
+  };
+
+  // Правка рынков уже согласованной записи (режим «Все встречи») — сразу в базу.
+  const handleSaveCountries = async (item: MeetItem, countries: string[]) => {
+    if (item.kind !== "entry") return;
+    const updated = await patchMeeting(item.data.id, { countries: countries.length > 0 ? countries : ["General"] });
+    onEntryUpdated(updated);
   };
 
   const handleReject = async (item: MeetItem) => {
@@ -1468,9 +1560,11 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <ActionsPanel
                   item={selected}
-                  onConfirm={(storage) => handleConfirm(selected, storage)}
+                  markets={markets}
+                  onConfirm={(storage, countries) => handleConfirm(selected, storage, countries)}
                   onReject={() => handleReject(selected)}
                   onReclassify={() => handleReclassify(selected)}
+                  onSaveCountries={(countries) => handleSaveCountries(selected, countries)}
                 />
               </div>
             </>

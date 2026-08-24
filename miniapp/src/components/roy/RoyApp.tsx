@@ -3,12 +3,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
-import { getDeepLinkMeetingId } from "@/lib/telegram";
+import { getDeepLinkMeetingId, getDeepLinkTaskId } from "@/lib/telegram";
 import { fetchAgentMeetings, logout } from "@/lib/api";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { RoyNavContext, useRoyNav, useDt, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
 import type { Lens, SmartListId } from "@/lib/smartLists";
-import { RoyTabBar, NavHeader, RoyHeader, Avatar, SearchBtn, ROY_TABS } from "./ui";
+import { RoyTabBar, NavHeader, RoyHeader, Avatar, ROY_TABS } from "./ui";
+import { HeaderActions } from "./HeaderActions";
 import { initials } from "./dash/shared";
 import { useIsDesktop } from "./useIsDesktop";
 import { SearchScreen } from "./screens/SearchScreen";
@@ -33,6 +34,7 @@ import { SettingsScreen } from "@/components/SettingsScreen";
 import { AdminScreen } from "@/components/AdminScreen";
 import { MeetAdminScreen } from "./screens/MeetAdminScreen";
 import { ProfileMenu } from "./ProfileMenu";
+import { NotificationsBell } from "./NotificationsBell";
 import { AnswerModal } from "./AnswerModal";
 
 // Каркас «Рой»: корневые разделы + push-стек.
@@ -122,6 +124,14 @@ export function RoyApp({ me }: { me: Me | null }) {
     const id = getDeepLinkMeetingId();
     if (id) {
       openMeeting(id);
+      hydrated.current = true;
+      return;
+    }
+    // Deep-link из пуша о комментарии → сразу карточка задачи.
+    const taskId = getDeepLinkTaskId();
+    if (taskId) {
+      setTabState("task");
+      setStack([{ view: "taskDetail", params: { id: taskId } }]);
       hydrated.current = true;
       return;
     }
@@ -223,14 +233,17 @@ export function RoyApp({ me }: { me: Me | null }) {
                     (Задачи/База/Встречи) ведут шапки панелей дашборда; назад на дашборд —
                     эта строка. Push-экраны имеют свой «Назад». Мобайл — нижний таб-бар. */}
                 {isDesktop && tab !== "search" && (
-                  <button
-                    type="button"
-                    onClick={() => setTab("search")}
-                    className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-2.5 text-left font-semibold text-ink-soft transition-colors hover:text-ink"
-                  >
-                    <RoyMark size={22} />
-                    <span style={{ fontSize: 14 }}>← Главная</span>
-                  </button>
+                  <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-2">
+                    <button
+                      type="button"
+                      onClick={() => setTab("search")}
+                      className="flex items-center gap-2 py-0.5 text-left font-semibold text-ink-soft transition-colors hover:text-ink"
+                    >
+                      <RoyMark size={22} />
+                      <span style={{ fontSize: 14 }}>← Главная</span>
+                    </button>
+                    <NotificationsBell />
+                  </div>
                 )}
                 <div className="min-h-0 flex-1 overflow-hidden">
                   {tab === "search" && (isDashboard ? <RoyDashboard /> : <SearchScreen />)}
@@ -359,7 +372,7 @@ function MoreScreen({ root = false }: { root?: boolean }) {
   if (me?.is_admin) rows.push({ label: dt("Админ", "Admin"), route: { view: "admin" } });
   return (
     <div className="roy-pop flex h-full flex-col">
-      {root ? <RoyHeader title={dt("Ещё", "More")} /> : <NavHeader onBack={pop} title={dt("Ещё", "More")} />}
+      {root ? <RoyHeader title={dt("Ещё", "More")} right={<HeaderActions />} /> : <NavHeader onBack={pop} title={dt("Ещё", "More")} />}
       {me && (
         <div className="flex shrink-0 items-center gap-3 px-4 pb-3">
           <Avatar size={44}>{initials(me.name)}</Avatar>

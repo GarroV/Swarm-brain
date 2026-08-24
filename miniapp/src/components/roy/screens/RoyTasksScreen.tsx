@@ -1,6 +1,7 @@
 "use client";
 import { useDt, useRoyNav } from "../nav";
-import { RoyHeader, FAB, SearchBtn } from "../ui";
+import { RoyHeader, FAB } from "../ui";
+import { HeaderActions } from "../HeaderActions";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { MobileTaskRow } from "../MobileTaskRow";
 import { SmartListNav } from "@/components/tasks/SmartListNav";
@@ -42,7 +43,7 @@ export function RoyTasksScreen() {
     <div className="relative h-full overflow-y-auto">
       {/* Поиск — иконкой в шапке: таба «Поиск» на мобайле больше нет, а искать нужно с любого
           экрана (решение владельца 2026-08-22). */}
-      <RoyHeader title={dt("Задачи", "Tasks")} right={<SearchBtn onClick={() => push({ view: "ask" })} />} />
+      <RoyHeader title={dt("Задачи", "Tasks")} right={<HeaderActions />} />
       {/* Одна строка управления: чип охвата/группировки + скроллящиеся смарт-списки.
           Было три яруса (линза, «По рынкам», «Все сотрудники», чипы) = 199px до первой задачи. */}
       <div className="flex items-center gap-2 px-5 pb-3">

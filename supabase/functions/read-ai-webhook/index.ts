@@ -3,6 +3,7 @@ import { normalizeCountries, COUNTRY_PROMPT_RULE } from "../_shared/countries.ts
 import { applyGeneralSentinel } from "../_shared/meta-extract.ts";
 import { TEZISY_PROMPT } from "../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
+import { normalizeExtractedDueDate, todayIso } from "../_shared/llm-date.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
@@ -103,8 +104,9 @@ async function extractAndSaveTasks(content: string, meetingId: string): Promise<
     return name ? `${name}${role}${markets}` : null;
   }).filter(Boolean).join("\n");
 
+  const today = todayIso();
   const raw = await chatComplete(
-    "Извлеки задачи из транскрипта встречи. Верни JSON:\n" +
+    `Сегодня ${today}. Извлеки задачи из транскрипта встречи. Верни JSON:\n` +
     "{\"tasks\": [{\"title\": \"...\", \"assignee\": \"Полное имя или null\", \"due_date\": \"YYYY-MM-DD или null\", \"tags\": [\"страна\", \"тема\"]}]}\n\n" +
     "Список команды (имя [роль] рынки):\n" + (teamList || "неизвестна") + "\n\n" +
     "ПРАВИЛА назначения:\n" +
@@ -114,6 +116,7 @@ async function extractAndSaveTasks(content: string, meetingId: string): Promise<
     "4. Если в тексте прямо сказано 'Имя, сделай X' — назначь это имя\n" +
     "5. Если ответственный неясен — assignee: null\n" +
     "6. Используй ТОЧНЫЕ имена из списка команды выше\n" +
+    "due_date: год считай от сегодняшней даты. Если назван только день и месяц («до 17 августа») — подставь ближайший подходящий год, НИКОГДА не бери год из головы. Срок не назван — null.\n" +
     "tags — страны и темы задачи. Только JSON.",
     content,
     true
@@ -139,7 +142,8 @@ async function extractAndSaveTasks(content: string, meetingId: string): Promise<
       await supabase.from("tasks").insert({
         title: task.title,
         assignees: assignee ? [assignee] : [],
-        due_date: task.due_date ?? null,
+        // Слой 2 против выдуманного моделью года (см. _shared/tasks/due-date.ts).
+        due_date: normalizeExtractedDueDate(task.due_date, today),
         tags: task.tags ?? [],
         meeting_id: meetingId,
         status: "pending",
