@@ -198,6 +198,7 @@ supabase/functions/swarm-bot/
 | `oauth_tokens` | OAuth токены интеграций | `service` (`read_ai`), `client_id`, `access_token`, `refresh_token`, `expires_at`, `updated_at` |
 | `oauth_state` | Временный PKCE state для OAuth | `state`, `client_id`, `code_verifier` — создаётся при старте OAuth, удаляется после callback |
 | `task_comments` | Комментарии-апдейты к задаче (веб + MCP) | `task_id` (FK → `tasks`, ON DELETE CASCADE, индекс `idx_task_comments_task_id`), `content`, `added_by_telegram_id` (bigint; имя резолвится на чтении), `added_by` (legacy, nullable), `created_at` |
+| `task_subscriptions` | Подписка на уведомления о комментариях к задаче (issue #82) — таблица **ИСКЛЮЧЕНИЙ**, а не всего круга: нет строки = поведение по умолчанию (причастные получают, остальные нет) | `task_id` (FK → `tasks`, ON DELETE CASCADE, индекс `idx_task_subscriptions_task`), `telegram_id` (FK → `allowed_users`, ON DELETE CASCADE), PK = (`task_id`,`telegram_id`), `state` (**CHECK** `subscribed`\|`muted`), `reason` (**CHECK** `comment`\|`manual` — откуда взялась строка, нужно для пометки в пуше), `created_at`, `updated_at`. Миграция `20260824180000`. RLS включён, политик нет (внешний замок) |
 | `notifications` | Лента колокольчика: событие «к твоей задаче написали» на КАЖДОГО получателя (миграция `20260824120000`) | `recipient_telegram_id` (FK → `allowed_users`, CASCADE), `group_id`, `type` (`check`: пока только `task_comment`), `task_id`/`comment_id` (FK, ON DELETE CASCADE — уведомление уходит вместе со своим поводом), `actor_telegram_id`, `read_at` (null = непрочитано), `created_at`. Индексы: `idx_notifications_recipient` (лента), `idx_notifications_unread` (частичный, счётчик бейджа) |
 
 ### `tasks.status` — значения и целостность
@@ -815,6 +816,8 @@ _Задачи / спринты / зависимости:_
 | `GET` | `/tasks/:id/comments` | Комментарии к задаче (старые→новые), с резолвом имени автора. Гейт = видимость задачи (`group_id` + приватность). Модуль `swarm-api/task-comments.ts` |
 | `POST` | `/tasks/:id/comments` | Добавить комментарий `{content}` (≤4000 символов, валидатор `_shared/tasks/comments.ts`). Автор — вызывающий (`added_by_telegram_id`) |
 | `DELETE` | `/tasks/:id/comments/:cid` | Удалить комментарий — только автор или админ |
+| `GET` | `/tasks/:id/subscription` | Состояние подписки вызывающего: `{state: subscribed\|muted\|null, reason, notified}`. `notified` — придут ли уведомления сейчас (это и показывает тумблер в карточке). Модуль `swarm-api/task-subscriptions.ts` |
+| `PATCH` | `/tasks/:id/subscription` | Явный выбор человека `{notify: boolean}` → `state` = `subscribed`/`muted`, `reason=manual`. Гейт тот же — видимость задачи |
 | `GET` | `/notifications` | Лента уведомлений вызывающего (новые сверху, `?limit=` ≤100, по умолчанию 30) + счётчик `unread`. Строго свои: фильтр по `recipient_telegram_id`. Задача, ставшая приватной ПОСЛЕ уведомления, из ленты выпадает (`canViewTask` на выдаче). Модуль `swarm-api/notifications.ts` |
 | `POST` | `/notifications/read` | Пометить прочитанным: `{ids}` — перечисленные, без тела — всё непрочитанное. Чужие не помечаются даже по точному id |
 | `GET` | `/sprints` | Спринты воркспейса (все участники) |

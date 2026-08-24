@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { useRoyNav } from "@/components/roy/nav";
+import { useRoyNav, useDt } from "@/components/roy/nav";
 import { RoyCard, SectionLabel } from "@/components/roy/ui";
 import { RoyIcon } from "@/components/roy/icons";
-import { fetchTaskComments, addTaskComment, deleteTaskComment, type TaskComment } from "@/lib/api";
+import { fetchTaskComments, addTaskComment, deleteTaskComment, fetchTaskSubscription, setTaskSubscription, type TaskComment, type TaskSubscription } from "@/lib/api";
 import { displayName } from "@/lib/utils";
 import { linkify } from "@/lib/linkify";
 
@@ -21,7 +21,12 @@ function fmtDate(iso: string | null): string {
 // Рендерится только внутри RoyApp → useRoyNav безопасен (как в TaskDetail).
 export function TaskComments({ taskId }: { taskId: string }) {
   const { toast, me } = useRoyNav();
+  // dt только для новых строк (подписка) — остальной текст файла пока русский,
+  // его переводит отдельная задача i18n, здесь её не тащим.
+  const dt = useDt();
   const [comments, setComments] = useState<TaskComment[]>([]);
+  const [sub, setSub] = useState<TaskSubscription | null>(null);
+  const [subBusy, setSubBusy] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -43,6 +48,31 @@ export function TaskComments({ taskId }: { taskId: string }) {
       alive = false;
     };
   }, [taskId]);
+
+  // Состояние подписки — отдельным запросом: тумблер появляется, когда ответ пришёл,
+  // и не задерживает ленту комментариев (ошибку не показываем — тумблер просто не покажем).
+  useEffect(() => {
+    let alive = true;
+    fetchTaskSubscription(taskId).then((s) => { if (alive) setSub(s); }).catch(() => {});
+    return () => { alive = false; };
+  }, [taskId]);
+
+  // Тумблер «уведомлять / не уведомлять». Оптимистично, с откатом: человек жмёт его, чтобы
+  // прекратить поток уведомлений, и должен сразу видеть результат.
+  const toggleSub = async () => {
+    if (!sub || subBusy) return;
+    const next = !sub.notified;
+    setSubBusy(true);
+    setSub({ ...sub, notified: next, state: next ? "subscribed" : "muted", reason: "manual" });
+    try {
+      setSub(await setTaskSubscription(taskId, next));
+    } catch {
+      setSub(sub);
+      toast(dt("Не удалось сохранить", "Could not save"));
+    } finally {
+      setSubBusy(false);
+    }
+  };
 
   const submitComment = async () => {
     const text = draft.trim();
@@ -94,7 +124,27 @@ export function TaskComments({ taskId }: { taskId: string }) {
 
   return (
     <div className="mt-4">
-      <SectionLabel>Комментарии</SectionLabel>
+      <div className="flex items-center justify-between gap-2">
+        <SectionLabel>Комментарии</SectionLabel>
+        {sub && (
+          <button
+            type="button"
+            onClick={() => void toggleSub()}
+            disabled={subBusy}
+            aria-pressed={sub.notified}
+            title={sub.notified
+              ? dt("Уведомления о новых комментариях включены. Нажмите, чтобы отписаться.",
+                   "Notifications for new comments are on. Click to unsubscribe.")
+              : dt("Уведомления отключены. Нажмите, чтобы подписаться.",
+                   "Notifications are off. Click to subscribe.")}
+            className="flex shrink-0 items-center gap-1.5 rounded-[10px] px-2 py-1 transition-colors hover:bg-surface-2 disabled:opacity-50"
+            style={{ fontSize: 12, color: sub.notified ? "var(--accent-ink)" : "var(--ink-mute)" }}
+          >
+            <RoyIcon name="bell" size={13} strokeWidth={2} />
+            {sub.notified ? dt("Уведомлять", "Notify me") : dt("Не уведомлять", "Muted")}
+          </button>
+        )}
+      </div>
 
       {/* Ввод — сверху: Enter отправляет, новый апдейт появляется первым в ленте (новые сверху). */}
       <div className="mt-1.5 flex items-end gap-2">
