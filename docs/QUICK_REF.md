@@ -131,6 +131,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Concern | Файлы | Детали |
 |---|---|---|
 | Экраны/панели/дизайн-система/навигация | `miniapp/src/components/roy/**` (app/layout/screens); переиспользуемые компоненты задач — `miniapp/src/components/tasks/**` (напр. `TaskRow.tsx`) | spoke [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md) |
+| 🧭 **Мобильная навигация** (таб-бар, поиск, «Ещё», проекты) — табы **Задачи · Проекты · Встречи · Ещё**, дом — задачи; поиск не таб, а иконка в шапке (push-роут `ask`); база — пункт «Ещё» (роут `base`); настройки/команда/админ/карта доступны с ЛЮБОГО таба (были только с «Поиска»). Проекты на телефоне — список → задачи внутри (роут `project`), канбана нет намеренно. Жест строки один во всём приложении: тап открывает, свайп влево — Изменить/Удалить (`MobileTaskRow`); тап определяет браузер через `onClick`, а НЕ `pointerup` — иначе скролл открывает карточку | `miniapp/src/components/roy/{RoyApp.tsx,nav.ts,ui.tsx,SwipeRow.tsx,MobileTaskRow.tsx}`, `roy/screens/{RoyTasksScreen,RoyProjectsScreen,ProjectTasksScreen,RoyMeetingsScreen,RoyBaseScreen,SearchScreen}.tsx`, `components/tasks/LensMenu.tsx` | ADR [2026-08-22-mobile-nav](decisions/2026-08-22-mobile-nav.md) · §Навигация мобайла в [MINIAPP_ARCHITECTURE.md](MINIAPP_ARCHITECTURE.md) · смоук `miniapp/e2e/` |
 | API-клиент / типы | `miniapp/src/lib/api.ts`, `miniapp/src/types.ts` | MINIAPP_ARCHITECTURE.md |
 
 ### MCP / установщики
