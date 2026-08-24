@@ -19,6 +19,10 @@ function todayISO(now: Date): string {
 // инициализаторе useState, а НЕ в эффекте: эффект-сохранение на маунте затирал бы значение
 // дефолтом раньше, чем restore применится (в dev StrictMode эффекты ещё и сдваиваются).
 type SavedTasksView = { activeList?: SmartListId; activeLabelId?: string | null; lens?: Lens; byMarket?: boolean; allStaff?: boolean };
+export function readSavedTasksView(): SavedTasksView | null {
+  return readSavedView();
+}
+
 function readSavedView(): SavedTasksView | null {
   try {
     if (typeof window === "undefined") return null;

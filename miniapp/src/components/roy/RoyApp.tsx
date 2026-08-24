@@ -24,7 +24,7 @@ import { NewEntry } from "./screens/NewEntry";
 import { RoyMeetingsScreen } from "./screens/RoyMeetingsScreen";
 import { MeetingDetail } from "./screens/MeetingDetail";
 import { RoyDashboard } from "./RoyDashboard";
-import { FeedbackFab } from "./FeedbackFab";
+import { FeedbackDialog, FeedbackFab } from "./FeedbackFab";
 import { RoyMark } from "./RoyMark";
 import { MeetingReview } from "@/components/MeetingReview";
 import { TasksScreen } from "@/components/tasks/TasksScreen";
@@ -272,7 +272,9 @@ export function RoyApp({ me }: { me: Me | null }) {
         onSaved={() => setTasksVersion((v) => v + 1)}
       />
       {answerQuery !== null && <AnswerModal query={answerQuery} onClose={() => setAnswerQuery(null)} />}
-      <FeedbackFab />
+      {/* На мобайле «?» была вторым FAB под «+» и спорила с главным действием экрана —
+          фидбек переехал пунктом в «Ещё» (аудит мобилки 2026-08-22). */}
+      {isDesktop && <FeedbackFab />}
     </RoyNavContext.Provider>
   );
 }
@@ -347,6 +349,7 @@ function Wrapped({ title, children }: { title: string; children: React.ReactNode
 function MoreScreen({ root = false }: { root?: boolean }) {
   const { me, push, pop } = useRoyNav();
   const dt = useDt();
+  const [feedback, setFeedback] = useState(false);
   const rows: { label: string; route: RoyRoute }[] = [
     { label: dt("База", "Knowledge base"), route: { view: "base" } },
     { label: dt("Команда", "Team"), route: { view: "team" } },
@@ -378,6 +381,15 @@ function MoreScreen({ root = false }: { root?: boolean }) {
             {r.label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setFeedback(true)}
+          className="flex w-full items-center justify-between rounded-[18px] border border-line bg-surface px-4 py-3.5 text-left font-semibold text-ink transition-transform active:scale-[0.98]"
+          style={{ fontSize: 15 }}
+        >
+          {dt("Оставить фидбек", "Send feedback")}
+        </button>
+        <FeedbackDialog open={feedback} onOpenChange={setFeedback} />
       </div>
     </div>
   );

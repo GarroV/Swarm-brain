@@ -67,10 +67,16 @@ export function isSearchIndexSummary(e: { source: string; summary: string | null
 export function entryPreview(e: { source: string; summary: string | null; content: string; metadata: Record<string, unknown> }): string {
   if (e.summary && !isSearchIndexSummary(e)) return e.summary.trim();
   const title = deriveEntryTitle(e);
+  // Заголовок берётся из первой строки и обрезается до 80 символов с «…», поэтому строгое
+  // равенство line !== title не срабатывало на длинной одностроч­ной записи: карточка печатала
+  // обрезанный текст жирным и ТУТ ЖЕ его целиком серым (жалоба по аудиту мобилки 2026-08-22).
+  // Сравниваем по началу строки без хвостового «…».
+  const base = title.replace(/…$/, "").trim();
+  const fromTitle = (line: string) => line === title || (base.length > 0 && line.startsWith(base));
   return (e.content || "")
     .split("\n")
     .map((x) => x.trim())
     .filter(Boolean)
-    .filter((line) => line !== title && !/^ссылка:/i.test(line))
+    .filter((line) => !fromTitle(line) && !/^ссылка:/i.test(line))
     .join(" ");
 }

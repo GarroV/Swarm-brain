@@ -111,6 +111,13 @@ function chain(...cmps: Array<(a: Task, b: Task) => number>) {
 }
 
 // Базовый предикат «принадлежит списку» (без линзы и сортировки).
+// Экспортируется как `matchesList`: тем же правилом проверяется только что созданная задача —
+// если она не попадает в активный список, экран задач переключает вид, иначе задача «пропадает»
+// (создал без срока → вернулся в «Сегодня» → пусто; найдено аудитом мобилки 2026-08-22).
+export function matchesList(task: Task, listId: SmartListId, now: Date = new Date()): boolean {
+  return inList(task, listId, now);
+}
+
 function inList(task: Task, listId: SmartListId, now: Date): boolean {
   if (listId === "done") return isDone(task);
   if (isDone(task)) return false; // все остальные списки — только незавершённое
