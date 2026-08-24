@@ -35,6 +35,7 @@ import {
 } from "../_shared/tasks/projects.ts";
 import { normalizeCountries, COUNTRY_NAMES, detectQueryCountry } from "../_shared/countries.ts";
 import { extractEntryMeta, applyGeneralSentinel, buildEmbeddingInput, embed } from "../_shared/meta-extract.ts";
+import { pickSuggestedMarkets } from "../_shared/market-suggest.ts";
 import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
@@ -1310,8 +1311,9 @@ Deno.serve(async (req: Request) => {
   const agentPublishMatch = routePath.match(/^\/agent-meetings\/([^/]+)\/publish$/);
   const agentNotesMatch = routePath.match(/^\/agent-meetings\/([^/]+)\/notes$/);
   const agentResummarizeMatch = routePath.match(/^\/agent-meetings\/([^/]+)\/resummarize$/);
-  if (agentMeetingMatch || agentPublishMatch || agentNotesMatch || agentResummarizeMatch) {
-    const mId = (agentMeetingMatch ?? agentPublishMatch ?? agentNotesMatch ?? agentResummarizeMatch)![1];
+  const agentMarketMatch = routePath.match(/^\/agent-meetings\/([^/]+)\/market-suggestion$/);
+  if (agentMeetingMatch || agentPublishMatch || agentNotesMatch || agentResummarizeMatch || agentMarketMatch) {
+    const mId = (agentMeetingMatch ?? agentPublishMatch ?? agentNotesMatch ?? agentResummarizeMatch ?? agentMarketMatch)![1];
     const { data: mRow } = await supabase.from("meetings").select("*").eq("id", mId).maybeSingle();
     const meeting = mRow as Record<string, unknown> | null;
     // Черновик (в т.ч. правка, публикация, удаление) — только записавшему; админ НЕ исключение.
@@ -1331,6 +1333,47 @@ Deno.serve(async (req: Request) => {
       const { data } = await supabase.from("meetings").select("*").eq("id", mId).single();
       const [enriched] = await withRecorderNames([(data ?? {}) as { recorders?: unknown }]);
       return json(enriched, 200, origin);
+    }
+
+    // GET /:id/market-suggestion — что предложить в чипах рынков на вычитке (issue #73).
+    // Дорогой сигнал (классификатор по тезисам) считается ТОЛЬКО когда название и участники
+    // молчат: он же исторический источник перетега, и звать OpenAI на каждое открытие
+    // карточки незачем.
+    if (agentMarketMatch && req.method === "GET") {
+      const title = (meeting.title as string | null) ?? null;
+      const emails = new Set(
+        ((meeting as { attendees?: MeetingAttendee[] }).attendees ?? [])
+          .map((a) => (a?.email ?? "").trim().toLowerCase())
+          .filter(Boolean),
+      );
+      let participantMarkets: string[][] = [];
+      if (emails.size > 0) {
+        // Матчим по lower(email) в коде: в базе уникальность тоже по lower(email), а .in()
+        // сравнивал бы регистрозависимо и терял участников с «Ivan.Petrov@…».
+        const { data: users } = await supabase.from("allowed_users")
+          .select("telegram_id, email").eq("group_id", groupId);
+        const ids = ((users ?? []) as Array<{ telegram_id: number | null; email: string | null }>)
+          .filter((u) => u.telegram_id && emails.has((u.email ?? "").trim().toLowerCase()))
+          .map((u) => u.telegram_id as number);
+        if (ids.length > 0) {
+          const { data: profiles } = await supabase.from("user_profiles").select("markets").in("telegram_id", ids);
+          participantMarkets = ((profiles ?? []) as Array<{ markets: string[] | null }>)
+            .map((pr) => pr.markets ?? []).filter((m) => m.length > 0);
+        }
+      }
+      let suggestion = pickSuggestedMarkets({ title, participantMarkets, notesMarkets: [] });
+      const draftNotes = meeting.draft_notes_md as string | null;
+      if (!suggestion.source && draftNotes) {
+        try {
+          const meta = await extractEntryMeta(draftNotes, Deno.env.get("OPENAI_API_KEY")!);
+          suggestion = pickSuggestedMarkets({ title, participantMarkets, notesMarkets: meta.countries });
+        } catch (e) {
+          // Подсказка не критична: чипы просто откроются пустыми и человек выберет сам.
+          // Молчать нельзя — иначе «подсказка всегда пустая» выглядит как задумка.
+          console.error("market-suggestion: классификатор по тезисам не ответил", e);
+        }
+      }
+      return json(suggestion, 200, origin);
     }
 
     // ── Live-пометки «Роя» (meeting_live_notes) — для экрана /live ──────────────
@@ -1407,11 +1450,18 @@ Deno.serve(async (req: Request) => {
       const draft = meeting.draft_notes_md as string | null;
       if (!draft) return apiErr(400, "Тезисы ещё не готовы — публиковать нечего", origin);
 
-      // Встреча нашего рекордера: привязываем к рынкам через общее COUNTRY_PROMPT_RULE
-      // (раньше countries хардкодился []), затем эмбеддим тезисы ВМЕСТЕ со странами.
+      // Рынки: приоритет у человека (issue #73). Пришли в теле с экрана вычитки — они и
+      // авторитетны, классификатор не зовём вовсе (ни лишнего вызова, ни его перетега), и
+      // applyGeneralSentinel не применяем: несколько рынков разрешены, раз их выбрал человек.
+      // Пустой список = «Общее», а в базе это тег General, а не отсутствие тега.
+      // Поля countries в теле нет (бот, старый клиент) → прежнее поведение классификатора.
       const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
-      const meta = await extractEntryMeta(draft, OPENAI_KEY);
-      const countries = applyGeneralSentinel(meta.countries);
+      const manualCountries = Array.isArray(body.countries)
+        ? normalizeCountries(body.countries as string[])
+        : null;
+      const countries = manualCountries !== null
+        ? (manualCountries.length > 0 ? manualCountries : ["General"])
+        : applyGeneralSentinel((await extractEntryMeta(draft, OPENAI_KEY)).countries);
       const embedding = await embed(buildEmbeddingInput(draft, countries), OPENAI_KEY);
 
       const startedAt = meeting.started_at as string | null;

@@ -1,5 +1,5 @@
 import { getInitData } from "./telegram";
-import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, Project, AgentMeeting, MeetingLiveNote } from "@/types";
+import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote } from "@/types";
 
 export type CreateTaskInput = {
   title: string;
@@ -819,18 +819,30 @@ export async function deleteAgentMeeting(id: string): Promise<void> {
   return apiFetch<void>(`/agent-meetings/${id}`, { method: "DELETE" });
 }
 
-export async function publishAgentMeeting(id: string, base: "workspace" | "personal"): Promise<Entry> {
+// Подсказка рынков для чипов на вычитке. Отдельным вызовом (а не полем встречи), потому что
+// в редком случае считается классификатором по тезисам — незачем держать на этом весь GET.
+export async function fetchMarketSuggestion(id: string): Promise<MarketSuggestion> {
+  if (DEV_MODE) return { markets: ["BG"], source: "title" };
+  return apiFetch<MarketSuggestion>(`/agent-meetings/${id}/market-suggestion`);
+}
+
+// countries — то, что человек выставил чипами. Пустой массив = «Общее» (сервер запишет тег
+// General). undefined = поле не передаём вовсе → сервер оставит прежнее поведение классификатора.
+export async function publishAgentMeeting(id: string, base: "workspace" | "personal", countries?: string[]): Promise<Entry> {
   if (DEV_MODE) {
     const idx = mockAgentMeetings.findIndex((x) => x.id === id);
     if (idx !== -1) mockAgentMeetings[idx] = { ...mockAgentMeetings[idx], status: "in_base" };
     return {
       id: "mock-entry", content: "", summary: mockAgentMeetings[idx]?.draft_notes_md ?? "",
-      added_by: "", source: "desktop-agent", metadata: {}, countries: [], entry_type: "transcript",
+      added_by: "", source: "desktop-agent", metadata: {}, countries: countries ?? [], entry_type: "transcript",
       entry_date: null, group_id: null, is_private: base === "personal", owner_id: null,
       created_at: new Date().toISOString(),
     };
   }
-  return apiFetch<Entry>(`/agent-meetings/${id}/publish`, { method: "POST", body: JSON.stringify({ base }) });
+  return apiFetch<Entry>(`/agent-meetings/${id}/publish`, {
+    method: "POST",
+    body: JSON.stringify(countries === undefined ? { base } : { base, countries }),
+  });
 }
 
 // ── Integrations / Granola ────────────────────────────────────────────────────
