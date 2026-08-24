@@ -1015,7 +1015,9 @@ function ActionsPanel({
 }: {
   item: MeetItem;
   markets: string[] | null;
-  onConfirm: (storage: Storage, countries: string[]) => Promise<void>;
+  // countries === undefined — блок рынков не показан (список рынков не загрузился): решение
+  // уходит БЕЗ них, чтобы невидимый пустой выбор не затёр рынки записи на «Общее».
+  onConfirm: (storage: Storage, countries: string[] | undefined) => Promise<void>;
   onReject: () => Promise<void>;
   onReclassify: () => Promise<void>;
   // Правка рынков у УЖЕ согласованной записи — сохраняется сразу по клику (решение принято,
@@ -1091,11 +1093,33 @@ function ActionsPanel({
       .finally(() => setSavingCountries(false));
   };
 
+  const SUGGEST_LABEL: Record<NonNullable<MarketSuggestion["source"]>, string> = {
+    title: "по названию встречи",
+    participants: "по рынкам участников",
+    notes: "по тезисам",
+  };
+
+  // Рынки показываем всегда, когда известен список воркспейса: и в очереди (до решения),
+  // и у уже согласованной записи (чтобы можно было исправить чужую страну в дайджесте).
+  const marketsBlock = markets && markets.length > 0 ? (
+    <div className="flex flex-col gap-1.5">
+      <SectionLabel className="!mb-0">
+        {savingCountries ? "Рынки · сохраняю…" : "Рынки"}
+      </SectionLabel>
+      <MarketChips codes={markets} value={countries} onChange={changeCountries} disabled={savingCountries} />
+      {suggestSource && (
+        <p className="text-ink-mute leading-snug" style={{ fontSize: 11 }}>
+          Предложено {SUGGEST_LABEL[suggestSource]} — поправьте, если не так.
+        </p>
+      )}
+    </div>
+  ) : null;
+
   const handleConfirm = async () => {
     if (confirmState !== "idle") return;
     setConfirmState("busy");
     try {
-      await onConfirm(storage, countries);
+      await onConfirm(storage, marketsBlock ? countries : undefined);
       setConfirmState("done");
     } catch {
       setConfirmState("idle");
@@ -1127,28 +1151,6 @@ function ActionsPanel({
   const confirmLabel = confirmState === "busy" ? "…" : confirmState === "done" ? "Готово" : isAgent ? "Опубликовать" : "Согласовать";
   const rejectLabel = rejectState === "busy" ? "…" : rejectState === "done" ? "Удалено" : "Отклонить";
   const reclassLabel = reclassState === "busy" ? "…" : reclassState === "done" ? "В заметках" : "Не встреча → в заметки";
-
-  const SUGGEST_LABEL: Record<NonNullable<MarketSuggestion["source"]>, string> = {
-    title: "по названию встречи",
-    participants: "по рынкам участников",
-    notes: "по тезисам",
-  };
-
-  // Рынки показываем всегда, когда известен список воркспейса: и в очереди (до решения),
-  // и у уже согласованной записи (чтобы можно было исправить чужую страну в дайджесте).
-  const marketsBlock = markets && markets.length > 0 ? (
-    <div className="flex flex-col gap-1.5">
-      <SectionLabel className="!mb-0">
-        {savingCountries ? "Рынки · сохраняю…" : "Рынки"}
-      </SectionLabel>
-      <MarketChips codes={markets} value={countries} onChange={changeCountries} disabled={savingCountries} />
-      {suggestSource && (
-        <p className="text-ink-mute leading-snug" style={{ fontSize: 11 }}>
-          Предложено {SUGGEST_LABEL[suggestSource]} — поправьте, если не так.
-        </p>
-      )}
-    </div>
-  ) : null;
 
   return (
     <div className="flex flex-col gap-3 px-4 py-4">
@@ -1409,11 +1411,15 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
 
   // countries — рынки, выставленные человеком чипами (issue #73). Пустой список = «Общее»,
   // и в базе это тег General, а не отсутствие тега (иначе запись выпадет из дайджеста совсем).
-  const handleConfirm = async (item: MeetItem, storage: Storage, countries: string[]) => {
-    const marketTags = countries.length > 0 ? countries : ["General"];
+  const handleConfirm = async (item: MeetItem, storage: Storage, countries: string[] | undefined) => {
+    const marketTags = countries === undefined ? undefined : (countries.length > 0 ? countries : ["General"]);
     if (item.kind === "entry") {
       // Подтверждение встречи + выбор хранилища (личное/общее)
-      await patchMeeting(item.data.id, { confirmed: true, is_private: storage === "personal", countries: marketTags });
+      await patchMeeting(item.data.id, {
+        confirmed: true,
+        is_private: storage === "personal",
+        ...(marketTags ? { countries: marketTags } : {}),
+      });
       toast(storage === "personal" ? "Согласовано в личное" : "Встреча согласована");
       await animateRemove(item.data.id);
     } else {
