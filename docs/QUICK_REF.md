@@ -54,7 +54,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 |---|---|---|---|
 | `ci.yml` | push в `main`, PR | `deno check` + `deno test` всех edge-функций; сборка + типы miniapp | `ubuntu-latest`, 10 / 15 мин |
 | `recorder.yml` | push/PR, ТОЛЬКО при изменениях в `recorder/**` | `swift build -c release` — ловит поломку до тега релиза | `macos-latest`, 25 мин |
-| `recorder-release.yml` | push тега `recorder-build-*` | собирает предсобранный `SwarmRecorder.app` и публикует **release-asset**, который качают установщик и апдейтер (issue #19) | `macos-14`, 30 мин |
+| `recorder-release.yml` | push тега `recorder-build-*` | собирает предсобранный `SwarmRecorder.app` и публикует **release-asset**. ⚠️ Скачивают его НЕ оттуда: репозиторий приватный → анонимно 404, раздача идёт из Storage `swarm_drive/recorder/` (issue #91), asset туда надо залить | `macos-14`, 30 мин |
 
 - **Ничего не деплоит.** Edge-функции — руками (`supabase functions deploy`), веб — Cloudflare Pages сам по push. Единственный workflow, который влияет на пользователей, — `recorder-release.yml`: без него `.app` придётся собирать локально и заливать в релиз вручную.
 - **`timeout-minutes` обязателен на каждом job** (добавлено 2026-08-20). Без него зависший job висит до дефолтных **6 часов** GitHub: в приватном `GarroV/multa` так трижды за день (19.08) сгорело **1080 минут** из месячной квоты аккаунта, после чего Actions встали во всех приватных репозиториях ([multa#148](https://github.com/GarroV/multa/issues/148)). С таймаутом зависший прогон честно падает и присылает уведомление, а не съедает квоту молча.
@@ -138,7 +138,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | **Обрезка тишины перед Whisper** (речевые блоки, offset реального старта → −~60% Whisper-минут; env `SWARM_VAD_DB`/`SWARM_VAD_CUT`) | `recorder/Sources/SwarmRecorder/SilenceTrimmer.swift` + `Segmenter.segment(allowEmpty:)` | §Флоу встреч (meeting-ingest) |
 | **Кто из участников транскрибирует** — арбитраж по длительности записи (побеждает БОЛЕЕ ПОЛНАЯ, не «кто первый нажал стоп»: issue #23) | сервер `meeting-claim/index.ts` (`TAKEOVER_MIN_RATIO`/`TAKEOVER_MIN_EXTRA_SEC`, `heldSeconds`), колонка `meetings.recorded_seconds`; клиент `SwarmTypes.swift` (`ClaimRequest.recordedSeconds`) | §Флоу встреч |
 | **Отклонённая запись (`decision=defer`) НЕ удаляется** — карантин `failed/<id>/` на 3 суток + уведомление + пункт меню «Дослать мою запись» (перезаявка, не просто ingest: issue #24) | `UploadQueue.swift` (`quarantineDeferred`,`deferredIds`,`resendDeferred`), `AppDelegate.swift` (`notifyDeferred`,`resendDeferredTapped`) | смоук: `SwarmRecorder --selftest-quarantine` |
-| Релиз новой сборки (тег `recorder-build-N`) | `swarm-recorder-version/index.ts` (`LATEST_BUILD`) | recorder/README.md (runbook) |
+| Релиз новой сборки (тег `recorder-build-N`) | **залить zip в Storage** `swarm_drive/recorder/SwarmRecorder-N.zip` → `swarm-recorder-version/index.ts` (`LATEST_BUILD`) | recorder/README.md (runbook); порядок обязателен — `LATEST_BUILD` без файла = 404 всем (issue #91) |
 
 ### Frontend «Рой» (веб-интерфейс, браузер/PWA) — `miniapp/src/components/roy/`
 | Concern | Файлы | Детали |

@@ -81,9 +81,15 @@
 // сервер ловит оборванную запись / истечение токена). Тег recorder-build-4, build-app.sh ✅ (подпись валидна).
 // build 3 (2026-06-30): бэкап аудио держится до публикации в базу + потолок 3 суток. Тег recorder-build-3.
 const LATEST_BUILD = 22;
-// URL предсобранного .app (GitHub Release asset). Установщик и апдейтер качают отсюда — сборки
-// из исходников на машине юзера больше нет (issue #19). Держать имя ассета в синхроне с CI/релизом.
-const ASSET_URL = `https://github.com/GarroV/Swarm-brain/releases/download/recorder-build-${LATEST_BUILD}/SwarmRecorder-${LATEST_BUILD}.zip`;
+// URL предсобранного .app. Установщик и апдейтер качают отсюда — сборки из исходников на машине
+// юзера больше нет (issue #19).
+// ⚠️ РАЗДАЁМ ИЗ SUPABASE STORAGE, НЕ С GITHUB (issue #91, 2026-08-25). Репозиторий приватный
+// с 20.08.2026 → release asset анонимно отдаёт 404, и установка у любого нового человека падала
+// с враньём «нет интернета или блокирует прокси». Бакет `swarm_drive` публичный, бинарник секретов
+// не содержит (токен вписывается локально при установке). Держать в синхроне с релизом: каждый
+// новый build ОБЯЗАН быть залит в Storage до подъёма LATEST_BUILD — иначе снова раздадим 404.
+// Заливка: POST /storage/v1/object/swarm_drive/recorder/SwarmRecorder-<N>.zip (service_role, x-upsert).
+const ASSET_URL = `https://vbqglndbxkpmreccpqmr.supabase.co/storage/v1/object/public/swarm_drive/recorder/SwarmRecorder-${LATEST_BUILD}.zip`;
 
 Deno.serve((req: Request) => {
   if (req.method === "OPTIONS") {
