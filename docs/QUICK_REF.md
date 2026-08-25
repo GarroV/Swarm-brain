@@ -150,7 +150,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Concern | Файлы | Детали |
 |---|---|---|
 | MCP-инструменты (Claude Desktop) | `swarm-mcp/index.ts`, `swarm-mcp/tasks/tools.ts` | §swarm-mcp |
-| Авто-сетап Claude Desktop (`/setup`) | `swarm-setup/script.ts`, `swarm-bot/lib/mcp-setup.ts` | §swarm-mcp |
+| Авто-сетап Claude Desktop (`/setup`) | `swarm-setup/script.ts` (`SETUP_SCRIPT` + `BRIDGE_SCRIPT` + `MERGE_FUNCTION`), `swarm-bot/lib/mcp-setup.ts` | §swarm-mcp; мост `bash`+`curl` вместо Node/mcp-remote (#47), тесты `deno test --allow-read --allow-write --allow-run supabase/functions/swarm-setup/script.test.ts` |
 | Подключение Claude — оба пути (Desktop + веб-коннектор claude.ai) | `swarm-bot/index.ts` (`/connect_claude`, `/setup`, `/mytoken`), `_shared/mcp-token.ts` | §MCP-аутентификация |
 | Промт-инструкции для проекта Claude Desktop (поле Instructions) | единый источник `_shared/claude-project-prompt.ts` → бот `/claude` + swarm-api `GET /mcp/instructions` (кнопка в вебе `SettingsScreen.tsx` `ClaudeDesktopSection`) | §swarm-api |
 | 🔍 «Токен протух» / `Invalid token` (диагностика) | токен **бессрочный** → это рассинхрон клиента, НЕ истечение. `_shared/mcp-token.ts`, `swarm-mcp/index.ts` (token check ~843), БД `allowed_users.claude_mcp_token_hash`. Проверка: `has_token=true, expires_at=null` → чинить клиента (`/mytoken`) | §MCP-аутентификация |

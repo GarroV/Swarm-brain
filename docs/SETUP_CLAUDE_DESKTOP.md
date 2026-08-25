@@ -5,7 +5,7 @@
 1. В боте напиши **`/setup`**.
 2. Бот пришлёт **одну команду** с уже вшитым твоим токеном.
 3. Открой приложение **Терминал** (⌘+Пробел → набери «Терминал» → Enter), вставь команду (⌘+V), нажми Enter.
-4. Скрипт сам всё поставит (включая Node, если его нет — без пароля, в твою домашнюю папку), пропишет коннектор и перезапустит Claude Desktop.
+4. Скрипт сам всё поставит, пропишет коннектор и перезапустит Claude Desktop. Ничего скачивать не нужно: он кладёт маленький мост на `bash`+`curl` (они есть на любом маке) и правит конфиг штатным `plutil`. Node, npm и интернет к их серверам больше не требуются — только доступ к самому Swarm.
 
 Готово — в Claude появится сервер **swarm-brain** с инструментами. Дальше создай проект и вставь в **Instructions** текст из команды `/claude`.
 
@@ -25,18 +25,27 @@
 1. В боте: **`/mytoken`** — получишь токен `smcp_…`. Если токен у тебя уже выдан, бот **не перевыпустит его молча** (это сломало бы рабочий config): предупредит и попросит подтвердить кнопкой. Перевыпускай, только если потерял токен или подозреваешь утечку — старый при этом перестаёт работать.
 2. Создай/открой `~/Library/Application Support/Claude/claude_desktop_config.json` и добавь блок (не затирая существующие серверы). Замени `<SUPABASE_PROJECT_REF>` на ref своего Supabase-проекта и `smcp_ТВОЙ_ТОКЕН` — на токен из `/mytoken`:
 
+Сначала положи мост (он переводит stdio-поток Claude Desktop в HTTP-запрос к нашему серверу):
+
+```sh
+mkdir -p ~/.swarm-brain/bin
+curl -fsSL https://<SUPABASE_PROJECT_REF>.supabase.co/functions/v1/swarm-setup \
+  | sed -n "/<<'SWARM_BRIDGE_EOF'/,/^SWARM_BRIDGE_EOF$/p" | sed '1d;$d' > ~/.swarm-brain/bin/swarm-mcp-bridge.sh
+chmod +x ~/.swarm-brain/bin/swarm-mcp-bridge.sh
+```
+
+Затем впиши блок (замени `<ТВОЙ_ЮЗЕР>` на имя своей папки в `/Users`):
+
 ```json
 {
   "mcpServers": {
     "swarm-brain": {
-      "command": "npx",
-      "args": [
-        "-y", "mcp-remote",
-        "https://<SUPABASE_PROJECT_REF>.supabase.co/functions/v1/swarm-mcp",
-        "--transport", "http-only",
-        "--header", "Authorization:${AUTH_HEADER}"
-      ],
-      "env": { "AUTH_HEADER": "Bearer smcp_ТВОЙ_ТОКЕН" }
+      "command": "/bin/bash",
+      "args": ["/Users/<ТВОЙ_ЮЗЕР>/.swarm-brain/bin/swarm-mcp-bridge.sh"],
+      "env": {
+        "SWARM_MCP_URL": "https://<SUPABASE_PROJECT_REF>.supabase.co/functions/v1/swarm-mcp",
+        "SWARM_MCP_AUTH": "Bearer smcp_ТВОЙ_ТОКЕН"
+      }
     }
   }
 }
@@ -44,10 +53,12 @@
 
 > Продакшен Dodo Brands развёрнут на ref `vbqglndbxkpmreccpqmr` — для подключения к нему URL будет `https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp`. Свой ref можно найти в дашборде Supabase (Project Settings → General) или в начале URL `…supabase.co`.
 
-3. Нужен Node (`mcp-remote` гоняется через `npx`). Если Claude Desktop пишет «npx not found» — укажи в `command` **абсолютный путь** к `node`, а первым элементом `args` — абсолютный путь к `npx` (GUI-приложение не наследует PATH шелла). Это именно то, что автоскрипт делает за тебя.
+3. Пути в `command` и `args` — **абсолютные**: GUI-приложение не наследует PATH шелла, и относительный путь просто не найдётся. Node и `npx` больше не нужны вовсе (было до 2026-08-25, issue #47 — три сетевые точки отказа за корпоративным VPN).
 4. Полностью выйди из Claude Desktop (**Cmd+Q**) и открой заново.
 
-> ⚠️ Никогда не используй поле `"url"` / `"type":"http"` в `claude_desktop_config.json` — Claude Desktop его не понимает и **молча стирает весь блок `mcpServers`** (баг anthropics/claude-code#37286). Только форма с `command` + `mcp-remote`.
+> ⚠️ Никогда не используй поле `"url"` / `"type":"http"` в `claude_desktop_config.json` — Claude Desktop его не понимает и **молча стирает весь блок `mcpServers`** (баг anthropics/claude-code#37286). Только форма с `command` + `args`.
+
+> ℹ️ Мост синхронный: запрос → ответ. Серверные события (прогресс, `tools/list_changed`, стриминг) он не поддерживает — `swarm-mcp` их и не использует. Когда понадобятся — issue #94.
 
 ---
 
