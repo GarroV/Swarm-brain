@@ -18,7 +18,7 @@ export type ProjectWithCounts = Project & { task_count: number; backlog_count: n
 // отфильтрует), но продолжает утекать числом в task_count/backlog_count карточки проекта.
 export async function listProjects(
   groupId: string,
-  opts: { viewerId?: number } = {},
+  opts: { viewerId?: number; isAdmin?: boolean } = {},
 ): Promise<ProjectWithCounts[]> {
   // В отличие от listTasks (predicate is_private/owner_id пушится в сам SQL-запрос + .limit(200)),
   // тут тянем ВСЕ строки воркспейса и фильтруем приватность в JS ниже — осознанный трейдофф:
@@ -41,16 +41,20 @@ export async function listProjects(
   list = list.filter((p) => canViewProject(p, opts.viewerId, index));
   if (list.length === 0) return [];
 
-  // Считаем задачи по проектам одним запросом (без N+1), с той же visibility-фильтрацией,
-  // что применяет listTasks: приватная задача видна только владельцу (обхода для админа нет).
-  // Безопасный дефолт без viewerId — как в listTasks: считаем только публичные.
+  // Считаем задачи по проектам одним запросом (без N+1), с ТОЙ ЖЕ visibility-фильтрацией,
+  // что применяет listTasks — включая админский оверсайт по задачам (решение 2026-08-21: чужие
+  // задачи админ видит, чужие проекты нет). Иначе цифра на карточке противоречит доске под ней:
+  // проверено на проде 2026-08-25 — у руководителя подпроект «Дмитрий Карпов» показывал 0 задач,
+  // а доска внутри рисовала 11. Безопасный дефолт без viewerId — как в listTasks: только публичные.
   let tasksQuery = supabase
     .from("tasks").select("project_id, project_linked")
     .eq("group_id", groupId)
     .in("project_id", list.map((p) => p.id));
-  tasksQuery = opts.viewerId !== undefined
-    ? tasksQuery.or(`is_private.eq.false,owner_id.eq.${opts.viewerId}`)
-    : tasksQuery.eq("is_private", false);
+  if (!opts.isAdmin) {
+    tasksQuery = opts.viewerId !== undefined
+      ? tasksQuery.or(`is_private.eq.false,owner_id.eq.${opts.viewerId}`)
+      : tasksQuery.eq("is_private", false);
+  }
   const { data: tasks } = await tasksQuery;
   const counts = new Map<string, { total: number; backlog: number }>();
   ((tasks ?? []) as Array<{ project_id: string | null; project_linked: boolean }>).forEach((t) => {

@@ -847,7 +847,7 @@ Deno.serve(async (req: Request) => {
   // ── Projects (Project Space) ────────────────────────────────────────────────
   if (routePath === "/projects") {
     if (req.method === "GET") {
-      return json(await listProjects(groupId, { viewerId: telegram_id }), 200, origin);
+      return json(await listProjects(groupId, { viewerId: telegram_id, isAdmin }), 200, origin);
     }
     if (req.method === "POST") {
       let body: Record<string, unknown>;
