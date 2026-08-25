@@ -1,16 +1,24 @@
 import Foundation
 
 // Тихий авто-апдейт. Пользователи рекордера — нетехнари (маркетинг), поэтому без кнопок и
-// терминала: фоном, в простое, сам. Apple Developer ID у нас нет → готовый бинарь качать нельзя
-// (Gatekeeper карантинит ненотаризованное). Поэтому ПЕРЕСОБИРАЕМ из исходников тем же локальным
-// cert «SwarmRecorder Self-Signed» → designated requirement не меняется → TCC-грант на запись
-// экрана НЕ слетает. По сути — автоматизация install.sh, запускаемая самим приложением.
+// терминала: фоном, в простое, сам.
+//
+// Схема — СКАЧИВАЕМ готовый .app и переподписываем локальным cert'ом (как это делает установщик,
+// issue #19). Apple Developer ID у нас нет, поэтому скачанное нельзя оставлять как есть: снимаем
+// карантин (иначе Gatekeeper заблокирует) и переподписываем тем же per-machine cert
+// «SwarmRecorder Self-Signed» → designated requirement не меняется → TCC-грант на запись экрана
+// НЕ слетает.
+//
+// ⚠️ Почему больше НЕ пересобираем из исходников (issue #91, 2026-08-25): старая схема клонировала
+// тег `recorder-build-<N>` с GitHub и звала `swift build`. Репозиторий стал приватным 20.08.2026 —
+// анонимный clone отказывает по авторизации, ветка обработки была `keep current`, и авто-апдейт
+// у ВСЕЙ команды умер МОЛЧА (никто не заметил: сервер честно отдавал новый build, обновления не
+// происходило). Скачивание zip снимает и вторую проблему старой схемы — требование Command Line
+// Tools (git/swift) на машине нетехнаря.
 enum Updater {
-    static let repoURL = "https://github.com/GarroV/Swarm-brain"
-    // Обновляемся ТОЛЬКО на пинованный тег recorder-build-<N> (а не на HEAD дев-ветки main) —
-    // иначе авто-апдейт мог бы притащить недоделанный код в простой коммит маркетологам. Тег = ровно
-    // протестированная сборка. Нет тега → clone падает → тихо остаёмся на текущей версии.
-    static func releaseTag(_ build: Int) -> String { "recorder-build-\(build)" }
+    // Идентичность локального cert'а. Обязана совпадать с установщиком (swarm-recorder-setup):
+    // именно на её leaf завязан designated requirement, а на DR — выданное TCC-разрешение.
+    static let signingIdentity = "SwarmRecorder Self-Signed"
 
     // Номер текущей сборки из CFBundleVersion (recorder/VERSION). Старый нечисловой («0.1.0») → 0.
     static var currentBuild: Int {
@@ -34,8 +42,9 @@ enum Updater {
         }
     }
 
-    // Спросить сервер последний доступный build. nil при любой ошибке → не обновляемся.
-    static func latestBuild(config: SwarmConfig) async -> Int? {
+    // Спросить сервер последний доступный build и URL артефакта. nil при любой ошибке → не обновляемся.
+    // Источник истины — `swarm-recorder-version` (наш Supabase), GitHub в схеме больше не участвует.
+    static func latestRelease(config: SwarmConfig) async -> (build: Int, assetURL: URL)? {
         let base = config.ingestBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let url = URL(string: base + "/swarm-recorder-version") else { return nil }
         var req = URLRequest(url: url)
@@ -43,30 +52,49 @@ enum Updater {
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
               (resp as? HTTPURLResponse)?.statusCode == 200,
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        if let b = obj["build"] as? Int { return b }
-        if let b = obj["build"] as? Double { return Int(b) }
-        if let s = obj["build"] as? String { return Int(s) }
-        return nil
+        var build: Int?
+        if let b = obj["build"] as? Int { build = b }
+        else if let b = obj["build"] as? Double { build = Int(b) }
+        else if let s = obj["build"] as? String { build = Int(s) }
+        guard let build else { return nil }
+        guard let asset = assetURL(from: obj["url"] as? String, build: build, apiBase: base) else { return nil }
+        return (build, asset)
     }
 
-    // Запустить отсоединённый апдейтер. Сборка идёт при живом приложении (простоя на сборку нет);
-    // подмена /Applications + перезапуск — только когда нет recording-lock. Сборку упала / cert
-    // отсутствует / версия не новее → ничего не трогаем, остаёмся на рабочей версии.
-    static func runUpdater(currentBuild cur: Int, targetBuild: Int) {
+    // URL артефакта: берём из ответа сервера, а при его отсутствии выводим из адреса API
+    // (тот же проект Supabase, публичный бакет). Домен НЕ хардкодим — он живёт в config.json.
+    //
+    // Артефакт обязан лежать на ТОМ ЖЕ хосте, что и API: скачанное мы переподписываем своим
+    // cert'ом и подставляем в /Applications, поэтому источник бинарника не должен уводиться
+    // куда-то ещё одним лишь ответом сервера.
+    static func assetURL(from raw: String?, build: Int, apiBase: String) -> URL? {
+        guard let apiURL = URL(string: apiBase), let apiHost = apiURL.host else { return nil }
+        let fallback = apiBase.replacingOccurrences(of: "/functions/v1", with: "")
+            + "/storage/v1/object/public/swarm_drive/recorder/SwarmRecorder-\(build).zip"
+        let candidate = (raw?.isEmpty == false) ? raw! : fallback
+        guard let url = URL(string: candidate),
+              url.scheme == "https",
+              url.host == apiHost else { return nil }
+        return url
+    }
+
+    // Запустить отсоединённый апдейтер. Скачивание идёт при живом приложении (простоя нет);
+    // подмена /Applications + перезапуск — только когда нет recording-lock. Скачивание упало /
+    // cert отсутствует / версия не новее → ничего не трогаем, остаёмся на рабочей версии.
+    static func runUpdater(currentBuild cur: Int, targetBuild: Int, assetURL: URL) {
         let appPath = Bundle.main.bundlePath
         let pid = ProcessInfo.processInfo.processIdentifier
         let dir = supportDir()
         let scriptURL = dir.appendingPathComponent("self-update.sh")
         let logPath = dir.appendingPathComponent("self-update.log").path
         let lockPath = recordingLockURL.path
-        let tag = releaseTag(targetBuild)
 
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        guard (try? script(appPath: appPath).write(to: scriptURL, atomically: true, encoding: .utf8)) != nil else { return }
+        guard (try? script().write(to: scriptURL, atomically: true, encoding: .utf8)) != nil else { return }
 
         // Полностью отсоединяем (nohup + &): хелпер должен пережить наш SIGTERM и перезапуск.
-        // Аргументы: pid, текущий build, путь .app, lock, git-тег релиза.
-        let cmd = "nohup bash \(shq(scriptURL.path)) \(pid) \(cur) \(shq(appPath)) \(shq(lockPath)) \(shq(tag)) >> \(shq(logPath)) 2>&1 &"
+        // Аргументы: pid, текущий build, путь .app, lock, целевой build, URL артефакта.
+        let cmd = "nohup bash \(shq(scriptURL.path)) \(pid) \(cur) \(shq(appPath)) \(shq(lockPath)) \(targetBuild) \(shq(assetURL.absoluteString)) >> \(shq(logPath)) 2>&1 &"
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/bash")
         p.arguments = ["-c", cmd]
@@ -76,30 +104,42 @@ enum Updater {
     // Экранирование одиночными кавычками для безопасной подстановки путей в bash.
     private static func shq(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
-    // Текст хелпера. Принимает: $1=pid приложения, $2=текущий build, $3=путь .app, $4=lock.
-    private static func script(appPath: String) -> String {
+    // Текст хелпера. Принимает: $1=pid приложения, $2=текущий build, $3=путь .app, $4=lock,
+    // $5=целевой build, $6=URL артефакта.
+    private static func script() -> String {
         """
         #!/bin/bash
         set -u
-        REPO=\(shq(repoURL))
-        APP_PID="$1"; CUR="$2"; APP_PATH="$3"; LOCK="$4"; TAG="$5"
+        IDENTITY=\(shq(signingIdentity))
+        APP_PID="$1"; CUR="$2"; APP_PATH="$3"; LOCK="$4"; TARGET="$5"; URL="$6"
         log(){ echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
-        log "self-update: current build $CUR → tag $TAG, app $APP_PATH (pid $APP_PID)"
-        command -v git >/dev/null 2>&1   || { log "no git; skip"; exit 0; }
-        command -v swift >/dev/null 2>&1 || { log "no swift toolchain; skip"; exit 0; }
-        TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-        # Клонируем ПИНОВАННЫЙ тег релиза (не HEAD дев-ветки). Нет тега → падаем → остаёмся как есть.
-        if ! git clone --depth 1 --branch "$TAG" "$REPO" "$TMP/src" >/dev/null 2>&1; then log "clone tag $TAG failed (нет тега? нет сети?); keep current"; exit 0; fi
-        cd "$TMP/src/recorder" || { log "no recorder/ dir"; exit 0; }
-        # Робастно и set -u-safe: дефолт 0, читаем только если файл доступен, пустой → 0.
-        # (Старый `$(... || echo 0)` не ловил ПУСТОЙ успех tr → под set -u падало «NEW: unbound».)
-        NEW="0"; [ -r VERSION ] && NEW="$(tr -cd '0-9' < VERSION 2>/dev/null)"; [ -n "${NEW:-}" ] || NEW="0"
-        if [ "$NEW" -le "$CUR" ]; then log "not newer (repo VERSION=$NEW <= $CUR); skip"; exit 0; fi
+        log "self-update: current build $CUR → build $TARGET, app $APP_PATH (pid $APP_PID)"
         # Стабильный cert обязателен — иначе подпись схлопнется в ad-hoc и грант на запись слетит.
-        if ! security find-identity -p codesigning 2>/dev/null | grep -q "SwarmRecorder Self-Signed"; then log "no signing cert; skip (would break TCC)"; exit 0; fi
-        log "building build $NEW…"
-        if ! ./build-app.sh >/dev/null 2>&1; then log "build failed; keep current version"; exit 0; fi
-        [ -d "SwarmRecorder.app" ] || { log "build produced no app; keep current"; exit 0; }
+        if ! security find-identity -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then log "no signing cert; skip (would break TCC)"; exit 0; fi
+        TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+        # Качаем ГОТОВЫЙ .app (сборки из исходников больше нет — issue #91). Диагностика честная:
+        # различаем «файла нет по ссылке» и «сети нет», иначе следующий сбой снова уведёт разбор.
+        # `--retry` печатает %{http_code} за КАЖДУЮ попытку («000000» при обрыве сети), поэтому
+        # берём последние 3 символа — иначе ветка «нет сети» не срабатывает и лог врёт про артефакт.
+        CODE="$(curl -sL --retry 3 --max-time 300 -o "$TMP/app.zip" -w '%{http_code}' "$URL" 2>/dev/null || echo 000)"
+        CODE="${CODE: -3}"
+        case "$CODE" in
+          200) : ;;
+          000) log "download failed (нет сети?); keep current"; exit 0 ;;
+          *)   log "download failed (HTTP $CODE от $URL — артефакт не опубликован?); keep current"; exit 0 ;;
+        esac
+        if ! ditto -x -k "$TMP/app.zip" "$TMP/unz" >/dev/null 2>&1; then log "unzip failed; keep current"; exit 0; fi
+        SRC="$TMP/unz/SwarmRecorder.app"
+        [ -d "$SRC" ] || SRC="$(/usr/bin/find "$TMP/unz" -maxdepth 2 -name 'SwarmRecorder.app' -print -quit 2>/dev/null)"
+        if [ -z "${SRC:-}" ] || [ ! -d "$SRC" ]; then log "no SwarmRecorder.app inside archive; keep current"; exit 0; fi
+        # Версию берём из САМОГО бандла, а не из ответа сервера: подменять приложение можно только
+        # на заведомо более новое (иначе битая раздача откатила бы всех назад).
+        NEW="0"; NEW="$(plutil -extract CFBundleVersion raw "$SRC/Contents/Info.plist" 2>/dev/null | tr -cd '0-9')"; [ -n "${NEW:-}" ] || NEW="0"
+        if [ "$NEW" -le "$CUR" ]; then log "not newer (downloaded CFBundleVersion=$NEW <= $CUR); skip"; exit 0; fi
+        # Скачанное карантинится Gatekeeper'ом — снимаем ДО подписи.
+        xattr -dr com.apple.quarantine "$SRC" 2>/dev/null || true
+        if ! codesign --force --timestamp=none -s "$IDENTITY" "$SRC" >/dev/null 2>&1; then log "codesign failed; keep current"; exit 0; fi
+        if ! codesign -d --requirements - "$SRC" 2>&1 | grep -q 'certificate leaf'; then log "unstable DR after signing (TCC would break); keep current"; exit 0; fi
         # Санити: APP_PATH обязан быть .app-бандлом — не сносим произвольный путь.
         case "$APP_PATH" in *.app) : ;; *) log "refusing: APP_PATH не .app ($APP_PATH)"; exit 0 ;; esac
         # Не прерывать запись: ждём снятия lock (до 30 мин). Всё ещё пишет — отложим до следующего раза.
@@ -127,8 +167,7 @@ enum Updater {
         # новое на место → если финальный шаг упал, возвращаем .bak. Сбой стейджа = старое не тронуто.
         STAGE="${APP_PATH}.new-$$"; BAK="${APP_PATH}.bak-$$"
         rm -rf "$STAGE" "$BAK"
-        if ! cp -R SwarmRecorder.app "$STAGE"; then log "stage copy failed; current app untouched"; rm -rf "$STAGE"; open "$APP_PATH" 2>/dev/null || true; exit 0; fi
-        xattr -dr com.apple.quarantine "$STAGE" 2>/dev/null || true
+        if ! cp -R "$SRC" "$STAGE"; then log "stage copy failed; current app untouched"; rm -rf "$STAGE"; open "$APP_PATH" 2>/dev/null || true; exit 0; fi
         if ! mv "$APP_PATH" "$BAK" 2>/dev/null; then log "cannot move current aside; abort"; rm -rf "$STAGE"; open "$APP_PATH" 2>/dev/null || true; exit 0; fi
         if ! mv "$STAGE" "$APP_PATH" 2>/dev/null; then log "swap failed; restoring backup"; mv "$BAK" "$APP_PATH" 2>/dev/null || true; rm -rf "$STAGE"; open "$APP_PATH" 2>/dev/null || true; exit 1; fi
         rm -rf "$BAK"
