@@ -5,39 +5,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { RoyIcon } from "@/components/roy/icons";
+import { MONTHS, WEEKDAYS, parseISO, toISO, fmtFull, addMonths, buildGrid } from "@/lib/calendar";
 
-const MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
-const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
-const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
-
-function parseISO(s: string): Date | null {
-  if (!s) return null;
-  const [y, m, d] = s.split("-").map(Number);
-  if (!y || !m || !d) return null;
-  const dt = new Date(y, m - 1, d);
-  return isNaN(dt.getTime()) ? null : dt;
-}
-function toISO(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function fmtTrigger(s: string): string | null {
-  const d = parseISO(s);
-  return d ? `${d.getDate()} ${MONTHS_GEN[d.getMonth()]} ${d.getFullYear()}` : null;
-}
-function addMonths(d: Date, n: number): Date {
-  return new Date(d.getFullYear(), d.getMonth() + n, 1);
-}
-// Сетка месяца, неделя с понедельника: ведущие пустые ячейки + дни месяца, добитые до кратности 7.
-function buildGrid(view: Date): (Date | null)[] {
-  const year = view.getFullYear(), month = view.getMonth();
-  const lead = (new Date(year, month, 1).getDay() + 6) % 7; // Пн = 0
-  const daysIn = new Date(year, month + 1, 0).getDate();
-  const cells: (Date | null)[] = [];
-  for (let i = 0; i < lead; i++) cells.push(null);
-  for (let d = 1; d <= daysIn; d++) cells.push(new Date(year, month, d));
-  while (cells.length % 7 !== 0) cells.push(null);
-  return cells;
-}
+// Подпись даты в триггере: «12 августа 2026» (общий формат — lib/calendar).
+const fmtTrigger = fmtFull;
 
 type Props = {
   value: string;                     // ISO "YYYY-MM-DD" или ""

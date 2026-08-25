@@ -108,6 +108,14 @@ const MOCK_USERS: User[] = [
   { telegram_id: 345678, name: "Bob Jones", username: "bob", role: "rnd", markets: ["RS", "ME"] },
 ];
 
+// Срок мок-задачи ОТНОСИТЕЛЬНО сегодня: жёсткие даты протухают (были «июнь 2026» — к августу
+// весь dev-список висел просрочкой, и фильтры по периоду проверить было не на чем).
+function mockDue(daysFromToday: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysFromToday);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // Демо-фабрика задачи (моки DEV_MODE) — сокращает шум при наполнении дерева.
 function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
   return {
@@ -123,13 +131,13 @@ function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
   };
 }
 let mockTasks: Task[] = [
-  mkMock({ id: "1", title: "Prepare Q2 report", description: "Collect metrics and draft slides", due_date: "2026-06-15", country: "KZ", task_role: "bd", priority: "high" }),
+  mkMock({ id: "1", title: "Prepare Q2 report", description: "Collect metrics and draft slides", due_date: mockDue(0), country: "KZ", task_role: "bd", priority: "high" }),
   mkMock({ id: "2", title: "Design landing page", country: "PL", task_role: "marketing", priority: "med", status: "in_progress", created_by_name: "Alice Smith" }),
-  mkMock({ id: "3", title: "Review contracts", due_date: "2026-05-30", task_role: "rnd", priority: "low", status: "done", created_by_name: null }),
+  mkMock({ id: "3", title: "Review contracts", due_date: mockDue(-40), task_role: "rnd", priority: "low", status: "done", created_by_name: null }),
   // ── доп. мок-задачи для проверки тумблеров «По рынкам»/«Все сотрудники» (разные исполнители/страны) ──
-  mkMock({ id: "4", title: "Kazakhstan pricing review", country: "KZ", assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: "2026-06-20" }),
-  mkMock({ id: "5", title: "Poland launch checklist", country: "PL", assignees: ["Alice Smith"], assignee_telegram_ids: [789012], due_date: "2026-06-18", created_by_name: "Alice Smith" }),
-  mkMock({ id: "6", title: "Serbia distributor call", country: "RS", assignees: ["Bob Jones"], assignee_telegram_ids: [345678], due_date: "2026-06-22", created_by_name: "Bob Jones" }),
+  mkMock({ id: "4", title: "Kazakhstan pricing review", country: "KZ", assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: mockDue(2) }),
+  mkMock({ id: "5", title: "Poland launch checklist", country: "PL", assignees: ["Alice Smith"], assignee_telegram_ids: [789012], due_date: mockDue(9), created_by_name: "Alice Smith" }),
+  mkMock({ id: "6", title: "Serbia distributor call", country: "RS", assignees: ["Bob Jones"], assignee_telegram_ids: [345678], due_date: mockDue(21), created_by_name: "Bob Jones" }),
   mkMock({ id: "7", title: "Montenegro market scan", country: "ME", assignees: ["Bob Jones"], assignee_telegram_ids: [345678], created_by_name: "Bob Jones" }),
   mkMock({ id: "8", title: "General team retro notes", assignees: [], assignee_telegram_ids: [], is_private: false }),
   // ── демо-дерево проекта pr1 «Swarm Brain» (для локального просмотра v2) ──

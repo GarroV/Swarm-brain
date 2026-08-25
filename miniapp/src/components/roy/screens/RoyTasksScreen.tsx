@@ -9,6 +9,8 @@ import { LensToggle } from "@/components/tasks/LensToggle";
 import { useReminderTasks } from "@/components/tasks/useReminderTasks";
 import { SMART_LISTS } from "@/lib/smartLists";
 import type { Task } from "@/types";
+import { rangeLabel } from "@/lib/dateRange";
+import { RangePicker } from "@/components/ui/RangePicker";
 
 // Мобильный Reminders-вид задач: чипы смарт-списков + спокойный чек-лист со свайпом.
 export function RoyTasksScreen() {
@@ -52,7 +54,7 @@ export function RoyTasksScreen() {
   return (
     <div className="relative h-full overflow-y-auto">
       <RoyHeader title="Задачи" />
-      <div className="px-5 pb-2">
+      <div className="flex flex-wrap items-center gap-1.5 px-5 pb-2">
         <LensToggle
           lens={r.lens}
           onChangeLens={r.setLens}
@@ -62,11 +64,14 @@ export function RoyTasksScreen() {
           onToggleAllStaff={() => r.setAllStaff((v) => !v)}
           showAllStaff={!!r.me?.is_admin}
         />
+        {/* Период — такой же модификатор, как «По рынкам»: стоит рядом с ними, а не в ленте
+            списков, чтобы включённый фильтр всегда был на виду. */}
+        <RangePicker variant="chip" value={r.range} onChange={r.setRange} />
       </div>
       <SmartListNav variant="chips" active={r.activeList} counts={r.counts} onSelect={r.setActiveList} />
 
       <div className="px-5 pb-2 text-ink-mute" style={{ fontSize: 12.5 }}>
-        {activeDef.label} · {total}
+        {activeDef.label} · {total}{r.range ? ` · ${rangeLabel(r.range)}` : ""}
       </div>
 
       <div className="space-y-2.5 px-5 pb-28">

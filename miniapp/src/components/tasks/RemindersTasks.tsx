@@ -7,6 +7,7 @@ import { TaskQuickActions } from "./TaskQuickActions";
 import { useReminderTasks } from "./useReminderTasks";
 import { LabelEditor } from "./LabelEditor";
 import { SMART_LISTS } from "@/lib/smartLists";
+import { rangeLabel } from "@/lib/dateRange";
 import { fetchUsers, fetchConfig, type TaskLabel } from "@/lib/api";
 import type { Task, User } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
@@ -127,6 +128,8 @@ export function RemindersTasks() {
           const full = r.labels.find((x) => x.id === l.id);
           if (full) setLabelEditor(full);
         }}
+        range={r.range}
+        onRange={r.setRange}
       />
 
       <div className="flex min-h-0 flex-1 flex-col">
@@ -134,6 +137,20 @@ export function RemindersTasks() {
           <div className="flex min-w-0 items-baseline gap-2.5">
             <h1 className="truncate font-bold text-accent-ink" style={{ fontSize: 24, letterSpacing: "-0.02em" }}>{headerTitle}</h1>
             <span className="shrink-0 text-ink-mute" style={{ fontSize: 13 }}>{total} {plural(total)}</span>
+            {/* Период виден в заголовке, а не только в рельсе: иначе «мало задач» из-за активного
+                фильтра читается как «задач нет». Клик снимает период. */}
+            {r.range && (
+              <button
+                type="button"
+                onClick={() => r.setRange(null)}
+                title="Снять период"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 font-semibold text-accent-ink transition-colors hover:bg-accent-soft/70"
+                style={{ fontSize: 11.5 }}
+              >
+                {rangeLabel(r.range)}
+                <RoyIcon name="x" size={10} strokeWidth={2.2} />
+              </button>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <LensToggle
