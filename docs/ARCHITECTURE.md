@@ -737,7 +737,8 @@ supabase/functions/swarm-api/
 ├── index.ts        # Router + все эндпоинты
 ├── auth.ts         # verifyInitData() — проверка Telegram initData (спящий путь Mini App) + проверка веб-JWT
 ├── admin.ts        # /admin/* роуты (админы: telegram_id 744230399 или is_admin)
-└── entries-guard.ts  # Обязательный слой безопасности для всех endpoints с entries
+├── entries-guard.ts  # Обязательный слой безопасности для всех endpoints с entries
+└── meetings-payload.ts # Форма ответа GET /meetings: какие колонки уезжают в браузер
 ```
 
 **Назначение:** REST API для веб-интерфейса «Рой» (браузер/PWA). Третий клиент поверх `_shared/tasks/db.ts`.
@@ -841,11 +842,23 @@ _Записи базы знаний (entries — только через `entrie
 | `POST` | `/entries` | Создать заметку из текста: эмбеддинг + классификация стран/типа (GPT-4o-mini, `COUNTRY_PROMPT_RULE`/`ENTRY_TYPE_PROMPT_RULE`) + тезисы (если ≥80 симв); `source=note`, привязка `group_id`/`owner_id`; 201 |
 | `POST` | `/entries/upload` | Multipart-загрузка файла в Storage (`swarm_drive/uploads/`) + создание записи (`source=file`, `metadata.file_url`); `is_private` опц.; 201 |
 
+**⚡ Форма ответа `GET /meetings` — канон `swarm-api/meetings-payload.ts`** (issue #102, 26.08.2026):
+
+| | что уезжает в браузер |
+|---|---|
+| **Колонки** | `MEETING_COLUMNS` — ровно поля типа `Entry` (`miniapp/src/types.ts`) + `updated_at`. **`embedding` и `fts` НЕ запрашиваются никогда** |
+| **Большой список** (`?confirmed=true` или без параметра) | `content` и `summary` урезаны до `LIST_PREVIEW_CHARS` (400 симв.), у записи стоит **`truncated: true`** |
+| **Очередь вычитки** (`?confirmed=false`) | полный текст, без урезания — там единицы строк и текст нужен сразу |
+
+Зачем: хендлер делал `select("*")` и отдавал **~10 МБ на 230 встреч**, из которых 61% — `embedding` (4.2 МБ) и `fts` (1.8 МБ), т.е. колонки, которых нет в типе `Entry` и которые фронт физически не мог прочитать; ещё 2.7 МБ — полные транскрипты, в списке не рендерящиеся. Запрос к базе при этом занимает **1.3 мс** — узким местом была не выборка, а объём. После фикса тот же список — **452 кБ** (в 22 раза меньше).
+
+**Контракт `truncated` обязателен к соблюдению на клиенте.** Экран, который открывает встречу **из объекта списка**, а не по `id`, обязан до-загрузить её через `fetchMeeting(id)` и до тех пор НЕ рисовать транскрипт/тезисы и НЕ давать извлечение задач — иначе обрезок в 400 символов выглядит как короткая, но полная встреча. Сейчас такой экран один — `MeetAdminScreen` (`selectItem`, режим «Все встречи»); остальные (`MeetingDetail`, `RecordDetail`, `AnswerModal`, дашборд, поиск) переходят по `id` и получают запись целиком.
+
 _Встречи — `/meetings` (подтверждённые записи-встречи в `entries`):_
 
 | Метод | Путь | Что делает |
 |-------|------|-----------|
-| `GET` | `/meetings` | Записи-встречи (`entry_type=meeting`). `?confirmed=true/false` фильтрует по `metadata.confirmed` (очередь «на согласовании») |
+| `GET` | `/meetings` | Записи-встречи (`entry_type=meeting`). `?confirmed=true/false` фильтрует по `metadata.confirmed` (очередь «на согласовании»), `?limit=` (дефолт 500, потолок 2000). **Ответ СПИСОЧНЫЙ и урезанный** — см. ниже |
 | `GET` | `/meetings/:id` | Одна встреча-запись (`getEntrySecure`) |
 | `PATCH` | `/meetings/:id` | Правка: `confirmed` (в `metadata`), `summary`, `content`, `entry_type` (реклассификация «встреча → заметка», уводит из очереди), `is_private` (+`owner_id` как у задач), `countries` |
 | `DELETE` | `/meetings/:id` | Удалить встречу-запись (204) |

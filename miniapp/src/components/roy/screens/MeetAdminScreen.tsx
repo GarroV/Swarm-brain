@@ -6,6 +6,7 @@ import { RoyIcon } from "../icons";
 import { deriveEntryTitle, entryImporterName } from "../entry";
 import {
   fetchMeetings,
+  fetchMeeting,
   fetchAgentMeetings,
   fetchAgentMeeting,
   fetchAgentMeetingNotes,
@@ -585,14 +586,22 @@ function DetailPanel({
           </div>
         </div>
 
-        {e.summary && (
-          <div>
-            <SectionLabel>Саммари</SectionLabel>
-            <TezisyBlocks text={e.summary} />
-          </div>
-        )}
+        {/* Пока идёт до-загрузка полного текста (issue #102) показываем плашку, а НЕ обрезок:
+            урезанные тезисы и транскрипт выглядели бы как короткая, но полная встреча. */}
+        {e.truncated ? (
+          <div className="text-ink-mute" style={{ fontSize: 13 }}>Загружаем расшифровку…</div>
+        ) : (
+          <>
+            {e.summary && (
+              <div>
+                <SectionLabel>Саммари</SectionLabel>
+                <TezisyBlocks text={e.summary} />
+              </div>
+            )}
 
-        <ContentEditor entry={e} onSaved={onEntryUpdated} />
+            <ContentEditor entry={e} onSaved={onEntryUpdated} />
+          </>
+        )}
       </div>
     );
   }
@@ -1236,7 +1245,7 @@ function ActionsPanel({
           entry: привязываем к записи (meeting_id). agent-черновик: записи ещё нет (entry_id
           появится при публикации) → задачи автономные; извлекаем из тезисов, а при их отсутствии —
           из транскрипта (фолбэк), чтобы блок был доступен для ЛЮБОЙ встречи с содержанием. */}
-      {item.kind === "entry" && (
+      {item.kind === "entry" && !item.data.truncated && (
         <div className="mt-1 border-t border-line pt-3">
           <TasksFromMeeting text={item.data.content} meetingId={item.data.id} resetKey={item.data.id} />
         </div>
@@ -1356,6 +1365,26 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
   }, [mode, allMeetings]);
 
   const switchMode = (m: string) => { setSelected(null); setMode(m as "review" | "all"); };
+
+  // Список «Все встречи» приходит с урезанными content/summary (issue #102). Полный текст
+  // нужен только ОТКРЫТОЙ карточке — до-загружаем его по клику. Выбор ставим сразу, не
+  // дожидаясь ответа: заголовок, дата, источник и рынки в списочной строке уже есть, так что
+  // панель не мигает пустотой. Пока полного текста нет, у записи стоит truncated — по нему
+  // DetailPanel/ActionsPanel прячут транскрипт, тезисы и извлечение задач, чтобы не показать
+  // обрезок как полный и не извлечь задачи из первых 400 символов.
+  const selectItem = useCallback((item: MeetItem) => {
+    setSelected(item);
+    if (item.kind !== "entry" || !item.data.truncated) return;
+    const id = item.data.id;
+    fetchMeeting(id)
+      .then((full) => {
+        setSelected((prev) =>
+          prev && prev.kind === "entry" && prev.data.id === id ? { kind: "entry", data: full } : prev,
+        );
+        setAllMeetings((prev) => prev?.map((e) => (e.id === id ? full : e)) ?? null);
+      })
+      .catch(() => toast("Не удалось загрузить расшифровку — попробуйте открыть встречу снова"));
+  }, [toast]);
 
   // Список зависит от режима: Ревью — очередь (черновики + неподтверждённые), Все — весь доступный.
   const reviewItems: MeetItem[] = [
@@ -1507,7 +1536,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
                 key={itemId(item)}
                 item={item}
                 active={selected !== null && itemId(selected) === itemId(item)}
-                onClick={() => setSelected(item)}
+                onClick={() => selectItem(item)}
                 removing={removingIds.has(itemId(item))}
               />
             ))}

@@ -11,6 +11,7 @@ import {
   buildReviewQueueQuery,
   getEntrySecure,
 } from "./entries-guard.ts";
+import { MEETING_COLUMNS, toListRow } from "./meetings-payload.ts";
 import {
   createTask,
   getTask,
@@ -1182,9 +1183,12 @@ Deno.serve(async (req: Request) => {
     // Несогласованные (очередь вычитки) — по причастности: владелец ИЛИ участник встречи.
     // Обычный фильтр видимости тут не годится: «ничья» неприватная встреча из read-ai висела
     // бы в очереди у всего воркспейса (issue #66). Согласованные — обычное правило.
-    let q = (confirmedParam === "false"
-      ? buildReviewQueueQuery(supabase, "*", { groupId, telegramId: telegram_id, email: userEmail })
-      : buildEntriesQuery(supabase, "*", { groupId, telegramId: telegram_id }))
+    // Очередь вычитки (единицы строк) — текст нужен сразу и целиком. Большой список —
+    // урезанный (toListRow ниже): 230 встреч × полный транскрипт = ~10 МБ в браузер (issue #102).
+    const isReviewQueue = confirmedParam === "false";
+    let q = (isReviewQueue
+      ? buildReviewQueueQuery(supabase, MEETING_COLUMNS, { groupId, telegramId: telegram_id, email: userEmail })
+      : buildEntriesQuery(supabase, MEETING_COLUMNS, { groupId, telegramId: telegram_id }))
       .eq("entry_type", "meeting")
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -1206,7 +1210,8 @@ Deno.serve(async (req: Request) => {
         if (m.entry_id && tg !== null) recMap.set(m.entry_id, tg);
       }
     }
-    return json(await withImporterNames(rows, recMap), 200, origin);
+    const named = await withImporterNames(rows, recMap);
+    return json(isReviewQueue ? named : named.map(toListRow), 200, origin);
   }
 
   // ── POST /meetings/:id/resummarize — пересобрать тезисы УЖЕ опубликованной встречи ──

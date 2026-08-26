@@ -129,6 +129,11 @@ export type Entry = {
   is_private: boolean;
   owner_id: number | null;
   created_at: string;
+  // true — запись пришла из СПИСОЧНОГО ответа GET /meetings, где content/summary урезаны
+  // до превью (issue #102: иначе 230 встреч = ~10 МБ в браузер). Полный текст надо
+  // до-загрузить через fetchMeeting(id). Экран НЕ должен показывать урезанный транскрипт
+  // как полный и тем более извлекать из него задачи.
+  truncated?: boolean;
 };
 
 export type Integration = {
