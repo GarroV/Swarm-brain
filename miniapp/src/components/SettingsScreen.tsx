@@ -690,7 +690,7 @@ function ClaudeDesktopSection() {
           <Button size="sm" variant="secondary" onClick={copy} className="w-full">
             {copied ? "✓ Скопировано" : "Скопировать команду"}
           </Button>
-          <p className="text-xs text-muted-foreground">2. Скрипт поставит Node (если нужно), пропишет коннектор и перезапустит Claude Desktop.</p>
+          <p className="text-xs text-muted-foreground">2. Скрипт пропишет коннектор и перезапустит Claude Desktop. Ничего скачивать не нужно — Node и npm больше не требуются.</p>
           <p className="text-xs text-muted-foreground">3. В Claude Desktop появится сервер <b>swarm-brain</b> с инструментами. Токен личный — никому не пересылай.</p>
         </div>
       )}
