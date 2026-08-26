@@ -1,5 +1,12 @@
 {
   "imports": {
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+  },
+  "tasks": {
+    // Единая команда на весь репозиторий: edge-функции + тесты веба (у miniapp своего
+    // раннера нет, тесты чистой логики гоняются здесь же). Флаг -A обязателен: часть тестов
+    // установщика Claude Desktop пишет во временный каталог и запускает подпроцесс, и под
+    // урезанными правами (--allow-read / --allow-net) они падают правами, а не по сути.
+    "test": "deno test -A supabase/ miniapp/sw.test.ts miniapp/src/lib/"
   }
 }
