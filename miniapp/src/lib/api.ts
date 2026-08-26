@@ -6,6 +6,8 @@ export type CreateTaskInput = {
   description?: string | null;
   status?: string;
   due_date?: string | null;
+  /** Пинг: день напоминания. null — снять. Перенос взводит сгоревший пинг заново (делает API). */
+  remind_date?: string | null;
   assignee_telegram_id?: number | null;
   country?: string | null;
   task_role?: string | null;
@@ -108,12 +110,22 @@ const MOCK_USERS: User[] = [
   { telegram_id: 345678, name: "Bob Jones", username: "bob", role: "rnd", markets: ["RS", "ME"] },
 ];
 
+// Срок/пинг мок-задачи ОТНОСИТЕЛЬНО сегодня: жёсткие даты протухают (были «июнь 2026» — к
+// августу весь dev-список висел просрочкой, и ни фильтр по периоду, ни пинги проверить было
+// не на чем).
+function mockDay(daysFromToday: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysFromToday);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // Демо-фабрика задачи (моки DEV_MODE) — сокращает шум при наполнении дерева.
 function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
   return {
     id: o.id, title: o.title, description: o.description ?? null,
     assignees: o.assignees ?? [], assignee_telegram_ids: o.assignee_telegram_ids ?? [],
-    due_date: o.due_date ?? null, tags: o.tags ?? [], country: o.country ?? null,
+    due_date: o.due_date ?? null, remind_date: o.remind_date ?? null, reminded_at: o.reminded_at ?? null,
+    tags: o.tags ?? [], country: o.country ?? null,
     task_role: o.task_role ?? null, priority: o.priority ?? null, source: "mini_app",
     status: o.status ?? "open", created_at: new Date().toISOString(), updated_at: null,
     meeting_id: null, url: null, group_id: "cee", created_by_name: o.created_by_name ?? "Dev User",
@@ -123,13 +135,13 @@ function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
   };
 }
 let mockTasks: Task[] = [
-  mkMock({ id: "1", title: "Prepare Q2 report", description: "Collect metrics and draft slides", due_date: "2026-06-15", country: "KZ", task_role: "bd", priority: "high" }),
+  mkMock({ id: "1", title: "Prepare Q2 report", description: "Collect metrics and draft slides", due_date: mockDay(0), remind_date: mockDay(7), country: "KZ", task_role: "bd", priority: "high" }),
   mkMock({ id: "2", title: "Design landing page", country: "PL", task_role: "marketing", priority: "med", status: "in_progress", created_by_name: "Alice Smith" }),
-  mkMock({ id: "3", title: "Review contracts", due_date: "2026-05-30", task_role: "rnd", priority: "low", status: "done", created_by_name: null }),
+  mkMock({ id: "3", title: "Review contracts", due_date: mockDay(-40), task_role: "rnd", priority: "low", status: "done", created_by_name: null }),
   // ── доп. мок-задачи для проверки тумблеров «По рынкам»/«Все сотрудники» (разные исполнители/страны) ──
-  mkMock({ id: "4", title: "Kazakhstan pricing review", country: "KZ", assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: "2026-06-20" }),
-  mkMock({ id: "5", title: "Poland launch checklist", country: "PL", assignees: ["Alice Smith"], assignee_telegram_ids: [789012], due_date: "2026-06-18", created_by_name: "Alice Smith" }),
-  mkMock({ id: "6", title: "Serbia distributor call", country: "RS", assignees: ["Bob Jones"], assignee_telegram_ids: [345678], due_date: "2026-06-22", created_by_name: "Bob Jones" }),
+  mkMock({ id: "4", title: "Kazakhstan pricing review", country: "KZ", assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: mockDay(2), remind_date: mockDay(1) }),
+  mkMock({ id: "5", title: "Poland launch checklist", country: "PL", assignees: ["Alice Smith"], assignee_telegram_ids: [789012], due_date: mockDay(9), remind_date: mockDay(-1), reminded_at: new Date().toISOString(), created_by_name: "Alice Smith" }),
+  mkMock({ id: "6", title: "Serbia distributor call", country: "RS", assignees: ["Bob Jones"], assignee_telegram_ids: [345678], due_date: mockDay(21), created_by_name: "Bob Jones" }),
   mkMock({ id: "7", title: "Montenegro market scan", country: "ME", assignees: ["Bob Jones"], assignee_telegram_ids: [345678], created_by_name: "Bob Jones" }),
   mkMock({ id: "8", title: "General team retro notes", assignees: [], assignee_telegram_ids: [], is_private: false }),
   // ── демо-дерево проекта pr1 «Swarm Brain» (для локального просмотра v2) ──
@@ -341,7 +353,8 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     const newTask: Task = {
       id: Date.now().toString(), title: input.title, description: input.description ?? null,
       assignees: [], assignee_telegram_ids: input.assignee_telegram_id ? [input.assignee_telegram_id] : [],
-      due_date: input.due_date ?? null, tags: input.tags ?? [], country: input.country ?? null,
+      due_date: input.due_date ?? null, remind_date: input.remind_date ?? null, reminded_at: null,
+      tags: input.tags ?? [], country: input.country ?? null,
       task_role: input.task_role ?? null, priority: input.priority ?? null, source: "mini_app", status: input.status ?? "open",
       created_at: new Date().toISOString(), updated_at: null, meeting_id: input.meeting_id ?? null, url: null, group_id: "cee",
       created_by_name: MOCK_ME.name,
@@ -542,7 +555,7 @@ export type TaskComment = {
 // поле `type` заведено под назначения/смены статуса (беклог), UI на него уже смотрит.
 export type SwarmNotification = {
   id: string;
-  type: "task_comment";
+  type: "task_comment" | "task_reminder";
   task_id: string | null;
   task_title: string;
   comment_id: string | null;
@@ -559,6 +572,9 @@ export async function fetchNotifications(limit = 30): Promise<{ items: SwarmNoti
       { id: "n1", type: "task_comment", task_id: "1", task_title: "Раздельный НДС в Венгрии", comment_id: "c1",
         content: "Юристы подтвердили схему, нужен твой апрув до пятницы.", actor_telegram_id: 555, actor_name: "Anna K.",
         read_at: null, created_at: new Date(Date.now() - 12 * 60 * 1000).toISOString() },
+      { id: "n0", type: "task_reminder", task_id: "1", task_title: "Prepare Q2 report", comment_id: null,
+        content: "", actor_telegram_id: null, actor_name: "—",
+        read_at: null, created_at: new Date(Date.now() - 3 * 60 * 1000).toISOString() },
       { id: "n2", type: "task_comment", task_id: "2", task_title: "Апи Рецептов", comment_id: "c2",
         content: "Выкатили на стенд, посмотри контракт.", actor_telegram_id: 556, actor_name: "Ivan P.",
         read_at: new Date().toISOString(), created_at: new Date(Date.now() - 26 * 3600 * 1000).toISOString() },

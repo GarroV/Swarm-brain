@@ -629,6 +629,14 @@ Deno.serve(async (req: Request) => {
       if (body.country !== undefined) fields.country = body.country as string | null;
       if (body.task_role !== undefined) fields.task_role = body.task_role as string | null;
       if ("due_date" in body) fields.due_date = body.due_date as string | null;
+      // Пинг: перенос ВЗВОДИТ его заново (reminded_at = null) — иначе уже сработавший пинг,
+      // передвинутый на новую дату, молча не пришёл бы: крон берёт только неотправленные.
+      // Снятие пинга (null) заодно чистит след, чтобы карточка не показывала «напомнили».
+      if ("remind_date" in body) {
+        fields.remind_date = body.remind_date as string | null;
+        fields.reminded_at = null;
+        fields.remind_set_by = fields.remind_date ? telegram_id : null;
+      }
       if (body.status !== undefined) fields.status = body.status as string;
       if ("start_date" in body) fields.start_date = body.start_date as string | null;
       if (typeof body.timeline_position === "number") fields.timeline_position = body.timeline_position;

@@ -5,6 +5,7 @@
 import type { Task, Me } from "@/types";
 import type { RoyIconName } from "@/components/roy/icons";
 import { countryCode } from "@/lib/countries";
+import { inRange, dayOf, type DateRange } from "@/lib/dateRange";
 
 export type SmartListId = "today" | "upcoming" | "all" | "done";
 // Линза = ось «чьи задачи»: «mine» — назначенные на меня; «team» — ОБЩИЕ (не приватные, без
@@ -110,8 +111,19 @@ function chain(...cmps: Array<(a: Task, b: Task) => number>) {
   };
 }
 
+// Период (модификатор «Эта неделя»/«Этот месяц»/произвольный) — пересечение со списком, а не
+// расширение: задача обязана попасть И в список, И в диапазон. Дата берётся по смыслу списка —
+// в «Готовых» это дата закрытия (updated_at — прокси, отдельного completed_at в таблице нет),
+// в остальных срок (due_date). Задача без нужной даты в период не попадает.
+function inPeriod(task: Task, listId: SmartListId, range: DateRange | null): boolean {
+  if (!range) return true;
+  const day = listId === "done" ? dayOf(task.updated_at ?? task.created_at) : dayOf(task.due_date);
+  return inRange(day, range);
+}
+
 // Базовый предикат «принадлежит списку» (без линзы и сортировки).
-function inList(task: Task, listId: SmartListId, now: Date): boolean {
+function inList(task: Task, listId: SmartListId, now: Date, range: DateRange | null = null): boolean {
+  if (!inPeriod(task, listId, range)) return false;
   if (listId === "done") return isDone(task);
   if (isDone(task)) return false; // все остальные списки — только незавершённое
   const today = midnight(now);
@@ -132,17 +144,17 @@ function sorterFor(listId: SmartListId): (a: Task, b: Task) => number {
 }
 
 // Отфильтрованный и отсортированный список задач для смарт-списка под линзой.
-export function filterTasks(tasks: Task[], listId: SmartListId, lens: Lens, me: Me | null, now: Date = new Date()): Task[] {
+export function filterTasks(tasks: Task[], listId: SmartListId, lens: Lens, me: Me | null, now: Date = new Date(), range: DateRange | null = null): Task[] {
   return tasks
-    .filter((t) => matchesLens(t, lens, me) && inList(t, listId, now))
+    .filter((t) => matchesLens(t, lens, me) && inList(t, listId, now, range))
     .sort(sorterFor(listId));
 }
 
 // Счётчики для всех списков (для рельса/чипов).
-export function countLists(tasks: Task[], lens: Lens, me: Me | null, now: Date = new Date()): Record<SmartListId, number> {
+export function countLists(tasks: Task[], lens: Lens, me: Me | null, now: Date = new Date(), range: DateRange | null = null): Record<SmartListId, number> {
   const counts = {} as Record<SmartListId, number>;
   for (const def of SMART_LISTS) {
-    counts[def.id] = tasks.filter((t) => matchesLens(t, lens, me) && inList(t, def.id, now)).length;
+    counts[def.id] = tasks.filter((t) => matchesLens(t, lens, me) && inList(t, def.id, now, range)).length;
   }
   return counts;
 }
@@ -175,8 +187,8 @@ function bucketByMarket(inScope: Task[]): MarketGroup[] {
 // (владелец 2026-08-19: должен группировать ТО, что уже выбрано, "Мои"/"Команда" тоже, не
 // только "Все"). Для "показать буквально всех" линзу переопределяет вызывающий (effectiveLens
 // в useReminderTasks, когда включён отдельный тумблер "Все сотрудники").
-export function groupByMarket(tasks: Task[], listId: SmartListId, lens: Lens, me: Me | null, now: Date = new Date()): MarketGroup[] {
-  return bucketByMarket(filterTasks(tasks, listId, lens, me, now));
+export function groupByMarket(tasks: Task[], listId: SmartListId, lens: Lens, me: Me | null, now: Date = new Date(), range: DateRange | null = null): MarketGroup[] {
+  return bucketByMarket(filterTasks(tasks, listId, lens, me, now, range));
 }
 
 export type StaffGroup = { name: string; label: string; tasks: Task[] };
@@ -184,8 +196,8 @@ export type StaffGroup = { name: string; label: string; tasks: Task[] };
 // Группировка задач АКТИВНОГО смарт-списка по ИСПОЛНИТЕЛЮ — все владельцы (админский вид «все сотрудники»).
 // Задача с несколькими исполнителями попадает в секцию каждого (полная картина «у кого что»).
 // Без исполнителя → «Без исполнителя», в конец. Группы по убыванию размера, затем по имени.
-export function groupByAssignee(tasks: Task[], listId: SmartListId, lens: Lens, me: Me | null, now: Date = new Date()): StaffGroup[] {
-  const inScope = filterTasks(tasks, listId, lens, me, now);
+export function groupByAssignee(tasks: Task[], listId: SmartListId, lens: Lens, me: Me | null, now: Date = new Date(), range: DateRange | null = null): StaffGroup[] {
+  const inScope = filterTasks(tasks, listId, lens, me, now, range);
   const NONE = " none";
   const map = new Map<string, Task[]>();
   for (const t of inScope) {
@@ -212,19 +224,19 @@ export type NestedStaffGroup = StaffGroup & { marketGroups: MarketGroup[] };
 // Оба тумблера разом ("Все сотрудники" + "По рынкам"): сначала по сотруднику, внутри каждого -
 // по рынку (владелец: "группировка по сотруднику, а под ней - по рынкам"). Независимые измерения
 // одной и той же задачи - конфликта нет, задача просто попадает в [свой исполнитель][свой рынок].
-export function groupByAssigneeThenMarket(tasks: Task[], listId: SmartListId, lens: Lens, me: Me | null, now: Date = new Date()): NestedStaffGroup[] {
-  return groupByAssignee(tasks, listId, lens, me, now)
+export function groupByAssigneeThenMarket(tasks: Task[], listId: SmartListId, lens: Lens, me: Me | null, now: Date = new Date(), range: DateRange | null = null): NestedStaffGroup[] {
+  return groupByAssignee(tasks, listId, lens, me, now, range)
     .map((sg) => ({ ...sg, marketGroups: bucketByMarket(sg.tasks) }));
 }
 
 // ── Персональные смарт-метки (личные списки) ────────────────────────────────
 // Список метки авто-собирает незавершённые задачи с этой меткой. Сортировка — как today/upcoming/all.
-export function filterByLabel(tasks: Task[], labelId: string): Task[] {
+export function filterByLabel(tasks: Task[], labelId: string, range: DateRange | null = null): Task[] {
   return tasks
-    .filter((t) => !isDone(t) && (t.label_ids?.includes(labelId) ?? false))
+    .filter((t) => !isDone(t) && (t.label_ids?.includes(labelId) ?? false) && inRange(dayOf(t.due_date), range))
     .sort(chain(byDueAsc, byPriorityDesc, byCreatedDesc));
 }
 
-export function countByLabel(tasks: Task[], labelId: string): number {
-  return tasks.filter((t) => !isDone(t) && (t.label_ids?.includes(labelId) ?? false)).length;
+export function countByLabel(tasks: Task[], labelId: string, range: DateRange | null = null): number {
+  return tasks.filter((t) => !isDone(t) && (t.label_ids?.includes(labelId) ?? false) && inRange(dayOf(t.due_date), range)).length;
 }
