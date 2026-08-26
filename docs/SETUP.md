@@ -286,6 +286,20 @@ select cron.schedule(
   $$
 );
 
+-- Пинги задач (ручные напоминания) — почасовой тик, шлёт наступившие. Тик частый нарочно:
+-- пинг одноразовый, и пропущенный час означал бы напоминание, опоздавшее на день.
+select cron.schedule(
+  'task-pings-hourly',
+  '0 * * * *',
+  $$
+    select net.http_post(
+      url := 'https://<YOUR_PROJECT_REF>.supabase.co/functions/v1/swarm-bot',
+      headers := '{"Content-Type":"application/json","X-Cron-Secret":"<CRON_SECRET>"}',
+      body := '{"task_pings_cron":true}'
+    );
+  $$
+);
+
 -- Ежедневный отчёт активности админу — вчерашние сутки, ~06:00 UTC (≈07–08:00 Europe/Belgrade)
 select cron.schedule(
   'daily-report',

@@ -90,7 +90,9 @@ export function NewTask({ id }: { id?: string }) {
         const lens = view?.lens ?? "mine";
         const list = view?.activeList ?? "today";
         const lensOk = matchesLens(created, lens, me);
-        if (lensOk && matchesList(created, list)) setTab("task");
+        // Период тоже учитываем: с включённой «Этой неделей» задача вне диапазона так же
+        // невидима, и «пропала» вернулось бы ровно тем же способом (фича периода пришла из main).
+        if (lensOk && matchesList(created, list, new Date(), view?.range ?? null)) setTab("task");
         else openTasks(lensOk ? lens : "all", "all");
       }
     } catch {

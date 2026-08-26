@@ -217,8 +217,12 @@ const allErrors = [];
 {
   const { browser, page, errors } = await connect(PHONE);
   await freshLoad(page);
-  await clickText(page, "Задачи");
-  await wait(1200);
+  // Вид задаём явно: моки перешли на относительные даты (mockDay), и в «Сегодня» законно может
+  // не быть ни одной строки — тогда мерить плотность и тач-цели нечем, а проверка молча
+  // «зеленела» бы на пустом экране. «Все/Все» гарантирует непустой список.
+  await page.evaluate(() => localStorage.setItem("roy_tasks_view", JSON.stringify({ activeList: "all", lens: "all" })));
+  await page.reload({ waitUntil: "networkidle2" });
+  await wait(1700);
   const geom = await page.evaluate(() => {
     const first = document.querySelector("[data-swipe-content]")?.parentElement?.getBoundingClientRect();
     const cb = document.querySelector('button[role="checkbox"]');

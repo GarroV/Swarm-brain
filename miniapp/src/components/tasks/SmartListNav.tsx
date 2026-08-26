@@ -2,6 +2,8 @@
 import { cn } from "@/lib/utils";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { SMART_LISTS, type SmartListId } from "@/lib/smartLists";
+import { RangePicker } from "@/components/ui/RangePicker";
+import type { DateRange } from "@/lib/dateRange";
 
 type SmartListNavProps = {
   variant: "rail" | "chips";
@@ -24,10 +26,15 @@ type SmartListNavProps = {
   onCreateLabel?: () => void;
   /** Только rail: открыть редактор списка (переименовать/удалить). */
   onEditLabel?: (label: { id: string; name: string; icon: string }) => void;
+  /** Только rail: период — модификатор поверх выбранного списка (сужает его по дате).
+      На мобайле период живёт рядом с тумблерами «По рынкам»/«Все сотрудники» (RoyTasksScreen),
+      а не в этой ленте: в прокрутке чип уезжал за край и активный фильтр был не виден. */
+  range?: DateRange | null;
+  onRange?: (range: DateRange | null) => void;
 };
 
 // Навигация по смарт-спискам: вертикальный рельс (десктоп) или горизонтальные чипы (мобайл).
-export function SmartListNav({ variant, compact, active, counts, onSelect, query, onQuery, labels, labelCounts, activeLabelId, onSelectLabel, onCreateLabel, onEditLabel }: SmartListNavProps) {
+export function SmartListNav({ variant, compact, active, counts, onSelect, query, onQuery, labels, labelCounts, activeLabelId, onSelectLabel, onCreateLabel, onEditLabel, range, onRange }: SmartListNavProps) {
   if (variant === "chips") {
     // Затухание справа (mask, не градиент-подложка) — единственный честный намёк, что чипы
     // скроллятся: раньше четвёртый чип просто обрубался краем экрана и выглядел сломанным.
@@ -104,6 +111,16 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
           </button>
         );
       })}
+
+      {/* Период — не список, а модификатор: сужает по дате ЛЮБОЙ выбранный список (в «Готовых» —
+          по дате закрытия). Поэтому стоит отдельной секцией под ними, а не пятым пунктом. */}
+      {onRange && (
+        <>
+          <div className="my-1.5 border-t border-line" />
+          <div className="px-2.5 pb-1 font-mono uppercase text-ink-mute" style={{ fontSize: 10, letterSpacing: "0.08em" }}>Период</div>
+          <RangePicker variant="rail" value={range ?? null} onChange={onRange} />
+        </>
+      )}
 
       {/* Персональные списки-метки (смарт-списки по метке). */}
       {onSelectLabel && labels && (

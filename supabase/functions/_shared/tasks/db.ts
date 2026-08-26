@@ -13,6 +13,8 @@ export async function createTask(input: TaskInput, groupId?: string): Promise<Ta
     assignees: input.assignees ?? [],
     assignee_telegram_ids: input.assignee_telegram_ids ?? [],
     due_date: input.due_date ?? null,
+    remind_date: input.remind_date ?? null,
+    remind_set_by: input.remind_date ? (input.remind_set_by ?? input.created_by_telegram_id ?? null) : null,
     tags: input.tags ?? [],
     country: input.country ?? null,
     task_role: input.task_role ?? null,

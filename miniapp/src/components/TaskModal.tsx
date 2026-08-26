@@ -114,6 +114,9 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
   // ссылками (linkify); textarea появляется по клику. Пустое описание — сразу editable.
   const [descEditing, setDescEditing] = useState(true);
   const [dueDate, setDueDate] = useState("");
+  // Пинг — ручное напоминание, живёт рядом со сроком и независимо от него.
+  const [remindDate, setRemindDate] = useState("");
+  const [remindedAt, setRemindedAt] = useState<string | null>(null);
   const [country, setCountry] = useState("");
   const [taskRole, setTaskRole] = useState(NONE);
   const [assigneeId, setAssigneeId] = useState(NONE);
@@ -139,6 +142,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     const initialDescription = task?.description ?? prefill?.description ?? "";
     const initialStatus = normStatus(task?.status);
     const initialDue = task?.due_date ?? prefill?.due_date ?? "";
+    const initialRemind = task?.remind_date ?? "";
     const initialCountry = task?.country ?? prefill?.country ?? "";
     const initialRole = task?.task_role ?? NONE;
     const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
@@ -150,6 +154,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     setDescription(initialDescription);
     setDescEditing(!initialDescription.trim());
     setDueDate(initialDue);
+    setRemindDate(initialRemind);
+    setRemindedAt(task?.reminded_at ?? null);
     setCountry(initialCountry);
     setTaskRole(initialRole);
     setAssigneeId(cur);
@@ -165,6 +171,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
       description: initialDescription,
       status: initialStatus,
       dueDate: initialDue,
+      remindDate: initialRemind,
       country: initialCountry,
       taskRole: initialRole,
       assigneeId: cur,
@@ -215,7 +222,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
 
   // Текущий снапшот формы (для сравнения с сохранённым) — те же ключи, что в useEffect open.
   const formSnapshot = () =>
-    JSON.stringify({ title, description, status, dueDate, country, taskRole, assigneeId, selProject, labelIds });
+    JSON.stringify({ title, description, status, dueDate, remindDate, country, taskRole, assigneeId, selProject, labelIds });
 
   // Собрать PATCH из текущих значений формы. null → сохранять нечего/нельзя (пустое название).
   const buildPatch = (): UpdateTaskInput | null => {
@@ -226,6 +233,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
       title: t,
       description: description.trim() || null,
       due_date: dueDate || null,
+      remind_date: remindDate || null,
       country: country || null,
       task_role: taskRole === NONE ? null : taskRole,
       status,
@@ -261,7 +269,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     }, AUTOSAVE_DELAY);
     return () => clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isEdit, title, description, status, dueDate, country, taskRole, assigneeId, selProject, labelIds]);
+  }, [open, isEdit, title, description, status, dueDate, remindDate, country, taskRole, assigneeId, selProject, labelIds]);
 
   // Закрытие: досрочно сохраняем pending-изменения (пока debounce не успел сработать).
   const handleClose = () => {
@@ -291,6 +299,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
         title: title.trim(),
         description: description.trim() || null,
         due_date: dueDate || null,
+        remind_date: remindDate || null,
         country: country || null,
         task_role: taskRole === NONE ? null : taskRole,
       };
@@ -470,6 +479,22 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                 <div>
                   <label htmlFor="modal-due" className={labelCls} style={{ fontSize: 12 }}>Срок</label>
                   <DatePicker value={dueDate} onChange={setDueDate} className={fieldCls} placeholder="Срок" />
+                </div>
+                <div>
+                  <label htmlFor="modal-ping" className={labelCls} style={{ fontSize: 12 }}>{dt("Пинг", "Ping")}</label>
+                  <DatePicker
+                    value={remindDate}
+                    onChange={(iso) => { setRemindDate(iso); setRemindedAt(null); }}
+                    className={fieldCls}
+                    icon="bell"
+                    placeholder={dt("Напомнить", "Remind me")}
+                    clearLabel={dt("Убрать пинг", "Clear ping")}
+                  />
+                  <p className="mt-1 text-ink-mute" style={{ fontSize: 11 }}>
+                    {remindDate && remindedAt
+                      ? dt("Уже напомнили — выбери новый день, чтобы напомнить снова", "Already sent — pick a new day to be reminded again")
+                      : dt("Напомним в этот день, один раз", "One reminder on this day")}
+                  </p>
                 </div>
                 <div>
                   <span className={labelCls} style={{ fontSize: 12 }}>{dt("Проект", "Project")}</span>

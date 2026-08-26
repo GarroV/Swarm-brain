@@ -34,9 +34,18 @@ async function fill(page, selector, value) {
 // ── 1. Карточка задачи: название, статус, комментарий ────────────────────────
 {
   await freshLoad(page);
-  await clickText(page, "Задачи");
-  await wait(1200);
+  // Вид задаём явно: моки перешли на относительные даты, и «Сегодня» законно бывает пустым —
+  // тогда открывать нечего, а падение выглядело бы как поломка карточки.
+  await page.evaluate(() => localStorage.setItem("roy_tasks_view", JSON.stringify({ activeList: "all", lens: "all" })));
+  await page.reload({ waitUntil: "networkidle2" });
+  await wait(1700);
   const rows = await swipeRows(page);
+  r.ok("в списке есть задачи для правки", rows.length > 0, `строк: ${rows.length}`);
+  if (rows.length === 0) {
+    r.finish(errors);
+    await shutdown();
+    process.exit(1);
+  }
   await tap(page, 195, rows[0].y + rows[0].h / 2);
   r.ok("карточка задачи открывается", await dialogOpen(page));
 
