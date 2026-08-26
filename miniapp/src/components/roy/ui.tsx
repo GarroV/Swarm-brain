@@ -6,6 +6,8 @@ import { cn, displayName } from "@/lib/utils";
 import { countryCode } from "@/lib/countries";
 import { RoyIcon, type RoyIconName } from "./icons";
 import { useDt } from "./nav";
+import { NotificationsBell } from "./NotificationsBell";
+import { useIsDesktop } from "./useIsDesktop";
 
 // Примитивы дизайн-системы из design_handoff_roy (mobile-proto-ui.jsx), портированные
 // в идиому miniapp: Tailwind + семантические токены хендоффа (см. globals.css). Значения,
@@ -321,7 +323,12 @@ export function Segmented({ items, value, onChange }: { items: SegItem[]; value:
 }
 
 // ── Header (крупный заголовок экрана) ────────────────────────────────────────
-export function RoyHeader({ title, right, sub }: { title: ReactNode; right?: ReactNode; sub?: ReactNode }) {
+export function RoyHeader({ title, right, sub, bell = true }: { title: ReactNode; right?: ReactNode; sub?: ReactNode; bell?: boolean }) {
+  // На десктопе колокольчик уже стоит в полосе оболочки «← Главная» над экраном — второй
+  // в заголовке дал бы два одинаковых колокольчика на «Базе» и «Встречах» (эти экраны общие
+  // для мобайла и десктопа). Поэтому здесь он только на мобайле.
+  const isDesktop = useIsDesktop();
+  const showBell = bell && !isDesktop;
   return (
     <div className="px-5 pt-2 pb-3">
       <div className="flex items-center justify-between gap-2.5">
@@ -329,7 +336,13 @@ export function RoyHeader({ title, right, sub }: { title: ReactNode; right?: Rea
         <h1 className="leading-[1.1]" style={ROY_TYPE.pageTitle}>
           {title}
         </h1>
-        {right}
+        {/* Колокольчик — часть ОБОЛОЧКИ, а не экрана: уведомление не должно требовать
+            возврата на главную (запрос владельца 2026-08-24). Свои действия экрана идут
+            левее, колокольчик всегда крайний справа — угол не «прыгает» между экранами. */}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {right}
+          {showBell && <NotificationsBell />}
+        </div>
       </div>
       {sub && (
         <div className="text-ink-soft" style={{ fontSize: 13.5, marginTop: 3 }}>
@@ -551,7 +564,7 @@ export function FAB({ onClick, className, "aria-label": ariaLabel = "Созда�
 }
 
 // ── NavHeader (шапка push-экрана с «Назад») ──────────────────────────────────
-export function NavHeader({ onBack, title, right }: { onBack: () => void; title?: ReactNode; right?: ReactNode }) {
+export function NavHeader({ onBack, title, right, bell = true }: { onBack: () => void; title?: ReactNode; right?: ReactNode; bell?: boolean }) {
   return (
     <div className="shrink-0 flex items-center gap-2.5 bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg" style={{ padding: "6px 14px 10px" }}>
       <button
@@ -567,8 +580,9 @@ export function NavHeader({ onBack, title, right }: { onBack: () => void; title?
       <div className="flex-1 text-center font-semibold truncate" style={{ fontSize: 16, opacity: title ? 1 : 0 }}>
         {title}
       </div>
-      <div className="flex justify-end" style={{ width: 64 }}>
+      <div className="flex items-center justify-end gap-1.5" style={{ minWidth: 64 }}>
         {right}
+        {bell && <NotificationsBell />}
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Project, ProjectInput } from "./types.ts";
 import { validateParent, type ProjectRef } from "./project-nesting.ts";
-import { canViewProject, type ProjectAccessRow } from "./project-access.ts";
+import { canViewProject, parentLookup, type ProjectAccessRow } from "./project-access.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -18,7 +18,7 @@ export type ProjectWithCounts = Project & { task_count: number; backlog_count: n
 // отфильтрует), но продолжает утекать числом в task_count/backlog_count карточки проекта.
 export async function listProjects(
   groupId: string,
-  opts: { viewerId?: number } = {},
+  opts: { viewerId?: number; isAdmin?: boolean } = {},
 ): Promise<ProjectWithCounts[]> {
   // В отличие от listTasks (predicate is_private/owner_id пушится в сам SQL-запрос + .limit(200)),
   // тут тянем ВСЕ строки воркспейса и фильтруем приватность в JS ниже — осознанный трейдофф:
@@ -31,25 +31,30 @@ export async function listProjects(
     .limit(500);
   let list = (projects ?? []) as Project[];
 
-  // Приватна строка, если это подпроект (parent_id≠null, скрыт от чужих по умолчанию — запрос
-  // владельца 2026-08-19: «чтобы Анна видела не все подпроекты, а только проект Vibe Coding и свои
-  // подпроекты») ИЛИ явно помечена is_private (тумблер на проекте ВЕРХНЕГО уровня, тот же день:
-  // «скрыть этот конкретный проект из общего пула»). Приватная строка видна только своему
-  // created_by (+ админу). created_by=null (легаси-строка/системное создание без юзера) НЕ прячем
-  // ни от кого — молча терять доступ к «ничейной» строке хуже, чем показать её лишний раз.
-  list = list.filter((p) => canViewProject(p, opts.viewerId));
+  // Доска — общее пространство команды (решение владельца 2026-08-24): проект и подпроект видны
+  // всем в воркспейсе, пока на них (или на их группе) не включён тумблер-глаз `is_private`.
+  // Приватность наследуется вниз — закрытая группа уносит с собой все свои подпроекты; индекс
+  // родителей строим по ПОЛНОМУ списку воркспейса ДО фильтрации, иначе у подпроекта пропадёт
+  // группа и он схлопнется в fail-closed. created_by=null (легаси/системная строка) не прячем
+  // ни от кого. Админского обхода нет намеренно (решение 2026-08-21).
+  const index = parentLookup(list);
+  list = list.filter((p) => canViewProject(p, opts.viewerId, index));
   if (list.length === 0) return [];
 
-  // Считаем задачи по проектам одним запросом (без N+1), с той же visibility-фильтрацией,
-  // что применяет listTasks: приватная задача видна только владельцу (обхода для админа нет).
-  // Безопасный дефолт без viewerId — как в listTasks: считаем только публичные.
+  // Считаем задачи по проектам одним запросом (без N+1), с ТОЙ ЖЕ visibility-фильтрацией,
+  // что применяет listTasks — включая админский оверсайт по задачам (решение 2026-08-21: чужие
+  // задачи админ видит, чужие проекты нет). Иначе цифра на карточке противоречит доске под ней:
+  // проверено на проде 2026-08-25 — у руководителя подпроект «Дмитрий Карпов» показывал 0 задач,
+  // а доска внутри рисовала 11. Безопасный дефолт без viewerId — как в listTasks: только публичные.
   let tasksQuery = supabase
     .from("tasks").select("project_id, project_linked")
     .eq("group_id", groupId)
     .in("project_id", list.map((p) => p.id));
-  tasksQuery = opts.viewerId !== undefined
-    ? tasksQuery.or(`is_private.eq.false,owner_id.eq.${opts.viewerId}`)
-    : tasksQuery.eq("is_private", false);
+  if (!opts.isAdmin) {
+    tasksQuery = opts.viewerId !== undefined
+      ? tasksQuery.or(`is_private.eq.false,owner_id.eq.${opts.viewerId}`)
+      : tasksQuery.eq("is_private", false);
+  }
   const { data: tasks } = await tasksQuery;
   const counts = new Map<string, { total: number; backlog: number }>();
   ((tasks ?? []) as Array<{ project_id: string | null; project_linked: boolean }>).forEach((t) => {
@@ -115,19 +120,25 @@ export async function updateProject(
   return (data as Project | null) ?? null;
 }
 
-// Приватную строку (подпроект ИЛИ явный is_private на верхнем уровне) правит/удаляет только автор
-// (+ админ) — тот же критерий, что в listProjects. Публичный проект верхнего уровня по-прежнему
-// правит любой участник воркспейса (решение владельца 2026-07-01 — команда сама себе управляет
-// общими проектами); это распространяется и на сам тумблер is_private, пока проект публичный —
-// как только он станет приватным, дальнейшие правки (в т.ч. снять приватность) — только автору.
+// Закрытую строку (тумблер-глаз на ней самой или на её группе) правит/удаляет только автор.
+// Открытый проект и открытый подпроект правит любой участник воркспейса (решение владельца
+// 2026-07-01 — команда сама себе управляет общими проектами); это распространяется и на сам
+// тумблер is_private, пока строка открыта — как только её закрыли, дальнейшие правки (в т.ч.
+// снять приватность) доступны только автору.
 // SERVICE_ROLE_KEY используется везде (RLS не защищает) — эта проверка ЕДИНСТВЕННАЯ преграда
-// между «Анна не видит чужой приватный проект в списке» и «Анна может его переименовать/удалить,
+// между «Анна не видит чужой закрытый проект в списке» и «Анна может его переименовать/удалить,
 // зная id напрямую» (см. правило проекта: вся проверка доступа — только через код).
+//
+// Тянем весь список воркспейса, а не одну строку: приватность подпроекта зависит от его группы,
+// и без неё предикат честно схлопнется в fail-closed (проектов единицы-десятки, см. listProjects).
 async function canMutateProject(id: string, groupId: string, opts: { viewerId?: number }): Promise<boolean> {
-  const { data } = await supabase.from("projects").select("parent_id, created_by, is_private").eq("id", id).eq("group_id", groupId).maybeSingle();
-  if (!data) return false;
+  const { data } = await supabase.from("projects")
+    .select("id, parent_id, created_by, is_private").eq("group_id", groupId).limit(500);
+  const rows = (data ?? []) as Array<ProjectAccessRow & { id: string }>;
+  const row = rows.find((r) => r.id === id);
+  if (!row) return false;
   // Критерий тот же, что в listProjects — один предикат на просмотр и на мутацию (project-access.ts).
-  return canViewProject(data as ProjectAccessRow, opts.viewerId);
+  return canViewProject(row, opts.viewerId, parentLookup(rows));
 }
 
 // Удаляет проект своего воркспейса. Задачи освобождаются (FK ON DELETE SET NULL для project_id),

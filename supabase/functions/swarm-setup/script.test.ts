@@ -1,127 +1,116 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
-import { SETUP_SCRIPT } from "./script.ts";
+import { SETUP_SCRIPT, MERGE_FUNCTION, BRIDGE_SCRIPT } from "./script.ts";
 
-// Тесты установщика Claude Desktop. Шапка script.ts давно обещала «тесты мёржа», но их не
-// существовало — при том что скрипт правит ЧУЖОЙ файл конфигурации пользователя, где уже могут
-// жить другие MCP-серверы, и рапортует об успехе. Здесь закрыты два класса:
-//   1) мёрж — прогоняется НАСТОЯЩИЙ node-код из скрипта (вырезается из отрендеренного текста),
-//      а не его копия: копия разошлась бы с оригиналом и тест бы врал;
-//   2) состав проверок — чтобы проверку токена и подтяжку mcp-remote нельзя было тихо удалить
-//      (issue #47: без них установщик печатал «✅ Готово», а в Claude было «Server disconnected»).
+// Тесты установщика Claude Desktop. Скрипт правит ЧУЖОЙ файл конфигурации пользователя, где уже
+// могут жить другие MCP-серверы, и рапортует об успехе — здесь закрыты три класса:
+//   1) мёрж — прогоняется НАСТОЯЩАЯ функция merge_config из script.ts (импортом, не копией:
+//      копия разошлась бы с оригиналом и тест бы врал);
+//   2) состав проверок — чтобы пробу токена нельзя было тихо удалить (issue #47: без неё
+//      установщик печатал «✅ Готово», а в Claude было «Server disconnected»);
+//   3) отсутствие Node — схема переведена на мост bash+curl (issue #47, 2026-08-25), и возврат
+//      npx/mcp-remote в конфиг должен ронять тест, а не всплывать у пользователя за VPN.
 
-// ── Вырезаем из скрипта тот самый блок мёржа (node -e '…') ────────────────────
-function mergeSource(): string {
-  const m = SETUP_SCRIPT.match(/"\$NODE_BIN" -e '([\s\S]*?)'\n/);
-  if (!m) throw new Error("блок мёржа не найден — изменилась форма вызова node -e");
-  return m[1];
-}
+const SRV_JSON = JSON.stringify({
+  command: "/bin/bash",
+  args: ["/Users/x/.swarm-brain/bin/swarm-mcp-bridge.sh"],
+  env: { SWARM_MCP_URL: "https://example.test/functions/v1/swarm-mcp", SWARM_MCP_AUTH: "Bearer smcp_test123" },
+});
 
-// Прогон блока мёржа на подготовленном конфиге; возвращает получившийся JSON.
-async function runMerge(existing: string | null): Promise<Record<string, unknown>> {
+// Прогон настоящей merge_config на подготовленном конфиге. Возвращает код возврата и текст файла.
+async function runMerge(existing: string | null): Promise<{ code: number; raw: string }> {
   const dir = await Deno.makeTempDir();
   const cfgPath = `${dir}/claude_desktop_config.json`;
   if (existing !== null) await Deno.writeTextFile(cfgPath, existing);
-  const cmd = new Deno.Command("node", {
-    args: ["-e", mergeSource()],
-    env: {
-      CONFIG_PATH: cfgPath,
-      NODE_BIN: "/opt/node/bin/node",
-      NPX_PATH: "/opt/node/bin/npx",
-      MCP_URL: "https://example.test/functions/v1/swarm-mcp",
-      SWARM_TOKEN: "smcp_test123",
-    },
-    stdout: "piped",
-    stderr: "piped",
-  });
-  const { code, stderr } = await cmd.output();
-  if (code !== 0) throw new Error(`merge exit ${code}: ${new TextDecoder().decode(stderr)}`);
-  const out = JSON.parse(await Deno.readTextFile(cfgPath));
+  const script = `${MERGE_FUNCTION}\nmerge_config "$1" "$2"\n`;
+  const cmd = new Deno.Command("bash", { args: ["-c", script, "bash", cfgPath, SRV_JSON], stdout: "piped", stderr: "piped" });
+  const { code } = await cmd.output();
+  const raw = await Deno.readTextFile(cfgPath).catch(() => "");
   await Deno.remove(dir, { recursive: true });
-  return out;
+  return { code, raw };
+}
+
+async function mergeJson(existing: string | null): Promise<Record<string, any>> {
+  const { code, raw } = await runMerge(existing);
+  assertEquals(code, 0);
+  return JSON.parse(raw);
 }
 
 Deno.test("мёрж: на чистой машине создаёт swarm-brain со stdio-формой", async () => {
-  const cfg = await runMerge(null) as { mcpServers: Record<string, Record<string, unknown>> };
+  const cfg = await mergeJson(null);
   const s = cfg.mcpServers["swarm-brain"];
-  assertEquals(s.command, "/opt/node/bin/node");
-  // Claude Desktop понимает в файле ТОЛЬКО stdio-форму: url/type:http он не читает и затирает
-  // весь mcpServers. Если кто-то «упростит» конфиг до url — этот тест обязан упасть.
+  assertEquals(s.command, "/bin/bash");
+  assertEquals(s.args[0].endsWith("swarm-mcp-bridge.sh"), true);
+  // "url"/"type" Claude Desktop не понимает и молча затирает весь mcpServers — их быть не должно.
   assertEquals("url" in s, false);
   assertEquals("type" in s, false);
-  assertEquals((s.env as Record<string, string>).AUTH_HEADER, "Bearer smcp_test123");
-  // Литерал подставляется mcp-remote в рантайме — в args должен лежать именно он, не сам токен.
-  assertStringIncludes(JSON.stringify(s.args), "Authorization:${AUTH_HEADER}");
-  assertEquals(JSON.stringify(s.args).includes("smcp_test123"), false);
+  assertEquals(s.env.SWARM_MCP_AUTH, "Bearer smcp_test123");
 });
 
-Deno.test("мёрж: ЧУЖИЕ серверы остаются нетронутыми", async () => {
-  const before = JSON.stringify({
+Deno.test("мёрж: ЧУЖИЕ серверы и настройки остаются нетронутыми", async () => {
+  const cfg = await mergeJson(JSON.stringify({
     mcpServers: {
-      knowledgebase: { command: "/usr/bin/foo", args: ["--bar"] },
-      figma: { command: "npx", args: ["-y", "figma-mcp"] },
+      knowledgebase: { command: "/usr/bin/foo", args: ["a"] },
+      figma: { command: "/usr/bin/node", args: ["x", "figma-mcp"] },
     },
-  });
-  const cfg = await runMerge(before) as { mcpServers: Record<string, Record<string, unknown>> };
+    theme: "dark",
+  }));
   assertEquals(Object.keys(cfg.mcpServers).sort(), ["figma", "knowledgebase", "swarm-brain"]);
   assertEquals(cfg.mcpServers.knowledgebase.command, "/usr/bin/foo");
-  assertEquals((cfg.mcpServers.figma.args as string[])[1], "figma-mcp");
+  assertEquals(cfg.mcpServers.figma.args[1], "figma-mcp");
+  assertEquals(cfg.theme, "dark");
 });
 
-Deno.test("мёрж: повторная установка перезаписывает свой блок, не плодя дублей", async () => {
-  const first = JSON.stringify({
-    mcpServers: { "swarm-brain": { command: "/old/node", env: { AUTH_HEADER: "Bearer smcp_OLD" } } },
-  });
-  const cfg = await runMerge(first) as { mcpServers: Record<string, Record<string, unknown>> };
+Deno.test("мёрж: переустановка поверх старой Node-схемы заменяет блок целиком", async () => {
+  const cfg = await mergeJson(JSON.stringify({
+    mcpServers: {
+      "swarm-brain": { command: "/old/node", args: ["npx", "-y", "mcp-remote"], env: { AUTH_HEADER: "Bearer old" } },
+    },
+  }));
   assertEquals(Object.keys(cfg.mcpServers), ["swarm-brain"]);
-  assertEquals(cfg.mcpServers["swarm-brain"].command, "/opt/node/bin/node");
-  assertEquals((cfg.mcpServers["swarm-brain"].env as Record<string, string>).AUTH_HEADER, "Bearer smcp_test123");
+  assertEquals(cfg.mcpServers["swarm-brain"].command, "/bin/bash");
+  // Старый ключ env не должен пережить замену — иначе в конфиге останется мёртвый токен.
+  assertEquals("AUTH_HEADER" in cfg.mcpServers["swarm-brain"].env, false);
 });
 
 Deno.test("мёрж: пустой файл и конфиг без mcpServers не роняют установку", async () => {
-  assertEquals(typeof (await runMerge("")).mcpServers, "object");
-  const cfg = await runMerge(JSON.stringify({ theme: "dark" })) as Record<string, unknown>;
-  assertEquals(cfg.theme, "dark");                      // чужие настройки сохранены
-  assertEquals("swarm-brain" in (cfg.mcpServers as Record<string, unknown>), true);
+  assertEquals(typeof (await mergeJson("")).mcpServers, "object");
+  const cfg = await mergeJson(JSON.stringify({ theme: "dark" }));
+  assertEquals(cfg.theme, "dark");
+  assertEquals("swarm-brain" in cfg.mcpServers, true);
 });
 
-Deno.test("мёрж: битый JSON НЕ затирается — выход с кодом 3 (бэкап цел)", async () => {
-  const dir = await Deno.makeTempDir();
-  const cfgPath = `${dir}/claude_desktop_config.json`;
-  const broken = "{ это не json ";
-  await Deno.writeTextFile(cfgPath, broken);
-  const { code } = await new Deno.Command("node", {
-    args: ["-e", mergeSource()],
-    env: {
-      CONFIG_PATH: cfgPath, NODE_BIN: "/opt/node/bin/node", NPX_PATH: "/opt/node/bin/npx",
-      MCP_URL: "https://example.test/mcp", SWARM_TOKEN: "smcp_test123",
-    },
-    stdout: "piped", stderr: "piped",
-  }).output();
+Deno.test("мёрж: битый JSON НЕ затирается — код возврата 3, файл пользователя цел", async () => {
+  const broken = '{"mcpServers": {"knowledgebase": ';
+  const { code, raw } = await runMerge(broken);
   assertEquals(code, 3);
-  assertEquals(await Deno.readTextFile(cfgPath), broken);   // файл пользователя не тронут
-  await Deno.remove(dir, { recursive: true });
+  assertEquals(raw, broken);
 });
 
-// ── Состав проверок: их нельзя тихо удалить ───────────────────────────────────
+Deno.test("мёрж: валидный JSON не принимается за битый", async () => {
+  // Регресс-тест: проверка валидности через plutil -lint ругалась «Unexpected character {» на
+  // ЛЮБОЙ корректный JSON (lint ждёт property list), и установщик отказывался ставиться на
+  // нормальный конфиг. Проверка должна быть через plutil -convert.
+  const { code } = await runMerge(JSON.stringify({ mcpServers: { figma: { command: "/usr/bin/figma" } } }));
+  assertEquals(code, 0);
+});
 
 Deno.test("токен проверяется на сервере ДО записи конфига", () => {
   const probeAt = SETUP_SCRIPT.indexOf("Проверяю токен на сервере");
-  const writeAt = SETUP_SCRIPT.indexOf("Мёрж swarm-brain");
+  const writeAt = SETUP_SCRIPT.indexOf("merge_config \"$CONFIG\"");
   assertEquals(probeAt > 0 && writeAt > probeAt, true);
-  // Проверять надо tools/call: initialize и tools/list отвечают и без авторизации.
-  assertStringIncludes(SETUP_SCRIPT, '"method":"tools/call"');
 });
 
-Deno.test("токен чистится от пробелов и переносов до отправки", () => {
-  assertStringIncludes(SETUP_SCRIPT, "tr -d '[:space:]'");
+Deno.test("Node в схему не вернулся: ни npx, ни mcp-remote, ни скачивания nodejs.org", () => {
+  // Смотрим ИСПОЛНЯЕМЫЕ строки: в комментариях эти слова законны — они объясняют, что заменили.
+  const code = SETUP_SCRIPT.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n");
+  for (const forbidden of ["mcp-remote", "npx", "nodejs.org", "registry.npmjs.org", "node_modules"]) {
+    assertEquals(code.includes(forbidden), false, `в установщике снова ${forbidden}`);
+  }
 });
 
-Deno.test("mcp-remote подтягивается установщиком, а не при первом запуске в Claude", () => {
-  assertStringIncludes(SETUP_SCRIPT, "install --no-save");
-  assertStringIncludes(SETUP_SCRIPT, "mcp-remote");
-});
-
-Deno.test("определение версии Node не шумит ошибкой curl (56) из-за SIGPIPE", () => {
-  const line = SETUP_SCRIPT.split("\n").find((l) => l.includes("nodejs.org/dist/index.json"));
-  assertEquals(line?.includes("2>/dev/null"), true);
+Deno.test("мост: шлёт токен заголовком и не отвечает на уведомления", () => {
+  assertStringIncludes(BRIDGE_SCRIPT, "Authorization: $AUTH");
+  assertStringIncludes(BRIDGE_SCRIPT, "want_reply");
+  // Токен не должен попадать в аргументы процесса — иначе он виден в ps любому на машине.
+  assertEquals(BRIDGE_SCRIPT.includes("smcp_"), false);
 });

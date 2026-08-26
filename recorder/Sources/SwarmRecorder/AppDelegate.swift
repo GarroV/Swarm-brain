@@ -283,7 +283,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // Тихий авто-апдейт: только в простое (запись/отправку не рвём) и один раз за сессию (после
     // апдейта приложение перезапустится). Сервер новее → запускаем отсоединённый хелпер
-    // (пересборка из исходников тем же cert → права не слетают). Подробности — Updater.swift.
+    // (скачивает готовый .app и переподписывает тем же cert → права не слетают). Подробности —
+    // Updater.swift.
     private var updateSpawned = false
     private var lastUpdateCheckAt: Date?
     // Релизы редкие → проверять часто незачем. Чек на старте (lastUpdateCheckAt=nil) + не чаще
@@ -298,14 +299,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard Bundle.main.bundlePath.hasPrefix("/Applications/") else { return }
         lastUpdateCheckAt = Date()
         Task {
-            guard let latest = await Updater.latestBuild(config: cfg), latest > Updater.currentBuild else { return }
+            guard let latest = await Updater.latestRelease(config: cfg), latest.build > Updater.currentBuild else { return }
             // Перепроверяем простой и взводим флаг на ГЛАВНОМ потоке (state/updateSpawned — только там).
             let go: Bool = await MainActor.run {
                 guard case .idle = self.state, !self.updateSpawned else { return false }
                 self.updateSpawned = true
                 return true
             }
-            if go { Updater.runUpdater(currentBuild: Updater.currentBuild, targetBuild: latest) }
+            if go { Updater.runUpdater(currentBuild: Updater.currentBuild, targetBuild: latest.build, assetURL: latest.assetURL) }
         }
     }
 

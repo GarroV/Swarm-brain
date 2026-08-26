@@ -48,6 +48,7 @@ import { corsHeaders, json, apiErr } from "./http.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
+import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
@@ -425,8 +426,12 @@ Deno.serve(async (req: Request) => {
   const commentResp = await handleTaskCommentRoutes(supabase, req, routePath, telegram_id, groupId, isAdmin, origin, resolveNames);
   if (commentResp) return commentResp;
 
+  // Подписка на уведомления о комментариях к задаче (/tasks/:id/subscription) — issue #82.
+  const subResp = await handleTaskSubscriptionRoutes(supabase, req, routePath, telegram_id, groupId, isAdmin, origin);
+  if (subResp) return subResp;
+
   // Лента уведомлений (/notifications*) — строго свои: фильтр по recipient_telegram_id.
-  const notifResp = await handleNotificationRoutes(supabase, req, routePath, telegram_id, origin, resolveNames);
+  const notifResp = await handleNotificationRoutes(supabase, req, routePath, telegram_id, isAdmin, origin, resolveNames);
   if (notifResp) return notifResp;
 
   // GET /tasks or POST /tasks
@@ -842,7 +847,7 @@ Deno.serve(async (req: Request) => {
   // ── Projects (Project Space) ────────────────────────────────────────────────
   if (routePath === "/projects") {
     if (req.method === "GET") {
-      return json(await listProjects(groupId, { viewerId: telegram_id }), 200, origin);
+      return json(await listProjects(groupId, { viewerId: telegram_id, isAdmin }), 200, origin);
     }
     if (req.method === "POST") {
       let body: Record<string, unknown>;

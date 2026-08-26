@@ -54,7 +54,7 @@ function MeetingRow({ e, onOpen }: { e: Entry; onOpen: () => void }) {
 export function MeetingsApprove({ data, className }: { data: DashboardData; className?: string }) {
   const { push } = useRoyNav();
   const dt = useDt();
-  const { loading, pendingList, recentMeetings, pendingMeetings, reviewCount } = data;
+  const { meetingsState, pendingList, recentMeetings, pendingMeetings, reviewCount } = data;
   const approvalCount = pendingMeetings + reviewCount;
   // Превью в карточке: pending — что требует решения, recent — недавно опубликованные.
   // Полные списки за «Ревью» (шапка → meetAdmin) и «Все встречи» (вкладка cal).
@@ -69,7 +69,11 @@ export function MeetingsApprove({ data, className }: { data: DashboardData; clas
       tint="var(--meet-ink)"
       badge={approvalCount > 0 ? <AccentBadge>{approvalCount} {dt("на согласовании", "pending")}</AccentBadge> : undefined}
       headAction={dt("Доска встреч", "Board")}
-      loading={loading}
+      loading={meetingsState.loading}
+      failed={meetingsState.failed}
+      onRetry={meetingsState.retry}
+      errorText={dt("Не загрузилось", "Failed to load")}
+      retryText={dt("Повторить", "Retry")}
       empty={pendingList.length === 0 && recentMeetings.length === 0}
       emptyText={dt("Встреч нет", "No meetings")}
       onHead={() => push({ view: "meetAdmin" })}

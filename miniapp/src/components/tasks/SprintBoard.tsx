@@ -37,6 +37,47 @@ const EXPANDED_KEY = "swarm.board.expandedProjects"; // localStorage: какие
 const COLLAPSED_SUBS_KEY = "swarm.board.collapsedSubprojects";
 const NO_SECTION = "__none__";    // секция для задач без проекта
 
+// Тумблер-глаз: закрывает проект ИЛИ подпроект от остальной команды (решение владельца
+// 2026-08-24 — доска общая, прячет только этот тумблер, и он наследуется вниз по дереву).
+// Закрытое состояние подписано СЛОВОМ, а не только пиктограммой: голая иконка читалась как
+// украшение, и по доске нельзя было понять, что открыто, а что нет, не наводя курсор
+// (замечание владельца в тот же день). Открытое состояние остаётся тихим — иконка без подписи.
+// `inherited` — подпроект внутри закрытой группы: он закрыт не сам по себе, а вместе с ней,
+// поэтому кнопки нет, есть честная метка (нажатие ничего бы не изменило).
+function PrivacyToggle({ isPrivate, inherited, onToggle, compact, label }: {
+  isPrivate: boolean;
+  inherited?: boolean;
+  onToggle?: () => void;
+  compact?: boolean;
+  label: { closed: string; open: string; hint: string; inherited: string };
+}) {
+  const size = compact ? 11 : 13;
+  const text = compact ? "text-[10px]" : "text-[11px]";
+  if (inherited) {
+    return (
+      <span className={`flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-1.5 py-0.5 text-ink-soft ${text} font-semibold`} title={label.inherited}>
+        <RoyIcon name="eyeOff" size={size} strokeWidth={2.2} />
+        {label.closed}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`flex shrink-0 items-center gap-1 rounded-full transition-colors ${
+        isPrivate
+          ? `bg-accent-soft px-1.5 py-0.5 text-accent-ink ${text} font-semibold hover:bg-accent-soft/70`
+          : "p-1 text-ink-soft hover:bg-surface-2 hover:text-ink"
+      }`}
+      title={isPrivate ? label.hint : label.open}
+    >
+      <RoyIcon name={isPrivate ? "eyeOff" : "eye"} size={size} strokeWidth={2.2} />
+      {isPrivate && <span>{label.closed}</span>}
+    </button>
+  );
+}
+
 function initials(names: string[]): string {
   if (!names.length) return "";
   return names[0].split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
@@ -193,9 +234,11 @@ export function SprintBoard() {
     try { await updateProject(id, { name: n }); } catch { load(); }
   }
 
-  // Тумблер приватности проекта ВЕРХНЕГО уровня — скрывает его из общего пула воркспейса (виден
-  // только своему created_by + админу, тот же критерий, что у подпроектов). Владелец 2026-08-19:
-  // «нужно добавить пиктограмму приватности... чтобы этот конкретный проект скрыть из общего пула».
+  // Тумблер приватности — работает и на проекте, и на подпроекте (владелец 2026-08-24: «это
+  // нормальный функционал, но растяни его на подпроекты тоже... или я могу захотеть закрыть один
+  // из подпроектов, значит тогда он скрывается ото всех»). Закрытую строку видит только тот, кто
+  // её закрыл — админского обхода нет (решение 2026-08-21). Закрытие ГРУППЫ уносит и её
+  // подпроекты: наследование считает бэкенд (`_shared/tasks/project-access.ts`).
   async function toggleProjectPrivacy(id: string, current: boolean) {
     const next = !current;
     setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, is_private: next } : p)));
@@ -455,9 +498,8 @@ export function SprintBoard() {
                   <RoyIcon name="board" size={15} strokeWidth={1.9} />
                   <span className="flex-1 truncate text-sm font-bold text-ink">{sec.name}</span>
                   {sec.is_private && (
-                    <span className="shrink-0 text-ink-mute" title={dt("Скрыт из общего пула", "Hidden from the team")}>
-                      <RoyIcon name="eyeOff" size={12} strokeWidth={2.1} />
-                    </span>
+                    <PrivacyToggle isPrivate inherited compact
+                      label={{ closed: dt("Только я", "Only me"), open: "", hint: "", inherited: dt("Проект закрыт от команды", "Project is hidden from the team") }} />
                   )}
                   <RoyIcon name="cright" size={12} className="text-ink-soft" />
                 </div>
@@ -494,24 +536,21 @@ export function SprintBoard() {
                 ) : (
                   <span className="text-sm font-bold text-ink">{sec.name}</span>
                 )}
-                {sec.is_private && (
-                  <span className="shrink-0 text-ink-mute" title={dt("Скрыт из общего пула", "Hidden from the team")}>
-                    <RoyIcon name="eyeOff" size={12} strokeWidth={2.1} />
-                  </span>
-                )}
                 <span className="text-xs text-ink-soft">{total}</span>
                 {/* Добавить задачу (в каждой колонке уже есть свой «+», см. renderStatusColumn) и
                     добавить подпроект (дублировано дальше в теле, см. renderAddSubproject) убраны
                     отсюда — обе точки входа и так интуитивно доступны внутри поля (владелец
                     2026-08-19). Вместо них — тумблер приватности. */}
                 <div className="ml-auto flex items-center gap-0.5" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
-                  <button
-                    onClick={() => toggleProjectPrivacy(sec.id, sec.is_private)}
-                    className={`rounded-full p-1 transition-colors ${sec.is_private ? "bg-accent-soft text-accent-ink hover:bg-accent-soft" : "text-ink-soft hover:bg-surface-2"}`}
-                    title={sec.is_private ? dt("Скрыт из общего пула — показать всем", "Hidden from the team — make visible to everyone") : dt("Виден всей команде — скрыть из общего пула", "Visible to the team — hide from the general pool")}
-                  >
-                    <RoyIcon name={sec.is_private ? "eyeOff" : "eye"} size={13} strokeWidth={2.2} />
-                  </button>
+                  <PrivacyToggle
+                    isPrivate={sec.is_private}
+                    onToggle={() => toggleProjectPrivacy(sec.id, sec.is_private)}
+                    label={{
+                      closed: dt("Только я", "Only me"),
+                      open: dt("Виден всей команде — скрыть проект вместе с подпроектами", "Visible to the team — hide the project with its subprojects"),
+                      hint: dt("Закрыт вместе с подпроектами — показать команде", "Hidden with its subprojects — show to the team"),
+                      inherited: "",
+                    }} />
                   <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Переименовать проект", "Rename project")}>
                     <RoyIcon name="pencil" size={13} />
                   </button>
@@ -560,6 +599,18 @@ export function SprintBoard() {
                           )}
                           <span className="text-[11px] text-ink-soft">{kidTasks.filter((t) => !isBacklogStatus(t.status)).length}</span>
                           <div className="ml-auto flex items-center gap-0.5">
+                            {/* Тумблер подпроекта. Закрытая ГРУППА уже закрыла его — тогда вместо кнопки
+                                метка: нажатие ничего бы не поменяло, а обещать обратное нечестно. */}
+                            <PrivacyToggle compact
+                              isPrivate={kid.is_private}
+                              inherited={sec.is_private || undefined}
+                              onToggle={() => toggleProjectPrivacy(kid.id, kid.is_private)}
+                              label={{
+                                closed: dt("Только я", "Only me"),
+                                open: dt("Виден всей команде — скрыть подпроект", "Visible to the team — hide this subproject"),
+                                hint: dt("Скрыт ото всех — показать команде", "Hidden from everyone — show to the team"),
+                                inherited: dt("Закрыт вместе с проектом", "Hidden together with the project"),
+                              }} />
                             <button onClick={() => setRenaming({ id: kid.id, name: kid.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Переименовать", "Rename")}><RoyIcon name="pencil" size={12} /></button>
                             <button onClick={() => removeSection(kid.id, kid.name)} className="rounded-full p-1 text-ink-soft hover:bg-surface-2 hover:text-destructive" title={dt("Удалить", "Delete")}><RoyIcon name="trash" size={12} /></button>
                           </div>

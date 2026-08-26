@@ -1,5 +1,5 @@
 "use client";
-import { useRoyNav } from "../nav";
+import { useRoyNav, useDt } from "../nav";
 import { Avatar, TypeTag, TYPE_TAG } from "../ui";
 import { RoyIcon } from "../icons";
 import { entryTagKey, deriveEntryTitle, entryImporterName } from "../entry";
@@ -42,7 +42,10 @@ function MaterialRow({ e, now, onOpen }: { e: Entry; now: number; onOpen: () => 
 
 export function Materials({ data, className }: { data: DashboardData; className?: string }) {
   const { push, setTab } = useRoyNav();
-  const { loading, materials } = data;
+  // dt только для новых строк (ошибка загрузки) — остальной текст в этом файле пока
+  // русский, его переводит отдельная задача i18n, здесь её не тащим.
+  const dt = useDt();
+  const { materialsState, materials } = data;
   const now = Date.now();
 
   return (
@@ -52,7 +55,11 @@ export function Materials({ data, className }: { data: DashboardData; className?
       tint="var(--accent-ink)"
       badge={materials.length > 0 ? <AccentBadge>{materials.length} новых</AccentBadge> : undefined}
       headAction="База"
-      loading={loading}
+      loading={materialsState.loading}
+      failed={materialsState.failed}
+      onRetry={materialsState.retry}
+      errorText={dt("Не загрузилось", "Failed to load")}
+      retryText={dt("Повторить", "Retry")}
       empty={materials.length === 0}
       emptyText="За последние сутки ничего не добавляли"
       onHead={() => setTab("book")}

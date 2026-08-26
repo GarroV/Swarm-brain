@@ -15,7 +15,7 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
   const { openTasks, bumpTasks } = useRoyNav();
   const dt = useDt();
   const [creating, setCreating] = useState(false);
-  const { loading, today, week, mine } = data;
+  const { tasksState, today, week, mine } = data;
 
   // Только активные — завершённые на дашборде не показываем (для них есть список «Готовые»).
   const active = (ts: typeof mine) => ts.filter((t) => norm(t.status) !== "done");
@@ -37,7 +37,11 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
         icon="task"
         tint="var(--accent-ink)"
         headAction={dt("Доска", "Board")}
-        loading={loading}
+        loading={tasksState.loading}
+        failed={tasksState.failed}
+        onRetry={tasksState.retry}
+        errorText={dt("Не загрузилось", "Failed to load")}
+        retryText={dt("Повторить", "Retry")}
         empty={empty}
         emptyText={dt("Личных задач нет", "No personal tasks")}
         onHead={() => openTasks("mine", "today")}

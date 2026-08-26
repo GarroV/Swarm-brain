@@ -1,53 +1,107 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { canViewProject, isProjectPrivate, pickProjectByName, type ProjectNameRow } from "./project-access.ts";
+import {
+  canViewProject,
+  isProjectPrivate,
+  parentLookup,
+  pickProjectByName,
+  type ProjectAccessRow,
+  type ProjectNameRow,
+} from "./project-access.ts";
 
 const ANNA = 111;
 const BOB = 222;
 const ADMIN = 744230399;
 
-const publicTop = { parent_id: null, created_by: BOB, is_private: false };
-const privateTop = { parent_id: null, created_by: BOB, is_private: true };
-const subproject = { parent_id: "top", created_by: BOB, is_private: false };
-const legacy = { parent_id: null, created_by: null, is_private: true };
+// Дерево воркспейса: публичная группа с подпроектами и закрытая группа со своим подпроектом.
+const publicTop: ProjectAccessRow = { parent_id: null, created_by: BOB, is_private: false };
+const privateTop: ProjectAccessRow = { parent_id: null, created_by: BOB, is_private: true };
+const openSub: ProjectAccessRow = { parent_id: "pub", created_by: BOB, is_private: false };
+const closedSub: ProjectAccessRow = { parent_id: "pub", created_by: BOB, is_private: true };
+const subOfClosed: ProjectAccessRow = { parent_id: "secret", created_by: BOB, is_private: false };
+const legacy: ProjectAccessRow = { parent_id: null, created_by: null, is_private: true };
 
-Deno.test("isProjectPrivate: приватность даёт и подпроект, и тумблер", () => {
-  assertEquals(isProjectPrivate(publicTop), false);
-  assertEquals(isProjectPrivate(privateTop), true);
-  assertEquals(isProjectPrivate(subproject), true);
+const tree = new Map<string, ProjectAccessRow>([
+  ["pub", publicTop],
+  ["secret", privateTop],
+]);
+
+Deno.test("isProjectPrivate: вложенность сама по себе больше не прячет (решение владельца 2026-08-24)", () => {
+  assertEquals(isProjectPrivate(openSub, tree), false);
+  assertEquals(isProjectPrivate(publicTop, tree), false);
 });
 
-Deno.test("canViewProject: публичный проект верхнего уровня видит весь воркспейс", () => {
-  assertEquals(canViewProject(publicTop, ANNA), true);
-  assertEquals(canViewProject(publicTop, undefined), true);
+Deno.test("isProjectPrivate: прячет собственный тумблер — и на верхнем уровне, и на подпроекте", () => {
+  assertEquals(isProjectPrivate(privateTop, tree), true);
+  assertEquals(isProjectPrivate(closedSub, tree), true);
 });
 
-Deno.test("canViewProject: чужой приватный проект не видит никто, включая админа", () => {
-  assertEquals(canViewProject(privateTop, ANNA), false);
-  assertEquals(canViewProject(privateTop, BOB), true);
-  assertEquals(canViewProject(privateTop, ADMIN), false);
+Deno.test("isProjectPrivate: закрытый родитель закрывает и открытый подпроект (наследование вниз)", () => {
+  assertEquals(isProjectPrivate(subOfClosed, tree), true);
 });
 
-Deno.test("canViewProject: чужой подпроект скрыт так же, как приватный проект", () => {
-  assertEquals(canViewProject(subproject, ANNA), false);
-  assertEquals(canViewProject(subproject, BOB), true);
+Deno.test("canViewProject: открытый подпроект открытой группы видит весь воркспейс", () => {
+  assertEquals(canViewProject(openSub, ANNA, tree), true);
+  assertEquals(canViewProject(openSub, undefined, tree), true);
+});
+
+Deno.test("canViewProject: закрытый подпроект скрыт ото всех, кроме автора — админ не исключение", () => {
+  assertEquals(canViewProject(closedSub, ANNA, tree), false);
+  assertEquals(canViewProject(closedSub, ADMIN, tree), false);
+  assertEquals(canViewProject(closedSub, BOB, tree), true);
+});
+
+Deno.test("canViewProject: закрытая группа скрывает свои подпроекты целиком", () => {
+  assertEquals(canViewProject(subOfClosed, ANNA, tree), false);
+  assertEquals(canViewProject(subOfClosed, BOB, tree), true); // автор группы видит
+});
+
+Deno.test("canViewProject: чужой открытый подпроект в закрытой группе не спасает собственное авторство", () => {
+  // Подпроект Анны внутри закрытой группы Боба: группа закрыта → закрыто и её содержимое.
+  const annaSubInClosed: ProjectAccessRow = { parent_id: "secret", created_by: ANNA, is_private: false };
+  assertEquals(canViewProject(annaSubInClosed, ANNA, tree), false);
+});
+
+Deno.test("canViewProject: родителя нет в выборке — строка закрыта (fail-closed)", () => {
+  const orphan: ProjectAccessRow = { parent_id: "gone", created_by: BOB, is_private: false };
+  assertEquals(canViewProject(orphan, ANNA, new Map()), false);
+  assertEquals(canViewProject(orphan, BOB, new Map()), false);
+});
+
+Deno.test("canViewProject: цикл в parent_id не вешает проверку", () => {
+  const a: ProjectAccessRow = { parent_id: "b", created_by: BOB, is_private: false };
+  const b: ProjectAccessRow = { parent_id: "a", created_by: BOB, is_private: false };
+  const cyclic = new Map<string, ProjectAccessRow>([["a", a], ["b", b]]);
+  assertEquals(canViewProject(a, ANNA, cyclic), false);
 });
 
 Deno.test("canViewProject: без личности зрителя приватное закрыто (fail-closed)", () => {
-  assertEquals(canViewProject(privateTop, undefined), false);
-  assertEquals(canViewProject(subproject, undefined), false);
+  assertEquals(canViewProject(privateTop, undefined, tree), false);
+  assertEquals(canViewProject(closedSub, undefined, tree), false);
 });
 
 Deno.test("canViewProject: легаси-строка без created_by остаётся общей", () => {
-  assertEquals(canViewProject(legacy, ANNA), true);
+  assertEquals(canViewProject(legacy, ANNA, tree), true);
+});
+
+Deno.test("parentLookup: собирает индекс родителей из плоского списка строк воркспейса", () => {
+  const rows = [
+    { id: "pub", ...publicTop },
+    { id: "sub", ...openSub },
+  ];
+  const idx = parentLookup(rows);
+  assertEquals(idx.get("pub"), publicTop);
+  assertEquals(canViewProject(openSub, ANNA, idx), true);
 });
 
 // ── Резолв имени в id через MCP (issue #37) ────────────────────────────────────
-// Чужое приватное РЕАЛЬНО лежит в данных — отказ сверяем с «как будто его нет».
+// Чужое закрытое РЕАЛЬНО лежит в данных — отказ сверяем с «как будто его нет».
 
 const rows: ProjectNameRow[] = [
   { id: "pub", name: "Launch RS", parent_id: null, created_by: BOB, is_private: false },
   { id: "secret", name: "Salary review", parent_id: null, created_by: BOB, is_private: true },
   { id: "sub", name: "Vibe Coding", parent_id: "pub", created_by: BOB, is_private: false },
+  { id: "subsecret", name: "Payroll detail", parent_id: "secret", created_by: BOB, is_private: false },
+  { id: "closedsub", name: "Личное", parent_id: "pub", created_by: BOB, is_private: true },
   { id: "mine", name: "My private thing", parent_id: null, created_by: ANNA, is_private: true },
 ];
 
@@ -55,13 +109,22 @@ Deno.test("pickProjectByName: публичный проект резолвитс
   assertEquals(pickProjectByName(rows, "Launch RS", ANNA), { id: "pub", ambiguous: false });
 });
 
+Deno.test("pickProjectByName: открытый подпроект теперь резолвится — доска общая", () => {
+  assertEquals(pickProjectByName(rows, "Vibe Coding", ANNA), { id: "sub", ambiguous: false });
+});
+
 Deno.test("pickProjectByName: чужой приватный проект не резолвится — как будто его нет", () => {
   assertEquals(pickProjectByName(rows, "Salary review", ANNA), null);
   assertEquals(pickProjectByName([], "Salary review", ANNA), null); // тот же ответ на пустых данных
 });
 
-Deno.test("pickProjectByName: чужой подпроект не резолвится", () => {
-  assertEquals(pickProjectByName(rows, "Vibe Coding", ANNA), null);
+Deno.test("pickProjectByName: подпроект закрытой группы не резолвится", () => {
+  assertEquals(pickProjectByName(rows, "Payroll detail", ANNA), null);
+});
+
+Deno.test("pickProjectByName: закрытый тумблером подпроект не резолвится у чужого", () => {
+  assertEquals(pickProjectByName(rows, "Личное", ANNA), null);
+  assertEquals(pickProjectByName(rows, "Личное", BOB), { id: "closedsub", ambiguous: false });
 });
 
 Deno.test("pickProjectByName: свой приватный проект резолвится", () => {

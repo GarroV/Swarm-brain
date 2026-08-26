@@ -218,11 +218,34 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { return new Response("Bad Request", { status: 400 }); }
 
   // ── Cron triggers (требуют X-Cron-Secret) ────────────────────────────────────
-  if (body.setup_commands === true || body.digest_cron === true || body.daily_report_cron === true || body.review_reminders_cron === true || body.feedback_retention_cron === true || body.readai_token_refresh === true || body.granola_poll === true || body.meetings_watchdog === true) {
+  if (body.setup_commands === true || body.digest_cron === true || body.daily_report_cron === true || body.review_reminders_cron === true || body.feedback_retention_cron === true || body.readai_token_refresh === true || body.granola_poll === true || body.meetings_watchdog === true || body.webhook_info === true || body.set_webhook === true) {
     if (!CRON_SECRET || req.headers.get("X-Cron-Secret") !== CRON_SECRET) {
       return new Response("Forbidden", { status: 403 });
     }
   }
+  // ── Вебхук: диагностика и переустановка (X-Cron-Secret) ─────────────────────
+  // Зачем: если Telegram перестаёт доставлять апдейты, снаружи это НЕ ВИДНО — функция жива и
+  // отвечает 200 на прямой POST, а сообщения людей просто не приходят, и бот молча «не отвечает».
+  // Проверить это можно только у Telegram (getWebhookInfo), а для запроса нужен токен бота,
+  // который лежит в секретах Edge Functions и наружу не отдаётся. Поэтому спрашиваем изнутри.
+  // Токен в ответ НЕ попадает: Telegram возвращает только url/ошибки/счётчик очереди.
+  if (body.webhook_info === true) {
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo`);
+    return new Response(await res.text(), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
+  // Переустановка вебхука на саму эту функцию. URL берём из окружения, а НЕ из тела запроса —
+  // иначе триггер стал бы способом увести все сообщения команды на чужой адрес.
+  if (body.set_webhook === true) {
+    const target = `${Deno.env.get("SUPABASE_URL")}/functions/v1/swarm-bot`;
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: target, allowed_updates: ["message", "callback_query"] }),
+    });
+    const json = await res.json();
+    return new Response(JSON.stringify({ target, telegram: json }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
+
   if (body.setup_commands === true) {
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
       method: "POST",

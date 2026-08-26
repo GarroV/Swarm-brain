@@ -13,16 +13,20 @@
 // Почему так: CLT (git/swift) нужен ТОЛЬКО для сборки из исходников — а её мы вынесли в CI.
 // codesign/security/openssl/xattr/ditto — штатные бинарники macOS, работают без CLT (проверено).
 
-const REPO_URL = "https://github.com/GarroV/Swarm-brain";
+// Готовый .app раздаётся из ПУБЛИЧНОГО бакета Storage, а не из GitHub Release (issue #91):
+// репозиторий приватный с 20.08.2026 → анонимный curl за release asset получает 404, и установка
+// падала у каждого нового человека. Канон источника — `swarm-recorder-version` (поле `url`);
+// строка ниже нужна только как фолбэк, если функция версии недоступна.
+const ASSET_BASE_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/storage/v1/object/public/swarm_drive/recorder";
 const INGEST_BASE_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1";
 // Фолбэк-номер сборки, если swarm-recorder-version недоступен. Держать в синхроне с recorder/VERSION.
-const RECORDER_FALLBACK_BUILD = 19;
+const RECORDER_FALLBACK_BUILD = 22;
 
 export const SETUP_SCRIPT = `#!/bin/bash
 # Swarm Brain → SwarmRecorder (macOS). Не запускай вручную — возьми команду в боте: /recordertoken
 set -u
 
-REPO_URL="${REPO_URL}"
+ASSET_BASE_URL="${ASSET_BASE_URL}"
 INGEST_BASE_URL="${INGEST_BASE_URL}"
 FALLBACK_BUILD="${RECORDER_FALLBACK_BUILD}"
 CONFIG_DIR="$HOME/Library/Application Support/SwarmRecorder"
@@ -63,7 +67,7 @@ BUILD="$(printf '%s' "$VER_JSON" | grep -oE '"build":[0-9]+' | grep -oE '[0-9]+'
 URL="$(printf '%s' "$VER_JSON" | grep -oE '"url":"[^"]+"' | sed 's/^"url":"//; s/"$//' | head -1)"
 [ -n "$BUILD" ] || BUILD="$FALLBACK_BUILD"
 if [ -z "$URL" ]; then
-  URL="$REPO_URL/releases/download/recorder-build-$BUILD/SwarmRecorder-$BUILD.zip"
+  URL="$ASSET_BASE_URL/SwarmRecorder-$BUILD.zip"
 fi
 say "✓ Сборка $BUILD"
 
@@ -71,9 +75,18 @@ say "✓ Сборка $BUILD"
 step "Скачиваю приложение (готовая сборка, без Xcode)"
 TMP="$(mktemp -d)"
 ZIP="$TMP/SwarmRecorder.zip"
-if ! curl -fL --retry 3 -o "$ZIP" "$URL" >/dev/null 2>&1; then
-  die "Не удалось скачать приложение: $URL (нет интернета или блокирует прокси?)"
-fi
+# Различаем «файла нет по ссылке» и «сети нет»: раньше обе ветки врали про интернет/прокси,
+# и диагностика уходила не туда (issue #91 — реальной причиной была приватность репозитория).
+# Флаг --retry печатает %{http_code} за КАЖДУЮ попытку («000000» при обрыве сети) — берём последние 3.
+HTTP_CODE="$(curl -sL --retry 3 -o "$ZIP" -w '%{http_code}' "$URL" 2>/dev/null || echo 000)"
+HTTP_CODE="\${HTTP_CODE: -3}"
+case "$HTTP_CODE" in
+  200) ;;
+  000) die "Не удалось связаться с сервером раздачи: $URL (нет интернета или блокирует прокси?)";;
+  403|404) die "Сборка $BUILD недоступна по ссылке (HTTP $HTTP_CODE): $URL
+Это не твой интернет — файл не опубликован или ссылка протухла. Покажи эту ошибку владельцу Swarm.";;
+  *) die "Сервер раздачи ответил HTTP $HTTP_CODE: $URL";;
+esac
 if ! ditto -x -k "$ZIP" "$TMP/unz" >/dev/null 2>&1; then
   die "Не удалось распаковать загруженный архив."
 fi

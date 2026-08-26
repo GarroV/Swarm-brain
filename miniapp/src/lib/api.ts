@@ -594,6 +594,33 @@ export async function deleteTaskComment(taskId: string, commentId: string): Prom
   return apiFetch<void>(`/tasks/${taskId}/comments/${commentId}`, { method: "DELETE" });
 }
 
+// ── Подписка на уведомления о комментариях к задаче (issue #82) ───────────────
+// `state` — явная строка (`subscribed`/`muted`) или null, если человек ничего не выбирал;
+// `notified` — придут ли уведомления сейчас (это и показывает тумблер).
+export type TaskSubscription = {
+  state: "subscribed" | "muted" | null;
+  reason: "comment" | "manual" | null;
+  notified: boolean;
+};
+
+let mockSubscription: TaskSubscription = { state: null, reason: null, notified: true };
+
+export async function fetchTaskSubscription(taskId: string): Promise<TaskSubscription> {
+  if (DEV_MODE) return mockSubscription;
+  return apiFetch<TaskSubscription>(`/tasks/${taskId}/subscription`);
+}
+
+export async function setTaskSubscription(taskId: string, notify: boolean): Promise<TaskSubscription> {
+  if (DEV_MODE) {
+    mockSubscription = { state: notify ? "subscribed" : "muted", reason: "manual", notified: notify };
+    return mockSubscription;
+  }
+  return apiFetch<TaskSubscription>(`/tasks/${taskId}/subscription`, {
+    method: "PATCH",
+    body: JSON.stringify({ notify }),
+  });
+}
+
 // ── Entries ───────────────────────────────────────────────────────────────────
 
 export async function fetchEntries(filters?: { source?: string; type?: string; date_from?: string; date_to?: string }): Promise<Entry[]> {

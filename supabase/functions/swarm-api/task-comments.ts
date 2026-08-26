@@ -3,6 +3,7 @@ import { json } from "./http.ts";
 import { validateCommentContent } from "../_shared/tasks/comments.ts";
 import { canViewTask } from "../_shared/tasks/access.ts";
 import { notifyTaskComment } from "./notifications.ts";
+import { ensureCommentSubscription } from "./task-subscriptions.ts";
 
 // Роуты /tasks/:id/comments — комментарии-апдейты к задаче.
 // Доступ: задача того же воркспейса (group_id) + приватную видит только владелец/админ.
@@ -86,6 +87,9 @@ export async function handleTaskCommentRoutes(
     const row = data as CommentRow;
     const names = await resolveNames([telegramId]);
     const actorName = names.get(telegramId) ?? String(telegramId);
+    // Участие подписывает: дальше по этой задаче автор получает уведомления, даже если она
+    // не его (issue #82). Ранее отписавшегося комментарий НЕ переподписывает.
+    await ensureCommentSubscription(supabase, taskId, telegramId);
     // Уведомляем причастных к задаче. Ждём завершения (Edge-функция может быть убита
     // сразу после ответа, и отложенный промис не досчитается), но сбой внутри не роняет
     // ответ: notifyTaskComment ловит свои ошибки сам.

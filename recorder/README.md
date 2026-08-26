@@ -210,10 +210,25 @@ Edge-функция: `supabase/functions/swarm-recorder-setup` (публичны
 1. Внести изменения в `recorder/`, **поднять `recorder/VERSION`** (напр. `2` → `3`).
 2. Закоммитить и смёржить в `main`. **Проверить, что собирается** (`./build-app.sh`).
 3. Поставить тег на этот коммит и запушить: `git tag recorder-build-3 && git push origin recorder-build-3`.
-4. Поднять `LATEST_BUILD` в `supabase/functions/swarm-recorder-version/index.ts` до `3`, задеплоить:
+4. **Залить готовый zip в Storage — раздача идёт ОТТУДА, не с GitHub** (репозиторий приватный
+   с 20.08.2026, release asset анонимно отдаёт 404 — issue #91):
+   ```sh
+   KEY="$(supabase projects api-keys --project-ref vbqglndbxkpmreccpqmr -o json \
+     | python3 -c 'import sys,json;d=json.load(sys.stdin);ks=d["keys"] if isinstance(d,dict) else d;print(next(k["api_key"] for k in ks if k.get("id")=="service_role"))')"
+   curl -X POST "https://vbqglndbxkpmreccpqmr.supabase.co/storage/v1/object/swarm_drive/recorder/SwarmRecorder-3.zip" \
+     -H "authorization: Bearer $KEY" -H "content-type: application/zip" -H "x-upsert: true" \
+     --data-binary @SwarmRecorder-3.zip
+   # проверить анонимно: curl -sS -o /dev/null -w '%{http_code}\n' \
+   #   https://vbqglndbxkpmreccpqmr.supabase.co/storage/v1/object/public/swarm_drive/recorder/SwarmRecorder-3.zip
+   ```
+5. Поднять `LATEST_BUILD` в `supabase/functions/swarm-recorder-version/index.ts` до `3`, задеплоить:
    `supabase functions deploy swarm-recorder-version --no-verify-jwt`.
-5. Готово — все рекордеры тихо обновятся в простое в течение ~15 мин. Лог у пользователя:
+   ⚠️ **Только после шага 4** — `LATEST_BUILD` без залитого файла раздаёт 404 всем.
+6. Готово — все рекордеры тихо обновятся в простое в течение ~15 мин. Лог у пользователя:
    `~/Library/Application Support/SwarmRecorder/self-update.log`.
+   ⚠️ **Пока не починен апдейтер (issue #91), шаг 6 не работает:** `Updater.swift` собирает новую
+   версию из `git clone` приватного репозитория → отказ авторизации → `keep current`, молча.
+   До перевода апдейтера на скачивание zip обновление доезжает только переустановкой установщиком.
 
 Источник версии — наш Supabase (`swarm-recorder-version`), **GitHub API не используется**.
 

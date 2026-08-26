@@ -91,11 +91,19 @@ case "${1:-plan}" in
 Живой баг окно обгоняет — тогда: FORCE=1 ./scripts/deploy-window.sh go"
       echo; echo "⚠ Вне окна, но FORCE=1 — раскатываю."
     fi
-    [ -n "$FUNCS" ] || die "Нечего раскатывать: изменённых функций нет."
-
-    head_ "Раскатка"
-    # shellcheck disable=SC2086
-    supabase functions deploy $FUNCS --no-verify-jwt --project-ref "$PROJECT_REF"
+    # Релиз без функций — нормальный случай: правка только веба уезжает САМА при мёрже в main
+    # (Cloudflare Pages). Раскатывать нечего, но метку двинуть надо — иначе следующий plan
+    # снова покажет эти коммиты, и в шуме потеряется то, что действительно ждёт раскатки.
+    if [ -n "$FUNCS" ]; then
+      head_ "Раскатка"
+      # shellcheck disable=SC2086
+      supabase functions deploy $FUNCS --no-verify-jwt --project-ref "$PROJECT_REF"
+    elif [ "$WEB" -gt 0 ] || [ "$COMMITS" -gt 0 ]; then
+      head_ "Edge-функций к раскатке нет"
+      echo "  Веб уехал сам при мёрже в main (Cloudflare Pages) — двигаю только метку."
+    else
+      die "Нечего раскатывать и нечего отмечать: с прошлой раскатки ничего не менялось."
+    fi
 
     git tag -f "$TAG" HEAD >/dev/null
     git push -f origin "refs/tags/$TAG" >/dev/null 2>&1 || echo "(метка осталась локальной)"
