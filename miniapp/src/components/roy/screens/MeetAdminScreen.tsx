@@ -4,6 +4,7 @@ import { useRoyNav } from "../nav";
 import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks, Participants } from "../ui";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle, entryImporterName } from "../entry";
+import { hasDraftNotes } from "@/lib/agentMeeting";
 import {
   fetchMeetings,
   fetchMeeting,
@@ -767,7 +768,7 @@ function AgentMeetingDetail({
   // Поллинг, пока идёт обработка: нет тезисов И статус не терминальный (done/failed).
   // Раньше стоп был только на draft_notes_md||failed → done с пустыми тезисами крутил вечно.
   useEffect(() => {
-    if (m.draft_notes_md || m.summary_status === "done" || m.summary_status === "failed") return;
+    if (hasDraftNotes(m) || m.summary_status === "done" || m.summary_status === "failed") return;
     const id = setInterval(() => {
       setPollCount((c) => c + 1);
       fetchAgentMeeting(m.id)
@@ -777,11 +778,11 @@ function AgentMeetingDetail({
         });
     }, AGENT_POLL_MS);
     return () => clearInterval(id);
-  }, [m.id, m.draft_notes_md, m.summary_status]);
+  }, [m.id, m.draft_notes_md, m.has_draft_notes, m.summary_status]);
 
   // Подсказка, что обработка затянулась: всё ещё processing, тезисов нет, опросов накопилось много.
   const isTakingTooLong =
-    !m.draft_notes_md && m.summary_status !== "failed" && m.summary_status !== "done" && pollCount >= AGENT_SLOW_POLL_COUNT;
+    !hasDraftNotes(m) && m.summary_status !== "failed" && m.summary_status !== "done" && pollCount >= AGENT_SLOW_POLL_COUNT;
 
   const segments = m.transcript?.segments ?? [];
   const hasTranscript = segments.length > 0;
@@ -895,7 +896,7 @@ function AgentMeetingDetail({
       {/* Тезисы + транскрипт скроллятся внутри своего контейнера, а не растят страницу. */}
       <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-16">
         {/* Верх: тезисы / статус обработки */}
-        {m.draft_notes_md ? (
+        {hasDraftNotes(m) && m.draft_notes_md ? (
           <div>
             <div className={`${STICKY_HEAD} flex items-center justify-between gap-2`} style={STICKY_HEAD_BG}>
               <SectionLabel className="!mb-0">Тезисы</SectionLabel>
@@ -1374,6 +1375,17 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
   // обрезок как полный и не извлечь задачи из первых 400 символов.
   const selectItem = useCallback((item: MeetItem) => {
     setSelected(item);
+    // Черновик рекордера: в списке нет ни тезисов, ни транскрипта (issue #108) — а ActionsPanel
+    // извлекает из них задачи. Догружаем целиком; AgentMeetingDetail просит то же самое на
+    // своём маунте, и дедуп запросов (issue #103) склеивает оба вызова в один.
+    if (item.kind === "agent") {
+      const aid = item.data.id;
+      fetchAgentMeeting(aid)
+        .then((full) => setSelected((prev) =>
+          prev && prev.kind === "agent" && prev.data.id === aid ? { kind: "agent", data: full } : prev))
+        .catch(() => { /* деталь сама покажет ошибку — своя загрузка у неё есть */ });
+      return;
+    }
     if (item.kind !== "entry" || !item.data.truncated) return;
     const id = item.data.id;
     fetchMeeting(id)

@@ -36,3 +36,25 @@ export function toListRow<T extends Row>(row: T): T & { content: string; summary
   const out = { ...row, content: c.v ?? "", summary: s.v };
   return (c.cut || s.cut) ? { ...out, truncated: true as const } : out;
 }
+
+// ── GET /agent-meetings (списочный) ───────────────────────────────────────────
+
+type AgentRow = { draft_notes_md?: string | null; [k: string]: unknown };
+
+/**
+ * Убирает из списочного ответа текст черновика тезисов, оставляя только признак наличия.
+ *
+ * Зачем: `draft_notes_md` — это полные тезисы встречи, и в списке они не рендерятся; экран
+ * ревью показывает название, дату и статус. Но список опрашивается каждые 10 секунд, поэтому
+ * 154 кБ (18 черновиков на проде) превращались в ~55 МБ в час на одной открытой вкладке
+ * (issue #108). Полный текст берёт деталь по GET /agent-meetings/:id — она и так его
+ * до-загружает.
+ *
+ * Признак нужен именно как поле, а не как «пришёл ли текст»: списку надо отличать «тезисы
+ * готовятся» от «готовы», и без флага он бы читал отсутствие текста как «не готово» для ВСЕХ.
+ * Пустая строка считается «не готово» — иначе список рапортует «готово» на пустышке.
+ */
+export function toAgentListRow<T extends AgentRow>(row: T): Omit<T, "draft_notes_md"> & { has_draft_notes: boolean } {
+  const { draft_notes_md, ...rest } = row;
+  return { ...rest, has_draft_notes: (draft_notes_md ?? "").trim().length > 0 };
+}

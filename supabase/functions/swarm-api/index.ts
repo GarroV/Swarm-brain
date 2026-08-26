@@ -12,7 +12,7 @@ import {
   getEntrySecure,
   ENTRY_COLUMNS,
 } from "./entries-guard.ts";
-import { toListRow } from "./meetings-payload.ts";
+import { toAgentListRow, toListRow } from "./meetings-payload.ts";
 import {
   createTask,
   getTask,
@@ -1336,7 +1336,11 @@ Deno.serve(async (req: Request) => {
     q = q.contains("recorders", JSON.stringify(draftMeetingsOwnScoped(telegram_id)));
     const { data, error } = await q;
     if (error) return apiErr(500, error.message, origin);
-    return json(await withRecorderNames((data ?? []) as Array<{ recorders?: unknown }>), 200, origin);
+    // draft_notes_md → признак has_draft_notes: список рисует название/дату/статус, а текст
+    // тезисов ехал в 10-секундном поллинге (154 кБ за опрос ≈ 55 МБ/час на вкладку, issue #108).
+    // Полный текст берёт деталь GET /agent-meetings/:id — она его и так до-загружает.
+    const enrichedList = await withRecorderNames((data ?? []) as Array<{ recorders?: unknown }>);
+    return json(enrichedList.map(toAgentListRow), 200, origin);
   }
 
   // GET/PATCH/DELETE /agent-meetings/:id, POST /:id/publish, GET/POST /:id/notes (live-пометки),
