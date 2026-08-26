@@ -737,11 +737,13 @@ supabase/functions/swarm-api/
 ├── index.ts        # Router + все эндпоинты
 ├── auth.ts         # verifyInitData() — проверка Telegram initData (спящий путь Mini App) + проверка веб-JWT
 ├── admin.ts        # /admin/* роуты (админы: telegram_id 744230399 или is_admin)
-├── entries-guard.ts  # Обязательный слой безопасности для всех endpoints с entries
-└── meetings-payload.ts # Форма ответа GET /meetings: какие колонки уезжают в браузер
+├── entries-guard.ts  # Обязательный слой безопасности для всех endpoints с entries + ENTRY_COLUMNS
+└── meetings-payload.ts # Урезание СПИСОЧНОГО ответа GET /meetings (toListRow)
 ```
 
 **Назначение:** REST API для веб-интерфейса «Рой» (браузер/PWA). Третий клиент поверх `_shared/tasks/db.ts`.
+
+**🚫 `select("*")` по `entries` запрещён — только `ENTRY_COLUMNS`** (issue #102). У таблицы есть `embedding vector(1536)` (~18.5 кБ текстом на строку) и `fts tsvector` (~7.8 кБ), которых нет ни в `EntryRow`, ни в клиентском `Entry`. Сервер их только **пишет** (пересчитывает через OpenAI / генерирует база) и ни в одной точке не читает — в ответе это чистый балласт: 6 МБ из 10 на списке встреч и 26 кБ на каждое открытие одной записи. Закреплено тестом `entries-guard.test.ts` («getEntrySecure запрашивает ENTRY_COLUMNS, а не `*`»).
 
 **Безопасность entries — `entries-guard.ts`:**
 
@@ -846,7 +848,7 @@ _Записи базы знаний (entries — только через `entrie
 
 | | что уезжает в браузер |
 |---|---|
-| **Колонки** | `MEETING_COLUMNS` — ровно поля типа `Entry` (`miniapp/src/types.ts`) + `updated_at`. **`embedding` и `fts` НЕ запрашиваются никогда** |
+| **Колонки** | `ENTRY_COLUMNS` (канон — `entries-guard.ts`) — ровно поля `EntryRow`/клиентского `Entry` + `updated_at`. **`embedding` и `fts` НЕ запрашиваются никогда, ни списком, ни по одной записи** |
 | **Большой список** (`?confirmed=true` или без параметра) | `content` и `summary` урезаны до `LIST_PREVIEW_CHARS` (400 симв.), у записи стоит **`truncated: true`** |
 | **Очередь вычитки** (`?confirmed=false`) | полный текст, без урезания — там единицы строк и текст нужен сразу |
 

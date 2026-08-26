@@ -10,8 +10,9 @@ import {
   buildEntriesQuery,
   buildReviewQueueQuery,
   getEntrySecure,
+  ENTRY_COLUMNS,
 } from "./entries-guard.ts";
-import { MEETING_COLUMNS, toListRow } from "./meetings-payload.ts";
+import { toListRow } from "./meetings-payload.ts";
 import {
   createTask,
   getTask,
@@ -970,7 +971,7 @@ Deno.serve(async (req: Request) => {
         if ("content" in body) fields.content = body.content;
         if ("summary" in body) fields.summary = body.summary;
         await supabase.from("entries").update(fields).eq("id", entry.id);
-        const { data } = await supabase.from("entries").select("*").eq("id", entry.id).single();
+        const { data } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", entry.id).single();
         return json(data, 200, origin);
       }
       if (req.method === "DELETE") {
@@ -1187,8 +1188,8 @@ Deno.serve(async (req: Request) => {
     // урезанный (toListRow ниже): 230 встреч × полный транскрипт = ~10 МБ в браузер (issue #102).
     const isReviewQueue = confirmedParam === "false";
     let q = (isReviewQueue
-      ? buildReviewQueueQuery(supabase, MEETING_COLUMNS, { groupId, telegramId: telegram_id, email: userEmail })
-      : buildEntriesQuery(supabase, MEETING_COLUMNS, { groupId, telegramId: telegram_id }))
+      ? buildReviewQueueQuery(supabase, ENTRY_COLUMNS, { groupId, telegramId: telegram_id, email: userEmail })
+      : buildEntriesQuery(supabase, ENTRY_COLUMNS, { groupId, telegramId: telegram_id }))
       .eq("entry_type", "meeting")
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -1238,7 +1239,7 @@ Deno.serve(async (req: Request) => {
       const upd: Record<string, unknown> = { summary: tezisi, content: tezisi };
       if (embedding) upd.embedding = embedding;
       await supabase.from("entries").update(upd).eq("id", entry.id);
-      const { data } = await supabase.from("entries").select("*").eq("id", entry.id).single();
+      const { data } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", entry.id).single();
       return json(data, 200, origin);
     });
   }
@@ -1294,7 +1295,7 @@ Deno.serve(async (req: Request) => {
         }
         if ("countries" in body && Array.isArray(body.countries)) fields.countries = normalizeCountries(body.countries as string[]);
         await supabase.from("entries").update(fields).eq("id", entry.id);
-        const { data } = await supabase.from("entries").select("*").eq("id", entry.id).single();
+        const { data } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", entry.id).single();
         return json(data, 200, origin);
       }
       if (req.method === "DELETE") {

@@ -5,6 +5,7 @@ import {
   buildReviewQueueQuery,
   EntryAccessError,
   getEntrySecure,
+  ENTRY_COLUMNS,
 } from "./entries-guard.ts";
 
 // ── Mock chainable query builder ───────────────────────────────────────────────
@@ -40,6 +41,31 @@ const baseEntry = {
   owner_id: 111,
   content: "x",
 };
+
+// ── ENTRY_COLUMNS ─────────────────────────────────────────────────────────────
+
+const cols = () => ENTRY_COLUMNS.split(",").map((c) => c.trim());
+
+Deno.test("ENTRY_COLUMNS не тянет колонки, которых нет в EntryRow — сервер их не читает, фронт не знает", () => {
+  for (const dead of ["embedding", "fts", "last_review_reminded_at", "*"]) {
+    assertEquals(cols().includes(dead), false, `${dead} не должна уезжать в браузер`);
+  }
+});
+
+Deno.test("ENTRY_COLUMNS покрывает все поля EntryRow + updated_at", () => {
+  const need = [
+    "id", "content", "summary", "added_by", "source", "metadata", "countries",
+    "entry_type", "entry_date", "group_id", "is_private", "owner_id", "created_at", "updated_at",
+  ];
+  for (const f of need) assertEquals(cols().includes(f), true, `${f} есть в EntryRow, но не запрашивается`);
+});
+
+Deno.test("getEntrySecure запрашивает ENTRY_COLUMNS, а не '*'", async () => {
+  const { client, calls } = makeSupabase(baseEntry);
+  await getEntrySecure(client, "e1", { groupId: "cee", telegramId: 999 });
+  const select = calls.find((c) => c.method === "select");
+  assertEquals(select?.args[0], ENTRY_COLUMNS);
+});
 
 // ── getEntrySecure ──────────────────────────────────────────────────────────────
 

@@ -1,21 +1,5 @@
-import { assert, assertEquals } from "jsr:@std/assert@1";
-import { LIST_PREVIEW_CHARS, MEETING_COLUMNS, toListRow } from "./meetings-payload.ts";
-
-const cols = () => MEETING_COLUMNS.split(",").map((c) => c.trim());
-
-Deno.test("не запрашиваем колонки, которых нет в типе Entry — фронт их прочитать не может", () => {
-  for (const dead of ["embedding", "fts", "last_review_reminded_at", "*"]) {
-    assertEquals(cols().includes(dead), false, `${dead} не должна уезжать в браузер`);
-  }
-});
-
-Deno.test("запрашиваем всё, что фронт реально читает", () => {
-  const need = [
-    "id", "content", "summary", "added_by", "source", "metadata", "countries",
-    "entry_type", "entry_date", "group_id", "is_private", "owner_id", "created_at", "updated_at",
-  ];
-  for (const f of need) assert(cols().includes(f), `${f} нужна фронту, но не запрашивается`);
-});
+import { assertEquals } from "jsr:@std/assert@1";
+import { LIST_PREVIEW_CHARS, toListRow } from "./meetings-payload.ts";
 
 Deno.test("toListRow режет content и summary и честно помечает truncated", () => {
   const row = { id: "a", content: "x".repeat(50_000), summary: "y".repeat(9_000), metadata: {} };
