@@ -4,7 +4,7 @@
 // Поповер рендерится в портал (fixed по триггеру) — не обрезается внутри модалки с overflow.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { RoyIcon } from "@/components/roy/icons";
+import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 
 const MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 const MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
@@ -46,11 +46,17 @@ type Props = {
   placeholder?: string;
   /** Компактный триггер: только иконка (без подписи) — для быстрых действий в строке задачи. */
   compact?: boolean;
+  /** Иконка триггера: «cal» — срок (по умолчанию), «bell» — пинг (напоминание). */
+  icon?: RoyIconName;
+  /** Подпись кнопки для скринридера в компактном виде (по умолчанию «Срок»). */
+  ariaLabel?: string;
+  /** Подпись «убрать» в поповере (по умолчанию «Убрать срок»). */
+  clearLabel?: string;
 };
 
 const POPOVER_W = 264, POPOVER_H = 340;
 
-export function DatePicker({ value, onChange, className = "", placeholder = "Выбрать дату", compact = false }: Props) {
+export function DatePicker({ value, onChange, className = "", placeholder = "Выбрать дату", compact = false, icon = "cal", ariaLabel = "Срок", clearLabel = "Убрать срок" }: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -103,7 +109,7 @@ export function DatePicker({ value, onChange, className = "", placeholder = "В�
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={compact ? "Срок" : undefined}
+        aria-label={compact ? ariaLabel : undefined}
         // stopPropagation — чтобы клик не «всплыл» как тап по строке задачи (открытие карточки)
         // и не съелся как старт свайпа (SwipeRow на мобайле). См. чекбокс TaskRow.
         onPointerDown={(e) => e.stopPropagation()}
@@ -111,7 +117,7 @@ export function DatePicker({ value, onChange, className = "", placeholder = "В�
         className={compact ? className : `${className} flex items-center gap-2 text-left`}
         style={compact ? { color: value ? "var(--accent-ink)" : "var(--ink-soft)" } : undefined}
       >
-        <RoyIcon name="cal" size={15} strokeWidth={compact ? 1.9 : undefined} />
+        <RoyIcon name={icon} size={15} strokeWidth={compact ? 1.9 : undefined} />
         {!compact && <span className={label ? "text-ink" : "text-ink-soft"}>{label ?? placeholder}</span>}
       </button>
 
@@ -155,7 +161,7 @@ export function DatePicker({ value, onChange, className = "", placeholder = "В�
 
           {value && (
             <button type="button" onClick={() => { onChange(""); setOpen(false); }}
-              className="w-full mt-2 rounded-lg border border-line text-[12px] py-1.5 text-ink-soft hover:text-destructive hover:border-destructive/40 transition-colors">Убрать срок</button>
+              className="w-full mt-2 rounded-lg border border-line text-[12px] py-1.5 text-ink-soft hover:text-destructive hover:border-destructive/40 transition-colors">{clearLabel}</button>
           )}
         </div>,
         document.body,

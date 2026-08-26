@@ -5,6 +5,10 @@ export type Task = {
   assignees: string[];
   assignee_telegram_ids: number[];
   due_date: string | null;
+  // Пинг — ручное напоминание, независимое от срока: «дедлайн 20-го, вспомнить 1-го».
+  // `reminded_at` NOT NULL = пинг уже отзвонил и сгорел (одноразовый, решение владельца 2026-08-26).
+  remind_date: string | null;
+  reminded_at: string | null;
   tags: string[];
   country: string | null;
   task_role: string | null;

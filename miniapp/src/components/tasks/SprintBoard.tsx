@@ -266,7 +266,8 @@ export function SprintBoard() {
     const tempId = "temp-" + Date.now();
     const optimistic: Task = {
       id: tempId, title: t, description: null, assignees: [], assignee_telegram_ids: [],
-      due_date: null, tags: [], country: null, task_role: null, priority: null, source: "mini_app",
+      due_date: null, remind_date: null, reminded_at: null,
+      tags: [], country: null, task_role: null, priority: null, source: "mini_app",
       status, created_at: new Date().toISOString(), updated_at: null, meeting_id: null,
       url: null, group_id: null, created_by_name: null, is_private: false, owner_id: null,
       start_date: null, timeline_position: null, sprint_id, label_ids: [], project_id,
