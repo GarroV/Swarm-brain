@@ -940,7 +940,13 @@ Deno.serve(async (req: Request) => {
     const dateFrom = url.searchParams.get("date_from") ?? undefined;
     const dateTo = url.searchParams.get("date_to") ?? undefined;
 
-    let q = buildEntriesQuery(supabase, "id,content,summary,source,entry_type,entry_date,countries,is_private,owner_id,created_at", { groupId, telegramId: telegram_id })
+    // ENTRY_COLUMNS, а не свой список: прежний вручную собранный не включал metadata, и фронт
+    // терял и тип записи, и заголовок — entryTagKey читает metadata.url/file_type (53 ссылки и
+    // 3 файла из 92 заметок показывались тегом «note»), deriveEntryTitle читает metadata.title
+    // (54 заметки получали заголовок из первой строки текста). Оба хелпера написаны через
+    // `metadata ?? {}` — не падали, а молча деградировали (issue #107). Заодно приехали
+    // added_by (нужен entryImporterName для атрибуции «добавил») и group_id.
+    let q = buildEntriesQuery(supabase, ENTRY_COLUMNS, { groupId, telegramId: telegram_id })
       .eq("entry_type", "note")
       .not("source", "eq", "digest")
       .order("created_at", { ascending: false })
@@ -1472,7 +1478,7 @@ Deno.serve(async (req: Request) => {
 
       // идемпотентность: уже опубликовано → вернуть существующую запись
       if (meeting.status === "in_base" && meeting.entry_id) {
-        const { data: existing } = await supabase.from("entries").select("*").eq("id", meeting.entry_id as string).single();
+        const { data: existing } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", meeting.entry_id as string).single();
         return json(existing, 200, origin);
       }
       const draft = meeting.draft_notes_md as string | null;
@@ -1514,7 +1520,7 @@ Deno.serve(async (req: Request) => {
           .update({ entry_id: dup.id, status: "in_base", updated_at: new Date().toISOString() })
           .eq("id", mId)
           .is("entry_id", null);
-        const { data: existing } = await supabase.from("entries").select("*").eq("id", dup.id).single();
+        const { data: existing } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", dup.id).single();
         return json(existing, 200, origin);
       }
 
@@ -1535,7 +1541,7 @@ Deno.serve(async (req: Request) => {
         group_id: groupId,
         is_private: isPrivate,
         owner_id: isPrivate ? telegram_id : null,
-      }).select("*").single();
+      }).select(ENTRY_COLUMNS).single();
       if (insErr || !created) return apiErr(500, insErr?.message ?? "publish failed", origin);
 
       // привязка + статус с защитой от гонки (только если ещё не привязано)
@@ -1550,7 +1556,7 @@ Deno.serve(async (req: Request) => {
         await supabase.from("entries").delete().eq("id", (created as { id: string }).id);
         const { data: m2 } = await supabase.from("meetings").select("entry_id").eq("id", mId).single();
         const existingId = (m2 as { entry_id: string | null }).entry_id;
-        const { data: existing } = await supabase.from("entries").select("*").eq("id", existingId as string).single();
+        const { data: existing } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", existingId as string).single();
         return json(existing, 200, origin);
       }
       // Задачи НЕ генерируем автоматически. Пользователь создаёт их вручную кнопкой
