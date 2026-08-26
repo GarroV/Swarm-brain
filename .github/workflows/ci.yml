@@ -50,5 +50,8 @@ jobs:
           cache: npm
           cache-dependency-path: miniapp/package-lock.json
       - run: npm ci
+      # Хеш inline-скрипта темы в public/_headers должен совпадать со скриптом в layout.tsx,
+      # иначе CSP молча запретит его и тема перестанет следовать за системной (issue #100).
+      - run: npm run check:csp
       # next build проверяет и типы, и сборку — то же, что делает Cloudflare Pages, но ДО прода.
       - run: npm run build
