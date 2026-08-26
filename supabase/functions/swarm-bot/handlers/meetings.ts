@@ -444,9 +444,12 @@ export async function handleMeetingCallbacks(
         [[{ text: "🌍 Проставить рынки", callback_data: `mctry_${entryId}` }]]);
       return true;
     }
-    // Publish: pending → workspace-visible. Clear uploader-private scoping so the
-    // confirmed meeting is visible to the whole workspace (visibility contract).
-    await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true }, is_private: false, owner_id: null }).eq("id", entryId).eq("group_id", groupId);
+    // Publish: pending → workspace-visible. Снимаем приватность, но НЕ владельца: is_private
+    // отвечает за видимость, owner_id — за авторство (решение владельца 2026-08-22, «не должно
+    // быть ничьих»). Здесь стояло owner_id: null — тот же источник «ничьих» записей, что был в
+    // swarm-api; там поправлено 2026-08-22, а этот путь (согласование из бота) пропустили.
+    const publisherId = (entry as { owner_id?: number | null }).owner_id ?? userId;
+    await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true }, is_private: false, owner_id: publisherId }).eq("id", entryId).eq("group_id", groupId);
     const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
     await sendMessage(chatId, `✅ Встреча сохранена: <b>${title}</b>`);
     const content = (entry.content as string) ?? "";
