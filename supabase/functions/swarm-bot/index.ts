@@ -20,6 +20,7 @@ import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } 
 import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
 import { sendDailyReport } from "./handlers/daily-report-send.ts";
 import { sendReviewReminders } from "./handlers/review-reminders-send.ts";
+import { sendTaskPings } from "./handlers/task-pings-send.ts";
 import { getHelpText, helpKeyboard, guideMenu, guideStep } from "./handlers/help.ts";
 import { mintMcpToken, buildSetupOneLiner, hasActiveMcpToken, mintRecorderToken, buildRecorderSetupOneLiner, hasActiveRecorderToken } from "./lib/mcp-setup.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
@@ -218,7 +219,7 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { return new Response("Bad Request", { status: 400 }); }
 
   // ── Cron triggers (требуют X-Cron-Secret) ────────────────────────────────────
-  if (body.setup_commands === true || body.digest_cron === true || body.daily_report_cron === true || body.review_reminders_cron === true || body.feedback_retention_cron === true || body.readai_token_refresh === true || body.granola_poll === true || body.meetings_watchdog === true || body.webhook_info === true || body.set_webhook === true) {
+  if (body.setup_commands === true || body.digest_cron === true || body.daily_report_cron === true || body.review_reminders_cron === true || body.task_pings_cron === true || body.feedback_retention_cron === true || body.readai_token_refresh === true || body.granola_poll === true || body.meetings_watchdog === true || body.webhook_info === true || body.set_webhook === true) {
     if (!CRON_SECRET || req.headers.get("X-Cron-Secret") !== CRON_SECRET) {
       return new Response("Forbidden", { status: 403 });
     }
@@ -287,6 +288,11 @@ Deno.serve(async (req: Request) => {
   if (body.review_reminders_cron === true) {
     await sendReviewReminders();
     return new Response("OK", { status: 200 });
+  }
+
+  if (body.task_pings_cron === true) {
+    const sent = await sendTaskPings();
+    return new Response(`OK: ${sent} pings sent`, { status: 200 });
   }
 
   if (body.feedback_retention_cron === true) {

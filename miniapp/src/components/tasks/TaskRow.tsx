@@ -31,6 +31,9 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
   const done = isDone(task);
   const overdue = isOverdue(task, now);
   const due = fmtDue(task.due_date, dt("ru-RU", "en-US"));
+  // Пинг показываем, только пока он ЖДЁТ: отзвонивший (reminded_at) сгорел, и висящая
+  // дата напоминания вводила бы в заблуждение — «напомнят», хотя уже напомнили.
+  const ping = done || task.reminded_at ? null : fmtDue(task.remind_date, dt("ru-RU", "en-US"));
   const high = task.priority === "high";
   const fromMeeting = Boolean(task.meeting_id);
   const hasAssignee = showAssignee && (task.assignees?.length ?? 0) > 0;
@@ -46,10 +49,13 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
         aria-label={done ? dt("Снять отметку", "Mark as not done") : dt("Отметить выполненной", "Mark as done")}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e: MouseEvent) => { e.stopPropagation(); onToggle(); }}
-        className="mt-px flex shrink-0 items-center justify-center rounded-full border-2 transition-colors"
+        // Кружок остаётся мелким (плотность строки), а нажимается зона 40x44 — псевдоэлемент
+        // ::after, поэтому вёрстка не сдвигается. Вправо зона растянута меньше: там начинается
+        // заголовок, и тап по нему должен открывать задачу, а не переключать галочку.
+        className="relative mt-px flex shrink-0 items-center justify-center rounded-full border-2 transition-colors after:absolute after:-left-3 after:-right-1.5 after:-top-3 after:-bottom-3 after:content-['']"
         style={{
-          width: 19,
-          height: 19,
+          width: 20,
+          height: 20,
           borderColor: done ? "var(--status-done)" : "var(--line-2)",
           background: done ? "var(--status-done)" : "transparent",
         }}
@@ -81,6 +87,17 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
             <span className="inline-flex items-center gap-1" style={{ fontSize: 11.5, color: overdue ? "var(--pri-high)" : "var(--ink-soft)", fontWeight: overdue ? 600 : 400 }}>
               <RoyIcon name="cal" size={11} />
               {due}
+            </span>
+          )}
+          {ping && (
+            // Ближайший пинг — рядом со сроком: видно «когда напомнят», не открывая карточку.
+            <span
+              className="inline-flex items-center gap-1 font-semibold"
+              style={{ fontSize: 10.5, color: "var(--accent-ink)", background: "var(--accent-soft)", borderRadius: 6, padding: "1px 6px" }}
+              title={dt("Напомним в этот день", "You'll be reminded on this day")}
+            >
+              <RoyIcon name="bell" size={10} />
+              {ping}
             </span>
           )}
           {hasAssignee && (

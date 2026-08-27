@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "test": "deno test --allow-net"
+    "test": "deno test -A"
   },
   "lock": false
 }

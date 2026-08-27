@@ -164,7 +164,7 @@ export function TaskComments({ taskId }: { taskId: string }) {
           disabled={!draft.trim() || sending}
           aria-label="Отправить"
           title="Отправить (Enter)"
-          className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[11px] bg-primary text-white transition-transform active:scale-[0.94] disabled:opacity-40"
+          className="flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-primary text-white transition-transform active:scale-[0.94] disabled:opacity-40"
         >
           <RoyIcon name="arrow" size={16} strokeWidth={2.2} />
         </button>
@@ -185,7 +185,9 @@ export function TaskComments({ taskId }: { taskId: string }) {
                   <span className="flex items-center gap-2">
                     <span className="text-ink-mute" style={{ fontSize: 11.5 }}>{fmtDate(c.created_at)}</span>
                     {canDelete && (
-                      <button type="button" aria-label="Удалить комментарий" onClick={() => removeComment(c.id)} className="text-ink-soft transition-colors hover:text-[var(--pri-high)]">
+                      <button type="button" aria-label="Удалить комментарий" onClick={() => removeComment(c.id)} // Тач-цель 36x36 у крестика 13px: иконка мелкая, зона нажатия — нет.
+                        className="-m-2 inline-flex size-9 items-center justify-center p-2 text-ink-soft transition-colors hover:text-[var(--pri-high)]"
+                      >
                         <RoyIcon name="x" size={13} strokeWidth={2} />
                       </button>
                     )}

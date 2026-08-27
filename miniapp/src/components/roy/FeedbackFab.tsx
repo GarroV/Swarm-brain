@@ -4,7 +4,23 @@ import { RoyIcon } from "@/components/roy/icons";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FeedbackForm } from "./FeedbackForm";
 
-/** Плавающая кнопка «?» в углу — открывает форму фидбека из любого экрана. */
+/** Диалог фидбека без своей кнопки — для пунктов меню («Ещё» на мобайле). */
+export function FeedbackDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[420px]">
+        <DialogHeader>
+          <DialogTitle>Фидбек</DialogTitle>
+        </DialogHeader>
+        <FeedbackForm onDone={() => onOpenChange(false)} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Плавающая кнопка «?» в углу — открывает форму фидбека из любого экрана.
+ *  На мобайле НЕ используется: там она стояла вторым FAB под «+» и спорила с главным
+ *  действием экрана — фидбек живёт пунктом в «Ещё» (аудит мобилки 2026-08-22). */
 export function FeedbackFab() {
   const [open, setOpen] = useState(false);
   return (

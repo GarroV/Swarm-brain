@@ -52,12 +52,14 @@ const NONE = "__none__";
 const AUTOSAVE_DELAY = 550;
 
 // Roy-стилизованные нативные контролы (без shadcn): стекло + линия + янтарный фокус.
+// min-h-10 — тач-цель полей на телефоне (было 38px при норме 44).
 const fieldCls =
-  "w-full rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute dark:backdrop-blur-sm";
+  "w-full min-h-10 rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute dark:backdrop-blur-sm";
 const labelCls = "mb-1 block font-semibold text-ink-soft";
 // Триггер кастомного Select (в теме проекта) — под общий вид полей (fieldCls): полная ширина,
 // та же линия/фон/скругление. Нативный <select> заменён, чтобы выпадашка была не системной.
-const selectTriggerCls = "w-full h-auto rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink";
+// min-h-10 — тач-цель: селекты проекта/исполнителя были 32-38px при норме 44.
+const selectTriggerCls = "w-full h-auto min-h-10 rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink";
 
 interface TaskModalProps {
   task?: Task;
@@ -112,6 +114,9 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
   // ссылками (linkify); textarea появляется по клику. Пустое описание — сразу editable.
   const [descEditing, setDescEditing] = useState(true);
   const [dueDate, setDueDate] = useState("");
+  // Пинг — ручное напоминание, живёт рядом со сроком и независимо от него.
+  const [remindDate, setRemindDate] = useState("");
+  const [remindedAt, setRemindedAt] = useState<string | null>(null);
   const [country, setCountry] = useState("");
   const [taskRole, setTaskRole] = useState(NONE);
   const [assigneeId, setAssigneeId] = useState(NONE);
@@ -137,6 +142,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     const initialDescription = task?.description ?? prefill?.description ?? "";
     const initialStatus = normStatus(task?.status);
     const initialDue = task?.due_date ?? prefill?.due_date ?? "";
+    const initialRemind = task?.remind_date ?? "";
     const initialCountry = task?.country ?? prefill?.country ?? "";
     const initialRole = task?.task_role ?? NONE;
     const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
@@ -148,6 +154,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     setDescription(initialDescription);
     setDescEditing(!initialDescription.trim());
     setDueDate(initialDue);
+    setRemindDate(initialRemind);
+    setRemindedAt(task?.reminded_at ?? null);
     setCountry(initialCountry);
     setTaskRole(initialRole);
     setAssigneeId(cur);
@@ -163,6 +171,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
       description: initialDescription,
       status: initialStatus,
       dueDate: initialDue,
+      remindDate: initialRemind,
       country: initialCountry,
       taskRole: initialRole,
       assigneeId: cur,
@@ -213,7 +222,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
 
   // Текущий снапшот формы (для сравнения с сохранённым) — те же ключи, что в useEffect open.
   const formSnapshot = () =>
-    JSON.stringify({ title, description, status, dueDate, country, taskRole, assigneeId, selProject, labelIds });
+    JSON.stringify({ title, description, status, dueDate, remindDate, country, taskRole, assigneeId, selProject, labelIds });
 
   // Собрать PATCH из текущих значений формы. null → сохранять нечего/нельзя (пустое название).
   const buildPatch = (): UpdateTaskInput | null => {
@@ -224,6 +233,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
       title: t,
       description: description.trim() || null,
       due_date: dueDate || null,
+      remind_date: remindDate || null,
       country: country || null,
       task_role: taskRole === NONE ? null : taskRole,
       status,
@@ -259,7 +269,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     }, AUTOSAVE_DELAY);
     return () => clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isEdit, title, description, status, dueDate, country, taskRole, assigneeId, selProject, labelIds]);
+  }, [open, isEdit, title, description, status, dueDate, remindDate, country, taskRole, assigneeId, selProject, labelIds]);
 
   // Закрытие: досрочно сохраняем pending-изменения (пока debounce не успел сработать).
   const handleClose = () => {
@@ -289,6 +299,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
         title: title.trim(),
         description: description.trim() || null,
         due_date: dueDate || null,
+        remind_date: remindDate || null,
         country: country || null,
         task_role: taskRole === NONE ? null : taskRole,
       };
@@ -365,7 +376,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                 disabled={deleting}
                 aria-label="Удалить задачу"
                 title="Удалить задачу"
-                className="flex items-center justify-center rounded-[10px] p-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                // Тач-цель 40x40: на телефоне кнопка была 29x29 при норме 44 — и это удаление.
+                className="flex size-10 items-center justify-center rounded-[10px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               >
                 <RoyIcon name="trash" size={17} />
               </button>
@@ -374,7 +386,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
               type="button"
               onClick={handleClose}
               aria-label="Закрыть"
-              className="flex items-center justify-center rounded-[10px] p-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="flex size-10 items-center justify-center rounded-[10px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             >
               <RoyIcon name="x" size={18} />
             </button>
@@ -447,7 +459,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                           aria-pressed={on}
                           title={s.label}
                           className={`flex flex-1 items-center justify-center gap-1.5 rounded-[9px] py-1.5 font-semibold transition-colors active:scale-[0.97] ${on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(80,60,20,.1)]" : "bg-transparent text-ink-soft hover:text-ink"}`}
-                          style={{ fontSize: 12.5 }}
+                          // Тач-цель: переключатель статуса был 30px при норме 44.
+                          style={{ fontSize: 12.5, minHeight: 40 }}
                         >
                           {s.icon === "circle" ? (
                             <span className="rounded-full border-2 border-current" style={{ width: 13, height: 13 }} />
@@ -466,6 +479,22 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                 <div>
                   <label htmlFor="modal-due" className={labelCls} style={{ fontSize: 12 }}>Срок</label>
                   <DatePicker value={dueDate} onChange={setDueDate} className={fieldCls} placeholder="Срок" />
+                </div>
+                <div>
+                  <label htmlFor="modal-ping" className={labelCls} style={{ fontSize: 12 }}>{dt("Пинг", "Ping")}</label>
+                  <DatePicker
+                    value={remindDate}
+                    onChange={(iso) => { setRemindDate(iso); setRemindedAt(null); }}
+                    className={fieldCls}
+                    icon="bell"
+                    placeholder={dt("Напомнить", "Remind me")}
+                    clearLabel={dt("Убрать пинг", "Clear ping")}
+                  />
+                  <p className="mt-1 text-ink-mute" style={{ fontSize: 11 }}>
+                    {remindDate && remindedAt
+                      ? dt("Уже напомнили — выбери новый день, чтобы напомнить снова", "Already sent — pick a new day to be reminded again")
+                      : dt("Напомним в этот день, один раз", "One reminder on this day")}
+                  </p>
                 </div>
                 <div>
                   <span className={labelCls} style={{ fontSize: 12 }}>{dt("Проект", "Project")}</span>

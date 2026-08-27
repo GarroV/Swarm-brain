@@ -6,6 +6,7 @@ import {
   filterTasks, countLists, groupByMarket, groupByAssignee, groupByAssigneeThenMarket, isDone, filterByLabel, countByLabel,
   type SmartListId, type Lens, type MarketGroup, type StaffGroup, type NestedStaffGroup,
 } from "@/lib/smartLists";
+import { resolveRange, type DateRange } from "@/lib/dateRange";
 import { useRoyNav } from "@/components/roy/nav";
 
 function todayISO(now: Date): string {
@@ -18,7 +19,13 @@ function todayISO(now: Date): string {
 // Последний выбранный вид доски — переживает рефреш (localStorage). Читаем в ленивом
 // инициализаторе useState, а НЕ в эффекте: эффект-сохранение на маунте затирал бы значение
 // дефолтом раньше, чем restore применится (в dev StrictMode эффекты ещё и сдваиваются).
-type SavedTasksView = { activeList?: SmartListId; activeLabelId?: string | null; lens?: Lens; byMarket?: boolean; allStaff?: boolean };
+type SavedTasksView = { activeList?: SmartListId; activeLabelId?: string | null; lens?: Lens; byMarket?: boolean; allStaff?: boolean; range?: DateRange | null };
+// Экспортируется для NewTask: созданная задача сверяется с ТЕМ ЖЕ сохранённым видом, в который
+// человек вернётся, — включая период. Иначе задача вне активного фильтра выглядит потерянной.
+export function readSavedTasksView(): SavedTasksView | null {
+  return readSavedView();
+}
+
 function readSavedView(): SavedTasksView | null {
   try {
     if (typeof window === "undefined") return null;
@@ -30,7 +37,7 @@ function readSavedView(): SavedTasksView | null {
 // Общее состояние Reminders-списка для десктопа и мобайла: загрузка, линза, активный
 // смарт-список, локальный поиск, оптимистичные мутации (toggle/удаление/быстрое добавление).
 export function useReminderTasks() {
-  const { taskView } = useRoyNav();
+  const { taskView, tasksVersion } = useRoyNav();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   // Начальный вид: приоритет — вход с дашборда (taskView), иначе сохранённый в localStorage
@@ -49,6 +56,10 @@ export function useReminderTasks() {
   // (`me == null`) считаем НЕ админом — fail-closed.
   const allStaff = allStaffRaw && !!me?.is_admin;
   const effLens: Lens = allStaff ? "staff" : lens;
+  // Период — модификатор поверх активного списка (см. lib/dateRange.ts). Восстанавливаем через
+  // resolveRange: пресет пересчитывается ОТ СЕГОДНЯ, иначе сохранённая «эта неделя» через неделю
+  // молча показывала бы прошлую. Произвольный диапазон берётся как есть.
+  const [range, setRange] = useState<DateRange | null>(() => resolveRange(readSavedView()?.range));
   const [query, setQuery] = useState("");
   const [labels, setLabels] = useState<TaskLabel[]>([]);
   const [activeLabelId, setActiveLabelId] = useState<string | null>(() => (taskView ? null : readSavedView()?.activeLabelId ?? null));
@@ -60,10 +71,10 @@ export function useReminderTasks() {
         // allStaff сохраняем ЭФФЕКТИВНЫЙ (у не-админа протухший true вычищается из хранилища),
         // но пока `me` не загрузился — оставляем как было, иначе первый рендер стёр бы выбор админа.
         const staffToSave = me == null ? allStaffRaw : allStaff;
-        window.localStorage.setItem("roy_tasks_view", JSON.stringify({ activeList, activeLabelId, lens, byMarket, allStaff: staffToSave }));
+        window.localStorage.setItem("roy_tasks_view", JSON.stringify({ activeList, activeLabelId, lens, byMarket, allStaff: staffToSave, range }));
       }
     } catch { /* storage недоступен — игнор */ }
-  }, [activeList, activeLabelId, lens, byMarket, allStaff, allStaffRaw, me]);
+  }, [activeList, activeLabelId, lens, byMarket, allStaff, allStaffRaw, me, range]);
 
   // Оптимистично добавленные задачи (по реальному id из ответа POST/PATCH). Держим их поверх
   // серверной выборки, пока сервер не вернёт их в списке — иначе фоновый поллинг «моргает»
@@ -103,6 +114,15 @@ export function useReminderTasks() {
   // Рефетч после мутации (модалка/строка): помечаем мутацию (пауза фона) + тянем задачи.
   const reload = useCallback(() => { markMutation(); return loadTasks(); }, [markMutation, loadTasks]);
 
+  // Правка задачи из карточки (TaskModal) бампает общий счётчик tasksVersion. Без подписки на него
+  // список ждал следующего тика поллинга — до 10 секунд показывал старое название/статус, и на
+  // телефоне это читалось как «правка не применилась» (найдено смоуком 2026-08-25).
+  const firstVersion = useRef(tasksVersion);
+  useEffect(() => {
+    if (tasksVersion === firstVersion.current) return;
+    reload();
+  }, [tasksVersion, reload]);
+
   useEffect(() => {
     load();
     const interval = setInterval(() => {
@@ -124,7 +144,7 @@ export function useReminderTasks() {
   // effLens — «Все сотрудники» (админ) расширяет охват до линзы «staff» независимо от Мои/Команда/Все
   // (см. объявление effLens выше). Счётчики рельса тоже считаем по нему — иначе цифры в рельсе
   // (Сегодня/Ближайшие/…) не совпадали бы с тем, что реально показано при включённом тумблере.
-  const counts = useMemo(() => countLists(list, effLens, me, now), [list, effLens, me, now]);
+  const counts = useMemo(() => countLists(list, effLens, me, now, range), [list, effLens, me, now, range]);
 
   const matchesQuery = useCallback(
     (t: Task) => !query.trim() || t.title.toLowerCase().includes(query.trim().toLowerCase()),
@@ -135,39 +155,39 @@ export function useReminderTasks() {
   const queried = useMemo(() => list.filter(matchesQuery), [list, matchesQuery]);
 
   const visible: Task[] = useMemo(
-    () => filterTasks(queried, activeList, effLens, me, now),
-    [queried, activeList, effLens, me, now],
+    () => filterTasks(queried, activeList, effLens, me, now, range),
+    [queried, activeList, effLens, me, now, range],
   );
 
   // Персональные списки-метки: счётчики по всем меткам + задачи активной метки.
   const labelCounts = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const l of labels) m[l.id] = countByLabel(list, l.id);
+    for (const l of labels) m[l.id] = countByLabel(list, l.id, range);
     return m;
-  }, [labels, list]);
+  }, [labels, list, range]);
   const visibleByLabel: Task[] = useMemo(
-    () => (activeLabelId ? filterByLabel(queried, activeLabelId) : []),
-    [activeLabelId, queried],
+    () => (activeLabelId ? filterByLabel(queried, activeLabelId, range) : []),
+    [activeLabelId, queried, range],
   );
 
   // Тумблер «По рынкам» (без «Все сотрудники»): группируем ТЕКУЩИЙ охват (Мои/Команда/Все) по
   // рынку. С «Все сотрудники» одновременно — см. nestedGroups ниже (вложенная группировка).
   const marketGroups: MarketGroup[] = useMemo(
-    () => (byMarket && !allStaff ? groupByMarket(queried, activeList, effLens, me, now) : []),
-    [byMarket, allStaff, activeList, queried, effLens, me, now],
+    () => (byMarket && !allStaff ? groupByMarket(queried, activeList, effLens, me, now, range) : []),
+    [byMarket, allStaff, activeList, queried, effLens, me, now, range],
   );
 
   // Тумблер «Все сотрудники» (админ) без «По рынкам»: группируем по исполнителю.
   const staffGroups: StaffGroup[] = useMemo(
-    () => (allStaff && !byMarket ? groupByAssignee(queried, activeList, effLens, me, now) : []),
-    [allStaff, byMarket, activeList, queried, effLens, me, now],
+    () => (allStaff && !byMarket ? groupByAssignee(queried, activeList, effLens, me, now, range) : []),
+    [allStaff, byMarket, activeList, queried, effLens, me, now, range],
   );
 
   // Оба тумблера разом: вложенная группировка — сотрудник → рынок (владелец: «группировка по
   // сотруднику, а под ней — по рынкам», задача попадает в оба измерения без конфликта).
   const nestedGroups: NestedStaffGroup[] = useMemo(
-    () => (allStaff && byMarket ? groupByAssigneeThenMarket(queried, activeList, effLens, me, now) : []),
-    [allStaff, byMarket, activeList, queried, effLens, me, now],
+    () => (allStaff && byMarket ? groupByAssigneeThenMarket(queried, activeList, effLens, me, now, range) : []),
+    [allStaff, byMarket, activeList, queried, effLens, me, now, range],
   );
 
   const toggle = useCallback(async (t: Task) => {
@@ -227,7 +247,7 @@ export function useReminderTasks() {
   return {
     tasks, me, loading: tasks === null,
     activeList, setActiveList, lens, setLens, effLens, query, setQuery,
-    byMarket, setByMarket, allStaff, setAllStaff,
+    byMarket, setByMarket, allStaff, setAllStaff, range, setRange,
     counts, visible, marketGroups, staffGroups, nestedGroups, now,
     labels, activeLabelId, setActiveLabelId, labelCounts, visibleByLabel, reloadLabels,
     toggle, remove, quickAdd, patchTask, reload,

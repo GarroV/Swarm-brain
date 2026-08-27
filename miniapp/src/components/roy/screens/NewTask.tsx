@@ -3,6 +3,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useRoyNav } from "../nav";
 import { NavHeader, SectionLabel, Chip, Segmented } from "../ui";
 import { createTask, updateTask, fetchTask, fetchConfig, fetchUsers } from "@/lib/api";
+import { matchesLens, matchesList } from "@/lib/smartLists";
+import { readSavedTasksView } from "@/components/tasks/useReminderTasks";
 import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
 import type { User } from "@/types";
@@ -25,7 +27,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 const inputCls = "w-full bg-surface border border-line-2 rounded-[18px] px-4 py-3 text-ink outline-none focus:border-primary";
 
 export function NewTask({ id }: { id?: string }) {
-  const { pop, setTab, toast } = useRoyNav();
+  const { me, pop, setTab, toast, openTasks } = useRoyNav();
   const editing = !!id;
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
@@ -79,9 +81,19 @@ export function NewTask({ id }: { id?: string }) {
         toast("Сохранено");
         pop();
       } else {
-        await createTask(payload);
+        const created = await createTask(payload);
         toast("Задача создана");
-        setTab("task");
+        // Задача, не попадающая в активный вид списка, выглядела как потерянная: создал без
+        // срока → вернулся в «Сегодня» → пусто. Проверяем тем же правилом, которым живёт список,
+        // и при промахе открываем вид, где задача видна.
+        const view = readSavedTasksView();
+        const lens = view?.lens ?? "mine";
+        const list = view?.activeList ?? "today";
+        const lensOk = matchesLens(created, lens, me);
+        // Период тоже учитываем: с включённой «Этой неделей» задача вне диапазона так же
+        // невидима, и «пропала» вернулось бы ровно тем же способом (фича периода пришла из main).
+        if (lensOk && matchesList(created, list, new Date(), view?.range ?? null)) setTab("task");
+        else openTasks(lensOk ? lens : "all", "all");
       }
     } catch {
       toast("Не удалось сохранить");

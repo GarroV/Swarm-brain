@@ -32,6 +32,9 @@ jobs:
           deno-version: v2.x
       - name: deno check (все edge-функции)
         run: deno check $(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts)
+      # Тесты настоящего мёржа конфига Claude Desktop идут ТОЛЬКО на macOS: их JSON-движок —
+      # plutil (Apple-only), и на Linux-раннере они честно помечаются пропуском (см. HAS_PLUTIL
+      # в swarm-setup/script.test.ts). Инварианты мёржа при этом проверяются статически и здесь.
       - name: deno test
         run: deno test -A supabase/functions/
 

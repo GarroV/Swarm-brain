@@ -4,8 +4,10 @@ import { useRoyNav } from "../nav";
 import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks, Participants } from "../ui";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle, entryImporterName } from "../entry";
+import { hasDraftNotes } from "@/lib/agentMeeting";
 import {
   fetchMeetings,
+  fetchMeeting,
   fetchAgentMeetings,
   fetchAgentMeeting,
   fetchAgentMeetingNotes,
@@ -585,14 +587,22 @@ function DetailPanel({
           </div>
         </div>
 
-        {e.summary && (
-          <div>
-            <SectionLabel>Саммари</SectionLabel>
-            <TezisyBlocks text={e.summary} />
-          </div>
-        )}
+        {/* Пока идёт до-загрузка полного текста (issue #102) показываем плашку, а НЕ обрезок:
+            урезанные тезисы и транскрипт выглядели бы как короткая, но полная встреча. */}
+        {e.truncated ? (
+          <div className="text-ink-mute" style={{ fontSize: 13 }}>Загружаем расшифровку…</div>
+        ) : (
+          <>
+            {e.summary && (
+              <div>
+                <SectionLabel>Саммари</SectionLabel>
+                <TezisyBlocks text={e.summary} />
+              </div>
+            )}
 
-        <ContentEditor entry={e} onSaved={onEntryUpdated} />
+            <ContentEditor entry={e} onSaved={onEntryUpdated} />
+          </>
+        )}
       </div>
     );
   }
@@ -758,7 +768,7 @@ function AgentMeetingDetail({
   // Поллинг, пока идёт обработка: нет тезисов И статус не терминальный (done/failed).
   // Раньше стоп был только на draft_notes_md||failed → done с пустыми тезисами крутил вечно.
   useEffect(() => {
-    if (m.draft_notes_md || m.summary_status === "done" || m.summary_status === "failed") return;
+    if (hasDraftNotes(m) || m.summary_status === "done" || m.summary_status === "failed") return;
     const id = setInterval(() => {
       setPollCount((c) => c + 1);
       fetchAgentMeeting(m.id)
@@ -768,11 +778,11 @@ function AgentMeetingDetail({
         });
     }, AGENT_POLL_MS);
     return () => clearInterval(id);
-  }, [m.id, m.draft_notes_md, m.summary_status]);
+  }, [m.id, m.draft_notes_md, m.has_draft_notes, m.summary_status]);
 
   // Подсказка, что обработка затянулась: всё ещё processing, тезисов нет, опросов накопилось много.
   const isTakingTooLong =
-    !m.draft_notes_md && m.summary_status !== "failed" && m.summary_status !== "done" && pollCount >= AGENT_SLOW_POLL_COUNT;
+    !hasDraftNotes(m) && m.summary_status !== "failed" && m.summary_status !== "done" && pollCount >= AGENT_SLOW_POLL_COUNT;
 
   const segments = m.transcript?.segments ?? [];
   const hasTranscript = segments.length > 0;
@@ -886,7 +896,7 @@ function AgentMeetingDetail({
       {/* Тезисы + транскрипт скроллятся внутри своего контейнера, а не растят страницу. */}
       <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-16">
         {/* Верх: тезисы / статус обработки */}
-        {m.draft_notes_md ? (
+        {hasDraftNotes(m) && m.draft_notes_md ? (
           <div>
             <div className={`${STICKY_HEAD} flex items-center justify-between gap-2`} style={STICKY_HEAD_BG}>
               <SectionLabel className="!mb-0">Тезисы</SectionLabel>
@@ -1236,7 +1246,7 @@ function ActionsPanel({
           entry: привязываем к записи (meeting_id). agent-черновик: записи ещё нет (entry_id
           появится при публикации) → задачи автономные; извлекаем из тезисов, а при их отсутствии —
           из транскрипта (фолбэк), чтобы блок был доступен для ЛЮБОЙ встречи с содержанием. */}
-      {item.kind === "entry" && (
+      {item.kind === "entry" && !item.data.truncated && (
         <div className="mt-1 border-t border-line pt-3">
           <TasksFromMeeting text={item.data.content} meetingId={item.data.id} resetKey={item.data.id} />
         </div>
@@ -1356,6 +1366,37 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
   }, [mode, allMeetings]);
 
   const switchMode = (m: string) => { setSelected(null); setMode(m as "review" | "all"); };
+
+  // Список «Все встречи» приходит с урезанными content/summary (issue #102). Полный текст
+  // нужен только ОТКРЫТОЙ карточке — до-загружаем его по клику. Выбор ставим сразу, не
+  // дожидаясь ответа: заголовок, дата, источник и рынки в списочной строке уже есть, так что
+  // панель не мигает пустотой. Пока полного текста нет, у записи стоит truncated — по нему
+  // DetailPanel/ActionsPanel прячут транскрипт, тезисы и извлечение задач, чтобы не показать
+  // обрезок как полный и не извлечь задачи из первых 400 символов.
+  const selectItem = useCallback((item: MeetItem) => {
+    setSelected(item);
+    // Черновик рекордера: в списке нет ни тезисов, ни транскрипта (issue #108) — а ActionsPanel
+    // извлекает из них задачи. Догружаем целиком; AgentMeetingDetail просит то же самое на
+    // своём маунте, и дедуп запросов (issue #103) склеивает оба вызова в один.
+    if (item.kind === "agent") {
+      const aid = item.data.id;
+      fetchAgentMeeting(aid)
+        .then((full) => setSelected((prev) =>
+          prev && prev.kind === "agent" && prev.data.id === aid ? { kind: "agent", data: full } : prev))
+        .catch(() => { /* деталь сама покажет ошибку — своя загрузка у неё есть */ });
+      return;
+    }
+    if (item.kind !== "entry" || !item.data.truncated) return;
+    const id = item.data.id;
+    fetchMeeting(id)
+      .then((full) => {
+        setSelected((prev) =>
+          prev && prev.kind === "entry" && prev.data.id === id ? { kind: "entry", data: full } : prev,
+        );
+        setAllMeetings((prev) => prev?.map((e) => (e.id === id ? full : e)) ?? null);
+      })
+      .catch(() => toast("Не удалось загрузить расшифровку — попробуйте открыть встречу снова"));
+  }, [toast]);
 
   // Список зависит от режима: Ревью — очередь (черновики + неподтверждённые), Все — весь доступный.
   const reviewItems: MeetItem[] = [
@@ -1507,7 +1548,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
                 key={itemId(item)}
                 item={item}
                 active={selected !== null && itemId(selected) === itemId(item)}
-                onClick={() => setSelected(item)}
+                onClick={() => selectItem(item)}
                 removing={removingIds.has(itemId(item))}
               />
             ))}

@@ -1,5 +1,5 @@
 "use client";
-// Быстрые действия в строке задачи: СРОК / ИСПОЛНИТЕЛЬ / РЫНОК / СПИСКИ без открытия карточки.
+// Быстрые действия в строке задачи: СРОК / ПИНГ / ИСПОЛНИТЕЛЬ / РЫНОК / СПИСКИ без открытия карточки.
 // Срок — DatePicker (compact); исполнитель — QuickPickPopover; страна — CountryPopover
 // (variant="icon", сетка флагов, единый компонент с формой TaskModal); списки — пиктограммы-метки
 // (PictogramPicker, multi).
@@ -34,6 +34,16 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
         compact
         value={task.due_date ?? ""}
         onChange={(iso) => commit({ due_date: iso || null }, { due_date: iso || null })}
+        className={TRIGGER}
+        placeholder=""
+      />
+      <DatePicker
+        compact
+        icon="bell"
+        ariaLabel="Пинг"
+        clearLabel="Убрать пинг"
+        value={task.remind_date ?? ""}
+        onChange={(iso) => commit({ remind_date: iso || null }, { remind_date: iso || null, reminded_at: null })}
         className={TRIGGER}
         placeholder=""
       />

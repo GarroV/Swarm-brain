@@ -4,17 +4,20 @@ import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId, getDeepLinkTaskId } from "@/lib/telegram";
-import { logout } from "@/lib/api";
+import { fetchAgentMeetings, logout } from "@/lib/api";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
-import { RoyNavContext, useRoyNav, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
+import { RoyNavContext, useRoyNav, useDt, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
 import type { Lens, SmartListId } from "@/lib/smartLists";
-import { RoyTabBar, NavHeader, Avatar, ROY_TABS } from "./ui";
+import { RoyTabBar, NavHeader, RoyHeader, Avatar, ROY_TABS } from "./ui";
+import { HeaderActions } from "./HeaderActions";
 import { initials } from "./dash/shared";
 import { useIsDesktop } from "./useIsDesktop";
 import { SearchScreen } from "./screens/SearchScreen";
 import { AnswerScreen } from "./screens/AnswerScreen";
 import { RecordDetail } from "./screens/RecordDetail";
 import { RoyTasksScreen } from "./screens/RoyTasksScreen";
+import { RoyProjectsScreen } from "./screens/RoyProjectsScreen";
+import { ProjectTasksScreen } from "./screens/ProjectTasksScreen";
 import { TaskDetail } from "./screens/TaskDetail";
 import { NewTask } from "./screens/NewTask";
 import { RoyBaseScreen } from "./screens/RoyBaseScreen";
@@ -22,7 +25,7 @@ import { NewEntry } from "./screens/NewEntry";
 import { RoyMeetingsScreen } from "./screens/RoyMeetingsScreen";
 import { MeetingDetail } from "./screens/MeetingDetail";
 import { RoyDashboard } from "./RoyDashboard";
-import { FeedbackFab } from "./FeedbackFab";
+import { FeedbackDialog, FeedbackFab } from "./FeedbackFab";
 import { RoyMark } from "./RoyMark";
 import { MeetingReview } from "@/components/MeetingReview";
 import { TasksScreen } from "@/components/tasks/TasksScreen";
@@ -34,9 +37,13 @@ import { ProfileMenu } from "./ProfileMenu";
 import { NotificationsBell } from "./NotificationsBell";
 import { AnswerModal } from "./AnswerModal";
 
-// Каркас «Рой» по дизайн-хендоффу: 4 корневых таба (Поиск/Задачи/База/Встречи) + push-стек.
-// Мобайл — нижний таб-бар; десктоп (lg+) — левый сайдбар. На десктопе вкладка «Задачи»
-// показывает полный TasksScreen с видами Доска/Таймлайн/Спринт/Граф; на мобайле — список.
+// Каркас «Рой»: корневые разделы + push-стек.
+// МОБАЙЛ (решение владельца 2026-08-22, docs/decisions/2026-08-22-mobile-nav.md): нижний таб-бар
+// «Задачи · Встречи · Ещё» (+ «Проекты» шагом 4), дом — задачи. Поиск не таб, а иконка в шапке
+// любого корневого экрана → push-роут `ask` (тот же SearchScreen/AnswerScreen). База — пункт
+// «Ещё» → push-роут `base`. Настройки/Команда/Админ/Карта живут в «Ещё» и потому доступны с
+// ЛЮБОГО таба (до этого — только из шапки «Поиска», т.е. с одного экрана из четырёх).
+// ДЕСКТОП (lg+) не менялся: дом — дашборд (`search`), «Задачи» — полный TasksScreen, база — `book`.
 
 export function RoyApp({ me }: { me: Me | null }) {
   const [tab, setTabState] = useState<RoyTab>("search");
@@ -51,6 +58,10 @@ export function RoyApp({ me }: { me: Me | null }) {
   const [taskView, setTaskView] = useState<{ lens: Lens; list?: SmartListId } | null>(null);
   const openTask = useCallback((t: Task) => setTaskModalTask(t), []);
   const isDesktop = useIsDesktop();
+  // Сколько черновиков встреч ждёт вычитки — для бейджа на табе «Встречи». Ошибку глотаем:
+  // эндпоинт /agent-meetings может быть недоступен, и это не повод ронять каркас (та же
+  // намеренная деградация, что в AgentReviewQueue).
+  const [reviewCount, setReviewCount] = useState(0);
   // Стек восстановлен из sessionStorage? До этого не персистим, иначе начальный [] затрёт сохранённый.
   const hydrated = useRef(false);
 
@@ -91,6 +102,16 @@ export function RoyApp({ me }: { me: Me | null }) {
     setStack([{ view: "meetingReview", params: { id } }]);
   }, []);
 
+  // Бейдж «на вычитке»: считаем при монтировании и при каждой смене таба на «Встречи»
+  // (разобрал очередь → вернулся на другой таб → счётчик обновится при следующем заходе).
+  useEffect(() => {
+    let alive = true;
+    fetchAgentMeetings("awaiting_review")
+      .then((list) => { if (alive) setReviewCount(list.length); })
+      .catch(() => { if (alive) setReviewCount(0); });
+    return () => { alive = false; };
+  }, [tab, stack.length]);
+
   useEffect(() => {
     if (!toastMsg) return;
     const id = setTimeout(() => setToastMsg(null), 1900);
@@ -116,14 +137,24 @@ export function RoyApp({ me }: { me: Me | null }) {
     }
     try {
       const saved = sessionStorage.getItem("roy_tab");
-      if (saved && ROY_TABS.some((t) => t.id === saved)) setTabState(saved as RoyTab);
+      // Валидируем по ПОЛНОМУ союзу, а не по ROY_TABS: в баре мобильные табы, а `search`/`book` —
+      // десктопные разделы. На мобайле сохранённые десктопные значения мигрируем, иначе человек с
+      // живой сессией после деплоя попал бы на экран, которого в баре нет (подсветки таба нет).
+      const valid = saved && (["search", "task", "projects", "book", "cal", "more"] as const).includes(saved as RoyTab)
+        ? (saved as RoyTab)
+        : null;
+      const desktop = window.matchMedia("(min-width: 1024px)").matches;
+      const initial: RoyTab = desktop
+        ? (valid ?? "search")
+        : valid === null || valid === "search" ? "task" : valid === "book" ? "more" : valid;
+      setTabState(initial);
       // Восстанавливаем и push-стек (открытую деталь), чтобы рефреш не сбрасывал на корень таба.
       // Валидируем не только view, но и ОБЯЗАТЕЛЬНЫЕ params (битый/усечённый storage → роут без id
       // ушёл бы в fetch(undefined) и белый экран). Любой невалидный роут → стек не восстанавливаем.
       const rawStack = sessionStorage.getItem("roy_stack");
       if (rawStack) {
         const parsed = JSON.parse(rawStack);
-        const needsId = new Set(["record", "taskDetail", "meetingDetail", "meetingReview"]);
+        const needsId = new Set(["record", "taskDetail", "meetingDetail", "meetingReview", "project"]);
         const valid = (r: { view?: unknown; params?: { id?: unknown; query?: unknown } }) => {
           if (!r || typeof r.view !== "string") return false;
           if (r.view === "answer") return typeof r.params?.query === "string";
@@ -217,10 +248,14 @@ export function RoyApp({ me }: { me: Me | null }) {
                 <div className="min-h-0 flex-1 overflow-hidden">
                   {tab === "search" && (isDashboard ? <RoyDashboard /> : <SearchScreen />)}
                   {tab === "task" && (isDesktop ? <TasksScreen /> : <RoyTasksScreen />)}
+                  {/* Десктоп своей доской проектов уже владеет (TasksScreen → вид «Проекты»),
+                      мобильный экран — отдельный: список проектов → задачи внутри. */}
+                  {tab === "projects" && (isDesktop ? <TasksScreen /> : <RoyProjectsScreen />)}
                   {tab === "book" && <RoyBaseScreen />}
                   {tab === "cal" && <RoyMeetingsScreen />}
+                  {tab === "more" && <MoreScreen root />}
                 </div>
-                <RoyTabBar active={tab} onChange={(id) => setTab(id as RoyTab)} className="lg:hidden" />
+                <RoyTabBar active={tab} onChange={(id) => setTab(id as RoyTab)} className="lg:hidden" badges={{ cal: reviewCount }} />
               </>
             )}
 
@@ -250,7 +285,9 @@ export function RoyApp({ me }: { me: Me | null }) {
         onSaved={() => setTasksVersion((v) => v + 1)}
       />
       {answerQuery !== null && <AnswerModal query={answerQuery} onClose={() => setAnswerQuery(null)} />}
-      <FeedbackFab />
+      {/* На мобайле «?» была вторым FAB под «+» и спорила с главным действием экрана —
+          фидбек переехал пунктом в «Ещё» (аудит мобилки 2026-08-22). */}
+      {isDesktop && <FeedbackFab />}
     </RoyNavContext.Provider>
   );
 }
@@ -264,6 +301,9 @@ function PushScreen({ route }: { route: RoyRoute }) {
   if (route.view === "newEntry") return <NewEntry />;
   if (route.view === "meetingDetail") return <MeetingDetail id={route.params.id} />;
   if (route.view === "more") return <MoreScreen />;
+  if (route.view === "ask") return <AskScreen />;
+  if (route.view === "base") return <BaseScreen />;
+  if (route.view === "project") return <ProjectTasksScreen id={route.params.id} />;
   if (route.view === "map") return <MapScreen />;
   if (route.view === "settings") return <Wrapped title="Настройки"><SettingsScreen /></Wrapped>;
   if (route.view === "team") return <Wrapped title="Команда"><TeamScreen /></Wrapped>;
@@ -293,6 +333,19 @@ function MapScreen() {
   );
 }
 
+// Поиск как push-экран: таба «Поиск» на мобайле нет, вход — иконка в шапке (SearchBtn).
+// Тот же SearchScreen (поле, недавние запросы, «Продолжить»), только с «Назад» вместо лого.
+function AskScreen() {
+  const { pop } = useRoyNav();
+  return <SearchScreen onBack={pop} />;
+}
+
+// База как push-экран из «Ещё» — тот же RoyBaseScreen, с «Назад» вместо заголовка-хедера.
+function BaseScreen() {
+  const { pop } = useRoyNav();
+  return <RoyBaseScreen onBack={pop} />;
+}
+
 function Wrapped({ title, children }: { title: string; children: React.ReactNode }) {
   const { pop } = useRoyNav();
   return (
@@ -303,17 +356,32 @@ function Wrapped({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function MoreScreen() {
+// «Ещё» — корневой таб на мобайле (root) и push-экран на десктопе (из шапки дашборда).
+// Здесь живёт всё, что не заслужило таба: профиль, база, команда, настройки, админка, карта.
+// Именно это закрывает главный блокер навигации — раньше вход был только из шапки «Поиска».
+function MoreScreen({ root = false }: { root?: boolean }) {
   const { me, push, pop } = useRoyNav();
+  const dt = useDt();
+  const [feedback, setFeedback] = useState(false);
   const rows: { label: string; route: RoyRoute }[] = [
-    { label: "Карта системы", route: { view: "map" } },
-    { label: "Настройки", route: { view: "settings" } },
-    { label: "Команда", route: { view: "team" } },
+    { label: dt("База", "Knowledge base"), route: { view: "base" } },
+    { label: dt("Команда", "Team"), route: { view: "team" } },
+    { label: dt("Настройки", "Settings"), route: { view: "settings" } },
+    { label: dt("Карта системы", "System map"), route: { view: "map" } },
   ];
-  if (me?.is_admin) rows.push({ label: "Админ", route: { view: "admin" } });
+  if (me?.is_admin) rows.push({ label: dt("Админ", "Admin"), route: { view: "admin" } });
   return (
     <div className="roy-pop flex h-full flex-col">
-      <NavHeader onBack={pop} title="Ещё" />
+      {root ? <RoyHeader title={dt("Ещё", "More")} right={<HeaderActions />} /> : <NavHeader onBack={pop} title={dt("Ещё", "More")} />}
+      {me && (
+        <div className="flex shrink-0 items-center gap-3 px-4 pb-3">
+          <Avatar size={44}>{initials(me.name)}</Avatar>
+          <div className="min-w-0">
+            <div className="truncate font-semibold text-ink" style={{ fontSize: 15 }}>{me.name}</div>
+            {me.username && <div className="truncate text-ink-mute" style={{ fontSize: 13 }}>@{me.username}</div>}
+          </div>
+        </div>
+      )}
       <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
         {rows.map((r) => (
           <button
@@ -326,6 +394,15 @@ function MoreScreen() {
             {r.label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setFeedback(true)}
+          className="flex w-full items-center justify-between rounded-[18px] border border-line bg-surface px-4 py-3.5 text-left font-semibold text-ink transition-transform active:scale-[0.98]"
+          style={{ fontSize: 15 }}
+        >
+          {dt("Оставить фидбек", "Send feedback")}
+        </button>
+        <FeedbackDialog open={feedback} onOpenChange={setFeedback} />
       </div>
     </div>
   );

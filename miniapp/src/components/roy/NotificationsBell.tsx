@@ -183,7 +183,17 @@ export function NotificationsBell({ className }: { className?: string }) {
                           line-clamp именно на этом span, а не на вложенном: вложенный становится
                           -webkit-box и уносит текст на строку ниже имени автора. */}
                       <span className="mt-0.5 line-clamp-2 text-ink-soft" style={{ fontSize: 12.5 }}>
-                        <span className="font-semibold">{n.actor_name}</span>{": "}{n.content}
+                        {/* У пинга нет автора и текста: событие системное, и «— : » выглядело бы поломкой. */}
+                        {n.type === "task_reminder" ? (
+                          <span className="inline-flex items-center gap-1 font-semibold text-accent-ink">
+                            <RoyIcon name="bell" size={11} />
+                            {dt("Напоминание, которое ты поставил", "The reminder you set")}
+                          </span>
+                        ) : (
+                          <>
+                            <span className="font-semibold">{n.actor_name}</span>{": "}{n.content}
+                          </>
+                        )}
                       </span>
                     </span>
                   </button>
@@ -203,7 +213,7 @@ export function NotificationsBell({ className }: { className?: string }) {
             : dt("Уведомления", "Notifications")
         }
         aria-expanded={open}
-        className="relative flex items-center rounded-[12px] border border-line bg-surface p-2 shadow-[0_4px_14px_-8px_rgba(60,45,20,.4)] transition-colors hover:bg-surface-2 active:scale-[0.97] dark:backdrop-blur-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        className="relative flex size-10 items-center justify-center rounded-[12px] border border-line bg-surface shadow-[0_4px_14px_-8px_rgba(60,45,20,.4)] transition-colors hover:bg-surface-2 active:scale-[0.97] dark:backdrop-blur-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
       >
         <RoyIcon name="bell" size={20} className="text-ink-soft" />
         {unread > 0 && (
