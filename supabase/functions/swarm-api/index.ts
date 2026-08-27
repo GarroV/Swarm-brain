@@ -24,6 +24,7 @@ import {
 } from "../_shared/tasks/db.ts";
 import { recurrencePatchFor, resolveRecurrence } from "../_shared/tasks/recurrence.ts";
 import { createJsonObjectScanner } from "../_shared/json-object-stream.ts";
+import { readOpenAiSseChunk } from "../_shared/openai-sse.ts";
 import type { TaskInput, SprintInput, ProjectInput } from "../_shared/tasks/types.ts";
 import {
   listSprints,
@@ -301,27 +302,22 @@ async function streamExtractTasks(text: string, origin: string): Promise<Respons
       const decoder = new TextDecoder();
       let sseTail = "";
       let count = 0;
+      // Модель что-то написала (хоть один непустой кусок текста). Нужно, чтобы отличить
+      // «задач в тезисах правда нет» от «мы не смогли разобрать ответ»: снаружи и то и другое
+      // выглядит как пустой список, но первое — правда, а второе — молчаливый сбой.
+      let sawContent = false;
 
       try {
         outer: while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           sseTail += decoder.decode(value, { stream: true });
-          // OpenAI отдаёт свой SSE: строки `data: {…}` и финальный `data: [DONE]`.
-          const lines = sseTail.split("\n");
-          sseTail = lines.pop() ?? "";
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith("data:")) continue;
-            const payload = trimmed.slice(5).trim();
-            if (payload === "[DONE]") break outer;
-            let delta = "";
-            try {
-              delta = JSON.parse(payload)?.choices?.[0]?.delta?.content ?? "";
-            } catch {
-              continue; // битый кусок протокола пропускаем, поток не роняем
-            }
-            if (!delta) continue;
+          // Разбор чужого протокола вынесен в _shared/openai-sse.ts и покрыт фикстурой:
+          // ошибка здесь означала бы молча пустой разбор у человека на экране.
+          const { deltas, rest, done: upstreamDone } = readOpenAiSseChunk(sseTail, false);
+          sseTail = rest;
+          for (const delta of deltas) {
+            sawContent = true;
             for (const chunk of scanner.push(delta)) {
               let task: ExtractedTask | null = null;
               try {
@@ -334,8 +330,16 @@ async function streamExtractTasks(text: string, origin: string): Promise<Respons
               if (++count >= EXTRACT_MAX_TASKS) break outer;
             }
           }
+          if (upstreamDone) break;
         }
-        send({ type: "done", count });
+        if (count === 0 && sawContent) {
+          // Ответ был, задач ноль — значит сломался разбор, а не встреча оказалась пустой.
+          // Честная ошибка вместо «Задач не найдено»: пусть человек нажмёт ещё раз и увидит
+          // причину, а не решит, что поручений в его встрече нет.
+          send({ type: "error", message: "Ответ модели не удалось разобрать" });
+        } else {
+          send({ type: "done", count });
+        }
       } catch (e) {
         send({ type: "error", message: e instanceof Error ? e.message : "stream failed" });
       } finally {
