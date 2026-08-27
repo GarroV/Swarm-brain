@@ -16,3 +16,5 @@ SwarmRecorder-*.zip
 
 # Local config with the personal token — never commit
 config.json
+bumblebee-*.zip
+AppIcon.iconset/

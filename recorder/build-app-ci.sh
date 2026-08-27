@@ -1,5 +1,5 @@
 #!/bin/bash
-# CI-сборка ПРЕДсобранного SwarmRecorder.app для дистрибуции (issue #19).
+# CI-сборка ПРЕДсобранного приложения для дистрибуции (issue #19).
 # Universal (arm64 + x86_64), deployment target macOS 13.0 (запускается на 13+), ad-hoc подпись.
 # На машине пользователя установщик (swarm-recorder-setup) переподписывает per-machine cert'ом —
 # здесь только ad-hoc, чтобы бандл был корректным. Собирается на macOS-раннере (macos-14) в CI,
@@ -16,10 +16,18 @@ TARGET_MIN="13.0"
 # ${BUILD} в скобках ОБЯЗАТЕЛЬНО: дальше идёт «…» (U+2026), и bash на macos-раннере приклеивает
 # многобайтовый символ к имени переменной → «BUILD…: unbound variable», а set -u валит сборку
 # до первого swift build. Так молча не собрались релизы 20/21/22 (issue #40).
+# Иконку рисует код (RoyArt.swift) — пересобираем, чтобы .icns не отстал от марки в меню-баре.
+./gen-icon.sh >/dev/null
+
 echo "[ci] swift build arm64 + x86_64 (macosx${TARGET_MIN}), build ${BUILD}…"
 swift build -c release --arch arm64  -Xswiftc -target -Xswiftc "arm64-apple-macosx$TARGET_MIN"
 swift build -c release --arch x86_64 -Xswiftc -target -Xswiftc "x86_64-apple-macosx$TARGET_MIN"
 
+# ⚠️ ПЕРЕХОДНОЕ имя бандла ВНУТРИ архива. Приложение называется bumblebee, но апдейтер на
+# машинах людей (build ≤ 23) ищет в архиве буквально SwarmRecorder.app и при другом имени молча
+# остаётся на старой версии («no SwarmRecorder.app inside archive; keep current»). Поэтому едем
+# под старым именем, а переименовывает себя уже приложение на машине (AppDelegate.migrateBundleName).
+# Убрать это имя можно, когда у всех рекордер будет build ≥ 24 (allowed_users.recorder_last_version).
 APP="SwarmRecorder.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -35,8 +43,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>SwarmRecorder</string>
-  <key>CFBundleDisplayName</key><string>Swarm Recorder</string>
+  <key>CFBundleName</key><string>bumblebee</string>
+  <key>CFBundleDisplayName</key><string>bumblebee</string>
   <key>CFBundleExecutable</key><string>SwarmRecorder</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>io.dodobrands.swarmrecorder</string>
@@ -45,9 +53,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
-  <key>NSMicrophoneUsageDescription</key><string>SwarmRecorder записывает звук встречи, чтобы подготовить тезисы.</string>
-  <key>NSAudioCaptureUsageDescription</key><string>SwarmRecorder записывает системный звук встречи (собеседников), чтобы подготовить тезисы.</string>
-  <key>NSAppleEventsUsageDescription</key><string>SwarmRecorder читает URL активной вкладки браузера, чтобы определить комнату звонка (Meet/Контур) для дедупа встреч.</string>
+  <key>NSMicrophoneUsageDescription</key><string>bumblebee записывает звук встречи, чтобы подготовить тезисы.</string>
+  <key>NSAudioCaptureUsageDescription</key><string>bumblebee записывает системный звук встречи (собеседников), чтобы подготовить тезисы.</string>
+  <key>NSAppleEventsUsageDescription</key><string>bumblebee читает URL активной вкладки браузера, чтобы определить комнату звонка (Meet/Контур) для дедупа встреч.</string>
 </dict>
 </plist>
 PLIST
