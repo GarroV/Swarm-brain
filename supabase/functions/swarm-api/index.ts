@@ -23,6 +23,7 @@ import {
   deleteTask,
 } from "../_shared/tasks/db.ts";
 import { recurrencePatchFor, resolveRecurrence } from "../_shared/tasks/recurrence.ts";
+import { createJsonObjectScanner } from "../_shared/json-object-stream.ts";
 import type { TaskInput, SprintInput, ProjectInput } from "../_shared/tasks/types.ts";
 import {
   listSprints,
@@ -210,44 +211,148 @@ function cleanExtractedField(value: unknown): string | null {
   return NULLISH_FIELDS.has(trimmed.toLowerCase()) ? null : trimmed;
 }
 
-async function gptExtractTasks(text: string): Promise<ExtractedTask[]> {
-  const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
-  const today = todayIso();
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: `Сегодня ${today}. Извлеки задачи из тезисов встречи. Верни JSON массив (только JSON, без markdown): [{"title":"короткая формулировка действия","description":"1 фраза контекста из обсуждения: зачем/какой ожидаемый результат/важная деталь. НЕ повторяй заголовок другими словами","assignee":"полное имя ответственного","due_date":"YYYY-MM-DD","country":"ISO-код рынка, например RS"}]. Бери только реальные поручения/действия с конкретным результатом. Если задач нет — пустой массив [].\nЕсли для поля (кроме title) в тексте нет данных — ставь JSON-литерал null БЕЗ кавычек. Строка "null" запрещена: это текст, а не пустое значение, и он попадает пользователю на экран.\ndue_date: год считай от сегодняшней даты. Если в тексте назван только день и месяц («до 17 августа») — подставь ближайший подходящий год, НИКОГДА не бери год из головы. Если срок не назван — null.` },
-        { role: "user", content: text.slice(0, 8000) },
-      ],
-      max_tokens: 1200,
-    }),
+// Промпт и тело запроса — ОДИН источник на оба режима (обычный ответ и поток). Копий промпта
+// извлечения задач в проекте и так три (бот, api, историчные дубли); четвёртая ради формата
+// доставки гарантированно разошлась бы с этой.
+const EXTRACT_MODEL = "gpt-4o-mini";
+const EXTRACT_MAX_TASKS = 10;
+
+function extractPrompt(today: string): string {
+  return `Сегодня ${today}. Извлеки задачи из тезисов встречи. Верни JSON массив (только JSON, без markdown): [{"title":"короткая формулировка действия","description":"1 фраза контекста из обсуждения: зачем/какой ожидаемый результат/важная деталь. НЕ повторяй заголовок другими словами","assignee":"полное имя ответственного","due_date":"YYYY-MM-DD","country":"ISO-код рынка, например RS"}]. Бери только реальные поручения/действия с конкретным результатом. Если задач нет — пустой массив [].\nЕсли для поля (кроме title) в тексте нет данных — ставь JSON-литерал null БЕЗ кавычек. Строка "null" запрещена: это текст, а не пустое значение, и он попадает пользователю на экран.\ndue_date: год считай от сегодняшней даты. Если в тексте назван только день и месяц («до 17 августа») — подставь ближайший подходящий год, НИКОГДА не бери год из головы. Если срок не назван — null.`;
+}
+
+function extractRequestBody(text: string, today: string, stream: boolean): string {
+  return JSON.stringify({
+    model: EXTRACT_MODEL,
+    messages: [
+      { role: "system", content: extractPrompt(today) },
+      { role: "user", content: text.slice(0, 8000) },
+    ],
+    max_tokens: 1200,
+    ...(stream ? { stream: true } : {}),
   });
+}
+
+function callExtractor(text: string, today: string, stream: boolean): Promise<Response> {
+  return fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")!}`,
+    },
+    body: extractRequestBody(text, today, stream),
+  });
+}
+
+// Слой 2 поверх промпта: выдуманный моделью год и строковые «пустоты» чиним здесь — промпт
+// можно проигнорировать, проверку нет. Задача без заголовка отбрасывается (возвращаем null):
+// показывать и создавать там нечего.
+function toExtractedTask(raw: unknown, today: string): ExtractedTask | null {
+  const t = (raw ?? {}) as Record<string, unknown>;
+  const title = cleanExtractedField(t.title);
+  if (!title) return null;
+  return {
+    title,
+    description: cleanExtractedField(t.description),
+    assignee: cleanExtractedField(t.assignee),
+    due_date: normalizeExtractedDueDate(cleanExtractedField(t.due_date), today),
+    country: cleanExtractedField(t.country),
+  };
+}
+
+async function gptExtractTasks(text: string): Promise<ExtractedTask[]> {
+  const today = todayIso();
+  const res = await callExtractor(text, today, false);
   if (!res.ok) return [];
   try {
     const raw = (await res.json()).choices[0].message.content.replace(/```json\n?|\n?```/g, "").trim();
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    // Слой 2: выдуманный моделью год и строковые «пустоты» чиним здесь — промпт можно
-    // проигнорировать, проверку нет. Задачи без заголовка отбрасываем: показывать и создавать
-    // там нечего.
     return (parsed as unknown[])
-      .map((raw) => {
-        const t = (raw ?? {}) as Record<string, unknown>;
-        return {
-          title: cleanExtractedField(t.title) ?? "",
-          description: cleanExtractedField(t.description),
-          assignee: cleanExtractedField(t.assignee),
-          due_date: normalizeExtractedDueDate(cleanExtractedField(t.due_date), today),
-          country: cleanExtractedField(t.country),
-        };
-      })
-      .filter((t) => t.title.length > 0);
+      .map((item) => toExtractedTask(item, today))
+      .filter((t): t is ExtractedTask => t !== null);
   } catch {
     return [];
   }
+}
+
+// Потоковое извлечение (SSE). Экран разбора открывается мгновенно и дописывает задачи по мере
+// готовности: замер по прод-логам показал, что 3–5 секунд ожидания — это целиком генерация
+// модели, а не инфраструктура (обычный вызов swarm-api укладывается в 200–600 мс). Ждать конца
+// значит держать человека перед пустым экраном всё это время; отдавать по объекту — показать
+// первую задачу примерно через секунду.
+//
+// Формат событий (по одному JSON на `data:`):
+//   {"type":"task","task":{…}}   — очередная готовая задача
+//   {"type":"done","count":N}    — поток закончился штатно
+//   {"type":"error","message":…} — модель оборвалась на середине; молча не глотаем
+async function streamExtractTasks(text: string, origin: string): Promise<Response> {
+  const today = todayIso();
+  const upstream = await callExtractor(text, today, true);
+  // Проверяем ДО того, как отдать 200: после начала потока сообщить об ошибке уже нечем.
+  if (!upstream.ok || !upstream.body) return apiErr(502, "Extractor unavailable", origin);
+
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    async start(controller) {
+      const send = (payload: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+      const scanner = createJsonObjectScanner();
+      const reader = upstream.body!.getReader();
+      const decoder = new TextDecoder();
+      let sseTail = "";
+      let count = 0;
+
+      try {
+        outer: while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          sseTail += decoder.decode(value, { stream: true });
+          // OpenAI отдаёт свой SSE: строки `data: {…}` и финальный `data: [DONE]`.
+          const lines = sseTail.split("\n");
+          sseTail = lines.pop() ?? "";
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) continue;
+            const payload = trimmed.slice(5).trim();
+            if (payload === "[DONE]") break outer;
+            let delta = "";
+            try {
+              delta = JSON.parse(payload)?.choices?.[0]?.delta?.content ?? "";
+            } catch {
+              continue; // битый кусок протокола пропускаем, поток не роняем
+            }
+            if (!delta) continue;
+            for (const chunk of scanner.push(delta)) {
+              let task: ExtractedTask | null = null;
+              try {
+                task = toExtractedTask(JSON.parse(chunk), today);
+              } catch {
+                continue; // объект не собрался в валидный JSON — пропускаем именно его
+              }
+              if (!task) continue;
+              send({ type: "task", task });
+              if (++count >= EXTRACT_MAX_TASKS) break outer;
+            }
+          }
+        }
+        send({ type: "done", count });
+      } catch (e) {
+        send({ type: "error", message: e instanceof Error ? e.message : "stream failed" });
+      } finally {
+        reader.cancel().catch(() => {});
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(body, {
+    headers: {
+      ...corsHeaders(origin),
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
 
 // Человеческий заголовок записи: metadata.title → первая непустая строка summary → срез content.
@@ -2049,6 +2154,12 @@ Deno.serve(async (req: Request) => {
     let body: Record<string, unknown>;
     try { body = await req.json(); } catch { return apiErr(400, "Invalid JSON", origin); }
     if (!body.text || typeof body.text !== "string") return apiErr(400, "text required", origin);
+
+    // Потоковый режим — по Accept, а не по новому пути: контракт эндпоинта не меняется,
+    // старый JSON-ответ продолжает работать для всех, кто про поток не знает.
+    if ((req.headers.get("Accept") ?? "").includes("text/event-stream")) {
+      return await streamExtractTasks(body.text, origin);
+    }
 
     // Единый экстрактор (тот же `gptExtractTasks`, что на публикации встречи) — без дубля промпта.
     // Та же форма {title,description,assignee,due_date,country}; при сбое GPT отдаёт [] (мягко, не 500).

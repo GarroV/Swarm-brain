@@ -84,10 +84,12 @@ type Props = {
   users: User[];
   /** Идёт массовое добавление: кнопки заблокированы, лист не закрывается сам. */
   busy: boolean;
+  /** Модель ещё пишет: внизу висит заготовка, «Задач не найдено» не показываем раньше времени. */
+  streaming: boolean;
   actions: HarvestActions;
 };
 
-export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, busy, actions }: Props) {
+export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, busy, streaming, actions }: Props) {
   const dt = useDt();
   // Пересчёт геометрии при смене размера окна: лист открыт, а окно перетащили на другой экран.
   const [, bumpViewport] = useState(0);
@@ -127,10 +129,14 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, bus
                   {dt("Разбор задач из встречи", "Tasks from this meeting")}
                 </Dialog.Title>
                 <p className="mt-1 text-ink-soft" style={{ fontSize: 13 }}>
-                  {dt(
-                    `Найдено ${tasks.length} · выбрано ${selected.length}`,
-                    `${tasks.length} found · ${selected.length} selected`,
-                  )}
+                  {streaming
+                    ? (tasks.length === 0
+                        ? dt("Читаю тезисы…", "Reading the notes…")
+                        : dt(`Нашёл ${tasks.length}, ищу дальше…`, `${tasks.length} so far, still reading…`))
+                    : dt(
+                        `Найдено ${tasks.length} · выбрано ${selected.length}`,
+                        `${tasks.length} found · ${selected.length} selected`,
+                      )}
                 </p>
               </div>
               <button
@@ -146,7 +152,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, bus
             </header>
 
             <div className="min-h-0 flex-auto overflow-y-auto px-3 py-3">
-              {tasks.length === 0 ? (
+              {tasks.length === 0 && !streaming ? (
                 <p className="px-1 text-ink-mute" style={{ fontSize: 12.5 }}>
                   {dt("Задач не найдено.", "No tasks found.")}
                 </p>
@@ -164,6 +170,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, bus
                       actions={actions}
                     />
                   ))}
+                  {streaming && <PendingRow />}
                 </ul>
               )}
             </div>
@@ -173,7 +180,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, bus
                 <button
                   type="button"
                   onClick={() => actions.toggleAll(!allSelected)}
-                  disabled={busy}
+                  disabled={busy || streaming}
                   className="rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
                   style={{ padding: "6px 12px", fontSize: 12, minHeight: 40 }}
                 >
@@ -193,16 +200,18 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, bus
               <button
                 type="button"
                 onClick={actions.commit}
-                disabled={busy || selected.length === 0}
+                disabled={busy || streaming || selected.length === 0}
                 className="ml-auto inline-flex items-center justify-center gap-2 rounded-[13px] font-semibold transition-[transform,opacity,filter,background] duration-150 enabled:hover:scale-[1.02] enabled:hover:brightness-105 active:scale-[0.98] disabled:opacity-60"
                 // Пока ничего не выбрано, кнопка НЕ выглядит главной: акцентная заливка на
                 // неработающей кнопке читается как «нажми», и человек тыкает в пустоту.
-                style={selected.length === 0 && !busy
+                style={(selected.length === 0 || streaming) && !busy
                   ? { padding: "10px 16px", fontSize: 14, minHeight: 40, background: "var(--surface-2)", color: "var(--ink-mute)", border: "1px solid var(--line)" }
                   : { padding: "10px 16px", fontSize: 14, minHeight: 40, background: "var(--accent-ink)", color: "var(--card)", border: 0 }}
               >
                 <RoyIcon name="check" size={16} strokeWidth={2.1} />
-                {busy
+                {streaming
+                  ? dt("Ещё ищу…", "Still reading…")
+                  : busy
                   ? dt("Добавляем…", "Adding…")
                   // Ноль выбранных — говорим ПОЧЕМУ кнопка не нажимается, а не «Добавить 0 задач».
                   : selected.length === 0
@@ -237,7 +246,9 @@ function HarvestRow({ task, users, busy, editing, onStartEdit, onStopEdit, actio
 
   return (
     <li
-      className="rounded-[14px] border border-line bg-surface transition-colors hover:border-line-2 dark:backdrop-blur-lg"
+      // roy-harvest-row-in отыгрывается ОДИН раз при монтировании: строки приезжают потоком в
+      // непредсказуемые моменты, и без собственного движения это читается как мигание списка.
+      className="roy-harvest-row-in rounded-[14px] border border-line bg-surface transition-colors hover:border-line-2 dark:backdrop-blur-lg"
       style={{ opacity: task._selected ? 1 : 0.55 }}
     >
       <div className="flex items-start gap-2 p-2">
@@ -337,6 +348,26 @@ function HarvestRow({ task, users, busy, editing, onStartEdit, onStopEdit, actio
             <RoyIcon name="x" size={13} strokeWidth={1.9} />
           </button>
         </div>
+      </div>
+    </li>
+  );
+}
+
+// Заготовка в хвосте списка, пока модель пишет. Занимает место примерно одной строки, чтобы
+// приезд настоящей задачи не дёргал высоту листа сильнее необходимого, и показывает, что
+// работа идёт, — пустой хвост читался бы как «всё, больше не будет».
+function PendingRow() {
+  const dt = useDt();
+  return (
+    <li
+      aria-live="polite"
+      aria-label={dt("Модель ищет задачи", "The model is finding tasks")}
+      className="roy-harvest-row-in rounded-[14px] border border-dashed border-line bg-surface/50 p-3"
+    >
+      <div className="roy-harvest-wave flex flex-col gap-2">
+        <div className="rounded-[6px] bg-surface-2" style={{ height: 11, width: "62%" }} />
+        <div className="rounded-[6px] bg-surface-2" style={{ height: 9, width: "88%" }} />
+        <div className="rounded-[6px] bg-surface-2" style={{ height: 9, width: "34%" }} />
       </div>
     </li>
   );

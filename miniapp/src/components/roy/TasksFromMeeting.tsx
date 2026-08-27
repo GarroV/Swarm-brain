@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoyNav, useDt } from "./nav";
 import { RoyIcon } from "./icons";
-import { createTask, extractTasksPreview, fetchUsers } from "@/lib/api";
+import { createTask, extractTasksStreamed, fetchUsers } from "@/lib/api";
 import { resolveAssigneeId, taskCountLabel } from "@/lib/proposedTasks";
 import type { User } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
@@ -28,7 +28,8 @@ export function TasksFromMeeting({
   const anchorRef = useRef<HTMLDivElement>(null);
 
   const [tasks, setTasks] = useState<DraftTask[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  // streaming — модель ещё пишет: лист УЖЕ открыт и дописывается, кнопка занята.
+  const [streaming, setStreaming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
@@ -40,7 +41,7 @@ export function TasksFromMeeting({
   // что было открыто по прошлой встрече.
   useEffect(() => {
     setTasks(null);
-    setLoading(false);
+    setStreaming(false);
     setBusy(false);
     setSheetOpen(false);
     setEditing(null);
@@ -59,17 +60,26 @@ export function TasksFromMeeting({
     setSheetOpen(true);
   }, []);
 
+  // Лист открывается ДО запроса и дописывается по мере ответа модели: ожидание — это её
+  // генерация (3–5 с по прод-логам), и держать перед человеком пустой экран всё это время
+  // незачем, если первая задача готова примерно через секунду.
   const extract = async () => {
-    if (loading) return;
-    setLoading(true);
+    if (streaming) return;
+    setTasks([]);
+    setStreaming(true);
+    openSheet();
+    let seen = 0;
     try {
-      const proposed = await extractTasksPreview(text);
-      setTasks(proposed.map((p, i) => ({ ...p, _key: `${Date.now()}-${i}`, _selected: true })));
-      openSheet();
+      await extractTasksStreamed(text, (proposed) => {
+        const key = `${Date.now()}-${seen++}`;
+        setTasks((prev) => [...(prev ?? []), { ...proposed, _key: key, _selected: true }]);
+      });
     } catch {
       toast(dt("Не удалось вычленить задачи", "Could not extract tasks"));
+      // Что успело приехать — оставляем: половина разбора полезнее пустого листа.
+      if (seen === 0) setSheetOpen(false);
     } finally {
-      setLoading(false);
+      setStreaming(false);
     }
   };
 
@@ -148,13 +158,13 @@ export function TasksFromMeeting({
           </button>
           <button
             type="button"
-            disabled={loading || !hasContent}
+            disabled={streaming || !hasContent}
             onClick={extract}
             className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,opacity,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
             style={{ padding: "6px 12px", fontSize: 12, minHeight: 40 }}
           >
             <RoyIcon name="spark" size={13} strokeWidth={1.9} />
-            {loading ? dt("Генерируем…", "Generating…") : dt("Сгенерировать", "Generate")}
+            {streaming ? dt("Ищу задачи…", "Finding tasks…") : dt("Сгенерировать", "Generate")}
           </button>
         </div>
       </div>
@@ -165,7 +175,7 @@ export function TasksFromMeeting({
         </p>
       )}
 
-      {hasContent && pending === 0 && tasks !== null && !loading && (
+      {hasContent && pending === 0 && tasks !== null && !streaming && (
         <p className="text-ink-mute" style={{ fontSize: 12.5 }}>
           {dt("Задач не найдено.", "No tasks found.")}
         </p>
@@ -195,6 +205,7 @@ export function TasksFromMeeting({
         tasks={tasks ?? []}
         users={users}
         busy={busy}
+        streaming={streaming}
         actions={actions}
       />
 
