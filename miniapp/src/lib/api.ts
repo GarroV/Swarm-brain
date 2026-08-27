@@ -1,6 +1,7 @@
 import { getInitData } from "./telegram";
 import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote } from "@/types";
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
+import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
 
 export type CreateTaskInput = {
@@ -68,13 +69,8 @@ export type UpdateMeetingInput = {
 
 // Предложенная задача из preview-извлечения (POST /tasks/extract { save:false }) —
 // ещё НЕ создана в базе; на экране ревью встреч пользователь правит/удаляет/добавляет к себе.
-export type ProposedTask = {
-  title: string;
-  description?: string | null;
-  assignee?: string | null;
-  due_date?: string | null;
-  country?: string | null;
-};
+// Форма и нормализация ответа модели живут в `lib/proposedTasks.ts` (там же тесты).
+export type { ProposedTask } from "./proposedTasks";
 
 export type UpdateMeInput = {
   role?: string | null;
@@ -491,14 +487,19 @@ export async function extractTasks(text: string): Promise<Task[]> {
 }
 
 // Preview-извлечение: вернуть предложенные задачи БЕЗ создания (для ревью на экране встреч).
+// Ответ модели прогоняется через normalizeProposedTasks — вторым слоем поверх промпта:
+// GPT регулярно пишет СТРОКУ "null" вместо JSON null, и она доезжала до карточки чипом
+// «null» (issue #125). Мок DEV_MODE специально содержит такой мусор, чтобы поведение
+// без сети совпадало с боевым.
 export async function extractTasksPreview(text: string): Promise<ProposedTask[]> {
   if (DEV_MODE) {
-    return [
-      { title: "Свести правки по продуктовой аналитике", description: "Из обсуждения встречи", due_date: null, country: null },
-      { title: "Поделиться записью встречи маркетологов", description: null, due_date: null, country: null },
-    ];
+    return normalizeProposedTasks([
+      { title: "Свести правки по продуктовой аналитике", description: "Из обсуждения встречи", assignee: "Alice Smith", due_date: "2026-09-30", country: "RS" },
+      { title: "Поделиться записью встречи маркетологов", description: "null", assignee: "null", due_date: "null", country: "null" },
+      { title: "Найти безопасную замену для маскарпоне и пересобрать техкарту десертов", description: "Текущий поставщик сорвал поставку", assignee: "Иван Посторонний", due_date: "2026-08-29", country: null },
+    ]);
   }
-  return apiFetch<ProposedTask[]>("/tasks/extract", { method: "POST", body: JSON.stringify({ text, save: false }) });
+  return normalizeProposedTasks(await apiFetch<unknown>("/tasks/extract", { method: "POST", body: JSON.stringify({ text, save: false }) }));
 }
 
 // ── Sprints (Рой) ───────────────────────────────────────────────────────────────
