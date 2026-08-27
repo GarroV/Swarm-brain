@@ -4,6 +4,7 @@ import { useRoyNav, useDt } from "./nav";
 import { RoyIcon } from "./icons";
 import { cn } from "@/lib/utils";
 import { fetchNotifications, markNotificationsRead, fetchTask, type SwarmNotification } from "@/lib/api";
+import { publishNotice } from "@/lib/deployNotice";
 
 // Колокольчик уведомлений: бейдж непрочитанных + поповер-лента, клик по строке открывает
 // задачу. Поведение и оформление поповера — как у ProfileMenu (клик-вне, Esc, тот же попап),
@@ -40,6 +41,9 @@ export function NotificationsBell({ className }: { className?: string }) {
   const load = useCallback(async () => {
     try {
       const res = await fetchNotifications();
+      // Объявление о раскатке едет прицепом в этом же ответе — публикуем его для плашки
+      // (DeployNoticeBar), чтобы у неё не было своего поллинга той же ручки (issue #103).
+      publishNotice(res.notice ?? null);
       if (!alive.current) return;
       setItems(res.items);
       setUnread(res.unread);

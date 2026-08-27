@@ -35,6 +35,7 @@ import { AdminScreen } from "@/components/AdminScreen";
 import { MeetAdminScreen } from "./screens/MeetAdminScreen";
 import { ProfileMenu } from "./ProfileMenu";
 import { NotificationsBell } from "./NotificationsBell";
+import { DeployNoticeBar } from "./DeployNoticeBar";
 import { AnswerModal } from "./AnswerModal";
 
 // Каркас «Рой»: корневые разделы + push-стек.
@@ -198,6 +199,8 @@ export function RoyApp({ me }: { me: Me | null }) {
   return (
     <RoyNavContext.Provider value={nav}>
       <div className="flex flex-col h-[100dvh] bg-background text-foreground dark:bg-transparent">
+        {/* Плашка «скоро обновление» — плавающая, поверх всех экранов, layout не сдвигает. */}
+        <DeployNoticeBar />
         {me?.is_demo && (
           <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-4 py-1.5 text-white" style={{ fontSize: 13 }}>
             <span className="font-semibold">🎬 Demo mode</span>

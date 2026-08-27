@@ -1,6 +1,7 @@
 import { getInitData } from "./telegram";
 import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote } from "@/types";
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
+import type { DeployNotice } from "@/lib/deployNotice";
 
 export type CreateTaskInput = {
   title: string;
@@ -606,7 +607,14 @@ export type SwarmNotification = {
   created_at: string;
 };
 
-export async function fetchNotifications(limit = 30): Promise<{ items: SwarmNotification[]; unread: number }> {
+export type NotificationsResponse = {
+  items: SwarmNotification[];
+  unread: number;
+  /** Объявление о раскатке — едет прицепом к ленте, отдельного поллинга нет. */
+  notice?: DeployNotice | null;
+};
+
+export async function fetchNotifications(limit = 30): Promise<NotificationsResponse> {
   if (DEV_MODE) {
     const items: SwarmNotification[] = [
       { id: "n1", type: "task_comment", task_id: "1", task_title: "Раздельный НДС в Венгрии", comment_id: "c1",
@@ -619,9 +627,14 @@ export async function fetchNotifications(limit = 30): Promise<{ items: SwarmNoti
         content: "Выкатили на стенд, посмотри контракт.", actor_telegram_id: 556, actor_name: "Ivan P.",
         read_at: new Date().toISOString(), created_at: new Date(Date.now() - 26 * 3600 * 1000).toISOString() },
     ];
-    return { items, unread: items.filter((i) => !i.read_at).length };
+    // DEV_MODE: объявление о раскатке через 8 минут — иначе плашку не посмотреть локально.
+    const notice: DeployNotice = {
+      at: new Date(Date.now() + 8 * 60 * 1000).toISOString(),
+      until: new Date(Date.now() + 40 * 60 * 1000).toISOString(),
+    };
+    return { items, unread: items.filter((i) => !i.read_at).length, notice };
   }
-  return apiFetch<{ items: SwarmNotification[]; unread: number }>(`/notifications?limit=${limit}`);
+  return apiFetch<NotificationsResponse>(`/notifications?limit=${limit}`);
 }
 
 // Без ids помечает прочитанным всё непрочитанное.

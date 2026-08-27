@@ -113,6 +113,46 @@ export async function notifyTaskComment(
 
 // ── Роуты ────────────────────────────────────────────────────────────────────
 
+/** Ключ строки `app_settings` с объявлением о раскатке. */
+export const DEPLOY_NOTICE_KEY = "deploy_notice";
+
+type DeployNoticeValue = { at?: unknown; until?: unknown; ru?: unknown; en?: unknown };
+
+/**
+ * Объявление «скоро обновление» — едет ПРИЦЕПОМ к ленте уведомлений, которую веб и так
+ * опрашивает раз в 60 с: отдельный эндпоинт означал бы отдельный поллинг ради одной строки.
+ *
+ * Истёкшее объявление не отдаём: `until` — страховка от плашки, которую забыли снять (упал
+ * скрипт раскатки, оборвалась сессия). Сбой чтения гасит плашку, но НЕ роняет ленту:
+ * уведомления важнее объявления.
+ */
+async function loadDeployNotice(
+  supabase: SupabaseClient,
+): Promise<{ at: string; until: string; ru?: string; en?: string } | null> {
+  const { data, error } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", DEPLOY_NOTICE_KEY)
+    .maybeSingle();
+  if (error) {
+    console.error("deploy notice read failed:", error);
+    return null;
+  }
+  const v = (data?.value ?? null) as DeployNoticeValue | null;
+  if (!v || typeof v.at !== "string" || typeof v.until !== "string") return null;
+
+  const until = new Date(v.until).getTime();
+  if (Number.isNaN(until) || Number.isNaN(new Date(v.at).getTime())) return null;
+  if (Date.now() >= until) return null;
+
+  return {
+    at: v.at,
+    until: v.until,
+    ...(typeof v.ru === "string" && v.ru ? { ru: v.ru } : {}),
+    ...(typeof v.en === "string" && v.en ? { en: v.en } : {}),
+  };
+}
+
 export async function handleNotificationRoutes(
   supabase: SupabaseClient,
   req: Request,
@@ -167,7 +207,8 @@ export async function handleNotificationRoutes(
       created_at: r.created_at,
     }));
     // Счётчик — по видимым в этом же окне, чтобы бейдж не показывал то, чего в ленте нет.
-    return json({ items, unread: items.filter((i) => !i.read_at).length }, 200, origin);
+    const notice = await loadDeployNotice(supabase);
+    return json({ items, unread: items.filter((i) => !i.read_at).length, notice }, 200, origin);
   }
 
   // POST /notifications/read { ids?: string[] } — без ids помечает прочитанным всё.
