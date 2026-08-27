@@ -281,7 +281,8 @@ export function Chip({ children, active, onClick, leading }: { children: ReactNo
         TAP,
         active ? "bg-ink text-surface border-ink" : "bg-surface text-ink-soft border-line-2",
       )}
-      style={{ fontSize: 13, padding: "7px 13px" }}
+      // Минимальная высота — тач-цель: было ~31px при норме 44 (аудит мобилки 2026-08-24).
+      style={{ fontSize: 13, padding: "7px 13px", minHeight: 40 }}
     >
       {leading}
       {children}
@@ -306,7 +307,7 @@ export function Segmented({ items, value, onChange }: { items: SegItem[]; value:
               TAP,
               on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(80,60,20,.1)]" : "bg-transparent text-ink-soft",
             )}
-            style={{ fontSize: 13.5, padding: "8px 6px", borderRadius: 9 }}
+            style={{ fontSize: 13.5, padding: "8px 6px", borderRadius: 9, minHeight: 40 }}
           >
             {it.label}
             {it.count != null && (
@@ -349,6 +350,25 @@ export function RoyHeader({ title, right, sub, bell = true }: { title: ReactNode
         </div>
       )}
     </div>
+  );
+}
+
+// Единственный вход в поиск на мобайле (таба «Поиск» больше нет): иконка в шапке любого
+// корневого экрана. Формулировка одна во всех точках входа — владелец 2026-08-22: «у нас поиск
+// в вебе один», два разных плейсхолдера читались как две функции. Тач-цель 40x40 (норма 44 —
+// с учётом padding шапки).
+export function SearchBtn({ onClick }: { onClick: () => void }) {
+  const dt = useDt();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={dt("Спросить или найти", "Ask or find")}
+      className={cn("inline-flex items-center justify-center shrink-0 rounded-full bg-surface border border-line-2 text-ink-soft", TAP)}
+      style={{ width: 40, height: 40 }}
+    >
+      <RoyIcon name="search" size={20} strokeWidth={1.9} />
+    </button>
   );
 }
 
@@ -527,12 +547,16 @@ export function FAB({ onClick, className, "aria-label": ariaLabel = "Созда�
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
+      // fixed, а не absolute: экраны-списки сами являются скролл-контейнерами, и absolute-кнопка
+      // уезжала ВМЕСТЕ с содержимым — на прокрученном списке «+» оказывался поверх строк у
+      // верхнего края и съедал по ним тап и свайп (аудит мобилки 2026-08-24). Отступ снизу
+      // считается от таб-бара (69px) плюс безопасная зона.
       className={cn(
-        "absolute z-20 flex items-center justify-center rounded-[18px] bg-primary text-white border-0 shadow-[0_10px_24px_-6px_rgba(200,130,30,.6)]",
+        "fixed z-20 flex items-center justify-center rounded-[18px] bg-primary text-white border-0 shadow-[0_10px_24px_-6px_rgba(200,130,30,.6)]",
         TAP,
         className,
       )}
-      style={{ right: 18, bottom: 96, width: 56, height: 56 }}
+      style={{ right: 18, bottom: "calc(88px + env(safe-area-inset-bottom))", width: 56, height: 56 }}
     >
       <RoyIcon name="plus" size={26} strokeWidth={2.3} />
     </button>
@@ -547,7 +571,8 @@ export function NavHeader({ onBack, title, right, bell = true }: { onBack: () =>
         type="button"
         onClick={onBack}
         className={cn("inline-flex items-center gap-0.5 bg-transparent border-0 text-primary font-semibold", TAP)}
-        style={{ fontSize: 16, padding: "4px 4px 4px 0" }}
+        // Тач-цель: «Назад» стоит на каждом push-экране и была высотой 32px при норме 44.
+        style={{ fontSize: 16, padding: "4px 8px 4px 0", minHeight: 44 }}
       >
         <RoyIcon name="cleft" size={20} strokeWidth={2.2} />
         Назад
@@ -563,15 +588,19 @@ export function NavHeader({ onBack, title, right, bell = true }: { onBack: () =>
   );
 }
 
-// ── TabBar (4 корневых таба) ─────────────────────────────────────────────────
-export const ROY_TABS: { id: string; label: string; icon: RoyIconName }[] = [
-  { id: "search", label: "Поиск", icon: "search" },
-  { id: "task", label: "Задачи", icon: "task" },
-  { id: "book", label: "База", icon: "book" },
-  { id: "cal", label: "Встречи", icon: "cal" },
+// ── TabBar (мобильные корневые табы) ────────────────────────────────────────
+// Набор — решение владельца 2026-08-22: «задачи, проекты, встречи, еще». Поиск перестал быть
+// табом (иконка в шапке любого экрана), база уехала в «Ещё». Подписи двуязычные: правило
+// проекта №6 — новый пользовательский текст сразу EN+RU.
+export const ROY_TABS: { id: string; label: string; labelEn: string; icon: RoyIconName }[] = [
+  { id: "task", label: "Задачи", labelEn: "Tasks", icon: "task" },
+  { id: "projects", label: "Проекты", labelEn: "Projects", icon: "board" },
+  { id: "cal", label: "Встречи", labelEn: "Meetings", icon: "cal" },
+  { id: "more", label: "Ещё", labelEn: "More", icon: "dots" },
 ];
 
-export function RoyTabBar({ active, onChange, className }: { active: string; onChange: (id: string) => void; className?: string }) {
+export function RoyTabBar({ active, onChange, className, badges }: { active: string; onChange: (id: string) => void; className?: string; badges?: Record<string, number> }) {
+  const dt = useDt();
   return (
     <div className={cn("shrink-0 flex justify-around items-start bg-surface border-t border-line", className)} style={{ paddingTop: 9, paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
       {ROY_TABS.map((t) => {
@@ -584,9 +613,21 @@ export function RoyTabBar({ active, onChange, className }: { active: string; onC
             className={cn("flex flex-col items-center gap-1 bg-transparent border-0", TAP, on ? "text-primary" : "text-ink-mute")}
             style={{ padding: "2px 14px" }}
           >
-            <RoyIcon name={t.icon} size={23} strokeWidth={on ? 2.1 : 1.8} />
+            <span className="relative">
+              <RoyIcon name={t.icon} size={23} strokeWidth={on ? 2.1 : 1.8} />
+              {/* Счётчик неразобранного (сейчас — черновики встреч «на вычитке»): раздел уехал
+                  с первого экрана, поэтому о нём должно быть видно, не заходя внутрь. */}
+              {!!badges?.[t.id] && (
+                <span
+                  className="absolute -right-2 -top-1 inline-flex items-center justify-center rounded-full bg-primary font-bold text-white"
+                  style={{ minWidth: 16, height: 16, fontSize: 10, padding: "0 4px" }}
+                >
+                  {badges[t.id] > 9 ? "9+" : badges[t.id]}
+                </span>
+              )}
+            </span>
             <span style={{ fontSize: 10.5 }} className={on ? "font-bold" : "font-medium"}>
-              {t.label}
+              {dt(t.label, t.labelEn)}
             </span>
           </button>
         );

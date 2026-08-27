@@ -122,6 +122,14 @@ function inPeriod(task: Task, listId: SmartListId, range: DateRange | null): boo
 }
 
 // Базовый предикат «принадлежит списку» (без линзы и сортировки).
+// Экспортируется как `matchesList`: тем же правилом проверяется только что созданная задача —
+// если она не попадает в активный вид, экран задач переключает его, иначе задача «пропадает»
+// (создал без срока → вернулся в «Сегодня» → пусто; найдено аудитом мобилки 2026-08-22).
+// Период прокидывается насквозь: с включённым «Эта неделя» задача вне диапазона так же невидима.
+export function matchesList(task: Task, listId: SmartListId, now: Date = new Date(), range: DateRange | null = null): boolean {
+  return inList(task, listId, now, range);
+}
+
 function inList(task: Task, listId: SmartListId, now: Date, range: DateRange | null = null): boolean {
   if (!inPeriod(task, listId, range)) return false;
   if (listId === "done") return isDone(task);

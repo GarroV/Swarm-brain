@@ -820,6 +820,14 @@ export async function patchMeeting(id: string, fields: UpdateMeetingInput): Prom
       mockMeetings[idx] = { ...mockMeetings[idx], entry_type: fields.entry_type };
     if (fields.is_private !== undefined)
       mockMeetings[idx] = { ...mockMeetings[idx], is_private: fields.is_private };
+    // Название встречи живёт в metadata.title — как на бэкенде (PATCH /meetings/:id). Без этой
+    // ветки мок молча игнорировал переименование: UI показывал тост «Название обновлено», а имя
+    // не менялось, то есть локально и в демо продукт вёл себя иначе, чем на проде.
+    if (typeof fields.title === "string" && fields.title.trim())
+      mockMeetings[idx] = {
+        ...mockMeetings[idx],
+        metadata: { ...mockMeetings[idx].metadata, title: fields.title.trim().slice(0, 200) },
+      };
     return mockMeetings[idx];
   }
   return apiFetch<Entry>(`/meetings/${id}`, { method: "PATCH", body: JSON.stringify(fields) });

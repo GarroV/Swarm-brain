@@ -13,9 +13,19 @@ export function SwipeRow({ children, actions, onTap }: { children: ReactNode; ac
   const [dx, setDx] = useState(0);
   const [open, setOpen] = useState(false);
   const drag = useRef<{ x: number; y: number; decided: boolean; horizontal: boolean } | null>(null);
+  // Тап определяет БРАУЗЕР (событие click), а не мы по pointerup. Причина: при вертикальном
+  // скролле списка браузер забирает жест себе (touch-action: pan-y) и присылает pointercancel —
+  // часто ДО первого pointermove, поэтому «не горизонтально» ≠ «тап». Раньше onUp считал тапом
+  // любой не-горизонтальный жест, и каждый скролл по строке открывал задачу. Браузер после
+  // скролла click не шлёт — значит ложных открытий нет. Остаётся погасить click после
+  // ГОРИЗОНТАЛЬНОГО свайпа (скролла не было → click придёт).
+  const swallowClick = useRef(false);
 
   const onDown = (e: PointerEvent) => {
     drag.current = { x: e.clientX, y: e.clientY, decided: false, horizontal: false };
+    // Новый жест — снимаем возможный «недоеденный» флаг (свайп, после которого click не пришёл:
+    // палец ушёл за пределы строки, жест отменён). Иначе он съел бы следующий честный тап.
+    swallowClick.current = false;
   };
   const onMove = (e: PointerEvent) => {
     const d = drag.current;
@@ -32,29 +42,43 @@ export function SwipeRow({ children, actions, onTap }: { children: ReactNode; ac
     next = Math.max(-width, Math.min(0, next));
     setDx(next);
   };
+  // Конец жеста. Горизонтальный — доводим шторку до края и гасим следующий click
+  // (он придёт, т.к. скролла не было). Вертикальный/нулевой — ничего: тап обработает onClick.
   const onUp = () => {
     const d = drag.current;
     drag.current = null;
-    if (!d) return;
-    if (!d.horizontal) {
-      // тап: если открыто — закрыть, иначе действие строки
-      if (open) {
-        setOpen(false);
-        setDx(0);
-      } else {
-        onTap?.();
-      }
-      return;
-    }
+    if (!d?.horizontal) return;
+    swallowClick.current = true;
     const shouldOpen = dx < -width / 2;
     setOpen(shouldOpen);
     setDx(shouldOpen ? -width : 0);
+  };
+
+  const onClick = () => {
+    if (swallowClick.current) {
+      swallowClick.current = false;
+      return;
+    }
+    // Шторка открыта — тап по строке её закрывает (как в Telegram), а не открывает карточку.
+    if (open) {
+      setOpen(false);
+      setDx(0);
+      return;
+    }
+    onTap?.();
   };
 
   const dragging = drag.current?.horizontal ?? false;
 
   return (
     <div className="relative overflow-hidden rounded-[18px]">
+      {/* Слой действий существует, только когда шторка тронута. В покое он лежал под строкой и
+          пробивался наружу тонкой дугой на скруглённых углах (заметно на светлой теме): строка
+          поднята в композитор из-за transform, и клип контейнера ложится на слои с разным
+          антиалиасингом — ни radius у слоя действий, ни собственный композитный слой дугу не
+          убрали до конца, а условный рендер убирает саму возможность. Побочная польза: в покое
+          в DOM нет кнопок, до которых всё равно не дотянуться. */}
+      {(dx !== 0 || open) && (
       <div className="absolute inset-y-0 right-0 flex">
         {actions.map((a) => (
           <button
@@ -73,11 +97,14 @@ export function SwipeRow({ children, actions, onTap }: { children: ReactNode; ac
           </button>
         ))}
       </div>
+      )}
       <div
+        data-swipe-content
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
+        onClick={onClick}
         style={{
           transform: `translateX(${dx}px)`,
           transition: dragging ? "none" : "transform .22s cubic-bezier(.22,1,.36,1)",

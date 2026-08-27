@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRoyNav } from "../nav";
+import { useDt, useRoyNav } from "../nav";
 import { RoyIcon } from "../icons";
-import { Avatar, SectionLabel, Chip, RoyCard, Market } from "../ui";
+import { Avatar, NavHeader, SectionLabel, Chip, RoyCard, Market } from "../ui";
 import { RoyMark } from "../RoyMark";
 import { NotificationsBell } from "../NotificationsBell";
 import { fetchTasks, fetchMeetings } from "@/lib/api";
@@ -34,7 +34,8 @@ function initials(name: string | undefined | null): string {
   return name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("") || "Я";
 }
 
-export function SearchScreen() {
+export function SearchScreen({ onBack }: { onBack?: () => void }) {
+  const dt = useDt();
   const { me, push, setTab, openAnswer } = useRoyNav();
   const [q, setQ] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
@@ -73,21 +74,26 @@ export function SearchScreen() {
 
   return (
     <div className="h-full overflow-y-auto">
-      {/* лого + аватар */}
-      <div className="flex items-center justify-between px-5 pt-3 pb-2">
-        <div className="flex items-center gap-2">
-          <RoyMark size={30} />
-          <span className="font-bold" style={{ fontSize: 22, letterSpacing: "-0.01em" }}>
-            Swarm
-          </span>
+      {/* Шапка. В push-режиме (мобильный вход по иконке поиска) — «Назад»; на десктопе, где этот
+          экран открывается как раздел, — лого и аватар как было. */}
+      {onBack ? (
+        <NavHeader onBack={onBack} title={dt("Поиск", "Search")} />
+      ) : (
+        <div className="flex items-center justify-between px-5 pt-3 pb-2">
+          <div className="flex items-center gap-2">
+            <RoyMark size={30} />
+            <span className="font-bold" style={{ fontSize: 22, letterSpacing: "-0.01em" }}>
+              Swarm
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <NotificationsBell />
+            <button type="button" onClick={() => push({ view: "more" })} aria-label={dt("Меню", "Menu")} className="transition-transform active:scale-[0.95]">
+              <Avatar size={36}>{initials(me?.name)}</Avatar>
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <NotificationsBell />
-          <button type="button" onClick={() => push({ view: "more" })} aria-label="Меню" className="transition-transform active:scale-[0.95]">
-            <Avatar size={36}>{initials(me?.name)}</Avatar>
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* поле поиска (герой) */}
       <div className="px-5 pt-2">

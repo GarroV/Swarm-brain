@@ -20,6 +20,12 @@ function todayISO(now: Date): string {
 // инициализаторе useState, а НЕ в эффекте: эффект-сохранение на маунте затирал бы значение
 // дефолтом раньше, чем restore применится (в dev StrictMode эффекты ещё и сдваиваются).
 type SavedTasksView = { activeList?: SmartListId; activeLabelId?: string | null; lens?: Lens; byMarket?: boolean; allStaff?: boolean; range?: DateRange | null };
+// Экспортируется для NewTask: созданная задача сверяется с ТЕМ ЖЕ сохранённым видом, в который
+// человек вернётся, — включая период. Иначе задача вне активного фильтра выглядит потерянной.
+export function readSavedTasksView(): SavedTasksView | null {
+  return readSavedView();
+}
+
 function readSavedView(): SavedTasksView | null {
   try {
     if (typeof window === "undefined") return null;
@@ -31,7 +37,7 @@ function readSavedView(): SavedTasksView | null {
 // Общее состояние Reminders-списка для десктопа и мобайла: загрузка, линза, активный
 // смарт-список, локальный поиск, оптимистичные мутации (toggle/удаление/быстрое добавление).
 export function useReminderTasks() {
-  const { taskView } = useRoyNav();
+  const { taskView, tasksVersion } = useRoyNav();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   // Начальный вид: приоритет — вход с дашборда (taskView), иначе сохранённый в localStorage
@@ -107,6 +113,15 @@ export function useReminderTasks() {
   const reloadLabels = useCallback(() => { fetchTaskLabels().then(setLabels).catch(() => {}); }, []);
   // Рефетч после мутации (модалка/строка): помечаем мутацию (пауза фона) + тянем задачи.
   const reload = useCallback(() => { markMutation(); return loadTasks(); }, [markMutation, loadTasks]);
+
+  // Правка задачи из карточки (TaskModal) бампает общий счётчик tasksVersion. Без подписки на него
+  // список ждал следующего тика поллинга — до 10 секунд показывал старое название/статус, и на
+  // телефоне это читалось как «правка не применилась» (найдено смоуком 2026-08-25).
+  const firstVersion = useRef(tasksVersion);
+  useEffect(() => {
+    if (tasksVersion === firstVersion.current) return;
+    reload();
+  }, [tasksVersion, reload]);
 
   useEffect(() => {
     load();

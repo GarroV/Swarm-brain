@@ -1,8 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { useRoyNav } from "../nav";
+import { useDt, useRoyNav } from "../nav";
 import { RoyHeader, Segmented, RoyCard, Market, SectionLabel, StorageBadge } from "../ui";
+import { HeaderActions } from "../HeaderActions";
 import { RoyIcon, type RoyIconName } from "../icons";
+import { SwipeRow } from "../SwipeRow";
 import { DashTaskRow } from "../dash/shared";
 import { useIsDesktop } from "../useIsDesktop";
 import { deriveEntryTitle, entryImporterName } from "../entry";
@@ -54,11 +56,15 @@ function ActionIcon({ name, label, color, onClick }: { name: RoyIconName; label:
   );
 }
 
-function MeetingCard({ e, onOpen, onRemove }: { e: Entry; onOpen: () => void; onRemove: () => void }) {
+// Строка встречи. На мобайле действия спрятаны в свайп — тот же жест, что у задач: две
+// кнопки 36x36 вплотную в строке были и мелкой целью, и риском случайного удаления (владелец
+// 2026-08-22: «лаконичное логичное меню»). На десктопе действия остаются на виду: там мышь,
+// свайпать нечем.
+function MeetingCard({ e, onOpen, onRemove, mobile }: { e: Entry; onOpen: () => void; onRemove: () => void; mobile?: boolean }) {
   const who = entryImporterName(e);
-  return (
+  const body = (
     <div className="relative">
-      <button type="button" onClick={onOpen} className="block w-full text-left transition-transform active:scale-[0.99]">
+      <button type="button" onClick={mobile ? undefined : onOpen} className="block w-full text-left transition-transform active:scale-[0.99]">
         <RoyCard className="flex items-center gap-3 px-4 py-3.5">
           <span className="inline-flex shrink-0 items-center justify-center rounded-[12px]" style={{ width: 38, height: 38, background: "var(--meet-soft)", color: "var(--meet-ink)" }}>
             <RoyIcon name="meet" size={19} />
@@ -83,14 +89,28 @@ function MeetingCard({ e, onOpen, onRemove }: { e: Entry; onOpen: () => void; on
               )}
             </div>
           </div>
-          <span className="shrink-0" style={{ width: 90 }} />
+          {!mobile && <span className="shrink-0" style={{ width: 90 }} />}
         </RoyCard>
       </button>
-      <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
-        <ActionIcon name="pencil" label="Изменить" color="var(--accent-ink)" onClick={onOpen} />
-        <ActionIcon name="trash" label="Удалить" color="var(--pri-high)" onClick={onRemove} />
-      </div>
+      {!mobile && (
+        <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
+          <ActionIcon name="pencil" label="Изменить" color="var(--accent-ink)" onClick={onOpen} />
+          <ActionIcon name="trash" label="Удалить" color="var(--pri-high)" onClick={onRemove} />
+        </div>
+      )}
     </div>
+  );
+  if (!mobile) return body;
+  return (
+    <SwipeRow
+      onTap={onOpen}
+      actions={[
+        { icon: "pencil", label: "Изменить", color: "var(--accent-ink)", onClick: onOpen },
+        { icon: "trash", label: "Удалить", color: "var(--pri-high)", onClick: onRemove },
+      ]}
+    >
+      {body}
+    </SwipeRow>
   );
 }
 
@@ -135,6 +155,7 @@ function CountsPanel({ title, counts }: { title: string; counts: [string, number
 
 export function RoyMeetingsScreen() {
   const { push, toast } = useRoyNav();
+  const dt = useDt();
   const confirm = useConfirm();
   const isDesktop = useIsDesktop();
   const [meetings, setMeetings] = useState<Entry[] | null>(null);
@@ -174,7 +195,8 @@ export function RoyMeetingsScreen() {
   const segmented = <Segmented items={SEGS} value={seg} onChange={setSeg} />;
   const skeleton = meetings == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 72, borderRadius: 18 }} />);
   const emptyFeed = meetings && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">Встреч нет</div>;
-  const feedCards = items.map((e) => <MeetingCard key={e.id} e={e} onOpen={() => open(e.id)} onRemove={() => remove(e)} />);
+  const feedCards = (mobile: boolean) =>
+    items.map((e) => <MeetingCard key={e.id} e={e} mobile={mobile} onOpen={() => open(e.id)} onRemove={() => remove(e)} />);
 
   // «По странам»: только рынки воркспейса (allowed_markets), локализованные; всё прочее
   // (экзотические страны из глобальных встреч, General, без страны) сворачиваем в «Другие».
@@ -211,7 +233,7 @@ export function RoyMeetingsScreen() {
             <div className="space-y-2.5 pb-4">
               {skeleton}
               {emptyFeed}
-              {feedCards}
+              {feedCards(false)}
             </div>
           </div>
           <aside className="min-h-0 space-y-3 overflow-y-auto">
@@ -227,13 +249,15 @@ export function RoyMeetingsScreen() {
   // ── Мобайл: стопкой (как было) ───────────────────────────────────────────────
   return (
     <div className="relative h-full overflow-y-auto">
+      <RoyHeader title={dt("Встречи", "Meetings")} right={<HeaderActions />} />
+      {/* Очередь вычитки — ПОД заголовком экрана, а не над ним: блок «На вычитке» висел выше
+          h1 и читался как отдельный экран без названия. */}
       <AgentReviewQueue onOpen={openReview} />
-      <RoyHeader title="Встречи" />
-      <div className="px-5 pb-3">{segmented}</div>
+      <div className="px-5 pb-3 pt-3">{segmented}</div>
       <div className="space-y-2.5 px-5 pb-28">
         {skeleton}
         {emptyFeed}
-        {feedCards}
+        {feedCards(true)}
       </div>
     </div>
   );

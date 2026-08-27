@@ -52,12 +52,14 @@ const NONE = "__none__";
 const AUTOSAVE_DELAY = 550;
 
 // Roy-стилизованные нативные контролы (без shadcn): стекло + линия + янтарный фокус.
+// min-h-10 — тач-цель полей на телефоне (было 38px при норме 44).
 const fieldCls =
-  "w-full rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute dark:backdrop-blur-sm";
+  "w-full min-h-10 rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute dark:backdrop-blur-sm";
 const labelCls = "mb-1 block font-semibold text-ink-soft";
 // Триггер кастомного Select (в теме проекта) — под общий вид полей (fieldCls): полная ширина,
 // та же линия/фон/скругление. Нативный <select> заменён, чтобы выпадашка была не системной.
-const selectTriggerCls = "w-full h-auto rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink";
+// min-h-10 — тач-цель: селекты проекта/исполнителя были 32-38px при норме 44.
+const selectTriggerCls = "w-full h-auto min-h-10 rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink";
 
 interface TaskModalProps {
   task?: Task;
@@ -374,7 +376,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                 disabled={deleting}
                 aria-label="Удалить задачу"
                 title="Удалить задачу"
-                className="flex items-center justify-center rounded-[10px] p-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                // Тач-цель 40x40: на телефоне кнопка была 29x29 при норме 44 — и это удаление.
+                className="flex size-10 items-center justify-center rounded-[10px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               >
                 <RoyIcon name="trash" size={17} />
               </button>
@@ -383,7 +386,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
               type="button"
               onClick={handleClose}
               aria-label="Закрыть"
-              className="flex items-center justify-center rounded-[10px] p-1.5 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="flex size-10 items-center justify-center rounded-[10px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             >
               <RoyIcon name="x" size={18} />
             </button>
@@ -456,7 +459,8 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                           aria-pressed={on}
                           title={s.label}
                           className={`flex flex-1 items-center justify-center gap-1.5 rounded-[9px] py-1.5 font-semibold transition-colors active:scale-[0.97] ${on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(80,60,20,.1)]" : "bg-transparent text-ink-soft hover:text-ink"}`}
-                          style={{ fontSize: 12.5 }}
+                          // Тач-цель: переключатель статуса был 30px при норме 44.
+                          style={{ fontSize: 12.5, minHeight: 40 }}
                         >
                           {s.icon === "circle" ? (
                             <span className="rounded-full border-2 border-current" style={{ width: 13, height: 13 }} />

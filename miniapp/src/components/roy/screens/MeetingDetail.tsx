@@ -27,7 +27,8 @@ function ActionChip({ icon, label, onClick, danger }: { icon: RoyIconName; label
       type="button"
       onClick={onClick}
       className="inline-flex items-center gap-1.5 rounded-[11px] border px-3 py-2 font-semibold transition-transform active:scale-[0.96]"
-      style={{ fontSize: 13, borderColor: "var(--line-2)", color: danger ? "var(--pri-high)" : "var(--accent-ink)" }}
+      // Тач-цель: правка названия/тезисов/стран и удаление были 38px при норме 44.
+      style={{ fontSize: 13, borderColor: "var(--line-2)", color: danger ? "var(--pri-high)" : "var(--accent-ink)", minHeight: 40 }}
     >
       <RoyIcon name={icon} size={16} strokeWidth={1.9} />
       {label}

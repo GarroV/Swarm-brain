@@ -7,6 +7,8 @@ import type { DateRange } from "@/lib/dateRange";
 
 type SmartListNavProps = {
   variant: "rail" | "chips";
+  /** Только chips: без внешних отступов и с затуханием справа — для строки рядом с чипом линзы. */
+  compact?: boolean;
   active: SmartListId;
   counts: Record<SmartListId, number>;
   onSelect: (id: SmartListId) => void;
@@ -32,10 +34,18 @@ type SmartListNavProps = {
 };
 
 // Навигация по смарт-спискам: вертикальный рельс (десктоп) или горизонтальные чипы (мобайл).
-export function SmartListNav({ variant, active, counts, onSelect, query, onQuery, labels, labelCounts, activeLabelId, onSelectLabel, onCreateLabel, onEditLabel, range, onRange }: SmartListNavProps) {
+export function SmartListNav({ variant, compact, active, counts, onSelect, query, onQuery, labels, labelCounts, activeLabelId, onSelectLabel, onCreateLabel, onEditLabel, range, onRange }: SmartListNavProps) {
   if (variant === "chips") {
+    // Затухание справа (mask, не градиент-подложка) — единственный честный намёк, что чипы
+    // скроллятся: раньше четвёртый чип просто обрубался краем экрана и выглядел сломанным.
+    // Маска работает поверх любого фона, включая галактику тёмной темы.
     return (
-      <div className="flex gap-1.5 overflow-x-auto px-5 pb-3">
+      <div
+        className={cn(
+          "flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          compact ? "[mask-image:linear-gradient(to_right,black_calc(100%-22px),transparent)]" : "px-5 pb-3",
+        )}
+      >
         {SMART_LISTS.map(({ id, label, icon }) => {
           const on = id === active;
           return (
@@ -47,7 +57,8 @@ export function SmartListNav({ variant, active, counts, onSelect, query, onQuery
                 "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 font-semibold transition-colors",
                 on ? "bg-primary text-white" : "bg-secondary text-secondary-foreground hover:bg-secondary/70",
               )}
-              style={{ fontSize: 12.5 }}
+              // Тач-цель: чипы — основная навигация по списку, были 31px при норме 44.
+              style={{ fontSize: 12.5, minHeight: 40 }}
             >
               <RoyIcon name={icon} size={13} strokeWidth={2} />
               {label}

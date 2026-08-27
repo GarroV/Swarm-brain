@@ -49,10 +49,13 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
         aria-label={done ? dt("Снять отметку", "Mark as not done") : dt("Отметить выполненной", "Mark as done")}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e: MouseEvent) => { e.stopPropagation(); onToggle(); }}
-        className="mt-px flex shrink-0 items-center justify-center rounded-full border-2 transition-colors"
+        // Кружок остаётся мелким (плотность строки), а нажимается зона 40x44 — псевдоэлемент
+        // ::after, поэтому вёрстка не сдвигается. Вправо зона растянута меньше: там начинается
+        // заголовок, и тап по нему должен открывать задачу, а не переключать галочку.
+        className="relative mt-px flex shrink-0 items-center justify-center rounded-full border-2 transition-colors after:absolute after:-left-3 after:-right-1.5 after:-top-3 after:-bottom-3 after:content-['']"
         style={{
-          width: 19,
-          height: 19,
+          width: 20,
+          height: 20,
           borderColor: done ? "var(--status-done)" : "var(--line-2)",
           background: done ? "var(--status-done)" : "transparent",
         }}

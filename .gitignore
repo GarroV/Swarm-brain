@@ -16,3 +16,6 @@ graphify-out/
 
 # SDD scratch (subagent-driven-development ledger/workspace)
 .superpowers/
+
+# Отчёты сканера безопасности AITriage — локальные артефакты прогонов, не код
+aitriage-reports/
