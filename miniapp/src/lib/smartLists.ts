@@ -221,7 +221,11 @@ export type StaffGroup = { name: string; label: string; tasks: Task[] };
 // Без исполнителя → «Без исполнителя», в конец. Группы по убыванию размера, затем по имени.
 export function groupByAssignee(tasks: Task[], listId: SmartListId, lens: Lens, me: Me | null, now: Date = new Date(), range: DateRange | null = null): StaffGroup[] {
   const inScope = filterTasks(tasks, listId, lens, me, now, range);
-  const NONE = " none";
+  // Сентинел-ключ «без исполнителя»: имя пользователя таким начаться не может.
+  // Записан ЭСКЕЙПОМ намеренно — сырой байт 0x00 в исходнике делает файл бинарным
+  // для file(1), после чего grep пропускает все 265 строк МОЛЧА (код возврата 1,
+  // без «Binary file matches»), и поиск потребителей matchesLens даёт ложный ноль (issue #129).
+  const NONE = "\u0000none";
   const map = new Map<string, Task[]>();
   for (const t of inScope) {
     const names = (t.assignees ?? []).filter(Boolean);
