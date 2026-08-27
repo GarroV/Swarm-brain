@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createTask, getTask, listTasks, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
+import { recurrencePatchFor, resolveRecurrence } from "../../_shared/tasks/recurrence.ts";
 import { validateCommentContent } from "../../_shared/tasks/comments.ts";
 import { taskAccessError } from "../../_shared/tasks/access.ts";
 import { pickProjectByName, type ProjectNameRow } from "../../_shared/tasks/project-access.ts";
@@ -137,6 +138,7 @@ export async function toolAddTask(args: {
   context_id?: string;
   labels?: string[];
   project_name?: string;
+  recur_freq?: string | null;
   requesting_user_id?: number;
 }): Promise<string> {
   const assignees: string[] = [];
@@ -174,6 +176,11 @@ export async function toolAddTask(args: {
     ? await resolveLabelIds(args.requesting_user_id, args.labels, true)
     : [];
 
+  // Цикличность — тем же хелпером, что в вебе: частота проверяется, число месяца выводится из
+  // срока. Без срока считать следующее вхождение не от чего, поэтому отказ, а не тихое NULL.
+  const recur = resolveRecurrence(args.recur_freq, args.due_date ?? null);
+  if (!recur.ok) return `Ошибка: ${recur.error}`;
+
   try {
     const task = await createTask({
       title: args.title,
@@ -193,6 +200,8 @@ export async function toolAddTask(args: {
       is_private: labelIds.length > 0 ? true : undefined,
       owner_id: labelIds.length > 0 ? (args.requesting_user_id ?? null) : undefined,
       project_id,
+      recur_freq: recur.recur_freq,
+      recur_anchor_dom: recur.recur_anchor_dom,
     }, groupId ?? undefined);
     if (args.requesting_user_id) {
       await notifyCreator(args.requesting_user_id, args.title);
@@ -214,6 +223,7 @@ export async function toolUpdateTask(args: {
   task_role?: string;
   labels?: string[];
   project_name?: string;
+  recur_freq?: string | null;
   requesting_user_id: number;
 }): Promise<string> {
   const task = await getTask(args.id);
@@ -261,6 +271,23 @@ export async function toolUpdateTask(args: {
   if ("due_date" in args) fields.due_date = args.due_date ?? null;
   if (args.status !== undefined) fields.status = args.status;
   if (args.task_role !== undefined) fields.task_role = args.task_role;
+
+  // Цикличность (null — снять). Считаем от ИТОГОВОГО срока: его могли поменять этим же вызовом.
+  // Якорь числа месяца хелпер трогает только когда изменился срок или частота — иначе правка
+  // одного названия увела бы зажатую задачу с 31-го числа на 28-е.
+  if ("recur_freq" in args) {
+    const effDue = "due_date" in args ? (args.due_date ?? null) : task.due_date;
+    const recur = recurrencePatchFor(args.recur_freq, effDue, task);
+    if (!recur.ok) return `Ошибка: ${recur.error}`;
+    fields.recur_freq = recur.recur_freq;
+    if ("recur_anchor_dom" in recur) fields.recur_anchor_dom = recur.recur_anchor_dom;
+  }
+  // Регулярная задача без срока молча перестала бы повторяться.
+  const effFreq = "recur_freq" in fields ? fields.recur_freq : task.recur_freq;
+  const effDueFinal = "due_date" in fields ? fields.due_date : task.due_date;
+  if (effFreq && !effDueFinal) {
+    return "Ошибка: у регулярной задачи должен быть срок — задай due_date или сними цикличность (recur_freq: null).";
+  }
 
   if (args.assignee_name !== undefined) {
     if (!args.assignee_name) {
@@ -413,13 +440,14 @@ export const TASK_TOOL_DEFINITIONS = [
         },
         labels: { type: "array", items: { type: "string" }, description: "Имена личных смарт-меток (папок). Задача с метками становится личной." },
         project_name: { type: "string", description: "Имя проекта или подпроекта доски (Проекты/SprintBoard) — без него задача на доску не попадёт, только в общий список. При неточном совпадении берётся ближайшее по имени; при отсутствии — предупреждение в ответе, задача всё равно создаётся." },
+        recur_freq: { type: ["string", "null"], enum: ["daily", "weekly", "monthly", null], description: "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность." },
       },
       required: ["title", "source"],
     },
   },
   {
     name: "update_task",
-    description: "Обновить задачу по ID. Передай только поля которые нужно изменить. due_date: null — убрать дедлайн.",
+    description: "Обновить задачу по ID. Передай только поля которые нужно изменить. due_date: null — убрать дедлайн. ⚠️ У РЕГУЛЯРНОЙ задачи (recur_freq заполнен) status: done задачу НЕ закрывает: срок переносится на следующее вхождение, статус снова open.",
     inputSchema: {
       type: "object",
       properties: {
@@ -437,6 +465,7 @@ export const TASK_TOOL_DEFINITIONS = [
           description: "Роль исполнителя: marketing — маркетинг, rnd — продукт/разработка, bd — всё остальное (операционка, бизнес)",
         },
         project_name: { type: "string", description: "Имя проекта или подпроекта доски. Пустая строка — снять проект (задача уйдёт с доски в общий список)." },
+        recur_freq: { type: ["string", "null"], enum: ["daily", "weekly", "monthly", null], description: "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность." },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
       },
       required: ["id", "requesting_user_id"],

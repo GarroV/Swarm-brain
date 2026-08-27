@@ -1,6 +1,6 @@
 // Запуск: deno test supabase/functions/_shared/tasks/recurrence.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { buildRecurPatch, nextOccurrence, recurrencePatchFor, resolveRecurrence, TASK_TZ, todayInTz, type RecurRow } from "./recurrence.ts";
+import { buildRecurPatch, nextOccurrence, recurFreqLabelRu, recurrencePatchFor, resolveRecurrence, TASK_TZ, todayInTz, type RecurRow } from "./recurrence.ts";
 
 // ── daily ────────────────────────────────────────────────────────────────────
 
@@ -213,4 +213,19 @@ Deno.test("weekly якоря не имеет — гасим, чтобы не о�
 
 Deno.test("цикличность без срока отбивается и здесь", () => {
   assertEquals(recurrencePatchFor("weekly", null, stored()).ok, false);
+});
+
+// ── recurFreqLabelRu: короткая подпись для Telegram ──────────────────────────
+
+Deno.test("подпись бота — частота без дня недели: точный день виден в строке срока", () => {
+  // Намеренно НЕ «по средам»: таблица русских падежей живёт в вебе
+  // (miniapp/src/lib/recurrenceLabels.ts), и вторая копия здесь разъехалась бы.
+  assertEquals(recurFreqLabelRu("daily"), "каждый день");
+  assertEquals(recurFreqLabelRu("weekly"), "раз в неделю");
+  assertEquals(recurFreqLabelRu("monthly"), "раз в месяц");
+});
+
+Deno.test("у нерегулярной задачи подписи нет", () => {
+  assertEquals(recurFreqLabelRu(null), null);
+  assertEquals(recurFreqLabelRu("hourly"), null);
 });

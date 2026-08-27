@@ -206,3 +206,17 @@ export function recurrencePatchFor(
   }
   return { ok: true, recur_freq: resolved.recur_freq };
 }
+
+// Короткая подпись частоты для Telegram. НАМЕРЕННО без дня недели («раз в неделю», а не
+// «по средам»): таблица русских падежей живёт в вебе (miniapp/src/lib/recurrenceLabels.ts),
+// и вторая копия здесь неизбежно разъехалась бы — а точный день и так виден в строке срока
+// той же карточки. null — задача не регулярная.
+const FREQ_LABEL_RU: Record<RecurFreq, string> = {
+  daily: "каждый день",
+  weekly: "раз в неделю",
+  monthly: "раз в месяц",
+};
+
+export function recurFreqLabelRu(freq: string | null | undefined): string | null {
+  return isRecurFreq(freq) ? FREQ_LABEL_RU[freq] : null;
+}

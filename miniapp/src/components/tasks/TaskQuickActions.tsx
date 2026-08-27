@@ -1,5 +1,6 @@
 "use client";
-// Быстрые действия в строке задачи: СРОК / ПИНГ / ИСПОЛНИТЕЛЬ / РЫНОК / СПИСКИ без открытия карточки.
+// Быстрые действия в строке задачи: СРОК / ПИНГ / ЦИКЛИЧНОСТЬ / ИСПОЛНИТЕЛЬ / РЫНОК / СПИСКИ
+// без открытия карточки.
 // Срок — DatePicker (compact); исполнитель — QuickPickPopover; страна — CountryPopover
 // (variant="icon", сетка флагов, единый компонент с формой TaskModal); списки — пиктограммы-метки
 // (PictogramPicker, multi).
@@ -13,12 +14,15 @@ import { updateTask, type UpdateTaskInput, type TaskLabel } from "@/lib/api";
 import { displayName } from "@/lib/utils";
 import type { RoyIconName } from "@/components/roy/icons";
 import type { Task, User } from "@/types";
+import { recurrenceOptions } from "@/lib/recurrenceLabels";
+import { useDt } from "@/components/roy/nav";
 
 const TRIGGER = "flex h-[26px] w-[26px] items-center justify-center rounded-[9px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
 export function TaskQuickActions({ task, users, markets, labels, onPatch, onChanged }: { task: Task; users: User[]; markets: string[]; labels: TaskLabel[]; onPatch: (patch: Partial<Task>) => void; onChanged: () => void }) {
   // Рынки — только рынки ВОРКСПЕЙСА (allowed_markets из /config); если не заданы — все из COUNTRY_NAMES.
   // Текущий рынок задачи добавляется, если его нет в списке (легаси-значение), чтобы выбор не «потерялся».
+  const dt = useDt();
   const codes = markets.length ? [...markets] : Object.keys(COUNTRY_NAMES);
   if (task.country && !codes.includes(task.country)) codes.push(task.country);
 
@@ -47,6 +51,21 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
         className={TRIGGER}
         placeholder=""
       />
+      {/* Цикличность — только у задачи со сроком: день недели и число берутся из него, без срока
+          считать следующее вхождение не от чего (то же правило, что в форме). */}
+      {task.due_date && (
+        <QuickPickPopover
+          icon="repeat"
+          ariaLabel={dt("Повторять", "Repeat")}
+          clearable
+          value={task.recur_freq ?? ""}
+          options={(recurrenceOptions(task.due_date, task.recur_anchor_dom) ?? []).map((o) => ({
+            id: o.freq,
+            label: dt(o.ru, o.en),
+          }))}
+          onPick={(freq) => commit({ recur_freq: freq || null }, { recur_freq: freq || null })}
+        />
+      )}
       <QuickPickPopover
         icon="team"
         ariaLabel="Исполнитель"
