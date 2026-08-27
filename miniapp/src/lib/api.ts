@@ -502,6 +502,58 @@ export async function extractTasksPreview(text: string): Promise<ProposedTask[]>
   return normalizeProposedTasks(await apiFetch<unknown>("/tasks/extract", { method: "POST", body: JSON.stringify({ text, save: false }) }));
 }
 
+// Потоковое извлечение: тот же эндпоинт, но с Accept: text/event-stream — сервер отдаёт задачи
+// по одной, как только модель дописала очередную. Замер по прод-логам: ожидание 3–5 с целиком
+// уходит на генерацию, поэтому единственный способ его убрать — показывать готовое сразу, а не
+// ждать последнюю задачу ради первой.
+//
+// onTask вызывается на КАЖДУЮ приехавшую задачу; функция завершается, когда поток закрылся.
+// Ошибка модели прилетает событием и поднимается исключением — молча оборванный разбор
+// выглядел бы как «задач не найдено», а это разные вещи.
+export async function extractTasksStreamed(text: string, onTask: (task: ProposedTask) => void): Promise<void> {
+  if (DEV_MODE) {
+    // Локально имитируем темп настоящего потока, иначе анимацию прихода нечем проверить.
+    for (const task of await extractTasksPreview(text)) {
+      await new Promise((r) => setTimeout(r, 700));
+      onTask(task);
+    }
+    return;
+  }
+
+  const res = await fetch(`${API_BASE}/tasks/extract`, {
+    method: "POST",
+    cache: "no-store",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...authHeaders() },
+    body: JSON.stringify({ text, save: false }),
+  });
+  if (!res.ok || !res.body) throw new ApiError(res.status, res.statusText);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let tail = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    tail += decoder.decode(value, { stream: true });
+    // События разделены пустой строкой; последний кусок может быть недописан — оставляем в хвосте.
+    const parts = tail.split("\n\n");
+    tail = parts.pop() ?? "";
+    for (const part of parts) {
+      const line = part.split("\n").find((l) => l.startsWith("data:"));
+      if (!line) continue;
+      let event: { type?: string; task?: unknown; message?: string };
+      try { event = JSON.parse(line.slice(5).trim()); } catch { continue; }
+      if (event.type === "task" && event.task) {
+        const [task] = normalizeProposedTasks([event.task]);
+        if (task) onTask(task);
+      } else if (event.type === "error") {
+        throw new ApiError(502, event.message ?? "stream failed");
+      }
+    }
+  }
+}
+
 // ── Sprints (Рой) ───────────────────────────────────────────────────────────────
 let mockSprints: Sprint[] = [
   { id: "sp1", group_id: "cee", name: "Sprint 24", start_date: "2026-06-02", end_date: "2026-06-15", status: "active", created_at: new Date().toISOString() },

@@ -302,3 +302,20 @@
 .roy-harvest-backdrop { transition: opacity 260ms ease-out; }
 .roy-harvest-backdrop[data-starting-style],
 .roy-harvest-backdrop[data-ending-style] { opacity: 0; }
+
+/* Приезд задачи в разборе. Строки появляются по мере того, как модель их дописывает
+   (поток), в непредсказуемые моменты — без собственного движения это читается как мигание,
+   и глаз теряет место в списке. Движение здесь указатель: «вот это только что приехало».
+   Тот же почерк, что у самого листа (одна кривая), и те же compositor-свойства. */
+@keyframes roy-harvest-row-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+.roy-harvest-row-in { animation: roy-harvest-row-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .roy-harvest-row-in { animation: none; } }
+
+/* Заготовка «модель пишет»: первый кадр листа не должен быть пустым, а хвост списка во время
+   потока должен показывать, что работа продолжается. Волна — тот же приём, что у .roy-shim. */
+@keyframes roy-harvest-wave { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.75; } }
+.roy-harvest-wave { animation: roy-harvest-wave 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .roy-harvest-wave { animation: none; opacity: 0.5; } }
