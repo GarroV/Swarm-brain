@@ -155,7 +155,7 @@ export function TaskDetail({ id }: { id: string }) {
                   )}
                 </Row>
                 <Row label="Создано">{fmtDate(t.created_at)}</Row>
-                <Row label="Источник">{sourceLabel(t.source)}</Row>
+                <Row label="Источник">{sourceLabel(t.source ?? null)}</Row>
                 {t.created_by_name && <Row label="Автор">{t.created_by_name}</Row>}
               </RoyCard>
             </div>

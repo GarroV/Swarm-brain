@@ -343,7 +343,7 @@ export async function fetchTasks(filters?: string | TaskFilters): Promise<Task[]
     let r = mockTasks;
     if (f.status) r = r.filter((t) => t.status === f.status);
     if (f.sprint_id) r = r.filter((t) => t.sprint_id === f.sprint_id);
-    if (f.tags?.length) r = r.filter((t) => f.tags!.some((tag) => t.tags.includes(tag)));
+    if (f.tags?.length) r = r.filter((t) => f.tags!.some((tag) => (t.tags ?? []).includes(tag)));
     if (f.label_id) r = r.filter((t) => t.label_ids?.includes(f.label_id!));
     if (f.project_id) r = r.filter((t) => t.project_id === f.project_id);
     return [...r]; // копия: не отдаём mockTasks по ссылке (иначе оптимистичные апдейты в UI дублируют)

@@ -135,6 +135,13 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
   // Снапшот последних сохранённых значений формы (JSON) — чтобы автосейв слал PATCH только при реальном изменении.
   const savedSnapRef = useRef("");
 
+  // Задача из СПИСОЧНОГО ответа приходит БЕЗ description и task_role — их не тянет проекция
+  // TASK_LIST_COLUMNS (issue #116). А buildPatch() ниже собирает PATCH из ВСЕХ полей формы,
+  // а не только изменённых, поэтому автосейв на такой задаче отправил бы 
+  // и  и стёр реальные значения.  = «не загружено» (пусто — это
+  // ), полную версию догружает openTask по id: пока она не доехала, запись запрещена.
+  const isPartial = isEdit && task?.description === undefined;
+
   // Reset form whenever the dialog opens or the task changes
   useEffect(() => {
     if (!open) return;
@@ -250,7 +257,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
 
   // Автосохранение (edit): при любом изменении формы — debounce → PATCH. Кнопки «Сохранить» нет.
   useEffect(() => {
-    if (!open || !isEdit || !task) return;
+    if (!open || !isEdit || !task || isPartial) return;
     const snap = formSnapshot();
     if (snap === savedSnapRef.current) return; // ничего не менялось
     if (!title.trim()) return; // пустое название не сохраняем (обязательное поле)
@@ -269,11 +276,11 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     }, AUTOSAVE_DELAY);
     return () => clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isEdit, title, description, status, dueDate, remindDate, country, taskRole, assigneeId, selProject, labelIds]);
+  }, [open, isEdit, isPartial, title, description, status, dueDate, remindDate, country, taskRole, assigneeId, selProject, labelIds]);
 
   // Закрытие: досрочно сохраняем pending-изменения (пока debounce не успел сработать).
   const handleClose = () => {
-    if (isEdit && task && title.trim()) {
+    if (isEdit && task && !isPartial && title.trim()) {
       const snap = formSnapshot();
       if (snap !== savedSnapRef.current) {
         const patch = buildPatch();
@@ -336,7 +343,9 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
   };
 
   const titleMissing = isEdit && !title.trim();
-  const saveHint = titleMissing
+  const saveHint = isPartial
+    ? "Загружаем…"
+    : titleMissing
     ? "Нужно название"
     : saveState === "saving"
       ? "Сохранение…"

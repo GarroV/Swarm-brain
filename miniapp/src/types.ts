@@ -1,7 +1,14 @@
+// ⚠️ Поля, помеченные , СПИСОЧНЫЙ GET /tasks не отдаёт (проекция TASK_LIST_COLUMNS,
+// issue #116): вес строки задачи — во многом имена 35 полей JSON, 1146 Б против 583 Б.
+//  здесь значит «не загружено», а не «пусто» — пусто это .
+// Полную задачу даёт fetchTask(id); детальные экраны (TaskDetail, NewTask) так и делают.
+// Редактор получает объект ИЗ СПИСКА, поэтому у него отдельная защита: пока
+// , запись заблокирована (см. isPartial в TaskModal) — иначе
+// автосейв отправил бы  и стёр реальный текст.
 export type Task = {
   id: string;
   title: string;
-  description: string | null;
+  description?: string | null;
   assignees: string[];
   assignee_telegram_ids: number[];
   due_date: string | null;
@@ -9,23 +16,23 @@ export type Task = {
   // `reminded_at` NOT NULL = пинг уже отзвонил и сгорел (одноразовый, решение владельца 2026-08-26).
   remind_date: string | null;
   reminded_at: string | null;
-  tags: string[];
+  tags?: string[];
   country: string | null;
-  task_role: string | null;
+  task_role?: string | null;
   priority: string | null;
-  source: string;
+  source?: string;
   status: string;
   created_at: string;
-  updated_at: string | null;
+  updated_at?: string | null;
   meeting_id: string | null;
-  url: string | null;
+  url?: string | null;
   group_id?: string | null;
   created_by_name: string | null;
   // Модуль задач (Рой):
   is_private: boolean;
-  owner_id: number | null;
+  owner_id?: number | null;
   start_date: string | null;
-  timeline_position: number | null;
+  timeline_position?: number | null;
   sprint_id: string | null;
   label_ids: string[];
   project_id: string | null;

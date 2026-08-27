@@ -4,7 +4,7 @@ import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId, getDeepLinkTaskId } from "@/lib/telegram";
-import { fetchAgentMeetings, logout } from "@/lib/api";
+import { fetchAgentMeetings, fetchTask, logout } from "@/lib/api";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { RoyNavContext, useRoyNav, useDt, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
 import type { Lens, SmartListId } from "@/lib/smartLists";
@@ -56,7 +56,6 @@ export function RoyApp({ me }: { me: Me | null }) {
   const [answerQuery, setAnswerQuery] = useState<string | null>(null);
   // Стартовая линза доски задач при входе из панелей дашборда (Мои/Команда). null = дефолт.
   const [taskView, setTaskView] = useState<{ lens: Lens; list?: SmartListId } | null>(null);
-  const openTask = useCallback((t: Task) => setTaskModalTask(t), []);
   const isDesktop = useIsDesktop();
   // Сколько черновиков встреч ждёт вычитки — для бейджа на табе «Встречи». Ошибку глотаем:
   // эндпоинт /agent-meetings может быть недоступен, и это не повод ронять каркас (та же
@@ -93,6 +92,20 @@ export function RoyApp({ me }: { me: Me | null }) {
     }
   }, []);
   const toast = useCallback((msg: string) => setToastMsg(msg), []);
+
+  // Списочный GET /tasks не отдаёт description и task_role (проекция TASK_LIST_COLUMNS,
+  // issue #116), а редактор получает объект ИЗ СПИСКА. Окно открываем сразу — заголовок,
+  // срок, исполнитель и метки в списочной строке уже есть, так что пустоты не видно, — а
+  // полную задачу догружаем по id и подменяем: эффект сброса формы в TaskModal зависит от
+  // самого объекта, поэтому форма переинициализируется на полных данных. До подмены запись
+  // в TaskModal заблокирована (isPartial), иначе автосейв стёр бы описание.
+  const openTask = useCallback((t: Task) => {
+    setTaskModalTask(t);
+    if (t.description !== undefined) return;   // уже полная (например, из fetchTask)
+    fetchTask(t.id)
+      .then((full) => setTaskModalTask((prev) => (prev && prev.id === full.id ? full : prev)))
+      .catch(() => toast("Не удалось загрузить задачу целиком — закройте и откройте снова"));
+  }, [toast]);
 
   // Открыть вычитку встречи в этом инстансе: вкладка Встречи + push вычитки.
   // Дёргается и из начального deep-link, и по событию roy:open-meeting (когда встречу
