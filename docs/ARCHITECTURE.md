@@ -206,7 +206,7 @@ supabase/functions/swarm-bot/
 
 ### `tasks.status` — значения и целостность
 
-⚠️ **`tasks.status` НЕ ограничен CHECK на уровне БД** (`text not null default 'open'`, `supabase/schema/00_base_schema.sql`; ни одна миграция CHECK не добавляет). БД примет **любую строку** — целостность держится только на прикладном слое. CHECK на `status` есть лишь у `sprints` (`planned`/`active`/`completed`) и `meetings` (`awaiting_review`/`in_base`), но НЕ у `tasks`.
+⚠️ **`tasks.status` НЕ ограничен CHECK на уровне БД** (`text not null default 'open'`, `supabase/migrations/00000000_initial_schema.sql`; ни одна миграция CHECK не добавляет). БД примет **любую строку** — целостность держится только на прикладном слое. CHECK на `status` есть лишь у `sprints` (`planned`/`active`/`completed`) и `meetings` (`awaiting_review`/`in_base`), но НЕ у `tasks`.
 
 Прикладные значения `tasks.status` (используются в swarm-bot / swarm-mcp / swarm-api):
 
@@ -221,7 +221,7 @@ supabase/functions/swarm-bot/
 
 `listTasks` по умолчанию исключает `done`/`cancelled`/`draft`. Поскольку CHECK нет — опечатка или новое значение из кода молча запишутся в БД; следить за консистентностью значений нужно в коде.
 
-**Миграции:** начальная схема (полный набор `CREATE TABLE` в их текущем end-state) живёт в `supabase/schema/00_base_schema.sql` — фундамент изначально строился руками в дашборде Supabase, этот файл его реконструирует для bootstrap'а чистого проекта с нуля. Инкрементальные файлы в `supabase/migrations/` (по дате) в основном только `ALTER` существующие таблицы, **но не все**: таблица `meetings` (Swarm Meetings) **создаётся** миграцией `20260612000000_meetings.sql` (`CREATE TABLE`, additive). ⚠️ `00_base_schema.sql` может отставать от migrations — например, на момент ревизии в нём нет `tasks.priority`, токенов рекордера и таблицы `meetings` (они добавлены поздними миграциями).
+**Миграции — единственный источник схемы.** Всё живёт в `supabase/migrations/`: базовые таблицы создаёт `00000000_initial_schema.sql`, остальные файлы (по дате) накатываются поверх. Контур с нуля поднимается одной командой — `supabase db reset` (проверено на пустой базе 27.08.2026, 60 миграций). Рукописный дубль схемы `supabase/schema/00_base_schema.sql` **удалён 27.08.2026** (issue #118): он дважды отставал от миграций — не хватало колонок пинга задач и цикличности — и обещал bootstrap, который на деле давал неполную таблицу `tasks`. ⚠️ Версия миграции = префикс имени файла, и Supabase CLI держит по ней PK: **два файла с одним номером роняют `supabase db reset`** (issue #120, прожило три дня) — коллизию ловит гард в `.githooks/pre-commit`. Инкрементальные файлы в основном только `ALTER` существующие таблицы, **но не все**: таблица `meetings` (Swarm Meetings) **создаётся** миграцией `20260612000000_meetings.sql` (`CREATE TABLE`, additive). ⚠️ `00_base_schema.sql` может отставать от migrations — например, на момент ревизии в нём нет `tasks.priority`, токенов рекордера и таблицы `meetings` (они добавлены поздними миграциями).
 
 ---
 

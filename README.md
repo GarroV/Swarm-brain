@@ -123,7 +123,7 @@ supabase/
 │   ├── read-ai-auth/           # OAuth2 авторизации Read.ai (отключается)
 │   ├── read-ai-webhook/        # Вебхук Read.ai (отключается, READ_AI_ENABLED off)
 │   └── _shared/                # общий код: sources (реестр источников), mcp-token, recorder-token, meeting-processor, meeting-dedup, tasks, search, countries
-└── migrations/                 # инкрементальные миграции; старт с нуля — supabase/schema/00_base_schema.sql
+└── migrations/                 # ВСЯ схема: 00000000_initial_schema.sql + инкрементальные. Старт с нуля — supabase db reset (или db push)
 
 miniapp/                        # Веб-интерфейс «Рой» (Next.js 16 → статический экспорт → Cloudflare Pages; имя папки историческое — это обычный сайт/PWA, НЕ Telegram Mini App)
 └── src/                        # Поиск/RAG, доска задач, база знаний, вычитка встреч
