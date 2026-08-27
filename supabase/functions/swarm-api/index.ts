@@ -46,11 +46,23 @@ import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
 import { normalizeExtractedDueDate, todayIso } from "../_shared/llm-date.ts";
 import { canAccessDraftMeeting, draftMeetingsOwnScoped, type DraftMeetingRow } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
-import { corsHeaders, json, apiErr } from "./http.ts";
+import { corsHeaders, json, apiErr, parseListLimit } from "./http.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
+
+// Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
+// верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
+// все экраны задач фильтруют статусы и линзы НА КЛИЕНТЕ (смарт-листы, колонка «Готово»,
+// таймлайн), значит вебу нужен полный набор. На проде задач было 188 из 200, и при переполнении
+// сортировка `due_date ASC nulls last` отрезала бы первыми задачи БЕЗ срока — их 67, и под них
+// на дашборде отдельная секция. Молча: клиент отфильтровал бы кусок и показал как всё (#111).
+//
+// 2000 — не «навсегда», а окно: на проде ~1.1 кБ на задачу, то есть 2000 задач ≈ 2.2 МБ, и это
+// уже путь, которым /meetings дорос до 10 МБ (#102). Настоящий фикс — серверная фильтрация
+// статусов вместо клиентской (#111), громкое усечение — #112. Пока держим breadcrumb в логах.
+const TASKS_LIST_LIMIT = 2000;
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
@@ -443,8 +455,7 @@ Deno.serve(async (req: Request) => {
       const country = url.searchParams.get("country") ?? undefined;
       const assigneeText = url.searchParams.get("assignee") ?? undefined;
       const mine = url.searchParams.get("mine") === "true";
-      const limitParam = url.searchParams.get("limit");
-      const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+      const limit = parseListLimit(url.searchParams.get("limit"), { def: TASKS_LIST_LIMIT, max: TASKS_LIST_LIMIT });
       const confirmedParam = url.searchParams.get("confirmed");
       const confirmedFilter = confirmedParam === "true" ? true : confirmedParam === "false" ? false : undefined;
       const sprintId = url.searchParams.get("sprint_id") ?? undefined;
@@ -477,6 +488,13 @@ Deno.serve(async (req: Request) => {
         },
         groupId,
       );
+      // Упёрлись в лимит — значит часть задач в ответ НЕ попала, и клиент об этом не узнает
+      // (ответ — голый массив, признака усечения в нём нет). Пока #112 не сделает усечение
+      // громким для пользователя, оставляем след в логах: увидим до того, как заметит команда.
+      if (tasks.length >= limit) {
+        console.warn(`[tasks] список упёрся в лимит ${limit} — часть задач не попала в ответ (issue #111/#112)`);
+      }
+
       // Batch-resolve creator names
       const creatorIds = [...new Set(
         tasks.map(t => t.created_by_telegram_id)
@@ -1186,7 +1204,7 @@ Deno.serve(async (req: Request) => {
     const confirmedParam = url.searchParams.get("confirmed");
     // Лимит настраиваемый (?limit=), дефолт 500 — прежний хардкод 50 обрезал список «Все встречи»
     // (у команды уже 60+ встреч только за 2 недели). Потолок 2000 — защита от гигантского payload.
-    const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") ?? "500", 10) || 500, 1), 2000);
+    const limit = parseListLimit(url.searchParams.get("limit"), { def: 500, max: 2000 });
     // Несогласованные (очередь вычитки) — по причастности: владелец ИЛИ участник встречи.
     // Обычный фильтр видимости тут не годится: «ничья» неприватная встреча из read-ai висела
     // бы в очереди у всего воркспейса (issue #66). Согласованные — обычное правило.
