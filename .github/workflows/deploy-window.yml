@@ -1,0 +1,49 @@
+name: Ночная раскатка
+
+# Вливает в main PR с меткой `deploy-window` — ночью, когда команда не работает.
+# Правило владельца 2026-08-27: апдейты катятся всегда во внерабочее время
+# (docs/decisions/2026-08-27-deploy-at-night.md). Мёрж в main = раскатка веба:
+# Cloudflare Pages собирает прод с main сам.
+#
+# Вся логика — в scripts/deploy-window-merge.sh: так её можно прогнать локально в сухом
+# режиме (DRY_RUN=1) и не выяснять поведение автоматики уже на проде.
+
+on:
+  schedule:
+    # 23:00 по Белграду. Два часа UTC, потому что Белград летом UTC+2, зимой UTC+1 —
+    # скрипт сам проверяет местное время и второй запуск тихо выходит.
+    - cron: "0 21 * * *"
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Сухой прогон: показать решение, ничего не вливать"
+        type: boolean
+        default: true
+      force:
+        description: "Обойти проверку окна (живой баг обгоняет окно)"
+        type: boolean
+        default: false
+
+# Две раскатки одновременно не нужны никогда.
+concurrency:
+  group: deploy-window
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    name: Влить помеченный PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write        # пуш в main
+      pull-requests: write   # мёрж, снятие метки, комментарий
+    steps:
+      - uses: actions/checkout@v4
+      - name: Раскатка помеченного PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          FORCE: ${{ inputs.force && '1' || '0' }}
+        run: bash scripts/deploy-window-merge.sh
