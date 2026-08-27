@@ -12,16 +12,24 @@ export function corsHeaders(origin: string): Record<string, string> {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    // Без Expose-Headers браузер не отдаст JS ничего, кроме простых заголовков — на
+    // cross-origin запросах X-Total-Count был бы виден в DevTools и невидим коду.
+    "Access-Control-Expose-Headers": "X-Total-Count",
   };
 }
 
 // Cache-Control: no-store на КАЖДОМ ответе — это приватный API (чужие записи, задачи,
 // тезисы). Без него ответ вправе осесть в промежуточном кэше и отдаться повторно/не тому
 // (см. issue #71: service worker кэшировал /api/* и показывал данные «на шаг назад»).
-export function json(data: unknown, status = 200, origin = ""): Response {
+export function json(data: unknown, status = 200, origin = "", extra?: Record<string, string>): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...corsHeaders(origin) },
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      ...corsHeaders(origin),
+      ...(extra ?? {}),
+    },
   });
 }
 

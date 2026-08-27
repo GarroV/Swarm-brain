@@ -101,6 +101,7 @@ supabase functions deploy swarm-api --no-verify-jwt
 ### Ключевые файлы
 | Файл | Назначение |
 |------|-----------|
+| `src/components/TaskModal.tsx` | Редактор задачи. **Автосейв собирает PATCH из ВСЕХ полей формы**, а не только изменённых, поэтому на задаче из списочного ответа (без `description`/`task_role`, issue #116) он стёр бы реальный текст. Защита — `isPartial` (`task.description === undefined`): пока полная версия не доехала, запись запрещена, в индикаторе «Загружаем…». Догружает `openTask` в `RoyApp.tsx` |
 | `src/lib/api.ts` | Все запросы к swarm-api + DEV_MODE mock (tasks, sprints, dependencies). **GET-ы проходят через дедупликацию** (`request-cache.ts`): одновременные одинаковые запросы делят один сетевой, повтор внутри 2.5 с берётся из памяти, любая мутация сбрасывает кэш. Общего слоя данных у экранов нет — каждый компонент грузит своё в `useEffect`, и одна ручка дёргалась 2–8 раз за открытие (issue #103) |
 | `src/lib/request-cache.ts` | Кэш/дедуп GET-запросов. **Только в памяти вкладки** — HTTP-кэш и Cache Storage не задействованы, запрет кэширования приватных ответов (issue #71) в силе. TTL (`REQUEST_CACHE_TTL_MS = 2500`) заведомо меньше самого частого поллинга (10 с), иначе кэш проглотил бы опрос и очередь вычитки замерла бы на экране. Ошибки не кэшируются. Тест: `deno test --allow-read miniapp/src/lib/request-cache.test.ts` |
 | `src/lib/telegram.ts` | getInitData, initApp |

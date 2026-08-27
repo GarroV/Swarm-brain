@@ -13,10 +13,12 @@ import {
   ENTRY_COLUMNS,
 } from "./entries-guard.ts";
 import { toAgentListRow, toListRow } from "./meetings-payload.ts";
+import { TASK_LIST_COLUMNS } from "./task-columns.ts";
 import {
   createTask,
   getTask,
   listTasks,
+  listTasksWithTotal,
   updateTask,
   deleteTask,
 } from "../_shared/tasks/db.ts";
@@ -468,8 +470,11 @@ Deno.serve(async (req: Request) => {
       const dueDateFrom = url.searchParams.get("due_date_from") ?? undefined;
       const dueDateTo = url.searchParams.get("due_date_to") ?? undefined;
 
-      const tasks = await listTasks(
+      const { tasks, total } = await listTasksWithTotal(
         {
+          // Узкая проекция: 1146 → 583 Б на строку (issue #116). description в списках не
+          // рендерится; редактор до-загружает задачу по id.
+          columns: TASK_LIST_COLUMNS,
           status,
           country,
           assigneeText,
@@ -520,7 +525,12 @@ Deno.serve(async (req: Request) => {
         created_by_name: t.created_by_telegram_id != null ? (creatorMap.get(t.created_by_telegram_id) ?? null) : null,
       }));
 
-      return json(tasksWithCreator, 200, origin);
+      // X-Total-Count — сколько задач подходит под фильтры БЕЗ лимита. Заголовком, а не
+      // конвертом: ответ остаётся голым массивом, поэтому бот и MCP не задеты. null приходит,
+      // когда счётчик соврал бы (фильтр по имени исполнителя доклеивается в JS уже после
+      // выборки) — тогда заголовок просто не ставим, а не подсовываем неверное число.
+      const totalHeader = total != null ? { "X-Total-Count": String(total) } : undefined;
+      return json(tasksWithCreator, 200, origin, totalHeader);
     }
 
     if (req.method === "POST") {

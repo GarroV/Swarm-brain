@@ -49,13 +49,17 @@ export async function getTask(id: string): Promise<Task | null> {
   return data as Task | null;
 }
 
-export async function listTasks(filters: {
+export async function listTasksWithTotal(filters: {
   status?: string;
   country?: string;
   period?: string;
   telegramId?: number;
   assigneeText?: string;
   limit?: number;
+  // Какие колонки тянуть. По умолчанию "*" — так ходят бот и MCP: боту нужен description
+  // для формата сообщения. Веб передаёт узкую проекцию (TASK_LIST_COLUMNS, issue #116):
+  // вес строки задачи — во многом имена 35 полей JSON, 1146 Б против 583 Б на проекции.
+  columns?: string;
   confirmed?: boolean;
   createdBy?: number;
   dueToday?: boolean;
@@ -70,10 +74,10 @@ export async function listTasks(filters: {
   startDateTo?: string;
   dueDateFrom?: string;
   dueDateTo?: string;
-}, groupId?: string): Promise<Task[]> {
+}, groupId?: string): Promise<{ tasks: Task[]; total: number | null }> {
   let q = supabase
     .from("tasks")
-    .select("*")
+    .select(filters.columns ?? "*", { count: "exact" })
     .order("due_date", { ascending: true, nullsFirst: false });
 
   // Видимость приватных задач: приватная видна только владельцу (админ — все).
@@ -121,15 +125,34 @@ export async function listTasks(filters: {
 
   if (groupId) q = q.eq("group_id", groupId);
 
-  const { data } = await q.limit(filters.limit ?? 200);
-  let tasks = (data ?? []) as Task[];
+  const { data, count } = await q.limit(filters.limit ?? 200);
+  // Двойное приведение: при динамическом select(string) supabase-js не может вывести форму
+  // строки и типизирует результат как GenericStringError[]. Форму гарантирует TASK_LIST_COLUMNS
+  // (под тестом) и тип Task, где выброшенные проекцией поля помечены опциональными.
+  let tasks = (data ?? []) as unknown as Task[];
+
+  // total = сколько строк подходит под фильтры БЕЗ лимита. Нужен, чтобы ответ мог честно
+  // сказать «показаны N из M»: сейчас усечение молчит, а лимит режет КОНЕЦ сортировки
+  // (due_date ASC nulls last), то есть задачи без срока (issue #111/#112).
+  // assigneeText фильтруется уже в JS, ниже, поэтому при нём счётчик из базы соврал бы —
+  // отдаём null вместо неверного числа.
+  let total: number | null = typeof count === "number" ? count : null;
 
   if (filters.assigneeText) {
     const lower = filters.assigneeText.toLowerCase();
     tasks = tasks.filter(t => t.assignees?.some(a => a.toLowerCase().includes(lower)));
+    total = null;
   }
 
-  return tasks;
+  return { tasks, total };
+}
+
+/** Обёртка для вызывающих, которым нужен только список (бот, MCP). */
+export async function listTasks(
+  filters: Parameters<typeof listTasksWithTotal>[0],
+  groupId?: string,
+): Promise<Task[]> {
+  return (await listTasksWithTotal(filters, groupId)).tasks;
 }
 
 /** Задача не закрылась, а перекатилась на следующий цикл: `from` — прежний срок, `to` — новый. */
