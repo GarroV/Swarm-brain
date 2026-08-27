@@ -25,6 +25,7 @@ import { COUNTRY_NAMES, countryCode } from "@/lib/countries";
 import { CountryPopover } from "@/components/tasks/CountryPopover";
 import { linkify } from "@/lib/linkify";
 import { useDt } from "@/components/roy/nav";
+import { recurrenceOptions } from "@/lib/recurrenceLabels";
 
 // Функционал ролей пока не используется командой — поле скрыто в UI, но не удалено
 // (данные task_role продолжают сохраняться на уже размеченных задачах).
@@ -114,6 +115,9 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
   // ссылками (linkify); textarea появляется по клику. Пустое описание — сразу editable.
   const [descEditing, setDescEditing] = useState(true);
   const [dueDate, setDueDate] = useState("");
+  // Цикличность: null — обычная задача. Производная от срока (день недели/число берутся из
+  // него), поэтому без срока включить нельзя.
+  const [recurFreq, setRecurFreq] = useState<string | null>(null);
   // Пинг — ручное напоминание, живёт рядом со сроком и независимо от него.
   const [remindDate, setRemindDate] = useState("");
   const [remindedAt, setRemindedAt] = useState<string | null>(null);
@@ -143,6 +147,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     const initialStatus = normStatus(task?.status);
     const initialDue = task?.due_date ?? prefill?.due_date ?? "";
     const initialRemind = task?.remind_date ?? "";
+    const initialRecur = task?.recur_freq ?? null;
     const initialCountry = task?.country ?? prefill?.country ?? "";
     const initialRole = task?.task_role ?? NONE;
     const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
@@ -155,6 +160,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     setDescEditing(!initialDescription.trim());
     setDueDate(initialDue);
     setRemindDate(initialRemind);
+    setRecurFreq(initialRecur);
     setRemindedAt(task?.reminded_at ?? null);
     setCountry(initialCountry);
     setTaskRole(initialRole);
@@ -172,6 +178,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
       status: initialStatus,
       dueDate: initialDue,
       remindDate: initialRemind,
+      recurFreq: initialRecur,
       country: initialCountry,
       taskRole: initialRole,
       assigneeId: cur,
@@ -220,9 +227,17 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     }
   }
 
+  // Варианты цикличности зависят только от срока — считаем один раз на рендер.
+  // Якорь показываем, только пока срок не тронут: изменил дату — подпись идёт за новой,
+  // потому что сервер пересчитает якорь по тому же правилу (recurrencePatchFor).
+  const recurOptions = recurrenceOptions(
+    dueDate,
+    dueDate === (task?.due_date ?? "") ? task?.recur_anchor_dom : null,
+  );
+
   // Текущий снапшот формы (для сравнения с сохранённым) — те же ключи, что в useEffect open.
   const formSnapshot = () =>
-    JSON.stringify({ title, description, status, dueDate, remindDate, country, taskRole, assigneeId, selProject, labelIds });
+    JSON.stringify({ title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds });
 
   // Собрать PATCH из текущих значений формы. null → сохранять нечего/нельзя (пустое название).
   const buildPatch = (): UpdateTaskInput | null => {
@@ -234,6 +249,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
       description: description.trim() || null,
       due_date: dueDate || null,
       remind_date: remindDate || null,
+      recur_freq: recurFreq,
       country: country || null,
       task_role: taskRole === NONE ? null : taskRole,
       status,
@@ -269,7 +285,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
     }, AUTOSAVE_DELAY);
     return () => clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isEdit, title, description, status, dueDate, remindDate, country, taskRole, assigneeId, selProject, labelIds]);
+  }, [open, isEdit, title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds]);
 
   // Закрытие: досрочно сохраняем pending-изменения (пока debounce не успел сработать).
   const handleClose = () => {
@@ -300,6 +316,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
         description: description.trim() || null,
         due_date: dueDate || null,
         remind_date: remindDate || null,
+        recur_freq: recurFreq,
         country: country || null,
         task_role: taskRole === NONE ? null : taskRole,
       };
@@ -478,7 +495,14 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="modal-due" className={labelCls} style={{ fontSize: 12 }}>Срок</label>
-                  <DatePicker value={dueDate} onChange={setDueDate} className={fieldCls} placeholder="Срок" />
+                  <DatePicker
+                    value={dueDate}
+                    // Сняли срок — цикличность гаснет вместе с ним: без срока считать следующее
+                    // вхождение не от чего, а тихо оставленная частота молча перестала бы работать.
+                    onChange={(iso) => { setDueDate(iso); if (!iso) setRecurFreq(null); }}
+                    className={fieldCls}
+                    placeholder={dt("Срок", "Due date")}
+                  />
                 </div>
                 <div>
                   <label htmlFor="modal-ping" className={labelCls} style={{ fontSize: 12 }}>{dt("Пинг", "Ping")}</label>
@@ -496,6 +520,55 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
                       : dt("Напомним в этот день, один раз", "One reminder on this day")}
                   </p>
                 </div>
+                {/* Цикличность. Подписи вариантов считаются от срока («По средам», «26-го числа»)
+                    — день недели и число отдельно не хранятся, это и есть срок задачи. */}
+                <div className="col-span-2">
+                  <label className="flex cursor-pointer items-center gap-2 text-ink-soft" style={{ fontSize: 12.5, minHeight: 40 }}>
+                    <input
+                      type="checkbox"
+                      checked={!!recurFreq}
+                      disabled={!recurOptions}
+                      onChange={(e) => setRecurFreq(e.target.checked ? "weekly" : null)}
+                      className="size-4 accent-accent disabled:opacity-40"
+                    />
+                    <RoyIcon name="repeat" size={14} strokeWidth={2} />
+                    <span className="font-semibold">{dt("Повторять", "Repeat")}</span>
+                    {!recurOptions && (
+                      <span className="text-ink-mute" style={{ fontSize: 11 }}>
+                        {dt("— сначала поставь срок", "— set a due date first")}
+                      </span>
+                    )}
+                  </label>
+                  {recurFreq && recurOptions && (
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {recurOptions.map((o) => {
+                        const on = o.freq === recurFreq;
+                        return (
+                          <button
+                            key={o.freq}
+                            type="button"
+                            onClick={() => setRecurFreq(o.freq)}
+                            className={`inline-flex items-center rounded-full px-3 py-1.5 font-semibold transition-colors ${
+                              on ? "bg-primary text-white" : "bg-secondary text-secondary-foreground hover:bg-secondary/70"
+                            }`}
+                            style={{ fontSize: 12, minHeight: 36 }}
+                          >
+                            {dt(o.ru, o.en)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {recurFreq && (
+                    <p className="mt-1 text-ink-mute" style={{ fontSize: 11 }}>
+                      {dt(
+                        "Отметишь готовой — задача не закроется, а перенесётся на следующий раз",
+                        "Marking it done rolls the task to its next occurrence instead of closing it",
+                      )}
+                    </p>
+                  )}
+                </div>
+
                 <div>
                   <span className={labelCls} style={{ fontSize: 12 }}>{dt("Проект", "Project")}</span>
                   <Select value={selProject ?? NONE} onValueChange={(v) => setSelProject(v === NONE ? null : v)}>

@@ -33,6 +33,10 @@ export type Task = {
   parent_id: string | null;
   tree_x: number | null;
   tree_y: number | null;
+  // Цикличность: null = обычная задача. День недели (weekly) и число (monthly) берутся
+  // из due_date — отдельно не хранятся. recur_anchor_dom помнит исходное число месяца.
+  recur_freq: string | null;
+  recur_anchor_dom: number | null;
 };
 
 export type SprintStatus = "planned" | "active" | "completed";

@@ -26,6 +26,8 @@ export type CreateTaskInput = {
   parent_id?: string | null;
   tree_x?: number | null;
   tree_y?: number | null;
+  /** Цикличность: daily | weekly | monthly; null — снять. Требует срока (API отобьёт без него). */
+  recur_freq?: string | null;
 };
 
 export type UpdateTaskInput = Partial<CreateTaskInput> & { status?: string; project_linked?: boolean };
@@ -133,6 +135,7 @@ function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
     is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null,
     label_ids: [], project_id: o.project_id ?? null, project_linked: o.project_linked ?? false,
     parent_id: o.parent_id ?? null, tree_x: o.tree_x ?? null, tree_y: o.tree_y ?? null,
+    recur_freq: o.recur_freq ?? null, recur_anchor_dom: o.recur_anchor_dom ?? null,
   };
 }
 let mockTasks: Task[] = [
@@ -145,6 +148,10 @@ let mockTasks: Task[] = [
   mkMock({ id: "6", title: "Serbia distributor call", country: "RS", assignees: ["Bob Jones"], assignee_telegram_ids: [345678], due_date: mockDay(21), created_by_name: "Bob Jones" }),
   mkMock({ id: "7", title: "Montenegro market scan", country: "ME", assignees: ["Bob Jones"], assignee_telegram_ids: [345678], created_by_name: "Bob Jones" }),
   mkMock({ id: "8", title: "General team retro notes", assignees: [], assignee_telegram_ids: [], is_private: false }),
+  // ── регулярные задачи: без них смарт-список «Регулярные» скрыт и его не посмотреть ──
+  mkMock({ id: "9", title: "Weekly sales report", assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: mockDay(1), recur_freq: "weekly" }),
+  mkMock({ id: "10", title: "Daily inbox zero", assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: mockDay(0), recur_freq: "daily" }),
+  mkMock({ id: "11", title: "Monthly invoice run", assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: mockDay(12), recur_freq: "monthly" }),
   // ── демо-дерево проекта pr1 «Swarm Brain» (для локального просмотра v2) ──
   mkMock({ id: "p_onb", title: "Онбординг", project_id: "pr1", project_linked: true }),
   mkMock({ id: "p_search", title: "Поиск по базе", project_id: "pr1", project_linked: true, status: "in_progress" }),
@@ -393,6 +400,9 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       sprint_id: input.sprint_id ?? null, label_ids: input.label_ids ?? [],
       project_id: input.project_id ?? null, project_linked: input.parent_id ? true : false,
       parent_id: input.parent_id ?? null, tree_x: input.tree_x ?? null, tree_y: input.tree_y ?? null,
+      recur_freq: input.recur_freq ?? null,
+      recur_anchor_dom: input.recur_freq === "monthly" && input.due_date
+        ? Number(input.due_date.slice(8, 10)) : null,
     };
     mockTasks.push(newTask);
     return newTask;

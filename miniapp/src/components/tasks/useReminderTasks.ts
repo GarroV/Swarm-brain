@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchMe, fetchTasks, updateTask, deleteTask, createTask, fetchTaskLabels, type TaskLabel, type CreateTaskInput } from "@/lib/api";
+import { fetchMe, fetchTasks, updateTask, deleteTask, createTask, fetchTaskLabels, type TaskLabel } from "@/lib/api";
+import { buildQuickAddInput } from "@/lib/quickAddTask";
 import type { Me, Task } from "@/types";
 import {
   filterTasks, countLists, groupByMarket, groupByAssignee, groupByAssigneeThenMarket, isDone, filterByLabel, countByLabel,
@@ -225,10 +226,13 @@ export function useReminderTasks() {
     const trimmed = title.trim();
     if (!trimmed) return;
     markMutation();
-    const input: CreateTaskInput = { title: trimmed };
-    if (me) input.assignee_telegram_id = me.telegram_id;
-    if (activeList === "today" && !labelId) input.due_date = todayISO(new Date());
-    if (labelId) input.is_private = true;
+    // Дефолты быстрого добавления — общий хелпер с доской проектов (buildQuickAddInput):
+    // одна точка правды, чтобы «+» в разных местах снова не разошёлся по исполнителю.
+    const input = buildQuickAddInput(trimmed, me, {
+      todayISO: activeList === "today" ? todayISO(new Date()) : null,
+      labelId,
+    });
+    if (!input) return;
     try {
       const created = await createTask(input);
       let finalTask = created;

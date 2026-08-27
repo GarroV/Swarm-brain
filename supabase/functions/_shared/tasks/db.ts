@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Task, TaskInput } from "./types.ts";
+import { buildRecurPatch, todayInTz, type RecurRow } from "./recurrence.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -36,6 +37,8 @@ export async function createTask(input: TaskInput, groupId?: string): Promise<Ta
     parent_id: input.parent_id ?? null,
     tree_x: input.tree_x ?? null,
     tree_y: input.tree_y ?? null,
+    recur_freq: input.recur_freq ?? null,
+    recur_anchor_dom: input.recur_anchor_dom ?? null,
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Task;
@@ -129,13 +132,64 @@ export async function listTasks(filters: {
   return tasks;
 }
 
+/** Задача не закрылась, а перекатилась на следующий цикл: `from` — прежний срок, `to` — новый. */
+export interface RecurResult {
+  recurred: { from: string; to: string };
+}
+
 export async function updateTask(
   id: string,
   fields: Partial<TaskInput> & { status?: string; url?: string; due_date?: string | null },
-): Promise<void> {
+  opts: { actor?: string } = {},
+): Promise<RecurResult | null> {
+  let patch: Record<string, unknown> = { ...fields };
+  let result: RecurResult | null = null;
+
+  // Закрытие РЕГУЛЯРНОЙ задачи — не закрытие, а перекат на следующее вхождение графика.
+  // Живёт здесь, потому что это единственная точка записи статуса задач: веб (PATCH /tasks),
+  // бот и MCP ходят через неё, и обойти перекат нельзя. Лишний SELECT — только на «done».
+  if (fields.status === "done") {
+    const { data: row } = await supabase.from("tasks")
+      .select("status, recur_freq, recur_anchor_dom, due_date, start_date, remind_date")
+      .eq("id", id)
+      .maybeSingle();
+    if (row) {
+      // Значения из ЭТОГО же патча важнее сохранённых: срок/частоту могли поменять и закрыть
+      // задачу одним запросом (MCP умеет), и считать надо от нового графика, а не от прежнего.
+      const effective: RecurRow = {
+        status: (fields.status as string) ?? row.status,
+        recur_freq: fields.recur_freq !== undefined ? fields.recur_freq ?? null : row.recur_freq,
+        recur_anchor_dom: fields.recur_anchor_dom !== undefined ? fields.recur_anchor_dom ?? null : row.recur_anchor_dom,
+        due_date: fields.due_date !== undefined ? fields.due_date ?? null : row.due_date,
+        start_date: fields.start_date !== undefined ? fields.start_date ?? null : row.start_date,
+        remind_date: fields.remind_date !== undefined ? fields.remind_date ?? null : row.remind_date,
+      };
+      const recurPatch = buildRecurPatch(effective, todayInTz());
+      if (recurPatch) {
+        patch = { ...patch, ...recurPatch }; // у переката приоритет над «done» из запроса
+        result = { recurred: { from: effective.due_date!, to: recurPatch.due_date } };
+      }
+    }
+  }
+
   await supabase.from("tasks")
-    .update({ ...fields, updated_at: new Date().toISOString() })
+    .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", id);
+
+  // В roll-forward-модели от выполнения не остаётся НИКАКОГО следа (статус снова «открыто»,
+  // задача в «Готовых» не появится). Строка в уже существующей task_history — единственная
+  // память о том, что цикл закрыли.
+  if (result) {
+    await supabase.from("task_history").insert({
+      task_id: id,
+      changed_by: opts.actor ?? "recurring",
+      old_status: fields.status ?? null,
+      new_status: "open",
+      note: `цикл закрыт, следующий срок ${result.recurred.to} (было ${result.recurred.from})`,
+    });
+  }
+
+  return result;
 }
 
 export async function deleteTask(id: string): Promise<void> {

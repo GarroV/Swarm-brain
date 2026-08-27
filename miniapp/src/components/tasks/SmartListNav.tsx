@@ -1,7 +1,8 @@
 "use client";
 import { cn } from "@/lib/utils";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
-import { SMART_LISTS, type SmartListId } from "@/lib/smartLists";
+import { HIDE_WHEN_EMPTY, SMART_LISTS, type SmartListId } from "@/lib/smartLists";
+import { useDt } from "@/components/roy/nav";
 import { RangePicker } from "@/components/ui/RangePicker";
 import type { DateRange } from "@/lib/dateRange";
 
@@ -35,6 +36,13 @@ type SmartListNavProps = {
 
 // Навигация по смарт-спискам: вертикальный рельс (десктоп) или горизонтальные чипы (мобайл).
 export function SmartListNav({ variant, compact, active, counts, onSelect, query, onQuery, labels, labelCounts, activeLabelId, onSelectLabel, onCreateLabel, onEditLabel, range, onRange }: SmartListNavProps) {
+  const dt = useDt();
+  // «Регулярные» видны только когда такие задачи есть (решение владельца 2026-08-27: «если
+  // задач таких нет, то список скрывается»). Активный список не прячем даже при нуле — иначе,
+  // сняв цикличность с последней задачи, пользователь остался бы на исчезнувшем из навигации
+  // списке и не понял бы, куда попал.
+  const lists = SMART_LISTS.filter(({ id }) => !HIDE_WHEN_EMPTY.has(id) || counts[id] > 0 || id === active);
+
   if (variant === "chips") {
     // Затухание справа (mask, не градиент-подложка) — единственный честный намёк, что чипы
     // скроллятся: раньше четвёртый чип просто обрубался краем экрана и выглядел сломанным.
@@ -46,7 +54,7 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
           compact ? "[mask-image:linear-gradient(to_right,black_calc(100%-22px),transparent)]" : "px-5 pb-3",
         )}
       >
-        {SMART_LISTS.map(({ id, label, icon }) => {
+        {lists.map(({ id, label, labelEn, icon }) => {
           const on = id === active;
           return (
             <button
@@ -61,7 +69,7 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
               style={{ fontSize: 12.5, minHeight: 40 }}
             >
               <RoyIcon name={icon} size={13} strokeWidth={2} />
-              {label}
+              {dt(label, labelEn)}
               {counts[id] > 0 && (
                 <span className={`font-mono ${on ? "text-white/80" : "text-ink-mute"}`} style={{ fontSize: 11 }}>
                   {counts[id]}
@@ -88,7 +96,7 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
           />
         </label>
       )}
-      {SMART_LISTS.map(({ id, label, icon }) => {
+      {lists.map(({ id, label, labelEn, icon }) => {
         const on = id === active;
         return (
           <button
@@ -102,7 +110,7 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
             style={{ fontSize: 13.5 }}
           >
             <RoyIcon name={icon} size={16} strokeWidth={on ? 2.1 : 1.8} />
-            <span className="flex-1 text-left">{label}</span>
+            <span className="flex-1 text-left">{dt(label, labelEn)}</span>
             {counts[id] > 0 && (
               <span className={`font-mono ${on ? "text-accent-ink" : "text-ink-mute"}`} style={{ fontSize: 11.5 }}>
                 {counts[id]}

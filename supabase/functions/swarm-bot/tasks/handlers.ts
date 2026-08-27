@@ -846,14 +846,24 @@ export async function handleTaskCallbacks(
     const newStatus = parts.slice(2).join("_");
     const task = await dbGetTask(taskId);
     if (!task) { await sendMessage(chatId, "Задача не найдена."); return true; }
-    await dbUpdateTask(taskId, { status: newStatus });
-    await supabase.from("task_history").insert({
-      task_id: taskId,
-      changed_by: username,
-      old_status: task.status,
-      new_status: newStatus,
-    });
-    await sendMessage(chatId, `${STATUS_LABEL[newStatus] ?? newStatus} <b>${task.title}</b>`);
+    const recur = await dbUpdateTask(taskId, { status: newStatus }, { actor: username });
+    // Регулярная задача не закрылась, а перекатилась — историю в этом случае пишет updateTask
+    // (с прежним и новым сроком), второй строкой не дублируем.
+    if (!recur) {
+      await supabase.from("task_history").insert({
+        task_id: taskId,
+        changed_by: username,
+        old_status: task.status,
+        new_status: newStatus,
+      });
+    }
+    // Соврать «Готово» про незакрытую задачу нельзя: у регулярной сообщаем следующий срок.
+    await sendMessage(
+      chatId,
+      recur
+        ? `🔁 <b>${task.title}</b> — цикл закрыт, следующий срок ${new Date(recur.recurred.to + "T12:00:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}`
+        : `${STATUS_LABEL[newStatus] ?? newStatus} <b>${task.title}</b>`,
+    );
     return true;
   }
 

@@ -6,6 +6,7 @@ import { PriDot, Market } from "@/components/roy/ui";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { isDone, isOverdue } from "@/lib/smartLists";
+import { recurrenceBadge } from "@/lib/recurrenceLabels";
 
 function fmtDue(iso: string | null, locale: string): string | null {
   if (!iso) return null;
@@ -34,6 +35,9 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
   // Пинг показываем, только пока он ЖДЁТ: отзвонивший (reminded_at) сгорел, и висящая
   // дата напоминания вводила бы в заблуждение — «напомнят», хотя уже напомнили.
   const ping = done || task.reminded_at ? null : fmtDue(task.remind_date, dt("ru-RU", "en-US"));
+  // Цикличность: показываем всегда, когда есть — по карточке должно быть видно, что
+  // галочка не закроет задачу, а перенесёт её на следующий раз.
+  const recur = recurrenceBadge(task.recur_freq, task.due_date, task.recur_anchor_dom);
   const high = task.priority === "high";
   const fromMeeting = Boolean(task.meeting_id);
   const hasAssignee = showAssignee && (task.assignees?.length ?? 0) > 0;
@@ -98,6 +102,16 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
             >
               <RoyIcon name="bell" size={10} />
               {ping}
+            </span>
+          )}
+          {recur && (
+            <span
+              className="inline-flex items-center gap-1 font-semibold text-ink-soft bg-surface-2 border border-line-2"
+              style={{ fontSize: 10.5, borderRadius: 6, padding: "1px 6px" }}
+              title={dt("Регулярная задача: галочка перенесёт её на следующий раз", "Recurring task: completing it rolls to the next occurrence")}
+            >
+              <RoyIcon name="repeat" size={10} />
+              {dt(recur.ru, recur.en)}
             </span>
           )}
           {hasAssignee && (
