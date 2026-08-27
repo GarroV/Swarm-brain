@@ -516,7 +516,7 @@ function GoogleCalendarSection() {
     else window.open(url, "_blank");
   };
   const disconnect = async () => {
-    if (!(await confirm({ title: "Отключить Google-календарь?", description: "Рекордер перестанет предлагать записи по календарю, а тезисы — получать название и участников.", confirmText: "Отключить" }))) return;
+    if (!(await confirm({ title: "Отключить Google-календарь?", description: "bumblebee перестанет предлагать записи по календарю, а тезисы — получать название и участников.", confirmText: "Отключить" }))) return;
     await disconnectGoogle();
     setConnected(false);
   };
@@ -524,7 +524,7 @@ function GoogleCalendarSection() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Подключи Google-календарь — рекордер заранее предложит запись («встреча через N мин»), а тезисы получат название и участников. Доступ только на чтение событий.
+        Подключи Google-календарь — bumblebee заранее предложит запись («встреча через N мин»), а тезисы получат название и участников. Доступ только на чтение событий.
       </p>
       {connected ? (
         <div className="flex items-center gap-3">
@@ -554,7 +554,7 @@ function RecorderSection() {
   }, []);
 
   const getCommand = async (reissue: boolean) => {
-    if (reissue && !(await confirm({ title: "Перевыпустить токен рекордера?", description: "Старый токен перестанет работать — рекордер нужно будет переустановить командой ниже.", confirmText: "Перевыпустить" }))) return;
+    if (reissue && !(await confirm({ title: "Перевыпустить токен bumblebee?", description: "Старый токен перестанет работать — bumblebee нужно будет переустановить командой ниже.", confirmText: "Перевыпустить" }))) return;
     setMinting(true);
     try {
       const { oneLiner: cmd, expiresAt } = await mintRecorderToken();
@@ -581,7 +581,7 @@ function RecorderSection() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Рекордер пишет звук созвона на Mac, сервер делает расшифровку и тезисы — готовая встреча приходит во «Встречи» сама. Токен рекордера отдельный от Claude Desktop.
+        bumblebee пишет звук созвона на Mac, сервер делает расшифровку и тезисы — готовая встреча приходит во «Встречи» сама. Токен bumblebee отдельный от Claude Desktop.
       </p>
 
       {setup?.active && expStr && !oneLiner && (
@@ -603,7 +603,7 @@ function RecorderSection() {
           </Button>
           <p className="text-xs text-muted-foreground">2. Скрипт поставит приложение и откроет его.</p>
           <p className="text-xs text-muted-foreground">
-            3. Выдай разрешение: <b>System Settings → Privacy &amp; Security → Screen &amp; System Audio Recording</b> → включи SwarmRecorder → перезапусти (⌘Q и открой заново).
+            3. Выдай разрешение: <b>System Settings → Privacy &amp; Security → Screen &amp; System Audio Recording</b> → включи bumblebee → перезапусти (⌘Q и открой заново).
           </p>
           <p className="text-xs text-muted-foreground">
             Токен личный, никому не пересылай. Для авто-предложения записи нужен подключённый Google-календарь (секция выше).
@@ -672,7 +672,7 @@ function ClaudeDesktopSection() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Claude Desktop получает доступ к базе знаний, встречам и задачам — ищет и отвечает по делу прямо на твоём Mac. Токен отдельный от рекордера, бессрочный.
+        Claude Desktop получает доступ к базе знаний, встречам и задачам — ищет и отвечает по делу прямо на твоём Mac. Токен отдельный от bumblebee, бессрочный.
       </p>
 
       {active && !oneLiner && <p className="text-sm text-status-done">✓ Подключён</p>}
@@ -733,7 +733,7 @@ export function SettingsScreen() {
         <Section icon="cal" title="Google-календарь">
           <GoogleCalendarSection />
         </Section>
-        <Section icon="mic" title="Рекордер встреч (Mac)">
+        <Section icon="mic" title="bumblebee — запись встреч (Mac)">
           <RecorderSection />
         </Section>
         <Section icon="spark" title="Claude Desktop">

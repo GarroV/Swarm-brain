@@ -1,5 +1,5 @@
 #!/bin/bash
-# Собирает запускаемый SwarmRecorder.app БЕЗ полного Xcode — только CommandLineTools.
+# Собирает запускаемый bumblebee.app БЕЗ полного Xcode — только CommandLineTools.
 # swift build → сборка .app-бандла → ad-hoc подпись. TCC-разрешения работают для локального теста.
 # (Полный Xcode не требуется; он лишь удобнее для отладки.)
 set -e
@@ -8,12 +8,15 @@ cd "$(dirname "$0")"
 echo "[1/4] swift build (release)…"
 swift build -c release
 
+# Иконку рисует код (RoyArt.swift) — пересобираем, чтобы .icns не отстал от марки в меню-баре.
+./gen-icon.sh >/dev/null
+
 # Монотонный номер сборки — единый источник в recorder/VERSION. Вшиваем в CFBundleVersion;
 # по нему авто-апдейтер сравнивает себя с серверным swarm-recorder-version.
 BUILD="$(tr -dc '0-9' < VERSION 2>/dev/null || true)"
 [ -n "$BUILD" ] || BUILD="1"
 
-APP="SwarmRecorder.app"
+APP="bumblebee.app"
 BIN=".build/release/SwarmRecorder"
 echo "[2/4] собираю бандл $APP (build $BUILD) ..."
 rm -rf "$APP"
@@ -26,8 +29,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>SwarmRecorder</string>
-  <key>CFBundleDisplayName</key><string>Swarm Recorder</string>
+  <key>CFBundleName</key><string>bumblebee</string>
+  <key>CFBundleDisplayName</key><string>bumblebee</string>
   <key>CFBundleExecutable</key><string>SwarmRecorder</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>io.dodobrands.swarmrecorder</string>
@@ -36,9 +39,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
-  <key>NSMicrophoneUsageDescription</key><string>SwarmRecorder записывает звук встречи, чтобы подготовить тезисы.</string>
-  <key>NSAudioCaptureUsageDescription</key><string>SwarmRecorder записывает системный звук встречи (собеседников), чтобы подготовить тезисы.</string>
-  <key>NSAppleEventsUsageDescription</key><string>SwarmRecorder читает URL активной вкладки браузера, чтобы определить комнату звонка (Meet/Контур) для дедупа встреч.</string>
+  <key>NSMicrophoneUsageDescription</key><string>bumblebee записывает звук встречи, чтобы подготовить тезисы.</string>
+  <key>NSAudioCaptureUsageDescription</key><string>bumblebee записывает системный звук встречи (собеседников), чтобы подготовить тезисы.</string>
+  <key>NSAppleEventsUsageDescription</key><string>bumblebee читает URL активной вкладки браузера, чтобы определить комнату звонка (Meet/Контур) для дедупа встреч.</string>
 </dict>
 </plist>
 PLIST

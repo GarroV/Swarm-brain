@@ -1,4 +1,12 @@
-# SwarmRecorder — macOS рекордер встреч
+# bumblebee — macOS рекордер встреч
+
+> **Имя.** Для человека приложение называется **bumblebee** (со строчной, латиницей): так оно
+> подписано в `/Applications`, в Privacy & Security и во встречах. Внутри — код, папка `recorder/`,
+> Swift-таргет `SwarmRecorder`, bundle id `io.dodobrands.swarmrecorder`, сертификат
+> «SwarmRecorder Self-Signed», папка данных `~/Library/Application Support/SwarmRecorder/` и
+> `source=desktop-agent` в базе — **остались прежними намеренно**: на bundle id и сертификате
+> висит TCC-грант на запись системного звука, в папке лежат токен и неотправленные записи.
+> Канон решения — [../docs/decisions/2026-08-28-recorder-renamed-bumblebee.md](../docs/decisions/2026-08-28-recorder-renamed-bumblebee.md).
 
 Лёгкое меню-бар приложение: записывает звук онлайн-звонка → отправляет аудио в Swarm Brain
 (`meeting-claim` → `meeting-ingest`), где сервер транскрибирует (OpenAI) и делает тезисы.
@@ -109,7 +117,7 @@ E2E доказан: `--selftest` прогоняет полный цикл (за�
 Основной путь — `./build-app.sh`. Скрипту достаточно **Command Line Tools** (SwiftPM):
 
 1. `swift build -c release` — собирает бинарь.
-2. Сборка `.app`-бандла руками: `SwarmRecorder.app/Contents/MacOS/` + сгенерённый `Info.plist`
+2. Сборка `.app`-бандла руками: `bumblebee.app/Contents/MacOS/` + сгенерённый `Info.plist`
    (`io.dodobrands.swarmrecorder`, `LSMinimumSystemVersion=13.0`, `LSUIElement=YES`,
    `NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`, `NSAppleEventsUsageDescription`).
    Локальным macOS-Календарём **не пользуемся** (Google Calendar читаем на сервере, `meeting-current`) — TCC-ключей `NSCalendars*` нет (см.
@@ -120,7 +128,7 @@ E2E доказан: `--selftest` прогоняет полный цикл (за�
 
 ```sh
 ./build-app.sh
-open SwarmRecorder.app
+open bumblebee.app
 # логи: log stream --predicate 'process == "SwarmRecorder"'  (или Console.app)
 ```
 
@@ -130,7 +138,7 @@ open SwarmRecorder.app
 
 ### Прогон без меню-бара
 
-`SwarmRecorder --selftest` — headless: пишет ~6 с (параллельно проигрывая клип через `afplay`),
+`bumblebee.app/Contents/MacOS/SwarmRecorder --selftest` — headless: пишет ~6 с (параллельно проигрывая клип через `afplay`),
 печатает размеры дорожек и, если найден `config.json`, делает `claim` + загрузку своим же
 `SwarmClient`. Маркеры в выводе: `SELFTEST_CAPTURE`, `SELFTEST_CLAIM`, `SELFTEST_UPLOAD`.
 
@@ -197,7 +205,7 @@ Edge-функция: `supabase/functions/swarm-recorder-setup` (публичны
 2. Если сервер новее вшитого `CFBundleVersion` (из `recorder/VERSION`) **и** приложение в простое →
    запускается отсоединённый хелпер: клонирует **пинованный тег** `recorder-build-<N>` (НЕ HEAD
    дев-ветки — чтобы недоделанный код не уехал команде), `swift build`, подпись локальным cert.
-3. Подмена `/Applications/SwarmRecorder.app` + перезапуск — только когда нет записи (файл-замок
+3. Подмена `/Applications/bumblebee.app` + перезапуск — только когда нет записи (файл-замок
    `.recording`). Сборка упала / нет cert / нет тега → тихо остаёмся на рабочей версии, ретрай позже.
 
 **Бутстрап:** само авто-обновление впервые появляется в **build 2**. Кто стоит на старой сборке —
@@ -226,6 +234,29 @@ Edge-функция: `supabase/functions/swarm-recorder-setup` (публичны
    ⚠️ **Только после шага 4** — `LATEST_BUILD` без залитого файла раздаёт 404 всем.
 6. Готово — все рекордеры тихо обновятся в простое в течение ~15 мин. Лог у пользователя:
    `~/Library/Application Support/SwarmRecorder/self-update.log`.
+
+### Переходное имя бандла внутри архива (снять, когда у всех build ≥ 24)
+
+Приложение называется `bumblebee.app`, но **внутри раздаваемого zip бандл пока лежит как
+`SwarmRecorder.app`**: апдейтер сборок ≤ 23 ищет в архиве буквально это имя и при другом молча
+остаётся на старой версии (`no SwarmRecorder.app inside archive; keep current`). Переименовывает
+себя само приложение — `Updater.runBundleRename()` при первом запуске переносит
+`/Applications/SwarmRecorder.app` → `/Applications/bumblebee.app` (вне записи, с возвратом на место
+при любой осечке). Проверить, что переход закончен:
+
+```sql
+select recorder_last_version, count(*) from allowed_users where recorder_token_hash is not null group by 1;
+```
+
+Все ≥ 24 → в `build-app-ci.sh` можно поставить `APP="bumblebee.app"`, а ветку со старым именем
+убрать из `Updater.swift` и из установщика.
+
+### Иконка
+
+Иконка рисуется **кодом**, а не лежит картинкой: геометрия марки — `Sources/SwarmRecorder/RoyArt.swift`
+(меню-бар, виджет), `.icns` собирает `./gen-icon.sh` тем же кодом (компилирует `gen-icon.swift`
+вместе с `RoyArt.swift`, поэтому иконка приложения и меню-бара не разъезжаются). `build-app.sh` и
+`build-app-ci.sh` зовут его сами. Правишь марку — правь `RoyArt.swift`, а не `.icns`.
    ⚠️ **Пока не починен апдейтер (issue #91), шаг 6 не работает:** `Updater.swift` собирает новую
    версию из `git clone` приватного репозитория → отказ авторизации → `keep current`, молча.
    До перевода апдейтера на скачивание zip обновление доезжает только переустановкой установщиком.
@@ -275,7 +306,7 @@ hardened runtime; в `build-app.sh` намеренно нет `--options runtime
 
 **Б. Получили `.zip` с собранным `.app`** — снять карантин и открыть:
 ```sh
-xattr -dr com.apple.quarantine SwarmRecorder.app && open SwarmRecorder.app
+xattr -dr com.apple.quarantine bumblebee.app && open bumblebee.app
 ```
 (в этом случае подпись чужая/ad-hoc → разрешения придётся выдать на своей машине заново; путь А стабильнее).
 

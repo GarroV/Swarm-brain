@@ -19,7 +19,7 @@ function fmtDate(iso: string | null): string {
 
 // Человекочитаемый источник записи (обязательная пометка провенанса).
 const SOURCE_LABEL: Record<string, string> = {
-  granola: "Granola", read_ai: "Read.ai", "desktop-agent": "Рекордер", "swarm-recorder": "Рекордер",
+  granola: "Granola", read_ai: "Read.ai", "desktop-agent": "bumblebee", "swarm-recorder": "bumblebee",
   telegram: "Бот (Telegram)", link: "Ссылка", note: "Заметка", pdf: "PDF", image: "Изображение",
   claude_desktop: "Claude Desktop", manual: "Вручную", digest: "Дайджест",
 };

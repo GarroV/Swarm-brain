@@ -78,6 +78,75 @@ enum Updater {
         return url
     }
 
+    // ── Переезд под новое имя (bumblebee) ────────────────────────────────────────────────────
+    // Приложение называется bumblebee, но на машинах людей оно лежит как /Applications/SwarmRecorder.app:
+    // апдейтер прошлых сборок ставит новый бандл ровно в свой прежний путь, а имя внутри архива
+    // обязано оставаться старым, иначе обновление молча не доедет. Поэтому имя меняет само
+    // приложение — один раз, после первого запуска новой сборки.
+    //
+    // Разрешение «Screen & System Audio Recording» переезд переживает: TCC держит грант на
+    // designated requirement (identifier + certificate leaf), путь и имя файла в него не входят —
+    // проверено на установленной копии: identifier "io.dodobrands.swarmrecorder" and certificate leaf …
+    static let legacyBundlePath = "/Applications/SwarmRecorder.app"
+    static let currentBundlePath = "/Applications/bumblebee.app"
+
+    // Нужен ли переезд: мы запущены именно из старого пути в /Applications.
+    static func needsBundleRename(bundlePath: String = Bundle.main.bundlePath) -> Bool {
+        bundlePath == legacyBundlePath
+    }
+
+    // Запускает отсоединённый хелпер и возвращает true, если он стартовал (тогда зовущий обязан
+    // завершить приложение — переименовать бандл под работающим процессом нельзя).
+    // Во время записи не трогаем ничего: переезд подождёт следующего запуска.
+    @discardableResult
+    static func runBundleRename() -> Bool {
+        guard needsBundleRename() else { return false }
+        if FileManager.default.fileExists(atPath: recordingLockURL.path) { return false }
+        let dir = supportDir()
+        let scriptURL = dir.appendingPathComponent("rename-bundle.sh")
+        let logPath = dir.appendingPathComponent("self-update.log").path
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        guard (try? renameScript().write(to: scriptURL, atomically: true, encoding: .utf8)) != nil else { return false }
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let cmd = "nohup bash \(shq(scriptURL.path)) \(pid) \(shq(legacyBundlePath)) \(shq(currentBundlePath)) \(shq(recordingLockURL.path)) >> \(shq(logPath)) 2>&1 &"
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/bash")
+        p.arguments = ["-c", cmd]
+        guard (try? p.run()) != nil else { return false }
+        return true
+    }
+
+    // $1=pid, $2=старый путь, $3=новый путь, $4=lock записи.
+    private static func renameScript() -> String {
+        """
+        #!/bin/bash
+        set -u
+        APP_PID="$1"; OLD="$2"; NEW="$3"; LOCK="$4"
+        log(){ echo "[$(date '+%Y-%m-%d %H:%M:%S')] rename: $*"; }
+        # Санити: переименовываем только .app внутри /Applications — не произвольный путь.
+        case "$OLD" in /Applications/*.app) : ;; *) log "refusing: OLD не /Applications/*.app ($OLD)"; exit 0 ;; esac
+        case "$NEW" in /Applications/*.app) : ;; *) log "refusing: NEW не /Applications/*.app ($NEW)"; exit 0 ;; esac
+        # Ждём, пока приложение договорит и умрёт: под работающим процессом бандл не двигаем.
+        for _ in $(seq 1 30); do kill -0 "$APP_PID" 2>/dev/null || break; sleep 1; done
+        if kill -0 "$APP_PID" 2>/dev/null; then log "app pid $APP_PID жив после 30с; отложено"; exit 0; fi
+        # Гонка: запись могла стартовать в момент выхода — тогда не трогаем бандл, но приложение
+        # обязаны вернуть (иначе оно просто исчезнет, а встреча из календаря будет пропущена).
+        if [ -f "$LOCK" ]; then log "идёт запись; переезд отложен"; open "$OLD" 2>/dev/null || true; exit 0; fi
+        if [ -d "$NEW" ]; then
+          # Новое уже стоит (переустановили установщиком) — старая копия лишняя, иначе два
+          # рекордера пишут одну встречу.
+          log "$NEW уже на месте; убираю прежний $OLD"
+          rm -rf "$OLD"
+        elif ! mv "$OLD" "$NEW" 2>/dev/null; then
+          log "mv не удался; остаёмся на прежнем имени"
+          open "$OLD" 2>/dev/null || true
+          exit 0
+        fi
+        open "$NEW" 2>/dev/null || true
+        log "переехали: $OLD -> $NEW"
+        """
+    }
+
     // Запустить отсоединённый апдейтер. Скачивание идёт при живом приложении (простоя нет);
     // подмена /Applications + перезапуск — только когда нет recording-lock. Скачивание упало /
     // cert отсутствует / версия не новее → ничего не трогаем, остаёмся на рабочей версии.
@@ -129,9 +198,15 @@ enum Updater {
           *)   log "download failed (HTTP $CODE от $URL — артефакт не опубликован?); keep current"; exit 0 ;;
         esac
         if ! ditto -x -k "$TMP/app.zip" "$TMP/unz" >/dev/null 2>&1; then log "unzip failed; keep current"; exit 0; fi
-        SRC="$TMP/unz/SwarmRecorder.app"
-        [ -d "$SRC" ] || SRC="$(/usr/bin/find "$TMP/unz" -maxdepth 2 -name 'SwarmRecorder.app' -print -quit 2>/dev/null)"
-        if [ -z "${SRC:-}" ] || [ ! -d "$SRC" ]; then log "no SwarmRecorder.app inside archive; keep current"; exit 0; fi
+        # Имя бандла в архиве переходное: сейчас там SwarmRecorder.app (иначе апдейтер сборок ≤23
+        # не найдёт его и молча не обновится), позже — bumblebee.app. Принимаем оба.
+        SRC=""
+        for CAND in "$TMP/unz/bumblebee.app" "$TMP/unz/SwarmRecorder.app"; do
+          [ -d "$CAND" ] && { SRC="$CAND"; break; }
+        done
+        [ -n "$SRC" ] || SRC="$(/usr/bin/find "$TMP/unz" -maxdepth 2 -name 'bumblebee.app' -print -quit 2>/dev/null)"
+        [ -n "$SRC" ] || SRC="$(/usr/bin/find "$TMP/unz" -maxdepth 2 -name 'SwarmRecorder.app' -print -quit 2>/dev/null)"
+        if [ -z "${SRC:-}" ] || [ ! -d "$SRC" ]; then log "no app bundle inside archive; keep current"; exit 0; fi
         # Версию берём из САМОГО бандла, а не из ответа сервера: подменять приложение можно только
         # на заведомо более новое (иначе битая раздача откатила бы всех назад).
         NEW="0"; NEW="$(plutil -extract CFBundleVersion raw "$SRC/Contents/Info.plist" 2>/dev/null | tr -cd '0-9')"; [ -n "${NEW:-}" ] || NEW="0"

@@ -139,6 +139,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private let recordAction = "RECORD"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Переезд под новое имя (bumblebee) — до всего остального: если хелпер стартовал,
+        // приложение обязано выйти, свой бандл под собой не переименуешь. Он вернёт нас сам.
+        if Updater.runBundleRename() {
+            NSApp.terminate(nil)
+            return
+        }
+
         do { config = try SwarmConfig.load() }
         catch { configError = "нужен токен — вставь через меню" }
 

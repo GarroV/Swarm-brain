@@ -1,10 +1,11 @@
-// Bash-скрипт авто-установки SwarmRecorder (macOS, ПРЕДсобранный .app). Отдаётся функцией
+// Bash-скрипт авто-установки bumblebee — рекордера встреч (macOS, ПРЕДсобранный .app). Отдаётся функцией
 // swarm-recorder-setup. Вынесен отдельно, чтобы можно было отрендерить и проверить (bash -n).
 //
 // Поток (Option B — prebuilt, БЕЗ Xcode/Command Line Tools на машине юзера — issue #19):
 //   0. Проверить SWARM_TOKEN (^smcp_) и macOS.
 //   1. Узнать последнюю сборку + URL артефакта у swarm-recorder-version.
-//   2. Скачать готовый SwarmRecorder.app.zip (GitHub Release asset) → распаковать (ditto).
+//   2. Скачать готовый .app в zip → распаковать (ditto). Имя бандла в архиве переходное
+//      (SwarmRecorder.app, см. recorder/build-app-ci.sh) — принимаем и его, и bumblebee.app.
 //   3. Снять карантин (xattr) — иначе Gatekeeper заблокирует скачанный .app.
 //   4. Создать per-machine self-signed cert (штатные /usr/bin/openssl + security — CLT НЕ нужен).
 //   5. Переподписать .app этим cert'ом (штатный codesign) → стабильный DR → TCC переживает апдейты.
@@ -20,10 +21,10 @@
 const ASSET_BASE_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/storage/v1/object/public/swarm_drive/recorder";
 const INGEST_BASE_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1";
 // Фолбэк-номер сборки, если swarm-recorder-version недоступен. Держать в синхроне с recorder/VERSION.
-const RECORDER_FALLBACK_BUILD = 22;
+const RECORDER_FALLBACK_BUILD = 24;
 
 export const SETUP_SCRIPT = `#!/bin/bash
-# Swarm Brain → SwarmRecorder (macOS). Не запускай вручную — возьми команду в боте: /recordertoken
+# Swarm Brain → bumblebee (macOS). Не запускай вручную — возьми команду в боте: /recordertoken
 set -u
 
 ASSET_BASE_URL="${ASSET_BASE_URL}"
@@ -39,7 +40,7 @@ say()  { printf '%s\\n' "$*"; }
 step() { printf '\\n▶ %s\\n' "$*"; }
 die()  { printf '\\n❌ %s\\n' "$*" >&2; [ -n "\${TMP:-}" ] && rm -rf "$TMP"; exit 1; }
 
-say "🎙  Swarm Brain → SwarmRecorder"
+say "🎙  Swarm Brain → bumblebee"
 say ""
 say "Что произойдёт: скачается готовое приложение (~1 МБ), локально подпишется и поставится в"
 say "/Applications с уже прописанным токеном. БЕЗ Xcode, без сборки, без пароля."
@@ -90,9 +91,13 @@ esac
 if ! ditto -x -k "$ZIP" "$TMP/unz" >/dev/null 2>&1; then
   die "Не удалось распаковать загруженный архив."
 fi
-APP_SRC="$TMP/unz/SwarmRecorder.app"
-[ -d "$APP_SRC" ] || APP_SRC="$(/usr/bin/find "$TMP/unz" -maxdepth 2 -name 'SwarmRecorder.app' -print -quit 2>/dev/null)"
-[ -n "$APP_SRC" ] && [ -d "$APP_SRC" ] || die "В архиве нет SwarmRecorder.app."
+APP_SRC=""
+for CAND in "$TMP/unz/bumblebee.app" "$TMP/unz/SwarmRecorder.app"; do
+  [ -d "$CAND" ] && { APP_SRC="$CAND"; break; }
+done
+[ -n "$APP_SRC" ] || APP_SRC="$(/usr/bin/find "$TMP/unz" -maxdepth 2 -name 'bumblebee.app' -print -quit 2>/dev/null)"
+[ -n "$APP_SRC" ] || APP_SRC="$(/usr/bin/find "$TMP/unz" -maxdepth 2 -name 'SwarmRecorder.app' -print -quit 2>/dev/null)"
+[ -n "$APP_SRC" ] && [ -d "$APP_SRC" ] || die "В архиве нет приложения (.app)."
 say "✓ Приложение получено"
 
 # ── 3. Снимаю карантин (иначе Gatekeeper заблокирует скачанное) ──────────────────
@@ -139,11 +144,17 @@ say "✓ Подпись стабильная — разрешение переж
 
 # ── 6. Ставлю в /Applications ───────────────────────────────────────────────────
 step "Ставлю в /Applications"
-DEST="/Applications/SwarmRecorder.app"
+DEST="/Applications/bumblebee.app"
+LEGACY_DEST="/Applications/SwarmRecorder.app"
 LOCK="$CONFIG_DIR/.recording"
 rm -rf "$DEST" 2>/dev/null || true
 cp -R "$APP_SRC" "$DEST" || die "Не удалось скопировать в /Applications."
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
+# Копия под прежним именем осталась бы вторым рекордером и писала бы те же встречи параллельно.
+if [ -d "$LEGACY_DEST" ]; then
+  rm -rf "$LEGACY_DEST" 2>/dev/null || true
+  say "✓ Прежняя копия (SwarmRecorder.app) убрана"
+fi
 
 # ── 7. Токен в конфиг (форма SwarmConfig) ───────────────────────────────────────
 step "Прописываю токен в конфиг"
@@ -160,9 +171,12 @@ say "✓ Конфиг записан: $CONFIG"
 
 # Перезапуск (во время записи — не трогаем, чтобы не оборвать встречу).
 if [ -f "$LOCK" ]; then
-  say "⚠ Идёт запись — установлено, но НЕ перезапускаю. После встречи: ⌘Q рекордера и открой заново."
+  say "⚠ Идёт запись — установлено, но НЕ перезапускаю. После встречи: ⌘Q bumblebee и открой заново."
 else
+  # Имя ПРОЦЕССА осталось прежним (CFBundleExecutable не трогали, чтобы не сбросить TCC),
+  # поэтому глушим по нему; osascript пробуем на оба имени бандла — старое и новое.
   if pgrep -x "SwarmRecorder" >/dev/null 2>&1; then
+    osascript -e 'quit app "bumblebee"' >/dev/null 2>&1 || true
     osascript -e 'quit app "SwarmRecorder"' >/dev/null 2>&1 || true
     pkill -x SwarmRecorder 2>/dev/null || true
     sleep 1
@@ -174,12 +188,12 @@ rm -rf "$TMP"
 
 # ── 8. Финальное сообщение ──────────────────────────────────────────────────────
 say ""
-say "✅ Готово! SwarmRecorder установлен в /Applications и запущен (иконка в меню-баре, токен уже прописан)."
+say "✅ Готово! bumblebee установлен в /Applications и запущен (иконка в меню-баре, токен уже прописан)."
 say ""
 say "Остался ОДИН шаг — выдать разрешение на запись системного звука:"
 say "  1. System Settings → Privacy & Security → Screen & System Audio Recording →"
-say "     включи SwarmRecorder (это же — пункт меню рекордера «Открыть настройки записи»)."
-say "  2. Затем ВЫЙДИ из рекордера (⌘Q в его меню) и открой заново —"
+say "     включи bumblebee (это же — пункт меню «Открыть настройки записи»)."
+say "  2. Затем ВЫЙДИ из bumblebee (⌘Q в его меню) и открой заново —"
 say "     macOS применяет это разрешение только после перезапуска приложения."
 say ""
 say "Дальше: «Записать встречу» в меню (вручную) или по уведомлению о звонке."

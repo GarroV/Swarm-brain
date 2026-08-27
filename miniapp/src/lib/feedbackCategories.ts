@@ -2,7 +2,7 @@
 // miniapp — отдельный пакет (Next.js), импортировать из edge-функций нельзя.
 // При правке набора категорий синхронь ОБА места.
 export const FEEDBACK_CATEGORIES = [
-  { code: "recorder", label: "Рекордер" },
+  { code: "recorder", label: "bumblebee" },
   { code: "meetings", label: "Встречи" },
   { code: "search", label: "Поиск" },
   { code: "tasks", label: "Задачи" },

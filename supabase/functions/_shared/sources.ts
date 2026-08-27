@@ -6,7 +6,7 @@ export type SourceKind = "device" | "external";
 
 // id источника (значение колонки `source`) → метка + как попадает в систему.
 export const MEETING_SOURCES: Record<string, { label: string; kind: SourceKind }> = {
-  "desktop-agent": { label: "Рекордер", kind: "device" },   // наш macOS-рекордер (durable в таблице meetings)
+  "desktop-agent": { label: "bumblebee", kind: "device" }, // наш macOS-рекордер (durable в таблице meetings)
   granola: { label: "Granola", kind: "external" },           // per-user API (тезисы готовы)
   read_ai: { label: "Read.ai", kind: "external" },           // общий webhook (отключается)
 };

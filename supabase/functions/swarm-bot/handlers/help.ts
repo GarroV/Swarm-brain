@@ -25,7 +25,7 @@ export function getHelpText(): string {
     "Печатаешь текст — бот <b>ищет по базе</b> (или /ask [вопрос]). Сохранить: перешли сообщение · пришли 📎 файл (PDF/Excel/TXT/CSV) · 🎤 голос · 🖼 фото · 🔗 ссылку, либо «сохрани: …» / /add [текст]. /status — статистика.\n\n" +
 
     "<b>🎙 Встречи</b>\n" +
-    "Прилетают автоматически (Read.ai · Granola · рекордер) → /meetings — вычитка и подтверждение тезисов.\n\n" +
+    "Прилетают автоматически (Read.ai · Granola · bumblebee) → /meetings — вычитка и подтверждение тезисов.\n\n" +
 
     "<b>✅ Задачи</b>\n" +
     "/tasks — активные · /tasks [имя или страна] — фильтр · /addtask — создать. Те же задачи видны в вебе и в Claude.\n\n" +
@@ -42,8 +42,8 @@ export function getHelpText(): string {
     "━━━━━━━━━━━━━━━\n\n" +
 
     "🔌 <b>Как подключить</b>\n" +
-    "Swarm Brain можно открыть в вебе и в Claude Desktop, а встречи — писать рекордером на Mac. " +
-    "Чтобы всё это заработало, нужна разовая настройка: 3 шага (Claude · рекордер · Google). Жми кнопку ниже 👇"
+    "Swarm Brain можно открыть в вебе и в Claude Desktop, а встречи — писать через bumblebee на Mac. " +
+    "Чтобы всё это заработало, нужна разовая настройка: 3 шага (Claude · bumblebee · Google). Жми кнопку ниже 👇"
   );
 }
 
@@ -56,7 +56,7 @@ export function helpKeyboard(): unknown[][] {
 
 const GUIDE_MENU_TEXT =
   "⚙️ <b>Настройка системы — 3 шага</b>\n\n" +
-  "Swarm Brain работает через веб-приложение, Claude Desktop и рекордер встреч. " +
+  "Swarm Brain работает через веб-приложение, Claude Desktop и bumblebee — запись встреч на Mac. " +
   "Выбери шаг (лучше по порядку) — инструкция откроется прямо здесь.";
 
 const GUIDE_STEPS: readonly string[] = [
@@ -69,18 +69,18 @@ const GUIDE_STEPS: readonly string[] = [
   "⚠️ Токен в строке — личный и <b>бессрочный</b>, никому не пересылай.\n" +
   "Вручную: /connect_claude · /mytoken (есть активный — бот предупредит) · /claude · /revoketoken — отозвать.",
 
-  // 2️⃣ Рекордер встреч (Mac)
-  "<b>2️⃣ Рекордер встреч (Mac) — пишет звук созвона, сервер делает расшифровку и тезисы</b>\n" +
+  // 2️⃣ bumblebee — запись встреч (Mac)
+  "<b>2️⃣ bumblebee (Mac) — пишет звук созвона, сервер делает расшифровку и тезисы</b>\n" +
   "<i>Что даёт:</i> не нужно конспектировать — готовая встреча сама приходит с тезисами.\n\n" +
   "• /recordertoken → бот пришлёт <b>одну строку</b> <code>curl … | bash</code> для Терминала (вставь как в шаге 1). Скрипт поставит приложение в /Applications и откроет его.\n" +
-  "• Выдай разрешение: System Settings → Privacy → «Screen &amp; System Audio Recording» → включи SwarmRecorder → ⌘Q и открой заново.\n" +
+  "• Выдай разрешение: System Settings → Privacy → «Screen &amp; System Audio Recording» → включи bumblebee → ⌘Q и открой заново.\n" +
   "• Живёт в меню-баре. Готовая встреча → появляется в /meetings.\n\n" +
-  "⚠️ Токен рекордера <b>отдельный</b> (на год), /mytoken его не трогает · отозвать: /revokerecordertoken.\n" +
-  "⚠️ Нужна привязка Google-календаря (шаг 3) — без неё рекордер не видит встреч и не предложит запись сам.",
+  "⚠️ Токен bumblebee <b>отдельный</b> (на год), /mytoken его не трогает · отозвать: /revokerecordertoken.\n" +
+  "⚠️ Нужна привязка Google-календаря (шаг 3) — без неё bumblebee не видит встреч и не предложит запись сам.",
 
   // 3️⃣ Google-авторизация
   "<b>3️⃣ Google-авторизация (Google-календарь)</b>\n" +
-  "<i>Что даёт:</i> рекордер видит встречи заранее и сам предлагает запись; тезисы получают название встречи и участников.\n\n" +
+  "<i>Что даёт:</i> bumblebee видит встречи заранее и сам предлагает запись; тезисы получают название встречи и участников.\n\n" +
   `• Только в вебе (команды бота нет): открой <a href="${WEB_URL}">Swarm Brain</a> → Настройки → Google-календарь → «Подключить».\n` +
   "• Доступ только на чтение событий (read-only).\n\n" +
   "✅ После трёх шагов встречи прилетают сами → /meetings — вычитка и подтверждение тезисов.",
@@ -92,7 +92,7 @@ export function guideMenu(): { text: string; keyboard: unknown[][] } {
     text: GUIDE_MENU_TEXT,
     keyboard: [
       [{ text: "1️⃣ Claude Desktop (MCP)", callback_data: "guide_s1" }],
-      [{ text: "2️⃣ Рекордер встреч (Mac)", callback_data: "guide_s2" }],
+      [{ text: "2️⃣ bumblebee — встречи (Mac)", callback_data: "guide_s2" }],
       [{ text: "3️⃣ Google-календарь", callback_data: "guide_s3" }],
     ],
   };

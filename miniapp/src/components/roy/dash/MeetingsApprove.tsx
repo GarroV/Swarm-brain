@@ -39,7 +39,7 @@ function MeetingRow({ e, onOpen }: { e: Entry; onOpen: () => void }) {
             </span>
           )}
           <span className="font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)" }}>
-            {(() => { const s = sourceLabel(e.source); return dt(s, s === "Рекордер" ? "Recorder" : s === "Встреча" ? "Meeting" : s); })()}
+            {(() => { const s = sourceLabel(e.source); return dt(s, s === "Встреча" ? "Meeting" : s); })()}
           </span>
           <Market code={e.countries?.[0]} />
           {fmtDate(e.entry_date || e.created_at, dt("ru-RU", "en-US")) && (

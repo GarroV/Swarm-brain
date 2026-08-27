@@ -84,20 +84,20 @@ async function sendSetupOneLiner(chatId: number, userId: number): Promise<void> 
 async function sendRecorderToken(chatId: number, userId: number): Promise<void> {
   const minted = await mintRecorderToken(userId);
   if (!minted) {
-    await sendMessage(chatId, "❌ Не удалось сгенерировать токен рекордера. Обратись к администратору.");
+    await sendMessage(chatId, "❌ Не удалось сгенерировать токен bumblebee. Обратись к администратору.");
     return;
   }
   const expStr = minted.expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
   await sendMessage(chatId,
-    `<b>🎙 Подключаем рекордер встреч за один шаг</b> (macOS)\n\n` +
-    `Одна команда — скрипт сам поставит рекордер, подпишет и пропишет токен. Пароль может спросить только установка Command Line Tools (если их ещё нет на маке).\n\n` +
+    `<b>🎙 Подключаем bumblebee — запись встреч за один шаг</b> (macOS)\n\n` +
+    `Одна команда — скрипт сам поставит bumblebee, подпишет и пропишет токен. Пароль может спросить только установка Command Line Tools (если их ещё нет на маке).\n\n` +
     `1️⃣ Открой приложение <b>Терминал</b>\n` +
     `<i>(⌘+Пробел → набери «Терминал» → Enter)</i>\n\n` +
     `2️⃣ Вставь эту команду (⌘+V) и нажми Enter:\n\n` +
     `<code>${buildRecorderSetupOneLiner(minted.token)}</code>\n\n` +
-    `3️⃣ Приложение откроется само. Выдай разрешение: System Settings → Privacy → «Screen &amp; System Audio Recording» → включи SwarmRecorder, затем ⌘Q и открой заново. Готово ✅\n\n` +
+    `3️⃣ Приложение откроется само. Выдай разрешение: System Settings → Privacy → «Screen &amp; System Audio Recording» → включи bumblebee, затем ⌘Q и открой заново. Готово ✅\n\n` +
     `Токен действует до <b>${expStr}</b>. Это <b>отдельный</b> токен — перевыпуск /mytoken для Claude Desktop его НЕ трогает. Никому не пересылай. Отозвать: /revokerecordertoken.\n\n` +
-    `<i>Вручную: вставь токен <code>${minted.token}</code> в рекордере — иконка в меню-баре → «Вставить токен из буфера».</i>`
+    `<i>Вручную: вставь токен <code>${minted.token}</code> в bumblebee — иконка в меню-баре → «Вставить токен из буфера».</i>`
   );
 }
 
@@ -182,8 +182,8 @@ async function checkRecorderHealth(): Promise<void> {
     await supabase.from("allowed_users").update({ recorder_last_recording: false }).eq("telegram_id", u.telegram_id);
     try {
       await sendMessage(u.telegram_id,
-        "⚠️ <b>Похоже, запись встречи прервалась</b> — рекордер писал встречу, но перестал отвечать " +
-        "(возможно, приложение закрылось). Проверь, что SwarmRecorder запущен, и при необходимости запиши заново.");
+        "⚠️ <b>Похоже, запись встречи прервалась</b> — bumblebee писал встречу, но перестал отвечать " +
+        "(возможно, приложение закрылось). Проверь, что bumblebee запущен, и при необходимости запиши заново.");
     } catch (e) { console.error(`checkRecorderHealth signal1 ${u.telegram_id}:`, e); }
   }
 
@@ -204,8 +204,8 @@ async function checkRecorderHealth(): Promise<void> {
     await supabase.from("allowed_users").update({ recorder_expiry_warned: true }).eq("telegram_id", u.telegram_id);
     try {
       await sendMessage(u.telegram_id,
-        `🎙 <b>Токен рекордера истекает через ${days} дн.</b> Чтобы запись встреч не прервалась — ` +
-        `переустанови рекордер: /recordertoken.`);
+        `🎙 <b>Токен bumblebee истекает через ${days} дн.</b> Чтобы запись встреч не прервалась — ` +
+        `переустанови bumblebee: /recordertoken.`);
     } catch (e) { console.error(`checkRecorderHealth signal2 ${u.telegram_id}:`, e); }
   }
 }
@@ -541,7 +541,7 @@ Deno.serve(async (req: Request) => {
         `Напиши вопрос — найду ответ по базе. Чтобы сохранить: кнопка 📥 <b>Добавить</b>, либо пришли 🎤 голос · 📎 файл · 🔗 ссылку · пересланное сообщение.\n\n` +
         `🌐 <b>Swarm Brain</b> — приложение: задачи, встречи, поиск.\n` +
         `🔗 https://swarm-brain.pages.dev — вход через Telegram, ставится как приложение (Dock / экран «Домой»).\n\n` +
-        `🎙 <b>Рекордер встреч (Mac):</b> /recordertoken → приложение встанет в /Applications. Затем привяжи Google-календарь в Swarm Brain → Настройки → Google Calendar (без него рекордер не видит встреч).\n\n` +
+        `🎙 <b>bumblebee — запись встреч (Mac):</b> /recordertoken → приложение встанет в /Applications. Затем привяжи Google-календарь в Swarm Brain → Настройки → Google Calendar (без него bumblebee не видит встреч).\n\n` +
         `🖥 <b>Claude Desktop:</b> /setup — подключить автоматически.\n\n` +
         `📖 /help — полная справка`,
         buildKeyboard()
@@ -730,10 +730,10 @@ Deno.serve(async (req: Request) => {
       // Предупреждаем и просим явного подтверждения (зеркало mtk_reissue для Claude Desktop).
       if (await hasActiveRecorderToken(userId)) {
         await sendInlineMessage(chatId,
-          `🎙 <b>У тебя уже есть активный токен рекордера.</b>\n\n` +
-          `Если рекордер уже подключён — он <b>работает</b>, делать ничего не нужно.\n\n` +
+          `🎙 <b>У тебя уже есть активный токен bumblebee.</b>\n\n` +
+          `Если bumblebee уже подключён — он <b>работает</b>, делать ничего не нужно.\n\n` +
           `Перевыпуск нужен, только если ты <b>потерял</b> токен или подозреваешь <b>утечку</b>. ` +
-          `Он <b>убьёт старый</b> — придётся заново прогнать установку рекордера.`,
+          `Он <b>убьёт старый</b> — придётся заново прогнать установку bumblebee.`,
           [[{ text: "🔄 Всё равно перевыпустить", callback_data: "rtk_reissue" }]]
         );
       } else {
@@ -744,7 +744,7 @@ Deno.serve(async (req: Request) => {
         .from("allowed_users")
         .update({ recorder_token_hash: null, recorder_token_expires_at: null })
         .eq("telegram_id", userId);
-      await sendMessage(chatId, rvErr ? "❌ Не удалось отозвать." : "🔒 <b>Токен рекордера отозван.</b> Новый — через /recordertoken.");
+      await sendMessage(chatId, rvErr ? "❌ Не удалось отозвать." : "🔒 <b>Токен bumblebee отозван.</b> Новый — через /recordertoken.");
     } else if (command === "/connect_claude") {
       await sendMessage(chatId,
         `<b>🖥 Как подключить Claude к базе знаний</b>\n\n` +

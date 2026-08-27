@@ -9,6 +9,16 @@
 // Деплой: supabase functions deploy swarm-recorder-version --no-verify-jwt (публичный GET, без секретов).
 
 // Держать в синхроне с recorder/VERSION (ветка main). Поднимать ПОСЛЕ мёрджа+проверки сборки.
+// build 24 (2026-08-28): ПЕРЕИМЕНОВАНИЕ В bumblebee (запрос команды). Приложение называется
+// bumblebee, у него новая иконка — схематичная «жопка шмеля» (рисуется кодом, RoyArt.swift).
+// Внутреннее не тронуто намеренно: CFBundleIdentifier, cert «SwarmRecorder Self-Signed», папка
+// ~/Library/Application Support/SwarmRecorder и source=desktop-agent в базе — на них завязаны
+// TCC-грант («Screen & System Audio Recording») и неотправленные записи.
+// ⚠️ ПЕРЕХОДНЫЙ РЕЛИЗ: бандл ВНУТРИ архива по-прежнему SwarmRecorder.app, иначе апдейтер сборок
+// ≤23 не найдёт его и молча останется на старом («no SwarmRecorder.app inside archive»).
+// Переименовывает себя само приложение при первом запуске (Updater.runBundleRename →
+// /Applications/bumblebee.app), вне записи, с возвратом на место при любой осечке.
+// Канон решения — docs/decisions/2026-08-28-recorder-renamed-bumblebee.md.
 // build 23 (2026-08-25): АВТО-АПДЕЙТ ВОСКРЕШЁН (issue #91). Updater.swift больше не клонирует
 // исходники и не собирает их на машине юзера — качает готовый zip из Storage и переподписывает
 // локальным cert'ом, как это делает установщик. Старая схема (`git clone` тега + `swift build`)
@@ -98,7 +108,7 @@
 // build 4 (2026-07-09): heartbeat-мониторинг рекордера (SwarmClient.heartbeat → meeting-heartbeat;
 // сервер ловит оборванную запись / истечение токена). Тег recorder-build-4, build-app.sh ✅ (подпись валидна).
 // build 3 (2026-06-30): бэкап аудио держится до публикации в базу + потолок 3 суток. Тег recorder-build-3.
-const LATEST_BUILD = 23;
+const LATEST_BUILD = 24;
 // URL предсобранного .app. Установщик и апдейтер качают отсюда — сборки из исходников на машине
 // юзера больше нет (issue #19).
 // ⚠️ РАЗДАЁМ ИЗ SUPABASE STORAGE, НЕ С GITHUB (issue #91, 2026-08-25). Репозиторий приватный

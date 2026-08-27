@@ -1,5 +1,5 @@
 #!/bin/bash
-# Установка SwarmRecorder из исходников — без платного Apple-аккаунта.
+# Установка bumblebee (рекордер встреч) из исходников — без платного Apple-аккаунта.
 # Локально собранное приложение Gatekeeper НЕ карантинит, TCC-разрешения стабильны.
 # Нужны только Command Line Tools.
 set -e
@@ -33,10 +33,17 @@ fi
 
 ./build-app.sh
 
-DEST="/Applications/SwarmRecorder.app"
+DEST="/Applications/bumblebee.app"
+LEGACY="/Applications/SwarmRecorder.app"
 echo "[install] ставлю в $DEST ..."
 rm -rf "$DEST"
-cp -R SwarmRecorder.app "$DEST"
+cp -R bumblebee.app "$DEST"
+# Копия под старым именем осталась бы вторым рекордером: она ловит те же встречи и пишет их
+# параллельно. Сносим ровно её, и только если это не то же самое место.
+if [ -d "$LEGACY" ] && [ "$LEGACY" != "$DEST" ]; then
+  echo "[install] убираю прежний $LEGACY (иначе два рекордера на одну встречу)"
+  rm -rf "$LEGACY"
+fi
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true   # на случай, если папка пришла из сети
 
 # Перезапуск: `open` НЕ перезапускает уже работающее приложение — старый процесс остаётся
@@ -61,7 +68,7 @@ cat <<'NEXT'
      «Вставить токен…» (персональный smcp_-токен из бота: /recordertoken).
   2. Выдай разрешение «Screen & System Audio Recording» (системный звук): System Settings →
      Privacy & Security → включи SwarmRecorder (это же — пункт меню «Открыть настройки записи»).
-     Затем ВЫЙДИ из рекордера (⌘Q) и открой заново — macOS применяет разрешение после перезапуска.
+     Затем ВЫЙДИ из bumblebee (⌘Q) и открой заново — macOS применяет разрешение после перезапуска.
   3. «Записать встречу» (вручную) или по уведомлению о встрече. Разрешение теперь стабильно:
      выдаётся ОДИН раз и держится между пересборками/обновлениями (стабильная подпись).
 NEXT

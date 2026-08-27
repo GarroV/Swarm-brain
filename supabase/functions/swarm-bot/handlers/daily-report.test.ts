@@ -23,7 +23,7 @@ Deno.test("aggregateActivity: счётчики по воркспейсам и и
   const r = aggregateActivity(rows);
   assertEquals(r.meetings.total, 3);
   assertEquals(r.meetings.byWorkspace, { CEE: 2, OTHER: 1 });
-  assertEquals(r.meetings.bySource, { "рекордер": 1, granola: 2 });
+  assertEquals(r.meetings.bySource, { bumblebee: 1, granola: 2 });
   assertEquals(r.notes.total, 3);
   assertEquals(r.notes.byWorkspace, { CEE: 2, OTHER: 1 });
   assertEquals(r.notes.bySource, { "💬 чат": 1, "🔗 ссылки": 1, "🎤 голосовые": 1 });

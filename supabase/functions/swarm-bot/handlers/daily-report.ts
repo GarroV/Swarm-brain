@@ -63,7 +63,7 @@ export interface ReportData {
 }
 
 const MEETING_SOURCE_LABEL: Record<string, string> = {
-  "desktop-agent": "рекордер",
+  "desktop-agent": "bumblebee",
   granola: "granola",
   read_ai: "read.ai",
 };
