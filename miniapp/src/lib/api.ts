@@ -1,5 +1,6 @@
 import { getInitData } from "./telegram";
 import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote } from "@/types";
+import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 
 export type CreateTaskInput = {
   title: string;
@@ -219,7 +220,27 @@ function authHeaders(): Record<string, string> {
   return initData ? { Authorization: `tma ${initData}` } : {};
 }
 
+// Дедупликация одинаковых GET-ов (issue #103). Кэш ТОЛЬКО в памяти вкладки и только для
+// чтения; любая мутация его сбрасывает, чтобы экран не показал данные «на шаг назад».
+const requestCache = createRequestCache({ ttlMs: REQUEST_CACHE_TTL_MS });
+
+function isRead(options?: RequestInit): boolean {
+  const m = (options?.method ?? "GET").toUpperCase();
+  return m === "GET";
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  if (isRead(options)) return requestCache.run(path, () => apiFetchRaw<T>(path, options));
+  try {
+    return await apiFetchRaw<T>(path, options);
+  } finally {
+    // После мутации кэш чтения недействителен — даже если запрос упал: сервер мог
+    // применить часть изменений, и отдать старое из памяти было бы хуже, чем перечитать.
+    requestCache.invalidate();
+  }
+}
+
+async function apiFetchRaw<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     // no-store: ответы приватного API не должны ни отдаваться из кэша, ни в него попадать.
@@ -238,7 +259,16 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return body as T;
 }
 
+// Загрузка файлов (multipart): всегда мутация — сбрасываем кэш чтения.
 async function apiFetchNoContentType<T>(path: string, options?: RequestInit): Promise<T> {
+  try {
+    return await apiFetchNoContentTypeRaw<T>(path, options);
+  } finally {
+    requestCache.invalidate();
+  }
+}
+
+async function apiFetchNoContentTypeRaw<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     cache: "no-store",

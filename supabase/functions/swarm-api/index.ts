@@ -10,7 +10,9 @@ import {
   buildEntriesQuery,
   buildReviewQueueQuery,
   getEntrySecure,
+  ENTRY_COLUMNS,
 } from "./entries-guard.ts";
+import { toAgentListRow, toListRow } from "./meetings-payload.ts";
 import {
   createTask,
   getTask,
@@ -938,7 +940,13 @@ Deno.serve(async (req: Request) => {
     const dateFrom = url.searchParams.get("date_from") ?? undefined;
     const dateTo = url.searchParams.get("date_to") ?? undefined;
 
-    let q = buildEntriesQuery(supabase, "id,content,summary,source,entry_type,entry_date,countries,is_private,owner_id,created_at", { groupId, telegramId: telegram_id })
+    // ENTRY_COLUMNS, а не свой список: прежний вручную собранный не включал metadata, и фронт
+    // терял и тип записи, и заголовок — entryTagKey читает metadata.url/file_type (53 ссылки и
+    // 3 файла из 92 заметок показывались тегом «note»), deriveEntryTitle читает metadata.title
+    // (54 заметки получали заголовок из первой строки текста). Оба хелпера написаны через
+    // `metadata ?? {}` — не падали, а молча деградировали (issue #107). Заодно приехали
+    // added_by (нужен entryImporterName для атрибуции «добавил») и group_id.
+    let q = buildEntriesQuery(supabase, ENTRY_COLUMNS, { groupId, telegramId: telegram_id })
       .eq("entry_type", "note")
       .not("source", "eq", "digest")
       .order("created_at", { ascending: false })
@@ -969,7 +977,7 @@ Deno.serve(async (req: Request) => {
         if ("content" in body) fields.content = body.content;
         if ("summary" in body) fields.summary = body.summary;
         await supabase.from("entries").update(fields).eq("id", entry.id);
-        const { data } = await supabase.from("entries").select("*").eq("id", entry.id).single();
+        const { data } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", entry.id).single();
         return json(data, 200, origin);
       }
       if (req.method === "DELETE") {
@@ -1182,9 +1190,12 @@ Deno.serve(async (req: Request) => {
     // Несогласованные (очередь вычитки) — по причастности: владелец ИЛИ участник встречи.
     // Обычный фильтр видимости тут не годится: «ничья» неприватная встреча из read-ai висела
     // бы в очереди у всего воркспейса (issue #66). Согласованные — обычное правило.
-    let q = (confirmedParam === "false"
-      ? buildReviewQueueQuery(supabase, "*", { groupId, telegramId: telegram_id, email: userEmail })
-      : buildEntriesQuery(supabase, "*", { groupId, telegramId: telegram_id }))
+    // Очередь вычитки (единицы строк) — текст нужен сразу и целиком. Большой список —
+    // урезанный (toListRow ниже): 230 встреч × полный транскрипт = ~10 МБ в браузер (issue #102).
+    const isReviewQueue = confirmedParam === "false";
+    let q = (isReviewQueue
+      ? buildReviewQueueQuery(supabase, ENTRY_COLUMNS, { groupId, telegramId: telegram_id, email: userEmail })
+      : buildEntriesQuery(supabase, ENTRY_COLUMNS, { groupId, telegramId: telegram_id }))
       .eq("entry_type", "meeting")
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -1206,7 +1217,8 @@ Deno.serve(async (req: Request) => {
         if (m.entry_id && tg !== null) recMap.set(m.entry_id, tg);
       }
     }
-    return json(await withImporterNames(rows, recMap), 200, origin);
+    const named = await withImporterNames(rows, recMap);
+    return json(isReviewQueue ? named : named.map(toListRow), 200, origin);
   }
 
   // ── POST /meetings/:id/resummarize — пересобрать тезисы УЖЕ опубликованной встречи ──
@@ -1233,7 +1245,7 @@ Deno.serve(async (req: Request) => {
       const upd: Record<string, unknown> = { summary: tezisi, content: tezisi };
       if (embedding) upd.embedding = embedding;
       await supabase.from("entries").update(upd).eq("id", entry.id);
-      const { data } = await supabase.from("entries").select("*").eq("id", entry.id).single();
+      const { data } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", entry.id).single();
       return json(data, 200, origin);
     });
   }
@@ -1289,7 +1301,7 @@ Deno.serve(async (req: Request) => {
         }
         if ("countries" in body && Array.isArray(body.countries)) fields.countries = normalizeCountries(body.countries as string[]);
         await supabase.from("entries").update(fields).eq("id", entry.id);
-        const { data } = await supabase.from("entries").select("*").eq("id", entry.id).single();
+        const { data } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", entry.id).single();
         return json(data, 200, origin);
       }
       if (req.method === "DELETE") {
@@ -1324,7 +1336,11 @@ Deno.serve(async (req: Request) => {
     q = q.contains("recorders", JSON.stringify(draftMeetingsOwnScoped(telegram_id)));
     const { data, error } = await q;
     if (error) return apiErr(500, error.message, origin);
-    return json(await withRecorderNames((data ?? []) as Array<{ recorders?: unknown }>), 200, origin);
+    // draft_notes_md → признак has_draft_notes: список рисует название/дату/статус, а текст
+    // тезисов ехал в 10-секундном поллинге (154 кБ за опрос ≈ 55 МБ/час на вкладку, issue #108).
+    // Полный текст берёт деталь GET /agent-meetings/:id — она его и так до-загружает.
+    const enrichedList = await withRecorderNames((data ?? []) as Array<{ recorders?: unknown }>);
+    return json(enrichedList.map(toAgentListRow), 200, origin);
   }
 
   // GET/PATCH/DELETE /agent-meetings/:id, POST /:id/publish, GET/POST /:id/notes (live-пометки),
@@ -1466,7 +1482,7 @@ Deno.serve(async (req: Request) => {
 
       // идемпотентность: уже опубликовано → вернуть существующую запись
       if (meeting.status === "in_base" && meeting.entry_id) {
-        const { data: existing } = await supabase.from("entries").select("*").eq("id", meeting.entry_id as string).single();
+        const { data: existing } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", meeting.entry_id as string).single();
         return json(existing, 200, origin);
       }
       const draft = meeting.draft_notes_md as string | null;
@@ -1508,7 +1524,7 @@ Deno.serve(async (req: Request) => {
           .update({ entry_id: dup.id, status: "in_base", updated_at: new Date().toISOString() })
           .eq("id", mId)
           .is("entry_id", null);
-        const { data: existing } = await supabase.from("entries").select("*").eq("id", dup.id).single();
+        const { data: existing } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", dup.id).single();
         return json(existing, 200, origin);
       }
 
@@ -1529,7 +1545,7 @@ Deno.serve(async (req: Request) => {
         group_id: groupId,
         is_private: isPrivate,
         owner_id: isPrivate ? telegram_id : null,
-      }).select("*").single();
+      }).select(ENTRY_COLUMNS).single();
       if (insErr || !created) return apiErr(500, insErr?.message ?? "publish failed", origin);
 
       // привязка + статус с защитой от гонки (только если ещё не привязано)
@@ -1544,7 +1560,7 @@ Deno.serve(async (req: Request) => {
         await supabase.from("entries").delete().eq("id", (created as { id: string }).id);
         const { data: m2 } = await supabase.from("meetings").select("entry_id").eq("id", mId).single();
         const existingId = (m2 as { entry_id: string | null }).entry_id;
-        const { data: existing } = await supabase.from("entries").select("*").eq("id", existingId as string).single();
+        const { data: existing } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", existingId as string).single();
         return json(existing, 200, origin);
       }
       // Задачи НЕ генерируем автоматически. Пользователь создаёт их вручную кнопкой

@@ -7,6 +7,7 @@ import { useDt, useRoyNav } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { SwipeRow } from "@/components/roy/SwipeRow";
 import { useConfirm } from "@/components/ui/confirm";
+import { hasDraftNotes } from "@/lib/agentMeeting";
 
 type Props = { onOpen: (id: string) => void };
 
@@ -72,8 +73,11 @@ export function AgentReviewQueue({ onOpen }: Props) {
             >
               <p className="text-sm font-medium leading-snug line-clamp-1 text-ink">{m.title ?? "Встреча без названия"}</p>
               <p className="text-xs text-ink-soft mt-0.5">
+                {/* Формат даты — общий («12 июн.»), признак готовности тезисов — hasDraftNotes из
+                    main: списочный /agent-meetings больше не возвращает текст тезисов (#108),
+                    поэтому проверять draft_notes_md напрямую нельзя. */}
                 {fmtDate(m.started_at ?? m.created_at)}
-                {m.draft_notes_md === null ? " · готовим тезисы…" : ""}
+                {hasDraftNotes(m) ? "" : " · готовим тезисы…"}
               </p>
             </button>
           );

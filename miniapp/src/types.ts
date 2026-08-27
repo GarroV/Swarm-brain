@@ -129,6 +129,11 @@ export type Entry = {
   is_private: boolean;
   owner_id: number | null;
   created_at: string;
+  // true — запись пришла из СПИСОЧНОГО ответа GET /meetings, где content/summary урезаны
+  // до превью (issue #102: иначе 230 встреч = ~10 МБ в браузер). Полный текст надо
+  // до-загрузить через fetchMeeting(id). Экран НЕ должен показывать урезанный транскрипт
+  // как полный и тем более извлекать из него задачи.
+  truncated?: boolean;
 };
 
 export type Integration = {
@@ -172,8 +177,14 @@ export type AgentMeeting = {
   ended_at: string | null;
   status: "awaiting_review" | "in_base";
   // Состояние генерации тезисов: тезисы готовятся / готовы / не удалось обработать.
-  summary_status: "processing" | "done" | "failed";
-  draft_notes_md: string | null;
+  // Опционально: СПИСОЧНЫЙ GET /agent-meetings этого поля не отдаёт (и никогда не отдавал —
+  // тип врал, что оно всегда есть). Приходит только в детали GET /agent-meetings/:id.
+  summary_status?: "processing" | "done" | "failed";
+  // Текст тезисов — только в ДЕТАЛИ. В списке вместо него признак наличия (issue #108).
+  // Проверять готовность — через hasDraftNotes() из lib/agentMeeting.ts, а не напрямую:
+  // `draft_notes_md === null` на списочной форме даёт ложное «готовим тезисы…».
+  draft_notes_md?: string | null;
+  has_draft_notes?: boolean;
   // Участники из календаря (детальный GET /agent-meetings/:id, select *). Может быть пусто
   // для ручных записей без календарного события.
   attendees?: Attendee[] | null;

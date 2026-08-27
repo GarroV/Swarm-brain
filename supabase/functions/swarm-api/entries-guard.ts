@@ -2,6 +2,15 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+// Колонки записи, которые уезжают в браузер. Ровно поля EntryRow + updated_at — и НИКОГДА
+// не `*`: у entries есть embedding vector(1536) (~18.5 кБ текстом на строку) и fts tsvector
+// (~7.8 кБ), которых нет ни в EntryRow, ни в клиентском типе Entry. Сервер их только ПИШЕТ
+// (пересчитывает через OpenAI / генерирует база) и ни в одной точке не читает, поэтому в
+// ответе они чистый балласт: на списке встреч это давало 6 МБ из 10 (issue #102), на одной
+// записи — 26 кБ на каждое открытие.
+export const ENTRY_COLUMNS =
+  "id,content,summary,added_by,source,metadata,countries,entry_type,entry_date,group_id,is_private,owner_id,created_at,updated_at";
+
 export type EntryRow = {
   id: string;
   content: string;
@@ -53,7 +62,7 @@ export async function getEntrySecure(
 ): Promise<EntryRow> {
   const { data } = await supabase
     .from("entries")
-    .select("*")
+    .select(ENTRY_COLUMNS)
     .eq("id", id)
     .maybeSingle();
 
