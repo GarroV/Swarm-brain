@@ -183,7 +183,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         <div className="flex flex-wrap items-center gap-2 text-xs text-ink-soft">
-          <span className="rounded-[7px] px-2 py-0.5 font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)" }}>Рекордер</span>
+          <span className="rounded-[7px] px-2 py-0.5 font-semibold" style={{ fontSize: 11, color: "var(--meet-ink)", background: "var(--meet-soft)" }}>bumblebee</span>
           {meeting.started_at && <span>{fmtDay(meeting.started_at)}</span>}
           {published
             ? <span className="inline-flex items-center gap-1" style={{ color: "var(--status-done)" }}><RoyIcon name="check" size={13} strokeWidth={2.2} /> В базе</span>

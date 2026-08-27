@@ -2,7 +2,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { sourceLabel, ALL_MEETING_SOURCES, ENTRY_MEETING_SOURCES } from "./sources.ts";
 
 Deno.test("sourceLabel: известные источники + fallback", () => {
-  assertEquals(sourceLabel("desktop-agent"), "Рекордер");
+  assertEquals(sourceLabel("desktop-agent"), "bumblebee");
   assertEquals(sourceLabel("granola"), "Granola");
   assertEquals(sourceLabel("read_ai"), "Read.ai");
   assertEquals(sourceLabel("otter"), "Встреча");
