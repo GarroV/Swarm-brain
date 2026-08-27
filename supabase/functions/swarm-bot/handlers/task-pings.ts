@@ -11,8 +11,11 @@
 // • получатель — исполнители; у общей задачи без исполнителя — тот, кто поставил пинг.
 
 import { canViewTask } from "../../_shared/tasks/access.ts";
+import { TASK_TZ, todayInTz } from "../../_shared/tasks/recurrence.ts";
 
-export const PING_TZ = "Europe/Belgrade";
+// Часовой пояс и календарный «сегодня» — канон в _shared/tasks/recurrence.ts (одна копия
+// на весь модуль задач: перекат регулярных и пинги обязаны считать один и тот же день).
+export const PING_TZ = TASK_TZ;
 const MAX_BUTTONS = 10; // Telegram: не вываливаем сотню кнопок — верх списка + «…ещё N»
 const MONTHS_SHORT = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 
@@ -34,14 +37,9 @@ export interface InlineUrlButton {
   url: string;
 }
 
-// Календарный «сегодня» по Белграду: пинг задан датой, а не моментом времени, поэтому
-// сравнивать с UTC-днём нельзя — ночью после 22:00 UTC это уже завтрашний день команды.
-export function todayIn(now: Date = new Date(), tz: string = PING_TZ): string {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
-    .formatToParts(now);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
-}
+// Календарный «сегодня» по Белграду — реэкспорт канона, чтобы существующие вызовы и тесты
+// (`todayIn`) остались на месте, а формула жила в одном файле.
+export const todayIn = todayInTz;
 
 function isDone(status: string): boolean {
   return status === "done";

@@ -35,6 +35,10 @@ export type Task = {
   parent_id: string | null;
   tree_x: number | null;
   tree_y: number | null;
+  // Цикличность: NULL = обычная задача. День недели/число берутся из due_date,
+  // recur_anchor_dom помнит исходное число месяца для monthly (31 янв → 28 фев → 31 мар).
+  recur_freq: string | null;
+  recur_anchor_dom: number | null;
 };
 
 export type TaskInput = {
@@ -68,6 +72,8 @@ export type TaskInput = {
   parent_id?: string | null;
   tree_x?: number | null;
   tree_y?: number | null;
+  recur_freq?: string | null;
+  recur_anchor_dom?: number | null;
 };
 
 // ── Спринты ───────────────────────────────────────────────────────────────────

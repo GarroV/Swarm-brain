@@ -7,7 +7,7 @@ import type { RoyIconName } from "@/components/roy/icons";
 import { countryCode } from "@/lib/countries";
 import { inRange, dayOf, type DateRange } from "@/lib/dateRange";
 
-export type SmartListId = "today" | "upcoming" | "all" | "done";
+export type SmartListId = "today" | "upcoming" | "all" | "recurring" | "done";
 // Линза = ось «чьи задачи»: «mine» — назначенные на меня; «team» — ОБЩИЕ (не приватные, без
 // конкретного исполнителя); «all» — «мои + командные» (владелец 2026-08-20: «линза "все"
 // показывает свои задачи и задачи команды, чужие задачи не показывает»); «staff» — АДМИНСКИЙ
@@ -23,16 +23,27 @@ export type Lens = "mine" | "team" | "all" | "staff";
 // главный экран держит в зависимостях useMemo примитивный `meId`, а не объект `me`.
 export type Viewer = Pick<Me, "telegram_id">;
 
-export type SmartListDef = { id: SmartListId; label: string; icon: RoyIconName };
+export type SmartListDef = { id: SmartListId; label: string; labelEn: string; icon: RoyIconName };
 
 // Единый источник правды для порядка/подписей/иконок смарт-списков (время/статус).
 // «По рынкам»/«Все сотрудники» — НЕ смарт-списки, а независимые тумблеры (см. Lens), накладываются на любой из этих списков.
 export const SMART_LISTS: SmartListDef[] = [
-  { id: "today", label: "Сегодня", icon: "clock" },
-  { id: "upcoming", label: "Ближайшие", icon: "cal" },
-  { id: "all", label: "Все", icon: "task" },
-  { id: "done", label: "Готовые", icon: "check" },
+  { id: "today", label: "Сегодня", labelEn: "Today", icon: "clock" },
+  { id: "upcoming", label: "Ближайшие", labelEn: "Upcoming", icon: "cal" },
+  { id: "all", label: "Все", labelEn: "All", icon: "task" },
+  // «Регулярные» — единственный список, который ПРЯЧЕТСЯ при нулевом счётчике (решение
+  // владельца 2026-08-27: «если задач таких нет, то список скрывается»). Скрытие живёт в
+  // SmartListNav, здесь список объявлен всегда — иначе счётчик было бы негде взять.
+  { id: "recurring", label: "Регулярные", labelEn: "Recurring", icon: "repeat" },
+  { id: "done", label: "Готовые", labelEn: "Done", icon: "check" },
 ];
+
+// Списки, исчезающие из навигации, когда в них нечего показать.
+export const HIDE_WHEN_EMPTY: ReadonlySet<SmartListId> = new Set<SmartListId>(["recurring"]);
+
+export function isRecurring(task: Task): boolean {
+  return task.recur_freq != null;
+}
 
 export const HIGH_PRIORITY = "high";
 const PRI_RANK: Record<string, number> = { high: 3, med: 2, low: 1 };
@@ -141,6 +152,10 @@ function inList(task: Task, listId: SmartListId, now: Date, range: DateRange | n
       return due != null && due <= today;
     case "upcoming":
       return due != null && due > today;
+    case "recurring":
+      // Регулярные НЕ убираются из остальных списков (решение владельца 2026-08-27): задача
+      // с сегодняшним сроком по-прежнему видна в «Сегодня», здесь она показана дополнительно.
+      return isRecurring(task);
     case "all":
       return true;
   }

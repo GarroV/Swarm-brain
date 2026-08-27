@@ -20,6 +20,7 @@ import {
   updateTask,
   deleteTask,
 } from "../_shared/tasks/db.ts";
+import { recurrencePatchFor, resolveRecurrence } from "../_shared/tasks/recurrence.ts";
 import type { TaskInput, SprintInput, ProjectInput } from "../_shared/tasks/types.ts";
 import {
   listSprints,
@@ -548,6 +549,11 @@ Deno.serve(async (req: Request) => {
       const dateErr = validateTaskDates(startDate, dueDate);
       if (dateErr) return apiErr(400, dateErr, origin);
 
+      // Цикличность: частоту проверяет, число месяца выводит из срока один хелпер на
+      // веб/бота/MCP — иначе anchor выводили бы тремя способами или забыли бы вовсе.
+      const recur = resolveRecurrence(body.recur_freq, dueDate);
+      if (!recur.ok) return apiErr(400, recur.error, origin);
+
       const isPrivate = body.is_private === true;
       const sprintId = (body.sprint_id as string | null) ?? null;
       if (sprintId && !(await sprintInWorkspace(sprintId, groupId))) {
@@ -604,6 +610,8 @@ Deno.serve(async (req: Request) => {
         tree_y: typeof body.tree_y === "number" ? body.tree_y : null,
         timeline_position: typeof body.timeline_position === "number" ? body.timeline_position : null,
         tags: Array.isArray(body.tags) ? (body.tags as string[]) : undefined,
+        recur_freq: recur.recur_freq,
+        recur_anchor_dom: recur.recur_anchor_dom,
       };
 
       try {
@@ -744,6 +752,23 @@ Deno.serve(async (req: Request) => {
       const effDue = "due_date" in fields ? fields.due_date : task.due_date;
       const dateErr = validateTaskDates(effStart, effDue);
       if (dateErr) return apiErr(400, dateErr, origin);
+
+      // Цикличность (null — снять). Число месяца выводим из ИТОГОВОГО срока: его могли
+      // поменять этим же запросом.
+      if ("recur_freq" in body) {
+        const recur = recurrencePatchFor(body.recur_freq, effDue, task);
+        if (!recur.ok) return apiErr(400, recur.error, origin);
+        fields.recur_freq = recur.recur_freq;
+        // Ключа нет = якорь оставляем как есть (человек не трогал ни срок, ни частоту):
+        // иначе правка названия сбросила бы график зажатой задачи с 31-го числа на 28-е.
+        if ("recur_anchor_dom" in recur) fields.recur_anchor_dom = recur.recur_anchor_dom;
+      }
+      // Регулярная задача без срока не сможет посчитать следующий цикл и МОЛЧА перестанет
+      // повторяться. Снять срок можно только вместе с цикличностью.
+      const effFreq = "recur_freq" in fields ? fields.recur_freq : task.recur_freq;
+      if (effFreq && !effDue) {
+        return apiErr(400, "У регулярной задачи должен быть срок: задай срок или сними цикличность", origin);
+      }
 
       if ("assignee_telegram_id" in body) {
         if (!body.assignee_telegram_id) {

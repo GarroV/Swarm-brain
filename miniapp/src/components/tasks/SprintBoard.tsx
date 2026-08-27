@@ -9,6 +9,7 @@ import type { Task, Sprint, Project } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { Button } from "@/components/ui/button";
 import { RoyIcon } from "@/components/roy/icons";
+import { buildQuickAddInput } from "@/lib/quickAddTask";
 import { useConfirm } from "@/components/ui/confirm";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 
@@ -264,18 +265,24 @@ export function SprintBoard() {
     // ответом заменяем временную на реальную; при ошибке — откат. Раньше ждали create+полный
     // рефетч → задержка появления.
     const tempId = "temp-" + Date.now();
+    // Исполнитель — я (общий дефолт быстрого добавления, buildQuickAddInput): держим его и в
+    // оптимистичной карточке, иначе она мигнёт «общей» и перескочит после ответа сервера.
     const optimistic: Task = {
-      id: tempId, title: t, description: null, assignees: [], assignee_telegram_ids: [],
+      id: tempId, title: t, description: null,
+      assignees: me?.name ? [me.name] : [], assignee_telegram_ids: me ? [me.telegram_id] : [],
       due_date: null, remind_date: null, reminded_at: null,
       tags: [], country: null, task_role: null, priority: null, source: "mini_app",
       status, created_at: new Date().toISOString(), updated_at: null, meeting_id: null,
       url: null, group_id: null, created_by_name: null, is_private: false, owner_id: null,
       start_date: null, timeline_position: null, sprint_id, label_ids: [], project_id,
       project_linked: false, parent_id: null, tree_x: null, tree_y: null,
+      recur_freq: null, recur_anchor_dom: null,
     };
     setTasks((prev) => [optimistic, ...prev]);
     try {
-      const created = await createTask({ title: t, status, project_id: project_id ?? undefined, sprint_id: sprint_id ?? undefined });
+      const input = buildQuickAddInput(t, me, { status, projectId: project_id, sprintId: sprint_id });
+      if (!input) return;
+      const created = await createTask(input);
       // заменяем временную на реальную; фильтруем и temp, и возможный дубль created.id (страховка)
       setTasks((prev) => [created, ...prev.filter((x) => x.id !== tempId && x.id !== created.id)]);
     } catch {

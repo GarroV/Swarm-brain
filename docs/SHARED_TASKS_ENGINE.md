@@ -12,6 +12,7 @@
 |------|---------|
 | `_shared/tasks/types.ts` | Единственный источник `Task` и `TaskInput`. Клиенты импортируют отсюда. |
 | `_shared/tasks/db.ts` | Чистый доступ к таблице `tasks`: `createTask`, `getTask`, `listTasks`, `updateTask`, `deleteTask`. |
+| `_shared/tasks/recurrence.ts` | Цикличность задач: чистая арифметика графика (`nextOccurrence`, `buildRecurPatch`), приём из запроса (`resolveRecurrence`, `recurrencePatchFor`) и **канонический часовой пояс модуля** (`TASK_TZ`, `todayInTz` — `task-pings` импортирует отсюда, своей копии не держит). Без БД и сети, под тестами. |
 | `_shared/tasks/sprints.ts` | Доступ к таблице `sprints` (изоляция по `group_id`): `listSprints`, `createSprint`, `updateSprint`, `deleteSprint`, `setTasksSprint`. |
 | `_shared/tasks/dependencies.ts` | Доступ к `task_dependencies`: `listDependencies`, `listWorkspaceDependencies`, `createDependency`, `deleteDependency`. Приватность — только через `tasks`. |
 | `swarm-mcp/tasks/tools.ts` | Прослойка MCP: резолв `requesting_user_id→group_id` и `assignee_name→assignees/ids`, вызов движка, форматирование строк для Claude. |
@@ -56,8 +57,16 @@ listTasks(filters, groupId?) → Promise<Task[]>
   assigneeText: пост-фильтр по assignees[] (после запроса).
   limit: дефолт 200.
 
-updateTask(id, fields) → Promise<void>
+updateTask(id, fields, opts?) → Promise<RecurResult | null>
   Всегда добавляет updated_at.
+  ⚠️ fields.status === "done" у РЕГУЛЯРНОЙ задачи (recur_freq != null) закрытием НЕ является:
+     патч подменяется на перекат (due_date → следующее вхождение, status → "open",
+     start_date/remind_date сдвигаются на ту же дельту, reminded_at → null), в task_history
+     пишется строка «цикл закрыт, следующий срок …», и функция возвращает
+     { recurred: { from, to } } — вызывающий обязан сказать пользователю правду
+     (бот отвечает «цикл закрыт, следующий срок …», а не «Готово»).
+     Живёт здесь намеренно: это единственная точка записи статуса, обойти перекат нельзя.
+  opts.actor — кто правит (идёт в task_history.changed_by; по умолчанию "recurring").
 
 deleteTask(id) → Promise<void>
   Сначала task_history, потом tasks.

@@ -1,5 +1,5 @@
 import { supabase } from "../lib/supabase.ts";
-import { createTask, getTask, listTasks, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
+import { createTask, getTask, listTasks, updateTask, deleteTask, type RecurResult } from "../../_shared/tasks/db.ts";
 import type { Task, TaskInput } from "../../_shared/tasks/types.ts";
 
 export async function dbGetTask(id: string): Promise<Task | null> {
@@ -29,11 +29,14 @@ export async function dbCreateTask(input: TaskInput): Promise<Task> {
   return createTask(input, input.group_id ?? undefined);
 }
 
+// Возвращает признак переката регулярной задачи (null — обычное обновление): бот обязан
+// сказать «Готово, следующий срок …», иначе он соврёт про закрытие незакрытой задачи.
 export async function dbUpdateTask(
   id: string,
   fields: Partial<TaskInput> & { status?: string; url?: string; due_date?: string | null },
-): Promise<void> {
-  return updateTask(id, fields);
+  opts: { actor?: string } = {},
+): Promise<RecurResult | null> {
+  return updateTask(id, fields, opts);
 }
 
 export async function dbDeleteTask(id: string): Promise<void> {
