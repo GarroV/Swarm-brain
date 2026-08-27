@@ -196,7 +196,19 @@ async function withFreshAssignees<
 
 // ── Извлечение задач из тезисов встречи (тот же подход, что POST /tasks/extract,
 //    плюс резолв исполнителей и привязка к встрече) ───────────────────────────────
-type ExtractedTask = { title: string; description?: string; assignee?: string; due_date?: string | null; country?: string | null };
+type ExtractedTask = { title: string; description?: string | null; assignee?: string | null; due_date?: string | null; country?: string | null };
+
+// Пустоты, которые модель выдаёт СТРОКОЙ вместо JSON null. Промпт ниже это запрещает, но
+// промпт можно проигнорировать, а проверку нет: строка "null" доезжала до карточки разбора
+// серым чипом «null» вместо страны (issue #125). Тот же список продублирован на клиенте
+// (`miniapp/src/lib/proposedTasks.ts`) — там он страхует уже любой кривой ответ API.
+const NULLISH_FIELDS = new Set(["", "null", "none", "nil", "undefined", "n/a", "na", "-", "—", "–"]);
+
+function cleanExtractedField(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return NULLISH_FIELDS.has(trimmed.toLowerCase()) ? null : trimmed;
+}
 
 async function gptExtractTasks(text: string): Promise<ExtractedTask[]> {
   const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
@@ -207,7 +219,7 @@ async function gptExtractTasks(text: string): Promise<ExtractedTask[]> {
     body: JSON.stringify({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: `Сегодня ${today}. Извлеки задачи из тезисов встречи. Верни JSON массив (только JSON, без markdown): [{"title":"короткая формулировка действия","description":"1 фраза контекста из обсуждения: зачем/какой ожидаемый результат/важная деталь. НЕ повторяй заголовок другими словами. null, если заголовок самодостаточен","assignee":"Полное имя или null","due_date":"YYYY-MM-DD или null","country":"... или null"}]. Бери только реальные поручения/действия с конкретным результатом. Если задач нет — пустой массив [].\ndue_date: год считай от сегодняшней даты. Если в тексте назван только день и месяц («до 17 августа») — подставь ближайший подходящий год, НИКОГДА не бери год из головы. Если срок не назван — null.` },
+        { role: "system", content: `Сегодня ${today}. Извлеки задачи из тезисов встречи. Верни JSON массив (только JSON, без markdown): [{"title":"короткая формулировка действия","description":"1 фраза контекста из обсуждения: зачем/какой ожидаемый результат/важная деталь. НЕ повторяй заголовок другими словами","assignee":"полное имя ответственного","due_date":"YYYY-MM-DD","country":"ISO-код рынка, например RS"}]. Бери только реальные поручения/действия с конкретным результатом. Если задач нет — пустой массив [].\nЕсли для поля (кроме title) в тексте нет данных — ставь JSON-литерал null БЕЗ кавычек. Строка "null" запрещена: это текст, а не пустое значение, и он попадает пользователю на экран.\ndue_date: год считай от сегодняшней даты. Если в тексте назван только день и месяц («до 17 августа») — подставь ближайший подходящий год, НИКОГДА не бери год из головы. Если срок не назван — null.` },
         { role: "user", content: text.slice(0, 8000) },
       ],
       max_tokens: 1200,
@@ -218,8 +230,21 @@ async function gptExtractTasks(text: string): Promise<ExtractedTask[]> {
     const raw = (await res.json()).choices[0].message.content.replace(/```json\n?|\n?```/g, "").trim();
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    // Слой 2: выдуманный моделью год чиним здесь — промпт можно проигнорировать, проверку нет.
-    return (parsed as ExtractedTask[]).map((t) => ({ ...t, due_date: normalizeExtractedDueDate(t.due_date, today) }));
+    // Слой 2: выдуманный моделью год и строковые «пустоты» чиним здесь — промпт можно
+    // проигнорировать, проверку нет. Задачи без заголовка отбрасываем: показывать и создавать
+    // там нечего.
+    return (parsed as unknown[])
+      .map((raw) => {
+        const t = (raw ?? {}) as Record<string, unknown>;
+        return {
+          title: cleanExtractedField(t.title) ?? "",
+          description: cleanExtractedField(t.description),
+          assignee: cleanExtractedField(t.assignee),
+          due_date: normalizeExtractedDueDate(cleanExtractedField(t.due_date), today),
+          country: cleanExtractedField(t.country),
+        };
+      })
+      .filter((t) => t.title.length > 0);
   } catch {
     return [];
   }

@@ -269,3 +269,36 @@
 .react-flow__node { transition: transform 190ms cubic-bezier(0.22, 1, 0.36, 1); }
 .react-flow__node.dragging { transition: none; }
 @media (prefers-reduced-motion: reduce) { .react-flow__node { transition: none; } }
+
+/* ── Разбор задач из встречи: блок «разъезжается» из панели в правый лист ──────
+   Container transform без библиотек. Лист рендерится СРАЗУ в финальной геометрии
+   (fixed left/top/width/height ставит JS — единый источник размеров), а на входе и
+   выходе к нему применяется обратный transform до прямоугольника блока-источника:
+   переменные --hv-* приходят инлайном из getBoundingClientRect, снятого в момент клика.
+   Так первый кадр визуально СОВПАДАЕТ с блоком, и лист выглядит выросшим из него.
+   Анимируются только transform и opacity — работа компоновщика, без layout-прохода.
+   prefers-reduced-motion гасится глобальным правилом выше (transition-duration: .01ms). */
+.roy-harvest {
+  transform-origin: 0 0;
+  transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.roy-harvest[data-starting-style],
+.roy-harvest[data-ending-style] {
+  transform: translate(var(--hv-x, 0px), var(--hv-y, 8px)) scale(var(--hv-sx, 0.96), var(--hv-sy, 0.96));
+  /* will-change живёт ТОЛЬКО на время анимации: постоянный слой composited-памяти не нужен. */
+  will-change: transform;
+}
+/* Содержимое — отдельным слоем поверх коробки: пока она масштабируется, текст ещё прозрачен,
+   поэтому растянутых букв не видно (в этом весь смысл приёма). */
+.roy-harvest-body {
+  transition: opacity 220ms ease-out 110ms, transform 240ms cubic-bezier(0.22, 1, 0.36, 1) 110ms;
+}
+.roy-harvest[data-starting-style] .roy-harvest-body,
+.roy-harvest[data-ending-style] .roy-harvest-body {
+  opacity: 0;
+  transform: translateY(10px);
+  transition-delay: 0ms;
+}
+.roy-harvest-backdrop { transition: opacity 260ms ease-out; }
+.roy-harvest-backdrop[data-starting-style],
+.roy-harvest-backdrop[data-ending-style] { opacity: 0; }
