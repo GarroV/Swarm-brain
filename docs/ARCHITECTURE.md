@@ -197,7 +197,7 @@ supabase/functions/swarm-bot/
 | `allowed_users` | Белый список | `telegram_id` (nullable — email-only/pending), `username`, `email` (**каноничный ключ веб-входа Google Sign-In**, уникальный индекс по `lower(email)`), `is_admin`, `group_id` (FK → `workspaces.id`); токены (см. [MCP-аутентификация](#mcp-аутентификация)): `claude_mcp_token_hash`, `claude_mcp_token_expires_at` (MCP/Claude Desktop, бессрочный → `null`), `recorder_token_hash`, `recorder_token_expires_at` (отдельный токен рекордера, миграция `20260617120000`); heartbeat-мониторинг рекордера: `recorder_last_seen`, `recorder_last_recording`, `recorder_last_version`, `recorder_expiry_warned` (миграция `20260708120000`) |
 | `user_profiles` | Профили пользователей | `telegram_id`, `first_name`, `last_name`, `role` (**CHECK** `role in ('marketing','bd','rnd')`, миграция `20260528120000`), `markets`, `phone`, `email`, `notes`, `name_aliases`. ⚠️ **`username` здесь НЕТ** — он в `allowed_users`. Имя = `first_name`+`last_name`, фолбэк на `@username` из `allowed_users` (хелпер `resolveNames` в swarm-api). Не селектить `username` из `user_profiles` — PostgREST упадёт на несуществующей колонке → `data=null` |
 | `user_integrations` | API-ключи интеграций | `telegram_id`, `service` (`granola`), `api_key`, `last_polled_at`, `skipped_note_ids` |
-| `app_settings` | Глобальные настройки | `key`, `value` — хранит `feedback_channel_id` |
+| `app_settings` | Глобальные настройки | `key`, `value` — `feedback_channel_id`, `granola_last_polled_at`, `deploy_notice` (см. §app_settings — ключи) |
 | `oauth_tokens` | OAuth токены интеграций | `service` (`read_ai`), `client_id`, `access_token`, `refresh_token`, `expires_at`, `updated_at` |
 | `oauth_state` | Временный PKCE state для OAuth | `state`, `client_id`, `code_verifier` — создаётся при старте OAuth, удаляется после callback |
 | `task_comments` | Комментарии-апдейты к задаче (веб + MCP) | `task_id` (FK → `tasks`, ON DELETE CASCADE, индекс `idx_task_comments_task_id`), `content`, `added_by_telegram_id` (bigint; имя резолвится на чтении), `added_by` (legacy, nullable), `created_at` |
@@ -824,7 +824,7 @@ _Задачи / спринты / зависимости:_
 | `DELETE` | `/tasks/:id/comments/:cid` | Удалить комментарий — только автор или админ |
 | `GET` | `/tasks/:id/subscription` | Состояние подписки вызывающего: `{state: subscribed\|muted\|null, reason, notified}`. `notified` — придут ли уведомления сейчас (это и показывает тумблер в карточке). Модуль `swarm-api/task-subscriptions.ts` |
 | `PATCH` | `/tasks/:id/subscription` | Явный выбор человека `{notify: boolean}` → `state` = `subscribed`/`muted`, `reason=manual`. Гейт тот же — видимость задачи |
-| `GET` | `/notifications` | Лента уведомлений вызывающего (новые сверху, `?limit=` ≤100, по умолчанию 30) + счётчик `unread`. Строго свои: фильтр по `recipient_telegram_id`. Задача, ставшая приватной ПОСЛЕ уведомления, из ленты выпадает (`canViewTask` на выдаче). Модуль `swarm-api/notifications.ts` |
+| `GET` | `/notifications` | Лента уведомлений вызывающего (новые сверху, `?limit=` ≤100, по умолчанию 30) + счётчик `unread`. Строго свои: фильтр по `recipient_telegram_id`. Задача, ставшая приватной ПОСЛЕ уведомления, из ленты выпадает (`canViewTask` на выдаче). Модуль `swarm-api/notifications.ts`. Вместе с лентой едет **`notice`** — объявление о раскатке (`{at, until}` из `app_settings.deploy_notice`, `null` если нет или истекло): у плашки в вебе нет своего поллинга, она берёт его отсюда. |
 | `POST` | `/notifications/read` | Пометить прочитанным: `{ids}` — перечисленные, без тела — всё непрочитанное. Чужие не помечаются даже по точному id |
 | `GET` | `/sprints` | Спринты воркспейса (все участники) |
 | `POST` | `/sprints` | Создать спринт (`name`, `start_date`, `end_date`, `status`) — **только admin** |
@@ -986,6 +986,7 @@ supabase/functions/swarm-mcp/
 |------|-------------|-----------|
 | `feedback_channel_id` | number (chat_id) | Telegram-группа для пересылки фидбеков. Текущее значение: `-1003955027649` |
 | `granola_last_polled_at` | ISO timestamp | Время последнего опроса Granola-поллером |
+| `deploy_notice` | `{at, until}` (ISO) | Объявление «скоро обновление» → плашка в вебе. `until` — срок годности В ДАННЫХ: плашка гаснет сама, даже если скрипт раскатки упал и не снял её. Ставит/снимает `scripts/deploy-notice.sh` (его зовёт `make notice` и сам `deploy-window.sh go`). Отсутствие строки = объявления нет |
 
 ---
 

@@ -10,11 +10,14 @@ SB         := C:/projects/swarm-staging
 # Инициализация (демо-дефолт Supabase для приватного staging): см. docs/DEPLOY.md.
 STAGING_PGPW := $(shell cat $(HOME)/.swarm/staging_pgpw 2>/dev/null)
 
-.PHONY: help smoke-staging smoke-prod staging-sync-functions staging-migrate staging-psql staging-ps staging-up staging-down deploy-plan deploy
+.PHONY: help smoke-staging smoke-prod staging-sync-functions staging-migrate staging-psql staging-ps staging-up staging-down deploy-plan deploy who notice notice-off
 
 help:
 	@echo "deploy-plan            — что готово, но НЕ раскатано (накопитель; ничего не меняет)"
 	@echo "deploy                 — раскатать накопленное (окно: будни 09:00–09:59 Белград; нужно «да» владельца)"
+	@echo "who                    — кто сейчас в проде (запись/обработка встречи = стоп; люди = предупреждение)"
+	@echo "notice MIN=15          — объявить обновление: плашка в вебе с отсчётом (правка прод-данных!)"
+	@echo "notice-off             — снять объявление вручную (deploy снимает его сам)"
 	@echo "smoke-staging          — смоук edge-функций на staging (MUSPELHEIM)"
 	@echo "smoke-prod             — смоук edge-функций на проде"
 	@echo "staging-sync-functions — залить supabase/functions на staging + рестарт edge-runtime"
@@ -62,3 +65,13 @@ deploy-plan:
 
 deploy:
 	@./scripts/deploy-window.sh go
+
+# Кто в проде прямо сейчас. Отдельная цель, потому что смотреть полезно и без раскатки.
+who:
+	@./scripts/deploy-activity.sh
+
+notice:
+	@./scripts/deploy-notice.sh set $(or $(MIN),15)
+
+notice-off:
+	@./scripts/deploy-notice.sh off
