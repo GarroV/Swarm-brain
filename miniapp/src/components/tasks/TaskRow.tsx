@@ -31,6 +31,9 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
   const done = isDone(task);
   const overdue = isOverdue(task, now);
   const due = fmtDue(task.due_date, dt("ru-RU", "en-US"));
+  // Пинг показываем, только пока он ЖДЁТ: отзвонивший (reminded_at) сгорел, и висящая
+  // дата напоминания вводила бы в заблуждение — «напомнят», хотя уже напомнили.
+  const ping = done || task.reminded_at ? null : fmtDue(task.remind_date, dt("ru-RU", "en-US"));
   const high = task.priority === "high";
   const fromMeeting = Boolean(task.meeting_id);
   const hasAssignee = showAssignee && (task.assignees?.length ?? 0) > 0;
@@ -81,6 +84,17 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
             <span className="inline-flex items-center gap-1" style={{ fontSize: 11.5, color: overdue ? "var(--pri-high)" : "var(--ink-soft)", fontWeight: overdue ? 600 : 400 }}>
               <RoyIcon name="cal" size={11} />
               {due}
+            </span>
+          )}
+          {ping && (
+            // Ближайший пинг — рядом со сроком: видно «когда напомнят», не открывая карточку.
+            <span
+              className="inline-flex items-center gap-1 font-semibold"
+              style={{ fontSize: 10.5, color: "var(--accent-ink)", background: "var(--accent-soft)", borderRadius: 6, padding: "1px 6px" }}
+              title={dt("Напомним в этот день", "You'll be reminded on this day")}
+            >
+              <RoyIcon name="bell" size={10} />
+              {ping}
             </span>
           )}
           {hasAssignee && (

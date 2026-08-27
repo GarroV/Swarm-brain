@@ -5,6 +5,7 @@ import type { AgentMeeting } from "@/types";
 import { RoyIcon } from "@/components/roy/icons";
 import { useRoyNav } from "@/components/roy/nav";
 import { useConfirm } from "@/components/ui/confirm";
+import { hasDraftNotes } from "@/lib/agentMeeting";
 
 type Props = { onOpen: (id: string) => void };
 
@@ -59,7 +60,7 @@ export function AgentReviewQueue({ onOpen }: Props) {
               <p className="text-sm font-medium leading-snug line-clamp-1 text-ink">{m.title ?? "Встреча без названия"}</p>
               <p className="text-xs text-ink-soft mt-0.5">
                 {(m.started_at ?? m.created_at).slice(0, 10)}
-                {m.draft_notes_md === null ? " · готовим тезисы…" : ""}
+                {hasDraftNotes(m) ? "" : " · готовим тезисы…"}
               </p>
             </button>
             <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1.5">

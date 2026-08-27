@@ -5,6 +5,11 @@ export type Task = {
   assignees: string[];
   assignee_telegram_ids: number[];
   due_date: string | null;
+  // Пинг — ручное напоминание, независимое от срока (см. swarm-bot/handlers/task-pings.ts).
+  // `reminded_at` NOT NULL = пинг уже сгорел; перенос `remind_date` его снова взводит (API).
+  remind_date: string | null;
+  reminded_at: string | null;
+  remind_set_by: number | null;
   tags: string[];
   country: string | null;
   task_role: string | null;
@@ -38,6 +43,9 @@ export type TaskInput = {
   assignees?: string[];
   assignee_telegram_ids?: number[];
   due_date?: string | null;
+  remind_date?: string | null;
+  reminded_at?: string | null;
+  remind_set_by?: number | null;
   tags?: string[];
   country?: string | null;
   task_role?: string | null;

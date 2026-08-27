@@ -183,7 +183,17 @@ export function NotificationsBell({ className }: { className?: string }) {
                           line-clamp именно на этом span, а не на вложенном: вложенный становится
                           -webkit-box и уносит текст на строку ниже имени автора. */}
                       <span className="mt-0.5 line-clamp-2 text-ink-soft" style={{ fontSize: 12.5 }}>
-                        <span className="font-semibold">{n.actor_name}</span>{": "}{n.content}
+                        {/* У пинга нет автора и текста: событие системное, и «— : » выглядело бы поломкой. */}
+                        {n.type === "task_reminder" ? (
+                          <span className="inline-flex items-center gap-1 font-semibold text-accent-ink">
+                            <RoyIcon name="bell" size={11} />
+                            {dt("Напоминание, которое ты поставил", "The reminder you set")}
+                          </span>
+                        ) : (
+                          <>
+                            <span className="font-semibold">{n.actor_name}</span>{": "}{n.content}
+                          </>
+                        )}
                       </span>
                     </span>
                   </button>
