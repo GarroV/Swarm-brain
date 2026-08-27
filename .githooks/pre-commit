@@ -16,6 +16,28 @@ if [ -n "$code_touched" ] && [ -z "$docs_touched" ]; then
   echo "             Дока — часть DoD, в ТОМ ЖЕ коммите. Сверься; если не требуется — коммить дальше (не блокирует)." >&2
 fi
 
+# ── Дубль версии миграции (БЛОКИРУЕТ) ───────────────────────────────────────────
+# Supabase CLI ведёт supabase_migrations.schema_migrations с PK по ВЕРСИИ (префикс имени
+# файла), а не по имени. Две миграции с одним номером роняют `supabase db reset` на
+# 23505 — и контур с нуля не собирается вообще, то есть проверка миграций перед
+# прод-раскаткой молча перестаёт работать (issue #120: так прожили три дня).
+# Коллизия возникает ровно тогда, когда две ветки создают миграцию в один условный полдень.
+if [ -d supabase/migrations ]; then
+  dup_versions=$(ls supabase/migrations/*.sql 2>/dev/null \
+    | xargs -n1 basename \
+    | grep -E '^[0-9]+_' \
+    | cut -d_ -f1 | sort | uniq -d || true)
+  if [ -n "$dup_versions" ]; then
+    echo "[pre-commit] ❌ миграции с одинаковой версией — 'supabase db reset' упадёт:" >&2
+    for v in $dup_versions; do
+      echo "             версия $v:" >&2
+      ls supabase/migrations/${v}_*.sql | sed 's|^|               |' >&2
+    done
+    echo "             Переименуй одну в свободный номер, сохранив порядок относительно соседей." >&2
+    exit 1
+  fi
+fi
+
 staged=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^supabase/functions/.*\.ts$' || true)
 if [ -z "$staged" ]; then
   exit 0

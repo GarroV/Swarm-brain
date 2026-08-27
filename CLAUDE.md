@@ -92,7 +92,7 @@
 - ~~`requesting_user_id` в MCP на доверии~~ ✅ **закрыто 2026-07-19**: `MCP_AUTH_REQUIRED=true` выставлен в проде → без валидного `smcp_`-токена MCP отбивает (Unauthorized), личность форсится из токена, подмена `requesting_user_id` невозможна (проверено: токенлесс → -32001)
 - ~~`generate_mcp_token`/`revoke_mcp_token` выпускали/гасили токен на любого через публичный anon-ключ~~ ✅ **закрыто 2026-08-26** (миграция `20260826210000`, advisory GHSA-vxrp-599j-46hv): EXECUTE был на `PUBLIC` → любой с anon-ключом дёргал `/rest/v1/rpc/generate_mcp_token(<чужой id>)` и получал доступ к базе от имени жертвы. REVOKE с PUBLIC/anon/authenticated, EXECUTE только у `service_role` (приложение минтит токен в коде под ним). **Урок: после DDL гонять `get_advisors`; SECURITY DEFINER-функции проверять `has_function_privilege('anon', …)` — грант на `PUBLIC` наследуется в anon/authenticated, обычный `REVOKE … FROM anon` его не снимает**
 - Granola API-ключи хранятся plaintext в `user_integrations`
-- ~~Начальная схема БД не в `supabase/migrations/`~~ ✅ `supabase/schema/00_base_schema.sql` поднимает проект с нуля
+- ~~Начальная схема БД не в `supabase/migrations/`~~ ✅ **миграций достаточно**: `supabase/migrations/00000000_initial_schema.sql` создаёт все базовые таблицы, остальные накатываются поверх. Проверено `supabase db reset` на пустой базе 27.08.2026. Рукописный дубль схемы (`supabase/schema/00_base_schema.sql`) **удалён** — он дважды отставал от миграций (issue #118) и вводил в заблуждение того, кто поднимал контур
 
 ---
 
