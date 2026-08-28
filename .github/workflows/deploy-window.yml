@@ -39,11 +39,30 @@ jobs:
       contents: write        # пуш в main
       pull-requests: write   # мёрж, снятие метки, комментарий
     steps:
+      # fetch-depth: 0 — скрипту нужны метка prod-deployed и история, чтобы понять, какие
+      # edge-функции изменились с прошлой раскатки. На shallow-клоне diff по метке невозможен.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # CLI нужен для `supabase functions deploy` (раскатка функций после мёржа).
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Настроить git для метки prod-deployed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
       - name: Раскатка помеченного PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
           FORCE: ${{ inputs.force && '1' || '0' }}
+          # Раскатка edge-функций: токен для deploy + REST-доступ, которым deploy-activity.sh
+          # проверяет, что на проде прямо сейчас не идёт запись/обработка встречи. Без REST
+          # проверка fail-closed откажет, и функции не поедут (это осознанно: непонятное
+          # состояние прода — не «чисто»).
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: bash scripts/deploy-window-merge.sh
