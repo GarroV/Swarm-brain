@@ -13,12 +13,14 @@ export function MobileTaskRow({
   now,
   showAssignee,
   onToggle,
+  onSetStatus,
   onRemove,
 }: {
   task: Task;
   now?: Date;
   showAssignee?: boolean;
   onToggle: () => void;
+  onSetStatus?: (status: string) => void;
   onRemove: () => void;
 }) {
   const { push, openTask } = useRoyNav();
@@ -32,7 +34,7 @@ export function MobileTaskRow({
       ]}
     >
       <div className="bg-background px-3">
-        <TaskRow task={task} now={now} showAssignee={showAssignee} onToggle={onToggle} />
+        <TaskRow task={task} now={now} showAssignee={showAssignee} onToggle={onToggle} onSetStatus={onSetStatus} />
       </div>
     </SwipeRow>
   );

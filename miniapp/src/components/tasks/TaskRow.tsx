@@ -5,6 +5,7 @@ import type { TaskLabel } from "@/lib/api";
 import { PriDot, Market } from "@/components/roy/ui";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
+import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { isDone, isOverdue } from "@/lib/smartLists";
 import { recurrenceBadge } from "@/lib/recurrenceLabels";
 
@@ -17,6 +18,13 @@ function fmtDue(iso: string | null, locale: string): string | null {
 type TaskRowProps = {
   task: Task;
   onToggle: () => void;
+  /**
+   * Передан — вместо одной галочки рисуем ТРИ кнопки статуса (открыто / в работе / готово).
+   * Решение владельца 2026-08-28: «делать один единственный значок который сам меняется не
+   * вариант, он не будет считываться. 3 кнопки — вполне понятное поведение». Без пропа строка
+   * остаётся с прежней галочкой, чтобы дашборд и прочие потребители не менялись заодно.
+   */
+  onSetStatus?: (status: string) => void;
   showAssignee?: boolean;
   now?: Date;
   /** Десктоп: кнопки изменить/удалить в мета-ряду (рядом с датой), показываются по hover строки (group). */
@@ -27,9 +35,22 @@ type TaskRowProps = {
 
 // Строка задачи в стиле macOS Reminders: крупный круглый чекбокс, заголовок, чипы (рынок/срок/важное),
 // аватар исполнителя. Непрозрачный фон — чтобы корректно работать внутри SwipeRow на мобайле.
-export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(), trailing, labels = [] }: TaskRowProps) {
+// Три состояния строки. Шестерёнка у «в работе» — ручка (pencil) занята смыслом «Изменить»,
+// в том числе в этой же строке, поэтому взять её нельзя.
+const ROW_STATUSES: { id: string; icon: RoyIconName | null; ru: string; en: string }[] = [
+  { id: "open", icon: null, ru: "Открыто", en: "Open" },
+  // Часы, а не шестерёнка: решение владельца 2026-08-28 — шестерёнка на 13px читалась солнцем
+  // (в этом штриховом языке зубья не помещаются), а часы уже в наборе и стоят в карточке.
+  { id: "in_progress", icon: "clock", ru: "В работе", en: "In progress" },
+  { id: "done", icon: "check", ru: "Готово", en: "Done" },
+];
+
+export function TaskRow({ task, onToggle, onSetStatus, showAssignee = true, now = new Date(), trailing, labels = [] }: TaskRowProps) {
   const dt = useDt();
+  const isDesktop = useIsDesktop();
   const done = isDone(task);
+  // Текущий статус для трёх кнопок: в базе исторически встречается «progress» вместо «in_progress».
+  const cur = task.status === "progress" ? "in_progress" : (task.status ?? "open");
   const overdue = isOverdue(task, now);
   const due = fmtDue(task.due_date, dt("ru-RU", "en-US"));
   // Пинг показываем, только пока он ЖДЁТ: отзвонивший (reminded_at) сгорел, и висящая
@@ -48,26 +69,66 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
 
   return (
     <div className="flex items-start gap-2.5 px-3 py-2">
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={done}
-        aria-label={done ? dt("Снять отметку", "Mark as not done") : dt("Отметить выполненной", "Mark as done")}
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e: MouseEvent) => { e.stopPropagation(); onToggle(); }}
-        // Кружок остаётся мелким (плотность строки), а нажимается зона 40x44 — псевдоэлемент
-        // ::after, поэтому вёрстка не сдвигается. Вправо зона растянута меньше: там начинается
-        // заголовок, и тап по нему должен открывать задачу, а не переключать галочку.
-        className="relative mt-px flex shrink-0 items-center justify-center rounded-full border-2 transition-colors after:absolute after:-left-3 after:-right-1.5 after:-top-3 after:-bottom-3 after:content-['']"
-        style={{
-          width: 20,
-          height: 20,
-          borderColor: done ? "var(--status-done)" : "var(--line-2)",
-          background: done ? "var(--status-done)" : "transparent",
-        }}
-      >
-        {done && <RoyIcon name="check" size={11} strokeWidth={2.4} className="text-white" />}
-      </button>
+      {onSetStatus && isDesktop ? (
+        // Три кнопки статуса. Зона нажатия растянута только по вертикали (±9px) — по горизонтали
+        // кнопки стоят вплотную, и растягивание вбок перекрывало бы соседнюю.
+        <div className="mt-px flex shrink-0 items-center gap-1.5" role="group" aria-label={dt("Статус", "Status")}>
+          {ROW_STATUSES.map((st) => {
+            const on = st.id === cur;
+            const isDoneBtn = st.id === "done";
+            return (
+              <button
+                key={st.id}
+                type="button"
+                aria-label={dt(st.ru, st.en)}
+                aria-pressed={on}
+                title={dt(st.ru, st.en)}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e: MouseEvent) => { e.stopPropagation(); onSetStatus(st.id); }}
+                className="relative flex items-center justify-center rounded-full border-2 transition-colors after:absolute after:-left-1 after:-right-1 after:-top-[10px] after:-bottom-[10px] after:content-['']"
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderColor: on ? (isDoneBtn ? "var(--status-done)" : "var(--accent-ink)") : "var(--line-2)",
+                  background: on ? (isDoneBtn ? "var(--status-done)" : "var(--accent-soft)") : "transparent",
+                  color: on ? (isDoneBtn ? "#fff" : "var(--accent-ink)") : "var(--ink-mute)",
+                }}
+              >
+                {/* Знак виден ВСЕГДА, не только у активной: иначе неактивные «открыто» и
+                    «готово» — два одинаковых пустых кружка, и какой из них какой, не понять. */}
+                {st.icon && <RoyIcon name={st.icon} size={isDoneBtn ? 12 : 13} strokeWidth={isDoneBtn ? 2.4 : 1.9} />}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={done}
+          aria-label={done ? dt("Снять отметку", "Mark as not done") : dt("Отметить выполненной", "Mark as done")}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e: MouseEvent) => { e.stopPropagation(); onToggle(); }}
+          // Кружок остаётся мелким (плотность строки), а нажимается зона 40x44 — псевдоэлемент
+          // ::after, поэтому вёрстка не сдвигается. Вправо зона растянута меньше: там начинается
+          // заголовок, и тап по нему должен открывать задачу, а не переключать галочку.
+          className="relative mt-px flex shrink-0 items-center justify-center rounded-full border-2 transition-colors after:absolute after:-left-3 after:-right-1.5 after:-top-3 after:-bottom-3 after:content-['']"
+          style={{
+            width: 20,
+            height: 20,
+            borderColor: done ? "var(--status-done)" : cur === "in_progress" ? "var(--accent-ink)" : "var(--line-2)",
+            background: done ? "var(--status-done)" : "transparent",
+          }}
+        >
+          {done ? (
+            <RoyIcon name="check" size={11} strokeWidth={2.4} className="text-white" />
+          ) : cur === "in_progress" ? (
+            // Часы внутри кружка — единственный способ показать «в работе» на телефоне, не
+            // расширяя строку и не ломая тач-цель. Тап по-прежнему = «готово».
+            <RoyIcon name="clock" size={12} strokeWidth={2} className="text-[var(--accent-ink)]" />
+          ) : null}
+        </button>
+      )}
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
