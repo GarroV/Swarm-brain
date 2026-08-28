@@ -2,9 +2,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoyNav, useDt } from "./nav";
 import { RoyIcon } from "./icons";
-import { createTask, extractTasksStreamed, fetchUsers } from "@/lib/api";
-import { resolveAssigneeId, taskCountLabel } from "@/lib/proposedTasks";
-import type { User } from "@/types";
+import { createTask, extractTasksStreamed, fetchMe, fetchUsers } from "@/lib/api";
+import { effectiveAssigneeId, taskCountLabel } from "@/lib/proposedTasks";
+import type { Me, User } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { TasksHarvestSheet, type DraftTask, type HarvestActions } from "./TasksHarvestSheet";
 
@@ -34,6 +34,8 @@ export function TasksFromMeeting({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  // Кто разбирает: задача без названного ответственного остаётся на нём (effectiveAssigneeId).
+  const [me, setMe] = useState<Me | null>(null);
   // Открытый в редакторе черновик: строка-предложение (доводка) или пустой (кнопка «Своя»).
   const [editing, setEditing] = useState<DraftTask | null>(null);
 
@@ -52,6 +54,7 @@ export function TasksFromMeeting({
   useEffect(() => {
     let alive = true;
     fetchUsers().then((u) => { if (alive) setUsers(u); }).catch(() => { /* тихо: без списка исполнитель просто останется «не назначен» */ });
+    fetchMe().then((m) => { if (alive) setMe(m); }).catch(() => { /* тихо: без личности поведение как раньше — «не назначен» */ });
     return () => { alive = false; };
   }, []);
 
@@ -102,27 +105,37 @@ export function TasksFromMeeting({
     const chosen = tasks?.filter((t) => t._selected) ?? [];
     if (busy || chosen.length === 0) return;
     setBusy(true);
-    const results = await Promise.allSettled(chosen.map((t) => createTask({
-      title: t.title,
-      description: t.description,
-      country: t.country,
-      due_date: t.due_date,
-      assignee_telegram_id: resolveAssigneeId(t.assignee, users),
+    // Исполнителя считаем ДО отправки и держим рядом с черновиком: он нужен второй раз —
+    // сказать в тосте, сколько задач ушло ничьими (имя в тезисах есть, а такого человека
+    // в команде нет). Без этой строки «ничьи» задачи уезжают молча: тост говорит «Добавлено»,
+    // а найти их потом негде — ровно так потерялись две задачи 28.08.2026.
+    const payloads = chosen.map((t) => ({ draft: t, assigneeId: effectiveAssigneeId(t.assignee, users, me?.telegram_id ?? null) }));
+    const results = await Promise.allSettled(payloads.map(({ draft, assigneeId }) => createTask({
+      title: draft.title,
+      description: draft.description,
+      country: draft.country,
+      due_date: draft.due_date,
+      assignee_telegram_id: assigneeId,
       meeting_id: meetingId ?? null,
     })));
     const addedKeys = new Set(chosen.filter((_, i) => results[i].status === "fulfilled").map((t) => t._key));
     setTasks((prev) => prev?.filter((t) => !addedKeys.has(t._key)) ?? null);
     setBusy(false);
 
+    const orphans = payloads.filter(({ draft, assigneeId }) => assigneeId == null && addedKeys.has(draft._key)).length;
+    const orphanTail = orphans > 0
+      ? dt(` · ${orphans} без исполнителя`, ` · ${orphans} unassigned`)
+      : "";
+
     if (addedKeys.size > 0) onAdded?.();
     if (addedKeys.size === chosen.length) {
-      toast(dt(`Добавлено ${taskCountLabel(addedKeys.size)}`, `Added ${addedKeys.size} task${addedKeys.size === 1 ? "" : "s"}`));
+      toast(dt(`Добавлено ${taskCountLabel(addedKeys.size)}`, `Added ${addedKeys.size} task${addedKeys.size === 1 ? "" : "s"}`) + orphanTail);
       setSheetOpen(false);
     } else {
       toast(dt(
         `Добавлено ${addedKeys.size} из ${chosen.length} — остальные остались в разборе`,
         `Added ${addedKeys.size} of ${chosen.length} — the rest are still in the review`,
-      ));
+      ) + orphanTail);
     }
   };
 
@@ -204,6 +217,7 @@ export function TasksFromMeeting({
         anchorRect={anchorRect}
         tasks={tasks ?? []}
         users={users}
+        meId={me?.telegram_id ?? null}
         busy={busy}
         streaming={streaming}
         actions={actions}

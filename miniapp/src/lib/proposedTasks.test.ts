@@ -1,6 +1,6 @@
 // Раннер тот же, что у quickAddTask.test.ts и edge-функций: deno test miniapp/src/lib/proposedTasks.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { normalizeProposedTask, normalizeProposedTasks, resolveAssigneeId, taskCountLabel } from "./proposedTasks.ts";
+import { effectiveAssigneeId, normalizeProposedTask, normalizeProposedTasks, resolveAssigneeId, taskCountLabel } from "./proposedTasks.ts";
 
 const USERS = [
   { telegram_id: 744230399, name: "Vasiliy Garro", username: "garro" },
@@ -103,4 +103,32 @@ Deno.test("«Добавить N задач» склоняется по-русс�
   assertEquals(taskCountLabel(11), "11 задач");
   assertEquals(taskCountLabel(21), "21 задачу");
   assertEquals(taskCountLabel(0), "0 задач");
+});
+
+// ── Кому уйдёт задача при публикации ─────────────────────────────────────────
+// Прод-инцидент 28.08.2026: коллега разобрала встречу, нажала «Добавить» — задачи легли
+// БЕЗ исполнителя и без срока (модель не назвала ответственного). В «Сегодня» их нет
+// (список требует срок), в группировке по сотрудникам — нет её секции: человек решил, что
+// задачи не сохранились. Правило: ответственного не назвали — задача остаётся на том, кто
+// её публикует; назвали чужое/неизвестное имя — по-прежнему никого не выдумываем.
+
+Deno.test("исполнитель не назван — задача остаётся на публикующем", () => {
+  assertEquals(effectiveAssigneeId(null, USERS, 326345803), 326345803);
+  assertEquals(effectiveAssigneeId("", USERS, 326345803), 326345803);
+  assertEquals(effectiveAssigneeId("   ", USERS, 326345803), 326345803);
+});
+
+Deno.test("названный исполнитель важнее публикующего", () => {
+  assertEquals(effectiveAssigneeId("Мария Иванова", USERS, 326345803), 100);
+  assertEquals(effectiveAssigneeId("@garro", USERS, 326345803), 744230399);
+});
+
+Deno.test("названо чужое или неоднозначное имя — исполнителя не выдумываем", () => {
+  assertEquals(effectiveAssigneeId("Илья Голдин", USERS, 326345803), null);
+  assertEquals(effectiveAssigneeId("Пётр", USERS, 326345803), null);
+});
+
+Deno.test("личность публикующего неизвестна — поведение как раньше", () => {
+  assertEquals(effectiveAssigneeId(null, USERS, null), null);
+  assertEquals(effectiveAssigneeId("Мария Иванова", USERS, null), 100);
 });

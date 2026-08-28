@@ -4,7 +4,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { useDt } from "./nav";
 import { RoyIcon } from "./icons";
 import { countryCode, countryFlag } from "@/lib/countries";
-import { resolveAssigneeId, taskCountLabel, type ProposedTask } from "@/lib/proposedTasks";
+import { effectiveAssigneeId, taskCountLabel, type ProposedTask } from "@/lib/proposedTasks";
 import type { User } from "@/types";
 
 // Разбор задач, предложенных из встречи. До 2026-08-27 предложения жили строками в УЗКОЙ
@@ -82,6 +82,8 @@ type Props = {
   anchorRect: DOMRect | null;
   tasks: DraftTask[];
   users: User[];
+  /** Кто разбирает: задача без названного ответственного уйдёт на него — строка показывает это ДО публикации. */
+  meId: number | null;
   /** Идёт массовое добавление: кнопки заблокированы, лист не закрывается сам. */
   busy: boolean;
   /** Модель ещё пишет: внизу висит заготовка, «Задач не найдено» не показываем раньше времени. */
@@ -89,7 +91,7 @@ type Props = {
   actions: HarvestActions;
 };
 
-export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, busy, streaming, actions }: Props) {
+export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, meId, busy, streaming, actions }: Props) {
   const dt = useDt();
   // Пересчёт геометрии при смене размера окна: лист открыт, а окно перетащили на другой экран.
   const [, bumpViewport] = useState(0);
@@ -163,6 +165,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, bus
                       key={task._key}
                       task={task}
                       users={users}
+                      meId={meId}
                       busy={busy}
                       editing={editingKey === task._key}
                       onStartEdit={() => setEditingKey(task._key)}
@@ -231,6 +234,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, bus
 type RowProps = {
   task: DraftTask;
   users: User[];
+  meId: number | null;
   busy: boolean;
   editing: boolean;
   onStartEdit: () => void;
@@ -238,9 +242,11 @@ type RowProps = {
   actions: HarvestActions;
 };
 
-function HarvestRow({ task, users, busy, editing, onStartEdit, onStopEdit, actions }: RowProps) {
+function HarvestRow({ task, users, meId, busy, editing, onStartEdit, onStopEdit, actions }: RowProps) {
   const dt = useDt();
-  const assigneeId = resolveAssigneeId(task.assignee, users);
+  // Тот же расчёт, что и при публикации: строка обязана показывать РЕАЛЬНОГО будущего
+  // исполнителя, иначе человек соглашается не на то, что уедет в базу.
+  const assigneeId = effectiveAssigneeId(task.assignee, users, meId);
   const matched = assigneeId ? users.find((u) => u.telegram_id === assigneeId) : undefined;
   const due = fmtDate(task.due_date);
 
