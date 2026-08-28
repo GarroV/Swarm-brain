@@ -1,4 +1,5 @@
 import { verifyState, hmacSign } from "../../../_lib/oauth-state";
+import { type GoogleName, nameSigPayload, normalizeName } from "../../../_lib/google-name";
 import { signJWT, SESSION_TTL_SEC } from "../../../_lib/jwt";
 
 // CF Pages Function: GET /api/auth/google/callback — Google вернул code.
@@ -50,17 +51,23 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
     headers: { Authorization: `Bearer ${tok.access_token}` },
   });
   if (!uiRes.ok) return loginErr(origin, "userinfo");
-  const ui = await uiRes.json() as { email?: string; email_verified?: boolean | string };
+  const ui = await uiRes.json() as {
+    email?: string; email_verified?: boolean | string; given_name?: string; family_name?: string;
+  };
   const email = String(ui.email ?? "").toLowerCase().trim();
   const verified = ui.email_verified === true || ui.email_verified === "true";
   if (!email || !verified || email.split("@")[1] !== ALLOWED_DOMAIN) return loginErr(origin, "domain");
 
-  // 3) резолв личности через Supabase (server-to-server, HMAC на WEB_JWT_SECRET)
-  const sig = await hmacSign(env.WEB_JWT_SECRET, email);
+  // 3) резолв личности через Supabase (server-to-server, HMAC на WEB_JWT_SECRET).
+  // Имя из Google идёт тем же запросом и ВХОДИТ в подпись: auth-resolve принимает его только с
+  // подписью email|given|family, иначе имя можно было бы подменить реплеем. Заполняет пустой
+  // user_profiles.first_name — источник дефолтного названия записи без календаря (#184).
+  const name: GoogleName = { given: normalizeName(ui.given_name), family: normalizeName(ui.family_name) };
+  const sig = await hmacSign(env.WEB_JWT_SECRET, nameSigPayload(email, name));
   const rRes = await fetch(RESOLVE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, sig }),
+    body: JSON.stringify({ email, sig, given_name: name.given ?? "", family_name: name.family ?? "" }),
   });
   if (!rRes.ok) return loginErr(origin, "resolve");
   const r = await rRes.json() as { found?: boolean; telegram_id?: number | null; id?: number };
