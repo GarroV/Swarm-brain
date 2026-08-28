@@ -5,6 +5,7 @@ import type { TaskLabel } from "@/lib/api";
 import { PriDot, Market } from "@/components/roy/ui";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
+import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { isDone, isOverdue } from "@/lib/smartLists";
 import { recurrenceBadge } from "@/lib/recurrenceLabels";
 
@@ -38,12 +39,15 @@ type TaskRowProps = {
 // в том числе в этой же строке, поэтому взять её нельзя.
 const ROW_STATUSES: { id: string; icon: RoyIconName | null; ru: string; en: string }[] = [
   { id: "open", icon: null, ru: "Открыто", en: "Open" },
-  { id: "in_progress", icon: "gear", ru: "В работе", en: "In progress" },
+  // Часы, а не шестерёнка: решение владельца 2026-08-28 — шестерёнка на 13px читалась солнцем
+  // (в этом штриховом языке зубья не помещаются), а часы уже в наборе и стоят в карточке.
+  { id: "in_progress", icon: "clock", ru: "В работе", en: "In progress" },
   { id: "done", icon: "check", ru: "Готово", en: "Done" },
 ];
 
 export function TaskRow({ task, onToggle, onSetStatus, showAssignee = true, now = new Date(), trailing, labels = [] }: TaskRowProps) {
   const dt = useDt();
+  const isDesktop = useIsDesktop();
   const done = isDone(task);
   // Текущий статус для трёх кнопок: в базе исторически встречается «progress» вместо «in_progress».
   const cur = task.status === "progress" ? "in_progress" : (task.status ?? "open");
@@ -65,7 +69,7 @@ export function TaskRow({ task, onToggle, onSetStatus, showAssignee = true, now 
 
   return (
     <div className="flex items-start gap-2.5 px-3 py-2">
-      {onSetStatus ? (
+      {onSetStatus && isDesktop ? (
         // Три кнопки статуса. Зона нажатия растянута только по вертикали (±9px) — по горизонтали
         // кнопки стоят вплотную, и растягивание вбок перекрывало бы соседнюю.
         <div className="mt-px flex shrink-0 items-center gap-1.5" role="group" aria-label={dt("Статус", "Status")}>
@@ -112,11 +116,17 @@ export function TaskRow({ task, onToggle, onSetStatus, showAssignee = true, now 
           style={{
             width: 20,
             height: 20,
-            borderColor: done ? "var(--status-done)" : "var(--line-2)",
+            borderColor: done ? "var(--status-done)" : cur === "in_progress" ? "var(--accent-ink)" : "var(--line-2)",
             background: done ? "var(--status-done)" : "transparent",
           }}
         >
-          {done && <RoyIcon name="check" size={11} strokeWidth={2.4} className="text-white" />}
+          {done ? (
+            <RoyIcon name="check" size={11} strokeWidth={2.4} className="text-white" />
+          ) : cur === "in_progress" ? (
+            // Часы внутри кружка — единственный способ показать «в работе» на телефоне, не
+            // расширяя строку и не ломая тач-цель. Тап по-прежнему = «готово».
+            <RoyIcon name="clock" size={12} strokeWidth={2} className="text-[var(--accent-ink)]" />
+          ) : null}
         </button>
       )}
 
