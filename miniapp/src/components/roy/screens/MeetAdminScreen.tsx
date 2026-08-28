@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRoyNav } from "../nav";
+import { useRoyNav, useDt } from "../nav";
 import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks, Participants } from "../ui";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle, entryImporterName } from "../entry";
@@ -1282,6 +1282,7 @@ const MODE_SEGS = [
 
 export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "review" | "all" } = {}) {
   const { pop, toast } = useRoyNav();
+  const dt = useDt();
   const confirm = useConfirm();
 
   const [mode, setMode] = useState<"review" | "all">(initialMode);
@@ -1474,8 +1475,16 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
       await animateRemove(item.data.id);
     } else {
       // Публикация черновика агента в выбранную базу
-      await publishAgentMeeting(item.data.id, storage === "personal" ? "personal" : "workspace", countries);
-      toast(storage === "personal" ? "Опубликовано в личное" : "Черновик опубликован");
+      const published = await publishAgentMeeting(item.data.id, storage === "personal" ? "personal" : "workspace", countries);
+      if (published.duplicate) {
+        // Сервер нашёл эту же встречу в базе (её опубликовал другой участник) и привязал черновик
+        // к ней. Тезисы, которые человек только что вычитал, в базу НЕ уехали — молчать об этом
+        // нельзя (issue #170: тост «Черновик опубликован» уверял в обратном).
+        toast(dt("Эта встреча уже в базе — черновик привязан к ней, ваши тезисы не сохранены",
+                 "This meeting is already in the base — the draft was linked to it, your notes were not saved"));
+      } else {
+        toast(storage === "personal" ? "Опубликовано в личное" : "Черновик опубликован");
+      }
       await animateRemove(item.data.id);
     }
   };

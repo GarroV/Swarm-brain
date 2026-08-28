@@ -1704,9 +1704,14 @@ Deno.serve(async (req: Request) => {
       // (не привязываемся к ним и не раскрываем) — тогда публикуем как обычно.
       const dup = await findDuplicateMeeting(supabase, {
         groupId, entryDate, startedAt, attendees: mAttendees,
-        // identity_key (календарное событие+день) — решающий сигнал: тот же ключ → дубль,
-        // разный → РАЗНАЯ встреча, не склеиваем (без него 4 встречи IMF BD 23.07 слиплись в одну).
+        // identity_key решает однозначно только для СРАВНИМЫХ ключей (одно календарное событие
+        // или одна комната у двух рекордеров); ключи из разных пространств им не разводятся (#164).
         identityKey: (meeting.identity_key as string | null) ?? null,
+        // Название — сигнал для Granola-записей (участников она не отдаёт вовсе).
+        title: (meeting.title as string | null) ?? null,
+        // E-mail публикующего — сигнал для записи из комнаты (ни названия, ни участников):
+        // сам записавший есть в attendees календарной записи той же встречи.
+        viewerEmail: userEmail,
         viewerId: telegram_id,
       });
       // Фильтр приватности теперь ВНУТРИ findDuplicateMeeting (issue #45) — чужое личное сюда
@@ -1717,7 +1722,10 @@ Deno.serve(async (req: Request) => {
           .eq("id", mId)
           .is("entry_id", null);
         const { data: existing } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", dup.id).single();
-        return json(existing, 200, origin);
+        // Флаг duplicate — чтобы клиент не соврал «Черновик опубликован» (issue #170): в базе
+        // остаётся ЧУЖАЯ версия тезисов, а правки вычитавшего никуда не уехали. Ответ должен
+        // отличать «создал новую запись» (201) от «привязал к существующей» (200 + duplicate).
+        return json({ ...(existing as Record<string, unknown>), duplicate: true }, 200, origin);
       }
 
       const { data: created, error: insErr } = await supabase.from("entries").insert({
@@ -1937,7 +1945,9 @@ Deno.serve(async (req: Request) => {
     // Кросс-источниковый дедуп: встреча уже в базе (другой участник / рекордер / повторный импорт)?
     // Помечаем заметку обработанной (чтобы ушла из очереди ревью) и не создаём дубль.
     const dup = await findDuplicateMeeting(supabase, {
-      groupId, entryDate, startedAt: ts ?? null, attendees, viewerId: telegram_id,
+      groupId, entryDate, startedAt: ts ?? null, attendees,
+      title: (note.title as string | null) ?? null,
+      viewerEmail: userEmail, viewerId: telegram_id,
     });
     if (dup) {
       const current: string[] = (integration as { skipped_note_ids?: string[] }).skipped_note_ids ?? [];
