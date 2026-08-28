@@ -30,3 +30,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: swift build -c release
         run: swift build -c release
+
+      # Чистая логика рекордера (RecorderKit) — XCTest есть только там, где стоит Xcode:
+      # на рабочей машине с одними Command Line Tools `swift test` не собирается, поэтому
+      # прогон живёт в CI.
+      - name: swift test
+        run: swift test

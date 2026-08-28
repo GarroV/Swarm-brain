@@ -7,9 +7,21 @@ let package = Package(
     name: "SwarmRecorder",
     platforms: [.macOS(.v13)],
     targets: [
+        // Чистая логика без AppKit — то, что можно проверить тестами (`swift test`).
+        // Всё, что зависит от NSStatusItem/NSPanel, остаётся в SwarmRecorder.
+        .target(
+            name: "RecorderKit",
+            path: "Sources/RecorderKit"
+        ),
         .executableTarget(
             name: "SwarmRecorder",
+            dependencies: ["RecorderKit"],
             path: "Sources/SwarmRecorder"
+        ),
+        .testTarget(
+            name: "RecorderKitTests",
+            dependencies: ["RecorderKit"],
+            path: "Tests/RecorderKitTests"
         )
     ]
 )
