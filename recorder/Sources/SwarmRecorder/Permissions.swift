@@ -65,6 +65,24 @@ enum Permissions {
         }
     }
 
+    // Открывает панель разрешения УВЕДОМЛЕНИЙ, по возможности сразу на карточке bumblebee.
+    // Якорь с ?id=<bundle id> ведёт прямо к приложению — иначе человек попадает в общий список
+    // из полусотни программ и ищет нас глазами. Дальше фолбэки: панель без якоря на приложение
+    // и легаси-идентификатор для старых ОС.
+    static func openNotificationSettings() {
+        let bundleId = Bundle.main.bundleIdentifier ?? ""
+        let encoded = bundleId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? bundleId
+        var anchors: [String] = []
+        if !bundleId.isEmpty {
+            anchors.append("x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(encoded)")
+        }
+        anchors.append("x-apple.systempreferences:com.apple.Notifications-Settings.extension")
+        anchors.append("x-apple.systempreferences:com.apple.preference.notifications")
+        for s in anchors {
+            if let url = URL(string: s), NSWorkspace.shared.open(url) { return }
+        }
+    }
+
     static func requestMicrophone() async -> Bool {
         await AVCaptureDevice.requestAccess(for: .audio)
     }
