@@ -202,6 +202,18 @@ export function useReminderTasks() {
     }
   }, [load, markMutation]);
 
+  // Смена статуса на КОНКРЕТНЫЙ из трёх (строка списка с тремя кнопками), а не переключение
+  // «готово / не готово». Оптимистично, с откатом через load() — как toggle рядом.
+  const setStatus = useCallback(async (t: Task, next: string) => {
+    markMutation();
+    setTasks((prev) => prev?.map((x) => (x.id === t.id ? { ...x, status: next } : x)) ?? null);
+    try {
+      await updateTask(t.id, { status: next });
+    } catch {
+      load();
+    }
+  }, [load, markMutation]);
+
   const remove = useCallback(async (t: Task) => {
     markMutation();
     setTasks((prev) => prev?.filter((x) => x.id !== t.id) ?? null);
@@ -254,6 +266,6 @@ export function useReminderTasks() {
     byMarket, setByMarket, allStaff, setAllStaff, range, setRange,
     counts, visible, marketGroups, staffGroups, nestedGroups, now,
     labels, activeLabelId, setActiveLabelId, labelCounts, visibleByLabel, reloadLabels,
-    toggle, remove, quickAdd, patchTask, reload,
+    toggle, setStatus, remove, quickAdd, patchTask, reload,
   };
 }

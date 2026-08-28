@@ -43,7 +43,7 @@ const TASK_ROLES = [
 // Иконка "circle" рисуется CSS-бордером (в наборе RoyIcon кружка нет).
 const STATUSES: { id: string; label: string; icon: RoyIconName | "circle" }[] = [
   { id: "open", label: "Открыто", icon: "circle" },
-  { id: "in_progress", label: "В работе", icon: "clock" },
+  { id: "in_progress", label: "В работе", icon: "gear" },
   { id: "done", label: "Готово", icon: "check" },
 ];
 const normStatus = (s?: string | null) => (s === "progress" ? "in_progress" : (s ?? "open"));
