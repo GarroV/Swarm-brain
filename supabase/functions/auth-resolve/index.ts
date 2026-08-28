@@ -2,6 +2,7 @@
 // Аутентификация ВЫЗОВА (не пользователя): HMAC(email) на WEB_JWT_SECRET, общий с CF Pages.
 // Возвращает allowed_users по email (lower). Деплой: supabase functions deploy auth-resolve --no-verify-jwt
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { type GoogleName, nameSigPayload, profileNameUpdate } from "../_shared/google-profile.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET") ?? "";
@@ -25,13 +26,20 @@ function json(payload: unknown, status = 200): Response {
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "method" }, 405);
   if (!WEB_JWT_SECRET) return json({ error: "not configured" }, 500);
-  let body: { email?: string; sig?: string };
+  let body: { email?: string; sig?: string; given_name?: string; family_name?: string };
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
   const email = (body.email ?? "").toLowerCase().trim();
   const sig = body.sig ?? "";
   if (!email || !sig) return json({ error: "bad request" }, 400);
   // Доказательство владения WEB_JWT_SECRET, привязанное к конкретному email.
-  if (!timingSafeEq(sig, await hmacHex(email))) return json({ error: "forbidden" }, 403);
+  // Два контракта подписи: email|given|family (несёт имя из Google) и голый email (старый CF Pages).
+  // Обе стороны деплоятся не атомарно, поэтому старая подпись остаётся валидной — иначе вход ляжет
+  // на время между раскаткой функции и раскаткой Pages. Имя принимается ТОЛЬКО при новой подписи:
+  // с голым email его можно было бы подменить реплеем.
+  const claimedName: GoogleName = { given: body.given_name, family: body.family_name };
+  const nameSigned = timingSafeEq(sig, await hmacHex(nameSigPayload(email, claimedName)));
+  if (!nameSigned && !timingSafeEq(sig, await hmacHex(email))) return json({ error: "forbidden" }, 403);
+  const trustedName: GoogleName = nameSigned ? claimedName : {};
 
   // email хранится в lower (бэкфилл + запись админкой); уникальный индекс по lower(email).
   const { data, error } = await supabase
@@ -64,10 +72,28 @@ Deno.serve(async (req: Request) => {
       telegramId = (re as { telegram_id: number | null } | null)?.telegram_id ?? null;
     }
     if (telegramId != null) {
+      // Имя из Google лучше локальной части email («v.garro»), но она остаётся резервом:
+      // человек мог не дать scope profile или не иметь имени в аккаунте.
+      const seed = profileNameUpdate(null, trustedName) ?? { first_name: email.split("@")[0] };
       await supabase.from("user_profiles").upsert(
-        { telegram_id: telegramId, first_name: email.split("@")[0] },
+        { telegram_id: telegramId, ...seed },
         { onConflict: "telegram_id", ignoreDuplicates: true },
       );
+    }
+  }
+
+  // Дозаполняем имя при каждом входе: пустые поля — из Google, заполненные руками не трогаем.
+  // Раньше first_name не писал никто автоматически, и дефолтному названию записи без календаря
+  // (#184) было нечего подставлять.
+  if (telegramId != null) {
+    const { data: prof } = await supabase
+      .from("user_profiles").select("first_name, last_name").eq("telegram_id", telegramId).maybeSingle();
+    const upd = profileNameUpdate(prof as { first_name?: string | null; last_name?: string | null } | null, trustedName);
+    if (upd) {
+      const { error: profErr } = await supabase
+        .from("user_profiles").upsert({ telegram_id: telegramId, ...upd }, { onConflict: "telegram_id" });
+      // Профиль — не причина не пустить человека в продукт: логируем и идём дальше.
+      if (profErr) console.error("auth-resolve: профиль не обновлён", telegramId, profErr.message);
     }
   }
 

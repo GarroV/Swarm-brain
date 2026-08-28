@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyAgentToken, AgentAuthError, type AgentIdentity } from "../_shared/agent-auth.ts";
+import { defaultMeetingTitle, displayNameOf } from "../_shared/meeting-title.ts";
 import { sameMeetingByRoster, scopeRoomKey, ROSTER_TOLERANCE_MIN } from "../_shared/meeting-roster.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
@@ -360,6 +361,21 @@ async function savePersonalNotes(
   });
 }
 
+// Как назвать человека в дефолтном заголовке записи (#184): профиль важнее username —
+// «Вадим Гарро» понятнее, чем «garro». Обе таблицы читаем разом, это один лишний round-trip
+// только для записей без своего названия.
+async function displayNameOfUser(telegramId: number | null | undefined): Promise<string | null> {
+  if (telegramId == null) return null;
+  const [{ data: user }, { data: prof }] = await Promise.all([
+    supabase.from("allowed_users").select("username").eq("telegram_id", telegramId).maybeSingle(),
+    supabase.from("user_profiles").select("first_name, last_name").eq("telegram_id", telegramId).maybeSingle(),
+  ]);
+  return displayNameOf({
+    ...((prof as { first_name?: string | null; last_name?: string | null } | null) ?? {}),
+    username: (user as { username?: string | null } | null)?.username ?? null,
+  });
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("OK", { status: 200 });
 
@@ -385,11 +401,18 @@ Deno.serve(async (req: Request) => {
   const nowIso = new Date(nowMs).toISOString();
   const leaseIso = new Date(nowMs + LEASE_TTL_SEC * 1000).toISOString();
 
+  // Запись без своего названия (ручной старт, звонок с нераспознанным заголовком вкладки)
+  // называется «участник — дата»: иначе в очереди вычитки такие строки неотличимы друг от друга
+  // (#184, решение владельца 2026-08-28). Имя знает сервер — у клиента на диске только токен;
+  // человек потом правит заголовок вручную (PATCH /agent-meetings/:id).
+  const claimTitle = (body.title ?? "").trim() ||
+    defaultMeetingTitle(await displayNameOfUser(identity.telegramId), body.started_at);
+
   const baseRow = {
     source: "desktop-agent",
     identity_kind: body.identity_kind,
     identity_key: body.identity_key,
-    title: body.title ?? null,
+    title: claimTitle,
     started_at: body.started_at ?? null,
     ended_at: body.ended_at ?? null,
     attendees: body.attendees ?? [],

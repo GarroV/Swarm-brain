@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Foundation
+import RecorderKit
 import UserNotifications
 
 // Меню-бар приложение. Авто-предложение записи с СОГЛАСИЕМ из двух источников:
@@ -134,6 +135,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // активный звонок (событие может быть заглушкой/не про этот созвон) — конец определяем только по
     // тишине дорожек (см. recWatchTick). Оставлен присвоенным для контекста/логов.
     private var scheduledEndAt: Date?
+    // Тикает раз в 30 сек, пока идёт запись: обновляет ТОЛЬКО подпись у значка (счётчик
+    // «49m left»). Полный rebuildMenu() тут не годится — он пересобирает всё меню целиком.
+    private var statusTitleTimer: Timer?
     // Дефолтный стоп: если активный созвон не детектится, запись не идёт дольше этого лимита.
     // Бэкстоп от runaway-записи (когда детект созвона молчит — напр. ручной старт без звонка).
     private static let maxNoCallSeconds: TimeInterval = 75 * 60   // 1ч15м
@@ -552,11 +556,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    // Подпись у значка: «что пишется прямо сейчас» (референс Granola, решение владельца
+    // 2026-08-28 — docs/decisions/2026-08-28-status-bar-on-air.md). В покое подписи нет,
+    // остаётся один глиф. Логика и её проверки — RecorderKit.StatusBarTitle.
+    private func refreshStatusTitle() {
+        guard let button = statusItem.button else { return }
+        let text = StatusBarTitle.text(recording: isRecording, title: identity?.title, endsAt: scheduledEndAt)
+        // Пустая строка, а не nil: nil у NSButton.title означает «оставить как было».
+        button.title = text.map { " \($0)" } ?? ""
+        syncStatusTitleTimer()
+    }
+
+    // Счётчик тикает только во время записи: в покое таймер не нужен и будить машину незачем.
+    private func syncStatusTitleTimer() {
+        if isRecording, statusTitleTimer == nil {
+            let t = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshStatusTitle() }
+            }
+            RunLoop.main.add(t, forMode: .common)
+            statusTitleTimer = t
+        } else if !isRecording, let t = statusTitleTimer {
+            t.invalidate()
+            statusTitleTimer = nil
+        }
+    }
+
     private func rebuildMenu() {
         if let button = statusItem.button {
             button.image = RoyArt.menuBarImage(recording: isRecording)
             button.toolTip = tooltipText()
         }
+        refreshStatusTitle()
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: statusText(), action: nil, keyEquivalent: ""))
         menu.addItem(.separator())
@@ -1398,7 +1428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let req = ClaimRequest(
             identityKind: kind,
             identityKey: meta.identityKey ?? "manual:\(meta.base)",
-            title: meta.title ?? "Восстановленная запись",
+            title: meta.title,   // пусто → сервер назовёт «участник — дата» (#184)
             startedAt: meta.calStartISO ?? meta.startISO,
             endedAt: meta.calEndISO ?? iso.string(from: Date()),
             agentVersion: "0.1.0")
@@ -1484,7 +1514,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             req = ClaimRequest(
                 identityKind: info.kind,
                 identityKey: info.key,
-                title: titleOverride ?? info.title ?? "Встреча",
+                title: titleOverride ?? info.title,   // пусто → сервер назовёт «участник — дата» (#184)
                 startedAt: info.startISO ?? iso.string(from: p.started),
                 endedAt: info.endISO ?? iso.string(from: p.ended),
                 attendees: info.attendees.isEmpty ? nil : info.attendees,
@@ -1496,7 +1526,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             req = ClaimRequest(
                 identityKind: .manual,
                 identityKey: p.manualKey,   // стабильный ключ → повтор claim не плодит встречи
-                title: titleOverride ?? "Запись \(DateFormatter.localizedString(from: p.ended, dateStyle: .short, timeStyle: .short))",
+                // Заглушку названия больше не придумываем: имя человека знает сервер, а не мы
+                // (у нас на диске только токен). Пусто → meeting-claim ставит «участник — дата» (#184).
+                title: titleOverride,
                 startedAt: iso.string(from: p.started),
                 endedAt: iso.string(from: p.ended),
                 agentVersion: "0.1.0",
