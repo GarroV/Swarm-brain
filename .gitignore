@@ -6,6 +6,9 @@ node_modules/
 .DS_Store
 .claude/
 *.png
+# …кроме марки приложения: она НЕ скриншот, а исходник иконки, и без неё сборка рекордера
+# падает на генерации .icns (проверено на CI: «нет Resources/BeeMark.png»).
+!recorder/Resources/*.png
 credentials/
 exports/
 
