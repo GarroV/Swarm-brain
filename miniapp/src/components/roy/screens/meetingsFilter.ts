@@ -6,35 +6,13 @@ import { countryCode } from "@/lib/countries";
 import { entryImporterName } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
 
-export type PeriodId = "all" | "week" | "month" | "quarter" | "custom";
-export type StorageFilter = "any" | "shared" | "personal";
-export type StatusFilter = "any" | "confirmed" | "pending";
+// Форма фильтра, дефолты и его сохранение живут в src/lib/meetingsFilters.ts — там нет
+// импортов экрана, поэтому их берёт `deno test src/lib/`. Здесь реэкспорт, чтобы
+// потребители (панель фильтров, экран встреч) импортировали всё из одного места.
+export type { PeriodId, StorageFilter, StatusFilter, MeetingsFilterState } from "@/lib/meetingsFilters";
+export { EMPTY_FILTERS, isFilterActive, loadSavedFilters, saveFilters } from "@/lib/meetingsFilters";
+import type { MeetingsFilterState, PeriodId } from "@/lib/meetingsFilters";
 
-export type MeetingsFilterState = {
-  query: string;
-  period: PeriodId;
-  /** Границы произвольного периода (YYYY-MM-DD), действуют при period="custom". */
-  from: string;
-  to: string;
-  /** Пусто = не фильтруем. Коды стран (ISO alpha-2). */
-  countries: string[];
-  /** Пусто = не фильтруем. Человекочитаемые ярлыки источника (как в sourceLabel). */
-  sources: string[];
-  /** Пусто = не фильтруем. Имена тех, кто принёс встречу. */
-  people: string[];
-  storage: StorageFilter;
-  status: StatusFilter;
-};
-
-export const EMPTY_FILTERS: MeetingsFilterState = {
-  query: "", period: "all", from: "", to: "",
-  countries: [], sources: [], people: [], storage: "any", status: "any",
-};
-
-export function isFilterActive(f: MeetingsFilterState): boolean {
-  return f.query.trim() !== "" || f.period !== "all" || f.countries.length > 0
-    || f.sources.length > 0 || f.people.length > 0 || f.storage !== "any" || f.status !== "any";
-}
 
 // Дата встречи для фильтра по периоду: entry_date (день встречи), иначе created_at.
 export function meetingDay(e: Entry): string | null {
@@ -93,3 +71,4 @@ export function applyMeetingsFilter(
     return true;
   });
 }
+

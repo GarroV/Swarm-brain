@@ -14,6 +14,7 @@ import {
 } from "./entries-guard.ts";
 import { toAgentListRow, toListRow } from "./meetings-payload.ts";
 import { TASK_LIST_COLUMNS } from "./task-columns.ts";
+import { resolveDigestScope } from "./digest-scope.ts";
 import {
   createTask,
   getTask,
@@ -2070,8 +2071,21 @@ Deno.serve(async (req: Request) => {
       return [code, COUNTRY_NAMES[code] ?? m];
     }))];
 
-    // Персональный дайджест — СТРОГО по странам пользователя (entries.countries ∩ markets),
-    // если рынки заданы. Без рынков — по всему воркспейсу.
+    // Охват дайджеста решается ЯВНО (см. digest-scope.ts). Считаем по нормализованным
+    // countryVariants, а не по сырым markets: рынок, который не распознала normalizeCountry,
+    // до фильтра не доедет — и «рынки вроде заданы» снова обернулось бы показом всего
+    // воркспейса, ровно тем молчанием, ради которого модуль и заведён.
+    const scope = resolveDigestScope(countryVariants, allCountries);
+
+    // Рынки не выбраны — дайджест не строим (решение владельца 2026-08-28, issue #154).
+    // Раньше здесь молча показывался весь воркспейс: человек получал уверенную сводку по
+    // чужим странам и делал вывод, что система показывает ему чужое. Отдаём флаг, а не
+    // готовый текст: подсказку «где настроить» рисует веб на языке интерфейса.
+    if (scope === "needs-markets") {
+      return json({ text: "", needs_markets: true, sources: [] }, 200, origin);
+    }
+
+    // Персональный дайджест — СТРОГО по странам пользователя (entries.countries ∩ markets).
     let q = supabase.from("entries")
       .select("id, summary, content, source, created_at, countries, metadata, entry_type")
       .gte("created_at", since)
@@ -2086,7 +2100,7 @@ Deno.serve(async (req: Request) => {
     // странами. Раньше `.not(countries cs General)` выкидывал легитимные рыночные записи
     // (напр. [ME,SI,HR,RS,BG,General]) → дайджест схлопывался до 1–2 стран. Фильтр «пан-компанийного
     // шума» ниже смотрит на КОНКРЕТНЫЕ страны (без General), а не на наличие General.
-    if (!allCountries && countryVariants.length) q = q.overlaps("countries", countryVariants);
+    if (scope === "markets") q = q.overlaps("countries", countryVariants);
     const { data: entriesRaw } = await q;
     // Пан-компанийный шум (не рыночная новость, давал «ахинею»): нет ни одной конкретной страны
     // ЛИБО охват >6 стран (широкое объявление на всю сеть). В персональный дайджест не берём.
@@ -2097,7 +2111,7 @@ Deno.serve(async (req: Request) => {
     });
 
     if (!entries?.length) {
-      const msg = (!allCountries && markets.length)
+      const msg = (scope === "markets")
         ? `За этот период нет записей по вашим странам (${markets.map((m) => COUNTRY_NAMES[m] ?? m).join(", ")}).`
         : "За указанный период нет записей.";
       return json({ text: msg }, 200, origin);
