@@ -252,6 +252,8 @@ Deno.serve(async (req: Request) => {
       entryDate: startTime ? startTime.split("T")[0] : null,
       startedAt: startTime ?? null,
       attendees: dedupAttendees,
+      // Название — сигнал для источников без списка участников (Granola и записи из комнаты).
+      title,
     });
     if (meetingDup) {
       console.log("read-ai skip duplicate meeting", meetingId, "→", meetingDup.id, `(${meetingDup.source})`);

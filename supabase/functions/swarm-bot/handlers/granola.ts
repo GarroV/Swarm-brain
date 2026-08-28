@@ -257,7 +257,7 @@ async function saveGranolaNote(
   void username; void isPrivate; // приватность решается при публикации; в вычитку все — единообразно
 
   // Эта встреча уже опубликована в базе (другой участник / рекордер / повторно)? Не дублируем.
-  const dup = await findDuplicateMeeting(supabase, { groupId, entryDate, startedAt: startTime, attendees, viewerId: telegramId });
+  const dup = await findDuplicateMeeting(supabase, { groupId, entryDate, startedAt: startTime, attendees, title, viewerId: telegramId });
   if (dup) {
     await markSkipped(telegramId, noteId);
     await sendMessage(chatId, `Эта встреча уже в базе: <b>${dup.title}</b> — повторно не импортирую.`);
@@ -421,7 +421,7 @@ async function ingestNewGranolaNotesForUser(integration: {
     // Кросс-источниковый дедуп: эта встреча уже опубликована в базе (другой участник / рекордер)?
     // Если да — не плодим черновик, помечаем заметку обработанной.
     const dup = await findDuplicateMeeting(supabase, {
-      groupId, entryDate, startedAt: startTime, attendees, viewerId: integration.telegram_id,
+      groupId, entryDate, startedAt: startTime, attendees, title, viewerId: integration.telegram_id,
     });
     if (dup) {
       console.log("granola ingest skip duplicate", integration.telegram_id, note.id, "→", dup.id, `(${dup.source})`);

@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRoyNav } from "../nav";
+import { useRoyNav, useDt } from "../nav";
+import { groupNotesByAuthor } from "@/lib/meetingNotes";
 import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks, Participants } from "../ui";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle, entryImporterName } from "../entry";
@@ -20,8 +21,9 @@ import {
   deleteAgentMeeting,
   publishAgentMeeting,
   fetchMarketSuggestion,
+  fetchMeetingNotes,
 } from "@/lib/api";
-import type { Entry, AgentMeeting, MarketSuggestion, TranscriptSegment, MeetingLiveNote } from "@/types";
+import type { Entry, AgentMeeting, MarketSuggestion, TranscriptSegment, MeetingLiveNote, MeetingNotes } from "@/types";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { countryCode } from "@/lib/countries";
 import { MarketChips } from "../MarketChips";
@@ -511,12 +513,28 @@ function DetailPanel({
   const title = itemTitle(item);
   const date = fmtDate(itemDate(item));
   const src = itemSource(item);
+  const dtPanel = useDt();
   // Инлайн-правка названия встречи (карандаш у заголовка). Пишем в metadata.title (его и
   // предпочитает deriveEntryTitle). Сброс при смене выбранной записи.
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
   useEffect(() => { setEditingTitle(false); }, [item.data.id]);
+
+  // Заметки участников: одну встречу пишут несколько человек, и до 2026-08-28 их пометки
+  // ИСЧЕЗАЛИ из интерфейса после публикации (их грузил только экран черновика). Собираем со
+  // всех версий встречи одним запросом — командные «на полях» с автором + свои личные.
+  const [notes, setNotes] = useState<MeetingNotes | null>(null);
+  const isEntry = item.kind === "entry";
+  useEffect(() => {
+    setNotes(null);
+    if (!isEntry) return;
+    let alive = true;
+    fetchMeetingNotes(item.data.id)
+      .then((n) => { if (alive) setNotes(n); })
+      .catch(() => { /* заметок может не быть — блок просто не показываем */ });
+    return () => { alive = false; };
+  }, [item.data.id, isEntry]);
 
   if (item.kind === "entry") {
     const e = item.data;
@@ -603,6 +621,46 @@ function DetailPanel({
             <ContentEditor entry={e} onSaved={onEntryUpdated} />
           </>
         )}
+
+        {/* Заметки участников — со ВСЕХ, кто писал эту встречу (решение владельца 2026-08-28:
+            «заметки сохраняем все, с разбивкой по пользователям»). Командные пометки «на полях»
+            подписаны автором; личные приватны — их видит только автор. */}
+        {notes && (notes.live.length > 0 || notes.personal.length > 0) && (
+          <div className="border-t border-line pt-3">
+            <SectionLabel>Заметки участников</SectionLabel>
+            {notes.live.length > 0 && (
+              <div className="mt-2 flex flex-col gap-2.5">
+                {groupNotesByAuthor(notes.live).map(([author, rows]) => (
+                  <div key={author}>
+                    <p className="text-ink-mute font-semibold" style={{ fontSize: 11 }}>{author}</p>
+                    <div className="mt-1 flex flex-col gap-1.5">
+                      {rows.map((n) => (
+                        <div key={n.id} className="flex items-start gap-2.5">
+                          <span className="mt-0.5 shrink-0 tabular-nums font-semibold text-ink-mute" style={{ fontSize: 12 }}>
+                            {formatOffset(n.offset_sec)}
+                          </span>
+                          <span className="text-ink-soft leading-relaxed whitespace-pre-wrap" style={{ fontSize: 13 }}>{n.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {notes.personal.length > 0 && (
+              <div className="mt-3">
+                <p className="text-ink-mute font-semibold" style={{ fontSize: 11 }}>
+                  {dtPanel("Мои личные пометки — видны только мне", "My private notes — visible only to me")}
+                </p>
+                <div className="mt-1 flex flex-col gap-1.5">
+                  {notes.personal.map((n) => (
+                    <p key={n.id} className="text-ink-soft leading-relaxed whitespace-pre-wrap" style={{ fontSize: 13 }}>{n.content}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -657,6 +715,7 @@ function AgentMeetingDetail({
   onUpdated: (updated: AgentMeeting) => void;
 }) {
   const { toast } = useRoyNav();
+  const dt = useDt();
   // Локальная копия: поллинг подменяет её свежими данными по мере готовности тезисов.
   const [m, setM] = useState<AgentMeeting>(meeting);
   // Счётчик опросов: после AGENT_SLOW_POLL_COUNT показываем подсказку «обработка затянулась».
@@ -891,6 +950,29 @@ function AgentMeetingDetail({
             <Participants attendees={m.attendees} />
           </div>
         )}
+        {/* Эта встреча уже в базе — говорим ДО публикации, а не тостом после (решение владельца
+            2026-08-28). Запись общая: в базу идёт САМАЯ ПОЛНАЯ версия, и правки участника
+            относятся к общей встрече, а не к личной копии. Если человек уже правил тезисы,
+            текст другой: автоматика его правки чужой версией не перетрёт и наоборот. */}
+        {m.in_base_duplicate && (
+          <div
+            className="mt-2 flex items-start gap-2 rounded-[10px] border px-3 py-2"
+            style={{ borderColor: "color-mix(in srgb, var(--status-open) 35%, transparent)", background: "color-mix(in srgb, var(--status-open) 8%, transparent)" }}
+          >
+            <RoyIcon name="warn" size={14} strokeWidth={1.9} />
+            <p className="text-ink-soft leading-snug" style={{ fontSize: 12 }}>
+              {m.notes_edited_at
+                ? dt(
+                    `Ты правишь общую встречу — она уже лежит в базе как «${m.in_base_duplicate.title}», и там своя версия тезисов. Твои правки не заменят её автоматически.`,
+                    `You are editing a shared meeting — it is already in the base as “${m.in_base_duplicate.title}” with its own version of the notes. Your edits will not replace it automatically.`,
+                  )
+                : dt(
+                    `Эта встреча уже в базе как «${m.in_base_duplicate.title}» — запись общая. При публикации в базе останется самая полная версия.`,
+                    `This meeting is already in the base as “${m.in_base_duplicate.title}” — the record is shared. On publish the base keeps the most complete version.`,
+                  )}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Тезисы + транскрипт скроллятся внутри своего контейнера, а не растят страницу. */}
@@ -1035,6 +1117,7 @@ function ActionsPanel({
   onSaveCountries: (countries: string[]) => Promise<void>;
 }) {
   const { toast } = useRoyNav();
+  const dt = useDt();
   const [confirmState, setConfirmState] = useState<ActionState>("idle");
   const [rejectState, setRejectState] = useState<ActionState>("idle");
   const [reclassState, setReclassState] = useState<ActionState>("idle");
@@ -1117,6 +1200,14 @@ function ActionsPanel({
         {savingCountries ? "Рынки · сохраняю…" : "Рынки"}
       </SectionLabel>
       <MarketChips codes={markets} value={countries} onChange={changeCountries} disabled={savingCountries} />
+      {countries.length >= 2 && (
+        // Сервер схлопнет 2+ рынка в «Общее» (канон 2026-08-06, порог переподтверждён 2026-08-28,
+        // issue #167) — говорим об этом ДО сохранения, иначе выбор «RS + BG» молча превращается
+        // в другое: чипы после ответа сервера просто гаснут, и человек читает это как сбой.
+        <p className="text-ink-mute leading-snug" style={{ fontSize: 11 }}>
+          {dt("2+ рынка = «Общее» (кросс-маркет)", "2+ markets = “General” (cross-market)")}
+        </p>
+      )}
       {suggestSource && (
         <p className="text-ink-mute leading-snug" style={{ fontSize: 11 }}>
           Предложено {SUGGEST_LABEL[suggestSource]} — поправьте, если не так.
@@ -1282,6 +1373,7 @@ const MODE_SEGS = [
 
 export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "review" | "all" } = {}) {
   const { pop, toast } = useRoyNav();
+  const dt = useDt();
   const confirm = useConfirm();
 
   const [mode, setMode] = useState<"review" | "all">(initialMode);
@@ -1474,8 +1566,24 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
       await animateRemove(item.data.id);
     } else {
       // Публикация черновика агента в выбранную базу
-      await publishAgentMeeting(item.data.id, storage === "personal" ? "personal" : "workspace", countries);
-      toast(storage === "personal" ? "Опубликовано в личное" : "Черновик опубликован");
+      const published = await publishAgentMeeting(item.data.id, storage === "personal" ? "personal" : "workspace", countries);
+      if (published.duplicate) {
+        // Встреча уже в базе (её опубликовал другой участник). Говорим, ЧТО именно произошло:
+        // в базе остаётся самая полная версия (issue #176), и человек должен знать, чья она
+        // теперь. Прежний тост «Черновик опубликован» врал в обоих случаях (issue #170).
+        if (published.replaced) {
+          toast(dt("Твоя версия полнее — она стала основной в общей записи",
+                   "Your version is more complete — it is now the shared record"));
+        } else if (published.arbitration === "published_edited" || published.arbitration === "incoming_edited") {
+          toast(dt("Встреча уже в базе, и тезисы там правили руками — твоя версия её не заменила",
+                   "The meeting is already in the base and its notes were edited by hand — your version did not replace it"));
+        } else {
+          toast(dt("Встреча уже в базе, и там версия полнее — твоя не заменила её",
+                   "The meeting is already in the base with a more complete version — yours did not replace it"));
+        }
+      } else {
+        toast(storage === "personal" ? "Опубликовано в личное" : "Черновик опубликован");
+      }
       await animateRemove(item.data.id);
     }
   };
