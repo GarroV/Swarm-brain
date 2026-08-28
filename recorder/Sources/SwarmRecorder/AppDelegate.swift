@@ -432,8 +432,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         case .idle:
             if let m = pendingMeeting { return "Встреча \(meetingWhen(m)): «\(m.title ?? "")»" }
             if callActive { return "Идёт звонок" }
-            if queuedCount > 0 { return "Готов · \(queuedCount) в очереди" }
-            return "Готов"
+            if queuedCount > 0 { return "bumblebee готов · \(queuedCount) в очереди" }
+            return "bumblebee готов"
         case .recording: return "● Идёт запись"
         case .sending: return "Отправка…"
         case .noScreenRecording: return "🔴 Нет доступа «Screen Recording»"
@@ -445,13 +445,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    // Подпись при наведении на значок в меню-баре. Значок маленький и без подписи — по нему
+    // непонятно, чьё это приложение; тултип отвечает именем, а в непокойном состоянии ещё и
+    // состоянием, чтобы не открывать меню ради «оно вообще пишет?».
+    private func tooltipText() -> String {
+        if configError != nil { return "bumblebee — нужен токен" }
+        switch state {
+        case .idle: return queuedCount > 0 ? "bumblebee — \(queuedCount) в очереди" : "bumblebee"
+        case .recording: return "bumblebee — идёт запись"
+        case .sending: return "bumblebee — отправка"
+        default: return "bumblebee — \(statusText())"
+        }
+    }
+
     // Текст «куда идти» в System Settings для каждого типа сбоя разрешений (для пункта меню).
     private func settingsHint(for s: State) -> String? {
         switch s {
         case .noScreenRecording, .noSystemAudio:
             return Permissions.captureSettingsPath
         case .noMic:
-            return "System Settings → Privacy & Security → Microphone → включить SwarmRecorder"
+            return "System Settings → Privacy & Security → Microphone → включить bumblebee"
         default:
             return nil
         }
@@ -460,6 +473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func rebuildMenu() {
         if let button = statusItem.button {
             button.image = RoyArt.menuBarImage(recording: isRecording)
+            button.toolTip = tooltipText()
         }
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: statusText(), action: nil, keyEquivalent: ""))
