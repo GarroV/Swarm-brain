@@ -42,7 +42,7 @@ import {
   projectInWorkspace,
 } from "../_shared/tasks/projects.ts";
 import { normalizeCountries, COUNTRY_NAMES, detectQueryCountry } from "../_shared/countries.ts";
-import { extractEntryMeta, applyGeneralSentinel, buildEmbeddingInput, embed } from "../_shared/meta-extract.ts";
+import { extractEntryMeta, applyGeneralSentinel, marketTagsFromInput, buildEmbeddingInput, embed } from "../_shared/meta-extract.ts";
 import { pickSuggestedMarkets } from "../_shared/market-suggest.ts";
 import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
@@ -1489,7 +1489,10 @@ Deno.serve(async (req: Request) => {
           // источником «ничьих» записей (первый — блок confirmed выше, issue #66).
           fields.owner_id = entry.owner_id ?? telegram_id;
         }
-        if ("countries" in body && Array.isArray(body.countries)) fields.countries = normalizeCountries(body.countries as string[]);
+        // Рынки с экрана: marketTagsFromInput сохраняет сентинел General и применяет порог 2+.
+        // Раньше здесь стоял голый normalizeCountries — он выбрасывал «General» как не-страну,
+        // и «Общее» уезжало в базу пустым массивом (issue #166: запись выпадала из дайджеста).
+        if ("countries" in body && Array.isArray(body.countries)) fields.countries = marketTagsFromInput(body.countries as string[]);
         await supabase.from("entries").update(fields).eq("id", entry.id);
         const { data } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", entry.id).single();
         return json(data, 200, origin);
@@ -1679,16 +1682,15 @@ Deno.serve(async (req: Request) => {
       if (!draft) return apiErr(400, "Тезисы ещё не готовы — публиковать нечего", origin);
 
       // Рынки: приоритет у человека (issue #73). Пришли в теле с экрана вычитки — они и
-      // авторитетны, классификатор не зовём вовсе (ни лишнего вызова, ни его перетега), и
-      // applyGeneralSentinel не применяем: несколько рынков разрешены, раз их выбрал человек.
-      // Пустой список = «Общее», а в базе это тег General, а не отсутствие тега.
-      // Поля countries в теле нет (бот, старый клиент) → прежнее поведение классификатора.
+      // авторитетны, классификатор не зовём вовсе (ни лишнего вызова, ни его перетега).
+      // Порог 2+ применяется и к ним (issue #167, решение владельца 2026-08-28): чипы
+      // предзаполнены подсказкой, поэтому «выбрал человек» на практике часто значит
+      // «предложила система, человек нажал Согласовать» — а 2 рынка в записи это кросс-маркет,
+      // и она всплывала бы в дайджесте КАЖДОЙ из стран. Пустой список = «Общее», в базе это тег
+      // General, а не отсутствие тега. Поля countries в теле нет (бот, старый клиент) → классификатор.
       const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
-      const manualCountries = Array.isArray(body.countries)
-        ? normalizeCountries(body.countries as string[])
-        : null;
-      const countries = manualCountries !== null
-        ? (manualCountries.length > 0 ? manualCountries : ["General"])
+      const countries = Array.isArray(body.countries)
+        ? marketTagsFromInput(body.countries as string[])
         : applyGeneralSentinel((await extractEntryMeta(draft, OPENAI_KEY)).countries);
       const embedding = await embed(buildEmbeddingInput(draft, countries), OPENAI_KEY);
 

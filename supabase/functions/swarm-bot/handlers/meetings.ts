@@ -5,7 +5,7 @@ import { setSession, getSession, clearSession, saveEntry } from "../lib/storage.
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { getWorkspaceMarkets } from "../lib/workspace.ts";
 import { COUNTRY_NAMES } from "../../_shared/countries.ts";
-import { buildEmbeddingInput } from "../../_shared/meta-extract.ts";
+import { buildEmbeddingInput, marketTagsFromInput } from "../../_shared/meta-extract.ts";
 import { analyzeAndCreateTasks } from "../tasks/handlers.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
@@ -407,7 +407,17 @@ export async function handleMeetingCallbacks(
     const entryId = data.slice("mctry_done_".length);
     const { data: entry } = await supabase.from("entries").select("countries, summary, content").eq("id", entryId).eq("group_id", groupId).maybeSingle();
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
-    const countries = ((entry.countries as string[] | null) ?? []);
+    // Канон рынков (issue #169): 1 рынок → тег, 0 или ≥2 → ["General"] схлопыванием.
+    // Схлопываем на «Готово», а не на каждый тап: во время мультивыбора выбор копится в
+    // entries.countries, и схлоп на тапе визуально сбрасывал бы уже выбранный рынок.
+    // Раньше здесь порога не было вовсе — набор уезжал в базу как есть (пять рынков — пожалуйста),
+    // и запись всплывала в дайджесте каждого из них.
+    const picked = ((entry.countries as string[] | null) ?? []);
+    const countries = marketTagsFromInput(picked);
+    const collapsed = picked.filter((c) => c !== "General").length >= 2;
+    if (countries.join(",") !== picked.join(",")) {
+      await supabase.from("entries").update({ countries }).eq("id", entryId).eq("group_id", groupId);
+    }
     // Вектор включает страны («Страны: …») — пересчитываем embedding под новый набор (best-effort).
     try {
       const base = (entry.summary as string | null) || (entry.content as string | null) || "";
@@ -421,7 +431,9 @@ export async function handleMeetingCallbacks(
     const kb: PickerRow[] = [];
     if (countries.length) kb.push([{ text: "✅ Подтвердить встречу", callback_data: `mc_${entryId}` }]);
     kb.push([{ text: "🌍 Изменить рынки", callback_data: `mctry_${entryId}` }]);
-    await editInlineMessage(chatId, cb.message.message_id, `🌍 Рынки встречи: <b>${names.length ? names.join(", ") : "не заданы"}</b>`, kb);
+    // Схлопнули — говорим почему, иначе выбор «RS + BG» молча превращается в «Общее».
+    const collapsedNote = collapsed ? "\n<i>2+ рынка = Общее (кросс-маркет)</i>" : "";
+    await editInlineMessage(chatId, cb.message.message_id, `🌍 Рынки встречи: <b>${names.length ? names.join(", ") : "не заданы"}</b>${collapsedNote}`, kb);
     return true;
   }
   if (data.startsWith("mctry_")) {

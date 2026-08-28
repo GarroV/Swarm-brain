@@ -32,9 +32,13 @@ export interface MarketSignals {
   notesMarkets: string[];
 }
 
-// Больше двух рынков в подсказке — это уже кросс-маркет: предлагать нечего, пусть человек
-// решит сам (тот же порог, что у applyGeneralSentinel — 2+ рынка схлопываются в General).
-const MAX_SUGGESTED = 2;
+// Автоматика предлагает МАКСИМУМ ОДИН рынок — тот же порог, что у applyGeneralSentinel
+// (ровно 1 рынок → тег; 0 или ≥2 → General; решение владельца 2026-08-06, переподтверждено
+// 2026-08-28). Раньше здесь стояло 2, и комментарий рядом врал про «тот же порог»: подсказка
+// легально предлагала ДВА рынка, публикация писала их как есть — кросс-маркетная встреча
+// получала два страновых тега и всплывала в дайджесте обеих стран (issue #167, живой случай
+// 26.08: «IT+BD» уехала с ['RS','BG']). Два кандидата = кросс-маркет: предлагать нечего.
+const MAX_SUGGESTED = 1;
 
 export function pickSuggestedMarkets(signals: MarketSignals): MarketSuggestion {
   const fromTitle = signals.title ? detectQueryCountry(signals.title) : null;

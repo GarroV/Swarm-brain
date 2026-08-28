@@ -30,6 +30,20 @@ export function applyGeneralSentinel(countries: readonly string[]): string[] {
   return specific;
 }
 
+// Рынки, пришедшие ОТ КЛИЕНТА (чипы на экране вычитки / в карточке встречи) → теги записи.
+// Делает ровно две вещи, которых порознь не хватало:
+//   • нормализует свободный ввод в ISO (["Bulgaria"] → ["BG"]);
+//   • сохраняет сентинел: если явного рынка не осталось — ["General"], а НЕ пустой массив.
+// Второе — регрессия issue #166: PATCH встречи прогонял ["General"] через normalizeCountries,
+// а тот знает только страны («General» ему не словарное значение) → в базу уезжал [] и запись
+// выпадала из дайджеста совсем, хотя человек выбирал «Общее».
+// Порог 2+ применяется и к РУЧНОМУ выбору (issue #167, порог переподтверждён владельцем
+// 2026-08-28): чипы предзаполнены подсказкой, поэтому «выбрал человек» на практике часто
+// значит «предложила система и человек согласился» — а два рынка в записи это кросс-маркет.
+export function marketTagsFromInput(raw: readonly string[]): string[] {
+  return applyGeneralSentinel(normalizeCountries([...raw]));
+}
+
 // Текст для эмбеддинга: база + «Страны: …» + опц. ключевые слова (как в saveEntry/granola).
 export function buildEmbeddingInput(baseText: string, countries: readonly string[], keywords?: string): string {
   const specific = specificCountries(countries);

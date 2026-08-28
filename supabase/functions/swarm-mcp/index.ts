@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolListTaskLabels, toolGetTaskComments, toolAddTaskComment, TASK_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS, COMMENT_TOOL_DEFINITIONS } from "./tasks/tools.ts";
 import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, detectQueryCountry } from "../_shared/countries.ts";
-import { applyGeneralSentinel, specificCountries } from "../_shared/meta-extract.ts";
+import { applyGeneralSentinel, marketTagsFromInput, specificCountries } from "../_shared/meta-extract.ts";
 import { matchEntries } from "../_shared/search.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
@@ -807,12 +807,12 @@ async function toolUpdateEntry(args: { id: string; content?: string; summary?: s
     updates.entry_date = args.entry_date;
   }
   if (Array.isArray(args.countries)) {
-    const normalized = normalizeCountries(args.countries);
-    const specific = normalized.filter(c => c !== "General");
-    if (specific.length === 0 || specific.length >= 3) {
-      if (!normalized.includes("General")) normalized.push("General");
-    }
-    updates.countries = normalized;
+    // Единый канон рынков (issue #169): 1 рынок → тег, 0 или ≥2 → ["General"] СХЛОПЫВАНИЕМ.
+    // Здесь жил свой порог — «0 или ≥3 → дописать General к списку»: два рынка проходили как
+    // есть, а при трёх получалось ['RS','BG','RO','General'] и запись попадала в дайджест
+    // каждой из стран (тот самый перетег, который канон 2026-08-06 и закрывал). Заодно этот
+    // порог 3 расходился с остальными путями записи и с памятью команды о правиле.
+    updates.countries = marketTagsFromInput(args.countries);
   }
 
   if (!Object.keys(updates).length) return "Нечего обновлять — передай хотя бы одно поле.";

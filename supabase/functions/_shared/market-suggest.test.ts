@@ -42,13 +42,30 @@ Deno.test("сигналов нет — пусто (Общее), а не угад
   );
 });
 
-Deno.test("тезисы нормализуются в ISO и режутся до двух рынков", () => {
+Deno.test("тезисы нормализуются в ISO; два и больше рынков — кросс-маркет, не предлагаем (issue #167)", () => {
   assertEquals(
-    pickSuggestedMarkets({ title: null, participantMarkets: [], notesMarkets: ["Bulgaria", "Хорватия"] }),
-    { markets: ["BG", "HR"], source: "notes" },
+    pickSuggestedMarkets({ title: null, participantMarkets: [], notesMarkets: ["Bulgaria"] }),
+    { markets: ["BG"], source: "notes" },
+  );
+  assertEquals(
+    pickSuggestedMarkets({ title: null, participantMarkets: [], notesMarkets: ["Хорватия"] }),
+    { markets: ["HR"], source: "notes" },
+  );
+  // Живой случай 26.08: у встречи «IT+BD» классификатор по тезисам дал два рынка, они уехали
+  // в базу как ['RS','BG'] и запись попала в дайджест обеих стран. Порог канона — 1.
+  assertEquals(
+    pickSuggestedMarkets({ title: null, participantMarkets: [], notesMarkets: ["Serbia", "Bulgaria"] }),
+    { markets: [], source: null },
   );
   assertEquals(
     pickSuggestedMarkets({ title: null, participantMarkets: [], notesMarkets: ["Bulgaria", "Croatia", "Serbia"] }),
+    { markets: [], source: null },
+  );
+});
+
+Deno.test("пересечение участников из двух рынков тоже не предлагается (порог 1)", () => {
+  assertEquals(
+    pickSuggestedMarkets({ title: "Weekly sync", participantMarkets: [["RS", "BG"], ["RS", "BG", "HR"]], notesMarkets: [] }),
     { markets: [], source: null },
   );
 });
