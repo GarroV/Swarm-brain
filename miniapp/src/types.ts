@@ -233,4 +233,18 @@ export type MeetingLiveNote = {
   text: string;
   author_id: number;
   created_at: string;
+  // Кто написал пометку (резолв author_id → user_profiles на сервере). Приходит в заметках
+  // записи (GET /meetings/:id/notes), где пометки собраны со ВСЕХ участников встречи.
+  author_name?: string | null;
+  meeting_id?: string;
+};
+
+// Заметки участников встречи-записи (GET /meetings/:id/notes). Одну встречу пишут несколько
+// человек, у каждого своя строка meetings со своими пометками — экран собирает их вместе
+// (решение владельца 2026-08-28: «заметки сохраняем все, с разбивкой по пользователям»).
+// live — командные пометки «на полях» с автором; personal — ТОЛЬКО свои личные (они приватны).
+export type MeetingNotes = {
+  versions: number;
+  live: MeetingLiveNote[];
+  personal: Array<{ id: string; content: string; created_at: string }>;
 };

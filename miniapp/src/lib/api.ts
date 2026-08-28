@@ -1,5 +1,5 @@
 import { getInitData } from "./telegram";
-import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote } from "@/types";
+import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote, MeetingNotes } from "@/types";
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
@@ -978,6 +978,13 @@ export async function fetchAgentMeeting(id: string): Promise<AgentMeeting> {
 export async function fetchAgentMeetingNotes(id: string): Promise<MeetingLiveNote[]> {
   if (DEV_MODE) return [];
   return apiFetch<MeetingLiveNote[]>(`/agent-meetings/${id}/notes`);
+}
+
+// Заметки ВСЕХ участников встречи-записи: командные пометки «на полях» (с автором) + свои личные.
+// До 2026-08-28 после публикации пометки не показывались вообще — их грузил только экран черновика.
+export async function fetchMeetingNotes(entryId: string): Promise<MeetingNotes> {
+  if (DEV_MODE) return { versions: 1, live: [], personal: [] };
+  return apiFetch<MeetingNotes>(`/meetings/${entryId}/notes`);
 }
 
 export async function patchAgentMeetingDraft(id: string, draft_notes_md: string): Promise<AgentMeeting> {

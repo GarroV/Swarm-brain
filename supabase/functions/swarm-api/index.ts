@@ -1441,6 +1441,59 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // ── GET /meetings/:id/notes — заметки ВСЕХ участников встречи ─────────────────
+  // «Заметки мы сохраняем все, с разбивкой по пользователям» (решение владельца 2026-08-28).
+  // Одну встречу пишут несколько человек, у каждого своя строка meetings со своими пометками;
+  // после публикации в базе остаётся ОДНА запись, и до сих пор пометки просто исчезали из
+  // интерфейса — их грузил только экран черновика. Собираем по связи meetings.entry_id, ничего
+  // не перенося: данные остаются на своих местах, а экран показывает их вместе.
+  //
+  // Приватность: живые пометки (meeting_live_notes) командные — их писали в общий виджет встречи,
+  // показываем с автором. Личные пометки (entries, kind=personal_notes) приватны по дизайну
+  // (claim кладёт их как is_private с owner_id) — отдаём ТОЛЬКО свои, о чужих не сообщаем.
+  const meetingNotesMatch = routePath.match(/^\/meetings\/([^/]+)\/notes$/);
+  if (meetingNotesMatch && req.method === "GET") {
+    return withEntries(origin, async () => {
+      const entry = await getEntrySecure(supabase, meetingNotesMatch[1], { groupId, telegramId: telegram_id });
+      // Все версии этой встречи: привязанные строки meetings + та, из которой запись создана
+      // (entry_id проставляется при публикации, но metadata.meeting_id несёт исходную версию).
+      const { data: versions } = await supabase.from("meetings")
+        .select("id, claim_owner, source, identity_kind, started_at, recorded_seconds")
+        .eq("group_id", groupId)
+        .eq("entry_id", entry.id);
+      const ids = new Set<string>(((versions ?? []) as Array<{ id: string }>).map((v) => v.id));
+      const ownMeetingId = (entry.metadata as { meeting_id?: string } | null)?.meeting_id;
+      if (ownMeetingId) ids.add(ownMeetingId);
+      if (ids.size === 0) return json({ live: [], personal: [], versions: 0 }, 200, origin);
+      const idList = [...ids];
+
+      const [{ data: live }, { data: personal }] = await Promise.all([
+        supabase.from("meeting_live_notes")
+          .select("id, meeting_id, offset_sec, text, author_id, created_at")
+          .in("meeting_id", idList)
+          .order("offset_sec", { ascending: true }),
+        supabase.from("entries")
+          .select("id, content, created_at, metadata")
+          .eq("group_id", groupId)
+          .eq("owner_id", telegram_id)
+          .eq("metadata->>kind", "personal_notes")
+          .in("metadata->>meeting_id", idList),
+      ]);
+
+      const liveRows = ((live ?? []) as Array<{ author_id: number | null }>);
+      const names = await resolveNames([...new Set(liveRows.map((r) => r.author_id).filter((n): n is number => typeof n === "number"))]);
+      return json({
+        versions: idList.length,
+        live: liveRows.map((r) => {
+          const row = r as { id: string; meeting_id: string; offset_sec: number; text: string; author_id: number | null; created_at: string };
+          return { ...row, author_name: row.author_id != null ? (names.get(row.author_id) ?? `#${row.author_id}`) : null };
+        }),
+        personal: ((personal ?? []) as Array<{ id: string; content: string; created_at: string }>)
+          .map((r) => ({ id: r.id, content: r.content, created_at: r.created_at })),
+      }, 200, origin);
+    });
+  }
+
   // ── GET/PATCH/DELETE /meetings/:id ────────────────────────────────────────────
   const meetingMatch = routePath.match(/^\/meetings\/([^/]+)$/);
   if (meetingMatch) {

@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoyNav, useDt } from "../nav";
+import { groupNotesByAuthor } from "@/lib/meetingNotes";
 import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks, Participants } from "../ui";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle, entryImporterName } from "../entry";
@@ -20,8 +21,9 @@ import {
   deleteAgentMeeting,
   publishAgentMeeting,
   fetchMarketSuggestion,
+  fetchMeetingNotes,
 } from "@/lib/api";
-import type { Entry, AgentMeeting, MarketSuggestion, TranscriptSegment, MeetingLiveNote } from "@/types";
+import type { Entry, AgentMeeting, MarketSuggestion, TranscriptSegment, MeetingLiveNote, MeetingNotes } from "@/types";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { countryCode } from "@/lib/countries";
 import { MarketChips } from "../MarketChips";
@@ -511,12 +513,28 @@ function DetailPanel({
   const title = itemTitle(item);
   const date = fmtDate(itemDate(item));
   const src = itemSource(item);
+  const dtPanel = useDt();
   // Инлайн-правка названия встречи (карандаш у заголовка). Пишем в metadata.title (его и
   // предпочитает deriveEntryTitle). Сброс при смене выбранной записи.
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
   useEffect(() => { setEditingTitle(false); }, [item.data.id]);
+
+  // Заметки участников: одну встречу пишут несколько человек, и до 2026-08-28 их пометки
+  // ИСЧЕЗАЛИ из интерфейса после публикации (их грузил только экран черновика). Собираем со
+  // всех версий встречи одним запросом — командные «на полях» с автором + свои личные.
+  const [notes, setNotes] = useState<MeetingNotes | null>(null);
+  const isEntry = item.kind === "entry";
+  useEffect(() => {
+    setNotes(null);
+    if (!isEntry) return;
+    let alive = true;
+    fetchMeetingNotes(item.data.id)
+      .then((n) => { if (alive) setNotes(n); })
+      .catch(() => { /* заметок может не быть — блок просто не показываем */ });
+    return () => { alive = false; };
+  }, [item.data.id, isEntry]);
 
   if (item.kind === "entry") {
     const e = item.data;
@@ -602,6 +620,46 @@ function DetailPanel({
 
             <ContentEditor entry={e} onSaved={onEntryUpdated} />
           </>
+        )}
+
+        {/* Заметки участников — со ВСЕХ, кто писал эту встречу (решение владельца 2026-08-28:
+            «заметки сохраняем все, с разбивкой по пользователям»). Командные пометки «на полях»
+            подписаны автором; личные приватны — их видит только автор. */}
+        {notes && (notes.live.length > 0 || notes.personal.length > 0) && (
+          <div className="border-t border-line pt-3">
+            <SectionLabel>Заметки участников</SectionLabel>
+            {notes.live.length > 0 && (
+              <div className="mt-2 flex flex-col gap-2.5">
+                {groupNotesByAuthor(notes.live).map(([author, rows]) => (
+                  <div key={author}>
+                    <p className="text-ink-mute font-semibold" style={{ fontSize: 11 }}>{author}</p>
+                    <div className="mt-1 flex flex-col gap-1.5">
+                      {rows.map((n) => (
+                        <div key={n.id} className="flex items-start gap-2.5">
+                          <span className="mt-0.5 shrink-0 tabular-nums font-semibold text-ink-mute" style={{ fontSize: 12 }}>
+                            {formatOffset(n.offset_sec)}
+                          </span>
+                          <span className="text-ink-soft leading-relaxed whitespace-pre-wrap" style={{ fontSize: 13 }}>{n.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {notes.personal.length > 0 && (
+              <div className="mt-3">
+                <p className="text-ink-mute font-semibold" style={{ fontSize: 11 }}>
+                  {dtPanel("Мои личные пометки — видны только мне", "My private notes — visible only to me")}
+                </p>
+                <div className="mt-1 flex flex-col gap-1.5">
+                  {notes.personal.map((n) => (
+                    <p key={n.id} className="text-ink-soft leading-relaxed whitespace-pre-wrap" style={{ fontSize: 13 }}>{n.content}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
     );
