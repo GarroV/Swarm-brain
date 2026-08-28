@@ -1,8 +1,10 @@
-// Генератор иконки приложения — схематичная «жопка шмеля» (bumblebee).
-// Геометрия НЕ дублируется: рисует RoyArt из исходников приложения, чтобы иконка приложения,
-// меню-бара и виджета не разъехались.
-// Запуск (из recorder/):  ./gen-icon.sh   → AppIcon.iconset + AppIcon.icns
+// Генератор AppIcon.icns: графитовый чип + марка из Resources/BeeMark.png.
+// Запуск (из recorder/):  ./gen-icon.sh
 import AppKit
+
+let markURL = URL(fileURLWithPath: "Resources/BeeMark.png")
+guard let mark = NSImage(contentsOf: markURL) else { fatalError("нет Resources/BeeMark.png") }
+let graphite = NSColor(srgbRed: 0x24 / 255.0, green: 0x1F / 255.0, blue: 0x18 / 255.0, alpha: 1)
 
 func render(_ px: Int) -> Data {
     let s = CGFloat(px)
@@ -11,7 +13,11 @@ func render(_ px: Int) -> Data {
         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-    RoyArt.drawMark(in: s)
+    NSGraphicsContext.current?.imageInterpolation = .high
+    NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: s, height: s), xRadius: s * 0.22, yRadius: s * 0.22).addClip()
+    graphite.setFill()
+    NSRect(x: 0, y: 0, width: s, height: s).fill()
+    mark.draw(in: NSRect(x: 0, y: 0, width: s, height: s))
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!
 }

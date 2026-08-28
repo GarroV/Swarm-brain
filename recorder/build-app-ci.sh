@@ -37,6 +37,7 @@ lipo -create \
   -output "$APP/Contents/MacOS/SwarmRecorder"
 lipo -info "$APP/Contents/MacOS/SwarmRecorder"
 cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp Resources/BeeMark.png "$APP/Contents/Resources/BeeMark.png"   # марка для меню-бара и виджета
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

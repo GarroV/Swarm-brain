@@ -253,8 +253,9 @@ select recorder_last_version, count(*) from allowed_users where recorder_token_h
 
 ### Иконка
 
-Иконка рисуется **кодом**, а не лежит картинкой: геометрия марки — `Sources/SwarmRecorder/RoyArt.swift`
-(меню-бар, виджет), `.icns` собирает `./gen-icon.sh` тем же кодом (компилирует `gen-icon.swift`
+Марка — схематичный шмель линиями: тело с четырьмя полосами, два крыла по бокам, усики, острый
+низ (референс владельца, build 25). Иконка рисуется **кодом**, а не лежит картинкой: геометрия —
+`Sources/SwarmRecorder/RoyArt.swift` (меню-бар, виджет), `.icns` собирает `./gen-icon.sh` тем же кодом (компилирует `gen-icon.swift`
 вместе с `RoyArt.swift`, поэтому иконка приложения и меню-бара не разъезжаются). `build-app.sh` и
 `build-app-ci.sh` зовут его сами. Правишь марку — правь `RoyArt.swift`, а не `.icns`.
    ⚠️ **Пока не починен апдейтер (issue #91), шаг 6 не работает:** `Updater.swift` собирает новую
