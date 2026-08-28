@@ -21,7 +21,7 @@
 const ASSET_BASE_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/storage/v1/object/public/swarm_drive/recorder";
 const INGEST_BASE_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1";
 // Фолбэк-номер сборки, если swarm-recorder-version недоступен. Держать в синхроне с recorder/VERSION.
-const RECORDER_FALLBACK_BUILD = 25;
+const RECORDER_FALLBACK_BUILD = 26;
 
 export const SETUP_SCRIPT = `#!/bin/bash
 # Swarm Brain → bumblebee (macOS). Не запускай вручную — возьми команду в боте: /recordertoken

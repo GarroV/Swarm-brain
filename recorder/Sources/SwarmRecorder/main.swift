@@ -184,8 +184,35 @@ func runAnalyze(_ files: [String]) {
     RunLoop.main.run()
 }
 
+// Режим --selftest-update: смоук пункта меню «Обновить bumblebee». Печатает решение, которое
+// приняла бы кнопка (та же Updater.decide), и с флагом --apply реально запускает обновление.
+// Без него кнопку нельзя проверить иначе как кликом на живой машине.
+func runUpdateSelfTest(apply: Bool) {
+    Task {
+        let cfg = try? SwarmConfig.load()
+        let decision = await Updater.decide(config: cfg, isIdle: true)
+        switch decision {
+        case .noConfig:            print("SELFTEST_UPDATE decision=no_config")
+        case .notInstalled(let p): print("SELFTEST_UPDATE decision=not_installed path=\(p)")
+        case .busy:                print("SELFTEST_UPDATE decision=busy")
+        case .unreachable:         print("SELFTEST_UPDATE decision=unreachable")
+        case .upToDate(let b):     print("SELFTEST_UPDATE decision=up_to_date build=\(b)")
+        case .available(let b, let from, let url):
+            print("SELFTEST_UPDATE decision=available from=\(from) to=\(b) url=\(url.lastPathComponent)")
+            if apply {
+                Updater.runUpdater(currentBuild: from, targetBuild: b, assetURL: url)
+                print("SELFTEST_UPDATE applied=yes (хелпер запущен, приложение перезапустится)")
+            }
+        }
+        exit(0)
+    }
+    RunLoop.main.run()
+}
+
 if let ai = CommandLine.arguments.firstIndex(of: "--analyze") {
     runAnalyze(Array(CommandLine.arguments[(ai + 1)...]))
+} else if CommandLine.arguments.contains("--selftest-update") {
+    runUpdateSelfTest(apply: CommandLine.arguments.contains("--apply"))   // не возвращается до exit()
 } else if CommandLine.arguments.contains("--selftest-quarantine") {
     runQuarantineSelfTest()   // не возвращается (RunLoop) до exit()
 } else if CommandLine.arguments.contains("--selftest") {

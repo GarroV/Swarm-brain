@@ -42,6 +42,29 @@ enum Updater {
         }
     }
 
+    // ── Решение «обновляться ли сейчас» ───────────────────────────────────────────────────────
+    // Отделено от показа, чтобы одну и ту же логику дёргали и пункт меню, и самопроверка
+    // (--selftest-update): иначе кнопку нельзя проверить иначе как руками на живой машине.
+    enum Decision {
+        case noConfig                       // токен не прописан — обновлять нечем
+        case notInstalled(String)           // запущено не из /Applications: своп чужого пути опасен
+        case busy                           // идёт запись/отправка — не трогаем
+        case unreachable                    // сервер версий не ответил
+        case upToDate(build: Int)           // уже последняя
+        case available(build: Int, from: Int, assetURL: URL)
+    }
+
+    static func decide(config: SwarmConfig?, bundlePath: String = Bundle.main.bundlePath,
+                       isIdle: Bool) async -> Decision {
+        guard let config else { return .noConfig }
+        guard bundlePath.hasPrefix("/Applications/") else { return .notInstalled(bundlePath) }
+        guard isIdle else { return .busy }
+        guard let latest = await latestRelease(config: config) else { return .unreachable }
+        let cur = currentBuild
+        guard latest.build > cur else { return .upToDate(build: cur) }
+        return .available(build: latest.build, from: cur, assetURL: latest.assetURL)
+    }
+
     // Спросить сервер последний доступный build и URL артефакта. nil при любой ошибке → не обновляемся.
     // Источник истины — `swarm-recorder-version` (наш Supabase), GitHub в схеме больше не участвует.
     static func latestRelease(config: SwarmConfig) async -> (build: Int, assetURL: URL)? {
