@@ -16,12 +16,36 @@ export interface MintedRecorderToken {
   expiresAt: Date;
 }
 
-// Минтит новый токен рекордера, перезаписывая старый (старый сразу мёртв). Возвращает null при ошибке.
+// Сколько живёт ПЕРЕКРЫТИЕ прежнего токена при перевыпуске. Короткое намеренно: окно ослабляет
+// обнаружение кражи токена (Ory о graceful rotation: «это workaround, а не практика»), поэтому
+// оно нужно ровно на то время, пока человек доносит новый токен до рекордера. Обычно гаснет
+// раньше — при первом же успешном запросе с новым токеном (см. _shared/agent-auth.ts).
+export const RECORDER_TOKEN_GRACE_HOURS = 24;
+
+// Минтит новый токен рекордера.
+//
+// Прежний токен НЕ умирает сразу: он переезжает в recorder_token_prev_* и работает ещё
+// RECORDER_TOKEN_GRACE_HOURS. Иначе человек, нажавший «перевыпустить» и не дошедший до установки,
+// оставался с рекордером, который пишет встречи и не может их залить — молча (issue #146).
+// Явный отзыв (`revokeRecorderToken`) гасит оба, перекрытия там нет.
 export async function mintRecorderToken(
   supabase: SupabaseClient,
   telegramId: number,
   ttlDays = 365,
 ): Promise<MintedRecorderToken | null> {
+  // Текущий хэш нужен ДО перезаписи — он и станет перекрытием.
+  const { data: before } = await supabase
+    .from("allowed_users")
+    .select("recorder_token_hash, recorder_token_expires_at")
+    .eq("telegram_id", telegramId)
+    .maybeSingle();
+  const prev = before as { recorder_token_hash: string | null; recorder_token_expires_at: string | null } | null;
+  // Перекрываем только живой токен: протухший продлевать через перевыпуск нельзя.
+  const prevAlive = !!prev?.recorder_token_hash &&
+    (!prev.recorder_token_expires_at || Date.parse(prev.recorder_token_expires_at) >= Date.now());
+  const graceUntil = prevAlive
+    ? new Date(Date.now() + RECORDER_TOKEN_GRACE_HOURS * 60 * 60 * 1000).toISOString()
+    : null;
   // Без дефисов: на десктоп-Telegram двойной клик по <code> выделяет «слово» до дефиса.
   const token = "smcp_" + crypto.randomUUID().replaceAll("-", "");
   const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
@@ -32,10 +56,34 @@ export async function mintRecorderToken(
   const { error } = await supabase
     .from("allowed_users")
     // recorder_expiry_warned сброс: новый токен → снова можно предупредить перед ЕГО истечением.
-    .update({ recorder_token_hash: hashHex, recorder_token_expires_at: expiresAt.toISOString(), recorder_expiry_warned: false })
+    .update({
+      recorder_token_hash: hashHex,
+      recorder_token_expires_at: expiresAt.toISOString(),
+      recorder_expiry_warned: false,
+      recorder_token_prev_hash: prevAlive ? prev!.recorder_token_hash : null,
+      recorder_token_prev_expires_at: graceUntil,
+    })
     .eq("telegram_id", telegramId);
   if (error) return null;
   return { token, expiresAt };
+}
+
+// Отзыв: гасит и текущий токен, и перекрытие. Здесь мягкости быть не должно — команду зовут,
+// когда токен утёк, и «ещё сутки поработает» означало бы «вор ещё сутки поработает».
+export async function revokeRecorderToken(
+  supabase: SupabaseClient,
+  telegramId: number,
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("allowed_users")
+    .update({
+      recorder_token_hash: null,
+      recorder_token_expires_at: null,
+      recorder_token_prev_hash: null,
+      recorder_token_prev_expires_at: null,
+    })
+    .eq("telegram_id", telegramId);
+  return !error;
 }
 
 // Есть ли у пользователя активный (непротухший) токен рекордера + когда истекает.
@@ -66,6 +114,14 @@ export async function hasActiveRecorderToken(
 }
 
 // Однострочник для Терминала: ставит и настраивает рекордер с уже вшитым токеном.
+// Для ПЕРВОЙ установки — токена на машине ещё нет.
 export function buildRecorderSetupOneLiner(token: string): string {
   return `curl -fsSL ${RECORDER_SETUP_URL} | SWARM_TOKEN='${token}' bash`;
+}
+
+// Однострочник ОБНОВЛЕНИЯ: без токена. Установщик подхватит уже прописанный токен из локального
+// конфига, поэтому обновление не требует перевыпуска и ничего не ломает, даже если человек
+// бросит его на полпути. Это и есть основной ответ на issue #146 — перекрытие лишь страхует.
+export function buildRecorderUpdateOneLiner(): string {
+  return `curl -fsSL ${RECORDER_SETUP_URL} | bash`;
 }

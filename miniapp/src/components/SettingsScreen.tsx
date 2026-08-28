@@ -544,7 +544,7 @@ function GoogleCalendarSection() {
 
 function RecorderSection() {
   const confirm = useConfirm();
-  const [setup, setSetup] = useState<{ active: boolean; expiresAt: string | null } | null>(null);
+  const [setup, setSetup] = useState<{ active: boolean; expiresAt: string | null; updateOneLiner?: string } | null>(null);
   const [oneLiner, setOneLiner] = useState<string | null>(null);
   const [minting, setMinting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -554,7 +554,11 @@ function RecorderSection() {
   }, []);
 
   const getCommand = async (reissue: boolean) => {
-    if (reissue && !(await confirm({ title: "Перевыпустить токен bumblebee?", description: "Старый токен перестанет работать — bumblebee нужно будет переустановить командой ниже.", confirmText: "Перевыпустить" }))) return;
+    if (reissue && !(await confirm({
+      title: "Перевыпустить токен bumblebee?",
+      description: "Нужно, только если ты потерял токен или ставишь bumblebee на ДРУГОЙ мак. Для обновления на этом маке токен менять не надо — есть команда выше. Прежний токен после перевыпуска поработает ещё сутки, чтобы записи не потерялись.",
+      confirmText: "Перевыпустить",
+    }))) return;
     setMinting(true);
     try {
       const { oneLiner: cmd, expiresAt } = await mintRecorderToken();
@@ -565,14 +569,17 @@ function RecorderSection() {
     }
   };
 
-  const copy = async () => {
-    if (!oneLiner) return;
+  const [copiedUpdate, setCopiedUpdate] = useState(false);
+
+  const copyText = async (text: string, mark: (v: boolean) => void = setCopiedUpdate) => {
     try {
-      await navigator.clipboard.writeText(oneLiner);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(text);
+      mark(true);
+      setTimeout(() => mark(false), 2000);
     } catch { /* clipboard недоступен — пользователь скопирует вручную */ }
   };
+
+  const copy = () => oneLiner && copyText(oneLiner, setCopied);
 
   const expStr = setup?.expiresAt
     ? new Date(setup.expiresAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })
@@ -588,9 +595,24 @@ function RecorderSection() {
         <p className="text-sm text-status-done">✓ Подключён · токен действует до {expStr}</p>
       )}
 
+      {/* Уже подключённым почти всегда нужно обновить приложение, а не сменить токен. Эта команда
+          идёт БЕЗ токена: установщик возьмёт прописанный на маке, поэтому брошенная на полпути
+          установка ничего не ломает. Перевыпуск ниже — для потери токена и другого мака. */}
+      {setup?.active && setup.updateOneLiner && !oneLiner && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">Обновить bumblebee на этом маке — вставь в Терминал (токен менять не нужно):</p>
+          <div className="rounded-lg border bg-muted/50 p-2.5">
+            <code className="block break-all text-xs">{setup.updateOneLiner}</code>
+          </div>
+          <Button size="sm" variant="secondary" onClick={() => copyText(setup.updateOneLiner!)} className="w-full">
+            {copiedUpdate ? "✓ Скопировано" : "Скопировать команду обновления"}
+          </Button>
+        </div>
+      )}
+
       {!oneLiner ? (
-        <Button size="sm" onClick={() => getCommand(setup?.active ?? false)} disabled={minting || setup === null} className="w-full">
-          {minting ? "Готовлю…" : setup?.active ? "Перевыпустить команду установки" : "Получить команду установки"}
+        <Button size="sm" variant={setup?.active ? "ghost" : "default"} onClick={() => getCommand(setup?.active ?? false)} disabled={minting || setup === null} className="w-full">
+          {minting ? "Готовлю…" : setup?.active ? "Перевыпустить токен (потерял / другой мак)" : "Получить команду установки"}
         </Button>
       ) : (
         <div className="space-y-2">

@@ -3,6 +3,8 @@ import {
   mintRecorderToken as _mintRecorderToken,
   hasActiveRecorderToken as _hasActiveRecorderToken,
   buildRecorderSetupOneLiner,
+  buildRecorderUpdateOneLiner,
+  revokeRecorderToken as _revokeRecorderToken,
   type MintedRecorderToken,
 } from "../../_shared/recorder-token.ts";
 import {
@@ -15,7 +17,7 @@ import {
 // Тонкие обёртки на bot-клиенте над общими модулями _shared/{mcp,recorder}-token.ts.
 // Те же модули использует swarm-api для веб «Настройки → Claude Desktop / Рекордер».
 // Сигнатуры сохранены для index.ts (/setup, /mytoken, /recordertoken, re-issue callbacks).
-export { buildRecorderSetupOneLiner, buildSetupOneLiner };
+export { buildRecorderSetupOneLiner, buildRecorderUpdateOneLiner, buildSetupOneLiner };
 export type { MintedRecorderToken, MintedToken };
 
 export function mintMcpToken(telegramId: number): Promise<MintedToken | null> {
@@ -29,4 +31,7 @@ export function mintRecorderToken(telegramId: number, ttlDays = 365): Promise<Mi
 }
 export function hasActiveRecorderToken(telegramId: number): Promise<boolean> {
   return _hasActiveRecorderToken(supabase, telegramId);
+}
+export function revokeRecorderToken(telegramId: number): Promise<boolean> {
+  return _revokeRecorderToken(supabase, telegramId);
 }

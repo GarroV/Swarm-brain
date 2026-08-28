@@ -22,7 +22,7 @@ import { sendDailyReport } from "./handlers/daily-report-send.ts";
 import { sendReviewReminders } from "./handlers/review-reminders-send.ts";
 import { sendTaskPings } from "./handlers/task-pings-send.ts";
 import { getHelpText, helpKeyboard, guideMenu, guideStep } from "./handlers/help.ts";
-import { mintMcpToken, buildSetupOneLiner, hasActiveMcpToken, mintRecorderToken, buildRecorderSetupOneLiner, hasActiveRecorderToken } from "./lib/mcp-setup.ts";
+import { mintMcpToken, buildSetupOneLiner, hasActiveMcpToken, mintRecorderToken, buildRecorderSetupOneLiner, buildRecorderUpdateOneLiner, hasActiveRecorderToken, revokeRecorderToken } from "./lib/mcp-setup.ts";
 import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -729,22 +729,26 @@ Deno.serve(async (req: Request) => {
       // Если живой токен уже есть — НЕ перевыпускаем молча (это убьёт авторизацию рекордера).
       // Предупреждаем и просим явного подтверждения (зеркало mtk_reissue для Claude Desktop).
       if (await hasActiveRecorderToken(userId)) {
+        // Живой токен → человеку почти всегда нужно ОБНОВИТЬ приложение, а не менять токен.
+        // Команда обновления идёт без токена: установщик возьмёт уже прописанный из конфига, и
+        // брошенная на полпути установка ничего не сломает (issue #146). Перевыпуск оставлен
+        // вторым планом — он для потери и утечки.
         await sendInlineMessage(chatId,
-          `🎙 <b>У тебя уже есть активный токен bumblebee.</b>\n\n` +
-          `Если bumblebee уже подключён — он <b>работает</b>, делать ничего не нужно.\n\n` +
-          `Перевыпуск нужен, только если ты <b>потерял</b> токен или подозреваешь <b>утечку</b>. ` +
-          `Он <b>убьёт старый</b> — придётся заново прогнать установку bumblebee.`,
-          [[{ text: "🔄 Всё равно перевыпустить", callback_data: "rtk_reissue" }]]
+          `🎙 <b>bumblebee уже подключён — токен менять не нужно.</b>\n\n` +
+          `Чтобы <b>обновить приложение</b> (или переустановить его на этом же маке), вставь в Терминал:\n\n` +
+          `<code>${buildRecorderUpdateOneLiner()}</code>\n\n` +
+          `Токен возьмётся из настроек на маке — доступ не прервётся, даже если бросишь на полпути.\n\n` +
+          `<i>Перевыпуск нужен, только если ты потерял токен, ставишь на ДРУГОЙ мак или подозреваешь утечку. ` +
+          `Прежний токен после него поработает ещё сутки, чтобы записи не потерялись.</i>`,
+          [[{ text: "🔄 Всё-таки перевыпустить токен", callback_data: "rtk_reissue" }]]
         );
       } else {
         await sendRecorderToken(chatId, userId);
       }
     } else if (command === "/revokerecordertoken") {
-      const { error: rvErr } = await supabase
-        .from("allowed_users")
-        .update({ recorder_token_hash: null, recorder_token_expires_at: null })
-        .eq("telegram_id", userId);
-      await sendMessage(chatId, rvErr ? "❌ Не удалось отозвать." : "🔒 <b>Токен bumblebee отозван.</b> Новый — через /recordertoken.");
+      // Отзыв гасит и перекрытие: команду зовут при утечке, «ещё сутки поработает» тут неуместно.
+      const revoked = await revokeRecorderToken(userId);
+      await sendMessage(chatId, revoked ? "🔒 <b>Токен bumblebee отозван.</b> Новый — через /recordertoken." : "❌ Не удалось отозвать.");
     } else if (command === "/connect_claude") {
       await sendMessage(chatId,
         `<b>🖥 Как подключить Claude к базе знаний</b>\n\n` +

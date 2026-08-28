@@ -308,7 +308,7 @@ export async function fetchConfig(): Promise<{ allowed_markets: string[] }> {
 }
 
 // Рекордер встреч (Mac): статус токена и минт/перевыпуск однострочника установки.
-export async function fetchRecorderSetup(): Promise<{ active: boolean; expiresAt: string | null }> {
+export async function fetchRecorderSetup(): Promise<{ active: boolean; expiresAt: string | null; updateOneLiner?: string }> {
   if (DEV_MODE) return { active: false, expiresAt: null };
   return apiFetch<{ active: boolean; expiresAt: string | null }>("/recorder/setup");
 }
