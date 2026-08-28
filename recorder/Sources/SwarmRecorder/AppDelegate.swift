@@ -85,6 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var notifiedKeys: Set<String> = []     // по каким уже слали уведомление
     // Микрофонный запасной детект.
     private var callActive = false
+    // Разрешены ли уведомления. nil — ещё не спросили систему (первые мгновения после старта):
+    // на этом статусе меню молчит, чтобы не пугать человека ложной тревогой.
+    private var notificationsAllowed: Bool?
     private var micWasActive = false
     private var callDismissedUntil: Date?
     private var watchTimer: Timer?
@@ -202,7 +205,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let record = UNNotificationAction(identifier: recordAction, title: "Записать", options: [.foreground])
         let cat = UNNotificationCategory(identifier: notifyCategory, actions: [record], intentIdentifiers: [], options: [])
         center.setNotificationCategories([cat])
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        // Ответ на запрос ЧИТАЕМ. Раньше здесь стояло `{ _, _ in }`: человек отказывал (или
+        // системный запрос вообще не появлялся), приложение об этом не узнавало никогда, и
+        // каждое последующее уведомление молча уходило в никуда — а через них рекордер
+        // сообщает то, о чём иначе не узнать: «звонок завершён, сохраняю», «нужен новый
+        // токен», «системный звук не пишется» (issue #155).
+        center.requestAuthorization(options: [.alert, .sound]) { [weak self] _, _ in
+            self?.refreshNotificationAuthorization()
+        }
+    }
+
+    // Текущий статус разрешения на уведомления. nil — ещё не спрашивали систему.
+    // Спрашиваем систему, а не запоминаем ответ на первый запрос: разрешение снимают и выдают
+    // в System Settings в любой момент, мимо приложения.
+    private func refreshNotificationAuthorization(then: (() -> Void)? = nil) {
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            DispatchQueue.main.async {
+                let allowed = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
+                let changed = self?.notificationsAllowed != allowed
+                self?.notificationsAllowed = allowed
+                if changed { self?.rebuildMenu() }
+                then?()
+            }
+        }
     }
 
     // ── Сон/пробуждение ноутбука ──────────────────────────────────────────────────
@@ -251,6 +276,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // орфаны от жёсткого выключения подберёт recovery на следующем старте.
         Task { await UploadQueue.shared.drain(config: cfg); await refreshQueueBadge() }
         sendHeartbeat()
+        // Разрешение на уведомления могли выдать или снять в System Settings, пока ноут спал —
+        // приложению об этом никто не сообщает. Пробуждение единственный момент, когда дёшево
+        // переспросить систему, чтобы подсказка в меню не врала (issue #155).
+        refreshNotificationAuthorization()
     }
 
     private func startWatching() {
@@ -598,6 +627,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Бэкстоп: macOS-разрешение на запись системного звука можно открыть вручную в любой
         // момент (Core Audio process-tap при отказе иногда даёт тишину без ошибки → catch не сработает).
         menu.addItem(NSMenuItem(title: "Открыть настройки записи", action: #selector(openRecordingSettingsTapped), keyEquivalent: ""))
+        // Уведомления выключены — говорим об этом ЗДЕСЬ, потому что сказать больше негде:
+        // единственный канал, которым рекордер зовёт человека, как раз и не работает. Строка
+        // появляется только при точно известном отказе (notificationsAllowed == false), а не
+        // на неизвестном статусе (issue #155).
+        if notificationsAllowed == false {
+            let hint = NSMenuItem(title: "Уведомления выключены — не смогу предупредить", action: nil, keyEquivalent: "")
+            hint.isEnabled = false
+            menu.addItem(hint)
+        }
+        // Проверка разрешения по требованию (владелец 2026-08-28: «система сама не спросила»).
+        // Пункт есть всегда: если macOS не показала запрос при первом запуске, другого пути
+        // включить уведомления у человека нет — а по статусу он видит, чем кончилось.
+        menu.addItem(NSMenuItem(title: "Проверить уведомления", action: #selector(checkNotificationsTapped), keyEquivalent: ""))
         // Обновление по требованию. Авто-апдейт работает сам, но человеку нужен способ обновиться
         // СЕЙЧАС и увидеть результат: иначе единственный известный ему путь — перевыпуск токена
         // в боте, который гасит рабочую установку, если он не дойдёт до конца (issue #146).
@@ -741,6 +783,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc private func openMicSettingsTapped() {
         Permissions.openMicrophoneSettings()
+    }
+
+    // Перепроверяет статус уведомлений и, если их нет, ведёт прямо в нужную панель настроек.
+    // Сначала пробуем ЗАПРОСИТЬ: если система ещё не спрашивала (.notDetermined), человек
+    // получит обычный системный запрос и включит всё в один клик, не уходя в Settings.
+    @objc private func checkNotificationsTapped() {
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { [weak self] settings in
+            if settings.authorizationStatus == .notDetermined {
+                center.requestAuthorization(options: [.alert, .sound]) { _, _ in
+                    self?.refreshNotificationAuthorization {
+                        // Отказал в системном окне — показываем, где это переиграть.
+                        if self?.notificationsAllowed == false { Permissions.openNotificationSettings() }
+                    }
+                }
+                return
+            }
+            DispatchQueue.main.async {
+                self?.refreshNotificationAuthorization {
+                    if self?.notificationsAllowed == false { Permissions.openNotificationSettings() }
+                }
+            }
+        }
     }
 
     // «Повторить» после типизированного сбоя: сбрасываем состояние и повторяем последнее
