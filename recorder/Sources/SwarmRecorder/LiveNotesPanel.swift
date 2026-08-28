@@ -47,9 +47,12 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         startedAt = Date()
         ensurePanel()
         setSystemAudioWarning(false)   // новая запись — сбросить метку «собеседник не пишется»
-        // Название сразу в поле: реальное (календарь/комната) → иначе дефолт «Встреча <юзер> · <дата>»,
-        // чтобы встреча не уходила безымянной. Пользователь может переписать на ходу (уйдёт в claim).
-        titleField?.stringValue = Self.resolvedTitle(initialTitle)
+        // В поле — ТОЛЬКО реальное название (календарь/комната). Пусто — значит пусто: заголовок
+        // поставит сервер («участник — дата», #184), у него есть настоящее имя человека из базы.
+        // Раньше поле заполнялось «Встреча <NSFullUserName()> · <дата>», и эта строка уходила в
+        // claim как titleOverride — то есть серверный дефолт не мог сработать НИКОГДА, а имя
+        // бралось из учётки macOS («admin», «MacBook Pro»), см. #189.
+        titleField?.stringValue = (initialTitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         clearNotes()
         showExpanded()
     }
@@ -164,7 +167,9 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         // ── строка названия встречи (всегда видна, в т.ч. свёрнутой; правка на ходу → в claim) ──
         let tag = iconView("tag", size: 11, color: Self.amber)
         let titleFld = NSTextField()
-        titleFld.placeholderString = "Название встречи…"
+        // Плейсхолдер честно говорит, что будет, если не вписать: пустое поле не значит
+        // «встреча уйдёт безымянной» — сервер назовёт её по имени и дате.
+        titleFld.placeholderString = "Без названия — назовём по имени и дате"
         titleFld.font = .systemFont(ofSize: 13, weight: .medium); titleFld.textColor = Self.ink
         titleFld.isBordered = false; titleFld.drawsBackground = false; titleFld.focusRingType = .none
         titleFld.lineBreakMode = .byTruncatingTail; titleFld.cell?.isScrollable = true
@@ -304,18 +309,6 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         notesStack?.arrangedSubviews.forEach { $0.removeFromSuperview() }
     }
     private func fmt(_ s: Int) -> String { String(format: "%02d:%02d", s / 60, s % 60) }
-
-    // Название встречи для поля: реальное (с сервера/из комнаты) если есть, иначе дефолт
-    // «Встреча <имя пользователя macOS> · <дата, время>» — встреча не остаётся безымянной.
-    private static func resolvedTitle(_ initial: String?) -> String {
-        if let t = initial?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty { return t }
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "ru_RU")
-        df.dateFormat = "d MMMM, HH:mm"
-        let who = NSFullUserName().trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = who.isEmpty ? "" : "\(who) · "
-        return "Встреча \(name)\(df.string(from: Date()))"
-    }
 
     private func isTitle(_ obj: Notification) -> Bool { (obj.object as AnyObject) === titleField }
     func controlTextDidBeginEditing(_ obj: Notification) {
