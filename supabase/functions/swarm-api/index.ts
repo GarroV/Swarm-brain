@@ -48,6 +48,7 @@ import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
+import { arbitrateFullness, type TranscriptLike } from "../_shared/meeting-fullness.ts";
 import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
 import { normalizeExtractedDueDate, todayIso } from "../_shared/llm-date.ts";
 import { canAccessDraftMeeting, draftMeetingsOwnScoped, type DraftMeetingRow } from "../_shared/meeting-access.ts";
@@ -1635,7 +1636,27 @@ Deno.serve(async (req: Request) => {
     // GET — полный черновик (транскрипт + тезисы + участники + имена записавших)
     if (agentMeetingMatch && req.method === "GET") {
       const [enriched] = await withRecorderNames([meeting]);
-      return json(enriched, 200, origin);
+      // Эта же встреча уже в базе? Признак нужен ДО публикации: человек должен видеть, что
+      // встреча общая и лежит в базе, а не узнавать об этом из тоста после нажатия
+      // «Опубликовать» (решение владельца 2026-08-28: «ему скажет плашка, что он редактирует
+      // общую встречу, которая лежит в базе»). Для уже опубликованного черновика не считаем —
+      // там ответ и так известен.
+      let inBaseDuplicate: { id: string; title: string; source: string } | null = null;
+      if (meeting.status !== "in_base") {
+        const startedAt = meeting.started_at as string | null;
+        const dupNow = await findDuplicateMeeting(supabase, {
+          groupId,
+          entryDate: startedAt ? startedAt.split("T")[0] : null,
+          startedAt,
+          attendees: ((meeting as { attendees?: MeetingAttendee[] }).attendees ?? []),
+          identityKey: (meeting.identity_key as string | null) ?? null,
+          title: (meeting.title as string | null) ?? null,
+          viewerEmail: userEmail,
+          viewerId: telegram_id,
+        });
+        if (dupNow) inBaseDuplicate = { id: dupNow.id, title: dupNow.title, source: dupNow.source };
+      }
+      return json({ ...(enriched as Record<string, unknown>), in_base_duplicate: inBaseDuplicate }, 200, origin);
     }
 
     // PATCH — вычитка/правка черновика: тезисы и/или название (только до публикации)
@@ -1721,11 +1742,66 @@ Deno.serve(async (req: Request) => {
           .update({ entry_id: dup.id, status: "in_base", updated_at: new Date().toISOString() })
           .eq("id", mId)
           .is("entry_id", null);
+
+        // «В базу по дефолту идёт САМАЯ ПОЛНАЯ встреча» (решение владельца 2026-08-28, issue #176).
+        // Прежде тут молча оставалась версия того, кто опубликовал раньше — то самое правило
+        // «кто первый», за которое проект уже заплатил потерей записи на 2ч26м в claim (#23/#24).
+        // Полноту меряем объёмом РАСПОЗНАННОГО: длительность к потере звука собеседника слепа
+        // (26.08: 1920 с против 1980 с при 469 против 1097 сегментов).
+        const { data: pubMeeting } = await supabase.from("meetings")
+          .select("id, transcript, notes_edited_at")
+          .eq("entry_id", dup.id)
+          .neq("id", mId)
+          .order("recorded_seconds", { ascending: false, nullsFirst: false })
+          .limit(1)
+          .maybeSingle();
+        const verdict = arbitrateFullness(
+          { transcript: (meeting as { transcript?: TranscriptLike }).transcript ?? null,
+            notesEditedAt: (meeting.notes_edited_at as string | null) ?? null },
+          { transcript: (pubMeeting as { transcript?: TranscriptLike } | null)?.transcript ?? null,
+            notesEditedAt: (pubMeeting as { notes_edited_at?: string | null } | null)?.notes_edited_at ?? null },
+        );
+
+        if (verdict.replace) {
+          // Заменяем СОДЕРЖИМОЕ записи, id сохраняется: ссылки, задачи и привязки не рвутся.
+          // Прежние тезисы не пропадают — они остаются в draft_notes_md своей строки meetings,
+          // а факт замены пишем в metadata (кто, когда, чем именно оказалась полнее).
+          const prevMeta = ((dup as unknown as { metadata?: Record<string, unknown> }).metadata ?? {}) as Record<string, unknown>;
+          const { data: prevEntry } = await supabase.from("entries").select("metadata").eq("id", dup.id).single();
+          const baseMeta = ((prevEntry as { metadata?: Record<string, unknown> } | null)?.metadata ?? prevMeta) as Record<string, unknown>;
+          const newEmbedding = await embed(buildEmbeddingInput(draft, countries), OPENAI_KEY);
+          await supabase.from("entries").update({
+            content: draft,
+            summary: draft,
+            embedding: newEmbedding,
+            metadata: {
+              ...baseMeta,
+              meeting_id: mId,
+              title: meeting.title ?? baseMeta.title ?? null,
+              attendees: (meeting as { attendees?: unknown }).attendees ?? baseMeta.attendees ?? [],
+              identity_key: (meeting.identity_key as string | null) ?? null,
+              superseded: {
+                at: new Date().toISOString(),
+                by_telegram_id: telegram_id,
+                reason: verdict.reason,
+                prev_meeting_id: (pubMeeting as { id?: string } | null)?.id ?? null,
+              },
+            },
+            updated_at: new Date().toISOString(),
+          }).eq("id", dup.id);
+          console.log(`publish: версия встречи заменена на более полную ${dup.id} (${verdict.reason}, by ${telegram_id})`);
+        }
+
         const { data: existing } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", dup.id).single();
-        // Флаг duplicate — чтобы клиент не соврал «Черновик опубликован» (issue #170): в базе
-        // остаётся ЧУЖАЯ версия тезисов, а правки вычитавшего никуда не уехали. Ответ должен
-        // отличать «создал новую запись» (201) от «привязал к существующей» (200 + duplicate).
-        return json({ ...(existing as Record<string, unknown>), duplicate: true }, 200, origin);
+        // Клиент обязан сказать правду (issue #170): либо «твоя версия стала основной, она полнее»,
+        // либо «встреча уже в базе, там своя версия — ты правишь общую запись». Прежний ответ был
+        // неотличим от «создал новую», и тост уверял «Черновик опубликован».
+        return json({
+          ...(existing as Record<string, unknown>),
+          duplicate: true,
+          replaced: verdict.replace,
+          arbitration: verdict.reason,
+        }, 200, origin);
       }
 
       const { data: created, error: insErr } = await supabase.from("entries").insert({

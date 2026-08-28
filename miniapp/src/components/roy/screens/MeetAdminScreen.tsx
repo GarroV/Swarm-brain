@@ -657,6 +657,7 @@ function AgentMeetingDetail({
   onUpdated: (updated: AgentMeeting) => void;
 }) {
   const { toast } = useRoyNav();
+  const dt = useDt();
   // Локальная копия: поллинг подменяет её свежими данными по мере готовности тезисов.
   const [m, setM] = useState<AgentMeeting>(meeting);
   // Счётчик опросов: после AGENT_SLOW_POLL_COUNT показываем подсказку «обработка затянулась».
@@ -889,6 +890,29 @@ function AgentMeetingDetail({
         {m.attendees && m.attendees.length > 0 && (
           <div className="mt-1.5">
             <Participants attendees={m.attendees} />
+          </div>
+        )}
+        {/* Эта встреча уже в базе — говорим ДО публикации, а не тостом после (решение владельца
+            2026-08-28). Запись общая: в базу идёт САМАЯ ПОЛНАЯ версия, и правки участника
+            относятся к общей встрече, а не к личной копии. Если человек уже правил тезисы,
+            текст другой: автоматика его правки чужой версией не перетрёт и наоборот. */}
+        {m.in_base_duplicate && (
+          <div
+            className="mt-2 flex items-start gap-2 rounded-[10px] border px-3 py-2"
+            style={{ borderColor: "color-mix(in srgb, var(--status-open) 35%, transparent)", background: "color-mix(in srgb, var(--status-open) 8%, transparent)" }}
+          >
+            <RoyIcon name="warn" size={14} strokeWidth={1.9} />
+            <p className="text-ink-soft leading-snug" style={{ fontSize: 12 }}>
+              {m.notes_edited_at
+                ? dt(
+                    `Ты правишь общую встречу — она уже лежит в базе как «${m.in_base_duplicate.title}», и там своя версия тезисов. Твои правки не заменят её автоматически.`,
+                    `You are editing a shared meeting — it is already in the base as “${m.in_base_duplicate.title}” with its own version of the notes. Your edits will not replace it automatically.`,
+                  )
+                : dt(
+                    `Эта встреча уже в базе как «${m.in_base_duplicate.title}» — запись общая. При публикации в базе останется самая полная версия.`,
+                    `This meeting is already in the base as “${m.in_base_duplicate.title}” — the record is shared. On publish the base keeps the most complete version.`,
+                  )}
+            </p>
           </div>
         )}
       </div>
@@ -1486,11 +1510,19 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
       // Публикация черновика агента в выбранную базу
       const published = await publishAgentMeeting(item.data.id, storage === "personal" ? "personal" : "workspace", countries);
       if (published.duplicate) {
-        // Сервер нашёл эту же встречу в базе (её опубликовал другой участник) и привязал черновик
-        // к ней. Тезисы, которые человек только что вычитал, в базу НЕ уехали — молчать об этом
-        // нельзя (issue #170: тост «Черновик опубликован» уверял в обратном).
-        toast(dt("Эта встреча уже в базе — черновик привязан к ней, ваши тезисы не сохранены",
-                 "This meeting is already in the base — the draft was linked to it, your notes were not saved"));
+        // Встреча уже в базе (её опубликовал другой участник). Говорим, ЧТО именно произошло:
+        // в базе остаётся самая полная версия (issue #176), и человек должен знать, чья она
+        // теперь. Прежний тост «Черновик опубликован» врал в обоих случаях (issue #170).
+        if (published.replaced) {
+          toast(dt("Твоя версия полнее — она стала основной в общей записи",
+                   "Your version is more complete — it is now the shared record"));
+        } else if (published.arbitration === "published_edited" || published.arbitration === "incoming_edited") {
+          toast(dt("Встреча уже в базе, и тезисы там правили руками — твоя версия её не заменила",
+                   "The meeting is already in the base and its notes were edited by hand — your version did not replace it"));
+        } else {
+          toast(dt("Встреча уже в базе, и там версия полнее — твоя не заменила её",
+                   "The meeting is already in the base with a more complete version — yours did not replace it"));
+        }
       } else {
         toast(storage === "personal" ? "Опубликовано в личное" : "Черновик опубликован");
       }
