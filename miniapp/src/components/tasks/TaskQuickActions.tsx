@@ -35,14 +35,14 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
   return (
     <>
       <DatePicker
-        compact
+        variant="compact"
         value={task.due_date ?? ""}
         onChange={(iso) => commit({ due_date: iso || null }, { due_date: iso || null })}
         className={TRIGGER}
         placeholder=""
       />
       <DatePicker
-        compact
+        variant="compact"
         icon="bell"
         ariaLabel="Пинг"
         clearLabel="Убрать пинг"

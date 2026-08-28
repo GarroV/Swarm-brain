@@ -7,19 +7,23 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import { RoyIcon } from "@/components/roy/icons";
 import { countryName, countryFlag, countryCode } from "@/lib/countries";
+import { propertyRowCls, PropertyLabel, PropertyValue, PropertyChevron } from "@/components/ui/PropertyRow";
 
 type Props = {
   value: string;                 // id выбранной страны ("" = Global)
   codes: string[];               // коды стран для сетки (рынки воркспейса)
   onChange: (id: string) => void;
   // Триггер: "chip" — чип с текущей страной (форма); "icon" — компактная иконка-глобус
-  // (плотная строка задачи). Тело поповера (сетка флагов) одинаково в обоих случаях.
-  variant?: "chip" | "icon";
+  // (плотная строка задачи); "row" — тихая строка свойства в карточке задачи.
+  // Тело поповера (сетка флагов) одинаково во всех случаях.
+  variant?: "chip" | "icon" | "row";
+  /** Подпись строки в виде "row" (по умолчанию «Страна»). */
+  label?: string;
 };
 
 const W = 288, H = 300;
 
-export function CountryPopover({ value, codes, onChange, variant = "chip" }: Props) {
+export function CountryPopover({ value, codes, onChange, variant = "chip", label = "Страна" }: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -75,6 +79,30 @@ export function CountryPopover({ value, codes, onChange, variant = "chip" }: Pro
           style={{ width: 26, height: 26, color: value ? "var(--accent-ink)" : "var(--ink-soft)" }}
         >
           {value ? <span style={{ fontSize: 15 }}>{countryFlag(value)}</span> : <RoyIcon name="globe" size={15} strokeWidth={1.9} />}
+        </button>
+      ) : variant === "row" ? (
+        // Строка свойства (карточка задачи): подпись слева, страна значением справа.
+        <button
+          ref={btnRef}
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={toggle}
+          className={propertyRowCls}
+        >
+          <PropertyLabel icon="globe">{label}</PropertyLabel>
+          <PropertyValue>
+            {value ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span style={{ fontSize: 14 }}>{countryFlag(value)}</span>
+                <span className="truncate">{countryName(value)}</span>
+              </span>
+            ) : (
+              "Global"
+            )}
+          </PropertyValue>
+          <PropertyChevron />
         </button>
       ) : (
         // Чип-триггер (форма): текущая страна одной строкой; клик открывает сетку.

@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { PropertyRow, PropertyLabel, PropertyValue, propertySelectCls } from "@/components/ui/PropertyRow";
 import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
@@ -58,10 +59,6 @@ const AUTOSAVE_DELAY = 550;
 const fieldCls =
   "w-full min-h-10 rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute dark:backdrop-blur-sm";
 const labelCls = "mb-1 block font-semibold text-ink-soft";
-// Триггер кастомного Select (в теме проекта) — под общий вид полей (fieldCls): полная ширина,
-// та же линия/фон/скругление. Нативный <select> заменён, чтобы выпадашка была не системной.
-// min-h-10 — тач-цель: селекты проекта/исполнителя были 32-38px при норме 44.
-const selectTriggerCls = "w-full h-auto min-h-10 rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink";
 
 interface TaskModalProps {
   task?: Task;
@@ -129,6 +126,8 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
   // Цикличность: null — обычная задача. Производная от срока (день недели/число берутся из
   // него), поэтому без срока включить нельзя.
   const [recurFreq, setRecurFreq] = useState<string | null>(null);
+  // Чипы частоты раскрыты? Свёрнуты по умолчанию: в сводке видно значение, детали — по клику.
+  const [recurOpen, setRecurOpen] = useState(false);
   // Пинг — ручное напоминание, живёт рядом со сроком и независимо от него.
   const [remindDate, setRemindDate] = useState("");
   const [remindedAt, setRemindedAt] = useState<string | null>(null);
@@ -201,6 +200,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
     setDueDate(initialDue);
     setRemindDate(initialRemind);
     setRecurFreq(initialRecur);
+    setRecurOpen(false);
     setRemindedAt(task?.reminded_at ?? null);
     setCountry(initialCountry);
     setTaskRole(initialRole);
@@ -274,6 +274,14 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
     dueDate,
     dueDate === (task?.due_date ?? "") ? task?.recur_anchor_dom : null,
   );
+
+  // Значение строки «Повторять»: сама частота словами. Без срока строка выключена и честно
+  // говорит почему — раньше это была приписка мелким шрифтом рядом с чекбоксом.
+  const recurValueLabel = !recurOptions
+    ? dt("нужен срок", "needs a due date")
+    : recurFreq
+      ? (() => { const o = recurOptions.find((x) => x.freq === recurFreq); return o ? dt(o.ru, o.en) : "—"; })()
+      : "—";
 
   // Текущий снапшот формы (для сравнения с сохранённым) — те же ключи, что в useEffect open.
   const formSnapshot = () =>
@@ -538,108 +546,106 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               </div>
             </div>
 
-            {/* Правая колонка: настройки */}
-            <div className="flex flex-col gap-2.5">
+            {/* Правая колонка: сводка свойств. Тихие строки «иконка · подпись · значение»
+                вместо десяти боксов с подписями сверху — владелец 2026-08-28: «очень все крупно,
+                хочется минимализма в интерфейсе задач». Механика строки — ui/PropertyRow.tsx. */}
+            <div className="flex flex-col gap-0.5">
+              {/* Статус — единственный акцент колонки: меняется чаще всего и должен ловиться
+                  взглядом сразу. Внешний бокс-контейнер убран, выбранный держится янтарной
+                  пилюлей. 40px оставляем на всех ширинах: это главная кнопка карточки. */}
               {isEdit && (
-                <div>
-                  <span className={labelCls} style={{ fontSize: 12 }}>Статус</span>
-                  <div className="flex gap-[3px] rounded-[12px] border border-line bg-surface-2 p-[3px]">
-                    {STATUSES.map((s) => {
-                      const on = s.id === status;
+                <div className="mb-1.5 flex gap-1">
+                  {STATUSES.map((s) => {
+                    const on = s.id === status;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setStatus(s.id)}
+                        aria-label={s.label}
+                        aria-pressed={on}
+                        title={s.label}
+                        className={`flex flex-1 items-center justify-center gap-1.5 rounded-[10px] font-semibold transition-colors active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${on ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:bg-surface-2 hover:text-ink"}`}
+                        style={{ fontSize: 12.5, minHeight: 40 }}
+                      >
+                        {s.icon === "circle" ? (
+                          <span className="rounded-full border-2 border-current" style={{ width: 13, height: 13 }} />
+                        ) : (
+                          <RoyIcon name={s.icon} size={15} strokeWidth={2} />
+                        )}
+                        {on && <span>{s.label}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <DatePicker
+                variant="row"
+                value={dueDate}
+                // Сняли срок — цикличность гаснет вместе с ним: без срока считать следующее
+                // вхождение не от чего, а тихо оставленная частота молча перестала бы работать.
+                onChange={(iso) => { setDueDate(iso); if (!iso) setRecurFreq(null); }}
+                ariaLabel={dt("Срок", "Due date")}
+                placeholder="—"
+              />
+
+              <DatePicker
+                variant="row"
+                value={remindDate}
+                onChange={(iso) => { setRemindDate(iso); setRemindedAt(null); }}
+                icon="bell"
+                ariaLabel={dt("Пинг", "Ping")}
+                placeholder="—"
+                clearLabel={dt("Убрать пинг", "Clear ping")}
+              />
+              {/* Подсказка молчит, пока пинга нет: постоянная строка под полем занимала вертикаль
+                  ни за чем. «Уже напомнили» показываем всегда — она объясняет, почему дата стоит,
+                  а звонка больше не будет. */}
+              {remindDate && (
+                <p className="px-2 pb-1 text-right text-ink-mute" style={{ fontSize: 11 }}>
+                  {remindedAt
+                    ? dt("Уже напомнили — выбери новый день, чтобы напомнить снова", "Already sent — pick a new day to be reminded again")
+                    : dt("Напомним в этот день, один раз", "One reminder on this day")}
+                </p>
+              )}
+
+              {/* Цикличность. Подписи вариантов считаются от срока («По средам», «26-го числа»)
+                  — день недели и число отдельно не хранятся, это и есть срок задачи.
+                  Нативного чекбокса тут больше нет: в тёмной теме браузер рисовал его системным
+                  белым квадратом, чужим всему остальному. Теперь это обычная строка свойства,
+                  а выбор частоты (включая «не повторять») живёт в чипах под ней. */}
+              <PropertyRow
+                icon="repeat"
+                label={dt("Повторять", "Repeat")}
+                value={recurValueLabel}
+                muted={!recurFreq}
+                disabled={!recurOptions}
+                expanded={recurOpen}
+                onClick={() => setRecurOpen((o) => !o)}
+              />
+              {recurOpen && recurOptions && (
+                <div className="px-2 pb-1">
+                  <div className="flex flex-wrap gap-1.5">
+                    {[{ freq: null as string | null, ru: "Не повторять", en: "Never" }, ...recurOptions].map((o) => {
+                      const on = o.freq === recurFreq;
                       return (
                         <button
-                          key={s.id}
+                          key={o.freq ?? "none"}
                           type="button"
-                          onClick={() => setStatus(s.id)}
-                          aria-label={s.label}
-                          aria-pressed={on}
-                          title={s.label}
-                          className={`flex flex-1 items-center justify-center gap-1.5 rounded-[9px] py-1.5 font-semibold transition-colors active:scale-[0.97] ${on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(80,60,20,.1)]" : "bg-transparent text-ink-soft hover:text-ink"}`}
-                          // Тач-цель: переключатель статуса был 30px при норме 44.
-                          style={{ fontSize: 12.5, minHeight: 40 }}
+                          onClick={() => setRecurFreq(o.freq)}
+                          // Тот же чип, что в «Списках» — сплошной primary кричал громче статуса,
+                          // хотя «не повторять» это отсутствие настройки, а не главное в карточке.
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${on ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
+                          style={{ fontSize: 11.5 }}
                         >
-                          {s.icon === "circle" ? (
-                            <span className="rounded-full border-2 border-current" style={{ width: 13, height: 13 }} />
-                          ) : (
-                            <RoyIcon name={s.icon} size={15} strokeWidth={2} />
-                          )}
-                          {on && <span>{s.label}</span>}
+                          {dt(o.ru, o.en)}
                         </button>
                       );
                     })}
                   </div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="modal-due" className={labelCls} style={{ fontSize: 12 }}>Срок</label>
-                  <DatePicker
-                    value={dueDate}
-                    // Сняли срок — цикличность гаснет вместе с ним: без срока считать следующее
-                    // вхождение не от чего, а тихо оставленная частота молча перестала бы работать.
-                    onChange={(iso) => { setDueDate(iso); if (!iso) setRecurFreq(null); }}
-                    className={fieldCls}
-                    placeholder={dt("Срок", "Due date")}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="modal-ping" className={labelCls} style={{ fontSize: 12 }}>{dt("Пинг", "Ping")}</label>
-                  <DatePicker
-                    value={remindDate}
-                    onChange={(iso) => { setRemindDate(iso); setRemindedAt(null); }}
-                    className={fieldCls}
-                    icon="bell"
-                    placeholder={dt("Напомнить", "Remind me")}
-                    clearLabel={dt("Убрать пинг", "Clear ping")}
-                  />
-                  <p className="mt-1 text-ink-mute" style={{ fontSize: 11 }}>
-                    {remindDate && remindedAt
-                      ? dt("Уже напомнили — выбери новый день, чтобы напомнить снова", "Already sent — pick a new day to be reminded again")
-                      : dt("Напомним в этот день, один раз", "One reminder on this day")}
-                  </p>
-                </div>
-                {/* Цикличность. Подписи вариантов считаются от срока («По средам», «26-го числа»)
-                    — день недели и число отдельно не хранятся, это и есть срок задачи. */}
-                <div className="col-span-2">
-                  <label className="flex cursor-pointer items-center gap-2 text-ink-soft" style={{ fontSize: 12.5, minHeight: 40 }}>
-                    <input
-                      type="checkbox"
-                      checked={!!recurFreq}
-                      disabled={!recurOptions}
-                      onChange={(e) => setRecurFreq(e.target.checked ? "weekly" : null)}
-                      className="size-4 accent-accent disabled:opacity-40"
-                    />
-                    <RoyIcon name="repeat" size={14} strokeWidth={2} />
-                    <span className="font-semibold">{dt("Повторять", "Repeat")}</span>
-                    {!recurOptions && (
-                      <span className="text-ink-mute" style={{ fontSize: 11 }}>
-                        {dt("— сначала поставь срок", "— set a due date first")}
-                      </span>
-                    )}
-                  </label>
-                  {recurFreq && recurOptions && (
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {recurOptions.map((o) => {
-                        const on = o.freq === recurFreq;
-                        return (
-                          <button
-                            key={o.freq}
-                            type="button"
-                            onClick={() => setRecurFreq(o.freq)}
-                            className={`inline-flex items-center rounded-full px-3 py-1.5 font-semibold transition-colors ${
-                              on ? "bg-primary text-white" : "bg-secondary text-secondary-foreground hover:bg-secondary/70"
-                            }`}
-                            style={{ fontSize: 12, minHeight: 36 }}
-                          >
-                            {dt(o.ru, o.en)}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
                   {recurFreq && (
-                    <p className="mt-1 text-ink-mute" style={{ fontSize: 11 }}>
+                    <p className="mt-1.5 text-ink-mute" style={{ fontSize: 11 }}>
                       {dt(
                         "Отметишь готовой — задача не закроется, а перенесётся на следующий раз",
                         "Marking it done rolls the task to its next occurrence instead of closing it",
@@ -647,26 +653,51 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                     </p>
                   )}
                 </div>
+              )}
 
-                <div>
-                  <span className={labelCls} style={{ fontSize: 12 }}>{dt("Проект", "Project")}</span>
-                  <Select value={selProject ?? NONE} onValueChange={(v) => setSelProject(v === NONE ? null : v)}>
-                    <SelectTrigger id="modal-project" className={selectTriggerCls}>
-                      {/* Подпись считаем САМИ (base-ui Value в этой версии рисует сырое значение/UUID). */}
-                      <span className="truncate">{!selProject || selProject === NONE ? "—" : (projects.find((p) => p.id === selProject)?.name ?? "—")}</span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE}>—</SelectItem>
-                      {projects.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+              <Select value={selProject ?? NONE} onValueChange={(v) => setSelProject(v === NONE ? null : v)}>
+                <SelectTrigger id="modal-project" aria-label={dt("Проект", "Project")} className={propertySelectCls}>
+                  <PropertyLabel icon="board">{dt("Проект", "Project")}</PropertyLabel>
+                  {/* Подпись считаем САМИ (base-ui Value в этой версии рисует сырое значение/UUID). */}
+                  <PropertyValue muted={!selProject || selProject === NONE}>
+                    {!selProject || selProject === NONE ? "—" : (projects.find((p) => p.id === selProject)?.name ?? "—")}
+                  </PropertyValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>—</SelectItem>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Выбор страны — контекстное меню: строка-триггер + портал-поповер с сеткой флагов. */}
+              <CountryPopover
+                value={selectedCountryId}
+                codes={countryCodes}
+                onChange={setCountry}
+                variant="row"
+                label={dt("Страна", "Country")}
+              />
+
+              {/* «Общие» = без конкретного исполнителя → командная задача (вкладка «Команда»). */}
+              <Select value={assigneeId} onValueChange={(v) => setAssigneeId(v ?? NONE)}>
+                <SelectTrigger id="modal-assignee" aria-label={dt("Исполнитель", "Assignee")} className={propertySelectCls}>
+                  <PropertyLabel icon="team">{dt("Исполнитель", "Assignee")}</PropertyLabel>
+                  <PropertyValue muted={assigneeId === NONE}>
+                    {assigneeId === NONE ? dt("Общие", "Unassigned") : (assigneeOptions.find((o) => o.id === assigneeId)?.name ?? `#${assigneeId}`)}
+                  </PropertyValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>{dt("Общие (вся команда)", "Unassigned (whole team)")}</SelectItem>
+                  {assigneeOptions.map((o) => (
+                    <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
               {SHOW_TASK_ROLE && (
-                <div>
+                <div className="px-2 pt-1">
                   <label htmlFor="modal-role" className={labelCls} style={{ fontSize: 12 }}>Роль</label>
                   <select id="modal-role" className={fieldCls} value={taskRole} onChange={(e) => setTaskRole(e.target.value)}>
                     <option value={NONE}>— Нет —</option>
@@ -677,35 +708,12 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                 </div>
               )}
 
-              {/* Страна + Исполнитель в один ряд — экономим вертикаль. */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <span className={labelCls} style={{ fontSize: 12 }}>Страна</span>
-                  {/* Выбор страны — контекстное меню: чип-триггер + портал-поповер с сеткой флагов. */}
-                  <CountryPopover value={selectedCountryId} codes={countryCodes} onChange={setCountry} />
-                </div>
-                <div>
-                  <span className={labelCls} style={{ fontSize: 12 }}>Исполнитель</span>
-                  {/* «Общие» = без конкретного исполнителя → командная задача (видна во вкладке «Команда»). */}
-                  <Select value={assigneeId} onValueChange={(v) => setAssigneeId(v ?? NONE)}>
-                    <SelectTrigger id="modal-assignee" className={selectTriggerCls}>
-                      <span className="truncate">{assigneeId === NONE ? "Общие (вся команда)" : (assigneeOptions.find((o) => o.id === assigneeId)?.name ?? `#${assigneeId}`)}</span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE}>Общие (вся команда)</SelectItem>
-                      {assigneeOptions.map((o) => (
-                        <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Персональные списки-метки. Видны всегда; выбор списка делает задачу личной. */}
+              {/* Персональные списки-метки. Единственное многозначное свойство — строкой его не
+                  выразить, поэтому остаётся чипами, но уезжает под линию, ниже сводки. */}
               {labels.length > 0 && (
-                <div>
-                  <span className={labelCls} style={{ fontSize: 12 }}>Списки</span>
-                  <div className="flex flex-wrap gap-1.5">
+                <div className="mt-1.5 border-t border-line pt-2.5">
+                  <span className="mb-1.5 block px-2 text-ink-mute" style={{ fontSize: 11 }}>{dt("Списки", "Lists")}</span>
+                  <div className="flex flex-wrap gap-1.5 px-2">
                     {labels.map((l) => {
                       const on = labelIds.includes(l.id);
                       return (
@@ -713,7 +721,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                           key={l.id}
                           type="button"
                           onClick={() => setLabelIds((prev) => (prev.includes(l.id) ? prev.filter((x) => x !== l.id) : [...prev, l.id]))}
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold transition-colors ${on ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${on ? "border-primary bg-accent-soft text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2"}`}
                           style={{ fontSize: 12 }}
                         >
                           <RoyIcon name={((l.icon as RoyIconName) || "tag")} size={13} strokeWidth={1.9} />
@@ -723,7 +731,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                     })}
                   </div>
                   {labelIds.length > 0 && !task?.is_private && (
-                    <p className="mt-1.5 text-ink-mute" style={{ fontSize: 11.5 }}>
+                    <p className="mt-1.5 px-2 text-ink-mute" style={{ fontSize: 11.5 }}>
                       Список личный — задача станет видна только тебе.
                     </p>
                   )}

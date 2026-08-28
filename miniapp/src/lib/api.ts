@@ -130,7 +130,7 @@ function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
     status: o.status ?? "open", created_at: new Date().toISOString(), updated_at: null,
     meeting_id: null, url: null, group_id: "cee", created_by_name: o.created_by_name ?? "Dev User",
     is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null,
-    label_ids: [], project_id: o.project_id ?? null, project_linked: o.project_linked ?? false,
+    label_ids: o.label_ids ?? [], project_id: o.project_id ?? null, project_linked: o.project_linked ?? false,
     parent_id: o.parent_id ?? null, tree_x: o.tree_x ?? null, tree_y: o.tree_y ?? null,
     recur_freq: o.recur_freq ?? null, recur_anchor_dom: o.recur_anchor_dom ?? null,
   };
@@ -138,7 +138,9 @@ function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
 let mockTasks: Task[] = [
   mkMock({ id: "1", title: "Prepare Q2 report", description: "Collect metrics and draft slides", due_date: mockDay(0), remind_date: mockDay(7), country: "KZ", task_role: "bd", priority: "high" }),
   mkMock({ id: "2", title: "Design landing page", country: "PL", task_role: "marketing", priority: "med", status: "in_progress", created_by_name: "Alice Smith" }),
-  mkMock({ id: "3", title: "Review contracts", due_date: mockDay(-40), task_role: "rnd", priority: "low", status: "done", created_by_name: null }),
+  // Выполненная задача СО СПИСКОМ — покрытие того, что чипы списков у неё не пропадают
+  // (решение владельца 2026-08-28). Без этого случая мок не показывал разницы вообще.
+  mkMock({ id: "3", title: "Review contracts", due_date: mockDay(-40), task_role: "rnd", priority: "low", status: "done", created_by_name: null, label_ids: ["l-it"] }),
   // ── доп. мок-задачи для проверки тумблеров «По рынкам»/«Все сотрудники» (разные исполнители/страны) ──
   mkMock({ id: "4", title: "Kazakhstan pricing review", country: "KZ", assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: mockDay(2), remind_date: mockDay(1) }),
   mkMock({ id: "5", title: "Poland launch checklist", country: "PL", assignees: ["Alice Smith"], assignee_telegram_ids: [789012], due_date: mockDay(9), remind_date: mockDay(-1), reminded_at: new Date().toISOString(), created_by_name: "Alice Smith" }),
