@@ -1398,7 +1398,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let req = ClaimRequest(
             identityKind: kind,
             identityKey: meta.identityKey ?? "manual:\(meta.base)",
-            title: meta.title ?? "Восстановленная запись",
+            title: meta.title,   // пусто → сервер назовёт «участник — дата» (#184)
             startedAt: meta.calStartISO ?? meta.startISO,
             endedAt: meta.calEndISO ?? iso.string(from: Date()),
             agentVersion: "0.1.0")
@@ -1484,7 +1484,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             req = ClaimRequest(
                 identityKind: info.kind,
                 identityKey: info.key,
-                title: titleOverride ?? info.title ?? "Встреча",
+                title: titleOverride ?? info.title,   // пусто → сервер назовёт «участник — дата» (#184)
                 startedAt: info.startISO ?? iso.string(from: p.started),
                 endedAt: info.endISO ?? iso.string(from: p.ended),
                 attendees: info.attendees.isEmpty ? nil : info.attendees,
@@ -1496,7 +1496,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             req = ClaimRequest(
                 identityKind: .manual,
                 identityKey: p.manualKey,   // стабильный ключ → повтор claim не плодит встречи
-                title: titleOverride ?? "Запись \(DateFormatter.localizedString(from: p.ended, dateStyle: .short, timeStyle: .short))",
+                // Заглушку названия больше не придумываем: имя человека знает сервер, а не мы
+                // (у нас на диске только токен). Пусто → meeting-claim ставит «участник — дата» (#184).
+                title: titleOverride,
                 startedAt: iso.string(from: p.started),
                 endedAt: iso.string(from: p.ended),
                 agentVersion: "0.1.0",
