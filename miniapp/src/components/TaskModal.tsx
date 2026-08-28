@@ -15,6 +15,7 @@ import {
   fetchConfig,
   fetchProjects,
   fetchMe,
+  fetchTask,
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
@@ -103,7 +104,17 @@ function TaskOrigin({ task }: { task: Task }) {
   );
 }
 
-export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, projectId }: TaskModalProps) {
+export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, meetingId, projectId }: TaskModalProps) {
+  // Догрузка полной задачи живёт ЗДЕСЬ, а не в вызывающем экране. Раньше это было требованием
+  // к вызывающей стороне («открыл задачу из списка — догрузи по id»), и из пяти точек входа его
+  // соблюдала одна: список, доска, таймлайн и облако проекта отдавали объект из проекции
+  // TASK_LIST_COLUMNS, карточка навсегда застревала в «Загружаем…» и МОЛЧА теряла все правки
+  // (issue #145, владелец 2026-08-28: «нажимал что она выполнена, но нифига не сработало»).
+  // Теперь любой вызывающий корректен по построению.
+  const [hydrated, setHydrated] = useState<Task | null>(null);
+  const [hydrateFailed, setHydrateFailed] = useState(false);
+  const [hydrateAttempt, setHydrateAttempt] = useState(0);
+  const task = hydrated && taskProp && hydrated.id === taskProp.id ? hydrated : taskProp;
   const isEdit = !!task;
   const confirm = useConfirm();
   const dt = useDt();
@@ -140,11 +151,33 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
   const savedSnapRef = useRef("");
 
   // Задача из СПИСОЧНОГО ответа приходит БЕЗ description и task_role — их не тянет проекция
-  // TASK_LIST_COLUMNS (issue #116). А buildPatch() ниже собирает PATCH из ВСЕХ полей формы,
-  // а не только изменённых, поэтому автосейв на такой задаче отправил бы 
-  // и  и стёр реальные значения.  = «не загружено» (пусто — это
-  // ), полную версию догружает openTask по id: пока она не доехала, запись запрещена.
+  // TASK_LIST_COLUMNS (issue #116). А buildPatch() ниже собирает PATCH из ВСЕХ полей формы, а не
+  // только изменённых, поэтому автосейв на такой задаче отправил бы пустые description/task_role
+  // и стёр реальные значения. undefined = «не загружено» (null — это «пусто», законное значение).
+  // Пока полная версия не доехала, запись запрещена, а форма выключена — иначе кнопки
+  // переключались бы, ничего не сохраняя, и врали бы человеку и скринридеру.
   const isPartial = isEdit && task?.description === undefined;
+
+  // Догружаем ровно один раз на задачу: taskProp меняет идентичность при каждом обновлении
+  // списка, поэтому сторожим по id, а не по ссылке. hydrateAttempt — ручной повтор из строки
+  // ошибки.
+  useEffect(() => {
+    if (!open || !taskProp || taskProp.description !== undefined) return;
+    if (hydrated?.id === taskProp.id) return;
+    let cancelled = false;
+    setHydrateFailed(false);
+    fetchTask(taskProp.id)
+      .then((full) => { if (!cancelled) setHydrated(full); })
+      .catch(() => { if (!cancelled) setHydrateFailed(true); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, taskProp?.id, taskProp?.description, hydrateAttempt]);
+
+  // Закрыли карточку — забываем догруженное, иначе следующая откроется с чужими данными,
+  // пока сторож по id не сработает.
+  useEffect(() => {
+    if (!open) { setHydrated(null); setHydrateFailed(false); }
+  }, [open]);
 
   // Reset form whenever the dialog opens or the task changes
   useEffect(() => {
@@ -360,7 +393,9 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
   };
 
   const titleMissing = isEdit && !title.trim();
-  const saveHint = isPartial
+  const saveHint = hydrateFailed
+    ? "Не загрузилось"
+    : isPartial
     ? "Загружаем…"
     : titleMissing
     ? "Нужно название"
@@ -371,7 +406,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
         : saveState === "saved"
           ? "Сохранено"
           : "";
-  const saveHintDanger = titleMissing || saveState === "error";
+  const saveHintDanger = titleMissing || saveState === "error" || hydrateFailed;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
@@ -421,6 +456,41 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
 
         {/* Поля — две колонки: слева название + большое поле редактуры, справа настройки */}
         <div className="max-h-[80vh] overflow-y-auto px-5 py-3">
+          {/* Отказ догрузки — ГРОМКИЙ. Раньше это был один тост и навсегда мёртвая форма:
+              человек правил задачу, ничего не сохранялось, и никто ему об этом не говорил. */}
+          {hydrateFailed && (
+            <div
+              className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[12px] border px-3 py-2"
+              style={{
+                borderColor: "color-mix(in srgb, var(--pri-high) 40%, transparent)",
+                background: "color-mix(in srgb, var(--pri-high) 8%, transparent)",
+              }}
+            >
+              <RoyIcon name="warn" size={15} className="shrink-0 text-[var(--pri-high)]" />
+              <span className="min-w-0 flex-1 text-ink" style={{ fontSize: 12.5 }}>
+                {dt(
+                  "Не удалось загрузить задачу целиком. Правки заблокированы, чтобы не стереть описание.",
+                  "Could not load the full task. Editing is blocked so the description isn't wiped.",
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => setHydrateAttempt((n) => n + 1)}
+                className="shrink-0 rounded-[10px] border border-line bg-surface px-3 font-semibold text-ink transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                style={{ fontSize: 12, minHeight: 32 }}
+              >
+                {dt("Повторить", "Retry")}
+              </button>
+            </div>
+          )}
+          {/* Пока задача неполная, форма ВЫКЛЮЧЕНА: fieldset[disabled] гасит и поля, и кнопки.
+              Иначе статус «нажимается», значение в форме меняется, PATCH не уходит — и интерфейс
+              врёт человеку и скринридеру (aria-pressed переключался на несохранённом). */}
+          <fieldset
+            disabled={isPartial}
+            aria-busy={isPartial && !hydrateFailed}
+            className={`m-0 min-w-0 border-0 p-0 ${isPartial ? "opacity-60" : ""}`}
+          >
           <div className="grid items-start gap-x-5 gap-y-3 sm:grid-cols-[1.4fr_1fr]">
             {/* Левая колонка: название + редактура */}
             <div className="flex flex-col gap-2.5">
@@ -661,6 +731,7 @@ export function TaskModal({ task, open, onClose, onSaved, prefill, meetingId, pr
               )}
             </div>
           </div>
+          </fieldset>
 
           {isEdit && task && (
             <div className="mt-1 border-t border-line pt-3">
