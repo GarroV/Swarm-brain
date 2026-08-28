@@ -27,7 +27,7 @@ import { countryCode } from "@/lib/countries";
 import { MarketChips } from "../MarketChips";
 import {
   applyMeetingsFilter, isFilterActive, isConfirmed, personOf,
-  EMPTY_FILTERS, type MeetingsFilterState, type PeriodId,
+  EMPTY_FILTERS, loadSavedFilters, saveFilters, type MeetingsFilterState, type PeriodId,
 } from "./meetingsFilter";
 
 // Статистика по «Все встречи»: сортированный подсчёт (по убыванию).
@@ -1294,7 +1294,16 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
   // «Все встречи» — грузятся лениво при первом переключении в этот режим.
   const [allMeetings, setAllMeetings] = useState<Entry[] | null>(null);
   // Фильтры режима «Все встречи» (владелец 2026-08-21: правый блок статистики → блок фильтров).
-  const [filters, setFilters] = useState<MeetingsFilterState>(EMPTY_FILTERS);
+  // Выбор переживает уход с экрана и перезагрузку (владелец 2026-08-28: «человек выставил —
+  // система запомнила»). Хранилище читаем ПОСЛЕ монтирования, а не в инициализаторе useState:
+  // страница собирается статически, и разный результат на сервере и на клиенте дал бы
+  // рассинхрон гидрации. Тот же порядок, что у периода дайджеста.
+  const [filters, setFiltersState] = useState<MeetingsFilterState>(EMPTY_FILTERS);
+  useEffect(() => { setFiltersState(loadSavedFilters()); }, []);
+  const setFilters = useCallback((next: MeetingsFilterState) => {
+    setFiltersState(next);
+    saveFilters(next);
+  }, []);
   const [markets, setMarkets] = useState<string[] | null>(null);
   const [selected, setSelected] = useState<MeetItem | null>(null);
 
