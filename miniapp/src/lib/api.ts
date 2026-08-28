@@ -136,7 +136,7 @@ function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
   };
 }
 let mockTasks: Task[] = [
-  mkMock({ id: "1", title: "Prepare Q2 report", description: "Collect metrics and draft slides", due_date: mockDay(0), remind_date: mockDay(7), country: "KZ", task_role: "bd", priority: "high", label_ids: ["l-it"] }),
+  mkMock({ id: "1", title: "Prepare Q2 report", description: "Collect metrics and draft slides", due_date: mockDay(0), remind_date: mockDay(7), country: "KZ", task_role: "bd", priority: "high" }),
   mkMock({ id: "2", title: "Design landing page", country: "PL", task_role: "marketing", priority: "med", status: "in_progress", created_by_name: "Alice Smith" }),
   // Выполненная задача СО СПИСКОМ — покрытие того, что чипы списков у неё не пропадают
   // (решение владельца 2026-08-28). Без этого случая мок не показывал разницы вообще.
