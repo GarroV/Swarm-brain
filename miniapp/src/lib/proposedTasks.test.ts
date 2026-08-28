@@ -123,9 +123,16 @@ Deno.test("названный исполнитель важнее публику
   assertEquals(effectiveAssigneeId("@garro", USERS, 326345803), 744230399);
 });
 
-Deno.test("названо чужое или неоднозначное имя — исполнителя не выдумываем", () => {
-  assertEquals(effectiveAssigneeId("Илья Голдин", USERS, 326345803), null);
-  assertEquals(effectiveAssigneeId("Пётр", USERS, 326345803), null);
+Deno.test("имя названо, но из текста не подтянулось — задача тоже на публикующем", () => {
+  // Решение владельца 2026-08-28: «не смогли подтянуть исполнителя — ставим того, кто
+  // генерировал задачу». Незнакомое имя и неоднозначность больше НЕ дают ничью задачу.
+  assertEquals(effectiveAssigneeId("Илья Голдин", USERS, 326345803), 326345803);
+  assertEquals(effectiveAssigneeId("Пётр", USERS, 326345803), 326345803);
+});
+
+Deno.test("ничья задача остаётся только когда публикующий неизвестен", () => {
+  assertEquals(effectiveAssigneeId("Илья Голдин", USERS, null), null);
+  assertEquals(effectiveAssigneeId("Пётр", USERS, null), null);
 });
 
 Deno.test("личность публикующего неизвестна — поведение как раньше", () => {
