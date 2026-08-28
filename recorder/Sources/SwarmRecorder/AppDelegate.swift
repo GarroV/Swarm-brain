@@ -317,6 +317,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    // Идёт ручная проверка обновления (пункт меню показывает это вместо кнопки).
+    private var updateCheckInFlight = false
+
+    // Пункт «Обновить bumblebee». Решение принимает Updater.decide — та же функция, что и в
+    // самопроверке `--selftest-update`, поэтому поведение кнопки проверяемо без кликов.
+    @objc private func checkUpdateTapped() {
+        guard !updateCheckInFlight else { return }
+        updateCheckInFlight = true
+        rebuildMenu()
+        let idle: Bool = { if case .idle = state, !updateSpawned { return true }; return false }()
+        let cfg = config
+        Task {
+            let decision = await Updater.decide(config: cfg, isIdle: idle)
+            await MainActor.run {
+                self.updateCheckInFlight = false
+                self.applyUpdateDecision(decision)
+                self.rebuildMenu()
+            }
+        }
+    }
+
+    private func applyUpdateDecision(_ decision: Updater.Decision) {
+        switch decision {
+        case .noConfig:
+            infoAlert("Нужен токен", "bumblebee пока не подключён — вставь токен из бота, потом обновляй.")
+        case .notInstalled(let path):
+            infoAlert("Обновление недоступно",
+                      "Приложение запущено не из /Applications, а из \(path). Обновляется только копия в /Applications.")
+        case .busy:
+            infoAlert("Сейчас идёт запись",
+                      "Обновлю после встречи — прерывать запись ради обновления нельзя. Можно вернуться к этому пункту, когда запись закончится.")
+        case .unreachable:
+            infoAlert("Не удалось проверить обновление",
+                      "Сервер не ответил — похоже, нет сети. bumblebee проверяет обновления и сам, в простое, так что можно просто попробовать позже.")
+        case .upToDate(let build):
+            infoAlert("Установлена последняя версия", "Сборка \(build) — обновлять нечего.")
+        case .available(let build, let from, let assetURL):
+            updateSpawned = true
+            Updater.runUpdater(currentBuild: from, targetBuild: build, assetURL: assetURL)
+            infoAlert("Обновляю до сборки \(build)",
+                      "Сейчас \(from). Скачаю и перезапущу — это займёт несколько секунд. Разрешение на запись звука не слетит, токен останется прежним.")
+        }
+    }
+
+    private func infoAlert(_ title: String, _ text: String) {
+        let a = NSAlert()
+        a.messageText = title
+        a.informativeText = text
+        a.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        a.runModal()
+    }
+
     @objc private func watchTick() {
         guard let cfg = config, configError == nil else { return }
         Task {
@@ -545,6 +598,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Бэкстоп: macOS-разрешение на запись системного звука можно открыть вручную в любой
         // момент (Core Audio process-tap при отказе иногда даёт тишину без ошибки → catch не сработает).
         menu.addItem(NSMenuItem(title: "Открыть настройки записи", action: #selector(openRecordingSettingsTapped), keyEquivalent: ""))
+        // Обновление по требованию. Авто-апдейт работает сам, но человеку нужен способ обновиться
+        // СЕЙЧАС и увидеть результат: иначе единственный известный ему путь — перевыпуск токена
+        // в боте, который гасит рабочую установку, если он не дойдёт до конца (issue #146).
+        if updateCheckInFlight {
+            let item = NSMenuItem(title: "Проверяю обновление…", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        } else {
+            menu.addItem(NSMenuItem(title: "Обновить bumblebee · сборка \(Updater.currentBuild)",
+                                    action: #selector(checkUpdateTapped), keyEquivalent: ""))
+        }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Выйти", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         for item in menu.items where item.action != nil && item.action != #selector(NSApplication.terminate(_:)) {
