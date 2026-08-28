@@ -4,7 +4,7 @@ import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId, getDeepLinkTaskId } from "@/lib/telegram";
-import { fetchAgentMeetings, fetchTask, logout } from "@/lib/api";
+import { fetchAgentMeetings, logout } from "@/lib/api";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { RoyNavContext, useRoyNav, useDt, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
 import type { Lens, SmartListId } from "@/lib/smartLists";
@@ -100,13 +100,10 @@ export function RoyApp({ me }: { me: Me | null }) {
   // полную задачу догружаем по id и подменяем: эффект сброса формы в TaskModal зависит от
   // самого объекта, поэтому форма переинициализируется на полных данных. До подмены запись
   // в TaskModal заблокирована (isPartial), иначе автосейв стёр бы описание.
-  const openTask = useCallback((t: Task) => {
-    setTaskModalTask(t);
-    if (t.description !== undefined) return;   // уже полная (например, из fetchTask)
-    fetchTask(t.id)
-      .then((full) => setTaskModalTask((prev) => (prev && prev.id === full.id ? full : prev)))
-      .catch(() => toast("Не удалось загрузить задачу целиком — закройте и откройте снова"));
-  }, [toast]);
+  // Просто открываем. Полную версию задачи догружает сам TaskModal, если пришла урезанная
+  // (issue #145): держать это здесь значило требовать того же от каждой новой точки входа —
+  // четыре из пяти уже не выполняли требование и молча теряли правки.
+  const openTask = useCallback((t: Task) => setTaskModalTask(t), []);
 
   // Открыть вычитку встречи в этом инстансе: вкладка Встречи + push вычитки.
   // Дёргается и из начального deep-link, и по событию roy:open-meeting (когда встречу

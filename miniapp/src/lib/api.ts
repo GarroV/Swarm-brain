@@ -350,7 +350,15 @@ export async function fetchTasks(filters?: string | TaskFilters): Promise<Task[]
     if (f.tags?.length) r = r.filter((t) => f.tags!.some((tag) => (t.tags ?? []).includes(tag)));
     if (f.label_id) r = r.filter((t) => t.label_ids?.includes(f.label_id!));
     if (f.project_id) r = r.filter((t) => t.project_id === f.project_id);
-    return [...r]; // копия: не отдаём mockTasks по ссылке (иначе оптимистичные апдейты в UI дублируют)
+    // Копия (не отдаём mockTasks по ссылке — иначе оптимистичные апдейты в UI дублируют) И БЕЗ
+    // description: прод отдаёт список узкой проекцией TASK_LIST_COLUMNS, и мок обязан врать так же.
+    // Пока мок отдавал задачи целиком, застревание карточки в «Загружаем…» (issue #145) локально
+    // не воспроизводилось вообще — баг доехал до людей.
+    return r.map((t) => {
+      const copy: Record<string, unknown> = { ...t };
+      delete copy.description;
+      return copy as Task;
+    });
   }
   const params = new URLSearchParams();
   if (f.status) params.set("status", f.status);
@@ -374,10 +382,13 @@ export async function fetchTasks(filters?: string | TaskFilters): Promise<Task[]
 
 export async function fetchTask(id: string): Promise<Task> {
   if (DEV_MODE) {
-    const all = await fetchTasks();
-    const t = all.find((x) => x.id === id);
+    // Из mockTasks НАПРЯМУЮ, а не через fetchTasks(): списочный мок режет description под
+    // прод-проекцию, а этот эндпоинт — ровно тот, кто отдаёт задачу ЦЕЛИКОМ (на сервере
+    // select("*")). Через fetchTasks() догрузка вернула бы такую же неполную задачу и карточка
+    // осталась бы в «Загружаем…» навсегда.
+    const t = mockTasks.find((x) => x.id === id);
     if (!t) throw new ApiError(404, "Not found");
-    return t;
+    return { ...t };
   }
   return apiFetch<Task>(`/tasks/${id}`);
 }
