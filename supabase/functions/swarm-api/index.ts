@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
 import { verifyJWT, signJWT } from "../_shared/jwt.ts";
-import { getRecorderTokenStatus, mintRecorderToken, buildRecorderSetupOneLiner } from "../_shared/recorder-token.ts";
+import { getRecorderTokenStatus, mintRecorderToken, buildRecorderSetupOneLiner, buildRecorderUpdateOneLiner } from "../_shared/recorder-token.ts";
 import { getMcpTokenStatus, mintMcpToken, buildSetupOneLiner } from "../_shared/mcp-token.ts";
 import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
 import { feedbackCategoryLabel, isFeedbackCategory } from "../_shared/feedback-categories.ts";
@@ -490,7 +490,9 @@ Deno.serve(async (req: Request) => {
   // GET /recorder/setup — статус токена рекордера (активен ли + до когда) для секции «Рекордер» в вебе.
   if (req.method === "GET" && routePath === "/recorder/setup") {
     const st = await getRecorderTokenStatus(supabase, telegram_id);
-    return json(st, 200, origin);
+    // updateOneLiner отдаём всегда: он без токена (установщик возьмёт прописанный на маке),
+    // поэтому не секрет и не требует перевыпуска — им же чинится «хочу обновить приложение».
+    return json({ ...st, updateOneLiner: buildRecorderUpdateOneLiner() }, 200, origin);
   }
 
   // POST /recorder/token — минт/перевыпуск токена рекордера → { oneLiner, expiresAt }.
