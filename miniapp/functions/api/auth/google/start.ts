@@ -2,6 +2,8 @@ import { signState } from "../../../_lib/oauth-state";
 
 // CF Pages Function: GET /api/auth/google/start?next=… → редирект на Google consent.
 // Живёт на домене pages.dev (как /api/auth/telegram), чтобы кука встала на нужный домен.
+import { LOGIN_SCOPES } from "../../../_lib/google-name";
+
 type Env = { GOOGLE_CLIENT_ID: string; WEB_JWT_SECRET: string };
 type Ctx = { request: Request; env: Env };
 
@@ -22,7 +24,14 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   auth.searchParams.set("client_id", clientId);
   auth.searchParams.set("redirect_uri", redirectUri);
   auth.searchParams.set("response_type", "code");
-  auth.searchParams.set("scope", "openid email profile");
+  // Календарь просим здесь же: «вошёл через Google — календарь привязан» (решение владельца
+  // 2026-08-28). Google покажет granular-экран; снятая галочка календаря вход НЕ ломает.
+  auth.searchParams.set("scope", LOGIN_SCOPES);
+  // refresh_token нужен серверу, чтобы читать календарь без человека у экрана. Без offline
+  // Google отдаёт только короткоживущий access_token, и привязка была бы фикцией.
+  auth.searchParams.set("access_type", "offline");
+  // Уже выданные права переносим, чтобы не терять их при добавлении новых.
+  auth.searchParams.set("include_granted_scopes", "true");
   auth.searchParams.set("hd", ALLOWED_DOMAIN); // подсказка Google показывать аккаунты домена
   auth.searchParams.set("prompt", "select_account");
   auth.searchParams.set("state", await signState(env.WEB_JWT_SECRET, next));

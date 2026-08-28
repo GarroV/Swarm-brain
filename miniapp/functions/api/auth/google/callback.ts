@@ -1,5 +1,5 @@
 import { verifyState, hmacSign } from "../../../_lib/oauth-state";
-import { type GoogleName, nameSigPayload, normalizeName } from "../../../_lib/google-name";
+import { type GoogleName, hasCalendarScope, nameSigPayload, normalizeName } from "../../../_lib/google-name";
 import { signJWT, SESSION_TTL_SEC } from "../../../_lib/jwt";
 
 // CF Pages Function: GET /api/auth/google/callback — Google вернул code.
@@ -10,6 +10,7 @@ type Ctx = { request: Request; env: Env };
 
 const ALLOWED_DOMAIN = "dodobrands.io";
 const RESOLVE_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/auth-resolve";
+const CALENDAR_LINK_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/google-oauth/link";
 
 function loginErr(origin: string, err: string): Response {
   return Response.redirect(`${origin}/login?err=${encodeURIComponent(err)}`, 302);
@@ -43,7 +44,7 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
     }),
   });
   if (!tokRes.ok) return loginErr(origin, "token");
-  const tok = await tokRes.json() as { access_token?: string };
+  const tok = await tokRes.json() as { access_token?: string; refresh_token?: string; scope?: string };
   if (!tok.access_token) return loginErr(origin, "token");
 
   // 2) userinfo → verified email + домен
@@ -76,7 +77,28 @@ export async function onRequestGet(ctx: Ctx): Promise<Response> {
   // telegram_id (-id). Пустой id тут — сбой резолва (гонка/ошибка записи), а не «ждём Telegram».
   if (r.telegram_id == null) return loginErr(origin, "link_telegram");
 
-  // 4) сессия
+  // 4) календарь, если человек оставил галочку на экране согласия.
+  // Проверяем ФАКТИЧЕСКИ выданные scope, а не предполагаем: Google требует «handle any denial of
+  // scopes by disabling relevant features». Снял галочку — просто не привязываем, вход идёт дальше
+  // (решение владельца 2026-08-28). refresh_token Google отдаёт только при первом согласии на
+  // календарь: у кого он уже есть в базе, тут будет пусто — перетирать нечем и не нужно.
+  if (hasCalendarScope(tok.scope) && tok.refresh_token) {
+    try {
+      const linkSig = await hmacSign(env.WEB_JWT_SECRET, `${r.telegram_id}|${tok.refresh_token}`);
+      const linkRes = await fetch(CALENDAR_LINK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telegram_id: r.telegram_id, refresh_token: tok.refresh_token, sig: linkSig }),
+      });
+      // Календарь — не причина не пустить человека в продукт: он увидит «не подключён» в
+      // Настройках и привяжет кнопкой. Молча считать привязанным нельзя.
+      if (!linkRes.ok) console.error("google-login: календарь не привязался", linkRes.status);
+    } catch (e) {
+      console.error("google-login: календарь не привязался", e);
+    }
+  }
+
+  // 5) сессия
   const jwt = await signJWT({ telegram_id: r.telegram_id }, env.WEB_JWT_SECRET);
   const maxAge = SESSION_TTL_SEC;
   return new Response(null, {

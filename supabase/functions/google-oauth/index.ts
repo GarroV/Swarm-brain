@@ -8,6 +8,7 @@
 // Секреты: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET (+ есть WEB_JWT_SECRET, WEB_BASE_URL).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyJWT } from "../_shared/jwt.ts";
+import { CALENDAR_SCOPE } from "../_shared/google-scopes.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID") ?? "";
@@ -15,8 +16,22 @@ const CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET") ?? "";
 const JWT_SECRET = Deno.env.get("WEB_JWT_SECRET") ?? "";
 const WEB_BASE = Deno.env.get("WEB_BASE_URL") ?? "";
 const REDIRECT_URI = `${Deno.env.get("SUPABASE_URL")!}/functions/v1/google-oauth/callback`;
-// Минимальный доступ: только чтение событий календаря.
-const SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly";
+// Минимальный доступ: только чтение событий календаря. Канон строки — _shared/google-scopes.ts
+// (её же просит экран входа через Google, чтобы календарь привязывался одним действием).
+const SCOPE = CALENDAR_SCOPE;
+const enc = new TextEncoder();
+
+async function hmacHex(data: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", enc.encode(JWT_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(data)));
+  return [...sig].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+function timingSafeEq(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
 
 Deno.serve(async (req: Request) => {
   if (!CLIENT_ID || !CLIENT_SECRET) {
@@ -24,6 +39,36 @@ Deno.serve(async (req: Request) => {
   }
   const url = new URL(req.url);
   const isCallback = url.pathname.endsWith("/callback");
+
+  // ── /link: привязка календаря, добытая на экране ВХОДА (server-to-server) ──
+  // Вход через Google просит календарный scope вместе с профилем (решение владельца 2026-08-28),
+  // и refresh_token оказывается у CF Pages. Класть его в базу оттуда нельзя — SERVICE_ROLE в CF
+  // не тащим, — поэтому Pages отдаёт токен сюда под HMAC(telegram_id|refresh) на общем
+  // WEB_JWT_SECRET. Тот же приём, что у auth-resolve: подпись доказывает владение секретом и
+  // привязана к конкретной паре, а не к «кто-то знает URL».
+  if (url.pathname.endsWith("/link") && req.method === "POST") {
+    if (!JWT_SECRET) return new Response("not configured", { status: 500 });
+    let body: { telegram_id?: number; refresh_token?: string; sig?: string };
+    try { body = await req.json(); } catch { return new Response("bad json", { status: 400 }); }
+    const tgId = body.telegram_id;
+    const refresh = (body.refresh_token ?? "").trim();
+    if (typeof tgId !== "number" || !Number.isFinite(tgId) || !refresh || !body.sig) {
+      return new Response("bad request", { status: 400 });
+    }
+    if (!timingSafeEq(body.sig, await hmacHex(`${tgId}|${refresh}`))) {
+      return new Response("forbidden", { status: 403 });
+    }
+    const { error } = await supabase.from("user_integrations").upsert(
+      { telegram_id: tgId, service: "google_calendar", api_key: refresh, skipped_note_ids: [] },
+      { onConflict: "telegram_id,service" },
+    );
+    if (error) {
+      console.error("google-oauth /link: не сохранил refresh", tgId, error.message);
+      return new Response("db", { status: 500 });
+    }
+    console.log(`google-oauth /link: календарь привязан на входе, telegram_id=${tgId}`);
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
 
   // ── /callback: обмен кода на токены, сохранение refresh_token ──
   if (isCallback) {

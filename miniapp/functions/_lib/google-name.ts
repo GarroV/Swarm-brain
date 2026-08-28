@@ -19,3 +19,15 @@ export function normalizeName(raw: string | null | undefined): string | null {
 export function nameSigPayload(email: string, n: GoogleName): string {
   return `${email}|${normalizeName(n.given) ?? ""}|${normalizeName(n.family) ?? ""}`;
 }
+
+// ── scope, которые просит экран входа ────────────────────────────────────────
+// ⚠️ Тоже зеркало: канон — `supabase/functions/_shared/google-scopes.ts`. Календарь просим
+// вместе с профилем (решение владельца 2026-08-28), человек может снять галочку — тогда
+// в ответе Google этого scope не будет, и календарь просто не привяжется.
+export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly";
+export const LOGIN_SCOPES = `openid email profile ${CALENDAR_SCOPE}`;
+
+export function hasCalendarScope(granted: string | null | undefined): boolean {
+  if (!granted) return false;
+  return granted.split(/\s+/).filter(Boolean).includes(CALENDAR_SCOPE);
+}
