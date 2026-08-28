@@ -48,6 +48,7 @@ import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
+import { arbitrateFullness, type TranscriptLike } from "../_shared/meeting-fullness.ts";
 import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
 import { normalizeExtractedDueDate, todayIso } from "../_shared/llm-date.ts";
 import { canAccessDraftMeeting, draftMeetingsOwnScoped, type DraftMeetingRow } from "../_shared/meeting-access.ts";
@@ -1440,6 +1441,59 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // ── GET /meetings/:id/notes — заметки ВСЕХ участников встречи ─────────────────
+  // «Заметки мы сохраняем все, с разбивкой по пользователям» (решение владельца 2026-08-28).
+  // Одну встречу пишут несколько человек, у каждого своя строка meetings со своими пометками;
+  // после публикации в базе остаётся ОДНА запись, и до сих пор пометки просто исчезали из
+  // интерфейса — их грузил только экран черновика. Собираем по связи meetings.entry_id, ничего
+  // не перенося: данные остаются на своих местах, а экран показывает их вместе.
+  //
+  // Приватность: живые пометки (meeting_live_notes) командные — их писали в общий виджет встречи,
+  // показываем с автором. Личные пометки (entries, kind=personal_notes) приватны по дизайну
+  // (claim кладёт их как is_private с owner_id) — отдаём ТОЛЬКО свои, о чужих не сообщаем.
+  const meetingNotesMatch = routePath.match(/^\/meetings\/([^/]+)\/notes$/);
+  if (meetingNotesMatch && req.method === "GET") {
+    return withEntries(origin, async () => {
+      const entry = await getEntrySecure(supabase, meetingNotesMatch[1], { groupId, telegramId: telegram_id });
+      // Все версии этой встречи: привязанные строки meetings + та, из которой запись создана
+      // (entry_id проставляется при публикации, но metadata.meeting_id несёт исходную версию).
+      const { data: versions } = await supabase.from("meetings")
+        .select("id, claim_owner, source, identity_kind, started_at, recorded_seconds")
+        .eq("group_id", groupId)
+        .eq("entry_id", entry.id);
+      const ids = new Set<string>(((versions ?? []) as Array<{ id: string }>).map((v) => v.id));
+      const ownMeetingId = (entry.metadata as { meeting_id?: string } | null)?.meeting_id;
+      if (ownMeetingId) ids.add(ownMeetingId);
+      if (ids.size === 0) return json({ live: [], personal: [], versions: 0 }, 200, origin);
+      const idList = [...ids];
+
+      const [{ data: live }, { data: personal }] = await Promise.all([
+        supabase.from("meeting_live_notes")
+          .select("id, meeting_id, offset_sec, text, author_id, created_at")
+          .in("meeting_id", idList)
+          .order("offset_sec", { ascending: true }),
+        supabase.from("entries")
+          .select("id, content, created_at, metadata")
+          .eq("group_id", groupId)
+          .eq("owner_id", telegram_id)
+          .eq("metadata->>kind", "personal_notes")
+          .in("metadata->>meeting_id", idList),
+      ]);
+
+      const liveRows = ((live ?? []) as Array<{ author_id: number | null }>);
+      const names = await resolveNames([...new Set(liveRows.map((r) => r.author_id).filter((n): n is number => typeof n === "number"))]);
+      return json({
+        versions: idList.length,
+        live: liveRows.map((r) => {
+          const row = r as { id: string; meeting_id: string; offset_sec: number; text: string; author_id: number | null; created_at: string };
+          return { ...row, author_name: row.author_id != null ? (names.get(row.author_id) ?? `#${row.author_id}`) : null };
+        }),
+        personal: ((personal ?? []) as Array<{ id: string; content: string; created_at: string }>)
+          .map((r) => ({ id: r.id, content: r.content, created_at: r.created_at })),
+      }, 200, origin);
+    });
+  }
+
   // ── GET/PATCH/DELETE /meetings/:id ────────────────────────────────────────────
   const meetingMatch = routePath.match(/^\/meetings\/([^/]+)$/);
   if (meetingMatch) {
@@ -1635,7 +1689,27 @@ Deno.serve(async (req: Request) => {
     // GET — полный черновик (транскрипт + тезисы + участники + имена записавших)
     if (agentMeetingMatch && req.method === "GET") {
       const [enriched] = await withRecorderNames([meeting]);
-      return json(enriched, 200, origin);
+      // Эта же встреча уже в базе? Признак нужен ДО публикации: человек должен видеть, что
+      // встреча общая и лежит в базе, а не узнавать об этом из тоста после нажатия
+      // «Опубликовать» (решение владельца 2026-08-28: «ему скажет плашка, что он редактирует
+      // общую встречу, которая лежит в базе»). Для уже опубликованного черновика не считаем —
+      // там ответ и так известен.
+      let inBaseDuplicate: { id: string; title: string; source: string } | null = null;
+      if (meeting.status !== "in_base") {
+        const startedAt = meeting.started_at as string | null;
+        const dupNow = await findDuplicateMeeting(supabase, {
+          groupId,
+          entryDate: startedAt ? startedAt.split("T")[0] : null,
+          startedAt,
+          attendees: ((meeting as { attendees?: MeetingAttendee[] }).attendees ?? []),
+          identityKey: (meeting.identity_key as string | null) ?? null,
+          title: (meeting.title as string | null) ?? null,
+          viewerEmail: userEmail,
+          viewerId: telegram_id,
+        });
+        if (dupNow) inBaseDuplicate = { id: dupNow.id, title: dupNow.title, source: dupNow.source };
+      }
+      return json({ ...(enriched as Record<string, unknown>), in_base_duplicate: inBaseDuplicate }, 200, origin);
     }
 
     // PATCH — вычитка/правка черновика: тезисы и/или название (только до публикации)
@@ -1704,9 +1778,14 @@ Deno.serve(async (req: Request) => {
       // (не привязываемся к ним и не раскрываем) — тогда публикуем как обычно.
       const dup = await findDuplicateMeeting(supabase, {
         groupId, entryDate, startedAt, attendees: mAttendees,
-        // identity_key (календарное событие+день) — решающий сигнал: тот же ключ → дубль,
-        // разный → РАЗНАЯ встреча, не склеиваем (без него 4 встречи IMF BD 23.07 слиплись в одну).
+        // identity_key решает однозначно только для СРАВНИМЫХ ключей (одно календарное событие
+        // или одна комната у двух рекордеров); ключи из разных пространств им не разводятся (#164).
         identityKey: (meeting.identity_key as string | null) ?? null,
+        // Название — сигнал для Granola-записей (участников она не отдаёт вовсе).
+        title: (meeting.title as string | null) ?? null,
+        // E-mail публикующего — сигнал для записи из комнаты (ни названия, ни участников):
+        // сам записавший есть в attendees календарной записи той же встречи.
+        viewerEmail: userEmail,
         viewerId: telegram_id,
       });
       // Фильтр приватности теперь ВНУТРИ findDuplicateMeeting (issue #45) — чужое личное сюда
@@ -1716,8 +1795,66 @@ Deno.serve(async (req: Request) => {
           .update({ entry_id: dup.id, status: "in_base", updated_at: new Date().toISOString() })
           .eq("id", mId)
           .is("entry_id", null);
+
+        // «В базу по дефолту идёт САМАЯ ПОЛНАЯ встреча» (решение владельца 2026-08-28, issue #176).
+        // Прежде тут молча оставалась версия того, кто опубликовал раньше — то самое правило
+        // «кто первый», за которое проект уже заплатил потерей записи на 2ч26м в claim (#23/#24).
+        // Полноту меряем объёмом РАСПОЗНАННОГО: длительность к потере звука собеседника слепа
+        // (26.08: 1920 с против 1980 с при 469 против 1097 сегментов).
+        const { data: pubMeeting } = await supabase.from("meetings")
+          .select("id, transcript, notes_edited_at")
+          .eq("entry_id", dup.id)
+          .neq("id", mId)
+          .order("recorded_seconds", { ascending: false, nullsFirst: false })
+          .limit(1)
+          .maybeSingle();
+        const verdict = arbitrateFullness(
+          { transcript: (meeting as { transcript?: TranscriptLike }).transcript ?? null,
+            notesEditedAt: (meeting.notes_edited_at as string | null) ?? null },
+          { transcript: (pubMeeting as { transcript?: TranscriptLike } | null)?.transcript ?? null,
+            notesEditedAt: (pubMeeting as { notes_edited_at?: string | null } | null)?.notes_edited_at ?? null },
+        );
+
+        if (verdict.replace) {
+          // Заменяем СОДЕРЖИМОЕ записи, id сохраняется: ссылки, задачи и привязки не рвутся.
+          // Прежние тезисы не пропадают — они остаются в draft_notes_md своей строки meetings,
+          // а факт замены пишем в metadata (кто, когда, чем именно оказалась полнее).
+          const prevMeta = ((dup as unknown as { metadata?: Record<string, unknown> }).metadata ?? {}) as Record<string, unknown>;
+          const { data: prevEntry } = await supabase.from("entries").select("metadata").eq("id", dup.id).single();
+          const baseMeta = ((prevEntry as { metadata?: Record<string, unknown> } | null)?.metadata ?? prevMeta) as Record<string, unknown>;
+          const newEmbedding = await embed(buildEmbeddingInput(draft, countries), OPENAI_KEY);
+          await supabase.from("entries").update({
+            content: draft,
+            summary: draft,
+            embedding: newEmbedding,
+            metadata: {
+              ...baseMeta,
+              meeting_id: mId,
+              title: meeting.title ?? baseMeta.title ?? null,
+              attendees: (meeting as { attendees?: unknown }).attendees ?? baseMeta.attendees ?? [],
+              identity_key: (meeting.identity_key as string | null) ?? null,
+              superseded: {
+                at: new Date().toISOString(),
+                by_telegram_id: telegram_id,
+                reason: verdict.reason,
+                prev_meeting_id: (pubMeeting as { id?: string } | null)?.id ?? null,
+              },
+            },
+            updated_at: new Date().toISOString(),
+          }).eq("id", dup.id);
+          console.log(`publish: версия встречи заменена на более полную ${dup.id} (${verdict.reason}, by ${telegram_id})`);
+        }
+
         const { data: existing } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", dup.id).single();
-        return json(existing, 200, origin);
+        // Клиент обязан сказать правду (issue #170): либо «твоя версия стала основной, она полнее»,
+        // либо «встреча уже в базе, там своя версия — ты правишь общую запись». Прежний ответ был
+        // неотличим от «создал новую», и тост уверял «Черновик опубликован».
+        return json({
+          ...(existing as Record<string, unknown>),
+          duplicate: true,
+          replaced: verdict.replace,
+          arbitration: verdict.reason,
+        }, 200, origin);
       }
 
       const { data: created, error: insErr } = await supabase.from("entries").insert({
@@ -1937,7 +2074,9 @@ Deno.serve(async (req: Request) => {
     // Кросс-источниковый дедуп: встреча уже в базе (другой участник / рекордер / повторный импорт)?
     // Помечаем заметку обработанной (чтобы ушла из очереди ревью) и не создаём дубль.
     const dup = await findDuplicateMeeting(supabase, {
-      groupId, entryDate, startedAt: ts ?? null, attendees, viewerId: telegram_id,
+      groupId, entryDate, startedAt: ts ?? null, attendees,
+      title: (note.title as string | null) ?? null,
+      viewerEmail: userEmail, viewerId: telegram_id,
     });
     if (dup) {
       const current: string[] = (integration as { skipped_note_ids?: string[] }).skipped_note_ids ?? [];
