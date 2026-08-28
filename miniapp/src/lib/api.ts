@@ -130,7 +130,7 @@ function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
     status: o.status ?? "open", created_at: new Date().toISOString(), updated_at: null,
     meeting_id: null, url: null, group_id: "cee", created_by_name: o.created_by_name ?? "Dev User",
     is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null,
-    label_ids: [], project_id: o.project_id ?? null, project_linked: o.project_linked ?? false,
+    label_ids: o.label_ids ?? [], project_id: o.project_id ?? null, project_linked: o.project_linked ?? false,
     parent_id: o.parent_id ?? null, tree_x: o.tree_x ?? null, tree_y: o.tree_y ?? null,
     recur_freq: o.recur_freq ?? null, recur_anchor_dom: o.recur_anchor_dom ?? null,
   };
@@ -138,7 +138,9 @@ function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
 let mockTasks: Task[] = [
   mkMock({ id: "1", title: "Prepare Q2 report", description: "Collect metrics and draft slides", due_date: mockDay(0), remind_date: mockDay(7), country: "KZ", task_role: "bd", priority: "high" }),
   mkMock({ id: "2", title: "Design landing page", country: "PL", task_role: "marketing", priority: "med", status: "in_progress", created_by_name: "Alice Smith" }),
-  mkMock({ id: "3", title: "Review contracts", due_date: mockDay(-40), task_role: "rnd", priority: "low", status: "done", created_by_name: null }),
+  // Выполненная задача СО СПИСКОМ — покрытие того, что чипы списков у неё не пропадают
+  // (решение владельца 2026-08-28). Без этого случая мок не показывал разницы вообще.
+  mkMock({ id: "3", title: "Review contracts", due_date: mockDay(-40), task_role: "rnd", priority: "low", status: "done", created_by_name: null, label_ids: ["l-it"] }),
   // ── доп. мок-задачи для проверки тумблеров «По рынкам»/«Все сотрудники» (разные исполнители/страны) ──
   mkMock({ id: "4", title: "Kazakhstan pricing review", country: "KZ", assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: mockDay(2), remind_date: mockDay(1) }),
   mkMock({ id: "5", title: "Poland launch checklist", country: "PL", assignees: ["Alice Smith"], assignee_telegram_ids: [789012], due_date: mockDay(9), remind_date: mockDay(-1), reminded_at: new Date().toISOString(), created_by_name: "Alice Smith" }),
@@ -308,7 +310,7 @@ export async function fetchConfig(): Promise<{ allowed_markets: string[] }> {
 }
 
 // Рекордер встреч (Mac): статус токена и минт/перевыпуск однострочника установки.
-export async function fetchRecorderSetup(): Promise<{ active: boolean; expiresAt: string | null }> {
+export async function fetchRecorderSetup(): Promise<{ active: boolean; expiresAt: string | null; updateOneLiner?: string }> {
   if (DEV_MODE) return { active: false, expiresAt: null };
   return apiFetch<{ active: boolean; expiresAt: string | null }>("/recorder/setup");
 }
@@ -350,7 +352,15 @@ export async function fetchTasks(filters?: string | TaskFilters): Promise<Task[]
     if (f.tags?.length) r = r.filter((t) => f.tags!.some((tag) => (t.tags ?? []).includes(tag)));
     if (f.label_id) r = r.filter((t) => t.label_ids?.includes(f.label_id!));
     if (f.project_id) r = r.filter((t) => t.project_id === f.project_id);
-    return [...r]; // копия: не отдаём mockTasks по ссылке (иначе оптимистичные апдейты в UI дублируют)
+    // Копия (не отдаём mockTasks по ссылке — иначе оптимистичные апдейты в UI дублируют) И БЕЗ
+    // description: прод отдаёт список узкой проекцией TASK_LIST_COLUMNS, и мок обязан врать так же.
+    // Пока мок отдавал задачи целиком, застревание карточки в «Загружаем…» (issue #145) локально
+    // не воспроизводилось вообще — баг доехал до людей.
+    return r.map((t) => {
+      const copy: Record<string, unknown> = { ...t };
+      delete copy.description;
+      return copy as Task;
+    });
   }
   const params = new URLSearchParams();
   if (f.status) params.set("status", f.status);
@@ -374,10 +384,13 @@ export async function fetchTasks(filters?: string | TaskFilters): Promise<Task[]
 
 export async function fetchTask(id: string): Promise<Task> {
   if (DEV_MODE) {
-    const all = await fetchTasks();
-    const t = all.find((x) => x.id === id);
+    // Из mockTasks НАПРЯМУЮ, а не через fetchTasks(): списочный мок режет description под
+    // прод-проекцию, а этот эндпоинт — ровно тот, кто отдаёт задачу ЦЕЛИКОМ (на сервере
+    // select("*")). Через fetchTasks() догрузка вернула бы такую же неполную задачу и карточка
+    // осталась бы в «Загружаем…» навсегда.
+    const t = mockTasks.find((x) => x.id === id);
     if (!t) throw new ApiError(404, "Not found");
-    return t;
+    return { ...t };
   }
   return apiFetch<Task>(`/tasks/${id}`);
 }

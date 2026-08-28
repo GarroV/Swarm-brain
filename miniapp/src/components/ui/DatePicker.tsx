@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
+import { propertyRowCls, PropertyLabel, PropertyValue, PropertyChevron } from "@/components/ui/PropertyRow";
 import { MONTHS, WEEKDAYS, parseISO, toISO, fmtFull, addMonths, buildGrid } from "@/lib/calendar";
 
 // Подпись даты в триггере: «12 августа 2026» (общий формат — lib/calendar).
@@ -15,11 +16,16 @@ type Props = {
   onChange: (iso: string) => void;   // "" = срок убран
   className?: string;
   placeholder?: string;
-  /** Компактный триггер: только иконка (без подписи) — для быстрых действий в строке задачи. */
-  compact?: boolean;
+  /**
+   * Вид триггера:
+   *  «field» — поле с рамкой (форма создания задачи);
+   *  «compact» — только иконка, для быстрых действий в строке задачи;
+   *  «row» — тихая строка свойства «иконка · подпись · значение» (карточка задачи).
+   */
+  variant?: "field" | "compact" | "row";
   /** Иконка триггера: «cal» — срок (по умолчанию), «bell» — пинг (напоминание). */
   icon?: RoyIconName;
-  /** Подпись кнопки для скринридера в компактном виде (по умолчанию «Срок»). */
+  /** Название свойства: подпись для скринридера, а в виде «row» — ещё и видимая подпись строки. */
   ariaLabel?: string;
   /** Подпись «убрать» в поповере (по умолчанию «Убрать срок»). */
   clearLabel?: string;
@@ -27,7 +33,9 @@ type Props = {
 
 const POPOVER_W = 264, POPOVER_H = 340;
 
-export function DatePicker({ value, onChange, className = "", placeholder = "Выбрать дату", compact = false, icon = "cal", ariaLabel = "Срок", clearLabel = "Убрать срок" }: Props) {
+export function DatePicker({ value, onChange, className = "", placeholder = "Выбрать дату", variant = "field", icon = "cal", ariaLabel = "Срок", clearLabel = "Убрать срок" }: Props) {
+  const isCompact = variant === "compact";
+  const isRow = variant === "row";
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -80,16 +88,26 @@ export function DatePicker({ value, onChange, className = "", placeholder = "В�
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={compact ? ariaLabel : undefined}
+        aria-label={variant === "field" ? undefined : ariaLabel}
         // stopPropagation — чтобы клик не «всплыл» как тап по строке задачи (открытие карточки)
         // и не съелся как старт свайпа (SwipeRow на мобайле). См. чекбокс TaskRow.
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-        className={compact ? className : `${className} flex items-center gap-2 text-left`}
-        style={compact ? { color: value ? "var(--accent-ink)" : "var(--ink-soft)" } : undefined}
+        className={isCompact ? className : isRow ? `${propertyRowCls} ${className}` : `${className} flex items-center gap-2 text-left`}
+        style={isCompact ? { color: value ? "var(--accent-ink)" : "var(--ink-soft)" } : undefined}
       >
-        <RoyIcon name={icon} size={15} strokeWidth={compact ? 1.9 : undefined} />
-        {!compact && <span className={label ? "text-ink" : "text-ink-soft"}>{label ?? placeholder}</span>}
+        {isRow ? (
+          <>
+            <PropertyLabel icon={icon}>{ariaLabel}</PropertyLabel>
+            <PropertyValue muted={!label}>{label ?? placeholder}</PropertyValue>
+            <PropertyChevron />
+          </>
+        ) : (
+          <>
+            <RoyIcon name={icon} size={15} strokeWidth={isCompact ? 1.9 : undefined} />
+            {!isCompact && <span className={label ? "text-ink" : "text-ink-soft"}>{label ?? placeholder}</span>}
+          </>
+        )}
       </button>
 
       {open && pos && createPortal(

@@ -42,7 +42,9 @@ export function TaskRow({ task, onToggle, showAssignee = true, now = new Date(),
   const fromMeeting = Boolean(task.meeting_id);
   const hasAssignee = showAssignee && (task.assignees?.length ?? 0) > 0;
   // Списки, в которых состоит задача (личные смарт-метки) — показываем чипами на карточке.
-  const taskLabels = done ? [] : labels.filter((l) => task.label_ids?.includes(l.id));
+  // Показываем И у выполненной (решение владельца 2026-08-28): раньше чипы у неё скрывались, и в
+  // «Готовых» было не понять, к какому списку задача относилась — а искать её там как раз и идут.
+  const taskLabels = labels.filter((l) => task.label_ids?.includes(l.id));
 
   return (
     <div className="flex items-start gap-2.5 px-3 py-2">

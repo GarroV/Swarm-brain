@@ -49,6 +49,21 @@ async function fill(page, selector, value) {
   await tap(page, 195, rows[0].y + rows[0].h / 2);
   r.ok("карточка задачи открывается", await dialogOpen(page));
 
+  // Список отдаёт задачу узкой проекцией (без description), полную догружает сама карточка.
+  // Пока догрузки не было, форма молча блокировала запись: человек жал «Готово», кнопка
+  // переключалась, PATCH не уходил (issue #145). Ждём с запасом и требуем рабочую форму.
+  await wait(1500);
+  const hydrate = await page.evaluate(() => {
+    const d = document.querySelector('[role="dialog"]');
+    const fs = d ? d.querySelector("fieldset") : null;
+    return { head: (d ? d.innerText : "").slice(0, 80), disabled: fs ? fs.disabled : null };
+  });
+  r.ok(
+    "карточка догрузила полную задачу и не застряла в «Загружаем…»",
+    !/Загружаем|Не загрузилось/.test(hydrate.head) && hydrate.disabled === false,
+    JSON.stringify(hydrate),
+  );
+
   const title = "Задача " + stamp();
   await fill(page, '[role="dialog"] input[placeholder*="Название"]', title);
   // Автосохранение с дебаунсом 550мс — ждём, пока новое имя доедет до списка под карточкой.
@@ -76,6 +91,21 @@ async function fill(page, selector, value) {
     return b ? b.getAttribute("aria-pressed") ?? getComputedStyle(b).backgroundColor : null;
   });
   r.ok("статус «В работе» выставляется в карточке", statusSet === "ok" && statusVisible !== "rgba(0, 0, 0, 0)", `${statusSet}, фон=${statusVisible}`);
+
+  // Вид кнопки — НЕ доказательство: до фикса она точно так же переключалась, а PATCH не уходил.
+  // Доказательство — переоткрыть карточку и увидеть статус, пришедший с сервера.
+  await page.keyboard.press("Escape");
+  await waitFor(page, () => !document.querySelector('[role="dialog"]'));
+  await wait(900);
+  const rows3 = await swipeRows(page);
+  const again = rows3.find((x) => x.title.includes(title.slice(0, 12))) ?? rows3[0];
+  await tap(page, 195, again.y + again.h / 2);
+  await wait(1600);
+  const persisted = await page.evaluate(() => {
+    const b = document.querySelector('[role="dialog"] button[aria-label="В работе"]');
+    return b ? b.getAttribute("aria-pressed") : "нет кнопки";
+  });
+  r.ok("статус «В работе» ПЕРЕЖИЛ переоткрытие карточки", persisted === "true", `aria-pressed=${persisted}`);
 
   // комментарий
   const comment = "Комментарий " + stamp();

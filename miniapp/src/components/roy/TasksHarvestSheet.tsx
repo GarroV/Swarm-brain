@@ -4,7 +4,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { useDt } from "./nav";
 import { RoyIcon } from "./icons";
 import { countryCode, countryFlag } from "@/lib/countries";
-import { resolveAssigneeId, taskCountLabel, type ProposedTask } from "@/lib/proposedTasks";
+import { effectiveAssigneeId, resolveAssigneeId, taskCountLabel, type ProposedTask } from "@/lib/proposedTasks";
 import type { User } from "@/types";
 
 // Разбор задач, предложенных из встречи. До 2026-08-27 предложения жили строками в УЗКОЙ
@@ -82,6 +82,8 @@ type Props = {
   anchorRect: DOMRect | null;
   tasks: DraftTask[];
   users: User[];
+  /** Кто разбирает: задача без названного ответственного уйдёт на него — строка показывает это ДО публикации. */
+  meId: number | null;
   /** Идёт массовое добавление: кнопки заблокированы, лист не закрывается сам. */
   busy: boolean;
   /** Модель ещё пишет: внизу висит заготовка, «Задач не найдено» не показываем раньше времени. */
@@ -89,7 +91,7 @@ type Props = {
   actions: HarvestActions;
 };
 
-export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, busy, streaming, actions }: Props) {
+export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, meId, busy, streaming, actions }: Props) {
   const dt = useDt();
   // Пересчёт геометрии при смене размера окна: лист открыт, а окно перетащили на другой экран.
   const [, bumpViewport] = useState(0);
@@ -163,6 +165,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, bus
                       key={task._key}
                       task={task}
                       users={users}
+                      meId={meId}
                       busy={busy}
                       editing={editingKey === task._key}
                       onStartEdit={() => setEditingKey(task._key)}
@@ -231,6 +234,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, bus
 type RowProps = {
   task: DraftTask;
   users: User[];
+  meId: number | null;
   busy: boolean;
   editing: boolean;
   onStartEdit: () => void;
@@ -238,9 +242,15 @@ type RowProps = {
   actions: HarvestActions;
 };
 
-function HarvestRow({ task, users, busy, editing, onStartEdit, onStopEdit, actions }: RowProps) {
+function HarvestRow({ task, users, meId, busy, editing, onStartEdit, onStopEdit, actions }: RowProps) {
   const dt = useDt();
-  const assigneeId = resolveAssigneeId(task.assignee, users);
+  // Тот же расчёт, что и при публикации: строка обязана показывать РЕАЛЬНОГО будущего
+  // исполнителя, иначе человек соглашается не на то, что уедет в базу.
+  const assigneeId = effectiveAssigneeId(task.assignee, users, meId);
+  // Имя в тезисах было, но такого человека в команде нет (или их двое) → по решению владельца
+  // задача уходит на разбирающего. Исходное имя всё равно показываем: подмена ответственного
+  // молча — это то же враньё интерфейса, от которого чинили пропажу задач.
+  const fellBackToMe = Boolean(task.assignee?.trim()) && resolveAssigneeId(task.assignee, users) == null;
   const matched = assigneeId ? users.find((u) => u.telegram_id === assigneeId) : undefined;
   const due = fmtDate(task.due_date);
 
@@ -300,10 +310,18 @@ function HarvestRow({ task, users, busy, editing, onStartEdit, onStopEdit, actio
             <span className="inline-flex items-center gap-1">
               <RoyIcon name="team" size={12} strokeWidth={1.8} />
               {matched
-                ? matched.name
+                ? fellBackToMe
+                  // Имя из тезисов в команде не нашлось: задача уходит на разбирающего, но рядом
+                  // остаётся исходное имя — иначе человек не поймёт, почему задача вдруг его.
+                  ? <span title={dt(
+                      `«${task.assignee}» в команде не найден — задача уйдёт на вас`,
+                      `“${task.assignee}” is not in the team — the task will go to you`,
+                    )}>
+                      {matched.name} <span className="text-[var(--pri-high)]">·&nbsp;{dt(`вместо «${task.assignee}»`, `instead of “${task.assignee}”`)}</span>
+                    </span>
+                  : matched.name
                 : task.assignee
-                  // Имя из тезисов не нашлось в команде: показываем как есть, но честно
-                  // помечаем — задача создастся без исполнителя, а не «на кого-то похожего».
+                  // Ни в команде, ни на кого перевесить (личность разбирающего неизвестна).
                   ? <span title={dt("Не найден в команде — задача создастся без исполнителя", "Not found in the team — the task will be created unassigned")}>
                       {task.assignee} <span className="text-[var(--pri-high)]">·&nbsp;{dt("не найден", "not found")}</span>
                     </span>
