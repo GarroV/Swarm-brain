@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRoyNav } from "../nav";
+import { useRoyNav, useDt } from "../nav";
 import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks, Participants } from "../ui";
 import { RoyIcon } from "../icons";
 import { deriveEntryTitle, entryImporterName } from "../entry";
@@ -1035,6 +1035,7 @@ function ActionsPanel({
   onSaveCountries: (countries: string[]) => Promise<void>;
 }) {
   const { toast } = useRoyNav();
+  const dt = useDt();
   const [confirmState, setConfirmState] = useState<ActionState>("idle");
   const [rejectState, setRejectState] = useState<ActionState>("idle");
   const [reclassState, setReclassState] = useState<ActionState>("idle");
@@ -1117,6 +1118,14 @@ function ActionsPanel({
         {savingCountries ? "Рынки · сохраняю…" : "Рынки"}
       </SectionLabel>
       <MarketChips codes={markets} value={countries} onChange={changeCountries} disabled={savingCountries} />
+      {countries.length >= 2 && (
+        // Сервер схлопнет 2+ рынка в «Общее» (канон 2026-08-06, порог переподтверждён 2026-08-28,
+        // issue #167) — говорим об этом ДО сохранения, иначе выбор «RS + BG» молча превращается
+        // в другое: чипы после ответа сервера просто гаснут, и человек читает это как сбой.
+        <p className="text-ink-mute leading-snug" style={{ fontSize: 11 }}>
+          {dt("2+ рынка = «Общее» (кросс-маркет)", "2+ markets = “General” (cross-market)")}
+        </p>
+      )}
       {suggestSource && (
         <p className="text-ink-mute leading-snug" style={{ fontSize: 11 }}>
           Предложено {SUGGEST_LABEL[suggestSource]} — поправьте, если не так.
