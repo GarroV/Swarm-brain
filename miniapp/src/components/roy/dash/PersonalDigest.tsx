@@ -52,12 +52,26 @@ export function PersonalDigest({ className }: { className?: string }) {
   const [sources, setSources] = useState<AskSource[]>([]);
   const [at, setAt] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  // Рынки не выбраны — строить дайджест не из чего (issue #154). Отдельное состояние, а не
+  // текст-заглушка от сервера: подсказку надо перевести и увести человека прямо в настройки.
+  const [needsMarkets, setNeedsMarkets] = useState(false);
 
   const run = useCallback(async (d: number) => {
     setGenerating(true);
     try {
       const all = readDigestAllCountries();
       const r = await generateDigest(d, all);
+      if (r.needsMarkets) {
+        // Кэш чистим: иначе на экране остался бы дайджест, собранный до того, как выяснилось,
+        // что рынки не выбраны — то самое «уверенно показываем не то».
+        setNeedsMarkets(true);
+        setText(null);
+        setSources([]);
+        setAt(null);
+        try { window.localStorage.removeItem(CACHE_KEY); } catch { /* приватный режим */ }
+        return;
+      }
+      setNeedsMarkets(false);
       const now = new Date().toISOString();
       setText(r.text);
       setSources(r.sources);
@@ -102,7 +116,31 @@ export function PersonalDigest({ className }: { className?: string }) {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 px-4 py-3">
-        {text ? (
+        {needsMarkets ? (
+          // Честный отказ вместо сводки по чужим странам: говорим причину и уводим туда,
+          // где это чинится одним кликом (issue #154).
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 py-2 text-center">
+            <span className="inline-flex items-center justify-center rounded-full" style={{ width: 36, height: 36, color: "var(--accent-ink)", background: "color-mix(in srgb, var(--accent-ink) 12%, transparent)" }}>
+              <RoyIcon name="globe" size={19} strokeWidth={1.9} />
+            </span>
+            <p className="text-sm text-ink-soft" style={{ maxWidth: 320 }}>
+              {dt(
+                "Рынки не выбраны — дайджест собирать не из чего. Отметьте свои страны, и он будет приходить строго по ним.",
+                "No markets selected — there's nothing to build the digest from. Pick your countries and it will follow them.",
+              )}
+            </p>
+            <button
+              onClick={() => push({ view: "settings" })}
+              className="rounded-[12px] bg-primary px-4 py-2 font-semibold text-white transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              style={{ fontSize: 13.5 }}
+            >
+              {dt("Выбрать рынки", "Choose markets")}
+            </button>
+            <span className="text-ink-mute" style={{ fontSize: 11.5 }}>
+              {dt("Настройки → Профиль → Рынки", "Settings → Profile → Markets")}
+            </span>
+          </div>
+        ) : text ? (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">
               <TezisyBlocks text={text} onSource={openSource} onDeepen={(topic) => openAnswer(dt(`Расскажи подробнее: ${topic}`, `Tell me more: ${topic}`))} />

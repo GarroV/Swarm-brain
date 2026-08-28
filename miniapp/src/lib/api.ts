@@ -1117,10 +1117,16 @@ export async function sendFeedback(
 // allCountries — админ-опция «весь воркспейс» (иначе дайджест строго по своим рынкам). Сервер
 // применяет флаг только для админа (гейт isAdmin), не-админу игнорирует.
 // sources — записи-источники (формат AskSource, как в RAG): клик по сноске [n] открывает исходник.
-export async function generateDigest(days = 7, allCountries = false): Promise<{ text: string; sources: AskSource[] }> {
-  if (DEV_MODE) return { text: "**Сербия**\n\n• Обсуждение стратегии Q3 [1]", sources: [] };
-  const r = await apiFetch<{ text: string; sources?: AskSource[] }>("/digest", { method: "POST", body: JSON.stringify({ days, all_countries: allCountries }) });
-  return { text: r.text, sources: r.sources ?? [] };
+// needsMarkets — у человека не выбраны рынки, и дайджест по ним построить не из чего.
+// Сервер отдаёт признак, а не готовую фразу: подсказка живёт в вебе и переводится (issue #154).
+export async function generateDigest(days = 7, allCountries = false): Promise<{ text: string; sources: AskSource[]; needsMarkets: boolean }> {
+  if (DEV_MODE) {
+    return MOCK_ME.markets.length
+      ? { text: "**Сербия**\n\n• Обсуждение стратегии Q3 [1]", sources: [], needsMarkets: false }
+      : { text: "", sources: [], needsMarkets: true };
+  }
+  const r = await apiFetch<{ text: string; sources?: AskSource[]; needs_markets?: boolean }>("/digest", { method: "POST", body: JSON.stringify({ days, all_countries: allCountries }) });
+  return { text: r.text, sources: r.sources ?? [], needsMarkets: r.needs_markets === true };
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
