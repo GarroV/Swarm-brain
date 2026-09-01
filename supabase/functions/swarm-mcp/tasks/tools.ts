@@ -139,6 +139,7 @@ export async function toolAddTask(args: {
   labels?: string[];
   project_name?: string;
   recur_freq?: string | null;
+  confirmed?: boolean;
   requesting_user_id?: number;
 }): Promise<string> {
   const assignees: string[] = [];
@@ -194,7 +195,10 @@ export async function toolAddTask(args: {
       status: "open",
       meeting_id: args.context_id ?? null,
       tags: [],
-      confirmed: false,
+      // Агент публикует на доску сам, если его об этом попросили. Прежде здесь стояло
+      // жёсткое false, и задача, созданная через MCP, оседала в очереди подтверждения:
+      // на доске её нет, а в ответе «Задача создана» — ни слова об этом.
+      confirmed: args.confirmed ?? false,
       created_by_telegram_id: args.requesting_user_id ?? null,
       label_ids: labelIds,
       is_private: labelIds.length > 0 ? true : undefined,
@@ -206,7 +210,10 @@ export async function toolAddTask(args: {
     if (args.requesting_user_id) {
       await notifyCreator(args.requesting_user_id, args.title);
     }
-    return `✅ Задача создана (id: ${task.id})${matchWarning}.`;
+    const where = (args.confirmed ?? false)
+      ? "на доске"
+      : "в очереди подтверждения — на доске появится после подтверждения";
+    return `✅ Задача создана ${where} (id: ${task.id})${matchWarning}.`;
   } catch (e) {
     return `Ошибка: ${e instanceof Error ? e.message : String(e)}`;
   }
@@ -365,7 +372,11 @@ export async function toolGetTasks(args: {
     const who = t.assignees?.join(", ") || "—";
     const due = t.due_date ? ` | дедлайн: ${t.due_date}` : "";
     const country = t.country ? ` | ${t.country}` : "";
-    return `• [${t.status}] ${t.title}\n  Исполнитель: ${who}${due}${country}`;
+    // Статус и подтверждение — разные поля: задача бывает «open» и при этом невидима
+    // на доске, потому что ждёт подтверждения. Без этой пометки агент не может
+    // проверить, попала ли его задача на доску.
+    const pending = t.confirmed === false ? " | ⏳ не подтверждена, на доске не видна" : "";
+    return `• [${t.status}] ${t.title}\n  Исполнитель: ${who}${due}${country}${pending}`;
   }).join("\n\n");
 }
 
@@ -441,6 +452,7 @@ export const TASK_TOOL_DEFINITIONS = [
         labels: { type: "array", items: { type: "string" }, description: "Имена личных смарт-меток (папок). Задача с метками становится личной." },
         project_name: { type: "string", description: "Имя проекта или подпроекта доски (Проекты/SprintBoard) — без него задача на доску не попадёт, только в общий список. При неточном совпадении берётся ближайшее по имени; при отсутствии — предупреждение в ответе, задача всё равно создаётся." },
         recur_freq: { type: ["string", "null"], enum: ["daily", "weekly", "monthly", null], description: "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность." },
+        confirmed: { type: "boolean", description: "true — задача сразу попадает на доску, минуя очередь подтверждения. По умолчанию false: задача ждёт подтверждения человеком и на доске не видна." },
       },
       required: ["title", "source"],
     },
