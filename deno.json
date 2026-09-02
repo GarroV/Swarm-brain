@@ -1,7 +1,14 @@
 {
   "imports": {
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
+    // Алиас веба (его знают Vite/Next, но не Deno): без него type-check тестов miniapp падает
+    // на первом же `@/types` и обрывает ВЕСЬ прогон до запуска тестов (issue #207).
+    "@/": "./miniapp/src/"
   },
+  // sloppy-imports — ради того же алиаса: веб пишет `@/types` без расширения (норма для
+  // Vite/Next), Deno без этого флага требует `.ts` и обрывает прогон на type-check. Для
+  // edge-функций ничего не меняет: там импорты и так с расширениями.
+  "unstable": ["sloppy-imports"],
   "tasks": {
     // Единая команда на весь репозиторий: edge-функции + тесты веба (у miniapp своего
     // раннера нет, тесты чистой логики гоняются здесь же). Флаг -A обязателен: часть тестов
