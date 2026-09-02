@@ -1,4 +1,5 @@
 import Foundation
+import RecorderKit
 
 enum SwarmError: Error, CustomStringConvertible {
     // http(код, тело, Retry-After в секундах если сервер прислал заголовок).
@@ -132,13 +133,16 @@ struct SwarmClient {
             let attendees: [Attendee]?
             let startedAt: String?
             let endedAt: String?
+            let joinUrl: String?
         }
         struct Resp: Decodable { let meeting: M?; let reason: String? }
         let r = try decoder.decode(Resp.self, from: data)
         let dead = (r.reason == "token_refresh_failed")
         guard let m = r.meeting else { return MeetingLookup(meeting: nil, tokenDead: dead) }
+        let join = JoinLink.safeURL(m.joinUrl)   // только https, см. RecorderKit/JoinLink
         let info = MeetingIdentity.Info(kind: .calendar, key: m.identityKey, title: m.title,
-                                        attendees: m.attendees ?? [], startISO: m.startedAt, endISO: m.endedAt)
+                                        attendees: m.attendees ?? [], startISO: m.startedAt, endISO: m.endedAt,
+                                        joinURL: join)
         return MeetingLookup(meeting: info, tokenDead: false)
     }
 

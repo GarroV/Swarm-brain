@@ -8,6 +8,8 @@ import RecorderKit
 final class RecorderWidget {
     var onStop: (() -> Void)?
     var onRecord: (() -> Void)?
+    // «Подключиться» на баннере встречи — открыть звонок И включить запись (референс Granola).
+    var onJoin: (() -> Void)?
     var onDismiss: (() -> Void)?
     // ✕ на капсуле «в обработке» — убрать индикатор с экрана (обработка продолжится в фоне).
     var onProcessingDismiss: (() -> Void)?
@@ -36,8 +38,11 @@ final class RecorderWidget {
     private let levelColumn = NSStackView()   // mic-полоса над system-полосой (вертикально)
     private static let levelWidth: CGFloat = 26
     private static let levelHeight: CGFloat = 4
-    // Размер капсулы — один на создание панели и на расчёт позиции (WidgetPlacement).
-    private static let panelSize = CGSize(width: 72, height: 110)
+    // Узкая вертикальная капсула (запись / обработка) — размер проверен временем.
+    private static let pillSize = CGSize(width: 72, height: 110)
+    // Баннер встречи шире: в нём название, время слота и кнопки. Ширину берём по контенту,
+    // а не числом из головы — длинные названия и локали иначе обрезаются по-разному.
+    private static let bannerMinSize = CGSize(width: 300, height: 84)
     // Куда человек перетащил капсулу. UI-состояние, поэтому UserDefaults, а не config.json.
     private static let originKey = "widget.origin"
 
@@ -45,10 +50,18 @@ final class RecorderWidget {
     private var lastLevel: CGFloat = 0
     private var lastSysLevel: CGFloat = 0
 
-    private let pendMark = NSImageView()
-    private let playBtn = NSButton()
-    private let dismissBtn = NSButton()
-    private let pendRow = NSStackView()
+    // Баннер встречи (состояние «встреча — записать?»): название, время слота, две кнопки.
+    // Решение владельца 02.09.2026 (#193): «лаконичнее, аккуратнее, мягче + кнопка перехода
+    // на встречу». Референс — баннер Granola.
+    private let bannerAccent = NSView()
+    private let bannerTitle = NSTextField(labelWithString: "")
+    private let bannerSubtitle = NSTextField(labelWithString: "")
+    private let bannerJoin = NSButton()
+    private let bannerRecord = NSButton()
+    private let bannerClose = NSButton()
+    private let bannerButtons = NSStackView()
+    private let bannerColumn = NSStackView()
+    private let bannerRow = NSStackView()
 
     // Состояние «в обработке»: ✕ (убрать) сверху → крутилка / зелёная галка → марка «Рой».
     private let procMark = NSImageView()
@@ -60,19 +73,29 @@ final class RecorderWidget {
     func showRecording(startedAt: Date) {
         ensurePanel()
         recRow.isHidden = false
-        pendRow.isHidden = true
+        bannerRow.isHidden = true
+        bannerClose.isHidden = true
         hideProcessingRow()
         startPulse()
         startLevelMeter()
         present()
     }
 
-    func showPending(title: String, when: String) {
+    /// Баннер встречи. `notice` — что читает человек (RecorderKit/MeetingNotice),
+    /// `canJoin` — есть ли ссылка на звонок (нет → кнопки «Подключиться» тоже нет).
+    func showPending(notice: MeetingNotice, canJoin: Bool) {
         ensurePanel()
         stopLevelMeter()
-        playBtn.toolTip = title
+        bannerTitle.stringValue = notice.title
+        bannerTitle.toolTip = notice.title          // название целиком, если обрезалось
+        bannerSubtitle.stringValue = notice.subtitle
+        bannerSubtitle.isHidden = notice.subtitle.isEmpty
+        bannerJoin.isHidden = !canJoin
+        bannerClose.isHidden = false
+        // Единственное действие обязано выглядеть главным: нет ссылки — «Записать» заливаем.
+        paint(bannerRecord, filled: !canJoin)
         recRow.isHidden = true
-        pendRow.isHidden = false
+        bannerRow.isHidden = false
         hideProcessingRow()
         present()
     }
@@ -83,7 +106,8 @@ final class RecorderWidget {
         stopPulse()
         stopLevelMeter()
         recRow.isHidden = true
-        pendRow.isHidden = true
+        bannerRow.isHidden = true
+        bannerClose.isHidden = true
         procRow.isHidden = false
         procCheck.isHidden = true
         procSpinner.isHidden = false
@@ -97,7 +121,8 @@ final class RecorderWidget {
         stopPulse()
         stopLevelMeter()
         recRow.isHidden = true
-        pendRow.isHidden = true
+        bannerRow.isHidden = true
+        bannerClose.isHidden = true
         procRow.isHidden = false
         procSpinner.stopAnimation(nil)
         procSpinner.isHidden = true
@@ -120,7 +145,7 @@ final class RecorderWidget {
     // ── Построение ───────────────────────────────────────────────────────────────
     private func ensurePanel() {
         if panel != nil { return }
-        let p = NSPanel(contentRect: NSRect(origin: .zero, size: Self.panelSize),
+        let p = NSPanel(contentRect: NSRect(origin: .zero, size: Self.pillSize),
                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isFloatingPanel = true
         p.level = .floating
@@ -138,7 +163,6 @@ final class RecorderWidget {
         card.layer?.borderColor = RoyArt.amber.withAlphaComponent(0.30).cgColor   // янтарная обводка (без белых углов)
 
         configMark(recMark)
-        configMark(pendMark)
         configMark(procMark)
         // Клик по марке «Рой» во время записи → свернуть/развернуть панель заметок.
         recMark.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(toggleNotesAction)))
@@ -152,9 +176,6 @@ final class RecorderWidget {
         configLevelBar()
 
         iconButton(stopBtn, symbol: "xmark", color: NSColor(white: 1, alpha: 0.65), action: #selector(stopAction))
-        iconButton(playBtn, symbol: "play.fill", color: RoyArt.amber, action: #selector(recordAction))
-        sizeIcon(playBtn, 17)
-        iconButton(dismissBtn, symbol: "xmark", color: NSColor(white: 1, alpha: 0.65), action: #selector(dismissAction))
 
         // Две полосы уровня стопкой: mic (я) сверху, system (собеседники) снизу.
         levelColumn.orientation = .vertical
@@ -173,12 +194,7 @@ final class RecorderWidget {
         recRow.alignment = .centerX
         recRow.setViews([stopBtn, micRow, recMark], in: .top)
 
-        // Состояние «встреча — записать?»: ✕ сверху → ▶ → иконка «Рой» снизу (та же вертикаль).
-        pendRow.orientation = .vertical
-        pendRow.spacing = 10
-        pendRow.alignment = .centerX
-        pendRow.setViews([dismissBtn, playBtn, pendMark], in: .top)
-        pendRow.isHidden = true
+        buildBanner()
 
         // Состояние «в обработке»: ✕ (убрать) сверху → крутилка / зелёная галка → марка «Рой».
         iconButton(procDismissBtn, symbol: "xmark", color: NSColor(white: 1, alpha: 0.65), action: #selector(procDismissAction))
@@ -198,7 +214,7 @@ final class RecorderWidget {
         procRow.setViews([procDismissBtn, procSpinner, procCheck, procMark], in: .top)
         procRow.isHidden = true
 
-        for row in [recRow, pendRow, procRow] {
+        for row in [recRow, procRow] {
             row.translatesAutoresizingMaskIntoConstraints = false
             row.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
             card.addSubview(row)
@@ -207,12 +223,107 @@ final class RecorderWidget {
                 row.centerYAnchor.constraint(equalTo: card.centerYAnchor)
             ])
         }
+        // Баннер — текстовый блок, он читается слева направо: центрировать его нельзя,
+        // иначе при коротком названии слева зияет пустота, а название «плывёт».
+        bannerRow.translatesAutoresizingMaskIntoConstraints = false
+        bannerRow.edgeInsets = NSEdgeInsets(top: 10, left: 14, bottom: 10, right: 12)
+        card.addSubview(bannerRow)
+        NSLayoutConstraint.activate([
+            bannerRow.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            bannerRow.centerYAnchor.constraint(equalTo: card.centerYAnchor)
+        ])
+        // ✕ живёт в правом верхнем углу карточки, а не в стеке: в стеке он ездил за длиной
+        // названия и при коротком прилипал к тексту.
+        bannerClose.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(bannerClose)
+        NSLayoutConstraint.activate([
+            bannerClose.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
+            bannerClose.topAnchor.constraint(equalTo: card.topAnchor, constant: 12)
+        ])
         p.contentView = card
         panel = p
         // Капсула таскается за фон (isMovableByWindowBackground) — ловим конец перетаскивания.
         NotificationCenter.default.addObserver(self, selector: #selector(panelDidMove),
                                                name: NSWindow.didMoveNotification, object: p)
     }
+
+    // ── Баннер встречи ──────────────────────────────────────────────────────────
+    // Название → время слота → действия. Ни одного служебного слова: вопрос «записать?»
+    // раньше стоял в тексте и дублировал кнопку.
+    private func buildBanner() {
+        bannerAccent.wantsLayer = true
+        bannerAccent.layer?.backgroundColor = RoyArt.amber.cgColor
+        bannerAccent.layer?.cornerRadius = 2
+        bannerAccent.translatesAutoresizingMaskIntoConstraints = false
+        bannerAccent.widthAnchor.constraint(equalToConstant: 4).isActive = true
+        bannerAccent.heightAnchor.constraint(equalToConstant: 62).isActive = true
+
+        bannerTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        bannerTitle.textColor = NSColor(white: 1, alpha: 0.95)
+        bannerTitle.lineBreakMode = .byTruncatingTail
+        bannerTitle.maximumNumberOfLines = 1
+        bannerSubtitle.font = .systemFont(ofSize: 11, weight: .regular)
+        bannerSubtitle.textColor = NSColor(white: 1, alpha: 0.55)
+        bannerSubtitle.lineBreakMode = .byTruncatingTail
+        bannerSubtitle.maximumNumberOfLines = 1
+        for label in [bannerTitle, bannerSubtitle] {
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.widthAnchor.constraint(lessThanOrEqualToConstant: 232).isActive = true
+        }
+
+        // Главное действие — «Подключиться»: один клик заходит в звонок И включает запись,
+        // чтобы не бежать в календарь. Поэтому она залита янтарём, а «Записать» — вторичная.
+        textButton(bannerJoin, title: "Подключиться", filled: true, action: #selector(joinAction))
+        bannerJoin.toolTip = "Откроет звонок и включит запись"
+        textButton(bannerRecord, title: "Записать", filled: false, action: #selector(recordAction))
+        iconButton(bannerClose, symbol: "xmark", color: NSColor(white: 1, alpha: 0.5), action: #selector(dismissAction))
+        sizeIcon(bannerClose, 11)
+        bannerClose.toolTip = "Не записывать эту встречу"
+
+        bannerButtons.orientation = .horizontal
+        bannerButtons.spacing = 6
+        bannerButtons.alignment = .centerY
+        bannerButtons.setViews([bannerJoin, bannerRecord], in: .leading)
+
+        bannerColumn.orientation = .vertical
+        bannerColumn.spacing = 4
+        bannerColumn.alignment = .leading
+        bannerColumn.setViews([bannerTitle, bannerSubtitle, bannerButtons], in: .top)
+
+        bannerRow.orientation = .horizontal
+        bannerRow.spacing = 10
+        bannerRow.alignment = .top
+        bannerRow.setViews([bannerAccent, bannerColumn], in: .leading)
+        bannerRow.isHidden = true
+    }
+
+    // Кнопка с подписью: мягкая, скруглённая, без системной рамки.
+    private func textButton(_ b: NSButton, title: String, filled: Bool, action: Selector) {
+        b.title = title
+        b.font = .systemFont(ofSize: 11, weight: .medium)
+        b.isBordered = false
+        b.bezelStyle = .regularSquare
+        b.wantsLayer = true
+        b.layer?.cornerRadius = 7
+        paint(b, filled: filled)
+        b.target = self
+        b.action = action
+        b.translatesAutoresizingMaskIntoConstraints = false
+        b.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        // Ширина = подпись + воздух по бокам. У кнопки без рамки нет своих отступов,
+        // и текст иначе упирается прямо в скругление.
+        let textWidth = (title as NSString).size(withAttributes: [.font: b.font ?? .systemFont(ofSize: 11)]).width
+        b.widthAnchor.constraint(equalToConstant: ceil(textWidth) + 22).isActive = true
+    }
+
+    // Главное действие — янтарная заливка, вторичное — приглушённая подложка.
+    private func paint(_ b: NSButton, filled: Bool) {
+        b.contentTintColor = filled ? NSColor(srgbRed: 0.10, green: 0.08, blue: 0.05, alpha: 1)
+                                    : NSColor(white: 1, alpha: 0.85)
+        b.layer?.backgroundColor = filled ? RoyArt.amber.cgColor : NSColor(white: 1, alpha: 0.10).cgColor
+    }
+
+    @objc private func joinAction() { onJoin?() }
 
     private func configMark(_ v: NSImageView) {
         v.image = RoyArt.markImage(size: 24)
@@ -261,15 +372,25 @@ final class RecorderWidget {
 
     private func present() {
         guard let p = panel, let screen = NSScreen.main else { return }
-        if !p.isVisible {
+        let size = currentSize()
+        // Размер меняется вместе с состоянием (баннер встречи ↔ узкая капсула), поэтому
+        // кадр пересчитываем и когда капсула уже видна — иначе баннер обрежется.
+        if !p.isVisible || p.frame.size != size {
             // Куда перетащили — там и появляется; кто не таскал — ниже полосы управления
             // веб-приложений (issue #197). Правила и границы — WidgetPlacement.
-            let origin = WidgetPlacement.origin(saved: Self.savedOrigin(),
-                                                size: Self.panelSize,
-                                                in: screen.visibleFrame)
-            p.setFrame(NSRect(origin: origin, size: Self.panelSize), display: true)
+            let saved = Self.savedOrigin() ?? (p.isVisible ? p.frame.origin : nil)
+            let origin = WidgetPlacement.origin(saved: saved, size: size, in: screen.visibleFrame)
+            p.setFrame(NSRect(origin: origin, size: size), display: true)
         }
         p.orderFrontRegardless()
+    }
+
+    /// Размер под текущее состояние: баннер — по своему контенту, остальное — узкая капсула.
+    private func currentSize() -> CGSize {
+        guard !bannerRow.isHidden else { return Self.pillSize }
+        let fit = bannerRow.fittingSize
+        return CGSize(width: max(Self.bannerMinSize.width, fit.width + 20),
+                      height: max(Self.bannerMinSize.height, fit.height + 20))
     }
 
     // ── Память положения ─────────────────────────────────────────────────────────
