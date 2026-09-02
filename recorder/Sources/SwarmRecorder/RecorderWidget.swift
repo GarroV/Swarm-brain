@@ -1,4 +1,5 @@
 import AppKit
+import RecorderKit
 
 // Минимальная плавающая ВЕРТИКАЛЬНАЯ капсула. Без текста. Сверху вниз:
 //   • запись  → ✕ (стоп) / 🎙 (красный, пульсирует) + полоса уровня / марка «Рой»;
@@ -35,6 +36,11 @@ final class RecorderWidget {
     private let levelColumn = NSStackView()   // mic-полоса над system-полосой (вертикально)
     private static let levelWidth: CGFloat = 26
     private static let levelHeight: CGFloat = 4
+    // Размер капсулы — один на создание панели и на расчёт позиции (WidgetPlacement).
+    private static let panelSize = CGSize(width: 72, height: 110)
+    // Куда человек перетащил капсулу. UI-состояние, поэтому UserDefaults, а не config.json.
+    private static let originKey = "widget.origin"
+
     private var levelTimer: Timer?
     private var lastLevel: CGFloat = 0
     private var lastSysLevel: CGFloat = 0
@@ -114,7 +120,7 @@ final class RecorderWidget {
     // ── Построение ───────────────────────────────────────────────────────────────
     private func ensurePanel() {
         if panel != nil { return }
-        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 72, height: 110),
+        let p = NSPanel(contentRect: NSRect(origin: .zero, size: Self.panelSize),
                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isFloatingPanel = true
         p.level = .floating
@@ -203,6 +209,9 @@ final class RecorderWidget {
         }
         p.contentView = card
         panel = p
+        // Капсула таскается за фон (isMovableByWindowBackground) — ловим конец перетаскивания.
+        NotificationCenter.default.addObserver(self, selector: #selector(panelDidMove),
+                                               name: NSWindow.didMoveNotification, object: p)
     }
 
     private func configMark(_ v: NSImageView) {
@@ -252,14 +261,27 @@ final class RecorderWidget {
 
     private func present() {
         guard let p = panel, let screen = NSScreen.main else { return }
-        // Вертикальная капсула (✕ / микрофон+уровни / иконка «Рой»). Узкая и высокая; правый верх.
-        let w: CGFloat = 72, h: CGFloat = 110
-        let vf = screen.visibleFrame
         if !p.isVisible {
-            // правый верх, чуть ниже области уведомлений
-            p.setFrame(NSRect(x: vf.maxX - w - 18, y: vf.maxY - h - 96, width: w, height: h), display: true)
+            // Куда перетащили — там и появляется; кто не таскал — ниже полосы управления
+            // веб-приложений (issue #197). Правила и границы — WidgetPlacement.
+            let origin = WidgetPlacement.origin(saved: Self.savedOrigin(),
+                                                size: Self.panelSize,
+                                                in: screen.visibleFrame)
+            p.setFrame(NSRect(origin: origin, size: Self.panelSize), display: true)
         }
         p.orderFrontRegardless()
+    }
+
+    // ── Память положения ─────────────────────────────────────────────────────────
+    private static func savedOrigin() -> CGPoint? {
+        guard let raw = UserDefaults.standard.string(forKey: originKey) else { return nil }
+        let p = NSPointFromString(raw)
+        return p == .zero ? nil : p   // .zero — и «не задано», и разбор мусора
+    }
+
+    @objc private func panelDidMove() {
+        guard let p = panel, p.isVisible else { return }
+        UserDefaults.standard.set(NSStringFromPoint(p.frame.origin), forKey: Self.originKey)
     }
 
     // ── Пульс индикатора записи ─────────────────────────────────────────────────
