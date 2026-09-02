@@ -16,6 +16,9 @@ export interface GEvent {
   transparency?: string; // "opaque" (занят) | "transparent" (свободен / OOO)
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
+  location?: string;
+  hangoutLink?: string;
+  conferenceData?: { entryPoints?: Array<{ entryPointType?: string; uri?: string }> };
   organizer?: { self?: boolean };
   creator?: { self?: boolean };
   attendees?: Array<{ displayName?: string; email?: string; self?: boolean; responseStatus?: string }>;
