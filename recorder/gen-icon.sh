@@ -4,7 +4,7 @@
 set -e
 cd "$(dirname "$0")"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-swiftc -O -o "$TMP/gen-icon" gen-icon.swift
+swiftc -O -o "$TMP/gen-icon" Sources/RecorderKit/MarkRenderer.swift gen-icon.swift
 "$TMP/gen-icon"
 iconutil -c icns AppIcon.iconset -o AppIcon.icns
 rm -rf AppIcon.iconset
