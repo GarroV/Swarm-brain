@@ -11,5 +11,8 @@ enum MeetingIdentity {
         let attendees: [Attendee]
         let startISO: String?   // nil для room/manual
         let endISO: String?
+        /// Ссылка «зайти в звонок» из календаря (сервер: meeting-current → join_url).
+        /// nil — у встречи ссылки нет (или мы её не приняли: пускаем только https).
+        let joinURL: URL?
     }
 }

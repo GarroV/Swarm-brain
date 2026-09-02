@@ -7,6 +7,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyAgentToken, AgentAuthError } from "../_shared/agent-auth.ts";
 import { type GEvent, pickCurrentEvent } from "./select.ts";
+import { joinLink } from "./join-link.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 const CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID") ?? "";
@@ -73,6 +74,9 @@ Deno.serve(async (req: Request) => {
       attendees,
       started_at: ev.start!.dateTime,
       ended_at: ev.end!.dateTime,
+      // Ссылка «зайти в звонок»: рекордер вешает на неё кнопку в уведомлении, чтобы не
+      // бежать в календарь (#193). null — у встречи ссылки нет, кнопки не будет.
+      join_url: joinLink(ev),
     },
   });
 });

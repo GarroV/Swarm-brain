@@ -22,7 +22,10 @@ extension MeetingIdentity {
         // ниже подставится дата-дефолт «Встреча <юзер> · <дата>». Захардоженное имя платформы
         // («Google Meet»/«Контур.Толк») как название больше не используем — оно бесполезно.
         let title = cleanTitle(front.title)
-        return Info(kind: .room, key: room.key, title: title, attendees: [], startISO: nil, endISO: nil)
+        // joinURL нет намеренно: комната взята из ОТКРЫТОЙ вкладки — человек уже в звонке,
+        // и кнопка «подключиться» вела бы туда, где он и так находится.
+        return Info(kind: .room, key: room.key, title: title, attendees: [], startISO: nil, endISO: nil,
+                    joinURL: nil)
     }
 
     // URL + заголовок активной вкладки фронтового браузера — одним AppleScript-вызовом.
