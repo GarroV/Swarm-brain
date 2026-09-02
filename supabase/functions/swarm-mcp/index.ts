@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolListTaskLabels, toolGetTaskComments, toolAddTaskComment, TASK_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS, COMMENT_TOOL_DEFINITIONS } from "./tasks/tools.ts";
+import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolGetProjects, toolListTaskLabels, toolGetTaskComments, toolAddTaskComment, TASK_TOOL_DEFINITIONS, PROJECT_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS, COMMENT_TOOL_DEFINITIONS } from "./tasks/tools.ts";
 import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, detectQueryCountry } from "../_shared/countries.ts";
 import { applyGeneralSentinel, marketTagsFromInput, specificCountries } from "../_shared/meta-extract.ts";
 import { matchEntries } from "../_shared/search.ts";
@@ -159,16 +159,17 @@ const TOOLS = [
       properties: {
         assignee: { type: "string", description: "Имя исполнителя" },
         country: { type: "string", description: "Страна или рынок" },
-        status: { type: "string", enum: ["open", "in_progress", "done", "cancelled"] },
+        status: { type: "string", enum: ["backlog", "open", "in_progress", "done", "cancelled"] },
         period: { type: "string", enum: ["week"], description: "Задачи на этой неделе" },
         label: { type: "string", description: "Имя личной смарт-метки для фильтра" },
-        project: { type: "string", description: "Имя проекта или подпроекта доски — фильтр по нему. Не найден — фильтр молча игнорируется." },
+        project: { type: "string", description: "Имя проекта или подпроекта доски — фильтр по нему. Не найден — отказ со списком доступных проектов (задачи НЕ показываются). Точные имена — get_projects." },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу" },
       },
       required: ["requesting_user_id"],
     },
   },
   ...TASK_TOOL_DEFINITIONS,
+  ...PROJECT_TOOL_DEFINITIONS,
   ...LABEL_TOOL_DEFINITIONS,
   ...COMMENT_TOOL_DEFINITIONS,
   {
@@ -995,9 +996,11 @@ Deno.serve(async (req: Request) => {
       } else if (name === "get_tasks") {
         result = await toolGetTasksMcp(args as { assignee?: string; country?: string; status?: string; period?: string; label?: string; project?: string; requesting_user_id: number });
       } else if (name === "add_task") {
-        result = await toolAddTask(args as { title: string; description?: string; assignee_name?: string; country?: string; due_date?: string; task_role?: string; source: string; context_id?: string; labels?: string[]; project_name?: string; requesting_user_id?: number });
+        result = await toolAddTask(args as { title: string; description?: string; assignee_name?: string; country?: string; due_date?: string; task_role?: string; source: string; context_id?: string; labels?: string[]; project_name?: string; status?: string; confirmed?: boolean; requesting_user_id?: number });
       } else if (name === "update_task") {
         result = await toolUpdateTask(args as { id: string; title?: string; description?: string; assignee_name?: string; country?: string; due_date?: string | null; status?: string; task_role?: string; labels?: string[]; project_name?: string; requesting_user_id: number });
+      } else if (name === "get_projects") {
+        result = await toolGetProjects(args as { requesting_user_id: number });
       } else if (name === "list_task_labels") {
         result = await toolListTaskLabels(args as { requesting_user_id: number });
       } else if (name === "delete_task") {

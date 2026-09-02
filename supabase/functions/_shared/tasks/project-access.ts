@@ -100,3 +100,11 @@ export function pickProjectByName(
   if (partial.length > 1) return { id: partial[0].id, ambiguous: true };
   return null;
 }
+
+// Имена проектов, видимых зрителю — тем же предикатом, что и резолв по имени. Нужен, чтобы
+// отказ «проект не найден» мог перечислить, что вообще есть (issue #199): без списка агент
+// перебирает имена вслепую, а закрытый проект в подсказку попасть не должен.
+export function visibleProjectNames(rows: ProjectNameRow[], viewerId: number | undefined): string[] {
+  const index = parentLookup(rows);
+  return rows.filter((p) => canViewProject(p, viewerId, index)).map((p) => p.name);
+}

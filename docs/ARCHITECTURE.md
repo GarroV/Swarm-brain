@@ -106,7 +106,7 @@
 
 | Клиент | Файл | Что делает поверх движка |
 |--------|------|--------------------------|
-| swarm-mcp | `swarm-mcp/tasks/tools.ts` | резолв `requesting_user_id → group_id` (обязателен для get/delete/update); воркспейс-изоляция (`task.group_id === groupId`); fuzzy-резолв `assignee_name`; форматирование `Task[]` для Claude; `add_task` → `confirmed:false` + `created_by_telegram_id` + Telegram-уведомление создателю (`notifyCreator`) |
+| swarm-mcp | `swarm-mcp/tasks/tools.ts` | резолв `requesting_user_id → group_id` (обязателен для get/delete/update); воркспейс-изоляция (`task.group_id === groupId`); fuzzy-резолв `assignee_name`; форматирование `Task[]` для Claude (чистая часть — `swarm-mcp/tasks/format.ts` + тесты); `add_task` → **`confirmed:true` по умолчанию** (задача сразу на доске) + `created_by_telegram_id`; Telegram-уведомление создателю (`notifyCreator`) уходит ТОЛЬКО при явном `confirmed:false` — у задачи, попавшей на доску, подтверждать нечего |
 | swarm-bot | `swarm-bot/tasks/{db,handlers}.ts` | тонкая обёртка; **все командные листинги фильтруют `is_private=false`** — личные задачи Роя видны только в miniapp у владельца, не текут в бот; создание (wizard + `analyzeAndCreateTasks`) → `confirmed:false`+`created_by_telegram_id`, завершение wizard → `confirmed:true`+`broadcastTaskAssigned` |
 | swarm-api | `swarm-api/index.ts` | HTTP-обёртка (`/tasks*`); доступ к entries — через `entries-guard.ts`; `meeting_id` валидируется (IDOR-guard) |
 
@@ -1042,10 +1042,11 @@ supabase/functions/swarm-mcp/
 | `get_users` | Список пользователей воркспейса |
 | `get_feedback` | Фидбек пользователей (баги/идеи), фильтры `status`/`category`; **владелец-only**, по умолчанию незакрытые |
 | `resolve_feedback` | Пометить фидбек `triaged`/`done`/`wontfix` (+ опц. `task_id`); **владелец-only** |
-| `add_task` | Создать задачу (с fuzzy-матчингом исполнителя). Параметр `labels` (имена личных смарт-меток) — резолв/авто-создание меток владельца, задача становится личной. `recur_freq` (`daily`/`weekly`/`monthly`) — цикличность; **требует `due_date`**, иначе отказ |
+| `add_task` | Создать задачу (с fuzzy-матчингом исполнителя). **`confirmed` по умолчанию `true` — задача сразу на доске** (решение владельца 2026-09-03, канон [decisions/2026-09-03-mcp-task-goes-to-board.md](decisions/2026-09-03-mcp-task-goes-to-board.md)); `confirmed:false` кладёт её в очередь «На проверке», видимую ТОЛЬКО в боте, и тогда же уходит `notifyCreator`. `status` (`backlog`/`open`/`in_progress`/`done`/`cancelled`) — колонка доски. Параметр `labels` (имена личных смарт-меток) — резолв/авто-создание меток владельца, задача становится личной. `recur_freq` (`daily`/`weekly`/`monthly`) — цикличность; **требует `due_date`**, иначе отказ |
 | `update_task` | Обновить задачу. Параметр `labels` — только для своей личной задачи. `recur_freq` (`null` — снять) идёт через `recurrencePatchFor`, поэтому якорь числа месяца не сбивается при правке других полей. ⚠️ `status:"done"` у регулярной задачи её НЕ закрывает — срок переносится на следующее вхождение (описание тулзы предупреждает об этом Claude явно) |
 | `delete_task` | Удалить задачу |
-| `get_tasks` | Список задач с фильтрами (в т.ч. `label` — имя личной смарт-метки) |
+| `get_tasks` | Список задач с фильтрами (в т.ч. `label` — имя личной смарт-метки, `status` включает `backlog`). **Неизвестный `project` → отказ со списком доступных имён, а не молчаливый игнор фильтра** (issue #199). Неподтверждённая задача помечена `⏳ на проверке (в вебе не видна)` — иначе агент принимает её за задачу на доске (issue #201) |
+| `get_projects` | Доски воркспейса деревом: проект → подпроекты, `id`, счётчики задач и бэклога. Приватность — тем же предикатом, что резолв по имени (`canViewProject`), админского обхода нет. Без него агент угадывал имена вслепую (issue #198) |
 | `list_task_labels` | Список личных смарт-меток вызывающего (имя + id) |
 | `get_task_comments` | Комментарии-апдейты к задаче по её ID (если задача доступна вызывающему) |
 | `add_task_comment` | Добавить комментарий-апдейт к задаче по её ID от лица вызывающего |

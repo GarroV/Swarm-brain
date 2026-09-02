@@ -4,6 +4,9 @@ import { recurrencePatchFor, resolveRecurrence } from "../../_shared/tasks/recur
 import { validateCommentContent } from "../../_shared/tasks/comments.ts";
 import { taskAccessError } from "../../_shared/tasks/access.ts";
 import { pickProjectByName, type ProjectNameRow } from "../../_shared/tasks/project-access.ts";
+import { listProjects } from "../../_shared/tasks/projects.ts";
+import { visibleProjectNames } from "../../_shared/tasks/project-access.ts";
+import { addTaskOutcome, formatProjectTree, formatTaskLine, projectNotFoundMessage } from "./format.ts";
 
 // Оверсайт руководителя по ЗАДАЧАМ — осознанное решение владельца, см. docs/decisions/2026-08-21-admin-visibility.md.
 // На проекты и записи он НЕ распространяется.
@@ -113,16 +116,20 @@ async function matchAssignee(name: string): Promise<{ telegram_id: number; displ
 // задачи на доску — только в общий список). Точное совпадение по имени приоритетнее частичного;
 // при неоднозначности (несколько совпадений) — не гадаем, отдаём null + предупреждение вызывающему,
 // как и matchAssignee при неопознанном исполнителе.
+async function fetchProjectRows(groupId: string): Promise<ProjectNameRow[]> {
+  const { data } = await supabase.from("projects")
+    .select("id, name, parent_id, created_by, is_private").eq("group_id", groupId);
+  return (data ?? []) as ProjectNameRow[];
+}
+
 async function matchProject(
   groupId: string,
   name: string,
   viewerId: number | undefined,
 ): Promise<{ id: string; ambiguous: boolean } | null> {
-  const { data } = await supabase.from("projects")
-    .select("id, name, parent_id, created_by, is_private").eq("group_id", groupId);
   // Админского обхода нет (решение владельца 2026-08-21): чужой приватный проект не резолвится
   // ни у кого, включая владельца продукта.
-  return pickProjectByName((data ?? []) as ProjectNameRow[], name, viewerId);
+  return pickProjectByName(await fetchProjectRows(groupId), name, viewerId);
 }
 
 // ── Tool implementations (MCP prослойки — резолв + shared engine + форматирование) ──
@@ -139,6 +146,8 @@ export async function toolAddTask(args: {
   labels?: string[];
   project_name?: string;
   recur_freq?: string | null;
+  status?: string;
+  confirmed?: boolean;
   requesting_user_id?: number;
 }): Promise<string> {
   const assignees: string[] = [];
@@ -191,10 +200,17 @@ export async function toolAddTask(args: {
       due_date: args.due_date ?? null,
       task_role: args.task_role ?? null,
       source: args.source,
-      status: "open",
+      // Бэклог доски — это статус "backlog" (колонка «Бэклог» на SprintBoard ловит всё, что не
+      // open/in_progress/done). Без параметра задача ложилась в «Открыто», и человек перетаскивал
+      // её руками (issue #200).
+      status: args.status ?? "open",
       meeting_id: args.context_id ?? null,
       tags: [],
-      confirmed: false,
+      // Задача от агента создаётся по прямой команде человека — это не авто-извлечение из
+      // встречи, вычитывать её не надо (решение владельца 2026-09-03, issue #201). Веб просит
+      // ТОЛЬКО confirmed=true (fetchTasks), поэтому confirmed:false = задача невидима во всём
+      // интерфейсе и подтверждается лишь в боте.
+      confirmed: args.confirmed ?? true,
       created_by_telegram_id: args.requesting_user_id ?? null,
       label_ids: labelIds,
       is_private: labelIds.length > 0 ? true : undefined,
@@ -203,10 +219,13 @@ export async function toolAddTask(args: {
       recur_freq: recur.recur_freq,
       recur_anchor_dom: recur.recur_anchor_dom,
     }, groupId ?? undefined);
-    if (args.requesting_user_id) {
+    // Уведомление «подтверди в боте» — только у задач, которые правда ждут вычитки. У задачи,
+    // сразу попавшей на доску, подтверждать нечего, и гнать человека в бота незачем.
+    const confirmed = args.confirmed ?? true;
+    if (!confirmed && args.requesting_user_id) {
       await notifyCreator(args.requesting_user_id, args.title);
     }
-    return `✅ Задача создана (id: ${task.id})${matchWarning}.`;
+    return addTaskOutcome({ id: task.id, confirmed, warning: matchWarning });
   } catch (e) {
     return `Ошибка: ${e instanceof Error ? e.message : String(e)}`;
   }
@@ -344,9 +363,19 @@ export async function toolGetTasks(args: {
   if (!groupId) return "Ошибка: пользователь не найден в системе.";
 
   const labelIds = args.label ? await resolveLabelIds(args.requesting_user_id, [args.label], false) : [];
-  // Проект/подпроект доски (issue #28). Не найден — не роняем запрос, просто игнорируем фильтр
-  // (get_tasks и так best-effort по остальным фильтрам).
-  const projectMatch = args.project ? await matchProject(groupId, args.project, args.requesting_user_id) : null;
+
+  // Проект/подпроект доски (issue #28). Не найден — ОТКАЗ, а не игнор фильтра (issue #199):
+  // молча отданная полная доска неотличима от «в проекте столько задач», и агент докладывает
+  // содержимое чужого проекта как содержимое запрошенного. Строки тянем один раз — из них же
+  // берётся подсказка с доступными именами.
+  let projectMatch: { id: string; ambiguous: boolean } | null = null;
+  if (args.project) {
+    const rows = await fetchProjectRows(groupId);
+    projectMatch = pickProjectByName(rows, args.project, args.requesting_user_id);
+    if (!projectMatch) {
+      return projectNotFoundMessage(args.project, visibleProjectNames(rows, args.requesting_user_id));
+    }
+  }
 
   const tasks = await listTasks({
     status: args.status,
@@ -361,12 +390,18 @@ export async function toolGetTasks(args: {
 
   if (!tasks.length) return "Задач не найдено.";
 
-  return tasks.map(t => {
-    const who = t.assignees?.join(", ") || "—";
-    const due = t.due_date ? ` | дедлайн: ${t.due_date}` : "";
-    const country = t.country ? ` | ${t.country}` : "";
-    return `• [${t.status}] ${t.title}\n  Исполнитель: ${who}${due}${country}`;
-  }).join("\n\n");
+  return tasks.map((t) => formatTaskLine(t)).join("\n\n");
+}
+
+// Дерево досок воркспейса (issue #198): без него агент не знал имён проектов и подпроектов и
+// угадывал их вслепую — «VC», «аудит», «додо аудит систем» мимо `Vibe Coding` / `Audit
+// Management System`. Админского обхода нет (решение 2026-08-21): чужие закрытые проекты не
+// показываем никому.
+export async function toolGetProjects(args: { requesting_user_id: number }): Promise<string> {
+  const groupId = await resolveGroupId(args.requesting_user_id);
+  if (!groupId) return "Ошибка: пользователь не найден в системе.";
+  const projects = await listProjects(groupId, { viewerId: args.requesting_user_id });
+  return formatProjectTree(projects);
 }
 
 // ── Комментарии к задачам (апдейты) ────────────────────────────────────────────
@@ -422,7 +457,7 @@ export async function toolAddTaskComment(args: { task_id: string; content: strin
 export const TASK_TOOL_DEFINITIONS = [
   {
     name: "add_task",
-    description: "Создать новую задачу. Используй после того как пользователь подтвердил список задач из транскрипта.",
+    description: "Создать новую задачу. По умолчанию задача сразу попадает на доску и видна в вебе. Для доски укажи project_name (имя из get_projects), иначе задача уйдёт только в общий список.",
     inputSchema: {
       type: "object",
       properties: {
@@ -441,6 +476,8 @@ export const TASK_TOOL_DEFINITIONS = [
         labels: { type: "array", items: { type: "string" }, description: "Имена личных смарт-меток (папок). Задача с метками становится личной." },
         project_name: { type: "string", description: "Имя проекта или подпроекта доски (Проекты/SprintBoard) — без него задача на доску не попадёт, только в общий список. При неточном совпадении берётся ближайшее по имени; при отсутствии — предупреждение в ответе, задача всё равно создаётся." },
         recur_freq: { type: ["string", "null"], enum: ["daily", "weekly", "monthly", null], description: "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность." },
+        status: { type: "string", enum: ["backlog", "open", "in_progress", "done", "cancelled"], description: "Колонка доски, куда положить задачу. По умолчанию open («Открыто»); backlog — колонка «Бэклог»." },
+        confirmed: { type: "boolean", description: "По умолчанию true — задача сразу на доске. false кладёт её в очередь «На проверке», которая видна ТОЛЬКО в Telegram-боте (в вебе такой задачи не видно вообще) — используй только если человек прямо попросил очередь." },
       },
       required: ["title", "source"],
     },
@@ -457,7 +494,7 @@ export const TASK_TOOL_DEFINITIONS = [
         assignee_name: { type: "string", description: "Новый исполнитель. Пустая строка — убрать исполнителя." },
         country: { type: "string" },
         due_date: { type: ["string", "null"], description: "YYYY-MM-DD или null чтобы убрать" },
-        status: { type: "string", enum: ["open", "in_progress", "done", "cancelled"] },
+        status: { type: "string", enum: ["backlog", "open", "in_progress", "done", "cancelled"], description: "Колонка доски. backlog — «Бэклог» (issue #200)." },
         labels: { type: "array", items: { type: "string" }, description: "Имена личных смарт-меток. Работает только на твоих личных задачах." },
         task_role: {
           type: "string",
@@ -481,6 +518,20 @@ export const TASK_TOOL_DEFINITIONS = [
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
       },
       required: ["id", "requesting_user_id"],
+    },
+  },
+];
+
+export const PROJECT_TOOL_DEFINITIONS = [
+  {
+    name: "get_projects",
+    description: "Показать доски воркспейса деревом: проекты, их подпроекты, id и счётчики задач. Вызывай ПЕРЕД add_task/get_tasks с project_name — имена проектов угадать нельзя.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности" },
+      },
+      required: ["requesting_user_id"],
     },
   },
 ];

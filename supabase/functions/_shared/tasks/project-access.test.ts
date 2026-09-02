@@ -4,6 +4,7 @@ import {
   isProjectPrivate,
   parentLookup,
   pickProjectByName,
+  visibleProjectNames,
   type ProjectAccessRow,
   type ProjectNameRow,
 } from "./project-access.ts";
@@ -148,4 +149,23 @@ Deno.test("pickProjectByName: невидимая строка не создаё�
 
 Deno.test("pickProjectByName: частичное совпадение тоже не достаёт чужое приватное", () => {
   assertEquals(pickProjectByName(rows, "Salary", ANNA), null);
+});
+
+// ── visibleProjectNames: подсказка в отказе не должна раскрывать закрытые проекты (issue #199) ──
+
+Deno.test("visibleProjectNames: чужой закрытый проект в список не попадает", () => {
+  const rows = [
+    { id: "open", name: "Открытый", parent_id: null, created_by: 1, is_private: false },
+    { id: "mine", name: "Мой закрытый", parent_id: null, created_by: 7, is_private: true },
+    { id: "alien", name: "Чужой закрытый", parent_id: null, created_by: 1, is_private: true },
+  ];
+  assertEquals(visibleProjectNames(rows, 7), ["Открытый", "Мой закрытый"]);
+});
+
+Deno.test("visibleProjectNames: подпроект закрытой группы не всплывает в подсказке", () => {
+  const rows = [
+    { id: "grp", name: "Закрытая группа", parent_id: null, created_by: 1, is_private: true },
+    { id: "kid", name: "Подпроект", parent_id: "grp", created_by: 1, is_private: false },
+  ];
+  assertEquals(visibleProjectNames(rows, 7), []);
 });

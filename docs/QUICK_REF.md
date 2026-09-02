@@ -171,7 +171,8 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 ### MCP / установщики
 | Concern | Файлы | Детали |
 |---|---|---|
-| MCP-инструменты (Claude Desktop) | `swarm-mcp/index.ts`, `swarm-mcp/tasks/tools.ts` | §swarm-mcp |
+| MCP-инструменты (Claude Desktop) | `swarm-mcp/index.ts`, `swarm-mcp/tasks/tools.ts`, форматирование ответов `swarm-mcp/tasks/format.ts` (+`.test.ts`) | §swarm-mcp |
+| 🧭 **MCP и доски задач** — `get_projects` отдаёт дерево проект→подпроект с `id` (имена не угадывают); `add_task` по умолчанию **`confirmed:true`, задача сразу на доске** и в бота никого не уводит, `status:"backlog"` кладёт в колонку «Бэклог»; неизвестный `project` в `get_tasks` → отказ со списком доступных, а не полная доска молча | `swarm-mcp/tasks/{tools.ts,format.ts}`, `_shared/tasks/project-access.ts` (`visibleProjectNames`), `_shared/tasks/projects.ts` (`listProjects`) | ADR [2026-09-03-mcp-task-goes-to-board](decisions/2026-09-03-mcp-task-goes-to-board.md) · §swarm-mcp в [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Авто-сетап Claude Desktop (`/setup`) | `swarm-setup/script.ts` (`SETUP_SCRIPT` + `BRIDGE_SCRIPT` + `MERGE_FUNCTION`), `swarm-bot/lib/mcp-setup.ts` | §swarm-mcp; мост `bash`+`curl` вместо Node/mcp-remote (#47), тесты `deno test --allow-read --allow-write --allow-run supabase/functions/swarm-setup/script.test.ts` |
 | Подключение Claude — оба пути (Desktop + веб-коннектор claude.ai) | `swarm-bot/index.ts` (`/connect_claude`, `/setup`, `/mytoken`), `_shared/mcp-token.ts` | §MCP-аутентификация |
 | Промт-инструкции для проекта Claude Desktop (поле Instructions) | единый источник `_shared/claude-project-prompt.ts` → бот `/claude` + swarm-api `GET /mcp/instructions` (кнопка в вебе `SettingsScreen.tsx` `ClaudeDesktopSection`) | §swarm-api |
