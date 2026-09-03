@@ -5,19 +5,32 @@ import XCTest
 // управления веб-приложений (аватары, счётчики, кнопки) — капсула их накрывала. И позиция
 // не помнилась: человек оттаскивал её каждый запуск заново.
 final class WidgetPlacementTests: XCTestCase {
-    // Экран 1440×900 с занятым меню-баром — привычная рабочая геометрия.
+    // Экран 1440×900 с занятым меню-баром — привычная рабочая геометрия. На нём подъём
+    // на два фрейма НЕ проходит целиком: упирается в воздух под меню-баром (headerBand),
+    // и это правильное поведение — см. testLiftIsClampedOnAShortScreen.
     private let screen = CGRect(x: 0, y: 0, width: 1440, height: 875)
+    // Рабочий монитор владельца (visibleFrame, замерено `--selftest-widget` 03.09.2026):
+    // на нём подъём проходит полностью, поэтому именно здесь проверяем сам подъём.
+    private let wideScreen = CGRect(x: 0, y: 51, width: 1710, height: 1022)
     private let size = CGSize(width: 72, height: 110)
 
     // Владелец 03.09.2026: «надо виджет поднять чуть выше, я думаю на 2 таких же фрейма».
     // Прежнее требование «верх не выше 200 пунктов от края» (#197) этим и снято — оно
     // физически несовместимо с подъёмом, см. комментарий в WidgetPlacement.
     func testDefaultIsLiftedByTwoBannerHeights() {
-        let o = WidgetPlacement.origin(saved: nil, size: size, in: screen)
+        let o = WidgetPlacement.origin(saved: nil, size: size, in: wideScreen)
 
-        let withoutLift = screen.maxY - screen.height * WidgetPlacement.topFraction - size.height
+        let withoutLift = wideScreen.maxY - wideScreen.height * WidgetPlacement.topFraction - size.height
         XCTAssertEqual(o.y, withoutLift + WidgetPlacement.defaultLift, accuracy: 0.5,
                        "дефолт не поднят на два фрейма")
+    }
+
+    // На узком экране подъём законно срезается ограничителем сверху — но именно
+    // ограничителем, а не «подъёма не было»: окно обязано встать вплотную к границе.
+    func testLiftIsClampedByTheHeaderBandOnANarrowScreen() {
+        let o = WidgetPlacement.origin(saved: nil, size: size, in: screen)
+
+        XCTAssertEqual(o.y + size.height, screen.maxY - WidgetPlacement.headerBand, accuracy: 0.5)
     }
 
     func testDefaultStaysBelowTheMenuBarAndAboveTheDock() {
@@ -61,7 +74,7 @@ final class WidgetPlacementTests: XCTestCase {
     // ── Переход между режимами (капсула ↔ баннер): окно одно, значит и место одно ──────────
 
     func testMorphKeepsTheRightEdge() {
-        let pill = CGRect(x: 1620, y: 880, width: 72, height: 110)
+        let pill = CGRect(x: 1350, y: 700, width: 72, height: 110)   // внутри screen
         let banner = CGSize(width: 300, height: 102)
 
         let o = WidgetPlacement.morphOrigin(from: pill, to: banner, in: screen)
@@ -70,7 +83,7 @@ final class WidgetPlacementTests: XCTestCase {
     }
 
     func testMorphKeepsTheTopLine() {
-        let pill = CGRect(x: 1620, y: 880, width: 72, height: 110)
+        let pill = CGRect(x: 1350, y: 700, width: 72, height: 110)   // внутри screen
         let banner = CGSize(width: 300, height: 102)
 
         let o = WidgetPlacement.morphOrigin(from: pill, to: banner, in: screen)
@@ -91,7 +104,7 @@ final class WidgetPlacementTests: XCTestCase {
     // Переход в обратную сторону (баннер → капсула) обязан быть симметричным: правый край
     // и верх на месте, иначе капсула «отпрыгивает» от того места, где человек её видел.
     func testMorphIsSymmetricBackToPill() {
-        let banner = CGRect(x: 1392, y: 888, width: 300, height: 102)
+        let banner = CGRect(x: 1122, y: 700, width: 300, height: 102)   // внутри screen
         let pill = CGSize(width: 72, height: 110)
 
         let o = WidgetPlacement.morphOrigin(from: banner, to: pill, in: screen)
