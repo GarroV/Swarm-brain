@@ -28,6 +28,10 @@ final class RecorderWidget {
     var systemLevelProvider: (() -> Float)?
 
     private var panel: NSPanel?
+    /// Фактическая рамка окна на экране — только для чтения. Нужна режиму
+    /// `--selftest-widget`: положение виджета иначе проверяется глазами по скриншоту,
+    /// а «кажется, стало выше» — не проверка (правка дефолта 03.09.2026).
+    var currentFrame: CGRect? { panel?.frame }
     private let recMark = NSImageView()
     private let micIndicator = NSImageView()
     private let stopBtn = NSButton()

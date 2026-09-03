@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Foundation
+import RecorderKit   // WidgetPlacement для --selftest-widget
 
 // Режим --selftest: headless-проверка захвата системного звука без меню-бара.
 // Пишет ~6с, параллельно проигрывая клип через afplay, печатает размер файла.
@@ -163,6 +164,56 @@ func runQuarantineSelfTest() {
     RunLoop.main.run()
 }
 
+// Режим --selftest-widget: показать окно (баннер встречи или капсулу записи) в ДЕФОЛТНОЙ
+// позиции и напечатать её геометрию. Заведён 03.09.2026 вместе с подъёмом дефолта на два
+// фрейма: иначе положение окна проверяется только реальной записью — то есть мусорной
+// встречей в проде, — а «на глаз выше/ниже» проверкой не является.
+//   --selftest-widget            баннер встречи, 20 секунд
+//   --selftest-widget --pill     капсула записи
+//   --selftest-widget --keep N   держать N секунд
+// Сохранённую позицию режим НЕ трогает и НЕ читает: проверяем именно дефолт.
+func runWidgetSelfTest(pill: Bool, seconds: Double) {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+
+    // Дефолт считается от чистого состояния: если окно раньше перетаскивали, сохранённая
+    // позиция победила бы и мы проверили бы не то, что видит новый человек.
+    let savedKey = "widget.origin"
+    let saved = UserDefaults.standard.string(forKey: savedKey)
+    UserDefaults.standard.removeObject(forKey: savedKey)
+
+    let widget = RecorderWidget()
+    if pill {
+        widget.showRecording(startedAt: Date())
+    } else {
+        let now = Date()
+        let notice = MeetingNotice.compose(title: "Проверка положения окна",
+                                           start: now.addingTimeInterval(600),
+                                           end: now.addingTimeInterval(4200),
+                                           now: now)
+        widget.showPending(notice: notice, canJoin: true)
+    }
+
+    // Печать — после прохода RunLoop: до него окно ещё не разложено по констрейнтам.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+        let vf = NSScreen.main?.visibleFrame ?? .zero
+        guard let f = widget.currentFrame else { NSLog("selftest-widget: окна нет"); exit(1) }
+        let topGap = vf.maxY - f.maxY          // сколько от верха рабочей области до верха окна
+        let expectedNoLift = vf.maxY - vf.height * WidgetPlacement.topFraction - f.height
+        print("selftest-widget: режим=\(pill ? "капсула" : "баннер")")
+        print("  visibleFrame = \(vf)")
+        print("  окно         = \(f)")
+        print("  отступ сверху = \(Int(topGap)) пт   (headerBand = \(Int(WidgetPlacement.headerBand)))")
+        print("  подъём        = \(Int(f.origin.y - expectedNoLift)) пт   (defaultLift = \(Int(WidgetPlacement.defaultLift)))")
+    }
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+        if let saved { UserDefaults.standard.set(saved, forKey: savedKey) }  // вернули как было
+        exit(0)
+    }
+    app.run()
+}
+
 // Режим --analyze <file.m4a…>: печатает речевые блоки SilenceTrimmer и % экономии Whisper-минут.
 // Временный debug для калибровки на реальных записях (сверка со ссылочным ffmpeg-замером).
 func runAnalyze(_ files: [String]) {
@@ -209,7 +260,12 @@ func runUpdateSelfTest(apply: Bool) {
     RunLoop.main.run()
 }
 
-if let ai = CommandLine.arguments.firstIndex(of: "--analyze") {
+if CommandLine.arguments.contains("--selftest-widget") {
+    let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in
+        i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
+    }
+    runWidgetSelfTest(pill: CommandLine.arguments.contains("--pill"), seconds: keep ?? 20)
+} else if let ai = CommandLine.arguments.firstIndex(of: "--analyze") {
     runAnalyze(Array(CommandLine.arguments[(ai + 1)...]))
 } else if CommandLine.arguments.contains("--selftest-update") {
     runUpdateSelfTest(apply: CommandLine.arguments.contains("--apply"))   // не возвращается до exit()
