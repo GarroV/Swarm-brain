@@ -5,10 +5,17 @@ import { DashBlock, SubHead, DashTaskRow, norm } from "./shared";
 import { TaskModal } from "@/components/TaskModal";
 import type { DashboardData } from "./useDashboardData";
 
-// Левая колонка главного экрана: личные задачи текущего пользователя.
-// КАСКАД «не держать пустой блок»: показываем первый непустой ярус — текущие (Сегодня/просрочено)
-// → если нет, ближайшие (в пределах недели) → если нет, ВСЕ мои (включая без срока). Так блок
-// всегда показывает задачи, а не пустоту с одним счётчиком. «+ ещё N» ведёт на доску.
+// Левая колонка главного экрана (верхняя половина): личные задачи ТЕКУЩЕГО дня.
+//
+// Раньше здесь работал КАСКАД «не держать пустой блок»: сегодня → если пусто, неделя → если
+// пусто, все мои. Каскад СНЯТ по решению владельца 03.09.2026 (issue #217: «задачи сокращаем
+// список в половину, и при этом показываем там только то что сегодня») — блок показывает
+// ровно один ярус, «Сегодня», и при пустом дне честно говорит, что на сегодня задач нет,
+// вместо подмены ярусом «Ближайшие», о которой человек не просил.
+//
+// Просроченное остаётся здесь же: ярус «Сегодня» = срок ≤ сегодня (groupMine), прятать
+// просрочку нельзя — она и есть то, что требует внимания в первую очередь.
+// «+ ещё N» ведёт на доску: остальные задачи не должны исчезнуть с главной.
 // Строки рисуются общим `DashTaskRow` (= тот же `TaskRow`, что и на доске) — единый вид.
 
 export function PersonalTasks({ data, className }: { data: DashboardData; className?: string }) {
@@ -20,15 +27,14 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
   // Только активные — завершённые на дашборде не показываем (для них есть список «Готовые»).
   const active = (ts: typeof mine) => ts.filter((t) => norm(t.status) !== "done");
   const aToday = active(today);
-  const aWeek = active(week);
   const aMine = active(mine);
 
-  const tier =
-    aToday.length > 0 ? { label: dt("Сегодня", "Today"), tasks: aToday } :
-    aWeek.length > 0 ? { label: dt("Ближайшие", "Upcoming"), tasks: aWeek } :
-    { label: dt("Все", "All"), tasks: aMine };
-  const moreCount = aMine.length - tier.tasks.length; // не вошедшие в показанный ярус
+  const tier = { label: dt("Сегодня", "Today"), tasks: aToday };
+  // «+ ещё N» считаем от ВСЕХ моих активных: на сегодня пусто, но 110 задач в работе — это
+  // не «пусто», и ссылка на доску обязана остаться.
+  const moreCount = aMine.length - aToday.length;
   const empty = aMine.length === 0;
+  const emptyDay = aToday.length === 0 && aMine.length > 0;
 
   return (
     <>
@@ -51,6 +57,11 @@ export function PersonalTasks({ data, className }: { data: DashboardData; classN
       >
         <SubHead count={tier.tasks.length}>{tier.label}</SubHead>
         {tier.tasks.map((t) => <DashTaskRow key={t.id} task={t} />)}
+        {emptyDay && (
+          <div className="py-6 text-center text-ink-soft" style={{ fontSize: 12.5 }}>
+            {dt("На сегодня задач нет", "Nothing due today")}
+          </div>
+        )}
         {moreCount > 0 && (
           <button
             type="button"

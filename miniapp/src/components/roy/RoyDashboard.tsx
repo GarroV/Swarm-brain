@@ -41,7 +41,14 @@ export function RoyDashboard() {
         className="grid min-h-0 flex-1 gap-4 overflow-hidden p-4"
         style={{ gridTemplateColumns: "minmax(260px, 288px) minmax(0, 1fr) minmax(300px, 344px)" }}
       >
-        <PersonalTasks data={data} />
+        {/* Левая колонка делится пополам (issue #217, владелец 03.09.2026: «задачи сокращаем
+            список в половину… задачи команды также переносим налево, под задачи сотрудника»).
+            min-h-0 + flex-1 на обеих панелях — иначе длинный список распирает колонку и вторая
+            панель уезжает за край экрана. */}
+        <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
+          <PersonalTasks data={data} className="min-h-0 flex-1" />
+          <TeamTasks data={data} className="min-h-0 flex-1" />
+        </div>
 
         <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
           <SearchHero />
@@ -49,9 +56,10 @@ export function RoyDashboard() {
           {/* «Добавлено за сутки» (Materials) временно скрыто — переиспользуем позже */}
         </div>
 
+        {/* Правая колонка освободилась под «Встречи сегодня» из календаря (issue #218) —
+            пока в ней только записанные встречи. */}
         <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
           <MeetingsApprove data={data} className="min-h-0 flex-1" />
-          <TeamTasks data={data} className="min-h-0 flex-1" />
         </div>
       </div>
     </div>

@@ -4,10 +4,12 @@ import { fetchMe, fetchTasks, updateTask, deleteTask, createTask, fetchTaskLabel
 import { buildQuickAddInput } from "@/lib/quickAddTask";
 import type { Me, Task } from "@/types";
 import {
-  filterTasks, countLists, groupByMarket, groupByAssignee, groupByAssigneeThenMarket, isDone, filterByLabel, countByLabel,
-  type SmartListId, type Lens, type MarketGroup, type StaffGroup, type NestedStaffGroup,
+  filterTasks, countLists, countStatuses, groupByMarket, groupByAssignee, groupByAssigneeThenMarket, isDone, filterByLabel, countByLabel,
+  DEFAULT_STATUSES, STATUS_FILTERS,
+  type SmartListId, type Lens, type MarketGroup, type StaffGroup, type NestedStaffGroup, type StatusFilter, type StatusSet,
 } from "@/lib/smartLists";
 import { resolveRange, type DateRange } from "@/lib/dateRange";
+import { migrateSavedView, savedStatuses, type SavedTasksView, type StoredTasksView } from "@/lib/tasksView";
 import { useRoyNav } from "@/components/roy/nav";
 
 function todayISO(now: Date): string {
@@ -20,9 +22,10 @@ function todayISO(now: Date): string {
 // Последний выбранный вид доски — переживает рефреш (localStorage). Читаем в ленивом
 // инициализаторе useState, а НЕ в эффекте: эффект-сохранение на маунте затирал бы значение
 // дефолтом раньше, чем restore применится (в dev StrictMode эффекты ещё и сдваиваются).
-type SavedTasksView = { activeList?: SmartListId; activeLabelId?: string | null; lens?: Lens; byMarket?: boolean; allStaff?: boolean; range?: DateRange | null };
+// Чтение/миграция вида — чистая логика в lib/tasksView.ts (там же тесты).
 // Экспортируется для NewTask: созданная задача сверяется с ТЕМ ЖЕ сохранённым видом, в который
-// человек вернётся, — включая период. Иначе задача вне активного фильтра выглядит потерянной.
+// человек вернётся, — включая период и набор статусов. Иначе задача вне активного фильтра
+// выглядит потерянной.
 export function readSavedTasksView(): SavedTasksView | null {
   return readSavedView();
 }
@@ -31,7 +34,8 @@ function readSavedView(): SavedTasksView | null {
   try {
     if (typeof window === "undefined") return null;
     const raw = window.localStorage.getItem("roy_tasks_view");
-    return raw ? (JSON.parse(raw) as SavedTasksView) : null;
+    if (!raw) return null;
+    return migrateSavedView(JSON.parse(raw) as StoredTasksView);
   } catch { return null; }
 }
 
@@ -61,6 +65,15 @@ export function useReminderTasks() {
   // resolveRange: пресет пересчитывается ОТ СЕГОДНЯ, иначе сохранённая «эта неделя» через неделю
   // молча показывала бы прошлую. Произвольный диапазон берётся как есть.
   const [range, setRange] = useState<DateRange | null>(() => resolveRange(readSavedView()?.range));
+  // Ось «статус» (issue #216) — мультивыбор поверх оси времени; переживает рефреш вместе с видом.
+  const [statuses, setStatuses] = useState<StatusSet>(() => savedStatuses(readSavedView()));
+  const toggleStatus = useCallback((id: StatusFilter) => {
+    setStatuses((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
   const [query, setQuery] = useState("");
   const [labels, setLabels] = useState<TaskLabel[]>([]);
   const [activeLabelId, setActiveLabelId] = useState<string | null>(() => (taskView ? null : readSavedView()?.activeLabelId ?? null));
@@ -72,10 +85,10 @@ export function useReminderTasks() {
         // allStaff сохраняем ЭФФЕКТИВНЫЙ (у не-админа протухший true вычищается из хранилища),
         // но пока `me` не загрузился — оставляем как было, иначе первый рендер стёр бы выбор админа.
         const staffToSave = me == null ? allStaffRaw : allStaff;
-        window.localStorage.setItem("roy_tasks_view", JSON.stringify({ activeList, activeLabelId, lens, byMarket, allStaff: staffToSave, range }));
+        window.localStorage.setItem("roy_tasks_view", JSON.stringify({ activeList, activeLabelId, lens, byMarket, allStaff: staffToSave, range, statuses: [...statuses] }));
       }
     } catch { /* storage недоступен — игнор */ }
-  }, [activeList, activeLabelId, lens, byMarket, allStaff, allStaffRaw, me, range]);
+  }, [activeList, activeLabelId, lens, byMarket, allStaff, allStaffRaw, me, range, statuses]);
 
   // Оптимистично добавленные задачи (по реальному id из ответа POST/PATCH). Держим их поверх
   // серверной выборки, пока сервер не вернёт их в списке — иначе фоновый поллинг «моргает»
@@ -145,7 +158,10 @@ export function useReminderTasks() {
   // effLens — «Все сотрудники» (админ) расширяет охват до линзы «staff» независимо от Мои/Команда/Все
   // (см. объявление effLens выше). Счётчики рельса тоже считаем по нему — иначе цифры в рельсе
   // (Сегодня/Ближайшие/…) не совпадали бы с тем, что реально показано при включённом тумблере.
-  const counts = useMemo(() => countLists(list, effLens, me, now, range), [list, effLens, me, now, range]);
+  const counts = useMemo(() => countLists(list, effLens, me, now, range, statuses), [list, effLens, me, now, range, statuses]);
+  // Счётчики чипов статуса — каждый считается «как если бы включён был только он», поэтому
+  // цифра у чипа не зависит от остальных чипов и не прыгает при их переключении.
+  const statusCounts = useMemo(() => countStatuses(list, activeList, effLens, me, now, range), [list, activeList, effLens, me, now, range]);
 
   const matchesQuery = useCallback(
     (t: Task) => !query.trim() || t.title.toLowerCase().includes(query.trim().toLowerCase()),
@@ -156,8 +172,8 @@ export function useReminderTasks() {
   const queried = useMemo(() => list.filter(matchesQuery), [list, matchesQuery]);
 
   const visible: Task[] = useMemo(
-    () => filterTasks(queried, activeList, effLens, me, now, range),
-    [queried, activeList, effLens, me, now, range],
+    () => filterTasks(queried, activeList, effLens, me, now, range, statuses),
+    [queried, activeList, effLens, me, now, range, statuses],
   );
 
   // Персональные списки-метки: счётчики по всем меткам + задачи активной метки.
@@ -174,27 +190,32 @@ export function useReminderTasks() {
   // Тумблер «По рынкам» (без «Все сотрудники»): группируем ТЕКУЩИЙ охват (Мои/Команда/Все) по
   // рынку. С «Все сотрудники» одновременно — см. nestedGroups ниже (вложенная группировка).
   const marketGroups: MarketGroup[] = useMemo(
-    () => (byMarket && !allStaff ? groupByMarket(queried, activeList, effLens, me, now, range) : []),
-    [byMarket, allStaff, activeList, queried, effLens, me, now, range],
+    () => (byMarket && !allStaff ? groupByMarket(queried, activeList, effLens, me, now, range, statuses) : []),
+    [byMarket, allStaff, activeList, queried, effLens, me, now, range, statuses],
   );
 
   // Тумблер «Все сотрудники» (админ) без «По рынкам»: группируем по исполнителю.
   const staffGroups: StaffGroup[] = useMemo(
-    () => (allStaff && !byMarket ? groupByAssignee(queried, activeList, effLens, me, now, range) : []),
-    [allStaff, byMarket, activeList, queried, effLens, me, now, range],
+    () => (allStaff && !byMarket ? groupByAssignee(queried, activeList, effLens, me, now, range, statuses) : []),
+    [allStaff, byMarket, activeList, queried, effLens, me, now, range, statuses],
   );
 
   // Оба тумблера разом: вложенная группировка — сотрудник → рынок (владелец: «группировка по
   // сотруднику, а под ней — по рынкам», задача попадает в оба измерения без конфликта).
   const nestedGroups: NestedStaffGroup[] = useMemo(
-    () => (allStaff && byMarket ? groupByAssigneeThenMarket(queried, activeList, effLens, me, now, range) : []),
-    [allStaff, byMarket, activeList, queried, effLens, me, now, range],
+    () => (allStaff && byMarket ? groupByAssigneeThenMarket(queried, activeList, effLens, me, now, range, statuses) : []),
+    [allStaff, byMarket, activeList, queried, effLens, me, now, range, statuses],
   );
 
   const toggle = useCallback(async (t: Task) => {
     const next = isDone(t) ? "open" : "done";
     markMutation();
-    setTasks((prev) => prev?.map((x) => (x.id === t.id ? { ...x, status: next } : x)) ?? null);
+    // updated_at патчим ВМЕСТЕ со статусом: с issue #216 закрытая задача живёт на оси времени
+    // по дате закрытия, а `updated_at` — её прокси. Без этого только что отмеченная задача
+    // исчезала из «Открыто» и не появлялась в «Сегодня + Готово» до следующего поллинга
+    // (до 10 секунд «задача пропала»). Сервер вернёт своё значение — оно и победит.
+    const closedNow = new Date().toISOString();
+    setTasks((prev) => prev?.map((x) => (x.id === t.id ? { ...x, status: next, updated_at: closedNow } : x)) ?? null);
     try {
       await updateTask(t.id, { status: next });
     } catch {
@@ -252,6 +273,7 @@ export function useReminderTasks() {
     tasks, me, loading: tasks === null,
     activeList, setActiveList, lens, setLens, effLens, query, setQuery,
     byMarket, setByMarket, allStaff, setAllStaff, range, setRange,
+    statuses, toggleStatus, statusCounts,
     counts, visible, marketGroups, staffGroups, nestedGroups, now,
     labels, activeLabelId, setActiveLabelId, labelCounts, visibleByLabel, reloadLabels,
     toggle, remove, quickAdd, patchTask, reload,

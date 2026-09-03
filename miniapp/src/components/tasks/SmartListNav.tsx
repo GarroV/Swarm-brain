@@ -1,7 +1,8 @@
 "use client";
 import { cn } from "@/lib/utils";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
-import { HIDE_WHEN_EMPTY, SMART_LISTS, type SmartListId } from "@/lib/smartLists";
+import { HIDE_WHEN_EMPTY, SMART_LISTS, type SmartListId, type StatusFilter, type StatusSet } from "@/lib/smartLists";
+import { StatusFilters } from "./StatusFilters";
 import { useDt } from "@/components/roy/nav";
 import { RangePicker } from "@/components/ui/RangePicker";
 import type { DateRange } from "@/lib/dateRange";
@@ -19,6 +20,14 @@ type SmartListNavProps = {
   // Пункт «Все сотрудники» в рельсе УДАЛЁН 2026-08-20 (владелец: «в двух местах, левые можно
   // убрать»): тот же тумблер живёт чипом в шапке экрана (`LensToggle`, только админу) — там он
   // рядом с «По рынкам», с которым и работает в паре. Два входа в одно состояние путали.
+  /** Ось «статус» (issue #216) — мультивыбор тумблеров ПОВЕРХ выбранного списка.
+      В rail стоит отдельным блоком под списками (владелец 03.09.2026: «визуально разделить
+      блоки "сегодня-ближайшие-все" и ниже сделать новый блок где будут фильтры статусов»).
+      В chips-варианте не рисуется: на мобайле лента чипов и так скроллится, статусы живут
+      второй строкой в RoyTasksScreen — рядом с «По рынкам» и периодом. */
+  statuses?: StatusSet;
+  statusCounts?: Record<StatusFilter, number>;
+  onToggleStatus?: (id: StatusFilter) => void;
   /** Только rail: персональные списки-метки. */
   labels?: { id: string; name: string; icon: string }[];
   labelCounts?: Record<string, number>;
@@ -35,7 +44,7 @@ type SmartListNavProps = {
 };
 
 // Навигация по смарт-спискам: вертикальный рельс (десктоп) или горизонтальные чипы (мобайл).
-export function SmartListNav({ variant, compact, active, counts, onSelect, query, onQuery, labels, labelCounts, activeLabelId, onSelectLabel, onCreateLabel, onEditLabel, range, onRange }: SmartListNavProps) {
+export function SmartListNav({ variant, compact, active, counts, onSelect, query, onQuery, statuses, statusCounts, onToggleStatus, labels, labelCounts, activeLabelId, onSelectLabel, onCreateLabel, onEditLabel, range, onRange }: SmartListNavProps) {
   const dt = useDt();
   // «Регулярные» видны только когда такие задачи есть (решение владельца 2026-08-27: «если
   // задач таких нет, то список скрывается»). Активный список не прячем даже при нуле — иначе,
@@ -120,8 +129,18 @@ export function SmartListNav({ variant, compact, active, counts, onSelect, query
         );
       })}
 
-      {/* Период — не список, а модификатор: сужает по дате ЛЮБОЙ выбранный список (в «Готовых» —
-          по дате закрытия). Поэтому стоит отдельной секцией под ними, а не пятым пунктом. */}
+      {/* Статус — вторая ось (issue #216): накладывается на выбранный список, а не подменяет
+          его. Поэтому отдельным блоком за разделителем, а не пунктом в списках выше. */}
+      {statuses && onToggleStatus && (
+        <>
+          <div className="my-1.5 border-t border-line" />
+          <div className="px-2.5 pb-1 font-mono uppercase text-ink-mute" style={{ fontSize: 10, letterSpacing: "0.08em" }}>{dt("Статус", "Status")}</div>
+          <StatusFilters variant="rail" active={statuses} counts={statusCounts} onToggle={onToggleStatus} />
+        </>
+      )}
+
+      {/* Период — не список, а модификатор: сужает по дате ЛЮБОЙ выбранный список (у закрытых
+          задач — по дате закрытия). Поэтому стоит отдельной секцией, а не пунктом оси времени. */}
       {onRange && (
         <>
           <div className="my-1.5 border-t border-line" />
