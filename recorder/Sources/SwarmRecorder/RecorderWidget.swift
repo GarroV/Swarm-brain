@@ -28,6 +28,16 @@ final class RecorderWidget {
     var systemLevelProvider: (() -> Float)?
 
     private var panel: NSPanel?
+    /// Фактическая рамка окна на экране — только для чтения. Нужна режиму
+    /// `--selftest-widget`: положение виджета иначе проверяется глазами по скриншоту,
+    /// а «кажется, стало выше» — не проверка (правка дефолта 03.09.2026).
+    var currentFrame: CGRect? { panel?.frame }
+    /// Дышит ли значок — для режима самопроверки: «анимируется или нет» по скриншоту не
+    /// определить, а по флагу — определить.
+    var isIdlePulsing: Bool { idlePulsing }
+    /// Прозрачность содержимого окна: ловит регресс, когда fade при смене режима не доехал
+    /// до 1 и капсула осталась полупрозрачной.
+    var contentAlpha: CGFloat { panel?.contentView?.alphaValue ?? -1 }
     private let recMark = NSImageView()
     private let micIndicator = NSImageView()
     private let stopBtn = NSButton()
@@ -54,6 +64,10 @@ final class RecorderWidget {
     private var levelTimer: Timer?
     private var lastLevel: CGFloat = 0
     private var lastSysLevel: CGFloat = 0
+    // Дыхание значка в простое (IdlePulse). Картинку марки НЕ трогаем — ни форму, ни цвет:
+    // анимируется только прозрачность слоя, как у индикатора микрофона рядом.
+    private var idlePulsing = false
+    private var silentTicks = 0
 
     // Баннер встречи (состояние «встреча — записать?»): название, время слота, две кнопки.
     // Решение владельца 02.09.2026 (#193): «лаконичнее, аккуратнее, мягче + кнопка перехода
@@ -375,19 +389,44 @@ final class RecorderWidget {
         b.action = action
     }
 
+    // Длительность перехода между режимами. 0.22 с — окно успевает «вытечь», но не тормозит
+    // реакцию на действие человека (кнопка «Записать» → капсула).
+    private static let morphDuration: TimeInterval = 0.22
+
     private func present() {
         guard let p = panel, let screen = NSScreen.main else { return }
         let size = currentSize()
-        // Размер меняется вместе с состоянием (баннер встречи ↔ узкая капсула), поэтому
-        // кадр пересчитываем и когда капсула уже видна — иначе баннер обрежется.
-        if !p.isVisible || p.frame.size != size {
-            // Куда перетащили — там и появляется; кто не таскал — ниже полосы управления
-            // веб-приложений (issue #197). Правила и границы — WidgetPlacement.
-            let saved = Self.savedOrigin() ?? (p.isVisible ? p.frame.origin : nil)
+        if !p.isVisible {
+            // Куда перетащили — там и появляется; кто не таскал — по дефолту WidgetPlacement.
+            let saved = Self.savedOrigin()
             let origin = WidgetPlacement.origin(saved: saved, size: size, in: screen.visibleFrame)
             p.setFrame(NSRect(origin: origin, size: size), display: true)
+        } else if p.frame.size != size {
+            // Смена режима (баннер встречи ↔ капсула записи): окно ОДНО и то же, поэтому
+            // не прыгаем на новую позицию, а плавно меняем ширину/высоту от правого-верхнего
+            // угла — уведомление буквально вытекает из капсулы (просьба владельца 03.09.2026).
+            let target = NSRect(origin: WidgetPlacement.morphOrigin(from: p.frame, to: size, in: screen.visibleFrame),
+                                size: size)
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = Self.morphDuration
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                p.animator().setFrame(target, display: true)
+            }
+            // Содержимое нового режима проявляем, а не подменяем мгновенно: иначе текст
+            // баннера возникает раньше, чем окно под него доехало.
+            fadeInContent()
         }
         p.orderFrontRegardless()
+    }
+
+    // Мягкое проявление содержимого при смене режима (0 → 1 за половину перехода).
+    private func fadeInContent() {
+        guard let content = panel?.contentView else { return }
+        content.alphaValue = 0.35
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = Self.morphDuration / 2
+            content.animator().alphaValue = 1
+        }
     }
 
     /// Размер под текущее состояние: баннер — по своему контенту, остальное — узкая капсула.
@@ -435,8 +474,47 @@ final class RecorderWidget {
     private func stopLevelMeter() {
         levelTimer?.invalidate()
         levelTimer = nil
+        silentTicks = 0
+        stopIdlePulse()
         applyLevel(0, to: levelFill)
         applyLevel(0, to: sysLevelFill)
+    }
+
+    // Дыхание: включается тишиной, гаснет первым же звуком (IdlePulse).
+    private func updateIdlePulse() {
+        let quiet = lastLevel < IdlePulse.silenceLevel && lastSysLevel < IdlePulse.silenceLevel
+        silentTicks = quiet ? silentTicks + 1 : 0
+        if IdlePulse.shouldPulse(micLevel: lastLevel, systemLevel: lastSysLevel, silentTicks: silentTicks) {
+            startIdlePulse()
+        } else {
+            stopIdlePulse()
+        }
+    }
+
+    // Неторопливое дыхание значка: opacity 1 → 0.45 и обратно, полный цикл 3.2 с. Тот же
+    // приём, что у индикатора микрофона рядом (startPulse), только медленнее и мягче.
+    // Покадровая перекраска марки, с которой я начал, читалась как бегущая дорожка и,
+    // хуже того, трогала саму картинку — владелец 03.09.2026: «дело не в цвете, а в форме»,
+    // «давай сделаем пульсацию, а не бегающую дорожку. и пульсацию неторопливую».
+    private func startIdlePulse() {
+        guard !idlePulsing else { return }
+        idlePulsing = true
+        recMark.wantsLayer = true
+        let a = CABasicAnimation(keyPath: "opacity")
+        a.fromValue = 1.0
+        a.toValue = IdlePulse.minOpacity
+        a.duration = IdlePulse.halfPeriod
+        a.autoreverses = true
+        a.repeatCount = .infinity
+        a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)   // дыхание, не мигание
+        recMark.layer?.add(a, forKey: "idlePulse")
+    }
+
+    private func stopIdlePulse() {
+        guard idlePulsing else { return }
+        idlePulsing = false
+        recMark.layer?.removeAnimation(forKey: "idlePulse")
+        recMark.layer?.opacity = 1
     }
 
     @objc private func tickLevel() {
@@ -448,6 +526,8 @@ final class RecorderWidget {
         let rawSys = CGFloat(max(0, min(1, systemLevelProvider?() ?? 0)))
         lastSysLevel = rawSys > lastSysLevel ? rawSys : lastSysLevel * 0.6 + rawSys * 0.4
         applyLevel(lastSysLevel, to: sysLevelFill)
+
+        updateIdlePulse()
     }
 
     private func applyLevel(_ level: CGFloat, to fill: CALayer) {
