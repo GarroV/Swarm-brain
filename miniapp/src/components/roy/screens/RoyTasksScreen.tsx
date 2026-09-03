@@ -7,10 +7,11 @@ import { MobileTaskRow } from "../MobileTaskRow";
 import { SmartListNav } from "@/components/tasks/SmartListNav";
 import { LensMenu } from "@/components/tasks/LensMenu";
 import { useReminderTasks } from "@/components/tasks/useReminderTasks";
-import { SMART_LISTS } from "@/lib/smartLists";
+import { SMART_LISTS, isOnlyDone } from "@/lib/smartLists";
 import type { Task } from "@/types";
 import { rangeLabel } from "@/lib/dateRange";
 import { RangePicker } from "@/components/ui/RangePicker";
+import { StatusFilters } from "@/components/tasks/StatusFilters";
 
 // Мобильный Reminders-вид задач: чипы смарт-списков + спокойный чек-лист со свайпом.
 export function RoyTasksScreen() {
@@ -66,6 +67,13 @@ export function RoyTasksScreen() {
         </div>
       </div>
 
+      {/* Ось «статус» (issue #216) — своя строка под осью времени: в одну ленту с чипами
+          списков они бы уехали за край, и включённый фильтр был бы не виден (та же причина,
+          по которой период вынесен из ленты). */}
+      <div className="px-5 pb-2">
+        <StatusFilters variant="chips" active={r.statuses} counts={r.statusCounts} onToggle={r.toggleStatus} />
+      </div>
+
       <div className="px-5 pb-2 text-ink-mute" style={{ fontSize: 12.5 }}>
         {activeDef.label} · {total}{r.range ? ` · ${rangeLabel(r.range)}` : ""}
       </div>
@@ -75,7 +83,7 @@ export function RoyTasksScreen() {
 
         {!r.loading && total === 0 && (
           <div className="py-10 text-center text-sm text-ink-soft">
-            {r.activeList === "done" ? "Пусто — всё разобрано" : "Здесь пока пусто"}
+            {isOnlyDone(r.statuses) ? "Пусто — всё разобрано" : "Здесь пока пусто"}
           </div>
         )}
 
