@@ -117,7 +117,7 @@
 // build 4 (2026-07-09): heartbeat-мониторинг рекордера (SwarmClient.heartbeat → meeting-heartbeat;
 // сервер ловит оборванную запись / истечение токена). Тег recorder-build-4, build-app.sh ✅ (подпись валидна).
 // build 3 (2026-06-30): бэкап аудио держится до публикации в базу + потолок 3 суток. Тег recorder-build-3.
-const LATEST_BUILD = 26;
+const LATEST_BUILD = 30;
 // URL предсобранного .app. Установщик и апдейтер качают отсюда — сборки из исходников на машине
 // юзера больше нет (issue #19).
 // ⚠️ РАЗДАЁМ ИЗ SUPABASE STORAGE, НЕ С GITHUB (issue #91, 2026-08-25). Репозиторий приватный
