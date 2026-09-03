@@ -6,6 +6,7 @@ import { SearchHero } from "./dash/SearchHero";
 // Materials («Добавлено за сутки») временно скрыт на дашборде — переиспользуем позже.
 // import { Materials } from "./dash/Materials";
 import { MeetingsApprove } from "./dash/MeetingsApprove";
+import { MeetingsToday } from "./dash/MeetingsToday";
 import { TeamTasks } from "./dash/TeamTasks";
 import { ProjectMapButton } from "./dash/ProjectMapButton";
 import { PersonalDigest } from "./dash/PersonalDigest";
@@ -56,9 +57,11 @@ export function RoyDashboard() {
           {/* «Добавлено за сутки» (Materials) временно скрыто — переиспользуем позже */}
         </div>
 
-        {/* Правая колонка освободилась под «Встречи сегодня» из календаря (issue #218) —
-            пока в ней только записанные встречи. */}
+        {/* Правая колонка: СВЕРХУ грядущие встречи из календаря, СНИЗУ записанные —
+            порядок задан владельцем 03.09.2026 («блок с грядущими встречами ставим выше,
+            блок записанных встреч ставим ниже»), issue #218. */}
         <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
+          <MeetingsToday className="min-h-0 flex-1" />
           <MeetingsApprove data={data} className="min-h-0 flex-1" />
         </div>
       </div>

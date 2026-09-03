@@ -58,6 +58,11 @@ import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
+// Календарь на сегодня для панели главной (issue #218): доступ к Google — общий модуль
+// (его же зовёт meeting-current), отбор событий дня и границы суток — чистая логика под тестами.
+import { accessToken, listEvents } from "../_shared/google-calendar.ts";
+import { todayMeetings, dayBounds } from "../_shared/meetings-today.ts";
+import { joinLink } from "../meeting-current/join-link.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
 // верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
@@ -1898,6 +1903,35 @@ Deno.serve(async (req: Request) => {
     }
 
     return apiErr(405, "Method not allowed", origin);
+  }
+
+  // ── GET /calendar/today — встречи из календаря на сегодня (issue #218) ────────
+  // Панель «Встречи сегодня» в правой колонке главной: что предстоит и куда зайти.
+  // Календарь читается серверной OAuth-интеграцией (та же, что у рекордера) — у браузера
+  // доступа к календарю нет и не должно быть.
+  //
+  // Причины пустоты РАЗЛИЧАЮТСЯ намеренно: панель по ним рисует разное. `not_connected` →
+  // кнопка «Подключить календарь» (решение владельца 03.09.2026: «лишнее напоминание про
+  // календарь, там же можно сделать кнопку»), `token_expired` → та же кнопка как
+  // «переподключить», `calendar_error`/пустой список → обычное пустое состояние. Молча
+  // показать пустоту при отвалившейся интеграции нельзя — это урок #175.
+  if (req.method === "GET" && routePath === "/calendar/today") {
+    const { data: integ } = await supabase
+      .from("user_integrations").select("api_key")
+      .eq("telegram_id", telegram_id).eq("service", "google_calendar").maybeSingle();
+    const refresh = (integ as { api_key?: string } | null)?.api_key;
+    if (!refresh) return json({ meetings: [], reason: "not_connected" }, 200, origin);
+
+    const token = await accessToken(refresh);
+    if (!token) return json({ meetings: [], reason: "token_expired" }, 200, origin);
+
+    // Пояс берём у клиента: сервер живёт в UTC и не знает, какие сутки у человека сейчас.
+    const tzOffset = Number(url.searchParams.get("tz_offset") ?? "0");
+    const { timeMin, timeMax } = dayBounds(new Date().toISOString(), Number.isFinite(tzOffset) ? tzOffset : 0);
+    const items = await listEvents(token, timeMin, timeMax, 25);
+    if (!items) return json({ meetings: [], reason: "calendar_error" }, 200, origin);
+
+    return json({ meetings: todayMeetings(items, new Date(), joinLink) }, 200, origin);
   }
 
   // ── GET /integrations ─────────────────────────────────────────────────────────

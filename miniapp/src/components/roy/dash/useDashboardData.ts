@@ -87,6 +87,9 @@ export type DashboardData = {
   pendingMeetings: number;
   /** число черновиков desktop-agent на вычитке */
   reviewCount: number;
+  /** Сами черновики рекордера на вычитке. Раньше отдавался только счётчик — и 24 черновика
+      были невидимы с главной, хотя входили в бейдж (issue #220). */
+  reviewList: AgentMeeting[];
   /** состояние загрузки ПО ПАНЕЛЯМ — каждая ждёт только свои источники */
   tasksState: PanelState;
   materialsState: PanelState;
@@ -154,6 +157,7 @@ export function useDashboardData(): DashboardData {
       recentMeetings,
       pendingMeetings: pendingList.length,
       reviewCount: review.list?.length ?? 0,
+      reviewList: review.list ?? [],
       tasksState: panelState([tasks], tasks.reload),
       materialsState: panelState([entries, meetings], retryMaterials),
       meetingsState: panelState([pending, meetings, review], retryMeetings),
