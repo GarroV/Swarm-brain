@@ -6,7 +6,7 @@ import { LensToggle } from "./LensToggle";
 import { TaskQuickActions } from "./TaskQuickActions";
 import { useReminderTasks } from "./useReminderTasks";
 import { LabelEditor } from "./LabelEditor";
-import { SMART_LISTS } from "@/lib/smartLists";
+import { SMART_LISTS, isOnlyDone } from "@/lib/smartLists";
 import { rangeLabel } from "@/lib/dateRange";
 import { fetchUsers, fetchConfig, type TaskLabel } from "@/lib/api";
 import type { Task, User } from "@/types";
@@ -55,6 +55,7 @@ export function RemindersTasks() {
   // Активная персональная метка перебивает смарт-список и группировки.
   const activeLabel = r.activeLabelId ? r.labels.find((l) => l.id === r.activeLabelId) ?? null : null;
   const isLabelView = !!activeLabel;
+  const onlyDoneSelected = isOnlyDone(r.statuses);
   // «По рынкам»/«Все сотрудники» — независимые тумблеры (не линза), применяются к текущему охвату.
   // Оба разом → вложенная группировка (сотрудник → рынок), см. r.nestedGroups.
   const byMarket = !isLabelView && r.byMarket;
@@ -119,6 +120,9 @@ export function RemindersTasks() {
         onSelect={(id) => { r.setActiveLabelId(null); r.setActiveList(id); }}
         query={r.query}
         onQuery={r.setQuery}
+        statuses={r.statuses}
+        statusCounts={r.statusCounts}
+        onToggleStatus={r.toggleStatus}
         labels={r.labels}
         labelCounts={r.labelCounts}
         activeLabelId={r.activeLabelId}
@@ -182,7 +186,7 @@ export function RemindersTasks() {
 
           {!r.loading && total === 0 && (
             <p className="py-12 text-center text-ink-soft" style={{ fontSize: 13.5 }}>
-              {r.activeList === "done" ? "Пусто — всё разобрано" : "Здесь пока пусто"}
+              {onlyDoneSelected ? "Пусто — всё разобрано" : "Здесь пока пусто"}
             </p>
           )}
 
@@ -220,7 +224,7 @@ export function RemindersTasks() {
           {!r.loading && !grouped && visibleRows.map(renderRow)}
 
           {/* Инлайн быстрое добавление (временно скрыто, см. SHOW_INLINE_QUICK_ADD) */}
-          {SHOW_INLINE_QUICK_ADD && !r.loading && (isLabelView || r.activeList !== "done") && (
+          {SHOW_INLINE_QUICK_ADD && !r.loading && (isLabelView || !onlyDoneSelected) && (
             <label className="mt-1 flex items-center gap-3 px-1 py-3 text-ink-soft">
               <span className="flex size-[22px] shrink-0 items-center justify-center rounded-full border-2 border-primary text-primary">
                 <RoyIcon name="plus" size={13} strokeWidth={2.4} />
