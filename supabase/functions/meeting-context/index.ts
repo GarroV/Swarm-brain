@@ -33,24 +33,11 @@ function json(body: unknown, status = 200): Response {
 }
 
 type Body = {
-  /** Название текущей встречи — главный сигнал страны («Dodo Pizza Bulgaria»). */
+  /** Название текущей встречи — ЕДИНСТВЕННЫЙ сигнал страны («Dodo Pizza Bulgaria»). */
   title?: string | null;
-  /** E-mail участников: второй сигнал страны, через рынки в их профилях. */
-  attendees?: string[] | null;
   /** Запись текущей встречи, если она уже создана — её саму в «прошлый раз» не берём. */
   exclude_entry_id?: string | null;
 };
-
-// Рынки участников из профилей — второй сигнал после названия (тот же приоритет, что на
-// вычитке). Только по e-mail: имена совпадают ненадёжно, а ошибка здесь даёт чужую страну.
-async function participantMarkets(emails: string[]): Promise<string[][]> {
-  const clean = emails.map((e) => e.trim().toLowerCase()).filter(Boolean).slice(0, 20);
-  if (clean.length === 0) return [];
-  const { data } = await supabase.from("user_profiles").select("email, markets").in("email", clean);
-  return ((data ?? []) as Array<{ markets?: string[] | null }>)
-    .map((p) => p.markets ?? [])
-    .filter((m) => m.length > 0);
-}
 
 // Заголовок записи: у entries отдельной колонки нет — он живёт в metadata.title, иначе
 // берём первую строку содержимого (тот же порядок, что в вебе у deriveEntryTitle).
@@ -78,9 +65,9 @@ Deno.serve(async (req: Request) => {
     .from("allowed_users").select("group_id").eq("telegram_id", viewerId).maybeSingle();
   const groupId = (userRow as { group_id?: string | null } | null)?.group_id ?? null;
 
-  const country = contextCountry(body.title ?? null, await participantMarkets(body.attendees ?? []));
-  // Страну не определили (или кандидатов больше одного = кросс-маркет). Гадать нельзя:
-  // показать «прошлый созвон» не той страны хуже, чем не показать ничего.
+  // Только явное указание в названии — требование владельца «максимальное совпадение».
+  // Не определили (или кросс-маркет) → блока нет: тезисы чужой страны хуже пустоты.
+  const country = contextCountry(body.title ?? null);
   if (!country) return json({ country: null, meeting: null, tasks: [], reason: "no_country" });
 
   // Последняя ОПУБЛИКОВАННАЯ встреча этой страны, видимая смотрящему.

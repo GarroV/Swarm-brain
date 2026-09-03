@@ -206,10 +206,14 @@ func runNotesSelfTest(seconds: Double) {
             print("  [\(tag)] высота окна \(Int(panel.panelHeightForTests)) pt, строк \(panel.contextRowsForTests.count):")
             for r in panel.contextRowsForTests { print("    · \(r.replacingOccurrences(of: "\n", with: " ⏎ ").prefix(88))") }
         }
+        print("  пометок человека в буфере ДО контекста: \(panel.noteBufferCountForTests)")
         dump("свёрнуто")
         panel.expandForTests(tezisy: true, tasks: true)
         dump("раскрыто")
         panel.expandForTests(tezisy: false, tasks: false)
+        // Барьер: показ контекста не должен добавить ни одной пометки человека —
+        // иначе тезисы прошлой встречи уехали бы к текущей записи.
+        print("  пометок человека в буфере ПОСЛЕ контекста: \(panel.noteBufferCountForTests) (должно быть 0)")
     }
 
     DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { exit(0) }

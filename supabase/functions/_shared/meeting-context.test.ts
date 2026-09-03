@@ -5,18 +5,18 @@
 import { assertEquals } from "jsr:@std/assert";
 import { contextCountry, tezisyPreview, PREVIEW_LIMITS } from "./meeting-context.ts";
 
-Deno.test("страна созвона берётся из названия встречи", () => {
-  // Название — самый прямой сигнал: «созвон с Болгарией» у рекордера так и называется.
-  assertEquals(contextCountry("Dodo Pizza Bulgaria", []), "BG");
-  assertEquals(contextCountry("Wolt Bulgaria with team", []), "BG");
-  assertEquals(contextCountry("IMF - Слот под комитет Четверг", []), null);
+Deno.test("страна берётся из ЯВНОГО указания в названии встречи", () => {
+  // «у нас все встречи со странами прям явно прописаны в названии встречи» — владелец.
+  assertEquals(contextCountry("Dodo Pizza Bulgaria"), "BG");
+  assertEquals(contextCountry("Wolt Bulgaria with team"), "BG");
 });
 
-Deno.test("страна падает на рынки участников, когда в названии её нет", () => {
-  // Общий рынок у всех участников — законный сигнал (тот же приоритет, что в market-suggest).
-  assertEquals(contextCountry("Weekly sync", [["BG"], ["BG"]]), "BG");
-  // Разные рынки — кросс-маркет, гадать нельзя.
-  assertEquals(contextCountry("Weekly sync", [["BG"], ["RS"]]), null);
+Deno.test("без явного указания страны — null, догадок не делаем", () => {
+  // Ни по участникам, ни по смыслу: тезисы чужой страны хуже пустого блока.
+  assertEquals(contextCountry("IMF - Слот под комитет Четверг"), null);
+  assertEquals(contextCountry("Weekly sync"), null);
+  assertEquals(contextCountry(""), null);
+  assertEquals(contextCountry(null), null);
 });
 
 Deno.test("превью тезисов: заголовки разделов и первые пункты", () => {

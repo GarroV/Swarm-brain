@@ -1108,7 +1108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     // «Что было в прошлый раз» (issue #226): тезисы последней встречи с этой
                     // стороной и висящие задачи. Запрос ФОНОВЫЙ и необязательный: не ответил —
                     // блока просто нет, запись от этого не страдает и не ждёт сети.
-                    loadMeetingContext(title: id?.title, attendees: id?.attendees ?? [])
+                    loadMeetingContext(title: id?.title)
                 }
             } catch {
                 // Сбой старта захвата системного звука = нет нужного TCC-разрешения. На 14.4+ это
@@ -1121,13 +1121,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // Контекст созвона для панели заметок (issue #226). Ошибки глотаем намеренно: это
     // справка, а не часть записи — падать или ретраить из-за неё нельзя.
-    private func loadMeetingContext(title: String?, attendees: [Attendee]) {
+    private func loadMeetingContext(title: String?) {
         guard let cfg = config else { return }
-        let emails = attendees.compactMap(\.email)
         Task.detached { [weak self] in
             guard self != nil else { return }
             let client = SwarmClient(config: cfg)
-            let ctx = try? await client.meetingContext(title: title, attendees: emails)
+            let ctx = try? await client.meetingContext(title: title)
             await MainActor.run { LiveNotesPanel.shared.setContext(ctx) }
         }
     }

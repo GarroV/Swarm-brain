@@ -53,6 +53,9 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         cfg = config
         self.micLevel = micLevel; self.sysLevel = systemLevel; self.onStop = onStop; self.onCollapse = onCollapse
         buffer.removeAll()
+        // Контекст прошлой встречи обязан уйти вместе с прошлой записью: иначе на следующем
+        // созвоне человек увидел бы блок предыдущего (и решил бы, что это про эту встречу).
+        setContext(nil)
         clearPersistedNotes()   // новая запись — прошлый персист пометок больше не актуален
         editedTitle = nil
         startedAt = Date()
@@ -337,6 +340,9 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     }
     /// Высота окна панели — ловит «блок разъехался и выдавил поле ввода за край».
     var panelHeightForTests: CGFloat { panel?.frame.height ?? 0 }
+    /// Сколько пометок ЧЕЛОВЕКА в буфере. Режим самопроверки печатает это после setContext:
+    /// так видно, что показ контекста не подмешал ни одной строки в то, что уйдёт к встрече.
+    var noteBufferCountForTests: Int { buffer.count }
     /// Раскрыть секции из режима самопроверки (в жизни это делает клик человека).
     func expandForTests(tezisy: Bool, tasks: Bool) {
         tezisyExpanded = tezisy
@@ -346,6 +352,15 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
 
     /// Показать контекст созвона. Вызывается из AppDelegate после ответа `meeting-context`.
     /// `nil` или пустой контекст — блок просто не появляется: пустая рамка читается как сбой.
+    ///
+    /// ⚠️ БАРЬЕР, который нельзя ломать (требование владельца 03.09.2026: «убедись, что
+    /// отображаемые тезисы и задачи не смешаются в транскрибцию встречи с теми тезисами,
+    /// что пользователь сам пишет»): контекст живёт ТОЛЬКО во вью `contextStack` и никогда
+    /// не попадает в `buffer` — он пополняется единственным местом, `addFromField()`, то
+    /// есть нажатием человека, и ровно `buffer` уходит на сервер в `flush()`. Ни setContext,
+    /// ни renderContext к буферу не обращаются; если однажды понадобится «добавить пункт из
+    /// контекста в пометки», это должно быть ЯВНЫМ действием человека, а не побочным
+    /// эффектом отрисовки.
     func setContext(_ ctx: MeetingContext?) {
         context = ctx
         tezisyExpanded = false
