@@ -1009,7 +1009,7 @@ function AgentMeetingDetail({
                 </div>
               </div>
             ) : (
-              <TezisyBlocks text={m.draft_notes_md} />
+              <TezisyBlocks text={m.draft_notes_md} aiNotice />
             )}
           </div>
         ) : m.summary_status === "done" || m.summary_status === "failed" ? (

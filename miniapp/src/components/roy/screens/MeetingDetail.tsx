@@ -286,7 +286,7 @@ export function MeetingDetail({ id }: { id: string }) {
                     </button>
                   )}
                 </div>
-                <TezisyBlocks text={e.summary} />
+                <TezisyBlocks text={e.summary} aiNotice />
               </div>
             ) : null}
 

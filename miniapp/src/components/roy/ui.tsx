@@ -467,21 +467,56 @@ function leadEmoji(text: string): { icon: RoyIconName | null; rest: string; had:
   return { icon: EMOJI_ICON[m[1]] ?? null, rest: text.slice(m[0].length), had: true };
 }
 
-export function TezisyBlocks({ text, className, onDeepen, onSource }: { text: string; className?: string; onDeepen?: (topic: string) => void; onSource?: (n: number) => void }) {
+// Подпись «обработано с помощью AI» + кнопка копирования над тезисами встречи.
+// Решение владельца 03.09.2026: подпись нужна ТОЛЬКО в окне тезисов по встрече, и главное —
+// она должна уезжать в БУФЕР вместе с текстом, чтобы вставленные куда-то тезисы сами объясняли,
+// что их собрала модель. Поэтому строка живёт на рендере, а НЕ в draft_notes_md: в тексте она
+// уехала бы в поиск и эмбеддинги, дублировалась бы при каждой регенерации и пропадала бы при
+// ручной правке (отредактированные тезисы мы не перезаписываем).
+export const AI_NOTICE_RU = "Обработано с помощью AI";
+export const AI_NOTICE_EN = "Processed with AI";
+
+function TezisyAiRow({ text }: { text: string }) {
+  const dt = useDt();
+  const [copied, setCopied] = useState(false);
+  const notice = dt(AI_NOTICE_RU, AI_NOTICE_EN);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(`${notice}\n\n${text}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // clipboard недоступен (не https, отказ пользователя) — тезисы остаются на экране,
+      // человек скопирует выделением. Молчать нельзя было бы, если бы текст никуда не помещался.
+    }
+  };
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="flex items-center gap-1.5 text-ink-mute" style={{ fontSize: 11 }}>
+        <RoyIcon name="spark" size={12} strokeWidth={1.9} className="shrink-0" />
+        {notice}
+      </span>
+      <button
+        type="button"
+        onClick={copy}
+        title={dt("Скопировать тезисы вместе с подписью", "Copy the theses with the notice")}
+        className="flex shrink-0 items-center gap-1 rounded-[8px] border border-line px-2 font-medium text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        style={{ fontSize: 11, minHeight: 24 }}
+      >
+        {copied && <RoyIcon name="check" size={12} strokeWidth={2.1} className="shrink-0" />}
+        {copied ? dt("Скопировано", "Copied") : dt("Копировать", "Copy")}
+      </button>
+    </div>
+  );
+}
+
+export function TezisyBlocks({ text, className, onDeepen, onSource, aiNotice }: { text: string; className?: string; onDeepen?: (topic: string) => void; onSource?: (n: number) => void; aiNotice?: boolean }) {
   const dt = useDt();
   const blocks = parseTezisy(text);
   if (blocks.length === 0) return null;
   return (
     <div className={cn("flex flex-col", className)} style={{ gap: 9 }}>
-      {/* Подпись «обработано с помощью AI» — решение владельца 03.09.2026: тезисы всегда
-          помечены, чтобы читатель видел, что текст собрала модель, а не человек. Живёт ЗДЕСЬ,
-          в единственной точке рендера тезисов, — тогда подпись есть на всех экранах сразу и
-          НЕ пачкает сам draft_notes_md (в тексте она уехала бы в поиск и эмбеддинги, дублировалась
-          бы при регенерации и пропадала бы при ручной правке). */}
-      <div className="flex items-center gap-1.5 text-ink-mute" style={{ fontSize: 11 }}>
-        <RoyIcon name="spark" size={12} strokeWidth={1.9} className="shrink-0" />
-        <span>{dt("Обработано с помощью AI", "Processed with AI")}</span>
-      </div>
+      {aiNotice && <TezisyAiRow text={text} />}
       {blocks.map((b, i) => {
         if (b.kind === "heading") {
           const { icon, rest } = leadEmoji(b.text);
