@@ -1105,6 +1105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                         systemLevel: { [weak self] in self?.recorder.currentSystemLevel() ?? 0 },
                         onStop: { [weak self] in self?.stopTapped() },
                         onCollapse: { [weak self] in self?.collapseNotes() })
+                    // «Что было в прошлый раз» (issue #226): тезисы последней встречи с этой
+                    // стороной и висящие задачи. Запрос ФОНОВЫЙ и необязательный: не ответил —
+                    // блока просто нет, запись от этого не страдает и не ждёт сети.
+                    loadMeetingContext(title: id?.title)
                 }
             } catch {
                 // Сбой старта захвата системного звука = нет нужного TCC-разрешения. На 14.4+ это
@@ -1112,6 +1116,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 setState(Permissions.usesSystemAudioCapture ? .noSystemAudio : .noScreenRecording)
                 Permissions.openScreenRecordingSettings()
             }
+        }
+    }
+
+    // Контекст созвона для панели заметок (issue #226). Ошибки глотаем намеренно: это
+    // справка, а не часть записи — падать или ретраить из-за неё нельзя.
+    private func loadMeetingContext(title: String?) {
+        guard let cfg = config else { return }
+        Task.detached { [weak self] in
+            guard self != nil else { return }
+            let client = SwarmClient(config: cfg)
+            let ctx = try? await client.meetingContext(title: title)
+            await MainActor.run { LiveNotesPanel.shared.setContext(ctx) }
         }
     }
 
