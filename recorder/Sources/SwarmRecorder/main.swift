@@ -170,9 +170,11 @@ func runQuarantineSelfTest() {
 // встречей в проде, — а «на глаз выше/ниже» проверкой не является.
 //   --selftest-widget            баннер встречи, 20 секунд
 //   --selftest-widget --pill     капсула записи
+//   --selftest-widget --morph    переключать баннер ↔ капсулу каждые 2.5 с (видно анимацию
+//                                перехода и то, что окно ОДНО, а не два разных)
 //   --selftest-widget --keep N   держать N секунд
 // Сохранённую позицию режим НЕ трогает и НЕ читает: проверяем именно дефолт.
-func runWidgetSelfTest(pill: Bool, seconds: Double) {
+func runWidgetSelfTest(pill: Bool, morph: Bool = false, shimmerFrame: Int? = nil, seconds: Double) {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
 
@@ -206,6 +208,50 @@ func runWidgetSelfTest(pill: Bool, seconds: Double) {
         print("  отступ сверху = \(Int(topGap)) пт   (headerBand = \(Int(WidgetPlacement.headerBand)))")
         print("  подъём        = \(Int(f.origin.y - expectedNoLift)) пт   (defaultLift = \(Int(WidgetPlacement.defaultLift)))")
     }
+
+    // Переключение режимов по таймеру: так видно и анимацию перехода, и то, что окно одно.
+    if morph {
+        var showingPill = pill
+        let t = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { _ in
+            showingPill.toggle()
+            if showingPill {
+                widget.showRecording(startedAt: Date())
+            } else {
+                let now = Date()
+                widget.showPending(notice: MeetingNotice.compose(title: "Проверка положения окна",
+                                                                 start: now.addingTimeInterval(600),
+                                                                 end: now.addingTimeInterval(4200),
+                                                                 now: now),
+                                   canJoin: true)
+            }
+            // Рамку читаем ПОСЛЕ анимации перехода: сразу после переключения она ещё
+            // старая, и лог печатал режим с рамкой предыдущего — врущая диагностика.
+            let mode = showingPill ? "капсула" : "баннер"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                if let f = widget.currentFrame {
+                    print("  morph → \(mode): окно = \(f), правый край = \(Int(f.maxX)), верх = \(Int(f.maxY))")
+                }
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+    }
+
+    // Заморозить конкретный кадр переливания — чтобы снять крайние фазы и увидеть,
+    // насколько велика амплитуда «жёлтый ↔ чёрный».
+    if let shimmerFrame {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            widget.previewShimmer(frame: shimmerFrame)
+            print("  кадр переливания зафиксирован: \(shimmerFrame)")
+        }
+    }
+
+    // Раз в секунду печатаем состояние переливания и прозрачность содержимого: обе вещи
+    // по скриншоту не проверяются, а именно в них и живут регрессы.
+    let watch = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+        let st = widget.shimmerState
+        print("  t+: shimmer=\(st.active ? "on" : "off") step=\(st.step) contentAlpha=\(String(format: "%.2f", widget.contentAlpha))")
+    }
+    RunLoop.main.add(watch, forMode: .common)
 
     DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
         if let saved { UserDefaults.standard.set(saved, forKey: savedKey) }  // вернули как было
@@ -264,7 +310,13 @@ if CommandLine.arguments.contains("--selftest-widget") {
     let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in
         i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
     }
-    runWidgetSelfTest(pill: CommandLine.arguments.contains("--pill"), seconds: keep ?? 20)
+    let frame = CommandLine.arguments.firstIndex(of: "--shimmer-frame").flatMap { i -> Int? in
+        i + 1 < CommandLine.arguments.count ? Int(CommandLine.arguments[i + 1]) : nil
+    }
+    runWidgetSelfTest(pill: CommandLine.arguments.contains("--pill"),
+                      morph: CommandLine.arguments.contains("--morph"),
+                      shimmerFrame: frame,
+                      seconds: keep ?? 20)
 } else if let ai = CommandLine.arguments.firstIndex(of: "--analyze") {
     runAnalyze(Array(CommandLine.arguments[(ai + 1)...]))
 } else if CommandLine.arguments.contains("--selftest-update") {

@@ -47,6 +47,25 @@ public enum WidgetPlacement {
         return CGPoint(x: x, y: y)
     }
 
+    /// Куда съехать окну, когда МЕНЯЕТСЯ РЕЖИМ (капсула записи ↔ баннер встречи) и вместе с
+    /// ним размер. Правый край и верх сохраняются — тогда баннер «вытекает» из капсулы влево,
+    /// а не выглядит вторым, отдельно прилетевшим окном (просьба владельца 03.09.2026:
+    /// «чтобы элемент по сути был единым, и уведомление из капсулы вытекало»).
+    ///
+    /// Пересчитывать позицию через `defaultOrigin` здесь НЕЛЬЗЯ: окно, которое человек
+    /// перетащил, прыгало бы на дефолтное место при каждой смене режима.
+    public static func morphOrigin(from current: CGRect, to size: CGSize,
+                                   in visibleFrame: CGRect) -> CGPoint {
+        // Растём влево от правого края и вниз от верхнего.
+        var x = current.maxX - size.width
+        var y = current.maxY - size.height
+        // У левого края расти влево некуда — прижимаемся и растём вправо.
+        x = min(max(x, visibleFrame.minX), max(visibleFrame.minX, visibleFrame.maxX - size.width))
+        // Тот же зажим по вертикали: у нижнего края окно не должно уйти за экран.
+        y = min(max(y, visibleFrame.minY), max(visibleFrame.minY, visibleFrame.maxY - size.height))
+        return CGPoint(x: x, y: y)
+    }
+
     /// Позиция при показе: сохранённая (втянутая в границы экрана), иначе дефолтная.
     public static func origin(saved: CGPoint?, size: CGSize, in visibleFrame: CGRect,
                               rightInset: CGFloat = 18) -> CGPoint {

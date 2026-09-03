@@ -58,6 +58,48 @@ final class WidgetPlacementTests: XCTestCase {
         XCTAssertEqual(o.x, screen.maxX - size.width - 18, accuracy: 0.5)
     }
 
+    // ── Переход между режимами (капсула ↔ баннер): окно одно, значит и место одно ──────────
+
+    func testMorphKeepsTheRightEdge() {
+        let pill = CGRect(x: 1620, y: 880, width: 72, height: 110)
+        let banner = CGSize(width: 300, height: 102)
+
+        let o = WidgetPlacement.morphOrigin(from: pill, to: banner, in: screen)
+
+        XCTAssertEqual(o.x + banner.width, pill.maxX, accuracy: 0.5, "правый край съехал")
+    }
+
+    func testMorphKeepsTheTopLine() {
+        let pill = CGRect(x: 1620, y: 880, width: 72, height: 110)
+        let banner = CGSize(width: 300, height: 102)
+
+        let o = WidgetPlacement.morphOrigin(from: pill, to: banner, in: screen)
+
+        XCTAssertEqual(o.y + banner.height, pill.maxY, accuracy: 0.5, "верх окна съехал")
+    }
+
+    // Окно перетащили к левому краю: расти влево некуда — прижимаемся, но за экран не уходим.
+    func testMorphClampsAtTheLeftEdge() {
+        let pill = CGRect(x: 4, y: 500, width: 72, height: 110)
+        let banner = CGSize(width: 300, height: 102)
+
+        let o = WidgetPlacement.morphOrigin(from: pill, to: banner, in: screen)
+
+        XCTAssertGreaterThanOrEqual(o.x, screen.minX, "окно уехало за левый край")
+    }
+
+    // Переход в обратную сторону (баннер → капсула) обязан быть симметричным: правый край
+    // и верх на месте, иначе капсула «отпрыгивает» от того места, где человек её видел.
+    func testMorphIsSymmetricBackToPill() {
+        let banner = CGRect(x: 1392, y: 888, width: 300, height: 102)
+        let pill = CGSize(width: 72, height: 110)
+
+        let o = WidgetPlacement.morphOrigin(from: banner, to: pill, in: screen)
+
+        XCTAssertEqual(o.x + pill.width, banner.maxX, accuracy: 0.5)
+        XCTAssertEqual(o.y + pill.height, banner.maxY, accuracy: 0.5)
+    }
+
     func testSavedPositionWins() {
         let saved = CGPoint(x: 300, y: 400)
 
