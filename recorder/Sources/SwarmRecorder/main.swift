@@ -174,7 +174,7 @@ func runQuarantineSelfTest() {
 //                                перехода и то, что окно ОДНО, а не два разных)
 //   --selftest-widget --keep N   держать N секунд
 // Сохранённую позицию режим НЕ трогает и НЕ читает: проверяем именно дефолт.
-func runWidgetSelfTest(pill: Bool, morph: Bool = false, shimmerFrame: Int? = nil, seconds: Double) {
+func runWidgetSelfTest(pill: Bool, morph: Bool = false, seconds: Double) {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
 
@@ -183,6 +183,17 @@ func runWidgetSelfTest(pill: Bool, morph: Bool = false, shimmerFrame: Int? = nil
     let savedKey = "widget.origin"
     let saved = UserDefaults.standard.string(forKey: savedKey)
     UserDefaults.standard.removeObject(forKey: savedKey)
+
+    // ЛОВУШКА, на которой я попался 03.09.2026: запущенный из папки сборки бинарь не видит
+    // BeeMark.png (ресурс кладёт только build-app.sh в бандл) и молча рисует ЗАПАСНОЙ глиф —
+    // предупреждение уходит в NSLog, то есть мимо глаз. В результате скриншот проверки
+    // показал владельцу «сломанную форму» шмеля, которой в продукте нет. Теперь режим
+    // самопроверки говорит об этом громко и в stdout, рядом с остальными замерами.
+    if Bundle.main.url(forResource: "BeeMark", withExtension: "png") == nil {
+        print("⚠️  BeeMark.png НЕ найден: значок будет ЗАПАСНОЙ, форма НЕ как в продукте.")
+        print("    Проверять вид значка только из установленного бандла:")
+        print("    /Applications/bumblebee.app/Contents/MacOS/SwarmRecorder --selftest-widget …")
+    }
 
     let widget = RecorderWidget()
     if pill {
@@ -236,20 +247,10 @@ func runWidgetSelfTest(pill: Bool, morph: Bool = false, shimmerFrame: Int? = nil
         RunLoop.main.add(t, forMode: .common)
     }
 
-    // Заморозить конкретный кадр переливания — чтобы снять крайние фазы и увидеть,
-    // насколько велика амплитуда «жёлтый ↔ чёрный».
-    if let shimmerFrame {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            widget.previewShimmer(frame: shimmerFrame)
-            print("  кадр переливания зафиксирован: \(shimmerFrame)")
-        }
-    }
-
-    // Раз в секунду печатаем состояние переливания и прозрачность содержимого: обе вещи
+    // Раз в секунду печатаем состояние дыхания и прозрачность содержимого: обе вещи
     // по скриншоту не проверяются, а именно в них и живут регрессы.
     let watch = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-        let st = widget.shimmerState
-        print("  t+: shimmer=\(st.active ? "on" : "off") step=\(st.step) contentAlpha=\(String(format: "%.2f", widget.contentAlpha))")
+        print("  t+: пульсация=\(widget.isIdlePulsing ? "идёт" : "нет") contentAlpha=\(String(format: "%.2f", widget.contentAlpha))")
     }
     RunLoop.main.add(watch, forMode: .common)
 
@@ -310,12 +311,8 @@ if CommandLine.arguments.contains("--selftest-widget") {
     let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in
         i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
     }
-    let frame = CommandLine.arguments.firstIndex(of: "--shimmer-frame").flatMap { i -> Int? in
-        i + 1 < CommandLine.arguments.count ? Int(CommandLine.arguments[i + 1]) : nil
-    }
     runWidgetSelfTest(pill: CommandLine.arguments.contains("--pill"),
                       morph: CommandLine.arguments.contains("--morph"),
-                      shimmerFrame: frame,
                       seconds: keep ?? 20)
 } else if let ai = CommandLine.arguments.firstIndex(of: "--analyze") {
     runAnalyze(Array(CommandLine.arguments[(ai + 1)...]))

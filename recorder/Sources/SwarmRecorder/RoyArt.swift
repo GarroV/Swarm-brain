@@ -25,11 +25,9 @@ enum RoyArt {
         return img
     }
 
-    // Полная марка: графитовый скруглённый чип + шмель. Цвет шмеля параметром — им
-    // пользуется переливание в простое (IdleShimmer), белый остаётся значением по умолчанию.
-    static func markImage(size s: CGFloat, glyphColor: NSColor = .white,
-                          plate: NSColor = MarkRenderer.graphite) -> NSImage {
-        MarkRenderer.chipImage(mark, size: s, plate: plate, glyphColor: glyphColor)
+    // Полная марка: графитовый скруглённый чип + белый шмель. Для виджета и .icns.
+    static func markImage(size s: CGFloat) -> NSImage {
+        MarkRenderer.chipImage(mark, size: s)
     }
 
     // Та же марка прямо в текущий контекст.

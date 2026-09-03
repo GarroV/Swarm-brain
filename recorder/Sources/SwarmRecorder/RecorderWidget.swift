@@ -32,17 +32,9 @@ final class RecorderWidget {
     /// `--selftest-widget`: положение виджета иначе проверяется глазами по скриншоту,
     /// а «кажется, стало выше» — не проверка (правка дефолта 03.09.2026).
     var currentFrame: CGRect? { panel?.frame }
-    /// Поставить КОНКРЕТНЫЙ кадр переливания и заморозить его (режим самопроверки: снять
-    /// крайние фазы). Без замка тик уровней через 0.2 с снова включил бы анимацию и
-    /// перекрыл кадр — на этом и попался первый замер.
-    func previewShimmer(frame: Int) {
-        stopShimmer()
-        shimmerFrozen = true
-        recMark.image = Self.shimmerImages[min(max(frame, 0), Self.shimmerFrames - 1)]
-    }
-    /// Идёт ли переливание значка (IdleShimmer) — для того же режима самопроверки:
-    /// «мигает или нет» по скриншоту не определить, а по флагу и шагу — определить.
-    var shimmerState: (active: Bool, step: Int) { (shimmerTimer != nil, shimmerStep) }
+    /// Дышит ли значок — для режима самопроверки: «анимируется или нет» по скриншоту не
+    /// определить, а по флагу — определить.
+    var isIdlePulsing: Bool { idlePulsing }
     /// Прозрачность содержимого окна: ловит регресс, когда fade при смене режима не доехал
     /// до 1 и капсула осталась полупрозрачной.
     var contentAlpha: CGFloat { panel?.contentView?.alphaValue ?? -1 }
@@ -72,25 +64,10 @@ final class RecorderWidget {
     private var levelTimer: Timer?
     private var lastLevel: CGFloat = 0
     private var lastSysLevel: CGFloat = 0
-    // Переливание значка в простое (IdleShimmer). Кадры считаем ОДИН раз: перерисовывать
-    // марку 12 раз в секунду ради смены цвета — пустая работа для CPU в фоне.
-    private var shimmerTimer: Timer?
-    private var shimmerStep = 0
-    /// Замок для `previewShimmer` (только режим самопроверки): автоматика не трогает кадр.
-    private var shimmerFrozen = false
+    // Дыхание значка в простое (IdlePulse). Картинку марки НЕ трогаем — ни форму, ни цвет:
+    // анимируется только прозрачность слоя, как у индикатора микрофона рядом.
+    private var idlePulsing = false
     private var silentTicks = 0
-    private static let shimmerFrames = 10
-    private static let shimmerFPS: TimeInterval = 1.0 / 12
-    private static let shimmerImages: [NSImage] = (0..<shimmerFrames).map { i in
-        let t = IdleShimmer.phase(step: i, frames: shimmerFrames)
-        // Жёлто-чёрная волна, как полосы на шмеле (просьба владельца: «чтоб переливалась
-        // желтым/черным»): шмель идёт от янтаря к тёмному графиту, подложка — навстречу,
-        // от графита к тёплому. Двустороннее движение заметно на значке 24 пт, где одного
-        // изменения цвета глифа почти не видно — проверено замером (разброс был 5 единиц).
-        let glyph = RoyArt.amber.blended(withFraction: t * 0.85, of: RoyArt.graphite) ?? RoyArt.amber
-        let plate = RoyArt.graphite.blended(withFraction: t * 0.35, of: RoyArt.amber) ?? RoyArt.graphite
-        return RoyArt.markImage(size: 24, glyphColor: glyph, plate: plate)
-    }
 
     // Баннер встречи (состояние «встреча — записать?»): название, время слота, две кнопки.
     // Решение владельца 02.09.2026 (#193): «лаконичнее, аккуратнее, мягче + кнопка перехода
@@ -498,43 +475,46 @@ final class RecorderWidget {
         levelTimer?.invalidate()
         levelTimer = nil
         silentTicks = 0
-        stopShimmer()
+        stopIdlePulse()
         applyLevel(0, to: levelFill)
         applyLevel(0, to: sysLevelFill)
     }
 
-    // Переливание: включается тишиной, гаснет первым же звуком (IdleShimmer).
-    private func updateShimmer() {
-        guard !shimmerFrozen else { return }
-        let quiet = lastLevel < IdleShimmer.silenceLevel && lastSysLevel < IdleShimmer.silenceLevel
+    // Дыхание: включается тишиной, гаснет первым же звуком (IdlePulse).
+    private func updateIdlePulse() {
+        let quiet = lastLevel < IdlePulse.silenceLevel && lastSysLevel < IdlePulse.silenceLevel
         silentTicks = quiet ? silentTicks + 1 : 0
-        let want = IdleShimmer.shouldShimmer(micLevel: lastLevel, systemLevel: lastSysLevel, silentTicks: silentTicks)
-        if want { startShimmer() } else { stopShimmer() }
+        if IdlePulse.shouldPulse(micLevel: lastLevel, systemLevel: lastSysLevel, silentTicks: silentTicks) {
+            startIdlePulse()
+        } else {
+            stopIdlePulse()
+        }
     }
 
-    private func startShimmer() {
-        guard shimmerTimer == nil else { return }
-        let t = Timer.scheduledTimer(timeInterval: Self.shimmerFPS, target: self,
-                                     selector: #selector(tickShimmer), userInfo: nil, repeats: true)
-        RunLoop.main.add(t, forMode: .common)
-        shimmerTimer = t
+    // Неторопливое дыхание значка: opacity 1 → 0.45 и обратно, полный цикл 3.2 с. Тот же
+    // приём, что у индикатора микрофона рядом (startPulse), только медленнее и мягче.
+    // Покадровая перекраска марки, с которой я начал, читалась как бегущая дорожка и,
+    // хуже того, трогала саму картинку — владелец 03.09.2026: «дело не в цвете, а в форме»,
+    // «давай сделаем пульсацию, а не бегающую дорожку. и пульсацию неторопливую».
+    private func startIdlePulse() {
+        guard !idlePulsing else { return }
+        idlePulsing = true
+        recMark.wantsLayer = true
+        let a = CABasicAnimation(keyPath: "opacity")
+        a.fromValue = 1.0
+        a.toValue = IdlePulse.minOpacity
+        a.duration = IdlePulse.halfPeriod
+        a.autoreverses = true
+        a.repeatCount = .infinity
+        a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)   // дыхание, не мигание
+        recMark.layer?.add(a, forKey: "idlePulse")
     }
 
-    private func stopShimmer() {
-        guard shimmerTimer != nil else { return }
-        shimmerTimer?.invalidate()
-        shimmerTimer = nil
-        shimmerStep = 0
-        recMark.image = RoyArt.markImage(size: 24)   // вернуть обычный белый шмель
-    }
-
-    @objc private func tickShimmer() {
-        shimmerStep += 1
-        // Кадр выбираем ЧЕРЕЗ протестированную фазу (IdleShimmer.phase), а не своей
-        // арифметикой по модулю: именно в ней легко перепутать край цикла и получить рывок.
-        let t = IdleShimmer.phase(step: shimmerStep, frames: Self.shimmerFrames)
-        let idx = Int((t * CGFloat(Self.shimmerFrames - 1)).rounded())
-        recMark.image = Self.shimmerImages[min(max(idx, 0), Self.shimmerFrames - 1)]
+    private func stopIdlePulse() {
+        guard idlePulsing else { return }
+        idlePulsing = false
+        recMark.layer?.removeAnimation(forKey: "idlePulse")
+        recMark.layer?.opacity = 1
     }
 
     @objc private func tickLevel() {
@@ -547,7 +527,7 @@ final class RecorderWidget {
         lastSysLevel = rawSys > lastSysLevel ? rawSys : lastSysLevel * 0.6 + rawSys * 0.4
         applyLevel(lastSysLevel, to: sysLevelFill)
 
-        updateShimmer()
+        updateIdlePulse()
     }
 
     private func applyLevel(_ level: CGFloat, to fill: CALayer) {
