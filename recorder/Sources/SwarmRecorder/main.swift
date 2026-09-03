@@ -163,6 +163,50 @@ func runQuarantineSelfTest() {
     RunLoop.main.run()
 }
 
+// Режим --selftest-notes: показать панель заметок с ПОДСТАВНЫМ контекстом «С прошлого раза»
+// (issue #226). Нужен, чтобы проверить вёрстку блока в узких 312 pt до того, как функция
+// meeting-context раскатана: без него единственный способ увидеть блок — живая запись после
+// раскатки, то есть проверка после факта.
+//   --selftest-notes            свёрнутое превью
+//   --selftest-notes --keep N   держать N секунд
+func runNotesSelfTest(seconds: Double) {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.regular)
+
+    let cfg = SwarmConfig(token: "selftest", ingestBaseURL: "http://127.0.0.1:1", webBaseURL: "https://swarm-brain.pages.dev")
+    Task { @MainActor in
+        // Панель — main-actor: и берём, и трогаем её ТОЛЬКО отсюда, иначе Swift 6 это запретит.
+        let panel = LiveNotesPanel.shared
+        await panel.show(config: cfg, initialTitle: "Dodo Pizza Bulgaria",
+                         micLevel: { 0.2 }, systemLevel: { 0.1 },
+                         onStop: { exit(0) }, onCollapse: {})
+        // Данные — как их отдаёт meeting-context для реального созвона с Болгарией
+        // (проверено на проде: встреча 02.09, задачи «Посмотреть рейтинги Болгарии» и
+        // «Трекер задач Болгарии»).
+        panel.setContext(MeetingContext(
+            country: "BG",
+            meeting: .init(entry_id: "048f3a55-7f3f-431d-ad0e-7a88b51f60b4",
+                           title: "Dodo Pizza Bulgaria",
+                           date: "2026-09-02",
+                           sections: ["Болгария", "Персонал", "Решения и договорённости"],
+                           bullets: ["Бургас: не хватает курьеров, спрос выше мощностей",
+                                     "Тематическая коробка: продажи планируются 35 дней",
+                                     "Контакт-центр: предложено объединить страны региона"],
+                           total_bullets: 12,
+                           full_text: "### Болгария\n- Бургас: не хватает курьеров, спрос выше мощностей\n- Тематическая коробка: продажи планируются 35 дней\n### Персонал\n- Николь второй месяц в команде\n### Решения и договорённости\n- считаем P&L по новой схеме",
+                           truncated: false),
+            tasks: [
+                .init(id: "t1", title: "Посмотреть рейтинги Болгарии", due_date: "2026-09-04", assignees: [], status: "open", source: "country"),
+                .init(id: "t2", title: "Трекер задач Болгарии", due_date: nil, assignees: [], status: "in_progress", source: "country"),
+            ],
+            reason: nil))
+        print("selftest-notes: панель показана с подставным контекстом (BG)")
+    }
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { exit(0) }
+    app.run()
+}
+
 // Режим --analyze <file.m4a…>: печатает речевые блоки SilenceTrimmer и % экономии Whisper-минут.
 // Временный debug для калибровки на реальных записях (сверка со ссылочным ffmpeg-замером).
 func runAnalyze(_ files: [String]) {
@@ -209,7 +253,12 @@ func runUpdateSelfTest(apply: Bool) {
     RunLoop.main.run()
 }
 
-if let ai = CommandLine.arguments.firstIndex(of: "--analyze") {
+if CommandLine.arguments.contains("--selftest-notes") {
+    let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in
+        i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
+    }
+    runNotesSelfTest(seconds: keep ?? 30)
+} else if let ai = CommandLine.arguments.firstIndex(of: "--analyze") {
     runAnalyze(Array(CommandLine.arguments[(ai + 1)...]))
 } else if CommandLine.arguments.contains("--selftest-update") {
     runUpdateSelfTest(apply: CommandLine.arguments.contains("--apply"))   // не возвращается до exit()

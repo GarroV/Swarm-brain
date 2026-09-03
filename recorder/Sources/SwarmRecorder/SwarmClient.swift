@@ -150,6 +150,27 @@ struct SwarmClient {
     // Статус встречи для рекордера: `summary` (транскрибация: ""/processing/done/failed) гасит капсулу
     // «в обработке»; `published` (status=='in_base') — сигнал удалить локальный бэкап аудио. Возвращает
     // статусы только встреч вызывающего (claim_owner). Сетевой/4xx сбой бросаем наверх (бэкап не трогаем).
+    /// Контекст созвона: тезисы прошлой встречи с этой стороной + висящие задачи (issue #226).
+    /// Сеть здесь НЕ критична: не ответило — панель просто не покажет блок, запись не страдает.
+    /// Поэтому вызывающий ловит ошибку и молчит, а не ретраит и не мешает записи.
+    func meetingContext(title: String?, attendees: [String]) async throws -> MeetingContext {
+        var req = URLRequest(url: url("meeting-context"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        authed(&req)
+        // Тело — через Codable, а не словарь с кастом: смешанный [String: Any] в Swift
+        // не кодируется, а каст к [String: String] молча выбросил бы и attendees, и title —
+        // сервер тогда не определит страну и ответит «no_country», хотя данные были.
+        struct ContextRequest: Encodable { let title: String; let attendees: [String] }
+        req.httpBody = try JSONEncoder().encode(ContextRequest(title: title ?? "", attendees: attendees))
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else {
+            throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "")
+        }
+        return try JSONDecoder().decode(MeetingContext.self, from: data)
+    }
+
     func fetchMeetingStatuses(_ ids: [String]) async throws -> [String: MeetingStatus] {
         guard !ids.isEmpty else { return [:] }
         var comps = URLComponents(url: url("/meeting-status"), resolvingAgainstBaseURL: false)!
