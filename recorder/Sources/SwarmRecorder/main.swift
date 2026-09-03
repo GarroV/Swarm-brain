@@ -181,8 +181,8 @@ func runNotesSelfTest(seconds: Double) {
                          micLevel: { 0.2 }, systemLevel: { 0.1 },
                          onStop: { exit(0) }, onCollapse: {})
         // Данные — как их отдаёт meeting-context для реального созвона с Болгарией
-        // (проверено на проде: встреча 02.09, задачи «Посмотреть рейтинги Болгарии» и
-        // «Трекер задач Болгарии»).
+        // (проверено на проде: тезисы встречи 02.09; задачи стороны BG — «Посмотреть
+        // рейтинги Болгарии» и «Трекер задач Болгарии», к той встрече они не привязаны).
         panel.setContext(MeetingContext(
             country: "BG",
             meeting: .init(entry_id: "048f3a55-7f3f-431d-ad0e-7a88b51f60b4",
@@ -196,8 +196,8 @@ func runNotesSelfTest(seconds: Double) {
                            full_text: "### Болгария\n- Бургас: не хватает курьеров, спрос выше мощностей\n- Тематическая коробка: продажи планируются 35 дней\n### Персонал\n- Николь второй месяц в команде\n### Решения и договорённости\n- считаем P&L по новой схеме",
                            truncated: false),
             tasks: [
-                .init(id: "t1", title: "Посмотреть рейтинги Болгарии", due_date: "2026-09-04", assignees: [], status: "open", source: "country"),
-                .init(id: "t2", title: "Трекер задач Болгарии", due_date: nil, assignees: [], status: "in_progress", source: "country"),
+                .init(id: "t1", title: "Посмотреть рейтинги Болгарии", due_date: "2026-09-04", assignees: [], status: "open"),
+                .init(id: "t2", title: "Трекер задач Болгарии", due_date: nil, assignees: [], status: "in_progress"),
             ],
             reason: nil))
         print("selftest-notes: панель показана с подставным контекстом (BG)")

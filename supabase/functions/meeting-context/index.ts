@@ -5,18 +5,21 @@
 // тезисы и задачи уже лежат в базе, поэтому это обычная выборка, а не анализ.
 //
 // Решения владельца 03.09.2026: «эта сторона = эта страна», «тезисы последней встречи»,
-// «задачи показываем связанные с этой встречей», «функционал нужен именно к регулярным
-// встречам» (созвон с Болгарией → тезисы прошлого созвона с Болгарией, чтобы по ним пройтись).
+// «функционал нужен именно к регулярным встречам» (созвон с Болгарией → тезисы прошлого
+// созвона с Болгарией, чтобы по ним пройтись). И отдельно: задачи с тезисами «никак и не
+// должны соприкасаться — это разные вещи». Поэтому две НЕЗАВИСИМЫЕ выборки: тезисы у
+// последней встречи этой страны, задачи — у самой страны, безотносительно той встречи.
 //
 // Деплой: supabase functions deploy meeting-context --no-verify-jwt (хитит рекордер с Bearer smcp_).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyAgentToken, AgentAuthError } from "../_shared/agent-auth.ts";
-import { contextCountry, tezisyPreview, mergeContextTasks, PREVIEW_LIMITS } from "../_shared/meeting-context.ts";
+import { contextCountry, tezisyPreview, PREVIEW_LIMITS } from "../_shared/meeting-context.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-/** Сколько задач отдаём. Панель узкая; полный список — в вебе по ссылке на задачу. */
-const TASK_LIMIT = 5;
+/** Сколько задач отдаём. Свёрнуто панель показывает 2, раскрытая — весь список.
+ *  По стране их бывает больше десятка (на проде RS 15, SI 13), полный список — в вебе. */
+const TASK_LIMIT = 10;
 /** Статусы, которых в панели быть не должно. */
 //  • done/cancelled — закрытые;
 //  • pending — задачи, извлечённые из встреч и НЕ подтверждённые человеком (issue #208):
@@ -104,41 +107,21 @@ Deno.serve(async (req: Request) => {
 
   const preview = tezisyPreview(entry.content);
 
-  // Задачи: сначала привязанные ИМЕННО к этой встрече (решение владельца «задачи показываем
-  // связанные с этой встречей»), затем добивка по стране — иначе секция пуста ровно в том
-  // примере, с которого просьба началась: у последней встречи BG задач нет ни одной, а по
-  // стране BG их три (замерено на проде 03.09.2026).
-  const taskFields = "id, title, due_date, assignees, status, country, is_private, owner_id";
+  // Задачи СТОРОНЫ (страны) текущего созвона — независимо от того, какая запись нашлась
+  // для тезисов: «задачи и тезисы никак и не должны соприкасаться, это разные вещи»
+  // (владелец 03.09.2026). Поэтому здесь нет ни meeting_id, ни ссылки на entry выше.
   let tq = supabase
     .from("tasks")
-    .select(taskFields)
-    .eq("meeting_id", entry.id)
-    .not("status", "in", `(${HIDDEN_TASK_STATUSES.join(",")})`)
-    .eq("confirmed", true)
-    .or(`is_private.eq.false,owner_id.eq.${viewerId}`)
-    .order("due_date", { ascending: true, nullsFirst: false })
-    .limit(TASK_LIMIT);
-  if (groupId) tq = tq.eq("group_id", groupId);
-  const { data: meetingTaskRows } = await tq;
-
-  let cq = supabase
-    .from("tasks")
-    .select(taskFields)
+    .select("id, title, due_date, assignees, status")
     .eq("country", country)
     .not("status", "in", `(${HIDDEN_TASK_STATUSES.join(",")})`)
     .eq("confirmed", true)
     .or(`is_private.eq.false,owner_id.eq.${viewerId}`)
     .order("due_date", { ascending: true, nullsFirst: false })
     .limit(TASK_LIMIT);
-  if (groupId) cq = cq.eq("group_id", groupId);
-  const { data: countryTaskRows } = await cq;
-
+  if (groupId) tq = tq.eq("group_id", groupId);
+  const { data: taskRows } = await tq;
   type TaskRow = { id: string; title: string; due_date: string | null; assignees: string[] | null; status: string };
-  const taskRows = mergeContextTasks(
-    (meetingTaskRows ?? []) as TaskRow[],
-    (countryTaskRows ?? []) as TaskRow[],
-    TASK_LIMIT,
-  );
 
   return json({
     country,
@@ -153,15 +136,12 @@ Deno.serve(async (req: Request) => {
       truncated: preview.truncated,
       limits: { full_chars: PREVIEW_LIMITS.fullChars },
     },
-    tasks: taskRows.map((t) => ({
+    tasks: ((taskRows ?? []) as TaskRow[]).map((t) => ({
       id: t.id,
       title: t.title,
       due_date: t.due_date,
       assignees: t.assignees ?? [],
       status: t.status,
-      // Откуда задача: с прошлой встречи или просто по этой стране. Клиент подписывает —
-      // иначе «висит по этой встрече» и «висит по стране» читаются как одно и то же.
-      source: t.source,
     })),
   });
 });

@@ -1,8 +1,9 @@
 // Контекст созвона для панели заметок рекордера (issue #226).
 // Решения владельца 03.09.2026: «эта сторона = эта страна», «тезисы последней встречи»,
-// «задачи показываем связанные с этой встречей», функционал нужен для регулярных встреч.
+// а задачи и тезисы «никак и не должны соприкасаться — это разные вещи»: тезисы у последней
+// встречи, задачи у стороны (страны) текущего созвона, одно от другого не зависит.
 import { assertEquals } from "jsr:@std/assert";
-import { contextCountry, tezisyPreview, mergeContextTasks, PREVIEW_LIMITS } from "./meeting-context.ts";
+import { contextCountry, tezisyPreview, PREVIEW_LIMITS } from "./meeting-context.ts";
 
 Deno.test("страна созвона берётся из названия встречи", () => {
   // Название — самый прямой сигнал: «созвон с Болгарией» у рекордера так и называется.
@@ -64,27 +65,4 @@ Deno.test("полный текст помечается усечённым то�
 Deno.test("маркеры списка распознаются в обоих написаниях", () => {
   const p = tezisyPreview("### Тема\n* звёздочкой\n- дефисом");
   assertEquals(p.totalBullets, 2);
-});
-
-Deno.test("задачи встречи идут первыми, задачи страны добивают остаток", () => {
-  const meeting = [{ id: "m1" }, { id: "m2" }];
-  const country = [{ id: "c1" }, { id: "c2" }, { id: "c3" }];
-
-  const merged = mergeContextTasks(meeting, country, 4);
-
-  assertEquals(merged.map((t) => t.id), ["m1", "m2", "c1", "c2"]);
-  assertEquals(merged.map((t) => t.source), ["meeting", "meeting", "country", "country"]);
-});
-
-Deno.test("одна и та же задача не задваивается", () => {
-  // Задача встречи, у которой ещё и страна совпала, приходит в обеих выборках.
-  const merged = mergeContextTasks([{ id: "x" }], [{ id: "x" }, { id: "y" }], 5);
-  assertEquals(merged.map((t) => t.id), ["x", "y"]);
-  assertEquals(merged[0].source, "meeting");
-});
-
-Deno.test("лимит соблюдается, задачи встречи не вытесняются страновыми", () => {
-  const meeting = [{ id: "m1" }, { id: "m2" }, { id: "m3" }];
-  const merged = mergeContextTasks(meeting, [{ id: "c1" }], 2);
-  assertEquals(merged.map((t) => t.id), ["m1", "m2"]);
 });

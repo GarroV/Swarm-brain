@@ -20,9 +20,10 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private var timerLabel: NSTextField?
     private var micTrack: NSView?, sysTrack: NSView?
     private let micFill = CALayer(), sysFill = CALayer()
-    // Блок «С прошлого раза» (issue #226): тезисы последней встречи с этой стороной и
-    // висящие задачи. Живёт ВНУТРИ прокрутки над пометками — тогда раскрытие полного текста
-    // получает прокрутку бесплатно, а поле ввода остаётся внизу окна («съезд на поле»).
+    // Блок «С прошлого раза» (issue #226): две НЕЗАВИСИМЫЕ секции — тезисы последней встречи
+    // с этой стороной и задачи самой стороны. Живёт ВНУТРИ прокрутки над пометками — тогда
+    // раскрытие полного текста получает прокрутку бесплатно, а поле ввода остаётся внизу
+    // окна («съезд на поле»).
     private var contextStack: NSStackView?
     /// Запомненный конфиг: из него берётся адрес веба для ссылки на задачу.
     private var cfg: SwarmConfig?
@@ -386,6 +387,9 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
             }
         }
 
+        // Задачи — своя секция, НЕ связанная с тезисами выше: это задачи стороны созвона,
+        // а не той записи, чьи тезисы показаны («задачи и тезисы никак и не должны
+        // соприкасаться» — владелец 03.09.2026).
         if !ctx.tasks.isEmpty {
             let n = ctx.tasks.count
             rows.append(disclosureRow(
@@ -394,6 +398,9 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
                 action: #selector(toggleTasks)))
             let shown = tasksExpanded ? ctx.tasks : Array(ctx.tasks.prefix(2))
             for t in shown { rows.append(taskRow(t)) }
+            if !tasksExpanded && n > shown.count {
+                rows.append(hintLabel("ещё \(n - shown.count) — нажми, чтобы раскрыть"))
+            }
         }
 
         box.setViews(rows, in: .top)
@@ -475,10 +482,8 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     }
 
     private func taskRow(_ t: MeetingContext.Task) -> NSView {
-        // Срок и происхождение задачи подписаны: «висит по этой встрече» и «висит по стране» —
-        // разные вещи, и без подписи вторая читается как первая.
-        var suffix = t.due_date.map { "  " + humanDate($0) } ?? "  без срока"
-        if t.source == "country" { suffix += "  · по рынку" }
+        // Срок подписан всегда: «без срока» — тоже факт, а пустое место читается как обрезка.
+        let suffix = t.due_date.map { "  " + humanDate($0) } ?? "  без срока"
         let b = NSButton(title: "○  " + t.title + suffix, target: self, action: #selector(openTask(_:)))
         b.identifier = NSUserInterfaceItemIdentifier(t.id)
         b.isBordered = false; b.bezelStyle = .inline
