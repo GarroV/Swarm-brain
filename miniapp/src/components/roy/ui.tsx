@@ -473,6 +473,15 @@ export function TezisyBlocks({ text, className, onDeepen, onSource }: { text: st
   if (blocks.length === 0) return null;
   return (
     <div className={cn("flex flex-col", className)} style={{ gap: 9 }}>
+      {/* Подпись «обработано с помощью AI» — решение владельца 03.09.2026: тезисы всегда
+          помечены, чтобы читатель видел, что текст собрала модель, а не человек. Живёт ЗДЕСЬ,
+          в единственной точке рендера тезисов, — тогда подпись есть на всех экранах сразу и
+          НЕ пачкает сам draft_notes_md (в тексте она уехала бы в поиск и эмбеддинги, дублировалась
+          бы при регенерации и пропадала бы при ручной правке). */}
+      <div className="flex items-center gap-1.5 text-ink-mute" style={{ fontSize: 11 }}>
+        <RoyIcon name="spark" size={12} strokeWidth={1.9} className="shrink-0" />
+        <span>{dt("Обработано с помощью AI", "Processed with AI")}</span>
+      </div>
       {blocks.map((b, i) => {
         if (b.kind === "heading") {
           const { icon, rest } = leadEmoji(b.text);
