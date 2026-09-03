@@ -9,15 +9,47 @@ final class WidgetPlacementTests: XCTestCase {
     private let screen = CGRect(x: 0, y: 0, width: 1440, height: 875)
     private let size = CGSize(width: 72, height: 110)
 
-    func testDefaultSitsBelowTheHeaderStrip() {
+    // Владелец 03.09.2026: «надо виджет поднять чуть выше, я думаю на 2 таких же фрейма».
+    // Прежнее требование «верх не выше 200 пунктов от края» (#197) этим и снято — оно
+    // физически несовместимо с подъёмом, см. комментарий в WidgetPlacement.
+    func testDefaultIsLiftedByTwoBannerHeights() {
         let o = WidgetPlacement.origin(saved: nil, size: size, in: screen)
 
-        // Верх капсулы уходит вниз минимум на 200 пунктов от верха экрана: полоса аватаров,
-        // счётчиков и кнопок веб-приложений живёт выше этой границы.
-        XCTAssertLessThanOrEqual(o.y + size.height, screen.maxY - 200,
-                                 "капсула всё ещё в полосе управления")
-        // Но и не сползает к доку — там она мешает не меньше.
-        XCTAssertGreaterThanOrEqual(o.y, screen.minY + 120, "капсула сползла в док")
+        let withoutLift = screen.maxY - screen.height * WidgetPlacement.topFraction - size.height
+        XCTAssertEqual(o.y, withoutLift + WidgetPlacement.defaultLift, accuracy: 0.5,
+                       "дефолт не поднят на два фрейма")
+    }
+
+    func testDefaultStaysBelowTheMenuBarAndAboveTheDock() {
+        let o = WidgetPlacement.origin(saved: nil, size: size, in: screen)
+
+        // Под меню-бар не залезаем: подъём ограничен воздухом сверху.
+        XCTAssertLessThanOrEqual(o.y + size.height, screen.maxY - WidgetPlacement.headerBand,
+                                 "окно ушло под меню-бар")
+        // И не сползает к доку — там оно мешает не меньше.
+        XCTAssertGreaterThanOrEqual(o.y, screen.minY + 120, "окно сползло в док")
+    }
+
+    // Капсула (72×110) и баннер встречи (300×84) обязаны вставать на ОДНУ линию по верху:
+    // подъём задан в пунктах, а не в размерах окна, иначе при переключении режима окно
+    // прыгало бы по вертикали само собой.
+    func testPillAndBannerShareTheSameTopLine() {
+        let banner = CGSize(width: 300, height: 84)
+
+        let pillTop = WidgetPlacement.origin(saved: nil, size: size, in: screen).y + size.height
+        let bannerTop = WidgetPlacement.origin(saved: nil, size: banner, in: screen).y + banner.height
+
+        XCTAssertEqual(pillTop, bannerTop, accuracy: 0.5, "верх капсулы и баннера разъехался")
+    }
+
+    // Маленький экран: подъём не должен выталкивать окно за верхнюю границу.
+    func testLiftIsClampedOnAShortScreen() {
+        let short = CGRect(x: 0, y: 0, width: 1280, height: 620)
+
+        let o = WidgetPlacement.origin(saved: nil, size: size, in: short)
+
+        XCTAssertLessThanOrEqual(o.y + size.height, short.maxY - WidgetPlacement.headerBand)
+        XCTAssertGreaterThanOrEqual(o.y, short.minY, "окно уехало за нижний край")
     }
 
     func testDefaultHugsTheRightEdge() {
