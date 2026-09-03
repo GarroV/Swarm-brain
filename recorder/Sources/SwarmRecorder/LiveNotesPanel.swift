@@ -324,6 +324,25 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     }
 
     // ── Блок «С прошлого раза» ───────────────────────────────────────────────────
+    /// Что реально отрисовано в блоке — для режима `--selftest-notes`. Скриншот показывает
+    /// пиксели, а проверить нужно СОДЕРЖИМОЕ: собрались ли строки, те ли, и меняются ли они
+    /// при раскрытии. Возвращает подписи строк сверху вниз.
+    var contextRowsForTests: [String] {
+        (contextStack?.views ?? []).map { v in
+            if let b = v as? NSButton { return b.title }
+            if let t = v as? NSTextField { return t.stringValue }
+            return String(describing: type(of: v))
+        }
+    }
+    /// Высота окна панели — ловит «блок разъехался и выдавил поле ввода за край».
+    var panelHeightForTests: CGFloat { panel?.frame.height ?? 0 }
+    /// Раскрыть секции из режима самопроверки (в жизни это делает клик человека).
+    func expandForTests(tezisy: Bool, tasks: Bool) {
+        tezisyExpanded = tezisy
+        tasksExpanded = tasks
+        renderContext()
+    }
+
     /// Показать контекст созвона. Вызывается из AppDelegate после ответа `meeting-context`.
     /// `nil` или пустой контекст — блок просто не появляется: пустая рамка читается как сбой.
     func setContext(_ ctx: MeetingContext?) {
@@ -352,7 +371,10 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
                 expanded: tezisyExpanded,
                 action: #selector(toggleTezisy)))
             if tezisyExpanded {
-                rows.append(bodyLabel(prev.full_text))
+                // Markdown в панели не рендерится, поэтому раскладываем его сами: «### Тема»
+                // становится подзаголовком, «- пункт» — строкой списка. Показывать сырые
+                // «###» и «- » человеку нельзя: он читает тезисы, а не разметку.
+                rows.append(contentsOf: renderedTezisy(prev.full_text))
                 if prev.truncated {
                     rows.append(hintLabel("показано начало — полностью в вебе"))
                 }
@@ -413,6 +435,32 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         return l
     }
 
+    // Тезисы построчно: заголовок раздела → подзаголовок, пункт → строка с точкой,
+    // остальное → обычный абзац. Пустые строки съедаются (в markdown они разделители).
+    private func renderedTezisy(_ md: String) -> [NSView] {
+        var out: [NSView] = []
+        for raw in md.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { continue }
+            if line.hasPrefix("#") {
+                let heading = line.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces)
+                if !heading.isEmpty { out.append(headingLabel(heading)) }
+            } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
+                out.append(bulletLabel(String(line.dropFirst(2))))
+            } else {
+                out.append(bodyLabel(line))
+            }
+        }
+        return out
+    }
+
+    private func headingLabel(_ text: String) -> NSTextField {
+        let l = NSTextField(labelWithString: text)
+        l.font = .systemFont(ofSize: 11.5, weight: .semibold)
+        l.textColor = Self.amberHi
+        return l
+    }
+
     private func bodyLabel(_ text: String) -> NSTextField {
         let l = NSTextField(wrappingLabelWithString: text)
         l.font = .systemFont(ofSize: 11.5); l.textColor = Self.ink
@@ -443,8 +491,14 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
 
     private func humanDate(_ iso: String) -> String {
         let inF = DateFormatter(); inF.dateFormat = "yyyy-MM-dd"
+        inF.locale = Locale(identifier: "en_US_POSIX")     // разбор ISO не зависит от локали машины
         guard let d = inF.date(from: String(iso.prefix(10))) else { return iso }
-        let out = DateFormatter(); out.locale = .current; out.setLocalizedDateFormatFromTemplate("d MMM")
+        let out = DateFormatter()
+        // Локаль ЖЁСТКО русская, а не `.current`: остальной текст блока русский, и на машине
+        // с английской системой получалось «Тезисы · 2 Sep · 12 пунктов» — смесь языков в
+        // одной строке. Когда у рекордера появится i18n-слой (#205), локаль поедет оттуда.
+        out.locale = Locale(identifier: "ru_RU")
+        out.setLocalizedDateFormatFromTemplate("d MMM")
         return out.string(from: d)
     }
 

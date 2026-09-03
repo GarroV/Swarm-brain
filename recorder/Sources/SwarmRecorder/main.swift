@@ -201,6 +201,15 @@ func runNotesSelfTest(seconds: Double) {
             ],
             reason: nil))
         print("selftest-notes: панель показана с подставным контекстом (BG)")
+        // Печатаем СОДЕРЖИМОЕ блока, а не только факт показа: свёрнутый вид, затем раскрытый.
+        @MainActor func dump(_ tag: String) {
+            print("  [\(tag)] высота окна \(Int(panel.panelHeightForTests)) pt, строк \(panel.contextRowsForTests.count):")
+            for r in panel.contextRowsForTests { print("    · \(r.replacingOccurrences(of: "\n", with: " ⏎ ").prefix(88))") }
+        }
+        dump("свёрнуто")
+        panel.expandForTests(tezisy: true, tasks: true)
+        dump("раскрыто")
+        panel.expandForTests(tezisy: false, tasks: false)
     }
 
     DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { exit(0) }
