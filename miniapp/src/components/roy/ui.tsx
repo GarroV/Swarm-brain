@@ -6,6 +6,7 @@ import { cn, displayName } from "@/lib/utils";
 import { countryCode } from "@/lib/countries";
 import { RoyIcon, type RoyIconName } from "./icons";
 import { useDt } from "./nav";
+import { buildTezisyCopyText, type TezisyCopyMeta } from "@/lib/tezisyCopy";
 import { NotificationsBell } from "./NotificationsBell";
 import { useIsDesktop } from "./useIsDesktop";
 
@@ -467,39 +468,36 @@ function leadEmoji(text: string): { icon: RoyIconName | null; rest: string; had:
   return { icon: EMOJI_ICON[m[1]] ?? null, rest: text.slice(m[0].length), had: true };
 }
 
-// Подпись «обработано с помощью AI» + кнопка копирования над тезисами встречи.
-// Решение владельца 03.09.2026: подпись нужна ТОЛЬКО в окне тезисов по встрече, и главное —
-// она должна уезжать в БУФЕР вместе с текстом, чтобы вставленные куда-то тезисы сами объясняли,
-// что их собрала модель. Поэтому строка живёт на рендере, а НЕ в draft_notes_md: в тексте она
-// уехала бы в поиск и эмбеддинги, дублировалась бы при каждой регенерации и пропадала бы при
-// ручной правке (отредактированные тезисы мы не перезаписываем).
-export const AI_NOTICE_RU = "Обработано с помощью AI";
-export const AI_NOTICE_EN = "Processed with AI";
-
-function TezisyAiRow({ text }: { text: string }) {
+// Кнопка «Копировать» над тезисами встречи. Решение владельца 03.09.2026 (уточнено в тот же
+// день): на экране подписи быть НЕ должно — она нужна в БУФЕРЕ, чтобы вставленный куда-то
+// конспект сам объяснял, что его собрала модель, и из какой он встречи. Поэтому шапка живёт
+// здесь, а не в draft_notes_md: в тексте она уехала бы в поиск и эмбеддинги, дублировалась бы
+// при каждой регенерации и пропадала бы при ручной правке (отредактированные тезисы мы не
+// перезаписываем).
+function TezisyCopyRow({ text, meta }: { text: string; meta: TezisyCopyMeta }) {
   const dt = useDt();
   const [copied, setCopied] = useState(false);
-  const notice = dt(AI_NOTICE_RU, AI_NOTICE_EN);
   const copy = async () => {
+    const payload = buildTezisyCopyText(text, meta, {
+      notice: dt("Обработано с помощью AI", "Processed with AI"),
+      meeting: dt("Встреча", "Meeting"),
+      locale: dt("ru-RU", "en-US"),
+    });
     try {
-      await navigator.clipboard.writeText(`${notice}\n\n${text}`);
+      await navigator.clipboard.writeText(payload);
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      // clipboard недоступен (не https, отказ пользователя) — тезисы остаются на экране,
-      // человек скопирует выделением. Молчать нельзя было бы, если бы текст никуда не помещался.
+      // clipboard недоступен (не https, отказ пользователя) — тезисы остаются на экране и
+      // копируются выделением. Кнопка просто не даст отклика, данные не теряются.
     }
   };
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="flex items-center gap-1.5 text-ink-mute" style={{ fontSize: 11 }}>
-        <RoyIcon name="spark" size={12} strokeWidth={1.9} className="shrink-0" />
-        {notice}
-      </span>
+    <div className="flex justify-end">
       <button
         type="button"
         onClick={copy}
-        title={dt("Скопировать тезисы вместе с подписью", "Copy the theses with the notice")}
+        title={dt("Скопировать тезисы с пометкой об AI", "Copy the theses with the AI notice")}
         className="flex shrink-0 items-center gap-1 rounded-[8px] border border-line px-2 font-medium text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
         style={{ fontSize: 11, minHeight: 24 }}
       >
@@ -510,13 +508,15 @@ function TezisyAiRow({ text }: { text: string }) {
   );
 }
 
-export function TezisyBlocks({ text, className, onDeepen, onSource, aiNotice }: { text: string; className?: string; onDeepen?: (topic: string) => void; onSource?: (n: number) => void; aiNotice?: boolean }) {
+
+
+export function TezisyBlocks({ text, className, onDeepen, onSource, copyMeta }: { text: string; className?: string; onDeepen?: (topic: string) => void; onSource?: (n: number) => void; copyMeta?: TezisyCopyMeta }) {
   const dt = useDt();
   const blocks = parseTezisy(text);
   if (blocks.length === 0) return null;
   return (
     <div className={cn("flex flex-col", className)} style={{ gap: 9 }}>
-      {aiNotice && <TezisyAiRow text={text} />}
+      {copyMeta && <TezisyCopyRow text={text} meta={copyMeta} />}
       {blocks.map((b, i) => {
         if (b.kind === "heading") {
           const { icon, rest } = leadEmoji(b.text);

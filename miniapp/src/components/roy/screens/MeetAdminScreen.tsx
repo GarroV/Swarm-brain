@@ -1009,7 +1009,7 @@ function AgentMeetingDetail({
                 </div>
               </div>
             ) : (
-              <TezisyBlocks text={m.draft_notes_md} aiNotice />
+              <TezisyBlocks text={m.draft_notes_md} copyMeta={{ title: m.title, date: m.started_at }} />
             )}
           </div>
         ) : m.summary_status === "done" || m.summary_status === "failed" ? (
