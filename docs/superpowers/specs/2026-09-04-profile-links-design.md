@@ -50,7 +50,9 @@ PL/pgSQL, `SECURITY DEFINER`, `REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO servi
 Без FK: `feedback.telegram_id`, `notifications.actor_telegram_id`, `projects.created_by`,
 `task_comments.added_by_telegram_id`, `tasks.assignee_telegram_ids` (**массив**),
 `tasks.created_by_telegram_id`, `tasks.remind_set_by`, `user_integrations.telegram_id`.
-`tasks.created_by` — `text`, при реализации проверить, id там или имя.
+
+`tasks.created_by` (`text`) в список **не входит**: проверено на проде 04.09.2026 — там у всех
+287 строк значение `system`, это источник создания, а не человек.
 
 Особые случаи внутри переноса:
 - `tasks.assignee_telegram_ids` — `array_replace`, затем дедуп: если `new_id` уже был в массиве,
@@ -122,8 +124,3 @@ PL/pgSQL, `SECURITY DEFINER`, `REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO servi
 Миграция (`ADD COLUMN` + функция) · деплой `swarm-api`, `swarm-bot` · веб (плитка). Всё —
 ночное окно 23:00–05:59 по явному «да», метка `deploy-window`. После раскатки — привязка
 вживую на реальной синтетической личности, затем доклад владельцу.
-
-## Открытый вопрос к реализации
-
-`tasks.created_by :: text` — единственная колонка, про которую по типу не видно, id там или имя.
-Проверить выборкой до написания миграции.
