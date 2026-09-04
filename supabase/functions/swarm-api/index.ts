@@ -61,7 +61,7 @@ import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
 // Календарь на сегодня для панели главной (issue #218): доступ к Google — общий модуль
 // (его же зовёт meeting-current), отбор событий дня и границы суток — чистая логика под тестами.
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
-import { todayMeetings, dayBounds } from "../_shared/meetings-today.ts";
+import { todayMeetings, dayBounds, type RecorderPresence } from "../_shared/meetings-today.ts";
 import { joinLink } from "../meeting-current/join-link.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
@@ -1931,7 +1931,29 @@ Deno.serve(async (req: Request) => {
     const items = await listEvents(token, timeMin, timeMax, 25);
     if (!items) return json({ meetings: [], reason: "calendar_error" }, 200, origin);
 
-    return json({ meetings: todayMeetings(items, new Date(), joinLink) }, 200, origin);
+    // Где сидит сам человек: рекордер сообщает это в heartbeat. Панель по этим флагам
+    // рисует `ON AIR` / `REC` вместо кнопки «Подключиться» — предлагать зайти туда, где
+    // человек уже сидит, значит не понимать, что происходит (решение владельца 04.09.2026).
+    const { data: rec } = await supabase
+      .from("allowed_users")
+      .select("recorder_last_seen, recorder_last_recording, recorder_last_on_call, recorder_last_meeting_key")
+      .eq("telegram_id", telegram_id).maybeSingle();
+    const r = rec as {
+      recorder_last_seen?: string | null;
+      recorder_last_recording?: boolean | null;
+      recorder_last_on_call?: boolean | null;
+      recorder_last_meeting_key?: string | null;
+    } | null;
+    const presence: RecorderPresence | null = r
+      ? {
+        meetingKey: r.recorder_last_meeting_key ?? null,
+        onCall: r.recorder_last_on_call === true,
+        recording: r.recorder_last_recording === true,
+        lastSeen: r.recorder_last_seen ?? null,
+      }
+      : null;
+
+    return json({ meetings: todayMeetings(items, new Date(), joinLink, presence) }, 200, origin);
   }
 
   // ── GET /integrations ─────────────────────────────────────────────────────────

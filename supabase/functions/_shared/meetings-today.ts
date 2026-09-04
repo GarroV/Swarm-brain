@@ -9,6 +9,31 @@
 // одну встречу для рекордера, а тут нужен весь день).
 import type { GEvent } from "../meeting-current/select.ts";
 
+/**
+ * Что рекордер видит прямо сейчас — из его heartbeat (`allowed_users.recorder_last_*`).
+ * Два ФАКТА, а не один: в звонке можно сидеть без записи (решение владельца 04.09.2026,
+ * канон — docs/decisions/2026-09-04-on-air-v-panele-vstrech.md).
+ */
+export type RecorderPresence = {
+  /** Ключ встречи, которую рекордер видит: «<uid>:<дата>», как в meeting-claim. */
+  meetingKey: string | null;
+  /** Вход микрофона держит ДРУГОЕ приложение — идёт реальный созвон (CallDetector). */
+  onCall: boolean;
+  /** Рекордер пишет этот звонок. */
+  recording: boolean;
+  /** Время последнего heartbeat. */
+  lastSeen: string | null;
+};
+
+/**
+ * За сколько присутствие считается устаревшим. Пока звонок идёт, рекордер шлёт keep-alive
+ * раз в 2 минуты, поэтому пятиминутная тишина — это спящий ноут или обрыв сети, а не «всё
+ * ещё в звонке». Границу по ВРЕМЕНИ ВСТРЕЧИ здесь не проверяем: её задаёт сам рекордер
+ * (meeting-current отдаёт ключ только в окне ±10 мин от слота), а лишняя проверка погасила бы
+ * затянувшийся созвон, где люди ещё говорят.
+ */
+const PRESENCE_TTL_MS = 5 * 60_000;
+
 export type TodayMeeting = {
   id: string;
   title: string | null;
@@ -23,6 +48,10 @@ export type TodayMeeting = {
   is_past: boolean;
   /** Сколько людей в приглашении (без нас): «1:1» и «совещание» читаются по-разному. */
   attendees: number;
+  /** Ты сам в этом звонке прямо сейчас — панель показывает `ON AIR`. */
+  on_call: boolean;
+  /** …и рекордер его пишет — рядом с `ON AIR` встаёт `REC`. */
+  recording: boolean;
 };
 
 /**
@@ -32,8 +61,18 @@ export type TodayMeeting = {
  *   • события на весь день (`start.date` без времени) — дни рождения, отпуска, дедлайны.
  * Порядок — по времени начала: день читается сверху вниз, как в календаре.
  */
-export function todayMeetings(events: GEvent[], now: Date, joinLinkOf: (e: GEvent) => string | null): TodayMeeting[] {
+export function todayMeetings(
+  events: GEvent[],
+  now: Date,
+  joinLinkOf: (e: GEvent) => string | null,
+  presence?: RecorderPresence | null,
+): TodayMeeting[] {
   const t = now.getTime();
+  // Присутствие протухло (или его нет) — дальше сравнивать ключи незачем.
+  const live = presence?.meetingKey && presence.lastSeen &&
+    t - Date.parse(presence.lastSeen) <= PRESENCE_TTL_MS
+    ? presence
+    : null;
   return events
     .filter((e) => e.status !== "cancelled")
     .filter((e) => e.transparency !== "transparent")
@@ -43,8 +82,12 @@ export function todayMeetings(events: GEvent[], now: Date, joinLinkOf: (e: GEven
       const ends = e.end!.dateTime!;
       const s = Date.parse(starts);
       const en = Date.parse(ends);
+      const id = e.iCalUID ?? e.id;
+      // Ключ несёт и дату: у повторяющейся встречи uid один на всю серию, и сравнение по
+      // одному uid зажгло бы ON AIR на вчерашнем экземпляре.
+      const mine = live?.meetingKey === `${id}:${starts.slice(0, 10)}`;
       return {
-        id: e.iCalUID ?? e.id,
+        id,
         title: e.summary?.trim() || null,
         starts_at: starts,
         ends_at: ends,
@@ -53,6 +96,8 @@ export function todayMeetings(events: GEvent[], now: Date, joinLinkOf: (e: GEven
         is_past: en <= t,
         // Себя не считаем: «участников 1» у встречи вдвоём выглядит ошибкой.
         attendees: (e.attendees ?? []).filter((a) => !a.self).length,
+        on_call: mine ? live!.onCall : false,
+        recording: mine ? live!.recording : false,
       };
     })
     .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
