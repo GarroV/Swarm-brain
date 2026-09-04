@@ -1934,10 +1934,15 @@ Deno.serve(async (req: Request) => {
     // Где сидит сам человек: рекордер сообщает это в heartbeat. Панель по этим флагам
     // рисует `ON AIR` / `REC` вместо кнопки «Подключиться» — предлагать зайти туда, где
     // человек уже сидит, значит не понимать, что происходит (решение владельца 04.09.2026).
-    const { data: rec } = await supabase
+    // Код может приехать РАНЬШЕ миграции: ночная автоматика вливает PR и деплоит функции,
+    // а миграции накатываются руками (scripts/deploy-window.sh их только показывает). Пока
+    // колонок нет, PostgREST ответит ошибкой — тогда панель работает как до фичи, без ON AIR,
+    // но ошибку не проглатываем молча: без записи в лог такой перекос порядка не заметить.
+    const { data: rec, error: recErr } = await supabase
       .from("allowed_users")
       .select("recorder_last_seen, recorder_last_recording, recorder_last_on_call, recorder_last_meeting_key")
       .eq("telegram_id", telegram_id).maybeSingle();
+    if (recErr) console.warn("[calendar/today] присутствие рекордера не прочиталось:", recErr.message);
     const r = rec as {
       recorder_last_seen?: string | null;
       recorder_last_recording?: boolean | null;
