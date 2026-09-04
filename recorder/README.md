@@ -232,7 +232,7 @@ Edge-функция: `supabase/functions/swarm-recorder-setup` (публичны
 5. Поднять `LATEST_BUILD` в `supabase/functions/swarm-recorder-version/index.ts` до `3`, задеплоить:
    `supabase functions deploy swarm-recorder-version --no-verify-jwt`.
    ⚠️ **Только после шага 4** — `LATEST_BUILD` без залитого файла раздаёт 404 всем.
-6. Готово — все рекордеры тихо обновятся в простое в течение ~15 мин. Лог у пользователя:
+6. Готово — рекордеры тихо обновятся в простое. **Не за 15 минут:** чек версии троттлится `updateCheckMinInterval` = 6 часов (`AppDelegate`), а `maintenanceTick` раз в 15 минут лишь предлагает его. То есть свежую сборку человек получит при следующем запуске приложения либо в пределах ~6 часов простоя; кому надо сразу — пункт меню «Обновить bumblebee · сборка N». Лог у пользователя:
    `~/Library/Application Support/SwarmRecorder/self-update.log`.
 
 ### Обновление по требованию (пункт меню)
