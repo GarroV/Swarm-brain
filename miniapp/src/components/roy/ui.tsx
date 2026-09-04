@@ -6,6 +6,7 @@ import { cn, displayName } from "@/lib/utils";
 import { countryCode } from "@/lib/countries";
 import { RoyIcon, type RoyIconName } from "./icons";
 import { useDt } from "./nav";
+import { buildTezisyCopyText, type TezisyCopyMeta } from "@/lib/tezisyCopy";
 import { NotificationsBell } from "./NotificationsBell";
 import { useIsDesktop } from "./useIsDesktop";
 
@@ -467,12 +468,55 @@ function leadEmoji(text: string): { icon: RoyIconName | null; rest: string; had:
   return { icon: EMOJI_ICON[m[1]] ?? null, rest: text.slice(m[0].length), had: true };
 }
 
-export function TezisyBlocks({ text, className, onDeepen, onSource }: { text: string; className?: string; onDeepen?: (topic: string) => void; onSource?: (n: number) => void }) {
+// Кнопка «Копировать» над тезисами встречи. Решение владельца 03.09.2026 (уточнено в тот же
+// день): на экране подписи быть НЕ должно — она нужна в БУФЕРЕ, чтобы вставленный куда-то
+// конспект сам объяснял, что его собрала модель, и из какой он встречи. Поэтому шапка живёт
+// здесь, а не в draft_notes_md: в тексте она уехала бы в поиск и эмбеддинги, дублировалась бы
+// при каждой регенерации и пропадала бы при ручной правке (отредактированные тезисы мы не
+// перезаписываем).
+function TezisyCopyRow({ text, meta }: { text: string; meta: TezisyCopyMeta }) {
+  const dt = useDt();
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    const payload = buildTezisyCopyText(text, meta, {
+      notice: dt("Обработано с помощью AI", "Processed with AI"),
+      meeting: dt("Встреча", "Meeting"),
+      locale: dt("ru-RU", "en-US"),
+    });
+    try {
+      await navigator.clipboard.writeText(payload);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // clipboard недоступен (не https, отказ пользователя) — тезисы остаются на экране и
+      // копируются выделением. Кнопка просто не даст отклика, данные не теряются.
+    }
+  };
+  return (
+    <div className="flex justify-end">
+      <button
+        type="button"
+        onClick={copy}
+        title={dt("Скопировать тезисы с пометкой об AI", "Copy the theses with the AI notice")}
+        className="flex shrink-0 items-center gap-1 rounded-[8px] border border-line px-2 font-medium text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        style={{ fontSize: 11, minHeight: 24 }}
+      >
+        {copied && <RoyIcon name="check" size={12} strokeWidth={2.1} className="shrink-0" />}
+        {copied ? dt("Скопировано", "Copied") : dt("Копировать", "Copy")}
+      </button>
+    </div>
+  );
+}
+
+
+
+export function TezisyBlocks({ text, className, onDeepen, onSource, copyMeta }: { text: string; className?: string; onDeepen?: (topic: string) => void; onSource?: (n: number) => void; copyMeta?: TezisyCopyMeta }) {
   const dt = useDt();
   const blocks = parseTezisy(text);
   if (blocks.length === 0) return null;
   return (
     <div className={cn("flex flex-col", className)} style={{ gap: 9 }}>
+      {copyMeta && <TezisyCopyRow text={text} meta={copyMeta} />}
       {blocks.map((b, i) => {
         if (b.kind === "heading") {
           const { icon, rest } = leadEmoji(b.text);
