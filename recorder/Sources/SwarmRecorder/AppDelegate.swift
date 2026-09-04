@@ -90,6 +90,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // на этом статусе меню молчит, чтобы не пугать человека ложной тревогой.
     private var notificationsAllowed: Bool?
     private var micWasActive = false
+    // Маяк присутствия для панели «Встречи сегодня» (issue #218): что мы уже рассказали
+    // серверу и когда. Логика «пора или нет» — RecorderKit.PresenceBeacon.
+    private var presenceSent: PresenceBeacon.State?
+    private var presenceSentAt: Date?
     private var callDismissedUntil: Date?
     private var watchTimer: Timer?
     private var maintTimer: Timer?
@@ -324,10 +328,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Heartbeat серверу: «рекордер жив» + пишем ли сейчас + версия сборки. Best-effort. Шлётся из
     // maintenanceTick (15 мин), при смене статуса записи (setState — сервер сразу видит старт/стоп,
     // без этого была бы ложная тревога «запись прервалась») и разово на старте.
-    private func sendHeartbeat() {
+    //
+    // Вместе с этим уходит присутствие (`on_call` + ключ встречи) — по нему панель «Встречи
+    // сегодня» рисует `ON AIR`. Ключ берём у записи, если она идёт: там он точный, а календарный
+    // детект в этот момент может уже смотреть на следующий слот.
+    private func sendHeartbeat(onCall: Bool? = nil, meetingKey: String? = nil) {
         guard let cfg = config, configError == nil else { return }
         let recording = isRecording
-        Task { await SwarmClient(config: cfg).heartbeat(recording: recording, version: Updater.currentBuild) }
+        let call = onCall ?? (presenceSent?.onCall ?? false)
+        let key = meetingKey ?? (isRecording ? identity?.key : presenceSent?.meetingKey)
+        presenceSent = PresenceBeacon.State(onCall: call, meetingKey: key)
+        presenceSentAt = Date()
+        Task {
+            await SwarmClient(config: cfg).heartbeat(
+                recording: recording, version: Updater.currentBuild, onCall: call, meetingKey: key)
+        }
+    }
+
+    // Присутствие меняется чаще, чем всё остальное, поэтому у него свой троттл: смену состояния
+    // отправляем сразу, а пока звонок идёт — повторяем не чаще PresenceBeacon.keepAlive.
+    private func pulsePresence(onCall: Bool, calendarKey: String?) {
+        let key = isRecording ? identity?.key : calendarKey
+        let now = PresenceBeacon.State(onCall: onCall, meetingKey: onCall ? key : nil)
+        guard PresenceBeacon.shouldSend(
+            previous: presenceSent, current: now, lastSentAt: presenceSentAt, now: Date()) else { return }
+        sendHeartbeat(onCall: now.onCall, meetingKey: now.meetingKey)
     }
 
     // Тихий авто-апдейт: только в простое (запись/отправку не рвём) и один раз за сессию (после
@@ -425,7 +450,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // Реальный созвон, а не просто занятый микрофон: фильтруем системные демоны
             // (CoreSpeech), иначе «звонок» виден всегда и сыпались бы ложные предложения записи.
             let micOn = CallDetector.realCallActive()
-            DispatchQueue.main.async { [weak self] in self?.handleDetection(meeting: meeting, micActive: micOn) }
+            DispatchQueue.main.async { [weak self] in
+                self?.handleDetection(meeting: meeting, micActive: micOn)
+                // Присутствие обновляем ОТДЕЛЬНО от handleDetection: тот выходит по
+                // `guard case .idle`, а панели нужен сигнал и во время записи.
+                self?.pulsePresence(onCall: micOn, calendarKey: meeting?.key)
+            }
         }
     }
 
@@ -598,10 +628,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // остаётся один глиф. Логика и её проверки — RecorderKit.StatusBarTitle.
     private func refreshStatusTitle() {
         guard let button = statusItem.button else { return }
-        let text = StatusBarTitle.text(recording: isRecording, title: identity?.title, endsAt: scheduledEndAt)
+        let text = titleSuppressed
+            ? nil
+            : StatusBarTitle.text(recording: isRecording, title: identity?.title, endsAt: scheduledEndAt)
         // Пустая строка, а не nil: nil у NSButton.title означает «оставить как было».
         button.title = text.map { " \($0)" } ?? ""
+        if text != nil { scheduleMenuBarFitCheck() }
         syncStatusTitleTimer()
+    }
+
+    // ── Значок не должен исчезать из строки состояния (issue #232) ───────────────
+    // macOS МОЛЧА прячет элементы, которым не хватило ширины: на 13" с вырезом подпись
+    // «Название · 53m left» выдавила сам значок bumblebee — вместе с единственным способом
+    // остановить запись и посмотреть статус (`NSStatusItem.isVisible` при этом остаётся true).
+    // Поэтому после установки подписи проверяем геометрию и при нехватке места снимаем её.
+    private var titleSuppressed = false
+
+    private func scheduleMenuBarFitCheck() {
+        // Ширина элемента пересчитывается не в тот же кадр — смотрим чуть позже.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.checkMenuBarFit() }
+    }
+
+    private func checkMenuBarFit() {
+        guard !titleSuppressed, let button = statusItem.button, !button.title.isEmpty else { return }
+        let zone = NSScreen.main?.auxiliaryTopRightArea
+        guard !MenuBarFit.isVisible(itemFrame: button.window?.frame, menuBarZone: zone) else { return }
+        // Обратно подпись НЕ возвращаем до конца записи: качели «влез / не влез» мигали бы
+        // значком на каждом обновлении счётчика. Счётчик полезен, управление — необходимо.
+        titleSuppressed = true
+        button.title = ""
+        dbg("menu bar: подпись снята, элемент не влезал (issue #232) frame=\(String(describing: button.window?.frame)) zone=\(String(describing: zone))")
     }
 
     // Счётчик тикает только во время записи: в покое таймер не нужен и будить машину незачем.
@@ -834,6 +890,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         case .recording, .sending: Updater.setRecordingLock(true)
         default: Updater.setRecordingLock(false)
         }
+        // Вне записи подписи нет — снимаем запрет, чтобы следующая запись снова показала
+        // название и счётчик (issue #232: запрет ставится только когда место кончилось).
+        if case .recording = s {} else { titleSuppressed = false }
         // Heartbeat: сервер должен знать старт/стоп записи (recording=false при остановке снимает
         // ложное «прервалась»). Но в моменты .recording/.sending НЕ шлём синхронно — это самые
         // хрупкие точки жизненного цикла тапа (start/stop), не добавляем туда конкурентный сетевой

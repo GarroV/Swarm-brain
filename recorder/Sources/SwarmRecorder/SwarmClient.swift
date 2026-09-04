@@ -105,12 +105,17 @@ struct SwarmClient {
     // POST /meeting-heartbeat — «рекордер жив» + статус записи + версия сборки. Для серверного
     // watchdog (оборванная запись / истечение токена). Best-effort: ошибки глотаем — heartbeat
     // не критичен и не должен мешать записи/отправке.
-    func heartbeat(recording: Bool, version: Int) async {
+    //
+    // `onCall`/`meetingKey` — присутствие человека для панели «Встречи сегодня» (`ON AIR`):
+    // в звонке можно сидеть без записи, поэтому это отдельные факты от `recording`.
+    func heartbeat(recording: Bool, version: Int, onCall: Bool = false, meetingKey: String? = nil) async {
         var req = URLRequest(url: url("/meeting-heartbeat"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         authed(&req)
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["recording": recording, "version": version])
+        var body: [String: Any] = ["recording": recording, "version": version, "on_call": onCall]
+        if let meetingKey { body["meeting_key"] = meetingKey }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         _ = try? await Self.session.data(for: req)
     }
 

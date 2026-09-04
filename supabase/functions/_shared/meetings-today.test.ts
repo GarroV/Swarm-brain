@@ -1,6 +1,6 @@
 // Панель «Встречи сегодня» (issue #218).
 import { assertEquals } from "jsr:@std/assert";
-import { todayMeetings, dayBounds } from "./meetings-today.ts";
+import { todayMeetings, dayBounds, type RecorderPresence } from "./meetings-today.ts";
 import type { GEvent } from "../meeting-current/select.ts";
 
 const NOW = new Date("2026-09-03T12:00:00Z");
@@ -66,4 +66,65 @@ Deno.test("границы дня считаются в поясе пользов
 Deno.test("для UTC-пояса границы совпадают с календарными сутками", () => {
   const { timeMin } = dayBounds("2026-09-03T12:00:00Z", 0);
   assertEquals(timeMin, "2026-09-03T00:00:00.000Z");
+});
+
+// ── ON AIR: «ты сам в этом звонке» (решение владельца 04.09.2026) ─────────────
+// Присутствие приходит из heartbeat рекордера: on_call (вход микрофона держит другое
+// приложение) и recording (пишем) — два независимых факта, см.
+// docs/decisions/2026-09-04-on-air-v-panele-vstrech.md.
+const presence = (over: Partial<RecorderPresence> = {}): RecorderPresence => ({
+  meetingKey: "x:2026-09-03",
+  onCall: true,
+  recording: false,
+  lastSeen: NOW.toISOString(),
+  ...over,
+});
+
+Deno.test("без данных о присутствии флаги не зажигаются", () => {
+  const out = todayMeetings([ev({ id: "x" })], NOW, link, null);
+  assertEquals([out[0].on_call, out[0].recording], [false, false]);
+});
+
+Deno.test("ON AIR горит только у встречи, чей ключ назвал рекордер", () => {
+  const out = todayMeetings([
+    ev({ id: "x", start: { dateTime: "2026-09-03T11:45:00Z" }, end: { dateTime: "2026-09-03T12:30:00Z" } }),
+    ev({ id: "y", start: { dateTime: "2026-09-03T11:45:00Z" }, end: { dateTime: "2026-09-03T12:30:00Z" } }),
+  ], NOW, link, presence());
+  const byId = Object.fromEntries(out.map((m) => [m.id, m]));
+  assertEquals([byId.x.on_call, byId.y.on_call], [true, false]);
+});
+
+Deno.test("протухший heartbeat не зажигает ON AIR", () => {
+  // Пока звонок идёт, рекордер шлёт keep-alive раз в 2 минуты. Тишина дольше пяти минут —
+  // это спящий ноут или отвалившаяся сеть, а не «человек всё ещё в звонке».
+  const stale = new Date(NOW.getTime() - 6 * 60_000).toISOString();
+  const out = todayMeetings([ev({ id: "x" })], NOW, link, presence({ lastSeen: stale }));
+  assertEquals([out[0].on_call, out[0].recording], [false, false]);
+});
+
+Deno.test("звонок без записи: ON AIR горит, REC нет", () => {
+  const out = todayMeetings([ev({ id: "x" })], NOW, link, presence({ recording: false }));
+  assertEquals([out[0].on_call, out[0].recording], [true, false]);
+});
+
+Deno.test("запись зажигает и ON AIR, и REC", () => {
+  const out = todayMeetings([ev({ id: "x" })], NOW, link, presence({ recording: true }));
+  assertEquals([out[0].on_call, out[0].recording], [true, true]);
+});
+
+Deno.test("затянувшаяся встреча остаётся ON AIR после конца слота", () => {
+  // Слот кончился, но рекордер всё ещё видит этот звонок — значит люди говорят. Гасить
+  // строку как «прошедшую» нельзя: ограничение по времени даёт сам рекордер (окно ±10 мин
+  // у meeting-current), сервер проверяет только свежесть heartbeat.
+  const out = todayMeetings([ev({
+    id: "x", start: { dateTime: "2026-09-03T10:30:00Z" }, end: { dateTime: "2026-09-03T11:55:00Z" },
+  })], NOW, link, presence());
+  assertEquals([out[0].is_past, out[0].on_call], [true, true]);
+});
+
+Deno.test("ключ без даты не считается совпадением", () => {
+  // identity_key рекордера — «<uid>:<дата>»; сравнение по одному uid склеило бы серию
+  // повторяющихся встреч в одну и зажгло ON AIR на вчерашнем экземпляре.
+  const out = todayMeetings([ev({ id: "x" })], NOW, link, presence({ meetingKey: "x" }));
+  assertEquals(out[0].on_call, false);
 });
