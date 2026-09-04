@@ -92,6 +92,20 @@ for i in $(seq 0 $((COUNT - 1))); do
   T="$(printf '%s' "$PRS" | jq -r ".[$i].title")"
   M="$(printf '%s' "$PRS" | jq -r ".[$i].mergeable")"
   ST="$(printf '%s' "$PRS" | jq -r ".[$i].mergeStateStatus")"
+  # UNKNOWN — это «GitHub ещё не считал», а не «не влить». Мержабельность вычисляется ЛЕНИВО,
+  # по запросу: первый ответ про свежий PR (или про любой после сдвига main) приходит UNKNOWN,
+  # а следующий — уже CLEAN. Считать это отказом нельзя: скрипт перескочил бы годный PR и
+  # раскатал СЛЕДУЮЩИЙ, чего владелец не ждёт. Поэтому переспрашиваем, а пропускаем лишь то,
+  # что осталось неопределённым и после повторов.
+  ATTEMPT=0
+  while { [ "$M" = "UNKNOWN" ] || [ "$ST" = "UNKNOWN" ]; } && [ "$ATTEMPT" -lt 3 ]; do
+    ATTEMPT=$((ATTEMPT + 1))
+    say "#$N: состояние ещё не посчитано — переспрашиваю ($ATTEMPT/3)"
+    sleep 10
+    FRESH="$(gh pr view "$N" --repo "$REPO" --json mergeable,mergeStateStatus 2>/dev/null)" || break
+    M="$(printf '%s' "$FRESH" | jq -r '.mergeable')"
+    ST="$(printf '%s' "$FRESH" | jq -r '.mergeStateStatus')"
+  done
   if [ "$M" = "MERGEABLE" ] && [ "$ST" = "CLEAN" ]; then
     NUM="$N"; TITLE="$T"; MERGEABLE="$M"; STATE="$ST"
     say "Кандидат: #$NUM «${TITLE}» (mergeable=$MERGEABLE, состояние=$STATE)"
@@ -103,7 +117,7 @@ for i in $(seq 0 $((COUNT - 1))); do
   case "$ST" in
     DIRTY)            REASON="$REASON Конфликт с main — нужно развести руками." ;;
     UNSTABLE|BLOCKED) REASON="$REASON Есть красный или не добежавший чек." ;;
-    UNKNOWN)          REASON="$REASON GitHub ещё считает состояние." ;;
+    UNKNOWN)          REASON="$REASON GitHub не посчитал состояние даже после трёх попыток." ;;
   esac
   say "Пропускаю #$N «${T}»: $REASON"
   SKIPPED="$SKIPPED $N"
