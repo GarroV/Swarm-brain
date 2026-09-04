@@ -316,6 +316,10 @@ export type TodayMeeting = {
   is_now: boolean;
   is_past: boolean;
   attendees: number;
+  /** Ты сам в этом звонке прямо сейчас (сигнал рекордера) — строка показывает `ON AIR`. */
+  on_call: boolean;
+  /** …и рекордер его пишет — рядом с `ON AIR` встаёт `REC`. */
+  recording: boolean;
 };
 /** `reason` различает причины пустоты: панель по ним рисует РАЗНОЕ (кнопка vs пустое состояние). */
 export type TodayMeetings = {
@@ -327,9 +331,9 @@ export async function fetchTodayMeetings(): Promise<TodayMeetings> {
   if (DEV_MODE) {
     const at = (h: number, m: number) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
     return { meetings: [
-      { id: "m1", title: "Dodo Pizza Bulgaria", starts_at: at(9, 0), ends_at: at(10, 0), join_url: "https://meet.example/bg", is_now: false, is_past: true, attendees: 4 },
-      { id: "m2", title: "IMF — слот под комитет", starts_at: at(14, 0), ends_at: at(15, 0), join_url: "https://meet.example/imf", is_now: true, is_past: false, attendees: 6 },
-      { id: "m3", title: "1:1 с Антоном", starts_at: at(17, 30), ends_at: at(18, 0), join_url: null, is_now: false, is_past: false, attendees: 1 },
+      { id: "m1", title: "Dodo Pizza Bulgaria", starts_at: at(9, 0), ends_at: at(10, 0), join_url: "https://meet.example/bg", is_now: false, is_past: true, attendees: 4, on_call: false, recording: false },
+      { id: "m2", title: "IMF — слот под комитет", starts_at: at(14, 0), ends_at: at(15, 0), join_url: "https://meet.example/imf", is_now: true, is_past: false, attendees: 6, on_call: true, recording: true },
+      { id: "m3", title: "1:1 с Антоном", starts_at: at(17, 30), ends_at: at(18, 0), join_url: null, is_now: false, is_past: false, attendees: 1, on_call: false, recording: false },
     ] };
   }
   // Смещение с ОБРАТНЫМ знаком: getTimezoneOffset даёт минуты до UTC, серверу нужно
