@@ -230,7 +230,7 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 | `meetAdmin` | — | **Desktop-ревью встреч (master-detail)** | `screens/MeetAdminScreen.tsx` |
 | `more` | — | Ещё (карта системы / настройки / команда / админ) | inline `MoreScreen` в RoyApp |
 | `map` | — | Карта системы (iframe на `/system-map.html`) | inline `MapScreen` в RoyApp |
-| `settings` | — | Настройки | `SettingsScreen.tsx` |
+| `settings` | — | **Профиль сотрудника**: шапка (кто я + карандаш) · сетка плиток подключений со статусом · «Настройки» списком. Плитки заменили девять свёрнутых секций-аккордеонов, где статус был виден только после раскрытия каждой (решение владельца 04.09.2026, [decisions/2026-09-04-profile-connectors.md](decisions/2026-09-04-profile-connectors.md)). Состояния плитки: `connected` · `expiring` · **`expired`** · `off`; `expired` намеренно отличается от `off` цветом и подложкой — протухший токен требует ПЕРЕподключения (урок [#175](https://github.com/GarroV/Swarm-brain/issues/175)). Модель статусов — чистая, с тестами: `lib/connectors.ts` (+ `.test.ts`). Плитка Telegram показывает правду уже сейчас (`me.telegram_id > 0`), но кнопки привязки нет до [#92](https://github.com/GarroV/Swarm-brain/issues/92) | `SettingsScreen.tsx`, `components/profile/{ProfileHeader,ConnectorsSection,ConnectorTile,TelegramPanel}.tsx`, `lib/connectors.ts` |
 | `team` | — | Команда | `TeamScreen.tsx` |
 | `admin` | — | Системная админка | `AdminScreen.tsx` |
 

@@ -11,6 +11,11 @@ import {
 import { getInitData } from "@/lib/telegram";
 import { countryCode } from "@/lib/countries";
 import type { Me, Integration, GranolaNote } from "@/types";
+import { ProfileHeader } from "@/components/profile/ProfileHeader";
+import { ConnectorsSection } from "@/components/profile/ConnectorsSection";
+import { TelegramPanel } from "@/components/profile/TelegramPanel";
+import { SectionLabel } from "@/components/roy/ui";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -744,6 +749,7 @@ function ClaudeDesktopSection() {
 
 export function SettingsScreen() {
   const [me, setMe] = useState<Me | null>(null);
+  const [editing, setEditing] = useState(false);
   // В браузере getInitData() пустой → показываем выход; внутри Telegram — нет.
   const isWebSession = !getInitData();
 
@@ -752,21 +758,30 @@ export function SettingsScreen() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4 space-y-3">
-        <Section icon="team" title="Профиль">
-          {me ? <ProfileSection me={me} /> : <p className="text-sm text-muted-foreground">Загрузка…</p>}
-        </Section>
-        <Section icon="doc" title="Granola">
-          <GranolaSection />
-        </Section>
-        <Section icon="cal" title="Google-календарь">
-          <GoogleCalendarSection />
-        </Section>
-        <Section icon="mic" title="bumblebee — запись встреч (Mac)">
-          <RecorderSection />
-        </Section>
-        <Section icon="spark" title="Claude Desktop">
-          <ClaudeDesktopSection />
-        </Section>
+        {me ? (
+          <>
+            <ProfileHeader me={me} open={editing} onToggle={() => setEditing((v) => !v)} />
+            {editing && (
+              <div className="rounded-[14px] border border-accent-line bg-surface px-3 py-3 dark:backdrop-blur-sm">
+                <ProfileSection me={me} />
+              </div>
+            )}
+            <ConnectorsSection
+              me={me}
+              panels={{
+                calendar: <GoogleCalendarSection />,
+                recorder: <RecorderSection />,
+                telegram: <TelegramPanel me={me} />,
+                granola: <GranolaSection />,
+                claude: <ClaudeDesktopSection />,
+              }}
+            />
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">Загрузка…</p>
+        )}
+
+        <SectionLabel className="pt-1">Настройки</SectionLabel>
         <Section icon="note" title="Дайджест">
           <DigestSection isAdmin={!!me?.is_admin} />
         </Section>
