@@ -8,23 +8,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyAgentToken, AgentAuthError } from "../_shared/agent-auth.ts";
 import { type GEvent, pickCurrentEvent } from "./select.ts";
 import { joinLink } from "./join-link.ts";
+// Обмен refresh→access и запрос событий — общий модуль (его же зовёт swarm-api для панели
+// «Встречи сегодня», issue #218). Здесь своей копии больше нет.
+import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-const CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID") ?? "";
-const CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET") ?? "";
-
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-}
-
-async function accessToken(refresh: string): Promise<string | null> {
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, refresh_token: refresh, grant_type: "refresh_token" }),
-  });
-  if (!res.ok) return null;
-  return (await res.json()).access_token ?? null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -48,13 +38,8 @@ Deno.serve(async (req: Request) => {
   // Окно: чуть назад (идущая) + вперёд на 10 мин (предстоящая, для упреждающего «через N мин»).
   const timeMin = new Date(now.getTime() - 2 * 60_000).toISOString();
   const timeMax = new Date(now.getTime() + 10 * 60_000).toISOString();
-  const q = new URLSearchParams({ singleEvents: "true", orderBy: "startTime", timeMin, timeMax, maxResults: "10" });
-  const calRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${q}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!calRes.ok) return json({ meeting: null, reason: "calendar_api_error" });
-
-  const items = ((await calRes.json()).items ?? []) as GEvent[];
+  const items = await listEvents(token, timeMin, timeMax, 10);
+  if (!items) return json({ meeting: null, reason: "calendar_api_error" });
   // Выбор события среди перекрывающихся — скоринг по RSVP/организатору/плотности (см. select.ts).
   // Фаза B (привязка по ссылке комнаты) ляжет поверх коротким замыканием при room-match.
   const ev = pickCurrentEvent(items, now.getTime());

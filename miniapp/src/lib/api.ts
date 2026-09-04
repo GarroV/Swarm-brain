@@ -304,6 +304,44 @@ export async function logout(): Promise<void> {
   await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
 }
 
+// ── Встречи сегодня из календаря (issue #218) ────────────────────────────────
+// Панель правой колонки главной. Календарь читает СЕРВЕР по OAuth-интеграции — у браузера
+// доступа к календарю нет. Пояс шлём свой: сервер живёт в UTC и не знает, какие у нас сутки.
+export type TodayMeeting = {
+  id: string;
+  title: string | null;
+  starts_at: string;
+  ends_at: string;
+  join_url: string | null;
+  is_now: boolean;
+  is_past: boolean;
+  attendees: number;
+  /** Ты сам в этом звонке прямо сейчас (сигнал рекордера) — строка показывает `ON AIR`. */
+  on_call: boolean;
+  /** …и рекордер его пишет — рядом с `ON AIR` встаёт `REC`. */
+  recording: boolean;
+};
+/** `reason` различает причины пустоты: панель по ним рисует РАЗНОЕ (кнопка vs пустое состояние). */
+export type TodayMeetings = {
+  meetings: TodayMeeting[];
+  reason?: "not_connected" | "token_expired" | "calendar_error";
+};
+
+export async function fetchTodayMeetings(): Promise<TodayMeetings> {
+  if (DEV_MODE) {
+    const at = (h: number, m: number) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
+    return { meetings: [
+      { id: "m1", title: "Dodo Pizza Bulgaria", starts_at: at(9, 0), ends_at: at(10, 0), join_url: "https://meet.example/bg", is_now: false, is_past: true, attendees: 4, on_call: false, recording: false },
+      { id: "m2", title: "IMF — слот под комитет", starts_at: at(14, 0), ends_at: at(15, 0), join_url: "https://meet.example/imf", is_now: true, is_past: false, attendees: 6, on_call: true, recording: true },
+      { id: "m3", title: "1:1 с Антоном", starts_at: at(17, 30), ends_at: at(18, 0), join_url: null, is_now: false, is_past: false, attendees: 1, on_call: false, recording: false },
+    ] };
+  }
+  // Смещение с ОБРАТНЫМ знаком: getTimezoneOffset даёт минуты до UTC, серверу нужно
+  // «насколько местное время впереди UTC» (Белград летом +120).
+  const tz = -new Date().getTimezoneOffset();
+  return apiFetch<TodayMeetings>(`/calendar/today?tz_offset=${tz}`);
+}
+
 export async function fetchConfig(): Promise<{ allowed_markets: string[] }> {
   if (DEV_MODE) return { allowed_markets: ["RS","HR","SI","ME","BG","ES","RO","PL","EE","LT","CY","HU","MD","BY","TR","AZ","AM","GE","TJ","KG","MN","NG","MX","ID","RU","UA","KZ"] };
   return apiFetch<{ allowed_markets: string[] }>("/config");

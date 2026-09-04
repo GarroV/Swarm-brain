@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useRoyNav } from "../nav";
 import { NavHeader, SectionLabel, Chip, Segmented } from "../ui";
 import { createTask, updateTask, fetchTask, fetchConfig, fetchUsers } from "@/lib/api";
-import { matchesLens, matchesList } from "@/lib/smartLists";
+import { matchesLens, matchesList, DEFAULT_STATUSES } from "@/lib/smartLists";
 import { readSavedTasksView } from "@/components/tasks/useReminderTasks";
 import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
@@ -89,10 +89,11 @@ export function NewTask({ id }: { id?: string }) {
         const view = readSavedTasksView();
         const lens = view?.lens ?? "mine";
         const list = view?.activeList ?? "today";
+        const statuses = view?.statuses ? new Set(view.statuses) : DEFAULT_STATUSES;
         const lensOk = matchesLens(created, lens, me);
         // Период тоже учитываем: с включённой «Этой неделей» задача вне диапазона так же
         // невидима, и «пропала» вернулось бы ровно тем же способом (фича периода пришла из main).
-        if (lensOk && matchesList(created, list, new Date(), view?.range ?? null)) setTab("task");
+        if (lensOk && matchesList(created, list, new Date(), view?.range ?? null, statuses)) setTab("task");
         else openTasks(lensOk ? lens : "all", "all");
       }
     } catch {

@@ -105,12 +105,17 @@ struct SwarmClient {
     // POST /meeting-heartbeat — «рекордер жив» + статус записи + версия сборки. Для серверного
     // watchdog (оборванная запись / истечение токена). Best-effort: ошибки глотаем — heartbeat
     // не критичен и не должен мешать записи/отправке.
-    func heartbeat(recording: Bool, version: Int) async {
+    //
+    // `onCall`/`meetingKey` — присутствие человека для панели «Встречи сегодня» (`ON AIR`):
+    // в звонке можно сидеть без записи, поэтому это отдельные факты от `recording`.
+    func heartbeat(recording: Bool, version: Int, onCall: Bool = false, meetingKey: String? = nil) async {
         var req = URLRequest(url: url("/meeting-heartbeat"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         authed(&req)
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["recording": recording, "version": version])
+        var body: [String: Any] = ["recording": recording, "version": version, "on_call": onCall]
+        if let meetingKey { body["meeting_key"] = meetingKey }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         _ = try? await Self.session.data(for: req)
     }
 
@@ -150,6 +155,27 @@ struct SwarmClient {
     // Статус встречи для рекордера: `summary` (транскрибация: ""/processing/done/failed) гасит капсулу
     // «в обработке»; `published` (status=='in_base') — сигнал удалить локальный бэкап аудио. Возвращает
     // статусы только встреч вызывающего (claim_owner). Сетевой/4xx сбой бросаем наверх (бэкап не трогаем).
+    /// Контекст созвона: тезисы прошлой встречи с этой стороной + висящие задачи (issue #226).
+    /// Сеть здесь НЕ критична: не ответило — панель просто не покажет блок, запись не страдает.
+    /// Поэтому вызывающий ловит ошибку и молчит, а не ретраит и не мешает записи.
+    func meetingContext(title: String?) async throws -> MeetingContext {
+        var req = URLRequest(url: url("meeting-context"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        authed(&req)
+        // Тело — через Codable, а не словарь с кастом: каст молча терял поля, и сервер
+        // отвечал бы «no_country» при живом названии. Название — единственный сигнал
+        // страны (владелец: «явное совпадение… все встречи со странами прописаны в названии»).
+        struct ContextRequest: Encodable { let title: String }
+        req.httpBody = try JSONEncoder().encode(ContextRequest(title: title ?? ""))
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else {
+            throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "")
+        }
+        return try JSONDecoder().decode(MeetingContext.self, from: data)
+    }
+
     func fetchMeetingStatuses(_ ids: [String]) async throws -> [String: MeetingStatus] {
         guard !ids.isEmpty else { return [:] }
         var comps = URLComponents(url: url("/meeting-status"), resolvingAgainstBaseURL: false)!

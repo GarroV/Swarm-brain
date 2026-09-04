@@ -66,7 +66,8 @@ export function DashBlock({
   onRetry?: () => void;
   empty: boolean;
   emptyText: string;
-  onHead: () => void;
+  /** Переход в раздел по клику на шапку. Не передан → шапка не кликабельна (у панели нет своего экрана). */
+  onHead?: () => void;
   /** Быстрое «+» в шапке (например создать задачу, не уходя с дашборда). */
   onAdd?: () => void;
   /** aria-label/подсказка кнопки «+». */
@@ -121,6 +122,12 @@ export function DashBlock({
             {headAction ?? "Открыть"}
             <RoyIcon name="cright" size={14} strokeWidth={2} />
           </button>
+        </div>
+      ) : !onHead ? (
+        // Без своего экрана: обычный заголовок, не кнопка — иначе клик обещает переход,
+        // которого не будет.
+        <div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-3 text-left">
+          {headLeft}
         </div>
       ) : (
         <button
