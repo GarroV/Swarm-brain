@@ -214,7 +214,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
                 </div>
               </div>
             ) : (
-              <TezisyBlocks text={meeting.draft_notes_md ?? ""} />
+              <TezisyBlocks text={meeting.draft_notes_md ?? ""} copyMeta={{ title: meeting.title, date: meeting.started_at }} />
             )
           ) : summaryTerminal ? (
             // Обработка завершена, но тезисов нет (пусто/сбой) — даём «Переобработать» из транскрипта,

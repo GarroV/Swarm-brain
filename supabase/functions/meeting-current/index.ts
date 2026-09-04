@@ -1,6 +1,6 @@
 // «Какая встреча идёт сейчас» для рекордера — по серверной Google-интеграции.
 // Agent-токен (smcp_) → telegram_id → refresh_token из user_integrations → access_token →
-// Google Calendar API (события now±30мин) → идущее событие → идентичность для claim.
+// Google Calendar API (события now−2мин…now+LOOKAHEAD_MIN) → идущее событие → идентичность для claim.
 // Рекордеру не нужен ни macOS-Календарь, ни доступ к календарю на маке.
 //
 // Деплой: supabase functions deploy meeting-current --no-verify-jwt (хитит рекордер с Bearer smcp_).
@@ -13,6 +13,9 @@ import { joinLink } from "./join-link.ts";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+// За сколько минут до начала встреча считается «предстоящей» и рекордер предлагает запись.
+const LOOKAHEAD_MIN = 5;
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
@@ -35,9 +38,12 @@ Deno.serve(async (req: Request) => {
   if (!token) return json({ meeting: null, reason: "token_refresh_failed" });
 
   const now = new Date();
-  // Окно: чуть назад (идущая) + вперёд на 10 мин (предстоящая, для упреждающего «через N мин»).
+  // Окно: чуть назад (идущая) + вперёд на LOOKAHEAD_MIN (предстоящая, для упреждающего «через N мин»).
+  // Порог упреждения задаёт ТОЛЬКО сервер: рекордер показывает «через N мин» по тому, что пришло
+  // (AppDelegate.swift, meetingSubtitle) — своего порога у него нет. Было 10 мин, с 04.09.2026 — 5
+  // (решение владельца: «есть запрос на уведомление о встрече за 5 минут, а не за десять»).
   const timeMin = new Date(now.getTime() - 2 * 60_000).toISOString();
-  const timeMax = new Date(now.getTime() + 10 * 60_000).toISOString();
+  const timeMax = new Date(now.getTime() + LOOKAHEAD_MIN * 60_000).toISOString();
   const items = await listEvents(token, timeMin, timeMax, 10);
   if (!items) return json({ meeting: null, reason: "calendar_api_error" });
   // Выбор события среди перекрывающихся — скоринг по RSVP/организатору/плотности (см. select.ts).
