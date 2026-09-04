@@ -53,3 +53,41 @@ final class PresenceBeaconTests: XCTestCase {
             lastSentAt: now, now: now.addingTimeInterval(PresenceBeacon.keepAlive)))
     }
 }
+
+// ── Слияние состояния для heartbeat (issue #242) ─────────────────────────────
+// Дефект был в том, что «звонка нет» (явный nil-ключ) подменялся ПРОШЛЫМ ключом: сохранённое
+// состояние вечно отличалось от текущего, и heartbeat уходил на каждом тике детекта — 144
+// запроса в час вместо тишины в простое.
+extension PresenceBeaconTests {
+    func testЯвноеСостояниеБеретсяКакЕсть() {
+        let merged = PresenceBeacon.stateForHeartbeat(
+            explicit: PresenceBeacon.State(onCall: false, meetingKey: nil),
+            previous: PresenceBeacon.State(onCall: true, meetingKey: "x:2026-09-04"),
+            recordingKey: nil)
+        XCTAssertEqual(merged, PresenceBeacon.State(onCall: false, meetingKey: nil))
+    }
+
+    func testБезЯвногоСостоянияНаследуемПрошлое() {
+        // Обычный heartbeat (старт, maintenanceTick) присутствие не знает — и не должен его гасить.
+        let merged = PresenceBeacon.stateForHeartbeat(
+            explicit: nil,
+            previous: PresenceBeacon.State(onCall: true, meetingKey: "x:2026-09-04"),
+            recordingKey: nil)
+        XCTAssertEqual(merged, PresenceBeacon.State(onCall: true, meetingKey: "x:2026-09-04"))
+    }
+
+    func testКлючЗаписиВажнееПрошлого() {
+        // Пишем встречу — ключ берём у записи: календарный детект в этот момент может смотреть
+        // уже на следующий слот.
+        let merged = PresenceBeacon.stateForHeartbeat(
+            explicit: nil,
+            previous: PresenceBeacon.State(onCall: true, meetingKey: "старый:2026-09-04"),
+            recordingKey: "запись:2026-09-04")
+        XCTAssertEqual(merged, PresenceBeacon.State(onCall: true, meetingKey: "запись:2026-09-04"))
+    }
+
+    func testБезПрошлогоИБезЯвногоСостоянияЗвонкаНет() {
+        let merged = PresenceBeacon.stateForHeartbeat(explicit: nil, previous: nil, recordingKey: nil)
+        XCTAssertEqual(merged, PresenceBeacon.State(onCall: false, meetingKey: nil))
+    }
+}

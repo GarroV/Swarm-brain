@@ -332,16 +332,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Вместе с этим уходит присутствие (`on_call` + ключ встречи) — по нему панель «Встречи
     // сегодня» рисует `ON AIR`. Ключ берём у записи, если она идёт: там он точный, а календарный
     // детект в этот момент может уже смотреть на следующий слот.
-    private func sendHeartbeat(onCall: Bool? = nil, meetingKey: String? = nil) {
+    // `presence` — ЯВНОЕ состояние от маяка (в том числе «звонка нет» с пустым ключом); nil
+    // означает «присутствие не знаю, наследуй прошлое». Двух опциональных полей здесь быть не
+    // должно: с ними «не передали» и «передали nil» сливались, и heartbeat молотил каждый тик
+    // (issue #242). Слияние — в RecorderKit.PresenceBeacon.stateForHeartbeat, оно под тестами.
+    private func sendHeartbeat(presence: PresenceBeacon.State? = nil) {
         guard let cfg = config, configError == nil else { return }
         let recording = isRecording
-        let call = onCall ?? (presenceSent?.onCall ?? false)
-        let key = meetingKey ?? (isRecording ? identity?.key : presenceSent?.meetingKey)
-        presenceSent = PresenceBeacon.State(onCall: call, meetingKey: key)
+        let state = PresenceBeacon.stateForHeartbeat(
+            explicit: presence,
+            previous: presenceSent,
+            recordingKey: isRecording ? identity?.key : nil)
+        presenceSent = state
         presenceSentAt = Date()
         Task {
             await SwarmClient(config: cfg).heartbeat(
-                recording: recording, version: Updater.currentBuild, onCall: call, meetingKey: key)
+                recording: recording, version: Updater.currentBuild,
+                onCall: state.onCall, meetingKey: state.meetingKey)
         }
     }
 
@@ -352,7 +359,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let now = PresenceBeacon.State(onCall: onCall, meetingKey: onCall ? key : nil)
         guard PresenceBeacon.shouldSend(
             previous: presenceSent, current: now, lastSentAt: presenceSentAt, now: Date()) else { return }
-        sendHeartbeat(onCall: now.onCall, meetingKey: now.meetingKey)
+        sendHeartbeat(presence: now)
     }
 
     // Тихий авто-апдейт: только в простое (запись/отправку не рвём) и один раз за сессию (после

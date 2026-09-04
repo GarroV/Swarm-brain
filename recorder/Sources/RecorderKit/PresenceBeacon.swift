@@ -26,6 +26,26 @@ public enum PresenceBeacon {
         }
     }
 
+    /// Что отправить в heartbeat: явное состояние берётся КАК ЕСТЬ, иначе наследуем прошлое.
+    ///
+    /// Разделение важнее, чем кажется: обычный heartbeat (старт, maintenanceTick, смена статуса
+    /// записи) о присутствии ничего не знает и гасить его не должен, а маяк присутствия наоборот
+    /// обязан уметь сказать «звонка нет» — то есть передать ПУСТОЙ ключ. Пока это были два
+    /// опциональных поля с `??`, эти два случая были неразличимы: явный nil подменялся прошлым
+    /// ключом, сохранённое состояние вечно расходилось с текущим, и heartbeat уходил на каждом
+    /// тике детекта — 144 запроса в час вместо тишины (issue #242).
+    public static func stateForHeartbeat(
+        explicit: State?,
+        previous: State?,
+        recordingKey: String?
+    ) -> State {
+        if let explicit { return explicit }
+        return State(
+            onCall: previous?.onCall ?? false,
+            meetingKey: recordingKey ?? previous?.meetingKey,
+        )
+    }
+
     public static func shouldSend(
         previous: State?,
         current: State,
