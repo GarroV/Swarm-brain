@@ -20,6 +20,16 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     private var timerLabel: NSTextField?
     private var micTrack: NSView?, sysTrack: NSView?
     private let micFill = CALayer(), sysFill = CALayer()
+    // Блок «С прошлого раза» (issue #226): две НЕЗАВИСИМЫЕ секции — тезисы последней встречи
+    // с этой стороной и задачи самой стороны. Живёт ВНУТРИ прокрутки над пометками — тогда
+    // раскрытие полного текста получает прокрутку бесплатно, а поле ввода остаётся внизу
+    // окна («съезд на поле»).
+    private var contextStack: NSStackView?
+    /// Запомненный конфиг: из него берётся адрес веба для ссылки на задачу.
+    private var cfg: SwarmConfig?
+    private var context: MeetingContext?
+    private var tezisyExpanded = false
+    private var tasksExpanded = false
     private var timer: Timer?, levelTimer: Timer?
     private var micLevel: (() -> Float)?, sysLevel: (() -> Float)?, onStop: (() -> Void)?
     private var onCollapse: (() -> Void)?      // клик по марке в блокноте → свернуть в пилюлю (виджет)
@@ -40,8 +50,12 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
 
     /// Старт записи: сбрасываем буфер/таймстампы, показываем блокнот.
     func show(config: SwarmConfig, initialTitle: String?, micLevel: @escaping () -> Float, systemLevel: @escaping () -> Float, onStop: @escaping () -> Void, onCollapse: @escaping () -> Void) {
+        cfg = config
         self.micLevel = micLevel; self.sysLevel = systemLevel; self.onStop = onStop; self.onCollapse = onCollapse
         buffer.removeAll()
+        // Контекст прошлой встречи обязан уйти вместе с прошлой записью: иначе на следующем
+        // созвоне человек увидел бы блок предыдущего (и решил бы, что это про эту встречу).
+        setContext(nil)
         clearPersistedNotes()   // новая запись — прошлый персист пометок больше не актуален
         editedTitle = nil
         startedAt = Date()
@@ -190,8 +204,16 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 13
         stack.translatesAutoresizingMaskIntoConstraints = false
         notesStack = stack
+        let ctx = NSStackView(); ctx.orientation = .vertical; ctx.alignment = .leading; ctx.spacing = 7
+        ctx.translatesAutoresizingMaskIntoConstraints = false
+        ctx.isHidden = true            // до ответа сервера блока нет вовсе, а не пустая рамка
+        contextStack = ctx
+        let inner = NSStackView(views: [ctx, stack])
+        inner.orientation = .vertical; inner.alignment = .leading; inner.spacing = 13
+        inner.translatesAutoresizingMaskIntoConstraints = false
+
         let doc = FlippedView(); doc.translatesAutoresizingMaskIntoConstraints = false
-        doc.addSubview(stack)
+        doc.addSubview(inner)
         let scroll = NSScrollView(); scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.hasVerticalScroller = true; scroll.drawsBackground = false; scroll.documentView = doc
         NSLayoutConstraint.activate([
@@ -199,10 +221,10 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
             doc.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
             doc.trailingAnchor.constraint(equalTo: scroll.contentView.trailingAnchor),
             doc.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
-            stack.topAnchor.constraint(equalTo: doc.topAnchor),
-            stack.leadingAnchor.constraint(equalTo: doc.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: doc.trailingAnchor),
-            stack.bottomAnchor.constraint(equalTo: doc.bottomAnchor)
+            inner.topAnchor.constraint(equalTo: doc.topAnchor),
+            inner.leadingAnchor.constraint(equalTo: doc.leadingAnchor),
+            inner.trailingAnchor.constraint(equalTo: doc.trailingAnchor),
+            inner.bottomAnchor.constraint(equalTo: doc.bottomAnchor)
         ])
 
         let pen = iconView("pencil", size: 15, color: Self.amber)
@@ -303,6 +325,215 @@ final class LiveNotesPanel: NSObject, NSTextFieldDelegate {
     func setSystemAudioWarning(_ on: Bool) {
         sysFill.backgroundColor = (on ? Self.rec : Self.amberHi).cgColor
         sysTrack?.toolTip = on ? "Собеседник не пишется — проверь вывод звука (наушники?)" : nil
+    }
+
+    // ── Блок «С прошлого раза» ───────────────────────────────────────────────────
+    /// Что реально отрисовано в блоке — для режима `--selftest-notes`. Скриншот показывает
+    /// пиксели, а проверить нужно СОДЕРЖИМОЕ: собрались ли строки, те ли, и меняются ли они
+    /// при раскрытии. Возвращает подписи строк сверху вниз.
+    var contextRowsForTests: [String] {
+        (contextStack?.views ?? []).map { v in
+            if let b = v as? NSButton { return b.title }
+            if let t = v as? NSTextField { return t.stringValue }
+            return String(describing: type(of: v))
+        }
+    }
+    /// Высота окна панели — ловит «блок разъехался и выдавил поле ввода за край».
+    var panelHeightForTests: CGFloat { panel?.frame.height ?? 0 }
+    /// Сколько пометок ЧЕЛОВЕКА в буфере. Режим самопроверки печатает это после setContext:
+    /// так видно, что показ контекста не подмешал ни одной строки в то, что уйдёт к встрече.
+    var noteBufferCountForTests: Int { buffer.count }
+    /// Раскрыть секции из режима самопроверки (в жизни это делает клик человека).
+    func expandForTests(tezisy: Bool, tasks: Bool) {
+        tezisyExpanded = tezisy
+        tasksExpanded = tasks
+        renderContext()
+    }
+
+    /// Показать контекст созвона. Вызывается из AppDelegate после ответа `meeting-context`.
+    /// `nil` или пустой контекст — блок просто не появляется: пустая рамка читается как сбой.
+    ///
+    /// ⚠️ БАРЬЕР, который нельзя ломать (требование владельца 03.09.2026: «убедись, что
+    /// отображаемые тезисы и задачи не смешаются в транскрибцию встречи с теми тезисами,
+    /// что пользователь сам пишет»): контекст живёт ТОЛЬКО во вью `contextStack` и никогда
+    /// не попадает в `buffer` — он пополняется единственным местом, `addFromField()`, то
+    /// есть нажатием человека, и ровно `buffer` уходит на сервер в `flush()`. Ни setContext,
+    /// ни renderContext к буферу не обращаются; если однажды понадобится «добавить пункт из
+    /// контекста в пометки», это должно быть ЯВНЫМ действием человека, а не побочным
+    /// эффектом отрисовки.
+    func setContext(_ ctx: MeetingContext?) {
+        context = ctx
+        tezisyExpanded = false
+        tasksExpanded = false
+        renderContext()
+    }
+
+    private func renderContext() {
+        guard let box = contextStack else { return }
+        box.setViews([], in: .top)
+        guard let ctx = context, ctx.meeting != nil || !ctx.tasks.isEmpty else {
+            box.isHidden = true
+            return
+        }
+        box.isHidden = false
+
+        var rows: [NSView] = [sectionLabel("С ПРОШЛОГО РАЗА")]
+
+        if let prev = ctx.meeting {
+            let date = humanDate(prev.date)
+            let count = prev.total_bullets
+            rows.append(disclosureRow(
+                title: "Тезисы · \(date) · \(count) \(pluralPoints(count))",
+                expanded: tezisyExpanded,
+                action: #selector(toggleTezisy)))
+            if tezisyExpanded {
+                // Markdown в панели не рендерится, поэтому раскладываем его сами: «### Тема»
+                // становится подзаголовком, «- пункт» — строкой списка. Показывать сырые
+                // «###» и «- » человеку нельзя: он читает тезисы, а не разметку.
+                rows.append(contentsOf: renderedTezisy(prev.full_text))
+                if prev.truncated {
+                    rows.append(hintLabel("показано начало — полностью в вебе"))
+                }
+            } else {
+                for b in prev.bullets { rows.append(bulletLabel(b)) }
+                if count > prev.bullets.count {
+                    rows.append(hintLabel("ещё \(count - prev.bullets.count) — нажми, чтобы раскрыть"))
+                }
+            }
+        }
+
+        // Задачи — своя секция, НЕ связанная с тезисами выше: это задачи стороны созвона,
+        // а не той записи, чьи тезисы показаны («задачи и тезисы никак и не должны
+        // соприкасаться» — владелец 03.09.2026).
+        if !ctx.tasks.isEmpty {
+            let n = ctx.tasks.count
+            rows.append(disclosureRow(
+                title: "Задачи · \(n) \(pluralTasks(n))",
+                expanded: tasksExpanded,
+                action: #selector(toggleTasks)))
+            let shown = tasksExpanded ? ctx.tasks : Array(ctx.tasks.prefix(2))
+            for t in shown { rows.append(taskRow(t)) }
+            if !tasksExpanded && n > shown.count {
+                rows.append(hintLabel("ещё \(n - shown.count) — нажми, чтобы раскрыть"))
+            }
+        }
+
+        box.setViews(rows, in: .top)
+        NSLayoutConstraint.activate(rows.compactMap { r in
+            r.widthAnchor.constraint(equalTo: box.widthAnchor)
+        })
+    }
+
+    @objc private func toggleTezisy() { tezisyExpanded.toggle(); renderContext() }
+    @objc private func toggleTasks() { tasksExpanded.toggle(); renderContext() }
+
+    @objc private func openTask(_ sender: NSButton) {
+        // Рекордер не редактор задач: клик уводит в веб по существующему deep-link.
+        guard let id = sender.identifier?.rawValue, let c = cfg,
+              let u = URL(string: "\(c.webBaseURL)/?task=\(id)") else { return }
+        NSWorkspace.shared.open(u)
+    }
+
+    private func sectionLabel(_ text: String) -> NSTextField {
+        let l = NSTextField(labelWithString: text)
+        l.font = .monospacedSystemFont(ofSize: 9.5, weight: .semibold)
+        l.textColor = Self.mute
+        return l
+    }
+
+    private func disclosureRow(title: String, expanded: Bool, action: Selector) -> NSView {
+        let b = NSButton(title: (expanded ? "▾  " : "▸  ") + title, target: self, action: action)
+        b.isBordered = false; b.bezelStyle = .inline
+        b.contentTintColor = Self.amber
+        b.font = .systemFont(ofSize: 11.5, weight: .semibold)
+        b.alignment = .left
+        return b
+    }
+
+    private func bulletLabel(_ text: String) -> NSTextField {
+        let l = NSTextField(wrappingLabelWithString: "· " + text)
+        l.font = .systemFont(ofSize: 11.5); l.textColor = Self.ink
+        l.isSelectable = false; l.drawsBackground = false
+        return l
+    }
+
+    // Тезисы построчно: заголовок раздела → подзаголовок, пункт → строка с точкой,
+    // остальное → обычный абзац. Пустые строки съедаются (в markdown они разделители).
+    private func renderedTezisy(_ md: String) -> [NSView] {
+        var out: [NSView] = []
+        for raw in md.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { continue }
+            if line.hasPrefix("#") {
+                let heading = line.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces)
+                if !heading.isEmpty { out.append(headingLabel(heading)) }
+            } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
+                out.append(bulletLabel(String(line.dropFirst(2))))
+            } else {
+                out.append(bodyLabel(line))
+            }
+        }
+        return out
+    }
+
+    private func headingLabel(_ text: String) -> NSTextField {
+        let l = NSTextField(labelWithString: text)
+        l.font = .systemFont(ofSize: 11.5, weight: .semibold)
+        l.textColor = Self.amberHi
+        return l
+    }
+
+    private func bodyLabel(_ text: String) -> NSTextField {
+        let l = NSTextField(wrappingLabelWithString: text)
+        l.font = .systemFont(ofSize: 11.5); l.textColor = Self.ink
+        l.isSelectable = true; l.drawsBackground = false
+        return l
+    }
+
+    private func hintLabel(_ text: String) -> NSTextField {
+        let l = NSTextField(labelWithString: text)
+        l.font = .monospacedSystemFont(ofSize: 9.5, weight: .regular); l.textColor = Self.mute
+        return l
+    }
+
+    private func taskRow(_ t: MeetingContext.Task) -> NSView {
+        // Срок подписан всегда: «без срока» — тоже факт, а пустое место читается как обрезка.
+        let suffix = t.due_date.map { "  " + humanDate($0) } ?? "  без срока"
+        let b = NSButton(title: "○  " + t.title + suffix, target: self, action: #selector(openTask(_:)))
+        b.identifier = NSUserInterfaceItemIdentifier(t.id)
+        b.isBordered = false; b.bezelStyle = .inline
+        b.contentTintColor = Self.ink
+        b.font = .systemFont(ofSize: 11.5)
+        b.alignment = .left
+        b.toolTip = "Открыть задачу в вебе"
+        return b
+    }
+
+    private func humanDate(_ iso: String) -> String {
+        let inF = DateFormatter(); inF.dateFormat = "yyyy-MM-dd"
+        inF.locale = Locale(identifier: "en_US_POSIX")     // разбор ISO не зависит от локали машины
+        guard let d = inF.date(from: String(iso.prefix(10))) else { return iso }
+        let out = DateFormatter()
+        // Локаль ЖЁСТКО русская, а не `.current`: остальной текст блока русский, и на машине
+        // с английской системой получалось «Тезисы · 2 Sep · 12 пунктов» — смесь языков в
+        // одной строке. Когда у рекордера появится i18n-слой (#205), локаль поедет оттуда.
+        out.locale = Locale(identifier: "ru_RU")
+        out.setLocalizedDateFormatFromTemplate("d MMM")
+        return out.string(from: d)
+    }
+
+    private func pluralPoints(_ n: Int) -> String {
+        let m10 = n % 10, m100 = n % 100
+        if m10 == 1 && m100 != 11 { return "пункт" }
+        if (2...4).contains(m10) && !(12...14).contains(m100) { return "пункта" }
+        return "пунктов"
+    }
+
+    private func pluralTasks(_ n: Int) -> String {
+        let m10 = n % 10, m100 = n % 100
+        if m10 == 1 && m100 != 11 { return "задача" }
+        if (2...4).contains(m10) && !(12...14).contains(m100) { return "задачи" }
+        return "задач"
     }
 
     private func clearNotes() {

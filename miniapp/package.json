@@ -7,7 +7,7 @@
     "build": "next build && node scripts/gen-csp-headers.mjs && node scripts/sw-stamp.mjs out",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "deno test -A --no-check src/lib/"
+    "test": "deno test -A --no-check --config ../deno.json src/lib/"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

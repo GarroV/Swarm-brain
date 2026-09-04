@@ -81,27 +81,59 @@ if [ "$COUNT" = "0" ]; then
   exit 0
 fi
 
-NUM="$(printf '%s' "$PRS" | jq -r '.[0].number')"
-TITLE="$(printf '%s' "$PRS" | jq -r '.[0].title')"
-MERGEABLE="$(printf '%s' "$PRS" | jq -r '.[0].mergeable')"
-STATE="$(printf '%s' "$PRS" | jq -r '.[0].mergeStateStatus')"
-say "Кандидат: #$NUM «${TITLE}» (mergeable=$MERGEABLE, состояние=$STATE)"
-[ "$COUNT" -gt 1 ] && say "Ещё помечено: $((COUNT-1)) — они дождутся следующей ночи (по одному за прогон)."
-
-# ── Гейты ─────────────────────────────────────────────────────────────────────
-if [ "$MERGEABLE" != "MERGEABLE" ] || [ "$STATE" != "CLEAN" ]; then
-  REASON="не влит: mergeable=$MERGEABLE, состояние=$STATE."
-  case "$STATE" in
-    DIRTY)    REASON="$REASON Конфликт с main — нужно развести руками." ;;
+# Берём самый старый ГОДНЫЙ, а не просто самый старый. Раньше скрипт брал `.[0]` и при
+# негодном кандидате выходил — один PR с конфликтом в голове очереди блокировал раскатку
+# ЦЕЛИКОМ и молча: помечено три PR, чеки зелёные, а ночью не уезжает ничего (issue #239,
+# случай 04.09.2026 — #215 висел DIRTY с 03.09 и держал за собой #235 и #237).
+# «Один PR за ночь» сохраняется: перебор останавливается на первом годном.
+NUM=""; TITLE=""; SKIPPED=""
+for i in $(seq 0 $((COUNT - 1))); do
+  N="$(printf '%s' "$PRS" | jq -r ".[$i].number")"
+  T="$(printf '%s' "$PRS" | jq -r ".[$i].title")"
+  M="$(printf '%s' "$PRS" | jq -r ".[$i].mergeable")"
+  ST="$(printf '%s' "$PRS" | jq -r ".[$i].mergeStateStatus")"
+  # UNKNOWN — это «GitHub ещё не считал», а не «не влить». Мержабельность вычисляется ЛЕНИВО,
+  # по запросу: первый ответ про свежий PR (или про любой после сдвига main) приходит UNKNOWN,
+  # а следующий — уже CLEAN. Считать это отказом нельзя: скрипт перескочил бы годный PR и
+  # раскатал СЛЕДУЮЩИЙ, чего владелец не ждёт. Поэтому переспрашиваем, а пропускаем лишь то,
+  # что осталось неопределённым и после повторов.
+  ATTEMPT=0
+  while { [ "$M" = "UNKNOWN" ] || [ "$ST" = "UNKNOWN" ]; } && [ "$ATTEMPT" -lt 3 ]; do
+    ATTEMPT=$((ATTEMPT + 1))
+    say "#$N: состояние ещё не посчитано — переспрашиваю ($ATTEMPT/3)"
+    sleep 10
+    FRESH="$(gh pr view "$N" --repo "$REPO" --json mergeable,mergeStateStatus 2>/dev/null)" || break
+    M="$(printf '%s' "$FRESH" | jq -r '.mergeable')"
+    ST="$(printf '%s' "$FRESH" | jq -r '.mergeStateStatus')"
+  done
+  if [ "$M" = "MERGEABLE" ] && [ "$ST" = "CLEAN" ]; then
+    NUM="$N"; TITLE="$T"; MERGEABLE="$M"; STATE="$ST"
+    say "Кандидат: #$NUM «${TITLE}» (mergeable=$MERGEABLE, состояние=$STATE)"
+    break
+  fi
+  # Негодного НЕ пропускаем молча: метку оставляем, но говорим ему и в лог, почему он потерял
+  # очередь — иначе PR стоит неделями, а автор думает, что не наступило окно.
+  REASON="не влит: mergeable=$M, состояние=$ST."
+  case "$ST" in
+    DIRTY)            REASON="$REASON Конфликт с main — нужно развести руками." ;;
     UNSTABLE|BLOCKED) REASON="$REASON Есть красный или не добежавший чек." ;;
-    UNKNOWN)  REASON="$REASON GitHub ещё считает состояние — попробую следующей ночью." ;;
+    UNKNOWN)          REASON="$REASON GitHub не посчитал состояние даже после трёх попыток." ;;
   esac
-  say "$REASON"
-  if [ "$DRY_RUN" = "1" ]; then say "(dry-run: комментарий не пишу)"; exit 0; fi
-  gh pr comment "$NUM" --repo "$REPO" \
-    --body "🌙 Ночная раскатка: $REASON Метку оставил — вернусь следующей ночью." >/dev/null
+  say "Пропускаю #$N «${T}»: $REASON"
+  SKIPPED="$SKIPPED $N"
+  if [ "$DRY_RUN" != "1" ]; then
+    gh pr comment "$N" --repo "$REPO" \
+      --body "🌙 Ночная раскатка: $REASON Метку оставил, но очередь не держу — беру следующий PR." >/dev/null || true
+  fi
+done
+
+if [ -z "$NUM" ]; then
+  say "Годных PR с меткой «${LABEL}» нет (пропущено:${SKIPPED:- —}) — раскатывать нечего."
   exit 0
 fi
+[ -n "$SKIPPED" ] && say "Пропущены как негодные:${SKIPPED}"
+REMAINING=$((COUNT - 1))
+[ "$REMAINING" -gt 0 ] && say "Ещё помечено: $REMAINING — дождутся следующей ночи (по одному за прогон)."
 
 # ── Раскатка ──────────────────────────────────────────────────────────────────
 if [ "$DRY_RUN" = "1" ]; then

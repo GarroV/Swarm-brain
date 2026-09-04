@@ -87,3 +87,38 @@ struct IngestResponse: Decodable {
     let summaryStatus: String?  // "processing" | "skipped_human_edit"
     let error: String?
 }
+
+// ── Контекст созвона «что было в прошлый раз» (issue #226) ───────────────────
+// Отдаёт функция meeting-context ДВЕ НЕЗАВИСИМЫЕ вещи: тезисы последней встречи с этой
+// стороной (страной) и задачи самой стороны. Они не связаны между собой — «задачи и тезисы
+// никак и не должны соприкасаться, это разные вещи» (владелец). Считает сервер — панель
+// только рисует: превью в узкие 312 pt нарезать на клиенте нечем, а полные тезисы
+// на проде доходят до 24 КБ.
+struct MeetingContext: Codable {
+    struct Previous: Codable {
+        let entry_id: String
+        let title: String?
+        let date: String
+        /// Заголовки разделов тезисов — оглавление прошлой встречи.
+        let sections: [String]
+        /// Первые пункты (уже обрезанные сервером по длине).
+        let bullets: [String]
+        let total_bullets: Int
+        /// Полный текст для раскрытия.
+        let full_text: String
+        /// Полный текст обрезан потолком — панель обязана это сказать (issue #112).
+        let truncated: Bool
+    }
+    struct Task: Codable {
+        let id: String
+        let title: String
+        let due_date: String?
+        let assignees: [String]
+        let status: String
+    }
+    let country: String?
+    let meeting: Previous?
+    let tasks: [Task]
+    /// "no_country" — страну созвона определить не удалось; "no_previous_meeting" — первая встреча.
+    let reason: String?
+}

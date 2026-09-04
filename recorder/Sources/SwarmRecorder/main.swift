@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Foundation
+import RecorderKit   // WidgetPlacement для --selftest-widget
 
 // Режим --selftest: headless-проверка захвата системного звука без меню-бара.
 // Пишет ~6с, параллельно проигрывая клип через afplay, печатает размер файла.
@@ -163,6 +164,160 @@ func runQuarantineSelfTest() {
     RunLoop.main.run()
 }
 
+// Режим --selftest-notes: показать панель заметок с ПОДСТАВНЫМ контекстом «С прошлого раза»
+// (issue #226). Нужен, чтобы проверить вёрстку блока в узких 312 pt до того, как функция
+// meeting-context раскатана: без него единственный способ увидеть блок — живая запись после
+// раскатки, то есть проверка после факта.
+//   --selftest-notes            свёрнутое превью
+//   --selftest-notes --keep N   держать N секунд
+func runNotesSelfTest(seconds: Double) {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.regular)
+
+    let cfg = SwarmConfig(token: "selftest", ingestBaseURL: "http://127.0.0.1:1", webBaseURL: "https://swarm-brain.pages.dev")
+    Task { @MainActor in
+        // Панель — main-actor: и берём, и трогаем её ТОЛЬКО отсюда, иначе Swift 6 это запретит.
+        let panel = LiveNotesPanel.shared
+        await panel.show(config: cfg, initialTitle: "Dodo Pizza Bulgaria",
+                         micLevel: { 0.2 }, systemLevel: { 0.1 },
+                         onStop: { exit(0) }, onCollapse: {})
+        // Данные — как их отдаёт meeting-context для реального созвона с Болгарией
+        // (проверено на проде: тезисы встречи 02.09; задачи стороны BG — «Посмотреть
+        // рейтинги Болгарии» и «Трекер задач Болгарии», к той встрече они не привязаны).
+        panel.setContext(MeetingContext(
+            country: "BG",
+            meeting: .init(entry_id: "048f3a55-7f3f-431d-ad0e-7a88b51f60b4",
+                           title: "Dodo Pizza Bulgaria",
+                           date: "2026-09-02",
+                           sections: ["Болгария", "Персонал", "Решения и договорённости"],
+                           bullets: ["Бургас: не хватает курьеров, спрос выше мощностей",
+                                     "Тематическая коробка: продажи планируются 35 дней",
+                                     "Контакт-центр: предложено объединить страны региона"],
+                           total_bullets: 12,
+                           full_text: "### Болгария\n- Бургас: не хватает курьеров, спрос выше мощностей\n- Тематическая коробка: продажи планируются 35 дней\n### Персонал\n- Николь второй месяц в команде\n### Решения и договорённости\n- считаем P&L по новой схеме",
+                           truncated: false),
+            tasks: [
+                .init(id: "t1", title: "Посмотреть рейтинги Болгарии", due_date: "2026-09-04", assignees: [], status: "open"),
+                .init(id: "t2", title: "Трекер задач Болгарии", due_date: nil, assignees: [], status: "in_progress"),
+            ],
+            reason: nil))
+        print("selftest-notes: панель показана с подставным контекстом (BG)")
+        // Печатаем СОДЕРЖИМОЕ блока, а не только факт показа: свёрнутый вид, затем раскрытый.
+        @MainActor func dump(_ tag: String) {
+            print("  [\(tag)] высота окна \(Int(panel.panelHeightForTests)) pt, строк \(panel.contextRowsForTests.count):")
+            for r in panel.contextRowsForTests { print("    · \(r.replacingOccurrences(of: "\n", with: " ⏎ ").prefix(88))") }
+        }
+        print("  пометок человека в буфере ДО контекста: \(panel.noteBufferCountForTests)")
+        dump("свёрнуто")
+        panel.expandForTests(tezisy: true, tasks: true)
+        dump("раскрыто")
+        panel.expandForTests(tezisy: false, tasks: false)
+        // Барьер: показ контекста не должен добавить ни одной пометки человека —
+        // иначе тезисы прошлой встречи уехали бы к текущей записи.
+        print("  пометок человека в буфере ПОСЛЕ контекста: \(panel.noteBufferCountForTests) (должно быть 0)")
+    }
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { exit(0) }
+    app.run()
+}
+
+// Режим --selftest-widget: показать окно (баннер встречи или капсулу записи) в ДЕФОЛТНОЙ
+// позиции и напечатать её геометрию. Заведён 03.09.2026 вместе с подъёмом дефолта на два
+// фрейма: иначе положение окна проверяется только реальной записью — то есть мусорной
+// встречей в проде, — а «на глаз выше/ниже» проверкой не является.
+//   --selftest-widget            баннер встречи, 20 секунд
+//   --selftest-widget --pill     капсула записи
+//   --selftest-widget --morph    переключать баннер ↔ капсулу каждые 2.5 с (видно анимацию
+//                                перехода и то, что окно ОДНО, а не два разных)
+//   --selftest-widget --keep N   держать N секунд
+// Сохранённую позицию режим НЕ трогает и НЕ читает: проверяем именно дефолт.
+func runWidgetSelfTest(pill: Bool, morph: Bool = false, seconds: Double) {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+
+    // Дефолт считается от чистого состояния: если окно раньше перетаскивали, сохранённая
+    // позиция победила бы и мы проверили бы не то, что видит новый человек.
+    let savedKey = "widget.origin"
+    let saved = UserDefaults.standard.string(forKey: savedKey)
+    UserDefaults.standard.removeObject(forKey: savedKey)
+
+    // ЛОВУШКА, на которой я попался 03.09.2026: запущенный из папки сборки бинарь не видит
+    // BeeMark.png (ресурс кладёт только build-app.sh в бандл) и молча рисует ЗАПАСНОЙ глиф —
+    // предупреждение уходит в NSLog, то есть мимо глаз. В результате скриншот проверки
+    // показал владельцу «сломанную форму» шмеля, которой в продукте нет. Теперь режим
+    // самопроверки говорит об этом громко и в stdout, рядом с остальными замерами.
+    if Bundle.main.url(forResource: "BeeMark", withExtension: "png") == nil {
+        print("⚠️  BeeMark.png НЕ найден: значок будет ЗАПАСНОЙ, форма НЕ как в продукте.")
+        print("    Проверять вид значка только из установленного бандла:")
+        print("    /Applications/bumblebee.app/Contents/MacOS/SwarmRecorder --selftest-widget …")
+    }
+
+    let widget = RecorderWidget()
+    if pill {
+        widget.showRecording(startedAt: Date())
+    } else {
+        let now = Date()
+        let notice = MeetingNotice.compose(title: "Проверка положения окна",
+                                           start: now.addingTimeInterval(600),
+                                           end: now.addingTimeInterval(4200),
+                                           now: now)
+        widget.showPending(notice: notice, canJoin: true)
+    }
+
+    // Печать — после прохода RunLoop: до него окно ещё не разложено по констрейнтам.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+        let vf = NSScreen.main?.visibleFrame ?? .zero
+        guard let f = widget.currentFrame else { NSLog("selftest-widget: окна нет"); exit(1) }
+        let topGap = vf.maxY - f.maxY          // сколько от верха рабочей области до верха окна
+        let expectedNoLift = vf.maxY - vf.height * WidgetPlacement.topFraction - f.height
+        print("selftest-widget: режим=\(pill ? "капсула" : "баннер")")
+        print("  visibleFrame = \(vf)")
+        print("  окно         = \(f)")
+        print("  отступ сверху = \(Int(topGap)) пт   (headerBand = \(Int(WidgetPlacement.headerBand)))")
+        print("  подъём        = \(Int(f.origin.y - expectedNoLift)) пт   (defaultLift = \(Int(WidgetPlacement.defaultLift)))")
+    }
+
+    // Переключение режимов по таймеру: так видно и анимацию перехода, и то, что окно одно.
+    if morph {
+        var showingPill = pill
+        let t = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { _ in
+            showingPill.toggle()
+            if showingPill {
+                widget.showRecording(startedAt: Date())
+            } else {
+                let now = Date()
+                widget.showPending(notice: MeetingNotice.compose(title: "Проверка положения окна",
+                                                                 start: now.addingTimeInterval(600),
+                                                                 end: now.addingTimeInterval(4200),
+                                                                 now: now),
+                                   canJoin: true)
+            }
+            // Рамку читаем ПОСЛЕ анимации перехода: сразу после переключения она ещё
+            // старая, и лог печатал режим с рамкой предыдущего — врущая диагностика.
+            let mode = showingPill ? "капсула" : "баннер"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                if let f = widget.currentFrame {
+                    print("  morph → \(mode): окно = \(f), правый край = \(Int(f.maxX)), верх = \(Int(f.maxY))")
+                }
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+    }
+
+    // Раз в секунду печатаем состояние дыхания и прозрачность содержимого: обе вещи
+    // по скриншоту не проверяются, а именно в них и живут регрессы.
+    let watch = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+        print("  t+: пульсация=\(widget.isIdlePulsing ? "идёт" : "нет") contentAlpha=\(String(format: "%.2f", widget.contentAlpha))")
+    }
+    RunLoop.main.add(watch, forMode: .common)
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+        if let saved { UserDefaults.standard.set(saved, forKey: savedKey) }  // вернули как было
+        exit(0)
+    }
+    app.run()
+}
+
 // Режим --analyze <file.m4a…>: печатает речевые блоки SilenceTrimmer и % экономии Whisper-минут.
 // Временный debug для калибровки на реальных записях (сверка со ссылочным ffmpeg-замером).
 func runAnalyze(_ files: [String]) {
@@ -209,7 +364,19 @@ func runUpdateSelfTest(apply: Bool) {
     RunLoop.main.run()
 }
 
-if let ai = CommandLine.arguments.firstIndex(of: "--analyze") {
+if CommandLine.arguments.contains("--selftest-notes") {
+    let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in
+        i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
+    }
+    runNotesSelfTest(seconds: keep ?? 30)
+} else if CommandLine.arguments.contains("--selftest-widget") {
+    let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in
+        i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
+    }
+    runWidgetSelfTest(pill: CommandLine.arguments.contains("--pill"),
+                      morph: CommandLine.arguments.contains("--morph"),
+                      seconds: keep ?? 20)
+} else if let ai = CommandLine.arguments.firstIndex(of: "--analyze") {
     runAnalyze(Array(CommandLine.arguments[(ai + 1)...]))
 } else if CommandLine.arguments.contains("--selftest-update") {
     runUpdateSelfTest(apply: CommandLine.arguments.contains("--apply"))   // не возвращается до exit()
