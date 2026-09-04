@@ -5,6 +5,9 @@ import type { Me } from "@/types";
 /**
  * Панель плитки Telegram. Кнопки привязки пока НЕТ: слияние личности (issue #92) ещё не сделано,
  * а рисовать кнопку, которая ничего не делает, хуже, чем честно сказать, как обстоит дело.
+ *
+ * И НЕ отсылать к администратору: он тоже не может. Инлайн-редактор профиля в AdminScreen правит
+ * всё, КРОМЕ telegram_id и @username — привязка сейчас возможна только правкой базы руками.
  * Плитка при этом показывается всем: состояние правдиво и сейчас — у веб-личности id отрицательный.
  */
 export function TelegramPanel({ me }: { me: Me }) {
@@ -25,8 +28,8 @@ export function TelegramPanel({ me }: { me: Me }) {
   return (
     <p className="text-sm text-muted-foreground">
       {dt(
-        "Вход в систему сделан по e-mail, без Telegram: уведомления не приходят и бот недоступен. Кнопка привязки готовится; пока привязать может администратор.",
-        "You signed in by e-mail, without Telegram: notifications don't arrive and the bot is unavailable. A link button is on the way; for now an admin can link it for you.",
+        "Вход в систему сделан по e-mail, без Telegram: уведомления не приходят и бот недоступен. Привязать пока нельзя — эту возможность делаем.",
+        "You signed in by e-mail, without Telegram: notifications don't arrive and the bot is unavailable. Linking isn't possible yet — we're building it.",
       )}
     </p>
   );
