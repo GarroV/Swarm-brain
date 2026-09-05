@@ -1,7 +1,9 @@
 // Ось «статус» на экране задач (issue #216) — независимый фильтр поверх оси времени.
 // Решения владельца 03.09.2026:
 //   • статусы «Открыто / В процессе / Готово» накладываются НА «Сегодня/Ближайшие/Все»;
-//   • `pending` и `backlog` замьючены («спринты не используются, нет смысла туда смотреть»);
+//   • `backlog` замьючен («спринты не используются, нет смысла туда смотреть»);
+//   • `pending` убран из мьюта 05.09.2026 вместе с самим статусом — «пендинг вообще
+//     убираем, не понимаю смысла» (#208, трубы, писавшие его, удалены);
 //   • ось времени для ЗАКРЫТЫХ задач считается по дате закрытия («Сегодня + Готово» =
 //     «что я закрыл сегодня»), для остальных — по сроку.
 import { assertEquals } from "jsr:@std/assert";
@@ -46,9 +48,14 @@ Deno.test("statusBucket: cancelled считается закрытой вмес�
   assertEquals(statusBucket(task({ id: "b", status: "cancelled" })), "done");
 });
 
-Deno.test("statusBucket: pending и backlog замьючены (решение владельца 03.09.2026)", () => {
-  assertEquals(statusBucket(task({ id: "a", status: "pending" })), null);
+Deno.test("statusBucket: замьючен только backlog (решение владельца 03.09.2026)", () => {
   assertEquals(statusBucket(task({ id: "b", status: "backlog" })), null);
+});
+
+Deno.test("statusBucket: pending больше не мьютится — статус убран целиком 05.09.2026", () => {
+  // Раз его никто не пишет, прятать нечего. А если появится — пусть будет виден, как любой
+  // незнакомый статус: молча скрытая задача и была причиной #208.
+  assertEquals(statusBucket(task({ id: "a", status: "pending" })), "open");
 });
 
 Deno.test("statusBucket: НЕЗНАКОМЫЙ статус попадает в «Открыто», а не пропадает", () => {
@@ -59,7 +66,6 @@ Deno.test("statusBucket: НЕЗНАКОМЫЙ статус попадает в �
 Deno.test("замьюченные задачи не показываются даже в «Все» со всеми чипами", () => {
   const tasks = [
     task({ id: "open", status: "open" }),
-    task({ id: "pend", status: "pending" }),
     task({ id: "back", status: "backlog" }),
   ];
   assertEquals(filter(tasks, "all", set("open", "in_progress", "done")), ["open"]);
@@ -80,7 +86,7 @@ Deno.test("пустой набор чипов = без фильтра по ст�
   const tasks = [
     task({ id: "o", status: "open" }),
     task({ id: "d", status: "done" }),
-    task({ id: "pend", status: "pending" }),
+    task({ id: "back", status: "backlog" }),
   ];
   assertEquals(filter(tasks, "all", set()).sort(), ["d", "o"]);
 });
@@ -138,7 +144,7 @@ Deno.test("счётчики списков считаются с учётом в
     task({ id: "o", status: "open", due_date: "2026-09-03" }),
     task({ id: "p", status: "in_progress", due_date: "2026-09-03" }),
     task({ id: "d", status: "done", updated_at: "2026-09-03T09:00:00+00:00" }),
-    task({ id: "pend", status: "pending", due_date: "2026-09-03" }),
+    task({ id: "back", status: "backlog", due_date: "2026-09-03" }),
   ];
   const onlyOpen = countLists(tasks, "mine", ME, NOW, null, set("open"));
   assertEquals(onlyOpen.today, 1);
