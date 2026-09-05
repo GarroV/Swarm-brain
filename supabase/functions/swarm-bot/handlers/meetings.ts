@@ -1,3 +1,4 @@
+import { entryAccessError, type EntryAccessRow } from "../../_shared/entries/access.ts";
 import { supabase } from "../lib/supabase.ts";
 import { getReadAiToken, readAiGet, READ_AI_API, READ_AI_AUTH_URL } from "../lib/readai.ts";
 import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
@@ -10,6 +11,38 @@ import { analyzeAndCreateTasks } from "../tasks/handlers.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
+
+// Загрузка встречи-записи для действий бота С ПРОВЕРКОЙ ДОСТУПА (issue #60).
+//
+// Раньше каждая ветка колбэка читала и правила запись по `id + group_id`: воркспейс есть,
+// приватности нет. То есть участник воркспейса мог выгрузить содержимое ЧУЖОЙ ЛИЧНОЙ встречи
+// файлом в Telegram, переписать ей рынки, название, дату и удалить её. Защищало только то,
+// что id — UUID и его неоткуда взять; на неугадываемость полагаться нельзя, это не проверка.
+//
+// Личное пространство неприкосновенно при ЛЮБОМ действии (правило владельца 05.09.2026),
+// поэтому загрузка идёт через общий гард, а не через ещё одну ручную проверку рядом.
+// Прочитанная встреча: metadata читают точечно, поэтому она объект, остальные колонки —
+// unknown и приводятся на месте использования (как было и с сырым ответом supabase-js).
+type ActionEntry = { metadata?: Record<string, unknown> | null; [k: string]: unknown };
+
+async function loadEntryForAction(
+  entryId: string,
+  groupId: string,
+  viewerId: number,
+  columns: string,
+  opts?: { mutate?: boolean },
+): Promise<ActionEntry | null> {
+  const { data } = await supabase
+    .from("entries")
+    .select(`${columns}, is_private, owner_id, group_id`)
+    .eq("id", entryId)
+    .maybeSingle();
+  const denied = entryAccessError(
+    entryId, data as EntryAccessRow | null, viewerId, groupId,
+    { requireOwner: opts?.mutate === true },
+  );
+  return denied ? null : (data as ActionEntry | null);
+}
 
 export async function handleConnect(chatId: number): Promise<void> {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -115,9 +148,8 @@ function marketFlag(code: string): string {
     ? String.fromCodePoint(...[...code.toUpperCase()].map((c) => 0x1F1E6 + c.charCodeAt(0) - 65))
     : "🌐";
 }
-async function renderMarketPicker(entryId: string, groupId: string): Promise<{ text: string; keyboard: PickerRow[] } | null> {
-  const { data: entry } = await supabase.from("entries")
-    .select("countries").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+async function renderMarketPicker(entryId: string, groupId: string, viewerId: number): Promise<{ text: string; keyboard: PickerRow[] } | null> {
+  const entry = await loadEntryForAction(entryId, groupId, viewerId, "countries");
   if (!entry) return null;
   const selected = new Set<string>(((entry.countries as string[] | null) ?? []));
   const markets = await getWorkspaceMarkets(groupId);
@@ -178,7 +210,7 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("md_")) {
     const entryId = data.replace("md_", "");
 
-    const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata");
     const title = (entry?.metadata?.title as string) ?? "Встреча";
     const meetingId = entry?.metadata?.meeting_id as string | null ?? null;
 
@@ -230,20 +262,20 @@ export async function handleMeetingCallbacks(
   }
   if (data.startsWith("mr_")) {
     const entryId = data.replace("mr_", "");
-    const { data: entry } = await supabase.from("entries").select("content, summary, metadata, created_at, source").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    const entry = await loadEntryForAction(entryId, groupId, userId, "content, summary, metadata, created_at, source");
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
 
     const title = (entry.metadata?.title as string) ?? "Встреча";
     const meetingId = entry.metadata?.meeting_id as string | undefined;
     const tags = (entry.metadata?.tags as string[] | undefined);
     const confirmed = entry.metadata?.confirmed;
-    const entryDate = (entry.metadata?.entry_date as string) ?? entry.created_at.split("T")[0];
+    const entryDate = (entry.metadata?.entry_date as string) ?? (entry.created_at as string).split("T")[0];
     const dateStr = new Date(`${entryDate}T12:00:00`).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
     const src = entry.source === "granola" ? "📓 Granola" : "📹 Read.ai";
 
     const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const summaryText = entry.summary
-      ? escHtml(entry.summary.slice(0, 2000))
+      ? escHtml((entry.summary as string).slice(0, 2000))
       : "<i>Тезисы не сгенерированы</i>";
 
     let tasksText = "";
@@ -286,7 +318,7 @@ export async function handleMeetingCallbacks(
   }
   if (data.startsWith("mtr_")) {
     const entryId = data.replace("mtr_", "");
-    const { data: entry } = await supabase.from("entries").select("content, metadata, created_at").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    const entry = await loadEntryForAction(entryId, groupId, userId, "content, metadata, created_at");
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
 
     const transcript = (entry.content as string ?? "").split("Стенограмма:")[1]?.trim()
@@ -311,9 +343,9 @@ export async function handleMeetingCallbacks(
   }
   if (data.startsWith("medit_")) {
     const entryId = data.replace("medit_", "");
-    const { data: entry } = await supabase.from("entries").select("summary").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    const entry = await loadEntryForAction(entryId, groupId, userId, "summary");
     await setSession(chatId, `meeting_edit_summary_${entryId}`);
-    const current = entry?.summary ? `\n\nТекущие тезисы:\n${entry.summary.slice(0, 1000)}` : "";
+    const current = entry?.summary ? `\n\nТекущие тезисы:\n${(entry.summary as string).slice(0, 1000)}` : "";
     await sendMessage(
       chatId,
       `Напиши инструкцию: что изменить в тезисах.${current}\n\n` +
@@ -373,7 +405,7 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("mexp_")) {
     // Export meeting as file from admin panel
     const entryId = data.replace("mexp_", "");
-    const { data: entry } = await supabase.from("entries").select("content, metadata, created_at").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    const entry = await loadEntryForAction(entryId, groupId, userId, "content, metadata, created_at");
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
     else {
       const rawTitle = ((entry.metadata as Record<string, unknown>)?.title as string | undefined) ?? "meeting";
@@ -394,18 +426,18 @@ export async function handleMeetingCallbacks(
     const sep = rest.indexOf("_"); // entryId = UUID (без '_'), далее код рынка / "General"
     const entryId = rest.slice(0, sep);
     const code = rest.slice(sep + 1);
-    const { data: entry } = await supabase.from("entries").select("countries").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    const entry = await loadEntryForAction(entryId, groupId, userId, "countries");
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
     const set = new Set<string>(((entry.countries as string[] | null) ?? []));
     if (set.has(code)) set.delete(code); else set.add(code); // toggle; General — обычный элемент набора
     await supabase.from("entries").update({ countries: [...set] }).eq("id", entryId).eq("group_id", groupId);
-    const picker = await renderMarketPicker(entryId, groupId);
+    const picker = await renderMarketPicker(entryId, groupId, userId);
     if (picker) await editInlineMessage(chatId, cb.message.message_id, picker.text, picker.keyboard);
     return true;
   }
   if (data.startsWith("mctry_done_")) {
     const entryId = data.slice("mctry_done_".length);
-    const { data: entry } = await supabase.from("entries").select("countries, summary, content").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    const entry = await loadEntryForAction(entryId, groupId, userId, "countries, summary, content");
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
     // Канон рынков (issue #169): 1 рынок → тег, 0 или ≥2 → ["General"] схлопыванием.
     // Схлопываем на «Готово», а не на каждый тап: во время мультивыбора выбор копится в
@@ -438,7 +470,7 @@ export async function handleMeetingCallbacks(
   }
   if (data.startsWith("mctry_")) {
     const entryId = data.slice("mctry_".length);
-    const picker = await renderMarketPicker(entryId, groupId);
+    const picker = await renderMarketPicker(entryId, groupId, userId);
     if (!picker) { await sendMessage(chatId, "Встреча не найдена."); return true; }
     await sendInlineMessage(chatId, picker.text, picker.keyboard);
     return true;
@@ -446,7 +478,7 @@ export async function handleMeetingCallbacks(
   if (data.startsWith("mc_")) {
     // Confirm meeting — жёсткий блок без рынков, затем publish + auto-extract tasks
     const entryId = data.replace("mc_", "");
-    const { data: entry } = await supabase.from("entries").select("metadata, content, countries").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata, content, countries");
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
     const countries = ((entry.countries as string[] | null) ?? []);
     if (countries.length === 0) {
@@ -492,12 +524,13 @@ export async function handleMeetingSessionInput(
   action: string,
   text: string,
   groupId: string,
+  userId: number,
 ): Promise<boolean> {
   if (action.startsWith("meeting_title_")) {
     await clearSession(chatId);
     const entryId = action.replace("meeting_title_", "");
     const newTitle = text.trim();
-    const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata");
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
     else {
       await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle } }).eq("id", entryId).eq("group_id", groupId);
@@ -521,7 +554,7 @@ export async function handleMeetingSessionInput(
     const dateVal = /^\d{4}-\d{2}-\d{2}$/.test(parsed.trim()) ? parsed.trim() : null;
     if (!dateVal) { await sendMessage(chatId, "Не удалось распознать дату. Попробуй ещё раз."); }
     else {
-      const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+      const entry = await loadEntryForAction(entryId, groupId, userId, "metadata");
       if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
       else {
         await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), entry_date: dateVal } }).eq("id", entryId).eq("group_id", groupId);
@@ -540,12 +573,7 @@ export async function handleMeetingSessionInput(
     await clearSession(chatId);
     const entryId = action.replace("meeting_edit_summary_", "");
 
-    const { data: entry } = await supabase
-      .from("entries")
-      .select("content, summary, metadata")
-      .eq("id", entryId)
-      .eq("group_id", groupId)
-      .maybeSingle();
+    const entry = await loadEntryForAction(entryId, groupId, userId, "content, summary, metadata");
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); return true; }
 
     await sendMessage(chatId, "Обновляю...");
@@ -590,7 +618,7 @@ export async function handleMeetingSessionInput(
     await clearSession(chatId);
     const entryId = action.replace("meeting_rename_", "");
     const newTitle = text.trim();
-    const { data: entry } = await supabase.from("entries").select("metadata").eq("id", entryId).eq("group_id", groupId).maybeSingle();
+    const entry = await loadEntryForAction(entryId, groupId, userId, "metadata");
     if (!entry) { await sendMessage(chatId, "Встреча не найдена."); }
     else {
       await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), title: newTitle } }).eq("id", entryId).eq("group_id", groupId);

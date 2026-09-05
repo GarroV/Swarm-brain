@@ -497,7 +497,7 @@ Deno.serve(async (req: Request) => {
       } else if (action === "waiting_ask") {
         await clearSession(chatId);
         await handleAsk(chatId, text, userId, groupId);
-      } else if (action && await handleMeetingSessionInput(chatId, action, text, groupId)) {
+      } else if (action && await handleMeetingSessionInput(chatId, action, text, groupId, userId)) {
         // meeting session handled
       } else if (action && await handleUserSessionInput(chatId, userId, action, text)) {
         // user session handled
