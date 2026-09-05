@@ -63,6 +63,7 @@ import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 import { todayMeetings, dayBounds, type RecorderPresence } from "../_shared/meetings-today.ts";
 import { joinLink } from "../meeting-current/join-link.ts";
+import { isTaskStatus, taskStatusError } from "../_shared/tasks/statuses.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
 // верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
@@ -737,6 +738,11 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      // Статус приходит от клиента строкой — раньше писался как есть, и в базу мог лечь
+      // любой мусор (#208). Отказ явный: 400 с перечнем, а не тихая запись.
+      if (body.status !== undefined && !isTaskStatus(body.status)) {
+        return apiErr(400, taskStatusError(body.status), origin);
+      }
       const input: TaskInput = {
         title: body.title as string,
         description: (body.description as string | null) ?? null,
@@ -818,7 +824,10 @@ Deno.serve(async (req: Request) => {
         fields.reminded_at = null;
         fields.remind_set_by = fields.remind_date ? telegram_id : null;
       }
-      if (body.status !== undefined) fields.status = body.status as string;
+      if (body.status !== undefined) {
+        if (!isTaskStatus(body.status)) return apiErr(400, taskStatusError(body.status), origin);
+        fields.status = body.status as string;
+      }
       if ("start_date" in body) fields.start_date = body.start_date as string | null;
       if (typeof body.timeline_position === "number") fields.timeline_position = body.timeline_position;
       if (Array.isArray(body.tags)) fields.tags = body.tags as string[];
