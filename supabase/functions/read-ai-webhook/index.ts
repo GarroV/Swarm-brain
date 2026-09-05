@@ -167,7 +167,7 @@ Deno.serve(async (req: Request) => {
     if (transcript) parts.push(`Стенограмма:\n${transcript.slice(0, 8000)}`);
     const fullContent = parts.join("\n\n");
 
-    // Кросс-источниковый дедуп ДО дорогих LLM-вызовов и extractAndSaveTasks (иначе на дубле
+    // Кросс-источниковый дедуп ДО дорогих LLM-вызовов (иначе на дубле
     // зря потратим токены и создадим задачи-сироты без записи). Встреча уже в базе → выходим.
     const dedupAttendees: MeetingAttendee[] = participants.map((p) => ({
       name: (p.name ?? p.display_name) as string | undefined,

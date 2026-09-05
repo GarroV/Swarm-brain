@@ -26,7 +26,7 @@ const TASK_LIMIT = 10;
 //    на проде их 32, с 30.06, и в вебе они не видны вообще. Показать их как «висят за этой
 //    стороной» = вывалить полтора месяца необработанного импорта;
 //  • backlog — колонка доски спринта, а спринтами не пользуются (решение владельца, issue #216).
-const HIDDEN_TASK_STATUSES = ["done", "cancelled", "pending", "backlog"];
+const HIDDEN_TASK_STATUSES = ["done", "cancelled", "backlog"];
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
