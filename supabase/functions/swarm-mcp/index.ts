@@ -7,6 +7,7 @@ import { detectQuerySince } from "../_shared/query-time.ts";
 import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
 import { isFeedbackStatus } from "../_shared/feedback-categories.ts";
 import { normalizeExtractedEventDate, todayIso } from "../_shared/llm-date.ts";
+import { entryAccessError, type EntryAccessRow } from "../_shared/entries/access.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -713,16 +714,21 @@ async function toolListEntries(args: { source?: string; entry_type?: string; dat
 async function toolDeleteEntry(args: { id: string; requesting_user_id?: number }): Promise<string> {
   const { data: entry, error: fetchErr } = await supabase
     .from("entries")
-    .select("metadata, source, owner_id")
+    .select("metadata, source, owner_id, is_private, group_id")
     .eq("id", args.id)
     .maybeSingle();
 
   if (fetchErr) return `Ошибка: ${fetchErr.message}`;
-  if (!entry) return `Запись ${args.id} не найдена.`;
 
-  if (args.requesting_user_id && (entry as { owner_id?: number }).owner_id !== args.requesting_user_id) {
-    return `Запрещено: можно удалить только свою запись. Владелец записи — другой пользователь.`;
-  }
+  // Гард вместо ручной проверки (issue #60). Прежняя строка начиналась с
+  // `if (args.requesting_user_id && …)`: без личности проверка ПРОПУСКАЛАСЬ целиком —
+  // fail-open. Сейчас нет личности → нет права, и воркспейс проверяется тоже.
+  const deniedDel = entryAccessError(
+    args.id, entry as EntryAccessRow | null, args.requesting_user_id ?? null,
+    args.requesting_user_id ? await getUserGroupId(args.requesting_user_id) : undefined, { requireOwner: true },
+  );
+  if (deniedDel) return deniedDel;
+  if (!entry) return `Запись ${args.id} не найдена.`;   // сужение: гард уже отсёк null
 
   const fileUrl = (entry.metadata as Record<string, unknown> | null)?.file_url as string | undefined;
   if (fileUrl) {
@@ -741,15 +747,24 @@ async function toolDeleteEntry(args: { id: string; requesting_user_id?: number }
   return `✅ Запись удалена${fileUrl ? " вместе с файлом из Storage" : ""}.`;
 }
 
-async function toolUpdateEntry(args: { id: string; content?: string; summary?: string; title?: string; entry_date?: string; countries?: string[]; file_content_base64?: string; file_name?: string }): Promise<string> {
+async function toolUpdateEntry(args: { id: string; content?: string; summary?: string; title?: string; entry_date?: string; countries?: string[]; file_content_base64?: string; file_name?: string; requesting_user_id?: number }): Promise<string> {
   const { data: existing, error: fetchErr } = await supabase
     .from("entries")
-    .select("metadata")
+    .select("metadata, is_private, owner_id, group_id")
     .eq("id", args.id)
     .maybeSingle();
 
   if (fetchErr) return `Ошибка: ${fetchErr.message}`;
-  if (!existing) return `Запись ${args.id} не найдена.`;
+
+  // Проверки не было ВООБЩЕ: правка шла по одному id, поэтому любой человек с валидным
+  // MCP-токеном мог переписать содержимое чужой личной записи из другого воркспейса (issue #60).
+  const deniedUpd = entryAccessError(
+    args.id, existing as EntryAccessRow | null, args.requesting_user_id ?? null,
+    args.requesting_user_id ? await getUserGroupId(args.requesting_user_id) : undefined,
+    { requireOwner: true },
+  );
+  if (deniedUpd) return deniedUpd;
+  if (!existing) return `Запись ${args.id} не найдена.`;   // сужение: гард уже отсёк null
 
   if (args.file_content_base64 && args.file_name) {
     const oldMeta = (existing.metadata as Record<string, unknown>) ?? {};
@@ -824,15 +839,24 @@ async function toolUpdateEntry(args: { id: string; content?: string; summary?: s
   return `✅ Запись обновлена (${Object.keys(updates).join(", ")}).`;
 }
 
-async function toolReindexEntry(args: { id: string; summary?: string }): Promise<string> {
+async function toolReindexEntry(args: { id: string; summary?: string; requesting_user_id?: number }): Promise<string> {
   const { data: entry, error } = await supabase
     .from("entries")
-    .select("id, content, summary, source")
+    .select("id, content, summary, source, is_private, owner_id, group_id")
     .eq("id", args.id)
     .maybeSingle();
 
   if (error) return `Ошибка: ${error.message}`;
-  if (!entry) return `Запись ${args.id} не найдена.`;
+
+  // Переиндексация переписывает summary, страны, тип и дату — это правка записи, а не чтение,
+  // и проверки здесь тоже не было (issue #60).
+  const deniedRx = entryAccessError(
+    args.id, entry as EntryAccessRow | null, args.requesting_user_id ?? null,
+    args.requesting_user_id ? await getUserGroupId(args.requesting_user_id) : undefined,
+    { requireOwner: true },
+  );
+  if (deniedRx) return deniedRx;
+  if (!entry) return `Запись ${args.id} не найдена.`;   // сужение: гард уже отсёк null
 
   const e = entry as { id: string; content: string; summary: string | null; source: string };
   const existingSummary = args.summary ?? e.summary ?? undefined;
@@ -1020,11 +1044,11 @@ Deno.serve(async (req: Request) => {
       } else if (name === "list_entries") {
         result = await toolListEntries(args as { source?: string; entry_type?: string; date_from?: string; date_to?: string; limit?: number; has_file?: boolean; has_no_countries?: boolean; requesting_user_id?: number });
       } else if (name === "delete_entry") {
-        result = await toolDeleteEntry(args as { id: string });
+        result = await toolDeleteEntry(args as { id: string; requesting_user_id?: number });
       } else if (name === "update_entry") {
-        result = await toolUpdateEntry(args as { id: string; content?: string; summary?: string; title?: string; entry_date?: string; countries?: string[]; file_content_base64?: string; file_name?: string });
+        result = await toolUpdateEntry(args as { id: string; content?: string; summary?: string; title?: string; entry_date?: string; countries?: string[]; file_content_base64?: string; file_name?: string; requesting_user_id?: number });
       } else if (name === "reindex_entry") {
-        result = await toolReindexEntry(args as { id: string; summary?: string });
+        result = await toolReindexEntry(args as { id: string; summary?: string; requesting_user_id?: number });
       } else if (name === "upload_file") {
         result = await toolUploadFile(args as { file_name: string; file_content_base64: string; mime_type?: string; summary: string; source?: string; requesting_user_id?: number });
       } else if (name === "get_storage_stats") {
