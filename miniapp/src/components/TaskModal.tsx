@@ -122,6 +122,17 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
   // Пока в описании есть сохранённый текст — показываем его как read-only с кликабельными
   // ссылками (linkify); textarea появляется по клику. Пустое описание — сразу editable.
   const [descEditing, setDescEditing] = useState(true);
+  // Высота, которую блок «Описание» занимал в режиме ЧТЕНИЯ (issue #211). Чтение росло под
+  // текст до 320px, а textarea открывалась жёсткими 160px — длинное описание схлопывалось на
+  // клике, и править его приходилось через щель. Запоминаем фактическую высоту перед
+  // переключением и стартуем редактор с неё; ручной resize-y остаётся.
+  const descReadRef = useRef<HTMLDivElement | null>(null);
+  const [descHeight, setDescHeight] = useState<number | null>(null);
+  const startDescEdit = () => {
+    const h = descReadRef.current?.offsetHeight;
+    if (h) setDescHeight(Math.min(Math.max(h, 100), 320));
+    setDescEditing(true);
+  };
   const [dueDate, setDueDate] = useState("");
   // Цикличность: null — обычная задача. Производная от срока (день недели/число берутся из
   // него), поэтому без срока включить нельзя.
@@ -523,18 +534,19 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                     onChange={(e) => setDescription(e.target.value)}
                     onBlur={() => { if (description.trim()) setDescEditing(false); }}
                     placeholder="Подробности, контекст, что именно сделать…"
-                    style={{ height: 160, minHeight: 100, lineHeight: 1.55 }}
+                    style={{ height: descHeight ?? 160, minHeight: 100, lineHeight: 1.55 }}
                   />
                 ) : (
                   <div
                     id="modal-desc"
                     role="button"
                     tabIndex={0}
-                    onClick={() => setDescEditing(true)}
+                    ref={descReadRef}
+                    onClick={startDescEdit}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        setDescEditing(true);
+                        startDescEdit();
                       }
                     }}
                     className={`${fieldCls} max-h-[320px] cursor-text overflow-y-auto whitespace-pre-wrap`}
