@@ -4,7 +4,7 @@ import { useDt, useRoyNav } from "../nav";
 import { RoyHeader, NavHeader, RoyCard, TypeTag, Market, Chip, FAB } from "../ui";
 import { RoyIcon } from "../icons";
 import { entryTagKey, entryFacet, deriveEntryTitle, entryPreview } from "../entry";
-import { fetchEntries } from "@/lib/api";
+import { fetchEntriesWithTotal } from "@/lib/api";
 import type { Entry } from "@/types";
 
 // Встреч здесь нет (GET /entries отдаёт только entry_type='note'; встречи — свой таб).
@@ -29,12 +29,15 @@ export function RoyBaseScreen({ onBack }: { onBack?: () => void }) {
   const { push, openAnswer } = useRoyNav();
   const dt = useDt();
   const [entries, setEntries] = useState<Entry[] | null>(null);
+  // Сколько записей есть НА САМОМ ДЕЛЕ: сервер отдаёт заголовком X-Total-Count (issue #112).
+  // null — счёт не пришёл, тогда про усечение молчим, а не выдумываем число.
+  const [total, setTotal] = useState<number | null>(null);
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
 
   useEffect(() => {
-    fetchEntries()
-      .then(setEntries)
+    fetchEntriesWithTotal()
+      .then(({ rows, total }) => { setEntries(rows); setTotal(total); })
       .catch(() => setEntries([]));
   }, []);
 
@@ -74,6 +77,13 @@ export function RoyBaseScreen({ onBack }: { onBack?: () => void }) {
       <div className="space-y-2.5 px-5 pb-28">
         {entries == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 88, borderRadius: 18 }} />)}
         {entries && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">Здесь пока пусто</div>}
+        {/* Честный признак усечения: экран не имеет права рисовать приехавший кусок как весь
+            набор. Показываем только когда список реально обрезан — иначе это шум. */}
+        {entries && total != null && entries.length < total && (
+          <p className="px-1 pb-2 text-ink-soft" style={{ fontSize: 12 }}>
+            {dt(`Показаны ${entries.length} из ${total}`, `Showing ${entries.length} of ${total}`)}
+          </p>
+        )}
         {items.map((e) => (
           <button key={e.id} type="button" onClick={() => push({ view: "record", params: { id: e.id } })} className="w-full text-left transition-transform active:scale-[0.99]">
             <RoyCard className="px-4 py-3.5">

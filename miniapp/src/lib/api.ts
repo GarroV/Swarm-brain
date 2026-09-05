@@ -796,12 +796,40 @@ export async function setTaskSubscription(taskId: string, notify: boolean): Prom
 
 // ── Entries ───────────────────────────────────────────────────────────────────
 
+/**
+ * Списочный запрос, который доносит до экрана, сколько строк есть НА САМОМ ДЕЛЕ (issue #112).
+ *
+ * Сервер отдаёт полное число заголовком `X-Total-Count` (голым массивом, чтобы не сломать бота
+ * и MCP), а `fetch` его молча выбрасывает — тело парсится, заголовки нет. Из-за этого экран
+ * рисовал приехавший кусок как полный набор: 92 заметки в базе, 50 на экране, ни ошибки, ни
+ * признака. `total: null` — сервер счёт не прислал (например, у очереди вычитки он соврал бы).
+ */
+export async function apiFetchList<T>(path: string): Promise<{ rows: T[]; total: number | null }> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    cache: "no-store",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+  });
+  const body = await res.json().catch(() => ({ error: res.statusText }));
+  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText);
+  const raw = res.headers.get("X-Total-Count");
+  const total = raw != null && /^\d+$/.test(raw) ? Number(raw) : null;
+  return { rows: (body ?? []) as T[], total };
+}
+
 export async function fetchEntries(filters?: { source?: string; type?: string; date_from?: string; date_to?: string }): Promise<Entry[]> {
-  if (DEV_MODE) return mockEntries;
+  return (await fetchEntriesWithTotal(filters)).rows;
+}
+
+/** То же, но со счётом: экран должен уметь сказать «показаны N из M» (issue #112). */
+export async function fetchEntriesWithTotal(
+  filters?: { source?: string; type?: string; date_from?: string; date_to?: string },
+): Promise<{ rows: Entry[]; total: number | null }> {
+  if (DEV_MODE) return { rows: mockEntries, total: mockEntries.length };
   const qs = new URLSearchParams(
     Object.entries(filters ?? {}).filter(([, v]) => v != null) as [string, string][]
   ).toString();
-  return apiFetch<Entry[]>(`/entries${qs ? `?${qs}` : ""}`);
+  return apiFetchList<Entry>(`/entries${qs ? `?${qs}` : ""}`);
 }
 
 export async function fetchEntry(id: string): Promise<Entry> {

@@ -102,10 +102,13 @@ export function buildEntriesQuery(
   supabase: SupabaseClient,
   select: string,
   { groupId, telegramId }: { groupId: string; telegramId: number },
+  // `count: "exact"` — чтобы списочный ответ мог честно сказать, что он обрезан (issue #112).
+  // Считает ТОТ ЖЕ запрос, без второго round-trip: PostgREST возвращает число рядом с данными.
+  opts?: { count?: "exact" },
 ) {
   return supabase
     .from("entries")
-    .select(select)
+    .select(select, opts?.count ? { count: opts.count } : undefined)
     .eq("group_id", groupId)
     .or(`is_private.eq.false,and(is_private.eq.true,owner_id.eq.${telegramId})`);
 }

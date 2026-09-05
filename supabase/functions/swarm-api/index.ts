@@ -1142,18 +1142,25 @@ Deno.serve(async (req: Request) => {
     // (54 заметки получали заголовок из первой строки текста). Оба хелпера написаны через
     // `metadata ?? {}` — не падали, а молча деградировали (issue #107). Заодно приехали
     // added_by (нужен entryImporterName для атрибуции «добавил») и group_id.
-    let q = buildEntriesQuery(supabase, ENTRY_COLUMNS, { groupId, telegramId: telegram_id })
+    let q = buildEntriesQuery(supabase, ENTRY_COLUMNS, { groupId, telegramId: telegram_id }, { count: "exact" })
       .eq("entry_type", "note")
       .not("source", "eq", "digest")
       .order("created_at", { ascending: false })
-      .limit(50);
+      // Лимит настраиваемый, как у /meetings и /tasks. Хардкод 50 стоял с начала и молча резал
+      // базу знаний: на 05.09.2026 видимых заметок 92, отдавалось 50 — 42 записи не существовало
+      // для человека. Потолок 2000 — тот же, что у задач (#111): это окно, а не пагинация (#104).
+      .limit(parseListLimit(url.searchParams.get("limit"), { def: 500, max: 2000 }));
     if (source) q = q.eq("source", source);
     if (type) q = q.eq("entry_type", type);
     if (dateFrom) q = q.gte("entry_date", dateFrom);
     if (dateTo) q = q.lte("entry_date", dateTo);
-    const { data, error } = await q;
+    const { data, error, count } = await q;
     if (error) return apiErr(500, error.message, origin);
-    return json(data, 200, origin);
+    // Сколько записей подходит под фильтры БЕЗ лимита (issue #112). Заголовком, а не конвертом:
+    // ответ остаётся голым массивом, поэтому бот и MCP не задеты. Замер на проде 05.09.2026:
+    // 92 заметки видно, отдавалось 50 — 42 записи не существовало для человека, и экран об этом
+    // молчал. Лимит здесь не поднимаем: сперва признак, пагинация отдельно (#104).
+    return json(data, 200, origin, count != null ? { "X-Total-Count": String(count) } : undefined);
   }
 
   // ── GET /entries/:id ──────────────────────────────────────────────────────────
@@ -1391,13 +1398,13 @@ Deno.serve(async (req: Request) => {
     const isReviewQueue = confirmedParam === "false";
     let q = (isReviewQueue
       ? buildReviewQueueQuery(supabase, ENTRY_COLUMNS, { groupId, telegramId: telegram_id, email: userEmail })
-      : buildEntriesQuery(supabase, ENTRY_COLUMNS, { groupId, telegramId: telegram_id }))
+      : buildEntriesQuery(supabase, ENTRY_COLUMNS, { groupId, telegramId: telegram_id }, { count: "exact" }))
       .eq("entry_type", "meeting")
       .order("created_at", { ascending: false })
       .limit(limit);
     if (confirmedParam === "true") q = q.eq("metadata->>confirmed", "true");
     if (confirmedParam === "false") q = q.or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false");
-    const { data, error } = await q;
+    const { data, error, count } = await q;
     if (error) return apiErr(500, error.message, origin);
     const rows = (data ?? []) as unknown as Array<{ id: string; owner_id?: number | null; metadata?: unknown }>;
     // «Кто записал» часто не продублирован в metadata записи, но есть в связанной строке meetings
@@ -1414,7 +1421,9 @@ Deno.serve(async (req: Request) => {
       }
     }
     const named = await withImporterNames(rows, recMap);
-    return json(isReviewQueue ? named : named.map(toListRow), 200, origin);
+    // Сколько встреч подходит под фильтр БЕЗ лимита (issue #112). У очереди вычитки счёта нет:
+    // buildReviewQueueQuery считает причастность в два запроса, и число там соврало бы.
+    return json(isReviewQueue ? named : named.map(toListRow), 200, origin, count != null ? { "X-Total-Count": String(count) } : undefined);
   }
 
   // ── POST /meetings/:id/resummarize — пересобрать тезисы УЖЕ опубликованной встречи ──
@@ -1573,7 +1582,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "GET" && routePath === "/agent-meetings") {
     const status = url.searchParams.get("status") ?? "awaiting_review";
     let q = supabase.from("meetings")
-      .select("id, title, source, identity_kind, started_at, ended_at, status, draft_notes_md, recorders, entry_id, created_at")
+      .select("id, title, source, identity_kind, started_at, ended_at, status, draft_notes_md, recorders, entry_id, created_at", { count: "exact" })
       .eq("group_id", groupId)
       .eq("status", status)
       .order("started_at", { ascending: false, nullsFirst: false })
@@ -1586,13 +1595,14 @@ Deno.serve(async (req: Request) => {
     // оверсайта нет (решение владельца 2026-08-20). Прежний `?all=true` для админа убран;
     // пригляд «у кого копится» — агрегат без контента GET /admin/review-counts.
     q = q.contains("recorders", JSON.stringify(draftMeetingsOwnScoped(telegram_id)));
-    const { data, error } = await q;
+    const { data, error, count } = await q;
     if (error) return apiErr(500, error.message, origin);
     // draft_notes_md → признак has_draft_notes: список рисует название/дату/статус, а текст
     // тезисов ехал в 10-секундном поллинге (154 кБ за опрос ≈ 55 МБ/час на вкладку, issue #108).
     // Полный текст берёт деталь GET /agent-meetings/:id — она его и так до-загружает.
     const enrichedList = await withRecorderNames((data ?? []) as Array<{ recorders?: unknown }>);
-    return json(enrichedList.map(toAgentListRow), 200, origin);
+    // Сколько черновиков подходит под фильтр БЕЗ лимита 50 (issue #112).
+    return json(enrichedList.map(toAgentListRow), 200, origin, count != null ? { "X-Total-Count": String(count) } : undefined);
   }
 
   // GET/PATCH/DELETE /agent-meetings/:id, POST /:id/publish, GET/POST /:id/notes (live-пометки),
