@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { getDeepLinkMeetingId, getDeepLinkTaskId } from "@/lib/telegram";
 import { fetchAgentMeetings, logout } from "@/lib/api";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
+import { queryToState, stateToPath } from "@/lib/royUrl";
 import { RoyNavContext, useRoyNav, useDt, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
 import type { Lens, SmartListId } from "@/lib/smartLists";
 import { RoyTabBar, NavHeader, RoyHeader, Avatar, ROY_TABS } from "./ui";
@@ -64,6 +65,9 @@ export function RoyApp({ me }: { me: Me | null }) {
   const [reviewCount, setReviewCount] = useState(0);
   // Стек восстановлен из sessionStorage? До этого не персистим, иначе начальный [] затрёт сохранённый.
   const hydrated = useRef(false);
+  // Состояние только что пришло ИЗ адреса (popstate или разбор при загрузке) — значит
+  // синхронизатор не должен класть новую запись в историю: иначе «назад» встанет в петлю.
+  const fromUrl = useRef(false);
 
   const setTab = useCallback((t: RoyTab) => {
     setTaskView(null);   // обычный переход по табу → доска задач с дефолтной линзой
@@ -85,13 +89,10 @@ export function RoyApp({ me }: { me: Me | null }) {
     if (isDesktop) setAnswerQuery(query);
     else setStack((s) => [...s, { view: "answer", params: { query } }]);
   }, [isDesktop]);
-  const pop = useCallback(() => {
-    setStack((s) => s.slice(0, -1));
-    // deep-link встречи приходит как ?meeting= — чистим, чтобы назад не открывал её снова
-    if (typeof window !== "undefined" && window.location.search) {
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, []);
+  // Адрес больше не чистим здесь: им владеет синхронизатор ниже (issue #31). Раньше эта
+  // строка была единственным местом, где менялся URL, и делала ровно одно — стирала
+  // ?meeting=, чтобы «назад» не открывал встречу снова.
+  const pop = useCallback(() => setStack((s) => s.slice(0, -1)), []);
   const toast = useCallback((msg: string) => setToastMsg(msg), []);
 
   // Списочный GET /tasks не отдаёт description и task_role (проекция TASK_LIST_COLUMNS,
@@ -146,6 +147,16 @@ export function RoyApp({ me }: { me: Me | null }) {
       hydrated.current = true;
       return;
     }
+    // Адрес важнее сохранённой сессии: если человеку прислали ссылку, открыть надо ЕЁ экран,
+    // а не тот, на котором он сам остановился вчера (issue #31).
+    const fromAddress = queryToState(window.location.search);
+    if (fromAddress.tab || fromAddress.route) {
+      fromUrl.current = true;
+      if (fromAddress.tab) setTabState(fromAddress.tab);
+      setStack(fromAddress.route ? [fromAddress.route] : []);
+      hydrated.current = true;
+      return;
+    }
     try {
       const saved = sessionStorage.getItem("roy_tab");
       // Валидируем по ПОЛНОМУ союзу, а не по ROY_TABS: в баре мобильные табы, а `search`/`book` —
@@ -179,6 +190,31 @@ export function RoyApp({ me }: { me: Me | null }) {
     } catch { /* приватный режим / битый JSON — стартуем с корня */ }
     hydrated.current = true;
   }, [openMeeting]);
+
+  // ── Адресная строка (issue #31) ───────────────────────────────────────────────
+  // Состояние → адрес. Каждый переход кладёт запись в историю, поэтому «назад» браузера
+  // возвращает на предыдущий экран приложения, а не уводит с сайта. Ссылку можно скопировать
+  // и отправить коллеге, средний клик открывает экран в новой вкладке.
+  useEffect(() => {
+    if (!hydrated.current || typeof window === "undefined") return;
+    // Пришли из popstate или из разбора адреса — своей записи в историю не добавляем.
+    if (fromUrl.current) { fromUrl.current = false; return; }
+    const path = stateToPath(tab, stack[stack.length - 1] ?? null, window.location.pathname);
+    if (path === window.location.pathname + window.location.search) return;
+    window.history.pushState({}, "", path);
+  }, [tab, stack]);
+
+  // Адрес → состояние. Срабатывает на «назад»/«вперёд» браузера и на правку адреса руками.
+  useEffect(() => {
+    const onPop = () => {
+      const next = queryToState(window.location.search);
+      fromUrl.current = true;
+      setTabState(next.tab ?? "search");
+      setStack(next.route ? [next.route] : []);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   // Персист push-стека рядом с roy_tab: после рефреша остаёмся на текущей детали.
   // (Если восстановленная деталь по id уже удалена — её экран мягко покажет ошибку загрузки.)
