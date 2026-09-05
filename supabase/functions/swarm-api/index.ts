@@ -1878,7 +1878,13 @@ Deno.serve(async (req: Request) => {
         entry_date: entryDate,
         group_id: groupId,
         is_private: isPrivate,
-        owner_id: isPrivate ? telegram_id : null,
+        // Автор = тот, кто записал встречу и завёл её в систему. Раньше здесь стояло
+        // `isPrivate ? telegram_id : null`: у общей записи автор стирался, потому что
+        // owner_id тащит две роли сразу — авторство и ключ приватности, а для видимости
+        // общей записи он не нужен (фильтр `is_private=false OR owner_id=…` проходит по
+        // первой половине). На видимость это поле у общей записи не влияет, зато без него
+        // автор не мог править и удалять собственную опубликованную встречу.
+        owner_id: telegram_id,
       }).select(ENTRY_COLUMNS).single();
       if (insErr || !created) return apiErr(500, insErr?.message ?? "publish failed", origin);
 
