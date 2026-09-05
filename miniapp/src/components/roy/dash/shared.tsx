@@ -84,10 +84,16 @@ export function DashBlock({
       >
         <RoyIcon name={icon} size={16} strokeWidth={2} />
       </span>
-      <span className="truncate font-bold text-ink" style={{ fontSize: 15.5, letterSpacing: "-0.01em" }}>
+      {/* Заголовок ужимается ПОСЛЕДНИМ (issue #223). Раньше он и бейдж сжимались одинаково, и в
+          правой колонке дашборда (344px на 1440) «Встречи» превращались в «Вс…», как только в
+          бейдже появлялось «2 на согласовании». Заголовок — единственное, что говорит, ЧТО за
+          панель; опознавать её по иконке человек не обязан. min-w не даёт схлопнуться ниже
+          читаемого, truncate оставлен для действительно длинных названий. */}
+      <span className="min-w-[7ch] truncate font-bold text-ink" style={{ fontSize: 15.5, letterSpacing: "-0.01em" }}>
         {title}
       </span>
-      {badge}
+      {/* Бейдж отдаёт место первым: его смысл дублируется ярусом ниже («Требуют решения N»). */}
+      <span className="min-w-0 shrink overflow-hidden">{badge}</span>
     </div>
   );
 
@@ -179,15 +185,30 @@ export function AccentBadge({ children }: { children: ReactNode }) {
 }
 
 // ── Строка-кнопка тела панели ───────────────────────────────────────────────────
+// НЕ <button> (issue #248). Внутрь строки кладут собственные кнопки — «Подключиться»/«Вернуться»
+// в панели «Встречи сегодня», — а кнопка внутри кнопки невалидна в HTML. Парсер закрывает
+// внешнюю раньше времени, серверная разметка расходится с клиентским деревом, и React пишет
+// hydration error на каждом рендере дашборда. Ровно по этой причине рядом уже живёт DashTaskRow
+// не кнопкой.
+//
+// Клавиатуру у div приходится делать руками: Enter и Пробел, роль и tabIndex. Пробел ещё и
+// гасим на нажатии — иначе браузер прокрутит страницу вместо активации строки.
 export function Row({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition-colors hover:bg-surface-2"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className="flex w-full cursor-pointer items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line"
     >
       {children}
-    </button>
+    </div>
   );
 }
 
