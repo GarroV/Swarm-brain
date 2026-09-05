@@ -7,7 +7,6 @@ import { chatComplete, getEmbedding } from "../lib/openai.ts";
 import { getWorkspaceMarkets } from "../lib/workspace.ts";
 import { COUNTRY_NAMES } from "../../_shared/countries.ts";
 import { buildEmbeddingInput, marketTagsFromInput } from "../../_shared/meta-extract.ts";
-import { analyzeAndCreateTasks } from "../tasks/handlers.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -396,7 +395,11 @@ export async function handleMeetingCallbacks(
     for (const t of (meetingTasks ?? []) as Array<{ id: string; assignees: string[] }>) {
       const existing = t.assignees ?? [];
       if (!existing.includes(assigneeName)) {
-        await supabase.from("tasks").update({ assignees: [...existing, assigneeName], status: "pending" }).eq("id", t.id);
+        // Статус здесь БОЛЬШЕ НЕ ТРОГАЕМ (05.09.2026). Раньше назначение исполнителя
+        // переводило задачу в `pending` — то есть уже видимая задача уезжала в статус,
+        // которого не показывают ни веб, ни рекордер, и человек терял её ровно в тот
+        // момент, когда её на него повесили. Назначаем исполнителя, статус оставляем.
+        await supabase.from("tasks").update({ assignees: [...existing, assigneeName] }).eq("id", t.id);
       }
     }
     await sendMessage(chatId, `✅ <b>${assigneeName}</b> добавлен(а) к задачам встречи.`);
@@ -496,10 +499,12 @@ export async function handleMeetingCallbacks(
     await supabase.from("entries").update({ metadata: { ...(entry.metadata as Record<string, unknown>), confirmed: true }, is_private: false, owner_id: publisherId }).eq("id", entryId).eq("group_id", groupId);
     const title = ((entry.metadata as Record<string, unknown>)?.title as string) ?? "Встреча";
     await sendMessage(chatId, `✅ Встреча сохранена: <b>${title}</b>`);
-    const content = (entry.content as string) ?? "";
-    if (content) {
-      await analyzeAndCreateTasks(content, chatId, userId, entryId, groupId);
-    }
+    // Авто-извлечение задач из встречи УБРАНО 05.09.2026 (решение владельца: «раз бот —
+    // удаляй все»). Бот клал такие задачи в статус `pending`, подтвердить их можно было
+    // только карточкой в Telegram, а в вебе статус не показывался вовсе — так на проде
+    // осело 32 задачи с исполнителями и сроками, которых полтора месяца не видел никто.
+    // Сегодня задачи из встречи делает человек кнопкой «Сгенерировать задачи» в вебе:
+    // предложения живут в интерфейсе, а в базу попадает только выбранное и сразу активным.
     return true;
   }
   if (data.startsWith("met_")) {

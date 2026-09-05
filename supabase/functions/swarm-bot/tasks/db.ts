@@ -54,9 +54,6 @@ export async function dbListAllOpen(groupId?: string): Promise<Task[]> {
   return (data ?? []) as Task[];
 }
 
-export async function dbListPending(createdBy: number, groupId?: string): Promise<Task[]> {
-  return listTasks({ confirmed: false, createdBy, limit: 20 }, groupId);
-}
 
 export async function dbListToday(telegramId: number, groupId?: string): Promise<Task[]> {
   const [mine, allTag] = await Promise.all([

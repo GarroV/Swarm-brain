@@ -4,7 +4,6 @@ export {
   handleAddTask,
   handleTaskCallbacks,
   handleTaskSessionInput,
-  analyzeAndCreateTasks,
   handleQuickCreateTask,
   smartTaskSearch,
   sendTaskCard,

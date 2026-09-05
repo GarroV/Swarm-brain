@@ -2,9 +2,9 @@ import { supabase, ADMIN_USER_ID } from "../lib/supabase.ts";
 import { chatComplete } from "../lib/openai.ts";
 import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession } from "../lib/storage.ts";
-import { dbGetTask, dbListTasks, dbCreateTask, dbUpdateTask, dbDeleteTask, dbListAllOpen, dbListPending, dbListToday } from "./db.ts";
+import { dbGetTask, dbListTasks, dbCreateTask, dbUpdateTask, dbDeleteTask, dbListAllOpen, dbListToday } from "./db.ts";
 import { getProfilesForPrompt, buildProfileMap, buildDisplayNameMap, getAllUniqueMarkets, resolveAssignees, findUserByMention } from "./matcher.ts";
-import { sendTaskCard, sendPendingTaskCard, STATUS_LABEL, formatTaskLine } from "./formatter.ts";
+import { sendTaskCard, STATUS_LABEL, formatTaskLine } from "./formatter.ts";
 import { normalizeExtractedDueDate, todayIso } from "../../_shared/llm-date.ts";
 import type { Task } from "./types.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
@@ -100,7 +100,6 @@ export async function handleTasks(chatId: number, userId: number, filter: string
     // Interactive main menu — single inline message
     await sendInlineMessage(chatId, "📋 <b>Задачи</b>", [
       [
-        { text: "⏳ На проверке", callback_data: "tk_pending" },
         { text: "📅 На сегодня", callback_data: "tk_today" },
       ],
       [
@@ -152,99 +151,14 @@ export async function handleAddTask(chatId: number): Promise<void> {
   await sendMessage(chatId, "📌 <b>Новая задача</b>\n\nЗадача?");
 }
 
-// ── analyzeAndCreateTasks ─────────────────────────────────────────────────────
-
-export async function analyzeAndCreateTasks(content: string, chatId: number, userId: number, entryId: string, groupId?: string): Promise<void> {
-  const profiles = await getProfilesForPrompt();
-  const userList = JSON.stringify(profiles.map(p => ({
-    id: p.id,
-    name: p.name,
-    aliases: p.name_aliases,
-    email: p.email,
-    role: p.role,
-    markets: p.markets,
-  })));
-
-  const today = todayIso();
-  const raw = await chatComplete(
-    `Сегодня ${today}. Ты анализируешь текст командной базы знаний. Извлеки задачи — только конкретные поручения/действия.\n` +
-    `Члены команды (JSON): ${userList || "[]"}\n\n` +
-    `Роли команды:\n` +
-    `- "marketing" — задачи по маркетингу, рекламе, соцсетям\n` +
-    `- "rnd" — задачи по продукту, разработке, исследованиям\n` +
-    `- "bd" — всё остальное: операционка, бизнес-процессы, сопровождение\n\n` +
-    `Правила назначения:\n` +
-    `1. Если упоминается конкретный человек (по имени, фамилии, псевдониму, email или сокращённому имени) — запиши его id из списка в assignee_ids\n` +
-    `2. Если упоминается страна/рынок — заполни country\n` +
-    `3. Если понятна роль исполнителя — заполни task_role\n` +
-    `4. assignee_ids может содержать несколько id если задача явно для нескольких людей\n\n` +
-    `Верни ТОЛЬКО JSON без markdown:\n` +
-    `{"tasks":[{"title":"Название","description":"1 фраза контекста","assignee_ids":[123456789],"assignee_mention":"Vasya","task_role":"bd","country":"Словения","due_date":"2026-06-01","confidence":0.9}]}\n` +
-    `assignee_ids — массив полей id из списка выше, или [] если исполнитель неизвестен.\n` +
-    `assignee_mention — точная цитата из текста как упоминается исполнитель (имя, email, ник) — даже если id не найден.\n` +
-    `description — 1 короткая фраза контекста задачи (зачем / какой результат / важная деталь из текста); НЕ повторяй заголовок; null если заголовок самодостаточен.\n` +
-    `task_role — одно из: "marketing", "bd", "rnd", или null если неизвестно.\n` +
-    `country — название страны или null. due_date — YYYY-MM-DD или null.\n` +
-    `due_date: год считай от сегодняшней даты. Если назван только день и месяц («до 17 августа») — подставь ближайший подходящий год, НИКОГДА не бери год из головы. Срок не назван — null.\n` +
-    `Создавай задачи только с confidence >= 0.7. Если задач нет — {"tasks":[]}.`,
-    content.slice(0, 6000),
-    { temperature: 0, json: true }
-  );
-
-  let tasks: Array<{
-    title: string;
-    description?: string | null;
-    assignee_ids: number[];
-    assignee_mention?: string;
-    task_role: string | null;
-    country: string | null;
-    due_date: string | null;
-    confidence: number;
-  }> = [];
-  try {
-    const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
-    tasks = (parsed.tasks ?? []).filter((t: { confidence: number }) => t.confidence >= 0.7);
-  } catch { return; }
-  if (!tasks.length) return;
-
-  const VALID_ROLES = new Set(["marketing", "bd", "rnd"]);
-  for (const task of tasks) {
-    const { assignees, assignee_telegram_ids } = resolveAssignees(profiles, task);
-
-    // Fuzzy fallback: if GPT couldn't resolve the ID but gave us a mention text
-    let finalAssignees = assignees;
-    let finalTelegramIds = assignee_telegram_ids;
-    if (!finalTelegramIds.length && task.assignee_mention) {
-      const matched = findUserByMention(task.assignee_mention, profiles);
-      if (matched) {
-        finalAssignees = [matched.name];
-        finalTelegramIds = [matched.id];
-      }
-    }
-
-    const task_role = VALID_ROLES.has(task.task_role ?? "") ? task.task_role : null;
-    await dbCreateTask({
-      title: task.title,
-      description: task.description ?? null,
-      assignees: finalAssignees,
-      assignee_telegram_ids: finalTelegramIds,
-      task_role,
-      country: task.country ?? null,
-      // Слой 2 против выдуманного моделью года (см. _shared/tasks/due-date.ts).
-      due_date: normalizeExtractedDueDate(task.due_date, today),
-      source: "transcript",
-      status: "pending",
-      confirmed: false,
-      created_by_telegram_id: userId,
-      meeting_id: entryId,
-      group_id: groupId ?? null,
-    });
-  }
-
-  const n = tasks.length;
-  const word = n === 1 ? "задача" : n < 5 ? "задачи" : "задач";
-  await sendMessage(chatId, `📋 Найдено <b>${n} ${word}</b> — проверь в <b>📋 Задачи → На подтверждении</b>.`);
-}
+// Функция analyzeAndCreateTasks УДАЛЕНА 05.09.2026 (решение владельца: «раз бот — удаляй все»).
+//
+// Она вытаскивала задачи из транскрипта при сохранении встречи ботом и клала их в статус
+// `pending`: подтвердить можно было только карточкой в Telegram, а веб такой статус не
+// показывал вовсе. На проде так осело 32 задачи с исполнителями и сроками, которых полтора
+// месяца не видел ни один человек. Задачи из встречи теперь делает человек кнопкой
+// «Сгенерировать задачи» в вебе — предложения живут в интерфейсе, в базу едет выбранное и
+// сразу активным. Статус `pending` у задач больше не пишет никто (детектор в tasks-no-pending.test.ts).
 
 // ── smartTaskSearch ───────────────────────────────────────────────────────────
 
@@ -285,7 +199,6 @@ export async function smartTaskSearch(chatId: number, question: string): Promise
 const STATUS_EMOJI: Record<string, string> = {
   open: "🔵",
   in_progress: "🟡",
-  pending: "⏳",
   done: "✅",
   cancelled: "❌",
   draft: "📝",
@@ -296,7 +209,6 @@ const STATUS_LABEL_FULL: Record<string, string> = {
   in_progress: "В работе",
   done: "Выполнена",
   cancelled: "Отменена",
-  pending: "На подтверждении",
   draft: "Черновик",
 };
 
@@ -326,7 +238,6 @@ function buildMainMenuMessage(): { text: string; keyboard: Array<Array<{ text: s
     text: "📋 <b>Задачи</b>",
     keyboard: [
       [
-        { text: "⏳ На проверке", callback_data: "tk_pending" },
         { text: "📅 На сегодня", callback_data: "tk_today" },
       ],
       [
@@ -366,9 +277,6 @@ function buildTaskDetailMessage(task: Task): { text: string; keyboard: unknown[]
     statusRow.push({ text: "↩️ Открыть", callback_data: `tk_st_${task.id}_open` });
   } else if (task.status === "done" || task.status === "cancelled") {
     statusRow.push({ text: "↩️ Переоткрыть", callback_data: `tk_st_${task.id}_open` });
-  } else if (task.status === "pending") {
-    statusRow.push({ text: "▶️ В работу", callback_data: `tk_st_${task.id}_in_progress` });
-    statusRow.push({ text: "✅ Готово", callback_data: `tk_st_${task.id}_done` });
   }
 
   const keyboard: unknown[][] = [];
@@ -536,38 +444,10 @@ export async function handleTaskCallbacks(
     return true;
   }
 
-  // tk_pending — tasks awaiting my review
-  if (data === "tk_pending") {
-    const tasks = await dbListPending(userId, groupId);
-    if (!tasks.length) {
-      await editInlineMessage(
-        chatId, cb.message.message_id,
-        "✅ Задач на проверке нет.",
-        [[{ text: "🔙 Назад", callback_data: "tk_menu" }]],
-      );
-      return true;
-    }
-    const buttons = tasks.map((t) => {
-      const who = t.assignees?.length ? ` · ${t.assignees[0].split(" ")[0]}` : " · ⚠️";
-      const due = t.due_date ? ` · ${t.due_date.slice(5)}` : "";
-      return [{ text: `⏳ ${truncateTitle(t.title)}${who}${due}`, callback_data: `tk_pen_${t.id}` }];
-    });
-    buttons.push([{ text: "🔙 Назад", callback_data: "tk_menu" }]);
-    await editInlineMessage(chatId, cb.message.message_id, `⏳ <b>На проверке (${tasks.length}):</b>`, buttons);
-    return true;
-  }
+  // Ветки tk_pending и tk_pen_ УДАЛЕНЫ 05.09.2026: статуса `pending` у задач больше нет,
+  // подтверждать в Telegram нечего. Задачи из встречи делает человек в вебе кнопкой
+  // «Сгенерировать задачи», и в базу они едут сразу активными.
 
-  // tk_pen_{taskId} — open single pending task card
-  if (data.startsWith("tk_pen_")) {
-    const taskId = data.replace("tk_pen_", "");
-    const task = await dbGetTask(taskId);
-    if (!task) {
-      await editInlineMessage(chatId, cb.message.message_id, "Задача не найдена.", [[{ text: "🔙 Назад", callback_data: "tk_pending" }]]);
-      return true;
-    }
-    await sendPendingTaskCard(chatId, task);
-    return true;
-  }
 
   // tk_today — tasks due today or overdue, assigned to me or #all
   if (data === "tk_today") {
@@ -746,7 +626,7 @@ export async function handleTaskCallbacks(
     return true;
   }
 
-  // tdue_{taskId} — prompt deadline edit (from pending card)
+  // tdue_{taskId} — правка срока с карточки задачи
   if (data.startsWith("tdue_")) {
     const taskId = data.replace("tdue_", "");
     await setSession(chatId, "task_date", taskId);
@@ -754,7 +634,7 @@ export async function handleTaskCallbacks(
     return true;
   }
 
-  // tctag_{taskId} — country and tag picker (from pending card)
+  // tctag_{taskId} — выбор страны и меток с карточки задачи
   if (data.startsWith("tctag_")) {
     const taskId = data.replace("tctag_", "");
     const COUNTRIES = ["Serbia", "Bulgaria", "Croatia", "Hungary", "Moldova", "Romania"];
@@ -879,13 +759,7 @@ export async function handleTaskCallbacks(
 // ── Task list menu callbacks ──────────────────────────────────────────────────
 
 async function handleTaskListCallback(chatId: number, userId: number, _username: string, type: string): Promise<void> {
-  if (type === "pending") {
-    const { data } = await supabase.from("tasks").select("*").eq("status", "pending").eq("is_private", false).order("created_at", { ascending: false }).limit(15);
-    const tasks = (data ?? []) as Task[];
-    if (!tasks.length) { await sendMessage(chatId, "Задач на подтверждении нет. ✅"); return; }
-    await sendMessage(chatId, `<b>⏳ На подтверждении: ${tasks.length}</b>`);
-    for (const t of tasks) await sendPendingTaskCard(chatId, t);
-  } else if (type === "done") {
+  if (type === "done") {
     const { data } = await supabase.from("tasks").select("*").eq("status", "done").eq("is_private", false).order("updated_at", { ascending: false }).limit(15);
     const tasks = (data ?? []) as Task[];
     if (!tasks.length) { await sendMessage(chatId, "Выполненных задач нет."); return; }
