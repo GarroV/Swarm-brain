@@ -87,75 +87,6 @@ async function extractCountries(text: string): Promise<string[]> {
   } catch { return []; }
 }
 
-async function extractAndSaveTasks(content: string, meetingId: string): Promise<number> {
-  const { data: profiles } = await supabase.from("user_profiles").select("first_name, last_name, markets, role");
-  type ProfileRow = { first_name?: string; last_name?: string; markets?: string[]; role?: string };
-
-  // Build canonical name map: any variant → canonical full name
-  const canonicalNames = (profiles ?? []).map((p: ProfileRow) => {
-    const name = [p.first_name, p.last_name].filter(Boolean).join(" ");
-    return name || null;
-  }).filter(Boolean) as string[];
-
-  const teamList = (profiles ?? []).map((p: ProfileRow) => {
-    const name = [p.first_name, p.last_name].filter(Boolean).join(" ");
-    const markets = p.markets?.length ? ` (рынки: ${p.markets.join(", ")})` : " (рынки: не указаны)";
-    const role = p.role ? ` [${p.role}]` : "";
-    return name ? `${name}${role}${markets}` : null;
-  }).filter(Boolean).join("\n");
-
-  const today = todayIso();
-  const raw = await chatComplete(
-    `Сегодня ${today}. Извлеки задачи из транскрипта встречи. Верни JSON:\n` +
-    "{\"tasks\": [{\"title\": \"...\", \"assignee\": \"Полное имя или null\", \"due_date\": \"YYYY-MM-DD или null\", \"tags\": [\"страна\", \"тема\"]}]}\n\n" +
-    "Список команды (имя [роль] рынки):\n" + (teamList || "неизвестна") + "\n\n" +
-    "ПРАВИЛА назначения:\n" +
-    "1. assignee — ОДИН человек, кто лично должен выполнить задачу\n" +
-    "2. Участие в встрече НЕ означает ответственность за задачу\n" +
-    "3. Если задача про страну/рынок — назначь того у кого эта страна в рынках\n" +
-    "4. Если в тексте прямо сказано 'Имя, сделай X' — назначь это имя\n" +
-    "5. Если ответственный неясен — assignee: null\n" +
-    "6. Используй ТОЧНЫЕ имена из списка команды выше\n" +
-    "due_date: год считай от сегодняшней даты. Если назван только день и месяц («до 17 августа») — подставь ближайший подходящий год, НИКОГДА не бери год из головы. Срок не назван — null.\n" +
-    "tags — страны и темы задачи. Только JSON.",
-    content,
-    true
-  );
-
-  try {
-    const parsed = JSON.parse(raw) as { tasks?: Array<{ title: string; assignee?: string | null; assignees?: string[]; due_date: string | null; tags: string[] }> };
-    const tasks = parsed.tasks ?? [];
-
-    // Resolve assignee string → canonical name from profiles
-    const resolveAssignee = (raw: string | null | undefined): string | null => {
-      if (!raw) return null;
-      const lower = raw.toLowerCase();
-      const match = canonicalNames.find(n =>
-        n.toLowerCase().includes(lower) || lower.includes(n.toLowerCase().split(" ").pop()!)
-      );
-      return match ?? null;
-    };
-
-    for (const task of tasks) {
-      const assigneeRaw = task.assignee ?? (task.assignees?.[0] ?? null);
-      const assignee = resolveAssignee(assigneeRaw);
-      await supabase.from("tasks").insert({
-        title: task.title,
-        assignees: assignee ? [assignee] : [],
-        // Слой 2 против выдуманного моделью года (см. _shared/tasks/due-date.ts).
-        due_date: normalizeExtractedDueDate(task.due_date, today),
-        tags: task.tags ?? [],
-        meeting_id: meetingId,
-        status: "pending",
-        // Read.ai uses single OAuth token tied to CEE workspace
-        group_id: "cee",
-      });
-    }
-    return tasks.length;
-  } catch {
-    return 0;
-  }
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("OK", { status: 200 });
@@ -267,11 +198,13 @@ Deno.serve(async (req: Request) => {
       ? `Встреча: ${title}\n\nСтенограмма:\n${transcript.slice(0, 12000)}`
       : fullContent.slice(0, 6000);
 
-    // Generate structured tezises + extract metadata + embedding + tasks in parallel
-    const [tezises, embedding, taskCount, countries] = await Promise.all([
+    // Тезисы + метаданные + embedding параллельно. Автоматического извлечения задач здесь
+    // больше нет (05.09.2026): оно писало их в статус `pending`, который не показывает ни
+    // веб, ни рекордер, — то есть создавало задачи, невидимые всем. Задачи из встречи делает
+    // человек кнопкой «Сгенерировать задачи» в вебе.
+    const [tezises, embedding, countries] = await Promise.all([
       chatComplete(TEZISY_PROMPT, tezisSource),
       getEmbedding(fullContent),
-      extractAndSaveTasks(fullContent, meetingId),
       extractCountries(fullContent),
     ]);
 
@@ -310,10 +243,6 @@ Deno.serve(async (req: Request) => {
     text += `<b>${title}</b>${durationStr}\n`;
     text += `📅 ${meetingDateStr}`;
     if (participantsStr) text += `\n👥 ${participantsStr}`;
-    if (taskCount > 0) {
-      const word = taskCount === 1 ? "задача" : taskCount < 5 ? "задачи" : "задач";
-      text += `\n📌 ${taskCount} ${word} извлечено`;
-    }
     text += `\n\nПроверьте и подтвердите:`;
 
     await sendTelegramInline(text, [
