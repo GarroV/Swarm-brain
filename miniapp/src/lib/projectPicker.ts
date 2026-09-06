@@ -3,10 +3,13 @@ import type { Project } from "@/types";
 // Состав и порядок выпадающего списка «Проект» в карточке задачи.
 //
 // Решение владельца 2026-09-06 (docs/decisions/2026-09-06-project-picker-own-only.md):
-// при настройке задачи человек видит ТОЛЬКО свои проекты и подпроекты — общий список
-// воркспейса (48 строк прода, три автора, вперемешку и с повторяющимися названиями)
-// выбрать в нём нужное не давал. Доска (SprintBoard) осталась общей, менялась только
-// витрина выбора.
+// «только проекты и подпроекты которые создал я, все, не больше». Общий список воркспейса
+// (48 строк прода, три автора, вперемешку и с повторяющимися названиями) выбрать в нём
+// нужное не давал. Доска (SprintBoard) осталась общей, менялась только витрина выбора.
+//
+// Привязку задачи к ЧУЖОМУ проекту это не рвёт: строки в списке нет, но значение живёт в
+// состоянии карточки, а подпись считается по полному списку проектов (TaskModal). Проверено
+// живым прогоном 2026-09-06 — Base UI не сбрасывает значение, которого нет среди пунктов.
 //
 // Это НЕ замок: доступ к проекту стережёт сервер (canViewProject в _shared/tasks/
 // project-access.ts). Здесь только удобство выбора, поэтому при неизвестном зрителе
@@ -25,24 +28,19 @@ const byName = (a: string, b: string) => a.localeCompare(b, "ru");
 
 export function buildProjectOptions(
   projects: Project[],
-  opts: { viewerId?: number | null; selectedId?: string | null },
+  opts: { viewerId?: number | null },
 ): ProjectPickerOptions {
   const viewerId = opts.viewerId ?? null;
-  const selectedId = opts.selectedId ?? null;
   const byId = new Map(projects.map((p) => [p.id, p]));
 
-  // «Моё» = я автор, либо строка ничейная (легаси/бот — иначе она недостижима),
-  // либо это подпроект в моей группе (сосед по моей же ветке).
-  const isMine = (p: Project): boolean => {
-    if (viewerId === null) return true;
-    if (p.created_by === null || p.created_by === viewerId) return true;
-    const parent = p.parent_id ? byId.get(p.parent_id) : undefined;
-    return parent !== undefined && (parent.created_by === null || parent.created_by === viewerId);
-  };
+  // «Моё» = я автор строки, и только. Уточнение владельца 2026-09-06: «мне надо чтобы
+  // выпадающий список проектов показывал только проекты и подпроекты которые создал я,
+  // все, не больше» — ни ничейных строк, ни чужих подпроектов в моей группе.
+  // Личность неизвестна (`fetchMe` не ответил) — показываем всё: пустой селект означал бы
+  // «не к чему привязать задачу», а замок тут всё равно не здесь, а на сервере.
+  const isMine = (p: Project): boolean => viewerId === null || p.created_by === viewerId;
 
-  // Уже привязанный чужой проект остаётся в списке: убери его — подпись схлопнется в «—»,
-  // и первое же сохранение молча оторвёт задачу от проекта.
-  const visible = projects.filter((p) => isMine(p) || p.id === selectedId);
+  const visible = projects.filter(isMine);
 
   const toOption = (p: Project): ProjectOption => ({
     id: p.id,
@@ -50,19 +48,9 @@ export function buildProjectOptions(
     parentName: p.parent_id ? (byId.get(p.parent_id)?.name ?? "…") : null,
   });
 
-  // Чужая привязанная строка — в голову своей секции: это текущее значение, ему место на виду.
-  const pinFirst = (list: ProjectOption[]) => {
-    const i = list.findIndex((o) => o.id === selectedId);
-    return i <= 0 ? list : [list[i], ...list.slice(0, i), ...list.slice(i + 1)];
-  };
-  const isForeignSelected = (o: ProjectOption) => o.id === selectedId && !isMine(byId.get(o.id)!);
-
-  const tops = visible.filter((p) => !p.parent_id).map(toOption).sort((a, b) => byName(a.name, b.name));
-  const subs = visible.filter((p) => p.parent_id).map(toOption)
-    .sort((a, b) => byName(a.parentName ?? "", b.parentName ?? "") || byName(a.name, b.name));
-
   return {
-    tops: tops.some(isForeignSelected) ? pinFirst(tops) : tops,
-    subs: subs.some(isForeignSelected) ? pinFirst(subs) : subs,
+    tops: visible.filter((p) => !p.parent_id).map(toOption).sort((a, b) => byName(a.name, b.name)),
+    subs: visible.filter((p) => p.parent_id).map(toOption)
+      .sort((a, b) => byName(a.parentName ?? "", b.parentName ?? "") || byName(a.name, b.name)),
   };
 }

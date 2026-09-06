@@ -259,10 +259,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
   }, []);
 
   // Состав и порядок выпадашки «Проект»: только свои проекты и подпроекты, двумя секциями.
-  const projectOptions = useMemo(
-    () => buildProjectOptions(projects, { viewerId: myId, selectedId: selProject }),
-    [projects, myId, selProject],
-  );
+  const projectOptions = useMemo(() => buildProjectOptions(projects, { viewerId: myId }), [projects, myId]);
 
   // Опции исполнителя = пользователи воркспейса + текущий исполнитель, если его нет в списке
   // (иначе select не показал бы его, а сохранение затёрло бы назначение).

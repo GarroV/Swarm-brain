@@ -68,27 +68,31 @@ Deno.test("подпроекты сортируются группами: сна�
   ]);
 });
 
-Deno.test("уже привязанный чужой проект остаётся в списке — иначе сохранение молча оторвёт задачу", () => {
+Deno.test("чужой проект не всплывает в списке даже когда задача к нему привязана", () => {
+  // Владелец 2026-09-06: «все, не больше». Проверено живым прогоном: привязка при этом не рвётся —
+  // Base UI не сбрасывает значение, которого нет среди пунктов, а подпись в карточке считается
+  // по ПОЛНОМУ списку проектов (TaskModal), не по этому. Оторвать задачу можно только руками.
   const { tops } = buildProjectOptions(ALL, { viewerId: ME, selectedId: "revizii" });
-  assertEquals(tops.map((o) => o.id), ["revizii", "imf", "vibe"]);
+  assertEquals(tops.map((o) => o.id), ["imf", "vibe"]);
 });
 
-Deno.test("уже привязанный чужой ПОДпроект тоже остаётся, с подписью своей группы", () => {
+Deno.test("чужой ПОДпроект — так же: привязка есть, строки в списке нет", () => {
   const { subs } = buildProjectOptions(ALL, { viewerId: ME, selectedId: "romania" });
-  assertEquals(subs.map((o) => o.id), ["romania", "karpov", "pl"]);
-  assertEquals(subs[0].parentName, "Анализ ревизий");
+  assertEquals(subs.map((o) => o.id), ["karpov", "pl"]);
 });
 
-Deno.test("подпроект внутри моей группы виден, даже если завёл его коллега", () => {
+Deno.test("чужой подпроект в моей группе тоже не показываем — «только те, что создал я»", () => {
+  // Уточнение владельца 2026-09-06: «мне надо чтобы выпадающий список проектов показывал
+  // только проекты и подпроекты которые создал я, все, не больше».
   const list = [...ALL, proj({ id: "chuzhoy", name: "Испания", parent_id: "imf", created_by: COLLEAGUE })];
   const { subs } = buildProjectOptions(list, { viewerId: ME, selectedId: null });
-  assertEquals(subs.map((o) => o.id).includes("chuzhoy"), true);
+  assertEquals(subs.map((o) => o.id), ["karpov", "pl"]);
 });
 
-Deno.test("строка без автора (легаси/бот) видна всем — иначе она стала бы недостижимой", () => {
-  const list = [proj({ id: "nobody", name: "Дайджест", created_by: null })];
+Deno.test("строка без автора — не моя, в список не идёт", () => {
+  const list = [proj({ id: "nobody", name: "Дайджест", created_by: null }), proj({ id: "moy", name: "Vibe Coding" })];
   const { tops } = buildProjectOptions(list, { viewerId: ME, selectedId: null });
-  assertEquals(tops.map((o) => o.id), ["nobody"]);
+  assertEquals(tops.map((o) => o.id), ["moy"]);
 });
 
 Deno.test("личность зрителя ещё не известна — показываем всё, это витрина, а не замок", () => {
