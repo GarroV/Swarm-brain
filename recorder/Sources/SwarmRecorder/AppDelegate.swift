@@ -83,7 +83,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var dismissedUntil: [String: Date] = [:]
     private let recordedSuppressSeconds: TimeInterval = 20 * 60   // «уже записал» — короткий кулдаун (дозапись/рестарт того же созвона снова предложатся)
     private let dismissMeetingSeconds: TimeInterval = 3 * 3600    // «Не записывать» без известного конца события — на несколько часов
-    private var notifiedKeys: Set<String> = []     // по каким уже слали уведомление
     // Микрофонный запасной детект.
     private var callActive = false
     // Разрешены ли уведомления. nil — ещё не спросили систему (первые мгновения после старта):
@@ -145,12 +144,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Дефолтный стоп: если активный созвон не детектится, запись не идёт дольше этого лимита.
     // Бэкстоп от runaway-записи (когда детект созвона молчит — напр. ручной старт без звонка).
     private static let maxNoCallSeconds: TimeInterval = 75 * 60   // 1ч15м
-
-    private let notifyCategory = "MEETING_START"
-    // Та же встреча, но со ссылкой на звонок: набор кнопок задаёт КАТЕГОРИЯ, поэтому их две.
-    private let notifyJoinCategory = "MEETING_START_JOIN"
-    private let recordAction = "RECORD"
-    private let joinAction = "JOIN"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Переезд под новое имя (bumblebee) — до всего остального: если хелпер стартовал,
@@ -214,14 +207,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func setupNotifications() {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        let record = UNNotificationAction(identifier: recordAction, title: "Записать", options: [.foreground])
-        // Кнопка-referens Granola: один клик и заходит в звонок, и включает запись — чтобы не
-        // бежать в календарь искать ссылку (решение владельца 02.09.2026, #193).
-        let join = UNNotificationAction(identifier: joinAction, title: "Подключиться и записать", options: [.foreground])
-        let cat = UNNotificationCategory(identifier: notifyCategory, actions: [record], intentIdentifiers: [], options: [])
-        let joinCat = UNNotificationCategory(identifier: notifyJoinCategory, actions: [join, record],
-                                             intentIdentifiers: [], options: [])
-        center.setNotificationCategories([cat, joinCat])
+        // Кнопок и категорий нет: предложение записать живёт только в капсуле (решение владельца
+        // 07.09.2026, docs/decisions/2026-09-07-one-surface-for-meeting-prompt.md). Разрешение
+        // всё равно нужно — через штатные баннеры идут ИНФОРМАЦИОННЫЕ сообщения, у которых
+        // второй поверхности нет.
         // Ответ на запрос ЧИТАЕМ. Раньше здесь стояло `{ _, _ in }`: человек отказывал (или
         // системный запрос вообще не появлялся), приложение об этом не узнавало никогда, и
         // каждое последующее уведомление молча уходило в никуда — а через них рекордер
@@ -485,8 +474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             callActive = false
             if pendingMeeting?.key != m.key {
                 pendingMeeting = m
-                if !notifiedKeys.contains(m.key) { notifiedKeys.insert(m.key); notifyMeeting(m) }
-                rebuildMenu()
+                rebuildMenu()   // syncWidget покажет капсулу — единственная поверхность предложения
             }
             return
         }
@@ -495,7 +483,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Нет события календаря → запасной детект звонка по микрофону.
         if micActive && !wasActive {
             if let until = callDismissedUntil, Date() < until { return }
-            if !callActive { callActive = true; postCallNotification(); rebuildMenu() }
+            if !callActive { callActive = true; rebuildMenu() }
         } else if !micActive, callActive {
             callActive = false
             rebuildMenu()
@@ -517,51 +505,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                                      now: Date())
     }
 
-    private func notifyMeeting(_ m: MeetingIdentity.Info) {
-        let notice = notice(for: m)
-        let content = UNMutableNotificationContent()
-        content.title = notice.title
-        content.subtitle = notice.subtitle
-        content.categoryIdentifier = notifyCategory
-        content.sound = .default
-        // Ссылка на звонок есть → набор кнопок с «Подключиться и записать». Саму ссылку несём
-        // в userInfo: обработчик действия получает только уведомление, не встречу.
-        if let join = m.joinURL {
-            content.categoryIdentifier = notifyJoinCategory
-            content.userInfo = [Self.joinURLKey: join.absoluteString]
-        }
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "meeting-\(m.key)", content: content, trigger: nil))
-    }
-
-    private func postCallNotification() {
-        let content = UNMutableNotificationContent()
-        content.title = "Идёт звонок"
-        content.categoryIdentifier = notifyCategory
-        content.sound = .default
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "call-\(Int(Date().timeIntervalSince1970))", content: content, trigger: nil))
-    }
-
-    static let joinURLKey = "join_url"
-
-    // Открыть звонок из уведомления. Схему проверяет JoinLink (только https) — ссылка
-    // приехала из приглашения, которое мог создать кто угодно, а открываем её мы.
-    private func openJoinURL(from userInfo: [AnyHashable: Any]) {
-        guard let url = JoinLink.safeURL(userInfo[Self.joinURLKey] as? String) else { return }
-        NSWorkspace.shared.open(url)
-    }
-
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.banner, .sound])
     }
 
+    // Клик по уведомлению НИЧЕГО не запускает. Раньше здесь стоял `acceptPrompt()` на
+    // `UNNotificationDefaultActionIdentifier` — то есть запись начиналась от клика по ЛЮБОМУ
+    // уведомлению приложения, включая «нужен новый токен» и «звонок завершён, сохраняю».
+    // Предложение записать теперь живёт только в капсуле, и решение принимается там.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
-        if response.actionIdentifier == joinAction {
-            openJoinURL(from: response.notification.request.content.userInfo)
-        }
-        if response.actionIdentifier == recordAction || response.actionIdentifier == joinAction
-            || response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-            DispatchQueue.main.async { [weak self] in self?.acceptPrompt() }
-        }
         completionHandler()
     }
 
