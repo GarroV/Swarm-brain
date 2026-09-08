@@ -144,6 +144,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Дефолтный стоп: если активный созвон не детектится, запись не идёт дольше этого лимита.
     // Бэкстоп от runaway-записи (когда детект созвона молчит — напр. ручной старт без звонка).
     private static let maxNoCallSeconds: TimeInterval = 75 * 60   // 1ч15м
+    // Жёсткий потолок длительности записи. Лимит выше теперь требует ещё и ФАКТИЧЕСКОЙ тишины
+    // дорожек (issue #271), поэтому «не писать вечно» держит именно потолок: забытый старт под
+    // музыку/видео звучит непрерывно и лимитом по тишине не ловится.
+    private static let maxHardSeconds: TimeInterval = 4 * 60 * 60   // 4 часа
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Переезд под новое имя (bumblebee) — до всего остального: если хелпер стартовал,
@@ -1292,6 +1296,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
 
+        // (0в) Жёсткий потолок длительности — работает всегда, даже при живом звуке и активном
+        // детекте. Это единственная защита от runaway-записи после того, как лимит (б) ниже стал
+        // требовать фактической тишины.
+        if elapsed >= Self.maxHardSeconds {
+            autoStop(reason: "потолок 4 ч — останавливаю запись")
+            return
+        }
+
         if realCall {
             callSeenDuringRec = true
             silentTicks = 0
@@ -1307,7 +1319,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         // (б) Дефолтный стоп: за 1ч15м активный созвон так и не детектился (или давно смолк) →
         // запись не должна тянуться дальше. Защита от runaway, когда детект молчит.
-        if elapsed >= Self.maxNoCallSeconds && silentTicks >= 3 {
+        // Инцидент 2026-09-08 (issue #271): правило смотрело ТОЛЬКО на silentTicks — счётчик
+        // «никто другой не держит микрофон», то есть на ДЕТЕКТ, а не на звук. Детект был слеп всю
+        // запись (issue #270: others=[] в 899 тиках подряд), и живой громкий созвон (sysPeak
+        // 0.3–1.0 без единого тихого тика) оборвался ровно на 1ч15м. Поэтому лимит требует теперь
+        // и ФАКТИЧЕСКОЙ тишины обеих дорожек: пока кто-то звучит — пишем, от бесконечной записи
+        // держит потолок (0в) выше.
+        if elapsed >= Self.maxNoCallSeconds && silentTicks >= 3
+            && systemSilentTicks >= Self.systemSilenceTicksToStop {
             autoStop(reason: "лимит 1ч15м без активного созвона")
             return
         }
