@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Task, TaskInput } from "./types.ts";
+import { completionPatch, isClosedStatus } from "./statuses.ts";
 import { buildRecurPatch, todayInTz, type RecurRow } from "./recurrence.ts";
 
 const supabase = createClient(
@@ -22,6 +23,8 @@ export async function createTask(input: TaskInput, groupId?: string): Promise<Ta
     priority: input.priority ?? null,
     source: input.source ?? "manual",
     status: input.status ?? "open",
+    // Задача может родиться уже закрытой (импорт, MCP) — тогда дата закрытия ставится сразу.
+    completed_at: isClosedStatus(input.status) ? new Date().toISOString() : null,
     meeting_id: input.meeting_id ?? null,
     group_id: groupId ?? input.group_id ?? null,
     confirmed: input.confirmed ?? false,
@@ -167,48 +170,72 @@ export async function updateTask(
 ): Promise<RecurResult | null> {
   let patch: Record<string, unknown> = { ...fields };
   let result: RecurResult | null = null;
+  let prev: { status: string; completed_at: string | null } | null = null;
 
-  // Закрытие РЕГУЛЯРНОЙ задачи — не закрытие, а перекат на следующее вхождение графика.
-  // Живёт здесь, потому что это единственная точка записи статуса задач: веб (PATCH /tasks),
-  // бот и MCP ходят через неё, и обойти перекат нельзя. Лишний SELECT — только на «done».
-  if (fields.status === "done") {
+  // Статус меняется — нужен прежний снимок строки. Он отвечает сразу на три вопроса:
+  // не перекат ли это регулярной задачи, ставить ли дату закрытия и что записать в историю.
+  // Лишний SELECT платим только когда статус реально в патче.
+  if (fields.status !== undefined) {
     const { data: row } = await supabase.from("tasks")
-      .select("status, recur_freq, recur_anchor_dom, due_date, start_date, remind_date")
+      .select("status, completed_at, recur_freq, recur_anchor_dom, due_date, start_date, remind_date")
       .eq("id", id)
       .maybeSingle();
     if (row) {
-      // Значения из ЭТОГО же патча важнее сохранённых: срок/частоту могли поменять и закрыть
-      // задачу одним запросом (MCP умеет), и считать надо от нового графика, а не от прежнего.
-      const effective: RecurRow = {
-        status: (fields.status as string) ?? row.status,
-        recur_freq: fields.recur_freq !== undefined ? fields.recur_freq ?? null : row.recur_freq,
-        recur_anchor_dom: fields.recur_anchor_dom !== undefined ? fields.recur_anchor_dom ?? null : row.recur_anchor_dom,
-        due_date: fields.due_date !== undefined ? fields.due_date ?? null : row.due_date,
-        start_date: fields.start_date !== undefined ? fields.start_date ?? null : row.start_date,
-        remind_date: fields.remind_date !== undefined ? fields.remind_date ?? null : row.remind_date,
-      };
-      const recurPatch = buildRecurPatch(effective, todayInTz());
-      if (recurPatch) {
-        patch = { ...patch, ...recurPatch }; // у переката приоритет над «done» из запроса
-        result = { recurred: { from: effective.due_date!, to: recurPatch.due_date } };
+      prev = { status: row.status, completed_at: row.completed_at ?? null };
+
+      // Закрытие РЕГУЛЯРНОЙ задачи — не закрытие, а перекат на следующее вхождение графика.
+      // Живёт здесь, потому что это единственная точка записи статуса задач: веб (PATCH /tasks),
+      // бот и MCP ходят через неё, и обойти перекат нельзя.
+      if (fields.status === "done") {
+        // Значения из ЭТОГО же патча важнее сохранённых: срок/частоту могли поменять и закрыть
+        // задачу одним запросом (MCP умеет), и считать надо от нового графика, а не от прежнего.
+        const effective: RecurRow = {
+          status: (fields.status as string) ?? row.status,
+          recur_freq: fields.recur_freq !== undefined ? fields.recur_freq ?? null : row.recur_freq,
+          recur_anchor_dom: fields.recur_anchor_dom !== undefined ? fields.recur_anchor_dom ?? null : row.recur_anchor_dom,
+          due_date: fields.due_date !== undefined ? fields.due_date ?? null : row.due_date,
+          start_date: fields.start_date !== undefined ? fields.start_date ?? null : row.start_date,
+          remind_date: fields.remind_date !== undefined ? fields.remind_date ?? null : row.remind_date,
+        };
+        const recurPatch = buildRecurPatch(effective, todayInTz());
+        if (recurPatch) {
+          patch = { ...patch, ...recurPatch }; // у переката приоритет над «done» из запроса
+          result = { recurred: { from: effective.due_date!, to: recurPatch.due_date } };
+        }
       }
     }
   }
+
+  // Дата закрытия считается от ЭФФЕКТИВНОГО статуса — то есть уже после переката, который
+  // возвращает задачу в «open»: перекатившаяся задача закрытой не считается.
+  const nextStatus = patch.status as string | undefined;
+  patch = { ...patch, ...completionPatch(nextStatus, prev?.completed_at, new Date().toISOString()) };
 
   await supabase.from("tasks")
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", id);
 
-  // В roll-forward-модели от выполнения не остаётся НИКАКОГО следа (статус снова «открыто»,
-  // задача в «Готовых» не появится). Строка в уже существующей task_history — единственная
-  // память о том, что цикл закрыли.
   if (result) {
+    // В roll-forward-модели от выполнения не остаётся НИКАКОГО следа (статус снова «открыто»,
+    // задача в «Готовых» не появится). Строка в уже существующей task_history — единственная
+    // память о том, что цикл закрыли.
     await supabase.from("task_history").insert({
       task_id: id,
       changed_by: opts.actor ?? "recurring",
       old_status: fields.status ?? null,
       new_status: "open",
       note: `цикл закрыт, следующий срок ${result.recurred.to} (было ${result.recurred.from})`,
+    });
+  } else if (prev && nextStatus && prev.status !== nextStatus) {
+    // Обычная смена статуса. До 08.09.2026 историю писал ТОЛЬКО бот и только на перекате —
+    // в таблице на проде лежала одна строка за всё время, и «когда задача поехала в работу»
+    // ответа не имело. Пишем из общей точки, значит и веб, и MCP тоже попадают в историю.
+    await supabase.from("task_history").insert({
+      task_id: id,
+      changed_by: opts.actor ?? null,
+      old_status: prev.status,
+      new_status: nextStatus,
+      note: null,
     });
   }
 

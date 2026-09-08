@@ -175,11 +175,14 @@ function chain(...cmps: Array<(a: Task, b: Task) => number>) {
 }
 
 // Дата, по которой задача живёт на оси времени и в периоде. Для ЗАКРЫТОЙ это дата закрытия
-// (updated_at — прокси, отдельного completed_at в таблице нет), для остальных — срок.
+// (completed_at; updated_at и created_at — запасные варианты для старых строк), для остальных — срок.
+// ⚠️ updated_at в списочном ответе НЕ приходит (выброшен из TASK_LIST_COLUMNS), поэтому до
+// появления completed_at этот расчёт молча падал на created_at и «Сегодня + Готово» показывал
+// созданные сегодня вместо закрытых — issue #268.
 // Решение владельца 03.09.2026 («ось времени да, давай как ты предложил»): поэтому
 // «Сегодня + Готово» = «что я закрыл сегодня», а не «закрытые со сроком сегодня».
 function axisDay(task: Task): string | null {
-  return isDone(task) ? dayOf(task.updated_at ?? task.created_at) : dayOf(task.due_date);
+  return isDone(task) ? dayOf(task.completed_at ?? task.updated_at ?? task.created_at) : dayOf(task.due_date);
 }
 
 // Период (модификатор «Эта неделя»/«Этот месяц»/произвольный) — пересечение со списком, а не
@@ -214,7 +217,7 @@ function inList(task: Task, listId: SmartListId, now: Date, range: DateRange | n
     // Закрытая живёт на оси времени по дате ЗАКРЫТИЯ: «Сегодня» = закрыл сегодня.
     // «Ближайшие» для закрытых смысла не имеют — в будущем задачи не закрывают.
     if (listId === "upcoming") return false;
-    const day = dayOf(task.updated_at ?? task.created_at);
+    const day = dayOf(task.completed_at ?? task.updated_at ?? task.created_at);
     return day != null && parseDay(day) === today;
   }
   const due = dueMidnight(task);

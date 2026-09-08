@@ -5,7 +5,7 @@
 // где enum обязан быть литералом. Дубли расходятся молча: разъехавшийся enum просто перестанет
 // принимать статус, а разъехавшийся CHECK начнёт отбивать вставки на проде.
 import { assertEquals } from "jsr:@std/assert@1";
-import { isTaskStatus, TASK_STATUSES, taskStatusError } from "./statuses.ts";
+import { completionPatch, isTaskStatus, TASK_STATUSES, taskStatusError } from "./statuses.ts";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
 
@@ -38,4 +38,44 @@ Deno.test("enum'ы MCP перечисляют ровно тот же набор"
     const список = e[1].split(",").map((s) => s.trim().replace(/^"|"$/g, "")).filter(Boolean).sort();
     assertEquals(список, [...TASK_STATUSES].sort());
   }
+});
+
+// ── completed_at: момент закрытия задачи ────────────────────────────────────
+// Дата закрытия до 08.09.2026 не хранилась вовсе: экраны считали её по `updated_at`,
+// который сдвигается от любой правки (переименовал задачу — «закрыл сегодня»).
+// Спринтам нужна честная дата, поэтому патч считается здесь, чистой функцией.
+
+Deno.test("completionPatch: переход в done ставит время закрытия", () => {
+  const patch = completionPatch("done", null, "2026-09-08T10:00:00.000Z");
+  assertEquals(patch, { completed_at: "2026-09-08T10:00:00.000Z" });
+});
+
+Deno.test("completionPatch: cancelled тоже считается закрытием", () => {
+  const patch = completionPatch("cancelled", null, "2026-09-08T10:00:00.000Z");
+  assertEquals(patch, { completed_at: "2026-09-08T10:00:00.000Z" });
+});
+
+Deno.test("completionPatch: правка уже закрытой задачи не сдвигает дату закрытия", () => {
+  const patch = completionPatch("done", "2026-09-01T08:00:00.000Z", "2026-09-08T10:00:00.000Z");
+  assertEquals(patch, {});
+});
+
+Deno.test("completionPatch: возврат в работу обнуляет дату закрытия", () => {
+  const patch = completionPatch("in_progress", "2026-09-01T08:00:00.000Z", "2026-09-08T10:00:00.000Z");
+  assertEquals(patch, { completed_at: null });
+});
+
+Deno.test("completionPatch: перекат регулярной задачи (status=open) закрытием не считается", () => {
+  const patch = completionPatch("open", null, "2026-09-08T10:00:00.000Z");
+  assertEquals(patch, {});
+});
+
+Deno.test("completionPatch: патч без статуса дату не трогает", () => {
+  const patch = completionPatch(undefined, "2026-09-01T08:00:00.000Z", "2026-09-08T10:00:00.000Z");
+  assertEquals(patch, {});
+});
+
+Deno.test("completionPatch: незнакомый статус считается открытым (страховка после #208)", () => {
+  const patch = completionPatch("pending", "2026-09-01T08:00:00.000Z", "2026-09-08T10:00:00.000Z");
+  assertEquals(patch, { completed_at: null });
 });
