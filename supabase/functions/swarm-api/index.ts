@@ -56,6 +56,7 @@ import { handleAdminRoutes } from "./admin.ts";
 import { corsHeaders, json, apiErr, parseListLimit } from "./http.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
+import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
 // Календарь на сегодня для панели главной (issue #218): доступ к Google — общий модуль
@@ -594,6 +595,11 @@ Deno.serve(async (req: Request) => {
   // Лента уведомлений (/notifications*) — строго свои: фильтр по recipient_telegram_id.
   const notifResp = await handleNotificationRoutes(supabase, req, routePath, telegram_id, isAdmin, origin, resolveNames);
   if (notifResp) return notifResp;
+
+  // Спринты (/sprint-cycles*) — issue #267. Отдельным модулем: этот файл и так вдвое больше
+  // предела (#265). Не путать с /sprints ниже — там ВКЛАДКИ доски проектов.
+  const cycleResp = await handleSprintCycleRoutes(req, routePath, telegram_id, groupId, isAdmin, origin);
+  if (cycleResp) return cycleResp;
 
   // GET /tasks or POST /tasks
   if (routePath === "/tasks") {
