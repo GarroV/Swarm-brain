@@ -101,3 +101,67 @@ Deno.test("historyRowsFor: снятие срока (дата → null) фикс�
   const [row] = historyRowsFor({ taskId: "t1", snapshot: { due_date: "2026-09-10" }, patch: { due_date: null } });
   assertEquals([row.field, row.old_value, row.new_value], ["due_date", "2026-09-10", null]);
 });
+
+// ── changed_by: колонка NOT NULL, поэтому null в ней = журнал молча не пишется (issue #287) ──
+
+Deno.test("changed_by: имя автора, когда оно известно (путь бота)", () => {
+  const rows = historyRowsFor({
+    taskId: "t1",
+    snapshot: { status: "open" },
+    patch: { status: "done" },
+    actor: "garro",
+    actorTelegramId: 744230399,
+  });
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].changed_by, "garro");
+  assertEquals(rows[0].changed_by_telegram_id, 744230399);
+});
+
+Deno.test("changed_by: telegram_id строкой, когда имени нет (путь веба и MCP)", () => {
+  const rows = historyRowsFor({
+    taskId: "t1",
+    snapshot: { status: "open" },
+    patch: { status: "in_progress" },
+    actorTelegramId: 744230399,
+  });
+  assertEquals(rows[0].changed_by, "744230399");
+});
+
+Deno.test("changed_by: system, когда автор неизвестен вовсе (cron, бэкфилл)", () => {
+  const rows = historyRowsFor({
+    taskId: "t1",
+    snapshot: { status: "open" },
+    patch: { status: "cancelled" },
+  });
+  assertEquals(rows[0].changed_by, "system");
+});
+
+Deno.test("changed_by: пустая строка и пробелы за имя не считаются", () => {
+  const rows = historyRowsFor({
+    taskId: "t1",
+    snapshot: { status: "open" },
+    patch: { status: "done" },
+    actor: "   ",
+    actorTelegramId: 42,
+  });
+  assertEquals(rows[0].changed_by, "42");
+});
+
+Deno.test("changed_by ни на одном пути не бывает пустым — иначе вставка падает на NOT NULL", () => {
+  const paths = [
+    { actor: "garro", actorTelegramId: 1 },
+    { actor: null, actorTelegramId: 1 },
+    { actor: undefined, actorTelegramId: undefined },
+    { actor: "", actorTelegramId: null },
+  ];
+  for (const actorArgs of paths) {
+    const rows = historyRowsFor({
+      taskId: "t1",
+      snapshot: { status: "open" },
+      patch: { status: "done" },
+      ...actorArgs,
+    });
+    assertEquals(rows.length, 1);
+    assert(rows[0].changed_by.length > 0, `пустой changed_by для ${JSON.stringify(actorArgs)}`);
+  }
+});
