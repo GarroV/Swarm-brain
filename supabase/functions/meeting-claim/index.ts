@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyAgentToken, AgentAuthError, type AgentIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf } from "../_shared/meeting-title.ts";
 import { sameMeetingByRoster, scopeRoomKey, ROSTER_TOLERANCE_MIN } from "../_shared/meeting-roster.ts";
+import { CLAIM_LEASE_TTL_SEC } from "../_shared/meeting-lease.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -20,7 +21,10 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 // На сколько выдаётся право транскрибации. Истёк и транскрипта нет → claim перехватит другой.
-const LEASE_TTL_SEC = 1800;
+// Значение и продление живут в _shared/meeting-lease.ts: лиз выдаётся здесь, а ПРОДЛЕВАЮТ его
+// ingest и процессор, пока обработка жива (issue #285) — иначе через 30 минут право забирала
+// любая, в том числе более короткая, запись.
+const LEASE_TTL_SEC = CLAIM_LEASE_TTL_SEC;
 
 // Перехват права более полной записью. Оба порога должны выполниться разом — чтобы почти
 // одинаковые записи (штатный случай: все стопнули в пределах минуты) не гоняли перетранскрибацию
