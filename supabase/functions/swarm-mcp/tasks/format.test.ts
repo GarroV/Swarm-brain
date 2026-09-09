@@ -107,6 +107,25 @@ Deno.test("formatTaskLine: без исполнителя — прочерк, а 
   assertStringIncludes(formatTaskLine({ status: "open", title: "T", confirmed: true }), "—");
 });
 
+// ── get_tasks: id задачи в строке (issue #275) ────────────────────────────────
+
+Deno.test("formatTaskLine: печатает ПОЛНЫЙ id — им вызывается get_task_comments", () => {
+  const id = "8e1c1d4a-1f3b-4a5c-9e77-2b0d5f6a7c88";
+  const line = formatTaskLine({ id, status: "in_progress", title: "Название", confirmed: true });
+  assertStringIncludes(line, `(id: ${id})`);
+});
+
+Deno.test("formatTaskLine: id стоит перед пометкой «на проверке» — не разрывает её", () => {
+  const id = "8e1c1d4a-1f3b-4a5c-9e77-2b0d5f6a7c88";
+  const line = formatTaskLine({ id, status: "open", title: "T", confirmed: false });
+  assert(line.indexOf(`(id: ${id})`) < line.indexOf("на проверке"), line);
+});
+
+Deno.test("formatTaskLine: без id строки «(id: undefined)» не появляется", () => {
+  const line = formatTaskLine({ status: "open", title: "T", confirmed: true });
+  assert(!line.includes("id:"), line);
+});
+
 // ── add_task: где оказалась задача (issue #201) ───────────────────────────────
 
 Deno.test("addTaskOutcome: подтверждённая задача — сказано, что она на доске, и НЕ уводит в бота", () => {

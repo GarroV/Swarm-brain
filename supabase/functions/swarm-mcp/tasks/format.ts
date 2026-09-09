@@ -63,8 +63,14 @@ export function projectNotFoundMessage(name: string, available: string[]): strin
  * Строка задачи в выдаче get_tasks. `confirmed: false` помечается явно: такая задача не видна
  * НИГДЕ в вебе (`fetchTasks` всегда просит `confirmed=true`), и без пометки агент видит «open»
  * и считает, что задача на доске (issue #201).
+ *
+ * id печатается ПОЛНЫМ uuid (issue #275): выдача была текстом без id, а `get_task_comments` и
+ * `add_task_comment` принимают только uuid — цепочка «увидел изменившуюся задачу → прочитал её
+ * комментарии» была разорвана, и агенту оставалось угадывать. Не префикс: резолва по префиксу
+ * нет, короткий id вернул бы «задача не найдена».
  */
 export function formatTaskLine(t: {
+  id?: string;
   status: string;
   title: string;
   assignees?: string[] | null;
@@ -73,10 +79,11 @@ export function formatTaskLine(t: {
   confirmed?: boolean;
 }): string {
   const who = t.assignees?.join(", ") || "—";
+  const id = t.id ? ` (id: ${t.id})` : "";
   const due = t.due_date ? ` | дедлайн: ${t.due_date}` : "";
   const country = t.country ? ` | ${t.country}` : "";
   const pending = t.confirmed === false ? " ⏳ на проверке (в вебе не видна)" : "";
-  return `• [${t.status}] ${t.title}${pending}\n  Исполнитель: ${who}${due}${country}`;
+  return `• [${t.status}] ${t.title}${id}${pending}\n  Исполнитель: ${who}${due}${country}`;
 }
 
 /**

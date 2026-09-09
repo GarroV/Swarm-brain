@@ -154,7 +154,7 @@ const TOOLS = [
   },
   {
     name: "get_tasks",
-    description: "Получить задачи команды с фильтрами по исполнителю, стране или статусу.",
+    description: "Получить задачи команды с фильтрами по исполнителю, стране или статусу. В каждой строке печатается id задачи — им вызываются get_task_comments, add_task_comment и update_task.",
     inputSchema: {
       type: "object",
       properties: {

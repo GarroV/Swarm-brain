@@ -551,11 +551,11 @@ export const LABEL_TOOL_DEFINITIONS = [
 export const COMMENT_TOOL_DEFINITIONS = [
   {
     name: "get_task_comments",
-    description: "Показать комментарии-апдейты к задаче по её ID (если задача доступна тебе).",
+    description: "Показать комментарии-апдейты к задаче по её ID (если задача доступна тебе). ID берётся из выдачи get_tasks — он печатается в строке задачи.",
     inputSchema: {
       type: "object",
       properties: {
-        task_id: { type: "string", description: "ID задачи" },
+        task_id: { type: "string", description: "ID задачи — полный uuid из строки задачи в get_tasks (сокращённый префикс не резолвится)" },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
       },
       required: ["task_id", "requesting_user_id"],
@@ -567,7 +567,7 @@ export const COMMENT_TOOL_DEFINITIONS = [
     inputSchema: {
       type: "object",
       properties: {
-        task_id: { type: "string", description: "ID задачи" },
+        task_id: { type: "string", description: "ID задачи — полный uuid из строки задачи в get_tasks (сокращённый префикс не резолвится)" },
         content: { type: "string", description: "Текст комментария" },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен" },
       },
