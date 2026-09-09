@@ -3,25 +3,28 @@ import { useMemo, useState } from "react";
 import type { Project, Task } from "@/types";
 import { RoyIcon } from "@/components/roy/icons";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDt } from "@/components/roy/nav";
+import {
+  POOL_ALL, POOL_NO_PROJECT, filterPoolTasks, projectLabel, projectOptions,
+} from "@/lib/sprintPool";
 
 // Пул «Задачи» экрана спринтов. Роль колонки «Бэклог», которой в спринтовом канбане нет
 // (решение владельца 2026-09-08: «backlog заменим на слово задачи»): слева лежат задачи
 // воркспейса, ещё не взятые в спринт, справа — то, что в спринте.
 //
 // Своим файлом, а не внутри SprintsScreen: у пула свои фильтры и свой выбор, и вместе они
-// вышли бы за предел размера файла (issue #265).
+// вышли бы за предел размера файла (issue #265). Правило отбора — чистыми функциями в
+// `lib/sprintPool.ts` под тестами; здесь только разметка и состояние.
+//
+// Списки — общий `ui/select` (base-ui), как в TaskModal и настройках, а НЕ нативный `<select>`:
+// нативный на macOS раскрывается системным меню поверх интерфейса и выглядит чужеродно
+// (замечание владельца 09.09.2026 по первому прогону на проде).
 
-const ALL = "__all__";
 const fieldCls =
   "w-full min-h-9 rounded-[10px] border border-line bg-surface px-2.5 py-1.5 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute dark:backdrop-blur-sm";
-
-/** Подпись проекта в фильтре: у подпроекта — «Группа › Имя», иначе неотличимы тёзки. */
-function projectLabel(p: Project, all: Project[]): string {
-  if (!p.parent_id) return p.name;
-  const parent = all.find((x) => x.id === p.parent_id);
-  return parent ? `${parent.name} › ${p.name}` : p.name;
-}
+const triggerCls =
+  "w-full min-h-9 h-9 rounded-[10px] border-line bg-surface px-2.5 text-sm text-ink data-[size=default]:h-9 dark:backdrop-blur-sm dark:bg-surface";
 
 export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
   /** Задачи, доступные к добавлению: экран уже убрал взятые в спринт и закрытые. */
@@ -33,8 +36,8 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
 }) {
   const dt = useDt();
   const [query, setQuery] = useState("");
-  const [projectId, setProjectId] = useState<string>(ALL);
-  const [assignee, setAssignee] = useState<string>(ALL);
+  const [projectId, setProjectId] = useState<string>(POOL_ALL);
+  const [assignee, setAssignee] = useState<string>(POOL_ALL);
   const [picked, setPicked] = useState<Set<string>>(new Set());
 
   const assignees = useMemo(() => {
@@ -43,22 +46,29 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [tasks]);
 
-  const projectOptions = useMemo(
-    () => projects.map((p) => ({ id: p.id, label: projectLabel(p, projects) }))
-      .sort((a, b) => a.label.localeCompare(b.label)),
-    [projects],
-  );
-  const projectName = (id: string | null) => (id ? projects.find((p) => p.id === id)?.name ?? null : null);
+  const options = useMemo(() => projectOptions(projects), [projects]);
+  const hasUnassignedProject = useMemo(() => tasks.some((t) => !t.project_id), [tasks]);
+  const projectName = (id: string | null) => {
+    const p = id ? projects.find((x) => x.id === id) : null;
+    return p ? projectLabel(p, projects) : null;
+  };
 
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return tasks.filter((t) => {
-      if (q && !t.title.toLowerCase().includes(q)) return false;
-      if (projectId !== ALL && t.project_id !== projectId) return false;
-      if (assignee !== ALL && !t.assignees.includes(assignee)) return false;
-      return true;
-    });
-  }, [tasks, query, projectId, assignee]);
+  // Подпись в свёрнутом виде: без неё base-ui показывает СЫРОЕ значение («__all__»),
+  // пока меню ни разу не открывали и пункты ещё не смонтированы.
+  const projectValueLabel = (v: unknown) => {
+    const id = String(v ?? POOL_ALL);
+    if (id === POOL_NO_PROJECT) return dt("Без проекта", "No project");
+    return options.find((o) => o.id === id)?.label ?? dt("Все проекты", "All projects");
+  };
+  const assigneeValueLabel = (v: unknown) => {
+    const name = String(v ?? POOL_ALL);
+    return name === POOL_ALL ? dt("Все исполнители", "All assignees") : name;
+  };
+
+  const visible = useMemo(
+    () => filterPoolTasks(tasks, projects, { query, projectId, assignee }),
+    [tasks, projects, query, projectId, assignee],
+  );
 
   function toggle(id: string) {
     setPicked((prev) => {
@@ -85,14 +95,34 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
       <div className="space-y-1.5 p-2 border-b border-line">
         <input value={query} onChange={(e) => setQuery(e.target.value)}
           placeholder={dt("Поиск по названию", "Search by title")} className={fieldCls} />
-        <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className={fieldCls}>
-          <option value={ALL}>{dt("Все проекты", "All projects")}</option>
-          {projectOptions.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-        </select>
-        <select value={assignee} onChange={(e) => setAssignee(e.target.value)} className={fieldCls}>
-          <option value={ALL}>{dt("Все исполнители", "All assignees")}</option>
-          {assignees.map((a) => <option key={a} value={a}>{a}</option>)}
-        </select>
+
+        {/* Проект: выбор ГРУППЫ приносит и её подпроекты — иначе у группы видно только «Общее». */}
+        <Select value={projectId} onValueChange={(v) => setProjectId(String(v))}>
+          <SelectTrigger className={triggerCls} aria-label={dt("Проект", "Project")}>
+            <SelectValue>{projectValueLabel}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={POOL_ALL}>{dt("Все проекты", "All projects")}</SelectItem>
+            {hasUnassignedProject && (
+              <SelectItem value={POOL_NO_PROJECT}>{dt("Без проекта", "No project")}</SelectItem>
+            )}
+            {options.map((o) => (
+              <SelectItem key={o.id} value={o.id} className={o.child ? "pl-7" : undefined}>
+                {o.child ? `› ${o.label}` : o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={assignee} onValueChange={(v) => setAssignee(String(v))}>
+          <SelectTrigger className={triggerCls} aria-label={dt("Исполнитель", "Assignee")}>
+            <SelectValue>{assigneeValueLabel}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={POOL_ALL}>{dt("Все исполнители", "All assignees")}</SelectItem>
+            {assignees.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
