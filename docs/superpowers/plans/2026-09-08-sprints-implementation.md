@@ -25,8 +25,8 @@
 | `aa0a0e4` | **Этап 1:** `tasks.completed_at`, простановка в `updateTask`, бэкфилл, `task_history` при любой смене статуса. Закрывает [#268](https://github.com/GarroV/Swarm-brain/issues/268) |
 | `a8b7031` | **Этап 2:** таблицы `sprint_cycles`/`sprint_items`, `computeSprintStats` (9 тестов), слой данных, роуты отдельным модулем |
 
-Проверено: `deno check` всех функций, 441 тест, `next build`.
-**Не проверено:** миграции локально не прогонялись — Docker на машине не был запущен.
+Проверено: `deno check` всех функций, 441 тест, `next build`; миграции прогнаны на локальном
+контуре 09.09.2026 (см. §Раскатка, шаг 1).
 
 ## Совмещено с этой ветвью — фидбеки по MCP (решение владельца 09.09.2026)
 
@@ -141,7 +141,9 @@
 
 Порядок обязателен, потому что код падает на отсутствующей колонке, а веб собирается с `main` сам:
 
-1. **Прогнать миграции локально** (`supabase start` + `supabase db reset`) — не сделано, обязательно.
+1. ✅ **Миграции прогнаны локально** 09.09.2026 (`supabase start` + `supabase db reset` в worktree):
+   67 миграций с нуля, ноль ошибок; на контуре проверены `sprint_cycles` (14 колонок, CHECK
+   `sprint_cycles_status_check` и `sprint_cycles_dates`), `sprint_items` (12), `task_history` (12).
 2. Миграции `20260908120000` и `20260908130000` на прод.
 3. Миграция `20260909210000_task_comments_created_at_idx` (ADD-only, под #276).
 4. `supabase functions deploy swarm-api` (и потребители `_shared/tasks/db.ts`: бот, MCP).
