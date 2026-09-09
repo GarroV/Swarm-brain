@@ -12,9 +12,13 @@ import { SprintTaskPool } from "@/components/tasks/SprintTaskPool";
 import { SprintReport } from "@/components/tasks/SprintReport";
 import { TaskModal } from "@/components/TaskModal";
 import { Button } from "@/components/ui/button";
+import {
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { RoyIcon } from "@/components/roy/icons";
 import { useConfirm } from "@/components/ui/confirm";
 import { buildQuickAddInput } from "@/lib/quickAddTask";
+import { poolCandidates, projectLabel } from "@/lib/sprintPool";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 
 // Экран «Спринты» — период работы команды с датами, планом и приёмкой (issue #267).
@@ -28,6 +32,7 @@ import { useDt, useRoyNav } from "@/components/roy/nav";
 const SPRINT_SECTION = "__sprint__";  // канбан спринта — одна секция, drop меняет только статус
 const CLOSED = new Set(["done", "cancelled"]);
 const DEFAULT_LENGTH_DAYS = 13;       // двухнедельный спринт: старт + 13 = ровно 14 дней
+const ARCHIVE_NONE = "__archive__";   // «архив не выбран»: у ui/select пустая строка не значение
 
 function iso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -36,6 +41,12 @@ function iso(d: Date): string {
 function fmtDay(value: string): string {
   const d = new Date(value);
   return isNaN(d.getTime()) ? value : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+
+/** Имя по умолчанию — «Спринт 10.09 — 23.09»: так их называют в переписке. */
+function defaultCycleName(from: Date, to: Date): string {
+  const dm = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return `Спринт ${dm(from)} — ${dm(to)}`;
 }
 
 function fmtRange(from: string, to: string): string {
@@ -137,22 +148,26 @@ export function SprintsScreen() {
       const live = it.frozen || !it.task_id ? undefined : byId.get(it.task_id);
       const card = live ?? frozenCard(it);
       out.push(card);
-      labels.set(card.id, it.project ?? (live ? projects.find((p) => p.id === live.project_id)?.name ?? null : null));
+      const liveProject = live ? projects.find((p) => p.id === live.project_id) : undefined;
+      // Полная подпись «Группа › Подпроект»: у подпроектов бывают тёзки, а по голому имени
+      // не видно, к какой группе относится полоса (в пуле подпись такая же).
+      labels.set(card.id, it.project ?? (liveProject ? projectLabel(liveProject, projects) : null));
     }
     return { cards: out, groupLabels: labels };
   }, [items, tasks, projects]);
 
-  // Пул слева: не взятые в спринт и не закрытые. Закрытую задачу в спринт добавлять смысла нет —
-  // она бы сразу легла в «Готово» и накрутила процент выполнения задним числом.
-  const poolTasks = useMemo(
-    () => tasks.filter((t) => !inSprint.has(t.id) && !CLOSED.has(t.status)),
-    [tasks, inSprint],
-  );
+  // Пул слева. Правило отбора — `poolCandidates` в lib/sprintPool.ts (под тестами): не взятые
+  // в спринт, не закрытые, не приватные.
+  const poolTasks = useMemo(() => poolCandidates(tasks, inSprint), [tasks, inSprint]);
 
   const plan = items.filter((i) => i.in_plan);
   const planDone = plan.filter((i) => CLOSED.has(i.status)).length;
   const doneTotal = items.filter((i) => CLOSED.has(i.status)).length;
-  const percent = detail?.stats?.planPercent ?? (plan.length === 0 ? 0 : Math.round((planDone / plan.length) * 100));
+  // Пока спринт черновик, `in_plan` ещё не проставлен — полоска считается от состава, иначе
+  // она стоит на нуле при половине закрытых задач и выглядит сломанной.
+  const percentBase = plan.length > 0 ? { done: planDone, total: plan.length } : { done: doneTotal, total: items.length };
+  const percent = detail?.stats?.planPercent
+    ?? (percentBase.total === 0 ? 0 : Math.round((percentBase.done / percentBase.total) * 100));
 
   async function applyDrop(taskId: string, _section: string, status: string) {
     setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status } : t)));
@@ -298,24 +313,36 @@ export function SprintsScreen() {
           );
         })}
         {archive.length > 0 && (
-          <select value={archive.some((c) => c.id === selectedId) ? selectedId ?? "" : ""}
-            onChange={(e) => e.target.value && setSelectedId(e.target.value)}
-            className="rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-semibold text-ink-soft outline-none dark:backdrop-blur-sm">
-            <option value="">{dt("Архив", "Archive")}</option>
-            {[...new Set(archive.map((c) => c.start_date.slice(0, 4)))].sort().reverse().map((year) => (
-              <optgroup key={year} label={year}>
-                {archive.filter((c) => c.start_date.startsWith(year)).map((c) => (
-                  <option key={c.id} value={c.id}>{c.name} · {fmtRange(c.start_date, c.end_date)}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+          /* Архив принятых спринтов, сгруппированный по годам. Общий ui/select, не нативный:
+             системное меню macOS выглядит чужеродно поверх интерфейса (владелец 09.09.2026). */
+          <Select value={archive.some((c) => c.id === selectedId) ? selectedId ?? ARCHIVE_NONE : ARCHIVE_NONE}
+            onValueChange={(v) => { const id = String(v); if (id !== ARCHIVE_NONE) setSelectedId(id); }}>
+            <SelectTrigger size="sm" aria-label={dt("Архив спринтов", "Sprint archive")}
+              className="h-7 shrink-0 rounded-full border-line bg-surface px-2.5 text-xs font-semibold text-ink-soft dark:bg-surface dark:backdrop-blur-sm">
+              <SelectValue>
+                {(v) => archive.find((c) => c.id === String(v))?.name ?? dt("Архив", "Archive")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ARCHIVE_NONE}>{dt("Архив", "Archive")}</SelectItem>
+              {[...new Set(archive.map((c) => c.start_date.slice(0, 4)))].sort().reverse().map((year) => (
+                <SelectGroup key={year}>
+                  <SelectLabel>{year}</SelectLabel>
+                  {archive.filter((c) => c.start_date.startsWith(year)).map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name} · {fmtRange(c.start_date, c.end_date)}</SelectItem>
+                  ))}
+                </SelectGroup>
+              ))}
+            </SelectContent>
+          </Select>
         )}
         {isAdmin && (
           <button onClick={() => {
             const today = new Date();
             const end = new Date(); end.setDate(end.getDate() + DEFAULT_LENGTH_DAYS);
-            setForm({ name: "", start_date: iso(today), end_date: iso(end) });
+            // Имя предзаполнено датами: пустое поле упиралось в ошибку «введите название»
+            // на первом же клике, а имя по датам — то, как спринты и называют.
+            setForm({ name: defaultCycleName(today, end), start_date: iso(today), end_date: iso(end) });
             setCreating((v) => !v);
           }}
             className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm shrink-0"
