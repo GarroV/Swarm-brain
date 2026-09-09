@@ -48,6 +48,9 @@ export async function dbListAllOpen(groupId?: string): Promise<Task[]> {
   let q = supabase.from("tasks").select("*")
     .not("status", "in", '("done","cancelled","draft")')
     .eq("is_private", false)  // личные задачи (Рой) не показываем в командных списках бота
+    // Незавершённый /addtask (confirmed:false, между «Задача?» и вводом дедлайна) не должен
+    // мелькать в команде — тот же принцип, что уже используют MCP и miniapp (см. addtask_title).
+    .eq("confirmed", true)
     .order("assignees", { ascending: true });
   if (groupId) q = q.eq("group_id", groupId);
   const { data } = await q.limit(200);
