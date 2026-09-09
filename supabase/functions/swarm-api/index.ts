@@ -45,6 +45,7 @@ import { normalizeCountries, COUNTRY_NAMES, detectQueryCountry } from "../_share
 import { extractEntryMeta, applyGeneralSentinel, marketTagsFromInput, buildEmbeddingInput, embed } from "../_shared/meta-extract.ts";
 import { pickSuggestedMarkets } from "../_shared/market-suggest.ts";
 import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
+import { getFileSecure, FileAccessError } from "./file-access.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
@@ -76,6 +77,10 @@ import { isTaskStatus, taskStatusError } from "../_shared/tasks/statuses.ts";
 // уже путь, которым /meetings дорос до 10 МБ (#102). Настоящий фикс — серверная фильтрация
 // статусов вместо клиентской (#111), громкое усечение — #112. Пока держим breadcrumb в логах.
 const TASKS_LIST_LIMIT = 2000;
+
+// TTL signed-URL для приватных файлов (swarm_private): достаточно, чтобы браузер/Telegram
+// успел скачать по 302-редиректу, но ссылка не живёт долго и не шерится.
+const FILE_SIGNED_TTL_SEC = 60;
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
@@ -1387,6 +1392,34 @@ Deno.serve(async (req: Request) => {
       followups = Array.isArray(parsed.followups) ? parsed.followups.filter((x: unknown) => typeof x === "string").slice(0, 3) : [];
     } catch { /* answer пустой → фронт покажет только источники */ }
     return json({ query: q, answer, sources, followups }, 200, origin);
+  }
+
+  // ── GET /file/* — авторизованная раздача приватных файлов (swarm_private) ──────
+  // Публичные URL убраны (утечка swarm_drive): каждый показ проходит проверку доступа по
+  // реестру storage_files (getFileSecure), затем 302 на короткоживущий signed URL. Путь —
+  // всё после "/file/" (объекты лежат во вложенных папках: uploads/<...>). Для БОТА этот путь
+  // не годится (Telegram качает сам, без нашей сессии) — он генерит signed URL напрямую.
+  if (req.method === "GET" && routePath.startsWith("/file/")) {
+    const filePath = decodeURIComponent(routePath.slice("/file/".length));
+    if (!filePath) return apiErr(400, "path required", origin);
+    try {
+      const resolved = await getFileSecure(supabase, filePath, {
+        groupId,
+        telegramId: telegram_id,
+        isAdmin,
+      });
+      const { data: signed, error: signErr } = await supabase.storage
+        .from(resolved.bucket)
+        .createSignedUrl(resolved.path, FILE_SIGNED_TTL_SEC);
+      if (signErr || !signed?.signedUrl) return apiErr(500, "Signing failed", origin);
+      return new Response(null, {
+        status: 302,
+        headers: { ...corsHeaders(origin), Location: signed.signedUrl, "Cache-Control": "no-store" },
+      });
+    } catch (e) {
+      if (e instanceof FileAccessError) return apiErr(e.status, e.message, origin);
+      throw e;
+    }
   }
 
   // ── GET /meetings ─────────────────────────────────────────────────────────────

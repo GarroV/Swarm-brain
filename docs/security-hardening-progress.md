@@ -16,7 +16,7 @@
 - **#2 Вебхук бота без `secret_token`** — подделка апдейтов = трата OpenAI + команды от
   админа. Advisory GHSA-mjhh-3wvp-23p2.
 - **#3 Rate-limiting отсутствует везде** — фрод/DoS OpenAI-ключа.
-- **#4 Демо-лимит запросов** (частный случай #3): 5 «дорогих» запросов/день на демо-сессию
+- **#4 Демо-лимит запросов** (issue #282) (частный случай #3): 5 «дорогих» запросов/день на демо-сессию
   (ключ лимита — `jti` в JWT демо-входа).
 
 Best-practices ресёрч (регулярная практика) — отдельным потоком: включить GitHub secret
@@ -39,11 +39,9 @@ copy → verify → бэкап → delete последним. Резолв вл�
 - [x] Слой авторизации: `swarm-api/file-access.ts` — `decideFileAccess` + `getFileSecure`.
       11 тестов зелёных. Коммит 18c2204.
 - [x] Миграция реестра: `supabase/migrations/20260905200000_storage_files_registry.sql`.
-- [ ] **СЛЕДУЮЩЕЕ:** эндпоинт `GET /file/*` в `swarm-api/index.ts` — распарсить path после
-      `/file/`, `getFileSecure(supabase, path, {groupId, telegramId, isAdmin})`,
-      `supabase.storage.from(bucket).createSignedUrl(path, 60)` → 302 Location. Вставить рядом
-      с `/search`/`/ask` (после строки ~1399). Unit-логика уже покрыта; эндпоинт — тонкая
-      обёртка, смоук на проде ночью.
+- [x] Эндпоинт `GET /file/*` в `swarm-api/index.ts` — `getFileSecure` → `createSignedUrl`
+      (TTL 60с) → 302. deno check + 74 теста (-A) зелёные. Смоук на проде — ночью при раскатке.
+- [ ] **СЛЕДУЮЩЕЕ:** нормализация исходящих ссылок (см. ниже).
 - [ ] Нормализация исходящих ссылок: где сейчас `getPublicUrl`/`publicUrl` уходит в ответ
       (`swarm-api/index.ts:1227,2246`, `swarm-bot/lib/storage.ts:385`, `swarm-mcp:134`) —
       отдавать `/api/file/<path>`. Хранить path в БД.
@@ -63,3 +61,7 @@ copy → verify → бэкап → delete последним. Резолв вл�
 2. Миграция БД: backfill реестра + URL→path.
 3. Проверить показ на проде → бэкап → удалить приватные объекты из публичного `swarm_drive`.
    Откат до шага 3 — вернуть старый код; после — из бэкапа.
+
+## Беклог (GitHub Issues, метка security)
+
+#279 storage · #280 вебхук · #281 rate-limiting · #282 демо-лимит · #283 best practices · #284 мета-трекер.
