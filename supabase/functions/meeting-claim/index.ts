@@ -37,10 +37,14 @@ type ClaimDecision = "transcribe" | "defer";
 // дошли её», — то есть просил человека принять решение, которое сервер уже принял сам и
 // данных для которого у человека нет.
 //   published — встречу правил человек или её уже опубликовали: перехват невозможен НИКОГДА;
-//   shorter   — наша запись не заметно полнее держателя (пороги TAKEOVER_*);
+//   shorter   — наша запись КОРОЧЕ записи держателя;
+//   similar   — наша не короче, но разница не дотянула до порогов TAKEOVER_* (типовой случай:
+//               все остановили запись в пределах минуты). Отделено от shorter, потому что
+//               человеку нельзя показывать «взяли 36 минут вместо твоих 38» без объяснения —
+//               это выглядит как ошибка арбитража, хотя это защита от перетранскрибации;
 //   race      — держатель сменился, пока мы считали: повтор имеет смысл;
-//   unknown   — претендент не прислал длительность (старая сборка рекордера).
-type DeferReason = "published" | "shorter" | "race" | "unknown";
+//   unknown   — длительность неизвестна (старая сборка рекордера или пустая у держателя).
+type DeferReason = "published" | "shorter" | "similar" | "race" | "unknown";
 interface UserNote { ts: number; text: string }
 interface Attendee { name?: string; email?: string }
 
@@ -305,7 +309,13 @@ async function resolveExisting(
   if (!(candidate > 0 && !protectedRow && isSubstantiallyLonger(candidate, held))) {
     // Причину называем клиенту: «уже опубликовано» и «твоя короче» — разные новости для человека,
     // и в первом случае досылать запись бессмысленно в принципе (issue #274).
-    const reason: DeferReason = protectedRow ? "published" : candidate > 0 ? "shorter" : "unknown";
+    const reason: DeferReason = protectedRow
+      ? "published"
+      : candidate <= 0 || held <= 0
+      ? "unknown"
+      : candidate >= held
+      ? "similar"
+      : "shorter";
     return { decision: "defer", supersededOwner: null, heldBy, deferReason: reason, heldSeconds: held };
   }
 
