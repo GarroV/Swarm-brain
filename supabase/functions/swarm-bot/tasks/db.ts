@@ -34,7 +34,7 @@ export async function dbCreateTask(input: TaskInput): Promise<Task> {
 export async function dbUpdateTask(
   id: string,
   fields: Partial<TaskInput> & { status?: string; url?: string; due_date?: string | null },
-  opts: { actor?: string } = {},
+  opts: { actor?: string; actorTelegramId?: number } = {},
 ): Promise<RecurResult | null> {
   return updateTask(id, fields, opts);
 }

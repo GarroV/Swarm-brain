@@ -952,7 +952,9 @@ Deno.serve(async (req: Request) => {
       }
 
       try {
-        await updateTask(taskId, fields);
+        // actorTelegramId — «кто передвинул» в журнале изменений (issue #286). Веб раньше не
+        // писал историю вообще, поэтому именно здесь её больше всего не хватало.
+        await updateTask(taskId, fields, { actorTelegramId: telegram_id });
         // Каскад: если задача ушла из дерева (project_linked=false) — её поддерево тоже в бэклог
         // (иначе висели бы подзадачи с родителем-в-бэклоге, нарушая инвариант дерева).
         if (fields.project_linked === false) {

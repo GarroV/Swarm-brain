@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Task, TaskInput } from "./types.ts";
 import { completionPatch, isClosedStatus } from "./statuses.ts";
 import { buildRecurPatch, todayInTz, type RecurRow } from "./recurrence.ts";
+import { HISTORY_SNAPSHOT_COLUMNS, historyRowsFor, type TaskSnapshot } from "./history.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -158,6 +159,18 @@ export async function listTasks(
   return (await listTasksWithTotal(filters, groupId)).tasks;
 }
 
+/** Снимок задачи ДО апдейта: поля для переката, даты закрытия и журнала изменений. */
+type UpdateSnapshotRow = TaskSnapshot & {
+  status: string;
+  completed_at: string | null;
+  recur_freq: string | null;
+  recur_anchor_dom: number | null;
+  due_date: string | null;
+  start_date: string | null;
+  remind_date: string | null;
+  group_id: string | null;
+};
+
 /** Задача не закрылась, а перекатилась на следующий цикл: `from` — прежний срок, `to` — новый. */
 export interface RecurResult {
   recurred: { from: string; to: string };
@@ -166,21 +179,32 @@ export interface RecurResult {
 export async function updateTask(
   id: string,
   fields: Partial<TaskInput> & { status?: string; url?: string; due_date?: string | null },
-  opts: { actor?: string } = {},
+  opts: { actor?: string; actorTelegramId?: number } = {},
 ): Promise<RecurResult | null> {
   let patch: Record<string, unknown> = { ...fields };
   let result: RecurResult | null = null;
   let prev: { status: string; completed_at: string | null } | null = null;
+  let snapshot: TaskSnapshot | null = null;
 
-  // Статус меняется — нужен прежний снимок строки. Он отвечает сразу на три вопроса:
-  // не перекат ли это регулярной задачи, ставить ли дату закрытия и что записать в историю.
-  // Лишний SELECT платим только когда статус реально в патче.
-  if (fields.status !== undefined) {
-    const { data: row } = await supabase.from("tasks")
-      .select("status, completed_at, recur_freq, recur_anchor_dom, due_date, start_date, remind_date")
+  // Прежний снимок строки отвечает сразу на четыре вопроса: не перекат ли это регулярной задачи,
+  // ставить ли дату закрытия, что записать в историю статуса и какие ещё поля изменились (журнал,
+  // issue #286). Лишний SELECT платим только когда в патче есть хоть одно ОТСЛЕЖИВАЕМОЕ поле —
+  // переименование или правка описания по-прежнему идут одним запросом.
+  const touchesTracked = HISTORY_SNAPSHOT_COLUMNS.some((c) => c in fields);
+  if (touchesTracked) {
+    const cols = [...new Set([
+      ...HISTORY_SNAPSHOT_COLUMNS,
+      "status", "completed_at", "recur_freq", "recur_anchor_dom", "due_date", "start_date", "remind_date", "group_id",
+    ])].join(", ");
+    const { data } = await supabase.from("tasks")
+      .select(cols)
       .eq("id", id)
       .maybeSingle();
+    // Двойное приведение: при динамическом select(string) supabase-js форму строки не выводит
+    // (тот же приём, что в listTasksWithTotal).
+    const row = data as unknown as UpdateSnapshotRow | null;
     if (row) {
+      snapshot = row as TaskSnapshot;
       prev = { status: row.status, completed_at: row.completed_at ?? null };
 
       // Закрытие РЕГУЛЯРНОЙ задачи — не закрытие, а перекат на следующее вхождение графика.
@@ -226,17 +250,26 @@ export async function updateTask(
       new_status: "open",
       note: `цикл закрыт, следующий срок ${result.recurred.to} (было ${result.recurred.from})`,
     });
-  } else if (prev && nextStatus && prev.status !== nextStatus) {
-    // Обычная смена статуса. До 08.09.2026 историю писал ТОЛЬКО бот и только на перекате —
-    // в таблице на проде лежала одна строка за всё время, и «когда задача поехала в работу»
-    // ответа не имело. Пишем из общей точки, значит и веб, и MCP тоже попадают в историю.
-    await supabase.from("task_history").insert({
-      task_id: id,
-      changed_by: opts.actor ?? null,
-      old_status: prev.status,
-      new_status: nextStatus,
-      note: null,
+  } else {
+    // Журнал изменений: статус, срок, исполнитель, проект, спринт, приоритет — по строке на
+    // каждое РЕАЛЬНО изменившееся поле (issue #286). До 09.09.2026 историю писал только бот и
+    // только на перекате: на проде лежали две строки на две задачи, и вопрос руководства «где,
+    // когда, куда передвинули» ответа не имел. Пишем из общей точки — значит веб, бот и MCP
+    // попадают в журнал сразу, без правок в трёх местах.
+    const rows = historyRowsFor({
+      taskId: id,
+      snapshot,
+      patch,
+      actor: opts.actor ?? null,
+      actorTelegramId: opts.actorTelegramId ?? null,
+      groupId: (snapshot?.group_id as string | null | undefined) ?? null,
     });
+    if (rows.length) {
+      const { error } = await supabase.from("task_history").insert(rows);
+      // Журнал не должен ронять апдейт задачи, но и молчать нельзя: пустой отчёт через месяц
+      // неотличим от «никто ничего не двигал».
+      if (error) console.error(`task_history insert failed for ${id}:`, error.message);
+    }
   }
 
   return result;

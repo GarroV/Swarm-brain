@@ -332,7 +332,7 @@ export async function toolUpdateTask(args: {
   }
 
   try {
-    await updateTask(args.id, fields);
+    await updateTask(args.id, fields, { actorTelegramId: args.requesting_user_id });
     return `✅ Задача обновлена.${matchWarning}`;
   } catch (e) {
     return `Ошибка: ${e instanceof Error ? e.message : String(e)}`;
