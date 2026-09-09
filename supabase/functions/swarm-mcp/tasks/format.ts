@@ -63,8 +63,14 @@ export function projectNotFoundMessage(name: string, available: string[]): strin
  * Строка задачи в выдаче get_tasks. `confirmed: false` помечается явно: такая задача не видна
  * НИГДЕ в вебе (`fetchTasks` всегда просит `confirmed=true`), и без пометки агент видит «open»
  * и считает, что задача на доске (issue #201).
+ *
+ * id печатается ПОЛНЫМ uuid (issue #275): выдача была текстом без id, а `get_task_comments` и
+ * `add_task_comment` принимают только uuid — цепочка «увидел изменившуюся задачу → прочитал её
+ * комментарии» была разорвана, и агенту оставалось угадывать. Не префикс: резолва по префиксу
+ * нет, короткий id вернул бы «задача не найдена».
  */
 export function formatTaskLine(t: {
+  id?: string;
   status: string;
   title: string;
   assignees?: string[] | null;
@@ -73,10 +79,11 @@ export function formatTaskLine(t: {
   confirmed?: boolean;
 }): string {
   const who = t.assignees?.join(", ") || "—";
+  const id = t.id ? ` (id: ${t.id})` : "";
   const due = t.due_date ? ` | дедлайн: ${t.due_date}` : "";
   const country = t.country ? ` | ${t.country}` : "";
   const pending = t.confirmed === false ? " ⏳ на проверке (в вебе не видна)" : "";
-  return `• [${t.status}] ${t.title}${pending}\n  Исполнитель: ${who}${due}${country}`;
+  return `• [${t.status}] ${t.title}${id}${pending}\n  Исполнитель: ${who}${due}${country}`;
 }
 
 /**
@@ -92,4 +99,46 @@ export function addTaskOutcome(o: { id: string; confirmed: boolean; warning?: st
   return `✅ Задача создана, но ЖДЁТ ПОДТВЕРЖДЕНИЯ (id: ${o.id})${w}. ` +
     "В вебе её не видно — очередь «На проверке» есть только в Telegram-боте (/tasks → ⏳ На проверке). " +
     "Чтобы задача сразу попадала на доску, создавай её без confirmed: false.";
+}
+/** Комментарий-апдейт в выдаче get_recent_comments, уже с резолвленным автором. */
+export type RecentCommentRow = {
+  task_id: string;
+  task_title: string;
+  author: string;
+  created_at: string;
+  content: string;
+};
+
+/**
+ * Свежие комментарии одной выдачей, сгруппированные по задаче (issue #276): дайджест читает
+ * «что нового по задачам», а не плоскую ленту, поэтому задача печатается один раз с id — им
+ * дотягиваются остальные комментарии через get_task_comments.
+ *
+ * `truncated` — читали с потолком и он сработал: об этом говорим ПРЯМО. Молча обрезанная выдача
+ * неотличима от «больше ничего не было», и дайджест уходит владельцу с потерянными апдейтами.
+ */
+export function formatRecentComments(
+  rows: RecentCommentRow[],
+  opts: { sinceISO: string; truncated?: boolean },
+): string {
+  if (!rows.length) return `Новых комментариев с ${opts.sinceISO} нет.`;
+
+  const byTask = new Map<string, RecentCommentRow[]>();
+  for (const r of rows) {
+    const list = byTask.get(r.task_id) ?? [];
+    list.push(r);
+    byTask.set(r.task_id, list);
+  }
+
+  const out: string[] = [];
+  for (const [taskId, list] of byTask) {
+    const lines = list.map((r) => `  [${r.created_at.slice(0, 16).replace("T", " ")}] ${r.author}: ${r.content}`);
+    out.push(`• ${list[0].task_title} (id: ${taskId})\n${lines.join("\n")}`);
+  }
+
+  const head = `Комментарии с ${opts.sinceISO}: ${rows.length} в ${byTask.size} задачах.`;
+  const tail = opts.truncated
+    ? "\n\n⚠️ Выдача обрезана лимитом — свежих комментариев БОЛЬШЕ, чем показано. Подними limit или сузь since."
+    : "";
+  return `${head}\n\n${out.join("\n\n")}${tail}`;
 }

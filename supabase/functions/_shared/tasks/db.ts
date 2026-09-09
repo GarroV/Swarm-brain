@@ -1,6 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Task, TaskInput } from "./types.ts";
+import { completionPatch, isClosedStatus } from "./statuses.ts";
 import { buildRecurPatch, todayInTz, type RecurRow } from "./recurrence.ts";
+import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -22,6 +24,8 @@ export async function createTask(input: TaskInput, groupId?: string): Promise<Ta
     priority: input.priority ?? null,
     source: input.source ?? "manual",
     status: input.status ?? "open",
+    // Задача может родиться уже закрытой (импорт, MCP) — тогда дата закрытия ставится сразу.
+    completed_at: isClosedStatus(input.status) ? new Date().toISOString() : null,
     meeting_id: input.meeting_id ?? null,
     group_id: groupId ?? input.group_id ?? null,
     confirmed: input.confirmed ?? false,
@@ -155,6 +159,18 @@ export async function listTasks(
   return (await listTasksWithTotal(filters, groupId)).tasks;
 }
 
+/** Снимок задачи ДО апдейта: поля для переката, даты закрытия и журнала изменений. */
+type UpdateSnapshotRow = TaskSnapshot & {
+  status: string;
+  completed_at: string | null;
+  recur_freq: string | null;
+  recur_anchor_dom: number | null;
+  due_date: string | null;
+  start_date: string | null;
+  remind_date: string | null;
+  group_id: string | null;
+};
+
 /** Задача не закрылась, а перекатилась на следующий цикл: `from` — прежний срок, `to` — новый. */
 export interface RecurResult {
   recurred: { from: string; to: string };
@@ -163,46 +179,68 @@ export interface RecurResult {
 export async function updateTask(
   id: string,
   fields: Partial<TaskInput> & { status?: string; url?: string; due_date?: string | null },
-  opts: { actor?: string } = {},
+  opts: { actor?: string; actorTelegramId?: number } = {},
 ): Promise<RecurResult | null> {
   let patch: Record<string, unknown> = { ...fields };
   let result: RecurResult | null = null;
+  let prev: { status: string; completed_at: string | null } | null = null;
+  let snapshot: TaskSnapshot | null = null;
 
-  // Закрытие РЕГУЛЯРНОЙ задачи — не закрытие, а перекат на следующее вхождение графика.
-  // Живёт здесь, потому что это единственная точка записи статуса задач: веб (PATCH /tasks),
-  // бот и MCP ходят через неё, и обойти перекат нельзя. Лишний SELECT — только на «done».
-  if (fields.status === "done") {
-    const { data: row } = await supabase.from("tasks")
-      .select("status, recur_freq, recur_anchor_dom, due_date, start_date, remind_date")
+  // Прежний снимок строки отвечает сразу на четыре вопроса: не перекат ли это регулярной задачи,
+  // ставить ли дату закрытия, что записать в историю статуса и какие ещё поля изменились (журнал,
+  // issue #286). Снимок берём целиком, потому что в журнал идёт ЛЮБОЕ поле, кроме служебного
+  // шума (решение владельца 09.09.2026: «уметь всё что угодно отмечать у задач»). Апдейт задачи
+  // — не hot path (человек нажал кнопку), поэтому один лишний SELECT здесь дешевле, чем
+  // невосстановимо потерянная история.
+  const touchesJournaled = Object.keys(fields).some(isJournaled);
+  if (touchesJournaled) {
+    const { data } = await supabase.from("tasks")
+      .select("*")
       .eq("id", id)
       .maybeSingle();
+    // Двойное приведение: при динамическом select(string) supabase-js форму строки не выводит
+    // (тот же приём, что в listTasksWithTotal).
+    const row = data as unknown as UpdateSnapshotRow | null;
     if (row) {
-      // Значения из ЭТОГО же патча важнее сохранённых: срок/частоту могли поменять и закрыть
-      // задачу одним запросом (MCP умеет), и считать надо от нового графика, а не от прежнего.
-      const effective: RecurRow = {
-        status: (fields.status as string) ?? row.status,
-        recur_freq: fields.recur_freq !== undefined ? fields.recur_freq ?? null : row.recur_freq,
-        recur_anchor_dom: fields.recur_anchor_dom !== undefined ? fields.recur_anchor_dom ?? null : row.recur_anchor_dom,
-        due_date: fields.due_date !== undefined ? fields.due_date ?? null : row.due_date,
-        start_date: fields.start_date !== undefined ? fields.start_date ?? null : row.start_date,
-        remind_date: fields.remind_date !== undefined ? fields.remind_date ?? null : row.remind_date,
-      };
-      const recurPatch = buildRecurPatch(effective, todayInTz());
-      if (recurPatch) {
-        patch = { ...patch, ...recurPatch }; // у переката приоритет над «done» из запроса
-        result = { recurred: { from: effective.due_date!, to: recurPatch.due_date } };
+      snapshot = row as TaskSnapshot;
+      prev = { status: row.status, completed_at: row.completed_at ?? null };
+
+      // Закрытие РЕГУЛЯРНОЙ задачи — не закрытие, а перекат на следующее вхождение графика.
+      // Живёт здесь, потому что это единственная точка записи статуса задач: веб (PATCH /tasks),
+      // бот и MCP ходят через неё, и обойти перекат нельзя.
+      if (fields.status === "done") {
+        // Значения из ЭТОГО же патча важнее сохранённых: срок/частоту могли поменять и закрыть
+        // задачу одним запросом (MCP умеет), и считать надо от нового графика, а не от прежнего.
+        const effective: RecurRow = {
+          status: (fields.status as string) ?? row.status,
+          recur_freq: fields.recur_freq !== undefined ? fields.recur_freq ?? null : row.recur_freq,
+          recur_anchor_dom: fields.recur_anchor_dom !== undefined ? fields.recur_anchor_dom ?? null : row.recur_anchor_dom,
+          due_date: fields.due_date !== undefined ? fields.due_date ?? null : row.due_date,
+          start_date: fields.start_date !== undefined ? fields.start_date ?? null : row.start_date,
+          remind_date: fields.remind_date !== undefined ? fields.remind_date ?? null : row.remind_date,
+        };
+        const recurPatch = buildRecurPatch(effective, todayInTz());
+        if (recurPatch) {
+          patch = { ...patch, ...recurPatch }; // у переката приоритет над «done» из запроса
+          result = { recurred: { from: effective.due_date!, to: recurPatch.due_date } };
+        }
       }
     }
   }
+
+  // Дата закрытия считается от ЭФФЕКТИВНОГО статуса — то есть уже после переката, который
+  // возвращает задачу в «open»: перекатившаяся задача закрытой не считается.
+  const nextStatus = patch.status as string | undefined;
+  patch = { ...patch, ...completionPatch(nextStatus, prev?.completed_at, new Date().toISOString()) };
 
   await supabase.from("tasks")
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", id);
 
-  // В roll-forward-модели от выполнения не остаётся НИКАКОГО следа (статус снова «открыто»,
-  // задача в «Готовых» не появится). Строка в уже существующей task_history — единственная
-  // память о том, что цикл закрыли.
   if (result) {
+    // В roll-forward-модели от выполнения не остаётся НИКАКОГО следа (статус снова «открыто»,
+    // задача в «Готовых» не появится). Строка в уже существующей task_history — единственная
+    // память о том, что цикл закрыли.
     await supabase.from("task_history").insert({
       task_id: id,
       changed_by: opts.actor ?? "recurring",
@@ -210,6 +248,26 @@ export async function updateTask(
       new_status: "open",
       note: `цикл закрыт, следующий срок ${result.recurred.to} (было ${result.recurred.from})`,
     });
+  } else {
+    // Журнал изменений: статус, срок, исполнитель, проект, спринт, приоритет — по строке на
+    // каждое РЕАЛЬНО изменившееся поле (issue #286). До 09.09.2026 историю писал только бот и
+    // только на перекате: на проде лежали две строки на две задачи, и вопрос руководства «где,
+    // когда, куда передвинули» ответа не имел. Пишем из общей точки — значит веб, бот и MCP
+    // попадают в журнал сразу, без правок в трёх местах.
+    const rows = historyRowsFor({
+      taskId: id,
+      snapshot,
+      patch,
+      actor: opts.actor ?? null,
+      actorTelegramId: opts.actorTelegramId ?? null,
+      groupId: (snapshot?.group_id as string | null | undefined) ?? null,
+    });
+    if (rows.length) {
+      const { error } = await supabase.from("task_history").insert(rows);
+      // Журнал не должен ронять апдейт задачи, но и молчать нельзя: пустой отчёт через месяц
+      // неотличим от «никто ничего не двигал».
+      if (error) console.error(`task_history insert failed for ${id}:`, error.message);
+    }
   }
 
   return result;

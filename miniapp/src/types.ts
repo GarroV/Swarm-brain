@@ -24,6 +24,8 @@ export type Task = {
   status: string;
   created_at: string;
   updated_at?: string | null;
+  /** Момент закрытия (done/cancelled). У задач, закрытых до 08.09.2026 — прокси из updated_at. */
+  completed_at?: string | null;
   meeting_id: string | null;
   url?: string | null;
   group_id?: string | null;

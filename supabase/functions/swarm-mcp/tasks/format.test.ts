@@ -2,6 +2,7 @@ import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
   addTaskOutcome,
   formatProjectTree,
+  formatRecentComments,
   formatTaskLine,
   projectNotFoundMessage,
   type ProjectTreeRow,
@@ -107,6 +108,25 @@ Deno.test("formatTaskLine: без исполнителя — прочерк, а 
   assertStringIncludes(formatTaskLine({ status: "open", title: "T", confirmed: true }), "—");
 });
 
+// ── get_tasks: id задачи в строке (issue #275) ────────────────────────────────
+
+Deno.test("formatTaskLine: печатает ПОЛНЫЙ id — им вызывается get_task_comments", () => {
+  const id = "8e1c1d4a-1f3b-4a5c-9e77-2b0d5f6a7c88";
+  const line = formatTaskLine({ id, status: "in_progress", title: "Название", confirmed: true });
+  assertStringIncludes(line, `(id: ${id})`);
+});
+
+Deno.test("formatTaskLine: id стоит перед пометкой «на проверке» — не разрывает её", () => {
+  const id = "8e1c1d4a-1f3b-4a5c-9e77-2b0d5f6a7c88";
+  const line = formatTaskLine({ id, status: "open", title: "T", confirmed: false });
+  assert(line.indexOf(`(id: ${id})`) < line.indexOf("на проверке"), line);
+});
+
+Deno.test("formatTaskLine: без id строки «(id: undefined)» не появляется", () => {
+  const line = formatTaskLine({ status: "open", title: "T", confirmed: true });
+  assert(!line.includes("id:"), line);
+});
+
 // ── add_task: где оказалась задача (issue #201) ───────────────────────────────
 
 Deno.test("addTaskOutcome: подтверждённая задача — сказано, что она на доске, и НЕ уводит в бота", () => {
@@ -126,4 +146,50 @@ Deno.test("addTaskOutcome: id и предупреждение резолва н�
   const msg = addTaskOutcome({ id: "t42", confirmed: true, warning: " ⚠️ проект не найден" });
   assertStringIncludes(msg, "t42");
   assertStringIncludes(msg, "проект не найден");
+});
+
+// ── get_recent_comments: свежие апдейты одной выдачей (issue #276) ────────────
+
+const recent = (over: Partial<Parameters<typeof formatRecentComments>[0][number]> = {}) => ({
+  task_id: "8e1c1d4a-1f3b-4a5c-9e77-2b0d5f6a7c88",
+  task_title: "Починить дайджест",
+  author: "Аня",
+  created_at: "2026-09-09T07:15:00.000Z",
+  content: "Взяла в работу",
+  ...over,
+});
+
+Deno.test("formatRecentComments: пусто — честно сказано, с какого момента смотрели", () => {
+  const out = formatRecentComments([], { sinceISO: "2026-09-08T00:00:00.000Z" });
+  assertStringIncludes(out, "2026-09-08T00:00:00.000Z");
+  assertStringIncludes(out, "нет");
+});
+
+Deno.test("formatRecentComments: комментарии сгруппированы по задаче, id печатается один раз", () => {
+  const out = formatRecentComments(
+    [recent(), recent({ content: "Готово", created_at: "2026-09-09T09:00:00.000Z" })],
+    { sinceISO: "2026-09-09T00:00:00.000Z" },
+  );
+  assertEquals(out.split("id: 8e1c1d4a-1f3b-4a5c-9e77-2b0d5f6a7c88").length - 1, 1);
+  assertStringIncludes(out, "Взяла в работу");
+  assertStringIncludes(out, "Готово");
+  assertStringIncludes(out, "2 в 1 задачах");
+});
+
+Deno.test("formatRecentComments: разные задачи — отдельные блоки со своими id", () => {
+  const other = recent({ task_id: "11111111-2222-3333-4444-555555555555", task_title: "Вторая" });
+  const out = formatRecentComments([recent(), other], { sinceISO: "2026-09-09T00:00:00.000Z" });
+  assertStringIncludes(out, "Починить дайджест (id: 8e1c1d4a-1f3b-4a5c-9e77-2b0d5f6a7c88)");
+  assertStringIncludes(out, "Вторая (id: 11111111-2222-3333-4444-555555555555)");
+  assertStringIncludes(out, "2 в 2 задачах");
+});
+
+Deno.test("formatRecentComments: обрезанная выдача говорит об этом ПРЯМО — иначе дайджест теряет апдейты молча", () => {
+  const out = formatRecentComments([recent()], { sinceISO: "2026-09-09T00:00:00.000Z", truncated: true });
+  assertStringIncludes(out, "обрезана");
+});
+
+Deno.test("formatRecentComments: не обрезанная выдача не пугает предупреждением", () => {
+  const out = formatRecentComments([recent()], { sinceISO: "2026-09-09T00:00:00.000Z" });
+  assert(!out.includes("обрезана"), out);
 });
