@@ -485,8 +485,8 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 | `feedback_text` | feedback.ts | Ожидание текста фидбека |
 | `feedback_category` | feedback.ts | Ожидание выбора раздела (клавиатура `fbcat_`) |
 | `feedback_photo` | feedback.ts | Ожидание скриншота или кнопки "Готово" |
-| `addtask_title` | tasks/handlers.ts | Wizard `/addtask`: ожидание названия задачи |
-| `addtask_due` | tasks/handlers.ts | Wizard `/addtask`: ожидание дедлайна (по завершении — `confirmed:true` + `broadcastTaskAssigned`) |
+| `addtask_title` | tasks/handlers.ts | Wizard `/addtask`: ожидание названия задачи. Исполнитель ставится сразу — сам отправитель (`assignee_telegram_ids:[userId]`), шага выбора исполнителя нет (решение владельца 2026-09-09). Черновик создаётся со `status:"backlog"` (было `"draft"` — недопустимое значение по `tasks_status_check`, миграция 20260905190000 приняла её `/addtask` не работал вообще, issue #294); недособранность до конца визарда прячет `confirmed:false` — тот же признак, что уже фильтруют MCP/miniapp. `dbListAllOpen`/«Мои задачи» дополнены фильтром `confirmed:true`, иначе недособранная задача мелькала бы в команде |
+| `addtask_due` | tasks/handlers.ts | Wizard `/addtask`: ожидание дедлайна (по завершении — `confirmed:true`). «Пропустить» ставит дедлайн на завтра (дефолт), а не оставляет пустым — исполнитель тут всегда сам создатель. Ручная дата идёт через `normalizeExtractedDueDate` (см. §Движок задач выше — год от модели не верить). `broadcastTaskAssigned` не зовём: самому себе «тебе назначена задача» слать незачем |
 | `task_date` | tasks/handlers.ts | Ожидание нового дедлайна (правка существующей задачи / из pending-карточки) |
 | `task_rename` | tasks/handlers.ts | Ожидание нового названия задачи |
 | `onboard_role` | users.ts | Онбординг нового пользователя: ожидание роли (далее `onboard_markets` → `onboard_email` → `onboard_phone`; каждый шаг можно пропустить кнопкой `onboard_skip_<step>`) |
@@ -604,8 +604,7 @@ claimer → meeting-ingest: грузит АУДИО (части ≤15мин → 
 | `ts_<taskId>_<status>` | Сменить статус задачи; запись в `task_history` делает `updateTask` (бот свою вставку больше не дублирует — #286) |
 | `ta_<taskId>` | Показать кнопки выбора исполнителя |
 | `tas_<taskId>_<tgId>` | Назначить исполнителя (`status=open`) |
-| `tat_<taskId>_<tgId>` | Wizard `/addtask`: исполнитель выбран → показать пикер рынка |
-| `tac_<taskId>:<index\|none>` | Wizard `/addtask`: выбор страны → перейти к дедлайну (сессия `addtask_due`) |
+| `tac_<taskId>:<index\|none>` | Wizard `/addtask`: выбор рынка (сразу после названия — шага выбора исполнителя нет) → перейти к дедлайну (сессия `addtask_due`) |
 | `tacx_<taskId>` | Wizard `/addtask`: отмена создания (удаляет черновик задачи) |
 | `tdc_<taskId>` | Запрос подтверждения удаления задачи (карточка) |
 | `tdconf_<taskId>` | Подтвердить удаление задачи |

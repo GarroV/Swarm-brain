@@ -3,7 +3,7 @@ import { chatComplete } from "../lib/openai.ts";
 import { sendMessage, sendInlineMessage, editInlineMessage } from "../lib/telegram.ts";
 import { setSession, clearSession } from "../lib/storage.ts";
 import { dbGetTask, dbListTasks, dbCreateTask, dbUpdateTask, dbDeleteTask, dbListAllOpen, dbListToday } from "./db.ts";
-import { getProfilesForPrompt, buildProfileMap, buildDisplayNameMap, getAllUniqueMarkets, resolveAssignees, findUserByMention } from "./matcher.ts";
+import { getProfilesForPrompt, buildProfileMap, buildDisplayNameMap, getAllUniqueMarkets, findUserByMention } from "./matcher.ts";
 import { sendTaskCard, STATUS_LABEL, formatTaskLine } from "./formatter.ts";
 import { normalizeExtractedDueDate, todayIso } from "../../_shared/llm-date.ts";
 import type { Task } from "./types.ts";
@@ -334,7 +334,8 @@ export async function handleTaskCallbacks(
     ]);
     const seen = new Set<string>();
     const merged = [...byId, ...byName].filter(t => !seen.has(t.id) && seen.add(t.id));
-    const active = merged.filter(t => !["done", "cancelled", "draft"].includes(t.status));
+    // confirmed:false — незавершённый /addtask (между «Задача?» и вводом дедлайна), не показываем
+    const active = merged.filter(t => t.confirmed && !["done", "cancelled", "draft"].includes(t.status));
 
     if (!active.length) {
       await editInlineMessage(
@@ -534,23 +535,6 @@ export async function handleTaskCallbacks(
 
   // ── End interactive task browser ──────────────────────────────────────────
 
-  // /addtask: assignee selection → tat_{taskId}_{telegramId}
-  if (data.startsWith("tat_")) {
-    const rest = data.replace("tat_", "");
-    const sep = rest.lastIndexOf("_");
-    const taskId = rest.slice(0, sep);
-    const telegramId = Number(rest.slice(sep + 1));
-    const nameMap = await buildDisplayNameMap([telegramId]);
-    const assigneeName = nameMap[telegramId] ?? String(telegramId);
-    await dbUpdateTask(taskId, { assignee_telegram_ids: [telegramId], assignees: [assigneeName] });
-    const markets = await getAllUniqueMarkets();
-    const countryButtons = markets.map((m, i) => [{ text: `🌍 ${m}`, callback_data: `tac_${taskId}:${i}` }]);
-    countryButtons.push([{ text: "❌ Без рынка", callback_data: `tac_${taskId}:none` }]);
-    countryButtons.push([{ text: "🚫 Отмена", callback_data: `tacx_${taskId}` }]);
-    await sendInlineMessage(chatId, "Рынок?", countryButtons);
-    return true;
-  }
-
   // /addtask: cancel → tacx_{taskId}
   if (data.startsWith("tacx_")) {
     const taskId = data.replace("tacx_", "");
@@ -579,7 +563,7 @@ export async function handleTaskCallbacks(
     }
     await dbUpdateTask(taskId, { country });
     await setSession(chatId, "addtask_due", taskId);
-    await sendMessage(chatId, `Дедлайн? (ДД.ММ.ГГГГ или «пропустить»)`);
+    await sendMessage(chatId, `Дедлайн? (ДД.ММ.ГГГГ или «пропустить» — тогда завтра)`);
     return true;
   }
 
@@ -817,7 +801,8 @@ export async function handleTaskSessionInput(
     return true;
   }
 
-  // /addtask step 1: title received
+  // /addtask step 1: title received — исполнитель всегда сам отправитель, дальше сразу рынок
+  // (владелец 2026-09-09: /addtask — это личное «добавь себе задачу», без выбора исполнителя)
   if (action === "addtask_title") {
     await clearSession(chatId);
     const title = text.trim();
@@ -826,56 +811,51 @@ export async function handleTaskSessionInput(
       await setSession(chatId, "addtask_title");
       return true;
     }
+    // status:"draft" здесь раньше стоял намеренно — прятал недособранную задачу из
+    // dbListAllOpen/«Мои задачи» (см. фильтры там) без второго флага. С 20260905190000
+    // (tasks_status_check, issue #208) 'draft' — недопустимое значение, INSERT падал на
+    // констрейнте (issue #291): «Задача?» в /addtask не работала вовсе. 'backlog' — тот же
+    // «ещё не в работе» смысл, а прятать до конца визарда теперь должен только confirmed:false.
     const task = await dbCreateTask({
       title,
       source: "manual",
-      status: "draft",
+      status: "backlog",
       group_id: groupId ?? null,
       confirmed: false,
       created_by_telegram_id: userId,
+      assignee_telegram_ids: [userId],
     });
-    const { data: allowedUsers } = await supabase.from("allowed_users").select("telegram_id, username");
-    const seen = new Set<number>();
-    const allUsers = [
-      { telegram_id: ADMIN_USER_ID, username: null as string | null },
-      ...((allowedUsers ?? []) as Array<{ telegram_id: number | null; username: string | null }>),
-    ].filter((u): u is { telegram_id: number; username: string | null } => {
-      if (u.telegram_id == null) return false;
-      if (seen.has(u.telegram_id)) return false;
-      seen.add(u.telegram_id);
-      return true;
-    });
-    const nameMap = await buildDisplayNameMap(allUsers.map(u => u.telegram_id));
-    const buttons = allUsers.map(u => [{
-      text: nameMap[u.telegram_id] || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`),
-      callback_data: `tat_${task.id}_${u.telegram_id}`,
-    }]);
-    buttons.push([{ text: "❌ Без исполнителя", callback_data: `tac_${task.id}:none` }]);
-    buttons.push([{ text: "🚫 Отмена", callback_data: `tacx_${task.id}` }]);
-    await sendInlineMessage(chatId, `📌 <b>${title}</b>\n\nКому назначить?`, buttons);
+    const markets = await getAllUniqueMarkets();
+    const countryButtons = markets.map((m, i) => [{ text: `🌍 ${m}`, callback_data: `tac_${task.id}:${i}` }]);
+    countryButtons.push([{ text: "❌ Без рынка", callback_data: `tac_${task.id}:none` }]);
+    countryButtons.push([{ text: "🚫 Отмена", callback_data: `tacx_${task.id}` }]);
+    await sendInlineMessage(chatId, `📌 <b>${title}</b>\n\nРынок?`, countryButtons);
     return true;
   }
 
-  // /addtask step 2: due date received
+  // /addtask step 2: due date received — «пропустить» ставит дедлайн на завтра (дефолт), а не
+  // оставляет пустым: исполнитель тут всегда сам создатель, задача без срока рисковала повиснуть
+  // незамеченной. broadcastTaskAssigned здесь больше не зовём — исполнитель всегда сам создатель,
+  // слать себе «тебе назначена задача» незачем (та же логика уже в handleQuickCreateTask).
   if (action === "addtask_due" && context) {
     await clearSession(chatId);
     const taskId = context;
     if (["пропустить", "skip", "пропуск"].includes(text.trim().toLowerCase())) {
-      await dbUpdateTask(taskId, { status: "open", confirmed: true });
+      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+      await dbUpdateTask(taskId, { due_date: tomorrow, status: "open", confirmed: true });
       const task = await dbGetTask(taskId);
       if (task) {
         await sendMessage(chatId, "✅ Задача создана!");
         await sendTaskCard(chatId, task);
-        await broadcastTaskAssigned(task, groupId ?? "");
       }
       return true;
     }
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayIso();
     const parsed = await chatComplete(
       `Сегодня ${today}. Преобразуй дату из текста пользователя в формат ГГГГ-ММ-ДД. Только дату, без пояснений. Если не распознал — верни "null".`,
       text.trim()
     );
-    const due = /^\d{4}-\d{2}-\d{2}$/.test(parsed.trim()) ? parsed.trim() : null;
+    const due = normalizeExtractedDueDate(parsed.trim(), today);
     if (!due) {
       await sendMessage(chatId, "Не удалось распознать дату. Попробуй ещё раз или напиши «пропустить».");
       await setSession(chatId, "addtask_due", taskId);
@@ -886,7 +866,6 @@ export async function handleTaskSessionInput(
     if (task) {
       await sendMessage(chatId, "✅ Задача создана!");
       await sendTaskCard(chatId, task);
-      await broadcastTaskAssigned(task, groupId ?? "");
     }
     return true;
   }
