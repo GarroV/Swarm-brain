@@ -2,11 +2,18 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createTask, getTask, listTasks, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
 import { recurrencePatchFor, resolveRecurrence } from "../../_shared/tasks/recurrence.ts";
 import { validateCommentContent } from "../../_shared/tasks/comments.ts";
-import { taskAccessError } from "../../_shared/tasks/access.ts";
+import { canViewTask, taskAccessError } from "../../_shared/tasks/access.ts";
 import { pickProjectByName, type ProjectNameRow } from "../../_shared/tasks/project-access.ts";
 import { listProjects } from "../../_shared/tasks/projects.ts";
 import { visibleProjectNames } from "../../_shared/tasks/project-access.ts";
-import { addTaskOutcome, formatProjectTree, formatTaskLine, projectNotFoundMessage } from "./format.ts";
+import {
+  addTaskOutcome,
+  formatProjectTree,
+  formatRecentComments,
+  formatTaskLine,
+  projectNotFoundMessage,
+  type RecentCommentRow,
+} from "./format.ts";
 
 // Оверсайт руководителя по ЗАДАЧАМ — осознанное решение владельца, см. docs/decisions/2026-08-21-admin-visibility.md.
 // На проекты и записи он НЕ распространяется.
@@ -454,6 +461,91 @@ export async function toolAddTaskComment(args: { task_id: string; content: strin
   return "✅ Комментарий добавлен.";
 }
 
+// Свежие комментарии одним запросом (issue #276). Сценарий — утренний дайджест по задачам
+// команды: раньше он требовал N вызовов get_task_comments, по одному на изменившуюся задачу.
+const RECENT_DEFAULT_WINDOW_H = 24;   // since не задан — сутки назад: дайджест ежедневный
+const RECENT_DEFAULT_LIMIT = 50;
+const RECENT_MAX_LIMIT = 200;
+// Читаем с запасом к лимиту выдачи: приватные задачи отсеиваются УЖЕ В КОДЕ (RLS не механизм
+// авторизации, всё ходит service_role), и без запаса один болтливый чужой тред съедал бы всю
+// выдачу — человек получил бы пустой дайджест при живых апдейтах по своим задачам.
+const RECENT_READ_MULTIPLIER = 4;
+const RECENT_READ_CAP = 500;
+
+export async function toolGetRecentComments(
+  args: { since?: string; limit?: number; requesting_user_id: number },
+): Promise<string> {
+  const groupId = await resolveGroupId(args.requesting_user_id);
+  if (!groupId) return "Ошибка: пользователь не найден в системе.";
+
+  // Неразобранный since — ОТКАЗ, а не тихий дефолт: молча подставленные сутки неотличимы от
+  // «за твой период ничего не было», и дайджест соврёт про спокойную неделю.
+  let sinceMs: number;
+  if (args.since === undefined) {
+    sinceMs = Date.now() - RECENT_DEFAULT_WINDOW_H * 3600_000;
+  } else {
+    const parsed = Date.parse(args.since);
+    if (Number.isNaN(parsed)) {
+      return `Ошибка: since «${args.since}» не разобрать — нужна дата ISO (2026-09-09 или 2026-09-09T07:00:00Z). Комментарии НЕ показаны.`;
+    }
+    sinceMs = parsed;
+  }
+  const sinceISO = new Date(sinceMs).toISOString();
+  const limit = Math.min(Math.max(1, Math.floor(args.limit ?? RECENT_DEFAULT_LIMIT)), RECENT_MAX_LIMIT);
+  const readCap = Math.min(limit * RECENT_READ_MULTIPLIER, RECENT_READ_CAP);
+
+  const { data, error } = await supabase
+    .from("task_comments").select("task_id, content, added_by_telegram_id, created_at")
+    .gte("created_at", sinceISO)
+    .order("created_at", { ascending: false })
+    .limit(readCap);
+  if (error) {
+    console.error("task_comments recent failed:", error);
+    return "Ошибка: не удалось загрузить комментарии.";
+  }
+  const raw = (data ?? []) as Array<{ task_id: string; content: string; added_by_telegram_id: number | null; created_at: string }>;
+  if (!raw.length) return formatRecentComments([], { sinceISO });
+
+  // Видимость считаем тем же каноническим правилом, что и поштучное чтение (canViewTask +
+  // воркспейс). Оверсайт админа по задачам сохраняется осознанно — docs/decisions/2026-08-21-admin-visibility.md.
+  const isAdmin = args.requesting_user_id === ADMIN_USER_ID;
+  const { data: taskRows } = await supabase
+    .from("tasks").select("id, title, group_id, is_private, owner_id")
+    .in("id", [...new Set(raw.map((r) => r.task_id))]);
+  const titleById = new Map<string, string>();
+  for (const t of (taskRows ?? []) as Array<{ id: string; title: string; group_id: string | null; is_private: boolean; owner_id: number | null }>) {
+    if (t.group_id !== groupId) continue;
+    if (!canViewTask(t, args.requesting_user_id, isAdmin)) continue;
+    titleById.set(t.id, t.title);
+  }
+
+  const visible = raw.filter((r) => titleById.has(r.task_id));
+  // Обрезали, если уперлись в потолок чтения ИЛИ доступных больше, чем просили показать.
+  const truncated = raw.length >= readCap || visible.length > limit;
+  // Забираем limit самых свежих (выдача пришла desc), а печатаем по возрастанию: внутри задачи
+  // апдейты должны читаться как история, а не с конца.
+  const page = visible.slice(0, limit).reverse();
+  if (!page.length) return formatRecentComments([], { sinceISO });
+
+  const authorIds = [...new Set(page.map((r) => r.added_by_telegram_id).filter((x): x is number => !!x))];
+  const { data: profs } = await supabase
+    .from("user_profiles").select("telegram_id, first_name, last_name")
+    .in("telegram_id", authorIds.length ? authorIds : [0]);
+  const nameById = new Map<number, string>();
+  for (const pr of (profs ?? []) as Array<{ telegram_id: number; first_name?: string; last_name?: string }>) {
+    nameById.set(pr.telegram_id, [pr.first_name, pr.last_name].filter(Boolean).join(" ") || String(pr.telegram_id));
+  }
+
+  const rows: RecentCommentRow[] = page.map((r) => ({
+    task_id: r.task_id,
+    task_title: titleById.get(r.task_id) ?? r.task_id,
+    author: r.added_by_telegram_id ? (nameById.get(r.added_by_telegram_id) ?? String(r.added_by_telegram_id)) : "—",
+    created_at: r.created_at,
+    content: r.content,
+  }));
+  return formatRecentComments(rows, { sinceISO, truncated });
+}
+
 export const TASK_TOOL_DEFINITIONS = [
   {
     name: "add_task",
@@ -549,6 +641,19 @@ export const LABEL_TOOL_DEFINITIONS = [
 ];
 
 export const COMMENT_TOOL_DEFINITIONS = [
+  {
+    name: "get_recent_comments",
+    description: "Свежие комментарии-апдейты по ВСЕМ доступным тебе задачам одним запросом — для дайджеста «что нового». Сгруппированы по задаче, у каждой печатается id.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        since: { type: "string", description: "С какого момента брать комментарии: ISO-дата (2026-09-09) или момент (2026-09-09T07:00:00Z). По умолчанию — последние 24 часа. Неразобранное значение = отказ, а не тихий дефолт" },
+        limit: { type: "number", description: "Сколько комментариев показать: по умолчанию 50, максимум 200. Если свежих больше — выдача честно скажет, что обрезана" },
+        requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для фильтрации по воркспейсу и приватности" },
+      },
+      required: ["requesting_user_id"],
+    },
+  },
   {
     name: "get_task_comments",
     description: "Показать комментарии-апдейты к задаче по её ID (если задача доступна тебе). ID берётся из выдачи get_tasks — он печатается в строке задачи.",

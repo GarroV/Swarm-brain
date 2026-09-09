@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolGetProjects, toolListTaskLabels, toolGetTaskComments, toolAddTaskComment, TASK_TOOL_DEFINITIONS, PROJECT_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS, COMMENT_TOOL_DEFINITIONS } from "./tasks/tools.ts";
+import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolGetProjects, toolListTaskLabels, toolGetTaskComments, toolGetRecentComments, toolAddTaskComment, TASK_TOOL_DEFINITIONS, PROJECT_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS, COMMENT_TOOL_DEFINITIONS } from "./tasks/tools.ts";
 import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, detectQueryCountry } from "../_shared/countries.ts";
 import { applyGeneralSentinel, marketTagsFromInput, specificCountries } from "../_shared/meta-extract.ts";
 import { matchEntries } from "../_shared/search.ts";
@@ -1031,6 +1031,8 @@ Deno.serve(async (req: Request) => {
         result = await toolDeleteTask(args as { id: string; requesting_user_id: number });
       } else if (name === "get_task_comments") {
         result = await toolGetTaskComments(args as { task_id: string; requesting_user_id: number });
+      } else if (name === "get_recent_comments") {
+        result = await toolGetRecentComments(args as { since?: string; limit?: number; requesting_user_id: number });
       } else if (name === "add_task_comment") {
         result = await toolAddTaskComment(args as { task_id: string; content: string; requesting_user_id: number });
       } else if (name === "get_meetings") {
