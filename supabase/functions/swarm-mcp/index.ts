@@ -1,5 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolGetProjects, toolListTaskLabels, toolGetTaskComments, toolGetRecentComments, toolAddTaskComment, TASK_TOOL_DEFINITIONS, PROJECT_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS, COMMENT_TOOL_DEFINITIONS } from "./tasks/tools.ts";
+import {
+  toolGetTaskStats,
+  toolGetTaskHistory,
+  toolGetRecentTaskChanges,
+  ANALYTICS_TOOL_DEFINITIONS,
+} from "./tasks/analytics.ts";
 import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE, detectQueryCountry } from "../_shared/countries.ts";
 import { applyGeneralSentinel, marketTagsFromInput, specificCountries } from "../_shared/meta-extract.ts";
 import { matchEntries } from "../_shared/search.ts";
@@ -173,6 +179,7 @@ const TOOLS = [
   ...PROJECT_TOOL_DEFINITIONS,
   ...LABEL_TOOL_DEFINITIONS,
   ...COMMENT_TOOL_DEFINITIONS,
+  ...ANALYTICS_TOOL_DEFINITIONS,
   {
     name: "get_meetings",
     description: "Получить последние встречи из Read.ai сохранённые в базе знаний.",
@@ -1031,6 +1038,12 @@ Deno.serve(async (req: Request) => {
         result = await toolDeleteTask(args as { id: string; requesting_user_id: number });
       } else if (name === "get_task_comments") {
         result = await toolGetTaskComments(args as { task_id: string; requesting_user_id: number });
+      } else if (name === "get_task_stats") {
+        result = await toolGetTaskStats(args as { period?: string; since?: string; assignee?: string; project?: string; country?: string; requesting_user_id: number });
+      } else if (name === "get_task_history") {
+        result = await toolGetTaskHistory(args as { task_id: string; requesting_user_id: number });
+      } else if (name === "get_recent_task_changes") {
+        result = await toolGetRecentTaskChanges(args as { since?: string; limit?: number; requesting_user_id: number });
       } else if (name === "get_recent_comments") {
         result = await toolGetRecentComments(args as { since?: string; limit?: number; requesting_user_id: number });
       } else if (name === "add_task_comment") {

@@ -17,7 +17,7 @@ import {
 
 // Оверсайт руководителя по ЗАДАЧАМ — осознанное решение владельца, см. docs/decisions/2026-08-21-admin-visibility.md.
 // На проекты и записи он НЕ распространяется.
-const ADMIN_USER_ID = 744230399;
+export const ADMIN_USER_ID = 744230399;
 
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
@@ -39,7 +39,7 @@ const supabase = createClient(
 
 // ── Workspace + assignee resolution (MCP layer, not in shared engine) ─────────
 
-async function resolveGroupId(telegramId: number): Promise<string | null> {
+export async function resolveGroupId(telegramId: number): Promise<string | null> {
   const { data } = await supabase
     .from("allowed_users")
     .select("group_id")
@@ -123,7 +123,7 @@ async function matchAssignee(name: string): Promise<{ telegram_id: number; displ
 // задачи на доску — только в общий список). Точное совпадение по имени приоритетнее частичного;
 // при неоднозначности (несколько совпадений) — не гадаем, отдаём null + предупреждение вызывающему,
 // как и matchAssignee при неопознанном исполнителе.
-async function fetchProjectRows(groupId: string): Promise<ProjectNameRow[]> {
+export async function fetchProjectRows(groupId: string): Promise<ProjectNameRow[]> {
   const { data } = await supabase.from("projects")
     .select("id, name, parent_id, created_by, is_private").eq("group_id", groupId);
   return (data ?? []) as ProjectNameRow[];
