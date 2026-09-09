@@ -4,9 +4,10 @@ import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { RemindersTasks } from "@/components/tasks/RemindersTasks";
 import { TimelineView } from "@/components/tasks/TimelineView";
 import { SprintBoard } from "@/components/tasks/SprintBoard";
+import { SprintsScreen } from "@/components/tasks/SprintsScreen";
 import { ProjectsGrid } from "@/components/tasks/ProjectsGrid";
 
-type View = "list" | "timeline" | "sprint" | "projects";
+type View = "list" | "timeline" | "sprint" | "sprints" | "projects";
 
 const VIEWS: Array<{ id: View; label: string; icon: RoyIconName }> = [
   { id: "list", label: "Задачи", icon: "task" },
@@ -14,6 +15,9 @@ const VIEWS: Array<{ id: View; label: string; icon: RoyIconName }> = [
   // Код (TimelineView) оставлен для возможного возврата. Чтобы вернуть: раскомментировать строку ниже.
   // { id: "timeline", label: "Таймлайн", icon: "timeline" },
   { id: "sprint", label: "Проекты", icon: "board" },
+  // «Спринты» (sprint_cycles) — период работы с датами и приёмкой; не путать с вкладками
+  // доски «Проекты» выше (таблица `sprints`, имя историческое).
+  { id: "sprints", label: "Спринты", icon: "repeat" },
   // Старые проекты (react-flow дерево) временно отключены по решению владельца 2026-08-06 —
   // код (ProjectsGrid/ProjectTree/treeGeom) оставлен для возможного возврата. Работа по проектам
   // теперь ведётся секциями на доске «Проекты» (таб выше). Чтобы вернуть: раскомментировать строку ниже.
@@ -25,7 +29,7 @@ const VIEWS: Array<{ id: View; label: string; icon: RoyIconName }> = [
 // паттерн, что у верхней вкладки в RoyApp.tsx (roy_tab) — sessionStorage, не переживает закрытие
 // вкладки браузера, только рефреш.
 const VIEW_KEY = "roy_tasks_view";
-const VALID_VIEWS: readonly View[] = ["list", "timeline", "sprint", "projects"];
+const VALID_VIEWS: readonly View[] = ["list", "timeline", "sprint", "sprints", "projects"];
 
 function readInitialView(): View {
   if (typeof window === "undefined") return "list";
@@ -70,6 +74,7 @@ export function TasksScreen() {
         {view === "list" && <RemindersTasks />}
         {view === "timeline" && <TimelineView />}
         {view === "sprint" && <SprintBoard />}
+        {view === "sprints" && <SprintsScreen />}
         {view === "projects" && <ProjectsGrid />}
       </div>
     </div>

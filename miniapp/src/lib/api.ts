@@ -1,5 +1,5 @@
 import { getInitData } from "./telegram";
-import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote, MeetingNotes } from "@/types";
+import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, SprintCycle, SprintCycleDetail, SprintCycleItem, SprintStats, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote, MeetingNotes } from "@/types";
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
@@ -647,6 +647,184 @@ export async function addTasksToSprint(sprintId: string, taskIds: string[]): Pro
 export async function removeTasksFromSprint(sprintId: string, taskIds: string[]): Promise<void> {
   if (DEV_MODE) { mockTasks = mockTasks.map((t) => (taskIds.includes(t.id) ? { ...t, sprint_id: null } : t)); return; }
   await apiFetch<{ updated: number }>(`/sprints/${sprintId}/tasks`, { method: "DELETE", body: JSON.stringify({ task_ids: taskIds }) });
+}
+
+// ── Спринты (`/sprint-cycles`) ─────────────────────────────────────────────────
+// ⚠️ Выше — вкладки доски (`/sprints`, таблица `sprints`). Здесь спринт как период работы.
+// Права: смотреть и набирать состав — все; создать/стартовать/принять/удалить — админ (гейтит
+// сервер, кнопки в UI просто не показываются не-админу).
+
+// Моки: черновик (кнопка «Начать спринт»), активный с составом и принятый прошлогодний —
+// без принятого не проверить ни архив с фильтром по году, ни блок итогов.
+const MOCK_CYCLE_ACCEPTED_STATS: SprintStats = {
+  plan: 4, planDone: 3, planPercent: 75, extra: 2, extraDone: 1, carried: 2, unassigned: 0,
+  byPerson: [{ name: "Dev User", plan: 3, done: 2 }, { name: "Alice Smith", plan: 1, done: 1 }],
+  byProject: [{ name: "Swarm Brain", total: 4, done: 3 }, { name: null, total: 2, done: 1 }],
+  byDay: [{ day: mockDay(-40), done: 2 }, { day: mockDay(-38), done: 2 }],
+};
+
+let mockCycles: SprintCycle[] = [
+  {
+    id: "sc_active", group_id: "cee", name: "Спринт 41", start_date: mockDay(-3), end_date: mockDay(11),
+    status: "active", created_by: "123456", started_at: new Date().toISOString(),
+    accepted_at: null, accepted_by: null, summary: null, stats: null, created_at: new Date().toISOString(),
+  },
+  {
+    id: "sc_draft", group_id: "cee", name: "Спринт 42", start_date: mockDay(12), end_date: mockDay(26),
+    status: "draft", created_by: "123456", started_at: null,
+    accepted_at: null, accepted_by: null, summary: null, stats: null, created_at: new Date().toISOString(),
+  },
+  {
+    id: "sc_done", group_id: "cee", name: "Спринт 40", start_date: "2025-11-03", end_date: "2025-11-16",
+    status: "accepted", created_by: "123456", started_at: "2025-11-03T09:00:00.000Z",
+    accepted_at: "2025-11-17T09:00:00.000Z", accepted_by: "123456",
+    summary: "Закрыли поиск и дайджест, рекордер уехал в следующий спринт.",
+    stats: MOCK_CYCLE_ACCEPTED_STATS, created_at: "2025-11-01T09:00:00.000Z",
+  },
+];
+
+// Состав живых спринтов держим ссылками на mockTasks — тогда перетаскивание карточки в канбане
+// меняет ту же строку, что видит доска проектов (в проде это и есть одна строка).
+let mockCycleItems: Record<string, { id: string; task_id: string; in_plan: boolean }[]> = {
+  sc_active: [
+    { id: "si1", task_id: "p_onb", in_plan: true },
+    { id: "si2", task_id: "p_search", in_plan: true },
+    { id: "si3", task_id: "p_dig", in_plan: true },
+    { id: "si4", task_id: "2", in_plan: false },
+  ],
+  sc_draft: [],
+};
+
+const MOCK_CYCLE_FROZEN: SprintCycleItem[] = [
+  { id: "sf1", task_id: null, in_plan: true, added_at: "2025-11-03T09:00:00.000Z", title: "Гибрид-ранжирование", status: "done", assignees: ["Dev User"], project_id: null, project: "Swarm Brain", completed_at: "2025-11-10T12:00:00.000Z", frozen: true },
+  { id: "sf2", task_id: null, in_plan: true, added_at: "2025-11-03T09:00:00.000Z", title: "Страновой фильтр", status: "done", assignees: ["Dev User"], project_id: null, project: "Swarm Brain", completed_at: "2025-11-12T12:00:00.000Z", frozen: true },
+  { id: "sf3", task_id: null, in_plan: true, added_at: "2025-11-03T09:00:00.000Z", title: "Дайджест", status: "done", assignees: ["Alice Smith"], project_id: null, project: "Swarm Brain", completed_at: "2025-11-14T12:00:00.000Z", frozen: true },
+  { id: "sf4", task_id: null, in_plan: true, added_at: "2025-11-03T09:00:00.000Z", title: "Рекордер", status: "in_progress", assignees: ["Dev User"], project_id: null, project: "Swarm Brain", completed_at: null, frozen: true },
+  { id: "sf5", task_id: null, in_plan: false, added_at: "2025-11-06T09:00:00.000Z", title: "Экспорт CSV", status: "done", assignees: [], project_id: null, project: null, completed_at: "2025-11-15T12:00:00.000Z", frozen: true },
+  { id: "sf6", task_id: null, in_plan: false, added_at: "2025-11-07T09:00:00.000Z", title: "i18n переключатель", status: "open", assignees: [], project_id: null, project: null, completed_at: null, frozen: true },
+];
+
+function mockItemsOf(cycleId: string): SprintCycleItem[] {
+  if (cycleId === "sc_done") return MOCK_CYCLE_FROZEN;
+  const projectName = (id: string | null) => (id ? mockProjects.find((p) => p.id === id)?.name ?? null : null);
+  return (mockCycleItems[cycleId] ?? []).flatMap((row) => {
+    const t = mockTasks.find((x) => x.id === row.task_id);
+    if (!t) return [];
+    return [{
+      id: row.id, task_id: t.id, in_plan: row.in_plan, added_at: new Date().toISOString(),
+      title: t.title, status: t.status, assignees: t.assignees,
+      project_id: t.project_id, project: projectName(t.project_id),
+      completed_at: t.status === "done" ? new Date().toISOString() : null, frozen: false,
+    }];
+  });
+}
+
+export async function fetchSprintCycles(): Promise<SprintCycle[]> {
+  if (DEV_MODE) return [...mockCycles].sort((a, b) => (a.start_date < b.start_date ? 1 : -1));
+  return apiFetch<SprintCycle[]>("/sprint-cycles");
+}
+
+export async function fetchSprintCycle(id: string): Promise<SprintCycleDetail> {
+  if (DEV_MODE) {
+    const c = mockCycles.find((x) => x.id === id);
+    if (!c) throw new ApiError(404, "Not found");
+    return { ...c, items: mockItemsOf(id) };
+  }
+  return apiFetch<SprintCycleDetail>(`/sprint-cycles/${id}`);
+}
+
+export async function createSprintCycle(input: { name: string; start_date: string; end_date: string }): Promise<SprintCycle> {
+  if (DEV_MODE) {
+    const c: SprintCycle = {
+      id: "sc" + Date.now(), group_id: "cee", name: input.name, start_date: input.start_date, end_date: input.end_date,
+      status: "draft", created_by: String(MOCK_ME.telegram_id), started_at: null, accepted_at: null,
+      accepted_by: null, summary: null, stats: null, created_at: new Date().toISOString(),
+    };
+    mockCycles = [...mockCycles, c];
+    mockCycleItems = { ...mockCycleItems, [c.id]: [] };
+    return c;
+  }
+  return apiFetch<SprintCycle>("/sprint-cycles", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function updateSprintCycle(
+  id: string,
+  fields: Partial<{ name: string; start_date: string; end_date: string; summary: string | null }>,
+): Promise<SprintCycle> {
+  if (DEV_MODE) {
+    mockCycles = mockCycles.map((c) => (c.id === id ? { ...c, ...fields } : c));
+    return mockCycles.find((c) => c.id === id)!;
+  }
+  return apiFetch<SprintCycle>(`/sprint-cycles/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+}
+
+export async function deleteSprintCycle(id: string): Promise<void> {
+  if (DEV_MODE) { mockCycles = mockCycles.filter((c) => c.id !== id || c.status === "accepted"); return; }
+  await apiFetch<void>(`/sprint-cycles/${id}`, { method: "DELETE" });
+}
+
+export async function startSprintCycle(id: string): Promise<SprintCycle> {
+  if (DEV_MODE) {
+    mockCycleItems = { ...mockCycleItems, [id]: (mockCycleItems[id] ?? []).map((r) => ({ ...r, in_plan: true })) };
+    mockCycles = mockCycles.map((c) => (c.id === id ? { ...c, status: "active", started_at: new Date().toISOString() } : c));
+    return mockCycles.find((c) => c.id === id)!;
+  }
+  return apiFetch<SprintCycle>(`/sprint-cycles/${id}/start`, { method: "POST" });
+}
+
+/** Приёмка: замораживает состав клоном, считает итоги и переносит незакрытые в next_cycle_id. */
+export async function acceptSprintCycle(
+  id: string,
+  input: { summary?: string | null; next_cycle_id?: string | null } = {},
+): Promise<{ cycle: SprintCycle; frozen: number; carried: number }> {
+  if (DEV_MODE) {
+    const items = mockItemsOf(id);
+    const stats: SprintStats = {
+      plan: items.filter((i) => i.in_plan).length,
+      planDone: items.filter((i) => i.in_plan && i.status === "done").length,
+      planPercent: items.filter((i) => i.in_plan).length === 0 ? 0
+        : Math.round((items.filter((i) => i.in_plan && i.status === "done").length / items.filter((i) => i.in_plan).length) * 100),
+      extra: items.filter((i) => !i.in_plan).length,
+      extraDone: items.filter((i) => !i.in_plan && i.status === "done").length,
+      carried: items.filter((i) => i.status !== "done" && i.status !== "cancelled").length,
+      unassigned: items.filter((i) => i.assignees.length === 0).length,
+      byPerson: [], byProject: [], byDay: [],
+    };
+    mockCycles = mockCycles.map((c) => (c.id === id
+      ? { ...c, status: "accepted", accepted_at: new Date().toISOString(), accepted_by: String(MOCK_ME.telegram_id), summary: input.summary ?? c.summary, stats }
+      : c));
+    return { cycle: mockCycles.find((c) => c.id === id)!, frozen: items.length, carried: 0 };
+  }
+  return apiFetch<{ cycle: SprintCycle; frozen: number; carried: number }>(
+    `/sprint-cycles/${id}/accept`,
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+/** Возвращает, сколько задач реально добавилось: приватные и уже добавленные сервер отсекает молча. */
+export async function addTasksToSprintCycle(id: string, taskIds: string[]): Promise<number> {
+  if (DEV_MODE) {
+    const already = new Set((mockCycleItems[id] ?? []).map((r) => r.task_id));
+    const cycle = mockCycles.find((c) => c.id === id);
+    const fresh = taskIds.filter((t) => !already.has(t));
+    mockCycleItems = {
+      ...mockCycleItems,
+      [id]: [...(mockCycleItems[id] ?? []), ...fresh.map((t) => ({ id: "si" + t, task_id: t, in_plan: cycle?.status === "draft" }))],
+    };
+    // Как на сервере: `backlog` переводится в `open`, иначе задача не попадёт ни в одну колонку.
+    mockTasks = mockTasks.map((t) => (fresh.includes(t.id) && t.status === "backlog" ? { ...t, status: "open" } : t));
+    return fresh.length;
+  }
+  const res = await apiFetch<{ added: number }>(`/sprint-cycles/${id}/tasks`, { method: "POST", body: JSON.stringify({ task_ids: taskIds }) });
+  return res.added;
+}
+
+export async function removeTaskFromSprintCycle(id: string, taskId: string): Promise<void> {
+  if (DEV_MODE) {
+    mockCycleItems = { ...mockCycleItems, [id]: (mockCycleItems[id] ?? []).filter((r) => r.task_id !== taskId) };
+    return;
+  }
+  await apiFetch<void>(`/sprint-cycles/${id}/tasks/${taskId}`, { method: "DELETE" });
 }
 
 // ── Projects (Project Space) ────────────────────────────────────────────────────
