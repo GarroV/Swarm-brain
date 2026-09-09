@@ -9,6 +9,7 @@ import type { Project, SprintCycle, SprintCycleDetail, SprintCycleItem, Task } f
 import { KanbanColumn } from "@/components/tasks/TaskKanban";
 import type { KanbanDrag, KanbanHandlers, KanbanQuickAdd } from "@/components/tasks/TaskKanban";
 import { SprintTaskPool } from "@/components/tasks/SprintTaskPool";
+import { SprintReport } from "@/components/tasks/SprintReport";
 import { TaskModal } from "@/components/TaskModal";
 import { Button } from "@/components/ui/button";
 import { RoyIcon } from "@/components/roy/icons";
@@ -84,6 +85,7 @@ export function SprintsScreen() {
   const [form, setForm] = useState({ name: "", start_date: "", end_date: "" });
   const [editing, setEditing] = useState<Task | null>(null);
   const [drag, setDrag] = useState<KanbanDrag>(null);
+  const [reportOpen, setReportOpen] = useState(true);
   const [quickAdd, setQuickAdd] = useState<KanbanQuickAdd>(null);
 
   const COLUMNS = useMemo(() => [
@@ -395,8 +397,9 @@ export function SprintsScreen() {
                 <Button size="sm" className="h-9 text-xs" onClick={accept} disabled={busy}>{dt("Принять спринт", "Accept sprint")}</Button>
               )}
               {accepted && (
-                // Отчёт принятого спринта — этап 4; пока честная подпись вместо кнопки в никуда.
-                <span className="text-xs text-ink-soft/70">{dt("Отчёт — в работе", "Report — coming soon")}</span>
+                <Button size="sm" variant="outline" className="h-9 text-xs" onClick={() => setReportOpen((v) => !v)}>
+                  {reportOpen ? dt("Скрыть отчёт", "Hide report") : dt("Открыть отчёт", "Open report")}
+                </Button>
               )}
               {isAdmin && !accepted && (
                 <button onClick={removeCycle} disabled={busy} title={dt("Удалить спринт", "Delete sprint")}
@@ -407,14 +410,19 @@ export function SprintsScreen() {
             </div>
           </div>
 
-          {accepted && detail.summary && (
-            <p className="mx-4 mb-2 text-xs text-ink-soft">{detail.summary}</p>
+          {accepted && (
+            <p className="mx-4 mb-2 text-xs text-ink-soft/70">
+              {dt(
+                `Архив: карточки — слепок на момент приёмки ${detail.accepted_at ? fmtDay(detail.accepted_at) : ""}, изменить их нельзя.`,
+                `Archive: cards are a snapshot taken at acceptance${detail.accepted_at ? ` on ${fmtDay(detail.accepted_at)}` : ""} and cannot be changed.`,
+              )}
+            </p>
           )}
 
           <div className="flex-1 min-h-0 flex gap-3 px-4 pb-4">
-            {!accepted && (
-              <SprintTaskPool tasks={poolTasks} projects={projects} adding={busy} onAdd={addToSprint} />
-            )}
+            {accepted
+              ? (reportOpen && <SprintReport cycle={detail} />)
+              : <SprintTaskPool tasks={poolTasks} projects={projects} adding={busy} onAdd={addToSprint} />}
             <div className="flex-1 min-w-0 flex gap-3 overflow-x-auto">
               {items.length === 0 ? (
                 <p className="py-10 text-sm text-ink-soft/70">
