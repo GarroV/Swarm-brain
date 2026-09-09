@@ -60,6 +60,60 @@ export type Sprint = {
   created_at: string;
 };
 
+// ── Спринты (`sprint_cycles`) ─────────────────────────────────────────────────
+// ⚠️ `Sprint` выше — это ВКЛАДКА доски проектов (таблица `sprints`, имя историческое).
+// Спринт как период работы — `SprintCycle` (таблица `sprint_cycles`, роуты `/sprint-cycles`).
+export type CycleStatus = "draft" | "active" | "accepted";
+
+export type SprintStats = {
+  plan: number;
+  planDone: number;
+  planPercent: number;
+  extra: number;
+  extraDone: number;
+  /** Незакрытые на момент приёмки — они уезжают в следующий спринт. */
+  carried: number;
+  unassigned: number;
+  byPerson: { name: string; plan: number; done: number }[];
+  byProject: { name: string | null; total: number; done: number }[];
+  byDay: { day: string; done: number }[];
+};
+
+export type SprintCycle = {
+  id: string;
+  group_id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  status: CycleStatus;
+  created_by: string | null;
+  started_at: string | null;
+  accepted_at: string | null;
+  accepted_by: string | null;
+  summary: string | null;
+  /** Итоги считаются один раз на приёмке и хранятся в строке — у живого спринта null. */
+  stats: SprintStats | null;
+  created_at: string;
+};
+
+/** Задача в составе спринта: до приёмки — живая, после — из клона (`frozen`). */
+export type SprintCycleItem = {
+  id: string;
+  task_id: string | null;
+  in_plan: boolean;
+  added_at: string;
+  title: string;
+  status: string;
+  assignees: string[];
+  project_id: string | null;
+  project: string | null;
+  completed_at: string | null;
+  frozen: boolean;
+};
+
+/** GET /sprint-cycles/:id отдаёт спринт вместе с составом — экран без него бесполезен. */
+export type SprintCycleDetail = SprintCycle & { items: SprintCycleItem[] };
+
 export type Project = {
   id: string;
   group_id: string;

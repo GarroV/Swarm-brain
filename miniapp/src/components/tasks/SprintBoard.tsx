@@ -12,12 +12,8 @@ import { RoyIcon } from "@/components/roy/icons";
 import { buildQuickAddInput } from "@/lib/quickAddTask";
 import { useConfirm } from "@/components/ui/confirm";
 import { useDt, useRoyNav } from "@/components/roy/nav";
-
-function fmtDay(iso: string | null): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? null : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-}
+import { KanbanColumn, TaskKanban } from "@/components/tasks/TaskKanban";
+import type { KanbanColumnDef, KanbanDrag, KanbanHandlers } from "@/components/tasks/TaskKanban";
 
 // Колонки по статусу. Бэклог — куда копятся задачи/идеи; оттуда тянутся в работу.
 const COLUMNS = [
@@ -37,6 +33,14 @@ const EXPANDED_KEY = "swarm.board.expandedProjects"; // localStorage: какие
 // уже существующих пользователей не меняется молча: пустой localStorage = как раньше, всё видно).
 const COLLAPSED_SUBS_KEY = "swarm.board.collapsedSubprojects";
 const NO_SECTION = "__none__";    // секция для задач без проекта
+
+// Первая колонка доски — общий бэклог: в неё падает всё, что не в трёх рабочих статусах
+// (у спринта такой колонки нет, поэтому правило живёт здесь, а не в TaskKanban).
+function boardColumnTasks(col: KanbanColumnDef, tasks: Task[]): Task[] {
+  return col.status === "backlog"
+    ? tasks.filter((t) => isBacklogStatus(t.status))
+    : tasks.filter((t) => t.status === col.status);
+}
 
 // Тумблер-глаз: закрывает проект ИЛИ подпроект от остальной команды (решение владельца
 // 2026-08-24 — доска общая, прячет только этот тумблер, и он наследуется вниз по дереву).
@@ -79,13 +83,6 @@ function PrivacyToggle({ isPrivate, inherited, onToggle, compact, label }: {
   );
 }
 
-function initials(names: string[]): string {
-  if (!names.length) return "";
-  return names[0].split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
-}
-
-type DragInfo = { id: string } | null;
-
 export function SprintBoard() {
   const confirm = useConfirm();
   const dt = useDt();
@@ -108,7 +105,7 @@ export function SprintBoard() {
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   // быстрый ввод задачи: ключ `${sectionId}` → черновик заголовка
   const [quickAdd, setQuickAdd] = useState<{ section: string; status: string; title: string } | null>(null);
-  const drag = useState<DragInfo>(null); const dragRef = drag[0]; const setDrag = drag[1];
+  const drag = useState<KanbanDrag>(null); const dragRef = drag[0]; const setDrag = drag[1];
   // Проекты — плитки: по умолчанию свёрнуты, двойной клик разворачивает. Состояние ПЕРСОНАЛЬНОЕ
   // (localStorage, не общее): раскрыл проект у себя — у других он остаётся свёрнутым.
   const [expanded, setExpanded] = useState<Set<string>>(() => {
@@ -317,23 +314,6 @@ export function SprintBoard() {
     } catch { load(); } finally { setDeletingSprint(false); }
   }
 
-  // Один ряд «4 колонки для набора задач» — переиспользуется для обычной секции, ряда
-  // подпроекта и ряда «Общее»/«General». sectionId — id (под)проекта или NO_SECTION,
-  // на нём завязаны applyDrop/quickAdd/renaming (как и раньше). real=false скрывает
-  // переименовать/удалить (для «Общее» и «Без секции» — это не отдельная сущность-проект).
-  // 4 колонки статусов (Бэклог/Открыто/В работе/Готово) для набора задач одного (под)проекта.
-  // Заголовок проекта — снаружи (плитка), поэтому здесь только колонки. Клик по колонке добавляет задачу.
-  function renderColumns(projectId: string, tasks: Task[]) {
-    return (
-      <div className="flex gap-3 p-3 overflow-x-auto">
-        {COLUMNS.map((col) => renderStatusColumn(
-          projectId, col,
-          col.status === "backlog" ? tasks.filter((t) => isBacklogStatus(t.status)) : tasks.filter((t) => t.status === col.status),
-        ))}
-      </div>
-    );
-  }
-
   // Блок «+ Подпроект» (кнопка + инлайн-инпут). Один и тот же у обычной секции (создать
   // ПЕРВЫЙ подпроект → секция становится группой) и у уже-группы — DRY, чтобы вход в
   // подпроекты был доступен всегда, а не только когда дети уже есть.
@@ -359,70 +339,18 @@ export function SprintBoard() {
     );
   }
 
-  // Одна статус-колонка: заголовок + быстрый ввод + drop-зона + карточки. Клик по пустому полю
-  // колонки создаёт карточку задачи В ЭТОЙ колонке (её статус). badgeFor — бейдж подпроекта.
-  function renderStatusColumn(
-    projectId: string,
-    col: { status: string; label: string; bar: string },
-    colTasks: Task[],
-    badgeFor?: (t: Task) => string | undefined,
-  ) {
-    const adding = quickAdd?.section === projectId && quickAdd?.status === col.status;
-    return (
-      <div key={col.status}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => { e.preventDefault(); if (dragRef) { applyDrop(dragRef.id, projectId, col.status); setDrag(null); } }}
-        className="w-64 shrink-0 flex flex-col rounded-xl bg-surface-2 border border-line p-2 dark:backdrop-blur-lg">
-        {/* «+» в заголовке — надёжный способ добавить задачу независимо от заполненности колонки:
-            клик по пустому полю ниже (title="Кликни по пустому полю…") требует, собственно, пустого
-            поля — забитая карточками колонка его не оставляет (владелец: «нереально тыкнуть по
-            пустому полю, значит и новую задачу не добавить»). Кнопка не заменяет клик по пустому
-            месту, а страхует его. */}
-        <div className="flex items-center gap-2 px-2 py-1.5">
-          <span className="size-2.5 rounded-full" style={{ background: col.bar }} />
-          <span className="text-xs font-semibold text-ink">{col.label}</span>
-          <span className="ml-auto text-xs text-ink-soft">{colTasks.length}</span>
-          <button
-            type="button"
-            onClick={() => { if (!adding) setQuickAdd({ section: projectId, status: col.status, title: "" }); }}
-            className="rounded-full p-0.5 text-ink-soft hover:bg-surface-2 hover:text-ink"
-            title={dt("Добавить задачу", "Add task")}
-          >
-            <RoyIcon name="plus" size={13} strokeWidth={2} />
-          </button>
-        </div>
-        {adding && (
-          <input autoFocus value={quickAdd!.title}
-            onChange={(e) => setQuickAdd({ section: projectId, status: col.status, title: e.target.value })}
-            onKeyDown={(e) => { if (e.key === "Enter") addTask(projectId, col.status, quickAdd!.title); if (e.key === "Escape") setQuickAdd(null); }}
-            onBlur={() => addTask(projectId, col.status, quickAdd!.title)}
-            placeholder="Новая задача, Enter"
-            className="mx-1 mb-1 rounded-md border border-line bg-card px-2 py-1.5 text-sm text-ink outline-none focus:border-primary/50" />
-        )}
-        <div className="flex-1 overflow-y-auto space-y-2 pt-1 min-h-[56px] cursor-text"
-          onClick={(e) => { if (e.target === e.currentTarget && !adding) setQuickAdd({ section: projectId, status: col.status, title: "" }); }}
-          title="Кликни по пустому полю — добавить задачу">
-          {colTasks.map((t) => {
-            const badge = badgeFor?.(t);
-            return (
-              <div key={t.id} draggable
-                onDragStart={(e) => { setDrag({ id: t.id }); e.dataTransfer.effectAllowed = "move"; }}
-                onDragEnd={() => setDrag(null)}
-                onClick={(e) => { e.stopPropagation(); setEditing(t); }}
-                className="rounded-lg bg-card border border-line shadow-sm p-2.5 cursor-pointer hover:border-primary/40 active:cursor-grabbing dark:backdrop-blur-sm">
-                {badge && <span className="inline-block mb-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-ink-soft bg-surface-2 border border-line">{badge}</span>}
-                <p className="text-sm font-medium leading-snug text-ink">{t.title}</p>
-                <div className="flex items-center gap-2 mt-2 text-[11px] text-ink-soft">
-                  {t.due_date && <span className="inline-flex items-center gap-1"><RoyIcon name="cal" size={11} /> {fmtDay(t.due_date)}</span>}
-                  {t.assignees.length > 0 && <span className="ml-auto font-bold">{initials(t.assignees)}</span>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
+  // Ручки канбана (общий компонент TaskKanban.tsx). Стейт перетаскивания и быстрого ввода
+  // общий на всю доску, а не на колонку: карточку тащат между колонками разных подпроектов,
+  // и открытый быстрый ввод должен быть ровно один.
+  const kanban: KanbanHandlers = {
+    drag: dragRef,
+    onDragChange: setDrag,
+    onDropTask: applyDrop,
+    quickAdd,
+    onQuickAddChange: setQuickAdd,
+    onQuickAddSubmit: addTask,
+    onOpenTask: (t) => setEditing(t),
+  };
 
   if (loading) return <p className="text-center text-ink-soft py-12 text-sm">Загрузка…</p>;
 
@@ -545,7 +473,7 @@ export function SprintBoard() {
                   <span className="text-sm font-bold text-ink">{sec.name}</span>
                 )}
                 <span className="text-xs text-ink-soft">{total}</span>
-                {/* Добавить задачу (в каждой колонке уже есть свой «+», см. renderStatusColumn) и
+                {/* Добавить задачу (в каждой колонке уже есть свой «+», см. KanbanColumn в TaskKanban.tsx) и
                     добавить подпроект (дублировано дальше в теле, см. renderAddSubproject) убраны
                     отсюда — обе точки входа и так интуитивно доступны внутри поля (владелец
                     2026-08-19). Вместо них — тумблер приватности. */}
@@ -570,17 +498,17 @@ export function SprintBoard() {
 
               {open && (kids.length === 0 ? (
                 <div>
-                  {renderColumns(sec.id, secDirectTasks)}
+                  <TaskKanban sectionId={sec.id} columns={COLUMNS} tasks={secDirectTasks}
+                    tasksForColumn={boardColumnTasks} kanban={kanban} />
                   {renderAddSubproject(sec.id)}
                 </div>
               ) : (
                 <div className="flex gap-3 p-3 overflow-x-auto">
                   {/* Общий бэклог проекта: backlog-задачи группы И подпроектов (с бейджем подпроекта). */}
-                  {renderStatusColumn(
-                    sec.id, COLUMNS[0],
-                    [...secDirectTasks, ...kidsWithTasks.flatMap((k) => k.tasks)].filter((t) => isBacklogStatus(t.status)),
-                    (t) => (t.project_id !== sec.id ? kids.find((k) => k.id === t.project_id)?.name : undefined),
-                  )}
+                  <KanbanColumn sectionId={sec.id} column={COLUMNS[0]}
+                    tasks={[...secDirectTasks, ...kidsWithTasks.flatMap((k) => k.tasks)].filter((t) => isBacklogStatus(t.status))}
+                    badgeFor={(t) => (t.project_id !== sec.id ? kids.find((k) => k.id === t.project_id)?.name : undefined)}
+                    kanban={kanban} />
                   {/* Пространства подпроектов: у каждого только рабочие колонки. */}
                   <div className="flex-1 min-w-0 space-y-3">
                     {kidsWithTasks.map(({ kid, tasks: kidTasks }) => {
@@ -641,7 +569,10 @@ export function SprintBoard() {
                               className="flex gap-3 overflow-x-auto transition-opacity duration-200"
                               style={{ opacity: subOpen ? 1 : 0, transitionDelay: subOpen ? "120ms" : "0ms" }}
                             >
-                              {WORK_COLUMNS.map((col) => renderStatusColumn(kid.id, col, kidTasks.filter((t) => t.status === col.status)))}
+                              {WORK_COLUMNS.map((col) => (
+                                <KanbanColumn key={col.status} sectionId={kid.id} column={col}
+                                  tasks={kidTasks.filter((t) => t.status === col.status)} kanban={kanban} />
+                              ))}
                             </div>
                           </div>
                         </div>
