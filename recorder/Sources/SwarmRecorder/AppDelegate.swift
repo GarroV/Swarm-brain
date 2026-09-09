@@ -976,7 +976,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             c.body = "Твоя запись принята — она полнее той, что была в базе. Тезисы перегенерируются и придут в Telegram."
         } else if let refused {
             c.title = "Сервер снова отказал"
-            c.body = "Право транскрибации держит \(refused.hasPrefix("@") ? refused : "@\(refused)"): его запись не короче твоей. Аудио осталось в бэкапе."
+            // Не утверждаем «его запись не короче»: в состоянии published (встречу правили или
+            // опубликовали) перехват запрещён независимо от длительностей — issue #274.
+            c.body = "Встречу обрабатывает \(refused.hasPrefix("@") ? refused : "@\(refused)") — твоя запись не понадобилась. Аудио осталось в бэкапе."
         } else {
             c.title = "Не удалось дослать запись"
             c.body = "\(error ?? "неизвестная ошибка"). Аудио на месте — попробуй позже."
@@ -1572,12 +1574,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Запись отклонена сервером (транскрибирует другой участник). Раньше этот исход был НЕОТЛИЧИМ
     // от успеха: файлы стирались, индикатор гас, показывалось штатное «сохраняю встречу».
     // Теперь говорим прямо — пока аудио ещё живо в карантине и решение можно откатить.
-    private func notifyDeferred(holder: String?, seconds: Double) {
-        let who = holder.map { "@\($0)" } ?? "другой участник"
+    //
+    // ⚠️ Текст ИНФОРМИРУЕТ, а не просит решать (issue #274, фидбек владельца 09.09.2026).
+    // Прежняя формулировка — «твоя запись сохранена, если она полнее, дошли её» — перекладывала
+    // на человека выбор, которого он сделать не может: длительности чужой записи он не видит,
+    // сервер этот выбор уже сделал сам по порогам (TAKEOVER_MIN_RATIO/EXTRA_SEC в meeting-claim),
+    // а повторная заявка уходит с ТЕМИ ЖЕ секундами и получает тот же отказ. В состоянии
+    // published (встречу правил человек или её опубликовали) досылание не сработает вообще
+    // никогда. Поэтому текст разведён по причине отказа, которую теперь присылает сервер.
+    private func notifyDeferred(holder: String?, seconds: Double, heldSeconds: Double?, reason: String?) {
+        let who = holder.map { "@\($0)" } ?? "коллега"
+        let mine = Self.humanDuration(seconds)
         let c = UNMutableNotificationContent()
-        c.title = "Твоя запись не пошла в обработку"
-        c.body = "Эту встречу транскрибирует \(who). Твоя запись (\(Self.humanDuration(seconds))) сохранена на 3 суток — если она полнее, дошли её через меню: «Дослать мою запись»."
         c.sound = .default
+
+        switch reason {
+        case "published":
+            // Перехват запрещён навсегда — предлагать что-либо сделать было бы ложью.
+            c.title = "Встреча уже собрана"
+            c.body = "Эту встречу записал и уже опубликовал \(who) — твоя запись (\(mine)) не нужна. Копия хранится 3 суток и удалится сама."
+        case "shorter":
+            // Здесь длительность держателя есть — называем обе, чтобы решение сервера было видно.
+            let theirs = heldSeconds.map { Self.humanDuration($0) }
+            c.title = "Запись обрабатывает \(who)"
+            c.body = theirs.map {
+                "В обработку пошла запись \(who) — \($0) против твоих \(mine). Делать ничего не нужно, тезисы придут всем. Твоя копия хранится 3 суток."
+            } ?? "В обработку пошла запись \(who), она полнее твоей (\(mine)). Делать ничего не нужно, тезисы придут всем. Твоя копия хранится 3 суток."
+        default:
+            // race / unknown / старый сервер без причины — общий honest-текст без просьб.
+            c.title = "Запись обрабатывает \(who)"
+            c.body = "Эту встречу обрабатывает \(who) — двойная транскрибация не нужна. Твоя запись (\(mine)) хранится 3 суток на случай сбоя."
+        }
+
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "deferred-\(Int(Date().timeIntervalSince1970))", content: c, trigger: nil))
     }
 
@@ -1684,7 +1712,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                             recordedSeconds: recordedSeconds)
                     )
                     await MainActor.run {
-                        self.notifyDeferred(holder: claim.heldByName, seconds: recordedSeconds)
+                        self.notifyDeferred(holder: claim.heldByName, seconds: recordedSeconds,
+                                            heldSeconds: claim.heldSeconds, reason: claim.deferReason)
                     }
                 } catch {
                     staged = false

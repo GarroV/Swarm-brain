@@ -32,6 +32,15 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 type IdentityKind = "calendar" | "room" | "manual";
 type ClaimDecision = "transcribe" | "defer";
+// Почему запись не пошла в обработку. Нужна КЛИЕНТУ, а не только логам (issue #274): раньше
+// рекордер знал лишь «defer» и печатал один текст на все случаи — «если твоя запись полнее,
+// дошли её», — то есть просил человека принять решение, которое сервер уже принял сам и
+// данных для которого у человека нет.
+//   published — встречу правил человек или её уже опубликовали: перехват невозможен НИКОГДА;
+//   shorter   — наша запись не заметно полнее держателя (пороги TAKEOVER_*);
+//   race      — держатель сменился, пока мы считали: повтор имеет смысл;
+//   unknown   — претендент не прислал длительность (старая сборка рекордера).
+type DeferReason = "published" | "shorter" | "race" | "unknown";
 interface UserNote { ts: number; text: string }
 interface Attendee { name?: string; email?: string }
 
@@ -262,7 +271,13 @@ async function resolveExisting(
   identity: AgentIdentity,
   nowIso: string,
   leaseIso: string,
-): Promise<{ decision: ClaimDecision; supersededOwner: number | null; heldBy: number | null }> {
+): Promise<{
+  decision: ClaimDecision;
+  supersededOwner: number | null;
+  heldBy: number | null;
+  deferReason: DeferReason | null;
+  heldSeconds: number | null;
+}> {
   let heldBy = row.claim_owner;
 
   // (1) Свободна (никто не держит / лиз истёк и транскрипта нет) — занимаем.
@@ -280,7 +295,7 @@ async function resolveExisting(
     .or(`claim_owner.is.null,lease_expires_at.lt.${nowIso}`)
     .select("id")
     .maybeSingle();
-  if (claimed) return { decision: "transcribe", supersededOwner: null, heldBy: identity.telegramId };
+  if (claimed) return { decision: "transcribe", supersededOwner: null, heldBy: identity.telegramId, deferReason: null, heldSeconds: null };
 
   // (2) Занята. Перехватываем, только если НАША запись заметно полнее — и не трогаем то, что
   // правил человек или уже опубликовали команде.
@@ -288,7 +303,10 @@ async function resolveExisting(
   const held = heldSeconds(row);
   const protectedRow = row.notes_edited_at !== null || row.status === "in_base";
   if (!(candidate > 0 && !protectedRow && isSubstantiallyLonger(candidate, held))) {
-    return { decision: "defer", supersededOwner: null, heldBy };
+    // Причину называем клиенту: «уже опубликовано» и «твоя короче» — разные новости для человека,
+    // и в первом случае досылать запись бессмысленно в принципе (issue #274).
+    const reason: DeferReason = protectedRow ? "published" : candidate > 0 ? "shorter" : "unknown";
+    return { decision: "defer", supersededOwner: null, heldBy, deferReason: reason, heldSeconds: held };
   }
 
   // Сбрасываем ТОЛЬКО маркеры обработки: transcript/draft_notes_md остаются до прихода нового аудио.
@@ -309,13 +327,13 @@ async function resolveExisting(
     .eq("claim_owner", row.claim_owner)   // никто не перехватил, пока мы считали
     .select("id")
     .maybeSingle();
-  if (!took) return { decision: "defer", supersededOwner: null, heldBy };
+  if (!took) return { decision: "defer", supersededOwner: null, heldBy, deferReason: "race", heldSeconds: held };
 
   heldBy = identity.telegramId;
   console.log(
     `meeting-claim: перехват ${row.id} — ${Math.round(candidate)}с у ${identity.telegramId} против ${Math.round(held)}с у ${row.claim_owner}`,
   );
-  return { decision: "transcribe", supersededOwner: row.claim_owner, heldBy };
+  return { decision: "transcribe", supersededOwner: row.claim_owner, heldBy, deferReason: null, heldSeconds: held };
 }
 
 // Личные пометки участника → приватная entry (is_private, owner_id) с metadata.meeting_id.
@@ -427,6 +445,8 @@ Deno.serve(async (req: Request) => {
   // Кого перехватили (для recorders) и кто держит право, если нам отказали (для сообщения юзеру).
   let supersededOwner: number | null = null;
   let heldBy: number | null = null;
+  let deferReason: DeferReason | null = null;
+  let heldSeconds: number | null = null;
 
   if (body.identity_kind === "manual") {
     // Telegram/кнопка — без дедупа, всегда новая встреча, всегда транскрибируем сами.
@@ -459,6 +479,8 @@ Deno.serve(async (req: Request) => {
       decision = res.decision;
       supersededOwner = res.supersededOwner;
       heldBy = res.heldBy;
+      deferReason = res.deferReason;
+      heldSeconds = res.heldSeconds;
       console.log(
         `meeting-claim: склейка по составу ${meetingId} (${joined.reason}) — ключ ${scopedKey} присоединён к ${joined.row.identity_key}, решение ${decision}`,
       );
@@ -484,6 +506,8 @@ Deno.serve(async (req: Request) => {
           decision = res.decision;
           supersededOwner = res.supersededOwner;
           heldBy = res.heldBy;
+          deferReason = res.deferReason;
+          heldSeconds = res.heldSeconds;
           console.log(`meeting-claim: гонка склейки — свою строку убрал, присоединился к ${meetingId} (${rival.reason}), решение ${decision}`);
         }
       } else if (insErr && insErr.code === "23505") {
@@ -500,6 +524,8 @@ Deno.serve(async (req: Request) => {
         decision = res.decision;
         supersededOwner = res.supersededOwner;
         heldBy = res.heldBy;
+        deferReason = res.deferReason;
+        heldSeconds = res.heldSeconds;
       } else {
         return fail(`create failed: ${insErr?.message ?? "unknown"}`, 500);
       }
@@ -542,5 +568,9 @@ Deno.serve(async (req: Request) => {
     lease_ttl_sec: LEASE_TTL_SEC,
     held_by: heldBy,
     held_by_name: heldByName,
+    // Длительность записи держателя и причина отказа — чтобы клиент сказал человеку, ЧТО
+    // произошло, вместо просьбы сравнить свою запись с невидимой чужой (issue #274).
+    held_seconds: decision === "defer" ? heldSeconds : null,
+    defer_reason: decision === "defer" ? deferReason : null,
   });
 });
