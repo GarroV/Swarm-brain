@@ -4,7 +4,7 @@
 // Правило файла то же, что у format.ts: выдача обязана говорить, ЧТО получилось, и честно
 // признаваться, чего в данных нет. Молчаливый ноль хуже ошибки — он выглядит как факт.
 
-import type { TaskStats } from "../../_shared/tasks/analytics.ts";
+import type { FlowTimes, TaskStats } from "../../_shared/tasks/analytics.ts";
 
 /** Дата раскатки журнала перемещений: раньше неё истории почти нет (см. миграцию #286). */
 export const JOURNAL_SINCE_NOTE =
@@ -13,7 +13,10 @@ export const JOURNAL_SINCE_NOTE =
 const pct = (x: number): string => `${Math.round(x * 100)}%`;
 const day = (iso: string): string => iso.slice(0, 10);
 
-export function formatTaskStats(s: TaskStats, opts: { label: string; scope?: string }): string {
+export function formatTaskStats(
+  s: TaskStats,
+  opts: { label: string; scope?: string; flow?: FlowTimes; capped?: boolean },
+): string {
   const lines: string[] = [
     `📊 Задачи — ${opts.label} (с ${day(s.sinceISO)})${opts.scope ? `, ${opts.scope}` : ""}`,
     "",
@@ -33,16 +36,45 @@ export function formatTaskStats(s: TaskStats, opts: { label: string; scope?: str
   );
   if (s.oldestOpenDays !== null) lines.push(`Самая старая незакрытая: ${s.oldestOpenDays} дн`);
 
+  // Время работы — только по журналу. basis печатаем всегда: среднее по трём задачам из сорока
+  // выглядит как картина по всем сорока, и это ровно тот случай, когда цифра врёт молча.
+  const flow = opts.flow;
+  if (flow) {
+    lines.push("", flow.basis === 0
+      ? "Время работы с задачами: журнал ещё не видел переходов «в работу» — считать не на чем"
+      : `Время работы (по журналу, ${flow.basis} задач):`);
+    if (flow.basis > 0) {
+      lines.push(
+        flow.timeToStartAvgDays === null
+          ? "• ждала начала работы: нет данных"
+          : `• ждала начала работы: в среднем ${flow.timeToStartAvgDays} дн, медиана ${flow.timeToStartMedianDays} дн`,
+        flow.cycleAvgDays === null
+          ? "• в работе до закрытия: нет закрытых с переходом в работу"
+          : `• в работе до закрытия: в среднем ${flow.cycleAvgDays} дн, медиана ${flow.cycleMedianDays} дн`,
+      );
+    }
+  }
+
   if (s.closedByAssignee.length) {
     lines.push("", "Закрыли за период:");
     for (const r of s.closedByAssignee) lines.push(`• ${r.name} — ${r.count}`);
   }
 
-  lines.push(
-    "",
-    "Что здесь НЕ посчитано: время в каждом статусе, cycle time и переносы сроков — они считаются по журналу перемещений.",
-    JOURNAL_SINCE_NOTE,
-  );
+  if (s.closedByBucket.length || s.createdByBucket.length) {
+    const unit = s.bucket === "day" ? "по дням" : "по месяцам";
+    lines.push("", `Раскладка ${unit} (создано / закрыто):`);
+    const keys = [...new Set([...s.createdByBucket, ...s.closedByBucket].map((b) => b.key))].sort();
+    const created = new Map(s.createdByBucket.map((b) => [b.key, b.count]));
+    const closed = new Map(s.closedByBucket.map((b) => [b.key, b.count]));
+    for (const k of keys) lines.push(`• ${k}: ${created.get(k) ?? 0} / ${closed.get(k) ?? 0}`);
+  }
+
+  lines.push("", JOURNAL_SINCE_NOTE);
+  if (opts.capped) {
+    lines.push(
+      "⚠️ Выборка упёрлась в потолок задач — статистика ПОСЧИТАНА НЕ ПО ВСЕМ задачам. Сузь период или добавь фильтр по проекту/исполнителю.",
+    );
+  }
   return lines.join("\n");
 }
 

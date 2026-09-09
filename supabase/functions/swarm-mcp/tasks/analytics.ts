@@ -11,7 +11,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { listTasks, getTask } from "../../_shared/tasks/db.ts";
 import { canViewTask, taskAccessError } from "../../_shared/tasks/access.ts";
-import { computeTaskStats, periodStartISO, type StatsTask } from "../../_shared/tasks/analytics.ts";
+import { computeFlowTimes, computeTaskStats, periodStartISO, type StatsTask } from "../../_shared/tasks/analytics.ts";
 import { ADMIN_USER_ID, fetchProjectRows, resolveGroupId } from "./tools.ts";
 import { pickProjectByName, visibleProjectNames } from "../../_shared/tasks/project-access.ts";
 import { projectNotFoundMessage } from "./format.ts";
@@ -107,22 +107,50 @@ export async function toolGetTaskStats(args: {
     projectId = match.id;
   }
 
+  // ⚠️ confirmed: true обязателен. Без него listTasks применяет свой дефолт «не показывать
+  // done/cancelled/draft» — и статистика считала «закрыто за период: 0» при 149 закрытых задачах
+  // на проде. Заодно из выдачи уходит очередь на проверке, которой на доске нет.
+  // isAdmin: админ видит все задачи, включая личные (подтверждено владельцем 09.09.2026) —
+  // без этого сводка для руководителя молча недосчитывала бы больше сотни приватных задач.
+  const isAdmin = args.requesting_user_id === ADMIN_USER_ID;
   const tasks = await listTasks({
     country: args.country,
     assigneeText: args.assignee,
     projectId,
+    confirmed: true,
     viewerId: args.requesting_user_id,
+    isAdmin,
     limit: STATS_TASK_CAP,
   }, groupId);
 
   const stats = computeTaskStats(tasks as StatsTask[], { sinceISO });
+
+  // Время работы считается по журналу переходов — тянем его для задач этой выборки. Журнал
+  // наполняется только с раскатки #286, поэтому basis в выдаче печатается всегда.
+  const ids = tasks.map((t) => t.id);
+  let flow;
+  if (ids.length) {
+    const { data: transitions } = await supabase
+      .from("task_history")
+      .select("task_id, new_value, new_status, created_at")
+      .in("task_id", ids)
+      .or("field.eq.status,field.is.null");
+    const rows = ((transitions ?? []) as Array<{ task_id: string; new_value: string | null; new_status: string | null; created_at: string }>)
+      .map((r) => ({ task_id: r.task_id, new_value: r.new_value ?? r.new_status, created_at: r.created_at }));
+    flow = computeFlowTimes(rows, tasks as StatsTask[]);
+  }
   const scope = [
     args.assignee ? `исполнитель: ${args.assignee}` : null,
     args.project ? `проект: ${args.project}` : null,
     args.country ? `рынок: ${args.country}` : null,
   ].filter(Boolean).join(", ");
   const label = args.since ? "период" : (args.period ?? DEFAULT_PERIOD);
-  return formatTaskStats(stats, { label, scope: scope || undefined });
+  return formatTaskStats(stats, {
+    label,
+    scope: scope || undefined,
+    flow,
+    capped: tasks.length >= STATS_TASK_CAP,
+  });
 }
 
 export async function toolGetTaskHistory(args: { task_id: string; requesting_user_id: number }): Promise<string> {
@@ -212,7 +240,7 @@ export async function toolGetRecentTaskChanges(
 export const ANALYTICS_TOOL_DEFINITIONS = [
   {
     name: "get_task_stats",
-    description: "Статистика по задачам за период: создано/закрыто, время от постановки до закрытия, дисциплина сроков, кто сколько закрыл, что просрочено. Фильтры по исполнителю, проекту, рынку.",
+    description: "Статистика по задачам за период: создано/закрыто (с раскладкой по дням или месяцам), время от постановки до закрытия, время ожидания начала работы и время в работе по журналу, дисциплина сроков, кто сколько закрыл, что просрочено. Фильтры по исполнителю, проекту, рынку.",
     inputSchema: {
       type: "object",
       properties: {

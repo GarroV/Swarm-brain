@@ -9,19 +9,43 @@
 // Здесь живёт РЕШЕНИЕ, какие строки журнала породит патч, — отдельно от записи в базу, чтобы
 // его можно было проверить тестами: молчаливо не записанное изменение неотличимо от «его не
 // было», а заметно это станет через месяц, когда отчёт окажется пустым.
+//
+// ⚠️ Отмечаем ВСЁ, кроме явного списка исключений — решение владельца 09.09.2026: «по сути надо
+// уметь всё что угодно отмечать у задач, чтобы потом вытащить можно было». Поэтому здесь
+// blacklist, а не whitelist: новое поле задачи попадает в журнал само, без правки этого файла.
+// Обратное (список отслеживаемых) означало бы, что каждое новое поле молча не пишется, и это
+// выяснялось бы уже на отчёте.
 
-/** Поля, изменения которых попадают в журнал: колонка задачи → имя в журнале. */
-export const TRACKED_FIELDS: Record<string, string> = {
-  status: "status",
-  due_date: "due_date",
+/** Служебное и шумное — в журнал НЕ идёт. */
+const SKIPPED_FIELDS = new Set([
+  "id",
+  "group_id",
+  "created_at",
+  "updated_at",
+  // Производное от статуса: дата закрытия ставится автоматом, отдельной строкой не нужна.
+  "completed_at",
+  // Дубль assignees в виде id — писали бы два события на одну смену исполнителя.
+  "assignee_telegram_ids",
+  // Координаты карточки в дереве и позиция на таймлайне: меняются каждым перетаскиванием мышью,
+  // смысла для статистики не несут, а журнал забили бы полностью.
+  "tree_x",
+  "tree_y",
+  "timeline_position",
+  // Служебная отметка «напоминание отправлено» — пишет крон, а не человек.
+  "reminded_at",
+]);
+
+/** Человекочитаемые имена для полей, у которых имя колонки не говорит само за себя. */
+const FIELD_ALIASES: Record<string, string> = {
   assignees: "assignee",
   project_id: "project",
   sprint_id: "sprint",
-  priority: "priority",
+  parent_id: "parent",
+  label_ids: "labels",
 };
 
-/** Колонки, которые нужно прочитать до апдейта, чтобы знать «было». */
-export const HISTORY_SNAPSHOT_COLUMNS = Object.keys(TRACKED_FIELDS);
+/** Значения журнала — не хранилище текстов: длинные поля (описание) обрезаем. */
+export const MAX_VALUE_LEN = 200;
 
 export type TaskSnapshot = Record<string, unknown>;
 
@@ -39,15 +63,31 @@ export type HistoryRow = {
   note: string | null;
 };
 
-/** Значение поля в текстовый вид журнала. Массив (assignees) — «Аня, Вася», пустое — null. */
+/** Имя поля в журнале: алиас, если есть, иначе имя колонки как есть. */
+export function journalFieldName(column: string): string {
+  return FIELD_ALIASES[column] ?? column;
+}
+
+/** Идёт ли изменение этой колонки в журнал. */
+export function isJournaled(column: string): boolean {
+  return !SKIPPED_FIELDS.has(column);
+}
+
+/** Значение поля в текстовый вид журнала. Массив — «Аня, Вася», пустое — null, длинное обрезаем. */
 export function historyValue(v: unknown): string | null {
   if (v === null || v === undefined) return null;
+  let s: string;
   if (Array.isArray(v)) {
     const parts = v.map((x) => String(x ?? "").trim()).filter((x) => x.length > 0);
-    return parts.length ? parts.join(", ") : null;
+    if (!parts.length) return null;
+    s = parts.join(", ");
+  } else if (typeof v === "object") {
+    s = JSON.stringify(v);
+  } else {
+    s = String(v).trim();
   }
-  const s = String(v).trim();
-  return s.length ? s : null;
+  if (!s.length) return null;
+  return s.length > MAX_VALUE_LEN ? `${s.slice(0, MAX_VALUE_LEN - 1)}…` : s;
 }
 
 /**
@@ -70,11 +110,12 @@ export function historyRowsFor(args: {
   if (!snapshot) return [];
 
   const rows: HistoryRow[] = [];
-  for (const [column, field] of Object.entries(TRACKED_FIELDS)) {
-    if (!(column in patch)) continue;
+  for (const column of Object.keys(patch)) {
+    if (!isJournaled(column)) continue;
     const before = historyValue(snapshot[column]);
     const after = historyValue(patch[column]);
     if (before === after) continue;
+    const field = journalFieldName(column);
     rows.push({
       task_id: taskId,
       field,

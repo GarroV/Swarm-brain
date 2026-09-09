@@ -16,6 +16,9 @@ const stats = (over: Partial<TaskStats> = {}): TaskStats => ({
   openNow: 7, inProgressNow: 2, overdueNow: 1,
   closedByAssignee: [{ name: "Вася", count: 2 }, { name: "Аня", count: 1 }],
   oldestOpenDays: 12.5,
+  bucket: "day",
+  createdByBucket: [{ key: "2026-09-03", count: 3 }, { key: "2026-09-04", count: 2 }],
+  closedByBucket: [{ key: "2026-09-05", count: 3 }],
   ...over,
 });
 
@@ -88,4 +91,43 @@ Deno.test("formatRecentChanges: пусто — с оговоркой про да
   const out = formatRecentChanges([], { sinceISO: "2026-09-02T00:00:00.000Z" });
   assertStringIncludes(out, "нет");
   assertStringIncludes(out, "Журнал перемещений ведётся");
+});
+
+// ── Срезы по времени и время работы (решение владельца 09.09.2026) ───────────────────────────
+
+Deno.test("formatTaskStats: раскладка по дням печатает создано / закрыто по каждой дате", () => {
+  const out = formatTaskStats(stats(), { label: "week" });
+  assertStringIncludes(out, "Раскладка по дням");
+  assertStringIncludes(out, "2026-09-03: 3 / 0");
+  assertStringIncludes(out, "2026-09-05: 0 / 3");
+});
+
+Deno.test("formatTaskStats: длинное окно подписано месяцами", () => {
+  const out = formatTaskStats(stats({ bucket: "month", createdByBucket: [{ key: "2026-08", count: 4 }], closedByBucket: [{ key: "2026-08", count: 2 }] }), { label: "quarter" });
+  assertStringIncludes(out, "Раскладка по месяцам");
+  assertStringIncludes(out, "2026-08: 4 / 2");
+});
+
+Deno.test("formatTaskStats: время работы печатает basis — по скольким задачам считали", () => {
+  const out = formatTaskStats(stats(), {
+    label: "week",
+    flow: { basis: 7, cycleAvgDays: 3.2, cycleMedianDays: 2, timeToStartAvgDays: 1.5, timeToStartMedianDays: 1 },
+  });
+  assertStringIncludes(out, "по журналу, 7 задач");
+  assertStringIncludes(out, "ждала начала работы: в среднем 1.5 дн");
+  assertStringIncludes(out, "в работе до закрытия: в среднем 3.2 дн");
+});
+
+Deno.test("formatTaskStats: журнал пуст — сказано прямо, а не средним по нулю задач", () => {
+  const out = formatTaskStats(stats(), {
+    label: "week",
+    flow: { basis: 0, cycleAvgDays: null, cycleMedianDays: null, timeToStartAvgDays: null, timeToStartMedianDays: null },
+  });
+  assertStringIncludes(out, "считать не на чем");
+  assert(!out.includes("в среднем null"), out);
+});
+
+Deno.test("formatTaskStats: упёрлись в потолок выборки — выдача предупреждает, что посчитано не по всем", () => {
+  const out = formatTaskStats(stats(), { label: "year", capped: true });
+  assertStringIncludes(out, "НЕ ПО ВСЕМ");
 });

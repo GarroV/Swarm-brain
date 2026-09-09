@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Task, TaskInput } from "./types.ts";
 import { completionPatch, isClosedStatus } from "./statuses.ts";
 import { buildRecurPatch, todayInTz, type RecurRow } from "./recurrence.ts";
-import { HISTORY_SNAPSHOT_COLUMNS, historyRowsFor, type TaskSnapshot } from "./history.ts";
+import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -188,16 +188,14 @@ export async function updateTask(
 
   // Прежний снимок строки отвечает сразу на четыре вопроса: не перекат ли это регулярной задачи,
   // ставить ли дату закрытия, что записать в историю статуса и какие ещё поля изменились (журнал,
-  // issue #286). Лишний SELECT платим только когда в патче есть хоть одно ОТСЛЕЖИВАЕМОЕ поле —
-  // переименование или правка описания по-прежнему идут одним запросом.
-  const touchesTracked = HISTORY_SNAPSHOT_COLUMNS.some((c) => c in fields);
-  if (touchesTracked) {
-    const cols = [...new Set([
-      ...HISTORY_SNAPSHOT_COLUMNS,
-      "status", "completed_at", "recur_freq", "recur_anchor_dom", "due_date", "start_date", "remind_date", "group_id",
-    ])].join(", ");
+  // issue #286). Снимок берём целиком, потому что в журнал идёт ЛЮБОЕ поле, кроме служебного
+  // шума (решение владельца 09.09.2026: «уметь всё что угодно отмечать у задач»). Апдейт задачи
+  // — не hot path (человек нажал кнопку), поэтому один лишний SELECT здесь дешевле, чем
+  // невосстановимо потерянная история.
+  const touchesJournaled = Object.keys(fields).some(isJournaled);
+  if (touchesJournaled) {
     const { data } = await supabase.from("tasks")
-      .select(cols)
+      .select("*")
       .eq("id", id)
       .maybeSingle();
     // Двойное приведение: при динамическом select(string) supabase-js форму строки не выводит

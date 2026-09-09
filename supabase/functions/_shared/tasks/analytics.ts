@@ -36,6 +36,25 @@ export type TaskStats = {
   closedByAssignee: Array<{ name: string; count: number }>;
   /** Самая старая незакрытая задача, в днях. null — незакрытых нет. */
   oldestOpenDays: number | null;
+  /** Гранулярность раскладки: короткое окно считаем по дням, длинное — по месяцам. */
+  bucket: Bucket;
+  /** Раскладка по времени: сколько создано и закрыто в каждый день (или месяц) окна. */
+  createdByBucket: Array<{ key: string; count: number }>;
+  closedByBucket: Array<{ key: string; count: number }>;
+};
+
+export type Bucket = "day" | "month";
+
+/** Время работы с задачами — считается ТОЛЬКО по журналу переходов (issue #286). */
+export type FlowTimes = {
+  /** По скольким задачам удалось посчитать (у остальных нет перехода в работу в журнале). */
+  basis: number;
+  /** in_progress → закрытие, в днях. */
+  cycleAvgDays: number | null;
+  cycleMedianDays: number | null;
+  /** постановка → первый in_progress, в днях: сколько задача ждала начала работы. */
+  timeToStartAvgDays: number | null;
+  timeToStartMedianDays: number | null;
 };
 
 const DAY_MS = 86_400_000;
@@ -57,13 +76,28 @@ const round1 = (x: number): number => Math.round(x * 10) / 10;
  * Сводка по выборке задач. `tasks` уже отфильтрованы по воркспейсу и видимости вызывающего —
  * доступ здесь НЕ проверяется (см. `_shared/tasks/access.ts`), функция только считает.
  */
+/** Окно короче ~полутора месяцев читается по дням, длиннее — по месяцам (иначе 365 строк). */
+const BUCKET_DAY_LIMIT = 45;
+
+function bucketKey(iso: string, bucket: Bucket): string {
+  return bucket === "day" ? iso.slice(0, 10) : iso.slice(0, 7);
+}
+
+function countedByBucket(map: Map<string, number>): Array<{ key: string; count: number }> {
+  return [...map.entries()].map(([key, count]) => ({ key, count })).sort((a, b) => a.key.localeCompare(b.key));
+}
+
 export function computeTaskStats(
   tasks: StatsTask[],
-  opts: { sinceISO: string; now?: Date },
+  opts: { sinceISO: string; now?: Date; bucket?: Bucket },
 ): TaskStats {
   const nowMs = (opts.now ?? new Date()).getTime();
   const sinceMs = Date.parse(opts.sinceISO);
   const today = new Date(nowMs).toISOString().slice(0, 10);
+  const bucket: Bucket = opts.bucket ??
+    ((nowMs - sinceMs) / DAY_MS <= BUCKET_DAY_LIMIT ? "day" : "month");
+  const createdBuckets = new Map<string, number>();
+  const closedBuckets = new Map<string, number>();
 
   let createdInPeriod = 0, closedInPeriod = 0;
   let openNow = 0, inProgressNow = 0, overdueNow = 0;
@@ -73,10 +107,16 @@ export function computeTaskStats(
 
   for (const t of tasks) {
     const closed = isClosedStatus(t.status);
-    if (t.created_at && Date.parse(t.created_at) >= sinceMs) createdInPeriod++;
+    if (t.created_at && Date.parse(t.created_at) >= sinceMs) {
+      createdInPeriod++;
+      const k = bucketKey(t.created_at, bucket);
+      createdBuckets.set(k, (createdBuckets.get(k) ?? 0) + 1);
+    }
 
     if (closed && t.completed_at && Date.parse(t.completed_at) >= sinceMs) {
       closedInPeriod++;
+      const k = bucketKey(t.completed_at, bucket);
+      closedBuckets.set(k, (closedBuckets.get(k) ?? 0) + 1);
       if (t.created_at) leads.push(days(t.created_at, Date.parse(t.completed_at)));
       for (const name of t.assignees?.length ? t.assignees : ["—"]) {
         closedBy.set(name, (closedBy.get(name) ?? 0) + 1);
@@ -119,6 +159,54 @@ export function computeTaskStats(
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
     oldestOpenDays: oldestOpen === null ? null : round1(oldestOpen),
+    bucket,
+    createdByBucket: countedByBucket(createdBuckets),
+    closedByBucket: countedByBucket(closedBuckets),
+  };
+}
+
+/**
+ * Время работы с задачами по журналу переходов: сколько задача ждала начала работы и сколько
+ * пробыла в работе до закрытия. Считается только там, где журнал видел переход в `in_progress` —
+ * `basis` говорит, по скольким задачам получилось, чтобы средним по трём задачам не выдавали
+ * картину по сорока.
+ *
+ * `transitions` — строки журнала о смене статуса (field='status'), любой порядок.
+ */
+export function computeFlowTimes(
+  transitions: Array<{ task_id: string; new_value: string | null; created_at: string }>,
+  tasks: StatsTask[],
+): FlowTimes {
+  const firstStart = new Map<string, number>();
+  for (const t of transitions) {
+    if (t.new_value !== "in_progress") continue;
+    const ms = Date.parse(t.created_at);
+    const known = firstStart.get(t.task_id);
+    if (known === undefined || ms < known) firstStart.set(t.task_id, ms);
+  }
+
+  const cycles: number[] = [];
+  const waits: number[] = [];
+  for (const task of tasks) {
+    const startedMs = firstStart.get(task.id);
+    if (startedMs === undefined) continue;
+    if (task.created_at) waits.push((startedMs - Date.parse(task.created_at)) / DAY_MS);
+    if (task.completed_at) cycles.push((Date.parse(task.completed_at) - startedMs) / DAY_MS);
+  }
+
+  const avg = (xs: number[]): number | null =>
+    xs.length ? round1(xs.reduce((a, b) => a + b, 0) / xs.length) : null;
+  const med = (xs: number[]): number | null => {
+    const m = median(xs);
+    return m === null ? null : round1(m);
+  };
+
+  return {
+    basis: firstStart.size,
+    cycleAvgDays: avg(cycles),
+    cycleMedianDays: med(cycles),
+    timeToStartAvgDays: avg(waits),
+    timeToStartMedianDays: med(waits),
   };
 }
 
