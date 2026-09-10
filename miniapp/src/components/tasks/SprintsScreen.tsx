@@ -231,13 +231,23 @@ export function SprintsScreen() {
 
   async function start() {
     if (!detail) return;
+    // Старт с пустым составом фиксирует ПУСТОЙ план: процент считать будет не от чего, и всё
+    // набранное потом пойдёт «сверх плана». Владелец наступил на это на первом же спринте
+    // (09.09.2026: «тестовый» уехал в active с нулём задач), поэтому предупреждение явное.
     if (!(await confirm({
       title: dt(`Начать «${detail.name}»?`, `Start “${detail.name}”?`),
-      description: dt(
-        `Состав спринта (${items.length}) станет планом, от которого считается процент. Добавленное позже пойдёт «сверх плана».`,
-        `The current ${items.length} task(s) become the plan the percentage is measured against. Anything added later counts as extra.`,
-      ),
-      confirmText: dt("Начать спринт", "Start sprint"),
+      description: items.length === 0
+        ? dt(
+          "Состав пуст — план будет пустым: процент выполнения считать будет не от чего, а всё набранное после старта пойдёт «сверх плана». Обычно сначала набирают задачи, потом стартуют.",
+          "The sprint is empty, so the plan will be empty too: there is nothing to measure the percentage against, and everything added after the start counts as extra. Usually you pick the tasks first and start afterwards.",
+        )
+        : dt(
+          `Состав спринта (${items.length}) станет планом, от которого считается процент. Добавленное позже пойдёт «сверх плана».`,
+          `The current ${items.length} task(s) become the plan the percentage is measured against. Anything added later counts as extra.`,
+        ),
+      confirmText: items.length === 0
+        ? dt("Всё равно начать", "Start anyway")
+        : dt("Начать спринт", "Start sprint"),
     }))) return;
     setBusy(true);
     try { await startSprintCycle(detail.id); await Promise.all([load(), reloadDetail(detail.id)]); }
