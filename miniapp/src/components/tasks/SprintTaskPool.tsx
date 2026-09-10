@@ -5,13 +5,12 @@ import { RoyIcon } from "@/components/roy/icons";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDt } from "@/components/roy/nav";
-import {
-  POOL_ALL, POOL_NO_PROJECT, filterPoolTasks, projectLabel, projectOptions,
-} from "@/lib/sprintPool";
+import { POOL_ALL, filterPoolTasks, projectLabel, projectOptions } from "@/lib/sprintPool";
 
 // Пул «Задачи» экрана спринтов. Роль колонки «Бэклог», которой в спринтовом канбане нет
 // (решение владельца 2026-09-08: «backlog заменим на слово задачи»): слева лежат задачи
-// воркспейса, ещё не взятые в спринт, справа — то, что в спринте.
+// ПРОСТРАНСТВА ПРОЕКТОВ, ещё не взятые в спринт, справа — то, что в спринте. Задачи без
+// проекта в пул не попадают вовсе (владелец 10.09.2026, см. lib/sprintPool.ts).
 //
 // Своим файлом, а не внутри SprintsScreen: у пула свои фильтры и свой выбор, и вместе они
 // вышли бы за предел размера файла (issue #265). Правило отбора — чистыми функциями в
@@ -47,7 +46,6 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
   }, [tasks]);
 
   const options = useMemo(() => projectOptions(projects), [projects]);
-  const hasUnassignedProject = useMemo(() => tasks.some((t) => !t.project_id), [tasks]);
   const projectName = (id: string | null) => {
     const p = id ? projects.find((x) => x.id === id) : null;
     return p ? projectLabel(p, projects) : null;
@@ -57,7 +55,6 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
   // пока меню ни разу не открывали и пункты ещё не смонтированы.
   const projectValueLabel = (v: unknown) => {
     const id = String(v ?? POOL_ALL);
-    if (id === POOL_NO_PROJECT) return dt("Без проекта", "No project");
     return options.find((o) => o.id === id)?.label ?? dt("Все проекты", "All projects");
   };
   const assigneeValueLabel = (v: unknown) => {
@@ -103,9 +100,6 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={POOL_ALL}>{dt("Все проекты", "All projects")}</SelectItem>
-            {hasUnassignedProject && (
-              <SelectItem value={POOL_NO_PROJECT}>{dt("Без проекта", "No project")}</SelectItem>
-            )}
             {options.map((o) => (
               <SelectItem key={o.id} value={o.id} className={o.child ? "pl-7" : undefined}>
                 {o.child ? `› ${o.label}` : o.label}
@@ -147,7 +141,7 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
         {visible.length === 0 && (
           <p className="py-6 text-center text-xs text-ink-soft/70">
             {tasks.length === 0
-              ? dt("Свободных задач нет — всё уже в спринте", "No free tasks — everything is in the sprint")
+              ? dt("Свободных задач в проектах нет — всё уже в спринте", "No free project tasks — everything is in the sprint")
               : dt("Под фильтры ничего не попало", "Nothing matches the filters")}
           </p>
         )}
@@ -164,7 +158,7 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
               <button type="button" disabled={disabled} onClick={() => toggle(t.id)} className="flex-1 text-left">
                 <p className="text-sm leading-snug text-ink">{t.title}</p>
                 <p className="mt-0.5 text-[11px] text-ink-soft">
-                  {project ?? dt("без проекта", "no project")}
+                  {project ?? dt("проект скрыт", "project hidden")}
                   {t.assignees.length > 0 && ` · ${t.assignees.join(", ")}`}
                 </p>
               </button>

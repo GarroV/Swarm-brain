@@ -15,7 +15,6 @@
 import type { Project, Task } from "@/types";
 
 export const POOL_ALL = "__all__";
-export const POOL_NO_PROJECT = "__none__";
 
 /**
  * Проекты, попадающие под выбор `projectId`: сам проект и все его подпроекты.
@@ -71,12 +70,9 @@ export type PoolFilters = { query: string; projectId: string; assignee: string }
 /** Отбор задач пула по всем трём фильтрам сразу. */
 export function filterPoolTasks(tasks: Task[], projects: Project[], f: PoolFilters): Task[] {
   const q = f.query.trim().toLowerCase();
-  const scope = f.projectId === POOL_ALL || f.projectId === POOL_NO_PROJECT
-    ? null
-    : projectScope(f.projectId, projects);
+  const scope = f.projectId === POOL_ALL ? null : projectScope(f.projectId, projects);
   return tasks.filter((t) => {
     if (q && !t.title.toLowerCase().includes(q)) return false;
-    if (f.projectId === POOL_NO_PROJECT && t.project_id) return false;
     if (scope && !(t.project_id && scope.has(t.project_id))) return false;
     if (f.assignee !== POOL_ALL && !t.assignees.includes(f.assignee)) return false;
     return true;
@@ -87,7 +83,14 @@ export function filterPoolTasks(tasks: Task[], projects: Project[], f: PoolFilte
 export const CLOSED_STATUSES = new Set(["done", "cancelled"]);
 
 /**
- * Кто вообще может попасть в пул: не взятые в этот спринт, не закрытые, не приватные.
+ * Кто вообще может попасть в пул: задачи ПРОСТРАНСТВА ПРОЕКТОВ, не взятые в этот спринт,
+ * не закрытые, не приватные.
+ *
+ * Задача без проекта в пул не попадает вовсе — решение владельца 10.09.2026 по итогам первого
+ * прогона на проде («подтягиваем все что есть в проекте. т.е. только то что в пространстве
+ * проектов!»): спринт планирует работу по проектам, а список из 171 строки, где половина —
+ * личные разовые дела без проекта, делает набор состава неподъёмным. Нужна такая задача в
+ * спринте — её сначала кладут в проект, это обычное действие на доске.
  *
  * Закрытая задача сразу легла бы в «Готово» и накрутила процент выполнения задним числом.
  * Приватные сервер не берёт в спринт в принципе (`is_private=false` в фильтре добавления),
@@ -95,5 +98,6 @@ export const CLOSED_STATUSES = new Set(["done", "cancelled"]);
  * которое закончится «добавлено 0 из 1».
  */
 export function poolCandidates(tasks: Task[], inSprint: ReadonlySet<string>): Task[] {
-  return tasks.filter((t) => !inSprint.has(t.id) && !CLOSED_STATUSES.has(t.status) && !t.is_private);
+  return tasks.filter((t) =>
+    !!t.project_id && !inSprint.has(t.id) && !CLOSED_STATUSES.has(t.status) && !t.is_private);
 }

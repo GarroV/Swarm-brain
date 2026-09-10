@@ -2,7 +2,7 @@
 // поэтому выбор группы обязан приносить задачи её подпроектов, а выбор подпроекта — только свои.
 import { assertEquals } from "jsr:@std/assert";
 import {
-  POOL_ALL, POOL_NO_PROJECT, filterPoolTasks, poolCandidates, projectOptions, projectScope,
+  POOL_ALL, filterPoolTasks, poolCandidates, projectOptions, projectScope,
 } from "./sprintPool.ts";
 import type { Project, Task } from "../types.ts";
 
@@ -47,12 +47,7 @@ Deno.test("проект без подпроектов ведёт себя как
   assertEquals(ids, ["t_solo"]);
 });
 
-Deno.test("«Без проекта» показывает только задачи без привязки", () => {
-  const ids = filterPoolTasks(TASKS, PROJECTS, { ...ALL, projectId: POOL_NO_PROJECT }).map((t) => t.id);
-  assertEquals(ids, ["t_none"]);
-});
-
-Deno.test("«Все проекты» ничего не отсекает", () => {
+Deno.test("«Все проекты» сам по себе ничего не отсекает — отбор делает poolCandidates", () => {
   assertEquals(filterPoolTasks(TASKS, PROJECTS, ALL).length, TASKS.length);
 });
 
@@ -102,17 +97,29 @@ Deno.test("подпроект без видимого родителя не ис
 
 Deno.test("в пул не попадают взятые в спринт, закрытые и приватные", () => {
   const tasks = [
-    task("свободная", null),
-    task("взятая", null),
-    task("закрытая", null, { status: "done" }),
-    task("отменённая", null, { status: "cancelled" }),
-    task("приватная", null, { is_private: true }),
+    task("свободная", "kid1"),
+    task("взятая", "kid1"),
+    task("закрытая", "kid1", { status: "done" }),
+    task("отменённая", "kid1", { status: "cancelled" }),
+    task("приватная", "kid1", { is_private: true }),
   ];
   const ids = poolCandidates(tasks, new Set(["взятая"])).map((t) => t.id);
   assertEquals(ids, ["свободная"]);
 });
 
 Deno.test("своя приватная задача тоже не попадает — сервер её в спринт не возьмёт", () => {
-  const mine = [task("моя личная", null, { is_private: true, owner_id: 1 })];
+  const mine = [task("моя личная", "kid1", { is_private: true, owner_id: 1 })];
   assertEquals(poolCandidates(mine, new Set()).length, 0);
+});
+
+// Решение владельца 10.09.2026: «только то что в пространстве проектов!»
+Deno.test("задача без проекта в пул не попадает вовсе", () => {
+  const tasks = [task("в проекте", "kid1"), task("сама по себе", null)];
+  assertEquals(poolCandidates(tasks, new Set()).map((t) => t.id), ["в проекте"]);
+});
+
+Deno.test("«Все проекты» — это все задачи ПРОЕКТОВ, задача без проекта не всплывает", () => {
+  const pool = poolCandidates(TASKS, new Set());
+  const ids = filterPoolTasks(pool, PROJECTS, ALL).map((t) => t.id);
+  assertEquals(ids, ["t_group", "t_kid1", "t_kid2", "t_solo"]);
 });
