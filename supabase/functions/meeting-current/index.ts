@@ -34,8 +34,12 @@ Deno.serve(async (req: Request) => {
   const refresh = (data as { api_key?: string } | null)?.api_key;
   if (!refresh) return json({ meeting: null, reason: "google_not_connected" });
 
-  const token = await accessToken(refresh);
-  if (!token) return json({ meeting: null, reason: "token_refresh_failed" });
+  const tok = await accessToken(refresh);
+  // `token_refresh_failed` (→ рекордер просит переподключить календарь) — ТОЛЬКО когда Google
+  // подтвердил, что refresh_token реально мёртв (invalid_grant/invalid_client). Временный сбой
+  // (429/5xx/сеть) — та же ветка, что ошибка Calendar API: рекордер её не показывает как «мёртво».
+  if (!tok.ok) return json({ meeting: null, reason: tok.deadGrant ? "token_refresh_failed" : "calendar_api_error" });
+  const token = tok.token;
 
   const now = new Date();
   // Окно: чуть назад (идущая) + вперёд на LOOKAHEAD_MIN (предстоящая, для упреждающего «через N мин»).
