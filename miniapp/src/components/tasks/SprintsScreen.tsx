@@ -401,13 +401,18 @@ export function SprintsScreen() {
             )}
 
             <div className="flex items-center gap-2">
-              <div className="h-1.5 w-28 overflow-hidden rounded-full bg-surface-2">
-                <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
-              </div>
+              {/* У пустого спринта полоска и «закрыто 0/0» — визуальный мусор: считать нечего. */}
+              {items.length > 0 && (
+                <div className="h-1.5 w-28 overflow-hidden rounded-full bg-surface-2">
+                  <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
+                </div>
+              )}
               <span className="text-xs text-ink-soft">
-                {plan.length > 0
-                  ? dt(`план ${planDone}/${plan.length} · ${percent}%`, `plan ${planDone}/${plan.length} · ${percent}%`)
-                  : dt(`закрыто ${doneTotal}/${items.length}`, `done ${doneTotal}/${items.length}`)}
+                {items.length === 0
+                  ? dt("состав пуст", "no tasks yet")
+                  : plan.length > 0
+                    ? dt(`план ${planDone}/${plan.length} · ${percent}%`, `plan ${planDone}/${plan.length} · ${percent}%`)
+                    : dt(`закрыто ${doneTotal}/${items.length}`, `done ${doneTotal}/${items.length}`)}
               </span>
               {items.length > plan.length && plan.length > 0 && (
                 <span className="text-xs text-ink-soft">
@@ -452,9 +457,17 @@ export function SprintsScreen() {
               : <SprintTaskPool tasks={poolTasks} projects={projects} adding={busy} onAdd={addToSprint} />}
             <div className="flex-1 min-w-0 flex gap-3 overflow-x-auto">
               {items.length === 0 ? (
-                <p className="py-10 text-sm text-ink-soft/70">
-                  {dt("В спринте пока нет задач — наберите их из пула слева.", "The sprint is empty — pick tasks from the pool on the left.")}
-                </p>
+                /* Пустой спринт объясняет ровно следующее действие: «наберите из пула» не
+                   говорит, ЧЕМ набирают, и человек упирается в экран (владелец 09.09.2026). */
+                <div className="py-10 text-sm text-ink-soft/80 space-y-1.5">
+                  <p className="font-semibold text-ink">{dt("В спринте пока нет задач", "The sprint is empty")}</p>
+                  <p>{dt("1. Слева отметьте задачи галочками — сверху появится «Добавить в спринт».",
+                         "1. Tick the tasks on the left — an “Add to sprint” button appears above the list.")}</p>
+                  <p>{dt("2. Одну задачу быстрее добавить кнопкой «+» в её строке.",
+                         "2. A single task is faster to add with the “+” on its row.")}</p>
+                  <p>{dt("Дальше задачи двигаются по колонкам мышью, как на доске проектов.",
+                         "After that, drag tasks between columns just like on the project board.")}</p>
+                </div>
               ) : COLUMNS.map((col) => (
                 <KanbanColumn key={col.status} sectionId={SPRINT_SECTION} column={col}
                   tasks={cards.filter((t) => (col.status === "done" ? CLOSED.has(t.status) : t.status === col.status))}
