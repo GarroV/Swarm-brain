@@ -1955,8 +1955,12 @@ Deno.serve(async (req: Request) => {
     const refresh = (integ as { api_key?: string } | null)?.api_key;
     if (!refresh) return json({ meetings: [], reason: "not_connected" }, 200, origin);
 
-    const token = await accessToken(refresh);
-    if (!token) return json({ meetings: [], reason: "token_expired" }, 200, origin);
+    const tok = await accessToken(refresh);
+    // `token_expired` (→ панель предлагает «Переподключить») — ТОЛЬКО реально мёртвый refresh_token
+    // (invalid_grant/invalid_client). Временная запинка Google (429/5xx/сеть) идёт в `calendar_error` —
+    // то же пустое состояние, что при сбое Calendar API, без призыва переподключаться (issue #302).
+    if (!tok.ok) return json({ meetings: [], reason: tok.deadGrant ? "token_expired" : "calendar_error" }, 200, origin);
+    const token = tok.token;
 
     // Пояс берём у клиента: сервер живёт в UTC и не знает, какие сутки у человека сейчас.
     const tzOffset = Number(url.searchParams.get("tz_offset") ?? "0");
