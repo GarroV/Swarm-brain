@@ -1,15 +1,8 @@
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
+// Ретрай переехал в lib/retry.ts — тот же алгоритм (3 попытки, 500 мс × 2^i),
+// но общий с дневным сводом и покрытый тестами.
+import { withRetry } from "./retry.ts";
 
-async function withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < retries; i++) {
-    try { return await fn(); } catch (e) {
-      lastErr = e;
-      if (i < retries - 1) await new Promise((r) => setTimeout(r, 500 * Math.pow(2, i)));
-    }
-  }
-  throw lastErr;
-}
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 export async function getEmbedding(text: string): Promise<number[]> {
   return withRetry(async () => {

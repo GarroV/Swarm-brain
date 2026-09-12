@@ -1,3 +1,5 @@
+import { type RetryOptions, withRetry } from "../lib/retry.ts";
+
 export const REPORT_TZ = "Europe/Belgrade";
 
 export interface DayWindow {
@@ -147,19 +149,74 @@ export function aggregateActivity(rows: EntryRow[]): ReportData {
 // отдельным запросом (см. daily-report-send.ts), не из entries.
 const MAX_TITLES = 15;
 
-export function formatReport(data: ReportData, dateLabel: string, reviewCount = 0): string {
+// `null` вместо числа = «эту часть получить не удалось», и это НЕ то же самое, что ноль:
+// пустой день выглядит как тихий, а неотвеченный запрос обязан назваться ошибкой (issue #305).
+export function formatReport(
+  data: ReportData | null,
+  dateLabel: string,
+  reviewCount: number | null = 0,
+): string {
   const header = `📊 <b>Свод за ${dateLabel}</b> (вчера)`;
-  const addedTotal = data.meetings.total + data.notes.total;
+  const addedTotal = data ? data.meetings.total + data.notes.total : null;
   if (addedTotal === 0 && reviewCount === 0) {
     return `${header}\n\nЗа вчера ничего не добавили — тихий день.`;
   }
-  const lines = [header, "", `📥 Добавлено в базу: <b>${addedTotal}</b>`];
-  if (addedTotal > 0) {
+  const lines = [header, "", `📥 Добавлено в базу: <b>${addedTotal ?? "—"}</b>`];
+  if (data && addedTotal && addedTotal > 0) {
     for (const t of data.addedTitles.slice(0, MAX_TITLES)) lines.push(`• ${esc(t)}`);
     if (data.addedTitles.length > MAX_TITLES) {
       lines.push(`…и ещё ${data.addedTitles.length - MAX_TITLES}`);
     }
   }
-  lines.push("", `📋 На вычитке: <b>${reviewCount}</b>`);
+  lines.push("", `📋 На вычитке: <b>${reviewCount ?? "—"}</b>`);
+  if (data === null || reviewCount === null) {
+    lines.push("", "⚠️ Часть данных получить не удалось — запрос не прошёл. Повторить: /report");
+  }
   return lines.join("\n");
+}
+
+// --- Сборка свода из двух независимых запросов ---
+// Запросы РАЗВЯЗАНЫ намеренно: упавший `entries` не должен уносить с собой очередь вычитки,
+// и наоборот. Каждый идёт через withRetry, потому что разовый 504 от шлюза Supabase
+// (12.09.2026, issue #307) стоил целого дневного свода — крон приходит раз в сутки.
+
+export interface DailyReportSources {
+  loadEntries: () => Promise<EntryRow[]>;
+  loadReviewCount: () => Promise<number>;
+}
+
+export interface BuildDailyReportOptions {
+  retry?: RetryOptions;
+}
+
+type Attempt<T> = { ok: true; value: T } | { ok: false; error: string };
+
+async function attempt<T>(fn: () => Promise<T>, retry?: RetryOptions): Promise<Attempt<T>> {
+  try {
+    return { ok: true, value: await withRetry(fn, retry) };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    console.error("daily-report: запрос не прошёл после повторов —", error);
+    return { ok: false, error };
+  }
+}
+
+export async function buildDailyReport(
+  sources: DailyReportSources,
+  dateLabel: string,
+  opts: BuildDailyReportOptions = {},
+): Promise<string> {
+  // Последовательно, а не параллельно: шлюз уже мог быть нездоров, добавлять ему
+  // одновременных запросов незачем — свод не срочный.
+  const entries = await attempt(sources.loadEntries, opts.retry);
+  const review = await attempt(sources.loadReviewCount, opts.retry);
+  if (!entries.ok && !review.ok) {
+    return `⚠️ <b>Свод за ${dateLabel}</b> (вчера)\n\n` +
+      `Не удалось собрать: база не ответила — ${esc(entries.error)}.\nПовторить: /report`;
+  }
+  return formatReport(
+    entries.ok ? aggregateActivity(entries.value) : null,
+    dateLabel,
+    review.ok ? review.value : null,
+  );
 }
