@@ -1,0 +1,66 @@
+name: Раскатка edge-функций (руками)
+
+# Раскатывает накопленные с метки `prod-deployed` edge-функции по кнопке — тем же скриптом,
+# что и человек локально (`make deploy`), поэтому правил выбора функций тут своих нет.
+#
+# Зачем отдельно от ночной раскатки: `deploy-window.yml` катит функции ТОЛЬКО следом за PR
+# с меткой `deploy-window`. PR, влитый руками, функции не раскатывает — и прод молча остаётся
+# на старом коде, пока веб уже уехал (Cloudflare Pages собирает с main сам). Так 11.09.2026
+# фикс календаря из #303 сутки пролежал в main, не доехав до прода: ночной прогон написал
+# «PR с меткой нет — раскатывать нечего» и вышел.
+#
+# Разрешение владельца на раскатку это НЕ отменяет: кнопку жмут после «да», как и всё остальное.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Сухой прогон: показать план, ничего не раскатывать"
+        type: boolean
+        default: true
+      force:
+        description: "Обойти проверку окна 23:00–05:59 (нужно явное «да» владельца)"
+        type: boolean
+        default: false
+      skip_activity_check:
+        description: "Пропустить проверку «кто в проде» — ставить только если проверил вручную"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-window          # общая с ночной: две раскатки одновременно не нужны никогда
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Раскатать накопленное
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write           # метка prod-deployed двигается и пушится
+    steps:
+      # fetch-depth: 0 — без истории и метки prod-deployed не понять, какие функции изменились.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Настроить git для метки prod-deployed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: План или раскатка
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          FORCE: ${{ inputs.force && '1' || '0' }}
+          # Проверка «кто в проде» требует прод-ключа, которого в CI нет по решению 2026-08-28
+          # (не класть service-role в секреты публичного репозитория). Поэтому при ручном
+          # дневном запуске активность проверяется ЧЕЛОВЕКОМ до нажатия кнопки.
+          SKIP_ACTIVITY_CHECK: ${{ inputs.skip_activity_check && '1' || '0' }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ./scripts/deploy-window.sh plan
+          else
+            ./scripts/deploy-window.sh go
+          fi
