@@ -14,6 +14,11 @@
 ```bash
 make deploy-plan   # что готово, но НЕ раскатано (функции, веб, миграции, рекордер)
 make deploy        # раскатать накопленное + передвинуть метку prod-deployed
+# Локальный CLI без прав на проект? Та же раскатка кнопкой в CI (токен лежит в секретах репо):
+#   gh workflow run deploy-functions.yml -f dry_run=false -f force=true -f skip_activity_check=true
+#   (skip_activity_check ставится ТОЛЬКО если проверил вручную, кто сейчас в проде)
+# ⚠️ Сверяешь план локально — тяни метку `git fetch --tags --force`: обычный fetch НЕ двигает
+#   существующий тег, и plan покажет давно раскатанные функции (поймано 12.09.2026)
 ```
 
 ```bash
