@@ -1,0 +1,10 @@
+<!-- managed by furca: append-only, do not change the line format below — fabrica and cursus parse this file -->
+# Build log
+
+<!-- line format: "YYYY-MM-DD HH:MM [role] event". role: setup (preparing the project: intake, research, brainstorm, documents) | dispatcher | block:<name> (a block's agent) | converge | deploy (rolling out to the target platform). The timestamp is taken from the system clock (`date '+%Y-%m-%d %H:%M'`) at the moment of writing, never from the model's idea of the time: a log that runs ahead of the clock silently breaks every conclusion drawn from it. New entries are appended; old ones are never edited or deleted. Every agent launch is recorded as «Block <name> launched: role <agent type>, model <model>» — without it there is no way to see which role and which model did the work. Block acceptance is recorded with the numbers of the run — "executed N, skipped M, coverage P%" — otherwise the next acceptance has nothing to compare the composition of the run against: the exit code is identical for two hundred executed checks and for zero registered ones. The requirement is switched on by the marker line «Log format: from this line on, every agent launch is recorded with its role and model»: the dispatcher writes it first thing, and the integrity check asks for launch records only about blocks after the marker — logs kept before the rule are left alone. -->
+
+<!-- 2026-07-29 10:00 [dispatcher] Example entry: build started -->
+
+2026-09-17 00:43 [setup] Фаза 1 (анкета) закончена: заполнена из спеки 28.08 и решений владельца, опрос с нуля не проводился по решению владельца 17.09
+2026-09-17 00:43 [setup] Смоуки доступов: GitHub ✅, MUSPELHEIM ✅ (11.68 ГиБ WSL2, 23 контейнера ~2.36 ГиБ, свободно ~9.3 ГиБ, диск 134.7 ГБ), прод-база Swarm ❌ Unauthorized обоими маршрутами
+2026-09-17 00:43 [setup] Замер площадки разошёлся со спекой §8: запас памяти ~9.3 ГиБ вместо заявленных 13.5 ГБ
