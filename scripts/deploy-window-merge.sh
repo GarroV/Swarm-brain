@@ -19,7 +19,8 @@
 #     Логика не дублируется: зовём тот же scripts/deploy-window.sh go, что и человек локально.
 #   · Миграции и рекордер по-прежнему идут своими путями — их автооткатом не вернёшь.
 #
-# DRY_RUN=1 — показать решение и не делать ничего (так эта логика проверялась до попадания в main).
+# DRY_RUN=1 — показать решение и не делать ничего: рабочее дерево НЕ трогается, ни checkout,
+#             ни reset --hard (так эта логика проверялась до попадания в main; issue #246).
 # FORCE=1   — обойти проверку окна (живой баг окно обгоняет; «да» владельца всё равно нужно).
 set -uo pipefail
 
@@ -43,17 +44,37 @@ now_local() { TZ=Europe/Belgrade date '+%a %d.%m %H:%M %Z'; }
 # поэтому пропуск включается только когда мы реально в ночном окне.
 FUNCS_RESULT="не запускалась"
 deploy_functions() {
+  # Сухой режим — ПЕРВЫМ делом, до любых операций над рабочим деревом (issue #246). Ниже идут
+  # checkout и reset --hard: в CI чекаут свежий и терять нечего, а на машине человека они сносят
+  # незакоммиченную работу без вопроса — ровно у того, кто послушался шапки «не делать ничего».
+  # Тэги подтянуть можно: дерева это не касается, а без свежего prod-deployed план врёт (метку
+  # двигает только сама раскатка).
+  if [ "${DEPLOY_DRY:-0}" = "1" ]; then
+    git fetch --tags --force -q origin main || true
+    ./scripts/deploy-window.sh plan || say "(план функций не собрался)"
+    return 0
+  fi
+
   local hour; hour="$(TZ=Europe/Belgrade date +%H)"
   if [ "$((10#$hour))" -ge 23 ] || [ "$((10#$hour))" -lt 6 ]; then
     export SKIP_ACTIVITY_CHECK=1
   fi
-  git fetch --tags --force -q origin main || true
-  git checkout -q main 2>/dev/null || git checkout -q -B main origin/main
-  git reset -q --hard origin/main
-  if [ "${DEPLOY_DRY:-0}" = "1" ]; then
-    ./scripts/deploy-window.sh plan || say "(план функций не собрался)"
-    return 0
+  # Незакоммиченное — стоп. В CI дерево всегда чистое, поэтому гейт там молчит; на машине
+  # человека он единственное, что стоит между `reset --hard` и чужим WIP.
+  if [ -n "$(git status --porcelain)" ]; then
+    say "⚠ В рабочем дереве есть незакоммиченное — функции не трогаю (reset --hard стёр бы это)."
+    FUNCS_RESULT="НЕ раскатаны (грязное рабочее дерево)"
+    return 1
   fi
+  git fetch --tags --force -q origin main || true
+  # Промах checkout — НЕ повод продолжать: без него reset --hard прилетит в ТЕКУЩУЮ ветку и
+  # сдвинет её на origin/main. Так бывает, когда main занят другим worktree (у нас их несколько).
+  if ! git checkout -q main 2>/dev/null && ! git checkout -q -B main origin/main; then
+    say "⚠ Не смог переключиться на main — функции не трогаю (reset --hard ушёл бы в текущую ветку)."
+    FUNCS_RESULT="НЕ раскатаны (не переключился на main)"
+    return 1
+  fi
+  git reset -q --hard origin/main
   if FORCE="$FORCE" ./scripts/deploy-window.sh go; then
     FUNCS_RESULT="раскатаны"
   else
