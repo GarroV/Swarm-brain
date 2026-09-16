@@ -5,7 +5,7 @@
 // где enum обязан быть литералом. Дубли расходятся молча: разъехавшийся enum просто перестанет
 // принимать статус, а разъехавшийся CHECK начнёт отбивать вставки на проде.
 import { assertEquals } from "jsr:@std/assert@1";
-import { completionPatch, isTaskStatus, TASK_STATUSES, taskStatusError } from "./statuses.ts";
+import { completionPatch, hidesClosedByDefault, isTaskStatus, TASK_STATUSES, taskStatusError } from "./statuses.ts";
 
 const ROOT = new URL("../../", import.meta.url).pathname;
 
@@ -78,4 +78,26 @@ Deno.test("completionPatch: патч без статуса дату не тро�
 Deno.test("completionPatch: незнакомый статус считается открытым (страховка после #208)", () => {
   const patch = completionPatch("pending", "2026-09-01T08:00:00.000Z", "2026-09-08T10:00:00.000Z");
   assertEquals(patch, { completed_at: null });
+});
+
+// Правило «прятать закрытые по умолчанию» — issue #304.
+//
+// В listTasksWithTotal оно жило строкой `q.not("status","in",'("done","cancelled","draft")')`,
+// которая накладывалась ДО `q.eq("status", filters.status)`. При `status: "done"` оба условия
+// складывались в заведомо пустое пересечение, и MCP отвечал «Задач не найдено» — неотличимо
+// от «задач действительно нет». Правило вынесено сюда чистой функцией, чтобы его можно было
+// проверить без базы.
+Deno.test("закрытые прячем только когда про статус не спрашивали (issue #304)", () => {
+  // Обычный список: закрытые не нужны — иначе доска утонет в сделанном.
+  assertEquals(hidesClosedByDefault({}), true);
+
+  // Явный фильтр по статусу ОТМЕНЯЕТ правило — иначе он даёт пустоту и молчит об этом.
+  assertEquals(hidesClosedByDefault({ status: "done" }), false);
+  assertEquals(hidesClosedByDefault({ status: "cancelled" }), false);
+  assertEquals(hidesClosedByDefault({ status: "open" }), false);
+
+  // У этих веток свой отбор, правило по умолчанию к ним не применялось и раньше.
+  assertEquals(hidesClosedByDefault({ confirmed: true }), false);
+  assertEquals(hidesClosedByDefault({ confirmed: false }), false);
+  assertEquals(hidesClosedByDefault({ dueToday: true }), false);
 });
