@@ -770,6 +770,7 @@ _Все три: перевыпуск **убивает старый токен**,
 | `READ_AI_CLIENT_ID` | read-ai-auth | да (для Read.ai OAuth) | OAuth client id Read.ai (авторизация в `read-ai-auth`) |
 | `READ_AI_WEBHOOK_SECRET` | read-ai-webhook | да (для Read.ai webhook) | Секрет проверки входящего вебхука Read.ai |
 | `READ_AI_ENABLED` | read-ai-webhook | нет (дефолт выкл.) | Kill-switch обработки Read.ai-вебхука: только `="true"` включает приём (иначе 200 OK без записи в БД — Read.ai не ретраит) |
+| `READAI_DEFAULT_GROUP_ID` | read-ai-webhook | нет | Воркспейс по умолчанию, когда ни один участник встречи не найден в `allowed_users` (issue #56). Не задан → встреча НЕ сохраняется (422 + сообщение админу): лучше отказ, чем чужая команда. Обычный путь — резолв по e-mail участников, конфигурация нужна только как запасной |
 
 > Примечание: `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (OAuth-интеграция календаря рекордера) и `GOOGLE_CLIENT_EMAIL`/`GOOGLE_PRIVATE_KEY`/`GOOGLE_DRIVE_FOLDER_ID` (service-account для Google Drive) — **разные** механизмы Google, не путать.
 
