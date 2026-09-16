@@ -51,3 +51,23 @@ export function completionPatch(
   if (isClosedStatus(nextStatus)) return prevCompletedAt ? {} : { completed_at: nowIso };
   return prevCompletedAt ? { completed_at: null } : {};
 }
+
+/**
+ * Прятать ли закрытые задачи (`done`/`cancelled`/`draft`) из выдачи по умолчанию.
+ *
+ * Обычный список закрытые не показывает — иначе доска тонет в сделанном. Но ЯВНЫЙ фильтр по
+ * статусу это правило ОТМЕНЯЕТ (issue #304): до 16.09.2026 запрет накладывался в запросе ДО
+ * `eq("status", …)`, поэтому `status: "done"` складывался с «не показывать done» в заведомо
+ * пустое пересечение. MCP отвечал «Задач не найдено» — а это неотличимо от «задач и правда нет»,
+ * и агент, только что закрывший задачу, мог решить, что закрытие не сработало, и закрыть её ещё раз.
+ *
+ * Ветки `confirmed` и `dueToday` ведут свой отбор сами, поэтому правило к ним не применяется —
+ * так было и до правки.
+ */
+export function hidesClosedByDefault(filters: {
+  confirmed?: boolean;
+  dueToday?: boolean;
+  status?: string;
+}): boolean {
+  return filters.confirmed === undefined && !filters.dueToday && !filters.status;
+}

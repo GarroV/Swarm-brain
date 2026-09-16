@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Task, TaskInput } from "./types.ts";
-import { completionPatch, isClosedStatus } from "./statuses.ts";
+import { completionPatch, hidesClosedByDefault, isClosedStatus } from "./statuses.ts";
 import { buildRecurPatch, todayInTz, type RecurRow } from "./recurrence.ts";
 import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
 
@@ -94,11 +94,10 @@ export async function listTasksWithTotal(filters: {
     }
   }
 
-  if (filters.confirmed !== undefined) {
-    q = q.eq("confirmed", filters.confirmed);
-  } else if (!filters.dueToday) {
-    q = q.not("status", "in", '("done","cancelled","draft")');
-  }
+  if (filters.confirmed !== undefined) q = q.eq("confirmed", filters.confirmed);
+  // Правило «закрытые прячем» живёт в statuses.ts чистой функцией (issue #304): здесь оно
+  // накладывалось ДО eq("status", …), и явный запрос `status: "done"` давал пустое пересечение.
+  if (hidesClosedByDefault(filters)) q = q.not("status", "in", '("done","cancelled","draft")');
 
   if (filters.status) q = q.eq("status", filters.status);
   if (filters.country) q = q.ilike("country", `%${filters.country}%`);

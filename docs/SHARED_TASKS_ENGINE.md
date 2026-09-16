@@ -47,7 +47,12 @@ listTasks(filters, groupId?) → Promise<Task[]>
     isAdmin=true → видит все (фильтр приватности не накладывается).
     иначе viewerId задан → or(is_private.eq.false, owner_id.eq.viewerId).
     иначе (нет ни isAdmin, ни viewerId) → безопасный дефолт: только is_private=false.
-  confirmed задан → eq(confirmed); иначе (и не dueToday) исключает done/cancelled/draft.
+  confirmed задан → eq(confirmed).
+  Закрытые (done/cancelled/draft) исключаются по умолчанию — правило `hidesClosedByDefault`
+    в `_shared/tasks/statuses.ts`: когда не задан ни confirmed, ни dueToday, ни status.
+    ⚠️ ЯВНЫЙ status правило ОТМЕНЯЕТ (issue #304): до 16.09.2026 запрет накладывался ДО
+    eq(status, …), поэтому status="done" давал пустое пересечение и MCP отвечал «Задач
+    не найдено» — неотличимо от «задач нет».
   country: ilike. createdBy: eq(created_by_telegram_id).
   sprintId: eq(sprint_id). tags: overlaps (ANY-совпадение).
   startDateFrom/To: gte/lte(start_date). dueDateFrom/To: gte/lte(due_date).
