@@ -24,7 +24,7 @@ on:
         type: boolean
         default: true
       force:
-        description: "Обойти проверку окна 23:00–05:59 (нужно явное «да» владельца)"
+        description: "Обойти проверку окна 23:00–06:59 (нужно явное «да» владельца)"
         type: boolean
         default: false
       skip_activity_check:
