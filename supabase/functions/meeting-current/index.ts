@@ -5,7 +5,7 @@
 //
 // Деплой: supabase functions deploy meeting-current --no-verify-jwt (хитит рекордер с Bearer smcp_).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { AgentAuthError, verifyAgentToken } from "../_shared/agent-auth.ts";
+import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { pickCurrentEvent } from "./select.ts";
 import { conferenceInfo } from "./join-link.ts";
 // Обмен refresh→access и запрос событий — общий модуль (его же зовёт swarm-api для панели
@@ -29,7 +29,7 @@ function json(body: unknown, status = 200): Response {
 Deno.serve(async (req: Request) => {
   let identity;
   try {
-    identity = await verifyAgentToken(supabase, req);
+    identity = await resolveActingIdentity(supabase, req);
   } catch (e) {
     if (e instanceof AgentAuthError) return json({ error: e.message }, 401);
     throw e;

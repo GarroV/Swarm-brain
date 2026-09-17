@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyAgentToken, AgentAuthError } from "../_shared/agent-auth.ts";
+import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
 
 // meeting-status — лёгкий статус-эндпоинт для рекордера. Рекордер держит локальный бэкап
 // исходного аудио и удаляет его, КОГДА встреча ОПУБЛИКОВАНА в базу (`status='in_base'` → запись
@@ -25,7 +25,7 @@ Deno.serve(async (req: Request) => {
 
   let identity;
   try {
-    identity = await verifyAgentToken(supabase, req);
+    identity = await resolveActingIdentity(supabase, req);
   } catch (e) {
     if (e instanceof AgentAuthError) return json({ ok: false, error: e.message }, e.status);
     throw e;
