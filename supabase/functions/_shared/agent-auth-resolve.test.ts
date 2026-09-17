@@ -471,3 +471,36 @@ Deno.test("строка агента найдена, но хэш не её — 4
     "хэш не совпал",
   );
 });
+
+Deno.test("БЛОКИРУЮЩИЙ: отказ по подмене не выдаёт, заведён ли человек в системе", async () => {
+  // Разные тексты отказа превращали заголовок подмены в оракул существования:
+  // держатель токена агента подставлял произвольные telegram_id и по тексту 403
+  // узнавал, заведён ли человек в Swarm вообще — в любом чужом воркспейсе, не имея
+  // прав ни на один. Telegram id не секрет и резолвится из username, поэтому это
+  // давало скомпрометированному токену список пользователей всей системы.
+  //
+  // Тест сравнивает тексты трёх разных причин отказа и требует, чтобы они совпали.
+  // Проверен порчей: с прежними формулировками падает.
+  const messages: string[] = [];
+  for (const id of [999, 222, 333]) { // не заведён · чужой воркспейс · без воркспейса
+    const { client } = makeSupabase({
+      agentByToken: await botRow(),
+      personById: people,
+    });
+    try {
+      await resolveActingIdentity(client, req(BOT_TOKEN, id));
+      throw new Error(`подмена за ${id} прошла, хотя не должна была`);
+    } catch (e) {
+      if (!(e instanceof AgentAuthError)) throw e;
+      messages.push(e.message);
+    }
+  }
+  const [first] = messages;
+  for (const m of messages) {
+    assertEquals(
+      m,
+      first,
+      `отказы различаются и выдают существование человека: ${JSON.stringify(messages)}`,
+    );
+  }
+});

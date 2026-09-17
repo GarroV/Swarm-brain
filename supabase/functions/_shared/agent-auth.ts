@@ -301,20 +301,27 @@ export async function resolveActingIdentity(
   const person = data as
     | { telegram_id: number; group_id: string | null }
     | null;
-  if (!person) {
-    throw new AgentAuthError(403, `${ON_BEHALF_OF_HEADER}: unknown user`);
-  }
   // Воркспейс сверяем строго: агент обслуживает один воркспейс и не может назвать владельцем
   // человека из чужого. Человек без воркспейса тоже не подходит — встреча стала бы ничьей.
-  if (person.group_id === null || person.group_id !== agent.groupId) {
+  //
+  // Отказ ОДИН на все причины, как и в findAgent выше. Разные тексты («unknown user» против
+  // «outside the workspace») превращали заголовок в оракул существования: держатель токена
+  // агента подставлял произвольные telegram_id и по тексту 403 узнавал, заведён ли человек
+  // в Swarm вообще — в любом чужом воркспейсе, не имея прав ни на один. Telegram id не секрет
+  // и резолвится из username, так что это давало скомпрометированному токену список
+  // пользователей всей системы. Причина отказа остаётся в логе: она нужна нам, не чужому.
+  if (!person || person.group_id === null || person.group_id !== agent.groupId) {
+    const reason = !person
+      ? "человек не заведён"
+      : person.group_id === null
+      ? "человек без воркспейса"
+      : `чужой воркспейс ${person.group_id}`;
     console.warn(
-      `agent-auth: агент ${agent.id} (${agent.groupId}) просил действовать за ${behalf} (${
-        person.group_id ?? "без воркспейса"
-      })`,
+      `agent-auth: агент ${agent.id} (${agent.groupId}) просил действовать за ${behalf}: ${reason}`,
     );
     throw new AgentAuthError(
       403,
-      `${ON_BEHALF_OF_HEADER}: user is outside the agent's workspace`,
+      `${ON_BEHALF_OF_HEADER}: not a user of this agent's workspace`,
     );
   }
 
