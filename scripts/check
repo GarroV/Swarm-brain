@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Единая команда прогона. Её зовут приёмка блока, хук pre-push и CI — одна точка входа,
+# иначе «на моей машине зелено» перестаёт что-либо значить.
+#
+# Стека два: бот на Node/TypeScript (bot/) и сервер на Deno (supabase/functions/).
+# Шесть обязательных ролей проверок закрыты по обоим, где инструмент есть; где его
+# нет — сказано вслух, а не пропущено молча.
+#
+# Отсутствие инструмента — КРАСНЫЙ, а не пропуск: проверка, которой нет, не должна
+# выглядеть выполненной.
+#
+#   scripts/check            — всё
+#   scripts/check bot        — только бот
+#   scripts/check server     — только серверные функции
+set -uo pipefail
+
+# Ошибка в самом скрипте (нет команды, необъявленная переменная, промах путём) —
+# это КРАСНЫЙ, а не пропуск. Проверено порчей 17.09.2026: mapfile отсутствовал в
+# bash 3.2, список файлов молча остался пустым, и прогон отчитался ЗЕЛЁНЫМ.
+self_error=0
+trap 'self_error=1' ERR
+
+cd "$(dirname "$0")/.."
+scope="${1:-all}"
+failed=()
+skipped=()
+
+run() { # run <имя> <команда...>
+  local name="$1"; shift
+  printf '\n──── %s\n' "$name"
+  if "$@"; then
+    printf '✔ %s\n' "$name"
+  else
+    printf '✘ %s\n' "$name"
+    failed+=("$name")
+  fi
+}
+
+need() { # need <инструмент> <имя проверки>
+  if command -v "$1" >/dev/null 2>&1; then return 0; fi
+  printf '\n✘ %s: инструмента «%s» нет в PATH — проверка НЕ выполнялась\n' "$2" "$1"
+  failed+=("$2 (нет инструмента $1)")
+  return 1
+}
+
+if [[ "$scope" == "all" || "$scope" == "bot" ]]; then
+  if [[ -d bot/node_modules ]]; then
+    run "бот · формат"           npm --prefix bot run format:check
+    run "бот · линт с типами"    npm --prefix bot run lint
+    run "бот · типы"             npm --prefix bot run typecheck
+    if find bot/src -name '*.test.ts' -print -quit | grep -q .; then
+      run "бот · тесты"          npm --prefix bot run test
+      run "бот · порог покрытия" scripts/gate-coverage.sh bot/coverage/lcov.info bot
+    else
+      printf '\n○ бот · тесты: файлов *.test.ts в bot/src пока нет\n'
+      skipped+=("бот · тесты и покрытие (нет ни одного файла *.test.ts)")
+    fi
+    run "бот · мёртвый код"      npm --prefix bot run deadcode
+    run "бот · границы модулей"  npm --prefix bot run boundaries
+  else
+    printf '\n✘ бот: bot/node_modules нет — окружение не поднято, проверки НЕ выполнялись\n'
+    printf '  поднять: npm ci --prefix bot\n'
+    failed+=("бот (окружение не поднято)")
+  fi
+fi
+
+if [[ "$scope" == "all" || "$scope" == "server" ]]; then
+  if need deno "сервер"; then
+    # Формат и линт сервера смотрят ТОЛЬКО файлы, которые трогает стройка.
+    # Замер 17.09.2026: в существующем коде Swarm 172 файла из 188 не по формату
+    # и 133 замечания линта. Переформатировать репозиторий целиком значит затоптать
+    # параллельные ветки и сделать дифы блоков нечитаемыми — то есть убить ровно ту
+    # пользу, ради которой роль «формат» и заведена. Легаси остаётся как есть;
+    # новый и правленый код обязан быть по канону. Решение D013.
+    # Портируемо, без mapfile: на macOS системный bash — 3.2, а mapfile появился в 4.0.
+    # Проверено порчей: с mapfile список молча оставался пустым, и прогон выходил ЗЕЛЁНЫМ.
+    touched_list="$(
+      { base="$(git merge-base origin/main HEAD 2>/dev/null || true)"
+        [ -n "$base" ] && git diff --name-only --diff-filter=ACMR "$base"...HEAD -- 'supabase/functions/*.ts'
+        git diff --name-only --diff-filter=ACMR -- 'supabase/functions/*.ts'
+        git diff --name-only --diff-filter=ACMR --cached -- 'supabase/functions/*.ts'
+        # Новые файлы ещё не в индексе, а блоки создают именно их. Без этой строки
+        # прогон честно зеленел на файле, которого не видел. Проверено порчей 17.09.2026.
+        git ls-files --others --exclude-standard -- 'supabase/functions/*.ts'
+      } 2>/dev/null | sort -u
+    )"
+    touched=()
+    while IFS= read -r f; do
+      [ -n "$f" ] && [ -f "$f" ] && touched+=("$f")
+    done <<< "$touched_list"
+
+    if [ "${#touched[@]}" -gt 0 ]; then
+      printf '\nфайлов сервера, затронутых стройкой: %d\n' "${#touched[@]}"
+      run "сервер · формат"  deno fmt --check "${touched[@]}"
+      run "сервер · линт"    deno lint "${touched[@]}"
+    else
+      printf '\n○ сервер · формат и линт: стройка пока не трогала ни одного файла supabase/functions\n'
+      skipped+=("сервер · формат и линт (стройка не трогала файлов сервера)")
+    fi
+    # Типы — по ВСЕМ функциям, а не только по изменённым: правка в _shared/ ломает
+    # потребителей, которых её автор не открывал, и видно это только полным проходом.
+    run "сервер · типы"    bash -c '
+      status=0
+      while IFS= read -r f; do
+        deno check --quiet "$f" || status=1
+      done < <(find supabase/functions -maxdepth 2 -name index.ts)
+      exit $status'
+    if compgen -G "supabase/functions/**/*.test.ts" >/dev/null 2>&1 \
+       || find supabase/functions -name '*.test.ts' -print -quit | grep -q .; then
+      run "сервер · тесты" bash -c '
+        rm -rf /tmp/scriba-cov
+        deno test --allow-all --coverage=/tmp/scriba-cov supabase/functions
+        deno coverage /tmp/scriba-cov --lcov --output=reports/lcov-server.info'
+      run "сервер · порог покрытия" scripts/gate-coverage.sh reports/lcov-server.info server
+    else
+      printf '\n○ сервер · тесты: файлов *.test.ts в supabase/functions пока нет\n'
+      skipped+=("сервер · тесты (нет ни одного файла *.test.ts)")
+    fi
+    printf '\n○ сервер · мёртвый код и границы модулей: готового инструмента под Deno нет\n'
+    skipped+=("сервер · мёртвый код и границы (нет инструмента под Deno — осознанный пробел, docs/furca/plan.md)")
+  fi
+fi
+
+printf '\n════ итог\n'
+if [[ ${#skipped[@]} -gt 0 ]]; then
+  printf 'пропущено с объявленной причиной:\n'
+  printf '  ○ %s\n' "${skipped[@]}"
+fi
+if [[ $self_error -ne 0 ]]; then
+  printf 'КРАСНЫЙ: сам прогон дал ошибку (см. вывод выше) — результат недействителен.\n'
+  exit 1
+fi
+if [[ ${#failed[@]} -gt 0 ]]; then
+  printf 'КРАСНЫЙ, не сошлось:\n'
+  printf '  ✘ %s\n' "${failed[@]}"
+  exit 1
+fi
+printf 'ЗЕЛЁНЫЙ\n'

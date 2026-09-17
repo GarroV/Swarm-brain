@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Зовёт единую команду прогона перед пушем. Включается один раз на машине:
+#   git config core.hooksPath .githooks
+#
+# Хук ОБЯЗАН падать, когда инструмента нет, а не пропускать проверку молча:
+# молчаливо пропущенный гейт неотличим от пройденного.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+
+if [[ ! -x "$root/scripts/check" ]]; then
+  echo "pre-push: $root/scripts/check отсутствует или не исполняемый — пуш остановлен." >&2
+  echo "Это не повод обойти проверку: без единой команды прогона «зелено» ничего не значит." >&2
+  exit 1
+fi
+
+echo "pre-push: scripts/check"
+"$root/scripts/check"
