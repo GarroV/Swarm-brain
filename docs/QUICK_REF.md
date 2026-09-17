@@ -10,6 +10,7 @@
 > миграции и рискованное — ночью.** Пуш в `main` тоже раскатка: Cloudflare Pages собирает веб
 > с `main` сам. Что накопилось — `make deploy-plan`, раскатать — `make deploy` (вне окна откажет,
 > `FORCE=1` — осознанный обход). Канон: [decisions/2026-08-24-deploy-window.md](decisions/2026-08-24-deploy-window.md).
+> Правка только в `bot/**` (бот `scriba`) веб не задевает — как и `recorder/**`; раскатка самого бота — пересборка контейнера на MUSPELHEIM, а не мёрж. Канон границы: [decisions/2026-09-17-scriba-stays-in-monorepo.md](decisions/2026-09-17-scriba-stays-in-monorepo.md).
 
 ```bash
 make deploy-plan   # что готово, но НЕ раскатано (функции, веб, миграции, рекордер)
@@ -58,14 +59,15 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 
 | Workflow | Когда | Что делает | Раннер / потолок |
 |---|---|---|---|
-| `ci.yml` | push в `main`, PR | `deno check` + `deno test` всех edge-функций; сборка + типы miniapp | `ubuntu-latest`, 10 / 15 мин |
+| `ci.yml` | push в `main`, PR — **кроме правок только в `bot/**`** (их проверяет `bot.yml`) | `deno check` + `deno test` всех edge-функций; сборка + типы miniapp | `ubuntu-latest`, 10 / 15 мин |
+| `bot.yml` | push/PR, ТОЛЬКО при изменениях в `bot/**`, `scripts/check`, `scripts/gate-coverage.sh` | `npm ci --prefix bot` → **`scripts/check bot`**: формат, линт с типами, типы, тесты, порог покрытия, мёртвый код, границы модулей. Та же команда у приёмки блока и хука pre-push | `ubuntu-latest`, 15 мин |
 | `recorder.yml` | push/PR, ТОЛЬКО при изменениях в `recorder/**` | `swift build -c release` — ловит поломку до тега релиза | `macos-latest`, 25 мин |
 | `recorder-release.yml` | push тега `recorder-build-*` | собирает предсобранный `.app` (внутри архива имя пока `SwarmRecorder.app` — переходное, см. recorder/README.md) и публикует **release-asset**. ⚠️ Скачивают его НЕ оттуда: репозиторий приватный → анонимно 404, раздача идёт из Storage `swarm_drive/recorder/` (issue #91), asset туда надо залить | `macos-14`, 30 мин |
 
 - **Ничего не деплоит.** Edge-функции — руками (`supabase functions deploy`), веб — Cloudflare Pages сам по push. Единственный workflow, который влияет на пользователей, — `recorder-release.yml`: без него `.app` придётся собирать локально и заливать в релиз вручную.
 - **`timeout-minutes` обязателен на каждом job** (добавлено 2026-08-20). Без него зависший job висит до дефолтных **6 часов** GitHub: в приватном `GarroV/multa` так трижды за день (19.08) сгорело **1080 минут** из месячной квоты аккаунта, после чего Actions встали во всех приватных репозиториях ([multa#148](https://github.com/GarroV/multa/issues/148)). С таймаутом зависший прогон честно падает и присылает уведомление, а не съедает квоту молча.
-- **`concurrency: cancel-in-progress`** в `ci.yml`/`recorder.yml` — новый пуш отменяет прогон устаревшего коммита. В `recorder-release.yml` его НЕТ намеренно: прогоны идут по тегам, каждый публикует свой ассет.
-- **Минуты Actions тратят приватные репозитории — а Swarm ПРИВАТНЫЙ** (с 20.08.2026, решение о приватности беклога). Прежнее «Swarm публичный, минуты бесплатны» больше не действует: прогоны Swarm расходуют общую квоту аккаунта, и **macOS-раннер считается ×10** (`recorder.yml`/`recorder-release.yml` — 25–30 мин потолка = до 300 минут квоты за прогон). Прежде чем добавлять/расширять workflow, считай расход.
+- **`concurrency: cancel-in-progress`** в `ci.yml`/`recorder.yml`/`bot.yml` — новый пуш отменяет прогон устаревшего коммита. В `recorder-release.yml` его НЕТ намеренно: прогоны идут по тегам, каждый публикует свой ассет.
+- **Минуты Actions тратят только приватные репозитории — а Swarm ПУБЛИЧНЫЙ** (снова с 27.08.2026; проверено `gh repo view GarroV/Swarm-brain --json visibility` 17.09.2026 → `PUBLIC`), поэтому прогоны бесплатны и квоту аккаунта не жгут. ⚠️ Правило держится на видимости: переведут репозиторий в приватные — **macOS-раннер считается ×10** (`recorder.yml`/`recorder-release.yml`, 25–30 мин потолка = до 300 минут квоты за прогон), и расход придётся считать заново ([multa#148](https://github.com/GarroV/multa/issues/148) — так за день сгорело 1080 минут). До 17.09.2026 этот пункт утверждал обратное («Swarm ПРИВАТНЫЙ») и противоречил DEPLOY.md.
 - **🔴 Как опознать «CI лежит по биллингу», а не по коду** (случилось 20.08.2026 ~13:00 UTC): job'ы падают **за 3–5 секунд с ПУСТЫМ списком шагов**, `gh run view --log-failed` отдаёт «log not found», а причина видна только в аннотации check-run:
   ```bash
   gh api repos/GarroV/Swarm-brain/actions/runs/<RUN_ID>/jobs --jq '.jobs[].id' \
