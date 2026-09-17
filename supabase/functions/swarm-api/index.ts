@@ -46,6 +46,7 @@ import { extractEntryMeta, applyGeneralSentinel, marketTagsFromInput, buildEmbed
 import { pickSuggestedMarkets } from "../_shared/market-suggest.ts";
 import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { getFileSecure, FileAccessError } from "./file-access.ts";
+import { storagePathFromLink, withNormalizedFileLink } from "../_shared/storage-links.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
@@ -1174,7 +1175,9 @@ Deno.serve(async (req: Request) => {
     // ответ остаётся голым массивом, поэтому бот и MCP не задеты. Замер на проде 05.09.2026:
     // 92 заметки видно, отдавалось 50 — 42 записи не существовало для человека, и экран об этом
     // молчал. Лимит здесь не поднимаем: сперва признак, пагинация отдельно (#104).
-    return json(data, 200, origin, count != null ? { "X-Total-Count": String(count) } : undefined);
+    // Ссылки на файлы наружу отдаём только через /api/file/<path> (публичные URL бакета убраны).
+    const rows = (data ?? []).map((r) => withNormalizedFileLink(r as unknown as Record<string, unknown>));
+    return json(rows, 200, origin, count != null ? { "X-Total-Count": String(count) } : undefined);
   }
 
   // ── GET /entries/:id ──────────────────────────────────────────────────────────
@@ -1184,7 +1187,7 @@ Deno.serve(async (req: Request) => {
     return withEntries(origin, async () => {
       if (req.method === "GET") {
         const entry = await getEntrySecure(supabase, entryId, { groupId, telegramId: telegram_id });
-        return json(entry, 200, origin);
+        return json(withNormalizedFileLink(entry as unknown as Record<string, unknown>), 200, origin);
       }
       if (req.method === "PATCH") {
         const entry = await getEntrySecure(supabase, entryId, { groupId, telegramId: telegram_id, requireOwner: true });
@@ -1195,14 +1198,27 @@ Deno.serve(async (req: Request) => {
         if ("summary" in body) fields.summary = body.summary;
         await supabase.from("entries").update(fields).eq("id", entry.id);
         const { data } = await supabase.from("entries").select(ENTRY_COLUMNS).eq("id", entry.id).single();
-        return json(data, 200, origin);
+        return json(withNormalizedFileLink((data ?? {}) as unknown as Record<string, unknown>), 200, origin);
       }
       if (req.method === "DELETE") {
         const entry = await getEntrySecure(supabase, entryId, { groupId, telegramId: telegram_id, requireOwner: true });
         const fileUrl = (entry.metadata as Record<string, unknown>)?.file_url as string | undefined;
         if (fileUrl) {
-          const path = fileUrl.split("/swarm_drive/")[1];
-          if (path) await supabase.storage.from("swarm_drive").remove([path]);
+          // Путь разбираем общим хелпером, а не split("/swarm_drive/"): имя бакета в ссылке
+          // больше не одно (старые файлы — swarm_drive, новые — swarm_private), и percent-
+          // encoding в имени раньше приводил к remove() по несуществующему ключу — удаление
+          // молча не удаляло, файл оставался доступен по прежней ссылке.
+          const path = storagePathFromLink(fileUrl);
+          if (path) {
+            const { data: reg } = await supabase
+              .from("storage_files").select("bucket").eq("path", path).maybeSingle();
+            const bucket = (reg as { bucket?: string } | null)?.bucket ?? "swarm_drive";
+            const { error: rmErr } = await supabase.storage.from(bucket).remove([path]);
+            // Объект не удалён — запись НЕ трогаем: иначе файл останется в хранилище без
+            // владельца, то есть навсегда и без следов (тихая утечка вместо ошибки).
+            if (rmErr) return apiErr(500, `File delete failed: ${rmErr.message}`, origin);
+            await supabase.from("storage_files").delete().eq("path", path);
+          }
         }
         await supabase.from("entries").delete().eq("id", entry.id);
         return new Response(null, { status: 204, headers: corsHeaders(origin) });

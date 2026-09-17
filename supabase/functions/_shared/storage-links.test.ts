@@ -4,6 +4,7 @@ import {
   webFileUrl,
   absoluteFileUrl,
   normalizeFileLink,
+  withNormalizedFileLink,
 } from "./storage-links.ts";
 
 const PUBLIC_DRIVE =
@@ -112,4 +113,67 @@ Deno.test("normalizeFileLink: нераспознанное значение → 
   assertEquals(normalizeFileLink("https://example.com/secret.pdf"), null);
   assertEquals(normalizeFileLink(undefined), null);
   assertEquals(normalizeFileLink(42), null);
+});
+
+// ── withNormalizedFileLink: то, что применяем к строке записи на отдаче ───────
+
+Deno.test("withNormalizedFileLink: file_url в metadata переписывается на /api/file", () => {
+  const row = {
+    id: "e1",
+    metadata: { filename: "x.pdf", file_url: PUBLIC_DRIVE, file_type: "application/pdf" },
+  };
+  const out = withNormalizedFileLink(row);
+  assertEquals(
+    (out.metadata as Record<string, unknown>).file_url,
+    "/api/file/uploads/2026-09-05_%D0%BE%D1%82%D1%87%D1%91%D1%82.pdf",
+  );
+  // Остальные поля metadata не теряются.
+  assertEquals((out.metadata as Record<string, unknown>).filename, "x.pdf");
+  assertEquals(out.id, "e1");
+});
+
+Deno.test("withNormalizedFileLink: исходный объект не мутируется", () => {
+  const meta = { file_url: PUBLIC_DRIVE };
+  const row = { id: "e1", metadata: meta };
+  withNormalizedFileLink(row);
+  assertEquals(meta.file_url, PUBLIC_DRIVE);
+});
+
+Deno.test("withNormalizedFileLink: внешняя ссылка (не наш бакет) остаётся как есть", () => {
+  // Google Drive и прочие внешние ссылки — легитимное содержимое, не наш файл.
+  const row = { metadata: { file_url: "https://drive.google.com/file/d/123/view" } };
+  const out = withNormalizedFileLink(row);
+  assertEquals(
+    (out.metadata as Record<string, unknown>).file_url,
+    "https://drive.google.com/file/d/123/view",
+  );
+});
+
+Deno.test("withNormalizedFileLink: запись без файла проходит нетронутой", () => {
+  const row = { id: "e1", metadata: { url: "https://example.com" } };
+  assertEquals(withNormalizedFileLink(row), row);
+  assertEquals(withNormalizedFileLink({ id: "e2" }), { id: "e2" });
+  assertEquals(withNormalizedFileLink({ id: "e3", metadata: null }), { id: "e3", metadata: null });
+});
+
+Deno.test("withNormalizedFileLink: список строк — каждая нормализуется", () => {
+  const rows = [
+    { metadata: { file_url: PUBLIC_DRIVE } },
+    { metadata: { url: "https://example.com" } },
+  ];
+  const out = rows.map((r) => withNormalizedFileLink(r));
+  assertEquals(
+    (out[0].metadata as Record<string, unknown>).file_url,
+    "/api/file/uploads/2026-09-05_%D0%BE%D1%82%D1%87%D1%91%D1%82.pdf",
+  );
+  assertEquals((out[1].metadata as Record<string, unknown>).url, "https://example.com");
+});
+
+Deno.test("withNormalizedFileLink: с базой — абсолютная ссылка (MCP, письма)", () => {
+  const row = { metadata: { file_url: PUBLIC_DRIVE } };
+  const out = withNormalizedFileLink(row, { baseUrl: "https://swarm-brain.pages.dev" });
+  assertEquals(
+    (out.metadata as Record<string, unknown>).file_url,
+    "https://swarm-brain.pages.dev/api/file/uploads/2026-09-05_%D0%BE%D1%82%D1%87%D1%91%D1%82.pdf",
+  );
 });

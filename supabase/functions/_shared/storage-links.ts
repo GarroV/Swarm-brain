@@ -102,3 +102,29 @@ export function normalizeFileLink(value: unknown, opts: NormalizeOptions = {}): 
   if (!path) return null;
   return opts.baseUrl ? absoluteFileUrl(path, opts.baseUrl) : webFileUrl(path);
 }
+
+/**
+ * Строка записи с нормализованной metadata.file_url — то, что применяем ПЕРЕД отдачей наружу.
+ *
+ * Работает только с нашими файлами: внешняя ссылка (Google Drive и прочее) — легитимное
+ * содержимое записи и остаётся нетронутой. Исходный объект не мутируется: строка приходит
+ * из ответа supabase-js и может использоваться дальше по коду.
+ *
+ * ВАЖНО: применять на ОТДАЧЕ, а не внутри логики. Серверные потребители (удаление объекта,
+ * отправка файла ботом) читают metadata из базы сами и ждут там путь/URL хранилища, а не
+ * наш маршрут.
+ */
+export function withNormalizedFileLink<T extends Record<string, unknown>>(
+  row: T,
+  opts: NormalizeOptions = {},
+): T {
+  const meta = row?.metadata;
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return row;
+  const current = (meta as Record<string, unknown>).file_url;
+  if (typeof current !== "string") return row;
+
+  const normalized = normalizeFileLink(current, opts);
+  if (!normalized || normalized === current) return row;
+
+  return { ...row, metadata: { ...(meta as Record<string, unknown>), file_url: normalized } } as T;
+}
