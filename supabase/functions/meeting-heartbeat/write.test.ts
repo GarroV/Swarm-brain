@@ -1,9 +1,5 @@
-// deno-lint-ignore-file no-import-prefix -- см. _shared/agent-auth.ts: edge-функции Swarm
 // деплоятся с URL-импортами, перевод на голые спецификаторы из линта непроверяем из ветки.
-import {
-  assertEquals,
-  assertThrows,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
 import { buildHeartbeatWrite } from "./write.ts";
 

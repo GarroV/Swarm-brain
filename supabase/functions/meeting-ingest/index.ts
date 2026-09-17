@@ -1,15 +1,7 @@
-// deno-lint-ignore-file no-import-prefix -- edge-функции Swarm деплоятся с URL-импортами (так во
 // ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import {
-  AgentAuthError,
-  resolveActingIdentity,
-} from "../_shared/agent-auth.ts";
-import {
-  type InMemoryPart,
-  runMeetingStep,
-  uploadPartsAndBuildState,
-} from "../_shared/meeting-processor.ts";
+import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
+import { type InMemoryPart, runMeetingStep, uploadPartsAndBuildState } from "../_shared/meeting-processor.ts";
 
 // meeting-ingest — приём АУДИО от claimer (см. transcribator/10-REVISED-DESIGN.md §4, §7.2).
 // Облачная схема: рекордер пишет звук → грузит сюда; сервер транскрибирует (OpenAI Whisper)

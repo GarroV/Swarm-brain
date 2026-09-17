@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-import-prefix -- правило требует голых спецификаторов из
 // import-map, но edge-функции Swarm деплоятся с URL-импортами (так во ВСЕХ функциях без
 // исключения) и проверить деплой с голым спецификатором из ветки нельзя. Перевод импортов ради
 // линта = непроверяемый риск для живого конвейера. Дефект гейта вынесен диспетчеру.
@@ -7,10 +6,7 @@
 // Вынесены отдельным файлом намеренно: это единственное место, где расширяется авторизация, и
 // список «что боту запрещено» должен читаться подряд, а не выуживаться из тестов классификатора.
 // Красный файл = блок не сдаётся, даже если всё остальное зелёное.
-import {
-  assertEquals,
-  assertRejects,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   AgentAuthError,
@@ -63,9 +59,7 @@ function makeSupabase(opts: {
         if (table === "service_agents") {
           return Promise.resolve({ data: opts.agentByToken ?? null });
         }
-        const byId = calls.find((c) =>
-          c.method === "eq" && c.args[0] === "telegram_id"
-        );
+        const byId = calls.find((c) => c.method === "eq" && c.args[0] === "telegram_id");
         if (byId) {
           const id = byId.args[1] as number;
           personLookups.push(id);

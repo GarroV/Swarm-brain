@@ -26,9 +26,7 @@ export function buildHeartbeatWrite(
   const recording = body.recording === true;
   const version = typeof body.version === "number" ? body.version : null;
   const onCall = body.on_call === true;
-  const rawKey = typeof body.meeting_key === "string"
-    ? body.meeting_key.trim()
-    : "";
+  const rawKey = typeof body.meeting_key === "string" ? body.meeting_key.trim() : "";
   // Ключ держим только пока человек в звонке (или мы пишем). Иначе он завис бы после
   // созвона и панель показывала бы ON AIR на давно закончившейся встрече.
   const meetingKey = (onCall || recording) && rawKey ? rawKey : null;

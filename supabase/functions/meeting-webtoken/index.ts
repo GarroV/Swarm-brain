@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-import-prefix -- edge-функции Swarm деплоятся с URL-импортами (так во
 // ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, verifyAgentToken } from "../_shared/agent-auth.ts";

@@ -1,20 +1,8 @@
-// deno-lint-ignore-file no-import-prefix -- edge-функции Swarm деплоятся с URL-импортами (так во
 // ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import {
-  AgentAuthError,
-  type AgentIdentity,
-  resolveActingIdentity,
-} from "../_shared/agent-auth.ts";
-import {
-  defaultMeetingTitle,
-  displayNameOf,
-} from "../_shared/meeting-title.ts";
-import {
-  ROSTER_TOLERANCE_MIN,
-  sameMeetingByRoster,
-  scopeRoomKey,
-} from "../_shared/meeting-roster.ts";
+import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
+import { defaultMeetingTitle, displayNameOf } from "../_shared/meeting-title.ts";
+import { ROSTER_TOLERANCE_MIN, sameMeetingByRoster, scopeRoomKey } from "../_shared/meeting-roster.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -140,21 +128,11 @@ function validate(raw: unknown): ClaimBody {
     started_at: typeof b.started_at === "string" ? b.started_at : undefined,
     ended_at: typeof b.ended_at === "string" ? b.ended_at : undefined,
     title: typeof b.title === "string" ? b.title : undefined,
-    attendees: Array.isArray(b.attendees)
-      ? (b.attendees as Attendee[])
-      : undefined,
+    attendees: Array.isArray(b.attendees) ? (b.attendees as Attendee[]) : undefined,
     user_notes: notes,
-    agent_version: typeof b.agent_version === "string"
-      ? b.agent_version
-      : undefined,
-    mic_start_offset:
-      typeof micOffset === "number" && Number.isFinite(micOffset)
-        ? micOffset
-        : undefined,
-    recorded_seconds:
-      typeof recSec === "number" && Number.isFinite(recSec) && recSec > 0
-        ? recSec
-        : undefined,
+    agent_version: typeof b.agent_version === "string" ? b.agent_version : undefined,
+    mic_start_offset: typeof micOffset === "number" && Number.isFinite(micOffset) ? micOffset : undefined,
+    recorded_seconds: typeof recSec === "number" && Number.isFinite(recSec) && recSec > 0 ? recSec : undefined,
   };
 }
 
@@ -192,8 +170,7 @@ async function registerRecorder(
     "id",
     meetingId,
   ).single();
-  const recorders =
-    ((data as { recorders?: RecorderEntry[] } | null)?.recorders) ?? [];
+  const recorders = ((data as { recorders?: RecorderEntry[] } | null)?.recorders) ?? [];
   const next: RecorderEntry[] = recorders.map((r) =>
     supersedeOwner != null && r.telegram_id === supersedeOwner &&
       r.role === "transcribe"
@@ -204,9 +181,7 @@ async function registerRecorder(
     telegram_id: telegramId,
     claimed_at: nowIso,
     role,
-    ...(recordedSeconds !== undefined
-      ? { recorded_seconds: recordedSeconds }
-      : {}),
+    ...(recordedSeconds !== undefined ? { recorded_seconds: recordedSeconds } : {}),
   };
   const at = next.findIndex((r) => r.telegram_id === telegramId);
   if (at >= 0) next[at] = { ...next[at], ...mine };
@@ -308,9 +283,7 @@ async function findMeetingByRoster(
     .lte("started_at", to)
     .order("created_at", { ascending: true })
     .limit(20);
-  const candidates = ((data ?? []) as RosterCandidate[]).filter((c) =>
-    c.identity_key !== scopedKey
-  );
+  const candidates = ((data ?? []) as RosterCandidate[]).filter((c) => c.identity_key !== scopedKey);
   if (candidates.length === 0) return null;
 
   const incoming = {
@@ -407,9 +380,7 @@ async function resolveExisting(
 
   heldBy = identity.telegramId;
   console.log(
-    `meeting-claim: перехват ${row.id} — ${
-      Math.round(candidate)
-    }с у ${identity.telegramId} против ${
+    `meeting-claim: перехват ${row.id} — ${Math.round(candidate)}с у ${identity.telegramId} против ${
       Math.round(held)
     }с у ${row.claim_owner}`,
   );

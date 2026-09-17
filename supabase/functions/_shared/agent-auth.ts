@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-import-prefix -- правило требует голых спецификаторов из
 // import-map, но edge-функции Swarm деплоятся с URL-импортами (так во ВСЕХ функциях без
 // исключения) и проверить деплой с голым спецификатором из ветки нельзя. Перевод импортов ради
 // линта = непроверяемый риск для живого конвейера. Дефект гейта вынесен диспетчеру.
@@ -98,17 +97,14 @@ export async function sha256Hex(value: string): Promise<string> {
     "SHA-256",
     new TextEncoder().encode(value),
   );
-  return Array.from(new Uint8Array(buf)).map((b) =>
-    b.toString(16).padStart(2, "0")
-  ).join("");
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 // ── Вход ─────────────────────────────────────────────────────────────────────
 
 const USER_COLUMNS =
   "telegram_id, group_id, claude_mcp_token_hash, claude_mcp_token_expires_at, recorder_token_hash, recorder_token_expires_at, recorder_token_prev_hash, recorder_token_prev_expires_at";
-const AGENT_COLUMNS =
-  "id, name, group_id, token_hash, token_expires_at, is_active";
+const AGENT_COLUMNS = "id, name, group_id, token_hash, token_expires_at, is_active";
 
 async function bearerHash(req: Request): Promise<string> {
   const authHeader = req.headers.get("Authorization") ?? "";

@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-import-prefix -- edge-функции Swarm деплоятся с URL-импортами (так во
 // ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 // Heartbeat рекордера. Рекордер раз в ~15 мин (maintenanceTick) шлёт «я жив» + статус записи +
 // версию. Пишет allowed_users.recorder_last_{seen,recording,version}. Watchdog checkRecorderHealth
@@ -19,10 +18,7 @@
 // иначе watchdog решил бы, что у человека работает рекордер, и погасил бы настоящий сигнал.
 // Деплой: supabase functions deploy meeting-heartbeat --no-verify-jwt (рекордер хитит с Bearer-токеном).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import {
-  AgentAuthError,
-  resolveActingIdentity,
-} from "../_shared/agent-auth.ts";
+import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { buildHeartbeatWrite, type HeartbeatBody } from "./write.ts";
 
 const supabase = createClient(
