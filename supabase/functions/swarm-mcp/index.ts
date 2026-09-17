@@ -13,6 +13,12 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
+import { absoluteFileUrl, removeStorageObject } from "../_shared/storage-links.ts";
+
+// Адрес веба: ссылку на файл отдаём абсолютной — получатель ответа (Claude Desktop)
+// не наша страница, относительный путь там некликабелен.
+const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "https://swarm-brain.pages.dev";
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 // Владелец (админ) — единственный, кому доступна поверхность фидбека. Совпадает с ADMIN_USER_ID в боте.
@@ -622,7 +628,7 @@ async function toolUploadFile(args: {
   }
 
   const sizeKb = Math.round(uploadResult.fileSizeBytes / 1024);
-  return `✅ Файл загружен: ${args.file_name} (${sizeKb} KB)\n📎 ${uploadResult.publicUrl}`;
+  return `✅ Файл загружен: ${args.file_name} (${sizeKb} KB)\n📎 ${absoluteFileUrl(uploadResult.path, WEB_BASE_URL)}`;
 }
 
 async function toolGetStorageStats(args: { requesting_user_id?: number } = {}): Promise<string> {
@@ -731,20 +737,18 @@ async function toolDeleteEntry(args: { id: string; requesting_user_id?: number }
   if (!entry) return `Запись ${args.id} не найдена.`;   // сужение: гард уже отсёк null
 
   const fileUrl = (entry.metadata as Record<string, unknown> | null)?.file_url as string | undefined;
-  if (fileUrl) {
-    try {
-      const url = new URL(fileUrl);
-      const pathParts = url.pathname.split("/object/public/swarm_drive/");
-      if (pathParts.length > 1) {
-        await supabase.storage.from("swarm_drive").remove([decodeURIComponent(pathParts[1])]);
-      }
-    } catch { /* ignore storage deletion errors */ }
+  const removal = fileUrl ? await removeStorageObject(supabase, fileUrl) : { status: "no-file" as const };
+  // Файл не удалился — запись оставляем и говорим об этом. Раньше ошибка глушилась,
+  // а ответ всё равно утверждал «вместе с файлом из Storage»: файл оставался доступен
+  // по прежней ссылке, и никто об этом не узнавал.
+  if (removal.status === "failed") {
+    return `Запись НЕ удалена: файл не удалось убрать из Storage (${removal.error}). Записи без файла не оставляем — иначе файл останется доступен по прежней ссылке.`;
   }
 
   const { error: delErr } = await supabase.from("entries").delete().eq("id", args.id);
   if (delErr) return `Ошибка удаления: ${delErr.message}`;
 
-  return `✅ Запись удалена${fileUrl ? " вместе с файлом из Storage" : ""}.`;
+  return `✅ Запись удалена${removal.status === "removed" ? " вместе с файлом из Storage" : ""}.`;
 }
 
 async function toolUpdateEntry(args: { id: string; content?: string; summary?: string; title?: string; entry_date?: string; countries?: string[]; file_content_base64?: string; file_name?: string; requesting_user_id?: number }): Promise<string> {
@@ -771,13 +775,12 @@ async function toolUpdateEntry(args: { id: string; content?: string; summary?: s
     const oldFileUrl = oldMeta.file_url as string | undefined;
 
     if (oldFileUrl) {
-      try {
-        const url = new URL(oldFileUrl);
-        const pathParts = url.pathname.split("/object/public/swarm_drive/");
-        if (pathParts.length > 1) {
-          await supabase.storage.from("swarm_drive").remove([decodeURIComponent(pathParts[1])]);
-        }
-      } catch { /* ignore */ }
+      const oldRemoval = await removeStorageObject(supabase, oldFileUrl);
+      // Прежний объект остался — не заливаем новый поверх: иначе старый файл живёт в
+      // хранилище без ссылки на него, невидимый и неудаляемый.
+      if (oldRemoval.status === "failed") {
+        return `Файл не заменён: прежний не удалось убрать из Storage (${oldRemoval.error}).`;
+      }
     }
 
     const mimeType = mimeFromExtension(args.file_name);
@@ -799,7 +802,7 @@ async function toolUpdateEntry(args: { id: string; content?: string; summary?: s
     if (updErr) return `Ошибка обновления метаданных файла: ${updErr.message}`;
 
     const sizeKb = Math.round(uploadResult.fileSizeBytes / 1024);
-    return `✅ Файл заменён: ${args.file_name} (${sizeKb} KB)\n📎 ${uploadResult.publicUrl}`;
+    return `✅ Файл заменён: ${args.file_name} (${sizeKb} KB)\n📎 ${absoluteFileUrl(uploadResult.path, WEB_BASE_URL)}`;
   }
 
   const updates: Record<string, unknown> = {};

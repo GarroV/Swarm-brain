@@ -1,10 +1,12 @@
 import { assertEquals } from "jsr:@std/assert@1";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   storagePathFromLink,
   webFileUrl,
   absoluteFileUrl,
   normalizeFileLink,
   withNormalizedFileLink,
+  removeStorageObject,
 } from "./storage-links.ts";
 
 const PUBLIC_DRIVE =
@@ -176,4 +178,80 @@ Deno.test("withNormalizedFileLink: с базой — абсолютная ссы
     (out.metadata as Record<string, unknown>).file_url,
     "https://swarm-brain.pages.dev/api/file/uploads/2026-09-05_%D0%BE%D1%82%D1%87%D1%91%D1%82.pdf",
   );
+});
+
+// ── removeStorageObject: единственное место, где файл записи удаляется ────────
+
+// Mock: реестр (storage_files) + storage.remove с записью вызовов и настраиваемой ошибкой.
+function makeStorage(opts: { registry?: unknown; removeError?: string } = {}) {
+  const calls: { removed: Array<{ bucket: string; paths: string[] }>; registryDeleted: string[] } = {
+    removed: [],
+    registryDeleted: [],
+  };
+  const tableBuilder: Record<string, unknown> = {};
+  let pendingDelete = false;
+  tableBuilder.select = () => tableBuilder;
+  tableBuilder.delete = () => { pendingDelete = true; return tableBuilder; };
+  tableBuilder.eq = (_col: string, val: string) => {
+    if (pendingDelete) { calls.registryDeleted.push(val); pendingDelete = false; }
+    return tableBuilder;
+  };
+  tableBuilder.maybeSingle = () => Promise.resolve({ data: opts.registry ?? null });
+
+  const client = {
+    from: () => tableBuilder,
+    storage: {
+      from: (bucket: string) => ({
+        remove: (paths: string[]) => {
+          calls.removed.push({ bucket, paths });
+          return Promise.resolve({ error: opts.removeError ? { message: opts.removeError } : null });
+        },
+      }),
+    },
+  } as unknown as SupabaseClient;
+  return { client, calls };
+}
+
+Deno.test("removeStorageObject: не наш файл → no-file, в хранилище не лезем", async () => {
+  const { client, calls } = makeStorage();
+  const res = await removeStorageObject(client, "https://drive.google.com/file/d/1/view");
+  assertEquals(res.status, "no-file");
+  assertEquals(calls.removed.length, 0);
+});
+
+Deno.test("removeStorageObject: нет строки реестра → старый бакет swarm_drive", async () => {
+  const { client, calls } = makeStorage({ registry: null });
+  const res = await removeStorageObject(client, PUBLIC_DRIVE);
+  assertEquals(res.status, "removed");
+  assertEquals(calls.removed[0].bucket, "swarm_drive");
+  assertEquals(calls.removed[0].paths, ["uploads/2026-09-05_отчёт.pdf"]);
+});
+
+Deno.test("removeStorageObject: бакет берётся из реестра, строка реестра снимается", async () => {
+  const { client, calls } = makeStorage({
+    registry: { bucket: "swarm_private" },
+  });
+  const res = await removeStorageObject(client, "uploads/x.pdf");
+  assertEquals(res.status, "removed");
+  assertEquals(calls.removed[0].bucket, "swarm_private");
+  assertEquals(calls.registryDeleted, ["uploads/x.pdf"]);
+});
+
+Deno.test("removeStorageObject: ошибка удаления → failed, реестр не трогаем", async () => {
+  // Файл остался в хранилище — строка реестра должна остаться его следом,
+  // иначе объект теряет владельца и становится неудаляемым мусором.
+  const { client, calls } = makeStorage({ registry: { bucket: "swarm_private" }, removeError: "boom" });
+  const res = await removeStorageObject(client, "uploads/x.pdf");
+  assertEquals(res.status, "failed");
+  assertEquals(res.error, "boom");
+  assertEquals(calls.registryDeleted, []);
+});
+
+Deno.test("removeStorageObject: percent-encoded имя удаляется декодированным", async () => {
+  const { client, calls } = makeStorage();
+  await removeStorageObject(
+    client,
+    "https://x.supabase.co/storage/v1/object/public/swarm_drive/uploads/a%20b.pdf",
+  );
+  assertEquals(calls.removed[0].paths, ["uploads/a b.pdf"]);
 });

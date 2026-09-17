@@ -46,7 +46,7 @@ import { extractEntryMeta, applyGeneralSentinel, marketTagsFromInput, buildEmbed
 import { pickSuggestedMarkets } from "../_shared/market-suggest.ts";
 import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { getFileSecure, FileAccessError } from "./file-access.ts";
-import { storagePathFromLink, withNormalizedFileLink } from "../_shared/storage-links.ts";
+import { removeStorageObject, withNormalizedFileLink } from "../_shared/storage-links.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
@@ -1204,21 +1204,10 @@ Deno.serve(async (req: Request) => {
         const entry = await getEntrySecure(supabase, entryId, { groupId, telegramId: telegram_id, requireOwner: true });
         const fileUrl = (entry.metadata as Record<string, unknown>)?.file_url as string | undefined;
         if (fileUrl) {
-          // Путь разбираем общим хелпером, а не split("/swarm_drive/"): имя бакета в ссылке
-          // больше не одно (старые файлы — swarm_drive, новые — swarm_private), и percent-
-          // encoding в имени раньше приводил к remove() по несуществующему ключу — удаление
-          // молча не удаляло, файл оставался доступен по прежней ссылке.
-          const path = storagePathFromLink(fileUrl);
-          if (path) {
-            const { data: reg } = await supabase
-              .from("storage_files").select("bucket").eq("path", path).maybeSingle();
-            const bucket = (reg as { bucket?: string } | null)?.bucket ?? "swarm_drive";
-            const { error: rmErr } = await supabase.storage.from(bucket).remove([path]);
-            // Объект не удалён — запись НЕ трогаем: иначе файл останется в хранилище без
-            // владельца, то есть навсегда и без следов (тихая утечка вместо ошибки).
-            if (rmErr) return apiErr(500, `File delete failed: ${rmErr.message}`, origin);
-            await supabase.from("storage_files").delete().eq("path", path);
-          }
+          const removal = await removeStorageObject(supabase, fileUrl);
+          // Объект не удалён — запись НЕ трогаем: иначе файл остался бы в хранилище без
+          // владельца, то есть навсегда и по прежней ссылке.
+          if (removal.status === "failed") return apiErr(500, `File delete failed: ${removal.error}`, origin);
         }
         await supabase.from("entries").delete().eq("id", entry.id);
         return new Response(null, { status: 204, headers: corsHeaders(origin) });

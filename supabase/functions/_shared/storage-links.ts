@@ -13,6 +13,12 @@
 // ВАЖНО про бота: Telegram качает файл сам, без нашей сессии, поэтому боту эта ссылка не годится —
 // он генерит signed URL напрямую. См. swarm-bot/lib/storage.ts.
 
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+// Бакет, куда файлы клались до перехода на приватный: строки реестра для них могут
+// отсутствовать (они старше реестра), поэтому он же и запасной вариант при удалении.
+export const LEGACY_PUBLIC_BUCKET = "swarm_drive";
+
 // Префикс веб-маршрута. Веб ходит в API через same-origin прокси Cloudflare Pages (/api/* →
 // swarm-api), поэтому ссылка относительная: сессионная cookie доезжает, CORS не участвует.
 export const API_FILE_PREFIX = "/api/file/";
@@ -127,4 +133,44 @@ export function withNormalizedFileLink<T extends Record<string, unknown>>(
   if (!normalized || normalized === current) return row;
 
   return { ...row, metadata: { ...(meta as Record<string, unknown>), file_url: normalized } } as T;
+}
+
+export type RemoveResult = {
+  status: "removed" | "no-file" | "failed";
+  path?: string;
+  bucket?: string;
+  error?: string;
+};
+
+/**
+ * Удаляет объект записи из хранилища и снимает его строку реестра.
+ *
+ * Единственное место, где это делается: раньше каждый вызывающий сам резал путь строкой
+ * («split("/swarm_drive/")», «split("/object/public/swarm_drive/")»), и оба варианта
+ * сломались бы о второй бакет и о percent-encoded имя — remove() уходил по несуществующему
+ * ключу, ошибки не возвращал, а человеку сообщалось «удалено вместе с файлом».
+ *
+ * Ошибку НЕ проглатывает: вызывающий обязан решить, что сказать. Строку реестра снимаем
+ * только после фактического удаления объекта — иначе файл остаётся в хранилище без
+ * владельца, то есть навсегда и без следов.
+ */
+export async function removeStorageObject(
+  supabase: SupabaseClient,
+  link: unknown,
+): Promise<RemoveResult> {
+  const path = storagePathFromLink(link);
+  if (!path) return { status: "no-file" };
+
+  const { data: reg } = await supabase
+    .from("storage_files")
+    .select("bucket")
+    .eq("path", path)
+    .maybeSingle();
+  const bucket = (reg as { bucket?: string } | null)?.bucket ?? LEGACY_PUBLIC_BUCKET;
+
+  const { error } = await supabase.storage.from(bucket).remove([path]);
+  if (error) return { status: "failed", error: error.message, path, bucket };
+
+  await supabase.from("storage_files").delete().eq("path", path);
+  return { status: "removed", path, bucket };
 }
