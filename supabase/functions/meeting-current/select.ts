@@ -87,9 +87,7 @@ export function pickCurrentEvent(
   nowMs: number,
 ): GEvent | null {
   const cand = items.filter(isCandidate);
-  const ongoing = cand.filter((e) =>
-    startMs(e) <= nowMs && nowMs <= Date.parse(e.end!.dateTime!)
-  );
+  const ongoing = cand.filter((e) => startMs(e) <= nowMs && nowMs <= Date.parse(e.end!.dateTime!));
   if (ongoing.length) return ongoing.slice().sort(betterFirst)[0];
   const upcoming = cand
     .filter((e) => startMs(e) > nowMs)
