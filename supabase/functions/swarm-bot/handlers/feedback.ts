@@ -1,7 +1,7 @@
 import { supabase } from "../lib/supabase.ts";
 import { removeStorageObject } from "../../_shared/storage-links.ts";
 import { sendMessage, sendInlineMessage, getTelegramFileUrl } from "../lib/telegram.ts";
-import { uploadToStorage, setSession, clearSession, getSession } from "../lib/storage.ts";
+import { uploadToStorage, setSession, clearSession, getSession, registerFeedbackFile, discardOrphanFile } from "../lib/storage.ts";
 import {
   FEEDBACK_CATEGORIES,
   feedbackCategoryLabel,
@@ -65,15 +65,21 @@ async function postToChannel(
   }
 }
 
-/** Скачать фото из Telegram и переложить в swarm_drive → durable public URL. */
+/** Скачать фото из Telegram и переложить в приватный бакет → путь (показ только админу). */
 async function screenshotToStorage(photoFileId: string): Promise<string | undefined> {
   try {
     const tgUrl = await getTelegramFileUrl(photoFileId);
     const res = await fetch(tgUrl);
     if (!res.ok) return undefined;
     const buffer = await res.arrayBuffer();
-    const { url } = await uploadToStorage("feedback.jpg", buffer, "image/jpeg", "feedback");
-    return url ?? undefined;
+    const { path } = await uploadToStorage("feedback.jpg", buffer, "image/jpeg", "feedback");
+    if (!path) return undefined;
+    // Незарегистрированный скрин не отдаст ни один эндпоинт — такой файл только занимает место.
+    if (await registerFeedbackFile(path)) {
+      await discardOrphanFile(path);
+      return undefined;
+    }
+    return path;
   } catch {
     return undefined; // скрин — не критично; фидбек сохраняем и без него
   }
@@ -196,7 +202,7 @@ export async function handleFeedbackPhoto(
 
 /**
  * Retention: удалить давно закрытый фидбек (done/wontfix старше N дней) вместе со
- * скринами в swarm_drive. Незакрытый (new/triaged) НЕ трогаем. Дёргается pg_cron
+ * скринами в приватном бакете. Незакрытый (new/triaged) НЕ трогаем. Дёргается pg_cron
  * через {feedback_retention_cron:true}. Возвращает число удалённых строк.
  */
 const FEEDBACK_RETENTION_DAYS = 90;
