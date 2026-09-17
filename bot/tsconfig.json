@@ -11,6 +11,9 @@
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
+    // Node 24 в контейнере исполняет TypeScript напрямую (снятие типов), а ESM требует
+    // указывать расширение в импорте буквально — поэтому импорты пишутся как "./x.ts".
+    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "skipLibCheck": true,
