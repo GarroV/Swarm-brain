@@ -17,11 +17,21 @@ export interface GEvent {
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
   location?: string;
+  description?: string;
   hangoutLink?: string;
-  conferenceData?: { entryPoints?: Array<{ entryPointType?: string; uri?: string }> };
+  conferenceData?: {
+    entryPoints?: Array<{ entryPointType?: string; uri?: string }>;
+  };
   organizer?: { self?: boolean };
   creator?: { self?: boolean };
-  attendees?: Array<{ displayName?: string; email?: string; self?: boolean; responseStatus?: string }>;
+  attendees?: Array<
+    {
+      displayName?: string;
+      email?: string;
+      self?: boolean;
+      responseStatus?: string;
+    }
+  >;
 }
 
 // Балл события: выше = вероятнее «та самая» встреча. Сигналы язык-независимы и не требуют доп. API.
@@ -38,7 +48,7 @@ export function eventScore(e: GEvent): number {
     case "declined":
       s -= 3;
       break;
-    // needsAction / нет attendees → 0 (нейтрально: часто ходишь без RSVP)
+      // needsAction / нет attendees → 0 (нейтрально: часто ходишь без RSVP)
   }
   if (e.organizer?.self || e.creator?.self) s += 2;
   return s;
@@ -72,9 +82,14 @@ function isCandidate(e: GEvent): boolean {
 
 // Выбирает событие: сперва лучшее из ИДУЩИХ сейчас (по скорингу), иначе ближайшее предстоящее
 // (для упреждающего уведомления). null — если кандидатов нет.
-export function pickCurrentEvent(items: GEvent[], nowMs: number): GEvent | null {
+export function pickCurrentEvent(
+  items: GEvent[],
+  nowMs: number,
+): GEvent | null {
   const cand = items.filter(isCandidate);
-  const ongoing = cand.filter((e) => startMs(e) <= nowMs && nowMs <= Date.parse(e.end!.dateTime!));
+  const ongoing = cand.filter((e) =>
+    startMs(e) <= nowMs && nowMs <= Date.parse(e.end!.dateTime!)
+  );
   if (ongoing.length) return ongoing.slice().sort(betterFirst)[0];
   const upcoming = cand
     .filter((e) => startMs(e) > nowMs)
