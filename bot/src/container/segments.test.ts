@@ -94,6 +94,23 @@ describe("buildRecordArguments", () => {
     expect(withList).toContain("/out/parts.csv");
   });
 
+  it("ограничение по времени записи попадает в аргументы, когда его задали", () => {
+    const limited = buildRecordArguments({
+      monitorSource: "scriba.monitor",
+      outputPattern: "/out/part-%03d.m4a",
+      bitrateKbps: 32,
+      segmentSeconds: 3,
+      durationSeconds: 9,
+    });
+
+    expect(limited).toContain("-t");
+    expect(limited[limited.indexOf("-t") + 1]).toBe("9");
+  });
+
+  it("без ограничения по времени -t не появляется: запись идёт до остановки", () => {
+    expect(argv).not.toContain("-t");
+  });
+
   it("нецелая длина сегмента — отказ: ffmpeg молча округлит и части разъедутся", () => {
     expect(() =>
       buildRecordArguments({

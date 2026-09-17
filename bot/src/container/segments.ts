@@ -39,6 +39,11 @@ export interface RecordArgumentsInput {
   readonly bitrateKbps: number;
   readonly segmentSeconds: number;
   /**
+   * Сколько секунд писать; без него запись идёт до остановки процесса — так пишется встреча.
+   * Ограничение нужно смоуку, которому надо закончить самому.
+   */
+  readonly durationSeconds?: number;
+  /**
    * Куда сложить список частей со смещениями; без него список не пишется.
    */
   readonly segmentListPath?: string;
@@ -95,6 +100,8 @@ export function buildRecordArguments(input: RecordArgumentsInput): string[] {
       ? []
       : ["-segment_list", input.segmentListPath, "-segment_list_type", "csv"];
 
+  const duration = input.durationSeconds === undefined ? [] : ["-t", String(input.durationSeconds)];
+
   return [
     "-hide_banner",
     "-nostdin",
@@ -104,6 +111,7 @@ export function buildRecordArguments(input: RecordArgumentsInput): string[] {
     "pulse",
     "-i",
     input.monitorSource,
+    ...duration,
     // Одна сведённая дорожка: кто говорит, приносит адаптер площадки таймлайном (решение D008).
     "-ac",
     String(input.channels ?? 1),
