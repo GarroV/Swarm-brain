@@ -9,7 +9,7 @@
 Работы меньше, чем кажется: модель уже есть — `Segment { start, end, text, speaker? }` хранит
 говорящего по интервалу, а имя вычисляется ровно в одной строке сборки.
 
-## Контракт
+## API-контракт
 
 ```jsonc
 // поле speakers формы meeting-ingest — НЕОБЯЗАТЕЛЬНОЕ
@@ -30,7 +30,7 @@ export function nameAt(timeline: SpeakerSpan[], start: number, end: number): str
 `identity` (бот должен уметь аутентифицироваться, прежде чем что-то слать). Внешнее: существующие
 `meeting-ingest`, `_shared/meeting-processor.ts`.
 
-## Готовность блока
+## Definition of Done блока
 
 | этап | пункт |
 | --- | --- |

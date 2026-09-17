@@ -9,7 +9,7 @@
 Эталон поведения — `bumblebee`: его `SwarmClient.swift` и `UploadQueue.swift` (818 строк чистого
 протокола) переписываются на TypeScript. Переносится **контракт, а не код**.
 
-## Контракт
+## API-контракт
 
 Потребляет: `GET /meeting-current`, `POST /meeting-claim`, `POST /meeting-ingest`,
 `POST /meeting-heartbeat`, `GET /meeting-status`.
@@ -33,7 +33,7 @@ export interface RecordingSession {
 `identity` (токен и подмена личности), `ingest-speakers` (формат таймлайна), `meet-adapter`
 (источник активного говорящего).
 
-## Готовность блока
+## Definition of Done блока
 
 | этап | пункт |
 | --- | --- |

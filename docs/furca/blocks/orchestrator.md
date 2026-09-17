@@ -7,7 +7,7 @@
 
 Для MVP достаточно ручного запуска по ссылке; автозапуск по календарю — следующий этап.
 
-## Контракт
+## API-контракт
 
 ```ts
 export async function startForMeeting(joinUrl: string, platform: Platform, onBehalfOf: number): Promise<ContainerId>;
@@ -22,7 +22,7 @@ export async function stop(id: ContainerId): Promise<void>;
 `container` (что поднимать), `swarm-client` (чем ходить на сервер), `conference-link` (откуда берётся
 ссылка и площадка).
 
-## Готовность блока
+## Definition of Done блока
 
 | этап | пункт |
 | --- | --- |

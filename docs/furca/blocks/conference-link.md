@@ -6,7 +6,7 @@
 дополняет её тем, чего не хватает боту: какая это площадка и почему ссылки нет, если её нет.
 Маленький блок с большим эффектом — он же закрывает часть запланированной Фазы B room-match.
 
-## Контракт
+## API-контракт
 
 ```ts
 // meeting-current/join-link.ts
@@ -25,7 +25,7 @@ export function conferencePlatform(url: string): "meet" | "kontur" | "zoom" | nu
 
 Продуктовых нет. Внешнее: существующие `meeting-current/index.ts`, `join-link.ts` и его тесты.
 
-## Готовность блока
+## Definition of Done блока
 
 | этап | пункт |
 | --- | --- |
@@ -33,7 +33,7 @@ export function conferencePlatform(url: string): "meet" | "kontur" | "zoom" | nu
 | 1 | `conferencePlatform` покрыта тестами: все три площадки, мусор, неизвестный хост → `null` |
 | 1 | ссылки нет → в ответе `reason: "no_conference_link"`, а не молчаливый `null` |
 | 1 | существующие тесты `join-link.test.ts` зелёные — поведение `join_url` не изменилось |
-| 2 | ключ комнаты `zoom:<id>` заведён на сервере и в рекордере одновременно |
+| 4 | ключ комнаты `zoom:<id>` заведён на сервере и в рекордере одновременно |
 
 ## Статус
 
