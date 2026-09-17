@@ -75,8 +75,12 @@ if [[ "$scope" == "all" || "$scope" == "server" ]]; then
     # Портируемо, без mapfile: на macOS системный bash — 3.2, а mapfile появился в 4.0.
     # Проверено порчей: с mapfile список молча оставался пустым, и прогон выходил ЗЕЛЁНЫМ.
     touched_list="$(
-      { base="$(git merge-base origin/main HEAD 2>/dev/null || true)"
-        [ -n "$base" ] && git diff --name-only --diff-filter=ACMR "$base"...HEAD -- 'supabase/functions/*.ts'
+      { base="$(grep -v '^#' .scriba-build-base 2>/dev/null | tr -d '[:space:]')"
+        if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+          git diff --name-only --diff-filter=ACMR "$base"...HEAD -- 'supabase/functions/*.ts'
+        elif [ -n "$base" ]; then
+          echo "БАЗА НЕ НАЙДЕНА: $base" >&2
+        fi
         git diff --name-only --diff-filter=ACMR -- 'supabase/functions/*.ts'
         git diff --name-only --diff-filter=ACMR --cached -- 'supabase/functions/*.ts'
         # Новые файлы ещё не в индексе, а блоки создают именно их. Без этой строки
