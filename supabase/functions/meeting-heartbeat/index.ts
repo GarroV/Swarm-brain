@@ -1,3 +1,5 @@
+// deno-lint-ignore-file no-import-prefix -- edge-функции Swarm деплоятся с URL-импортами (так во
+// ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 // Heartbeat рекордера. Рекордер раз в ~15 мин (maintenanceTick) шлёт «я жив» + статус записи +
 // версию. Пишет allowed_users.recorder_last_{seen,recording,version}. Watchdog checkRecorderHealth
 // (swarm-bot) читает эти поля для двух сигналов: «оборванная запись» и «токен истекает».
@@ -11,43 +13,53 @@
 // Пока звонок идёт, рекордер шлёт keep-alive чаще (2 мин) — панель считает присутствие живым
 // пять минут, дальше гасит.
 //
-// Auth: verifyAgentToken принимает recorder_token_hash ИЛИ claude_mcp_token_hash (см. _shared/agent-auth).
+// Auth: resolveActingIdentity принимает recorder_token_hash ИЛИ claude_mcp_token_hash человека
+// (см. _shared/agent-auth), а также токен служебного агента с заголовком X-On-Behalf-Of.
+// Heartbeat агента при этом ложится в ЕГО строку service_agents, а не в строку человека:
+// иначе watchdog решил бы, что у человека работает рекордер, и погасил бы настоящий сигнал.
 // Деплой: supabase functions deploy meeting-heartbeat --no-verify-jwt (рекордер хитит с Bearer-токеном).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyAgentToken, AgentAuthError } from "../_shared/agent-auth.ts";
+import {
+  AgentAuthError,
+  resolveActingIdentity,
+} from "../_shared/agent-auth.ts";
+import { buildHeartbeatWrite, type HeartbeatBody } from "./write.ts";
 
-const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+const supabase = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+);
 
 function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 Deno.serve(async (req: Request) => {
   let identity;
   try {
-    identity = await verifyAgentToken(supabase, req);
+    identity = await resolveActingIdentity(supabase, req);
   } catch (e) {
-    if (e instanceof AgentAuthError) return json({ error: e.message }, 401);
+    if (e instanceof AgentAuthError) {
+      return json({ error: e.message }, e.status);
+    }
     throw e;
   }
 
-  let body: { recording?: unknown; version?: unknown; on_call?: unknown; meeting_key?: unknown };
-  try { body = await req.json(); } catch { body = {}; }
-  const recording = body.recording === true;
-  const version = typeof body.version === "number" ? body.version : null;
-  const onCall = body.on_call === true;
-  const rawKey = typeof body.meeting_key === "string" ? body.meeting_key.trim() : "";
-  // Ключ держим только пока человек в звонке (или мы пишем). Иначе он завис бы после
-  // созвона и панель показывала бы ON AIR на давно закончившейся встрече.
-  const meetingKey = (onCall || recording) && rawKey ? rawKey : null;
+  let body: HeartbeatBody;
+  try {
+    body = await req.json();
+  } catch {
+    body = {};
+  }
 
-  const { error } = await supabase.from("allowed_users").update({
-    recorder_last_seen: new Date().toISOString(),
-    recorder_last_recording: recording,
-    recorder_last_version: version,
-    recorder_last_on_call: onCall,
-    recorder_last_meeting_key: meetingKey,
-  }).eq("telegram_id", identity.telegramId);
+  const write = buildHeartbeatWrite(identity, body, new Date().toISOString());
+  const { error } = await supabase
+    .from(write.table)
+    .update(write.patch)
+    .eq(write.matchColumn, write.matchValue);
   if (error) return json({ error: "update failed" }, 500);
   return json({ ok: true });
 });
