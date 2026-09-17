@@ -7,25 +7,25 @@
 |---|---|---|---|---|---|---|
 | T001 | chores | — | todo | Вернуть доступ к прод-базе: выяснить, почему отказывают и MCP-коннектор, и CLI; добиться успешного запроса к проду | #323 | 1 |
 | T002 | chores | — | done | Поставить `scripts/check`, `scripts/gate-coverage.sh`, `.githooks/pre-push`, карантин версий в `bot/.npmrc`; прогнать на испорченной копии и убедиться, что краснеет | #324 | 1 |
-| T010 | identity | — | todo | Миграция: таблица служебных агентов с токеном бота; накат только добавлением и обратим | #325 | 1 |
-| T011 | identity | T010 | todo | `kind` в `AgentIdentity`; `classifyToken` распознаёт токен бота; тесты на все виды токенов | #326 | 1 |
-| T012 | identity | T011 | todo | `resolveActingIdentity`: подмена личности один раз на входе, на выходе — человек | #327 | 1 |
-| T013 | identity | T012 | todo | `meeting-claim`, `meeting-ingest`, `meeting-heartbeat` переведены на `resolveActingIdentity` | #328 | 1 |
-| T014 | identity | T013 | todo | Блокирующие тесты: recorder не может `on_behalf_of`; бот не может указать чужой воркспейс; токен бота без `on_behalf_of` не даёт прав | #329 | 1 |
-| T015 | identity | T014 | todo | Регресс: `bumblebee` прогнан после правок эндпоинтов и работает как раньше | #330 | 1 |
-| T020 | conference-link | — | todo | `description` добавлен четвёртым источником ссылки, тест на него зелёный | #331 | 1 |
-| T021 | conference-link | — | todo | `conferencePlatform` по хосту; тесты на три площадки, мусор и неизвестный хост | #332 | 1 |
-| T022 | conference-link | T021 | todo | Ссылки нет → в ответе `reason: "no_conference_link"`, а не молчаливый `null` | #333 | 1 |
+| T010 | identity | — | in_progress | Миграция: таблица служебных агентов с токеном бота; накат только добавлением и обратим | #325 | 1 |
+| T011 | identity | T010 | in_progress | `kind` в `AgentIdentity`; `classifyToken` распознаёт токен бота; тесты на все виды токенов | #326 | 1 |
+| T012 | identity | T011 | in_progress | `resolveActingIdentity`: подмена личности один раз на входе, на выходе — человек | #327 | 1 |
+| T013 | identity | T012 | in_progress | `meeting-claim`, `meeting-ingest`, `meeting-heartbeat` переведены на `resolveActingIdentity` | #328 | 1 |
+| T014 | identity | T013 | in_progress | Блокирующие тесты: recorder не может `on_behalf_of`; бот не может указать чужой воркспейс; токен бота без `on_behalf_of` не даёт прав | #329 | 1 |
+| T015 | identity | T014 | in_progress | Регресс: `bumblebee` прогнан после правок эндпоинтов и работает как раньше | #330 | 1 |
+| T020 | conference-link | — | in_progress | `description` добавлен четвёртым источником ссылки, тест на него зелёный | #331 | 1 |
+| T021 | conference-link | — | in_progress | `conferencePlatform` по хосту; тесты на три площадки, мусор и неизвестный хост | #332 | 1 |
+| T022 | conference-link | T021 | in_progress | Ссылки нет → в ответе `reason: "no_conference_link"`, а не молчаливый `null` | #333 | 1 |
 | T030 | ingest-speakers | T012 | todo | `meeting-ingest` принимает поле `speakers`; мусор отвергается внятной ошибкой на границе | #334 | 1 |
 | T031 | ingest-speakers | — | todo | Чистая функция `nameAt`: тесты на перекрытия, дыры, пустой таймлайн, несовпадение времён | #335 | 1 |
 | T032 | ingest-speakers | T030,T031 | todo | Имена подставляются в `Segment.speaker`; мягкая деградация без таймлайна проверена тестом | #336 | 1 |
 | T033 | ingest-speakers | T032 | todo | Легенда говорящих в промпте тезисов согласована: не обещает «я», которого в стенограмме нет | #337 | 1 |
-| T040 | container | — | todo | Dockerfile: playwright-образ + Xvfb + PulseAudio + ffmpeg; контейнер поднимается и гасится | #338 | 1 |
-| T041 | container | T040 | todo | PulseAudio null-sink: `XDG_RUNTIME_DIR`, `set-default-sink`, monitor-source проверяется при старте | #339 | 1 |
-| T042 | container | T041 | todo | Chromium стартует с `ignoreDefaultArgs: ['--mute-audio']`; звук реально попадает в sink | #340 | 1 |
-| T043 | container | T042 | todo | Смоук записи звука падает на тишине и внятно говорит почему; прогнан на испорченной копии, порча подтверждена | #341 | 1 |
-| T044 | container | T042 | todo | Нарезка ffmpeg по `segment_time` под лимит 25 МБ; каждая часть открывается самостоятельно | #342 | 1 |
-| T045 | container | T040 | todo | Два контейнера одновременно не слышат друг друга (проверено запуском двух) | #343 | 1 |
+| T040 | container | — | in_progress | Dockerfile: playwright-образ + Xvfb + PulseAudio + ffmpeg; контейнер поднимается и гасится | #338 | 1 |
+| T041 | container | T040 | in_progress | PulseAudio null-sink: `XDG_RUNTIME_DIR`, `set-default-sink`, monitor-source проверяется при старте | #339 | 1 |
+| T042 | container | T041 | in_progress | Chromium стартует с `ignoreDefaultArgs: ['--mute-audio']`; звук реально попадает в sink | #340 | 1 |
+| T043 | container | T042 | in_progress | Смоук записи звука падает на тишине и внятно говорит почему; прогнан на испорченной копии, порча подтверждена | #341 | 1 |
+| T044 | container | T042 | in_progress | Нарезка ffmpeg по `segment_time` под лимит 25 МБ; каждая часть открывается самостоятельно | #342 | 1 |
+| T045 | container | T040 | in_progress | Два контейнера одновременно не слышат друг друга (проверено запуском двух) | #343 | 1 |
 | T050 | meet-adapter | T042 | todo | `join`: вход по ссылке с вводом имени `scriba`; локаль запиннена `?hl=en` + `--lang=en-US` | #344 | 1 |
 | T051 | meet-adapter | T050 | todo | `waitAdmitted` различает admitted / denied / timeout / captcha; каждый исход проверен вживую | #345 | 1 |
 | T052 | meet-adapter | T050 | todo | `activeSpeaker` возвращает имя говорящего; селекторы по `aria-label`/`role`, не по классам | #346 | 1 |
