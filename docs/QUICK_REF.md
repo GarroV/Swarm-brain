@@ -41,6 +41,21 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 
 > **`--no-verify-jwt` теперь ЗАКРЕПЛЁН в `supabase/config.toml`** (`[functions.<name>] verify_jwt = false` для всех 15 функций). Флаг в командах выше — подстраховка, конфиг и так делает функции публичными на шлюзе. **Не ставь `verify_jwt = true`** ни одной функции: рекордер/вебхуки/бот шлют не-JWT `Bearer`-токены и делают свою авторизацию в коде → шлюз с verify_jwt отобьёт их 401 `INVALID_JWT_FORMAT` ещё до функции (так в 2026-06-30 молча падали ВСЕ загрузки рекордера — разбор в BACKLOG).
 
+### Доступ к прод-базе из Claude Code (только чтение)
+
+MCP-сервер Supabase подключается **в local scope одной командой**, а не через `.mcp.json` в репозитории — тот удалён 17.09.2026 ([#317](https://github.com/GarroV/Swarm-brain/issues/317)), т.к. project-scoped сервер требует одобрения диалогом и без него молча не подключается.
+
+```bash
+claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
+  --project-ref=vbqglndbxkpmreccpqmr --read-only
+```
+
+- **Токен не передаётся флагом.** Сервер читает `SUPABASE_ACCESS_TOKEN` из окружения сессии (значение — в `.claude/settings.local.json`, папка целиком в `.gitignore`; записать — `.claude/set-supabase-token.sh`). Секрет в аргументах команды осел бы в истории shell, а в `.mcp.json` — в git публичного репозитория.
+- **Права PAT — только Read:** Project Settings, Advisors, Logs, Database, Migrations, Edge Functions. Роль ответа — `supabase_read_only_user`, записать нельзя by design; миграции катятся кнопкой в CI (см. выше). Таблица «MCP tool → Required permission» — в [доках Supabase](https://supabase.com/docs/guides/platform/personal-access-tokens).
+- ⚠️ **Доступ проверять ТОЛЬКО реальным запросом** (`execute_sql`). Две ловушки, каждая выглядит как рабочий доступ: `get_project_url` отвечает и без токена (собирает URL локально, в API не ходит), а неодобренный project-сервер не подключён, хотя инструменты `mcp__supabase__*` в сессии видны.
+- **Тот же доступ без MCP:** `POST https://api.supabase.com/v1/projects/<ref>/database/query` с `Authorization: Bearer $SUPABASE_ACCESS_TOKEN`, и `supabase` CLI — env перебивает keychain-логин, поэтому маршрут другого проекта (PROMUS) не ломается.
+- ⚠️ **worktree не наследует `.claude/`** — в нём нужна копия или symlink, иначе доступа там нет.
+
 ### Веб (miniapp) — Cloudflare Pages, АВТО (руками НЕ деплоить)
 
 > Проверено 2026-06-28 через CF API. Веб «Рой» выкатывается **сам** на каждый push в `main` — отдельный ручной шаг НЕ нужен (в отличие от edge-функций выше).
