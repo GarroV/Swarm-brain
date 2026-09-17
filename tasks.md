@@ -13,9 +13,9 @@
 | T013 | identity | T012 | in_progress | `meeting-claim`, `meeting-ingest`, `meeting-heartbeat` переведены на `resolveActingIdentity` | #328 | 1 |
 | T014 | identity | T013 | in_progress | Блокирующие тесты: recorder не может `on_behalf_of`; бот не может указать чужой воркспейс; токен бота без `on_behalf_of` не даёт прав | #329 | 1 |
 | T015 | identity | T014 | in_progress | Регресс: `bumblebee` прогнан после правок эндпоинтов и работает как раньше | #330 | 1 |
-| T020 | conference-link | — | in_progress | `description` добавлен четвёртым источником ссылки, тест на него зелёный | #331 | 1 |
-| T021 | conference-link | — | in_progress | `conferencePlatform` по хосту; тесты на три площадки, мусор и неизвестный хост | #332 | 1 |
-| T022 | conference-link | T021 | in_progress | Ссылки нет → в ответе `reason: "no_conference_link"`, а не молчаливый `null` | #333 | 1 |
+| T020 | conference-link | — | done | `description` добавлен четвёртым источником ссылки, тест на него зелёный | #331 | 1 |
+| T021 | conference-link | — | done | `conferencePlatform` по хосту; тесты на три площадки, мусор и неизвестный хост | #332 | 1 |
+| T022 | conference-link | T021 | done | Ссылки нет → в ответе `reason: "no_conference_link"`, а не молчаливый `null` | #333 | 1 |
 | T030 | ingest-speakers | T012 | todo | `meeting-ingest` принимает поле `speakers`; мусор отвергается внятной ошибкой на границе | #334 | 1 |
 | T031 | ingest-speakers | — | todo | Чистая функция `nameAt`: тесты на перекрытия, дыры, пустой таймлайн, несовпадение времён | #335 | 1 |
 | T032 | ingest-speakers | T030,T031 | todo | Имена подставляются в `Segment.speaker`; мягкая деградация без таймлайна проверена тестом | #336 | 1 |
