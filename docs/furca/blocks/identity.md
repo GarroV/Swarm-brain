@@ -54,12 +54,12 @@ export async function resolveActingIdentity(
 | задача | кто | чем проверено |
 | --- | --- | --- |
 | T010 миграция `service_agents` | myself | локальный контур: 68 миграций на чистой базе, 0 падений; повторный накат идемпотентен; `drop table` откатывает, 22 остальные таблицы живы; порча (`references public.workspaces_typo`) → накат красный, возврат копией |
-| T011 `kind` + `classifyToken` | myself | `./scripts/check server` |
-| T012 `resolveActingIdentity` | myself | `./scripts/check server` |
-| T013 три эндпоинта | myself | `./scripts/check server` + `deno check` |
-| T014 блокирующие тесты | myself | `./scripts/check server`, каждый прогнан порчей |
+| T011 `kind` + `classifyToken` | myself | 11 тестов классификатора, включая токен агента (истёкший, бессрочный, чужой хэш) |
+| T012 `resolveActingIdentity` | myself | 24 теста на поддельном Supabase; порча трёх guard'ов → красный, возврат копией |
+| T013 три эндпоинта | myself | `./scripts/check` зелёный (670 тестов, покрытие 87.17% против базы 85.21%); `deno check` по всем функциям |
+| T014 блокирующие тесты | myself | каждый прогнан порчей; один зеленел на снятой проверке и был переписан на причину отказа |
 | T015 регресс `bumblebee` | myself | контрактные тесты старого клиента |
 
 ## Статус
 
-in_progress · 2026-09-17 — T010 закрыта (миграция проверена на локальном контуре)
+in_progress · 2026-09-17 — T010–T014 закрыты, остался T015 (регресс bumblebee)

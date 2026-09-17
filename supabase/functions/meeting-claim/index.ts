@@ -1,7 +1,20 @@
+// deno-lint-ignore-file no-import-prefix -- edge-функции Swarm деплоятся с URL-импортами (так во
+// ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyAgentToken, AgentAuthError, type AgentIdentity } from "../_shared/agent-auth.ts";
-import { defaultMeetingTitle, displayNameOf } from "../_shared/meeting-title.ts";
-import { sameMeetingByRoster, scopeRoomKey, ROSTER_TOLERANCE_MIN } from "../_shared/meeting-roster.ts";
+import {
+  AgentAuthError,
+  type AgentIdentity,
+  resolveActingIdentity,
+} from "../_shared/agent-auth.ts";
+import {
+  defaultMeetingTitle,
+  displayNameOf,
+} from "../_shared/meeting-title.ts";
+import {
+  ROSTER_TOLERANCE_MIN,
+  sameMeetingByRoster,
+  scopeRoomKey,
+} from "../_shared/meeting-roster.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -25,15 +38,21 @@ const LEASE_TTL_SEC = 1800;
 // Перехват права более полной записью. Оба порога должны выполниться разом — чтобы почти
 // одинаковые записи (штатный случай: все стопнули в пределах минуты) не гоняли перетранскрибацию
 // туда-сюда, но провал вроде «3 минуты против 2.5 часов» закрывался гарантированно.
-const TAKEOVER_MIN_RATIO = 1.5;      // новая запись длиннее текущей минимум в полтора раза
-const TAKEOVER_MIN_EXTRA_SEC = 300;  // …и минимум на 5 минут в абсолюте
+const TAKEOVER_MIN_RATIO = 1.5; // новая запись длиннее текущей минимум в полтора раза
+const TAKEOVER_MIN_EXTRA_SEC = 300; // …и минимум на 5 минут в абсолюте
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 type IdentityKind = "calendar" | "room" | "manual";
 type ClaimDecision = "transcribe" | "defer";
-interface UserNote { ts: number; text: string }
-interface Attendee { name?: string; email?: string }
+interface UserNote {
+  ts: number;
+  text: string;
+}
+interface Attendee {
+  name?: string;
+  email?: string;
+}
 
 interface ClaimBody {
   identity_kind: IdentityKind;
@@ -66,18 +85,29 @@ function fail(message: string, status = 400): Response {
 async function getEmbedding(text: string): Promise<number[]> {
   const res = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-    body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "text-embedding-3-small",
+      input: text.slice(0, 8000),
+    }),
   });
   const data = await res.json();
   if (!res.ok) {
-    throw new Error((data as { error?: { message?: string } }).error?.message ?? "OpenAI error");
+    throw new Error(
+      (data as { error?: { message?: string } }).error?.message ??
+        "OpenAI error",
+    );
   }
   return (data as { data: Array<{ embedding: number[] }> }).data[0].embedding;
 }
 
 function validate(raw: unknown): ClaimBody {
-  if (typeof raw !== "object" || raw === null) throw new Error("body must be an object");
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("body must be an object");
+  }
   const b = raw as Record<string, unknown>;
 
   const kind = b.identity_kind;
@@ -90,10 +120,14 @@ function validate(raw: unknown): ClaimBody {
 
   let notes: UserNote[] | undefined;
   if (b.user_notes !== undefined) {
-    if (!Array.isArray(b.user_notes)) throw new Error("user_notes must be an array");
+    if (!Array.isArray(b.user_notes)) {
+      throw new Error("user_notes must be an array");
+    }
     notes = b.user_notes.map((n) => {
       const o = n as Record<string, unknown>;
-      if (typeof o.text !== "string") throw new Error("user_notes[].text must be a string");
+      if (typeof o.text !== "string") {
+        throw new Error("user_notes[].text must be a string");
+      }
       return { ts: typeof o.ts === "number" ? o.ts : 0, text: o.text };
     });
   }
@@ -106,12 +140,21 @@ function validate(raw: unknown): ClaimBody {
     started_at: typeof b.started_at === "string" ? b.started_at : undefined,
     ended_at: typeof b.ended_at === "string" ? b.ended_at : undefined,
     title: typeof b.title === "string" ? b.title : undefined,
-    attendees: Array.isArray(b.attendees) ? (b.attendees as Attendee[]) : undefined,
+    attendees: Array.isArray(b.attendees)
+      ? (b.attendees as Attendee[])
+      : undefined,
     user_notes: notes,
-    agent_version: typeof b.agent_version === "string" ? b.agent_version : undefined,
-    mic_start_offset: typeof micOffset === "number" && Number.isFinite(micOffset) ? micOffset : undefined,
+    agent_version: typeof b.agent_version === "string"
+      ? b.agent_version
+      : undefined,
+    mic_start_offset:
+      typeof micOffset === "number" && Number.isFinite(micOffset)
+        ? micOffset
+        : undefined,
     recorded_seconds:
-      typeof recSec === "number" && Number.isFinite(recSec) && recSec > 0 ? recSec : undefined,
+      typeof recSec === "number" && Number.isFinite(recSec) && recSec > 0
+        ? recSec
+        : undefined,
   };
 }
 
@@ -124,7 +167,12 @@ function formatTs(sec: number): string {
 
 // role=superseded — запись, у которой право транскрибации отобрала более полная (см. арбитраж).
 type RecorderRole = ClaimDecision | "superseded";
-interface RecorderEntry { telegram_id: number; claimed_at: string; role: RecorderRole; recorded_seconds?: number }
+interface RecorderEntry {
+  telegram_id: number;
+  claimed_at: string;
+  role: RecorderRole;
+  recorded_seconds?: number;
+}
 
 // Регистрируем записавшего в meetings.recorders. Read-modify-write: при низкой
 // одновременности достаточно; гонка двух одновременных claim'ов теоретически может
@@ -140,10 +188,15 @@ async function registerRecorder(
   recordedSeconds: number | undefined,
   supersedeOwner?: number | null,
 ): Promise<void> {
-  const { data } = await supabase.from("meetings").select("recorders").eq("id", meetingId).single();
-  const recorders = ((data as { recorders?: RecorderEntry[] } | null)?.recorders) ?? [];
+  const { data } = await supabase.from("meetings").select("recorders").eq(
+    "id",
+    meetingId,
+  ).single();
+  const recorders =
+    ((data as { recorders?: RecorderEntry[] } | null)?.recorders) ?? [];
   const next: RecorderEntry[] = recorders.map((r) =>
-    supersedeOwner != null && r.telegram_id === supersedeOwner && r.role === "transcribe"
+    supersedeOwner != null && r.telegram_id === supersedeOwner &&
+      r.role === "transcribe"
       ? { ...r, role: "superseded" as RecorderRole }
       : r
   );
@@ -151,19 +204,32 @@ async function registerRecorder(
     telegram_id: telegramId,
     claimed_at: nowIso,
     role,
-    ...(recordedSeconds !== undefined ? { recorded_seconds: recordedSeconds } : {}),
+    ...(recordedSeconds !== undefined
+      ? { recorded_seconds: recordedSeconds }
+      : {}),
   };
   const at = next.findIndex((r) => r.telegram_id === telegramId);
   if (at >= 0) next[at] = { ...next[at], ...mine };
   else next.push(mine);
-  await supabase.from("meetings").update({ recorders: next, updated_at: nowIso }).eq("id", meetingId);
+  await supabase.from("meetings").update({
+    recorders: next,
+    updated_at: nowIso,
+  }).eq("id", meetingId);
 }
 
 // Длительность записи, которая СЕЙЧАС лежит за встречей (сек). Для строк, заведённых старым
 // клиентом, recorded_seconds пуст — оцениваем по последнему таймстампу сохранённого транскрипта.
 // Это позволяет перехватить право у записи старой сборки, не дожидаясь обновления всей команды.
-function heldSeconds(row: { recorded_seconds?: number | null; transcript?: { segments?: Array<{ end?: number }> } | null }): number {
-  if (typeof row.recorded_seconds === "number" && Number.isFinite(row.recorded_seconds)) {
+function heldSeconds(
+  row: {
+    recorded_seconds?: number | null;
+    transcript?: { segments?: Array<{ end?: number }> } | null;
+  },
+): number {
+  if (
+    typeof row.recorded_seconds === "number" &&
+    Number.isFinite(row.recorded_seconds)
+  ) {
     return row.recorded_seconds;
   }
   const segs = row.transcript?.segments ?? [];
@@ -177,15 +243,21 @@ function heldSeconds(row: { recorded_seconds?: number | null; transcript?: { seg
 
 // Заметно ли претендент полнее того, что уже есть. Оба порога разом — см. константы.
 function isSubstantiallyLonger(candidate: number, held: number): boolean {
-  return candidate >= held * TAKEOVER_MIN_RATIO && candidate >= held + TAKEOVER_MIN_EXTRA_SEC;
+  return candidate >= held * TAKEOVER_MIN_RATIO &&
+    candidate >= held + TAKEOVER_MIN_EXTRA_SEC;
 }
 
 // E-mail участника по telegram_id — нужен, чтобы понять «а этот человек есть в списке участников
 // той встречи?». Единственный доступный серверу признак для записи из комнаты: у неё нет ни
 // названия, ни attendees, но сам записавший в календарном списке другой стороны присутствует.
-async function emailOfUser(telegramId: number | null | undefined): Promise<string | null> {
+async function emailOfUser(
+  telegramId: number | null | undefined,
+): Promise<string | null> {
   if (telegramId == null) return null;
-  const { data } = await supabase.from("allowed_users").select("email").eq("telegram_id", telegramId).maybeSingle();
+  const { data } = await supabase.from("allowed_users").select("email").eq(
+    "telegram_id",
+    telegramId,
+  ).maybeSingle();
   return ((data as { email?: string | null } | null)?.email ?? null);
 }
 
@@ -228,16 +300,24 @@ async function findMeetingByRoster(
 
   const { data } = await supabase
     .from("meetings")
-    .select("id, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at")
+    .select(
+      "id, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at",
+    )
     .eq("group_id", groupId)
     .gte("started_at", from)
     .lte("started_at", to)
     .order("created_at", { ascending: true })
     .limit(20);
-  const candidates = ((data ?? []) as RosterCandidate[]).filter((c) => c.identity_key !== scopedKey);
+  const candidates = ((data ?? []) as RosterCandidate[]).filter((c) =>
+    c.identity_key !== scopedKey
+  );
   if (candidates.length === 0) return null;
 
-  const incoming = { startedAt: body.started_at ?? null, attendees: body.attendees ?? [], ownerEmail: myEmail };
+  const incoming = {
+    startedAt: body.started_at ?? null,
+    attendees: body.attendees ?? [],
+    ownerEmail: myEmail,
+  };
   for (const c of candidates) {
     const candEmail = await emailOfUser(c.claim_owner);
     const verdict = sameMeetingByRoster(incoming, {
@@ -262,7 +342,13 @@ async function resolveExisting(
   identity: AgentIdentity,
   nowIso: string,
   leaseIso: string,
-): Promise<{ decision: ClaimDecision; supersededOwner: number | null; heldBy: number | null }> {
+): Promise<
+  {
+    decision: ClaimDecision;
+    supersededOwner: number | null;
+    heldBy: number | null;
+  }
+> {
   let heldBy = row.claim_owner;
 
   // (1) Свободна (никто не держит / лиз истёк и транскрипта нет) — занимаем.
@@ -280,14 +366,22 @@ async function resolveExisting(
     .or(`claim_owner.is.null,lease_expires_at.lt.${nowIso}`)
     .select("id")
     .maybeSingle();
-  if (claimed) return { decision: "transcribe", supersededOwner: null, heldBy: identity.telegramId };
+  if (claimed) {
+    return {
+      decision: "transcribe",
+      supersededOwner: null,
+      heldBy: identity.telegramId,
+    };
+  }
 
   // (2) Занята. Перехватываем, только если НАША запись заметно полнее — и не трогаем то, что
   // правил человек или уже опубликовали команде.
   const candidate = body.recorded_seconds ?? 0;
   const held = heldSeconds(row);
   const protectedRow = row.notes_edited_at !== null || row.status === "in_base";
-  if (!(candidate > 0 && !protectedRow && isSubstantiallyLonger(candidate, held))) {
+  if (
+    !(candidate > 0 && !protectedRow && isSubstantiallyLonger(candidate, held))
+  ) {
     return { decision: "defer", supersededOwner: null, heldBy };
   }
 
@@ -306,14 +400,18 @@ async function resolveExisting(
       last_progress_at: null,
     })
     .eq("id", row.id)
-    .eq("claim_owner", row.claim_owner)   // никто не перехватил, пока мы считали
+    .eq("claim_owner", row.claim_owner) // никто не перехватил, пока мы считали
     .select("id")
     .maybeSingle();
   if (!took) return { decision: "defer", supersededOwner: null, heldBy };
 
   heldBy = identity.telegramId;
   console.log(
-    `meeting-claim: перехват ${row.id} — ${Math.round(candidate)}с у ${identity.telegramId} против ${Math.round(held)}с у ${row.claim_owner}`,
+    `meeting-claim: перехват ${row.id} — ${
+      Math.round(candidate)
+    }с у ${identity.telegramId} против ${
+      Math.round(held)
+    }с у ${row.claim_owner}`,
   );
   return { decision: "transcribe", supersededOwner: row.claim_owner, heldBy };
 }
@@ -364,14 +462,24 @@ async function savePersonalNotes(
 // Как назвать человека в дефолтном заголовке записи (#184): профиль важнее username —
 // «Вадим Гарро» понятнее, чем «garro». Обе таблицы читаем разом, это один лишний round-trip
 // только для записей без своего названия.
-async function displayNameOfUser(telegramId: number | null | undefined): Promise<string | null> {
+async function displayNameOfUser(
+  telegramId: number | null | undefined,
+): Promise<string | null> {
   if (telegramId == null) return null;
   const [{ data: user }, { data: prof }] = await Promise.all([
-    supabase.from("allowed_users").select("username").eq("telegram_id", telegramId).maybeSingle(),
-    supabase.from("user_profiles").select("first_name, last_name").eq("telegram_id", telegramId).maybeSingle(),
+    supabase.from("allowed_users").select("username").eq(
+      "telegram_id",
+      telegramId,
+    ).maybeSingle(),
+    supabase.from("user_profiles").select("first_name, last_name").eq(
+      "telegram_id",
+      telegramId,
+    ).maybeSingle(),
   ]);
   return displayNameOf({
-    ...((prof as { first_name?: string | null; last_name?: string | null } | null) ?? {}),
+    ...((prof as
+      | { first_name?: string | null; last_name?: string | null }
+      | null) ?? {}),
     username: (user as { username?: string | null } | null)?.username ?? null,
   });
 }
@@ -381,7 +489,7 @@ Deno.serve(async (req: Request) => {
 
   let identity: AgentIdentity;
   try {
-    identity = await verifyAgentToken(supabase, req);
+    identity = await resolveActingIdentity(supabase, req);
   } catch (e) {
     if (e instanceof AgentAuthError) return fail(e.message, e.status);
     throw e;
@@ -406,7 +514,10 @@ Deno.serve(async (req: Request) => {
   // (#184, решение владельца 2026-08-28). Имя знает сервер — у клиента на диске только токен;
   // человек потом правит заголовок вручную (PATCH /agent-meetings/:id).
   const claimTitle = (body.title ?? "").trim() ||
-    defaultMeetingTitle(await displayNameOfUser(identity.telegramId), body.started_at);
+    defaultMeetingTitle(
+      await displayNameOfUser(identity.telegramId),
+      body.started_at,
+    );
 
   const baseRow = {
     source: "desktop-agent",
@@ -432,10 +543,16 @@ Deno.serve(async (req: Request) => {
     // Telegram/кнопка — без дедупа, всегда новая встреча, всегда транскрибируем сами.
     const { data, error } = await supabase
       .from("meetings")
-      .insert({ ...baseRow, claim_owner: identity.telegramId, lease_expires_at: leaseIso })
+      .insert({
+        ...baseRow,
+        claim_owner: identity.telegramId,
+        lease_expires_at: leaseIso,
+      })
       .select("id")
       .single();
-    if (error || !data) return fail(`create failed: ${error?.message ?? "unknown"}`, 500);
+    if (error || !data) {
+      return fail(`create failed: ${error?.message ?? "unknown"}`, 500);
+    }
     meetingId = (data as { id: string }).id;
     decision = "transcribe";
   } else {
@@ -448,14 +565,29 @@ Deno.serve(async (req: Request) => {
     // Комнатный ключ сужаем до дня: у регулярной встречи ссылка одна на всю серию, а индекс
     // глобальный — без дневного суффикса второй созвон в той же комнате получал defer и не
     // записывался вовсе (issue #181). Сужает СЕРВЕР: у команды стоят разные сборки рекордера.
-    const scopedKey = scopeRoomKey(body.identity_kind, body.identity_key, body.started_at ?? null);
+    const scopedKey = scopeRoomKey(
+      body.identity_kind,
+      body.identity_key,
+      body.started_at ?? null,
+    );
     const myEmail = await emailOfUser(identity.telegramId);
 
     // (2) до вставки: вдруг эта встреча уже открыта под другим ключом.
-    const joined = await findMeetingByRoster(identity.groupId, body, myEmail, scopedKey);
+    const joined = await findMeetingByRoster(
+      identity.groupId,
+      body,
+      myEmail,
+      scopedKey,
+    );
     if (joined) {
       meetingId = joined.row.id;
-      const res = await resolveExisting(joined.row, body, identity, nowIso, leaseIso);
+      const res = await resolveExisting(
+        joined.row,
+        body,
+        identity,
+        nowIso,
+        leaseIso,
+      );
       decision = res.decision;
       supersededOwner = res.supersededOwner;
       heldBy = res.heldBy;
@@ -465,7 +597,12 @@ Deno.serve(async (req: Request) => {
     } else {
       const { data: created, error: insErr } = await supabase
         .from("meetings")
-        .insert({ ...baseRow, identity_key: scopedKey, claim_owner: identity.telegramId, lease_expires_at: leaseIso })
+        .insert({
+          ...baseRow,
+          identity_key: scopedKey,
+          claim_owner: identity.telegramId,
+          lease_expires_at: leaseIso,
+        })
         .select("id")
         .maybeSingle();
 
@@ -476,27 +613,51 @@ Deno.serve(async (req: Request) => {
         // Ищем ещё раз и, если нашлась строка, созданная РАНЬШЕ нашей, отдаём ей право, а свою
         // пустую (только что созданную, без транскрипта) убираем — иначе в базе останется дубль,
         // который потом придётся склеивать на публикации.
-        const rival = await findMeetingByRoster(identity.groupId, body, myEmail, scopedKey);
+        const rival = await findMeetingByRoster(
+          identity.groupId,
+          body,
+          myEmail,
+          scopedKey,
+        );
         if (rival && rival.row.id !== meetingId) {
-          await supabase.from("meetings").delete().eq("id", meetingId).is("transcript", null);
+          await supabase.from("meetings").delete().eq("id", meetingId).is(
+            "transcript",
+            null,
+          );
           meetingId = rival.row.id;
-          const res = await resolveExisting(rival.row, body, identity, nowIso, leaseIso);
+          const res = await resolveExisting(
+            rival.row,
+            body,
+            identity,
+            nowIso,
+            leaseIso,
+          );
           decision = res.decision;
           supersededOwner = res.supersededOwner;
           heldBy = res.heldBy;
-          console.log(`meeting-claim: гонка склейки — свою строку убрал, присоединился к ${meetingId} (${rival.reason}), решение ${decision}`);
+          console.log(
+            `meeting-claim: гонка склейки — свою строку убрал, присоединился к ${meetingId} (${rival.reason}), решение ${decision}`,
+          );
         }
       } else if (insErr && insErr.code === "23505") {
         // Встреча с этим ключом уже есть → решаем по тому же правилу, что и при склейке.
         const { data: existing } = await supabase
           .from("meetings")
-          .select("id, claim_owner, recorded_seconds, transcript, notes_edited_at, status")
+          .select(
+            "id, claim_owner, recorded_seconds, transcript, notes_edited_at, status",
+          )
           .eq("identity_key", scopedKey)
           .single();
         if (!existing) return fail("claim conflict but meeting not found", 409);
         const row = existing as ExistingMeetingRow;
         meetingId = row.id;
-        const res = await resolveExisting(row, body, identity, nowIso, leaseIso);
+        const res = await resolveExisting(
+          row,
+          body,
+          identity,
+          nowIso,
+          leaseIso,
+        );
         decision = res.decision;
         supersededOwner = res.supersededOwner;
         heldBy = res.heldBy;
@@ -510,24 +671,38 @@ Deno.serve(async (req: Request) => {
   // неотличимы, и мёртвая ветка арбитража могла месяцами не срабатывать незамеченной
   // (docs/decisions/2026-08-28-fullness-over-recency.md, мера №3).
   console.log(
-    `meeting-claim: ${decision} ${meetingId} kind=${body.identity_kind} sec=${Math.round(body.recorded_seconds ?? 0)} by=${identity.telegramId} heldBy=${heldBy ?? "—"}`,
+    `meeting-claim: ${decision} ${meetingId} kind=${body.identity_kind} sec=${
+      Math.round(body.recorded_seconds ?? 0)
+    } by=${identity.telegramId} heldBy=${heldBy ?? "—"}`,
   );
 
-  await registerRecorder(meetingId, identity.telegramId, decision, nowIso, body.recorded_seconds, supersededOwner);
+  await registerRecorder(
+    meetingId,
+    identity.telegramId,
+    decision,
+    nowIso,
+    body.recorded_seconds,
+    supersededOwner,
+  );
 
   // Личные пометки — best-effort: их сбой не должен валить координацию транскрибации.
   if (body.user_notes && body.user_notes.length > 0) {
     try {
       await savePersonalNotes(meetingId, identity, body.user_notes, body.title);
     } catch (e) {
-      console.error(`meeting-claim: failed to save personal notes for ${meetingId}:`, e);
+      console.error(
+        `meeting-claim: failed to save personal notes for ${meetingId}:`,
+        e,
+      );
     }
   }
 
   // При отказе называем, кто держит право: клиент показывает это пользователю вместо молчания
   // («эту встречу пишет @аня — твоя запись в базу не пойдёт»), см. #24/#25.
   let heldByName: string | null = null;
-  if (decision === "defer" && heldBy !== null && heldBy !== identity.telegramId) {
+  if (
+    decision === "defer" && heldBy !== null && heldBy !== identity.telegramId
+  ) {
     const { data: holder } = await supabase
       .from("allowed_users")
       .select("username")
