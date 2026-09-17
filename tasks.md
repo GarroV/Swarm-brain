@@ -20,12 +20,12 @@
 | T031 | ingest-speakers | — | todo | Чистая функция `nameAt`: тесты на перекрытия, дыры, пустой таймлайн, несовпадение времён | #335 | 1 |
 | T032 | ingest-speakers | T030,T031 | todo | Имена подставляются в `Segment.speaker`; мягкая деградация без таймлайна проверена тестом | #336 | 1 |
 | T033 | ingest-speakers | T032 | todo | Легенда говорящих в промпте тезисов согласована: не обещает «я», которого в стенограмме нет | #337 | 1 |
-| T040 | container | — | in_progress | Dockerfile: playwright-образ + Xvfb + PulseAudio + ffmpeg; контейнер поднимается и гасится | #338 | 1 |
-| T041 | container | T040 | in_progress | PulseAudio null-sink: `XDG_RUNTIME_DIR`, `set-default-sink`, monitor-source проверяется при старте | #339 | 1 |
-| T042 | container | T041 | in_progress | Chromium стартует с `ignoreDefaultArgs: ['--mute-audio']`; звук реально попадает в sink | #340 | 1 |
-| T043 | container | T042 | in_progress | Смоук записи звука падает на тишине и внятно говорит почему; прогнан на испорченной копии, порча подтверждена | #341 | 1 |
-| T044 | container | T042 | in_progress | Нарезка ffmpeg по `segment_time` под лимит 25 МБ; каждая часть открывается самостоятельно | #342 | 1 |
-| T045 | container | T040 | in_progress | Два контейнера одновременно не слышат друг друга (проверено запуском двух) | #343 | 1 |
+| T040 | container | — | todo | Dockerfile: playwright-образ + Xvfb + PulseAudio + ffmpeg; контейнер поднимается и гасится | #338 | 1 |
+| T041 | container | T040 | todo | PulseAudio null-sink: `XDG_RUNTIME_DIR`, `set-default-sink`, monitor-source проверяется при старте | #339 | 1 |
+| T042 | container | T041 | todo | Chromium стартует с `ignoreDefaultArgs: ['--mute-audio']`; звук реально попадает в sink | #340 | 1 |
+| T043 | container | T042 | todo | Смоук записи звука падает на тишине и внятно говорит почему; прогнан на испорченной копии, порча подтверждена | #341 | 1 |
+| T044 | container | T042 | todo | Нарезка ffmpeg по `segment_time` под лимит 25 МБ; каждая часть открывается самостоятельно | #342 | 1 |
+| T045 | container | T040 | todo | Два контейнера одновременно не слышат друг друга (проверено запуском двух) | #343 | 1 |
 | T050 | meet-adapter | T042 | todo | `join`: вход по ссылке с вводом имени `scriba`; локаль запиннена `?hl=en` + `--lang=en-US` | #344 | 1 |
 | T051 | meet-adapter | T050 | todo | `waitAdmitted` различает admitted / denied / timeout / captcha; каждый исход проверен вживую | #345 | 1 |
 | T052 | meet-adapter | T050 | todo | `activeSpeaker` возвращает имя говорящего; селекторы по `aria-label`/`role`, не по классам | #346 | 1 |
