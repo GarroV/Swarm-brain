@@ -109,7 +109,7 @@ if [[ "$scope" == "all" || "$scope" == "server" ]]; then
        || find supabase/functions -name '*.test.ts' -print -quit | grep -q .; then
       run "сервер · тесты" bash -c '
         rm -rf /tmp/scriba-cov
-        deno test --allow-all --coverage=/tmp/scriba-cov supabase/functions
+        deno test --allow-all --coverage=/tmp/scriba-cov --junit-path=reports/check-server.xml supabase/functions
         deno coverage /tmp/scriba-cov --lcov --output=reports/lcov-server.info'
       run "сервер · порог покрытия" scripts/gate-coverage.sh reports/lcov-server.info server
     else

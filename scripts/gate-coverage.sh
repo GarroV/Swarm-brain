@@ -13,6 +13,7 @@ set -euo pipefail
 
 lcov_path="${1:?укажите путь к lcov.info}"
 baseline_name="${2:?укажите имя базы, например bot или server}"
+promote="${3:-}"   # --promote: поднять базу. Зовёт ТОЛЬКО диспетчер на приёмке.
 baseline_file="reports/coverage-baseline-${baseline_name}.txt"
 
 if [[ ! -s "$lcov_path" ]]; then
@@ -51,7 +52,16 @@ if awk -v c="$current" -v b="$baseline" 'BEGIN { exit !(c + 0.005 < b) }'; then
 fi
 
 echo "покрытие $baseline_name: ${current}% (база ${baseline}%, $hit/$found строк)"
+
+# Базу поднимает ТОЛЬКО приёмка, и только явным флагом. Причина конкретная: строка
+# базы одна на всех, а блоки идут параллельно в своих копиях. Поднимая её у себя,
+# каждый блок готовит конфликт при слиянии и, что хуже, поднимает порог соседям,
+# которые под него не работали. Замечено блоком conference-link на первой же сдаче.
 if awk -v c="$current" -v b="$baseline" 'BEGIN { exit !(c > b) }'; then
-  printf '%s\n' "$current" > "$baseline_file"
-  echo "база поднята до ${current}%"
+  if [[ "$promote" == "--promote" ]]; then
+    printf '%s\n' "$current" > "$baseline_file"
+    echo "база поднята до ${current}% (приёмка)"
+  else
+    echo "покрытие выросло на $(awk -v c="$current" -v b="$baseline" 'BEGIN{printf "%.2f", c-b}') п.п. — базу поднимет приёмка (--promote)"
+  fi
 fi
