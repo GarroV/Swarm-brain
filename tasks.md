@@ -7,11 +7,11 @@
 |---|---|---|---|---|---|---|
 | T001 | chores | — | done | Вернуть доступ к прод-базе: выяснить, почему отказывают и MCP-коннектор, и CLI; добиться успешного запроса к проду | #323 | 1 |
 | T002 | chores | — | done | Поставить `scripts/check`, `scripts/gate-coverage.sh`, `.githooks/pre-push`, карантин версий в `bot/.npmrc`; прогнать на испорченной копии и убедиться, что краснеет | #324 | 1 |
-| T010 | identity | — | in_progress | Миграция: таблица служебных агентов с токеном бота; накат только добавлением и обратим | #325 | 1 |
-| T011 | identity | T010 | in_progress | `kind` в `AgentIdentity`; `classifyToken` распознаёт токен бота; тесты на все виды токенов | #326 | 1 |
-| T012 | identity | T011 | in_progress | `resolveActingIdentity`: подмена личности один раз на входе, на выходе — человек | #327 | 1 |
-| T013 | identity | T012 | in_progress | `meeting-claim`, `meeting-ingest`, `meeting-heartbeat` переведены на `resolveActingIdentity` | #328 | 1 |
-| T014 | identity | T013 | in_progress | Блокирующие тесты: recorder не может `on_behalf_of`; бот не может указать чужой воркспейс; токен бота без `on_behalf_of` не даёт прав | #329 | 1 |
+| T010 | identity | — | done | Миграция: таблица служебных агентов с токеном бота; накат только добавлением и обратим | #325 | 1 |
+| T011 | identity | T010 | done | `kind` в `AgentIdentity`; `classifyToken` распознаёт токен бота; тесты на все виды токенов | #326 | 1 |
+| T012 | identity | T011 | done | `resolveActingIdentity`: подмена личности один раз на входе, на выходе — человек | #327 | 1 |
+| T013 | identity | T012 | done | `meeting-claim`, `meeting-ingest`, `meeting-heartbeat` переведены на `resolveActingIdentity` | #328 | 1 |
+| T014 | identity | T013 | done | Блокирующие тесты: recorder не может `on_behalf_of`; бот не может указать чужой воркспейс; токен бота без `on_behalf_of` не даёт прав | #329 | 1 |
 | T015 | identity | T014 | in_progress | Регресс: `bumblebee` прогнан после правок эндпоинтов и работает как раньше | #330 | 1 |
 | T020 | conference-link | — | done | `description` добавлен четвёртым источником ссылки, тест на него зелёный | #331 | 1 |
 | T021 | conference-link | — | done | `conferencePlatform` по хосту; тесты на три площадки, мусор и неизвестный хост | #332 | 1 |
@@ -40,6 +40,8 @@
 | T080 | notices | T012 | todo | Уведомление «стою у двери» владельцу встречи; повтор ровно один, затем выход | #355 | 1 |
 | T081 | notices | T080 | todo | Тексты уведомлений заведены на английском и русском | #356 | 1 |
 | T082 | notices | T022 | todo | Ни один сценарий отказа не завершается молча — проверено по списку из спеки | #357 | 1 |
+| T016 | identity | T013 | todo | `meeting-current` и `meeting-status` переведены на `resolveActingIdentity`: бот ходит во все пять эндпоинтов, а не в три | #370 | 1 |
+| T017 | identity | T016 | blocked:Q007 | Сузить полномочия токена агента до участников встречи, а не всего воркспейса — по решению владельца | #371 | 1 |
 | T003 | chores | T015,T033,T044 | todo | `ARCHITECTURE.md` и `QUICK_REF.md` обновлены по факту изменений сервера и появления бота | #358 | 1 |
 | T004 | chores | T043,T051,T063,T071,T082 | todo | Живой прогон на реальной встрече по всему списку готовности MVP из спеки | #359 | 1 |
 | T100 | orchestrator | T071 | todo | Автозапуск по календарю: бот приходит на встречу сам | #360 | 2 |
