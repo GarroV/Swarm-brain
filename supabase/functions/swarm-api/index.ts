@@ -47,7 +47,7 @@ import { pickSuggestedMarkets } from "../_shared/market-suggest.ts";
 import { matchEntries, type MatchedEntry } from "../_shared/search.ts";
 import { getFileSecure, FileAccessError } from "./file-access.ts";
 import { removeStorageObject, withNormalizedFileLink } from "../_shared/storage-links.ts";
-import { uploadPrivateFile, registerStorageFile, PRIVATE_BUCKET } from "../_shared/storage-files.ts";
+import { uploadPrivateFile, registerStorageFile, safeStorageName, PRIVATE_BUCKET } from "../_shared/storage-files.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
@@ -1227,7 +1227,9 @@ Deno.serve(async (req: Request) => {
 
     const arrayBuffer = await file.arrayBuffer();
     const date = new Date().toISOString().slice(0, 10);
-    const safeName = file.name.replace(/[^a-zA-Zа-яёА-ЯЁ0-9.\-_]/g, "_");
+    // Кириллицу Storage в ключе НЕ принимает («Invalid key») — прежняя маска её сохраняла,
+    // и файл с русским именем не загружался вовсе. Настоящее имя живёт в metadata.filename.
+    const safeName = safeStorageName(file.name);
     const path = `uploads/${date}_${safeName}`;
 
     // Приватный бакет: публичной ссылки на файл команды больше не существует. В metadata
@@ -2294,7 +2296,7 @@ Deno.serve(async (req: Request) => {
     if (screenshotFile) {
       const buf = await screenshotFile.arrayBuffer();
       const date = new Date().toISOString().slice(0, 10);
-      const safeName = (screenshotFile.name || "screenshot.png").replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      const safeName = safeStorageName(screenshotFile.name || "screenshot.png");
       const path = `feedback/${date}_${crypto.randomUUID().slice(0, 8)}_${safeName}`;
       const { error: upErr } = await uploadPrivateFile(supabase, {
         path, body: buf, contentType: screenshotFile.type || "image/png", upsert: true,

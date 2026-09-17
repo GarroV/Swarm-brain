@@ -14,7 +14,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 import { absoluteFileUrl, removeStorageObject } from "../_shared/storage-links.ts";
-import { uploadPrivateFile, registerStorageFile, PRIVATE_BUCKET } from "../_shared/storage-files.ts";
+import { uploadPrivateFile, registerStorageFile, safeStorageName, PRIVATE_BUCKET } from "../_shared/storage-files.ts";
 
 // Адрес веба: ссылку на файл отдаём абсолютной — получатель ответа (Claude Desktop)
 // не наша страница, относительный путь там некликабелен.
@@ -127,7 +127,9 @@ async function uploadToStorage(
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const uuid = crypto.randomUUID();
-  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  // Транслит вместо голой замены: имя «отчёт.pdf» превращалось в «______.pdf» — путь,
+  // по которому невозможно понять, что за файл.
+  const safeName = safeStorageName(fileName);
   const path = `uploads/${yyyy}/${mm}/${uuid}-${safeName}`;
 
   const { error } = await uploadPrivateFile(supabase, {

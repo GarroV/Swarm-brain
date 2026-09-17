@@ -1,5 +1,5 @@
 import { supabase, ADMIN_USER_ID } from "./supabase.ts";
-import { uploadPrivateFile, registerStorageFile, PRIVATE_BUCKET } from "../../_shared/storage-files.ts";
+import { uploadPrivateFile, registerStorageFile, safeStorageName, PRIVATE_BUCKET } from "../../_shared/storage-files.ts";
 import { absoluteFileUrl } from "../../_shared/storage-links.ts";
 import { getEmbedding, chatComplete } from "./openai.ts";
 import { normalizeCountries, COUNTRY_PROMPT_RULE, ENTRY_TYPE_PROMPT_RULE } from "../../_shared/countries.ts";
@@ -345,27 +345,6 @@ export async function generateSummary(text: string): Promise<string | null> {
   } catch { return null; }
 }
 
-const RU_TRANSLIT: Record<string, string> = {
-  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z",
-  и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
-  с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh",
-  щ: "shch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
-};
-
-/**
- * Build an ASCII-safe Supabase Storage object key. Storage keys reject
- * non-ASCII (Cyrillic etc.) — transliterate, strip the rest, keep it readable.
- */
-function safeStorageName(fileName: string): string {
-  const translit = [...fileName].map((ch) => {
-    const lower = ch.toLowerCase();
-    const mapped = RU_TRANSLIT[lower];
-    if (mapped === undefined) return ch;
-    return ch === lower ? mapped : mapped.charAt(0).toUpperCase() + mapped.slice(1);
-  }).join("");
-  const ascii = translit.replace(/[^a-zA-Z0-9.\-_]/g, "_").replace(/_+/g, "_");
-  return ascii.replace(/^_+|_+$/g, "") || "file";
-}
 
 // Адрес веба: ссылка в сообщении Telegram ведёт в браузер, где у человека есть сессия и
 // где проверяется доступ. Signed URL здесь не годится — сообщение живёт дольше подписи.

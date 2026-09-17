@@ -5,6 +5,7 @@ import {
   registerStorageFile,
   externalFileUrl,
   PRIVATE_BUCKET,
+  safeStorageName,
 } from "./storage-files.ts";
 
 type MockOpts = {
@@ -142,4 +143,23 @@ Deno.test("externalFileUrl: пустое значение → null", async () =>
   const { client } = makeClient();
   assertEquals(await externalFileUrl(client, ""), null);
   assertEquals(await externalFileUrl(client, undefined), null);
+});
+
+// ── safeStorageName: ключ объекта обязан быть ASCII ──────────────────────────
+
+Deno.test("safeStorageName: кириллица транслитерируется (иначе Storage отвергает ключ)", () => {
+  assertEquals(safeStorageName("отчёт.pdf"), "otchet.pdf");
+  assertEquals(safeStorageName("Отчёт по рынку.pdf"), "Otchet_po_rynku.pdf");
+});
+
+Deno.test("safeStorageName: результат всегда в ASCII", () => {
+  for (const name of ["отчёт по рынку (v2).pdf", "план 2026.xlsx", "ЖЁСТКИЙ_ДИСК.txt"]) {
+    const safe = safeStorageName(name);
+    assertEquals(/^[a-zA-Z0-9.\-_]+$/.test(safe), true, `${name} → ${safe}`);
+  }
+});
+
+Deno.test("safeStorageName: имя из одних спецсимволов не даёт пустой ключ", () => {
+  assertEquals(safeStorageName("???"), "file");
+  assertEquals(safeStorageName(""), "file");
 });

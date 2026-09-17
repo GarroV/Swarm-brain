@@ -83,3 +83,28 @@ export async function externalFileUrl(
   if (error || !data?.signedUrl) return null;
   return data.signedUrl;
 }
+
+// Имя объекта в Storage обязано быть ASCII: ключ с кириллицей отвергается («Invalid key»),
+// то есть файл с русским названием просто не загружается. Пробел и скобки при этом
+// допустимы, но заменяются тоже — так путь остаётся читаемым в логах и ссылках.
+export const RU_TRANSLIT: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z",
+  и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
+  с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh",
+  щ: "shch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+};
+
+/**
+ * Build an ASCII-safe Supabase Storage object key. Storage keys reject
+ * non-ASCII (Cyrillic etc.) — transliterate, strip the rest, keep it readable.
+ */
+export function safeStorageName(fileName: string): string {
+  const translit = [...fileName].map((ch) => {
+    const lower = ch.toLowerCase();
+    const mapped = RU_TRANSLIT[lower];
+    if (mapped === undefined) return ch;
+    return ch === lower ? mapped : mapped.charAt(0).toUpperCase() + mapped.slice(1);
+  }).join("");
+  const ascii = translit.replace(/[^a-zA-Z0-9.\-_]/g, "_").replace(/_+/g, "_");
+  return ascii.replace(/^_+|_+$/g, "") || "file";
+}
