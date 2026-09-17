@@ -25,3 +25,9 @@ create index if not exists storage_files_entry_id_idx on public.storage_files (e
 
 comment on table public.storage_files is
   'Реестр объектов приватного бакета swarm_private: связь path → владелец (запись/фидбек). Права доступа берутся из entries на момент проверки, здесь НЕ дублируются. См. swarm-api/file-access.ts.';
+
+-- Права. Таблица создаётся миграцией от роли postgres, и service_role НЕ получает доступ сам:
+-- без этих грантов приложение падает с «permission denied for table storage_files» — то есть
+-- и раздача файлов (/file), и все загрузки. Проверено на локальном контуре 17.09.2026.
+-- anon/authenticated не даём ничего: клиент в базу не ходит, RLS на таблице — внешний замок.
+grant select, insert, update, delete on public.storage_files to service_role;

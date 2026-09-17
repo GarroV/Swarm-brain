@@ -154,6 +154,14 @@ async function copyPhase() {
 
 // ── backfill ─────────────────────────────────────────────────────────────────
 async function backfillPhase() {
+  // Без таблицы реестра перепись ссылок превращает файлы в недоступные: ссылка уже путь,
+  // а проверить доступ не по чему. Проверяем ДО первой записи, а не по ходу.
+  const { error: regProbe } = await supabase.from("storage_files").select("path").limit(1);
+  if (regProbe) {
+    console.error(`Реестр storage_files недоступен (${regProbe.message}). Сначала миграции.`);
+    Deno.exit(1);
+  }
+
   // 1. Вложения записей.
   const { data: entries, error } = await supabase.from("entries")
     .select("id, metadata").not("metadata->>file_url", "is", null);
@@ -169,12 +177,15 @@ async function backfillPhase() {
     if (!path) { skipped++; continue; }
     // Чанки одного файла — несколько записей на один путь: владельцем делаем первую.
     if (!seen.has(path)) {
-      seen.add(path);
       if (apply) {
         const { error: regErr } = await supabase.from("storage_files")
           .upsert({ path, bucket: PRIVATE_BUCKET, owner_kind: "entry", entry_id: e.id }, { onConflict: "path" });
+        // Помечаем путь обработанным ТОЛЬКО после успеха: иначе следующая запись того же
+        // файла (чанки делят один объект) сочтёт его зарегистрированным и перепишет ссылку
+        // на путь, которого нет в реестре, — файл станет недоступен.
         if (regErr) { console.error(`✗ реестр ${path}: ${regErr.message}`); continue; }
       }
+      seen.add(path);
       regs++;
     }
     if (raw !== path) {
@@ -217,12 +228,21 @@ async function backfillPhase() {
 }
 
 // ── verify ───────────────────────────────────────────────────────────────────
-async function verifyPhase() {
+type Check = { missing: Obj[]; stillUrl: string[]; unregistered: string[]; orphans: Obj[]; total: number };
+
+// Одна проверка на две фазы: verify показывает её человеку, cleanup ею же защищается.
+// Разные проверки в этих двух местах — как раз то, из-за чего оригиналы удалились при
+// незаполненном реестре (проверено на контуре 17.09.2026).
+async function collectCheck(): Promise<Check> {
   const src = await listAll(SOURCE_BUCKET);
   const dst = new Map((await listAll(PRIVATE_BUCKET)).map((o) => [o.path, o]));
   const missing = src.filter((o) => dst.get(o.path)?.size !== o.size);
 
-  const { data: regRows } = await supabase.from("storage_files").select("path");
+  const { data: regRows, error: regErr } = await supabase.from("storage_files").select("path");
+  if (regErr) {
+    console.error(`Реестр недоступен (${regErr.message}).`);
+    Deno.exit(1);
+  }
   const registered = new Set(((regRows ?? []) as Array<{ path: string }>).map((r) => r.path));
 
   const { data: entries } = await supabase.from("entries")
@@ -236,20 +256,20 @@ async function verifyPhase() {
     if (typeof raw === "string" && raw !== path) stillUrl.push(e.id);
     if (!registered.has(path)) unregistered.push(path);
   }
-
-  // Объекты, на которые не ссылается ни одна запись: они есть на проде (след старого
-  // удаления, которое молча не удаляло). Переносим их вместе со всеми — так публичный
-  // доступ закрывается, — но владельца у них нет, значит и показать их некому.
   const orphans = src.filter((o) => !registered.has(o.path));
+  return { missing, stillUrl, unregistered, orphans, total: src.length };
+}
 
-  console.log(`Копии на месте: ${src.length - missing.length}/${src.length}`);
-  if (missing.length) console.log(`  ✗ не перенесены: ${missing.slice(0, 10).map((o) => o.path).join(", ")}${missing.length > 10 ? " …" : ""}`);
-  console.log(`Ссылок ещё в старом виде (URL вместо пути): ${stillUrl.length}`);
-  console.log(`Файлов записей вне реестра (будут 404 на /file): ${unregistered.length}`);
-  console.log(`Объектов без владельца (перенесены, но показать их некому): ${orphans.length}`);
-  if (unregistered.length) console.log(`  ${unregistered.slice(0, 10).join(", ")}${unregistered.length > 10 ? " …" : ""}`);
+async function verifyPhase() {
+  const c = await collectCheck();
+  console.log(`Копии на месте: ${c.total - c.missing.length}/${c.total}`);
+  if (c.missing.length) console.log(`  ✗ не перенесены: ${c.missing.slice(0, 10).map((o) => o.path).join(", ")}${c.missing.length > 10 ? " …" : ""}`);
+  console.log(`Ссылок ещё в старом виде (URL вместо пути): ${c.stillUrl.length}`);
+  console.log(`Файлов записей вне реестра (будут 404 на /file): ${c.unregistered.length}`);
+  if (c.unregistered.length) console.log(`  ${c.unregistered.slice(0, 10).join(", ")}${c.unregistered.length > 10 ? " …" : ""}`);
+  console.log(`Объектов без владельца (перенесены, но показать их некому): ${c.orphans.length}`);
 
-  const ok = !missing.length && !stillUrl.length && !unregistered.length;
+  const ok = !c.missing.length && !c.stillUrl.length && !c.unregistered.length;
   console.log(ok ? "\n✅ Готово к удалению оригиналов." : "\n⛔ Оригиналы удалять НЕЛЬЗЯ.");
   if (!ok) Deno.exit(1);
 }
@@ -260,14 +280,16 @@ async function cleanupPhase() {
     console.error("Удаление оригиналов — только после verify и с флагом --i-verified.");
     Deno.exit(1);
   }
+  // Флаг --i-verified подтверждает осознанность, но НЕ заменяет проверку: удалять оригиналы,
+  // пока ссылки или реестр не готовы, значит оставить людей без доступа к их же файлам.
+  const c = await collectCheck();
+  if (c.missing.length || c.stillUrl.length || c.unregistered.length) {
+    console.error(`⛔ Удаление отменено: копий нет у ${c.missing.length}, ссылок в старом виде ${c.stillUrl.length}, вне реестра ${c.unregistered.length}. Сначала verify.`);
+    Deno.exit(1);
+  }
   const src = await listAll(SOURCE_BUCKET);
   const dst = new Map((await listAll(PRIVATE_BUCKET)).map((o) => [o.path, o]));
   const safe = src.filter((o) => dst.get(o.path)?.size === o.size);
-  const unsafe = src.length - safe.length;
-  if (unsafe) {
-    console.error(`⛔ ${unsafe} объектов не имеют сверенной копии — удаление отменено целиком.`);
-    Deno.exit(1);
-  }
   if (!apply) {
     console.log(`[сухой прогон] удалил бы из ${SOURCE_BUCKET}: ${safe.length} объектов`);
     return;
