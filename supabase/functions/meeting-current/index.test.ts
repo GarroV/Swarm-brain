@@ -2,7 +2,6 @@
 // Deno.serve. Юнит-тест на conferenceInfo доказывает разбор ссылки, но не доказывает, что
 // разобранное доехало до ответа — а читают рекордер и бот именно ответ.
 //
-// deno-lint-ignore no-import-prefix -- канон серверных тестов Swarm: std тянется по https, карты импортов у supabase/functions нет
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
 const TOKEN = "smcp_stub-token";
@@ -33,11 +32,7 @@ const json = (body: unknown, status = 200) =>
 // глобальный fetch стал бы ловушкой для соседнего теста, который сеть трогает по-настоящему.
 const realFetch = globalThis.fetch;
 const stubFetch = ((input: Request | URL | string) => {
-  const url = typeof input === "string"
-    ? input
-    : input instanceof URL
-    ? input.href
-    : input.url;
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   if (url.includes("/rest/v1/allowed_users")) {
     return json({
       telegram_id: 42,
@@ -54,14 +49,10 @@ const stubFetch = ((input: Request | URL | string) => {
     return googleConnected ? json({ api_key: "refresh-token" }) : json(null);
   }
   if (url.includes("oauth2.googleapis.com/token")) {
-    return tokenExchangeOk
-      ? json({ access_token: "access-token" })
-      : json({ error: "invalid_grant" }, 400);
+    return tokenExchangeOk ? json({ access_token: "access-token" }) : json({ error: "invalid_grant" }, 400);
   }
   if (url.includes("googleapis.com/calendar/v3")) {
-    return calendarItems === null
-      ? json({ error: "boom" }, 500)
-      : json({ items: calendarItems });
+    return calendarItems === null ? json({ error: "boom" }, 500) : json({ items: calendarItems });
   }
   throw new Error(`смоук не ждал запроса наружу: ${url}`);
 }) as typeof fetch;

@@ -107,10 +107,15 @@ if [[ "$scope" == "all" || "$scope" == "server" ]]; then
       exit $status'
     if compgen -G "supabase/functions/**/*.test.ts" >/dev/null 2>&1 \
        || find supabase/functions -name '*.test.ts' -print -quit | grep -q .; then
+      # Каталог покрытия — ВНУТРИ копии, а не в /tmp. Общий путь в /tmp — это гонка:
+      # блоки идут параллельно в разных копиях, каждый чистит и пишет один и тот же
+      # каталог, и отчёт достаётся тому, кто закончил последним. Поймано 17.09.2026 на
+      # приёмке первого блока: покрытие «выросло» до 99.77%, потому что в отчёте осталось
+      # 6 файлов вместо 188 — прогон был зелёным и означал не то, что показывал.
       run "сервер · тесты" bash -c '
-        rm -rf /tmp/scriba-cov
-        deno test --allow-all --coverage=/tmp/scriba-cov --junit-path=reports/check-server.xml supabase/functions
-        deno coverage /tmp/scriba-cov --lcov --output=reports/lcov-server.info'
+        rm -rf .coverage-server
+        deno test --allow-all --coverage=.coverage-server --junit-path=reports/check-server.xml supabase/functions
+        deno coverage .coverage-server --lcov --output=reports/lcov-server.info'
       run "сервер · порог покрытия" scripts/gate-coverage.sh reports/lcov-server.info server
     else
       printf '\n○ сервер · тесты: файлов *.test.ts в supabase/functions пока нет\n'

@@ -26,3 +26,5 @@ bot/node_modules/
 bot/coverage/
 reports/check.xml
 reports/lcov-*.info
+.coverage-server/
+reports/check-server.xml

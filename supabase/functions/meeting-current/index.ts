@@ -4,7 +4,6 @@
 // Рекордеру не нужен ни macOS-Календарь, ни доступ к календарю на маке.
 //
 // Деплой: supabase functions deploy meeting-current --no-verify-jwt (хитит рекордер с Bearer smcp_).
-// deno-lint-ignore no-import-prefix -- edge-функции деплоятся с https-импортами: карты импортов у supabase/functions нет
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, verifyAgentToken } from "../_shared/agent-auth.ts";
 import { pickCurrentEvent } from "./select.ts";

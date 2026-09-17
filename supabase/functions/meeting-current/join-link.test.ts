@@ -1,4 +1,3 @@
-// deno-lint-ignore no-import-prefix -- канон серверных тестов Swarm: std тянется по https, карты импортов у supabase/functions нет
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { conferenceInfo, conferencePlatform, joinLink } from "./join-link.ts";
 import type { GEvent } from "./select.ts";
@@ -63,8 +62,7 @@ Deno.test("место проведения без ссылки ссылкой н
 Deno.test("находит ссылку внутри текста места проведения", () => {
   const ev = {
     id: "e1",
-    location:
-      "Zoom: https://us02web.zoom.us/j/8912345678?pwd=abc (пароль в описании)",
+    location: "Zoom: https://us02web.zoom.us/j/8912345678?pwd=abc (пароль в описании)",
   } as GEvent;
 
   assertEquals(joinLink(ev), "https://us02web.zoom.us/j/8912345678?pwd=abc");
@@ -189,8 +187,7 @@ Deno.test("не-https площадкой не считается", () => {
 Deno.test("берёт ссылку из описания, когда больше её взять неоткуда", () => {
   const ev = {
     id: "e1",
-    description:
-      "Повестка: планы на квартал.\nПодключиться: https://ktalk.ru/weekly-42",
+    description: "Повестка: планы на квартал.\nПодключиться: https://ktalk.ru/weekly-42",
   } as GEvent;
 
   assertEquals(joinLink(ev), "https://ktalk.ru/weekly-42");
@@ -201,8 +198,7 @@ Deno.test("в описании предпочитает ссылку извес�
   // Первая https-ссылка там сплошь и рядом не звонок, а документ.
   const ev = {
     id: "e1",
-    description:
-      "Материалы: https://docs.google.com/document/d/abc\nЗвонок: https://us02web.zoom.us/j/8912345678",
+    description: "Материалы: https://docs.google.com/document/d/abc\nЗвонок: https://us02web.zoom.us/j/8912345678",
   } as GEvent;
 
   assertEquals(joinLink(ev), "https://us02web.zoom.us/j/8912345678");
