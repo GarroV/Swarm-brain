@@ -159,3 +159,27 @@ export function buildBoard(
   });
   return directions;
 }
+
+/**
+ * Пора ли считать молчание сигналом. С дня сверки неотмеченная задача помечается «не
+ * отмечено» (D013): молчание не должно выглядеть как отсутствие проблем.
+ *
+ * Правило живёт здесь, а не в экране, по той же причине, что и проценты: «с какого дня»
+ * — это правило продукта, и в двух экранах оно разъедется. Сравниваем по КАЛЕНДАРНОМУ
+ * дню: день сверки наступает с его начала, а не в момент, когда пройдут ещё сутки.
+ * Негодная дата сигнал не включает — лучше промолчать, чем пометить всю доску серым.
+ */
+export function checksDue(
+  checkDate: string | null,
+  today: Date = new Date(),
+): boolean {
+  if (!checkDate) return false;
+  const day = new Date(`${checkDate}T00:00:00`);
+  if (isNaN(day.getTime())) return false;
+  const start = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  );
+  return day.getTime() <= start.getTime();
+}

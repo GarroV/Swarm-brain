@@ -5,7 +5,12 @@
 // шапка экрана считает иначе, чем итог принятого спринта, человек увидит два разных факта об
 // одном спринте и не узнает, какой из них верен.
 import { assertEquals } from "@std/assert";
-import { buildBoard, computeProgress, sprintKpi } from "./initiatives.ts";
+import {
+  buildBoard,
+  checksDue,
+  computeProgress,
+  sprintKpi,
+} from "./initiatives.ts";
 import type { Project, SprintCycleItem } from "../types.ts";
 
 function project(
@@ -180,4 +185,18 @@ Deno.test("шапка: отметка у отменённой задачи не 
   ]);
   assertEquals(kpi.checkOk, 0);
   assertEquals(kpi.unchecked, 0);
+});
+
+Deno.test("сверка: до дня сверки молчание — норма, с этого дня — сигнал", () => {
+  const today = new Date("2026-09-19T12:00:00Z");
+  // Ритуал не назначен — «не отмечено» не показываем вовсе, иначе вся доска в серых метках.
+  assertEquals(checksDue(null, today), false);
+  assertEquals(checksDue("2026-09-20", today), false);
+  // День сверки наступил — считается с его начала, а не с конца.
+  assertEquals(checksDue("2026-09-19", today), true);
+  assertEquals(checksDue("2026-09-18", today), true);
+});
+
+Deno.test("сверка: негодная дата не включает сигнал молча", () => {
+  assertEquals(checksDue("не дата", new Date("2026-09-19T12:00:00Z")), false);
 });

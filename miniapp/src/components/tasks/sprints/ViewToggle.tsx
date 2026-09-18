@@ -7,7 +7,7 @@ import { useDt } from "@/components/roy/nav";
 // владельца: «Список + канбан переключателем»): вид — это привычка смотреть, и сбрасывать
 // его на каждом заходе значит переключать вручную по десять раз в день.
 
-export type SprintView = "list" | "kanban";
+export type SprintView = "list" | "kanban" | "check";
 
 const KEY = "swarm.sprints.view";
 
@@ -22,7 +22,9 @@ export function useSprintView(): [SprintView, (v: SprintView) => void] {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(KEY);
-      if (saved === "list" || saved === "kanban") setView(saved);
+      if (saved === "list" || saved === "kanban" || saved === "check") {
+        setView(saved);
+      }
     } catch {
       /* приватное окно: вид останется списком, это рабочее состояние */
     }
@@ -46,9 +48,16 @@ export function ViewToggle(
   },
 ) {
   const dt = useDt();
-  const views: { id: SprintView; icon: "task" | "board"; label: string }[] = [
+  const views: {
+    id: SprintView;
+    icon: "task" | "board" | "check";
+    label: string;
+  }[] = [
     { id: "list", icon: "task", label: dt("Список", "List") },
     { id: "kanban", icon: "board", label: dt("Канбан", "Kanban") },
+    // Сверка — та же линза на тот же состав, поэтому живёт в переключателе, а не отдельной
+    // вкладкой: ритуал идёт по спринту, который сейчас открыт.
+    { id: "check", icon: "check", label: dt("Сверка", "Check-in") },
   ];
 
   return (

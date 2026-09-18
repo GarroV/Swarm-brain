@@ -7,7 +7,7 @@ import {
   updateTask,
 } from "@/lib/api";
 import type { Project, Sprint, SprintCycle, SprintCycleDetail, SprintCycleItem, Task, User } from "@/types";
-import { buildBoard, sprintKpi } from "@/lib/initiatives";
+import { buildBoard, checksDue, sprintKpi } from "@/lib/initiatives";
 import { KanbanColumn } from "@/components/tasks/TaskKanban";
 import type { KanbanDrag, KanbanHandlers, KanbanQuickAdd } from "@/components/tasks/TaskKanban";
 import { SprintTaskPool } from "@/components/tasks/SprintTaskPool";
@@ -24,6 +24,7 @@ import { poolCandidates, projectLabel } from "@/lib/sprintPool";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { AcceptDialog, type AcceptSubmit } from "@/components/tasks/sprints/AcceptDialog";
+import { CheckScreen } from "@/components/tasks/sprints/CheckScreen";
 import { BoardSkeleton, InitiativeList } from "@/components/tasks/sprints/InitiativeList";
 import { SpaceSwitcher } from "@/components/tasks/sprints/SpaceSwitcher";
 import { SprintKpiHeader } from "@/components/tasks/sprints/SprintKpiHeader";
@@ -183,7 +184,8 @@ export function SprintsScreen() {
   const kpi = useMemo(() => sprintKpi(items), [items]);
   const board = useMemo(() => buildBoard(items, projects), [items, projects]);
   // «Не отмечено» показываем с дня сверки (D013): до него молчание — норма, а не сигнал.
-  const unchecked = !!detail?.check_date && daysLeft(detail.check_date) <= 0;
+  // Само правило — в lib/initiatives (под тестами): в двух экранах «с какого дня» разъедется.
+  const unchecked = checksDue(detail?.check_date ?? null);
 
   async function applyDrop(taskId: string, _section: string, status: string) {
     setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status } : t)));
@@ -321,6 +323,24 @@ export function SprintsScreen() {
     finally { setBusy(false); }
   }
 
+  // Отметка сверки: сначала на экране, потом на сервере. Ритуал — разговор на десять минут,
+  // и ждать ответа сети на каждое нажатие значит его растянуть; отказ откатывает строку и
+  // говорит вслух, а не оставляет отметку, которой на сервере нет.
+  async function markItem(
+    item: SprintCycleItem,
+    patch: Partial<Pick<SprintCycleItem, "check_status" | "check_note" | "to_carry" | "carry_reason">>,
+  ) {
+    if (!detail || !item.task_id) return;
+    const before = detail;
+    setDetail({ ...detail, items: detail.items.map((i) => (i.id === item.id ? { ...i, ...patch } : i)) });
+    try {
+      await patchSprintCycleItem(detail.id, item.task_id, patch);
+    } catch (e) {
+      setDetail(before);
+      setErr(e instanceof Error ? e.message : dt("Отметка не сохранилась", "The mark was not saved"));
+    }
+  }
+
   const kanban: KanbanHandlers = {
     drag, onDragChange: setDrag, onDropTask: applyDrop,
     quickAdd, onQuickAddChange: setQuickAdd, onQuickAddSubmit: addTaskToColumn,
@@ -334,7 +354,10 @@ export function SprintsScreen() {
 
   // Канбан — только на компьютере (D003), поэтому на телефоне список показывается всегда,
   // независимо от запомненного вида.
-  const showList = view === "list" || !isDesktop;
+  // Канбан — только на компьютере (D003); сверка и список читаемы и с телефона.
+  const effectiveView = view === "kanban" && !isDesktop ? "list" : view;
+  const showList = effectiveView === "list";
+  const showCheck = effectiveView === "check";
 
   /* Пустой спринт объясняет ровно следующее действие: «наберите из пула» не говорит, ЧЕМ
      набирают, и человек упирается в экран (владелец 09.09.2026). */
@@ -523,7 +546,9 @@ export function SprintsScreen() {
             {accepted
               ? (reportOpen && <SprintReport cycle={detail} />)
               : isDesktop && <SprintTaskPool tasks={poolTasks} projects={projects} adding={busy} onAdd={addToSprint} />}
-            {showList ? (
+            {showCheck ? (
+              <CheckScreen cycle={detail} unchecked={unchecked} onMark={markItem} />
+            ) : showList ? (
               <div className="flex-1 min-w-0 overflow-y-auto">
                 {items.length === 0 ? emptyComposition : (
                   <InitiativeList board={board} unchecked={unchecked} users={users}
