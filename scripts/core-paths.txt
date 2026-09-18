@@ -16,3 +16,6 @@ miniapp/src/lib/spaceAnalytics.ts|miniapp/src/lib/spaceAnalytics.test.ts
 supabase/functions/swarm-api/space-journal.ts|supabase/functions/swarm-api/space-journal.db.test.ts
 # Сроки инициативы: перепутанный интервал не падает, он просто рисует полоску не там.
 supabase/functions/swarm-api/project-fields.ts|supabase/functions/swarm-api/project-fields.test.ts
+# Ссылки задачи: список схем в коде — единственное, что стоит между `javascript:` в поле
+# и этим же адресом в href на экране. Ошибка здесь не падает, она делает ссылку кликабельной.
+miniapp/src/lib/taskLinks.ts|miniapp/src/lib/taskLinks.test.ts
