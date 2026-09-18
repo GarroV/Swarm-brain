@@ -79,9 +79,13 @@ export function historyValue(v: unknown): string | null {
   if (v === null || v === undefined) return null;
   let s: string;
   if (Array.isArray(v)) {
-    const parts = v.map((x) => String(x ?? "").trim()).filter((x) =>
-      x.length > 0
-    );
+    // Ссылки приходят объектами {title, url}: без этого в журнале встало бы
+    // «[object Object]», и строка истории не сказала бы ничего.
+    const parts = v.map((x) =>
+      x && typeof x === "object" && "url" in (x as Record<string, unknown>)
+        ? String((x as { url: unknown }).url ?? "").trim()
+        : String(x ?? "").trim()
+    ).filter((x) => x.length > 0);
     if (!parts.length) return null;
     s = parts.join(", ");
   } else if (typeof v === "object") {

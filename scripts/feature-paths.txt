@@ -13,9 +13,13 @@ supabase/functions/_shared/tasks/sprint-items.ts
 supabase/functions/_shared/tasks/sprint-accept.ts
 supabase/functions/swarm-api/sprint-cycles.ts
 supabase/functions/swarm-api/sprint-routes.db.test.ts
-supabase/functions/swarm-api/space-journal.ts
 miniapp/src/lib/initiatives.ts
 miniapp/src/lib/initiatives.test.ts
 miniapp/src/lib/spaceAnalytics.ts
 miniapp/src/lib/spaceAnalytics.test.ts
 miniapp/src/components/tasks/sprints
+supabase/functions/swarm-api/space-journal.ts
+supabase/functions/swarm-api/space-journal.db.test.ts
+supabase/functions/swarm-api/project-fields.ts
+supabase/functions/swarm-api/project-fields.test.ts
+supabase/functions/swarm-api/task-links.db.test.ts

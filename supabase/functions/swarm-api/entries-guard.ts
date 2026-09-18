@@ -110,7 +110,9 @@ export function buildEntriesQuery(
     .from("entries")
     .select(select, opts?.count ? { count: opts.count } : undefined)
     .eq("group_id", groupId)
-    .or(`is_private.eq.false,and(is_private.eq.true,owner_id.eq.${telegramId})`);
+    .or(
+      `is_private.eq.false,and(is_private.eq.true,owner_id.eq.${telegramId})`,
+    );
 }
 
 /**
@@ -135,7 +137,11 @@ export function buildEntriesQuery(
 export function buildReviewQueueQuery(
   supabase: SupabaseClient,
   select: string,
-  { groupId, telegramId, email }: { groupId: string; telegramId: number; email?: string | null },
+  { groupId, telegramId, email }: {
+    groupId: string;
+    telegramId: number;
+    email?: string | null;
+  },
 ) {
   const mine = `owner_id.eq.${telegramId}`;
   const clean = (email ?? "").trim().toLowerCase();

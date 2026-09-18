@@ -11,3 +11,8 @@ supabase/functions/_shared/tasks/links.ts|supabase/functions/_shared/tasks/links
 supabase/functions/_shared/tasks/sprint-items.ts|supabase/functions/swarm-api/sprint-routes.db.test.ts
 miniapp/src/lib/initiatives.ts|miniapp/src/lib/initiatives.test.ts
 miniapp/src/lib/spaceAnalytics.ts|miniapp/src/lib/spaceAnalytics.test.ts
+# Журнал пространства собирает события из чужих таблиц: ошибка в правиле видимости молчит
+# и показывает чужую приватную задачу под видом «ленты».
+supabase/functions/swarm-api/space-journal.ts|supabase/functions/swarm-api/space-journal.db.test.ts
+# Сроки инициативы: перепутанный интервал не падает, он просто рисует полоску не там.
+supabase/functions/swarm-api/project-fields.ts|supabase/functions/swarm-api/project-fields.test.ts

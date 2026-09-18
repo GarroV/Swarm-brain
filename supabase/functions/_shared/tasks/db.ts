@@ -54,6 +54,9 @@ export async function createTask(
     tree_y: input.tree_y ?? null,
     recur_freq: input.recur_freq ?? null,
     recur_anchor_dom: input.recur_anchor_dom ?? null,
+    // Пустой массив, а не null: колонка объявлена not null, и «ссылок нет» — это пустой
+    // список, по которому фронт сразу рисует поле, не проверяя на null.
+    links: input.links ?? [],
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Task;

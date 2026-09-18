@@ -80,6 +80,16 @@ export async function listProjects(
   }));
 }
 
+/** Одна инициатива воркспейса. Нужна правке: часть проверок сверяется с тем, что уже стоит. */
+export async function getProject(
+  id: string,
+  groupId: string,
+): Promise<Project | null> {
+  const { data } = await supabase.from("projects")
+    .select("*").eq("id", id).eq("group_id", groupId).maybeSingle();
+  return (data as Project | null) ?? null;
+}
+
 export async function createProject(
   input: ProjectInput,
   groupId: string,
@@ -105,6 +115,9 @@ export async function createProject(
     created_by: createdBy,
     sprint_id: input.sprint_id ?? null,
     is_private: input.is_private ?? false,
+    owner_telegram_id: input.owner_telegram_id ?? null,
+    start_date: input.start_date ?? null,
+    end_date: input.end_date ?? null,
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Project;
