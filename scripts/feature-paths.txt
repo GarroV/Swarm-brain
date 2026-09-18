@@ -1,0 +1,15 @@
+# Пути доски инициатив: на них действуют формат, линт, мёртвый код и границы.
+# Остальной репозиторий этими ролями не проверяется — код чужой для этой стройки,
+# замер 18.09.2026: 24 из 26 файлов _shared/tasks не по deno fmt, 15 замечаний линта.
+# Включать их «ошибкой» на всём репозитории значит получить красный гейт на пустом месте.
+supabase/functions/_shared/tasks/sprint-carry.ts
+supabase/functions/_shared/tasks/sprint-carry.test.ts
+supabase/functions/_shared/tasks/links.ts
+supabase/functions/_shared/tasks/links.test.ts
+supabase/functions/swarm-api/sprint-cycles.ts
+supabase/functions/swarm-api/space-journal.ts
+miniapp/src/lib/initiatives.ts
+miniapp/src/lib/initiatives.test.ts
+miniapp/src/lib/spaceAnalytics.ts
+miniapp/src/lib/spaceAnalytics.test.ts
+miniapp/src/components/tasks/sprints

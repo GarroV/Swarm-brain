@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Порча: ломаем ядро нарочно и убеждаемся, что тесты краснеют.
+# Это единственная проверка, отвечающая на вопрос «а тесты вообще что-нибудь ловят».
+# Команда проекта, а не то, что кто-то помнит сделать: на живых прогонах её пропускали
+# именно потому, что она держалась на памяти.
+#
+# Отдельно проверяется, что порча ПРИМЕНИЛАСЬ: если подстановка молча ничего не изменила,
+# «отрицательный прогон» зелёный обманом — так уже было.
+set -o pipefail
+cd "$(dirname "$0")/.."
+FAILED=0
+
+while IFS='|' read -r SRC TEST; do
+  case "$SRC" in ''|\#*) continue ;; esac
+  if [ ! -f "$SRC" ] || [ ! -f "$TEST" ]; then
+    echo "порча  пропуск  $SRC — модуля или тестов ещё нет"
+    continue
+  fi
+
+  cp "$SRC" "$SRC.porcha-backup"
+  # Мутация: переворачиваем первое сравнение. Если ни одного не нашлось — это отказ,
+  # а не успех: модуль без сравнений нечем испортить, и молчать об этом нельзя.
+  if grep -q ' === ' "$SRC"; then
+    perl -0pi -e 's/ === / !== /' -- "$SRC"
+  elif grep -q ' >= ' "$SRC"; then
+    perl -0pi -e 's/ >= / > /' -- "$SRC"
+  elif grep -q ' < ' "$SRC"; then
+    perl -0pi -e 's/ < / <= /' -- "$SRC"
+  else
+    echo "порча  ОТКАЗ    $SRC — нечего испортить, проверка недействительна"
+    mv "$SRC.porcha-backup" "$SRC"; FAILED=1; continue
+  fi
+
+  if cmp -s "$SRC" "$SRC.porcha-backup"; then
+    echo "порча  ОТКАЗ    $SRC — подстановка не применилась, прогон был бы ложно зелёным"
+    mv "$SRC.porcha-backup" "$SRC"; FAILED=1; continue
+  fi
+
+  OUT=$(deno test -A --no-check "$TEST" 2>&1); ST=$?
+  mv "$SRC.porcha-backup" "$SRC"
+
+  if [ "$ST" -eq 0 ]; then
+    echo "порча  КРАСНЫЙ  $SRC — тесты прошли на сломанном коде, они ничего не проверяют"
+    FAILED=1
+  else
+    echo "порча  ok       $SRC — тесты упали, как и должны"
+  fi
+done < scripts/core-paths.txt
+
+exit "$FAILED"

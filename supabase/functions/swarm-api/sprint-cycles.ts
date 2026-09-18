@@ -23,8 +23,12 @@ import {
 
 function badDates(body: Record<string, unknown>): string | null {
   if (!body.name || typeof body.name !== "string") return "name is required";
-  if (!body.start_date || !body.end_date) return "start_date и end_date обязательны";
-  if ((body.start_date as string) > (body.end_date as string)) return "start_date не может быть позже end_date";
+  if (!body.start_date || !body.end_date) {
+    return "start_date и end_date обязательны";
+  }
+  if ((body.start_date as string) > (body.end_date as string)) {
+    return "start_date не может быть позже end_date";
+  }
   return null;
 }
 
@@ -47,7 +51,9 @@ export async function handleSprintCycleRoutes(
   const actor = String(telegramId);
 
   if (routePath === "/sprint-cycles") {
-    if (req.method === "GET") return json(await listCycles(groupId), 200, origin);
+    if (req.method === "GET") {
+      return json(await listCycles(groupId), 200, origin);
+    }
     if (req.method === "POST") {
       if (!isAdmin) return apiErr(403, "Forbidden", origin);
       const body = await readBody(req);
@@ -55,11 +61,15 @@ export async function handleSprintCycleRoutes(
       const bad = badDates(body);
       if (bad) return apiErr(400, bad, origin);
       try {
-        const cycle = await createCycle({
-          name: body.name as string,
-          start_date: body.start_date as string,
-          end_date: body.end_date as string,
-        }, groupId, actor);
+        const cycle = await createCycle(
+          {
+            name: body.name as string,
+            start_date: body.start_date as string,
+            end_date: body.end_date as string,
+          },
+          groupId,
+          actor,
+        );
         return json(cycle, 201, origin);
       } catch (e) {
         return apiErr(500, e instanceof Error ? e.message : String(e), origin);
@@ -76,7 +86,11 @@ export async function handleSprintCycleRoutes(
       if (!cycle) return apiErr(404, "Not found", origin);
       // Состав отдаём вместе с циклом: экран спринта без него всё равно бесполезен,
       // а второй запрос стоил бы лишнего круга на каждом открытии.
-      return json({ ...cycle, items: await listItems(id, groupId) }, 200, origin);
+      return json(
+        { ...cycle, items: await listItems(id, groupId) },
+        200,
+        origin,
+      );
     }
     if (req.method === "PATCH") {
       if (!isAdmin) return apiErr(403, "Forbidden", origin);
@@ -84,10 +98,17 @@ export async function handleSprintCycleRoutes(
       if (!body) return apiErr(400, "Invalid JSON", origin);
       const fields: Parameters<typeof updateCycle>[1] = {};
       if (typeof body.name === "string") fields.name = body.name;
-      if (typeof body.start_date === "string") fields.start_date = body.start_date;
+      if (typeof body.start_date === "string") {
+        fields.start_date = body.start_date;
+      }
       if (typeof body.end_date === "string") fields.end_date = body.end_date;
-      if (typeof body.summary === "string" || body.summary === null) fields.summary = body.summary as string | null;
-      if (fields.start_date && fields.end_date && fields.start_date > fields.end_date) {
+      if (typeof body.summary === "string" || body.summary === null) {
+        fields.summary = body.summary as string | null;
+      }
+      if (
+        fields.start_date && fields.end_date &&
+        fields.start_date > fields.end_date
+      ) {
         return apiErr(400, "start_date не может быть позже end_date", origin);
       }
       const updated = await updateCycle(id, fields, groupId);
@@ -118,7 +139,9 @@ export async function handleSprintCycleRoutes(
     const body = (await readBody(req)) ?? {};
     const result = await acceptCycle(acceptMatch[1], groupId, actor, {
       summary: typeof body.summary === "string" ? body.summary : null,
-      nextCycleId: typeof body.next_cycle_id === "string" ? body.next_cycle_id : null,
+      nextCycleId: typeof body.next_cycle_id === "string"
+        ? body.next_cycle_id
+        : null,
     });
     if (!result) return apiErr(404, "Not found или спринт уже принят", origin);
     return json(result, 200, origin);
@@ -128,15 +151,25 @@ export async function handleSprintCycleRoutes(
   if (tasksMatch && req.method === "POST") {
     const body = await readBody(req);
     if (!body) return apiErr(400, "Invalid JSON", origin);
-    const taskIds = Array.isArray(body.task_ids) ? (body.task_ids as string[]) : [];
+    const taskIds = Array.isArray(body.task_ids)
+      ? (body.task_ids as string[])
+      : [];
     const cycle = await getCycle(tasksMatch[1], groupId);
     if (!cycle) return apiErr(404, "Not found", origin);
-    if (cycle.status === "accepted") return apiErr(409, "Спринт принят, состав не меняется", origin);
+    if (cycle.status === "accepted") {
+      return apiErr(409, "Спринт принят, состав не меняется", origin);
+    }
     // Сколько реально добавилось: чужие воркспейсы, приватные и уже добавленные отсеиваются молча.
-    return json({ added: await addItems(tasksMatch[1], taskIds, groupId, actor) }, 200, origin);
+    return json(
+      { added: await addItems(tasksMatch[1], taskIds, groupId, actor) },
+      200,
+      origin,
+    );
   }
 
-  const itemMatch = routePath.match(/^\/sprint-cycles\/([^/]+)\/tasks\/([^/]+)$/);
+  const itemMatch = routePath.match(
+    /^\/sprint-cycles\/([^/]+)\/tasks\/([^/]+)$/,
+  );
   if (itemMatch && req.method === "DELETE") {
     const ok = await removeItem(itemMatch[1], itemMatch[2], groupId);
     if (!ok) return apiErr(404, "Not found или спринт уже принят", origin);

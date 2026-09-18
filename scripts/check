@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Единая команда проверок доски инициатив. Её же зовут приёмка блока, pre-push и CI —
+# иначе три набора расходятся и «у меня зелено» перестаёт что-либо значить.
+#
+# Роли (admissio): формат, линт, типы, тесты с порогом покрытия, мёртвый код, границы.
+# Формат/линт/мёртвый код/границы — только на файлах фичи (scripts/feature-paths.txt):
+# остальной репозиторий писался до этих гейтов, включать их там значит чинить чужое.
+# Пропуск считается падением: невыполненная проверка ничего не проверила.
+set -o pipefail
+cd "$(dirname "$0")/.."
+mkdir -p reports
+REPORT=reports/check.json
+FAILED=0
+ROWS=()
+
+row() { # роль статус выполнено пропущено подробность
+  ROWS+=("{\"role\":\"$1\",\"status\":\"$2\",\"executed\":$3,\"skipped\":$4,\"detail\":\"$5\"}")
+  printf '%-16s %-8s %s\n' "$1" "$2" "$5"
+  [ "$2" = fail ] && FAILED=1
+  return 0
+}
+
+# Файлы фичи, которые уже существуют. Пока стройка не началась, список пуст — это
+# сообщается вслух и отдельной строкой в отчёте, а не выглядит как пройденная проверка.
+# bash 3.2 в macOS не знает mapfile — читаем циклом, иначе гейт не запускается у владельца
+EXISTING=()
+while IFS= read -r p; do
+  case "$p" in ''|\#*) continue ;; esac
+  [ -e "$p" ] && EXISTING+=("$p")
+done < scripts/feature-paths.txt
+N=${#EXISTING[@]}
+
+if [ "$N" -eq 0 ]; then
+  row "формат" "empty" 0 0 "файлов фичи ещё нет"
+  row "линт" "empty" 0 0 "файлов фичи ещё нет"
+  row "мёртвый-код" "empty" 0 0 "файлов фичи ещё нет"
+  row "границы" "empty" 0 0 "файлов фичи ещё нет"
+else
+  out=$(deno fmt --check "${EXISTING[@]}" 2>&1); st=$?
+  row "формат" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
+
+  out=$(deno lint "${EXISTING[@]}" 2>&1); st=$?
+  row "линт" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -2 | tr -d '"' | tr '\n' ' ')"
+
+  out=$(deno run -A scripts/check-graph.ts 2>&1); st=$?
+  row "мёртвый-код" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | grep -i 'мёртв' | tr -d '"' | tr '\n' ' ')"
+  row "границы" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | grep -i 'границ' | tr -d '"' | tr '\n' ' ')"
+fi
+
+# Типы: edge-функции (точки входа явно — без них deno check проверяет не всё) и веб.
+ENTRIES=()
+while IFS= read -r e; do ENTRIES+=("$e"); done < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts)
+out=$(deno check "${ENTRIES[@]}" 2>&1); st=$?
+row "типы-функции" "$([ $st -eq 0 ] && echo pass || echo fail)" "${#ENTRIES[@]}" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
+
+out=$(cd miniapp && npx --no-install tsc --noEmit 2>&1); st=$?
+row "типы-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
+
+# Тесты: машинный отчёт JUnit + покрытие. Пропущенный тест — падение (см. ниже).
+# Два прогона, как их гоняет сам проект: функции с проверкой типов, веб без неё
+# (`--no-check`). Это не наша уступка: тесты веба сегодня не проходят type-check, потому
+# что ссылаются на несуществующий параметр — issue #383. Когда он закрыт, флаг убирается
+# и оба прогона становятся одинаковыми.
+rm -rf reports/cov
+deno test -A --coverage=reports/cov --reporter=junit supabase/ \
+  > reports/tests-functions.junit.xml 2> reports/tests.log; st1=$?
+deno test -A --no-check --coverage=reports/cov --reporter=junit \
+  miniapp/sw.test.ts miniapp/src/lib/ > reports/tests-web.junit.xml 2>> reports/tests.log; st2=$?
+
+count() { # файл атрибут — сумма по всем testsuite
+  grep -o "$2=\"[0-9]*\"" "$1" 2>/dev/null | tr -dc '0-9\n' | awk '{s+=$1} END {print s+0}'
+}
+EXEC=$(( $(count reports/tests-functions.junit.xml tests) + $(count reports/tests-web.junit.xml tests) ))
+SKIP=$(( $(count reports/tests-functions.junit.xml skipped) + $(count reports/tests-web.junit.xml skipped) ))
+STATUS=pass
+[ "$st1" -ne 0 ] || [ "$st2" -ne 0 ] && STATUS=fail
+[ "$SKIP" -gt 0 ] && STATUS=fail   # пропуск ничего не проверил — гейт обязан сказать вслух
+[ "$EXEC" -eq 0 ] && STATUS=fail   # ноль зарегистрированных проверок ≠ зелено
+row "тесты" "$STATUS" "$EXEC" "$SKIP" "выполнено $EXEC, пропущено $SKIP"
+
+if [ -d reports/cov ]; then
+  deno coverage --lcov --output=reports/cov.lcov reports/cov > /dev/null 2>&1
+  out=$(sh scripts/gate-coverage.sh "$(cat scripts/coverage-floor.txt)" reports/cov.lcov 2>&1); st=$?
+  row "покрытие" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr -d '"')"
+else
+  row "покрытие" "fail" 0 1 "нет данных покрытия"
+fi
+
+printf '{"generated":"%s","failed":%s,"roles":[%s]}\n' \
+  "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$FAILED" "$(IFS=,; echo "${ROWS[*]}")" > "$REPORT"
+echo "отчёт: $REPORT"
+exit "$FAILED"
