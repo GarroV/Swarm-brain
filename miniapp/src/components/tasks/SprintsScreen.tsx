@@ -2,10 +2,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   acceptSprintCycle, addTasksToSprintCycle, createSprintCycle, createTask,
-  deleteSprintCycle, fetchProjects, fetchSprintCycle, fetchSprintCycles, fetchTasks,
-  removeTaskFromSprintCycle, startSprintCycle, updateTask,
+  deleteSprintCycle, fetchProjects, fetchSprintCycle, fetchSprintCycles, fetchSprints,
+  fetchTasks, fetchUsers, removeTaskFromSprintCycle, startSprintCycle, updateTask,
 } from "@/lib/api";
-import type { Project, SprintCycle, SprintCycleDetail, SprintCycleItem, Task } from "@/types";
+import type { Project, Sprint, SprintCycle, SprintCycleDetail, SprintCycleItem, Task, User } from "@/types";
+import { buildBoard, sprintKpi } from "@/lib/initiatives";
 import { KanbanColumn } from "@/components/tasks/TaskKanban";
 import type { KanbanDrag, KanbanHandlers, KanbanQuickAdd } from "@/components/tasks/TaskKanban";
 import { SprintTaskPool } from "@/components/tasks/SprintTaskPool";
@@ -20,6 +21,12 @@ import { useConfirm } from "@/components/ui/confirm";
 import { buildQuickAddInput } from "@/lib/quickAddTask";
 import { poolCandidates, projectLabel } from "@/lib/sprintPool";
 import { useDt, useRoyNav } from "@/components/roy/nav";
+import { useIsDesktop } from "@/components/roy/useIsDesktop";
+import { BoardSkeleton, InitiativeList } from "@/components/tasks/sprints/InitiativeList";
+import { SpaceSwitcher } from "@/components/tasks/sprints/SpaceSwitcher";
+import { SprintKpiHeader } from "@/components/tasks/sprints/SprintKpiHeader";
+import { useSprintView, ViewToggle } from "@/components/tasks/sprints/ViewToggle";
+import { daysLeft, fmtDay, fmtRange } from "@/components/tasks/sprints/format";
 
 // Экран «Спринты» — период работы команды с датами, планом и приёмкой (issue #267).
 // ⚠️ Не путать с доской «Проекты» (SprintBoard.tsx): там таблица `sprints` = ВКЛАДКИ доски,
@@ -38,25 +45,10 @@ function iso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function fmtDay(value: string): string {
-  const d = new Date(value);
-  return isNaN(d.getTime()) ? value : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
-}
-
 /** Имя по умолчанию — «Спринт 10.09 — 23.09»: так их называют в переписке. */
 function defaultCycleName(from: Date, to: Date): string {
   const dm = (d: Date) => `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
   return `Спринт ${dm(from)} — ${dm(to)}`;
-}
-
-function fmtRange(from: string, to: string): string {
-  return `${fmtDay(from)} — ${fmtDay(to)}`;
-}
-
-/** Осталось дней до конца спринта; отрицательное — просрочен. */
-function daysLeft(endDate: string): number {
-  const end = new Date(`${endDate}T23:59:59`);
-  return Math.ceil((end.getTime() - Date.now()) / 86_400_000);
 }
 
 /**
@@ -84,7 +76,14 @@ export function SprintsScreen() {
   const { me } = useRoyNav();
   const isAdmin = me?.is_admin ?? false;
 
+  const isDesktop = useIsDesktop();
+  const [view, setView] = useSprintView();
+
   const [cycles, setCycles] = useState<SprintCycle[]>([]);
+  const [spaces, setSpaces] = useState<Sprint[]>([]);
+  const [space, setSpace] = useState<string | null>(null);
+  const [spacePicked, setSpacePicked] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SprintCycleDetail | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -107,8 +106,10 @@ export function SprintsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [c, t, p] = await Promise.all([fetchSprintCycles(), fetchTasks(), fetchProjects()]);
-      setCycles(c); setTasks(t); setProjects(p); setErr(null);
+      const [c, t, p, sp, u] = await Promise.all([
+        fetchSprintCycles(), fetchTasks(), fetchProjects(), fetchSprints(), fetchUsers(),
+      ]);
+      setCycles(c); setTasks(t); setProjects(p); setSpaces(sp); setUsers(u); setErr(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : dt("Не удалось загрузить спринты", "Failed to load sprints"));
     } finally {
@@ -118,14 +119,27 @@ export function SprintsScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Автовыбор: активный спринт, иначе ближайший черновик, иначе последний по дате.
+  // Пространство выбирается один раз за заход: там, где идёт живой спринт, иначе первое.
+  // `spacePicked` нужен, чтобы не переставлять выбор человека на каждой перезагрузке данных —
+  // иначе переключился на соседнее пространство, сохранил задачу, и тебя вернуло обратно.
   useEffect(() => {
-    if (selectedId || cycles.length === 0) return;
-    const pick = cycles.find((c) => c.status === "active")
-      ?? [...cycles].reverse().find((c) => c.status === "draft")
-      ?? cycles[0];
-    setSelectedId(pick.id);
-  }, [cycles, selectedId]);
+    if (spacePicked || cycles.length === 0) return;
+    const live = cycles.find((c) => c.status === "active") ?? cycles[0];
+    setSpace(live.tab_id);
+    setSpacePicked(true);
+  }, [cycles, spacePicked]);
+
+  // Спринты пространства: у каждого пространства своя череда, чужие тут не показываются.
+  const spaceCycles = useMemo(() => cycles.filter((c) => c.tab_id === space), [cycles, space]);
+
+  // Автовыбор внутри пространства: активный спринт, иначе ближайший черновик, иначе последний.
+  useEffect(() => {
+    if (spaceCycles.some((c) => c.id === selectedId)) return;
+    const pick = spaceCycles.find((c) => c.status === "active")
+      ?? [...spaceCycles].reverse().find((c) => c.status === "draft")
+      ?? spaceCycles[0];
+    setSelectedId(pick?.id ?? null);
+  }, [spaceCycles, selectedId]);
 
   const reloadDetail = useCallback(async (id: string | null) => {
     if (!id) { setDetail(null); return; }
@@ -161,13 +175,12 @@ export function SprintsScreen() {
   const poolTasks = useMemo(() => poolCandidates(tasks, inSprint), [tasks, inSprint]);
 
   const plan = items.filter((i) => i.in_plan);
-  const planDone = plan.filter((i) => CLOSED.has(i.status)).length;
-  const doneTotal = items.filter((i) => CLOSED.has(i.status)).length;
-  // Пока спринт черновик, `in_plan` ещё не проставлен — полоска считается от состава, иначе
-  // она стоит на нуле при половине закрытых задач и выглядит сломанной.
-  const percentBase = plan.length > 0 ? { done: planDone, total: plan.length } : { done: doneTotal, total: items.length };
-  const percent = detail?.stats?.planPercent
-    ?? (percentBase.total === 0 ? 0 : Math.round((percentBase.done / percentBase.total) * 100));
+  // Цифры шапки и дерево доски считает lib/initiatives — то же правило, что у серверных
+  // итогов. Считать их здесь значило бы завести второй ответ на вопрос «сколько сделано».
+  const kpi = useMemo(() => sprintKpi(items), [items]);
+  const board = useMemo(() => buildBoard(items, projects), [items, projects]);
+  // «Не отмечено» показываем с дня сверки (D013): до него молчание — норма, а не сигнал.
+  const unchecked = !!detail?.check_date && daysLeft(detail.check_date) <= 0;
 
   async function applyDrop(taskId: string, _section: string, status: string) {
     setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status } : t)));
@@ -220,7 +233,11 @@ export function SprintsScreen() {
     if (!name) { setErr(dt("Введите название спринта", "Enter a sprint name")); return; }
     setBusy(true);
     try {
-      const created = await createSprintCycle({ name, start_date: form.start_date, end_date: form.end_date });
+      // Спринт заводится В ПРОСТРАНСТВЕ, которое сейчас открыто: спринт без вкладки не
+      // виден нигде, кроме «Без пространства», и на второй день его ищут всей командой.
+      const created = await createSprintCycle({
+        name, start_date: form.start_date, end_date: form.end_date, tab_id: space,
+      });
       setCreating(false); setErr(null);
       await load();
       setSelectedId(created.id);
@@ -296,13 +313,49 @@ export function SprintsScreen() {
     onOpenTask: (t) => setEditing(t),
   };
 
-  const live = cycles.filter((c) => c.status !== "accepted");
-  const archive = cycles.filter((c) => c.status === "accepted");
+  // Канбан — только на компьютере (D003), поэтому на телефоне список показывается всегда,
+  // независимо от запомненного вида.
+  const showList = view === "list" || !isDesktop;
 
-  if (loading) return <p className="text-center text-ink-soft py-12 text-sm">{dt("Загрузка…", "Loading…")}</p>;
+  /* Пустой спринт объясняет ровно следующее действие: «наберите из пула» не говорит, ЧЕМ
+     набирают, и человек упирается в экран (владелец 09.09.2026). */
+  const emptyComposition = (
+    <div className="py-10 text-sm text-ink-soft/80 space-y-1.5">
+      <p className="font-semibold text-ink">{dt("В спринте пока нет задач", "The sprint is empty")}</p>
+      {isDesktop ? (
+        <>
+          <p>{dt("1. Слева отметьте задачи галочками — сверху появится «Добавить в спринт».",
+                 "1. Tick the tasks on the left — an “Add to sprint” button appears above the list.")}</p>
+          <p>{dt("2. Одну задачу быстрее добавить кнопкой «+» в её строке.",
+                 "2. A single task is faster to add with the “+” on its row.")}</p>
+        </>
+      ) : (
+        <p>{dt("Состав спринта набирают с компьютера — на телефоне спринт только смотрят и отмечают.",
+               "A sprint is filled from a computer — on a phone you read it and mark progress.")}</p>
+      )}
+    </div>
+  );
+
+  const live = spaceCycles.filter((c) => c.status !== "accepted");
+  const archive = spaceCycles.filter((c) => c.status === "accepted");
+  // «Без пространства» показываем только если такие спринты есть: пустая вкладка-обрубок
+  // на доске, где все спринты разложены, — лишний вопрос «а что там».
+  const hasOrphans = cycles.some((c) => c.tab_id === null);
+
+  // Пустой экран и «ещё не загрузилось» обязаны выглядеть по-разному, иначе человек
+  // читает медленную сеть как «задач нет» и заводит их заново.
+  if (loading) return <div className="px-4 py-6"><BoardSkeleton /></div>;
 
   return (
     <div className="flex flex-col h-full min-h-0">
+      {/* Пространство — первый вопрос («какой проект»), спринт — второй. */}
+      <SpaceSwitcher spaces={spaces} value={space} showOrphans={hasOrphans}
+        counts={new Map(
+          [...spaces.map((s) => [s.id as string | null, cycles.filter((c) => c.tab_id === s.id).length] as const),
+            [null, cycles.filter((c) => c.tab_id === null).length] as const],
+        )}
+        onChange={(id) => { setSpace(id); setSpacePicked(true); setSelectedId(null); }} />
+
       {/* Селектор: живые спринты чипами, принятые — архивом (их со временем станет много) */}
       <div className="flex items-center gap-1.5 px-4 pt-3 pb-2 overflow-x-auto shrink-0">
         {live.map((c) => {
@@ -338,7 +391,7 @@ export function SprintsScreen() {
             </SelectContent>
           </Select>
         )}
-        {isAdmin && (
+        {(
           <button onClick={() => {
             const today = new Date();
             const end = new Date(); end.setDate(end.getDate() + DEFAULT_LENGTH_DAYS);
@@ -352,6 +405,11 @@ export function SprintsScreen() {
             <RoyIcon name="plus" size={14} strokeWidth={2} />
           </button>
         )}
+
+        {/* Вид запоминается у человека; канбан — только на компьютере (D003). */}
+        <div className="ml-auto flex items-center gap-2">
+          <ViewToggle value={isDesktop ? view : "list"} onChange={setView} kanbanDisabled={!isDesktop} />
+        </div>
       </div>
 
       {creating && (
@@ -377,10 +435,11 @@ export function SprintsScreen() {
 
       {!detail ? (
         <p className="px-4 py-10 text-center text-sm text-ink-soft/70">
-          {cycles.length === 0
-            ? (isAdmin
-              ? dt("Спринтов пока нет. Создайте первый кнопкой «+» сверху.", "No sprints yet. Create the first one with “+” above.")
-              : dt("Спринтов пока нет — их создаёт админ.", "No sprints yet — an admin creates them."))
+          {spaceCycles.length === 0
+            ? dt(
+              "В этом пространстве спринтов пока нет. Создайте первый кнопкой «+» сверху — это может любой участник.",
+              "No sprints in this space yet. Create the first one with “+” above — any participant can.",
+            )
             : dt("Выберите спринт сверху.", "Pick a sprint above.")}
         </p>
       ) : (
@@ -402,32 +461,18 @@ export function SprintsScreen() {
               </span>
             )}
 
-            <div className="flex items-center gap-2">
-              {/* У пустого спринта полоска и «закрыто 0/0» — визуальный мусор: считать нечего. */}
-              {items.length > 0 && (
-                <div className="h-1.5 w-28 overflow-hidden rounded-full bg-surface-2">
-                  <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
-                </div>
-              )}
+            <SprintKpiHeader kpi={kpi} showUnchecked={unchecked} />
+            {plan.length > 0 && items.length > plan.length && (
               <span className="text-xs text-ink-soft">
-                {items.length === 0
-                  ? dt("состав пуст", "no tasks yet")
-                  : plan.length > 0
-                    ? dt(`план ${planDone}/${plan.length} · ${percent}%`, `plan ${planDone}/${plan.length} · ${percent}%`)
-                    : dt(`закрыто ${doneTotal}/${items.length}`, `done ${doneTotal}/${items.length}`)}
+                {dt(`сверх плана ${items.length - plan.length}`, `extra ${items.length - plan.length}`)}
               </span>
-              {items.length > plan.length && plan.length > 0 && (
-                <span className="text-xs text-ink-soft">
-                  {dt(`сверх плана ${items.length - plan.length}`, `extra ${items.length - plan.length}`)}
-                </span>
-              )}
-            </div>
+            )}
 
             <div className="ml-auto flex items-center gap-2">
-              {isAdmin && detail.status === "draft" && (
+              {detail.status === "draft" && (
                 <Button size="sm" className="h-9 text-xs" onClick={start} disabled={busy}>{dt("Начать спринт", "Start sprint")}</Button>
               )}
-              {isAdmin && detail.status === "active" && (
+              {detail.status === "active" && (
                 <Button size="sm" className="h-9 text-xs" onClick={accept} disabled={busy}>{dt("Принять спринт", "Accept sprint")}</Button>
               )}
               {accepted && (
@@ -454,23 +499,27 @@ export function SprintsScreen() {
           )}
 
           <div className="flex-1 min-h-0 flex gap-3 px-4 pb-4">
+            {/* Пул — способ набрать состав, поэтому он нужен обоим видам; на телефоне его
+                нет (D003): выбор галочками в узкой колонке нечитаем. */}
             {accepted
               ? (reportOpen && <SprintReport cycle={detail} />)
-              : <SprintTaskPool tasks={poolTasks} projects={projects} adding={busy} onAdd={addToSprint} />}
+              : isDesktop && <SprintTaskPool tasks={poolTasks} projects={projects} adding={busy} onAdd={addToSprint} />}
+            {showList ? (
+              <div className="flex-1 min-w-0 overflow-y-auto">
+                {items.length === 0 ? emptyComposition : (
+                  <InitiativeList board={board} unchecked={unchecked} users={users}
+                    onOpen={(item) => {
+                      // Открываем ЖИВУЮ задачу: строка спринта — это её отражение, и править
+                      // надо задачу. У упоминания и приватной чужой открывать нечего — такие
+                      // строки список кликабельными и не делает.
+                      const live = item.task_id ? tasks.find((t) => t.id === item.task_id) : undefined;
+                      if (live) setEditing(live);
+                    }} />
+                )}
+              </div>
+            ) : (
             <div className="flex-1 min-w-0 flex gap-3 overflow-x-auto">
-              {items.length === 0 ? (
-                /* Пустой спринт объясняет ровно следующее действие: «наберите из пула» не
-                   говорит, ЧЕМ набирают, и человек упирается в экран (владелец 09.09.2026). */
-                <div className="py-10 text-sm text-ink-soft/80 space-y-1.5">
-                  <p className="font-semibold text-ink">{dt("В спринте пока нет задач", "The sprint is empty")}</p>
-                  <p>{dt("1. Слева отметьте задачи галочками — сверху появится «Добавить в спринт».",
-                         "1. Tick the tasks on the left — an “Add to sprint” button appears above the list.")}</p>
-                  <p>{dt("2. Одну задачу быстрее добавить кнопкой «+» в её строке.",
-                         "2. A single task is faster to add with the “+” on its row.")}</p>
-                  <p>{dt("Дальше задачи двигаются по колонкам мышью, как на доске проектов.",
-                         "After that, drag tasks between columns just like on the project board.")}</p>
-                </div>
-              ) : COLUMNS.map((col) => (
+              {items.length === 0 ? emptyComposition : COLUMNS.map((col) => (
                 <KanbanColumn key={col.status} sectionId={SPRINT_SECTION} column={col}
                   tasks={cards.filter((t) => (col.status === "done" ? CLOSED.has(t.status) : t.status === col.status))}
                   groupOf={(t) => groupLabels.get(t.id) ?? null}
@@ -480,6 +529,7 @@ export function SprintsScreen() {
                   kanban={kanban} />
               ))}
             </div>
+            )}
           </div>
         </>
       )}
