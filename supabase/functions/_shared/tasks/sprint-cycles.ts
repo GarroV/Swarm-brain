@@ -59,7 +59,10 @@ export async function listCycles(groupId: string): Promise<SprintCycle[]> {
   return (data ?? []) as SprintCycle[];
 }
 
-export async function getCycle(id: string, groupId: string): Promise<SprintCycle | null> {
+export async function getCycle(
+  id: string,
+  groupId: string,
+): Promise<SprintCycle | null> {
   const { data } = await supabase.from("sprint_cycles")
     .select("*").eq("id", id).eq("group_id", groupId).maybeSingle();
   return (data as SprintCycle | null) ?? null;
@@ -94,7 +97,10 @@ export async function updateCycle(
   return (data as SprintCycle | null) ?? null;
 }
 
-export async function deleteCycle(id: string, groupId: string): Promise<boolean> {
+export async function deleteCycle(
+  id: string,
+  groupId: string,
+): Promise<boolean> {
   // Принятый спринт — архив, его не удаляют: иначе исчезает единственная память о периоде.
   const { data } = await supabase.from("sprint_cycles")
     .delete().eq("id", id).eq("group_id", groupId).neq("status", "accepted")
@@ -107,19 +113,30 @@ export async function deleteCycle(id: string, groupId: string): Promise<boolean>
  * процент. Добавленное позже пойдёт как «сверх плана» — именно это различие владелец просил
  * видеть в итогах, чтобы набранная по ходу мелочь не улучшала картинку.
  */
-export async function startCycle(id: string, groupId: string): Promise<SprintCycle | null> {
+export async function startCycle(
+  id: string,
+  groupId: string,
+): Promise<SprintCycle | null> {
   const cycle = await getCycle(id, groupId);
   if (!cycle || cycle.status !== "draft") return null;
 
-  await supabase.from("sprint_items").update({ in_plan: true }).eq("cycle_id", id);
+  await supabase.from("sprint_items").update({ in_plan: true }).eq(
+    "cycle_id",
+    id,
+  );
   const { data } = await supabase.from("sprint_cycles")
-    .update({ status: "active", started_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .update({
+      status: "active",
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id).eq("group_id", groupId)
     .select().maybeSingle();
   return (data as SprintCycle | null) ?? null;
 }
 
-const TASK_FIELDS = "id, title, status, assignees, project_id, is_private, group_id, completed_at";
+const TASK_FIELDS =
+  "id, title, status, assignees, project_id, is_private, group_id, completed_at";
 
 /**
  * Добавление задач в спринт.
@@ -147,7 +164,9 @@ export async function addItems(
 
   const { data: existing } = await supabase.from("sprint_items")
     .select("task_id").eq("cycle_id", cycleId);
-  const already = new Set((existing ?? []).map((r) => (r as { task_id: string | null }).task_id));
+  const already = new Set(
+    (existing ?? []).map((r) => (r as { task_id: string | null }).task_id),
+  );
 
   const fresh = allowed.filter((t) => !already.has(t.id));
   if (fresh.length === 0) return 0;
@@ -162,7 +181,9 @@ export async function addItems(
     })),
   ).select("id");
 
-  const fromBacklog = fresh.filter((t) => t.status === "backlog").map((t) => t.id);
+  const fromBacklog = fresh.filter((t) => t.status === "backlog").map((t) =>
+    t.id
+  );
   if (fromBacklog.length > 0) {
     await supabase.from("tasks")
       .update({ status: "open", updated_at: new Date().toISOString() })
@@ -172,7 +193,11 @@ export async function addItems(
   return (inserted ?? []).length;
 }
 
-export async function removeItem(cycleId: string, taskId: string, groupId: string): Promise<boolean> {
+export async function removeItem(
+  cycleId: string,
+  taskId: string,
+  groupId: string,
+): Promise<boolean> {
   const cycle = await getCycle(cycleId, groupId);
   if (!cycle || cycle.status === "accepted") return false; // архив неизменен
   const { data } = await supabase.from("sprint_items")
@@ -182,21 +207,33 @@ export async function removeItem(cycleId: string, taskId: string, groupId: strin
 }
 
 /** Состав спринта: у принятого — из клона, у живого — из задач. */
-export async function listItems(cycleId: string, groupId: string): Promise<SprintItem[]> {
+export async function listItems(
+  cycleId: string,
+  groupId: string,
+): Promise<SprintItem[]> {
   const cycle = await getCycle(cycleId, groupId);
   if (!cycle) return [];
 
   const { data: rows } = await supabase.from("sprint_items")
-    .select("id, task_id, in_plan, added_at, frozen_at, frozen_title, frozen_status, frozen_assignees, frozen_project, frozen_completed_at")
+    .select(
+      "id, task_id, in_plan, added_at, frozen_at, frozen_title, frozen_status, frozen_assignees, frozen_project, frozen_completed_at",
+    )
     .eq("cycle_id", cycleId).order("added_at", { ascending: true });
   const items = (rows ?? []) as Record<string, unknown>[];
   if (items.length === 0) return [];
 
-  const liveIds = items.filter((r) => !r.frozen_at && r.task_id).map((r) => r.task_id as string);
+  const liveIds = items.filter((r) => !r.frozen_at && r.task_id).map((r) =>
+    r.task_id as string
+  );
   const live = new Map<string, Record<string, unknown>>();
   if (liveIds.length > 0) {
-    const { data: tasks } = await supabase.from("tasks").select(TASK_FIELDS).in("id", liveIds);
-    for (const t of (tasks ?? []) as Record<string, unknown>[]) live.set(t.id as string, t);
+    const { data: tasks } = await supabase.from("tasks").select(TASK_FIELDS).in(
+      "id",
+      liveIds,
+    );
+    for (const t of (tasks ?? []) as Record<string, unknown>[]) {
+      live.set(t.id as string, t);
+    }
   }
 
   const projectNames = await loadProjectNames(items, live);
@@ -210,12 +247,22 @@ export async function listItems(cycleId: string, groupId: string): Promise<Sprin
       task_id: (r.task_id as string | null) ?? null,
       in_plan: !!r.in_plan,
       added_at: r.added_at as string,
-      title: frozen ? (r.frozen_title as string) : ((t?.title as string) ?? "(задача удалена)"),
-      status: frozen ? (r.frozen_status as string) : ((t?.status as string) ?? "cancelled"),
-      assignees: frozen ? ((r.frozen_assignees as string[]) ?? []) : ((t?.assignees as string[]) ?? []),
+      title: frozen
+        ? (r.frozen_title as string)
+        : ((t?.title as string) ?? "(задача удалена)"),
+      status: frozen
+        ? (r.frozen_status as string)
+        : ((t?.status as string) ?? "cancelled"),
+      assignees: frozen
+        ? ((r.frozen_assignees as string[]) ?? [])
+        : ((t?.assignees as string[]) ?? []),
       project_id: projectId,
-      project: frozen ? ((r.frozen_project as string | null) ?? null) : (projectId ? projectNames.get(projectId) ?? null : null),
-      completed_at: frozen ? ((r.frozen_completed_at as string | null) ?? null) : ((t?.completed_at as string | null) ?? null),
+      project: frozen
+        ? ((r.frozen_project as string | null) ?? null)
+        : (projectId ? projectNames.get(projectId) ?? null : null),
+      completed_at: frozen
+        ? ((r.frozen_completed_at as string | null) ?? null)
+        : ((t?.completed_at as string | null) ?? null),
       frozen,
     };
   });
@@ -233,8 +280,12 @@ async function loadProjectNames(
   }
   const names = new Map<string, string>();
   if (ids.size === 0) return names;
-  const { data } = await supabase.from("projects").select("id, name").in("id", [...ids]);
-  for (const p of (data ?? []) as { id: string; name: string }[]) names.set(p.id, p.name);
+  const { data } = await supabase.from("projects").select("id, name").in("id", [
+    ...ids,
+  ]);
+  for (const p of (data ?? []) as { id: string; name: string }[]) {
+    names.set(p.id, p.name);
+  }
   return names;
 }
 
@@ -283,7 +334,8 @@ export async function acceptCycle(
   })));
 
   let carried = 0;
-  const openIds = items.filter((it) => !isClosedStatus(it.status) && it.task_id).map((it) => it.task_id as string);
+  const openIds = items.filter((it) => !isClosedStatus(it.status) && it.task_id)
+    .map((it) => it.task_id as string);
   if (opts.nextCycleId && openIds.length > 0) {
     const next = await getCycle(opts.nextCycleId, groupId);
     // В принятый спринт переносить нельзя — иначе архив, который обязан быть неизменным,

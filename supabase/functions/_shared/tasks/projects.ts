@@ -1,7 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Project, ProjectInput } from "./types.ts";
-import { validateParent, type ProjectRef } from "./project-nesting.ts";
-import { canViewProject, parentLookup, type ProjectAccessRow } from "./project-access.ts";
+import { type ProjectRef, validateParent } from "./project-nesting.ts";
+import {
+  canViewProject,
+  parentLookup,
+  type ProjectAccessRow,
+} from "./project-access.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -10,7 +14,10 @@ const supabase = createClient(
 
 // Все операции изолированы по group_id — проект принадлежит воркспейсу.
 
-export type ProjectWithCounts = Project & { task_count: number; backlog_count: number };
+export type ProjectWithCounts = Project & {
+  task_count: number;
+  backlog_count: number;
+};
 
 // Проекты воркспейса + счётчики: всего задач в проекте и из них в бэклоге (project_linked=false).
 // Счётчики обязаны уважать приватность задач (та же видимость, что у listTasks) — иначе
@@ -57,7 +64,9 @@ export async function listProjects(
   }
   const { data: tasks } = await tasksQuery;
   const counts = new Map<string, { total: number; backlog: number }>();
-  ((tasks ?? []) as Array<{ project_id: string | null; project_linked: boolean }>).forEach((t) => {
+  ((tasks ?? []) as Array<
+    { project_id: string | null; project_linked: boolean }
+  >).forEach((t) => {
     if (!t.project_id) return;
     const c = counts.get(t.project_id) ?? { total: 0, backlog: 0 };
     c.total += 1;
@@ -80,7 +89,11 @@ export async function createProject(
   if (parentId !== null) {
     const { data: refs } = await supabase
       .from("projects").select("id, parent_id").eq("group_id", groupId);
-    const v = validateParent({ projectId: null, parentId, all: (refs ?? []) as ProjectRef[] });
+    const v = validateParent({
+      projectId: null,
+      parentId,
+      all: (refs ?? []) as ProjectRef[],
+    });
     if (!v.ok) throw new Error(v.error);
   }
   const { data, error } = await supabase.from("projects").insert({
@@ -109,7 +122,11 @@ export async function updateProject(
   if ("parent_id" in fields) {
     const { data: refs } = await supabase
       .from("projects").select("id, parent_id").eq("group_id", groupId);
-    const v = validateParent({ projectId: id, parentId: fields.parent_id ?? null, all: (refs ?? []) as ProjectRef[] });
+    const v = validateParent({
+      projectId: id,
+      parentId: fields.parent_id ?? null,
+      all: (refs ?? []) as ProjectRef[],
+    });
     if (!v.ok) throw new Error(v.error);
   }
   if (!(await canMutateProject(id, groupId, opts))) return null;
@@ -131,9 +148,14 @@ export async function updateProject(
 //
 // Тянем весь список воркспейса, а не одну строку: приватность подпроекта зависит от его группы,
 // и без неё предикат честно схлопнется в fail-closed (проектов единицы-десятки, см. listProjects).
-async function canMutateProject(id: string, groupId: string, opts: { viewerId?: number }): Promise<boolean> {
+async function canMutateProject(
+  id: string,
+  groupId: string,
+  opts: { viewerId?: number },
+): Promise<boolean> {
   const { data } = await supabase.from("projects")
-    .select("id, parent_id, created_by, is_private").eq("group_id", groupId).limit(500);
+    .select("id, parent_id, created_by, is_private").eq("group_id", groupId)
+    .limit(500);
   const rows = (data ?? []) as Array<ProjectAccessRow & { id: string }>;
   const row = rows.find((r) => r.id === id);
   if (!row) return false;
@@ -143,7 +165,11 @@ async function canMutateProject(id: string, groupId: string, opts: { viewerId?: 
 
 // Удаляет проект своего воркспейса. Задачи освобождаются (FK ON DELETE SET NULL для project_id),
 // а project_linked сбрасываем явно (FK его не трогает).
-export async function deleteProject(id: string, groupId: string, opts: { viewerId?: number } = {}): Promise<boolean> {
+export async function deleteProject(
+  id: string,
+  groupId: string,
+  opts: { viewerId?: number } = {},
+): Promise<boolean> {
   if (!(await canMutateProject(id, groupId, opts))) return false;
   const { data } = await supabase.from("projects")
     .delete().eq("id", id).eq("group_id", groupId).select("id").maybeSingle();
@@ -154,8 +180,12 @@ export async function deleteProject(id: string, groupId: string, opts: { viewerI
   return true;
 }
 
-export async function projectInWorkspace(id: string, groupId: string): Promise<boolean> {
+export async function projectInWorkspace(
+  id: string,
+  groupId: string,
+): Promise<boolean> {
   const { data } = await supabase
-    .from("projects").select("id").eq("id", id).eq("group_id", groupId).maybeSingle();
+    .from("projects").select("id").eq("id", id).eq("group_id", groupId)
+    .maybeSingle();
   return !!data;
 }

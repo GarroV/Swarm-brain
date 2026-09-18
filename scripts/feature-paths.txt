@@ -4,8 +4,11 @@
 # Включать их «ошибкой» на всём репозитории значит получить красный гейт на пустом месте.
 supabase/functions/_shared/tasks/sprint-carry.ts
 supabase/functions/_shared/tasks/sprint-carry.test.ts
+supabase/functions/_shared/tasks/sprint-dates.ts
+supabase/functions/_shared/tasks/sprint-dates.test.ts
 supabase/functions/_shared/tasks/links.ts
 supabase/functions/_shared/tasks/links.test.ts
+supabase/functions/_shared/tasks/sprint-accept.db.test.ts
 supabase/functions/swarm-api/sprint-cycles.ts
 supabase/functions/swarm-api/space-journal.ts
 miniapp/src/lib/initiatives.ts

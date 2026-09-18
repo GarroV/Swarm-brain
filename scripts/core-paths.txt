@@ -4,6 +4,7 @@
 # Формат строки: <модуль>|<его тесты>
 supabase/functions/_shared/tasks/sprint-stats.ts|supabase/functions/_shared/tasks/sprint-stats.test.ts
 supabase/functions/_shared/tasks/sprint-carry.ts|supabase/functions/_shared/tasks/sprint-carry.test.ts
+supabase/functions/_shared/tasks/sprint-dates.ts|supabase/functions/_shared/tasks/sprint-dates.test.ts
 supabase/functions/_shared/tasks/links.ts|supabase/functions/_shared/tasks/links.test.ts
 miniapp/src/lib/initiatives.ts|miniapp/src/lib/initiatives.test.ts
 miniapp/src/lib/spaceAnalytics.ts|miniapp/src/lib/spaceAnalytics.test.ts

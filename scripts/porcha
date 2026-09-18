@@ -22,10 +22,18 @@ while IFS='|' read -r SRC TEST; do
   # а не успех: модуль без сравнений нечем испортить, и молчать об этом нельзя.
   if grep -q ' === ' "$SRC"; then
     perl -0pi -e 's/ === / !== /' -- "$SRC"
+  elif grep -q ' !== ' "$SRC"; then
+    perl -0pi -e 's/ !== / === /' -- "$SRC"
   elif grep -q ' >= ' "$SRC"; then
     perl -0pi -e 's/ >= / > /' -- "$SRC"
+  elif grep -q ' <= ' "$SRC"; then
+    perl -0pi -e 's/ <= / < /' -- "$SRC"
   elif grep -q ' < ' "$SRC"; then
     perl -0pi -e 's/ < / <= /' -- "$SRC"
+  elif grep -q ' > ' "$SRC"; then
+    perl -0pi -e 's/ > / >= /' -- "$SRC"
+  elif grep -q ' && ' "$SRC"; then
+    perl -0pi -e 's/ && / || /' -- "$SRC"
   else
     echo "порча  ОТКАЗ    $SRC — нечего испортить, проверка недействительна"
     mv "$SRC.porcha-backup" "$SRC"; FAILED=1; continue

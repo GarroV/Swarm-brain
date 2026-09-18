@@ -1,6 +1,10 @@
 {
   "imports": {
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
+    // Зависимости тестов доски инициатив: линт запрещает inline-адрес в импорте, и это по делу —
+    // версия, размазанная по файлам, обновляется в одном месте и забывается в трёх остальных.
+    "@std/assert": "https://deno.land/std@0.224.0/assert/mod.ts",
+    "postgres": "https://deno.land/x/postgres@v0.19.3/mod.ts",
     // Алиас веба (его знают Vite/Next, но не Deno): без него type-check тестов miniapp падает
     // на первом же `@/types` и обрывает ВЕСЬ прогон до запуска тестов (issue #207).
     "@/": "./miniapp/src/"
