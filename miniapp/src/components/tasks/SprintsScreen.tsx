@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   acceptSprintCycle, addTasksToSprintCycle, createSprintCycle, createTask,
   deleteSprintCycle, fetchProjects, fetchSprintCycle, fetchSprintCycles, fetchSprints,
-  fetchTasks, fetchUsers, removeTaskFromSprintCycle, startSprintCycle, updateTask,
+  fetchTasks, fetchUsers, patchSprintCycleItem, removeTaskFromSprintCycle, startSprintCycle,
+  updateTask,
 } from "@/lib/api";
 import type { Project, Sprint, SprintCycle, SprintCycleDetail, SprintCycleItem, Task, User } from "@/types";
 import { buildBoard, sprintKpi } from "@/lib/initiatives";
@@ -22,6 +23,7 @@ import { buildQuickAddInput } from "@/lib/quickAddTask";
 import { poolCandidates, projectLabel } from "@/lib/sprintPool";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
+import { AcceptDialog, type AcceptSubmit } from "@/components/tasks/sprints/AcceptDialog";
 import { BoardSkeleton, InitiativeList } from "@/components/tasks/sprints/InitiativeList";
 import { SpaceSwitcher } from "@/components/tasks/sprints/SpaceSwitcher";
 import { SprintKpiHeader } from "@/components/tasks/sprints/SprintKpiHeader";
@@ -97,6 +99,7 @@ export function SprintsScreen() {
   const [drag, setDrag] = useState<KanbanDrag>(null);
   const [reportOpen, setReportOpen] = useState(true);
   const [quickAdd, setQuickAdd] = useState<KanbanQuickAdd>(null);
+  const [acceptOpen, setAcceptOpen] = useState(false);
 
   const COLUMNS = useMemo(() => [
     { status: "open", label: dt("Открыто", "Open"), bar: "#8C8475" },
@@ -272,26 +275,37 @@ export function SprintsScreen() {
     finally { setBusy(false); }
   }
 
-  async function accept() {
+  // Приёмка идёт через своё окно: в нём видно, ЧТО уедет, и можно вписать причину переноса
+  // (D011). Подтверждение в одну строку этого места не давало, и таблица причин стояла пустой.
+  async function submitAccept({ summary, reasons }: AcceptSubmit) {
     if (!detail) return;
-    // Следующий спринт создаёт сама приёмка — одной транзакцией с переносом хвостов. Искать,
-    // «куда бы переложить», больше не нужно: раньше без готового черновика работа просто
-    // оставалась в принятом спринте и пропадала из виду.
-    const open = items.filter((i) => !CLOSED.has(i.status)).length;
-    if (!(await confirm({
-      title: dt(`Принять «${detail.name}»?`, `Accept “${detail.name}”?`),
-      description: dt(
-        `Состав замрёт слепком на момент приёмки, итоги посчитаются один раз. Незакрытые (${open}) уедут в следующий спринт — он создастся сам, встык. Отменить приёмку нельзя.`,
-        `The composition freezes as a snapshot and the results are computed once. ${open} unfinished task(s) move to the next sprint, which is created automatically right after this one. Accepting cannot be undone.`,
-      ),
-      confirmText: dt("Принять спринт", "Accept sprint"),
-    }))) return;
     setBusy(true);
     try {
-      await acceptSprintCycle(detail.id);
-      await Promise.all([load(), reloadDetail(detail.id)]);
-    } catch (e) { setErr(e instanceof Error ? e.message : dt("Не удалось принять", "Failed to accept")); }
-    finally { setBusy(false); }
+      // Причины пишем ДО приёмки: после неё состав заморожен, и строка правке не поддаётся.
+      // Ошибка одной причины не должна отменять приёмку — но и молчать о ней нельзя.
+      const failed: string[] = [];
+      for (const [taskId, carry_reason] of Object.entries(reasons)) {
+        try {
+          await patchSprintCycleItem(detail.id, taskId, { carry_reason });
+        } catch {
+          failed.push(taskId);
+        }
+      }
+      const result = await acceptSprintCycle(detail.id, { summary });
+      setAcceptOpen(false);
+      await load();
+      setSelectedId(result.next?.id ?? detail.id);
+      setErr(
+        failed.length > 0
+          ? dt(
+            `Спринт принят, но ${failed.length} причин(ы) не сохранились — их можно вписать в следующем спринте.`,
+            `The sprint is accepted, but ${failed.length} reason(s) were not saved — you can add them in the next sprint.`,
+          )
+          : null,
+      );
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : dt("Не удалось принять", "Failed to accept"));
+    } finally { setBusy(false); }
   }
 
   async function removeCycle() {
@@ -473,7 +487,7 @@ export function SprintsScreen() {
                 <Button size="sm" className="h-9 text-xs" onClick={start} disabled={busy}>{dt("Начать спринт", "Start sprint")}</Button>
               )}
               {detail.status === "active" && (
-                <Button size="sm" className="h-9 text-xs" onClick={accept} disabled={busy}>{dt("Принять спринт", "Accept sprint")}</Button>
+                <Button size="sm" className="h-9 text-xs" onClick={() => setAcceptOpen(true)} disabled={busy}>{dt("Принять спринт", "Accept sprint")}</Button>
               )}
               {accepted && (
                 <Button size="sm" variant="outline" className="h-9 text-xs" onClick={() => setReportOpen((v) => !v)}>
@@ -533,6 +547,10 @@ export function SprintsScreen() {
           </div>
         </>
       )}
+
+      <AcceptDialog open={acceptOpen && !!detail} cycleName={detail?.name ?? ""} busy={busy}
+        carrying={items.filter((i) => !CLOSED.has(i.status) && !i.removed)}
+        onCancel={() => setAcceptOpen(false)} onAccept={submitAccept} />
 
       <TaskModal task={editing ?? undefined} open={!!editing} onClose={() => setEditing(null)}
         onSaved={() => { load(); reloadDetail(selectedId); }} />
