@@ -100,6 +100,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var recWatchTimer: Timer?
     private var callSeenDuringRec = false
     private var silentTicks = 0
+    // «Разговор начался» — собеседников слышно 2 тика подряд. До этого правила (0) и (а) запись не
+    // останавливают: они про конец разговора, а до начала ловят ожидание в лобби (issue #379).
+    private var conversation = ConversationGate()
     // Тики подряд, когда НИКТО не звучит: ни системная дорожка (собеседники), ни СВОЙ микрофон.
     // Считается независимо от mic-детекта занятости: ловит конец БРАУЗЕРНОГО звонка (Google Meet /
     // Контур.Толк во вкладке), где браузер держит микрофон непрерывно даже после выхода.
@@ -1162,6 +1165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func startCallEndWatch() {
         callSeenDuringRec = false
         silentTicks = 0
+        conversation = ConversationGate()
         systemSilentTicks = 0
         systemOnlySilentTicks = 0
         roomGoneTicks = 0
@@ -1244,6 +1248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if loudStreak >= 2 { systemSilentTicks = 0 }
         }
         // Бэкстоп только по собеседникам (мик не участвует) — см. объявление счётчика.
+        conversation.observe(otherSideAudible: systemPeak >= Self.systemSilenceLevel)
         if systemPeak < Self.systemSilenceLevel {
             systemOnlySilentTicks += 1
         } else {
@@ -1256,7 +1261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if #available(macOS 14.0, *) {
             let info = CallDetector.othersUsingMicInfo()
             realCall = !info.isEmpty
-            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks) sysPeak=\(String(format: "%.3f", systemPeak)) micPeak=\(String(format: "%.3f", micPeak)) sysSilent=\(systemSilentTicks) sysOnly=\(systemOnlySilentTicks) roomGone=\(roomGoneTicks) elapsed=\(Int(elapsed))s")
+            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) talk=\(conversation.isOpen) silent=\(silentTicks) sysPeak=\(String(format: "%.3f", systemPeak)) micPeak=\(String(format: "%.3f", micPeak)) sysSilent=\(systemSilentTicks) sysOnly=\(systemOnlySilentTicks) roomGone=\(roomGoneTicks) elapsed=\(Int(elapsed))s")
         }
 
         // (Сигнал вкладки) Быстрый конец БРАУЗЕРНОГО созвона: вкладка комнаты (Meet/Контур) закрыта
@@ -1286,8 +1291,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // (0) Конец БРАУЗЕРНОГО звонка по тишине ОБЕИХ дорожек. Срабатывает ДАЖЕ когда
         // mic-холдер (браузер) всё ещё держит мик — НЕ гейтим на realCall==false. Требуем, чтобы
-        // звонок хоть раз был замечен (callSeenDuringRec), чтобы не стопать «пустой» ручной старт.
-        if callSeenDuringRec && systemSilentTicks >= Self.systemSilenceTicksToStop {
+        // звонок хоть раз был замечен (callSeenDuringRec), чтобы не стопать «пустой» ручной старт,
+        // и чтобы разговор уже начался (conversation.isOpen): три минуты тишины в лобби до прихода
+        // собеседников — это ожидание, а не конец звонка (issue #379).
+        if callSeenDuringRec && conversation.isOpen && systemSilentTicks >= Self.systemSilenceTicksToStop {
             autoStop(reason: "звонок завершён (тишина)")
             return
         }
@@ -1314,8 +1321,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // Реального созвона сейчас нет — копим «тихие» тики (5с каждый).
         silentTicks += 1
-        // (а) Созвон был и смолк ~15с → закончился → стоп.
-        if callSeenDuringRec && silentTicks >= 3 {
+        // (а) Созвон был и смолк ~15с → закончился → стоп. Только после начала разговора: переход
+        // из лобби в звонок (или из вкладки в приложение) может отпустить микрофон дольше 15 с
+        // (issue #379). До разговора запись держат бэкстопы (0б) и (б).
+        if callSeenDuringRec && conversation.isOpen && silentTicks >= 3 {
             autoStop(reason: "звонок завершён")
             return
         }
