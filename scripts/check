@@ -29,6 +29,15 @@ row() { # роль статус выполнено пропущено подро
   return 0
 }
 
+# Полный вывод роли — в файл рядом с отчётом. Строка отчёта показывает хвост в две строки, и
+# этого хватает, пока проверка зелёная; когда она падает, причина оказывается ВЫШЕ хвоста и
+# теряется. Так и вышло: гейт в CI сказал «линт fail: Found 1 problem» и ни слова о том, где
+# и что, — а локально та же команда была зелёной (другая версия рантайма). Файлы забирает
+# CI как артефакт, поэтому причина доезжает до человека, а не остаётся в чужом раннере.
+keep() { # роль <<< вывод
+  printf '%s\n' "$2" > "reports/$1.txt"
+}
+
 # Файлы фичи, которые уже существуют. Пока стройка не началась, список пуст — это
 # сообщается вслух и отдельной строкой в отчёте, а не выглядит как пройденная проверка.
 # bash 3.2 в macOS не знает mapfile — читаем циклом, иначе гейт не запускается у владельца
@@ -45,13 +54,13 @@ if [ "$N" -eq 0 ]; then
   row "мёртвый-код" "empty" 0 0 "файлов фичи ещё нет"
   row "границы" "empty" 0 0 "файлов фичи ещё нет"
 else
-  out=$(deno fmt --check "${EXISTING[@]}" 2>&1); st=$?
+  out=$(deno fmt --check "${EXISTING[@]}" 2>&1); st=$?; keep формат "$out"
   row "формат" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
 
-  out=$(deno lint "${EXISTING[@]}" 2>&1); st=$?
+  out=$(deno lint "${EXISTING[@]}" 2>&1); st=$?; keep линт "$out"
   row "линт" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -2 | tr -d '"' | tr '\n' ' ')"
 
-  out=$(deno run -A scripts/check-graph.ts 2>&1); st=$?
+  out=$(deno run -A scripts/check-graph.ts 2>&1); st=$?; keep граф "$out"
   row "мёртвый-код" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | grep -i 'мёртв' | tr -d '"' | tr '\n' ' ')"
   row "границы" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | grep -i 'границ' | tr -d '"' | tr '\n' ' ')"
 fi
@@ -59,10 +68,10 @@ fi
 # Типы: edge-функции (точки входа явно — без них deno check проверяет не всё) и веб.
 ENTRIES=()
 while IFS= read -r e; do ENTRIES+=("$e"); done < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts)
-out=$(deno check "${ENTRIES[@]}" 2>&1); st=$?
+out=$(deno check "${ENTRIES[@]}" 2>&1); st=$?; keep типы-функции "$out"
 row "типы-функции" "$([ $st -eq 0 ] && echo pass || echo fail)" "${#ENTRIES[@]}" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
 
-out=$(cd miniapp && npx --no-install tsc --noEmit 2>&1); st=$?
+out=$(cd miniapp && npx --no-install tsc --noEmit 2>&1); st=$?; keep типы-веб "$out"
 row "типы-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
 
 # Тесты: машинный отчёт JUnit + покрытие. Пропущенный тест — падение (см. ниже).
@@ -98,4 +107,18 @@ fi
 printf '{"generated":"%s","failed":%s,"roles":[%s]}\n' \
   "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$FAILED" "$(IFS=,; echo "${ROWS[*]}")" > "$REPORT"
 echo "отчёт: $REPORT"
+
+# Падение печатаем целиком прямо здесь. Артефакт с отчётами есть, но за ним надо идти и
+# распаковывать, а человек смотрит в лог — и если в логе только «Found 1 problem», проверка
+# сообщила о падении и не сообщила о причине.
+if [ "$FAILED" -ne 0 ]; then
+  echo
+  echo "── Что именно упало ───────────────────────────────────────────────"
+  for f in reports/*.txt; do
+    [ -s "$f" ] || continue
+    echo "· $f"
+    sed 's/^/    /' "$f"
+  done
+  sed -n '1,40p' reports/tests.log 2>/dev/null | sed 's/^/    /'
+fi
 exit "$FAILED"
