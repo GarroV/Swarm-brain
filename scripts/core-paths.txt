@@ -6,5 +6,8 @@ supabase/functions/_shared/tasks/sprint-stats.ts|supabase/functions/_shared/task
 supabase/functions/_shared/tasks/sprint-carry.ts|supabase/functions/_shared/tasks/sprint-carry.test.ts
 supabase/functions/_shared/tasks/sprint-dates.ts|supabase/functions/_shared/tasks/sprint-dates.test.ts
 supabase/functions/_shared/tasks/links.ts|supabase/functions/_shared/tasks/links.test.ts
+# Состав спринта — тоже ядро, хотя и ходит в базу: ошибка в правиле видимости молчит и
+# показывает чужую приватную задачу всей команде. Ловит порча через тесты гвардов.
+supabase/functions/_shared/tasks/sprint-items.ts|supabase/functions/swarm-api/sprint-routes.db.test.ts
 miniapp/src/lib/initiatives.ts|miniapp/src/lib/initiatives.test.ts
 miniapp/src/lib/spaceAnalytics.ts|miniapp/src/lib/spaceAnalytics.test.ts
