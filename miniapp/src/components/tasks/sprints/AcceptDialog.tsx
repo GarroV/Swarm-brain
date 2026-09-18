@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import type { SprintCycleItem } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -34,20 +34,30 @@ export function AcceptDialog(
   const dt = useDt();
   const [summary, setSummary] = useState("");
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  // Свежий состав хвостов без участия в зависимостях эффекта (см. ниже, почему это важно).
+  const carryingRef = useRef(carrying);
+  carryingRef.current = carrying;
 
   // Каждое открытие — чистое окно: недописанная причина прошлой приёмки не должна
   // всплыть в следующей и уехать в отчёт как объяснение другого спринта.
+  //
+  // ⚠️ Зависимость ТОЛЬКО от `open`. С `carrying` в списке зависимостей окно уходило в
+  // бесконечную перерисовку: список хвостов собирается фильтром на каждый рендер, то есть
+  // это каждый раз НОВЫЙ массив, эффект пишет состояние, состояние даёт новый рендер, и так
+  // по кругу («Maximum update depth exceeded» — поймано живым прогоном 19.09.2026). Свежие
+  // причины читаются из `carrying` в момент открытия и этого достаточно: пока окно открыто,
+  // состав уже не меняется.
   useEffect(() => {
     if (!open) return;
     setSummary("");
     setReasons(
       Object.fromEntries(
-        carrying
+        carryingRef.current
           .filter((i) => i.task_id && i.carry_reason)
           .map((i) => [i.task_id as string, i.carry_reason as string]),
       ),
     );
-  }, [open, carrying]);
+  }, [open]);
 
   const submit = () => {
     const filled = Object.fromEntries(

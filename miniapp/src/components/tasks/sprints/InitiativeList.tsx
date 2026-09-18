@@ -22,6 +22,11 @@ import { fmtDay } from "./format";
 
 const CLOSED = new Set(["done", "cancelled"]);
 
+/** У направления нет инициатив — только задачи, лежащие прямо на нём. */
+function bare(dir: DirectionNode): boolean {
+  return dir.initiatives.length === 1 && dir.initiatives[0].project === null;
+}
+
 const STATUS_TONE: Record<string, string> = {
   done: "bg-status-done",
   in_progress: "bg-status-prog",
@@ -204,20 +209,38 @@ export function InitiativeList(
             </div>
           </header>
           <div className="space-y-1.5">
-            {dir.initiatives.map((ini) => {
-              const key = `${dir.project?.id ?? ""}/${ini.project?.id ?? ""}`;
-              return (
-                <Initiative
-                  key={key}
-                  node={ini}
-                  collapsed={closed.has(key)}
-                  onToggle={() => toggle(key)}
-                  unchecked={unchecked}
-                  ownerName={ownerName}
-                  onOpen={onOpen}
-                />
-              );
-            })}
+            {
+              /* Направление, у которого инициатив нет вовсе, показывает задачи напрямую.
+                Обёртка «Общее» с теми же цифрами, что у направления, — строка, которая
+                ничего не добавляет и прячет задачи за лишний клик (видно на живом экране). */
+            }
+            {bare(dir)
+              ? (
+                <div className="rounded-xl border border-line bg-surface/40 px-1 py-1 dark:backdrop-blur-sm">
+                  {dir.initiatives[0].items.map((item) => (
+                    <TaskRow
+                      key={item.id}
+                      item={item}
+                      unchecked={unchecked}
+                      onOpen={onOpen}
+                    />
+                  ))}
+                </div>
+              )
+              : dir.initiatives.map((ini) => {
+                const key = `${dir.project?.id ?? ""}/${ini.project?.id ?? ""}`;
+                return (
+                  <Initiative
+                    key={key}
+                    node={ini}
+                    collapsed={closed.has(key)}
+                    onToggle={() => toggle(key)}
+                    unchecked={unchecked}
+                    ownerName={ownerName}
+                    onOpen={onOpen}
+                  />
+                );
+              })}
           </div>
         </section>
       ))}

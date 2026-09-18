@@ -327,6 +327,11 @@ export function SprintsScreen() {
     onOpenTask: (t) => setEditing(t),
   };
 
+  // Хвосты приёмки: незакрытое и не упоминание. Через useMemo, чтобы окно приёмки получало
+  // один и тот же массив между рендерами — новый массив на каждый рендер оно читает как
+  // изменение состава.
+  const carrying = useMemo(() => items.filter((i) => !CLOSED.has(i.status) && !i.removed), [items]);
+
   // Канбан — только на компьютере (D003), поэтому на телефоне список показывается всегда,
   // независимо от запомненного вида.
   const showList = view === "list" || !isDesktop;
@@ -549,8 +554,7 @@ export function SprintsScreen() {
       )}
 
       <AcceptDialog open={acceptOpen && !!detail} cycleName={detail?.name ?? ""} busy={busy}
-        carrying={items.filter((i) => !CLOSED.has(i.status) && !i.removed)}
-        onCancel={() => setAcceptOpen(false)} onAccept={submitAccept} />
+        carrying={carrying} onCancel={() => setAcceptOpen(false)} onAccept={submitAccept} />
 
       <TaskModal task={editing ?? undefined} open={!!editing} onClose={() => setEditing(null)}
         onSaved={() => { load(); reloadDetail(selectedId); }} />

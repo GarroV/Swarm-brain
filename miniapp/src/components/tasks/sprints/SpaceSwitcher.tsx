@@ -39,7 +39,11 @@ export function SpaceSwitcher(
         }`}
       >
         {label}
-        {n ? <span className="ml-1 tabular-nums opacity-70">{n}</span> : null}
+        {
+          /* Отделено точкой: «Sprint 24» и счётчик 3 без разделителя читаются как «Sprint 243» —
+            проверено на живом экране, имя пространства превращалось в другое имя. */
+        }
+        {n ? <span className="ml-1 tabular-nums opacity-60">· {n}</span> : null}
       </button>
     );
   };

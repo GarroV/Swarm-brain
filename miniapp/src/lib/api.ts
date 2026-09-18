@@ -699,7 +699,22 @@ let mockCycles: SprintCycle[] = [
 
 // Состав живых спринтов держим ссылками на mockTasks — тогда перетаскивание карточки в канбане
 // меняет ту же строку, что видит доска проектов (в проде это и есть одна строка).
-let mockCycleItems: Record<string, { id: string; task_id: string; in_plan: boolean }[]> = {
+/**
+ * Строка состава в моках: хранится узко (связь + план), остальное собирается из живой задачи —
+ * иначе демо показывало бы копию, разъехавшуюся с задачей. Поля переноса приходится хранить:
+ * они принадлежат СОСТАВУ, а не задаче, и у задачи их взять неоткуда.
+ */
+type MockItemRow = {
+  id: string;
+  task_id: string;
+  in_plan: boolean;
+  carry_count?: number;
+  carried_manual?: boolean;
+  carry_reason?: string | null;
+  frozen?: boolean;
+};
+
+let mockCycleItems: Record<string, MockItemRow[]> = {
   sc_active: [
     { id: "si1", task_id: "p_onb", in_plan: true },
     { id: "si2", task_id: "p_search", in_plan: true },
@@ -742,11 +757,15 @@ function mockItemsOf(cycleId: string): SprintCycleItem[] {
       title: t.title, status: t.status, assignees: t.assignees,
       project_id: t.project_id, project: projectName(t.project_id),
       due_date: t.due_date,
-      completed_at: t.status === "done" ? new Date().toISOString() : null, frozen: false,
+      completed_at: t.status === "done" ? new Date().toISOString() : null,
+      frozen: row.frozen ?? false,
+      carry_count: row.carry_count ?? 0,
+      carried_manual: row.carried_manual ?? null,
       check_status: mockChecks[row.id]?.check_status ?? null,
       check_note: mockChecks[row.id]?.check_note ?? null,
       to_carry: mockChecks[row.id]?.to_carry ?? false,
-      carry_reason: mockChecks[row.id]?.carry_reason ?? null,
+      // Причина из окна сверки перекрывает ту, что приехала вместе с переносом.
+      carry_reason: mockChecks[row.id]?.carry_reason ?? row.carry_reason ?? null,
     }];
   });
 }
@@ -875,7 +894,28 @@ export async function acceptSprintCycle(
       summary: null, stats: null, created_at: new Date().toISOString(),
     };
     mockCycles = [...mockCycles, next];
-    mockCycleItems = { ...mockCycleItems, [next.id]: [] };
+    // Хвосты переезжают в следующий спринт — как это делает сервер одной транзакцией
+    // (`accept_sprint_cycle`). Раньше мок отдавал `carried: 3` и создавал следующий спринт
+    // ПУСТЫМ: демо показывало «уехали» и пустой состав, то есть врало ровно про то, ради чего
+    // приёмка и сделана (поймано живым прогоном 19.09.2026).
+    const carriedRows: MockItemRow[] = tails.flatMap((i) =>
+      i.task_id
+        ? [{
+          id: `${next.id}_${i.task_id}`,
+          task_id: i.task_id,
+          in_plan: false,
+          carry_count: i.carry_count + 1,
+          carried_manual: i.to_carry,
+          carry_reason: i.carry_reason,
+        }]
+        : []
+    );
+    // Принятый спринт — снимок: его строки больше не живые, как и на сервере.
+    mockCycleItems = {
+      ...mockCycleItems,
+      [id]: (mockCycleItems[id] ?? []).map((r) => ({ ...r, frozen: true })),
+      [next.id]: carriedRows,
+    };
     return {
       cycle: mockCycles.find((c) => c.id === id)!, next,
       frozen: mockItemsOf(id).length, carried: stats.carried,
