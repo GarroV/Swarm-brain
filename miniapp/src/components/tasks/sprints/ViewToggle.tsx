@@ -7,7 +7,7 @@ import { useDt } from "@/components/roy/nav";
 // владельца: «Список + канбан переключателем»): вид — это привычка смотреть, и сбрасывать
 // его на каждом заходе значит переключать вручную по десять раз в день.
 
-export type SprintView = "list" | "kanban" | "check";
+export type SprintView = "list" | "kanban" | "check" | "initiatives";
 
 const KEY = "swarm.sprints.view";
 
@@ -22,7 +22,10 @@ export function useSprintView(): [SprintView, (v: SprintView) => void] {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(KEY);
-      if (saved === "list" || saved === "kanban" || saved === "check") {
+      if (
+        saved === "list" || saved === "kanban" || saved === "check" ||
+        saved === "initiatives"
+      ) {
         setView(saved);
       }
     } catch {
@@ -50,7 +53,7 @@ export function ViewToggle(
   const dt = useDt();
   const views: {
     id: SprintView;
-    icon: "task" | "board" | "check";
+    icon: "task" | "board" | "check" | "graph";
     label: string;
   }[] = [
     { id: "list", icon: "task", label: dt("Список", "List") },
@@ -58,6 +61,14 @@ export function ViewToggle(
     // Сверка — та же линза на тот же состав, поэтому живёт в переключателе, а не отдельной
     // вкладкой: ритуал идёт по спринту, который сейчас открыт.
     { id: "check", icon: "check", label: dt("Сверка", "Check-in") },
+    // «Все инициативы» — вид на ПРОСТРАНСТВО, а не на спринт: здесь видно и то, что в
+    // спринт не попало. Стоит в том же ряду, потому что человек переключает не сущность,
+    // а то, на что смотрит.
+    {
+      id: "initiatives",
+      icon: "graph",
+      label: dt("Инициативы", "Initiatives"),
+    },
   ];
 
   return (

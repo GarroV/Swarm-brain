@@ -2,6 +2,7 @@
 import { useState } from "react";
 import type { SprintCycleItem } from "@/types";
 import type { DirectionNode, InitiativeNode } from "@/lib/initiatives";
+import { isBareDirection } from "@/lib/initiatives";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import {
@@ -21,11 +22,6 @@ import { fmtDay } from "./format";
 // инициативам», и на кросс-командном проекте спрашивают именно второе.
 
 const CLOSED = new Set(["done", "cancelled"]);
-
-/** У направления нет инициатив — только задачи, лежащие прямо на нём. */
-function bare(dir: DirectionNode): boolean {
-  return dir.initiatives.length === 1 && dir.initiatives[0].project === null;
-}
 
 const STATUS_TONE: Record<string, string> = {
   done: "bg-status-done",
@@ -214,7 +210,7 @@ export function InitiativeList(
                 Обёртка «Общее» с теми же цифрами, что у направления, — строка, которая
                 ничего не добавляет и прячет задачи за лишний клик (видно на живом экране). */
             }
-            {bare(dir)
+            {isBareDirection(dir)
               ? (
                 <div className="rounded-xl border border-line bg-surface/40 px-1 py-1 dark:backdrop-blur-sm">
                   {dir.initiatives[0].items.map((item) => (

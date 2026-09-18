@@ -980,13 +980,13 @@ export async function removeTaskFromSprintCycle(id: string, taskId: string): Pro
 // не проверяет отбор «только свои проекты» в селекте карточки задачи. MOCK_ME = 123456.
 const MOCK_COLLEAGUE = 507931827;
 let mockProjects: Project[] = [
-  { id: "pr1", group_id: "cee", name: "Swarm Brain", color: "#5b8def", emoji: null, parent_id: null, sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
-  { id: "prg1", group_id: "cee", name: "Вайб код проекты", color: null, emoji: null, parent_id: null, sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 3, backlog_count: 1 },
-  { id: "pr1a", group_id: "cee", name: "Бот по стройкам", color: null, emoji: null, parent_id: "prg1", sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 2, backlog_count: 1 },
+  { id: "pr1", group_id: "cee", name: "Swarm Brain", color: "#5b8def", emoji: null, parent_id: null, sprint_id: "sp1", created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
+  { id: "prg1", group_id: "cee", name: "Вайб код проекты", color: null, emoji: null, parent_id: null, sprint_id: "sp1", created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 3, backlog_count: 1 },
+  { id: "pr1a", group_id: "cee", name: "Бот по стройкам", color: null, emoji: null, parent_id: "prg1", sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: 123456, start_date: mockDay(-10), end_date: mockDay(20), is_private: false, task_count: 2, backlog_count: 1 },
   { id: "pr1b", group_id: "cee", name: "Дизайн-терминал", color: null, emoji: null, parent_id: "prg1", sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 1, backlog_count: 0 },
-  { id: "pr2", group_id: "cee", name: "тест-2", color: null, emoji: null, parent_id: null, sprint_id: null, created_by: null, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
-  { id: "pr3", group_id: "cee", name: "Личный эксперимент", color: null, emoji: null, parent_id: null, sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: true, task_count: 0, backlog_count: 0 },
-  { id: "pr4", group_id: "cee", name: "Анализ ревизий", color: null, emoji: null, parent_id: null, sprint_id: null, created_by: MOCK_COLLEAGUE, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
+  { id: "pr2", group_id: "cee", name: "тест-2", color: null, emoji: null, parent_id: null, sprint_id: "sp1", created_by: null, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
+  { id: "pr3", group_id: "cee", name: "Личный эксперимент", color: null, emoji: null, parent_id: null, sprint_id: "sp1", created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: true, task_count: 0, backlog_count: 0 },
+  { id: "pr4", group_id: "cee", name: "Анализ ревизий", color: null, emoji: null, parent_id: null, sprint_id: "sp1", created_by: MOCK_COLLEAGUE, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
   { id: "pr4a", group_id: "cee", name: "Румыния июнь-август", color: null, emoji: null, parent_id: "pr4", sprint_id: null, created_by: MOCK_COLLEAGUE, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
 ];
 
@@ -1004,7 +1004,9 @@ export async function createProject(input: { name: string; color?: string | null
   return apiFetch<Project>("/projects", { method: "POST", body: JSON.stringify(input) });
 }
 
-export async function updateProject(id: string, fields: Partial<{ name: string; color: string | null; emoji: string | null; parent_id: string | null; sprint_id: string | null; is_private: boolean }>): Promise<Project> {
+// Поля инициативы (`owner_telegram_id`, `start_date`, `end_date`) сервер принимает с миграции
+// 20260918120000 и сверяет `start <= end` (`swarm-api/project-fields.ts`).
+export async function updateProject(id: string, fields: Partial<{ name: string; color: string | null; emoji: string | null; parent_id: string | null; sprint_id: string | null; is_private: boolean; owner_telegram_id: number | null; start_date: string | null; end_date: string | null }>): Promise<Project> {
   if (DEV_MODE) {
     const i = mockProjects.findIndex((p) => p.id === id);
     if (i !== -1) mockProjects[i] = { ...mockProjects[i], ...fields };

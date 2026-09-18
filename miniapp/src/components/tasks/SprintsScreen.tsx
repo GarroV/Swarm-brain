@@ -4,10 +4,10 @@ import {
   acceptSprintCycle, addTasksToSprintCycle, createSprintCycle, createTask,
   deleteSprintCycle, fetchProjects, fetchSprintCycle, fetchSprintCycles, fetchSprints,
   fetchTasks, fetchUsers, patchSprintCycleItem, removeTaskFromSprintCycle, startSprintCycle,
-  updateTask,
+  updateProject, updateTask,
 } from "@/lib/api";
 import type { Project, Sprint, SprintCycle, SprintCycleDetail, SprintCycleItem, Task, User } from "@/types";
-import { buildBoard, checksDue, sprintKpi } from "@/lib/initiatives";
+import { buildBoard, checksDue, spaceProjects, sprintKpi } from "@/lib/initiatives";
 import { KanbanColumn } from "@/components/tasks/TaskKanban";
 import type { KanbanDrag, KanbanHandlers, KanbanQuickAdd } from "@/components/tasks/TaskKanban";
 import { SprintTaskPool } from "@/components/tasks/SprintTaskPool";
@@ -24,6 +24,7 @@ import { poolCandidates, projectLabel } from "@/lib/sprintPool";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { AcceptDialog, type AcceptSubmit } from "@/components/tasks/sprints/AcceptDialog";
+import { AllInitiatives } from "@/components/tasks/sprints/AllInitiatives";
 import { CheckScreen } from "@/components/tasks/sprints/CheckScreen";
 import { BoardSkeleton, InitiativeList } from "@/components/tasks/sprints/InitiativeList";
 import { SpaceSwitcher } from "@/components/tasks/sprints/SpaceSwitcher";
@@ -358,6 +359,33 @@ export function SprintsScreen() {
   const effectiveView = view === "kanban" && !isDesktop ? "list" : view;
   const showList = effectiveView === "list";
   const showCheck = effectiveView === "check";
+  const showInitiatives = effectiveView === "initiatives";
+
+  // Задачи пространства — для «Всех инициатив»: правило принадлежности в lib/initiatives
+  // под тестами, потому что ошибка тут молчит и показывает чужую стройку как свою.
+  const spaceTasks = useMemo(() => {
+    const ids = spaceProjects(projects, space);
+    return tasks.filter((t) => t.project_id && ids.has(t.project_id));
+  }, [tasks, projects, space]);
+
+  // Живой спринт пространства — в него берут задачи с «Всех инициатив».
+  const liveCycle = useMemo(
+    () => spaceCycles.find((c) => c.status === "active") ?? spaceCycles.find((c) => c.status === "draft") ?? null,
+    [spaceCycles],
+  );
+
+  async function saveInitiative(
+    id: string,
+    patch: { owner_telegram_id: number | null; start_date: string | null; end_date: string | null },
+  ) {
+    try {
+      await updateProject(id, patch);
+      setProjects(await fetchProjects());
+      setErr(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : dt("Не удалось сохранить инициативу", "Failed to save the initiative"));
+    }
+  }
 
   /* Пустой спринт объясняет ровно следующее действие: «наберите из пула» не говорит, ЧЕМ
      набирают, и человек упирается в экран (владелец 09.09.2026). */
@@ -546,7 +574,12 @@ export function SprintsScreen() {
             {accepted
               ? (reportOpen && <SprintReport cycle={detail} />)
               : isDesktop && <SprintTaskPool tasks={poolTasks} projects={projects} adding={busy} onAdd={addToSprint} />}
-            {showCheck ? (
+            {showInitiatives ? (
+              <AllInitiatives tasks={spaceTasks} projects={projects} users={users}
+                inSprint={inSprint} sprintName={liveCycle?.name ?? null}
+                onAddToSprint={(taskId) => { if (liveCycle) addToSprint([taskId]); }}
+                onOpenTask={(t) => setEditing(t)} onSaveProject={saveInitiative} />
+            ) : showCheck ? (
               <CheckScreen cycle={detail} unchecked={unchecked} onMark={markItem} />
             ) : showList ? (
               <div className="flex-1 min-w-0 overflow-y-auto">

@@ -17,17 +17,29 @@ export interface Progress {
   percent: number;
 }
 
+/**
+ * Минимум, который дереву нужно от строки. Доска собирается и из состава спринта, и из
+ * обычных задач («Все инициативы»), а правило раскладки у них одно — значит и код один.
+ * `removed` есть только у состава: у задачи его нет, и `undefined` читается как «не удалена».
+ */
+export interface BoardRow {
+  id: string;
+  status: string;
+  project_id: string | null;
+  removed?: boolean;
+}
+
 /** Инициатива внутри направления. `project: null` — задачи, лежащие прямо на направлении. */
-export interface InitiativeNode {
+export interface InitiativeNode<T extends BoardRow = SprintCycleItem> {
   project: Project | null;
-  items: SprintCycleItem[];
+  items: T[];
   progress: Progress;
 }
 
 /** Направление — проект верхнего уровня. `project: null` — задачи вообще без проекта. */
-export interface DirectionNode {
+export interface DirectionNode<T extends BoardRow = SprintCycleItem> {
   project: Project | null;
-  initiatives: InitiativeNode[];
+  initiatives: InitiativeNode<T>[];
   progress: Progress;
 }
 
@@ -47,16 +59,16 @@ export interface SprintKpi extends Progress {
 }
 
 /** Строка-упоминание удалённой задачи: самой задачи нет, в счёт она не идёт. */
-function isMention(i: SprintCycleItem): boolean {
-  return i.removed;
+function isMention(i: BoardRow): boolean {
+  return i.removed === true;
 }
 
 /** То, что вообще участвует в проценте: живое и не отменённое. */
-function counted(items: readonly SprintCycleItem[]): SprintCycleItem[] {
+function counted<T extends BoardRow>(items: readonly T[]): T[] {
   return items.filter((i) => !isMention(i) && i.status !== "cancelled");
 }
 
-export function computeProgress(items: readonly SprintCycleItem[]): Progress {
+export function computeProgress(items: readonly BoardRow[]): Progress {
   const live = counted(items);
   const done = live.filter((i) => i.status === "done").length;
   return {
@@ -101,15 +113,15 @@ function byName(
  * Неизвестный проект — не повод потерять задачу: такая строка уходит в «Без направления».
  * Пустых направлений на доске нет: доска спринта про то, что в работе сейчас.
  */
-export function buildBoard(
-  items: readonly SprintCycleItem[],
+export function buildBoard<T extends BoardRow>(
+  items: readonly T[],
   projects: readonly Project[],
-): DirectionNode[] {
+): DirectionNode<T>[] {
   const byId = new Map(projects.map((p) => [p.id, p]));
 
   // directionId → initiativeId → строки. null-ключ кодируем пустой строкой: Map различает
   // null и "" , а собирать ключи строками проще, чем держать два параллельных хранилища.
-  const tree = new Map<string, Map<string, SprintCycleItem[]>>();
+  const tree = new Map<string, Map<string, T[]>>();
 
   for (const item of items) {
     const project = item.project_id === null
@@ -132,9 +144,9 @@ export function buildBoard(
     inner.get(iniKey)!.push(item);
   }
 
-  const directions: DirectionNode[] = [];
+  const directions: DirectionNode<T>[] = [];
   for (const [dirKey, inner] of tree) {
-    const initiatives: InitiativeNode[] = [];
+    const initiatives: InitiativeNode<T>[] = [];
     for (const [iniKey, rows] of inner) {
       initiatives.push({
         project: iniKey === "" ? null : byId.get(iniKey) ?? null,
@@ -182,4 +194,35 @@ export function checksDue(
     today.getDate(),
   );
   return day.getTime() <= start.getTime();
+}
+
+/**
+ * Проекты пространства: сам проект держит вкладку в `sprint_id`, подпроект наследует её у
+ * родителя (у подпроекта своё поле обычно пустое). Возвращает МНОЖЕСТВО id — им фильтруют
+ * задачи для «Всех инициатив».
+ *
+ * Правило под тестами не из педантизма: ошибка здесь молчит и показывает чужую стройку как
+ * свою — экран выглядит рабочим, просто в нём не то, что человек думает.
+ */
+export function spaceProjects(
+  projects: readonly Project[],
+  spaceId: string | null,
+): Set<string> {
+  const byId = new Map(projects.map((p) => [p.id, p]));
+  const tabOf = (p: Project): string | null =>
+    p.parent_id === null
+      ? p.sprint_id
+      : byId.get(p.parent_id)?.sprint_id ?? null;
+  // `null` — законное пространство «Без вкладки», а не «ничего»: проекты, не привязанные ни
+  // к одной вкладке, иначе не видно нигде.
+  return new Set(projects.filter((p) => tabOf(p) === spaceId).map((p) => p.id));
+}
+
+/**
+ * У направления нет инициатив — только задачи, лежащие прямо на нём. Такое направление
+ * рисуется без обёртки «Общее»: строка с теми же цифрами, что у направления, ничего не
+ * добавляет и прячет задачи за лишний клик.
+ */
+export function isBareDirection(dir: DirectionNode<BoardRow>): boolean {
+  return dir.initiatives.length === 1 && dir.initiatives[0].project === null;
 }
