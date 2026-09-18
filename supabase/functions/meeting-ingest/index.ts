@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyAgentToken, AgentAuthError } from "../_shared/agent-auth.ts";
 import { runMeetingStep, uploadPartsAndBuildState, type InMemoryPart } from "../_shared/meeting-processor.ts";
+import { claimLeaseUntil } from "../_shared/meeting-lease.ts";
 
 // meeting-ingest — приём АУДИО от claimer (см. transcribator/10-REVISED-DESIGN.md §4, §7.2).
 // Облачная схема: рекордер пишет звук → грузит сюда; сервер транскрибирует (OpenAI Whisper)
@@ -166,9 +167,20 @@ Deno.serve(async (req: Request) => {
     return fail("failed to store audio", 500);
   }
   const nowIso = new Date().toISOString();
+  // Лиз права транскрибации продлеваем вместе с приёмом аудио (issue #285). Аудио уже здесь и
+  // обработка вот-вот начнётся — если оставить лиз с момента claim, он истечёт посреди работы,
+  // встреча снова станет «свободной» и право заберёт следующий претендент, даже с записью на
+  // три минуты (ветка «свободна» в meeting-claim длительности не сравнивает).
   await supabase
     .from("meetings")
-    .update({ summary_status: "processing", process_state: state, last_progress_at: nowIso, processing_lease: null, updated_at: nowIso })
+    .update({
+      summary_status: "processing",
+      process_state: state,
+      last_progress_at: nowIso,
+      processing_lease: null,
+      lease_expires_at: claimLeaseUntil(),
+      updated_at: nowIso,
+    })
     .eq("id", m.id);
 
   // Inline-проход после ответа: короткую встречу добивает сразу; длинную подхватит cron meeting-process.
