@@ -10,18 +10,13 @@ set -o pipefail
 cd "$(dirname "$0")/.."
 mkdir -p reports
 
-# Доступы локального контура — тестам, которые ходят в настоящую базу. Значения берутся у
-# самого контура и нигде не хранятся. Контур не поднят — переменных не будет, и тесты базы
-# упадут с внятной причиной: это правильнее «пропущено», которое выглядит как проверенное.
-if command -v supabase >/dev/null 2>&1; then
-  while IFS='=' read -r k v; do
-    v=${v%\"}; v=${v#\"}
-    case "$k" in
-      API_URL) export SUPABASE_URL="$v" ;;
-      SERVICE_ROLE_KEY) export SUPABASE_SERVICE_ROLE_KEY="$v" ;;
-      DB_URL) export SUPABASE_DB_URL="$v" ;;
-    esac
-  done < <(supabase status -o env 2>/dev/null)
+# Доступы локального контура — тестам, которые ходят в настоящую базу. Подставляет их одна
+# обёртка на весь проект (её же зовёт CI): два места, делающих это по-своему, — две правды о
+# том, с чем прогонялись проверки. Контур не поднят — переменных не будет, и тесты базы упадут
+# с внятной причиной; это правильнее «пропущено», которое выглядит как проверенное.
+if [ -z "${SWARM_DB_ENV:-}" ]; then
+  export SWARM_DB_ENV=1
+  exec ./scripts/with-local-db "$0" "$@"
 fi
 REPORT=reports/check.json
 FAILED=0

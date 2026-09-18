@@ -16,8 +16,8 @@ check: ## Единый прогон проверок доски инициати
 	@./scripts/check
 
 porcha: ## Порча: ломаем ядро нарочно и убеждаемся, что тесты краснеют (код + база)
-	@./scripts/porcha
-	@./scripts/porcha-sql
+	@./scripts/with-local-db ./scripts/porcha
+	@./scripts/with-local-db ./scripts/porcha-sql
 
 help:
 	@echo "deploy-plan            — что готово, но НЕ раскатано (накопитель; ничего не меняет)"
