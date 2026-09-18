@@ -1,5 +1,5 @@
 import { getInitData } from "./telegram";
-import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, SprintCycle, SprintCycleDetail, SprintCycleItem, SprintStats, CheckStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote, MeetingNotes } from "@/types";
+import type { Me, Task, TaskLink, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, SprintCycle, SprintCycleDetail, SprintCycleItem, SprintStats, CheckStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote, MeetingNotes } from "@/types";
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
@@ -30,6 +30,12 @@ export type CreateTaskInput = {
   tree_y?: number | null;
   /** Цикличность: daily | weekly | monthly; null — снять. Требует срока (API отобьёт без него). */
   recur_freq?: string | null;
+  /**
+   * Ссылки задачи. ⚠️ Списочный ответ GET /tasks их НЕ отдаёт (TASK_LIST_COLUMNS) — задача из
+   * списка приходит с `links === undefined`. Слать это поле можно только с догруженной по id
+   * задачи, иначе пустой список затрёт реальные ссылки.
+   */
+  links?: TaskLink[];
 };
 
 export type UpdateTaskInput = Partial<CreateTaskInput> & { status?: string; project_linked?: boolean };
