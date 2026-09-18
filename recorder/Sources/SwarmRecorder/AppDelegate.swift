@@ -94,6 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var presenceSent: PresenceBeacon.State?
     private var presenceSentAt: Date?
     private var callDismissedUntil: Date?
+    // Последняя календарная встреча от сервера и когда она получена. Нужна, чтобы ручной старт
+    // («Записать» в меню, ответ на подсказку о звонке) привязывался к идущей встрече, а не писал
+    // её как manual мимо склейки с коллегами (решение владельца 18.09.2026, issue #379).
+    // Живёт отдельно от pendingMeeting: то — предложение в капсуле, его можно закрыть крестиком.
+    private var lastCalendar: (info: MeetingIdentity.Info, at: Date)?
     private var watchTimer: Timer?
     private var maintTimer: Timer?
     // Авто-стоп по концу звонка (per-process детект во время записи).
@@ -454,6 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // (CoreSpeech), иначе «звонок» виден всегда и сыпались бы ложные предложения записи.
             let micOn = CallDetector.realCallActive()
             DispatchQueue.main.async { [weak self] in
+                if let m = meeting { self?.lastCalendar = (m, Date()) }
                 self?.handleDetection(meeting: meeting, micActive: micOn)
                 // Присутствие обновляем ОТДЕЛЬНО от handleDetection: тот выходит по
                 // `guard case .idle`, а панели нужен сигнал и во время записи.
@@ -681,6 +687,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             switch state {
             case .recording:
                 menu.addItem(NSMenuItem(title: "Остановить и отправить", action: #selector(stopTapped), keyEquivalent: "s"))
+                // Оговорка владельца к «календарь берём всегда» (18.09.2026): запись включают и на
+                // ОФЛАЙН встрече, а в календаре в это время стоит другое событие. Тогда человек
+                // отвязывает запись — она уедет отдельной встречей, а не подменит календарную.
+                if let title = identity?.title, identity?.kind == .calendar {
+                    menu.addItem(NSMenuItem(title: "Это не «\(title)» — писать отдельно",
+                                            action: #selector(detachMeetingTapped), keyEquivalent: ""))
+                }
             case .sending:
                 break
             default:
@@ -1021,8 +1034,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     // ── Запись ───────────────────────────────────────────────────────────────────
+    // Идентичность для старта «руками»: календарь (если он свежий и слот идёт) → комната → manual.
+    // Порядок тот же, что у сервера: календарь богаче комнаты (название, участники, границы слота)
+    // и склеивает запись с записями коллег об этой же встрече.
+    private func manualStartIdentity() -> MeetingIdentity.Info? {
+        let iso = ISO8601DateFormatter()
+        if let cal = lastCalendar,
+           StartIdentity.useCalendar(fetchedAt: cal.at,
+                                     start: cal.info.startISO.flatMap { iso.date(from: $0) },
+                                     end: cal.info.endISO.flatMap { iso.date(from: $0) },
+                                     now: Date()) {
+            return cal.info
+        }
+        return MeetingIdentity.currentRoom()
+    }
+
     @objc private func recordTapped() {
-        beginRecording(identity: MeetingIdentity.currentRoom())
+        beginRecording(identity: manualStartIdentity())
     }
     @objc private func recordMeetingTapped() { acceptPrompt() }
     @objc private func recordCallTapped() { acceptPrompt() }
@@ -1040,7 +1068,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             beginRecording(identity: m)
         } else {
             callActive = false
-            beginRecording(identity: MeetingIdentity.currentRoom())
+            beginRecording(identity: manualStartIdentity())
         }
     }
 
@@ -1442,6 +1470,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             pendingSend = captured
             await performSend(captured)
         }
+    }
+
+    // «Это не та встреча»: снимаем календарную привязку прямо во время записи — дальше она уедет
+    // как manual (сервер на manual всегда заводит новую встречу, чужую не тронет). Мету переписываем
+    // тем же движением, иначе восстановление после краша вернёт старую привязку.
+    @objc private func detachMeetingTapped() {
+        guard case .recording = state else { return }
+        identity = nil
+        scheduledEndAt = nil
+        if let dir = currentRecDir, let base = currentRecBase {
+            writeRecordingMeta(dir: dir, base: base, startedAt: recordStartedAt ?? Date(), identity: nil)
+        }
+        dbg("DETACH: запись отвязана от календарной встречи")
+        refreshStatusTitle()
+        rebuildMenu()
     }
 
     // Взвести «Отправка…» + watchdog: если через sendWatchdogSeconds всё ещё .sending (та же
