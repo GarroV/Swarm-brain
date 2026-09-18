@@ -74,6 +74,8 @@ export type TaskInput = {
   tree_y?: number | null;
   recur_freq?: string | null;
   recur_anchor_dom?: number | null;
+  /** Ссылки на материалы: массив {title, url}. Разбор и проверка схемы — `links.ts`. */
+  links?: { title: string | null; url: string }[];
 };
 
 // ── Спринты ───────────────────────────────────────────────────────────────────
@@ -117,6 +119,13 @@ export type Project = {
   created_by: number | null;
   created_at: string;
   parent_id: string | null;
+  /**
+   * Ответственный за направление или инициативу и её сроки (доска инициатив, 18.09.2026).
+   * У задач отдельного «ответственного» нет и не заводится — там работает исполнитель.
+   */
+  owner_telegram_id: number | null;
+  start_date: string | null;
+  end_date: string | null;
   // Вкладка-владелец проекта (sprints.id). Проект принадлежит одной вкладке; подпроект наследует
   // вкладку родителя. null — проект вне вкладок (легаси/после удаления вкладки: ON DELETE SET NULL).
   sprint_id: string | null;
@@ -133,4 +142,8 @@ export type ProjectInput = {
   parent_id?: string | null;
   sprint_id?: string | null;
   is_private?: boolean;
+  /** Ответственный за направление или инициативу (telegram id участника воркспейса). */
+  owner_telegram_id?: number | null;
+  start_date?: string | null;
+  end_date?: string | null;
 };

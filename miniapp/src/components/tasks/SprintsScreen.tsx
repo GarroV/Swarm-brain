@@ -255,31 +255,23 @@ export function SprintsScreen() {
     finally { setBusy(false); }
   }
 
-  // Куда уедут незакрытые: ближайший черновик после этого спринта, иначе любой черновик.
-  const carryTarget = useMemo(() => {
-    if (!detail) return null;
-    const drafts = cycles.filter((c) => c.status === "draft" && c.id !== detail.id);
-    return drafts.filter((c) => c.start_date >= detail.end_date).sort((a, b) => a.start_date.localeCompare(b.start_date))[0]
-      ?? drafts[0] ?? null;
-  }, [cycles, detail]);
-
   async function accept() {
     if (!detail) return;
+    // Следующий спринт создаёт сама приёмка — одной транзакцией с переносом хвостов. Искать,
+    // «куда бы переложить», больше не нужно: раньше без готового черновика работа просто
+    // оставалась в принятом спринте и пропадала из виду.
     const open = items.filter((i) => !CLOSED.has(i.status)).length;
-    const carry = carryTarget
-      ? dt(`Незакрытые (${open}) уедут в «${carryTarget.name}».`, `${open} unfinished task(s) will move to “${carryTarget.name}”.`)
-      : dt(`Незакрытых ${open} — переносить некуда, черновика следующего спринта нет.`, `${open} unfinished — nowhere to move them, there is no next draft sprint.`);
     if (!(await confirm({
       title: dt(`Принять «${detail.name}»?`, `Accept “${detail.name}”?`),
       description: dt(
-        `Состав замрёт слепком на момент приёмки, итоги посчитаются один раз. ${carry} Отменить приёмку нельзя.`,
-        `The composition freezes as a snapshot and the results are computed once. ${carry} Accepting cannot be undone.`,
+        `Состав замрёт слепком на момент приёмки, итоги посчитаются один раз. Незакрытые (${open}) уедут в следующий спринт — он создастся сам, встык. Отменить приёмку нельзя.`,
+        `The composition freezes as a snapshot and the results are computed once. ${open} unfinished task(s) move to the next sprint, which is created automatically right after this one. Accepting cannot be undone.`,
       ),
       confirmText: dt("Принять спринт", "Accept sprint"),
     }))) return;
     setBusy(true);
     try {
-      await acceptSprintCycle(detail.id, { next_cycle_id: carryTarget?.id ?? null });
+      await acceptSprintCycle(detail.id);
       await Promise.all([load(), reloadDetail(detail.id)]);
     } catch (e) { setErr(e instanceof Error ? e.message : dt("Не удалось принять", "Failed to accept")); }
     finally { setBusy(false); }

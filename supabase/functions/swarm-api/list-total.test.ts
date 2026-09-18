@@ -42,7 +42,11 @@ Deno.test("каждый списочный эндпоинт отдаёт X-Total
 Deno.test("роуты из списка вообще существуют — тест не проходит вхолостую", async () => {
   const src = await Deno.readTextFile(`${HERE}index.ts`);
   for (const r of LIST_ROUTES) {
-    assertEquals(routeBody(src, r) !== "", true, `роут ${r} не найден в index.ts — обнови LIST_ROUTES`);
+    assertEquals(
+      routeBody(src, r) !== "",
+      true,
+      `роут ${r} не найден в index.ts — обнови LIST_ROUTES`,
+    );
   }
 });
 
