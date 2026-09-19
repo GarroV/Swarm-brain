@@ -54,17 +54,17 @@ const NOTIF = [
 const NAV = [
   { g:"Работа", items:[
     { id:"tasks", n:"Задачи", c:42, ic:"M3 8.5 6 11.5 13 4.5" },
-    { id:"projects", n:"Проекты", c:7, ic:"M2.5 3.5h11v9h-11zM2.5 6.5h11" },
-    { id:"sprints", n:"Спринты", c:2, ic:"M2.5 12.5V7m3.7 5.5v-9m3.6 9v-6m3.7 6v-3" }]},
+    { id:"projects", n:"Проекты", c:7, ic:"M2.5 3.5h11v9h-11zM2.5 6.5h11M6 3.5v9" },
+    { id:"sprints", n:"Спринты", c:2, ic:"M3 13V8.5M6.3 13V4M9.7 13V7M13 13V10" }]},
   { g:"Знание", items:[
     { id:"meetings", n:"Встречи", c:5, ic:"M2.5 3.5h11v10h-11zM2.5 6.5h11M5.5 2v3m5-3v3" },
     { id:"base", n:"База", ic:"M3 3.5h4.2a1.8 1.8 0 0 1 1.8 1.8v7.2M13 3.5H8.8A1.8 1.8 0 0 0 7 5.3v7.2" }]},
-  { g:"Люди", items:[{ id:"team", n:"Команда", c:12, ic:"M2 13c0-2.2 1.8-3.6 4-3.6s4 1.4 4 3.6M11 5.6a2 2 0 0 1 0 3.8" }]},
+  { g:"Люди", items:[{ id:"team", n:"Команда", c:12, ic:"M6 7.6a2.3 2.3 0 1 0 0-4.6 2.3 2.3 0 0 0 0 4.6M2 13c0-2.2 1.8-3.6 4-3.6s4 1.4 4 3.6M11.2 5.8a1.9 1.9 0 0 1 0 3.7M11.6 13c0-1.5-.5-2.5-1.3-3.1" }]},
 ];
 const NAVFOOT = [
   { id:"settings", n:"Настройки", ic:"M8 1.8v1.8m0 8.8v1.8m6.2-6.2h-1.8M3.6 8H1.8" },
   { id:"admin", n:"Админ", ic:"M8 2 3 4.2v4c0 3 2.1 5 5 5.8 2.9-.8 5-2.8 5-5.8v-4z" },
-  { id:"map", n:"Карта системы", ic:"M6.5 4.5h3a2 2 0 0 1 2 2v3" },
+  { id:"map", n:"Карта системы", ic:"M4.5 6.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4M11.5 13.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4M6.5 4.5h3a2 2 0 0 1 2 2v3" },
 ];
 const TABS = {
   tasks:[["today","Сегодня"],["upcoming","Ближайшие"],["all","Все"],["recurring","Регулярные"],["archive","Архив"]],
@@ -92,7 +92,7 @@ function renderNav() {
 }
 function renderTabs() {
   const t = TABS[S.sec] || [];
-  const cnt = (id) => S.sec === "tasks" ? TASKS.filter((x) => x.list === id).length
+  const cnt = (id) => S.sec === "tasks" ? TASKS.filter((x) => x.list === id && (S.lens === "all" || x.lens === S.lens)).length
     : S.sec === "meetings" ? MEET.filter((x) => x.st === id || id === "all").length : null;
   $(".tabs").innerHTML = t.map(([id, n]) => {
     const c = cnt(id);
@@ -110,9 +110,9 @@ function screenTasks() {
     ${["mine","team","all"].map((l) => `<div class="chip${S.lens === l ? " on" : ""}" data-lens="${l}" tabindex="0">${{ mine:"Мои", team:"Команды", all:"Все" }[l]}</div>`).join("")}
     <div style="width:1px;height:18px;background:var(--line-strong);margin:0 4px"></div>
     ${["todo","doing","done"].map((s) => `<div class="chip${S.status.has(s) ? " on" : ""}" data-st="${s}" tabindex="0">${dot(s)}${ST[s]}</div>`).join("")}
-    <div class="chip${S.byMarket ? " on" : ""}" data-tgl="byMarket" tabindex="0">По рынкам</div>
+    <div style="flex-basis:100%;height:0"></div><div class="chip${S.byMarket ? " on" : ""}" data-tgl="byMarket" tabindex="0">Группировать по рынкам</div>
     <div class="chip${S.staff ? " on" : ""}" data-tgl="staff" tabindex="0">Все сотрудники</div>
-    <div class="right"><span>Просрочено <b>${TASKS.filter((x) => x.dueK === "now").length}</b></span><span>Показано <b>${rows.length}</b></span></div></div>`;
+    <div class="right"><span>Просрочено <b>${rows.filter((x) => x.dueK === "now").length}</b></span><span>Показано <b>${rows.length}</b></span></div></div>`;
   if (!rows.length) return bar + `<div class="empty"><b>Здесь пусто</b>Смените линзу или фильтр статуса</div>`;
   const groups = S.tab === "archive" ? [["Закрытые", rows]]
     : [["Просрочено", rows.filter((x) => x.dueK === "now")], ["На этой неделе", rows.filter((x) => x.dueK === "soon")], ["Позже", rows.filter((x) => !x.dueK)]];
