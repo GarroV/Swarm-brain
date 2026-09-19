@@ -94,12 +94,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var presenceSent: PresenceBeacon.State?
     private var presenceSentAt: Date?
     private var callDismissedUntil: Date?
+    // Последняя календарная встреча от сервера и когда она получена. Нужна, чтобы ручной старт
+    // («Записать» в меню, ответ на подсказку о звонке) привязывался к идущей встрече, а не писал
+    // её как manual мимо склейки с коллегами (решение владельца 18.09.2026, issue #379).
+    // Живёт отдельно от pendingMeeting: то — предложение в капсуле, его можно закрыть крестиком.
+    private var lastCalendar: (info: MeetingIdentity.Info, at: Date)?
     private var watchTimer: Timer?
     private var maintTimer: Timer?
     // Авто-стоп по концу звонка (per-process детект во время записи).
     private var recWatchTimer: Timer?
     private var callSeenDuringRec = false
     private var silentTicks = 0
+    // «Разговор начался» — собеседников слышно 2 тика подряд. До этого правила (0) и (а) запись не
+    // останавливают: они про конец разговора, а до начала ловят ожидание в лобби (issue #379).
+    private var conversation = ConversationGate()
     // Тики подряд, когда НИКТО не звучит: ни системная дорожка (собеседники), ни СВОЙ микрофон.
     // Считается независимо от mic-детекта занятости: ловит конец БРАУЗЕРНОГО звонка (Google Meet /
     // Контур.Толк во вкладке), где браузер держит микрофон непрерывно даже после выхода.
@@ -451,6 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // (CoreSpeech), иначе «звонок» виден всегда и сыпались бы ложные предложения записи.
             let micOn = CallDetector.realCallActive()
             DispatchQueue.main.async { [weak self] in
+                if let m = meeting { self?.lastCalendar = (m, Date()) }
                 self?.handleDetection(meeting: meeting, micActive: micOn)
                 // Присутствие обновляем ОТДЕЛЬНО от handleDetection: тот выходит по
                 // `guard case .idle`, а панели нужен сигнал и во время записи.
@@ -678,6 +687,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             switch state {
             case .recording:
                 menu.addItem(NSMenuItem(title: "Остановить и отправить", action: #selector(stopTapped), keyEquivalent: "s"))
+                // Оговорка владельца к «календарь берём всегда» (18.09.2026): запись включают и на
+                // ОФЛАЙН встрече, а в календаре в это время стоит другое событие. Тогда человек
+                // отвязывает запись — она уедет отдельной встречей, а не подменит календарную.
+                if let title = identity?.title, identity?.kind == .calendar {
+                    menu.addItem(NSMenuItem(title: "Это не «\(title)» — писать отдельно",
+                                            action: #selector(detachMeetingTapped), keyEquivalent: ""))
+                }
             case .sending:
                 break
             default:
@@ -1018,8 +1034,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     // ── Запись ───────────────────────────────────────────────────────────────────
+    // Идентичность для старта «руками»: календарь (если он свежий и слот идёт) → комната → manual.
+    // Порядок тот же, что у сервера: календарь богаче комнаты (название, участники, границы слота)
+    // и склеивает запись с записями коллег об этой же встрече.
+    private func manualStartIdentity() -> MeetingIdentity.Info? {
+        let iso = ISO8601DateFormatter()
+        if let cal = lastCalendar,
+           StartIdentity.useCalendar(fetchedAt: cal.at,
+                                     start: cal.info.startISO.flatMap { iso.date(from: $0) },
+                                     end: cal.info.endISO.flatMap { iso.date(from: $0) },
+                                     now: Date()) {
+            return cal.info
+        }
+        return MeetingIdentity.currentRoom()
+    }
+
     @objc private func recordTapped() {
-        beginRecording(identity: MeetingIdentity.currentRoom())
+        beginRecording(identity: manualStartIdentity())
     }
     @objc private func recordMeetingTapped() { acceptPrompt() }
     @objc private func recordCallTapped() { acceptPrompt() }
@@ -1037,7 +1068,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             beginRecording(identity: m)
         } else {
             callActive = false
-            beginRecording(identity: MeetingIdentity.currentRoom())
+            beginRecording(identity: manualStartIdentity())
         }
     }
 
@@ -1162,6 +1193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func startCallEndWatch() {
         callSeenDuringRec = false
         silentTicks = 0
+        conversation = ConversationGate()
         systemSilentTicks = 0
         systemOnlySilentTicks = 0
         roomGoneTicks = 0
@@ -1244,6 +1276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if loudStreak >= 2 { systemSilentTicks = 0 }
         }
         // Бэкстоп только по собеседникам (мик не участвует) — см. объявление счётчика.
+        conversation.observe(otherSideAudible: systemPeak >= Self.systemSilenceLevel)
         if systemPeak < Self.systemSilenceLevel {
             systemOnlySilentTicks += 1
         } else {
@@ -1256,7 +1289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if #available(macOS 14.0, *) {
             let info = CallDetector.othersUsingMicInfo()
             realCall = !info.isEmpty
-            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks) sysPeak=\(String(format: "%.3f", systemPeak)) micPeak=\(String(format: "%.3f", micPeak)) sysSilent=\(systemSilentTicks) sysOnly=\(systemOnlySilentTicks) roomGone=\(roomGoneTicks) elapsed=\(Int(elapsed))s")
+            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) talk=\(conversation.isOpen) silent=\(silentTicks) sysPeak=\(String(format: "%.3f", systemPeak)) micPeak=\(String(format: "%.3f", micPeak)) sysSilent=\(systemSilentTicks) sysOnly=\(systemOnlySilentTicks) roomGone=\(roomGoneTicks) elapsed=\(Int(elapsed))s")
         }
 
         // (Сигнал вкладки) Быстрый конец БРАУЗЕРНОГО созвона: вкладка комнаты (Meet/Контур) закрыта
@@ -1286,8 +1319,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // (0) Конец БРАУЗЕРНОГО звонка по тишине ОБЕИХ дорожек. Срабатывает ДАЖЕ когда
         // mic-холдер (браузер) всё ещё держит мик — НЕ гейтим на realCall==false. Требуем, чтобы
-        // звонок хоть раз был замечен (callSeenDuringRec), чтобы не стопать «пустой» ручной старт.
-        if callSeenDuringRec && systemSilentTicks >= Self.systemSilenceTicksToStop {
+        // звонок хоть раз был замечен (callSeenDuringRec), чтобы не стопать «пустой» ручной старт,
+        // и чтобы разговор уже начался (conversation.isOpen): три минуты тишины в лобби до прихода
+        // собеседников — это ожидание, а не конец звонка (issue #379).
+        if callSeenDuringRec && conversation.isOpen && systemSilentTicks >= Self.systemSilenceTicksToStop {
             autoStop(reason: "звонок завершён (тишина)")
             return
         }
@@ -1314,8 +1349,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // Реального созвона сейчас нет — копим «тихие» тики (5с каждый).
         silentTicks += 1
-        // (а) Созвон был и смолк ~15с → закончился → стоп.
-        if callSeenDuringRec && silentTicks >= 3 {
+        // (а) Созвон был и смолк ~15с → закончился → стоп. Только после начала разговора: переход
+        // из лобби в звонок (или из вкладки в приложение) может отпустить микрофон дольше 15 с
+        // (issue #379). До разговора запись держат бэкстопы (0б) и (б).
+        if callSeenDuringRec && conversation.isOpen && silentTicks >= 3 {
             autoStop(reason: "звонок завершён")
             return
         }
@@ -1433,6 +1470,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             pendingSend = captured
             await performSend(captured)
         }
+    }
+
+    // «Это не та встреча»: снимаем календарную привязку прямо во время записи — дальше она уедет
+    // как manual (сервер на manual всегда заводит новую встречу, чужую не тронет). Мету переписываем
+    // тем же движением, иначе восстановление после краша вернёт старую привязку.
+    @objc private func detachMeetingTapped() {
+        guard case .recording = state else { return }
+        identity = nil
+        scheduledEndAt = nil
+        if let dir = currentRecDir, let base = currentRecBase {
+            writeRecordingMeta(dir: dir, base: base, startedAt: recordStartedAt ?? Date(), identity: nil)
+        }
+        dbg("DETACH: запись отвязана от календарной встречи")
+        refreshStatusTitle()
+        rebuildMenu()
     }
 
     // Взвести «Отправка…» + watchdog: если через sendWatchdogSeconds всё ещё .sending (та же
