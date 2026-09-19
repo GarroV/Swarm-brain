@@ -58,7 +58,7 @@ jobs:
           # так бывает у ветки, пролежавшей дольше соседних. Без флага CLI отказывается
           # вставлять её «в середину» истории и выходит с кодом 1.
           EXTRA=""
-          [ "$INCLUDE_ALL" = "true" ] && EXTRA="--include-all"
+          if [ "$INCLUDE_ALL" = "true" ]; then EXTRA="--include-all"; fi
           if [ "$DRY_RUN" = "true" ]; then
             supabase db push --linked --dry-run $EXTRA
           else
