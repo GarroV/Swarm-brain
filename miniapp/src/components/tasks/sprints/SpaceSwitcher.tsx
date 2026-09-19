@@ -20,7 +20,15 @@ import { createSprint, deleteSprint, updateSprint } from "@/lib/api";
 export const NO_SPACE = null;
 
 export function SpaceSwitcher(
-  { spaces, value, onChange, counts, showOrphans = false, canManage = false, onChanged }: {
+  {
+    spaces,
+    value,
+    onChange,
+    counts,
+    showOrphans = false,
+    canManage = false,
+    onChanged,
+  }: {
     spaces: Sprint[];
     value: string | null;
     onChange: (id: string | null) => void;
@@ -35,7 +43,9 @@ export function SpaceSwitcher(
   const dt = useDt();
   const confirm = useConfirm();
   // draft: null — ничего не редактируем; {id: null} — создаём новое; {id} — переименовываем.
-  const [draft, setDraft] = useState<{ id: string | null; name: string } | null>(null);
+  const [draft, setDraft] = useState<
+    { id: string | null; name: string } | null
+  >(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -61,7 +71,11 @@ export function SpaceSwitcher(
         // Пространство — именованный фильтр, даты ему не нужны, но схема спринта их требует:
         // подставляем сегодняшнюю, человеку они не показываются.
         const today = new Date().toISOString().slice(0, 10);
-        const created = await createSprint({ name, start_date: today, end_date: today });
+        const created = await createSprint({
+          name,
+          start_date: today,
+          end_date: today,
+        });
         await onChanged?.();
         onChange(created.id);
       } else {
@@ -70,7 +84,11 @@ export function SpaceSwitcher(
       }
       setDraft(null);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : dt("Не удалось сохранить", "Could not save"));
+      setErr(
+        e instanceof Error
+          ? e.message
+          : dt("Не удалось сохранить", "Could not save"),
+      );
     } finally {
       setBusy(false);
     }
@@ -80,7 +98,10 @@ export function SpaceSwitcher(
     if (!active) return;
     const inside = counts?.get(active.id) ?? 0;
     const ok = await confirm({
-      title: dt(`Удалить пространство «${active.name}»?`, `Delete space “${active.name}”?`),
+      title: dt(
+        `Удалить пространство «${active.name}»?`,
+        `Delete space “${active.name}”?`,
+      ),
       description: inside > 0
         ? dt(
           `Внутри ${inside} спринт(ов) — они удалятся вместе с пространством. Задачи останутся, просто выйдут из него.`,
@@ -99,7 +120,11 @@ export function SpaceSwitcher(
       onChange(spaces.find((s) => s.id !== active.id)?.id ?? null);
       await onChanged?.();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : dt("Не удалось удалить", "Could not delete"));
+      setErr(
+        e instanceof Error
+          ? e.message
+          : dt("Не удалось удалить", "Could not delete"),
+      );
     } finally {
       setBusy(false);
     }
@@ -153,13 +178,18 @@ export function SpaceSwitcher(
         {showOrphans && chip(NO_SPACE, dt("Без пространства", "No space"))}
         {onChanged && !draft && (
           <>
-            {iconBtn(dt("Новое пространство", "New space"), () => setDraft({ id: null, name: "" }), "+")}
+            {iconBtn(
+              dt("Новое пространство", "New space"),
+              () => setDraft({ id: null, name: "" }),
+              "+",
+            )}
             {canManage && active && iconBtn(
               dt("Переименовать", "Rename"),
               () => setDraft({ id: active.id, name: active.name }),
               "✎",
             )}
-            {canManage && active && iconBtn(dt("Удалить", "Delete"), remove, "✕")}
+            {canManage && active &&
+              iconBtn(dt("Удалить", "Delete"), remove, "✕")}
           </>
         )}
       </div>

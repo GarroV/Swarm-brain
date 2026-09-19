@@ -198,7 +198,11 @@ export function buildPeopleBoard<T extends BoardRow & { assignees: string[] }>(
   for (const [name, rows] of byPerson) {
     nodes.push({
       project: name === "" ? null : personProject(name),
-      initiatives: [{ project: null, items: rows, progress: computeProgress(rows) }],
+      initiatives: [{
+        project: null,
+        items: rows,
+        progress: computeProgress(rows),
+      }],
       progress: computeProgress(rows),
     });
   }

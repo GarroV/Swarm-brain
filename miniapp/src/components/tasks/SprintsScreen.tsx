@@ -6,7 +6,6 @@ import {
   createSprintCycle,
   createTask,
   deleteSprintCycle,
-  updateSprintCycle,
   fetchProjects,
   fetchSprintCycle,
   fetchSprintCycles,
@@ -17,6 +16,7 @@ import {
   removeTaskFromSprintCycle,
   startSprintCycle,
   updateProject,
+  updateSprintCycle,
   updateTask,
 } from "@/lib/api";
 import type {
@@ -168,7 +168,9 @@ export function SprintsScreen() {
   // Инициатива, в которую заводят задачу стандартной карточкой. null — карточка закрыта.
   // Своё поле ввода в строке было короче, но заводило второй способ создания задачи
   // (владелец 19.09.2026: «давай вызывать нашу стандартную менюшку»).
-  const [addingTo, setAddingTo] = useState<string | null | undefined>(undefined);
+  const [addingTo, setAddingTo] = useState<string | null | undefined>(
+    undefined,
+  );
   // Панель «Задачи» слева: нужна только при наборе состава. Выбор помнится между заходами —
   // как у переключателя видов (замечание владельца 19.09.2026).
   const [poolOpen, setPoolOpen] = useState(true);
@@ -567,7 +569,9 @@ export function SprintsScreen() {
       load();
     } catch (e) {
       setErr(
-        e instanceof Error ? e.message : dt("Не удалось отметить", "Failed to mark"),
+        e instanceof Error
+          ? e.message
+          : dt("Не удалось отметить", "Failed to mark"),
       );
     }
   }
@@ -907,7 +911,9 @@ export function SprintsScreen() {
             <div className="mx-4 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-2xl border border-line bg-surface/40 px-3 py-2 dark:backdrop-blur-sm">
               {renaming === null
                 ? (
-                  <span className="text-sm font-bold text-ink">{detail.name}</span>
+                  <span className="text-sm font-bold text-ink">
+                    {detail.name}
+                  </span>
                 )
                 : (
                   <input
@@ -918,7 +924,9 @@ export function SprintsScreen() {
                     onKeyDown={async (e) => {
                       if (e.key === "Escape") setRenaming(null);
                       if (e.key === "Enter" && renaming.trim()) {
-                        await updateSprintCycle(detail.id, { name: renaming.trim() });
+                        await updateSprintCycle(detail.id, {
+                          name: renaming.trim(),
+                        });
                         setRenaming(null);
                         await load();
                       }
@@ -1110,40 +1118,49 @@ export function SprintsScreen() {
                   <div className="flex-1 min-w-0 overflow-y-auto">
                     {items.length === 0 ? emptyComposition : (
                       <>
-                        <GroupingToggle value={grouping} onChange={setGrouping} />
-                      <InitiativeList
-                        board={byPeople ? peopleBoard : board}
-                        noneLabel={byPeople
-                          ? dt("Без исполнителя", "Unassigned")
-                          : undefined}
-                        unchecked={unchecked}
-                        users={users}
-                        // Принятый спринт — слепок: в него не дописывают. В группировке по
-                        // людям «+ задача» нет: группа — человек, а не проект, и класть
-                        // задачу «в человека» некуда.
-                        onAdd={accepted || byPeople
-                          ? undefined
-                          : (projectId) => setAddingTo(projectId)}
-                        onDone={accepted ? undefined : toggleDone}
-                        onCarry={accepted ? undefined : toggleCarry}
-                        onCheck={accepted ? undefined : (item, status) =>
-                          markItem(item, {
-                            check_status: status,
-                            // Сняли отметку — убираем и причину: висящая причина от снятого
-                            // риска читается как живая.
-                            ...(status === null ? { check_note: null } : {}),
-                          })}
-                        onNote={accepted ? undefined : (item, patch) => markItem(item, patch)}
-                        onOpen={(item) => {
-                          // Открываем ЖИВУЮ задачу: строка спринта — это её отражение, и править
-                          // надо задачу. У упоминания и приватной чужой открывать нечего — такие
-                          // строки список кликабельными и не делает.
-                          const live = item.task_id
-                            ? tasks.find((t) => t.id === item.task_id)
-                            : undefined;
-                          if (live) setEditing(live);
-                        }}
-                      />
+                        <GroupingToggle
+                          value={grouping}
+                          onChange={setGrouping}
+                        />
+                        <InitiativeList
+                          board={byPeople ? peopleBoard : board}
+                          noneLabel={byPeople
+                            ? dt("Без исполнителя", "Unassigned")
+                            : undefined}
+                          unchecked={unchecked}
+                          users={users}
+                          // Принятый спринт — слепок: в него не дописывают. В группировке по
+                          // людям «+ задача» нет: группа — человек, а не проект, и класть
+                          // задачу «в человека» некуда.
+                          onAdd={accepted || byPeople
+                            ? undefined
+                            : (projectId) => setAddingTo(projectId)}
+                          onDone={accepted ? undefined : toggleDone}
+                          onCarry={accepted ? undefined : toggleCarry}
+                          onCheck={accepted
+                            ? undefined
+                            : (item, status) =>
+                              markItem(item, {
+                                check_status: status,
+                                // Сняли отметку — убираем и причину: висящая причина от снятого
+                                // риска читается как живая.
+                                ...(status === null
+                                  ? { check_note: null }
+                                  : {}),
+                              })}
+                          onNote={accepted
+                            ? undefined
+                            : (item, patch) => markItem(item, patch)}
+                          onOpen={(item) => {
+                            // Открываем ЖИВУЮ задачу: строка спринта — это её отражение, и править
+                            // надо задачу. У упоминания и приватной чужой открывать нечего — такие
+                            // строки список кликабельными и не делает.
+                            const live = item.task_id
+                              ? tasks.find((t) => t.id === item.task_id)
+                              : undefined;
+                            if (live) setEditing(live);
+                          }}
+                        />
                       </>
                     )}
                   </div>
