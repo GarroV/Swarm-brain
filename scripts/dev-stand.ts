@@ -16,10 +16,40 @@
 import { signJWT } from "../miniapp/functions/_lib/jwt.ts";
 
 const PORT = Number(Deno.env.get("STAND_PORT") ?? 8080);
-const WEB = Deno.env.get("STAND_WEB") ?? "http://127.0.0.1:3117";
+const WEB = Deno.env.get("STAND_WEB") ?? "";
+// Статика собранного веба (`miniapp/out`). Это и есть то, что отдаёт Cloudflare в проде,
+// поэтому стенд по умолчанию показывает ЕЁ, а не dev-сервер: смотреть надо на продукт, а не
+// на среду разработки. Живой `next dev` подключается переменной STAND_WEB, когда нужны
+// правки на лету.
+const STATIC_DIR = Deno.env.get("STAND_STATIC") ?? "miniapp/out";
 const API = Deno.env.get("STAND_API") ?? "http://127.0.0.1:54321/functions/v1/swarm-api";
 const SECRET = Deno.env.get("WEB_JWT_SECRET") ?? "local-dev-stand-secret-not-a-real-one-32b";
 const DEMO_USER_ID = 900000001; // тот же демо-пользователь, что в проде
+
+
+// Отдача статики: путь без расширения — это маршрут, ему соответствует `<путь>.html`
+// (так же, как Cloudflare Pages раздаёт экспорт Next).
+async function serveStatic(pathname: string): Promise<Response> {
+  const rel = pathname === "/" ? "/index.html" : pathname;
+  const candidates = rel.includes(".") ? [rel] : [`${rel}.html`, `${rel}/index.html`];
+  for (const c of candidates) {
+    try {
+      const file = await Deno.readFile(`${STATIC_DIR}${c}`);
+      return new Response(file, { headers: { "content-type": contentType(c) } });
+    } catch { /* следующий кандидат */ }
+  }
+  return new Response("not found", { status: 404 });
+}
+
+function contentType(path: string): string {
+  const ext = path.slice(path.lastIndexOf("."));
+  const map: Record<string, string> = {
+    ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css",
+    ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
+    ".woff2": "font/woff2", ".ico": "image/x-icon", ".txt": "text/plain",
+  };
+  return map[ext] ?? "application/octet-stream";
+}
 
 // Заголовки ответа чистим: `fetch` ОТДАЁТ ТЕЛО УЖЕ РАСПАКОВАННЫМ, а `content-encoding: gzip`
 // в ответе остаётся — браузер пробует распаковать второй раз и получает битый файл. Внешне
@@ -66,6 +96,8 @@ async function handler(req: Request): Promise<Response> {
     });
     return new Response(res.body, { status: res.status, headers: cleanHeaders(res) });
   }
+
+  if (!WEB) return await serveStatic(url.pathname);
 
   const res = await fetch(`${WEB}${url.pathname}${url.search}`, {
     method: req.method,
