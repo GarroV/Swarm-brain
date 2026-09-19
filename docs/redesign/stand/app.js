@@ -291,3 +291,193 @@ window.addEventListener("DOMContentLoaded", () => {
   $(".pop").innerHTML = `<h4>Уведомления</h4>` + NOTIF.map((n) => `<div class="n"><b>${n.t}</b><div>${n.s}</div><div class="w">${n.w}</div></div>`).join("");
   render();
 });
+
+/* ═══ РАСШИРЕНИЕ: полный функционал ═══════════════════════════════ */
+const MARKETS = ["RS","HR","SI","BA","General"];
+const LABELS = ["закупки","процесс","встреча","отчёт","обучение","юр","доступы","регулярно"];
+const HIST = [
+  { w:"3 ч назад", a:"А. Ковач", t:"перенёс в «В работе»" },
+  { w:"вчера", a:"М. Дам", t:"поставил срок 17 сен" },
+  { w:"15 сен", a:"Система", t:"создана из встречи «Планёрка по открытию»" },
+];
+const LINKS = [["блокирует","141","Назначить ответственного за приёмку мебели"],["связана","132","Уточнить санитарные требования"]];
+S.dtab = "over"; S.bulk = new Set(); S.lang = "RU";
+
+/* модалка */
+function modal(title, body, foot) {
+  $(".mscrim").classList.add("open");
+  const m = $(".modal"); m.classList.add("open");
+  m.innerHTML = `<header><h3>${title}</h3><button class="btn" data-mclose="1">✕</button></header>
+    <div class="mbody">${body}</div><footer>${foot}</footer>`;
+}
+function closeModal() { $(".mscrim").classList.remove("open"); $(".modal").classList.remove("open"); }
+const opt = (arr, sel) => arr.map((x) => `<option${x === sel ? " selected" : ""}>${x}</option>`).join("");
+const chips = (arr, on) => arr.map((x) => `<span class="chip${on && on.includes(x) ? " on" : ""}">${x}</span>`).join("");
+
+function newTaskModal() {
+  modal("Новая задача", `
+    <div class="fld"><label>Название</label><input placeholder="Что нужно сделать"></div>
+    <div class="fld"><label>Описание</label><textarea placeholder="Контекст, ссылки, детали"></textarea></div>
+    <div class="two">
+      <div class="fld"><label>Проект</label><select>${opt(PROJ.map((p) => p.n))}</select></div>
+      <div class="fld"><label>Исполнитель</label><select>${opt(["— не назначен", ...U.map((u) => u.n)])}</select></div>
+      <div class="fld"><label>Срок</label><input type="date"></div>
+      <div class="fld"><label>Приоритет</label><select>${opt(["P1","P2","P3"], "P2")}</select></div></div>
+    <div class="fld"><label>Метки</label><div class="pick">${chips(LABELS, ["процесс"])}</div></div>
+    <div class="fld"><label>Рынки</label><div class="pick">${chips(MARKETS, ["RS"])}</div></div>
+    <div class="fld"><label>Повтор</label><select>${opt(["без повтора","каждый день","каждый понедельник","каждое 1 число"])}</select></div>
+    <div class="fld"><label>Напоминание</label><select>${opt(["не напоминать","за день до срока","в день срока утром"])}</select></div>
+    <label class="sw"><i></i>Личная задача — видна только мне</label>`,
+    `<button class="btn" data-mclose="1">Отмена</button><button class="btn pri" data-mclose="1">Создать задачу</button>`);
+}
+function newEntryModal() {
+  modal("Новая запись в базе", `
+    <div class="fld"><label>Заголовок</label><input placeholder="О чём запись"></div>
+    <div class="fld"><label>Тип</label><select>${opt(["Заметка","Документ","Транскрипт","Сводка"])}</select></div>
+    <div class="fld"><label>Текст</label><textarea placeholder="Полный текст — сохраняется целиком, без сокращений"></textarea></div>
+    <div class="fld"><label>Файл</label><input type="file"></div>
+    <div class="fld"><label>Страны и рынки</label><div class="pick">${chips(MARKETS, ["General"])}</div></div>
+    <label class="sw"><i></i>Личная запись — видна только мне</label>`,
+    `<button class="btn" data-mclose="1">Отмена</button><button class="btn pri" data-mclose="1">Сохранить в базу</button>`);
+}
+function feedbackModal() {
+  modal("Сообщить о проблеме", `
+    <div class="fld"><label>Категория</label><select>${opt(["Баг — что-то сломалось","Идея — чего не хватает","Вопрос","Другое"])}</select></div>
+    <div class="fld"><label>Что случилось</label><textarea placeholder="Опишите, что вы делали и что пошло не так"></textarea></div>
+    <div class="fld"><label>Скриншот</label><input type="file" accept="image/*"></div>
+    <div class="src">Экран, язык и версия прикрепятся автоматически</div>`,
+    `<button class="btn" data-mclose="1">Отмена</button><button class="btn pri" data-mclose="1">Отправить</button>`);
+}
+function tezisyModal() {
+  modal("Правка тезисов", `
+    <div class="fld"><label>Тезисы встречи</label><textarea style="min-height:180px">ЗАКУПКИ
+— Смета выше бюджета на 14%, поставщик держит цену до пятницы.
+— Нужна разбивка по позициям к следующей планёрке.
+
+ПЛОЩАДКА
+— Санитарные требования уточняются.</textarea></div>
+    <div class="src">«Переписать» отправит текст модели и заменит тезисы — исходный транскрипт не меняется</div>`,
+    `<button class="btn" data-mclose="1">Отмена</button><button class="btn" data-mclose="1">Переписать моделью</button><button class="btn pri" data-mclose="1">Сохранить</button>`);
+}
+
+/* деталь задачи со вкладками */
+const baseDetail = renderDetail;
+renderDetail = function () {
+  baseDetail();
+  const task = TASKS.find((x) => x.id === S.sel);
+  if (!task) return;
+  const head = $(".detail .d-head");
+  head.insertAdjacentHTML("afterend", `<div class="dtabs">
+    ${[["over","Обзор"],["hist","История"],["links","Связи"],["subs","Подписчики"]].map(([i, n]) =>
+      `<div class="dtab${S.dtab === i ? " on" : ""}" data-dtab="${i}">${n}</div>`).join("")}</div>`);
+  if (S.dtab === "over") return;
+  const b = $(".detail .d-body");
+  if (S.dtab === "hist") b.innerHTML = `<div class="lab" style="margin-top:0;padding-top:0;border:0">Журнал перемещений</div>
+    <div class="tl">${HIST.map((h) => `<div class="e"><div class="p"></div><div><b>${h.a}</b> ${h.t}<div class="w">${h.w}</div></div></div>`).join("")}</div>`;
+  if (S.dtab === "links") b.innerHTML = `<div class="lab" style="margin-top:0;padding-top:0;border:0">Связи задачи</div>
+    <div class="rowset">${LINKS.map(([k, id, t]) => `<div><span class="k">${k}</span><span class="v">${id} · ${t}</span></div>`).join("")}</div>
+    <div style="margin-top:10px"><button class="btn">Связать с другой задачей</button></div>`;
+  if (S.dtab === "subs") b.innerHTML = `<div class="lab" style="margin-top:0;padding-top:0;border:0">Кто получает уведомления</div>
+    <div class="rowset">${U.slice(0,2).map((u) => `<div><span class="k">${u.n}</span><span class="v">комментарии и смена статуса</span><span class="a state on">подписан</span></div>`).join("")}</div>
+    <div style="margin-top:10px"><button class="btn">Подписаться</button><button class="btn" style="margin-left:6px">Напомнить мне</button></div>`;
+};
+
+/* массовые действия + кнопка создания в Задачах */
+const baseTasks = SCREENS.tasks;
+SCREENS.tasks = function () {
+  let html = baseTasks();
+  html = html.replace('<div class="right">', `<button class="btn pri" data-new="task" style="height:26px;font-size:var(--fs-meta)">＋ Задача</button><div class="right">`);
+  if (S.bulk.size) html = `<div class="bulk">Выбрано: ${S.bulk.size}<button class="btn">Назначить</button><button class="btn">Срок</button><button class="btn">Метка</button><button class="btn">В архив</button><span class="x"><button class="btn" data-bulkclr="1">Снять выделение</button></span></div>` + html;
+  return html.replace(/<td class="t">/g, (m) => `<td class="ck"><input type="checkbox" data-ck="1"></td>${m}`)
+             .replace('<th style="width:42%">Задача</th>', '<th class="ck"><input type="checkbox" data-ckall="1"></th><th style="width:38%">Задача</th>');
+};
+SCREENS.base = ((base) => function () {
+  return `<div class="bar"><button class="btn pri" data-new="entry" style="height:26px;font-size:var(--fs-meta)">＋ Запись</button>
+    <div class="chip">Страна: все</div><div class="chip">Только мои</div>
+    <div class="right"><span>Записей <b>${RECS.length}</b></span><span>Файлов <b>12</b></span></div></div>` + base();
+})(SCREENS.base);
+SCREENS.meetings = ((base) => function () {
+  return `<div class="bar"><div class="chip on">Период: всё время</div><div class="chip">Источник: все</div><div class="chip">Участник: все</div>
+    <div class="right"><span>Невычитано <b>${MEET.filter((x) => x.st === "review").length}</b></span></div></div>` + base();
+})(SCREENS.meetings);
+
+/* спринты: живые вкладки */
+SCREENS.sprints = ((base) => function () {
+  if (S.tab === "check") return `<div class="panes"><div class="pane"><h3>Чек спринта «Сентябрь, цикл 2»</h3><div class="sub">Что обещали и где стоим · 12 из 19 закрыто</div>
+    <div class="rowset">${PROJ.map((p) => `<div><span class="k">${p.n}</span><span class="v">${p.all - p.open} из ${p.all} закрыто</span><span class="a state ${p.open > 4 ? "off" : "on"}">${p.open > 4 ? "отстаёт" : "в графике"}</span></div>`).join("")}</div>
+    <div style="margin-top:12px"><button class="btn pri">Закрыть цикл</button><button class="btn" style="margin-left:6px">Перенести хвосты</button></div></div></div>`;
+  if (S.tab === "analytics") return `<div class="panes"><div class="pane"><h3>Аналитика цикла</h3><div class="sub">Скорость и распределение нагрузки</div>
+    <div class="rowset"><div><span class="k">Закрыто за цикл</span><span class="v">12 задач</span></div>
+    <div><span class="k">Средний срок в работе</span><span class="v">3,4 дня</span></div>
+    <div><span class="k">Просрочено</span><span class="v">3 задачи</span></div>
+    <div><span class="k">Перенесено из прошлого</span><span class="v">5 задач</span></div></div>
+    <div class="lab">Нагрузка по людям</div><div class="rowset">${U.map((u, i) => `<div><span class="k">${u.n}</span><span class="v">${[6,5,4,3][i]} задач</span><span class="a state ${i === 0 ? "off" : "on"}">${i === 0 ? "перегруз" : "норма"}</span></div>`).join("")}</div></div></div>`;
+  if (S.tab === "journal") return `<div class="panes"><div class="pane"><h3>Журнал перемещений</h3><div class="sub">Кто и когда двигал задачи по доске</div>
+    <div class="tl">${[["3 ч назад","А. Ковач","перенёс «Согласовать смету» в «В работе»"],["вчера","М. Дам","вернул «Проверить чек-лист» в «Бэклог»"],["вчера","И. Пет","закрыл «Свести расходы по логистике»"],["2 дня назад","Система","перенесла 5 хвостов в новый цикл"]].map(([w, a, t]) =>
+      `<div class="e"><div class="p"></div><div><b>${a}</b> ${t}<div class="w">${w}</div></div></div>`).join("")}</div></div></div>`;
+  return base();
+})(SCREENS.sprints);
+
+/* настройки: живые действия */
+SCREENS.settings = function () {
+  const P = {
+    profile:[["Имя","А. Ковач","—"],["Telegram","@user","Отвязать"],["Язык интерфейса", S.lang === "RU" ? "Русский" : "English","Переключить"],["Часовой пояс","Europe/Belgrade","Изменить"],["Демо-режим","выключен","—"]],
+    integr:[["Google Calendar","подключён · встречи дня","Отключить"],["Granola","подключён · авто-импорт","Отключить"],["Read.ai","вебхук активен","Проверить"],["bumblebee","build 24 · установлен","Обновить"]],
+    tokens:[["MCP-токен для Claude Desktop","smcp_••••••••","Перевыпустить"],["Токен рекордера","•••••• ","Перевыпустить"],["Инструкция для Claude Desktop","готова","Открыть"]],
+    notif:[["Тезисы готовы","в Telegram и в колокольчик","Выключить"],["Комментарии к задачам","в Telegram","Выключить"],["Ежедневный дайджест","09:00","Изменить время"],["Напоминания по задачам","включены","Выключить"],["Невычитанные встречи","напоминать через 48 ч","Выключить"]],
+  }[S.tab];
+  return `<div class="panes"><div class="pane"><h3>${TABS.settings.find(([i]) => i === S.tab)[1]}</h3>
+    <div class="sub">Настройки применяются к вашему аккаунту</div>
+    <div class="rowset">${P.map(([k, v, a]) => `<div><span class="k">${k}</span><span class="v">${v}</span>
+      <span class="a">${a === "—" ? "" : `<button class="btn" style="height:26px"${a === "Переключить" ? ' data-lang="1"' : ""}>${a}</button>`}</span></div>`).join("")}</div></div></div>`;
+};
+
+/* карта системы */
+SCREENS.map = () => `<div class="panes" style="max-width:none"><div class="pane"><h3>Карта системы</h3>
+  <div class="sub">Как связаны поверхности, данные и люди</div>
+  <svg viewBox="0 0 720 260" style="width:100%;height:auto;font:500 11px var(--font-ui)">
+    ${[["bumblebee",40,30],["Granola",40,95],["Read.ai",40,160],["Telegram-бот",40,225]].map(([t, x, y]) =>
+      `<g><rect x="${x}" y="${y}" width="112" height="34" rx="8" fill="#fff" stroke="#DDE2E8"/><text x="${x + 56}" y="${y + 21}" text-anchor="middle" fill="#1B2028">${t}</text></g>
+       <path d="M${x + 112} ${y + 17} H 268" stroke="#C9D9F0" stroke-width="1.5" fill="none"/>`).join("")}
+    <rect x="268" y="95" width="130" height="70" rx="10" fill="#E8EEF8" stroke="#1F4E9C"/><text x="333" y="125" text-anchor="middle" fill="#1F4E9C" font-weight="700">База знаний</text>
+    <text x="333" y="143" text-anchor="middle" fill="#5C6672" font-size="10">entries · meetings · tasks</text>
+    ${[["Веб «Рой»",520,45],["Claude Desktop (MCP)",520,110],["Уведомления в Telegram",520,175]].map(([t, x, y]) =>
+      `<path d="M398 130 H ${x}" stroke="#C9D9F0" stroke-width="1.5" fill="none"/>
+       <g><rect x="${x}" y="${y}" width="164" height="34" rx="8" fill="#fff" stroke="#DDE2E8"/><text x="${x + 82}" y="${y + 21}" text-anchor="middle" fill="#1B2028">${t}</text></g>`).join("")}
+  </svg></div></div>`;
+
+/* обработчики расширения */
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-new],[data-mclose],[data-dtab],[data-bulkclr],[data-ck],[data-ckall],[data-dig],[data-me],[data-lang],[data-fab],[data-readall]");
+  if (!t) { $(".menu")?.classList.remove("open"); $(".dig")?.classList.remove("open"); return; }
+  if (t.dataset.new === "task") return newTaskModal();
+  if (t.dataset.new === "entry") return newEntryModal();
+  if (t.dataset.fab) return feedbackModal();
+  if (t.dataset.mclose) return closeModal();
+  if (t.dataset.dtab) { S.dtab = t.dataset.dtab; return render(); }
+  if (t.dataset.bulkclr) { S.bulk.clear(); return render(); }
+  if (t.dataset.ckall) { const on = t.checked; document.querySelectorAll("[data-ck]").forEach((c) => { c.checked = on; }); S.bulk = on ? new Set(TASKS.map((x) => x.id)) : new Set(); return render(); }
+  if (t.dataset.ck) { const id = +t.closest("tr").dataset.task; S.bulk.has(id) ? S.bulk.delete(id) : S.bulk.add(id); return render(); }
+  if (t.dataset.dig) { $(".dig").classList.toggle("open"); $(".menu").classList.remove("open"); return; }
+  if (t.dataset.me) { $(".menu").classList.toggle("open"); $(".dig").classList.remove("open"); return; }
+  if (t.dataset.lang) { S.lang = S.lang === "RU" ? "EN" : "RU"; return render(); }
+});
+window.addEventListener("DOMContentLoaded", () => {
+  $(".fab").dataset.fab = "1";
+  $(".dig").innerHTML = `<h4>Дайджест на сегодня</h4>
+    <div class="sec"><h5>Требует вас</h5>
+      <div class="li"><i class="d"></i>3 задачи просрочены — смета, франчайзи, санитария</div>
+      <div class="li"><i class="d"></i>3 встречи ждут вычитки</div></div>
+    <div class="sec"><h5>Встречи сегодня</h5>
+      <div class="li"><i class="d"></i>11:00 · Сверка бюджета Q4</div>
+      <div class="li"><i class="d"></i>15:30 · Поставщик упаковки</div></div>
+    <div class="sec"><h5>Движение за сутки</h5>
+      <div class="li"><i class="d"></i>Закрыто 2 задачи, создано 4</div>
+      <div class="li"><i class="d"></i>Новых записей в базе: 1</div></div>`;
+  $(".menu").innerHTML = `<div class="mi">А. Ковач<span class="a">админ</span></div><div class="sep"></div>
+    <div class="mi" data-lang="1">Язык интерфейса<span class="a">${S.lang}</span></div>
+    <div class="mi">Воркспейс<span class="a">IMF BD</span></div>
+    <div class="mi">Claude Desktop<span class="a">MCP</span></div><div class="sep"></div>
+    <div class="mi">Выйти</div>`;
+  render();
+});
