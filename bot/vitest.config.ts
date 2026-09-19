@@ -10,6 +10,10 @@ export default defineConfig({
       reporter: ["text-summary", "lcov"],
       reportsDirectory: "coverage",
       include: ["src/**/*.ts"],
+      // Программы, которые исполняются только внутри контейнера: у них верхнеуровневый
+      // await, запуск браузера и ffmpeg. Их проверяет живой смоук записи, а не юнит-тест,
+      // и включение их в покрытие меряло бы не логику, а наличие контейнера.
+      exclude: ["src/container/verify-environment.ts", "src/container/smoke-audio.ts"],
     },
   },
 });

@@ -1,6 +1,10 @@
 .env
 .env.local
 .env.*
+# .env.example — публичный шаблон с именами переменных и безопасными значениями;
+# лежит в репо намеренно, паттерн `.env.*` его иначе съедает молча.
+!.env.example
+!**/.env.example
 supabase/.temp/
 node_modules/
 .DS_Store

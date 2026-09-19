@@ -1,0 +1,53 @@
+# Стенд контейнера scriba.
+#
+# Имя проекта задано здесь и всё равно передаётся ключом при запуске — оно разделяет стенды
+# параллельных копий репозитория: без своего имени `up` перехватывает чужие контейнеры, а
+# `down -v` сносит чужой том вместе с данными.
+#
+#   docker compose -p scriba-container -f bot/container/docker-compose.yml up -d
+#   docker compose -p scriba-container -f bot/container/docker-compose.yml down -v
+#
+# Портов стенд не публикует: снаружи контейнер ничего не отдаёт, всё общение идёт наружу
+# (Supabase) и внутрь (dockerode). Занимать порт «на всякий случай» — значит отобрать его
+# у соседа.
+name: scriba-container
+
+x-scriba: &scriba
+  build:
+    context: ..
+    dockerfile: container/Dockerfile
+  image: scriba-container:dev
+  # tini первым процессом: иначе `sleep`/`node` в роли PID 1 игнорируют SIGTERM, и
+  # остановка стенда каждый раз ждёт таймаут и добивает контейнер по SIGKILL.
+  init: true
+  # /dev/shm по умолчанию 64 МБ — Chromium на этом падает посреди встречи.
+  shm_size: 1gb
+
+services:
+  scriba:
+    <<: *scriba
+    container_name: scriba-container-solo
+    volumes:
+      - recordings:/recordings
+
+  # Пара для проверки изоляции: два контейнера одновременно не слышат друг друга.
+  # Имя sink'а у обоих одинаковое намеренно — изоляция обязана держаться на границе
+  # контейнера, а не на том, что кто-то выбрал разные имена.
+  scriba-a:
+    <<: *scriba
+    container_name: scriba-container-a
+    profiles: ["pair"]
+    volumes:
+      - recordings-a:/recordings
+
+  scriba-b:
+    <<: *scriba
+    container_name: scriba-container-b
+    profiles: ["pair"]
+    volumes:
+      - recordings-b:/recordings
+
+volumes:
+  recordings:
+  recordings-a:
+  recordings-b:
