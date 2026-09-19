@@ -6,6 +6,7 @@ import {
   createSprintCycle,
   createTask,
   deleteSprintCycle,
+  updateSprintCycle,
   fetchProjects,
   fetchSprintCycle,
   fetchSprintCycles,
@@ -161,6 +162,10 @@ export function SprintsScreen() {
 
   const [cycles, setCycles] = useState<SprintCycle[]>([]);
   const [spaces, setSpaces] = useState<Sprint[]>([]);
+  // Переименование спринта: null — не правим, иначе черновик имени. Спринт, названный датами
+  // при создании, со временем получает смысл («Запуск Эстонии»), и менять имя должно быть
+  // можно, не пересоздавая период (#403).
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [space, setSpace] = useState<string | null>(null);
   const [spacePicked, setSpacePicked] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -675,6 +680,8 @@ export function SprintsScreen() {
             [null, cycles.filter((c) => c.tab_id === null).length] as const,
           ],
         )}
+        canManage={isAdmin}
+        onChanged={load}
         onChange={(id) => {
           setSpace(id);
           setSpacePicked(true);
@@ -839,7 +846,37 @@ export function SprintsScreen() {
           <>
             {/* Шапка: даты, состояние, прогресс, действие по состоянию */}
             <div className="mx-4 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-2xl border border-line bg-surface/40 px-3 py-2 dark:backdrop-blur-sm">
-              <span className="text-sm font-bold text-ink">{detail.name}</span>
+              {renaming === null
+                ? (
+                  <span className="text-sm font-bold text-ink">{detail.name}</span>
+                )
+                : (
+                  <input
+                    autoFocus
+                    value={renaming}
+                    disabled={busy}
+                    onChange={(e) => setRenaming(e.target.value)}
+                    onKeyDown={async (e) => {
+                      if (e.key === "Escape") setRenaming(null);
+                      if (e.key === "Enter" && renaming.trim()) {
+                        await updateSprintCycle(detail.id, { name: renaming.trim() });
+                        setRenaming(null);
+                        await load();
+                      }
+                    }}
+                    className="w-56 rounded-full border border-line bg-surface px-3 py-1 text-sm font-bold text-ink outline-none focus:border-ink-soft"
+                  />
+                )}
+              {isAdmin && !accepted && renaming === null && (
+                <button
+                  onClick={() => setRenaming(detail.name)}
+                  disabled={busy}
+                  title={dt("Переименовать спринт", "Rename sprint")}
+                  className="rounded-full border border-line bg-surface px-2 py-0.5 text-[11px] text-ink-soft hover:bg-surface-2 disabled:opacity-50 dark:backdrop-blur-sm"
+                >
+                  ✎
+                </button>
+              )}
               <span className="text-xs text-ink-soft">
                 {fmtRange(detail.start_date, detail.end_date)}
               </span>
