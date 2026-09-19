@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<title>SWARM — стенд редизайна</title>
+<meta name="viewport" content="width=1440">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head><body>
+<div class="app">
+  <aside class="nav">
+    <div class="ws"><div class="ws-mark">S</div><div><div class="ws-name">SWARM</div><div class="ws-sub">IMF BD</div></div></div>
+    <div class="nav-scroll"></div>
+    <div class="nav-foot"></div>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <div><div class="crumb"></div><h1></h1></div>
+      <div class="search" data-search="1" tabindex="0">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 14 14"/></svg>
+        Поиск по задачам и базе<span class="kbd">⌘K</span></div>
+      <div class="bell" data-bell="1" tabindex="0"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6.5a4 4 0 0 1 8 0c0 3 1 4 1 4H3s1-1 1-4"/><path d="M6.5 13a1.6 1.6 0 0 0 3 0"/></svg><span class="b">3</span></div>
+      <div class="me">ВГ</div>
+      <div class="pop"></div>
+    </div>
+    <nav class="tabs"></nav>
+    <div class="body" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden"></div>
+  </main>
+
+  <aside class="detail"></aside>
+</div>
+
+<button class="fab">＋ Фидбек</button>
+<div class="scrim"></div>
+<div class="pal">
+  <input id="q" placeholder="Найти задачу, встречу, запись — или спросить базу" autocomplete="off">
+  <div class="res"></div>
+  <div class="foot"><span>↑↓ выбор</span><span>Enter — открыть или спросить</span><span>Esc — закрыть</span></div>
+</div>
+<script src="app.js"></script>
+</body></html>
