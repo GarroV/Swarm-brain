@@ -144,82 +144,35 @@ function TaskRow(
 
 /** Инициатива: сворачивается, потому что на кросс-командном проекте их десятки, и
  *  развёрнутые все разом они превращают экран в ленту без структуры. */
-/** Строка «+ задача» внутри инициативы. Задача рождается здесь же, в этой инициативе и в
- *  этом спринте, — а не заводится отдельно и потом набирается галочками из пула (#407).
- *  Исполнитель — тот, кто создаёт (решение владельца 19.09.2026): у инициативы владелец
- *  может быть один, а пишут в неё разные люди, и подстановка чужого имени в свою задачу
- *  читается как назначение работы другому. */
+/** Строка «+ задача» внутри инициативы. Открывает СТАНДАРТНУЮ карточку задачи с уже
+ *  проставленной инициативой (решение владельца 19.09.2026: «при добавлении давай вызывать
+ *  нашу стандартную менюшку добавления задачи»). Своё поле ввода здесь было короче, но
+ *  заводило второй, урезанный способ создания задачи — с ним расходятся поля и правила. */
 function AddTaskRow(
   { projectId, onAdd }: {
     projectId: string | null;
-    onAdd: (projectId: string | null, title: string) => Promise<void>;
+    onAdd: (projectId: string | null) => void;
   },
 ) {
   const dt = useDt();
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function submit() {
-    if (!title.trim() || busy) return;
-    setBusy(true);
-    try {
-      await onAdd(projectId, title.trim());
-      setTitle("");
-      // Не закрываем: подряд заводят несколько задач, и закрытие после каждой заставляет
-      // целиться в кнопку снова.
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="w-full rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-ink-soft/70 transition-colors hover:bg-surface-2 hover:text-ink"
-      >
-        {dt("+ задача", "+ task")}
-      </button>
-    );
-  }
-
   return (
-    <div className="flex items-center gap-1.5 px-2 py-1.5">
-      <input
-        autoFocus
-        value={title}
-        disabled={busy}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") submit();
-          if (e.key === "Escape") {
-            setTitle("");
-            setOpen(false);
-          }
-        }}
-        placeholder={dt("Название задачи", "Task name")}
-        className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 py-1 text-xs text-ink outline-none focus:border-[var(--accent-ink)]"
-      />
-      <button
-        type="button"
-        onClick={() => {
-          setTitle("");
-          setOpen(false);
-        }}
-        className="shrink-0 rounded-lg px-2 py-1 text-xs text-ink-soft hover:bg-surface-2"
-      >
-        {dt("готово", "done")}
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onAdd(projectId);
+      }}
+      className="w-full rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-ink-soft/70 transition-colors hover:bg-surface-2 hover:text-ink"
+    >
+      {dt("+ задача", "+ task")}
+    </button>
   );
 }
 
 function Initiative(
   { node, collapsed, onToggle, unchecked, ownerName, onOpen, onAdd, onDone, onCarry }: {
     node: InitiativeNode;
-    onAdd?: (projectId: string | null, title: string) => Promise<void>;
+    onAdd?: (projectId: string | null) => void;
     onDone?: (item: SprintCycleItem) => void | Promise<void>;
     onCarry?: (item: SprintCycleItem) => void | Promise<void>;
     collapsed: boolean;
@@ -299,7 +252,7 @@ export function InitiativeList(
     onOpen?: (item: SprintCycleItem) => void;
     /** Есть — внутри каждой инициативы появляется строка «+ задача». Нет — доска только читается
      *  (принятый спринт, чужое пространство). */
-    onAdd?: (projectId: string | null, title: string) => Promise<void>;
+    onAdd?: (projectId: string | null) => void;
     onDone?: (item: SprintCycleItem) => void | Promise<void>;
     onCarry?: (item: SprintCycleItem) => void | Promise<void>;
   },
