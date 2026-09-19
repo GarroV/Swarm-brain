@@ -4,12 +4,16 @@ import { applyGeneralSentinel } from "../_shared/meta-extract.ts";
 import { TEZISY_PROMPT } from "../_shared/tezisy-prompt.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "../_shared/meeting-dedup.ts";
 import { normalizeExtractedDueDate, todayIso } from "../_shared/llm-date.ts";
+import { resolveWebhookGroupId } from "./workspace.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const WEBHOOK_SECRET = Deno.env.get("READ_AI_WEBHOOK_SECRET") ?? "";
+// Воркспейс по умолчанию, когда участников встречи в allowed_users не нашлось (issue #56).
+// Не задан — встреча не сохраняется: лучше отказ, чем чужая команда.
+const READAI_DEFAULT_GROUP_ID = Deno.env.get("READAI_DEFAULT_GROUP_ID") ?? "";
 const ADMIN_CHAT_ID = 744230399;
 
 async function verifySignature(req: Request, body: string): Promise<boolean> {
@@ -167,6 +171,29 @@ Deno.serve(async (req: Request) => {
     if (transcript) parts.push(`Стенограмма:\n${transcript.slice(0, 8000)}`);
     const fullContent = parts.join("\n\n");
 
+    // Воркспейс НЕ зашит в код (issue #56). Личность у вебхука одна — участники встречи,
+    // поэтому их e-mail'ы ищутся в allowed_users. Никого не нашли → берём READAI_DEFAULT_GROUP_ID,
+    // если он выставлен; нет ни того, ни другого → ОТКАЗ, а не «положим в дефолтный»: уехавшая
+    // не туда встреча не падает и никем не замечается, а лежит в чужой команде со стенограммой.
+    const participantEmails = [...new Set(
+      participants.map((p) => String(p.email ?? "").trim().toLowerCase()).filter(Boolean),
+    )];
+    const memberRows = participantEmails.length
+      ? (await supabase.from("allowed_users").select("group_id").in("email", participantEmails)).data
+      : [];
+    const resolved = resolveWebhookGroupId(
+      ((memberRows ?? []) as Array<{ group_id: string | null }>).map((r) => r.group_id),
+      READAI_DEFAULT_GROUP_ID,
+    );
+    if (!resolved.ok) {
+      console.error("read-ai reject: воркспейс не определён", meetingId, "—", resolved.reason);
+      await sendTelegram(`⚠️ Read.ai: встреча «${title}» НЕ сохранена — ${resolved.reason}`);
+      return new Response(JSON.stringify({ ok: false, error: "workspace_unresolved", reason: resolved.reason }), {
+        status: 422, headers: { "Content-Type": "application/json" },
+      });
+    }
+    const groupId = resolved.groupId;
+
     // Кросс-источниковый дедуп ДО дорогих LLM-вызовов (иначе на дубле
     // зря потратим токены и создадим задачи-сироты без записи). Встреча уже в базе → выходим.
     const dedupAttendees: MeetingAttendee[] = participants.map((p) => ({
@@ -179,7 +206,7 @@ Deno.serve(async (req: Request) => {
     // из-за того, чего мы не имеем права видеть (issue #45). Дубль общей встречи виден и
     // убирается руками; потерянная встреча не восстанавливается.
     const meetingDup = await findDuplicateMeeting(supabase, {
-      groupId: "cee",
+      groupId,
       entryDate: startTime ? startTime.split("T")[0] : null,
       startedAt: startTime ?? null,
       attendees: dedupAttendees,
@@ -225,8 +252,7 @@ Deno.serve(async (req: Request) => {
       countries,
       entry_type: "meeting",
       entry_date: entryDateIso,
-      // Read.ai uses single OAuth token tied to CEE workspace
-      group_id: "cee",
+      group_id: groupId,
     }).select("id").single();
 
     const entryId = (savedEntry as { id: string } | null)?.id ?? meetingId;

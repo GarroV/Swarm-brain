@@ -25,7 +25,9 @@ function conditionalOwnerOnEntries(src: string): number[] {
     const froms = [...line.matchAll(/\.from\(\s*["'`]([a-z_]+)["'`]/g)];
     if (froms.length) current = froms[froms.length - 1][1];
     // Интересует только вставка/обновление entries: `owner_id` с тернаркой или с null.
-    if (current === "entries" && /owner_id\s*:/.test(line) && /\?|null/.test(line)) {
+    if (
+      current === "entries" && /owner_id\s*:/.test(line) && /\?|null/.test(line)
+    ) {
       hits.push(i + 1);
     }
     if (/;\s*$/.test(line) && !/owner_id\s*:/.test(line)) current = null;
@@ -39,7 +41,9 @@ Deno.test("у записи всегда есть автор: owner_id в entries
   assertEquals(
     hits,
     [],
-    `owner_id у entries записан условно или как null в строках: ${hits.join(", ")}. ` +
+    `owner_id у entries записан условно или как null в строках: ${
+      hits.join(", ")
+    }. ` +
       "Автор записи — тот, кто её завёл; для видимости общей записи owner_id не нужен, " +
       "но без него автор теряет право править и удалять собственную запись.",
   );

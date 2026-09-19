@@ -166,3 +166,28 @@ Deno.test("matchesList учитывает статус: задача «в раб
   assertEquals(matchesList(t, "today", NOW, null, set("open")), false);
   assertEquals(matchesList(t, "today", NOW, null, set("open", "in_progress")), true);
 });
+
+// ── Дата закрытия: completed_at, а не updated_at (issue #268) ────────────────
+// updated_at в списочном ответе не приходит вовсе (выброшен из TASK_LIST_COLUMNS), поэтому
+// расчёт молча падал на created_at: «Сегодня + Готово» показывал СОЗДАННЫЕ сегодня. Кейса
+// «создана давно, закрыта сегодня» в тестах не было — потому дефект и дожил до сентября.
+
+Deno.test("«Сегодня + Готово»: задача, созданная давно и закрытая сегодня, попадает в список", () => {
+  const t = task({
+    id: "old-created-closed-today",
+    status: "done",
+    created_at: "2026-08-20T09:00:00+00:00",
+    completed_at: "2026-09-03T09:30:00+00:00",
+  });
+  assertEquals(matchesList(t, "today", NOW, null, set("done")), true);
+});
+
+Deno.test("«Сегодня + Готово»: закрытая на прошлой неделе задача сегодня не показывается", () => {
+  const t = task({
+    id: "closed-last-week",
+    status: "done",
+    created_at: "2026-09-03T08:00:00+00:00", // создана сегодня — прежний расчёт втащил бы её
+    completed_at: "2026-08-27T15:00:00+00:00",
+  });
+  assertEquals(matchesList(t, "today", NOW, null, set("done")), false);
+});

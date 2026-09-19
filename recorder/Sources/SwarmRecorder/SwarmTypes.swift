@@ -75,6 +75,11 @@ struct ClaimResponse: Decodable {
     // Кто держит право транскрибации, когда нам отказали (для честного сообщения пользователю).
     let heldBy: Int?
     let heldByName: String?
+    // Длительность записи держателя и ПРИЧИНА отказа (issue #274). Без них клиент печатал один
+    // текст на все исходы и просил человека сравнить свою запись с чужой, которой он не видит.
+    // Старый сервер их не присылает → nil, текст деградирует до общего «обрабатывает коллега».
+    let heldSeconds: Double?
+    let deferReason: String?    // "published" | "shorter" | "race" | "unknown"
 
     var shouldTranscribe: Bool { decision == "transcribe" }
 }

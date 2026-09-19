@@ -24,6 +24,8 @@ export type Task = {
   status: string;
   created_at: string;
   updated_at?: string | null;
+  /** Момент закрытия (done/cancelled). У задач, закрытых до 08.09.2026 — прокси из updated_at. */
+  completed_at?: string | null;
   meeting_id: string | null;
   url?: string | null;
   group_id?: string | null;
@@ -44,6 +46,17 @@ export type Task = {
   // из due_date — отдельно не хранятся. recur_anchor_dom помнит исходное число месяца.
   recur_freq: string | null;
   recur_anchor_dom: number | null;
+  /**
+   * Ссылки на материалы задачи: макет, документ, переписка. Отдельным полем, а не строкой в
+   * описании, — чтобы их можно было открыть, не открывая карточку. Списочный GET их не отдаёт.
+   */
+  links?: TaskLink[];
+};
+
+/** Ссылка задачи. Схема и проверки — `_shared/tasks/links.ts` (только http/https). */
+export type TaskLink = {
+  title: string | null;
+  url: string;
 };
 
 export type SprintStatus = "planned" | "active" | "completed";
@@ -58,6 +71,100 @@ export type Sprint = {
   created_at: string;
 };
 
+// ── Спринты (`sprint_cycles`) ─────────────────────────────────────────────────
+// ⚠️ `Sprint` выше — это ВКЛАДКА доски проектов (таблица `sprints`, имя историческое).
+// Спринт как период работы — `SprintCycle` (таблица `sprint_cycles`, роуты `/sprint-cycles`).
+export type CycleStatus = "draft" | "active" | "accepted";
+
+/** Зеркало `_shared/tasks/sprint-stats.ts`: считает сервер на приёмке, веб только показывает. */
+export type SprintStats = {
+  plan: number;
+  planDone: number;
+  planPercent: number;
+  extra: number;
+  extraDone: number;
+  /** Незакрытые на момент приёмки — они уезжают в следующий спринт. */
+  carried: number;
+  /** Из них помечены человеком «к переносу» (с причиной). */
+  carried_manual: number;
+  /** Из них уехали сами: спринт кончился, а задача нет. */
+  carried_auto: number;
+  /** Отменённые — отдельной цифрой, вне процента (решение владельца 18.09.2026). */
+  cancelled: number;
+  /** Упоминания удалённых задач: в составе видны, в счёте не участвуют. */
+  removed: number;
+  check_ok: number;
+  check_risk: number;
+  check_problem: number;
+  unassigned: number;
+  byPerson: { name: string; plan: number; done: number }[];
+  byProject: { name: string | null; total: number; done: number }[];
+  byDay: { day: string; done: number }[];
+};
+
+export type SprintCycle = {
+  id: string;
+  group_id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  /**
+   * Пространство спринта — вкладка доски (`Sprint.id`). null = «Без вкладки»: спринты,
+   * заведённые до пространств. Живой спринт в пространстве ровно один — это держит база.
+   */
+  tab_id: string | null;
+  /** День сверки в середине спринта; null — ритуал не назначен. */
+  check_date: string | null;
+  status: CycleStatus;
+  created_by: string | null;
+  started_at: string | null;
+  accepted_at: string | null;
+  accepted_by: string | null;
+  summary: string | null;
+  /** Итоги считаются один раз на приёмке и хранятся в строке — у живого спринта null. */
+  stats: SprintStats | null;
+  created_at: string;
+};
+
+/** Отметка сверки: как идут дела у задачи в середине спринта. */
+export type CheckStatus = "ok" | "risk" | "problem";
+
+/** Задача в составе спринта: до приёмки — живая, после — из клона (`frozen`). */
+export type SprintCycleItem = {
+  id: string;
+  task_id: string | null;
+  in_plan: boolean;
+  added_at: string;
+  title: string;
+  status: string;
+  assignees: string[];
+  project_id: string | null;
+  project: string | null;
+  completed_at: string | null;
+  due_date: string | null;
+  frozen: boolean;
+  check_status: CheckStatus | null;
+  check_note: string | null;
+  check_at: string | null;
+  check_by: string | null;
+  to_carry: boolean;
+  carry_reason: string | null;
+  /** Сколько раз задача уже переезжала: с двух показываем «×N». */
+  carry_count: number;
+  carried_manual: boolean | null;
+  /** Задача удалена: строка осталась упоминанием и в счёт не идёт. */
+  removed: boolean;
+  removed_at: string | null;
+  /**
+   * Задача приватная и смотрящий не владелец: строка видна, содержимого нет. Убрать её совсем
+   * значило бы молча уменьшить состав, и цифры отчёта перестали бы сходиться у разных людей.
+   */
+  hidden: boolean;
+};
+
+/** GET /sprint-cycles/:id отдаёт спринт вместе с составом — экран без него бесполезен. */
+export type SprintCycleDetail = SprintCycle & { items: SprintCycleItem[] };
+
 export type Project = {
   id: string;
   group_id: string;
@@ -69,9 +176,15 @@ export type Project = {
   sprint_id: string | null;
   created_by: number | null;
   created_at: string;
-  // Тумблер приватности проекта ВЕРХНЕГО уровня — скрывает его из общего пула воркспейса
-  // (виден только created_by + админу). Подпроект и так приватен по умолчанию (parent_id≠null).
+  // Тумблер приватности: есть и у проекта, и у подпроекта (решение владельца 2026-08-24 —
+  // доска общая, закрывается точечно глазом). Закрытая строка видна только своему created_by,
+  // админского обхода нет; закрытая группа уносит вниз все свои подпроекты.
   is_private: boolean;
+  // Поля инициативы (доска инициатив): у направления и подпроекта одинаковые, смысл разный —
+  // у инициативы это «кто ведёт и до какого числа», у направления обычно пусто.
+  owner_telegram_id: number | null;
+  start_date: string | null;
+  end_date: string | null;
   // Отдаётся из GET /projects (агрегаты):
   task_count?: number;
   backlog_count?: number;

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import type { Task, User, Project } from "@/types";
 import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
@@ -18,7 +18,7 @@ import {
   fetchTask,
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger } from "@/components/ui/select";
 import { PropertyRow, PropertyLabel, PropertyValue, propertySelectCls } from "@/components/ui/PropertyRow";
 import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
@@ -28,6 +28,7 @@ import { CountryPopover } from "@/components/tasks/CountryPopover";
 import { linkify } from "@/lib/linkify";
 import { useDt } from "@/components/roy/nav";
 import { recurrenceOptions } from "@/lib/recurrenceLabels";
+import { buildProjectOptions } from "@/lib/projectPicker";
 
 // Функционал ролей пока не используется командой — поле скрыто в UI, но не удалено
 // (данные task_role продолжают сохраняться на уже размеченных задачах).
@@ -152,6 +153,8 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
   const [labels, setLabels] = useState<TaskLabel[]>([]);
   const [labelIds, setLabelIds] = useState<string[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  // Свой telegram_id — по нему отбираются свои проекты в селекте (решение владельца 2026-09-06).
+  const [myId, setMyId] = useState<number | null>(null);
   const [selProject, setSelProject] = useState<string | null>(task?.project_id ?? projectId ?? null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -247,9 +250,16 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
   }, [open, task, projectId]);
 
   // Список проектов для селекта — грузим один раз при монтировании модалки.
+  // Личность тянем ТУТ ЖЕ и ставим состояние одним заходом: иначе между ответами
+  // список успел бы мигнуть всеми проектами воркспейса, от чего и уходим.
   useEffect(() => {
-    void fetchProjects().then(setProjects);
+    void Promise.all([fetchProjects(), fetchMe().then((m) => m.telegram_id).catch(() => null)])
+      .then(([list, id]) => { setMyId(id); setProjects(list); })
+      .catch(() => {});
   }, []);
+
+  // Состав и порядок выпадашки «Проект»: только свои проекты и подпроекты, двумя секциями.
+  const projectOptions = useMemo(() => buildProjectOptions(projects, { viewerId: myId }), [projects, myId]);
 
   // Опции исполнителя = пользователи воркспейса + текущий исполнитель, если его нет в списке
   // (иначе select не показал бы его, а сохранение затёрло бы назначение).
@@ -677,9 +687,26 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>—</SelectItem>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
+                  {projectOptions.tops.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel>{dt("Проекты", "Projects")}</SelectLabel>
+                      {projectOptions.tops.map((o) => (
+                        <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {projectOptions.tops.length > 0 && projectOptions.subs.length > 0 && <SelectSeparator />}
+                  {projectOptions.subs.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel>{dt("Подпроекты", "Subprojects")}</SelectLabel>
+                      {projectOptions.subs.map((o) => (
+                        <SelectItem key={o.id} value={o.id}>
+                          {/* Группа в подписи обязательна: «Маркетинг» на проде существует дважды. */}
+                          <span className="text-ink-mute">{o.parentName} › </span>{o.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
                 </SelectContent>
               </Select>
 

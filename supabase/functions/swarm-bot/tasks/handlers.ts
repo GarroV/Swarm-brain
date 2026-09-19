@@ -726,17 +726,10 @@ export async function handleTaskCallbacks(
     const newStatus = parts.slice(2).join("_");
     const task = await dbGetTask(taskId);
     if (!task) { await sendMessage(chatId, "Задача не найдена."); return true; }
-    const recur = await dbUpdateTask(taskId, { status: newStatus }, { actor: username });
-    // Регулярная задача не закрылась, а перекатилась — историю в этом случае пишет updateTask
-    // (с прежним и новым сроком), второй строкой не дублируем.
-    if (!recur) {
-      await supabase.from("task_history").insert({
-        task_id: taskId,
-        changed_by: username,
-        old_status: task.status,
-        new_status: newStatus,
-      });
-    }
+    const recur = await dbUpdateTask(taskId, { status: newStatus }, { actor: username, actorTelegramId: userId });
+    // Историю здесь БОЛЬШЕ НЕ ПИШЕМ: с issue #286 её пишет updateTask из единственной точки —
+    // и для переката, и для обычной смены статуса. Прежняя вставка давала бы вторую строку на
+    // то же событие, то есть удвоенную статистику перемещений по задачам из бота.
     // Соврать «Готово» про незакрытую задачу нельзя: у регулярной сообщаем следующий срок.
     await sendMessage(
       chatId,

@@ -15,7 +15,10 @@ export async function listSprints(groupId: string): Promise<Sprint[]> {
   return (data ?? []) as Sprint[];
 }
 
-export async function createSprint(input: SprintInput, groupId: string): Promise<Sprint> {
+export async function createSprint(
+  input: SprintInput,
+  groupId: string,
+): Promise<Sprint> {
   const { data, error } = await supabase.from("sprints").insert({
     group_id: groupId,
     name: input.name,
@@ -41,7 +44,10 @@ export async function updateSprint(
 }
 
 // Удаляет спринт своего воркспейса. Задачи освобождаются автоматически (FK ON DELETE SET NULL).
-export async function deleteSprint(id: string, groupId: string): Promise<boolean> {
+export async function deleteSprint(
+  id: string,
+  groupId: string,
+): Promise<boolean> {
   const { data } = await supabase.from("sprints")
     .delete().eq("id", id).eq("group_id", groupId).select("id").maybeSingle();
   return !!data;

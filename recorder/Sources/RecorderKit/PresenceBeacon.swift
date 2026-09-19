@@ -42,7 +42,9 @@ public enum PresenceBeacon {
         if let explicit { return explicit }
         return State(
             onCall: previous?.onCall ?? false,
-            meetingKey: recordingKey ?? previous?.meetingKey,
+            // Без висячей запятой: она разрешена только со Swift 6.1 (SE-0439), а раннер
+            // macos-14 в recorder-release собирается старее и валит сборку (issue #272).
+            meetingKey: recordingKey ?? previous?.meetingKey
         )
     }
 

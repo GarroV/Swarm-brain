@@ -83,7 +83,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var dismissedUntil: [String: Date] = [:]
     private let recordedSuppressSeconds: TimeInterval = 20 * 60   // «уже записал» — короткий кулдаун (дозапись/рестарт того же созвона снова предложатся)
     private let dismissMeetingSeconds: TimeInterval = 3 * 3600    // «Не записывать» без известного конца события — на несколько часов
-    private var notifiedKeys: Set<String> = []     // по каким уже слали уведомление
     // Микрофонный запасной детект.
     private var callActive = false
     // Разрешены ли уведомления. nil — ещё не спросили систему (первые мгновения после старта):
@@ -145,12 +144,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Дефолтный стоп: если активный созвон не детектится, запись не идёт дольше этого лимита.
     // Бэкстоп от runaway-записи (когда детект созвона молчит — напр. ручной старт без звонка).
     private static let maxNoCallSeconds: TimeInterval = 75 * 60   // 1ч15м
-
-    private let notifyCategory = "MEETING_START"
-    // Та же встреча, но со ссылкой на звонок: набор кнопок задаёт КАТЕГОРИЯ, поэтому их две.
-    private let notifyJoinCategory = "MEETING_START_JOIN"
-    private let recordAction = "RECORD"
-    private let joinAction = "JOIN"
+    // Жёсткий потолок длительности записи. Лимит выше теперь требует ещё и ФАКТИЧЕСКОЙ тишины
+    // дорожек (issue #271), поэтому «не писать вечно» держит именно потолок: забытый старт под
+    // музыку/видео звучит непрерывно и лимитом по тишине не ловится.
+    private static let maxHardSeconds: TimeInterval = 4 * 60 * 60   // 4 часа
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Переезд под новое имя (bumblebee) — до всего остального: если хелпер стартовал,
@@ -214,14 +211,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func setupNotifications() {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        let record = UNNotificationAction(identifier: recordAction, title: "Записать", options: [.foreground])
-        // Кнопка-referens Granola: один клик и заходит в звонок, и включает запись — чтобы не
-        // бежать в календарь искать ссылку (решение владельца 02.09.2026, #193).
-        let join = UNNotificationAction(identifier: joinAction, title: "Подключиться и записать", options: [.foreground])
-        let cat = UNNotificationCategory(identifier: notifyCategory, actions: [record], intentIdentifiers: [], options: [])
-        let joinCat = UNNotificationCategory(identifier: notifyJoinCategory, actions: [join, record],
-                                             intentIdentifiers: [], options: [])
-        center.setNotificationCategories([cat, joinCat])
+        // Кнопок и категорий нет: предложение записать живёт только в капсуле (решение владельца
+        // 07.09.2026, docs/decisions/2026-09-07-one-surface-for-meeting-prompt.md). Разрешение
+        // всё равно нужно — через штатные баннеры идут ИНФОРМАЦИОННЫЕ сообщения, у которых
+        // второй поверхности нет.
         // Ответ на запрос ЧИТАЕМ. Раньше здесь стояло `{ _, _ in }`: человек отказывал (или
         // системный запрос вообще не появлялся), приложение об этом не узнавало никогда, и
         // каждое последующее уведомление молча уходило в никуда — а через них рекордер
@@ -485,8 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             callActive = false
             if pendingMeeting?.key != m.key {
                 pendingMeeting = m
-                if !notifiedKeys.contains(m.key) { notifiedKeys.insert(m.key); notifyMeeting(m) }
-                rebuildMenu()
+                rebuildMenu()   // syncWidget покажет капсулу — единственная поверхность предложения
             }
             return
         }
@@ -495,7 +487,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Нет события календаря → запасной детект звонка по микрофону.
         if micActive && !wasActive {
             if let until = callDismissedUntil, Date() < until { return }
-            if !callActive { callActive = true; postCallNotification(); rebuildMenu() }
+            if !callActive { callActive = true; rebuildMenu() }
         } else if !micActive, callActive {
             callActive = false
             rebuildMenu()
@@ -517,51 +509,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                                      now: Date())
     }
 
-    private func notifyMeeting(_ m: MeetingIdentity.Info) {
-        let notice = notice(for: m)
-        let content = UNMutableNotificationContent()
-        content.title = notice.title
-        content.subtitle = notice.subtitle
-        content.categoryIdentifier = notifyCategory
-        content.sound = .default
-        // Ссылка на звонок есть → набор кнопок с «Подключиться и записать». Саму ссылку несём
-        // в userInfo: обработчик действия получает только уведомление, не встречу.
-        if let join = m.joinURL {
-            content.categoryIdentifier = notifyJoinCategory
-            content.userInfo = [Self.joinURLKey: join.absoluteString]
-        }
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "meeting-\(m.key)", content: content, trigger: nil))
-    }
-
-    private func postCallNotification() {
-        let content = UNMutableNotificationContent()
-        content.title = "Идёт звонок"
-        content.categoryIdentifier = notifyCategory
-        content.sound = .default
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "call-\(Int(Date().timeIntervalSince1970))", content: content, trigger: nil))
-    }
-
-    static let joinURLKey = "join_url"
-
-    // Открыть звонок из уведомления. Схему проверяет JoinLink (только https) — ссылка
-    // приехала из приглашения, которое мог создать кто угодно, а открываем её мы.
-    private func openJoinURL(from userInfo: [AnyHashable: Any]) {
-        guard let url = JoinLink.safeURL(userInfo[Self.joinURLKey] as? String) else { return }
-        NSWorkspace.shared.open(url)
-    }
-
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.banner, .sound])
     }
 
+    // Клик по уведомлению НИЧЕГО не запускает. Раньше здесь стоял `acceptPrompt()` на
+    // `UNNotificationDefaultActionIdentifier` — то есть запись начиналась от клика по ЛЮБОМУ
+    // уведомлению приложения, включая «нужен новый токен» и «звонок завершён, сохраняю».
+    // Предложение записать теперь живёт только в капсуле, и решение принимается там.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
-        if response.actionIdentifier == joinAction {
-            openJoinURL(from: response.notification.request.content.userInfo)
-        }
-        if response.actionIdentifier == recordAction || response.actionIdentifier == joinAction
-            || response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-            DispatchQueue.main.async { [weak self] in self?.acceptPrompt() }
-        }
         completionHandler()
     }
 
@@ -1020,7 +976,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             c.body = "Твоя запись принята — она полнее той, что была в базе. Тезисы перегенерируются и придут в Telegram."
         } else if let refused {
             c.title = "Сервер снова отказал"
-            c.body = "Право транскрибации держит \(refused.hasPrefix("@") ? refused : "@\(refused)"): его запись не короче твоей. Аудио осталось в бэкапе."
+            // Не утверждаем «его запись не короче»: в состоянии published (встречу правили или
+            // опубликовали) перехват запрещён независимо от длительностей — issue #274.
+            c.body = "Встречу обрабатывает \(refused.hasPrefix("@") ? refused : "@\(refused)") — твоя запись не понадобилась. Аудио осталось в бэкапе."
         } else {
             c.title = "Не удалось дослать запись"
             c.body = "\(error ?? "неизвестная ошибка"). Аудио на месте — попробуй позже."
@@ -1340,6 +1298,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
 
+        // (0в) Жёсткий потолок длительности — работает всегда, даже при живом звуке и активном
+        // детекте. Это единственная защита от runaway-записи после того, как лимит (б) ниже стал
+        // требовать фактической тишины.
+        if elapsed >= Self.maxHardSeconds {
+            autoStop(reason: "потолок 4 ч — останавливаю запись")
+            return
+        }
+
         if realCall {
             callSeenDuringRec = true
             silentTicks = 0
@@ -1355,7 +1321,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         // (б) Дефолтный стоп: за 1ч15м активный созвон так и не детектился (или давно смолк) →
         // запись не должна тянуться дальше. Защита от runaway, когда детект молчит.
-        if elapsed >= Self.maxNoCallSeconds && silentTicks >= 3 {
+        // Инцидент 2026-09-08 (issue #271): правило смотрело ТОЛЬКО на silentTicks — счётчик
+        // «никто другой не держит микрофон», то есть на ДЕТЕКТ, а не на звук. Детект был слеп всю
+        // запись (issue #270: others=[] в 899 тиках подряд), и живой громкий созвон (sysPeak
+        // 0.3–1.0 без единого тихого тика) оборвался ровно на 1ч15м. Поэтому лимит требует теперь
+        // и ФАКТИЧЕСКОЙ тишины обеих дорожек: пока кто-то звучит — пишем, от бесконечной записи
+        // держит потолок (0в) выше.
+        if elapsed >= Self.maxNoCallSeconds && silentTicks >= 3
+            && systemSilentTicks >= Self.systemSilenceTicksToStop {
             autoStop(reason: "лимит 1ч15м без активного созвона")
             return
         }
@@ -1601,12 +1574,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Запись отклонена сервером (транскрибирует другой участник). Раньше этот исход был НЕОТЛИЧИМ
     // от успеха: файлы стирались, индикатор гас, показывалось штатное «сохраняю встречу».
     // Теперь говорим прямо — пока аудио ещё живо в карантине и решение можно откатить.
-    private func notifyDeferred(holder: String?, seconds: Double) {
-        let who = holder.map { "@\($0)" } ?? "другой участник"
+    //
+    // ⚠️ Текст ИНФОРМИРУЕТ, а не просит решать (issue #274, фидбек владельца 09.09.2026).
+    // Прежняя формулировка — «твоя запись сохранена, если она полнее, дошли её» — перекладывала
+    // на человека выбор, которого он сделать не может: длительности чужой записи он не видит,
+    // сервер этот выбор уже сделал сам по порогам (TAKEOVER_MIN_RATIO/EXTRA_SEC в meeting-claim),
+    // а повторная заявка уходит с ТЕМИ ЖЕ секундами и получает тот же отказ. В состоянии
+    // published (встречу правил человек или её опубликовали) досылание не сработает вообще
+    // никогда. Поэтому текст разведён по причине отказа, которую теперь присылает сервер.
+    private func notifyDeferred(holder: String?, seconds: Double, heldSeconds: Double?, reason: String?) {
+        let who = holder.map { "@\($0)" } ?? "коллега"
+        let mine = Self.humanDuration(seconds)
         let c = UNMutableNotificationContent()
-        c.title = "Твоя запись не пошла в обработку"
-        c.body = "Эту встречу транскрибирует \(who). Твоя запись (\(Self.humanDuration(seconds))) сохранена на 3 суток — если она полнее, дошли её через меню: «Дослать мою запись»."
         c.sound = .default
+
+        switch reason {
+        case "published":
+            // Перехват запрещён навсегда — предлагать что-либо сделать было бы ложью.
+            c.title = "Встреча уже собрана"
+            c.body = "Эту встречу записал и уже опубликовал \(who) — твоя запись (\(mine)) не нужна. Копия хранится 3 суток и удалится сама."
+        case "shorter":
+            // Держатель ДЛИННЕЕ — называем обе длительности, решение сервера видно из чисел.
+            let theirs = heldSeconds.map { Self.humanDuration($0) }
+            c.title = "Запись обрабатывает \(who)"
+            c.body = theirs.map {
+                "В обработку пошла запись \(who) — \($0) против твоих \(mine). Делать ничего не нужно, тезисы придут всем. Твоя копия хранится 3 суток."
+            } ?? "В обработку пошла запись \(who), она полнее твоей (\(mine)). Делать ничего не нужно, тезисы придут всем. Твоя копия хранится 3 суток."
+        case "similar":
+            // Наша запись НЕ короче, но разница не дотянула до порогов перехвата. Числа тут
+            // показывать обязательно с объяснением: «взяли 36 мин вместо твоих 38» без причины
+            // читается как ошибка, хотя это защита от перетранскрибации почти одинаковых записей.
+            c.title = "Запись обрабатывает \(who)"
+            let theirsSimilar = heldSeconds.map { Self.humanDuration($0) }
+            c.body = theirsSimilar.map {
+                "Записи практически совпали: твоя \(mine), в обработке \($0) у \(who). Право осталось у того, кто заявился первым — перезапускать обработку из-за такой разницы смысла нет. Твоя копия хранится 3 суток."
+            } ?? "Записи практически совпали по длительности (твоя \(mine)) — обрабатывается запись \(who), заявившаяся первой. Твоя копия хранится 3 суток."
+        default:
+            // race / unknown / старый сервер без причины — общий honest-текст без просьб.
+            c.title = "Запись обрабатывает \(who)"
+            c.body = "Эту встречу обрабатывает \(who) — двойная транскрибация не нужна. Твоя запись (\(mine)) хранится 3 суток на случай сбоя."
+        }
+
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "deferred-\(Int(Date().timeIntervalSince1970))", content: c, trigger: nil))
     }
 
@@ -1713,7 +1721,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                             recordedSeconds: recordedSeconds)
                     )
                     await MainActor.run {
-                        self.notifyDeferred(holder: claim.heldByName, seconds: recordedSeconds)
+                        self.notifyDeferred(holder: claim.heldByName, seconds: recordedSeconds,
+                                            heldSeconds: claim.heldSeconds, reason: claim.deferReason)
                     }
                 } catch {
                     staged = false

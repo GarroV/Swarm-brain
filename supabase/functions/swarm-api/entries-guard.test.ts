@@ -3,9 +3,9 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildEntriesQuery,
   buildReviewQueueQuery,
+  ENTRY_COLUMNS,
   EntryAccessError,
   getEntrySecure,
-  ENTRY_COLUMNS,
 } from "./entries-guard.ts";
 
 // ── Mock chainable query builder ───────────────────────────────────────────────
@@ -48,16 +48,38 @@ const cols = () => ENTRY_COLUMNS.split(",").map((c) => c.trim());
 
 Deno.test("ENTRY_COLUMNS не тянет колонки, которых нет в EntryRow — сервер их не читает, фронт не знает", () => {
   for (const dead of ["embedding", "fts", "last_review_reminded_at", "*"]) {
-    assertEquals(cols().includes(dead), false, `${dead} не должна уезжать в браузер`);
+    assertEquals(
+      cols().includes(dead),
+      false,
+      `${dead} не должна уезжать в браузер`,
+    );
   }
 });
 
 Deno.test("ENTRY_COLUMNS покрывает все поля EntryRow + updated_at", () => {
   const need = [
-    "id", "content", "summary", "added_by", "source", "metadata", "countries",
-    "entry_type", "entry_date", "group_id", "is_private", "owner_id", "created_at", "updated_at",
+    "id",
+    "content",
+    "summary",
+    "added_by",
+    "source",
+    "metadata",
+    "countries",
+    "entry_type",
+    "entry_date",
+    "group_id",
+    "is_private",
+    "owner_id",
+    "created_at",
+    "updated_at",
   ];
-  for (const f of need) assertEquals(cols().includes(f), true, `${f} есть в EntryRow, но не запрашивается`);
+  for (const f of need) {
+    assertEquals(
+      cols().includes(f),
+      true,
+      `${f} есть в EntryRow, но не запрашивается`,
+    );
+  }
 });
 
 Deno.test("getEntrySecure запрашивает ENTRY_COLUMNS, а не '*'", async () => {
@@ -71,7 +93,10 @@ Deno.test("getEntrySecure запрашивает ENTRY_COLUMNS, а не '*'", as
 
 Deno.test("getEntrySecure — returns entry when workspace + visibility pass", async () => {
   const { client } = makeSupabase(baseEntry);
-  const row = await getEntrySecure(client, "e1", { groupId: "cee", telegramId: 999 });
+  const row = await getEntrySecure(client, "e1", {
+    groupId: "cee",
+    telegramId: 999,
+  });
   assertEquals(row.id, "e1");
 });
 
@@ -94,7 +119,11 @@ Deno.test("getEntrySecure — 404 on cross-workspace access (isolation)", async 
 });
 
 Deno.test("getEntrySecure — private entry is 404 (not 403) for non-owner", async () => {
-  const { client } = makeSupabase({ ...baseEntry, is_private: true, owner_id: 111 });
+  const { client } = makeSupabase({
+    ...baseEntry,
+    is_private: true,
+    owner_id: 111,
+  });
   const err = await assertRejects(
     () => getEntrySecure(client, "e1", { groupId: "cee", telegramId: 222 }),
     EntryAccessError,
@@ -104,8 +133,15 @@ Deno.test("getEntrySecure — private entry is 404 (not 403) for non-owner", asy
 });
 
 Deno.test("getEntrySecure — owner can read own private entry", async () => {
-  const { client } = makeSupabase({ ...baseEntry, is_private: true, owner_id: 111 });
-  const row = await getEntrySecure(client, "e1", { groupId: "cee", telegramId: 111 });
+  const { client } = makeSupabase({
+    ...baseEntry,
+    is_private: true,
+    owner_id: 111,
+  });
+  const row = await getEntrySecure(client, "e1", {
+    groupId: "cee",
+    telegramId: 111,
+  });
   assertEquals(row.owner_id, 111);
 });
 
@@ -158,7 +194,11 @@ Deno.test("buildEntriesQuery — applies group isolation + visibility filter", (
 
 Deno.test("buildReviewQueueQuery — фильтр по причастности, а не по is_private", () => {
   const { client, calls } = makeSupabase(null);
-  buildReviewQueueQuery(client, "*", { groupId: "cee", telegramId: 111, email: "me@dodo.io" });
+  buildReviewQueueQuery(client, "*", {
+    groupId: "cee",
+    telegramId: 111,
+    email: "me@dodo.io",
+  });
 
   const or = calls.find((c) => c.method === "or");
   const cond = String(or?.args[0] ?? "");
@@ -171,7 +211,11 @@ Deno.test("buildReviewQueueQuery — фильтр по причастности,
 
 Deno.test("buildReviewQueueQuery — без email фильтруем только по владельцу (fail-closed)", () => {
   const { client, calls } = makeSupabase(null);
-  buildReviewQueueQuery(client, "*", { groupId: "cee", telegramId: 111, email: null });
+  buildReviewQueueQuery(client, "*", {
+    groupId: "cee",
+    telegramId: 111,
+    email: null,
+  });
   const cond = String(calls.find((c) => c.method === "or")?.args[0] ?? "");
   assertEquals(cond.includes("owner_id.eq.111"), true);
   assertEquals(cond.includes("attendees"), false);

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Порча базы: ломаем условие в миграции, накатываем сломанное и убеждаемся, что тест краснеет.
+#
+# Зачем отдельно от scripts/porcha: там мутация переворачивает сравнение в TypeScript, а
+# правила приёмки живут в SQL — в функции и триггере. Их ошибка молчит громче всего: хвост не
+# уехал или приватная задача уехала, и узнают об этом через две недели.
+#
+# Миграция накатывается повторно целиком: она вся идемпотентна (create or replace, add column
+# if not exists, drop trigger if exists). Поэтому восстановление — это просто накат исходника.
+set -o pipefail
+cd "$(dirname "$0")/.."
+
+MIGRATION=supabase/migrations/20260918120000_initiatives_board.sql
+DB_URL="${SUPABASE_DB_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}"
+# NOTICE от idempotent-миграции («колонка уже есть») топит вердикт порчи в сотнях строк —
+# а читают отчёт ради одной строки «ok» или «КРАСНЫЙ».
+export PGOPTIONS="-c client_min_messages=warning"
+FAILED=0
+
+if ! psql "$DB_URL" -Atc 'select 1' >/dev/null 2>&1; then
+  echo "порча-sql  ОТКАЗ    нет связи с базой ($DB_URL). Подними контур: supabase start && supabase db reset"
+  echo "порча-sql  Пропуск здесь был бы ложным зелёным: непроверенная проверка выглядит как проверенная."
+  exit 1
+fi
+
+restore() { psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$MIGRATION" >/dev/null; }
+
+while IFS='|' read -r FROM TO TEST; do
+  case "$FROM" in ''|\#*) continue ;; esac
+
+  if ! grep -qF "$FROM" "$MIGRATION"; then
+    echo "порча-sql  ОТКАЗ    не нашёл в миграции: $FROM — список порчи отстал от кода"
+    FAILED=1; continue
+  fi
+
+  TMP=$(mktemp)
+  FROM="$FROM" TO="$TO" perl -pe 's/\Q$ENV{FROM}\E/$ENV{TO}/g' "$MIGRATION" > "$TMP"
+  if cmp -s "$TMP" "$MIGRATION"; then
+    echo "порча-sql  ОТКАЗ    подстановка не применилась: $FROM"
+    rm -f "$TMP"; FAILED=1; continue
+  fi
+
+  if ! psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$TMP" >/dev/null 2>&1; then
+    # Сломанная миграция, которая не накатывается, проверку не проводит: база осталась целой,
+    # и зелёный тест ничего бы не значил.
+    echo "порча-sql  ОТКАЗ    сломанная миграция не накатилась: $FROM"
+    rm -f "$TMP"; restore; FAILED=1; continue
+  fi
+  rm -f "$TMP"
+
+  deno test -A --no-check "$TEST" >/dev/null 2>&1; ST=$?
+  restore
+
+  if [ "$ST" -eq 0 ]; then
+    echo "порча-sql  КРАСНЫЙ  тесты прошли на сломанном: $FROM — это условие никто не проверяет"
+    FAILED=1
+  else
+    echo "порча-sql  ok       тесты упали, как и должны: $FROM"
+  fi
+done < scripts/porcha-sql.txt
+
+exit "$FAILED"
