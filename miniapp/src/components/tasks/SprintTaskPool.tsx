@@ -1,11 +1,22 @@
 "use client";
 import { useMemo, useState } from "react";
-import type { Project, Task } from "@/types";
+import type { Project, Task, User } from "@/types";
 import { RoyIcon } from "@/components/roy/icons";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useDt } from "@/components/roy/nav";
-import { POOL_ALL, filterPoolTasks, projectLabel, projectOptions } from "@/lib/sprintPool";
+import {
+  filterPoolTasks,
+  POOL_ALL,
+  projectLabel,
+  projectOptions,
+} from "@/lib/sprintPool";
 
 // Пул «Задачи» экрана спринтов. Роль колонки «Бэклог», которой в спринтовом канбане нет
 // (решение владельца 2026-09-08: «backlog заменим на слово задачи»): слева лежат задачи
@@ -25,25 +36,37 @@ const fieldCls =
 const triggerCls =
   "w-full min-h-9 h-9 rounded-[10px] border-line bg-surface px-2.5 text-sm text-ink data-[size=default]:h-9 dark:backdrop-blur-sm dark:bg-surface";
 
-export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
-  /** Задачи, доступные к добавлению: экран уже убрал взятые в спринт и закрытые. */
-  tasks: Task[];
-  projects: Project[];
-  disabled?: boolean;
-  adding?: boolean;
-  onAdd: (taskIds: string[]) => void;
-}) {
+export function SprintTaskPool(
+  { tasks, projects, users, disabled, adding, onAdd }: {
+    /** Задачи, доступные к добавлению: экран уже убрал взятые в спринт и закрытые. */
+    tasks: Task[];
+    projects: Project[];
+    /** Люди воркспейса целиком — см. комментарий к `assignees`. */
+    users: User[];
+    disabled?: boolean;
+    adding?: boolean;
+    onAdd: (taskIds: string[]) => void;
+  },
+) {
   const dt = useDt();
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState<string>(POOL_ALL);
   const [assignee, setAssignee] = useState<string>(POOL_ALL);
   const [picked, setPicked] = useState<Set<string>>(new Set());
 
+  // Люди воркспейса ЦЕЛИКОМ, а не те, чьи задачи попали в пул. Список, выведенный из
+  // выборки, выглядит исправным и молча врёт: на проде 19.09 фильтр показывал троих из
+  // одиннадцати — у трёх коллег все активные задачи были без проекта, а пул берёт только
+  // привязанные к проектам. Читается это как «остальных в системе нет», хотя у одной из
+  // них 30 живых задач. Теперь выбор имени без задач даёт честное «ничего не нашлось».
+  // Имена из задач подмешиваем сверх того: исполнитель — строка, и в ней может стоять тот,
+  // кого уже нет среди допущенных; выкинуть его значит потерять доступ к его задачам.
   const assignees = useMemo(() => {
     const names = new Set<string>();
+    for (const u of users) if (u.name) names.add(u.name);
     for (const t of tasks) for (const a of t.assignees) names.add(a);
     return [...names].sort((a, b) => a.localeCompare(b));
-  }, [tasks]);
+  }, [tasks, users]);
 
   const options = useMemo(() => projectOptions(projects), [projects]);
   const projectName = (id: string | null) => {
@@ -55,7 +78,8 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
   // пока меню ни разу не открывали и пункты ещё не смонтированы.
   const projectValueLabel = (v: unknown) => {
     const id = String(v ?? POOL_ALL);
-    return options.find((o) => o.id === id)?.label ?? dt("Все проекты", "All projects");
+    return options.find((o) => o.id === id)?.label ??
+      dt("Все проекты", "All projects");
   };
   const assigneeValueLabel = (v: unknown) => {
     const name = String(v ?? POOL_ALL);
@@ -70,7 +94,8 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
   function toggle(id: string) {
     setPicked((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
@@ -85,23 +110,41 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
     <div className="flex flex-col min-h-0 w-72 shrink-0 rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-line">
         <RoyIcon name="task" size={14} strokeWidth={1.9} />
-        <span className="text-sm font-bold text-ink">{dt("Задачи", "Tasks")}</span>
+        <span className="text-sm font-bold text-ink">
+          {dt("Задачи", "Tasks")}
+        </span>
         <span className="ml-auto text-xs text-ink-soft">{visible.length}</span>
       </div>
 
       <div className="space-y-1.5 p-2 border-b border-line">
-        <input value={query} onChange={(e) => setQuery(e.target.value)}
-          placeholder={dt("Поиск по названию", "Search by title")} className={fieldCls} />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={dt("Поиск по названию", "Search by title")}
+          className={fieldCls}
+        />
 
         {/* Проект: выбор ГРУППЫ приносит и её подпроекты — иначе у группы видно только «Общее». */}
-        <Select value={projectId} onValueChange={(v) => setProjectId(String(v))}>
-          <SelectTrigger className={triggerCls} aria-label={dt("Проект", "Project")}>
+        <Select
+          value={projectId}
+          onValueChange={(v) => setProjectId(String(v))}
+        >
+          <SelectTrigger
+            className={triggerCls}
+            aria-label={dt("Проект", "Project")}
+          >
             <SelectValue>{projectValueLabel}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={POOL_ALL}>{dt("Все проекты", "All projects")}</SelectItem>
+            <SelectItem value={POOL_ALL}>
+              {dt("Все проекты", "All projects")}
+            </SelectItem>
             {options.map((o) => (
-              <SelectItem key={o.id} value={o.id} className={o.child ? "pl-7" : undefined}>
+              <SelectItem
+                key={o.id}
+                value={o.id}
+                className={o.child ? "pl-7" : undefined}
+              >
                 {o.child ? `› ${o.label}` : o.label}
               </SelectItem>
             ))}
@@ -109,29 +152,45 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
         </Select>
 
         <Select value={assignee} onValueChange={(v) => setAssignee(String(v))}>
-          <SelectTrigger className={triggerCls} aria-label={dt("Исполнитель", "Assignee")}>
+          <SelectTrigger
+            className={triggerCls}
+            aria-label={dt("Исполнитель", "Assignee")}
+          >
             <SelectValue>{assigneeValueLabel}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={POOL_ALL}>{dt("Все исполнители", "All assignees")}</SelectItem>
-            {assignees.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+            <SelectItem value={POOL_ALL}>
+              {dt("Все исполнители", "All assignees")}
+            </SelectItem>
+            {assignees.map((a) => <SelectItem key={a} value={a}>{a}
+            </SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
-      {/* Панель действия — СРАЗУ под фильтрами, а не в подвале панели: в подвале она
+      {
+        /* Панель действия — СРАЗУ под фильтрами, а не в подвале панели: в подвале она
           оказывается на несколько сотен пикселей ниже отмеченной галочки, и человек,
           глядящий в начало списка, просто не видит, что выбор что-то дал (владелец
-          09.09.2026: «отметил галочкой квадратик… и что? а где что дальше?»). */}
+          09.09.2026: «отметил галочкой квадратик… и что? а где что дальше?»). */
+      }
       {picked.size > 0 && (
         <div className="flex items-center gap-2 border-b border-line bg-accent-soft/60 p-2">
-          <Button size="sm" className="h-9 flex-1 text-xs" disabled={disabled || adding}
-            onClick={() => submit([...picked])}>
-            {adding
-              ? dt("Добавляем…", "Adding…")
-              : dt(`Добавить в спринт: ${picked.size}`, `Add to sprint: ${picked.size}`)}
+          <Button
+            size="sm"
+            className="h-9 flex-1 text-xs"
+            disabled={disabled || adding}
+            onClick={() => submit([...picked])}
+          >
+            {adding ? dt("Добавляем…", "Adding…") : dt(
+              `Добавить в спринт: ${picked.size}`,
+              `Add to sprint: ${picked.size}`,
+            )}
           </Button>
-          <button onClick={() => setPicked(new Set())} className="px-2 text-xs text-ink-soft hover:text-ink">
+          <button
+            onClick={() => setPicked(new Set())}
+            className="px-2 text-xs text-ink-soft hover:text-ink"
+          >
             {dt("Снять", "Clear")}
           </button>
         </div>
@@ -141,21 +200,42 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
         {visible.length === 0 && (
           <p className="py-6 text-center text-xs text-ink-soft/70">
             {tasks.length === 0
-              ? dt("Свободных задач в проектах нет — всё уже в спринте", "No free project tasks — everything is in the sprint")
-              : dt("Под фильтры ничего не попало", "Nothing matches the filters")}
+              ? dt(
+                "Свободных задач в проектах нет — всё уже в спринте",
+                "No free project tasks — everything is in the sprint",
+              )
+              : dt(
+                "Под фильтры ничего не попало",
+                "Nothing matches the filters",
+              )}
           </p>
         )}
         {visible.map((t) => {
           const on = picked.has(t.id);
           const project = projectName(t.project_id);
           return (
-            <div key={t.id}
-              className={`group flex items-start gap-2 rounded-lg border p-2 transition-colors ${on ? "border-primary bg-primary/10" : "border-line bg-card hover:border-line-2"}`}>
-              <input type="checkbox" checked={on} disabled={disabled}
+            <div
+              key={t.id}
+              className={`group flex items-start gap-2 rounded-lg border p-2 transition-colors ${
+                on
+                  ? "border-primary bg-primary/10"
+                  : "border-line bg-card hover:border-line-2"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={on}
+                disabled={disabled}
                 onChange={() => toggle(t.id)}
                 className="mt-0.5 size-4 shrink-0 cursor-pointer accent-[var(--primary)]"
-                title={dt("Выбрать", "Select")} />
-              <button type="button" disabled={disabled} onClick={() => toggle(t.id)} className="flex-1 text-left">
+                title={dt("Выбрать", "Select")}
+              />
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => toggle(t.id)}
+                className="flex-1 text-left"
+              >
                 <p className="text-sm leading-snug text-ink">{t.title}</p>
                 <p className="mt-0.5 text-[11px] text-ink-soft">
                   {project ?? dt("проект скрыт", "project hidden")}
@@ -163,16 +243,22 @@ export function SprintTaskPool({ tasks, projects, disabled, adding, onAdd }: {
                 </p>
               </button>
               {/* Добавить одну, не собирая выбор: частый случай — «эту тоже возьмём». */}
-              <button type="button" disabled={disabled} onClick={() => submit([t.id])}
-                title={dt("Добавить эту задачу в спринт", "Add this task to the sprint")}
-                className="rounded-full p-1 text-ink-soft opacity-60 transition-opacity group-hover:opacity-100 hover:bg-surface-2 hover:text-ink disabled:opacity-30">
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => submit([t.id])}
+                title={dt(
+                  "Добавить эту задачу в спринт",
+                  "Add this task to the sprint",
+                )}
+                className="rounded-full p-1 text-ink-soft opacity-60 transition-opacity group-hover:opacity-100 hover:bg-surface-2 hover:text-ink disabled:opacity-30"
+              >
                 <RoyIcon name="plus" size={13} strokeWidth={2} />
               </button>
             </div>
           );
         })}
       </div>
-
     </div>
   );
 }

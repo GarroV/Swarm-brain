@@ -151,6 +151,7 @@ function frozenCard(item: SprintCycleItem): Task {
 
 export function SprintsScreen() {
   const dt = useDt();
+
   const confirm = useConfirm();
   const { me } = useRoyNav();
   const isAdmin = me?.is_admin ?? false;
@@ -950,6 +951,7 @@ export function SprintsScreen() {
                   <SprintTaskPool
                     tasks={poolTasks}
                     projects={projects}
+                    users={users}
                     adding={busy}
                     onAdd={addToSprint}
                   />

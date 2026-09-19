@@ -27,6 +27,33 @@ on conflict (id) do update set name = excluded.name;
 -- сессию выдаёт витрина, а право читать воркспейс живёт в базе. Поймано живым прогоном
 -- стенда 19.09 — сид считался готовым, а демо не открывалось.
 -- Id тот же, что зашит в `functions/api/auth/demo.ts` и в барьере `isDemo` у swarm-api.
+-- Команда демо-воркспейса. Люди заводятся ОТДЕЛЬНО от задач: фильтр исполнителей берёт
+-- список людей, а не выводит его из задач, и демо обязано это показывать — включая
+-- человека, у которого задач сейчас нет.
+insert into allowed_users (telegram_id, username, added_by, is_admin, group_id)
+values
+  (900000002, 'maya',  0, false, :'gid'),
+  (900000003, 'tom',   0, false, :'gid'),
+  (900000004, 'ines',  0, false, :'gid'),
+  (900000005, 'karl',  0, false, :'gid'),
+  (900000006, 'sofia', 0, false, :'gid'),
+  (900000007, 'nils',  0, false, :'gid')  -- без задач: фильтр обязан показывать и таких
+on conflict (telegram_id) do update
+  set group_id = excluded.group_id, username = excluded.username, is_admin = false;
+
+-- Имена людей живут в user_profiles, а не в allowed_users: без профиля фильтр показал бы
+-- логин вместо имени, и демо выглядело бы недоделанным.
+insert into user_profiles (telegram_id, first_name, last_name)
+values
+  (900000002, 'Maya', 'Lindqvist'),
+  (900000003, 'Tom', 'Farrow'),
+  (900000004, 'Ines', 'Duarte'),
+  (900000005, 'Karl', 'Brenner'),
+  (900000006, 'Sofia', 'Rinaldi'),
+  (900000007, 'Nils', 'Berg')
+on conflict (telegram_id) do update
+  set first_name = excluded.first_name, last_name = excluded.last_name;
+
 insert into allowed_users (telegram_id, username, added_by, is_admin, group_id)
 values (900000001, 'demo', 0, false, :'gid')
 on conflict (telegram_id) do update
