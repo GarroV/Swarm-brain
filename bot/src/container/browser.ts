@@ -1,10 +1,14 @@
 /**
  * Параметры запуска Chromium внутри контейнера.
  *
- * Тут закрыт главный риск проекта: Playwright добавляет `--mute-audio` в аргументы по
- * умолчанию, и звук молча не пишется — ни ошибки, ни строчки в логе. Снимается это ровно
- * одним способом: `ignoreDefaultArgs: ["--mute-audio"]`. Всё, что знает про вёрстку
- * площадки, живёт в адаптере; здесь только окружение.
+ * `ignoreDefaultArgs: ["--mute-audio"]` — страховка на случай, если Playwright когда-нибудь
+ * начнёт добавлять `--mute-audio` в аргументы Chromium по умолчанию: тогда наш ignore его
+ * снимет. В версии 1.63 на Linux этого флага в дефолтах НЕТ (проверено 2026-09-19 запуском
+ * Chromium в контейнере и осмотром живых args через ps), поэтому реальная защита от
+ * молчаливой тишины лежит в другом месте: `set-default-sink` в entrypoint.sh и проверка
+ * `Default Sink == наш sink` в inspectAudioEnvironment. Строка ниже дешёвая и вреда не
+ * несёт — оставлена как страховка. Всё, что знает про вёрстку площадки, живёт в адаптере;
+ * здесь только окружение.
  */
 
 export const MUTE_AUDIO_ARG = "--mute-audio";
@@ -36,7 +40,7 @@ export function chromiumLaunchOptions(input: ChromiumLaunchInput = {}): Chromium
 
   return {
     headless: false,
-    // Единственная строка, которая отделяет запись от тишины.
+    // Страховка от возможного будущего дефолта Playwright (см. шапку файла).
     ignoreDefaultArgs: [MUTE_AUDIO_ARG],
     args: [
       ...(input.sandbox === true ? [] : ["--no-sandbox"]),

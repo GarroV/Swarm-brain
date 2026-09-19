@@ -3,13 +3,22 @@
 #
 # Четыре прогона подряд, и красный среди первых трёх обязателен:
 #   1. звучащая страница          → смоук ОБЯЗАН пройти;
-#   2. Chromium с --mute-audio    → смоук ОБЯЗАН покраснеть (это и есть главная грабля);
+#   2. чужой default sink         → смоук ОБЯЗАН покраснеть: Chromium возьмёт дефолтный
+#      sink на старте, и если он не наш — звук уйдёт мимо записи (реальная грабля,
+#      от которой защищает `set-default-sink` в entrypoint.sh);
 #   3. молчащая страница          → смоук ОБЯЗАН покраснеть;
 #   4. два контейнера параллельно → у соседа ОБЯЗАНА быть тишина (изоляция границей
 #      контейнера, а не именем sink'а — sink у обоих одинаковый намеренно).
 # Проверка, которая не падает на испорченном входе, — не проверка, поэтому «зелёный» тут
 # складывается из одного успеха, двух подтверждённых отказов и одной подтверждённой
 # изоляции.
+#
+# Историческая справка: раньше шаг 2 был про `--mute-audio`. Живой прогон 2026-09-19
+# показал, что в Playwright v1.63 на Linux этот флаг в дефолтных аргументах Chromium
+# отсутствует (проверено `ps` в контейнере), поэтому симулировать «главную граблю»
+# через `SCRIBA_SMOKE_FORCE_MUTE` бессмысленно: смоук проходил, порча ничего не
+# ломала. Реальная грабля из спеки — «Chromium заиграет мимо записи» — покрывается
+# через порчу default sink.
 #
 #   bot/container/smoke.sh
 set -uo pipefail
@@ -47,9 +56,22 @@ compose up -d "$SERVICE" || exit 1
 step pass "$CONTAINER" "1/4 звучащая страница" \
   SCRIBA_SMOKE_PAGE=file:///opt/scriba/tone.html SCRIBA_SMOKE_EXPECT=sound
 
-step fail "$CONTAINER" "2/4 Chromium с --mute-audio" \
-  SCRIBA_SMOKE_PAGE=file:///opt/scriba/tone.html SCRIBA_SMOKE_EXPECT=sound \
-  SCRIBA_SMOKE_FORCE_MUTE=1
+printf '\n──── 2/4 чужой default sink (ждём: fail)\n'
+# Заводим второй null-sink и делаем его дефолтным. inspectAudioEnvironment должен
+# покраснеть на «Default Sink != scriba», смоук выйдет ненулевым — это и есть отказ.
+# После — гарантированно возвращаем «scriba» в дефолт и выгружаем чужой sink, чтобы
+# оставшиеся шаги не спотыкались.
+if docker exec "$CONTAINER" bash -euxc '
+    MOD=$(pactl load-module module-null-sink sink_name=elsewhere)
+    trap "pactl set-default-sink '"$CONTAINER"'_scriba_restore 2>/dev/null || pactl set-default-sink scriba; pactl unload-module $MOD" EXIT
+    pactl set-default-sink elsewhere
+    node /app/src/container/smoke-audio.ts
+'; then
+  printf '✘ 2/4 чужой default sink: смоук прошёл (код 0) — это НЕ то, чего ждали\n' >&2
+  failures=$((failures + 1))
+else
+  printf '✔ 2/4 чужой default sink: покраснел, как и должен\n'
+fi
 
 step fail "$CONTAINER" "3/4 молчащая страница" \
   SCRIBA_SMOKE_PAGE=file:///opt/scriba/silence.html SCRIBA_SMOKE_EXPECT=sound
@@ -93,4 +115,4 @@ if [ "$failures" -ne 0 ]; then
   printf '\n✘ ИТОГ: %s прогонов из четырёх повели себя не так, как обязаны\n' "$failures" >&2
   exit 1
 fi
-printf '\n✔ ИТОГ: смоук ловит звук, краснеет на --mute-audio и тишине, изоляция контейнеров держится\n'
+printf '\n✔ ИТОГ: смоук ловит звук, краснеет на чужом default sink и на тишине, изоляция контейнеров держится\n'
