@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo, useRef } from "react";
-import type { Task, User, Project } from "@/types";
+import type { Task, TaskLink, User, Project } from "@/types";
+import { TaskLinksField } from "@/components/tasks/TaskLinksField";
 import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
 import {
@@ -120,6 +121,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState("open");
   const [description, setDescription] = useState("");
+  const [links, setLinks] = useState<TaskLink[]>([]);
   // Пока в описании есть сохранённый текст — показываем его как read-only с кликабельными
   // ссылками (linkify); textarea появляется по клику. Пустое описание — сразу editable.
   const [descEditing, setDescEditing] = useState(true);
@@ -205,11 +207,15 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
     const initialRole = task?.task_role ?? NONE;
     const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
     const initialLabels = task?.label_ids ?? [];
+    // Ссылок нет в списочной проекции: у недогруженной задачи здесь undefined, и пустой
+    // список НЕ отправляется (isPartial глушит автосейв целиком — см. ниже).
+    const initialLinks = task?.links ?? [];
     const initialProject = task?.project_id ?? projectId ?? null;
 
     setTitle(initialTitle);
     setStatus(initialStatus);
     setDescription(initialDescription);
+    setLinks(initialLinks);
     setDescEditing(!initialDescription.trim());
     setDueDate(initialDue);
     setRemindDate(initialRemind);
@@ -238,6 +244,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
       assigneeId: cur,
       selProject: initialProject,
       labelIds: initialLabels,
+      links: initialLinks,
     });
 
     fetchUsers().then(setUsers).catch(() => {});
@@ -306,7 +313,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
 
   // Текущий снапшот формы (для сравнения с сохранённым) — те же ключи, что в useEffect open.
   const formSnapshot = () =>
-    JSON.stringify({ title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds });
+    JSON.stringify({ title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds, links });
 
   // Собрать PATCH из текущих значений формы. null → сохранять нечего/нельзя (пустое название).
   const buildPatch = (): UpdateTaskInput | null => {
@@ -323,6 +330,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
       task_role: taskRole === NONE ? null : taskRole,
       status,
       project_id: selProject,
+      links,
     };
     // Исполнителя шлём только если поменяли — иначе правка других полей затёрла бы назначение,
     // которое нельзя было префиллить (имя без telegram_id).
@@ -354,7 +362,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
     }, AUTOSAVE_DELAY);
     return () => clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isEdit, isPartial, title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds]);
+  }, [open, isEdit, isPartial, title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds, links]);
 
   // Закрытие: досрочно сохраняем pending-изменения (пока debounce не успел сработать).
   const handleClose = () => {
@@ -383,6 +391,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
       const base = {
         title: title.trim(),
         description: description.trim() || null,
+        links,
         due_date: dueDate || null,
         remind_date: remindDate || null,
         recur_freq: recurFreq,
@@ -533,6 +542,11 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                   placeholder="Название задачи"
                 />
               </div>
+              {/* Ссылки — НАД описанием (решение владельца 18.09.2026): их ищут глазами
+                  первыми, а описание бывает на экран длиной. У недогруженной задачи поле
+                  показываем только для чтения — отправлять её ссылки всё равно нельзя. */}
+              <TaskLinksField links={links} onChange={setLinks} disabled={isPartial} />
+
               <div className="flex flex-col">
                 <label htmlFor="modal-desc" className={labelCls} style={{ fontSize: 12 }}>Описание</label>
                 {descEditing ? (

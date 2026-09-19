@@ -23,3 +23,6 @@ supabase/functions/swarm-api/space-journal.db.test.ts
 supabase/functions/swarm-api/project-fields.ts
 supabase/functions/swarm-api/project-fields.test.ts
 supabase/functions/swarm-api/task-links.db.test.ts
+miniapp/src/lib/taskLinks.ts
+miniapp/src/lib/taskLinks.test.ts
+miniapp/src/components/tasks/TaskLinksField.tsx

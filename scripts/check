@@ -38,6 +38,14 @@ keep() { # роль <<< вывод
   printf '%s\n' "$2" > "reports/$1.txt"
 }
 
+# Конфиг репозитория — ЯВНО, всюду. Без `--config` deno ищет его сам, вверх от файла, и для
+# всего под `miniapp/` находит `miniapp/package.json` — то есть НЕ наш deno.json. Правила из
+# него в этот момент не действуют: выключенный на весь репозиторий `no-sloppy-imports`
+# воскресает и валит линт на `./format` — том самом расширении-без-расширения, которое
+# обязателен писать веб. Локально это выглядит как «правило не выключается», в CI — как
+# красный гейт на пустом месте.
+CFG=(--config deno.json)
+
 # Файлы фичи, которые уже существуют. Пока стройка не началась, список пуст — это
 # сообщается вслух и отдельной строкой в отчёте, а не выглядит как пройденная проверка.
 # bash 3.2 в macOS не знает mapfile — читаем циклом, иначе гейт не запускается у владельца
@@ -54,10 +62,10 @@ if [ "$N" -eq 0 ]; then
   row "мёртвый-код" "empty" 0 0 "файлов фичи ещё нет"
   row "границы" "empty" 0 0 "файлов фичи ещё нет"
 else
-  out=$(deno fmt --check "${EXISTING[@]}" 2>&1); st=$?; keep формат "$out"
+  out=$(deno fmt "${CFG[@]}" --check "${EXISTING[@]}" 2>&1); st=$?; keep формат "$out"
   row "формат" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
 
-  out=$(deno lint "${EXISTING[@]}" 2>&1); st=$?; keep линт "$out"
+  out=$(deno lint "${CFG[@]}" "${EXISTING[@]}" 2>&1); st=$?; keep линт "$out"
   row "линт" "$([ $st -eq 0 ] && echo pass || echo fail)" "$N" 0 "$(echo "$out" | tail -2 | tr -d '"' | tr '\n' ' ')"
 
   out=$(deno run -A scripts/check-graph.ts 2>&1); st=$?; keep граф "$out"
@@ -68,7 +76,7 @@ fi
 # Типы: edge-функции (точки входа явно — без них deno check проверяет не всё) и веб.
 ENTRIES=()
 while IFS= read -r e; do ENTRIES+=("$e"); done < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts)
-out=$(deno check "${ENTRIES[@]}" 2>&1); st=$?; keep типы-функции "$out"
+out=$(deno check "${CFG[@]}" "${ENTRIES[@]}" 2>&1); st=$?; keep типы-функции "$out"
 row "типы-функции" "$([ $st -eq 0 ] && echo pass || echo fail)" "${#ENTRIES[@]}" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
 
 out=$(cd miniapp && npx --no-install tsc --noEmit 2>&1); st=$?; keep типы-веб "$out"

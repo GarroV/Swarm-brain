@@ -1,5 +1,5 @@
 import { getInitData } from "./telegram";
-import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, SprintCycle, SprintCycleDetail, SprintCycleItem, SprintStats, CheckStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote, MeetingNotes } from "@/types";
+import type { JournalEvent, Me, Task, TaskLink, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, SprintCycle, SprintCycleDetail, SprintCycleItem, SprintStats, CheckStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote, MeetingNotes } from "@/types";
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
@@ -30,6 +30,12 @@ export type CreateTaskInput = {
   tree_y?: number | null;
   /** Цикличность: daily | weekly | monthly; null — снять. Требует срока (API отобьёт без него). */
   recur_freq?: string | null;
+  /**
+   * Ссылки задачи. ⚠️ Списочный ответ GET /tasks их НЕ отдаёт (TASK_LIST_COLUMNS) — задача из
+   * списка приходит с `links === undefined`. Слать это поле можно только с догруженной по id
+   * задачи, иначе пустой список затрёт реальные ссылки.
+   */
+  links?: TaskLink[];
 };
 
 export type UpdateTaskInput = Partial<CreateTaskInput> & { status?: string; project_linked?: boolean };
@@ -693,7 +699,22 @@ let mockCycles: SprintCycle[] = [
 
 // Состав живых спринтов держим ссылками на mockTasks — тогда перетаскивание карточки в канбане
 // меняет ту же строку, что видит доска проектов (в проде это и есть одна строка).
-let mockCycleItems: Record<string, { id: string; task_id: string; in_plan: boolean }[]> = {
+/**
+ * Строка состава в моках: хранится узко (связь + план), остальное собирается из живой задачи —
+ * иначе демо показывало бы копию, разъехавшуюся с задачей. Поля переноса приходится хранить:
+ * они принадлежат СОСТАВУ, а не задаче, и у задачи их взять неоткуда.
+ */
+type MockItemRow = {
+  id: string;
+  task_id: string;
+  in_plan: boolean;
+  carry_count?: number;
+  carried_manual?: boolean;
+  carry_reason?: string | null;
+  frozen?: boolean;
+};
+
+let mockCycleItems: Record<string, MockItemRow[]> = {
   sc_active: [
     { id: "si1", task_id: "p_onb", in_plan: true },
     { id: "si2", task_id: "p_search", in_plan: true },
@@ -736,11 +757,15 @@ function mockItemsOf(cycleId: string): SprintCycleItem[] {
       title: t.title, status: t.status, assignees: t.assignees,
       project_id: t.project_id, project: projectName(t.project_id),
       due_date: t.due_date,
-      completed_at: t.status === "done" ? new Date().toISOString() : null, frozen: false,
+      completed_at: t.status === "done" ? new Date().toISOString() : null,
+      frozen: row.frozen ?? false,
+      carry_count: row.carry_count ?? 0,
+      carried_manual: row.carried_manual ?? null,
       check_status: mockChecks[row.id]?.check_status ?? null,
       check_note: mockChecks[row.id]?.check_note ?? null,
       to_carry: mockChecks[row.id]?.to_carry ?? false,
-      carry_reason: mockChecks[row.id]?.carry_reason ?? null,
+      // Причина из окна сверки перекрывает ту, что приехала вместе с переносом.
+      carry_reason: mockChecks[row.id]?.carry_reason ?? row.carry_reason ?? null,
     }];
   });
 }
@@ -869,7 +894,28 @@ export async function acceptSprintCycle(
       summary: null, stats: null, created_at: new Date().toISOString(),
     };
     mockCycles = [...mockCycles, next];
-    mockCycleItems = { ...mockCycleItems, [next.id]: [] };
+    // Хвосты переезжают в следующий спринт — как это делает сервер одной транзакцией
+    // (`accept_sprint_cycle`). Раньше мок отдавал `carried: 3` и создавал следующий спринт
+    // ПУСТЫМ: демо показывало «уехали» и пустой состав, то есть врало ровно про то, ради чего
+    // приёмка и сделана (поймано живым прогоном 19.09.2026).
+    const carriedRows: MockItemRow[] = tails.flatMap((i) =>
+      i.task_id
+        ? [{
+          id: `${next.id}_${i.task_id}`,
+          task_id: i.task_id,
+          in_plan: false,
+          carry_count: i.carry_count + 1,
+          carried_manual: i.to_carry,
+          carry_reason: i.carry_reason,
+        }]
+        : []
+    );
+    // Принятый спринт — снимок: его строки больше не живые, как и на сервере.
+    mockCycleItems = {
+      ...mockCycleItems,
+      [id]: (mockCycleItems[id] ?? []).map((r) => ({ ...r, frozen: true })),
+      [next.id]: carriedRows,
+    };
     return {
       cycle: mockCycles.find((c) => c.id === id)!, next,
       frozen: mockItemsOf(id).length, carried: stats.carried,
@@ -934,15 +980,37 @@ export async function removeTaskFromSprintCycle(id: string, taskId: string): Pro
 // не проверяет отбор «только свои проекты» в селекте карточки задачи. MOCK_ME = 123456.
 const MOCK_COLLEAGUE = 507931827;
 let mockProjects: Project[] = [
-  { id: "pr1", group_id: "cee", name: "Swarm Brain", color: "#5b8def", emoji: null, parent_id: null, sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
-  { id: "prg1", group_id: "cee", name: "Вайб код проекты", color: null, emoji: null, parent_id: null, sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 3, backlog_count: 1 },
-  { id: "pr1a", group_id: "cee", name: "Бот по стройкам", color: null, emoji: null, parent_id: "prg1", sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 2, backlog_count: 1 },
+  { id: "pr1", group_id: "cee", name: "Swarm Brain", color: "#5b8def", emoji: null, parent_id: null, sprint_id: "sp1", created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
+  { id: "prg1", group_id: "cee", name: "Вайб код проекты", color: null, emoji: null, parent_id: null, sprint_id: "sp1", created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 3, backlog_count: 1 },
+  { id: "pr1a", group_id: "cee", name: "Бот по стройкам", color: null, emoji: null, parent_id: "prg1", sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: 123456, start_date: mockDay(-10), end_date: mockDay(20), is_private: false, task_count: 2, backlog_count: 1 },
   { id: "pr1b", group_id: "cee", name: "Дизайн-терминал", color: null, emoji: null, parent_id: "prg1", sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 1, backlog_count: 0 },
-  { id: "pr2", group_id: "cee", name: "тест-2", color: null, emoji: null, parent_id: null, sprint_id: null, created_by: null, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
-  { id: "pr3", group_id: "cee", name: "Личный эксперимент", color: null, emoji: null, parent_id: null, sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: true, task_count: 0, backlog_count: 0 },
-  { id: "pr4", group_id: "cee", name: "Анализ ревизий", color: null, emoji: null, parent_id: null, sprint_id: null, created_by: MOCK_COLLEAGUE, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
+  { id: "pr2", group_id: "cee", name: "тест-2", color: null, emoji: null, parent_id: null, sprint_id: "sp1", created_by: null, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
+  { id: "pr3", group_id: "cee", name: "Личный эксперимент", color: null, emoji: null, parent_id: null, sprint_id: "sp1", created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: true, task_count: 0, backlog_count: 0 },
+  { id: "pr4", group_id: "cee", name: "Анализ ревизий", color: null, emoji: null, parent_id: null, sprint_id: "sp1", created_by: MOCK_COLLEAGUE, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
   { id: "pr4a", group_id: "cee", name: "Румыния июнь-август", color: null, emoji: null, parent_id: "pr4", sprint_id: null, created_by: MOCK_COLLEAGUE, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
 ];
+
+/**
+ * Журнал пространства: события по дням. `days` — 1, 3, 7 или "all" (сервер других не берёт).
+ * Приватные задачи в ленту не попадают: правило видимости живёт на сервере, и обходить его
+ * клиентским фильтром нельзя — он просто не получит этих строк.
+ */
+export async function fetchSpaceJournal(
+  tabId: string,
+  days: "1" | "3" | "7" | "all" = "7",
+): Promise<JournalEvent[]> {
+  if (DEV_MODE) {
+    const day = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+    return [
+      { at: day(0), kind: "check", actor: "Гарро", task_id: "p_onb", task_title: "Онбординг", text: "отметил риск: ждём ответа партнёра" },
+      { at: day(0), kind: "item_added", actor: "Гарро", task_id: "2", task_title: "Рекордер", text: "добавил в спринт «Спринт 41»" },
+      { at: day(1), kind: "task_change", actor: "Лена", task_id: "p_search", task_title: "Поиск по базе", text: "статус: открыто → в работе" },
+      { at: day(2), kind: "comment", actor: "Лена", task_id: "p_dig", task_title: "Дайджест", text: "нужен макет письма" },
+      { at: day(3), kind: "cycle_started", actor: "Гарро", task_id: null, task_title: null, text: "начал спринт «Спринт 41»" },
+    ];
+  }
+  return apiFetch<JournalEvent[]>(`/spaces/${encodeURIComponent(tabId)}/journal?days=${days}`);
+}
 
 export async function fetchProjects(): Promise<Project[]> {
   if (DEV_MODE) return [...mockProjects]; // копия: иначе оптимистичный append в UI дублирует (общая ссылка)
@@ -958,7 +1026,9 @@ export async function createProject(input: { name: string; color?: string | null
   return apiFetch<Project>("/projects", { method: "POST", body: JSON.stringify(input) });
 }
 
-export async function updateProject(id: string, fields: Partial<{ name: string; color: string | null; emoji: string | null; parent_id: string | null; sprint_id: string | null; is_private: boolean }>): Promise<Project> {
+// Поля инициативы (`owner_telegram_id`, `start_date`, `end_date`) сервер принимает с миграции
+// 20260918120000 и сверяет `start <= end` (`swarm-api/project-fields.ts`).
+export async function updateProject(id: string, fields: Partial<{ name: string; color: string | null; emoji: string | null; parent_id: string | null; sprint_id: string | null; is_private: boolean; owner_telegram_id: number | null; start_date: string | null; end_date: string | null }>): Promise<Project> {
   if (DEV_MODE) {
     const i = mockProjects.findIndex((p) => p.id === id);
     if (i !== -1) mockProjects[i] = { ...mockProjects[i], ...fields };

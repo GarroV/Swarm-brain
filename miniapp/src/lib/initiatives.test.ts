@@ -5,7 +5,13 @@
 // шапка экрана считает иначе, чем итог принятого спринта, человек увидит два разных факта об
 // одном спринте и не узнает, какой из них верен.
 import { assertEquals } from "@std/assert";
-import { buildBoard, computeProgress, sprintKpi } from "./initiatives.ts";
+import {
+  buildBoard,
+  checksDue,
+  computeProgress,
+  spaceProjects,
+  sprintKpi,
+} from "./initiatives.ts";
 import type { Project, SprintCycleItem } from "../types.ts";
 
 function project(
@@ -13,7 +19,9 @@ function project(
   name: string,
   parent_id: string | null = null,
 ): Project {
-  return { id, name, parent_id } as Project;
+  // `sprint_id` задаём явно: в базе он всегда есть (строка или null), и фикстура с
+  // `undefined` проверяла бы состояние, которого у настоящих данных не бывает.
+  return { id, name, parent_id, sprint_id: null } as Project;
 }
 
 function item(
@@ -180,4 +188,57 @@ Deno.test("шапка: отметка у отменённой задачи не 
   ]);
   assertEquals(kpi.checkOk, 0);
   assertEquals(kpi.unchecked, 0);
+});
+
+Deno.test("сверка: до дня сверки молчание — норма, с этого дня — сигнал", () => {
+  const today = new Date("2026-09-19T12:00:00Z");
+  // Ритуал не назначен — «не отмечено» не показываем вовсе, иначе вся доска в серых метках.
+  assertEquals(checksDue(null, today), false);
+  assertEquals(checksDue("2026-09-20", today), false);
+  // День сверки наступил — считается с его начала, а не с конца.
+  assertEquals(checksDue("2026-09-19", today), true);
+  assertEquals(checksDue("2026-09-18", today), true);
+});
+
+Deno.test("сверка: негодная дата не включает сигнал молча", () => {
+  assertEquals(checksDue("не дата", new Date("2026-09-19T12:00:00Z")), false);
+});
+
+Deno.test("дерево собирается и из обычных задач — у них нет поля removed", () => {
+  const tasks = [
+    { id: "t1", status: "done", project_id: "ini1" },
+    { id: "t2", status: "open", project_id: "ini1" },
+  ];
+  const board = buildBoard(tasks, [
+    project("dir1", "Направление", null),
+    project("ini1", "Инициатива", "dir1"),
+  ]);
+  assertEquals(board.length, 1);
+  assertEquals(board[0].progress, { total: 2, done: 1, percent: 50 });
+  // Тип строки сохраняется: экран получает свои задачи, а не обрезанный слепок.
+  assertEquals(board[0].initiatives[0].items[0].id, "t1");
+});
+
+Deno.test("пространство: проект вкладки и его подпроекты, чужие не попадают", () => {
+  const projects = [
+    project("dirA", "Направление A", null),
+    project("iniA", "Инициатива A", "dirA"),
+    project("dirB", "Направление B", null),
+  ];
+  // Вкладку проект держит сам, подпроект наследует её у родителя.
+  const withTab = projects.map((p) =>
+    p.id === "dirA"
+      ? { ...p, sprint_id: "tab1" }
+      : p.id === "dirB"
+      ? { ...p, sprint_id: "tab2" }
+      : p
+  );
+  const ids = spaceProjects(withTab, "tab1");
+  assertEquals([...ids].sort(), ["dirA", "iniA"]);
+  assertEquals([...spaceProjects(withTab, "tab2")], ["dirB"]);
+  // «Без пространства» — проекты, не привязанные ни к одной вкладке: они не должны
+  // исчезнуть с доски только потому, что вкладку им не назначили.
+  assertEquals([...spaceProjects(withTab, null)], []);
+  const withOrphan = [...withTab, project("dirC", "Направление C", null)];
+  assertEquals([...spaceProjects(withOrphan, null)], ["dirC"]);
 });
