@@ -7,6 +7,7 @@
 import { assertEquals } from "@std/assert";
 import {
   buildBoard,
+  buildPeopleBoard,
   checksDue,
   computeProgress,
   spaceProjects,
@@ -241,4 +242,24 @@ Deno.test("пространство: проект вкладки и его по�
   assertEquals([...spaceProjects(withTab, null)], []);
   const withOrphan = [...withTab, project("dirC", "Направление C", null)];
   assertEquals([...spaceProjects(withOrphan, null)], ["dirC"]);
+});
+
+Deno.test("по людям: задача с двумя исполнителями видна обоим", () => {
+  // На обходе про такую задачу спросят обоих. Показать её только первому значит, что второй
+  // на своей странице обхода её не увидит и будет уверен, что у него её нет.
+  const board = buildPeopleBoard([
+    item("t1", null, { assignees: ["Аня", "Паша"] }),
+    item("t2", null, { assignees: ["Аня"], status: "done" }),
+  ]);
+  assertEquals(board.map((d) => d.project?.name ?? null), ["Аня", "Паша"]);
+  assertEquals(board[0].progress, { total: 2, done: 1, percent: 50 });
+  assertEquals(board[1].initiatives[0].items.length, 1);
+});
+
+Deno.test("по людям: «без исполнителя» — последней группой", () => {
+  const board = buildPeopleBoard([
+    item("t1", null, { assignees: [] }),
+    item("t2", null, { assignees: ["Аня"] }),
+  ]);
+  assertEquals(board.map((d) => d.project?.name ?? null), ["Аня", null]);
 });

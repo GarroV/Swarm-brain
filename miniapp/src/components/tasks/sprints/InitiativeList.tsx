@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import type { SprintCycleItem } from "@/types";
+import type { CheckStatus, SprintCycleItem } from "@/types";
 import type { DirectionNode, InitiativeNode } from "@/lib/initiatives";
 import { isBareDirection } from "@/lib/initiatives";
 import { RoyIcon } from "@/components/roy/icons";
@@ -23,6 +23,15 @@ import { fmtDay } from "./format";
 
 const CLOSED = new Set(["done", "cancelled"]);
 
+// Один элемент вместо трёх кнопок: строка и так длинная (#411). Порядок повторяет разговор на
+// сверке — сперва «идёт по плану», потом сомнение, потом проблема; четвёртое нажатие снимает.
+const NEXT_CHECK: Record<string, CheckStatus | null> = {
+  none: "ok",
+  ok: "risk",
+  risk: "problem",
+  problem: null,
+};
+
 const STATUS_TONE: Record<string, string> = {
   done: "bg-status-done",
   in_progress: "bg-status-prog",
@@ -32,7 +41,7 @@ const STATUS_TONE: Record<string, string> = {
 /** Строка задачи. Клик открывает карточку — но только у живой: у упоминания и у чужой
  *  приватной открывать нечего, и «кнопка, которая ничего не делает» хуже её отсутствия. */
 function TaskRow(
-  { item, unchecked, onOpen, onDone, onCarry }: {
+  { item, unchecked, onOpen, onDone, onCarry, onCheck, onNote }: {
     item: SprintCycleItem;
     unchecked: boolean;
     onOpen?: (item: SprintCycleItem) => void;
@@ -40,10 +49,24 @@ function TaskRow(
      *  «→ перенести». Открывать карточку ради ежедневного клика — лишняя работа. */
     onDone?: (item: SprintCycleItem) => void | Promise<void>;
     onCarry?: (item: SprintCycleItem) => void | Promise<void>;
+    /** Отметка хода работы («как идут дела») — переезд со своего экрана сверки в строку
+     *  (владелец 19.09.2026). Ритуал остаётся, место ввода становится одно. */
+    onCheck?: (item: SprintCycleItem, status: CheckStatus | null) => void | Promise<void>;
+    /** Причина — отдельным обработчиком: у риска и проблемы это `check_note`, у переноса
+     *  `carry_reason`, и строка не должна знать, какое поле куда класть. */
+    onNote?: (
+      item: SprintCycleItem,
+      patch: { check_note?: string | null; carry_reason?: string | null },
+    ) => void | Promise<void>;
   },
 ) {
   const dt = useDt();
   const closed = CLOSED.has(item.status);
+  const needsNote = item.check_status === "risk" || item.check_status === "problem";
+  const noteField: "check_note" | "carry_reason" = needsNote ? "check_note" : "carry_reason";
+  const saved = (needsNote ? item.check_note : item.carry_reason) ?? "";
+  const [note, setNote] = useState<string | null>(null);
+  const noteValue = note ?? saved;
   const openable = !!onOpen && !item.removed && !item.hidden && !!item.task_id;
   const actionable = !item.removed && !item.hidden && !!item.task_id;
   // Клик по кнопке не должен открывать карточку — иначе каждое быстрое действие
@@ -129,14 +152,55 @@ function TaskRow(
             ? <AssigneeChip name={null} />
             : item.assignees.map((a) => <AssigneeChip key={a} name={a} />)}
           {item.due_date && <DueBadge date={item.due_date} closed={closed} />}
-          <CheckBadge
-            status={item.check_status}
-            note={item.check_note}
-            unchecked={unchecked && !closed}
-          />
+          {onCheck && !closed
+            ? (
+              <button
+                type="button"
+                onClick={act((i) => onCheck(i, NEXT_CHECK[i.check_status ?? "none"]))}
+                title={dt(
+                  "Как идут дела: по плану → риск → проблема",
+                  "How it is going: on track → at risk → problem",
+                )}
+                className="shrink-0 rounded-md transition-opacity hover:opacity-80"
+              >
+                <CheckBadge
+                  status={item.check_status}
+                  note={item.check_note}
+                  unchecked={unchecked}
+                />
+              </button>
+            )
+            : (
+              <CheckBadge
+                status={item.check_status}
+                note={item.check_note}
+                unchecked={unchecked && !closed}
+              />
+            )}
           {item.to_carry && <CarryFlag reason={item.carry_reason} />}
           <CarryBadge count={item.carry_count} reason={item.carry_reason} />
         </>
+      )}
+
+      {/* Причину спрашиваем там же, где поставили отметку: «риск» без причины к следующей
+          встрече уже никто не помнит. Поле необязательное — принуждение даёт «нет времени»
+          вместо объяснения. */}
+      {onNote && !closed && !item.removed && !item.hidden && (needsNote || item.to_carry) && (
+        <input
+          value={noteValue}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => setNote(e.target.value)}
+          onBlur={() => {
+            const v = noteValue.trim();
+            setNote(null);
+            if (v === saved.trim()) return;
+            onNote(item, { [noteField]: v || null });
+          }}
+          placeholder={needsNote
+            ? dt("что именно мешает (необязательно)", "what exactly is blocking (optional)")
+            : dt("почему переносится (необязательно)", "why it is carried over (optional)")}
+          className="w-full basis-full rounded-lg border border-line bg-card px-2 py-1 text-xs text-ink outline-none focus:border-primary/50"
+        />
       )}
     </div>
   );
@@ -170,11 +234,16 @@ function AddTaskRow(
 }
 
 function Initiative(
-  { node, collapsed, onToggle, unchecked, ownerName, onOpen, onAdd, onDone, onCarry }: {
+  { node, collapsed, onToggle, unchecked, ownerName, onOpen, onAdd, onDone, onCarry, onCheck, onNote }: {
     node: InitiativeNode;
     onAdd?: (projectId: string | null) => void;
     onDone?: (item: SprintCycleItem) => void | Promise<void>;
     onCarry?: (item: SprintCycleItem) => void | Promise<void>;
+    onCheck?: (item: SprintCycleItem, status: CheckStatus | null) => void | Promise<void>;
+    onNote?: (
+      item: SprintCycleItem,
+      patch: { check_note?: string | null; carry_reason?: string | null },
+    ) => void | Promise<void>;
     collapsed: boolean;
     onToggle: () => void;
     unchecked: boolean;
@@ -229,6 +298,8 @@ function Initiative(
               onOpen={onOpen}
               onDone={onDone}
               onCarry={onCarry}
+              onCheck={onCheck}
+              onNote={onNote}
             />
           ))}
           {onAdd && <AddTaskRow projectId={node.project?.id ?? null} onAdd={onAdd} />}
@@ -245,8 +316,12 @@ function Initiative(
  * а строка задачи не должна знать про календарь ритуала.
  */
 export function InitiativeList(
-  { board, unchecked = false, users = [], onOpen, onAdd, onDone, onCarry }: {
+  { board, unchecked = false, users = [], noneLabel, onOpen, onAdd, onDone, onCarry, onCheck, onNote }:
+  {
     board: DirectionNode[];
+    /** Подпись группы-остатка. По умолчанию «Без направления»; при группировке по людям —
+     *  «Без исполнителя»: остаток называется по тому, чего в нём нет. */
+    noneLabel?: string;
     unchecked?: boolean;
     users?: { telegram_id: number; name: string }[];
     onOpen?: (item: SprintCycleItem) => void;
@@ -255,6 +330,11 @@ export function InitiativeList(
     onAdd?: (projectId: string | null) => void;
     onDone?: (item: SprintCycleItem) => void | Promise<void>;
     onCarry?: (item: SprintCycleItem) => void | Promise<void>;
+    onCheck?: (item: SprintCycleItem, status: CheckStatus | null) => void | Promise<void>;
+    onNote?: (
+      item: SprintCycleItem,
+      patch: { check_note?: string | null; carry_reason?: string | null },
+    ) => void | Promise<void>;
   },
 ) {
   const dt = useDt();
@@ -281,7 +361,7 @@ export function InitiativeList(
               <span className="text-sm">{dir.project.emoji}</span>
             )}
             <h3 className="min-w-0 truncate text-sm font-bold text-ink">
-              {dir.project?.name ?? dt("Без направления", "No direction")}
+              {dir.project?.name ?? noneLabel ?? dt("Без направления", "No direction")}
             </h3>
             <div className="ml-auto flex items-center gap-2">
               <ProgressBar percent={dir.progress.percent} className="w-24" />
@@ -303,6 +383,10 @@ export function InitiativeList(
                       item={item}
                       unchecked={unchecked}
                       onOpen={onOpen}
+                      onDone={onDone}
+                      onCarry={onCarry}
+                      onCheck={onCheck}
+                      onNote={onNote}
                     />
                   ))}
                 </div>
@@ -321,6 +405,8 @@ export function InitiativeList(
                     onAdd={onAdd}
                     onDone={onDone}
                     onCarry={onCarry}
+                    onCheck={onCheck}
+                    onNote={onNote}
                   />
                 );
               })}

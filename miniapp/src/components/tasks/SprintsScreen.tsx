@@ -30,6 +30,7 @@ import type {
 } from "@/types";
 import {
   buildBoard,
+  buildPeopleBoard,
   checksDue,
   spaceProjects,
   sprintKpi,
@@ -66,7 +67,6 @@ import {
 import { AllInitiatives } from "@/components/tasks/sprints/AllInitiatives";
 import { AnalyticsScreen } from "@/components/tasks/sprints/AnalyticsScreen";
 import { JournalScreen } from "@/components/tasks/sprints/JournalScreen";
-import { CheckScreen } from "@/components/tasks/sprints/CheckScreen";
 import {
   BoardSkeleton,
   InitiativeList,
@@ -74,6 +74,8 @@ import {
 import { SpaceSwitcher } from "@/components/tasks/sprints/SpaceSwitcher";
 import { SprintKpiHeader } from "@/components/tasks/sprints/SprintKpiHeader";
 import {
+  GroupingToggle,
+  useSprintGrouping,
   useSprintView,
   ViewToggle,
 } from "@/components/tasks/sprints/ViewToggle";
@@ -159,6 +161,7 @@ export function SprintsScreen() {
 
   const isDesktop = useIsDesktop();
   const [view, setView] = useSprintView();
+  const [grouping, setGrouping] = useSprintGrouping();
 
   const [cycles, setCycles] = useState<SprintCycle[]>([]);
   const [spaces, setSpaces] = useState<Sprint[]>([]);
@@ -326,6 +329,11 @@ export function SprintsScreen() {
   // итогов. Считать их здесь значило бы завести второй ответ на вопрос «сколько сделано».
   const kpi = useMemo(() => sprintKpi(items), [items]);
   const board = useMemo(() => buildBoard(items, projects), [items, projects]);
+  // Вторая группировка того же состава — по людям. Ради неё был отдельный экран сверки;
+  // после переезда отметок в строку (владелец 19.09.2026) это переключатель внутри списка:
+  // на встрече идут по человеку, в работе — по инициативе.
+  const peopleBoard = useMemo(() => buildPeopleBoard(items), [items]);
+  const byPeople = grouping === "people";
   // «Не отмечено» показываем с дня сверки (D013): до него молчание — норма, а не сигнал.
   // Само правило — в lib/initiatives (под тестами): в двух экранах «с какого дня» разъедется.
   const unchecked = checksDue(detail?.check_date ?? null);
@@ -618,10 +626,8 @@ export function SprintsScreen() {
 
   // Канбан — только на компьютере (D003), поэтому на телефоне список показывается всегда,
   // независимо от запомненного вида.
-  // Канбан — только на компьютере (D003); сверка и список читаемы и с телефона.
   const effectiveView = view === "kanban" && !isDesktop ? "list" : view;
   const showList = effectiveView === "list";
-  const showCheck = effectiveView === "check";
   const showInitiatives = effectiveView === "initiatives";
   const showAnalytics = effectiveView === "analytics";
   const showJournal = effectiveView === "journal";
@@ -1099,28 +1105,35 @@ export function SprintsScreen() {
                     onSaveProject={saveInitiative}
                   />
                 )
-                : showCheck
-                ? (
-                  <CheckScreen
-                    cycle={detail}
-                    unchecked={unchecked}
-                    onMark={markItem}
-                  />
-                )
                 : showList
                 ? (
                   <div className="flex-1 min-w-0 overflow-y-auto">
                     {items.length === 0 ? emptyComposition : (
+                      <>
+                        <GroupingToggle value={grouping} onChange={setGrouping} />
                       <InitiativeList
-                        board={board}
+                        board={byPeople ? peopleBoard : board}
+                        noneLabel={byPeople
+                          ? dt("Без исполнителя", "Unassigned")
+                          : undefined}
                         unchecked={unchecked}
                         users={users}
-                        // Принятый спринт — слепок: в него не дописывают.
-                        onAdd={accepted
+                        // Принятый спринт — слепок: в него не дописывают. В группировке по
+                        // людям «+ задача» нет: группа — человек, а не проект, и класть
+                        // задачу «в человека» некуда.
+                        onAdd={accepted || byPeople
                           ? undefined
                           : (projectId) => setAddingTo(projectId)}
                         onDone={accepted ? undefined : toggleDone}
                         onCarry={accepted ? undefined : toggleCarry}
+                        onCheck={accepted ? undefined : (item, status) =>
+                          markItem(item, {
+                            check_status: status,
+                            // Сняли отметку — убираем и причину: висящая причина от снятого
+                            // риска читается как живая.
+                            ...(status === null ? { check_note: null } : {}),
+                          })}
+                        onNote={accepted ? undefined : (item, patch) => markItem(item, patch)}
                         onOpen={(item) => {
                           // Открываем ЖИВУЮ задачу: строка спринта — это её отражение, и править
                           // надо задачу. У упоминания и приватной чужой открывать нечего — такие
@@ -1131,6 +1144,7 @@ export function SprintsScreen() {
                           if (live) setEditing(live);
                         }}
                       />
+                      </>
                     )}
                   </div>
                 )

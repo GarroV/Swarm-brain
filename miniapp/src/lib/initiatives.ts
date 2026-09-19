@@ -173,6 +173,68 @@ export function buildBoard<T extends BoardRow>(
 }
 
 /**
+ * Та же доска, но сгруппированная ПО ЛЮДЯМ: направление — человек, задачи лежат прямо на
+ * нём. Нужна для обхода на встрече (идём по человеку, а не по проекту) — раньше ради этого
+ * был отдельный экран сверки; после переезда отметок в строку (владелец 19.09.2026) это
+ * просто вторая группировка того же списка.
+ *
+ * Задача с двумя исполнителями попадает к обоим: на обходе про неё спросят обоих, и
+ * «показать только первому» означало бы, что второй её не увидит.
+ */
+export function buildPeopleBoard<T extends BoardRow & { assignees: string[] }>(
+  items: readonly T[],
+): DirectionNode<T>[] {
+  const byPerson = new Map<string, T[]>();
+  for (const item of items) {
+    // Без исполнителя — тоже группа, причём та, ради которой обход и затевают.
+    const names = item.assignees.length > 0 ? item.assignees : [""];
+    for (const name of names) {
+      if (!byPerson.has(name)) byPerson.set(name, []);
+      byPerson.get(name)!.push(item);
+    }
+  }
+
+  const nodes: DirectionNode<T>[] = [];
+  for (const [name, rows] of byPerson) {
+    nodes.push({
+      project: name === "" ? null : personProject(name),
+      initiatives: [{ project: null, items: rows, progress: computeProgress(rows) }],
+      progress: computeProgress(rows),
+    });
+  }
+  // «Без исполнителя» — последним, как и «Без направления»: это остаток, а не человек.
+  nodes.sort((a, b) => {
+    if (a.project === null) return 1;
+    if (b.project === null) return -1;
+    return a.project.name.localeCompare(b.project.name);
+  });
+  return nodes;
+}
+
+/**
+ * Человек в роли направления. Настоящим проектом он не является и в базу не попадает —
+ * это подпись группы, поэтому идентификатор с префиксом `person:`: если такой id когда-то
+ * утечёт в запрос, он не совпадёт ни с одним проектом, вместо тихой подмены чужого.
+ */
+function personProject(name: string): Project {
+  return {
+    id: `person:${name}`,
+    group_id: "",
+    name,
+    color: null,
+    emoji: null,
+    parent_id: null,
+    sprint_id: null,
+    created_by: null,
+    created_at: "",
+    is_private: false,
+    owner_telegram_id: null,
+    start_date: null,
+    end_date: null,
+  };
+}
+
+/**
  * Пора ли считать молчание сигналом. С дня сверки неотмеченная задача помечается «не
  * отмечено» (D013): молчание не должно выглядеть как отсутствие проблем.
  *

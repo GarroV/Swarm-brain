@@ -10,7 +10,6 @@ import { useDt } from "@/components/roy/nav";
 export type SprintView =
   | "list"
   | "kanban"
-  | "check"
   | "initiatives"
   | "analytics"
   | "journal";
@@ -28,8 +27,11 @@ export function useSprintView(): [SprintView, (v: SprintView) => void] {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(KEY);
-      if (
-        saved === "list" || saved === "kanban" || saved === "check" ||
+      // «Сверка» была отдельным видом до 19.09.2026; её отметки переехали в строку списка.
+      // Тому, у кого она осталась запомненной, показываем список, а не пустой экран.
+      if (saved === "check") setView("list");
+      else if (
+        saved === "list" || saved === "kanban" ||
         saved === "initiatives" || saved === "analytics" ||
         saved === "journal"
       ) {
@@ -60,14 +62,11 @@ export function ViewToggle(
   const dt = useDt();
   const views: {
     id: SprintView;
-    icon: "task" | "board" | "check" | "graph" | "timeline" | "clock";
+    icon: "task" | "board" | "graph" | "timeline" | "clock";
     label: string;
   }[] = [
     { id: "list", icon: "task", label: dt("Список", "List") },
     { id: "kanban", icon: "board", label: dt("Канбан", "Kanban") },
-    // Сверка — та же линза на тот же состав, поэтому живёт в переключателе, а не отдельной
-    // вкладкой: ритуал идёт по спринту, который сейчас открыт.
-    { id: "check", icon: "check", label: dt("Сверка", "Check-in") },
     // «Все инициативы» — вид на ПРОСТРАНСТВО, а не на спринт: здесь видно и то, что в
     // спринт не попало. Стоит в том же ряду, потому что человек переключает не сущность,
     // а то, на что смотрит.
@@ -112,6 +111,73 @@ export function ViewToggle(
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Группировка списка: по инициативам (как работают) или по людям (как обходят на встрече).
+ * Жила отдельным экраном «Сверка», пока отметки не переехали в строку (владелец
+ * 19.09.2026): один состав, две линзы — это переключатель, а не второй экран.
+ */
+export type SprintGrouping = "initiatives" | "people";
+
+const GKEY = "swarm.sprints.grouping";
+
+export function useSprintGrouping(): [
+  SprintGrouping,
+  (v: SprintGrouping) => void,
+] {
+  const [grouping, setGrouping] = useState<SprintGrouping>("initiatives");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(GKEY);
+      if (saved === "initiatives" || saved === "people") setGrouping(saved);
+    } catch { /* приватное окно: останется группировка по инициативам */ }
+  }, []);
+
+  const choose = (v: SprintGrouping) => {
+    setGrouping(v);
+    try {
+      localStorage.setItem(GKEY, v);
+    } catch { /* не запомнили — не беда */ }
+  };
+
+  return [grouping, choose];
+}
+
+export function GroupingToggle(
+  { value, onChange }: {
+    value: SprintGrouping;
+    onChange: (v: SprintGrouping) => void;
+  },
+) {
+  const dt = useDt();
+  const opts: { id: SprintGrouping; label: string }[] = [
+    { id: "initiatives", label: dt("по инициативам", "by initiative") },
+    { id: "people", label: dt("по людям", "by person") },
+  ];
+  return (
+    <div className="mb-2 flex items-center gap-1 px-0.5">
+      <span className="mr-1 text-[11px] text-ink-soft">
+        {dt("группировать:", "group:")}
+      </span>
+      {opts.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          onClick={() => onChange(o.id)}
+          aria-pressed={value === o.id}
+          className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+            value === o.id
+              ? "border-primary/40 bg-primary/10 text-primary"
+              : "border-line bg-surface text-ink-soft hover:bg-surface-2"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }
