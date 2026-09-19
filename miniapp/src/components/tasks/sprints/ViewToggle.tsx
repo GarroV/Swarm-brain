@@ -12,7 +12,8 @@ export type SprintView =
   | "kanban"
   | "check"
   | "initiatives"
-  | "analytics";
+  | "analytics"
+  | "journal";
 
 const KEY = "swarm.sprints.view";
 
@@ -29,7 +30,8 @@ export function useSprintView(): [SprintView, (v: SprintView) => void] {
       const saved = localStorage.getItem(KEY);
       if (
         saved === "list" || saved === "kanban" || saved === "check" ||
-        saved === "initiatives" || saved === "analytics"
+        saved === "initiatives" || saved === "analytics" ||
+        saved === "journal"
       ) {
         setView(saved);
       }
@@ -58,7 +60,7 @@ export function ViewToggle(
   const dt = useDt();
   const views: {
     id: SprintView;
-    icon: "task" | "board" | "check" | "graph" | "timeline";
+    icon: "task" | "board" | "check" | "graph" | "timeline" | "clock";
     label: string;
   }[] = [
     { id: "list", icon: "task", label: dt("Список", "List") },
@@ -76,6 +78,7 @@ export function ViewToggle(
     },
     // Аналитика — тоже про пространство: семь таблиц по всем его спринтам.
     { id: "analytics", icon: "timeline", label: dt("Аналитика", "Analytics") },
+    { id: "journal", icon: "clock", label: dt("Журнал", "Journal") },
   ];
 
   return (

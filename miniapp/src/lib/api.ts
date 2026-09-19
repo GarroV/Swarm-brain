@@ -1,5 +1,5 @@
 import { getInitData } from "./telegram";
-import type { Me, Task, TaskLink, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, SprintCycle, SprintCycleDetail, SprintCycleItem, SprintStats, CheckStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote, MeetingNotes } from "@/types";
+import type { JournalEvent, Me, Task, TaskLink, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, SprintCycle, SprintCycleDetail, SprintCycleItem, SprintStats, CheckStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote, MeetingNotes } from "@/types";
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
@@ -989,6 +989,28 @@ let mockProjects: Project[] = [
   { id: "pr4", group_id: "cee", name: "Анализ ревизий", color: null, emoji: null, parent_id: null, sprint_id: "sp1", created_by: MOCK_COLLEAGUE, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
   { id: "pr4a", group_id: "cee", name: "Румыния июнь-август", color: null, emoji: null, parent_id: "pr4", sprint_id: null, created_by: MOCK_COLLEAGUE, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
 ];
+
+/**
+ * Журнал пространства: события по дням. `days` — 1, 3, 7 или "all" (сервер других не берёт).
+ * Приватные задачи в ленту не попадают: правило видимости живёт на сервере, и обходить его
+ * клиентским фильтром нельзя — он просто не получит этих строк.
+ */
+export async function fetchSpaceJournal(
+  tabId: string,
+  days: "1" | "3" | "7" | "all" = "7",
+): Promise<JournalEvent[]> {
+  if (DEV_MODE) {
+    const day = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+    return [
+      { at: day(0), kind: "check", actor: "Гарро", task_id: "p_onb", task_title: "Онбординг", text: "отметил риск: ждём ответа партнёра" },
+      { at: day(0), kind: "item_added", actor: "Гарро", task_id: "2", task_title: "Рекордер", text: "добавил в спринт «Спринт 41»" },
+      { at: day(1), kind: "task_change", actor: "Лена", task_id: "p_search", task_title: "Поиск по базе", text: "статус: открыто → в работе" },
+      { at: day(2), kind: "comment", actor: "Лена", task_id: "p_dig", task_title: "Дайджест", text: "нужен макет письма" },
+      { at: day(3), kind: "cycle_started", actor: "Гарро", task_id: null, task_title: null, text: "начал спринт «Спринт 41»" },
+    ];
+  }
+  return apiFetch<JournalEvent[]>(`/spaces/${encodeURIComponent(tabId)}/journal?days=${days}`);
+}
 
 export async function fetchProjects(): Promise<Project[]> {
   if (DEV_MODE) return [...mockProjects]; // копия: иначе оптимистичный append в UI дублирует (общая ссылка)

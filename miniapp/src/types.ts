@@ -162,6 +162,27 @@ export type SprintCycleItem = {
   hidden: boolean;
 };
 
+/** Событие журнала пространства: кто и что сделал. Пишется не в таблицу — собирается из
+ *  истории задач, комментариев и состава спринтов (`swarm-api/space-journal.ts`). */
+export type JournalKind =
+  | "task_change"
+  | "comment"
+  | "item_added"
+  | "check"
+  | "carry"
+  | "removed"
+  | "cycle_started"
+  | "cycle_accepted";
+
+export type JournalEvent = {
+  at: string;
+  kind: JournalKind;
+  actor: string | null;
+  task_id: string | null;
+  task_title: string | null;
+  text: string;
+};
+
 /** GET /sprint-cycles/:id отдаёт спринт вместе с составом — экран без него бесполезен. */
 export type SprintCycleDetail = SprintCycle & { items: SprintCycleItem[] };
 
