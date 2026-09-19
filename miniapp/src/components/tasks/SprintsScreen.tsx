@@ -344,6 +344,28 @@ export function SprintsScreen() {
     }
   }
 
+  // Строка «+ задача» внутри инициативы: задача рождается сразу в нужном проекте и в текущем
+  // спринте. Исполнитель — создатель (`me`), решение владельца 19.09.2026: у инициативы один
+  // владелец, а пишут в неё разные люди.
+  async function addTaskToInitiative(projectId: string | null, title: string) {
+    if (!detail) return;
+    const input = buildQuickAddInput(title, me, {
+      projectId: projectId ?? undefined,
+    });
+    if (!input) return;
+    try {
+      const created = await createTask(input);
+      setTasks((prev) => [created, ...prev]);
+      await addTasksToSprintCycle(detail.id, [created.id]);
+      await reloadDetail(detail.id);
+    } catch (e) {
+      setErr(
+        e instanceof Error ? e.message : dt("Не удалось добавить", "Failed to add"),
+      );
+      load();
+    }
+  }
+
   async function addToSprint(taskIds: string[]) {
     if (!detail) return;
     setBusy(true);
@@ -1039,6 +1061,8 @@ export function SprintsScreen() {
                         board={board}
                         unchecked={unchecked}
                         users={users}
+                        // Принятый спринт — слепок: в него не дописывают.
+                        onAdd={accepted ? undefined : addTaskToInitiative}
                         onOpen={(item) => {
                           // Открываем ЖИВУЮ задачу: строка спринта — это её отражение, и править
                           // надо задачу. У упоминания и приватной чужой открывать нечего — такие

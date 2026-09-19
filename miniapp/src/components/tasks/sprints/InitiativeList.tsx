@@ -96,9 +96,82 @@ function TaskRow(
 
 /** Инициатива: сворачивается, потому что на кросс-командном проекте их десятки, и
  *  развёрнутые все разом они превращают экран в ленту без структуры. */
+/** Строка «+ задача» внутри инициативы. Задача рождается здесь же, в этой инициативе и в
+ *  этом спринте, — а не заводится отдельно и потом набирается галочками из пула (#407).
+ *  Исполнитель — тот, кто создаёт (решение владельца 19.09.2026): у инициативы владелец
+ *  может быть один, а пишут в неё разные люди, и подстановка чужого имени в свою задачу
+ *  читается как назначение работы другому. */
+function AddTaskRow(
+  { projectId, onAdd }: {
+    projectId: string | null;
+    onAdd: (projectId: string | null, title: string) => Promise<void>;
+  },
+) {
+  const dt = useDt();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!title.trim() || busy) return;
+    setBusy(true);
+    try {
+      await onAdd(projectId, title.trim());
+      setTitle("");
+      // Не закрываем: подряд заводят несколько задач, и закрытие после каждой заставляет
+      // целиться в кнопку снова.
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="w-full rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-ink-soft/70 transition-colors hover:bg-surface-2 hover:text-ink"
+      >
+        {dt("+ задача", "+ task")}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-1.5">
+      <input
+        autoFocus
+        value={title}
+        disabled={busy}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+          if (e.key === "Escape") {
+            setTitle("");
+            setOpen(false);
+          }
+        }}
+        placeholder={dt("Название задачи", "Task name")}
+        className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 py-1 text-xs text-ink outline-none focus:border-[var(--accent-ink)]"
+      />
+      <button
+        type="button"
+        onClick={() => {
+          setTitle("");
+          setOpen(false);
+        }}
+        className="shrink-0 rounded-lg px-2 py-1 text-xs text-ink-soft hover:bg-surface-2"
+      >
+        {dt("готово", "done")}
+      </button>
+    </div>
+  );
+}
+
 function Initiative(
-  { node, collapsed, onToggle, unchecked, ownerName, onOpen }: {
+  { node, collapsed, onToggle, unchecked, ownerName, onOpen, onAdd }: {
     node: InitiativeNode;
+    onAdd?: (projectId: string | null, title: string) => Promise<void>;
     collapsed: boolean;
     onToggle: () => void;
     unchecked: boolean;
@@ -153,6 +226,7 @@ function Initiative(
               onOpen={onOpen}
             />
           ))}
+          {onAdd && <AddTaskRow projectId={node.project?.id ?? null} onAdd={onAdd} />}
         </div>
       )}
     </div>
@@ -166,11 +240,14 @@ function Initiative(
  * а строка задачи не должна знать про календарь ритуала.
  */
 export function InitiativeList(
-  { board, unchecked = false, users = [], onOpen }: {
+  { board, unchecked = false, users = [], onOpen, onAdd }: {
     board: DirectionNode[];
     unchecked?: boolean;
     users?: { telegram_id: number; name: string }[];
     onOpen?: (item: SprintCycleItem) => void;
+    /** Есть — внутри каждой инициативы появляется строка «+ задача». Нет — доска только читается
+     *  (принятый спринт, чужое пространство). */
+    onAdd?: (projectId: string | null, title: string) => Promise<void>;
   },
 ) {
   const dt = useDt();
@@ -234,6 +311,7 @@ export function InitiativeList(
                     unchecked={unchecked}
                     ownerName={ownerName}
                     onOpen={onOpen}
+                    onAdd={onAdd}
                   />
                 );
               })}
