@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<title>SWARM — макет экрана «Задачи»</title>
+<meta name="viewport" content="width=1440">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Токены — значения ядра forma dodo/core/dodo-ds.css. В продукте подключается сам файл. */
+:root{
+  --canvas:#EDEFF2; --surface:#FFF; --surface-2:#F7F9FB; --surface-3:#F2F4F7; --surface-head:#EDEFF2;
+  --ink:#1B2028; --ink-2:#5C6672; --ink-3:#626B77; --ink-empty:#B8C0C9;
+  --line:#ECEFF3; --line-strong:#DDE2E8; --line-control:#DCE1E7;
+  --accent:#1F4E9C; --accent-hover:#24589F; --accent-soft:#E8EEF8; --accent-line:#C9D9F0;
+  --warn:#B26B00; --warn-soft:#FFF9EC; --warn-mark:#E0A03A;
+  --ok:#1E8E5E; --bad:#C53030; --brand-purple:#5B3DEC;
+  --font-ui:'Golos Text',system-ui,sans-serif; --font-num:'IBM Plex Mono',ui-monospace,monospace;
+  --fs-display:20px; --fs-title:16px; --fs-lead:14px; --fs-body:13px; --fs-dense:12.5px; --fs-meta:11.5px; --fs-micro:10.5px;
+  --row:34px; --control-h:30px; --gutter:24px; --nav-w:232px; --detail-w:372px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:400 var(--fs-body)/1.45 var(--font-ui);color:var(--ink);background:var(--canvas);-webkit-font-smoothing:antialiased}
+.app{display:grid;grid-template-columns:var(--nav-w) 1fr var(--detail-w);height:100vh;min-width:1280px}
+
+/* ── ПАПКИ: постоянная левая навигация ───────────────────────── */
+.nav{background:var(--surface-2);border-right:1px solid var(--line-strong);display:flex;flex-direction:column}
+.ws{display:flex;align-items:center;gap:9px;padding:14px 14px 12px;border-bottom:1px solid var(--line)}
+.ws-mark{width:26px;height:26px;border-radius:7px;background:var(--ink);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;letter-spacing:.02em}
+.ws-name{font-weight:600;font-size:var(--fs-lead);letter-spacing:-.01em}
+.ws-sub{font-size:var(--fs-micro);color:var(--ink-3);text-transform:uppercase;letter-spacing:.1em}
+.nav-scroll{flex:1;overflow:auto;padding:10px 8px}
+.grp{font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.1em;color:var(--ink-empty);padding:14px 8px 5px;font-weight:600}
+.grp:first-child{padding-top:4px}
+.item{display:flex;align-items:center;gap:9px;height:30px;padding:0 8px;border-radius:6px;color:var(--ink-2);font-size:var(--fs-dense);cursor:default;transition:background .12s}
+.item:hover{background:var(--surface-3);color:var(--ink)}
+.item.on{background:var(--accent-soft);color:var(--accent);font-weight:600;box-shadow:inset 2px 0 0 var(--accent)}
+.item .ic{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;opacity:.85}
+.item .n{margin-left:auto;font:500 var(--fs-micro)/1 var(--font-num);color:var(--ink-3);background:var(--surface-3);padding:3px 5px;border-radius:4px}
+.item.on .n{background:#fff;color:var(--accent)}
+.nav-foot{border-top:1px solid var(--line);padding:8px}
+
+/* ── ЦЕНТР ───────────────────────────────────────────────────── */
+.main{display:flex;flex-direction:column;background:var(--surface);min-width:0}
+.top{display:flex;align-items:center;gap:12px;height:46px;padding:0 var(--gutter);border-bottom:1px solid var(--line)}
+h1{font-size:var(--fs-display);font-weight:700;letter-spacing:-.02em}
+.crumb{font-size:var(--fs-meta);color:var(--ink-3)}
+.search{margin-left:auto;display:flex;align-items:center;gap:7px;width:260px;height:var(--control-h);padding:0 9px;border:1px solid var(--line-control);border-radius:7px;background:var(--surface-2);color:var(--ink-empty);font-size:var(--fs-dense)}
+.kbd{margin-left:auto;font:500 var(--fs-micro)/1 var(--font-num);border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:4px;padding:3px 4px;color:var(--ink-3);background:#fff}
+.me{width:26px;height:26px;border-radius:50%;background:var(--brand-purple);color:#fff;display:grid;place-items:center;font-size:var(--fs-micro);font-weight:600}
+
+/* ── ВКЛАДКИ: второй уровень ─────────────────────────────────── */
+.tabs{display:flex;gap:2px;padding:0 var(--gutter);border-bottom:1px solid var(--line);background:var(--surface)}
+.tab{position:relative;padding:9px 11px 10px;font-size:var(--fs-dense);color:var(--ink-3);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:default}
+.tab:hover{color:var(--ink)}
+.tab.on{color:var(--ink);font-weight:600;border-bottom-color:var(--accent)}
+.tab .c{font:500 var(--fs-micro)/1 var(--font-num);color:var(--ink-empty);margin-left:5px}
+
+.bar{display:flex;align-items:center;gap:6px;padding:9px var(--gutter);border-bottom:1px solid var(--line);background:var(--surface-2)}
+.chip{display:flex;align-items:center;gap:5px;height:26px;padding:0 9px;border:1px solid var(--line-control);border-radius:13px;background:#fff;font-size:var(--fs-meta);color:var(--ink-2);cursor:default}
+.chip:hover{border-color:var(--line-control);background:var(--surface-3)}
+.chip.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent);font-weight:600}
+.chip .x{color:var(--ink-empty);font-size:13px;line-height:1}
+.bar .right{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:var(--fs-meta);color:var(--ink-3)}
+.bar .right b{font:500 var(--fs-num)/1 var(--font-num);color:var(--ink)}
+
+/* ── ТАБЛИЦА ─────────────────────────────────────────────────── */
+.list{flex:1;overflow:auto}
+table{width:100%;border-collapse:collapse}
+thead th{position:sticky;top:0;z-index:1;background:var(--surface-head);text-align:left;font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);font-weight:600;padding:7px 12px;border-bottom:1px solid var(--line-strong);white-space:nowrap}
+thead th.r,td.r{text-align:right}
+tbody tr{height:var(--row);border-bottom:1px solid var(--line);cursor:default}
+tbody tr:hover{background:var(--surface-2)}
+tbody tr.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+td{padding:0 12px;font-size:var(--fs-dense);color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+td.t{color:var(--ink);font-weight:500;max-width:0;width:44%}
+tbody tr.sel td.t{font-weight:600}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:9px;vertical-align:1px}
+.d-todo{background:var(--ink-empty)}.d-doing{background:var(--accent)}.d-wait{background:var(--warn-mark)}.d-done{background:var(--ok)}
+.tag{display:inline-block;padding:2px 6px;border-radius:4px;font-size:var(--fs-micro);font-weight:600;letter-spacing:.02em}
+.tag-p{background:#EFEBFF;color:#4A2FD0}.tag-m{background:var(--accent-soft);color:var(--accent)}.tag-o{background:#FFE8DA;color:#B04516}
+.av{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;font-size:var(--fs-micro);font-weight:600;color:#fff;margin-right:6px;vertical-align:-5px}
+.due{font:500 var(--fs-num)/1 var(--font-num)}
+.due.now{color:var(--bad);font-weight:600}.due.soon{color:var(--warn)}
+.pri{font:500 var(--fs-num-sm,10.5px)/1 var(--font-num);color:var(--ink-3)}
+.pri.hi{color:var(--bad);font-weight:600}
+.sect td{background:var(--surface-3);font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);font-weight:600;height:26px}
+
+/* ── ДЕТАЛЬ: панель, а не модалка поверх ─────────────────────── */
+.detail{background:var(--surface-2);border-left:1px solid var(--line-strong);display:flex;flex-direction:column;box-shadow:-1px 0 0 rgba(27,32,40,.03)}
+.d-head{padding:16px var(--gutter) 13px;background:var(--surface);border-bottom:1px solid var(--line)}
+.d-crumb{font-size:var(--fs-micro);color:var(--ink-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px}
+.d-title{font-size:var(--fs-title);font-weight:600;letter-spacing:-.01em;line-height:1.3}
+.d-acts{display:flex;gap:6px;margin-top:12px}
+.btn{height:var(--control-h);padding:0 12px;border:1px solid var(--line-control);border-radius:7px;background:#fff;font:500 var(--fs-dense)/1 var(--font-ui);color:var(--ink-2);display:grid;place-items:center;cursor:default}
+.btn:hover{border-color:var(--line-strong);background:var(--surface-2)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.pri:hover{background:var(--accent-hover)}
+.d-body{flex:1;overflow:auto;padding:14px var(--gutter)}
+.f{display:grid;grid-template-columns:86px 1fr;gap:7px 12px;font-size:var(--fs-dense);align-items:center}
+.f dt{color:var(--ink-3);font-size:var(--fs-meta)}
+.f dd{color:var(--ink)}
+.lab{font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.1em;color:var(--ink-empty);font-weight:600;margin:18px 0 7px;padding-top:14px;border-top:1px solid var(--line)}
+.note{background:#fff;border:1px solid var(--line);border-radius:9px;padding:11px 12px;font-size:var(--fs-dense);color:var(--ink-2);line-height:1.5}
+.note em{color:var(--accent);font-style:normal;font-weight:600}
+.src{display:flex;align-items:center;gap:8px;background:var(--warn-soft);border:1px solid #F0E2C2;border-radius:9px;padding:9px 11px;font-size:var(--fs-meta);color:var(--warn)}
+.cm{display:flex;gap:9px;margin-top:11px}
+.cm .b{background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px 11px;font-size:var(--fs-dense);color:var(--ink-2);flex:1}
+.cm .w{font-size:var(--fs-micro);color:var(--ink-3);margin-bottom:3px}
+.cm .w b{color:var(--ink);font-weight:600}
+/* подпись макета */
+.stamp{position:fixed;right:10px;bottom:8px;font:500 10px/1 var(--font-num);color:var(--ink-empty);letter-spacing:.08em}
+</style></head>
+<body><div class="app">
+
+<aside class="nav">
+  <div class="ws"><div class="ws-mark">S</div><div><div class="ws-name">SWARM</div><div class="ws-sub">IMF BD</div></div></div>
+  <div class="nav-scroll">
+    <div class="grp">Работа</div>
+    <div class="item on"><svg class="ic" viewBox="0 0 16 16"><path d="M3 8.5 6 11.5 13 4.5"/></svg>Задачи<span class="n">42</span></div>
+    <div class="item"><svg class="ic" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/><path d="M2.5 6.5h11"/></svg>Проекты<span class="n">7</span></div>
+    <div class="item"><svg class="ic" viewBox="0 0 16 16"><path d="M2.5 12.5V7m3.7 5.5v-9m3.6 9v-6m3.7 6v-3"/></svg>Спринты<span class="n">2</span></div>
+    <div class="grp">Знание</div>
+    <div class="item"><svg class="ic" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v3m5-3v3"/></svg>Встречи<span class="n">5</span></div>
+    <div class="item"><svg class="ic" viewBox="0 0 16 16"><path d="M3 3.5h4.2a1.8 1.8 0 0 1 1.8 1.8v7.2M13 3.5H8.8A1.8 1.8 0 0 0 7 5.3v7.2"/></svg>База</div>
+    <div class="item"><svg class="ic" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 14 14"/></svg>Ответ</div>
+    <div class="grp">Люди</div>
+    <div class="item"><svg class="ic" viewBox="0 0 16 16"><circle cx="6" cy="6" r="2.3"/><path d="M2 13c0-2.2 1.8-3.6 4-3.6s4 1.4 4 3.6M11 5.6a2 2 0 0 1 0 3.8M11.6 13c0-1.6-.6-2.6-1.4-3.2"/></svg>Команда<span class="n">12</span></div>
+  </div>
+  <div class="nav-foot">
+    <div class="item"><svg class="ic" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.8m0 8.8v1.8m6.2-6.2h-1.8M3.6 8H1.8"/></svg>Настройки</div>
+    <div class="item"><svg class="ic" viewBox="0 0 16 16"><path d="M8 2 3 4.2v4c0 3 2.1 5 5 5.8 2.9-.8 5-2.8 5-5.8v-4z"/></svg>Админ</div>
+    <div class="item"><svg class="ic" viewBox="0 0 16 16"><circle cx="4.5" cy="4.5" r="2"/><circle cx="11.5" cy="11.5" r="2"/><path d="M6.5 4.5h3a2 2 0 0 1 2 2v3"/></svg>Карта системы</div>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="top">
+    <div><div class="crumb">Работа</div><h1>Задачи</h1></div>
+    <div class="search"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 14 14"/></svg>Поиск по задачам и базе<span class="kbd">⌘K</span></div>
+    <div class="me">ВГ</div>
+  </div>
+
+  <nav class="tabs">
+    <div class="tab on">Мои <span class="c">8</span></div>
+    <div class="tab">Команда <span class="c">42</span></div>
+    <div class="tab">Пул <span class="c">6</span></div>
+    <div class="tab">Из встреч <span class="c">3</span></div>
+    <div class="tab">Архив</div>
+  </nav>
+
+  <div class="bar">
+    <div class="chip on">Проект: Открытие CEE <span class="x">×</span></div>
+    <div class="chip">Срок: любой</div>
+    <div class="chip">Исполнитель: все</div>
+    <div class="chip">+ Фильтр</div>
+    <div class="right"><span>Просрочено <b>3</b></span><span>На неделе <b>11</b></span><span>Всего <b>42</b></span></div>
+  </div>
+
+  <div class="list"><table>
+    <thead><tr><th style="width:44%">Задача</th><th>Проект</th><th>Исполнитель</th><th>Метка</th><th class="r">Срок</th><th class="r">Приор.</th></tr></thead>
+    <tbody>
+      <tr class="sect"><td colspan="6">Просрочено · 3</td></tr>
+      <tr class="sel"><td class="t"><span class="dot d-doing"></span>Согласовать смету по оборудованию кухни</td><td>Открытие CEE</td><td><span class="av" style="background:#5B3DEC">АК</span>А. Ковач</td><td><span class="tag tag-o">закупки</span></td><td class="r"><span class="due now">17 сен</span></td><td class="r"><span class="pri hi">P1</span></td></tr>
+      <tr><td class="t"><span class="dot d-wait"></span>Ответить франчайзи по срокам поставки</td><td>Открытие CEE</td><td><span class="av" style="background:#1F4E9C">МД</span>М. Дам</td><td><span class="tag tag-m">встреча</span></td><td class="r"><span class="due now">18 сен</span></td><td class="r"><span class="pri hi">P1</span></td></tr>
+      <tr><td class="t"><span class="dot d-todo"></span>Уточнить санитарные требования по площадке</td><td>Открытие CEE</td><td><span class="av" style="background:#1E8E5E">ИП</span>И. Пет</td><td><span class="tag tag-p">процесс</span></td><td class="r"><span class="due now">18 сен</span></td><td class="r"><span class="pri">P2</span></td></tr>
+      <tr class="sect"><td colspan="6">На этой неделе · 5</td></tr>
+      <tr><td class="t"><span class="dot d-doing"></span>Собрать тезисы встречи с поставщиком упаковки</td><td>Операции</td><td><span class="av" style="background:#5B3DEC">АК</span>А. Ковач</td><td><span class="tag tag-m">встреча</span></td><td class="r"><span class="due soon">22 сен</span></td><td class="r"><span class="pri">P2</span></td></tr>
+      <tr><td class="t"><span class="dot d-todo"></span>Проверить чек-лист открытия перед запуском</td><td>Открытие CEE</td><td><span class="av" style="background:#C53030">ЕС</span>Е. Сав</td><td><span class="tag tag-p">процесс</span></td><td class="r"><span class="due soon">23 сен</span></td><td class="r"><span class="pri">P2</span></td></tr>
+      <tr><td class="t"><span class="dot d-todo"></span>Обновить обучающие материалы для смены</td><td>Персонал</td><td><span class="av" style="background:#1F4E9C">МД</span>М. Дам</td><td><span class="tag tag-p">обучение</span></td><td class="r"><span class="due">24 сен</span></td><td class="r"><span class="pri">P3</span></td></tr>
+      <tr><td class="t"><span class="dot d-done"></span>Свести расходы по логистике за август</td><td>Финансы</td><td><span class="av" style="background:#1E8E5E">ИП</span>И. Пет</td><td><span class="tag tag-o">отчёт</span></td><td class="r"><span class="due">25 сен</span></td><td class="r"><span class="pri">P3</span></td></tr>
+      <tr><td class="t"><span class="dot d-todo"></span>Назначить ответственного за приёмку мебели</td><td>Открытие CEE</td><td style="color:var(--ink-empty)">— не назначен</td><td><span class="tag tag-o">закупки</span></td><td class="r"><span class="due">26 сен</span></td><td class="r"><span class="pri">P2</span></td></tr>
+      <tr class="sect"><td colspan="6">Позже · 4</td></tr>
+      <tr><td class="t"><span class="dot d-todo"></span>Описать процесс передачи смены</td><td>Операции</td><td><span class="av" style="background:#5B3DEC">АК</span>А. Ковач</td><td><span class="tag tag-p">процесс</span></td><td class="r"><span class="due">2 окт</span></td><td class="r"><span class="pri">P3</span></td></tr>
+      <tr><td class="t"><span class="dot d-todo"></span>Сверить меню с локальными поставщиками</td><td>Открытие CEE</td><td><span class="av" style="background:#1E8E5E">ИП</span>И. Пет</td><td><span class="tag tag-o">закупки</span></td><td class="r"><span class="due">6 окт</span></td><td class="r"><span class="pri">P3</span></td></tr>
+      <tr><td class="t"><span class="dot d-todo"></span>Подготовить отчёт по первому месяцу работы</td><td>Финансы</td><td><span class="av" style="background:#C53030">ЕС</span>Е. Сав</td><td><span class="tag tag-o">отчёт</span></td><td class="r"><span class="due">14 окт</span></td><td class="r"><span class="pri">P3</span></td></tr>
+    </tbody>
+  </table></div>
+</main>
+
+<aside class="detail">
+  <div class="d-head">
+    <div class="d-crumb">Открытие CEE · Задача 128</div>
+    <div class="d-title">Согласовать смету по оборудованию кухни</div>
+    <div class="d-acts"><button class="btn pri">Взять в работу</button><button class="btn">Передать</button><button class="btn">⋯</button></div>
+  </div>
+  <div class="d-body">
+    <dl class="f">
+      <dt>Статус</dt><dd><span class="dot d-doing"></span>В работе</dd>
+      <dt>Исполнитель</dt><dd><span class="av" style="background:#5B3DEC">АК</span>А. Ковач</dd>
+      <dt>Срок</dt><dd><span class="due now">17 сен</span> <span style="color:var(--bad);font-size:var(--fs-meta)">· просрочено на 2 дня</span></dd>
+      <dt>Приоритет</dt><dd><span class="pri hi">P1</span></dd>
+      <dt>Метки</dt><dd><span class="tag tag-o">закупки</span></dd>
+    </dl>
+    <div class="lab">Откуда задача</div>
+    <div class="src"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11"/></svg>Из встречи «Планёрка по открытию» · 15 сен</div>
+    <div class="lab">Описание</div>
+    <div class="note">Смета от поставщика пришла выше бюджета на <em>14%</em>. Нужно свести позиции с тем, что уже согласовано, и вынести расхождение на планёрку.</div>
+    <div class="lab">Обсуждение · 2</div>
+    <div class="cm"><span class="av" style="background:#1F4E9C">МД</span><div class="b"><div class="w"><b>М. Дам</b> · вчера</div>Поставщик готов держать цену до конца недели.</div></div>
+    <div class="cm"><span class="av" style="background:#5B3DEC">АК</span><div class="b"><div class="w"><b>А. Ковач</b> · 3 ч назад</div>Свожу позиции, к завтрашней планёрке будет разбивка.</div></div>
+  </div>
+</aside>
+
+</div><div class="stamp">МАКЕТ · НЕ ЖИВОЙ ПРОДУКТ · ТОКЕНЫ forma dodo/core</div></body></html>
