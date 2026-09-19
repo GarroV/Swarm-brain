@@ -162,6 +162,20 @@ export function SprintsScreen() {
 
   const [cycles, setCycles] = useState<SprintCycle[]>([]);
   const [spaces, setSpaces] = useState<Sprint[]>([]);
+  // Панель «Задачи» слева: нужна только при наборе состава. Выбор помнится между заходами —
+  // как у переключателя видов (замечание владельца 19.09.2026).
+  const [poolOpen, setPoolOpen] = useState(true);
+  useEffect(() => {
+    try {
+      setPoolOpen(localStorage.getItem("swarm.sprints.pool") !== "0");
+    } catch { /* приватное окно — просто оставляем открытой */ }
+  }, []);
+  function togglePool(next: boolean) {
+    setPoolOpen(next);
+    try {
+      localStorage.setItem("swarm.sprints.pool", next ? "1" : "0");
+    } catch { /* приватное окно — панель просто не запомнится */ }
+  }
   // Переименование спринта: null — не правим, иначе черновик имени. Спринт, названный датами
   // при создании, со временем получает смысл («Запуск Эстонии»), и менять имя должно быть
   // можно, не пересоздавая период (#403).
@@ -949,6 +963,17 @@ export function SprintsScreen() {
                       : dt("Открыть отчёт", "Open report")}
                   </Button>
                 )}
+                {isDesktop && !accepted && !poolOpen && (
+                  <button
+                    onClick={() => togglePool(true)}
+                    className="rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-semibold text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink dark:backdrop-blur-sm"
+                  >
+                    {dt("Задачи", "Tasks")}
+                    <span className="ml-1 tabular-nums opacity-60">
+                      {poolTasks.length}
+                    </span>
+                  </button>
+                )}
                 {isAdmin && !accepted && (
                   <button
                     onClick={removeCycle}
@@ -984,13 +1009,14 @@ export function SprintsScreen() {
               }
               {accepted
                 ? (reportOpen && <SprintReport cycle={detail} />)
-                : isDesktop && (
+                : isDesktop && poolOpen && (
                   <SprintTaskPool
                     tasks={poolTasks}
                     projects={projects}
                     users={users}
                     adding={busy}
                     onAdd={addToSprint}
+                    onHide={() => togglePool(false)}
                   />
                 )}
               {showJournal

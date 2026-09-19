@@ -37,7 +37,7 @@ const triggerCls =
   "w-full min-h-9 h-9 rounded-[10px] border-line bg-surface px-2.5 text-sm text-ink data-[size=default]:h-9 dark:backdrop-blur-sm dark:bg-surface";
 
 export function SprintTaskPool(
-  { tasks, projects, users, disabled, adding, onAdd }: {
+  { tasks, projects, users, disabled, adding, onAdd, onHide }: {
     /** Задачи, доступные к добавлению: экран уже убрал взятые в спринт и закрытые. */
     tasks: Task[];
     projects: Project[];
@@ -46,6 +46,8 @@ export function SprintTaskPool(
     disabled?: boolean;
     adding?: boolean;
     onAdd: (taskIds: string[]) => void;
+    /** Есть — в шапке появляется крестик, прячущий панель. */
+    onHide?: () => void;
   },
 ) {
   const dt = useDt();
@@ -114,6 +116,22 @@ export function SprintTaskPool(
           {dt("Задачи", "Tasks")}
         </span>
         <span className="ml-auto text-xs text-ink-soft">{visible.length}</span>
+        {
+          /* Пул нужен только когда набирают состав; всё остальное время он занимает половину
+            ширины и мешает смотреть доску (замечание владельца 19.09.2026). Прячется крестиком,
+            возвращается кнопкой в шапке спринта; выбор помнится между заходами. */
+        }
+        {onHide && (
+          <button
+            type="button"
+            onClick={onHide}
+            title={dt("Скрыть задачи", "Hide tasks")}
+            aria-label={dt("Скрыть задачи", "Hide tasks")}
+            className="rounded-full p-1 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink"
+          >
+            <RoyIcon name="cleft" size={13} />
+          </button>
+        )}
       </div>
 
       <div className="space-y-1.5 p-2 border-b border-line">
