@@ -25,6 +25,7 @@ import { useDt, useRoyNav } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { AcceptDialog, type AcceptSubmit } from "@/components/tasks/sprints/AcceptDialog";
 import { AllInitiatives } from "@/components/tasks/sprints/AllInitiatives";
+import { AnalyticsScreen } from "@/components/tasks/sprints/AnalyticsScreen";
 import { CheckScreen } from "@/components/tasks/sprints/CheckScreen";
 import { BoardSkeleton, InitiativeList } from "@/components/tasks/sprints/InitiativeList";
 import { SpaceSwitcher } from "@/components/tasks/sprints/SpaceSwitcher";
@@ -360,6 +361,7 @@ export function SprintsScreen() {
   const showList = effectiveView === "list";
   const showCheck = effectiveView === "check";
   const showInitiatives = effectiveView === "initiatives";
+  const showAnalytics = effectiveView === "analytics";
 
   // Задачи пространства — для «Всех инициатив»: правило принадлежности в lib/initiatives
   // под тестами, потому что ошибка тут молчит и показывает чужую стройку как свою.
@@ -574,7 +576,11 @@ export function SprintsScreen() {
             {accepted
               ? (reportOpen && <SprintReport cycle={detail} />)
               : isDesktop && <SprintTaskPool tasks={poolTasks} projects={projects} adding={busy} onAdd={addToSprint} />}
-            {showInitiatives ? (
+            {showAnalytics ? (
+              <AnalyticsScreen cycles={spaceCycles} current={detail} projects={projects}
+                tasks={spaceTasks} users={users} space={space}
+                spaceName={spaces.find((s) => s.id === space)?.name ?? dt("Без пространства", "No space")} />
+            ) : showInitiatives ? (
               <AllInitiatives tasks={spaceTasks} projects={projects} users={users}
                 inSprint={inSprint} sprintName={liveCycle?.name ?? null}
                 onAddToSprint={(taskId) => { if (liveCycle) addToSprint([taskId]); }}

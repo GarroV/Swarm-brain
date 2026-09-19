@@ -7,7 +7,12 @@ import { useDt } from "@/components/roy/nav";
 // владельца: «Список + канбан переключателем»): вид — это привычка смотреть, и сбрасывать
 // его на каждом заходе значит переключать вручную по десять раз в день.
 
-export type SprintView = "list" | "kanban" | "check" | "initiatives";
+export type SprintView =
+  | "list"
+  | "kanban"
+  | "check"
+  | "initiatives"
+  | "analytics";
 
 const KEY = "swarm.sprints.view";
 
@@ -24,7 +29,7 @@ export function useSprintView(): [SprintView, (v: SprintView) => void] {
       const saved = localStorage.getItem(KEY);
       if (
         saved === "list" || saved === "kanban" || saved === "check" ||
-        saved === "initiatives"
+        saved === "initiatives" || saved === "analytics"
       ) {
         setView(saved);
       }
@@ -53,7 +58,7 @@ export function ViewToggle(
   const dt = useDt();
   const views: {
     id: SprintView;
-    icon: "task" | "board" | "check" | "graph";
+    icon: "task" | "board" | "check" | "graph" | "timeline";
     label: string;
   }[] = [
     { id: "list", icon: "task", label: dt("Список", "List") },
@@ -69,6 +74,8 @@ export function ViewToggle(
       icon: "graph",
       label: dt("Инициативы", "Initiatives"),
     },
+    // Аналитика — тоже про пространство: семь таблиц по всем его спринтам.
+    { id: "analytics", icon: "timeline", label: dt("Аналитика", "Analytics") },
   ];
 
   return (
