@@ -88,6 +88,11 @@ export function SprintTaskPool(
     return name === POOL_ALL ? dt("Все исполнители", "All assignees") : name;
   };
 
+  // Пока ни один фильтр не выбран и поиск пуст — список не показывается вовсе (владелец
+  // 19.09.2026). Девяносто строк стеной не помогают выбрать: человек всё равно сперва
+  // сужает до проекта, исполнителя или слова в названии.
+  const idle = !query.trim() && projectId === POOL_ALL && assignee === POOL_ALL;
+
   const visible = useMemo(
     () => filterPoolTasks(tasks, projects, { query, projectId, assignee }),
     [tasks, projects, query, projectId, assignee],
@@ -115,7 +120,9 @@ export function SprintTaskPool(
         <span className="text-sm font-bold text-ink">
           {dt("Задачи", "Tasks")}
         </span>
-        <span className="ml-auto text-xs text-ink-soft">{visible.length}</span>
+        <span className="ml-auto text-xs text-ink-soft">
+          {idle ? tasks.length : visible.length}
+        </span>
         {
           /* Пул нужен только когда набирают состав; всё остальное время он занимает половину
             ширины и мешает смотреть доску (замечание владельца 19.09.2026). Прячется крестиком,
@@ -216,7 +223,15 @@ export function SprintTaskPool(
       )}
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-        {visible.length === 0 && (
+        {idle && (
+          <p className="py-6 text-center text-xs text-ink-soft/70">
+            {dt(
+              "Выберите проект или исполнителя — или начните печатать название",
+              "Pick a project or an assignee — or start typing a name",
+            )}
+          </p>
+        )}
+        {!idle && visible.length === 0 && (
           <p className="py-6 text-center text-xs text-ink-soft/70">
             {tasks.length === 0
               ? dt(
@@ -229,7 +244,7 @@ export function SprintTaskPool(
               )}
           </p>
         )}
-        {visible.map((t) => {
+        {!idle && visible.map((t) => {
           const on = picked.has(t.id);
           const project = projectName(t.project_id);
           return (
