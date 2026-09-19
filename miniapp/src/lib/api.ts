@@ -1,5 +1,28 @@
 import { getInitData } from "./telegram";
-import type { JournalEvent, Me, Task, TaskLink, User, Entry, Integration, GranolaNote, AdminWorkspace, AdminUser, Sprint, SprintStatus, SprintCycle, SprintCycleDetail, SprintCycleItem, SprintStats, CheckStatus, Project, AgentMeeting, MarketSuggestion, MeetingLiveNote, MeetingNotes } from "@/types";
+import type {
+  AdminUser,
+  AdminWorkspace,
+  AgentMeeting,
+  CheckStatus,
+  Entry,
+  GranolaNote,
+  Integration,
+  JournalEvent,
+  MarketSuggestion,
+  Me,
+  MeetingLiveNote,
+  MeetingNotes,
+  Project,
+  Sprint,
+  SprintCycle,
+  SprintCycleDetail,
+  SprintCycleItem,
+  SprintStats,
+  SprintStatus,
+  Task,
+  TaskLink,
+  User,
+} from "@/types";
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
@@ -38,7 +61,10 @@ export type CreateTaskInput = {
   links?: TaskLink[];
 };
 
-export type UpdateTaskInput = Partial<CreateTaskInput> & { status?: string; project_linked?: boolean };
+export type UpdateTaskInput = Partial<CreateTaskInput> & {
+  status?: string;
+  project_linked?: boolean;
+};
 
 export type TaskFilters = {
   status?: string;
@@ -111,9 +137,27 @@ const MOCK_ME: Me = {
 };
 
 const MOCK_USERS: User[] = [
-  { telegram_id: 123456, name: "Dev User", username: "devuser", role: "bd", markets: ["KZ"] },
-  { telegram_id: 789012, name: "Alice Smith", username: "alice", role: "marketing", markets: ["PL"] },
-  { telegram_id: 345678, name: "Bob Jones", username: "bob", role: "rnd", markets: ["RS", "ME"] },
+  {
+    telegram_id: 123456,
+    name: "Dev User",
+    username: "devuser",
+    role: "bd",
+    markets: ["KZ"],
+  },
+  {
+    telegram_id: 789012,
+    name: "Alice Smith",
+    username: "alice",
+    role: "marketing",
+    markets: ["PL"],
+  },
+  {
+    telegram_id: 345678,
+    name: "Bob Jones",
+    username: "bob",
+    role: "rnd",
+    markets: ["RS", "ME"],
+  },
 ];
 
 // Срок/пинг мок-задачи ОТНОСИТЕЛЬНО сегодня: жёсткие даты протухают (были «июнь 2026» — к
@@ -122,90 +166,318 @@ const MOCK_USERS: User[] = [
 function mockDay(daysFromToday: number): string {
   const d = new Date();
   d.setDate(d.getDate() + daysFromToday);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${
+    String(d.getDate()).padStart(2, "0")
+  }`;
 }
 
 // Демо-фабрика задачи (моки DEV_MODE) — сокращает шум при наполнении дерева.
 function mkMock(o: Partial<Task> & { id: string; title: string }): Task {
   return {
-    id: o.id, title: o.title, description: o.description ?? null,
-    assignees: o.assignees ?? [], assignee_telegram_ids: o.assignee_telegram_ids ?? [],
-    due_date: o.due_date ?? null, remind_date: o.remind_date ?? null, reminded_at: o.reminded_at ?? null,
-    tags: o.tags ?? [], country: o.country ?? null,
-    task_role: o.task_role ?? null, priority: o.priority ?? null, source: "mini_app",
-    status: o.status ?? "open", created_at: new Date().toISOString(), updated_at: null,
-    meeting_id: null, url: null, group_id: "cee", created_by_name: o.created_by_name ?? "Dev User",
-    is_private: false, owner_id: null, start_date: null, timeline_position: null, sprint_id: null,
-    label_ids: o.label_ids ?? [], project_id: o.project_id ?? null, project_linked: o.project_linked ?? false,
-    parent_id: o.parent_id ?? null, tree_x: o.tree_x ?? null, tree_y: o.tree_y ?? null,
-    recur_freq: o.recur_freq ?? null, recur_anchor_dom: o.recur_anchor_dom ?? null,
+    id: o.id,
+    title: o.title,
+    description: o.description ?? null,
+    assignees: o.assignees ?? [],
+    assignee_telegram_ids: o.assignee_telegram_ids ?? [],
+    due_date: o.due_date ?? null,
+    remind_date: o.remind_date ?? null,
+    reminded_at: o.reminded_at ?? null,
+    tags: o.tags ?? [],
+    country: o.country ?? null,
+    task_role: o.task_role ?? null,
+    priority: o.priority ?? null,
+    source: "mini_app",
+    status: o.status ?? "open",
+    created_at: new Date().toISOString(),
+    updated_at: null,
+    meeting_id: null,
+    url: null,
+    group_id: "cee",
+    created_by_name: o.created_by_name ?? "Dev User",
+    is_private: false,
+    owner_id: null,
+    start_date: null,
+    timeline_position: null,
+    sprint_id: null,
+    label_ids: o.label_ids ?? [],
+    project_id: o.project_id ?? null,
+    project_linked: o.project_linked ?? false,
+    parent_id: o.parent_id ?? null,
+    tree_x: o.tree_x ?? null,
+    tree_y: o.tree_y ?? null,
+    recur_freq: o.recur_freq ?? null,
+    recur_anchor_dom: o.recur_anchor_dom ?? null,
   };
 }
 let mockTasks: Task[] = [
-  mkMock({ id: "1", title: "Prepare Q2 report", description: "Collect metrics and draft slides", due_date: mockDay(0), remind_date: mockDay(7), country: "KZ", task_role: "bd", priority: "high" }),
-  mkMock({ id: "2", title: "Design landing page", country: "PL", task_role: "marketing", priority: "med", status: "in_progress", created_by_name: "Alice Smith" }),
+  mkMock({
+    id: "1",
+    title: "Prepare Q2 report",
+    description: "Collect metrics and draft slides",
+    due_date: mockDay(0),
+    remind_date: mockDay(7),
+    country: "KZ",
+    task_role: "bd",
+    priority: "high",
+  }),
+  mkMock({
+    id: "2",
+    title: "Design landing page",
+    country: "PL",
+    task_role: "marketing",
+    priority: "med",
+    status: "in_progress",
+    created_by_name: "Alice Smith",
+  }),
   // Выполненная задача СО СПИСКОМ — покрытие того, что чипы списков у неё не пропадают
   // (решение владельца 2026-08-28). Без этого случая мок не показывал разницы вообще.
-  mkMock({ id: "3", title: "Review contracts", due_date: mockDay(-40), task_role: "rnd", priority: "low", status: "done", created_by_name: null, label_ids: ["l-it"] }),
+  mkMock({
+    id: "3",
+    title: "Review contracts",
+    due_date: mockDay(-40),
+    task_role: "rnd",
+    priority: "low",
+    status: "done",
+    created_by_name: null,
+    label_ids: ["l-it"],
+  }),
   // ── доп. мок-задачи для проверки тумблеров «По рынкам»/«Все сотрудники» (разные исполнители/страны) ──
-  mkMock({ id: "4", title: "Kazakhstan pricing review", country: "KZ", assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: mockDay(2), remind_date: mockDay(1) }),
-  mkMock({ id: "5", title: "Poland launch checklist", country: "PL", assignees: ["Alice Smith"], assignee_telegram_ids: [789012], due_date: mockDay(9), remind_date: mockDay(-1), reminded_at: new Date().toISOString(), created_by_name: "Alice Smith" }),
-  mkMock({ id: "6", title: "Serbia distributor call", country: "RS", assignees: ["Bob Jones"], assignee_telegram_ids: [345678], due_date: mockDay(21), created_by_name: "Bob Jones" }),
-  mkMock({ id: "7", title: "Montenegro market scan", country: "ME", assignees: ["Bob Jones"], assignee_telegram_ids: [345678], created_by_name: "Bob Jones" }),
-  mkMock({ id: "8", title: "General team retro notes", assignees: [], assignee_telegram_ids: [], is_private: false }),
+  mkMock({
+    id: "4",
+    title: "Kazakhstan pricing review",
+    country: "KZ",
+    assignees: ["Dev User"],
+    assignee_telegram_ids: [123456],
+    due_date: mockDay(2),
+    remind_date: mockDay(1),
+  }),
+  mkMock({
+    id: "5",
+    title: "Poland launch checklist",
+    country: "PL",
+    assignees: ["Alice Smith"],
+    assignee_telegram_ids: [789012],
+    due_date: mockDay(9),
+    remind_date: mockDay(-1),
+    reminded_at: new Date().toISOString(),
+    created_by_name: "Alice Smith",
+  }),
+  mkMock({
+    id: "6",
+    title: "Serbia distributor call",
+    country: "RS",
+    assignees: ["Bob Jones"],
+    assignee_telegram_ids: [345678],
+    due_date: mockDay(21),
+    created_by_name: "Bob Jones",
+  }),
+  mkMock({
+    id: "7",
+    title: "Montenegro market scan",
+    country: "ME",
+    assignees: ["Bob Jones"],
+    assignee_telegram_ids: [345678],
+    created_by_name: "Bob Jones",
+  }),
+  mkMock({
+    id: "8",
+    title: "General team retro notes",
+    assignees: [],
+    assignee_telegram_ids: [],
+    is_private: false,
+  }),
   // ── регулярные задачи: без них смарт-список «Регулярные» скрыт и его не посмотреть ──
-  mkMock({ id: "9", title: "Weekly sales report", assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: mockDay(1), recur_freq: "weekly" }),
-  mkMock({ id: "10", title: "Daily inbox zero", assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: mockDay(0), recur_freq: "daily" }),
-  mkMock({ id: "11", title: "Monthly invoice run", assignees: ["Dev User"], assignee_telegram_ids: [123456], due_date: mockDay(12), recur_freq: "monthly" }),
+  mkMock({
+    id: "9",
+    title: "Weekly sales report",
+    assignees: ["Dev User"],
+    assignee_telegram_ids: [123456],
+    due_date: mockDay(1),
+    recur_freq: "weekly",
+  }),
+  mkMock({
+    id: "10",
+    title: "Daily inbox zero",
+    assignees: ["Dev User"],
+    assignee_telegram_ids: [123456],
+    due_date: mockDay(0),
+    recur_freq: "daily",
+  }),
+  mkMock({
+    id: "11",
+    title: "Monthly invoice run",
+    assignees: ["Dev User"],
+    assignee_telegram_ids: [123456],
+    due_date: mockDay(12),
+    recur_freq: "monthly",
+  }),
   // ── демо-дерево проекта pr1 «Swarm Brain» (для локального просмотра v2) ──
-  mkMock({ id: "p_onb", title: "Онбординг", project_id: "pr1", project_linked: true }),
-  mkMock({ id: "p_search", title: "Поиск по базе", project_id: "pr1", project_linked: true, status: "in_progress" }),
-  mkMock({ id: "p_rec", title: "Рекордер", project_id: "pr1", project_linked: true }),
-  mkMock({ id: "p_dig", title: "Дайджест", project_id: "pr1", project_linked: true, status: "done" }),
-  mkMock({ id: "p_s_country", title: "Страновой фильтр", project_id: "pr1", project_linked: true, status: "done", parent_id: "p_search" }),
-  mkMock({ id: "p_s_hybrid", title: "Гибрид-ранжирование", project_id: "pr1", project_linked: true, parent_id: "p_search" }),
-  mkMock({ id: "p_s_heart", title: "Хартбит", project_id: "pr1", project_linked: true, status: "in_progress", parent_id: "p_rec" }),
-  mkMock({ id: "p_b_csv", title: "Экспорт CSV", project_id: "pr1", project_linked: false }),
-  mkMock({ id: "p_b_i18n", title: "i18n переключатель", project_id: "pr1", project_linked: false }),
+  mkMock({
+    id: "p_onb",
+    title: "Онбординг",
+    project_id: "pr1",
+    project_linked: true,
+  }),
+  mkMock({
+    id: "p_search",
+    title: "Поиск по базе",
+    project_id: "pr1",
+    project_linked: true,
+    status: "in_progress",
+  }),
+  mkMock({
+    id: "p_rec",
+    title: "Рекордер",
+    project_id: "pr1",
+    project_linked: true,
+  }),
+  mkMock({
+    id: "p_dig",
+    title: "Дайджест",
+    project_id: "pr1",
+    project_linked: true,
+    status: "done",
+  }),
+  mkMock({
+    id: "p_s_country",
+    title: "Страновой фильтр",
+    project_id: "pr1",
+    project_linked: true,
+    status: "done",
+    parent_id: "p_search",
+  }),
+  mkMock({
+    id: "p_s_hybrid",
+    title: "Гибрид-ранжирование",
+    project_id: "pr1",
+    project_linked: true,
+    parent_id: "p_search",
+  }),
+  mkMock({
+    id: "p_s_heart",
+    title: "Хартбит",
+    project_id: "pr1",
+    project_linked: true,
+    status: "in_progress",
+    parent_id: "p_rec",
+  }),
+  mkMock({
+    id: "p_b_csv",
+    title: "Экспорт CSV",
+    project_id: "pr1",
+    project_linked: false,
+  }),
+  mkMock({
+    id: "p_b_i18n",
+    title: "i18n переключатель",
+    project_id: "pr1",
+    project_linked: false,
+  }),
   // ── демо-подпроекты для вложенной структуры ──
-  mkMock({ id: "p_bot_main", title: "Основное ядро бота", project_id: "pr1a", project_linked: true, status: "in_progress" }),
-  mkMock({ id: "p_bot_api", title: "Интеграция с API", project_id: "pr1a", project_linked: true }),
-  mkMock({ id: "p_design_ui", title: "UI компоненты", project_id: "pr1b", project_linked: true, status: "done" }),
+  mkMock({
+    id: "p_bot_main",
+    title: "Основное ядро бота",
+    project_id: "pr1a",
+    project_linked: true,
+    status: "in_progress",
+  }),
+  mkMock({
+    id: "p_bot_api",
+    title: "Интеграция с API",
+    project_id: "pr1a",
+    project_linked: true,
+  }),
+  mkMock({
+    id: "p_design_ui",
+    title: "UI компоненты",
+    project_id: "pr1b",
+    project_linked: true,
+    status: "done",
+  }),
 ];
 
 let mockEntries: Entry[] = [
   {
-    id: "e1", content: "Обсудили стратегию выхода на рынок Казахстана. Ключевые игроки: Kaspi, Halyk. Нужно готовить локализацию Q3.",
-    summary: "Стратегия Казахстан: Kaspi, Halyk, локализация Q3", added_by: "Dev User",
-    source: "note", metadata: {}, countries: ["KZ"], entry_type: "note", entry_date: "2026-06-01",
-    group_id: "cee", is_private: false, owner_id: 123456, created_at: new Date(Date.now() - 86400000).toISOString(),
+    id: "e1",
+    content:
+      "Обсудили стратегию выхода на рынок Казахстана. Ключевые игроки: Kaspi, Halyk. Нужно готовить локализацию Q3.",
+    summary: "Стратегия Казахстан: Kaspi, Halyk, локализация Q3",
+    added_by: "Dev User",
+    source: "note",
+    metadata: {},
+    countries: ["KZ"],
+    entry_type: "note",
+    entry_date: "2026-06-01",
+    group_id: "cee",
+    is_private: false,
+    owner_id: 123456,
+    created_at: new Date(Date.now() - 86400000).toISOString(),
   },
   {
-    id: "e2", content: "Личная заметка: нужно изучить конкурентов в Польше до конца месяца.",
-    summary: null, added_by: "Dev User",
-    source: "note", metadata: {}, countries: ["PL"], entry_type: "note", entry_date: null,
-    group_id: "cee", is_private: true, owner_id: 123456, created_at: new Date(Date.now() - 3600000).toISOString(),
+    id: "e2",
+    content:
+      "Личная заметка: нужно изучить конкурентов в Польше до конца месяца.",
+    summary: null,
+    added_by: "Dev User",
+    source: "note",
+    metadata: {},
+    countries: ["PL"],
+    entry_type: "note",
+    entry_date: null,
+    group_id: "cee",
+    is_private: true,
+    owner_id: 123456,
+    created_at: new Date(Date.now() - 3600000).toISOString(),
   },
   {
-    id: "e3", content: "Встреча с партнёром из Сербии. Обсудили условия дистрибуции, подписание планируется в июле.",
-    summary: "Сербия: дистрибуция, подписание в июле", added_by: "Alice Smith",
-    source: "granola", metadata: { confirmed: true }, countries: ["RS"], entry_type: "meeting", entry_date: "2026-05-30",
-    group_id: "cee", is_private: false, owner_id: 789012, created_at: new Date(Date.now() - 172800000).toISOString(),
+    id: "e3",
+    content:
+      "Встреча с партнёром из Сербии. Обсудили условия дистрибуции, подписание планируется в июле.",
+    summary: "Сербия: дистрибуция, подписание в июле",
+    added_by: "Alice Smith",
+    source: "granola",
+    metadata: { confirmed: true },
+    countries: ["RS"],
+    entry_type: "meeting",
+    entry_date: "2026-05-30",
+    group_id: "cee",
+    is_private: false,
+    owner_id: 789012,
+    created_at: new Date(Date.now() - 172800000).toISOString(),
   },
 ];
 
 const mockMeetings: Entry[] = [
   {
-    id: "m1", content: "Kickoff встреча нового квартала. Участники: Dev User, Alice, Bob. Приоритеты: рост Польши, запуск в Сербии.",
-    summary: "Q3 kickoff: приоритеты Польша + Сербия", added_by: "Dev User",
-    source: "granola", metadata: { confirmed: false, title: "Q3 Kickoff" }, countries: ["PL", "RS"], entry_type: "meeting", entry_date: "2026-06-01",
-    group_id: "cee", is_private: false, owner_id: 123456, created_at: new Date(Date.now() - 86400000).toISOString(),
+    id: "m1",
+    content:
+      "Kickoff встреча нового квартала. Участники: Dev User, Alice, Bob. Приоритеты: рост Польши, запуск в Сербии.",
+    summary: "Q3 kickoff: приоритеты Польша + Сербия",
+    added_by: "Dev User",
+    source: "granola",
+    metadata: { confirmed: false, title: "Q3 Kickoff" },
+    countries: ["PL", "RS"],
+    entry_type: "meeting",
+    entry_date: "2026-06-01",
+    group_id: "cee",
+    is_private: false,
+    owner_id: 123456,
+    created_at: new Date(Date.now() - 86400000).toISOString(),
   },
   {
-    id: "m2", content: "Встреча с командой Read.ai для обсуждения интеграции.",
-    summary: "Read.ai интеграция — обсуждение деталей", added_by: "Alice Smith",
-    source: "read_ai", metadata: { confirmed: true, title: "Read.ai Integration Call" }, countries: [], entry_type: "meeting", entry_date: "2026-05-28",
-    group_id: "cee", is_private: false, owner_id: 789012, created_at: new Date(Date.now() - 432000000).toISOString(),
+    id: "m2",
+    content: "Встреча с командой Read.ai для обсуждения интеграции.",
+    summary: "Read.ai интеграция — обсуждение деталей",
+    added_by: "Alice Smith",
+    source: "read_ai",
+    metadata: { confirmed: true, title: "Read.ai Integration Call" },
+    countries: [],
+    entry_type: "meeting",
+    entry_date: "2026-05-28",
+    group_id: "cee",
+    is_private: false,
+    owner_id: 789012,
+    created_at: new Date(Date.now() - 432000000).toISOString(),
   },
 ];
 
@@ -213,9 +485,12 @@ const mockIntegrations: Integration[] = [];
 
 const mockGranolaUnprocessed: GranolaNote[] = [
   {
-    id: "gn1", title: "Partner Call — Warsaw",
+    id: "gn1",
+    title: "Partner Call — Warsaw",
     created_at: new Date(Date.now() - 3600000).toISOString(),
-    calendar_event: { scheduled_start_time: new Date(Date.now() - 7200000).toISOString() },
+    calendar_event: {
+      scheduled_start_time: new Date(Date.now() - 7200000).toISOString(),
+    },
     attendees: [{ name: "Jan Kowalski", email: "jan@example.com" }],
   },
 ];
@@ -242,7 +517,9 @@ function isRead(options?: RequestInit): boolean {
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  if (isRead(options)) return requestCache.run(path, () => apiFetchRaw<T>(path, options));
+  if (isRead(options)) {
+    return requestCache.run(path, () => apiFetchRaw<T>(path, options));
+  }
   try {
     return await apiFetchRaw<T>(path, options);
   } finally {
@@ -272,7 +549,10 @@ async function apiFetchRaw<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 // Загрузка файлов (multipart): всегда мутация — сбрасываем кэш чтения.
-async function apiFetchNoContentType<T>(path: string, options?: RequestInit): Promise<T> {
+async function apiFetchNoContentType<T>(
+  path: string,
+  options?: RequestInit,
+): Promise<T> {
   try {
     return await apiFetchNoContentTypeRaw<T>(path, options);
   } finally {
@@ -280,7 +560,10 @@ async function apiFetchNoContentType<T>(path: string, options?: RequestInit): Pr
   }
 }
 
-async function apiFetchNoContentTypeRaw<T>(path: string, options?: RequestInit): Promise<T> {
+async function apiFetchNoContentTypeRaw<T>(
+  path: string,
+  options?: RequestInit,
+): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     cache: "no-store",
@@ -307,7 +590,10 @@ export async function fetchMe(): Promise<Me> {
 // /api/auth/logout напрямую, минуя прокси в swarm-api. Внутри Telegram Mini App
 // бессмысленно — там сессия определяется initData, а не cookie.
 export async function logout(): Promise<void> {
-  await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
+  await fetch(`${API_BASE}/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  });
 }
 
 // ── Встречи сегодня из календаря (issue #218) ────────────────────────────────
@@ -335,12 +621,51 @@ export type TodayMeetings = {
 
 export async function fetchTodayMeetings(): Promise<TodayMeetings> {
   if (DEV_MODE) {
-    const at = (h: number, m: number) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
-    return { meetings: [
-      { id: "m1", title: "Dodo Pizza Bulgaria", starts_at: at(9, 0), ends_at: at(10, 0), join_url: "https://meet.example/bg", is_now: false, is_past: true, attendees: 4, on_call: false, recording: false },
-      { id: "m2", title: "IMF — слот под комитет", starts_at: at(14, 0), ends_at: at(15, 0), join_url: "https://meet.example/imf", is_now: true, is_past: false, attendees: 6, on_call: true, recording: true },
-      { id: "m3", title: "1:1 с Антоном", starts_at: at(17, 30), ends_at: at(18, 0), join_url: null, is_now: false, is_past: false, attendees: 1, on_call: false, recording: false },
-    ] };
+    const at = (h: number, m: number) => {
+      const d = new Date();
+      d.setHours(h, m, 0, 0);
+      return d.toISOString();
+    };
+    return {
+      meetings: [
+        {
+          id: "m1",
+          title: "Dodo Pizza Bulgaria",
+          starts_at: at(9, 0),
+          ends_at: at(10, 0),
+          join_url: "https://meet.example/bg",
+          is_now: false,
+          is_past: true,
+          attendees: 4,
+          on_call: false,
+          recording: false,
+        },
+        {
+          id: "m2",
+          title: "IMF — слот под комитет",
+          starts_at: at(14, 0),
+          ends_at: at(15, 0),
+          join_url: "https://meet.example/imf",
+          is_now: true,
+          is_past: false,
+          attendees: 6,
+          on_call: true,
+          recording: true,
+        },
+        {
+          id: "m3",
+          title: "1:1 с Антоном",
+          starts_at: at(17, 30),
+          ends_at: at(18, 0),
+          join_url: null,
+          is_now: false,
+          is_past: false,
+          attendees: 1,
+          on_call: false,
+          recording: false,
+        },
+      ],
+    };
   }
   // Смещение с ОБРАТНЫМ знаком: getTimezoneOffset даёт минуты до UTC, серверу нужно
   // «насколько местное время впереди UTC» (Белград летом +120).
@@ -349,21 +674,63 @@ export async function fetchTodayMeetings(): Promise<TodayMeetings> {
 }
 
 export async function fetchConfig(): Promise<{ allowed_markets: string[] }> {
-  if (DEV_MODE) return { allowed_markets: ["RS","HR","SI","ME","BG","ES","RO","PL","EE","LT","CY","HU","MD","BY","TR","AZ","AM","GE","TJ","KG","MN","NG","MX","ID","RU","UA","KZ"] };
+  if (DEV_MODE) {
+    return {
+      allowed_markets: [
+        "RS",
+        "HR",
+        "SI",
+        "ME",
+        "BG",
+        "ES",
+        "RO",
+        "PL",
+        "EE",
+        "LT",
+        "CY",
+        "HU",
+        "MD",
+        "BY",
+        "TR",
+        "AZ",
+        "AM",
+        "GE",
+        "TJ",
+        "KG",
+        "MN",
+        "NG",
+        "MX",
+        "ID",
+        "RU",
+        "UA",
+        "KZ",
+      ],
+    };
+  }
   return apiFetch<{ allowed_markets: string[] }>("/config");
 }
 
 // Рекордер встреч (Mac): статус токена и минт/перевыпуск однострочника установки.
-export async function fetchRecorderSetup(): Promise<{ active: boolean; expiresAt: string | null; updateOneLiner?: string }> {
+export async function fetchRecorderSetup(): Promise<
+  { active: boolean; expiresAt: string | null; updateOneLiner?: string }
+> {
   if (DEV_MODE) return { active: false, expiresAt: null };
-  return apiFetch<{ active: boolean; expiresAt: string | null }>("/recorder/setup");
+  return apiFetch<{ active: boolean; expiresAt: string | null }>(
+    "/recorder/setup",
+  );
 }
-export async function mintRecorderToken(): Promise<{ oneLiner: string; expiresAt: string }> {
-  return apiFetch<{ oneLiner: string; expiresAt: string }>("/recorder/token", { method: "POST" });
+export async function mintRecorderToken(): Promise<
+  { oneLiner: string; expiresAt: string }
+> {
+  return apiFetch<{ oneLiner: string; expiresAt: string }>("/recorder/token", {
+    method: "POST",
+  });
 }
 
 // Claude Desktop (MCP): статус токена и минт/перевыпуск однострочника установки.
-export async function fetchMcpSetup(): Promise<{ active: boolean; expiresAt: string | null }> {
+export async function fetchMcpSetup(): Promise<
+  { active: boolean; expiresAt: string | null }
+> {
   if (DEV_MODE) return { active: false, expiresAt: null };
   return apiFetch<{ active: boolean; expiresAt: string | null }>("/mcp/setup");
 }
@@ -372,14 +739,24 @@ export async function mintMcpToken(): Promise<{ oneLiner: string }> {
 }
 // Текст инструкций для проекта Claude Desktop (то, что вставляют в поле Instructions).
 // Персонализируется Telegram ID на сервере — зеркало бот-команды /claude.
-export async function fetchClaudeInstructions(): Promise<{ instructions: string }> {
-  if (DEV_MODE) return { instructions: "Ты работаешь с командной базой знаний Swarm Brain…\n\nМой Telegram ID: 123456\n(dev-заглушка инструкций для проекта Claude Desktop)" };
+export async function fetchClaudeInstructions(): Promise<
+  { instructions: string }
+> {
+  if (DEV_MODE) {
+    return {
+      instructions:
+        "Ты работаешь с командной базой знаний Swarm Brain…\n\nМой Telegram ID: 123456\n(dev-заглушка инструкций для проекта Claude Desktop)",
+    };
+  }
   return apiFetch<{ instructions: string }>("/mcp/instructions");
 }
 
 export async function patchMe(fields: UpdateMeInput): Promise<void> {
   if (DEV_MODE) return;
-  return apiFetch<void>("/me", { method: "PATCH", body: JSON.stringify(fields) });
+  return apiFetch<void>("/me", {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  });
 }
 
 export async function fetchUsers(): Promise<User[]> {
@@ -387,13 +764,19 @@ export async function fetchUsers(): Promise<User[]> {
   return apiFetch<User[]>("/users");
 }
 
-export async function fetchTasks(filters?: string | TaskFilters): Promise<Task[]> {
-  const f: TaskFilters = typeof filters === "string" ? { status: filters } : (filters ?? {});
+export async function fetchTasks(
+  filters?: string | TaskFilters,
+): Promise<Task[]> {
+  const f: TaskFilters = typeof filters === "string"
+    ? { status: filters }
+    : (filters ?? {});
   if (DEV_MODE) {
     let r = mockTasks;
     if (f.status) r = r.filter((t) => t.status === f.status);
     if (f.sprint_id) r = r.filter((t) => t.sprint_id === f.sprint_id);
-    if (f.tags?.length) r = r.filter((t) => f.tags!.some((tag) => (t.tags ?? []).includes(tag)));
+    if (f.tags?.length) {
+      r = r.filter((t) => f.tags!.some((tag) => (t.tags ?? []).includes(tag)));
+    }
     if (f.label_id) r = r.filter((t) => t.label_ids?.includes(f.label_id!));
     if (f.project_id) r = r.filter((t) => t.project_id === f.project_id);
     // Копия (не отдаём mockTasks по ссылке — иначе оптимистичные апдейты в UI дублируют) И БЕЗ
@@ -442,72 +825,139 @@ export async function fetchTask(id: string): Promise<Task> {
 export async function createTask(input: CreateTaskInput): Promise<Task> {
   if (DEV_MODE) {
     const newTask: Task = {
-      id: Date.now().toString(), title: input.title, description: input.description ?? null,
-      assignees: [], assignee_telegram_ids: input.assignee_telegram_id ? [input.assignee_telegram_id] : [],
-      due_date: input.due_date ?? null, remind_date: input.remind_date ?? null, reminded_at: null,
-      tags: input.tags ?? [], country: input.country ?? null,
-      task_role: input.task_role ?? null, priority: input.priority ?? null, source: "mini_app", status: input.status ?? "open",
-      created_at: new Date().toISOString(), updated_at: null, meeting_id: input.meeting_id ?? null, url: null, group_id: "cee",
+      id: Date.now().toString(),
+      title: input.title,
+      description: input.description ?? null,
+      assignees: [],
+      assignee_telegram_ids: input.assignee_telegram_id
+        ? [input.assignee_telegram_id]
+        : [],
+      due_date: input.due_date ?? null,
+      remind_date: input.remind_date ?? null,
+      reminded_at: null,
+      tags: input.tags ?? [],
+      country: input.country ?? null,
+      task_role: input.task_role ?? null,
+      priority: input.priority ?? null,
+      source: "mini_app",
+      status: input.status ?? "open",
+      created_at: new Date().toISOString(),
+      updated_at: null,
+      meeting_id: input.meeting_id ?? null,
+      url: null,
+      group_id: "cee",
       created_by_name: MOCK_ME.name,
-      is_private: input.is_private ?? false, owner_id: input.is_private ? MOCK_ME.telegram_id : null,
-      start_date: input.start_date ?? null, timeline_position: input.timeline_position ?? null,
-      sprint_id: input.sprint_id ?? null, label_ids: input.label_ids ?? [],
-      project_id: input.project_id ?? null, project_linked: input.parent_id ? true : false,
-      parent_id: input.parent_id ?? null, tree_x: input.tree_x ?? null, tree_y: input.tree_y ?? null,
+      is_private: input.is_private ?? false,
+      owner_id: input.is_private ? MOCK_ME.telegram_id : null,
+      start_date: input.start_date ?? null,
+      timeline_position: input.timeline_position ?? null,
+      sprint_id: input.sprint_id ?? null,
+      label_ids: input.label_ids ?? [],
+      project_id: input.project_id ?? null,
+      project_linked: input.parent_id ? true : false,
+      parent_id: input.parent_id ?? null,
+      tree_x: input.tree_x ?? null,
+      tree_y: input.tree_y ?? null,
       recur_freq: input.recur_freq ?? null,
       recur_anchor_dom: input.recur_freq === "monthly" && input.due_date
-        ? Number(input.due_date.slice(8, 10)) : null,
+        ? Number(input.due_date.slice(8, 10))
+        : null,
     };
     mockTasks.push(newTask);
     return newTask;
   }
-  return apiFetch<Task>("/tasks", { method: "POST", body: JSON.stringify(input) });
+  return apiFetch<Task>("/tasks", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
-export async function updateTask(id: string, fields: UpdateTaskInput): Promise<Task> {
+export async function updateTask(
+  id: string,
+  fields: UpdateTaskInput,
+): Promise<Task> {
   if (DEV_MODE) {
     const idx = mockTasks.findIndex((t) => t.id === id);
     if (idx === -1) throw new ApiError(404, "Not found");
     const task = { ...mockTasks[idx], updated_at: new Date().toISOString() };
     if (fields.title !== undefined) task.title = fields.title;
-    if (fields.description !== undefined) task.description = fields.description ?? null;
+    if (fields.description !== undefined) {
+      task.description = fields.description ?? null;
+    }
     if (fields.status !== undefined) task.status = fields.status;
     if (fields.due_date !== undefined) task.due_date = fields.due_date ?? null;
     if (fields.country !== undefined) task.country = fields.country ?? null;
-    if (fields.task_role !== undefined) task.task_role = fields.task_role ?? null;
-    if (fields.start_date !== undefined) task.start_date = fields.start_date ?? null;
-    if (fields.sprint_id !== undefined) task.sprint_id = fields.sprint_id ?? null;
+    if (fields.task_role !== undefined) {
+      task.task_role = fields.task_role ?? null;
+    }
+    if (fields.start_date !== undefined) {
+      task.start_date = fields.start_date ?? null;
+    }
+    if (fields.sprint_id !== undefined) {
+      task.sprint_id = fields.sprint_id ?? null;
+    }
     if (fields.tags !== undefined) task.tags = fields.tags ?? [];
     if (fields.label_ids !== undefined) task.label_ids = fields.label_ids ?? [];
-    if (fields.timeline_position !== undefined) task.timeline_position = fields.timeline_position ?? null;
-    if (fields.project_id !== undefined) task.project_id = fields.project_id ?? null;
-    if (fields.parent_id !== undefined) task.parent_id = fields.parent_id ?? null;
+    if (fields.timeline_position !== undefined) {
+      task.timeline_position = fields.timeline_position ?? null;
+    }
+    if (fields.project_id !== undefined) {
+      task.project_id = fields.project_id ?? null;
+    }
+    if (fields.parent_id !== undefined) {
+      task.parent_id = fields.parent_id ?? null;
+    }
     if (fields.tree_x !== undefined) task.tree_x = fields.tree_x ?? null;
     if (fields.tree_y !== undefined) task.tree_y = fields.tree_y ?? null;
-    if ((fields as { project_linked?: boolean }).project_linked !== undefined) task.project_linked = (fields as { project_linked?: boolean }).project_linked!;
+    if ((fields as { project_linked?: boolean }).project_linked !== undefined) {
+      task.project_linked = (fields as { project_linked?: boolean })
+        .project_linked!;
+    }
     if (fields.is_private !== undefined) {
       task.is_private = fields.is_private;
       task.owner_id = fields.is_private ? MOCK_ME.telegram_id : null;
     }
     if ("assignee_telegram_id" in fields) {
-      task.assignee_telegram_ids = fields.assignee_telegram_id ? [fields.assignee_telegram_id] : [];
+      task.assignee_telegram_ids = fields.assignee_telegram_id
+        ? [fields.assignee_telegram_id]
+        : [];
     }
     mockTasks[idx] = task;
     return task;
   }
-  return apiFetch<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+  return apiFetch<Task>(`/tasks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  });
 }
 
 export async function deleteTask(id: string): Promise<void> {
-  if (DEV_MODE) { mockTasks = mockTasks.filter((t) => t.id !== id); return; }
+  if (DEV_MODE) {
+    mockTasks = mockTasks.filter((t) => t.id !== id);
+    return;
+  }
   return apiFetch<void>(`/tasks/${id}`, { method: "DELETE" });
 }
 
 // ── Персональные смарт-метки задач ──────────────────────────────────────────
-export type TaskLabel = { id: string; name: string; icon: string; color: string | null; sort_order: number; count: number };
+export type TaskLabel = {
+  id: string;
+  name: string;
+  icon: string;
+  color: string | null;
+  sort_order: number;
+  count: number;
+};
 
 let MOCK_LABELS: TaskLabel[] = [
-  { id: "l-it", name: "Айти", icon: "task", color: null, sort_order: 0, count: 0 },
+  {
+    id: "l-it",
+    name: "Айти",
+    icon: "task",
+    color: null,
+    sort_order: 0,
+    count: 0,
+  },
 ];
 
 export async function fetchTaskLabels(): Promise<TaskLabel[]> {
@@ -515,32 +965,58 @@ export async function fetchTaskLabels(): Promise<TaskLabel[]> {
   return apiFetch<TaskLabel[]>("/task-labels");
 }
 
-export async function createTaskLabel(input: { name: string; icon?: string; color?: string | null }): Promise<TaskLabel> {
+export async function createTaskLabel(
+  input: { name: string; icon?: string; color?: string | null },
+): Promise<TaskLabel> {
   if (DEV_MODE) {
-    const l: TaskLabel = { id: `l-${Date.now()}`, name: input.name, icon: input.icon ?? "tag", color: input.color ?? null, sort_order: MOCK_LABELS.length, count: 0 };
+    const l: TaskLabel = {
+      id: `l-${Date.now()}`,
+      name: input.name,
+      icon: input.icon ?? "tag",
+      color: input.color ?? null,
+      sort_order: MOCK_LABELS.length,
+      count: 0,
+    };
     MOCK_LABELS.push(l);
     return l;
   }
-  return apiFetch<TaskLabel>("/task-labels", { method: "POST", body: JSON.stringify(input) });
+  return apiFetch<TaskLabel>("/task-labels", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
-export async function updateTaskLabel(id: string, fields: Partial<{ name: string; icon: string; color: string | null; sort_order: number }>): Promise<TaskLabel> {
+export async function updateTaskLabel(
+  id: string,
+  fields: Partial<
+    { name: string; icon: string; color: string | null; sort_order: number }
+  >,
+): Promise<TaskLabel> {
   if (DEV_MODE) {
     const l = MOCK_LABELS.find((x) => x.id === id)!;
     Object.assign(l, fields);
     return l;
   }
-  return apiFetch<TaskLabel>(`/task-labels/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+  return apiFetch<TaskLabel>(`/task-labels/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  });
 }
 
 export async function deleteTaskLabel(id: string): Promise<void> {
-  if (DEV_MODE) { MOCK_LABELS = MOCK_LABELS.filter((x) => x.id !== id); return; }
+  if (DEV_MODE) {
+    MOCK_LABELS = MOCK_LABELS.filter((x) => x.id !== id);
+    return;
+  }
   await apiFetch<void>(`/task-labels/${id}`, { method: "DELETE" });
 }
 
 export async function extractTasks(text: string): Promise<Task[]> {
   if (DEV_MODE) return [];
-  return apiFetch<Task[]>("/tasks/extract", { method: "POST", body: JSON.stringify({ text }) });
+  return apiFetch<Task[]>("/tasks/extract", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
 }
 
 // Preview-извлечение: вернуть предложенные задачи БЕЗ создания (для ревью на экране встреч).
@@ -548,15 +1024,41 @@ export async function extractTasks(text: string): Promise<Task[]> {
 // GPT регулярно пишет СТРОКУ "null" вместо JSON null, и она доезжала до карточки чипом
 // «null» (issue #125). Мок DEV_MODE специально содержит такой мусор, чтобы поведение
 // без сети совпадало с боевым.
-export async function extractTasksPreview(text: string): Promise<ProposedTask[]> {
+export async function extractTasksPreview(
+  text: string,
+): Promise<ProposedTask[]> {
   if (DEV_MODE) {
     return normalizeProposedTasks([
-      { title: "Свести правки по продуктовой аналитике", description: "Из обсуждения встречи", assignee: "Alice Smith", due_date: "2026-09-30", country: "RS" },
-      { title: "Поделиться записью встречи маркетологов", description: "null", assignee: "null", due_date: "null", country: "null" },
-      { title: "Найти безопасную замену для маскарпоне и пересобрать техкарту десертов", description: "Текущий поставщик сорвал поставку", assignee: "Иван Посторонний", due_date: "2026-08-29", country: null },
+      {
+        title: "Свести правки по продуктовой аналитике",
+        description: "Из обсуждения встречи",
+        assignee: "Alice Smith",
+        due_date: "2026-09-30",
+        country: "RS",
+      },
+      {
+        title: "Поделиться записью встречи маркетологов",
+        description: "null",
+        assignee: "null",
+        due_date: "null",
+        country: "null",
+      },
+      {
+        title:
+          "Найти безопасную замену для маскарпоне и пересобрать техкарту десертов",
+        description: "Текущий поставщик сорвал поставку",
+        assignee: "Иван Посторонний",
+        due_date: "2026-08-29",
+        country: null,
+      },
     ]);
   }
-  return normalizeProposedTasks(await apiFetch<unknown>("/tasks/extract", { method: "POST", body: JSON.stringify({ text, save: false }) }));
+  return normalizeProposedTasks(
+    await apiFetch<unknown>("/tasks/extract", {
+      method: "POST",
+      body: JSON.stringify({ text, save: false }),
+    }),
+  );
 }
 
 // Потоковое извлечение: тот же эндпоинт, но с Accept: text/event-stream — сервер отдаёт задачи
@@ -567,7 +1069,10 @@ export async function extractTasksPreview(text: string): Promise<ProposedTask[]>
 // onTask вызывается на КАЖДУЮ приехавшую задачу; функция завершается, когда поток закрылся.
 // Ошибка модели прилетает событием и поднимается исключением — молча оборванный разбор
 // выглядел бы как «задач не найдено», а это разные вещи.
-export async function extractTasksStreamed(text: string, onTask: (task: ProposedTask) => void): Promise<void> {
+export async function extractTasksStreamed(
+  text: string,
+  onTask: (task: ProposedTask) => void,
+): Promise<void> {
   if (DEV_MODE) {
     // Локально имитируем темп настоящего потока, иначе анимацию прихода нечем проверить.
     for (const task of await extractTasksPreview(text)) {
@@ -581,7 +1086,11 @@ export async function extractTasksStreamed(text: string, onTask: (task: Proposed
     method: "POST",
     cache: "no-store",
     credentials: "include",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...authHeaders() },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      ...authHeaders(),
+    },
     body: JSON.stringify({ text, save: false }),
   });
   if (!res.ok || !res.body) throw new ApiError(res.status, res.statusText);
@@ -600,7 +1109,11 @@ export async function extractTasksStreamed(text: string, onTask: (task: Proposed
       const line = part.split("\n").find((l) => l.startsWith("data:"));
       if (!line) continue;
       let event: { type?: string; task?: unknown; message?: string };
-      try { event = JSON.parse(line.slice(5).trim()); } catch { continue; }
+      try {
+        event = JSON.parse(line.slice(5).trim());
+      } catch {
+        continue;
+      }
       if (event.type === "task" && event.task) {
         const [task] = normalizeProposedTasks([event.task]);
         if (task) onTask(task);
@@ -613,7 +1126,15 @@ export async function extractTasksStreamed(text: string, onTask: (task: Proposed
 
 // ── Sprints (Рой) ───────────────────────────────────────────────────────────────
 let mockSprints: Sprint[] = [
-  { id: "sp1", group_id: "cee", name: "Sprint 24", start_date: "2026-06-02", end_date: "2026-06-15", status: "active", created_at: new Date().toISOString() },
+  {
+    id: "sp1",
+    group_id: "cee",
+    name: "Sprint 24",
+    start_date: "2026-06-02",
+    end_date: "2026-06-15",
+    status: "active",
+    created_at: new Date().toISOString(),
+  },
 ];
 
 export async function fetchSprints(): Promise<Sprint[]> {
@@ -621,38 +1142,89 @@ export async function fetchSprints(): Promise<Sprint[]> {
   return apiFetch<Sprint[]>("/sprints");
 }
 
-export async function createSprint(input: { name: string; start_date: string; end_date: string; status?: SprintStatus }): Promise<Sprint> {
+export async function createSprint(
+  input: {
+    name: string;
+    start_date: string;
+    end_date: string;
+    status?: SprintStatus;
+  },
+): Promise<Sprint> {
   if (DEV_MODE) {
-    const s: Sprint = { id: Date.now().toString(), group_id: "cee", name: input.name, start_date: input.start_date, end_date: input.end_date, status: input.status ?? "planned", created_at: new Date().toISOString() };
+    const s: Sprint = {
+      id: Date.now().toString(),
+      group_id: "cee",
+      name: input.name,
+      start_date: input.start_date,
+      end_date: input.end_date,
+      status: input.status ?? "planned",
+      created_at: new Date().toISOString(),
+    };
     mockSprints.push(s);
     return s;
   }
-  return apiFetch<Sprint>("/sprints", { method: "POST", body: JSON.stringify(input) });
+  return apiFetch<Sprint>("/sprints", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
-export async function updateSprint(id: string, fields: Partial<{ name: string; start_date: string; end_date: string; status: SprintStatus }>): Promise<Sprint> {
+export async function updateSprint(
+  id: string,
+  fields: Partial<
+    { name: string; start_date: string; end_date: string; status: SprintStatus }
+  >,
+): Promise<Sprint> {
   if (DEV_MODE) {
     const i = mockSprints.findIndex((s) => s.id === id);
     if (i === -1) throw new ApiError(404, "Not found");
     mockSprints[i] = { ...mockSprints[i], ...fields };
     return mockSprints[i];
   }
-  return apiFetch<Sprint>(`/sprints/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+  return apiFetch<Sprint>(`/sprints/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  });
 }
 
 export async function deleteSprint(id: string): Promise<void> {
-  if (DEV_MODE) { mockSprints = mockSprints.filter((s) => s.id !== id); return; }
+  if (DEV_MODE) {
+    mockSprints = mockSprints.filter((s) => s.id !== id);
+    return;
+  }
   return apiFetch<void>(`/sprints/${id}`, { method: "DELETE" });
 }
 
-export async function addTasksToSprint(sprintId: string, taskIds: string[]): Promise<void> {
-  if (DEV_MODE) { mockTasks = mockTasks.map((t) => (taskIds.includes(t.id) ? { ...t, sprint_id: sprintId } : t)); return; }
-  await apiFetch<{ updated: number }>(`/sprints/${sprintId}/tasks`, { method: "POST", body: JSON.stringify({ task_ids: taskIds }) });
+export async function addTasksToSprint(
+  sprintId: string,
+  taskIds: string[],
+): Promise<void> {
+  if (DEV_MODE) {
+    mockTasks = mockTasks.map((
+      t,
+    ) => (taskIds.includes(t.id) ? { ...t, sprint_id: sprintId } : t));
+    return;
+  }
+  await apiFetch<{ updated: number }>(`/sprints/${sprintId}/tasks`, {
+    method: "POST",
+    body: JSON.stringify({ task_ids: taskIds }),
+  });
 }
 
-export async function removeTasksFromSprint(sprintId: string, taskIds: string[]): Promise<void> {
-  if (DEV_MODE) { mockTasks = mockTasks.map((t) => (taskIds.includes(t.id) ? { ...t, sprint_id: null } : t)); return; }
-  await apiFetch<{ updated: number }>(`/sprints/${sprintId}/tasks`, { method: "DELETE", body: JSON.stringify({ task_ids: taskIds }) });
+export async function removeTasksFromSprint(
+  sprintId: string,
+  taskIds: string[],
+): Promise<void> {
+  if (DEV_MODE) {
+    mockTasks = mockTasks.map((
+      t,
+    ) => (taskIds.includes(t.id) ? { ...t, sprint_id: null } : t));
+    return;
+  }
+  await apiFetch<{ updated: number }>(`/sprints/${sprintId}/tasks`, {
+    method: "DELETE",
+    body: JSON.stringify({ task_ids: taskIds }),
+  });
 }
 
 // ── Спринты (`/sprint-cycles`) ─────────────────────────────────────────────────
@@ -664,11 +1236,30 @@ export async function removeTasksFromSprint(sprintId: string, taskIds: string[])
 // Моки: черновик (кнопка «Начать спринт»), активный с составом и принятый прошлогодний —
 // без принятого не проверить ни архив с фильтром по году, ни блок итогов.
 const MOCK_CYCLE_ACCEPTED_STATS: SprintStats = {
-  plan: 4, planDone: 3, planPercent: 75, extra: 2, extraDone: 1,
-  carried: 2, carried_manual: 1, carried_auto: 1, cancelled: 0, removed: 0,
-  check_ok: 3, check_risk: 1, check_problem: 0, unassigned: 0,
-  byPerson: [{ name: "Dev User", plan: 3, done: 2 }, { name: "Alice Smith", plan: 1, done: 1 }],
-  byProject: [{ name: "Swarm Brain", total: 4, done: 3 }, { name: null, total: 2, done: 1 }],
+  plan: 4,
+  planDone: 3,
+  planPercent: 75,
+  extra: 2,
+  extraDone: 1,
+  carried: 2,
+  carried_manual: 1,
+  carried_auto: 1,
+  cancelled: 0,
+  removed: 0,
+  check_ok: 3,
+  check_risk: 1,
+  check_problem: 0,
+  unassigned: 0,
+  byPerson: [{ name: "Dev User", plan: 3, done: 2 }, {
+    name: "Alice Smith",
+    plan: 1,
+    done: 1,
+  }],
+  byProject: [{ name: "Swarm Brain", total: 4, done: 3 }, {
+    name: null,
+    total: 2,
+    done: 1,
+  }],
   byDay: [{ day: mockDay(-40), done: 2 }, { day: mockDay(-38), done: 2 }],
 };
 
@@ -676,24 +1267,55 @@ const MOCK_CYCLE_ACCEPTED_STATS: SprintStats = {
 // не проверить ни переключатель, ни правило «живой спринт в пространстве один».
 let mockCycles: SprintCycle[] = [
   {
-    id: "sc_active", group_id: "cee", name: "Спринт 41", start_date: mockDay(-3), end_date: mockDay(11),
-    tab_id: "sp1", check_date: mockDay(3),
-    status: "active", created_by: "123456", started_at: new Date().toISOString(),
-    accepted_at: null, accepted_by: null, summary: null, stats: null, created_at: new Date().toISOString(),
+    id: "sc_active",
+    group_id: "cee",
+    name: "Спринт 41",
+    start_date: mockDay(-3),
+    end_date: mockDay(11),
+    tab_id: "sp1",
+    check_date: mockDay(3),
+    status: "active",
+    created_by: "123456",
+    started_at: new Date().toISOString(),
+    accepted_at: null,
+    accepted_by: null,
+    summary: null,
+    stats: null,
+    created_at: new Date().toISOString(),
   },
   {
-    id: "sc_draft", group_id: "cee", name: "Спринт 42", start_date: mockDay(12), end_date: mockDay(26),
-    tab_id: "sp1", check_date: mockDay(18),
-    status: "draft", created_by: "123456", started_at: null,
-    accepted_at: null, accepted_by: null, summary: null, stats: null, created_at: new Date().toISOString(),
+    id: "sc_draft",
+    group_id: "cee",
+    name: "Спринт 42",
+    start_date: mockDay(12),
+    end_date: mockDay(26),
+    tab_id: "sp1",
+    check_date: mockDay(18),
+    status: "draft",
+    created_by: "123456",
+    started_at: null,
+    accepted_at: null,
+    accepted_by: null,
+    summary: null,
+    stats: null,
+    created_at: new Date().toISOString(),
   },
   {
-    id: "sc_done", group_id: "cee", name: "Спринт 40", start_date: "2025-11-03", end_date: "2025-11-16",
-    tab_id: "sp1", check_date: "2025-11-09",
-    status: "accepted", created_by: "123456", started_at: "2025-11-03T09:00:00.000Z",
-    accepted_at: "2025-11-17T09:00:00.000Z", accepted_by: "123456",
+    id: "sc_done",
+    group_id: "cee",
+    name: "Спринт 40",
+    start_date: "2025-11-03",
+    end_date: "2025-11-16",
+    tab_id: "sp1",
+    check_date: "2025-11-09",
+    status: "accepted",
+    created_by: "123456",
+    started_at: "2025-11-03T09:00:00.000Z",
+    accepted_at: "2025-11-17T09:00:00.000Z",
+    accepted_by: "123456",
     summary: "Закрыли поиск и дайджест, рекордер уехал в следующий спринт.",
-    stats: MOCK_CYCLE_ACCEPTED_STATS, created_at: "2025-11-01T09:00:00.000Z",
+    stats: MOCK_CYCLE_ACCEPTED_STATS,
+    created_at: "2025-11-01T09:00:00.000Z",
   },
 ];
 
@@ -728,34 +1350,152 @@ let mockCycleItems: Record<string, MockItemRow[]> = {
  * Дефолты полей сверки и переноса. Перечислять их в каждой строке мока значит завести
  * восемь мест, которые разойдутся при следующем поле; здесь одно.
  */
-function mockItemBase(): Omit<SprintCycleItem, "id" | "task_id" | "in_plan" | "added_at" | "title" | "status" | "assignees" | "project_id" | "project" | "completed_at" | "frozen"> {
+function mockItemBase(): Omit<
+  SprintCycleItem,
+  | "id"
+  | "task_id"
+  | "in_plan"
+  | "added_at"
+  | "title"
+  | "status"
+  | "assignees"
+  | "project_id"
+  | "project"
+  | "completed_at"
+  | "frozen"
+> {
   return {
-    due_date: null, check_status: null, check_note: null, check_at: null, check_by: null,
-    to_carry: false, carry_reason: null, carry_count: 0, carried_manual: null,
-    removed: false, removed_at: null, hidden: false,
+    due_date: null,
+    check_status: null,
+    check_note: null,
+    check_at: null,
+    check_by: null,
+    to_carry: false,
+    carry_reason: null,
+    carry_count: 0,
+    carried_manual: null,
+    removed: false,
+    removed_at: null,
+    hidden: false,
   };
 }
 
 const MOCK_CYCLE_FROZEN: SprintCycleItem[] = [
-  { ...mockItemBase(), id: "sf1", task_id: null, in_plan: true, added_at: "2025-11-03T09:00:00.000Z", title: "Гибрид-ранжирование", status: "done", assignees: ["Dev User"], project_id: null, project: "Swarm Brain", completed_at: "2025-11-10T12:00:00.000Z", frozen: true, check_status: "ok" },
-  { ...mockItemBase(), id: "sf2", task_id: null, in_plan: true, added_at: "2025-11-03T09:00:00.000Z", title: "Страновой фильтр", status: "done", assignees: ["Dev User"], project_id: null, project: "Swarm Brain", completed_at: "2025-11-12T12:00:00.000Z", frozen: true, check_status: "ok" },
-  { ...mockItemBase(), id: "sf3", task_id: null, in_plan: true, added_at: "2025-11-03T09:00:00.000Z", title: "Дайджест", status: "done", assignees: ["Alice Smith"], project_id: null, project: "Swarm Brain", completed_at: "2025-11-14T12:00:00.000Z", frozen: true, check_status: "ok" },
-  { ...mockItemBase(), id: "sf4", task_id: null, in_plan: true, added_at: "2025-11-03T09:00:00.000Z", title: "Рекордер", status: "in_progress", assignees: ["Dev User"], project_id: null, project: "Swarm Brain", completed_at: null, frozen: true, check_status: "risk", check_note: "Ждём железо", to_carry: true, carry_reason: "Не приехал микрофон", carried_manual: true, carry_count: 1 },
-  { ...mockItemBase(), id: "sf5", task_id: null, in_plan: false, added_at: "2025-11-06T09:00:00.000Z", title: "Экспорт CSV", status: "done", assignees: [], project_id: null, project: null, completed_at: "2025-11-15T12:00:00.000Z", frozen: true },
-  { ...mockItemBase(), id: "sf6", task_id: null, in_plan: false, added_at: "2025-11-07T09:00:00.000Z", title: "i18n переключатель", status: "open", assignees: [], project_id: null, project: null, completed_at: null, frozen: true, carried_manual: false },
+  {
+    ...mockItemBase(),
+    id: "sf1",
+    task_id: null,
+    in_plan: true,
+    added_at: "2025-11-03T09:00:00.000Z",
+    title: "Гибрид-ранжирование",
+    status: "done",
+    assignees: ["Dev User"],
+    project_id: null,
+    project: "Swarm Brain",
+    completed_at: "2025-11-10T12:00:00.000Z",
+    frozen: true,
+    check_status: "ok",
+  },
+  {
+    ...mockItemBase(),
+    id: "sf2",
+    task_id: null,
+    in_plan: true,
+    added_at: "2025-11-03T09:00:00.000Z",
+    title: "Страновой фильтр",
+    status: "done",
+    assignees: ["Dev User"],
+    project_id: null,
+    project: "Swarm Brain",
+    completed_at: "2025-11-12T12:00:00.000Z",
+    frozen: true,
+    check_status: "ok",
+  },
+  {
+    ...mockItemBase(),
+    id: "sf3",
+    task_id: null,
+    in_plan: true,
+    added_at: "2025-11-03T09:00:00.000Z",
+    title: "Дайджест",
+    status: "done",
+    assignees: ["Alice Smith"],
+    project_id: null,
+    project: "Swarm Brain",
+    completed_at: "2025-11-14T12:00:00.000Z",
+    frozen: true,
+    check_status: "ok",
+  },
+  {
+    ...mockItemBase(),
+    id: "sf4",
+    task_id: null,
+    in_plan: true,
+    added_at: "2025-11-03T09:00:00.000Z",
+    title: "Рекордер",
+    status: "in_progress",
+    assignees: ["Dev User"],
+    project_id: null,
+    project: "Swarm Brain",
+    completed_at: null,
+    frozen: true,
+    check_status: "risk",
+    check_note: "Ждём железо",
+    to_carry: true,
+    carry_reason: "Не приехал микрофон",
+    carried_manual: true,
+    carry_count: 1,
+  },
+  {
+    ...mockItemBase(),
+    id: "sf5",
+    task_id: null,
+    in_plan: false,
+    added_at: "2025-11-06T09:00:00.000Z",
+    title: "Экспорт CSV",
+    status: "done",
+    assignees: [],
+    project_id: null,
+    project: null,
+    completed_at: "2025-11-15T12:00:00.000Z",
+    frozen: true,
+  },
+  {
+    ...mockItemBase(),
+    id: "sf6",
+    task_id: null,
+    in_plan: false,
+    added_at: "2025-11-07T09:00:00.000Z",
+    title: "i18n переключатель",
+    status: "open",
+    assignees: [],
+    project_id: null,
+    project: null,
+    completed_at: null,
+    frozen: true,
+    carried_manual: false,
+  },
 ];
 
 function mockItemsOf(cycleId: string): SprintCycleItem[] {
   if (cycleId === "sc_done") return MOCK_CYCLE_FROZEN;
-  const projectName = (id: string | null) => (id ? mockProjects.find((p) => p.id === id)?.name ?? null : null);
+  const projectName = (
+    id: string | null,
+  ) => (id ? mockProjects.find((p) => p.id === id)?.name ?? null : null);
   return (mockCycleItems[cycleId] ?? []).flatMap((row) => {
     const t = mockTasks.find((x) => x.id === row.task_id);
     if (!t) return [];
     return [{
       ...mockItemBase(),
-      id: row.id, task_id: t.id, in_plan: row.in_plan, added_at: new Date().toISOString(),
-      title: t.title, status: t.status, assignees: t.assignees,
-      project_id: t.project_id, project: projectName(t.project_id),
+      id: row.id,
+      task_id: t.id,
+      in_plan: row.in_plan,
+      added_at: new Date().toISOString(),
+      title: t.title,
+      status: t.status,
+      assignees: t.assignees,
+      project_id: t.project_id,
+      project: projectName(t.project_id),
       due_date: t.due_date,
       completed_at: t.status === "done" ? new Date().toISOString() : null,
       frozen: row.frozen ?? false,
@@ -765,24 +1505,39 @@ function mockItemsOf(cycleId: string): SprintCycleItem[] {
       check_note: mockChecks[row.id]?.check_note ?? null,
       to_carry: mockChecks[row.id]?.to_carry ?? false,
       // Причина из окна сверки перекрывает ту, что приехала вместе с переносом.
-      carry_reason: mockChecks[row.id]?.carry_reason ?? row.carry_reason ?? null,
+      carry_reason: mockChecks[row.id]?.carry_reason ?? row.carry_reason ??
+        null,
     }];
   });
 }
 
 /** Отметки сверки в DEV_MODE живут отдельно: строка состава там собирается из задачи на лету. */
-let mockChecks: Record<string, Partial<Pick<SprintCycleItem, "check_status" | "check_note" | "to_carry" | "carry_reason">>> = {};
+let mockChecks: Record<
+  string,
+  Partial<
+    Pick<
+      SprintCycleItem,
+      "check_status" | "check_note" | "to_carry" | "carry_reason"
+    >
+  >
+> = {};
 
 /**
  * Спринты пространства. `tabId` не передан — все, как было до пространств; `null` — служебное
  * пространство «Без вкладки» (спринты, заведённые раньше или потерявшие вкладку).
  */
-export async function fetchSprintCycles(tabId?: string | null): Promise<SprintCycle[]> {
+export async function fetchSprintCycles(
+  tabId?: string | null,
+): Promise<SprintCycle[]> {
   if (DEV_MODE) {
-    const rows = tabId === undefined ? mockCycles : mockCycles.filter((c) => c.tab_id === tabId);
+    const rows = tabId === undefined
+      ? mockCycles
+      : mockCycles.filter((c) => c.tab_id === tabId);
     return [...rows].sort((a, b) => (a.start_date < b.start_date ? 1 : -1));
   }
-  const q = tabId === undefined ? "" : `?tab_id=${tabId === null ? "none" : encodeURIComponent(tabId)}`;
+  const q = tabId === undefined
+    ? ""
+    : `?tab_id=${tabId === null ? "none" : encodeURIComponent(tabId)}`;
   return apiFetch<SprintCycle[]>(`/sprint-cycles${q}`);
 }
 
@@ -796,49 +1551,98 @@ export async function fetchSprintCycle(id: string): Promise<SprintCycleDetail> {
 }
 
 export async function createSprintCycle(
-  input: { name: string; start_date: string; end_date: string; tab_id?: string | null; check_date?: string | null },
+  input: {
+    name: string;
+    start_date: string;
+    end_date: string;
+    tab_id?: string | null;
+    check_date?: string | null;
+  },
 ): Promise<SprintCycle> {
   if (DEV_MODE) {
     // Как сервер: второй живой спринт в том же пространстве не заводится (частичный уникальный
     // индекс в базе). Без этой проверки в DEV_MODE экран выглядел бы работающим, а прод — нет.
-    const live = mockCycles.find((c) => c.tab_id === (input.tab_id ?? null) && c.status !== "accepted");
-    if (live) throw new ApiError(409, "В этом пространстве уже есть живой спринт");
+    const live = mockCycles.find((c) =>
+      c.tab_id === (input.tab_id ?? null) && c.status !== "accepted"
+    );
+    if (live) {
+      throw new ApiError(409, "В этом пространстве уже есть живой спринт");
+    }
     const c: SprintCycle = {
-      id: "sc" + Date.now(), group_id: "cee", name: input.name, start_date: input.start_date, end_date: input.end_date,
-      tab_id: input.tab_id ?? null, check_date: input.check_date ?? null,
-      status: "draft", created_by: String(MOCK_ME.telegram_id), started_at: null, accepted_at: null,
-      accepted_by: null, summary: null, stats: null, created_at: new Date().toISOString(),
+      id: "sc" + Date.now(),
+      group_id: "cee",
+      name: input.name,
+      start_date: input.start_date,
+      end_date: input.end_date,
+      tab_id: input.tab_id ?? null,
+      check_date: input.check_date ?? null,
+      status: "draft",
+      created_by: String(MOCK_ME.telegram_id),
+      started_at: null,
+      accepted_at: null,
+      accepted_by: null,
+      summary: null,
+      stats: null,
+      created_at: new Date().toISOString(),
     };
     mockCycles = [...mockCycles, c];
     mockCycleItems = { ...mockCycleItems, [c.id]: [] };
     return c;
   }
-  return apiFetch<SprintCycle>("/sprint-cycles", { method: "POST", body: JSON.stringify(input) });
+  return apiFetch<SprintCycle>("/sprint-cycles", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function updateSprintCycle(
   id: string,
-  fields: Partial<{ name: string; start_date: string; end_date: string; summary: string | null }>,
+  fields: Partial<
+    {
+      name: string;
+      start_date: string;
+      end_date: string;
+      summary: string | null;
+    }
+  >,
 ): Promise<SprintCycle> {
   if (DEV_MODE) {
     mockCycles = mockCycles.map((c) => (c.id === id ? { ...c, ...fields } : c));
     return mockCycles.find((c) => c.id === id)!;
   }
-  return apiFetch<SprintCycle>(`/sprint-cycles/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+  return apiFetch<SprintCycle>(`/sprint-cycles/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  });
 }
 
 export async function deleteSprintCycle(id: string): Promise<void> {
-  if (DEV_MODE) { mockCycles = mockCycles.filter((c) => c.id !== id || c.status === "accepted"); return; }
+  if (DEV_MODE) {
+    mockCycles = mockCycles.filter((c) =>
+      c.id !== id || c.status === "accepted"
+    );
+    return;
+  }
   await apiFetch<void>(`/sprint-cycles/${id}`, { method: "DELETE" });
 }
 
 export async function startSprintCycle(id: string): Promise<SprintCycle> {
   if (DEV_MODE) {
-    mockCycleItems = { ...mockCycleItems, [id]: (mockCycleItems[id] ?? []).map((r) => ({ ...r, in_plan: true })) };
-    mockCycles = mockCycles.map((c) => (c.id === id ? { ...c, status: "active", started_at: new Date().toISOString() } : c));
+    mockCycleItems = {
+      ...mockCycleItems,
+      [id]: (mockCycleItems[id] ?? []).map((r) => ({ ...r, in_plan: true })),
+    };
+    mockCycles = mockCycles.map((
+      c,
+    ) => (c.id === id
+      ? { ...c, status: "active", started_at: new Date().toISOString() }
+      : c)
+    );
     return mockCycles.find((c) => c.id === id)!;
   }
-  return apiFetch<SprintCycle>(`/sprint-cycles/${id}/start`, { method: "POST" });
+  return apiFetch<SprintCycle>(`/sprint-cycles/${id}/start`, {
+    method: "POST",
+  });
 }
 
 /**
@@ -867,10 +1671,13 @@ export async function acceptSprintCycle(
     const stats: SprintStats = {
       plan: plan.length,
       planDone: plan.filter((i) => i.status === "done").length,
-      planPercent: plan.length === 0 ? 0
-        : Math.round((plan.filter((i) => i.status === "done").length / plan.length) * 100),
+      planPercent: plan.length === 0 ? 0 : Math.round(
+        (plan.filter((i) => i.status === "done").length / plan.length) * 100,
+      ),
       extra: counted.filter((i) => !i.in_plan).length,
-      extraDone: counted.filter((i) => !i.in_plan && i.status === "done").length,
+      extraDone: counted.filter((i) =>
+        !i.in_plan && i.status === "done"
+      ).length,
       carried: tails.length,
       carried_manual: tails.filter((i) => i.to_carry).length,
       carried_auto: tails.filter((i) => !i.to_carry).length,
@@ -880,18 +1687,37 @@ export async function acceptSprintCycle(
       check_risk: counted.filter((i) => i.check_status === "risk").length,
       check_problem: counted.filter((i) => i.check_status === "problem").length,
       unassigned: counted.filter((i) => i.assignees.length === 0).length,
-      byPerson: [], byProject: [], byDay: [],
+      byPerson: [],
+      byProject: [],
+      byDay: [],
     };
     const cur = mockCycles.find((c) => c.id === id)!;
     mockCycles = mockCycles.map((c) => (c.id === id
-      ? { ...c, status: "accepted", accepted_at: new Date().toISOString(), accepted_by: String(MOCK_ME.telegram_id), summary: input.summary ?? c.summary, stats }
-      : c));
+      ? {
+        ...c,
+        status: "accepted",
+        accepted_at: new Date().toISOString(),
+        accepted_by: String(MOCK_ME.telegram_id),
+        summary: input.summary ?? c.summary,
+        stats,
+      }
+      : c)
+    );
     // Следующий спринт встык: так же, как его считает сервер (`nextCycleDates`).
     const next: SprintCycle = {
-      ...cur, id: "sc" + Date.now(), name: `${cur.name} +1`,
-      start_date: mockDay(1), end_date: mockDay(14), check_date: mockDay(7),
-      status: "draft", started_at: null, accepted_at: null, accepted_by: null,
-      summary: null, stats: null, created_at: new Date().toISOString(),
+      ...cur,
+      id: "sc" + Date.now(),
+      name: `${cur.name} +1`,
+      start_date: mockDay(1),
+      end_date: mockDay(14),
+      check_date: mockDay(7),
+      status: "draft",
+      started_at: null,
+      accepted_at: null,
+      accepted_by: null,
+      summary: null,
+      stats: null,
+      created_at: new Date().toISOString(),
     };
     mockCycles = [...mockCycles, next];
     // Хвосты переезжают в следующий спринт — как это делает сервер одной транзакцией
@@ -917,9 +1743,12 @@ export async function acceptSprintCycle(
       [next.id]: carriedRows,
     };
     return {
-      cycle: mockCycles.find((c) => c.id === id)!, next,
-      frozen: mockItemsOf(id).length, carried: stats.carried,
-      carried_manual: stats.carried_manual, carried_auto: stats.carried_auto,
+      cycle: mockCycles.find((c) => c.id === id)!,
+      next,
+      frozen: mockItemsOf(id).length,
+      carried: stats.carried,
+      carried_manual: stats.carried_manual,
+      carried_auto: stats.carried_auto,
     };
   }
   return apiFetch<AcceptResult>(
@@ -935,12 +1764,24 @@ export async function acceptSprintCycle(
 export async function patchSprintCycleItem(
   cycleId: string,
   taskId: string,
-  patch: Partial<{ check_status: CheckStatus | null; check_note: string | null; to_carry: boolean; carry_reason: string | null }>,
+  patch: Partial<
+    {
+      check_status: CheckStatus | null;
+      check_note: string | null;
+      to_carry: boolean;
+      carry_reason: string | null;
+    }
+  >,
 ): Promise<SprintCycleItem> {
   if (DEV_MODE) {
-    const row = (mockCycleItems[cycleId] ?? []).find((r) => r.task_id === taskId);
+    const row = (mockCycleItems[cycleId] ?? []).find((r) =>
+      r.task_id === taskId
+    );
     if (!row) throw new ApiError(404, "Not found");
-    mockChecks = { ...mockChecks, [row.id]: { ...mockChecks[row.id], ...patch } };
+    mockChecks = {
+      ...mockChecks,
+      [row.id]: { ...mockChecks[row.id], ...patch },
+    };
     return mockItemsOf(cycleId).find((i) => i.task_id === taskId)!;
   }
   return apiFetch<SprintCycleItem>(
@@ -950,29 +1791,55 @@ export async function patchSprintCycleItem(
 }
 
 /** Возвращает, сколько задач реально добавилось: приватные и уже добавленные сервер отсекает молча. */
-export async function addTasksToSprintCycle(id: string, taskIds: string[]): Promise<number> {
+export async function addTasksToSprintCycle(
+  id: string,
+  taskIds: string[],
+): Promise<number> {
   if (DEV_MODE) {
     const already = new Set((mockCycleItems[id] ?? []).map((r) => r.task_id));
     const cycle = mockCycles.find((c) => c.id === id);
     const fresh = taskIds.filter((t) => !already.has(t));
     mockCycleItems = {
       ...mockCycleItems,
-      [id]: [...(mockCycleItems[id] ?? []), ...fresh.map((t) => ({ id: "si" + t, task_id: t, in_plan: cycle?.status === "draft" }))],
+      [id]: [
+        ...(mockCycleItems[id] ?? []),
+        ...fresh.map((t) => ({
+          id: "si" + t,
+          task_id: t,
+          in_plan: cycle?.status === "draft",
+        })),
+      ],
     };
     // Как на сервере: `backlog` переводится в `open`, иначе задача не попадёт ни в одну колонку.
-    mockTasks = mockTasks.map((t) => (fresh.includes(t.id) && t.status === "backlog" ? { ...t, status: "open" } : t));
+    mockTasks = mockTasks.map((
+      t,
+    ) => (fresh.includes(t.id) && t.status === "backlog"
+      ? { ...t, status: "open" }
+      : t)
+    );
     return fresh.length;
   }
-  const res = await apiFetch<{ added: number }>(`/sprint-cycles/${id}/tasks`, { method: "POST", body: JSON.stringify({ task_ids: taskIds }) });
+  const res = await apiFetch<{ added: number }>(`/sprint-cycles/${id}/tasks`, {
+    method: "POST",
+    body: JSON.stringify({ task_ids: taskIds }),
+  });
   return res.added;
 }
 
-export async function removeTaskFromSprintCycle(id: string, taskId: string): Promise<void> {
+export async function removeTaskFromSprintCycle(
+  id: string,
+  taskId: string,
+): Promise<void> {
   if (DEV_MODE) {
-    mockCycleItems = { ...mockCycleItems, [id]: (mockCycleItems[id] ?? []).filter((r) => r.task_id !== taskId) };
+    mockCycleItems = {
+      ...mockCycleItems,
+      [id]: (mockCycleItems[id] ?? []).filter((r) => r.task_id !== taskId),
+    };
     return;
   }
-  await apiFetch<void>(`/sprint-cycles/${id}/tasks/${taskId}`, { method: "DELETE" });
+  await apiFetch<void>(`/sprint-cycles/${id}/tasks/${taskId}`, {
+    method: "DELETE",
+  });
 }
 
 // ── Projects (Project Space) ────────────────────────────────────────────────────
@@ -980,14 +1847,142 @@ export async function removeTaskFromSprintCycle(id: string, taskId: string): Pro
 // не проверяет отбор «только свои проекты» в селекте карточки задачи. MOCK_ME = 123456.
 const MOCK_COLLEAGUE = 507931827;
 let mockProjects: Project[] = [
-  { id: "pr1", group_id: "cee", name: "Swarm Brain", color: "#5b8def", emoji: null, parent_id: null, sprint_id: "sp1", created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
-  { id: "prg1", group_id: "cee", name: "Вайб код проекты", color: null, emoji: null, parent_id: null, sprint_id: "sp1", created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 3, backlog_count: 1 },
-  { id: "pr1a", group_id: "cee", name: "Бот по стройкам", color: null, emoji: null, parent_id: "prg1", sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: 123456, start_date: mockDay(-10), end_date: mockDay(20), is_private: false, task_count: 2, backlog_count: 1 },
-  { id: "pr1b", group_id: "cee", name: "Дизайн-терминал", color: null, emoji: null, parent_id: "prg1", sprint_id: null, created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 1, backlog_count: 0 },
-  { id: "pr2", group_id: "cee", name: "тест-2", color: null, emoji: null, parent_id: null, sprint_id: "sp1", created_by: null, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
-  { id: "pr3", group_id: "cee", name: "Личный эксперимент", color: null, emoji: null, parent_id: null, sprint_id: "sp1", created_by: 123456, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: true, task_count: 0, backlog_count: 0 },
-  { id: "pr4", group_id: "cee", name: "Анализ ревизий", color: null, emoji: null, parent_id: null, sprint_id: "sp1", created_by: MOCK_COLLEAGUE, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
-  { id: "pr4a", group_id: "cee", name: "Румыния июнь-август", color: null, emoji: null, parent_id: "pr4", sprint_id: null, created_by: MOCK_COLLEAGUE, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: false, task_count: 0, backlog_count: 0 },
+  {
+    id: "pr1",
+    group_id: "cee",
+    name: "Swarm Brain",
+    color: "#5b8def",
+    emoji: null,
+    parent_id: null,
+    sprint_id: "sp1",
+    created_by: 123456,
+    created_at: new Date().toISOString(),
+    owner_telegram_id: null,
+    start_date: null,
+    end_date: null,
+    is_private: false,
+    task_count: 0,
+    backlog_count: 0,
+  },
+  {
+    id: "prg1",
+    group_id: "cee",
+    name: "Вайб код проекты",
+    color: null,
+    emoji: null,
+    parent_id: null,
+    sprint_id: "sp1",
+    created_by: 123456,
+    created_at: new Date().toISOString(),
+    owner_telegram_id: null,
+    start_date: null,
+    end_date: null,
+    is_private: false,
+    task_count: 3,
+    backlog_count: 1,
+  },
+  {
+    id: "pr1a",
+    group_id: "cee",
+    name: "Бот по стройкам",
+    color: null,
+    emoji: null,
+    parent_id: "prg1",
+    sprint_id: null,
+    created_by: 123456,
+    created_at: new Date().toISOString(),
+    owner_telegram_id: 123456,
+    start_date: mockDay(-10),
+    end_date: mockDay(20),
+    is_private: false,
+    task_count: 2,
+    backlog_count: 1,
+  },
+  {
+    id: "pr1b",
+    group_id: "cee",
+    name: "Дизайн-терминал",
+    color: null,
+    emoji: null,
+    parent_id: "prg1",
+    sprint_id: null,
+    created_by: 123456,
+    created_at: new Date().toISOString(),
+    owner_telegram_id: null,
+    start_date: null,
+    end_date: null,
+    is_private: false,
+    task_count: 1,
+    backlog_count: 0,
+  },
+  {
+    id: "pr2",
+    group_id: "cee",
+    name: "тест-2",
+    color: null,
+    emoji: null,
+    parent_id: null,
+    sprint_id: "sp1",
+    created_by: null,
+    created_at: new Date().toISOString(),
+    owner_telegram_id: null,
+    start_date: null,
+    end_date: null,
+    is_private: false,
+    task_count: 0,
+    backlog_count: 0,
+  },
+  {
+    id: "pr3",
+    group_id: "cee",
+    name: "Личный эксперимент",
+    color: null,
+    emoji: null,
+    parent_id: null,
+    sprint_id: "sp1",
+    created_by: 123456,
+    created_at: new Date().toISOString(),
+    owner_telegram_id: null,
+    start_date: null,
+    end_date: null,
+    is_private: true,
+    task_count: 0,
+    backlog_count: 0,
+  },
+  {
+    id: "pr4",
+    group_id: "cee",
+    name: "Анализ ревизий",
+    color: null,
+    emoji: null,
+    parent_id: null,
+    sprint_id: "sp1",
+    created_by: MOCK_COLLEAGUE,
+    created_at: new Date().toISOString(),
+    owner_telegram_id: null,
+    start_date: null,
+    end_date: null,
+    is_private: false,
+    task_count: 0,
+    backlog_count: 0,
+  },
+  {
+    id: "pr4a",
+    group_id: "cee",
+    name: "Румыния июнь-август",
+    color: null,
+    emoji: null,
+    parent_id: "pr4",
+    sprint_id: null,
+    created_by: MOCK_COLLEAGUE,
+    created_at: new Date().toISOString(),
+    owner_telegram_id: null,
+    start_date: null,
+    end_date: null,
+    is_private: false,
+    task_count: 0,
+    backlog_count: 0,
+  },
 ];
 
 /**
@@ -1000,16 +1995,58 @@ export async function fetchSpaceJournal(
   days: "1" | "3" | "7" | "all" = "7",
 ): Promise<JournalEvent[]> {
   if (DEV_MODE) {
-    const day = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+    const day = (n: number) =>
+      new Date(Date.now() - n * 86_400_000).toISOString();
     return [
-      { at: day(0), kind: "check", actor: "Гарро", task_id: "p_onb", task_title: "Онбординг", text: "отметил риск: ждём ответа партнёра" },
-      { at: day(0), kind: "item_added", actor: "Гарро", task_id: "2", task_title: "Рекордер", text: "добавил в спринт «Спринт 41»" },
-      { at: day(1), kind: "task_change", actor: "Лена", task_id: "p_search", task_title: "Поиск по базе", text: "статус: открыто → в работе" },
-      { at: day(2), kind: "comment", actor: "Лена", task_id: "p_dig", task_title: "Дайджест", text: "нужен макет письма" },
-      { at: day(3), kind: "cycle_started", actor: "Гарро", task_id: null, task_title: null, text: "начал спринт «Спринт 41»" },
+      {
+        at: day(0),
+        kind: "check",
+        actor: "Гарро",
+        task_id: "p_onb",
+        task_title: "Онбординг",
+        text: "отметил риск: ждём ответа партнёра",
+      },
+      {
+        at: day(0),
+        kind: "item_added",
+        actor: "Гарро",
+        task_id: "2",
+        task_title: "Рекордер",
+        text: "добавил в спринт «Спринт 41»",
+      },
+      {
+        at: day(1),
+        kind: "task_change",
+        actor: "Лена",
+        task_id: "p_search",
+        task_title: "Поиск по базе",
+        text: "статус: открыто → в работе",
+      },
+      {
+        at: day(2),
+        kind: "comment",
+        actor: "Лена",
+        task_id: "p_dig",
+        task_title: "Дайджест",
+        text: "нужен макет письма",
+      },
+      {
+        at: day(3),
+        kind: "cycle_started",
+        actor: "Гарро",
+        task_id: null,
+        task_title: null,
+        text: "начал спринт «Спринт 41»",
+      },
     ];
   }
-  return apiFetch<JournalEvent[]>(`/spaces/${encodeURIComponent(tabId)}/journal?days=${days}`);
+  // Сервер отдаёт КОНВЕРТ `{ events: [...] }`, а не голый массив (`swarm-api/space-journal.ts`).
+  // Клиент читал ответ как массив — экран падал на `for...of` по объекту («не iterable»).
+  // Разворачиваем здесь, одним местом: экран про транспорт знать не должен.
+  const body = await apiFetch<{ events?: JournalEvent[] } | JournalEvent[]>(
+    `/spaces/${encodeURIComponent(tabId)}/journal?days=${days}`,
+  );
+  return Array.isArray(body) ? body : body?.events ?? [];
 }
 
 export async function fetchProjects(): Promise<Project[]> {
@@ -1017,28 +2054,77 @@ export async function fetchProjects(): Promise<Project[]> {
   return apiFetch<Project[]>("/projects");
 }
 
-export async function createProject(input: { name: string; color?: string | null; emoji?: string | null; parent_id?: string | null; sprint_id?: string | null; is_private?: boolean }): Promise<Project> {
+export async function createProject(
+  input: {
+    name: string;
+    color?: string | null;
+    emoji?: string | null;
+    parent_id?: string | null;
+    sprint_id?: string | null;
+    is_private?: boolean;
+  },
+): Promise<Project> {
   if (DEV_MODE) {
-    const p: Project = { id: Date.now().toString(), group_id: "cee", name: input.name, color: input.color ?? null, emoji: input.emoji ?? null, parent_id: input.parent_id ?? null, sprint_id: input.sprint_id ?? null, created_by: MOCK_ME.telegram_id, created_at: new Date().toISOString(), owner_telegram_id: null, start_date: null, end_date: null, is_private: input.is_private ?? false, task_count: 0, backlog_count: 0 };
+    const p: Project = {
+      id: Date.now().toString(),
+      group_id: "cee",
+      name: input.name,
+      color: input.color ?? null,
+      emoji: input.emoji ?? null,
+      parent_id: input.parent_id ?? null,
+      sprint_id: input.sprint_id ?? null,
+      created_by: MOCK_ME.telegram_id,
+      created_at: new Date().toISOString(),
+      owner_telegram_id: null,
+      start_date: null,
+      end_date: null,
+      is_private: input.is_private ?? false,
+      task_count: 0,
+      backlog_count: 0,
+    };
     mockProjects.push(p);
     return p;
   }
-  return apiFetch<Project>("/projects", { method: "POST", body: JSON.stringify(input) });
+  return apiFetch<Project>("/projects", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 // Поля инициативы (`owner_telegram_id`, `start_date`, `end_date`) сервер принимает с миграции
 // 20260918120000 и сверяет `start <= end` (`swarm-api/project-fields.ts`).
-export async function updateProject(id: string, fields: Partial<{ name: string; color: string | null; emoji: string | null; parent_id: string | null; sprint_id: string | null; is_private: boolean; owner_telegram_id: number | null; start_date: string | null; end_date: string | null }>): Promise<Project> {
+export async function updateProject(
+  id: string,
+  fields: Partial<
+    {
+      name: string;
+      color: string | null;
+      emoji: string | null;
+      parent_id: string | null;
+      sprint_id: string | null;
+      is_private: boolean;
+      owner_telegram_id: number | null;
+      start_date: string | null;
+      end_date: string | null;
+    }
+  >,
+): Promise<Project> {
   if (DEV_MODE) {
     const i = mockProjects.findIndex((p) => p.id === id);
     if (i !== -1) mockProjects[i] = { ...mockProjects[i], ...fields };
     return mockProjects[i];
   }
-  return apiFetch<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+  return apiFetch<Project>(`/projects/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  });
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  if (DEV_MODE) { mockProjects = mockProjects.filter((p) => p.id !== id); return; }
+  if (DEV_MODE) {
+    mockProjects = mockProjects.filter((p) => p.id !== id);
+    return;
+  }
   await apiFetch<{ ok: boolean }>(`/projects/${id}`, { method: "DELETE" });
 }
 
@@ -1073,18 +2159,47 @@ export type NotificationsResponse = {
   notice?: DeployNotice | null;
 };
 
-export async function fetchNotifications(limit = 30): Promise<NotificationsResponse> {
+export async function fetchNotifications(
+  limit = 30,
+): Promise<NotificationsResponse> {
   if (DEV_MODE) {
     const items: SwarmNotification[] = [
-      { id: "n1", type: "task_comment", task_id: "1", task_title: "Раздельный НДС в Венгрии", comment_id: "c1",
-        content: "Юристы подтвердили схему, нужен твой апрув до пятницы.", actor_telegram_id: 555, actor_name: "Anna K.",
-        read_at: null, created_at: new Date(Date.now() - 12 * 60 * 1000).toISOString() },
-      { id: "n0", type: "task_reminder", task_id: "1", task_title: "Prepare Q2 report", comment_id: null,
-        content: "", actor_telegram_id: null, actor_name: "—",
-        read_at: null, created_at: new Date(Date.now() - 3 * 60 * 1000).toISOString() },
-      { id: "n2", type: "task_comment", task_id: "2", task_title: "Апи Рецептов", comment_id: "c2",
-        content: "Выкатили на стенд, посмотри контракт.", actor_telegram_id: 556, actor_name: "Ivan P.",
-        read_at: new Date().toISOString(), created_at: new Date(Date.now() - 26 * 3600 * 1000).toISOString() },
+      {
+        id: "n1",
+        type: "task_comment",
+        task_id: "1",
+        task_title: "Раздельный НДС в Венгрии",
+        comment_id: "c1",
+        content: "Юристы подтвердили схему, нужен твой апрув до пятницы.",
+        actor_telegram_id: 555,
+        actor_name: "Anna K.",
+        read_at: null,
+        created_at: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
+      },
+      {
+        id: "n0",
+        type: "task_reminder",
+        task_id: "1",
+        task_title: "Prepare Q2 report",
+        comment_id: null,
+        content: "",
+        actor_telegram_id: null,
+        actor_name: "—",
+        read_at: null,
+        created_at: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
+      },
+      {
+        id: "n2",
+        type: "task_comment",
+        task_id: "2",
+        task_title: "Апи Рецептов",
+        comment_id: "c2",
+        content: "Выкатили на стенд, посмотри контракт.",
+        actor_telegram_id: 556,
+        actor_name: "Ivan P.",
+        read_at: new Date().toISOString(),
+        created_at: new Date(Date.now() - 26 * 3600 * 1000).toISOString(),
+      },
     ];
     // DEV_MODE: объявление о раскатке через 8 минут — иначе плашку не посмотреть локально.
     const notice: DeployNotice = {
@@ -1105,21 +2220,50 @@ export async function markNotificationsRead(ids?: string[]): Promise<void> {
   });
 }
 
-export async function fetchTaskComments(taskId: string): Promise<TaskComment[]> {
-  if (DEV_MODE) return [
-    { id: "c1", content: "Начал, жду данные от партнёра.", author_name: "Dev User", author_telegram_id: 123456, created_at: new Date().toISOString() },
-  ];
+export async function fetchTaskComments(
+  taskId: string,
+): Promise<TaskComment[]> {
+  if (DEV_MODE) {
+    return [
+      {
+        id: "c1",
+        content: "Начал, жду данные от партнёра.",
+        author_name: "Dev User",
+        author_telegram_id: 123456,
+        created_at: new Date().toISOString(),
+      },
+    ];
+  }
   return apiFetch<TaskComment[]>(`/tasks/${taskId}/comments`);
 }
 
-export async function addTaskComment(taskId: string, content: string): Promise<TaskComment> {
-  if (DEV_MODE) return { id: Date.now().toString(), content, author_name: "Dev User", author_telegram_id: 123456, created_at: new Date().toISOString() };
-  return apiFetch<TaskComment>(`/tasks/${taskId}/comments`, { method: "POST", body: JSON.stringify({ content }) });
+export async function addTaskComment(
+  taskId: string,
+  content: string,
+): Promise<TaskComment> {
+  if (DEV_MODE) {
+    return {
+      id: Date.now().toString(),
+      content,
+      author_name: "Dev User",
+      author_telegram_id: 123456,
+      created_at: new Date().toISOString(),
+    };
+  }
+  return apiFetch<TaskComment>(`/tasks/${taskId}/comments`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
 }
 
-export async function deleteTaskComment(taskId: string, commentId: string): Promise<void> {
+export async function deleteTaskComment(
+  taskId: string,
+  commentId: string,
+): Promise<void> {
   if (DEV_MODE) return;
-  return apiFetch<void>(`/tasks/${taskId}/comments/${commentId}`, { method: "DELETE" });
+  return apiFetch<void>(`/tasks/${taskId}/comments/${commentId}`, {
+    method: "DELETE",
+  });
 }
 
 // ── Подписка на уведомления о комментариях к задаче (issue #82) ───────────────
@@ -1131,16 +2275,29 @@ export type TaskSubscription = {
   notified: boolean;
 };
 
-let mockSubscription: TaskSubscription = { state: null, reason: null, notified: true };
+let mockSubscription: TaskSubscription = {
+  state: null,
+  reason: null,
+  notified: true,
+};
 
-export async function fetchTaskSubscription(taskId: string): Promise<TaskSubscription> {
+export async function fetchTaskSubscription(
+  taskId: string,
+): Promise<TaskSubscription> {
   if (DEV_MODE) return mockSubscription;
   return apiFetch<TaskSubscription>(`/tasks/${taskId}/subscription`);
 }
 
-export async function setTaskSubscription(taskId: string, notify: boolean): Promise<TaskSubscription> {
+export async function setTaskSubscription(
+  taskId: string,
+  notify: boolean,
+): Promise<TaskSubscription> {
   if (DEV_MODE) {
-    mockSubscription = { state: notify ? "subscribed" : "muted", reason: "manual", notified: notify };
+    mockSubscription = {
+      state: notify ? "subscribed" : "muted",
+      reason: "manual",
+      notified: notify,
+    };
     return mockSubscription;
   }
   return apiFetch<TaskSubscription>(`/tasks/${taskId}/subscription`, {
@@ -1159,7 +2316,9 @@ export async function setTaskSubscription(taskId: string, notify: boolean): Prom
  * рисовал приехавший кусок как полный набор: 92 заметки в базе, 50 на экране, ни ошибки, ни
  * признака. `total: null` — сервер счёт не прислал (например, у очереди вычитки он соврал бы).
  */
-export async function apiFetchList<T>(path: string): Promise<{ rows: T[]; total: number | null }> {
+export async function apiFetchList<T>(
+  path: string,
+): Promise<{ rows: T[]; total: number | null }> {
   const res = await fetch(`${API_BASE}${path}`, {
     cache: "no-store",
     credentials: "include",
@@ -1172,17 +2331,32 @@ export async function apiFetchList<T>(path: string): Promise<{ rows: T[]; total:
   return { rows: (body ?? []) as T[], total };
 }
 
-export async function fetchEntries(filters?: { source?: string; type?: string; date_from?: string; date_to?: string }): Promise<Entry[]> {
+export async function fetchEntries(
+  filters?: {
+    source?: string;
+    type?: string;
+    date_from?: string;
+    date_to?: string;
+  },
+): Promise<Entry[]> {
   return (await fetchEntriesWithTotal(filters)).rows;
 }
 
 /** То же, но со счётом: экран должен уметь сказать «показаны N из M» (issue #112). */
 export async function fetchEntriesWithTotal(
-  filters?: { source?: string; type?: string; date_from?: string; date_to?: string },
+  filters?: {
+    source?: string;
+    type?: string;
+    date_from?: string;
+    date_to?: string;
+  },
 ): Promise<{ rows: Entry[]; total: number | null }> {
   if (DEV_MODE) return { rows: mockEntries, total: mockEntries.length };
   const qs = new URLSearchParams(
-    Object.entries(filters ?? {}).filter(([, v]) => v != null) as [string, string][]
+    Object.entries(filters ?? {}).filter(([, v]) => v != null) as [
+      string,
+      string,
+    ][],
   ).toString();
   return apiFetchList<Entry>(`/entries${qs ? `?${qs}` : ""}`);
 }
@@ -1196,18 +2370,27 @@ export async function fetchEntry(id: string): Promise<Entry> {
   return apiFetch<Entry>(`/entries/${id}`);
 }
 
-export async function patchEntry(id: string, fields: UpdateEntryInput): Promise<Entry> {
+export async function patchEntry(
+  id: string,
+  fields: UpdateEntryInput,
+): Promise<Entry> {
   if (DEV_MODE) {
     const idx = mockEntries.findIndex((x) => x.id === id);
     if (idx === -1) throw new ApiError(404, "Not found");
     mockEntries[idx] = { ...mockEntries[idx], ...fields };
     return mockEntries[idx];
   }
-  return apiFetch<Entry>(`/entries/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+  return apiFetch<Entry>(`/entries/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  });
 }
 
 export async function deleteEntry(id: string): Promise<void> {
-  if (DEV_MODE) { mockEntries = mockEntries.filter((x) => x.id !== id); return; }
+  if (DEV_MODE) {
+    mockEntries = mockEntries.filter((x) => x.id !== id);
+    return;
+  }
   return apiFetch<void>(`/entries/${id}`, { method: "DELETE" });
 }
 
@@ -1215,7 +2398,8 @@ export async function searchEntries(q: string): Promise<Entry[]> {
   if (DEV_MODE) {
     const lq = q.toLowerCase();
     return mockEntries.filter((e) =>
-      e.content.toLowerCase().includes(lq) || (e.summary ?? "").toLowerCase().includes(lq)
+      e.content.toLowerCase().includes(lq) ||
+      (e.summary ?? "").toLowerCase().includes(lq)
     );
   }
   return apiFetch<Entry[]>(`/search?q=${encodeURIComponent(q)}`);
@@ -1253,53 +2437,96 @@ export async function ask(q: string): Promise<AskResult> {
       date: (e as { entry_date?: string | null }).entry_date ?? null,
       similarity: 0.82 - i * 0.1,
     }));
-    return { query: q, answer: `Демо-ответ на «${q}» по источникам [1][2].`, sources, followups: ["Уточнить по рынку?", "Какие задачи связаны?"] };
+    return {
+      query: q,
+      answer: `Демо-ответ на «${q}» по источникам [1][2].`,
+      sources,
+      followups: ["Уточнить по рынку?", "Какие задачи связаны?"],
+    };
   }
-  return apiFetch<AskResult>("/ask", { method: "POST", body: JSON.stringify({ q }) });
+  return apiFetch<AskResult>("/ask", {
+    method: "POST",
+    body: JSON.stringify({ q }),
+  });
 }
 
 export async function createEntry(input: CreateEntryInput): Promise<Entry> {
   if (DEV_MODE) {
     const e: Entry = {
-      id: Date.now().toString(), content: input.content, summary: null, added_by: "Dev User",
-      source: "note", metadata: {}, countries: [], entry_type: "note", entry_date: null,
-      group_id: "cee", is_private: input.is_private ?? false, owner_id: 123456,
+      id: Date.now().toString(),
+      content: input.content,
+      summary: null,
+      added_by: "Dev User",
+      source: "note",
+      metadata: {},
+      countries: [],
+      entry_type: "note",
+      entry_date: null,
+      group_id: "cee",
+      is_private: input.is_private ?? false,
+      owner_id: 123456,
       created_at: new Date().toISOString(),
     };
     mockEntries.unshift(e);
     return e;
   }
-  return apiFetch<Entry>("/entries", { method: "POST", body: JSON.stringify(input) });
+  return apiFetch<Entry>("/entries", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
-export async function uploadFile(file: File, is_private = false): Promise<Entry> {
+export async function uploadFile(
+  file: File,
+  is_private = false,
+): Promise<Entry> {
   const form = new FormData();
   form.append("file", file);
   form.append("is_private", String(is_private));
   if (DEV_MODE) {
     const e: Entry = {
-      id: Date.now().toString(), content: `Файл: ${file.name}`, summary: null, added_by: "Dev User",
-      source: "file", metadata: { filename: file.name }, countries: [], entry_type: "document", entry_date: null,
-      group_id: "cee", is_private, owner_id: 123456, created_at: new Date().toISOString(),
+      id: Date.now().toString(),
+      content: `Файл: ${file.name}`,
+      summary: null,
+      added_by: "Dev User",
+      source: "file",
+      metadata: { filename: file.name },
+      countries: [],
+      entry_type: "document",
+      entry_date: null,
+      group_id: "cee",
+      is_private,
+      owner_id: 123456,
+      created_at: new Date().toISOString(),
     };
     mockEntries.unshift(e);
     return e;
   }
-  return apiFetchNoContentType<Entry>("/entries/upload", { method: "POST", body: form });
+  return apiFetchNoContentType<Entry>("/entries/upload", {
+    method: "POST",
+    body: form,
+  });
 }
 
 // ── Meetings ──────────────────────────────────────────────────────────────────
 
 // all=true — админский оверрайд: показать все pending встречи воркспейса, а не только
 // свои. Уважается сервером ТОЛЬКО для админа; для остальных всегда own-scoped.
-export async function fetchMeetings(filters?: { confirmed?: boolean; all?: boolean }): Promise<Entry[]> {
+export async function fetchMeetings(
+  filters?: { confirmed?: boolean; all?: boolean },
+): Promise<Entry[]> {
   if (DEV_MODE) {
-    if (filters?.confirmed !== undefined)
-      return mockMeetings.filter((m) => Boolean(m.metadata.confirmed) === filters.confirmed);
+    if (filters?.confirmed !== undefined) {
+      return mockMeetings.filter((m) =>
+        Boolean(m.metadata.confirmed) === filters.confirmed
+      );
+    }
     return mockMeetings;
   }
   const params = new URLSearchParams();
-  if (filters?.confirmed !== undefined) params.set("confirmed", String(filters.confirmed));
+  if (filters?.confirmed !== undefined) {
+    params.set("confirmed", String(filters.confirmed));
+  }
   if (filters?.all) params.set("all", "true");
   const qs = params.toString();
   return apiFetch<Entry[]>(`/meetings${qs ? `?${qs}` : ""}`);
@@ -1314,33 +2541,61 @@ export async function fetchMeeting(id: string): Promise<Entry> {
   return apiFetch<Entry>(`/meetings/${id}`);
 }
 
-export async function patchMeeting(id: string, fields: UpdateMeetingInput): Promise<Entry> {
+export async function patchMeeting(
+  id: string,
+  fields: UpdateMeetingInput,
+): Promise<Entry> {
   if (DEV_MODE) {
     const idx = mockMeetings.findIndex((x) => x.id === id);
     if (idx === -1) throw new ApiError(404, "Not found");
-    if (fields.confirmed !== undefined)
-      mockMeetings[idx] = { ...mockMeetings[idx], metadata: { ...mockMeetings[idx].metadata, confirmed: fields.confirmed } };
-    if (fields.summary !== undefined)
+    if (fields.confirmed !== undefined) {
+      mockMeetings[idx] = {
+        ...mockMeetings[idx],
+        metadata: {
+          ...mockMeetings[idx].metadata,
+          confirmed: fields.confirmed,
+        },
+      };
+    }
+    if (fields.summary !== undefined) {
       mockMeetings[idx] = { ...mockMeetings[idx], summary: fields.summary };
-    if (fields.countries !== undefined)
+    }
+    if (fields.countries !== undefined) {
       mockMeetings[idx] = { ...mockMeetings[idx], countries: fields.countries };
-    if (fields.content !== undefined)
+    }
+    if (fields.content !== undefined) {
       mockMeetings[idx] = { ...mockMeetings[idx], content: fields.content };
-    if (fields.entry_type !== undefined)
-      mockMeetings[idx] = { ...mockMeetings[idx], entry_type: fields.entry_type };
-    if (fields.is_private !== undefined)
-      mockMeetings[idx] = { ...mockMeetings[idx], is_private: fields.is_private };
+    }
+    if (fields.entry_type !== undefined) {
+      mockMeetings[idx] = {
+        ...mockMeetings[idx],
+        entry_type: fields.entry_type,
+      };
+    }
+    if (fields.is_private !== undefined) {
+      mockMeetings[idx] = {
+        ...mockMeetings[idx],
+        is_private: fields.is_private,
+      };
+    }
     // Название встречи живёт в metadata.title — как на бэкенде (PATCH /meetings/:id). Без этой
     // ветки мок молча игнорировал переименование: UI показывал тост «Название обновлено», а имя
     // не менялось, то есть локально и в демо продукт вёл себя иначе, чем на проде.
-    if (typeof fields.title === "string" && fields.title.trim())
+    if (typeof fields.title === "string" && fields.title.trim()) {
       mockMeetings[idx] = {
         ...mockMeetings[idx],
-        metadata: { ...mockMeetings[idx].metadata, title: fields.title.trim().slice(0, 200) },
+        metadata: {
+          ...mockMeetings[idx].metadata,
+          title: fields.title.trim().slice(0, 200),
+        },
       };
+    }
     return mockMeetings[idx];
   }
-  return apiFetch<Entry>(`/meetings/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
+  return apiFetch<Entry>(`/meetings/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  });
 }
 
 export async function deleteMeeting(id: string): Promise<void> {
@@ -1360,16 +2615,25 @@ let mockAgentMeetings: AgentMeeting[] = [
     ended_at: "2026-06-12T14:47:00+03:00",
     status: "awaiting_review",
     summary_status: "done",
-    draft_notes_md: "### Контекст\n- Обсудили эквайринг в Болгарии\n\n### Ключевые решения\n- Сдвинуть запуск на июль",
+    draft_notes_md:
+      "### Контекст\n- Обсудили эквайринг в Болгарии\n\n### Ключевые решения\n- Сдвинуть запуск на июль",
     transcript: {
       language: "ru",
       model: "whisper-large-v3-turbo",
       segments: [
         { start: 0, end: 6, text: "Так, все собрались, начинаем." },
-        { start: 6, end: 14, text: "По Болгарии: клиент просит сдвинуть запуск." },
+        {
+          start: 6,
+          end: 14,
+          text: "По Болгарии: клиент просит сдвинуть запуск.",
+        },
       ],
     },
-    recorders: [{ telegram_id: 744230399, claimed_at: "2026-06-12T14:47:10+03:00", role: "transcribe" }],
+    recorders: [{
+      telegram_id: 744230399,
+      claimed_at: "2026-06-12T14:47:10+03:00",
+      role: "transcribe",
+    }],
     entry_id: null,
     created_at: "2026-06-12T14:47:00+03:00",
   },
@@ -1396,40 +2660,59 @@ export async function fetchAgentMeeting(id: string): Promise<AgentMeeting> {
 }
 
 // Живые пометки «на полях» встречи (виджет рекордера → meeting_live_notes), по возрастанию offset_sec.
-export async function fetchAgentMeetingNotes(id: string): Promise<MeetingLiveNote[]> {
+export async function fetchAgentMeetingNotes(
+  id: string,
+): Promise<MeetingLiveNote[]> {
   if (DEV_MODE) return [];
   return apiFetch<MeetingLiveNote[]>(`/agent-meetings/${id}/notes`);
 }
 
 // Заметки ВСЕХ участников встречи-записи: командные пометки «на полях» (с автором) + свои личные.
 // До 2026-08-28 после публикации пометки не показывались вообще — их грузил только экран черновика.
-export async function fetchMeetingNotes(entryId: string): Promise<MeetingNotes> {
+export async function fetchMeetingNotes(
+  entryId: string,
+): Promise<MeetingNotes> {
   if (DEV_MODE) return { versions: 1, live: [], personal: [] };
   return apiFetch<MeetingNotes>(`/meetings/${entryId}/notes`);
 }
 
-export async function patchAgentMeetingDraft(id: string, draft_notes_md: string): Promise<AgentMeeting> {
+export async function patchAgentMeetingDraft(
+  id: string,
+  draft_notes_md: string,
+): Promise<AgentMeeting> {
   if (DEV_MODE) {
     const idx = mockAgentMeetings.findIndex((x) => x.id === id);
     if (idx === -1) throw new ApiError(404, "Not found");
     mockAgentMeetings[idx] = { ...mockAgentMeetings[idx], draft_notes_md };
     return mockAgentMeetings[idx];
   }
-  return apiFetch<AgentMeeting>(`/agent-meetings/${id}`, { method: "PATCH", body: JSON.stringify({ draft_notes_md }) });
+  return apiFetch<AgentMeeting>(`/agent-meetings/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ draft_notes_md }),
+  });
 }
 
-export async function renameAgentMeeting(id: string, title: string): Promise<AgentMeeting> {
+export async function renameAgentMeeting(
+  id: string,
+  title: string,
+): Promise<AgentMeeting> {
   if (DEV_MODE) {
     const idx = mockAgentMeetings.findIndex((x) => x.id === id);
     if (idx === -1) throw new ApiError(404, "Not found");
     mockAgentMeetings[idx] = { ...mockAgentMeetings[idx], title };
     return mockAgentMeetings[idx];
   }
-  return apiFetch<AgentMeeting>(`/agent-meetings/${id}`, { method: "PATCH", body: JSON.stringify({ title }) });
+  return apiFetch<AgentMeeting>(`/agent-meetings/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
 }
 
 // Пере-сводка тезисов текущим промптом из сохранённого транскрипта (без ре-транскрибации).
-export async function resummarizeAgentMeeting(id: string, note?: string): Promise<AgentMeeting> {
+export async function resummarizeAgentMeeting(
+  id: string,
+  note?: string,
+): Promise<AgentMeeting> {
   if (DEV_MODE) {
     const idx = mockAgentMeetings.findIndex((x) => x.id === id);
     if (idx === -1) throw new ApiError(404, "Not found");
@@ -1458,27 +2741,46 @@ export async function deleteAgentMeeting(id: string): Promise<void> {
 
 // Подсказка рынков для чипов на вычитке. Отдельным вызовом (а не полем встречи), потому что
 // в редком случае считается классификатором по тезисам — незачем держать на этом весь GET.
-export async function fetchMarketSuggestion(id: string): Promise<MarketSuggestion> {
+export async function fetchMarketSuggestion(
+  id: string,
+): Promise<MarketSuggestion> {
   if (DEV_MODE) return { markets: ["BG"], source: "title" };
   return apiFetch<MarketSuggestion>(`/agent-meetings/${id}/market-suggestion`);
 }
 
 // countries — то, что человек выставил чипами. Пустой массив = «Общее» (сервер запишет тег
 // General). undefined = поле не передаём вовсе → сервер оставит прежнее поведение классификатора.
-export async function publishAgentMeeting(id: string, base: "workspace" | "personal", countries?: string[]): Promise<Entry> {
+export async function publishAgentMeeting(
+  id: string,
+  base: "workspace" | "personal",
+  countries?: string[],
+): Promise<Entry> {
   if (DEV_MODE) {
     const idx = mockAgentMeetings.findIndex((x) => x.id === id);
-    if (idx !== -1) mockAgentMeetings[idx] = { ...mockAgentMeetings[idx], status: "in_base" };
+    if (idx !== -1) {
+      mockAgentMeetings[idx] = { ...mockAgentMeetings[idx], status: "in_base" };
+    }
     return {
-      id: "mock-entry", content: "", summary: mockAgentMeetings[idx]?.draft_notes_md ?? "",
-      added_by: "", source: "desktop-agent", metadata: {}, countries: countries ?? [], entry_type: "transcript",
-      entry_date: null, group_id: null, is_private: base === "personal", owner_id: null,
+      id: "mock-entry",
+      content: "",
+      summary: mockAgentMeetings[idx]?.draft_notes_md ?? "",
+      added_by: "",
+      source: "desktop-agent",
+      metadata: {},
+      countries: countries ?? [],
+      entry_type: "transcript",
+      entry_date: null,
+      group_id: null,
+      is_private: base === "personal",
+      owner_id: null,
       created_at: new Date().toISOString(),
     };
   }
   return apiFetch<Entry>(`/agent-meetings/${id}/publish`, {
     method: "POST",
-    body: JSON.stringify(countries === undefined ? { base } : { base, countries }),
+    body: JSON.stringify(
+      countries === undefined ? { base } : { base, countries },
+    ),
   });
 }
 
@@ -1491,11 +2793,18 @@ export async function fetchIntegrations(): Promise<Integration[]> {
 
 export async function connectGranola(api_key: string): Promise<void> {
   if (DEV_MODE) {
-    mockIntegrations.push({ service: "granola", last_polled_at: null, skipped_note_ids: [] });
+    mockIntegrations.push({
+      service: "granola",
+      last_polled_at: null,
+      skipped_note_ids: [],
+    });
     void api_key;
     return;
   }
-  return apiFetch<void>("/integrations/granola", { method: "POST", body: JSON.stringify({ api_key }) });
+  return apiFetch<void>("/integrations/granola", {
+    method: "POST",
+    body: JSON.stringify({ api_key }),
+  });
 }
 
 export async function disconnectGranola(): Promise<void> {
@@ -1513,26 +2822,42 @@ export async function googleConnectUrl(): Promise<string> {
 }
 export async function disconnectGoogle(): Promise<void> {
   if (DEV_MODE) {
-    const idx = mockIntegrations.findIndex((i) => i.service === "google_calendar");
+    const idx = mockIntegrations.findIndex((i) =>
+      i.service === "google_calendar"
+    );
     if (idx !== -1) mockIntegrations.splice(idx, 1);
     return;
   }
   return apiFetch<void>("/integrations/google", { method: "DELETE" });
 }
 
-export async function fetchGranolaUnprocessed(period: "today" | "7d" | "30d" = "7d"): Promise<GranolaNote[]> {
+export async function fetchGranolaUnprocessed(
+  period: "today" | "7d" | "30d" = "7d",
+): Promise<GranolaNote[]> {
   if (DEV_MODE) return mockGranolaUnprocessed;
   return apiFetch<GranolaNote[]>(`/granola/notes?period=${period}`);
 }
 
-export async function previewGranolaNote(id: string): Promise<{ summary: string }> {
-  if (DEV_MODE) return { summary: "Тезисы встречи: обсудили стратегию, наметили следующие шаги." };
+export async function previewGranolaNote(
+  id: string,
+): Promise<{ summary: string }> {
+  if (DEV_MODE) {
+    return {
+      summary: "Тезисы встречи: обсудили стратегию, наметили следующие шаги.",
+    };
+  }
   return apiFetch<{ summary: string }>(`/granola/notes/${id}/preview`);
 }
 
-export async function importGranolaNote(id: string, visibility: "public" | "private"): Promise<void> {
+export async function importGranolaNote(
+  id: string,
+  visibility: "public" | "private",
+): Promise<void> {
   if (DEV_MODE) return;
-  return apiFetch<void>(`/granola/notes/${id}/import`, { method: "POST", body: JSON.stringify({ visibility }) });
+  return apiFetch<void>(`/granola/notes/${id}/import`, {
+    method: "POST",
+    body: JSON.stringify({ visibility }),
+  });
 }
 
 export async function skipGranolaNote(id: string): Promise<void> {
@@ -1547,12 +2872,22 @@ export async function sendFeedback(
   category: string,
   screenshot?: File | null,
 ): Promise<void> {
-  if (DEV_MODE) { console.log("DEV feedback:", { text, category, screenshot: screenshot?.name }); return; }
+  if (DEV_MODE) {
+    console.log("DEV feedback:", {
+      text,
+      category,
+      screenshot: screenshot?.name,
+    });
+    return;
+  }
   const form = new FormData();
   form.append("text", text);
   form.append("category", category);
   if (screenshot) form.append("screenshot", screenshot);
-  return apiFetchNoContentType<void>("/feedback", { method: "POST", body: form });
+  return apiFetchNoContentType<void>("/feedback", {
+    method: "POST",
+    body: form,
+  });
 }
 
 // allCountries — админ-опция «весь воркспейс» (иначе дайджест строго по своим рынкам). Сервер
@@ -1560,80 +2895,167 @@ export async function sendFeedback(
 // sources — записи-источники (формат AskSource, как в RAG): клик по сноске [n] открывает исходник.
 // needsMarkets — у человека не выбраны рынки, и дайджест по ним построить не из чего.
 // Сервер отдаёт признак, а не готовую фразу: подсказка живёт в вебе и переводится (issue #154).
-export async function generateDigest(days = 7, allCountries = false): Promise<{ text: string; sources: AskSource[]; needsMarkets: boolean }> {
+export async function generateDigest(
+  days = 7,
+  allCountries = false,
+): Promise<{ text: string; sources: AskSource[]; needsMarkets: boolean }> {
   if (DEV_MODE) {
     return MOCK_ME.markets.length
-      ? { text: "**Сербия**\n\n• Обсуждение стратегии Q3 [1]", sources: [], needsMarkets: false }
+      ? {
+        text: "**Сербия**\n\n• Обсуждение стратегии Q3 [1]",
+        sources: [],
+        needsMarkets: false,
+      }
       : { text: "", sources: [], needsMarkets: true };
   }
-  const r = await apiFetch<{ text: string; sources?: AskSource[]; needs_markets?: boolean }>("/digest", { method: "POST", body: JSON.stringify({ days, all_countries: allCountries }) });
-  return { text: r.text, sources: r.sources ?? [], needsMarkets: r.needs_markets === true };
+  const r = await apiFetch<
+    { text: string; sources?: AskSource[]; needs_markets?: boolean }
+  >("/digest", {
+    method: "POST",
+    body: JSON.stringify({ days, all_countries: allCountries }),
+  });
+  return {
+    text: r.text,
+    sources: r.sources ?? [],
+    needsMarkets: r.needs_markets === true,
+  };
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 export async function fetchAdminWorkspaces(): Promise<AdminWorkspace[]> {
-  if (DEV_MODE) return [
-    { id: "cee", name: "CEE", allowed_markets: null, user_count: 3 },
-    { id: "other", name: "Other Markets", allowed_markets: ["NG","MX","ID"], user_count: 2 },
-  ];
+  if (DEV_MODE) {
+    return [
+      { id: "cee", name: "CEE", allowed_markets: null, user_count: 3 },
+      {
+        id: "other",
+        name: "Other Markets",
+        allowed_markets: ["NG", "MX", "ID"],
+        user_count: 2,
+      },
+    ];
+  }
   return apiFetch<AdminWorkspace[]>("/admin/workspaces");
 }
 
-export async function fetchAdminWorkspaceUsers(wsId: string): Promise<AdminUser[]> {
-  if (DEV_MODE) return [
-    ...MOCK_USERS.map(u => ({ ...u, is_admin: false, first_name: null, last_name: null, email: null, phone: null, notes: null, created_at: new Date().toISOString() })),
-    // Ожидающее приглашение (добавлен по @username, ещё не входил) — состояние, в котором админ
-    // привязывает почту. Без него локально не увидеть форму «Привязать email».
-    {
-      id: "99", telegram_id: null, pending: true, name: "@pending_invite", username: "pending_invite",
-      is_admin: false, role: null, markets: [], first_name: null, last_name: null,
-      email: null, phone: null, notes: null, created_at: new Date().toISOString(),
-    },
-  ];
+export async function fetchAdminWorkspaceUsers(
+  wsId: string,
+): Promise<AdminUser[]> {
+  if (DEV_MODE) {
+    return [
+      ...MOCK_USERS.map((u) => ({
+        ...u,
+        is_admin: false,
+        first_name: null,
+        last_name: null,
+        email: null,
+        phone: null,
+        notes: null,
+        created_at: new Date().toISOString(),
+      })),
+      // Ожидающее приглашение (добавлен по @username, ещё не входил) — состояние, в котором админ
+      // привязывает почту. Без него локально не увидеть форму «Привязать email».
+      {
+        id: "99",
+        telegram_id: null,
+        pending: true,
+        name: "@pending_invite",
+        username: "pending_invite",
+        is_admin: false,
+        role: null,
+        markets: [],
+        first_name: null,
+        last_name: null,
+        email: null,
+        phone: null,
+        notes: null,
+        created_at: new Date().toISOString(),
+      },
+    ];
+  }
   return apiFetch<AdminUser[]>(`/admin/workspaces/${wsId}/users`);
 }
 
 // Добавление/перемещение пользователя в воркспейс. API принимает либо telegram_id, либо
 // username (allowed_users.upsert по telegram_id/username реассайнит group_id → это же = «переместить»).
-export async function addUserToWorkspace(wsId: string, ref: { telegramId?: number; username?: string; email?: string }): Promise<void> {
+export async function addUserToWorkspace(
+  wsId: string,
+  ref: { telegramId?: number; username?: string; email?: string },
+): Promise<void> {
   if (DEV_MODE) return;
-  const body = ref.telegramId != null ? { telegram_id: ref.telegramId }
-    : ref.email ? { email: ref.email }            // добавление по почте (веб-вход через Google, без Telegram)
+  const body = ref.telegramId != null
+    ? { telegram_id: ref.telegramId }
+    : ref.email
+    ? { email: ref.email } // добавление по почте (веб-вход через Google, без Telegram)
     : { username: ref.username };
-  return apiFetch<void>(`/admin/workspaces/${wsId}/users`, { method: "POST", body: JSON.stringify(body) });
+  return apiFetch<void>(`/admin/workspaces/${wsId}/users`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 // userId — telegram_id (реальный юзер) ЛИБО username (ожидающее приглашение без telegram_id).
-export async function removeUserFromWorkspace(wsId: string, userId: number | string): Promise<void> {
+export async function removeUserFromWorkspace(
+  wsId: string,
+  userId: number | string,
+): Promise<void> {
   if (DEV_MODE) return;
-  return apiFetch<void>(`/admin/workspaces/${wsId}/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+  return apiFetch<void>(
+    `/admin/workspaces/${wsId}/users/${encodeURIComponent(userId)}`,
+    { method: "DELETE" },
+  );
 }
 
-export async function patchAdminWorkspace(wsId: string, fields: { name?: string; allowed_markets?: string[] | null }): Promise<AdminWorkspace> {
-  if (DEV_MODE) return { id: wsId, name: fields.name ?? wsId, allowed_markets: fields.allowed_markets ?? null, user_count: 0 };
-  return apiFetch<AdminWorkspace>(`/admin/workspaces/${wsId}`, { method: "PATCH", body: JSON.stringify(fields) });
+export async function patchAdminWorkspace(
+  wsId: string,
+  fields: { name?: string; allowed_markets?: string[] | null },
+): Promise<AdminWorkspace> {
+  if (DEV_MODE) {
+    return {
+      id: wsId,
+      name: fields.name ?? wsId,
+      allowed_markets: fields.allowed_markets ?? null,
+      user_count: 0,
+    };
+  }
+  return apiFetch<AdminWorkspace>(`/admin/workspaces/${wsId}`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  });
 }
 
 // Создать воркспейс (id = slug a-z0-9-, name — отображаемое). Фаза 2 бот-паритета.
-export async function createAdminWorkspace(id: string, name: string): Promise<AdminWorkspace> {
+export async function createAdminWorkspace(
+  id: string,
+  name: string,
+): Promise<AdminWorkspace> {
   if (DEV_MODE) return { id, name, allowed_markets: null, user_count: 0 };
-  return apiFetch<AdminWorkspace>("/admin/workspaces", { method: "POST", body: JSON.stringify({ id, name }) });
+  return apiFetch<AdminWorkspace>("/admin/workspaces", {
+    method: "POST",
+    body: JSON.stringify({ id, name }),
+  });
 }
 
 // Рассылка всем пользователям системы (Telegram). Возвращает счётчики доставки.
-export async function broadcastMessage(text: string): Promise<{ sent: number; failed: number; total: number }> {
+export async function broadcastMessage(
+  text: string,
+): Promise<{ sent: number; failed: number; total: number }> {
   if (DEV_MODE) return { sent: 0, failed: 0, total: 0 };
-  return apiFetch<{ sent: number; failed: number; total: number }>("/admin/broadcast", { method: "POST", body: JSON.stringify({ text }) });
+  return apiFetch<{ sent: number; failed: number; total: number }>(
+    "/admin/broadcast",
+    { method: "POST", body: JSON.stringify({ text }) },
+  );
 }
 
 // Сводка для админа: сколько встреч на вычитке у каждого участника (агрегат, без контента).
 export type ReviewCount = { telegram_id: number; name: string; count: number };
 export async function fetchReviewCounts(): Promise<ReviewCount[]> {
-  if (DEV_MODE) return [
-    { telegram_id: 224830225, name: "Александра Миронова", count: 3 },
-    { telegram_id: 744230399, name: "Vasiliy Garro", count: 1 },
-  ];
+  if (DEV_MODE) {
+    return [
+      { telegram_id: 224830225, name: "Александра Миронова", count: 3 },
+      { telegram_id: 744230399, name: "Vasiliy Garro", count: 1 },
+    ];
+  }
   return apiFetch<ReviewCount[]>("/admin/review-counts");
 }
 
@@ -1642,8 +3064,19 @@ export async function fetchReviewCounts(): Promise<ReviewCount[]> {
 // нет — бэкенд для такой строки принимает ТОЛЬКО email, канон веб-входа через Google).
 export async function patchAdminUser(
   ref: number | string,
-  fields: { first_name?: string | null; last_name?: string | null; role?: string | null; email?: string | null; phone?: string | null; notes?: string | null; markets?: string[] },
+  fields: {
+    first_name?: string | null;
+    last_name?: string | null;
+    role?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    notes?: string | null;
+    markets?: string[];
+  },
 ): Promise<void> {
   if (DEV_MODE) return;
-  return apiFetch<void>(`/admin/users/${encodeURIComponent(String(ref))}`, { method: "PATCH", body: JSON.stringify(fields) });
+  return apiFetch<void>(`/admin/users/${encodeURIComponent(String(ref))}`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  });
 }
