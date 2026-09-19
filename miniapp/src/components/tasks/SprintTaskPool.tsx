@@ -125,11 +125,12 @@ export function SprintTaskPool(
           <button
             type="button"
             onClick={onHide}
-            title={dt("Скрыть задачи", "Hide tasks")}
-            aria-label={dt("Скрыть задачи", "Hide tasks")}
-            className="rounded-full p-1 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink"
+            title={dt("Свернуть влево", "Collapse to the left")}
+            aria-label={dt("Свернуть влево", "Collapse to the left")}
+            className="flex items-center gap-0.5 rounded-lg border border-line bg-surface px-1.5 py-1 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink"
           >
             <RoyIcon name="cleft" size={13} />
+            <RoyIcon name="cleft" size={13} className="-ml-2" />
           </button>
         )}
       </div>

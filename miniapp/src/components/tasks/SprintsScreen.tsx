@@ -985,17 +985,6 @@ export function SprintsScreen() {
                       : dt("Открыть отчёт", "Open report")}
                   </Button>
                 )}
-                {isDesktop && !accepted && !poolOpen && (
-                  <button
-                    onClick={() => togglePool(true)}
-                    className="rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-semibold text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink dark:backdrop-blur-sm"
-                  >
-                    {dt("Задачи", "Tasks")}
-                    <span className="ml-1 tabular-nums opacity-60">
-                      {poolTasks.length}
-                    </span>
-                  </button>
-                )}
                 {isAdmin && !accepted && (
                   <button
                     onClick={removeCycle}
@@ -1031,7 +1020,29 @@ export function SprintsScreen() {
               }
               {accepted
                 ? (reportOpen && <SprintReport cycle={detail} />)
-                : isDesktop && poolOpen && (
+                : isDesktop && !poolOpen
+                ? (
+                  /* Свёрнутая панель остаётся слева, на своём месте: кнопка, уехавшая в правый
+                     верх, читалась как «задачи куда-то делись» (владелец 19.09.2026). */
+                  <button
+                    type="button"
+                    onClick={() => togglePool(true)}
+                    title={dt("Показать задачи", "Show tasks")}
+                    className="flex w-9 shrink-0 flex-col items-center gap-2 rounded-xl border border-line bg-surface/40 py-2 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink dark:backdrop-blur-sm"
+                  >
+                    <RoyIcon name="cright" size={14} />
+                    <span className="text-[11px] font-semibold tabular-nums">
+                      {poolTasks.length}
+                    </span>
+                    <span
+                      className="text-[11px] font-semibold tracking-wide"
+                      style={{ writingMode: "vertical-rl" }}
+                    >
+                      {dt("Задачи", "Tasks")}
+                    </span>
+                  </button>
+                )
+                : isDesktop && (
                   <SprintTaskPool
                     tasks={poolTasks}
                     projects={projects}
