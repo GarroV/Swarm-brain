@@ -74,7 +74,7 @@
 | `swarm-bot` (`daily_report_cron`) | Cron (раз в сутки, ~06:00 UTC) | Ежедневный отчёт активности админу: счёт `entries` за вчерашние сутки (Europe/Belgrade) по `entry_type` (meeting/note) → `sendMessage(ADMIN_USER_ID)`. Вывод (переделан 2026-07-25): «📥 Добавлено в базу: N» + список названий (встречи+документы, из `metadata.title`/первой строки) + «📋 На вычитке: M» (вся очередь `meetings.status=awaiting_review`); «тихий день» — только когда оба ноль. Тот же флоу дублирует команда `/report`. **Свод переживает разовый отказ базы** (issue #305, повод — 504 от шлюза 12.09.2026): оба запроса идут через `withRetry` (3 попытки, 500 мс × 2^i) и **развязаны** — упавший `entries` не уносит с собой очередь вычитки, и наоборот; недоступная часть печатается как `—` (это НЕ ноль: ноль значит «тихий день») с подсказкой повторить `/report`. Хендлеры `handlers/daily-report.ts` (чистое ядро — `yesterdayWindow`/`aggregateActivity`/`formatReport`/`buildDailyReport`) + `handlers/daily-report-send.ts` (I/O `sendDailyReport()` — только сами запросы, ошибка supabase-js переводится в исключение, иначе ретрай её не увидит) |
 | `swarm-bot` (`task_pings_cron`) | Cron (почасовой, pg_cron `task-pings-hourly`) | «Пинги» задач: наступившие ручные напоминания (`tasks.remind_date <= сегодня`, `reminded_at is null`, задача не закрыта) → сообщение в Telegram с кнопкой в веб (`/?task=<id>`) + строка в ленте-колокольчике (`notifications.type='task_reminder'`). Пинг ОДНОРАЗОВЫЙ: после отправки `reminded_at`, повторов нет (решение владельца 2026-08-26). Получатели — исполнители; общая задача без исполнителя → поставивший пинг (`remind_set_by`); приватная → владелец. Не сумели отправить (человек не запускал бота) — пинг НЕ гасим, повторим на следующем тике; некому отправить вовсе — гасим с `console.warn`, иначе задача крутилась бы в выборке вечно. Гейта рабочих часов НЕТ (день выбрал человек, тик — почасовой). Хендлеры `handlers/task-pings.ts` (ядро: `isPingDue`/`pingRecipients`/`groupByRecipient`/`formatPings`, покрыто `task-pings.test.ts`) + `handlers/task-pings-send.ts` (I/O `sendTaskPings()`) |
 | `swarm-bot` (`review_reminders_cron`) | Cron (почасовой, pg_cron `review-reminders-hourly`; гейт рабочих часов Белграда — будни 9–19 — в коде) | Напоминалка **владельцу** про его невычитанные встречи-записи (`entries` `confirmed!=true`) старше 48ч: сообщение с кнопкой в веб (`/?meeting=<id>`), дальше каждые 24ч до вычитки. Антиспам — `entries.last_review_reminded_at`. Уводит из Telegram в веб (решение владельца 2026-07-25). Хендлеры `handlers/review-reminders.ts` (ядро: `isWorkingHours`/`selectDueReminders`/`formatReminder`) + `handlers/review-reminders-send.ts` (I/O `sendReviewReminders()`) |
-| `swarm-bot` (`feedback_retention_cron`) | Cron (раз в сутки; требует `X-Cron-Secret`) | Чистка Storage: удаляет закрытый фидбек (`status` done/wontfix, `resolved_at` старше 90 дней) вместе со скринами в `swarm_drive`. Незакрытый (`new`/`triaged`) не трогает. Хендлер — `handlers/feedback.ts` `cleanupOldFeedback()` |
+| `swarm-bot` (`feedback_retention_cron`) | Cron (раз в сутки; требует `X-Cron-Secret`) | Чистка Storage: удаляет закрытый фидбек (`status` done/wontfix, `resolved_at` старше 90 дней) вместе со скринами в приватном бакете. Незакрытый (`new`/`triaged`) не трогает. Хендлер — `handlers/feedback.ts` `cleanupOldFeedback()` |
 | `granola-poller` | ⚠️ выведен из крона | Устаревшая standalone-функция: только слала уведомление в Telegram, в БД ничего не клала. Логика переехала в `swarm-bot` (`ingestNewGranolaNotesAllUsers`) |
 | `read-ai-webhook` | Webhook от Read.ai | Принимает завершённые встречи, сохраняет в `entries`, уведомляет бота |
 | `read-ai-auth` | HTTP redirect (OAuth) | OAuth callback для авторизации Read.ai, сохраняет токен в `app_settings` |
@@ -653,7 +653,7 @@ _Все три: перевыпуск **убивает старый токен**,
 | `username` | text | Telegram username |
 | `text` | text NOT NULL | Текст фидбека |
 | `photo_file_id` | text | Telegram file_id (legacy; канон скрина — `screenshot_url`) |
-| `screenshot_url` | text | Durable URL скрина в `swarm_drive` (виден вне Telegram) |
+| `screenshot_url` | text | **Путь** скрина в приватном бакете (`feedback/…`). Показ — через `/api/file/<path>`, только суперадмину. Раньше здесь лежал публичный URL |
 | `status` | text | `new` → `triaged` → `done` / `wontfix` (дефолт `new`) |
 | `category` | text | Раздел (дефолт `other`); канон enum — `_shared/feedback-categories.ts` |
 | `source` | text | `bot` / `web` (дефолт `bot`) |
@@ -681,6 +681,55 @@ _Все три: перевыпуск **убивает старый токен**,
 - 🔒 **RLS включён на всех 18 таблицах `public`, политик НЕТ — deny-all для `anon`/`authenticated`** (миграция `20260819180000_rls_enable_remaining.sql`, issue #41). Это НЕ авторизация (её делает код, выше), а замок на прямой доступ к базе в обход Edge Functions: anon-ключ Supabase публичен по дизайну, и до фикса пять таблиц (`meetings`, `meeting_live_notes`, `projects`, `sprints`, `task_labels`) стояли без RLS — реальные встречи читались анонимно через `/rest/v1` (проверено на проде до и после: было `[{id,title},…]`, стало `[]`, запись → 401). Приложение и cron не задеты: `service_role` и `postgres` — `rolbypassrls=true`. **Следствие:** клиент не может ходить в базу напрямую (supabase-js в браузере упрётся в deny-all); понадобится — сперва политики, потом код
 - Workspace-изоляция: все запросы к `entries` и `tasks` фильтруются по `group_id` пользователя — пользователь видит только данные своего воркспейса
 - **Demo-сессия** (`telegram_id === DEMO_USER_ID` 900000001, вход по секретной ссылке `/api/auth/demo?key=<DEMO_ACCESS_KEY>`): барьер `isDemo` в `swarm-api` форсит `group_id='demo'` (НЕ из БД), `isAdmin=false`, 403 на токен-минт. Admin-роуты недоступны (они НЕ group-scoped — broadcast шлёт всем, workspaces/:id/users по любому id — были бы дырами). Данные изолированы тем же `group_id`-фильтром, что `cee`↔`other`. Наполнение — `supabase/demo-seed.sql` (идемпотентный ресет к эталону)
+
+## Файлы и Storage
+
+Канон по файлам: бакеты, реестр, как строится ссылка. Код — `_shared/storage-files.ts`
+(загрузка и регистрация), `_shared/storage-links.ts` (ссылки и удаление),
+`swarm-api/file-access.ts` (проверка доступа).
+
+### Бакеты
+
+| Бакет | Видимость | Что лежит |
+|-------|-----------|-----------|
+| `swarm_private` | приватный | **всё, что принадлежит команде**: вложения записей (`uploads/…`), документы/таблицы/PDF из бота (`documents/`, `spreadsheets/`, `pdfs/`), скрины фидбека (`feedback/…`) |
+| `swarm_drive` | публичный | **только ассеты рекордера** (`recorder/…`): установщик и `Updater.swift` тянут их анонимно, это не секрет. Исторически здесь лежали и файлы команды — отсюда утечка, ради которой сделан приватный бакет |
+
+### Реестр `storage_files`
+
+Связь `path → владелец`, и ничего больше: права берутся из записи-владельца **на момент
+проверки**, поэтому смена приватности записи не оставляет реестр рассогласованным.
+
+- `owner_kind='entry'` + `entry_id` — вложение записи; каскад при удалении записи.
+- `owner_kind='feedback'` — скрин фидбека, записи-владельца нет (виден только суперадмину).
+
+**Регистрация — обязательная часть загрузки, не «потом».** Незарегистрированный путь для
+`/file` не существует (404), то есть файл залит и недоступен. Поэтому при сбое регистрации
+загрузка откатывается целиком.
+
+### Как файл доезжает до человека
+
+| Получатель | Ссылка | Почему так |
+|------------|--------|------------|
+| Веб | `/api/file/<path>` (относительная) | Прокси Cloudflare Pages `/api/*` → swarm-api, same-origin: сессионная cookie доезжает. Эндпоинт проверяет доступ и отдаёт 302 на signed URL (60 с) |
+| Сообщение бота | `<WEB_BASE_URL>/api/file/<path>` | Ссылка живёт в переписке дольше любой подписи, поэтому ведёт в веб, где доступ проверяется заново |
+| Ответ MCP | `<WEB_BASE_URL>/api/file/<path>` | Получатель — Claude Desktop, не наша страница: относительный путь там некликабелен |
+| Внешний качальщик (Telegram качает сам) | signed URL, 60 с | Нашей сессии у него нет; `externalFileUrl` |
+
+**В `metadata.file_url` хранится ПУТЬ объекта**, а не ссылка. У записей, созданных до
+перехода, там остался публичный URL — отдача чинит это на лету (`withNormalizedFileLink`),
+поэтому клиент всегда видит `/api/file/<path>`. Внешние ссылки (Google Drive) не трогаются.
+
+### Правила
+
+- Ссылку на файл **не собирать руками** — только `webFileUrl`/`absoluteFileUrl`/
+  `normalizeFileLink`. Имя с пробелом, кириллицей, `?` или `#` рвёт склеенный вручную адрес.
+- Путь из ссылки доставать `storagePathFromLink`, а не `split("/swarm_drive/")`: имя бакета
+  больше не одно, а percent-encoding ломает такой разбор молча.
+- Удалять файл только через `removeStorageObject` (бакет из реестра, строка реестра снимается
+  после фактического удаления). **Ошибку удаления не проглатывать:** запись, удалённая при
+  живом объекте, оставляет файл в хранилище навсегда и без владельца.
+- Проверять доступ только через `getFileSecure`; прямых `supabase.storage` в обход — не писать.
 
 ## Воркспейсы
 
@@ -919,9 +968,10 @@ _Записи базы знаний (entries — только через `entrie
 | `GET` | `/entries` | Список заметок (`entry_type=note`, без `source=digest`). Фильтры: `source`, `type`, `date_from/to`; ≤50, по `created_at desc`. Воркспейс+приватность через `buildEntriesQuery` |
 | `GET` | `/entries/:id` | Одна запись (`getEntrySecure`). Приватная чужая / несуществующая → 404 |
 | `PATCH` | `/entries/:id` | Правка `content`/`summary` — **только владелец** (`requireOwner`) |
-| `DELETE` | `/entries/:id` | Удалить запись + прикреплённый файл из Storage (`swarm_drive`) — только владелец; 204 |
+| `DELETE` | `/entries/:id` | Удалить запись + прикреплённый файл из Storage (бакет берётся из реестра `storage_files`) — только владелец; 204. Объект не удалился → запись НЕ удаляется и отдаётся 500: иначе файл остаётся в хранилище без владельца |
 | `POST` | `/entries` | Создать заметку из текста: эмбеддинг + классификация стран/типа (GPT-4o-mini, `COUNTRY_PROMPT_RULE`/`ENTRY_TYPE_PROMPT_RULE`) + тезисы (если ≥80 симв); `source=note`, привязка `group_id`/`owner_id`; 201 |
-| `POST` | `/entries/upload` | Multipart-загрузка файла в Storage (`swarm_drive/uploads/`) + создание записи (`source=file`, `metadata.file_url`); `is_private` опц.; 201 |
+| `POST` | `/entries/upload` | Multipart-загрузка файла в **приватный** бакет (`swarm_private/uploads/`) + запись (`source=file`) + строка реестра `storage_files`. В `metadata.file_url` кладётся **путь объекта**, наружу отдаётся `/api/file/<path>`; `is_private` опц.; 201. Сбой регистрации → откат (объект и запись удаляются) |
+| `GET` | `/file/*` | **Авторизованная раздача приватного файла.** Путь — всё после `/file/`. Доступ по реестру (`getFileSecure`: владелец через `storage_files` → свежие права из `entries`), затем 302 на signed URL (TTL 60 с). Отказ всегда 404 — существование чужого приватного файла не раскрывается. Для бота не годится (Telegram качает сам, без сессии) |
 
 **⚡ Форма ответа `GET /meetings` — канон `swarm-api/meetings-payload.ts`** (issue #102, 26.08.2026):
 
@@ -1022,7 +1072,7 @@ _Поиск / RAG / прочее:_
 | `GET` | `/search?q=` | Гибридный поиск по `entries` (`match_entries_hybrid`: русский full-text + вектор через RRF, **фильтр по стране** (когда названа — пул кандидатов = записи этой страны ИЛИ `General`; чужие страны отсекаются) + буст этой страны в ранге + окно свежести — сначала ≤2 нед, добор старых при <5 источников, ступенчатый буст recency; страна детектится из текста запроса — `detectQueryCountry`, понимает русские склонения («Сербии»/«Сербией» → RS, стем+падежное окончание, без ложных «индикатор»/«грузить»); миграция `20260730120000_search_country_filter`) → `Entry[]`  🔒 **Невычитанная встреча в выдачу НЕ попадает** (issue #70, 2026-08-24): `entry_type='meeting'` участвует в поиске только при `metadata.confirmed='true'`. Read.ai создаёт встречу общей и несогласованной, поэтому сырой транскрипт находился всей командой до вычитки; гард очереди (#66) поиск не закрывал — он ходит прямо в RPC. Фильтр добавлен в ОБЕ перегрузки `match_entries_hybrid` и в каждой ДВАЖДЫ (full-text и векторная ветки) + в `match_entries`; миграции `20260824100000`, `20260824101500`. Заметки и документы не затронуты — поля `confirmed` у них нет. |
 | `POST` | `/ask` | RAG-ответ (экран Answer редизайна): embed → `matchEntries` (топ-8, приватность+воркспейс в RPC) → GPT-4o-mini синтез строго по источникам со сносками `[n]` → `{ query, answer, sources[], followups[] }`. Пусто → без GPT; сбой синтеза → деградация до источников |
 | `POST` | `/digest` | Персональный дайджест за период (`{ days }`, дефолт 7): GPT-сводка по `entries` воркспейса (приватность учтена) СТРОГО по рынкам пользователя. Охват решает `resolveDigestScope` (`swarm-api/digest-scope.ts`) по НОРМАЛИЗОВАННЫМ кодам стран: рынки есть → фильтр `countries ∩ markets`; админский `all_countries` → весь воркспейс; **рынков нет → `{ text: "", needs_markets: true }`, дайджест не строится** (issue #154 — раньше пустой `markets` молча снимал фильтр и человек получал сводку по чужим странам). Подсказку «где настроить» рисует веб, сервер отдаёт признак; записей нет → текстовая заглушка |
-| `POST` | `/feedback` | **multipart/form-data**: `text` (обяз.) + `category` + опц. `screenshot` (файл → `swarm_drive`). Сохраняет в `feedback` (`source='web'`, username из `allowed_users`) + пинг в канал `feedback_channel_id` (без кнопок); 204 |
+| `POST` | `/feedback` | **multipart/form-data**: `text` (обяз.) + `category` + опц. `screenshot` (файл → приватный бакет + реестр). Сохраняет в `feedback` (`source='web'`, username из `allowed_users`) + пинг в канал `feedback_channel_id` (без кнопок); 204 |
 
 _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_admin=true`):_
 

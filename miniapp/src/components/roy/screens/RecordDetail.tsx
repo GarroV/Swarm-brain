@@ -32,6 +32,11 @@ export function RecordBody({ entry: e }: { entry: Entry }) {
   const date = fmtDate(e.entry_date || e.created_at);
   // Участники из календаря — кладутся в metadata.attendees при публикации встречи рекордера.
   const attendees = (e.metadata?.attendees as Attendee[] | undefined) ?? [];
+  // Вложение. API отдаёт ссылку уже нормализованной (/api/file/<path>) — публичных ссылок на
+  // файлы команды не существует, доступ проверяется на каждом открытии. Строить адрес здесь
+  // нельзя: в metadata лежит путь, а у старых записей — ещё прежний URL.
+  const fileHref = typeof e.metadata?.file_url === "string" ? (e.metadata.file_url as string) : null;
+  const fileName = (e.metadata?.file_name ?? e.metadata?.filename) as string | undefined;
   return (
     <>
       <div className="mb-2 flex flex-wrap items-center gap-2 pt-1">
@@ -50,6 +55,18 @@ export function RecordBody({ entry: e }: { entry: Entry }) {
         </span>
         {who && <span>· добавил: <span className="font-semibold text-ink">{who}</span></span>}
       </div>
+      {fileHref && (
+        <a
+          href={fileHref}
+          target="_blank"
+          rel="noreferrer"
+          className="mb-3.5 inline-flex max-w-full items-center gap-2 px-3 py-2 text-ink transition hover:opacity-80"
+          style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 12, fontSize: 13 }}
+        >
+          <RoyIcon name={entryTagKey(e) === "pdf" ? "pdf" : "doc"} size={15} className="shrink-0 text-accent-ink" />
+          <span className="truncate font-semibold">{fileName || "Скачать файл"}</span>
+        </a>
+      )}
       {attendees.length > 0 && (
         <div className="mb-3.5 -mt-1.5">
           <Participants attendees={attendees} />

@@ -19,6 +19,13 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
+import { absoluteFileUrl, removeStorageObject } from "../_shared/storage-links.ts";
+import { uploadPrivateFile, registerStorageFile, safeStorageName, PRIVATE_BUCKET } from "../_shared/storage-files.ts";
+
+// Адрес веба: ссылку на файл отдаём абсолютной — получатель ответа (Claude Desktop)
+// не наша страница, относительный путь там некликабелен.
+const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "https://swarm-brain.pages.dev";
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 // Владелец (админ) — единственный, кому доступна поверхность фидбека. Совпадает с ADMIN_USER_ID в боте.
@@ -120,26 +127,24 @@ async function uploadToStorage(
   fileContentBase64: string,
   fileName: string,
   mimeType: string
-): Promise<{ path: string; publicUrl: string; fileSizeBytes: number }> {
+): Promise<{ path: string; fileSizeBytes: number }> {
   const bytes = Uint8Array.from(atob(fileContentBase64), c => c.charCodeAt(0));
   const now = new Date();
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const uuid = crypto.randomUUID();
-  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  // Транслит вместо голой замены: имя «отчёт.pdf» превращалось в «______.pdf» — путь,
+  // по которому невозможно понять, что за файл.
+  const safeName = safeStorageName(fileName);
   const path = `uploads/${yyyy}/${mm}/${uuid}-${safeName}`;
 
-  const { error } = await supabase.storage
-    .from("swarm_drive")
-    .upload(path, bytes, { contentType: mimeType, upsert: false });
+  const { error } = await uploadPrivateFile(supabase, {
+    path, body: bytes, contentType: mimeType, upsert: false,
+  });
+  if (error) throw new Error(`Storage upload failed: ${error}`);
 
-  if (error) throw new Error(`Storage upload failed: ${error.message}`);
-
-  const { data: { publicUrl } } = supabase.storage
-    .from("swarm_drive")
-    .getPublicUrl(path);
-
-  return { path, publicUrl, fileSizeBytes: bytes.length };
+  // Публичной ссылки больше нет: наружу отдаётся /api/file/<path>, а в metadata — путь.
+  return { path, fileSizeBytes: bytes.length };
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
@@ -590,7 +595,7 @@ async function toolUploadFile(args: {
   const source = args.source ?? "file";
   const mimeType = args.mime_type ?? mimeFromExtension(args.file_name);
 
-  let uploadResult: { path: string; publicUrl: string; fileSizeBytes: number };
+  let uploadResult: { path: string; fileSizeBytes: number };
   try {
     uploadResult = await uploadToStorage(args.file_content_base64, args.file_name, mimeType);
   } catch (e) {
@@ -605,14 +610,14 @@ async function toolUploadFile(args: {
   let workspaceGroupId: string | null = null;
   if (args.requesting_user_id) workspaceGroupId = await getUserGroupId(args.requesting_user_id);
 
-  const { error } = await supabase.from("entries").insert({
+  const { data: created, error } = await supabase.from("entries").insert({
     content: args.summary,
     summary: args.summary,
     embedding,
     added_by: "claude_desktop",
     source,
     metadata: {
-      file_url: uploadResult.publicUrl,
+      file_url: uploadResult.path,
       file_name: args.file_name,
       mime_type: mimeType,
       file_size_bytes: uploadResult.fileSizeBytes,
@@ -621,15 +626,26 @@ async function toolUploadFile(args: {
     entry_type: entryMeta.entry_type,
     entry_date: entryMeta.entry_date,
     group_id: workspaceGroupId,
-  });
+  }).select("id").single();
 
   if (error) {
-    await supabase.storage.from("swarm_drive").remove([uploadResult.path]);
+    await supabase.storage.from(PRIVATE_BUCKET).remove([uploadResult.path]);
     return `Ошибка создания записи: ${error.message}`;
   }
 
+  // Без строки реестра файл недоступен (эндпоинт /file отдаёт 404) — откатываем всё,
+  // чтобы не оставить запись с вечно ломающимся вложением.
+  const regNew = await registerStorageFile(supabase, {
+    path: uploadResult.path, owner: { kind: "entry", entryId: (created as { id: string }).id },
+  });
+  if (regNew.error) {
+    await supabase.storage.from(PRIVATE_BUCKET).remove([uploadResult.path]);
+    await supabase.from("entries").delete().eq("id", (created as { id: string }).id);
+    return `Ошибка регистрации файла: ${regNew.error}`;
+  }
+
   const sizeKb = Math.round(uploadResult.fileSizeBytes / 1024);
-  return `✅ Файл загружен: ${args.file_name} (${sizeKb} KB)\n📎 ${uploadResult.publicUrl}`;
+  return `✅ Файл загружен: ${args.file_name} (${sizeKb} KB)\n📎 ${absoluteFileUrl(uploadResult.path, WEB_BASE_URL)}`;
 }
 
 async function toolGetStorageStats(args: { requesting_user_id?: number } = {}): Promise<string> {
@@ -738,20 +754,18 @@ async function toolDeleteEntry(args: { id: string; requesting_user_id?: number }
   if (!entry) return `Запись ${args.id} не найдена.`;   // сужение: гард уже отсёк null
 
   const fileUrl = (entry.metadata as Record<string, unknown> | null)?.file_url as string | undefined;
-  if (fileUrl) {
-    try {
-      const url = new URL(fileUrl);
-      const pathParts = url.pathname.split("/object/public/swarm_drive/");
-      if (pathParts.length > 1) {
-        await supabase.storage.from("swarm_drive").remove([decodeURIComponent(pathParts[1])]);
-      }
-    } catch { /* ignore storage deletion errors */ }
+  const removal = fileUrl ? await removeStorageObject(supabase, fileUrl) : { status: "no-file" as const };
+  // Файл не удалился — запись оставляем и говорим об этом. Раньше ошибка глушилась,
+  // а ответ всё равно утверждал «вместе с файлом из Storage»: файл оставался доступен
+  // по прежней ссылке, и никто об этом не узнавал.
+  if (removal.status === "failed") {
+    return `Запись НЕ удалена: файл не удалось убрать из Storage (${removal.error}). Записи без файла не оставляем — иначе файл останется доступен по прежней ссылке.`;
   }
 
   const { error: delErr } = await supabase.from("entries").delete().eq("id", args.id);
   if (delErr) return `Ошибка удаления: ${delErr.message}`;
 
-  return `✅ Запись удалена${fileUrl ? " вместе с файлом из Storage" : ""}.`;
+  return `✅ Запись удалена${removal.status === "removed" ? " вместе с файлом из Storage" : ""}.`;
 }
 
 async function toolUpdateEntry(args: { id: string; content?: string; summary?: string; title?: string; entry_date?: string; countries?: string[]; file_content_base64?: string; file_name?: string; requesting_user_id?: number }): Promise<string> {
@@ -778,17 +792,16 @@ async function toolUpdateEntry(args: { id: string; content?: string; summary?: s
     const oldFileUrl = oldMeta.file_url as string | undefined;
 
     if (oldFileUrl) {
-      try {
-        const url = new URL(oldFileUrl);
-        const pathParts = url.pathname.split("/object/public/swarm_drive/");
-        if (pathParts.length > 1) {
-          await supabase.storage.from("swarm_drive").remove([decodeURIComponent(pathParts[1])]);
-        }
-      } catch { /* ignore */ }
+      const oldRemoval = await removeStorageObject(supabase, oldFileUrl);
+      // Прежний объект остался — не заливаем новый поверх: иначе старый файл живёт в
+      // хранилище без ссылки на него, невидимый и неудаляемый.
+      if (oldRemoval.status === "failed") {
+        return `Файл не заменён: прежний не удалось убрать из Storage (${oldRemoval.error}).`;
+      }
     }
 
     const mimeType = mimeFromExtension(args.file_name);
-    let uploadResult: { path: string; publicUrl: string; fileSizeBytes: number };
+    let uploadResult: { path: string; fileSizeBytes: number };
     try {
       uploadResult = await uploadToStorage(args.file_content_base64, args.file_name, mimeType);
     } catch (e) {
@@ -797,7 +810,7 @@ async function toolUpdateEntry(args: { id: string; content?: string; summary?: s
 
     const newMeta = {
       ...oldMeta,
-      file_url: uploadResult.publicUrl,
+      file_url: uploadResult.path,
       file_name: args.file_name,
       mime_type: mimeType,
       file_size_bytes: uploadResult.fileSizeBytes,
@@ -805,8 +818,13 @@ async function toolUpdateEntry(args: { id: string; content?: string; summary?: s
     const { error: updErr } = await supabase.from("entries").update({ metadata: newMeta }).eq("id", args.id);
     if (updErr) return `Ошибка обновления метаданных файла: ${updErr.message}`;
 
+    const regRepl = await registerStorageFile(supabase, {
+      path: uploadResult.path, owner: { kind: "entry", entryId: args.id },
+    });
+    if (regRepl.error) return `Файл залит, но не зарегистрирован (${regRepl.error}) — он недоступен для показа.`;
+
     const sizeKb = Math.round(uploadResult.fileSizeBytes / 1024);
-    return `✅ Файл заменён: ${args.file_name} (${sizeKb} KB)\n📎 ${uploadResult.publicUrl}`;
+    return `✅ Файл заменён: ${args.file_name} (${sizeKb} KB)\n📎 ${absoluteFileUrl(uploadResult.path, WEB_BASE_URL)}`;
   }
 
   const updates: Record<string, unknown> = {};

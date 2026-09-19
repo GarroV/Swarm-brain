@@ -36,7 +36,7 @@ supabase functions deploy meeting-webtoken --no-verify-jwt   # обмен record
 # daily_report_cron — ежедневный отчёт активности админу (pg_cron '0 6 * * *' → swarm-bot {"daily_report_cron":true})
 # review_reminders_cron — напоминалка владельцу про невычитанные встречи >48ч, кнопка в веб (pg_cron 'review-reminders-hourly' почасовой, гейт рабочих часов Белграда в коде → swarm-bot {"review_reminders_cron":true})
 # task_pings_cron — «пинги» задач: наступившие ручные напоминания → Telegram + колокольчик (pg_cron 'task-pings-hourly' почасовой → swarm-bot {"task_pings_cron":true}; регистрация pg_cron — вручную в проде, как остальные)
-# feedback_retention_cron — чистка закрытого фидбека (done/wontfix >90 дней) + скрины в swarm_drive (pg_cron раз в сутки → swarm-bot {"feedback_retention_cron":true}; регистрация pg_cron — вручную в проде, как остальные)
+# feedback_retention_cron — чистка закрытого фидбека (done/wontfix >90 дней) + скрины в приватном бакете (pg_cron раз в сутки → swarm-bot {"feedback_retention_cron":true}; регистрация pg_cron — вручную в проде, как остальные)
 supabase secrets set BOT_NAME=swarm-bot                       # env-переменные
 ```
 
@@ -108,6 +108,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 | Сохранение записи (saveEntry/индекс), сессии, доступ | `swarm-bot/lib/storage.ts` | §Флоу сохранения, §Сессионный механизм |
 | Правка/удаление записей из чата | `swarm-bot/handlers/manage.ts` | §Управление записями |
 | Воркспейсы | `swarm-bot/lib/workspace.ts` | §Воркспейсы |
+| **Файлы: загрузка, ссылки, доступ, удаление** | `_shared/storage-files.ts` (в приватный бакет + реестр), `_shared/storage-links.ts` (ссылки `/api/file/<path>`, удаление), `swarm-api/file-access.ts` (проверка доступа), эндпоинт `GET /file/*` | §Файлы и Storage |
 | Фидбек (приём бот+веб, категории, скрины, разбор) | бот `swarm-bot/handlers/feedback.ts`; веб `swarm-api` `POST /feedback` + `miniapp/.../roy/{FeedbackForm,FeedbackFab}.tsx`; разбор `swarm-mcp` (`get_feedback`/`resolve_feedback`); канон категорий `_shared/feedback-categories.ts` | §Таблица feedback |
 | Telegram helpers / новый хендлер | `swarm-bot/lib/telegram.ts`, `handlers/<name>.ts` | §swarm-bot |
 | `ADMIN_USER_ID` (зашит) | `swarm-bot/lib/supabase.ts` → `744230399` | §Контроль доступа |

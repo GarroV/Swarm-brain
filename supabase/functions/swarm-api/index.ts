@@ -77,6 +77,17 @@ import {
 } from "../_shared/meta-extract.ts";
 import { pickSuggestedMarkets } from "../_shared/market-suggest.ts";
 import { type MatchedEntry, matchEntries } from "../_shared/search.ts";
+import { FileAccessError, getFileSecure } from "./file-access.ts";
+import {
+  removeStorageObject,
+  withNormalizedFileLink,
+} from "../_shared/storage-links.ts";
+import {
+  PRIVATE_BUCKET,
+  registerStorageFile,
+  safeStorageName,
+  uploadPrivateFile,
+} from "../_shared/storage-files.ts";
 import { detectQuerySince } from "../_shared/query-time.ts";
 import { resummarizeFromTranscript } from "../_shared/meeting-processor.ts";
 import {
@@ -124,6 +135,10 @@ import { isTaskStatus, taskStatusError } from "../_shared/tasks/statuses.ts";
 // уже путь, которым /meetings дорос до 10 МБ (#102). Настоящий фикс — серверная фильтрация
 // статусов вместо клиентской (#111), громкое усечение — #112. Пока держим breadcrumb в логах.
 const TASKS_LIST_LIMIT = 2000;
+
+// TTL signed-URL для приватных файлов (swarm_private): достаточно, чтобы браузер/Telegram
+// успел скачать по 302-редиректу, но ссылка не живёт долго и не шерится.
+const FILE_SIGNED_TTL_SEC = 60;
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
@@ -1711,8 +1726,12 @@ Deno.serve(async (req: Request) => {
     // ответ остаётся голым массивом, поэтому бот и MCP не задеты. Замер на проде 05.09.2026:
     // 92 заметки видно, отдавалось 50 — 42 записи не существовало для человека, и экран об этом
     // молчал. Лимит здесь не поднимаем: сперва признак, пагинация отдельно (#104).
+    // Ссылки на файлы наружу отдаём только через /api/file/<path> (публичные URL бакета убраны).
+    const rows = (data ?? []).map((r) =>
+      withNormalizedFileLink(r as unknown as Record<string, unknown>)
+    );
     return json(
-      data,
+      rows,
       200,
       origin,
       count != null ? { "X-Total-Count": String(count) } : undefined,
@@ -1729,7 +1748,11 @@ Deno.serve(async (req: Request) => {
           groupId,
           telegramId: telegram_id,
         });
-        return json(entry, 200, origin);
+        return json(
+          withNormalizedFileLink(entry as unknown as Record<string, unknown>),
+          200,
+          origin,
+        );
       }
       if (req.method === "PATCH") {
         const entry = await getEntrySecure(supabase, entryId, {
@@ -1749,7 +1772,13 @@ Deno.serve(async (req: Request) => {
         await supabase.from("entries").update(fields).eq("id", entry.id);
         const { data } = await supabase.from("entries").select(ENTRY_COLUMNS)
           .eq("id", entry.id).single();
-        return json(data, 200, origin);
+        return json(
+          withNormalizedFileLink(
+            (data ?? {}) as unknown as Record<string, unknown>,
+          ),
+          200,
+          origin,
+        );
       }
       if (req.method === "DELETE") {
         const entry = await getEntrySecure(supabase, entryId, {
@@ -1761,8 +1790,12 @@ Deno.serve(async (req: Request) => {
           | string
           | undefined;
         if (fileUrl) {
-          const path = fileUrl.split("/swarm_drive/")[1];
-          if (path) await supabase.storage.from("swarm_drive").remove([path]);
+          const removal = await removeStorageObject(supabase, fileUrl);
+          // Объект не удалён — запись НЕ трогаем: иначе файл остался бы в хранилище без
+          // владельца, то есть навсегда и по прежней ссылке.
+          if (removal.status === "failed") {
+            return apiErr(500, `File delete failed: ${removal.error}`, origin);
+          }
         }
         await supabase.from("entries").delete().eq("id", entry.id);
         return new Response(null, {
@@ -1788,19 +1821,20 @@ Deno.serve(async (req: Request) => {
 
     const arrayBuffer = await file.arrayBuffer();
     const date = new Date().toISOString().slice(0, 10);
-    const safeName = file.name.replace(/[^a-zA-Zа-яёА-ЯЁ0-9.\-_]/g, "_");
+    // Кириллицу Storage в ключе НЕ принимает («Invalid key») — прежняя маска её сохраняла,
+    // и файл с русским именем не загружался вовсе. Настоящее имя живёт в metadata.filename.
+    const safeName = safeStorageName(file.name);
     const path = `uploads/${date}_${safeName}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from("swarm_drive")
-      .upload(path, arrayBuffer, {
-        contentType: file.type || "application/octet-stream",
-        upsert: true,
-      });
-    if (uploadError) return apiErr(500, uploadError.message, origin);
-
-    const { data: { publicUrl } } = supabase.storage.from("swarm_drive")
-      .getPublicUrl(path);
+    // Приватный бакет: публичной ссылки на файл команды больше не существует. В metadata
+    // кладём ПУТЬ — ссылку строит отдача (withNormalizedFileLink → /api/file/<path>).
+    const { error: uploadError } = await uploadPrivateFile(supabase, {
+      path,
+      body: arrayBuffer,
+      contentType: file.type,
+      upsert: true,
+    });
+    if (uploadError) return apiErr(500, uploadError, origin);
 
     const { data: profile } = await supabase.from("user_profiles")
       .select("first_name").eq("telegram_id", telegram_id).maybeSingle();
@@ -1814,11 +1848,7 @@ Deno.serve(async (req: Request) => {
         embedding: null,
         added_by: addedBy,
         source: "file",
-        metadata: {
-          filename: file.name,
-          file_url: publicUrl,
-          file_type: file.type,
-        },
+        metadata: { filename: file.name, file_url: path, file_type: file.type },
         countries: [],
         entry_type: "note",
         entry_date: null,
@@ -1826,8 +1856,33 @@ Deno.serve(async (req: Request) => {
         is_private: isPrivate,
         owner_id: telegram_id,
       }).select().single();
-    if (insertError) return apiErr(500, insertError.message, origin);
-    return json(entry, 201, origin);
+    if (insertError) {
+      // Запись не создалась — объект без владельца не оставляем.
+      await supabase.storage.from(PRIVATE_BUCKET).remove([path]);
+      return apiErr(500, insertError.message, origin);
+    }
+
+    // Реестр — обязательная часть загрузки: без строки файл зальётся и будет недоступен
+    // (эндпоинт /file отдаёт 404 на незарегистрированный путь). Не смогли — откатываем всё,
+    // иначе человек увидит запись с вечно ломающимся вложением.
+    const reg = await registerStorageFile(supabase, {
+      path,
+      owner: { kind: "entry", entryId: (entry as { id: string }).id },
+    });
+    if (reg.error) {
+      await supabase.storage.from(PRIVATE_BUCKET).remove([path]);
+      await supabase.from("entries").delete().eq(
+        "id",
+        (entry as { id: string }).id,
+      );
+      return apiErr(500, `File registration failed: ${reg.error}`, origin);
+    }
+
+    return json(
+      withNormalizedFileLink(entry as unknown as Record<string, unknown>),
+      201,
+      origin,
+    );
   }
 
   // ── POST /entries ─────────────────────────────────────────────────────────────
@@ -2063,6 +2118,42 @@ Deno.serve(async (req: Request) => {
         : [];
     } catch { /* answer пустой → фронт покажет только источники */ }
     return json({ query: q, answer, sources, followups }, 200, origin);
+  }
+
+  // ── GET /file/* — авторизованная раздача приватных файлов (swarm_private) ──────
+  // Публичные URL убраны (утечка swarm_drive): каждый показ проходит проверку доступа по
+  // реестру storage_files (getFileSecure), затем 302 на короткоживущий signed URL. Путь —
+  // всё после "/file/" (объекты лежат во вложенных папках: uploads/<...>). Для БОТА этот путь
+  // не годится (Telegram качает сам, без нашей сессии) — он генерит signed URL напрямую.
+  if (req.method === "GET" && routePath.startsWith("/file/")) {
+    const filePath = decodeURIComponent(routePath.slice("/file/".length));
+    if (!filePath) return apiErr(400, "path required", origin);
+    try {
+      const resolved = await getFileSecure(supabase, filePath, {
+        groupId,
+        telegramId: telegram_id,
+        isAdmin,
+      });
+      const { data: signed, error: signErr } = await supabase.storage
+        .from(resolved.bucket)
+        .createSignedUrl(resolved.path, FILE_SIGNED_TTL_SEC);
+      if (signErr || !signed?.signedUrl) {
+        return apiErr(500, "Signing failed", origin);
+      }
+      return new Response(null, {
+        status: 302,
+        headers: {
+          ...corsHeaders(origin),
+          Location: signed.signedUrl,
+          "Cache-Control": "no-store",
+        },
+      });
+    } catch (e) {
+      if (e instanceof FileAccessError) {
+        return apiErr(e.status, e.message, origin);
+      }
+      throw e;
+    }
   }
 
   // ── GET /meetings ─────────────────────────────────────────────────────────────
@@ -3323,7 +3414,7 @@ Deno.serve(async (req: Request) => {
 
   // ── POST /feedback ────────────────────────────────────────────────────────────
   // Принимает ОБА формата (backward-compat на время раскатки со старым кэш-бандлом):
-  //   • multipart/form-data — новый веб: text + category + опц. screenshot (→ swarm_drive)
+  //   • multipart/form-data — новый веб: text + category + опц. screenshot (→ приватный бакет)
   //   • application/json    — legacy-клиент (старый service-worker кэш): только { text, category? }
   if (req.method === "POST" && routePath === "/feedback") {
     let text = "";
@@ -3369,28 +3460,37 @@ Deno.serve(async (req: Request) => {
     const username = (au as { username?: string } | null)?.username ??
       String(telegram_id);
 
-    // Скрин — durable URL в swarm_drive (единственный способ увидеть его вне Telegram).
+    // Скрин — в приватном бакете; в feedback кладём путь, показ идёт через /api/file (admin-only).
     let screenshotUrl: string | null = null;
     if (screenshotFile) {
       const buf = await screenshotFile.arrayBuffer();
       const date = new Date().toISOString().slice(0, 10);
-      const safeName = (screenshotFile.name || "screenshot.png").replace(
-        /[^a-zA-Z0-9.\-_]/g,
-        "_",
-      );
+      const safeName = safeStorageName(screenshotFile.name || "screenshot.png");
       const path = `feedback/${date}_${
         crypto.randomUUID().slice(0, 8)
       }_${safeName}`;
-      const { error: upErr } = await supabase.storage
-        .from("swarm_drive")
-        .upload(path, buf, {
-          contentType: screenshotFile.type || "image/png",
-          upsert: true,
-        });
+      const { error: upErr } = await uploadPrivateFile(supabase, {
+        path,
+        body: buf,
+        contentType: screenshotFile.type || "image/png",
+        upsert: true,
+      });
+      // Скрин — admin-only, поэтому и он в приватном бакете, а в feedback кладём ПУТЬ.
       if (!upErr) {
-        screenshotUrl =
-          supabase.storage.from("swarm_drive").getPublicUrl(path).data
-            .publicUrl;
+        const regFb = await registerStorageFile(supabase, {
+          path,
+          owner: { kind: "feedback" },
+        });
+        if (regFb.error) {
+          // Незарегистрированный скрин недоступен никому — лучше фидбек без картинки,
+          // чем ссылка, которая всегда отдаёт 404.
+          console.error(`[feedback] реестр скрина не записан: ${regFb.error}`);
+          await supabase.storage.from(PRIVATE_BUCKET).remove([path]);
+        } else {
+          screenshotUrl = path;
+        }
+      } else {
+        console.error(`[feedback] скрин не загружен: ${upErr}`);
       }
     }
 
