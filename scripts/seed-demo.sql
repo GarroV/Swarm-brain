@@ -23,6 +23,15 @@ insert into workspaces (id, name)
 values (:'gid', 'Demo Workspace')
 on conflict (id) do update set name = excluded.name;
 
+-- Демо-пользователь. Без него демо-вход открывается отказом «User not in allowed list»:
+-- сессию выдаёт витрина, а право читать воркспейс живёт в базе. Поймано живым прогоном
+-- стенда 19.09 — сид считался готовым, а демо не открывалось.
+-- Id тот же, что зашит в `functions/api/auth/demo.ts` и в барьере `isDemo` у swarm-api.
+insert into allowed_users (telegram_id, username, added_by, is_admin, group_id)
+values (900000001, 'demo', 0, false, :'gid')
+on conflict (telegram_id) do update
+  set group_id = excluded.group_id, is_admin = false, username = excluded.username;
+
 -- Пространство = вкладка доски. Имя выдумано; к реальным проектам команды отношения не имеет.
 insert into sprints (id, group_id, name, start_date, end_date, status)
 values ('d0000000-0000-4000-8000-000000000001', :'gid', 'Store Experience',
@@ -216,7 +225,8 @@ commit;
 
 -- Что получилось — печатаем числами, а не словом «готово»: сид, который ничего не записал,
 -- выглядит успешным ровно так же, как сид, который записал всё.
-select 'spaces'      as entity, count(*) from sprints        where group_id = :'gid'
+select 'demo user'   as entity, count(*) from allowed_users   where group_id = :'gid'
+union all select 'spaces',     count(*) from sprints        where group_id = :'gid'
 union all select 'directions', count(*) from projects        where group_id = :'gid' and parent_id is null
 union all select 'initiatives', count(*) from projects       where group_id = :'gid' and parent_id is not null
 union all select 'tasks',      count(*) from tasks           where group_id = :'gid'
