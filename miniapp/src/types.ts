@@ -46,6 +46,17 @@ export type Task = {
   // из due_date — отдельно не хранятся. recur_anchor_dom помнит исходное число месяца.
   recur_freq: string | null;
   recur_anchor_dom: number | null;
+  /**
+   * Ссылки на материалы задачи: макет, документ, переписка. Отдельным полем, а не строкой в
+   * описании, — чтобы их можно было открыть, не открывая карточку. Списочный GET их не отдаёт.
+   */
+  links?: TaskLink[];
+};
+
+/** Ссылка задачи. Схема и проверки — `_shared/tasks/links.ts` (только http/https). */
+export type TaskLink = {
+  title: string | null;
+  url: string;
 };
 
 export type SprintStatus = "planned" | "active" | "completed";
@@ -65,6 +76,7 @@ export type Sprint = {
 // Спринт как период работы — `SprintCycle` (таблица `sprint_cycles`, роуты `/sprint-cycles`).
 export type CycleStatus = "draft" | "active" | "accepted";
 
+/** Зеркало `_shared/tasks/sprint-stats.ts`: считает сервер на приёмке, веб только показывает. */
 export type SprintStats = {
   plan: number;
   planDone: number;
@@ -73,6 +85,17 @@ export type SprintStats = {
   extraDone: number;
   /** Незакрытые на момент приёмки — они уезжают в следующий спринт. */
   carried: number;
+  /** Из них помечены человеком «к переносу» (с причиной). */
+  carried_manual: number;
+  /** Из них уехали сами: спринт кончился, а задача нет. */
+  carried_auto: number;
+  /** Отменённые — отдельной цифрой, вне процента (решение владельца 18.09.2026). */
+  cancelled: number;
+  /** Упоминания удалённых задач: в составе видны, в счёте не участвуют. */
+  removed: number;
+  check_ok: number;
+  check_risk: number;
+  check_problem: number;
   unassigned: number;
   byPerson: { name: string; plan: number; done: number }[];
   byProject: { name: string | null; total: number; done: number }[];
@@ -85,6 +108,13 @@ export type SprintCycle = {
   name: string;
   start_date: string;
   end_date: string;
+  /**
+   * Пространство спринта — вкладка доски (`Sprint.id`). null = «Без вкладки»: спринты,
+   * заведённые до пространств. Живой спринт в пространстве ровно один — это держит база.
+   */
+  tab_id: string | null;
+  /** День сверки в середине спринта; null — ритуал не назначен. */
+  check_date: string | null;
   status: CycleStatus;
   created_by: string | null;
   started_at: string | null;
@@ -95,6 +125,9 @@ export type SprintCycle = {
   stats: SprintStats | null;
   created_at: string;
 };
+
+/** Отметка сверки: как идут дела у задачи в середине спринта. */
+export type CheckStatus = "ok" | "risk" | "problem";
 
 /** Задача в составе спринта: до приёмки — живая, после — из клона (`frozen`). */
 export type SprintCycleItem = {
@@ -108,7 +141,25 @@ export type SprintCycleItem = {
   project_id: string | null;
   project: string | null;
   completed_at: string | null;
+  due_date: string | null;
   frozen: boolean;
+  check_status: CheckStatus | null;
+  check_note: string | null;
+  check_at: string | null;
+  check_by: string | null;
+  to_carry: boolean;
+  carry_reason: string | null;
+  /** Сколько раз задача уже переезжала: с двух показываем «×N». */
+  carry_count: number;
+  carried_manual: boolean | null;
+  /** Задача удалена: строка осталась упоминанием и в счёт не идёт. */
+  removed: boolean;
+  removed_at: string | null;
+  /**
+   * Задача приватная и смотрящий не владелец: строка видна, содержимого нет. Убрать её совсем
+   * значило бы молча уменьшить состав, и цифры отчёта перестали бы сходиться у разных людей.
+   */
+  hidden: boolean;
 };
 
 /** GET /sprint-cycles/:id отдаёт спринт вместе с составом — экран без него бесполезен. */
@@ -129,6 +180,11 @@ export type Project = {
   // доска общая, закрывается точечно глазом). Закрытая строка видна только своему created_by,
   // админского обхода нет; закрытая группа уносит вниз все свои подпроекты.
   is_private: boolean;
+  // Поля инициативы (доска инициатив): у направления и подпроекта одинаковые, смысл разный —
+  // у инициативы это «кто ведёт и до какого числа», у направления обычно пусто.
+  owner_telegram_id: number | null;
+  start_date: string | null;
+  end_date: string | null;
   // Отдаётся из GET /projects (агрегаты):
   task_count?: number;
   backlog_count?: number;

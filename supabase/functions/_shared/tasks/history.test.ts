@@ -1,5 +1,11 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { historyRowsFor, historyValue, isJournaled, journalFieldName, MAX_VALUE_LEN } from "./history.ts";
+import {
+  historyRowsFor,
+  historyValue,
+  isJournaled,
+  journalFieldName,
+  MAX_VALUE_LEN,
+} from "./history.ts";
 
 Deno.test("historyValue: массив исполнителей — читаемая строка, пустой массив — null", () => {
   assertEquals(historyValue(["Аня", "Вася"]), "Аня, Вася");
@@ -29,7 +35,20 @@ Deno.test("isJournaled: пишем ВСЁ, кроме служебного шу�
   assert(isJournaled("country"));
   assert(isJournaled("какое_то_новое_поле"));
   // Шум и служебное — мимо журнала.
-  for (const skipped of ["id", "group_id", "created_at", "updated_at", "completed_at", "tree_x", "tree_y", "timeline_position", "reminded_at", "assignee_telegram_ids"]) {
+  for (
+    const skipped of [
+      "id",
+      "group_id",
+      "created_at",
+      "updated_at",
+      "completed_at",
+      "tree_x",
+      "tree_y",
+      "timeline_position",
+      "reminded_at",
+      "assignee_telegram_ids",
+    ]
+  ) {
     assert(!isJournaled(skipped), skipped);
   }
 });
@@ -53,12 +72,20 @@ Deno.test("historyRowsFor: пишет только реально изменив
 });
 
 Deno.test("historyRowsFor: у статуса заполнены и старые колонки — прежние читатели не сломаны", () => {
-  const [row] = historyRowsFor({ taskId: "t1", snapshot: { status: "open" }, patch: { status: "done" } });
+  const [row] = historyRowsFor({
+    taskId: "t1",
+    snapshot: { status: "open" },
+    patch: { status: "done" },
+  });
   assertEquals([row.old_status, row.new_status], ["open", "done"]);
 });
 
 Deno.test("historyRowsFor: не-статусные поля НЕ пишут old_status/new_status", () => {
-  const [row] = historyRowsFor({ taskId: "t1", snapshot: { project_id: "p1" }, patch: { project_id: "p2" } });
+  const [row] = historyRowsFor({
+    taskId: "t1",
+    snapshot: { project_id: "p1" },
+    patch: { project_id: "p2" },
+  });
   assertEquals(row.field, "project");
   assertEquals([row.old_status, row.new_status], [null, null]);
 });
@@ -68,11 +95,18 @@ Deno.test("historyRowsFor: несколько полей за один патч 
     taskId: "t1",
     snapshot: { status: "open", assignees: ["Аня"], sprint_id: null },
     patch: { status: "in_progress", assignees: ["Вася"], sprint_id: "s1" },
-    actor: "vasya", actorTelegramId: 42, groupId: "cee",
+    actor: "vasya",
+    actorTelegramId: 42,
+    groupId: "cee",
   });
   assertEquals(rows.length, 3);
-  assertEquals(new Set(rows.map((r) => r.field)), new Set(["status", "assignee", "sprint"]));
-  assert(rows.every((r) => r.changed_by_telegram_id === 42 && r.group_id === "cee"));
+  assertEquals(
+    new Set(rows.map((r) => r.field)),
+    new Set(["status", "assignee", "sprint"]),
+  );
+  assert(
+    rows.every((r) => r.changed_by_telegram_id === 42 && r.group_id === "cee"),
+  );
 });
 
 Deno.test("historyRowsFor: переименование и правка описания тоже попадают в журнал", () => {
@@ -81,7 +115,10 @@ Deno.test("historyRowsFor: переименование и правка опис
     snapshot: { title: "Старое", description: "было" },
     patch: { title: "Новое", description: "стало" },
   });
-  assertEquals(new Set(rows.map((r) => r.field)), new Set(["title", "description"]));
+  assertEquals(
+    new Set(rows.map((r) => r.field)),
+    new Set(["title", "description"]),
+  );
 });
 
 Deno.test("historyRowsFor: перетаскивание карточки в дереве журнал НЕ засоряет", () => {
@@ -94,12 +131,23 @@ Deno.test("historyRowsFor: перетаскивание карточки в де
 });
 
 Deno.test("historyRowsFor: без снимка «было» строк не пишем — иначе журнал соврёт про переход", () => {
-  assertEquals(historyRowsFor({ taskId: "t1", snapshot: null, patch: { status: "done" } }), []);
+  assertEquals(
+    historyRowsFor({ taskId: "t1", snapshot: null, patch: { status: "done" } }),
+    [],
+  );
 });
 
 Deno.test("historyRowsFor: снятие срока (дата → null) фиксируется как изменение", () => {
-  const [row] = historyRowsFor({ taskId: "t1", snapshot: { due_date: "2026-09-10" }, patch: { due_date: null } });
-  assertEquals([row.field, row.old_value, row.new_value], ["due_date", "2026-09-10", null]);
+  const [row] = historyRowsFor({
+    taskId: "t1",
+    snapshot: { due_date: "2026-09-10" },
+    patch: { due_date: null },
+  });
+  assertEquals([row.field, row.old_value, row.new_value], [
+    "due_date",
+    "2026-09-10",
+    null,
+  ]);
 });
 
 // ── changed_by: колонка NOT NULL, поэтому null в ней = журнал молча не пишется (issue #287) ──
@@ -162,6 +210,9 @@ Deno.test("changed_by ни на одном пути не бывает пусты
       ...actorArgs,
     });
     assertEquals(rows.length, 1);
-    assert(rows[0].changed_by.length > 0, `пустой changed_by для ${JSON.stringify(actorArgs)}`);
+    assert(
+      rows[0].changed_by.length > 0,
+      `пустой changed_by для ${JSON.stringify(actorArgs)}`,
+    );
   }
 });

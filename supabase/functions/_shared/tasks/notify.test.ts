@@ -1,6 +1,10 @@
 // Запуск: deno test supabase/functions/_shared/tasks/notify.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { commentRecipients, isCommentRecipient, type NotifiableTask } from "./notify.ts";
+import {
+  commentRecipients,
+  isCommentRecipient,
+  type NotifiableTask,
+} from "./notify.ts";
 
 const task = (over: Partial<NotifiableTask> = {}): NotifiableTask => ({
   assignee_telegram_ids: [],
@@ -11,7 +15,11 @@ const task = (over: Partial<NotifiableTask> = {}): NotifiableTask => ({
 });
 
 Deno.test("commentRecipients: исполнители + создатель + владелец", () => {
-  const t = task({ assignee_telegram_ids: [1, 2], created_by_telegram_id: 3, owner_id: 4 });
+  const t = task({
+    assignee_telegram_ids: [1, 2],
+    created_by_telegram_id: 3,
+    owner_id: 4,
+  });
   assertEquals(commentRecipients(t, 99), [1, 2, 3, 4]);
 });
 
@@ -21,19 +29,31 @@ Deno.test("commentRecipients: автор комментария себе не ш
 });
 
 Deno.test("commentRecipients: дубликаты схлопываются", () => {
-  const t = task({ assignee_telegram_ids: [7, 7], created_by_telegram_id: 7, owner_id: 7 });
+  const t = task({
+    assignee_telegram_ids: [7, 7],
+    created_by_telegram_id: 7,
+    owner_id: 7,
+  });
   assertEquals(commentRecipients(t, 99), [7]);
 });
 
 Deno.test("commentRecipients: null/пустые поля игнорируются", () => {
   assertEquals(commentRecipients(task(), 99), []);
-  assertEquals(commentRecipients(task({ assignee_telegram_ids: null }), 99), []);
+  assertEquals(
+    commentRecipients(task({ assignee_telegram_ids: null }), 99),
+    [],
+  );
 });
 
 // Приватную задачу видит ТОЛЬКО владелец (`canViewTask`). Уведомление исполнителю,
 // который задачу открыть не может, показало бы ему заголовок — это утечка.
 Deno.test("commentRecipients: приватная задача — только владелец", () => {
-  const t = task({ is_private: true, assignee_telegram_ids: [1, 2], created_by_telegram_id: 3, owner_id: 4 });
+  const t = task({
+    is_private: true,
+    assignee_telegram_ids: [1, 2],
+    created_by_telegram_id: 3,
+    owner_id: 4,
+  });
   assertEquals(commentRecipients(t, 99), [4]);
 });
 
@@ -44,14 +64,22 @@ Deno.test("commentRecipients: приватная задача, комменти�
 
 // Осиротевшая приватная задача (owner_id = null) закрыта для всех — fail-closed, как в access.ts.
 Deno.test("commentRecipients: приватная без владельца → никому", () => {
-  const t = task({ is_private: true, assignee_telegram_ids: [1], created_by_telegram_id: 3 });
+  const t = task({
+    is_private: true,
+    assignee_telegram_ids: [1],
+    created_by_telegram_id: 3,
+  });
   assertEquals(commentRecipients(t, 99), []);
 });
 
 // ── Подписки (issue #82, решение владельца 2026-08-24) ────────────────────────
 // Канон: docs/decisions/2026-08-24-comment-subscription.md
 
-const sub = (id: number, state: "subscribed" | "muted", is_admin = false) => ({ telegram_id: id, state, is_admin });
+const sub = (id: number, state: "subscribed" | "muted", is_admin = false) => ({
+  telegram_id: id,
+  state,
+  is_admin,
+});
 
 Deno.test("подписчик получает уведомление, даже если к задаче не причастен", () => {
   const t = task({ assignee_telegram_ids: [1] });
@@ -91,7 +119,10 @@ Deno.test("автор комментария не уведомляется да�
 
 Deno.test("подписчик-дубликат причастного не задваивается", () => {
   const t = task({ assignee_telegram_ids: [1], created_by_telegram_id: 2 });
-  assertEquals(commentRecipients(t, 99, [sub(1, "subscribed"), sub(2, "subscribed")]), [1, 2]);
+  assertEquals(
+    commentRecipients(t, 99, [sub(1, "subscribed"), sub(2, "subscribed")]),
+    [1, 2],
+  );
 });
 
 Deno.test("isCommentRecipient: три слоя по отдельности", () => {
@@ -100,9 +131,18 @@ Deno.test("isCommentRecipient: три слоя по отдельности", () 
   // muted гасит причастного
   assertEquals(isCommentRecipient(open, 1, { subscription: "muted" }), false);
   // подписка добавляет непричастного
-  assertEquals(isCommentRecipient(open, 9, { subscription: "subscribed" }), true);
+  assertEquals(
+    isCommentRecipient(open, 9, { subscription: "subscribed" }),
+    true,
+  );
   assertEquals(isCommentRecipient(open, 9, {}), false);
   // подписка не открывает чужую личную не-админу, но открывает админу
-  assertEquals(isCommentRecipient(priv, 9, { subscription: "subscribed" }), false);
-  assertEquals(isCommentRecipient(priv, 9, { subscription: "subscribed", isAdmin: true }), true);
+  assertEquals(
+    isCommentRecipient(priv, 9, { subscription: "subscribed" }),
+    false,
+  );
+  assertEquals(
+    isCommentRecipient(priv, 9, { subscription: "subscribed", isAdmin: true }),
+    true,
+  );
 });

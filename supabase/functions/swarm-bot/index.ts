@@ -8,6 +8,7 @@ import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
 import { handleVoice, handleDocument, handlePhoto, handleUrl } from "./handlers/media.ts";
 import { classifyEntryCommand, parseManageCommand, extractUrl, parseSaveCommand, parseCreateTaskCommand } from "./lib/intent.ts";
 import { ALL_MEETING_SOURCES, ENTRY_MEETING_SOURCES, sourceLabel } from "../_shared/sources.ts";
+import { timingSafeEq } from "../_shared/timing-safe.ts";
 import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
 import { handleEntryCommand, handleManageCallbacks, handleManageSessionInput } from "./handlers/manage.ts";
 import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput, handleQuickCreateTask } from "./tasks/index.ts";
@@ -27,6 +28,12 @@ import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
+// Секрет вебхука Telegram. Две переменные намеренно: значение и включение проверки.
+// Одной не обойтись — если начать отбивать апдейты раньше, чем Telegram узнает секрет
+// через setWebhook, бот перестанет отвечать людям. Порядок: задать SECRET → дёрнуть
+// set_webhook → убедиться, что апдейты идут → только потом ENFORCE=1.
+const TELEGRAM_WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "";
+const TELEGRAM_WEBHOOK_ENFORCE = Deno.env.get("TELEGRAM_WEBHOOK_ENFORCE") === "1";
 // Эндпоинт MCP-сервера для ручного подключения (веб-коннектор claude.ai: URL + Bearer-токен).
 const SWARM_MCP_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp";
 
@@ -215,6 +222,16 @@ async function checkRecorderHealth(): Promise<void> {
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("OK", { status: 200 });
 
+  // Подлинность источника апдейтов. Проверяем ДО req.json(): подделанное тело не должно
+  // доходить до разбора — иначе чужой POST тратит OpenAI и отдаёт команды от имени админа.
+  // Cron-триггеры ходят со своим X-Cron-Secret и проверяются ниже, их сюда не пускаем.
+  if (TELEGRAM_WEBHOOK_ENFORCE && !req.headers.get("X-Cron-Secret")) {
+    const provided = req.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
+    if (!TELEGRAM_WEBHOOK_SECRET || !timingSafeEq(provided, TELEGRAM_WEBHOOK_SECRET)) {
+      return new Response("Unauthorized", { status: 401 });
+    }
+  }
+
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return new Response("Bad Request", { status: 400 }); }
 
@@ -241,7 +258,12 @@ Deno.serve(async (req: Request) => {
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: target, allowed_updates: ["message", "callback_query"] }),
+      body: JSON.stringify({
+        url: target,
+        allowed_updates: ["message", "callback_query"],
+        // Пустой secret_token Telegram трактует как «снять секрет» — поэтому только когда задан.
+        ...(TELEGRAM_WEBHOOK_SECRET ? { secret_token: TELEGRAM_WEBHOOK_SECRET } : {}),
+      }),
     });
     const json = await res.json();
     return new Response(JSON.stringify({ target, telegram: json }), { status: 200, headers: { "Content-Type": "application/json" } });

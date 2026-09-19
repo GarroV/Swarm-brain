@@ -83,8 +83,13 @@ function bucketKey(iso: string, bucket: Bucket): string {
   return bucket === "day" ? iso.slice(0, 10) : iso.slice(0, 7);
 }
 
-function countedByBucket(map: Map<string, number>): Array<{ key: string; count: number }> {
-  return [...map.entries()].map(([key, count]) => ({ key, count })).sort((a, b) => a.key.localeCompare(b.key));
+function countedByBucket(
+  map: Map<string, number>,
+): Array<{ key: string; count: number }> {
+  return [...map.entries()].map(([key, count]) => ({ key, count })).sort((
+    a,
+    b,
+  ) => a.key.localeCompare(b.key));
 }
 
 export function computeTaskStats(
@@ -117,7 +122,9 @@ export function computeTaskStats(
       closedInPeriod++;
       const k = bucketKey(t.completed_at, bucket);
       closedBuckets.set(k, (closedBuckets.get(k) ?? 0) + 1);
-      if (t.created_at) leads.push(days(t.created_at, Date.parse(t.completed_at)));
+      if (t.created_at) {
+        leads.push(days(t.created_at, Date.parse(t.completed_at)));
+      }
       for (const name of t.assignees?.length ? t.assignees : ["—"]) {
         closedBy.set(name, (closedBy.get(name) ?? 0) + 1);
       }
@@ -137,11 +144,15 @@ export function computeTaskStats(
 
   // Дисциплина сроков — только по закрытым в периоде, у которых срок вообще стоял.
   const withDue = tasks.filter((t) =>
-    isClosedStatus(t.status) && t.completed_at && Date.parse(t.completed_at) >= sinceMs && t.due_date
+    isClosedStatus(t.status) && t.completed_at &&
+    Date.parse(t.completed_at) >= sinceMs && t.due_date
   );
-  const onTime = withDue.filter((t) => t.completed_at!.slice(0, 10) <= t.due_date!).length;
+  const onTime =
+    withDue.filter((t) => t.completed_at!.slice(0, 10) <= t.due_date!).length;
 
-  const avg = leads.length ? leads.reduce((a, b) => a + b, 0) / leads.length : null;
+  const avg = leads.length
+    ? leads.reduce((a, b) => a + b, 0) / leads.length
+    : null;
   const med = median(leads);
 
   return {
@@ -150,7 +161,9 @@ export function computeTaskStats(
     closedInPeriod,
     leadTimeAvgDays: avg === null ? null : round1(avg),
     leadTimeMedianDays: med === null ? null : round1(med),
-    onTimeRate: withDue.length ? Math.round((onTime / withDue.length) * 100) / 100 : null,
+    onTimeRate: withDue.length
+      ? Math.round((onTime / withDue.length) * 100) / 100
+      : null,
     onTimeBase: withDue.length,
     openNow,
     inProgressNow,
@@ -174,7 +187,9 @@ export function computeTaskStats(
  * `transitions` — строки журнала о смене статуса (field='status'), любой порядок.
  */
 export function computeFlowTimes(
-  transitions: Array<{ task_id: string; new_value: string | null; created_at: string }>,
+  transitions: Array<
+    { task_id: string; new_value: string | null; created_at: string }
+  >,
   tasks: StatsTask[],
 ): FlowTimes {
   const firstStart = new Map<string, number>();
@@ -190,8 +205,12 @@ export function computeFlowTimes(
   for (const task of tasks) {
     const startedMs = firstStart.get(task.id);
     if (startedMs === undefined) continue;
-    if (task.created_at) waits.push((startedMs - Date.parse(task.created_at)) / DAY_MS);
-    if (task.completed_at) cycles.push((Date.parse(task.completed_at) - startedMs) / DAY_MS);
+    if (task.created_at) {
+      waits.push((startedMs - Date.parse(task.created_at)) / DAY_MS);
+    }
+    if (task.completed_at) {
+      cycles.push((Date.parse(task.completed_at) - startedMs) / DAY_MS);
+    }
   }
 
   const avg = (xs: number[]): number | null =>
@@ -211,8 +230,17 @@ export function computeFlowTimes(
 }
 
 /** Начало окна для период-слова. Неизвестное слово — null, чтобы вызывающий отказал явно. */
-export function periodStartISO(period: string, now: Date = new Date()): string | null {
-  const map: Record<string, number> = { day: 1, week: 7, month: 30, quarter: 90, year: 365 };
+export function periodStartISO(
+  period: string,
+  now: Date = new Date(),
+): string | null {
+  const map: Record<string, number> = {
+    day: 1,
+    week: 7,
+    month: 30,
+    quarter: 90,
+    year: 365,
+  };
   const d = map[period];
   if (!d) return null;
   return new Date(now.getTime() - d * DAY_MS).toISOString();

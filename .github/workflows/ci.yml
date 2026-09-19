@@ -41,8 +41,17 @@ jobs:
       # Тесты настоящего мёржа конфига Claude Desktop идут ТОЛЬКО на macOS: их JSON-движок —
       # plutil (Apple-only), и на Linux-раннере они честно помечаются пропуском (см. HAS_PLUTIL
       # в swarm-setup/script.test.ts). Инварианты мёржа при этом проверяются статически и здесь.
+      # Часть тестов ходит в НАСТОЯЩУЮ базу (приёмка спринта, триггер удаления задачи, гварды
+      # роутов, журнал пространства): транзакцию и правило видимости моком не проверить — мок
+      # согласится с моделью автора. Поэтому в CI поднимается локальный контур Supabase, а
+      # пропуск «базы нет» считается падением, а не пропуском.
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Локальный контур Supabase
+        run: supabase start && supabase db reset
       - name: deno test
-        run: deno test -A supabase/functions/
+        run: ./scripts/with-local-db deno test -A supabase/functions/
 
   miniapp:
     name: Mini App (Next.js) — сборка + типы
@@ -69,3 +78,41 @@ jobs:
         with:
           deno-version: v2.x
       - run: npm test
+
+  gate:
+    name: Гейт доски инициатив (scripts/check + порча)
+    runs-on: ubuntu-latest
+    # Шесть ролей проверок одной командой: формат, линт, типы, тесты с непадающим покрытием,
+    # мёртвый код, границы модулей. Отдельным заданием, а не строчкой в существующих: гейт
+    # обязан гоняться сам, а не «когда кто-то вспомнит прогнать его локально».
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: miniapp/package-lock.json
+      - name: Зависимости веба (нужны проверке типов)
+        working-directory: miniapp
+        run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Локальный контур Supabase
+        run: supabase start && supabase db reset
+      - name: Гейт
+        run: ./scripts/check
+      # Порча отвечает на вопрос, на который гейт не отвечает: проверяют ли эти проверки хоть
+      # что-нибудь. Ломаем ядро и базу нарочно и убеждаемся, что тесты краснеют.
+      - name: Порча
+        run: make porcha
+      - name: Машинный отчёт прогона
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-report
+          path: reports/

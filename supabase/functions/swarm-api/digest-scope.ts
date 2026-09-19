@@ -9,7 +9,10 @@
 // рынков» не было своего исхода: оно молча схлопывалось в «показать всё».
 export type DigestScope = "workspace" | "markets" | "needs-markets";
 
-export function resolveDigestScope(markets: readonly string[], allCountries: boolean): DigestScope {
+export function resolveDigestScope(
+  markets: readonly string[],
+  allCountries: boolean,
+): DigestScope {
   // Админский «весь воркспейс» осознанно снимает фильтр — рынки для него не нужны.
   if (allCountries) return "workspace";
   return markets.length > 0 ? "markets" : "needs-markets";

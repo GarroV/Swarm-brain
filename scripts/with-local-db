@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Запускает команду с доступами к ЛОКАЛЬНОМУ контуру Supabase.
+#
+#   ./scripts/with-local-db deno test -A supabase/functions/
+#
+# Зачем отдельной обёрткой: тесты, которые ходят в настоящую базу, нужны и локально, и в CI.
+# Два места, подставляющих доступы по-своему, — это две правды о том, с чем прогонялись
+# проверки, и рано или поздно одна из них тише другой.
+#
+# Значения берутся у самого контура и никуда не печатаются: они нужны процессу, а не человеку.
+# Контур не поднят — команда всё равно выполняется, и тесты базы падают с внятной причиной.
+# Это сознательно: «пропущено, потому что базы нет» выглядит как проверенное, а таковым не
+# является.
+set -o pipefail
+cd "$(dirname "$0")/.."
+
+if command -v supabase >/dev/null 2>&1; then
+  while IFS='=' read -r key value; do
+    value=${value%\"}
+    value=${value#\"}
+    case "$key" in
+      API_URL) export SUPABASE_URL="$value" ;;
+      SERVICE_ROLE_KEY) export SUPABASE_SERVICE_ROLE_KEY="$value" ;;
+      DB_URL) export SUPABASE_DB_URL="$value" ;;
+    esac
+  done < <(supabase status -o env 2>/dev/null)
+fi
+
+exec "$@"
