@@ -7,9 +7,16 @@ import { getDeepLinkMeetingId, getDeepLinkTaskId } from "@/lib/telegram";
 import { fetchAgentMeetings, logout } from "@/lib/api";
 import { OPEN_MEETING_EVENT } from "@/lib/single-tab";
 import { queryToState, stateToPath } from "@/lib/royUrl";
-import { RoyNavContext, useRoyNav, useDt, type RoyNav, type RoyRoute, type RoyTab } from "./nav";
+import {
+  type RoyNav,
+  RoyNavContext,
+  type RoyRoute,
+  type RoyTab,
+  useDt,
+  useRoyNav,
+} from "./nav";
 import type { Lens, SmartListId } from "@/lib/smartLists";
-import { RoyTabBar, NavHeader, RoyHeader, Avatar, ROY_TABS } from "./ui";
+import { Avatar, NavHeader, ROY_TABS, RoyHeader, RoyTabBar } from "./ui";
 import { HeaderActions } from "./HeaderActions";
 import { initials } from "./dash/shared";
 import { useIsDesktop } from "./useIsDesktop";
@@ -49,6 +56,14 @@ import { AnswerModal } from "./AnswerModal";
 
 export function RoyApp({ me }: { me: Me | null }) {
   const [tab, setTabState] = useState<RoyTab>("search");
+  // Язык документа — по языку интерфейса. В разметке он зашит как "ru", а демо-сессия
+  // рендерится по-английски: скринридер читал бы английский текст русским голосом, а даты
+  // форматировались бы по русской локали посреди английского экрана (issue #389).
+  useEffect(() => {
+    if (typeof document === "undefined" || !me) return;
+    document.documentElement.lang = me.is_demo ? "en" : "ru";
+  }, [me]);
+
   const [stack, setStack] = useState<RoyRoute[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   // Единое окно-редактор задачи (открывается по клику откуда угодно) + ревизия для рефреша списков.
@@ -57,7 +72,9 @@ export function RoyApp({ me }: { me: Me | null }) {
   // Контекстное окно ответа (десктоп). На мобайле openAnswer уходит в push (см. ниже).
   const [answerQuery, setAnswerQuery] = useState<string | null>(null);
   // Стартовая линза доски задач при входе из панелей дашборда (Мои/Команда). null = дефолт.
-  const [taskView, setTaskView] = useState<{ lens: Lens; list?: SmartListId } | null>(null);
+  const [taskView, setTaskView] = useState<
+    { lens: Lens; list?: SmartListId } | null
+  >(null);
   const isDesktop = useIsDesktop();
   // Сколько черновиков встреч ждёт вычитки — для бейджа на табе «Встречи». Ошибку глотаем:
   // эндпоинт /agent-meetings может быть недоступен, и это не повод ронять каркас (та же
@@ -70,18 +87,22 @@ export function RoyApp({ me }: { me: Me | null }) {
   const fromUrl = useRef(false);
 
   const setTab = useCallback((t: RoyTab) => {
-    setTaskView(null);   // обычный переход по табу → доска задач с дефолтной линзой
+    setTaskView(null); // обычный переход по табу → доска задач с дефолтной линзой
     setStack([]);
     setTabState(t);
     // Запоминаем вкладку, чтобы рефреш страницы не сбрасывал на «Поиск».
-    try { sessionStorage.setItem("roy_tab", t); } catch { /* приватный режим */ }
+    try {
+      sessionStorage.setItem("roy_tab", t);
+    } catch { /* приватный режим */ }
   }, []);
   // Открыть доску задач с заданной линзой (из панелей «Мои»/«Команда» дашборда).
   const openTasks = useCallback((lens: Lens, list?: SmartListId) => {
     setTaskView({ lens, list });
     setStack([]);
     setTabState("task");
-    try { sessionStorage.setItem("roy_tab", "task"); } catch { /* приватный режим */ }
+    try {
+      sessionStorage.setItem("roy_tab", "task");
+    } catch { /* приватный режим */ }
   }, []);
   const push = useCallback((r: RoyRoute) => setStack((s) => [...s, r]), []);
   // Десктоп — ответ контекстным окном поверх дашборда; мобайл — полноэкранный push.
@@ -119,9 +140,15 @@ export function RoyApp({ me }: { me: Me | null }) {
   useEffect(() => {
     let alive = true;
     fetchAgentMeetings("awaiting_review")
-      .then((list) => { if (alive) setReviewCount(list.length); })
-      .catch(() => { if (alive) setReviewCount(0); });
-    return () => { alive = false; };
+      .then((list) => {
+        if (alive) setReviewCount(list.length);
+      })
+      .catch(() => {
+        if (alive) setReviewCount(0);
+      });
+    return () => {
+      alive = false;
+    };
   }, [tab, stack.length]);
 
   useEffect(() => {
@@ -162,13 +189,19 @@ export function RoyApp({ me }: { me: Me | null }) {
       // Валидируем по ПОЛНОМУ союзу, а не по ROY_TABS: в баре мобильные табы, а `search`/`book` —
       // десктопные разделы. На мобайле сохранённые десктопные значения мигрируем, иначе человек с
       // живой сессией после деплоя попал бы на экран, которого в баре нет (подсветки таба нет).
-      const valid = saved && (["search", "task", "projects", "book", "cal", "more"] as const).includes(saved as RoyTab)
+      const valid = saved &&
+          (["search", "task", "projects", "book", "cal", "more"] as const)
+            .includes(saved as RoyTab)
         ? (saved as RoyTab)
         : null;
       const desktop = window.matchMedia("(min-width: 1024px)").matches;
       const initial: RoyTab = desktop
         ? (valid ?? "search")
-        : valid === null || valid === "search" ? "task" : valid === "book" ? "more" : valid;
+        : valid === null || valid === "search"
+        ? "task"
+        : valid === "book"
+        ? "more"
+        : valid;
       setTabState(initial);
       // Восстанавливаем и push-стек (открытую деталь), чтобы рефреш не сбрасывал на корень таба.
       // Валидируем не только view, но и ОБЯЗАТЕЛЬНЫЕ params (битый/усечённый storage → роут без id
@@ -176,11 +209,21 @@ export function RoyApp({ me }: { me: Me | null }) {
       const rawStack = sessionStorage.getItem("roy_stack");
       if (rawStack) {
         const parsed = JSON.parse(rawStack);
-        const needsId = new Set(["record", "taskDetail", "meetingDetail", "meetingReview", "project"]);
-        const valid = (r: { view?: unknown; params?: { id?: unknown; query?: unknown } }) => {
+        const needsId = new Set([
+          "record",
+          "taskDetail",
+          "meetingDetail",
+          "meetingReview",
+          "project",
+        ]);
+        const valid = (
+          r: { view?: unknown; params?: { id?: unknown; query?: unknown } },
+        ) => {
           if (!r || typeof r.view !== "string") return false;
           if (r.view === "answer") return typeof r.params?.query === "string";
-          if (needsId.has(r.view)) return typeof r.params?.id === "string" && r.params.id.length > 0;
+          if (needsId.has(r.view)) {
+            return typeof r.params?.id === "string" && r.params.id.length > 0;
+          }
           return true;
         };
         if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(valid)) {
@@ -198,8 +241,15 @@ export function RoyApp({ me }: { me: Me | null }) {
   useEffect(() => {
     if (!hydrated.current || typeof window === "undefined") return;
     // Пришли из popstate или из разбора адреса — своей записи в историю не добавляем.
-    if (fromUrl.current) { fromUrl.current = false; return; }
-    const path = stateToPath(tab, stack[stack.length - 1] ?? null, window.location.pathname);
+    if (fromUrl.current) {
+      fromUrl.current = false;
+      return;
+    }
+    const path = stateToPath(
+      tab,
+      stack[stack.length - 1] ?? null,
+      window.location.pathname,
+    );
     if (path === window.location.pathname + window.location.search) return;
     window.history.pushState({}, "", path);
   }, [tab, stack]);
@@ -221,8 +271,9 @@ export function RoyApp({ me }: { me: Me | null }) {
   useEffect(() => {
     if (!hydrated.current) return;
     try {
-      if (stack.length) sessionStorage.setItem("roy_stack", JSON.stringify(stack));
-      else sessionStorage.removeItem("roy_stack");
+      if (stack.length) {
+        sessionStorage.setItem("roy_stack", JSON.stringify(stack));
+      } else sessionStorage.removeItem("roy_stack");
     } catch { /* приватный режим */ }
   }, [stack]);
 
@@ -236,7 +287,20 @@ export function RoyApp({ me }: { me: Me | null }) {
     return () => window.removeEventListener(OPEN_MEETING_EVENT, handler);
   }, [openMeeting]);
 
-  const nav: RoyNav = { me, tab, setTab, push, pop, toast, openTask, openAnswer, tasksVersion, bumpTasks: () => setTasksVersion((v) => v + 1), taskView, openTasks };
+  const nav: RoyNav = {
+    me,
+    tab,
+    setTab,
+    push,
+    pop,
+    toast,
+    openTask,
+    openAnswer,
+    tasksVersion,
+    bumpTasks: () => setTasksVersion((v) => v + 1),
+    taskView,
+    openTasks,
+  };
   const top = stack[stack.length - 1];
   // На десктопе домашняя вкладка («Поиск») — бенто-дашборд во всю ширину; на мобайле и в
   // push-стеке остаётся центрированная колонка.
@@ -248,12 +312,23 @@ export function RoyApp({ me }: { me: Me | null }) {
         {/* Плашка «скоро обновление» — плавающая, поверх всех экранов, layout не сдвигает. */}
         <DeployNoticeBar />
         {me?.is_demo && (
-          <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-4 py-1.5 text-white" style={{ fontSize: 13 }}>
+          <div
+            className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-4 py-1.5 text-white"
+            style={{ fontSize: 13 }}
+          >
             <span className="font-semibold">🎬 Demo mode</span>
-            <span className="hidden opacity-90 sm:inline">— a Swarm Brain showcase, not a real workspace</span>
+            <span className="hidden opacity-90 sm:inline">
+              — a Swarm Brain showcase, not a real workspace
+            </span>
             <button
               type="button"
-              onClick={async () => { try { await logout(); } finally { window.location.href = "/login"; } }}
+              onClick={async () => {
+                try {
+                  await logout();
+                } finally {
+                  window.location.href = "/login";
+                }
+              }}
               className="rounded-full bg-white/20 px-3 py-0.5 font-semibold transition-colors hover:bg-white/30"
             >
               Exit demo
@@ -262,102 +337,153 @@ export function RoyApp({ me }: { me: Me | null }) {
         )}
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div
-            className={cn(
-              "relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden",
-              // Тёмная тема: лёгкая вуаль БЕЗ blur — галактика видна в щелях между панелями
-              // (не размыта). Frost/стекло — на самих карточках (RoyCard). Читаемость голого
-              // текста подстрахована вуалью + приглушённой галактикой.
-              "dark:bg-[#0a0b07]/22",
-              // Десктоп — единая оптимальная ширина с авто-полями по краям (во всю ширину
-              // получалось «дерьмо»: строки/текст растягивались на весь монитор). Мобайл — узкая колонка.
-              isDashboard ? "max-w-[1280px]" : "max-w-[480px] lg:max-w-[1280px]",
-            )}
-          >
-            {top ? (
-              <PushScreen route={top} />
-            ) : (
-              <>
-                {/* Desktop dashboard-центрично: сайдбара нет, дашборд — дом. На секции
+            <div
+              className={cn(
+                "relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden",
+                // Тёмная тема: лёгкая вуаль БЕЗ blur — галактика видна в щелях между панелями
+                // (не размыта). Frost/стекло — на самих карточках (RoyCard). Читаемость голого
+                // текста подстрахована вуалью + приглушённой галактикой.
+                "dark:bg-[#0a0b07]/22",
+                // Десктоп — единая оптимальная ширина с авто-полями по краям (во всю ширину
+                // получалось «дерьмо»: строки/текст растягивались на весь монитор). Мобайл — узкая колонка.
+                isDashboard
+                  ? "max-w-[1280px]"
+                  : "max-w-[480px] lg:max-w-[1280px]",
+              )}
+            >
+              {top ? <PushScreen route={top} /> : (
+                <>
+                  {
+                    /* Desktop dashboard-центрично: сайдбара нет, дашборд — дом. На секции
                     (Задачи/База/Встречи) ведут шапки панелей дашборда; назад на дашборд —
-                    эта строка. Push-экраны имеют свой «Назад». Мобайл — нижний таб-бар. */}
-                {isDesktop && tab !== "search" && (
-                  <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-2">
-                    <button
-                      type="button"
-                      onClick={() => setTab("search")}
-                      className="flex items-center gap-2 py-0.5 text-left font-semibold text-ink-soft transition-colors hover:text-ink"
-                    >
-                      <RoyMark size={22} />
-                      <span style={{ fontSize: 14 }}>← Главная</span>
-                    </button>
-                    <NotificationsBell />
+                    эта строка. Push-экраны имеют свой «Назад». Мобайл — нижний таб-бар. */
+                  }
+                  {isDesktop && tab !== "search" && (
+                    <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-2">
+                      <button
+                        type="button"
+                        onClick={() => setTab("search")}
+                        className="flex items-center gap-2 py-0.5 text-left font-semibold text-ink-soft transition-colors hover:text-ink"
+                      >
+                        <RoyMark size={22} />
+                        <span style={{ fontSize: 14 }}>← Главная</span>
+                      </button>
+                      <NotificationsBell />
+                    </div>
+                  )}
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    {tab === "search" &&
+                      (isDashboard ? <RoyDashboard /> : <SearchScreen />)}
+                    {tab === "task" &&
+                      (isDesktop ? <TasksScreen /> : <RoyTasksScreen />)}
+                    {
+                      /* Десктоп своей доской проектов уже владеет (TasksScreen → вид «Проекты»),
+                      мобильный экран — отдельный: список проектов → задачи внутри. */
+                    }
+                    {tab === "projects" &&
+                      (isDesktop ? <TasksScreen /> : <RoyProjectsScreen />)}
+                    {tab === "book" && <RoyBaseScreen />}
+                    {tab === "cal" && <RoyMeetingsScreen />}
+                    {tab === "more" && <MoreScreen root />}
                   </div>
-                )}
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  {tab === "search" && (isDashboard ? <RoyDashboard /> : <SearchScreen />)}
-                  {tab === "task" && (isDesktop ? <TasksScreen /> : <RoyTasksScreen />)}
-                  {/* Десктоп своей доской проектов уже владеет (TasksScreen → вид «Проекты»),
-                      мобильный экран — отдельный: список проектов → задачи внутри. */}
-                  {tab === "projects" && (isDesktop ? <TasksScreen /> : <RoyProjectsScreen />)}
-                  {tab === "book" && <RoyBaseScreen />}
-                  {tab === "cal" && <RoyMeetingsScreen />}
-                  {tab === "more" && <MoreScreen root />}
-                </div>
-                <RoyTabBar active={tab} onChange={(id) => setTab(id as RoyTab)} className="lg:hidden" badges={{ cal: reviewCount }} />
-              </>
-            )}
+                  <RoyTabBar
+                    active={tab}
+                    onChange={(id) => setTab(id as RoyTab)}
+                    className="lg:hidden"
+                    badges={{ cal: reviewCount }}
+                  />
+                </>
+              )}
 
-            {toastMsg && (
-              <div
-                role="status"
-                className="roy-pop absolute bottom-[110px] left-1/2 z-50 -translate-x-1/2 rounded-[13px] bg-ink px-4 py-2.5 text-sm text-surface shadow-[0_10px_30px_rgba(0,0,0,.3)]"
-              >
-                {toastMsg}
-              </div>
-            )}
-          </div>
-          {/* Профиль/управление — внизу слева (desktop, вместо сайдбара): нативный поповер
+              {toastMsg && (
+                <div
+                  role="status"
+                  className="roy-pop absolute bottom-[110px] left-1/2 z-50 -translate-x-1/2 rounded-[13px] bg-ink px-4 py-2.5 text-sm text-surface shadow-[0_10px_30px_rgba(0,0,0,.3)]"
+                >
+                  {toastMsg}
+                </div>
+              )}
+            </div>
+            {
+              /* Профиль/управление — внизу слева (desktop, вместо сайдбара): нативный поповер
               в углу с inline-секциями Настройки/Команда/Админ, без перехода на страницу.
-              На мобайле — аватар в шапке + таб-бар. */}
-          {isDesktop && <ProfileMenu />}
-        </div>
+              На мобайле — аватар в шапке + таб-бар. */
+            }
+            {isDesktop && <ProfileMenu />}
+          </div>
         </div>
       </div>
 
-      {/* Единое окно-редактор задачи — рендерится один раз в корне, открывается openTask() из
-          любого места. onSaved бампает tasksVersion → списки задач перезапрашиваются. */}
+      {
+        /* Единое окно-редактор задачи — рендерится один раз в корне, открывается openTask() из
+          любого места. onSaved бампает tasksVersion → списки задач перезапрашиваются. */
+      }
       <TaskModal
         task={taskModalTask ?? undefined}
         open={taskModalTask !== null}
         onClose={() => setTaskModalTask(null)}
         onSaved={() => setTasksVersion((v) => v + 1)}
       />
-      {answerQuery !== null && <AnswerModal query={answerQuery} onClose={() => setAnswerQuery(null)} />}
-      {/* На мобайле «?» была вторым FAB под «+» и спорила с главным действием экрана —
-          фидбек переехал пунктом в «Ещё» (аудит мобилки 2026-08-22). */}
+      {answerQuery !== null && (
+        <AnswerModal
+          query={answerQuery}
+          onClose={() => setAnswerQuery(null)}
+        />
+      )}
+      {
+        /* На мобайле «?» была вторым FAB под «+» и спорила с главным действием экрана —
+          фидбек переехал пунктом в «Ещё» (аудит мобилки 2026-08-22). */
+      }
       {isDesktop && <FeedbackFab />}
     </RoyNavContext.Provider>
   );
 }
 
 function PushScreen({ route }: { route: RoyRoute }) {
-  if (route.view === "meetingReview") return <MeetingReviewScreen id={route.params.id} />;
-  if (route.view === "answer") return <AnswerScreen query={route.params.query} />;
+  if (route.view === "meetingReview") {
+    return <MeetingReviewScreen id={route.params.id} />;
+  }
+  if (route.view === "answer") {
+    return <AnswerScreen query={route.params.query} />;
+  }
   if (route.view === "record") return <RecordDetail id={route.params.id} />;
   if (route.view === "taskDetail") return <TaskDetail id={route.params.id} />;
   if (route.view === "newTask") return <NewTask id={route.params?.id} />;
   if (route.view === "newEntry") return <NewEntry />;
-  if (route.view === "meetingDetail") return <MeetingDetail id={route.params.id} />;
+  if (route.view === "meetingDetail") {
+    return <MeetingDetail id={route.params.id} />;
+  }
   if (route.view === "more") return <MoreScreen />;
   if (route.view === "ask") return <AskScreen />;
   if (route.view === "base") return <BaseScreen />;
-  if (route.view === "project") return <ProjectTasksScreen id={route.params.id} />;
+  if (route.view === "project") {
+    return <ProjectTasksScreen id={route.params.id} />;
+  }
   if (route.view === "map") return <MapScreen />;
-  if (route.view === "settings") return <Wrapped title="Настройки"><SettingsScreen /></Wrapped>;
-  if (route.view === "team") return <Wrapped title="Команда"><TeamScreen /></Wrapped>;
-  if (route.view === "admin") return <Wrapped title="Админ"><AdminScreen /></Wrapped>;
-  if (route.view === "meetAdmin") return <MeetAdminScreen initialMode={route.params?.mode} />;
+  if (route.view === "settings") {
+    return (
+      <Wrapped title="Настройки">
+        <SettingsScreen />
+      </Wrapped>
+    );
+  }
+  if (route.view === "team") {
+    return (
+      <Wrapped title="Команда">
+        <TeamScreen />
+      </Wrapped>
+    );
+  }
+  if (route.view === "admin") {
+    return (
+      <Wrapped title="Админ">
+        <AdminScreen />
+      </Wrapped>
+    );
+  }
+  if (route.view === "meetAdmin") {
+    return <MeetAdminScreen initialMode={route.params?.mode} />;
+  }
   return null;
 }
 
@@ -395,7 +521,9 @@ function BaseScreen() {
   return <RoyBaseScreen onBack={pop} />;
 }
 
-function Wrapped({ title, children }: { title: string; children: React.ReactNode }) {
+function Wrapped(
+  { title, children }: { title: string; children: React.ReactNode },
+) {
   const { pop } = useRoyNav();
   return (
     <div className="roy-pop flex h-full flex-col">
@@ -418,16 +546,29 @@ function MoreScreen({ root = false }: { root?: boolean }) {
     { label: dt("Настройки", "Settings"), route: { view: "settings" } },
     { label: dt("Карта системы", "System map"), route: { view: "map" } },
   ];
-  if (me?.is_admin) rows.push({ label: dt("Админ", "Admin"), route: { view: "admin" } });
+  if (me?.is_admin) {
+    rows.push({ label: dt("Админ", "Admin"), route: { view: "admin" } });
+  }
   return (
     <div className="roy-pop flex h-full flex-col">
-      {root ? <RoyHeader title={dt("Ещё", "More")} right={<HeaderActions />} /> : <NavHeader onBack={pop} title={dt("Ещё", "More")} />}
+      {root
+        ? <RoyHeader title={dt("Ещё", "More")} right={<HeaderActions />} />
+        : <NavHeader onBack={pop} title={dt("Ещё", "More")} />}
       {me && (
         <div className="flex shrink-0 items-center gap-3 px-4 pb-3">
           <Avatar size={44}>{initials(me.name)}</Avatar>
           <div className="min-w-0">
-            <div className="truncate font-semibold text-ink" style={{ fontSize: 15 }}>{me.name}</div>
-            {me.username && <div className="truncate text-ink-mute" style={{ fontSize: 13 }}>@{me.username}</div>}
+            <div
+              className="truncate font-semibold text-ink"
+              style={{ fontSize: 15 }}
+            >
+              {me.name}
+            </div>
+            {me.username && (
+              <div className="truncate text-ink-mute" style={{ fontSize: 13 }}>
+                @{me.username}
+              </div>
+            )}
           </div>
         </div>
       )}

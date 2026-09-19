@@ -3,11 +3,21 @@
 // писать «10 сен», другая «10.09», и человек считает, что видит разные даты.
 
 /** «10 сен» — короткий день для строк и чипов. */
+// Локаль дат берётся из языка ДОКУМЕНТА, а не зашита: в демо интерфейс английский, и
+// «13 сент. — 26 сент.» посреди английского экрана читается как недоделка (issue #389).
+// Через `<html lang>`, а не параметром в каждой функции: потребителей девять, и добавление
+// аргумента в каждую превращает мелкую правку в переборку половины экрана — а сам `lang`
+// продукту всё равно нужен верный, его читают скринридеры и браузер.
+export function uiLocale(): string {
+  if (typeof document === "undefined") return "ru-RU";
+  return document.documentElement.lang === "en" ? "en-GB" : "ru-RU";
+}
+
 export function fmtDay(value: string): string {
   const d = new Date(value);
   return isNaN(d.getTime())
     ? value
-    : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+    : d.toLocaleDateString(uiLocale(), { day: "numeric", month: "short" });
 }
 
 /** «10 сен — 23 сен» — период спринта. */

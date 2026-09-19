@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JournalEvent, JournalKind } from "@/types";
 import { fetchSpaceJournal } from "@/lib/api";
+import { uiLocale } from "./format";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 
@@ -35,14 +36,14 @@ function dayLabel(iso: string, dt: (ru: string, en: string) => string): string {
   const diff = Math.round((start(new Date()) - start(d)) / 86_400_000);
   if (diff === 0) return dt("Сегодня", "Today");
   if (diff === 1) return dt("Вчера", "Yesterday");
-  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  return d.toLocaleDateString(uiLocale(), { day: "numeric", month: "long" });
 }
 
 function time(iso: string): string {
   const d = new Date(iso);
   return isNaN(d.getTime())
     ? ""
-    : d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    : d.toLocaleTimeString(uiLocale(), { hour: "2-digit", minute: "2-digit" });
 }
 
 export function JournalScreen({ space }: { space: string | null }) {
