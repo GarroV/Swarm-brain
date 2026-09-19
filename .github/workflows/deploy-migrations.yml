@@ -21,6 +21,10 @@ on:
         description: "Сухой прогон: показать, что уедет на прод, ничего не менять"
         type: boolean
         default: true
+      include_all:
+        description: "Накатить и те миграции, что старше последней применённой на проде"
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-window          # общая с раскаткой функций: две раскатки разом не нужны никогда
@@ -48,9 +52,15 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           DRY_RUN: ${{ inputs.dry_run }}
+          INCLUDE_ALL: ${{ inputs.include_all }}
         run: |
+          # --include-all нужен, когда файл миграции старше последней применённой на проде:
+          # так бывает у ветки, пролежавшей дольше соседних. Без флага CLI отказывается
+          # вставлять её «в середину» истории и выходит с кодом 1.
+          EXTRA=""
+          if [ "$INCLUDE_ALL" = "true" ]; then EXTRA="--include-all"; fi
           if [ "$DRY_RUN" = "true" ]; then
-            supabase db push --linked --dry-run
+            supabase db push --linked --dry-run $EXTRA
           else
-            supabase db push --linked
+            supabase db push --linked $EXTRA
           fi
