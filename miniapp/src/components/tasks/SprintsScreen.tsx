@@ -552,6 +552,27 @@ export function SprintsScreen() {
   // Отметка сверки: сначала на экране, потом на сервере. Ритуал — разговор на десять минут,
   // и ждать ответа сети на каждое нажатие значит его растянуть; отказ откатывает строку и
   // говорит вслух, а не оставляет отметку, которой на сервере нет.
+  // «✓» в строке: закрывает задачу и возвращает обратно. Статус живёт в самой задаче, а не в
+  // строке спринта, поэтому правим задачу и перечитываем состав (#407 — быстрые действия).
+  async function toggleDone(item: SprintCycleItem) {
+    if (!detail || !item.task_id) return;
+    const next = CLOSED.has(item.status) ? "open" : "done";
+    try {
+      await updateTask(item.task_id, { status: next });
+      await reloadDetail(detail.id);
+      load();
+    } catch (e) {
+      setErr(
+        e instanceof Error ? e.message : dt("Не удалось отметить", "Failed to mark"),
+      );
+    }
+  }
+
+  // «→» в строке: та же пометка «к переносу», что на сверке, — без захода на отдельный экран.
+  function toggleCarry(item: SprintCycleItem) {
+    return markItem(item, { to_carry: !item.to_carry });
+  }
+
   async function markItem(
     item: SprintCycleItem,
     patch: Partial<
@@ -1100,6 +1121,8 @@ export function SprintsScreen() {
                         users={users}
                         // Принятый спринт — слепок: в него не дописывают.
                         onAdd={accepted ? undefined : addTaskToInitiative}
+                        onDone={accepted ? undefined : toggleDone}
+                        onCarry={accepted ? undefined : toggleCarry}
                         onOpen={(item) => {
                           // Открываем ЖИВУЮ задачу: строка спринта — это её отражение, и править
                           // надо задачу. У упоминания и приватной чужой открывать нечего — такие
