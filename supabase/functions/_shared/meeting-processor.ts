@@ -30,6 +30,7 @@ import {
 import { TEZISY_PROMPT } from "./tezisy-prompt.ts";
 import { glossaryWhisperHint } from "./glossary.ts";
 import { extractChatContent } from "./openai-chat.ts";
+import { claimLeaseUntil } from "./meeting-lease.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -314,10 +315,18 @@ async function releaseLease(supabase: SupabaseClient, id: string): Promise<void>
 }
 
 // Персист прогресса: process_state + heartbeat. summary_status НЕ трогаем (остаётся processing).
+// Вместе с прогрессом продлеваем лиз права транскрибации (issue #285): обработка длинной записи
+// идёт дольше 30 минут (на проде такие встречи есть), а истёкший лиз означает «встреча свободна» —
+// и её подхватывал любой следующий claim, теряя уже принятое аудио держателя.
 async function saveState(supabase: SupabaseClient, id: string, state: ProcessState): Promise<void> {
   const nowIso = new Date().toISOString();
   await supabase.from("meetings")
-    .update({ process_state: state, last_progress_at: nowIso, updated_at: nowIso })
+    .update({
+      process_state: state,
+      last_progress_at: nowIso,
+      lease_expires_at: claimLeaseUntil(),
+      updated_at: nowIso,
+    })
     .eq("id", id);
 }
 

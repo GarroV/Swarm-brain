@@ -7,24 +7,34 @@
 //
 // Теперь список один и на него смотрят трое: валидация на входе (400 вместо тихой записи),
 // CHECK в базе (миграция 20260905190000_tasks_status_check) и тест, сверяющий его с enum'ами MCP.
-export const TASK_STATUSES = ["open", "in_progress", "done", "cancelled", "backlog"] as const;
+export const TASK_STATUSES = [
+  "open",
+  "in_progress",
+  "done",
+  "cancelled",
+  "backlog",
+] as const;
 
 export type TaskStatus = typeof TASK_STATUSES[number];
 
 export function isTaskStatus(v: unknown): v is TaskStatus {
-  return typeof v === "string" && (TASK_STATUSES as readonly string[]).includes(v);
+  return typeof v === "string" &&
+    (TASK_STATUSES as readonly string[]).includes(v);
 }
 
 /** Текст отказа для API: называет и что пришло, и что принимается. */
 export function taskStatusError(v: unknown): string {
-  return `Недопустимый статус задачи: ${JSON.stringify(v)}. Принимаются: ${TASK_STATUSES.join(", ")}.`;
+  return `Недопустимый статус задачи: ${JSON.stringify(v)}. Принимаются: ${
+    TASK_STATUSES.join(", ")
+  }.`;
 }
 
 /** Статусы, означающие, что работа над задачей закончена. */
 export const CLOSED_STATUSES = ["done", "cancelled"] as const;
 
 export function isClosedStatus(v: unknown): boolean {
-  return typeof v === "string" && (CLOSED_STATUSES as readonly string[]).includes(v);
+  return typeof v === "string" &&
+    (CLOSED_STATUSES as readonly string[]).includes(v);
 }
 
 /**
@@ -48,6 +58,29 @@ export function completionPatch(
   nowIso: string,
 ): { completed_at?: string | null } {
   if (nextStatus === undefined) return {};
-  if (isClosedStatus(nextStatus)) return prevCompletedAt ? {} : { completed_at: nowIso };
+  if (isClosedStatus(nextStatus)) {
+    return prevCompletedAt ? {} : { completed_at: nowIso };
+  }
   return prevCompletedAt ? { completed_at: null } : {};
+}
+
+/**
+ * Прятать ли закрытые задачи (`done`/`cancelled`/`draft`) из выдачи по умолчанию.
+ *
+ * Обычный список закрытые не показывает — иначе доска тонет в сделанном. Но ЯВНЫЙ фильтр по
+ * статусу это правило ОТМЕНЯЕТ (issue #304): до 16.09.2026 запрет накладывался в запросе ДО
+ * `eq("status", …)`, поэтому `status: "done"` складывался с «не показывать done» в заведомо
+ * пустое пересечение. MCP отвечал «Задач не найдено» — а это неотличимо от «задач и правда нет»,
+ * и агент, только что закрывший задачу, мог решить, что закрытие не сработало, и закрыть её ещё раз.
+ *
+ * Ветки `confirmed` и `dueToday` ведут свой отбор сами, поэтому правило к ним не применяется —
+ * так было и до правки.
+ */
+export function hidesClosedByDefault(filters: {
+  confirmed?: boolean;
+  dueToday?: boolean;
+  status?: string;
+}): boolean {
+  return filters.confirmed === undefined && !filters.dueToday &&
+    !filters.status;
 }

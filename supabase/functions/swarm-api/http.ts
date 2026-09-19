@@ -4,9 +4,10 @@
 const MINIAPP_ORIGIN = Deno.env.get("MINIAPP_ORIGIN") ?? "*";
 
 export function corsHeaders(origin: string): Record<string, string> {
-  const allowOrigin =
-    MINIAPP_ORIGIN === "*" ? "*"
-    : origin === MINIAPP_ORIGIN ? origin
+  const allowOrigin = MINIAPP_ORIGIN === "*"
+    ? "*"
+    : origin === MINIAPP_ORIGIN
+    ? origin
     : MINIAPP_ORIGIN;
   return {
     "Access-Control-Allow-Origin": allowOrigin,
@@ -21,7 +22,12 @@ export function corsHeaders(origin: string): Record<string, string> {
 // Cache-Control: no-store на КАЖДОМ ответе — это приватный API (чужие записи, задачи,
 // тезисы). Без него ответ вправе осесть в промежуточном кэше и отдаться повторно/не тому
 // (см. issue #71: service worker кэшировал /api/* и показывал данные «на шаг назад»).
-export function json(data: unknown, status = 200, origin = "", extra?: Record<string, string>): Response {
+export function json(
+  data: unknown,
+  status = 200,
+  origin = "",
+  extra?: Record<string, string>,
+): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
@@ -52,7 +58,10 @@ export function apiErr(status: number, message: string, origin = ""): Response {
  * сортировка `due_date ASC nulls last` отрезала бы первыми задачи БЕЗ срока — их 67, и под
  * них на дашборде есть отдельная секция (issue #111).
  */
-export function parseListLimit(param: string | null, { def, max }: { def: number; max: number }): number {
+export function parseListLimit(
+  param: string | null,
+  { def, max }: { def: number; max: number },
+): number {
   const raw = param ? parseInt(param, 10) : NaN;
   const wanted = Number.isFinite(raw) && raw > 0 ? raw : def;
   return Math.min(wanted, max);

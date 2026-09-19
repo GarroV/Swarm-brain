@@ -15,7 +15,11 @@
  *  полный текст экран детали до-загружает по id (GET /meetings/:id). */
 export const LIST_PREVIEW_CHARS = 400;
 
-type Row = { content?: string | null; summary?: string | null; [k: string]: unknown };
+type Row = {
+  content?: string | null;
+  summary?: string | null;
+  [k: string]: unknown;
+};
 
 function cut(s: string | null | undefined): { v: string | null; cut: boolean } {
   if (s == null) return { v: null, cut: false };
@@ -30,7 +34,9 @@ function cut(s: string | null | undefined): { v: string | null; cut: boolean } {
  * как полный. Очередь вычитки (confirmed=false, единицы строк) через это не проходит —
  * там текст нужен сразу и целиком.
  */
-export function toListRow<T extends Row>(row: T): T & { content: string; summary: string | null; truncated?: true } {
+export function toListRow<T extends Row>(
+  row: T,
+): T & { content: string; summary: string | null; truncated?: true } {
   const c = cut(row.content);
   const s = cut(row.summary);
   const out = { ...row, content: c.v ?? "", summary: s.v };
@@ -54,7 +60,9 @@ type AgentRow = { draft_notes_md?: string | null; [k: string]: unknown };
  * готовятся» от «готовы», и без флага он бы читал отсутствие текста как «не готово» для ВСЕХ.
  * Пустая строка считается «не готово» — иначе список рапортует «готово» на пустышке.
  */
-export function toAgentListRow<T extends AgentRow>(row: T): Omit<T, "draft_notes_md"> & { has_draft_notes: boolean } {
+export function toAgentListRow<T extends AgentRow>(
+  row: T,
+): Omit<T, "draft_notes_md"> & { has_draft_notes: boolean } {
   const { draft_notes_md, ...rest } = row;
   return { ...rest, has_draft_notes: (draft_notes_md ?? "").trim().length > 0 };
 }

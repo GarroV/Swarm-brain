@@ -28,10 +28,13 @@ export type TaskSubscriber = {
 
 // Причастные к задаче: исполнители, создатель, владелец (владелец 2026-08-24:
 // «есть задачи которые я создал = мои задачи»).
-export function isInvolvedInTask(task: NotifiableTask, userId: number): boolean {
-  return (task.assignee_telegram_ids ?? []).includes(userId)
-    || task.created_by_telegram_id === userId
-    || task.owner_id === userId;
+export function isInvolvedInTask(
+  task: NotifiableTask,
+  userId: number,
+): boolean {
+  return (task.assignee_telegram_ids ?? []).includes(userId) ||
+    task.created_by_telegram_id === userId ||
+    task.owner_id === userId;
 }
 
 /**
@@ -55,7 +58,9 @@ export function isCommentRecipient(
   opts: { isAdmin?: boolean; subscription?: SubscriptionState | null } = {},
 ): boolean {
   if (opts.subscription === "muted") return false;
-  if (opts.subscription === "subscribed") return canViewTask(task, userId, opts.isAdmin === true);
+  if (opts.subscription === "subscribed") {
+    return canViewTask(task, userId, opts.isAdmin === true);
+  }
   return isInvolvedInTask(task, userId) && canViewTask(task, userId, false);
 }
 
@@ -85,7 +90,12 @@ export function commentRecipients(
     if (!id || id === actorTelegramId || seen.has(id)) continue;
     seen.add(id);
     const sub = byId.get(id);
-    if (!isCommentRecipient(task, id, { isAdmin: sub?.is_admin, subscription: sub?.state ?? null })) continue;
+    if (
+      !isCommentRecipient(task, id, {
+        isAdmin: sub?.is_admin,
+        subscription: sub?.state ?? null,
+      })
+    ) continue;
     out.push(id);
   }
   return out;

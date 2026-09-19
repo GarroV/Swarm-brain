@@ -12,6 +12,13 @@ STAGING_PGPW := $(shell cat $(HOME)/.swarm/staging_pgpw 2>/dev/null)
 
 .PHONY: help smoke-staging smoke-prod staging-sync-functions staging-migrate staging-psql staging-ps staging-up staging-down deploy-plan deploy who notice notice-off
 
+check: ## Единый прогон проверок доски инициатив (формат, линт, типы, тесты, покрытие, мёртвый код, границы)
+	@./scripts/check
+
+porcha: ## Порча: ломаем ядро нарочно и убеждаемся, что тесты краснеют (код + база)
+	@./scripts/with-local-db ./scripts/porcha
+	@./scripts/with-local-db ./scripts/porcha-sql
+
 help:
 	@echo "deploy-plan            — что готово, но НЕ раскатано (накопитель; ничего не меняет)"
 	@echo "deploy                 — раскатать накопленное (окно: будни 09:00–09:59 Белград; нужно «да» владельца)"

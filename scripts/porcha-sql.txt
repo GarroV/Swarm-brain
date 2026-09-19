@@ -1,0 +1,13 @@
+# Порча для базы: что ломаем в миграции | на что меняем | каким тестом ловим.
+# Разделитель — символ «|», в SQL-подстановках его быть не должно.
+#
+# Каждая строка отвечает на вопрос «если убрать это условие, тест покраснеет?». Если нет —
+# условие держится ни на чём, и в базе оно осталось только потому, что его никто не проверял.
+and t.is_private = false|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
+# Условия «на всякий случай» сюда не попадают: их порча краснеть не заставит, потому что они
+# ничего не держат. Такое условие не вносится в список, а убирается из SQL — 18.09.2026 так
+# ушло `si.removed_at is null` из приёмки: упоминание отсекает соединение по внешнему ключу.
+si.carry_count + 1|si.carry_count|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
+v_cycle.status <> 'active'|v_cycle.status = 'нет такого статуса'|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
+before delete on public.tasks|before insert on public.tasks|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
+and frozen_at is null|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts

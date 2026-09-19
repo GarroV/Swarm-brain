@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Не пускает в публичный репозиторий детали незакрытых уязвимостей.
+#
+# Повод (17.09.2026): внутренний трекер security-работ — перечень открытых дыр живого
+# продукта с рабочими деталями — лежал в запушенной ветке и читался анонимно 12 дней.
+# Репозиторий публичный, поэтому видна ЛЮБАЯ ветка, не только main.
+#
+# Документ, которому нельзя наружу, помечается внутри строкой-маркером (см. $MARKER —
+# он собран из частей, иначе хук блокировал бы сам себя). Хранить такой файл вне git
+# (~/Documents/workbench/private/), детали уязвимостей — в приватном advisory.
+#
+# Осознанный обход: git push --no-verify
+set -uo pipefail
+
+ZERO='0000000000000000000000000000000000000000'
+MARKER="PRIVATE-DO-NOT""-PUBLISH"
+RISKY_NAME='(security[-_].*progress|.*security[-_]audit|.*pentest|.*vuln(erabilit)?(y|ies)[-_]|.*advisory[-_]draft)'
+
+blocked=0
+report() {
+  if [ "$blocked" -eq 0 ]; then
+    echo "" >&2
+    echo "⛔ Пуш остановлен: в отправляемых коммитах есть внутренние security-материалы." >&2
+    echo "   Репозиторий публичный — видны ВСЕ ветки, не только main." >&2
+    echo "" >&2
+  fi
+  blocked=1
+  echo "   • $1" >&2
+}
+
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ "$local_sha" = "$ZERO" ] && continue          # удаление ветки — не наша забота
+
+  if [ "$remote_sha" = "$ZERO" ]; then
+    base=$(git merge-base "$local_sha" refs/remotes/origin/main 2>/dev/null || true)
+    if [ -n "$base" ]; then range="$base..$local_sha"; else range="$local_sha"; fi
+  else
+    range="$remote_sha..$local_sha"
+  fi
+
+  files=$(git log --name-only --pretty=format: "$range" 2>/dev/null | sort -u | sed '/^$/d')
+  [ -z "$files" ] && continue
+
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    case "$f" in .githooks/*) continue ;; esac     # сама защита — не материал
+    if printf '%s' "$f" | grep -qiE "$RISKY_NAME"; then
+      report "$f — имя выглядит как внутренний security-документ"
+      continue
+    fi
+    # Маркер ищем по всем версиям файла в диапазоне: он мог быть добавлен и удалён внутри.
+    if git log -p "$range" -- "$f" 2>/dev/null | grep -q "$MARKER"; then
+      report "$f — помечен маркером запрета публикации"
+    fi
+  done <<< "$files"
+done
+
+if [ "$blocked" -eq 1 ]; then
+  cat >&2 <<'TXT'
+
+   Что делать:
+   1. Держи файл вне git — ~/Documents/workbench/private/
+   2. Детали уязвимости — в приватный advisory:
+      gh api -X POST repos/{owner}/{repo}/security-advisories
+   3. В публичном трекере оставь нейтральную строку: что делаем,
+      без указания, чего именно не хватает и как это использовать.
+
+   Файл уже в истории ветки? Удаления новым коммитом НЕ достаточно —
+   перенеси работу на чистую ветку от main.
+
+   Осознанно публикуешь? git push --no-verify
+
+TXT
+  exit 1
+fi
+
+exit 0

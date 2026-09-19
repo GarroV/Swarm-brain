@@ -6,7 +6,7 @@
 
 ## Деплой
 
-> 🚦 **Раскатка — только по явному «да» владельца и в окно 23:00–05:59 по Белграду, любой день** (утреннее окно отменено 27.08.2026, канон [decisions/2026-08-27-deploy-at-night.md](decisions/2026-08-27-deploy-at-night.md));
+> 🚦 **Раскатка — только по явному «да» владельца и в окно 23:00–06:59 по Белграду, любой день** (утреннее окно отменено 27.08.2026, канон [decisions/2026-08-27-deploy-at-night.md](decisions/2026-08-27-deploy-at-night.md));
 > миграции и рискованное — ночью.** Пуш в `main` тоже раскатка: Cloudflare Pages собирает веб
 > с `main` сам. Что накопилось — `make deploy-plan`, раскатать — `make deploy` (вне окна откажет,
 > `FORCE=1` — осознанный обход). Канон: [decisions/2026-08-24-deploy-window.md](decisions/2026-08-24-deploy-window.md).
@@ -14,6 +14,11 @@
 ```bash
 make deploy-plan   # что готово, но НЕ раскатано (функции, веб, миграции, рекордер)
 make deploy        # раскатать накопленное + передвинуть метку prod-deployed
+# Локальный CLI без прав на проект? Та же раскатка кнопкой в CI (токен лежит в секретах репо):
+#   gh workflow run deploy-functions.yml -f dry_run=false -f force=true -f skip_activity_check=true
+#   (skip_activity_check ставится ТОЛЬКО если проверил вручную, кто сейчас в проде)
+# ⚠️ Сверяешь план локально — тяни метку `git fetch --tags --force`: обычный fetch НЕ двигает
+#   существующий тег, и plan покажет давно раскатанные функции (поймано 12.09.2026)
 ```
 
 ```bash
@@ -36,6 +41,21 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 
 > **`--no-verify-jwt` теперь ЗАКРЕПЛЁН в `supabase/config.toml`** (`[functions.<name>] verify_jwt = false` для всех 15 функций). Флаг в командах выше — подстраховка, конфиг и так делает функции публичными на шлюзе. **Не ставь `verify_jwt = true`** ни одной функции: рекордер/вебхуки/бот шлют не-JWT `Bearer`-токены и делают свою авторизацию в коде → шлюз с verify_jwt отобьёт их 401 `INVALID_JWT_FORMAT` ещё до функции (так в 2026-06-30 молча падали ВСЕ загрузки рекордера — разбор в BACKLOG).
 
+### Доступ к прод-базе из Claude Code (только чтение)
+
+MCP-сервер Supabase подключается **в local scope одной командой**, а не через `.mcp.json` в репозитории — тот удалён 17.09.2026 ([#317](https://github.com/GarroV/Swarm-brain/issues/317)), т.к. project-scoped сервер требует одобрения диалогом и без него молча не подключается.
+
+```bash
+claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
+  --project-ref=vbqglndbxkpmreccpqmr --read-only
+```
+
+- **Токен не передаётся флагом.** Сервер читает `SUPABASE_ACCESS_TOKEN` из окружения сессии (значение — в `.claude/settings.local.json`, папка целиком в `.gitignore`; записать — `.claude/set-supabase-token.sh`). Секрет в аргументах команды осел бы в истории shell, а в `.mcp.json` — в git публичного репозитория.
+- **Права PAT — только Read:** Project Settings, Advisors, Logs, Database, Migrations, Edge Functions. Роль ответа — `supabase_read_only_user`, записать нельзя by design; миграции катятся кнопкой в CI (см. выше). Таблица «MCP tool → Required permission» — в [доках Supabase](https://supabase.com/docs/guides/platform/personal-access-tokens).
+- ⚠️ **Доступ проверять ТОЛЬКО реальным запросом** (`execute_sql`). Две ловушки, каждая выглядит как рабочий доступ: `get_project_url` отвечает и без токена (собирает URL локально, в API не ходит), а неодобренный project-сервер не подключён, хотя инструменты `mcp__supabase__*` в сессии видны.
+- **Тот же доступ без MCP:** `POST https://api.supabase.com/v1/projects/<ref>/database/query` с `Authorization: Bearer $SUPABASE_ACCESS_TOKEN`, и `supabase` CLI — env перебивает keychain-логин, поэтому маршрут другого проекта (PROMUS) не ломается.
+- ⚠️ **worktree не наследует `.claude/`** — в нём нужна копия или symlink, иначе доступа там нет.
+
 ### Веб (miniapp) — Cloudflare Pages, АВТО (руками НЕ деплоить)
 
 > Проверено 2026-06-28 через CF API. Веб «Рой» выкатывается **сам** на каждый push в `main` — отдельный ручной шаг НЕ нужен (в отличие от edge-функций выше).
@@ -53,7 +73,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 
 | Workflow | Когда | Что делает | Раннер / потолок |
 |---|---|---|---|
-| `ci.yml` | push в `main`, PR | `deno check` + `deno test` всех edge-функций; сборка + типы miniapp | `ubuntu-latest`, 10 / 15 мин |
+| `ci.yml` | push в `main`, PR | `deno check` + `deno test` всех edge-функций (с поднятым локальным контуром Supabase — часть тестов ходит в настоящую базу); сборка + типы miniapp; задание **gate** — `./scripts/check` (формат, линт, типы, тесты с непадающим покрытием, мёртвый код, границы) и `make porcha` | `ubuntu-latest`, 10 / 15 / 20 мин |
 | `recorder.yml` | push/PR, ТОЛЬКО при изменениях в `recorder/**` | `swift build -c release` — ловит поломку до тега релиза | `macos-latest`, 25 мин |
 | `recorder-release.yml` | push тега `recorder-build-*` | собирает предсобранный `.app` (внутри архива имя пока `SwarmRecorder.app` — переходное, см. recorder/README.md) и публикует **release-asset**. ⚠️ Скачивают его НЕ оттуда: репозиторий приватный → анонимно 404, раздача идёт из Storage `swarm_drive/recorder/` (issue #91), asset туда надо залить | `macos-14`, 30 мин |
 
@@ -104,7 +124,8 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 | Concern | Файлы | Детали |
 |---|---|---|
 | CRUD/спринты/типы | `_shared/tasks/{db,sprints,types}.ts` | spoke [SHARED_TASKS_ENGINE.md](SHARED_TASKS_ENGINE.md) |
-| 🧭 **Спринты** (период → приёмка → снимок, issue #267): сущность `sprint_cycles` + состав/клон `sprint_items`; итоги считает ЧИСТАЯ функция `computeSprintStats` один раз на приёмке и больше не пересчитывает; дата закрытия — `tasks.completed_at`. ⚠️ таблица `sprints` — это вкладки доски проектов, а не спринты | `_shared/tasks/{sprint-cycles,sprint-stats,statuses}.ts`, роуты `swarm-api/sprint-cycles.ts` | §Таблицы БД, §swarm-api, [спека](superpowers/specs/2026-09-08-sprints-design.md), [решение](decisions/2026-09-08-sprints.md), [план и состояние работ](superpowers/plans/2026-09-08-sprints-implementation.md) ⏸ этапы 1–2 в ветке `feat/sprints`, не раскатано; этапы 3–4 стартуют после 10.09.2026 |
+| 🧭 **Спринты** (период → приёмка → снимок, issue #267): сущность `sprint_cycles` + состав/клон `sprint_items`; итоги считает ЧИСТАЯ функция `computeSprintStats` один раз на приёмке и больше не пересчитывает; дата закрытия — `tasks.completed_at`. ⚠️ таблица `sprints` — это вкладки доски проектов, а не спринты | Экран — вкладка **«Спринты»** в `TasksScreen.tsx` (`miniapp/src/components/tasks/SprintsScreen.tsx`): слева пул `SprintTaskPool.tsx` (**только задачи пространства проектов** — без `project_id` в пул не попадают, решение владельца 10.09.2026; не взятые в спринт, не закрытые, не приватные; фильтр по проекту ИЕРАРХИЧЕСКИЙ — группа приносит и подпроекты, правила в `lib/sprintPool.ts` под тестами), справа общий канбан `TaskKanban.tsx` из ТРЁХ колонок (Открыто · В работе · Готово — «Бэклога» в спринте нет, его роль играет пул), карточки сгруппированы заголовками проектов. Создавать, начинать, принимать и править спринт может **любой участник** (решение владельца 18.09.2026 — планирование командное); под админом остался только **DELETE** спринта. Набирать состав и двигать задачи — все. Принятый спринт только на чтение и по клону, слева вместо пула — отчёт `SprintReport.tsx` (рисует `stats`, посчитанные на приёмке) | `_shared/tasks/{sprint-cycles,sprint-items,sprint-accept,sprint-stats,sprint-carry,sprint-dates,statuses}.ts` (циклы · состав и сверка · приёмка · итоги · правило переноса · даты), роуты `swarm-api/{sprint-cycles,space-journal,project-fields}.ts`, `miniapp/src/components/tasks/{SprintsScreen,SprintTaskPool,TaskKanban}.tsx` | §Таблицы БД, §swarm-api, [спека](superpowers/specs/2026-09-08-sprints-design.md), [решение](decisions/2026-09-08-sprints.md), [план и состояние работ](superpowers/plans/2026-09-08-sprints-implementation.md) — этапы 1–4 раскатаны на прод 09.09.2026 по «да» владельца (миграции применены, `swarm-api` v150, веб собран Cloudflare Pages с `main` `0d64dd4`); живого прогона спринта на проде ещё не было — первое создание за владельцем |
+| 🧭 **Доска инициатив** (спринт как пространство большого кросс-командного проекта, 18.09.2026): пространство = вкладка доски (`sprint_cycles.tab_id` → `sprints.id`), в пространстве **один незакрытый спринт** (частичный уникальный индекс); сверка в середине спринта (`check_status` ok/risk/problem + комментарий), пометка «к переносу» с причиной, «×N» — сколько раз задача переезжала (`carry_count`); удалённая задача остаётся **упоминанием** (триггер `before delete on tasks`); отменённая задача — отдельная цифра **вне процента** (решение владельца 18.09.2026). Приёмка — **одна транзакция** в базе (`accept_sprint_cycle`): снимок, статус, следующий черновик, перенос хвостов | Экран — этап 2 (ещё не построен): виды «Список» и «Канбан», сверка, «Все инициативы», аналитика, журнал | Миграция `20260918120000`, `_shared/tasks/{sprint-items,sprint-accept,sprint-carry,sprint-dates,links}.ts`, `swarm-api/{sprint-cycles,space-journal,project-fields}.ts` | §Таблицы БД, §swarm-api, [спека](superpowers/specs/2026-09-18-initiatives-board-design.md), [решение](decisions/2026-09-18-doska-iniciativ.md), граф задач — `tasks.md` в корне. Этап 1 (данные и API) готов, на прод НЕ раскатан |
 | 📅 **Дата от модели — год не верить** (2026-08-24): промпты извлечения не знали сегодняшней даты, и на день без года («до 17 августа») модель дописывала год из обучающих данных — на проде стабильно **2023**. Защита в два слоя: (1) каждый такой промпт начинается с `Сегодня <YYYY-MM-DD>` + правило «год считай от сегодняшней даты, НИКОГДА не из головы»; (2) ответ модели проходит через `_shared/llm-date.ts` — `normalizeExtractedDueDate` (срок задачи, окно −60…+540 дней) и `normalizeExtractedEventDate` (дата события записи, окно −400…+7 дней): дата вне окна = год галлюцинация → день и месяц сохраняются, год берётся ближайший подходящий; подходящего нет → `null` (лучше без срока, чем с выдуманным). Точки применения: `swarm-api` `gptExtractTasks`, `swarm-bot/tasks/handlers.ts` `analyzeAndCreateTasks`, `read-ai-webhook`, `swarm-bot/lib/storage.ts` (`buildEntryIndex`/`extractEntryMeta`), `swarm-mcp` (`extractEntryMeta` + reindex). ⚠️ Дату, выбранную человеком в календаре, нормализатор НЕ трогает — прошедший срок там осознанный выбор | `_shared/llm-date.ts` (+ `.test.ts`) | §Движок задач, §Флоу сохранения |
 | Бот-обёртка / MCP-прослойка / fuzzy-assignee | `swarm-bot/tasks/{db,handlers,matcher}.ts`, `swarm-mcp/tasks/tools.ts` | §Движок задач |
 | Персональные смарт-метки (личные списки) | БД `task_labels` + `tasks.label_ids`; API `swarm-api/task-labels.ts` (+`http.ts`); MCP `swarm-mcp/tasks/tools.ts` (`list_task_labels`, `labels`); веб `miniapp/src/components/tasks/{PictogramPicker,LabelEditor}.tsx`, `lib/smartLists.ts` (`filterByLabel`) | §Таблицы БД, §swarm-api, §swarm-mcp |
@@ -183,7 +204,7 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 |---|---|---|
 | MCP-инструменты (Claude Desktop) | `swarm-mcp/index.ts`, `swarm-mcp/tasks/tools.ts`, форматирование ответов `swarm-mcp/tasks/format.ts` (+`.test.ts`) | §swarm-mcp |
 | 🧭 **Статистика по задачам** (запрос руководства): агрегаты за период, история одной задачи, все изменения за период | `_shared/tasks/analytics.ts` (расчёты), `swarm-mcp/tasks/{analytics.ts,analytics-format.ts}` (инструменты `get_task_stats`/`get_task_history`/`get_recent_task_changes`) | спека [2026-09-09-task-analytics-design](superpowers/specs/2026-09-09-task-analytics-design.md) · [#286](https://github.com/GarroV/Swarm-brain/issues/286) |
-| 🧭 **Журнал изменений задач** (кто/когда/с чего на что передвинул) — пишется из единственной точки `updateTask`; решение о строках — `_shared/tasks/history.ts`; данные только с даты раскатки #286 | `_shared/tasks/{db.ts,history.ts}`, миграция `20260909220000_task_history_field_journal` | спека [2026-09-09-task-analytics-design](superpowers/specs/2026-09-09-task-analytics-design.md) · §Таблицы БД в [ARCHITECTURE.md](ARCHITECTURE.md) |
+| 🧭 **Журнал изменений задач** (кто/когда/с чего на что передвинул) — пишется из единственной точки `updateTask`; решение о строках — `_shared/tasks/history.ts`; данные только с даты раскатки #286. ⚠️ `changed_by` — `text NOT NULL`: автора кладёт `actorName()` (имя → telegram_id строкой → `system`), `null` там означал бы, что журнал молча не пишется совсем (issue #287, починено и раскатано 09.09.2026) | `_shared/tasks/{db.ts,history.ts}`, миграция `20260909220000_task_history_field_journal` | спека [2026-09-09-task-analytics-design](superpowers/specs/2026-09-09-task-analytics-design.md) · §Таблицы БД в [ARCHITECTURE.md](ARCHITECTURE.md) |
 | 🧭 **MCP и доски задач** — `get_projects` отдаёт дерево проект→подпроект с `id` (имена не угадывают); `add_task` по умолчанию **`confirmed:true`, задача сразу на доске** и в бота никого не уводит, `status:"backlog"` кладёт в колонку «Бэклог»; неизвестный `project` в `get_tasks` → отказ со списком доступных, а не полная доска молча; `get_tasks` печатает **полный `id`** каждой задачи — вход для `get_task_comments`/`update_task` (#275) | `swarm-mcp/tasks/{tools.ts,format.ts}`, `_shared/tasks/project-access.ts` (`visibleProjectNames`), `_shared/tasks/projects.ts` (`listProjects`) | ADR [2026-09-03-mcp-task-goes-to-board](decisions/2026-09-03-mcp-task-goes-to-board.md) · §swarm-mcp в [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Авто-сетап Claude Desktop (`/setup`) | `swarm-setup/script.ts` (`SETUP_SCRIPT` + `BRIDGE_SCRIPT` + `MERGE_FUNCTION`), `swarm-bot/lib/mcp-setup.ts` | §swarm-mcp; мост `bash`+`curl` вместо Node/mcp-remote (#47), тесты `deno test --allow-read --allow-write --allow-run supabase/functions/swarm-setup/script.test.ts` |
 | Подключение Claude — оба пути (Desktop + веб-коннектор claude.ai) | `swarm-bot/index.ts` (`/connect_claude`, `/setup`, `/mytoken`), `_shared/mcp-token.ts` | §MCP-аутентификация |
@@ -274,13 +295,16 @@ supabase secrets set BOT_NAME=swarm-bot                       # env-переме
 4. Закоммитить (`main`) + сразу `git push`.
 5. Задеплоить (`--no-verify-jwt`).
 6. **Проверить, что не отвалилось** (принцип №2): `deno check` + смоук реального флоу; что не проверил — сказать прямо.
+   Для доски инициатив есть единая команда: **`./scripts/check`** (все шесть ролей проверок + машинный отчёт `reports/check.json`)
+   и **`make porcha`** — ломает ядро и базу нарочно и убеждается, что тесты краснеют. Тесты ходят в настоящую базу, поэтому
+   сперва `supabase start && supabase db reset`; доступы подставляет `./scripts/with-local-db`, руками их задавать не нужно.
 
 ---
 
 ## Доки — держать живыми (на поток)
 
 - **🧭 Индекс выше — единый вход.** Меняешь подсистему → проверь, что её строка в индексе и инвентарь в ARCHITECTURE актуальны (тем же коммитом — часть DoD).
-- **Инвентари сверяй скриптом, не глазами:** `./scripts/doc-inventory.sh [endpoints|env|functions|tables|callbacks]` печатает факты ИЗ КОДА → сверь с таблицами в ARCHITECTURE. Расхождение = дрифт (код не задокументирован / дока устарела).
+- **Инвентари сверяй скриптом, не глазами:** `./scripts/doc-inventory.sh [endpoints|env|functions|tables|callbacks|dups]` печатает факты ИЗ КОДА → сверь с таблицами в ARCHITECTURE. Расхождение = дрифт (код не задокументирован / дока устарела). Раздел `dups` работает наоборот — смотрит не код, а сами доки: ищет файл, описанный в одной таблице ДВАЖДЫ (issue #224 — три таких строки прожили неделями, и правки уходили в одну копию из двух).
 - **Перед крупным мёржем или раз в квартал** — drift-аудит скиллом `keeping-docs-current` (`~/.claude/skills/keeping-docs-current/drift-audit.workflow.js`): перечисляет публичные поверхности из кода и диффает с доками.
 - **Один факт — одно место.** Инвентари (эндпоинты/env/таблицы/callbacks) — **канон в ARCHITECTURE**; QUICK_REF/SETUP только ссылаются или дают выжимку.
 - **ADR** на неочевидные решения — `docs/decisions/` (Context / Decision / Consequences), коротко.

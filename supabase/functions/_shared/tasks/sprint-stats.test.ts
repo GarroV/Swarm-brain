@@ -28,7 +28,11 @@ Deno.test("процент считается от плана, взятое св�
     item({ status: "done", completed_at: "2026-09-11T09:00:00Z" }),
     item({ status: "in_progress" }),
     item({ status: "open" }),
-    item({ in_plan: false, status: "done", completed_at: "2026-09-12T09:00:00Z" }),
+    item({
+      in_plan: false,
+      status: "done",
+      completed_at: "2026-09-12T09:00:00Z",
+    }),
     item({ in_plan: false, status: "open" }),
   ]);
   assertEquals(s.plan, 4);
@@ -47,15 +51,92 @@ Deno.test("незакрытое на момент приёмки считает�
   assertEquals(s.carried, 2);
 });
 
-Deno.test("cancelled — тоже закрытая: работа над ней кончилась", () => {
-  const s = computeSprintStats([item({ status: "cancelled", completed_at: "2026-09-10T09:00:00Z" })]);
-  assertEquals(s.planDone, 1);
+Deno.test("отменённая не считается сделанной и никуда не едет (решение владельца 18.09.2026)", () => {
+  // Раньше она шла в «сделано»: отмена задачи повышала процент выполнения, то есть отчёт
+  // улучшался оттого, что работу не сделали. Теперь — отдельной цифрой, мимо процента.
+  const s = computeSprintStats([
+    item({ status: "cancelled", completed_at: "2026-09-10T09:00:00Z" }),
+  ]);
+  assertEquals(s.planDone, 0);
+  assertEquals(s.cancelled, 1);
   assertEquals(s.carried, 0);
+});
+
+Deno.test("отменённая уходит и из знаменателя: две задачи, одна сделана, одна отменена — это 100%", () => {
+  const s = computeSprintStats([
+    item({ status: "done", completed_at: "2026-09-10T09:00:00Z" }),
+    item({ status: "cancelled" }),
+  ]);
+  assertEquals(s.planDone, 1);
+  assertEquals(s.cancelled, 1);
+  assertEquals(s.planPercent, 100);
+});
+
+Deno.test("спринт из одних отмен — ноль процентов, а не сто и не деление на ноль", () => {
+  const s = computeSprintStats([
+    item({ status: "cancelled" }),
+    item({ status: "cancelled" }),
+  ]);
+  assertEquals(s.planPercent, 0);
+  assertEquals(s.cancelled, 2);
+});
+
+Deno.test("отменённая не попадает в разрезы по людям и проектам", () => {
+  const s = computeSprintStats([
+    item({
+      status: "done",
+      assignees: ["Марина"],
+      completed_at: "2026-09-10T09:00:00Z",
+    }),
+    item({ status: "cancelled", assignees: ["Марина"] }),
+  ]);
+  assertEquals(s.byPerson[0], { name: "Марина", plan: 1, done: 1 });
+  assertEquals(s.byProject[0].total, 1);
+});
+
+Deno.test("упоминание удалённой задачи не считается нигде", () => {
+  const s = computeSprintStats([
+    item({ status: "done", completed_at: "2026-09-10T09:00:00Z" }),
+    item({ status: "open", removed_at: "2026-09-12T10:00:00Z" }),
+  ]);
+  assertEquals(s.plan, 1);
+  assertEquals(s.removed, 1);
+  assertEquals(s.carried, 0);
+  assertEquals(s.planPercent, 100);
+  assertEquals(s.byPerson.length, 1);
+});
+
+Deno.test("перенос разведён на ручной и автоматический", () => {
+  const s = computeSprintStats([
+    item({ status: "open", to_carry: true }),
+    item({ status: "in_progress" }),
+    item({ status: "done", completed_at: "2026-09-10T09:00:00Z" }),
+  ]);
+  assertEquals(s.carried, 2);
+  assertEquals(s.carried_manual, 1);
+  assertEquals(s.carried_auto, 1);
+});
+
+Deno.test("отметки сверки считаются по видам", () => {
+  const s = computeSprintStats([
+    item({ check_status: "ok" }),
+    item({ check_status: "risk" }),
+    item({ check_status: "risk" }),
+    item({ check_status: "problem" }),
+    item({}),
+  ]);
+  assertEquals(s.check_ok, 1);
+  assertEquals(s.check_risk, 2);
+  assertEquals(s.check_problem, 1);
 });
 
 Deno.test("задача на двоих попадает в строку каждого, но в общий итог — один раз", () => {
   const s = computeSprintStats([
-    item({ assignees: ["Марина", "Тимур"], status: "done", completed_at: "2026-09-10T09:00:00Z" }),
+    item({
+      assignees: ["Марина", "Тимур"],
+      status: "done",
+      completed_at: "2026-09-10T09:00:00Z",
+    }),
     item({ assignees: ["Тимур"], status: "open" }),
   ]);
   assertEquals(s.plan, 2);
@@ -68,7 +149,11 @@ Deno.test("задача на двоих попадает в строку каж�
 
 Deno.test("задачи без исполнителя не создают пустую строку, а считаются отдельно", () => {
   const s = computeSprintStats([
-    item({ assignees: [], status: "done", completed_at: "2026-09-10T09:00:00Z" }),
+    item({
+      assignees: [],
+      status: "done",
+      completed_at: "2026-09-10T09:00:00Z",
+    }),
     item({ assignees: ["Марина"], status: "open" }),
   ]);
   assertEquals(s.unassigned, 1);
@@ -77,7 +162,11 @@ Deno.test("задачи без исполнителя не создают пус
 
 Deno.test("разрез по проектам: задача без проекта остаётся видимой строкой null", () => {
   const s = computeSprintStats([
-    item({ project: "Поставщики", status: "done", completed_at: "2026-09-10T09:00:00Z" }),
+    item({
+      project: "Поставщики",
+      status: "done",
+      completed_at: "2026-09-10T09:00:00Z",
+    }),
     item({ project: "Поставщики", status: "open" }),
     item({ project: null, status: "open" }),
   ]);

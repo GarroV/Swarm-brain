@@ -1,7 +1,13 @@
 // supabase/functions/swarm-bot/handlers/daily-report.test.ts
 // Запуск: deno test supabase/functions/swarm-bot/handlers/daily-report.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { aggregateActivity, formatReport, type EntryRow, yesterdayWindow } from "./daily-report.ts";
+import {
+  aggregateActivity,
+  buildDailyReport,
+  formatReport,
+  type EntryRow,
+  yesterdayWindow,
+} from "./daily-report.ts";
 
 Deno.test("yesterdayWindow: лето (CEST, UTC+2) — вчерашние локальные сутки в UTC", () => {
   // now = 2026-07-18 07:30 по Белграду (05:30 UTC). Вчера = 2026-07-17.
@@ -105,4 +111,71 @@ Deno.test("formatReport: название из первой строки content
   ]);
   const s = formatReport(data, "24.07", 0);
   assertEquals(s.includes("• Обучение в странах"), true);
+});
+
+// --- Свод переживает разовый отказ базы (issue #305) ---
+// Повод: 12.09.2026 шлюз Supabase отдал 504, свод за 11.09 пропал за сутки целиком.
+
+const noSleep = { sleep: () => Promise.resolve() };
+const oneMeeting: EntryRow[] = [
+  { entry_type: "meeting", source: "granola", group_id: "cee", metadata: { title: "Встреча" } },
+];
+
+Deno.test("buildDailyReport: первый запрос упал, второй прошёл — свод обычный", async () => {
+  let calls = 0;
+  const text = await buildDailyReport({
+    loadEntries: () => {
+      calls++;
+      if (calls < 2) throw new Error("Gateway Timeout");
+      return Promise.resolve(oneMeeting);
+    },
+    loadReviewCount: () => Promise.resolve(3),
+  }, "11.09", { retry: noSleep });
+
+  assertEquals(calls, 2);
+  assertEquals(text.includes("📥 Добавлено в базу: <b>1</b>"), true);
+  assertEquals(text.includes("📋 На вычитке: <b>3</b>"), true);
+  assertEquals(text.includes("/report"), false); // всё получено — подсказка не нужна
+});
+
+Deno.test("buildDailyReport: добавленное не получено — очередь вычитки всё равно приходит", async () => {
+  const text = await buildDailyReport({
+    loadEntries: () => Promise.reject(new Error("Gateway Timeout")),
+    loadReviewCount: () => Promise.resolve(3),
+  }, "11.09", { retry: noSleep });
+
+  assertEquals(text.includes("📋 На вычитке: <b>3</b>"), true);
+  assertEquals(text.includes("Добавлено в базу: <b>—</b>"), true);
+  assertEquals(text.includes("/report"), true);
+});
+
+Deno.test("buildDailyReport: очередь вычитки не посчиталась — добавленное всё равно приходит", async () => {
+  const text = await buildDailyReport({
+    loadEntries: () => Promise.resolve(oneMeeting),
+    loadReviewCount: () => Promise.reject(new Error("Gateway Timeout")),
+  }, "11.09", { retry: noSleep });
+
+  assertEquals(text.includes("📥 Добавлено в базу: <b>1</b>"), true);
+  assertEquals(text.includes("На вычитке: <b>—</b>"), true);
+  assertEquals(text.includes("/report"), true);
+});
+
+Deno.test("buildDailyReport: обе части недоступны — честная ошибка с подсказкой /report", async () => {
+  const text = await buildDailyReport({
+    loadEntries: () => Promise.reject(new Error("Gateway Timeout")),
+    loadReviewCount: () => Promise.reject(new Error("Gateway Timeout")),
+  }, "11.09", { retry: noSleep });
+
+  assertEquals(text.includes("Свод за 11.09"), true);
+  assertEquals(text.includes("Gateway Timeout"), true);
+  assertEquals(text.includes("/report"), true);
+});
+
+Deno.test("buildDailyReport: тихий день остаётся тихим (ноль и ноль, ошибок нет)", async () => {
+  const text = await buildDailyReport({
+    loadEntries: () => Promise.resolve([]),
+    loadReviewCount: () => Promise.resolve(0),
+  }, "11.09", { retry: noSleep });
+
+  assertEquals(text.includes("тихий день"), true);
 });

@@ -54,7 +54,8 @@ export type HistoryRow = {
   field: string;
   old_value: string | null;
   new_value: string | null;
-  changed_by: string | null;
+  /** Никогда не null: колонка `text NOT NULL`, см. actorName (issue #287). */
+  changed_by: string;
   changed_by_telegram_id: number | null;
   group_id: string | null;
   /** Совместимость: у field='status' дублируем в старые колонки, их читают прежние запросы. */
@@ -78,7 +79,13 @@ export function historyValue(v: unknown): string | null {
   if (v === null || v === undefined) return null;
   let s: string;
   if (Array.isArray(v)) {
-    const parts = v.map((x) => String(x ?? "").trim()).filter((x) => x.length > 0);
+    // Ссылки приходят объектами {title, url}: без этого в журнале встало бы
+    // «[object Object]», и строка истории не сказала бы ничего.
+    const parts = v.map((x) =>
+      x && typeof x === "object" && "url" in (x as Record<string, unknown>)
+        ? String((x as { url: unknown }).url ?? "").trim()
+        : String(x ?? "").trim()
+    ).filter((x) => x.length > 0);
     if (!parts.length) return null;
     s = parts.join(", ");
   } else if (typeof v === "object") {
@@ -97,6 +104,23 @@ export function historyValue(v: unknown): string | null {
  *
  * `patch` — то, что уходит в базу (после переката и прочих подстановок), `snapshot` — что было.
  */
+/**
+ * Кто изменил — для legacy-колонки `changed_by` (`text NOT NULL` с первой версии таблицы: её
+ * писал бот именем пользователя). Веб и MCP имени не знают, они передают только telegram_id,
+ * и `null` тут ронял вставку на NOT NULL — а `updateTask` глотал ошибку в `console.error`,
+ * поэтому журнал молча не писался вовсе (issue #287, поймано на проде 09.09.2026: 4 смены
+ * статуса после раскатки и ноль строк в журнале). Никогда не возвращает null.
+ */
+export function actorName(
+  actor?: string | null,
+  telegramId?: number | null,
+): string {
+  const name = actor?.trim();
+  if (name) return name;
+  if (telegramId != null) return String(telegramId);
+  return "system";
+}
+
 export function historyRowsFor(args: {
   taskId: string;
   snapshot: TaskSnapshot | null;
@@ -121,7 +145,7 @@ export function historyRowsFor(args: {
       field,
       old_value: before,
       new_value: after,
-      changed_by: args.actor ?? null,
+      changed_by: actorName(args.actor, args.actorTelegramId),
       changed_by_telegram_id: args.actorTelegramId ?? null,
       group_id: args.groupId ?? null,
       old_status: field === "status" ? before : null,
