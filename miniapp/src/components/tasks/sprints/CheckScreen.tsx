@@ -166,6 +166,15 @@ export function CheckScreen(
                 {person || dt("Без исполнителя", "Unassigned")}
               </h3>
               <span className="text-[11px] text-ink-soft">{items.length}</span>
+              {
+                /* Подпись к ряду кнопок справа. Без неё «по плану · риск · проблема ·
+                  к переносу» читаются как статусы задачи, а это оценка ХОДА работы на
+                  сверке середины спринта (замечание владельца 19.09.2026). В исходном
+                  макете эта подпись была: «На сверке: по плану / риск / проблема». */
+              }
+              <span className="ml-auto hidden text-[11px] text-ink-soft/60 sm:block">
+                {dt("как идут дела:", "how it is going:")}
+              </span>
               {unchecked && silent > 0 && (
                 <span className="rounded-full border border-line bg-surface-2 px-1.5 py-0.5 text-[10px] font-semibold text-ink-soft">
                   {dt(`не отмечено ${silent}`, `not checked ${silent}`)}
