@@ -66,7 +66,9 @@ interface TaskModalProps {
   task?: Task;
   open: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  /** Вызывается после сохранения. Для НОВОЙ задачи получает созданную — экран спринтов по
+   *  ней сразу кладёт задачу в спринт. Существующие вызывающие параметр игнорируют. */
+  onSaved: (created?: Task) => void;
   // Создание с префиллом (напр. задача из встречи): начальные значения формы. Игнорируются
   // в режиме правки (когда передан task). assignee не префиллим — GPT даёт имя, не telegram_id.
   prefill?: { title?: string; description?: string | null; country?: string | null; due_date?: string | null };
@@ -405,7 +407,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
       const created = await createTask(fields);
       // POST /tasks не принимает label_ids — вешаем метки вторым шагом на уже личную задачу.
       if (labelIds.length > 0) await updateTask(created.id, { label_ids: labelIds });
-      onSaved();
+      onSaved(created);
       onClose();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Не удалось создать");

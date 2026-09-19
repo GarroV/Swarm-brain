@@ -162,6 +162,10 @@ export function SprintsScreen() {
 
   const [cycles, setCycles] = useState<SprintCycle[]>([]);
   const [spaces, setSpaces] = useState<Sprint[]>([]);
+  // Инициатива, в которую заводят задачу стандартной карточкой. null — карточка закрыта.
+  // Своё поле ввода в строке было короче, но заводило второй способ создания задачи
+  // (владелец 19.09.2026: «давай вызывать нашу стандартную менюшку»).
+  const [addingTo, setAddingTo] = useState<string | null | undefined>(undefined);
   // Панель «Задачи» слева: нужна только при наборе состава. Выбор помнится между заходами —
   // как у переключателя видов (замечание владельца 19.09.2026).
   const [poolOpen, setPoolOpen] = useState(true);
@@ -358,26 +362,18 @@ export function SprintsScreen() {
     }
   }
 
-  // Строка «+ задача» внутри инициативы: задача рождается сразу в нужном проекте и в текущем
-  // спринте. Исполнитель — создатель (`me`), решение владельца 19.09.2026: у инициативы один
-  // владелец, а пишут в неё разные люди.
-  async function addTaskToInitiative(projectId: string | null, title: string) {
-    if (!detail) return;
-    const input = buildQuickAddInput(title, me, {
-      projectId: projectId ?? undefined,
-    });
-    if (!input) return;
-    try {
-      const created = await createTask(input);
-      setTasks((prev) => [created, ...prev]);
-      await addTasksToSprintCycle(detail.id, [created.id]);
-      await reloadDetail(detail.id);
-    } catch (e) {
-      setErr(
-        e instanceof Error ? e.message : dt("Не удалось добавить", "Failed to add"),
-      );
-      load();
+  // Задача, созданная карточкой, сразу попадает в текущий спринт — иначе «+ задача» внутри
+  // спринта завела бы её мимо него, в общий список.
+  async function onTaskCreated(created?: Task) {
+    load();
+    if (!created || !detail) {
+      if (detail) reloadDetail(detail.id);
+      return;
     }
+    try {
+      await addTasksToSprintCycle(detail.id, [created.id]);
+    } catch { /* задача создана; в спринт её можно взять из панели слева */ }
+    await reloadDetail(detail.id);
   }
 
   async function addToSprint(taskIds: string[]) {
@@ -1120,7 +1116,9 @@ export function SprintsScreen() {
                         unchecked={unchecked}
                         users={users}
                         // Принятый спринт — слепок: в него не дописывают.
-                        onAdd={accepted ? undefined : addTaskToInitiative}
+                        onAdd={accepted
+                          ? undefined
+                          : (projectId) => setAddingTo(projectId)}
                         onDone={accepted ? undefined : toggleDone}
                         onCarry={accepted ? undefined : toggleCarry}
                         onOpen={(item) => {
@@ -1174,6 +1172,12 @@ export function SprintsScreen() {
         onAccept={submitAccept}
       />
 
+      <TaskModal
+        open={addingTo !== undefined}
+        projectId={addingTo ?? null}
+        onClose={() => setAddingTo(undefined)}
+        onSaved={onTaskCreated}
+      />
       <TaskModal
         task={editing ?? undefined}
         open={!!editing}
