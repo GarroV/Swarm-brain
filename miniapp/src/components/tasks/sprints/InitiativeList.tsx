@@ -32,15 +32,27 @@ const STATUS_TONE: Record<string, string> = {
 /** Строка задачи. Клик открывает карточку — но только у живой: у упоминания и у чужой
  *  приватной открывать нечего, и «кнопка, которая ничего не делает» хуже её отсутствия. */
 function TaskRow(
-  { item, unchecked, onOpen }: {
+  { item, unchecked, onOpen, onDone, onCarry }: {
     item: SprintCycleItem;
     unchecked: boolean;
     onOpen?: (item: SprintCycleItem) => void;
+    /** Быстрые действия прямо в строке — как в исходном макете: «✓ выполнено» и
+     *  «→ перенести». Открывать карточку ради ежедневного клика — лишняя работа. */
+    onDone?: (item: SprintCycleItem) => void | Promise<void>;
+    onCarry?: (item: SprintCycleItem) => void | Promise<void>;
   },
 ) {
   const dt = useDt();
   const closed = CLOSED.has(item.status);
   const openable = !!onOpen && !item.removed && !item.hidden && !!item.task_id;
+  const actionable = !item.removed && !item.hidden && !!item.task_id;
+  // Клик по кнопке не должен открывать карточку — иначе каждое быстрое действие
+  // заканчивается всплывшей модалкой.
+  const act =
+    (fn?: (i: SprintCycleItem) => void | Promise<void>) => (e: React.MouseEvent) => {
+      e.stopPropagation();
+      fn?.(item);
+    };
 
   return (
     <div
@@ -55,6 +67,42 @@ function TaskRow(
         }`}
         title={item.status}
       />
+      {actionable && (onDone || onCarry) && (
+        <span className="flex shrink-0 items-center gap-0.5">
+          {onDone && (
+            <button
+              type="button"
+              onClick={act(onDone)}
+              title={closed
+                ? dt("Вернуть в работу", "Reopen")
+                : dt("Выполнено", "Done")}
+              className={`rounded-md border px-1.5 py-0.5 text-[11px] leading-none transition-colors ${
+                closed
+                  ? "border-status-done/50 bg-status-done/15 text-status-done"
+                  : "border-line text-ink-soft hover:bg-surface-2 hover:text-ink"
+              }`}
+            >
+              ✓
+            </button>
+          )}
+          {onCarry && !closed && (
+            <button
+              type="button"
+              onClick={act(onCarry)}
+              title={item.to_carry
+                ? dt("Снять пометку переноса", "Remove the carry mark")
+                : dt("Перенести в следующий спринт", "Carry to the next sprint")}
+              className={`rounded-md border px-1.5 py-0.5 text-[11px] leading-none transition-colors ${
+                item.to_carry
+                  ? "border-pri-med/50 bg-pri-med/15 text-pri-med"
+                  : "border-line text-ink-soft hover:bg-surface-2 hover:text-ink"
+              }`}
+            >
+              →
+            </button>
+          )}
+        </span>
+      )}
       <span
         className={`min-w-0 flex-1 truncate text-sm ${
           item.removed
@@ -169,9 +217,11 @@ function AddTaskRow(
 }
 
 function Initiative(
-  { node, collapsed, onToggle, unchecked, ownerName, onOpen, onAdd }: {
+  { node, collapsed, onToggle, unchecked, ownerName, onOpen, onAdd, onDone, onCarry }: {
     node: InitiativeNode;
     onAdd?: (projectId: string | null, title: string) => Promise<void>;
+    onDone?: (item: SprintCycleItem) => void | Promise<void>;
+    onCarry?: (item: SprintCycleItem) => void | Promise<void>;
     collapsed: boolean;
     onToggle: () => void;
     unchecked: boolean;
@@ -224,6 +274,8 @@ function Initiative(
               item={item}
               unchecked={unchecked}
               onOpen={onOpen}
+              onDone={onDone}
+              onCarry={onCarry}
             />
           ))}
           {onAdd && <AddTaskRow projectId={node.project?.id ?? null} onAdd={onAdd} />}
@@ -240,7 +292,7 @@ function Initiative(
  * а строка задачи не должна знать про календарь ритуала.
  */
 export function InitiativeList(
-  { board, unchecked = false, users = [], onOpen, onAdd }: {
+  { board, unchecked = false, users = [], onOpen, onAdd, onDone, onCarry }: {
     board: DirectionNode[];
     unchecked?: boolean;
     users?: { telegram_id: number; name: string }[];
@@ -248,6 +300,8 @@ export function InitiativeList(
     /** Есть — внутри каждой инициативы появляется строка «+ задача». Нет — доска только читается
      *  (принятый спринт, чужое пространство). */
     onAdd?: (projectId: string | null, title: string) => Promise<void>;
+    onDone?: (item: SprintCycleItem) => void | Promise<void>;
+    onCarry?: (item: SprintCycleItem) => void | Promise<void>;
   },
 ) {
   const dt = useDt();
@@ -312,6 +366,8 @@ export function InitiativeList(
                     ownerName={ownerName}
                     onOpen={onOpen}
                     onAdd={onAdd}
+                    onDone={onDone}
+                    onCarry={onCarry}
                   />
                 );
               })}
