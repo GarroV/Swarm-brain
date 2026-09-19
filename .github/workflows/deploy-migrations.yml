@@ -1,0 +1,56 @@
+name: Накат миграций БД (руками)
+
+# Накатывает миграции из supabase/migrations на прод по кнопке.
+#
+# Зачем отдельно: `supabase db push --linked` — штатный путь (docs/DEPLOY.md), но ЛОКАЛЬНО он
+# упирается в права. CLI сначала просит Platform API завести временную login-роль, и на личном
+# токене это отвечает 403 «does not have the necessary privileges», после чего просит
+# SUPABASE_DB_PASSWORD, которого в рабочем окружении нет (issue #398). В CI тот же CLI ходит
+# токеном из секретов репозитория — тем же, которым раскатываются функции.
+#
+# Порядок остаётся прежним: сначала миграция, потом функции. Деплой функций раньше базы = код
+# обращается к колонкам и таблицам, которых ещё нет.
+#
+# Разрешение владельца обязательно, как и на любую раскатку. Окно здесь не форсится автоматикой:
+# кнопку жмут осознанно.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Сухой прогон: показать, что уедет на прод, ничего не менять"
+        type: boolean
+        default: true
+
+concurrency:
+  group: deploy-window          # общая с раскаткой функций: две раскатки разом не нужны никогда
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Накатить миграции
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Привязать проект
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          # Пароль базы в секретах может отсутствовать: без него CLI заводит временную
+          # login-роль через Platform API. Пустая переменная этому не мешает.
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase link --project-ref vbqglndbxkpmreccpqmr
+      - name: План или накат
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            supabase db push --linked --dry-run
+          else
+            supabase db push --linked
+          fi
