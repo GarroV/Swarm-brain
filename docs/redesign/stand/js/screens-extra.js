@@ -158,7 +158,7 @@ function screenSearch() {
         `<span class="lnk" ${act("open-task", t.id)}>${mark(t.t)}</span>`, `${esc(projPath(t.pr))} · ${due(t.due, t.st === "done")}`])) : ""}
       ${r.meetings.length ? lab(`Встречи · ${r.meetings.length}`) + rows(r.meetings.map((m) => [tag(m.src, "m"),
         `<span class="lnk" ${act("open-meet", m.id)}>${mark(m.t)}</span>`, fmtDT(m.dt)])) : ""}
-      ${r.entries.length ? lab(`База · ${r.entries.length}`) + rows(r.entries.map((e) => [tag(TY_LABEL[e.ty], "p"),
+      ${r.entries.length ? lab(`База · ${r.entries.length}`) + rows(r.entries.map((e) => [tag(TY_LABEL[e.ty], "l"),
         `<span class="lnk" ${act("open-entry", e.id)}>${mark(e.h)}</span>`, mark(e.p.slice(0, 64))])) : ""}
       ${r.files.length ? lab(`Файлы · ${r.files.length}`) + rows(r.files.map((f) => [`<span class="ft ft-${f.ty}">${f.ty}</span>`,
         `<span class="lnk" ${act("open-file", f.id)}>${mark(f.n)}</span>`, esc(f.sz)])) : ""}

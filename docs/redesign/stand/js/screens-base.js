@@ -1,7 +1,8 @@
 /* База знаний: записи по типам, страны, приватность, реестр файлов. */
 
 const TY_LABEL = { meeting: "Встреча", document: "Документ", note: "Заметка", transcript: "Транскрипт", summary: "Сводка", link: "Ссылка" };
-const TY_KIND = { meeting: "m", document: "p", note: "o", transcript: "p", summary: "o", link: "p" };
+/* шесть типов на три цвета — цвет ничего не различал и только шумел; тип читается словом */
+const TY_KIND = { meeting: "l", document: "l", note: "l", transcript: "l", summary: "l", link: "l" };
 
 function baseBar() {
   return `<div class="bar">

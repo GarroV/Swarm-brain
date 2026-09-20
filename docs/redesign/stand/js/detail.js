@@ -104,7 +104,7 @@ function detailEntry(e) {
     btn("Открыть полностью", "reader", e.id, undefined, "pri") + btn("Переиндексировать", "reindex-entry", e.id)
     + btn("Править", "edit-entry", e.id) + btn("Удалить", "del-entry", e.id))
     + `<div class="d-body"><dl class="f">
-      <dt>Тип</dt><dd>${tag(e.ty, "p")}</dd><dt>Автор</dt><dd>${av(e.who)}</dd>
+      <dt>Тип</dt><dd>${tag(TY_LABEL[e.ty] || e.ty, "l")}</dd><dt>Автор</dt><dd>${av(e.who)}</dd>
       <dt>Добавлена</dt><dd>${dt(e.at)}</dd>
       <dt>Приватность</dt><dd><button class="mini${e.priv ? " on" : ""}" ${act("tgl-epriv", e.id)}>${e.priv ? "личная" : "общая"}</button></dd>
       <dt>Страны</dt><dd>${COUNTRIES.map((c) => `<button class="mini${e.cc.includes(c.c) ? " on" : ""}" ${act("tgl-ecc", e.id, c.c)}>${c.c}</button>`).join("")}</dd>
