@@ -141,6 +141,16 @@ function tokenCheck() {
         out.push(`колонки не заполняют таблицу: ${sum}px из ${tb.clientWidth}px, справа пустая полоса`);
     });
 
+    /* поле ввода не должно обрезать собственное значение; у нативной даты обрезка внутренняя,
+       её видно только по ширине — 130px это минимум под «дд.мм.гггг» и иконку календаря */
+    document.querySelectorAll('input, select, textarea').forEach((el) => {
+      if (!el.offsetParent || el.type === 'checkbox') return;
+      if (el.scrollWidth > el.clientWidth + 2)
+        out.push(`поле «${el.type || el.tagName.toLowerCase()}» уже своего содержимого на ${el.scrollWidth - el.clientWidth}px`);
+      if (el.type === 'date' && el.clientWidth < 130)
+        out.push(`поле даты шириной ${el.clientWidth}px — год и календарь не помещаются`);
+    });
+
     /* содержимое не должно вылезать за ячейку: обрезанная кнопка нажимается вслепую */
     document.querySelectorAll('.list td').forEach((td) => {
       const box = td.getBoundingClientRect();
