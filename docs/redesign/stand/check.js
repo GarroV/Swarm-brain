@@ -1119,6 +1119,32 @@ function tokenCheck() {
     'поиск находит слово в другой форме («смета» → «смету»)');
   want((await count('.srch mark')) > 0, 'в результатах видно, за что нашлось — совпадение подсвечено');
   want((await count('.srch .rowset > div')) > 1, 'на экране поиска есть находки');
+  /* база знаний обязана находить сказанное на встрече, а не только её название */
+  const inTez = await p.evaluate(() => {
+    const m = S.meetings.find((x) => (x.tez || []).length);
+    const word = ((m.tez[0].li || [])[0] || '').split(' ').find((w) => w.length > 6) || '';
+    return { word, byTitle: m.t.toLowerCase().includes(word.toLowerCase()), found: searchAll(word).meetings.some((x) => x.id === m.id) };
+  });
+  want(inTez.word && !inTez.byTitle && inTez.found,
+    `слово из тезисов находит встречу («${inTez.word}», в названии его нет: ${!inTez.byTitle})`);
+  /* счётчик не смеет считать обрезанный список: иначе «найдено 8» вместо тридцати */
+  const capped = await p.evaluate(() => {
+    const before = S.tasks;
+    S.tasks = [...Array(30)].map((_, i) => ({ ...before[0], id: 9000 + i, t: 'смета проверка ' + i }));
+    const r = searchAll('смета');
+    S.tasks = before;
+    return { total: r.total, shown: r.tasks.length };
+  });
+  want(capped.total >= 30 && capped.shown === 8 && capped.total > capped.shown,
+    `счётчик называет всё найденное, а показывает первые (нашлось ${capped.total}, показано ${capped.shown})`);
+  /* и то же самое ГЛАЗАМИ на экране, а не только в функции: печатать надо найденное,
+     а не длину показанного куска */
+  const printed = await p.evaluate(() => {
+    const said = (document.querySelector('.bar .right span') || {}).textContent || '';
+    return { said, total: searchAll(S.aq || '').total, rows: document.querySelectorAll('.srch .rowset > div').length };
+  });
+  want(printed.said.includes(String(printed.total)),
+    `на экране напечатано всё найденное (в строке «${printed.said.trim()}», найдено ${printed.total}, строк ${printed.rows})`);
   await shot('41-search');
   await go('search');
   await p.type('#q', 'смета');

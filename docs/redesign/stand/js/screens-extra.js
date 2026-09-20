@@ -157,10 +157,12 @@ function screenSearch() {
     let end = i + st.length;
     while (end < s0.length && /[а-яёa-z]/i.test(s0[end])) end++;
     return esc(s0.slice(0, i)) + `<mark>${esc(s0.slice(i, end))}</mark>` + esc(s0.slice(end)); };
-  const total = r.tasks.length + r.meetings.length + r.entries.length + r.files.length;
+  const shown = r.tasks.length + r.meetings.length + r.entries.length + r.files.length;
+  const CAP_NAME = { tasks: "задач", meetings: "встреч", entries: "записей базы", files: "файлов" };
   return `<div class="bar"><input class="qin" style="min-width:320px" placeholder="Что ищем" value="${esc(q)}" data-qin="search">
-    <div class="right"><span>Найдено <b>${total}</b></span>${btn("Спросить базу", "ask", undefined, q, "sm pri")}</div></div>
-    ${total ? `<div class="srch">
+    <div class="right"><span>Найдено <b>${r.total}</b>${r.total > shown ? `, показано ${shown}` : ""}</span>${btn("Спросить базу", "ask", undefined, q, "sm pri")}</div></div>
+    ${r.capped.length ? `<div class="hint pad">Показаны первые: ${r.capped.map((c) => `${CAP_NAME[c.k]} ${c.shown} из ${c.all}`).join(", ")}. Уточните запрос, чтобы увидеть остальное.</div>` : ""}
+    ${shown ? `<div class="srch">
       ${r.tasks.length ? lab(`Задачи · ${r.tasks.length}`) + rows(r.tasks.map((t) => [dot(t.st),
         `<span class="lnk" ${act("open-task", t.id)}>${mark(t.t)}</span>`, `${esc(projPath(t.pr))} · ${due(t.due, t.st === "done")}`])) : ""}
       ${r.meetings.length ? lab(`Встречи · ${r.meetings.length}`) + rows(r.meetings.map((m) => [tag(m.src, "m"),

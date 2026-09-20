@@ -140,18 +140,28 @@ function visibleFiles() {
    Настоящая морфология живёт на сервере; здесь — отсечение окончания,
    этого достаточно, чтобы поведение экрана было правдивым. */
 const stem = (w) => w.length >= 6 ? w.slice(0, w.length - 2) : w.length >= 4 ? w.slice(0, w.length - 1) : w;
+/* сколько результатов каждого вида показываем на экране поиска */
+const SEARCH_CAP = { tasks: 8, meetings: 6, entries: 6, files: 4 };
 function searchAll(q) {
   const s = q.trim().toLowerCase();
-  if (!s) return { tasks: [], meetings: [], entries: [], files: [] };
+  if (!s) return { tasks: [], meetings: [], entries: [], files: [], total: 0, capped: [] };
   const words = s.split(/\s+/).filter(Boolean).map(stem);
   const hit = (...vals) => { const text = vals.map((v) => String(v ?? "")).join(" ").toLowerCase();
     return words.every((w) => text.includes(w)); };
-  return {
-    tasks: S.tasks.filter((t) => hit(t.t, t.note, projPath(t.pr))).slice(0, 8),
-    meetings: S.meetings.filter((m) => hit(m.t)).slice(0, 6),
-    entries: S.entries.filter((e) => hit(e.h, e.p)).slice(0, 6),
-    files: S.files.filter((f) => hit(f.n)).slice(0, 4),
+  /* Встречу ищем и по тезисам с расшифровкой, а не только по названию: искать «смету»
+     в базе знаний и не находить встречу, где о ней час говорили, — обещание без покрытия. */
+  const found = {
+    tasks: S.tasks.filter((t) => hit(t.t, t.note, projPath(t.pr))),
+    meetings: S.meetings.filter((m) => hit(m.t, (m.tez || []).map((b) => `${b.h} ${(b.li || []).join(" ")}`).join(" "), m.tr)),
+    entries: S.entries.filter((e) => hit(e.h, e.p)),
+    files: S.files.filter((f) => hit(f.n)),
   };
+  /* сколько нашлось ВСЕГО — отдельно от того, сколько показываем: счётчик, считающий
+     обрезанный список, молча прячет остальное и говорит «найдено 8» вместо тридцати */
+  const total = Object.values(found).reduce((n, list) => n + list.length, 0);
+  return { ...Object.fromEntries(Object.entries(found).map(([k, list]) => [k, list.slice(0, SEARCH_CAP[k])])),
+    total, capped: Object.entries(found).filter(([k, list]) => list.length > SEARCH_CAP[k])
+      .map(([k, list]) => ({ k, shown: SEARCH_CAP[k], all: list.length })) };
 }
 
 /* ── действия ────────────────────────────────────────────────── */
