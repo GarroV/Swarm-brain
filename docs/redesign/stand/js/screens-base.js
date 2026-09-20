@@ -5,6 +5,12 @@ const TY_LABEL = { meeting: "Встреча", document: "Документ", note
 const TY_KIND = { meeting: "l", document: "l", note: "l", transcript: "l", summary: "l", link: "l" };
 
 function baseBar() {
+  /* счётчик обязан описывать ТО, ЧТО НА ЭКРАНЕ: раньше здесь стояло «Записей 14» —
+     всего в базе, — а на вкладке «Документы» под ним лежали четыре строки */
+  const onFiles = S.tab === "files";
+  const shown = onFiles ? visibleFiles() : visibleEntries(S.tab);
+  const total = onFiles ? S.files.length : S.entries.length;
+  const noun = onFiles ? "Файлов" : "Записей";
   return `<div class="bar">
     ${btn("＋ Запись", "new-entry", undefined, undefined, "pri sm")}
     <span class="drop">${btn(`Страна: ${S.bcc ? cname(S.bcc) : "все"}`, "noop", undefined, undefined, "sm")}
@@ -12,8 +18,8 @@ function baseBar() {
       ${COUNTRIES.map((c) => `<button class="mi${S.bcc === c.c ? " on" : ""}" ${act("b-cc", undefined, c.c)}>${c.c} · ${c.n}</button>`).join("")}</div></span>
     ${chip("Только мои", S.bmine, "b-mine")}
     <input class="qin" placeholder="Поиск по базе" value="${esc(S.bq)}" data-qin="base">
-    <div class="right"><span>Записей <b>${S.entries.length}</b></span><span>Файлов <b>${S.files.length}</b></span>
-      <span>Объём <b>${fsz(S.files.reduce((n, f) => n + f.kb, 0))}</b></span></div></div>`;
+    <div class="right"><span>${noun} <b>${shown.length}</b> из ${total}</span>
+      ${onFiles ? `<span>Объём <b>${fsz(shown.reduce((n, f) => n + f.kb, 0))}</b></span>` : ""}</div></div>`;
 }
 
 function screenBase() {
@@ -41,8 +47,10 @@ function screenBase() {
 
 function screenFiles() {
   if (!S.files.length) return empty("Файлов пока нет", "Файл попадает сюда вместе с записью, к которой его приложили");
+  const list = visibleFiles();
+  if (!list.length) return empty("Под фильтры не попал ни один файл", "Снимите страну, «только мои» или поиск");
   return table([{ t: "Файл", w: "30%" }, { t: "Запись", w: "24%" }, { t: "Загрузил", w: "17%" }, { t: "Индекс", w: "15%" }, { t: "Размер", r: true, w: "84px" }, { t: "Когда", r: true, w: "84px" }],
-    S.files.map((f) => `<tr class="row${S.sel === f.id && S.selKind === "file" ? " sel" : ""}" ${act("open-file", f.id)} tabindex="0">
+    list.map((f) => `<tr class="row${S.sel === f.id && S.selKind === "file" ? " sel" : ""}" ${act("open-file", f.id)} tabindex="0">
       ${cell(`<span class="ft ft-${f.ty}">${f.ty}</span>${esc(f.n)}`, "t")}
       ${cell(esc((S.entries.find((e) => e.id === f.rec) || {}).h || "—"))}
       ${cell(avShort(f.who))}

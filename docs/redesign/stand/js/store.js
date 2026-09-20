@@ -119,6 +119,18 @@ function visibleEntries(tab) {
     (!q || e.h.toLowerCase().includes(q) || e.p.toLowerCase().includes(q)));
 }
 
+/* Файл живёт при записи, поэтому страна и «только мои» достаются ему от родителя:
+   иначе на вкладке «Файлы» эти два фильтра стояли бы включёнными и ничего не делали. */
+function visibleFiles() {
+  const q = S.bq.trim().toLowerCase();
+  return S.files.filter((f) => {
+    const e = S.entries.find((x) => x.id === f.rec);
+    return (!S.bcc || (e && e.cc.includes(S.bcc))) &&
+      (!S.bmine || (e && e.who === ME)) &&
+      (!q || f.n.toLowerCase().includes(q) || (e && e.h.toLowerCase().includes(q)));
+  });
+}
+
 /* ── общий поиск (⌘K и ответ по базе) ────────────────────────── */
 /* Поиск по основе слова: «смета» обязана находить «смету» и «сметы».
    Настоящая морфология живёт на сервере; здесь — отсечение окончания,

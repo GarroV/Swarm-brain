@@ -414,6 +414,11 @@ function tokenCheck() {
     [...document.querySelectorAll('.bar .right span, .head .right span')].forEach((e) => {
       const t = e.textContent.replace(/\s+/g, ' ').trim();
       if (/^Показано\s+\d+$/.test(t)) out.push(`счётчик «${t}» не называет целое`);
+      /* и наоборот: названное показанным обязано совпасть со строками под ним —
+         в шапке Базы стояло «Записей 14», а на вкладке «Документы» лежало четыре */
+      const m = t.match(/^[А-Яа-яЁё]+\s+(\d+)\s+из\s+(\d+)$/);
+      const rows = document.querySelectorAll('.body tbody tr.row').length;
+      if (m && rows && +m[1] !== rows) out.push(`счётчик «${t}» расходится со строками на экране: ${rows}`);
     });
     /* содержимое ячейки, обрезанное CSS: человек видит «регулярно ⋯» и не может ни
        прочитать скрытое, ни узнать, сколько его. Обрезка допустима только осознанная —
@@ -678,7 +683,20 @@ function tokenCheck() {
     `читалка показывает настоящий текст записи, а не заглушку (заголовок: ${readTitle}; абзацев: ${readP.length}; первый: ${(readP[0] || '').slice(0, 50)})`);
   want((await count('.reader p')) >= 2, 'запись открывается целиком');
   await go('mclose'); await go('close');
+  /* вкладка типа: под счётчиком обязано лежать ровно то, что он назвал */
+  await go('tab', 'document'); await scan('12-база-документы');
+  const docsShown = await count('tbody tr[data-act="open-entry"]');
+  const docsSaid = +(await text('.bar .right span')).replace(/\D+/, '').match(/\d+/)[0];
+  want(docsShown === docsSaid && docsShown > 0, `счётчик вкладки «Документы» сходится со строками (${docsSaid} против ${docsShown})`);
+  await go('tab', 'all');
   await go('tab', 'files'); await shot('13-files');
+  /* фильтры бара обязаны действовать и здесь: файл наследует страну от своей записи,
+     иначе два включённых фильтра на этой вкладке молча ничего не делают */
+  const filesAll = await count('tbody tr[data-act="open-file"]');
+  await gov('b-cc', 'HR');
+  const filesHr = await count('tbody tr[data-act="open-file"]');
+  want(filesHr < filesAll, `страна сужает и список файлов (${filesAll} → ${filesHr})`);
+  await gov('b-cc', '');
   await go('open-file', 'f2'); await shot('14-file-detail');
   await go('close');
 
