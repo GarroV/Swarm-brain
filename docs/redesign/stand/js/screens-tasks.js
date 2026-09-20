@@ -44,8 +44,8 @@ function taskRow(t) {
     ${cell(`${dot(t.st)}${pri(t.prio)}${esc(t.t)}${t.priv ? ' <span class="lock" title="личная">🔒</span>' : ""}`, "t")}
     ${cell(esc(projPath(t.pr)))}
     ${cell(t.who.length ? avShort(t.who[0]) : `<span class="muted">— не назначен</span>`)}
-    ${cell(lbls(t.labels) + (t.recur ? tag(RECUR_LABEL[t.recur], "p") : ""))}
-    ${cell(t.mk ? `<span class="cc">${t.mk}</span>` : "", "r")}
+    ${cell(lbls(t.labels) + (t.recur ? tag(RECUR_LABEL[t.recur], "p") : ""), "opt")}
+    ${cell(t.mk ? `<span class="cc">${t.mk}</span>` : "", "r opt")}
     ${cell(due(t.due), "r")}</tr>`;
 }
 
@@ -73,8 +73,8 @@ function screenTasks() {
   const head = tasksToolbar() + bulkBar() + (S.tab === "today" ? calendarStrip() : "");
   if (!list.length) return head + empty("Задач в этом срезе нет", "Смените линзу, статусы или вкладку");
   return head + table([
-    { t: "", w: "30px" }, { t: "Задача", w: "34%" }, { t: "Проект", w: "16%" }, { t: "Исполнитель", w: "15%" },
-    { t: "Метки", w: "15%" }, { t: "Рынок", r: true, w: "62px" }, { t: "Срок", r: true, w: "84px" },
+    { t: "", w: "30px" }, { t: "Задача", w: "34%" }, { t: "Проект", w: "16%" }, { t: "Исполнитель", short: "Кто", w: "15%" },
+    { t: "Метки", w: "15%", opt: true }, { t: "Рынок", r: true, w: "78px", opt: true }, { t: "Срок", r: true, w: "84px" },
   ], groupRows(list));
 }
 

@@ -44,9 +44,13 @@ const rows = (list) => `<div class="rowset">${list.map(([k, v, a]) =>
   `<div><span class="k">${k}</span><span class="v">${v}</span>${a ? `<span class="a">${a}</span>` : ""}</div>`).join("")}</div>`;
 const state = (text, ok) => `<span class="state ${ok ? "on" : "off"}">${esc(text)}</span>`;
 
+/* c.opt — колонка второго ряда важности: в узком окне она уходит,
+   вместо того чтобы сжимать всё до обрезанных заголовков и имён. */
 function table(cols, body) {
   return `<div class="list"><table><thead><tr>${cols.map((c) =>
-    `<th${c.r ? ' class="r"' : ""}${c.w ? ` style="width:${c.w}"` : ""}>${esc(c.t)}</th>`).join("")}</tr></thead>
+    `<th class="${c.r ? "r " : ""}${c.opt ? "opt" : ""}"${c.w ? ` style="width:${c.w}"` : ""}>${
+      c.short ? `<span class="hfull">${esc(c.t)}</span><span class="hshort">${esc(c.short)}</span>` : esc(c.t)
+    }</th>`).join("")}</tr></thead>
     <tbody>${body}</tbody></table></div>`;
 }
 const cell = (v, cls) => `<td${cls ? ` class="${cls}"` : ""}>${v}</td>`;

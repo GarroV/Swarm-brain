@@ -79,6 +79,11 @@ function tokenCheck() {
       if (e.offsetHeight > lh * 1.75 + 6)
         out.push('подвал карточки перенёсся: «' + e.textContent.trim().slice(0, 24) + '» h=' + e.offsetHeight);
     });
+    /* заголовок колонки обрезан — колонку сделали уже её же названия */
+    document.querySelectorAll('th').forEach((th) => {
+      if (th.textContent.trim() && th.scrollWidth > th.clientWidth + 1)
+        out.push('заголовок колонки обрезан: ' + th.textContent.trim());
+    });
     /* имя человека нельзя обрезать: «Марко Дамья…» — это уже не идентификация */
     document.querySelectorAll('td').forEach((td) => {
       if (!td.querySelector('.av')) return;

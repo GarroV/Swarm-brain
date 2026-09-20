@@ -503,3 +503,13 @@ td.acts{white-space:nowrap}
 /* результаты поиска: ключ — это тег или точка, ему не нужны 150px */
 .srch .rowset .k{min-width:52px}
 mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding:0 2px;font-weight:600}
+
+/* колонки второго ряда важности уходят раньше, чем начинают резаться
+   заголовки и имена: лучше меньше колонок, чем «РЫН…» и «Марко Дамья…» */
+@media (max-width:1320px){ .app.with-detail .list .opt{display:none} }
+@media (max-width:1180px){ .list .opt{display:none} }
+
+/* заголовок колонки в узком окне: «Кто» вместо обрезанного «ИСПОЛНИТЕ…» */
+.hshort{display:none}
+@media (max-width:1320px){ .app.with-detail .list .hfull{display:none} .app.with-detail .list .hshort{display:inline} }
+@media (max-width:1180px){ .list .hfull{display:none} .list .hshort{display:inline} }
