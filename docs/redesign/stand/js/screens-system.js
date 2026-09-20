@@ -43,8 +43,10 @@ function screenSettings() {
       ["Роль", ROLE[me().role], ""],
       ["Telegram", esc(me().tg), btn("Изменить", "user-profile", ME, undefined, "sm")],
       ["Почта", me().em ? esc(me().em) : state("не привязана", false), btn("Изменить", "user-profile", ME, undefined, "sm")],
-      ["Язык интерфейса", S.lang === "RU" ? "Русский" : "English", btn("Переключить", "lang", undefined, undefined, "sm")],
-      ["Тема", S.theme === "dark" ? "тёмная" : "светлая", btn("Переключить", "theme", undefined, undefined, "sm")],
+      /* кнопка называет, ЧТО СТАНЕТ: «Переключить» заставляет угадывать, на что именно,
+         а вариантов у языка и темы больше одного не бывает только сегодня */
+      ["Язык интерфейса", S.lang === "RU" ? "Русский" : "English", btn(S.lang === "RU" ? "English" : "Русский", "lang", undefined, undefined, "sm")],
+      ["Тема", S.theme === "dark" ? "тёмная" : "светлая", btn(S.theme === "dark" ? "Светлая" : "Тёмная", "theme", undefined, undefined, "sm")],
       /* значение написано на выбранной кнопке — второй раз слева оно только сбивает */
       ["Часовой пояс", `<span class="muted">по нему считаются сроки и время встреч</span>`, `<span class="ib">${btn("Europe/Belgrade", "tz", undefined, "Europe/Belgrade", "sm" + (S.tz === "Europe/Belgrade" ? " on" : ""))}${btn("Europe/Zagreb", "tz", undefined, "Europe/Zagreb", "sm" + (S.tz === "Europe/Zagreb" ? " on" : ""))}</span>`],
       ["Аккаунт", "вход через Telegram", btn("Выйти", "logout", undefined, undefined, "sm")],

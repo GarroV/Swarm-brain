@@ -78,13 +78,18 @@ function recorderModal(kind) {
 /* ── таймлайн задач ──────────────────────────────────────────── */
 function screenTimeline() {
   const c = cycle();
-  const list = S.tasks.filter((t) => t.due && !t.arch && S.statuses.has(t.st) && inLens(t, S.lens)
-      && t.due >= c.from && t.due <= c.to)
-    .sort((a, b) => a.due.localeCompare(b.due));
+  /* Таймлайн живёт под полосой цикла — значит показывает ЗАДАЧИ ЦИКЛА, как доска,
+     чек и аналитика. Раньше он брал всё, у чего срок попал в даты окна, и печатал
+     «Задач со сроком 27» там, где на соседней вкладке стояло «Задач в цикле 12». */
+  const seen = (t) => !t.arch && S.statuses.has(t.st) && inLens(t, S.lens) && t.due;
+  const list = cycleTasks().filter(seen).sort((a, b) => a.due.localeCompare(b.due));
+  /* работа с датой внутри окна, но мимо цикла, не исчезает молча — её считают отдельно */
+  const outside = S.tasks.filter((t) => seen(t) && t.sprint !== c.id && t.due >= c.from && t.due <= c.to).length;
+  const note = outside ? `<span>Со сроком в эти даты, но вне цикла: <b>${outside}</b></span>` : "";
   const days = [...new Set(list.map((t) => t.due))];
-  if (!days.length) return cycleBar(`<span>Задач со сроком <b>0</b></span>`)
+  if (!days.length) return cycleBar(`<span>Задач со сроком <b>0</b></span>${note}`)
     + empty("В этом цикле нет задач со сроком", "Выберите другой цикл или поставьте задачам даты");
-  return cycleBar(`<span>Задач со сроком <b>${list.length}</b></span>`) + `<div class="tlv">${days.map((day) => {
+  return cycleBar(`<span>Задач со сроком <b>${list.length}</b></span>${note}`) + `<div class="tlv">${days.map((day) => {
     const items = list.filter((t) => t.due === day);
     /* день красный только пока в нём есть незакрытая задача: у сделанной срок уже ничего не требует */
     const late = dueKind(day) === "now" && items.some((t) => t.st !== "done");

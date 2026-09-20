@@ -132,6 +132,27 @@ function hardIdCheck() {
   return bad;
 }
 
+/* статическая проверка: действие, которое ТОЛЬКО сообщает об успехе. closeCycle печатал
+   «Цикл закрыт, хвосты перенесены» и не трогал ни цикл, ни задачи — такая кнопка хуже
+   отсутствующей, потому что человек считает дело сделанным. */
+function toastOnlyCheck() {
+  const bad = [];
+  const store = fs.readFileSync(path.join(__dirname, 'js', 'store.js'), 'utf8').split('\n');
+  for (let i = 0; i < store.length; i++) {
+    const h = store[i].match(/^  (\w+)\(/);
+    if (!h) continue;
+    let body = store[i], j = i;
+    while (!/\},\s*$/.test(store[j]) && j < store.length - 1) body += '\n' + store[++j];
+    const inner = body.replace(/^[^{]*\{/, '').replace(/\},\s*$/, '');
+    const lines = inner.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('/*') && !l.startsWith('*') && !l.startsWith('//'));
+    if (!lines.length) continue;
+    const onlyToast = lines.every((l) => /^A\.toast\(/.test(l) || /^render\(\);?$/.test(l));
+    if (onlyToast && /toast/.test(inner) && !/^toast$/.test(h[1]))
+      bad.push(`${h[1]}() только печатает сообщение об успехе и ничего не меняет`);
+  }
+  return bad;
+}
+
 function tokenCheck() {
   const css = fs.readFileSync(path.join(__dirname, 'app.css'), 'utf8');
   const defined = new Set();
@@ -142,7 +163,7 @@ function tokenCheck() {
 }
 
 (async () => {
-  const bad = [...tokenCheck(), ...clipCheck(), ...confirmCheck(), ...dupKeyCheck(), ...hardIdCheck()], errs = [];
+  const bad = [...tokenCheck(), ...clipCheck(), ...confirmCheck(), ...dupKeyCheck(), ...hardIdCheck(), ...toastOnlyCheck()], errs = [];
   const b = await puppeteer.launch({ executablePath: CHROME, headless: 'new' });
   const p = await b.newPage();
   await p.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
@@ -914,8 +935,19 @@ function tokenCheck() {
   const openAfter = await count('[data-drop="open"] .card');
   want(openAfter === openBefore + 1, `быстрый ввод в колонке создал карточку (${openBefore} → ${openAfter})`);
   await shot('42-quick-add');
+  /* доска и таймлайн — две вкладки ОДНОГО цикла: таймлайн показывает те же задачи,
+     только с датой, поэтому он не может насчитать больше доски */
+  const inCycleSaid = await p.evaluate(() => {
+    const t = [...document.querySelectorAll('.bar .right span')].map((e) => e.textContent).find((x) => /Задач в цикле/.test(x));
+    return t ? +t.replace(/\D+/g, '') : null; });
   await go('tab', 'timeline'); await shot('36-timeline');
   want((await count('.tday')) > 3, 'таймлайн разложил задачи по дням');
+  const tl = await p.evaluate(() => {
+    const said = [...document.querySelectorAll('.bar .right span')].map((e) => e.textContent).find((x) => /Задач со сроком/.test(x)) || '';
+    return { n: said ? +said.replace(/\D+/g, '') : null, items: document.querySelectorAll('.tdi').length, said }; });
+  want(tl.n === tl.items, `счётчик таймлайна равен числу карточек на нём (счётчик ${tl.n}, карточек ${tl.items})`);
+  want(inCycleSaid !== null && tl.n !== null && tl.n <= inCycleSaid,
+    `таймлайн не насчитывает больше задач, чем доска того же цикла (доска ${inCycleSaid}, таймлайн ${tl.n})`);
   await go('tab', 'pool'); await shot('20-initiatives');
   const prop = await count('[data-act="accept-init"]');
   await p.$eval('[data-act="accept-init"]', (e) => e.click());
