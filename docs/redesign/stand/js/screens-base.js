@@ -34,7 +34,7 @@ function screenFiles() {
       ${cell(avShort(f.who))}
       ${cell(state(f.ix, f.ix.includes("фрагмент") || f.ix === "переиндексирован"))}
       ${cell(`<span class="due">${esc(f.sz)}</span>`, "r")}
-      ${cell(due(f.at), "r")}</tr>`).join(""));
+      ${cell(dt(f.at), "r")}</tr>`).join(""));
 }
 
 function newEntryModal() {

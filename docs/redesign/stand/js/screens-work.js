@@ -14,7 +14,7 @@ function screenProjects() {
         return `<tr class="row${S.sel === p.id && S.selKind === "project" ? " sel" : ""}" ${act("open-proj", p.id)} tabindex="0">
           ${cell(dot(p.st === "paused" ? "open" : "in_progress") + esc(p.n), "t")}
           ${cell(avShort(p.own))}${cell(subs.length ? subs.map((s) => esc(s.n)).join(" · ") : `<span class="muted">—</span>`)}
-          ${cell(due(p.due))}${cell(`<span class="pdot p-med"></span>${open}`, "r")}${cell(`<span class="due">${tasks.length}</span>`, "r")}</tr>`;
+          ${cell(due(p.due))}${cell(`<span class="due">${open}</span>`, "r")}${cell(`<span class="due">${tasks.length}</span>`, "r")}</tr>`;
       }).join(""))
       : empty(all.length ? "Все проекты на паузе" : "В этом воркспейсе ещё нет проектов",
               all.length ? "Включите «показывать на паузе»" : "Проект появится вместе с первой задачей"));
@@ -62,7 +62,7 @@ function screenSprints() {
       return `<div class="col"><h3>${dot(c.id)}${c.n}<span class="n">${items.length}</span></h3>
         <div class="cards" data-drop="${c.id}">${items.map((t) => `<div class="card" draggable="true" data-card="${t.id}" ${act("open-task", t.id)} tabindex="0">
           ${pri(t.prio)}${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">—</span>`}
-          <span style="margin-left:auto">${due(t.due)}</span></div></div>`).join("")
+          <span style="margin-left:auto">${due(t.due, t.st === "done")}</span></div></div>`).join("")
           || `<div class="drop-empty">перетащите сюда</div>`}
           <input class="qadd" placeholder="+ задача в «${esc(c.n)}»" data-qadd="${c.id}"></div></div>`;
     }).join("")}</div>`;

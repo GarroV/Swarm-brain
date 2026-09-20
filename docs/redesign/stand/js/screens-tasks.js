@@ -46,7 +46,7 @@ function taskRow(t) {
     ${cell(t.who.length ? avShort(t.who[0]) : `<span class="muted">— не назначен</span>`)}
     ${cell(lbls(t.labels) + (t.recur ? tag(RECUR_LABEL[t.recur], "p") : ""), "opt")}
     ${cell(t.mk ? `<span class="cc">${t.mk}</span>` : "", "r opt")}
-    ${cell(due(t.due), "r")}</tr>`;
+    ${cell(due(t.due, t.st === "done"), "r")}</tr>`;
 }
 
 function groupRows(list) {

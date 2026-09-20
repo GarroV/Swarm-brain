@@ -104,7 +104,7 @@ function detailEntry(e) {
     + btn("Править", "edit-entry", e.id) + btn("Удалить", "del-entry", e.id))
     + `<div class="d-body"><dl class="f">
       <dt>Тип</dt><dd>${tag(e.ty, "p")}</dd><dt>Автор</dt><dd>${av(e.who)}</dd>
-      <dt>Добавлена</dt><dd>${due(e.at)}</dd>
+      <dt>Добавлена</dt><dd>${dt(e.at)}</dd>
       <dt>Приватность</dt><dd><button class="mini${e.priv ? " on" : ""}" ${act("tgl-epriv", e.id)}>${e.priv ? "личная" : "общая"}</button></dd>
       <dt>Страны</dt><dd>${COUNTRIES.map((c) => `<button class="mini${e.cc.includes(c.c) ? " on" : ""}" ${act("tgl-ecc", e.id, c.c)}>${c.c}</button>`).join("")}</dd>
       <dt>Индекс</dt><dd>${state(e.ix.n ? `${nFrag(e.ix.n)} · ${e.ix.at}` : "не индексируется", !!e.ix.n)}</dd></dl>
@@ -122,7 +122,7 @@ function detailFile(f) {
     btn("Скопировать ссылку", "copy", undefined, `https://swarm-brain.pages.dev/drive/${f.id}/${f.n}`, "pri") + btn("Переиндексировать", "reindex-file", f.id) + btn("Заменить файл", "replace-file", f.id))
     + `<div class="d-body"><div class="prev"><span class="ft ft-${f.ty}">${f.ty}</span>Предпросмотр доступен после открытия</div>
       <dl class="f"><dt>Размер</dt><dd><span class="due">${esc(f.sz)}</span></dd>
-      <dt>Загрузил</dt><dd>${av(f.who)}</dd><dt>Когда</dt><dd>${due(f.at)}</dd>
+      <dt>Загрузил</dt><dd>${av(f.who)}</dd><dt>Когда</dt><dd>${dt(f.at)}</dd>
       <dt>Индекс</dt><dd>${state(f.ix, f.ix.includes("фрагмент") || f.ix === "переиндексирован")}</dd>
       <dt>Доступ</dt><dd>Воркспейс IMF BD</dd></dl>
       ${lab("Привязан к записи")}<div class="src" ${act("open-entry", f.rec)}>${esc(e.h || "—")}</div></div>`;
@@ -144,7 +144,7 @@ function detailProject(p) {
       ${lab("Подпроекты")}${subs.length ? rows(subs.map((s) => [esc(s.n),
         nTasks(S.tasks.filter((t) => t.pr === s.id && !t.arch).length), btn("Открыть", "open-proj", s.id, undefined, "sm")]))
         : rows([["—", "подпроектов нет", ""]])}
-      ${lab("Последние задачи")}${rows(tasks.slice(0, 5).map((t) => [dot(t.st), `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, due(t.due)]))}</div>`;
+      ${lab("Последние задачи")}${rows(tasks.slice(0, 5).map((t) => [dot(t.st), `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, due(t.due, t.st === "done")]))}</div>`;
 }
 
 function renderDetail() {

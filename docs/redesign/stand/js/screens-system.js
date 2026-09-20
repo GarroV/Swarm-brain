@@ -101,14 +101,14 @@ function screenBroadcast() {
   return `<div class="bar">${btn("＋ Рассылка", "broadcast", undefined, undefined, "pri sm")}
     <div class="right"><span>Отправлено <b>${S.broadcasts.length}</b></span></div></div>`
     + table([{ t: "Текст", w: "50%" }, { t: "Кому" }, { t: "Отправил" }, { t: "Когда", r: true }],
-      S.broadcasts.map((b) => `<tr class="row">${cell(esc(b.t), "t")}${cell(esc(b.to))}${cell(av(b.who))}${cell(due(b.at), "r")}</tr>`).join(""));
+      S.broadcasts.map((b) => `<tr class="row">${cell(esc(b.t), "t")}${cell(esc(b.to))}${cell(av(b.who))}${cell(dt(b.at), "r")}</tr>`).join(""));
 }
 function screenFeedback() {
   const cat = (c) => (FEEDBACK_CATS.find(([v]) => v === c) || [, c])[1];
   return `<div class="bar">${chip(`Открыто: ${S.feedback.filter((f) => f.st === "open").length}`, true, "noop")}
     <div class="right"><span>Всего <b>${S.feedback.length}</b></span></div></div>`
     + table([{ t: "Сообщение", w: "42%" }, { t: "Категория" }, { t: "От кого" }, { t: "Когда" }, { t: "Статус", r: true, w: "180px" }],
-      S.feedback.map((f) => `<tr class="row">${cell(esc(f.t), "t")}${cell(tag(cat(f.cat), "p"))}${cell(av(f.who))}${cell(due(f.at))}
+      S.feedback.map((f) => `<tr class="row">${cell(esc(f.t), "t")}${cell(tag(cat(f.cat), "p"))}${cell(av(f.who))}${cell(dt(f.at))}
         ${cell(f.st === "open" ? btn("Закрыть", "resolve-fb", f.id, undefined, "sm") : state("закрыт", true), "r acts")}</tr>`).join(""));
 }
 

@@ -133,6 +133,19 @@ function tokenCheck() {
         }
       }
     }
+    /* красная дата читается как «просрочено»: уместна только в колонке срока и только у незакрытой задачи */
+    document.querySelectorAll('table').forEach((tb) => {
+      const heads = [...tb.querySelectorAll('thead th')].map((t) => t.textContent.trim().toLowerCase());
+      tb.querySelectorAll('tbody tr').forEach((tr) => {
+        [...tr.children].forEach((td, i) => {
+          if (!td.querySelector('.due.now, .due.soon')) return;
+          if (!/срок|дедлайн|просрочено/.test(heads[i] || '')) out.push(`дата покрашена как срок в колонке «${heads[i] || i}»`);
+          else if (tr.querySelector('.d-done')) out.push('красный срок у завершённой задачи');
+        });
+      });
+    });
+    if (document.querySelector('[data-drop="done"] .due.now')) out.push('красный срок у карточки в колонке «Готово»');
+
     /* карточки одного ряда сетки должны быть одной высоты */
     const grids = document.querySelectorAll('.grid');
     grids.forEach((g) => {
