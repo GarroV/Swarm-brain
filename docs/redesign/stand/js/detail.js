@@ -139,7 +139,7 @@ function detailProject(p) {
     + `<div class="d-body"><dl class="f">
       <dt>Владелец</dt><dd>${av(p.own)}</dd>
       <dt>Срок</dt><dd>${due(p.due)}</dd>
-      <dt>Задачи</dt><dd><span class="pdot p-med"></span>${open} открыто из ${tasks.length}</dd>
+      <dt>Задачи</dt><dd>${open} открыто из ${tasks.length}</dd>
       <dt>Подпроекты</dt><dd>${subs.length || "—"}</dd></dl>
       ${lab("Описание")}<div class="note">${esc(p.d)}</div>
       ${lab("Подпроекты")}${subs.length ? rows(subs.map((s) => [esc(s.n),

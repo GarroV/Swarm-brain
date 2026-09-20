@@ -134,7 +134,7 @@ function screenReviewCounts() {
     <div class="right"><span>Считается по участию во встрече</span></div></div>`
     + (byUser.length ? table([{ t: "Человек", w: "30%" }, { t: "Почта" }, { t: "Ждёт вычитки", r: true }, { t: "Напомнить", r: true, w: "180px" }],
       byUser.map(([u, n]) => `<tr class="row">${cell(av(u.id), "t")}${cell(u.em ? esc(u.em) : state("не привязана", false))}
-        ${cell(`<span class="pdot p-med"></span>${n}`, "r")}
+        ${cell(`<span class="due">${n}</span>`, "r")}
         ${cell(btn("Напомнить в Telegram", "remind", u.id, undefined, "sm"), "r acts")}</tr>`).join(""))
       : empty("Очередь пуста", "Все встречи вычитаны"));
 }

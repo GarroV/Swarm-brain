@@ -29,7 +29,7 @@ function meetRow(m) {
     ${cell(avs(m.who))}
     ${cell(tag(m.src, "m") + cc(m.cc))}
     ${cell(`<span class="due">${m.dur}</span><span class="unit">мин</span>`, "r")}
-    ${cell(m.tasks.length ? `<span class="pdot p-med"></span>${m.tasks.length}` : `<span class="muted">—</span>`, "r")}</tr>`;
+    ${cell(m.tasks.length ? `<span class="due">${m.tasks.length}</span>` : `<span class="muted">—</span>`, "r")}</tr>`;
 }
 
 function dupStrip() {

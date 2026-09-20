@@ -61,7 +61,7 @@ function screenSprints() {
       const items = inCycle.filter((t) => t.st === c.id);
       return `<div class="col"><h3>${dot(c.id)}${c.n}<span class="n">${items.length}</span></h3>
         <div class="cards" data-drop="${c.id}">${items.map((t) => `<div class="card" draggable="true" data-card="${t.id}" ${act("open-task", t.id)} tabindex="0">
-          ${pri(t.prio)}${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">—</span>`}
+          ${priMark(t.prio)}${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">—</span>`}
           <span style="margin-left:auto">${due(t.due, t.st === "done")}</span></div></div>`).join("")
           || `<div class="drop-empty">перетащите сюда</div>`}
           <input class="qadd" placeholder="+ задача в «${esc(c.n)}»" data-qadd="${c.id}"></div></div>`;
