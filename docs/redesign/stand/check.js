@@ -31,7 +31,8 @@ function tokenCheck() {
   if (process.argv[2] === 'break') await p.addStyleTag({ content: `
     .ib{display:block!important}
     .list td.ck{width:10px!important;overflow:hidden!important;text-overflow:ellipsis!important}
-    .chip{white-space:normal!important;width:60px!important}` });
+    .chip{white-space:normal!important;width:60px!important}
+    .dtab .c{margin-left:0!important}` });
 
   const sel = (a, id) => `[data-act="${a}"]` + (id !== undefined ? `[data-id="${id}"]` : '');
   const click = async (s) => {
@@ -53,6 +54,9 @@ function tokenCheck() {
       if (els.length < 2) return;
       const med = Math.min(...els.map((e) => e.offsetHeight));
       els.forEach((e) => { if (e.offsetHeight > med + 8) out.push('перенос в «' + e.textContent.trim().slice(0, 24) + '» h=' + e.offsetHeight); });
+    });
+    document.querySelectorAll('.chip,.btn,.tab,.mini,.cev,.tdh').forEach((e) => {
+      if (e.offsetHeight && e.scrollHeight > e.clientHeight + 2) out.push('текст не влез в «' + e.textContent.trim().slice(0, 22) + '»');
     });
     const rows = [...document.querySelectorAll('tbody tr')].filter((r) => r.offsetHeight > 0 && !r.classList.contains('sect'));
     if (rows.length > 2) { const m = Math.min(...rows.map((r) => r.offsetHeight));

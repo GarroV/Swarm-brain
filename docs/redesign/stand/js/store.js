@@ -39,6 +39,7 @@ const RECUR_LABEL = { weekly: "каждую неделю", monthly: "кажды�
 const MON = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
 const fmtDate = (iso) => { if (!iso) return "—"; const [, m, dd] = iso.split("-"); return `${+dd} ${MON[+m - 1]}`; };
 const daysTo = (iso) => { if (!iso) return null; return Math.round((Date.parse(iso) - Date.parse(TODAY)) / 86400000); };
+const fmtDT = (dt) => { const [d_, t_] = String(dt).split(" "); return `${fmtDate(d_)}, ${t_}`; };
 const dueKind = (iso) => { const n = daysTo(iso); if (n === null) return ""; if (n < 0) return "now"; if (n === 0) return "today"; return ""; };
 
 /* ── выборка задач: ось времени × линза × статусы × поиск ────── */

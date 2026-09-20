@@ -25,7 +25,7 @@ function meetBar() {
 function meetRow(m) {
   return `<tr class="row${S.sel === m.id && S.selKind === "meeting" ? " sel" : ""}" ${act("open-meet", m.id)} tabindex="0">
     ${cell(`${dot(m.st === "pending" ? "open" : m.st === "draft" ? "open" : "done")}${esc(m.t)}${m.store === "personal" ? ' <span class="lock" title="личное хранилище">🔒</span>' : ""}`, "t")}
-    ${cell(esc(m.dt))}
+    ${cell(esc(fmtDT(m.dt)))}
     ${cell(avs(m.who))}
     ${cell(tag(m.src, "m") + cc(m.cc))}
     ${cell(`<span class="due">${m.dur} мин</span>`, "r")}
@@ -38,7 +38,7 @@ function dupStrip() {
   return `<div class="review dup">Похоже на дубли: ${dups.length}. Черновик рекордера совпадает с уже разобранной встречей.</div>`
     + table([{ t: "Черновик", w: "30%" }, { t: "Похож на", w: "30%" }, { t: "Когда" }, { t: "Совпадение" }, { t: "Что делать", r: true, w: "210px" }],
       dups.map((m, i) => `<tr class="row">${cell(dot("open") + esc(m.t), "t")}
-        ${cell(esc((S.meetings.find((x) => x.st !== "draft") || {}).t || "—"))}${cell(esc(m.dt))}
+        ${cell(esc((S.meetings.find((x) => x.st !== "draft") || {}).t || "—"))}${cell(esc(fmtDT(m.dt)))}
         ${cell(state(i === 0 ? "87%" : "71%", false))}
         ${cell(`<span class="ib">${btn("Объединить", "merge-dup", m.id, undefined, "sm")}${btn("Не дубль", "keep-dup", m.id, undefined, "sm")}</span>`, "r acts")}</tr>`).join(""));
 }
@@ -61,7 +61,7 @@ function screenQueue() {
   return `<div class="bar"><span class="chip on">Ждут решения: ${S.queue.length}</span>
     <div class="right"><span>Публикация создаёт встречу и задачи разом</span></div></div>
     <div class="qlist">${S.queue.map((q) => `<div class="qcard">
-      <div class="qh"><b>${esc(q.t)}</b><span class="muted">${esc(q.dt)} · ${avs(q.who)} ${cc(q.cc)}</span></div>
+      <div class="qh"><b>${esc(q.t)}</b><span class="muted">${esc(fmtDT(q.dt))} · ${avs(q.who)} ${cc(q.cc)}</span></div>
       ${q.dup ? `<div class="warn">Похоже на дубль встречи «${esc((S.meetings.find((m) => m.id === q.dup) || {}).t || "")}»</div>` : ""}
       <div class="qcols">
         <div><div class="lab">Предложенные тезисы</div><div class="tez">${q.tez.map((s) =>

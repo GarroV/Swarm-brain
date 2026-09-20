@@ -458,3 +458,6 @@ td.acts{white-space:nowrap}
 .body{min-width:0}
 .cal{min-width:0;max-width:100%}
 .main>*{min-width:0}
+.chip,.btn,.tab,.hbtn,.mini,.tdh,.cev{white-space:nowrap;flex:none}
+.dtab .c{margin-left:5px;font:500 var(--fs-num-sm)/1 var(--font-mono);color:var(--ink-3)}
+.dtab.on .c{color:var(--accent)}

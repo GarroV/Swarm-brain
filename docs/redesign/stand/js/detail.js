@@ -74,7 +74,7 @@ function detailMeeting(m) {
       ])}</div>` : "")
       + (m.st === "draft" ? `<div class="warn">Черновик рекордера: тезисов ещё нет, в базу не попал.</div>` : "")
       + `<dl class="f"><dt>Участники</dt><dd>${m.who.map((i) => esc(user(i).n)).join(", ")}</dd>
-        <dt>Когда</dt><dd><span class="due">${esc(m.dt)}</span></dd>
+        <dt>Когда</dt><dd><span class="due">${esc(fmtDT(m.dt))}</span></dd>
         <dt>Длительность</dt><dd><span class="due">${m.dur} мин</span></dd>
         <dt>Источник</dt><dd>${tag(m.src, "m")}</dd>
         <dt>Хранилище</dt><dd>${["shared", "personal"].map((s) => `<button class="mini${m.store === s ? " on" : ""}" ${act("set-store", m.id, s)}>${s === "shared" ? "Общее" : "Личное"}</button>`).join("")}</dd>
@@ -91,7 +91,7 @@ function detailMeeting(m) {
     body = `<div class="tr">${m.tr.map(([w, who, text]) =>
       `<div class="ln"><span class="w">${w}</span>${av(who, false)}<span>${esc(text)}</span></div>`).join("")}</div>`;
   }
-  return dhead(`${m.src} · ${m.dt}`, m.t, acts)
+  return dhead(`${m.src} · ${fmtDT(m.dt)}`, m.t, acts)
     + `<div class="d-body">${dtabs([["overview", "Обзор"], ["tr", "Транскрипт", m.tr.length]])}${body}</div>`;
 }
 
