@@ -570,8 +570,12 @@ function tokenCheck() {
   await p.$eval('tbody tr[data-act="open-task"]', (e) => e.click());
   await new Promise((r) => setTimeout(r, 120));
   await shot('43-narrow-1200');
+  /* 1160 — зазор между «деталь в сетке» и «деталь поверх»: пороги CSS и JS должны совпадать */
+  await p.setViewport({ width: 1160, height: 800, deviceScaleFactor: 2 });
+  await new Promise((r) => setTimeout(r, 200));
+  await shot('45-narrow-1160');
   await p.setViewport({ width: 1100, height: 780, deviceScaleFactor: 2 });
-  await new Promise((r) => setTimeout(r, 120));
+  await new Promise((r) => setTimeout(r, 200));
   await shot('44-narrow-1100');
   await go('close');
   await p.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });

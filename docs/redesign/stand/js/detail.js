@@ -142,8 +142,10 @@ function detailProject(p) {
       <dt>Задачи</dt><dd>${open} открыто из ${tasks.length}</dd>
       <dt>Подпроекты</dt><dd>${subs.length || "—"}</dd></dl>
       ${lab("Описание")}<div class="note">${esc(p.d)}</div>
-      ${lab("Подпроекты")}${subs.length ? rows(subs.map((s) => [esc(s.n),
-        nTasks(S.tasks.filter((t) => t.pr === s.id && !t.arch).length), btn("Открыть", "open-proj", s.id, undefined, "sm")]))
+      ${lab("Подпроекты")}${subs.length ? rows(subs.map((s) => { const st = S.tasks.filter((t) => t.pr === s.id && !t.arch);
+        const so = st.filter((t) => t.st !== "done").length;
+        /* «11 задач» не говорит, сколько из них живых — а решает именно это */
+        return [esc(s.n), `${nTasks(st.length)} · ${so} открыто`, btn("Открыть", "open-proj", s.id, undefined, "sm")]; }))
         : rows([["—", "подпроектов нет", ""]])}
       ${lab("Последние задачи")}${rows(tasks.slice(0, 5).map((t) => [dot(t.st), `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, due(t.due, t.st === "done")]))}</div>`;
 }

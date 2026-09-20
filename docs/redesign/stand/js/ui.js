@@ -53,6 +53,9 @@ const alert_ = (text) => `<span class="state bad">${esc(text)}</span>`;
 
 /* c.opt — колонка второго ряда важности: в узком окне она уходит,
    вместо того чтобы сжимать всё до обрезанных заголовков и имён. */
+/* ниже этой ширины деталь ложится поверх списка и места у него не отнимает.
+   Тот же порог в app.css: @media (max-width:1140px) — менять их только вместе. */
+const OVERLAY_AT = 1140;
 /* места мало: деталь занимает половину окна или само окно узкое — тогда часть колонок прячется */
 const tight = () => (S.sel ? window.innerWidth <= 1700 : window.innerWidth <= 1180);
 
@@ -64,7 +67,7 @@ function table(cols, body) {
   const cssPx = (n) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n)) || 0;
   /* ширину области считаем из сетки, а не из DOM: на момент генерации разметки класс with-detail ещё прежний */
   const W = Math.max(320, window.innerWidth - cssPx("--nav-w")
-    - (S.sel && window.innerWidth > 1180 ? cssPx("--detail-w") : 0));
+    - (S.sel && window.innerWidth > OVERLAY_AT ? cssPx("--detail-w") : 0));
   const shown = cols.filter((c) => !(c.opt && tight()));
   const asPct = (w) => w.endsWith("%") ? parseFloat(w) : (parseFloat(w) / W) * 100;
   let fixed = 0, flex = 0;

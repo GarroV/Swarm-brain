@@ -72,9 +72,9 @@ const IST = { proposed: "предложена", accepted: "принята", in_p
 function screenPool() {
   if (!S.initiatives.length) return cycleBar() + empty("Инициатив пока нет", "Сюда попадают предложения, которые ещё не взяли в цикл");
   return cycleBar(`<span>Предложено <b>${S.initiatives.filter((i) => i.st === "proposed").length}</b></span>`)
-    + table([{ t: "Инициатива", w: "28%" }, { t: "Проект", w: "18%" }, { t: "Владелец", w: "17%" }, { t: "Задачи", w: "12%" }, { t: "Оценка", r: true, w: "80px" }, { t: "Решение", r: true, w: "220px" }],
+    + table([{ t: "Инициатива", w: "28%" }, { t: "Проект", w: "18%" }, { t: "Владелец", w: "17%" }, { t: "Задачи", w: "12%" }, { t: "Баллы", r: true, w: "80px" }, { t: "Решение", r: true, w: "220px" }],
       S.initiatives.map((i) => `<tr class="row">
-        ${cell(dot(i.st === "done" ? "done" : i.st === "proposed" ? "open" : "in_progress") + esc(i.t), "t")}
+        ${cell(esc(i.t), "t")}   /* статус инициативы уже написан словом в колонке «Решение» */
         ${cell(esc(projPath(i.pr)))}${cell(av(i.own))}
         ${cell(i.tasks.map((id) => `<span class="lnk" ${act("open-task", id)}>${id}</span>`).join(" · "))}
         ${cell(`<span class="due">${i.pts}</span>`, "r")}
