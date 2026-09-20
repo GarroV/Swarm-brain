@@ -95,7 +95,7 @@ function screenCheck() {
     ${rows(Object.keys(byProj).map((k) => {
       const list = byProj[k], d = list.filter((t) => t.st === "done").length;
       const late = list.filter((t) => dueKind(t.due) === "now").length;
-      return [esc(proj(k) ? proj(k).n : k), `${d} из ${list.length} закрыто`, state(late ? `${late} просрочено` : "в графике", !late)];
+      return [esc(proj(k) ? proj(k).n : k), `${d} из ${list.length} закрыто`, late ? alert_(`${late} просрочено`) : state("в графике", true)];
     }))}
     <div class="mt">${btn("Закрыть цикл", "close-cycle", undefined, undefined, "pri")}${btn("Перенести хвосты в следующий", "carry-over")}</div></div></div>`;
 }

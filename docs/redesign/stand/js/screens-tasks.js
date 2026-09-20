@@ -88,7 +88,7 @@ function newTaskModal(preset) {
       ${fld("Исполнитель", select("who", [["", "— не назначен"], ...S.users.map((u) => [String(u.id), u.n])], String(ME)))}
     </div>
     <div class="two">
-      ${fld("Срок", input("due", "", "2026-09-30"))}
+      ${fld("Срок", dateInput("due", ""))}
       ${fld("Приоритет", select("prio", [["high", "высокий"], ["med", "средний"], ["low", "низкий"]], "med"))}
     </div>
     ${fld("Метки", pick("labels", S.labels.map((l) => [l.id, l.n]), []))}

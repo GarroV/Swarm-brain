@@ -98,7 +98,7 @@ function publishModal(id) {
   const m = S.meetings.find((x) => x.id === id);
   modal("Опубликовать черновик записи", `
     ${fld("Название встречи", input("title", m.t))}
-    <div class="two">${fld("Дата и время", input("dt", m.dt))}${fld("Длительность", input("dur", `${m.dur} мин`))}</div>
+    <div class="two">${fld("Дата и время", input("dt", m.dt.replace(" ", "T"), "", "datetime-local"))}${fld("Длительность, мин", input("dur", String(m.dur), "", "number"))}</div>
     ${fld("Участники", pick("who", S.users.slice(0, 8).map((u) => [String(u.id), u.n]), [String(ME)]))}
     ${fld("Страны", pick("cc", COUNTRIES.map((c) => [c.c, c.n]), []))}
     ${fld("Что сделать при публикации", sw("tez", true, "Составить тезисы моделью") + sw("tasks", true, "Предложить задачи") + sw("tg", false, "Отправить участникам в Telegram"))}

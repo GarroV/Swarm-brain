@@ -16,7 +16,7 @@ function harvestModal(id) {
       <label class="hck"><input type="checkbox" data-f="on${i}" checked></label>
       <div class="hmain">${input(`t${i}`, it[0])}</div>
       <div class="hwho">${select(`w${i}`, S.users.map((u) => [String(u.id), u.n]), String(it[1]))}</div>
-      <div class="hdue">${input(`d${i}`, it[2])}</div></div>`).join("")}</div>`,
+      <div class="hdue">${dateInput(`d${i}`, it[2])}</div></div>`).join("")}</div>`,
     `${btn("Отмена", "mclose")}${btn("Создать выбранные", "do-harvest", id, String(items.length), "pri")}`, true);
 }
 

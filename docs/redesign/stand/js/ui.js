@@ -43,6 +43,8 @@ const lab = (t) => `<div class="lab">${esc(t)}</div>`;
 const rows = (list) => `<div class="rowset">${list.map(([k, v, a]) =>
   `<div><span class="k">${k}</span><span class="v">${v}</span>${a ? `<span class="a">${a}</span>` : ""}</div>`).join("")}</div>`;
 const state = (text, ok) => `<span class="state ${ok ? "on" : "off"}">${esc(text)}</span>`;
+/* просрочка — не нейтральное состояние: серый значок её прячет */
+const alert_ = (text) => `<span class="state bad">${esc(text)}</span>`;
 
 /* c.opt — колонка второго ряда важности: в узком окне она уходит,
    вместо того чтобы сжимать всё до обрезанных заголовков и имён. */
@@ -65,7 +67,8 @@ function modal(title, body, foot, wide) {
 }
 function closeModal() { $(".mscrim").classList.remove("open"); const m = $(".modal"); m.classList.remove("open", "wide"); }
 const fld = (label_, inner) => `<div class="fld"><label>${esc(label_)}</label>${inner}</div>`;
-const input = (name, value, ph) => `<input data-f="${name}" value="${esc(value || "")}" placeholder="${esc(ph || "")}">`;
+const input = (name, value, ph, type) => `<input data-f="${name}"${type ? ` type="${type}"` : ""} value="${esc(value || "")}" placeholder="${esc(ph || "")}">`;
+const dateInput = (name, value) => input(name, value, "", "date");
 const area = (name, value, ph) => `<textarea data-f="${name}" placeholder="${esc(ph || "")}">${esc(value || "")}</textarea>`;
 const select = (name, opts, sel) => `<select data-f="${name}">${opts.map(([v, t]) =>
   `<option value="${esc(v)}"${v === sel ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
