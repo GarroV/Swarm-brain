@@ -158,6 +158,7 @@ const ACTS = {
     if (me().role === "admin") S.staff = true;   /* чужие задачи видны только админу */
     render(); },
   "drop-assignee": () => { S.assignee = null; render(); },
+  "switch-ws": (id) => A.switchWorkspace(id),
   "carry-over": () => A.carryOver(),
   "regen-tez": (id) => { const ta = $(".modal [data-f=\"tez\"]");
     if (ta) ta.value = ta.value.replace(/\s+$/, "") + "\n\nПереписано моделью: формулировки сведены к решениям и договорённостям, повторы убраны.";

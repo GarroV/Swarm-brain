@@ -14,6 +14,12 @@ const due = (iso) => iso ? `<span class="due ${dueKind(iso)}">${fmtDate(iso)}</s
 const tag = (text, kind) => `<span class="tag tag-${kind || "o"}">${esc(text)}</span>`;
 const lbls = (ids) => ids.map((id) => { const l = label(id); return l ? tag(l.n, "o") : ""; }).join("");
 const cc = (codes) => codes.length ? codes.map((c) => `<span class="cc" title="${esc(cname(c))}">${c}</span>`).join("") : "";
+const wsChip = () => {
+  const cur = S.workspaces.find((w) => w.active) || S.workspaces[0];
+  return `<span class="drop">${btn(`Воркспейс: ${cur.name}`, "noop", undefined, undefined, "sm")}
+    <div class="dmenu">${S.workspaces.map((w) => `<button class="mi${w.active ? " on" : ""}" ${act("switch-ws", w.id)}>${esc(w.name)} · ${w.users} чел.</button>`).join("")}
+    <button class="mi" ${act("new-ws")}>＋ Новый воркспейс</button></div></span>`;
+};
 const chip = (text, on, a, id, v) => `<button class="chip${on ? " on" : ""}" ${act(a, id, v)}>${esc(text)}</button>`;
 const btn = (text, a, id, v, cls) => `<button class="btn${cls ? " " + cls : ""}" ${act(a, id, v)}>${esc(text)}</button>`;
 const empty = (title, sub) => `<div class="empty"><b>${esc(title)}</b>${sub ? esc(sub) : ""}</div>`;

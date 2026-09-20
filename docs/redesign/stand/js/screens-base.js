@@ -26,6 +26,7 @@ function screenBase() {
 }
 
 function screenFiles() {
+  if (!S.files.length) return empty("Файлов пока нет", "Файл попадает сюда вместе с записью, к которой его приложили");
   return table([{ t: "Файл", w: "36%" }, { t: "Запись" }, { t: "Загрузил" }, { t: "Индекс" }, { t: "Размер", r: true }, { t: "Когда", r: true }],
     S.files.map((f) => `<tr class="row${S.sel === f.id && S.selKind === "file" ? " sel" : ""}" ${act("open-file", f.id)} tabindex="0">
       ${cell(`<span class="ft ft-${f.ty}">${f.ty}</span>${esc(f.n)}`, "t")}

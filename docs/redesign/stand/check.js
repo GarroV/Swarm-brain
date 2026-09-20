@@ -280,6 +280,16 @@ function tokenCheck() {
   want((await count('tr.row')) > ofPerson, 'фильтр по человеку снимается крестиком');
   await go('sec', 'team');
   await go('tab', 'ws'); await shot('25-workspaces');
+  await go('sec', 'projects');
+  const prBefore = await count('tr.row');
+  await go('switch-ws', 'latam');
+  await new Promise((r) => setTimeout(r, 120));
+  want(prBefore > 0 && (await count('tr.row')) === 0, 'переключение воркспейса меняет данные, а не только подпись');
+  want((await text('.empty b')).length > 0, 'пустой воркспейс объясняет себя, а не показывает белый лист');
+  await go('switch-ws', 'cee');
+  await new Promise((r) => setTimeout(r, 120));
+  want((await count('tr.row')) === prBefore, 'возврат в свой воркспейс возвращает данные');
+  await go('sec', 'team');
   await go('sec', 'settings'); await shot('26-settings');
   await go('tab', 'integr');
   await go('integr', 'granola');
@@ -385,6 +395,29 @@ function tokenCheck() {
   await p.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
   await go('sec', 'tasks'); await shot('33-dark');
   await p.evaluate(() => { document.documentElement.dataset.theme = 'light'; });
+
+  /* пустой воркспейс: ни один экран не имеет права быть белым листом */
+  await p.evaluate(() => A.switchWorkspace('latam'));
+  await new Promise((r) => setTimeout(r, 120));
+  const secs = await p.evaluate(() => [...document.querySelectorAll('[data-act="sec"]')].map((e) => e.dataset.id));
+  for (const sec of secs) {
+    await p.evaluate((x) => A.go(x), sec);
+    await new Promise((r) => setTimeout(r, 90));
+    const tabs = await p.evaluate(() => [...document.querySelectorAll('[data-act="tab"]')].map((e) => e.dataset.id));
+    for (const tab of (tabs.length ? tabs : [null])) {
+      if (tab) { await p.evaluate((x) => A.tab(x), tab); await new Promise((r) => setTimeout(r, 90)); }
+      const info = await p.evaluate(() => ({
+        empty: !!document.querySelector('.empty'),
+        rows: document.querySelectorAll('tr.row').length,
+        len: (document.querySelector('.body') || document.body).innerText.trim().length,
+        rowset: document.querySelectorAll('.rowset > div').length,
+      }));
+      if (!info.empty && !info.rows && !info.rowset && info.len < 260)
+        bad.push(`пустой экран без объяснения: ${sec}${tab ? ' / ' + tab : ''}`);
+    }
+  }
+  await p.evaluate(() => A.switchWorkspace('cee'));
+  await new Promise((r) => setTimeout(r, 120));
 
   console.log(bad.length ? 'ДЕФЕКТЫ:\n' + [...new Set(bad)].join('\n') : 'дефектов вёрстки и поведения: нет');
   console.log('ошибки JS: ' + (errs.length ? '\n' + errs.join('\n') : 'нет'));

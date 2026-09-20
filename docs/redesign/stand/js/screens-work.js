@@ -4,9 +4,9 @@ function screenProjects() {
   if (S.tab === "map") return projectsMap();
   const all = S.projects.filter((p) => !p.parent);
   const roots = S.showClosed ? all : all.filter((p) => p.st !== "paused");
-  return `<div class="bar">${chip("Воркспейс: IMF BD", true, "noop")}${chip("Показывать на паузе", S.showClosed, "tgl", "showClosed")}
+  return `<div class="bar">${wsChip()}${chip("Показывать на паузе", S.showClosed, "tgl", "showClosed")}
     <div class="right"><span>Показано <b>${roots.length}</b> из ${all.length}</span><span>Подпроектов <b>${S.projects.length - all.length}</b></span></div></div>`
-    + table([{ t: "Проект", w: "34%" }, { t: "Владелец" }, { t: "Подпроекты" }, { t: "Срок" }, { t: "Открыто", r: true }, { t: "Всего", r: true }],
+    + (roots.length ? table([{ t: "Проект", w: "34%" }, { t: "Владелец" }, { t: "Подпроекты" }, { t: "Срок" }, { t: "Открыто", r: true }, { t: "Всего", r: true }],
       roots.map((p) => {
         const subs = S.projects.filter((x) => x.parent === p.id);
         const tasks = S.tasks.filter((t) => t.pr === p.id || subs.some((s) => s.id === t.pr));
@@ -15,13 +15,16 @@ function screenProjects() {
           ${cell(dot(p.st === "paused" ? "open" : "in_progress") + esc(p.n), "t")}
           ${cell(av(p.own))}${cell(subs.length ? subs.map((s) => esc(s.n)).join(" · ") : `<span class="muted">—</span>`)}
           ${cell(due(p.due))}${cell(`<span class="pdot p-med"></span>${open}`, "r")}${cell(`<span class="due">${tasks.length}</span>`, "r")}</tr>`;
-      }).join(""));
+      }).join(""))
+      : empty(all.length ? "Все проекты на паузе" : "В этом воркспейсе ещё нет проектов",
+              all.length ? "Включите «показывать на паузе»" : "Проект появится вместе с первой задачей"));
 }
 
 function projectsMap() {
   const roots = S.projects.filter((p) => !p.parent);
+  if (!roots.length) return `<div class="bar">${wsChip()}</div>` + empty("Карта пуста", "Здесь будет дерево проектов и подпроектов воркспейса");
   const cnt = (id) => S.tasks.filter((t) => t.pr === id && !t.arch).length;
-  return `<div class="bar">${chip("Воркспейс: IMF BD", true, "noop")}
+  return `<div class="bar">${wsChip()}
     <div class="right"><span>Щёлкните узел — откроется карточка проекта</span></div></div>
     <div class="tree"><div class="tnode root">IMF BD<span class="n">${S.tasks.filter((t) => !t.arch).length}</span></div>
     <div class="tkids">${roots.map((p) => {
@@ -52,6 +55,7 @@ function screenSprints() {
   if (S.tab === "journal") return screenJournal();
   const cols = S.cols.filter((c) => c.on);
   const inCycle = S.tasks.filter((t) => t.sprint === S.cycle && !t.arch);
+  if (!S.tasks.length) return cycleBar() + empty("В этом воркспейсе нет задач", "Доска наполнится, когда задачи попадут в цикл");
   return cycleBar(`<span>Задач в цикле <b>${inCycle.length}</b></span><span>Перетащите карточку, чтобы сменить статус</span>`)
     + `<div class="board">${cols.map((c) => {
       const items = inCycle.filter((t) => t.st === c.id);
@@ -66,6 +70,7 @@ function screenSprints() {
 
 const IST = { proposed: "предложена", accepted: "принята", in_progress: "в работе", done: "закрыта" };
 function screenPool() {
+  if (!S.initiatives.length) return cycleBar() + empty("Инициатив пока нет", "Сюда попадают предложения, которые ещё не взяли в цикл");
   return cycleBar(`<span>Предложено <b>${S.initiatives.filter((i) => i.st === "proposed").length}</b></span>`)
     + table([{ t: "Инициатива", w: "34%" }, { t: "Проект" }, { t: "Владелец" }, { t: "Задачи" }, { t: "Оценка", r: true }, { t: "Решение", r: true, w: "220px" }],
       S.initiatives.map((i) => `<tr class="row">
@@ -80,6 +85,7 @@ function screenPool() {
 
 function screenCheck() {
   const inCycle = S.tasks.filter((t) => t.sprint === S.cycle);
+  if (!inCycle.length) return cycleBar() + empty("В этом цикле нечего сверять", "Возьмите задачи в цикл — здесь появится прогресс по проектам");
   const done = inCycle.filter((t) => t.st === "done").length;
   const byProj = {};
   inCycle.forEach((t) => { const k = proj(t.pr) ? (proj(t.pr).parent || t.pr) : "—"; (byProj[k] = byProj[k] || []).push(t); });
@@ -96,6 +102,7 @@ function screenCheck() {
 
 function screenAnalytics() {
   const inCycle = S.tasks.filter((t) => t.sprint === S.cycle);
+  if (!inCycle.length) return cycleBar() + empty("Считать пока нечего", "Аналитика собирается по задачам цикла");
   const load = S.users.map((u) => [u, inCycle.filter((t) => t.who.includes(u.id)).length]).filter(([, n]) => n).sort((a, b) => b[1] - a[1]);
   const max = Math.max(...load.map(([, n]) => n), 1);
   return cycleBar() + `<div class="panes"><div class="pane"><h3>Аналитика цикла</h3><div class="sub">Скорость и распределение нагрузки</div>
@@ -113,6 +120,7 @@ function screenAnalytics() {
 function screenJournal() {
   const items = [];
   Object.keys(S.history).forEach((id) => (S.history[id] || []).forEach((h) => items.push({ ...h, id })));
+  if (!items.length) return cycleBar() + empty("Журнал пуст", "Записи появляются, когда задачи двигают по доске");
   return cycleBar() + `<div class="panes"><div class="pane"><h3>Журнал перемещений</h3>
     <div class="sub">Кто и когда двигал задачи — журнал ведётся с раскатки #286</div>
     <div class="tl">${items.map((h) => `<div class="e"><div class="p"></div><div><b>${esc(user(h.who).n)}</b> ${esc(h.t)}

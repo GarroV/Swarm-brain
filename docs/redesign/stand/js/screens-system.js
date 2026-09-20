@@ -6,7 +6,7 @@ function screenTeam() {
   if (S.tab === "ws") return screenWorkspaces();
   const openOf = (u) => S.tasks.filter((t) => t.who.includes(u.id) && t.st !== "done" && !t.arch).length;
   const list = S.activeOnly ? S.users.filter((u) => openOf(u) > 0) : S.users;
-  return `<div class="bar">${chip("Воркспейс: IMF BD", true, "noop")}${chip("Только с открытыми задачами", S.activeOnly, "tgl", "activeOnly")}
+  return `<div class="bar">${wsChip()}${chip("Только с открытыми задачами", S.activeOnly, "tgl", "activeOnly")}
     <div class="right"><span>${me().role === "admin" ? "Щёлкните строку — откроются задачи человека" : "Задачи коллег видны админу"}</span><span>Показано <b>${list.length}</b> из ${S.users.length}</span></div></div>`
     + table([{ t: "Участник", w: "26%" }, { t: "Роль" }, { t: "Рынок" }, { t: "Telegram" }, { t: "Почта" }, { t: "Открыто задач", r: true }],
       list.map((u) => `<tr class="row" ${act("person-tasks", u.id)} tabindex="0">${cell(av(u.id), "t")}${cell(ROLE[u.role] || u.role)}

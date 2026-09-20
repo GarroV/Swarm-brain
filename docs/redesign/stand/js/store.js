@@ -264,6 +264,21 @@ const A = {
     S.integrations = S.integrations.map((i) => i.id === id ? { ...i, st: i.st === "on" ? "off" : "on" } : i);
     A.toast("Интеграция переключена");
   },
+  switchWorkspace(id) {
+    if ((S.workspaces.find((w) => w.active) || {}).id === id) return;
+    S.workspaces = S.workspaces.map((w) => ({ ...w, active: w.id === id }));
+    const w = S.workspaces.find((x) => x.id === id);
+    /* стенд не тащит второй набор данных: честно показываем пустой воркспейс */
+    const empty = id !== "cee";
+    S.tasks = empty ? [] : TASKS.slice();
+    S.meetings = empty ? [] : MEETINGS.slice();
+    S.entries = empty ? [] : ENTRIES.slice();
+    S.files = empty ? [] : FILES.slice();
+    S.projects = empty ? [] : PROJECTS.slice();
+    S.queue = empty ? [] : AGENT_QUEUE.slice();
+    S.sel = null; S.bulk = new Set(); S.assignee = null;
+    A.toast(`Воркспейс: ${w.name}`);
+  },
   addWorkspace(id, name) { S.workspaces = [...S.workspaces, { id, name, users: 0, tasks: 0, entries: 0, active: false }]; A.toast("Воркспейс создан"); },
   addLink(id, otherId, kind) {
     S.tasks = S.tasks.map((t) => t.id === id ? { ...t, links: [...t.links, [kind, +otherId]] } : t);
