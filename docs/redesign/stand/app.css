@@ -486,3 +486,16 @@ td.acts{white-space:nowrap}
 
 /* снятая из публикации предложенная задача */
 .off{color:var(--ink-3);text-decoration:line-through}
+
+/* единица измерения рядом с числом: моношрифт только на цифре */
+.unit{margin-left:4px;font-size:var(--fs-micro);color:var(--ink-3)}
+
+/* Имя человека либо читается целиком, либо не показывается вовсе:
+   обрезанное «Марко Дамья…» хуже одного аватара с подсказкой.
+   Панель детали забирает 380px — в узком окне имена в таблице прячем. */
+@media (max-width:1320px){
+  .app.with-detail .list td .nm{display:none}
+}
+@media (max-width:1180px){
+  .list td .nm{display:none}
+}

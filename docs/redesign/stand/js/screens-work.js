@@ -6,14 +6,14 @@ function screenProjects() {
   const roots = S.showClosed ? all : all.filter((p) => p.st !== "paused");
   return `<div class="bar">${wsChip()}${chip("Показывать на паузе", S.showClosed, "tgl", "showClosed")}
     <div class="right"><span>Показано <b>${roots.length}</b> из ${all.length}</span><span>Подпроектов <b>${S.projects.length - all.length}</b></span></div></div>`
-    + (roots.length ? table([{ t: "Проект", w: "34%" }, { t: "Владелец" }, { t: "Подпроекты" }, { t: "Срок" }, { t: "Открыто", r: true }, { t: "Всего", r: true }],
+    + (roots.length ? table([{ t: "Проект", w: "28%" }, { t: "Владелец", w: "18%" }, { t: "Подпроекты", w: "26%" }, { t: "Срок", w: "12%" }, { t: "Открыто", r: true, w: "84px" }, { t: "Всего", r: true, w: "74px" }],
       roots.map((p) => {
         const subs = S.projects.filter((x) => x.parent === p.id);
         const tasks = S.tasks.filter((t) => t.pr === p.id || subs.some((s) => s.id === t.pr));
         const open = tasks.filter((t) => t.st !== "done" && !t.arch).length;
         return `<tr class="row${S.sel === p.id && S.selKind === "project" ? " sel" : ""}" ${act("open-proj", p.id)} tabindex="0">
           ${cell(dot(p.st === "paused" ? "open" : "in_progress") + esc(p.n), "t")}
-          ${cell(av(p.own))}${cell(subs.length ? subs.map((s) => esc(s.n)).join(" · ") : `<span class="muted">—</span>`)}
+          ${cell(avShort(p.own))}${cell(subs.length ? subs.map((s) => esc(s.n)).join(" · ") : `<span class="muted">—</span>`)}
           ${cell(due(p.due))}${cell(`<span class="pdot p-med"></span>${open}`, "r")}${cell(`<span class="due">${tasks.length}</span>`, "r")}</tr>`;
       }).join(""))
       : empty(all.length ? "Все проекты на паузе" : "В этом воркспейсе ещё нет проектов",
@@ -72,7 +72,7 @@ const IST = { proposed: "предложена", accepted: "принята", in_p
 function screenPool() {
   if (!S.initiatives.length) return cycleBar() + empty("Инициатив пока нет", "Сюда попадают предложения, которые ещё не взяли в цикл");
   return cycleBar(`<span>Предложено <b>${S.initiatives.filter((i) => i.st === "proposed").length}</b></span>`)
-    + table([{ t: "Инициатива", w: "34%" }, { t: "Проект" }, { t: "Владелец" }, { t: "Задачи" }, { t: "Оценка", r: true }, { t: "Решение", r: true, w: "220px" }],
+    + table([{ t: "Инициатива", w: "28%" }, { t: "Проект", w: "18%" }, { t: "Владелец", w: "17%" }, { t: "Задачи", w: "12%" }, { t: "Оценка", r: true, w: "80px" }, { t: "Решение", r: true, w: "220px" }],
       S.initiatives.map((i) => `<tr class="row">
         ${cell(dot(i.st === "done" ? "done" : i.st === "proposed" ? "open" : "in_progress") + esc(i.t), "t")}
         ${cell(esc(projPath(i.pr)))}${cell(av(i.own))}

@@ -27,11 +27,11 @@ function screenBase() {
 
 function screenFiles() {
   if (!S.files.length) return empty("Файлов пока нет", "Файл попадает сюда вместе с записью, к которой его приложили");
-  return table([{ t: "Файл", w: "36%" }, { t: "Запись" }, { t: "Загрузил" }, { t: "Индекс" }, { t: "Размер", r: true }, { t: "Когда", r: true }],
+  return table([{ t: "Файл", w: "30%" }, { t: "Запись", w: "24%" }, { t: "Загрузил", w: "17%" }, { t: "Индекс", w: "15%" }, { t: "Размер", r: true, w: "84px" }, { t: "Когда", r: true, w: "84px" }],
     S.files.map((f) => `<tr class="row${S.sel === f.id && S.selKind === "file" ? " sel" : ""}" ${act("open-file", f.id)} tabindex="0">
       ${cell(`<span class="ft ft-${f.ty}">${f.ty}</span>${esc(f.n)}`, "t")}
       ${cell(esc((S.entries.find((e) => e.id === f.rec) || {}).h || "—"))}
-      ${cell(av(f.who))}
+      ${cell(avShort(f.who))}
       ${cell(state(f.ix, f.ix.includes("фрагмент") || f.ix === "переиндексирован"))}
       ${cell(`<span class="due">${esc(f.sz)}</span>`, "r")}
       ${cell(due(f.at), "r")}</tr>`).join(""));

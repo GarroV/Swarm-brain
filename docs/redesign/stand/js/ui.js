@@ -6,8 +6,13 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":
 const act = (a, id, v) => `data-act="${a}"${id !== undefined ? ` data-id="${id}"` : ""}${v !== undefined ? ` data-v="${esc(v)}"` : ""}`;
 
 const av = (id, withName) => { const u = user(id); if (!u) return `<span class="muted">— не назначен</span>`;
-  return `<span class="av" style="background:${u.c}" title="${esc(u.n)}">${u.i}</span>${withName === false ? "" : esc(u.n)}`; };
+  return `<span class="av" style="background:${u.c}" title="${esc(u.n)}">${u.i}</span>${withName === false ? "" : `<span class="nm">${esc(u.n)}</span>`}`; };
 const avs = (ids) => ids.length ? ids.map((i) => av(i, false)).join("") : `<span class="muted">—</span>`;
+/* плотные таблицы: «Никола Й.» вместо обрезанного «Никола Йована…».
+   Полное имя остаётся в подсказке, в панели детали и в «Команде». */
+const avShort = (id) => { const u = user(id); if (!u) return `<span class="muted">— не назначен</span>`;
+  const [f, l] = u.n.split(" ");
+  return `<span class="av" style="background:${u.c}" title="${esc(u.n)}">${u.i}</span><span class="nm">${esc(l ? `${f} ${l[0]}.` : f)}</span>`; };
 const dot = (st) => `<span class="dot d-${st}"></span>`;
 const pri = (p) => `<span class="pdot p-${p}" title="приоритет: ${PRIO_LABEL[p]}"></span>`;
 const due = (iso) => iso ? `<span class="due ${dueKind(iso)}">${fmtDate(iso)}</span>` : `<span class="muted">—</span>`;

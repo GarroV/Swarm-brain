@@ -92,7 +92,7 @@ function screenTimeline() {
         <span class="pj">${esc(projPath(t.pr))}</span>
         <span class="mt">${lbls(t.labels)}${t.recur ? tag(RECUR_LABEL[t.recur], "p") : ""}</span>
         <span class="mk">${t.mk ? `<span class="cc">${t.mk}</span>` : ""}</span>
-        <span class="who">${t.who.length ? av(t.who[0]) : `<span class="muted">—</span>`}</span></div>`).join("")}</div></div>`;
+        <span class="who">${t.who.length ? avShort(t.who[0]) : `<span class="muted">—</span>`}</span></div>`).join("")}</div></div>`;
   }).join("")}</div>`;
 }
 

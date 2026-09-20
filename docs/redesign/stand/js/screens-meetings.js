@@ -28,7 +28,7 @@ function meetRow(m) {
     ${cell(esc(fmtDT(m.dt)))}
     ${cell(avs(m.who))}
     ${cell(tag(m.src, "m") + cc(m.cc))}
-    ${cell(`<span class="due">${m.dur} мин</span>`, "r")}
+    ${cell(`<span class="due">${m.dur}</span><span class="unit">мин</span>`, "r")}
     ${cell(m.tasks.length ? `<span class="pdot p-med"></span>${m.tasks.length}` : `<span class="muted">—</span>`, "r")}</tr>`;
 }
 

@@ -79,6 +79,11 @@ function tokenCheck() {
       if (e.offsetHeight > lh * 1.75 + 6)
         out.push('подвал карточки перенёсся: «' + e.textContent.trim().slice(0, 24) + '» h=' + e.offsetHeight);
     });
+    /* имя человека нельзя обрезать: «Марко Дамья…» — это уже не идентификация */
+    document.querySelectorAll('td').forEach((td) => {
+      if (!td.querySelector('.av')) return;
+      if (td.scrollWidth > td.clientWidth + 1) out.push('имя обрезано: ' + td.textContent.trim().slice(0, 22));
+    });
     /* кнопки встали друг под друга там, где места хватало на строку */
     {
       const parents = new Set([...document.querySelectorAll('.btn')].map((b) => b.parentElement));
