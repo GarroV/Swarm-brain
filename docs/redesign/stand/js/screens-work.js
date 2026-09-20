@@ -10,10 +10,8 @@ function screenProjects() {
     + (roots.length ? table([{ t: "Проект", w: "28%" }, { t: "Владелец", w: "18%" }, { t: "Подпроекты", w: "26%" }, { t: "Срок", w: "12%" }, { t: "Открыто", short: "Откр.", r: true, w: "84px" }, { t: "Всего", r: true, w: "74px" }],
       roots.map((p) => {
         const subs = S.projects.filter((x) => x.parent === p.id);
-        /* архивные не в счёт — иначе «Всего» здесь и число ветки на карте расходятся
-           на один и тот же проект, и человек идёт искать задачи, которых нет */
-        const tasks = S.tasks.filter((t) => (t.pr === p.id || subs.some((s) => s.id === t.pr)) && !t.arch);
-        const open = tasks.filter((t) => t.st !== "done" && !t.arch).length;
+        const tasks = projectTasks(p.id);
+        const open = tasks.filter((t) => t.st !== "done").length;
         return `<tr class="row${S.sel === p.id && S.selKind === "project" ? " sel" : ""}" ${act("open-proj", p.id)} tabindex="0">
           ${cell(dot(p.st === "paused" ? "open" : "in_progress") + esc(p.n), "t")}
           ${cell(avShort(p.own))}${cell(subs.length ? subs.map((s) => esc(s.n)).join(" · ") : `<span class="muted">—</span>`)}
@@ -29,7 +27,7 @@ function projectsMap() {
   const cnt = (id) => S.tasks.filter((t) => t.pr === id && !t.arch).length;
   /* у узла с детьми число — ВСЯ ветка: иначе корень «41» не сходится с суммой узлов,
      и человек считает, что часть задач потерялась. Своё число — в подсказке. */
-  const branch = (id) => cnt(id) + S.projects.filter((x) => x.parent === id).reduce((n, x) => n + cnt(x.id), 0);
+  const branch = (id) => projectTasks(id).length;
   /* задача без проекта существует — значит и на карте видна: иначе корень считает её,
      а под ним её нет, и число корня перестаёт сходиться с суммой ветвей */
   const admin = me().role === "admin";

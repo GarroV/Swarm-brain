@@ -132,8 +132,8 @@ function detailFile(f) {
 /* ── проект ──────────────────────────────────────────────────── */
 function detailProject(p) {
   const subs = S.projects.filter((x) => x.parent === p.id);
-  const tasks = S.tasks.filter((t) => t.pr === p.id || subs.some((s) => s.id === t.pr));
-  const open = tasks.filter((t) => t.st !== "done" && !t.arch).length;
+  const tasks = projectTasks(p.id);
+  const open = tasks.filter((t) => t.st !== "done").length;
   return dhead(`Проект · ${p.st === "paused" ? "пауза" : "идёт"}`, p.n,
     btn("Открыть задачи", "proj-tasks", p.id, undefined, "pri") + btn("Создать подпроект", "new-subproject", p.id) + btn(p.st === "paused" ? "Возобновить" : "Поставить на паузу", "toggle-proj", p.id))
     + `<div class="d-body"><dl class="f">

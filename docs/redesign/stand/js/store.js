@@ -79,6 +79,14 @@ function inLens(t, lens) {
      Оверсайт руководителя живёт в отдельном тумблере «Все сотрудники» выше. */
   return mine || team;
 }
+/* Задачи проекта = свои + задачи подпроектов, архивные НЕ в счёт. Одно место на весь
+   стенд: список проектов, карта и панель детали расходились на одном проекте (16 в
+   строке против 19 в панели), потому что каждый считал по-своему. */
+function projectTasks(id) {
+  const subs = S.projects.filter((x) => x.parent === id).map((x) => x.id);
+  return S.tasks.filter((t) => !t.arch && (t.pr === id || subs.includes(t.pr)));
+}
+
 function visibleTasks(list = S.tab) {
   const q = S.q.trim().toLowerCase();
   return S.tasks.filter((t) =>

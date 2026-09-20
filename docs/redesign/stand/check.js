@@ -809,6 +809,18 @@ function tokenCheck() {
       return [tds[0].textContent.trim(), +tds[tds.length - 1].textContent.trim()];
     })));
   await go('open-proj', 'p1'); await shot('16-project-detail');
+  /* панель детали и строка списка говорят про ОДИН проект — значит одно и то же число */
+  const pair = await p.evaluate(() => {
+    const row = [...document.querySelectorAll('tbody tr[data-act^="open-proj"]')].find((tr) => tr.classList.contains('sel'));
+    const tds = row ? [...row.children] : [];
+    const dd = [...document.querySelectorAll('.detail dt')].find((e) => e.textContent.trim() === 'Задачи');
+    const said = dd ? dd.nextElementSibling.textContent.trim() : '';
+    const m = said.match(/(\d+)\D+(\d+)/);
+    return { rowOpen: +(tds[tds.length - 2] || {}).textContent, rowAll: +(tds[tds.length - 1] || {}).textContent,
+      panelOpen: m ? +m[1] : null, panelAll: m ? +m[2] : null, said };
+  });
+  want(pair.rowAll === pair.panelAll && pair.rowOpen === pair.panelOpen,
+    `строка и панель дают одни числа по проекту (строка ${pair.rowOpen}/${pair.rowAll}, панель «${pair.said}»)`);
   await go('close');
   await go('tab', 'map'); await shot('17-projects-map');
   const mapTotals = await p.evaluate(() => Object.fromEntries(
