@@ -702,9 +702,34 @@ function tokenCheck() {
 
   /* ── проекты и спринты ──────────────────────────────────── */
   await go('sec', 'projects'); await shot('15-projects');
+  /* проект заводится с экрана: в продукте это есть (RoyProjectsScreen → createProject),
+     и стенд обязан уметь то же, иначе «перенесён весь функционал» — неправда */
+  const projBefore = await count('tbody tr[data-act^="open-proj"]');
+  await go('new-project');
+  await p.type('[data-f="n"]', 'Открытие BA');
+  await go('do-project');
+  await new Promise((r) => setTimeout(r, 120));
+  want((await count('tbody tr[data-act^="open-proj"]')) === projBefore + 1, 'проект заводится с экрана «Проекты»');
+  want((await text('.d-title')) === 'Открытие BA', 'созданный проект открылся в детали');
+  await go('close');
+  /* одно и то же «всего задач» на списке и на карте: раньше список считал архивные,
+     карта — нет, и один проект показывал 18 в списке против 16 на карте */
+  const listTotals = await p.evaluate(() => Object.fromEntries(
+    [...document.querySelectorAll('tbody tr[data-act^="open-proj"]')].map((tr) => {
+      const tds = [...tr.children];
+      return [tds[0].textContent.trim(), +tds[tds.length - 1].textContent.trim()];
+    })));
   await go('open-proj', 'p1'); await shot('16-project-detail');
   await go('close');
   await go('tab', 'map'); await shot('17-projects-map');
+  const mapTotals = await p.evaluate(() => Object.fromEntries(
+    [...document.querySelectorAll('.tkids > .tbr > .tnode')].map((e) => {
+      const n = e.querySelector('.n');
+      return [e.textContent.replace(n.textContent, '').trim(), +n.textContent];
+    })));
+  const clash = Object.keys(listTotals).filter((k) => mapTotals[k] !== undefined && mapTotals[k] !== listTotals[k]);
+  want(clash.length === 0, `список и карта дают одно число задач на проект (расходятся: ${
+    clash.map((k) => `${k}: ${listTotals[k]} против ${mapTotals[k]}`).join('; ')})`);
   /* число у корня обязано сходиться с суммой веток: иначе человек ищет потерянные задачи */
   const tree = await p.evaluate(() => ({
     root: +document.querySelector('.tnode.root .n').textContent,
@@ -837,6 +862,10 @@ function tokenCheck() {
   await go('switch-ws', 'cee');
   await new Promise((r) => setTimeout(r, 120));
   want((await count('tr.row')) === prBefore, 'возврат в свой воркспейс возвращает данные');
+  /* и возвращает ИМЕННО то, что было, включая созданное в этой сессии: раньше возврат
+     пересобирал данные из констант и «Открытие BA» исчезало без единого слова */
+  want((await p.evaluate(() => S.projects.some((x) => x.n === 'Открытие BA'))),
+    'созданный проект пережил переключение воркспейса и возврат');
   await go('sec', 'team');
   await go('sec', 'settings'); await shot('26-settings');
   await go('tab', 'integr');

@@ -155,6 +155,9 @@ function searchAll(q) {
 let nextTaskId = 200, nextId = 900;
 const uid = (p) => `${p}${nextId++}`;
 
+/* что лежит в каждом воркспейсе; заполняется при уходе из него */
+const WS_DATA = {};
+
 const A = {
   set(patch) { Object.assign(S, patch); render(); },
   toast(text) { S.toast = text; render(); clearTimeout(A._t); A._t = setTimeout(() => { S.toast = null; render(); }, 2600); },
@@ -264,6 +267,12 @@ const A = {
     S.files = S.files.map((f) => f.id === id ? { ...f, n: name || f.n, at: TODAY, who: ME, ix: "переиндексирован" } : f);
     A.toast("Файл заменён, индекс обновлён");
   },
+  addProject(name) {
+    const id = "p" + (S.projects.filter((x) => !x.parent).length + 1) + "n";
+    S.projects = [...S.projects, { id, n: name || "Новый проект", parent: null, own: ME, due: null, st: "active" }];
+    A.toast("Проект создан");
+    A.select("project", id);
+  },
   addSubproject(parent, name) {
     const id = parent + String.fromCharCode(97 + S.projects.filter((p) => p.parent === parent).length);
     S.projects = [...S.projects, { id, n: name || "Новый подпроект", parent, own: ME, due: null, st: "active" }];
@@ -301,17 +310,18 @@ const A = {
     A.toast("Интеграция переключена");
   },
   switchWorkspace(id) {
-    if ((S.workspaces.find((w) => w.active) || {}).id === id) return;
+    const from = (S.workspaces.find((w) => w.active) || {}).id;
+    if (from === id) return;
+    /* уходя, воркспейс запоминает своё: раньше возврат пересобирал данные из констант,
+       и всё созданное в сессии (задача, запись, проект) исчезало без предупреждения */
+    WS_DATA[from] = { tasks: S.tasks, meetings: S.meetings, entries: S.entries, files: S.files, projects: S.projects, queue: S.queue };
     S.workspaces = S.workspaces.map((w) => ({ ...w, active: w.id === id }));
     const w = S.workspaces.find((x) => x.id === id);
-    /* стенд не тащит второй набор данных: честно показываем пустой воркспейс */
-    const empty = id !== "cee";
-    S.tasks = empty ? [] : TASKS.slice();
-    S.meetings = empty ? [] : MEETINGS.slice();
-    S.entries = empty ? [] : ENTRIES.slice();
-    S.files = empty ? [] : FILES.slice();
-    S.projects = empty ? [] : PROJECTS.slice();
-    S.queue = empty ? [] : AGENT_QUEUE.slice();
+    /* второго набора данных стенд не тащит: чужой воркспейс честно пуст, пока в нём
+       ничего не завели */
+    const d = WS_DATA[id] || { tasks: [], meetings: [], entries: [], files: [], projects: [], queue: [] };
+    S.tasks = d.tasks; S.meetings = d.meetings; S.entries = d.entries;
+    S.files = d.files; S.projects = d.projects; S.queue = d.queue;
     S.sel = null; S.bulk = new Set(); S.assignee = null;
     A.toast(`Воркспейс: ${w.name}`);
   },

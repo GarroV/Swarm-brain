@@ -5,11 +5,14 @@ function screenProjects() {
   const all = S.projects.filter((p) => !p.parent);
   const roots = S.showClosed ? all : all.filter((p) => p.st !== "paused");
   return `<div class="bar">${wsChip()}${chip("Показывать на паузе", S.showClosed, "tgl", "showClosed")}
-    <div class="right"><span>Показано <b>${roots.length}</b> из ${all.length}</span><span>Подпроектов <b>${S.projects.length - all.length}</b></span></div></div>`
+    <div class="right"><span>Показано <b>${roots.length}</b> из ${all.length}</span><span>Подпроектов <b>${S.projects.length - all.length}</b></span>
+      ${btn("＋ Проект", "new-project", undefined, undefined, "pri sm")}</div></div>`
     + (roots.length ? table([{ t: "Проект", w: "28%" }, { t: "Владелец", w: "18%" }, { t: "Подпроекты", w: "26%" }, { t: "Срок", w: "12%" }, { t: "Открыто", short: "Откр.", r: true, w: "84px" }, { t: "Всего", r: true, w: "74px" }],
       roots.map((p) => {
         const subs = S.projects.filter((x) => x.parent === p.id);
-        const tasks = S.tasks.filter((t) => t.pr === p.id || subs.some((s) => s.id === t.pr));
+        /* архивные не в счёт — иначе «Всего» здесь и число ветки на карте расходятся
+           на один и тот же проект, и человек идёт искать задачи, которых нет */
+        const tasks = S.tasks.filter((t) => (t.pr === p.id || subs.some((s) => s.id === t.pr)) && !t.arch);
         const open = tasks.filter((t) => t.st !== "done" && !t.arch).length;
         return `<tr class="row${S.sel === p.id && S.selKind === "project" ? " sel" : ""}" ${act("open-proj", p.id)} tabindex="0">
           ${cell(dot(p.st === "paused" ? "open" : "in_progress") + esc(p.n), "t")}
