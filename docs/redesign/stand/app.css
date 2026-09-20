@@ -118,11 +118,12 @@ tbody tr.sel td.t{font-weight:600}
 .empty{display:grid;place-items:center;height:100%;color:var(--ink-empty);font-size:var(--fs-dense);text-align:center;gap:6px}
 .empty b{display:block;color:var(--ink-3);font-size:var(--fs-lead);font-weight:600}
 /* доска спринта */
-.board{display:flex;gap:12px;padding:14px var(--gutter);overflow:auto;flex:1;align-items:flex-start}
-.col{flex:0 0 250px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;max-height:100%}
+.board{display:flex;gap:12px;padding:14px var(--gutter);overflow:auto;flex:1;align-items:stretch;min-height:0}
+/* колонки делят ширину: доска на три колонки не должна жаться к левому краю */
+.col{flex:1 1 0;min-width:240px;max-width:420px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;max-height:100%}
 .col h3{font-size:var(--fs-meta);text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);padding:10px 12px 8px;display:flex;gap:6px;align-items:center}
 .col h3 .n{margin-left:auto;font:500 var(--fs-micro)/1 var(--font-num);color:var(--ink-empty)}
-.col .cards{padding:0 8px 8px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.col .cards{padding:0 8px 8px;overflow:auto;display:flex;flex-direction:column;gap:6px;min-height:60px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:var(--fs-dense);color:var(--ink);box-shadow:0 1px 1px rgba(27,32,40,.03)}
 .card:hover{border-color:var(--line-strong);box-shadow:0 2px 6px rgba(27,32,40,.07)}
 .card .m{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:var(--fs-micro);color:var(--ink-3)}
