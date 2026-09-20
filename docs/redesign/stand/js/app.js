@@ -88,6 +88,7 @@ const ACTS = {
   mclose: () => closeModal(),
   dtab: (id) => A.set({ dtab: id }),
   lens: (id) => A.set({ lens: id }),
+  "reset-statuses": () => A.set({ statuses: new Set(["open", "in_progress"]) }),
   status: (id) => { const s = new Set(S.statuses); s.has(id) ? s.delete(id) : s.add(id); A.set({ statuses: s }); },
   tgl: (k) => A.set({ [k]: !S[k] }),
   "open-task": (id) => A.select("task", +id),

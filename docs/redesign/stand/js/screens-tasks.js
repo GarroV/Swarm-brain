@@ -5,16 +5,26 @@ const STATUSES = [["open", "Открыто"], ["in_progress", "В работе"]
 
 function tasksToolbar() {
   const admin = me().role === "admin";
+  const stDefault = S.statuses.size === 2 && S.statuses.has("open") && S.statuses.has("in_progress");
+  const n = (stDefault ? 0 : 1) + (S.mk ? 1 : 0) + (S.byMarket ? 1 : 0) + (S.staff ? 1 : 0) + (S.assignee ? 1 : 0);
+  const groups = [
+    ["Статус", STATUSES.map(([id, nm]) => [`${dot(id)}${nm}`, "status", id, undefined, S.statuses.has(id)])],
+    ["Рынок", [["все рынки", "mk-filter", undefined, "", !S.mk],
+      ...COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "mk-filter", undefined, c.c, S.mk === c.c])]],
+    ["Показ", [["группировать по рынкам", "tgl", "byMarket", undefined, S.byMarket],
+      ...(admin ? [["все сотрудники", "tgl", "staff", undefined, S.staff]] : [])]],
+  ];
+  const active = [
+    ...(stDefault ? [] : [[`статус: ${STATUSES.filter(([id]) => S.statuses.has(id)).map(([, nm]) => nm).join(", ") || "ни одного"}`, "reset-statuses"]]),
+    ...(S.mk ? [[`рынок: ${S.mk}`, "mk-filter", undefined, ""]] : []),
+    ...(S.byMarket ? [["по рынкам", "tgl", "byMarket"]] : []),
+    ...(S.staff ? [["все сотрудники", "tgl", "staff"]] : []),
+  ];
   return `<div class="bar">
-    ${LENSES.map(([id, n]) => chip(n, S.lens === id, "lens", id)).join("")}
+    ${LENSES.map(([id, nm]) => chip(nm, S.lens === id, "lens", id)).join("")}
     <span class="sep-v"></span>
-    ${STATUSES.map(([id, n]) => `<button class="chip${S.statuses.has(id) ? " on" : ""}" ${act("status", id)}>${dot(id)}${n}</button>`).join("")}
-    <span class="sep-v"></span>
-    <span class="drop">${btn(`Рынок: ${S.mk ? S.mk : "все"}`, "noop", undefined, undefined, "sm")}
-      <div class="dmenu"><button class="mi" ${act("mk-filter", undefined, "")}>все</button>
-      ${COUNTRIES.map((c) => `<button class="mi${S.mk === c.c ? " on" : ""}" ${act("mk-filter", undefined, c.c)}>${c.c} · ${c.n}</button>`).join("")}</div></span>
-    ${chip("По рынкам", S.byMarket, "tgl", "byMarket")}
-    ${admin ? chip("Все сотрудники", S.staff, "tgl", "staff") : ""}
+    ${fdrop(n, groups)}
+    ${fchips(active)}
     ${S.assignee ? `<button class="chip on" ${act("drop-assignee")}>${av(S.assignee)}<span class="x">×</span></button>` : ""}
     <div class="right">
       <input class="qin" placeholder="Фильтр по названию" value="${esc(S.q)}" data-qin="tasks">

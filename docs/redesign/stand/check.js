@@ -50,7 +50,8 @@ function tokenCheck() {
     .list td.ck{width:10px!important;overflow:hidden!important;text-overflow:ellipsis!important}
     .chip{white-space:normal!important;width:60px!important}
     .dtab .c{margin-left:0!important}
-    .detail .dmenu{display:block!important}` });
+    .detail .dmenu{display:block!important}
+    .bar .drop:hover .dmenu{display:none!important}` });
 
   const sel = (a, id) => `[data-act="${a}"]` + (id !== undefined ? `[data-id="${id}"]` : '');
   const click = async (s) => {
@@ -363,6 +364,15 @@ function tokenCheck() {
 
   /* ── задачи ─────────────────────────────────────────────── */
   await shot('01-tasks-today');
+  /* свёрнутые фильтры обязаны РАСКРЫВАТЬСЯ мышью: щелчок по скрытому пункту из кода
+     проходит всегда, поэтому зелёный замер без этой проверки ничего не доказывает */
+  await p.hover('.bar .drop .btn');
+  await new Promise((r) => setTimeout(r, 120));
+  const menuOpen = await p.evaluate(() => {
+    const m = document.querySelector('.bar .drop .dmenu');
+    return m && m.offsetParent !== null && [...m.querySelectorAll('.mi')].some((e) => e.textContent.includes('Готово'));
+  });
+  want(menuOpen, 'наведение на «Фильтры» раскрывает меню со статусами');
   const mine = await count('tbody tr[data-act="open-task"]');
   await go('lens', 'all');
   const all = await count('tbody tr[data-act="open-task"]');

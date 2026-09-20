@@ -43,6 +43,16 @@ const nTasks = (n) => plural(n, "задача", "задачи", "задач");
 const nFrag = (n) => plural(n, "фрагмент", "фрагмента", "фрагментов");
 const nPeople = (n) => plural(n, "человек", "человека", "человек");
 const nMeet = (n) => plural(n, "встреча", "встречи", "встреч");
+/* «Фильтры» одной кнопкой. Разложенный подряд ряд переключателей — тот же дефект,
+   что и варианты в панели детали: место занимают все, включены один-два. Число на
+   кнопке и снимаемые чипы рядом говорят, почему список короткий. */
+const fgroups = (groups) => `<div class="dmenu wide">${groups.map(([title, items]) =>
+  `<div class="mgrp">${esc(title)}</div>` + items.map(([t, a, id, v, on]) =>
+    `<button class="mi${on ? " on" : ""}" ${act(a, id, v)}>${t}</button>`).join("")).join("")}</div>`;
+const fdrop = (n, groups) => `<span class="drop">${btn(n ? `Фильтры · ${n}` : "Фильтры", "noop", undefined, undefined, "sm" + (n ? " on" : ""))}${fgroups(groups)}</span>`;
+const fchips = (list) => list.map(([t, a, id, v]) =>
+  `<button class="chip on" ${act(a, id, v)}>${esc(t)}<span class="x">×</span></button>`).join("");
+
 /* Поле панели: на виду ЗНАЧЕНИЕ, варианты приходят по клику.
    Разложить все варианты рядом — значит показать орган управления вместо данных:
    у задачи так выходило 26 кнопок на 9 полей, и выбранное терялось среди невыбранного. */
