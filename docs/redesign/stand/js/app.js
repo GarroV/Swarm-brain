@@ -351,6 +351,9 @@ document.addEventListener("input", (e) => {
 document.addEventListener("change", (e) => {
   const t = e.target.closest("[data-act]");
   if (t && t.dataset.act === "set-assignee") A.patchTask(+t.dataset.id, { who: e.target.value ? [+e.target.value] : [] }, "сменил исполнителя");
+  /* срок сохраняется по выбору даты, а не по нажатию Enter: про Enter никто не догадается,
+     и правка молча пропадала при закрытии панели */
+  if (t && t.dataset.act === "set-due") A.patchTask(+t.dataset.id, { due: e.target.value || null }, ["Срок", e.target.value ? fmtDate(e.target.value) : "снят"]);
 });
 document.addEventListener("keydown", (e) => {
   /* быстрый ввод задачи в колонке доски */
@@ -382,10 +385,7 @@ document.addEventListener("keydown", (e) => {
   }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPal(); }
   if (e.key === "Escape") { closePal(); closeModal(); if (S.sel) A.close(); }
-  if (e.key === "Enter") {
-    const t = e.target.closest("[data-act='set-due']");
-    if (t) A.patchTask(+t.dataset.id, { due: e.target.value || null }, "сменил срок");
-  }
+
 });
 
 /* ── палитра ⌘K ──────────────────────────────────────────────── */

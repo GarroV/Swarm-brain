@@ -22,7 +22,9 @@ function detailTask(t) {
       <dt>Статус</dt><dd>${pickf(`${dot(t.st)}${ST_LABEL[t.st]}`, STATUSES.map(([id, n]) => [`${dot(id)}${n}`, "move", t.id, id, t.st === id]))}</dd>
       <dt>Исполнитель</dt><dd>${select("assignee", [["", "— не назначен"], ...S.users.map((u) => [String(u.id), u.n])], String(t.who[0] || ""))
         .replace("<select", `<select ${act("set-assignee", t.id)}`)}</dd>
-      <dt>Срок</dt><dd><input class="inl" value="${t.due || ""}" placeholder="—" ${act("set-due", t.id)}>${t.due && dueKind(t.due) === "now" ? ' <span class="over">просрочено</span>' : ""}</dd>
+      <!-- поле даты, а не строка: раньше здесь стояла ISO-строка «2026-09-17», которую
+           человек и читать не должен, и править мог во что угодно, нажав Enter -->
+      <dt>Срок</dt><dd><input type="date" class="inl" value="${t.due || ""}" ${act("set-due", t.id)}>${t.due && dueKind(t.due) === "now" ? ' <span class="over">просрочено</span>' : ""}</dd>
       <dt>Приоритет</dt><dd>${pickf(`${pri(t.prio)}${PRIO_LABEL[t.prio]}`, ["high", "med", "low"].map((p) => [`${pri(p)}${PRIO_LABEL[p]}`, "set-prio", t.id, p, t.prio === p]))}</dd>
       <dt>Метки</dt><dd>${pickm(lbls(t.labels), S.labels.map((l) => [esc(l.n), "tgl-label", t.id, l.id, t.labels.includes(l.id)]))}</dd>
       <dt>Рынок</dt><dd>${pickf(t.mk ? `<span class="cc">${t.mk}</span>${esc(cname(t.mk))}` : `<span class="muted">—</span>`, COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "set-mk", t.id, c.c, t.mk === c.c]))}</dd>

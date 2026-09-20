@@ -465,6 +465,16 @@ function tokenCheck() {
         if (m) { out.push(`дробное число через точку: «${m[0]}» в «${n.textContent.trim().slice(0, 32)}»`); break; }
       }
     }
+    /* ISO-дата на экране: «2026-09-17» — формат базы, а не человека; везде в стенде
+       даты выглядят как «17 сен», и одно такое поле ломает чтение */
+    {
+      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        if (n.parentElement && n.parentElement.closest('pre, code, script, style, input, textarea')) continue;
+        const m = n.textContent.match(/\b\d{4}-\d{2}-\d{2}\b/);
+        if (m) { out.push(`дата в машинном виде: «${m[0]}» в «${n.textContent.trim().slice(0, 40)}»`); break; }
+      }
+    }
     /* заголовок карточки, дословно повторяющий заголовок экрана: строка занята, а
        сказано ничего — «Карта системы» стояла дважды подряд */
     {
@@ -598,6 +608,14 @@ function tokenCheck() {
   await go('create-task');
   await new Promise((r) => setTimeout(r, 120));
   want((await text('.d-title')).includes('Проверить приёмку'), 'созданная задача открылась в детали');
+  /* срок правится выбором даты и сохраняется сразу: раньше это был текстовый ввод с
+     ISO-строкой, сохранявшийся только по Enter — о нём никто не догадывался */
+  const dueField = await p.$eval('[data-act="set-due"]', (e) => e.type);
+  want(dueField === 'date', `срок правится полем даты, а не строкой (сейчас «${dueField}»)`);
+  await p.$eval('[data-act="set-due"]', (e) => { e.value = '2026-10-15'; e.dispatchEvent(new Event('change', { bubbles: true })); });
+  await new Promise((r) => setTimeout(r, 120));
+  want((await p.evaluate(() => (S.tasks.find((t) => t.id === S.sel) || {}).due)) === '2026-10-15',
+    'выбранная дата сохраняется сразу, без нажатия Enter');
   want((await text('.toast')).includes('создана'), 'после создания показан тост');
   await shot('04-task-created');
 
