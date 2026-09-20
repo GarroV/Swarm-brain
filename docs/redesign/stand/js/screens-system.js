@@ -129,7 +129,9 @@ function screenMap() {
   /* колено: линия обязана дойти до узла, а не оборваться в воздухе */
   const wire = (x1, y1, x2, y2) => { const mx = Math.round((x1 + x2) / 2);
     return `<path d="M${x1} ${y1} H${mx} V${y2} H${x2}" stroke="var(--accent-line)" stroke-width="1.5" fill="none"/>`; };
-  return `<div class="panes wide"><div class="pane"><h3>Карта системы</h3>
+  /* заголовок карточки не повторяет заголовок экрана: «Карта системы» стояла дважды
+     подряд и съедала строку, ничего не сообщая */
+  return `<div class="panes wide"><div class="pane"><h3>Источники, база и поверхности</h3>
     <div class="sub">Как связаны источники, база и поверхности</div>
     <svg viewBox="0 0 760 270" style="width:100%;height:auto;font:500 11px var(--font-ui)">
       ${[["bumblebee", 30], ["Granola", 95], ["Read.ai", 160], ["Telegram-бот", 225]].map(([t, y]) =>

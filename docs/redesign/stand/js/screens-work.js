@@ -30,6 +30,11 @@ function projectsMap() {
   /* у узла с детьми число — ВСЯ ветка: иначе корень «41» не сходится с суммой узлов,
      и человек считает, что часть задач потерялась. Своё число — в подсказке. */
   const branch = (id) => cnt(id) + S.projects.filter((x) => x.parent === id).reduce((n, x) => n + cnt(x.id), 0);
+  /* задача без проекта существует — значит и на карте видна: иначе корень считает её,
+     а под ним её нет, и число корня перестаёт сходиться с суммой ветвей */
+  const admin = me().role === "admin";
+  const known = new Set(S.projects.map((x) => x.id));
+  const loose = S.tasks.filter((t) => !t.arch && !known.has(t.pr)).length;
   const ws = S.workspaces.find((w) => w.active) || S.workspaces[0];
   return `<div class="bar">${wsChip()}
     <div class="right"><span>Щёлкните узел — откроется карточка проекта</span></div></div>
@@ -44,7 +49,11 @@ function projectsMap() {
         ${subs.length ? `<div class="tsub">${subs.map((s) =>
           `<div class="tnode sub" ${act("open-proj", s.id)} tabindex="0">${esc(s.n)}<span class="n">${cnt(s.id)}</span></div>`).join("")}</div>` : ""}
       </div>`;
-    }).join("")}</div></div>`;
+    }).join("")}${loose ? `<div class="tbr"><div class="tnode${admin ? "" : " flat"}"${
+      admin ? ` ${act("tasks-no-project")} tabindex="0"` : ""} title="${
+      admin ? "задачи без проекта — например, созданные из встречи; щёлкните, чтобы открыть их списком"
+            : "задачи без проекта; часть из них — задачи коллег, их список виден админу"}">${
+      dot("open")}Без проекта<span class="n">${loose}</span></div></div>` : ""}</div></div>`;
 }
 
 /* ── спринты ─────────────────────────────────────────────────── */

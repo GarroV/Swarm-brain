@@ -116,7 +116,8 @@ const ACTS = {
       labels: f.labels, mk: (f.mk || [])[0] || null, recur: f.recur || null, priv: f.priv, note: f.note }); },
   check: (id, v, e) => { const s = new Set(S.bulk); const n = +id; s.has(n) ? s.delete(n) : s.add(n); A.set({ bulk: s }); },
   "reset-filters": () => A.set({ lens: "all", statuses: new Set(Object.keys(ST_LABEL)),
-    mk: null, assignee: null, q: "" }),
+    mk: null, assignee: null, q: "", noProject: false }),
+  "drop-no-project": () => A.set({ noProject: false }),
   "bulk-clear": () => A.set({ bulk: new Set() }),
   "bulk-assign": (id) => A.bulk("assign", +id),
   "bulk-due": (_, v) => A.bulk("due", v),
@@ -178,6 +179,16 @@ const ACTS = {
     <div class="hint">Ссылка на файл не изменится, индекс пересоберётся.</div>`,
     `${btn("Отмена", "mclose")}${btn("Заменить", "do-replace-file", id, undefined, "pri")}`),
   "do-replace-file": (id) => { const f = formData(); closeModal(); A.replaceFile(id, f.n); },
+  /* с карты — в список задач без проекта: узел обязан куда-то вести, иначе он декорация */
+  /* с карты — в список задач без проекта. Статусы тоже раскрываем: узел на карте считает
+     ВСЕ живые задачи ветки, и приход по нему обязан показать столько же, а не «ноль»
+     из-за того, что список по умолчанию прячет закрытые. */
+  "tasks-no-project": () => { A.go("tasks");
+    /* карта считает ВСЮ работу воркспейса, а список по умолчанию показывает только мою и
+       общую (канон линз). Чтобы узел не обещал больше, чем покажет, приход по нему
+       включает админский оверсайт и раскрывает статусы — тогда число сходится. */
+    A.set({ tab: "all", lens: "all", mk: null, q: "", assignee: null, noProject: true,
+      staff: me().role === "admin", statuses: new Set(Object.keys(ST_LABEL)) }); },
   "new-project": () => modal("Новый проект", fld("Название", input("n", "", "Например: Открытие BA")),
     `${btn("Отмена", "mclose")}${btn("Создать", "do-project", undefined, undefined, "pri")}`),
   "do-project": () => { const f = formData(); closeModal(); A.addProject(f.n); },
@@ -238,10 +249,11 @@ const ACTS = {
   remind: (id) => A.toast(`Напоминание отправлено: ${user(+id).n}`),
   "show-all": (_, v) => { closePal(); S.aq = v; S.sec = "search"; A.set({}); },
   harvest: (id) => harvestModal(id),
-  "do-harvest": (id, n) => { const f = formData(); closeModal();
+  "do-harvest": (id, n) => { const f = formData();
     const items = []; for (let i = 0; i < +n; i++) if (f["on" + i]) items.push({ t: f["t" + i], who: +f["w" + i], due: f["d" + i] });
-    if (!items.length) return A.toast("Ничего не выбрано");
-    A.harvest(id, items); },
+    /* окно закрываем ПОСЛЕ проверки: иначе снятые галочки и правки исчезали вместе с ним */
+    if (!items.length) return A.toast("Ничего не выбрано — отметьте хотя бы одну задачу");
+    closeModal(); A.harvest(id, items); },
   "review-next": (id) => reviewNext(id),
   reader: (id) => readerModal(id),
   "add-label": () => labelModal(null),
@@ -341,7 +353,7 @@ document.addEventListener("keydown", (e) => {
   const qa = e.target.dataset && e.target.dataset.qadd;
   if (qa && e.key === "Enter" && e.target.value.trim()) {
     const title = e.target.value.trim();
-    A.createTask({ title, pr: "p1", who: ME, due: null, prio: "med", labels: [], mk: null, recur: null, priv: false, note: "" });
+    A.createTask({ title, pr: null, who: ME, due: null, prio: "med", labels: [], mk: null, recur: null, priv: false, note: "" });
     A.patchTask(S.sel, { st: qa, sprint: S.cycle });
     A.close();
     return;

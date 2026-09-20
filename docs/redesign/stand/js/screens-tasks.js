@@ -9,7 +9,7 @@ const SHOW_TGL = { byMarket: "группировать по рынкам", staff
 function tasksToolbar() {
   const admin = me().role === "admin";
   const stDefault = S.statuses.size === 2 && S.statuses.has("open") && S.statuses.has("in_progress");
-  const n = (stDefault ? 0 : 1) + (S.mk ? 1 : 0) + (S.byMarket ? 1 : 0) + (S.staff ? 1 : 0) + (S.assignee ? 1 : 0);
+  const n = (stDefault ? 0 : 1) + (S.mk ? 1 : 0) + (S.byMarket ? 1 : 0) + (S.staff ? 1 : 0) + (S.assignee ? 1 : 0) + (S.noProject ? 1 : 0);
   const groups = [
     ["Статус", STATUSES.map(([id, nm]) => [`${dot(id)}${nm}`, "status", id, undefined, S.statuses.has(id)])],
     ["Рынок", [["все рынки", "mk-filter", undefined, "", !S.mk],
@@ -22,6 +22,8 @@ function tasksToolbar() {
     ...(S.mk ? [[`рынок: ${S.mk}`, "mk-filter", undefined, ""]] : []),
     ...(S.byMarket ? [[SHOW_TGL.byMarket, "tgl", "byMarket"]] : []),
     ...(S.staff ? [[SHOW_TGL.staff, "tgl", "staff"]] : []),
+    /* приход с карты сужает список — значит это видно и снимается, а не действует втихую */
+    ...(S.noProject ? [["без проекта", "drop-no-project"]] : []),
   ];
   return `<div class="bar">
     ${LENSES.map(([id, nm]) => chip(nm, S.lens === id, "lens", id)).join("")}

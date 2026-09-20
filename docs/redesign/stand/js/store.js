@@ -5,7 +5,7 @@ const S = {
   sec: "tasks", tab: "today", sel: null, selKind: null,
   /* задачи */
   lens: "mine", statuses: new Set(["open", "in_progress"]), byMarket: false, staff: false, noMailOnly: false,
-  q: "", bulk: new Set(), dtab: "overview", mk: "",
+  q: "", bulk: new Set(), dtab: "overview", mk: "", noProject: false,
   /* встречи */
   mf: { q: "", period: "all", cc: [], src: [], people: [], store: "any", st: "any" },
   /* база */
@@ -32,6 +32,9 @@ const S = {
 const user = (id) => S.users.find((u) => u.id === id);
 const me = () => user(ME);
 const proj = (id) => S.projects.find((p) => p.id === id);
+/* Проект у задачи, рождённой из встречи, НЕИЗВЕСТЕН: встреча не знает проекта. Раньше
+   всюду стоял зашитый проект p1 — и всё созданное молча приписывалось «Открытию CEE». Тот же
+   урок, что в продукте с зашитым group_id: зашитый идентификатор врёт тихо. */
 const projPath = (id) => { const p = proj(id); if (!p) return "—"; return p.parent ? `${proj(p.parent).n} · ${p.n}` : p.n; };
 const label = (id) => S.labels.find((l) => l.id === id);
 const cname = (c) => (COUNTRIES.find((x) => x.c === c) || {}).n || c;
@@ -82,6 +85,7 @@ function visibleTasks(list = S.tab) {
     inList(t, list) && inLens(t, S.lens) &&
     (list === "archive" || S.statuses.has(t.st)) &&
     (!S.mk || t.mk === S.mk) &&
+    (!S.noProject || !proj(t.pr)) &&
     (!S.assignee || t.who.includes(S.assignee)) &&
     (!q || t.t.toLowerCase().includes(q) || projPath(t.pr).toLowerCase().includes(q)));
 }
@@ -221,7 +225,7 @@ const A = {
   extractTasks(id) {
     const m = S.meetings.find((x) => x.id === id);
     const made = ["Уточнить сроки по итогам встречи", "Свести договорённости в документ"].map((t, k) => mkTask({
-      id: nextTaskId++, t, pr: "p1", who: [m.who[0]], due: null, prio: "med", src: m.id }));
+      id: nextTaskId++, t, pr: null, who: [m.who[0]], due: null, prio: "med", src: m.id }));
     S.tasks = [...made, ...S.tasks];
     S.meetings = S.meetings.map((x) => x.id === id ? { ...x, tasks: [...x.tasks, ...made.map((t) => t.id)] } : x);
     A.toast(`Создано задач: ${made.length}`);
@@ -234,7 +238,7 @@ const A = {
   queueAccept(id, store) {
     const q = S.queue.find((x) => x.id === id);
     const m = mkMeet({ id: uid("m"), t: q.t, dt: q.dt, dur: 30, who: q.who, src: "agent", st: "confirmed", store, cc: q.cc, tez: q.tez, tasks: [] });
-    const made = q.tasks.filter((x) => !x.off).map((x) => mkTask({ id: nextTaskId++, t: x.t, pr: "p1", who: [x.who], due: x.due, src: m.id }));
+    const made = q.tasks.filter((x) => !x.off).map((x) => mkTask({ id: nextTaskId++, t: x.t, pr: null, who: [x.who], due: x.due, src: m.id }));
     S.meetings = [m, ...S.meetings];
     S.tasks = [...made, ...S.tasks];
     S.queue = S.queue.filter((x) => x.id !== id);
@@ -352,7 +356,7 @@ const A = {
     render();
   },
   harvest(id, items) {
-    const made = items.map((x) => mkTask({ id: nextTaskId++, t: x.t, pr: "p1", who: [x.who], due: x.due, prio: "med", src: id }));
+    const made = items.map((x) => mkTask({ id: nextTaskId++, t: x.t, pr: null, who: [x.who], due: x.due, prio: "med", src: id }));
     S.tasks = [...made, ...S.tasks];
     S.meetings = S.meetings.map((m) => m.id === id ? { ...m, tasks: [...m.tasks, ...made.map((t) => t.id)] } : m);
     A.toast(`Создано задач: ${made.length}`);

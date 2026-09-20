@@ -116,6 +116,22 @@ function dupKeyCheck() {
   return bad;
 }
 
+/* статическая проверка: зашитый идентификатор сущности в создании. Урок продукта —
+   `group_id: "cee"` в read-ai-webhook: ренейм слага молча ломал логику. В стенде так же
+   молча всё созданное из встречи приписывалось проекту «p1». */
+function hardIdCheck() {
+  const bad = [];
+  for (const f of fs.readdirSync(path.join(__dirname, 'js'))) {
+    if (f === 'data.js') continue;   /* данные стенда — это и есть литералы */
+    fs.readFileSync(path.join(__dirname, 'js', f), 'utf8').split('\n').forEach((line, i) => {
+      if (/^\s*(\/\/|\/?\*)/.test(line)) return;   /* в комментарии литерал — это объяснение, а не привязка */
+      const m = line.match(/\b(pr|group_id|parent|sprint|ws)\s*:\s*"([a-z]+\d+[a-z]?)"/);
+      if (m) bad.push(`${f}:${i + 1} зашитый идентификатор ${m[1]}: "${m[2]}" — привяжется молча и не к тому`);
+    });
+  }
+  return bad;
+}
+
 function tokenCheck() {
   const css = fs.readFileSync(path.join(__dirname, 'app.css'), 'utf8');
   const defined = new Set();
@@ -126,7 +142,7 @@ function tokenCheck() {
 }
 
 (async () => {
-  const bad = [...tokenCheck(), ...clipCheck(), ...confirmCheck(), ...dupKeyCheck()], errs = [];
+  const bad = [...tokenCheck(), ...clipCheck(), ...confirmCheck(), ...dupKeyCheck(), ...hardIdCheck()], errs = [];
   const b = await puppeteer.launch({ executablePath: CHROME, headless: 'new' });
   const p = await b.newPage();
   await p.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
@@ -433,6 +449,14 @@ function tokenCheck() {
         const m = n.textContent.match(/(?<![\w.])\d+\.\d+(?![\w.])/);
         if (m) { out.push(`дробное число через точку: «${m[0]}» в «${n.textContent.trim().slice(0, 32)}»`); break; }
       }
+    }
+    /* заголовок карточки, дословно повторяющий заголовок экрана: строка занята, а
+       сказано ничего — «Карта системы» стояла дважды подряд */
+    {
+      const h1 = (document.querySelector('h1') || {}).textContent;
+      document.querySelectorAll('.body h3').forEach((h) => {
+        if (h1 && h.textContent.trim() === h1.trim()) out.push(`заголовок «${h1.trim()}» повторён дважды подряд`);
+      });
     }
     /* главное действие экрана живёт в одном месте: раньше «+ Задача» и «+ Проект» стояли
        справа, а «+ Запись», «+ Пользователь», «+ Воркспейс» — слева, и глаз искал заново */
@@ -786,6 +810,20 @@ function tokenCheck() {
   want(tree.root === tree.tops.reduce((a, b) => a + b, 0),
     `корень карты равен сумме веток (${tree.root} против ${tree.tops.join('+')})`);
   want(tree.label === tree.ws, `корень карты назван текущим воркспейсом (${tree.label} против ${tree.ws})`);
+  /* задача без проекта видна на карте и узел ведёт к ней: иначе корень считает задачи,
+     которых под ним нет, и найти их нечем */
+  const loose = await p.evaluate(() => S.tasks.filter((t) => !t.arch && !S.projects.some((x) => x.id === t.pr)).length);
+  if (loose > 0) {
+    want((await text('.tkids')).includes('Без проекта'), `задачи без проекта показаны на карте отдельной ветвью (их ${loose})`);
+    await go('tasks-no-project');
+    await new Promise((r) => setTimeout(r, 120));
+    const n = await count('tbody tr[data-act="open-task"]');
+    want(n === loose, `узел «Без проекта» открыл ровно эти задачи (${n} против ${loose})`);
+    want((await text('.bar')).includes('без проекта'), 'сужение списка видно снимаемым чипом, а не действует втихую');
+    await go('drop-no-project');
+    await go('sec', 'projects'); await go('tab', 'map');
+    await new Promise((r) => setTimeout(r, 90));
+  }
   /* имя воркспейса меняется — карта обязана поехать за ним; совпадение с зашитой строкой ничего не доказывает */
   await p.evaluate(() => { S.workspaces = S.workspaces.map((w) => w.active ? { ...w, name: 'Проверка имени' } : w); render(); });
   await new Promise((r) => setTimeout(r, 90));
