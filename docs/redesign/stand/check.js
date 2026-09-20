@@ -288,6 +288,16 @@ function tokenCheck() {
         if (btns && states) out.push(`колонка «${h}»: то кнопка, то состояние (${btns}/${states})`);
       });
     });
+
+    /* «Просрочено» и «Сегодня» — это требование к действию: завершённой задаче там не место */
+    {
+      let head = '';
+      document.querySelectorAll('tbody tr').forEach((r) => {
+        if (r.classList.contains('sect')) { head = r.textContent.trim(); return; }
+        if (/просрочено|сегодня/i.test(head) && r.querySelector('.d-done'))
+          out.push(`в разделе «${head.split('·')[0].trim()}» лежит завершённая задача: ${r.textContent.trim().slice(0, 28)}`);
+      });
+    }
     return out;
   });
   const shot = async (name) => { await p.screenshot({ path: `${OUT}/${name}.png` });

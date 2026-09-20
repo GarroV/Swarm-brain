@@ -43,7 +43,7 @@ function taskRow(t) {
     ${cell(`<input type="checkbox"${checked} ${act("check", t.id)}>`, "ck")}
     ${cell(`${dot(t.st)}${priMark(t.prio)}${esc(t.t)}${t.priv ? ' <span class="lock" title="личная">🔒</span>' : ""}`, "t")}
     ${cell(esc(projPath(t.pr)))}
-    ${cell(t.who.length ? avShort(t.who[0]) : `<span class="muted">— не назначен</span>`)}
+    ${cell(t.who.length ? avShort(t.who[0]) : `<span class="muted" title="исполнитель не назначен">—</span>`)}
     ${cell(lbls(t.labels) + (t.recur ? tag(RECUR_LABEL[t.recur], "p") : ""), "opt")}
     ${cell(t.mk ? `<span class="cc">${t.mk}</span>` : `<span class="muted">—</span>`, "r opt")}
     ${cell(due(t.due, t.st === "done"), "r")}</tr>`;
@@ -58,12 +58,16 @@ function groupRows(list) {
     return Object.keys(by).sort().map((k) => sect(k === "Без рынка" ? k : cname(k), by[k].length) + by[k].map(taskRow).join("")).join("");
   }
   if (S.tab === "today" || S.tab === "upcoming") {
-    const over = list.filter((t) => dueKind(t.due) === "now");
-    const today = list.filter((t) => dueKind(t.due) === "today");
-    const rest = list.filter((t) => !over.includes(t) && !today.includes(t));
+    /* завершённая задача не «просрочена» и не «на сегодня»: срок у неё уже ничего не требует */
+    const done = list.filter((t) => t.st === "done");
+    const live = list.filter((t) => t.st !== "done");
+    const over = live.filter((t) => dueKind(t.due) === "now");
+    const today = live.filter((t) => dueKind(t.due) === "today");
+    const rest = live.filter((t) => !over.includes(t) && !today.includes(t));
     return (over.length ? sect("Просрочено", over.length) + over.map(taskRow).join("") : "")
       + (today.length ? sect("Сегодня", today.length) + today.map(taskRow).join("") : "")
-      + (rest.length ? sect("Дальше", rest.length) + rest.map(taskRow).join("") : "");
+      + (rest.length ? sect("Дальше", rest.length) + rest.map(taskRow).join("") : "")
+      + (done.length ? sect("Сделано", done.length) + done.map(taskRow).join("") : "");
   }
   return list.map(taskRow).join("");
 }
