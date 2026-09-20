@@ -6,6 +6,16 @@ const puppeteer = require('/Users/garva/sb-smoke/node_modules/puppeteer-core');
 const OUT = process.argv[3] || '/tmp/swarm-stand-shots';
 require('fs').mkdirSync(OUT, { recursive: true });
 const URL = 'file://' + require('path').join(__dirname, 'index.html');
+/* статическая проверка: переменная, которой нет в :root, молча убивает всё объявление */
+{
+  const css = require('fs').readFileSync(require('path').join(__dirname, 'app.css'), 'utf8');
+  const defined = new Set();
+  for (const block of css.match(/:root[^{]*\{[^}]*\}/g) || []) for (const m of block.matchAll(/(--[a-z0-9-]+)\s*:/g)) defined.add(m[1]);
+  const missing = new Set();
+  for (const m of css.matchAll(/var\((--[a-z0-9-]+)\s*(,?)/g)) if (!defined.has(m[1]) && !m[2]) missing.add(m[1]);
+  if (missing.size) console.log('токены без объявления (браузер отбросит правило целиком): ' + [...missing].join(', '));
+}
+
 (async () => {
   const b = await puppeteer.launch({ executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless:'new', args:['--allow-file-access-from-files'] });
   const p = await b.newPage();
@@ -36,6 +46,10 @@ const URL = 'file://' + require('path').join(__dirname, 'index.html');
       const c = td.lastElementChild;
       if (c && c.offsetHeight > 0 && c.getBoundingClientRect().bottom > r.getBoundingClientRect().bottom + 2) bad.push('содержимое вылезло из строки: ' + td.textContent.trim().slice(0,22));
     }));
+    document.querySelectorAll('tr.sect td').forEach(td => {
+      const tbl = td.closest('table');
+      if (Math.abs(td.offsetWidth - tbl.offsetWidth) > 2) bad.push('строка-разделитель не на всю ширину: ' + td.textContent.trim().slice(0,18) + ' ' + td.offsetWidth + ' из ' + tbl.offsetWidth);
+    });
     document.querySelectorAll('table').forEach(t => { if (t.scrollWidth > t.parentElement.clientWidth + 1) bad.push('таблица шире контейнера'); });
     document.querySelectorAll('.tr .ln, .rowset > div, .rowset .v, .rowset .k, .d-title').forEach(el => { if (el.scrollWidth > el.clientWidth + 1) bad.push('строка обрезана: ' + el.textContent.trim().slice(0,24)); });
     return bad;
@@ -60,6 +74,37 @@ const URL = 'file://' + require('path').join(__dirname, 'index.html');
   await click('[data-meet="m1"]');             await shot('08-meet-detail');
   await click('[data-cmp]');                   await shot('09-compare');
   await click('[data-mclose]');
+  await click('[data-sec="projects"]');
+  await click('[data-tab="map"]');             await shot('10-projects-map');
+  await click('[data-proj="p1"]');             await shot('11-project-detail');
+  await click('[data-close]');
+  await click('[data-sec="sprints"]');         await shot('12-board');
+  const doneBefore = await p.$$eval('[data-drop="done"] .card', els => els.length);
+  await p.evaluate(() => {                     /* перетаскивание: dragstart и drop в разных тиках */
+    const card = document.querySelector('.card[data-card]');
+    const dt = new DataTransfer();
+    card.dispatchEvent(new DragEvent('dragstart', { bubbles:true, dataTransfer:dt }));
+    return new Promise(r => setTimeout(r, 30));
+  });
+  await p.evaluate(() => {
+    const zone = document.querySelector('[data-drop="done"]');
+    const dt = new DataTransfer();
+    zone.dispatchEvent(new DragEvent('dragover', { bubbles:true, dataTransfer:dt }));
+    zone.dispatchEvent(new DragEvent('drop', { bubbles:true, dataTransfer:dt }));
+  });
+  await new Promise(r => setTimeout(r, 150));
+  const doneAfter = await p.$$eval('[data-drop="done"] .card', els => els.length);
+  console.log(doneAfter === doneBefore + 1
+    ? 'перетаскивание: карточка переехала (' + doneBefore + ' → ' + doneAfter + ')'
+    : 'ПЕРЕТАСКИВАНИЕ НЕ СРАБОТАЛО: было ' + doneBefore + ', стало ' + doneAfter);
+  await shot('13-board-after-drop');
+  await click('[data-sec="settings"]');
+  await click('[data-tab="columns"]');         await shot('14-columns');
+  await click('[data-colmv="0:1"]');           await shot('15-columns-moved');
+  await p.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
+  await click('[data-sec="tasks"]');           await shot('16-dark-tasks');
+  await click('[data-task="128"]');            await shot('17-dark-detail');
+  await p.evaluate(() => { document.documentElement.dataset.theme = 'light'; });
   console.log('ошибки JS: ' + (errs.length ? '\n' + errs.join('\n') : 'нет'));
   await b.close();
 })();

@@ -117,7 +117,7 @@ function screenTasks() {
   const groups = S.tab === "archive" ? [["Закрытые", rows]]
     : [["Просрочено", rows.filter((x) => x.dueK === "now")], ["На этой неделе", rows.filter((x) => x.dueK === "soon")], ["Позже", rows.filter((x) => !x.dueK)]];
   const body = groups.filter(([, r]) => r.length).map(([n, r]) =>
-    `<tr class="sect"><td colspan="6">${n} · ${r.length}</td></tr>` + r.map((x) => `
+    `<tr class="sect"><td colspan="7">${n} · ${r.length}</td></tr>` + r.map((x) => `
     <tr class="row${S.sel === x.id ? " sel" : ""}" data-task="${x.id}" tabindex="0">
       <td class="t">${dot(x.st)}${esc(x.t)}</td><td>${esc(x.pr)}</td><td>${av(U[x.who])}</td>
       <td><span class="tag tag-${x.mk === "встреча" ? "m" : x.mk === "процесс" ? "p" : "o"}">${x.mk}</span></td>
@@ -652,3 +652,146 @@ document.addEventListener("click", (e) => {
   const t = e.target.closest("[data-close],[data-tab],[data-sec]");
   if (t) S.selFile = null;
 }, true);
+
+/* ══ расширение 3: проекты, доска, колонки, тёмная тема ══════ */
+
+S.moved = {};                       /* доска: куда перетащили карточку */
+S.selProj = null;
+S.theme = "light";
+S.cols = [
+  { id:"todo", n:"Бэклог", on:true }, { id:"doing", n:"В работе", on:true },
+  { id:"wait", n:"Ждёт", on:true }, { id:"done", n:"Готово", on:true },
+];
+const PMETA = {
+  p1:{ own:0, st:"идёт", due:"30 ноя", spr:"Сентябрь, цикл 2", d:"Открытие точки в CEE: площадка, оборудование, персонал, запуск." },
+  p2:{ own:2, st:"идёт", due:"— бессрочно", spr:"Сентябрь, цикл 2", d:"Текущие операции: смены, стандарты, контроль качества." },
+  p3:{ own:3, st:"идёт", due:"15 окт", spr:"—", d:"Бюджет, сверки, расчёты с поставщиками." },
+  p4:{ own:1, st:"пауза", due:"—", spr:"—", d:"Найм и обучение смен." },
+};
+const est = (x) => S.moved[x.id] || x.st;
+
+/* доска: колонки из настройки + перетаскивание */
+SCREENS.sprints = ((base) => function () {
+  if (S.tab !== "board") return base();
+  const cols = S.cols.filter((c) => c.on);
+  return `<div class="bar"><div class="chip on">Цикл: Сентябрь, 2</div><div class="chip">Проект: все</div><div class="chip">Исполнитель: все</div>
+    <div class="right"><span>Перетащите карточку, чтобы сменить статус</span></div></div>
+    <div class="board">${cols.map((c) => {
+      const items = TASKS.filter((x) => est(x) === c.id);
+      return `<div class="col" data-col="${c.id}"><h3>${dot(c.id)}${c.n}<span class="n">${items.length}</span></h3>
+        <div class="cards" data-drop="${c.id}">${items.map((x) => `<div class="card" draggable="true" data-task="${x.id}" data-card="${x.id}" tabindex="0">${esc(x.t)}
+          <div class="m">${av(U[x.who])}<span style="margin-left:auto" class="due ${x.dueK}">${x.due}</span></div></div>`).join("") ||
+          `<div class="drop-empty">перетащите сюда</div>`}</div></div>`;
+    }).join("")}</div>`;
+})(SCREENS.sprints);
+
+/* проекты: карта деревом */
+SCREENS.projects = ((base) => function () {
+  if (S.tab !== "map") return base();
+  return `<div class="bar"><div class="chip on">Воркспейс: IMF BD</div><div class="chip">Показывать закрытые</div>
+    <div class="right"><span>Проектов <b>${PROJ.length}</b></span><span>Подпроектов <b>${PROJ.reduce((a, p) => a + p.sub.length, 0)}</b></span></div></div>
+    <div class="tree"><div class="tnode root">IMF BD<span class="n">${PROJ.reduce((a, p) => a + p.all, 0)}</span></div>
+    <div class="tkids">${PROJ.map((p) => `<div class="tbr">
+      <div class="tnode${S.selProj === p.id ? " on" : ""}" data-proj="${p.id}" tabindex="0">${dot(PMETA[p.id].st === "пауза" ? "wait" : "doing")}${esc(p.n)}
+        <span class="n">${p.open}/${p.all}</span></div>
+      ${p.sub.length ? `<div class="tsub">${p.sub.map((sname) => `<div class="tnode sub" data-proj="${p.id}" tabindex="0">${esc(sname)}
+        <span class="n">${1 + (sname.length % 4)}</span></div>`).join("")}</div>` : ""}
+    </div>`).join("")}</div></div>`;
+})(SCREENS.projects);
+
+/* настройки: колонки доски */
+TABS.settings = [...TABS.settings, ["columns", "Колонки доски"]];
+SCREENS.settings = ((base) => function () {
+  if (S.tab !== "columns") return base();
+  return `<div class="panes"><div class="pane"><h3>Колонки доски спринта</h3>
+    <div class="sub">Порядок и состав колонок — общий для воркспейса</div>
+    <div class="rowset">${S.cols.map((c, i) => `<div><span class="k">${dot(c.id)}${c.n}</span>
+      <span class="v">${TASKS.filter((x) => est(x) === c.id).length} задач · статус <code>${c.id}</code></span>
+      <span class="a"><span class="ib"><button class="btn" style="height:24px" data-colmv="${i}:-1"${i === 0 ? " disabled" : ""}>↑</button>
+      <button class="btn" style="height:24px" data-colmv="${i}:1"${i === S.cols.length - 1 ? " disabled" : ""}>↓</button>
+      <button class="btn" style="height:24px" data-colon="${i}">${c.on ? "Скрыть" : "Показать"}</button></span></span></div>`).join("")}</div>
+    <div style="margin-top:12px"><button class="btn pri">Добавить колонку</button>
+      <button class="btn" style="margin-left:6px">Вернуть по умолчанию</button></div></div></div>`;
+})(SCREENS.settings);
+
+/* деталь проекта */
+const detail3 = renderDetail;
+renderDetail = function () {
+  if (S.selProj && !S.sel && !S.selFile) {
+    const p = PROJ.find((x) => x.id === S.selProj), m = PMETA[p.id];
+    $(".app").classList.add("with-detail");
+    $(".detail").innerHTML = `<div class="d-head"><div class="d-crumb">Проект · ${m.st}</div><div class="d-title">${esc(p.n)}</div>
+      <div class="d-acts"><button class="btn pri" data-sec="tasks">Открыть задачи</button><button class="btn">Создать подпроект</button>
+      <button class="btn">Архивировать</button><button class="btn" data-close="1">✕</button></div></div>
+      <div class="d-body"><dl class="f"><dt>Владелец</dt><dd>${av(U[m.own])}</dd>
+        <dt>Статус</dt><dd>${dot(m.st === "пауза" ? "wait" : "doing")}${m.st}</dd>
+        <dt>Срок</dt><dd><span class="due">${m.due}</span></dd>
+        <dt>Спринт</dt><dd>${m.spr}</dd>
+        <dt>Задачи</dt><dd><span class="pri">${p.open}</span> открыто из <span class="pri">${p.all}</span></dd>
+        <dt>Команда</dt><dd>${p.who.map((i) => U[i].n).join(", ")}</dd></dl>
+      <div class="lab">Описание</div><div class="note">${esc(m.d)}</div>
+      <div class="lab">Подпроекты</div><div class="rowset">${p.sub.length ? p.sub.map((sname) =>
+        `<div><span class="k">${esc(sname)}</span><span class="v">${1 + (sname.length % 4)} задач открыто</span></div>`).join("")
+        : `<div><span class="k">—</span><span class="v">подпроектов нет</span></div>`}</div>
+      <div class="lab">Последнее движение</div><div class="tl">
+        <div class="e"><div class="p"></div><div><b>А. Ковач</b> закрыл «Свести расходы по логистике»<div class="w">3 ч назад</div></div></div>
+        <div class="e"><div class="p"></div><div><b>М. Дам</b> создал задачу «Проверить чек-лист приёмки»<div class="w">вчера</div></div></div></div></div>`;
+    return;
+  }
+  detail3();
+};
+
+/* обработчики: проект, колонки, тема */
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-proj],[data-colmv],[data-colon],[data-theme]");
+  if (!t) return;
+  if (t.dataset.proj) { S.selProj = t.dataset.proj; S.sel = null; S.selFile = null; return render(); }
+  if (t.dataset.colmv) {
+    const [i, d] = t.dataset.colmv.split(":").map(Number), j = i + d;
+    if (j < 0 || j >= S.cols.length) return;
+    const next = [...S.cols]; [next[i], next[j]] = [next[j], next[i]]; S.cols = next; return render();
+  }
+  if (t.dataset.colon) {
+    const i = +t.dataset.colon;
+    S.cols = S.cols.map((c, k) => k === i ? { ...c, on: !c.on } : c); return render();
+  }
+  if (t.dataset.theme) {
+    S.theme = S.theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = S.theme;
+    return render();
+  }
+});
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-close],[data-tab],[data-sec]");
+  if (t && !t.dataset.proj) S.selProj = null;
+}, true);
+
+/* перетаскивание карточек по доске */
+let dragId = null;
+document.addEventListener("dragstart", (e) => {
+  const c = e.target.closest("[data-card]"); if (!c) return;
+  dragId = +c.dataset.card; c.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragId);
+});
+document.addEventListener("dragend", () => { dragId = null; document.querySelectorAll(".dragging,.over").forEach((el) => el.classList.remove("dragging", "over")); });
+document.addEventListener("dragover", (e) => {
+  const z = e.target.closest("[data-drop]"); if (!z || dragId === null) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = "move";
+  document.querySelectorAll(".over").forEach((el) => el.classList.remove("over")); z.classList.add("over");
+});
+document.addEventListener("drop", (e) => {
+  const z = e.target.closest("[data-drop]"); if (!z || dragId === null) return;
+  e.preventDefault();
+  S.moved = { ...S.moved, [dragId]: z.dataset.drop };
+  dragId = null; render();
+});
+
+window.addEventListener("DOMContentLoaded", () => {
+  const menu = $(".menu");
+  menu.querySelector(".sep").insertAdjacentHTML("afterend",
+    `<div class="mi" data-theme="1">Тема<span class="a t-lbl">светлая</span></div>`);
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("[data-theme]")) return;
+    const l = menu.querySelector(".t-lbl"); if (l) l.textContent = S.theme === "dark" ? "тёмная" : "светлая";
+  });
+});
