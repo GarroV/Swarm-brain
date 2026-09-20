@@ -168,7 +168,7 @@ tbody tr.sel td.t{font-weight:600}
 .answer{padding:18px var(--gutter);overflow:auto;max-width:760px}
 .answer .q{font-size:var(--fs-title);font-weight:600;letter-spacing:-.01em;margin-bottom:12px}
 .answer .a{font-size:var(--fs-body);line-height:1.62;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
-.answer sup{font:500 var(--fs-micro)/1 var(--font-num);color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 4px;margin-left:2px}
+.answer sup{font:500 var(--fs-micro)/1 var(--font-num);color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 3px;margin:0 1px 0 2px}
 /* панель уведомлений */
 .pop{position:absolute;right:var(--gutter);top:44px;width:340px;background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;box-shadow:0 14px 40px rgba(10,13,17,.16);z-index:30;display:none;overflow:hidden}
 .pop.open{display:block}
@@ -361,8 +361,9 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;margin:0;te
 .qin:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .bar.wrap{flex-wrap:wrap;row-gap:6px}
 .btn.sm{height:24px;padding:0 9px;font-size:var(--fs-meta)}
-.btn.mt,.mt{margin-top:12px}
-.mt .btn{margin-right:6px}
+.btn.mt{margin-top:12px}
+/* .btn — display:grid, поэтому в обычном контейнере кнопки встают друг под друга */
+.mt{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .mini{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;margin:0 4px 4px 0;border:1px solid var(--line-control);
   border-radius:11px;background:var(--surface);font-size:var(--fs-meta);color:var(--ink-2)}
 .mini.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:600}

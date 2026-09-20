@@ -79,6 +79,18 @@ function tokenCheck() {
       if (e.offsetHeight > lh * 1.75 + 6)
         out.push('подвал карточки перенёсся: «' + e.textContent.trim().slice(0, 24) + '» h=' + e.offsetHeight);
     });
+    /* кнопки встали друг под друга там, где места хватало на строку */
+    {
+      const parents = new Set([...document.querySelectorAll('.btn')].map((b) => b.parentElement));
+      parents.forEach((par) => {
+        const bs = [...par.children].filter((c) => c.classList.contains('btn') && c.offsetHeight > 0);
+        if (bs.length < 2) return;
+        const tops = bs.map((b) => Math.round(b.getBoundingClientRect().top));
+        if (Math.max(...tops) - Math.min(...tops) < 4) return;
+        const need = bs.reduce((a, b) => a + b.offsetWidth, 0) + 8 * (bs.length - 1);
+        if (need <= par.clientWidth) out.push('кнопки встали друг под друга, хотя строка вмещала: ' + bs.map((b) => b.textContent.trim().slice(0, 14)).join(' / '));
+      });
+    }
     /* русские числительные: «2 задач» и «1 задачи» — ошибка в пользовательском тексте */
     {
       const txt = (document.querySelector('.body') || document.body).innerText;
