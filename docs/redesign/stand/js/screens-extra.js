@@ -86,12 +86,13 @@ function screenTimeline() {
     + empty("В этом цикле нет задач со сроком", "Выберите другой цикл или поставьте задачам даты");
   return cycleBar(`<span>Задач со сроком <b>${list.length}</b></span>`) + `<div class="tlv">${days.map((day) => {
     const items = list.filter((t) => t.due === day);
-    const late = dueKind(day) === "now";
+    /* день красный только пока в нём есть незакрытая задача: у сделанной срок уже ничего не требует */
+    const late = dueKind(day) === "now" && items.some((t) => t.st !== "done");
     return `<div class="tday${late ? " late" : ""}"><div class="tdh">${fmtDate(day)}<span class="n">${items.length}</span></div>
       <div class="tditems">${items.map((t) => `<div class="tdi" ${act("open-task", t.id)}>${dot(t.st)}${priMark(t.prio)}<b>${esc(t.t)}</b>
         <span class="pj">${esc(projPath(t.pr))}</span>
         <span class="mt">${lbls(t.labels)}${t.recur ? tag(RECUR_LABEL[t.recur], "p") : ""}</span>
-        <span class="mk">${t.mk ? `<span class="cc">${t.mk}</span>` : ""}</span>
+        <span class="mk">${t.mk ? `<span class="cc">${t.mk}</span>` : `<span class="muted">—</span>`}</span>
         <span class="who">${t.who.length ? avShort(t.who[0]) : `<span class="muted">—</span>`}</span></div>`).join("")}</div></div>`;
   }).join("")}</div>`;
 }

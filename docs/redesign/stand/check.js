@@ -314,6 +314,13 @@ function tokenCheck() {
           out.push(`в разделе «${head.split('·')[0].trim()}» лежит завершённая задача: ${r.textContent.trim().slice(0, 28)}`);
       });
     }
+
+    /* в таймлайне «просрочено» висит на дне, а не на строке: правило для таблиц его не видит */
+    document.querySelectorAll('.tday.late').forEach((d) => {
+      const items = [...d.querySelectorAll('.tdi')];
+      if (items.length && items.every((i) => i.querySelector('.d-done')))
+        out.push('день помечен просроченным, хотя все задачи в нём закрыты: ' + d.querySelector('.tdh').textContent.trim());
+    });
     return out;
   });
   /* одно состояние — один цвет во всём стенде: «в работе» не может быть зелёным в таблице
