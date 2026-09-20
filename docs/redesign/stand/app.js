@@ -310,7 +310,7 @@ function modal(title, body, foot) {
   m.innerHTML = `<header><h3>${title}</h3><button class="btn" data-mclose="1">✕</button></header>
     <div class="mbody">${body}</div><footer>${foot}</footer>`;
 }
-function closeModal() { $(".mscrim").classList.remove("open"); $(".modal").classList.remove("open"); }
+function closeModal() { $(".mscrim").classList.remove("open"); $(".modal").classList.remove("open"); $(".modal").classList.remove("wide"); }
 const opt = (arr, sel) => arr.map((x) => `<option${x === sel ? " selected" : ""}>${x}</option>`).join("");
 const chips = (arr, on) => arr.map((x) => `<span class="chip${on && on.includes(x) ? " on" : ""}">${x}</span>`).join("");
 
@@ -481,3 +481,174 @@ window.addEventListener("DOMContentLoaded", () => {
     <div class="mi">Выйти</div>`;
   render();
 });
+
+/* ══ расширение 2: встречи целиком, файлы и реестр ═══════════ */
+
+const COUNTRIES = ["все", "Сербия", "Хорватия", "Словения", "Босния"];
+const CFLAG = { "Сербия":"RS", "Хорватия":"HR", "Словения":"SI", "Босния":"BA" };
+RECS[0].c = "Сербия"; RECS[1].c = "Хорватия"; RECS[2].c = "Сербия";
+RECS[3].c = "Словения"; RECS[4].c = "все"; RECS[5].c = "Босния";
+
+const FILES = [
+  { id:"f1", n:"Смета_оборудование_v3.xlsx", ty:"xlsx", sz:"248 КБ", rec:"r2", who:1, d:"15 сен", ix:"14 фрагментов" },
+  { id:"f2", n:"Договор_аренды_подписанный.pdf", ty:"pdf", sz:"1,2 МБ", rec:"r4", who:2, d:"5 сен", ix:"41 фрагмент" },
+  { id:"f3", n:"Планировка_зала.png", ty:"png", sz:"860 КБ", rec:"r2", who:1, d:"11 сен", ix:"не индексируется" },
+  { id:"f4", n:"Меню_себестоимость.xlsx", ty:"xlsx", sz:"96 КБ", rec:"r6", who:2, d:"28 авг", ix:"9 фрагментов" },
+  { id:"f5", n:"Стандарт_приёмки.docx", ty:"docx", sz:"54 КБ", rec:"r2", who:1, d:"11 сен", ix:"в очереди" },
+];
+const TRANSCRIPT = [
+  ["00:02", 0, "Начнём со сметы. Поставщик прислал финальную версию вчера вечером."],
+  ["00:14", 1, "Она выше бюджета. Если считать с доставкой — на четырнадцать процентов."],
+  ["01:05", 0, "Держит ли он цену, если мы ответим не сразу?"],
+  ["01:12", 1, "До пятницы держит, дальше пересчёт по курсу."],
+  ["03:40", 2, "По площадке: санитарные требования ещё уточняем, ответ обещали на неделе."],
+  ["05:21", 0, "Подрядчика на вывеску утверждаем? Возражений нет — утвердили."],
+];
+const DUPS = [
+  { a:"Запись без названия", b:"Планёрка по открытию", w:"18 сен, 12:04", sim:"87%" },
+  { a:"Черновик 16 сен 14:28", b:"Поставщик упаковки — переговоры", w:"16 сен, 14:28", sim:"71%" },
+];
+
+S.country = "все"; S.selFile = null;
+
+TABS.base = [...TABS.base, ["files", "Файлы"]];
+
+/* база: фильтр по стране + реестр файлов */
+SCREENS.base = ((base) => function () {
+  if (S.tab === "files") {
+    return `<div class="bar"><div class="chip on">Все типы</div><div class="chip">Только мои</div>
+      <div class="right"><span>Файлов <b>${FILES.length}</b></span><span>Объём <b>2,4 МБ</b></span></div></div>
+      <div class="list"><table><thead><tr><th style="width:38%">Файл</th><th>Запись</th><th>Загрузил</th><th>Индекс</th><th class="r">Размер</th><th class="r">Когда</th></tr></thead><tbody>
+      ${FILES.map((f) => `<tr class="row${S.selFile === f.id ? " sel" : ""}" data-file="${f.id}" tabindex="0">
+        <td class="t" title="${esc(f.n)}"><span class="ft ft-${f.ty}">${f.ty}</span>${esc(f.n)}</td>
+        <td>${esc((RECS.find((r) => r.id === f.rec) || {}).h || "—")}</td>
+        <td>${av(U[f.who])}</td>
+        <td><span class="state ${f.ix.includes("фрагмент") ? "on" : "off"}">${f.ix}</span></td>
+        <td class="r"><span class="due">${f.sz}</span></td><td class="r"><span class="due">${f.d}</span></td></tr>`).join("")}
+      </tbody></table></div>`;
+  }
+  const html = base();
+  if (S.country === "все") return html.replace(">Страна: все<", ` data-country="1">Страна: все<`);
+  const keep = RECS.filter((x) => x.c === S.country || x.c === "все").map((x) => x.id);
+  const grid = html.replace(/<div class="rec" data-rec="(r\d)"[\s\S]*?<\/div>\s*<\/div>/g, (m, id) => keep.includes(id) ? m : "");
+  return grid.replace(">Страна: все<", ` data-country="1">Страна: ${S.country}<`).replace('<div class="chip"', '<div class="chip on"');
+})(SCREENS.base);
+
+/* встречи: дедуп черновиков */
+SCREENS.meetings = ((base) => function () {
+  const html = base();
+  if (S.tab !== "draft") return html;
+  const dup = `<div class="review dup">Похоже на дубли: ${DUPS.length}. Черновик рекордера совпадает с уже разобранной встречей.</div>
+    <div class="list dups"><table><thead><tr><th style="width:30%">Черновик</th><th style="width:30%">Похож на</th><th>Когда</th><th>Совпадение</th><th class="r" style="width:196px">Что делать</th></tr></thead><tbody>
+    ${DUPS.map((d) => `<tr class="row"><td class="t">${dot("todo")}${esc(d.a)}</td><td>${esc(d.b)}</td><td>${d.w}</td>
+      <td><span class="state off">${d.sim}</span></td>
+      <td class="r acts"><span class="ib"><button class="btn" style="height:24px" data-dedup="merge">Объединить</button>
+      <button class="btn" style="height:24px" data-dedup="keep">Не дубль</button></span></td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="lab" style="margin:18px 0 8px">Черновики без разбора</div>`;
+  const at = html.indexOf('<div class="list"');
+  return at < 0 ? html + dup : html.slice(0, at) + dup + html.slice(at);
+})(SCREENS.meetings);
+
+/* модалки встречи */
+function compareModal() {
+  modal("Тезисы против транскрипта", `<div class="cmp">
+    <div><div class="lab">Тезисы</div><div class="tez"><h5>Закупки</h5><li class="hl">Смета выше бюджета на 14%, поставщик держит цену до пятницы.</li>
+      <li>Нужна разбивка по позициям к следующей планёрке.</li>
+      <h5>Площадка</h5><li class="hl">Санитарные требования уточняются, ответ ожидается на неделе.</li>
+      <h5>Решения</h5><li class="hl">Подрядчика на вывеску утвердили.</li></div></div>
+    <div><div class="lab">Транскрипт · 48 мин</div><div class="tr">${TRANSCRIPT.map(([w, who, txt]) =>
+      `<div class="ln"><span class="w">${w}</span><span class="av" style="background:${U[who].c}">${U[who].i}</span><span>${esc(txt)}</span></div>`).join("")}</div></div>
+  </div>`, `<button class="btn" data-mclose="1">Закрыть</button><button class="btn pri" data-mclose="1">Тезисы верны</button>`);
+  $(".modal").classList.add("wide");
+}
+function publishModal() {
+  modal("Опубликовать черновик записи", `
+    <div class="fld"><label>Название встречи</label><input value="Запись без названия"></div>
+    <div class="two"><div class="fld"><label>Дата и время</label><input value="18 сен, 12:04"></div>
+      <div class="fld"><label>Длительность</label><input value="18 мин" disabled></div></div>
+    <div class="fld"><label>Участники</label><div class="pick">${U.map((u, i) => `<span class="chip${i === 0 ? " on" : ""}">${u.n}</span>`).join("")}</div></div>
+    <div class="fld"><label>Проект</label><select>${opt(["— без проекта", ...PROJ.map((p) => p.n)], "Открытие CEE")}</select></div>
+    <div class="fld"><label>Что сделать при публикации</label>
+      <div class="sw on"><i></i>Составить тезисы моделью</div>
+      <div class="sw on"><i></i>Предложить задачи</div>
+      <div class="sw"><i></i>Отправить участникам в Telegram</div></div>
+    <div class="fld"><label>Приватность</label><div class="sw"><i></i>Личная запись — видна только мне</div></div>`,
+    `<button class="btn" data-mclose="1">Отмена</button><button class="btn pri" data-mclose="1">Опубликовать в базу</button>`);
+}
+
+/* деталь: встреча целиком, запись с реиндексом, файл */
+const detail2 = renderDetail;
+renderDetail = function () {
+  if (S.selFile) {
+    const f = FILES.find((x) => x.id === S.selFile);
+    const rec = RECS.find((r) => r.id === f.rec) || {};
+    $(".app").classList.add("with-detail");
+    $(".detail").innerHTML = `<div class="d-head"><div class="d-crumb">Файл · ${f.ty.toUpperCase()}</div><div class="d-title">${esc(f.n)}</div>
+      <div class="d-acts"><button class="btn pri">Скачать</button><button class="btn" data-reindex="1">Переиндексировать</button><button class="btn">Заменить</button><button class="btn" data-close="1">✕</button></div></div>
+      <div class="d-body"><div class="prev"><span class="ft ft-${f.ty}">${f.ty}</span>Предпросмотр доступен после открытия</div>
+      <dl class="f"><dt>Размер</dt><dd><span class="due">${f.sz}</span></dd><dt>Загрузил</dt><dd>${av(U[f.who])}</dd>
+        <dt>Когда</dt><dd><span class="due">${f.d}</span></dd>
+        <dt>Индекс</dt><dd><span class="state ${f.ix.includes("фрагмент") ? "on" : "off"}">${f.ix}</span></dd>
+        <dt>Доступ</dt><dd>Воркспейс IMF BD</dd></dl>
+      <div class="lab">Привязан к записи</div><div class="src">${esc(rec.h || "—")}</div>
+      <div class="lab">Где встречается</div><div class="rowset"><div><span class="k">Задача 128</span><span class="v">Согласовать смету с поставщиком</span></div>
+        <div><span class="k">Встреча</span><span class="v">Планёрка по открытию, 15 сен</span></div></div></div>`;
+    return;
+  }
+  detail2();
+  const meet = MEET.find((x) => x.id === S.sel);
+  if (meet) {
+    const acts = $(".detail .d-acts");
+    const extra = `<button class="btn" data-cmp="1">Сравнить с транскриптом</button>` +
+      (meet.st === "draft" ? `<button class="btn" data-pub="1">Опубликовать в базу</button>` : "");
+    acts.insertAdjacentHTML("afterbegin", meet.st === "draft" ? extra : "");
+    if (meet.st !== "draft") acts.querySelector(".btn:nth-child(3)").insertAdjacentHTML("afterend", extra);
+    const body = $(".detail .d-body");
+    if (meet.src === "bumblebee") {
+      body.insertAdjacentHTML("afterbegin", `<div class="lease"><b>Запись рекордера</b>
+        <div class="rowset"><div><span class="k">Устройство</span><span class="v">MacBook Pro · build 24</span></div>
+        <div><span class="k">Захват</span><span class="v">claim получен 12:04, lease до 12:26</span><span class="a state on">завершён</span></div>
+        <div><span class="k">Отложенная загрузка</span><span class="v">${meet.st === "draft" ? "ждала сети 6 мин" : "нет"}</span></div>
+        <div><span class="k">Вторая сторона</span><span class="v">системный звук пойман</span><span class="a state on">ок</span></div></div></div>`);
+    }
+    if (meet.st === "draft") {
+      body.insertAdjacentHTML("afterbegin", `<div class="warn">Черновик рекордера: тезисов ещё нет, в базу не попал. Похож на «Планёрка по открытию» на 87%.</div>`);
+      const tez = body.querySelector(".tez");
+      if (tez) tez.outerHTML = `<div class="empty sm"><b>Тезисов ещё нет</b>Черновик не разобран моделью
+        <button class="btn pri" style="margin-top:10px">Составить тезисы</button></div>`;
+      const labs = [...body.querySelectorAll(".lab")];
+      const tl = labs.find((l) => l.textContent === "Задачи из встречи");
+      if (tl) { tl.nextElementSibling.outerHTML = `<div class="rowset"><div><span class="k">—</span><span class="v">задач нет: встреча не разобрана</span></div></div>`; }
+    }
+  }
+  const rec = RECS.find((x) => x.id === S.sel);
+  if (rec) {
+    $(".detail .d-acts").insertAdjacentHTML("afterbegin", `<button class="btn" data-reindex="1">Переиндексировать</button>`);
+    $(".detail .d-body").insertAdjacentHTML("beforeend", `<div class="lab">Файлы записи</div>
+      <div class="rowset">${FILES.filter((f) => f.rec === rec.id).map((f) => `<div><span class="k"><span class="ft ft-${f.ty}">${f.ty}</span></span>
+        <span class="v">${esc(f.n)}</span><span class="a"><button class="btn" style="height:24px" data-file="${f.id}">Открыть</button></span></div>`).join("") ||
+        `<div><span class="k">—</span><span class="v">файлов нет</span></div>`}</div>
+      <div class="lab">Индексация</div><div class="rowset"><div><span class="k">Векторизована</span><span class="v">${rec.d}, 14 фрагментов</span><span class="a state on">актуальна</span></div>
+      <div><span class="k">Страна</span><span class="v">${rec.c === "все" ? "без страны" : rec.c}</span></div></div>`);
+  }
+};
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-cmp],[data-pub],[data-dedup],[data-file],[data-reindex],[data-country]");
+  if (!t) return;
+  if (t.dataset.cmp) return compareModal();
+  if (t.dataset.pub) return publishModal();
+  if (t.dataset.dedup) { t.closest("tr").style.opacity = ".4"; t.closest("tr").querySelectorAll(".btn").forEach((b) => { b.disabled = true; }); return; }
+  if (t.dataset.file) { S.selFile = t.dataset.file; S.sel = null; return render(); }
+  if (t.dataset.reindex) { t.textContent = "Индексируется…"; return; }
+  if (t.dataset.country) { S.country = COUNTRIES[(COUNTRIES.indexOf(S.country) + 1) % COUNTRIES.length]; return render(); }
+});
+
+/* закрытие детали чистит и файл */
+const go2 = go;
+go = function (sec) { S.selFile = null; go2(sec); };
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-close],[data-tab],[data-sec]");
+  if (t) S.selFile = null;
+}, true);
