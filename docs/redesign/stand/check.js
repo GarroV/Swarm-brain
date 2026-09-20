@@ -356,6 +356,10 @@ function tokenCheck() {
 
   /* ── люди и система ─────────────────────────────────────── */
   await go('sec', 'team'); await shot('24-team');
+  const lateCells = await p.$$eval('tbody tr', (rows) => rows.map((r) => {
+    const c = r.querySelectorAll('td'); return { late: c[6].textContent.trim(), red: !!c[6].querySelector('.due.now') }; }));
+  want(lateCells.some((c) => c.red) && lateCells.some((c) => c.late === '—'),
+    'колонка «просрочено» различает людей: у кого-то красное число, у кого-то прочерк');
   const teamAll = await count('tbody tr');
   await go('tgl', 'activeOnly');
   await new Promise((r) => setTimeout(r, 90));

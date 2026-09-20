@@ -4,14 +4,19 @@ const ROLE = { admin: "админ", ops: "операции", finance: "фина�
 
 function screenTeam() {
   if (S.tab === "ws") return screenWorkspaces();
-  const openOf = (u) => S.tasks.filter((t) => t.who.includes(u.id) && t.st !== "done" && !t.arch).length;
+  const mine = (u) => S.tasks.filter((t) => t.who.includes(u.id) && t.st !== "done" && !t.arch);
+  const openOf = (u) => mine(u).length;
+  const lateOf = (u) => mine(u).filter((t) => dueKind(t.due) === "now").length;
   const list = S.activeOnly ? S.users.filter((u) => openOf(u) > 0) : S.users;
   return `<div class="bar">${wsChip()}${chip("Только с открытыми задачами", S.activeOnly, "tgl", "activeOnly")}
     <div class="right"><span>${me().role === "admin" ? "Щёлкните строку — откроются задачи человека" : "Задачи коллег видны админу"}</span><span>Показано <b>${list.length}</b> из ${S.users.length}</span></div></div>`
-    + table([{ t: "Участник", w: "26%" }, { t: "Роль" }, { t: "Рынок" }, { t: "Telegram" }, { t: "Почта" }, { t: "Открыто задач", r: true }],
-      list.map((u) => `<tr class="row" ${act("person-tasks", u.id)} tabindex="0">${cell(av(u.id), "t")}${cell(ROLE[u.role] || u.role)}
+    + table([{ t: "Участник", w: "26%" }, { t: "Роль" }, { t: "Рынок" }, { t: "Telegram" }, { t: "Почта" },
+      { t: "Открыто", r: true, w: "100px" }, { t: "Просрочено", r: true, w: "132px" }],
+      list.map((u) => { const open = openOf(u), late = lateOf(u);
+        return `<tr class="row" ${act("person-tasks", u.id)} tabindex="0">${cell(av(u.id), "t")}${cell(ROLE[u.role] || u.role)}
           ${cell(`<span class="cc">${u.mk}</span>`)}${cell(esc(u.tg))}${cell(u.em ? esc(u.em) : state("не привязана", false))}
-          ${cell(`<span class="pdot p-med"></span>${openOf(u)}`, "r")}</tr>`).join(""));
+          ${cell(`<span class="due">${open}</span>`, "r")}
+          ${cell(late ? `<span class="due now">${late}</span>` : `<span class="muted">—</span>`, "r")}</tr>`; }).join(""));
 }
 function screenWorkspaces() {
   return `<div class="bar">${btn("＋ Воркспейс", "new-ws", undefined, undefined, "pri sm")}
