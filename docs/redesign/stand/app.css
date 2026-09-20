@@ -8,7 +8,7 @@
   --ok:#1E8E5E; --bad:#C53030; --brand-purple:#5B3DEC;
   --font-ui:'Golos Text',system-ui,sans-serif; --font-num:'IBM Plex Mono',ui-monospace,monospace;
   --fs-display:20px; --fs-title:16px; --fs-lead:14px; --fs-body:13px; --fs-dense:12.5px; --fs-meta:11.5px; --fs-micro:10.5px;
-  --row:34px; --control-h:30px; --gutter:24px; --nav-w:232px; --detail-w:372px;
+  --row:34px; --top-h:44px; --control-h:30px; --gutter:24px; --nav-w:232px; --detail-w:372px;
   /* были в разметке, но не заведены — из-за этого цифры теряли моноширинный шрифт,
      а блоки — подложку: объявление с неизвестной переменной браузер отбрасывает целиком */
   --font-mono:var(--font-num); --fs-num:12px; --fs-num-sm:10.5px;
@@ -38,16 +38,27 @@ body{font:400 var(--fs-body)/1.45 var(--font-ui);color:var(--ink);background:var
 
 /* ── ЦЕНТР ───────────────────────────────────────────────────── */
 .main{display:flex;flex-direction:column;background:var(--surface);min-width:0}
-.top{display:flex;align-items:center;gap:12px;height:46px;padding:0 var(--gutter);border-bottom:1px solid var(--line)}
-h1{font-size:var(--fs-display);font-weight:700;letter-spacing:-.02em}
-.crumb{font-size:var(--fs-meta);color:var(--ink-3)}
-.search{margin-left:auto;display:flex;align-items:center;gap:7px;width:260px;height:var(--control-h);padding:0 9px;border:1px solid var(--line-control);border-radius:7px;background:var(--surface-2);color:var(--ink-empty);font-size:var(--fs-dense)}
+/* Шапка — одна строка: название раздела, вкладки и действия рядом.
+   Крошка «Работа ▸ Задачи» дословно повторяла подсвеченный пункт меню, а заголовок
+   с вкладками занимали три полосы и уводили данные на 160–291px вниз. */
+.top{display:flex;align-items:center;flex-wrap:wrap;gap:0 14px;min-height:var(--top-h);padding:0 var(--gutter);border-bottom:1px solid var(--line)}
+/* вкладки скорее перенесутся на свою строку, чем обрежутся: обрезанная вкладка
+   молча прячет раздел, а лишние 36px видны и ничего не скрывают */
+h1{flex:none;font-size:var(--fs-title);font-weight:650;letter-spacing:-.015em}
+/* глобальное (поиск, дайджест, уведомления, профиль) живёт в рейке, а не в шапке экрана:
+   в шапке оно отнимало место у вкладок раздела и на «Базе» с восемью вкладками их обрезало */
+.search{display:flex;align-items:center;gap:7px;margin:10px 8px 0;height:var(--control-h);padding:0 9px;border:1px solid var(--line-control);border-radius:7px;background:var(--surface);color:var(--ink-empty);font-size:var(--fs-dense)}
+.search:hover{border-color:var(--line-strong);color:var(--ink-3)}
+.nav-me{display:flex;align-items:center;gap:6px;padding:8px 10px 10px;border-top:1px solid var(--line)}
+.nav-me .hbtn{flex:1;justify-content:flex-start}
+.nav-me .bell{margin-left:auto}
 .kbd{margin-left:auto;font:500 var(--fs-micro)/1 var(--font-num);border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:4px;padding:3px 4px;color:var(--ink-3);background:var(--surface)}
 .me{width:26px;height:26px;border-radius:50%;background:var(--brand-purple);color:#fff;display:grid;place-items:center;font-size:var(--fs-micro);font-weight:600}
 
 /* ── ВКЛАДКИ: второй уровень ─────────────────────────────────── */
-.tabs{display:flex;gap:2px;padding:0 var(--gutter);border-bottom:1px solid var(--line);background:var(--surface)}
-.tab{position:relative;padding:9px 11px 10px;font-size:var(--fs-dense);color:var(--ink-3);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:default}
+.tabs{display:flex;gap:2px;flex:1 1 auto;min-width:0;min-height:calc(var(--top-h) - 8px);align-self:stretch;align-items:center}
+.tabs::-webkit-scrollbar{display:none}
+.tab{position:relative;display:flex;align-items:center;flex:none;padding:0 10px;font-size:var(--fs-dense);color:var(--ink-3);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:default}
 .tab:hover{color:var(--ink)}
 .tab.on{color:var(--ink);font-weight:600;border-bottom-color:var(--accent)}
 .tab .c{font:500 var(--fs-micro)/1 var(--font-num);color:var(--ink-empty);margin-left:7px}

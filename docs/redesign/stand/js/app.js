@@ -67,8 +67,8 @@ const SCREENS = {
 
 function render() {
   renderNav();
-  const [crumb, title] = TITLES[S.sec] || ["", S.sec];
-  $(".crumb").textContent = crumb; $("h1").textContent = title;
+  const [, title] = TITLES[S.sec] || ["", S.sec];
+  $("h1").textContent = title;
   if (TABS[S.sec]) { $(".tabs").classList.remove("hidden"); renderTabs(); } else $(".tabs").classList.add("hidden");
   $(".body").innerHTML = SCREENS[S.sec]();
   renderDetail();
