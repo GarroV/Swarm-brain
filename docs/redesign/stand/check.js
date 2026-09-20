@@ -141,6 +141,11 @@ function tokenCheck() {
         out.push(`колонки не заполняют таблицу: ${sum}px из ${tb.clientWidth}px, справа пустая полоса`);
     });
 
+    /* встречи дня не должны уезжать за край: скрытую встречу человек просто не увидит */
+    document.querySelectorAll('.cal').forEach((c) => {
+      if (c.scrollWidth > c.clientWidth + 2) out.push(`полоса встреч уходит за край на ${c.scrollWidth - c.clientWidth}px`);
+    });
+
     /* поле ввода не должно обрезать собственное значение; у нативной даты обрезка внутренняя,
        её видно только по ширине — 130px это минимум под «дд.мм.гггг» и иконку календаря */
     document.querySelectorAll('input, select, textarea').forEach((el) => {
