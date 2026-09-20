@@ -230,6 +230,10 @@ tbody tr.sel td.t{font-weight:600}
 .tl .e .p{width:7px;height:7px;border-radius:50%;background:var(--line-control);margin:5px 0 0 3px}
 .tl .e b{color:var(--ink);font-weight:600}
 .tl .e .w{font-size:var(--fs-micro);color:var(--ink-empty);margin-top:2px}
+/* журнал: время отдельной колонкой — иначе каждое событие занимает две строки */
+.tl.log .e{grid-template-columns:86px 14px 1fr;align-items:baseline}
+.tl.log .e .w{margin:0;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tl.log .e .p{margin-top:0}
 /* шапка: кнопки */
 .hbtn{height:30px;padding:0 10px;display:flex;align-items:center;gap:6px;border-radius:7px;color:var(--ink-2);font-size:var(--fs-dense);cursor:pointer}
 .hbtn:hover{background:var(--surface-3);color:var(--ink)}

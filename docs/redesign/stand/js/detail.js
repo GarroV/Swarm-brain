@@ -10,7 +10,7 @@ const dhead = (crumb, title, acts) =>
 
 /* ── задача ──────────────────────────────────────────────────── */
 function detailTask(t) {
-  const cm = S.comments[t.id] || [], hi = S.history[t.id] || [];
+  const cm = S.comments[t.id] || [], hi = [...(S.history[t.id] || [])].sort((a, b) => a.m - b.m);
   const acts = t.arch
     ? btn("Вернуть из архива", "restore", t.id, undefined, "pri") + btn("Удалить навсегда", "del-task", t.id)
     : (t.st !== "in_progress" ? btn("Взять в работу", "take", t.id, undefined, "pri") : btn("Готово", "move", t.id, "done", "pri"))
@@ -38,7 +38,7 @@ function detailTask(t) {
   }
   if (S.dtab === "hist") {
     body = `<div class="tl">${hi.map((h) => `<div class="e"><div class="p"></div><div><b>${esc(user(h.who).n)}</b>
-      <span class="ev">${esc(h.k)}${h.v ? `: <b>${esc(h.v)}</b>` : ""}</span><div class="w">${esc(h.w)}</div></div></div>`).join("")
+      <span class="ev">${esc(h.k)}${h.v ? `: <b>${esc(h.v)}</b>` : ""}</span><div class="w">${esc(ago(h.m))}</div></div></div>`).join("")
       || '<div class="muted">Движения не было</div>'}</div>`;
   }
   if (S.dtab === "links") {

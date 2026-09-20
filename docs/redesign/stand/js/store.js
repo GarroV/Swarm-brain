@@ -41,6 +41,14 @@ const RECUR_LABEL = { weekly: "каждую неделю", monthly: "кажды�
 /* ── даты ────────────────────────────────────────────────────── */
 const MON = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
 const fmtDate = (iso) => { if (!iso) return "—"; const [, m, dd] = iso.split("-"); return `${+dd} ${MON[+m - 1]}`; };
+/* «когда» из минут назад: строка-дата в данных не сортируется, число — сортируется */
+const ago = (m) => {
+  if (m < 1) return "только что";
+  if (m < 60) return `${m} мин назад`;
+  if (m < 1440) return `${Math.round(m / 60)} ч назад`;
+  if (m < 2880) return "вчера";
+  return fmtDate(new Date(Date.parse(TODAY) - m * 60000).toISOString().slice(0, 10));
+};
 const daysTo = (iso) => { if (!iso) return null; return Math.round((Date.parse(iso) - Date.parse(TODAY)) / 86400000); };
 const fmtDT = (dt) => { const [d_, t_] = String(dt).split(" "); return `${fmtDate(d_)}, ${t_}`; };
 const dueKind = (iso) => { const n = daysTo(iso); if (n === null) return ""; if (n < 0) return "now"; if (n === 0) return "today"; return ""; };
@@ -144,13 +152,13 @@ const A = {
     const t = mkTask({ id: nextTaskId++, t: f.title, pr: f.pr, st: "open", who: f.who ? [f.who] : [],
       due: f.due || null, prio: f.prio, labels: f.labels, mk: f.mk, recur: f.recur, priv: f.priv, note: f.note });
     S.tasks = [t, ...S.tasks];
-    S.history = { ...S.history, [t.id]: [{ w: "только что", who: ME, k: "Создана", v: "вручную" }] };
+    S.history = { ...S.history, [t.id]: [{ m: 0, who: ME, k: "Создана", v: "вручную" }] };
     A.toast(`Задача ${t.id} создана`);
     A.select("task", t.id);
   },
   patchTask(id, patch, ev) {
     S.tasks = S.tasks.map((t) => t.id === id ? { ...t, ...patch } : t);
-    if (ev) S.history = { ...S.history, [id]: [{ w: "только что", who: ME, k: ev[0], v: ev[1] || "" }, ...(S.history[id] || [])] };
+    if (ev) S.history = { ...S.history, [id]: [{ m: 0, who: ME, k: ev[0], v: ev[1] || "" }, ...(S.history[id] || [])] };
     render();
   },
   moveTask(id, st) { A.patchTask(id, { st }, ["Статус", ST_LABEL[st]]); },

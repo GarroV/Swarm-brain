@@ -118,14 +118,20 @@ function screenAnalytics() {
 }
 
 function screenJournal() {
+  /* журнал живёт на вкладке цикла — значит и показывает события задач этого цикла */
+  const ids = new Set(S.tasks.filter((t) => t.sprint === S.cycle).map((t) => t.id));
   const items = [];
-  Object.keys(S.history).forEach((id) => (S.history[id] || []).forEach((h) => items.push({ ...h, id })));
-  if (!items.length) return cycleBar() + empty("Журнал пуст", "Записи появляются, когда задачи двигают по доске");
+  Object.keys(S.history).forEach((id) => { if (!ids.has(+id)) return;
+    (S.history[id] || []).forEach((h) => items.push({ ...h, id: +id })); });
+  items.sort((a, b) => a.m - b.m);
+  if (!items.length) return cycleBar() + empty("В этом цикле задачи не двигали",
+    "Записи появляются, когда задачу берут в работу, двигают по доске или меняют ей срок");
   return cycleBar() + `<div class="panes"><div class="pane"><h3>Журнал перемещений</h3>
-    <div class="sub">Кто и когда двигал задачи — журнал ведётся с раскатки #286</div>
-    <div class="tl">${items.map((h) => `<div class="e"><div class="p"></div><div><b>${esc(user(h.who).n)}</b>
+    <div class="sub">Кто и когда двигал задачи цикла — журнал ведётся с раскатки #286</div>
+    <div class="tl log">${items.map((h) => `<div class="e" data-m="${h.m}"><div class="w">${esc(ago(h.m))}</div>
+      <div class="p"></div><div><b>${esc(user(h.who).n)}</b>
       <span class="ev">${esc(h.k)}${h.v ? `: <b>${esc(h.v)}</b>` : ""}</span>
-      · <span class="lnk" ${act("open-task", h.id)}>задача ${h.id}</span><div class="w">${esc(h.w)}</div></div></div>`).join("")}</div></div></div>`;
+      · <span class="lnk" ${act("open-task", h.id)}>задача ${h.id}</span></div></div>`).join("")}</div></div></div>`;
 }
 
 /* перетаскивание карточек */

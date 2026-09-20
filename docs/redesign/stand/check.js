@@ -341,6 +341,18 @@ function tokenCheck() {
   await go('tab', 'check'); await shot('21-check');
   await go('tab', 'analytics'); await shot('22-analytics');
   await go('tab', 'journal'); await shot('23-journal');
+  const jm = await p.$$eval('.tl.log .e', (els) => els.map((e) => +e.dataset.m));
+  want(jm.length > 3 && jm.every((v, i) => i === 0 || jm[i - 1] <= v),
+    `журнал идёт от свежего к старому (${jm.join(' ')})`);
+  const jIds = await p.$$eval('.tl.log .lnk', (els) => els.map((e) => +e.textContent.replace(/\D/g, '')));
+  const offCycle = await p.evaluate((ids) => ids.filter((id) => (S.tasks.find((t) => t.id === id) || {}).sprint !== S.cycle), jIds);
+  want(offCycle.length === 0, `в журнале цикла только задачи цикла (чужие: ${offCycle.join(',')})`);
+  await go('set-cycle', 'c3');
+  await new Promise((r) => setTimeout(r, 120));
+  want((await count('.tl.log .e')) === 0 && (await count('.empty b')) === 1,
+    'в цикле без движений журнал объясняет пустоту, а не показывает чужие события');
+  await go('set-cycle', 'c2');
+  await new Promise((r) => setTimeout(r, 120));
 
   /* ── люди и система ─────────────────────────────────────── */
   await go('sec', 'team'); await shot('24-team');
