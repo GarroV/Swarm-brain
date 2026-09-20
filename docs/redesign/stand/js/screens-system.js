@@ -44,7 +44,8 @@ function screenSettings() {
       ["Почта", me().em ? esc(me().em) : state("не привязана", false), btn("Изменить", "user-profile", ME, undefined, "sm")],
       ["Язык интерфейса", S.lang === "RU" ? "Русский" : "English", btn("Переключить", "lang", undefined, undefined, "sm")],
       ["Тема", S.theme === "dark" ? "тёмная" : "светлая", btn("Переключить", "theme", undefined, undefined, "sm")],
-      ["Часовой пояс", esc(S.tz), `<span class="ib">${btn("Europe/Belgrade", "tz", undefined, "Europe/Belgrade", "sm" + (S.tz === "Europe/Belgrade" ? " on" : ""))}${btn("Europe/Zagreb", "tz", undefined, "Europe/Zagreb", "sm" + (S.tz === "Europe/Zagreb" ? " on" : ""))}</span>`],
+      /* значение написано на выбранной кнопке — второй раз слева оно только сбивает */
+      ["Часовой пояс", `<span class="muted">по нему считаются сроки и время встреч</span>`, `<span class="ib">${btn("Europe/Belgrade", "tz", undefined, "Europe/Belgrade", "sm" + (S.tz === "Europe/Belgrade" ? " on" : ""))}${btn("Europe/Zagreb", "tz", undefined, "Europe/Zagreb", "sm" + (S.tz === "Europe/Zagreb" ? " on" : ""))}</span>`],
       ["Аккаунт", "вход через Telegram", btn("Выйти", "logout", undefined, undefined, "sm")],
     ]),
     integr: () => rows(S.integrations.map((i) => [esc(i.n), esc(i.d),

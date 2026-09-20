@@ -321,6 +321,13 @@ function tokenCheck() {
       if (items.length && items.every((i) => i.querySelector('.d-done')))
         out.push('день помечен просроченным, хотя все задачи в нём закрыты: ' + d.querySelector('.tdh').textContent.trim());
     });
+
+    /* значение строки продублировано выбранной кнопкой рядом: читатель ищет разницу там, где её нет */
+    document.querySelectorAll('.rowset > div').forEach((r) => {
+      const v = r.querySelector('.v'), on = r.querySelector('.a .on');
+      if (v && on && v.textContent.trim() && v.textContent.trim() === on.textContent.trim())
+        out.push(`значение «${v.textContent.trim().slice(0, 24)}» повторено выбранной кнопкой в той же строке`);
+    });
     return out;
   });
   /* одно состояние — один цвет во всём стенде: «в работе» не может быть зелёным в таблице
