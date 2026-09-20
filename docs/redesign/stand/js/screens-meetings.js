@@ -65,7 +65,7 @@ function screenMeetings() {
 /* очередь вычитки агентских встреч — самый большой экран продукта */
 function screenQueue() {
   if (!S.queue.length) return empty("Очередь пуста", "Агентские встречи разобраны");
-  return `<div class="bar"><span class="chip on">Ждут решения: ${S.queue.length}</span>
+  return `<div class="bar"><span>Ждут решения <b>${S.queue.length}</b></span>
     <div class="right"><span>Публикация создаёт встречу и задачи разом</span></div></div>
     <div class="qlist">${S.queue.map((q) => `<div class="qcard">
       <div class="qh"><b>${esc(q.t)}</b><span class="muted">${esc(fmtDT(q.dt))} · ${avs(q.who)} ${cc(q.cc)}</span></div>

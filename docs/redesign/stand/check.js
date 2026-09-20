@@ -251,8 +251,11 @@ function tokenCheck() {
     }
 
     /* чип-заглушка: выглядит фильтром (а с .on — включённым), но клик ничего не меняет */
-    document.querySelectorAll('.chip[data-act="noop"]').forEach((c) =>
-      out.push('чип «' + c.textContent.trim().slice(0, 24) + '» ничего не фильтрует'));
+    document.querySelectorAll('.chip').forEach((c) => {
+      if (c.closest('[data-pick]')) return;            /* чипы выбора в формах живут по своим правилам */
+      const dead = c.dataset.act === 'noop' || (!c.dataset.act && c.classList.contains('on'));
+      if (dead) out.push('чип «' + c.textContent.trim().slice(0, 24) + '» ничего не фильтрует');
+    });
 
     /* в одной колонке пустое значение обязано выглядеть одинаково: либо везде прочерк, либо нигде.
        Иначе пустая клетка читается как «не поместилось», а не как «значения нет» */
