@@ -32,25 +32,32 @@ function meetRow(m) {
     ${cell(m.tasks.length ? `<span class="due">${m.tasks.length}</span>` : `<span class="muted">—</span>`, "r")}</tr>`;
 }
 
+/* черновик считается дублем, только если у него названа пара: «похож на» без пары — выдумка */
+const dupDrafts = () => S.meetings.filter((m) => m.st === "draft" && m.dupOf && !m.dupOk);
+
 function dupStrip() {
-  const dups = S.meetings.filter((m) => m.st === "draft" && !m.dupOk);
+  const dups = dupDrafts();
   if (!dups.length) return "";
   return `<div class="review dup">Похоже на дубли: ${dups.length}. Черновик рекордера совпадает с уже разобранной встречей.</div>`
     + table([{ t: "Черновик", w: "30%" }, { t: "Похож на", w: "30%" }, { t: "Когда" }, { t: "Совпадение" }, { t: "Что делать", r: true, w: "210px" }],
-      dups.map((m, i) => `<tr class="row">${cell(dot("open") + esc(m.t), "t")}
-        ${cell(esc((S.meetings.find((x) => x.st !== "draft") || {}).t || "—"))}${cell(esc(fmtDT(m.dt)))}
-        ${cell(state(i === 0 ? "87%" : "71%", false))}
-        ${cell(`<span class="ib">${btn("Объединить", "merge-dup", m.id, undefined, "sm")}${btn("Не дубль", "keep-dup", m.id, undefined, "sm")}</span>`, "r acts")}</tr>`).join(""));
+      dups.map((m) => { const o = S.meetings.find((x) => x.id === m.dupOf);
+        return `<tr class="row">${cell(dot("open") + esc(m.t), "t")}
+        ${cell(o ? `<span class="lnk" ${act("open-meet", o.id)}>${esc(o.t)}</span>` : `<span class="muted">—</span>`)}
+        ${cell(esc(fmtDT(m.dt)))}${cell(state(`${m.dupPct}%`, false))}
+        ${cell(`<span class="ib">${btn("Объединить", "merge-dup", m.id, undefined, "sm")}${btn("Не дубль", "keep-dup", m.id, undefined, "sm")}</span>`, "r acts")}</tr>`; }).join(""));
 }
 
 function screenMeetings() {
   if (S.tab === "queue") return screenQueue();
-  const list = visibleMeetings(S.tab);
+  /* черновик, ждущий решения по дублю, уже показан наверху: во второй таблице он был бы тем же самым */
+  const list = visibleMeetings(S.tab).filter((m) => S.tab !== "draft" || !dupDrafts().includes(m));
   const strip = S.tab === "review" && list.length
     ? `<div class="review">Невычитанных встреч: ${list.length}. Тезисы готовы, ждут подтверждения.
        ${btn("Вычитать подряд", "review-next", "", undefined, "sm")}</div>` : "";
-  const head = meetBar() + (S.tab === "draft" ? dupStrip() + lab("Черновики без разбора") : strip);
-  if (!list.length) return head + empty("Встреч в этом срезе нет", mfActive() ? "Сбросьте фильтры" : "Записи появятся после bumblebee, Granola или Read.ai");
+  const head = meetBar() + (S.tab === "draft" ? dupStrip() + lab("Остальные черновики") : strip);
+  if (!list.length) return head + (S.tab === "draft" && dupDrafts().length
+    ? empty("Других черновиков нет", "Все остальные ждут решения по дублям выше")
+    : empty("Встреч в этом срезе нет", mfActive() ? "Сбросьте фильтры" : "Записи появятся после bumblebee, Granola или Read.ai"));
   return head + table([{ t: "Встреча", w: "36%" }, { t: "Когда" }, { t: "Участники" }, { t: "Источник" },
     { t: "Длит.", r: true }, { t: "Задач", r: true }], list.map(meetRow).join(""));
 }

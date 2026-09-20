@@ -362,6 +362,23 @@ function tokenCheck() {
   await go('tab', 'review');
   want((await count(`tbody tr[data-act="open-meet"][data-id="${firstMeet}"]`)) === 0, 'подтверждённая встреча ушла из вычитки');
   await go('tab', 'draft'); await shot('10-drafts');
+  /* черновик с кандидатом на дубль показан один раз, а не в обеих таблицах сразу */
+  const dupTitle = await p.evaluate(() => (S.meetings.find((m) => m.st === 'draft' && m.dupOf) || {}).t);
+  want(!!dupTitle, 'в данных есть черновик, похожий на дубль');
+  want(await p.evaluate((t) => [...document.querySelectorAll('tbody tr')]
+    .filter((r) => r.textContent.includes(t)).length === 1, dupTitle), 'черновик-дубль не задвоен на экране');
+  /* «похож на» называет настоящую встречу, а не первую попавшуюся из списка */
+  want(await p.evaluate(() => {
+    const m = S.meetings.find((x) => x.st === 'draft' && x.dupOf);
+    const o = S.meetings.find((x) => x.id === m.dupOf);
+    return !!o && o.st !== 'draft' && document.body.innerText.includes(o.t);
+  }), 'пара дубля — существующая разобранная встреча');
+  const below = await count('.list:last-of-type tbody tr');
+  await go('keep-dup', await p.evaluate(() => S.meetings.find((m) => m.st === 'draft' && m.dupOf).id));
+  await new Promise((r) => setTimeout(r, 120));
+  want((await count('.list:last-of-type tbody tr')) === below + 1, '«Не дубль» переводит черновик в остальные, а не прячет его');
+  await p.evaluate(() => { S.meetings = S.meetings.map((m) => m.dupOk ? { ...m, dupOk: false } : m); render(); });
+  await new Promise((r) => setTimeout(r, 90));
   await go('tab', 'queue'); await shot('11-agent-queue');
   want((await count('.warn .wacts .btn')) === 2, 'подсказка про дубль даёт что-то сделать, а не только пугает');
   await go('not-dup', 'a2');
