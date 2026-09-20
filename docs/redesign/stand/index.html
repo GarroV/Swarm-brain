@@ -6,7 +6,11 @@
 <title>Swarm — стенд редизайна</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- шрифты подключены НЕ блокирующе: обычный rel=stylesheet с чужого хоста держит первую
+     отрисовку до ответа сети — стенд, открытый с файла без сети, показывал пустой экран,
+     а прогон проверки успевал замерить страницу до отрисовки и врал -->
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet" media="print" onload="this.media='all'">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>

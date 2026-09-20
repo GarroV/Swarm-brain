@@ -174,10 +174,15 @@ function tokenCheck() {
      прогон изредка печатал «НЕТ ЭЛЕМЕНТА» и «заголовок колонки обрезан» на ровном
      месте (примерно раз на восемь прогонов). Проверяющий, который иногда врёт,
      обесценивает зелёный результат, поэтому ждём готовности явно. */
-  await p.waitForFunction(() => window.__renders > 0
-    && document.querySelector('.bar .drop .btn')
-    && document.querySelector('[data-act="sec"][data-id="map"]'), { timeout: 8000 });
+  const ready = await p.waitForFunction(() => window.__renders > 0
+    && document.querySelector('.nav [data-act="sec"]'), { timeout: 15000 })
+    .then(() => true).catch(() => false);
+  if (!ready) { console.log('ПРОГОН НЕ НАЧАЛСЯ: стенд не отрисовался за 15 с'); await b.close(); process.exit(1); }
+  /* замер обязан идти по ФИРМЕННОМУ шрифту: запасной шире, и по нему заголовки честно
+     не помещаются — прогон печатал «заголовок колонки обрезан» на ровном месте */
   await p.evaluate(() => document.fonts && document.fonts.ready);
+  const brand = await p.evaluate(() => !document.fonts || document.fonts.check('600 12px "Golos Text"'));
+  if (!brand) console.log('ВНИМАНИЕ: фирменный шрифт не загрузился (сеть?) — замеры идут по запасному, он шире');
   await new Promise((r) => setTimeout(r, 60));
   try {
   /* негативный прогон: ломаем нарочно то, что каждая проверка должна ловить */
