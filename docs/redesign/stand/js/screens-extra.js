@@ -123,7 +123,7 @@ function acceptModal(id) {
   modal(`Принять в цикл · ${i.t}`, `
     <div class="two">${fld("Владелец", select("own", S.users.map((u) => [String(u.id), u.n]), String(i.own)))}
       ${fld("Оценка, очков", input("pts", String(i.pts)))}</div>
-    ${fld("В какой цикл", select("cyc", CYCLES.map((c) => [c.id, `${c.n} · ${c.st}`]), S.cycle))}
+    ${fld("В какой цикл", select("cyc", S.cycles.map((c) => [c.id, `${c.n} · ${c.st}`]), S.cycle))}
     ${rows(i.tasks.map((t) => [String(t), esc((S.tasks.find((x) => x.id === t) || {}).t || ""), ""]))}
     <div class="hint">Задачи инициативы попадут на доску текущего цикла.</div>`,
     `${btn("Отмена", "mclose")}${btn("Принять", "do-accept", id, undefined, "pri")}`);

@@ -41,6 +41,7 @@ function confirmCheck() {
   const ALLOWED = {
     dropLink: 'связь снимается и возвращается на том же экране кнопкой «Связать» — два клика, терять нечего',
     resetFilters: 'сброс вида, а не данных',
+    close: 'закрывает панель детали, данных не трогает',
   };
   /* разбор методов store: однострочный `  name(a) { … },` и многострочный до `  },` */
   const methods = [];
@@ -58,7 +59,7 @@ function confirmCheck() {
   const destructive = new Set();
   for (const { name, body } of methods) {
     if (ALLOWED[name]) continue;
-    const byName = /^(del|drop|delete|remove|reset|revoke|purge|clear)/.test(name);
+    const byName = /^(del|drop|delete|remove|reset|revoke|purge|clear|close)/.test(name);
     /* создаёт взамен (новая задача, встреча, добавление в набор) — это ход процесса,
        а не потеря: принятие из очереди уносит карточку, но взамен появляются строки */
     const makes = /mk(Task|Meet)\(|= \[[^\]]*\.\.\.S\./.test(body);
@@ -91,6 +92,30 @@ function confirmCheck() {
   return bad;
 }
 
+/* статическая проверка: два ключа с одним именем в объекте. JavaScript молча оставляет
+   ПОСЛЕДНИЙ, поэтому свежий код может быть мёртв с рождения: в store.js рядом лежали
+   работающий closeCycle и старая заглушка, побеждала заглушка — кнопка печатала
+   «Цикл закрыт, хвосты перенесены» и не делала ничего. */
+function dupKeyCheck() {
+  const bad = [];
+  for (const f of fs.readdirSync(path.join(__dirname, 'js'))) {
+    const lines = fs.readFileSync(path.join(__dirname, 'js', f), 'utf8').split('\n');
+    /* имена считаем В ПРЕДЕЛАХ ОДНОГО объекта: «tasks» законно живёт и в TABS, и в SCREENS */
+    let seen = new Map(), obj = '';
+    lines.forEach((line, i) => {
+      const open = line.match(/^(?:const|let|var)\s+(\w+)\s*=\s*\{\s*$/);
+      if (open) { seen = new Map(); obj = open[1]; return; }
+      if (/^\};?\s*$/.test(line)) { seen = new Map(); obj = ''; return; }
+      if (!obj) return;
+      const m = line.match(/^  "?([\w-]+)"?\s*[:(]/);
+      if (!m) return;
+      if (seen.has(m[1])) bad.push(`${f}: в ${obj} ключ «${m[1]}» объявлен дважды (строки ${seen.get(m[1])} и ${i + 1}) — работает последний`);
+      else seen.set(m[1], i + 1);
+    });
+  }
+  return bad;
+}
+
 function tokenCheck() {
   const css = fs.readFileSync(path.join(__dirname, 'app.css'), 'utf8');
   const defined = new Set();
@@ -101,7 +126,7 @@ function tokenCheck() {
 }
 
 (async () => {
-  const bad = [...tokenCheck(), ...clipCheck(), ...confirmCheck()], errs = [];
+  const bad = [...tokenCheck(), ...clipCheck(), ...confirmCheck(), ...dupKeyCheck()], errs = [];
   const b = await puppeteer.launch({ executablePath: CHROME, headless: 'new' });
   const p = await b.newPage();
   await p.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
@@ -796,6 +821,22 @@ function tokenCheck() {
     v: r.querySelector('.v').textContent.trim(), late: (r.querySelector('.a') || {}).textContent || '' })));
   const liar = checkRows.find((r) => /^(\d+) из \1 закрыто$/.test(r.v) && /просрочено/.test(r.late));
   want(!liar, `строка не спорит сама с собой: ${liar ? liar.v + ' · ' + liar.late : 'нет таких'}`);
+  /* «Закрыть цикл» обязана закрывать: до 20.09 она только печатала «Цикл закрыт,
+     хвосты перенесены», не трогая ни цикл, ни задачи */
+  const before = await p.evaluate(() => ({ cyc: S.cycle, st: (S.cycles.find((c) => c.id === S.cycle) || {}).st,
+    tail: S.tasks.filter((t) => t.sprint === S.cycle && t.st !== 'done' && !t.arch).length }));
+  await go('close-cycle');
+  await new Promise((r) => setTimeout(r, 90));
+  want((await count('.modal .hint')) === 1, 'закрытие цикла сперва спрашивает');
+  await go('do-close-cycle');
+  await new Promise((r) => setTimeout(r, 120));
+  const after = await p.evaluate((id) => ({ st: (S.cycles.find((c) => c.id === id) || {}).st, cyc: S.cycle,
+    left: S.tasks.filter((t) => t.sprint === id && t.st !== 'done' && !t.arch).length }), before.cyc);
+  want(after.st === 'closed', `цикл после «Закрыть цикл» действительно закрыт (стало «${after.st}»)`);
+  want(before.tail > 0 && after.left === 0, `незакрытые задачи переехали из закрытого цикла (было ${before.tail}, осталось ${after.left})`);
+  want(after.cyc !== before.cyc, 'вид переключился на следующий цикл, а не остался в закрытом');
+  await p.evaluate((b) => { S.cycles = CYCLES.slice(); S.cycle = b.cyc; S.tasks = TASKS.slice(); render(); }, before);
+  await new Promise((r) => setTimeout(r, 90));
   await go('tab', 'analytics'); await shot('22-analytics');
   want((await count('.rowset .state.bad')) === 1, 'просрочка в аналитике выделена, а не спрятана среди прочих чисел');
   want((await text('.rowset')).includes('в прошлом цикле'), 'скорость цикла сравнивается с прошлым');

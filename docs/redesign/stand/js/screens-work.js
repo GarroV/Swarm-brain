@@ -48,10 +48,10 @@ function projectsMap() {
 }
 
 /* ── спринты ─────────────────────────────────────────────────── */
-const cycle = () => CYCLES.find((c) => c.id === S.cycle);
+const cycle = () => S.cycles.find((c) => c.id === S.cycle);
 function cycleBar(extra) {
   return `<div class="bar"><span class="drop">${btn(`Цикл: ${cycle().n}`, "noop", undefined, undefined, "sm")}
-    <div class="dmenu">${CYCLES.map((c) => `<button class="mi${c.id === S.cycle ? " on" : ""}" ${act("set-cycle", c.id)}>${c.n} · ${CYCLE_ST[c.st]}</button>`).join("")}</div></span>
+    <div class="dmenu">${S.cycles.map((c) => `<button class="mi${c.id === S.cycle ? " on" : ""}" ${act("set-cycle", c.id)}>${c.n} · ${CYCLE_ST[c.st]}</button>`).join("")}</div></span>
     <span class="due">${fmtDate(cycle().from)} — ${fmtDate(cycle().to)}</span>
     ${cycle().st !== "active" ? state(CYCLE_ST[cycle().st], false) : ""}
     <div class="right">${extra || ""}</div></div>`;
@@ -121,7 +121,7 @@ function screenAnalytics() {
   const done = inCycle.filter((t) => t.st === "done").length;
   const late = inCycle.filter((t) => dueKind(t.due) === "now").length;
   /* скорость без предыдущего цикла — просто число: сравнивать не с чем */
-  const prevId = (CYCLES[CYCLES.findIndex((c) => c.id === S.cycle) + 1] || {}).id;
+  const prevId = (S.cycles[S.cycles.findIndex((c) => c.id === S.cycle) + 1] || {}).id;
   const prevDone = prevId ? S.tasks.filter((t) => t.sprint === prevId && t.st === "done").length : null;
   return cycleBar() + `<div class="panes"><div class="pane"><h3>Аналитика цикла</h3><div class="sub">Скорость и распределение нагрузки</div>
     ${rows([

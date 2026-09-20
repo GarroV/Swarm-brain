@@ -208,12 +208,15 @@ const ACTS = {
   "mf-store": (_, v) => { S.mf = { ...S.mf, store: v }; render(); },
   "mf-st": (_, v) => { S.mf = { ...S.mf, st: v }; render(); },
   "mf-clear": () => { S.mf = { q: "", period: "all", cc: [], src: [], people: [], store: "any", st: "any" }; render(); },
-  "accept-init": (id) => A.acceptInitiative(id),
   "drop-init": (id) => { const i = S.initiatives.find((x) => x.id === id) || {};
     modal("Снять инициативу?", `<div class="hint">Предложение <b>${esc(i.t || "")}</b> уйдёт из списка вместе с предложенными задачами.</div>`,
       `${btn("Оставить", "mclose")}${btn("Снять", "do-drop-init", id, undefined, "pri")}`); },
   "do-drop-init": (id) => { closeModal(); A.dropInitiative(id); },
-  "close-cycle": () => A.closeCycle(),
+  "close-cycle": () => { const c = cycle();
+    const tail = S.tasks.filter((t) => t.sprint === c.id && t.st !== "done" && !t.arch).length;
+    modal("Закрыть цикл?", `<div class="hint">Цикл <b>${esc(c.n)}</b> станет закрытым${tail ? `, а незакрытых задач переедет в следующий: ${tail}` : ", незакрытых задач в нём нет"}. Открыть обратно будет нечем.</div>`,
+      `${btn("Не закрывать", "mclose")}${btn("Закрыть цикл", "do-close-cycle", undefined, undefined, "pri")}`); },
+  "do-close-cycle": () => { closeModal(); A.closeCycle(); },
   "col-move": (_, v) => { const [i, d] = v.split(":").map(Number), j = i + d;
     if (j < 0 || j >= S.cols.length) return; const n = [...S.cols]; [n[i], n[j]] = [n[j], n[i]]; A.set({ cols: n }); },
   "col-tgl": (_, v) => A.set({ cols: S.cols.map((c, k) => k === +v ? { ...c, on: !c.on } : c) }),
@@ -231,9 +234,7 @@ const ACTS = {
   "do-link": (id) => { const f = formData(); closeModal(); A.addLink(+id, f.other, f.kind); },
   "drop-link": (id, v) => A.dropLink(+id, v),
   "accept-init": (id) => acceptModal(id),
-  "do-accept": (id) => { const f = formData(); closeModal();
-    S.initiatives = S.initiatives.map((i) => i.id === id ? { ...i, st: "accepted", own: +f.own, pts: +f.pts } : i);
-    A.toast("Инициатива принята в цикл"); },
+  "do-accept": (id) => { const f = formData(); closeModal(); A.acceptInitiative(id, { own: +f.own, pts: +f.pts }); },
   remind: (id) => A.toast(`Напоминание отправлено: ${user(+id).n}`),
   "show-all": (_, v) => { closePal(); S.aq = v; S.sec = "search"; A.set({}); },
   harvest: (id) => harvestModal(id),

@@ -14,7 +14,7 @@ const S = {
   /* фильтр по человеку — ставится кликом по строке в «Команде» */
   assignee: null, activeOnly: false, showClosed: false,
   /* спринты */
-  cycle: "c2", board: { drag: null },
+  cycle: "c2", cycles: CYCLES.slice(), board: { drag: null },
   cols: [ { id:"open", n:"Открыто", on:true }, { id:"in_progress", n:"В работе", on:true }, { id:"done", n:"Готово", on:true } ],
   /* система */
   theme: "light", lang: "RU", tz: "Europe/Belgrade", toast: null,
@@ -280,12 +280,26 @@ const A = {
   },
   carryOver() {
     const c = cycle();
-    const next = CYCLES.find((x) => x.from > c.to);
+    const next = S.cycles.find((x) => x.from > c.to);
     if (!next) { A.toast("Следующего цикла пока нет"); return; }
     const tail = S.tasks.filter((t) => t.sprint === S.cycle && t.st !== "done" && !t.arch);
     if (!tail.length) { A.toast("Хвостов нет — всё закрыто"); return; }
     S.tasks = S.tasks.map((t) => tail.includes(t) ? { ...t, sprint: next.id } : t);
     A.toast(`Перенесено в «${next.n}»: ${tail.length}`);
+  },
+  /* «Закрыть цикл» до 20.09 только печатал «Цикл закрыт, хвосты перенесены» и не делал
+     НИЧЕГО: ни цикл не закрывался, ни хвосты не двигались. Кнопка, которая врёт об успехе,
+     хуже отсутствующей — теперь она действительно закрывает и переносит. */
+  closeCycle() {
+    const c = cycle();
+    if (c.st === "closed") { A.toast("Цикл уже закрыт"); return; }
+    const next = S.cycles.find((x) => x.from > c.to);
+    const tail = S.tasks.filter((t) => t.sprint === c.id && t.st !== "done" && !t.arch);
+    if (tail.length && !next) { A.toast(`Следующего цикла нет — переносить ${tail.length} некуда`); return; }
+    if (tail.length) S.tasks = S.tasks.map((t) => tail.includes(t) ? { ...t, sprint: next.id } : t);
+    S.cycles = S.cycles.map((x) => x.id === c.id ? { ...x, st: "closed" } : x);
+    if (next) S.cycle = next.id;
+    A.toast(tail.length ? `Цикл закрыт, перенесено в «${next.n}»: ${tail.length}` : "Цикл закрыт, хвостов не было");
   },
   toggleProject(id) {
     S.projects = S.projects.map((p) => p.id === id ? { ...p, st: p.st === "paused" ? "active" : "paused" } : p);
@@ -293,9 +307,8 @@ const A = {
   },
 
   /* спринты */
-  acceptInitiative(id) { S.initiatives = S.initiatives.map((i) => i.id === id ? { ...i, st: "accepted" } : i); A.toast("Инициатива принята в цикл"); },
+  acceptInitiative(id, patch) { S.initiatives = S.initiatives.map((i) => i.id === id ? { ...i, st: "accepted", ...(patch || {}) } : i); A.toast("Инициатива принята в цикл"); },
   dropInitiative(id) { S.initiatives = S.initiatives.filter((i) => i.id !== id); A.toast("Инициатива снята"); },
-  closeCycle() { A.toast("Цикл закрыт, хвосты перенесены"); },
 
   /* система */
   readAll() { S.notif = S.notif.map((n) => ({ ...n, unread: false })); render(); },
