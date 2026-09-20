@@ -24,8 +24,8 @@ function screenBase() {
      занимали четыре ряда по 118px, рвали заголовки многоточием и читались хуже столбцов.
      Карточка остаётся там, где содержимое разнородное (дайджест, аналитика). */
   return baseBar() + table(
-    [{ t: "Запись", w: "38%" }, { t: "Тип", w: "13%" }, { t: "Рынок", w: "94px", opt: true },
-     { t: "Автор", w: "16%", opt: true }, { t: "Файлов", r: true, w: "78px", short: "Файл", opt: true },
+    [{ t: "Запись" }, { t: "Тип", w: "108px" }, { t: "Рынок", w: "92px", opt: true },
+     { t: "Автор", w: "150px", opt: true }, { t: "Файлов", r: true, w: "78px", short: "Файл", opt: true },
      { t: "Добавлена", r: true, w: "106px", short: "Когда" }],
     list.map((e) => {
       const files = S.files.filter((f) => f.rec === e.id).length;

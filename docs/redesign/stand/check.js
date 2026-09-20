@@ -51,7 +51,10 @@ function tokenCheck() {
     .chip{white-space:normal!important;width:60px!important}
     .dtab .c{margin-left:0!important}
     .detail .dmenu{display:block!important}
-    .bar .drop:hover .dmenu{display:none!important}` });
+    .bar .drop:hover .dmenu{display:none!important}
+    .top{min-height:200px!important}
+    .bar .dmenu{display:block!important}
+    .list tbody tr{height:64px!important}` });
 
   const sel = (a, id) => `[data-act="${a}"]` + (id !== undefined ? `[data-id="${id}"]` : '');
   const click = async (s) => {
@@ -392,6 +395,21 @@ function tokenCheck() {
   await go('tab', 'today');
   want((await count('.cal .cev')) === 3, 'календарь дня показывает встречи из Google');
   await go('tab', 'all'); await shot('03-tasks-all');
+  /* плотность: хром не должен съедать верх экрана, а панель фильтров — пестреть
+     переключателями. До правки было 160–291px и полтора десятка контролов подряд. */
+  const dens = await p.evaluate(() => {
+    const row = document.querySelector('.list tbody tr');
+    const bar = document.querySelector('.body .bar');
+    const vis = (e) => e.offsetParent !== null;
+    return {
+      chrome: row ? Math.round(row.getBoundingClientRect().top) : 0,
+      ctrls: bar ? [...bar.querySelectorAll('button, input, select, .chip')].filter(vis).length : 0,
+      rowH: row ? Math.round(row.getBoundingClientRect().height) : 0,
+    };
+  });
+  want(dens.chrome > 0 && dens.chrome <= 130, `до первой строки данных не больше 130px (сейчас ${dens.chrome})`);
+  want(dens.ctrls <= 8, `в панели фильтров на виду не больше 8 контролов (сейчас ${dens.ctrls})`);
+  want(dens.rowH > 0 && dens.rowH <= 40, `строка списка держит ритм не выше 40px (сейчас ${dens.rowH})`);
 
   /* создание задачи */
   await go('new-task');

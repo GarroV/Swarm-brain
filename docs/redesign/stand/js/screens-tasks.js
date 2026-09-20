@@ -96,7 +96,24 @@ function screenTasks() {
   return head + table([
     { t: "", w: "30px" }, { t: "Задача" }, { t: "Проект", w: "20%" }, { t: "Исполнитель", short: "Кто", w: "15%" },
     { t: "Метки", w: "15%", opt: true }, { t: "Рынок", r: true, w: "78px", opt: true }, { t: "Срок", r: true, w: "84px" },
-  ], groupRows(list));
+  ], groupRows(list)) + whatsNext(list);
+}
+
+/* Короткий список оставлял пол-экрана белым: человек видит три строки и не знает,
+   это всё или он сам себе сузил фильтр. Экран отвечает тем, что будет дальше. */
+function whatsNext(list) {
+  if (S.tab === "archive" || list.length > 6) return "";
+  const shown = new Set(list.map((t) => t.id));
+  const soon = S.tasks.filter((t) => !t.arch && t.st !== "done" && t.due && !shown.has(t.id) && inLens(t, S.lens))
+    .sort((a, b) => String(a.due).localeCompare(String(b.due))).slice(0, 4);
+  const done = S.tasks.filter((t) => !t.arch && t.st === "done" && inLens(t, S.lens)).slice(0, 3);
+  if (!soon.length && !done.length) return "";
+  const line = (t) => `<div class="nx" ${act("open-task", t.id)} tabindex="0">${priMark(t.prio)}${esc(clip(t.t, 54))}
+    <span class="r">${t.st === "done" ? state("закрыта", true) : due(t.due, false)}</span></div>`;
+  return `<div class="next">
+    ${soon.length ? `<div><div class="lab">Дальше по сроку</div>${soon.map(line).join("")}</div>` : ""}
+    ${done.length ? `<div><div class="lab">Недавно закрытые</div>${done.map(line).join("")}</div>` : ""}
+  </div>`;
 }
 
 /* ── модалка создания задачи ─────────────────────────────────── */
