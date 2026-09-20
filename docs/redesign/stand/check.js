@@ -378,6 +378,9 @@ function tokenCheck() {
   want((await count('tr.row')) > ofPerson, 'фильтр по человеку снимается крестиком');
   await go('sec', 'team');
   await go('tab', 'ws'); await shot('25-workspaces');
+  const wsUsers = +(await p.$eval('tbody tr td:nth-child(3)', (e) => e.textContent.trim()));
+  const realUsers = await p.evaluate(() => S.users.length);
+  want(wsUsers === realUsers, `у текущего воркспейса счётчик людей совпадает с вкладкой «Участники» (${wsUsers} против ${realUsers})`);
   await go('sec', 'projects');
   const prBefore = await count('tr.row');
   await go('switch-ws', 'latam');

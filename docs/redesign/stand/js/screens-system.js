@@ -19,12 +19,17 @@ function screenTeam() {
           ${cell(late ? `<span class="due now">${late}</span>` : `<span class="muted">—</span>`, "r")}</tr>`; }).join(""));
 }
 function screenWorkspaces() {
+  /* у текущего воркспейса цифры берутся из состояния, иначе они разойдутся с соседней вкладкой */
+  const num = (w) => w.active
+    ? { users: S.users.length, tasks: S.tasks.filter((t) => !t.arch).length, entries: S.entries.length }
+    : { users: w.users, tasks: w.tasks, entries: w.entries };
   return `<div class="bar">${btn("＋ Воркспейс", "new-ws", undefined, undefined, "pri sm")}
-    <div class="right"><span>Воркспейсов <b>${S.workspaces.length}</b></span></div></div>`
+    <div class="right"><span>Щёлкните строку — переключиться</span><span>Воркспейсов <b>${S.workspaces.length}</b></span></div></div>`
     + table([{ t: "Воркспейс", w: "30%" }, { t: "Слаг" }, { t: "Участников", r: true }, { t: "Задач", r: true }, { t: "Записей", r: true }, { t: "Статус", r: true }],
-      S.workspaces.map((w) => `<tr class="row">${cell(esc(w.name), "t")}${cell(`<code>${esc(w.id)}</code>`)}
-        ${cell(`<span class="due">${w.users}</span>`, "r")}${cell(`<span class="due">${w.tasks}</span>`, "r")}
-        ${cell(`<span class="due">${w.entries}</span>`, "r")}${cell(state(w.active ? "текущий" : "доступен", w.active), "r")}</tr>`).join(""));
+      S.workspaces.map((w) => { const n = num(w);
+        return `<tr class="row"${w.active ? "" : ` ${act("switch-ws", w.id)} tabindex="0"`}>${cell(esc(w.name), "t")}${cell(`<code>${esc(w.id)}</code>`)}
+        ${cell(`<span class="due">${n.users}</span>`, "r")}${cell(`<span class="due">${n.tasks}</span>`, "r")}
+        ${cell(`<span class="due">${n.entries}</span>`, "r")}${cell(state(w.active ? "текущий" : "доступен", w.active), "r")}</tr>`; }).join(""));
 }
 
 /* ── настройки ───────────────────────────────────────────────── */
