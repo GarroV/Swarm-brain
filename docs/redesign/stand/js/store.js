@@ -87,6 +87,10 @@ function projectTasks(id) {
   return S.tasks.filter((t) => !t.arch && (t.pr === id || subs.includes(t.pr)));
 }
 
+/* Задачи цикла — одно определение на все его вкладки: доска брала без архивных, а чек
+   цикла и аналитика — с архивными, и три вкладки одного экрана расходились в числах. */
+const cycleTasks = (id = S.cycle) => S.tasks.filter((t) => t.sprint === id && !t.arch);
+
 function visibleTasks(list = S.tab) {
   const q = S.q.trim().toLowerCase();
   return S.tasks.filter((t) =>

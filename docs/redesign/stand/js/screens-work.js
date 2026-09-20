@@ -70,7 +70,7 @@ function screenSprints() {
   if (S.tab === "analytics") return screenAnalytics();
   if (S.tab === "journal") return screenJournal();
   const cols = S.cols.filter((c) => c.on);
-  const inCycle = S.tasks.filter((t) => t.sprint === S.cycle && !t.arch);
+  const inCycle = cycleTasks();
   if (!S.tasks.length) return cycleBar() + empty("В этом воркспейсе нет задач", "Доска наполнится, когда задачи попадут в цикл");
   return cycleBar(`<span>Задач в цикле <b>${inCycle.length}</b></span><span>Перетащите карточку, чтобы сменить статус</span>`)
     + `<div class="board">${cols.map((c) => {
@@ -103,7 +103,7 @@ function screenPool() {
 }
 
 function screenCheck() {
-  const inCycle = S.tasks.filter((t) => t.sprint === S.cycle);
+  const inCycle = cycleTasks();
   if (!inCycle.length) return cycleBar() + empty("В этом цикле нечего сверять", "Возьмите задачи в цикл — здесь появится прогресс по проектам");
   const done = inCycle.filter((t) => t.st === "done").length;
   const byProj = {};
@@ -121,21 +121,25 @@ function screenCheck() {
 }
 
 function screenAnalytics() {
-  const inCycle = S.tasks.filter((t) => t.sprint === S.cycle);
+  const inCycle = cycleTasks();
   if (!inCycle.length) return cycleBar() + empty("Считать пока нечего", "Аналитика собирается по задачам цикла");
-  const load = S.users.map((u) => [u, inCycle.filter((t) => t.who.includes(u.id)).length]).filter(([, n]) => n).sort((a, b) => b[1] - a[1]);
+  /* нагрузка — это то, что ЕЩЁ висит: закрытые задачи в неё не входят, иначе человек,
+     закрывший десять, выглядит самым загруженным */
+  const open_ = inCycle.filter((t) => t.st !== "done");
+  const load = S.users.map((u) => [u, open_.filter((t) => t.who.includes(u.id)).length]).filter(([, n]) => n).sort((a, b) => b[1] - a[1]);
   const max = Math.max(...load.map(([, n]) => n), 1);
   const done = inCycle.filter((t) => t.st === "done").length;
-  const late = inCycle.filter((t) => dueKind(t.due) === "now").length;
+  /* просрочка закрытой задачи ничего не значит: считаем только живые */
+  const late = open_.filter((t) => dueKind(t.due) === "now").length;
   /* скорость без предыдущего цикла — просто число: сравнивать не с чем */
   const prevId = (S.cycles[S.cycles.findIndex((c) => c.id === S.cycle) + 1] || {}).id;
-  const prevDone = prevId ? S.tasks.filter((t) => t.sprint === prevId && t.st === "done").length : null;
+  const prevDone = prevId ? cycleTasks(prevId).filter((t) => t.st === "done").length : null;
   return cycleBar() + `<div class="panes"><div class="pane"><h3>Аналитика цикла</h3><div class="sub">Скорость и распределение нагрузки</div>
     ${rows([
       ["Закрыто за цикл", nTasks(done) + (prevDone === null ? "" : ` <span class="muted">· в прошлом цикле ${prevDone}</span>`)],
       ["В работе", nTasks(inCycle.filter((t) => t.st === "in_progress").length)],
       ["Просрочено", late ? alert_(nTasks(late)) : nTasks(0)],
-      ["Без исполнителя", nTasks(inCycle.filter((t) => !t.who.length).length)],
+      ["Без исполнителя", nTasks(open_.filter((t) => !t.who.length).length)],
     ])}
     ${lab("Нагрузка по людям")}
     <div class="bars">${load.map(([u, n]) => `<div class="brow" ${act("person-tasks", u.id)}><span class="k">${av(u.id)}</span>

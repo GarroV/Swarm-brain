@@ -947,6 +947,26 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 90));
   await go('tab', 'analytics'); await shot('22-analytics');
   want((await count('.rowset .state.bad')) === 1, 'просрочка в аналитике выделена, а не спрятана среди прочих чисел');
+  /* три вкладки одного экрана считают задачи цикла одинаково, и нагрузка не включает
+     закрытые: иначе закрывший десять выглядит самым загруженным */
+  const cyc = await p.evaluate(() => {
+    const nums = {};
+    document.querySelectorAll('.rowset > div').forEach((r) => {
+      const k = (r.querySelector('.k') || r.firstElementChild || {}).textContent;
+      const v = (r.querySelector('.v') || r.lastElementChild || {}).textContent || '';
+      if (k) nums[k.trim()] = parseInt(v, 10);
+    });
+    const load = [...document.querySelectorAll('.bars .brow .v')].reduce((n, e) => n + +e.textContent, 0);
+    const inCycle = cycleTasks();
+    return { nums, load,
+      open: inCycle.filter((t) => t.st !== 'done').length,
+      lateDone: inCycle.filter((t) => t.st === 'done' && dueKind(t.due) === 'now').length,
+      boardTotal: inCycle.length };
+  });
+  want(cyc.load + cyc.nums['Без исполнителя'] === cyc.open,
+    `нагрузка по людям плюс «без исполнителя» = живые задачи цикла (${cyc.load} + ${cyc.nums['Без исполнителя']} против ${cyc.open})`);
+  want(cyc.lateDone > 0 ? cyc.nums['Просрочено'] < cyc.open : true,
+    `закрытые задачи не попали в «просрочено» (закрытых с прошедшим сроком ${cyc.lateDone})`);
   want((await text('.rowset')).includes('в прошлом цикле'), 'скорость цикла сравнивается с прошлым');
   await go('person-tasks', '501');
   await new Promise((r) => setTimeout(r, 120));
