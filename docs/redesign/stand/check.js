@@ -141,6 +141,16 @@ function tokenCheck() {
         out.push(`колонки не заполняют таблицу: ${sum}px из ${tb.clientWidth}px, справа пустая полоса`);
     });
 
+    /* содержимое не должно вылезать за ячейку: обрезанная кнопка нажимается вслепую */
+    document.querySelectorAll('.list td').forEach((td) => {
+      const box = td.getBoundingClientRect();
+      td.querySelectorAll('.btn, .state, .tag').forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (r.width && r.right > box.right + 2)
+          out.push(`«${el.textContent.trim().slice(0, 24)}» вылезает из своей колонки на ${Math.round(r.right - box.right)}px`);
+      });
+    });
+
     /* вкладки не должны прятаться за краем: обрезанная вкладка недоступна */
     document.querySelectorAll('.dtabs, .tabs').forEach((t) => {
       if (t.scrollWidth > t.clientWidth + 2) out.push(`вкладки не помещаются и обрезаются: ${t.textContent.trim().slice(0, 60)}`);

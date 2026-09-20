@@ -89,7 +89,7 @@ function screenAdmin() {
   return `<div class="bar">${btn("＋ Пользователь", "new-user", undefined, undefined, "pri sm")}
     ${chip(`Только без почты · ${noMail.length}`, S.noMailOnly, "tgl-nomail")}
     <div class="right"><span>Показано <b>${list.length}</b> из ${S.users.length}</span><span>Очередь вычитки <b>${S.queue.length}</b></span></div></div>`
-    + (list.length ? table([{ t: "Пользователь", w: "22%" }, { t: "Роль" }, { t: "Рынки" }, { t: "Почта" }, { t: "Заметка админа", w: "26%" }, { t: "Действия", r: true, w: "190px" }],
+    + (list.length ? table([{ t: "Пользователь", w: "22%" }, { t: "Роль" }, { t: "Рынки" }, { t: "Почта" }, { t: "Заметка админа", w: "26%" }, { t: "Действия", r: true, w: "230px" }],
       list.map((u) => `<tr class="row">${cell(av(u.id), "t")}${cell(ROLE[u.role] || u.role)}
         ${cell(`<span class="cc">${u.mk}</span>`)}${cell(u.em ? esc(u.em) : state("не привязана", false))}
         ${cell(u.note ? esc(u.note) : `<span class="muted">—</span>`)}
@@ -135,7 +135,7 @@ function screenMap() {
       ["Задачи", "веб, бот, Claude Desktop", state("все поверхности", true)],
       ["Встречи и тезисы", "рекордер и импорт → база → веб", state("вычитка в вебе", true)],
       ["Файлы", "загрузка в вебе, индекс в базе", state("поиск по тексту", true)],
-      ["Уведомления", "только Telegram", state("бот не редактор", true)],
+      ["Уведомления", "только Telegram", state("бот не редактор", false)],
     ])}</div></div>`;
 }
 
