@@ -106,7 +106,7 @@ function detailEntry(e) {
       <dt>Добавлена</dt><dd>${due(e.at)}</dd>
       <dt>Приватность</dt><dd><button class="mini${e.priv ? " on" : ""}" ${act("tgl-epriv", e.id)}>${e.priv ? "личная" : "общая"}</button></dd>
       <dt>Страны</dt><dd>${COUNTRIES.map((c) => `<button class="mini${e.cc.includes(c.c) ? " on" : ""}" ${act("tgl-ecc", e.id, c.c)}>${c.c}</button>`).join("")}</dd>
-      <dt>Индекс</dt><dd>${state(e.ix.n ? `${e.ix.n} фрагментов · ${e.ix.at}` : "не индексируется", !!e.ix.n)}</dd></dl>
+      <dt>Индекс</dt><dd>${state(e.ix.n ? `${nFrag(e.ix.n)} · ${e.ix.at}` : "не индексируется", !!e.ix.n)}</dd></dl>
       ${lab("Фрагмент")}<div class="note">${esc(e.p)}</div>
       ${e.meet ? lab("Из встречи") + `<div class="src" ${act("open-meet", e.meet)}>${esc((S.meetings.find((m) => m.id === e.meet) || {}).t || "")}</div>` : ""}
       ${lab(`Файлы · ${files.length}`)}
@@ -141,7 +141,7 @@ function detailProject(p) {
       <dt>Подпроекты</dt><dd>${subs.length || "—"}</dd></dl>
       ${lab("Описание")}<div class="note">${esc(p.d)}</div>
       ${lab("Подпроекты")}${subs.length ? rows(subs.map((s) => [esc(s.n),
-        `${S.tasks.filter((t) => t.pr === s.id && !t.arch).length} задач`, btn("Открыть", "open-proj", s.id, undefined, "sm")]))
+        nTasks(S.tasks.filter((t) => t.pr === s.id && !t.arch).length), btn("Открыть", "open-proj", s.id, undefined, "sm")]))
         : rows([["—", "подпроектов нет", ""]])}
       ${lab("Последние задачи")}${rows(tasks.slice(0, 5).map((t) => [dot(t.st), `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, due(t.due)]))}</div>`;
 }

@@ -62,7 +62,7 @@ function settingsColumns() {
   return `<div class="panes"><div class="pane"><h3>Колонки доски спринта</h3>
     <div class="sub">Порядок и состав колонок — общий для воркспейса</div>
     ${rows(S.cols.map((c, i) => [`${dot(c.id)}${esc(c.n)}`,
-      `${S.tasks.filter((t) => t.st === c.id && t.sprint === S.cycle).length} задач · статус <code>${c.id}</code>`,
+      `${nTasks(S.tasks.filter((t) => t.st === c.id && t.sprint === S.cycle).length)} · статус <code>${c.id}</code>`,
       `<span class="ib">${btn("↑", "col-move", undefined, `${i}:-1`, "sm")}${btn("↓", "col-move", undefined, `${i}:1`, "sm")}
        ${btn(c.on ? "Скрыть" : "Показать", "col-tgl", undefined, String(i), "sm")}</span>`]))}
     <div class="mt">${btn("Добавить колонку", "add-col", undefined, undefined, "pri")}${btn("Вернуть по умолчанию", "reset-cols")}</div></div></div>`;
@@ -133,15 +133,16 @@ function renderHeaderPopovers() {
       <button class="rd" ${act("read-one", i)} title="отметить прочитанным">✓</button>
       <b>${esc(n.t)}</b>${esc(n.s)}<div class="w">${esc(n.w)}</div></div>`).join("")}`;
   const over = S.tasks.filter((t) => dueKind(t.due) === "now" && t.who.includes(ME) && !t.arch);
+  const pending = S.meetings.filter((m) => m.st === "pending").length;
   $(".dig").innerHTML = `<h4>Дайджест на сегодня</h4>
     <div class="sec"><h5>Требует вас</h5>
       ${over.map((t) => `<div class="li" ${act("open-task", t.id)}><i class="d"></i>${esc(t.t)}</div>`).join("") || '<div class="li"><i class="d"></i>Просроченного нет</div>'}
-      <div class="li" ${act("sec", "meetings")}><i class="d"></i>${S.meetings.filter((m) => m.st === "pending").length} встречи ждут вычитки</div>
-      <div class="li" ${act("sec", "meetings")}><i class="d"></i>${S.queue.length} агентских встреч в очереди</div></div>
+      <div class="li" ${act("sec", "meetings")}><i class="d"></i>${nMeet(pending)} ${pending % 10 === 1 && pending % 100 !== 11 ? "ждёт" : "ждут"} вычитки</div>
+      <div class="li" ${act("sec", "meetings")}><i class="d"></i>${plural(S.queue.length, "агентская встреча", "агентские встречи", "агентских встреч")} в очереди</div></div>
     <div class="sec"><h5>Встречи сегодня · ${CALENDAR.length}</h5>
       ${CALENDAR.map((c) => `<div class="li"><i class="d"></i>${c.at} · ${esc(c.t)}${c.rec ? "" : " · без записи"}</div>`).join("")}</div>
     <div class="sec"><h5>Движение за сутки</h5>
-      <div class="li"><i class="d"></i>Закрыто ${S.tasks.filter((t) => t.st === "done").length} задач, создано 4</div>
+      <div class="li"><i class="d"></i>Закрыто ${nTasks(S.tasks.filter((t) => t.st === "done").length)}, создано 4</div>
       <div class="li"><i class="d"></i>Новых записей в базе: 1</div></div>`;
   $(".menu").innerHTML = `<div class="mi">${av(ME)}<span class="a">${ROLE[me().role]}</span></div><div class="sep"></div>
     <button class="mi" ${act("theme")}>Тема<span class="a">${S.theme === "dark" ? "тёмная" : "светлая"}</span></button>

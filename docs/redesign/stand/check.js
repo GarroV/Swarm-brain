@@ -79,6 +79,22 @@ function tokenCheck() {
       if (e.offsetHeight > lh * 1.75 + 6)
         out.push('подвал карточки перенёсся: «' + e.textContent.trim().slice(0, 24) + '» h=' + e.offsetHeight);
     });
+    /* русские числительные: «2 задач» и «1 задачи» — ошибка в пользовательском тексте */
+    {
+      const txt = (document.querySelector('.body') || document.body).innerText;
+      const forms = { 'задач': ['задача', 'задачи', 'задач'], 'встреч': ['встреча', 'встречи', 'встреч'],
+        'фрагмент': ['фрагмент', 'фрагмента', 'фрагментов'], 'человек': ['человек', 'человека', 'человек'] };
+      const right = (n, f) => { const a = Math.abs(n) % 100, b = a % 10;
+        return a > 10 && a < 20 ? f[2] : b === 1 ? f[0] : b >= 2 && b <= 4 ? f[1] : f[2]; };
+      for (const stem of Object.keys(forms)) {
+        const re = new RegExp('(\\d+)\\s(' + stem + '[а-яё]*)', 'g');
+        let m;
+        while ((m = re.exec(txt))) {
+          const want = right(+m[1], forms[stem]);
+          if (m[2] !== want) out.push(`числительное: «${m[0]}» вместо «${m[1]} ${want}»`);
+        }
+      }
+    }
     /* карточки одного ряда сетки должны быть одной высоты */
     const grids = document.querySelectorAll('.grid');
     grids.forEach((g) => {

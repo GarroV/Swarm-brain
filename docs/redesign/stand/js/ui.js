@@ -17,9 +17,20 @@ const cc = (codes) => codes.length ? codes.map((c) => `<span class="cc" title="$
 const wsChip = () => {
   const cur = S.workspaces.find((w) => w.active) || S.workspaces[0];
   return `<span class="drop">${btn(`Воркспейс: ${cur.name}`, "noop", undefined, undefined, "sm")}
-    <div class="dmenu">${S.workspaces.map((w) => `<button class="mi${w.active ? " on" : ""}" ${act("switch-ws", w.id)}>${esc(w.name)} · ${w.users} чел.</button>`).join("")}
+    <div class="dmenu">${S.workspaces.map((w) => `<button class="mi${w.active ? " on" : ""}" ${act("switch-ws", w.id)}>${esc(w.name)} · ${nPeople(w.users)}</button>`).join("")}
     <button class="mi" ${act("new-ws")}>＋ Новый воркспейс</button></div></span>`;
 };
+/* русские числительные: «1 задача», «2 задачи», «5 задач».
+   Интерфейс двуязычный, и в EN подставится простая форма из второго аргумента. */
+const plural = (n, one, few, many) => {
+  const a = Math.abs(n) % 100, b = a % 10;
+  const word = a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many;
+  return `${n} ${word}`;
+};
+const nTasks = (n) => plural(n, "задача", "задачи", "задач");
+const nFrag = (n) => plural(n, "фрагмент", "фрагмента", "фрагментов");
+const nPeople = (n) => plural(n, "человек", "человека", "человек");
+const nMeet = (n) => plural(n, "встреча", "встречи", "встреч");
 const chip = (text, on, a, id, v) => `<button class="chip${on ? " on" : ""}" ${act(a, id, v)}>${esc(text)}</button>`;
 const btn = (text, a, id, v, cls) => `<button class="btn${cls ? " " + cls : ""}" ${act(a, id, v)}>${esc(text)}</button>`;
 const empty = (title, sub) => `<div class="empty"><b>${esc(title)}</b>${sub ? esc(sub) : ""}</div>`;

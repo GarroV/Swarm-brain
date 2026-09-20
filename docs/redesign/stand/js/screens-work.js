@@ -107,10 +107,10 @@ function screenAnalytics() {
   const max = Math.max(...load.map(([, n]) => n), 1);
   return cycleBar() + `<div class="panes"><div class="pane"><h3>Аналитика цикла</h3><div class="sub">Скорость и распределение нагрузки</div>
     ${rows([
-      ["Закрыто за цикл", `${inCycle.filter((t) => t.st === "done").length} задач`],
-      ["В работе", `${inCycle.filter((t) => t.st === "in_progress").length} задач`],
-      ["Просрочено", `${inCycle.filter((t) => dueKind(t.due) === "now").length} задач`],
-      ["Без исполнителя", `${inCycle.filter((t) => !t.who.length).length} задач`],
+      ["Закрыто за цикл", nTasks(inCycle.filter((t) => t.st === "done").length)],
+      ["В работе", nTasks(inCycle.filter((t) => t.st === "in_progress").length)],
+      ["Просрочено", nTasks(inCycle.filter((t) => dueKind(t.due) === "now").length)],
+      ["Без исполнителя", nTasks(inCycle.filter((t) => !t.who.length).length)],
     ])}
     ${lab("Нагрузка по людям")}
     <div class="bars">${load.map(([u, n]) => `<div class="brow"><span class="k">${av(u.id)}</span>
