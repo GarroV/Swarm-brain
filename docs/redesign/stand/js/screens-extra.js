@@ -84,8 +84,11 @@ function screenTimeline() {
     const items = list.filter((t) => t.due === day);
     const late = dueKind(day) === "now";
     return `<div class="tday${late ? " late" : ""}"><div class="tdh">${fmtDate(day)}<span class="n">${items.length}</span></div>
-      <div class="tditems">${items.map((t) => `<div class="tdi" ${act("open-task", t.id)}>${dot(t.st)}${pri(t.prio)}${esc(t.t)}
-        <span class="who">${t.who.length ? av(t.who[0], false) : ""}</span></div>`).join("")}</div></div>`;
+      <div class="tditems">${items.map((t) => `<div class="tdi" ${act("open-task", t.id)}>${dot(t.st)}${pri(t.prio)}<b>${esc(t.t)}</b>
+        <span class="pj">${esc(projPath(t.pr))}</span>
+        <span class="mt">${lbls(t.labels)}${t.recur ? tag(RECUR_LABEL[t.recur], "p") : ""}</span>
+        <span class="mk">${t.mk ? `<span class="cc">${t.mk}</span>` : ""}</span>
+        <span class="who">${t.who.length ? av(t.who[0]) : `<span class="muted">—</span>`}</span></div>`).join("")}</div></div>`;
   }).join("")}</div>`;
 }
 

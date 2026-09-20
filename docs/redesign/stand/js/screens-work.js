@@ -39,7 +39,7 @@ const cycle = () => CYCLES.find((c) => c.id === S.cycle);
 function cycleBar(extra) {
   return `<div class="bar"><span class="drop">${btn(`Цикл: ${cycle().n}`, "noop", undefined, undefined, "sm")}
     <div class="dmenu">${CYCLES.map((c) => `<button class="mi" ${act("noop")}>${c.n} · ${c.st}</button>`).join("")}</div></span>
-    ${chip(`${cycle().from} — ${cycle().to}`, false, "noop")}
+    ${chip(`${fmtDate(cycle().from)} — ${fmtDate(cycle().to)}`, false, "noop")}
     <div class="right">${extra || ""}</div></div>`;
 }
 function screenSprints() {

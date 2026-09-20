@@ -429,7 +429,13 @@ td.acts{white-space:nowrap}
 .tdi{display:flex;align-items:center;gap:2px;padding:7px 11px;border:1px solid var(--line);border-radius:8px;
   background:var(--surface);font-size:var(--fs-dense);color:var(--ink);cursor:pointer}
 .tdi:hover{border-color:var(--accent-line);background:var(--accent-soft)}
-.tdi .who{margin-left:auto}
+.tdi b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}
+.tdi .pj{margin-left:14px;color:var(--ink-3);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 220px}
+.tdi .mt{margin-left:auto;display:flex;gap:4px;align-items:center;flex:none}
+.tdi .mk{width:34px;text-align:right;flex:none}
+.tdi .who{margin-left:12px;flex:none;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.tdi .who .av{vertical-align:0;margin-right:0}
+.tdi{min-height:38px;box-sizing:border-box}
 .pop .n{position:relative}
 .pop .n .rd{position:absolute;right:10px;top:10px;width:18px;height:18px;border-radius:50%;background:var(--surface-3);
   color:var(--ink-3);font-size:10px;display:grid;place-items:center}
