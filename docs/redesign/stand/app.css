@@ -17,7 +17,7 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font:400 var(--fs-body)/1.45 var(--font-ui);color:var(--ink);background:var(--canvas);-webkit-font-smoothing:antialiased}
-.app{display:grid;grid-template-columns:var(--nav-w) 1fr var(--detail-w);height:100vh;min-width:1280px}
+.app{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr) var(--detail-w);height:100vh;min-width:1040px}
 
 /* ── ПАПКИ: постоянная левая навигация ───────────────────────── */
 .nav{background:var(--surface-2);border-right:1px solid var(--line-strong);display:flex;flex-direction:column}
@@ -108,8 +108,8 @@ tbody tr.sel td.t{font-weight:600}
 .stamp{position:fixed;right:10px;bottom:8px;font:500 10px/1 var(--font-num);color:var(--ink-empty);letter-spacing:.08em}
 
 /* ───────── дополнения стенда ───────── */
-.app{grid-template-columns:var(--nav-w) 1fr;transition:grid-template-columns .16s}
-.app.with-detail{grid-template-columns:var(--nav-w) 1fr var(--detail-w)}
+.app{grid-template-columns:var(--nav-w) minmax(0,1fr);transition:grid-template-columns .16s}
+.app.with-detail{grid-template-columns:var(--nav-w) minmax(0,1fr) var(--detail-w)}
 .detail{display:none}.app.with-detail .detail{display:flex}
 .item,.tab,.chip,.btn,.row{cursor:pointer}
 .item:focus-visible,.tab:focus-visible,.chip:focus-visible,.btn:focus-visible,tbody tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
@@ -441,3 +441,20 @@ td.acts{white-space:nowrap}
 .cev b{font-size:var(--fs-dense);color:var(--ink)}
 .cev .pl{color:var(--ink-3)}
 .srch{padding:4px var(--gutter) 28px;overflow:auto}
+
+/* быстрый ввод в колонке доски */
+.qadd{width:100%;height:30px;margin-top:6px;padding:0 10px;border:1px dashed var(--line-strong);border-radius:8px;
+  background:transparent;font:400 var(--fs-dense)/1 var(--font-ui);color:var(--ink)}
+.qadd::placeholder{color:var(--ink-empty)}
+.qadd:focus{outline:none;border-style:solid;border-color:var(--accent);background:var(--surface)}
+
+/* узкое окно ноутбука: панель детали сужается, потом уходит поверх */
+@media (max-width:1320px){ :root{ --detail-w:330px; --nav-w:208px; --gutter:18px } }
+@media (max-width:1140px){
+  .app.with-detail .detail{position:fixed;right:0;top:0;bottom:0;width:380px;z-index:35;
+    box-shadow:-18px 0 50px rgba(10,13,17,.18)}
+  .app.with-detail{grid-template-columns:var(--nav-w) minmax(0,1fr)}
+}
+.body{min-width:0}
+.cal{min-width:0;max-width:100%}
+.main>*{min-width:0}

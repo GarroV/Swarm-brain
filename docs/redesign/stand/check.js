@@ -34,7 +34,11 @@ function tokenCheck() {
     .chip{white-space:normal!important;width:60px!important}` });
 
   const sel = (a, id) => `[data-act="${a}"]` + (id !== undefined ? `[data-id="${id}"]` : '');
-  const click = async (s) => { await p.$eval(s, (e) => e.click()); await new Promise((r) => setTimeout(r, 90)); };
+  const click = async (s) => {
+    const ok = await p.$eval(s, (e) => { e.click(); return true; }).catch(() => false);
+    if (!ok) bad.push('НЕТ ЭЛЕМЕНТА: ' + s);
+    await new Promise((r) => setTimeout(r, 90));
+  };
   const go = (a, id) => click(sel(a, id));
   const gov = (a, v) => click(`[data-act="${a}"][data-v="${v}"]`);
   const count = (s) => p.$$eval(s, (els) => els.length);
@@ -215,6 +219,13 @@ function tokenCheck() {
   const doneAfter = await count('[data-drop="done"] .card');
   want(doneAfter === doneBefore + 1, `перетаскивание переносит карточку (${doneBefore} → ${doneAfter})`);
   await shot('19-board-after-drop');
+  const openBefore = await count('[data-drop="open"] .card');
+  await p.$eval('[data-qadd="open"]', (e) => { e.focus(); e.value = 'Быстрая задача с доски'; });
+  await p.keyboard.press('Enter');
+  await new Promise((r) => setTimeout(r, 150));
+  const openAfter = await count('[data-drop="open"] .card');
+  want(openAfter === openBefore + 1, `быстрый ввод в колонке создал карточку (${openBefore} → ${openAfter})`);
+  await shot('42-quick-add');
   await go('tab', 'timeline'); await shot('36-timeline');
   want((await count('.tday')) > 3, 'таймлайн разложил задачи по дням');
   await go('tab', 'pool'); await shot('20-initiatives');
@@ -282,6 +293,26 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 120));
   want((await text('h1')) === 'Ответ по базе', 'вопрос к базе открывает ответ');
   await shot('32-answer');
+  /* узкое окно ноутбука */
+  await p.setViewport({ width: 1200, height: 800, deviceScaleFactor: 2 });
+  await go('sec', 'tasks');
+  await p.$eval('tbody tr[data-act="open-task"]', (e) => e.click());
+  await new Promise((r) => setTimeout(r, 120));
+  await shot('43-narrow-1200');
+  await p.setViewport({ width: 1100, height: 780, deviceScaleFactor: 2 });
+  await new Promise((r) => setTimeout(r, 120));
+  await shot('44-narrow-1100');
+  await go('close');
+  await p.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
+  /* палитра с клавиатуры */
+  await go('search');
+  await p.type('#q', 'смет');
+  await new Promise((r) => setTimeout(r, 120));
+  await p.keyboard.press('ArrowDown');
+  await p.keyboard.press('Enter');
+  await new Promise((r) => setTimeout(r, 150));
+  want((await count('.detail .d-title')) === 1, 'палитра открывает находку с клавиатуры');
+  await go('close');
   await p.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
   await go('sec', 'tasks'); await shot('33-dark');
   await p.evaluate(() => { document.documentElement.dataset.theme = 'light'; });

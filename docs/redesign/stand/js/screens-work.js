@@ -57,7 +57,8 @@ function screenSprints() {
         <div class="cards" data-drop="${c.id}">${items.map((t) => `<div class="card" draggable="true" data-card="${t.id}" ${act("open-task", t.id)} tabindex="0">
           ${pri(t.prio)}${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">—</span>`}
           <span style="margin-left:auto">${due(t.due)}</span></div></div>`).join("")
-          || `<div class="drop-empty">перетащите сюда</div>`}</div></div>`;
+          || `<div class="drop-empty">перетащите сюда</div>`}
+          <input class="qadd" placeholder="+ задача в «${esc(c.n)}»" data-qadd="${c.id}"></div></div>`;
     }).join("")}</div>`;
 }
 

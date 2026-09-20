@@ -214,7 +214,9 @@ document.addEventListener("click", (e) => {
   const a = t.dataset.act;
   if (!ACTS[a]) return;
   e.stopPropagation();
+  const fromPal = !!t.closest(".pal");
   ACTS[a](t.dataset.id, t.dataset.v, e);
+  if (fromPal) closePal();
 });
 document.addEventListener("input", (e) => {
   const q = e.target.dataset.qin;
@@ -232,6 +234,33 @@ document.addEventListener("change", (e) => {
   if (t && t.dataset.act === "set-assignee") A.patchTask(+t.dataset.id, { who: e.target.value ? [+e.target.value] : [] }, "сменил исполнителя");
 });
 document.addEventListener("keydown", (e) => {
+  /* быстрый ввод задачи в колонке доски */
+  const qa = e.target.dataset && e.target.dataset.qadd;
+  if (qa && e.key === "Enter" && e.target.value.trim()) {
+    const title = e.target.value.trim();
+    A.createTask({ title, pr: "p1", who: ME, due: null, prio: "med", labels: [], mk: null, recur: null, priv: false, note: "" });
+    A.patchTask(S.sel, { st: qa, sprint: S.cycle });
+    A.close();
+    return;
+  }
+  /* палитра: стрелками и Enter */
+  if ($(".pal").classList.contains("open") && ["ArrowDown", "ArrowUp", "Enter"].includes(e.key)) {
+    const items = $$(".pal .r");
+    if (items.length) {
+      const cur = items.findIndex((x) => x.classList.contains("on"));
+      if (e.key === "Enter") { e.preventDefault();
+        if (cur >= 0) items[cur].click(); else { const v = $("#q").value; if (v) ACTS.ask(null, v); }
+        return; }
+      if (e.key !== "Enter") {
+        e.preventDefault();
+        const next = e.key === "ArrowDown" ? Math.min(cur + 1, items.length - 1) : Math.max(cur - 1, 0);
+        items.forEach((x) => x.classList.remove("on"));
+        items[next < 0 ? 0 : next].classList.add("on");
+        items[next < 0 ? 0 : next].scrollIntoView({ block: "nearest" });
+        return;
+      }
+    }
+  }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPal(); }
   if (e.key === "Escape") { closePal(); closeModal(); if (S.sel) A.close(); }
   if (e.key === "Enter") {
@@ -262,7 +291,6 @@ function palResults(q) {
 
 window.addEventListener("DOMContentLoaded", () => {
   $("#q").addEventListener("input", (e) => palResults(e.target.value));
-  $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.value) ACTS.ask(null, e.target.value); });
   $(".scrim").addEventListener("click", closePal);
   $(".mscrim").addEventListener("click", closeModal);
   renderHeaderPopovers();

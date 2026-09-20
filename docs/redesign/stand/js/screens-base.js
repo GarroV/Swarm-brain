@@ -11,7 +11,8 @@ function baseBar() {
       ${COUNTRIES.map((c) => `<button class="mi${S.bcc === c.c ? " on" : ""}" ${act("b-cc", undefined, c.c)}>${c.c} · ${c.n}</button>`).join("")}</div></span>
     ${chip("Только мои", S.bmine, "b-mine")}
     <input class="qin" placeholder="Поиск по базе" value="${esc(S.bq)}" data-qin="base">
-    <div class="right"><span>Записей <b>${S.entries.length}</b></span><span>Файлов <b>${S.files.length}</b></span></div></div>`;
+    <div class="right"><span>Записей <b>${S.entries.length}</b></span><span>Файлов <b>${S.files.length}</b></span>
+      <span>Объём <b>${(S.files.length * 0.55).toFixed(1)} МБ</b></span></div></div>`;
 }
 
 function screenBase() {
