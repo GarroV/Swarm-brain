@@ -163,10 +163,22 @@ function tokenCheck() {
     .list tbody tr{height:64px!important}` });
 
   const sel = (a, id) => `[data-act="${a}"]` + (id !== undefined ? `[data-id="${id}"]` : '');
+  /* ждём ФАКТА перерисовки, а не фиксированной паузы: пауза давала мигающее падение —
+     на загруженной машине замер успевал раньше, чем экран менялся */
+  const settled = async (was) => {
+    /* потолок 600 мс: перерисовка нормально укладывается в кадр, а действие, которое
+       вовсе не перерисовывает (открыватель меню), не должно стоить прогону двух секунд */
+    for (let i = 0; i < 60; i++) {
+      const now = await p.evaluate(() => window.__renders || 0);
+      if (now !== was) { await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => r()))); return; }
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
   const click = async (s) => {
+    const was = await p.evaluate(() => window.__renders || 0);
     const ok = await p.$eval(s, (e) => { e.click(); return true; }).catch(() => false);
     if (!ok) bad.push('НЕТ ЭЛЕМЕНТА: ' + s);
-    await new Promise((r) => setTimeout(r, 90));
+    else await settled(was);
   };
   const go = (a, id) => click(sel(a, id));
   const gov = (a, v) => click(`[data-act="${a}"][data-v="${v}"]`);
@@ -323,7 +335,10 @@ function tokenCheck() {
         });
       });
     });
-    if (document.querySelector('[data-drop="done"] .due.now')) out.push('красный срок у карточки в колонке «Готово»');
+    /* срок закрытой задачи не красят никак — ни красным, ни «скоро»: просрочка закрытого
+       ничего не значит, а цвет заставляет искать проблему там, где её нет */
+    document.querySelectorAll('[data-drop="done"] .due.now, [data-drop="done"] .due.soon, [data-drop="done"] .due.late')
+      .forEach((d) => out.push(`срок закрытой задачи окрашен как живой: «${d.textContent.trim()}» (${d.className})`));
 
     /* карточки одного ряда сетки должны быть одной высоты */
     const grids = document.querySelectorAll('.grid');
@@ -537,6 +552,10 @@ function tokenCheck() {
     return m && m.offsetParent !== null && [...m.querySelectorAll('.mi')].some((e) => e.textContent.includes('Готово'));
   });
   want(menuOpen, 'наведение на «Фильтры» раскрывает меню со статусами');
+  /* убираем курсор с «Фильтров»: оставленное наведение держит меню раскрытым, и
+     дальнейшие замеры считают его пункты за контролы панели */
+  await p.mouse.move(0, 0);
+  await new Promise((r) => setTimeout(r, 60));
   const mine = await count('tbody tr[data-act="open-task"]');
   await go('lens', 'all');
   const all = await count('tbody tr[data-act="open-task"]');
@@ -958,7 +977,13 @@ function tokenCheck() {
     'в списке только задачи выбранного человека');
   await go('drop-assignee');
   await new Promise((r) => setTimeout(r, 90));
-  want((await count('tr.row')) > ofPerson, 'фильтр по человеку снимается крестиком');
+  /* сообщение называет ОБА числа: одиночное падение «не сработало» без цифр нечем
+     разбирать, а это место уже мигало один раз */
+  const afterDrop = await count('tr.row');
+  const st8 = await p.evaluate(() => ({ lens: S.lens, tab: S.tab, staff: S.staff, noProject: S.noProject,
+    statuses: [...S.statuses], assignee: S.assignee, mk: S.mk, q: S.q }));
+  want(afterDrop > ofPerson,
+    `фильтр по человеку снимается крестиком (было ${ofPerson}, стало ${afterDrop}; состояние ${JSON.stringify(st8)})`);
   await go('sec', 'team');
   await go('tab', 'ws'); await shot('25-workspaces');
   /* читаем клетку по ЗАГОЛОВКУ колонки: «третья ячейка первой таблицы» — это на вкладке
