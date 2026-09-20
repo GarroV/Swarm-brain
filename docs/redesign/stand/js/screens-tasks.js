@@ -2,6 +2,9 @@
 
 const LENSES = [["mine", "Мои"], ["team", "Командные"], ["all", "Все"]];
 const STATUSES = [["open", "Открыто"], ["in_progress", "В работе"], ["done", "Готово"]];
+/* подпись переключателя живёт в одном месте: в меню и в снимаемом чипе он звался
+   «группировать по рынкам» и «по рынкам» — два имени у одного тумблера */
+const SHOW_TGL = { byMarket: "группировать по рынкам", staff: "все сотрудники" };
 
 function tasksToolbar() {
   const admin = me().role === "admin";
@@ -11,14 +14,14 @@ function tasksToolbar() {
     ["Статус", STATUSES.map(([id, nm]) => [`${dot(id)}${nm}`, "status", id, undefined, S.statuses.has(id)])],
     ["Рынок", [["все рынки", "mk-filter", undefined, "", !S.mk],
       ...COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "mk-filter", undefined, c.c, S.mk === c.c])]],
-    ["Показ", [["группировать по рынкам", "tgl", "byMarket", undefined, S.byMarket],
-      ...(admin ? [["все сотрудники", "tgl", "staff", undefined, S.staff]] : [])]],
+    ["Показ", [[SHOW_TGL.byMarket, "tgl", "byMarket", undefined, S.byMarket],
+      ...(admin ? [[SHOW_TGL.staff, "tgl", "staff", undefined, S.staff]] : [])]],
   ];
   const active = [
     ...(stDefault ? [] : [[`статус: ${STATUSES.filter(([id]) => S.statuses.has(id)).map(([, nm]) => nm).join(", ") || "ни одного"}`, "reset-statuses"]]),
     ...(S.mk ? [[`рынок: ${S.mk}`, "mk-filter", undefined, ""]] : []),
-    ...(S.byMarket ? [["по рынкам", "tgl", "byMarket"]] : []),
-    ...(S.staff ? [["все сотрудники", "tgl", "staff"]] : []),
+    ...(S.byMarket ? [[SHOW_TGL.byMarket, "tgl", "byMarket"]] : []),
+    ...(S.staff ? [[SHOW_TGL.staff, "tgl", "staff"]] : []),
   ];
   return `<div class="bar">
     ${LENSES.map(([id, nm]) => chip(nm, S.lens === id, "lens", id)).join("")}

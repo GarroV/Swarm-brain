@@ -434,6 +434,27 @@ function tokenCheck() {
         if (m) { out.push(`дробное число через точку: «${m[0]}» в «${n.textContent.trim().slice(0, 32)}»`); break; }
       }
     }
+    /* главное действие экрана живёт в одном месте: раньше «+ Задача» и «+ Проект» стояли
+       справа, а «+ Запись», «+ Пользователь», «+ Воркспейс» — слева, и глаз искал заново */
+    document.querySelectorAll('.bar').forEach((bar) => {
+      const pri = bar.querySelector('.btn.pri');
+      if (!pri) return;
+      const right = bar.querySelector('.right');
+      if (!right || !right.contains(pri) || right.lastElementChild !== pri)
+        out.push(`главное действие «${pri.textContent.trim()}» стоит не в конце панели`);
+    });
+    /* две кнопки с разными подписями и одним действием: подпись обещает одно, делает другое */
+    document.querySelectorAll('tbody tr, .bar').forEach((box) => {
+      const seen = new Map();
+      box.querySelectorAll('button[data-act]').forEach((b) => {
+        if (b.dataset.act === 'noop') return;   /* открыватель выпадающего меню ничего не обещает */
+        const key = b.dataset.act + ':' + (b.dataset.id || '') + ':' + (b.dataset.v || '');
+        const t = b.textContent.trim().replace(/×$/, '').trim();
+        if (seen.has(key) && seen.get(key) !== t)
+          out.push(`«${seen.get(key)}» и «${t}» — разные подписи у одного действия ${b.dataset.act}`);
+        else seen.set(key, t);
+      });
+    });
     /* счётчик показанного без целого: «Показано 3» не говорит, сколько спрятали
        фильтры, и человек не знает, надо ли их снимать */
     [...document.querySelectorAll('.bar .right span, .head .right span')].forEach((e) => {
@@ -978,7 +999,14 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 90));
   const noMail = await count('tbody tr');
   want(noMail > 0 && noMail < allUsers, `фильтр «только без почты» сужает список (было ${allUsers}, стало ${noMail})`);
-  want((await count('[data-act="user-profile"].attn')) === noMail, 'кнопка «привязать почту» стоит ровно у тех, у кого почты нет');
+  want((await count('[data-act="bind-mail"]')) === noMail, 'кнопка «привязать почту» стоит ровно у тех, у кого почты нет');
+  /* подпись обещает привязку — значит привязка и происходит, а не открывается карточка */
+  await go('bind-mail', (await p.$eval('[data-act="bind-mail"]', (e) => e.dataset.id)));
+  await p.type('[data-f="em"]', 'nikola@imf.example');
+  await go('do-bind-mail', (await p.evaluate(() => S.users.find((u) => !u.em).id)));
+  await new Promise((r) => setTimeout(r, 120));
+  want((await p.evaluate(() => S.users.filter((u) => !u.em).length)) === noMail - 1,
+    'кнопка «привязать почту» действительно привязывает почту');
   await go('tgl-nomail');
   await new Promise((r) => setTimeout(r, 90));
   await go('new-user');

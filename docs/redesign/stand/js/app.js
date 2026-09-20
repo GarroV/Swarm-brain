@@ -253,6 +253,14 @@ const ACTS = {
   "do-del-label": (id) => { closeModal(); A.delLabel(id); },
   "save-label": (id) => { const f = formData(); closeModal(); A.saveLabel(id || null, f.n); },
   "user-profile": (id) => userModal(id),
+  /* подпись обещает привязку почты — значит и делает её, а не открывает карточку целиком */
+  "bind-mail": (id) => { const u = user(+id);
+    modal("Привязать почту", `${fld("Рабочая почта", input("em", "", "ime@imf.example"))}
+      <div class="hint">Почта нужна, чтобы <b>${esc(u.n)}</b> попадал в очередь вычитки по своим встречам.</div>`,
+      `${btn("Отмена", "mclose")}${btn("Привязать", "do-bind-mail", id, undefined, "pri")}`); },
+  "do-bind-mail": (id) => { const f = formData(); closeModal();
+    if (!f.em || !f.em.includes("@")) { A.toast("Почта не похожа на почту — не привязана"); return; }
+    A.saveUser(+id, { em: f.em }); },
   "new-user": () => userModal(null),
   "set-cycle": (id) => { S.cycle = id; render(); },
   "notif-pref": (id) => A.toggleNotifPref(id),

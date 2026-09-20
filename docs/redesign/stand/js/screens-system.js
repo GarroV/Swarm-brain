@@ -23,8 +23,9 @@ function screenWorkspaces() {
   const num = (w) => w.active
     ? { users: S.users.length, tasks: S.tasks.filter((t) => !t.arch).length, entries: S.entries.length }
     : { users: w.users, tasks: w.tasks, entries: w.entries };
-  return `<div class="bar">${btn("＋ Воркспейс", "new-ws", undefined, undefined, "pri sm")}
-    <div class="right"><span>Щёлкните строку — переключиться</span><span>Воркспейсов <b>${S.workspaces.length}</b></span></div></div>`
+  return `<div class="bar">
+    <div class="right"><span>Щёлкните строку — переключиться</span><span>Воркспейсов <b>${S.workspaces.length}</b></span>
+      ${btn("＋ Воркспейс", "new-ws", undefined, undefined, "pri sm")}</div></div>`
     + table([{ t: "Воркспейс", w: "30%" }, { t: "Слаг" }, { t: "Участников", r: true }, { t: "Задач", r: true }, { t: "Записей", r: true }, { t: "Статус", r: true }],
       S.workspaces.map((w) => { const n = num(w);
         return `<tr class="row"${w.active ? "" : ` ${act("switch-ws", w.id)} tabindex="0"`}>${cell(esc(w.name), "t")}${cell(`<code>${esc(w.id)}</code>`)}
@@ -87,20 +88,22 @@ function screenAdmin() {
   if (S.tab === "feedback") return screenFeedback();
   const noMail = S.users.filter((u) => !u.em);
   const list = S.noMailOnly ? noMail : S.users;
-  return `<div class="bar">${btn("＋ Пользователь", "new-user", undefined, undefined, "pri sm")}
+  return `<div class="bar">
     ${chip(`Только без почты · ${noMail.length}`, S.noMailOnly, "tgl-nomail")}
-    <div class="right"><span>Показано <b>${list.length}</b> из ${S.users.length}</span><span>Очередь вычитки <b>${S.queue.length}</b></span></div></div>`
+    <div class="right"><span>Показано <b>${list.length}</b> из ${S.users.length}</span><span>Очередь вычитки <b>${S.queue.length}</b></span>
+      ${btn("＋ Пользователь", "new-user", undefined, undefined, "pri sm")}</div></div>`
     + (list.length ? table([{ t: "Пользователь", w: "22%" }, { t: "Роль" }, { t: "Рынок" }, { t: "Почта" }, { t: "Заметка админа", w: "26%" }, { t: "Действия", r: true, w: "230px" }],
       list.map((u) => `<tr class="row">${cell(av(u.id), "t")}${cell(ROLE[u.role] || u.role)}
         ${cell(`<span class="cc">${u.mk}</span>`)}${cell(u.em ? esc(u.em) : state("не привязана", false))}
         ${cell(u.note ? esc(u.note) : `<span class="muted">—</span>`)}
         ${cell(`<span class="ib">${btn("Профиль", "user-profile", u.id, undefined, "sm")}
-          ${u.em ? "" : btn("Привязать почту", "user-profile", u.id, undefined, "sm attn")}</span>`, "r acts")}</tr>`).join(""))
+          ${u.em ? "" : btn("Привязать почту", "bind-mail", u.id, undefined, "sm attn")}</span>`, "r acts")}</tr>`).join(""))
       : empty("Почта привязана у всех", "Снимите фильтр, чтобы увидеть весь воркспейс"));
 }
 function screenBroadcast() {
-  return `<div class="bar">${btn("＋ Рассылка", "broadcast", undefined, undefined, "pri sm")}
-    <div class="right"><span>Отправлено <b>${S.broadcasts.length}</b></span></div></div>`
+  return `<div class="bar">
+    <div class="right"><span>Отправлено <b>${S.broadcasts.length}</b></span>
+      ${btn("＋ Рассылка", "broadcast", undefined, undefined, "pri sm")}</div></div>`
     + table([{ t: "Текст", w: "50%" }, { t: "Кому" }, { t: "Отправил" }, { t: "Когда", r: true }],
       S.broadcasts.map((b) => `<tr class="row">${cell(esc(b.t), "t")}${cell(esc(b.to))}${cell(av(b.who))}${cell(dt(b.at), "r")}</tr>`).join(""));
 }

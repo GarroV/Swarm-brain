@@ -12,14 +12,14 @@ function baseBar() {
   const total = onFiles ? S.files.length : S.entries.length;
   const noun = onFiles ? "Файлов" : "Записей";
   return `<div class="bar">
-    ${btn("＋ Запись", "new-entry", undefined, undefined, "pri sm")}
     <span class="drop">${btn(`Страна: ${S.bcc ? cname(S.bcc) : "все"}`, "noop", undefined, undefined, "sm")}
       <div class="dmenu"><button class="mi" ${act("b-cc", undefined, "")}>все</button>
       ${COUNTRIES.map((c) => `<button class="mi${S.bcc === c.c ? " on" : ""}" ${act("b-cc", undefined, c.c)}>${c.c} · ${c.n}</button>`).join("")}</div></span>
     ${chip("Только мои", S.bmine, "b-mine")}
     <input class="qin" placeholder="Поиск по базе" value="${esc(S.bq)}" data-qin="base">
     <div class="right"><span>${noun} <b>${shown.length}</b> из ${total}</span>
-      ${onFiles ? `<span>Объём <b>${fsz(shown.reduce((n, f) => n + f.kb, 0))}</b></span>` : ""}</div></div>`;
+      ${onFiles ? `<span>Объём <b>${fsz(shown.reduce((n, f) => n + f.kb, 0))}</b></span>` : ""}
+      ${btn("＋ Запись", "new-entry", undefined, undefined, "pri sm")}</div></div>`;
 }
 
 function screenBase() {
