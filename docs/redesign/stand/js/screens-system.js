@@ -105,11 +105,17 @@ function screenBroadcast() {
 }
 function screenFeedback() {
   const cat = (c) => (FEEDBACK_CATS.find(([v]) => v === c) || [, c])[1];
-  return `<div class="bar">${chip(`Открыто: ${S.feedback.filter((f) => f.st === "open").length}`, true, "noop")}
-    <div class="right"><span>Всего <b>${S.feedback.length}</b></span></div></div>`
-    + table([{ t: "Сообщение", w: "42%" }, { t: "Категория" }, { t: "От кого" }, { t: "Когда" }, { t: "Статус", r: true, w: "180px" }],
-      S.feedback.map((f) => `<tr class="row">${cell(esc(f.t), "t")}${cell(tag(cat(f.cat), "p"))}${cell(av(f.who))}${cell(dt(f.at))}
-        ${cell(f.st === "open" ? btn("Закрыть", "resolve-fb", f.id, undefined, "sm") : state("закрыт", true), "r acts")}</tr>`).join(""));
+  const open = S.feedback.filter((f) => f.st === "open");
+  /* чип со счётчиком выглядел включённым фильтром, а список показывал всё подряд: теперь он фильтрует */
+  const list = S.fbo ? open : S.feedback;
+  return `<div class="bar">${chip(`Открыто: ${open.length}`, S.fbo, "fb-open")}
+    <div class="right"><span>Показано <b>${list.length}</b> из ${S.feedback.length}</span></div></div>`
+    + (list.length ? table([{ t: "Сообщение", w: "40%" }, { t: "Категория" }, { t: "От кого" }, { t: "Когда" },
+      { t: "Статус" }, { t: "Действие", r: true, w: "150px" }],
+      list.map((f) => `<tr class="row">${cell(esc(f.t), "t")}${cell(tag(cat(f.cat), "p"))}${cell(avShort(f.who))}${cell(dt(f.at))}
+        ${cell(f.st === "open" ? state("открыт", false) : state("закрыт", true))}
+        ${cell(f.st === "open" ? btn("Закрыть", "resolve-fb", f.id, undefined, "sm") : `<span class="muted">—</span>`, "r acts")}</tr>`).join(""))
+      : empty("Открытого фидбека нет", "Всё разобрано"));
 }
 
 /* ── карта системы ───────────────────────────────────────────── */

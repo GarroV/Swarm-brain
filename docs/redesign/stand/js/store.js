@@ -10,6 +10,7 @@ const S = {
   mf: { q: "", period: "all", cc: [], src: [], people: [], store: "any", st: "any" },
   /* база */
   bq: "", bcc: "", bmine: false,
+  fbo: false,
   /* фильтр по человеку — ставится кликом по строке в «Команде» */
   assignee: null, activeOnly: false, showClosed: false,
   /* спринты */

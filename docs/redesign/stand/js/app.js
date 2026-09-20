@@ -186,6 +186,7 @@ const ACTS = {
   integr: (id) => A.toggleIntegration(id),
   broadcast: () => broadcastModal(),
   "do-broadcast": () => { const f = formData(); closeModal(); A.broadcast(f.text, f.to); },
+  "fb-open": () => A.set({ fbo: !S.fbo }),
   "resolve-fb": (id) => A.resolveFeedback(id),
   fab: () => feedbackModal(),
   "send-fb": () => { const f = formData(); closeModal(); A.addFeedback((f.cat || [])[0] || "other", f.text); },

@@ -43,7 +43,7 @@ const cycle = () => CYCLES.find((c) => c.id === S.cycle);
 function cycleBar(extra) {
   return `<div class="bar"><span class="drop">${btn(`Цикл: ${cycle().n}`, "noop", undefined, undefined, "sm")}
     <div class="dmenu">${CYCLES.map((c) => `<button class="mi${c.id === S.cycle ? " on" : ""}" ${act("set-cycle", c.id)}>${c.n} · ${CYCLE_ST[c.st]}</button>`).join("")}</div></span>
-    ${chip(`${fmtDate(cycle().from)} — ${fmtDate(cycle().to)}`, false, "noop")}
+    <span class="due">${fmtDate(cycle().from)} — ${fmtDate(cycle().to)}</span>
     ${cycle().st !== "active" ? state(CYCLE_ST[cycle().st], false) : ""}
     <div class="right">${extra || ""}</div></div>`;
 }

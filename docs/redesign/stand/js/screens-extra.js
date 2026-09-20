@@ -130,7 +130,8 @@ function acceptModal(id) {
 function screenReviewCounts() {
   const pend = S.meetings.filter((m) => m.st === "pending");
   const byUser = S.users.map((u) => [u, pend.filter((m) => m.who.includes(u.id)).length]).filter(([, n]) => n);
-  return `<div class="bar">${chip(`Невычитано всего: ${pend.length}`, true, "noop")}
+  /* это счётчик, а не фильтр: чипом он прикидывался включённым и никого не отфильтровывал */
+  return `<div class="bar"><span>Невычитано всего <b>${pend.length}</b></span>
     <div class="right"><span>Считается по участию во встрече</span></div></div>`
     + (byUser.length ? table([{ t: "Человек", w: "30%" }, { t: "Почта" }, { t: "Ждёт вычитки", r: true }, { t: "Напомнить", r: true, w: "180px" }],
       byUser.map(([u, n]) => `<tr class="row">${cell(av(u.id), "t")}${cell(u.em ? esc(u.em) : state("не привязана", false))}

@@ -233,6 +233,10 @@ function tokenCheck() {
         if (!ACTS[e.dataset.act] && e.offsetParent) miss.add(e.dataset.act); });
       miss.forEach((a) => out.push('действие «' + a + '» некому обработать'));
     }
+
+    /* чип-заглушка: выглядит фильтром (а с .on — включённым), но клик ничего не меняет */
+    document.querySelectorAll('.chip[data-act="noop"]').forEach((c) =>
+      out.push('чип «' + c.textContent.trim().slice(0, 24) + '» ничего не фильтрует'));
     return out;
   });
   const shot = async (name) => { await p.screenshot({ path: `${OUT}/${name}.png` });
@@ -577,6 +581,18 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 90));
   want((await count('tbody tr')) >= 3, 'рассылка добавилась в список');
   await go('tab', 'feedback'); await shot('29-feedback');
+  const fbAll = await count('tbody tr.row');
+  await go('fb-open');
+  await new Promise((r) => setTimeout(r, 90));
+  const fbOpen = await count('tbody tr.row');
+  want(fbOpen < fbAll && fbOpen === await p.evaluate(() => S.feedback.filter((f) => f.st === 'open').length),
+    'чип «Открыто» фильтрует список, а не украшает шапку');
+  want((await text('.bar .right')).includes(`Показано ${fbOpen} из ${fbAll}`), 'шапка говорит, сколько показано из скольких');
+  await go('fb-open');
+  await new Promise((r) => setTimeout(r, 90));
+  want(await p.evaluate(() => [...document.querySelectorAll('tbody tr.row')].every((r) =>
+    r.children[4].textContent.trim() === 'открыт' || r.children[4].textContent.trim() === 'закрыт'),
+  ), 'статус фидбека назван словом в своей колонке');
   const openFb = await count('[data-act="resolve-fb"]');
   await p.$eval('[data-act="resolve-fb"]', (e) => e.click());
   await new Promise((r) => setTimeout(r, 90));
