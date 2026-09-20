@@ -28,7 +28,7 @@ function tasksToolbar() {
     ${S.assignee ? `<button class="chip on" ${act("drop-assignee")}>${av(S.assignee)}<span class="x">×</span></button>` : ""}
     <div class="right">
       <input class="qin" placeholder="Фильтр по названию" value="${esc(S.q)}" data-qin="tasks">
-      <span>Показано <b>${visibleTasks().length}</b></span>
+      <span>Показано <b>${visibleTasks().length}</b> из ${S.tasks.filter((t) => inList(t, S.tab)).length}</span>
       ${btn("＋ Задача", "new-task", undefined, undefined, "pri sm")}
     </div></div>`;
 }
