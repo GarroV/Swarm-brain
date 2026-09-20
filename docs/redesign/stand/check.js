@@ -141,6 +141,17 @@ function tokenCheck() {
         out.push(`колонки не заполняют таблицу: ${sum}px из ${tb.clientWidth}px, справа пустая полоса`);
     });
 
+    /* выбранное состояние должно быть видно: класс .on без своего стиля — невидимый выбор */
+    document.querySelectorAll('.btn.on, .mini.on, .chip.on, .mi.on').forEach((on) => {
+      const base = on.className.split(' ')[0];
+      const sib = [...on.parentElement.children].find((e) =>
+        e !== on && e.classList.contains(base) && !e.classList.contains('on'));
+      if (!sib) return;
+      const a = getComputedStyle(on), b = getComputedStyle(sib);
+      if (a.backgroundColor === b.backgroundColor && a.color === b.color && a.borderColor === b.borderColor && a.fontWeight === b.fontWeight)
+        out.push(`выбранное «${on.textContent.trim().slice(0, 24)}» выглядит как невыбранное`);
+    });
+
     /* встречи дня не должны уезжать за край: скрытую встречу человек просто не увидит */
     document.querySelectorAll('.cal').forEach((c) => {
       if (c.scrollWidth > c.clientWidth + 2) out.push(`полоса встреч уходит за край на ${c.scrollWidth - c.clientWidth}px`);
