@@ -133,6 +133,19 @@ function tokenCheck() {
         }
       }
     }
+    /* таблица должна занимать свой контейнер: пустой хвост справа читается как сломанная вёрстка */
+    document.querySelectorAll('.list table').forEach((tb) => {
+      const cols = [...tb.querySelectorAll('thead th')].filter((t) => t.offsetWidth > 0);
+      const sum = cols.reduce((a, t) => a + t.offsetWidth, 0);
+      if (tb.clientWidth - sum > 24)
+        out.push(`колонки не заполняют таблицу: ${sum}px из ${tb.clientWidth}px, справа пустая полоса`);
+    });
+
+    /* вкладки не должны прятаться за краем: обрезанная вкладка недоступна */
+    document.querySelectorAll('.dtabs, .tabs').forEach((t) => {
+      if (t.scrollWidth > t.clientWidth + 2) out.push(`вкладки не помещаются и обрезаются: ${t.textContent.trim().slice(0, 60)}`);
+    });
+
     /* красная дата читается как «просрочено»: уместна только в колонке срока и только у незакрытой задачи */
     document.querySelectorAll('table').forEach((tb) => {
       const heads = [...tb.querySelectorAll('thead th')].map((t) => t.textContent.trim().toLowerCase());
@@ -226,7 +239,8 @@ function tokenCheck() {
   want(afterArch === beforeArch + 1, `массовый архив сработал (${beforeArch} → ${afterArch})`);
   await shot('06-archive');
   await go('open-task', (await p.$eval('tbody tr[data-act="open-task"]', (e) => e.dataset.id)));
-  want((await text('.detail .btn')).includes('Вернуть'), 'в архиве предлагается вернуть задачу');
+  const archActs = await p.$$eval('.detail .d-acts .btn', (els) => els.map((e) => e.textContent.trim()).join(' | '));
+  want(archActs.includes('Вернуть'), `в архиве предлагается вернуть задачу (кнопки: ${archActs})`);
   await go('close');
 
   /* ── встречи ────────────────────────────────────────────── */

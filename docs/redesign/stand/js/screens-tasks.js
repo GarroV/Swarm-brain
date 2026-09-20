@@ -73,7 +73,7 @@ function screenTasks() {
   const head = tasksToolbar() + bulkBar() + (S.tab === "today" ? calendarStrip() : "");
   if (!list.length) return head + empty("Задач в этом срезе нет", "Смените линзу, статусы или вкладку");
   return head + table([
-    { t: "", w: "30px" }, { t: "Задача", w: "32%" }, { t: "Проект", w: "20%" }, { t: "Исполнитель", short: "Кто", w: "15%" },
+    { t: "", w: "30px" }, { t: "Задача" }, { t: "Проект", w: "20%" }, { t: "Исполнитель", short: "Кто", w: "15%" },
     { t: "Метки", w: "15%", opt: true }, { t: "Рынок", r: true, w: "78px", opt: true }, { t: "Срок", r: true, w: "84px" },
   ], groupRows(list));
 }

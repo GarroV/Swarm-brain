@@ -6,7 +6,8 @@ function dtabs(items) {
 }
 const dhead = (crumb, title, acts) =>
   `<div class="d-head"><div class="d-crumb">${esc(crumb)}</div><div class="d-title">${esc(title)}</div>
-   <div class="d-acts">${acts}${btn("✕", "close")}</div></div>`;
+   <span class="d-close">${btn("✕", "close", undefined, undefined, "sm")}</span>
+   <div class="d-acts">${acts}</div></div>`;
 
 /* ── задача ──────────────────────────────────────────────────── */
 function detailTask(t) {

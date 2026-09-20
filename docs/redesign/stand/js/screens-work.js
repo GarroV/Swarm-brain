@@ -6,7 +6,7 @@ function screenProjects() {
   const roots = S.showClosed ? all : all.filter((p) => p.st !== "paused");
   return `<div class="bar">${wsChip()}${chip("Показывать на паузе", S.showClosed, "tgl", "showClosed")}
     <div class="right"><span>Показано <b>${roots.length}</b> из ${all.length}</span><span>Подпроектов <b>${S.projects.length - all.length}</b></span></div></div>`
-    + (roots.length ? table([{ t: "Проект", w: "28%" }, { t: "Владелец", w: "18%" }, { t: "Подпроекты", w: "26%" }, { t: "Срок", w: "12%" }, { t: "Открыто", r: true, w: "84px" }, { t: "Всего", r: true, w: "74px" }],
+    + (roots.length ? table([{ t: "Проект", w: "28%" }, { t: "Владелец", w: "18%" }, { t: "Подпроекты", w: "26%" }, { t: "Срок", w: "12%" }, { t: "Открыто", short: "Откр.", r: true, w: "84px" }, { t: "Всего", r: true, w: "74px" }],
       roots.map((p) => {
         const subs = S.projects.filter((x) => x.parent === p.id);
         const tasks = S.tasks.filter((t) => t.pr === p.id || subs.some((s) => s.id === t.pr));

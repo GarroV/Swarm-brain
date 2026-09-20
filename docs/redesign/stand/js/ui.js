@@ -53,10 +53,31 @@ const alert_ = (text) => `<span class="state bad">${esc(text)}</span>`;
 
 /* c.opt — колонка второго ряда важности: в узком окне она уходит,
    вместо того чтобы сжимать всё до обрезанных заголовков и имён. */
+/* места мало: деталь занимает половину окна или само окно узкое — тогда часть колонок прячется */
+const tight = () => (S.sel ? window.innerWidth <= 1700 : window.innerWidth <= 1180);
+
 function table(cols, body) {
+  /* table-layout:fixed не раздаёт остаток колонке без ширины — считаем ширины сами,
+     иначе после скрытия колонок справа остаётся пустая полоса */
+  /* calc с процентами в table-layout:fixed Chrome считает неверно (проверено: calc(65% - 114px) → 105px),
+     поэтому пиксели переводим в проценты по ширине области и раздаём остаток — сумма всегда 100% */
+  const cssPx = (n) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n)) || 0;
+  /* ширину области считаем из сетки, а не из DOM: на момент генерации разметки класс with-detail ещё прежний */
+  const W = Math.max(320, window.innerWidth - cssPx("--nav-w")
+    - (S.sel && window.innerWidth > 1180 ? cssPx("--detail-w") : 0));
+  const shown = cols.filter((c) => !(c.opt && tight()));
+  const asPct = (w) => w.endsWith("%") ? parseFloat(w) : (parseFloat(w) / W) * 100;
+  let fixed = 0, flex = 0;
+  shown.forEach((c) => { if (c.w) fixed += asPct(c.w); else flex++; });
+  const rest = flex ? Math.max(12, (100 - fixed) / flex) : 0;
+  /* если заданное вместе с остатком переросло 100%, ужимаем всё пропорционально, иначе колонки обрежутся вразнобой */
+  const total = fixed + rest * flex;
+  const k = total > 100 ? 100 / total : 1;
+  const pc = (v) => `${Math.round(v * k * 100) / 100}%`;
+  const width = (c) => (c.opt && tight()) ? "" : ` style="width:${pc(c.w ? asPct(c.w) : rest)}"`;
   return `<div class="list"><table><thead><tr>${cols.map((c) =>
-    `<th class="${c.r ? "r " : ""}${c.opt ? "opt" : ""}"${c.w ? ` style="width:${c.w}"` : ""}>${
-      c.short ? `<span class="hfull">${esc(c.t)}</span><span class="hshort">${esc(c.short)}</span>` : esc(c.t)
+    `<th class="${c.r ? "r " : ""}${c.opt ? "opt" : ""}"${width(c)}>${
+      c.short && tight() ? esc(c.short) : esc(c.t)
     }</th>`).join("")}</tr></thead>
     <tbody>${body}</tbody></table></div>`;
 }

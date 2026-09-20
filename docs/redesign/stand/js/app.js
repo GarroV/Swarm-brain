@@ -336,5 +336,7 @@ window.addEventListener("DOMContentLoaded", () => {
   $(".scrim").addEventListener("click", closePal);
   $(".mscrim").addEventListener("click", closeModal);
   renderHeaderPopovers();
+  /* набор колонок зависит от ширины — без этого после ресайза таблица остаётся с прежними */
+  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 120); });
   render();
 });
