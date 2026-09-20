@@ -10,6 +10,9 @@ function tasksToolbar() {
     <span class="sep-v"></span>
     ${STATUSES.map(([id, n]) => `<button class="chip${S.statuses.has(id) ? " on" : ""}" ${act("status", id)}>${dot(id)}${n}</button>`).join("")}
     <span class="sep-v"></span>
+    <span class="drop">${btn(`Рынок: ${S.mk ? S.mk : "все"}`, "noop", undefined, undefined, "sm")}
+      <div class="dmenu"><button class="mi" ${act("mk-filter", undefined, "")}>все</button>
+      ${COUNTRIES.map((c) => `<button class="mi${S.mk === c.c ? " on" : ""}" ${act("mk-filter", undefined, c.c)}>${c.c} · ${c.n}</button>`).join("")}</div></span>
     ${chip("По рынкам", S.byMarket, "tgl", "byMarket")}
     ${admin ? chip("Все сотрудники", S.staff, "tgl", "staff") : ""}
     <div class="right">
@@ -66,7 +69,7 @@ function groupRows(list) {
 
 function screenTasks() {
   const list = visibleTasks();
-  const head = tasksToolbar() + bulkBar();
+  const head = tasksToolbar() + bulkBar() + (S.tab === "today" ? calendarStrip() : "");
   if (!list.length) return head + empty("Задач в этом срезе нет", "Смените линзу, статусы или вкладку");
   return head + table([
     { t: "", w: "30px" }, { t: "Задача", w: "40%" }, { t: "Проект" }, { t: "Исполнитель" },

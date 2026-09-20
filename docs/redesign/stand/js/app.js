@@ -25,13 +25,13 @@ const TABS = {
          ["transcript", "Транскрипты"], ["summary", "Сводки"], ["link", "Ссылки"], ["files", "Файлы"]],
   team: [["members", "Участники"], ["ws", "Воркспейсы"]],
   settings: [["profile", "Профиль"], ["integr", "Интеграции"], ["tokens", "Доступы"], ["notif", "Уведомления"], ["columns", "Колонки доски"], ["labels", "Метки"]],
-  admin: [["users", "Пользователи"], ["ws", "Воркспейсы"], ["broadcast", "Рассылка"], ["feedback", "Фидбек"]],
+  admin: [["users", "Пользователи"], ["ws", "Воркспейсы"], ["review", "Очередь вычитки"], ["broadcast", "Рассылка"], ["feedback", "Фидбек"]],
 };
 const TITLES = {
   tasks: ["Работа", "Задачи"], projects: ["Работа", "Проекты"], sprints: ["Работа", "Спринты"],
   meetings: ["Знание", "Встречи"], base: ["Знание", "База"], team: ["Люди", "Команда"],
   settings: ["Система", "Настройки"], admin: ["Система", "Админ"], map: ["Система", "Карта системы"],
-  answer: ["Поиск", "Ответ по базе"],
+  answer: ["Поиск", "Ответ по базе"], search: ["Поиск", "Результаты поиска"],
 };
 const firstTab = (sec) => TABS[sec] ? TABS[sec][0][0] : null;
 
@@ -39,7 +39,8 @@ const TAB_COUNT = {
   tasks: (id) => countList(id),
   meetings: (id) => id === "queue" ? S.queue.length : visibleMeetings(id).length,
   base: (id) => id === "files" ? S.files.length : visibleEntries(id).length,
-  admin: (id) => id === "feedback" ? S.feedback.filter((f) => f.st === "open").length : null,
+  admin: (id) => id === "feedback" ? S.feedback.filter((f) => f.st === "open").length
+    : id === "review" ? S.meetings.filter((m) => m.st === "pending").length : null,
   sprints: (id) => id === "pool" ? S.initiatives.filter((i) => i.st === "proposed").length : null,
 };
 
@@ -61,7 +62,7 @@ function renderTabs() {
 const SCREENS = {
   tasks: screenTasks, projects: screenProjects, sprints: screenSprints, meetings: screenMeetings,
   base: screenBase, team: screenTeam, settings: screenSettings, admin: screenAdmin,
-  map: screenMap, answer: screenAnswer,
+  map: screenMap, answer: screenAnswer, search: screenSearch,
 };
 
 function render() {
@@ -164,6 +165,16 @@ const ACTS = {
   "send-fb": () => { const f = formData(); closeModal(); A.addFeedback((f.cat || [])[0] || "other", f.text); },
   "new-ws": () => wsModal(),
   "do-ws": () => { const f = formData(); closeModal(); A.addWorkspace(f.id, f.name); },
+  "mk-filter": (_, v) => A.set({ mk: v }),
+  "add-link": (id) => linkModal(id),
+  "do-link": (id) => { const f = formData(); closeModal(); A.addLink(+id, f.other, f.kind); },
+  "drop-link": (id, v) => A.dropLink(+id, v),
+  "accept-init": (id) => acceptModal(id),
+  "do-accept": (id) => { const f = formData(); closeModal();
+    S.initiatives = S.initiatives.map((i) => i.id === id ? { ...i, st: "accepted", own: +f.own, pts: +f.pts } : i);
+    A.toast("Инициатива принята в цикл"); },
+  remind: (id) => A.toast(`Напоминание отправлено: ${user(+id).n}`),
+  "show-all": (_, v) => { closePal(); S.aq = v; S.sec = "search"; A.set({}); },
   harvest: (id) => harvestModal(id),
   "do-harvest": (id, n) => { const f = formData(); closeModal();
     const items = []; for (let i = 0; i < +n; i++) if (f["on" + i]) items.push({ t: f["t" + i], who: +f["w" + i], due: f["d" + i] });
@@ -211,6 +222,8 @@ document.addEventListener("input", (e) => {
     const n = $('[data-qin="tasks"]'); if (n) { n.focus(); n.setSelectionRange(p, p); } }
   if (q === "base") { S.bq = e.target.value; const p = e.target.selectionStart; render();
     const n = $('[data-qin="base"]'); if (n) { n.focus(); n.setSelectionRange(p, p); } }
+  if (q === "search") { S.aq = e.target.value; const p = e.target.selectionStart; render();
+    const n = $('[data-qin="search"]'); if (n) { n.focus(); n.setSelectionRange(p, p); } }
   if (q === "meet") { S.mf = { ...S.mf, q: e.target.value }; const p = e.target.selectionStart; render();
     const n = $('[data-qin="meet"]'); if (n) { n.focus(); n.setSelectionRange(p, p); } }
 });
@@ -238,6 +251,7 @@ function palResults(q) {
       + grp("Встречи", r.meetings.map((m) => `<div class="r" ${act("open-meet", m.id)}><span class="t">${esc(m.t)}</span><span class="s">${esc(m.dt)} · ${m.src}</span></div>`))
       + grp("База", r.entries.map((x) => `<div class="r" ${act("open-entry", x.id)}><span class="t">${esc(x.h)}</span><span class="s">${esc(x.p.slice(0, 60))}</span></div>`))
       + grp("Файлы", r.files.map((f) => `<div class="r" ${act("open-file", f.id)}><span class="t">${esc(f.n)}</span><span class="s">${f.sz}</span></div>`))
+      + `<div class="r" ${act("show-all", undefined, q)}><span class="t">Показать все результаты</span><span class="s">отдельным экраном, с разбивкой по типам</span></div>`
       + `<div class="r ask" ${act("ask", undefined, q)}><span class="t">Спросить базу: «${esc(q)}»</span><span class="s">ответ со ссылками на источники</span></div>`
     : `<div class="grp">Быстрые действия</div>
        <div class="r" ${act("new-task")}><span class="t">Новая задача</span></div>

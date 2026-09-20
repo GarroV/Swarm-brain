@@ -82,6 +82,13 @@ function tokenCheck() {
   await go('tgl', 'byMarket'); await shot('02-tasks-by-market');
   want((await count('tr.sect')) > 1, 'группировка по рынкам дала больше одной секции');
   await go('tgl', 'byMarket');
+  await gov('mk-filter', 'HR');
+  const hrTasks = await count('tbody tr[data-act="open-task"]');
+  await gov('mk-filter', '');
+  const allTasks = await count('tbody tr[data-act="open-task"]');
+  want(hrTasks < allTasks, `фильтр по рынку сузил список (${allTasks} → ${hrTasks})`);
+  await go('tab', 'today');
+  want((await count('.cal .cev')) === 3, 'календарь дня показывает встречи из Google');
   await go('tab', 'all'); await shot('03-tasks-all');
 
   /* создание задачи */
@@ -102,6 +109,11 @@ function tokenCheck() {
   await p.$eval('[data-act="comment"]', (e) => e.click());
   await new Promise((r) => setTimeout(r, 90));
   want((await count('.cm')) === 1, 'комментарий добавился');
+  await go('dtab', 'links');
+  await go('add-link');
+  await go('do-link');
+  await new Promise((r) => setTimeout(r, 120));
+  want((await count('[data-act="drop-link"]')) === 1, 'связь между задачами добавилась');
   await go('dtab', 'hist');
   want((await count('.tl .e')) >= 2, 'история пишет движения');
   await shot('05-task-detail-history');
@@ -209,7 +221,10 @@ function tokenCheck() {
   const prop = await count('[data-act="accept-init"]');
   await p.$eval('[data-act="accept-init"]', (e) => e.click());
   await new Promise((r) => setTimeout(r, 90));
-  want((await count('[data-act="accept-init"]')) === prop - 1, 'инициатива принята в цикл');
+  await shot('39-accept-dialog');
+  await p.$eval('[data-act="do-accept"]', (e) => e.click());
+  await new Promise((r) => setTimeout(r, 120));
+  want((await count('[data-act="accept-init"]')) === prop - 1, 'инициатива принята в цикл через диалог');
   await go('tab', 'check'); await shot('21-check');
   await go('tab', 'analytics'); await shot('22-analytics');
   await go('tab', 'journal'); await shot('23-journal');
@@ -246,6 +261,7 @@ function tokenCheck() {
   await p.$eval('[data-act="resolve-fb"]', (e) => e.click());
   await new Promise((r) => setTimeout(r, 90));
   want((await count('[data-act="resolve-fb"]')) === openFb - 1, 'фидбек закрывается');
+  await go('tab', 'review'); await shot('40-review-counts');
   await go('sec', 'map'); await shot('30-map');
 
   /* ── поиск и тема ───────────────────────────────────────── */
@@ -254,6 +270,14 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 120));
   want((await count('.pal .r')) > 1, 'поиск находит по данным');
   await shot('31-palette');
+  await p.$eval('[data-act="show-all"]', (e) => e.click());
+  await new Promise((r) => setTimeout(r, 120));
+  want((await text('h1')) === 'Результаты поиска', 'экран поиска открывается из палитры');
+  want((await count('.srch .rowset > div')) > 1, 'на экране поиска есть находки');
+  await shot('41-search');
+  await go('search');
+  await p.type('#q', 'смета');
+  await new Promise((r) => setTimeout(r, 120));
   await p.$eval('.pal .r.ask', (e) => e.click());
   await new Promise((r) => setTimeout(r, 120));
   want((await text('h1')) === 'Ответ по базе', 'вопрос к базе открывает ответ');

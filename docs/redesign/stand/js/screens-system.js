@@ -74,6 +74,7 @@ function settingsColumns() {
 /* ── админ ───────────────────────────────────────────────────── */
 function screenAdmin() {
   if (S.tab === "ws") return screenWorkspaces();
+  if (S.tab === "review") return screenReviewCounts();
   if (S.tab === "broadcast") return screenBroadcast();
   if (S.tab === "feedback") return screenFeedback();
   return `<div class="bar">${btn("＋ Пользователь", "noop", undefined, undefined, "pri sm")}
@@ -137,9 +138,8 @@ function renderHeaderPopovers() {
       ${over.map((t) => `<div class="li" ${act("open-task", t.id)}><i class="d"></i>${esc(t.t)}</div>`).join("") || '<div class="li"><i class="d"></i>Просроченного нет</div>'}
       <div class="li" ${act("sec", "meetings")}><i class="d"></i>${S.meetings.filter((m) => m.st === "pending").length} встречи ждут вычитки</div>
       <div class="li" ${act("sec", "meetings")}><i class="d"></i>${S.queue.length} агентских встреч в очереди</div></div>
-    <div class="sec"><h5>Встречи сегодня</h5>
-      <div class="li"><i class="d"></i>11:00 · Сверка бюджета Q4</div>
-      <div class="li"><i class="d"></i>15:30 · Поставщик упаковки</div></div>
+    <div class="sec"><h5>Встречи сегодня · ${CALENDAR.length}</h5>
+      ${CALENDAR.map((c) => `<div class="li"><i class="d"></i>${c.at} · ${esc(c.t)}${c.rec ? "" : " · без записи"}</div>`).join("")}</div>
     <div class="sec"><h5>Движение за сутки</h5>
       <div class="li"><i class="d"></i>Закрыто ${S.tasks.filter((t) => t.st === "done").length} задач, создано 4</div>
       <div class="li"><i class="d"></i>Новых записей в базе: 1</div></div>`;

@@ -41,10 +41,11 @@ function detailTask(t) {
       || '<div class="muted">Движения не было</div>'}</div>`;
   }
   if (S.dtab === "links") {
-    body = rows(t.links.length ? t.links.map(([kind, id]) => {
+    body = rows(t.links.length ? t.links.map(([kind, id], i) => {
       const o = S.tasks.find((x) => x.id === id);
-      return [esc(kind), `<span class="lnk" ${act("open-task", id)}>${esc(o ? o.t : id)}</span>`, btn("Снять", "noop", undefined, undefined, "sm")];
-    }) : [["—", "связей нет", ""]]) + `<div class="mt">${btn("Добавить связь", "noop")}</div>`;
+      return [esc(kind), `<span class="lnk" ${act("open-task", id)}>${esc(o ? o.t : id)}</span>`,
+        `<button class="btn sm" ${act("drop-link", t.id, String(i))}>Снять</button>`];
+    }) : [["—", "связей нет", ""]]) + `<div class="mt">${btn("Добавить связь", "add-link", t.id)}</div>`;
   }
   if (S.dtab === "subs") {
     body = rows(S.users.slice(0, 8).map((u) => [av(u.id), t.subs.includes(u.id) ? "получает уведомления" : "не подписан",

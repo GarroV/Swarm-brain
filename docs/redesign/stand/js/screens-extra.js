@@ -88,3 +88,65 @@ function screenTimeline() {
         <span class="who">${t.who.length ? av(t.who[0], false) : ""}</span></div>`).join("")}</div></div>`;
   }).join("")}</div>`;
 }
+
+/* ── календарь дня (Google Calendar) ─────────────────────────── */
+function calendarStrip() {
+  if (!CALENDAR.length) return "";
+  return `<div class="cal">${CALENDAR.map((c) => `<div class="cev">
+    <span class="at">${c.at}</span><b>${esc(c.t)}</b>
+    <span class="pl">${esc(c.place)}</span>${avs(c.who)}
+    ${c.rec ? state("рекордер включится", true) : state("без записи", false)}</div>`).join("")}</div>`;
+}
+
+/* ── связи задачи ────────────────────────────────────────────── */
+function linkModal(id) {
+  const others = S.tasks.filter((t) => t.id !== +id && !t.arch).slice(0, 24);
+  modal("Связать задачи", `
+    ${fld("Тип связи", select("kind", [["блокирует", "блокирует"], ["заблокирована", "заблокирована"], ["связана", "связана"], ["дубль", "дубль"]], "связана"))}
+    ${fld("С какой задачей", select("other", others.map((t) => [String(t.id), `${t.id} · ${t.t}`]), String(others[0] && others[0].id)))}`,
+    `${btn("Отмена", "mclose")}${btn("Связать", "do-link", id, undefined, "pri")}`);
+}
+
+/* ── приёмка инициативы в цикл ───────────────────────────────── */
+function acceptModal(id) {
+  const i = S.initiatives.find((x) => x.id === id);
+  modal(`Принять в цикл · ${i.t}`, `
+    <div class="two">${fld("Владелец", select("own", S.users.map((u) => [String(u.id), u.n]), String(i.own)))}
+      ${fld("Оценка, очков", input("pts", String(i.pts)))}</div>
+    ${fld("В какой цикл", select("cyc", CYCLES.map((c) => [c.id, `${c.n} · ${c.st}`]), S.cycle))}
+    ${rows(i.tasks.map((t) => [String(t), esc((S.tasks.find((x) => x.id === t) || {}).t || ""), ""]))}
+    <div class="hint">Задачи инициативы попадут на доску текущего цикла.</div>`,
+    `${btn("Отмена", "mclose")}${btn("Принять", "do-accept", id, undefined, "pri")}`);
+}
+
+/* ── админ: счётчики вычитки ─────────────────────────────────── */
+function screenReviewCounts() {
+  const pend = S.meetings.filter((m) => m.st === "pending");
+  const byUser = S.users.map((u) => [u, pend.filter((m) => m.who.includes(u.id)).length]).filter(([, n]) => n);
+  return `<div class="bar">${chip(`Невычитано всего: ${pend.length}`, true, "noop")}
+    <div class="right"><span>Считается по участию во встрече</span></div></div>`
+    + (byUser.length ? table([{ t: "Человек", w: "30%" }, { t: "Почта" }, { t: "Ждёт вычитки", r: true }, { t: "Напомнить", r: true, w: "180px" }],
+      byUser.map(([u, n]) => `<tr class="row">${cell(av(u.id), "t")}${cell(u.em ? esc(u.em) : state("не привязана", false))}
+        ${cell(`<span class="pdot p-med"></span>${n}`, "r")}
+        ${cell(btn("Напомнить в Telegram", "remind", u.id, undefined, "sm"), "r acts")}</tr>`).join(""))
+      : empty("Очередь пуста", "Все встречи вычитаны"));
+}
+
+/* ── полный экран поиска ─────────────────────────────────────── */
+function screenSearch() {
+  const q = S.aq || "";
+  const r = searchAll(q);
+  const total = r.tasks.length + r.meetings.length + r.entries.length + r.files.length;
+  return `<div class="bar"><input class="qin" style="min-width:320px" placeholder="Что ищем" value="${esc(q)}" data-qin="search">
+    <div class="right"><span>Найдено <b>${total}</b></span>${btn("Спросить базу", "ask", undefined, q, "sm pri")}</div></div>
+    ${total ? `<div class="srch">
+      ${r.tasks.length ? lab(`Задачи · ${r.tasks.length}`) + rows(r.tasks.map((t) => [dot(t.st),
+        `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, `${esc(projPath(t.pr))} · ${due(t.due)}`])) : ""}
+      ${r.meetings.length ? lab(`Встречи · ${r.meetings.length}`) + rows(r.meetings.map((m) => [tag(m.src, "m"),
+        `<span class="lnk" ${act("open-meet", m.id)}>${esc(m.t)}</span>`, esc(m.dt)])) : ""}
+      ${r.entries.length ? lab(`База · ${r.entries.length}`) + rows(r.entries.map((e) => [tag(TY_LABEL[e.ty], "p"),
+        `<span class="lnk" ${act("open-entry", e.id)}>${esc(e.h)}</span>`, esc(e.p.slice(0, 48))])) : ""}
+      ${r.files.length ? lab(`Файлы · ${r.files.length}`) + rows(r.files.map((f) => [`<span class="ft ft-${f.ty}">${f.ty}</span>`,
+        `<span class="lnk" ${act("open-file", f.id)}>${esc(f.n)}</span>`, esc(f.sz)])) : ""}
+    </div>` : empty("Ничего не нашлось", "Попробуйте другое слово или спросите базу")}`;
+}

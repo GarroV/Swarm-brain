@@ -5,7 +5,7 @@ const S = {
   sec: "tasks", tab: "today", sel: null, selKind: null,
   /* задачи */
   lens: "mine", statuses: new Set(["open", "in_progress"]), byMarket: false, staff: false,
-  q: "", bulk: new Set(), dtab: "overview",
+  q: "", bulk: new Set(), dtab: "overview", mk: "",
   /* встречи */
   mf: { q: "", period: "all", cc: [], src: [], people: [], store: "any", st: "any" },
   /* база */
@@ -65,6 +65,7 @@ function visibleTasks(list = S.tab) {
   return S.tasks.filter((t) =>
     inList(t, list) && inLens(t, S.lens) &&
     (list === "archive" || S.statuses.has(t.st)) &&
+    (!S.mk || t.mk === S.mk) &&
     (!q || t.t.toLowerCase().includes(q) || projPath(t.pr).toLowerCase().includes(q)));
 }
 const countList = (list) => S.tasks.filter((t) => inList(t, list) && inLens(t, S.lens) && (list === "archive" || S.statuses.has(t.st))).length;
@@ -235,6 +236,14 @@ const A = {
     A.toast("Интеграция переключена");
   },
   addWorkspace(id, name) { S.workspaces = [...S.workspaces, { id, name, users: 0, tasks: 0, entries: 0, active: false }]; A.toast("Воркспейс создан"); },
+  addLink(id, otherId, kind) {
+    S.tasks = S.tasks.map((t) => t.id === id ? { ...t, links: [...t.links, [kind, +otherId]] } : t);
+    A.toast("Связь добавлена");
+  },
+  dropLink(id, i) {
+    S.tasks = S.tasks.map((t) => t.id === id ? { ...t, links: t.links.filter((_, k) => k !== +i) } : t);
+    render();
+  },
   harvest(id, items) {
     const made = items.map((x) => mkTask({ id: nextTaskId++, t: x.t, pr: "p1", who: [x.who], due: x.due, prio: "med", src: id }));
     S.tasks = [...made, ...S.tasks];
