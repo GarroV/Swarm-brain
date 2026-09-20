@@ -106,16 +106,19 @@ function screenFeedback() {
 function screenMap() {
   const box = (t, x, y, w) => `<g><rect x="${x}" y="${y}" width="${w}" height="34" rx="8" fill="var(--surface)" stroke="var(--line-strong)"/>
     <text x="${x + w / 2}" y="${y + 21}" text-anchor="middle" fill="var(--ink)">${t}</text></g>`;
+  /* колено: линия обязана дойти до узла, а не оборваться в воздухе */
+  const wire = (x1, y1, x2, y2) => { const mx = Math.round((x1 + x2) / 2);
+    return `<path d="M${x1} ${y1} H${mx} V${y2} H${x2}" stroke="var(--accent-line)" stroke-width="1.5" fill="none"/>`; };
   return `<div class="panes wide"><div class="pane"><h3>Карта системы</h3>
     <div class="sub">Как связаны источники, база и поверхности</div>
     <svg viewBox="0 0 760 270" style="width:100%;height:auto;font:500 11px var(--font-ui)">
       ${[["bumblebee", 30], ["Granola", 95], ["Read.ai", 160], ["Telegram-бот", 225]].map(([t, y]) =>
-        box(t, 20, y, 120) + `<path d="M140 ${y + 17} H 280" stroke="var(--accent-line)" stroke-width="1.5" fill="none"/>`).join("")}
+        box(t, 20, y, 120) + wire(140, y + 17, 280, 136)).join("")}
       <rect x="280" y="100" width="140" height="72" rx="10" fill="var(--accent-soft)" stroke="var(--accent)"/>
       <text x="350" y="130" text-anchor="middle" fill="var(--accent)" font-weight="700">База знаний</text>
       <text x="350" y="148" text-anchor="middle" fill="var(--ink-2)" font-size="10">entries · meetings · tasks</text>
-      ${[["Веб «Рой»", 45], ["Claude Desktop (MCP)", 110], ["Уведомления в Telegram", 175]].map(([t, y]) =>
-        `<path d="M420 136 H 540" stroke="var(--accent-line)" stroke-width="1.5" fill="none"/>` + box(t, 540, y, 190)).join("")}
+      ${[["Веб SWARM", 45], ["Claude Desktop (MCP)", 110], ["Уведомления в Telegram", 175]].map(([t, y]) =>
+        wire(420, 136, 540, y + 17) + box(t, 540, y, 190)).join("")}
     </svg>
     ${lab("Что где живёт")}
     ${rows([
