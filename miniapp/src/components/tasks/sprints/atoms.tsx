@@ -3,7 +3,8 @@ import type { CheckStatus } from "@/types";
 import type { Progress } from "@/lib/initiatives";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
-import { fmtDay, isOverdue } from "./format";
+import { fmtDayShort, isOverdue } from "./format";
+import { avatarTone, initials } from "@/lib/people";
 
 // Мелкие детали доски инициатив: полоска прогресса, отметка сверки, «×N» переноса,
 // исполнитель, срок. Вынесены отдельно, потому что одни и те же метки стоят в четырёх
@@ -120,18 +121,34 @@ export function CarryFlag({ reason }: { reason?: string | null }) {
   );
 }
 
-/** Исполнитель. Без исполнителя строка тоже подписана — иначе «ничей» незаметен. */
+/**
+ * Исполнитель кружком с инициалами. Полное имя в каждой строке — главный источник её длины
+ * (внутри инициативы человек чаще всего один и тот же, и имя перестаёт нести информацию,
+ * оставаясь шумом на 120 px). Само имя никуда не девается: оно в подсказке.
+ *
+ * Цвет кружка считается от имени, а не назначается: человек узнаёт свои задачи по пятну
+ * раньше, чем читает буквы, и одинаковый серый у всех эту подсказку убивает.
+ */
 export function AssigneeChip({ name }: { name: string | null }) {
   const dt = useDt();
+  if (!name) {
+    return (
+      <span
+        title={dt("без исполнителя", "unassigned")}
+        className="grid size-5 shrink-0 place-items-center rounded-full border border-dashed border-line text-[9px] text-ink-soft/60"
+      >
+        ?
+      </span>
+    );
+  }
   return (
     <span
-      className={`whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] ${
-        name
-          ? "bg-surface-2 text-ink-soft"
-          : "border border-dashed border-line text-ink-soft/60"
+      title={name}
+      className={`grid size-5 shrink-0 place-items-center rounded-full text-[9px] font-semibold ${
+        avatarTone(name)
       }`}
     >
-      {name ?? dt("без исполнителя", "unassigned")}
+      {initials(name)}
     </span>
   );
 }
@@ -148,7 +165,7 @@ export function DueBadge({ date, closed = false }: {
         late ? "font-semibold text-pri-high" : "text-ink-soft"
       }`}
     >
-      {fmtDay(date)}
+      {fmtDayShort(date)}
     </span>
   );
 }

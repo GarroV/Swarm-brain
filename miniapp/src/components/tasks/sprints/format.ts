@@ -20,6 +20,17 @@ export function fmtDay(value: string): string {
     : d.toLocaleDateString(uiLocale(), { day: "numeric", month: "short" });
 }
 
+/**
+ * «22.09» — срок в строке задачи. Короче, чем «22 сент.», на треть, а читается так же: в
+ * списке дата стоит столбцом, и месяц словом там только растягивает строку.
+ */
+export function fmtDayShort(value: string): string {
+  const d = new Date(value);
+  return isNaN(d.getTime())
+    ? value
+    : d.toLocaleDateString(uiLocale(), { day: "2-digit", month: "2-digit" });
+}
+
 /** «10 сен — 23 сен» — период спринта. */
 export function fmtRange(from: string, to: string): string {
   return `${fmtDay(from)} — ${fmtDay(to)}`;
