@@ -310,9 +310,20 @@ function tokenCheck() {
   await go('create-entry');
   await new Promise((r) => setTimeout(r, 120));
   want((await text('.d-title')) === 'Заметка со стенда', 'новая запись открылась в детали');
+  const dupIds = await p.evaluate(() => {
+    const seen = {}, dup = [];
+    [['entries', S.entries], ['files', S.files], ['tasks', S.tasks], ['meetings', S.meetings]].forEach(([k, list]) =>
+      list.forEach((x) => { const key = k + ':' + x.id; if (seen[key]) dup.push(key); else seen[key] = 1; }));
+    return dup;
+  });
+  want(dupIds.length === 0, `созданное не занимает чужой идентификатор (${dupIds.join(', ')})`);
   await go('close');
   await go('open-entry', 'r2');
   await go('reader'); await shot('35-reader');
+  const readP = await p.$$eval('.reader p', (els) => els.map((e) => e.textContent.trim()));
+  const readTitle = await text('.modal .mh b, .modal h3, .modal .mtitle');
+  want(readP.length >= 2 && readP.every((t) => t.length > 40) && new Set(readP).size === readP.length,
+    `читалка показывает настоящий текст записи, а не заглушку (заголовок: ${readTitle}; абзацев: ${readP.length}; первый: ${(readP[0] || '').slice(0, 50)})`);
   want((await count('.reader p')) >= 2, 'запись открывается целиком');
   await go('mclose'); await go('close');
   await go('tab', 'files'); await shot('13-files');
