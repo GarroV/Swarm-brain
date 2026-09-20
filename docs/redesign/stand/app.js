@@ -795,3 +795,18 @@ window.addEventListener("DOMContentLoaded", () => {
     const l = menu.querySelector(".t-lbl"); if (l) l.textContent = S.theme === "dark" ? "тёмная" : "светлая";
   });
 });
+
+/* архивная задача: возврат вместо «взять в работу» */
+const detail4 = renderDetail;
+renderDetail = function () {
+  detail4();
+  const task = TASKS.find((x) => x.id === S.sel);
+  if (!task || task.list !== "archive") return;
+  const acts = $(".detail .d-acts");
+  acts.innerHTML = `<button class="btn pri">Вернуть из архива</button><button class="btn">Создать заново</button>
+    <button class="btn">Удалить навсегда</button><button class="btn" data-close="1">✕</button>`;
+  $(".detail .d-body").insertAdjacentHTML("afterbegin",
+    `<div class="lease"><b>В архиве</b><div class="rowset"><div><span class="k">Убрал</span><span class="v">${U[0].n}</span></div>
+      <div><span class="k">Когда</span><span class="v">12 сен, 18:40</span></div>
+      <div><span class="k">Причина</span><span class="v">закрыта вне доски</span></div></div></div>`);
+};
