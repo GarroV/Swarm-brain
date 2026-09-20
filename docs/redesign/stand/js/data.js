@@ -95,6 +95,13 @@ const TASKS = [
   mkTask({ id:157, t:"Черногория: проверить условия аренды", pr:"p1a", st:"open", who:[509], due:"2026-10-08", prio:"low", labels:["l6"], mk:"ME" }),
   mkTask({ id:158, t:"Македония: собрать контакты подрядчиков", pr:"p1a", st:"open", who:[], due:null, prio:"low", labels:[], mk:"MK" }),
   mkTask({ id:159, t:"Перезвонить в санитарную службу", pr:"p1a", st:"open", who:[], due:"2026-09-19", prio:"high", labels:["l2"], mk:"RS", sprint:"c2" }),
+  /* прошлый цикл: без него не с чем сравнивать скорость и пуст журнал при переключении */
+  mkTask({ id:120, t:"Согласовать планировку зала", pr:"p1a", st:"done", who:[504], due:"2026-09-02", prio:"med", labels:["l2"], mk:"RS", sprint:"c1", at:"2026-08-25" }),
+  mkTask({ id:121, t:"Собрать сметы по трём поставщикам", pr:"p1b", st:"done", who:[503], due:"2026-09-04", prio:"high", labels:["l1"], mk:"RS", sprint:"c1", at:"2026-08-25" }),
+  mkTask({ id:122, t:"Назначить ответственных по сменам", pr:"p2", st:"done", who:[505], due:"2026-09-05", prio:"med", labels:[], mk:"RS", sprint:"c1", at:"2026-08-26" }),
+  mkTask({ id:123, t:"Проверить документы по аренде", pr:"p1a", st:"done", who:[503], due:"2026-09-06", prio:"high", labels:["l6"], mk:"HR", sprint:"c1", at:"2026-08-27" }),
+  mkTask({ id:124, t:"Обучить смену работе с чек-листом", pr:"p2", st:"done", who:[508], due:"2026-09-07", prio:"low", labels:["l5"], mk:"RS", sprint:"c1", at:"2026-08-28" }),
+  mkTask({ id:125, t:"Закрыть вопрос с вывеской", pr:"p1a", st:"open", who:[502], due:"2026-09-07", prio:"med", labels:[], mk:"RS", sprint:"c1", at:"2026-08-28" }),
   mkTask({ id:160, t:"Выложить график смен на неделю", pr:"p2a", st:"open", who:[], due:"2026-09-20", prio:"med", labels:[], mk:"RS" }),
   mkTask({ id:120, t:"Выбрать подрядчика на вывеску", pr:"p1a", st:"done", who:[504], due:"2026-09-05", prio:"med", labels:["l1"], mk:"HR", arch:true }),
   mkTask({ id:121, t:"Старый регламент открытия смены", pr:"p2a", st:"done", who:[511], due:"2026-08-28", prio:"low", labels:["l2"], mk:"RS", arch:true }),

@@ -371,6 +371,12 @@ function tokenCheck() {
   want((await count('[data-act="accept-init"]')) === prop - 1, 'инициатива принята в цикл через диалог');
   await go('tab', 'check'); await shot('21-check');
   await go('tab', 'analytics'); await shot('22-analytics');
+  want((await count('.rowset .state.bad')) === 1, 'просрочка в аналитике выделена, а не спрятана среди прочих чисел');
+  want((await text('.rowset')).includes('в прошлом цикле'), 'скорость цикла сравнивается с прошлым');
+  await go('person-tasks', '501');
+  await new Promise((r) => setTimeout(r, 120));
+  want((await text('h1')) === 'Задачи', 'клик по полосе нагрузки уводит в задачи человека');
+  await go('sec', 'sprints'); await go('tab', 'analytics');
   await go('tab', 'journal'); await shot('23-journal');
   const jm = await p.$$eval('.tl.log .e', (els) => els.map((e) => +e.dataset.m));
   want(jm.length > 3 && jm.every((v, i) => i === 0 || jm[i - 1] <= v),

@@ -105,15 +105,20 @@ function screenAnalytics() {
   if (!inCycle.length) return cycleBar() + empty("Считать пока нечего", "Аналитика собирается по задачам цикла");
   const load = S.users.map((u) => [u, inCycle.filter((t) => t.who.includes(u.id)).length]).filter(([, n]) => n).sort((a, b) => b[1] - a[1]);
   const max = Math.max(...load.map(([, n]) => n), 1);
+  const done = inCycle.filter((t) => t.st === "done").length;
+  const late = inCycle.filter((t) => dueKind(t.due) === "now").length;
+  /* скорость без предыдущего цикла — просто число: сравнивать не с чем */
+  const prevId = (CYCLES[CYCLES.findIndex((c) => c.id === S.cycle) + 1] || {}).id;
+  const prevDone = prevId ? S.tasks.filter((t) => t.sprint === prevId && t.st === "done").length : null;
   return cycleBar() + `<div class="panes"><div class="pane"><h3>Аналитика цикла</h3><div class="sub">Скорость и распределение нагрузки</div>
     ${rows([
-      ["Закрыто за цикл", nTasks(inCycle.filter((t) => t.st === "done").length)],
+      ["Закрыто за цикл", nTasks(done) + (prevDone === null ? "" : ` <span class="muted">· в прошлом цикле ${prevDone}</span>`)],
       ["В работе", nTasks(inCycle.filter((t) => t.st === "in_progress").length)],
-      ["Просрочено", nTasks(inCycle.filter((t) => dueKind(t.due) === "now").length)],
+      ["Просрочено", late ? alert_(nTasks(late)) : nTasks(0)],
       ["Без исполнителя", nTasks(inCycle.filter((t) => !t.who.length).length)],
     ])}
     ${lab("Нагрузка по людям")}
-    <div class="bars">${load.map(([u, n]) => `<div class="brow"><span class="k">${av(u.id)}</span>
+    <div class="bars">${load.map(([u, n]) => `<div class="brow" ${act("person-tasks", u.id)}><span class="k">${av(u.id)}</span>
       <span class="bar-l"><i style="width:${Math.round(n / max * 100)}%"></i></span><span class="v">${n}</span></div>`).join("")}</div></div></div>`;
 }
 
