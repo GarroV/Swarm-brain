@@ -132,10 +132,17 @@ const ACTS = {
   "set-store": (id, v) => { S.meetings = S.meetings.map((m) => m.id === id ? { ...m, store: v } : m); render(); },
   "tgl-mcc": (id, v) => { S.meetings = S.meetings.map((m) => m.id === id
     ? { ...m, cc: m.cc.includes(v) ? m.cc.filter((c) => c !== v) : [...m.cc, v] } : m); render(); },
-  "merge-dup": (id) => A.mergeDup(id),
+  "merge-dup": (id) => { const m = S.meetings.find((x) => x.id === id) || {};
+    const to = S.meetings.find((x) => x.id === m.dupOf) || {};
+    modal("Объединить с встречей?", `<div class="hint">Черновик <b>${esc(clip(m.t || "", 48))}</b> исчезнет, его текст уйдёт в <b>${esc(clip(to.t || "встречу", 48))}</b>. Разъединить будет нечем.</div>`,
+      `${btn("Оставить как есть", "mclose")}${btn("Объединить", "do-merge-dup", id, undefined, "pri")}`); },
+  "do-merge-dup": (id) => { closeModal(); A.mergeDup(id); },
   "keep-dup": (id) => A.keepDup(id),
   "q-accept": (id, v) => A.queueAccept(id, v || "shared"),
-  "q-reject": (id) => A.queueReject(id),
+  "q-reject": (id) => { const q = S.queue.find((x) => x.id === id) || {};
+    modal("Отклонить предложение?", `<div class="hint">Встреча <b>${esc(clip(q.t || "", 48))}</b> и предложенные к ней задачи в базу не попадут. Агент их не переспросит.</div>`,
+      `${btn("Вернуться", "mclose")}${btn("Отклонить", "do-q-reject", id, undefined, "pri")}`); },
+  "do-q-reject": (id) => { closeModal(); A.queueReject(id); },
   "new-entry": () => newEntryModal(),
   "create-entry": () => { const f = formData(); if (!f.title) return A.toast("Нужно название");
     closeModal(); A.createEntry({ ty: f.ty, title: f.title, text: f.text, cc: f.cc, priv: f.priv, file: f.file }); },
@@ -234,7 +241,10 @@ const ACTS = {
   "notif-pref": (id) => A.toggleNotifPref(id),
   reissue: (id) => A.reissueToken(id),
   tz: (_, v) => { S.tz = v; A.toast(`Часовой пояс: ${v}`); },
-  "reset-cols": () => A.resetCols(),
+  "reset-cols": () => { const own = S.cols.filter((c) => !["open", "in_progress", "done"].includes(c.id)).length;
+    modal("Вернуть колонки по умолчанию?", `<div class="hint">Останутся три исходные колонки. Добавленных вами колонок пропадёт: ${own}.</div>`,
+      `${btn("Оставить", "mclose")}${btn("Вернуть", "do-reset-cols", undefined, undefined, "pri")}`); },
+  "do-reset-cols": () => { closeModal(); A.resetCols(); },
   "add-col": () => modal("Новая колонка доски", fld("Название", input("n", "", "Например: На проверке")),
     `${btn("Отмена", "mclose")}${btn("Добавить", "do-add-col", undefined, undefined, "pri")}`),
   "do-add-col": () => { const f = formData(); closeModal(); A.addCol(f.n); },

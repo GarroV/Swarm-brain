@@ -26,6 +26,71 @@ function clipCheck() {
   return bad;
 }
 
+/* статическая проверка: разрушительное действие обязано спрашивать.
+   Вручную такое не удержишь — удаление метки молча снимало её с семи задач, «Вернуть
+   колонки» выбрасывало добавленные пользователем. Список разрушителей берётся из
+   store.js сам, чтобы правило срабатывало и на те, которых ещё не написали: метод
+   разрушителен, если назван del/drop/delete/remove/reset/revoke/purge/clear ИЛИ
+   выбрасывает элементы из набора, ничего не создавая взамен. Действие с таким методом
+   либо открывает modal(), либо само зовётся do-* и достижимо только из этой модалки. */
+function confirmCheck() {
+  const src = (f) => fs.readFileSync(path.join(__dirname, 'js', f), 'utf8');
+  const store = src('store.js'), app = src('app.js');
+  /* Осознанные исключения — с причиной, а не молча: правило без причины превращается
+     в список «тут не смотрим», и следующий человек припишет туда что угодно. */
+  const ALLOWED = {
+    dropLink: 'связь снимается и возвращается на том же экране кнопкой «Связать» — два клика, терять нечего',
+    resetFilters: 'сброс вида, а не данных',
+  };
+  /* разбор методов store: однострочный `  name(a) { … },` и многострочный до `  },` */
+  const methods = [];
+  {
+    const lines = store.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const h = lines[i].match(/^  (\w+)\(/);
+      if (!h) continue;
+      let body = lines[i];
+      if (!/\},\s*$/.test(lines[i]))
+        for (let j = i + 1; j < lines.length && !/^  \},/.test(lines[j - 1]); j++) body += '\n' + lines[j];
+      methods.push({ name: h[1], body });
+    }
+  }
+  const destructive = new Set();
+  for (const { name, body } of methods) {
+    if (ALLOWED[name]) continue;
+    const byName = /^(del|drop|delete|remove|reset|revoke|purge|clear)/.test(name);
+    /* создаёт взамен (новая задача, встреча, добавление в набор) — это ход процесса,
+       а не потеря: принятие из очереди уносит карточку, но взамен появляются строки */
+    const makes = /mk(Task|Meet)\(|= \[[^\]]*\.\.\.S\./.test(body);
+    const byShape = /S\.\w+ = S\.\w+\.filter\(/.test(body) && !makes;
+    if (byName || byShape) destructive.add(name);
+  }
+  /* разбор карты действий app.js: заголовок — строка вида `  "имя": (…) =>` */
+  const acts = [];
+  let cur = null;
+  for (const line of app.split('\n')) {
+    const h = line.match(/^  "?([\w-]+)"?:\s*(\(|async)/);
+    if (h) { cur = { name: h[1], body: line }; acts.push(cur); }
+    else if (cur) cur.body += '\n' + line;
+  }
+  const calls = (body) => [...destructive].filter((d) => new RegExp('A\\.' + d + '\\b').test(body));
+  const bad = [];
+  for (const a of acts) {
+    const hit = calls(a.body);
+    if (!hit.length || a.name.startsWith('do-') || /\bmodal\(/.test(a.body)) continue;
+    bad.push(`действие «${a.name}» рушит данные (${hit.join(', ')}) без подтверждения`);
+  }
+  /* обратная сторона: подтверждающее do-* обязано жить только в модалке — кнопка с ним
+     на экране минует вопрос, и правило выше становится декорацией */
+  const screens = fs.readdirSync(path.join(__dirname, 'js')).filter((f) => f.startsWith('screens') || f === 'detail.js');
+  for (const a of acts) {
+    if (!a.name.startsWith('do-') || !calls(a.body).length) continue;
+    for (const f of screens)
+      if (src(f).includes(`"${a.name}"`)) bad.push(`подтверждающее «${a.name}» вызывается с экрана ${f} в обход вопроса`);
+  }
+  return bad;
+}
+
 function tokenCheck() {
   const css = fs.readFileSync(path.join(__dirname, 'app.css'), 'utf8');
   const defined = new Set();
@@ -36,7 +101,7 @@ function tokenCheck() {
 }
 
 (async () => {
-  const bad = [...tokenCheck(), ...clipCheck()], errs = [];
+  const bad = [...tokenCheck(), ...clipCheck(), ...confirmCheck()], errs = [];
   const b = await puppeteer.launch({ executablePath: CHROME, headless: 'new' });
   const p = await b.newPage();
   await p.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
@@ -762,7 +827,13 @@ function tokenCheck() {
   await go('do-add-col');
   await new Promise((r) => setTimeout(r, 90));
   want((await count('[data-act="col-tgl"]')) === colsBefore + 1, 'колонка доски добавляется');
+  /* разрушительное действие сперва спрашивает: до ответа набор колонок не тронут */
   await go('reset-cols');
+  await new Promise((r) => setTimeout(r, 90));
+  want((await count('.modal .hint')) === 1, 'сброс колонок сперва спрашивает подтверждение');
+  want((await count('[data-act="col-tgl"]')) === colsBefore + 1, 'до ответа на вопрос колонки не тронуты');
+  want((await text('.modal')).includes('пропадёт: 1'), 'вопрос называет, сколько колонок потеряется');
+  await go('do-reset-cols');
   await new Promise((r) => setTimeout(r, 90));
   want((await count('[data-act="col-tgl"]')) === colsBefore, 'колонки возвращаются по умолчанию');
   await go('tab', 'labels'); await shot('37-labels');
