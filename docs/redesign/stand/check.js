@@ -370,6 +370,10 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 120));
   want((await count('[data-act="accept-init"]')) === prop - 1, 'инициатива принята в цикл через диалог');
   await go('tab', 'check'); await shot('21-check');
+  const checkRows = await p.$$eval('.rowset > div', (rows) => rows.map((r) => ({
+    v: r.querySelector('.v').textContent.trim(), late: (r.querySelector('.a') || {}).textContent || '' })));
+  const liar = checkRows.find((r) => /^(\d+) из \1 закрыто$/.test(r.v) && /просрочено/.test(r.late));
+  want(!liar, `строка не спорит сама с собой: ${liar ? liar.v + ' · ' + liar.late : 'нет таких'}`);
   await go('tab', 'analytics'); await shot('22-analytics');
   want((await count('.rowset .state.bad')) === 1, 'просрочка в аналитике выделена, а не спрятана среди прочих чисел');
   want((await text('.rowset')).includes('в прошлом цикле'), 'скорость цикла сравнивается с прошлым');
