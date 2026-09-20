@@ -47,6 +47,11 @@ const chip = (text, on, a, id, v) => `<button class="chip${on ? " on" : ""}" ${a
 /* off — кнопка, которой сейчас нечего делать: недоступной её видно, а молча не срабатывающей — нет */
 const btn = (text, a, id, v, cls, off) => `<button class="btn${cls ? " " + cls : ""}"${off ? " disabled" : ""} ${act(a, id, v)}>${esc(text)}</button>`;
 const empty = (title, sub) => `<div class="empty"><b>${esc(title)}</b>${sub ? esc(sub) : ""}</div>`;
+/* обрезка без многоточия читается как конец фразы: «...держит цену до конца не».
+   Режем по границе слова и всегда ставим знак обрезки. */
+const clip = (t, n) => { const s = String(t || ""); if (s.length <= n) return s;
+  const cut = s.slice(0, n); const sp = cut.lastIndexOf(" ");
+  return (sp > n * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,.;:—-]+$/, "") + "…"; };
 const lab = (t) => `<div class="lab">${esc(t)}</div>`;
 const rows = (list) => `<div class="rowset">${list.map(([k, v, a]) =>
   `<div><span class="k">${k}</span><span class="v">${v}</span>${a ? `<span class="a">${a}</span>` : ""}</div>`).join("")}</div>`;

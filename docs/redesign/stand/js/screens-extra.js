@@ -106,8 +106,10 @@ function calendarStrip() {
 }
 
 /* ── связи задачи ────────────────────────────────────────────── */
+/* длиннее списка в выпадающем окне не выбирают — дальше ищут поиском */
+const LINK_OPTIONS = 24;
 function linkModal(id) {
-  const others = S.tasks.filter((t) => t.id !== +id && !t.arch).slice(0, 24);
+  const others = S.tasks.filter((t) => t.id !== +id && !t.arch).slice(0, LINK_OPTIONS);
   modal("Связать задачи", `
     ${fld("Тип связи", select("kind", [["блокирует", "блокирует"], ["заблокирована", "заблокирована"], ["связана", "связана"], ["дубль", "дубль"]], "связана"))}
     ${fld("С какой задачей", select("other", others.map((t) => [String(t.id), `${t.id} · ${t.t}`]), String(others[0] && others[0].id)))}`,
@@ -160,7 +162,7 @@ function screenSearch() {
       ${r.meetings.length ? lab(`Встречи · ${r.meetings.length}`) + rows(r.meetings.map((m) => [tag(m.src, "m"),
         `<span class="lnk" ${act("open-meet", m.id)}>${mark(m.t)}</span>`, fmtDT(m.dt)])) : ""}
       ${r.entries.length ? lab(`База · ${r.entries.length}`) + rows(r.entries.map((e) => [tag(TY_LABEL[e.ty], "l"),
-        `<span class="lnk" ${act("open-entry", e.id)}>${mark(e.h)}</span>`, mark(e.p.slice(0, 64))])) : ""}
+        `<span class="lnk" ${act("open-entry", e.id)}>${mark(e.h)}</span>`, mark(clip(e.p, 64))])) : ""}
       ${r.files.length ? lab(`Файлы · ${r.files.length}`) + rows(r.files.map((f) => [`<span class="ft ft-${f.ty}">${f.ty}</span>`,
         `<span class="lnk" ${act("open-file", f.id)}>${mark(f.n)}</span>`, esc(f.sz)])) : ""}
     </div>` : empty("Ничего не нашлось", "Попробуйте другое слово или спросите базу")}`;

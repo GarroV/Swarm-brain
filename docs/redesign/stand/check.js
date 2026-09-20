@@ -13,6 +13,19 @@ const URL = 'file://' + path.join(__dirname, 'index.html');
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 /* статическая проверка: переменная без объявления в :root молча убивает всё правило */
+/* статическая проверка: жёсткая обрезка строки без знака обрезки — текст обрывается на полуслове */
+function clipCheck() {
+  const bad = [];
+  for (const f of fs.readdirSync(path.join(__dirname, 'js'))) {
+    const src = fs.readFileSync(path.join(__dirname, 'js', f), 'utf8');
+    src.split('\n').forEach((line, i) => {
+      if (/\.slice\(0,\s*(2[0-9]|[3-9][0-9]|[0-9]{3,})\)/.test(line) && !line.includes('clip('))
+        bad.push(`${f}:${i + 1} обрезка строки без «…»: ${line.trim().slice(0, 60)}`);
+    });
+  }
+  return bad;
+}
+
 function tokenCheck() {
   const css = fs.readFileSync(path.join(__dirname, 'app.css'), 'utf8');
   const defined = new Set();
@@ -23,7 +36,7 @@ function tokenCheck() {
 }
 
 (async () => {
-  const bad = [...tokenCheck()], errs = [];
+  const bad = [...tokenCheck(), ...clipCheck()], errs = [];
   const b = await puppeteer.launch({ executablePath: CHROME, headless: 'new' });
   const p = await b.newPage();
   await p.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
@@ -729,6 +742,10 @@ function tokenCheck() {
   await p.type('#q', 'смета');
   await new Promise((r) => setTimeout(r, 120));
   want((await count('.pal .r')) > 1, 'поиск находит по данным');
+  want(await p.evaluate(() => { const rows = [...document.querySelectorAll('.pal .res > *')];
+    const i = rows.findIndex((e) => e.dataset.act === 'show-all');
+    return i > 0 && rows[i - 1].className === 'grp'; }),
+    'служебные действия палитры отделены заголовком, а не висят хвостом группы «Файлы»');
   await shot('31-palette');
   await p.$eval('[data-act="show-all"]', (e) => e.click());
   await new Promise((r) => setTimeout(r, 120));

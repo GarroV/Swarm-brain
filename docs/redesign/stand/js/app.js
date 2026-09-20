@@ -333,8 +333,9 @@ function palResults(q) {
   const html = q.trim()
     ? grp("Задачи", r.tasks.map((t) => `<div class="r" ${act("open-task", t.id)}><span class="t">${esc(t.t)}</span><span class="s">${esc(projPath(t.pr))} · ${ST_LABEL[t.st]}</span></div>`))
       + grp("Встречи", r.meetings.map((m) => `<div class="r" ${act("open-meet", m.id)}><span class="t">${esc(m.t)}</span><span class="s">${esc(fmtDT(m.dt))} · ${m.src}</span></div>`))
-      + grp("База", r.entries.map((x) => `<div class="r" ${act("open-entry", x.id)}><span class="t">${esc(x.h)}</span><span class="s">${esc(x.p.slice(0, 60))}</span></div>`))
+      + grp("База", r.entries.map((x) => `<div class="r" ${act("open-entry", x.id)}><span class="t">${esc(x.h)}</span><span class="s">${esc(clip(x.p, 60))}</span></div>`))
       + grp("Файлы", r.files.map((f) => `<div class="r" ${act("open-file", f.id)}><span class="t">${esc(f.n)}</span><span class="s">${f.sz}</span></div>`))
+      + `<div class="grp">Действия</div>`
       + `<div class="r" ${act("show-all", undefined, q)}><span class="t">Показать все результаты</span><span class="s">отдельным экраном, с разбивкой по типам</span></div>`
       + `<div class="r ask" ${act("ask", undefined, q)}><span class="t">Спросить базу: «${esc(q)}»</span><span class="s">ответ со ссылками на источники</span></div>`
     : `<div class="grp">Быстрые действия</div>
