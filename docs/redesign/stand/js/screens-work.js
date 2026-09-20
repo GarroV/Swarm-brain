@@ -149,7 +149,15 @@ function screenJournal() {
     <div class="tl log">${items.map((h) => `<div class="e" data-m="${h.m}"><div class="w">${esc(ago(h.m))}</div>
       <div class="p"></div><div><b>${esc(user(h.who).n)}</b>
       <span class="ev">${esc(h.k)}${h.v ? `: <b>${esc(h.v)}</b>` : ""}</span>
-      · <span class="lnk" ${act("open-task", h.id)}>задача ${h.id}</span></div></div>`).join("")}</div></div></div>`;
+      · ${logLink(h.id)}</div></div>`).join("")}</div></div></div>`;
+}
+
+/* Строка журнала обязана называть задачу словами: «задача 131» не говорит, что двигали,
+   а после удаления задачи ссылка вела в пустоту — открывался белый лист детали. */
+function logLink(id) {
+  const t = S.tasks.find((x) => x.id === id);
+  if (!t) return `<span class="muted" title="задача ${id} удалена">задача удалена</span>`;
+  return `<span class="lnk" ${act("open-task", id)} title="${esc(t.t)}">${esc(clip(t.t, 46))}</span>`;
 }
 
 /* перетаскивание карточек */

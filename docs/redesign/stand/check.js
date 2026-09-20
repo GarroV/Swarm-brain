@@ -807,7 +807,27 @@ function tokenCheck() {
   const jm = await p.$$eval('.tl.log .e', (els) => els.map((e) => +e.dataset.m));
   want(jm.length > 3 && jm.every((v, i) => i === 0 || jm[i - 1] <= v),
     `журнал идёт от свежего к старому (${jm.join(' ')})`);
-  const jIds = await p.$$eval('.tl.log .lnk', (els) => els.map((e) => +e.textContent.replace(/\D/g, '')));
+  /* идентификатор берём из действия, а не из текста: в строке теперь стоит НАЗВАНИЕ
+     задачи, и выдирание цифр из текста молча давало нули */
+  const jIds = await p.$$eval('.tl.log .lnk', (els) => els.map((e) => +e.dataset.id));
+  want(jIds.length > 3 && jIds.every((v) => Number.isFinite(v) && v > 0), `журнал ссылается на живые задачи (${jIds.join(',')})`);
+  /* «называет словами» проверяем сверкой с настоящим заголовком задачи: проверка на
+     «есть кириллица» проходила и на «задача 131» — слово «задача» тоже кириллица */
+  const jNamed = await p.evaluate(() => [...document.querySelectorAll('.tl.log .lnk')].filter((e) => {
+    const t = S.tasks.find((x) => x.id === +e.dataset.id);
+    const shown = e.textContent.replace(/…$/, '');
+    return !t || !t.t.startsWith(shown);
+  }).map((e) => e.textContent));
+  want(jNamed.length === 0, `строка журнала называет задачу её заголовком (не сошлось: ${jNamed.join(' | ')})`);
+  /* задача удалена — журнал не смеет предлагать ссылку на неё: либо строка уходит
+     вместе с задачей, либо говорит, что задачи больше нет */
+  const goneId = jIds[0];
+  const kept = await p.evaluate((id) => { const all = S.tasks; S.tasks = S.tasks.filter((t) => t.id !== id); render(); window.__all = all; return all.length; }, goneId);
+  await new Promise((r) => setTimeout(r, 90));
+  const deadLink = await p.evaluate((id) => [...document.querySelectorAll('.tl.log .lnk')].some((e) => +e.dataset.id === id), goneId);
+  want(kept > 0 && !deadLink, 'на удалённую задачу журнал ссылку не даёт');
+  await p.evaluate(() => { S.tasks = window.__all; render(); });
+  await new Promise((r) => setTimeout(r, 90));
   const offCycle = await p.evaluate((ids) => ids.filter((id) => (S.tasks.find((t) => t.id === id) || {}).sprint !== S.cycle), jIds);
   want(offCycle.length === 0, `в журнале цикла только задачи цикла (чужие: ${offCycle.join(',')})`);
   await go('set-cycle', 'c3');
