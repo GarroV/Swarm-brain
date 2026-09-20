@@ -20,7 +20,9 @@ const due = (iso, done) => iso ? `<span class="due ${done ? "" : dueKind(iso)}">
 /* дата факта (загружено, отправлено, добавлено) — она в прошлом всегда, красить её нечем */
 const dt = (iso) => iso ? `<span class="due">${fmtDate(iso)}</span>` : `<span class="muted">—</span>`;
 const tag = (text, kind) => `<span class="tag tag-${kind || "o"}">${esc(text)}</span>`;
-const lbls = (ids) => ids.map((id) => { const l = label(id); return l ? tag(l.n, "l") : ""; }).join("");
+/* пустая ячейка неотличима от «не поместилось»: нет значения — ставим прочерк */
+const lbls = (ids) => ids.map((id) => { const l = label(id); return l ? tag(l.n, "l") : ""; }).join("")
+  || `<span class="muted">—</span>`;
 /* в списке рядом с точкой статуса вторая точка нечитаема: показываем только высокий приоритет */
 const priMark = (p) => `<span class="pri-hi"${p === "high" ? ' title="высокий приоритет">!' : ">"}</span>`;
 const cc = (codes) => codes.length ? codes.map((c) => `<span class="cc" title="${esc(cname(c))}">${c}</span>`).join("") : "";

@@ -103,10 +103,10 @@ const TASKS = [
   mkTask({ id:114, t:"Обучить смену работе с чек-листом", pr:"p2", st:"done", who:[508], due:"2026-09-07", prio:"low", labels:["l5"], mk:"RS", sprint:"c1", at:"2026-08-28" }),
   mkTask({ id:115, t:"Закрыть вопрос с вывеской", pr:"p1a", st:"open", who:[502], due:"2026-09-07", prio:"med", labels:[], mk:"RS", sprint:"c1", at:"2026-08-28" }),
   mkTask({ id:160, t:"Выложить график смен на неделю", pr:"p2a", st:"open", who:[], due:"2026-09-20", prio:"med", labels:[], mk:"RS" }),
-  mkTask({ id:120, t:"Выбрать подрядчика на вывеску", pr:"p1a", st:"done", who:[504], due:"2026-09-05", prio:"med", labels:["l1"], mk:"HR", arch:true }),
+  mkTask({ id:120, t:"Выбрать подрядчика на вывеску", pr:"p1a", st:"done", who:[501], due:"2026-09-05", prio:"med", labels:["l1"], mk:"HR", arch:true }),
   mkTask({ id:121, t:"Старый регламент открытия смены", pr:"p2a", st:"done", who:[511], due:"2026-08-28", prio:"low", labels:["l2"], mk:"RS", arch:true }),
-  mkTask({ id:122, t:"Разовая закупка посуды", pr:"p1b", st:"done", who:[502], due:"2026-08-30", prio:"low", labels:["l1"], mk:"RS", arch:true }),
-  mkTask({ id:123, t:"Тестовая задача из бота", pr:"p5", st:"done", who:[507], due:"2026-08-20", prio:"low", labels:[], mk:null, arch:true, src:"bot" }),
+  mkTask({ id:122, t:"Разовая закупка посуды", pr:"p1b", st:"done", who:[501], due:"2026-08-30", prio:"low", labels:["l1"], mk:"RS", arch:true }),
+  mkTask({ id:123, t:"Тестовая задача из бота", pr:"p5", st:"done", who:[], due:"2026-08-20", prio:"low", labels:[], mk:null, arch:true, src:"bot" }),
 ];
 
 const COMMENTS = {

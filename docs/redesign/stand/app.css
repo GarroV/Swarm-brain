@@ -126,6 +126,7 @@ tbody tr.sel td.t{font-weight:600}
 /* пусто */
 .empty{display:grid;place-items:center;height:100%;color:var(--ink-empty);font-size:var(--fs-dense);text-align:center;gap:6px}
 .empty b{display:block;color:var(--ink-3);font-size:var(--fs-lead);font-weight:600}
+.emptyact{display:grid;place-items:center;padding-bottom:40px}
 /* доска спринта */
 .board{display:flex;gap:12px;padding:14px var(--gutter);overflow:auto;flex:1;align-items:stretch;min-height:0}
 /* колонки делят ширину: доска на три колонки не должна жаться к левому краю */

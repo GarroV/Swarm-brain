@@ -45,7 +45,7 @@ function taskRow(t) {
     ${cell(esc(projPath(t.pr)))}
     ${cell(t.who.length ? avShort(t.who[0]) : `<span class="muted">— не назначен</span>`)}
     ${cell(lbls(t.labels) + (t.recur ? tag(RECUR_LABEL[t.recur], "p") : ""), "opt")}
-    ${cell(t.mk ? `<span class="cc">${t.mk}</span>` : "", "r opt")}
+    ${cell(t.mk ? `<span class="cc">${t.mk}</span>` : `<span class="muted">—</span>`, "r opt")}
     ${cell(due(t.due, t.st === "done"), "r")}</tr>`;
 }
 
@@ -71,7 +71,14 @@ function groupRows(list) {
 function screenTasks() {
   const list = visibleTasks();
   const head = tasksToolbar() + bulkBar() + (S.tab === "today" ? calendarStrip() : "");
-  if (!list.length) return head + empty("Задач в этом срезе нет", "Смените линзу, статусы или вкладку");
+  if (!list.length) {
+    /* пустой экран без объяснения читается как «данных нет»: называем, сколько скрыто фильтрами */
+    const hidden = S.tasks.filter((t) => inList(t, S.tab)).length;
+    return head + empty("Задач в этом срезе нет", hidden
+      ? `Линза и фильтры скрывают ещё ${hidden}`
+      : "На этой вкладке пока ничего нет")
+      + (hidden ? `<div class="emptyact">${btn("Показать все", "reset-filters", undefined, undefined, "pri")}</div>` : "");
+  }
   return head + table([
     { t: "", w: "30px" }, { t: "Задача" }, { t: "Проект", w: "20%" }, { t: "Исполнитель", short: "Кто", w: "15%" },
     { t: "Метки", w: "15%", opt: true }, { t: "Рынок", r: true, w: "78px", opt: true }, { t: "Срок", r: true, w: "84px" },

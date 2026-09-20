@@ -101,6 +101,8 @@ const ACTS = {
     closeModal(); A.createTask({ title: f.title, pr: f.pr, who: f.who ? +f.who : null, due: f.due, prio: f.prio,
       labels: f.labels, mk: (f.mk || [])[0] || null, recur: f.recur || null, priv: f.priv, note: f.note }); },
   check: (id, v, e) => { const s = new Set(S.bulk); const n = +id; s.has(n) ? s.delete(n) : s.add(n); A.set({ bulk: s }); },
+  "reset-filters": () => A.set({ lens: "all", statuses: new Set(Object.keys(ST_LABEL)),
+    mk: null, assignee: null, q: "" }),
   "bulk-clear": () => A.set({ bulk: new Set() }),
   "bulk-assign": (id) => A.bulk("assign", +id),
   "bulk-due": (_, v) => A.bulk("due", v),

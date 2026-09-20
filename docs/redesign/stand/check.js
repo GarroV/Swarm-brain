@@ -30,6 +30,7 @@ function tokenCheck() {
   p.on('pageerror', (e) => errs.push('PAGEERROR: ' + e.message));
   p.on('console', (m) => { if (m.type() === 'error') errs.push('CONSOLE: ' + m.text()); });
   await p.goto(URL, { waitUntil: 'networkidle0' });
+  try {
   /* негативный прогон: ломаем нарочно то, что каждая проверка должна ловить */
   if (process.argv[2] === 'break') await p.addStyleTag({ content: `
     .ib{display:block!important}
@@ -47,6 +48,8 @@ function tokenCheck() {
   const gov = (a, v) => click(`[data-act="${a}"][data-v="${v}"]`);
   const count = (s) => p.$$eval(s, (els) => els.length);
   const text = (s) => p.$eval(s, (e) => e.textContent.trim()).catch(() => '');
+  /* чтение, которое не валит прогон: элемента нет — вернётся null, и проверка честно упадёт */
+  const seen = (s, fn) => p.$eval(s, fn).catch(() => null);
   const want = (cond, msg) => { if (!cond) bad.push('НЕ СРАБОТАЛО: ' + msg); };
 
   const measure = () => p.evaluate(() => {
@@ -237,6 +240,20 @@ function tokenCheck() {
     /* чип-заглушка: выглядит фильтром (а с .on — включённым), но клик ничего не меняет */
     document.querySelectorAll('.chip[data-act="noop"]').forEach((c) =>
       out.push('чип «' + c.textContent.trim().slice(0, 24) + '» ничего не фильтрует'));
+
+    /* в одной колонке пустое значение обязано выглядеть одинаково: либо везде прочерк, либо нигде.
+       Иначе пустая клетка читается как «не поместилось», а не как «значения нет» */
+    document.querySelectorAll('table').forEach((tb) => {
+      const heads = [...tb.querySelectorAll('thead th')].map((t) => t.textContent.trim());
+      const rows = [...tb.querySelectorAll('tbody tr')].filter((r) => !r.classList.contains('sect'));
+      heads.forEach((h, i) => {
+        let dash = 0, blank = 0;
+        rows.forEach((r) => { const td = r.children[i]; if (!td) return;
+          const t = td.textContent.trim();
+          if (t === '—') dash++; else if (!t && !td.querySelector('input,button,svg,img')) blank++; });
+        if (dash && blank) out.push(`колонка «${h}»: пустое то прочерком, то пустотой (${dash}/${blank})`);
+      });
+    });
     return out;
   });
   const shot = async (name) => { await p.screenshot({ path: `${OUT}/${name}.png` });
@@ -303,6 +320,24 @@ function tokenCheck() {
   const afterArch = await count('tbody tr[data-act="open-task"]');
   want(afterArch === beforeArch + 1, `массовый архив сработал (${beforeArch} → ${afterArch})`);
   await shot('06-archive');
+  /* пустой срез обязан объяснить себя и вернуть человека к данным */
+  await p.type('[data-qin="tasks"]', 'щщщ');
+  await new Promise((r) => setTimeout(r, 150));
+  want((await count('tbody tr.row')) === 0, 'фильтр по названию может обнулить срез');
+  want(/скрывают ещё \d+/.test(await text('.empty')), 'пустой срез называет, сколько скрыто фильтрами');
+  want(await seen('[data-act="reset-filters"]', (e) => { const r = e.getBoundingClientRect();
+    return r.width > 0 && r.bottom <= window.innerHeight; }) === true, 'кнопка «Показать все» видна, а не за краем экрана');
+  await go('reset-filters');
+  await new Promise((r) => setTimeout(r, 120));
+  want((await count('tbody tr.row')) > 0, '«Показать все» возвращает задачи в срез');
+  /* «Все» = мои + командные (решение владельца 2026-08-20), чужие личные — только под «Все сотрудники» */
+  want((await count('tbody tr.row')) === await p.evaluate(() =>
+    S.tasks.filter((t) => t.arch && inLens(t, 'all')).length), 'архив под линзой «Все» показывает мои и командные')
+  const archAll = await p.evaluate(() => S.tasks.filter((t) => t.arch).length);
+  await go('tgl', 'staff');
+  await new Promise((r) => setTimeout(r, 120));
+  want((await count('tbody tr.row')) === archAll, `«Все сотрудники» открывает весь архив (${archAll})`);
+  await go('tgl', 'staff');
   await go('open-task', (await p.$eval('tbody tr[data-act="open-task"]', (e) => e.dataset.id)));
   const archActs = await p.$$eval('.detail .d-acts .btn', (els) => els.map((e) => e.textContent.trim()).join(' | '));
   want(archActs.includes('Вернуть'), `в архиве предлагается вернуть задачу (кнопки: ${archActs})`);
@@ -532,9 +567,9 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 90));
   want((await text('.rowset code')) !== tokBefore, `токен перевыпускается (${tokBefore} → ${await text('.rowset code')})`);
   await go('tab', 'columns'); await shot('27-columns');
-  want(await p.$eval('[data-v="0:-1"]', (e) => e.disabled), 'вверх у первой колонки недоступно, а не молчит');
+  want(await seen('[data-v="0:-1"]', (e) => e.disabled) === true, 'вверх у первой колонки недоступно, а не молчит');
   const lastDown = await p.evaluate(() => S.cols.length - 1);
-  want(await p.$eval(`[data-v="${lastDown}:1"]`, (e) => e.disabled), 'вниз у последней колонки недоступно');
+  want(await seen(`[data-v="${lastDown}:1"]`, (e) => e.disabled) === true, 'вниз у последней колонки недоступно');
   await gov('col-tgl', '1');
   await new Promise((r) => setTimeout(r, 90));
   want((await text('.rowset')).includes('скрыта'), 'скрытая колонка названа словом, а не только текстом кнопки');
@@ -697,6 +732,10 @@ function tokenCheck() {
   await p.evaluate(() => A.switchWorkspace('cee'));
   await new Promise((r) => setTimeout(r, 120));
 
+  } catch (e) {
+    /* упавший $eval раньше убивал прогон: отчёт не печатался, а все проверки ниже молча не выполнялись */
+    bad.push('ПРОГОН ОБОРВАЛСЯ: ' + e.message + ' — проверки после этого места не выполнялись');
+  }
   console.log(bad.length ? 'ДЕФЕКТЫ:\n' + [...new Set(bad)].join('\n') : 'дефектов вёрстки и поведения: нет');
   console.log('ошибки JS: ' + (errs.length ? '\n' + errs.join('\n') : 'нет'));
   await b.close();

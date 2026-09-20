@@ -71,7 +71,10 @@ function inLens(t, lens) {
   const team = !t.priv && t.who.length === 0;
   if (lens === "mine") return t.who.includes(ME);
   if (lens === "team") return team;
-  return mine || team || (!t.priv && t.who.length > 0 && t.who.includes(ME));
+  /* «Все» = мои + командные, а НЕ буквально все: чужая личная задача — дело коллеги
+     (решение владельца 2026-08-20, канон — miniapp/src/lib/smartLists.ts matchesLens).
+     Оверсайт руководителя живёт в отдельном тумблере «Все сотрудники» выше. */
+  return mine || team;
 }
 function visibleTasks(list = S.tab) {
   const q = S.q.trim().toLowerCase();
