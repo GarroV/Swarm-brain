@@ -2,9 +2,10 @@
 
 function screenProjects() {
   if (S.tab === "map") return projectsMap();
-  const roots = S.projects.filter((p) => !p.parent);
-  return `<div class="bar">${chip("Воркспейс: IMF BD", true, "noop")}${chip("Показывать закрытые", false, "noop")}
-    <div class="right"><span>Проектов <b>${roots.length}</b></span><span>Подпроектов <b>${S.projects.length - roots.length}</b></span></div></div>`
+  const all = S.projects.filter((p) => !p.parent);
+  const roots = S.showClosed ? all : all.filter((p) => p.st !== "paused");
+  return `<div class="bar">${chip("Воркспейс: IMF BD", true, "noop")}${chip("Показывать на паузе", S.showClosed, "tgl", "showClosed")}
+    <div class="right"><span>Показано <b>${roots.length}</b> из ${all.length}</span><span>Подпроектов <b>${S.projects.length - all.length}</b></span></div></div>`
     + table([{ t: "Проект", w: "34%" }, { t: "Владелец" }, { t: "Подпроекты" }, { t: "Срок" }, { t: "Открыто", r: true }, { t: "Всего", r: true }],
       roots.map((p) => {
         const subs = S.projects.filter((x) => x.parent === p.id);
@@ -90,7 +91,7 @@ function screenCheck() {
       const late = list.filter((t) => dueKind(t.due) === "now").length;
       return [esc(proj(k) ? proj(k).n : k), `${d} из ${list.length} закрыто`, state(late ? `${late} просрочено` : "в графике", !late)];
     }))}
-    <div class="mt">${btn("Закрыть цикл", "close-cycle", undefined, undefined, "pri")}${btn("Перенести хвосты", "noop")}</div></div></div>`;
+    <div class="mt">${btn("Закрыть цикл", "close-cycle", undefined, undefined, "pri")}${btn("Перенести хвосты в следующий", "carry-over")}</div></div></div>`;
 }
 
 function screenAnalytics() {

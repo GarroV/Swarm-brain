@@ -12,7 +12,7 @@ const dhead = (crumb, title, acts) =>
 function detailTask(t) {
   const cm = S.comments[t.id] || [], hi = S.history[t.id] || [];
   const acts = t.arch
-    ? btn("Вернуть из архива", "restore", t.id, undefined, "pri") + btn("Удалить навсегда", "noop")
+    ? btn("Вернуть из архива", "restore", t.id, undefined, "pri") + btn("Удалить навсегда", "del-task", t.id)
     : (t.st !== "in_progress" ? btn("Взять в работу", "take", t.id, undefined, "pri") : btn("Готово", "move", t.id, "done", "pri"))
       + btn("Архивировать", "archive", t.id);
   let body = "";
@@ -100,7 +100,7 @@ function detailEntry(e) {
   const files = S.files.filter((f) => f.rec === e.id);
   return dhead(`Запись · ${e.ty}`, e.h,
     btn("Открыть полностью", "reader", e.id, undefined, "pri") + btn("Переиндексировать", "reindex-entry", e.id)
-    + btn("Править", "noop") + btn("Удалить", "del-entry", e.id))
+    + btn("Править", "edit-entry", e.id) + btn("Удалить", "del-entry", e.id))
     + `<div class="d-body"><dl class="f">
       <dt>Тип</dt><dd>${tag(e.ty, "p")}</dd><dt>Автор</dt><dd>${av(e.who)}</dd>
       <dt>Добавлена</dt><dd>${due(e.at)}</dd>
@@ -118,7 +118,7 @@ function detailEntry(e) {
 function detailFile(f) {
   const e = S.entries.find((x) => x.id === f.rec) || {};
   return dhead(`Файл · ${f.ty.toUpperCase()}`, f.n,
-    btn("Скачать", "noop", undefined, undefined, "pri") + btn("Переиндексировать", "reindex-file", f.id) + btn("Заменить", "noop"))
+    btn("Скопировать ссылку", "copy", undefined, `https://swarm-brain.pages.dev/drive/${f.id}/${f.n}`, "pri") + btn("Переиндексировать", "reindex-file", f.id) + btn("Заменить файл", "replace-file", f.id))
     + `<div class="d-body"><div class="prev"><span class="ft ft-${f.ty}">${f.ty}</span>Предпросмотр доступен после открытия</div>
       <dl class="f"><dt>Размер</dt><dd><span class="due">${esc(f.sz)}</span></dd>
       <dt>Загрузил</dt><dd>${av(f.who)}</dd><dt>Когда</dt><dd>${due(f.at)}</dd>
@@ -133,7 +133,7 @@ function detailProject(p) {
   const tasks = S.tasks.filter((t) => t.pr === p.id || subs.some((s) => s.id === t.pr));
   const open = tasks.filter((t) => t.st !== "done" && !t.arch).length;
   return dhead(`Проект · ${p.st === "paused" ? "пауза" : "идёт"}`, p.n,
-    btn("Открыть задачи", "proj-tasks", p.id, undefined, "pri") + btn("Создать подпроект", "noop") + btn("Архивировать", "noop"))
+    btn("Открыть задачи", "proj-tasks", p.id, undefined, "pri") + btn("Создать подпроект", "new-subproject", p.id) + btn(p.st === "paused" ? "Возобновить" : "Поставить на паузу", "toggle-proj", p.id))
     + `<div class="d-body"><dl class="f">
       <dt>Владелец</dt><dd>${av(p.own)}</dd>
       <dt>Срок</dt><dd>${due(p.due)}</dd>

@@ -15,6 +15,7 @@ function tasksToolbar() {
       ${COUNTRIES.map((c) => `<button class="mi${S.mk === c.c ? " on" : ""}" ${act("mk-filter", undefined, c.c)}>${c.c} · ${c.n}</button>`).join("")}</div></span>
     ${chip("По рынкам", S.byMarket, "tgl", "byMarket")}
     ${admin ? chip("Все сотрудники", S.staff, "tgl", "staff") : ""}
+    ${S.assignee ? `<button class="chip on" ${act("drop-assignee")}>${av(S.assignee)}<span class="x">×</span></button>` : ""}
     <div class="right">
       <input class="qin" placeholder="Фильтр по названию" value="${esc(S.q)}" data-qin="tasks">
       <span>Показано <b>${visibleTasks().length}</b></span>

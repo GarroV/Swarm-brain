@@ -472,3 +472,8 @@ td.acts{white-space:nowrap}
 /* кнопка-починка: действие, которого система ждёт от админа */
 .btn.attn{border-color:#E7C77A;background:#FFF8E1;color:#7A5A12}
 .btn.attn:hover{background:#FDEFC6}
+
+/* снимаемый фильтр-чип: человек, выбранный в «Команде» */
+.chip .x{margin-left:6px;color:var(--ink-3);font-weight:600}
+.chip.on .x{color:inherit;opacity:.7}
+.chip .av{margin-right:5px;vertical-align:-4px}

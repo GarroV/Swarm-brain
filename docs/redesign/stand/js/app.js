@@ -139,6 +139,29 @@ const ACTS = {
   "reindex-entry": (id) => A.reindex("entry", id),
   "reindex-file": (id) => A.reindex("file", id),
   "del-entry": (id) => A.deleteEntry(id),
+  "del-task": (id) => modal("Удалить навсегда?", `<div class="hint">Задача <b>${esc((S.tasks.find((t) => t.id === +id) || {}).t || "")}</b> исчезнет вместе с комментариями и историей. Отменить будет нечем.</div>`,
+    `${btn("Оставить", "mclose")}${btn("Удалить навсегда", "do-del-task", id, undefined, "pri")}`),
+  "do-del-task": (id) => { closeModal(); A.deleteTask(id); },
+  "edit-entry": (id) => { const e = S.entries.find((x) => x.id === id);
+    modal("Править запись", `${fld("Заголовок", input("h", e.h))}${fld("Фрагмент", area("p", e.p))}`,
+      `${btn("Отмена", "mclose")}${btn("Сохранить", "do-edit-entry", id, undefined, "pri")}`); },
+  "do-edit-entry": (id) => { const f = formData(); closeModal(); A.editEntry(id, { h: f.h, p: f.p }); },
+  "replace-file": (id) => modal("Заменить файл", `${fld("Имя нового файла", input("n", "", "смета-v3.pdf"))}
+    <div class="hint">Ссылка на файл не изменится, индекс пересоберётся.</div>`,
+    `${btn("Отмена", "mclose")}${btn("Заменить", "do-replace-file", id, undefined, "pri")}`),
+  "do-replace-file": (id) => { const f = formData(); closeModal(); A.replaceFile(id, f.n); },
+  "new-subproject": (id) => modal("Новый подпроект", fld("Название", input("n", "", "Например: Оборудование")),
+    `${btn("Отмена", "mclose")}${btn("Создать", "do-subproject", id, undefined, "pri")}`),
+  "do-subproject": (id) => { const f = formData(); closeModal(); A.addSubproject(id, f.n); },
+  "toggle-proj": (id) => A.toggleProject(id),
+  "person-tasks": (id) => { A.go("tasks"); S.assignee = +id; S.lens = "all"; S.tab = "all";
+    if (me().role === "admin") S.staff = true;   /* чужие задачи видны только админу */
+    render(); },
+  "drop-assignee": () => { S.assignee = null; render(); },
+  "carry-over": () => A.carryOver(),
+  "regen-tez": (id) => { const ta = $(".modal [data-f=\"tez\"]");
+    if (ta) ta.value = ta.value.replace(/\s+$/, "") + "\n\nПереписано моделью: формулировки сведены к решениям и договорённостям, повторы убраны.";
+    A.toast("Модель переписала тезисы — проверьте и сохраните"); },
   "tgl-epriv": (id) => { S.entries = S.entries.map((e) => e.id === id ? { ...e, priv: !e.priv } : e); render(); },
   "tgl-ecc": (id, v) => { S.entries = S.entries.map((e) => e.id === id
     ? { ...e, cc: e.cc.includes(v) ? e.cc.filter((c) => c !== v) : [...e.cc, v] } : e); render(); },

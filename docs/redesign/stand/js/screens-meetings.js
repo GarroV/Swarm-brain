@@ -89,7 +89,7 @@ function tezisyModal(id) {
   const text = m.tez.map((s) => s.li.join("\n")).join("\n");
   modal("Править тезисы", `${fld("Тезисы — по строке на пункт", area("tez", text))}
     <div class="hint">Модель перепишет текст, если нажать «Переписать моделью». Ручная правка помечает встречу как отредактированную и отключает авто-перезапись.</div>`,
-    `${btn("Отмена", "mclose")}${btn("Переписать моделью", "noop")}${btn("Сохранить", "save-tez", id, undefined, "pri")}`);
+    `${btn("Отмена", "mclose")}${btn("Переписать моделью", "regen-tez", id)}${btn("Сохранить", "save-tez", id, undefined, "pri")}`);
 }
 function publishModal(id) {
   const m = S.meetings.find((x) => x.id === id);

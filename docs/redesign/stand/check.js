@@ -262,6 +262,23 @@ function tokenCheck() {
 
   /* ── люди и система ─────────────────────────────────────── */
   await go('sec', 'team'); await shot('24-team');
+  const teamAll = await count('tbody tr');
+  await go('tgl', 'activeOnly');
+  await new Promise((r) => setTimeout(r, 90));
+  const teamActive = await count('tbody tr');
+  want(teamActive > 0 && teamActive < teamAll, `«только с открытыми задачами» сужает команду (${teamAll} → ${teamActive})`);
+  await go('tgl', 'activeOnly');
+  await new Promise((r) => setTimeout(r, 90));
+  await go('person-tasks', '504');
+  await new Promise((r) => setTimeout(r, 120));
+  want((await text('h1')) === 'Задачи', 'клик по человеку уводит в его задачи');
+  const ofPerson = await count('tr.row');
+  want(ofPerson > 0 && (await p.evaluate(() => S.tasks.filter((t) => t.who.includes(504)).length)) >= ofPerson,
+    'в списке только задачи выбранного человека');
+  await go('drop-assignee');
+  await new Promise((r) => setTimeout(r, 90));
+  want((await count('tr.row')) > ofPerson, 'фильтр по человеку снимается крестиком');
+  await go('sec', 'team');
   await go('tab', 'ws'); await shot('25-workspaces');
   await go('sec', 'settings'); await shot('26-settings');
   await go('tab', 'integr');

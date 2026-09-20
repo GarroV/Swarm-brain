@@ -10,6 +10,8 @@ const S = {
   mf: { q: "", period: "all", cc: [], src: [], people: [], store: "any", st: "any" },
   /* база */
   bq: "", bcc: "", bmine: false,
+  /* фильтр по человеку — ставится кликом по строке в «Команде» */
+  assignee: null, activeOnly: false, showClosed: false,
   /* спринты */
   cycle: "c2", board: { drag: null },
   cols: [ { id:"open", n:"Открыто", on:true }, { id:"in_progress", n:"В работе", on:true }, { id:"done", n:"Готово", on:true } ],
@@ -68,6 +70,7 @@ function visibleTasks(list = S.tab) {
     inList(t, list) && inLens(t, S.lens) &&
     (list === "archive" || S.statuses.has(t.st)) &&
     (!S.mk || t.mk === S.mk) &&
+    (!S.assignee || t.who.includes(S.assignee)) &&
     (!q || t.t.toLowerCase().includes(q) || projPath(t.pr).toLowerCase().includes(q)));
 }
 const countList = (list) => S.tasks.filter((t) => inList(t, list) && inLens(t, S.lens) && (list === "archive" || S.statuses.has(t.st))).length;
@@ -125,7 +128,7 @@ const A = {
   set(patch) { Object.assign(S, patch); render(); },
   toast(text) { S.toast = text; render(); clearTimeout(A._t); A._t = setTimeout(() => { S.toast = null; render(); }, 2600); },
 
-  go(sec) { S.sec = sec; S.sel = null; S.selKind = null; S.bulk = new Set(); S.tab = firstTab(sec); render(); },
+  go(sec) { S.sec = sec; S.sel = null; S.selKind = null; S.bulk = new Set(); S.assignee = null; S.tab = firstTab(sec); render(); },
   tab(id) { S.tab = id; S.sel = null; S.selKind = null; render(); },
   select(kind, id) { S.selKind = kind; S.sel = id; S.dtab = "overview"; render(); },
   close() { S.sel = null; S.selKind = null; render(); },
@@ -219,6 +222,30 @@ const A = {
     A.toast("Переиндексировано");
   },
   deleteEntry(id) { S.entries = S.entries.filter((e) => e.id !== id); S.sel = null; A.toast("Запись удалена"); },
+  deleteTask(id) { S.tasks = S.tasks.filter((t) => t.id !== +id); S.sel = null; A.toast("Задача удалена навсегда"); },
+  editEntry(id, patch) { S.entries = S.entries.map((e) => e.id === id ? { ...e, ...patch } : e); A.toast("Запись сохранена"); },
+  replaceFile(id, name) {
+    S.files = S.files.map((f) => f.id === id ? { ...f, n: name || f.n, at: TODAY, who: ME, ix: "переиндексирован" } : f);
+    A.toast("Файл заменён, индекс обновлён");
+  },
+  addSubproject(parent, name) {
+    const id = parent + String.fromCharCode(97 + S.projects.filter((p) => p.parent === parent).length);
+    S.projects = [...S.projects, { id, n: name || "Новый подпроект", parent, own: ME, due: null, st: "active" }];
+    A.toast("Подпроект создан");
+  },
+  carryOver() {
+    const c = cycle();
+    const next = CYCLES.find((x) => x.from > c.to);
+    if (!next) { A.toast("Следующего цикла пока нет"); return; }
+    const tail = S.tasks.filter((t) => t.sprint === S.cycle && t.st !== "done" && !t.arch);
+    if (!tail.length) { A.toast("Хвостов нет — всё закрыто"); return; }
+    S.tasks = S.tasks.map((t) => tail.includes(t) ? { ...t, sprint: next.id } : t);
+    A.toast(`Перенесено в «${next.n}»: ${tail.length}`);
+  },
+  toggleProject(id) {
+    S.projects = S.projects.map((p) => p.id === id ? { ...p, st: p.st === "paused" ? "active" : "paused" } : p);
+    A.toast(S.projects.find((p) => p.id === id).st === "paused" ? "Проект на паузе" : "Проект возобновлён");
+  },
 
   /* спринты */
   acceptInitiative(id) { S.initiatives = S.initiatives.map((i) => i.id === id ? { ...i, st: "accepted" } : i); A.toast("Инициатива принята в цикл"); },

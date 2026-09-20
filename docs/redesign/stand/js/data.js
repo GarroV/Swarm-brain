@@ -18,6 +18,8 @@ const USERS = [
   { id: 510, n: "Елена Вукович",    i: "ЕВ", c: "#B0451A", role: "market",  mk: "HR", tg: "@jelena_v", em: "jelena@imf.example" },
   { id: 511, n: "Стефан Илич",      i: "СИ", c: "#3A7D34", role: "ops",     mk: "RS", tg: "@stefan_i", em: "",                    note: "Новый в команде с 15 сен, доступ в Telegram выдан" },
   { id: 512, n: "Тамара Кнежевич",  i: "ТК", c: "#6B3FA0", role: "hr",      mk: "SI", tg: "@tamara_k", em: "tamara@imf.example" },
+  { id: 513, n: "Ирена Марич",      i: "ИМ", c: "#1F6F8B", role: "market",  mk: "BA", tg: "@irena_m",  em: "irena@imf.example", note: "Вышла 18 сен, задач пока нет" },
+  { id: 514, n: "Бранко Савич",     i: "БС", c: "#8C5A2B", role: "quality", mk: "ME", tg: "@branko_s", em: "branko@imf.example" },
 ];
 const ME = 501;
 const CYCLE_ST = { active: "идёт", closed: "закрыт", planned: "запланирован" };

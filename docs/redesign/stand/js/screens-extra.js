@@ -33,7 +33,7 @@ function readerModal(id) {
   const e = S.entries.find((x) => x.id === id);
   const full = e.full || `${e.p}\n\n${e.p}\n\nДалее по тексту: детали, ссылки на файлы и ответственных. Полный текст записи хранится в базе и попадает в поиск целиком.`;
   modal(e.h, `<div class="reader">${full.split("\n\n").map((x) => `<p>${esc(x)}</p>`).join("")}</div>`,
-    `${btn("Закрыть", "mclose")}${btn("Править", "noop")}${btn("Скачать", "noop")}`, true);
+    `${btn("Закрыть", "mclose")}${btn("Править", "edit-entry", id)}${btn("Скопировать текст", "copy", undefined, e.p)}`, true);
 }
 
 /* ── редактор меток ──────────────────────────────────────────── */
