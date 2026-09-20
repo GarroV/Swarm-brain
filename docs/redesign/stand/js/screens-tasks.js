@@ -99,7 +99,7 @@ function newTaskModal(preset) {
       ${fld("Приоритет", select("prio", [["high", "высокий"], ["med", "средний"], ["low", "низкий"]], "med"))}
     </div>
     ${fld("Метки", pick("labels", S.labels.map((l) => [l.id, l.n]), []))}
-    ${fld("Рынок", pick("mk", COUNTRIES.map((c) => [c.c, c.n]), []))}
+    ${fld("Рынок", pick("mk", COUNTRIES.map((c) => [c.c, c.n]), [], true))}
     <div class="two">
       ${fld("Повтор", select("recur", [["", "без повтора"], ["weekly", "каждую неделю"], ["monthly", "каждый месяц"]], ""))}
       ${fld("Напоминание", input("remind", "", "за день до срока"))}

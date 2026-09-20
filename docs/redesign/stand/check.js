@@ -254,10 +254,18 @@ function tokenCheck() {
         if (dash && blank) out.push(`колонка «${h}»: пустое то прочерком, то пустотой (${dash}/${blank})`);
       });
     });
+
+    /* поле с одним значением не имеет права показывать несколько выбранных */
+    document.querySelectorAll('[data-pick][data-one]').forEach((b) => {
+      const on = b.querySelectorAll('.chip.on').length;
+      if (on > 1) out.push(`в поле «${b.dataset.pick}» отмечено ${on} значения, а хранится одно`);
+    });
     return out;
   });
   const shot = async (name) => { await p.screenshot({ path: `${OUT}/${name}.png` });
     (await measure()).forEach((m) => bad.push(`${name}: ${m}`)); };
+  /* замер без снимка: состояние, которое живёт только между кликами, иначе правилами не проверяется */
+  const scan = async (name) => (await measure()).forEach((m) => bad.push(`${name}: ${m}`));
 
   /* ── задачи ─────────────────────────────────────────────── */
   await shot('01-tasks-today');
@@ -622,6 +630,16 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 90));
   want((await count('tbody tr')) === allUsers + 1, 'новый сотрудник добавляется в воркспейс');
   await go('user-profile', '504'); await shot('38-user-profile');
+  /* модель хранит один рынок: форма не должна позволять отметить несколько */
+  await p.$$eval('[data-pick="mk"] .chip', (els) => { els[0].click(); els[3].click(); });
+  want((await count('[data-pick="mk"] .chip.on')) === 1, 'рынок в профиле выбирается один, а не молча теряется при сохранении');
+  await scan('38-профиль-выбор-рынка');
+  const wantMk = await p.$eval('[data-pick="mk"] .chip.on', (e) => e.dataset.v);
+  await go('save-user', '504');
+  await new Promise((r) => setTimeout(r, 90));
+  want((await p.evaluate(() => S.users.find((u) => u.id === 504).mk)) === wantMk,
+    `сохранился именно выбранный рынок (${wantMk})`);
+  await go('user-profile', '504');
   await p.$eval('[data-f="em"]', (e) => { e.value = 'luka.new@imf.example'; });
   await go('save-user', '504');
   await new Promise((r) => setTimeout(r, 90));

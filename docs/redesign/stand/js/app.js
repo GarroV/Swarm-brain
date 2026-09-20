@@ -252,7 +252,14 @@ const ACTS = {
 
 document.addEventListener("click", (e) => {
   const pickChip = e.target.closest("[data-pick] .chip");
-  if (pickChip) { pickChip.classList.toggle("on"); return; }
+  if (pickChip) {
+    const box = pickChip.closest("[data-pick]");
+    if (box.hasAttribute("data-one")) {
+      box.querySelectorAll(".chip.on").forEach((c) => c.classList.remove("on"));
+      pickChip.classList.add("on");
+    } else pickChip.classList.toggle("on");
+    return;
+  }
   const swEl = e.target.closest("[data-sw]");
   if (swEl) { swEl.classList.toggle("on"); return; }
   const t = e.target.closest("[data-act]");

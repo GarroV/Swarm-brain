@@ -104,7 +104,9 @@ const dateInput = (name, value) => input(name, value, "", "date");
 const area = (name, value, ph) => `<textarea data-f="${name}" placeholder="${esc(ph || "")}">${esc(value || "")}</textarea>`;
 const select = (name, opts, sel) => `<select data-f="${name}">${opts.map(([v, t]) =>
   `<option value="${esc(v)}"${v === sel ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
-const pick = (name, opts, selected) => `<div class="pick" data-pick="${name}">${opts.map(([v, t]) =>
+/* one — поле, где модель хранит ОДНО значение: без этого форма разрешает отметить три рынка,
+   а сохраняется первый, молча и без предупреждения */
+const pick = (name, opts, selected, one) => `<div class="pick" data-pick="${name}"${one ? " data-one" : ""}>${opts.map(([v, t]) =>
   `<span class="chip${selected.includes(v) ? " on" : ""}" data-v="${esc(v)}">${esc(t)}</span>`).join("")}</div>`;
 const sw = (name, on, text) => `<div class="sw${on ? " on" : ""}" data-sw="${name}"><i></i>${esc(text)}</div>`;
 const formData = () => {
