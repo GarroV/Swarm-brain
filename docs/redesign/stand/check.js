@@ -735,6 +735,15 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 90));
   want((await count('[data-act="resolve-fb"]')) === openFb - 1, 'фидбек закрывается');
   await go('tab', 'review'); await shot('40-review-counts');
+  /* два числа на экране не должны спорить: в шапке названы и встречи, и строки по людям */
+  const seats = await p.evaluate(() => {
+    const tb = document.querySelector('.body table');
+    const i = [...tb.querySelectorAll('thead th')].findIndex((h) => h.textContent.trim() === 'Ждёт вычитки');
+    return [...tb.querySelectorAll('tbody tr')].reduce((n, r) => n + (+r.children[i].textContent.trim() || 0), 0);
+  });
+  want((await text('.bar .right')).includes(`${seats}`), `шапка очереди называет сумму по людям (${seats})`);
+  want((await text('.bar > span')).includes(await p.evaluate(() => String(S.meetings.filter((m) => m.st === 'pending').length))),
+    'шапка очереди называет число невычитанных встреч');
   await go('sec', 'map'); await shot('30-map');
 
   /* ── поиск и тема ───────────────────────────────────────── */
