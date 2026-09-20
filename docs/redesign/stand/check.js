@@ -424,6 +424,9 @@ function tokenCheck() {
   await p.$eval('[data-act="show-all"]', (e) => e.click());
   await new Promise((r) => setTimeout(r, 120));
   want((await text('h1')) === 'Результаты поиска', 'экран поиска открывается из палитры');
+  want((await p.evaluate(() => searchAll('смета').tasks.some((t) => t.t.toLowerCase().includes('смету')))),
+    'поиск находит слово в другой форме («смета» → «смету»)');
+  want((await count('.srch mark')) > 0, 'в результатах видно, за что нашлось — совпадение подсвечено');
   want((await count('.srch .rowset > div')) > 1, 'на экране поиска есть находки');
   await shot('41-search');
   await go('search');

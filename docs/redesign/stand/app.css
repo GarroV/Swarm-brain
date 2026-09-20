@@ -499,3 +499,7 @@ td.acts{white-space:nowrap}
 @media (max-width:1180px){
   .list td .nm{display:none}
 }
+
+/* результаты поиска: ключ — это тег или точка, ему не нужны 150px */
+.srch .rowset .k{min-width:52px}
+mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding:0 2px;font-weight:600}

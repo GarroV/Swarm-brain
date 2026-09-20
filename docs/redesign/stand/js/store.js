@@ -108,15 +108,21 @@ function visibleEntries(tab) {
 }
 
 /* ── общий поиск (⌘K и ответ по базе) ────────────────────────── */
+/* Поиск по основе слова: «смета» обязана находить «смету» и «сметы».
+   Настоящая морфология живёт на сервере; здесь — отсечение окончания,
+   этого достаточно, чтобы поведение экрана было правдивым. */
+const stem = (w) => w.length >= 6 ? w.slice(0, w.length - 2) : w.length >= 4 ? w.slice(0, w.length - 1) : w;
 function searchAll(q) {
   const s = q.trim().toLowerCase();
   if (!s) return { tasks: [], meetings: [], entries: [], files: [] };
-  const hit = (v) => String(v).toLowerCase().includes(s);
+  const words = s.split(/\s+/).filter(Boolean).map(stem);
+  const hit = (...vals) => { const text = vals.map((v) => String(v ?? "")).join(" ").toLowerCase();
+    return words.every((w) => text.includes(w)); };
   return {
-    tasks: S.tasks.filter((t) => hit(t.t)).slice(0, 5),
-    meetings: S.meetings.filter((m) => hit(m.t)).slice(0, 4),
-    entries: S.entries.filter((e) => hit(e.h) || hit(e.p)).slice(0, 4),
-    files: S.files.filter((f) => hit(f.n)).slice(0, 3),
+    tasks: S.tasks.filter((t) => hit(t.t, t.note, projPath(t.pr))).slice(0, 8),
+    meetings: S.meetings.filter((m) => hit(m.t)).slice(0, 6),
+    entries: S.entries.filter((e) => hit(e.h, e.p)).slice(0, 6),
+    files: S.files.filter((f) => hit(f.n)).slice(0, 4),
   };
 }
 

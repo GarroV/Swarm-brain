@@ -143,17 +143,24 @@ function screenReviewCounts() {
 function screenSearch() {
   const q = S.aq || "";
   const r = searchAll(q);
+  /* подсветка совпадения по основе слова: видно, ЗА ЧТО нашлось */
+  const mark = (text) => { const st = stem(q.trim().toLowerCase()); if (!st) return esc(text);
+    const i = String(text).toLowerCase().indexOf(st); if (i < 0) return esc(text);
+    const s0 = String(text);
+    let end = i + st.length;
+    while (end < s0.length && /[а-яёa-z]/i.test(s0[end])) end++;
+    return esc(s0.slice(0, i)) + `<mark>${esc(s0.slice(i, end))}</mark>` + esc(s0.slice(end)); };
   const total = r.tasks.length + r.meetings.length + r.entries.length + r.files.length;
   return `<div class="bar"><input class="qin" style="min-width:320px" placeholder="Что ищем" value="${esc(q)}" data-qin="search">
     <div class="right"><span>Найдено <b>${total}</b></span>${btn("Спросить базу", "ask", undefined, q, "sm pri")}</div></div>
     ${total ? `<div class="srch">
       ${r.tasks.length ? lab(`Задачи · ${r.tasks.length}`) + rows(r.tasks.map((t) => [dot(t.st),
-        `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, `${esc(projPath(t.pr))} · ${due(t.due)}`])) : ""}
+        `<span class="lnk" ${act("open-task", t.id)}>${mark(t.t)}</span>`, `${esc(projPath(t.pr))} · ${due(t.due)}`])) : ""}
       ${r.meetings.length ? lab(`Встречи · ${r.meetings.length}`) + rows(r.meetings.map((m) => [tag(m.src, "m"),
-        `<span class="lnk" ${act("open-meet", m.id)}>${esc(m.t)}</span>`, esc(m.dt)])) : ""}
+        `<span class="lnk" ${act("open-meet", m.id)}>${mark(m.t)}</span>`, fmtDT(m.dt)])) : ""}
       ${r.entries.length ? lab(`База · ${r.entries.length}`) + rows(r.entries.map((e) => [tag(TY_LABEL[e.ty], "p"),
-        `<span class="lnk" ${act("open-entry", e.id)}>${esc(e.h)}</span>`, esc(e.p.slice(0, 48))])) : ""}
+        `<span class="lnk" ${act("open-entry", e.id)}>${mark(e.h)}</span>`, mark(e.p.slice(0, 64))])) : ""}
       ${r.files.length ? lab(`Файлы · ${r.files.length}`) + rows(r.files.map((f) => [`<span class="ft ft-${f.ty}">${f.ty}</span>`,
-        `<span class="lnk" ${act("open-file", f.id)}>${esc(f.n)}</span>`, esc(f.sz)])) : ""}
+        `<span class="lnk" ${act("open-file", f.id)}>${mark(f.n)}</span>`, esc(f.sz)])) : ""}
     </div>` : empty("Ничего не нашлось", "Попробуйте другое слово или спросите базу")}`;
 }
