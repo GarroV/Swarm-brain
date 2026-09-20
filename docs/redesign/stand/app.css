@@ -300,6 +300,7 @@ th:last-child,td:last-child{padding-right:18px}
 .lease b{display:block;margin-bottom:6px;font-size:var(--fs-meta);color:var(--ink-muted);text-transform:uppercase;letter-spacing:.06em}
 .lease .rowset{margin:0}
 .warn{border:1px solid #F0D9A8;background:#FFF8E1;color:#7A5A12}
+.warn .wacts{display:inline-flex;gap:6px;margin-left:10px}
 .review.dup{border-color:#F0D9A8;background:#FFF8E1;color:#7A5A12}
 .rowset .k .ft{margin:0}
 /* деталь узкая — значения переносятся, а не режутся */

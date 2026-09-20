@@ -298,6 +298,10 @@ const A = {
     S.sel = null; S.bulk = new Set(); S.assignee = null;
     A.toast(`Воркспейс: ${w.name}`);
   },
+  notDup(id) {
+    S.queue = S.queue.map((q) => q.id === id ? { ...q, dup: null } : q);
+    A.toast("Отмечено: не дубль");
+  },
   addWorkspace(id, name) { S.workspaces = [...S.workspaces, { id, name, users: 0, tasks: 0, entries: 0, active: false }]; A.toast("Воркспейс создан"); },
   addLink(id, otherId, kind) {
     S.tasks = S.tasks.map((t) => t.id === id ? { ...t, links: [...t.links, [kind, +otherId]] } : t);

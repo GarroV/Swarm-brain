@@ -62,7 +62,8 @@ function screenQueue() {
     <div class="right"><span>Публикация создаёт встречу и задачи разом</span></div></div>
     <div class="qlist">${S.queue.map((q) => `<div class="qcard">
       <div class="qh"><b>${esc(q.t)}</b><span class="muted">${esc(fmtDT(q.dt))} · ${avs(q.who)} ${cc(q.cc)}</span></div>
-      ${q.dup ? `<div class="warn">Похоже на дубль встречи «${esc((S.meetings.find((m) => m.id === q.dup) || {}).t || "")}»</div>` : ""}
+      ${q.dup ? `<div class="warn">Похоже на дубль встречи «${esc((S.meetings.find((m) => m.id === q.dup) || {}).t || "")}»
+        <span class="wacts">${btn("Открыть ту встречу", "open-meet", q.dup, undefined, "sm")}${btn("Не дубль", "not-dup", q.id, undefined, "sm")}</span></div>` : ""}
       <div class="qcols">
         <div><div class="lab">Предложенные тезисы</div><div class="tez">${q.tez.map((s) =>
           `<h5>${esc(s.h)}</h5>${s.li.map((x) => `<li>${esc(x)}</li>`).join("")}`).join("")}</div></div>

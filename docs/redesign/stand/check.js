@@ -263,6 +263,10 @@ function tokenCheck() {
   want((await count(`tbody tr[data-act="open-meet"][data-id="${firstMeet}"]`)) === 0, 'подтверждённая встреча ушла из вычитки');
   await go('tab', 'draft'); await shot('10-drafts');
   await go('tab', 'queue'); await shot('11-agent-queue');
+  want((await count('.warn .wacts .btn')) === 2, 'подсказка про дубль даёт что-то сделать, а не только пугает');
+  await go('not-dup', 'a2');
+  await new Promise((r) => setTimeout(r, 120));
+  want((await count('.warn')) === 0, '«не дубль» снимает пометку');
   const q0 = await count('.qcard');
   const qid = await p.$eval('[data-act="q-accept"]', (e) => e.dataset.id);
   const proposed = await p.evaluate((id) => S.queue.find((q) => q.id === id).tasks.length, qid);
