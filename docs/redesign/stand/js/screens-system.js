@@ -71,9 +71,9 @@ function screenSettings() {
 function settingsColumns() {
   return `<div class="panes"><div class="pane"><h3>Колонки доски спринта</h3>
     <div class="sub">Порядок и состав колонок — общий для воркспейса</div>
-    ${rows(S.cols.map((c, i) => [`${dot(c.id)}${esc(c.n)}`,
+    ${rows(S.cols.map((c, i) => [`${dot(c.id)}${esc(c.n)}${c.on ? "" : " " + state("скрыта", false)}`,
       `${nTasks(S.tasks.filter((t) => t.st === c.id && t.sprint === S.cycle).length)} · статус <code>${c.id}</code>`,
-      `<span class="ib">${btn("↑", "col-move", undefined, `${i}:-1`, "sm")}${btn("↓", "col-move", undefined, `${i}:1`, "sm")}
+      `<span class="ib">${btn("↑", "col-move", undefined, `${i}:-1`, "sm", i === 0)}${btn("↓", "col-move", undefined, `${i}:1`, "sm", i === S.cols.length - 1)}
        ${btn(c.on ? "Скрыть" : "Показать", "col-tgl", undefined, String(i), "sm")}</span>`]))}
     <div class="mt">${btn("Добавить колонку", "add-col", undefined, undefined, "pri")}${btn("Вернуть по умолчанию", "reset-cols")}</div></div></div>`;
 }

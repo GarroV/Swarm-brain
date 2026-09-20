@@ -5,6 +5,9 @@
 const puppeteer = require('/Users/garva/sb-smoke/node_modules/puppeteer-core');
 const path = require('path'), fs = require('fs');
 const OUT = process.argv[3] || '/tmp/swarm-stand-shots';
+/* снимки прошлого прогона удаляются: иначе в папке лежат картинки кода, которого уже нет,
+   и смотреть их глазами — значит проверять вчерашний стенд */
+fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
 const URL = 'file://' + path.join(__dirname, 'index.html');
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -220,6 +223,16 @@ function tokenCheck() {
         else if (!s.dataset.act) out.push('сноска ' + n + ' никуда не ведёт');
       });
     });
+
+    /* data-act без обработчика: клик по такой кнопке не делает ничего и не жалуется.
+       Поля формы не в счёт — их действие обрабатывают слушатели input/change */
+    if (typeof ACTS === 'object') {
+      const miss = new Set();
+      document.querySelectorAll('[data-act]').forEach((e) => {
+        if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.tagName)) return;
+        if (!ACTS[e.dataset.act] && e.offsetParent) miss.add(e.dataset.act); });
+      miss.forEach((a) => out.push('действие «' + a + '» некому обработать'));
+    }
     return out;
   });
   const shot = async (name) => { await p.screenshot({ path: `${OUT}/${name}.png` });
@@ -515,6 +528,13 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 90));
   want((await text('.rowset code')) !== tokBefore, `токен перевыпускается (${tokBefore} → ${await text('.rowset code')})`);
   await go('tab', 'columns'); await shot('27-columns');
+  want(await p.$eval('[data-v="0:-1"]', (e) => e.disabled), 'вверх у первой колонки недоступно, а не молчит');
+  const lastDown = await p.evaluate(() => S.cols.length - 1);
+  want(await p.$eval(`[data-v="${lastDown}:1"]`, (e) => e.disabled), 'вниз у последней колонки недоступно');
+  await gov('col-tgl', '1');
+  await new Promise((r) => setTimeout(r, 90));
+  want((await text('.rowset')).includes('скрыта'), 'скрытая колонка названа словом, а не только текстом кнопки');
+  await gov('col-tgl', '1');
   const colsBefore = await count('[data-act="col-tgl"]');
   await go('add-col');
   await p.type('[data-f="n"]', 'На проверке');
@@ -601,7 +621,7 @@ function tokenCheck() {
     const all = [...r.tasks.map((t) => t.t), ...r.meetings.map((m) => m.t),
       ...r.entries.map((e) => e.h), ...r.files.map((f) => f.n)];
     return list.every((x) => all.includes(x)); }, ansSrc), 'источники ответа — реально найденные записи');
-  await shot('44-answer-other');
+  await shot('32-answer-other');
   /* пустой ответ говорит «нет», а не показывает выдуманные источники */
   await go('search');
   await p.type('#q', 'ксилофон');

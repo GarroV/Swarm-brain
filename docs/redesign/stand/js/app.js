@@ -255,7 +255,9 @@ document.addEventListener("click", (e) => {
   const t = e.target.closest("[data-act]");
   if (!t) { $$(".pop,.dig,.menu").forEach((p) => p.classList.remove("open")); return; }
   const a = t.dataset.act;
-  if (!ACTS[a]) return;
+  /* у полей формы действие обрабатывают слушатели input/change — клик им не нужен;
+     у всего остального неизвестное действие означает молча мёртвую кнопку */
+  if (!ACTS[a]) { if (!/^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) console.error("нет обработчика действия: " + a); return; }
   e.stopPropagation();
   const fromPal = !!t.closest(".pal");
   ACTS[a](t.dataset.id, t.dataset.v, e);

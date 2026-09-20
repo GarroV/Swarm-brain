@@ -42,7 +42,8 @@ const nFrag = (n) => plural(n, "фрагмент", "фрагмента", "фра
 const nPeople = (n) => plural(n, "человек", "человека", "человек");
 const nMeet = (n) => plural(n, "встреча", "встречи", "встреч");
 const chip = (text, on, a, id, v) => `<button class="chip${on ? " on" : ""}" ${act(a, id, v)}>${esc(text)}</button>`;
-const btn = (text, a, id, v, cls) => `<button class="btn${cls ? " " + cls : ""}" ${act(a, id, v)}>${esc(text)}</button>`;
+/* off — кнопка, которой сейчас нечего делать: недоступной её видно, а молча не срабатывающей — нет */
+const btn = (text, a, id, v, cls, off) => `<button class="btn${cls ? " " + cls : ""}"${off ? " disabled" : ""} ${act(a, id, v)}>${esc(text)}</button>`;
 const empty = (title, sub) => `<div class="empty"><b>${esc(title)}</b>${sub ? esc(sub) : ""}</div>`;
 const lab = (t) => `<div class="lab">${esc(t)}</div>`;
 const rows = (list) => `<div class="rowset">${list.map(([k, v, a]) =>
