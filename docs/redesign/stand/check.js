@@ -72,6 +72,26 @@ function tokenCheck() {
     });
     document.querySelectorAll('.rowset .v, .rowset .k, .d-title, .tr .ln').forEach((e) => {
       if (e.scrollWidth > e.clientWidth + 1) out.push('обрезано: ' + e.textContent.trim().slice(0, 20)); });
+    /* однострочный подвал карточки не имеет права переноситься:
+       из-за этого карточки в ряду разной высоты, а сетка выглядит рваной */
+    document.querySelectorAll('.rec .m, .qh, .card .m').forEach((e) => {
+      const lh = parseFloat(getComputedStyle(e).lineHeight) || 18;
+      if (e.offsetHeight > lh * 1.75 + 6)
+        out.push('подвал карточки перенёсся: «' + e.textContent.trim().slice(0, 24) + '» h=' + e.offsetHeight);
+    });
+    /* карточки одного ряда сетки должны быть одной высоты */
+    const grids = document.querySelectorAll('.grid');
+    grids.forEach((g) => {
+      const kids = [...g.children].filter((c) => c.offsetHeight > 0);
+      if (kids.length < 2) return;
+      const byTop = {};
+      kids.forEach((c) => { const t = Math.round(c.getBoundingClientRect().top); (byTop[t] = byTop[t] || []).push(c); });
+      Object.values(byTop).forEach((row) => {
+        if (row.length < 2) return;
+        const h = row.map((c) => c.offsetHeight);
+        if (Math.max(...h) - Math.min(...h) > 2) out.push('карточки в ряду разной высоты: ' + h.join('/'));
+      });
+    });
     return out;
   });
   const shot = async (name) => { await p.screenshot({ path: `${OUT}/${name}.png` });

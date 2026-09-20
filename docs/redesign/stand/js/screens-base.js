@@ -21,8 +21,8 @@ function screenBase() {
   if (!list.length) return baseBar() + empty("Записей нет", "Смените тип, страну или поиск");
   return baseBar() + `<div class="grid">${list.map((e) => `<div class="rec${S.sel === e.id && S.selKind === "entry" ? " sel" : ""}" ${act("open-entry", e.id)} tabindex="0">
     <h4>${esc(e.h)}${e.priv ? ' <span class="lock">🔒</span>' : ""}</h4><p>${esc(e.p)}</p>
-    <div class="m">${tag(TY_LABEL[e.ty], TY_KIND[e.ty])}${cc(e.cc)}<span>${fmtDate(e.at)}</span>
-      <span style="margin-left:auto">${av(e.who)}</span></div></div>`).join("")}</div>`;
+    <div class="m">${tag(TY_LABEL[e.ty], TY_KIND[e.ty])}${cc(e.cc)}<span class="dt">${fmtDate(e.at)}</span>
+      <span class="who">${av(e.who, false)}</span></div></div>`).join("")}</div>`;
 }
 
 function screenFiles() {
