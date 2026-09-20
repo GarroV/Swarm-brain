@@ -64,7 +64,7 @@ function detailMeeting(m) {
   const acts = (m.st === "pending" ? btn("Подтвердить тезисы", "confirm-meet", m.id, undefined, "pri") : "")
     + (m.st === "draft" ? btn("Опубликовать в базу", "publish-draft", m.id, undefined, "pri") : "")
     + btn("Сравнить с транскриптом", "compare", m.id)
-    + btn("Задачи из встречи", "harvest", m.id)
+    + btn("Собрать задачи", "harvest", m.id)
     + (m.st === "pending" ? btn("Следующая", "review-next", m.id) : "")
     + btn("Править тезисы", "edit-tez", m.id);
   const tasks = S.tasks.filter((t) => m.tasks.includes(t.id));
@@ -83,13 +83,13 @@ function detailMeeting(m) {
         <dt>Источник</dt><dd>${tag(m.src, "m")}</dd>
         <dt>Хранилище</dt><dd>${pickf(m.store === "shared" ? "Общее" : "Личное", ["shared", "personal"].map((s) => [s === "shared" ? "Общее" : "Личное", "set-store", m.id, s, m.store === s]))}</dd>
         <dt>Страны</dt><dd>${pickm(m.cc.length ? cc(m.cc) : `<span class="muted">—</span>`, COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "tgl-mcc", m.id, c.c, m.cc.includes(c.c)]))}</dd>
-        <dt>Статус</dt><dd>${m.st === "pending" ? "ждёт вычитки" : m.st === "draft" ? "черновик записи" : "подтверждена"}</dd></dl>
+        <dt>Статус</dt><dd>${state(MEET_ST[m.st], m.st === "confirmed")}</dd></dl>
         ${lab("Тезисы")}${m.st === "draft"
           ? `<div class="empty sm"><b>Тезисов ещё нет</b>Черновик не разобран моделью${btn("Составить тезисы", "publish-draft", m.id, undefined, "pri mt")}</div>`
           : `<div class="tez">${m.tez.map((s) => `<h5>${esc(s.h)}</h5>${s.li.map((x) => `<li>${esc(x)}</li>`).join("")}`).join("")}</div>`}
         ${lab(`Задачи из встречи · ${tasks.length}`)}
         ${tasks.length ? rows(tasks.map((t) => [String(t.id), `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, state(ST_LABEL[t.st], t.st === "done")]))
-          : rows([["—", "задач нет", btn("Собрать из тезисов", "harvest", m.id, undefined, "sm")]])}`;
+          : rows([["—", "задач нет", btn("Собрать задачи", "harvest", m.id, undefined, "sm")]])}`;
   }
   if (S.dtab === "tr") {
     body = `<div class="tr">${m.tr.map(([w, who, text]) =>

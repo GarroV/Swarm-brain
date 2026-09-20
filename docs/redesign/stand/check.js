@@ -572,7 +572,16 @@ function tokenCheck() {
   /* замер без снимка: состояние, которое живёт только между кликами, иначе правилами не проверяется */
   const scan = async (name) => (await measure()).forEach((m) => bad.push(`${name}: ${m}`));
 
+  /* ── главная ────────────────────────────────────────────── */
+  /* дом открывается по входу: сюда человек попадает, не нажимая ничего */
+  want(await p.$eval('.item.on', (e) => e.textContent.includes('Главная')), 'по входу открыт дом, а не раздел');
+  await shot('00-home');
+  const homeRows = await count('.home tbody tr[data-act="open-task"]');
+  want(homeRows > 0, 'на главной видны свои задачи');
+  want((await count('.home .nw')) >= 5, 'на главной есть топ новостей');
+
   /* ── задачи ─────────────────────────────────────────────── */
+  await go('sec', 'tasks');
   await shot('01-tasks-today');
   /* свёрнутые фильтры обязаны РАСКРЫВАТЬСЯ мышью: щелчок по скрытому пункту из кода
      проходит всегда, поэтому зелёный замер без этой проверки ничего не доказывает */
@@ -752,6 +761,19 @@ function tokenCheck() {
   await go('confirm-meet', firstMeet);
   await go('tab', 'review');
   want((await count(`tbody tr[data-act="open-meet"][data-id="${firstMeet}"]`)) === 0, 'подтверждённая встреча ушла из вычитки');
+  /* встреча без задач: только в этом состоянии на экране обе кнопки сбора — сверху
+     и в пустой секции. Они звались по-разному, и правило о двух подписях одного
+     действия молчало, потому что такое состояние ни разу не открывали */
+  await go('tab', 'all');
+  await go('open-meet', 'm12');
+  await new Promise((r) => setTimeout(r, 120));
+  await scan('08б-встреча-без-задач');
+  const meetSt = await p.evaluate(() => {
+    const dt = [...document.querySelectorAll('.detail dt')].find((e) => e.textContent.trim() === 'Статус');
+    const dd = dt && dt.nextElementSibling;
+    return { chip: !!(dd && dd.querySelector('.state')), text: dd ? dd.textContent.trim() : 'поля нет' }; });
+  want(meetSt.chip, `статус встречи показан плашкой, как везде в стенде, а не голым текстом («${meetSt.text}»)`);
+  await go('close');
   await go('tab', 'draft'); await shot('10-drafts');
   /* черновик с кандидатом на дубль показан один раз, а не в обеих таблицах сразу */
   const dupTitle = await p.evaluate(() => (S.meetings.find((m) => m.st === 'draft' && m.dupOf) || {}).t);
@@ -1230,7 +1252,8 @@ function tokenCheck() {
   want((await text('.bar .right')).includes(`${seats}`), `шапка очереди называет сумму по людям (${seats})`);
   want((await text('.bar > span')).includes(await p.evaluate(() => String(S.meetings.filter((m) => m.st === 'pending').length))),
     'шапка очереди называет число невычитанных встреч');
-  await go('sec', 'map'); await shot('30-map');
+  /* экрана «Карта системы» больше нет: в продукте такой поверхности не существует,
+     её придумал стенд, и владелец снял её из рейки 20.09.2026 */
 
   /* ── поиск и тема ───────────────────────────────────────── */
   await go('search');

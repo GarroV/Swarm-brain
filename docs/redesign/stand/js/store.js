@@ -2,7 +2,7 @@
    каждое действие возвращает новые массивы, дальше идёт перерисовка. */
 
 const S = {
-  sec: "tasks", tab: "today", sel: null, selKind: null,
+  sec: "home", tab: "today", sel: null, selKind: null,
   /* задачи */
   lens: "mine", statuses: new Set(["open", "in_progress"]), byMarket: false, staff: false, noMailOnly: false,
   q: "", bulk: new Set(), dtab: "overview", mk: "", noProject: false,
@@ -39,6 +39,7 @@ const projPath = (id) => { const p = proj(id); if (!p) return "—"; return p.pa
 const label = (id) => S.labels.find((l) => l.id === id);
 const cname = (c) => (COUNTRIES.find((x) => x.c === c) || {}).n || c;
 const ST_LABEL = { open: "Открыто", in_progress: "В работе", done: "Готово" };
+const MEET_ST = { pending: "ждёт вычитки", draft: "черновик записи", confirmed: "подтверждена" };
 const PRIO_LABEL = { high: "высокий", med: "средний", low: "низкий" };
 const RECUR_LABEL = { weekly: "каждую неделю", monthly: "каждый месяц", daily: "каждый день" };
 

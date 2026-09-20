@@ -102,7 +102,9 @@ tbody tr.sel td.t{font-weight:600}
 .d-title{padding-right:34px}
 .d-crumb{font-size:var(--fs-micro);color:var(--ink-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px}
 .d-title{font-size:var(--fs-title);font-weight:600;letter-spacing:-.01em;line-height:1.3}
-.d-acts{display:flex;gap:6px;margin-top:12px}
+.d-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+/* главное действие занимает строку целиком: иначе блок кнопок собирается лесенкой */
+.d-acts .btn.pri{flex:1 0 100%}
 .btn{height:var(--control-h);padding:0 12px;border:1px solid var(--line-control);border-radius:7px;background:var(--surface);font:500 var(--fs-dense)/1 var(--font-ui);color:var(--ink-2);display:grid;place-items:center;cursor:default}
 /* выбранный вариант обязан отличаться: класс .on без стиля делал выбор невидимым */
 .btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
@@ -135,6 +137,22 @@ tbody tr.sel td.t{font-weight:600}
 .item:focus-visible,.tab:focus-visible,.chip:focus-visible,.btn:focus-visible,tbody tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .hidden{display:none!important}
 /* пусто */
+/* Главная: слева свои задачи, справа короткие сводки. Обе колонки — тот же ритм строки,
+   что и везде: переход между папками не должен менять геометрию экрана. */
+.home{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:0;flex:1;min-height:0;overflow:auto}
+.home .hcol{min-width:0;padding-bottom:16px}
+.home .hcol.side{border-left:1px solid var(--line);padding:0 var(--gutter) 16px}
+.home .lab{padding:14px var(--gutter) 6px}
+.home .hcol.side .lab{padding-left:0;padding-right:0}
+.news{display:flex;flex-direction:column}
+.nw{display:flex;align-items:center;gap:8px;min-height:30px;padding:4px 0;font-size:var(--fs-dense);color:var(--ink-2);
+  border-bottom:1px solid var(--line);cursor:default}
+.nw:hover{color:var(--ink)}
+.nw i{width:6px;height:6px;border-radius:50%;background:var(--ink-empty);flex:none}
+.nw.bad i{background:var(--bad)}
+.nw.warn i{background:var(--warn)}
+.nw.ok i{background:var(--ok)}
+.nw .r{margin-left:auto;color:var(--ink-3);font-size:var(--fs-meta)}
 /* «что дальше» под коротким списком: экран отвечает, а не показывает белое поле */
 .next{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;padding:16px var(--gutter) 20px;
   margin-top:10px;border-top:1px solid var(--line)}

@@ -1,20 +1,19 @@
 /* Каркас: навигация, шапка, маршрут, один обработчик действий на всё приложение. */
 
+/* Рейка — плоский список папок: надпункты («Работа», «Знание») владелец снял 20.09.2026
+   как лишний уровень. «Карта системы» убрана: такого экрана в продукте нет. */
 const NAV = [
-  { g: "Работа", items: [
-    { id: "tasks", n: "Задачи", ic: "M2 8l4 4 8-9" },
-    { id: "projects", n: "Проекты", ic: "M1.5 3h13v10h-13zM1.5 6.5h13M6 6.5V13" },
-    { id: "sprints", n: "Спринты", ic: "M2 13V7M6 13V3M10 13V9M14 13V5" } ] },
-  { g: "Знание", items: [
-    { id: "meetings", n: "Встречи", ic: "M2 4h12v10H2zM2 7h12M5 2v3M11 2v3" },
-    { id: "base", n: "База", ic: "M3 2h10v12H3zM5.5 5h5M5.5 8h5M5.5 11h3" } ] },
-  { g: "Люди", items: [
-    { id: "team", n: "Команда", ic: "M5.5 7a2.2 2.2 0 100-4.4 2.2 2.2 0 000 4.4zM1.8 13c0-2 1.7-3.4 3.7-3.4S9.2 11 9.2 13M11 5.2a1.9 1.9 0 100 3.8M11.6 9.8c1.6.2 2.6 1.4 2.6 3" } ] },
+  { id: "home", n: "Главная", ic: "M2 7.4L8 2.4l6 5v6.2H9.8V9.6H6.2v4H2z" },
+  { id: "tasks", n: "Задачи", ic: "M2 8l4 4 8-9" },
+  { id: "projects", n: "Проекты", ic: "M1.5 3h13v10h-13zM1.5 6.5h13M6 6.5V13" },
+  { id: "sprints", n: "Спринты", ic: "M2 13V7M6 13V3M10 13V9M14 13V5" },
+  { id: "meetings", n: "Встречи", ic: "M2 4h12v10H2zM2 7h12M5 2v3M11 2v3" },
+  { id: "base", n: "База", ic: "M3 2h10v12H3zM5.5 5h5M5.5 8h5M5.5 11h3" },
+  { id: "team", n: "Команда", ic: "M5.5 7a2.2 2.2 0 100-4.4 2.2 2.2 0 000 4.4zM1.8 13c0-2 1.7-3.4 3.7-3.4S9.2 11 9.2 13M11 5.2a1.9 1.9 0 100 3.8M11.6 9.8c1.6.2 2.6 1.4 2.6 3" },
 ];
 const NAVFOOT = [
   { id: "settings", n: "Настройки", ic: "M8 10a2 2 0 100-4 2 2 0 000 4zM8 1.6v1.6M8 12.8v1.6M14.4 8h-1.6M3.2 8H1.6M12.5 3.5l-1.1 1.1M4.6 11.4l-1.1 1.1M12.5 12.5l-1.1-1.1M4.6 4.6L3.5 3.5" },
   { id: "admin", n: "Админ", ic: "M8 1.8l5.2 2v3.4c0 3-2.2 5.6-5.2 6.9-3-1.3-5.2-3.9-5.2-6.9V3.8z" },
-  { id: "map", n: "Карта системы", ic: "M3.4 4.6a1.6 1.6 0 100-3.2 1.6 1.6 0 000 3.2zM12.6 14.6a1.6 1.6 0 100-3.2 1.6 1.6 0 000 3.2zM3.4 4.6V9a2 2 0 002 2h5.6" },
 ];
 const TABS = {
   tasks: [["today", "Сегодня"], ["upcoming", "Ближайшие"], ["all", "Все"], ["recurring", "Регулярные"], ["archive", "Архив"]],
@@ -28,6 +27,7 @@ const TABS = {
   admin: [["users", "Пользователи"], ["ws", "Воркспейсы"], ["review", "Очередь вычитки"], ["broadcast", "Рассылка"], ["feedback", "Фидбек"]],
 };
 const TITLES = {
+  home: ["", "Главная"],
   tasks: ["Работа", "Задачи"], projects: ["Работа", "Проекты"], sprints: ["Работа", "Спринты"],
   meetings: ["Знание", "Встречи"], base: ["Знание", "База"], team: ["Люди", "Команда"],
   settings: ["Система", "Настройки"], admin: ["Система", "Админ"], map: ["Система", "Карта системы"],
@@ -48,7 +48,7 @@ function renderNav() {
   const badge = { tasks: countList("today"), meetings: visibleMeetings("review").length + S.queue.length };
   const item = (x) => `<div class="item${x.id === S.sec ? " on" : ""}" ${act("sec", x.id)} tabindex="0">
     <svg class="ic" viewBox="0 0 16 16"><path d="${x.ic}"/></svg>${x.n}${badge[x.id] ? `<span class="n">${badge[x.id]}</span>` : ""}</div>`;
-  $(".nav-scroll").innerHTML = NAV.map((g) => `<div class="grp">${g.g}</div>` + g.items.map(item).join("")).join("");
+  $(".nav-scroll").innerHTML = NAV.map(item).join("");
   $(".nav-foot").innerHTML = NAVFOOT.map(item).join("");
 }
 function renderTabs() {
@@ -60,7 +60,7 @@ function renderTabs() {
 }
 
 const SCREENS = {
-  tasks: screenTasks, projects: screenProjects, sprints: screenSprints, meetings: screenMeetings,
+  home: screenHome, tasks: screenTasks, projects: screenProjects, sprints: screenSprints, meetings: screenMeetings,
   base: screenBase, team: screenTeam, settings: screenSettings, admin: screenAdmin,
   map: screenMap, answer: screenAnswer, search: screenSearch,
 };
