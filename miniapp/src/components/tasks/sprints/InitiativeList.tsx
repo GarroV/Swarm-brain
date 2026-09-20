@@ -41,9 +41,20 @@ const STATUS_TONE: Record<string, string> = {
 /** Строка задачи. Клик открывает карточку — но только у живой: у упоминания и у чужой
  *  приватной открывать нечего, и «кнопка, которая ничего не делает» хуже её отсутствия. */
 function TaskRow(
-  { item, unchecked, onOpen, onDone, onCarry, onCheck, onNote }: {
+  {
+    item,
+    unchecked,
+    soleAssignee = false,
+    onOpen,
+    onDone,
+    onCarry,
+    onCheck,
+    onNote,
+  }: {
     item: SprintCycleItem;
     unchecked: boolean;
+    /** У всей инициативы один исполнитель — он подписан в её заголовке, из строк убран. */
+    soleAssignee?: boolean;
     onOpen?: (item: SprintCycleItem) => void;
     /** Быстрые действия прямо в строке — как в исходном макете: «✓ выполнено» и
      *  «→ перенести». Открывать карточку ради ежедневного клика — лишняя работа. */
@@ -156,12 +167,14 @@ function TaskRow(
           {item.removed_at ? ` ${fmtDay(item.removed_at)}` : ""}
         </span>
       )}
+      {
+        /* Правая колонка ФИКСИРОВАННОЙ ширины: без неё мета прижата к краю экрана, а название
+          к левому, и между ними пустота в половину строки — на широком мониторе тем больше,
+          чем шире окно. С фиксированной шириной строки выстраиваются столбцом и названия
+          обрезаются по одной границе. */
+      }
       {!item.removed && !item.hidden && (
-        <>
-          {item.assignees.length === 0
-            ? <AssigneeChip name={null} />
-            : item.assignees.map((a) => <AssigneeChip key={a} name={a} />)}
-          {item.due_date && <DueBadge date={item.due_date} closed={closed} />}
+        <div className="ml-auto flex shrink-0 items-center justify-end gap-1.5 sm:w-[190px]">
           {onCheck && !closed
             ? (
               <button
@@ -191,7 +204,16 @@ function TaskRow(
             )}
           {item.to_carry && <CarryFlag reason={item.carry_reason} />}
           <CarryBadge count={item.carry_count} reason={item.carry_reason} />
-        </>
+          {item.due_date && <DueBadge date={item.due_date} closed={closed} />}
+          {
+            /* Исполнителя не повторяем, когда он один на всю инициативу: его имя стоит в
+              заголовке, а в строках это шум (владелец 19.09.2026 — строка слишком длинная). */
+          }
+          {!soleAssignee &&
+            (item.assignees.length === 0
+              ? <AssigneeChip name={null} />
+              : item.assignees.map((a) => <AssigneeChip key={a} name={a} />))}
+        </div>
       )}
 
       {
@@ -292,6 +314,16 @@ function Initiative(
   const owner = project?.owner_telegram_id
     ? ownerName(project.owner_telegram_id)
     : null;
+  // Один исполнитель на всю инициативу — частый случай: тогда имя показывается один раз в
+  // заголовке, а строки освобождаются. Задачи без исполнителя в расчёт не идут — иначе
+  // одна «ничья» строка вернула бы имена во все остальные.
+  const named = node.items.filter((i) => !i.removed && !i.hidden).flatMap((i) =>
+    i.assignees
+  );
+  const sole = named.length > 0 && new Set(named).size === 1 &&
+      node.items.every((i) => i.removed || i.hidden || i.assignees.length === 1)
+    ? named[0]
+    : null;
 
   return (
     <div className="rounded-xl border border-line bg-surface/40 dark:backdrop-blur-sm">
@@ -314,6 +346,12 @@ function Initiative(
             · {owner}
           </span>
         )}
+        {sole && (
+          <span className="flex items-center gap-1 whitespace-nowrap text-[11px] text-ink-soft">
+            · <AssigneeChip name={sole} />
+            {sole}
+          </span>
+        )}
         {project?.end_date && (
           <span className="whitespace-nowrap text-[11px] text-ink-soft">
             · {dt("до", "due")} {fmtDay(project.end_date)}
@@ -331,6 +369,7 @@ function Initiative(
               key={item.id}
               item={item}
               unchecked={unchecked}
+              soleAssignee={sole !== null}
               onOpen={onOpen}
               onDone={onDone}
               onCarry={onCarry}
