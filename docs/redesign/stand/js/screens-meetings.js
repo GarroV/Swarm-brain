@@ -78,11 +78,21 @@ function screenQueue() {
 }
 
 /* ── модалки встреч ──────────────────────────────────────────── */
+/* подтверждение тезиса в расшифровке: совпадение по основам значимых слов */
+function tezConfirmed(m, line) {
+  const words = line.toLowerCase().match(/[а-яёa-z]{5,}/g) || [];
+  if (!words.length) return true;
+  const text = m.tr.map(([, , t]) => t).join(" ").toLowerCase();
+  const hits = words.filter((w) => text.includes(stem(w))).length;
+  return hits / words.length >= 0.5;
+}
 function compareModal(id) {
   const m = S.meetings.find((x) => x.id === id);
-  modal("Тезисы против транскрипта", `<div class="cmp">
+  modal("Тезисы против транскрипта", `
+    <div class="hint">Подсвечены пункты, которым нашлось подтверждение в расшифровке. Неподсвеченный пункт модель додумала — его стоит проверить или убрать.</div>
+    <div class="cmp">
     <div>${lab("Тезисы")}<div class="tez">${m.tez.map((s) =>
-      `<h5>${esc(s.h)}</h5>${s.li.map((x) => `<li class="hl">${esc(x)}</li>`).join("")}`).join("")}</div></div>
+      `<h5>${esc(s.h)}</h5>${s.li.map((x) => `<li${tezConfirmed(m, x) ? ' class="hl"' : ''}>${esc(x)}</li>`).join("")}`).join("")}</div></div>
     <div>${lab(`Транскрипт · ${m.dur} мин`)}<div class="tr">${m.tr.map(([w, who, text]) =>
       `<div class="ln"><span class="w">${w}</span>${av(who, false)}<span>${esc(text)}</span></div>`).join("")}</div></div></div>`,
     `${btn("Закрыть", "mclose")}${btn("Тезисы верны", "confirm-meet", id, undefined, "pri")}`, true);
