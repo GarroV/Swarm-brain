@@ -52,6 +52,9 @@ const empty = (title, sub) => `<div class="empty"><b>${esc(title)}</b>${sub ? es
 const clip = (t, n) => { const s = String(t || ""); if (s.length <= n) return s;
   const cut = s.slice(0, n); const sp = cut.lastIndexOf(" ");
   return (sp > n * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,.;:—-]+$/, "") + "…"; };
+/* размер везде из одного числа: строки в данных расходились с итогом, а разделитель
+   был то запятой, то точкой («1,2 МБ» в таблице против «5.0 МБ» в шапке) */
+const fsz = (kb) => kb >= 1024 ? `${(kb / 1024).toFixed(1).replace(".", ",")} МБ` : `${kb} КБ`;
 const lab = (t) => `<div class="lab">${esc(t)}</div>`;
 const rows = (list) => `<div class="rowset">${list.map(([k, v, a]) =>
   `<div><span class="k">${k}</span><span class="v">${v}</span>${a ? `<span class="a">${a}</span>` : ""}</div>`).join("")}</div>`;

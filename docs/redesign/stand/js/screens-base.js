@@ -13,7 +13,7 @@ function baseBar() {
     ${chip("Только мои", S.bmine, "b-mine")}
     <input class="qin" placeholder="Поиск по базе" value="${esc(S.bq)}" data-qin="base">
     <div class="right"><span>Записей <b>${S.entries.length}</b></span><span>Файлов <b>${S.files.length}</b></span>
-      <span>Объём <b>${(S.files.length * 0.55).toFixed(1)} МБ</b></span></div></div>`;
+      <span>Объём <b>${fsz(S.files.reduce((n, f) => n + f.kb, 0))}</b></span></div></div>`;
 }
 
 function screenBase() {
@@ -34,7 +34,7 @@ function screenFiles() {
       ${cell(esc((S.entries.find((e) => e.id === f.rec) || {}).h || "—"))}
       ${cell(avShort(f.who))}
       ${cell(state(f.ix, f.ix.includes("фрагмент") || f.ix === "переиндексирован"))}
-      ${cell(`<span class="due">${esc(f.sz)}</span>`, "r")}
+      ${cell(`<span class="due">${fsz(f.kb)}</span>`, "r")}
       ${cell(dt(f.at), "r")}</tr>`).join(""));
 }
 

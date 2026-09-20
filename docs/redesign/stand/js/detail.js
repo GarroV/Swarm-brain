@@ -122,7 +122,7 @@ function detailFile(f) {
   return dhead(`Файл · ${f.ty.toUpperCase()}`, f.n,
     btn("Скопировать ссылку", "copy", undefined, `https://swarm-brain.pages.dev/drive/${f.id}/${f.n}`, "pri") + btn("Переиндексировать", "reindex-file", f.id) + btn("Заменить файл", "replace-file", f.id))
     + `<div class="d-body"><div class="prev"><span class="ft ft-${f.ty}">${f.ty}</span>Предпросмотр доступен после открытия</div>
-      <dl class="f"><dt>Размер</dt><dd><span class="due">${esc(f.sz)}</span></dd>
+      <dl class="f"><dt>Размер</dt><dd><span class="due">${fsz(f.kb)}</span></dd>
       <dt>Загрузил</dt><dd>${av(f.who)}</dd><dt>Когда</dt><dd>${dt(f.at)}</dd>
       <dt>Индекс</dt><dd>${state(f.ix, f.ix.includes("фрагмент") || f.ix === "переиндексирован")}</dd>
       <dt>Доступ</dt><dd>Воркспейс IMF BD</dd></dl>

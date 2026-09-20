@@ -328,6 +328,17 @@ function tokenCheck() {
       if (v && on && v.textContent.trim() && v.textContent.trim() === on.textContent.trim())
         out.push(`значение «${v.textContent.trim().slice(0, 24)}» повторено выбранной кнопкой в той же строке`);
     });
+
+    /* русский интерфейс: дробное число пишется через запятую. Точка выдаёт цифру,
+       собранную мимо общего форматирования — рядом всегда найдётся «1,2 МБ» */
+    {
+      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        if (n.parentElement && n.parentElement.closest('pre, code, script, style, input')) continue;
+        const m = n.textContent.match(/(?<![\w.])\d+\.\d+(?![\w.])/);
+        if (m) { out.push(`дробное число через точку: «${m[0]}» в «${n.textContent.trim().slice(0, 32)}»`); break; }
+      }
+    }
     return out;
   });
   /* одно состояние — один цвет во всём стенде: «в работе» не может быть зелёным в таблице

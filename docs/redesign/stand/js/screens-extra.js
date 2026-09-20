@@ -168,6 +168,6 @@ function screenSearch() {
       ${r.entries.length ? lab(`База · ${r.entries.length}`) + rows(r.entries.map((e) => [tag(TY_LABEL[e.ty], "l"),
         `<span class="lnk" ${act("open-entry", e.id)}>${mark(e.h)}</span>`, mark(clip(e.p, 64))])) : ""}
       ${r.files.length ? lab(`Файлы · ${r.files.length}`) + rows(r.files.map((f) => [`<span class="ft ft-${f.ty}">${f.ty}</span>`,
-        `<span class="lnk" ${act("open-file", f.id)}>${mark(f.n)}</span>`, esc(f.sz)])) : ""}
+        `<span class="lnk" ${act("open-file", f.id)}>${mark(f.n)}</span>`, fsz(f.kb)])) : ""}
     </div>` : empty("Ничего не нашлось", "Попробуйте другое слово или спросите базу")}`;
 }
