@@ -460,6 +460,22 @@ function tokenCheck() {
   await go('open-proj', 'p1'); await shot('16-project-detail');
   await go('close');
   await go('tab', 'map'); await shot('17-projects-map');
+  /* число у корня обязано сходиться с суммой веток: иначе человек ищет потерянные задачи */
+  const tree = await p.evaluate(() => ({
+    root: +document.querySelector('.tnode.root .n').textContent,
+    label: document.querySelector('.tnode.root').childNodes[0].textContent.trim(),
+    tops: [...document.querySelectorAll('.tkids > .tbr > .tnode')].map((e) => +e.querySelector('.n').textContent),
+    ws: (S.workspaces.find((w) => w.active) || {}).name,
+  }));
+  want(tree.root === tree.tops.reduce((a, b) => a + b, 0),
+    `корень карты равен сумме веток (${tree.root} против ${tree.tops.join('+')})`);
+  want(tree.label === tree.ws, `корень карты назван текущим воркспейсом (${tree.label} против ${tree.ws})`);
+  /* имя воркспейса меняется — карта обязана поехать за ним; совпадение с зашитой строкой ничего не доказывает */
+  await p.evaluate(() => { S.workspaces = S.workspaces.map((w) => w.active ? { ...w, name: 'Проверка имени' } : w); render(); });
+  await new Promise((r) => setTimeout(r, 90));
+  want((await text('.tnode.root')).startsWith('Проверка имени'), 'корень карты берёт имя из воркспейса, а не зашит в код');
+  await p.evaluate((n) => { S.workspaces = S.workspaces.map((w) => w.active ? { ...w, name: n } : w); render(); }, tree.ws);
+  await new Promise((r) => setTimeout(r, 90));
   await go('sec', 'sprints'); await shot('18-board');
   const cardsC2 = await count('.card[data-card]');
   await go('set-cycle', 'c3');

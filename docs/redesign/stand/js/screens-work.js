@@ -24,14 +24,20 @@ function projectsMap() {
   const roots = S.projects.filter((p) => !p.parent);
   if (!roots.length) return `<div class="bar">${wsChip()}</div>` + empty("Карта пуста", "Здесь будет дерево проектов и подпроектов воркспейса");
   const cnt = (id) => S.tasks.filter((t) => t.pr === id && !t.arch).length;
+  /* у узла с детьми число — ВСЯ ветка: иначе корень «41» не сходится с суммой узлов,
+     и человек считает, что часть задач потерялась. Своё число — в подсказке. */
+  const branch = (id) => cnt(id) + S.projects.filter((x) => x.parent === id).reduce((n, x) => n + cnt(x.id), 0);
+  const ws = S.workspaces.find((w) => w.active) || S.workspaces[0];
   return `<div class="bar">${wsChip()}
     <div class="right"><span>Щёлкните узел — откроется карточка проекта</span></div></div>
-    <div class="tree"><div class="tnode root">IMF BD<span class="n">${S.tasks.filter((t) => !t.arch).length}</span></div>
+    <div class="tree"><div class="tnode root">${esc(ws.name)}<span class="n">${S.tasks.filter((t) => !t.arch).length}</span></div>
     <div class="tkids">${roots.map((p) => {
       const subs = S.projects.filter((x) => x.parent === p.id);
       return `<div class="tbr">
-        <div class="tnode${S.sel === p.id ? " on" : ""}" ${act("open-proj", p.id)} tabindex="0">${dot(p.st === "paused" ? "open" : "in_progress")}${esc(p.n)}
-          <span class="n">${cnt(p.id)}</span></div>
+        <div class="tnode${S.sel === p.id ? " on" : ""}" ${act("open-proj", p.id)} tabindex="0"${
+          subs.length ? ` title="своих задач: ${cnt(p.id)}, во всей ветке: ${branch(p.id)}"` : ""}>${
+          dot(p.st === "paused" ? "open" : "in_progress")}${esc(p.n)}
+          <span class="n">${branch(p.id)}</span></div>
         ${subs.length ? `<div class="tsub">${subs.map((s) =>
           `<div class="tnode sub" ${act("open-proj", s.id)} tabindex="0">${esc(s.n)}<span class="n">${cnt(s.id)}</span></div>`).join("")}</div>` : ""}
       </div>`;
