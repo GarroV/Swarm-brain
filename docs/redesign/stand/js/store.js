@@ -4,7 +4,7 @@
 const S = {
   sec: "tasks", tab: "today", sel: null, selKind: null,
   /* задачи */
-  lens: "mine", statuses: new Set(["open", "in_progress"]), byMarket: false, staff: false,
+  lens: "mine", statuses: new Set(["open", "in_progress"]), byMarket: false, staff: false, noMailOnly: false,
   q: "", bulk: new Set(), dtab: "overview", mk: "",
   /* встречи */
   mf: { q: "", period: "all", cc: [], src: [], people: [], store: "any", st: "any" },
@@ -262,6 +262,13 @@ const A = {
     A.toast("Метка удалена и снята с задач");
   },
   saveUser(id, patch) {
+    if (!id) {
+      const nid = Math.max(...S.users.map((u) => u.id)) + 1;
+      const ini = (patch.n || "Новый сотрудник").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+      S.users = [...S.users, { id: nid, i: ini, c: "#5B3DEC", tg: "", em: "", note: "", mk: "RS", role: "ops", ...patch }];
+      A.toast("Сотрудник добавлен");
+      return;
+    }
     S.users = S.users.map((u) => u.id === +id ? { ...u, ...patch } : u);
     A.toast("Профиль сохранён");
   },

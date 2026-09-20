@@ -12,11 +12,11 @@ const USERS = [
   { id: 504, n: "Лука Хорват",      i: "ЛХ", c: "#1F4E9C", role: "ops",     mk: "HR", tg: "@luka_h",   em: "luka@imf.example" },
   { id: 505, n: "Анна Новак",       i: "АН", c: "#7A3EA1", role: "hr",      mk: "SI", tg: "@anna_n",   em: "anna@imf.example" },
   { id: 506, n: "Эдин Хаджич",      i: "ЭХ", c: "#166A6A", role: "ops",     mk: "BA", tg: "@edin_h",   em: "edin@imf.example" },
-  { id: 507, n: "Никола Йованович", i: "НЙ", c: "#8A4B1E", role: "it",      mk: "RS", tg: "@nikola_j", em: "nikola@imf.example" },
-  { id: 508, n: "Милица Стоянович", i: "МС", c: "#A03A6B", role: "quality", mk: "RS", tg: "@milica_s", em: "milica@imf.example" },
+  { id: 507, n: "Никола Йованович", i: "НЙ", c: "#8A4B1E", role: "it",      mk: "RS", tg: "@nikola_j", em: "",                    note: "Подключён к рекордеру, почту не завёл — очередь вычитки не видит" },
+  { id: 508, n: "Милица Стоянович", i: "МС", c: "#A03A6B", role: "quality", mk: "RS", tg: "@milica_s", em: "milica@imf.example", note: "Ведёт качество по всем рынкам" },
   { id: 509, n: "Дарко Перич",      i: "ДП", c: "#2B6CB0", role: "ops",     mk: "ME", tg: "@darko_p",  em: "darko@imf.example" },
   { id: 510, n: "Елена Вукович",    i: "ЕВ", c: "#B0451A", role: "market",  mk: "HR", tg: "@jelena_v", em: "jelena@imf.example" },
-  { id: 511, n: "Стефан Илич",      i: "СИ", c: "#3A7D34", role: "ops",     mk: "RS", tg: "@stefan_i", em: "stefan@imf.example" },
+  { id: 511, n: "Стефан Илич",      i: "СИ", c: "#3A7D34", role: "ops",     mk: "RS", tg: "@stefan_i", em: "",                    note: "Новый в команде с 15 сен, доступ в Telegram выдан" },
   { id: 512, n: "Тамара Кнежевич",  i: "ТК", c: "#6B3FA0", role: "hr",      mk: "SI", tg: "@tamara_k", em: "tamara@imf.example" },
 ];
 const ME = 501;

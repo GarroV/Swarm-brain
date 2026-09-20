@@ -187,8 +187,10 @@ const ACTS = {
   "del-label": (id) => A.delLabel(id),
   "save-label": (id) => { const f = formData(); closeModal(); A.saveLabel(id || null, f.n); },
   "user-profile": (id) => userModal(id),
+  "new-user": () => userModal(null),
+  "tgl-nomail": () => { S.noMailOnly = !S.noMailOnly; render(); },
   "save-user": (id) => { const f = formData(); closeModal();
-    A.saveUser(id, { n: f.n, role: f.role, em: f.em, tg: f.tg, mk: (f.mk || [])[0] || "RS" }); },
+    A.saveUser(id, { n: f.n, role: f.role, em: f.em, tg: f.tg, mk: (f.mk || [])[0] || "RS", note: f.note }); },
   "rec-install": () => recorderModal("install"),
   "rec-update": () => recorderModal("update"),
   copy: (_, v) => { navigator.clipboard && navigator.clipboard.writeText(v).catch(() => {}); closeModal(); A.toast("Скопировано в буфер"); },

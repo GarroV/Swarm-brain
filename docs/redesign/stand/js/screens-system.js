@@ -77,15 +77,18 @@ function screenAdmin() {
   if (S.tab === "review") return screenReviewCounts();
   if (S.tab === "broadcast") return screenBroadcast();
   if (S.tab === "feedback") return screenFeedback();
-  return `<div class="bar">${btn("＋ Пользователь", "noop", undefined, undefined, "pri sm")}
-    ${chip("Только без почты", false, "noop")}
-    <div class="right"><span>В воркспейсе <b>${S.users.length}</b></span><span>Очередь вычитки <b>${S.queue.length}</b></span></div></div>`
-    + table([{ t: "Пользователь", w: "24%" }, { t: "Роль" }, { t: "Рынки" }, { t: "Почта" }, { t: "Заметка админа" }, { t: "Действия", r: true, w: "200px" }],
-      S.users.map((u) => `<tr class="row">${cell(av(u.id), "t")}${cell(ROLE[u.role] || u.role)}
+  const noMail = S.users.filter((u) => !u.em);
+  const list = S.noMailOnly ? noMail : S.users;
+  return `<div class="bar">${btn("＋ Пользователь", "new-user", undefined, undefined, "pri sm")}
+    ${chip(`Только без почты · ${noMail.length}`, S.noMailOnly, "tgl-nomail")}
+    <div class="right"><span>Показано <b>${list.length}</b> из ${S.users.length}</span><span>Очередь вычитки <b>${S.queue.length}</b></span></div></div>`
+    + (list.length ? table([{ t: "Пользователь", w: "22%" }, { t: "Роль" }, { t: "Рынки" }, { t: "Почта" }, { t: "Заметка админа", w: "26%" }, { t: "Действия", r: true, w: "190px" }],
+      list.map((u) => `<tr class="row">${cell(av(u.id), "t")}${cell(ROLE[u.role] || u.role)}
         ${cell(`<span class="cc">${u.mk}</span>`)}${cell(u.em ? esc(u.em) : state("не привязана", false))}
-        ${cell(`<span class="muted">—</span>`)}
-        ${cell(`<span class="ib">${btn("Профиль", "user-profile", u.id, undefined, "sm")}${btn("Привязать почту", "user-profile", u.id, undefined, "sm")}
-          ${btn("Удалить", "noop", undefined, undefined, "sm")}</span>`, "r acts")}</tr>`).join(""));
+        ${cell(u.note ? esc(u.note) : `<span class="muted">—</span>`)}
+        ${cell(`<span class="ib">${btn("Профиль", "user-profile", u.id, undefined, "sm")}
+          ${u.em ? "" : btn("Привязать почту", "user-profile", u.id, undefined, "sm attn")}</span>`, "r acts")}</tr>`).join(""))
+      : empty("Почта привязана у всех", "Снимите фильтр, чтобы увидеть весь воркспейс"));
 }
 function screenBroadcast() {
   return `<div class="bar">${btn("＋ Рассылка", "broadcast", undefined, undefined, "pri sm")}

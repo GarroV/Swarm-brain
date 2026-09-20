@@ -255,7 +255,8 @@ input[type=checkbox]{accent-color:var(--accent);width:13px;height:13px}
 .d-acts{flex-wrap:wrap}
 .detail .btn{white-space:nowrap}
 .bulk{flex-wrap:wrap;row-gap:6px}
-.rowset .k{min-width:104px;flex:none}
+.rowset .k{min-width:150px;flex:none}
+.detail .rowset .k{min-width:104px}
 .rowset .v{flex:1;min-width:0}
 .rowset .a{flex:none;white-space:nowrap}
 th:last-child,td:last-child{padding-right:18px}
@@ -467,3 +468,7 @@ td.acts{white-space:nowrap}
 .chip,.btn,.tab,.hbtn,.mini,.tdh,.cev{white-space:nowrap;flex:none}
 .dtab .c{margin-left:5px;font:500 var(--fs-num-sm)/1 var(--font-mono);color:var(--ink-3)}
 .dtab.on .c{color:var(--accent)}
+
+/* кнопка-починка: действие, которого система ждёт от админа */
+.btn.attn{border-color:#E7C77A;background:#FFF8E1;color:#7A5A12}
+.btn.attn:hover{background:#FDEFC6}

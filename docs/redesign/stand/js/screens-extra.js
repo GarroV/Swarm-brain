@@ -53,14 +53,14 @@ function labelModal(id) {
 
 /* ── профиль пользователя в админке ──────────────────────────── */
 function userModal(id) {
-  const u = user(+id);
-  modal(`Профиль · ${u.n}`, `
-    <div class="two">${fld("Имя", input("n", u.n))}${fld("Роль", select("role", Object.entries(ROLE), u.role))}</div>
-    <div class="two">${fld("Почта", input("em", u.em, "нужна для очереди вычитки"))}${fld("Telegram", input("tg", u.tg))}</div>
+  const u = id ? user(+id) : { n: "", role: "ops", em: "", tg: "", mk: "RS", note: "" };
+  modal(id ? `Профиль · ${u.n}` : "Новый сотрудник", `
+    <div class="two">${fld("Имя", input("n", u.n, "Имя и фамилия"))}${fld("Роль", select("role", Object.entries(ROLE), u.role))}</div>
+    <div class="two">${fld("Почта", input("em", u.em, "нужна для очереди вычитки"))}${fld("Telegram", input("tg", u.tg, "@username"))}</div>
     ${fld("Рынки", pick("mk", COUNTRIES.map((c) => [c.c, c.n]), [u.mk]))}
-    ${fld("Заметка админа", area("note", "", "Что важно знать про этого человека"))}
+    ${fld("Заметка админа", area("note", u.note || "", "Что важно знать про этого человека"))}
     <div class="hint">Почта связывает человека с участием во встречах: без неё он не увидит свою очередь вычитки.</div>`,
-    `${btn("Отмена", "mclose")}${btn("Сохранить профиль", "save-user", id, undefined, "pri")}`);
+    `${btn("Отмена", "mclose")}${btn(id ? "Сохранить профиль" : "Добавить", "save-user", id || undefined, undefined, "pri")}`);
 }
 
 /* ── команды установки рекордера ─────────────────────────────── */
