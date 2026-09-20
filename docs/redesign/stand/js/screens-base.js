@@ -51,21 +51,47 @@ function newEntryModal() {
 }
 
 /* ответ по базе (RAG) */
+
+/* Написанный от руки ответ живёт ровно для своей темы. На любом другом запросе
+   он был бы выдумкой со ссылками на непричастные встречи — поэтому вне темы
+   ответ собирается из того, что реально нашлось, вплоть до «ничего». */
+const ANSWER_TOPIC = ["смет", "оборудован", "бюджет", "поставщ"];
+
+function answerSources(q, r) {
+  if (ANSWER_TOPIC.some((k) => q.toLowerCase().includes(k)))
+    return [{ k: "Встреча", t: "Планёрка по открытию, 15 сен", a: "open-meet", v: "m1" },
+      { k: "Комментарий", t: "Задача 128, М. Дамьянович", a: "open-task", v: 128 },
+      { k: "Запись", t: "Санитарные требования — выписка", a: "open-entry", v: "r7" }];
+  return [...r.tasks.slice(0, 1).map((t) => ({ k: "Задача", t: t.t, a: "open-task", v: t.id })),
+    ...r.meetings.slice(0, 1).map((m) => ({ k: "Встреча", t: m.t, a: "open-meet", v: m.id })),
+    ...r.entries.slice(0, 1).map((e) => ({ k: "Запись", t: e.h, a: "open-entry", v: e.id }))];
+}
+
 function screenAnswer() {
   const q = S.aq || "";
   const r = searchAll(q);
+  const src = answerSources(q, r);
+  const found = [...r.tasks, ...r.meetings, ...r.entries, ...r.files];
+  /* сноска — не украшение: по ней открывается тот же источник, что и в списке */
+  const fn = (i) => src[i] ? `<sup ${act(src[i].a, src[i].v)} title="${esc(src[i].k)}: ${esc(src[i].t)}">${i + 1}</sup>` : "";
+  const named = (i) => src[i] ? `«${esc(src[i].t)}»${fn(i)}` : "";
+  const body = ANSWER_TOPIC.some((k) => q.toLowerCase().includes(k))
+    ? `По базе: смета по оборудованию пришла выше бюджета на 14%${fn(0)}, поставщик держит цену
+       до конца недели${fn(1)}, поэтому решение нужно принять на ближайшей планёрке.
+       Санитарные требования по площадке уточняются${fn(2)}.`
+    : found.length
+      ? `В базе нашлось ${found.length} ${plural(found.length, "упоминание", "упоминания", "упоминаний")}. Ближе всего — ${src.map((_, i) => named(i)).filter(Boolean).join(", ")}.
+         Полный список ниже; если нужного нет, добавьте запись — она попадёт в индекс.`
+      : `В базе нет ничего по этому запросу. Попробуйте другое слово или добавьте запись —
+         поиск и «Спросить базу» увидят её сразу после сохранения.`;
   return `<div class="answer"><div class="q">${esc(q)}</div>
-    <div class="a">По базе: смета по оборудованию пришла выше бюджета на 14%<sup>1</sup>, поставщик держит цену до конца недели<sup>2</sup>,
-    поэтому решение нужно принять на ближайшей планёрке. Санитарные требования по площадке уточняются<sup>3</sup>.</div>
-    ${lab("Источники")}
-    ${rows([
-      ["1 · Встреча", `<span class="lnk" ${act("open-meet", "m1")}>Планёрка по открытию, 15 сен</span>`],
-      ["2 · Комментарий", `<span class="lnk" ${act("open-task", 128)}>Задача 128, М. Дамьянович</span>`],
-      ["3 · Запись", `<span class="lnk" ${act("open-entry", "r7")}>Санитарные требования — выписка</span>`],
-    ])}
-    ${lab(`Найдено по запросу · ${r.tasks.length + r.entries.length + r.meetings.length}`)}
-    ${rows([...r.tasks.map((t) => ["Задача", `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`]),
+    <div class="a">${body}</div>
+    ${src.length ? lab("Источники") + rows(src.map((s, i) =>
+      [`${i + 1} · ${esc(s.k)}`, `<span class="lnk" ${act(s.a, s.v)}>${esc(s.t)}</span>`])) : ""}
+    ${found.length ? lab(`Найдено по запросу · ${found.length}`) + rows([
+      ...r.tasks.map((t) => ["Задача", `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`]),
       ...r.meetings.map((m) => ["Встреча", `<span class="lnk" ${act("open-meet", m.id)}>${esc(m.t)}</span>`]),
-      ...r.entries.map((e) => ["База", `<span class="lnk" ${act("open-entry", e.id)}>${esc(e.h)}</span>`])])}
+      ...r.entries.map((e) => ["База", `<span class="lnk" ${act("open-entry", e.id)}>${esc(e.h)}</span>`]),
+      ...r.files.map((f) => ["Файл", `<span class="lnk" ${act("open-file", f.id)}>${esc(f.n)}</span>`])]) : ""}
     <div class="mt">${btn("Сохранить ответ в базу", "new-entry")}${btn("Задать другой вопрос", "search")}</div></div>`;
 }

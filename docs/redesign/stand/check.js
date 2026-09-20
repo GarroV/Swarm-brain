@@ -208,6 +208,18 @@ function tokenCheck() {
         if (Math.max(...h) - Math.min(...h) > 2) out.push('карточки в ряду разной высоты: ' + h.join('/'));
       });
     });
+
+    /* сноска обязана указывать на существующий источник и открывать его:
+       номер без строки в списке — выдуманная ссылка, проверить её человек не может */
+    document.querySelectorAll('.answer').forEach((a) => {
+      const nums = new Set([...a.querySelectorAll('.rowset .k')]
+        .map((k) => (k.textContent.trim().match(/^(\d+)\s*·/) || [])[1]).filter(Boolean));
+      a.querySelectorAll('sup').forEach((s) => {
+        const n = s.textContent.trim();
+        if (!nums.has(n)) out.push('сноска ' + n + ' без источника в списке');
+        else if (!s.dataset.act) out.push('сноска ' + n + ' никуда не ведёт');
+      });
+    });
     return out;
   });
   const shot = async (name) => { await p.screenshot({ path: `${OUT}/${name}.png` });
@@ -466,8 +478,17 @@ function tokenCheck() {
   want((await count('tr.row')) > ofPerson, 'фильтр по человеку снимается крестиком');
   await go('sec', 'team');
   await go('tab', 'ws'); await shot('25-workspaces');
-  const wsUsers = +(await p.$eval('tbody tr td:nth-child(3)', (e) => e.textContent.trim()));
+  /* читаем клетку по ЗАГОЛОВКУ колонки: «третья ячейка первой таблицы» — это на вкладке
+     участников «Рынок» (RS → NaN), и проверка падала случайно, в зависимости от того, что открыто */
+  const wsUsers = await p.evaluate(() => {
+    const tb = [...document.querySelectorAll('.body table')].find((t) =>
+      [...t.querySelectorAll('thead th')].some((h) => h.textContent.trim() === 'Участников'));
+    if (!tb) return null;
+    const i = [...tb.querySelectorAll('thead th')].findIndex((h) => h.textContent.trim() === 'Участников');
+    return +tb.querySelector('tbody tr').children[i].textContent.trim();
+  });
   const realUsers = await p.evaluate(() => S.users.length);
+  want(wsUsers !== null, 'вкладка воркспейсов открылась');
   want(wsUsers === realUsers, `у текущего воркспейса счётчик людей совпадает с вкладкой «Участники» (${wsUsers} против ${realUsers})`);
   await go('sec', 'projects');
   const prBefore = await count('tr.row');
@@ -564,6 +585,31 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 120));
   want((await text('h1')) === 'Ответ по базе', 'вопрос к базе открывает ответ');
   await shot('32-answer');
+  /* сноска — рабочая ссылка на источник, а не значок */
+  await p.$eval('.answer sup', (e) => e.click());
+  await new Promise((r) => setTimeout(r, 120));
+  want((await text('.detail .d-title')).includes('Планёрка по открытию'), 'сноска в ответе открывает свой источник');
+  /* вне своей темы написанный от руки ответ был бы выдумкой со ссылками на непричастные встречи */
+  await go('search');
+  await p.type('#q', 'график');
+  await new Promise((r) => setTimeout(r, 120));
+  await p.$eval('.pal .r.ask', (e) => e.click());
+  await new Promise((r) => setTimeout(r, 120));
+  want(!(await text('.answer .a')).includes('смета по оборудованию'), 'ответ на другой запрос не пересказывает чужую тему');
+  const ansSrc = await p.$$eval('.answer .rowset .v', (els) => els.map((e) => e.textContent.trim()));
+  want(ansSrc.length > 0 && await p.evaluate((list) => { const r = searchAll('график');
+    const all = [...r.tasks.map((t) => t.t), ...r.meetings.map((m) => m.t),
+      ...r.entries.map((e) => e.h), ...r.files.map((f) => f.n)];
+    return list.every((x) => all.includes(x)); }, ansSrc), 'источники ответа — реально найденные записи');
+  await shot('44-answer-other');
+  /* пустой ответ говорит «нет», а не показывает выдуманные источники */
+  await go('search');
+  await p.type('#q', 'ксилофон');
+  await new Promise((r) => setTimeout(r, 120));
+  await p.$eval('.pal .r.ask', (e) => e.click());
+  await new Promise((r) => setTimeout(r, 120));
+  want((await count('.answer .rowset')) === 0 && (await text('.answer .a')).includes('нет ничего'),
+    'на пустой запрос ответ честен: источников нет');
   /* узкое окно ноутбука */
   await p.setViewport({ width: 1200, height: 800, deviceScaleFactor: 2 });
   await go('sec', 'tasks');

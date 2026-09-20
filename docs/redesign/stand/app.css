@@ -178,7 +178,9 @@ tbody tr.sel td.t{font-weight:600}
 .answer{padding:18px var(--gutter);overflow:auto;max-width:760px}
 .answer .q{font-size:var(--fs-title);font-weight:600;letter-spacing:-.01em;margin-bottom:12px}
 .answer .a{font-size:var(--fs-body);line-height:1.62;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
-.answer sup{font:500 var(--fs-micro)/1 var(--font-num);color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 3px;margin:0 1px 0 2px}
+/* сноска кликабельна и не отрывает запятую от слова: правый отступ — только внутренний */
+.answer sup{font:500 var(--fs-micro)/1 var(--font-num);color:var(--accent);cursor:pointer;margin-left:1px}
+.answer sup:hover{text-decoration:underline}
 /* панель уведомлений */
 .pop{position:absolute;right:var(--gutter);top:44px;width:340px;background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;box-shadow:0 14px 40px rgba(10,13,17,.16);z-index:30;display:none;overflow:hidden}
 .pop.open{display:block}
