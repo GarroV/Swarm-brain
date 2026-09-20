@@ -140,7 +140,12 @@ const ACTS = {
     closeModal(); A.createEntry({ ty: f.ty, title: f.title, text: f.text, cc: f.cc, priv: f.priv, file: f.file }); },
   "reindex-entry": (id) => A.reindex("entry", id),
   "reindex-file": (id) => A.reindex("file", id),
-  "del-entry": (id) => A.deleteEntry(id),
+  /* удаление без спроса: запись держит целую расшифровку, метка снимается сразу с N задач,
+     инициатива исчезает вместе с предложенными задачами. Спрашиваем, как у задачи. */
+  "del-entry": (id) => { const e = S.entries.find((x) => x.id === id) || {};
+    modal("Удалить запись?", `<div class="hint">Запись <b>${esc(e.h || "")}</b> исчезнет вместе с текстом и файлами. Отменить будет нечем.</div>`,
+      `${btn("Оставить", "mclose")}${btn("Удалить навсегда", "do-del-entry", id, undefined, "pri")}`); },
+  "do-del-entry": (id) => { closeModal(); A.deleteEntry(id); },
   "del-task": (id) => modal("Удалить навсегда?", `<div class="hint">Задача <b>${esc((S.tasks.find((t) => t.id === +id) || {}).t || "")}</b> исчезнет вместе с комментариями и историей. Отменить будет нечем.</div>`,
     `${btn("Оставить", "mclose")}${btn("Удалить навсегда", "do-del-task", id, undefined, "pri")}`),
   "do-del-task": (id) => { closeModal(); A.deleteTask(id); },
@@ -180,7 +185,10 @@ const ACTS = {
   "mf-st": (_, v) => { S.mf = { ...S.mf, st: v }; render(); },
   "mf-clear": () => { S.mf = { q: "", period: "all", cc: [], src: [], people: [], store: "any", st: "any" }; render(); },
   "accept-init": (id) => A.acceptInitiative(id),
-  "drop-init": (id) => A.dropInitiative(id),
+  "drop-init": (id) => { const i = S.initiatives.find((x) => x.id === id) || {};
+    modal("Снять инициативу?", `<div class="hint">Предложение <b>${esc(i.t || "")}</b> уйдёт из списка вместе с предложенными задачами.</div>`,
+      `${btn("Оставить", "mclose")}${btn("Снять", "do-drop-init", id, undefined, "pri")}`); },
+  "do-drop-init": (id) => { closeModal(); A.dropInitiative(id); },
   "close-cycle": () => A.closeCycle(),
   "col-move": (_, v) => { const [i, d] = v.split(":").map(Number), j = i + d;
     if (j < 0 || j >= S.cols.length) return; const n = [...S.cols]; [n[i], n[j]] = [n[j], n[i]]; A.set({ cols: n }); },
@@ -213,7 +221,11 @@ const ACTS = {
   reader: (id) => readerModal(id),
   "add-label": () => labelModal(null),
   "rename-label": (id) => labelModal(id),
-  "del-label": (id) => A.delLabel(id),
+  "del-label": (id) => { const l = label(id) || {};
+    const n = S.tasks.filter((t) => t.labels.includes(id)).length;
+    modal("Удалить метку?", `<div class="hint">Метка <b>${esc(l.n || "")}</b> будет снята с задач: ${n}. Вернуть её придётся руками.</div>`,
+      `${btn("Оставить", "mclose")}${btn("Удалить метку", "do-del-label", id, undefined, "pri")}`); },
+  "do-del-label": (id) => { closeModal(); A.delLabel(id); },
   "save-label": (id) => { const f = formData(); closeModal(); A.saveLabel(id || null, f.n); },
   "user-profile": (id) => userModal(id),
   "new-user": () => userModal(null),
