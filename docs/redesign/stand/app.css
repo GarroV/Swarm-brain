@@ -383,6 +383,15 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;margin:0;te
 .btn.mt{margin-top:12px}
 /* .btn — display:grid, поэтому в обычном контейнере кнопки встают друг под друга */
 .mt{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+/* значение поля читается как текст, а нажимается как кнопка: варианты приходят по клику */
+.fv{display:inline-flex;align-items:center;gap:5px;max-width:100%;min-height:23px;padding:1px 7px;margin-left:-7px;
+  border-radius:7px;color:var(--ink);font-size:var(--fs-dense);text-align:left}
+.fv:hover{background:var(--surface-2)}
+.fv .cv{width:6px;height:6px;margin-left:2px;border-right:1.3px solid var(--ink-3);border-bottom:1.3px solid var(--ink-3);
+  transform:translateY(-2px) rotate(45deg);flex:none}
+.fv.add{color:var(--ink-3);font-weight:600;padding:1px 6px;margin-left:0}
+.fv.add:hover{color:var(--accent)}
+.fmulti{display:inline-flex;align-items:center;flex-wrap:wrap;gap:4px}
 .mini{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;margin:0 4px 4px 0;border:1px solid var(--line-control);
   border-radius:11px;background:var(--surface);font-size:var(--fs-meta);color:var(--ink-2)}
 .mini.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:600}

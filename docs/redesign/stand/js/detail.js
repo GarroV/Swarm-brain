@@ -19,15 +19,15 @@ function detailTask(t) {
   let body = "";
   if (S.dtab === "overview") {
     body = `<dl class="f">
-      <dt>Статус</dt><dd>${STATUSES.map(([id, n]) => `<button class="mini${t.st === id ? " on" : ""}" ${act("move", t.id, id)}>${dot(id)}${n}</button>`).join("")}</dd>
+      <dt>Статус</dt><dd>${pickf(`${dot(t.st)}${ST_LABEL[t.st]}`, STATUSES.map(([id, n]) => [`${dot(id)}${n}`, "move", t.id, id, t.st === id]))}</dd>
       <dt>Исполнитель</dt><dd>${select("assignee", [["", "— не назначен"], ...S.users.map((u) => [String(u.id), u.n])], String(t.who[0] || ""))
         .replace("<select", `<select ${act("set-assignee", t.id)}`)}</dd>
       <dt>Срок</dt><dd><input class="inl" value="${t.due || ""}" placeholder="—" ${act("set-due", t.id)}>${t.due && dueKind(t.due) === "now" ? ' <span class="over">просрочено</span>' : ""}</dd>
-      <dt>Приоритет</dt><dd>${["high", "med", "low"].map((p) => `<button class="mini${t.prio === p ? " on" : ""}" ${act("set-prio", t.id, p)}>${pri(p)}${PRIO_LABEL[p]}</button>`).join("")}</dd>
-      <dt>Метки</dt><dd>${S.labels.map((l) => `<button class="mini${t.labels.includes(l.id) ? " on" : ""}" ${act("tgl-label", t.id, l.id)}>${esc(l.n)}</button>`).join("")}</dd>
-      <dt>Рынок</dt><dd>${COUNTRIES.map((c) => `<button class="mini${t.mk === c.c ? " on" : ""}" ${act("set-mk", t.id, c.c)}>${c.c}</button>`).join("")}</dd>
-      <dt>Повтор</dt><dd>${["", "weekly", "monthly"].map((r) => `<button class="mini${(t.recur || "") === r ? " on" : ""}" ${act("set-recur", t.id, r)}>${r ? RECUR_LABEL[r] : "нет"}</button>`).join("")}</dd>
-      <dt>Приватность</dt><dd><button class="mini${t.priv ? " on" : ""}" ${act("tgl-priv", t.id)}>${t.priv ? "личная" : "общая"}</button></dd>
+      <dt>Приоритет</dt><dd>${pickf(`${pri(t.prio)}${PRIO_LABEL[t.prio]}`, ["high", "med", "low"].map((p) => [`${pri(p)}${PRIO_LABEL[p]}`, "set-prio", t.id, p, t.prio === p]))}</dd>
+      <dt>Метки</dt><dd>${pickm(lbls(t.labels), S.labels.map((l) => [esc(l.n), "tgl-label", t.id, l.id, t.labels.includes(l.id)]))}</dd>
+      <dt>Рынок</dt><dd>${pickf(t.mk ? `<span class="cc">${t.mk}</span>${esc(cname(t.mk))}` : `<span class="muted">—</span>`, COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "set-mk", t.id, c.c, t.mk === c.c]))}</dd>
+      <dt>Повтор</dt><dd>${pickf(t.recur ? RECUR_LABEL[t.recur] : "нет", ["", "weekly", "monthly"].map((r) => [r ? RECUR_LABEL[r] : "нет", "set-recur", t.id, r, (t.recur || "") === r]))}</dd>
+      <dt>Приватность</dt><dd><button class="fv" ${act("tgl-priv", t.id)}>${t.priv ? "личная" : "общая"}</button></dd>
       <dt>Проект</dt><dd>${esc(projPath(t.pr))}</dd></dl>
       ${t.src && t.src !== "manual" ? lab("Откуда задача") + `<div class="src" ${act("open-meet", t.src)}>${esc((S.meetings.find((m) => m.id === t.src) || {}).t || t.src)}</div>` : ""}
       ${lab("Описание")}<div class="note">${t.note ? esc(t.note) : '<span class="muted">описания нет</span>'}</div>`;
@@ -79,8 +79,8 @@ function detailMeeting(m) {
         <dt>Когда</dt><dd><span class="due">${esc(fmtDT(m.dt))}</span></dd>
         <dt>Длительность</dt><dd><span class="due">${m.dur}</span><span class="unit">мин</span></dd>
         <dt>Источник</dt><dd>${tag(m.src, "m")}</dd>
-        <dt>Хранилище</dt><dd>${["shared", "personal"].map((s) => `<button class="mini${m.store === s ? " on" : ""}" ${act("set-store", m.id, s)}>${s === "shared" ? "Общее" : "Личное"}</button>`).join("")}</dd>
-        <dt>Страны</dt><dd>${COUNTRIES.map((c) => `<button class="mini${m.cc.includes(c.c) ? " on" : ""}" ${act("tgl-mcc", m.id, c.c)}>${c.c}</button>`).join("")}</dd>
+        <dt>Хранилище</dt><dd>${pickf(m.store === "shared" ? "Общее" : "Личное", ["shared", "personal"].map((s) => [s === "shared" ? "Общее" : "Личное", "set-store", m.id, s, m.store === s]))}</dd>
+        <dt>Страны</dt><dd>${pickm(m.cc.length ? cc(m.cc) : `<span class="muted">—</span>`, COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "tgl-mcc", m.id, c.c, m.cc.includes(c.c)]))}</dd>
         <dt>Статус</dt><dd>${m.st === "pending" ? "ждёт вычитки" : m.st === "draft" ? "черновик записи" : "подтверждена"}</dd></dl>
         ${lab("Тезисы")}${m.st === "draft"
           ? `<div class="empty sm"><b>Тезисов ещё нет</b>Черновик не разобран моделью${btn("Составить тезисы", "publish-draft", m.id, undefined, "pri mt")}</div>`
@@ -106,8 +106,8 @@ function detailEntry(e) {
     + `<div class="d-body"><dl class="f">
       <dt>Тип</dt><dd>${tag(TY_LABEL[e.ty] || e.ty, "l")}</dd><dt>Автор</dt><dd>${av(e.who)}</dd>
       <dt>Добавлена</dt><dd>${dt(e.at)}</dd>
-      <dt>Приватность</dt><dd><button class="mini${e.priv ? " on" : ""}" ${act("tgl-epriv", e.id)}>${e.priv ? "личная" : "общая"}</button></dd>
-      <dt>Страны</dt><dd>${COUNTRIES.map((c) => `<button class="mini${e.cc.includes(c.c) ? " on" : ""}" ${act("tgl-ecc", e.id, c.c)}>${c.c}</button>`).join("")}</dd>
+      <dt>Приватность</dt><dd><button class="fv" ${act("tgl-epriv", e.id)}>${e.priv ? "личная" : "общая"}</button></dd>
+      <dt>Страны</dt><dd>${pickm(e.cc.length ? cc(e.cc) : `<span class="muted">—</span>`, COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "tgl-ecc", e.id, c.c, e.cc.includes(c.c)]))}</dd>
       <dt>Индекс</dt><dd>${state(e.ix.n ? `${nFrag(e.ix.n)} · ${e.ix.at}` : "не индексируется", !!e.ix.n)}</dd></dl>
       ${lab("Фрагмент")}<div class="note">${esc(e.p)}</div>
       ${e.meet ? lab("Из встречи") + `<div class="src" ${act("open-meet", e.meet)}>${esc((S.meetings.find((m) => m.id === e.meet) || {}).t || "")}</div>` : ""}

@@ -49,7 +49,8 @@ function tokenCheck() {
     .ib{display:block!important}
     .list td.ck{width:10px!important;overflow:hidden!important;text-overflow:ellipsis!important}
     .chip{white-space:normal!important;width:60px!important}
-    .dtab .c{margin-left:0!important}` });
+    .dtab .c{margin-left:0!important}
+    .detail .dmenu{display:block!important}` });
 
   const sel = (a, id) => `[data-act="${a}"]` + (id !== undefined ? `[data-id="${id}"]` : '');
   const click = async (s) => {
@@ -394,7 +395,17 @@ function tokenCheck() {
 
   /* действия в детали */
   await go('take');
-  want((await p.$eval('.detail .mini.on', (e) => e.textContent)).includes('В работе'), 'кнопка «Взять в работу» сменила статус');
+  want((await p.$eval('.detail .f dd .fv', (e) => e.textContent)).includes('В работе'), 'кнопка «Взять в работу» сменила статус');
+  /* панель показывает ЗНАЧЕНИЯ, а не все варианты сразу: иначе она читается как форма настроек,
+     а не как задача. Порог — поля плюс небольшой запас на переключатели вроде приватности. */
+  const panelOpts = await p.evaluate(() => {
+    const d = document.querySelector('.detail');
+    const vis = (e) => e.offsetParent !== null;
+    return { fields: d.querySelectorAll('.f dt').length,
+      opts: [...d.querySelectorAll('.f .mini, .f .chip, .f .mi')].filter(vis).length };
+  });
+  want(panelOpts.opts <= panelOpts.fields + 2,
+    `панель детали показывает значения, а не варианты (видно вариантов ${panelOpts.opts} на ${panelOpts.fields} полей)`);
   await go('dtab', 'talk');
   await p.type('.cbox textarea', 'Проверил, вторая линия готова.');
   await p.$eval('[data-act="comment"]', (e) => e.click());

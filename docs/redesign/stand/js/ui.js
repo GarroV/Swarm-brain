@@ -43,6 +43,14 @@ const nTasks = (n) => plural(n, "задача", "задачи", "задач");
 const nFrag = (n) => plural(n, "фрагмент", "фрагмента", "фрагментов");
 const nPeople = (n) => plural(n, "человек", "человека", "человек");
 const nMeet = (n) => plural(n, "встреча", "встречи", "встреч");
+/* Поле панели: на виду ЗНАЧЕНИЕ, варианты приходят по клику.
+   Разложить все варианты рядом — значит показать орган управления вместо данных:
+   у задачи так выходило 26 кнопок на 9 полей, и выбранное терялось среди невыбранного. */
+const fmenu = (items) => `<div class="dmenu">${items.map(([t, a, id, v, on]) =>
+  `<button class="mi${on ? " on" : ""}" ${act(a, id, v)}>${t}</button>`).join("")}</div>`;
+const pickf = (value, items) => `<span class="drop"><button class="fv" ${act("noop")}>${value}<i class="cv"></i></button>${fmenu(items)}</span>`;
+/* многозначное поле: на виду только ВЫБРАННОЕ, «＋» открывает остальное */
+const pickm = (chosen, items) => `<span class="fmulti">${chosen}<span class="drop"><button class="fv add" ${act("noop")}>＋</button>${fmenu(items)}</span></span>`;
 const chip = (text, on, a, id, v) => `<button class="chip${on ? " on" : ""}" ${act(a, id, v)}>${esc(text)}</button>`;
 /* off — кнопка, которой сейчас нечего делать: недоступной её видно, а молча не срабатывающей — нет */
 const btn = (text, a, id, v, cls, off) => `<button class="btn${cls ? " " + cls : ""}"${off ? " disabled" : ""} ${act(a, id, v)}>${esc(text)}</button>`;
