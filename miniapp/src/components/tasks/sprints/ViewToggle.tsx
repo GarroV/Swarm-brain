@@ -10,7 +10,6 @@ import { useDt } from "@/components/roy/nav";
 export type SprintView =
   | "list"
   | "kanban"
-  | "initiatives"
   | "analytics"
   | "journal";
 
@@ -27,13 +26,13 @@ export function useSprintView(): [SprintView, (v: SprintView) => void] {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(KEY);
-      // «Сверка» была отдельным видом до 19.09.2026; её отметки переехали в строку списка.
-      // Тому, у кого она осталась запомненной, показываем список, а не пустой экран.
-      if (saved === "check") setView("list");
+      // Снятые виды: «Сверка» (19.09.2026, отметки переехали в строку списка) и «Инициативы»
+      // (19.09.2026, владелец: «вообще не ясно что это такое, надо убрать пункт»). У кого они
+      // остались запомненными — открывается список, а не пустой экран.
+      if (saved === "check" || saved === "initiatives") setView("list");
       else if (
         saved === "list" || saved === "kanban" ||
-        saved === "initiatives" || saved === "analytics" ||
-        saved === "journal"
+        saved === "analytics" || saved === "journal"
       ) {
         setView(saved);
       }
@@ -62,19 +61,11 @@ export function ViewToggle(
   const dt = useDt();
   const views: {
     id: SprintView;
-    icon: "task" | "board" | "graph" | "timeline" | "clock";
+    icon: "task" | "board" | "timeline" | "clock";
     label: string;
   }[] = [
     { id: "list", icon: "task", label: dt("Список", "List") },
     { id: "kanban", icon: "board", label: dt("Канбан", "Kanban") },
-    // «Все инициативы» — вид на ПРОСТРАНСТВО, а не на спринт: здесь видно и то, что в
-    // спринт не попало. Стоит в том же ряду, потому что человек переключает не сущность,
-    // а то, на что смотрит.
-    {
-      id: "initiatives",
-      icon: "graph",
-      label: dt("Инициативы", "Initiatives"),
-    },
     // Аналитика — тоже про пространство: семь таблиц по всем его спринтам.
     { id: "analytics", icon: "timeline", label: dt("Аналитика", "Analytics") },
     { id: "journal", icon: "clock", label: dt("Журнал", "Journal") },

@@ -64,7 +64,6 @@ import {
   AcceptDialog,
   type AcceptSubmit,
 } from "@/components/tasks/sprints/AcceptDialog";
-import { AllInitiatives } from "@/components/tasks/sprints/AllInitiatives";
 import { AnalyticsScreen } from "@/components/tasks/sprints/AnalyticsScreen";
 import { JournalScreen } from "@/components/tasks/sprints/JournalScreen";
 import {
@@ -632,7 +631,6 @@ export function SprintsScreen() {
   // независимо от запомненного вида.
   const effectiveView = view === "kanban" && !isDesktop ? "list" : view;
   const showList = effectiveView === "list";
-  const showInitiatives = effectiveView === "initiatives";
   const showAnalytics = effectiveView === "analytics";
   const showJournal = effectiveView === "journal";
 
@@ -1096,21 +1094,6 @@ export function SprintsScreen() {
                     space={space}
                     spaceName={spaces.find((s) => s.id === space)?.name ??
                       dt("Без пространства", "No space")}
-                  />
-                )
-                : showInitiatives
-                ? (
-                  <AllInitiatives
-                    tasks={spaceTasks}
-                    projects={projects}
-                    users={users}
-                    inSprint={inSprint}
-                    sprintName={liveCycle?.name ?? null}
-                    onAddToSprint={(taskId) => {
-                      if (liveCycle) addToSprint([taskId]);
-                    }}
-                    onOpenTask={(t) => setEditing(t)}
-                    onSaveProject={saveInitiative}
                   />
                 )
                 : showList
