@@ -41,7 +41,7 @@ function taskRow(t) {
   const checked = S.bulk.has(t.id) ? " checked" : "";
   return `<tr class="row${S.sel === t.id && S.selKind === "task" ? " sel" : ""}" ${act("open-task", t.id)} tabindex="0">
     ${cell(`<input type="checkbox"${checked} ${act("check", t.id)}>`, "ck")}
-    ${cell(`${dot(t.st)}${pri(t.prio)}${esc(t.t)}${t.priv ? ' <span class="lock" title="личная">🔒</span>' : ""}`, "t")}
+    ${cell(`${dot(t.st)}${priMark(t.prio)}${esc(t.t)}${t.priv ? ' <span class="lock" title="личная">🔒</span>' : ""}`, "t")}
     ${cell(esc(projPath(t.pr)))}
     ${cell(t.who.length ? avShort(t.who[0]) : `<span class="muted">— не назначен</span>`)}
     ${cell(lbls(t.labels) + (t.recur ? tag(RECUR_LABEL[t.recur], "p") : ""), "opt")}
@@ -73,7 +73,7 @@ function screenTasks() {
   const head = tasksToolbar() + bulkBar() + (S.tab === "today" ? calendarStrip() : "");
   if (!list.length) return head + empty("Задач в этом срезе нет", "Смените линзу, статусы или вкладку");
   return head + table([
-    { t: "", w: "30px" }, { t: "Задача", w: "34%" }, { t: "Проект", w: "16%" }, { t: "Исполнитель", short: "Кто", w: "15%" },
+    { t: "", w: "30px" }, { t: "Задача", w: "32%" }, { t: "Проект", w: "20%" }, { t: "Исполнитель", short: "Кто", w: "15%" },
     { t: "Метки", w: "15%", opt: true }, { t: "Рынок", r: true, w: "78px", opt: true }, { t: "Срок", r: true, w: "84px" },
   ], groupRows(list));
 }

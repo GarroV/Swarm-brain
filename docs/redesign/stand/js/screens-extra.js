@@ -40,7 +40,7 @@ function readerModal(id) {
 function screenLabels() {
   return `<div class="panes"><div class="pane"><h3>Метки задач</h3>
     <div class="sub">Общие для воркспейса: ими помечают задачи и фильтруют списки</div>
-    ${rows(S.labels.map((l) => [tag(l.n, "o"),
+    ${rows(S.labels.map((l) => [tag(l.n, "l"),
       nTasks(S.tasks.filter((t) => t.labels.includes(l.id)).length),
       `<span class="ib">${btn("Переименовать", "rename-label", l.id, undefined, "sm")}${btn("Удалить", "del-label", l.id, undefined, "sm")}</span>`]))}
     <div class="mt">${btn("Добавить метку", "add-label", undefined, undefined, "pri")}</div></div></div>`;
@@ -88,7 +88,7 @@ function screenTimeline() {
     const items = list.filter((t) => t.due === day);
     const late = dueKind(day) === "now";
     return `<div class="tday${late ? " late" : ""}"><div class="tdh">${fmtDate(day)}<span class="n">${items.length}</span></div>
-      <div class="tditems">${items.map((t) => `<div class="tdi" ${act("open-task", t.id)}>${dot(t.st)}${pri(t.prio)}<b>${esc(t.t)}</b>
+      <div class="tditems">${items.map((t) => `<div class="tdi" ${act("open-task", t.id)}>${dot(t.st)}${priMark(t.prio)}<b>${esc(t.t)}</b>
         <span class="pj">${esc(projPath(t.pr))}</span>
         <span class="mt">${lbls(t.labels)}${t.recur ? tag(RECUR_LABEL[t.recur], "p") : ""}</span>
         <span class="mk">${t.mk ? `<span class="cc">${t.mk}</span>` : ""}</span>
