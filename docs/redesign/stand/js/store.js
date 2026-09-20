@@ -144,19 +144,19 @@ const A = {
     const t = mkTask({ id: nextTaskId++, t: f.title, pr: f.pr, st: "open", who: f.who ? [f.who] : [],
       due: f.due || null, prio: f.prio, labels: f.labels, mk: f.mk, recur: f.recur, priv: f.priv, note: f.note });
     S.tasks = [t, ...S.tasks];
-    S.history = { ...S.history, [t.id]: [{ w: "только что", who: ME, t: "создал задачу" }] };
+    S.history = { ...S.history, [t.id]: [{ w: "только что", who: ME, k: "Создана", v: "вручную" }] };
     A.toast(`Задача ${t.id} создана`);
     A.select("task", t.id);
   },
-  patchTask(id, patch, note) {
+  patchTask(id, patch, ev) {
     S.tasks = S.tasks.map((t) => t.id === id ? { ...t, ...patch } : t);
-    if (note) S.history = { ...S.history, [id]: [{ w: "только что", who: ME, t: note }, ...(S.history[id] || [])] };
+    if (ev) S.history = { ...S.history, [id]: [{ w: "только что", who: ME, k: ev[0], v: ev[1] || "" }, ...(S.history[id] || [])] };
     render();
   },
-  moveTask(id, st) { A.patchTask(id, { st }, `перевёл в «${ST_LABEL[st]}»`); },
-  takeTask(id) { A.patchTask(id, { st: "in_progress", who: [ME] }, "взял в работу"); A.toast("Задача взята в работу"); },
-  archiveTask(id) { A.patchTask(id, { arch: true }, "убрал в архив"); A.toast("Задача в архиве"); },
-  restoreTask(id) { A.patchTask(id, { arch: false }, "вернул из архива"); A.toast("Задача возвращена"); },
+  moveTask(id, st) { A.patchTask(id, { st }, ["Статус", ST_LABEL[st]]); },
+  takeTask(id) { A.patchTask(id, { st: "in_progress", who: [ME] }, ["Взята в работу", ""]); A.toast("Задача взята в работу"); },
+  archiveTask(id) { A.patchTask(id, { arch: true }, ["В архив", ""]); A.toast("Задача в архиве"); },
+  restoreTask(id) { A.patchTask(id, { arch: false }, ["Из архива", ""]); A.toast("Задача возвращена"); },
   comment(id, text) {
     if (!text.trim()) return;
     S.comments = { ...S.comments, [id]: [...(S.comments[id] || []), { who: ME, w: "только что", t: text.trim() }] };

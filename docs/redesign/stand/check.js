@@ -108,6 +108,15 @@ function tokenCheck() {
         if (need <= par.clientWidth) out.push('кнопки встали друг под друга, хотя строка вмещала: ' + bs.map((b) => b.textContent.trim().slice(0, 14)).join(' / '));
       });
     }
+    /* глагол в мужском роде про человека, чей род не известен системе */
+    {
+      const txt = [document.querySelector('.body'), document.querySelector('.detail'), document.querySelector('.modal')]
+        .filter(Boolean).map((e) => e.innerText).join('\n');
+      /* \b в JS определён по ASCII, поэтому с кириллицей не работает —
+         границы слова задаём явным отрицанием русских букв */
+      const bad = txt.match(/(?<![а-яёА-ЯЁ])(создал|перевёл|взял|убрал|вернул|поменял|добавил|отметил|назначил|закрыл|открыл)(?![а-яёА-ЯЁ])/g);
+      if (bad) out.push('глагол в мужском роде: ' + [...new Set(bad)].join(', '));
+    }
     /* русские числительные: «2 задач» и «1 задачи» — ошибка в пользовательском тексте */
     {
       const txt = (document.querySelector('.body') || document.body).innerText;

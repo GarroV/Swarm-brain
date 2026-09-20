@@ -37,7 +37,8 @@ function detailTask(t) {
       <div class="cbox"><textarea data-cin="${t.id}" placeholder="Написать комментарий"></textarea>${btn("Отправить", "comment", t.id, undefined, "pri sm")}</div>`;
   }
   if (S.dtab === "hist") {
-    body = `<div class="tl">${hi.map((h) => `<div class="e"><div class="p"></div><div><b>${esc(user(h.who).n)}</b> ${esc(h.t)}<div class="w">${esc(h.w)}</div></div></div>`).join("")
+    body = `<div class="tl">${hi.map((h) => `<div class="e"><div class="p"></div><div><b>${esc(user(h.who).n)}</b>
+      <span class="ev">${esc(h.k)}${h.v ? `: <b>${esc(h.v)}</b>` : ""}</span><div class="w">${esc(h.w)}</div></div></div>`).join("")
       || '<div class="muted">Движения не было</div>'}</div>`;
   }
   if (S.dtab === "links") {

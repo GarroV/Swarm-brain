@@ -515,3 +515,7 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
 @media (max-width:1320px){ .app.with-detail .list .hfull{display:none} .app.with-detail .list .hshort{display:inline} }
 @media (max-width:1180px){ .list .hfull{display:none} .list .hshort{display:inline} }
 .state.bad{background:#FDE7E3;color:#B3261E}
+
+/* событие журнала: «что» и «во что», без глагола в мужском роде */
+.tl .ev{color:var(--ink-2)}
+.tl .ev b{color:var(--ink);font-weight:500}

@@ -123,7 +123,8 @@ function screenJournal() {
   if (!items.length) return cycleBar() + empty("Журнал пуст", "Записи появляются, когда задачи двигают по доске");
   return cycleBar() + `<div class="panes"><div class="pane"><h3>Журнал перемещений</h3>
     <div class="sub">Кто и когда двигал задачи — журнал ведётся с раскатки #286</div>
-    <div class="tl">${items.map((h) => `<div class="e"><div class="p"></div><div><b>${esc(user(h.who).n)}</b> ${esc(h.t)}
+    <div class="tl">${items.map((h) => `<div class="e"><div class="p"></div><div><b>${esc(user(h.who).n)}</b>
+      <span class="ev">${esc(h.k)}${h.v ? `: <b>${esc(h.v)}</b>` : ""}</span>
       · <span class="lnk" ${act("open-task", h.id)}>задача ${h.id}</span><div class="w">${esc(h.w)}</div></div></div>`).join("")}</div></div></div>`;
 }
 
