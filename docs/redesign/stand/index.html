@@ -1,11 +1,15 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8">
-<title>SWARM — стенд редизайна</title>
-<meta name="viewport" content="width=1440">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Swarm — стенд редизайна</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css">
-</head><body>
+</head>
+<body>
 <div class="app">
   <aside class="nav">
     <div class="ws"><div class="ws-mark">S</div><div><div class="ws-name">SWARM</div><div class="ws-sub">IMF BD</div></div></div>
@@ -16,31 +20,40 @@
   <main class="main">
     <div class="top">
       <div><div class="crumb"></div><h1></h1></div>
-      <div class="search" data-search="1" tabindex="0">
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 14 14"/></svg>
-        Поиск по задачам и базе<span class="kbd">⌘K</span></div>
-      <div class="bell" data-bell="1" tabindex="0"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6.5a4 4 0 0 1 8 0c0 3 1 4 1 4H3s1-1 1-4"/><path d="M6.5 13a1.6 1.6 0 0 0 3 0"/></svg><span class="b">3</span></div>
-      <div class="hbtn" data-dig="1" tabindex="0"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></svg>Дайджест</div>
-      <div class="me" data-me="1" tabindex="0">ВГ</div>
-      <div class="pop"></div>
-      <div class="pop dig"></div>
-      <div class="menu"></div>
+      <button class="search" data-act="search"><svg viewBox="0 0 16 16" width="13" height="13"><circle cx="7" cy="7" r="4.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.4 10.4L14 14" stroke="currentColor" stroke-width="1.5"/></svg>
+        Поиск по задачам и базе<span class="kbd">⌘K</span></button>
+      <button class="bell" data-act="bell"><svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 2a3.6 3.6 0 013.6 3.6v2.2l1 1.9H3.4l1-1.9V5.6A3.6 3.6 0 018 2zM6.4 11.6a1.6 1.6 0 003.2 0" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span class="b"></span></button>
+      <button class="hbtn" data-act="dig">☰ Дайджест</button>
+      <button class="me" data-act="memenu">АК</button>
     </div>
-    <nav class="tabs"></nav>
-    <div class="body" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden"></div>
+    <div class="tabs"></div>
+    <div class="body"></div>
   </main>
 
   <aside class="detail"></aside>
 </div>
 
-<button class="fab">＋ Фидбек</button>
+<div class="pop"></div>
+<div class="pop dig"></div>
+<div class="menu"></div>
+<div class="toast"></div>
+<button class="fab" data-act="fab">＋ Фидбек</button>
+
 <div class="scrim"></div>
-<div class="mscrim"></div>
-<div class="modal"></div>
-<div class="pal">
-  <input id="q" placeholder="Найти задачу, встречу, запись — или спросить базу" autocomplete="off">
-  <div class="res"></div>
-  <div class="foot"><span>↑↓ выбор</span><span>Enter — открыть или спросить</span><span>Esc — закрыть</span></div>
-</div>
-<script src="app.js"></script>
-</body></html>
+<div class="pal"><input id="q" placeholder="Задачи, встречи, записи, файлы — или вопрос к базе" autocomplete="off">
+  <div class="res"></div><div class="foot"><span>↑↓ выбрать · ⏎ открыть · esc закрыть</span><span>⌘K</span></div></div>
+
+<div class="mscrim"></div><div class="modal"></div>
+
+<script src="js/data.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/store.js"></script>
+<script src="js/screens-tasks.js"></script>
+<script src="js/screens-meetings.js"></script>
+<script src="js/screens-base.js"></script>
+<script src="js/screens-work.js"></script>
+<script src="js/screens-system.js"></script>
+<script src="js/detail.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
