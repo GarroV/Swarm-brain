@@ -96,11 +96,18 @@ function tezConfirmed(m, line) {
 }
 function compareModal(id) {
   const m = S.meetings.find((x) => x.id === id);
+  /* помечаем то, что требует действия, а не то, что в порядке: подсветка подтверждённых
+     красила тревожным цветом как раз спокойные пункты, а придуманные оставляла незаметными */
+  const unconfirmed = m.tez.reduce((n, s) => n + s.li.filter((x) => !tezConfirmed(m, x)).length, 0);
   modal("Тезисы против транскрипта", `
-    <div class="hint">Подсвечены пункты, которым нашлось подтверждение в расшифровке. Неподсвеченный пункт модель додумала — его стоит проверить или убрать.</div>
+    <div class="hint">${unconfirmed
+      ? `Не нашли подтверждения в расшифровке: ${unconfirmed}. Такой пункт модель могла додумать — проверьте или уберите его.`
+      : "Каждому пункту нашлось подтверждение в расшифровке."}</div>
     <div class="cmp">
     <div>${lab("Тезисы")}<div class="tez">${m.tez.map((s) =>
-      `<h5>${esc(s.h)}</h5>${s.li.map((x) => `<li${tezConfirmed(m, x) ? ' class="hl"' : ''}>${esc(x)}</li>`).join("")}`).join("")}</div></div>
+      `<h5>${esc(s.h)}</h5>${s.li.map((x) => tezConfirmed(m, x)
+        ? `<li>${esc(x)}</li>`
+        : `<li class="hl" title="в расшифровке подтверждения нет">${esc(x)}</li>`).join("")}`).join("")}</div></div>
     <div>${lab(`Транскрипт · ${m.dur} мин`)}<div class="tr">${m.tr.map(([w, who, text]) =>
       `<div class="ln"><span class="w">${w}</span>${av(who, false)}<span>${esc(text)}</span></div>`).join("")}</div></div></div>`,
     `${btn("Закрыть", "mclose")}${btn("Тезисы верны", "confirm-meet", id, undefined, "pri")}`, true);

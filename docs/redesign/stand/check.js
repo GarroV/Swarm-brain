@@ -426,6 +426,15 @@ function tokenCheck() {
   const firstMeet = await p.$eval('tbody tr[data-act="open-meet"]', (e) => e.dataset.id);
   await go('open-meet', firstMeet); await shot('08-meeting-detail');
   await go('compare'); await shot('09-compare');
+  /* помечено должно быть то, что требует действия: непроверенных пунктов столько же, сколько помечено */
+  const cmp = await p.evaluate(() => {
+    const m = S.meetings.find((x) => x.id === S.sel);
+    const un = m.tez.reduce((n, s) => n + s.li.filter((x) => !tezConfirmed(m, x)).length, 0);
+    return { un, marked: document.querySelectorAll('.modal .tez li.hl').length,
+      hint: document.querySelector('.modal .hint').textContent };
+  });
+  want(cmp.un > 0 && cmp.marked === cmp.un, `помечены недоказанные пункты (${cmp.marked} из ${cmp.un})`);
+  want(cmp.hint.includes(String(cmp.un)), 'подпись называет, сколько пунктов без подтверждения');
   await go('mclose');
   await go('harvest');
   await go('do-harvest');
