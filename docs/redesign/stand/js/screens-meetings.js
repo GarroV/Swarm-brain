@@ -18,8 +18,8 @@ function meetBar() {
     ${chip("Общее", f.store === "shared", "mf-store", undefined, f.store === "shared" ? "any" : "shared")}
     ${chip("Личное", f.store === "personal", "mf-store", undefined, f.store === "personal" ? "any" : "personal")}
     ${mfActive() ? btn("Сбросить", "mf-clear", undefined, undefined, "sm") : ""}
-    <div class="right"><span>Невычитано <b>${S.meetings.filter((m) => m.st === "pending").length}</b></span>
-      <span>Черновиков <b>${S.meetings.filter((m) => m.st === "draft").length}</b></span></div></div>`;
+    <div class="right"><span>Показано <b>${visibleMeetings(S.tab).length}</b> из ${
+      S.meetings.filter((m) => inMeetTab(m, S.tab)).length}</span></div></div>`;
 }
 
 function meetRow(m) {

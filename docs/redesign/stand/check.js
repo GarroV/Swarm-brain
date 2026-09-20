@@ -727,6 +727,10 @@ function tokenCheck() {
   await gov('mf-src', 'Granola');
   const gr = await count('tbody tr[data-act="open-meet"]');
   want(gr < rev, `фильтр по источнику сузил список (${rev} → ${gr})`);
+  /* счётчик в полосе описывает показанное, а не соседние вкладки: раньше тут висели
+     «Невычитано 3» и «Черновиков 2» — числа, на которые фильтры рядом не влияли */
+  const grSaid = (await text('.bar .right')).replace(/\s+/g, ' ').trim();
+  want(grSaid.includes(`Показано ${gr} из`), `счётчик полосы встреч следует за фильтром (строк ${gr}, в полосе «${grSaid}»)`);
   await go('mf-clear');
   const firstMeet = await p.$eval('tbody tr[data-act="open-meet"]', (e) => e.dataset.id);
   await go('open-meet', firstMeet); await shot('08-meeting-detail');

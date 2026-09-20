@@ -118,12 +118,15 @@ const countList = (list) => S.tasks.filter((t) => inList(t, list) && inLens(t, S
 
 /* ── выборка встреч: шесть осей, как в продукте ──────────────── */
 const PERIOD_DAYS = { week: 7, month: 30, quarter: 92 };
+/* принадлежность вкладке — отдельно от фильтров: полоса обязана сказать «показано N из M»,
+   а M — это всё, что лежит на вкладке, без учёта снимаемых фильтров */
+const inMeetTab = (m, tab) => tab === "review" ? m.st === "pending"
+  : tab === "draft" ? m.st === "draft"
+  : tab === "all" ? m.st !== "draft" : true;
 function visibleMeetings(tab) {
   const f = S.mf, q = f.q.trim().toLowerCase();
   return S.meetings.filter((m) => {
-    if (tab === "review" && m.st !== "pending") return false;
-    if (tab === "draft" && m.st !== "draft") return false;
-    if (tab === "all" && m.st === "draft") return false;
+    if (!inMeetTab(m, tab)) return false;
     if (f.period !== "all" && PERIOD_DAYS[f.period]) {
       const n = -daysTo(m.dt.slice(0, 10)); if (n > PERIOD_DAYS[f.period]) return false;
     }
