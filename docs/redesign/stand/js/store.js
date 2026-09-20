@@ -14,11 +14,12 @@ const S = {
   cycle: "c2", board: { drag: null },
   cols: [ { id:"open", n:"Открыто", on:true }, { id:"in_progress", n:"В работе", on:true }, { id:"done", n:"Готово", on:true } ],
   /* система */
-  theme: "light", lang: "RU", toast: null,
+  theme: "light", lang: "RU", tz: "Europe/Belgrade", toast: null,
   /* данные */
   tasks: TASKS.slice(), meetings: MEETINGS.slice(), entries: ENTRIES.slice(), files: FILES.slice(),
   projects: PROJECTS.slice(), comments: { ...COMMENTS }, history: { ...HISTORY },
   notif: NOTIF.slice(), feedback: FEEDBACK.slice(), queue: AGENT_QUEUE.slice(),
+  notifPrefs: NOTIF_PREFS.slice(), tokens: TOKENS.slice(),
   initiatives: INITIATIVES.slice(), broadcasts: BROADCASTS.slice(),
   integrations: INTEGRATIONS.slice(), workspaces: WORKSPACES.slice(), labels: LABELS.slice(),
   users: USERS.slice(),
@@ -273,6 +274,26 @@ const A = {
     A.toast("Профиль сохранён");
   },
   readOne(i) { S.notif = S.notif.map((n, k) => k === +i ? { ...n, unread: false } : n); render(); },
+  toggleNotifPref(id) {
+    S.notifPrefs = S.notifPrefs.map((n) => n.id === id ? { ...n, on: !n.on } : n);
+    const n = S.notifPrefs.find((x) => x.id === id);
+    A.toast(`${n.n}: ${n.on ? "включено" : "выключено"}`);
+  },
+  reissueToken(id) {
+    const tail = Math.random().toString(36).slice(2, 6);
+    S.tokens = S.tokens.map((t) => t.id === id
+      ? { ...t, v: (t.id === "mcp" ? "smcp_••••" : "••••") + tail, at: fmtDate(TODAY) } : t);
+    A.toast("Токен перевыпущен — старый больше не работает");
+  },
+  resetCols() {
+    S.cols = [ { id:"open", n:"Открыто", on:true }, { id:"in_progress", n:"В работе", on:true }, { id:"done", n:"Готово", on:true } ];
+    A.toast("Колонки возвращены по умолчанию");
+  },
+  addCol(name) {
+    const id = "c" + (S.cols.length + 1);
+    S.cols = [...S.cols, { id, n: name || "Новая колонка", on: true }];
+    A.toast("Колонка добавлена");
+  },
   theme() {
     S.theme = S.theme === "light" ? "dark" : "light";
     document.documentElement.dataset.theme = S.theme;

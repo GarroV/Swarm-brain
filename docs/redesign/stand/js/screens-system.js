@@ -29,31 +29,29 @@ function screenSettings() {
   if (S.tab === "labels") return screenLabels();
   const P = {
     profile: () => rows([
-      ["Имя", esc(me().n), btn("Изменить", "noop", undefined, undefined, "sm")],
+      ["Имя", esc(me().n), btn("Изменить", "user-profile", ME, undefined, "sm")],
       ["Роль", ROLE[me().role], ""],
-      ["Telegram", esc(me().tg), btn("Отвязать", "noop", undefined, undefined, "sm")],
-      ["Почта", esc(me().em), btn("Сменить", "noop", undefined, undefined, "sm")],
+      ["Telegram", esc(me().tg), btn("Изменить", "user-profile", ME, undefined, "sm")],
+      ["Почта", me().em ? esc(me().em) : state("не привязана", false), btn("Изменить", "user-profile", ME, undefined, "sm")],
       ["Язык интерфейса", S.lang === "RU" ? "Русский" : "English", btn("Переключить", "lang", undefined, undefined, "sm")],
       ["Тема", S.theme === "dark" ? "тёмная" : "светлая", btn("Переключить", "theme", undefined, undefined, "sm")],
-      ["Часовой пояс", "Europe/Belgrade", btn("Изменить", "noop", undefined, undefined, "sm")],
+      ["Часовой пояс", "Europe/Belgrade", `<span class="ib">${btn("Europe/Belgrade", "tz", undefined, "Europe/Belgrade", "sm" + (S.tz === "Europe/Belgrade" ? " on" : ""))}${btn("Europe/Zagreb", "tz", undefined, "Europe/Zagreb", "sm" + (S.tz === "Europe/Zagreb" ? " on" : ""))}</span>`],
       ["Аккаунт", "вход через Telegram", btn("Выйти", "logout", undefined, undefined, "sm")],
     ]),
     integr: () => rows(S.integrations.map((i) => [esc(i.n), esc(i.d),
       `<span class="ib">${state(i.st === "on" ? "подключено" : "выключено", i.st === "on")}
        ${btn(i.st === "on" ? "Отключить" : "Подключить", "integr", i.id, undefined, "sm")}</span>`])),
     tokens: () => rows([
-      ["MCP-токен для Claude Desktop", "smcp_•••••••• · выпущен 1 сен", btn("Перевыпустить", "noop", undefined, undefined, "sm")],
-      ["Инструкция для Claude Desktop", "готова", btn("Открыть", "noop", undefined, undefined, "sm")],
-      ["Токен рекордера", "•••••• · build 24", btn("Перевыпустить", "noop", undefined, undefined, "sm")],
+      ...S.tokens.map((t) => [esc(t.n), `<code>${esc(t.v)}</code> · выпущен ${esc(t.at)}`,
+        `<span class="ib">${btn("Скопировать", "copy", undefined, t.v, "sm")}${btn("Перевыпустить", "reissue", t.id, undefined, "sm attn")}</span>`]),
+      ["Инструкция для Claude Desktop", "как подключить MCP к Claude Desktop", btn("Открыть", "mcp-guide", undefined, undefined, "sm")],
       ["Команда установки bumblebee", "curl … | sh", btn("Показать", "rec-install", undefined, undefined, "sm")],
       ["Команда обновления bumblebee", "swarm-rec update", btn("Показать", "rec-update", undefined, undefined, "sm")],
     ]),
     notif: () => rows([
-      ["Тезисы готовы", "в Telegram и в колокольчик", btn("Выключить", "noop", undefined, undefined, "sm")],
-      ["Комментарии к задачам", "в Telegram", btn("Выключить", "noop", undefined, undefined, "sm")],
-      ["Ежедневный дайджест", "09:00", btn("Изменить время", "noop", undefined, undefined, "sm")],
-      ["Напоминания по задачам", "включены", btn("Выключить", "noop", undefined, undefined, "sm")],
-      ["Невычитанные встречи", "напоминать через 48 ч", btn("Выключить", "noop", undefined, undefined, "sm")],
+      ...S.notifPrefs.map((n) => [esc(n.n), esc(n.d),
+        `<span class="ib">${state(n.on ? "включено" : "выключено", n.on)}
+         ${btn(n.on ? "Выключить" : "Включить", "notif-pref", n.id, undefined, "sm")}</span>`]),
       ["Сгенерировать дайджест сейчас", "займёт около 10 секунд", btn("Сгенерировать", "dig", undefined, undefined, "sm")],
     ]),
   }[S.tab];
@@ -68,7 +66,7 @@ function settingsColumns() {
       `${S.tasks.filter((t) => t.st === c.id && t.sprint === S.cycle).length} задач · статус <code>${c.id}</code>`,
       `<span class="ib">${btn("↑", "col-move", undefined, `${i}:-1`, "sm")}${btn("↓", "col-move", undefined, `${i}:1`, "sm")}
        ${btn(c.on ? "Скрыть" : "Показать", "col-tgl", undefined, String(i), "sm")}</span>`]))}
-    <div class="mt">${btn("Добавить колонку", "noop", undefined, undefined, "pri")}${btn("Вернуть по умолчанию", "noop")}</div></div></div>`;
+    <div class="mt">${btn("Добавить колонку", "add-col", undefined, undefined, "pri")}${btn("Вернуть по умолчанию", "reset-cols")}</div></div></div>`;
 }
 
 /* ── админ ───────────────────────────────────────────────────── */

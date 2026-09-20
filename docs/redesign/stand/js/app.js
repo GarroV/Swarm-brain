@@ -189,6 +189,20 @@ const ACTS = {
   "user-profile": (id) => userModal(id),
   "new-user": () => userModal(null),
   "set-cycle": (id) => { S.cycle = id; render(); },
+  "notif-pref": (id) => A.toggleNotifPref(id),
+  reissue: (id) => A.reissueToken(id),
+  tz: (_, v) => { S.tz = v; A.toast(`Часовой пояс: ${v}`); },
+  "reset-cols": () => A.resetCols(),
+  "add-col": () => modal("Новая колонка доски", fld("Название", input("n", "", "Например: На проверке")),
+    `${btn("Отмена", "mclose")}${btn("Добавить", "do-add-col", undefined, undefined, "pri")}`),
+  "do-add-col": () => { const f = formData(); closeModal(); A.addCol(f.n); },
+  "mcp-guide": () => modal("Подключение Claude Desktop", `
+    <div class="hint">Добавьте блок в <code>claude_desktop_config.json</code> и перезапустите Claude Desktop.</div>
+    <pre class="cmd">"swarm-brain": {
+  "command": "npx",
+  "args": ["-y", "mcp-remote", "https://swarm-brain.pages.dev/mcp"],
+  "env": { "SWARM_TOKEN": "${esc(S.tokens[0].v)}" }
+}</pre>`, `${btn("Закрыть", "mclose")}${btn("Скопировать токен", "copy", undefined, S.tokens[0].v, "pri")}`),
   "tgl-nomail": () => { S.noMailOnly = !S.noMailOnly; render(); },
   "save-user": (id) => { const f = formData(); closeModal();
     A.saveUser(id, { n: f.n, role: f.role, em: f.em, tg: f.tg, mk: (f.mk || [])[0] || "RS", note: f.note }); },

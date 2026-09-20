@@ -232,6 +232,17 @@ const BROADCASTS = [
   { at:"2026-09-02", who:501, to:"админы", t:"Обновите bumblebee до build 24." },
 ];
 
+const NOTIF_PREFS = [
+  { id:"tez",     n:"Тезисы готовы",         d:"в Telegram и в колокольчик", on:true },
+  { id:"comment", n:"Комментарии к задачам", d:"в Telegram",                 on:true },
+  { id:"digest",  n:"Ежедневный дайджест",   d:"09:00, будни",               on:true },
+  { id:"remind",  n:"Напоминания по задачам", d:"за день до срока",          on:true },
+  { id:"unread",  n:"Невычитанные встречи",  d:"напоминать через 48 ч",      on:false },
+];
+const TOKENS = [
+  { id:"mcp", n:"MCP-токен для Claude Desktop", v:"smcp_••••••••", at:"1 сен" },
+  { id:"rec", n:"Токен рекордера",              v:"••••••",        at:"12 сен" },
+];
 const INTEGRATIONS = [
   { id:"google",  n:"Google Calendar", st:"on",  d:"ana@imf.example · встречи дня" },
   { id:"granola", n:"Granola",         st:"on",  d:"авто-импорт заметок" },
