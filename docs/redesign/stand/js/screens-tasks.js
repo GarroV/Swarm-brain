@@ -41,6 +41,11 @@ function tasksToolbar() {
 function bulkBar() {
   if (!S.bulk.size) return "";
   const users = S.users.slice(0, 6).map((u) => `<button class="mi" ${act("bulk-assign", u.id)}>${av(u.id)}</button>`).join("");
+  /* в архиве лежит уже заархивированное: кнопка «В архив» там не делала ничего,
+     а единственного нужного действия — вернуть — в панели не было вовсе */
+  if (S.tab === "archive") return `<div class="bulk">Выбрано: ${S.bulk.size}
+    <span class="ib">${btn("Вернуть из архива", "bulk-restore", undefined, undefined, "sm")}</span>
+    <button class="x" ${act("bulk-clear")}>✕</button></div>`;
   return `<div class="bulk">Выбрано: ${S.bulk.size}
     <span class="ib">
       <span class="drop">${btn("Назначить", "noop", undefined, undefined, "sm")}<div class="dmenu">${users}</div></span>

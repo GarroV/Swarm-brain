@@ -128,6 +128,7 @@ const ACTS = {
   "bulk-status": (_, v) => A.bulk("status", v),
   "bulk-label": (_, v) => A.bulk("label", v),
   "bulk-archive": () => A.bulk("archive"),
+  "bulk-restore": () => A.bulk("restore"),
   take: (id) => A.takeTask(+id),
   move: (id, v) => A.moveTask(+id, v),
   archive: (id) => A.archiveTask(+id),

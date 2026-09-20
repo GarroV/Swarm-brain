@@ -679,6 +679,25 @@ function tokenCheck() {
   const afterArch = await count('tbody tr[data-act="open-task"]');
   want(afterArch === beforeArch + 1, `массовый архив сработал (${beforeArch} → ${afterArch})`);
   await shot('06-archive');
+  /* архив без дороги назад — ловушка; «В архив» над уже архивным ничего не делает */
+  await click('tbody tr[data-act="open-task"] input[type=checkbox]');
+  const bulkSaid = await p.$$eval('.bulk .ib button', (b) => b.map((e) => e.textContent.trim()));
+  want(bulkSaid.some((x) => /Вернуть из архива/.test(x)) && !bulkSaid.some((x) => x === 'В архив'),
+    `в архиве массовая панель возвращает, а не архивирует повторно (кнопки: ${bulkSaid.join(', ') || 'нет'})`);
+  await go('bulk-restore');
+  await new Promise((r) => setTimeout(r, 120));
+  const afterRestore = await count('tbody tr[data-act="open-task"]');
+  want(afterRestore === afterArch - 1, `возврат из архива убрал строку из списка (${afterArch} → ${afterRestore})`);
+  /* создание в списке, который созданное не покажет, выглядит как молчаливый отказ */
+  await go('new-task');
+  await p.type('[data-f="title"]', 'Задача, созданная из архива');
+  await go('create-task');
+  await new Promise((r) => setTimeout(r, 140));
+  const seenAfterCreate = await p.evaluate(() => [...document.querySelectorAll('tbody tr[data-act="open-task"]')]
+    .some((tr) => tr.textContent.includes('созданная из архива')));
+  want(seenAfterCreate, 'созданная задача видна в списке, а не только в панели справа');
+  await go('close');
+  await go('tab', 'archive');
   /* пустой срез обязан объяснить себя и вернуть человека к данным */
   await p.type('[data-qin="tasks"]', 'щщщ');
   await new Promise((r) => setTimeout(r, 150));

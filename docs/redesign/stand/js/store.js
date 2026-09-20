@@ -101,6 +101,19 @@ function visibleTasks(list = S.tab) {
     (!S.assignee || t.who.includes(S.assignee)) &&
     (!q || t.t.toLowerCase().includes(q) || projPath(t.pr).toLowerCase().includes(q)));
 }
+/* Созданную задачу видно там, где её создали. Из «Архива» и «Регулярных» новая задача
+   не попадает в текущий список, и вместо своей записи человек видит прежний список —
+   создание выглядит как молчаливый отказ. Поэтому снимаем ровно то, что её прячет. */
+function revealTask(t) {
+  if (S.sec !== "tasks") return;
+  if (!inList(t, S.tab)) S.tab = "all";
+  if (!inLens(t, S.lens)) S.lens = "all";
+  if (!S.statuses.has(t.st)) S.statuses = new Set([...S.statuses, t.st]);
+  if (S.mk && t.mk !== S.mk) S.mk = null;
+  if (S.assignee && !t.who.includes(S.assignee)) S.assignee = null;
+  if (S.noProject && proj(t.pr)) S.noProject = false;
+  if (S.q && !t.t.toLowerCase().includes(S.q.trim().toLowerCase())) S.q = "";
+}
 const countList = (list) => S.tasks.filter((t) => inList(t, list) && inLens(t, S.lens) && (list === "archive" || S.statuses.has(t.st))).length;
 
 /* ── выборка встреч: шесть осей, как в продукте ──────────────── */
@@ -200,6 +213,7 @@ const A = {
     S.tasks = [t, ...S.tasks];
     S.history = { ...S.history, [t.id]: [{ m: 0, who: ME, k: "Создана", v: "вручную" }] };
     A.toast(`Задача ${t.id} создана`);
+    revealTask(t);
     A.select("task", t.id);
   },
   patchTask(id, patch, ev) {
@@ -229,8 +243,10 @@ const A = {
     if (action === "label") S.tasks = S.tasks.map((t) => ids.includes(t.id) ? { ...t, labels: [...new Set([...t.labels, value])] } : t);
     if (action === "status") S.tasks = S.tasks.map((t) => ids.includes(t.id) ? { ...t, st: value } : t);
     if (action === "archive") S.tasks = S.tasks.map((t) => ids.includes(t.id) ? { ...t, arch: true } : t);
+    if (action === "restore") S.tasks = S.tasks.map((t) => ids.includes(t.id) ? { ...t, arch: false } : t);
     S.bulk = new Set();
-    A.toast(`Изменено задач: ${ids.length}`);
+    const said = { archive: "В архив отправлено задач", restore: "Возвращено из архива задач" }[action];
+    A.toast(`${said || "Изменено задач"}: ${ids.length}`);
   },
 
   /* встречи */
