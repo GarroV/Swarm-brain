@@ -170,6 +170,15 @@ function tokenCheck() {
   p.on('pageerror', (e) => errs.push('PAGEERROR: ' + e.message));
   p.on('console', (m) => { if (m.type() === 'error') errs.push('CONSOLE: ' + m.text()); });
   await p.goto(URL, { waitUntil: 'networkidle0' });
+  /* первый замер уходил раньше, чем каркас успевал отрисоваться и применить шрифт:
+     прогон изредка печатал «НЕТ ЭЛЕМЕНТА» и «заголовок колонки обрезан» на ровном
+     месте (примерно раз на восемь прогонов). Проверяющий, который иногда врёт,
+     обесценивает зелёный результат, поэтому ждём готовности явно. */
+  await p.waitForFunction(() => window.__renders > 0
+    && document.querySelector('.bar .drop .btn')
+    && document.querySelector('[data-act="sec"][data-id="map"]'), { timeout: 8000 });
+  await p.evaluate(() => document.fonts && document.fonts.ready);
+  await new Promise((r) => setTimeout(r, 60));
   try {
   /* негативный прогон: ломаем нарочно то, что каждая проверка должна ловить */
   if (process.argv[2] === 'break') await p.addStyleTag({ content: `
