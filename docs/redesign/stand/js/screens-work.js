@@ -85,7 +85,8 @@ function screenPool() {
         ${cell(esc(projPath(i.pr)))}${cell(av(i.own))}
         ${cell(i.tasks.map((id) => `<span class="lnk" ${act("open-task", id)}>${id}</span>`).join(" · "))}
         ${cell(`<span class="due">${i.pts}</span>`, "r")}
-        ${cell(state(IST[i.st], i.st !== "proposed"))}
+        ${/* зелёный — про «дошло до конца», а не про любое непустое состояние */ ""}
+        ${cell(state(IST[i.st], i.st === "accepted" || i.st === "done"))}
         ${cell(i.st === "proposed"
           ? `<span class="ib">${btn("Принять в цикл", "accept-init", i.id, undefined, "sm pri")}${btn("Снять", "drop-init", i.id, undefined, "sm")}</span>`
           : `<span class="muted">—</span>`, "r acts")}</tr>`).join(""));

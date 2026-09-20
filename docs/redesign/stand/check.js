@@ -313,7 +313,21 @@ function tokenCheck() {
     }
     return out;
   });
+  /* одно состояние — один цвет во всём стенде: «в работе» не может быть зелёным в таблице
+     и синим на доске, иначе цвет перестаёт что-либо значить */
+  const stateSeen = new Map();
+  const collectStates = async (name) => {
+    const list = await p.evaluate(() => [...document.querySelectorAll('.state')]
+      .map((e) => [e.textContent.trim(), e.className]));
+    list.forEach(([t, cls]) => {
+      const prev = stateSeen.get(t);
+      if (!prev) stateSeen.set(t, { cls, where: name });
+      else if (prev.cls !== cls)
+        bad.push(`состояние «${t}» покрашено по-разному: «${prev.cls}» на ${prev.where}, «${cls}» на ${name}`);
+    });
+  };
   const shot = async (name) => { await p.screenshot({ path: `${OUT}/${name}.png` });
+    await collectStates(name);
     (await measure()).forEach((m) => bad.push(`${name}: ${m}`)); };
   /* замер без снимка: состояние, которое живёт только между кликами, иначе правилами не проверяется */
   const scan = async (name) => (await measure()).forEach((m) => bad.push(`${name}: ${m}`));
