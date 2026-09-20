@@ -20,6 +20,7 @@ const USERS = [
   { id: 512, n: "Тамара Кнежевич",  i: "ТК", c: "#6B3FA0", role: "hr",      mk: "SI", tg: "@tamara_k", em: "tamara@imf.example" },
 ];
 const ME = 501;
+const CYCLE_ST = { active: "идёт", closed: "закрыт", planned: "запланирован" };
 
 const COUNTRIES = [
   { c: "RS", n: "Сербия" }, { c: "HR", n: "Хорватия" }, { c: "SI", n: "Словения" },
@@ -75,12 +76,12 @@ const TASKS = [
   mkTask({ id:140, t:"Еженедельная сверка кассы", pr:"p3", st:"open", who:[503], due:"2026-09-22", prio:"med", labels:["l4","l10"], mk:"RS", recur:"weekly" }),
   mkTask({ id:141, t:"Подписать договор с поставщиком упаковки", pr:"p3", st:"open", who:[503], due:"2026-09-26", prio:"high", labels:["l1","l6"], mk:"RS", src:"m2", sprint:"c2" }),
   mkTask({ id:142, t:"Провести обучение по новым позициям меню", pr:"p4", st:"open", who:[512], due:"2026-09-29", prio:"med", labels:["l5"], mk:"SI" }),
-  mkTask({ id:143, t:"Ежемесячный отчёт по качеству", pr:"p2b", st:"open", who:[508], due:"2026-10-01", prio:"med", labels:["l4","l10"], mk:"RS", recur:"monthly" }),
+  mkTask({ id:143, t:"Ежемесячный отчёт по качеству", pr:"p2b", st:"open", who:[508], due:"2026-10-01", prio:"med", labels:["l4","l10"], mk:"RS", recur:"monthly", sprint:"c3" }),
   mkTask({ id:144, t:"Проверить работу второй линии выдачи", pr:"p2", st:"open", who:[511], due:"2026-09-24", prio:"low", labels:["l2"], mk:"RS" }),
-  mkTask({ id:145, t:"Согласовать макеты локальной акции", pr:"p6", st:"in_progress", who:[510], due:"2026-09-27", prio:"med", labels:[], mk:"HR" }),
+  mkTask({ id:145, t:"Согласовать макеты локальной акции", pr:"p6", st:"in_progress", who:[510], due:"2026-09-27", prio:"med", labels:[], mk:"HR", sprint:"c3" }),
   mkTask({ id:146, t:"Настроить вебхук Read.ai на новый воркспейс", pr:"p5", st:"in_progress", who:[507], due:"2026-09-23", prio:"med", labels:["l7"], mk:"RS" }),
   mkTask({ id:147, t:"Собрать обратную связь смены за неделю", pr:"p2a", st:"open", who:[511], due:"2026-09-21", prio:"low", labels:["l10"], mk:"RS", recur:"weekly" }),
-  mkTask({ id:148, t:"Проверить сроки по хорватской лицензии", pr:"p1a", st:"open", who:[504], due:"2026-10-05", prio:"med", labels:["l6"], mk:"HR" }),
+  mkTask({ id:148, t:"Проверить сроки по хорватской лицензии", pr:"p1a", st:"open", who:[504], due:"2026-10-05", prio:"med", labels:["l6"], mk:"HR", sprint:"c3" }),
   mkTask({ id:149, t:"Договориться о встрече с арендодателем", pr:"p1a", st:"done", who:[504], due:"2026-09-09", prio:"med", labels:["l3"], mk:"HR" }),
   mkTask({ id:150, t:"Разобрать очередь вычитки за неделю", pr:"p5", st:"open", who:[501], due:"2026-09-20", prio:"med", labels:["l10"], mk:null, recur:"weekly" }),
   mkTask({ id:151, t:"Обновить bumblebee на рабочих ноутбуках", pr:"p5", st:"open", who:[507], due:"2026-09-28", prio:"low", labels:["l7"], mk:"RS" }),

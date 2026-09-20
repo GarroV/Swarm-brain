@@ -188,6 +188,7 @@ const ACTS = {
   "save-label": (id) => { const f = formData(); closeModal(); A.saveLabel(id || null, f.n); },
   "user-profile": (id) => userModal(id),
   "new-user": () => userModal(null),
+  "set-cycle": (id) => { S.cycle = id; render(); },
   "tgl-nomail": () => { S.noMailOnly = !S.noMailOnly; render(); },
   "save-user": (id) => { const f = formData(); closeModal();
     A.saveUser(id, { n: f.n, role: f.role, em: f.em, tg: f.tg, mk: (f.mk || [])[0] || "RS", note: f.note }); },

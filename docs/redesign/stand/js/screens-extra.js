@@ -77,9 +77,13 @@ function recorderModal(kind) {
 
 /* ── таймлайн задач ──────────────────────────────────────────── */
 function screenTimeline() {
-  const list = S.tasks.filter((t) => t.due && !t.arch && S.statuses.has(t.st) && inLens(t, S.lens))
+  const c = cycle();
+  const list = S.tasks.filter((t) => t.due && !t.arch && S.statuses.has(t.st) && inLens(t, S.lens)
+      && t.due >= c.from && t.due <= c.to)
     .sort((a, b) => a.due.localeCompare(b.due));
   const days = [...new Set(list.map((t) => t.due))];
+  if (!days.length) return cycleBar(`<span>Задач со сроком <b>0</b></span>`)
+    + empty("В этом цикле нет задач со сроком", "Выберите другой цикл или поставьте задачам даты");
   return cycleBar(`<span>Задач со сроком <b>${list.length}</b></span>`) + `<div class="tlv">${days.map((day) => {
     const items = list.filter((t) => t.due === day);
     const late = dueKind(day) === "now";
