@@ -59,7 +59,8 @@ function detailMeeting(m) {
   const acts = (m.st === "pending" ? btn("Подтвердить тезисы", "confirm-meet", m.id, undefined, "pri") : "")
     + (m.st === "draft" ? btn("Опубликовать в базу", "publish-draft", m.id, undefined, "pri") : "")
     + btn("Сравнить с транскриптом", "compare", m.id)
-    + btn("Сгенерировать задачи", "extract", m.id)
+    + btn("Задачи из встречи", "harvest", m.id)
+    + (m.st === "pending" ? btn("Следующая", "review-next", m.id) : "")
     + btn("Править тезисы", "edit-tez", m.id);
   const tasks = S.tasks.filter((t) => m.tasks.includes(t.id));
   let body = "";
@@ -83,7 +84,7 @@ function detailMeeting(m) {
           : `<div class="tez">${m.tez.map((s) => `<h5>${esc(s.h)}</h5>${s.li.map((x) => `<li>${esc(x)}</li>`).join("")}`).join("")}</div>`}
         ${lab(`Задачи из встречи · ${tasks.length}`)}
         ${tasks.length ? rows(tasks.map((t) => [String(t.id), `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, state(ST_LABEL[t.st], t.st === "done")]))
-          : rows([["—", "задач нет", btn("Сгенерировать", "extract", m.id, undefined, "sm")]])}`;
+          : rows([["—", "задач нет", btn("Собрать из тезисов", "harvest", m.id, undefined, "sm")]])}`;
   }
   if (S.dtab === "tr") {
     body = `<div class="tr">${m.tr.map(([w, who, text]) =>
@@ -97,7 +98,7 @@ function detailMeeting(m) {
 function detailEntry(e) {
   const files = S.files.filter((f) => f.rec === e.id);
   return dhead(`Запись · ${e.ty}`, e.h,
-    btn("Открыть полностью", "noop", undefined, undefined, "pri") + btn("Переиндексировать", "reindex-entry", e.id)
+    btn("Открыть полностью", "reader", e.id, undefined, "pri") + btn("Переиндексировать", "reindex-entry", e.id)
     + btn("Править", "noop") + btn("Удалить", "del-entry", e.id))
     + `<div class="d-body"><dl class="f">
       <dt>Тип</dt><dd>${tag(e.ty, "p")}</dd><dt>Автор</dt><dd>${av(e.who)}</dd>

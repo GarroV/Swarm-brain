@@ -43,6 +43,7 @@ function cycleBar(extra) {
     <div class="right">${extra || ""}</div></div>`;
 }
 function screenSprints() {
+  if (S.tab === "timeline") return screenTimeline();
   if (S.tab === "pool") return screenPool();
   if (S.tab === "check") return screenCheck();
   if (S.tab === "analytics") return screenAnalytics();

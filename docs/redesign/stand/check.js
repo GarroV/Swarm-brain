@@ -133,8 +133,10 @@ function tokenCheck() {
   await go('open-meet', firstMeet); await shot('08-meeting-detail');
   await go('compare'); await shot('09-compare');
   await go('mclose');
-  await go('extract');
-  want((await text('.toast')).includes('Создано задач'), 'генерация задач из встречи отработала');
+  await go('harvest');
+  await go('do-harvest');
+  await new Promise((r) => setTimeout(r, 120));
+  want((await text('.toast')).includes('Создано задач'), 'сбор задач из встречи отработал');
   await go('confirm-meet', firstMeet);
   await go('tab', 'review');
   want((await count(`tbody tr[data-act="open-meet"][data-id="${firstMeet}"]`)) === 0, 'подтверждённая встреча ушла из вычитки');
@@ -144,6 +146,24 @@ function tokenCheck() {
   await p.$eval('[data-act="q-accept"]', (e) => e.click());
   await new Promise((r) => setTimeout(r, 120));
   want((await count('.qcard')) === q0 - 1, 'агентская встреча опубликована и ушла из очереди');
+
+  /* сбор задач из встречи, чтение записи, таймлайн, метки, профиль */
+  await go('tab', 'review');
+  const anyPending = await p.$$eval('tbody tr[data-act="open-meet"]', (e) => e.length ? e[0].dataset.id : null);
+  if (anyPending) {
+    await go('open-meet', anyPending);
+    await go('harvest');
+    await shot('34-harvest');
+    const tasksBefore = await p.evaluate(() => S.tasks.length);
+    await p.$eval('.hrv .hrow:nth-child(2) input[type=checkbox]', (e) => e.click());
+    await go('do-harvest');
+    await new Promise((r) => setTimeout(r, 120));
+    const tasksAfter = await p.evaluate(() => S.tasks.length);
+    want(tasksAfter === tasksBefore + 1, `сбор задач создал только отмеченные (${tasksBefore} → ${tasksAfter})`);
+    await go('review-next', anyPending);
+    want((await p.evaluate(() => S.sel)) !== anyPending, 'вычитка подряд переключает на следующую встречу');
+    await go('close');
+  }
 
   /* ── база ───────────────────────────────────────────────── */
   await go('sec', 'base'); await shot('12-base');
@@ -158,6 +178,10 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 120));
   want((await text('.d-title')) === 'Заметка со стенда', 'новая запись открылась в детали');
   await go('close');
+  await go('open-entry', 'r2');
+  await go('reader'); await shot('35-reader');
+  want((await count('.reader p')) >= 2, 'запись открывается целиком');
+  await go('mclose'); await go('close');
   await go('tab', 'files'); await shot('13-files');
   await go('open-file', 'f2'); await shot('14-file-detail');
   await go('close');
@@ -179,6 +203,8 @@ function tokenCheck() {
   const doneAfter = await count('[data-drop="done"] .card');
   want(doneAfter === doneBefore + 1, `перетаскивание переносит карточку (${doneBefore} → ${doneAfter})`);
   await shot('19-board-after-drop');
+  await go('tab', 'timeline'); await shot('36-timeline');
+  want((await count('.tday')) > 3, 'таймлайн разложил задачи по дням');
   await go('tab', 'pool'); await shot('20-initiatives');
   const prop = await count('[data-act="accept-init"]');
   await p.$eval('[data-act="accept-init"]', (e) => e.click());
@@ -196,7 +222,19 @@ function tokenCheck() {
   await go('integr', 'granola');
   want((await text('.toast')).includes('переключена'), 'интеграция переключается');
   await go('tab', 'columns'); await shot('27-columns');
+  await go('tab', 'labels'); await shot('37-labels');
+  const labelsBefore = await count('[data-act="rename-label"]');
+  await go('add-label');
+  await p.type('[data-f="n"]', 'приёмка');
+  await go('save-label');
+  await new Promise((r) => setTimeout(r, 90));
+  want((await count('[data-act="rename-label"]')) === labelsBefore + 1, 'метка добавилась');
   await go('sec', 'admin'); await shot('28-admin');
+  await go('user-profile', '504'); await shot('38-user-profile');
+  await p.$eval('[data-f="em"]', (e) => { e.value = 'luka.new@imf.example'; });
+  await go('save-user', '504');
+  await new Promise((r) => setTimeout(r, 90));
+  want((await p.evaluate(() => S.users.find((u) => u.id === 504).em)) === 'luka.new@imf.example', 'профиль в админке сохраняется');
   await go('tab', 'broadcast');
   await go('broadcast');
   await p.type('[data-f="text"]', 'Проверка рассылки со стенда');

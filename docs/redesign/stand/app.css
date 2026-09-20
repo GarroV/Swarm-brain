@@ -407,3 +407,30 @@ td.acts{white-space:nowrap}
 .list th,.list td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .list td.ck{width:34px;overflow:visible;text-overflow:clip}
 .list td.ck input{margin:0;vertical-align:middle}
+
+/* ── сбор задач, чтение, команды, таймлайн ──────────────────── */
+.hrv{display:flex;flex-direction:column;gap:8px}
+.hrow{display:grid;grid-template-columns:22px 1fr 170px 110px;gap:8px;align-items:center}
+.hck input{margin:0}
+.hrow input,.hrow select{width:100%;height:30px;padding:0 9px;border:1px solid var(--line-control);border-radius:7px;
+  background:var(--surface);font:400 var(--fs-dense)/1 var(--font-ui);color:var(--ink)}
+.hrow input:focus,.hrow select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.reader{max-height:440px;overflow:auto;font-size:var(--fs-body);line-height:1.62;color:var(--ink-2)}
+.reader p{margin:0 0 12px}
+.cmd{margin:12px 0;padding:11px 13px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surf-sunken);
+  font:500 var(--fs-dense)/1.5 var(--font-mono);color:var(--ink);white-space:pre-wrap;word-break:break-all}
+.tlv{padding:14px var(--gutter) 28px;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.tday{display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:start}
+.tdh{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border-radius:8px;background:var(--surface-3);
+  font:600 var(--fs-dense)/1 var(--font-ui);color:var(--ink-2)}
+.tday.late .tdh{background:#FDEAEA;color:var(--bad)}
+.tdh .n{margin-left:auto;font:500 var(--fs-num-sm)/1 var(--font-mono);color:var(--ink-3)}
+.tditems{display:flex;flex-direction:column;gap:6px}
+.tdi{display:flex;align-items:center;gap:2px;padding:7px 11px;border:1px solid var(--line);border-radius:8px;
+  background:var(--surface);font-size:var(--fs-dense);color:var(--ink);cursor:pointer}
+.tdi:hover{border-color:var(--accent-line);background:var(--accent-soft)}
+.tdi .who{margin-left:auto}
+.pop .n{position:relative}
+.pop .n .rd{position:absolute;right:10px;top:10px;width:18px;height:18px;border-radius:50%;background:var(--surface-3);
+  color:var(--ink-3);font-size:10px;display:grid;place-items:center}
+.pop .n .rd:hover{background:var(--accent-soft);color:var(--accent)}

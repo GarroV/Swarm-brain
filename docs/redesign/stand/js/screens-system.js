@@ -26,6 +26,7 @@ function screenWorkspaces() {
 /* ── настройки ───────────────────────────────────────────────── */
 function screenSettings() {
   if (S.tab === "columns") return settingsColumns();
+  if (S.tab === "labels") return screenLabels();
   const P = {
     profile: () => rows([
       ["Имя", esc(me().n), btn("Изменить", "noop", undefined, undefined, "sm")],
@@ -44,8 +45,8 @@ function screenSettings() {
       ["MCP-токен для Claude Desktop", "smcp_•••••••• · выпущен 1 сен", btn("Перевыпустить", "noop", undefined, undefined, "sm")],
       ["Инструкция для Claude Desktop", "готова", btn("Открыть", "noop", undefined, undefined, "sm")],
       ["Токен рекордера", "•••••• · build 24", btn("Перевыпустить", "noop", undefined, undefined, "sm")],
-      ["Команда установки bumblebee", "curl … | sh", btn("Скопировать", "noop", undefined, undefined, "sm")],
-      ["Команда обновления bumblebee", "swarm-rec update", btn("Скопировать", "noop", undefined, undefined, "sm")],
+      ["Команда установки bumblebee", "curl … | sh", btn("Показать", "rec-install", undefined, undefined, "sm")],
+      ["Команда обновления bumblebee", "swarm-rec update", btn("Показать", "rec-update", undefined, undefined, "sm")],
     ]),
     notif: () => rows([
       ["Тезисы готовы", "в Telegram и в колокольчик", btn("Выключить", "noop", undefined, undefined, "sm")],
@@ -82,7 +83,7 @@ function screenAdmin() {
       S.users.map((u) => `<tr class="row">${cell(av(u.id), "t")}${cell(ROLE[u.role] || u.role)}
         ${cell(`<span class="cc">${u.mk}</span>`)}${cell(u.em ? esc(u.em) : state("не привязана", false))}
         ${cell(`<span class="muted">—</span>`)}
-        ${cell(`<span class="ib">${btn("Профиль", "noop", undefined, undefined, "sm")}${btn("Привязать почту", "noop", undefined, undefined, "sm")}
+        ${cell(`<span class="ib">${btn("Профиль", "user-profile", u.id, undefined, "sm")}${btn("Привязать почту", "user-profile", u.id, undefined, "sm")}
           ${btn("Удалить", "noop", undefined, undefined, "sm")}</span>`, "r acts")}</tr>`).join(""));
 }
 function screenBroadcast() {
@@ -127,7 +128,8 @@ function screenMap() {
 /* ── шапка: колокольчик, дайджест, меню ──────────────────────── */
 function renderHeaderPopovers() {
   $(".pop").innerHTML = `<h4>Уведомления ${btn("Прочитать все", "readall", undefined, undefined, "sm")}</h4>
-    ${S.notif.map((n) => `<div class="n${n.unread ? " unread" : ""}" ${act(n.go[0] === "tasks" ? "open-task" : "open-meet", n.go[1])}>
+    ${S.notif.map((n, i) => `<div class="n${n.unread ? " unread" : ""}" ${act(n.go[0] === "tasks" ? "open-task" : "open-meet", n.go[1])}>
+      <button class="rd" ${act("read-one", i)} title="отметить прочитанным">✓</button>
       <b>${esc(n.t)}</b>${esc(n.s)}<div class="w">${esc(n.w)}</div></div>`).join("")}`;
   const over = S.tasks.filter((t) => dueKind(t.due) === "now" && t.who.includes(ME) && !t.arch);
   $(".dig").innerHTML = `<h4>Дайджест на сегодня</h4>

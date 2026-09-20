@@ -48,7 +48,7 @@ const pick = (name, opts, selected) => `<div class="pick" data-pick="${name}">${
 const sw = (name, on, text) => `<div class="sw${on ? " on" : ""}" data-sw="${name}"><i></i>${esc(text)}</div>`;
 const formData = () => {
   const o = {};
-  $$(".modal [data-f]").forEach((e) => { o[e.dataset.f] = e.value; });
+  $$(".modal [data-f]").forEach((e) => { o[e.dataset.f] = e.type === "checkbox" ? e.checked : e.value; });
   $$(".modal [data-pick]").forEach((p) => { o[p.dataset.pick] = [...p.querySelectorAll(".chip.on")].map((c) => c.dataset.v); });
   $$(".modal [data-sw]").forEach((s) => { o[s.dataset.sw] = s.classList.contains("on"); });
   return o;

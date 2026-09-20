@@ -48,7 +48,7 @@ function screenMeetings() {
   const list = visibleMeetings(S.tab);
   const strip = S.tab === "review" && list.length
     ? `<div class="review">Невычитанных встреч: ${list.length}. Тезисы готовы, ждут подтверждения.
-       ${btn("Вычитать подряд", "open-meet", list[0].id, undefined, "sm")}</div>` : "";
+       ${btn("Вычитать подряд", "review-next", "", undefined, "sm")}</div>` : "";
   const head = meetBar() + (S.tab === "draft" ? dupStrip() + lab("Черновики без разбора") : strip);
   if (!list.length) return head + empty("Встреч в этом срезе нет", mfActive() ? "Сбросьте фильтры" : "Записи появятся после bumblebee, Granola или Read.ai");
   return head + table([{ t: "Встреча", w: "36%" }, { t: "Когда" }, { t: "Участники" }, { t: "Источник" },

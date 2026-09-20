@@ -19,12 +19,12 @@ const NAVFOOT = [
 const TABS = {
   tasks: [["today", "Сегодня"], ["upcoming", "Ближайшие"], ["all", "Все"], ["recurring", "Регулярные"], ["archive", "Архив"]],
   projects: [["list", "Список"], ["map", "Карта проектов"]],
-  sprints: [["board", "Доска"], ["pool", "Инициативы"], ["check", "Чек цикла"], ["analytics", "Аналитика"], ["journal", "Журнал"]],
+  sprints: [["board", "Доска"], ["timeline", "Таймлайн"], ["pool", "Инициативы"], ["check", "Чек цикла"], ["analytics", "Аналитика"], ["journal", "Журнал"]],
   meetings: [["review", "Вычитка"], ["all", "Все встречи"], ["draft", "Черновики bumblebee"], ["queue", "Очередь агента"]],
   base: [["all", "Все записи"], ["meeting", "Встречи"], ["document", "Документы"], ["note", "Заметки"],
          ["transcript", "Транскрипты"], ["summary", "Сводки"], ["link", "Ссылки"], ["files", "Файлы"]],
   team: [["members", "Участники"], ["ws", "Воркспейсы"]],
-  settings: [["profile", "Профиль"], ["integr", "Интеграции"], ["tokens", "Доступы"], ["notif", "Уведомления"], ["columns", "Колонки доски"]],
+  settings: [["profile", "Профиль"], ["integr", "Интеграции"], ["tokens", "Доступы"], ["notif", "Уведомления"], ["columns", "Колонки доски"], ["labels", "Метки"]],
   admin: [["users", "Пользователи"], ["ws", "Воркспейсы"], ["broadcast", "Рассылка"], ["feedback", "Фидбек"]],
 };
 const TITLES = {
@@ -164,6 +164,24 @@ const ACTS = {
   "send-fb": () => { const f = formData(); closeModal(); A.addFeedback((f.cat || [])[0] || "other", f.text); },
   "new-ws": () => wsModal(),
   "do-ws": () => { const f = formData(); closeModal(); A.addWorkspace(f.id, f.name); },
+  harvest: (id) => harvestModal(id),
+  "do-harvest": (id, n) => { const f = formData(); closeModal();
+    const items = []; for (let i = 0; i < +n; i++) if (f["on" + i]) items.push({ t: f["t" + i], who: +f["w" + i], due: f["d" + i] });
+    if (!items.length) return A.toast("Ничего не выбрано");
+    A.harvest(id, items); },
+  "review-next": (id) => reviewNext(id),
+  reader: (id) => readerModal(id),
+  "add-label": () => labelModal(null),
+  "rename-label": (id) => labelModal(id),
+  "del-label": (id) => A.delLabel(id),
+  "save-label": (id) => { const f = formData(); closeModal(); A.saveLabel(id || null, f.n); },
+  "user-profile": (id) => userModal(id),
+  "save-user": (id) => { const f = formData(); closeModal();
+    A.saveUser(id, { n: f.n, role: f.role, em: f.em, tg: f.tg, mk: (f.mk || [])[0] || "RS" }); },
+  "rec-install": () => recorderModal("install"),
+  "rec-update": () => recorderModal("update"),
+  copy: (_, v) => { navigator.clipboard && navigator.clipboard.writeText(v).catch(() => {}); closeModal(); A.toast("Скопировано в буфер"); },
+  "read-one": (i) => A.readOne(i),
   theme: () => A.theme(),
   lang: () => A.lang(),
   readall: () => A.readAll(),

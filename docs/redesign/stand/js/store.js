@@ -235,6 +235,27 @@ const A = {
     A.toast("Интеграция переключена");
   },
   addWorkspace(id, name) { S.workspaces = [...S.workspaces, { id, name, users: 0, tasks: 0, entries: 0, active: false }]; A.toast("Воркспейс создан"); },
+  harvest(id, items) {
+    const made = items.map((x) => mkTask({ id: nextTaskId++, t: x.t, pr: "p1", who: [x.who], due: x.due, prio: "med", src: id }));
+    S.tasks = [...made, ...S.tasks];
+    S.meetings = S.meetings.map((m) => m.id === id ? { ...m, tasks: [...m.tasks, ...made.map((t) => t.id)] } : m);
+    A.toast(`Создано задач: ${made.length}`);
+  },
+  saveLabel(id, n) {
+    if (!n.trim()) return A.toast("Нужно название");
+    S.labels = id ? S.labels.map((l) => l.id === id ? { ...l, n } : l) : [...S.labels, { id: uid("l"), n, ic: "tag" }];
+    A.toast("Метка сохранена");
+  },
+  delLabel(id) {
+    S.labels = S.labels.filter((l) => l.id !== id);
+    S.tasks = S.tasks.map((t) => t.labels.includes(id) ? { ...t, labels: t.labels.filter((x) => x !== id) } : t);
+    A.toast("Метка удалена и снята с задач");
+  },
+  saveUser(id, patch) {
+    S.users = S.users.map((u) => u.id === +id ? { ...u, ...patch } : u);
+    A.toast("Профиль сохранён");
+  },
+  readOne(i) { S.notif = S.notif.map((n, k) => k === +i ? { ...n, unread: false } : n); render(); },
   theme() {
     S.theme = S.theme === "light" ? "dark" : "light";
     document.documentElement.dataset.theme = S.theme;
