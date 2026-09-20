@@ -149,6 +149,9 @@ tbody tr.sel td.t{font-weight:600}
 .card:hover{border-color:var(--line-strong);box-shadow:0 2px 6px rgba(27,32,40,.07)}
 .card .m{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:var(--fs-micro);color:var(--ink-3)}
 /* карточки записей базы */
+/* вторая строка в ячейке названия: фрагмент записи даёт узнавание, не съедая строку целиком */
+.list td.t .sub{display:block;color:var(--ink-3);font-size:var(--fs-meta);margin-top:1px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:10px;padding:14px var(--gutter);overflow:auto}
 .rec{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 13px}
 .rec:hover{border-color:var(--line-strong);box-shadow:0 2px 8px rgba(27,32,40,.06)}

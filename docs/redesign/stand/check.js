@@ -548,9 +548,9 @@ function tokenCheck() {
 
   /* ── база ───────────────────────────────────────────────── */
   await go('sec', 'base'); await shot('12-base');
-  const recs = await count('.rec');
+  const recs = await count('tbody tr[data-act="open-entry"]');
   await gov('b-cc', 'HR');
-  const hr = await count('.rec');
+  const hr = await count('tbody tr[data-act="open-entry"]');
   want(hr < recs, `фильтр по стране сузил базу (${recs} → ${hr})`);
   await gov('b-cc', '');
   await go('new-entry');

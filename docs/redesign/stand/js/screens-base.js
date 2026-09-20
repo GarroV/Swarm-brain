@@ -20,10 +20,23 @@ function screenBase() {
   if (S.tab === "files") return baseBar() + screenFiles();
   const list = visibleEntries(S.tab);
   if (!list.length) return baseBar() + empty("Записей нет", "Смените тип, страну или поиск");
-  return baseBar() + `<div class="grid">${list.map((e) => `<div class="rec${S.sel === e.id && S.selKind === "entry" ? " sel" : ""}" ${act("open-entry", e.id)} tabindex="0">
-    <h4>${esc(e.h)}${e.priv ? ' <span class="lock">🔒</span>' : ""}</h4><p>${esc(e.p)}</p>
-    <div class="m">${tag(TY_LABEL[e.ty], TY_KIND[e.ty])}${cc(e.cc)}<span class="dt">${fmtDate(e.at)}</span>
-      <span class="who">${av(e.who, false)}</span></div></div>`).join("")}</div>`;
+  /* однородные записи — таблицей, как задачи и встречи: карточками четырнадцать записей
+     занимали четыре ряда по 118px, рвали заголовки многоточием и читались хуже столбцов.
+     Карточка остаётся там, где содержимое разнородное (дайджест, аналитика). */
+  return baseBar() + table(
+    [{ t: "Запись", w: "38%" }, { t: "Тип", w: "13%" }, { t: "Рынок", w: "94px", opt: true },
+     { t: "Автор", w: "16%", opt: true }, { t: "Файлов", r: true, w: "78px", short: "Файл", opt: true },
+     { t: "Добавлена", r: true, w: "106px", short: "Когда" }],
+    list.map((e) => {
+      const files = S.files.filter((f) => f.rec === e.id).length;
+      return `<tr class="row${S.sel === e.id && S.selKind === "entry" ? " sel" : ""}" ${act("open-entry", e.id)} tabindex="0">
+        ${cell(`${esc(e.h)}${e.priv ? ' <span class="lock" title="личная">🔒</span>' : ""}<span class="sub">${esc(clip(e.p, 78))}</span>`, "t")}
+        ${cell(tag(TY_LABEL[e.ty], TY_KIND[e.ty]))}
+        ${cell(e.cc.length ? cc(e.cc) : `<span class="muted">—</span>`, "opt")}
+        ${cell(avShort(e.who), "opt")}
+        ${cell(files ? `<span class="due">${files}</span>` : `<span class="muted">—</span>`, "r opt")}
+        ${cell(dt(e.at), "r")}</tr>`;
+    }).join(""));
 }
 
 function screenFiles() {
