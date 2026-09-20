@@ -79,6 +79,13 @@ function tokenCheck() {
       if (e.offsetHeight > lh * 1.75 + 6)
         out.push('подвал карточки перенёсся: «' + e.textContent.trim().slice(0, 24) + '» h=' + e.offsetHeight);
     });
+    /* зачёркнутый текст — только у намеренно снятого (.dropped).
+       Иначе это столкновение имён классов: новый .off перекрасил .state.off */
+    document.querySelectorAll('.body *, .detail *').forEach((e) => {
+      if (!e.offsetParent) return;
+      if (getComputedStyle(e).textDecorationLine.includes('line-through') && !e.closest('.dropped'))
+        out.push('зачёркнуто без причины: ' + e.textContent.trim().slice(0, 24));
+    });
     /* заголовок колонки обрезан — колонку сделали уже её же названия */
     document.querySelectorAll('th').forEach((th) => {
       if (th.textContent.trim() && th.scrollWidth > th.clientWidth + 1)
@@ -225,7 +232,7 @@ function tokenCheck() {
   const proposed = await p.evaluate((id) => S.queue.find((q) => q.id === id).tasks.length, qid);
   await p.$eval('[data-act="q-task-off"]', (e) => e.click());
   await new Promise((r) => setTimeout(r, 90));
-  want((await count('.off')) >= 1, 'предложенную задачу можно снять до публикации');
+  want((await count('.dropped')) >= 1, 'предложенную задачу можно снять до публикации');
   const tasksBefore = await p.evaluate(() => S.tasks.length);
   await p.$eval('[data-act="q-accept"]', (e) => e.click());
   await new Promise((r) => setTimeout(r, 120));

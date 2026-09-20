@@ -75,7 +75,7 @@ function detailMeeting(m) {
       + (m.st === "draft" ? `<div class="warn">Черновик рекордера: тезисов ещё нет, в базу не попал.</div>` : "")
       + `<dl class="f"><dt>Участники</dt><dd>${m.who.map((i) => esc(user(i).n)).join(", ")}</dd>
         <dt>Когда</dt><dd><span class="due">${esc(fmtDT(m.dt))}</span></dd>
-        <dt>Длительность</dt><dd><span class="due">${m.dur} мин</span></dd>
+        <dt>Длительность</dt><dd><span class="due">${m.dur}</span><span class="unit">мин</span></dd>
         <dt>Источник</dt><dd>${tag(m.src, "m")}</dd>
         <dt>Хранилище</dt><dd>${["shared", "personal"].map((s) => `<button class="mini${m.store === s ? " on" : ""}" ${act("set-store", m.id, s)}>${s === "shared" ? "Общее" : "Личное"}</button>`).join("")}</dd>
         <dt>Страны</dt><dd>${COUNTRIES.map((c) => `<button class="mini${m.cc.includes(c.c) ? " on" : ""}" ${act("tgl-mcc", m.id, c.c)}>${c.c}</button>`).join("")}</dd>

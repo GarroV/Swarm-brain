@@ -50,7 +50,7 @@ h1{font-size:var(--fs-display);font-weight:700;letter-spacing:-.02em}
 .tab{position:relative;padding:9px 11px 10px;font-size:var(--fs-dense);color:var(--ink-3);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:default}
 .tab:hover{color:var(--ink)}
 .tab.on{color:var(--ink);font-weight:600;border-bottom-color:var(--accent)}
-.tab .c{font:500 var(--fs-micro)/1 var(--font-num);color:var(--ink-empty);margin-left:5px}
+.tab .c{font:500 var(--fs-micro)/1 var(--font-num);color:var(--ink-empty);margin-left:7px}
 
 .bar{display:flex;align-items:center;gap:6px;padding:9px var(--gutter);border-bottom:1px solid var(--line);background:var(--surface-2)}
 .chip{display:flex;align-items:center;gap:5px;height:26px;padding:0 9px;border:1px solid var(--line-control);border-radius:13px;background:var(--surface);font-size:var(--fs-meta);color:var(--ink-2);cursor:default}
@@ -472,7 +472,7 @@ td.acts{white-space:nowrap}
 .cal{min-width:0;max-width:100%}
 .main>*{min-width:0}
 .chip,.btn,.tab,.hbtn,.mini,.tdh,.cev{white-space:nowrap;flex:none}
-.dtab .c{margin-left:5px;font:500 var(--fs-num-sm)/1 var(--font-mono);color:var(--ink-3)}
+.dtab .c{margin-left:7px;font:500 var(--fs-num-sm)/1 var(--font-mono);color:var(--ink-3)}
 .dtab.on .c{color:var(--accent)}
 
 /* кнопка-починка: действие, которого система ждёт от админа */
@@ -485,7 +485,7 @@ td.acts{white-space:nowrap}
 .chip .av{margin-right:5px;vertical-align:-4px}
 
 /* снятая из публикации предложенная задача */
-.off{color:var(--ink-3);text-decoration:line-through}
+.dropped{color:var(--ink-3);text-decoration:line-through}
 
 /* единица измерения рядом с числом: моношрифт только на цифре */
 .unit{margin-left:4px;font-size:var(--fs-micro);color:var(--ink-3)}
