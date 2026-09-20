@@ -77,6 +77,19 @@ function render() {
   $(".bell .b").style.display = unread ? "" : "none";
   $(".toast").textContent = S.toast || "";
   $(".toast").classList.toggle("open", !!S.toast);
+  titleClipped();
+}
+
+/* Плотная таблица режет длинное значение многоточием средствами CSS, и человек видит
+   «регулярно ⋯» без возможности узнать, что скрыто. Ширину колонки в разметке не
+   предскажешь — её знает только браузер, поэтому после отрисовки проходим по ячейкам
+   и тем, что реально не поместились, отдаём полный текст подсказкой. */
+function titleClipped() {
+  document.querySelectorAll(".body td, .detail td").forEach((td) => {
+    const full = td.textContent.trim();
+    if (td.scrollWidth > td.clientWidth + 1 && full) td.title = full;
+    else if (td.title && td.title === full) td.removeAttribute("title");
+  });
 }
 
 /* ── один обработчик на все действия ─────────────────────────── */

@@ -409,6 +409,21 @@ function tokenCheck() {
         if (m) { out.push(`дробное число через точку: «${m[0]}» в «${n.textContent.trim().slice(0, 32)}»`); break; }
       }
     }
+    /* содержимое ячейки, обрезанное CSS: человек видит «регулярно ⋯» и не может ни
+       прочитать скрытое, ни узнать, сколько его. Обрезка допустима только осознанная —
+       через clip(), которая ставит «…» в САМ ТЕКСТ и сообщает целое в title. */
+    {
+      const clipped = [...document.querySelectorAll('td, .cell, .chipwrap')].filter((e) => {
+        if (e.offsetParent === null) return false;
+        if (e.scrollWidth <= e.clientWidth + 1) return false;
+        const t = e.textContent.trim();
+        /* подсказка засчитывается, только если несёт ВЕСЬ текст: «подробнее» в title
+           скрытого не возвращает */
+        return !t.endsWith('…') && e.title !== t;
+      });
+      clipped.slice(0, 3).forEach((e) => out.push(
+        `содержимое обрезано без следа: «${e.textContent.trim().slice(0, 40)}» (видно ${e.clientWidth}px из ${e.scrollWidth}px)`));
+    }
     return out;
   });
   /* одно состояние — один цвет во всём стенде: «в работе» не может быть зелёным в таблице
