@@ -67,7 +67,7 @@ function screenSprints() {
       const items = inCycle.filter((t) => t.st === c.id);
       return `<div class="col"><h3>${dot(c.id)}${c.n}<span class="n">${items.length}</span></h3>
         <div class="cards" data-drop="${c.id}">${items.map((t) => `<div class="card" draggable="true" data-card="${t.id}" ${act("open-task", t.id)} tabindex="0">
-          ${priMark(t.prio)}${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">—</span>`}
+          ${priMark(t.prio)}${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">не назначен</span>`}
           <span style="margin-left:auto">${due(t.due, t.st === "done")}</span></div></div>`).join("")
           || `<div class="drop-empty">перетащите сюда</div>`}
           <input class="qadd" placeholder="+ задача в «${esc(c.n)}»" data-qadd="${c.id}"></div></div>`;
@@ -78,15 +78,17 @@ const IST = { proposed: "предложена", accepted: "принята", in_p
 function screenPool() {
   if (!S.initiatives.length) return cycleBar() + empty("Инициатив пока нет", "Сюда попадают предложения, которые ещё не взяли в цикл");
   return cycleBar(`<span>Предложено <b>${S.initiatives.filter((i) => i.st === "proposed").length}</b></span>`)
-    + table([{ t: "Инициатива", w: "28%" }, { t: "Проект", w: "18%" }, { t: "Владелец", w: "17%" }, { t: "Задачи", w: "12%" }, { t: "Баллы", r: true, w: "80px" }, { t: "Решение", r: true, w: "220px" }],
+    + table([{ t: "Инициатива", w: "28%" }, { t: "Проект", w: "18%" }, { t: "Владелец", w: "17%" }, { t: "Задачи", w: "12%" }, { t: "Баллы", r: true, w: "80px" }, { t: "Статус" }, { t: "Решение", r: true, w: "220px" }],
+      /* статус инициативы уже написан словом в колонке «Решение», второй раз точкой не повторяем */
       S.initiatives.map((i) => `<tr class="row">
-        ${cell(esc(i.t), "t")}   /* статус инициативы уже написан словом в колонке «Решение» */
+        ${cell(esc(i.t), "t")}
         ${cell(esc(projPath(i.pr)))}${cell(av(i.own))}
         ${cell(i.tasks.map((id) => `<span class="lnk" ${act("open-task", id)}>${id}</span>`).join(" · "))}
         ${cell(`<span class="due">${i.pts}</span>`, "r")}
+        ${cell(state(IST[i.st], i.st !== "proposed"))}
         ${cell(i.st === "proposed"
           ? `<span class="ib">${btn("Принять в цикл", "accept-init", i.id, undefined, "sm pri")}${btn("Снять", "drop-init", i.id, undefined, "sm")}</span>`
-          : state(IST[i.st], i.st !== "proposed"), "r acts")}</tr>`).join(""));
+          : `<span class="muted">—</span>`, "r acts")}</tr>`).join(""));
 }
 
 function screenCheck() {

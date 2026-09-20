@@ -260,6 +260,34 @@ function tokenCheck() {
       const on = b.querySelectorAll('.chip.on').length;
       if (on > 1) out.push(`в поле «${b.dataset.pick}» отмечено ${on} значения, а хранится одно`);
     });
+
+    /* код, просочившийся в интерфейс: комментарий, невыполненная подстановка, «undefined».
+       Это ловится только по тексту — ни одно правило вёрстки такого не видит */
+    {
+      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      const seen = new Set();
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        if (n.parentElement && n.parentElement.closest('pre, code, script, style')) continue;
+        const t = n.textContent;
+        const hit = ['/*', '*/', '${', '[object Object]', 'undefined', 'NaN'].find((x) => t.includes(x));
+        if (hit && !seen.has(hit)) { seen.add(hit);
+          out.push(`в интерфейс попал код («${hit}»): ${t.trim().slice(0, 48)}`); }
+      }
+    }
+
+    /* колонка, где у одних строк кнопка, а у других — слово состояния: заголовок обещает одно,
+       а показывает то действие, то статус (и у части строк состояние вообще не названо) */
+    document.querySelectorAll('table').forEach((tb) => {
+      const heads = [...tb.querySelectorAll('thead th')].map((t) => t.textContent.trim());
+      const rows = [...tb.querySelectorAll('tbody tr')].filter((r) => !r.classList.contains('sect'));
+      heads.forEach((h, i) => {
+        let btns = 0, states = 0;
+        rows.forEach((r) => { const td = r.children[i]; if (!td) return;
+          if (td.querySelector('button')) btns++;
+          if (td.querySelector('.state')) states++; });
+        if (btns && states) out.push(`колонка «${h}»: то кнопка, то состояние (${btns}/${states})`);
+      });
+    });
     return out;
   });
   const shot = async (name) => { await p.screenshot({ path: `${OUT}/${name}.png` });
