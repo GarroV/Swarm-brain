@@ -163,9 +163,17 @@ function tokenCheck() {
   await go('tab', 'draft'); await shot('10-drafts');
   await go('tab', 'queue'); await shot('11-agent-queue');
   const q0 = await count('.qcard');
+  const qid = await p.$eval('[data-act="q-accept"]', (e) => e.dataset.id);
+  const proposed = await p.evaluate((id) => S.queue.find((q) => q.id === id).tasks.length, qid);
+  await p.$eval('[data-act="q-task-off"]', (e) => e.click());
+  await new Promise((r) => setTimeout(r, 90));
+  want((await count('.off')) >= 1, 'предложенную задачу можно снять до публикации');
+  const tasksBefore = await p.evaluate(() => S.tasks.length);
   await p.$eval('[data-act="q-accept"]', (e) => e.click());
   await new Promise((r) => setTimeout(r, 120));
+  const made = (await p.evaluate(() => S.tasks.length)) - tasksBefore;
   want((await count('.qcard')) === q0 - 1, 'агентская встреча опубликована и ушла из очереди');
+  want(made === proposed - 1, `публикация создаёт только оставленные задачи (предложено ${proposed}, создано ${made})`);
 
   /* сбор задач из встречи, чтение записи, таймлайн, метки, профиль */
   await go('tab', 'review');

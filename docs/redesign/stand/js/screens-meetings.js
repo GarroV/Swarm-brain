@@ -66,10 +66,13 @@ function screenQueue() {
       <div class="qcols">
         <div><div class="lab">Предложенные тезисы</div><div class="tez">${q.tez.map((s) =>
           `<h5>${esc(s.h)}</h5>${s.li.map((x) => `<li>${esc(x)}</li>`).join("")}`).join("")}</div></div>
-        <div><div class="lab">Предложенные задачи · ${q.tasks.length}</div>
-          ${rows(q.tasks.map((t) => [esc(t.t), `${user(t.who).n} · ${fmtDate(t.due)}`, ""]))}</div>
+        <div><div class="lab">Предложенные задачи · ${q.tasks.filter((t) => t.off !== true).length} из ${q.tasks.length}</div>
+          ${rows(q.tasks.map((t, i) => [
+            `<span class="${t.off ? "off" : ""}">${esc(t.t)}</span>`,
+            `<span class="${t.off ? "off" : ""}">${user(t.who).n} · ${fmtDate(t.due)}</span>`,
+            btn(t.off ? "Вернуть" : "Убрать", "q-task-off", q.id, String(i), "sm")]))}</div>
       </div>
-      <div class="qacts">${btn("Опубликовать в общее", "q-accept", q.id, "shared", "pri")}
+      <div class="qacts">${btn(`Опубликовать в общее${q.tasks.filter((t) => !t.off).length ? ` · задач ${q.tasks.filter((t) => !t.off).length}` : " без задач"}`, "q-accept", q.id, "shared", "pri")}
         ${btn("В личное хранилище", "q-accept", q.id, "personal")}
         ${btn("Отклонить", "q-reject", q.id)}</div></div>`).join("")}</div>`;
 }

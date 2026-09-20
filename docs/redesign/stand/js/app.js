@@ -159,6 +159,7 @@ const ACTS = {
     render(); },
   "drop-assignee": () => { S.assignee = null; render(); },
   "switch-ws": (id) => A.switchWorkspace(id),
+  "q-task-off": (id, v) => A.queueTaskOff(id, v),
   "carry-over": () => A.carryOver(),
   "regen-tez": (id) => { const ta = $(".modal [data-f=\"tez\"]");
     if (ta) ta.value = ta.value.replace(/\s+$/, "") + "\n\nПереписано моделью: формулировки сведены к решениям и договорённостям, повторы убраны.";

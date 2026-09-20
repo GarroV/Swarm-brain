@@ -200,11 +200,16 @@ const A = {
   queueAccept(id, store) {
     const q = S.queue.find((x) => x.id === id);
     const m = mkMeet({ id: uid("m"), t: q.t, dt: q.dt, dur: 30, who: q.who, src: "agent", st: "confirmed", store, cc: q.cc, tez: q.tez, tasks: [] });
-    const made = q.tasks.map((x) => mkTask({ id: nextTaskId++, t: x.t, pr: "p1", who: [x.who], due: x.due, src: m.id }));
+    const made = q.tasks.filter((x) => !x.off).map((x) => mkTask({ id: nextTaskId++, t: x.t, pr: "p1", who: [x.who], due: x.due, src: m.id }));
     S.meetings = [m, ...S.meetings];
     S.tasks = [...made, ...S.tasks];
     S.queue = S.queue.filter((x) => x.id !== id);
     A.toast(`Опубликовано, задач создано: ${made.length}`);
+  },
+  queueTaskOff(id, i) {
+    S.queue = S.queue.map((q) => q.id !== id ? q
+      : { ...q, tasks: q.tasks.map((t, k) => k === +i ? { ...t, off: !t.off } : t) });
+    render();
   },
   queueReject(id) { S.queue = S.queue.filter((x) => x.id !== id); A.toast("Отклонено, в базу не попало"); },
 

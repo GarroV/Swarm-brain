@@ -477,3 +477,6 @@ td.acts{white-space:nowrap}
 .chip .x{margin-left:6px;color:var(--ink-3);font-weight:600}
 .chip.on .x{color:inherit;opacity:.7}
 .chip .av{margin-right:5px;vertical-align:-4px}
+
+/* снятая из публикации предложенная задача */
+.off{color:var(--ink-3);text-decoration:line-through}
