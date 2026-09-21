@@ -87,9 +87,9 @@ function screenTimeline() {
   const outside = S.tasks.filter((t) => seen(t) && t.sprint !== c.id && t.due >= c.from && t.due <= c.to).length;
   const note = outside ? `<span>Со сроком в эти даты, но вне цикла: <b>${outside}</b></span>` : "";
   const days = [...new Set(list.map((t) => t.due))];
-  if (!days.length) return cycleBar(`<span>Задач со сроком <b>0</b></span>${note}`)
+  if (!days.length) return sprintBar(`<span>Задач со сроком <b>0</b></span>${note}`)
     + empty("В этом цикле нет задач со сроком", "Выберите другой цикл или поставьте задачам даты");
-  return cycleBar(`<span>Задач со сроком <b>${list.length}</b></span>${note}`) + `<div class="tlv">${days.map((day) => {
+  return sprintBar(`<span>Задач со сроком <b>${list.length}</b></span>${note}`) + `<div class="tlv">${days.map((day) => {
     const items = list.filter((t) => t.due === day);
     /* день красный только пока в нём есть незакрытая задача: у сделанной срок уже ничего не требует */
     const late = dueKind(day) === "now" && items.some((t) => t.st !== "done");
@@ -124,17 +124,6 @@ function linkModal(id) {
     `${btn("Отмена", "mclose")}${btn("Связать", "do-link", id, undefined, "pri")}`);
 }
 
-/* ── приёмка инициативы в цикл ───────────────────────────────── */
-function acceptModal(id) {
-  const i = S.initiatives.find((x) => x.id === id);
-  modal(`Принять в цикл · ${i.t}`, `
-    <div class="two">${fld("Владелец", select("own", S.users.map((u) => [String(u.id), u.n]), String(i.own)))}
-      ${fld("Оценка, очков", input("pts", String(i.pts)))}</div>
-    ${fld("В какой цикл", select("cyc", S.cycles.map((c) => [c.id, `${c.n} · ${c.st}`]), S.cycle))}
-    ${rows(i.tasks.map((t) => [String(t), esc((S.tasks.find((x) => x.id === t) || {}).t || ""), ""]))}
-    <div class="hint">Задачи инициативы попадут на доску текущего цикла.</div>`,
-    `${btn("Отмена", "mclose")}${btn("Принять", "do-accept", id, undefined, "pri")}`);
-}
 
 /* ── админ: счётчики вычитки ─────────────────────────────────── */
 function screenReviewCounts() {

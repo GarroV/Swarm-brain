@@ -16,6 +16,9 @@ const S = {
   assignee: null, activeOnly: false, showClosed: false,
   /* спринты */
   cycle: "c2", cycles: CYCLES.slice(), board: { drag: null },
+  /* спринты: пространство, состав (sprint_items), группировка, пул набора, отчёт */
+  space: "sp1", spaces: SPACES.slice(), items: SITEMS.slice(), group: "ini",
+  poolOpen: false, poolPr: "", poolWho: "", poolQ: "", report: false,
   /* доска проектов: вкладки досок (в продукте — таблица sprints), какие проекты раскрыты */
   boards: BOARDS.slice(), boardTab: "b1", openProj: new Set(["p1"]), subOpen: new Set(),
   /* система */
@@ -25,7 +28,7 @@ const S = {
   projects: PROJECTS.slice(), comments: { ...COMMENTS }, history: { ...HISTORY },
   notif: NOTIF.slice(), feedback: FEEDBACK.slice(), queue: AGENT_QUEUE.slice(),
   notifPrefs: NOTIF_PREFS.slice(), tokens: TOKENS.slice(),
-  initiatives: INITIATIVES.slice(), broadcasts: BROADCASTS.slice(),
+  broadcasts: BROADCASTS.slice(),
   integrations: INTEGRATIONS.slice(), workspaces: WORKSPACES.slice(), labels: LABELS.slice(),
   users: USERS.slice(),
 };
@@ -91,9 +94,12 @@ function projectTasks(id) {
   return S.tasks.filter((t) => !t.arch && (t.pr === id || subs.includes(t.pr)));
 }
 
-/* Задачи цикла — одно определение на все его вкладки: доска брала без архивных, а чек
-   цикла и аналитика — с архивными, и три вкладки одного экрана расходились в числах. */
-const cycleTasks = (id = S.cycle) => S.tasks.filter((t) => t.sprint === id && !t.arch);
+/* Задачи спринта — одно определение на все его вкладки: доска брала без архивных, а
+   аналитика с архивными, и вкладки одного экрана расходились в числах. Источник — состав
+   (S.items), как sprint_items в продукте: задача может быть взята в спринт и убрана из него,
+   а поле у самой задачи этого не помнит. */
+const cycleTasks = (id = S.cycle) => S.items.filter((i) => i.c === id)
+  .map((i) => S.tasks.find((t) => t.id === i.t)).filter((t) => t && !t.arch);
 
 function visibleTasks() {
   const q = S.q.trim().toLowerCase();
@@ -335,29 +341,6 @@ const A = {
     S.projects = [...S.projects, { id, n: name || "Новый подпроект", parent, own: ME, due: null, st: "active" }];
     A.toast("Подпроект создан");
   },
-  carryOver() {
-    const c = cycle();
-    const next = S.cycles.find((x) => x.from > c.to);
-    if (!next) { A.toast("Следующего цикла пока нет"); return; }
-    const tail = S.tasks.filter((t) => t.sprint === S.cycle && t.st !== "done" && !t.arch);
-    if (!tail.length) { A.toast("Хвостов нет — всё закрыто"); return; }
-    S.tasks = S.tasks.map((t) => tail.includes(t) ? { ...t, sprint: next.id } : t);
-    A.toast(`Перенесено в «${next.n}»: ${tail.length}`);
-  },
-  /* «Закрыть цикл» до 20.09 только печатал «Цикл закрыт, хвосты перенесены» и не делал
-     НИЧЕГО: ни цикл не закрывался, ни хвосты не двигались. Кнопка, которая врёт об успехе,
-     хуже отсутствующей — теперь она действительно закрывает и переносит. */
-  closeCycle() {
-    const c = cycle();
-    if (c.st === "closed") { A.toast("Цикл уже закрыт"); return; }
-    const next = S.cycles.find((x) => x.from > c.to);
-    const tail = S.tasks.filter((t) => t.sprint === c.id && t.st !== "done" && !t.arch);
-    if (tail.length && !next) { A.toast(`Следующего цикла нет — переносить ${tail.length} некуда`); return; }
-    if (tail.length) S.tasks = S.tasks.map((t) => tail.includes(t) ? { ...t, sprint: next.id } : t);
-    S.cycles = S.cycles.map((x) => x.id === c.id ? { ...x, st: "closed" } : x);
-    if (next) S.cycle = next.id;
-    A.toast(tail.length ? `Цикл закрыт, перенесено в «${next.n}»: ${tail.length}` : "Цикл закрыт, хвостов не было");
-  },
   addBoard(name) {
     const id = "b" + (S.boards.length + 1);
     S.boards = [...S.boards, { id, n: name || "Новая вкладка" }];
@@ -407,8 +390,85 @@ const A = {
   },
 
   /* спринты */
-  acceptInitiative(id, patch) { S.initiatives = S.initiatives.map((i) => i.id === id ? { ...i, st: "accepted", ...(patch || {}) } : i); A.toast("Инициатива принята в цикл"); },
-  dropInitiative(id) { S.initiatives = S.initiatives.filter((i) => i.id !== id); A.toast("Инициатива снята"); },
+  /* отметка сверки: по плану / риск / проблема. Повторное нажатие снимает — «не отмечено»
+     в продукте значит «человек промолчал», и вернуться к этому состоянию надо уметь */
+  setCheck(tid, v) {
+    S.items = S.items.map((i) => i.c === S.cycle && i.t === tid ? { ...i, chk: i.chk === v ? null : v } : i);
+    const now = S.items.find((i) => i.c === S.cycle && i.t === tid);
+    A.toast(now && now.chk ? `Отмечено: ${CHK[now.chk]}` : "Отметка снята");
+  },
+  toggleCarry(tid, reason) {
+    S.items = S.items.map((i) => i.c === S.cycle && i.t === tid
+      ? { ...i, carry: !i.carry, reason: !i.carry ? (reason || "") : "" } : i);
+    const now = S.items.find((i) => i.c === S.cycle && i.t === tid);
+    A.toast(now.carry ? "Помечена к переносу" : "Пометка переноса снята");
+  },
+  takeItem(tid) {
+    if (S.items.some((i) => i.c === S.cycle && i.t === tid)) { A.toast("Задача уже в спринте"); return; }
+    /* задача, взятая после старта, — «сверх плана»: иначе процент выполнения растёт от
+       добавления работы, и спринт выглядит лучше, чем он есть */
+    S.items = [...S.items, { c: S.cycle, t: tid, plan: cycle().st === "planned", chk: null, carry: false, reason: "", cnt: 0 }];
+    S.tasks = S.tasks.map((t) => t.id === tid ? { ...t, sprint: S.cycle } : t);
+    A.toast(cycle().st === "planned" ? "Задача в плане спринта" : "Задача взята сверх плана");
+  },
+  dropItem(tid) {
+    S.items = S.items.filter((i) => !(i.c === S.cycle && i.t === tid));
+    S.tasks = S.tasks.map((t) => t.id === tid && t.sprint === S.cycle ? { ...t, sprint: null } : t);
+    A.toast("Задача вышла из спринта — сама она никуда не делась");
+  },
+  startSprint(id) {
+    S.cycles = S.cycles.map((c) => c.id === id ? { ...c, st: "active" } : c);
+    A.toast("Спринт начат — состав замер планом");
+  },
+  /* Приёмка: итоги считаются один раз, незакрытое переезжает в следующий спринт с
+     причиной и счётчиком переносов, следующий создаётся встык — как в продукте. */
+  acceptSprint(id, summary) {
+    const c = S.cycles.find((x) => x.id === id);
+    const tail = S.items.filter((i) => i.c === id && (S.tasks.find((t) => t.id === i.t) || {}).st !== "done");
+    let next = S.cycles.find((x) => x.sp === c.sp && x.from > c.to && x.st !== "accepted");
+    if (!next) {
+      const from = new Date(Date.parse(c.to) + 86400000).toISOString().slice(0, 10);
+      const to = new Date(Date.parse(c.to) + 86400000 * 15).toISOString().slice(0, 10);
+      next = { id: "c" + (S.cycles.length + 1) + "n", n: `Спринт ${S.cycles.filter((x) => x.sp === c.sp).length + 1}`,
+        from, to, st: "planned", sp: c.sp, chk: null };
+      S.cycles = [...S.cycles, next];
+    }
+    S.items = [...S.items, ...tail.map((i) => ({ ...i, c: next.id, plan: true, chk: null,
+      carry: false, cnt: (i.cnt || 0) + 1, cf: id }))];
+    S.tasks = S.tasks.map((t) => tail.some((i) => i.t === t.id) ? { ...t, sprint: next.id } : t);
+    S.cycles = S.cycles.map((x) => x.id === id ? { ...x, st: "accepted", sum: summary || x.sum || "" } : x);
+    S.cycle = next.id;
+    A.toast(tail.length ? `Спринт принят, перенесено в «${next.n}»: ${tail.length}` : "Спринт принят, незакрытого не было");
+  },
+  addSprint(name) {
+    const last = spaceCycles()[0] || { to: TODAY };
+    const from = new Date(Date.parse(last.to) + 86400000).toISOString().slice(0, 10);
+    const to = new Date(Date.parse(from) + 86400000 * 13).toISOString().slice(0, 10);
+    const id = "c" + (S.cycles.length + 1) + "n";
+    S.cycles = [{ id, n: name || `Спринт ${spaceCycles().length + 1}`, from, to, st: "planned", sp: S.space, chk: null }, ...S.cycles];
+    S.cycle = id;
+    A.toast("Спринт создан — наберите состав");
+  },
+  renameSprint(id, name) {
+    if (!name) return;
+    S.cycles = S.cycles.map((c) => c.id === id ? { ...c, n: name } : c);
+    A.toast("Спринт переименован");
+  },
+  delSprint(id) {
+    const n = S.items.filter((i) => i.c === id).length;
+    S.cycles = S.cycles.filter((c) => c.id !== id);
+    S.items = S.items.filter((i) => i.c !== id);
+    S.tasks = S.tasks.map((t) => t.sprint === id ? { ...t, sprint: null } : t);
+    S.cycle = (spaceCycles()[0] || {}).id || null;
+    A.toast(n ? `Спринт удалён, задачи вышли из него: ${n}` : "Спринт удалён");
+  },
+  addSpace(name) {
+    const id = "sp" + (S.spaces.length + 1);
+    S.spaces = [...S.spaces, { id, n: name || "Новое пространство" }];
+    S.space = id;
+    S.cycle = null;
+    A.toast("Пространство создано");
+  },
 
   /* система */
   readAll() { S.notif = S.notif.map((n) => ({ ...n, unread: false })); render(); },

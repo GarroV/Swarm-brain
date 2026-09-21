@@ -21,7 +21,9 @@ const TABS = {
   projects: [["list", "Список"], ["map", "Карта проектов"]],
   /* «Доска» перестала быть вкладкой: список и канбан — два вида одного спринта,
      переключатель стоит в полосе цикла (канон 18.09 и первоисточник владельца) */
-  sprints: [["sprint", "Спринт"], ["timeline", "Таймлайн"], ["pool", "Инициативы"], ["check", "Чек цикла"], ["analytics", "Аналитика"], ["journal", "Журнал"]],
+  /* «Инициативы» отдельным видом сняты владельцем 19.09, «Сверка» переехала отметками
+     в строку состава — в продукте виды спринта ровно эти */
+  sprints: [["sprint", "Спринт"], ["timeline", "Таймлайн"], ["analytics", "Аналитика"], ["journal", "Журнал"]],
   /* «Вычитка» перестала быть вкладкой: она шапка общего экрана встреч — то, что ждёт
      человека, не должно лежать на соседней вкладке */
   meetings: [["all", "Все встречи"], ["draft", "Черновики bumblebee"], ["queue", "Очередь агента"]],
@@ -45,7 +47,6 @@ const TAB_COUNT = {
   base: (id) => id === "files" ? S.files.length : visibleEntries(id).length,
   admin: (id) => id === "feedback" ? S.feedback.filter((f) => f.st === "open").length
     : id === "review" ? S.meetings.filter((m) => m.st === "pending").length : null,
-  sprints: (id) => id === "pool" ? S.initiatives.filter((i) => i.st === "proposed").length : null,
 };
 
 function renderNav() {
@@ -113,6 +114,42 @@ const ACTS = {
   status: (id) => { const s = new Set(S.statuses); s.has(id) ? s.delete(id) : s.add(id); A.set({ statuses: s }); },
   tgl: (k) => A.set({ [k]: !S[k] }),
   "set-view": (_, v) => A.set({ sprintView: v }),
+  "set-group": (_, v) => A.set({ group: v }),
+  "set-space": (id) => { S.space = id; S.cycle = (S.cycles.find((c) => c.sp === id) || {}).id || null; A.set({}); },
+  "new-space": () => modal("Новое пространство", fld("Название", input("n", "", "Например: Маркетинг")),
+    `${btn("Отмена", "mclose")}${btn("Создать", "do-space", undefined, undefined, "pri")}`),
+  "do-space": () => { const f = formData(); closeModal(); A.addSpace(f.n); },
+  "new-sprint": () => modal("Новый спринт", fld("Название", input("n", "", "Например: Спринт 14")),
+    `${btn("Отмена", "mclose")}${btn("Создать", "do-sprint", undefined, undefined, "pri")}`),
+  "do-sprint": () => { const f = formData(); closeModal(); A.addSprint(f.n); },
+  "rename-sprint": (id) => modal("Переименовать спринт", fld("Название", input("n", (S.cycles.find((c) => c.id === id) || {}).n || "")),
+    `${btn("Отмена", "mclose")}${btn("Сохранить", "do-rename-sprint", id, undefined, "pri")}`),
+  "do-rename-sprint": (id) => { const f = formData(); closeModal(); A.renameSprint(id, f.n); },
+  "del-sprint": (id) => { const c = S.cycles.find((x) => x.id === id) || {};
+    const n = S.items.filter((i) => i.c === id).length;
+    modal("Удалить спринт?", `<div class="hint">Спринт <b>${esc(c.n || "")}</b> исчезнет. Задачи не удалятся — из спринта выйдет: ${n}.</div>`,
+      `${btn("Оставить", "mclose")}${btn("Удалить спринт", "do-del-sprint", id, undefined, "pri")}`); },
+  "do-del-sprint": (id) => { closeModal(); A.delSprint(id); },
+  "start-sprint": (id) => A.startSprint(id),
+  /* приёмка спрашивает: состав замрёт слепком, незакрытое переедет — отменить будет нечем */
+  "accept-sprint": (id) => { const tail = S.items.filter((i) => i.c === id
+      && (S.tasks.find((t) => t.id === i.t) || {}).st !== "done").length;
+    modal("Принять спринт?", `<div class="hint">Итоги посчитаются один раз, состав замрёт слепком.${
+      tail ? ` Незакрытых задач переедет в следующий спринт: ${tail}.` : " Незакрытых задач нет."}</div>
+      ${fld("Что получилось, что нет (необязательно)", area("sum", ""))}`,
+      `${btn("Отмена", "mclose")}${btn("Принять спринт", "do-accept-sprint", id, undefined, "pri")}`); },
+  "do-accept-sprint": (id) => { const f = formData(); closeModal(); A.acceptSprint(id, f.sum); },
+  "set-chk": (id, v) => A.setCheck(+id, v),
+  "tgl-carry": (id) => { const i = S.items.find((x) => x.c === S.cycle && x.t === +id) || {};
+    if (i.carry) { A.toggleCarry(+id); return; }
+    modal("Перенести в следующий спринт?", fld("Почему переносится (необязательно)", input("r", "", "Например: не хватило времени")),
+      `${btn("Отмена", "mclose")}${btn("Пометить", "do-carry", id, undefined, "pri")}`); },
+  "do-carry": (id) => { const f = formData(); closeModal(); A.toggleCarry(+id, f.r); },
+  "take-item": (id) => A.takeItem(+id),
+  "drop-item": (id) => A.dropItem(+id),
+  "pool-pr": (_, v) => A.set({ poolPr: v || "" }),
+  "pool-who": (_, v) => A.set({ poolWho: v ? +v : "" }),
+  "copy-report": (id) => A.toast("Итоги скопированы в буфер"),
   "open-task": (id) => A.select("task", +id),
   "open-meet": (id) => { S.sec = "meetings"; A.select("meeting", id); },
   "open-entry": (id) => A.select("entry", id),
@@ -238,7 +275,6 @@ const ACTS = {
   "switch-ws": (id) => A.switchWorkspace(id),
   "not-dup": (id) => A.notDup(id),
   "q-task-off": (id, v) => A.queueTaskOff(id, v),
-  "carry-over": () => A.carryOver(),
   "regen-tez": (id) => { const ta = $(".modal [data-f=\"tez\"]");
     if (ta) ta.value = ta.value.replace(/\s+$/, "") + "\n\nПереписано моделью: формулировки сведены к решениям и договорённостям, повторы убраны.";
     A.toast("Модель переписала тезисы — проверьте и сохраните"); },
@@ -254,15 +290,6 @@ const ACTS = {
   "mf-store": (_, v) => { S.mf = { ...S.mf, store: v }; render(); },
   "mf-st": (_, v) => { S.mf = { ...S.mf, st: v }; render(); },
   "mf-clear": () => { S.mf = { q: "", period: "all", cc: [], src: [], people: [], store: "any", st: "any" }; render(); },
-  "drop-init": (id) => { const i = S.initiatives.find((x) => x.id === id) || {};
-    modal("Снять инициативу?", `<div class="hint">Предложение <b>${esc(i.t || "")}</b> уйдёт из списка вместе с предложенными задачами.</div>`,
-      `${btn("Оставить", "mclose")}${btn("Снять", "do-drop-init", id, undefined, "pri")}`); },
-  "do-drop-init": (id) => { closeModal(); A.dropInitiative(id); },
-  "close-cycle": () => { const c = cycle();
-    const tail = S.tasks.filter((t) => t.sprint === c.id && t.st !== "done" && !t.arch).length;
-    modal("Закрыть цикл?", `<div class="hint">Цикл <b>${esc(c.n)}</b> станет закрытым${tail ? `, а незакрытых задач переедет в следующий: ${tail}` : ", незакрытых задач в нём нет"}. Открыть обратно будет нечем.</div>`,
-      `${btn("Не закрывать", "mclose")}${btn("Закрыть цикл", "do-close-cycle", undefined, undefined, "pri")}`); },
-  "do-close-cycle": () => { closeModal(); A.closeCycle(); },
   integr: (id) => A.toggleIntegration(id),
   broadcast: () => broadcastModal(),
   "do-broadcast": () => { const f = formData(); closeModal(); A.broadcast(f.text, f.to); },
@@ -276,8 +303,6 @@ const ACTS = {
   "add-link": (id) => linkModal(id),
   "do-link": (id) => { const f = formData(); closeModal(); A.addLink(+id, f.other, f.kind); },
   "drop-link": (id, v) => A.dropLink(+id, v),
-  "accept-init": (id) => acceptModal(id),
-  "do-accept": (id) => { const f = formData(); closeModal(); A.acceptInitiative(id, { own: +f.own, pts: +f.pts }); },
   remind: (id) => A.toast(`Напоминание отправлено: ${user(+id).n}`),
   "show-all": (_, v) => { closePal(); S.aq = v; S.sec = "search"; A.set({}); },
   harvest: (id) => harvestModal(id),
@@ -383,7 +408,10 @@ document.addEventListener("keydown", (e) => {
     const title = e.target.value.trim();
     const sec = e.target.dataset.qsec || null;                 /* доска проектов: секция = проект */
     A.createTask({ title, pr: sec, who: ME, due: null, prio: "med", labels: [], mk: null, recur: null, priv: false, note: "" });
-    A.patchTask(S.sel, sec ? { st: qa } : { st: qa, sprint: S.cycle });
+    A.patchTask(S.sel, { st: qa });
+    /* на канбане спринта карточка обязана попасть и в СОСТАВ спринта: поле у задачи
+       состава не заменяет, иначе новая карточка исчезала при первой перерисовке */
+    if (!sec) A.takeItem(S.sel);
     A.close();
     return;
   }

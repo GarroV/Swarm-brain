@@ -42,6 +42,7 @@ function confirmCheck() {
     dropLink: 'связь снимается и возвращается на том же экране кнопкой «Связать» — два клика, терять нечего',
     resetFilters: 'сброс вида, а не данных',
     close: 'закрывает панель детали, данных не трогает',
+    dropItem: 'задача выходит из спринта и тут же видна в пуле слева кнопкой «Взять» — терять нечего',
   };
   /* разбор методов store: однострочный `  name(a) { … },` и многострочный до `  },` */
   const methods = [];
@@ -372,6 +373,21 @@ function tokenCheck() {
         out.push(`поле «${el.type || el.tagName.toLowerCase()}» уже своего содержимого на ${el.scrollWidth - el.clientWidth}px`);
       if (el.type === 'date' && el.clientWidth < 130)
         out.push(`поле даты шириной ${el.clientWidth}px — год и календарь не помещаются`);
+    });
+
+    /* строки списков: соседи в одной строке не накладываются друг на друга. Кнопка
+       «Взять» в пуле легла ПОВЕРХ названия задачи — глазами это видно сразу, а ни одно
+       правило не падало: проверяли только выход за ячейку таблицы, не наложение. */
+    document.querySelectorAll('.pit, .strow, .pcard .h, .rv').forEach((row) => {
+      const kids = [...row.children].map((el) => ({ el, r: el.getBoundingClientRect() }))
+        .filter((x) => x.r.width > 1 && x.r.height > 1);
+      for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) {
+        const a = kids[i].r, b = kids[j].r;
+        const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (ox > 2 && oy > 2)
+          out.push(`в строке наложение на ${Math.round(ox)}px: «${kids[i].el.textContent.trim().slice(0, 20)}» и «${kids[j].el.textContent.trim().slice(0, 20)}»`);
+      }
     });
 
     /* содержимое не должно вылезать за ячейку: обрезанная кнопка нажимается вслепую */
@@ -835,9 +851,12 @@ function tokenCheck() {
   want(cmp.hint.includes(String(cmp.un)), 'подпись называет, сколько пунктов без подтверждения');
   await go('mclose');
   await go('harvest');
+  const tasksBeforeHarvest = await p.evaluate(() => S.tasks.length);
   await go('do-harvest');
-  await new Promise((r) => setTimeout(r, 120));
-  want((await text('.toast')).includes('Создано задач'), 'сбор задач из встречи отработал');
+  /* читаем ФАКТ (появились задачи), а не тост: тост живёт 2,6 секунды и на медленном
+     прогоне успевает исчезнуть — правило падало на исправном коде */
+  const harvested = await p.evaluate((was) => S.tasks.length - was, tasksBeforeHarvest);
+  want(harvested > 0, `сбор задач из встречи отработал (создано ${harvested})`);
   await go('confirm-meet', firstMeet);
   /* вычитка теперь шапка экрана, а не вкладка: подтверждённая встреча уходит из неё сразу */
   want((await count(`.revhead .rv[data-id="${firstMeet}"]`)) === 0, 'подтверждённая встреча ушла из вычитки');
@@ -1119,8 +1138,9 @@ function tokenCheck() {
   /* доска и таймлайн — две вкладки ОДНОГО цикла: таймлайн показывает те же задачи,
      только с датой, поэтому он не может насчитать больше доски */
   const inCycleSaid = await p.evaluate(() => {
-    const k = [...document.querySelectorAll('.kpi')].find((e) => /взято в цикл/.test(e.textContent));
-    return k ? +k.querySelector('b').textContent : null; });
+    const k = document.querySelector('.kpi b');
+    const m = k ? k.textContent.match(/\d+\/(\d+)/) : null;
+    return m ? +m[1] : null; });
   await go('tab', 'timeline'); await shot('36-timeline');
   want((await count('.tday')) > 3, 'таймлайн разложил задачи по дням');
   const tl = await p.evaluate(() => {
@@ -1128,35 +1148,117 @@ function tokenCheck() {
     return { n: said ? +said.replace(/\D+/g, '') : null, items: document.querySelectorAll('.tdi').length, said }; });
   want(tl.n === tl.items, `счётчик таймлайна равен числу карточек на нём (счётчик ${tl.n}, карточек ${tl.items})`);
   want(inCycleSaid !== null && tl.n !== null && tl.n <= inCycleSaid,
-    `таймлайн не насчитывает больше задач, чем доска того же цикла (доска ${inCycleSaid}, таймлайн ${tl.n})`);
-  await go('tab', 'pool'); await shot('20-initiatives');
-  const prop = await count('[data-act="accept-init"]');
-  await p.$eval('[data-act="accept-init"]', (e) => e.click());
-  await new Promise((r) => setTimeout(r, 90));
-  await shot('39-accept-dialog');
-  await p.$eval('[data-act="do-accept"]', (e) => e.click());
+    `таймлайн не насчитывает больше задач, чем спринт (в спринте ${inCycleSaid}, таймлайн ${tl.n})`);
+
+  /* ── спринт: состав, сверка, перенос, приёмка ───────────── */
+  await go('tab', 'sprint');
+  await gov('set-view', 'list');           /* до этого места вид переключали на канбан */
+  await new Promise((r) => setTimeout(r, 140));
+  /* счётчик наверху обязан сходиться с тем, что на экране: «сделано 3/12» при девяти
+     строках — это два разных факта об одном спринте */
+  const sprintCount = await p.evaluate(() => {
+    const k = document.querySelector('.kpi b');
+    const m = k ? k.textContent.match(/(\d+)\/(\d+)/) : null;
+    return { said: m ? +m[2] : null, rows: document.querySelectorAll('.strow').length,
+      doneSaid: m ? +m[1] : null, doneRows: [...document.querySelectorAll('.strow .dot')].filter((d) => d.classList.contains('d-done')).length };
+  });
+  want(sprintCount.said === sprintCount.rows, `счётчик спринта сходится со строками состава (${sprintCount.said} против ${sprintCount.rows})`);
+  want(sprintCount.doneSaid === sprintCount.doneRows, `«сделано» сходится с закрытыми строками (${sprintCount.doneSaid} против ${sprintCount.doneRows})`);
+  /* группировка «по людям» перекладывает ТЕ ЖЕ задачи: если после переключения их стало
+     больше или меньше, одна из раскладок врёт */
+  await gov('set-group', 'people'); await shot('20-sprint-people');
   await new Promise((r) => setTimeout(r, 120));
-  want((await count('[data-act="accept-init"]')) === prop - 1, 'инициатива принята в цикл через диалог');
-  await go('tab', 'check'); await shot('21-check');
-  const checkRows = await p.$$eval('.rowset > div', (rows) => rows.map((r) => ({
-    v: r.querySelector('.v').textContent.trim(), late: (r.querySelector('.a') || {}).textContent || '' })));
-  const liar = checkRows.find((r) => /^(\d+) из \1 закрыто$/.test(r.v) && /просрочено/.test(r.late));
-  want(!liar, `строка не спорит сама с собой: ${liar ? liar.v + ' · ' + liar.late : 'нет таких'}`);
-  /* «Закрыть цикл» обязана закрывать: до 20.09 она только печатала «Цикл закрыт,
-     хвосты перенесены», не трогая ни цикл, ни задачи */
+  const byPeople = await count('.strow');
+  await gov('set-group', 'ini');
+  await new Promise((r) => setTimeout(r, 120));
+  want(byPeople === sprintCount.rows, `группировка по людям показывает тот же состав (${byPeople} против ${sprintCount.rows})`);
+  /* отметка сверки ставится прямо в строке (отдельный экран «Сверка» снят 19.09) */
+  /* нажать действие по паре id+значение: у отметок сверки один data-act на строку,
+     различает их значение — без этого клик уходил в первую попавшуюся строку */
+  const gov2 = (name, id, v) => p.evaluate((n, i, val) => {
+    const el = document.querySelector(`[data-act="${n}"][data-id="${i}"][data-v="${val}"]`)
+      || document.querySelector(`[data-act="${n}"][data-id="${i}"]`);
+    if (el) el.click();
+  }, name, id, v);
+  const kpiOf = (word) => p.evaluate((w) => {
+    const k = [...document.querySelectorAll('.kpi')].find((e) => e.querySelector('span').textContent.trim() === w);
+    return k ? +k.querySelector('b').textContent : null; }, word);
+  const riskBefore = await kpiOf('риск');
+  /* отметку ставят из меню чипа: берём строку, где отметки ещё нет */
+  const chkId = await p.evaluate(() => {
+    const row = [...document.querySelectorAll('.strow')].find((r) => r.querySelector('.ck:not(.on)'));
+    const mi = row && [...row.querySelectorAll('.dmenu .mi')].find((e) => e.textContent.trim() === 'риск');
+    if (mi) { mi.click(); return mi.dataset.id; }
+    return null;
+  });
+  await new Promise((r) => setTimeout(r, 120));
+  want(chkId !== null && (await kpiOf('риск')) === riskBefore + 1, `отметка сверки ставится в строке и считается наверху (было ${riskBefore})`);
+  want((await p.evaluate((id) => {
+    const row = [...document.querySelectorAll('.strow')].find((r) => r.querySelector(`[data-act="set-chk"][data-id="${id}"]`));
+    const chip = row && row.querySelector('.ck');
+    return !!chip && chip.classList.contains('on') && chip.textContent.trim() === 'риск';
+  }, chkId)), 'чип строки показывает поставленную отметку словом, а не только цветом');
+  await gov2('set-chk', chkId, '');
+  await new Promise((r) => setTimeout(r, 120));
+  want((await kpiOf('риск')) === riskBefore, 'отметку можно снять — «не отмечено» достижимо обратно');
+  /* пометка «к переносу» спрашивает причину: перенос без причины на приёмке никто не вспомнит */
+  const carryBefore = await kpiOf('к переносу');
+  const carryId = await p.evaluate(() => { const b = [...document.querySelectorAll('.strow [data-act="tgl-carry"]')]
+    .find((e) => e.textContent.includes('Перенести')); if (!b) return null; b.click(); return b.dataset.id; });
+  await new Promise((r) => setTimeout(r, 120));
+  /* «.modal» в разметке стоит всегда (пустой контейнер) — спрашиваем про ПОЛЕ причины,
+     иначе правило проходит на коде, который ничего не спросил */
+  const askedWhy = (await count('.modal [data-f="r"]')) === 1;
+  want(askedWhy && carryId !== null, 'пометка переноса сперва спрашивает причину');
+  if (askedWhy) {
+    await p.type('[data-f="r"]', 'поставщик не ответил');
+    await go('do-carry', carryId);
+  }
+  await new Promise((r) => setTimeout(r, 140));
+  want((await kpiOf('к переносу')) === carryBefore + 1, `пометка переноса считается наверху (было ${carryBefore})`);
+  want((await p.evaluate((id) => { const el = [...document.querySelectorAll('.strow .carry')]
+    .find((e) => e.title.includes('поставщик не ответил')); return !!el; }, carryId)),
+    'причина переноса сохранилась у строки, а не растворилась в вопросе');
+  /* пул набора: взятая задача уходит из пула в состав, и «сверх плана» растёт —
+     спринт уже идёт, значит это добавленная работа, а не план */
+  await go('tgl', 'poolOpen');
+  await new Promise((r) => setTimeout(r, 140));
+  await shot('21-sprint-pool');
+  const poolBefore = await count('.pit');
+  const overBefore = await kpiOf('сверх плана');
+  const rowsBefore = await count('.strow');
+  await p.$eval('.pit [data-act="take-item"]', (e) => e.click());
+  await new Promise((r) => setTimeout(r, 140));
+  want((await count('.pit')) === poolBefore - 1, `взятая задача ушла из пула (${poolBefore} → ${await count('.pit')})`);
+  want((await count('.strow')) === rowsBefore + 1, 'взятая задача появилась в составе спринта');
+  want((await kpiOf('сверх плана')) === overBefore + 1, `задача, взятая после старта, считается сверх плана (было ${overBefore})`);
+  await go('tgl', 'poolOpen');
+  /* отчёт спринта: он же «Итоги» продукта — план, сделано, перенесено, кто сколько закрыл */
+  await go('tgl', 'report');
+  await new Promise((r) => setTimeout(r, 140));
+  await shot('39-sprint-report');
+  const report = await text('.pane');
+  want(['План', 'Сделано', 'Сверх плана', 'Перенесено', 'Кто сколько закрыл', 'По проектам'].every((w) => report.includes(w)),
+    'отчёт спринта называет план, сделанное, перенос и разрез по людям и проектам');
+  await go('tgl', 'report');
+  /* приёмка: спрашивает, переносит незакрытое в следующий спринт и переводит туда вид */
   const before = await p.evaluate(() => ({ cyc: S.cycle, st: (S.cycles.find((c) => c.id === S.cycle) || {}).st,
-    tail: S.tasks.filter((t) => t.sprint === S.cycle && t.st !== 'done' && !t.arch).length }));
-  await go('close-cycle');
-  await new Promise((r) => setTimeout(r, 90));
-  want((await count('.modal .hint')) === 1, 'закрытие цикла сперва спрашивает');
-  await go('do-close-cycle');
+    tail: S.items.filter((i) => i.c === S.cycle && (S.tasks.find((t) => t.id === i.t) || {}).st !== 'done').length }));
+  await go('accept-sprint', before.cyc);
   await new Promise((r) => setTimeout(r, 120));
-  const after = await p.evaluate((id) => ({ st: (S.cycles.find((c) => c.id === id) || {}).st, cyc: S.cycle,
-    left: S.tasks.filter((t) => t.sprint === id && t.st !== 'done' && !t.arch).length }), before.cyc);
-  want(after.st === 'closed', `цикл после «Закрыть цикл» действительно закрыт (стало «${after.st}»)`);
-  want(before.tail > 0 && after.left === 0, `незакрытые задачи переехали из закрытого цикла (было ${before.tail}, осталось ${after.left})`);
-  want(after.cyc !== before.cyc, 'вид переключился на следующий цикл, а не остался в закрытом');
-  await p.evaluate((b) => { S.cycles = CYCLES.slice(); S.cycle = b.cyc; S.tasks = TASKS.slice(); render(); }, before);
+  want((await count('.modal .hint')) === 1, 'приёмка спринта сперва спрашивает');
+  want((await text('.modal')).includes(String(before.tail)), 'вопрос называет, сколько незакрытого переедет');
+  await go('do-accept-sprint', before.cyc);
+  await new Promise((r) => setTimeout(r, 150));
+  const after = await p.evaluate((b) => ({ st: (S.cycles.find((c) => c.id === b.cyc) || {}).st, cyc: S.cycle,
+    left: S.items.filter((i) => i.c === b.cyc && (S.tasks.find((t) => t.id === i.t) || {}).st !== 'done').length,
+    moved: S.items.filter((i) => i.c === S.cycle && i.cf === b.cyc).length }), before);
+  want(after.st === 'accepted', `спринт после приёмки принят (стало «${after.st}»)`);
+  want(after.cyc !== before.cyc, 'вид переключился на следующий спринт, а не остался в принятом');
+  want(before.tail > 0 && after.moved === before.tail,
+    `незакрытое переехало в следующий спринт (было ${before.tail}, переехало ${after.moved})`);
+  want(after.left === before.tail, 'принятый спринт остался слепком: его состав не опустел задним числом');
+  await p.evaluate((b) => { S.cycles = CYCLES.slice(); S.cycle = b.cyc; S.items = SITEMS.slice(); S.tasks = TASKS.slice(); render(); }, before);
   await new Promise((r) => setTimeout(r, 90));
   await go('tab', 'analytics'); await shot('22-analytics');
   want((await count('.rowset .state.bad')) === 1, 'просрочка в аналитике выделена, а не спрятана среди прочих чисел');

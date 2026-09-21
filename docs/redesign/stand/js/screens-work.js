@@ -112,133 +112,212 @@ function projectsMap() {
 }
 
 /* ── спринты ─────────────────────────────────────────────────── */
-const cycle = () => S.cycles.find((c) => c.id === S.cycle);
-function cycleBar(extra) {
-  return `<div class="bar"><span class="drop">${btn(`Цикл: ${cycle().n}`, "noop", undefined, undefined, "sm")}
-    <div class="dmenu">${S.cycles.map((c) => `<button class="mi${c.id === S.cycle ? " on" : ""}" ${act("set-cycle", c.id)}>${c.n} · ${CYCLE_ST[c.st]}</button>`).join("")}</div></span>
-    <span class="due">${fmtDate(cycle().from)} — ${fmtDate(cycle().to)}</span>
-    ${cycle().st !== "active" ? state(CYCLE_ST[cycle().st], false) : ""}
-    <div class="right">${extra || ""}</div></div>`;
-}
-/* Спринт по первоисточнику («Доска инициатив и спринтов», переданная владельцем):
-   счётчики сверху, тело — направление → инициатива → задачи, у инициативы полоска
-   прогресса и счёт «сделано из взятого». Канбан остаётся, но переключателем:
-   решение владельца 18.09 — список по умолчанию, доска по нажатию. */
-function sprintKpi(inCycle) {
-  const done = inCycle.filter((t) => t.st === "done").length;
-  const late = inCycle.filter((t) => t.st !== "done" && dueKind(t.due) === "now").length;
-  const carry = inCycle.filter((t) => t.st !== "done" && dueKind(t.due) === "now" && t.prio !== "low").length;
-  return `<div class="kpis">
-    <div class="kpi"><b>${inCycle.length}</b><span>взято в цикл</span></div>
-    <div class="kpi"><b>${done}</b><span>выполнено</span></div>
-    <div class="kpi"><b>${inCycle.length - done}</b><span>в работе</span></div>
-    <div class="kpi${late ? " bad" : ""}"><b>${late}</b><span>просрочено</span></div>
-    <div class="kpi"><b>${carry}</b><span>под угрозой переноса</span></div></div>`;
+/* Модель продукта, не выдумка стенда: пространство → спринт (planned → active →
+   accepted) → состав (sprint_items: в плане / сверх плана, отметка сверки, пометка
+   «к переносу» с причиной). Инициатива — это ПОДПРОЕКТ, направление — проект верхнего
+   уровня (miniapp/src/lib/initiatives.ts), отдельной сущности «инициатива» нет. */
+const cycle = () => S.cycles.find((c) => c.id === S.cycle) || S.cycles[0];
+const spaceCycles = () => S.cycles.filter((c) => c.sp === S.space);
+const items = (cid = S.cycle) => S.items.filter((i) => i.c === cid);
+const itemTask = (i) => S.tasks.find((t) => t.id === i.t);
+/* живое в счёте: удалённые задачи и отменённые вне процента — правило продукта */
+const liveItems = (cid = S.cycle) => items(cid).filter((i) => itemTask(i) && !itemTask(i).arch);
+const CHK = { ok: "по плану", risk: "риск", problem: "проблема" };
+
+function sprintKpi(list) {
+  const done = list.filter((i) => itemTask(i).st === "done").length;
+  const pct = list.length ? Math.round(done / list.length * 100) : 0;
+  const chk = (v) => list.filter((i) => i.chk === v).length;
+  const box = (n, w, cls) => `<div class="kpi${cls ? " " + cls : ""}"><b>${n}</b><span>${w}</span></div>`;
+  return `<div class="kpis">${box(`${done}/${list.length}`, `сделано · ${pct}%`)}
+    ${box(chk("ok"), "по плану")}${box(chk("risk"), "риск", chk("risk") ? "warn" : "")}
+    ${box(chk("problem"), "проблема", chk("problem") ? "bad" : "")}
+    ${box(list.filter((i) => !i.chk && itemTask(i).st !== "done").length, "не отмечено")}
+    ${box(list.filter((i) => i.carry).length, "к переносу")}
+    ${box(list.filter((i) => !i.plan).length, "сверх плана")}
+    ${box(list.filter((i) => !itemTask(i).who.length).length, "без исполнителя")}</div>`;
 }
 
-function sprintTaskRow(t) {
-  return `<div class="strow${S.sel === t.id && S.selKind === "task" ? " sel" : ""}" ${act("open-task", t.id)} tabindex="0">
-    ${dot(t.st)}${priMark(t.prio)}<span class="t">${esc(t.t)}</span>
-    <span class="r">${t.who.length ? avShort(t.who[0]) : `<span class="muted">не назначен</span>`}${due(t.due, t.st === "done")}</span></div>`;
+/* строка состава: задача, отметка сверки и пометка переноса. Три отметки кнопками
+   рядом с каждой строкой — это стена кнопок: состояние свёрнуто в один чип с меню,
+   редкие действия («к переносу», «убрать») живут под многоточием. */
+const CHK_MARK = { ok: "ok", risk: "risk", problem: "problem" };
+function sprintTaskRow(i) {
+  const t = itemTask(i);
+  const cur = i.chk ? CHK[i.chk] : "не отмечено";
+  const menu = `<span class="drop ck-d"><button class="ck${i.chk ? " on " + CHK_MARK[i.chk] : ""}" ${act("noop")}>${cur}</button>
+    <div class="dmenu">${Object.keys(CHK).map((k) => `<button class="mi${i.chk === k ? " on" : ""}" ${act("set-chk", t.id, k)}>${CHK[k]}</button>`).join("")}
+      <button class="mi${i.chk ? "" : " on"}" ${act("set-chk", t.id, "")}>не отмечено</button></div></span>`;
+  const more = `<span class="drop"><button class="btn sm" ${act("noop")}>⋯</button>
+    <div class="dmenu">${i.carry
+      ? `<button class="mi" ${act("tgl-carry", t.id)}>Снять пометку переноса</button>`
+      : `<button class="mi" ${act("tgl-carry", t.id)}>Перенести в следующий спринт</button>`}
+      <button class="mi" ${act("drop-item", t.id)}>Убрать из спринта</button></div></span>`;
+  return `<div class="strow${S.sel === t.id && S.selKind === "task" ? " sel" : ""}">
+    <span class="t" ${act("open-task", t.id)} tabindex="0">${dot(t.st)}${priMark(t.prio)}${esc(t.t)}</span>
+    ${i.plan ? "" : `<span class="over" title="добавлено после старта спринта">сверх плана</span>`}
+    ${i.carry ? `<span class="carry" title="${esc(i.reason || "причина не указана")}">к переносу${i.cnt ? ` · ${i.cnt}-й раз` : ""}</span>` : ""}
+    ${menu}
+    <span class="r">${t.who.length ? avShort(t.who[0]) : `<span class="muted">не назначен</span>`}${due(t.due, t.st === "done")}${more}</span></div>`;
 }
 
-/* инициатива = группа задач цикла; у задачи вне инициатив своя группа, иначе часть
-   цикла просто не видна и счётчики наверху не сходятся с тем, что на экране */
-function sprintGroups(inCycle) {
-  const byIni = new Map();
-  const seen = new Set();
-  S.initiatives.forEach((i) => {
-    const list = inCycle.filter((t) => i.tasks.includes(t.id));
-    if (!list.length) return;
-    list.forEach((t) => seen.add(t.id));
-    const dir = proj(i.pr) ? (proj(i.pr).parent || i.pr) : "—";
-    if (!byIni.has(dir)) byIni.set(dir, []);
-    byIni.get(dir).push([i, list]);
+function initiativeBlock(name, own, list) {
+  const d = list.filter((i) => itemTask(i).st === "done").length;
+  const pct = list.length ? Math.round(d / list.length * 100) : 0;
+  const bad = list.filter((i) => i.chk === "problem").length;
+  return `<div class="ini"><div class="ih">
+    <div class="iname">${esc(name)}${own ? `<span class="iown">${esc(own)}</span>` : ""}</div>
+    <div class="iprog"><i style="width:${pct}%"></i></div>
+    ${bad ? alert_(`${d} из ${list.length} · проблема: ${bad}`) : state(`${d} из ${list.length}`, d === list.length && list.length > 0)}
+    </div><div class="stasks">${list.map(sprintTaskRow).join("")}</div></div>`;
+}
+
+/* направление → инициатива → задачи. Направление — проект верхнего уровня,
+   инициатива — подпроект; у задачи без проекта своя группа, иначе часть состава
+   не видна и счётчики наверху не сходятся с экраном. */
+function sprintByInitiative(list) {
+  const dirs = new Map();
+  list.forEach((i) => {
+    const t = itemTask(i);
+    const p = proj(t.pr);
+    const dir = p ? (p.parent || p.id) : "—";
+    const ini = p && p.parent ? p.id : "—";
+    if (!dirs.has(dir)) dirs.set(dir, new Map());
+    const m = dirs.get(dir);
+    if (!m.has(ini)) m.set(ini, []);
+    m.get(ini).push(i);
   });
-  const rest = inCycle.filter((t) => !seen.has(t.id));
-  const group = (i, list) => {
-    const d = list.filter((t) => t.st === "done").length;
-    const late = list.filter((t) => t.st !== "done" && dueKind(t.due) === "now").length;
-    const pct = Math.round(d / list.length * 100);
-    return `<div class="ini"><div class="ih">
-      <div class="iname">${esc(i.t)}<span class="iown">${user(i.own).n} · ${esc(projPath(i.pr))}</span></div>
-      <div class="iprog"><i style="width:${pct}%"></i></div>
-      ${late ? alert_(`${d} из ${list.length} · ${late} просрочено`) : state(`${d} из ${list.length}`, d === list.length)}
-      </div><div class="stasks">${list.map(sprintTaskRow).join("")}</div></div>`;
-  };
-  return [...byIni.entries()].map(([dir, inis]) =>
-      `<div class="dir">${esc(proj(dir) ? proj(dir).n : "Без направления")}</div>` + inis.map(([i, l]) => group(i, l)).join("")).join("")
-    + (rest.length ? `<div class="dir">Вне инициатив</div><div class="ini"><div class="stasks">${rest.map(sprintTaskRow).join("")}</div></div>` : "");
+  return [...dirs.entries()].map(([dir, inis]) => {
+    const dp = proj(dir);
+    return `<div class="dir">${esc(dp ? dp.n : "Без направления")}</div>`
+      + [...inis.entries()].map(([ini, l]) => {
+        const ip = proj(ini);
+        return initiativeBlock(ip ? ip.n : "Общее", ip ? user(ip.own).n : "", l);
+      }).join("");
+  }).join("");
+}
+
+function sprintByPeople(list) {
+  const by = new Map();
+  list.forEach((i) => {
+    const t = itemTask(i);
+    const k = t.who.length ? t.who[0] : 0;
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push(i);
+  });
+  return [...by.entries()].sort((a, b) => b[1].length - a[1].length)
+    .map(([uid, l]) => initiativeBlock(uid ? user(uid).n : "Без исполнителя", uid ? user(uid).role : "", l)).join("");
+}
+
+const SPRINT_ST = { planned: "запланирован", active: "идёт", accepted: "принят" };
+function sprintBar(extra) {
+  const c = cycle();
+  const sp = S.spaces.find((x) => x.id === S.space) || S.spaces[0];
+  const act_ = c.st === "planned" ? btn("Начать спринт", "start-sprint", c.id, undefined, "sm pri")
+    : c.st === "active" ? btn("Принять спринт", "accept-sprint", c.id, undefined, "sm pri") : "";
+  return `<div class="bar"><span class="drop">${btn(`Пространство: ${sp.n}`, "noop", undefined, undefined, "sm")}
+    <div class="dmenu">${S.spaces.map((x) => `<button class="mi${x.id === S.space ? " on" : ""}" ${act("set-space", x.id)}>${esc(x.n)}</button>`).join("")}
+      <button class="mi" ${act("new-space")}>＋ Новое пространство</button></div></span>
+    <span class="drop">${btn(`${c.n} · ${SPRINT_ST[c.st]}`, "noop", undefined, undefined, "sm")}
+    <div class="dmenu">${spaceCycles().map((x) => `<button class="mi${x.id === S.cycle ? " on" : ""}" ${act("set-cycle", x.id)}>${esc(x.n)} · ${SPRINT_ST[x.st]}</button>`).join("")}
+      <button class="mi" ${act("new-sprint")}>＋ Новый спринт</button>
+      <button class="mi" ${act("rename-sprint", c.id)}>Переименовать</button>
+      <button class="mi" ${act("del-sprint", c.id)}>Удалить спринт</button></div></span>
+    <span class="due">${fmtDate(c.from)} — ${fmtDate(c.to)}${c.chk ? ` · сверка ${fmtDate(c.chk)}` : ""}</span>
+    <div class="right">${extra || ""}${act_}</div></div>`;
+}
+
+/* Пул свободных задач — как в продукте: набирают состав спринта с фильтрами по
+   проекту, исполнителю и названию. Панель складывается: при готовом составе она мешает. */
+function sprintPool() {
+  const taken = new Set(items().map((i) => i.t));
+  const free = S.tasks.filter((t) => !t.arch && t.st !== "done" && !taken.has(t.id)
+    && (!S.poolPr || t.pr === S.poolPr) && (!S.poolWho || t.who.includes(S.poolWho))
+    && (!S.poolQ || t.t.toLowerCase().includes(S.poolQ.toLowerCase())));
+  return `<div class="pool"><div class="ph">Свободные задачи<span class="n">${free.length}</span>
+    <button class="ex on" ${act("tgl", "poolOpen")} title="Свернуть влево">◀</button></div>
+    <div class="pf">
+      <span class="drop">${btn(S.poolPr ? projPath(S.poolPr) : "Все проекты", "noop", undefined, undefined, "sm")}
+        <div class="dmenu"><button class="mi${S.poolPr ? "" : " on"}" ${act("pool-pr", "")}>Все проекты</button>
+        ${S.projects.map((p) => `<button class="mi${S.poolPr === p.id ? " on" : ""}" ${act("pool-pr", p.id)}>${esc(projPath(p.id))}</button>`).join("")}</div></span>
+      <span class="drop">${btn(S.poolWho ? user(S.poolWho).n : "Все исполнители", "noop", undefined, undefined, "sm")}
+        <div class="dmenu"><button class="mi${S.poolWho ? "" : " on"}" ${act("pool-who", "")}>Все исполнители</button>
+        ${S.users.map((u) => `<button class="mi${S.poolWho === u.id ? " on" : ""}" ${act("pool-who", u.id)}>${esc(u.n)}</button>`).join("")}</div></span>
+      <input class="pq" placeholder="Поиск по названию" value="${esc(S.poolQ)}" data-inp="poolQ"></div>
+    <div class="plist">${free.length ? free.map((t) => `<div class="pit">
+      <span class="t" ${act("open-task", t.id)} tabindex="0" title="${esc(t.t)}">${dot(t.st)}${esc(t.t)}</span>
+      ${btn("Взять", "take-item", t.id, undefined, "sm pri")}
+      <span class="m">${esc(projPath(t.pr))}${t.who.length ? " · " + user(t.who[0]).n : " · не назначена"}</span></div>`).join("")
+      : `<div class="pempty">${S.poolPr || S.poolWho || S.poolQ ? "Под фильтры ничего не попало" : "Свободных задач нет — всё уже в спринтах"}</div>`}</div></div>`;
+}
+
+function sprintReport(cid) {
+  const list = liveItems(cid);
+  const c = S.cycles.find((x) => x.id === cid);
+  const done = list.filter((i) => itemTask(i).st === "done");
+  const byUser = new Map();
+  done.forEach((i) => { const t = itemTask(i); const k = t.who.length ? t.who[0] : 0;
+    byUser.set(k, (byUser.get(k) || 0) + 1); });
+  const byProj = new Map();
+  list.forEach((i) => { const t = itemTask(i); const k = proj(t.pr) ? (proj(t.pr).parent || t.pr) : "—";
+    if (!byProj.has(k)) byProj.set(k, [0, 0]); const v = byProj.get(k);
+    byProj.set(k, [v[0] + (itemTask(i).st === "done" ? 1 : 0), v[1] + 1]); });
+  return `<div class="pane"><h3>Итоги спринта «${esc(c.n)}»</h3>
+    <div class="sub">${fmtDate(c.from)} — ${fmtDate(c.to)} · ${SPRINT_ST[c.st]}</div>
+    ${rows([
+      ["План", nTasks(list.filter((i) => i.plan).length)],
+      ["Сделано", nTasks(done.length)],
+      ["Сверх плана", nTasks(list.filter((i) => !i.plan).length)],
+      ["Перенесено", nTasks(list.filter((i) => i.carry).length)],
+      ["Просрочка", nTasks(list.filter((i) => itemTask(i).st !== "done" && dueKind(itemTask(i).due) === "now").length)],
+    ])}
+    ${lab("Кто сколько закрыл")}
+    ${rows([...byUser.entries()].sort((a, b) => b[1] - a[1]).map(([uid, n]) => [uid ? user(uid).n : "Без исполнителя", nTasks(n)]))}
+    ${lab("По проектам")}
+    ${rows([...byProj.entries()].map(([k, [d, all]]) => [proj(k) ? proj(k).n : "Без проекта", `${d} из ${all}`]))}
+    ${c.sum ? lab("Итог словами") + `<div class="note">${esc(c.sum)}</div>` : ""}
+    <div class="mt">${btn("Скопировать итоги", "copy-report", cid)}</div></div>`;
 }
 
 function screenSprints() {
   if (S.tab === "timeline") return screenTimeline();
-  if (S.tab === "pool") return screenPool();
-  if (S.tab === "check") return screenCheck();
   if (S.tab === "analytics") return screenAnalytics();
   if (S.tab === "journal") return screenJournal();
-  const inCycle = cycleTasks();
-  if (!S.tasks.length) return cycleBar() + empty("В этом воркспейсе нет задач", "Цикл наполнится, когда задачи в него попадут");
+  if (!spaceCycles().length) return sprintBar() + empty("В этом пространстве спринтов пока нет", "Заведите спринт — состав наберётся из свободных задач");
+  const list = liveItems();
   const view = `<span class="seg">
     <button class="sg${S.sprintView === "board" ? "" : " on"}" ${act("set-view", undefined, "list")}>Список</button>
-    <button class="sg${S.sprintView === "board" ? " on" : ""}" ${act("set-view", undefined, "board")}>Канбан</button></span>`;
-  if (S.sprintView !== "board") {
-    return cycleBar(view) + sprintKpi(inCycle)
-      + (inCycle.length ? `<div class="sprint">${sprintGroups(inCycle)}</div>`
-        : empty("В цикле пока нет задач", "Возьмите задачи из пула инициатив"));
-  }
+    <button class="sg${S.sprintView === "board" ? " on" : ""}" ${act("set-view", undefined, "board")}>Канбан</button></span>
+    <span class="seg">
+    <button class="sg${S.group === "people" ? "" : " on"}" ${act("set-group", undefined, "ini")}>по инициативам</button>
+    <button class="sg${S.group === "people" ? " on" : ""}" ${act("set-group", undefined, "people")}>по людям</button></span>
+    ${S.poolOpen ? "" : btn("Набрать состав", "tgl", "poolOpen", undefined, "sm")}
+    ${btn(S.report ? "Скрыть отчёт" : "Открыть отчёт", "tgl", "report", undefined, "sm")}`;
+  const body = S.report ? `<div class="panes">${sprintReport(S.cycle)}</div>`
+    : S.sprintView === "board" ? sprintBoard(list)
+    : list.length ? `<div class="sprint">${S.group === "people" ? sprintByPeople(list) : sprintByInitiative(list)}</div>`
+      : empty("Состав спринта пуст", "Наберите задачи из пула слева — план считается по ним");
+  return sprintBar(view) + sprintKpi(list)
+    + `<div class="swrap">${S.poolOpen ? sprintPool() : ""}<div class="scol">${body}</div></div>`;
+}
+
+function sprintBoard(list) {
   const cols = BCOLS.filter(([id]) => id !== "backlog");   /* у спринта «Бэклога» нет — канон продукта */
-  return cycleBar(view + `<span>Перетащите карточку, чтобы сменить статус</span>`) + sprintKpi(inCycle)
-    + `<div class="board">${cols.map(([cid, cn]) => {
-      const items = inCycle.filter((t) => t.st === cid);
-      return `<div class="col"><h3>${dot(cid)}${cn}<span class="n">${items.length}</span></h3>
-        <div class="cards" data-drop="${cid}">${items.map((t) => `<div class="card" draggable="true" data-card="${t.id}" ${act("open-task", t.id)} tabindex="0">
-          ${priMark(t.prio)}${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">не назначен</span>`}
-          <span style="margin-left:auto">${due(t.due, t.st === "done")}</span></div></div>`).join("")
-          || `<div class="drop-empty">перетащите сюда</div>`}
-          <input class="qadd" placeholder="+ задача в «${esc(cn)}»" data-qadd="${cid}"></div></div>`;
-    }).join("")}</div>`;
-}
-
-const IST = { proposed: "предложена", accepted: "принята", in_progress: "в работе", done: "закрыта" };
-function screenPool() {
-  if (!S.initiatives.length) return cycleBar() + empty("Инициатив пока нет", "Сюда попадают предложения, которые ещё не взяли в цикл");
-  return cycleBar(`<span>Предложено <b>${S.initiatives.filter((i) => i.st === "proposed").length}</b></span>`)
-    + table([{ t: "Инициатива", w: "28%" }, { t: "Проект", w: "18%" }, { t: "Владелец", w: "17%" }, { t: "Задачи", w: "12%" }, { t: "Баллы", r: true, w: "80px" }, { t: "Статус" }, { t: "Решение", r: true, w: "220px" }],
-      /* статус инициативы уже написан словом в колонке «Решение», второй раз точкой не повторяем */
-      S.initiatives.map((i) => `<tr class="row">
-        ${cell(esc(i.t), "t")}
-        ${cell(esc(projPath(i.pr)))}${cell(av(i.own))}
-        ${cell(i.tasks.map((id) => `<span class="lnk" ${act("open-task", id)}>${id}</span>`).join(" · "))}
-        ${cell(`<span class="due">${i.pts}</span>`, "r")}
-        ${/* зелёный — про «дошло до конца», а не про любое непустое состояние */ ""}
-        ${cell(state(IST[i.st], i.st === "accepted" || i.st === "done"))}
-        ${cell(i.st === "proposed"
-          ? `<span class="ib">${btn("Принять в цикл", "accept-init", i.id, undefined, "sm pri")}${btn("Снять", "drop-init", i.id, undefined, "sm")}</span>`
-          : `<span class="muted">—</span>`, "r acts")}</tr>`).join(""));
-}
-
-function screenCheck() {
-  const inCycle = cycleTasks();
-  if (!inCycle.length) return cycleBar() + empty("В этом цикле нечего сверять", "Возьмите задачи в цикл — здесь появится прогресс по проектам");
-  const done = inCycle.filter((t) => t.st === "done").length;
-  const byProj = {};
-  inCycle.forEach((t) => { const k = proj(t.pr) ? (proj(t.pr).parent || t.pr) : "—"; (byProj[k] = byProj[k] || []).push(t); });
-  return cycleBar() + `<div class="panes"><div class="pane"><h3>Чек цикла «${esc(cycle().n)}»</h3>
-    <div class="sub">Что обещали и где стоим · ${done} из ${inCycle.length} закрыто</div>
-    <div class="prog"><i style="width:${Math.round(done / Math.max(inCycle.length, 1) * 100)}%"></i></div>
-    ${rows(Object.keys(byProj).map((k) => {
-      const list = byProj[k], d = list.filter((t) => t.st === "done").length;
-      /* закрытая задача не «просрочена»: иначе строка «1 из 1 закрыто · 1 просрочено» противоречит сама себе */
-      const late = list.filter((t) => t.st !== "done" && dueKind(t.due) === "now").length;
-      return [esc(proj(k) ? proj(k).n : k), `${d} из ${list.length} закрыто`, late ? alert_(`${late} просрочено`) : state("в графике", true)];
-    }))}
-    <div class="mt">${btn("Закрыть цикл", "close-cycle", undefined, undefined, "pri")}${btn("Перенести хвосты в следующий", "carry-over")}</div></div></div>`;
+  return `<div class="board">${cols.map(([cid, cn]) => {
+    const inCol = list.filter((i) => itemTask(i).st === cid);
+    return `<div class="col"><h3>${dot(cid)}${cn}<span class="n">${inCol.length}</span></h3>
+      <div class="cards" data-drop="${cid}">${inCol.map((i) => { const t = itemTask(i);
+        return `<div class="card" draggable="true" data-card="${t.id}" ${act("open-task", t.id)} tabindex="0">
+        ${priMark(t.prio)}${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">не назначен</span>`}
+        <span style="margin-left:auto">${due(t.due, t.st === "done")}</span></div></div>`; }).join("")
+        || `<div class="drop-empty">перетащите сюда</div>`}
+        <input class="qadd" placeholder="+ задача в «${esc(cn)}»" data-qadd="${cid}"></div></div>`;
+  }).join("")}</div>`;
 }
 
 function screenAnalytics() {
-  const inCycle = cycleTasks();
-  if (!inCycle.length) return cycleBar() + empty("Считать пока нечего", "Аналитика собирается по задачам цикла");
+  const inCycle = liveItems().map(itemTask);
+  if (!inCycle.length) return sprintBar() + empty("Считать пока нечего", "Аналитика собирается по задачам цикла");
   /* нагрузка — это то, что ЕЩЁ висит: закрытые задачи в неё не входят, иначе человек,
      закрывший десять, выглядит самым загруженным */
   const open_ = inCycle.filter((t) => t.st !== "done");
@@ -248,9 +327,9 @@ function screenAnalytics() {
   /* просрочка закрытой задачи ничего не значит: считаем только живые */
   const late = open_.filter((t) => dueKind(t.due) === "now").length;
   /* скорость без предыдущего цикла — просто число: сравнивать не с чем */
-  const prevId = (S.cycles[S.cycles.findIndex((c) => c.id === S.cycle) + 1] || {}).id;
-  const prevDone = prevId ? cycleTasks(prevId).filter((t) => t.st === "done").length : null;
-  return cycleBar() + `<div class="panes"><div class="pane"><h3>Аналитика цикла</h3><div class="sub">Скорость и распределение нагрузки</div>
+  const prevId = (spaceCycles()[spaceCycles().findIndex((c) => c.id === S.cycle) + 1] || {}).id;
+  const prevDone = prevId ? liveItems(prevId).map(itemTask).filter((t) => t.st === "done").length : null;
+  return sprintBar() + `<div class="panes"><div class="pane"><h3>Аналитика цикла</h3><div class="sub">Скорость и распределение нагрузки</div>
     ${rows([
       ["Закрыто за цикл", nTasks(done) + (prevDone === null ? "" : ` <span class="muted">· в прошлом цикле ${prevDone}</span>`)],
       ["В работе", nTasks(inCycle.filter((t) => t.st === "in_progress").length)],
@@ -269,9 +348,9 @@ function screenJournal() {
   Object.keys(S.history).forEach((id) => { if (!ids.has(+id)) return;
     (S.history[id] || []).forEach((h) => items.push({ ...h, id: +id })); });
   items.sort((a, b) => a.m - b.m);
-  if (!items.length) return cycleBar() + empty("В этом цикле задачи не двигали",
+  if (!items.length) return sprintBar() + empty("В этом цикле задачи не двигали",
     "Записи появляются, когда задачу берут в работу, двигают по доске или меняют ей срок");
-  return cycleBar() + `<div class="panes"><div class="pane"><h3>Журнал перемещений</h3>
+  return sprintBar() + `<div class="panes"><div class="pane"><h3>Журнал перемещений</h3>
     <div class="sub">Кто и когда двигал задачи цикла — журнал ведётся с раскатки #286</div>
     <div class="tl log">${items.map((h) => `<div class="e" data-m="${h.m}"><div class="w">${esc(ago(h.m))}</div>
       <div class="p"></div><div><b>${esc(user(h.who).n)}</b>
