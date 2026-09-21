@@ -19,7 +19,7 @@ const S = {
   /* спринты: пространство, состав (sprint_items), группировка, пул набора, отчёт */
   space: "sp1", spaces: SPACES.slice(), items: SITEMS.slice(), group: "ini",
   poolOpen: false, poolPr: "", poolWho: "", poolQ: "", report: false, sFocus: null,
-  tezEdit: null, lastCopy: null,
+  tezEdit: null, lastCopy: null, from: "", to: "",
   /* доска проектов: вкладки досок (в продукте — таблица sprints), какие проекты раскрыты */
   boards: BOARDS.slice(), boardTab: "b1", openProj: new Set(["p1"]), subClosed: new Set(),
   /* система */
@@ -65,9 +65,21 @@ const PRIO_LABEL = { "": "не задан", high: "высокий", med: "сре
 const roleName = (id) => (S.roles.find((r) => r.id === id) || {}).n || "";
 /* период — та же ось, что RangePicker продукта: сужает список по сроку */
 const PERIOD = { any: "любой срок", today: "сегодня", week: "эта неделя", month: "этот месяц" };
+/* Три готовых среза закрывают не всякий вопрос: «что у нас на ближайшие 21 день» не
+   складывается ни из недели, ни из месяца (просьба владельца 21.09). Свой период
+   задаётся двумя датами, и он ничем не хуже готовых — те просто его частные случаи. */
+function periodName() {
+  if (S.period === "range") return S.from && S.to
+    ? `${fmtDate(S.from)} — ${fmtDate(S.to)}` : "свой период";
+  return PERIOD[S.period];
+}
 function inPeriod(t) {
   if (S.period === "any") return true;
   if (!t.due) return false;
+  if (S.period === "range") {
+    if (!S.from || !S.to) return true;
+    return t.due >= S.from && t.due <= S.to;
+  }
   const n = daysTo(t.due);
   if (S.period === "today") return n <= 0;
   if (S.period === "week") return n <= 7;
@@ -78,6 +90,8 @@ const RECUR_SHORT = { weekly: "↻ неделя", monthly: "↻ месяц" };
 const RECUR_LABEL = { weekly: "каждую неделю", monthly: "каждый месяц", daily: "каждый день" };
 
 /* ── даты ────────────────────────────────────────────────────── */
+const addDays = (iso, n) => { const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 const MON = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
 const fmtDate = (iso) => { if (!iso) return "—"; const [, m, dd] = iso.split("-"); return `${+dd} ${MON[+m - 1]}`; };
 /* «когда» из минут назад: строка-дата в данных не сортируется, число — сортируется */

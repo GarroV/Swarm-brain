@@ -34,8 +34,16 @@ function tasksToolbar() {
     <span class="sep-v"></span>
     ${sts}
     <span class="drop">${btn(S.mk ? `Рынок: ${S.mk}` : "Рынок", "noop", undefined, undefined, "sm" + (S.mk ? " on" : ""))}${fmenu(mkItems)}</span>
-    <span class="drop">${btn(S.period === "any" ? "Период" : `Период: ${PERIOD[S.period]}`, "noop", undefined, undefined, "sm" + (S.period === "any" ? "" : " on"))}${
-      fmenu(Object.keys(PERIOD).map((k) => [PERIOD[k], "set-period", undefined, k, S.period === k]))}</span>
+    <span class="drop">${btn(S.period === "any" ? "Период" : `Период: ${periodName()}`, "noop", undefined, undefined, "sm" + (S.period === "any" ? "" : " on"))}
+      <div class="dmenu">${Object.keys(PERIOD).map((k) =>
+        `<button class="mi${S.period === k ? " on" : ""}" ${act("set-period", undefined, k)}>${PERIOD[k]}</button>`).join("")}
+        <button class="mi${S.period === "range" ? " on" : ""}" ${act("set-period", undefined, "range")}>свой период…</button>
+        ${S.period === "range" ? `<div class="mrange">
+          <label>с<input type="date" data-inp="from" value="${esc(S.from)}"></label>
+          <label>по<input type="date" data-inp="to" value="${esc(S.to)}"></label>
+          <div class="quick">${[["7", "неделя"], ["14", "2 недели"], ["21", "21 день"], ["30", "месяц"], ["90", "квартал"]]
+            .map(([d, n]) => `<button class="chip" ${act("range-days", undefined, d)}>${n}</button>`).join("")}</div>
+        </div>` : ""}</div></span>
     <span class="drop">${btn(nMore ? `Ещё · ${nMore}` : "Ещё", "noop", undefined, undefined, "sm" + (nMore ? " on" : ""))}${fmenu(more)}</span>
     ${fchips(extra)}
     ${S.assignee ? `<button class="chip on" ${act("drop-assignee")}>${av(S.assignee)}<span class="x">×</span></button>` : ""}

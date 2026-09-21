@@ -173,7 +173,7 @@ function sprintPulse(list) {
     const v = list.filter(test).length;
     if (!v) return "";
     const on = S.sFocus === k;
-    return `<button class="mk${cls ? " " + cls : ""}${on ? " on" : ""}" ${act("sfocus", undefined, on ? "" : k)}
+    return `<button class="mk${cls ? " k-" + cls : ""}${on ? " on" : ""}" ${act("sfocus", undefined, on ? "" : k)}
       title="${on ? "Показать весь состав" : "Показать только эти задачи"}"><b>${v}</b>${esc(name)}</button>`;
   }).join("");
   return `<div class="pulse">

@@ -117,8 +117,13 @@ function calendarList() {
     ${btn("Переподключить", "cal-connect", undefined, undefined, "pri sm")}</div></div>`;
   if (!CALENDAR.length) return `<div class="calv"><div class="cnone"><b>Сегодня встреч нет</b>
     <span>Календарь подключён — день свободен</span></div></div>`;
+  /* Из календаря человек идёт НА ВСТРЕЧУ: без ссылки он лезет искать её в Google
+     Calendar или в почте, и опаздывает (просьба владельца 21.09). У встречи без ссылки
+     кнопки нет — пустая кнопка «Перейти» хуже отсутствующей. */
   return `<div class="calv">${CALENDAR.map((c) => `<div class="cev${isNow(c) ? " now" : ""}">
     <span class="at">${c.at}</span><b>${esc(c.t)}</b>
+    ${c.url ? `<a class="cgo${isNow(c) ? " now" : ""}" href="${esc(c.url)}" target="_blank" rel="noreferrer"
+      title="Открыть ${esc(c.place)}">${isNow(c) ? "Подключиться" : "Перейти"}</a>` : ""}
     <div class="cf"><span class="pl">${esc(c.place)}</span>${avs(c.who)}
     ${isNow(c) ? state("идёт сейчас", true) : ""}
     ${c.rec ? state("рекордер включится", true) : state("без записи", false)}</div></div>`).join("")}</div>`;

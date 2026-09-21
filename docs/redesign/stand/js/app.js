@@ -198,7 +198,11 @@ const ACTS = {
     ["Напоминание", v === "" ? "снято" : fmtDate(shiftDate(+v))]),
   "set-ping": (id) => {},           /* дата приходит событием change, как и срок */
   "drop-ping": (id) => A.setPing(+id, null),
-  "set-period": (_, v) => A.set({ period: v }),
+  "set-period": (_, v) => A.set(v === "range"
+    /* «свой период» без дат ничего не сужает: по умолчанию берём ближайшие две недели,
+       чтобы фильтр сразу показывал результат, а не пустой экран */
+    ? { period: v, from: S.from || TODAY, to: S.to || addDays(TODAY, 14) } : { period: v }),
+  "range-days": (_, v) => A.set({ period: "range", from: TODAY, to: addDays(TODAY, +v) }),
   /* Списки в продукте ЛИЧНЫЕ: выбор списка делает задачу личной (TaskModal: «if (labelIds.length
      && !task.is_private) patch.is_private = true»). Иначе личный список одного человека
      уехал бы в общий список чужими глазами. */

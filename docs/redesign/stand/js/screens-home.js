@@ -58,13 +58,13 @@ function screenHome() {
 
       <div class="lab">Топ 5 новостей</div>
       <div class="news">${homeNews().map(([t, kind, a, id]) =>
-        `<div class="nw ${kind}" ${act(a, id)} tabindex="0"><i></i>${esc(t)}</div>`).join("")}</div>
+        `<div class="nw k-${kind}" ${act(a, id)} tabindex="0"><i></i>${esc(t)}</div>`).join("")}</div>
 
       <div class="lab">Ждут вас</div>
       ${pending.length
         ? `<div class="news">${pending.slice(0, 4).map((m) =>
-            `<div class="nw warn" ${act("open-meet", m.id)} tabindex="0"><i></i>${esc(clip(m.t, 40))}<span class="r">вычитка</span></div>`).join("")}</div>`
-        : `<div class="news"><div class="nw ok"><i></i>Вычитка разобрана</div></div>`}
+            `<div class="nw k-warn" ${act("open-meet", m.id)} tabindex="0"><i></i>${esc(clip(m.t, 40))}<span class="r">вычитка</span></div>`).join("")}</div>`
+        : `<div class="news"><div class="nw k-ok"><i></i>Вычитка разобрана</div></div>`}
 
       <div class="lab">Последнее в базе</div>
       <div class="news">${recent.map((e) =>

@@ -258,9 +258,11 @@ const SITEMS = TASKS.filter((t) => t.sprint).map((t, i) => ({
 
 /* календарь дня: приходит из Google Calendar, встречи ещё не записаны */
 const CALENDAR = [
-  { at:"11:00", to:"11:45", t:"Сверка бюджета Q4", who:[502,503,509], place:"Google Meet", rec:true },
+  { at:"11:00", to:"11:45", t:"Сверка бюджета Q4", who:[502,503,509], place:"Google Meet", rec:true,
+    url:"https://meet.google.com/abc-defg-hij" },
   { at:"15:30", to:"16:00", t:"Поставщик упаковки — повтор", who:[501,503], place:"офис, переговорная", rec:false },
-  { at:"17:00", to:"17:40", t:"Онбординг: вторая смена", who:[505,512], place:"Google Meet", rec:true },
+  { at:"17:00", to:"17:40", t:"Онбординг: вторая смена", who:[505,512], place:"Google Meet", rec:true,
+    url:"https://meet.google.com/klm-nopq-rst" },
 ];
 
 const NOTIF = [

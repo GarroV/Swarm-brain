@@ -654,6 +654,35 @@ function tokenCheck() {
   const homeRows = await count('.home tbody tr[data-act="open-task"]');
   want(homeRows > 0, 'на главной видны свои задачи');
   want((await count('.home .nw')) >= 5, 'на главной есть топ новостей');
+  /* Из календаря идут НА ВСТРЕЧУ: без ссылки её ищут в почте и опаздывают
+     (просьба владельца 21.09). У идущей сейчас кнопка зовёт подключиться. */
+  const goLinks = await p.evaluate(() => [...document.querySelectorAll('.home .cev')].map((e) => {
+    const a = e.querySelector('.cgo');
+    return { now: e.classList.contains('now'), href: a ? a.getAttribute('href') : null,
+      text: a ? a.textContent.trim() : null, blank: a ? a.getAttribute('target') : null }; }));
+  const withLink = goLinks.filter((g) => g.href);
+  want(withLink.length >= 2 && withLink.every((g) => /^https?:\/\//.test(g.href) && g.blank === '_blank'),
+    `у встреч дня есть кнопка перехода (${withLink.length} из ${goLinks.length})`);
+  want(goLinks.filter((g) => g.now).every((g) => g.text === 'Подключиться'),
+    'у идущей сейчас встречи кнопка зовёт подключиться');
+  /* Строки одного списка начинаются с одной линии. Имя модификатора «warn» совпало с
+     именем плашки предупреждения, и часть строк подхватила её рамку и отступы — текст
+     съехал на 13px, список стал рваным («вёрстка гуляет», владелец 21.09). */
+  const newsAlign = await p.evaluate(() => {
+    const out = [];
+    document.querySelectorAll('.home .news').forEach((box) => {
+      const xs = [...box.querySelectorAll('.nw')].map((r) => {
+        const n = [...r.childNodes].find((c) => c.nodeType === 3 && c.textContent.trim());
+        if (!n) return null;
+        const rg = document.createRange(); rg.selectNode(n);
+        return Math.round(rg.getBoundingClientRect().left);
+      }).filter((x) => x !== null);
+      if (xs.length > 1) out.push(Math.max(...xs) - Math.min(...xs));
+    });
+    return out;
+  });
+  want(newsAlign.length > 0 && Math.max(...newsAlign) <= 1,
+    `строки списков на главной начинаются с одной линии (разброс ${Math.max(...newsAlign, 0)}px)`);
   /* встречи дня переехали в правый столбец: полосой наверху они забирали ширину у работы */
   want((await count('.home .hcol.side .calv .cev')) === 3, 'встречи дня стоят колонкой справа на главной');
   /* «Задачи команды» — панель дашборда продукта: в ней ничьи общие задачи, и ни одной
@@ -977,6 +1006,27 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 120));
   want((await count('.list .ping')) === pingsBefore, 'пинг снимается тем же местом, где ставился');
   await go('close');
+  /* «Неделя» и «месяц» закрывают не всякий вопрос: «что у нас на 21 день» из них не
+     складывается (просьба владельца 21.09). Свой период задаётся датами и работает
+     так же, как готовые срезы. */
+  {
+    await gov('set-period', 'range');
+    await new Promise((r) => setTimeout(r, 140));
+    await gov('range-days', '21');
+    await new Promise((r) => setTimeout(r, 160));
+    const r21 = await p.evaluate(() => ({ from: S.from, to: S.to,
+      shown: document.querySelectorAll('tbody tr[data-act="open-task"]').length,
+      bad: visibleTasks().filter((t) => !t.due || t.due < S.from || t.due > S.to).length,
+      said: (document.querySelector('.bar .btn.on') || {}).textContent || '' }));
+    want(r21.from && r21.to && r21.shown > 0 && r21.bad === 0,
+      `свой период на 21 день сужает список по датам (показано ${r21.shown}, чужих ${r21.bad})`);
+    want(/\d/.test(r21.said), `выбранный период назван на кнопке («${r21.said.trim()}»)`);
+    const wide = await p.evaluate(() => { S.to = addDays(S.from, 90); render();
+      return document.querySelectorAll('tbody tr[data-act="open-task"]').length; });
+    want(wide >= r21.shown, `растянутый период не показывает меньше узкого (21 день ${r21.shown}, квартал ${wide})`);
+    await gov('set-period', 'any');
+    await new Promise((r) => setTimeout(r, 140));
+  }
   /* период — ось продукта (RangePicker): сужает список по сроку и снимается */
   const allShown = await count('tbody tr[data-act="open-task"]');
   await gov('set-period', 'today');
@@ -1057,7 +1107,12 @@ function tokenCheck() {
      прикладывают ссылки (просьба владельца 21.09). */
   const tasksBeforeHarvest = await p.evaluate(() => S.tasks.length);
   await go('gen-tasks', firstMeet);
-  await new Promise((r) => setTimeout(r, 140));
+  /* ждём ПОЯВЛЕНИЯ списка, а не «сколько-нибудь миллисекунд»: на медленном прогоне
+     фиксированная пауза давала красный на исправном коде, а такой красный учит
+     не верить проверке */
+  await p.waitForFunction((mid) => S.genFor === mid && S.dtab === 'gen'
+    && document.querySelectorAll('.detail .glist .grow').length > 0,
+    { timeout: 5000 }, firstMeet).catch(() => {});
   const genView = await p.evaluate(() => ({
     tab: ((document.querySelector('.detail .dtab.on') || {}).textContent || '').trim(),
     rows: document.querySelectorAll('.detail .glist .grow').length,
@@ -1272,6 +1327,9 @@ function tokenCheck() {
   if (anyPending) {
     await go('open-meet', anyPending);
     await go('gen-tasks', anyPending);
+    await p.waitForFunction((mid) => S.genFor === mid
+      && document.querySelectorAll('.detail .glist .grow').length > 0,
+      { timeout: 5000 }, anyPending).catch(() => {});
     await shot('34-harvest');
     const tasksBefore = await p.evaluate(() => S.tasks.length);
     await go('gen-open', '1');
@@ -1661,6 +1719,12 @@ function tokenCheck() {
         return bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent'; }).length);
     want(loudOk === 0, `отметка «по плану» не залита цветом (залитых ${loudOk})`);
   }
+  /* Чипы срезов стоят на одной линии: «риск» подхватывал плашечные стили по имени
+     класса и висел на 7px выше соседей. */
+  const markLine = await p.evaluate(() => {
+    const tops = [...document.querySelectorAll('.pl-marks .mk')].map((e) => Math.round(e.getBoundingClientRect().top));
+    return tops.length > 1 ? Math.max(...tops) - Math.min(...tops) : 0; });
+  want(markLine <= 1, `чипы срезов стоят на одной линии (разброс ${markLine}px)`);
   /* Срез — не украшение: по числу кликают и видят ровно эти задачи, а обратно
      возвращаются одним движением. Иначе «проблема: 3» заставляет искать их глазами. */
   {

@@ -235,9 +235,12 @@ tbody tr.sel td.t{font-weight:600}
   border-bottom:1px solid var(--line);cursor:default}
 .nw:hover{color:var(--ink)}
 .nw i{width:6px;height:6px;border-radius:50%;background:var(--ink-empty);flex:none}
-.nw.bad i{background:var(--bad)}
-.nw.warn i{background:var(--warn)}
-.nw.ok i{background:var(--ok)}
+/* Имя модификатора не совпадает с именем плашки: строка новостей с классом «warn»
+   подхватывала рамку и отступы плашки предупреждения, и её текст стоял на 13px правее
+   соседних строк — тот самый «гуляет вёрстка» (найдено по жалобе владельца 21.09). */
+.nw.k-bad i{background:var(--bad)}
+.nw.k-warn i{background:var(--warn)}
+.nw.k-ok i{background:var(--ok)}
 .nw .r{margin-left:auto;color:var(--ink-3);font-size:var(--fs-meta)}
 /* «что дальше» под коротким списком: экран отвечает, а не показывает белое поле */
 .next{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;padding:16px var(--gutter) 20px;
@@ -720,8 +723,8 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
 .mk b{font:600 12px/1 var(--font-num);color:var(--ink)}
 .mk:hover{border-color:var(--accent);color:var(--accent)}
 .mk.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
-.mk.bad b{color:var(--bad)}
-.mk.warn b{color:var(--warn-mark)}
+.mk.k-bad b{color:var(--bad)}
+.mk.k-warn b{color:var(--warn-mark)}
 .mk.clr{border-style:dashed;color:var(--ink-3)}
 /* Заголовок состава: группировка — свойство списка, а не спринта, и звучит тихо. */
 .shead{display:flex;align-items:center;gap:10px;padding:10px var(--gutter) 2px}
@@ -934,3 +937,20 @@ tr:hover td .av + .av{box-shadow:0 0 0 2px var(--surface-2)}
 .tez.edit:focus{border-color:var(--accent)}
 .tez a{color:var(--accent)}
 .d-title .ibtn{margin-left:8px;vertical-align:middle}
+
+/* «Перейти» у встречи дня: у идущей сейчас — заметная, у будущей тихая. */
+.cev{position:relative}
+.cgo{position:absolute;top:8px;right:10px;height:24px;display:inline-flex;align-items:center;padding:0 10px;
+  border:1px solid var(--line-control);border-radius:20px;background:var(--surface);color:var(--ink-2);
+  font:500 var(--fs-meta)/1 var(--font-ui);text-decoration:none}
+.cgo:hover{border-color:var(--accent);color:var(--accent)}
+.cgo.now{background:var(--accent);border-color:var(--accent);color:#fff}
+.cev b{padding-right:96px;display:block}
+
+/* Свой период прямо в меню фильтра: две даты и готовые длины, включая те, которых нет
+   среди «неделя/месяц» — например 21 день. */
+.mrange{padding:8px 10px;border-top:1px solid var(--line)}
+.mrange label{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:var(--fs-meta);color:var(--ink-3)}
+.mrange input[type=date]{flex:1;height:28px;padding:0 8px;border:1px solid var(--line-strong);border-radius:7px;
+  background:var(--surface);font:400 var(--fs-meta)/1 var(--font-ui);color:var(--ink)}
+.mrange .quick{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
