@@ -430,9 +430,16 @@ const ACTS = {
    21.09 «чипы у задач не рабочие»). Если хоть один предок режет, меню переводим в
    координаты экрана и держим у кнопки. */
 function clipsMenu(m) {
+  /* важно: режет не тот предок, у кого есть overflow, а тот, за чьи границы меню
+     реально вылезло. Иначе достаточно одного скроллера на весь экран (.body), чтобы
+     КАЖДОЕ меню срывалось в координаты экрана — и меню, спокойно помещающееся под
+     своей кнопкой, становилось position:fixed без нужды */
+  const mb = m.getBoundingClientRect();
   for (let e = m.parentElement; e && e !== document.body; e = e.parentElement) {
     const s = getComputedStyle(e);
-    if (s.overflow !== "visible" || s.overflowX !== "visible" || s.overflowY !== "visible") return true;
+    if (s.overflow === "visible" && s.overflowX === "visible" && s.overflowY === "visible") continue;
+    const r = e.getBoundingClientRect();
+    if (mb.left < r.left - 1 || mb.right > r.right + 1 || mb.top < r.top - 1 || mb.bottom > r.bottom + 1) return true;
   }
   return false;
 }

@@ -251,7 +251,9 @@ tbody tr.sel td.t{font-weight:600}
   border-bottom:1px solid var(--line)}
 .next .nx:hover{color:var(--ink)}
 .next .nx .r{margin-left:auto}
-.empty{display:grid;place-items:center;height:100%;color:var(--ink-empty);font-size:var(--fs-dense);text-align:center;gap:6px}
+/* высоту даёт свободное место, а не 100% родителя: с height:100% пустой срез занимал
+   ровно экран и выталкивал кнопку «Показать все» за нижний край */
+.empty{display:grid;place-items:center;flex:1 1 auto;min-height:0;color:var(--ink-empty);font-size:var(--fs-dense);text-align:center;gap:6px}
 .empty b{display:block;color:var(--ink-3);font-size:var(--fs-lead);font-weight:600}
 .emptyact{display:grid;place-items:center;padding-bottom:40px}
 /* доска спринта */
@@ -652,9 +654,10 @@ td.acts{white-space:nowrap}
 /* узкое окно ноутбука: панель детали сужается, потом уходит поверх */
 @media (max-width:1320px){ :root{ --detail-w:460px; --nav-w:208px; --gutter:18px } }
 @media (max-width:1140px){ :root{ --detail-w:min(560px,92vw) } }
-/* скроллится СОДЕРЖИМОЕ, а не документ: без этого высокий экран («Проекты» — +745px)
-   растягивал страницу, и при прокрутке вниз вместе с ней уезжала левая колонка (владелец, 21.09) */
-.body{min-width:0;flex:1 1 auto;min-height:0;overflow:auto}
+/* Прокручивается СОДЕРЖИМОЕ экрана, а не документ: без этого высокий экран
+   («Проекты» — +745px) растягивал страницу, и при прокрутке вниз вместе с ней уезжала
+   левая колонка (владелец, 21.09) */
+.body{min-width:0;flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column}
 .main>*{min-width:0}
 .chip,.btn,.tab,.hbtn,.mini,.tdh{white-space:nowrap;flex:none}
 .dtab .c{margin-left:7px;font:500 var(--fs-num-sm)/1 var(--font-mono);color:var(--ink-3)}

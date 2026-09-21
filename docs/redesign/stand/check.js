@@ -309,6 +309,9 @@ function tokenCheck() {
       if (!visEl(e)) return;
       const cs = getComputedStyle(e), pr = parseFloat(cs.paddingRight) || 0;
       if (pr < 32) return;
+      /* резерв ВСЕГДА асимметричен: его отводят справа под кнопку или значок.
+         Равные поля слева и справа — поля раздела (--gutter), и текст в них не зажат */
+      if (Math.abs((parseFloat(cs.paddingLeft) || 0) - pr) < 4) return;
       const host = e.parentElement;
       if (!host || [...host.children].some((k) => k !== e && visEl(k)
         && /absolute|fixed/.test(getComputedStyle(k).position))) return;
@@ -811,10 +814,11 @@ function tokenCheck() {
   want(fabFree && fabFree.right <= 24 && !fabFree.covered,
     `кнопка фидбека стоит в углу экрана и не перекрыта панелью (отступ ${fabFree && fabFree.right}px)`);
   await go('close');
-  /* статусы владелец просил вернуть чипами: они обязаны быть НА ВИДУ, а не в меню */
+  /* завершённые прячет ОДИН тумблер на виду, а не три чипа статусов (владелец, 21.09):
+     выбирать «Открыто» отдельно от «В работе» никто не просил */
   const stChips = await p.$$eval('.bar > .chip', (e) => e.map((x) => x.textContent.trim()));
-  want(['Открыто', 'В работе', 'Готово'].every((n) => stChips.includes(n)),
-    `статусы стоят чипами в панели (видно: ${stChips.join(', ') || 'ничего'})`);
+  want(stChips.includes('Готово') && !stChips.includes('Открыто') && !stChips.includes('В работе'),
+    `завершённые скрывает один тумблер «Готово» (видно: ${stChips.join(', ') || 'ничего'})`);
   /* убираем курсор с «Фильтров»: оставленное наведение держит меню раскрытым, и
      дальнейшие замеры считают его пункты за контролы панели */
   await p.mouse.move(0, 0);
@@ -823,10 +827,10 @@ function tokenCheck() {
   await go('lens', 'all');
   const all = await count('tbody tr[data-act="open-task"]');
   want(all > mine, `линза «Все» шире «Моих» (было ${mine}, стало ${all})`);
-  await go('status', 'done');
+  await go('tgl-done');
   const withDone = await count('tbody tr[data-act="open-task"]');
-  want(withDone >= all, 'добавление статуса «Готово» не сузило список');
-  await go('status', 'done');
+  want(withDone >= all, 'тумблер «Готово» добавил завершённые, а не сузил список');
+  await go('tgl-done');
   await go('tgl', 'byMarket'); await shot('02-tasks-by-market');
   want((await count('tr.sect')) > 1, 'группировка по рынкам дала больше одной секции');
   await go('tgl', 'byMarket');
