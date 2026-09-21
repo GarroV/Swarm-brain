@@ -10,10 +10,16 @@ const BCOLS = [["backlog", "Бэклог"], ["open", "Открыто"], ["in_pro
 function boardBar() {
   const all = S.boardTab === "all";
   const tab = (b) => `<button class="sg${S.boardTab === b.id ? " on" : ""}" ${act("set-board", b.id)}>${esc(b.n)}${b.act ? " ·" : ""}</button>`;
+  const cur = S.boards.find((b) => b.id === S.boardTab);
+  /* Вкладками управляют из меню на самой вкладке: «Удалить вкладку» отдельной кнопкой
+     висела в полосе всегда и была единственным, что с вкладкой можно было сделать. */
+  const tabMenu = all ? "" : `<span class="drop">${btn("⋯", "noop", undefined, undefined, "sm")}${fmenu([
+    [`Переименовать «${esc(cur ? cur.n : "")}»`, "rename-board", S.boardTab],
+    ["Удалить вкладку", "del-board", S.boardTab]])}</span>`;
   return `<div class="bar">${wsChip()}
     <span class="seg">${`<button class="sg${all ? " on" : ""}" ${act("set-board", "all")}>Все вкладки</button>`}${S.boards.map(tab).join("")}</span>
     ${btn("＋ Вкладка", "new-board", undefined, undefined, "sm")}
-    ${all ? "" : btn("Удалить вкладку", "del-board", S.boardTab, undefined, "sm")}
+    ${tabMenu}
     ${chip("Показывать на паузе", S.showClosed, "tgl", "showClosed")}
     <div class="right">${btn("＋ Проект", "new-project", undefined, undefined, "pri sm")}</div></div>`;
 }
@@ -33,10 +39,13 @@ function projectCard(p) {
   const subs = S.projects.filter((x) => x.parent === p.id);
   const tasks = projectTasks(p.id);
   const open = tasks.filter((t) => t.st !== "done").length;
-  return `<div class="pcard${S.sel === p.id && S.selKind === "project" ? " sel" : ""}">
+  /* Раскрывается вся плитка, а не только стрелка: целиться в значок 14×14 ради того,
+     что и так главное действие карточки, — работа, которой можно не быть (просьба
+     владельца 21.09). Название по-прежнему открывает панель со списком задач. */
+  return `<div class="pcard${S.sel === p.id && S.selKind === "project" ? " sel" : ""}" ${act("toggle-open", p.id)} tabindex="0">
     <span class="h">${dot(p.st === "paused" ? "open" : "in_progress")}<b class="nm" ${act("open-proj", p.id)} tabindex="0">${esc(p.n)}</b>
       ${p.priv ? state("только я", false) : ""}${p.st === "paused" ? state("пауза", false) : ""}
-      <button class="ex" ${act("toggle-open", p.id)} title="Развернуть проект в колонки">▾</button></span>
+      <button class="ex" ${act("toggle-open", p.id)} title="Развернуть проект в колонки" aria-label="Развернуть проект в колонки">▾</button></span>
     <span class="m">задач: <b class="all">${tasks.length}</b> · открыто: <b class="open">${open}</b></span>
     <span class="s">${subs.length ? esc(subs.map((x) => x.n).join(" · ")) : `<span class="muted">без подпроектов</span>`}</span>
     <span class="f">${avShort(p.own)}${due(p.due)}</span></div>`;
@@ -64,10 +73,14 @@ function projectSection(p) {
      экран и врут, будто в проекте ничего нет, — тогда слева остаётся один «Бэклог»
      ветки, а место отдаётся подпроектам. */
   const branchBacklog = all.filter((t) => !ST_LABEL[t.st]);
+  /* У проекта бэклог общий — это склад идей и ещё не разобранных задач; у подпроекта
+     он про его работу и зовётся просто «Бэклог» (просьба владельца 21.09). */
+  const rootCols = BCOLS.map(([id, n]) => [id, id === "backlog" ? "Бэклог идей" : n]);
   const head = `<div class="ph"><button class="ex on" ${act("toggle-open", p.id)} title="Свернуть проект">▾</button>
       ${dot(p.st === "paused" ? "open" : "in_progress")}<b class="nm" ${act("open-proj", p.id)} tabindex="0">${esc(p.n)}</b>
       <span class="n">${all.length}</span>
-      <span class="pacts">${btn(p.priv ? "Только я" : "Вся команда", "proj-priv", p.id, undefined, "sm")}
+      <span class="pacts">${btn(p.priv ? "Доступен только мне" : "Доступен всей команде", "proj-priv", p.id, undefined, "sm")}
+        ${btn(p.st === "paused" ? "Снять с паузы" : "Поставить на паузу", "pause-proj", p.id, undefined, "sm")}
         ${btn("Переименовать", "rename-proj", p.id, undefined, "sm")}
         ${btn("＋ Подпроект", "new-subproject", p.id, undefined, "sm")}
         ${btn("Удалить", "del-proj", p.id, undefined, "sm")}</span></div>`;
@@ -81,12 +94,12 @@ function projectSection(p) {
       ${open ? `<div class="cols">${BCOLS.map(([id, n]) => boardCol(k.id, id, n, kt)).join("")}</div>` : ""}</div>`;
   };
   const body = own.length
-    ? `<div class="cols">${BCOLS.map(([id, n]) => boardCol(p.id, id, n, own)).join("")}</div>`
+    ? `<div class="cols">${rootCols.map(([id, n]) => boardCol(p.id, id, n, own)).join("")}</div>`
       + subs.map(subBlock).join("")
-    : (branchBacklog.length ? `<div class="cols one">${boardCol(p.id, "backlog", "Бэклог ветки", branchBacklog)}</div>` : "")
+    : (branchBacklog.length ? `<div class="cols one">${boardCol(p.id, "backlog", "Бэклог идей", branchBacklog)}</div>` : "")
       + (subs.length ? subs.map(subBlock).join("")
-        : `<div class="cols">${BCOLS.map(([id, n]) => boardCol(p.id, id, n, own)).join("")}</div>`);
-  return `<div class="psec${S.sel === p.id && S.selKind === "project" ? " sel" : ""}">${head}${body}</div>`;
+        : `<div class="cols">${rootCols.map(([id, n]) => boardCol(p.id, id, n, own)).join("")}</div>`);
+  return `<div class="psec${S.sel === p.id && S.selKind === "project" ? " sel" : ""}" data-id="${p.id}">${head}${body}</div>`;
 }
 
 function projectsMap() {

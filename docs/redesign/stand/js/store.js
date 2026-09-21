@@ -406,6 +406,11 @@ const A = {
     S.projects = [...S.projects, { id, n: name || "Новый подпроект", parent, own: ME, due: null, st: "active" }];
     A.toast("Подпроект создан");
   },
+  renameBoard(id, n) {
+    if (!n.trim()) return A.toast("Нужно название");
+    S.boards = S.boards.map((b) => b.id === id ? { ...b, n } : b);
+    A.toast("Вкладка переименована");
+  },
   addBoard(name) {
     const id = "b" + (S.boards.length + 1);
     S.boards = [...S.boards, { id, n: name || "Новая вкладка" }];
@@ -420,6 +425,14 @@ const A = {
     S.projects = S.projects.map((p) => p.b === id ? { ...p, b: null } : p);
     S.boardTab = (S.boards[0] || {}).id || "all";
     A.toast(n ? `Вкладка удалена, проектов осталось без вкладки: ${n}` : "Вкладка удалена");
+  },
+  /* Пауза у проекта была только в фильтре «показывать на паузе» — поставить проект на
+     паузу было нечем, и фильтр показывал то, чего никто не мог создать. */
+  togglePause(id) {
+    const p = S.projects.find((x) => x.id === id);
+    if (!p) return;
+    S.projects = S.projects.map((x) => x.id === id ? { ...x, st: x.st === "paused" ? "active" : "paused" } : x);
+    A.toast(p.st === "paused" ? `Проект «${p.n}» снят с паузы` : `Проект «${p.n}» поставлен на паузу`);
   },
   renameProject(id, name) {
     if (!name) return;

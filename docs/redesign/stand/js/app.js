@@ -293,6 +293,11 @@ const ACTS = {
   "do-del-board": (id) => { closeModal(); A.delBoard(id); },
   "toggle-open": (id) => { const s = new Set(S.openProj); s.has(id) ? s.delete(id) : s.add(id); A.set({ openProj: s }); },
   "toggle-sub-proj": (id) => { const s = new Set(S.subClosed); s.has(id) ? s.delete(id) : s.add(id); A.set({ subClosed: s }); },
+  "pause-proj": (id) => A.togglePause(id),
+  "rename-board": (id) => { const b = S.boards.find((x) => x.id === id) || {};
+    modal("Переименовать вкладку", fld("Название", input("n", b.n || "")),
+      `${btn("Отмена", "mclose")}${btn("Сохранить", "do-rename-board", id, undefined, "pri")}`); },
+  "do-rename-board": (id) => { const f = formData(); closeModal(); A.renameBoard(id, f.n); },
   "proj-priv": (id) => A.toggleProjPriv(id),
   "rename-proj": (id) => modal("Переименовать проект", fld("Название", input("n", (proj(id) || {}).n || "")),
     `${btn("Отмена", "mclose")}${btn("Сохранить", "do-rename-proj", id, undefined, "pri")}`),

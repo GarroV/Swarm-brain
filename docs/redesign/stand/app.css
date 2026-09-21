@@ -202,7 +202,9 @@ tbody tr.sel td.t{font-weight:600}
 .psec:hover .pacts,.psub:hover .pacts,.pacts:focus-within{opacity:1}
 .psec .cols{display:flex;gap:10px;padding:10px 14px 14px;overflow:auto}
 .psec .cols .col{min-width:210px;max-height:none}
-.psec .cols .cards{max-height:260px}
+/* Раскрытый проект: колонкам дали высоту. 260px — это три карточки, дальше человек
+   скроллит узкий столбик, хотя место на экране есть (просьба владельца 21.09). */
+.psec .cols .cards{max-height:440px;min-height:120px}
 /* Подпись макета. Стоит у левого края рабочей области: справа кнопка фидбека и
    тосты, а человеку, которому дали ссылку, надо сразу видеть, что данные вымышленные. */
 .stamp{position:fixed;left:calc(var(--nav-w) + 14px);bottom:8px;font:500 10px/1 var(--font-num);color:var(--ink-empty);letter-spacing:.08em}
@@ -835,3 +837,12 @@ tr.sect .sub{margin-left:8px;font-weight:400;text-transform:none;letter-spacing:
 td .av{margin-right:0}
 td .av + .av{margin-left:-7px;box-shadow:0 0 0 2px var(--surface)}
 tr:hover td .av + .av{box-shadow:0 0 0 2px var(--surface-2)}
+
+/* Стрелка раскрытия — не мелкий значок, а читаемая кнопка: раньше её не замечали и не
+   понимали, что плитка вообще раскрывается. Сама плитка тоже раскрывается по нажатию. */
+.pcard .ex{display:inline-flex;align-items:center;justify-content:center;width:26px;height:22px;
+  border:1px solid var(--line-control);border-radius:7px;background:var(--surface);color:var(--ink-2);
+  font-size:11px;line-height:1;transition:transform .12s ease-out}
+.pcard:hover .ex{border-color:var(--accent-line);color:var(--accent);background:var(--accent-soft)}
+.pcard{cursor:pointer}
+.psec .ph .ex,.psub .sh .ex{transform:rotate(180deg)}

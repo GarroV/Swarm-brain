@@ -1298,7 +1298,66 @@ function tokenCheck() {
   await go('toggle-open', 'p1');
   await new Promise((r) => setTimeout(r, 120));
   const secCols = await p.evaluate(() => [...document.querySelectorAll('.psec .cols > .col h3')].map((h) => h.childNodes[1].textContent.trim()));
-  want(secCols.slice(0, 4).join('/') === 'Бэклог/Открыто/В работе/Готово', `раскрытый проект дал колонки продукта (${secCols.join('/')})`);
+  want(secCols.slice(0, 4).join('/') === 'Бэклог идей/Открыто/В работе/Готово',
+    `раскрытый проект дал колонки продукта (${secCols.slice(0, 4).join('/')})`);
+  /* Бэклог проекта и бэклог подпроекта — разные вещи: у проекта это общий склад идей и
+     неразобранного, у подпроекта — его собственная очередь (просьба владельца 21.09). */
+  const subCols = await p.evaluate(() => [...document.querySelectorAll('.psub .cols > .col h3')].map((h) => h.childNodes[1].textContent.trim()));
+  want(subCols[0] === 'Бэклог' && secCols[0] === 'Бэклог идей',
+    `бэклог проекта и бэклог подпроекта названы по-разному («${secCols[0]}» и «${subCols[0]}»)`);
+  /* дальше смотрим на РАСКРЫТЫЙ проект и на СВЁРНУТУЮ плитку — берём их из состояния,
+     а не по имени: какой проект раскрыт, зависит от предыдущих шагов */
+  const openId = await p.evaluate(() => ([...document.querySelectorAll('.psec')][0] || {}).dataset?.id
+    || [...S.openProj][0] || null);
+  /* видимость проекта подписана словами: «Только я» не говорит, что будет по нажатию */
+  const privLabel = await p.evaluate(() => {
+    const b = [...document.querySelectorAll('.psec .pacts .btn')].find((x) => x.dataset.act === 'proj-priv');
+    return b ? b.textContent.trim() : ''; });
+  want(/Доступен/.test(privLabel), `кнопка видимости подписана словами («${privLabel}»)`);
+  /* пауза: фильтр «показывать на паузе» был, а поставить проект на паузу нечем */
+  const pauseId = await p.evaluate(() => {
+    const b = [...document.querySelectorAll('.psec .pacts .btn')].find((x) => x.dataset.act === 'pause-proj');
+    return b ? b.dataset.id : null; });
+  want(pauseId !== null, 'у проекта есть постановка на паузу');
+  const pauseBefore = await p.evaluate((id) => (S.projects.find((x) => x.id === id) || {}).st, pauseId);
+  await go('pause-proj', pauseId);
+  await new Promise((r) => setTimeout(r, 120));
+  const pauseAfter = await p.evaluate((id) => (S.projects.find((x) => x.id === id) || {}).st, pauseId);
+  want(pauseBefore !== 'paused' && pauseAfter === 'paused', `проект ставится на паузу (${pauseBefore} → ${pauseAfter})`);
+  /* поставленный на паузу уходит с доски — ради этого фильтр «показывать на паузе» и
+     существовал; включаем его и снимаем паузу тем же местом */
+  const goneWhilePaused = await p.evaluate((id) => !document.querySelector(`.psec[data-id="${id}"], .pcard[data-id="${id}"]`), pauseId);
+  want(goneWhilePaused, 'проект на паузе уходит с доски, пока не включено «показывать на паузе»');
+  await go('tgl', 'showClosed');
+  await new Promise((r) => setTimeout(r, 140));
+  want(!(await p.evaluate((id) => !document.querySelector(`.psec[data-id="${id}"], .pcard[data-id="${id}"]`), pauseId)),
+    '«показывать на паузе» возвращает его на доску');
+  await go('pause-proj', pauseId);
+  await new Promise((r) => setTimeout(r, 120));
+  want((await p.evaluate((id) => (S.projects.find((x) => x.id === id) || {}).st, pauseId)) === pauseBefore,
+    'проект снимается с паузы тем же местом');
+  await go('tgl', 'showClosed');
+  await new Promise((r) => setTimeout(r, 140));
+  /* плитка раскрывается целиком, а не только стрелкой */
+  const cardOpens = await p.evaluate(() => {
+    const card = document.querySelector('.pcard');
+    if (!card) return null;
+    const arrow = card.querySelector('.ex');
+    return { whole: card.dataset.act === 'toggle-open',
+      arrow: arrow ? Math.round(arrow.offsetWidth) + '×' + Math.round(arrow.offsetHeight) : 'нет',
+      seen: !!arrow && arrow.offsetWidth >= 20 && arrow.offsetHeight >= 18 }; });
+  want(cardOpens && cardOpens.whole, 'проект раскрывается нажатием на всю плитку');
+  want(cardOpens && cardOpens.seen, `стрелка раскрытия — читаемая кнопка (${cardOpens && cardOpens.arrow})`);
+  /* вкладку доски можно переименовать, а не только завести и удалить */
+  const boardWas = await p.evaluate(() => S.boardTab);
+  await go('set-board', await p.evaluate(() => S.boards[0].id));
+  await new Promise((r) => setTimeout(r, 140));
+  want((await count('[data-act="rename-board"]')) === 1, 'вкладку доски можно переименовать');
+  await go('set-board', boardWas);
+  await new Promise((r) => setTimeout(r, 140));
+  /* дальше нужен РАСКРЫТЫЙ p1: предыдущие шаги могли его свернуть */
+  if (!(await p.evaluate(() => S.openProj.has('p1')))) await go('toggle-open', 'p1');
+  await new Promise((r) => setTimeout(r, 140));
   const colPair = await p.evaluate(() => {
     const col = [...document.querySelectorAll('.psec .cols > .col')].find((c) => c.querySelector('h3').textContent.includes('В работе'));
     const real = S.tasks.filter((t) => !t.arch && t.pr === 'p1' && t.st === 'in_progress').length;
