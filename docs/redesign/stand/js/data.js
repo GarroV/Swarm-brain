@@ -42,22 +42,29 @@ const LABELS = [
   { id: "l9", n: "франчайзи", ic: "team" }, { id: "l10", n: "регулярно", ic: "repeat" },
 ];
 
-const PROJECTS = [
-  { id: "p1", n: "Открытие CEE", parent: null, own: 501, st: "active",  due: "2026-11-30", d: "Открытие точки в CEE: площадка, оборудование, персонал, запуск." },
-  { id: "p1a", n: "Площадка",     parent: "p1", own: 504, st: "active",  due: "2026-10-15", d: "Помещение, ремонт, согласования." },
-  { id: "p1b", n: "Оборудование", parent: "p1", own: 502, st: "active",  due: "2026-10-30", d: "Закупка и приёмка кухонного оборудования." },
-  { id: "p1c", n: "Персонал",     parent: "p1", own: 505, st: "active",  due: "2026-11-10", d: "Найм и обучение первой смены." },
-  { id: "p1d", n: "Маркетинг запуска", parent: "p1", own: 510, st: "planned", due: "2026-11-20", d: "Локальная кампания к открытию." },
-  { id: "p2", n: "Операции",      parent: null, own: 502, st: "active",  due: null, d: "Текущие операции: смены, стандарты, контроль качества." },
-  { id: "p2a", n: "Смены",        parent: "p2", own: 511, st: "active",  due: null, d: "График и подмены." },
-  { id: "p2b", n: "Стандарты",    parent: "p2", own: 508, st: "active",  due: null, d: "Стандарты приготовления и сервиса." },
-  { id: "p3", n: "Финансы",       parent: null, own: 503, st: "active",  due: "2026-10-15", d: "Бюджет, сверки, расчёты с поставщиками." },
-  { id: "p4", n: "Персонал",      parent: null, own: 505, st: "paused",  due: null, d: "Найм и обучение смен." },
-  { id: "p5", n: "IT и интеграции", parent: null, own: 507, st: "active", due: null, d: "Интеграции, доступы, рекордер." },
-  { id: "p6", n: "Маркетинг",     parent: null, own: 510, st: "active",  due: null, d: "Акции, локальные кампании, франчайзи." },
+const BOARDS = [
+  { id:"b1", n:"Запуск CEE", act:true },
+  { id:"b2", n:"Текущие операции" },
 ];
 
-/* задача: id, заголовок, проект, статус, исполнители, срок, приоритет, метки, страна, ... */
+const PROJECTS = [
+  { id: "p1", n: "Открытие CEE", parent: null, own: 501, st: "active",  due: "2026-11-30", b: "b1", d: "Открытие точки в CEE: площадка, оборудование, персонал, запуск." },
+  { id: "p1a", n: "Площадка",     parent: "p1", own: 504, st: "active",  due: "2026-10-15", b: "b1", d: "Помещение, ремонт, согласования." },
+  { id: "p1b", n: "Оборудование", parent: "p1", own: 502, st: "active",  due: "2026-10-30", b: "b1", d: "Закупка и приёмка кухонного оборудования." },
+  { id: "p1c", n: "Персонал",     parent: "p1", own: 505, st: "active",  due: "2026-11-10", b: "b1", d: "Найм и обучение первой смены." },
+  { id: "p1d", n: "Маркетинг запуска", parent: "p1", own: 510, st: "planned", due: "2026-11-20", b: "b1", d: "Локальная кампания к открытию." },
+  { id: "p2", n: "Операции",      parent: null, own: 502, st: "active",  due: null, b: "b2", d: "Текущие операции: смены, стандарты, контроль качества." },
+  { id: "p2a", n: "Смены",        parent: "p2", own: 511, st: "active",  due: null, b: "b2", d: "График и подмены." },
+  { id: "p2b", n: "Стандарты",    parent: "p2", own: 508, st: "active",  due: null, b: "b2", d: "Стандарты приготовления и сервиса." },
+  { id: "p3", n: "Финансы",       parent: null, own: 503, st: "active",  due: "2026-10-15", b: "b2", d: "Бюджет, сверки, расчёты с поставщиками." },
+  { id: "p4", n: "Персонал",      parent: null, own: 505, st: "paused",  due: null, b: "b2", priv: true, d: "Найм и обучение смен." },
+  { id: "p5", n: "IT и интеграции", parent: null, own: 507, st: "active", due: null, b: "b2", d: "Интеграции, доступы, рекордер." },
+  { id: "p6", n: "Маркетинг",     parent: null, own: 510, st: "active",  due: null, b: "b1", d: "Акции, локальные кампании, франчайзи." },
+];
+
+/* задача: id, заголовок, проект, статус, исполнители, срок, приоритет, метки, страна, ...
+   статусы — как в продукте: backlog / open / in_progress / done. «Бэклог» в списке задач
+   не показывается (в продукте он приглушён в smartLists) и живёт только колонкой доски. */
 const mkTask = (o) => ({
   id: o.id, t: o.t, pr: o.pr, st: o.st || "open", who: o.who || [], due: o.due || null,
   prio: o.prio || "med", labels: o.labels || [], mk: o.mk || null, recur: o.recur || null,
@@ -77,16 +84,16 @@ const TASKS = [
   mkTask({ id:139, t:"Закрыть доступы уволившимся", pr:"p5", st:"open", who:[507], due:"2026-09-19", prio:"high", labels:["l7"], mk:"RS", sprint:"c2" }),
   mkTask({ id:140, t:"Еженедельная сверка кассы", pr:"p3", st:"open", who:[503], due:"2026-09-22", prio:"med", labels:["l4","l10"], mk:"RS", recur:"weekly" }),
   mkTask({ id:141, t:"Подписать договор с поставщиком упаковки", pr:"p3", st:"open", who:[503], due:"2026-09-26", prio:"high", labels:["l1","l6"], mk:"RS", src:"m2", sprint:"c2" }),
-  mkTask({ id:142, t:"Провести обучение по новым позициям меню", pr:"p4", st:"open", who:[512], due:"2026-09-29", prio:"med", labels:["l5"], mk:"SI" }),
+  mkTask({ id:142, t:"Провести обучение по новым позициям меню", pr:"p4", st:"backlog", who:[512], due:"2026-09-29", prio:"med", labels:["l5"], mk:"SI" }),
   mkTask({ id:143, t:"Ежемесячный отчёт по качеству", pr:"p2b", st:"open", who:[508], due:"2026-10-01", prio:"med", labels:["l4","l10"], mk:"RS", recur:"monthly", sprint:"c3" }),
-  mkTask({ id:144, t:"Проверить работу второй линии выдачи", pr:"p2", st:"open", who:[511], due:"2026-09-24", prio:"low", labels:["l2"], mk:"RS" }),
+  mkTask({ id:144, t:"Проверить работу второй линии выдачи", pr:"p2", st:"backlog", who:[511], due:"2026-09-24", prio:"low", labels:["l2"], mk:"RS" }),
   mkTask({ id:145, t:"Согласовать макеты локальной акции", pr:"p6", st:"in_progress", who:[510], due:"2026-09-27", prio:"med", labels:[], mk:"HR", sprint:"c3" }),
   mkTask({ id:146, t:"Настроить вебхук Read.ai на новый воркспейс", pr:"p5", st:"in_progress", who:[507], due:"2026-09-23", prio:"med", labels:["l7"], mk:"RS" }),
   mkTask({ id:147, t:"Собрать обратную связь смены за неделю", pr:"p2a", st:"open", who:[511], due:"2026-09-21", prio:"low", labels:["l10"], mk:"RS", recur:"weekly" }),
   mkTask({ id:148, t:"Проверить сроки по хорватской лицензии", pr:"p1a", st:"open", who:[504], due:"2026-10-05", prio:"med", labels:["l6"], mk:"HR", sprint:"c3" }),
   mkTask({ id:149, t:"Договориться о встрече с арендодателем", pr:"p1a", st:"done", who:[504], due:"2026-09-09", prio:"med", labels:["l3"], mk:"HR" }),
   mkTask({ id:150, t:"Разобрать очередь вычитки за неделю", pr:"p5", st:"open", who:[501], due:"2026-09-20", prio:"med", labels:["l10"], mk:null, recur:"weekly" }),
-  mkTask({ id:151, t:"Обновить bumblebee на рабочих ноутбуках", pr:"p5", st:"open", who:[507], due:"2026-09-28", prio:"low", labels:["l7"], mk:"RS" }),
+  mkTask({ id:151, t:"Обновить bumblebee на рабочих ноутбуках", pr:"p5", st:"backlog", who:[507], due:"2026-09-28", prio:"low", labels:["l7"], mk:"RS" }),
   mkTask({ id:152, t:"Сверить остатки по складу в Нови-Саде", pr:"p2", st:"open", who:[502], due:"2026-09-24", prio:"med", labels:[], mk:"RS" }),
   mkTask({ id:153, t:"Личное: подготовить разговор по ставкам", pr:"p4", st:"open", who:[501], due:"2026-09-25", prio:"med", labels:[], mk:null, priv:true }),
   mkTask({ id:154, t:"Проверить боснийского поставщика теста", pr:"p1b", st:"open", who:[506], due:"2026-09-30", prio:"med", labels:["l1"], mk:"BA" }),

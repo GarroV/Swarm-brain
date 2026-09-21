@@ -960,7 +960,12 @@ function tokenCheck() {
   await go('close');
 
   /* ── проекты и спринты ──────────────────────────────────── */
-  await go('sec', 'projects'); await shot('15-projects');
+  await go('sec', 'projects');
+  /* доска продукта: вкладки досок сверху, проект раскрывается в колонки. Для проверок
+     карточек берём обзор всех вкладок и складываем раскрытый по умолчанию проект. */
+  await go('set-board', 'all');
+  await go('toggle-open', 'p1');
+  await shot('15-projects');
   /* проект заводится с экрана: в продукте это есть (RoyProjectsScreen → createProject),
      и стенд обязан уметь то же, иначе «перенесён весь функционал» — неправда */
   const projBefore = await count('.pcard');
@@ -990,6 +995,47 @@ function tokenCheck() {
   want(pair.rowAll === pair.panelAll && pair.rowOpen === pair.panelOpen,
     `карточка и панель дают одни числа по проекту (карточка ${pair.rowOpen}/${pair.rowAll}, панель «${pair.said}»)`);
   await go('close');
+  /* доска: раскрытый проект показывает четыре колонки продукта, а карточек в колонке
+     столько, сколько задач этого статуса у проекта — иначе колонка декоративная */
+  await go('toggle-open', 'p1');
+  await new Promise((r) => setTimeout(r, 120));
+  const secCols = await p.evaluate(() => [...document.querySelectorAll('.psec .cols > .col h3')].map((h) => h.childNodes[1].textContent.trim()));
+  want(secCols.slice(0, 4).join('/') === 'Бэклог/Открыто/В работе/Готово', `раскрытый проект дал колонки продукта (${secCols.join('/')})`);
+  const colPair = await p.evaluate(() => {
+    const col = [...document.querySelectorAll('.psec .cols > .col')].find((c) => c.querySelector('h3').textContent.includes('В работе'));
+    const real = S.tasks.filter((t) => !t.arch && t.pr === 'p1' && t.st === 'in_progress').length;
+    return { cards: col ? col.querySelectorAll('.card').length : -1, real };
+  });
+  want(colPair.cards === colPair.real, `в колонке столько карточек, сколько задач (${colPair.cards} против ${colPair.real})`);
+  /* «Бэклог» — живой статус продукта, но в списке задач он приглушён: задача из бэклога
+     не должна появиться в «Задачах», иначе список врёт про охват */
+  const backlogLeak = await p.evaluate(() => {
+    /* проверяем при ВСЕХ включённых статусах — именно так список выглядит после «сбросить
+       фильтры». При наборе по умолчанию бэклог не виден сам собой, и правило ничего не ловит */
+    const keep = { ...S, statuses: S.statuses };
+    S.statuses = new Set(Object.keys(ST_LABEL));
+    /* самый широкий охват: любой уцелевший от прошлых шагов фильтр прятал бы бэклог
+       вместо приглушения — и правило молча проходило бы на сломанном коде */
+    S.lens = 'all'; S.staff = true; S.q = ''; S.mk = null; S.assignee = null;
+    S.noProject = false; S.recurOnly = false; S.archOn = false;
+    const ids = new Set(S.tasks.filter((t) => t.st === 'backlog' && !t.arch).map((t) => t.id));
+    const shown = visibleTasks().filter((t) => ids.has(t.id)).length;
+    Object.assign(S, { statuses: keep.statuses, lens: keep.lens, staff: keep.staff, q: keep.q, mk: keep.mk,
+      assignee: keep.assignee, noProject: keep.noProject, recurOnly: keep.recurOnly, archOn: keep.archOn });
+    return { total: ids.size, shown };
+  });
+  want(backlogLeak.total > 0 && backlogLeak.shown === 0, `бэклог живёт на доске и не течёт в список задач (${backlogLeak.total} задач, в списке ${backlogLeak.shown})`);
+  /* вкладки досок делят проекты: переключение вкладки обязано менять состав экрана */
+  const boardCounts = await p.evaluate(async () => {
+    const at = () => document.querySelectorAll('.pcard, .psec').length;
+    const out = {};
+    for (const id of ['all', 'b1', 'b2']) { ACTS['set-board'](id); await new Promise((r) => requestAnimationFrame(r)); out[id] = at(); }
+    ACTS['set-board']('all'); await new Promise((r) => requestAnimationFrame(r));
+    return out;
+  });
+  want(boardCounts.b1 + boardCounts.b2 === boardCounts.all && boardCounts.b1 > 0 && boardCounts.b2 > 0,
+    `вкладки досок делят проекты без потерь (${boardCounts.b1} + ${boardCounts.b2} = ${boardCounts.all})`);
+  await go('toggle-open', 'p1');
   await go('tab', 'map'); await shot('17-projects-map');
   const mapTotals = await p.evaluate(() => Object.fromEntries(
     [...document.querySelectorAll('.tkids > .tbr > .tnode')].map((e) => {
@@ -1243,29 +1289,6 @@ function tokenCheck() {
   await go('reissue', 'mcp');
   await new Promise((r) => setTimeout(r, 90));
   want((await text('.rowset code')) !== tokBefore, `токен перевыпускается (${tokBefore} → ${await text('.rowset code')})`);
-  await go('tab', 'columns'); await shot('27-columns');
-  want(await seen('[data-v="0:-1"]', (e) => e.disabled) === true, 'вверх у первой колонки недоступно, а не молчит');
-  const lastDown = await p.evaluate(() => S.cols.length - 1);
-  want(await seen(`[data-v="${lastDown}:1"]`, (e) => e.disabled) === true, 'вниз у последней колонки недоступно');
-  await gov('col-tgl', '1');
-  await new Promise((r) => setTimeout(r, 90));
-  want((await text('.rowset')).includes('скрыта'), 'скрытая колонка названа словом, а не только текстом кнопки');
-  await gov('col-tgl', '1');
-  const colsBefore = await count('[data-act="col-tgl"]');
-  await go('add-col');
-  await p.type('[data-f="n"]', 'На проверке');
-  await go('do-add-col');
-  await new Promise((r) => setTimeout(r, 90));
-  want((await count('[data-act="col-tgl"]')) === colsBefore + 1, 'колонка доски добавляется');
-  /* разрушительное действие сперва спрашивает: до ответа набор колонок не тронут */
-  await go('reset-cols');
-  await new Promise((r) => setTimeout(r, 90));
-  want((await count('.modal .hint')) === 1, 'сброс колонок сперва спрашивает подтверждение');
-  want((await count('[data-act="col-tgl"]')) === colsBefore + 1, 'до ответа на вопрос колонки не тронуты');
-  want((await text('.modal')).includes('пропадёт: 1'), 'вопрос называет, сколько колонок потеряется');
-  await go('do-reset-cols');
-  await new Promise((r) => setTimeout(r, 90));
-  want((await count('[data-act="col-tgl"]')) === colsBefore, 'колонки возвращаются по умолчанию');
   await go('tab', 'labels'); await shot('37-labels');
   const labelsBefore = await count('[data-act="rename-label"]');
   await go('add-label');

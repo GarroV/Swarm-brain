@@ -164,8 +164,9 @@ tbody tr.sel td.t{font-weight:600}
 .rv b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rv .pl{flex:none;display:flex;align-items:center;gap:6px;color:var(--ink-3)}
 .rv .r{flex:none;margin-left:auto;display:flex;gap:6px}
-/* Проекты — карточками, как в рабочем продукте. Шесть колонок таблицы были выдумкой:
-   у проекта читают название, сколько задач и сколько из них живых. */
+/* Проекты — доска продукта: свёрнутый проект карточкой, раскрытый — колонками.
+   Сетка держит обе формы: раскрытая секция занимает всю ширину строки, соседние
+   карточки не прыгают. */
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:12px;padding:14px var(--gutter) 22px;
   align-content:start;overflow:auto}
 .pcard{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:14px 15px;text-align:left;
@@ -178,6 +179,25 @@ tbody tr.sel td.t{font-weight:600}
 .pcard .m b{font-weight:600;font-family:var(--font-mono)}
 .pcard .s{font-size:var(--fs-meta);color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
 .pcard .f{display:flex;align-items:center;gap:8px;margin-top:auto;font-size:var(--fs-meta)}
+.pcard .nm{cursor:pointer}
+.ex{margin-left:auto;flex:none;width:22px;height:22px;border:1px solid var(--line);border-radius:6px;background:var(--surface);
+  color:var(--ink-3);font-size:10px;line-height:1;display:grid;place-items:center;cursor:pointer;transition:transform .15s}
+.ex.on{transform:rotate(180deg);border-color:var(--accent-line);color:var(--accent)}
+.ex:hover{border-color:var(--accent);color:var(--accent)}
+/* Раскрытый проект: секция во всю ширину сетки — колонки не помещаются в карточку 268px */
+.psec{grid-column:1/-1;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);overflow:hidden}
+.psec.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.psec .ph,.psub .sh{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--surface-2);border-bottom:1px solid var(--line)}
+.psub .sh{background:transparent;border-bottom:1px dashed var(--line);padding:8px 14px 8px 26px}
+.psec .nm{font-size:var(--fs-lead);font-weight:600;color:var(--ink);cursor:pointer}
+.psub .nm{font-size:var(--fs-dense);font-weight:600}
+.psec .ph .n,.psub .sh .n{font:600 11px/1 var(--font-num);color:var(--ink-3);background:var(--surface);border:1px solid var(--line);
+  border-radius:20px;padding:3px 7px}
+.pacts{margin-left:auto;display:flex;gap:6px;opacity:.35;transition:opacity .15s}
+.psec:hover .pacts,.psub:hover .pacts,.pacts:focus-within{opacity:1}
+.psec .cols{display:flex;gap:10px;padding:10px 14px 14px;overflow:auto}
+.psec .cols .col{min-width:210px;max-height:none}
+.psec .cols .cards{max-height:260px}
 /* Подпись макета. Стоит у левого края рабочей области: справа кнопка фидбека и
    тосты, а человеку, которому дали ссылку, надо сразу видеть, что данные вымышленные. */
 .stamp{position:fixed;left:calc(var(--nav-w) + 14px);bottom:8px;font:500 10px/1 var(--font-num);color:var(--ink-empty);letter-spacing:.08em}

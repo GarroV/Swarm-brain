@@ -1,30 +1,81 @@
 /* Проекты и спринты: дерево проектов, доска с перетаскиванием, инициативы, чек, аналитика, журнал. */
 
-function screenProjects() {
-  if (S.tab === "map") return projectsMap();
-  const all = S.projects.filter((p) => !p.parent);
-  const roots = S.showClosed ? all : all.filter((p) => p.st !== "paused");
-  return `<div class="bar">${wsChip()}${chip("Показывать на паузе", S.showClosed, "tgl", "showClosed")}
-    <div class="right"><span>Показано <b>${roots.length}</b> из ${all.length}</span><span>Подпроектов <b>${S.projects.length - all.length}</b></span>
-      ${btn("＋ Проект", "new-project", undefined, undefined, "pri sm")}</div></div>`
-    + (roots.length ? `<div class="pgrid">${roots.map(projectCard).join("")}</div>`
-      : empty(all.length ? "Все проекты на паузе" : "В этом воркспейсе ещё нет проектов",
-              all.length ? "Включите «показывать на паузе»" : "Проект появится вместе с первой задачей"));
+/* Экран «Проекты» — доска продукта (miniapp/src/components/tasks/SprintBoard.tsx):
+   вкладки досок сверху, проекты секциями, внутри колонки Бэклог · Открыто · В работе ·
+   Готово, подпроекты со своими колонками, перетаскивание и быстрое добавление задачи.
+   До 21.09 здесь была сетка карточек — это МОБИЛЬНЫЙ экран продукта (RoyProjectsScreen),
+   а не рабочий: владелец просил вернуть то, что есть в проде, вместе с вкладками. */
+const BCOLS = [["backlog", "Бэклог"], ["open", "Открыто"], ["in_progress", "В работе"], ["done", "Готово"]];
+
+function boardBar() {
+  const all = S.boardTab === "all";
+  const tab = (b) => `<button class="sg${S.boardTab === b.id ? " on" : ""}" ${act("set-board", b.id)}>${esc(b.n)}${b.act ? " ·" : ""}</button>`;
+  return `<div class="bar">${wsChip()}
+    <span class="seg">${`<button class="sg${all ? " on" : ""}" ${act("set-board", "all")}>Все вкладки</button>`}${S.boards.map(tab).join("")}</span>
+    ${btn("＋ Вкладка", "new-board", undefined, undefined, "sm")}
+    ${all ? "" : btn("Удалить вкладку", "del-board", S.boardTab, undefined, "sm")}
+    ${chip("Показывать на паузе", S.showClosed, "tgl", "showClosed")}
+    <div class="right">${btn("＋ Проект", "new-project", undefined, undefined, "pri sm")}</div></div>`;
 }
 
-/* Карточка проекта — как в рабочем продукте: точка состояния, название, числа задач,
-   подпроекты, владелец и срок. Владелец: «верни как было в текущем проде, тот
-   функционал в целом устраивает». Таблица из шести колонок была моей выдумкой. */
+function screenProjects() {
+  if (S.tab === "map") return projectsMap();
+  const onBoard = S.projects.filter((p) => !p.parent && (S.boardTab === "all" || p.b === S.boardTab));
+  const roots = S.showClosed ? onBoard : onBoard.filter((p) => p.st !== "paused");
+  if (!roots.length) return boardBar() + empty(onBoard.length ? "Все проекты этой вкладки на паузе" : "На этой вкладке проектов нет",
+    onBoard.length ? "Включите «показывать на паузе»" : "Создайте проект — задачи разложатся по его колонкам");
+  return boardBar() + `<div class="pgrid">${roots.map((p) => S.openProj.has(p.id) ? projectSection(p) : projectCard(p)).join("")}</div>`;
+}
+
+/* Свёрнутый проект — карточка: точка состояния, название, числа задач, подпроекты,
+   владелец и срок. Раскрывается стрелкой, карточка целиком открывает панель проекта. */
 function projectCard(p) {
   const subs = S.projects.filter((x) => x.parent === p.id);
   const tasks = projectTasks(p.id);
   const open = tasks.filter((t) => t.st !== "done").length;
-  return `<button class="pcard${S.sel === p.id && S.selKind === "project" ? " sel" : ""}" ${act("open-proj", p.id)}>
-    <span class="h">${dot(p.st === "paused" ? "open" : "in_progress")}<b class="nm">${esc(p.n)}</b>
-      ${p.st === "paused" ? state("пауза", false) : ""}</span>
+  return `<div class="pcard${S.sel === p.id && S.selKind === "project" ? " sel" : ""}">
+    <span class="h">${dot(p.st === "paused" ? "open" : "in_progress")}<b class="nm" ${act("open-proj", p.id)} tabindex="0">${esc(p.n)}</b>
+      ${p.priv ? state("только я", false) : ""}${p.st === "paused" ? state("пауза", false) : ""}
+      <button class="ex" ${act("toggle-open", p.id)} title="Развернуть проект в колонки">▾</button></span>
     <span class="m">задач: <b class="all">${tasks.length}</b> · открыто: <b class="open">${open}</b></span>
     <span class="s">${subs.length ? esc(subs.map((x) => x.n).join(" · ")) : `<span class="muted">без подпроектов</span>`}</span>
-    <span class="f">${avShort(p.own)}${due(p.due)}</span></button>`;
+    <span class="f">${avShort(p.own)}${due(p.due)}</span></div>`;
+}
+
+/* Колонка доски: карточки задач секции, перетаскивание и строка быстрого добавления.
+   data-sec несёт проект — бросок в чужую секцию меняет задаче и статус, и проект,
+   как в продукте (applyDrop). */
+function boardCol(sec, id, n, tasks) {
+  const items = tasks.filter((t) => id === "backlog" ? !ST_LABEL[t.st] : t.st === id);
+  return `<div class="col"><h3>${dot(id === "backlog" ? "open" : id)}${n}<span class="n">${items.length}</span></h3>
+    <div class="cards" data-drop="${id}" data-sec="${sec}">${items.map((t) => `<div class="card" draggable="true" data-card="${t.id}" ${act("open-task", t.id)} tabindex="0">
+      ${priMark(t.prio)}${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">не назначен</span>`}
+      <span style="margin-left:auto">${due(t.due, t.st === "done")}</span></div></div>`).join("")
+      || `<div class="drop-empty">перетащите сюда</div>`}
+      <input class="qadd" placeholder="+ задача в «${esc(n)}»" data-qadd="${id}" data-qsec="${sec}"></div></div>`;
+}
+
+function projectSection(p) {
+  const subs = S.projects.filter((x) => x.parent === p.id);
+  const own = S.tasks.filter((t) => !t.arch && t.pr === p.id);
+  const all = projectTasks(p.id);
+  return `<div class="psec${S.sel === p.id && S.selKind === "project" ? " sel" : ""}">
+    <div class="ph"><button class="ex on" ${act("toggle-open", p.id)} title="Свернуть проект">▾</button>
+      ${dot(p.st === "paused" ? "open" : "in_progress")}<b class="nm" ${act("open-proj", p.id)} tabindex="0">${esc(p.n)}</b>
+      <span class="n">${all.length}</span>
+      <span class="pacts">${btn(p.priv ? "Только я" : "Вся команда", "proj-priv", p.id, undefined, "sm")}
+        ${btn("Переименовать", "rename-proj", p.id, undefined, "sm")}
+        ${btn("＋ Подпроект", "new-subproject", p.id, undefined, "sm")}
+        ${btn("Удалить", "del-proj", p.id, undefined, "sm")}</span></div>
+    <div class="cols">${BCOLS.map(([id, n]) => boardCol(p.id, id, n, own)).join("")}</div>
+    ${subs.map((k) => {
+      const kt = S.tasks.filter((t) => !t.arch && t.pr === k.id);
+      const open = S.subOpen.has(k.id);
+      return `<div class="psub"><div class="sh"><button class="ex${open ? " on" : ""}" ${act("toggle-sub-proj", k.id)}>▾</button>
+        <b class="nm" ${act("open-proj", k.id)} tabindex="0">${esc(k.n)}</b><span class="n">${kt.length}</span>
+        <span class="pacts">${btn("Переименовать", "rename-proj", k.id, undefined, "sm")}${btn("Удалить", "del-proj", k.id, undefined, "sm")}</span></div>
+        ${open ? `<div class="cols">${BCOLS.map(([id, n]) => boardCol(k.id, id, n, kt)).join("")}</div>` : ""}</div>`;
+    }).join("")}</div>`;
 }
 
 function projectsMap() {
@@ -136,16 +187,16 @@ function screenSprints() {
       + (inCycle.length ? `<div class="sprint">${sprintGroups(inCycle)}</div>`
         : empty("В цикле пока нет задач", "Возьмите задачи из пула инициатив"));
   }
-  const cols = S.cols.filter((c) => c.on);
+  const cols = BCOLS.filter(([id]) => id !== "backlog");   /* у спринта «Бэклога» нет — канон продукта */
   return cycleBar(view + `<span>Перетащите карточку, чтобы сменить статус</span>`) + sprintKpi(inCycle)
-    + `<div class="board">${cols.map((c) => {
-      const items = inCycle.filter((t) => t.st === c.id);
-      return `<div class="col"><h3>${dot(c.id)}${c.n}<span class="n">${items.length}</span></h3>
-        <div class="cards" data-drop="${c.id}">${items.map((t) => `<div class="card" draggable="true" data-card="${t.id}" ${act("open-task", t.id)} tabindex="0">
+    + `<div class="board">${cols.map(([cid, cn]) => {
+      const items = inCycle.filter((t) => t.st === cid);
+      return `<div class="col"><h3>${dot(cid)}${cn}<span class="n">${items.length}</span></h3>
+        <div class="cards" data-drop="${cid}">${items.map((t) => `<div class="card" draggable="true" data-card="${t.id}" ${act("open-task", t.id)} tabindex="0">
           ${priMark(t.prio)}${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">не назначен</span>`}
           <span style="margin-left:auto">${due(t.due, t.st === "done")}</span></div></div>`).join("")
           || `<div class="drop-empty">перетащите сюда</div>`}
-          <input class="qadd" placeholder="+ задача в «${esc(c.n)}»" data-qadd="${c.id}"></div></div>`;
+          <input class="qadd" placeholder="+ задача в «${esc(cn)}»" data-qadd="${cid}"></div></div>`;
     }).join("")}</div>`;
 }
 
@@ -249,5 +300,6 @@ document.addEventListener("dragover", (e) => {
 });
 document.addEventListener("drop", (e) => {
   const z = e.target.closest("[data-drop]"); if (!z || S.board.drag === null) return;
-  e.preventDefault(); const id = S.board.drag; S.board.drag = null; A.moveTask(id, z.dataset.drop);
+  e.preventDefault(); const id = S.board.drag; S.board.drag = null;
+  A.dropTask(id, z.dataset.drop, z.dataset.sec || null);
 });

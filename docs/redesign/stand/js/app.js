@@ -28,7 +28,7 @@ const TABS = {
   base: [["all", "Все записи"], ["meeting", "Встречи"], ["document", "Документы"], ["note", "Заметки"],
          ["transcript", "Транскрипты"], ["summary", "Сводки"], ["link", "Ссылки"], ["files", "Файлы"]],
   team: [["members", "Участники"], ["ws", "Воркспейсы"]],
-  settings: [["profile", "Профиль"], ["integr", "Интеграции"], ["tokens", "Доступы"], ["notif", "Уведомления"], ["columns", "Колонки доски"], ["labels", "Метки"]],
+  settings: [["profile", "Профиль"], ["integr", "Интеграции"], ["tokens", "Доступы"], ["notif", "Уведомления"], ["labels", "Метки"]],
   admin: [["users", "Пользователи"], ["ws", "Воркспейсы"], ["review", "Очередь вычитки"], ["broadcast", "Рассылка"], ["feedback", "Фидбек"]],
 };
 const TITLES = {
@@ -210,6 +210,27 @@ const ACTS = {
     `${btn("Отмена", "mclose")}${btn("Создать", "do-subproject", id, undefined, "pri")}`),
   "do-subproject": (id) => { const f = formData(); closeModal(); A.addSubproject(id, f.n); },
   "toggle-proj": (id) => A.toggleProject(id),
+  "set-board": (id) => A.set({ boardTab: id }),
+  "new-board": () => modal("Новая вкладка доски", fld("Название", input("n", "", "Например: Операции")),
+    `${btn("Отмена", "mclose")}${btn("Создать", "do-board", undefined, undefined, "pri")}`),
+  "do-board": () => { const f = formData(); closeModal(); A.addBoard(f.n); },
+  "del-board": (id) => { const b = S.boards.find((x) => x.id === id) || {};
+    const n = S.projects.filter((p) => p.b === id).length;
+    modal("Удалить вкладку?", `<div class="hint">Вкладка <b>${esc(b.n || "")}</b> исчезнет. Проекты и задачи останутся${n ? `, но проектов уйдёт из вкладки: ${n}` : ""}.</div>`,
+      `${btn("Оставить", "mclose")}${btn("Удалить вкладку", "do-del-board", id, undefined, "pri")}`); },
+  "do-del-board": (id) => { closeModal(); A.delBoard(id); },
+  "toggle-open": (id) => { const s = new Set(S.openProj); s.has(id) ? s.delete(id) : s.add(id); A.set({ openProj: s }); },
+  "toggle-sub-proj": (id) => { const s = new Set(S.subOpen); s.has(id) ? s.delete(id) : s.add(id); A.set({ subOpen: s }); },
+  "proj-priv": (id) => A.toggleProjPriv(id),
+  "rename-proj": (id) => modal("Переименовать проект", fld("Название", input("n", (proj(id) || {}).n || "")),
+    `${btn("Отмена", "mclose")}${btn("Сохранить", "do-rename-proj", id, undefined, "pri")}`),
+  "do-rename-proj": (id) => { const f = formData(); closeModal(); A.renameProject(id, f.n); },
+  "del-proj": (id) => { const p = proj(id) || {};
+    const kids = S.projects.filter((x) => x.parent === id).length;
+    const n = projectTasks(id).length;
+    modal("Удалить проект?", `<div class="hint">Проект <b>${esc(p.n || "")}</b>${kids ? ` и подпроектов: ${kids}` : ""} исчезнет. Задачи не удалятся — без проекта останется: ${n}.</div>`,
+      `${btn("Оставить", "mclose")}${btn("Удалить проект", "do-del-proj", id, undefined, "pri")}`); },
+  "do-del-proj": (id) => { closeModal(); A.delProject(id); },
   "person-tasks": (id) => { A.go("tasks"); S.assignee = +id; S.lens = "all"; S.archOn = false; S.recurOnly = false;
     if (me().role === "admin") S.staff = true;   /* чужие задачи видны только админу */
     render(); },
@@ -242,9 +263,6 @@ const ACTS = {
     modal("Закрыть цикл?", `<div class="hint">Цикл <b>${esc(c.n)}</b> станет закрытым${tail ? `, а незакрытых задач переедет в следующий: ${tail}` : ", незакрытых задач в нём нет"}. Открыть обратно будет нечем.</div>`,
       `${btn("Не закрывать", "mclose")}${btn("Закрыть цикл", "do-close-cycle", undefined, undefined, "pri")}`); },
   "do-close-cycle": () => { closeModal(); A.closeCycle(); },
-  "col-move": (_, v) => { const [i, d] = v.split(":").map(Number), j = i + d;
-    if (j < 0 || j >= S.cols.length) return; const n = [...S.cols]; [n[i], n[j]] = [n[j], n[i]]; A.set({ cols: n }); },
-  "col-tgl": (_, v) => A.set({ cols: S.cols.map((c, k) => k === +v ? { ...c, on: !c.on } : c) }),
   integr: (id) => A.toggleIntegration(id),
   broadcast: () => broadcastModal(),
   "do-broadcast": () => { const f = formData(); closeModal(); A.broadcast(f.text, f.to); },
@@ -292,13 +310,6 @@ const ACTS = {
   "notif-pref": (id) => A.toggleNotifPref(id),
   reissue: (id) => A.reissueToken(id),
   tz: (_, v) => { S.tz = v; A.toast(`Часовой пояс: ${v}`); },
-  "reset-cols": () => { const own = S.cols.filter((c) => !["open", "in_progress", "done"].includes(c.id)).length;
-    modal("Вернуть колонки по умолчанию?", `<div class="hint">Останутся три исходные колонки. Добавленных вами колонок пропадёт: ${own}.</div>`,
-      `${btn("Оставить", "mclose")}${btn("Вернуть", "do-reset-cols", undefined, undefined, "pri")}`); },
-  "do-reset-cols": () => { closeModal(); A.resetCols(); },
-  "add-col": () => modal("Новая колонка доски", fld("Название", input("n", "", "Например: На проверке")),
-    `${btn("Отмена", "mclose")}${btn("Добавить", "do-add-col", undefined, undefined, "pri")}`),
-  "do-add-col": () => { const f = formData(); closeModal(); A.addCol(f.n); },
   "mcp-guide": () => modal("Подключение Claude Desktop", `
     <div class="hint">Добавьте блок в <code>claude_desktop_config.json</code> и перезапустите Claude Desktop.</div>
     <pre class="cmd">"swarm-brain": {
@@ -370,8 +381,9 @@ document.addEventListener("keydown", (e) => {
   const qa = e.target.dataset && e.target.dataset.qadd;
   if (qa && e.key === "Enter" && e.target.value.trim()) {
     const title = e.target.value.trim();
-    A.createTask({ title, pr: null, who: ME, due: null, prio: "med", labels: [], mk: null, recur: null, priv: false, note: "" });
-    A.patchTask(S.sel, { st: qa, sprint: S.cycle });
+    const sec = e.target.dataset.qsec || null;                 /* доска проектов: секция = проект */
+    A.createTask({ title, pr: sec, who: ME, due: null, prio: "med", labels: [], mk: null, recur: null, priv: false, note: "" });
+    A.patchTask(S.sel, sec ? { st: qa } : { st: qa, sprint: S.cycle });
     A.close();
     return;
   }

@@ -16,7 +16,8 @@ const S = {
   assignee: null, activeOnly: false, showClosed: false,
   /* спринты */
   cycle: "c2", cycles: CYCLES.slice(), board: { drag: null },
-  cols: [ { id:"open", n:"Открыто", on:true }, { id:"in_progress", n:"В работе", on:true }, { id:"done", n:"Готово", on:true } ],
+  /* доска проектов: вкладки досок (в продукте — таблица sprints), какие проекты раскрыты */
+  boards: BOARDS.slice(), boardTab: "b1", openProj: new Set(["p1"]), subOpen: new Set(),
   /* система */
   theme: "light", lang: "RU", tz: "Europe/Belgrade", toast: null,
   /* данные */
@@ -322,7 +323,10 @@ const A = {
   },
   addProject(name) {
     const id = "p" + (S.projects.filter((x) => !x.parent).length + 1) + "n";
-    S.projects = [...S.projects, { id, n: name || "Новый проект", parent: null, own: ME, due: null, st: "active" }];
+    /* проект заводится на той вкладке, где человек стоит: без этого он создавался «нигде»
+       и с экрана исчезал — создание выглядело как молчаливый отказ */
+    const b = S.boardTab === "all" ? (S.boards[0] || {}).id || null : S.boardTab;
+    S.projects = [...S.projects, { id, n: name || "Новый проект", parent: null, own: ME, due: null, st: "active", b }];
     A.toast("Проект создан");
     A.select("project", id);
   },
@@ -353,6 +357,49 @@ const A = {
     S.cycles = S.cycles.map((x) => x.id === c.id ? { ...x, st: "closed" } : x);
     if (next) S.cycle = next.id;
     A.toast(tail.length ? `Цикл закрыт, перенесено в «${next.n}»: ${tail.length}` : "Цикл закрыт, хвостов не было");
+  },
+  addBoard(name) {
+    const id = "b" + (S.boards.length + 1);
+    S.boards = [...S.boards, { id, n: name || "Новая вкладка" }];
+    S.boardTab = id;
+    A.toast("Вкладка создана");
+  },
+  /* вкладку удаляем вместе с её принадлежностью, но НЕ с проектами: в продукте задачи и
+     проекты живут дальше, просто уходят из вкладки. Молча уносить работу нельзя. */
+  delBoard(id) {
+    const n = S.projects.filter((p) => p.b === id).length;
+    S.boards = S.boards.filter((b) => b.id !== id);
+    S.projects = S.projects.map((p) => p.b === id ? { ...p, b: null } : p);
+    S.boardTab = (S.boards[0] || {}).id || "all";
+    A.toast(n ? `Вкладка удалена, проектов осталось без вкладки: ${n}` : "Вкладка удалена");
+  },
+  renameProject(id, name) {
+    if (!name) return;
+    S.projects = S.projects.map((p) => p.id === id ? { ...p, n: name } : p);
+    A.toast("Проект переименован");
+  },
+  /* удаление проекта не уносит задачи — они остаются без проекта, как в продукте */
+  delProject(id) {
+    const kids = S.projects.filter((p) => p.parent === id).map((p) => p.id);
+    const gone = new Set([id, ...kids]);
+    const n = S.tasks.filter((t) => gone.has(t.pr)).length;
+    S.projects = S.projects.filter((p) => !gone.has(p.id));
+    S.tasks = S.tasks.map((t) => gone.has(t.pr) ? { ...t, pr: null } : t);
+    if (S.sel === id) { S.sel = null; S.selKind = null; }
+    A.toast(n ? `Проект удалён, задач осталось без проекта: ${n}` : "Проект удалён");
+  },
+  toggleProjPriv(id) {
+    S.projects = S.projects.map((p) => p.id === id ? { ...p, priv: !p.priv } : p);
+    A.toast(proj(id).priv ? "Проект виден только вам" : "Проект виден всей команде");
+  },
+  /* бросок карточки в колонку другой секции меняет и статус, и проект — как applyDrop
+     в продукте: иначе перенос между проектами на доске невозможен */
+  dropTask(id, st, pr) {
+    const t = S.tasks.find((x) => x.id === id);
+    if (!t) return;
+    if (t.st !== st) A.patchTask(id, { st }, ["Статус", st === "backlog" ? "Бэклог" : ST_LABEL[st]]);
+    if (pr && t.pr !== pr) A.patchTask(id, { pr }, ["Проект", projPath(pr)]);
+    if (t.st === st && (!pr || t.pr === pr)) render();
   },
   toggleProject(id) {
     S.projects = S.projects.map((p) => p.id === id ? { ...p, st: p.st === "paused" ? "active" : "paused" } : p);
@@ -442,15 +489,6 @@ const A = {
     S.tokens = S.tokens.map((t) => t.id === id
       ? { ...t, v: (t.id === "mcp" ? "smcp_••••" : "••••") + tail, at: fmtDate(TODAY) } : t);
     A.toast("Токен перевыпущен — старый больше не работает");
-  },
-  resetCols() {
-    S.cols = [ { id:"open", n:"Открыто", on:true }, { id:"in_progress", n:"В работе", on:true }, { id:"done", n:"Готово", on:true } ];
-    A.toast("Колонки возвращены по умолчанию");
-  },
-  addCol(name) {
-    const id = "c" + (S.cols.length + 1);
-    S.cols = [...S.cols, { id, n: name || "Новая колонка", on: true }];
-    A.toast("Колонка добавлена");
   },
   theme() {
     S.theme = S.theme === "light" ? "dark" : "light";

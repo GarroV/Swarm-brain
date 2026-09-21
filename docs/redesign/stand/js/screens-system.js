@@ -35,7 +35,6 @@ function screenWorkspaces() {
 
 /* ── настройки ───────────────────────────────────────────────── */
 function screenSettings() {
-  if (S.tab === "columns") return settingsColumns();
   if (S.tab === "labels") return screenLabels();
   const P = {
     profile: () => rows([
@@ -71,15 +70,6 @@ function screenSettings() {
   const title = TABS.settings.find(([id]) => id === S.tab)[1];
   return `<div class="panes"><div class="pane"><h3>${esc(title)}</h3>
     <div class="sub">Настройки применяются к вашему аккаунту</div>${P()}</div></div>`;
-}
-function settingsColumns() {
-  return `<div class="panes"><div class="pane"><h3>Колонки доски спринта</h3>
-    <div class="sub">Порядок и состав колонок — общий для воркспейса</div>
-    ${rows(S.cols.map((c, i) => [`${dot(c.id)}${esc(c.n)}${c.on ? "" : " " + state("скрыта", false)}`,
-      `${nTasks(S.tasks.filter((t) => t.st === c.id && t.sprint === S.cycle).length)} · статус <code>${c.id}</code>`,
-      `<span class="ib">${btn("↑", "col-move", undefined, `${i}:-1`, "sm", i === 0)}${btn("↓", "col-move", undefined, `${i}:1`, "sm", i === S.cols.length - 1)}
-       ${btn(c.on ? "Скрыть" : "Показать", "col-tgl", undefined, String(i), "sm")}</span>`]))}
-    <div class="mt">${btn("Добавить колонку", "add-col", undefined, undefined, "pri")}${btn("Вернуть по умолчанию", "reset-cols")}</div></div></div>`;
 }
 
 /* ── админ ───────────────────────────────────────────────────── */
