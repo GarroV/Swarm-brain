@@ -4,36 +4,42 @@ const LENSES = [["mine", "Мои"], ["team", "Командные"], ["all", "В�
 const STATUSES = [["open", "Открыто"], ["in_progress", "В работе"], ["done", "Готово"]];
 /* подпись переключателя живёт в одном месте: в меню и в снимаемом чипе он звался
    «группировать по рынкам» и «по рынкам» — два имени у одного тумблера */
-const SHOW_TGL = { byMarket: "группировать по рынкам", staff: "все сотрудники" };
+const SHOW_TGL = { byMarket: "группировать по рынкам", staff: "все сотрудники",
+  recurOnly: "только регулярные", archOn: "показать архив" };
 
+/* Панель фильтров — ОДНА строка и три зоны: чья работа (переключатель), статус
+   (чипы, их владелец просил вернуть), остальное (рынок и редкое — меню).
+   Чипы вернулись, но не все подряд: семь стран чипами и были тем самым
+   нагромождением, из-за которого фильтры уехали в две строки. */
 function tasksToolbar() {
   const admin = me().role === "admin";
-  const stDefault = S.statuses.size === 2 && S.statuses.has("open") && S.statuses.has("in_progress");
-  const n = (stDefault ? 0 : 1) + (S.mk ? 1 : 0) + (S.byMarket ? 1 : 0) + (S.staff ? 1 : 0) + (S.assignee ? 1 : 0) + (S.noProject ? 1 : 0);
-  const groups = [
-    ["Статус", STATUSES.map(([id, nm]) => [`${dot(id)}${nm}`, "status", id, undefined, S.statuses.has(id)])],
-    ["Рынок", [["все рынки", "mk-filter", undefined, "", !S.mk],
-      ...COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "mk-filter", undefined, c.c, S.mk === c.c])]],
-    ["Показ", [[SHOW_TGL.byMarket, "tgl", "byMarket", undefined, S.byMarket],
-      ...(admin ? [[SHOW_TGL.staff, "tgl", "staff", undefined, S.staff]] : [])]],
-  ];
-  const active = [
-    ...(stDefault ? [] : [[`статус: ${STATUSES.filter(([id]) => S.statuses.has(id)).map(([, nm]) => nm).join(", ") || "ни одного"}`, "reset-statuses"]]),
-    ...(S.mk ? [[`рынок: ${S.mk}`, "mk-filter", undefined, ""]] : []),
-    ...(S.byMarket ? [[SHOW_TGL.byMarket, "tgl", "byMarket"]] : []),
-    ...(S.staff ? [[SHOW_TGL.staff, "tgl", "staff"]] : []),
-    /* приход с карты сужает список — значит это видно и снимается, а не действует втихую */
+  const seg = LENSES.map(([id, nm]) =>
+    `<button class="sg${S.lens === id ? " on" : ""}" ${act("lens", id)}>${esc(nm)}</button>`).join("");
+  const sts = STATUSES.map(([id, nm]) =>
+    `<button class="chip${S.statuses.has(id) ? " on" : ""}" ${act("status", id)}>${dot(id)}${esc(nm)}</button>`).join("");
+  const mkItems = [["все рынки", "mk-filter", undefined, "", !S.mk],
+    ...COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "mk-filter", undefined, c.c, S.mk === c.c])];
+  const more = [[SHOW_TGL.byMarket, "tgl", "byMarket", undefined, S.byMarket],
+    [SHOW_TGL.recurOnly, "tgl", "recurOnly", undefined, S.recurOnly],
+    [SHOW_TGL.archOn, "tgl", "archOn", undefined, S.archOn],
+    ...(admin ? [[SHOW_TGL.staff, "tgl", "staff", undefined, S.staff]] : [])];
+  const nMore = (S.byMarket ? 1 : 0) + (S.recurOnly ? 1 : 0) + (S.archOn ? 1 : 0) + (S.staff ? 1 : 0);
+  /* редкое и пришедшее извне (клик по карте, по человеку) остаётся снимаемым чипом:
+     фильтр, который сузил список молча, человек ищет глазами и не находит */
+  const extra = [
     ...(S.noProject ? [["без проекта", "drop-no-project"]] : []),
   ];
   return `<div class="bar">
-    ${LENSES.map(([id, nm]) => chip(nm, S.lens === id, "lens", id)).join("")}
+    <span class="seg">${seg}</span>
     <span class="sep-v"></span>
-    ${fdrop(n, groups)}
-    ${fchips(active)}
+    ${sts}
+    <span class="drop">${btn(S.mk ? `Рынок: ${S.mk}` : "Рынок", "noop", undefined, undefined, "sm" + (S.mk ? " on" : ""))}${fmenu(mkItems)}</span>
+    <span class="drop">${btn(nMore ? `Ещё · ${nMore}` : "Ещё", "noop", undefined, undefined, "sm" + (nMore ? " on" : ""))}${fmenu(more)}</span>
+    ${fchips(extra)}
     ${S.assignee ? `<button class="chip on" ${act("drop-assignee")}>${av(S.assignee)}<span class="x">×</span></button>` : ""}
     <div class="right">
       <input class="qin" placeholder="Фильтр по названию" value="${esc(S.q)}" data-qin="tasks">
-      <span>Показано <b>${visibleTasks().length}</b> из ${S.tasks.filter((t) => inList(t, S.tab)).length}</span>
+      <span>Показано <b>${visibleTasks().length}</b> из ${scopeCount()}</span>
       ${btn("＋ Задача", "new-task", undefined, undefined, "pri sm")}
     </div></div>`;
 }
@@ -43,7 +49,7 @@ function bulkBar() {
   const users = S.users.slice(0, 6).map((u) => `<button class="mi" ${act("bulk-assign", u.id)}>${av(u.id)}</button>`).join("");
   /* в архиве лежит уже заархивированное: кнопка «В архив» там не делала ничего,
      а единственного нужного действия — вернуть — в панели не было вовсе */
-  if (S.tab === "archive") return `<div class="bulk">Выбрано: ${S.bulk.size}
+  if (S.archOn) return `<div class="bulk">Выбрано: ${S.bulk.size}
     <span class="ib">${btn("Вернуть из архива", "bulk-restore", undefined, undefined, "sm")}</span>
     <button class="x" ${act("bulk-clear")}>✕</button></div>`;
   return `<div class="bulk">Выбрано: ${S.bulk.size}
@@ -64,7 +70,7 @@ function taskRow(t) {
     ${cell(`${dot(t.st)}${priMark(t.prio)}${esc(t.t)}${t.priv ? ' <span class="lock" title="личная">🔒</span>' : ""}`, "t")}
     ${cell(esc(projPath(t.pr)))}
     ${cell(t.who.length ? avShort(t.who[0]) : `<span class="muted" title="исполнитель не назначен">—</span>`)}
-    ${cell(lbls(t.labels) + (t.recur ? tag(RECUR_LABEL[t.recur], "p") : ""), "opt")}
+    ${cell(lbls(t.labels) + (t.recur ? tag(RECUR_SHORT[t.recur], "p") : ""), "opt")}
     ${cell(t.mk ? `<span class="cc">${t.mk}</span>` : `<span class="muted">—</span>`, "r opt")}
     ${cell(due(t.due, t.st === "done"), "r")}</tr>`;
 }
@@ -77,16 +83,18 @@ function groupRows(list) {
     list.forEach((t) => { const k = t.mk || "Без рынка"; (by[k] = by[k] || []).push(t); });
     return Object.keys(by).sort().map((k) => sect(k === "Без рынка" ? k : cname(k), by[k].length) + by[k].map(taskRow).join("")).join("");
   }
-  if (S.tab === "today" || S.tab === "upcoming") {
+  if (!S.archOn) {
     /* завершённая задача не «просрочена» и не «на сегодня»: срок у неё уже ничего не требует */
     const done = list.filter((t) => t.st === "done");
     const live = list.filter((t) => t.st !== "done");
     const over = live.filter((t) => dueKind(t.due) === "now");
     const today = live.filter((t) => dueKind(t.due) === "today");
-    const rest = live.filter((t) => !over.includes(t) && !today.includes(t));
+    const later = live.filter((t) => !over.includes(t) && !today.includes(t) && t.due);
+    const nodue = live.filter((t) => !t.due);
     return (over.length ? sect("Просрочено", over.length) + over.map(taskRow).join("") : "")
       + (today.length ? sect("Сегодня", today.length) + today.map(taskRow).join("") : "")
-      + (rest.length ? sect("Дальше", rest.length) + rest.map(taskRow).join("") : "")
+      + (later.length ? sect("Дальше", later.length) + later.map(taskRow).join("") : "")
+      + (nodue.length ? sect("Без срока", nodue.length) + nodue.map(taskRow).join("") : "")
       + (done.length ? sect("Сделано", done.length) + done.map(taskRow).join("") : "");
   }
   return list.map(taskRow).join("");
@@ -99,22 +107,22 @@ function screenTasks() {
   const head = tasksToolbar() + bulkBar();
   if (!list.length) {
     /* пустой экран без объяснения читается как «данных нет»: называем, сколько скрыто фильтрами */
-    const hidden = S.tasks.filter((t) => inList(t, S.tab)).length;
+    const hidden = scopeCount();
     return head + empty("Задач в этом срезе нет", hidden
-      ? `Линза и фильтры скрывают ещё ${hidden}`
-      : "На этой вкладке пока ничего нет")
+      ? `Фильтры скрывают ещё ${hidden}`
+      : "Здесь пока ничего нет")
       + (hidden ? `<div class="emptyact">${btn("Показать все", "reset-filters", undefined, undefined, "pri")}</div>` : "");
   }
   return head + table([
     { t: "", w: "30px" }, { t: "Задача" }, { t: "Проект", w: "20%" }, { t: "Исполнитель", short: "Кто", w: "15%" },
-    { t: "Метки", w: "15%", opt: true }, { t: "Рынок", r: true, w: "78px", opt: true }, { t: "Срок", r: true, w: "84px" },
+    { t: "Метки", w: "17%", opt: true }, { t: "Рынок", r: true, w: "78px", opt: true }, { t: "Срок", r: true, w: "84px" },
   ], groupRows(list)) + whatsNext(list);
 }
 
 /* Короткий список оставлял пол-экрана белым: человек видит три строки и не знает,
    это всё или он сам себе сузил фильтр. Экран отвечает тем, что будет дальше. */
 function whatsNext(list) {
-  if (S.tab === "archive" || list.length > 6) return "";
+  if (S.archOn || list.length > 6) return "";
   const shown = new Set(list.map((t) => t.id));
   const soon = S.tasks.filter((t) => !t.arch && t.st !== "done" && t.due && !shown.has(t.id) && inLens(t, S.lens))
     .sort((a, b) => String(a.due).localeCompare(String(b.due))).slice(0, 4);

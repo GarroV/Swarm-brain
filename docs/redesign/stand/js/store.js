@@ -5,6 +5,7 @@ const S = {
   sec: "home", tab: "today", sel: null, selKind: null,
   /* задачи */
   lens: "mine", statuses: new Set(["open", "in_progress"]), byMarket: false, staff: false, noMailOnly: false,
+  recurOnly: false, archOn: false,
   q: "", bulk: new Set(), dtab: "overview", mk: "", noProject: false,
   /* встречи */
   mf: { q: "", period: "all", cc: [], src: [], people: [], store: "any", st: "any" },
@@ -41,6 +42,8 @@ const cname = (c) => (COUNTRIES.find((x) => x.c === c) || {}).n || c;
 const ST_LABEL = { open: "Открыто", in_progress: "В работе", done: "Готово" };
 const MEET_ST = { pending: "ждёт вычитки", draft: "черновик записи", confirmed: "подтверждена" };
 const PRIO_LABEL = { high: "высокий", med: "средний", low: "низкий" };
+/* в колонке метки длинная подпись повтора не помещается и режется: там короткая */
+const RECUR_SHORT = { weekly: "↻ неделя", monthly: "↻ месяц" };
 const RECUR_LABEL = { weekly: "каждую неделю", monthly: "каждый месяц", daily: "каждый день" };
 
 /* ── даты ────────────────────────────────────────────────────── */
@@ -59,14 +62,13 @@ const fmtDT = (dt) => { const [d_, t_] = String(dt).split(" "); return `${fmtDat
 const dueKind = (iso) => { const n = daysTo(iso); if (n === null) return ""; if (n < 0) return "now"; if (n === 0) return "today"; return ""; };
 
 /* ── выборка задач: ось времени × линза × статусы × поиск ────── */
-function inList(t, list) {
-  if (list === "archive") return t.arch;
+/* Ось времени была вкладками: «Сегодня · Ближайшие · Все · Регулярные · Архив».
+   Владелец: «немножко как-то путают». Срок и так виден группами прямо в списке
+   (просрочено / сегодня / дальше / без срока), а два редких среза стали тумблерами. */
+function inScope(t) {
+  if (S.archOn) return t.arch;
   if (t.arch) return false;
-  if (list === "recurring") return !!t.recur;
-  if (list === "all") return true;
-  const n = daysTo(t.due);
-  if (list === "today") return n !== null && n <= 0;
-  if (list === "upcoming") return n !== null && n > 0 && n <= 14;
+  if (S.recurOnly) return !!t.recur;
   return true;
 }
 function inLens(t, lens) {
@@ -92,11 +94,11 @@ function projectTasks(id) {
    цикла и аналитика — с архивными, и три вкладки одного экрана расходились в числах. */
 const cycleTasks = (id = S.cycle) => S.tasks.filter((t) => t.sprint === id && !t.arch);
 
-function visibleTasks(list = S.tab) {
+function visibleTasks() {
   const q = S.q.trim().toLowerCase();
   return S.tasks.filter((t) =>
-    inList(t, list) && inLens(t, S.lens) &&
-    (list === "archive" || S.statuses.has(t.st)) &&
+    inScope(t) && inLens(t, S.lens) &&
+    (S.archOn || S.statuses.has(t.st)) &&
     (!S.mk || t.mk === S.mk) &&
     (!S.noProject || !proj(t.pr)) &&
     (!S.assignee || t.who.includes(S.assignee)) &&
@@ -107,7 +109,8 @@ function visibleTasks(list = S.tab) {
    создание выглядит как молчаливый отказ. Поэтому снимаем ровно то, что её прячет. */
 function revealTask(t) {
   if (S.sec !== "tasks") return;
-  if (!inList(t, S.tab)) S.tab = "all";
+  if (t.arch !== !!S.archOn) S.archOn = !!t.arch;
+  if (S.recurOnly && !t.recur) S.recurOnly = false;
   if (!inLens(t, S.lens)) S.lens = "all";
   if (!S.statuses.has(t.st)) S.statuses = new Set([...S.statuses, t.st]);
   if (S.mk && t.mk !== S.mk) S.mk = null;
@@ -115,7 +118,11 @@ function revealTask(t) {
   if (S.noProject && proj(t.pr)) S.noProject = false;
   if (S.q && !t.t.toLowerCase().includes(S.q.trim().toLowerCase())) S.q = "";
 }
-const countList = (list) => S.tasks.filter((t) => inList(t, list) && inLens(t, S.lens) && (list === "archive" || S.statuses.has(t.st))).length;
+/* сколько задач в срезе без учёта снимаемых фильтров — для «показано N из M» */
+const scopeCount = () => S.tasks.filter(inScope).length;
+/* значок в рейке: свои незакрытые, у которых срок сегодня или уже прошёл */
+const countToday = () => S.tasks.filter((t) => !t.arch && t.st !== "done" && t.who.includes(ME)
+  && daysTo(t.due) !== null && daysTo(t.due) <= 0).length;
 
 /* ── выборка встреч: шесть осей, как в продукте ──────────────── */
 const PERIOD_DAYS = { week: 7, month: 30, quarter: 92 };

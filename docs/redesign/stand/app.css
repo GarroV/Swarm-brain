@@ -643,3 +643,17 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
 /* событие журнала: «что» и «во что», без глагола в мужском роде */
 .tl .ev{color:var(--ink-2)}
 .tl .ev b{color:var(--ink);font-weight:500}
+
+/* Переключатель «чья работа» — слитный сегмент, а не три отдельных чипа: это один
+   выбор из трёх, и три одинаковых чипа рядом со статусными читались как один ряд
+   из шести равноправных фильтров. */
+.seg{display:inline-flex;flex:none;border:1px solid var(--line-control);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg .sg{height:var(--control-h);padding:0 11px;font:500 var(--fs-dense)/1 var(--font-ui);color:var(--ink-2);white-space:nowrap;
+  border-right:1px solid var(--line-control);cursor:pointer}
+.seg .sg:last-child{border-right:0}
+.seg .sg:hover{background:var(--surface-2)}
+.seg .sg.on{background:var(--accent);color:#fff;font-weight:600}
+/* панель фильтров — одна строка: она не переносится, лишнее уезжает в меню.
+   В узкой рабочей области перенос разрешаем: спрятать фильтр хуже, чем перенести. */
+.bar{flex-wrap:nowrap}
+@container (max-width:1000px){ .bar{flex-wrap:wrap;row-gap:6px} }

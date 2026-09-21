@@ -16,7 +16,8 @@ const NAVFOOT = [
   { id: "admin", n: "Админ", ic: "M8 1.8l5.2 2v3.4c0 3-2.2 5.6-5.2 6.9-3-1.3-5.2-3.9-5.2-6.9V3.8z" },
 ];
 const TABS = {
-  tasks: [["today", "Сегодня"], ["upcoming", "Ближайшие"], ["all", "Все"], ["recurring", "Регулярные"], ["archive", "Архив"]],
+  /* У задач вкладок времени больше нет: срок виден группами в самом списке, а
+     «регулярные» и «архив» стали тумблерами в «Ещё» — вместо двух строк шапки одна */
   projects: [["list", "Список"], ["map", "Карта проектов"]],
   sprints: [["board", "Доска"], ["timeline", "Таймлайн"], ["pool", "Инициативы"], ["check", "Чек цикла"], ["analytics", "Аналитика"], ["journal", "Журнал"]],
   /* «Вычитка» перестала быть вкладкой: она шапка общего экрана встреч — то, что ждёт
@@ -38,7 +39,6 @@ const TITLES = {
 const firstTab = (sec) => TABS[sec] ? TABS[sec][0][0] : null;
 
 const TAB_COUNT = {
-  tasks: (id) => countList(id),
   meetings: (id) => id === "queue" ? S.queue.length : visibleMeetings(id).length,
   base: (id) => id === "files" ? S.files.length : visibleEntries(id).length,
   admin: (id) => id === "feedback" ? S.feedback.filter((f) => f.st === "open").length
@@ -47,7 +47,7 @@ const TAB_COUNT = {
 };
 
 function renderNav() {
-  const badge = { tasks: countList("today"), meetings: visibleMeetings("review").length + S.queue.length };
+  const badge = { tasks: countToday(), meetings: visibleMeetings("review").length + S.queue.length };
   const item = (x) => `<div class="item${x.id === S.sec ? " on" : ""}" ${act("sec", x.id)} tabindex="0">
     <svg class="ic" viewBox="0 0 16 16"><path d="${x.ic}"/></svg>${x.n}${badge[x.id] ? `<span class="n">${badge[x.id]}</span>` : ""}</div>`;
   $(".nav-scroll").innerHTML = NAV.map(item).join("");
@@ -115,14 +115,14 @@ const ACTS = {
   "open-entry": (id) => A.select("entry", id),
   "open-file": (id) => A.select("file", id),
   "open-proj": (id) => A.select("project", id),
-  "proj-tasks": (id) => { S.sec = "tasks"; S.tab = "all"; S.q = proj(id).n; A.set({}); },
+  "proj-tasks": (id) => { S.sec = "tasks"; S.archOn = false; S.recurOnly = false; S.q = proj(id).n; A.set({}); },
   "new-task": () => newTaskModal(),
   "create-task": () => { const f = formData(); if (!f.title) return A.toast("Нужно название");
     closeModal(); A.createTask({ title: f.title, pr: f.pr, who: f.who ? +f.who : null, due: f.due, prio: f.prio,
       labels: f.labels, mk: (f.mk || [])[0] || null, recur: f.recur || null, priv: f.priv, note: f.note }); },
   check: (id, v, e) => { const s = new Set(S.bulk); const n = +id; s.has(n) ? s.delete(n) : s.add(n); A.set({ bulk: s }); },
   "reset-filters": () => A.set({ lens: "all", statuses: new Set(Object.keys(ST_LABEL)),
-    mk: null, assignee: null, q: "", noProject: false }),
+    mk: null, assignee: null, q: "", noProject: false, recurOnly: false, archOn: false }),
   "drop-no-project": () => A.set({ noProject: false }),
   "bulk-clear": () => A.set({ bulk: new Set() }),
   "bulk-assign": (id) => A.bulk("assign", +id),
@@ -198,7 +198,7 @@ const ACTS = {
     /* карта считает ВСЮ работу воркспейса, а список по умолчанию показывает только мою и
        общую (канон линз). Чтобы узел не обещал больше, чем покажет, приход по нему
        включает админский оверсайт и раскрывает статусы — тогда число сходится. */
-    A.set({ tab: "all", lens: "all", mk: null, q: "", assignee: null, noProject: true,
+    A.set({ archOn: false, recurOnly: false, lens: "all", mk: null, q: "", assignee: null, noProject: true,
       staff: me().role === "admin", statuses: new Set(Object.keys(ST_LABEL)) }); },
   "new-project": () => modal("Новый проект", fld("Название", input("n", "", "Например: Открытие BA")),
     `${btn("Отмена", "mclose")}${btn("Создать", "do-project", undefined, undefined, "pri")}`),
@@ -207,7 +207,7 @@ const ACTS = {
     `${btn("Отмена", "mclose")}${btn("Создать", "do-subproject", id, undefined, "pri")}`),
   "do-subproject": (id) => { const f = formData(); closeModal(); A.addSubproject(id, f.n); },
   "toggle-proj": (id) => A.toggleProject(id),
-  "person-tasks": (id) => { A.go("tasks"); S.assignee = +id; S.lens = "all"; S.tab = "all";
+  "person-tasks": (id) => { A.go("tasks"); S.assignee = +id; S.lens = "all"; S.archOn = false; S.recurOnly = false;
     if (me().role === "admin") S.staff = true;   /* чужие задачи видны только админу */
     render(); },
   "drop-assignee": () => { S.assignee = null; render(); },

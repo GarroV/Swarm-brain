@@ -201,7 +201,10 @@ function tokenCheck() {
     .app.with-detail{grid-template-columns:var(--nav-w) minmax(0,1fr) 300px!important}
     .list th.opt{display:none!important}
     .pchip .v{max-width:40px!important}
-    .list td.r{padding-left:70px!important}` });
+    .list td.r{padding-left:70px!important}
+    .bar{flex-wrap:wrap!important;max-width:430px!important}
+    .detail{width:300px!important}
+    .seg .sg.on{background:transparent!important;color:var(--ink-2)!important;font-weight:500!important}` });
 
   const sel = (a, id) => `[data-act="${a}"]` + (id !== undefined ? `[data-id="${id}"]` : '');
   /* ждём ФАКТА перерисовки, а не фиксированной паузы: пауза давала мигающее падение —
@@ -341,7 +344,7 @@ function tokenCheck() {
     });
 
     /* выбранное состояние должно быть видно: класс .on без своего стиля — невидимый выбор */
-    document.querySelectorAll('.btn.on, .mini.on, .chip.on, .mi.on').forEach((on) => {
+    document.querySelectorAll('.btn.on, .mini.on, .chip.on, .mi.on, .sg.on, .dtab.on').forEach((on) => {
       const base = on.className.split(' ')[0];
       const sib = [...on.parentElement.children].find((e) =>
         e !== on && e.classList.contains(base) && !e.classList.contains('on'));
@@ -628,13 +631,18 @@ function tokenCheck() {
   await shot('01-tasks-today');
   /* свёрнутые фильтры обязаны РАСКРЫВАТЬСЯ мышью: щелчок по скрытому пункту из кода
      проходит всегда, поэтому зелёный замер без этой проверки ничего не доказывает */
-  await p.hover('.bar .drop .btn');
+  await p.hover('.bar .drop:last-of-type .btn');
   await new Promise((r) => setTimeout(r, 120));
   const menuOpen = await p.evaluate(() => {
-    const m = document.querySelector('.bar .drop .dmenu');
-    return m && m.offsetParent !== null && [...m.querySelectorAll('.mi')].some((e) => e.textContent.includes('Готово'));
+    const ds = document.querySelectorAll('.bar .drop');
+    const m = ds[ds.length - 1].querySelector('.dmenu');
+    return m && m.offsetParent !== null && [...m.querySelectorAll('.mi')].some((e) => e.textContent.includes('архив'));
   });
-  want(menuOpen, 'наведение на «Фильтры» раскрывает меню со статусами');
+  want(menuOpen, 'наведение на «Ещё» раскрывает меню с редкими срезами');
+  /* статусы владелец просил вернуть чипами: они обязаны быть НА ВИДУ, а не в меню */
+  const stChips = await p.$$eval('.bar > .chip', (e) => e.map((x) => x.textContent.trim()));
+  want(['Открыто', 'В работе', 'Готово'].every((n) => stChips.includes(n)),
+    `статусы стоят чипами в панели (видно: ${stChips.join(', ') || 'ничего'})`);
   /* убираем курсор с «Фильтров»: оставленное наведение держит меню раскрытым, и
      дальнейшие замеры считают его пункты за контролы панели */
   await p.mouse.move(0, 0);
@@ -655,14 +663,11 @@ function tokenCheck() {
   await gov('mk-filter', '');
   const allTasks = await count('tbody tr[data-act="open-task"]');
   want(hrTasks < allTasks, `фильтр по рынку сузил список (${allTasks} → ${hrTasks})`);
-  await go('tab', 'today');
-  /* на вкладке дня наверху висела полоса встреч — она и есть лишние ~90px хрома */
-  const chromeToday = await p.evaluate(() => {
-    const row = document.querySelector('.list tbody tr');
-    return row ? Math.round(row.getBoundingClientRect().top) : 0;
-  });
-  want(chromeToday > 0 && chromeToday <= 130, `на вкладке дня до первой задачи не больше 130px (сейчас ${chromeToday})`);
-  await go('tab', 'all'); await shot('03-tasks-all');
+  await shot('03-tasks-all');
+  /* ось времени больше не вкладки: группы по сроку живут в самом списке */
+  const sects = await p.$$eval('tr.sect', (e) => e.map((x) => x.textContent.replace(/·.*/, '').trim()));
+  want(sects.some((x) => x === 'Просрочено') && sects.some((x) => x === 'Сегодня'),
+    `список сам делится по сроку (секции: ${sects.join(', ') || 'нет'})`);
   /* плотность: хром не должен съедать верх экрана, а панель фильтров — пестреть
      переключателями. До правки было 160–291px и полтора десятка контролов подряд. */
   const dens = await p.evaluate(() => {
@@ -671,12 +676,13 @@ function tokenCheck() {
     const vis = (e) => e.offsetParent !== null;
     return {
       chrome: row ? Math.round(row.getBoundingClientRect().top) : 0,
-      ctrls: bar ? [...bar.querySelectorAll('button, input, select, .chip')].filter(vis).length : 0,
+      barH: bar ? Math.round(bar.getBoundingClientRect().height) : 0,
+      barWrap: bar ? getComputedStyle(bar).flexWrap : '',
       rowH: row ? Math.round(row.getBoundingClientRect().height) : 0,
     };
   });
   want(dens.chrome > 0 && dens.chrome <= 130, `до первой строки данных не больше 130px (сейчас ${dens.chrome})`);
-  want(dens.ctrls <= 8, `в панели фильтров на виду не больше 8 контролов (сейчас ${dens.ctrls})`);
+  want(dens.barH > 0 && dens.barH <= 60, `панель фильтров стоит в одну строку (высота ${dens.barH}px, перенос «${dens.barWrap}»)`);
   want(dens.rowH > 0 && dens.rowH <= 40, `строка списка держит ритм не выше 40px (сейчас ${dens.rowH})`);
 
   /* создание задачи */
@@ -746,13 +752,13 @@ function tokenCheck() {
   await go('close');
 
   /* массовые действия */
-  await go('tab', 'archive');
+  await go('tgl', 'archOn');
   const beforeArch = await count('tbody tr[data-act="open-task"]');
-  await go('tab', 'all');
+  await go('tgl', 'archOn');
   await click('tbody tr[data-act="open-task"] input[type=checkbox]');
   want((await count('.bulk')) === 1, 'панель массовых действий появилась');
   await go('bulk-archive');
-  await go('tab', 'archive');
+  await go('tgl', 'archOn');
   const afterArch = await count('tbody tr[data-act="open-task"]');
   want(afterArch === beforeArch + 1, `массовый архив сработал (${beforeArch} → ${afterArch})`);
   await shot('06-archive');
@@ -774,7 +780,7 @@ function tokenCheck() {
     .some((tr) => tr.textContent.includes('созданная из архива')));
   want(seenAfterCreate, 'созданная задача видна в списке, а не только в панели справа');
   await go('close');
-  await go('tab', 'archive');
+  await go('tgl', 'archOn');
   /* пустой срез обязан объяснить себя и вернуть человека к данным */
   await p.type('[data-qin="tasks"]', 'щщщ');
   await new Promise((r) => setTimeout(r, 150));
@@ -785,6 +791,9 @@ function tokenCheck() {
   await go('reset-filters');
   await new Promise((r) => setTimeout(r, 120));
   want((await count('tbody tr.row')) > 0, '«Показать все» возвращает задачи в срез');
+  /* «Показать все» снимает и срез архива — это фильтр как любой другой */
+  want((await p.evaluate(() => S.archOn)) === false, '«Показать все» снимает и срез архива');
+  await go('tgl', 'archOn');
   /* «Все» = мои + командные (решение владельца 2026-08-20), чужие личные — только под «Все сотрудники» */
   want((await count('tbody tr.row')) === await p.evaluate(() =>
     S.tasks.filter((t) => t.arch && inLens(t, 'all')).length), 'архив под линзой «Все» показывает мои и командные')
