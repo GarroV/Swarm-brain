@@ -39,8 +39,11 @@ export async function dbUpdateTask(
   return updateTask(id, fields, opts);
 }
 
-export async function dbDeleteTask(id: string): Promise<void> {
-  return deleteTask(id);
+export async function dbDeleteTask(
+  id: string,
+  archivedBy?: number,
+): Promise<void> {
+  return deleteTask(id, archivedBy);
 }
 
 // listAllOpen сортирует по assignees (не по due_date) — остаётся вне shared движка

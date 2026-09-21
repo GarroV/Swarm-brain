@@ -15,7 +15,8 @@ export async function listSprints(
   groupId: string,
   kind: SprintKind | "all" = "all",
 ): Promise<Sprint[]> {
-  let q = supabase.from("sprints").select("*").eq("group_id", groupId);
+  let q = supabase.from("sprints").select("*").eq("group_id", groupId)
+    .is("archived_at", null);
   if (kind !== "all") q = q.eq("kind", kind);
   const { data } = await q.order("start_date", { ascending: false });
   return (data ?? []) as Sprint[];
@@ -51,13 +52,27 @@ export async function updateSprint(
   return (data as Sprint | null) ?? null;
 }
 
-// Удаляет спринт своего воркспейса. Задачи освобождаются автоматически (FK ON DELETE SET NULL).
+// АРХИВИРУЕТ пространство своего воркспейса (решение владельца 21.09.2026, issue #427).
+//
+// Раньше здесь был DELETE, и он уносил с собой раскладку: `projects.sprint_id` и `tasks.sprint_id`
+// стоят на `on delete set null`, поэтому снос пространства молча выкидывал из него ВСЕ проекты.
+// Именно так 19–21.09.2026 раздел «Проекты» опустел у всей команды, а восстанавливать пришлось
+// по косвенному следу — строк уже не было.
+//
+// Теперь связь остаётся: проекты по-прежнему помнят своё пространство и видны в обзоре доски,
+// а вернуть пространство можно одним UPDATE, вместе со всем его составом.
 export async function deleteSprint(
   id: string,
   groupId: string,
+  archivedBy?: number,
 ): Promise<boolean> {
   const { data } = await supabase.from("sprints")
-    .delete().eq("id", id).eq("group_id", groupId).select("id").maybeSingle();
+    .update({
+      archived_at: new Date().toISOString(),
+      archived_by: archivedBy ?? null,
+    })
+    .eq("id", id).eq("group_id", groupId).is("archived_at", null)
+    .select("id").maybeSingle();
   return !!data;
 }
 

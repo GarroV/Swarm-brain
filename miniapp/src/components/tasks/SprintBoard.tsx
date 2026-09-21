@@ -9,6 +9,7 @@ import type { Task, Sprint, Project } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { Button } from "@/components/ui/button";
 import { RoyIcon } from "@/components/roy/icons";
+import { MoveProjectMenu } from "./MoveProjectMenu";
 import { buildQuickAddInput } from "@/lib/quickAddTask";
 import { useConfirm } from "@/components/ui/confirm";
 import { useDt, useRoyNav } from "@/components/roy/nav";
@@ -227,6 +228,15 @@ export function SprintBoard() {
     const sprint_id = newParent.sprint_id;
     setProjects((prev) => prev.map((p) => (p.id === kidId ? { ...p, parent_id: newParentId, sprint_id } : p)));
     try { await updateProject(kidId, { parent_id: newParentId, sprint_id }); } catch { load(); }
+  }
+
+  // Перенос проекта в другое пространство (issue #426). Подпроекты сервер тащит сам — инвариант
+  // «подпроект живёт в пространстве родителя»; здесь же двигаем их в локальном состоянии, иначе
+  // до перезагрузки дети остались бы нарисованными в старом пространстве.
+  async function moveProject(id: string, spaceId: string | null) {
+    setProjects((prev) => prev.map((p) =>
+      p.id === id || p.parent_id === id ? { ...p, sprint_id: spaceId } : p));
+    try { await updateProject(id, { sprint_id: spaceId }); } catch { load(); }
   }
 
   async function renameSection(id: string, name: string) {
@@ -496,6 +506,8 @@ export function SprintBoard() {
                       hint: dt("Закрыт вместе с подпроектами — показать команде", "Hidden with its subprojects — show to the team"),
                       inherited: "",
                     }} />
+                  <MoveProjectMenu spaces={sprints} currentId={sec.sprint_id ?? null}
+                    onMove={(spaceId) => moveProject(sec.id, spaceId)} />
                   <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Переименовать проект", "Rename project")}>
                     <RoyIcon name="pencil" size={13} />
                   </button>

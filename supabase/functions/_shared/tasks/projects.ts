@@ -6,6 +6,11 @@ import {
   parentLookup,
   type ProjectAccessRow,
 } from "./project-access.ts";
+import {
+  projectEventRow,
+  type ProjectHistoryRow,
+  projectHistoryRowsFor,
+} from "./project-history.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -13,6 +18,19 @@ const supabase = createClient(
 );
 
 // Все операции изолированы по group_id — проект принадлежит воркспейсу.
+
+/**
+ * Единственная точка записи журнала проектов (issue #426). Ошибку НЕ роняем наверх — журнал не
+ * должен ломать саму операцию, — но и не проглатываем молча: пустая история через месяц
+ * неотличима от «никто ничего не двигал», и именно так уже вышло с задачами (issue #287).
+ */
+async function writeHistory(rows: ProjectHistoryRow[]): Promise<void> {
+  if (!rows.length) return;
+  const { error } = await supabase.from("project_history").insert(rows);
+  if (error) {
+    console.error("project_history insert failed:", error.message);
+  }
+}
 
 export type ProjectWithCounts = Project & {
   task_count: number;
@@ -32,8 +50,11 @@ export async function listProjects(
   // проектов в воркспейсе на порядки меньше, чем задач/записей (обычно единицы-десятки, не тысячи).
   // .limit(500) — просто защитный потолок, а не расчётный лимит: DB-гард глубины (migration
   // 20260812140000) ограничивает вложенность (2 уровня), но НЕ число строк на group_id.
+  // `archived_at is null` — архив не показываем нигде, где раньше показывался удалённый проект,
+  // то есть нигде (архивация заменила удаление, issue #427).
   const { data: projects } = await supabase
     .from("projects").select("*").eq("group_id", groupId)
+    .is("archived_at", null)
     .order("created_at", { ascending: true })
     .limit(500);
   let list = (projects ?? []) as Project[];
@@ -86,7 +107,8 @@ export async function getProject(
   groupId: string,
 ): Promise<Project | null> {
   const { data } = await supabase.from("projects")
-    .select("*").eq("id", id).eq("group_id", groupId).maybeSingle();
+    .select("*").eq("id", id).eq("group_id", groupId)
+    .is("archived_at", null).maybeSingle();
   return (data as Project | null) ?? null;
 }
 
@@ -98,7 +120,8 @@ export async function createProject(
   const parentId = input.parent_id ?? null;
   if (parentId !== null) {
     const { data: refs } = await supabase
-      .from("projects").select("id, parent_id").eq("group_id", groupId);
+      .from("projects").select("id, parent_id").eq("group_id", groupId)
+      .is("archived_at", null);
     const v = validateParent({
       projectId: null,
       parentId,
@@ -120,7 +143,17 @@ export async function createProject(
     end_date: input.end_date ?? null,
   }).select().single();
   if (error) throw new Error(error.message);
-  return data as Project;
+  const project = data as Project;
+  await writeHistory([
+    projectEventRow({
+      projectId: project.id,
+      event: "created",
+      value: project.name,
+      actorTelegramId: createdBy ?? null,
+      groupId,
+    }),
+  ]);
+  return project;
 }
 
 // Обновляет только проект своего воркспейса. Возвращает обновлённый или null (не найден/чужой/
@@ -134,7 +167,8 @@ export async function updateProject(
 ): Promise<Project | null> {
   if ("parent_id" in fields) {
     const { data: refs } = await supabase
-      .from("projects").select("id, parent_id").eq("group_id", groupId);
+      .from("projects").select("id, parent_id").eq("group_id", groupId)
+      .is("archived_at", null);
     const v = validateParent({
       projectId: id,
       parentId: fields.parent_id ?? null,
@@ -143,11 +177,51 @@ export async function updateProject(
     if (!v.ok) throw new Error(v.error);
   }
   if (!(await canMutateProject(id, groupId, opts))) return null;
+  // Снимок ДО правки — иначе журналу не с чем сравнивать, и в него пошли бы строки
+  // «было X, стало X» на каждое поле формы, в которых настоящий переезд не найти.
+  const before = await getProject(id, groupId);
   const { data } = await supabase.from("projects")
     .update(fields)
     .eq("id", id).eq("group_id", groupId)
     .select().maybeSingle();
-  return (data as Project | null) ?? null;
+  const updated = (data as Project | null) ?? null;
+  if (!updated) return null;
+
+  const rows = projectHistoryRowsFor({
+    projectId: id,
+    snapshot: before as unknown as Record<string, unknown> | null,
+    patch: fields as Record<string, unknown>,
+    actorTelegramId: opts.viewerId ?? null,
+    groupId,
+  });
+
+  // Переезд в другое пространство тащит за собой подпроекты. Инвариант «подпроект живёт в
+  // пространстве родителя» держится везде, где подпроект создаётся или перетаскивается
+  // (SprintBoard), — но переезд самого родителя его ломал: дети оставались в прежнем
+  // пространстве, а доска рисует их ЧЕРЕЗ родителя, поэтому расхождение было бы не видно
+  // глазом и всплыло бы позже, как уже всплыло однажды с пустым разделом.
+  if (
+    "sprint_id" in fields && before && before.parent_id === null &&
+    before.sprint_id !== (fields.sprint_id ?? null)
+  ) {
+    const { data: kids } = await supabase.from("projects")
+      .update({ sprint_id: fields.sprint_id ?? null })
+      .eq("group_id", groupId).eq("parent_id", id).is("archived_at", null)
+      .select("id");
+    for (const kid of (kids ?? []) as Array<{ id: string }>) {
+      rows.push(...projectHistoryRowsFor({
+        projectId: kid.id,
+        snapshot: { sprint_id: before.sprint_id },
+        patch: { sprint_id: fields.sprint_id ?? null },
+        actorTelegramId: opts.viewerId ?? null,
+        groupId,
+        note: "вслед за родительским проектом",
+      }));
+    }
+  }
+
+  await writeHistory(rows);
+  return updated;
 }
 
 // Закрытую строку (тумблер-глаз на ней самой или на её группе) правит/удаляет только автор.
@@ -159,15 +233,20 @@ export async function updateProject(
 // между «Анна не видит чужой закрытый проект в списке» и «Анна может его переименовать/удалить,
 // зная id напрямую» (см. правило проекта: вся проверка доступа — только через код).
 //
+// Экспортируется потому, что видимость и право правки у проекта СОВПАДАЮТ (открытый правит любой
+// участник, закрытый — только автор), и журналу проекта нужна ровно эта проверка. Отдельный
+// предикат «только для чтения» разошёлся бы с этим при первой же правке одного из двух.
+//
 // Тянем весь список воркспейса, а не одну строку: приватность подпроекта зависит от его группы,
 // и без неё предикат честно схлопнется в fail-closed (проектов единицы-десятки, см. listProjects).
-async function canMutateProject(
+export async function canMutateProject(
   id: string,
   groupId: string,
   opts: { viewerId?: number },
 ): Promise<boolean> {
   const { data } = await supabase.from("projects")
     .select("id, parent_id, created_by, is_private").eq("group_id", groupId)
+    .is("archived_at", null)
     .limit(500);
   const rows = (data ?? []) as Array<ProjectAccessRow & { id: string }>;
   const row = rows.find((r) => r.id === id);
@@ -176,20 +255,56 @@ async function canMutateProject(
   return canViewProject(row, opts.viewerId, parentLookup(rows));
 }
 
-// Удаляет проект своего воркспейса. Задачи освобождаются (FK ON DELETE SET NULL для project_id),
-// а project_linked сбрасываем явно (FK его не трогает).
+// АРХИВИРУЕТ проект своего воркспейса (решение владельца 21.09.2026: «всё что удаляется — не
+// удаляется, а архивируется», issue #427). Для человека поведение прежнее — проект исчезает из
+// интерфейса; разница в том, что строка остаётся в базе и возвращается одним UPDATE.
+//
+// Уходит ВСЁ поддерево: подпроекты архивируются вместе с группой. Раньше DELETE группы отдавал
+// их FK `on delete set null`, и подпроекты всплывали на верхний уровень как самостоятельные —
+// человек удалял один проект, а получал россыпь чужих кусков.
+//
+// Задачи НЕ отвязываем (раньше отвязывали). Связь `tasks.project_id` — это и есть то, что
+// делает восстановление осмысленным: вернули проект — вернулся и его состав. Из раздела
+// «Задачи» они никуда не пропадают, там свой фильтр по `tasks.archived_at`.
 export async function deleteProject(
   id: string,
   groupId: string,
   opts: { viewerId?: number } = {},
 ): Promise<boolean> {
   if (!(await canMutateProject(id, groupId, opts))) return false;
+  const archive = {
+    archived_at: new Date().toISOString(),
+    archived_by: opts.viewerId ?? null,
+  };
   const { data } = await supabase.from("projects")
-    .delete().eq("id", id).eq("group_id", groupId).select("id").maybeSingle();
+    .update(archive)
+    .eq("id", id).eq("group_id", groupId).is("archived_at", null)
+    .select("id").maybeSingle();
   if (!data) return false;
-  await supabase.from("tasks")
-    .update({ project_linked: false })
-    .eq("group_id", groupId).is("project_id", null).eq("project_linked", true);
+  const { data: kids } = await supabase.from("projects")
+    .update(archive)
+    .eq("group_id", groupId).eq("parent_id", id).is("archived_at", null)
+    .select("id");
+
+  const kidIds = ((kids ?? []) as Array<{ id: string }>).map((k) => k.id);
+  await writeHistory([
+    projectEventRow({
+      projectId: id,
+      event: "archived",
+      value: kidIds.length ? `с подпроектами: ${kidIds.length}` : null,
+      actorTelegramId: opts.viewerId ?? null,
+      groupId,
+    }),
+    ...kidIds.map((kid) =>
+      projectEventRow({
+        projectId: kid,
+        event: "archived",
+        actorTelegramId: opts.viewerId ?? null,
+        groupId,
+        note: "вслед за родительским проектом",
+      })
+    ),
+  ]);
   return true;
 }
 
@@ -199,6 +314,7 @@ export async function projectInWorkspace(
 ): Promise<boolean> {
   const { data } = await supabase
     .from("projects").select("id").eq("id", id).eq("group_id", groupId)
+    .is("archived_at", null)
     .maybeSingle();
   return !!data;
 }

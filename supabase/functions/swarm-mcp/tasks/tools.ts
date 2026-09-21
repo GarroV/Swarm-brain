@@ -350,7 +350,7 @@ export async function toolDeleteTask(args: { id: string; requesting_user_id: num
   if (denied) return denied;
   if (!task) return `Задача ${args.id} не найдена.`;   // сужение: гард уже отсёк null
   try {
-    await deleteTask(args.id);
+    await deleteTask(args.id, args.requesting_user_id);
     return `✅ Задача «${task.title}» удалена.`;
   } catch (e) {
     return `Ошибка: ${e instanceof Error ? e.message : String(e)}`;

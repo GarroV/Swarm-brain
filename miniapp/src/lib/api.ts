@@ -1134,6 +1134,20 @@ let mockSprints: Sprint[] = [
     start_date: "2026-06-02",
     end_date: "2026-06-15",
     status: "active",
+    kind: "board_tab",
+    created_at: new Date().toISOString(),
+  },
+  // Второе пространство — чтобы в DEV_MODE проверялись переключение вкладок и перенос проекта
+  // между пространствами (issue #426): с одним пространством оба экрана выглядят рабочими,
+  // не показывая ничего.
+  {
+    id: "sp2",
+    group_id: "cee",
+    name: "Аня",
+    start_date: "2026-06-02",
+    end_date: "2026-06-15",
+    status: "active",
+    kind: "board_tab",
     created_at: new Date().toISOString(),
   },
 ];
