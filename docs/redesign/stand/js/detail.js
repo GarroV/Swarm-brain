@@ -138,7 +138,7 @@ function detailMeeting(m) {
       ${fmenu([["короче", "regen", m.id, "short"], ["подробнее", "regen", m.id, "long"],
         ["акцент на решениях", "regen", m.id, "decisions"], ["просто пересобрать", "regen", m.id, "plain"],
         ["своё пожелание…", "regen-own", m.id]])}</span>` : "")
-    + (isReview ? btn("Сравнить с транскриптом", "compare", m.id) + btn("Следующая", "review-next", m.id) : "")
+    + (isReview ? btn("Сравнить с транскриптом", "compare", m.id) : "")
     + `<span class="iacts">${ibtn("✎", "Править тезисы", "edit-tez", m.id)}
       ${ibtn("Aa", "Изменить название встречи", "rename-meet", m.id)}
       ${ibtn("⧉", "Копировать тезисы", "copy-tez", m.id)}

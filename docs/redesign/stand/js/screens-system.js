@@ -89,6 +89,9 @@ function screenSettings() {
 function screenAdmin() {
   if (S.tab === "ws") return screenWorkspaces();
   if (S.tab === "review") return screenReviewCounts();
+  /* разбор агентских встреч — работа админа: на экране «Встречи» он путал вкладкой,
+     которую владелец не смог назвать («что такое очередь агента я вообще не знаю») */
+  if (S.tab === "queue") return screenQueue();
   if (S.tab === "broadcast") return screenBroadcast();
   if (S.tab === "feedback") return screenFeedback();
   const noMail = S.users.filter((u) => !u.em);

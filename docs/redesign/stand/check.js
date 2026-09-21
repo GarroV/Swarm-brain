@@ -987,7 +987,7 @@ function tokenCheck() {
   await go('mf-clear');
   /* сверка с транскриптом и подтверждение — действия ВЫЧИТКИ, поэтому берём встречу
      из очереди вычитки, а не первую попавшуюся: у разобранной их на экране нет */
-  const firstMeet = await p.$eval('.revhead .rv', (e) => e.dataset.id);
+  const firstMeet = await p.$eval('.list tr.rv', (e) => e.dataset.id);
   await go('open-meet', firstMeet); await shot('08-meeting-detail');
   want((await count('.detail .dtab')) === 3, 'у встречи на вычитке три вкладки: обзор, тезисы, транскрипт');
   await go('compare'); await shot('09-compare');
@@ -1045,12 +1045,18 @@ function tokenCheck() {
   want(inBase.st === 'confirmed' && inBase.store === 'personal',
     `выбор хранилища доехал до встречи (${inBase.st} · ${inBase.store})`);
   /* вычитка теперь шапка экрана, а не вкладка: подтверждённая встреча уходит из неё сразу */
-  want((await count(`.revhead .rv[data-id="${firstMeet}"]`)) === 0, 'подтверждённая встреча ушла из вычитки');
-  want((await count('.revhead .rv')) > 0, 'очередь вычитки видна на экране встреч без переключения вкладок');
+  want((await count(`.list tr.rv[data-id="${firstMeet}"]`)) === 0, 'подтверждённая встреча ушла из вычитки');
+  want((await count('.list tr.rv')) > 0, 'вычитка видна секцией общего списка, без вкладок и шапки');
+  /* вкладок на экране встреч больше нет: вычитка, черновики и остальное — секции
+     одного списка (просьба владельца 21.09) */
+  const meetTabs = await p.$$eval('.tabs .tab', (e) => e.map((x) => x.textContent.trim()));
+  want(meetTabs.length === 0, `экран встреч без вкладок (${meetTabs.join(', ') || 'их нет'})`);
+  const meetSects = await p.$$eval('.list tr.sect', (e) => e.map((x) => x.textContent.trim()));
+  want(meetSects.some((t) => /На вычитке/.test(t)) && meetSects.some((t) => /Черновики/.test(t)),
+    `список встреч разбит секциями (${meetSects.length})`);
   /* встреча без задач: только в этом состоянии на экране обе кнопки сбора — сверху
      и в пустой секции. Они звались по-разному, и правило о двух подписях одного
      действия молчало, потому что такое состояние ни разу не открывали */
-  await go('tab', 'all');
   await go('open-meet', 'm12');
   await new Promise((r) => setTimeout(r, 120));
   /* Встречу открывают ради разобранного текста: главное окно — ГОТОВЫЕ ТЕЗИСЫ, а
@@ -1120,7 +1126,7 @@ function tokenCheck() {
   await go('mclose');
   await go('close');
 
-  await go('tab', 'draft'); await shot('10-drafts');
+  await shot('10-drafts');
   /* черновик с кандидатом на дубль показан один раз, а не в обеих таблицах сразу */
   const dupTitle = await p.evaluate(() => (S.meetings.find((m) => m.st === 'draft' && m.dupOf) || {}).t);
   want(!!dupTitle, 'в данных есть черновик, похожий на дубль');
@@ -1138,7 +1144,9 @@ function tokenCheck() {
   want((await count('.list:last-of-type tbody tr')) === below + 1, '«Не дубль» переводит черновик в остальные, а не прячет его');
   await p.evaluate(() => { S.meetings = S.meetings.map((m) => m.dupOk ? { ...m, dupOk: false } : m); render(); });
   await new Promise((r) => setTimeout(r, 90));
-  await go('tab', 'queue'); await shot('11-agent-queue');
+  /* разбор агентских встреч уехал в «Админ»: на экране встреч эта вкладка называлась
+     «Очередь агента», и владелец не смог сказать, что это */
+  await go('sec', 'admin'); await go('tab', 'queue'); await shot('11-agent-queue');
   want((await count('.warn .wacts .btn')) === 2, 'подсказка про дубль даёт что-то сделать, а не только пугает');
   await go('not-dup', 'a2');
   await new Promise((r) => setTimeout(r, 120));
@@ -1158,7 +1166,7 @@ function tokenCheck() {
 
   /* сбор задач из встречи, чтение записи, таймлайн, метки, профиль */
   await go('sec', 'meetings');
-  const anyPending = await p.$$eval('.revhead .rv', (e) => e.length ? e[0].dataset.id : null);
+  const anyPending = await p.$$eval('.list tr.rv', (e) => e.length ? e[0].dataset.id : null);
   if (anyPending) {
     await go('open-meet', anyPending);
     await go('gen-tasks', anyPending);
@@ -1175,8 +1183,6 @@ function tokenCheck() {
     want(marked.made === 1 && marked.shown === 1,
       `созданная задача помечена в списке предложенных (помечено ${marked.shown})`);
     await go('gen-close');
-    await go('review-next', anyPending);
-    want((await p.evaluate(() => S.sel)) !== anyPending, 'вычитка подряд переключает на следующую встречу');
     await go('close');
   }
 

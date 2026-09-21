@@ -1,4 +1,5 @@
-/* Встречи: шесть осей фильтра, вычитка, черновики рекордера, очередь агента. */
+/* Встречи: шесть осей фильтра и один список с секциями — вычитка, черновики, остальное.
+   Очередь агентских встреч живёт в «Админе»: это разбор чужой работы, а не свой список. */
 
 const SOURCES = ["bumblebee", "Granola", "Read.ai", "agent"];
 const PERIODS = [["all", "всё время"], ["week", "неделя"], ["month", "месяц"], ["quarter", "квартал"]];
@@ -18,15 +19,17 @@ function meetBar() {
     ${chip("Общее", f.store === "shared", "mf-store", undefined, f.store === "shared" ? "any" : "shared")}
     ${chip("Личное", f.store === "personal", "mf-store", undefined, f.store === "personal" ? "any" : "personal")}
     ${mfActive() ? btn("Сбросить", "mf-clear", undefined, undefined, "sm") : ""}
-    <div class="right"><span>Показано <b>${visibleMeetings(S.tab).length}</b> из ${
-      S.meetings.filter((m) => inMeetTab(m, S.tab)).length}</span></div></div>`;
+    <div class="right"><span>Показано <b>${visibleMeetings("any").length}</b> из ${
+      S.meetings.length}</span></div></div>`;
 }
 
 function meetRow(m) {
-  return `<tr class="row${S.sel === m.id && S.selKind === "meeting" ? " sel" : ""}" ${act("open-meet", m.id)} tabindex="0">
+  /* класс говорит, в каком состоянии встреча: по нему видно, ушла ли она с вычитки,
+     и его же читает проверка — раньше это была отдельная шапка экрана */
+  const kind = m.st === "pending" ? " rv" : m.st === "draft" ? " dr" : "";
+  return `<tr class="row${kind}${S.sel === m.id && S.selKind === "meeting" ? " sel" : ""}" ${act("open-meet", m.id)} tabindex="0">
     ${cell(`${dot(m.st === "pending" ? "open" : m.st === "draft" ? "open" : "done")}${esc(m.t)}${m.store === "personal" ? ' <span class="lock" title="личное хранилище">🔒</span>' : ""}`, "t")}
     ${cell(esc(fmtDT(m.dt)))}
-    ${cell(avs(m.who), "opt")}
     ${cell(tag(m.src, "m") + cc(m.cc), "opt")}
     ${cell(`<span class="due">${m.dur}</span><span class="unit">мин</span>`, "r")}
     ${cell(m.tasks.length ? `<span class="due">${m.tasks.length}</span>` : `<span class="muted">—</span>`, "r")}</tr>`;
@@ -47,39 +50,30 @@ function dupStrip() {
         ${cell(`<span class="ib">${btn("Объединить", "merge-dup", m.id, undefined, "sm")}${btn("Не дубль", "keep-dup", m.id, undefined, "sm")}</span>`, "r acts")}</tr>`; }).join(""));
 }
 
-/* Вычитка — не вкладка, а шапка экрана: это очередь, которая ждёт человека, и она
-   обязана быть видна сразу, вместе с действиями «подтвердить» и «собрать задачи».
-   Под ней — все остальные встречи тем же списком. */
-function reviewRow(m) {
-  return `<div class="rv${S.sel === m.id && S.selKind === "meeting" ? " sel" : ""}" ${act("open-meet", m.id)} tabindex="0">
-    <span class="at">${esc(fmtDT(m.dt))}</span><b>${esc(m.t)}</b>
-    <span class="pl">${tag(m.src, "m")}<span class="due">${m.dur}</span><span class="unit">мин</span></span>
-    ${avs(m.who)}
-    <span class="r ib">${btn("Подтвердить тезисы", "confirm-meet", m.id, undefined, "sm")}${btn("Сгенерировать задачи", "gen-tasks", m.id, undefined, "sm")}</span></div>`;
-}
-
-function reviewSection() {
-  const pend = visibleMeetings("review");
-  if (!pend.length) return `<div class="revhead done"><div class="rh"><b>Вычитка разобрана</b>
-    <span class="sub">Новые встречи придут сюда после bumblebee, Granola или Read.ai</span></div></div>`;
-  return `<div class="revhead"><div class="rh"><b>На вычитке · ${pend.length}</b>
-    <span class="sub">Тезисы готовы, ждут подтверждения</span>
-    <span class="ib">${btn("Вычитать подряд", "review-next", "", undefined, "pri sm")}</span></div>
-    ${pend.map(reviewRow).join("")}</div>`;
-}
-
 function screenMeetings() {
-  if (S.tab === "queue") return screenQueue();
-  /* черновик, ждущий решения по дублю, уже показан наверху: во второй таблице он был бы тем же самым */
-  const list = visibleMeetings(S.tab).filter((m) => S.tab !== "draft" || !dupDrafts().includes(m));
-  const head = meetBar() + (S.tab === "draft"
-    ? dupStrip() + lab("Остальные черновики")
-    : reviewSection() + lab("Все встречи"));
-  if (!list.length) return head + (S.tab === "draft" && dupDrafts().length
-    ? empty("Других черновиков нет", "Все остальные ждут решения по дублям выше")
-    : empty("Встреч в этом срезе нет", mfActive() ? "Сбросьте фильтры" : "Записи появятся после bumblebee, Granola или Read.ai"));
-  return head + table([{ t: "Встреча", w: "36%" }, { t: "Когда" }, { t: "Участники", opt: true }, { t: "Источник", opt: true },
-    { t: "Длит.", r: true }, { t: "Задач", r: true }], list.map(meetRow).join(""));
+  /* Один список с секциями вместо вкладок и шапки: «На вычитке» и так секция, а вкладки
+     сверху заставляли искать встречу по трём экранам (просьба владельца 21.09).
+     Вычитка стоит первой — это то, что ждёт человека. */
+  const all = visibleMeetings("any");
+  const pend = all.filter((m) => m.st === "pending");
+  const drafts = all.filter((m) => m.st === "draft" && !dupDrafts().includes(m));
+  const rest = all.filter((m) => m.st !== "pending" && m.st !== "draft");
+  const head = meetBar() + dupStrip();
+  if (!all.length) return head + empty("Встреч в этом срезе нет",
+    mfActive() ? "Сбросьте фильтры" : "Записи появятся после bumblebee, Granola или Read.ai");
+  const cols = 5;
+  const sect = (n, k, sub) => `<tr class="sect"><td colspan="${cols}">${esc(n)} · ${k}${
+    sub ? `<span class="sub">${esc(sub)}</span>` : ""}</td></tr>`;
+  const block = (title, list, sub) => list.length
+    ? sect(title, list.length, sub) + list.map(meetRow).join("") : "";
+  /* Участников в списке нет: в узкой колонке ряд лиц обрезался посередине («МДИПДП»
+     вместо трёх), а сами лица ничего не решают при выборе встречи — кто там был, видно
+     в панели. Список остался про «что, когда, откуда и сколько задач». */
+  return head + table([{ t: "Встреча", w: "38%" }, { t: "Когда" }, { t: "Источник", opt: true },
+    { t: "Длит.", r: true }, { t: "Задач", r: true }],
+    block("На вычитке", pend, "тезисы готовы, ждут подтверждения")
+    + block("Черновики bumblebee", drafts, "запись есть, тезисов ещё нет")
+    + block("Все встречи", rest));
 }
 
 /* очередь вычитки агентских встреч — самый большой экран продукта */

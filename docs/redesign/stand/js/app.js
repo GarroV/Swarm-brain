@@ -26,13 +26,13 @@ const TABS = {
   sprints: [["sprint", "Спринт"], ["timeline", "Таймлайн"], ["analytics", "Аналитика"], ["journal", "Журнал"]],
   /* «Вычитка» перестала быть вкладкой: она шапка общего экрана встреч — то, что ждёт
      человека, не должно лежать на соседней вкладке */
-  meetings: [["all", "Все встречи"], ["draft", "Черновики bumblebee"], ["queue", "Очередь агента"]],
   base: [["all", "Все записи"], ["meeting", "Встречи"], ["document", "Документы"], ["note", "Заметки"],
          ["transcript", "Транскрипты"], ["summary", "Сводки"], ["link", "Ссылки"], ["files", "Файлы"]],
   team: [["members", "Участники"], ["ws", "Воркспейсы"]],
   settings: [["profile", "Профиль"], ["integr", "Интеграции"], ["tokens", "Доступы"], ["notif", "Уведомления"],
     ["labels", "Списки"], ["roles", "Роли задач"]],
-  admin: [["users", "Пользователи"], ["ws", "Воркспейсы"], ["review", "Очередь вычитки"], ["broadcast", "Рассылка"], ["feedback", "Фидбек"]],
+  admin: [["users", "Пользователи"], ["ws", "Воркспейсы"], ["review", "Очередь вычитки"],
+    ["queue", "Встречи от агента"], ["broadcast", "Рассылка"], ["feedback", "Фидбек"]],
 };
 const TITLES = {
   home: ["", "Главная"],
@@ -44,7 +44,6 @@ const TITLES = {
 const firstTab = (sec) => TABS[sec] ? TABS[sec][0][0] : null;
 
 const TAB_COUNT = {
-  meetings: (id) => id === "queue" ? S.queue.length : visibleMeetings(id).length,
   base: (id) => id === "files" ? S.files.length : visibleEntries(id).length,
   admin: (id) => id === "feedback" ? S.feedback.filter((f) => f.st === "open").length
     : id === "review" ? S.meetings.filter((m) => m.st === "pending").length : null,
@@ -354,7 +353,6 @@ const ACTS = {
       note: f.note, ping: f.ping || null, urls: urlList(f.urls) }); },
   "gen-all": () => A.genAll(),
   "gen-close": () => { S.gen = []; S.genFor = null; S.dtab = "tez"; A.set({}); },
-  "review-next": (id) => reviewNext(id),
   reader: (id) => readerModal(id),
   "add-label": () => labelModal(null),
   "rename-label": (id) => labelModal(id),
