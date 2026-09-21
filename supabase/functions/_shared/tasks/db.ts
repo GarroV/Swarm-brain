@@ -6,6 +6,7 @@ import {
   isClosedStatus,
 } from "./statuses.ts";
 import { buildRecurPatch, type RecurRow, todayInTz } from "./recurrence.ts";
+import { defaultDueDate } from "./due.ts";
 import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
 
 const supabase = createClient(
@@ -22,7 +23,11 @@ export async function createTask(
     description: input.description ?? null,
     assignees: input.assignees ?? [],
     assignee_telegram_ids: input.assignee_telegram_ids ?? [],
-    due_date: input.due_date ?? null,
+    // Срок обязателен у КАЖДОЙ задачи, откуда бы она ни пришла — веб, бот, MCP, доска
+    // (решение владельца 21.09.2026: «по дефолту дедлайн +1 день от времени добавления»).
+    // Значение ставится здесь, в единственной точке создания, а не в трёх клиентах: копии
+    // одного правила в разных клиентах у нас уже расходились (линза задач, #440).
+    due_date: input.due_date ?? defaultDueDate(),
     remind_date: input.remind_date ?? null,
     remind_set_by: input.remind_date
       ? (input.remind_set_by ?? input.created_by_telegram_id ?? null)

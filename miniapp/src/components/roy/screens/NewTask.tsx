@@ -4,6 +4,7 @@ import { useRoyNav } from "../nav";
 import { NavHeader, SectionLabel, Chip, Segmented } from "../ui";
 import { createTask, updateTask, fetchTask, fetchConfig, fetchUsers } from "@/lib/api";
 import { matchesLens, matchesList, DEFAULT_STATUSES } from "@/lib/smartLists";
+import { tomorrowLocalISO } from "@/lib/dateRange";
 import { readSavedTasksView } from "@/components/tasks/useReminderTasks";
 import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
@@ -33,7 +34,9 @@ export function NewTask({ id }: { id?: string }) {
   const [desc, setDesc] = useState("");
   const [country, setCountry] = useState<string | null>(null);
   const [priority, setPriority] = useState("med");
-  const [due, setDue] = useState("");
+  // Срок обязателен и по умолчанию завтрашний (решение владельца 21.09.2026): пустое поле
+  // рождало задачу без срока, а такая не попадала ни в «Сегодня», ни в «Ближайшие» (#440).
+  const [due, setDue] = useState(tomorrowLocalISO());
   const [assignee, setAssignee] = useState<number | null>(null);
   const [isPrivate, setIsPrivate] = useState(false);
   const [markets, setMarkets] = useState<string[]>([]);
@@ -71,7 +74,7 @@ export function NewTask({ id }: { id?: string }) {
       description: desc.trim() || null,
       country,
       priority,
-      due_date: due || null,
+      due_date: due || tomorrowLocalISO(),
       assignee_telegram_id: assignee,
       is_private: isPrivate,
     };
