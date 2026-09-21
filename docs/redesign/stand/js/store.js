@@ -5,7 +5,7 @@ const S = {
   sec: "home", tab: "today", sel: null, selKind: null,
   /* задачи */
   lens: "mine", statuses: new Set(["open", "in_progress"]), byMarket: false, staff: false, noMailOnly: false,
-  recurOnly: false, archOn: false,
+  recurOnly: false, archOn: false, sprintView: "list",
   q: "", bulk: new Set(), dtab: "overview", mk: "", noProject: false,
   /* встречи */
   mf: { q: "", period: "all", cc: [], src: [], people: [], store: "any", st: "any" },

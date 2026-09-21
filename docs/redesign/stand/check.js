@@ -963,34 +963,32 @@ function tokenCheck() {
   await go('sec', 'projects'); await shot('15-projects');
   /* проект заводится с экрана: в продукте это есть (RoyProjectsScreen → createProject),
      и стенд обязан уметь то же, иначе «перенесён весь функционал» — неправда */
-  const projBefore = await count('tbody tr[data-act^="open-proj"]');
+  const projBefore = await count('.pcard');
   await go('new-project');
   await p.type('[data-f="n"]', 'Открытие BA');
   await go('do-project');
   await new Promise((r) => setTimeout(r, 120));
-  want((await count('tbody tr[data-act^="open-proj"]')) === projBefore + 1, 'проект заводится с экрана «Проекты»');
+  want((await count('.pcard')) === projBefore + 1, 'проект заводится с экрана «Проекты»');
   want((await text('.d-title')) === 'Открытие BA', 'созданный проект открылся в детали');
   await go('close');
   /* одно и то же «всего задач» на списке и на карте: раньше список считал архивные,
      карта — нет, и один проект показывал 18 в списке против 16 на карте */
   const listTotals = await p.evaluate(() => Object.fromEntries(
-    [...document.querySelectorAll('tbody tr[data-act^="open-proj"]')].map((tr) => {
-      const tds = [...tr.children];
-      return [tds[0].textContent.trim(), +tds[tds.length - 1].textContent.trim()];
-    })));
+    [...document.querySelectorAll('.pcard')].map((c) =>
+      [c.querySelector('.nm').textContent.trim(), +c.querySelector('.all').textContent.trim()])));
   await go('open-proj', 'p1'); await shot('16-project-detail');
   /* панель детали и строка списка говорят про ОДИН проект — значит одно и то же число */
   const pair = await p.evaluate(() => {
-    const row = [...document.querySelectorAll('tbody tr[data-act^="open-proj"]')].find((tr) => tr.classList.contains('sel'));
-    const tds = row ? [...row.children] : [];
+    const card = document.querySelector('.pcard.sel');
     const dd = [...document.querySelectorAll('.detail dt')].find((e) => e.textContent.trim() === 'Задачи');
     const said = dd ? dd.nextElementSibling.textContent.trim() : '';
     const m = said.match(/(\d+)\D+(\d+)/);
-    return { rowOpen: +(tds[tds.length - 2] || {}).textContent, rowAll: +(tds[tds.length - 1] || {}).textContent,
+    return { rowOpen: card ? +card.querySelector('.open').textContent : null,
+      rowAll: card ? +card.querySelector('.all').textContent : null,
       panelOpen: m ? +m[1] : null, panelAll: m ? +m[2] : null, said };
   });
   want(pair.rowAll === pair.panelAll && pair.rowOpen === pair.panelOpen,
-    `строка и панель дают одни числа по проекту (строка ${pair.rowOpen}/${pair.rowAll}, панель «${pair.said}»)`);
+    `карточка и панель дают одни числа по проекту (карточка ${pair.rowOpen}/${pair.rowAll}, панель «${pair.said}»)`);
   await go('close');
   await go('tab', 'map'); await shot('17-projects-map');
   const mapTotals = await p.evaluate(() => Object.fromEntries(
@@ -1032,11 +1030,11 @@ function tokenCheck() {
   await p.evaluate((n) => { S.workspaces = S.workspaces.map((w) => w.active ? { ...w, name: n } : w); render(); }, tree.ws);
   await new Promise((r) => setTimeout(r, 90));
   await go('sec', 'sprints'); await shot('18-board');
-  const cardsC2 = await count('.card[data-card]');
+  const cardsC2 = await count('.strow');
   await go('set-cycle', 'c3');
   await new Promise((r) => setTimeout(r, 120));
-  const cardsC3 = await count('.card[data-card]');
-  want(cardsC3 > 0 && cardsC3 !== cardsC2, `переключатель цикла меняет доску (c2: ${cardsC2}, c3: ${cardsC3})`);
+  const cardsC3 = await count('.strow');
+  want(cardsC3 > 0 && cardsC3 !== cardsC2, `переключатель цикла меняет список спринта (c2: ${cardsC2}, c3: ${cardsC3})`);
   await go('tab', 'timeline');
   await new Promise((r) => setTimeout(r, 120));
   const tlC3 = await count('.tdi');
@@ -1044,7 +1042,13 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 120));
   const tlC2 = await count('.tdi');
   want(tlC2 !== tlC3, `таймлайн следует за циклом (c3: ${tlC3}, c2: ${tlC2})`);
-  await go('tab', 'board');
+  /* доска — вид спринта, а не вкладка: список по умолчанию, канбан переключателем */
+  await go('tab', 'sprint');
+  await new Promise((r) => setTimeout(r, 150));
+  const sprintSects = await p.$$eval('.sprint .ini', (e) => e.length);
+  want(sprintSects > 0, 'спринт по умолчанию — список по инициативам, а не доска');
+  want((await count('.kpi')) >= 4, 'над спринтом стоят счётчики цикла');
+  await gov('set-view', 'board');
   await new Promise((r) => setTimeout(r, 120));
   const doneBefore = await count('[data-drop="done"] .card');
   const dragOk = await p.evaluate(() => { const c = document.querySelector('.card[data-card]');
@@ -1069,8 +1073,8 @@ function tokenCheck() {
   /* доска и таймлайн — две вкладки ОДНОГО цикла: таймлайн показывает те же задачи,
      только с датой, поэтому он не может насчитать больше доски */
   const inCycleSaid = await p.evaluate(() => {
-    const t = [...document.querySelectorAll('.bar .right span')].map((e) => e.textContent).find((x) => /Задач в цикле/.test(x));
-    return t ? +t.replace(/\D+/g, '') : null; });
+    const k = [...document.querySelectorAll('.kpi')].find((e) => /взято в цикл/.test(e.textContent));
+    return k ? +k.querySelector('b').textContent : null; });
   await go('tab', 'timeline'); await shot('36-timeline');
   want((await count('.tday')) > 3, 'таймлайн разложил задачи по дням');
   const tl = await p.evaluate(() => {
@@ -1212,14 +1216,14 @@ function tokenCheck() {
   want(wsUsers !== null, 'вкладка воркспейсов открылась');
   want(wsUsers === realUsers, `у текущего воркспейса счётчик людей совпадает с вкладкой «Участники» (${wsUsers} против ${realUsers})`);
   await go('sec', 'projects');
-  const prBefore = await count('tr.row');
+  const prBefore = await count('.pcard');
   await go('switch-ws', 'latam');
   await new Promise((r) => setTimeout(r, 120));
-  want(prBefore > 0 && (await count('tr.row')) === 0, 'переключение воркспейса меняет данные, а не только подпись');
+  want(prBefore > 0 && (await count('.pcard')) === 0, 'переключение воркспейса меняет данные, а не только подпись');
   want((await text('.empty b')).length > 0, 'пустой воркспейс объясняет себя, а не показывает белый лист');
   await go('switch-ws', 'cee');
   await new Promise((r) => setTimeout(r, 120));
-  want((await count('tr.row')) === prBefore, 'возврат в свой воркспейс возвращает данные');
+  want((await count('.pcard')) === prBefore, 'возврат в свой воркспейс возвращает данные');
   /* и возвращает ИМЕННО то, что было, включая созданное в этой сессии: раньше возврат
      пересобирал данные из констант и «Открытие BA» исчезало без единого слова */
   want((await p.evaluate(() => S.projects.some((x) => x.n === 'Открытие BA'))),

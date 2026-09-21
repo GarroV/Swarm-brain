@@ -7,20 +7,24 @@ function screenProjects() {
   return `<div class="bar">${wsChip()}${chip("Показывать на паузе", S.showClosed, "tgl", "showClosed")}
     <div class="right"><span>Показано <b>${roots.length}</b> из ${all.length}</span><span>Подпроектов <b>${S.projects.length - all.length}</b></span>
       ${btn("＋ Проект", "new-project", undefined, undefined, "pri sm")}</div></div>`
-    + (roots.length ? /* «Проект» без своей ширины — он и забирает остаток: иначе после скрытия
-       подпроектов справа оставалась пустая полоса на 114px */
-      table([{ t: "Проект" }, { t: "Владелец", w: "18%" }, { t: "Подпроекты", w: "26%", opt: true }, { t: "Срок", w: "12%" }, { t: "Открыто", short: "Откр.", r: true, w: "84px" }, { t: "Всего", r: true, w: "74px" }],
-      roots.map((p) => {
-        const subs = S.projects.filter((x) => x.parent === p.id);
-        const tasks = projectTasks(p.id);
-        const open = tasks.filter((t) => t.st !== "done").length;
-        return `<tr class="row${S.sel === p.id && S.selKind === "project" ? " sel" : ""}" ${act("open-proj", p.id)} tabindex="0">
-          ${cell(dot(p.st === "paused" ? "open" : "in_progress") + esc(p.n), "t")}
-          ${cell(avShort(p.own))}${cell(subs.length ? subs.map((s) => esc(s.n)).join(" · ") : `<span class="muted">—</span>`, "opt")}
-          ${cell(due(p.due))}${cell(`<span class="due">${open}</span>`, "r")}${cell(`<span class="due">${tasks.length}</span>`, "r")}</tr>`;
-      }).join(""))
+    + (roots.length ? `<div class="pgrid">${roots.map(projectCard).join("")}</div>`
       : empty(all.length ? "Все проекты на паузе" : "В этом воркспейсе ещё нет проектов",
               all.length ? "Включите «показывать на паузе»" : "Проект появится вместе с первой задачей"));
+}
+
+/* Карточка проекта — как в рабочем продукте: точка состояния, название, числа задач,
+   подпроекты, владелец и срок. Владелец: «верни как было в текущем проде, тот
+   функционал в целом устраивает». Таблица из шести колонок была моей выдумкой. */
+function projectCard(p) {
+  const subs = S.projects.filter((x) => x.parent === p.id);
+  const tasks = projectTasks(p.id);
+  const open = tasks.filter((t) => t.st !== "done").length;
+  return `<button class="pcard${S.sel === p.id && S.selKind === "project" ? " sel" : ""}" ${act("open-proj", p.id)}>
+    <span class="h">${dot(p.st === "paused" ? "open" : "in_progress")}<b class="nm">${esc(p.n)}</b>
+      ${p.st === "paused" ? state("пауза", false) : ""}</span>
+    <span class="m">задач: <b class="all">${tasks.length}</b> · открыто: <b class="open">${open}</b></span>
+    <span class="s">${subs.length ? esc(subs.map((x) => x.n).join(" · ")) : `<span class="muted">без подпроектов</span>`}</span>
+    <span class="f">${avShort(p.own)}${due(p.due)}</span></button>`;
 }
 
 function projectsMap() {
@@ -65,16 +69,75 @@ function cycleBar(extra) {
     ${cycle().st !== "active" ? state(CYCLE_ST[cycle().st], false) : ""}
     <div class="right">${extra || ""}</div></div>`;
 }
+/* Спринт по первоисточнику («Доска инициатив и спринтов», переданная владельцем):
+   счётчики сверху, тело — направление → инициатива → задачи, у инициативы полоска
+   прогресса и счёт «сделано из взятого». Канбан остаётся, но переключателем:
+   решение владельца 18.09 — список по умолчанию, доска по нажатию. */
+function sprintKpi(inCycle) {
+  const done = inCycle.filter((t) => t.st === "done").length;
+  const late = inCycle.filter((t) => t.st !== "done" && dueKind(t.due) === "now").length;
+  const carry = inCycle.filter((t) => t.st !== "done" && dueKind(t.due) === "now" && t.prio !== "low").length;
+  return `<div class="kpis">
+    <div class="kpi"><b>${inCycle.length}</b><span>взято в цикл</span></div>
+    <div class="kpi"><b>${done}</b><span>выполнено</span></div>
+    <div class="kpi"><b>${inCycle.length - done}</b><span>в работе</span></div>
+    <div class="kpi${late ? " bad" : ""}"><b>${late}</b><span>просрочено</span></div>
+    <div class="kpi"><b>${carry}</b><span>под угрозой переноса</span></div></div>`;
+}
+
+function sprintTaskRow(t) {
+  return `<div class="strow${S.sel === t.id && S.selKind === "task" ? " sel" : ""}" ${act("open-task", t.id)} tabindex="0">
+    ${dot(t.st)}${priMark(t.prio)}<span class="t">${esc(t.t)}</span>
+    <span class="r">${t.who.length ? avShort(t.who[0]) : `<span class="muted">не назначен</span>`}${due(t.due, t.st === "done")}</span></div>`;
+}
+
+/* инициатива = группа задач цикла; у задачи вне инициатив своя группа, иначе часть
+   цикла просто не видна и счётчики наверху не сходятся с тем, что на экране */
+function sprintGroups(inCycle) {
+  const byIni = new Map();
+  const seen = new Set();
+  S.initiatives.forEach((i) => {
+    const list = inCycle.filter((t) => i.tasks.includes(t.id));
+    if (!list.length) return;
+    list.forEach((t) => seen.add(t.id));
+    const dir = proj(i.pr) ? (proj(i.pr).parent || i.pr) : "—";
+    if (!byIni.has(dir)) byIni.set(dir, []);
+    byIni.get(dir).push([i, list]);
+  });
+  const rest = inCycle.filter((t) => !seen.has(t.id));
+  const group = (i, list) => {
+    const d = list.filter((t) => t.st === "done").length;
+    const late = list.filter((t) => t.st !== "done" && dueKind(t.due) === "now").length;
+    const pct = Math.round(d / list.length * 100);
+    return `<div class="ini"><div class="ih">
+      <div class="iname">${esc(i.t)}<span class="iown">${user(i.own).n} · ${esc(projPath(i.pr))}</span></div>
+      <div class="iprog"><i style="width:${pct}%"></i></div>
+      ${late ? alert_(`${d} из ${list.length} · ${late} просрочено`) : state(`${d} из ${list.length}`, d === list.length)}
+      </div><div class="stasks">${list.map(sprintTaskRow).join("")}</div></div>`;
+  };
+  return [...byIni.entries()].map(([dir, inis]) =>
+      `<div class="dir">${esc(proj(dir) ? proj(dir).n : "Без направления")}</div>` + inis.map(([i, l]) => group(i, l)).join("")).join("")
+    + (rest.length ? `<div class="dir">Вне инициатив</div><div class="ini"><div class="stasks">${rest.map(sprintTaskRow).join("")}</div></div>` : "");
+}
+
 function screenSprints() {
   if (S.tab === "timeline") return screenTimeline();
   if (S.tab === "pool") return screenPool();
   if (S.tab === "check") return screenCheck();
   if (S.tab === "analytics") return screenAnalytics();
   if (S.tab === "journal") return screenJournal();
-  const cols = S.cols.filter((c) => c.on);
   const inCycle = cycleTasks();
-  if (!S.tasks.length) return cycleBar() + empty("В этом воркспейсе нет задач", "Доска наполнится, когда задачи попадут в цикл");
-  return cycleBar(`<span>Задач в цикле <b>${inCycle.length}</b></span><span>Перетащите карточку, чтобы сменить статус</span>`)
+  if (!S.tasks.length) return cycleBar() + empty("В этом воркспейсе нет задач", "Цикл наполнится, когда задачи в него попадут");
+  const view = `<span class="seg">
+    <button class="sg${S.sprintView === "board" ? "" : " on"}" ${act("set-view", undefined, "list")}>Список</button>
+    <button class="sg${S.sprintView === "board" ? " on" : ""}" ${act("set-view", undefined, "board")}>Канбан</button></span>`;
+  if (S.sprintView !== "board") {
+    return cycleBar(view) + sprintKpi(inCycle)
+      + (inCycle.length ? `<div class="sprint">${sprintGroups(inCycle)}</div>`
+        : empty("В цикле пока нет задач", "Возьмите задачи из пула инициатив"));
+  }
+  const cols = S.cols.filter((c) => c.on);
+  return cycleBar(view + `<span>Перетащите карточку, чтобы сменить статус</span>`) + sprintKpi(inCycle)
     + `<div class="board">${cols.map((c) => {
       const items = inCycle.filter((t) => t.st === c.id);
       return `<div class="col"><h3>${dot(c.id)}${c.n}<span class="n">${items.length}</span></h3>

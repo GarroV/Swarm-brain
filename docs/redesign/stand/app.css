@@ -164,6 +164,20 @@ tbody tr.sel td.t{font-weight:600}
 .rv b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rv .pl{flex:none;display:flex;align-items:center;gap:6px;color:var(--ink-3)}
 .rv .r{flex:none;margin-left:auto;display:flex;gap:6px}
+/* Проекты — карточками, как в рабочем продукте. Шесть колонок таблицы были выдумкой:
+   у проекта читают название, сколько задач и сколько из них живых. */
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:12px;padding:14px var(--gutter) 22px;
+  align-content:start;overflow:auto}
+.pcard{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:14px 15px;text-align:left;
+  border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);cursor:pointer;min-height:112px}
+.pcard:hover{border-color:var(--accent);background:var(--accent-soft)}
+.pcard.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.pcard .h{display:flex;align-items:center;gap:7px;width:100%;min-width:0}
+.pcard .nm{font-size:var(--fs-lead);font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pcard .m{font-size:var(--fs-dense);color:var(--ink-2)}
+.pcard .m b{font-weight:600;font-family:var(--font-mono)}
+.pcard .s{font-size:var(--fs-meta);color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.pcard .f{display:flex;align-items:center;gap:8px;margin-top:auto;font-size:var(--fs-meta)}
 /* Подпись макета. Стоит у левого края рабочей области: справа кнопка фидбека и
    тосты, а человеку, которому дали ссылку, надо сразу видеть, что данные вымышленные. */
 .stamp{position:fixed;left:calc(var(--nav-w) + 14px);bottom:8px;font:500 10px/1 var(--font-num);color:var(--ink-empty);letter-spacing:.08em}
@@ -657,3 +671,28 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
    В узкой рабочей области перенос разрешаем: спрятать фильтр хуже, чем перенести. */
 .bar{flex-wrap:nowrap}
 @container (max-width:1000px){ .bar{flex-wrap:wrap;row-gap:6px} }
+
+/* Спринт по первоисточнику: счётчики сверху, тело — направление → инициатива → задачи. */
+.kpis{display:flex;gap:10px;padding:10px var(--gutter);border-bottom:1px solid var(--line);background:var(--surface-2);flex-wrap:wrap}
+.kpi{display:flex;flex-direction:column;gap:2px;min-width:104px;padding:6px 12px;border:1px solid var(--line);
+  border-radius:9px;background:var(--surface)}
+.kpi b{font:600 var(--fs-lead)/1 var(--font-mono);color:var(--ink)}
+.kpi span{font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3)}
+.kpi.bad b{color:var(--bad)}
+.sprint{flex:1;min-height:0;overflow:auto;padding:0 var(--gutter) 24px}
+.sprint .dir{margin:16px 0 6px;font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.1em;
+  color:var(--ink-empty);font-weight:600}
+.sprint .ini{border:1px solid var(--line-strong);border-radius:11px;background:var(--surface);margin-bottom:8px;overflow:hidden}
+.sprint .ih{display:flex;align-items:center;gap:12px;padding:9px 13px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.sprint .iname{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;font-size:var(--fs-dense);font-weight:600;color:var(--ink)}
+.sprint .iown{font-size:var(--fs-meta);font-weight:400;color:var(--ink-3)}
+.iprog{flex:none;width:120px;height:6px;border-radius:3px;background:var(--surface-3);overflow:hidden}
+.iprog i{display:block;height:100%;background:var(--accent)}
+.stasks{display:flex;flex-direction:column}
+.strow{display:flex;align-items:center;gap:7px;min-height:var(--row);padding:4px 13px;border-top:1px solid var(--line);
+  font-size:var(--fs-dense);color:var(--ink-2);cursor:pointer}
+.strow:first-child{border-top:0}
+.strow:hover{background:var(--accent-soft)}
+.strow.sel{box-shadow:inset 3px 0 0 var(--accent)}
+.strow .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.strow .r{flex:none;display:flex;align-items:center;gap:10px}

@@ -19,7 +19,9 @@ const TABS = {
   /* У задач вкладок времени больше нет: срок виден группами в самом списке, а
      «регулярные» и «архив» стали тумблерами в «Ещё» — вместо двух строк шапки одна */
   projects: [["list", "Список"], ["map", "Карта проектов"]],
-  sprints: [["board", "Доска"], ["timeline", "Таймлайн"], ["pool", "Инициативы"], ["check", "Чек цикла"], ["analytics", "Аналитика"], ["journal", "Журнал"]],
+  /* «Доска» перестала быть вкладкой: список и канбан — два вида одного спринта,
+     переключатель стоит в полосе цикла (канон 18.09 и первоисточник владельца) */
+  sprints: [["sprint", "Спринт"], ["timeline", "Таймлайн"], ["pool", "Инициативы"], ["check", "Чек цикла"], ["analytics", "Аналитика"], ["journal", "Журнал"]],
   /* «Вычитка» перестала быть вкладкой: она шапка общего экрана встреч — то, что ждёт
      человека, не должно лежать на соседней вкладке */
   meetings: [["all", "Все встречи"], ["draft", "Черновики bumblebee"], ["queue", "Очередь агента"]],
@@ -110,6 +112,7 @@ const ACTS = {
   "reset-statuses": () => A.set({ statuses: new Set(["open", "in_progress"]) }),
   status: (id) => { const s = new Set(S.statuses); s.has(id) ? s.delete(id) : s.add(id); A.set({ statuses: s }); },
   tgl: (k) => A.set({ [k]: !S[k] }),
+  "set-view": (_, v) => A.set({ sprintView: v }),
   "open-task": (id) => A.select("task", +id),
   "open-meet": (id) => { S.sec = "meetings"; A.select("meeting", id); },
   "open-entry": (id) => A.select("entry", id),
