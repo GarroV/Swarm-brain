@@ -857,3 +857,11 @@ tr:hover td .av + .av{box-shadow:0 0 0 2px var(--surface-2)}
 .uadd{display:flex;gap:6px;margin-top:6px}
 .uadd input{flex:1;min-width:0;height:30px;padding:0 10px;border:1px solid var(--line-control);border-radius:8px;
   background:var(--surface);font:400 var(--fs-dense)/1 var(--font-ui);color:var(--ink)}
+
+/* Инструкция по интеграции: шаги нумерованы — по ним идут сверху вниз, а не читают абзац. */
+.steps{margin:0 0 12px;padding-left:20px;color:var(--ink-2);font:400 13.5px/1.55 var(--font-ui)}
+.steps li{margin-bottom:6px}
+.soon{margin-bottom:12px;padding:9px 11px;border:1px dashed var(--line-control);border-radius:10px;
+  background:var(--surface-2);color:var(--ink-2);font:400 13px/1.5 var(--font-ui)}
+/* Кнопка, которой пока нечего делать, выглядит нерабочей — иначе её жмут и ждут. */
+.btn.dis{opacity:.45;cursor:not-allowed}

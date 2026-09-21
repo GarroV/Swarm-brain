@@ -1757,6 +1757,35 @@ function tokenCheck() {
     want(after.entries === before.entries + 1 && after.n === 0,
       `импорт заметок довёз запись до базы (записей ${before.entries} → ${after.entries}, осталось ${after.n})`);
   }
+  /* У КАЖДОЙ интеграции есть развёрнутая инструкция справа: «Подключить» без неё —
+     загадка про то, где брать ключ и что будет после (просьба владельца 21.09).
+     Пункты «в разработке» показаны в макете, но подключиться не дают: кнопка, которая
+     притворилась рабочей, заставит человека ждать писем, которых не будет. */
+  {
+    const list = await p.evaluate(() => S.integrations.map((i) => ({ id: i.id, soon: !!i.soon })));
+    const noGuide = await p.evaluate(() => S.integrations.filter((i) =>
+      !i.what || !(i.steps || []).length || !i.note).map((i) => i.id));
+    want(noGuide.length === 0, `у каждой интеграции есть инструкция (без неё: ${noGuide.join(', ') || 'нет'})`);
+    const soon = list.filter((i) => i.soon).map((i) => i.id);
+    want(soon.length >= 3, `в макете есть Pyrus, почта и Telegram («в разработке»: ${soon.join(', ')})`);
+    await go('open-integr', 'pyrus');
+    await new Promise((r) => setTimeout(r, 140));
+    const guide = await p.evaluate(() => ({
+      open: !!document.querySelector('.detail .steps'),
+      steps: document.querySelectorAll('.detail .steps li').length,
+      soonSaid: !!document.querySelector('.detail .soon'),
+      wide: (document.querySelector('.detail') || { getBoundingClientRect: () => ({ width: 0 }) })
+        .getBoundingClientRect().width }));
+    want(guide.open && guide.steps >= 3,
+      `инструкция открывается справа по шагам (шагов ${guide.steps}, ширина ${Math.round(guide.wide)}px)`);
+    want(guide.soonSaid, 'экран прямо говорит, что пункт ещё в разработке');
+    await go('integr', 'pyrus');
+    await new Promise((r) => setTimeout(r, 140));
+    const pyrusOn = await p.evaluate(() => (S.integrations.find((i) => i.id === 'pyrus') || {}).st === 'on');
+    want(!pyrusOn && (await text('.toast')).includes('разработке'),
+      'недоделанная интеграция не притворяется подключённой');
+    await go('close');
+  }
   /* Роли задач — справочник, а не константа в коде: в продукте набор зашит
      (marketing/bd/rnd) и поле скрыто флагом, поэтому ролью никто не пользуется.
      Заведённая роль обязана быть доступна в задаче сразу, а снятая — уйти с задач. */

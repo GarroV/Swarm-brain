@@ -273,6 +273,25 @@ function detailProject(p) {
       ${lab("Последние задачи")}${rows(tasks.slice(0, 5).map((t) => [dot(t.st), `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, due(t.due, t.st === "done")]))}</div>`;
 }
 
+/* Инструкция по интеграции: что она даёт, что нажать по шагам и чем придётся
+   заплатить (ключ в открытом виде, доступ по токену). Без последнего пункта человек
+   узнаёт про цену после подключения. */
+function detailIntegr(i) {
+  const on = i.st === "on";
+  return dhead(i.soon ? "Интеграция · в разработке" : `Интеграция · ${on ? "подключена" : "выключена"}`, i.n,
+    (i.soon ? btn("Подключить", "integr", i.id, undefined, "dis")
+      : btn(on ? "Отключить" : "Подключить", "integr", i.id, undefined, on ? "" : "pri"))
+    + (i.id === "granola" && on ? btn("Импорт заметок", "granola-import") : ""))
+    + `<div class="d-body">
+      ${i.soon ? `<div class="soon">Пункт в разработке: экран показывает, как это будет устроено.
+        Подключить пока нечего — кнопка не работает.</div>` : ""}
+      ${lab("Зачем это")}<div class="note">${esc(i.what)}</div>
+      ${lab("Как подключить")}<ol class="steps">${i.steps.map((x) => `<li>${esc(x)}</li>`).join("")}</ol>
+      ${lab("Что важно знать")}<div class="note">${esc(i.note)}</div>
+      ${lab("Состояние")}<dl class="f"><dt>Сейчас</dt><dd>${i.soon ? state("в разработке", false) : state(on ? "подключено" : "выключено", on)}</dd>
+        <dt>Подробности</dt><dd>${esc(i.d)}</dd></dl></div>`;
+}
+
 function renderDetail() {
   const app = $(".app"), d = $(".detail");
   const map = {
@@ -281,6 +300,7 @@ function renderDetail() {
     entry: () => { const e = S.entries.find((x) => x.id === S.sel); return e && detailEntry(e); },
     file: () => { const f = S.files.find((x) => x.id === S.sel); return f && detailFile(f); },
     project: () => { const p = proj(S.sel); return p && detailProject(p); },
+    integr: () => { const i = S.integrations.find((x) => x.id === S.sel); return i && detailIntegr(i); },
   };
   const html = S.selKind && map[S.selKind] ? map[S.selKind]() : null;
   if (!html) { app.classList.remove("with-detail"); d.innerHTML = ""; return; }

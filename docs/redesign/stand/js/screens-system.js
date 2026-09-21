@@ -51,13 +51,17 @@ function screenSettings() {
       ["Часовой пояс", `<span class="muted">по нему считаются сроки и время встреч</span>`, `<span class="ib">${btn("Europe/Belgrade", "tz", undefined, "Europe/Belgrade", "sm" + (S.tz === "Europe/Belgrade" ? " on" : ""))}${btn("Europe/Zagreb", "tz", undefined, "Europe/Zagreb", "sm" + (S.tz === "Europe/Zagreb" ? " on" : ""))}</span>`],
       ["Аккаунт", "вход через Telegram", btn("Выйти", "logout", undefined, undefined, "sm")],
     ]),
-    integr: () => rows(S.integrations.map((i) => [esc(i.n),
+    /* строка открывает развёрнутую инструкцию справа: место есть, а без инструкции
+       «Подключить» — это загадка про то, где брать ключ (просьба владельца 21.09) */
+    integr: () => rows(S.integrations.map((i) => [`<span class="lnk" ${act("open-integr", i.id)}>${esc(i.n)}</span>`
+      + (i.soon ? ` ${state("в разработке", false)}` : ""),
       /* у Granola в продукте видно, сколько заметок ещё не разобрано, и их импортируют
          кнопкой: без числа человек не знает, есть ли что забирать */
       i.id === "granola" ? `${esc(i.d)} · необработанных заметок: ${S.granolaNew}` : esc(i.d),
-      `<span class="ib">${state(i.st === "on" ? "подключено" : "выключено", i.st === "on")}
+      `<span class="ib">${i.soon ? "" : state(i.st === "on" ? "подключено" : "выключено", i.st === "on")}
        ${i.id === "granola" && i.st === "on" ? btn("Импорт заметок", "granola-import", undefined, undefined, "sm") : ""}
-       ${btn(i.st === "on" ? "Отключить" : "Подключить", "integr", i.id, undefined, "sm")}</span>`])),
+       ${btn("Инструкция", "open-integr", i.id, undefined, "sm")}
+       ${btn(i.st === "on" ? "Отключить" : "Подключить", "integr", i.id, undefined, "sm" + (i.soon ? " dis" : ""))}</span>`])),
     tokens: () => rows([
       ...S.tokens.map((t) => [esc(t.n), `<code>${esc(t.v)}</code> · выпущен ${esc(t.at)}`,
         `<span class="ib">${btn("Скопировать", "copy", undefined, t.v, "sm")}${btn("Перевыпустить", "reissue", t.id, undefined, "sm attn")}</span>`]),

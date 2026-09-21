@@ -564,6 +564,10 @@ const A = {
   resolveFeedback(id) { S.feedback = S.feedback.map((f) => f.id === id ? { ...f, st: "resolved" } : f); render(); },
   broadcast(text, to) { S.broadcasts = [{ at: TODAY, who: ME, to, t: text }, ...S.broadcasts]; A.toast("Рассылка отправлена"); },
   toggleIntegration(id) {
+    const cur = S.integrations.find((i) => i.id === id);
+    /* «в разработке» не должно ПРИТВОРЯТЬСЯ подключённым: человек поверит кнопке,
+       перестанет ждать письма и будет считать, что интеграция работает */
+    if (cur && cur.soon) return A.toast(`«${cur.n}» пока в разработке — подключить нечего`);
     S.integrations = S.integrations.map((i) => i.id === id ? { ...i, st: i.st === "on" ? "off" : "on" } : i);
     A.toast("Интеграция переключена");
   },

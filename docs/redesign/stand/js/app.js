@@ -338,6 +338,7 @@ const ACTS = {
   "dig-period": (_, v) => A.set({ digPeriod: v }),
   "dig-mk": (_, v) => A.set({ digMk: S.digMk.includes(v) ? S.digMk.filter((x) => x !== v) : [...S.digMk, v] }),
   "cal-connect": () => { S.cal = "on"; A.set({}); A.toast("Календарь подключён — встречи дня подтянутся"); },
+  "open-integr": (id) => A.select("integr", id),
   integr: (id) => A.toggleIntegration(id),
   broadcast: () => broadcastModal(),
   "do-broadcast": () => { const f = formData(); closeModal(); A.broadcast(f.text, f.to); },
