@@ -627,12 +627,12 @@ td.acts{white-space:nowrap}
    под ним место, участники и честный признак записи. Полосой наверху они забирали
    всю ширину экрана и отжимали работу вниз. */
 .calv{display:flex;flex-direction:column}
-.calv .cev{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:9px;row-gap:3px;
+.calv .cev{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:9px;row-gap:3px;
   padding:9px 0;border-bottom:1px solid var(--line);white-space:normal}
 .calv .cev:last-child{border-bottom:0}
 .calv .at{font:600 var(--fs-num)/1.4 var(--font-mono);color:var(--accent)}
 .calv .cev b{font-size:var(--fs-dense);color:var(--ink);line-height:1.4}
-.calv .cf{grid-column:2;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.calv .cf{grid-column:2/4;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
 .calv .pl{color:var(--ink-3);font-size:var(--fs-meta)}
 .srch{padding:4px var(--gutter) 28px;overflow:auto}
 
@@ -938,14 +938,16 @@ tr:hover td .av + .av{box-shadow:0 0 0 2px var(--surface-2)}
 .tez a{color:var(--accent)}
 .d-title .ibtn{margin-left:8px;vertical-align:middle}
 
-/* «Перейти» у встречи дня: у идущей сейчас — заметная, у будущей тихая. */
-.cev{position:relative}
-.cgo{position:absolute;top:8px;right:10px;height:24px;display:inline-flex;align-items:center;padding:0 10px;
+/* «Перейти» у встречи дня: у идущей сейчас — заметная, у будущей тихая. Кнопка —
+   ТРЕТЬЯ КОЛОНКА той же сетки, а не слой поверх строки: абсолютная кнопка требовала
+   резерва справа, и этот резерв ломал название даже у встречи БЕЗ кнопки
+   (найдено обходом экранов 21.09). */
+.cgo{align-self:start;height:24px;display:inline-flex;align-items:center;padding:0 10px;
   border:1px solid var(--line-control);border-radius:20px;background:var(--surface);color:var(--ink-2);
   font:500 var(--fs-meta)/1 var(--font-ui);text-decoration:none}
 .cgo:hover{border-color:var(--accent);color:var(--accent)}
 .cgo.now{background:var(--accent);border-color:var(--accent);color:#fff}
-.cev b{padding-right:96px;display:block}
+
 
 /* Свой период прямо в меню фильтра: две даты и готовые длины, включая те, которых нет
    среди «неделя/месяц» — например 21 день. */
@@ -954,3 +956,22 @@ tr:hover td .av + .av{box-shadow:0 0 0 2px var(--surface-2)}
 .mrange input[type=date]{flex:1;height:28px;padding:0 8px;border:1px solid var(--line-strong);border-radius:7px;
   background:var(--surface);font:400 var(--fs-meta)/1 var(--font-ui);color:var(--ink)}
 .mrange .quick{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+
+/* В цель высотой 12px попадают не с первого раза, а это обычные рабочие переключатели.
+   Текст оставляем как есть, растёт только область нажатия (обход экранов 21.09).
+   Ссылку внутри кликабельной строки не трогаем: там целью служит вся строка. */
+.lk,.labr{min-height:24px;padding:6px 0;display:inline-flex;align-items:center}
+.home .lnk:not(tr .lnk),.side .lnk:not(tr .lnk){min-height:22px;padding:4px 0;display:inline-flex;align-items:center}
+
+/* Ссылки в ответе по базе и сноска — такие же цели, как кнопки: в сноску 6×14 не
+   попасть вовсе, а именно по ней проверяют, откуда взят ответ. */
+/* Ссылка-текст — такая же цель, как кнопка: строка высотой 15px требует прицеливания,
+   а это основной способ открыть задачу из журнала, поиска и ответа. Внутри кликабельной
+   строки цель и так велика — там оставляем как было. */
+.lnk{display:inline-block;min-height:22px;line-height:22px;max-width:100%;vertical-align:middle;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+tr[data-act] .lnk,.row .lnk,.strow .lnk,.pit .lnk{min-height:0;line-height:inherit}
+.answer sup{vertical-align:baseline}
+.answer sup{min-width:18px;min-height:18px;padding:0 4px;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:6px;background:var(--accent-soft);color:var(--accent);cursor:pointer;vertical-align:baseline}
+.answer sup:hover{background:var(--accent);color:#fff}

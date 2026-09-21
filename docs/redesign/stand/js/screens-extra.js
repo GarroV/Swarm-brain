@@ -123,7 +123,7 @@ function calendarList() {
   return `<div class="calv">${CALENDAR.map((c) => `<div class="cev${isNow(c) ? " now" : ""}">
     <span class="at">${c.at}</span><b>${esc(c.t)}</b>
     ${c.url ? `<a class="cgo${isNow(c) ? " now" : ""}" href="${esc(c.url)}" target="_blank" rel="noreferrer"
-      title="Открыть ${esc(c.place)}">${isNow(c) ? "Подключиться" : "Перейти"}</a>` : ""}
+      title="Открыть ${esc(c.place)}">${isNow(c) ? "Подключиться" : "Перейти"}</a>` : `<span></span>`}
     <div class="cf"><span class="pl">${esc(c.place)}</span>${avs(c.who)}
     ${isNow(c) ? state("идёт сейчас", true) : ""}
     ${c.rec ? state("рекордер включится", true) : state("без записи", false)}</div></div>`).join("")}</div>`;

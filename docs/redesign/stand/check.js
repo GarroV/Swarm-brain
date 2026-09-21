@@ -270,6 +270,51 @@ function tokenCheck() {
       if (e.offsetHeight > lh * 1.75 + 6)
         out.push('подвал карточки перенёсся: «' + e.textContent.trim().slice(0, 24) + '» h=' + e.offsetHeight);
     });
+    /* В цель высотой 12px попадают не с первого раза. Ссылку внутри кликабельной строки
+       не считаем: там целью служит вся строка, и она большая (обход экранов 21.09). */
+    document.querySelectorAll('button, a, [data-act]').forEach((e) => {
+      if (!e.offsetParent || /^(TR|TD|TH)$/.test(e.tagName)) return;
+      if (e.closest('tr[data-act], .row, .pit, .strow, .grow, .cev')) return;
+      const r = e.getBoundingClientRect();
+      if (r.height > 0 && (r.height < 18 || r.width < 14))
+        out.push(`мелкая цель «${e.textContent.trim().slice(0, 18)}»: ${Math.round(r.width)}×${Math.round(r.height)}`);
+    });
+    /* Слой поверх текста и пустой резерв под него — один и тот же класс ошибки: кнопку
+       ставят абсолютом, под неё держат padding, и стоит кнопке исчезнуть — резерв ломает
+       текст в пустоту, а стоит тексту вырасти — кнопка ложится поверх него. Оба случая
+       ловятся на каждом снимке, а не только там, куда посмотрел человек (21.09). */
+    const visEl = (e) => e.offsetParent !== null && e.offsetWidth > 0 && e.offsetHeight > 0;
+    const textRects = (el) => { const rs = [];
+      el.childNodes.forEach((n) => { if (n.nodeType === 3 && n.textContent.trim()) {
+        const rg = document.createRange(); rg.selectNode(n);
+        [...rg.getClientRects()].forEach((x) => rs.push(x)); } });
+      return rs; };
+    document.querySelectorAll('.body *, .detail *').forEach((e) => {
+      const st = getComputedStyle(e);
+      if (!visEl(e) || (st.position !== 'absolute' && st.position !== 'fixed')) return;
+      /* выпадающие меню и панели лежат поверх заведомо — они и должны перекрывать */
+      if (e.closest('.dmenu,.pop,.modal,.pal,.toast,.fab') || e.classList.contains('dmenu')) return;
+      const r = e.getBoundingClientRect(), host = e.parentElement;
+      if (!host) return;
+      host.querySelectorAll('*').forEach((k) => {
+        if (k === e || e.contains(k) || !visEl(k) || k.closest('.dmenu')) return;
+        textRects(k).forEach((t) => {
+          if (Math.min(r.right, t.right) - Math.max(r.left, t.left) > 2
+            && Math.min(r.bottom, t.bottom) - Math.max(r.top, t.top) > 2)
+            out.push(`слой «${e.textContent.trim().slice(0, 16)}» лёг поверх текста «${k.textContent.trim().slice(0, 20)}»`);
+        });
+      });
+    });
+    document.querySelectorAll('.body *, .detail *').forEach((e) => {
+      if (!visEl(e)) return;
+      const cs = getComputedStyle(e), pr = parseFloat(cs.paddingRight) || 0;
+      if (pr < 32) return;
+      const host = e.parentElement;
+      if (!host || [...host.children].some((k) => k !== e && visEl(k)
+        && /absolute|fixed/.test(getComputedStyle(k).position))) return;
+      if (e.scrollHeight > (parseFloat(cs.lineHeight) || 18) * 1.6)
+        out.push(`пустой резерв ${Math.round(pr)}px справа сломал строку «${e.textContent.trim().slice(0, 22)}»`);
+    });
     /* зачёркнутый текст — только у намеренно снятого (.dropped).
        Иначе это столкновение имён классов: новый .off перекрасил .state.off */
     document.querySelectorAll('.body *, .detail *').forEach((e) => {
