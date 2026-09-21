@@ -23,6 +23,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  protected:
+    name: Защищённые разделы (нужно «да» владельца)
+    runs-on: ubuntu-latest
+    # Только на PR: на push в main сравнивать не с чем — изменение уже влито, а гейт должен
+    # срабатывать ДО того, как побочная правка доедет до людей.
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 5
+    steps:
+      # Полная история: гейт считает диапазон от точки расхождения с базовой веткой.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Тронуто ли защищённое без разрешения
+        run: ./scripts/check-protected-paths.sh origin/${{ github.base_ref }}
+
   edge:
     name: Edge Functions (Deno) — типы + тесты
     runs-on: ubuntu-latest
