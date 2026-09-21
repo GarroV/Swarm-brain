@@ -5,8 +5,11 @@ function dtabs(items, cur) {
   return `<div class="dtabs">${items.map(([id, n, k]) =>
     `<button class="dtab${on === id ? " on" : ""}" ${act("dtab", id)}>${esc(n)}${k ? `<span class="c">${k}</span>` : ""}</button>`).join("")}</div>`;
 }
-const dhead = (crumb, title, acts) =>
-  `<div class="d-head"><div class="d-crumb">${esc(crumb)}</div><div class="d-title">${esc(title)}</div>
+/* Кнопка переименования стоит У НАЗВАНИЯ, а не в общем ряду значков: значок «Aa»
+   среди кнопок про генерацию не говорит, ЧТО он переименует (просьба владельца 21.09). */
+const dhead = (crumb, title, acts, titleBtn) =>
+  `<div class="d-head"><div class="d-crumb">${esc(crumb)}</div>
+   <div class="d-title">${esc(title)}${titleBtn || ""}</div>
    <span class="d-close">${btn("✕", "close", undefined, undefined, "sm")}</span>
    <div class="d-acts">${acts}</div></div>`;
 
@@ -117,6 +120,14 @@ function detailTask(t) {
 }
 
 /* ── встреча ─────────────────────────────────────────────────── */
+/* Тезисы хранятся оформленным текстом: владелец правит их с жирностью, списками и
+   ссылками, и это же оформление уезжает в буфер обмена. Пока правки не было, текст
+   собирается из разобранных моделью секций. */
+function tezHtml(m) {
+  if (m.tezHtml) return m.tezHtml;
+  return m.tez.map((sec) => `<h5>${esc(sec.h)}</h5><ul>${sec.li.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`).join("");
+}
+
 function detailMeeting(m) {
   const tasks = S.tasks.filter((t) => m.tasks.includes(t.id));
   const isReview = m.st === "pending";
@@ -127,8 +138,11 @@ function detailMeeting(m) {
   /* Главное окно встречи — ГОТОВЫЕ ТЕЗИСЫ: ради разобранного текста встречу и
      открывают (просьба владельца 21.09). Транскрипт стоит отдельной вкладкой и у
      подтверждённой встречи тоже: сверять его приходится и после вычитки. */
-  const items = [["tez", "Тезисы", nTez], ["overview", "О встрече"], ["tr", "Транскрипт", m.tr.length]]
-    .concat(S.genFor === m.id ? [["gen", "Задачи", S.gen.length]] : []);
+  /* Порядок: карточка встречи — тезисы — задачи — транскрипт (просьба владельца 21.09).
+     Открывается встреча всё равно на тезисах: ради них сюда и приходят. Вкладка «Задачи»
+     стоит всегда, но задачи НЕ генерируются сами — только по кнопке внутри неё. */
+  const items = [["overview", "О встрече"], ["tez", "Тезисы", nTez],
+    ["gen", "Задачи", S.genFor === m.id ? S.gen.length : tasks.length], ["tr", "Транскрипт", m.tr.length]];
   const cur = items.some(([id]) => id === S.dtab) ? S.dtab : "tez";
   /* Управление встречей: словами — три действия, ради которых сюда приходят; редкое —
      значками с подписью (просьба владельца 21.09). Семь одинаковых кнопок в два ряда
@@ -150,18 +164,20 @@ function detailMeeting(m) {
         ["акцент на решениях", "regen", m.id, "decisions"], ["просто пересобрать", "regen", m.id, "plain"],
         ["своё пожелание…", "regen-own", m.id]])}</span>` : "")
     + (isReview ? btn("Сравнить с транскриптом", "compare", m.id) : "")
-    + `<span class="iacts">${ibtn("✎", "Править тезисы", "edit-tez", m.id)}
-      ${ibtn("Aa", "Изменить название встречи", "rename-meet", m.id)}
-      ${ibtn("⧉", "Копировать тезисы", "copy-tez", m.id)}
-      ${ibtn("🗑", "Удалить встречу", "del-meet", m.id)}</span>`;
+    /* удаление стоит в том же ряду, что и остальные действия над встречей, но с краю:
+       отдельная полка значков заставляла гадать, к чему они относятся */
+    + `<span class="iacts">${ibtn("🗑", "Удалить встречу", "del-meet", m.id)}</span>`;
   let body = "";
   if (cur === "overview") {
-    body = (m.claim ? `<div class="lease"><b>Запись рекордера</b>${rows([
-        ["Устройство", esc(m.claim.dev)],
-        ["Захват", `claim ${m.claim.at}, lease до ${m.claim.lease}`, state("завершён", true)],
-        ["Отложенная загрузка", m.claim.defer ? `ждала сети ${m.claim.defer} мин` : "нет"],
-        ["Вторая сторона", m.claim.other ? "системный звук пойман" : "не пойман", state(m.claim.other ? "ок" : "пропуск", m.claim.other)],
-      ])}</div>` : "")
+    /* Телеметрия рекордера (устройство, claim/lease, отложенная загрузка) убрана:
+       человеку она ничего не говорит — «нахуя? обычному пользователю не надо»
+       (владелец 21.09). Остаётся то, что меняет доверие к записи, и только когда
+       что-то пошло не так: молчать об этом нельзя, иначе он поверит неполной записи. */
+    const flaws = m.claim ? [
+      m.claim.other ? "" : "Записан только ваш микрофон — собеседника в записи нет, тезисы могут быть неполными.",
+      m.claim.defer ? `Запись ждала сети ${m.claim.defer} мин — в базу она приехала позже встречи.` : "",
+    ].filter(Boolean) : [];
+    body = flaws.map((x) => `<div class="warn">${esc(x)}</div>`).join("")
       + (m.st === "draft" ? `<div class="warn">Черновик рекордера: тезисов ещё нет, в базу не попал.</div>` : "")
       + `<dl class="f"><dt>Участники</dt><dd>${m.who.map((i) => esc(user(i).n)).join(", ")}</dd>
         <dt>Когда</dt><dd><span class="due">${esc(fmtDT(m.dt))}</span></dd>
@@ -171,21 +187,42 @@ function detailMeeting(m) {
           <span class="unit">меняется кнопкой «${m.st === "confirmed" ? "В базе" : "Добавить в базу"}»</span></dd>
         <dt>Страны</dt><dd>${pickm(m.cc.length ? cc(m.cc) : `<span class="muted">—</span>`, COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "tgl-mcc", m.id, c.c, m.cc.includes(c.c)]))}</dd>
         <dt>Статус</dt><dd>${state(MEET_ST[m.st], m.st === "confirmed")}</dd></dl>
-        ${lab(`Задачи из встречи · ${tasks.length}`)}
-        ${tasks.length ? rows(tasks.map((t) => [String(t.id), `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, state(ST_LABEL[t.st], t.st === "done")]))
-          : `<div class="empty sm"><b>Задач из встречи ещё нет</b>Тезисы разбираются на задачи по одному нажатию</div>`}
-        <div class="mt">${btn("Сгенерировать задачи", "gen-tasks", m.id, undefined, "pri")}</div>
+
         ${m.notes.length ? lab(`Пометки на полях · ${m.notes.length}`)
           + `<div class="mnotes">${m.notes.map((n) => `<div class="mn">${av(n.who, false)}<div class="b">
             <div class="w"><b>${esc(user(n.who).n)}</b> · ${esc(n.at)}</div>${esc(n.t)}</div></div>`).join("")}</div>` : ""}
         ${!isReview && trEntry ? lab("Транскрипт") + `<div class="src" ${act("open-entry", trEntry.id)}>${esc(trEntry.h)}</div>` : ""}`;
   }
   if (cur === "tez") {
+    /* Править и копировать тезисы можно ТАМ, ГДЕ ОНИ ЛЕЖАТ (просьба владельца 21.09):
+       значок в общей полке наверху не говорил, что именно он правит. Правка идёт в этом
+       же окне, а не в выпрыгивающей форме — текст остаётся на месте, где его читали. */
+    const editing = S.tezEdit === m.id;
     body = m.st === "draft"
       ? `<div class="empty sm"><b>Тезисов ещё нет</b>Черновик не разобран моделью${btn("Составить тезисы", "publish-draft", m.id, undefined, "pri mt")}</div>`
-      : `<div class="tez">${m.tez.map((sec) => `<h5>${esc(sec.h)}</h5>${sec.li.map((x) => `<li>${esc(x)}</li>`).join("")}`).join("")}</div>`;
+      : editing
+        ? `<div class="tezbar">${[["b", "Ж", "Жирный"], ["i", "К", "Курсив"], ["u", "Ч", "Подчёркнутый"],
+            ["s", "З", "Зачёркнутый"], ["ul", "•", "Список"], ["a", "⛓", "Ссылка"], ["x", "✕", "Снять оформление"]]
+            .map(([k, g, t]) => `<button class="fb" title="${esc(t)}" ${act("fmt", m.id, k)}>${g}</button>`).join("")}
+          <span class="right">${btn("Отмена", "tez-cancel", m.id, undefined, "sm")}${btn("Сохранить", "tez-save", m.id, undefined, "sm pri")}</span></div>
+          <div class="tez edit" contenteditable="true" data-tezbox="${m.id}">${tezHtml(m)}</div>
+          <div class="hint">Оформление сохранится и в тексте, и при копировании.
+            Ручная правка отключает авто-перезапись тезисов моделью.</div>`
+        : `<div class="tezacts">${btn("✎ Править", "tez-edit", m.id, undefined, "sm")}
+            ${btn("⧉ Копировать", "copy-tez", m.id, undefined, "sm")}
+            ${m.edited ? state("правлено вручную", false) : ""}</div>
+          <div class="tez">${tezHtml(m)}</div>`;
   }
-  if (cur === "gen") {
+  if (cur === "gen" && S.genFor !== m.id) {
+    /* Задачи по встрече генерируются ТОЛЬКО по кнопке (владелец 21.09): модель не должна
+       предлагать их сама при каждом открытии — это и деньги, и мусор в списке. */
+    body = (tasks.length
+      ? lab(`Задачи из встречи · ${tasks.length}`) + rows(tasks.map((t) => [String(t.id),
+          `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, state(ST_LABEL[t.st], t.st === "done")]))
+      : `<div class="empty sm"><b>Задач из встречи ещё нет</b>Модель разберёт тезисы на задачи, когда вы нажмёте кнопку</div>`)
+      + `<div class="mt">${btn("Сгенерировать задачи", "gen-tasks", m.id, undefined, "pri")}</div>`;
+  }
+  if (cur === "gen" && S.genFor === m.id) {
     /* «Сгенерировать задачи» переключает ЭТО ЖЕ окно на список предложенного, а не
        выбрасывает окно поверх встречи: человек остаётся там, где читал тезисы. */
     const made = S.gen.filter((g) => g.made).length;
@@ -203,7 +240,7 @@ function detailMeeting(m) {
     body = `<div class="tr">${m.tr.map(([w, who, text]) =>
       `<div class="ln"><span class="w">${w}</span>${av(who, false)}<span>${esc(text)}</span></div>`).join("")}</div>`;
   }
-  return dhead(`${m.src} · ${fmtDT(m.dt)}`, m.t, acts)
+  return dhead(`${m.src} · ${fmtDT(m.dt)}`, m.t, acts, ibtn("✎", "Переименовать встречу", "rename-meet", m.id))
     + `<div class="d-body">${dtabs(items, cur)}${body}</div>`;
 }
 

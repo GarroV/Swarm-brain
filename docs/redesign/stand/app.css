@@ -920,3 +920,17 @@ tr:hover td .av + .av{box-shadow:0 0 0 2px var(--surface-2)}
 
 /* Меню, выведенное из обрезающего контейнера: те же размеры, но в координатах экрана. */
 .dmenu.floated{position:fixed;z-index:60;right:auto;bottom:auto;margin:0}
+
+/* Правка тезисов на месте: полоса оформления + само поле того же вида, что и текст,
+   который правят — иначе после сохранения человек видит другой документ. */
+.tezacts{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.tezbar{display:flex;align-items:center;gap:4px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.tezbar .right{margin-left:auto;display:flex;gap:6px}
+.fb{width:28px;height:28px;border:1px solid var(--line-control);border-radius:8px;background:var(--surface);
+  color:var(--ink-2);font:600 12.5px/1 var(--font-ui);cursor:pointer}
+.fb:hover{background:var(--surface-2);color:var(--ink)}
+.tez.edit{min-height:220px;padding:12px 14px;border:1px solid var(--line-strong);border-radius:10px;
+  background:var(--surface);outline:none}
+.tez.edit:focus{border-color:var(--accent)}
+.tez a{color:var(--accent)}
+.d-title .ibtn{margin-left:8px;vertical-align:middle}

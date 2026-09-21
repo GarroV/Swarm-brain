@@ -19,6 +19,7 @@ const S = {
   /* спринты: пространство, состав (sprint_items), группировка, пул набора, отчёт */
   space: "sp1", spaces: SPACES.slice(), items: SITEMS.slice(), group: "ini",
   poolOpen: false, poolPr: "", poolWho: "", poolQ: "", report: false, sFocus: null,
+  tezEdit: null, lastCopy: null,
   /* доска проектов: вкладки досок (в продукте — таблица sprints), какие проекты раскрыты */
   boards: BOARDS.slice(), boardTab: "b1", openProj: new Set(["p1"]), subClosed: new Set(),
   /* система */
@@ -342,6 +343,34 @@ const A = {
     S.tasks = [...made, ...S.tasks];
     S.meetings = S.meetings.map((x) => x.id === id ? { ...x, tasks: [...x.tasks, ...made.map((t) => t.id)] } : x);
     A.toast(`Создано задач: ${made.length}`);
+  },
+  /* Правка в том же окне: сохраняем оформленный текст и пересобираем из него пункты,
+     чтобы счётчики и поиск видели то же, что человек. */
+  saveTezHtml(id, html) {
+    const plain = String(html).replace(/<\/(li|h5|p|div)>/gi, "\n").replace(/<[^>]+>/g, "")
+      .split("\n").map((x) => x.trim()).filter(Boolean);
+    if (!plain.length) return A.toast("Тезисы не могут быть пустыми");
+    S.meetings = S.meetings.map((m) => m.id === id
+      ? { ...m, tezHtml: html, tez: [{ h: "Тезисы", li: plain }], edited: true } : m);
+    S.tezEdit = null;
+    A.toast("Тезисы сохранены");
+  },
+  copyTez(id) {
+    const m = S.meetings.find((x) => x.id === id);
+    if (!m) return;
+    const html = m.tezHtml || m.tez.map((s) => `<h5>${s.h}</h5><ul>${s.li.map((x) => `<li>${x}</li>`).join("")}</ul>`).join("");
+    const text = String(html).replace(/<\/(li|h5|p|div)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/\n{2,}/g, "\n").trim();
+    /* в буфер кладём ОБА вида: html — чтобы оформление пережило вставку в документ,
+       plain — чтобы вставка в поле без оформления не принесла тегов */
+    S.lastCopy = { html, text };
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        navigator.clipboard.write([new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" }) })]).catch(() => {});
+      } else if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+    } catch (e) { /* буфер недоступен — стенд остаётся рабочим, текст уже в S.lastCopy */ }
+    A.toast("Тезисы скопированы с оформлением");
   },
   editTezisy(id, text) {
     S.meetings = S.meetings.map((m) => m.id === id ? { ...m, tez: [{ h: "Тезисы", li: text.split("\n").filter(Boolean) }], edited: true } : m);

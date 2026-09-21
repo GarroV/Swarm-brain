@@ -1040,7 +1040,7 @@ function tokenCheck() {
      из очереди вычитки, а не первую попавшуюся: у разобранной их на экране нет */
   const firstMeet = await p.$eval('.list tr.rv', (e) => e.dataset.id);
   await go('open-meet', firstMeet); await shot('08-meeting-detail');
-  want((await count('.detail .dtab')) === 3, 'у встречи на вычитке три вкладки: обзор, тезисы, транскрипт');
+  want((await count('.detail .dtab')) === 4, 'у встречи четыре вкладки: о встрече, тезисы, задачи, транскрипт');
   await go('compare'); await shot('09-compare');
   /* помечено должно быть то, что требует действия: непроверенных пунктов столько же, сколько помечено */
   const cmp = await p.evaluate(() => {
@@ -1114,7 +1114,8 @@ function tokenCheck() {
      транскрипт стоит отдельной вкладкой и у подтверждённой встречи тоже — сверять его
      приходится и после вычитки (просьба владельца 21.09). */
   const tabsDone = await p.$$eval('.detail .dtab', (e) => e.map((x) => x.textContent.replace(/\d+$/, '').trim()));
-  want(tabsDone[0] === 'Тезисы', `встреча открывается тезисами (вкладки: ${tabsDone.join(', ')})`);
+  want(tabsDone.join(' · ') === 'О встрече · Тезисы · Задачи · Транскрипт',
+    `порядок вкладок встречи: карточка, тезисы, задачи, транскрипт (сейчас: ${tabsDone.join(', ')})`);
   want(tabsDone.includes('Транскрипт'), 'транскрипт лежит отдельной вкладкой');
   const meetOpenOn = await p.evaluate(() => ({
     tab: ((document.querySelector('.detail .dtab.on') || {}).textContent || '').replace(/\d+$/, '').trim(),
@@ -1127,11 +1128,61 @@ function tokenCheck() {
   const icons = await p.evaluate(() => [...document.querySelectorAll('.detail .ibtn')].map((b) => ({
     glyph: b.textContent.trim(), title: (b.getAttribute('title') || '').trim(),
     aria: (b.getAttribute('aria-label') || '').trim(), act: b.dataset.act })));
-  want(icons.length >= 4, `редкие действия встречи стоят значками (${icons.length})`);
   want(icons.every((i) => i.title && i.aria), 'у каждого значка есть подпись и имя для читалки');
-  want(icons.some((i) => i.act === 'del-meet') && icons.some((i) => i.act === 'copy-tez')
-    && icons.some((i) => i.act === 'rename-meet') && icons.some((i) => i.act === 'edit-tez'),
-    'значками закрыты правка тезисов, название, копирование и удаление');
+  /* Значок стоит там, где лежит то, на что он действует: карандаш переименования — у
+     названия, правка и копирование тезисов — в разделе тезисов, удаление — в ряду
+     действий над встречей. Общая полка значков заставляла гадать, к чему они (21.09). */
+  /* Карточка встречи — для человека, а не для инженера: устройство, claim/lease и
+     отложенная загрузка ему ничего не говорят («нахуя? обычному пользователю не надо»,
+     владелец 21.09). Остаётся предупреждение, и только когда с записью что-то не так. */
+  await go('dtab', 'overview');
+  await new Promise((r) => setTimeout(r, 120));
+  const techWords = await p.evaluate(() => {
+    const t = (document.querySelector('.detail .d-body') || {}).textContent || '';
+    return ['claim', 'lease', 'Устройство', 'Отложенная загрузка'].filter((w) => t.includes(w)); });
+  want(techWords.length === 0, `в карточке встречи нет телеметрии рекордера (найдено: ${techWords.join(', ') || 'ничего'})`);
+  /* Правка тезисов идёт В ЭТОМ ЖЕ ОКНЕ и с оформлением: выпрыгивающая форма уносила
+     текст с того места, где его читали, а без оформления тезисы нельзя вставить в
+     документ так, как они выглядели (просьба владельца 21.09). */
+  await go('dtab', 'tez');
+  await go('tez-edit', 'm12');
+  await new Promise((r) => setTimeout(r, 140));
+  const ed = await p.evaluate(() => ({
+    modal: (document.querySelector('.modal') || {}).offsetParent != null,
+    box: !!document.querySelector('.detail [data-tezbox]'),
+    tools: document.querySelectorAll('.detail .tezbar .fb').length }));
+  want(!ed.modal && ed.box && ed.tools >= 5,
+    `тезисы правятся в том же окне, с оформлением (модалка ${ed.modal}, кнопок оформления ${ed.tools})`);
+  await p.evaluate(() => { const b = document.querySelector('.detail [data-tezbox]');
+    b.innerHTML = '<ul><li>Смета выше бюджета на <b>14%</b></li><li>Сроки <i>двигаются</i></li></ul>'; });
+  await go('tez-save', 'm12');
+  await new Promise((r) => setTimeout(r, 160));
+  const saved = await p.evaluate(() => { const m = S.meetings.find((x) => x.id === 'm12');
+    return { html: m.tezHtml || '', li: m.tez[0].li.length, shown: !!document.querySelector('.detail .tez b') }; });
+  want(saved.html.includes('<b>') && saved.li === 2 && saved.shown,
+    `оформление пережило сохранение и видно в тезисах (пунктов ${saved.li})`);
+  await go('copy-tez', 'm12');
+  await new Promise((r) => setTimeout(r, 120));
+  const copied = await p.evaluate(() => S.lastCopy || {});
+  want((copied.html || '').includes('<b>') && (copied.text || '').includes('14%')
+    && !(copied.text || '').includes('<b>'),
+    'копирование кладёт в буфер и оформленный текст, и чистый');
+  /* Задачи по встрече модель предлагает ТОЛЬКО по кнопке: открытие вкладки не должно
+     ни считать деньги, ни сыпать предложениями (владелец 21.09). */
+  await go('dtab', 'gen');
+  await new Promise((r) => setTimeout(r, 140));
+  const genIdle = await p.evaluate(() => ({ gen: S.gen.length, forId: S.genFor,
+    /* кнопка должна стоять В ТЕЛЕ вкладки: та, что в шапке панели, есть всегда и
+       ничего не говорит о содержимом вкладки */
+    btn: [...document.querySelectorAll('.detail .d-body .btn')].some((b) => /Сгенерировать задачи/.test(b.textContent)) }));
+  want(genIdle.forId !== 'm12' && genIdle.btn,
+    'вкладка «Задачи» сама ничего не генерирует — только предлагает кнопку');
+  const renameAtTitle = await p.evaluate(() =>
+    !!document.querySelector('.detail .d-title [data-act="rename-meet"]'));
+  want(renameAtTitle, 'карандаш переименования стоит у названия встречи');
+  want(icons.some((i) => i.act === 'del-meet'), 'удаление встречи — в ряду действий над встречей');
+  want(!icons.some((i) => i.act === 'copy-tez' || i.act === 'edit-tez'),
+    'правка и копирование тезисов не висят в общей полке значков');
   await go('dtab', 'overview');
   const meetSt = await p.evaluate(() => {
     const dt = [...document.querySelectorAll('.detail dt')].find((e) => e.textContent.trim() === 'Статус');

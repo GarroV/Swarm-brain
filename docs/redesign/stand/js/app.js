@@ -219,11 +219,26 @@ const ACTS = {
   compare: (id) => compareModal(id),
   extract: (id) => A.extractTasks(id),
   "edit-tez": (id) => tezisyModal(id),
+  "tez-edit": (id) => A.set({ tezEdit: id, dtab: "tez" }),
+  "tez-cancel": () => A.set({ tezEdit: null }),
+  "tez-save": (id) => { const box = $(`[data-tezbox="${id}"]`); if (box) A.saveTezHtml(id, box.innerHTML); },
+  /* Оформление даём тем же механизмом, что и браузерное поле ввода: execCommand помечен
+     устаревшим, но это единственный способ без редакторного движка, и для стенда он
+     показывает ровно то поведение, которое нужно проверить. */
+  fmt: (id, k) => { const box = $(`[data-tezbox="${id}"]`); if (!box) return;
+    box.focus();
+    const cmd = { b: "bold", i: "italic", u: "underline", s: "strikeThrough",
+      ul: "insertUnorderedList", x: "removeFormat" }[k];
+    if (cmd) return document.execCommand(cmd, false, null);
+    if (k === "a") { const sel = String(document.getSelection());
+      if (!sel) return A.toast("Выделите текст, который станет ссылкой");
+      const url = prompt("Адрес ссылки", "https://");
+      if (url) document.execCommand("createLink", false, url); } },
   "regen": (id, v) => A.regenTezisy(id, v),
   "regen-own": (id) => modal("Что поменять в тезисах", fld("Своё пожелание", input("w", "", "Например: выделить договорённости с поставщиком")),
     `${btn("Отмена", "mclose")}${btn("Переобработать", "do-regen-own", id, undefined, "pri")}`),
   "do-regen-own": (id) => { const f = formData(); closeModal(); A.regenTezisy(id, "own", f.w); },
-  "copy-tez": (id) => A.toast("Тезисы скопированы в буфер"),
+  "copy-tez": (id) => A.copyTez(id),
   "rename-meet": (id) => modal("Изменить название", fld("Название встречи", input("n", (S.meetings.find((m) => m.id === id) || {}).t || "")),
     `${btn("Отмена", "mclose")}${btn("Сохранить название", "do-rename-meet", id, undefined, "pri")}`),
   "do-rename-meet": (id) => { const f = formData(); closeModal(); A.renameMeeting(id, f.n); },
