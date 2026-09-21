@@ -1133,7 +1133,7 @@ function tokenCheck() {
   await go('mf-clear');
   /* сверка с транскриптом и подтверждение — действия ВЫЧИТКИ, поэтому берём встречу
      из очереди вычитки, а не первую попавшуюся: у разобранной их на экране нет */
-  const firstMeet = await p.$eval('.list tr.rv', (e) => e.dataset.id);
+  const firstMeet = await p.$eval('.list tr.pend', (e) => e.dataset.id);
   await go('open-meet', firstMeet); await shot('08-meeting-detail');
   want((await count('.detail .dtab')) === 4, 'у встречи четыре вкладки: о встрече, тезисы, задачи, транскрипт');
   await go('compare'); await shot('09-compare');
@@ -1196,8 +1196,8 @@ function tokenCheck() {
   want(inBase.st === 'confirmed' && inBase.store === 'personal',
     `выбор хранилища доехал до встречи (${inBase.st} · ${inBase.store})`);
   /* вычитка теперь шапка экрана, а не вкладка: подтверждённая встреча уходит из неё сразу */
-  want((await count(`.list tr.rv[data-id="${firstMeet}"]`)) === 0, 'подтверждённая встреча ушла из вычитки');
-  want((await count('.list tr.rv')) > 0, 'вычитка видна секцией общего списка, без вкладок и шапки');
+  want((await count(`.list tr.pend[data-id="${firstMeet}"]`)) === 0, 'подтверждённая встреча ушла из вычитки');
+  want((await count('.list tr.pend')) > 0, 'вычитка видна секцией общего списка, без вкладок и шапки');
   /* вкладок на экране встреч больше нет: вычитка, черновики и остальное — секции
      одного списка (просьба владельца 21.09) */
   const meetTabs = await p.$$eval('.tabs .tab', (e) => e.map((x) => x.textContent.trim()));
@@ -1329,23 +1329,6 @@ function tokenCheck() {
   await go('close');
 
   await shot('10-drafts');
-  /* черновик с кандидатом на дубль показан один раз, а не в обеих таблицах сразу */
-  const dupTitle = await p.evaluate(() => (S.meetings.find((m) => m.st === 'draft' && m.dupOf) || {}).t);
-  want(!!dupTitle, 'в данных есть черновик, похожий на дубль');
-  want(await p.evaluate((t) => [...document.querySelectorAll('tbody tr')]
-    .filter((r) => r.textContent.includes(t)).length === 1, dupTitle), 'черновик-дубль не задвоен на экране');
-  /* «похож на» называет настоящую встречу, а не первую попавшуюся из списка */
-  want(await p.evaluate(() => {
-    const m = S.meetings.find((x) => x.st === 'draft' && x.dupOf);
-    const o = S.meetings.find((x) => x.id === m.dupOf);
-    return !!o && o.st !== 'draft' && document.body.innerText.includes(o.t);
-  }), 'пара дубля — существующая разобранная встреча');
-  const below = await count('.list:last-of-type tbody tr');
-  await go('keep-dup', await p.evaluate(() => S.meetings.find((m) => m.st === 'draft' && m.dupOf).id));
-  await new Promise((r) => setTimeout(r, 120));
-  want((await count('.list:last-of-type tbody tr')) === below + 1, '«Не дубль» переводит черновик в остальные, а не прячет его');
-  await p.evaluate(() => { S.meetings = S.meetings.map((m) => m.dupOk ? { ...m, dupOk: false } : m); render(); });
-  await new Promise((r) => setTimeout(r, 90));
   /* разбор агентских встреч уехал в «Админ»: на экране встреч эта вкладка называлась
      «Очередь агента», и владелец не смог сказать, что это */
   await go('sec', 'admin'); await go('tab', 'queue'); await shot('11-agent-queue');
@@ -1368,7 +1351,7 @@ function tokenCheck() {
 
   /* сбор задач из встречи, чтение записи, таймлайн, метки, профиль */
   await go('sec', 'meetings');
-  const anyPending = await p.$$eval('.list tr.rv', (e) => e.length ? e[0].dataset.id : null);
+  const anyPending = await p.$$eval('.list tr.pend', (e) => e.length ? e[0].dataset.id : null);
   if (anyPending) {
     await go('open-meet', anyPending);
     await go('gen-tasks', anyPending);

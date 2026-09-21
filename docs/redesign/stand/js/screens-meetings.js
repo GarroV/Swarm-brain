@@ -25,8 +25,11 @@ function meetBar() {
 
 function meetRow(m) {
   /* класс говорит, в каком состоянии встреча: по нему видно, ушла ли она с вычитки,
-     и его же читает проверка — раньше это была отдельная шапка экрана */
-  const kind = m.st === "pending" ? " rv" : m.st === "draft" ? " dr" : "";
+     и его же читает проверка — раньше это была отдельная шапка экрана.
+     Имена именно такие: «rv» столкнулось с .rv из очереди вычитки (там это flex-строка),
+     и tr со строчным display рассыпал ячейки — встречи на вычитке шли без названия
+     и колонкой уже остальных (замечено владельцем 21.09) */
+  const kind = m.st === "pending" ? " pend" : m.st === "draft" ? " draft" : "";
   return `<tr class="row${kind}${S.sel === m.id && S.selKind === "meeting" ? " sel" : ""}" ${act("open-meet", m.id)} tabindex="0">
     ${cell(`${dot(m.st === "pending" ? "open" : m.st === "draft" ? "open" : "done")}${esc(m.t)}${m.store === "personal" ? ' <span class="lock" title="личное хранилище">🔒</span>' : ""}`, "t")}
     ${cell(esc(fmtDT(m.dt)))}
@@ -35,30 +38,15 @@ function meetRow(m) {
     ${cell(m.tasks.length ? `<span class="due">${m.tasks.length}</span>` : `<span class="muted">—</span>`, "r")}</tr>`;
 }
 
-/* черновик считается дублем, только если у него названа пара: «похож на» без пары — выдумка */
-const dupDrafts = () => S.meetings.filter((m) => m.st === "draft" && m.dupOf && !m.dupOk);
-
-function dupStrip() {
-  const dups = dupDrafts();
-  if (!dups.length) return "";
-  return `<div class="review dup">Похоже на дубли: ${dups.length}. Черновик рекордера совпадает с уже разобранной встречей.</div>`
-    + table([{ t: "Черновик", w: "30%" }, { t: "Похож на", w: "30%" }, { t: "Когда" }, { t: "Совпадение" }, { t: "Что делать", r: true, w: "210px" }],
-      dups.map((m) => { const o = S.meetings.find((x) => x.id === m.dupOf);
-        return `<tr class="row">${cell(dot("open") + esc(m.t), "t")}
-        ${cell(o ? `<span class="lnk" ${act("open-meet", o.id)}>${esc(o.t)}</span>` : `<span class="muted">—</span>`)}
-        ${cell(esc(fmtDT(m.dt)))}${cell(state(`${m.dupPct}%`, false))}
-        ${cell(`<span class="ib">${btn("Объединить", "merge-dup", m.id, undefined, "sm")}${btn("Не дубль", "keep-dup", m.id, undefined, "sm")}</span>`, "r acts")}</tr>`; }).join(""));
-}
-
 function screenMeetings() {
   /* Один список с секциями вместо вкладок и шапки: «На вычитке» и так секция, а вкладки
      сверху заставляли искать встречу по трём экранам (просьба владельца 21.09).
      Вычитка стоит первой — это то, что ждёт человека. */
   const all = visibleMeetings("any");
   const pend = all.filter((m) => m.st === "pending");
-  const drafts = all.filter((m) => m.st === "draft" && !dupDrafts().includes(m));
+  const drafts = all.filter((m) => m.st === "draft");
   const rest = all.filter((m) => m.st !== "pending" && m.st !== "draft");
-  const head = meetBar() + dupStrip();
+  const head = meetBar();
   if (!all.length) return head + empty("Встреч в этом срезе нет",
     mfActive() ? "Сбросьте фильтры" : "Записи появятся после bumblebee, Granola или Read.ai");
   const cols = 5;

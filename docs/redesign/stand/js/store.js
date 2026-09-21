@@ -348,8 +348,6 @@ const A = {
     S.meetings = S.meetings.map((m) => m.id === id ? { ...m, st: "pending", t: name || m.t, tez: TEZISY } : m);
     A.toast("Черновик опубликован, тезисы составлены");
   },
-  mergeDup(id) { S.meetings = S.meetings.filter((m) => m.id !== id); A.toast("Черновик объединён с встречей"); },
-  keepDup(id) { S.meetings = S.meetings.map((m) => m.id === id ? { ...m, dupOk: true } : m); A.toast("Отмечено: не дубль"); },
   extractTasks(id) {
     const m = S.meetings.find((x) => x.id === id);
     const made = ["Уточнить сроки по итогам встречи", "Свести договорённости в документ"].map((t, k) => mkTask({

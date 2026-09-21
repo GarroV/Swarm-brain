@@ -8,7 +8,7 @@
   --ok:#1E8E5E; --bad:#C53030; --brand-purple:#5B3DEC;
   --font-ui:'Golos Text',system-ui,sans-serif; --font-num:'IBM Plex Mono',ui-monospace,monospace;
   --fs-display:20px; --fs-title:16px; --fs-lead:14px; --fs-body:13px; --fs-dense:12.5px; --fs-meta:11.5px; --fs-micro:10.5px;
-  --row:34px; --top-h:44px; --control-h:30px; --gutter:24px; --nav-w:232px; --detail-w:560px; --pool-w:640px;
+  --row:34px; --top-h:44px; --bar-h:52px; --control-h:30px; --gutter:32px; --nav-w:232px; --detail-w:560px; --pool-w:640px;
   /* были в разметке, но не заведены — из-за этого цифры теряли моноширинный шрифт,
      а блоки — подложку: объявление с неизвестной переменной браузер отбрасывает целиком */
   --font-mono:var(--font-num); --fs-num:12px; --fs-num-sm:10.5px;
@@ -63,7 +63,9 @@ h1{flex:none;font-size:var(--fs-title);font-weight:650;letter-spacing:-.015em}
 .tab.on{color:var(--ink);font-weight:600;border-bottom-color:var(--accent)}
 .tab .c{font:500 var(--fs-micro)/1 var(--font-num);color:var(--ink-empty);margin-left:7px}
 
-.bar{display:flex;align-items:center;gap:6px;padding:9px var(--gutter);border-bottom:1px solid var(--line);background:var(--surface-2)}
+/* высота панели фиксирована: у разных вкладок в ней разные контролы (поле ввода выше чипа),
+   и от вкладки к вкладке содержимое экрана прыгало по вертикали (владелец, 21.09) */
+.bar{display:flex;align-items:center;gap:6px;min-height:var(--bar-h);padding:0 var(--gutter);border-bottom:1px solid var(--line);background:var(--surface-2)}
 .chip{display:flex;align-items:center;gap:5px;height:26px;padding:0 9px;border:1px solid var(--line-control);border-radius:13px;background:var(--surface);font-size:var(--fs-meta);color:var(--ink-2);cursor:default}
 .chip:hover{border-color:var(--line-control);background:var(--surface-3)}
 .chip.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent);font-weight:600}
@@ -402,7 +404,7 @@ input[type=checkbox]{accent-color:var(--accent);width:13px;height:13px}
 
 /* ── правки после визуальной проверки 19.09 ── */
 .chip,.btn,.tab,.item,.hbtn{white-space:nowrap}
-.bar{flex-wrap:wrap;row-gap:6px}
+.bar{flex-wrap:wrap;row-gap:6px;padding-top:7px;padding-bottom:7px}
 .bar .right{flex:none}
 .d-acts{flex-wrap:wrap}
 .detail .btn{white-space:nowrap}
@@ -507,7 +509,7 @@ button{font:inherit;color:inherit;border:0;background:none;padding:0;margin:0;te
 .qin{height:26px;min-width:190px;padding:0 10px;border:1px solid var(--line-control);border-radius:13px;
   background:var(--surface);font:400 var(--fs-meta)/1 var(--font-ui);color:var(--ink)}
 .qin:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-.bar.wrap{flex-wrap:wrap;row-gap:6px}
+.bar.wrap{flex-wrap:wrap;row-gap:6px;padding-top:7px;padding-bottom:7px}
 .btn.sm{height:24px;padding:0 9px;font-size:var(--fs-meta)}
 .btn.mt{margin-top:12px}
 /* .btn — display:grid, поэтому в обычном контейнере кнопки встают друг под друга */
@@ -650,7 +652,9 @@ td.acts{white-space:nowrap}
 /* узкое окно ноутбука: панель детали сужается, потом уходит поверх */
 @media (max-width:1320px){ :root{ --detail-w:460px; --nav-w:208px; --gutter:18px } }
 @media (max-width:1140px){ :root{ --detail-w:min(560px,92vw) } }
-.body{min-width:0}
+/* скроллится СОДЕРЖИМОЕ, а не документ: без этого высокий экран («Проекты» — +745px)
+   растягивал страницу, и при прокрутке вниз вместе с ней уезжала левая колонка (владелец, 21.09) */
+.body{min-width:0;flex:1 1 auto;min-height:0;overflow:auto}
 .main>*{min-width:0}
 .chip,.btn,.tab,.hbtn,.mini,.tdh{white-space:nowrap;flex:none}
 .dtab .c{margin-left:7px;font:500 var(--fs-num-sm)/1 var(--font-mono);color:var(--ink-3)}

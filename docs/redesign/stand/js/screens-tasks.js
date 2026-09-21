@@ -1,22 +1,22 @@
 /* Экран задач: ось времени (вкладки) × линза × статусы × поиск × группировки. */
 
 const LENSES = [["mine", "Мои"], ["team", "Командные"], ["all", "Все"]];
-const STATUSES = [["open", "Открыто"], ["in_progress", "В работе"], ["done", "Готово"]];
 /* подпись переключателя живёт в одном месте: в меню и в снимаемом чипе он звался
    «группировать по рынкам» и «по рынкам» — два имени у одного тумблера */
 const SHOW_TGL = { byMarket: "группировать по рынкам", staff: "все сотрудники",
   recurOnly: "только регулярные", archOn: "показать архив" };
 
-/* Панель фильтров — ОДНА строка и три зоны: чья работа (переключатель), статус
-   (чипы, их владелец просил вернуть), остальное (рынок и редкое — меню).
-   Чипы вернулись, но не все подряд: семь стран чипами и были тем самым
-   нагромождением, из-за которого фильтры уехали в две строки. */
+/* Панель фильтров — ОДНА строка и три зоны: чья работа (переключатель), готовые
+   (один тумблер), остальное (рынок и редкое — меню).
+   Три чипа статусов сняты (владелец, 21.09): выбирать «Открыто» отдельно от «В работе»
+   никто не просил, а решение всегда одно — показать завершённое или убрать его. */
 function tasksToolbar() {
   const admin = me().role === "admin";
   const seg = LENSES.map(([id, nm]) =>
     `<button class="sg${S.lens === id ? " on" : ""}" ${act("lens", id)}>${esc(nm)}</button>`).join("");
-  const sts = STATUSES.map(([id, nm]) =>
-    `<button class="chip${S.statuses.has(id) ? " on" : ""}" ${act("status", id)}>${dot(id)}${esc(nm)}</button>`).join("");
+  const doneOn = S.statuses.has("done");
+  const sts = `<button class="chip${doneOn ? " on" : ""}" ${act("tgl-done")}
+    title="${doneOn ? "завершённые показаны" : "завершённые скрыты"}">${dot("done")}Готово</button>`;
   const mkItems = [["все рынки", "mk-filter", undefined, "", !S.mk],
     ...COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "mk-filter", undefined, c.c, S.mk === c.c])];
   const more = [[SHOW_TGL.byMarket, "tgl", "byMarket", undefined, S.byMarket],

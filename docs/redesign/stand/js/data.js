@@ -179,7 +179,7 @@ const MEETINGS = [
   mkMeet({ id:"m9", t:"Босния: поставщик теста", dt:"2026-09-14 15:00", dur:29, who:[506,502], src:"Granola", st:"confirmed", store:"shared", cc:["BA"], tasks:[154] }),
   mkMeet({ id:"m10", t:"Хорватия: лицензия и сроки", dt:"2026-09-08 11:30", dur:38, who:[504,510], src:"bumblebee", st:"confirmed", store:"shared", cc:["HR"], tasks:[148], claim:{ dev:"MacBook Pro · build 23", at:"11:30", lease:"12:08", defer:2, other:true } }),
   /* тот же разговор, что Granola записала в m2 (16 сен 14:30): рекордер стартовал на две минуты раньше */
-  mkMeet({ id:"m11", t:"Черновик 16 сен 14:28", dt:"2026-09-16 14:28", dur:12, who:[501], src:"bumblebee", st:"draft", store:"shared", dupOf:"m2", dupPct:87, cc:[], tasks:[], claim:{ dev:"MacBook Pro · build 24", at:"14:28", lease:"14:40", defer:0, other:false } }),
+  mkMeet({ id:"m11", t:"Черновик 16 сен 14:28", dt:"2026-09-16 14:28", dur:12, who:[501], src:"bumblebee", st:"draft", store:"shared", cc:[], tasks:[], claim:{ dev:"MacBook Pro · build 24", at:"14:28", lease:"14:40", defer:0, other:false } }),
   mkMeet({ id:"m12", t:"Личное: разговор о ставках", dt:"2026-09-13 17:00", dur:22, who:[501], src:"Granola", st:"confirmed", store:"personal", cc:[], tasks:[] }),
 ];
 

@@ -115,8 +115,9 @@ const ACTS = {
   mclose: () => closeModal(),
   dtab: (id) => A.set({ dtab: id }),
   lens: (id) => A.set({ lens: id }),
-  "reset-statuses": () => A.set({ statuses: new Set(["open", "in_progress"]) }),
-  status: (id) => { const s = new Set(S.statuses); s.has(id) ? s.delete(id) : s.add(id); A.set({ statuses: s }); },
+  /* один тумблер вместо трёх чипов: он добавляет/убирает завершённые, живое остаётся всегда */
+  "tgl-done": () => { const s = new Set(S.statuses); s.has("done") ? s.delete("done") : s.add("done");
+    A.set({ statuses: s }); },
   tgl: (k) => A.set({ [k]: !S[k] }),
   "set-view": (_, v) => A.set({ sprintView: v }),
   sfocus: (_, v) => A.set({ sFocus: v || null }),
@@ -253,12 +254,6 @@ const ACTS = {
   "save-tez": (id) => { const f = formData(); closeModal(); A.editTezisy(id, f.tez); },
   "tgl-mcc": (id, v) => { S.meetings = S.meetings.map((m) => m.id === id
     ? { ...m, cc: m.cc.includes(v) ? m.cc.filter((c) => c !== v) : [...m.cc, v] } : m); render(); },
-  "merge-dup": (id) => { const m = S.meetings.find((x) => x.id === id) || {};
-    const to = S.meetings.find((x) => x.id === m.dupOf) || {};
-    modal("Объединить с встречей?", `<div class="hint">Черновик <b>${esc(clip(m.t || "", 48))}</b> исчезнет, его текст уйдёт в <b>${esc(clip(to.t || "встречу", 48))}</b>. Разъединить будет нечем.</div>`,
-      `${btn("Оставить как есть", "mclose")}${btn("Объединить", "do-merge-dup", id, undefined, "pri")}`); },
-  "do-merge-dup": (id) => { closeModal(); A.mergeDup(id); },
-  "keep-dup": (id) => A.keepDup(id),
   "q-accept": (id, v) => A.queueAccept(id, v || "shared"),
   "q-reject": (id) => { const q = S.queue.find((x) => x.id === id) || {};
     modal("Отклонить предложение?", `<div class="hint">Встреча <b>${esc(clip(q.t || "", 48))}</b> и предложенные к ней задачи в базу не попадут. Агент их не переспросит.</div>`,
