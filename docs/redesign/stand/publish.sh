@@ -23,7 +23,7 @@ node "$SRC/check.js" >/dev/null || { echo "СТОП: прогон стенда �
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 cp -R "$SRC"/. "$TMP"/
-rm -rf "$TMP/check.js" "$TMP/publish.sh"
+rm -rf "$TMP/check.js" "$TMP/publish.sh" "$TMP/README.md"
 # Jekyll на статике только мешает; robots закрывает черновик от поисковиков
 : > "$TMP/.nojekyll"
 printf 'User-agent: *\nDisallow: /\n' > "$TMP/robots.txt"
