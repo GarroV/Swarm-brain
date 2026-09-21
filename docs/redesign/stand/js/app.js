@@ -201,6 +201,9 @@ const ACTS = {
   /* Списки в продукте ЛИЧНЫЕ: выбор списка делает задачу личной (TaskModal: «if (labelIds.length
      && !task.is_private) patch.is_private = true»). Иначе личный список одного человека
      уехал бы в общий список чужими глазами. */
+  "add-url": (id) => { const el = document.querySelector(`[data-uin="${id}"]`);
+    if (!el) return; A.addUrl(+id, el.value); },
+  "drop-url": (id, v) => A.dropUrl(+id, +v),
   "tgl-label": (id, v) => { const t = S.tasks.find((x) => x.id === +id);
     const next = t.labels.includes(v) ? t.labels.filter((l) => l !== v) : [...t.labels, v];
     A.patchTask(+id, next.length && !t.priv ? { labels: next, priv: true } : { labels: next },

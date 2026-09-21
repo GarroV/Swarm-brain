@@ -592,6 +592,19 @@ const A = {
     S.tasks = S.tasks.map((t) => t.id === id ? { ...t, links: [...t.links, [kind, +otherId]] } : t);
     A.toast("Связь добавлена");
   },
+  addUrl(id, u) {
+    const url = String(u || "").trim();
+    /* ссылка, по которой нельзя перейти, хуже её отсутствия: молча не принимаем — говорим */
+    if (!/^https?:\/\/\S+$/.test(url)) return A.toast("Нужна ссылка вида https://…");
+    const t = S.tasks.find((x) => x.id === id);
+    A.patchTask(id, { urls: [...((t && t.urls) || []), url] }, ["Ссылка", url]);
+    A.toast("Ссылка добавлена");
+  },
+  dropUrl(id, i) {
+    const t = S.tasks.find((x) => x.id === id);
+    A.patchTask(id, { urls: ((t && t.urls) || []).filter((_, k) => k !== i) }, ["Ссылка", "убрана"]);
+    A.toast("Ссылка убрана");
+  },
   dropLink(id, i) {
     S.tasks = S.tasks.map((t) => t.id === id ? { ...t, links: t.links.filter((_, k) => k !== +i) } : t);
     render();

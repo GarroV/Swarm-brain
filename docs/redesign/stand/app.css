@@ -130,15 +130,17 @@ tbody tr.sel td.t{font-weight:600}
 /* Свойства задачи — сетка чипов «подпись · значение». Подписи стоят колонкой, поэтому
    значения выстроены по одной линии, а не лесенкой по длине слов. Значение нажимается,
    варианты приходят меню: столбик из девяти полей читался как форма настроек. */
-.props{display:grid;grid-template-columns:repeat(auto-fit,minmax(252px,1fr));gap:6px;margin-bottom:2px}
-.props .pc{display:flex;min-width:0}
-.props>.pchip.wide,.props>.pc.wide{grid-column:1/-1}
-.pchip{display:flex;align-items:center;gap:8px;width:100%;min-width:0;height:32px;padding:0 10px;
+/* Свойства задачи — чипы ПО СОДЕРЖИМОМУ, а не сетка из одинаковых широких кнопок:
+   «Приватность: общая» занимала пол-панели ради двух слов (просьба владельца 21.09). */
+.props{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:2px;align-items:flex-start}
+.props .pc{display:inline-flex;min-width:0;max-width:100%}
+.props>.pchip.wide,.props>.pc.wide{flex:1 0 100%}
+.pchip{display:flex;align-items:center;gap:8px;width:auto;max-width:100%;min-width:0;height:32px;padding:0 10px;
   border:1px solid var(--line-control);border-radius:8px;background:var(--surface);
   font:400 var(--fs-dense)/1 var(--font-ui);color:var(--ink);text-align:left}
 .pchip.static{background:transparent;border-color:transparent;color:var(--ink-2)}
 .pchip:not(.static):hover{border-color:var(--accent);background:var(--accent-soft)}
-.pchip .k{flex:none;width:88px;color:var(--ink-3);font-size:var(--fs-meta)}
+.pchip .k{flex:none;color:var(--ink-3);font-size:var(--fs-meta)}
 .pchip.wide .v{flex-wrap:wrap}
 .pchip .v{flex:0 1 auto;min-width:0;display:flex;align-items:center;gap:5px;overflow:hidden;white-space:nowrap}
 .pchip .cv{flex:none;width:6px;height:6px;border-right:1.3px solid var(--ink-3);border-bottom:1.3px solid var(--ink-3);
@@ -846,3 +848,12 @@ tr:hover td .av + .av{box-shadow:0 0 0 2px var(--surface-2)}
 .pcard:hover .ex{border-color:var(--accent-line);color:var(--accent);background:var(--accent-soft)}
 .pcard{cursor:pointer}
 .psec .ph .ex,.psub .sh .ex{transform:rotate(180deg)}
+
+/* Ссылки задачи — отдельное поле, как в проде (TaskLinksField): вырезанная из описания
+   ссылка пропадала молча. Пустое поле — одна строка ввода, без списка-обрубка. */
+.ulist{display:flex;flex-direction:column;gap:4px}
+.urow{display:flex;align-items:center;gap:8px}
+.urow .lnk{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--fs-dense)}
+.uadd{display:flex;gap:6px;margin-top:6px}
+.uadd input{flex:1;min-width:0;height:30px;padding:0 10px;border:1px solid var(--line-control);border-radius:8px;
+  background:var(--surface);font:400 var(--fs-dense)/1 var(--font-ui);color:var(--ink)}

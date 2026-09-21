@@ -43,6 +43,7 @@ function confirmCheck() {
     resetFilters: 'сброс вида, а не данных',
     close: 'закрывает панель детали, данных не трогает',
     dropItem: 'задача выходит из спринта и тут же видна в пуле слева кнопкой «Взять» — терять нечего',
+    dropUrl: 'ссылка снимается и вводится обратно строкой ввода рядом — вопрос дороже потери',
   };
   /* разбор методов store: однострочный `  name(a) { … },` и многострочный до `  },` */
   const methods = [];
@@ -812,17 +813,25 @@ function tokenCheck() {
   const dw = await p.$eval('.detail', (e) => Math.round(e.clientWidth));
   want(dw >= 520, `рабочая область задачи шире 520px (сейчас ${dw})`);
   /* «криво косо висят»: значения свойств обязаны стоять по одной линии в своей колонке */
-  const spread = await p.evaluate(() => {
-    const byCol = {};
-    [...document.querySelectorAll('.detail .props .pchip')].filter((e) => e.offsetParent).forEach((c) => {
-      const v = c.querySelector('.v'); if (!v) return;
-      const x = Math.round(c.getBoundingClientRect().left);
-      (byCol[x] = byCol[x] || []).push(Math.round(v.getBoundingClientRect().left));
-    });
-    const cols = Object.values(byCol).filter((xs) => xs.length > 1);
-    return cols.length ? Math.max(...cols.map((xs) => Math.max(...xs) - Math.min(...xs))) : -1;
+  /* Чипы свойств занимают место ПО СОДЕРЖИМОМУ: «Приватность · общая» на пол-панели —
+     это форма, а не задача (просьба владельца 21.09). Выравнивание значений в колонку
+     снято сознательно: оно и заставляло растягивать каждый чип на всю ячейку сетки.
+     Взамен проверяем, что короткий чип остался коротким и что чипы не наезжают. */
+  const chipFit = await p.evaluate(() => {
+    const box = document.querySelector('.detail .props');
+    const chips = [...document.querySelectorAll('.detail .props > *')].filter((e) => e.offsetParent);
+    const narrow = chips.filter((c) => !c.classList.contains('wide'));
+    const widest = narrow.length ? Math.max(...narrow.map((c) => c.offsetWidth)) : 0;
+    let overlap = 0;
+    for (let i = 0; i < chips.length; i++) for (let j = i + 1; j < chips.length; j++) {
+      const a = chips[i].getBoundingClientRect(), b = chips[j].getBoundingClientRect();
+      if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) overlap++;
+    }
+    return { boxW: box ? box.clientWidth : 0, widest, count: narrow.length, overlap };
   });
-  want(spread >= 0 && spread <= 1, `значения свойств стоят по одной линии (разброс ${spread}px)`);
+  want(chipFit.count > 0 && chipFit.widest <= chipFit.boxW * 0.62,
+    `чип свойства занимает место по содержимому (самый широкий ${chipFit.widest}px из ${chipFit.boxW}px)`);
+  want(chipFit.overlap === 0, `чипы свойств не наезжают друг на друга (наложений ${chipFit.overlap})`);
   /* панель показывает ЗНАЧЕНИЯ, а не все варианты сразу: иначе она читается как форма настроек,
      а не как задача. Порог — поля плюс небольшой запас на переключатели вроде приватности. */
   const panelOpts = await p.evaluate(() => {
@@ -922,6 +931,29 @@ function tokenCheck() {
     `«Все поля» достаёт спрятанное (${shownFields.length} → ${allFields.length})`);
   await go('tgl', 'allProps');
   await new Promise((r) => setTimeout(r, 120));
+  /* Ссылки лежат ОТДЕЛЬНЫМ полем над описанием — как в проде (TaskLinksField, решение
+     18.09): ссылка, утопленная в текст описания, не открывается одним движением и
+     теряется при правке. Мусор в поле не принимаем: строка «завтра» ссылкой не станет. */
+  const urlsBefore = await p.evaluate(() => document.querySelectorAll('.detail .ulist .urow').length);
+  await p.type(`[data-uin="${pingRow}"]`, 'не-ссылка');
+  await go('add-url', pingRow);
+  await new Promise((r) => setTimeout(r, 120));
+  want((await p.evaluate(() => document.querySelectorAll('.detail .ulist .urow').length)) === urlsBefore,
+    'в поле ссылок не проходит текст, который ссылкой не является');
+  await p.evaluate((id) => { document.querySelector(`[data-uin="${id}"]`).value = ''; }, pingRow);
+  await p.type(`[data-uin="${pingRow}"]`, 'https://example.com/smeta.pdf');
+  await go('add-url', pingRow);
+  await new Promise((r) => setTimeout(r, 140));
+  const urlAdded = await p.evaluate(() => {
+    const a = [...document.querySelectorAll('.detail .ulist .urow a')].pop();
+    return { n: document.querySelectorAll('.detail .ulist .urow').length,
+      href: a ? a.getAttribute('href') : null, open: a ? a.getAttribute('target') : null }; });
+  want(urlAdded.n === urlsBefore + 1 && urlAdded.href === 'https://example.com/smeta.pdf' && urlAdded.open === '_blank',
+    `ссылка прикладывается к задаче отдельным полем и открывается кликом (${urlsBefore} → ${urlAdded.n})`);
+  await gov2('drop-url', pingRow, String(urlAdded.n - 1));
+  await new Promise((r) => setTimeout(r, 140));
+  want((await p.evaluate(() => document.querySelectorAll('.detail .ulist .urow').length)) === urlsBefore,
+    'ссылка снимается тем же местом, где прикладывалась');
   await go('drop-ping', pingRow);
   await new Promise((r) => setTimeout(r, 120));
   want((await count('.list .ping')) === pingsBefore, 'пинг снимается тем же местом, где ставился');

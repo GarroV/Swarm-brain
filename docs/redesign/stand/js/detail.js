@@ -57,6 +57,18 @@ function taskProps(t) {
   return main + `<div class="props opt">${shown}${more}</div>`;
 }
 
+/* Ссылки — отдельное поле задачи, как в продукте: они переживают правку описания, и по
+   ним видно, куда идти, не читая текст. Добавляются и снимаются прямо в панели. */
+function taskUrls(t) {
+  const urls = t.urls || [];
+  return lab(`Ссылки · ${urls.length}`)
+    + `<div class="ulist">${urls.map((u, i) => `<div class="urow">
+        <a class="lnk" href="${esc(u)}" target="_blank" rel="noreferrer">${esc(u)}</a>
+        ${ibtn("×", "Убрать ссылку", "drop-url", t.id, String(i))}</div>`).join("")
+      || '<div class="muted">Ссылок пока нет</div>'}</div>
+      <div class="uadd"><input data-uin="${t.id}" placeholder="https://…">${btn("Добавить", "add-url", t.id, undefined, "sm")}</div>`;
+}
+
 /* Комментарии живут на основном окне задачи, внизу под остальным: во вкладке их не
    видно, пока не вспомнишь туда зайти, — а разговор по задаче и есть её половина. */
 function taskTalk(t) {
@@ -80,8 +92,7 @@ function detailTask(t) {
   if (tab === "overview") {
     body = taskProps(t)
       + (t.src && t.src !== "manual" ? lab("Откуда задача") + `<div class="src" ${act("open-meet", t.src)}>${esc((S.meetings.find((m) => m.id === t.src) || {}).t || t.src)}</div>` : "")
-      + ((t.urls || []).length ? lab("Ссылки")
-        + `<div class="ulist">${t.urls.map((u) => `<a class="lnk" href="${esc(u)}" target="_blank" rel="noreferrer">${esc(u)}</a>`).join("")}</div>` : "")
+      + taskUrls(t)
       + lab("Описание") + `<div class="note lg">${t.note ? esc(t.note) : '<span class="muted">описания нет</span>'}</div>`
       + taskTalk(t);
   }
