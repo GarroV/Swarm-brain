@@ -961,13 +961,37 @@ function tokenCheck() {
   want(cmp.un > 0 && cmp.marked === cmp.un, `помечены недоказанные пункты (${cmp.marked} из ${cmp.un})`);
   want(cmp.hint.includes(String(cmp.un)), 'подпись называет, сколько пунктов без подтверждения');
   await go('mclose');
-  await go('harvest');
+  /* «Сгенерировать задачи» переключает ТО ЖЕ окно встречи на список предложенного и
+     ничего не создаёт молча; задача заводится из обычной формы, где её правят и
+     прикладывают ссылки (просьба владельца 21.09). */
   const tasksBeforeHarvest = await p.evaluate(() => S.tasks.length);
-  await go('do-harvest');
-  /* читаем ФАКТ (появились задачи), а не тост: тост живёт 2,6 секунды и на медленном
-     прогоне успевает исчезнуть — правило падало на исправном коде */
-  const harvested = await p.evaluate((was) => S.tasks.length - was, tasksBeforeHarvest);
-  want(harvested > 0, `сбор задач из встречи отработал (создано ${harvested})`);
+  await go('gen-tasks', firstMeet);
+  await new Promise((r) => setTimeout(r, 140));
+  const genView = await p.evaluate(() => ({
+    tab: ((document.querySelector('.detail .dtab.on') || {}).textContent || '').trim(),
+    rows: document.querySelectorAll('.detail .glist .grow').length,
+    made: S.tasks.length }));
+  want(genView.rows > 0 && genView.made === tasksBeforeHarvest,
+    `«Сгенерировать задачи» показывает список в том же окне и молча ничего не создаёт (строк ${genView.rows})`);
+  await go('gen-open', '0');
+  const genForm = await p.evaluate(() => ({
+    title: (document.querySelector('.modal [data-f="title"]') || {}).value || '',
+    urls: !!document.querySelector('.modal [data-f="urls"]'),
+    project: !!document.querySelector('.modal [data-f="pr"]') }));
+  want(genForm.title.length > 0 && genForm.urls && genForm.project,
+    `предложенная задача открывается в обычной форме — с проектом и ссылками («${genForm.title.slice(0, 32)}»)`);
+  await p.type('.modal [data-f="urls"]', 'https://example.com/smeta');
+  await go('gen-save', '0');
+  await new Promise((r) => setTimeout(r, 160));
+  const afterGen = await p.evaluate((mid) => {
+    const t = S.tasks[0];
+    return { n: S.tasks.length, urls: (t.urls || []).length,
+      linked: (S.meetings.find((m) => m.id === mid) || { tasks: [] }).tasks.includes(t.id) }; }, firstMeet);
+  const harvested = afterGen.n - tasksBeforeHarvest;
+  want(harvested === 1, `задача из встречи создана по одной, а не пачкой (создано ${harvested})`);
+  want(afterGen.urls === 1 && afterGen.linked,
+    `оформленная задача унесла ссылку и привязалась к встрече (ссылок ${afterGen.urls})`);
+  await go('gen-close');
   await go('confirm-meet', firstMeet);
   /* вычитка теперь шапка экрана, а не вкладка: подтверждённая встреча уходит из неё сразу */
   want((await count(`.revhead .rv[data-id="${firstMeet}"]`)) === 0, 'подтверждённая встреча ушла из вычитки');
@@ -978,12 +1002,19 @@ function tokenCheck() {
   await go('tab', 'all');
   await go('open-meet', 'm12');
   await new Promise((r) => setTimeout(r, 120));
-  /* транскрипт показываем только на вычитке: у разобранной встречи он лежит записью
-     в базе, и вкладка-двойник только занимает место */
+  /* Встречу открывают ради разобранного текста: главное окно — ГОТОВЫЕ ТЕЗИСЫ, а
+     транскрипт стоит отдельной вкладкой и у подтверждённой встречи тоже — сверять его
+     приходится и после вычитки (просьба владельца 21.09). */
   const tabsDone = await p.$$eval('.detail .dtab', (e) => e.map((x) => x.textContent.replace(/\d+$/, '').trim()));
-  want(!tabsDone.includes('Транскрипт'), `у разобранной встречи нет вкладки транскрипта (вкладки: ${tabsDone.join(', ')})`);
-  want(tabsDone.includes('Тезисы'), 'тезисы у встречи вынесены отдельной вкладкой');
+  want(tabsDone[0] === 'Тезисы', `встреча открывается тезисами (вкладки: ${tabsDone.join(', ')})`);
+  want(tabsDone.includes('Транскрипт'), 'транскрипт лежит отдельной вкладкой');
+  const meetOpenOn = await p.evaluate(() => ({
+    tab: ((document.querySelector('.detail .dtab.on') || {}).textContent || '').replace(/\d+$/, '').trim(),
+    tez: document.querySelectorAll('.detail .tez li').length }));
+  want(meetOpenOn.tab === 'Тезисы' && meetOpenOn.tez > 0,
+    `открытая встреча сразу показывает тезисы, а не карточку («${meetOpenOn.tab}», пунктов ${meetOpenOn.tez})`);
   await scan('08б-встреча-без-задач');
+  await go('dtab', 'overview');
   const meetSt = await p.evaluate(() => {
     const dt = [...document.querySelectorAll('.detail dt')].find((e) => e.textContent.trim() === 'Статус');
     const dd = dt && dt.nextElementSibling;
@@ -1069,14 +1100,20 @@ function tokenCheck() {
   const anyPending = await p.$$eval('.revhead .rv', (e) => e.length ? e[0].dataset.id : null);
   if (anyPending) {
     await go('open-meet', anyPending);
-    await go('harvest');
+    await go('gen-tasks', anyPending);
     await shot('34-harvest');
     const tasksBefore = await p.evaluate(() => S.tasks.length);
-    await p.$eval('.hrv .hrow:nth-child(2) input[type=checkbox]', (e) => e.click());
-    await go('do-harvest');
-    await new Promise((r) => setTimeout(r, 120));
+    await go('gen-open', '1');
+    await go('gen-save', '1');
+    await new Promise((r) => setTimeout(r, 140));
     const tasksAfter = await p.evaluate(() => S.tasks.length);
-    want(tasksAfter === tasksBefore + 1, `сбор задач создал только отмеченные (${tasksBefore} → ${tasksAfter})`);
+    want(tasksAfter === tasksBefore + 1, `оформлена ровно одна выбранная задача (${tasksBefore} → ${tasksAfter})`);
+    /* созданная задача помечена в списке, и повторное нажатие не плодит вторую */
+    const marked = await p.evaluate(() => ({ made: S.gen.filter((g) => g.made).length,
+      shown: document.querySelectorAll('.detail .glist .grow.made').length }));
+    want(marked.made === 1 && marked.shown === 1,
+      `созданная задача помечена в списке предложенных (помечено ${marked.shown})`);
+    await go('gen-close');
     await go('review-next', anyPending);
     want((await p.evaluate(() => S.sel)) !== anyPending, 'вычитка подряд переключает на следующую встречу');
     await go('close');

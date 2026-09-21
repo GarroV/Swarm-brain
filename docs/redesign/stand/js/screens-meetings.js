@@ -55,7 +55,7 @@ function reviewRow(m) {
     <span class="at">${esc(fmtDT(m.dt))}</span><b>${esc(m.t)}</b>
     <span class="pl">${tag(m.src, "m")}<span class="due">${m.dur}</span><span class="unit">мин</span></span>
     ${avs(m.who)}
-    <span class="r ib">${btn("Подтвердить тезисы", "confirm-meet", m.id, undefined, "sm")}${btn("Собрать задачи", "harvest", m.id, undefined, "sm")}</span></div>`;
+    <span class="r ib">${btn("Подтвердить тезисы", "confirm-meet", m.id, undefined, "sm")}${btn("Сгенерировать задачи", "gen-tasks", m.id, undefined, "sm")}</span></div>`;
 }
 
 function reviewSection() {

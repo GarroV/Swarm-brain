@@ -37,6 +37,9 @@ const S = {
   broadcasts: BROADCASTS.slice(),
   integrations: INTEGRATIONS.slice(), granolaNew: 3, workspaces: WORKSPACES.slice(), labels: LABELS.slice(),
   roles: ROLES.slice(),
+  /* предложенные по встрече задачи: «Сгенерировать задачи» переключает то же окно
+     встречи на их список, а не создаёт всё молча одним нажатием */
+  gen: [], genFor: null,
   /* панель задачи по умолчанию показывает ЗАПОЛНЕННОЕ: пустые поля — по кнопке */
   allProps: false,
   users: USERS.slice(),
@@ -244,7 +247,9 @@ const A = {
 
   go(sec) { S.sec = sec; S.sel = null; S.selKind = null; S.assignee = null; S.tab = firstTab(sec); render(); },
   tab(id) { S.tab = id; S.sel = null; S.selKind = null; render(); },
-  select(kind, id) { S.selKind = kind; S.sel = id; S.dtab = "overview"; render(); },
+  /* встреча открывается на ТЕЗИСАХ: ради разобранного текста её и открывают,
+     карточка со временем и участниками — это уже справка (просьба владельца 21.09) */
+  select(kind, id) { S.selKind = kind; S.sel = id; S.dtab = kind === "meeting" ? "tez" : "overview"; render(); },
   close() { S.sel = null; S.selKind = null; render(); },
 
   /* задачи */
@@ -568,11 +573,34 @@ const A = {
     S.tasks = S.tasks.map((t) => t.id === id ? { ...t, links: t.links.filter((_, k) => k !== +i) } : t);
     render();
   },
-  harvest(id, items) {
-    const made = items.map((x) => mkTask({ id: nextTaskId++, t: x.t, pr: null, who: [x.who], due: x.due, prio: "med", src: id }));
-    S.tasks = [...made, ...S.tasks];
-    S.meetings = S.meetings.map((m) => m.id === id ? { ...m, tasks: [...m.tasks, ...made.map((t) => t.id)] } : m);
-    A.toast(`Создано задач: ${made.length}`);
+  genTasks(id) {
+    const m = S.meetings.find((x) => x.id === id);
+    const src = HARVEST[id] || [["Уточнить договорённости по итогам встречи", m.who[0], "2026-09-30"]];
+    S.gen = src.map(([t, who, due], i) => ({ i, t, who, due, made: null }));
+    S.genFor = id;
+    S.sec = "meetings"; S.selKind = "meeting"; S.sel = id; S.dtab = "gen";
+    render();
+  },
+  /* предложенная задача заводится ЧЕРЕЗ ОБЫЧНУЮ ФОРМУ: её правят, дают проект и
+     прикладывают ссылки до создания, а не чинят потом в списке */
+  genMake(i, f) {
+    const g = S.gen.find((x) => x.i === i);
+    if (!g || g.made) return;
+    const t = mkTask({ id: nextTaskId++, t: f.title, pr: f.pr, st: "open", who: f.who ? [f.who] : [],
+      due: f.due || null, prio: f.prio || null, labels: f.labels || [], mk: f.mk || null,
+      recur: f.recur || null, priv: !!f.priv || !!(f.labels || []).length, note: f.note || "",
+      ping: f.ping || null, urls: f.urls || [], src: S.genFor });
+    S.tasks = [t, ...S.tasks];
+    S.history = { ...S.history, [t.id]: [{ m: 0, who: ME, k: "Создана", v: "из встречи" }] };
+    S.meetings = S.meetings.map((m) => m.id === S.genFor ? { ...m, tasks: [...m.tasks, t.id] } : m);
+    S.gen = S.gen.map((x) => x.i === i ? { ...x, made: t.id } : x);
+    A.toast(`Задача ${t.id} создана из встречи`);
+  },
+  genAll() {
+    const left = S.gen.filter((g) => !g.made);
+    if (!left.length) return A.toast("Все предложенные задачи уже созданы");
+    left.forEach((g) => A.genMake(g.i, { title: g.t, who: g.who, due: g.due, pr: null }));
+    A.toast(`Создано задач: ${left.length}`);
   },
   saveRole(id, n) {
     if (!n.trim()) return A.toast("Нужно название");

@@ -166,6 +166,7 @@ const ACTS = {
   "create-task": () => { const f = formData(); if (!f.title) return A.toast("Нужно название");
     closeModal(); A.createTask({ title: f.title, pr: f.pr, who: f.who ? +f.who : null, due: f.due, prio: f.prio,
       labels: f.labels, mk: (f.mk || [])[0] || null, recur: f.recur || null, priv: f.priv || !!(f.labels || []).length, note: f.note,
+      urls: urlList(f.urls),
       ping: f.ping || null }); },
   "reset-filters": () => A.set({ lens: "all", statuses: new Set(Object.keys(ST_LABEL)),
     mk: null, assignee: null, q: "", noProject: false, recurOnly: false, archOn: false, period: "any" }),
@@ -345,12 +346,14 @@ const ACTS = {
   "drop-link": (id, v) => A.dropLink(+id, v),
   remind: (id) => A.toast(`Напоминание отправлено: ${user(+id).n}`),
   "show-all": (_, v) => { closePal(); S.aq = v; S.sec = "search"; A.set({}); },
-  harvest: (id) => harvestModal(id),
-  "do-harvest": (id, n) => { const f = formData();
-    const items = []; for (let i = 0; i < +n; i++) if (f["on" + i]) items.push({ t: f["t" + i], who: +f["w" + i], due: f["d" + i] });
-    /* окно закрываем ПОСЛЕ проверки: иначе снятые галочки и правки исчезали вместе с ним */
-    if (!items.length) return A.toast("Ничего не выбрано — отметьте хотя бы одну задачу");
-    closeModal(); A.harvest(id, items); },
+  "gen-tasks": (id) => A.genTasks(id),
+  "gen-open": (id) => genTaskModal(+id),
+  "gen-save": (i) => { const f = formData(); closeModal();
+    A.genMake(+i, { title: f.title, pr: f.pr, who: +f.who || null, due: f.due, prio: f.prio || null,
+      labels: f.labels, mk: (f.mk || [])[0] || null, recur: f.recur || null, priv: f.priv,
+      note: f.note, ping: f.ping || null, urls: urlList(f.urls) }); },
+  "gen-all": () => A.genAll(),
+  "gen-close": () => { S.gen = []; S.genFor = null; S.dtab = "tez"; A.set({}); },
   "review-next": (id) => reviewNext(id),
   reader: (id) => readerModal(id),
   "add-label": () => labelModal(null),

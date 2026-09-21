@@ -67,12 +67,17 @@ const PROJECTS = [
    не показывается (в продукте он приглушён в smartLists) и живёт только колонкой доски. */
 const mkTask = (o) => ({
   id: o.id, t: o.t, pr: o.pr, st: o.st || "open", who: o.who || [], due: o.due || null,
-  prio: o.prio || "med", labels: o.labels || [], mk: o.mk || null, recur: o.recur || null,
+  /* приоритет по умолчанию НЕ ставится: в проде он проставлен у 6 задач из 481,
+     а «средний» у всех подряд превращал поле в шум */
+  prio: o.prio || null, labels: o.labels || [], mk: o.mk || null, recur: o.recur || null,
   priv: !!o.priv, arch: !!o.arch, src: o.src || "manual", by: o.by || 501, at: o.at || "2026-09-10",
   /* пинг — ручное напоминание, живёт рядом со сроком и независимо от него («дедлайн 20-го,
      вспомнить 1-го»), одноразовый: отзвонил — сгорел. Роль — направление работы (rnd/bd/…). */
   ping: o.ping || null, pinged: !!o.pinged, role: o.role || null,
   sprint: o.sprint || null, links: o.links || [], subs: o.subs || [], note: o.note || "",
+  /* ссылки — отдельное поле задачи, как в продукте (TaskLinksField, решение 18.09):
+     вырезанная из описания ссылка пропадала молча */
+  urls: o.urls || [],
 });
 const TASKS = [
   mkTask({ id:128, ping:"2026-09-16", pinged:true, role:"bd", t:"Согласовать смету по оборудованию кухни", pr:"p1b", st:"in_progress", who:[501], due:"2026-09-17", prio:"high", labels:["l1"], mk:"RS", src:"m1", sprint:"c2", note:"Смета от поставщика выше бюджета на 14%. Свести позиции с согласованными и вынести расхождение на планёрку.", links:[["блокирует",141],["связана",132]], subs:[502,503] }),

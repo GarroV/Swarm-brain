@@ -154,25 +154,43 @@ function whatsNext(list) {
   </div>`;
 }
 
-/* ── модалка создания задачи ─────────────────────────────────── */
-function newTaskModal(preset) {
-  modal("Новая задача", `
-    ${fld("Что сделать", input("title", preset && preset.title, "Коротко и по делу"))}
+/* ── форма задачи ────────────────────────────────────────────────
+   Одна и та же форма открывается на создание и на оформление задачи, предложенной по
+   встрече: два разных окна с одними полями расходились бы по мелочам. */
+function taskFormBody(preset) {
+  const v = preset || {};
+  return `
+    ${fld("Что сделать", input("title", v.title, "Коротко и по делу"))}
     ${fld("Описание", area("note", "", "Контекст, ссылки, детали"))}
     <div class="two">
       ${fld("Проект", select("pr", S.projects.map((p) => [p.id, (p.parent ? "— " : "") + p.n]), "p1"))}
-      ${fld("Исполнитель", select("who", [["", "— не назначен"], ...S.users.map((u) => [String(u.id), u.n])], String(ME)))}
+      ${fld("Исполнитель", select("who", [["", "— не назначен"], ...S.users.map((u) => [String(u.id), u.n])], String(v.who || ME)))}
     </div>
     <div class="two">
-      ${fld("Срок", dateInput("due", ""))}
+      ${fld("Срок", dateInput("due", v.due || ""))}
       ${fld("Приоритет", select("prio", [["", "не задан"], ["high", "высокий"], ["med", "средний"], ["low", "низкий"]], ""))}
     </div>
     ${fld("Списки (личные)", pick("labels", S.labels.map((l) => [l.id, l.n]), []))}
+    ${fld("Ссылки", area("urls", (v.urls || []).join("\n"), "по одной в строке: https://…"))}
     ${fld("Рынок", pick("mk", COUNTRIES.map((c) => [c.c, c.n]), [], true))}
     <div class="two">
       ${fld("Повтор", select("recur", [["", "без повтора"], ["weekly", "каждую неделю"], ["monthly", "каждый месяц"]], ""))}
       ${fld("Напомнить (пинг)", dateInput("ping", ""))}
     </div>
-    ${fld("Приватность", sw("priv", false, "Личная задача — видна только мне"))}`,
+    ${fld("Приватность", sw("priv", false, "Личная задача — видна только мне"))}`;
+}
+
+function newTaskModal(preset) {
+  modal("Новая задача", taskFormBody(preset),
     `${btn("Отмена", "mclose")}${btn("Создать задачу", "create-task", undefined, undefined, "pri")}`);
+}
+
+/* Предложенная по встрече задача оформляется в той же форме — «ещё один экран» поверх
+   списка: правится текст, добавляются ссылки, и только потом она становится задачей. */
+function genTaskModal(i) {
+  const g = S.gen.find((x) => x.i === i);
+  if (!g) return;
+  if (g.made) return A.toast(`Эта задача уже создана — ${g.made}`);
+  modal("Задача из встречи", taskFormBody({ title: g.t, who: g.who, due: g.due }),
+    `${btn("Отмена", "mclose")}${btn("Создать задачу", "gen-save", String(i), undefined, "pri")}`);
 }

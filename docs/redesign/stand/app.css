@@ -801,3 +801,15 @@ td.qc{text-align:right;white-space:nowrap}
 /* спрятанные поля панели достаются кнопкой в том же ряду, что и чипы */
 .props.opt{margin-top:6px}
 .props.opt .btn{align-self:start}
+
+/* Список задач, предложенных по встрече: то же окно, что и тезисы, — не всплывашка. */
+.glist{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.grow{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;padding:9px 11px;
+  border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.grow.made{background:var(--surface-2);border-style:dashed}
+.grow .gt{font:500 var(--fs-dense)/1.35 var(--font-ui);color:var(--ink);cursor:pointer;text-align:left}
+.grow .gt:hover{color:var(--accent)}
+.grow .gm{display:inline-flex;align-items:center;gap:6px;color:var(--ink-3);font-size:var(--fs-meta)}
+/* ссылки задачи — отдельным полем, не внутри описания */
+.ulist{display:flex;flex-direction:column;gap:3px}
+.ulist .lnk{font-size:var(--fs-dense);word-break:break-all}

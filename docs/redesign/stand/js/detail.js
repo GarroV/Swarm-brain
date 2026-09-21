@@ -80,6 +80,8 @@ function detailTask(t) {
   if (tab === "overview") {
     body = taskProps(t)
       + (t.src && t.src !== "manual" ? lab("Откуда задача") + `<div class="src" ${act("open-meet", t.src)}>${esc((S.meetings.find((m) => m.id === t.src) || {}).t || t.src)}</div>` : "")
+      + ((t.urls || []).length ? lab("Ссылки")
+        + `<div class="ulist">${t.urls.map((u) => `<a class="lnk" href="${esc(u)}" target="_blank" rel="noreferrer">${esc(u)}</a>`).join("")}</div>` : "")
       + lab("Описание") + `<div class="note lg">${t.note ? esc(t.note) : '<span class="muted">описания нет</span>'}</div>`
       + taskTalk(t);
   }
@@ -111,13 +113,16 @@ function detailMeeting(m) {
   /* Транскрипт нужен на вычитке — там его сверяют с тезисами. У разобранной встречи он
      лежит в базе отдельной записью, и вторая копия вкладкой только занимает место. */
   const trEntry = S.entries.find((e) => e.meet === m.id && e.ty === "transcript");
-  const items = [["overview", "Обзор"], ["tez", "Тезисы", nTez]]
-    .concat(isReview ? [["tr", "Транскрипт", m.tr.length]] : []);
-  const cur = items.some(([id]) => id === S.dtab) ? S.dtab : "overview";
+  /* Главное окно встречи — ГОТОВЫЕ ТЕЗИСЫ: ради разобранного текста встречу и
+     открывают (просьба владельца 21.09). Транскрипт стоит отдельной вкладкой и у
+     подтверждённой встречи тоже: сверять его приходится и после вычитки. */
+  const items = [["tez", "Тезисы", nTez], ["overview", "О встрече"], ["tr", "Транскрипт", m.tr.length]]
+    .concat(S.genFor === m.id ? [["gen", "Задачи", S.gen.length]] : []);
+  const cur = items.some(([id]) => id === S.dtab) ? S.dtab : "tez";
   const acts = (isReview ? btn("Подтвердить тезисы", "confirm-meet", m.id, undefined, "pri") : "")
     + (m.st === "draft" ? btn("Опубликовать в базу", "publish-draft", m.id, undefined, "pri") : "")
     + (isReview ? btn("Сравнить с транскриптом", "compare", m.id) : "")
-    + btn("Собрать задачи", "harvest", m.id)
+    + btn("Сгенерировать задачи", "gen-tasks", m.id)
     + (isReview ? btn("Следующая", "review-next", m.id) : "")
     + btn("Править тезисы", "edit-tez", m.id)
     /* «Переобработать» в продукте спрашивает ЧТО поменять: четыре готовых пожелания и своё.
@@ -148,7 +153,7 @@ function detailMeeting(m) {
         ${lab(`Задачи из встречи · ${tasks.length}`)}
         ${tasks.length ? rows(tasks.map((t) => [String(t.id), `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, state(ST_LABEL[t.st], t.st === "done")]))
           : `<div class="empty sm"><b>Задач из встречи ещё нет</b>Тезисы разбираются на задачи по одному нажатию</div>`}
-        <div class="mt">${btn("Собрать задачи", "harvest", m.id, undefined, "pri")}</div>
+        <div class="mt">${btn("Сгенерировать задачи", "gen-tasks", m.id, undefined, "pri")}</div>
         ${m.notes.length ? lab(`Пометки на полях · ${m.notes.length}`)
           + `<div class="mnotes">${m.notes.map((n) => `<div class="mn">${av(n.who, false)}<div class="b">
             <div class="w"><b>${esc(user(n.who).n)}</b> · ${esc(n.at)}</div>${esc(n.t)}</div></div>`).join("")}</div>` : ""}
@@ -158,6 +163,20 @@ function detailMeeting(m) {
     body = m.st === "draft"
       ? `<div class="empty sm"><b>Тезисов ещё нет</b>Черновик не разобран моделью${btn("Составить тезисы", "publish-draft", m.id, undefined, "pri mt")}</div>`
       : `<div class="tez">${m.tez.map((sec) => `<h5>${esc(sec.h)}</h5>${sec.li.map((x) => `<li>${esc(x)}</li>`).join("")}`).join("")}</div>`;
+  }
+  if (cur === "gen") {
+    /* «Сгенерировать задачи» переключает ЭТО ЖЕ окно на список предложенного, а не
+       выбрасывает окно поверх встречи: человек остаётся там, где читал тезисы. */
+    const made = S.gen.filter((g) => g.made).length;
+    body = `<div class="hint">Модель предложила задачи по тезисам. Нажмите на задачу — откроется обычная форма:
+      там правится текст, проект и исполнитель и прикладываются ссылки.</div>
+      <div class="glist">${S.gen.map((g) => `<div class="grow${g.made ? " made" : ""}">
+        <button class="gt" ${act("gen-open", String(g.i))}>${esc(g.t)}</button>
+        <span class="gm">${g.who ? av(g.who) : ""}${g.due ? `<span class="due">${fmtDate(g.due)}</span>` : ""}</span>
+        ${g.made ? `<span class="lnk" ${act("open-task", g.made)}>задача ${g.made}</span>`
+          : btn("Оформить", "gen-open", String(g.i), undefined, "sm")}</div>`).join("")}</div>
+      <div class="mt">${btn(`Создать все · ${S.gen.length - made}`, "gen-all", m.id, undefined, "pri", made === S.gen.length)}
+        ${btn("Закрыть список", "gen-close", m.id)}</div>`;
   }
   if (cur === "tr") {
     body = `<div class="tr">${m.tr.map(([w, who, text]) =>

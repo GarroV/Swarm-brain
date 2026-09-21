@@ -149,3 +149,8 @@ const formData = () => {
   $$(".modal [data-sw]").forEach((s) => { o[s.dataset.sw] = s.classList.contains("on"); });
   return o;
 };
+
+/* Ссылки в форме вводятся строками: пустые строки и мусор без схемы отбрасываем —
+   ссылка, по которой нельзя перейти, хуже её отсутствия. */
+const urlList = (text) => String(text || "").split("\n").map((x) => x.trim())
+  .filter((x) => /^https?:\/\/\S+$/.test(x));
