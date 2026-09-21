@@ -90,7 +90,16 @@ function detailMeeting(m) {
     + (isReview ? btn("Сравнить с транскриптом", "compare", m.id) : "")
     + btn("Собрать задачи", "harvest", m.id)
     + (isReview ? btn("Следующая", "review-next", m.id) : "")
-    + btn("Править тезисы", "edit-tez", m.id);
+    + btn("Править тезисы", "edit-tez", m.id)
+    /* «Переобработать» в продукте спрашивает ЧТО поменять: четыре готовых пожелания и своё.
+       Кнопка «пересобрать» без выбора возвращала тот же текст, и человек жал её second раз. */
+    + (m.st !== "draft" ? `<span class="drop">${btn("Переобработать", "noop", undefined, undefined, "")}
+      ${fmenu([["короче", "regen", m.id, "short"], ["подробнее", "regen", m.id, "long"],
+        ["акцент на решениях", "regen", m.id, "decisions"], ["просто пересобрать", "regen", m.id, "plain"],
+        ["своё пожелание…", "regen-own", m.id]])}</span>` : "")
+    + `<span class="drop">${btn("Ещё", "noop", undefined, undefined, "")}
+      ${fmenu([["Копировать тезисы", "copy-tez", m.id], ["Изменить название", "rename-meet", m.id],
+        ["Удалить встречу", "del-meet", m.id]])}</span>`;
   let body = "";
   if (cur === "overview") {
     body = (m.claim ? `<div class="lease"><b>Запись рекордера</b>${rows([
@@ -111,6 +120,9 @@ function detailMeeting(m) {
         ${tasks.length ? rows(tasks.map((t) => [String(t.id), `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, state(ST_LABEL[t.st], t.st === "done")]))
           : `<div class="empty sm"><b>Задач из встречи ещё нет</b>Тезисы разбираются на задачи по одному нажатию</div>`}
         <div class="mt">${btn("Собрать задачи", "harvest", m.id, undefined, "pri")}</div>
+        ${m.notes.length ? lab(`Пометки на полях · ${m.notes.length}`)
+          + `<div class="mnotes">${m.notes.map((n) => `<div class="mn">${av(n.who, false)}<div class="b">
+            <div class="w"><b>${esc(user(n.who).n)}</b> · ${esc(n.at)}</div>${esc(n.t)}</div></div>`).join("")}</div>` : ""}
         ${!isReview && trEntry ? lab("Транскрипт") + `<div class="src" ${act("open-entry", trEntry.id)}>${esc(trEntry.h)}</div>` : ""}`;
   }
   if (cur === "tez") {

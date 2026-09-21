@@ -227,6 +227,9 @@ function tokenCheck() {
   };
   const go = (a, id) => click(sel(a, id));
   const gov = (a, v) => click(`[data-act="${a}"][data-v="${v}"]`);
+  /* нажать действие по паре id+значение: одно и то же действие живёт в нескольких
+     строках, и без пары клик уходил в первую попавшуюся */
+  const gov2 = (a, id, v) => click(`[data-act="${a}"][data-id="${id}"]` + (v ? `[data-v="${v}"]` : ''));
   const count = (s) => p.$$eval(s, (els) => els.length);
   const text = (s) => p.$eval(s, (e) => e.textContent.trim()).catch(() => '');
   /* чтение, которое не валит прогон: элемента нет — вернётся null, и проверка честно упадёт */
@@ -914,7 +917,45 @@ function tokenCheck() {
     const dd = dt && dt.nextElementSibling;
     return { chip: !!(dd && dd.querySelector('.state')), text: dd ? dd.textContent.trim() : 'поля нет' }; });
   want(meetSt.chip, `статус встречи показан плашкой, как везде в стенде, а не голым текстом («${meetSt.text}»)`);
+  /* переобработка тезисов: продукт спрашивает ЧТО поменять, а не «пересобрать» вслепую.
+     Текст обязан измениться и тост — назвать пожелание, иначе кнопка врёт об успехе. */
+  await go('open-meet', 'm1');
+  await new Promise((r) => setTimeout(r, 120));
+  const tezBefore = await p.evaluate(() => JSON.stringify((S.meetings.find((m) => m.id === 'm1') || {}).tez));
+  const regenItems = await p.$$eval('[data-act="regen"], [data-act="regen-own"]', (e) => e.map((x) => x.textContent.trim()));
+  want(regenItems.length >= 5, `переобработка предлагает пожелания, а не одну кнопку (${regenItems.join(', ') || 'нет'})`);
+  await gov2('regen', 'm1', 'short');
+  await new Promise((r) => setTimeout(r, 140));
+  const tezAfter = await p.evaluate(() => JSON.stringify((S.meetings.find((m) => m.id === 'm1') || {}).tez));
+  want(tezAfter !== tezBefore, 'переобработка действительно меняет тезисы, а не печатает «готово»');
+  want((await text('.toast')).includes('короче'), 'тост называет, каким пожеланием переобработали');
+  /* пометки на полях — то, что писали ВО ВРЕМЯ встречи: с автором и временем */
+  await go('dtab', 'overview');
+  await new Promise((r) => setTimeout(r, 120));
+  const notes = await p.evaluate(() => {
+    const m = S.meetings.find((x) => x.id === 'm1') || {};
+    const shown = [...document.querySelectorAll('.mn')];
+    return { real: (m.notes || []).length, shown: shown.length,
+      withWho: shown.filter((n) => n.querySelector('.w b')).length };
+  });
+  want(notes.real > 0 && notes.shown === notes.real, `пометки на полях показаны все (${notes.shown} из ${notes.real})`);
+  want(notes.withWho === notes.shown, 'у каждой пометки назван автор — без него непонятно, чьё это');
+  /* название встречи правится и меняется ВЕЗДЕ, а не только в панели */
+  await go('rename-meet', 'm1');
+  await p.$eval('[data-f="n"]', (e) => { e.value = ''; });
+  await p.type('[data-f="n"]', 'Планёрка по открытию — уточнённая');
+  await go('do-rename-meet', 'm1');
+  await new Promise((r) => setTimeout(r, 140));
+  want((await text('.d-title')).includes('уточнённая'), 'новое название встало в панели');
+  want(await p.evaluate(() => [...document.querySelectorAll('.body tbody tr')].some((r) => r.textContent.includes('уточнённая'))),
+    'новое название встало и в списке встреч, а не только в панели');
+  /* удаление встречи уносит расшифровку — спрашиваем */
+  await go('del-meet', 'm1');
+  await new Promise((r) => setTimeout(r, 120));
+  want((await count('.modal .hint')) === 1, 'удаление встречи сперва спрашивает');
+  await go('mclose');
   await go('close');
+
   await go('tab', 'draft'); await shot('10-drafts');
   /* черновик с кандидатом на дубль показан один раз, а не в обеих таблицах сразу */
   const dupTitle = await p.evaluate(() => (S.meetings.find((m) => m.st === 'draft' && m.dupOf) || {}).t);
@@ -1209,13 +1250,6 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 120));
   want(byPeople === sprintCount.rows, `группировка по людям показывает тот же состав (${byPeople} против ${sprintCount.rows})`);
   /* отметка сверки ставится прямо в строке (отдельный экран «Сверка» снят 19.09) */
-  /* нажать действие по паре id+значение: у отметок сверки один data-act на строку,
-     различает их значение — без этого клик уходил в первую попавшуюся строку */
-  const gov2 = (name, id, v) => p.evaluate((n, i, val) => {
-    const el = document.querySelector(`[data-act="${n}"][data-id="${i}"][data-v="${val}"]`)
-      || document.querySelector(`[data-act="${n}"][data-id="${i}"]`);
-    if (el) el.click();
-  }, name, id, v);
   const kpiOf = (word) => p.evaluate((w) => {
     const k = [...document.querySelectorAll('.kpi')].find((e) => e.querySelector('span').textContent.trim() === w);
     return k ? +k.querySelector('b').textContent : null; }, word);

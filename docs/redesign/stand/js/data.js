@@ -157,11 +157,15 @@ const TRANSCRIPT = [
   ["07:03", 503, "Тогда я закладываю в бюджет верхнюю границу и правлю после ответа поставщика."],
 ];
 
-const mkMeet = (o) => ({ ...o, tez: o.tez || TEZISY, tr: o.tr || TRANSCRIPT, tasks: o.tasks || [] });
+const mkMeet = (o) => ({ ...o, tez: o.tez || TEZISY, tr: o.tr || TRANSCRIPT, tasks: o.tasks || [],
+  notes: o.notes || [] });
 const MEETINGS = [
-  mkMeet({ id:"m1", t:"Планёрка по открытию", dt:"2026-09-15 10:00", dur:48, who:[501,502,504], src:"bumblebee", st:"confirmed", store:"shared", cc:["RS"], tasks:[128,132,135], claim:{ dev:"MacBook Pro · build 24", at:"10:00", lease:"10:48", defer:0, other:true } }),
+  mkMeet({ id:"m1", t:"Планёрка по открытию", dt:"2026-09-15 10:00", dur:48, who:[501,502,504], src:"bumblebee", st:"confirmed", store:"shared", cc:["RS"], tasks:[128,132,135],
+    notes:[{ who:501, at:"10:12", t:"Спросить у поставщика про фиксацию цены до конца месяца" },
+           { who:504, at:"10:31", t:"Санэпидстанция: заявку подали, ответ ждём к пятнице" }], claim:{ dev:"MacBook Pro · build 24", at:"10:00", lease:"10:48", defer:0, other:true } }),
   mkMeet({ id:"m2", t:"Поставщик упаковки — переговоры", dt:"2026-09-16 14:30", dur:32, who:[501,503], src:"Granola", st:"pending", store:"shared", cc:["RS"], tasks:[131,141] }),
-  mkMeet({ id:"m3", t:"Сверка бюджета Q4", dt:"2026-09-17 11:00", dur:55, who:[502,503,509], src:"Read.ai", st:"pending", store:"shared", cc:["RS","ME"], tasks:[156] }),
+  mkMeet({ id:"m3", t:"Сверка бюджета Q4", dt:"2026-09-17 11:00", dur:55, who:[502,503,509], src:"Read.ai", st:"pending", store:"shared", cc:["RS","ME"], tasks:[156],
+    notes:[{ who:503, at:"11:24", t:"Расхождение по логистике 14% — вынести отдельной строкой" }] }),
   mkMeet({ id:"m4", t:"Онбординг новой смены", dt:"2026-09-12 09:00", dur:41, who:[505,512], src:"bumblebee", st:"confirmed", store:"shared", cc:["SI"], tasks:[136,142], claim:{ dev:"MacBook Air · build 24", at:"09:00", lease:"09:41", defer:0, other:true } }),
   mkMeet({ id:"m5", t:"Ревизия меню", dt:"2026-09-10 16:00", dur:27, who:[501,508], src:"Granola", st:"confirmed", store:"shared", cc:["RS"], tasks:[138] }),
   mkMeet({ id:"m6", t:"Запись без названия", dt:"2026-09-18 12:04", dur:18, who:[501], src:"bumblebee", st:"draft", store:"shared", cc:[], tasks:[], claim:{ dev:"MacBook Pro · build 24", at:"12:04", lease:"12:26", defer:6, other:true } }),

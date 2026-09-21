@@ -275,6 +275,30 @@ const A = {
   },
 
   /* встречи */
+  /* Переобработка тезисов — как в продукте: не «пересобери», а ЧТО поменять. Четыре
+     готовых пожелания плюс своё; без транскрипта пересобирать нечего, и об этом надо
+     сказать, а не молча показать прежний текст. */
+  regenTezisy(id, kind, own) {
+    const m = S.meetings.find((x) => x.id === id);
+    if (!m || !m.tr.length) { A.toast("Пересобирать не из чего: транскрипта нет"); return; }
+    const said = { short: "короче", long: "подробнее", decisions: "с акцентом на решениях",
+      plain: "тем же промптом", own: own || "по вашему пожеланию" }[kind] || "заново";
+    const head = { short: "Коротко", long: "Подробно", decisions: "Решения", plain: "Итоги", own: "Итоги" }[kind] || "Итоги";
+    S.meetings = S.meetings.map((x) => x.id === id ? { ...x, tez: [{ h: head,
+      li: [`Тезисы переобработаны ${said}.`, ...x.tez.flatMap((sec) => sec.li).slice(0, kind === "short" ? 2 : 6)] }],
+      notesEdited: false } : x);
+    A.toast(`Тезисы переобработаны ${said}`);
+  },
+  renameMeeting(id, name) {
+    if (!name) return;
+    S.meetings = S.meetings.map((m) => m.id === id ? { ...m, t: name } : m);
+    A.toast("Название встречи обновлено");
+  },
+  delMeeting(id) {
+    S.meetings = S.meetings.filter((m) => m.id !== id);
+    if (S.sel === id) { S.sel = null; S.selKind = null; }
+    A.toast("Встреча и её расшифровка удалены");
+  },
   confirmMeeting(id) {
     S.meetings = S.meetings.map((m) => m.id === id ? { ...m, st: "confirmed" } : m);
     A.toast("Тезисы подтверждены, встреча в базе");

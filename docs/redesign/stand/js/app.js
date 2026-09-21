@@ -190,6 +190,18 @@ const ACTS = {
   compare: (id) => compareModal(id),
   extract: (id) => A.extractTasks(id),
   "edit-tez": (id) => tezisyModal(id),
+  "regen": (id, v) => A.regenTezisy(id, v),
+  "regen-own": (id) => modal("Что поменять в тезисах", fld("Своё пожелание", input("w", "", "Например: выделить договорённости с поставщиком")),
+    `${btn("Отмена", "mclose")}${btn("Переобработать", "do-regen-own", id, undefined, "pri")}`),
+  "do-regen-own": (id) => { const f = formData(); closeModal(); A.regenTezisy(id, "own", f.w); },
+  "copy-tez": (id) => A.toast("Тезисы скопированы в буфер"),
+  "rename-meet": (id) => modal("Изменить название", fld("Название встречи", input("n", (S.meetings.find((m) => m.id === id) || {}).t || "")),
+    `${btn("Отмена", "mclose")}${btn("Сохранить название", "do-rename-meet", id, undefined, "pri")}`),
+  "do-rename-meet": (id) => { const f = formData(); closeModal(); A.renameMeeting(id, f.n); },
+  "del-meet": (id) => { const m = S.meetings.find((x) => x.id === id) || {};
+    modal("Удалить встречу?", `<div class="hint">Встреча <b>${esc(m.t || "")}</b> и её расшифровка исчезнут без возможности восстановить.</div>`,
+      `${btn("Оставить", "mclose")}${btn("Удалить встречу", "do-del-meet", id, undefined, "pri")}`); },
+  "do-del-meet": (id) => { closeModal(); A.delMeeting(id); },
   "save-tez": (id) => { const f = formData(); closeModal(); A.editTezisy(id, f.tez); },
   "set-store": (id, v) => { S.meetings = S.meetings.map((m) => m.id === id ? { ...m, store: v } : m); render(); },
   "tgl-mcc": (id, v) => { S.meetings = S.meetings.map((m) => m.id === id
