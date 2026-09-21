@@ -189,6 +189,10 @@ tbody tr.sel td.t{font-weight:600}
 .psec{grid-column:1/-1;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);overflow:hidden}
 .psec.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .psec .ph,.psub .sh{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--surface-2);border-bottom:1px solid var(--line)}
+/* в шапке секции стрелка стоит ПЕРВОЙ: правило .ex{margin-left:auto} из карточки
+   расталкивало название и счётчик к середине строки */
+.psec .ph .ex,.psub .sh .ex{margin-left:0}
+.psec .cols.one{max-width:340px}
 .psub .sh{background:transparent;border-bottom:1px dashed var(--line);padding:8px 14px 8px 26px}
 .psec .nm{font-size:var(--fs-lead);font-weight:600;color:var(--ink);cursor:pointer}
 .psub .nm{font-size:var(--fs-dense);font-weight:600}

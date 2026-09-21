@@ -20,7 +20,7 @@ const S = {
   space: "sp1", spaces: SPACES.slice(), items: SITEMS.slice(), group: "ini",
   poolOpen: false, poolPr: "", poolWho: "", poolQ: "", report: false,
   /* доска проектов: вкладки досок (в продукте — таблица sprints), какие проекты раскрыты */
-  boards: BOARDS.slice(), boardTab: "b1", openProj: new Set(["p1"]), subOpen: new Set(),
+  boards: BOARDS.slice(), boardTab: "b1", openProj: new Set(["p1"]), subClosed: new Set(),
   /* система */
   theme: "light", lang: "RU", tz: "Europe/Belgrade", toast: null,
   /* календарь: on — подключён, off — не подключён, expired — доступ истёк */

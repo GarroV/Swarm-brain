@@ -59,23 +59,34 @@ function projectSection(p) {
   const subs = S.projects.filter((x) => x.parent === p.id);
   const own = S.tasks.filter((t) => !t.arch && t.pr === p.id);
   const all = projectTasks(p.id);
-  return `<div class="psec${S.sel === p.id && S.selKind === "project" ? " sel" : ""}">
-    <div class="ph"><button class="ex on" ${act("toggle-open", p.id)} title="Свернуть проект">▾</button>
+  /* Правило продукта: колонки показываем у СВОИХ задач проекта. Если своих нет и вся
+     работа лежит в подпроектах, четыре пустые колонки с «перетащите сюда» занимают
+     экран и врут, будто в проекте ничего нет, — тогда слева остаётся один «Бэклог»
+     ветки, а место отдаётся подпроектам. */
+  const branchBacklog = all.filter((t) => !ST_LABEL[t.st]);
+  const head = `<div class="ph"><button class="ex on" ${act("toggle-open", p.id)} title="Свернуть проект">▾</button>
       ${dot(p.st === "paused" ? "open" : "in_progress")}<b class="nm" ${act("open-proj", p.id)} tabindex="0">${esc(p.n)}</b>
       <span class="n">${all.length}</span>
       <span class="pacts">${btn(p.priv ? "Только я" : "Вся команда", "proj-priv", p.id, undefined, "sm")}
         ${btn("Переименовать", "rename-proj", p.id, undefined, "sm")}
         ${btn("＋ Подпроект", "new-subproject", p.id, undefined, "sm")}
-        ${btn("Удалить", "del-proj", p.id, undefined, "sm")}</span></div>
-    <div class="cols">${BCOLS.map(([id, n]) => boardCol(p.id, id, n, own)).join("")}</div>
-    ${subs.map((k) => {
-      const kt = S.tasks.filter((t) => !t.arch && t.pr === k.id);
-      const open = S.subOpen.has(k.id);
-      return `<div class="psub"><div class="sh"><button class="ex${open ? " on" : ""}" ${act("toggle-sub-proj", k.id)}>▾</button>
-        <b class="nm" ${act("open-proj", k.id)} tabindex="0">${esc(k.n)}</b><span class="n">${kt.length}</span>
-        <span class="pacts">${btn("Переименовать", "rename-proj", k.id, undefined, "sm")}${btn("Удалить", "del-proj", k.id, undefined, "sm")}</span></div>
-        ${open ? `<div class="cols">${BCOLS.map(([id, n]) => boardCol(k.id, id, n, kt)).join("")}</div>` : ""}</div>`;
-    }).join("")}</div>`;
+        ${btn("Удалить", "del-proj", p.id, undefined, "sm")}</span></div>`;
+  const subBlock = (k) => {
+    const kt = S.tasks.filter((t) => !t.arch && t.pr === k.id);
+    /* подпроекты раскрыты по умолчанию: свёрнутые, они превращают доску в список имён */
+    const open = !S.subClosed.has(k.id);
+    return `<div class="psub"><div class="sh"><button class="ex${open ? " on" : ""}" ${act("toggle-sub-proj", k.id)}>▾</button>
+      <b class="nm" ${act("open-proj", k.id)} tabindex="0">${esc(k.n)}</b><span class="n">${kt.length}</span>
+      <span class="pacts">${btn("Переименовать", "rename-proj", k.id, undefined, "sm")}${btn("Удалить", "del-proj", k.id, undefined, "sm")}</span></div>
+      ${open ? `<div class="cols">${BCOLS.map(([id, n]) => boardCol(k.id, id, n, kt)).join("")}</div>` : ""}</div>`;
+  };
+  const body = own.length
+    ? `<div class="cols">${BCOLS.map(([id, n]) => boardCol(p.id, id, n, own)).join("")}</div>`
+      + subs.map(subBlock).join("")
+    : (branchBacklog.length ? `<div class="cols one">${boardCol(p.id, "backlog", "Бэклог ветки", branchBacklog)}</div>` : "")
+      + (subs.length ? subs.map(subBlock).join("")
+        : `<div class="cols">${BCOLS.map(([id, n]) => boardCol(p.id, id, n, own)).join("")}</div>`);
+  return `<div class="psec${S.sel === p.id && S.selKind === "project" ? " sel" : ""}">${head}${body}</div>`;
 }
 
 function projectsMap() {
