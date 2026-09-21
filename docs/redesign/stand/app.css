@@ -139,6 +139,7 @@ tbody tr.sel td.t{font-weight:600}
 .pchip.static{background:transparent;border-color:transparent;color:var(--ink-2)}
 .pchip:not(.static):hover{border-color:var(--accent);background:var(--accent-soft)}
 .pchip .k{flex:none;width:88px;color:var(--ink-3);font-size:var(--fs-meta)}
+.pchip.wide .v{flex-wrap:wrap}
 .pchip .v{flex:0 1 auto;min-width:0;display:flex;align-items:center;gap:5px;overflow:hidden;white-space:nowrap}
 .pchip .cv{flex:none;width:6px;height:6px;border-right:1.3px solid var(--ink-3);border-bottom:1.3px solid var(--ink-3);
   transform:translateY(-2px) rotate(45deg)}

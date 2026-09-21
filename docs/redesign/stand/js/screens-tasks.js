@@ -34,6 +34,8 @@ function tasksToolbar() {
     <span class="sep-v"></span>
     ${sts}
     <span class="drop">${btn(S.mk ? `Рынок: ${S.mk}` : "Рынок", "noop", undefined, undefined, "sm" + (S.mk ? " on" : ""))}${fmenu(mkItems)}</span>
+    <span class="drop">${btn(S.period === "any" ? "Период" : `Период: ${PERIOD[S.period]}`, "noop", undefined, undefined, "sm" + (S.period === "any" ? "" : " on"))}${
+      fmenu(Object.keys(PERIOD).map((k) => [PERIOD[k], "set-period", undefined, k, S.period === k]))}</span>
     <span class="drop">${btn(nMore ? `Ещё · ${nMore}` : "Ещё", "noop", undefined, undefined, "sm" + (nMore ? " on" : ""))}${fmenu(more)}</span>
     ${fchips(extra)}
     ${S.assignee ? `<button class="chip on" ${act("drop-assignee")}>${av(S.assignee)}<span class="x">×</span></button>` : ""}
@@ -44,39 +46,21 @@ function tasksToolbar() {
     </div></div>`;
 }
 
-function bulkBar() {
-  if (!S.bulk.size) return "";
-  const users = S.users.slice(0, 6).map((u) => `<button class="mi" ${act("bulk-assign", u.id)}>${av(u.id)}</button>`).join("");
-  /* в архиве лежит уже заархивированное: кнопка «В архив» там не делала ничего,
-     а единственного нужного действия — вернуть — в панели не было вовсе */
-  if (S.archOn) return `<div class="bulk">Выбрано: ${S.bulk.size}
-    <span class="ib">${btn("Вернуть из архива", "bulk-restore", undefined, undefined, "sm")}</span>
-    <button class="x" ${act("bulk-clear")}>✕</button></div>`;
-  return `<div class="bulk">Выбрано: ${S.bulk.size}
-    <span class="ib">
-      <span class="drop">${btn("Назначить", "noop", undefined, undefined, "sm")}<div class="dmenu">${users}</div></span>
-      ${btn("Срок: сегодня", "bulk-due", undefined, TODAY, "sm")}
-      ${btn("В работу", "bulk-status", undefined, "in_progress", "sm")}
-      ${btn("Метка «процесс»", "bulk-label", undefined, "l2", "sm")}
-      ${btn("В архив", "bulk-archive", undefined, undefined, "sm")}
-    </span>
-    <button class="x" ${act("bulk-clear")}>✕</button></div>`;
-}
-
 function taskRow(t) {
-  const checked = S.bulk.has(t.id) ? " checked" : "";
+  /* пинг виден в строке, только пока ЖДЁТ: отзвонивший сгорел, и висящий значок
+     обещал бы напоминание, которого не будет (правило продукта, TaskRow) */
+  const ping = t.ping && !t.pinged ? `<span class="ping" title="напомним ${fmtDate(t.ping)}">⏰ ${fmtDate(t.ping)}</span>` : "";
   return `<tr class="row${S.sel === t.id && S.selKind === "task" ? " sel" : ""}" ${act("open-task", t.id)} tabindex="0">
-    ${cell(`<input type="checkbox"${checked} ${act("check", t.id)}>`, "ck")}
     ${cell(`${dot(t.st)}${priMark(t.prio)}${esc(t.t)}${t.priv ? ' <span class="lock" title="личная">🔒</span>' : ""}`, "t")}
     ${cell(esc(projPath(t.pr)))}
     ${cell(t.who.length ? avShort(t.who[0]) : `<span class="muted" title="исполнитель не назначен">—</span>`)}
-    ${cell(lbls(t.labels) + (t.recur ? tag(RECUR_SHORT[t.recur], "p") : ""), "opt")}
+    ${cell(lbls(t.labels) + (t.recur ? tag(RECUR_SHORT[t.recur], "p") : "") + ping, "opt")}
     ${cell(t.mk ? `<span class="cc">${t.mk}</span>` : `<span class="muted">—</span>`, "r opt")}
     ${cell(due(t.due, t.st === "done"), "r")}</tr>`;
 }
 
 function groupRows(list) {
-  const cols = 7;
+  const cols = 6;
   const sect = (n, k) => `<tr class="sect"><td colspan="${cols}">${esc(n)} · ${k}</td></tr>`;
   if (S.byMarket) {
     const by = {};
@@ -104,7 +88,7 @@ function screenTasks() {
   const list = visibleTasks();
   /* встречи дня живут на главной: в списке задач полоса занимала верх экрана и
      отжимала работу вниз, ничего при этом не решая */
-  const head = tasksToolbar() + bulkBar();
+  const head = tasksToolbar();
   if (!list.length) {
     /* пустой экран без объяснения читается как «данных нет»: называем, сколько скрыто фильтрами */
     const hidden = scopeCount();
@@ -114,7 +98,7 @@ function screenTasks() {
       + (hidden ? `<div class="emptyact">${btn("Показать все", "reset-filters", undefined, undefined, "pri")}</div>` : "");
   }
   return head + table([
-    { t: "", w: "30px" }, { t: "Задача" }, { t: "Проект", w: "20%" }, { t: "Исполнитель", short: "Кто", w: "15%" },
+    { t: "Задача" }, { t: "Проект", w: "20%" }, { t: "Исполнитель", short: "Кто", w: "15%" },
     { t: "Метки", w: "17%", opt: true }, { t: "Рынок", r: true, w: "78px", opt: true }, { t: "Срок", r: true, w: "84px" },
   ], groupRows(list)) + whatsNext(list);
 }
@@ -153,7 +137,7 @@ function newTaskModal(preset) {
     ${fld("Рынок", pick("mk", COUNTRIES.map((c) => [c.c, c.n]), [], true))}
     <div class="two">
       ${fld("Повтор", select("recur", [["", "без повтора"], ["weekly", "каждую неделю"], ["monthly", "каждый месяц"]], ""))}
-      ${fld("Напоминание", input("remind", "", "за день до срока"))}
+      ${fld("Напомнить (пинг)", dateInput("ping", ""))}
     </div>
     ${fld("Приватность", sw("priv", false, "Личная задача — видна только мне"))}`,
     `${btn("Отмена", "mclose")}${btn("Создать задачу", "create-task", undefined, undefined, "pri")}`);

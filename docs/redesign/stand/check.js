@@ -767,26 +767,62 @@ function tokenCheck() {
   await shot('05-task-detail-history');
   await go('close');
 
-  /* массовые действия */
+  /* архив: задача уходит из списка и возвращается оттуда. Массовое выделение строк из
+     стенда снято — в продукте его нет (сверка 21.09), архивируют по одной из панели. */
   await go('tgl', 'archOn');
   const beforeArch = await count('tbody tr[data-act="open-task"]');
   await go('tgl', 'archOn');
-  await click('tbody tr[data-act="open-task"] input[type=checkbox]');
-  want((await count('.bulk')) === 1, 'панель массовых действий появилась');
-  await go('bulk-archive');
+  const archId = await p.evaluate(() => { const tr = document.querySelector('tbody tr[data-act="open-task"]');
+    return tr ? tr.dataset.id : null; });
+  await go('open-task', archId);
+  await go('archive', archId);
+  await go('close');
   await go('tgl', 'archOn');
   const afterArch = await count('tbody tr[data-act="open-task"]');
-  want(afterArch === beforeArch + 1, `массовый архив сработал (${beforeArch} → ${afterArch})`);
+  want(afterArch === beforeArch + 1, `архивация убрала задачу из списка и добавила в архив (${beforeArch} → ${afterArch})`);
   await shot('06-archive');
-  /* архив без дороги назад — ловушка; «В архив» над уже архивным ничего не делает */
-  await click('tbody tr[data-act="open-task"] input[type=checkbox]');
-  const bulkSaid = await p.$$eval('.bulk .ib button', (b) => b.map((e) => e.textContent.trim()));
-  want(bulkSaid.some((x) => /Вернуть из архива/.test(x)) && !bulkSaid.some((x) => x === 'В архив'),
-    `в архиве массовая панель возвращает, а не архивирует повторно (кнопки: ${bulkSaid.join(', ') || 'нет'})`);
-  await go('bulk-restore');
+  /* дорога назад из архива проверяется ниже, на панели архивной задачи */
+  await go('open-task', archId);
+  await go('restore', archId);
+  await go('close');
   await new Promise((r) => setTimeout(r, 120));
   const afterRestore = await count('tbody tr[data-act="open-task"]');
-  want(afterRestore === afterArch - 1, `возврат из архива убрал строку из списка (${afterArch} → ${afterRestore})`);
+  want(afterRestore === afterArch - 1, `возврат из архива убрал строку из архива (${afterArch} → ${afterRestore})`);
+  /* пинг — ручное напоминание продукта: ставится в панели, виден в строке и гаснет,
+     когда отзвонил. Висящий значок сгоревшего пинга обещал бы то, чего не будет. */
+  await go('tgl', 'archOn');
+  const pingRow = await p.evaluate(() => {
+    const t = S.tasks.find((x) => !x.arch && !x.ping && visibleTasks().includes(x));
+    return t ? t.id : null; });
+  await go('open-task', pingRow);
+  const pingsBefore = await count('.list .ping');
+  await p.evaluate((id) => { const el = document.querySelector(`.detail input[type=date][data-act="set-ping"][data-id="${id}"]`);
+    el.value = '2026-09-30'; el.dispatchEvent(new Event('change', { bubbles: true })); }, pingRow);
+  await new Promise((r) => setTimeout(r, 140));
+  want((await count('.list .ping')) === pingsBefore + 1, `пинг поставлен из панели и виден в строке (${pingsBefore} → ${await count('.list .ping')})`);
+  want((await p.evaluate((id) => (S.history[id] || [])[0].k === 'Напоминание', pingRow)),
+    'пинг записался в историю задачи, а не только в поле');
+  const burnt = await p.evaluate(() => S.tasks.filter((t) => !t.arch && t.ping && t.pinged).length);
+  const burntShown = await p.evaluate(() => [...document.querySelectorAll('.list tbody tr')].filter((tr) => {
+    const id = +tr.dataset.id; const t = S.tasks.find((x) => x.id === id);
+    return t && t.pinged && tr.querySelector('.ping'); }).length);
+  want(burnt > 0 && burntShown === 0, `сгоревший пинг в строке не висит (сгоревших ${burnt}, показано ${burntShown})`);
+  await go('drop-ping', pingRow);
+  await new Promise((r) => setTimeout(r, 120));
+  want((await count('.list .ping')) === pingsBefore, 'пинг снимается тем же местом, где ставился');
+  await go('close');
+  /* период — ось продукта (RangePicker): сужает список по сроку и снимается */
+  const allShown = await count('tbody tr[data-act="open-task"]');
+  await gov('set-period', 'today');
+  await new Promise((r) => setTimeout(r, 120));
+  const todayShown = await count('tbody tr[data-act="open-task"]');
+  want(todayShown > 0 && todayShown < allShown, `период сужает список (все ${allShown}, сегодня ${todayShown})`);
+  want((await p.evaluate(() => visibleTasks().every((t) => t.due && daysTo(t.due) <= 0))),
+    'в срезе «сегодня» нет задач с будущим сроком и без срока');
+  await gov('set-period', 'any');
+  await new Promise((r) => setTimeout(r, 120));
+  want((await count('tbody tr[data-act="open-task"]')) === allShown, 'период снимается и список возвращается');
+
   /* создание в списке, который созданное не покажет, выглядит как молчаливый отказ */
   await go('new-task');
   await p.type('[data-f="title"]', 'Задача, созданная из архива');

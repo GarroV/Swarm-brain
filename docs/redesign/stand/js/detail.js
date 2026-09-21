@@ -26,6 +26,12 @@ function taskProps(t) {
     ${pchip("Рынок", t.mk ? `<span class="cc">${t.mk}</span>${esc(cname(t.mk))}` : `<span class="muted">не указан</span>`, COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "set-mk", t.id, c.c, t.mk === c.c]))}
     ${pchip("Повтор", t.recur ? RECUR_LABEL[t.recur] : "нет", ["", "weekly", "monthly"].map((r) => [r ? RECUR_LABEL[r] : "нет", "set-recur", t.id, r, (t.recur || "") === r]))}
     ${pchip("Приватность", t.priv ? "личная" : "общая", [["общая", "set-priv", t.id, "", !t.priv], ["личная", "set-priv", t.id, "1", t.priv]])}
+    ${pchip("Роль", t.role ? ROLE_LABEL[t.role] : `<span class="muted">без роли</span>`,
+      [["без роли", "set-role", t.id, "", !t.role], ...Object.keys(ROLE_LABEL).map((r) => [ROLE_LABEL[r], "set-role", t.id, r, t.role === r])])}
+    <span class="pchip wide"><span class="k">Напомнить</span><span class="v">
+      <input type="date" class="dv" value="${t.ping || ""}" ${act("set-ping", t.id)}>${
+      t.ping && t.pinged ? '<span class="over" title="пинг одноразовый: выберите новый день, чтобы напомнить снова">уже напомнили</span>' : ""}${
+      t.ping ? btn("убрать", "drop-ping", t.id, undefined, "sm") : ""}</span></span>
     ${pchip("Метки", lbls(t.labels), S.labels.map((l) => [esc(l.n), "tgl-label", t.id, l.id, t.labels.includes(l.id)]), "wide")}
     ${pflat("Проект", esc(projPath(t.pr)), "wide")}
   </div>`;

@@ -159,18 +159,11 @@ const ACTS = {
   "new-task": () => newTaskModal(),
   "create-task": () => { const f = formData(); if (!f.title) return A.toast("Нужно название");
     closeModal(); A.createTask({ title: f.title, pr: f.pr, who: f.who ? +f.who : null, due: f.due, prio: f.prio,
-      labels: f.labels, mk: (f.mk || [])[0] || null, recur: f.recur || null, priv: f.priv, note: f.note }); },
-  check: (id, v, e) => { const s = new Set(S.bulk); const n = +id; s.has(n) ? s.delete(n) : s.add(n); A.set({ bulk: s }); },
+      labels: f.labels, mk: (f.mk || [])[0] || null, recur: f.recur || null, priv: f.priv, note: f.note,
+      ping: f.ping || null }); },
   "reset-filters": () => A.set({ lens: "all", statuses: new Set(Object.keys(ST_LABEL)),
-    mk: null, assignee: null, q: "", noProject: false, recurOnly: false, archOn: false }),
+    mk: null, assignee: null, q: "", noProject: false, recurOnly: false, archOn: false, period: "any" }),
   "drop-no-project": () => A.set({ noProject: false }),
-  "bulk-clear": () => A.set({ bulk: new Set() }),
-  "bulk-assign": (id) => A.bulk("assign", +id),
-  "bulk-due": (_, v) => A.bulk("due", v),
-  "bulk-status": (_, v) => A.bulk("status", v),
-  "bulk-label": (_, v) => A.bulk("label", v),
-  "bulk-archive": () => A.bulk("archive"),
-  "bulk-restore": () => A.bulk("restore"),
   take: (id) => A.takeTask(+id),
   move: (id, v) => A.moveTask(+id, v),
   archive: (id) => A.archiveTask(+id),
@@ -182,6 +175,10 @@ const ACTS = {
   "set-priv": (id, v) => A.patchTask(+id, { priv: !!v }, ["Приватность", v ? "личная" : "общая"]),
   "set-mk": (id, v) => { const t = S.tasks.find((x) => x.id === +id); A.patchTask(+id, { mk: t.mk === v ? null : v }); },
   "set-recur": (id, v) => A.patchTask(+id, { recur: v || null }),
+  "set-role": (id, v) => A.patchTask(+id, { role: v || null }, ["Роль", v ? ROLE_LABEL[v] : "снята"]),
+  "set-ping": (id) => {},           /* дата приходит событием change, как и срок */
+  "drop-ping": (id) => A.setPing(+id, null),
+  "set-period": (_, v) => A.set({ period: v }),
   "tgl-label": (id, v) => { const t = S.tasks.find((x) => x.id === +id);
     A.patchTask(+id, { labels: t.labels.includes(v) ? t.labels.filter((l) => l !== v) : [...t.labels, v] }); },
   "tgl-priv": (id) => { const t = S.tasks.find((x) => x.id === +id); A.patchTask(+id, { priv: !t.priv }); },
@@ -400,6 +397,7 @@ document.addEventListener("change", (e) => {
   /* срок сохраняется по выбору даты, а не по нажатию Enter: про Enter никто не догадается,
      и правка молча пропадала при закрытии панели */
   if (t && t.dataset.act === "set-due") A.patchTask(+t.dataset.id, { due: e.target.value || null }, ["Срок", e.target.value ? fmtDate(e.target.value) : "снят"]);
+  if (t && t.dataset.act === "set-ping") A.setPing(+t.dataset.id, e.target.value || null);
 });
 document.addEventListener("keydown", (e) => {
   /* быстрый ввод задачи в колонке доски */

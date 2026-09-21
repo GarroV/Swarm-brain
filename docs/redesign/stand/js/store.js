@@ -6,7 +6,7 @@ const S = {
   /* задачи */
   lens: "mine", statuses: new Set(["open", "in_progress"]), byMarket: false, staff: false, noMailOnly: false,
   recurOnly: false, archOn: false, sprintView: "list",
-  q: "", bulk: new Set(), dtab: "overview", mk: "", noProject: false,
+  q: "", dtab: "overview", mk: "", noProject: false, period: "any",
   /* встречи */
   mf: { q: "", period: "all", cc: [], src: [], people: [], store: "any", st: "any" },
   /* база */
@@ -46,6 +46,18 @@ const cname = (c) => (COUNTRIES.find((x) => x.c === c) || {}).n || c;
 const ST_LABEL = { open: "Открыто", in_progress: "В работе", done: "Готово" };
 const MEET_ST = { pending: "ждёт вычитки", draft: "черновик записи", confirmed: "подтверждена" };
 const PRIO_LABEL = { high: "высокий", med: "средний", low: "низкий" };
+/* роли задач продукта: rnd / bd / marketing (на 21.09.2026 — 76 задач из 482) */
+const ROLE_LABEL = { rnd: "R&D", bd: "развитие", marketing: "маркетинг" };
+/* период — та же ось, что RangePicker продукта: сужает список по сроку */
+const PERIOD = { any: "любой срок", today: "сегодня", week: "эта неделя", month: "этот месяц" };
+function inPeriod(t) {
+  if (S.period === "any") return true;
+  if (!t.due) return false;
+  const n = daysTo(t.due);
+  if (S.period === "today") return n <= 0;
+  if (S.period === "week") return n <= 7;
+  return n <= 31;
+}
 /* в колонке метки длинная подпись повтора не помещается и режется: там короткая */
 const RECUR_SHORT = { weekly: "↻ неделя", monthly: "↻ месяц" };
 const RECUR_LABEL = { weekly: "каждую неделю", monthly: "каждый месяц", daily: "каждый день" };
@@ -107,7 +119,7 @@ function visibleTasks() {
     inScope(t) && inLens(t, S.lens) &&
     (S.archOn || S.statuses.has(t.st)) &&
     (!S.mk || t.mk === S.mk) &&
-    (!S.noProject || !proj(t.pr)) &&
+    (!S.noProject || !proj(t.pr)) && inPeriod(t) &&
     (!S.assignee || t.who.includes(S.assignee)) &&
     (!q || t.t.toLowerCase().includes(q) || projPath(t.pr).toLowerCase().includes(q)));
 }
@@ -219,7 +231,7 @@ const A = {
   set(patch) { Object.assign(S, patch); render(); },
   toast(text) { S.toast = text; render(); clearTimeout(A._t); A._t = setTimeout(() => { S.toast = null; render(); }, 2600); },
 
-  go(sec) { S.sec = sec; S.sel = null; S.selKind = null; S.bulk = new Set(); S.assignee = null; S.tab = firstTab(sec); render(); },
+  go(sec) { S.sec = sec; S.sel = null; S.selKind = null; S.assignee = null; S.tab = firstTab(sec); render(); },
   tab(id) { S.tab = id; S.sel = null; S.selKind = null; render(); },
   select(kind, id) { S.selKind = kind; S.sel = id; S.dtab = "overview"; render(); },
   close() { S.sel = null; S.selKind = null; render(); },
@@ -227,7 +239,8 @@ const A = {
   /* задачи */
   createTask(f) {
     const t = mkTask({ id: nextTaskId++, t: f.title, pr: f.pr, st: "open", who: f.who ? [f.who] : [],
-      due: f.due || null, prio: f.prio, labels: f.labels, mk: f.mk, recur: f.recur, priv: f.priv, note: f.note });
+      due: f.due || null, prio: f.prio, labels: f.labels, mk: f.mk, recur: f.recur, priv: f.priv, note: f.note,
+      ping: f.ping || null, role: f.role || null });
     S.tasks = [t, ...S.tasks];
     S.history = { ...S.history, [t.id]: [{ m: 0, who: ME, k: "Создана", v: "вручную" }] };
     A.toast(`Задача ${t.id} создана`);
@@ -240,6 +253,13 @@ const A = {
     render();
   },
   moveTask(id, st) { A.patchTask(id, { st }, ["Статус", ST_LABEL[st]]); },
+  /* пинг одноразовый: новый день взводит его заново, снятие — очищает. «Уже напомнили»
+     показываем всегда, иначе человек ставит дату и не понимает, почему ничего не будет */
+  setPing(id, day) {
+    A.patchTask(id, { ping: day || null, pinged: false },
+      ["Напоминание", day ? fmtDate(day) : "снято"]);
+    A.toast(day ? `Напомним ${fmtDate(day)}` : "Напоминание снято");
+  },
   takeTask(id) { A.patchTask(id, { st: "in_progress", who: [ME] }, ["Взята в работу", ""]); A.toast("Задача взята в работу"); },
   archiveTask(id) { A.patchTask(id, { arch: true }, ["В архив", ""]); A.toast("Задача в архиве"); },
   restoreTask(id) { A.patchTask(id, { arch: false }, ["Из архива", ""]); A.toast("Задача возвращена"); },
@@ -252,19 +272,6 @@ const A = {
     const t = S.tasks.find((x) => x.id === id);
     const subs = t.subs.includes(uid_) ? t.subs.filter((s) => s !== uid_) : [...t.subs, uid_];
     A.patchTask(id, { subs });
-  },
-  bulk(action, value) {
-    const ids = [...S.bulk];
-    if (!ids.length) return;
-    if (action === "assign") S.tasks = S.tasks.map((t) => ids.includes(t.id) ? { ...t, who: [value] } : t);
-    if (action === "due") S.tasks = S.tasks.map((t) => ids.includes(t.id) ? { ...t, due: value } : t);
-    if (action === "label") S.tasks = S.tasks.map((t) => ids.includes(t.id) ? { ...t, labels: [...new Set([...t.labels, value])] } : t);
-    if (action === "status") S.tasks = S.tasks.map((t) => ids.includes(t.id) ? { ...t, st: value } : t);
-    if (action === "archive") S.tasks = S.tasks.map((t) => ids.includes(t.id) ? { ...t, arch: true } : t);
-    if (action === "restore") S.tasks = S.tasks.map((t) => ids.includes(t.id) ? { ...t, arch: false } : t);
-    S.bulk = new Set();
-    const said = { archive: "В архив отправлено задач", restore: "Возвращено из архива задач" }[action];
-    A.toast(`${said || "Изменено задач"}: ${ids.length}`);
   },
 
   /* встречи */
@@ -495,7 +502,7 @@ const A = {
     const d = WS_DATA[id] || { tasks: [], meetings: [], entries: [], files: [], projects: [], queue: [] };
     S.tasks = d.tasks; S.meetings = d.meetings; S.entries = d.entries;
     S.files = d.files; S.projects = d.projects; S.queue = d.queue;
-    S.sel = null; S.bulk = new Set(); S.assignee = null;
+    S.sel = null; S.assignee = null;
     A.toast(`Воркспейс: ${w.name}`);
   },
   notDup(id) {
