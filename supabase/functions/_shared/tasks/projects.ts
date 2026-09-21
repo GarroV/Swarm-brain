@@ -32,8 +32,11 @@ export async function listProjects(
   // проектов в воркспейсе на порядки меньше, чем задач/записей (обычно единицы-десятки, не тысячи).
   // .limit(500) — просто защитный потолок, а не расчётный лимит: DB-гард глубины (migration
   // 20260812140000) ограничивает вложенность (2 уровня), но НЕ число строк на group_id.
+  // `archived_at is null` — архив не показываем нигде, где раньше показывался удалённый проект,
+  // то есть нигде (архивация заменила удаление, issue #427).
   const { data: projects } = await supabase
     .from("projects").select("*").eq("group_id", groupId)
+    .is("archived_at", null)
     .order("created_at", { ascending: true })
     .limit(500);
   let list = (projects ?? []) as Project[];
@@ -86,7 +89,8 @@ export async function getProject(
   groupId: string,
 ): Promise<Project | null> {
   const { data } = await supabase.from("projects")
-    .select("*").eq("id", id).eq("group_id", groupId).maybeSingle();
+    .select("*").eq("id", id).eq("group_id", groupId)
+    .is("archived_at", null).maybeSingle();
   return (data as Project | null) ?? null;
 }
 
@@ -98,7 +102,8 @@ export async function createProject(
   const parentId = input.parent_id ?? null;
   if (parentId !== null) {
     const { data: refs } = await supabase
-      .from("projects").select("id, parent_id").eq("group_id", groupId);
+      .from("projects").select("id, parent_id").eq("group_id", groupId)
+      .is("archived_at", null);
     const v = validateParent({
       projectId: null,
       parentId,
@@ -134,7 +139,8 @@ export async function updateProject(
 ): Promise<Project | null> {
   if ("parent_id" in fields) {
     const { data: refs } = await supabase
-      .from("projects").select("id, parent_id").eq("group_id", groupId);
+      .from("projects").select("id, parent_id").eq("group_id", groupId)
+      .is("archived_at", null);
     const v = validateParent({
       projectId: id,
       parentId: fields.parent_id ?? null,
@@ -168,6 +174,7 @@ async function canMutateProject(
 ): Promise<boolean> {
   const { data } = await supabase.from("projects")
     .select("id, parent_id, created_by, is_private").eq("group_id", groupId)
+    .is("archived_at", null)
     .limit(500);
   const rows = (data ?? []) as Array<ProjectAccessRow & { id: string }>;
   const row = rows.find((r) => r.id === id);
@@ -176,20 +183,35 @@ async function canMutateProject(
   return canViewProject(row, opts.viewerId, parentLookup(rows));
 }
 
-// Удаляет проект своего воркспейса. Задачи освобождаются (FK ON DELETE SET NULL для project_id),
-// а project_linked сбрасываем явно (FK его не трогает).
+// АРХИВИРУЕТ проект своего воркспейса (решение владельца 21.09.2026: «всё что удаляется — не
+// удаляется, а архивируется», issue #427). Для человека поведение прежнее — проект исчезает из
+// интерфейса; разница в том, что строка остаётся в базе и возвращается одним UPDATE.
+//
+// Уходит ВСЁ поддерево: подпроекты архивируются вместе с группой. Раньше DELETE группы отдавал
+// их FK `on delete set null`, и подпроекты всплывали на верхний уровень как самостоятельные —
+// человек удалял один проект, а получал россыпь чужих кусков.
+//
+// Задачи НЕ отвязываем (раньше отвязывали). Связь `tasks.project_id` — это и есть то, что
+// делает восстановление осмысленным: вернули проект — вернулся и его состав. Из раздела
+// «Задачи» они никуда не пропадают, там свой фильтр по `tasks.archived_at`.
 export async function deleteProject(
   id: string,
   groupId: string,
   opts: { viewerId?: number } = {},
 ): Promise<boolean> {
   if (!(await canMutateProject(id, groupId, opts))) return false;
+  const archive = {
+    archived_at: new Date().toISOString(),
+    archived_by: opts.viewerId ?? null,
+  };
   const { data } = await supabase.from("projects")
-    .delete().eq("id", id).eq("group_id", groupId).select("id").maybeSingle();
+    .update(archive)
+    .eq("id", id).eq("group_id", groupId).is("archived_at", null)
+    .select("id").maybeSingle();
   if (!data) return false;
-  await supabase.from("tasks")
-    .update({ project_linked: false })
-    .eq("group_id", groupId).is("project_id", null).eq("project_linked", true);
+  await supabase.from("projects")
+    .update(archive)
+    .eq("group_id", groupId).eq("parent_id", id).is("archived_at", null);
   return true;
 }
 
@@ -199,6 +221,7 @@ export async function projectInWorkspace(
 ): Promise<boolean> {
   const { data } = await supabase
     .from("projects").select("id").eq("id", id).eq("group_id", groupId)
+    .is("archived_at", null)
     .maybeSingle();
   return !!data;
 }

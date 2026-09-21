@@ -150,9 +150,10 @@ export async function handleSprintCycleRoutes(
       return json(updated, 200, origin);
     }
     if (req.method === "DELETE") {
-      // Единственное действие под админом: удаление необратимо и стирает историю периода.
+      // Под админом с 18.09.2026. Необратимым это действие быть перестало (архивация, #427),
+      // но право не расширяем без просьбы владельца — спринт общий.
       if (!isAdmin) return apiErr(403, "Forbidden", origin);
-      const ok = await deleteCycle(id, groupId);
+      const ok = await deleteCycle(id, groupId, telegramId);
       // Принятый спринт не удаляется — это архив периода, другой памяти о нём нет.
       if (!ok) return apiErr(404, "Not found или спринт уже принят", origin);
       return new Response(null, { status: 204, headers: corsHeaders(origin) });

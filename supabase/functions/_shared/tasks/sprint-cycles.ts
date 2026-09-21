@@ -63,7 +63,8 @@ export async function listCycles(
   groupId: string,
   tabId?: string | null,
 ): Promise<SprintCycle[]> {
-  let q = supabase.from("sprint_cycles").select("*").eq("group_id", groupId);
+  let q = supabase.from("sprint_cycles").select("*").eq("group_id", groupId)
+    .is("archived_at", null);
   // Без параметра — все спринты воркспейса, как было до пространств: так старый веб в ночь
   // раскатки продолжает видеть то же, что видел.
   if (tabId === null) q = q.is("tab_id", null);
@@ -75,7 +76,8 @@ export async function listCycles(
 /** Вкладка принадлежит этому воркспейсу? Чужую подсовывать нельзя — это чужое планирование. */
 async function tabInGroup(tabId: string, groupId: string): Promise<boolean> {
   const { data } = await supabase.from("sprints")
-    .select("id").eq("id", tabId).eq("group_id", groupId).maybeSingle();
+    .select("id").eq("id", tabId).eq("group_id", groupId)
+    .is("archived_at", null).maybeSingle();
   return !!data;
 }
 
@@ -84,7 +86,8 @@ export async function getCycle(
   groupId: string,
 ): Promise<SprintCycle | null> {
   const { data } = await supabase.from("sprint_cycles")
-    .select("*").eq("id", id).eq("group_id", groupId).maybeSingle();
+    .select("*").eq("id", id).eq("group_id", groupId)
+    .is("archived_at", null).maybeSingle();
   return (data as SprintCycle | null) ?? null;
 }
 
@@ -148,13 +151,21 @@ export async function updateCycle(
   return (data as SprintCycle | null) ?? null;
 }
 
+// АРХИВИРУЕТ спринт (решение владельца 21.09.2026, issue #427): состав `sprint_items` и
+// снимки приёмки остаются на месте, а не утекают каскадом вслед за строкой цикла.
 export async function deleteCycle(
   id: string,
   groupId: string,
+  archivedBy?: number,
 ): Promise<boolean> {
-  // Принятый спринт — архив, его не удаляют: иначе исчезает единственная память о периоде.
+  // Принятый спринт — архив, его не убирают: иначе исчезает единственная память о периоде.
   const { data } = await supabase.from("sprint_cycles")
-    .delete().eq("id", id).eq("group_id", groupId).neq("status", "accepted")
+    .update({
+      archived_at: new Date().toISOString(),
+      archived_by: archivedBy ?? null,
+    })
+    .eq("id", id).eq("group_id", groupId).neq("status", "accepted")
+    .is("archived_at", null)
     .select("id").maybeSingle();
   return !!data;
 }

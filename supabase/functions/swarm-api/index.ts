@@ -1445,7 +1445,8 @@ Deno.serve(async (req: Request) => {
         return apiErr(403, "Forbidden", origin);
       }
       try {
-        await deleteTask(taskId);
+        // archived_by — кто убрал задачу: с архивацией это единственный след автора (issue #427).
+        await deleteTask(taskId, telegram_id ?? undefined);
         return new Response(null, {
           status: 204,
           headers: corsHeaders(origin),
@@ -1542,7 +1543,7 @@ Deno.serve(async (req: Request) => {
     }
     if (req.method === "DELETE") {
       if (!isAdmin) return apiErr(403, "Forbidden", origin);
-      const ok = await deleteSprint(sprintId, groupId);
+      const ok = await deleteSprint(sprintId, groupId, telegram_id ?? undefined);
       if (!ok) return apiErr(404, "Not found", origin);
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }

@@ -63,7 +63,9 @@ export async function createTask(
 }
 
 export async function getTask(id: string): Promise<Task | null> {
+  // Архивная задача для приложения не существует — ровно как удалённая до 21.09.2026 (issue #427).
   const { data } = await supabase.from("tasks").select("*").eq("id", id)
+    .is("archived_at", null)
     .maybeSingle();
   return data as Task | null;
 }
@@ -97,6 +99,7 @@ export async function listTasksWithTotal(filters: {
   let q = supabase
     .from("tasks")
     .select(filters.columns ?? "*", { count: "exact" })
+    .is("archived_at", null)
     .order("due_date", { ascending: true, nullsFirst: false });
 
   // Видимость приватных задач: приватная видна только владельцу (админ — все).
@@ -324,7 +327,19 @@ export async function updateTask(
   return result;
 }
 
-export async function deleteTask(id: string): Promise<void> {
-  await supabase.from("task_history").delete().eq("task_id", id);
-  await supabase.from("tasks").delete().eq("id", id);
+// АРХИВИРУЕТ задачу (решение владельца 21.09.2026, issue #427). Для человека поведение
+// прежнее: задача исчезает из списков. Разница — строка остаётся в базе.
+//
+// Историю больше НЕ стираем. Раньше `deleteTask` сносил `task_history` первым делом, и журнал
+// пропадал ровно в том случае, ради которого заводился: «куда делась задача и кто её убрал».
+export async function deleteTask(
+  id: string,
+  archivedBy?: number,
+): Promise<void> {
+  await supabase.from("tasks")
+    .update({
+      archived_at: new Date().toISOString(),
+      archived_by: archivedBy ?? null,
+    })
+    .eq("id", id).is("archived_at", null);
 }
