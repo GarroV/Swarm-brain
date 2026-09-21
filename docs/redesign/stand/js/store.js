@@ -18,7 +18,7 @@ const S = {
   cycle: "c2", cycles: CYCLES.slice(), board: { drag: null },
   /* спринты: пространство, состав (sprint_items), группировка, пул набора, отчёт */
   space: "sp1", spaces: SPACES.slice(), items: SITEMS.slice(), group: "ini",
-  poolOpen: false, poolPr: "", poolWho: "", poolQ: "", report: false,
+  poolOpen: false, poolPr: "", poolWho: "", poolQ: "", report: false, sFocus: null,
   /* доска проектов: вкладки досок (в продукте — таблица sprints), какие проекты раскрыты */
   boards: BOARDS.slice(), boardTab: "b1", openProj: new Set(["p1"]), subClosed: new Set(),
   /* система */

@@ -13,6 +13,10 @@ const avs = (ids) => ids.length ? ids.map((i) => av(i, false)).join("") : `<span
 const avShort = (id) => { const u = user(id); if (!u) return `<span class="muted">— не назначен</span>`;
   const [f, l] = u.n.split(" ");
   return `<span class="av" style="background:${u.c}" title="${esc(u.n)}">${u.i}</span><span class="nm">${esc(l ? `${f} ${l[0]}.` : f)}</span>`; };
+/* Только кружок с инициалами: в плотном списке имя рядом с ним — тот же факт вторым
+   начертанием, а в группировке по людям ещё и третьим (имя стоит в заголовке группы). */
+const avOnly = (id) => { const u = user(id); if (!u) return `<span class="muted">не назначен</span>`;
+  return `<span class="av" style="background:${u.c}" title="${esc(u.n)}">${u.i}</span>`; };
 const dot = (st) => `<span class="dot d-${st}"></span>`;
 const pri = (p) => `<span class="pdot p-${p}" title="приоритет: ${PRIO_LABEL[p]}"></span>`;
 /* срок: красный только у незавершённой задачи — у сделанной «просрочено» уже ничего не значит */

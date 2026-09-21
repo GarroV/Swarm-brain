@@ -705,23 +705,47 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
 @container (max-width:1000px){ .bar{flex-wrap:wrap;row-gap:6px} }
 
 /* Спринт по первоисточнику: счётчики сверху, тело — направление → инициатива → задачи. */
-.kpis{display:flex;gap:10px;padding:10px var(--gutter);border-bottom:1px solid var(--line);background:var(--surface-2);flex-wrap:wrap}
-.kpi{display:flex;flex-direction:column;gap:2px;min-width:104px;padding:6px 12px;border:1px solid var(--line);
-  border-radius:9px;background:var(--surface)}
-.kpi b{font:600 var(--fs-lead)/1 var(--font-mono);color:var(--ink)}
-.kpi span{font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3)}
-.kpi.bad b{color:var(--bad)}
+/* Пульс спринта: одна полоса и одна строка срезов вместо восьми плиток.
+   Плитка, по которой нельзя кликнуть, не работа — она место. */
+.pulse{padding:9px var(--gutter);border-bottom:1px solid var(--line);background:var(--surface-2)}
+.pl-top{display:flex;align-items:center;gap:10px;font-size:var(--fs-dense);color:var(--ink-2)}
+.pl-top>b{font:600 var(--fs-lead)/1 var(--font-mono);color:var(--ink)}
+.pbar{flex:1;min-width:120px;height:7px;border-radius:4px;background:var(--surface-3);overflow:hidden;display:flex}
+.pbar i{display:block;height:100%}
+.pbar i.d{background:var(--ok)}
+.pbar i.w{background:var(--accent)}
+.pl-marks{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:7px;font-size:var(--fs-meta)}
+.mk{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 10px;border:1px solid var(--line-strong);
+  border-radius:20px;background:var(--surface);color:var(--ink-2);font:400 var(--fs-meta)/1 var(--font-ui);cursor:pointer}
+.mk b{font:600 12px/1 var(--font-num);color:var(--ink)}
+.mk:hover{border-color:var(--accent);color:var(--accent)}
+.mk.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.mk.bad b{color:var(--bad)}
+.mk.warn b{color:var(--warn-mark)}
+.mk.clr{border-style:dashed;color:var(--ink-3)}
+/* Заголовок состава: группировка — свойство списка, а не спринта, и звучит тихо. */
+.shead{display:flex;align-items:center;gap:10px;padding:10px var(--gutter) 2px}
+.scount{font:600 var(--fs-dense)/1 var(--font-ui);color:var(--ink)}
+.sgrp{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:var(--fs-meta)}
+.lk{border:0;background:none;padding:0;color:var(--ink-3);font:400 var(--fs-meta)/1 var(--font-ui);cursor:pointer}
+.lk:hover{color:var(--accent)}
+.lk.on{color:var(--ink);font-weight:600;text-decoration:underline;text-underline-offset:3px}
 .sprint{flex:1;min-height:0;overflow:auto;padding:0 var(--gutter) 24px}
 .sprint .dir{margin:16px 0 6px;font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.1em;
   color:var(--ink-empty);font-weight:600}
-.sprint .ini{border:1px solid var(--line-strong);border-radius:11px;background:var(--surface);margin-bottom:8px;overflow:hidden}
-.sprint .ih{display:flex;align-items:center;gap:12px;padding:9px 13px;border-bottom:1px solid var(--line);background:var(--surface-2)}
-.sprint .iname{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;font-size:var(--fs-dense);font-weight:600;color:var(--ink)}
+/* Группа без рамки и без тени: секция в рамке, внутри неё рамка группы, внутри строки —
+   три вложенных коробки и читались как теснота. Держит группу отступ, а не border. */
+.sprint .ini{margin-bottom:14px}
+.sprint .ih{display:flex;align-items:baseline;gap:10px;padding:4px 2px 5px;border-bottom:1px solid var(--line)}
+.sprint .iname{display:flex;align-items:baseline;gap:8px;min-width:0;flex:1;font-size:var(--fs-dense);font-weight:600;color:var(--ink)}
 .sprint .iown{font-size:var(--fs-meta);font-weight:400;color:var(--ink-3)}
+.idone{flex:none;font:400 var(--fs-meta)/1 var(--font-num);color:var(--ink-3)}
+.idone.all{color:var(--ok)}
+.ibad{flex:none;font:400 var(--fs-meta)/1 var(--font-ui);color:var(--bad)}
 .iprog{flex:none;width:120px;height:6px;border-radius:3px;background:var(--surface-3);overflow:hidden}
 .iprog i{display:block;height:100%;background:var(--accent)}
 .stasks{display:flex;flex-direction:column}
-.strow{display:flex;align-items:center;gap:7px;min-height:var(--row);padding:4px 13px;border-top:1px solid var(--line);
+.strow{display:flex;align-items:center;gap:7px;min-height:var(--row);padding:4px 2px;border-top:1px solid var(--line);
   font-size:var(--fs-dense);color:var(--ink-2);cursor:pointer}
 .strow:first-child{border-top:0}
 .strow:hover{background:var(--accent-soft)}
@@ -755,7 +779,10 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
   font:500 10.5px/1 var(--font-ui);color:var(--ink-3);cursor:pointer;white-space:nowrap}
 .ck:hover{border-color:var(--accent);color:var(--accent)}
 .ck.on{color:#fff;border-color:transparent}
-.ck.on.ok{background:var(--ok)}
+/* «По плану» — это норма, а не новость: зелёная заливка у каждой второй строки кричала
+   ровно про то, что всё хорошо, и заглушала две строки, где НЕ хорошо. Норма тихая,
+   голос остаётся у риска и проблемы. */
+.ck.on.ok{background:none;border-color:var(--line-strong);color:var(--ok)}
 .ck.on.risk{background:var(--warn-mark)}
 .ck.on.problem{background:var(--bad)}
 .strow .ck-d{flex:none}
@@ -865,3 +892,16 @@ tr:hover td .av + .av{box-shadow:0 0 0 2px var(--surface-2)}
   background:var(--surface-2);color:var(--ink-2);font:400 13px/1.5 var(--font-ui)}
 /* Кнопка, которой пока нечего делать, выглядит нерабочей — иначе её жмут и ждут. */
 .btn.dis{opacity:.45;cursor:not-allowed}
+
+/* Редкое действие строки показывается, когда до строки дотянулись: «⋯» у каждой из
+   тринадцати строк — тринадцать одинаковых значков, которые нажимают раз в неделю. */
+.strow .drop.rare{visibility:hidden}
+.strow:hover .drop.rare,.strow:focus-within .drop.rare,.strow .drop.rare.open{visibility:visible}
+/* Пул: список, а не двадцать четыре карточки с синей кнопкой. */
+.pool .plist{gap:0;padding:4px 8px 12px}
+.pit{border:0;border-bottom:1px solid var(--line);border-radius:0;background:none;padding:7px 3px}
+.pit:last-child{border-bottom:0}
+.pit:hover{background:var(--accent-soft)}
+.btn.sm.take{visibility:hidden;background:var(--surface);color:var(--ink-2)}
+.pit:hover .btn.take,.pit:focus-within .btn.take{visibility:visible}
+.pit:hover .btn.take:hover{border-color:var(--accent);color:var(--accent)}

@@ -1482,7 +1482,12 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 150));
   const sprintSects = await p.$$eval('.sprint .ini', (e) => e.length);
   want(sprintSects > 0, 'спринт по умолчанию — список по инициативам, а не доска');
-  want((await count('.kpi')) >= 4, 'над спринтом стоят счётчики цикла');
+  /* Показатели спринта: одна полоса «сколько сделано» и срезы, каждый из которых
+     СУЖАЕТ состав. Восемь одинаковых плиток занимали место у всех, а подсказывали
+     действие два-три (пересобрано по просьбе владельца 21.09). */
+  want((await count('.pulse .pbar')) === 1 && (await count('.pulse .mk')) >= 3,
+    `над спринтом одна полоса и срезы-фильтры (срезов ${await count('.pulse .mk')})`);
+  want((await count('.kpi')) === 0, 'ряда одинаковых плиток над спринтом больше нет');
   await gov('set-view', 'board');
   await new Promise((r) => setTimeout(r, 120));
   const doneBefore = await count('[data-drop="done"] .card');
@@ -1508,9 +1513,9 @@ function tokenCheck() {
   /* доска и таймлайн — две вкладки ОДНОГО цикла: таймлайн показывает те же задачи,
      только с датой, поэтому он не может насчитать больше доски */
   const inCycleSaid = await p.evaluate(() => {
-    const k = document.querySelector('.kpi b');
-    const m = k ? k.textContent.match(/\d+\/(\d+)/) : null;
-    return m ? +m[1] : null; });
+    const k = document.querySelector('.pulse .pl-top');
+    const m = k ? k.textContent.match(/(\d+)\s+из\s+(\d+)/) : null;
+    return m ? +m[2] : null; });
   await go('tab', 'timeline'); await shot('36-timeline');
   want((await count('.tday')) > 3, 'таймлайн разложил задачи по дням');
   const tl = await p.evaluate(() => {
@@ -1527,8 +1532,8 @@ function tokenCheck() {
   /* счётчик наверху обязан сходиться с тем, что на экране: «сделано 3/12» при девяти
      строках — это два разных факта об одном спринте */
   const sprintCount = await p.evaluate(() => {
-    const k = document.querySelector('.kpi b');
-    const m = k ? k.textContent.match(/(\d+)\/(\d+)/) : null;
+    const k = document.querySelector('.pulse .pl-top');
+    const m = k ? k.textContent.match(/(\d+)\s+из\s+(\d+)/) : null;
     return { said: m ? +m[2] : null, rows: document.querySelectorAll('.strow').length,
       doneSaid: m ? +m[1] : null, doneRows: [...document.querySelectorAll('.strow .dot')].filter((d) => d.classList.contains('d-done')).length };
   });
@@ -1542,10 +1547,53 @@ function tokenCheck() {
   await gov('set-group', 'ini');
   await new Promise((r) => setTimeout(r, 120));
   want(byPeople === sprintCount.rows, `группировка по людям показывает тот же состав (${byPeople} против ${sprintCount.rows})`);
+  /* Строка состава не повторяет одно и то же дважды: кружок с инициалами И имя рядом —
+     один факт двумя начертаниями, а при группировке по людям имя стоит ещё и в
+     заголовке группы. Правая часть строки из-за этого съедала треть ширины. */
+  {
+    const dupName = await p.evaluate(() => [...document.querySelectorAll('.strow .r')].filter((r) => {
+      const a = r.querySelector('.av');
+      return a && r.textContent.replace(/\s+/g, ' ').includes((a.getAttribute('title') || '').split(' ')[0]);
+    }).length);
+    want(dupName === 0, `строка состава не дублирует имя рядом с аватаром (дублей ${dupName})`);
+    /* «по плану» — норма: она не имеет права кричать громче строки, где проблема */
+    const loudOk = await p.evaluate(() => [...document.querySelectorAll('.strow .ck.on.ok')]
+      .filter((c) => { const bg = getComputedStyle(c).backgroundColor;
+        return bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent'; }).length);
+    want(loudOk === 0, `отметка «по плану» не залита цветом (залитых ${loudOk})`);
+  }
+  /* Срез — не украшение: по числу кликают и видят ровно эти задачи, а обратно
+     возвращаются одним движением. Иначе «проблема: 3» заставляет искать их глазами. */
+  {
+    const pick = await p.evaluate(() => {
+      const m = [...document.querySelectorAll('.pulse .mk')].find((e) => +e.querySelector('b').textContent > 0);
+      return m ? { v: +m.querySelector('b').textContent,
+        k: (m.getAttribute('data-v') || '') } : null; });
+    want(pick && pick.k, `срез над спринтом кликабелен («${pick ? pick.k : '—'}»)`);
+    await gov('sfocus', pick.k);
+    await new Promise((r) => setTimeout(r, 140));
+    const narrowed = await count('.strow');
+    want(narrowed === pick.v && narrowed < sprintCount.rows,
+      `срез сужает состав до своих задач (${sprintCount.rows} → ${narrowed}, обещано ${pick.v})`);
+    want((await text('.shead')).includes(String(pick.v)), 'заголовок состава называет, какой срез показан');
+    await gov('sfocus', '');
+    await new Promise((r) => setTimeout(r, 140));
+    want((await count('.strow')) === sprintCount.rows, 'срез снимается и состав возвращается целиком');
+  }
+  /* «Принять спринт» необратимо и делается раз в две недели: пока спринт идёт, оно не
+     должно быть самым ярким пятном экрана — иначе на него жмут по привычке. */
+  {
+    const loud = await p.evaluate(() => {
+      const b = [...document.querySelectorAll('.bar .btn')].find((x) => /Принять спринт/.test(x.textContent));
+      return b ? b.classList.contains('pri') : null; });
+    want(loud === false, 'пока спринт идёт, «Принять спринт» стоит тихой кнопкой');
+  }
   /* отметка сверки ставится прямо в строке (отдельный экран «Сверка» снят 19.09) */
+  /* срез читаем по подписи: ноль срезов не показывается вовсе, поэтому отсутствие —
+     это ноль, а не «не нашли» */
   const kpiOf = (word) => p.evaluate((w) => {
-    const k = [...document.querySelectorAll('.kpi')].find((e) => e.querySelector('span').textContent.trim() === w);
-    return k ? +k.querySelector('b').textContent : null; }, word);
+    const k = [...document.querySelectorAll('.pulse .mk')].find((e) => e.textContent.replace(/^\d+/, '').trim() === w);
+    return k ? +k.querySelector('b').textContent : 0; }, word);
   const riskBefore = await kpiOf('риск');
   /* отметку ставят из меню чипа: берём строку, где отметки ещё нет */
   const chkId = await p.evaluate(() => {

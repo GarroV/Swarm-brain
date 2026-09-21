@@ -148,18 +148,40 @@ const itemTask = (i) => S.tasks.find((t) => t.id === i.t);
 const liveItems = (cid = S.cycle) => items(cid).filter((i) => itemTask(i) && !itemTask(i).arch);
 const CHK = { ok: "по плану", risk: "риск", problem: "проблема" };
 
-function sprintKpi(list) {
-  const done = list.filter((i) => itemTask(i).st === "done").length;
-  const pct = list.length ? Math.round(done / list.length * 100) : 0;
-  const chk = (v) => list.filter((i) => i.chk === v).length;
-  const box = (n, w, cls) => `<div class="kpi${cls ? " " + cls : ""}"><b>${n}</b><span>${w}</span></div>`;
-  return `<div class="kpis">${box(`${done}/${list.length}`, `сделано · ${pct}%`)}
-    ${box(chk("ok"), "по плану")}${box(chk("risk"), "риск", chk("risk") ? "warn" : "")}
-    ${box(chk("problem"), "проблема", chk("problem") ? "bad" : "")}
-    ${box(list.filter((i) => !i.chk && itemTask(i).st !== "done").length, "не отмечено")}
-    ${box(list.filter((i) => i.carry).length, "к переносу")}
-    ${box(list.filter((i) => !i.plan).length, "сверх плана")}
-    ${box(list.filter((i) => !itemTask(i).who.length).length, "без исполнителя")}</div>`;
+/* Срезы, по которым спринт разбирают: каждый — ответ на «что сейчас делать», а не
+   украшение. Ими же сужают состав, поэтому они кликабельны. */
+const SFOCUS = {
+  problem:  ["проблема",        (i) => i.chk === "problem", "bad"],
+  risk:     ["риск",            (i) => i.chk === "risk", "warn"],
+  unchk:    ["не отмечено",     (i) => !i.chk && itemTask(i).st !== "done", ""],
+  nobody:   ["без исполнителя", (i) => !itemTask(i).who.length && itemTask(i).st !== "done", ""],
+  carry:    ["к переносу",      (i) => !!i.carry, ""],
+  over:     ["сверх плана",     (i) => !i.plan, ""],
+};
+const focusList = (list) => S.sFocus && SFOCUS[S.sFocus] ? list.filter(SFOCUS[S.sFocus][1]) : list;
+
+/* Восемь одинаковых плиток были картиной состояния, а не рабочим инструментом: место
+   занимали все, подсказывали действие два-три. Взамен — одна полоса «сколько сделано»
+   и одна строка «что требует внимания», где каждое число сужает состав до этих задач
+   (пересобрано по просьбе владельца 21.09: «неудобно, надо лаконично и воздушно»). */
+function sprintPulse(list) {
+  const st = (v) => list.filter((i) => itemTask(i).st === v).length;
+  const done = st("done"), work = st("in_progress"), n = list.length;
+  const pct = n ? Math.round(done / n * 100) : 0;
+  const seg = (v, cls) => v ? `<i class="${cls}" style="width:${v / n * 100}%" title="${v}"></i>` : "";
+  const marks = Object.entries(SFOCUS).map(([k, [name, test, cls]]) => {
+    const v = list.filter(test).length;
+    if (!v) return "";
+    const on = S.sFocus === k;
+    return `<button class="mk${cls ? " " + cls : ""}${on ? " on" : ""}" ${act("sfocus", undefined, on ? "" : k)}
+      title="${on ? "Показать весь состав" : "Показать только эти задачи"}"><b>${v}</b>${esc(name)}</button>`;
+  }).join("");
+  return `<div class="pulse">
+    <div class="pl-top"><b>${done} из ${n}</b><span class="muted">сделано · ${pct}%</span>
+      <div class="pbar">${seg(done, "d")}${seg(work, "w")}</div>
+      <span class="muted">${work} в работе · ${n - done - work} не начато</span></div>
+    ${marks ? `<div class="pl-marks"><span class="muted">требуют внимания:</span>${marks}${
+      S.sFocus ? `<button class="mk clr" ${act("sfocus", undefined, "")}>показать весь состав</button>` : ""}</div>` : ""}</div>`;
 }
 
 /* строка состава: задача, отметка сверки и пометка переноса. Три отметки кнопками
@@ -172,7 +194,7 @@ function sprintTaskRow(i) {
   const menu = `<span class="drop ck-d"><button class="ck${i.chk ? " on " + CHK_MARK[i.chk] : ""}" ${act("noop")}>${cur}</button>
     <div class="dmenu">${Object.keys(CHK).map((k) => `<button class="mi${i.chk === k ? " on" : ""}" ${act("set-chk", t.id, k)}>${CHK[k]}</button>`).join("")}
       <button class="mi${i.chk ? "" : " on"}" ${act("set-chk", t.id, "")}>не отмечено</button></div></span>`;
-  const more = `<span class="drop"><button class="btn sm" ${act("noop")}>⋯</button>
+  const more = `<span class="drop rare"><button class="btn sm" ${act("noop")}>⋯</button>
     <div class="dmenu">${i.carry
       ? `<button class="mi" ${act("tgl-carry", t.id)}>Снять пометку переноса</button>`
       : `<button class="mi" ${act("tgl-carry", t.id)}>Перенести в следующий спринт</button>`}
@@ -182,17 +204,21 @@ function sprintTaskRow(i) {
     ${i.plan ? "" : `<span class="over" title="добавлено после старта спринта">сверх плана</span>`}
     ${i.carry ? `<span class="carry" title="${esc(i.reason || "причина не указана")}">к переносу${i.cnt ? ` · ${i.cnt}-й раз` : ""}</span>` : ""}
     ${menu}
-    <span class="r">${t.who.length ? avShort(t.who[0]) : `<span class="muted">не назначен</span>`}${due(t.due, t.st === "done")}${more}</span></div>`;
+    ${/* аватар БЕЗ имени рядом: кружок с инициалами и «Ана К.» — один и тот же факт
+         дважды, а имя занимало треть правой части строки. Имя — в подсказке. */ ""}
+    <span class="r">${avOnly(t.who[0])}${due(t.due, t.st === "done")}${more}</span></div>`;
 }
 
 function initiativeBlock(name, own, list) {
   const d = list.filter((i) => itemTask(i).st === "done").length;
   const pct = list.length ? Math.round(d / list.length * 100) : 0;
   const bad = list.filter((i) => i.chk === "problem").length;
+  /* Рамка вокруг каждой группы внутри рамки секции делала экран тесным, а полоска
+     прогресса повторяла «0 из 2» соседним значком. Осталась одна строка-заголовок. */
   return `<div class="ini"><div class="ih">
     <div class="iname">${esc(name)}${own ? `<span class="iown">${esc(own)}</span>` : ""}</div>
-    <div class="iprog"><i style="width:${pct}%"></i></div>
-    ${bad ? alert_(`${d} из ${list.length} · проблема: ${bad}`) : state(`${d} из ${list.length}`, d === list.length && list.length > 0)}
+    <span class="idone${d === list.length && list.length ? " all" : ""}">${d} из ${list.length}</span>
+    ${bad ? `<span class="ibad">проблема: ${bad}</span>` : ""}
     </div><div class="stasks">${list.map(sprintTaskRow).join("")}</div></div>`;
 }
 
@@ -237,14 +263,20 @@ const SPRINT_ST = { planned: "запланирован", active: "идёт", acc
 function sprintBar(extra) {
   const c = cycle();
   const sp = S.spaces.find((x) => x.id === S.space) || S.spaces[0];
+  /* «Принять спринт» — действие раз в две недели и необратимое: пока спринт идёт,
+     оно стоит тихой кнопкой и разгорается, когда срок вышел. Яркой она перетягивала
+     внимание с того, ради чего на экран заходят каждый день. */
+  const over = c.to && TODAY >= c.to;
   const act_ = c.st === "planned" ? btn("Начать спринт", "start-sprint", c.id, undefined, "sm pri")
-    : c.st === "active" ? btn("Принять спринт", "accept-sprint", c.id, undefined, "sm pri") : "";
+    : c.st === "active" ? btn(over ? "Спринт закончился — принять" : "Принять спринт",
+      "accept-sprint", c.id, undefined, "sm" + (over ? " pri" : "")) : "";
   return `<div class="bar"><span class="drop">${btn(`Пространство: ${sp.n}`, "noop", undefined, undefined, "sm")}
     <div class="dmenu">${S.spaces.map((x) => `<button class="mi${x.id === S.space ? " on" : ""}" ${act("set-space", x.id)}>${esc(x.n)}</button>`).join("")}
       <button class="mi" ${act("new-space")}>＋ Новое пространство</button></div></span>
     <span class="drop">${btn(`${c.n} · ${SPRINT_ST[c.st]}`, "noop", undefined, undefined, "sm")}
     <div class="dmenu">${spaceCycles().map((x) => `<button class="mi${x.id === S.cycle ? " on" : ""}" ${act("set-cycle", x.id)}>${esc(x.n)} · ${SPRINT_ST[x.st]}</button>`).join("")}
       <button class="mi" ${act("new-sprint")}>＋ Новый спринт</button>
+      <button class="mi" ${act("tgl", "report")}>${S.report ? "Скрыть отчёт" : "Открыть отчёт"}</button>
       <button class="mi" ${act("rename-sprint", c.id)}>Переименовать</button>
       <button class="mi" ${act("del-sprint", c.id)}>Удалить спринт</button></div></span>
     <span class="due">${fmtDate(c.from)} — ${fmtDate(c.to)}${c.chk ? ` · сверка ${fmtDate(c.chk)}` : ""}</span>
@@ -270,7 +302,9 @@ function sprintPool() {
       <input class="pq" placeholder="Поиск по названию" value="${esc(S.poolQ)}" data-inp="poolQ"></div>
     <div class="plist">${free.length ? free.map((t) => `<div class="pit">
       <span class="t" ${act("open-task", t.id)} tabindex="0" title="${esc(t.t)}">${dot(t.st)}${esc(t.t)}</span>
-      ${btn("Взять", "take-item", t.id, undefined, "sm pri")}
+      ${/* «Взять» синей заливкой ×24 превращало пул в стену цвета: кнопка тихая и
+          проявляется на строке, к которой человек уже потянулся */ ""}
+      ${btn("Взять", "take-item", t.id, undefined, "sm take")}
       <span class="m">${esc(projPath(t.pr))}${t.who.length ? " · " + user(t.who[0]).n : " · не назначена"}</span></div>`).join("")
       : `<div class="pempty">${S.poolPr || S.poolWho || S.poolQ ? "Под фильтры ничего не попало" : "Свободных задач нет — всё уже в спринтах"}</div>`}</div></div>`;
 }
@@ -309,19 +343,24 @@ function screenSprints() {
   if (S.tab === "journal") return screenJournal();
   if (!spaceCycles().length) return sprintBar() + empty("В этом пространстве спринтов пока нет", "Заведите спринт — состав наберётся из свободных задач");
   const list = liveItems();
+  /* В полосе остаются вид и набор состава. Группировка — свойство списка, поэтому
+     переехала в его заголовок; отчёт — в меню спринта: открывают его раз в спринт. */
   const view = `<span class="seg">
     <button class="sg${S.sprintView === "board" ? "" : " on"}" ${act("set-view", undefined, "list")}>Список</button>
     <button class="sg${S.sprintView === "board" ? " on" : ""}" ${act("set-view", undefined, "board")}>Канбан</button></span>
-    <span class="seg">
-    <button class="sg${S.group === "people" ? "" : " on"}" ${act("set-group", undefined, "ini")}>по инициативам</button>
-    <button class="sg${S.group === "people" ? " on" : ""}" ${act("set-group", undefined, "people")}>по людям</button></span>
-    ${S.poolOpen ? "" : btn("Набрать состав", "tgl", "poolOpen", undefined, "sm")}
-    ${btn(S.report ? "Скрыть отчёт" : "Открыть отчёт", "tgl", "report", undefined, "sm")}`;
+    ${S.poolOpen ? "" : btn("Набрать состав", "tgl", "poolOpen", undefined, "sm")}`;
+  const shown = focusList(list);
+  const head = `<div class="shead"><span class="scount">Состав${S.sFocus
+    ? ` · ${esc(SFOCUS[S.sFocus][0])}: ${shown.length}` : ` · ${shown.length}`}</span>
+    <span class="sgrp"><span class="muted">группировать</span>
+      <button class="lk${S.group === "people" ? "" : " on"}" ${act("set-group", undefined, "ini")}>по инициативам</button>
+      <button class="lk${S.group === "people" ? " on" : ""}" ${act("set-group", undefined, "people")}>по людям</button></span></div>`;
   const body = S.report ? `<div class="panes">${sprintReport(S.cycle)}</div>`
-    : S.sprintView === "board" ? sprintBoard(list)
-    : list.length ? `<div class="sprint">${S.group === "people" ? sprintByPeople(list) : sprintByInitiative(list)}</div>`
-      : empty("Состав спринта пуст", "Наберите задачи из пула слева — план считается по ним");
-  return sprintBar(view) + sprintKpi(list)
+    : S.sprintView === "board" ? sprintBoard(shown)
+    : shown.length ? head + `<div class="sprint">${S.group === "people" ? sprintByPeople(shown) : sprintByInitiative(shown)}</div>`
+      : head + empty(S.sFocus ? "Таких задач в спринте нет" : "Состав спринта пуст",
+        S.sFocus ? "Снимите срез, чтобы увидеть весь состав" : "Наберите задачи из пула слева — план считается по ним");
+  return sprintBar(view) + sprintPulse(list)
     + `<div class="swrap">${S.poolOpen ? sprintPool() : ""}<div class="scol">${body}</div></div>`;
 }
 

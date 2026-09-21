@@ -119,6 +119,7 @@ const ACTS = {
   status: (id) => { const s = new Set(S.statuses); s.has(id) ? s.delete(id) : s.add(id); A.set({ statuses: s }); },
   tgl: (k) => A.set({ [k]: !S[k] }),
   "set-view": (_, v) => A.set({ sprintView: v }),
+  sfocus: (_, v) => A.set({ sFocus: v || null }),
   "set-group": (_, v) => A.set({ group: v }),
   "set-space": (id) => { S.space = id; S.cycle = (S.cycles.find((c) => c.sp === id) || {}).id || null; A.set({}); },
   "new-space": () => modal("Новое пространство", fld("Название", input("n", "", "Например: Маркетинг")),
