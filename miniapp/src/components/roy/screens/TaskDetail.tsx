@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
 import { useRoyNav } from "../nav";
-import { NavHeader, Segmented, RoyCard, PriDot, Market, AvatarStack, SectionLabel, IconBtn, TypeTag } from "../ui";
+import { NavHeader, RoyCard, PriDot, Market, AvatarStack, SectionLabel, IconBtn, TypeTag } from "../ui";
 import { RoyIcon } from "../icons";
 import { entryTagKey, deriveEntryTitle } from "../entry";
 import { fetchTask, updateTask, deleteTask, fetchMeeting } from "@/lib/api";
@@ -9,13 +9,14 @@ import { TaskComments } from "@/components/tasks/TaskComments";
 import { displayName } from "@/lib/utils";
 import type { Task, Entry } from "@/types";
 
-const SEGS = [
-  { id: "open", label: "Открыто" },
-  { id: "in_progress", label: "В работе" },
-  { id: "done", label: "Готово" },
-];
+// Переключателя статусов в карточке БОЛЬШЕ НЕТ (решение владельца 21.09.2026: «статусы в
+// самой задаче давай пока скроем. мы к ним привяжемся в проектах и спринтах, но в самом теле
+// задач пока скрой эти элементы»). Осталось одно действие — завершить задачу: без него
+// закрыть её из карточки было бы нечем, галочка есть только в строке списка.
 const PRI_LABEL: Record<string, string> = { high: "Высокий", med: "Средний", low: "Низкий" };
 const norm = (s: string) => (s === "progress" ? "in_progress" : s);
+// «Отменена» закрыта так же, как «Готово» — как в statusBucket на экране списка.
+const isClosed = (t: Task) => norm(t.status) === "done" || t.status === "cancelled";
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
@@ -130,7 +131,17 @@ export function TaskDetail({ id }: { id: string }) {
             <h1 className="mb-4 font-bold text-ink" style={{ fontSize: 24, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
               {t.title}
             </h1>
-            <Segmented items={SEGS} value={norm(t.status)} onChange={setStatus} />
+            <button
+              type="button"
+              onClick={() => setStatus(isClosed(t) ? "open" : "done")}
+              className="flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold"
+              style={isClosed(t)
+                ? { color: "var(--ink-soft)", background: "var(--surface-2)", border: "1px solid var(--line-2)" }
+                : { color: "var(--accent-ink)", background: "var(--accent-soft)", border: "1px solid var(--accent-line)" }}
+            >
+              <RoyIcon name={isClosed(t) ? "repeat" : "check"} size={14} strokeWidth={2} />
+              {isClosed(t) ? "Вернуть в работу" : "Готово"}
+            </button>
             <div className="mt-4">
               <RoyCard className="divide-y divide-line">
                 <Row label={t.assignees?.length > 1 ? "Исполнители" : "Исполнитель"}>

@@ -104,3 +104,14 @@ export function rangeLabel(range: DateRange | null): string {
   }
   return `${fmtShort(range.from)} — ${fmtShort(range.to)}`;
 }
+
+// Завтрашний день локальной датой YYYY-MM-DD — значение поля «Срок» по умолчанию в форме
+// задачи (решение владельца 21.09.2026: срок обязателен, по умолчанию +1 день от времени
+// добавления). ИСТОЧНИК ПРАВДЫ — сервер: `defaultDueDate` в `_shared/tasks/due.ts`
+// подставляет тот же срок любой задаче, созданной мимо этой формы (бот, MCP, доска).
+// Здесь — только предзаполнение, чтобы человек видел срок, а не пустое поле.
+export function tomorrowLocalISO(now: Date = new Date()): string {
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}

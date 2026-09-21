@@ -150,7 +150,7 @@ export function ProjectTasksScreen({ id }: { id: string }) {
 
         {groups.backlog.length > 0 && (
           <section className="mb-3 space-y-2.5">
-            <SectionLabel>{dt("Бэклог", "Backlog")} · {groups.backlog.length}</SectionLabel>
+            <SectionLabel>{dt("Бэклог задач", "Task backlog")} · {groups.backlog.length}</SectionLabel>
             {rows(groups.backlog)}
           </section>
         )}

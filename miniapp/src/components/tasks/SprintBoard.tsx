@@ -16,9 +16,11 @@ import { useDt, useRoyNav } from "@/components/roy/nav";
 import { KanbanColumn, TaskKanban } from "@/components/tasks/TaskKanban";
 import type { KanbanColumnDef, KanbanDrag, KanbanHandlers } from "@/components/tasks/TaskKanban";
 
-// Колонки по статусу. Бэклог — куда копятся задачи/идеи; оттуда тянутся в работу.
+// Колонки по статусу. Первая — общий бэклог проекта: «Бэклог задач» (решение владельца
+// 21.09.2026: «идеи не факт что у всех идеи»). Оттуда задачи тянутся в работу; это обычные
+// задачи, видимые в разделе «Задачи» наравне со всеми, а не отдельная сущность.
 const COLUMNS = [
-  { status: "backlog", label: "Бэклог", bar: "var(--status-open)" },
+  { status: "backlog", label: "Бэклог задач", bar: "var(--status-open)" },
   { status: "open", label: "Открыто", bar: "#8C8475" },
   { status: "in_progress", label: "В работе", bar: "var(--status-prog)" },
   { status: "done", label: "Готово", bar: "var(--status-done)" },
