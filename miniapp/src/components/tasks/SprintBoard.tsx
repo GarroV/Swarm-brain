@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   fetchTasks, updateTask, fetchSprints, createSprint,
   removeTasksFromSprint, deleteSprint,
@@ -149,15 +149,13 @@ export function SprintBoard() {
     };
   }, [load]);
 
-  // Автовыбор первой вкладки при заходе на доску: на ALL кнопка «+ Проект» скрыта (нужен явный
-  // выбор вкладки — проект создаётся В неё), и без вкладок список выглядит как «кнопки нет».
-  // Один раз за жизнь компонента (autoSelectedRef) — дальше пользователь волен вернуться на «Все».
-  const autoSelectedRef = useRef(false);
-  useEffect(() => {
-    if (autoSelectedRef.current || sprints.length === 0) return;
-    autoSelectedRef.current = true;
-    setSelected(sprints[0].id);
-  }, [sprints]);
+  // Автовыбора вкладки здесь НЕТ и быть не должно (снят 21.09.2026, владелец: «верни все
+  // проекты на место»). Он стоял с eb4089a ради кнопки «+ Проект», а сломал главное: доска
+  // открывается в обзоре ALL, и все проекты воркспейса видны сразу. Пока таблица `sprints`
+  // была пуста, автовыбор молчал; 19.09.2026 в разделе «Спринты» завели пространство
+  // «Инициативы качества» — оно лежит в ТОЙ ЖЕ таблице `sprints`, стало первой вкладкой доски,
+  // и автовыбор перекинул на неё всех пользователей. Проектов в ней нет (у всех 54 проектов
+  // sprint_id = null), поэтому доска у всех выглядела пустой, хотя данные были целы.
 
   // Вкладка ВЛАДЕЕТ проектами (решение владельца 2026-08-09): выбранная вкладка → её проекты
   // (project.sprint_id === selected), а задача принадлежит вкладке ЧЕРЕЗ свой проект. ALL — обзор
