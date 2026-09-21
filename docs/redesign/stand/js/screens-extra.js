@@ -38,16 +38,32 @@ function readerModal(id) {
 
 /* ── редактор меток ──────────────────────────────────────────── */
 function screenLabels() {
-  return `<div class="panes"><div class="pane"><h3>Метки задач</h3>
-    <div class="sub">Общие для воркспейса: ими помечают задачи и фильтруют списки</div>
+  return `<div class="panes"><div class="pane"><h3>Списки</h3>
+    <div class="sub">Личные списки: задача, попавшая в список, становится личной — её видит только владелец</div>
     ${rows(S.labels.map((l) => [tag(l.n, "l"),
       nTasks(S.tasks.filter((t) => t.labels.includes(l.id)).length),
       `<span class="ib">${btn("Переименовать", "rename-label", l.id, undefined, "sm")}${btn("Удалить", "del-label", l.id, undefined, "sm")}</span>`]))}
-    <div class="mt">${btn("Добавить метку", "add-label", undefined, undefined, "pri")}</div></div></div>`;
+    <div class="mt">${btn("Добавить список", "add-label", undefined, undefined, "pri")}</div></div></div>`;
+}
+
+/* Справочник ролей задач. В продукте набор зашит в код и поле скрыто — настроить роли
+   нельзя, поэтому ими и не пользуются. Здесь роль заводится и снимается из настроек. */
+function screenRoles() {
+  return `<div class="panes"><div class="pane"><h3>Роли задач</h3>
+    <div class="sub">Чья это работа по смыслу: развитие, маркетинг, R&D. Роль ставится в задаче и сужает списки</div>
+    ${rows(S.roles.map((r) => [esc(r.n),
+      nTasks(S.tasks.filter((t) => t.role === r.id).length),
+      `<span class="ib">${btn("Переименовать", "rename-role", r.id, undefined, "sm")}${btn("Удалить", "del-role", r.id, undefined, "sm")}</span>`]))}
+    <div class="mt">${btn("Добавить роль", "add-role", undefined, undefined, "pri")}</div></div></div>`;
+}
+function roleModal(id) {
+  const r = S.roles.find((x) => x.id === id);
+  modal(r ? "Переименовать роль" : "Новая роль", fld("Название", input("n", r ? r.n : "", "например, операции")),
+    `${btn("Отмена", "mclose")}${btn("Сохранить", "save-role", id || "", undefined, "pri")}`);
 }
 function labelModal(id) {
   const l = id ? label(id) : null;
-  modal(l ? "Переименовать метку" : "Новая метка", fld("Название", input("n", l ? l.n : "", "например, закупки")),
+  modal(l ? "Переименовать список" : "Новый список", fld("Название", input("n", l ? l.n : "", "например, закупки")),
     `${btn("Отмена", "mclose")}${btn("Сохранить", "save-label", id || "", undefined, "pri")}`);
 }
 

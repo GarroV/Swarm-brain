@@ -793,7 +793,20 @@ function tokenCheck() {
   });
   want(panelOpts.opts <= panelOpts.fields + 2,
     `панель детали показывает значения, а не варианты (видно вариантов ${panelOpts.opts} на ${panelOpts.fields} полей)`);
-  await go('dtab', 'talk');
+  /* Комментарии живут на ОСНОВНОМ окне задачи, под остальным (просьба владельца
+     21.09): во вкладке разговор не виден, пока туда не вспомнишь зайти. Проверяем, что
+     поле ввода доступно без переключения вкладок и что отправленное сразу видно. */
+  want((await count('[data-act="dtab"][data-id="talk"]')) === 0, 'отдельной вкладки «Комментарии» больше нет');
+  const talkPlace = await p.evaluate(() => {
+    const body = document.querySelector('.detail .d-body');
+    const box = body && body.querySelector('.cbox');
+    if (!box) return null;
+    const note = body.querySelector('.note');
+    return { after: !!note && note.compareDocumentPosition(box) === Node.DOCUMENT_POSITION_FOLLOWING,
+      visible: box.offsetParent !== null };
+  });
+  want(talkPlace && talkPlace.visible && talkPlace.after,
+    'комментарии стоят на обзоре задачи, ниже описания');
   await p.type('.cbox textarea', 'Проверил, вторая линия готова.');
   await p.$eval('[data-act="comment"]', (e) => e.click());
   await new Promise((r) => setTimeout(r, 90));
@@ -835,12 +848,12 @@ function tokenCheck() {
   const pingRow = await p.evaluate(() => {
     const t = S.tasks.find((x) => !x.arch && !x.ping && visibleTasks().includes(x));
     return t ? t.id : null; });
-  await go('open-task', pingRow);
   const pingsBefore = await count('.list .ping');
-  await p.evaluate((id) => { const el = document.querySelector(`.detail input[type=date][data-act="set-ping"][data-id="${id}"]`);
-    el.value = '2026-09-30'; el.dispatchEvent(new Event('change', { bubbles: true })); }, pingRow);
+  /* пинг ставится быстрым чипом ПРЯМО ИЗ СТРОКИ — перенос TaskQuickActions продукта:
+     самое частое движение в списке не должно стоить открытия карточки */
+  await gov2('set-ping-q', pingRow, '7');
   await new Promise((r) => setTimeout(r, 140));
-  want((await count('.list .ping')) === pingsBefore + 1, `пинг поставлен из панели и виден в строке (${pingsBefore} → ${await count('.list .ping')})`);
+  want((await count('.list .ping')) === pingsBefore + 1, `пинг ставится быстрым чипом прямо из строки (${pingsBefore} → ${await count('.list .ping')})`);
   want((await p.evaluate((id) => (S.history[id] || [])[0].k === 'Напоминание', pingRow)),
     'пинг записался в историю задачи, а не только в поле');
   const burnt = await p.evaluate(() => S.tasks.filter((t) => !t.arch && t.ping && t.pinged).length);
@@ -848,6 +861,27 @@ function tokenCheck() {
     const id = +tr.dataset.id; const t = S.tasks.find((x) => x.id === id);
     return t && t.pinged && tr.querySelector('.ping'); }).length);
   want(burnt > 0 && burntShown === 0, `сгоревший пинг в строке не висит (сгоревших ${burnt}, показано ${burntShown})`);
+  /* Панель задачи показывает ЗАПОЛНЕННОЕ: поле «Рынок: не указан» занимает строку и
+     ничего не сообщает — из-за таких строк панель читалась как анкета (просьба владельца
+     21.09). Спрятанное достаётся одной кнопкой, а не правкой кода. */
+  await go('open-task', pingRow);
+  const keys = () => p.evaluate(() => [...document.querySelectorAll('.detail .props .pchip')]
+    .filter((e) => e.offsetParent !== null)
+    .map((e) => ({ k: (e.querySelector('.k') || {}).textContent, empty: !!e.querySelector('.v .muted') })));
+  const shownFields = await keys();
+  want(shownFields.length > 0 && shownFields.every((f) => !f.empty),
+    `панель задачи не показывает пустых полей (пустых ${shownFields.filter((f) => f.empty).length} из ${shownFields.length})`);
+  const moreBtn = await p.evaluate(() => {
+    const b = [...document.querySelectorAll('.detail .props.opt .btn')].find((x) => /Все поля/.test(x.textContent));
+    return b ? b.textContent.trim() : null; });
+  want(moreBtn !== null, `спрятанные поля названы числом на кнопке («${moreBtn}»)`);
+  await go('tgl', 'allProps');
+  await new Promise((r) => setTimeout(r, 120));
+  const allFields = await keys();
+  want(allFields.length > shownFields.length,
+    `«Все поля» достаёт спрятанное (${shownFields.length} → ${allFields.length})`);
+  await go('tgl', 'allProps');
+  await new Promise((r) => setTimeout(r, 120));
   await go('drop-ping', pingRow);
   await new Promise((r) => setTimeout(r, 120));
   want((await count('.list .ping')) === pingsBefore, 'пинг снимается тем же местом, где ставился');

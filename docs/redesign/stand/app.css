@@ -787,3 +787,17 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
 .deploy.open{display:flex}
 .deploy .x{background:transparent;border:0;color:rgba(255,255,255,.7);cursor:pointer;font:500 var(--fs-meta)/1 var(--font-ui)}
 .deploy .x:hover{color:#fff}
+
+/* Быстрые действия в строке задачи: срок, пинг, повтор, исполнитель, рынок, списки.
+   Кнопки узкие и без подписей — подпись у каждой в title, значение видно цветом. */
+.qas{display:inline-flex;gap:3px;justify-content:flex-end}
+.qa{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:22px;padding:0 4px;
+  border:1px solid var(--line-control);border-radius:7px;background:var(--surface);color:var(--ink-2);
+  font:500 var(--fs-micro)/1 var(--font-ui)}
+.qa:hover{background:var(--surface-2);color:var(--ink)}
+.qa.on{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent)}
+.qa .cc{margin:0}
+td.qc{text-align:right;white-space:nowrap}
+/* спрятанные поля панели достаются кнопкой в том же ряду, что и чипы */
+.props.opt{margin-top:6px}
+.props.opt .btn{align-self:start}

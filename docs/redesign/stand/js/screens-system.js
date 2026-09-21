@@ -36,6 +36,7 @@ function screenWorkspaces() {
 /* ── настройки ───────────────────────────────────────────────── */
 function screenSettings() {
   if (S.tab === "labels") return screenLabels();
+  if (S.tab === "roles") return screenRoles();
   const P = {
     profile: () => rows([
       ["Имя", esc(me().n), btn("Изменить", "user-profile", ME, undefined, "sm")],

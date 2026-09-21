@@ -17,61 +17,90 @@ const dhead = (crumb, title, acts) =>
 function taskProps(t) {
   const users = [["— не назначен", "set-who", t.id, "", !t.who.length],
     ...S.users.map((u) => [`${av(u.id, false)}${esc(u.n)}`, "set-who", t.id, String(u.id), t.who[0] === u.id])];
-  return `<div class="props">
+  /* Главные свойства — те, без которых задача не задача: кто, в каком состоянии,
+     к какому сроку и в каком проекте. Они стоят всегда. */
+  const main = `<div class="props">
     ${pchip("Статус", `${dot(t.st)}${ST_LABEL[t.st]}`, STATUSES.map(([id, n]) => [`${dot(id)}${n}`, "move", t.id, id, t.st === id]))}
     ${pchip("Исполнитель", t.who.length ? `${av(t.who[0], false)}${esc(user(t.who[0]).n)}` : `<span class="muted">не назначен</span>`, users)}
     <span class="pchip wide"><span class="k">Срок</span><span class="v">
       <input type="date" class="dv" value="${t.due || ""}" ${act("set-due", t.id)}>${t.due && dueKind(t.due) === "now" ? '<span class="over">просрочено</span>' : ""}</span></span>
-    ${pchip("Приоритет", `${pri(t.prio)}${PRIO_LABEL[t.prio]}`, ["high", "med", "low"].map((p) => [`${pri(p)}${PRIO_LABEL[p]}`, "set-prio", t.id, p, t.prio === p]))}
-    ${pchip("Рынок", t.mk ? `<span class="cc">${t.mk}</span>${esc(cname(t.mk))}` : `<span class="muted">не указан</span>`, COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "set-mk", t.id, c.c, t.mk === c.c]))}
-    ${pchip("Повтор", t.recur ? RECUR_LABEL[t.recur] : "нет", ["", "weekly", "monthly"].map((r) => [r ? RECUR_LABEL[r] : "нет", "set-recur", t.id, r, (t.recur || "") === r]))}
-    ${pchip("Приватность", t.priv ? "личная" : "общая", [["общая", "set-priv", t.id, "", !t.priv], ["личная", "set-priv", t.id, "1", t.priv]])}
-    ${pchip("Роль", t.role ? ROLE_LABEL[t.role] : `<span class="muted">без роли</span>`,
-      [["без роли", "set-role", t.id, "", !t.role], ...Object.keys(ROLE_LABEL).map((r) => [ROLE_LABEL[r], "set-role", t.id, r, t.role === r])])}
-    <span class="pchip wide"><span class="k">Напомнить</span><span class="v">
-      <input type="date" class="dv" value="${t.ping || ""}" ${act("set-ping", t.id)}>${
-      t.ping && t.pinged ? '<span class="over" title="пинг одноразовый: выберите новый день, чтобы напомнить снова">уже напомнили</span>' : ""}${
-      t.ping ? btn("убрать", "drop-ping", t.id, undefined, "sm") : ""}</span></span>
-    ${pchip("Метки", lbls(t.labels), S.labels.map((l) => [esc(l.n), "tgl-label", t.id, l.id, t.labels.includes(l.id)]), "wide")}
     ${pflat("Проект", esc(projPath(t.pr)), "wide")}
   </div>`;
+  /* Остальное — по одному чипу, и ПУСТОЕ по умолчанию спрятано: поле «Рынок: не указан»
+     занимает строку и ничего не сообщает, а панель из-за таких строк читалась как анкета.
+     «Все поля» достаёт спрятанное, не открывая форму. */
+  const opt = [
+    [t.priv || t.labels.length, pchip("Списки", lbls(t.labels),
+      [["— личные списки: задача станет личной", "noop"],
+        ...S.labels.map((l) => [esc(l.n), "tgl-label", t.id, l.id, t.labels.includes(l.id)])], "wide")],
+    [!!t.ping, `<span class="pchip wide"><span class="k">Напомнить</span><span class="v">
+      <input type="date" class="dv" value="${t.ping || ""}" ${act("set-ping", t.id)}>${
+      t.ping && t.pinged ? '<span class="over" title="пинг одноразовый: выберите новый день, чтобы напомнить снова">уже напомнили</span>' : ""}${
+      t.ping ? btn("убрать", "drop-ping", t.id, undefined, "sm") : ""}</span></span>`],
+    [!!t.recur, pchip("Повтор", t.recur ? RECUR_LABEL[t.recur] : `<span class="muted">нет</span>`,
+      ["", "weekly", "monthly"].map((r) => [r ? RECUR_LABEL[r] : "нет", "set-recur", t.id, r, (t.recur || "") === r]))],
+    [!!t.mk, pchip("Рынок", t.mk ? `<span class="cc">${t.mk}</span>${esc(cname(t.mk))}` : `<span class="muted">не указан</span>`,
+      [["— без рынка", "set-mk", t.id, "", !t.mk], ...COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "set-mk", t.id, c.c, t.mk === c.c])])],
+    [!!t.role, pchip("Роль", t.role ? esc(roleName(t.role)) : `<span class="muted">без роли</span>`,
+      [["— без роли", "set-role", t.id, "", !t.role], ...S.roles.map((r) => [esc(r.n), "set-role", t.id, r.id, t.role === r.id])])],
+    [!!t.prio, pchip("Приоритет", t.prio ? `${pri(t.prio)}${PRIO_LABEL[t.prio]}` : `<span class="muted">не задан</span>`,
+      [["— не задан", "set-prio", t.id, "", !t.prio], ...["high", "med", "low"].map((p) => [`${pri(p)}${PRIO_LABEL[p]}`, "set-prio", t.id, p, t.prio === p])])],
+    /* приватность стоит всегда: «кто это увидит» — не редкое поле, а условие показа */
+    [true, pchip("Приватность", t.priv ? "личная" : "общая",
+      [["общая", "set-priv", t.id, "", !t.priv], ["личная", "set-priv", t.id, "1", t.priv]])],
+  ];
+  const hidden = opt.filter(([on]) => !on).length;
+  const shown = opt.filter(([on]) => on || S.allProps).map(([, html]) => html).join("");
+  const more = S.allProps
+    ? btn("Только заполненные", "tgl", "allProps", undefined, "sm on")
+    : (hidden ? btn(`Все поля · ещё ${hidden}`, "tgl", "allProps", undefined, "sm") : "");
+  return main + `<div class="props opt">${shown}${more}</div>`;
+}
+
+/* Комментарии живут на основном окне задачи, внизу под остальным: во вкладке их не
+   видно, пока не вспомнишь туда зайти, — а разговор по задаче и есть её половина. */
+function taskTalk(t) {
+  const cm = S.comments[t.id] || [];
+  return lab(`Комментарии · ${cm.length}`)
+    + `<div class="cms">${cm.map((c) => `<div class="cm">${av(c.who, false)}<div class="b"><div class="w"><b>${esc(user(c.who).n)}</b> · ${esc(c.w)}</div>${esc(c.t)}</div></div>`).join("")
+      || '<div class="muted">Комментариев пока нет</div>'}</div>
+      <div class="cbox"><textarea data-cin="${t.id}" placeholder="Написать комментарий"></textarea>${btn("Отправить", "comment", t.id, undefined, "pri sm")}</div>`;
 }
 
 function detailTask(t) {
   const cm = S.comments[t.id] || [], hi = [...(S.history[t.id] || [])].sort((a, b) => a.m - b.m);
+  /* вкладка «Комментарии» снята — разговор переехал в тело обзора; на старом значении
+     состояния панель иначе показала бы пустоту */
+  const tab = S.dtab === "talk" ? "overview" : S.dtab;
   const acts = t.arch
     ? btn("Вернуть из архива", "restore", t.id, undefined, "pri") + btn("Удалить навсегда", "del-task", t.id)
     : (t.st !== "in_progress" ? btn("Взять в работу", "take", t.id, undefined, "pri") : btn("Готово", "move", t.id, "done", "pri"))
       + btn("Архивировать", "archive", t.id);
   let body = "";
-  if (S.dtab === "overview") {
+  if (tab === "overview") {
     body = taskProps(t)
       + (t.src && t.src !== "manual" ? lab("Откуда задача") + `<div class="src" ${act("open-meet", t.src)}>${esc((S.meetings.find((m) => m.id === t.src) || {}).t || t.src)}</div>` : "")
-      + lab("Описание") + `<div class="note lg">${t.note ? esc(t.note) : '<span class="muted">описания нет</span>'}</div>`;
+      + lab("Описание") + `<div class="note lg">${t.note ? esc(t.note) : '<span class="muted">описания нет</span>'}</div>`
+      + taskTalk(t);
   }
-  if (S.dtab === "talk") {
-    body = `<div class="cms">${cm.map((c) => `<div class="cm">${av(c.who, false)}<div class="b"><div class="w"><b>${esc(user(c.who).n)}</b> · ${esc(c.w)}</div>${esc(c.t)}</div></div>`).join("")
-      || '<div class="muted">Комментариев нет</div>'}</div>
-      <div class="cbox"><textarea data-cin="${t.id}" placeholder="Написать комментарий"></textarea>${btn("Отправить", "comment", t.id, undefined, "pri sm")}</div>`;
-  }
-  if (S.dtab === "hist") {
+  if (tab === "hist") {
     body = `<div class="tl">${hi.map((h) => `<div class="e"><div class="p"></div><div><b>${esc(user(h.who).n)}</b>
       <span class="ev">${esc(h.k)}${h.v ? `: <b>${esc(h.v)}</b>` : ""}</span><div class="w">${esc(ago(h.m))}</div></div></div>`).join("")
       || '<div class="muted">Движения не было</div>'}</div>`;
   }
-  if (S.dtab === "links") {
+  if (tab === "links") {
     body = rows(t.links.length ? t.links.map(([kind, id], i) => {
       const o = S.tasks.find((x) => x.id === id);
       return [esc(kind), `<span class="lnk" ${act("open-task", id)}>${esc(o ? o.t : id)}</span>`,
         `<button class="btn sm" ${act("drop-link", t.id, String(i))}>Снять</button>`];
     }) : [["—", "связей нет", ""]]) + `<div class="mt">${btn("Добавить связь", "add-link", t.id)}</div>`;
   }
-  if (S.dtab === "subs") {
+  if (tab === "subs") {
     body = rows(S.users.slice(0, 8).map((u) => [av(u.id), t.subs.includes(u.id) ? "получает уведомления" : "не подписан",
       `<button class="btn sm" ${act("tgl-sub", t.id, u.id)}>${t.subs.includes(u.id) ? "Отписать" : "Подписать"}</button>`]));
   }
   return dhead(`${projPath(t.pr)} · Задача ${t.id}`, t.t, acts)
-    + `<div class="d-body">${dtabs([["overview", "Обзор"], ["talk", "Комментарии", cm.length], ["hist", "История", hi.length], ["links", "Связи", t.links.length], ["subs", "Подписчики", t.subs.length]])}${body}</div>`;
+    + `<div class="d-body">${dtabs([["overview", "Обзор", cm.length], ["hist", "История", hi.length], ["links", "Связи", t.links.length], ["subs", "Подписчики", t.subs.length]])}${body}</div>`;
 }
 
 /* ── встреча ─────────────────────────────────────────────────── */

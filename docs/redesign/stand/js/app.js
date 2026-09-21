@@ -30,7 +30,8 @@ const TABS = {
   base: [["all", "Все записи"], ["meeting", "Встречи"], ["document", "Документы"], ["note", "Заметки"],
          ["transcript", "Транскрипты"], ["summary", "Сводки"], ["link", "Ссылки"], ["files", "Файлы"]],
   team: [["members", "Участники"], ["ws", "Воркспейсы"]],
-  settings: [["profile", "Профиль"], ["integr", "Интеграции"], ["tokens", "Доступы"], ["notif", "Уведомления"], ["labels", "Метки"]],
+  settings: [["profile", "Профиль"], ["integr", "Интеграции"], ["tokens", "Доступы"], ["notif", "Уведомления"],
+    ["labels", "Списки"], ["roles", "Роли задач"]],
   admin: [["users", "Пользователи"], ["ws", "Воркспейсы"], ["review", "Очередь вычитки"], ["broadcast", "Рассылка"], ["feedback", "Фидбек"]],
 };
 const TITLES = {
@@ -164,7 +165,7 @@ const ACTS = {
   "new-task": () => newTaskModal(),
   "create-task": () => { const f = formData(); if (!f.title) return A.toast("Нужно название");
     closeModal(); A.createTask({ title: f.title, pr: f.pr, who: f.who ? +f.who : null, due: f.due, prio: f.prio,
-      labels: f.labels, mk: (f.mk || [])[0] || null, recur: f.recur || null, priv: f.priv, note: f.note,
+      labels: f.labels, mk: (f.mk || [])[0] || null, recur: f.recur || null, priv: f.priv || !!(f.labels || []).length, note: f.note,
       ping: f.ping || null }); },
   "reset-filters": () => A.set({ lens: "all", statuses: new Set(Object.keys(ST_LABEL)),
     mk: null, assignee: null, q: "", noProject: false, recurOnly: false, archOn: false, period: "any" }),
@@ -180,12 +181,30 @@ const ACTS = {
   "set-priv": (id, v) => A.patchTask(+id, { priv: !!v }, ["Приватность", v ? "личная" : "общая"]),
   "set-mk": (id, v) => { const t = S.tasks.find((x) => x.id === +id); A.patchTask(+id, { mk: t.mk === v ? null : v }); },
   "set-recur": (id, v) => A.patchTask(+id, { recur: v || null }),
-  "set-role": (id, v) => A.patchTask(+id, { role: v || null }, ["Роль", v ? ROLE_LABEL[v] : "снята"]),
+  "set-role": (id, v) => A.patchTask(+id, { role: v || null }, ["Роль", v ? roleName(v) : "снята"]),
+  "add-role": () => roleModal(null),
+  "rename-role": (id) => roleModal(id),
+  "save-role": (id) => { const f = formData(); closeModal(); A.saveRole(id || null, f.n); },
+  "del-role": (id) => { const r = S.roles.find((x) => x.id === id) || {};
+    const n = S.tasks.filter((t) => t.role === id).length;
+    modal("Удалить роль?", `<div class="hint">Роль <b>${esc(r.n || "")}</b> будет снята с задач: ${n}. Вернуть её придётся руками.</div>`,
+      `${btn("Оставить", "mclose")}${btn("Удалить роль", "do-del-role", id, undefined, "pri")}`); },
+  "do-del-role": (id) => { closeModal(); A.delRole(id); },
+  /* быстрый срок и пинг прямо из строки: значение — сдвиг в днях от сегодня, пустое снимает */
+  "set-due-q": (id, v) => A.patchTask(+id, { due: v === "" ? null : shiftDate(+v) },
+    ["Срок", v === "" ? "снят" : fmtDate(shiftDate(+v))]),
+  "set-ping-q": (id, v) => A.patchTask(+id, { ping: v === "" ? null : shiftDate(+v), pinged: false },
+    ["Напоминание", v === "" ? "снято" : fmtDate(shiftDate(+v))]),
   "set-ping": (id) => {},           /* дата приходит событием change, как и срок */
   "drop-ping": (id) => A.setPing(+id, null),
   "set-period": (_, v) => A.set({ period: v }),
+  /* Списки в продукте ЛИЧНЫЕ: выбор списка делает задачу личной (TaskModal: «if (labelIds.length
+     && !task.is_private) patch.is_private = true»). Иначе личный список одного человека
+     уехал бы в общий список чужими глазами. */
   "tgl-label": (id, v) => { const t = S.tasks.find((x) => x.id === +id);
-    A.patchTask(+id, { labels: t.labels.includes(v) ? t.labels.filter((l) => l !== v) : [...t.labels, v] }); },
+    const next = t.labels.includes(v) ? t.labels.filter((l) => l !== v) : [...t.labels, v];
+    A.patchTask(+id, next.length && !t.priv ? { labels: next, priv: true } : { labels: next },
+      next.length > t.labels.length ? ["Список", (label(v) || {}).n] : undefined); },
   "tgl-priv": (id) => { const t = S.tasks.find((x) => x.id === +id); A.patchTask(+id, { priv: !t.priv }); },
   "tgl-sub": (id, v) => A.toggleSub(+id, +v),
   comment: (id) => { const ta = $(`[data-cin="${id}"]`); A.comment(+id, ta.value); },
@@ -429,7 +448,7 @@ document.addEventListener("keydown", (e) => {
   if (qa && e.key === "Enter" && e.target.value.trim()) {
     const title = e.target.value.trim();
     const sec = e.target.dataset.qsec || null;                 /* доска проектов: секция = проект */
-    A.createTask({ title, pr: sec, who: ME, due: null, prio: "med", labels: [], mk: null, recur: null, priv: false, note: "" });
+    A.createTask({ title, pr: sec, who: ME, due: null, prio: null, labels: [], mk: null, recur: null, priv: false, note: "" });
     A.patchTask(S.sel, { st: qa });
     /* на канбане спринта карточка обязана попасть и в СОСТАВ спринта: поле у задачи
        состава не заменяет, иначе новая карточка исчезала при первой перерисовке */

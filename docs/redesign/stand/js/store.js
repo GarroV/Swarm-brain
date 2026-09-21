@@ -36,6 +36,9 @@ const S = {
   notifPrefs: NOTIF_PREFS.slice(), tokens: TOKENS.slice(),
   broadcasts: BROADCASTS.slice(),
   integrations: INTEGRATIONS.slice(), granolaNew: 3, workspaces: WORKSPACES.slice(), labels: LABELS.slice(),
+  roles: ROLES.slice(),
+  /* панель задачи по умолчанию показывает ЗАПОЛНЕННОЕ: пустые поля — по кнопке */
+  allProps: false,
   users: USERS.slice(),
 };
 
@@ -51,9 +54,11 @@ const label = (id) => S.labels.find((l) => l.id === id);
 const cname = (c) => (COUNTRIES.find((x) => x.c === c) || {}).n || c;
 const ST_LABEL = { open: "Открыто", in_progress: "В работе", done: "Готово" };
 const MEET_ST = { pending: "ждёт вычитки", draft: "черновик записи", confirmed: "подтверждена" };
-const PRIO_LABEL = { high: "высокий", med: "средний", low: "низкий" };
+/* Приоритет в продукте НЕ обязателен: в проде он проставлен у 6 задач из 481, а в
+   десктопной форме его вообще нет. Пустое значение — норма, и у него есть имя. */
+const PRIO_LABEL = { "": "не задан", high: "высокий", med: "средний", low: "низкий" };
 /* роли задач продукта: rnd / bd / marketing (на 21.09.2026 — 76 задач из 482) */
-const ROLE_LABEL = { rnd: "R&D", bd: "развитие", marketing: "маркетинг" };
+const roleName = (id) => (S.roles.find((r) => r.id === id) || {}).n || "";
 /* период — та же ось, что RangePicker продукта: сужает список по сроку */
 const PERIOD = { any: "любой срок", today: "сегодня", week: "эта неделя", month: "этот месяц" };
 function inPeriod(t) {
@@ -569,15 +574,25 @@ const A = {
     S.meetings = S.meetings.map((m) => m.id === id ? { ...m, tasks: [...m.tasks, ...made.map((t) => t.id)] } : m);
     A.toast(`Создано задач: ${made.length}`);
   },
+  saveRole(id, n) {
+    if (!n.trim()) return A.toast("Нужно название");
+    S.roles = id ? S.roles.map((r) => r.id === id ? { ...r, n } : r) : [...S.roles, { id: uid("ro"), n }];
+    A.toast("Роль сохранена");
+  },
+  delRole(id) {
+    S.roles = S.roles.filter((r) => r.id !== id);
+    S.tasks = S.tasks.map((t) => t.role === id ? { ...t, role: null } : t);
+    A.toast("Роль удалена и снята с задач");
+  },
   saveLabel(id, n) {
     if (!n.trim()) return A.toast("Нужно название");
     S.labels = id ? S.labels.map((l) => l.id === id ? { ...l, n } : l) : [...S.labels, { id: uid("l"), n, ic: "tag" }];
-    A.toast("Метка сохранена");
+    A.toast("Список сохранён");
   },
   delLabel(id) {
     S.labels = S.labels.filter((l) => l.id !== id);
     S.tasks = S.tasks.map((t) => t.labels.includes(id) ? { ...t, labels: t.labels.filter((x) => x !== id) } : t);
-    A.toast("Метка удалена и снята с задач");
+    A.toast("Список удалён и снят с задач");
   },
   saveUser(id, patch) {
     if (!id) {
