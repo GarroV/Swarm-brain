@@ -61,6 +61,10 @@ const fmenu = (items) => `<div class="dmenu">${items.map(([t, a, id, v, on]) =>
 const pickf = (value, items) => `<span class="drop"><button class="fv" ${act("noop")}>${value}<i class="cv"></i></button>${fmenu(items)}</span>`;
 /* многозначное поле: на виду только ВЫБРАННОЕ, «＋» открывает остальное */
 const pickm = (chosen, items) => `<span class="fmulti">${chosen}<span class="drop"><button class="fv add" ${act("noop")}>＋</button>${fmenu(items)}</span></span>`;
+/* Свойство задачи — чип «подпись · значение» в выровненной сетке: значение видно всегда,
+   варианты приходят по нажатию. Подписи стоят колонкой, поэтому значения не висят лесенкой. */
+const pchip = (k, v, items, cls) => `<span class="drop pc${cls ? " " + cls : ""}"><button class="pchip" ${act("noop")}><span class="k">${esc(k)}</span><span class="v">${v}</span><i class="cv"></i></button>${fmenu(items)}</span>`;
+const pflat = (k, v, cls) => `<span class="pchip static${cls ? " " + cls : ""}"><span class="k">${esc(k)}</span><span class="v">${v}</span></span>`;
 const chip = (text, on, a, id, v) => `<button class="chip${on ? " on" : ""}" ${act(a, id, v)}>${esc(text)}</button>`;
 /* off — кнопка, которой сейчас нечего делать: недоступной её видно, а молча не срабатывающей — нет */
 const btn = (text, a, id, v, cls, off) => `<button class="btn${cls ? " " + cls : ""}"${off ? " disabled" : ""} ${act(a, id, v)}>${esc(text)}</button>`;
@@ -86,17 +90,21 @@ const alert_ = (text) => `<span class="state bad">${esc(text)}</span>`;
    Тот же порог в app.css: @media (max-width:1140px) — менять их только вместе. */
 const OVERLAY_AT = 1140;
 /* места мало: деталь занимает половину окна или само окно узкое — тогда часть колонок прячется */
-const tight = () => (S.sel ? window.innerWidth <= 1700 : window.innerWidth <= 1180);
+const cssPx = (n) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n)) || 0;
+/* Теснота считается по ширине РАБОЧЕЙ ОБЛАСТИ, а не окна: открытая деталь забирает
+   у списка больше, чем любое сужение окна, и порог по окну этого не замечал.
+   Те же числа стоят в container-запросах в app.css — правим парой. */
+const workW = () => Math.max(320, window.innerWidth - cssPx("--nav-w")
+  - (S.sel && window.innerWidth > OVERLAY_AT ? cssPx("--detail-w") : 0));
+const tight = () => workW() <= 1080;
 
-function table(cols, body) {
+function table(cols, body, w) {
   /* table-layout:fixed не раздаёт остаток колонке без ширины — считаем ширины сами,
      иначе после скрытия колонок справа остаётся пустая полоса */
   /* calc с процентами в table-layout:fixed Chrome считает неверно (проверено: calc(65% - 114px) → 105px),
      поэтому пиксели переводим в проценты по ширине области и раздаём остаток — сумма всегда 100% */
-  const cssPx = (n) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n)) || 0;
   /* ширину области считаем из сетки, а не из DOM: на момент генерации разметки класс with-detail ещё прежний */
-  const W = Math.max(320, window.innerWidth - cssPx("--nav-w")
-    - (S.sel && window.innerWidth > OVERLAY_AT ? cssPx("--detail-w") : 0));
+  const W = w || workW();
   const shown = cols.filter((c) => !(c.opt && tight()));
   const asPct = (w) => w.endsWith("%") ? parseFloat(w) : (parseFloat(w) / W) * 100;
   let fixed = 0, flex = 0;

@@ -103,12 +103,14 @@ function screenTimeline() {
 }
 
 /* ── календарь дня (Google Calendar) ─────────────────────────── */
-function calendarStrip() {
+/* Встречи дня — колонкой сбоку. Горизонтальной полосой они забирали всю ширину сверху
+   и толкали работу вниз; вертикальным блоком стоят рядом и ничего не отжимают. */
+function calendarList() {
   if (!CALENDAR.length) return "";
-  return `<div class="cal">${CALENDAR.map((c) => `<div class="cev">
+  return `<div class="calv">${CALENDAR.map((c) => `<div class="cev">
     <span class="at">${c.at}</span><b>${esc(c.t)}</b>
-    <span class="pl">${esc(c.place)}</span>${avs(c.who)}
-    ${c.rec ? state("рекордер включится", true) : state("без записи", false)}</div>`).join("")}</div>`;
+    <div class="cf"><span class="pl">${esc(c.place)}</span>${avs(c.who)}
+    ${c.rec ? state("рекордер включится", true) : state("без записи", false)}</div></div>`).join("")}</div>`;
 }
 
 /* ── связи задачи ────────────────────────────────────────────── */

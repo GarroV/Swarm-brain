@@ -10,6 +10,26 @@ const dhead = (crumb, title, acts) =>
    <div class="d-acts">${acts}</div></div>`;
 
 /* ── задача ──────────────────────────────────────────────────── */
+/* Свойства задачи — сетка чипов, а не столбик полей: подписи и значения выровнены
+   по колонкам, значение нажимается, варианты приходят меню. Столбик из девяти строк
+   владелец назвал деревом настроек — и был прав: он читался как форма, а не как задача. */
+function taskProps(t) {
+  const users = [["— не назначен", "set-who", t.id, "", !t.who.length],
+    ...S.users.map((u) => [`${av(u.id, false)}${esc(u.n)}`, "set-who", t.id, String(u.id), t.who[0] === u.id])];
+  return `<div class="props">
+    ${pchip("Статус", `${dot(t.st)}${ST_LABEL[t.st]}`, STATUSES.map(([id, n]) => [`${dot(id)}${n}`, "move", t.id, id, t.st === id]))}
+    ${pchip("Исполнитель", t.who.length ? `${av(t.who[0], false)}${esc(user(t.who[0]).n)}` : `<span class="muted">не назначен</span>`, users)}
+    <span class="pchip wide"><span class="k">Срок</span><span class="v">
+      <input type="date" class="dv" value="${t.due || ""}" ${act("set-due", t.id)}>${t.due && dueKind(t.due) === "now" ? '<span class="over">просрочено</span>' : ""}</span></span>
+    ${pchip("Приоритет", `${pri(t.prio)}${PRIO_LABEL[t.prio]}`, ["high", "med", "low"].map((p) => [`${pri(p)}${PRIO_LABEL[p]}`, "set-prio", t.id, p, t.prio === p]))}
+    ${pchip("Рынок", t.mk ? `<span class="cc">${t.mk}</span>${esc(cname(t.mk))}` : `<span class="muted">не указан</span>`, COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "set-mk", t.id, c.c, t.mk === c.c]))}
+    ${pchip("Повтор", t.recur ? RECUR_LABEL[t.recur] : "нет", ["", "weekly", "monthly"].map((r) => [r ? RECUR_LABEL[r] : "нет", "set-recur", t.id, r, (t.recur || "") === r]))}
+    ${pchip("Приватность", t.priv ? "личная" : "общая", [["общая", "set-priv", t.id, "", !t.priv], ["личная", "set-priv", t.id, "1", t.priv]])}
+    ${pchip("Метки", lbls(t.labels), S.labels.map((l) => [esc(l.n), "tgl-label", t.id, l.id, t.labels.includes(l.id)]), "wide")}
+    ${pflat("Проект", esc(projPath(t.pr)), "wide")}
+  </div>`;
+}
+
 function detailTask(t) {
   const cm = S.comments[t.id] || [], hi = [...(S.history[t.id] || [])].sort((a, b) => a.m - b.m);
   const acts = t.arch
@@ -18,21 +38,9 @@ function detailTask(t) {
       + btn("Архивировать", "archive", t.id);
   let body = "";
   if (S.dtab === "overview") {
-    body = `<dl class="f">
-      <dt>Статус</dt><dd>${pickf(`${dot(t.st)}${ST_LABEL[t.st]}`, STATUSES.map(([id, n]) => [`${dot(id)}${n}`, "move", t.id, id, t.st === id]))}</dd>
-      <dt>Исполнитель</dt><dd>${select("assignee", [["", "— не назначен"], ...S.users.map((u) => [String(u.id), u.n])], String(t.who[0] || ""))
-        .replace("<select", `<select ${act("set-assignee", t.id)}`)}</dd>
-      <!-- поле даты, а не строка: раньше здесь стояла ISO-строка «2026-09-17», которую
-           человек и читать не должен, и править мог во что угодно, нажав Enter -->
-      <dt>Срок</dt><dd><input type="date" class="inl" value="${t.due || ""}" ${act("set-due", t.id)}>${t.due && dueKind(t.due) === "now" ? ' <span class="over">просрочено</span>' : ""}</dd>
-      <dt>Приоритет</dt><dd>${pickf(`${pri(t.prio)}${PRIO_LABEL[t.prio]}`, ["high", "med", "low"].map((p) => [`${pri(p)}${PRIO_LABEL[p]}`, "set-prio", t.id, p, t.prio === p]))}</dd>
-      <dt>Метки</dt><dd>${pickm(lbls(t.labels), S.labels.map((l) => [esc(l.n), "tgl-label", t.id, l.id, t.labels.includes(l.id)]))}</dd>
-      <dt>Рынок</dt><dd>${pickf(t.mk ? `<span class="cc">${t.mk}</span>${esc(cname(t.mk))}` : `<span class="muted">—</span>`, COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "set-mk", t.id, c.c, t.mk === c.c]))}</dd>
-      <dt>Повтор</dt><dd>${pickf(t.recur ? RECUR_LABEL[t.recur] : "нет", ["", "weekly", "monthly"].map((r) => [r ? RECUR_LABEL[r] : "нет", "set-recur", t.id, r, (t.recur || "") === r]))}</dd>
-      <dt>Приватность</dt><dd><button class="fv" ${act("tgl-priv", t.id)}>${t.priv ? "личная" : "общая"}</button></dd>
-      <dt>Проект</dt><dd>${esc(projPath(t.pr))}</dd></dl>
-      ${t.src && t.src !== "manual" ? lab("Откуда задача") + `<div class="src" ${act("open-meet", t.src)}>${esc((S.meetings.find((m) => m.id === t.src) || {}).t || t.src)}</div>` : ""}
-      ${lab("Описание")}<div class="note">${t.note ? esc(t.note) : '<span class="muted">описания нет</span>'}</div>`;
+    body = taskProps(t)
+      + (t.src && t.src !== "manual" ? lab("Откуда задача") + `<div class="src" ${act("open-meet", t.src)}>${esc((S.meetings.find((m) => m.id === t.src) || {}).t || t.src)}</div>` : "")
+      + lab("Описание") + `<div class="note lg">${t.note ? esc(t.note) : '<span class="muted">описания нет</span>'}</div>`;
   }
   if (S.dtab === "talk") {
     body = `<div class="cms">${cm.map((c) => `<div class="cm">${av(c.who, false)}<div class="b"><div class="w"><b>${esc(user(c.who).n)}</b> · ${esc(c.w)}</div>${esc(c.t)}</div></div>`).join("")
@@ -56,7 +64,7 @@ function detailTask(t) {
       `<button class="btn sm" ${act("tgl-sub", t.id, u.id)}>${t.subs.includes(u.id) ? "Отписать" : "Подписать"}</button>`]));
   }
   return dhead(`${projPath(t.pr)} · Задача ${t.id}`, t.t, acts)
-    + `<div class="d-body">${dtabs([["overview", "Обзор"], ["talk", "Обсуждение", cm.length], ["hist", "История", hi.length], ["links", "Связи", t.links.length], ["subs", "Подписчики", t.subs.length]])}${body}</div>`;
+    + `<div class="d-body">${dtabs([["overview", "Обзор"], ["talk", "Комментарии", cm.length], ["hist", "История", hi.length], ["links", "Связи", t.links.length], ["subs", "Подписчики", t.subs.length]])}${body}</div>`;
 }
 
 /* ── встреча ─────────────────────────────────────────────────── */

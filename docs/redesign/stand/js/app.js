@@ -133,7 +133,11 @@ const ACTS = {
   move: (id, v) => A.moveTask(+id, v),
   archive: (id) => A.archiveTask(+id),
   restore: (id) => A.restoreTask(+id),
-  "set-prio": (id, v) => A.patchTask(+id, { prio: v }, `приоритет: ${PRIO_LABEL[v]}`),
+  /* patchTask ждёт пару [событие, значение]; строка разбиралась по буквам и писала в
+     журнал «п: р» — поэтому здесь и ниже пара, а не собранная фраза */
+  "set-prio": (id, v) => A.patchTask(+id, { prio: v }, ["Приоритет", PRIO_LABEL[v]]),
+  "set-who": (id, v) => A.patchTask(+id, { who: v ? [+v] : [] }, ["Исполнитель", v ? user(+v).n : "снят"]),
+  "set-priv": (id, v) => A.patchTask(+id, { priv: !!v }, ["Приватность", v ? "личная" : "общая"]),
   "set-mk": (id, v) => { const t = S.tasks.find((x) => x.id === +id); A.patchTask(+id, { mk: t.mk === v ? null : v }); },
   "set-recur": (id, v) => A.patchTask(+id, { recur: v || null }),
   "tgl-label": (id, v) => { const t = S.tasks.find((x) => x.id === +id);

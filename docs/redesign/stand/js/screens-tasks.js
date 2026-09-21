@@ -94,7 +94,9 @@ function groupRows(list) {
 
 function screenTasks() {
   const list = visibleTasks();
-  const head = tasksToolbar() + bulkBar() + (S.tab === "today" ? calendarStrip() : "");
+  /* встречи дня живут на главной: в списке задач полоса занимала верх экрана и
+     отжимала работу вниз, ничего при этом не решая */
+  const head = tasksToolbar() + bulkBar();
   if (!list.length) {
     /* пустой экран без объяснения читается как «данных нет»: называем, сколько скрыто фильтрами */
     const hidden = S.tasks.filter((t) => inList(t, S.tab)).length;

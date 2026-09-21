@@ -7,14 +7,16 @@ function screenProjects() {
   return `<div class="bar">${wsChip()}${chip("Показывать на паузе", S.showClosed, "tgl", "showClosed")}
     <div class="right"><span>Показано <b>${roots.length}</b> из ${all.length}</span><span>Подпроектов <b>${S.projects.length - all.length}</b></span>
       ${btn("＋ Проект", "new-project", undefined, undefined, "pri sm")}</div></div>`
-    + (roots.length ? table([{ t: "Проект", w: "28%" }, { t: "Владелец", w: "18%" }, { t: "Подпроекты", w: "26%" }, { t: "Срок", w: "12%" }, { t: "Открыто", short: "Откр.", r: true, w: "84px" }, { t: "Всего", r: true, w: "74px" }],
+    + (roots.length ? /* «Проект» без своей ширины — он и забирает остаток: иначе после скрытия
+       подпроектов справа оставалась пустая полоса на 114px */
+      table([{ t: "Проект" }, { t: "Владелец", w: "18%" }, { t: "Подпроекты", w: "26%", opt: true }, { t: "Срок", w: "12%" }, { t: "Открыто", short: "Откр.", r: true, w: "84px" }, { t: "Всего", r: true, w: "74px" }],
       roots.map((p) => {
         const subs = S.projects.filter((x) => x.parent === p.id);
         const tasks = projectTasks(p.id);
         const open = tasks.filter((t) => t.st !== "done").length;
         return `<tr class="row${S.sel === p.id && S.selKind === "project" ? " sel" : ""}" ${act("open-proj", p.id)} tabindex="0">
           ${cell(dot(p.st === "paused" ? "open" : "in_progress") + esc(p.n), "t")}
-          ${cell(avShort(p.own))}${cell(subs.length ? subs.map((s) => esc(s.n)).join(" · ") : `<span class="muted">—</span>`)}
+          ${cell(avShort(p.own))}${cell(subs.length ? subs.map((s) => esc(s.n)).join(" · ") : `<span class="muted">—</span>`, "opt")}
           ${cell(due(p.due))}${cell(`<span class="due">${open}</span>`, "r")}${cell(`<span class="due">${tasks.length}</span>`, "r")}</tr>`;
       }).join(""))
       : empty(all.length ? "Все проекты на паузе" : "В этом воркспейсе ещё нет проектов",

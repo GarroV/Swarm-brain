@@ -26,8 +26,8 @@ function meetRow(m) {
   return `<tr class="row${S.sel === m.id && S.selKind === "meeting" ? " sel" : ""}" ${act("open-meet", m.id)} tabindex="0">
     ${cell(`${dot(m.st === "pending" ? "open" : m.st === "draft" ? "open" : "done")}${esc(m.t)}${m.store === "personal" ? ' <span class="lock" title="личное хранилище">🔒</span>' : ""}`, "t")}
     ${cell(esc(fmtDT(m.dt)))}
-    ${cell(avs(m.who))}
-    ${cell(tag(m.src, "m") + cc(m.cc))}
+    ${cell(avs(m.who), "opt")}
+    ${cell(tag(m.src, "m") + cc(m.cc), "opt")}
     ${cell(`<span class="due">${m.dur}</span><span class="unit">мин</span>`, "r")}
     ${cell(m.tasks.length ? `<span class="due">${m.tasks.length}</span>` : `<span class="muted">—</span>`, "r")}</tr>`;
 }
@@ -58,7 +58,7 @@ function screenMeetings() {
   if (!list.length) return head + (S.tab === "draft" && dupDrafts().length
     ? empty("Других черновиков нет", "Все остальные ждут решения по дублям выше")
     : empty("Встреч в этом срезе нет", mfActive() ? "Сбросьте фильтры" : "Записи появятся после bumblebee, Granola или Read.ai"));
-  return head + table([{ t: "Встреча", w: "36%" }, { t: "Когда" }, { t: "Участники" }, { t: "Источник" },
+  return head + table([{ t: "Встреча", w: "36%" }, { t: "Когда" }, { t: "Участники", opt: true }, { t: "Источник", opt: true },
     { t: "Длит.", r: true }, { t: "Задач", r: true }], list.map(meetRow).join(""));
 }
 

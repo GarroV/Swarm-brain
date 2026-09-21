@@ -49,12 +49,12 @@ function screenFiles() {
   if (!S.files.length) return empty("Файлов пока нет", "Файл попадает сюда вместе с записью, к которой его приложили");
   const list = visibleFiles();
   if (!list.length) return empty("Под фильтры не попал ни один файл", "Снимите страну, «только мои» или поиск");
-  return table([{ t: "Файл", w: "30%" }, { t: "Запись", w: "24%" }, { t: "Загрузил", w: "17%" }, { t: "Индекс", w: "15%" }, { t: "Размер", r: true, w: "84px" }, { t: "Когда", r: true, w: "84px" }],
+  return table([{ t: "Файл", w: "30%" }, { t: "Запись", w: "24%" }, { t: "Загрузил", w: "17%" }, { t: "Индекс", w: "15%", opt: true }, { t: "Размер", r: true, w: "84px" }, { t: "Когда", r: true, w: "84px" }],
     list.map((f) => `<tr class="row${S.sel === f.id && S.selKind === "file" ? " sel" : ""}" ${act("open-file", f.id)} tabindex="0">
       ${cell(`<span class="ft ft-${f.ty}">${f.ty}</span>${esc(f.n)}`, "t")}
       ${cell(esc((S.entries.find((e) => e.id === f.rec) || {}).h || "—"))}
       ${cell(avShort(f.who))}
-      ${cell(state(f.ix, f.ix.includes("фрагмент") || f.ix === "переиндексирован"))}
+      ${cell(state(f.ix, f.ix.includes("фрагмент") || f.ix === "переиндексирован"), "opt")}
       ${cell(`<span class="due">${fsz(f.kb)}</span>`, "r")}
       ${cell(dt(f.at), "r")}</tr>`).join(""));
 }

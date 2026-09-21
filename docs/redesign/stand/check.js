@@ -195,7 +195,13 @@ function tokenCheck() {
     .bar .drop:hover .dmenu{display:none!important}
     .top{min-height:200px!important}
     .bar .dmenu{display:block!important}
-    .list tbody tr{height:64px!important}` });
+    .list tbody tr{height:64px!important}
+    .calv .cev{width:90px!important;white-space:nowrap!important;overflow:hidden!important}
+    .pchip .k{width:auto!important}
+    .app.with-detail{grid-template-columns:var(--nav-w) minmax(0,1fr) 300px!important}
+    .list th.opt{display:none!important}
+    .pchip .v{max-width:40px!important}
+    .list td.r{padding-left:70px!important}` });
 
   const sel = (a, id) => `[data-act="${a}"]` + (id !== undefined ? `[data-id="${id}"]` : '');
   /* ждём ФАКТА перерисовки, а не фиксированной паузы: пауза давала мигающее падение —
@@ -263,10 +269,26 @@ function tokenCheck() {
       if (getComputedStyle(e).textDecorationLine.includes('line-through') && !e.closest('.dropped'))
         out.push('зачёркнуто без причины: ' + e.textContent.trim().slice(0, 24));
     });
+    /* колонка прячется целиком или не прячется вовсе: спрятанный заголовок при живых
+       ячейках сдвигает всю строку, и данные встают под чужой подписью — молча */
+    document.querySelectorAll('.list table').forEach((tb) => {
+      const vis = (e) => e.offsetParent !== null || getComputedStyle(e).display !== 'none';
+      const th = [...tb.querySelectorAll('thead th')].filter(vis).length;
+      const tr = tb.querySelector('tbody tr.row');
+      if (!tr) return;
+      const td = [...tr.children].filter(vis).length;
+      if (th !== td) out.push(`колонок в шапке ${th}, а в строке ${td}: данные встают под чужой подписью`);
+    });
     /* заголовок колонки обрезан — колонку сделали уже её же названия */
     document.querySelectorAll('th').forEach((th) => {
       if (th.textContent.trim() && th.scrollWidth > th.clientWidth + 1)
         out.push('заголовок колонки обрезан: ' + th.textContent.trim());
+    });
+    /* колонка с датой или числом задана в пикселях и обрезаться не должна вовсе:
+       «17 …» вместо «17 сен» человек прочитает как исправный срок и ошибётся */
+    document.querySelectorAll('.list td.r').forEach((td) => {
+      if (td.textContent.trim() && td.scrollWidth > td.clientWidth + 1)
+        out.push('число или срок обрезан: ' + td.textContent.trim().slice(0, 18));
     });
     /* имя человека нельзя обрезать: «Марко Дамья…» — это уже не идентификация */
     document.querySelectorAll('td').forEach((td) => {
@@ -329,11 +351,16 @@ function tokenCheck() {
         out.push(`выбранное «${on.textContent.trim().slice(0, 24)}» выглядит как невыбранное`);
     });
 
-    /* встречи дня не должны уезжать за край: скрытую встречу человек просто не увидит */
-    document.querySelectorAll('.cal').forEach((c) => {
-      if (c.scrollWidth > c.clientWidth + 2) out.push(`полоса встреч уходит за край на ${c.scrollWidth - c.clientWidth}px`);
+    /* встреча в колонке не должна обрезаться: скрытую встречу человек просто не увидит */
+    document.querySelectorAll('.calv .cev').forEach((c) => {
+      if (c.scrollWidth > c.clientWidth + 2) out.push(`встреча дня обрезана на ${c.scrollWidth - c.clientWidth}px: ${c.textContent.trim().slice(0, 28)}`);
     });
 
+    /* обрезанное значение свойства — это потерянное значение: человек читает «Сербия»
+       как «Серб…» и не знает, дочитал он или нет */
+    document.querySelectorAll('.pchip .v').forEach((v) => {
+      if (v.scrollWidth > v.clientWidth + 1) out.push(`значение свойства обрезано на ${v.scrollWidth - v.clientWidth}px: ${v.textContent.trim().slice(0, 20)}`);
+    });
     /* поле ввода не должно обрезать собственное значение; у нативной даты обрезка внутренняя,
        её видно только по ширине — 130px это минимум под «дд.мм.гггг» и иконку календаря */
     document.querySelectorAll('input, select, textarea').forEach((el) => {
@@ -593,6 +620,8 @@ function tokenCheck() {
   const homeRows = await count('.home tbody tr[data-act="open-task"]');
   want(homeRows > 0, 'на главной видны свои задачи');
   want((await count('.home .nw')) >= 5, 'на главной есть топ новостей');
+  /* встречи дня переехали в правый столбец: полосой наверху они забирали ширину у работы */
+  want((await count('.home .hcol.side .calv .cev')) === 3, 'встречи дня стоят колонкой справа на главной');
 
   /* ── задачи ─────────────────────────────────────────────── */
   await go('sec', 'tasks');
@@ -627,7 +656,12 @@ function tokenCheck() {
   const allTasks = await count('tbody tr[data-act="open-task"]');
   want(hrTasks < allTasks, `фильтр по рынку сузил список (${allTasks} → ${hrTasks})`);
   await go('tab', 'today');
-  want((await count('.cal .cev')) === 3, 'календарь дня показывает встречи из Google');
+  /* на вкладке дня наверху висела полоса встреч — она и есть лишние ~90px хрома */
+  const chromeToday = await p.evaluate(() => {
+    const row = document.querySelector('.list tbody tr');
+    return row ? Math.round(row.getBoundingClientRect().top) : 0;
+  });
+  want(chromeToday > 0 && chromeToday <= 130, `на вкладке дня до первой задачи не больше 130px (сейчас ${chromeToday})`);
   await go('tab', 'all'); await shot('03-tasks-all');
   /* плотность: хром не должен съедать верх экрана, а панель фильтров — пестреть
      переключателями. До правки было 160–291px и полтора десятка контролов подряд. */
@@ -665,14 +699,34 @@ function tokenCheck() {
 
   /* действия в детали */
   await go('take');
-  want((await p.$eval('.detail .f dd .fv', (e) => e.textContent)).includes('В работе'), 'кнопка «Взять в работу» сменила статус');
+  const statusChip = await p.evaluate(() => {
+    const c = [...document.querySelectorAll('.detail .props .pchip')]
+      .find((e) => (e.querySelector('.k') || {}).textContent === 'Статус');
+    return c ? c.querySelector('.v').textContent.trim() : '';
+  });
+  want(statusChip.includes('В работе'), `кнопка «Взять в работу» сменила статус (в чипе «${statusChip}»)`);
+  /* работать с задачей в колонке 372px нельзя — это была форточка, а не рабочее место */
+  const dw = await p.$eval('.detail', (e) => Math.round(e.clientWidth));
+  want(dw >= 520, `рабочая область задачи шире 520px (сейчас ${dw})`);
+  /* «криво косо висят»: значения свойств обязаны стоять по одной линии в своей колонке */
+  const spread = await p.evaluate(() => {
+    const byCol = {};
+    [...document.querySelectorAll('.detail .props .pchip')].filter((e) => e.offsetParent).forEach((c) => {
+      const v = c.querySelector('.v'); if (!v) return;
+      const x = Math.round(c.getBoundingClientRect().left);
+      (byCol[x] = byCol[x] || []).push(Math.round(v.getBoundingClientRect().left));
+    });
+    const cols = Object.values(byCol).filter((xs) => xs.length > 1);
+    return cols.length ? Math.max(...cols.map((xs) => Math.max(...xs) - Math.min(...xs))) : -1;
+  });
+  want(spread >= 0 && spread <= 1, `значения свойств стоят по одной линии (разброс ${spread}px)`);
   /* панель показывает ЗНАЧЕНИЯ, а не все варианты сразу: иначе она читается как форма настроек,
      а не как задача. Порог — поля плюс небольшой запас на переключатели вроде приватности. */
   const panelOpts = await p.evaluate(() => {
     const d = document.querySelector('.detail');
     const vis = (e) => e.offsetParent !== null;
-    return { fields: d.querySelectorAll('.f dt').length,
-      opts: [...d.querySelectorAll('.f .mini, .f .chip, .f .mi')].filter(vis).length };
+    return { fields: d.querySelectorAll('.f dt, .props .pchip').length,
+      opts: [...d.querySelectorAll('.mini, .props .chip, .mi')].filter(vis).length };
   });
   want(panelOpts.opts <= panelOpts.fields + 2,
     `панель детали показывает значения, а не варианты (видно вариантов ${panelOpts.opts} на ${panelOpts.fields} полей)`);

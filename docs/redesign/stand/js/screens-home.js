@@ -17,6 +17,10 @@ function homeNews() {
   ];
 }
 
+/* ширина правого столбца — та же, что в .home в app.css: проценты колонок считаются
+   от ЛЕВОГО столбца, иначе срок схлопывается в «17 …» */
+const HOME_SIDE = 344;
+
 function screenHome() {
   const mine = S.tasks.filter((t) => !t.arch && t.st !== "done" && t.who.includes(ME));
   const grp = (name, list) => list.length
@@ -29,14 +33,18 @@ function screenHome() {
   const body = grp("Просрочено", over) + grp("Сегодня", today) + grp("Дальше", week) + grp("Без срока", rest);
   const pending = S.meetings.filter((m) => m.st === "pending");
   const recent = [...S.entries].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 4);
-  return calendarStrip() + `<div class="home">
+  return `<div class="home">
     <div class="hcol">
       <div class="lab">Мои задачи · ${mine.length}</div>
       ${body
-        ? table([{ t: "Задача" }, { t: "Проект", w: "26%" }, { t: "Метки", w: "18%", opt: true }, { t: "Срок", r: true, w: "96px" }], body)
+        ? table([{ t: "Задача" }, { t: "Проект", w: "26%" }, { t: "Метки", w: "18%", opt: true }, { t: "Срок", r: true, w: "96px" }],
+            body, Math.max(320, workW() - HOME_SIDE))
         : empty("Задач на вас нет", "Свободно — можно взять из общего списка")}
     </div>
     <div class="hcol side">
+      <div class="lab">Встречи сегодня · ${CALENDAR.length}</div>
+      ${calendarList()}
+
       <div class="lab">Топ 5 новостей</div>
       <div class="news">${homeNews().map(([t, kind, a, id]) =>
         `<div class="nw ${kind}" ${act(a, id)} tabindex="0"><i></i>${esc(t)}</div>`).join("")}</div>
