@@ -32,8 +32,12 @@ export async function listProjects(
   // проектов в воркспейсе на порядки меньше, чем задач/записей (обычно единицы-десятки, не тысячи).
   // .limit(500) — просто защитный потолок, а не расчётный лимит: DB-гард глубины (migration
   // 20260812140000) ограничивает вложенность (2 уровня), но НЕ число строк на group_id.
+  // Порядок задаёт `position` (перестановка на доске, issue #433); строки без неё — в хвост по
+  // дате создания. Тот же предикат повторяет фронт (miniapp/src/lib/projectOrder.ts): порядок
+  // должен совпадать до и после перерисовки списка.
   const { data: projects } = await supabase
     .from("projects").select("*").eq("group_id", groupId)
+    .order("position", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true })
     .limit(500);
   let list = (projects ?? []) as Project[];
@@ -90,6 +94,21 @@ export async function getProject(
   return (data as Project | null) ?? null;
 }
 
+/** Позиция для новой строки: в конец списка своих братьев (шаг тот же, что у бэкфилла миграции). */
+const POSITION_STEP = 1000;
+async function nextPosition(
+  groupId: string,
+  parentId: string | null,
+): Promise<number> {
+  let q = supabase.from("projects").select("position").eq("group_id", groupId)
+    .not("position", "is", null)
+    .order("position", { ascending: false }).limit(1);
+  q = parentId === null ? q.is("parent_id", null) : q.eq("parent_id", parentId);
+  const { data } = await q.maybeSingle();
+  const last = (data as { position: number | null } | null)?.position ?? null;
+  return last === null ? POSITION_STEP : last + POSITION_STEP;
+}
+
 export async function createProject(
   input: ProjectInput,
   groupId: string,
@@ -106,9 +125,11 @@ export async function createProject(
     });
     if (!v.ok) throw new Error(v.error);
   }
+  const position = input.position ?? await nextPosition(groupId, parentId);
   const { data, error } = await supabase.from("projects").insert({
     group_id: groupId,
     name: input.name,
+    position,
     color: input.color ?? null,
     emoji: input.emoji ?? null,
     parent_id: parentId,

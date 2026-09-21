@@ -229,6 +229,8 @@ function personProject(name: string): Project {
     emoji: null,
     parent_id: null,
     sprint_id: null,
+    // Порядок в списке ему не нужен: строка виртуальная и живёт только в этой группировке.
+    position: null,
     created_by: null,
     created_at: "",
     is_private: false,
