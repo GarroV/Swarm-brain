@@ -54,6 +54,7 @@ import {
   updateSprint,
 } from "../_shared/tasks/sprints.ts";
 import {
+  canMutateProject,
   createProject,
   deleteProject,
   getProject,
@@ -1543,7 +1544,11 @@ Deno.serve(async (req: Request) => {
     }
     if (req.method === "DELETE") {
       if (!isAdmin) return apiErr(403, "Forbidden", origin);
-      const ok = await deleteSprint(sprintId, groupId, telegram_id ?? undefined);
+      const ok = await deleteSprint(
+        sprintId,
+        groupId,
+        telegram_id ?? undefined,
+      );
       if (!ok) return apiErr(404, "Not found", origin);
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
@@ -1627,6 +1632,33 @@ Deno.serve(async (req: Request) => {
       }
     }
     return apiErr(405, "Method not allowed", origin);
+  }
+
+  // Журнал проекта: что с ним делали и кто (issue #426). Доступ — та же видимость, что у самого
+  // проекта: `getProject` отдаёт null на чужой закрытый, и лента к нему не открывается.
+  const projectHistoryMatch = routePath.match(
+    /^\/projects\/([^/]+)\/history$/,
+  );
+  if (projectHistoryMatch) {
+    if (req.method !== "GET") {
+      return apiErr(405, "Method not allowed", origin);
+    }
+    const projectId = projectHistoryMatch[1];
+    // Видимость и право правки у проекта совпадают, поэтому проверка одна и та же. Чужой
+    // закрытый проект отдаёт 404, а не пустую ленту: пустая читается как «ничего не делали».
+    if (
+      !(await canMutateProject(projectId, groupId, { viewerId: telegram_id }))
+    ) {
+      return apiErr(404, "Not found", origin);
+    }
+    const { data } = await supabase.from("project_history")
+      .select(
+        "field, old_value, new_value, changed_by, changed_by_telegram_id, note, created_at",
+      )
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    return json(data ?? [], 200, origin);
   }
 
   const projectMatch = routePath.match(/^\/projects\/([^/]+)$/);
