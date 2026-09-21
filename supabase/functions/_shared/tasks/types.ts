@@ -81,6 +81,11 @@ export type TaskInput = {
 // ── Спринты ───────────────────────────────────────────────────────────────────
 export type SprintStatus = "planned" | "active" | "completed";
 
+// Таблица `sprints` обслуживает две разные поверхности, и их нельзя мешать: пространство,
+// заведённое в разделе «Спринты», однажды вылезло вкладкой в «Проектах» и уронило весь раздел
+// (разведены 21.09.2026, issue #423).
+export type SprintKind = "board_tab" | "space";
+
 export type Sprint = {
   id: string;
   group_id: string;
@@ -88,6 +93,7 @@ export type Sprint = {
   start_date: string;
   end_date: string;
   status: SprintStatus;
+  kind: SprintKind;
   created_at: string;
 };
 
@@ -96,6 +102,7 @@ export type SprintInput = {
   start_date: string;
   end_date: string;
   status?: SprintStatus;
+  kind?: SprintKind;
 };
 
 // ── Зависимости задач ─────────────────────────────────────────────────────────

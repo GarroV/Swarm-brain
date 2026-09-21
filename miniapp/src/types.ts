@@ -61,6 +61,11 @@ export type TaskLink = {
 
 export type SprintStatus = "planned" | "active" | "completed";
 
+// Одна таблица под две сущности: `board_tab` — вкладка доски «Проекты», `space` — пространство
+// раздела «Спринты». Разведены 21.09.2026 (issue #423): пространство, показанное вкладкой в
+// проектах, оставило раздел пустым у всех пользователей.
+export type SprintKind = "board_tab" | "space";
+
 export type Sprint = {
   id: string;
   group_id: string;
@@ -68,6 +73,8 @@ export type Sprint = {
   start_date: string;
   end_date: string;
   status: SprintStatus;
+  // Необязательное: старый ответ API (до раскатки функций) поля не содержит — читаем как board_tab.
+  kind?: SprintKind;
   created_at: string;
 };
 

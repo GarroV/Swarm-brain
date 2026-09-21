@@ -222,7 +222,7 @@ export function SprintsScreen() {
         fetchSprintCycles(),
         fetchTasks(),
         fetchProjects(),
-        fetchSprints(),
+        fetchSprints("space"),
         fetchUsers(),
       ]);
       setCycles(c);

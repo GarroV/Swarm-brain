@@ -1465,7 +1465,15 @@ Deno.serve(async (req: Request) => {
   // Чтение — любой в воркспейсе; создание/изменение/удаление — только админ.
   if (routePath === "/sprints") {
     if (req.method === "GET") {
-      return json(await listSprints(groupId), 200, origin);
+      // ?kind=board_tab — вкладки доски «Проекты», ?kind=space — пространства раздела
+      // «Спринты». Без параметра отдаём всё: старый веб, открытый в момент раскатки, должен
+      // продолжать работать. Новый веб всегда спрашивает свою сущность (issue #423).
+      const kindParam = url.searchParams.get("kind");
+      if (kindParam && kindParam !== "board_tab" && kindParam !== "space") {
+        return apiErr(400, "kind must be board_tab or space", origin);
+      }
+      const kind = (kindParam ?? "all") as "board_tab" | "space" | "all";
+      return json(await listSprints(groupId, kind), 200, origin);
     }
     if (req.method === "POST") {
       // Создание вкладки — любой участник воркспейса (владелец 2026-08-19: юзер уткнулся в
@@ -1486,11 +1494,19 @@ Deno.serve(async (req: Request) => {
       if ((body.start_date as string) > (body.end_date as string)) {
         return apiErr(400, "start_date не может быть позже end_date", origin);
       }
+      if (
+        body.kind !== undefined && body.kind !== "board_tab" &&
+        body.kind !== "space"
+      ) {
+        return apiErr(400, "kind must be board_tab or space", origin);
+      }
       const input: SprintInput = {
         name: body.name as string,
         start_date: body.start_date as string,
         end_date: body.end_date as string,
         status: (body.status as SprintInput["status"]) ?? "planned",
+        // Поверхность называет себя сама; молчание = вкладка доски, как было до разделения.
+        kind: (body.kind as SprintInput["kind"]) ?? "board_tab",
       };
       try {
         return json(await createSprint(input, groupId), 201, origin);

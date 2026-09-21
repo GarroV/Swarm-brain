@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import type { Sprint, SprintInput } from "./types.ts";
+import type { Sprint, SprintInput, SprintKind } from "./types.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -8,10 +8,16 @@ const supabase = createClient(
 
 // Все операции изолированы по group_id — спринт принадлежит воркспейсу.
 
-export async function listSprints(groupId: string): Promise<Sprint[]> {
-  const { data } = await supabase
-    .from("sprints").select("*").eq("group_id", groupId)
-    .order("start_date", { ascending: false });
+// `kind` обязателен на вызове: список без фильтра однажды притащил пространство спринтов
+// вкладкой на доску «Проекты» и оставил раздел пустым у всех (issue #423). Кому правда нужны
+// обе сущности разом — передаёт "all" осознанно.
+export async function listSprints(
+  groupId: string,
+  kind: SprintKind | "all" = "all",
+): Promise<Sprint[]> {
+  let q = supabase.from("sprints").select("*").eq("group_id", groupId);
+  if (kind !== "all") q = q.eq("kind", kind);
+  const { data } = await q.order("start_date", { ascending: false });
   return (data ?? []) as Sprint[];
 }
 
@@ -25,6 +31,8 @@ export async function createSprint(
     start_date: input.start_date,
     end_date: input.end_date,
     status: input.status ?? "planned",
+    // Без явного kind запись становится вкладкой доски — поверхность указывает его сама.
+    kind: input.kind ?? "board_tab",
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Sprint;
