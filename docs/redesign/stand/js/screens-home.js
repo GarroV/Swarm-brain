@@ -31,6 +31,10 @@ function screenHome() {
   const week = mine.filter((t) => t.due && t.due > TODAY).sort((a, b) => a.due.localeCompare(b.due)).slice(0, 6);
   const rest = mine.filter((t) => !t.due).slice(0, 4);
   const body = grp("Просрочено", over) + grp("Сегодня", today) + grp("Дальше", week) + grp("Без срока", rest);
+  /* «Задачи команды» — панель дашборда продукта: общие задачи, которые никто не взял.
+     Без неё главная показывает только свою работу, и ничьи задачи остаются незамеченными. */
+  const team = S.tasks.filter((t) => !t.arch && t.st !== "done" && !t.priv && !t.who.length)
+    .sort((a, b) => String(a.due || "9999").localeCompare(String(b.due || "9999")));
   const pending = S.meetings.filter((m) => m.st === "pending");
   const recent = [...S.entries].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 4);
   return `<div class="home">
@@ -40,6 +44,13 @@ function screenHome() {
         ? table([{ t: "Задача" }, { t: "Проект", w: "26%" }, { t: "Метки", w: "18%", opt: true }, { t: "Срок", r: true, w: "96px" }],
             body, Math.max(320, workW() - HOME_SIDE))
         : empty("Задач на вас нет", "Свободно — можно взять из общего списка")}
+      <div class="lab">Задачи команды · ${team.length}${team.length ? ` <span class="labr" ${act("team-tasks")} tabindex="0">все задачи команды</span>` : ""}</div>
+      ${team.length
+        ? table([{ t: "Задача" }, { t: "Проект", w: "26%" }, { t: "Срок", r: true, w: "96px" }],
+            team.slice(0, 5).map((t) => `<tr class="row${S.sel === t.id && S.selKind === "task" ? " sel" : ""}" ${act("open-task", t.id)} tabindex="0">
+              ${cell(`${dot(t.st)}${priMark(t.prio)}${esc(t.t)}`, "t")}${cell(esc(projPath(t.pr)))}${cell(due(t.due, false), "r")}</tr>`).join(""),
+            Math.max(320, workW() - HOME_SIDE))
+        : empty("Ничьих задач нет", "Всё, что общее, кто-то уже взял")}
     </div>
     <div class="hcol side">
       <div class="lab">Встречи сегодня · ${CALENDAR.length}</div>

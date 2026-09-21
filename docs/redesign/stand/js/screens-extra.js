@@ -105,11 +105,27 @@ function screenTimeline() {
 /* ── календарь дня (Google Calendar) ─────────────────────────── */
 /* Встречи дня — колонкой сбоку. Горизонтальной полосой они забирали всю ширину сверху
    и толкали работу вниз; вертикальным блоком стоят рядом и ничего не отжимают. */
+/* «идёт сейчас» — отдельный факт, не то же самое, что «рекордер пишет»: путать их
+   нельзя, человек по этой подписи решает, заходить ли в звонок (канон MeetingsToday). */
+const NOW_HM = "11:12";
+const isNow = (c) => c.at <= NOW_HM && NOW_HM < c.to;
+
 function calendarList() {
-  if (!CALENDAR.length) return "";
-  return `<div class="calv">${CALENDAR.map((c) => `<div class="cev">
+  /* календарь может быть не подключён или доступ по нему истечь: пустой список в этом
+     случае читается как «встреч сегодня нет», а это враньё — и человек не узнает,
+     что чинить. Состояние называем словом и даём дорогу. */
+  if (S.cal === "off") return `<div class="calv"><div class="cnone"><b>Календарь не подключён</b>
+    <span>Встречи дня и запуск рекордера берутся из Google Calendar</span>
+    ${btn("Подключить календарь", "cal-connect", undefined, undefined, "pri sm")}</div></div>`;
+  if (S.cal === "expired") return `<div class="calv"><div class="cnone"><b>Доступ к календарю истёк</b>
+    <span>Google отозвал разрешение — встречи дня сейчас не приходят</span>
+    ${btn("Переподключить", "cal-connect", undefined, undefined, "pri sm")}</div></div>`;
+  if (!CALENDAR.length) return `<div class="calv"><div class="cnone"><b>Сегодня встреч нет</b>
+    <span>Календарь подключён — день свободен</span></div></div>`;
+  return `<div class="calv">${CALENDAR.map((c) => `<div class="cev${isNow(c) ? " now" : ""}">
     <span class="at">${c.at}</span><b>${esc(c.t)}</b>
     <div class="cf"><span class="pl">${esc(c.place)}</span>${avs(c.who)}
+    ${isNow(c) ? state("идёт сейчас", true) : ""}
     ${c.rec ? state("рекордер включится", true) : state("без записи", false)}</div></div>`).join("")}</div>`;
 }
 

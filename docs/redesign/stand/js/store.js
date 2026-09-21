@@ -23,6 +23,8 @@ const S = {
   boards: BOARDS.slice(), boardTab: "b1", openProj: new Set(["p1"]), subOpen: new Set(),
   /* система */
   theme: "light", lang: "RU", tz: "Europe/Belgrade", toast: null,
+  /* календарь: on — подключён, off — не подключён, expired — доступ истёк */
+  cal: "on",
   /* данные */
   tasks: TASKS.slice(), meetings: MEETINGS.slice(), entries: ENTRIES.slice(), files: FILES.slice(),
   projects: PROJECTS.slice(), comments: { ...COMMENTS }, history: { ...HISTORY },
@@ -345,6 +347,14 @@ const A = {
     if (f.file) S.files = [{ id: uid("f"), n: f.file, ty: (f.file.split(".").pop() || "doc"), sz: "— КБ", rec: e.id, who: ME, at: TODAY, ix: "в очереди" }, ...S.files];
     A.toast("Запись добавлена в базу");
     A.select("entry", e.id);
+  },
+  /* «В задачу» — задача из записи прямо в базе: в продукте RecordDetail так и делает,
+     иначе человек копирует текст руками и теряет ссылку на источник */
+  taskFromEntry(id) {
+    const e = S.entries.find((x) => x.id === id);
+    if (!e) return;
+    A.createTask({ title: clip(e.h, 60), pr: null, who: ME, due: null, prio: "med",
+      labels: [], mk: (e.cc || [])[0] || null, recur: null, priv: e.priv, note: e.p });
   },
   reindex(kind, id) {
     if (kind === "entry") S.entries = S.entries.map((e) => e.id === id ? { ...e, ix: { n: e.ix.n, at: "только что" } } : e);

@@ -761,3 +761,16 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
   padding:8px 10px;font-size:var(--fs-dense);color:var(--ink)}
 .mn .w{font-size:var(--fs-meta);color:var(--ink-3);margin-bottom:3px}
 .mn .w b{color:var(--ink-2);font-weight:600}
+
+/* «Кратко от ИИ» — пересказ, а не цитата: отличаем его от фрагмента записи, иначе
+   человек читает сводку как дословный текст документа. */
+.note.ai{background:var(--accent-soft);border-color:var(--accent-line)}
+
+/* Календарь без данных объясняет себя: «встреч нет» и «календарь не подключён» —
+   разные факты, и человек по ним делает разное. */
+.cnone{display:flex;flex-direction:column;gap:5px;align-items:flex-start;padding:12px 13px;border:1px dashed var(--line-strong);
+  border-radius:10px;background:var(--surface-2)}
+.cnone b{font-size:var(--fs-dense);color:var(--ink)}
+.cnone span{font-size:var(--fs-meta);color:var(--ink-3)}
+.calv .cev.now{border-color:var(--accent);background:var(--accent-soft)}
+.lab .labr{float:right;font-weight:500;color:var(--accent);cursor:pointer;text-transform:none;letter-spacing:0}

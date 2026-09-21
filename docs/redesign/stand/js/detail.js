@@ -139,10 +139,20 @@ function detailMeeting(m) {
 }
 
 /* ── запись базы ─────────────────────────────────────────────── */
+/* «Кратко от ИИ» — то, что в продукте показывает RecordDetail: одно-два предложения
+   по записи. В стенде модели нет, поэтому пересказ собирается из самой записи, и у
+   записи без текста его не появляется: выдуманная сводка хуже её отсутствия. */
+function aiSum(e) {
+  if (!e.p) return "Пересказывать нечего: у записи нет текста.";
+  const first = e.p.split(/(?<=[.!?])\s/)[0] || e.p;
+  return `${first} Источник — ${TY_LABEL[e.ty] || e.ty}${e.meet ? " со встречи" : ""}, ${e.ix.n ? `в индексе ${nFrag(e.ix.n)}` : "вне индекса"}.`;
+}
+
 function detailEntry(e) {
   const files = S.files.filter((f) => f.rec === e.id);
   return dhead(`Запись · ${e.ty}`, e.h,
-    btn("Открыть полностью", "reader", e.id, undefined, "pri") + btn("Переиндексировать", "reindex-entry", e.id)
+    btn("Открыть полностью", "reader", e.id, undefined, "pri") + btn("В задачу", "task-from-entry", e.id)
+    + btn("Переиндексировать", "reindex-entry", e.id)
     + btn("Править", "edit-entry", e.id) + btn("Удалить", "del-entry", e.id))
     + `<div class="d-body"><dl class="f">
       <dt>Тип</dt><dd>${tag(TY_LABEL[e.ty] || e.ty, "l")}</dd><dt>Автор</dt><dd>${av(e.who)}</dd>
@@ -150,6 +160,7 @@ function detailEntry(e) {
       <dt>Приватность</dt><dd><button class="fv" ${act("tgl-epriv", e.id)}>${e.priv ? "личная" : "общая"}</button></dd>
       <dt>Страны</dt><dd>${pickm(e.cc.length ? cc(e.cc) : `<span class="muted">—</span>`, COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "tgl-ecc", e.id, c.c, e.cc.includes(c.c)]))}</dd>
       <dt>Индекс</dt><dd>${state(e.ix.n ? `${nFrag(e.ix.n)} · ${e.ix.at}` : "не индексируется", !!e.ix.n)}</dd></dl>
+      ${lab("Кратко от ИИ")}<div class="note ai">${esc(aiSum(e))}</div>
       ${lab("Фрагмент")}<div class="note">${esc(e.p)}</div>
       ${e.meet ? lab("Из встречи") + `<div class="src" ${act("open-meet", e.meet)}>${esc((S.meetings.find((m) => m.id === e.meet) || {}).t || "")}</div>` : ""}
       ${lab(`Файлы · ${files.length}`)}
@@ -161,7 +172,9 @@ function detailEntry(e) {
 function detailFile(f) {
   const e = S.entries.find((x) => x.id === f.rec) || {};
   return dhead(`Файл · ${f.ty.toUpperCase()}`, f.n,
-    btn("Скопировать ссылку", "copy", undefined, `https://swarm-brain.pages.dev/drive/${f.id}/${f.n}`, "pri") + btn("Переиндексировать", "reindex-file", f.id) + btn("Заменить файл", "replace-file", f.id))
+    btn("Скачать файл", "download-file", f.id, undefined, "pri")
+    + btn("Скопировать ссылку", "copy", undefined, `https://swarm-brain.pages.dev/drive/${f.id}/${f.n}`)
+    + btn("Переиндексировать", "reindex-file", f.id) + btn("Заменить файл", "replace-file", f.id))
     + `<div class="d-body"><div class="prev"><span class="ft ft-${f.ty}">${f.ty}</span>Предпросмотр доступен после открытия</div>
       <dl class="f"><dt>Размер</dt><dd><span class="due">${fsz(f.kb)}</span></dd>
       <dt>Загрузил</dt><dd>${av(f.who)}</dd><dt>Когда</dt><dd>${dt(f.at)}</dd>

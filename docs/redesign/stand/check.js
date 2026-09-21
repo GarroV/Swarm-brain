@@ -644,6 +644,44 @@ function tokenCheck() {
   want((await count('.home .nw')) >= 5, 'на главной есть топ новостей');
   /* встречи дня переехали в правый столбец: полосой наверху они забирали ширину у работы */
   want((await count('.home .hcol.side .calv .cev')) === 3, 'встречи дня стоят колонкой справа на главной');
+  /* «Задачи команды» — панель дашборда продукта: в ней ничьи общие задачи, и ни одной
+     своей или личной. Иначе панель дублирует «Мои задачи» и обещает не то. */
+  const teamPanel = await p.evaluate(() => {
+    const labs = [...document.querySelectorAll('.home .lab')];
+    const lab = labs.find((e) => e.textContent.includes('Задачи команды'));
+    if (!lab) return null;
+    const tbl = lab.nextElementSibling;
+    const ids = [...tbl.querySelectorAll('tbody tr[data-act="open-task"]')].map((r) => +r.dataset.id);
+    const rows = ids.map((id) => S.tasks.find((t) => t.id === id)).filter(Boolean);
+    return { said: +(lab.textContent.match(/·\s*(\d+)/) || [])[1], shown: ids.length,
+      mine: rows.filter((t) => t.who.includes(ME)).length,
+      priv: rows.filter((t) => t.priv).length,
+      real: S.tasks.filter((t) => !t.arch && t.st !== 'done' && !t.priv && !t.who.length).length };
+  });
+  want(teamPanel !== null && teamPanel.shown > 0, 'на главной есть панель «Задачи команды»');
+  want(teamPanel && teamPanel.mine === 0 && teamPanel.priv === 0,
+    `в «Задачах команды» нет ни своих, ни личных (своих ${teamPanel && teamPanel.mine}, личных ${teamPanel && teamPanel.priv})`);
+  want(teamPanel && teamPanel.said === teamPanel.real,
+    `счётчик панели команды равен числу ничьих задач (${teamPanel && teamPanel.said} против ${teamPanel && teamPanel.real})`);
+  /* календарь без подключения обязан сказать об этом: пустой список читается как
+     «встреч сегодня нет», и человек не узнаёт, что чинить */
+  await p.evaluate(() => { S.cal = 'off'; render(); });
+  await new Promise((r) => setTimeout(r, 120));
+  const calOff = await p.evaluate(() => {
+    const box = document.querySelector('.home .calv');
+    return { text: box ? box.textContent : '', hasBtn: !!(box && box.querySelector('[data-act="cal-connect"]')),
+      events: box ? box.querySelectorAll('.cev').length : -1 }; });
+  want(calOff.events === 0 && /не подключ/i.test(calOff.text) && calOff.hasBtn,
+    `неподключённый календарь объясняет себя и даёт дорогу («${calOff.text.trim().slice(0, 40)}»)`);
+  await p.evaluate(() => { S.cal = 'on'; render(); });
+  await new Promise((r) => setTimeout(r, 120));
+  /* «идёт сейчас» — отдельный факт от «рекордер включится»: путать их нельзя */
+  const nowMark = await p.evaluate(() => {
+    const live = [...document.querySelectorAll('.home .cev')].filter((e) => e.classList.contains('now'));
+    return { live: live.length, said: live.map((e) => e.textContent).filter((t) => /идёт сейчас/.test(t)).length,
+      real: CALENDAR.filter((c) => c.at <= NOW_HM && NOW_HM < c.to).length }; });
+  want(nowMark.real > 0 && nowMark.live === nowMark.real && nowMark.said === nowMark.real,
+    `идущая сейчас встреча помечена словом (идёт ${nowMark.real}, помечено ${nowMark.said})`);
 
   /* ── задачи ─────────────────────────────────────────────── */
   await go('sec', 'tasks');
@@ -1011,7 +1049,33 @@ function tokenCheck() {
   }
 
   /* ── база ───────────────────────────────────────────────── */
-  await go('sec', 'base'); await shot('12-base');
+  await go('sec', 'base');
+  /* «В задачу» из записи: в продукте RecordDetail так и делает, и задача обязана
+     унести с собой текст записи — иначе человек копирует руками и теряет источник */
+  {
+    const before = await p.evaluate(() => S.tasks.length);
+    const entryId = await p.evaluate(() => (S.entries.find((e) => e.p) || {}).id);
+    await go('open-entry', entryId);
+    await go('task-from-entry', entryId);
+    await new Promise((r) => setTimeout(r, 140));
+    const made = await p.evaluate((id) => {
+      const e = S.entries.find((x) => x.id === id);
+      const t = S.tasks[0];
+      return { grew: S.tasks.length, tookText: !!t && t.note === e.p, titled: !!t && t.t.length > 0 };
+    }, entryId);
+    want(made.grew === before + 1, `задача из записи создана (${before} → ${made.grew})`);
+    want(made.tookText && made.titled, 'задача из записи унесла её текст и название, а не пустую форму');
+    /* пересказ модели не выдумывается: у записи без текста его нет */
+    const aiHonest = await p.evaluate(() => {
+      const withText = aiSum({ p: 'Первое предложение. Второе.', ty: 'note', ix: { n: 3 } });
+      const without = aiSum({ p: '', ty: 'note', ix: { n: 0 } });
+      return { withText, without };
+    });
+    want(aiHonest.withText.includes('Первое предложение.'), 'пересказ опирается на текст записи');
+    want(/нечего/.test(aiHonest.without), `у записи без текста пересказ не выдумывается («${aiHonest.without}»)`);
+    await go('close');
+  }
+ await shot('12-base');
   const recs = await count('tbody tr[data-act="open-entry"]');
   await gov('b-cc', 'HR');
   const hr = await count('tbody tr[data-act="open-entry"]');

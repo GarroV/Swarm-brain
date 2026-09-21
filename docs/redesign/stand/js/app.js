@@ -221,6 +221,8 @@ const ACTS = {
   "create-entry": () => { const f = formData(); if (!f.title) return A.toast("Нужно название");
     closeModal(); A.createEntry({ ty: f.ty, title: f.title, text: f.text, cc: f.cc, priv: f.priv, file: f.file }); },
   "reindex-entry": (id) => A.reindex("entry", id),
+  "task-from-entry": (id) => A.taskFromEntry(id),
+  "download-file": (id) => A.toast(`Файл скачивается: ${(S.files.find((f) => f.id === id) || {}).n || ""}`),
   "reindex-file": (id) => A.reindex("file", id),
   /* удаление без спроса: запись держит целую расшифровку, метка снимается сразу с N задач,
      инициатива исчезает вместе с предложенными задачами. Спрашиваем, как у задачи. */
@@ -299,6 +301,8 @@ const ACTS = {
   "mf-store": (_, v) => { S.mf = { ...S.mf, store: v }; render(); },
   "mf-st": (_, v) => { S.mf = { ...S.mf, st: v }; render(); },
   "mf-clear": () => { S.mf = { q: "", period: "all", cc: [], src: [], people: [], store: "any", st: "any" }; render(); },
+  "team-tasks": () => { A.go("tasks"); A.set({ lens: "team", archOn: false, recurOnly: false, q: "", assignee: null }); },
+  "cal-connect": () => { S.cal = "on"; A.set({}); A.toast("Календарь подключён — встречи дня подтянутся"); },
   integr: (id) => A.toggleIntegration(id),
   broadcast: () => broadcastModal(),
   "do-broadcast": () => { const f = formData(); closeModal(); A.broadcast(f.text, f.to); },
