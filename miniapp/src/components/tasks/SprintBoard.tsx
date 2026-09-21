@@ -126,7 +126,13 @@ export function SprintBoard() {
 
   const load = useCallback(async () => {
     try {
-      const [t, s, p] = await Promise.all([fetchTasks(), fetchSprints(), fetchProjects()]);
+      // Только вкладки доски: пространства раздела «Спринты» лежат в той же таблице, и одно из
+      // них однажды стало здесь первой вкладкой, оставив раздел пустым у всех (issue #423).
+      const [t, s, p] = await Promise.all([
+        fetchTasks(),
+        fetchSprints("board_tab"),
+        fetchProjects(),
+      ]);
       setTasks(t); setSprints(s); setProjects(p);
     } catch { /* keep */ } finally { setLoading(false); }
   }, []);
@@ -292,7 +298,12 @@ export function SprintBoard() {
     // подставляем сегодняшнюю (пользователь их не видит).
     const today = new Date().toISOString().slice(0, 10);
     try {
-      const created = await createSprint({ name: form.name.trim(), start_date: today, end_date: today });
+      const created = await createSprint({
+        name: form.name.trim(),
+        start_date: today,
+        end_date: today,
+        kind: "board_tab",
+      });
       setForm({ name: "", start_date: "", end_date: "" }); setCreating(false);
       await load(); setSelected(created.id);
     } catch (e) { setFormErr(e instanceof Error ? e.message : "Не удалось создать вкладку"); }

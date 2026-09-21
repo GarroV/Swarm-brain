@@ -75,6 +75,9 @@ export function SpaceSwitcher(
           name,
           start_date: today,
           end_date: today,
+          // Именно пространство раздела «Спринты», не вкладка доски «Проекты» — одна таблица
+          // на две сущности однажды показала это пространство в проектах (issue #423).
+          kind: "space",
         });
         await onChanged?.();
         onChange(created.id);

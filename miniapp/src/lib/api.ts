@@ -18,6 +18,7 @@ import type {
   SprintCycleDetail,
   SprintCycleItem,
   SprintStats,
+  SprintKind,
   SprintStatus,
   Task,
   TaskLink,
@@ -1137,9 +1138,14 @@ let mockSprints: Sprint[] = [
   },
 ];
 
-export async function fetchSprints(): Promise<Sprint[]> {
-  if (DEV_MODE) return mockSprints;
-  return apiFetch<Sprint[]>("/sprints");
+// Вкладки доски «Проекты» и пространства раздела «Спринты» лежат в одной таблице, поэтому
+// экран обязан назвать СВОЮ сущность: список без фильтра однажды притащил пространство
+// вкладкой в «Проекты» и оставил раздел пустым у всех (issue #423).
+export async function fetchSprints(kind?: SprintKind): Promise<Sprint[]> {
+  if (DEV_MODE) {
+    return kind ? mockSprints.filter((s) => (s.kind ?? "board_tab") === kind) : mockSprints;
+  }
+  return apiFetch<Sprint[]>(kind ? `/sprints?kind=${kind}` : "/sprints");
 }
 
 export async function createSprint(
@@ -1148,6 +1154,7 @@ export async function createSprint(
     start_date: string;
     end_date: string;
     status?: SprintStatus;
+    kind?: SprintKind;
   },
 ): Promise<Sprint> {
   if (DEV_MODE) {
