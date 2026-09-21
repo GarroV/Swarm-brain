@@ -1562,6 +1562,51 @@ function tokenCheck() {
     want(after.entries === before.entries + 1 && after.n === 0,
       `импорт заметок довёз запись до базы (записей ${before.entries} → ${after.entries}, осталось ${after.n})`);
   }
+  /* Роли задач — справочник, а не константа в коде: в продукте набор зашит
+     (marketing/bd/rnd) и поле скрыто флагом, поэтому ролью никто не пользуется.
+     Заведённая роль обязана быть доступна в задаче сразу, а снятая — уйти с задач. */
+  await go('tab', 'roles');
+  want((await count('[data-act="add-role"]')) === 1, 'роли задач настраиваются с экрана настроек');
+  await go('add-role');
+  await p.type('[data-f="n"]', 'Операции');
+  await go('save-role', '');
+  await new Promise((r) => setTimeout(r, 140));
+  const newRole = await p.evaluate(() => S.roles.find((r) => r.n === 'Операции') || null);
+  want(newRole !== null, 'новая роль появилась в справочнике');
+  await go('sec', 'tasks');
+  const roleTask = await p.evaluate(() => visibleTasks()[0].id);
+  await go('open-task', roleTask);
+  await go('tgl', 'allProps');
+  await new Promise((r) => setTimeout(r, 120));
+  const roleChoices = await p.evaluate(() => [...document.querySelectorAll('.detail .props .mi')].map((e) => e.textContent.trim()));
+  want(roleChoices.includes('Операции'), 'заведённая роль сразу доступна в задаче');
+  await gov2('set-role', roleTask, newRole.id);
+  await new Promise((r) => setTimeout(r, 120));
+  want((await p.evaluate((id) => S.tasks.find((t) => t.id === id).role, roleTask)) === newRole.id,
+    'роль ставится в задаче');
+  await go('tgl', 'allProps');
+  await go('close');
+  await go('sec', 'settings'); await go('tab', 'roles');
+  await go('del-role', newRole.id);
+  const roleAsks = (await count('.modal [data-act="do-del-role"]')) === 1;
+  const roleSaid = await text('.modal');
+  want(roleAsks && /задач/.test(roleSaid), `удаление роли спрашивает и называет, с каких задач она уйдёт («${roleSaid.trim().slice(0, 60)}»)`);
+  await go('do-del-role', newRole.id);
+  await new Promise((r) => setTimeout(r, 140));
+  const roleGone = await p.evaluate((id) => ({ inDict: S.roles.some((r) => r.id === id), onTasks: S.tasks.filter((t) => t.role === id).length }), newRole.id);
+  want(!roleGone.inDict && roleGone.onTasks === 0,
+    `снятая роль ушла и из справочника, и с задач (на задачах ${roleGone.onTasks})`);
+  /* Список в продукте ЛИЧНЫЙ: задача, попавшая в список, становится личной. Иначе
+     личный список одного человека уезжает в общий список чужими глазами. */
+  await go('sec', 'tasks');
+  const openTask = await p.evaluate(() => (visibleTasks().find((t) => !t.priv && !t.labels.length) || {}).id);
+  const someLabel = await p.evaluate(() => S.labels[0].id);
+  await gov2('tgl-label', openTask, someLabel);
+  await new Promise((r) => setTimeout(r, 120));
+  const gotPriv = await p.evaluate((id) => { const t = S.tasks.find((x) => x.id === id); return { priv: t.priv, has: t.labels.length }; }, openTask);
+  want(gotPriv.has === 1 && gotPriv.priv === true, 'задача, попавшая в список, стала личной');
+  await gov2('tgl-label', openTask, someLabel);
+  await go('sec', 'settings');
   await go('tab', 'notif');
   const onBefore = await count('.state.on');
   await go('notif-pref', 'tez');
