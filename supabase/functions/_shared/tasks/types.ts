@@ -140,6 +140,12 @@ export type Project = {
   // закрытую строку видит только её created_by, админского обхода нет. Наследуется вниз — закрытый
   // проект закрывает свои подпроекты. Предикат — canViewProject (_shared/tasks/project-access.ts).
   is_private: boolean;
+  /**
+   * Порядок в списке братьев (один родитель + один воркспейс), общий для команды: меньше — выше.
+   * Вставка между соседями считается как середина их позиций, поэтому перетаскивание правит одну
+   * строку. NULL — строка ещё не размещена, показывается в хвосте по дате создания.
+   */
+  position: number | null;
 };
 
 export type ProjectInput = {
@@ -153,4 +159,6 @@ export type ProjectInput = {
   owner_telegram_id?: number | null;
   start_date?: string | null;
   end_date?: string | null;
+  /** Порядок среди братьев; не передан при создании — проект встаёт в конец списка. */
+  position?: number | null;
 };

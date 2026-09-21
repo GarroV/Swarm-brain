@@ -52,6 +52,23 @@ export function parseProjectFields(
     }
   }
 
+  // Позиция в списке братьев (перестановка на доске, issue #433). Строка и NaN сюда приходить
+  // не должны: позиция считается на клиенте арифметикой, и мусор означает сломанный вызов, а не
+  // намерение пользователя, — записать его значит тихо перемешать чужой порядок.
+  if ("position" in body) {
+    const v = body.position;
+    if (v === null) {
+      fields.position = null;
+    } else if (typeof v === "number" && Number.isFinite(v)) {
+      fields.position = v;
+    } else {
+      return {
+        fields: {},
+        error: "position: ожидается конечное число или null",
+      };
+    }
+  }
+
   for (const key of ["start_date", "end_date"] as const) {
     if (!(key in body)) continue;
     const parsed = readDate(body[key], key);

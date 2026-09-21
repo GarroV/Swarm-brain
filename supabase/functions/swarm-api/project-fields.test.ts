@@ -84,3 +84,26 @@ Deno.test("одинаковые даты — это один день, а не �
   });
   assertEquals(out.error, null);
 });
+
+// ── позиция в списке (перестановка на доске, issue #433) ─────────────────────
+// Мусор в позиции ломается молча: строка уедет в непредсказуемое место списка или порядок
+// схлопнется в дубли — на экране это выглядит как «карточки сами прыгают», а не как ошибка.
+
+Deno.test("позиция принимается числом, в том числе дробным и отрицательным", () => {
+  assertEquals(parseProjectFields({ position: 2500 }).fields.position, 2500);
+  assertEquals(parseProjectFields({ position: 1500.5 }).fields.position, 1500.5);
+  assertEquals(parseProjectFields({ position: -1000 }).fields.position, -1000);
+});
+
+Deno.test("позиция снимается только явным null", () => {
+  assertEquals(parseProjectFields({ position: null }).fields, { position: null });
+  assertEquals(parseProjectFields({}).fields.position, undefined);
+});
+
+Deno.test("нечисло и не-конечное число в позиции — отказ, а не молчаливая запись", () => {
+  for (const bad of ["вверх", "", true, {}, [], Number.NaN, Number.POSITIVE_INFINITY]) {
+    const out = parseProjectFields({ position: bad });
+    assertEquals(out.fields, {}, `принято мусорное значение: ${String(bad)}`);
+    assertEquals(typeof out.error, "string");
+  }
+});

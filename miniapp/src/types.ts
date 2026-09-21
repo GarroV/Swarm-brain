@@ -213,6 +213,10 @@ export type Project = {
   owner_telegram_id: number | null;
   start_date: string | null;
   end_date: string | null;
+  // Порядок в списке братьев (один родитель), общий для команды: меньше — выше. Двигается
+  // перетаскиванием на доске; расчёт новой позиции — miniapp/src/lib/projectOrder.ts.
+  // null — строка ещё не размещена, показывается в хвосте по дате создания.
+  position: number | null;
   // Отдаётся из GET /projects (агрегаты):
   task_count?: number;
   backlog_count?: number;
