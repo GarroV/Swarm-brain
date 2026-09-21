@@ -897,6 +897,25 @@ function tokenCheck() {
   const pingRow = await p.evaluate(() => {
     const t = S.tasks.find((x) => !x.arch && !x.ping && visibleTasks().includes(x));
     return t ? t.id : null; });
+  /* Открытое меню обязано быть ВИДНО. Меню чипа лежало в ячейке с overflow:hidden:
+     кнопка нажималась, меню открывалось и обрезалось в ноль — чип выглядел мёртвым
+     (жалоба владельца 21.09 «чипы у задач не рабочие»). Проверяем не «открылось», а
+     «до пункта можно дотянуться мышью». */
+  {
+    await p.evaluate(() => document.querySelector('.list .qa').click());
+    await new Promise((r) => setTimeout(r, 140));
+    const reach = await p.evaluate(() => {
+      const d = document.querySelector('.list .drop.open');
+      if (!d) return { open: false };
+      const m = d.querySelector('.dmenu'), r = m.getBoundingClientRect();
+      const el = document.elementFromPoint(r.left + r.width / 2, r.top + 12);
+      return { open: true, w: Math.round(r.width), h: Math.round(r.height),
+        hit: !!(el && m.contains(el)) };
+    });
+    want(reach.open && reach.w > 60 && reach.h > 40 && reach.hit,
+      `меню быстрого чипа видно и по нему можно попасть (${reach.w}×${reach.h}, попадание ${reach.hit})`);
+    await p.evaluate(() => document.body.click());
+  }
   const pingsBefore = await count('.list .ping');
   /* пинг ставится быстрым чипом ПРЯМО ИЗ СТРОКИ — перенос TaskQuickActions продукта:
      самое частое движение в списке не должно стоить открытия карточки */
@@ -1547,6 +1566,35 @@ function tokenCheck() {
   await gov('set-group', 'ini');
   await new Promise((r) => setTimeout(r, 120));
   want(byPeople === sprintCount.rows, `группировка по людям показывает тот же состав (${byPeople} против ${sprintCount.rows})`);
+  /* Выехавшая панель закрывается кликом по пустому месту: она лежит поверх экрана,
+     и крестик в дальнем углу был единственным выходом (владелец 21.09: «контринтуитивно»). */
+  {
+    if (!(await p.evaluate(() => S.poolOpen))) await go('tgl', 'poolOpen');
+    await new Promise((r) => setTimeout(r, 200));
+    const side = await p.evaluate(() => {
+      const el = document.querySelector('.pool');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { left: Math.round(r.left), w: Math.round(r.width), vw: window.innerWidth };
+    });
+    want(side && side.left > side.vw / 2 && side.w >= 560,
+      `пул набора выезжает справа и широкий (левый край ${side ? side.left : '—'}px из ${side ? side.vw : '—'}, ширина ${side ? side.w : '—'}px)`);
+    /* состав под панелью не пересобирается: раньше пул слева сдвигал его при каждом открытии */
+    await p.evaluate(() => { const r = document.querySelector('.strow'); window.__w = r ? Math.round(r.getBoundingClientRect().width) : 0; });
+    const rowW = await p.evaluate(() => window.__w);
+    await p.mouse.click(120, 400);                       /* пустое место слева */
+    await new Promise((r) => setTimeout(r, 220));
+    want((await p.evaluate(() => S.poolOpen)) === false, 'пул закрывается кликом по пустому месту слева');
+    const rowAfter = await p.evaluate(() => { const r = document.querySelector('.strow'); return r ? Math.round(r.getBoundingClientRect().width) : 0; });
+    want(rowW > 0 && rowAfter === rowW, `состав не дёргается при открытии пула (строка ${rowW}px → ${rowAfter}px)`);
+    /* та же привычка у панели задачи */
+    await go('open-task', (await p.evaluate(() => S.items.find((i) => i.c === S.cycle).t)));
+    await new Promise((r) => setTimeout(r, 200));
+    want((await p.evaluate(() => !!S.selKind)), 'задача из состава открывается панелью');
+    await p.mouse.click(120, 400);
+    await new Promise((r) => setTimeout(r, 220));
+    want((await p.evaluate(() => S.selKind)) === null, 'панель задачи закрывается кликом по пустому месту слева');
+  }
   /* Строка состава не повторяет одно и то же дважды: кружок с инициалами И имя рядом —
      один факт двумя начертаниями, а при группировке по людям имя стоит ещё и в
      заголовке группы. Правая часть строки из-за этого съедала треть ширины. */

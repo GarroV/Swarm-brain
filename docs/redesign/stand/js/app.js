@@ -411,14 +411,45 @@ const ACTS = {
   logout: () => A.toast("Выход из аккаунта (в стенде — заглушка)"),
 };
 
+/* Меню внутри таблицы обрезалось предком с overflow:hidden — кнопка нажималась, меню
+   открывалось, и его не было видно: чип выглядел мёртвым (найдено по жалобе владельца
+   21.09 «чипы у задач не рабочие»). Если хоть один предок режет, меню переводим в
+   координаты экрана и держим у кнопки. */
+function clipsMenu(m) {
+  for (let e = m.parentElement; e && e !== document.body; e = e.parentElement) {
+    const s = getComputedStyle(e);
+    if (s.overflow !== "visible" || s.overflowX !== "visible" || s.overflowY !== "visible") return true;
+  }
+  return false;
+}
+function placeMenu(d) {
+  const m = d.querySelector(".dmenu");
+  if (!m || !clipsMenu(m)) return;
+  m.classList.add("floated");
+  const r = d.getBoundingClientRect(), mb = m.getBoundingClientRect();
+  const left = Math.min(Math.max(8, r.left), window.innerWidth - mb.width - 8);
+  const below = r.bottom + 4, fits = below + mb.height < window.innerHeight - 8;
+  m.style.left = Math.round(left) + "px";
+  m.style.top = Math.round(fits ? below : Math.max(8, r.top - mb.height - 4)) + "px";
+}
+function unplaceMenu(d) {
+  const m = d.querySelector(".dmenu");
+  if (!m) return;
+  m.classList.remove("floated"); m.style.left = ""; m.style.top = "";
+}
+/* Экран уехал — приколотое к координатам меню осталось бы висеть над чужой строкой. */
+document.addEventListener("scroll", () => document.querySelectorAll(".drop.open")
+  .forEach((d) => { d.classList.remove("open"); unplaceMenu(d); }), true);
+
 document.addEventListener("click", (e) => {
   /* Меню живёт на нажатии: чужие закрываем всегда, своё переключаем. Пока оно держалось
      на :hover/:focus-within, после клика по кнопке меню оставалось висеть, и убрать его
      кликом по пустому месту было нельзя. */
   const inMenu = e.target.closest(".dmenu");
   const trigger = inMenu ? null : e.target.closest(".drop");
-  document.querySelectorAll(".drop.open").forEach((d) => { if (d !== trigger) d.classList.remove("open"); });
-  if (trigger) trigger.classList.toggle("open");
+  document.querySelectorAll(".drop.open").forEach((d) => { if (d !== trigger) { d.classList.remove("open"); unplaceMenu(d); } });
+  if (trigger) { trigger.classList.toggle("open");
+    trigger.classList.contains("open") ? placeMenu(trigger) : unplaceMenu(trigger); }
   const pickChip = e.target.closest("[data-pick] .chip");
   if (pickChip) {
     const box = pickChip.closest("[data-pick]");
@@ -431,7 +462,18 @@ document.addEventListener("click", (e) => {
   const swEl = e.target.closest("[data-sw]");
   if (swEl) { swEl.classList.toggle("on"); return; }
   const t = e.target.closest("[data-act]");
-  if (!t) { $$(".pop,.dig,.menu").forEach((p) => p.classList.remove("open")); return; }
+  if (!t) {
+    $$(".pop,.dig,.menu").forEach((p) => p.classList.remove("open"));
+    /* Клик по пустому месту слева закрывает выехавшую панель: она лежит поверх экрана,
+       и единственным выходом был крестик в дальнем углу — владелец 21.09: «из этого
+       положения нельзя выйти кликом по пустому месту, это контринтуитивно».
+       Порядок обратный порядку открытия: сперва то, что лежит сверху. */
+    if (!e.target.closest(".detail,.pool,.modal,.pal,.toast")) {
+      if (S.selKind) A.close();
+      else if (S.poolOpen) A.set({ poolOpen: false });
+    }
+    return;
+  }
   const a = t.dataset.act;
   /* у полей формы действие обрабатывают слушатели input/change — клик им не нужен;
      у всего остального неизвестное действие означает молча мёртвую кнопку */

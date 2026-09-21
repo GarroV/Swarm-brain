@@ -8,7 +8,7 @@
   --ok:#1E8E5E; --bad:#C53030; --brand-purple:#5B3DEC;
   --font-ui:'Golos Text',system-ui,sans-serif; --font-num:'IBM Plex Mono',ui-monospace,monospace;
   --fs-display:20px; --fs-title:16px; --fs-lead:14px; --fs-body:13px; --fs-dense:12.5px; --fs-meta:11.5px; --fs-micro:10.5px;
-  --row:34px; --top-h:44px; --control-h:30px; --gutter:24px; --nav-w:232px; --detail-w:560px;
+  --row:34px; --top-h:44px; --control-h:30px; --gutter:24px; --nav-w:232px; --detail-w:560px; --pool-w:640px;
   /* были в разметке, но не заведены — из-за этого цифры теряли моноширинный шрифт,
      а блоки — подложку: объявление с неизвестной переменной браузер отбрасывает целиком */
   --font-mono:var(--font-num); --fs-num:12px; --fs-num-sm:10.5px;
@@ -642,7 +642,7 @@ td.acts{white-space:nowrap}
 /* Рабочее место задачи занимает примерно столько же, сколько список: в 372px
    владелец справедливо не смог ничего делать. Значение держим в пикселях —
    его читает table() при раздаче ширин колонок, clamp() там разбирается в NaN. */
-@media (min-width:1560px){ :root{ --detail-w:640px } }
+@media (min-width:1560px){ :root{ --detail-w:640px; --pool-w:760px } }
 @media (min-width:1800px){ :root{ --detail-w:720px } }
 /* узкое окно ноутбука: панель детали сужается, потом уходит поверх */
 @media (max-width:1320px){ :root{ --detail-w:460px; --nav-w:208px; --gutter:18px } }
@@ -758,20 +758,32 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
    задачам, поэтому они должны быть видны одновременно, а не по очереди. */
 .swrap{display:flex;gap:0;flex:1;min-height:0;overflow:hidden}
 .swrap .scol{flex:1;min-width:0;display:flex;flex-direction:column;overflow:auto}
-.pool{flex:none;width:300px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:var(--surface-2);min-height:0}
-.pool .ph{display:flex;align-items:center;gap:7px;padding:10px 12px;font:600 var(--fs-dense)/1.2 var(--font-ui);
-  color:var(--ink);border-bottom:1px solid var(--line)}
+/* Пул набора — такая же выезжающая панель справа, как панель задачи, только шире:
+   слева он сдвигал состав при каждом открытии и отъедал у строки ширину. Лежит ПОД
+   панелью задачи (35): открыли задачу из пула — карточка легла поверх, пул никуда не делся. */
+.pool{position:fixed;right:0;top:0;bottom:0;width:var(--pool-w);max-width:96vw;z-index:34;
+  display:flex;flex-direction:column;background:var(--surface-2);border-left:1px solid var(--line-strong);
+  box-shadow:-20px 0 54px rgba(10,13,17,.18);transform:translateX(102%);transition:transform .18s ease-out}
+.pool.open{transform:none}
+.pool .ph{display:flex;align-items:center;gap:8px;padding:13px var(--gutter);font:600 var(--fs-dense)/1.2 var(--font-ui);
+  color:var(--ink);border-bottom:1px solid var(--line);background:var(--surface)}
+.pool .phint{font:400 var(--fs-meta)/1.2 var(--font-ui);color:var(--ink-3)}
+.pool .ph .ibtn{margin-left:auto}
 .pool .ph .n{font:600 11px/1 var(--font-num);color:var(--ink-3)}
-.pool .pf{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.pool .pf{display:flex;flex-wrap:wrap;gap:6px;padding:9px var(--gutter);border-bottom:1px solid var(--line)}
 .pool .pq{flex:1;min-width:120px;height:28px;padding:0 9px;border:1px solid var(--line-strong);border-radius:7px;
   background:var(--surface);font:400 var(--fs-meta)/1 var(--font-ui);color:var(--ink)}
-.pool .plist{flex:1;overflow:auto;padding:6px 8px 12px;display:flex;flex-direction:column;gap:4px}
-.pit{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:7px 9px;border:1px solid var(--line);
-  border-radius:8px;background:var(--surface)}
+.pool .plist{flex:1;overflow:auto;padding:4px var(--gutter) 16px;display:flex;flex-direction:column}
+/* Широкая панель — строка в одну линию: название целиком, остальное колонками,
+   тем же ритмом, что и список задач. */
+.pit{display:grid;grid-template-columns:minmax(0,1fr) 150px 26px 62px 64px;align-items:center;gap:10px;
+  min-height:var(--row);padding:5px 2px;border-bottom:1px solid var(--line)}
+.pit:last-child{border-bottom:0}
 .pit .t{font-size:var(--fs-dense);color:var(--ink);cursor:pointer;min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pit .m{font-size:var(--fs-meta);color:var(--ink-3);grid-column:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pit .btn{grid-column:2;grid-row:1/3;align-self:center}
+.pit .m{font-size:var(--fs-meta);color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pit .w,.pit .dd{font-size:var(--fs-meta);color:var(--ink-3)}
+.pit .dd{text-align:right}
 .pempty{padding:18px 10px;text-align:center;font-size:var(--fs-meta);color:var(--ink-3)}
 /* Отметка сверки стоит в строке задачи (отдельного экрана «Сверка» в продукте больше
    нет), но свёрнута в один чип: три кнопки у каждой строки превращали состав в стену. */
@@ -905,3 +917,6 @@ tr:hover td .av + .av{box-shadow:0 0 0 2px var(--surface-2)}
 .btn.sm.take{visibility:hidden;background:var(--surface);color:var(--ink-2)}
 .pit:hover .btn.take,.pit:focus-within .btn.take{visibility:visible}
 .pit:hover .btn.take:hover{border-color:var(--accent);color:var(--accent)}
+
+/* Меню, выведенное из обрезающего контейнера: те же размеры, но в координатах экрана. */
+.dmenu.floated{position:fixed;z-index:60;right:auto;bottom:auto;margin:0}

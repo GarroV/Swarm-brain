@@ -290,8 +290,9 @@ function sprintPool() {
   const free = S.tasks.filter((t) => !t.arch && t.st !== "done" && !taken.has(t.id)
     && (!S.poolPr || t.pr === S.poolPr) && (!S.poolWho || t.who.includes(S.poolWho))
     && (!S.poolQ || t.t.toLowerCase().includes(S.poolQ.toLowerCase())));
-  return `<div class="pool"><div class="ph">Свободные задачи<span class="n">${free.length}</span>
-    <button class="ex on" ${act("tgl", "poolOpen")} title="Свернуть влево">◀</button></div>
+  return `<div class="pool open"><div class="ph">Свободные задачи<span class="n">${free.length}</span>
+    <span class="phint">кнопка «Взять» уносит её в состав спринта</span>
+    ${ibtn("×", "Закрыть набор состава", "tgl", "poolOpen")}</div>
     <div class="pf">
       <span class="drop">${btn(S.poolPr ? projPath(S.poolPr) : "Все проекты", "noop", undefined, undefined, "sm")}
         <div class="dmenu"><button class="mi${S.poolPr ? "" : " on"}" ${act("pool-pr", "")}>Все проекты</button>
@@ -300,12 +301,15 @@ function sprintPool() {
         <div class="dmenu"><button class="mi${S.poolWho ? "" : " on"}" ${act("pool-who", "")}>Все исполнители</button>
         ${S.users.map((u) => `<button class="mi${S.poolWho === u.id ? " on" : ""}" ${act("pool-who", u.id)}>${esc(u.n)}</button>`).join("")}</div></span>
       <input class="pq" placeholder="Поиск по названию" value="${esc(S.poolQ)}" data-inp="poolQ"></div>
+    ${/* панель широкая, поэтому строка стала однострочной: название целиком, а проект,
+        исполнитель и срок — колонками, как в списке задач. «Взять» синей заливкой ×24
+        превращало пул в стену цвета: кнопка тихая и проявляется на нужной строке */ ""}
     <div class="plist">${free.length ? free.map((t) => `<div class="pit">
       <span class="t" ${act("open-task", t.id)} tabindex="0" title="${esc(t.t)}">${dot(t.st)}${esc(t.t)}</span>
-      ${/* «Взять» синей заливкой ×24 превращало пул в стену цвета: кнопка тихая и
-          проявляется на строке, к которой человек уже потянулся */ ""}
-      ${btn("Взять", "take-item", t.id, undefined, "sm take")}
-      <span class="m">${esc(projPath(t.pr))}${t.who.length ? " · " + user(t.who[0]).n : " · не назначена"}</span></div>`).join("")
+      <span class="m">${esc(projPath(t.pr))}</span>
+      <span class="w">${t.who.length ? avOnly(t.who[0]) : `<span class="muted">—</span>`}</span>
+      <span class="dd">${t.due ? due(t.due) : `<span class="muted">—</span>`}</span>
+      ${btn("Взять", "take-item", t.id, undefined, "sm take")}</div>`).join("")
       : `<div class="pempty">${S.poolPr || S.poolWho || S.poolQ ? "Под фильтры ничего не попало" : "Свободных задач нет — всё уже в спринтах"}</div>`}</div></div>`;
 }
 
@@ -348,7 +352,7 @@ function screenSprints() {
   const view = `<span class="seg">
     <button class="sg${S.sprintView === "board" ? "" : " on"}" ${act("set-view", undefined, "list")}>Список</button>
     <button class="sg${S.sprintView === "board" ? " on" : ""}" ${act("set-view", undefined, "board")}>Канбан</button></span>
-    ${S.poolOpen ? "" : btn("Набрать состав", "tgl", "poolOpen", undefined, "sm")}`;
+    ${btn("Набрать состав", "tgl", "poolOpen", undefined, "sm" + (S.poolOpen ? " on" : ""))}`;
   const shown = focusList(list);
   const head = `<div class="shead"><span class="scount">Состав${S.sFocus
     ? ` · ${esc(SFOCUS[S.sFocus][0])}: ${shown.length}` : ` · ${shown.length}`}</span>
@@ -360,8 +364,12 @@ function screenSprints() {
     : shown.length ? head + `<div class="sprint">${S.group === "people" ? sprintByPeople(shown) : sprintByInitiative(shown)}</div>`
       : head + empty(S.sFocus ? "Таких задач в спринте нет" : "Состав спринта пуст",
         S.sFocus ? "Снимите срез, чтобы увидеть весь состав" : "Наберите задачи из пула слева — план считается по ним");
+  /* Пул выезжает СПРАВА, как панель задачи, и лежит поверх состава: слева он сдвигал
+     состав каждый раз, когда его открывали, — экран прыгал, а места на строку
+     оставалось меньше (просьба владельца 21.09). Справа он ещё и шире: в строку
+     помещаются проект, исполнитель и срок. */
   return sprintBar(view) + sprintPulse(list)
-    + `<div class="swrap">${S.poolOpen ? sprintPool() : ""}<div class="scol">${body}</div></div>`;
+    + `<div class="swrap"><div class="scol">${body}</div></div>${S.poolOpen ? sprintPool() : ""}`;
 }
 
 function sprintBoard(list) {
