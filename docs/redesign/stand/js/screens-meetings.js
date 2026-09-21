@@ -47,14 +47,34 @@ function dupStrip() {
         ${cell(`<span class="ib">${btn("Объединить", "merge-dup", m.id, undefined, "sm")}${btn("Не дубль", "keep-dup", m.id, undefined, "sm")}</span>`, "r acts")}</tr>`; }).join(""));
 }
 
+/* Вычитка — не вкладка, а шапка экрана: это очередь, которая ждёт человека, и она
+   обязана быть видна сразу, вместе с действиями «подтвердить» и «собрать задачи».
+   Под ней — все остальные встречи тем же списком. */
+function reviewRow(m) {
+  return `<div class="rv${S.sel === m.id && S.selKind === "meeting" ? " sel" : ""}" ${act("open-meet", m.id)} tabindex="0">
+    <span class="at">${esc(fmtDT(m.dt))}</span><b>${esc(m.t)}</b>
+    <span class="pl">${tag(m.src, "m")}<span class="due">${m.dur}</span><span class="unit">мин</span></span>
+    ${avs(m.who)}
+    <span class="r ib">${btn("Подтвердить тезисы", "confirm-meet", m.id, undefined, "sm")}${btn("Собрать задачи", "harvest", m.id, undefined, "sm")}</span></div>`;
+}
+
+function reviewSection() {
+  const pend = visibleMeetings("review");
+  if (!pend.length) return `<div class="revhead done"><div class="rh"><b>Вычитка разобрана</b>
+    <span class="sub">Новые встречи придут сюда после bumblebee, Granola или Read.ai</span></div></div>`;
+  return `<div class="revhead"><div class="rh"><b>На вычитке · ${pend.length}</b>
+    <span class="sub">Тезисы готовы, ждут подтверждения</span>
+    <span class="ib">${btn("Вычитать подряд", "review-next", "", undefined, "pri sm")}</span></div>
+    ${pend.map(reviewRow).join("")}</div>`;
+}
+
 function screenMeetings() {
   if (S.tab === "queue") return screenQueue();
   /* черновик, ждущий решения по дублю, уже показан наверху: во второй таблице он был бы тем же самым */
   const list = visibleMeetings(S.tab).filter((m) => S.tab !== "draft" || !dupDrafts().includes(m));
-  const strip = S.tab === "review" && list.length
-    ? `<div class="review">Невычитанных встреч: ${list.length}. Тезисы готовы, ждут подтверждения.
-       ${btn("Вычитать подряд", "review-next", "", undefined, "sm")}</div>` : "";
-  const head = meetBar() + (S.tab === "draft" ? dupStrip() + lab("Остальные черновики") : strip);
+  const head = meetBar() + (S.tab === "draft"
+    ? dupStrip() + lab("Остальные черновики")
+    : reviewSection() + lab("Все встречи"));
   if (!list.length) return head + (S.tab === "draft" && dupDrafts().length
     ? empty("Других черновиков нет", "Все остальные ждут решения по дублям выше")
     : empty("Встреч в этом срезе нет", mfActive() ? "Сбросьте фильтры" : "Записи появятся после bumblebee, Granola или Read.ai"));

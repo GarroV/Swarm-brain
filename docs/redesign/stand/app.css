@@ -17,7 +17,7 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font:400 var(--fs-body)/1.45 var(--font-ui);color:var(--ink);background:var(--canvas);-webkit-font-smoothing:antialiased}
-.app{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr) var(--detail-w);height:100vh;min-width:1040px}
+.app{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);height:100vh;min-width:1040px}
 
 /* ── ПАПКИ: постоянная левая навигация ───────────────────────── */
 .nav{background:var(--surface-2);border-right:1px solid var(--line-strong);display:flex;flex-direction:column}
@@ -148,14 +148,34 @@ tbody tr.sel td.t{font-weight:600}
 .pchip .tag{margin:0}
 /* описание — рабочее поле, а не подпись: в широкой панели ему нужна высота */
 .note.lg{min-height:104px}
+/* Вычитка — шапка экрана встреч, а не соседняя вкладка: это очередь, которая ждёт
+   человека, и действия по ней («подтвердить», «собрать задачи») стоят прямо в строке. */
+.revhead{background:var(--surface-2);border-bottom:1px solid var(--line-strong)}
+.revhead .rh{display:flex;align-items:center;gap:10px;padding:11px var(--gutter) 9px}
+.revhead .rh b{font-size:var(--fs-lead)}
+.revhead .rh .sub{color:var(--ink-3);font-size:var(--fs-meta)}
+.revhead .rh .ib{margin-left:auto;display:flex;gap:6px}
+.revhead.done .rh b{color:var(--ink-2)}
+.rv{display:flex;align-items:center;gap:10px;min-height:var(--row);padding:5px var(--gutter);
+  border-top:1px solid var(--line);background:var(--surface);font-size:var(--fs-dense);cursor:pointer}
+.rv:hover{background:var(--accent-soft)}
+.rv.sel{box-shadow:inset 3px 0 0 var(--accent)}
+.rv .at{flex:none;width:114px;font:500 var(--fs-num)/1 var(--font-mono);color:var(--ink-3)}
+.rv b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rv .pl{flex:none;display:flex;align-items:center;gap:6px;color:var(--ink-3)}
+.rv .r{flex:none;margin-left:auto;display:flex;gap:6px}
 /* Подпись макета. Стоит у левого края рабочей области: справа кнопка фидбека и
    тосты, а человеку, которому дали ссылку, надо сразу видеть, что данные вымышленные. */
 .stamp{position:fixed;left:calc(var(--nav-w) + 14px);bottom:8px;font:500 10px/1 var(--font-num);color:var(--ink-empty);letter-spacing:.08em}
 
 /* ───────── дополнения стенда ───────── */
-.app{grid-template-columns:var(--nav-w) minmax(0,1fr);transition:grid-template-columns .16s}
-.app.with-detail{grid-template-columns:var(--nav-w) minmax(0,1fr) var(--detail-w)}
-.detail{display:none}.app.with-detail .detail{display:flex}
+/* Деталь выезжает поверх интерфейса и накрывает его правый край — это видно по тени.
+   Каркас при этом не перестраивается: список под панелью остаётся на месте, и
+   переключение между задачами не двигает ни одной колонки. */
+.detail{position:fixed;right:0;top:0;bottom:0;width:var(--detail-w);max-width:96vw;z-index:35;
+  box-shadow:-20px 0 54px rgba(10,13,17,.18);transform:translateX(102%);transition:transform .18s ease-out;
+  display:flex;visibility:hidden}
+.app.with-detail .detail{transform:none;visibility:visible}
 .item,.tab,.chip,.btn,.row{cursor:pointer}
 .item:focus-visible,.tab:focus-visible,.chip:focus-visible,.btn:focus-visible,tbody tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .hidden{display:none!important}
@@ -580,11 +600,7 @@ td.acts{white-space:nowrap}
 @media (min-width:1800px){ :root{ --detail-w:720px } }
 /* узкое окно ноутбука: панель детали сужается, потом уходит поверх */
 @media (max-width:1320px){ :root{ --detail-w:460px; --nav-w:208px; --gutter:18px } }
-@media (max-width:1140px){
-  .app.with-detail .detail{position:fixed;right:0;top:0;bottom:0;width:min(560px,92vw);z-index:35;
-    box-shadow:-18px 0 50px rgba(10,13,17,.18)}
-  .app.with-detail{grid-template-columns:var(--nav-w) minmax(0,1fr)}
-}
+@media (max-width:1140px){ :root{ --detail-w:min(560px,92vw) } }
 .body{min-width:0}
 .main>*{min-width:0}
 .chip,.btn,.tab,.hbtn,.mini,.tdh{white-space:nowrap;flex:none}

@@ -809,8 +809,11 @@ function tokenCheck() {
   const grSaid = (await text('.bar .right')).replace(/\s+/g, ' ').trim();
   want(grSaid.includes(`Показано ${gr} из`), `счётчик полосы встреч следует за фильтром (строк ${gr}, в полосе «${grSaid}»)`);
   await go('mf-clear');
-  const firstMeet = await p.$eval('tbody tr[data-act="open-meet"]', (e) => e.dataset.id);
+  /* сверка с транскриптом и подтверждение — действия ВЫЧИТКИ, поэтому берём встречу
+     из очереди вычитки, а не первую попавшуюся: у разобранной их на экране нет */
+  const firstMeet = await p.$eval('.revhead .rv', (e) => e.dataset.id);
   await go('open-meet', firstMeet); await shot('08-meeting-detail');
+  want((await count('.detail .dtab')) === 3, 'у встречи на вычитке три вкладки: обзор, тезисы, транскрипт');
   await go('compare'); await shot('09-compare');
   /* помечено должно быть то, что требует действия: непроверенных пунктов столько же, сколько помечено */
   const cmp = await p.evaluate(() => {
@@ -827,14 +830,20 @@ function tokenCheck() {
   await new Promise((r) => setTimeout(r, 120));
   want((await text('.toast')).includes('Создано задач'), 'сбор задач из встречи отработал');
   await go('confirm-meet', firstMeet);
-  await go('tab', 'review');
-  want((await count(`tbody tr[data-act="open-meet"][data-id="${firstMeet}"]`)) === 0, 'подтверждённая встреча ушла из вычитки');
+  /* вычитка теперь шапка экрана, а не вкладка: подтверждённая встреча уходит из неё сразу */
+  want((await count(`.revhead .rv[data-id="${firstMeet}"]`)) === 0, 'подтверждённая встреча ушла из вычитки');
+  want((await count('.revhead .rv')) > 0, 'очередь вычитки видна на экране встреч без переключения вкладок');
   /* встреча без задач: только в этом состоянии на экране обе кнопки сбора — сверху
      и в пустой секции. Они звались по-разному, и правило о двух подписях одного
      действия молчало, потому что такое состояние ни разу не открывали */
   await go('tab', 'all');
   await go('open-meet', 'm12');
   await new Promise((r) => setTimeout(r, 120));
+  /* транскрипт показываем только на вычитке: у разобранной встречи он лежит записью
+     в базе, и вкладка-двойник только занимает место */
+  const tabsDone = await p.$$eval('.detail .dtab', (e) => e.map((x) => x.textContent.replace(/\d+$/, '').trim()));
+  want(!tabsDone.includes('Транскрипт'), `у разобранной встречи нет вкладки транскрипта (вкладки: ${tabsDone.join(', ')})`);
+  want(tabsDone.includes('Тезисы'), 'тезисы у встречи вынесены отдельной вкладкой');
   await scan('08б-встреча-без-задач');
   const meetSt = await p.evaluate(() => {
     const dt = [...document.querySelectorAll('.detail dt')].find((e) => e.textContent.trim() === 'Статус');
@@ -879,8 +888,8 @@ function tokenCheck() {
   want(made === proposed - 1, `публикация создаёт только оставленные задачи (предложено ${proposed}, создано ${made})`);
 
   /* сбор задач из встречи, чтение записи, таймлайн, метки, профиль */
-  await go('tab', 'review');
-  const anyPending = await p.$$eval('tbody tr[data-act="open-meet"]', (e) => e.length ? e[0].dataset.id : null);
+  await go('sec', 'meetings');
+  const anyPending = await p.$$eval('.revhead .rv', (e) => e.length ? e[0].dataset.id : null);
   if (anyPending) {
     await go('open-meet', anyPending);
     await go('harvest');

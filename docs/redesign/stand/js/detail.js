@@ -1,8 +1,9 @@
 /* Правая панель. Всё, что в ней нажимается, меняет состояние — заглушек нет. */
 
-function dtabs(items) {
+function dtabs(items, cur) {
+  const on = cur || S.dtab;
   return `<div class="dtabs">${items.map(([id, n, k]) =>
-    `<button class="dtab${S.dtab === id ? " on" : ""}" ${act("dtab", id)}>${esc(n)}${k ? `<span class="c">${k}</span>` : ""}</button>`).join("")}</div>`;
+    `<button class="dtab${on === id ? " on" : ""}" ${act("dtab", id)}>${esc(n)}${k ? `<span class="c">${k}</span>` : ""}</button>`).join("")}</div>`;
 }
 const dhead = (crumb, title, acts) =>
   `<div class="d-head"><div class="d-crumb">${esc(crumb)}</div><div class="d-title">${esc(title)}</div>
@@ -69,15 +70,23 @@ function detailTask(t) {
 
 /* ── встреча ─────────────────────────────────────────────────── */
 function detailMeeting(m) {
-  const acts = (m.st === "pending" ? btn("Подтвердить тезисы", "confirm-meet", m.id, undefined, "pri") : "")
-    + (m.st === "draft" ? btn("Опубликовать в базу", "publish-draft", m.id, undefined, "pri") : "")
-    + btn("Сравнить с транскриптом", "compare", m.id)
-    + btn("Собрать задачи", "harvest", m.id)
-    + (m.st === "pending" ? btn("Следующая", "review-next", m.id) : "")
-    + btn("Править тезисы", "edit-tez", m.id);
   const tasks = S.tasks.filter((t) => m.tasks.includes(t.id));
+  const isReview = m.st === "pending";
+  const nTez = m.tez.reduce((n, sec) => n + sec.li.length, 0);
+  /* Транскрипт нужен на вычитке — там его сверяют с тезисами. У разобранной встречи он
+     лежит в базе отдельной записью, и вторая копия вкладкой только занимает место. */
+  const trEntry = S.entries.find((e) => e.meet === m.id && e.ty === "transcript");
+  const items = [["overview", "Обзор"], ["tez", "Тезисы", nTez]]
+    .concat(isReview ? [["tr", "Транскрипт", m.tr.length]] : []);
+  const cur = items.some(([id]) => id === S.dtab) ? S.dtab : "overview";
+  const acts = (isReview ? btn("Подтвердить тезисы", "confirm-meet", m.id, undefined, "pri") : "")
+    + (m.st === "draft" ? btn("Опубликовать в базу", "publish-draft", m.id, undefined, "pri") : "")
+    + (isReview ? btn("Сравнить с транскриптом", "compare", m.id) : "")
+    + btn("Собрать задачи", "harvest", m.id)
+    + (isReview ? btn("Следующая", "review-next", m.id) : "")
+    + btn("Править тезисы", "edit-tez", m.id);
   let body = "";
-  if (S.dtab === "overview") {
+  if (cur === "overview") {
     body = (m.claim ? `<div class="lease"><b>Запись рекордера</b>${rows([
         ["Устройство", esc(m.claim.dev)],
         ["Захват", `claim ${m.claim.at}, lease до ${m.claim.lease}`, state("завершён", true)],
@@ -89,22 +98,26 @@ function detailMeeting(m) {
         <dt>Когда</dt><dd><span class="due">${esc(fmtDT(m.dt))}</span></dd>
         <dt>Длительность</dt><dd><span class="due">${m.dur}</span><span class="unit">мин</span></dd>
         <dt>Источник</dt><dd>${tag(m.src, "m")}</dd>
-        <dt>Хранилище</dt><dd>${pickf(m.store === "shared" ? "Общее" : "Личное", ["shared", "personal"].map((s) => [s === "shared" ? "Общее" : "Личное", "set-store", m.id, s, m.store === s]))}</dd>
+        <dt>Хранилище</dt><dd>${pickf(m.store === "shared" ? "Общее" : "Личное", ["shared", "personal"].map((x) => [x === "shared" ? "Общее" : "Личное", "set-store", m.id, x, m.store === x]))}</dd>
         <dt>Страны</dt><dd>${pickm(m.cc.length ? cc(m.cc) : `<span class="muted">—</span>`, COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "tgl-mcc", m.id, c.c, m.cc.includes(c.c)]))}</dd>
         <dt>Статус</dt><dd>${state(MEET_ST[m.st], m.st === "confirmed")}</dd></dl>
-        ${lab("Тезисы")}${m.st === "draft"
-          ? `<div class="empty sm"><b>Тезисов ещё нет</b>Черновик не разобран моделью${btn("Составить тезисы", "publish-draft", m.id, undefined, "pri mt")}</div>`
-          : `<div class="tez">${m.tez.map((s) => `<h5>${esc(s.h)}</h5>${s.li.map((x) => `<li>${esc(x)}</li>`).join("")}`).join("")}</div>`}
         ${lab(`Задачи из встречи · ${tasks.length}`)}
         ${tasks.length ? rows(tasks.map((t) => [String(t.id), `<span class="lnk" ${act("open-task", t.id)}>${esc(t.t)}</span>`, state(ST_LABEL[t.st], t.st === "done")]))
-          : rows([["—", "задач нет", btn("Собрать задачи", "harvest", m.id, undefined, "sm")]])}`;
+          : `<div class="empty sm"><b>Задач из встречи ещё нет</b>Тезисы разбираются на задачи по одному нажатию</div>`}
+        <div class="mt">${btn("Собрать задачи", "harvest", m.id, undefined, "pri")}</div>
+        ${!isReview && trEntry ? lab("Транскрипт") + `<div class="src" ${act("open-entry", trEntry.id)}>${esc(trEntry.h)}</div>` : ""}`;
   }
-  if (S.dtab === "tr") {
+  if (cur === "tez") {
+    body = m.st === "draft"
+      ? `<div class="empty sm"><b>Тезисов ещё нет</b>Черновик не разобран моделью${btn("Составить тезисы", "publish-draft", m.id, undefined, "pri mt")}</div>`
+      : `<div class="tez">${m.tez.map((sec) => `<h5>${esc(sec.h)}</h5>${sec.li.map((x) => `<li>${esc(x)}</li>`).join("")}`).join("")}</div>`;
+  }
+  if (cur === "tr") {
     body = `<div class="tr">${m.tr.map(([w, who, text]) =>
       `<div class="ln"><span class="w">${w}</span>${av(who, false)}<span>${esc(text)}</span></div>`).join("")}</div>`;
   }
   return dhead(`${m.src} · ${fmtDT(m.dt)}`, m.t, acts)
-    + `<div class="d-body">${dtabs([["overview", "Обзор"], ["tr", "Транскрипт", m.tr.length]])}${body}</div>`;
+    + `<div class="d-body">${dtabs(items, cur)}${body}</div>`;
 }
 
 /* ── запись базы ─────────────────────────────────────────────── */
