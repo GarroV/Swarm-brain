@@ -1,10 +1,20 @@
-// Раннер тот же, что у projectPicker.test.ts: deno test -A --no-check src/lib/
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { dropSide, ORDER_STEP, planAppend, planReorder, sortByPosition } from "./projectOrder.ts";
+// Раннер тот же, что у projectPicker.test.ts: deno test -A --no-check src/lib/ (зависимость —
+// bare specifier из deno.json: прямые https-импорты линт запрещает).
+import { assertEquals } from "@std/assert";
+import {
+  dropSide,
+  ORDER_STEP,
+  planAppend,
+  planReorder,
+  sortByPosition,
+} from "./projectOrder.ts";
 
 type Row = { id: string; position: number | null; created_at: string };
-const row = (id: string, position: number | null, created_at = "2026-08-01T00:00:00Z"): Row =>
-  ({ id, position, created_at });
+const row = (
+  id: string,
+  position: number | null,
+  created_at = "2026-08-01T00:00:00Z",
+): Row => ({ id, position, created_at });
 
 // ── сортировка ───────────────────────────────────────────────────────────────
 
@@ -17,13 +27,40 @@ Deno.test("порядок задаёт position, при равенстве — �
   assertEquals(sortByPosition(list).map((r) => r.id), ["a", "b", "c"]);
 });
 
+Deno.test("одинаковые позиции разводит дата создания, а не случай", () => {
+  // После перенумерации дубли не появляются, но пережить их список обязан: иначе порядок
+  // «дышит» между перерисовками и человек видит, как строки сами меняются местами.
+  const list = [
+    row("b", 1000, "2026-08-02T00:00:00Z"),
+    row("a", 1000, "2026-08-01T00:00:00Z"),
+  ];
+  assertEquals(sortByPosition(list).map((r) => r.id), ["a", "b"]);
+});
+
+Deno.test("строка с позицией всегда выше строки без позиции, в любом порядке на входе", () => {
+  const placed = row("placed", 5000, "2026-09-09T00:00:00Z");
+  const blank = row("blank", null, "2026-01-01T00:00:00Z");
+  assertEquals(sortByPosition([placed, blank]).map((r) => r.id), [
+    "placed",
+    "blank",
+  ]);
+  assertEquals(sortByPosition([blank, placed]).map((r) => r.id), [
+    "placed",
+    "blank",
+  ]);
+});
+
 Deno.test("строка без позиции уходит в хвост, там — по дате создания", () => {
   const list = [
     row("new2", null, "2026-09-02T00:00:00Z"),
     row("placed", 5000, "2026-08-01T00:00:00Z"),
     row("new1", null, "2026-09-01T00:00:00Z"),
   ];
-  assertEquals(sortByPosition(list).map((r) => r.id), ["placed", "new1", "new2"]);
+  assertEquals(sortByPosition(list).map((r) => r.id), [
+    "placed",
+    "new1",
+    "new2",
+  ]);
 });
 
 // ── перестановка ─────────────────────────────────────────────────────────────
@@ -58,7 +95,11 @@ Deno.test("перетаскивание на место, где строка и 
 });
 
 Deno.test("строки без позиции (легаси) — перенумерация всего списка в новом порядке", () => {
-  const list = [row("a", null, "2026-08-01T00:00:00Z"), row("b", null, "2026-08-02T00:00:00Z"), row("c", null, "2026-08-03T00:00:00Z")];
+  const list = [
+    row("a", null, "2026-08-01T00:00:00Z"),
+    row("b", null, "2026-08-02T00:00:00Z"),
+    row("c", null, "2026-08-03T00:00:00Z"),
+  ];
   const plan = planReorder(list, "c", { id: "a", place: "before" });
   assertEquals(plan, [
     { id: "c", position: ORDER_STEP },
@@ -97,7 +138,10 @@ Deno.test("перенос в непустой проект — в конец с�
 });
 
 Deno.test("перенос в проект, где позиций ещё нет, — перенумерация, перенесённый последний", () => {
-  const list = [row("a", null, "2026-08-01T00:00:00Z"), row("b", null, "2026-08-02T00:00:00Z")];
+  const list = [
+    row("a", null, "2026-08-01T00:00:00Z"),
+    row("b", null, "2026-08-02T00:00:00Z"),
+  ];
   assertEquals(planAppend(list, "kid"), [
     { id: "a", position: ORDER_STEP },
     { id: "b", position: ORDER_STEP * 2 },

@@ -91,17 +91,32 @@ Deno.test("одинаковые даты — это один день, а не �
 
 Deno.test("позиция принимается числом, в том числе дробным и отрицательным", () => {
   assertEquals(parseProjectFields({ position: 2500 }).fields.position, 2500);
-  assertEquals(parseProjectFields({ position: 1500.5 }).fields.position, 1500.5);
+  assertEquals(
+    parseProjectFields({ position: 1500.5 }).fields.position,
+    1500.5,
+  );
   assertEquals(parseProjectFields({ position: -1000 }).fields.position, -1000);
 });
 
 Deno.test("позиция снимается только явным null", () => {
-  assertEquals(parseProjectFields({ position: null }).fields, { position: null });
+  assertEquals(parseProjectFields({ position: null }).fields, {
+    position: null,
+  });
   assertEquals(parseProjectFields({}).fields.position, undefined);
 });
 
 Deno.test("нечисло и не-конечное число в позиции — отказ, а не молчаливая запись", () => {
-  for (const bad of ["вверх", "", true, {}, [], Number.NaN, Number.POSITIVE_INFINITY]) {
+  for (
+    const bad of [
+      "вверх",
+      "",
+      true,
+      {},
+      [],
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+    ]
+  ) {
     const out = parseProjectFields({ position: bad });
     assertEquals(out.fields, {}, `принято мусорное значение: ${String(bad)}`);
     assertEquals(typeof out.error, "string");

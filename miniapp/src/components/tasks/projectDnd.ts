@@ -67,57 +67,63 @@ export function useProjectDnd(projects: Project[], handlers: Handlers) {
    * приём подпроекта внутрь (перенос). Уровни не смешиваются: проект не кладётся в подпроекты,
    * подпроект встаёт в верхний уровень только через перенос в конкретный проект.
    */
-  const dropProps = useCallback((target: Project, axis: DndAxis): DropProps => ({
-    onDragOver: (e) => {
-      if (!dragId || dragId === target.id) return;
-      const sameLevel = isTop(dragId) === !target.parent_id;
-      const acceptsChild = !isTop(dragId) && !target.parent_id;
-      if (!sameLevel && !acceptsChild) return;
-      e.preventDefault();
-      e.stopPropagation();
-      e.dataTransfer.dropEffect = "move";
-      if (sameLevel) {
-        const r = e.currentTarget.getBoundingClientRect();
-        const place = axis === "x"
-          ? dropSide(r.left, r.width, e.clientX)
-          : dropSide(r.top, r.height, e.clientY);
-        setHint({ id: target.id, place });
-        setOverProject(null);
-      } else {
-        setOverProject(target.id);
-        setHint(null);
-      }
-    },
-    onDragLeave: () => {
-      setHint((h) => (h?.id === target.id ? null : h));
-      setOverProject((p) => (p === target.id ? null : p));
-    },
-    onDrop: (e) => {
-      if (!dragId) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const moved = dragId;
-      if (isTop(moved) === !target.parent_id) {
-        const r = e.currentTarget.getBoundingClientRect();
-        const place = axis === "x"
-          ? dropSide(r.left, r.width, e.clientX)
-          : dropSide(r.top, r.height, e.clientY);
-        handlers.reorder(moved, { id: target.id, place });
-      } else if (!target.parent_id) {
-        handlers.moveInto(moved, target.id);
-      }
-      reset();
-    },
-  }), [dragId, isTop, handlers, reset]);
+  const dropProps = useCallback(
+    (target: Project, axis: DndAxis): DropProps => ({
+      onDragOver: (e) => {
+        if (!dragId || dragId === target.id) return;
+        const sameLevel = isTop(dragId) === !target.parent_id;
+        const acceptsChild = !isTop(dragId) && !target.parent_id;
+        if (!sameLevel && !acceptsChild) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "move";
+        if (sameLevel) {
+          const r = e.currentTarget.getBoundingClientRect();
+          const place = axis === "x"
+            ? dropSide(r.left, r.width, e.clientX)
+            : dropSide(r.top, r.height, e.clientY);
+          setHint({ id: target.id, place });
+          setOverProject(null);
+        } else {
+          setOverProject(target.id);
+          setHint(null);
+        }
+      },
+      onDragLeave: () => {
+        setHint((h) => (h?.id === target.id ? null : h));
+        setOverProject((p) => (p === target.id ? null : p));
+      },
+      onDrop: (e) => {
+        if (!dragId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const moved = dragId;
+        if (isTop(moved) === !target.parent_id) {
+          const r = e.currentTarget.getBoundingClientRect();
+          const place = axis === "x"
+            ? dropSide(r.left, r.width, e.clientX)
+            : dropSide(r.top, r.height, e.clientY);
+          handlers.reorder(moved, { id: target.id, place });
+        } else if (!target.parent_id) {
+          handlers.moveInto(moved, target.id);
+        }
+        reset();
+      },
+    }),
+    [dragId, isTop, handlers, reset],
+  );
 
   /** Подсветка места вставки: полоса у той грани строки, к которой она встанет. */
-  const hintShadow = useCallback((id: string, axis: DndAxis): string | undefined => {
-    if (hint?.id !== id) return undefined;
-    const offset = hint.place === "before" ? 3 : -3;
-    return axis === "x"
-      ? `inset ${offset}px 0 0 0 var(--primary)`
-      : `inset 0 ${offset}px 0 0 var(--primary)`;
-  }, [hint]);
+  const hintShadow = useCallback(
+    (id: string, axis: DndAxis): string | undefined => {
+      if (hint?.id !== id) return undefined;
+      const offset = hint.place === "before" ? 3 : -3;
+      return axis === "x"
+        ? `inset ${offset}px 0 0 0 var(--primary)`
+        : `inset 0 ${offset}px 0 0 var(--primary)`;
+    },
+    [hint],
+  );
 
   return {
     /** Что тащим прямо сейчас (null — ничего). */

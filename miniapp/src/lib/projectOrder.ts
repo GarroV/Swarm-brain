@@ -27,7 +27,9 @@ export type PositionChange = { id: string; position: number };
  */
 export function sortByPosition<T extends Orderable>(list: T[]): T[] {
   return [...list].sort((a, b) => {
-    if (a.position !== null && b.position !== null && a.position !== b.position) {
+    if (
+      a.position !== null && b.position !== null && a.position !== b.position
+    ) {
       return a.position - b.position;
     }
     if (a.position === null && b.position !== null) return 1;
@@ -63,7 +65,10 @@ export function planReorder<T extends Orderable>(
  * План для переноса строки в другой проект: она встаёт в конец списка новых братьев
  * (`siblings` — братья БЕЗ неё, она ещё числится за прежним родителем).
  */
-export function planAppend<T extends Orderable>(siblings: T[], movedId: string): PositionChange[] {
+export function planAppend<T extends Orderable>(
+  siblings: T[],
+  movedId: string,
+): PositionChange[] {
   const desired: Orderable[] = [
     ...sortByPosition(siblings),
     { id: movedId, position: null, created_at: "" },
@@ -93,8 +98,12 @@ function planFor(
   const single = at === 0 && desired.length === 1;
 
   if (single) return [{ id: movedId, position: ORDER_STEP }];
-  if (at === 0 && next !== null) return [{ id: movedId, position: next - ORDER_STEP }];
-  if (at === desired.length - 1 && prev !== null) return [{ id: movedId, position: prev + ORDER_STEP }];
+  if (at === 0 && next !== null) {
+    return [{ id: movedId, position: next - ORDER_STEP }];
+  }
+  if (at === desired.length - 1 && prev !== null) {
+    return [{ id: movedId, position: prev + ORDER_STEP }];
+  }
   if (prev !== null && next !== null && next - prev > MIN_GAP) {
     return [{ id: movedId, position: (prev + next) / 2 }];
   }
@@ -106,6 +115,10 @@ function planFor(
  * Сторона вставки под курсором: до строки или после неё. Считается от середины строки по той оси,
  * вдоль которой идёт список (X у плиток в ряду, Y у списка сверху вниз).
  */
-export function dropSide(start: number, size: number, pointer: number): "before" | "after" {
+export function dropSide(
+  start: number,
+  size: number,
+  pointer: number,
+): "before" | "after" {
   return pointer < start + size / 2 ? "before" : "after";
 }
