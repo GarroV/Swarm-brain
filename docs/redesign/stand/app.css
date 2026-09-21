@@ -148,8 +148,9 @@ tbody tr.sel td.t{font-weight:600}
 .pchip .tag{margin:0}
 /* описание — рабочее поле, а не подпись: в широкой панели ему нужна высота */
 .note.lg{min-height:104px}
-/* подпись макета */
-.stamp{position:fixed;right:10px;bottom:8px;font:500 10px/1 var(--font-num);color:var(--ink-empty);letter-spacing:.08em}
+/* Подпись макета. Стоит у левого края рабочей области: справа кнопка фидбека и
+   тосты, а человеку, которому дали ссылку, надо сразу видеть, что данные вымышленные. */
+.stamp{position:fixed;left:calc(var(--nav-w) + 14px);bottom:8px;font:500 10px/1 var(--font-num);color:var(--ink-empty);letter-spacing:.08em}
 
 /* ───────── дополнения стенда ───────── */
 .app{grid-template-columns:var(--nav-w) minmax(0,1fr);transition:grid-template-columns .16s}
