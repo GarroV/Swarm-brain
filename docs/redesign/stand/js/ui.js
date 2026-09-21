@@ -154,3 +154,8 @@ const formData = () => {
    ссылка, по которой нельзя перейти, хуже её отсутствия. */
 const urlList = (text) => String(text || "").split("\n").map((x) => x.trim())
   .filter((x) => /^https?:\/\/\S+$/.test(x));
+
+/* Кнопка-значок для редкого действия. Подпись обязательна: значок без наводки —
+   загадка, её жмут наугад, а «удалить» наугад жать нельзя. */
+const ibtn = (glyph, title, a, id, v) =>
+  `<button class="ibtn" title="${esc(title)}" aria-label="${esc(title)}" ${act(a, id, v)}>${glyph}</button>`;

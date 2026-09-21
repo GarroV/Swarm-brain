@@ -315,6 +315,16 @@ const A = {
     if (S.sel === id) { S.sel = null; S.selKind = null; }
     A.toast("Встреча и её расшифровка удалены");
   },
+  /* «Добавить в базу» — одно действие вместо двух: подтвердить тезисы и сказать, куда
+     встреча ляжет. Раньше подтверждение стояло кнопкой, а хранилище — полем в карточке,
+     и человек добавлял встречу, не зная, что она уедет в общую базу. */
+  addToBase(id, store) {
+    const m = S.meetings.find((x) => x.id === id);
+    if (!m) return;
+    if (m.st === "draft") return A.toast("Черновик сперва разбирается на тезисы");
+    S.meetings = S.meetings.map((x) => x.id === id ? { ...x, st: "confirmed", store } : x);
+    A.toast(store === "shared" ? "Встреча добавлена в общую базу" : "Встреча добавлена в личное хранилище");
+  },
   confirmMeeting(id) {
     S.meetings = S.meetings.map((m) => m.id === id ? { ...m, st: "confirmed" } : m);
     A.toast("Тезисы подтверждены, встреча в базе");

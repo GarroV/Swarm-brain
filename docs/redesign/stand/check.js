@@ -306,11 +306,22 @@ function tokenCheck() {
     {
       const parents = new Set([...document.querySelectorAll('.btn')].map((b) => b.parentElement));
       parents.forEach((par) => {
-        const bs = [...par.children].filter((c) => c.classList.contains('btn') && c.offsetHeight > 0);
+        /* меряем ВСЕХ соседей в ряду, а не только кнопки: рядом стоят меню и значки, и
+           без их ширины «строка вмещала» — неправда. Правило краснело на исправной
+           панели встречи, где перенос делали именно соседи. */
+        const kids = [...par.children].filter((c) => c.offsetHeight > 0);
+        const bs = kids.filter((c) => c.classList.contains('btn'));
         if (bs.length < 2) return;
+        /* «второй этаж» считаем по КНОПКАМ: соседи другой высоты стоят на пару пикселей
+           выше по выравниванию, и по ним выходило, будто строка переносится */
         const tops = bs.map((b) => Math.round(b.getBoundingClientRect().top));
         if (Math.max(...tops) - Math.min(...tops) < 4) return;
-        const need = bs.reduce((a, b) => a + b.offsetWidth, 0) + 8 * (bs.length - 1);
+        /* и с ОТСТУПАМИ: «margin-left:auto» у правой группы съедает строку, а по голым
+           ширинам выходит, будто места хватало */
+        const need = kids.reduce((a, b) => {
+          const st = getComputedStyle(b);
+          return a + b.offsetWidth + (parseFloat(st.marginLeft) || 0) + (parseFloat(st.marginRight) || 0);
+        }, 0) + 8 * (kids.length - 1);
         if (need <= par.clientWidth) out.push('кнопки встали друг под друга, хотя строка вмещала: ' + bs.map((b) => b.textContent.trim().slice(0, 14)).join(' / '));
       });
     }
@@ -992,7 +1003,18 @@ function tokenCheck() {
   want(afterGen.urls === 1 && afterGen.linked,
     `оформленная задача унесла ссылку и привязалась к встрече (ссылок ${afterGen.urls})`);
   await go('gen-close');
-  await go('confirm-meet', firstMeet);
+  /* «Добавить в базу» спрашивает КУДА и запоминает ответ: раньше подтверждение стояло
+     кнопкой, а хранилище — полем в карточке, и встреча уезжала в общую базу молча. */
+  const baseChoices = await p.evaluate(() => [...document.querySelectorAll('.detail .d-acts .mi')]
+    .filter((e) => e.dataset.act === 'add-base').map((e) => e.dataset.v));
+  want(baseChoices.includes('shared') && baseChoices.includes('personal'),
+    `добавление в базу спрашивает, куда класть (${baseChoices.join(', ') || 'выбора нет'})`);
+  await gov2('add-base', firstMeet, 'personal');
+  await new Promise((r) => setTimeout(r, 140));
+  const inBase = await p.evaluate((id) => { const m = S.meetings.find((x) => x.id === id);
+    return { st: m.st, store: m.store }; }, firstMeet);
+  want(inBase.st === 'confirmed' && inBase.store === 'personal',
+    `выбор хранилища доехал до встречи (${inBase.st} · ${inBase.store})`);
   /* вычитка теперь шапка экрана, а не вкладка: подтверждённая встреча уходит из неё сразу */
   want((await count(`.revhead .rv[data-id="${firstMeet}"]`)) === 0, 'подтверждённая встреча ушла из вычитки');
   want((await count('.revhead .rv')) > 0, 'очередь вычитки видна на экране встреч без переключения вкладок');
@@ -1014,6 +1036,16 @@ function tokenCheck() {
   want(meetOpenOn.tab === 'Тезисы' && meetOpenOn.tez > 0,
     `открытая встреча сразу показывает тезисы, а не карточку («${meetOpenOn.tab}», пунктов ${meetOpenOn.tez})`);
   await scan('08б-встреча-без-задач');
+  /* Управление встречей: главное — словами, редкое — значками, и у каждого значка есть
+     подпись. Значок без наводки жмут наугад, а «удалить встречу» наугад жать нельзя. */
+  const icons = await p.evaluate(() => [...document.querySelectorAll('.detail .ibtn')].map((b) => ({
+    glyph: b.textContent.trim(), title: (b.getAttribute('title') || '').trim(),
+    aria: (b.getAttribute('aria-label') || '').trim(), act: b.dataset.act })));
+  want(icons.length >= 4, `редкие действия встречи стоят значками (${icons.length})`);
+  want(icons.every((i) => i.title && i.aria), 'у каждого значка есть подпись и имя для читалки');
+  want(icons.some((i) => i.act === 'del-meet') && icons.some((i) => i.act === 'copy-tez')
+    && icons.some((i) => i.act === 'rename-meet') && icons.some((i) => i.act === 'edit-tez'),
+    'значками закрыты правка тезисов, название, копирование и удаление');
   await go('dtab', 'overview');
   const meetSt = await p.evaluate(() => {
     const dt = [...document.querySelectorAll('.detail dt')].find((e) => e.textContent.trim() === 'Статус');

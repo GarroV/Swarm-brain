@@ -813,3 +813,14 @@ td.qc{text-align:right;white-space:nowrap}
 /* ссылки задачи — отдельным полем, не внутри описания */
 .ulist{display:flex;flex-direction:column;gap:3px}
 .ulist .lnk{font-size:var(--fs-dense);word-break:break-all}
+
+/* Редкие действия встречи — значками: подпись у каждого в title, поэтому ряд читается
+   и не разрастается в два этажа одинаковых кнопок. */
+/* значки идут следом за словами, а не прижимаются к правому краю: прижатые,
+   они выталкивали кнопки на второй этаж даже когда строка вмещала всё */
+.iacts{display:inline-flex;gap:4px}
+.ibtn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;
+  border:1px solid var(--line-control);border-radius:9px;background:var(--surface);color:var(--ink-2);
+  font:500 12.5px/1 var(--font-ui);cursor:pointer}
+.ibtn:hover{background:var(--surface-2);color:var(--ink)}
+.ibtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}

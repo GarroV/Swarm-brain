@@ -209,6 +209,7 @@ const ACTS = {
   "tgl-priv": (id) => { const t = S.tasks.find((x) => x.id === +id); A.patchTask(+id, { priv: !t.priv }); },
   "tgl-sub": (id, v) => A.toggleSub(+id, +v),
   comment: (id) => { const ta = $(`[data-cin="${id}"]`); A.comment(+id, ta.value); },
+  "add-base": (id, v) => A.addToBase(id, v),
   "confirm-meet": (id) => A.confirmMeeting(id),
   "publish-draft": (id) => publishModal(id),
   "do-publish": (id) => { const f = formData(); closeModal(); A.publishDraft(id, f.title); },
@@ -228,7 +229,6 @@ const ACTS = {
       `${btn("Оставить", "mclose")}${btn("Удалить встречу", "do-del-meet", id, undefined, "pri")}`); },
   "do-del-meet": (id) => { closeModal(); A.delMeeting(id); },
   "save-tez": (id) => { const f = formData(); closeModal(); A.editTezisy(id, f.tez); },
-  "set-store": (id, v) => { S.meetings = S.meetings.map((m) => m.id === id ? { ...m, store: v } : m); render(); },
   "tgl-mcc": (id, v) => { S.meetings = S.meetings.map((m) => m.id === id
     ? { ...m, cc: m.cc.includes(v) ? m.cc.filter((c) => c !== v) : [...m.cc, v] } : m); render(); },
   "merge-dup": (id) => { const m = S.meetings.find((x) => x.id === id) || {};

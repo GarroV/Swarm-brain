@@ -119,21 +119,30 @@ function detailMeeting(m) {
   const items = [["tez", "Тезисы", nTez], ["overview", "О встрече"], ["tr", "Транскрипт", m.tr.length]]
     .concat(S.genFor === m.id ? [["gen", "Задачи", S.gen.length]] : []);
   const cur = items.some(([id]) => id === S.dtab) ? S.dtab : "tez";
-  const acts = (isReview ? btn("Подтвердить тезисы", "confirm-meet", m.id, undefined, "pri") : "")
-    + (m.st === "draft" ? btn("Опубликовать в базу", "publish-draft", m.id, undefined, "pri") : "")
-    + (isReview ? btn("Сравнить с транскриптом", "compare", m.id) : "")
+  /* Управление встречей: словами — три действия, ради которых сюда приходят; редкое —
+     значками с подписью (просьба владельца 21.09). Семь одинаковых кнопок в два ряда
+     не давали понять, что здесь главное. */
+  const storeName = m.store === "shared" ? "общая" : "личная";
+  const baseMenu = fmenu([
+    ["в общую базу — видит команда", "add-base", m.id, "shared", m.st === "confirmed" && m.store === "shared"],
+    ["в личное хранилище — только я", "add-base", m.id, "personal", m.st === "confirmed" && m.store === "personal"]]);
+  const acts = (m.st === "draft"
+      /* у черновика тезисов ещё нет: добавлять в базу нечего, сперва разбор */
+      ? btn("Составить тезисы", "publish-draft", m.id, undefined, "pri")
+      : `<span class="drop">${btn(m.st === "confirmed" ? `В базе · ${storeName}` : "Добавить в базу",
+          "noop", undefined, undefined, m.st === "confirmed" ? "" : "pri")}${baseMenu}</span>`)
     + btn("Сгенерировать задачи", "gen-tasks", m.id)
-    + (isReview ? btn("Следующая", "review-next", m.id) : "")
-    + btn("Править тезисы", "edit-tez", m.id)
-    /* «Переобработать» в продукте спрашивает ЧТО поменять: четыре готовых пожелания и своё.
-       Кнопка «пересобрать» без выбора возвращала тот же текст, и человек жал её second раз. */
-    + (m.st !== "draft" ? `<span class="drop">${btn("Переобработать", "noop", undefined, undefined, "")}
+    /* пересборка тезисов спрашивает ЧТО поменять: кнопка без выбора возвращала тот же
+       текст, и человек жал её второй раз */
+    + (m.st !== "draft" ? `<span class="drop">${btn("Сгенерировать тезисы заново", "noop", undefined, undefined, "")}
       ${fmenu([["короче", "regen", m.id, "short"], ["подробнее", "regen", m.id, "long"],
         ["акцент на решениях", "regen", m.id, "decisions"], ["просто пересобрать", "regen", m.id, "plain"],
         ["своё пожелание…", "regen-own", m.id]])}</span>` : "")
-    + `<span class="drop">${btn("Ещё", "noop", undefined, undefined, "")}
-      ${fmenu([["Копировать тезисы", "copy-tez", m.id], ["Изменить название", "rename-meet", m.id],
-        ["Удалить встречу", "del-meet", m.id]])}</span>`;
+    + (isReview ? btn("Сравнить с транскриптом", "compare", m.id) + btn("Следующая", "review-next", m.id) : "")
+    + `<span class="iacts">${ibtn("✎", "Править тезисы", "edit-tez", m.id)}
+      ${ibtn("Aa", "Изменить название встречи", "rename-meet", m.id)}
+      ${ibtn("⧉", "Копировать тезисы", "copy-tez", m.id)}
+      ${ibtn("🗑", "Удалить встречу", "del-meet", m.id)}</span>`;
   let body = "";
   if (cur === "overview") {
     body = (m.claim ? `<div class="lease"><b>Запись рекордера</b>${rows([
@@ -147,7 +156,8 @@ function detailMeeting(m) {
         <dt>Когда</dt><dd><span class="due">${esc(fmtDT(m.dt))}</span></dd>
         <dt>Длительность</dt><dd><span class="due">${m.dur}</span><span class="unit">мин</span></dd>
         <dt>Источник</dt><dd>${tag(m.src, "m")}</dd>
-        <dt>Хранилище</dt><dd>${pickf(m.store === "shared" ? "Общее" : "Личное", ["shared", "personal"].map((x) => [x === "shared" ? "Общее" : "Личное", "set-store", m.id, x, m.store === x]))}</dd>
+        <dt>Хранилище</dt><dd>${state(m.store === "shared" ? "общая база" : "личное хранилище", m.store === "shared")}
+          <span class="unit">меняется кнопкой «${m.st === "confirmed" ? "В базе" : "Добавить в базу"}»</span></dd>
         <dt>Страны</dt><dd>${pickm(m.cc.length ? cc(m.cc) : `<span class="muted">—</span>`, COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "tgl-mcc", m.id, c.c, m.cc.includes(c.c)]))}</dd>
         <dt>Статус</dt><dd>${state(MEET_ST[m.st], m.st === "confirmed")}</dd></dl>
         ${lab(`Задачи из встречи · ${tasks.length}`)}
