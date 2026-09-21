@@ -323,9 +323,10 @@ tbody tr.sel td.t{font-weight:600}
 .review{display:flex;align-items:center;gap:10px;padding:9px var(--gutter);background:var(--warn-soft);border-bottom:1px solid #F0E2C2;font-size:var(--fs-dense);color:var(--warn)}
 .review .btn{margin-left:auto;height:26px;font-size:var(--fs-meta)}
 /* фидбек */
-.fab{position:fixed;right:calc(var(--detail-w) + 18px);bottom:18px;height:34px;padding:0 14px;border-radius:17px;background:var(--ink);color:#fff;font-size:var(--fs-dense);font-weight:500;display:flex;align-items:center;gap:7px;box-shadow:0 6px 20px rgba(10,13,17,.22);z-index:20}
+/* прибита к углу экрана: раньше она ехала вместе с выезжающей панелью и
+   пряталась под ней — кнопку, которая убегает, не нажимают */
+.fab{position:fixed;right:18px;bottom:18px;height:34px;padding:0 14px;border-radius:17px;background:var(--ink);color:#fff;font-size:var(--fs-dense);font-weight:500;display:flex;align-items:center;gap:7px;box-shadow:0 6px 20px rgba(10,13,17,.22);z-index:36}
 .fab:hover{background:#2A3039}
-.app:not(.with-detail)~.fab{right:18px}
 
 .top{position:relative}
 .main{min-height:0}
@@ -535,7 +536,9 @@ input[type="date"].inl{width:auto;min-width:148px}
 .drop{position:relative;display:inline-flex}
 .drop .dmenu{display:none;position:absolute;left:0;top:calc(100% + 4px);z-index:25;min-width:190px;padding:4px;
   background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;box-shadow:0 12px 34px rgba(10,13,17,.16)}
-.drop:hover .dmenu,.drop:focus-within .dmenu{display:block}
+/* Меню открывается и закрывается НАЖАТИЕМ. На :hover/:focus-within оно после клика
+   висело открытым, и убрать его кликом по пустому месту было нельзя. */
+.drop.open .dmenu{display:block}
 .dmenu.wide{min-width:236px}
 .mgrp{font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.09em;color:var(--ink-empty);font-weight:600;padding:9px 8px 4px}
 .mgrp:first-child{padding-top:4px}

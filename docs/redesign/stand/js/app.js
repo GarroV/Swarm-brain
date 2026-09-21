@@ -404,6 +404,13 @@ const ACTS = {
 };
 
 document.addEventListener("click", (e) => {
+  /* Меню живёт на нажатии: чужие закрываем всегда, своё переключаем. Пока оно держалось
+     на :hover/:focus-within, после клика по кнопке меню оставалось висеть, и убрать его
+     кликом по пустому месту было нельзя. */
+  const inMenu = e.target.closest(".dmenu");
+  const trigger = inMenu ? null : e.target.closest(".drop");
+  document.querySelectorAll(".drop.open").forEach((d) => { if (d !== trigger) d.classList.remove("open"); });
+  if (trigger) trigger.classList.toggle("open");
   const pickChip = e.target.closest("[data-pick] .chip");
   if (pickChip) {
     const box = pickChip.closest("[data-pick]");
@@ -446,6 +453,11 @@ document.addEventListener("change", (e) => {
   if (t && t.dataset.act === "set-ping") A.setPing(+t.dataset.id, e.target.value || null);
 });
 document.addEventListener("keydown", (e) => {
+  /* Esc закрывает открытое меню — вторая дорога для тех, кто не целится мышью в пустоту */
+  if (e.key === "Escape" && document.querySelector(".drop.open")) {
+    document.querySelectorAll(".drop.open").forEach((d) => d.classList.remove("open"));
+    return;
+  }
   /* быстрый ввод задачи в колонке доски */
   const qa = e.target.dataset && e.target.dataset.qadd;
   if (qa && e.key === "Enter" && e.target.value.trim()) {

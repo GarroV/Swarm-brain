@@ -697,16 +697,45 @@ function tokenCheck() {
   /* ── задачи ─────────────────────────────────────────────── */
   await go('sec', 'tasks');
   await shot('01-tasks-today');
-  /* свёрнутые фильтры обязаны РАСКРЫВАТЬСЯ мышью: щелчок по скрытому пункту из кода
-     проходит всегда, поэтому зелёный замер без этой проверки ничего не доказывает */
-  await p.hover('.bar .drop:last-of-type .btn');
+  /* Свёрнутые фильтры обязаны РАСКРЫВАТЬСЯ мышью: щелчок по скрытому пункту из кода
+     проходит всегда, поэтому зелёный замер без этой проверки ничего не доказывает.
+     И обязаны ЗАКРЫВАТЬСЯ: меню держалось на наведении и после нажатия висело, а клик
+     по пустому месту его не убирал (жалоба владельца 21.09). */
+  const lastDropOpen = () => p.evaluate(() => {
+    const ds = document.querySelectorAll('.bar .drop');
+    const m = ds[ds.length - 1].querySelector('.dmenu');
+    return !!(m && m.offsetParent !== null); });
+  await p.click('.bar .drop:last-of-type .btn');
   await new Promise((r) => setTimeout(r, 120));
   const menuOpen = await p.evaluate(() => {
     const ds = document.querySelectorAll('.bar .drop');
     const m = ds[ds.length - 1].querySelector('.dmenu');
     return m && m.offsetParent !== null && [...m.querySelectorAll('.mi')].some((e) => e.textContent.includes('архив'));
   });
-  want(menuOpen, 'наведение на «Ещё» раскрывает меню с редкими срезами');
+  want(menuOpen, 'нажатие на «Ещё» раскрывает меню с редкими срезами');
+  /* клик по пустому месту экрана */
+  await p.mouse.click(700, 760);
+  await new Promise((r) => setTimeout(r, 120));
+  want(!(await lastDropOpen()), 'меню закрывается кликом по пустому месту');
+  await p.click('.bar .drop:last-of-type .btn');
+  await new Promise((r) => setTimeout(r, 120));
+  want(await lastDropOpen(), 'меню открывается повторно');
+  await p.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 120));
+  want(!(await lastDropOpen()), 'меню закрывается по Esc');
+  /* Кнопка фидбека прибита к углу экрана: раньше она уезжала вместе с выехавшей
+     панелью (жалоба владельца 21.09), поэтому меряем именно с ОТКРЫТОЙ панелью. */
+  const fabTask = await p.evaluate(() => visibleTasks()[0].id);
+  await go('open-task', fabTask);
+  await new Promise((r) => setTimeout(r, 140));
+  const fabFree = await p.evaluate(() => {
+    const f = document.querySelector('.fab');
+    if (!f) return null;
+    const r = f.getBoundingClientRect();
+    return { right: Math.round(window.innerWidth - r.right), covered: !f.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)) }; });
+  want(fabFree && fabFree.right <= 24 && !fabFree.covered,
+    `кнопка фидбека стоит в углу экрана и не перекрыта панелью (отступ ${fabFree && fabFree.right}px)`);
+  await go('close');
   /* статусы владелец просил вернуть чипами: они обязаны быть НА ВИДУ, а не в меню */
   const stChips = await p.$$eval('.bar > .chip', (e) => e.map((x) => x.textContent.trim()));
   want(['Открыто', 'В работе', 'Готово'].every((n) => stChips.includes(n)),
