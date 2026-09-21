@@ -1515,6 +1515,19 @@ function tokenCheck() {
   await go('tab', 'integr');
   await go('integr', 'granola');
   want((await text('.toast')).includes('переключена'), 'интеграция переключается');
+  /* импорт заметок Granola: число неразобранных видно, и по кнопке они уезжают в базу */
+  {
+    /* шаг выше выключил Granola — включаем обратно, иначе импортировать нечем */
+    if (!(await p.evaluate(() => (S.integrations.find((i) => i.id === 'granola') || {}).st === 'on'))) await go('integr', 'granola');
+    const before = await p.evaluate(() => ({ n: S.granolaNew, entries: S.entries.length }));
+    const said = await p.evaluate(() => (document.querySelector('.rowset') || {}).textContent || '');
+    want(before.n > 0 && said.includes(String(before.n)), `число необработанных заметок названо (${before.n})`);
+    await go('granola-import');
+    await new Promise((r) => setTimeout(r, 140));
+    const after = await p.evaluate(() => ({ n: S.granolaNew, entries: S.entries.length }));
+    want(after.entries === before.entries + 1 && after.n === 0,
+      `импорт заметок довёз запись до базы (записей ${before.entries} → ${after.entries}, осталось ${after.n})`);
+  }
   await go('tab', 'notif');
   const onBefore = await count('.state.on');
   await go('notif-pref', 'tez');
@@ -1532,6 +1545,24 @@ function tokenCheck() {
   await go('save-label');
   await new Promise((r) => setTimeout(r, 90));
   want((await count('[data-act="rename-label"]')) === labelsBefore + 1, 'метка добавилась');
+  /* объявление об обновлении: страница перезагрузится сама, и человек должен знать,
+     почему у него дёрнется экран. Полоса обязана убираться, иначе она вечная. */
+  await p.evaluate(() => { S.deploy = true; render(); });
+  await new Promise((r) => setTimeout(r, 120));
+  const dep = await p.evaluate(() => {
+    const el = document.querySelector('.deploy');
+    const r = el.getBoundingClientRect();
+    const main = document.querySelector('.main').getBoundingClientRect();
+    return { open: el.classList.contains('open'), text: el.textContent,
+      covers: r.bottom > main.top + 60 };
+  });
+  want(dep.open && /перезагруз/i.test(dep.text), `объявление об обновлении названо словами («${dep.text.trim().slice(0, 40)}»)`);
+  want(!dep.covers, 'объявление не накрывает рабочую область — из-под него читается экран');
+  await go('tgl', 'deploy');
+  await new Promise((r) => setTimeout(r, 120));
+  want(!(await p.evaluate(() => document.querySelector('.deploy').classList.contains('open'))),
+    'объявление убирается кнопкой, а не висит вечно');
+
   await go('sec', 'admin'); await shot('28-admin');
   const allUsers = await count('tbody tr');
   await go('tgl-nomail');

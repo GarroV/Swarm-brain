@@ -774,3 +774,12 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
 .cnone span{font-size:var(--fs-meta);color:var(--ink-3)}
 .calv .cev.now{border-color:var(--accent);background:var(--accent-soft)}
 .lab .labr{float:right;font-weight:500;color:var(--accent);cursor:pointer;text-transform:none;letter-spacing:0}
+
+/* Объявление об обновлении: пилюля по центру сверху, поверх содержимого, но не
+   закрывающая рабочую область — из-под неё в продукте читались «Задачи». */
+.deploy{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:60;display:none;
+  align-items:center;gap:10px;padding:8px 14px;border-radius:22px;background:var(--ink);color:#fff;
+  font:500 var(--fs-meta)/1 var(--font-ui);box-shadow:0 8px 24px rgba(10,13,17,.22)}
+.deploy.open{display:flex}
+.deploy .x{background:transparent;border:0;color:rgba(255,255,255,.7);cursor:pointer;font:500 var(--fs-meta)/1 var(--font-ui)}
+.deploy .x:hover{color:#fff}

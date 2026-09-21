@@ -80,6 +80,11 @@ function render() {
   const unread = S.notif.filter((n) => n.unread).length;
   $(".bell .b").textContent = unread || "";
   $(".bell .b").style.display = unread ? "" : "none";
+  /* объявление об обновлении — полоса продукта: страница перезагрузится сама, и человек
+     должен знать, почему у него сейчас дёрнется экран */
+  $(".deploy").innerHTML = S.deploy
+    ? `Идёт обновление — страница перезагрузится сама<button class="x" ${act("tgl", "deploy")}>Скрыть</button>` : "";
+  $(".deploy").classList.toggle("open", !!S.deploy);
   $(".toast").textContent = S.toast || "";
   $(".toast").classList.toggle("open", !!S.toast);
   titleClipped();
@@ -302,6 +307,9 @@ const ACTS = {
   "mf-st": (_, v) => { S.mf = { ...S.mf, st: v }; render(); },
   "mf-clear": () => { S.mf = { q: "", period: "all", cc: [], src: [], people: [], store: "any", st: "any" }; render(); },
   "team-tasks": () => { A.go("tasks"); A.set({ lens: "team", archOn: false, recurOnly: false, q: "", assignee: null }); },
+  "granola-import": () => A.importGranola(),
+  "dig-period": (_, v) => A.set({ digPeriod: v }),
+  "dig-mk": (_, v) => A.set({ digMk: S.digMk.includes(v) ? S.digMk.filter((x) => x !== v) : [...S.digMk, v] }),
   "cal-connect": () => { S.cal = "on"; A.set({}); A.toast("Календарь подключён — встречи дня подтянутся"); },
   integr: (id) => A.toggleIntegration(id),
   broadcast: () => broadcastModal(),

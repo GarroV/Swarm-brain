@@ -303,3 +303,11 @@ const INTEGRATIONS = [
   { id:"bee",     n:"bumblebee",       st:"on",  d:"build 24 · установлен 12 сен" },
   { id:"mcp",     n:"Claude Desktop (MCP)", st:"on", d:"токен smcp_•••• · выпущен 1 сен" },
 ];
+
+/* Импорт из Granola приносит НЕРАЗОБРАННЫЕ заметки — в продукте их число видно в
+   настройках, и по кнопке они уезжают в базу одной записью. */
+function mkEntryFromGranola(n) {
+  return { id: "r-gr" + Date.now(), ty: "note", h: `Заметки Granola — импорт (${n})`,
+    p: "Импортированные заметки встреч: договорённости по поставке, сроки приёмки, вопросы к франчайзи.",
+    who: ME, at: TODAY, cc: [], priv: false, meet: null, ix: { n: 2, at: "только что" } };
+}

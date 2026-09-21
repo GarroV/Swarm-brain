@@ -25,13 +25,17 @@ const S = {
   theme: "light", lang: "RU", tz: "Europe/Belgrade", toast: null,
   /* календарь: on — подключён, off — не подключён, expired — доступ истёк */
   cal: "on",
+  /* объявление об обновлении: продукт показывает его, когда собрана новая версия */
+  deploy: false,
+  /* дайджест: период и рынки, по которым он собирается */
+  digPeriod: "week", digMk: ["RS", "ME"],
   /* данные */
   tasks: TASKS.slice(), meetings: MEETINGS.slice(), entries: ENTRIES.slice(), files: FILES.slice(),
   projects: PROJECTS.slice(), comments: { ...COMMENTS }, history: { ...HISTORY },
   notif: NOTIF.slice(), feedback: FEEDBACK.slice(), queue: AGENT_QUEUE.slice(),
   notifPrefs: NOTIF_PREFS.slice(), tokens: TOKENS.slice(),
   broadcasts: BROADCASTS.slice(),
-  integrations: INTEGRATIONS.slice(), workspaces: WORKSPACES.slice(), labels: LABELS.slice(),
+  integrations: INTEGRATIONS.slice(), granolaNew: 3, workspaces: WORKSPACES.slice(), labels: LABELS.slice(),
   users: USERS.slice(),
 };
 
@@ -512,6 +516,13 @@ const A = {
   },
 
   /* система */
+  importGranola() {
+    const n = S.granolaNew;
+    if (!n) { A.toast("Новых заметок нет"); return; }
+    S.granolaNew = 0;
+    S.entries = [mkEntryFromGranola(n), ...S.entries];
+    A.toast(`Импортировано заметок: ${n}`);
+  },
   readAll() { S.notif = S.notif.map((n) => ({ ...n, unread: false })); render(); },
   addFeedback(cat, text) {
     S.feedback = [{ id: uid("fb"), cat, t: text, who: ME, at: TODAY, st: "open" }, ...S.feedback];

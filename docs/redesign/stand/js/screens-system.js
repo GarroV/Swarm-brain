@@ -50,8 +50,12 @@ function screenSettings() {
       ["Часовой пояс", `<span class="muted">по нему считаются сроки и время встреч</span>`, `<span class="ib">${btn("Europe/Belgrade", "tz", undefined, "Europe/Belgrade", "sm" + (S.tz === "Europe/Belgrade" ? " on" : ""))}${btn("Europe/Zagreb", "tz", undefined, "Europe/Zagreb", "sm" + (S.tz === "Europe/Zagreb" ? " on" : ""))}</span>`],
       ["Аккаунт", "вход через Telegram", btn("Выйти", "logout", undefined, undefined, "sm")],
     ]),
-    integr: () => rows(S.integrations.map((i) => [esc(i.n), esc(i.d),
+    integr: () => rows(S.integrations.map((i) => [esc(i.n),
+      /* у Granola в продукте видно, сколько заметок ещё не разобрано, и их импортируют
+         кнопкой: без числа человек не знает, есть ли что забирать */
+      i.id === "granola" ? `${esc(i.d)} · необработанных заметок: ${S.granolaNew}` : esc(i.d),
       `<span class="ib">${state(i.st === "on" ? "подключено" : "выключено", i.st === "on")}
+       ${i.id === "granola" && i.st === "on" ? btn("Импорт заметок", "granola-import", undefined, undefined, "sm") : ""}
        ${btn(i.st === "on" ? "Отключить" : "Подключить", "integr", i.id, undefined, "sm")}</span>`])),
     tokens: () => rows([
       ...S.tokens.map((t) => [esc(t.n), `<code>${esc(t.v)}</code> · выпущен ${esc(t.at)}`,
@@ -64,6 +68,14 @@ function screenSettings() {
       ...S.notifPrefs.map((n) => [esc(n.n), esc(n.d),
         `<span class="ib">${state(n.on ? "включено" : "выключено", n.on)}
          ${btn(n.on ? "Выключить" : "Включить", "notif-pref", n.id, undefined, "sm")}</span>`]),
+      /* дайджест собирается по периоду и рынкам — в продукте это его настройки, и без
+         них «Сгенерировать» молча берёт что-то своё */
+      ["Период дайджеста", "за какой срок собирать", `<span class="ib">${
+        [["week", "за неделю"], ["two", "за 2 недели"], ["month", "за месяц"]].map(([k, n]) =>
+          `<button class="chip${S.digPeriod === k ? " on" : ""}" ${act("dig-period", undefined, k)}>${n}</button>`).join("")}</span>`],
+      ["Рынки дайджеста", S.digMk.length ? "дайджест собирается по этим рынкам" : "рынки не выбраны — собирать не из чего",
+        `<span class="ib">${COUNTRIES.map((c) =>
+          `<button class="chip${S.digMk.includes(c.c) ? " on" : ""}" ${act("dig-mk", undefined, c.c)}><span class="cc">${c.c}</span></button>`).join("")}</span>`],
       ["Сгенерировать дайджест сейчас", "займёт около 10 секунд", btn("Сгенерировать", "dig", undefined, undefined, "sm")],
     ]),
   }[S.tab];
