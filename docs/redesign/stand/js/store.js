@@ -4,7 +4,7 @@
 const S = {
   sec: "home", tab: "today", sel: null, selKind: null,
   /* задачи */
-  lens: "mine", statuses: new Set(["open", "in_progress"]), byMarket: false, staff: false, noMailOnly: false,
+  lens: "mine", statuses: new Set(["in_progress"]), byMarket: false, staff: false, noMailOnly: false,
   recurOnly: false, archOn: false, sprintView: "list",
   q: "", dtab: "overview", mk: "", noProject: false, period: "any",
   /* встречи */
@@ -56,7 +56,11 @@ const proj = (id) => S.projects.find((p) => p.id === id);
 const projPath = (id) => { const p = proj(id); if (!p) return "—"; return p.parent ? `${proj(p.parent).n} · ${p.n}` : p.n; };
 const label = (id) => S.labels.find((l) => l.id === id);
 const cname = (c) => (COUNTRIES.find((x) => x.c === c) || {}).n || c;
-const ST_LABEL = { open: "Открыто", in_progress: "В работе", done: "Готово" };
+/* Состояний у задачи ДВА: она либо в работе, либо готова (решение владельца
+   22.09.2026 — «статус "готово" надо оставить, остальные убрать, т.е. у нас будет либо
+   задача в процессе, либо готова»). «Открыто» отдельным статусом не было ничем, кроме
+   «в работе, но ещё не начали» — различие, которое никто не поддерживал руками. */
+const ST_LABEL = { in_progress: "В работе", done: "Готово" };
 const MEET_ST = { pending: "ждёт вычитки", draft: "черновик записи", confirmed: "подтверждена" };
 /* Приоритет в продукте НЕ обязателен: в проде он проставлен у 6 задач из 481, а в
    десктопной форме его вообще нет. Пустое значение — норма, и у него есть имя. */
@@ -300,7 +304,7 @@ const A = {
 
   /* задачи */
   createTask(f) {
-    const t = mkTask({ id: nextTaskId++, t: f.title, pr: f.pr, st: "open", who: f.who ? [f.who] : [],
+    const t = mkTask({ id: nextTaskId++, t: f.title, pr: f.pr, st: "in_progress", who: f.who ? [f.who] : [],
       due: f.due || null, prio: f.prio, labels: f.labels, mk: f.mk, recur: f.recur, priv: f.priv, note: f.note,
       ping: f.ping || null, role: f.role || null });
     S.tasks = [t, ...S.tasks];
@@ -698,7 +702,7 @@ const A = {
   genMake(i, f) {
     const g = S.gen.find((x) => x.i === i);
     if (!g || g.made) return;
-    const t = mkTask({ id: nextTaskId++, t: f.title, pr: f.pr, st: "open", who: f.who ? [f.who] : [],
+    const t = mkTask({ id: nextTaskId++, t: f.title, pr: f.pr, st: "in_progress", who: f.who ? [f.who] : [],
       due: f.due || null, prio: f.prio || null, labels: f.labels || [], mk: f.mk || null,
       recur: f.recur || null, priv: !!f.priv || !!(f.labels || []).length, note: f.note || "",
       ping: f.ping || null, urls: f.urls || [], src: S.genFor });

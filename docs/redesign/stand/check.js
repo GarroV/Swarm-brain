@@ -1036,16 +1036,20 @@ function tokenCheck() {
   await shot('04-task-created');
 
   /* действия в детали */
-  await go('take');
+  /* Состояния два, «Взять в работу» больше нет: задача либо в работе, либо готова
+     (владелец, 22.09.2026). Правило проверяет то же — что кнопка шапки меняет состояние. */
+  await go('move', undefined);
   /* Статус читаем из ДАННЫХ и из шапки: чипа «Статус» в панели больше нет — статус
      меняется кнопкой, как в проде (владелец, 22.09.2026). Правило осталось про то же
      самое — кнопка обязана менять состояние задачи, — но перестало держаться за чип. */
   const tookIt = await p.evaluate(() => {
     const t = S.tasks.find((x) => x.id === S.sel);
     const acts = [...document.querySelectorAll('.detail .d-acts .btn')].map((e) => e.textContent.trim());
-    return { st: t && t.st, acts: acts.join(' | '),
+    return { st: t && t.st, acts: acts.join(' | '), labels: ST_LABEL,
       chip: [...document.querySelectorAll('.detail .props .pchip .k')].map((e) => e.textContent).join(',') }; });
-  want(tookIt.st === 'in_progress', `кнопка «Взять в работу» сменила статус (сейчас «${tookIt.st}», кнопки: ${tookIt.acts})`);
+  want(tookIt.st === 'done', `кнопка «Готово» закрыла задачу (сейчас «${tookIt.st}», кнопки: ${tookIt.acts})`);
+  want(Object.keys(tookIt.labels).length === 2,
+    `у задачи ровно два состояния — в работе и готова (сейчас: ${Object.keys(tookIt.labels).join(', ')})`);
   want(!/Статус/.test(tookIt.chip), `статуса в панели нет — он живёт кнопкой, как в проде (поля: ${tookIt.chip})`);
   /* работать с задачей в колонке 372px нельзя — это была форточка, а не рабочее место */
   const dw = await p.$eval('.detail', (e) => Math.round(e.clientWidth));

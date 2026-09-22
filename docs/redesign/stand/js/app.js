@@ -292,6 +292,7 @@ const ACTS = {
        общую (канон линз). Чтобы узел не обещал больше, чем покажет, приход по нему
        включает админский оверсайт и раскрывает статусы — тогда число сходится. */
     A.set({ archOn: false, recurOnly: false, lens: "all", mk: null, q: "", assignee: null, noProject: true,
+      statuses: new Set(Object.keys(ST_LABEL)),   /* узел обещает N задач — показываем все N */
       staff: me().role === "admin", statuses: new Set(Object.keys(ST_LABEL)) }); },
   "new-project": () => modal("Новый проект", fld("Название", input("n", "", "Например: Открытие BA")),
     `${btn("Отмена", "mclose")}${btn("Создать", "do-project", undefined, undefined, "pri")}`),

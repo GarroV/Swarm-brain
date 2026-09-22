@@ -100,7 +100,9 @@ function detailTask(t) {
   const tab = S.dtab === "talk" ? "overview" : S.dtab;
   const acts = t.arch
     ? btn("Вернуть из архива", "restore", t.id, undefined, "pri") + btn("Удалить навсегда", "del-task", t.id)
-    : (t.st !== "in_progress" ? btn("Взять в работу", "take", t.id, undefined, "pri") : btn("Готово", "move", t.id, "done", "pri"))
+    /* Состояния два, поэтому и кнопка одна: «Готово» закрывает, «Вернуть в работу»
+       открывает обратно. «Взять в работу» звать некуда — задача и так в работе. */
+    : (t.st === "done" ? btn("Вернуть в работу", "move", t.id, "in_progress", "pri") : btn("Готово", "move", t.id, "done", "pri"))
       + btn("Архивировать", "archive", t.id);
   let body = "";
   if (tab === "overview") {
