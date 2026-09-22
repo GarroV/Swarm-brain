@@ -5,7 +5,7 @@ const LENSES = [["mine", "Мои"], ["team", "Командные"], ["all", "В�
 const STATUSES = [["open", "Открыто"], ["in_progress", "В работе"], ["done", "Готово"]];
 /* подпись переключателя живёт в одном месте: в меню и в снимаемом чипе он звался
    «группировать по рынкам» и «по рынкам» — два имени у одного тумблера */
-const SHOW_TGL = { byMarket: "группировать по рынкам", staff: "все сотрудники",
+const SHOW_TGL = { byMarket: "группировать по рынкам",
   recurOnly: "только регулярные", archOn: "показать архив" };
 
 /* Панель фильтров — ОДНА строка и три зоны: чья работа (переключатель), готовые
@@ -14,8 +14,12 @@ const SHOW_TGL = { byMarket: "группировать по рынкам", staff
    никто не просил, а решение всегда одно — показать завершённое или убрать его. */
 function tasksToolbar() {
   const admin = me().role === "admin";
+  /* Выбран человек — смотрим ВСЮ его работу, и «Мои / Командные / Все» тут нечего делить:
+     переключатель гаснет (решение владельца 22.09.2026) и оживает, как только сотрудника
+     снимают. Гасим, а не прячем: исчезнувший орган управления человек ищет и не находит. */
+  const lensOff = !!S.assignee;
   const seg = LENSES.map(([id, nm]) =>
-    `<button class="sg${S.lens === id ? " on" : ""}" ${act("lens", id)}>${esc(nm)}</button>`).join("");
+    `<button class="sg${S.lens === id ? " on" : ""}"${lensOff ? " disabled" : ""} ${act("lens", id)}>${esc(nm)}</button>`).join("");
   const doneOn = S.statuses.has("done");
   const sts = `<button class="chip${doneOn ? " on" : ""}" ${act("tgl-done")}
     title="${doneOn ? "завершённые показаны" : "завершённые скрыты"}">${dot("done")}Готово</button>`;
@@ -23,18 +27,33 @@ function tasksToolbar() {
     ...COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "mk-filter", undefined, c.c, S.mk === c.c])];
   const more = [[SHOW_TGL.byMarket, "tgl", "byMarket", undefined, S.byMarket],
     [SHOW_TGL.recurOnly, "tgl", "recurOnly", undefined, S.recurOnly],
-    [SHOW_TGL.archOn, "tgl", "archOn", undefined, S.archOn],
-    ...(admin ? [[SHOW_TGL.staff, "tgl", "staff", undefined, S.staff]] : [])];
-  const nMore = (S.byMarket ? 1 : 0) + (S.recurOnly ? 1 : 0) + (S.archOn ? 1 : 0) + (S.staff ? 1 : 0);
+    [SHOW_TGL.archOn, "tgl", "archOn", undefined, S.archOn]];
+  const nMore = (S.byMarket ? 1 : 0) + (S.recurOnly ? 1 : 0) + (S.archOn ? 1 : 0);
+  /* Оверсайт руководителя — ОДНА кнопка «Сотрудники», и только у админа: в ней и «все
+     сотрудники» (был тумблер в «Ещё» — два места у одного факта), и выбор одного человека.
+     До 22.09.2026 выбрать человека можно было ТОЛЬКО придя со стороны — щелчком по нему на
+     другом экране; на самой панели такой двери не было, и чип с аватаром появлялся уже по
+     факту. Просьба владельца 22.09.2026: «нужен функционал выбора сотрудника… это отдельная
+     кнопка на панели, которая доступна только администратору».
+     Чужие задачи показывает ровно эта кнопка — у неадмина её нет, и путей к чужому нет. */
+  const staffItems = admin ? [
+    ["моё и командное", "pick-staff", undefined, "off", !S.staff && !S.assignee],
+    ["все сотрудники", "pick-staff", undefined, "all", S.staff && !S.assignee],
+    ...S.users.filter((u) => u.id !== ME).map((u) =>
+      [esc(u.n), "pick-staff", undefined, String(u.id), S.assignee === u.id])] : [];
+  const staffLabel = S.assignee ? `Сотрудник: ${sname(S.assignee)}`
+    : S.staff ? "Сотрудники: все" : "Сотрудники";
   /* редкое и пришедшее извне (клик по карте, по человеку) остаётся снимаемым чипом:
      фильтр, который сузил список молча, человек ищет глазами и не находит */
   const extra = [
     ...(S.noProject ? [["без проекта", "drop-no-project"]] : []),
   ];
   return `<div class="bar">
-    <span class="seg">${seg}</span>
+    <span class="seg${lensOff ? " off" : ""}"${lensOff ? ` title="Выбран сотрудник — показана вся его работа"` : ""}>${seg}</span>
     <span class="sep-v"></span>
     ${sts}
+    ${admin ? `<span class="drop">${btn(staffLabel, "noop", undefined, undefined,
+      "sm" + (S.staff || S.assignee ? " on" : ""))}${fmenu(staffItems)}</span>` : ""}
     <span class="drop">${btn(S.mk ? `Рынок: ${S.mk}` : "Рынок", "noop", undefined, undefined, "sm" + (S.mk ? " on" : ""))}${fmenu(mkItems)}</span>
     <span class="drop">${btn(S.period === "any" ? "Период" : `Период: ${periodName()}`, "noop", undefined, undefined, "sm" + (S.period === "any" ? "" : " on"))}
       <div class="dmenu">${Object.keys(PERIOD).map((k) =>
@@ -48,7 +67,6 @@ function tasksToolbar() {
         </div>` : ""}</div></span>
     <span class="drop">${btn(nMore ? `Ещё · ${nMore}` : "Ещё", "noop", undefined, undefined, "sm" + (nMore ? " on" : ""))}${fmenu(more)}</span>
     ${fchips(extra)}
-    ${S.assignee ? `<button class="chip on" ${act("drop-assignee")}>${av(S.assignee)}<span class="x">×</span></button>` : ""}
     <div class="right">
       <input class="qin" placeholder="Фильтр по названию" value="${esc(S.q)}" data-qin="tasks">
       <span>Показано <b>${visibleTasks().length}</b> из ${scopeCount()}</span>

@@ -329,7 +329,14 @@ const ACTS = {
   "person-tasks": (id) => { A.go("tasks"); S.assignee = +id; S.lens = "all"; S.archOn = false; S.recurOnly = false;
     if (me().role === "admin") S.staff = true;   /* чужие задачи видны только админу */
     render(); },
-  "drop-assignee": () => { S.assignee = null; render(); },
+  /* Единственная дверь к чужим задачам — и она заперта ролью: у неадмина кнопки нет, а
+     если действие всё же позовут, оно ничего не делает. */
+  "pick-staff": (_, v) => {
+    if (me().role !== "admin") return;
+    if (v === "off") { S.staff = false; S.assignee = null; }
+    else if (v === "all") { S.staff = true; S.assignee = null; }
+    else { S.assignee = +v; S.staff = true; S.lens = "all"; }
+    render(); },
   "switch-ws": (id) => A.switchWorkspace(id),
   "not-dup": (id) => A.notDup(id),
   "q-task-off": (id, v) => A.queueTaskOff(id, v),

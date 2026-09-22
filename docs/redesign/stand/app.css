@@ -709,6 +709,12 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
 .seg .sg:last-child{border-right:0}
 .seg .sg:hover{background:var(--surface-2)}
 .seg .sg.on{background:var(--accent);color:#fff;font-weight:600}
+/* Переключателю нечего делить: выбран конкретный сотрудник и показана вся его работа.
+   Гасим, а не прячем — пропавший орган управления человек ищет и не находит. */
+.seg.off{opacity:.5}
+.seg.off .sg{cursor:default}
+.seg.off .sg:hover{background:var(--surface)}
+.seg.off .sg.on:hover{background:var(--accent)}
 /* панель фильтров — одна строка: она не переносится, лишнее уезжает в меню.
    В узкой рабочей области перенос разрешаем: спрятать фильтр хуже, чем перенести. */
 .bar{flex-wrap:nowrap}

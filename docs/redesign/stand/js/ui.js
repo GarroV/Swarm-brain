@@ -10,9 +10,10 @@ const av = (id, withName) => { const u = user(id); if (!u) return `<span class="
 const avs = (ids) => ids.length ? ids.map((i) => av(i, false)).join("") : `<span class="muted">—</span>`;
 /* плотные таблицы: «Никола Й.» вместо обрезанного «Никола Йована…».
    Полное имя остаётся в подсказке, в панели детали и в «Команде». */
+const sname = (id) => { const u = user(id); if (!u) return "— не назначен";
+  const [f, l] = u.n.split(" "); return l ? `${f} ${l[0]}.` : f; };
 const avShort = (id) => { const u = user(id); if (!u) return `<span class="muted">— не назначен</span>`;
-  const [f, l] = u.n.split(" ");
-  return `<span class="av" style="background:${u.c}" title="${esc(u.n)}">${u.i}</span><span class="nm">${esc(l ? `${f} ${l[0]}.` : f)}</span>`; };
+  return `<span class="av" style="background:${u.c}" title="${esc(u.n)}">${u.i}</span><span class="nm">${esc(sname(id))}</span>`; };
 /* Только кружок с инициалами: в плотном списке имя рядом с ним — тот же факт вторым
    начертанием, а в группировке по людям ещё и третьим (имя стоит в заголовке группы). */
 const avOnly = (id) => { const u = user(id); if (!u) return `<span class="muted">не назначен</span>`;
