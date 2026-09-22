@@ -13,7 +13,7 @@ const S = {
   bq: "", bcc: "", bmine: false,
   fbo: false,
   /* фильтр по человеку — ставится кликом по строке в «Команде» */
-  assignee: null, activeOnly: false, showClosed: false,
+  assignee: null, lensWas: null, activeOnly: false, showClosed: false,
   /* спринты */
   cycle: "c2", cycles: CYCLES.slice(), board: { drag: null },
   /* спринты: пространство, состав (sprint_items), группировка, пул набора, отчёт */

@@ -333,9 +333,15 @@ const ACTS = {
      если действие всё же позовут, оно ничего не делает. */
   "pick-staff": (_, v) => {
     if (me().role !== "admin") return;
-    if (v === "off") { S.staff = false; S.assignee = null; }
-    else if (v === "all") { S.staff = true; S.assignee = null; }
-    else { S.assignee = +v; S.staff = true; S.lens = "all"; }
+    if (v === "off" || v === "all") {
+      /* сняли человека — переключатель возвращается туда, где стоял: иначе админ молча
+         остаётся в «Все» и потом не понимает, почему список шире обычного */
+      if (S.assignee && S.lensWas) { S.lens = S.lensWas; S.lensWas = null; }
+      S.staff = v === "all"; S.assignee = null;
+    } else {
+      if (!S.assignee) S.lensWas = S.lens;
+      S.assignee = +v; S.staff = true; S.lens = "all";
+    }
     render(); },
   "switch-ws": (id) => A.switchWorkspace(id),
   "not-dup": (id) => A.notDup(id),

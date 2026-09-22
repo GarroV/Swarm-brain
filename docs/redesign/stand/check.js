@@ -787,6 +787,55 @@ function tokenCheck() {
   /* ── задачи ─────────────────────────────────────────────── */
   await go('sec', 'tasks');
   await shot('01-tasks-today');
+  /* Оверсайт руководителя: отдельная кнопка «Сотрудники» на панели, и только у админа.
+     Щёлкаем как человек — по кнопке и по пункту меню: вызов действия из кода прошёл бы
+     и мимо неработающей кнопки, поэтому такой замер ничего не доказывает. */
+  const findStaffDrop = async () => {
+    for (const d of await p.$$('.bar .drop')) {
+      if (/Сотрудник/.test(await d.evaluate((e) => e.textContent))) return d; }
+    return null; };
+  const pickStaff = async (label) => {
+    const d = await findStaffDrop();
+    if (!d) return false;
+    await d.click();
+    await new Promise((r) => setTimeout(r, 140));
+    for (const m of await d.$$('.mi')) {
+      if ((await m.evaluate((e) => e.textContent)).trim() === label) {
+        await m.click(); await new Promise((r) => setTimeout(r, 180)); return true; } }
+    return false; };
+  want((await findStaffDrop()) !== null, 'на панели задач у админа есть кнопка «Сотрудники»');
+  const picked = await pickStaff('Марко Дамьянович');
+  want(picked, 'в меню «Сотрудники» выбирается конкретный человек');
+  const byOne = await p.evaluate(() => {
+    const rows = [...document.querySelectorAll('.list tbody tr[data-act="open-task"]')];
+    return { rows: rows.length,
+      foreign: rows.map((r) => S.tasks.find((t) => t.id === +r.dataset.id))
+        .filter((t) => t && !t.who.includes(502)).length,
+      segOff: !!document.querySelector('.bar .seg.off'),
+      segDead: [...document.querySelectorAll('.bar .seg .sg')].every((b) => b.disabled) }; });
+  want(byOne.rows > 0 && byOne.foreign === 0,
+    `выбран сотрудник — в списке только его задачи (строк ${byOne.rows}, чужих ${byOne.foreign})`);
+  want(byOne.segOff && byOne.segDead,
+    'при выбранном сотруднике переключатель «Мои / Командные / Все» погашен');
+  await pickStaff('моё и командное');
+  const back = await p.evaluate(() => ({ off: !!document.querySelector('.bar .seg.off'),
+    assignee: S.assignee, staff: !!S.staff }));
+  want(!back.off && back.assignee === null && !back.staff,
+    'снятие сотрудника возвращает переключатель и обычный срез');
+  /* Чужие задачи — только у админа: у остальных двери к ним нет вовсе. */
+  const asOps = await p.evaluate(() => {
+    const was = S.users.find((u) => u.id === ME).role;
+    S.users = S.users.map((u) => u.id === ME ? { ...u, role: 'ops' } : u); render();
+    const has = [...document.querySelectorAll('.bar .drop')].some((e) => /Сотрудник/.test(e.textContent));
+    /* и мимо кнопки тоже: действие само отказывает, а не полагается на спрятанный орган */
+    ACTS['pick-staff'](undefined, '502');
+    const forced = { assignee: S.assignee, staff: !!S.staff };
+    S.users = S.users.map((u) => u.id === ME ? { ...u, role: was } : u);
+    S.assignee = null; S.staff = false; render();
+    return { has, forced }; });
+  want(asOps.has === false, 'у неадмина кнопки «Сотрудники» на панели нет');
+  want(asOps.forced.assignee === null && asOps.forced.staff === false,
+    'неадмин не получает чужие задачи и в обход кнопки');
   /* Свёрнутые фильтры обязаны РАСКРЫВАТЬСЯ мышью: щелчок по скрытому пункту из кода
      проходит всегда, поэтому зелёный замер без этой проверки ничего не доказывает.
      И обязаны ЗАКРЫВАТЬСЯ: меню держалось на наведении и после нажатия висело, а клик
@@ -1127,10 +1176,10 @@ function tokenCheck() {
   want((await count('tbody tr.row')) === await p.evaluate(() =>
     S.tasks.filter((t) => t.arch && inLens(t, 'all')).length), 'архив под линзой «Все» показывает мои и командные')
   const archAll = await p.evaluate(() => S.tasks.filter((t) => t.arch).length);
-  await go('tgl', 'staff');
+  await gov('pick-staff', 'all');
   await new Promise((r) => setTimeout(r, 120));
   want((await count('tbody tr.row')) === archAll, `«Все сотрудники» открывает весь архив (${archAll})`);
-  await go('tgl', 'staff');
+  await gov('pick-staff', 'off');
   await go('open-task', (await p.$eval('tbody tr[data-act="open-task"]', (e) => e.dataset.id)));
   const archActs = await p.$$eval('.detail .d-acts .btn', (els) => els.map((e) => e.textContent.trim()).join(' | '));
   want(archActs.includes('Вернуть'), `в архиве предлагается вернуть задачу (кнопки: ${archActs})`);
@@ -1958,7 +2007,7 @@ function tokenCheck() {
   const ofPerson = await count('tr.row');
   want(ofPerson > 0 && (await p.evaluate(() => S.tasks.filter((t) => t.who.includes(504)).length)) >= ofPerson,
     'в списке только задачи выбранного человека');
-  await go('drop-assignee');
+  await gov('pick-staff', 'off');
   await new Promise((r) => setTimeout(r, 90));
   /* сообщение называет ОБА числа: одиночное падение «не сработало» без цифр нечем
      разбирать, а это место уже мигало один раз */
@@ -1966,7 +2015,7 @@ function tokenCheck() {
   const st8 = await p.evaluate(() => ({ lens: S.lens, tab: S.tab, staff: S.staff, noProject: S.noProject,
     statuses: [...S.statuses], assignee: S.assignee, mk: S.mk, q: S.q }));
   want(afterDrop > ofPerson,
-    `фильтр по человеку снимается крестиком (было ${ofPerson}, стало ${afterDrop}; состояние ${JSON.stringify(st8)})`);
+    `фильтр по человеку снимается кнопкой «Сотрудники» (было ${ofPerson}, стало ${afterDrop}; состояние ${JSON.stringify(st8)})`);
   await go('sec', 'team');
   await go('tab', 'ws'); await shot('25-workspaces');
   /* читаем клетку по ЗАГОЛОВКУ колонки: «третья ячейка первой таблицы» — это на вкладке
