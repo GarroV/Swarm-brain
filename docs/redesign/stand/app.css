@@ -89,9 +89,12 @@ h1{flex:none;font-size:var(--fs-title);font-weight:650;letter-spacing:-.015em}
    • резерв ТОЛЬКО справа — это не поле раздела, а асимметричный резерв под кнопку,
      и правило «пустой резерв 32px справа сломал строку» валит его намеренно.
    Собственные 12px крайних ячеек снимаем: иначе поле складывается в 44px и снова тесно. */
-.list{padding:0 var(--gutter)}
+/* Справа — мягкий воздух, слева ничего: «слева убери этот отступ, справа смягчи»
+   (владелец, 22.09.2026). 32px слева отодвигали список от края и ломали линию с шапкой
+   раздела, а резерв ровно в 32px справа правило «пустой резерв» считает не полем, а
+   местом под кнопку — поэтому 20px, и они мягче на глаз. */
+.list{padding-right:20px}
 .list table{width:100%}
-.list th:first-child,.list td:first-child{padding-left:0}
 .list th:last-child,.list td:last-child{padding-right:0}
 table{width:100%;border-collapse:collapse}
 thead th{position:sticky;top:0;z-index:1;background:var(--surface-head);text-align:left;font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);font-weight:600;padding:7px 12px;border-bottom:1px solid var(--line-strong);white-space:nowrap}
@@ -165,7 +168,7 @@ tbody tr.sel td.t{font-weight:600}
 .pchip .v{flex:0 1 auto;min-width:0;display:flex;align-items:center;gap:5px;overflow:hidden;white-space:nowrap}
 .pchip .cv{flex:none;width:6px;height:6px;border-right:1.3px solid var(--ink-3);border-bottom:1.3px solid var(--ink-3);
   transform:translateY(-2px) rotate(45deg)}
-.pchip .dv{flex:none;min-width:152px;height:24px;padding:0 4px;border:1px solid transparent;border-radius:6px;
+.pchip .dv{flex:none;min-width:118px;height:24px;padding:0 4px;border:1px solid transparent;border-radius:6px;
   background:transparent;font:500 var(--fs-num)/1 var(--font-mono);color:var(--ink)}
 .pchip .dv:hover,.pchip .dv:focus{border-color:var(--line-control);background:var(--surface-2)}
 .pchip .tag{margin:0}

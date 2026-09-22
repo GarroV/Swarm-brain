@@ -1037,12 +1037,16 @@ function tokenCheck() {
 
   /* действия в детали */
   await go('take');
-  const statusChip = await p.evaluate(() => {
-    const c = [...document.querySelectorAll('.detail .props .pchip')]
-      .find((e) => (e.querySelector('.k') || {}).textContent === 'Статус');
-    return c ? c.querySelector('.v').textContent.trim() : '';
-  });
-  want(statusChip.includes('В работе'), `кнопка «Взять в работу» сменила статус (в чипе «${statusChip}»)`);
+  /* Статус читаем из ДАННЫХ и из шапки: чипа «Статус» в панели больше нет — статус
+     меняется кнопкой, как в проде (владелец, 22.09.2026). Правило осталось про то же
+     самое — кнопка обязана менять состояние задачи, — но перестало держаться за чип. */
+  const tookIt = await p.evaluate(() => {
+    const t = S.tasks.find((x) => x.id === S.sel);
+    const acts = [...document.querySelectorAll('.detail .d-acts .btn')].map((e) => e.textContent.trim());
+    return { st: t && t.st, acts: acts.join(' | '),
+      chip: [...document.querySelectorAll('.detail .props .pchip .k')].map((e) => e.textContent).join(',') }; });
+  want(tookIt.st === 'in_progress', `кнопка «Взять в работу» сменила статус (сейчас «${tookIt.st}», кнопки: ${tookIt.acts})`);
+  want(!/Статус/.test(tookIt.chip), `статуса в панели нет — он живёт кнопкой, как в проде (поля: ${tookIt.chip})`);
   /* работать с задачей в колонке 372px нельзя — это была форточка, а не рабочее место */
   const dw = await p.$eval('.detail', (e) => Math.round(e.clientWidth));
   want(dw >= 520, `рабочая область задачи шире 520px (сейчас ${dw})`);
@@ -1169,10 +1173,15 @@ function tokenCheck() {
   await go('open-task', pingRow);
   const keys = () => p.evaluate(() => [...document.querySelectorAll('.detail .props .pchip')]
     .filter((e) => e.offsetParent !== null)
-    .map((e) => ({ k: (e.querySelector('.k') || {}).textContent, empty: !!e.querySelector('.v .muted') })));
-  const shownFields = await keys();
-  want(shownFields.length > 0 && shownFields.every((f) => !f.empty),
-    `панель задачи не показывает пустых полей (пустых ${shownFields.filter((f) => f.empty).length} из ${shownFields.length})`);
+    .map((e) => ({ k: (e.querySelector('.k') || {}).textContent, empty: !!e.querySelector('.v .muted'),
+      opt: !!e.closest('.props.opt') })));
+  /* Правило про анкету касается ДОБИРАЕМЫХ полей (.props.opt). Главный ряд — исполнитель,
+     рынок, роль, приватность, срок — стоит всегда, даже пустым: это не редкие поля, а те,
+     по которым задачу ищут и распределяют (решение владельца 22.09.2026 — поставить их
+     рядом). Пустой «Рынок: не указан» там не шум, а вопрос, на который надо ответить. */
+  const shownFields = (await keys()).filter((f) => f.opt);
+  want(shownFields.every((f) => !f.empty),
+    `добираемые поля панели не показываются пустыми (пустых ${shownFields.filter((f) => f.empty).length} из ${shownFields.length})`);
   const moreBtn = await p.evaluate(() => {
     const b = [...document.querySelectorAll('.detail .props.opt .btn')].find((x) => /Все поля/.test(x.textContent));
     return b ? b.textContent.trim() : null; });

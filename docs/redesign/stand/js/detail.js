@@ -22,13 +22,29 @@ function taskProps(t) {
     ...S.users.map((u) => [`${av(u.id, false)}${esc(u.n)}`, "set-who", t.id, String(u.id), t.who[0] === u.id])];
   /* Главные свойства — те, без которых задача не задача: кто, в каком состоянии,
      к какому сроку и в каком проекте. Они стоят всегда. */
+  /* Статуса в панели НЕТ: он меняется кнопкой «Готово» в шапке, как в проде, и чип
+     дублировал её третьим способом сделать одно и то же (владелец, 22.09.2026 —
+     «статус надо скрыть, как в проде»).
+     Ряд 1 — «кто и по какому фронту»: исполнитель, рынок, роль стоят рядом, потому что
+     читаются вместе («исполнитель, рынок, роль явно можно поставить рядом»).
+     Ряд 2 — «кому видно и к какому дню»: приватность строго под исполнителем, как
+     просил владелец, рядом с ней срок. Срок больше не wide: поле на всю ширину панели
+     под одну дату — самая широкая кнопка экрана ни за что. */
+  const mk = pchip("Рынок", t.mk ? `<span class="cc">${t.mk}</span>${esc(cname(t.mk))}` : `<span class="muted">не указан</span>`,
+    [["— без рынка", "set-mk", t.id, "", !t.mk], ...COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "set-mk", t.id, c.c, t.mk === c.c])]);
+  const role = pchip("Роль", t.role ? esc(roleName(t.role)) : `<span class="muted">без роли</span>`,
+    [["— без роли", "set-role", t.id, "", !t.role], ...S.roles.map((r) => [esc(r.n), "set-role", t.id, r.id, t.role === r.id])]);
   const main = `<div class="props">
-    ${pchip("Статус", `${dot(t.st)}${ST_LABEL[t.st]}`, STATUSES.map(([id, n]) => [`${dot(id)}${n}`, "move", t.id, id, t.st === id]))}
     ${pchip("Исполнитель", t.who.length ? `${av(t.who[0], false)}${esc(user(t.who[0]).n)}` : `<span class="muted">не назначен</span>`, users)}
-    <span class="pchip wide"><span class="k">Срок</span><span class="v">
+    ${mk}${role}
+  </div>
+  <div class="props">
+    ${pchip("Приватность", t.priv ? "личная" : "общая",
+      [["общая", "set-priv", t.id, "", !t.priv], ["личная", "set-priv", t.id, "1", t.priv]])}
+    <span class="pchip"><span class="k">Срок</span><span class="v">
       <input type="date" class="dv" value="${t.due || ""}" ${act("set-due", t.id)}>${t.due && dueKind(t.due) === "now" ? '<span class="over">просрочено</span>' : ""}</span></span>
-    ${pflat("Проект", esc(projPath(t.pr)), "wide")}
-  </div>`;
+  </div>
+  <div class="props">${pflat("Проект", esc(projPath(t.pr)), "wide")}</div>`;
   /* Остальное — по одному чипу, и ПУСТОЕ по умолчанию спрятано: поле «Рынок: не указан»
      занимает строку и ничего не сообщает, а панель из-за таких строк читалась как анкета.
      «Все поля» достаёт спрятанное, не открывая форму. */
@@ -42,15 +58,10 @@ function taskProps(t) {
       t.ping ? btn("убрать", "drop-ping", t.id, undefined, "sm") : ""}</span></span>`],
     [!!t.recur, pchip("Повтор", t.recur ? RECUR_LABEL[t.recur] : `<span class="muted">нет</span>`,
       ["", "weekly", "monthly"].map((r) => [r ? RECUR_LABEL[r] : "нет", "set-recur", t.id, r, (t.recur || "") === r]))],
-    [!!t.mk, pchip("Рынок", t.mk ? `<span class="cc">${t.mk}</span>${esc(cname(t.mk))}` : `<span class="muted">не указан</span>`,
-      [["— без рынка", "set-mk", t.id, "", !t.mk], ...COUNTRIES.map((c) => [`<span class="cc">${c.c}</span>${esc(c.n)}`, "set-mk", t.id, c.c, t.mk === c.c])])],
-    [!!t.role, pchip("Роль", t.role ? esc(roleName(t.role)) : `<span class="muted">без роли</span>`,
-      [["— без роли", "set-role", t.id, "", !t.role], ...S.roles.map((r) => [esc(r.n), "set-role", t.id, r.id, t.role === r.id])])],
-    [!!t.prio, pchip("Приоритет", t.prio ? `${pri(t.prio)}${PRIO_LABEL[t.prio]}` : `<span class="muted">не задан</span>`,
-      [["— не задан", "set-prio", t.id, "", !t.prio], ...["high", "med", "low"].map((p) => [`${pri(p)}${PRIO_LABEL[p]}`, "set-prio", t.id, p, t.prio === p])])],
-    /* приватность стоит всегда: «кто это увидит» — не редкое поле, а условие показа */
-    [true, pchip("Приватность", t.priv ? "личная" : "общая",
-      [["общая", "set-priv", t.id, "", !t.priv], ["личная", "set-priv", t.id, "1", t.priv]])],
+    /* Рынок и роль переехали в главный ряд — они читаются вместе с исполнителем.
+       Приватность переехала под исполнителя: «кто это увидит» — не редкое поле.
+       Приоритета в панели нет: такого поля у продукта нет (владелец, 22.09.2026 —
+       «приоритет выбрасываем, нет такого у нас»). */
   ];
   const hidden = opt.filter(([on]) => !on).length;
   const shown = opt.filter(([on]) => on || S.allProps).map(([, html]) => html).join("");
