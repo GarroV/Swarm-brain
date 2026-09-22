@@ -155,7 +155,7 @@ function screenReviewCounts() {
   const seats = byUser.reduce((n, [, k]) => n + k, 0);
   return `<div class="bar"><span>Невычитано встреч <b>${pend.length}</b></span>
     <div class="right"><span>Ждут вычитки у людей: <b>${seats}</b> — одна встреча приходит каждому участнику</span></div></div>`
-    + (byUser.length ? table([{ t: "Человек", w: "30%" }, { t: "Почта" }, { t: "Ждёт вычитки", r: true }, { t: "Напомнить", r: true, w: "180px" }],
+    + (byUser.length ? table([{ t: "Человек", w: "30%" }, { t: "Почта" }, { t: "Ждёт вычитки", r: true }, { t: "Напомнить", r: true, w: "204px" }],
       byUser.map(([u, n]) => `<tr class="row">${cell(av(u.id), "t")}${cell(u.em ? esc(u.em) : state("не привязана", false))}
         ${cell(`<span class="due">${n}</span>`, "r")}
         ${cell(btn("Напомнить в Telegram", "remind", u.id, undefined, "sm"), "r acts")}</tr>`).join(""))

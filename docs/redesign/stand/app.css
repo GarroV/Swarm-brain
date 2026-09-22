@@ -89,20 +89,26 @@ h1{flex:none;font-size:var(--fs-title);font-weight:650;letter-spacing:-.015em}
    • резерв ТОЛЬКО справа — это не поле раздела, а асимметричный резерв под кнопку,
      и правило «пустой резерв 32px справа сломал строку» валит его намеренно.
    Собственные 12px крайних ячеек снимаем: иначе поле складывается в 44px и снова тесно. */
-/* Справа — мягкий воздух, слева ничего: «слева убери этот отступ, справа смягчи»
-   (владелец, 22.09.2026). 32px слева отодвигали список от края и ломали линию с шапкой
-   раздела, а резерв ровно в 32px справа правило «пустой резерв» считает не полем, а
-   местом под кнопку — поэтому 20px, и они мягче на глаз. */
-.list{padding-right:20px}
-.list table{width:100%}
-.list th:last-child,.list td:last-child{padding-right:0}
+/* Поле раздела вокруг карточки — та же величина, что у «Проектов» и у панели фильтров,
+   поэтому все экраны стоят на одной линии. Отдельная просьба 22.09 «слева отступ убрать»
+   отменена более поздней — привести всё к виду «Проектов», где поле есть с обеих сторон. */
+.list{padding:2px var(--gutter) 22px}
+.sheet{border:1px solid var(--line-strong);border-radius:12px;background:var(--surface)}
+.sheet table{width:100%}
+/* скругление доезжает до углов шапки: иначе серая полоса торчит прямыми углами из рамки */
+.sheet thead th:first-child{border-top-left-radius:12px}
+.sheet thead th:last-child{border-top-right-radius:12px}
+.sheet tbody tr:last-child td{border-bottom:0}
+/* На главной таблицы живут без .list — поле им даёт сама колонка. */
+.home .hcol .sheet{margin:0 24px 12px}
+.home .hcol.side .sheet{margin-left:0;margin-right:0}
 table{width:100%;border-collapse:collapse}
-thead th{position:sticky;top:0;z-index:1;background:var(--surface-head);text-align:left;font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);font-weight:600;padding:7px 12px;border-bottom:1px solid var(--line-strong);white-space:nowrap}
+thead th{position:sticky;top:0;z-index:1;background:var(--surface-head);text-align:left;font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);font-weight:600;padding:7px 10px;border-bottom:1px solid var(--line-strong);white-space:nowrap}
 thead th.r,td.r{text-align:right}
 tbody tr{height:var(--row);border-bottom:1px solid var(--line);cursor:default}
 tbody tr:hover{background:var(--surface-2)}
 tbody tr.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
-td{padding:0 12px;font-size:var(--fs-dense);color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+td{padding:0 10px;font-size:var(--fs-dense);color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 td.t{color:var(--ink);font-weight:500;max-width:0;width:44%}
 tbody tr.sel td.t{font-weight:600}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:9px;vertical-align:1px}
@@ -250,7 +256,7 @@ tbody tr.sel td.t{font-weight:600}
 .home{display:grid;grid-template-columns:minmax(0,1fr) 344px;gap:0;flex:1;min-height:0;overflow:auto}
 .home .hcol{min-width:0;padding-bottom:16px}
 .home .hcol.side{border-left:1px solid var(--line);padding:0 var(--gutter) 16px}
-.home .lab{padding:14px var(--gutter) 6px}
+.home .lab{padding:14px 24px 6px}
 .home .hcol.side .lab{padding-left:0;padding-right:0}
 .news{display:flex;flex-direction:column}
 .nw{display:flex;align-items:center;gap:8px;min-height:30px;padding:4px 0;font-size:var(--fs-dense);color:var(--ink-2);

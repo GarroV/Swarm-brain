@@ -119,11 +119,16 @@ function table(cols, body, w) {
   const k = total > 100 ? 100 / total : 1;
   const pc = (v) => `${Math.round(v * k * 100) / 100}%`;
   const width = (c) => (c.opt && tight()) ? "" : ` style="width:${pc(c.w ? asPct(c.w) : rest)}"`;
-  return `<div class="list"><table><thead><tr>${cols.map((c) =>
+  /* Содержимое раздела лежит в КАРТОЧКЕ, отбитой от рейки, — один вид на все экраны,
+     эталоном взяты «Проекты» (владелец 22.09.2026: «давай приведём всё к единому
+     варианту, визуал того, как сейчас выглядят проекты, мне нравится»). До этого таблицы
+     шли от края до края и серая полоса шапки упиралась в рейку — разделы выглядели из
+     разных приложений. */
+  return `<div class="list"><div class="sheet"><table><thead><tr>${cols.map((c) =>
     `<th class="${c.r ? "r " : ""}${c.opt ? "opt" : ""}"${width(c)}>${
       c.short && tight() ? esc(c.short) : esc(c.t)
     }</th>`).join("")}</tr></thead>
-    <tbody>${body}</tbody></table></div>`;
+    <tbody>${body}</tbody></table></div></div>`;
 }
 const cell = (v, cls) => `<td${cls ? ` class="${cls}"` : ""}>${v}</td>`;
 

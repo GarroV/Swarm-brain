@@ -104,7 +104,7 @@ function screenAdmin() {
     ${chip(`Только без почты · ${noMail.length}`, S.noMailOnly, "tgl-nomail")}
     <div class="right"><span>Показано <b>${list.length}</b> из ${S.users.length}</span><span>Очередь вычитки <b>${S.queue.length}</b></span>
       ${btn("＋ Пользователь", "new-user", undefined, undefined, "pri sm")}</div></div>`
-    + (list.length ? table([{ t: "Пользователь", w: "22%" }, { t: "Роль" }, { t: "Рынок" }, { t: "Почта" }, { t: "Заметка админа", w: "26%" }, { t: "Действия", r: true, w: "230px" }],
+    + (list.length ? table([{ t: "Пользователь", w: "22%" }, { t: "Роль" }, { t: "Рынок" }, { t: "Почта" }, { t: "Заметка админа", w: "26%" }, { t: "Действия", r: true, w: "258px" }],
       list.map((u) => `<tr class="row">${cell(av(u.id), "t")}${cell(ROLE[u.role] || u.role)}
         ${cell(`<span class="cc">${u.mk}</span>`)}${cell(u.em ? esc(u.em) : state("не привязана", false))}
         ${cell(u.note ? esc(u.note) : `<span class="muted">—</span>`)}
