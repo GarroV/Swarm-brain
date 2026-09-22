@@ -117,8 +117,12 @@ const RECUR_SHORT = { weekly: "↻ неделя", monthly: "↻ месяц" };
 const RECUR_LABEL = { weekly: "каждую неделю", monthly: "каждый месяц", daily: "каждый день" };
 
 /* ── даты ────────────────────────────────────────────────────── */
-const addDays = (iso, n) => { const d = new Date(iso + "T00:00:00");
-  d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+/* Считаем и отдаём в UTC. Раньше дата строилась в ЛОКАЛЬНОМ времени, а возвращалась
+   через toISOString() — то есть в UTC: в поясе восточнее Гринвича (Белград, UTC+2)
+   addDays(d, 1) отдавал ТОТ ЖЕ день. Молча: ни ошибки, ни предупреждения. Поймано на
+   календарном виде 22.09.2026 — сетка крутила один день 92 раза подряд. */
+const addDays = (iso, n) => { const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const MON = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
 const fmtDate = (iso) => { if (!iso) return "—"; const [, m, dd] = iso.split("-"); return `${+dd} ${MON[+m - 1]}`; };
 /* «когда» из минут назад: строка-дата в данных не сортируется, число — сортируется */

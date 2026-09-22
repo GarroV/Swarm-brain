@@ -201,8 +201,16 @@ function calendarView(list) {
       <div class="cc-h"><b>${dow(d)} ${+d.slice(8)}</b>${items.length ? `<span class="n">${items.length}</span>` : ""}</div>
       <div class="cc-b">${items.map(card).join("")}</div></div>`;
   };
-  const note = S.period === "any" ? "период не выбран — показана текущая неделя"
-    : cut ? `показаны первые ${CAL_MAX_DAYS} дней периода` : "";
+  /* Задача со сроком вне показанных дней в сетку не попадает — и это обязано быть
+     сказано числом: иначе руководитель видит полупустую неделю и читает её как «людям
+     нечего делать», а на деле работа просто стоит за краем окна. */
+  const last = days[days.length - 1] || to;
+  const out = list.filter((t) => t.due && (t.due < days[0] || t.due > last)).length;
+  const note = [
+    S.period === "any" ? "период не выбран — показана текущая неделя" : "",
+    cut ? `показаны первые ${CAL_MAX_DAYS} дней периода` : "",
+    out ? `вне показанных дней ещё ${out}` : "",
+  ].filter(Boolean).join(" · ");
   return `<div class="calhead">Загрузка по срокам · ${fmtDate(from)} — ${fmtDate(days[days.length - 1] || to)}
     <span class="muted">${days.length} ${plural(days.length, "день", "дня", "дней")}</span>
     ${note ? `<span class="note">${esc(note)}</span>` : ""}</div>

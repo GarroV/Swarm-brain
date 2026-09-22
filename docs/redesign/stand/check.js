@@ -846,21 +846,72 @@ function tokenCheck() {
   await clickGroup();
   want((await rowsOf()) === openRows, 'повторный щелчок разворачивает группу обратно');
   await shot('01b-tasks-by-staff');
+  /* Календарный вид: «где кто как занят» по дням. Проверяем ФАКТ раскладки — что карточка
+     стоит в клетке СВОЕГО срока, а не просто что колонки нарисовались. */
+  const calBtn = () => p.$('[data-act="tgl-cal"]');
+  /* период приводим к известному состоянию: предыдущие проверки оставляли «свой период»,
+     и календарь мерился на чужом окне — 92 колонки без единой карточки */
+  await click('.bar [data-act="set-period"][data-v="any"]');
+  want((await calBtn()) !== null, 'на панели задач у админа есть кнопка «Календарный вид»');
+  const calOn = await calBtn();
+  if (calOn) { await calOn.click(); await new Promise((r) => setTimeout(r, 200)); }
+  const cal = await p.evaluate(() => {
+    const dayCols = [...document.querySelectorAll('.calgrid .cc-d:not(.nodue)')];
+    const days = calDays();
+    let wrong = 0, shown = 0;
+    dayCols.forEach((c, i) => [...c.querySelectorAll('.cc-t')].forEach((e) => {
+      shown++;
+      const t = S.tasks.find((x) => x.id === +e.dataset.id);
+      if (!t || t.due !== days[i]) wrong++; }));
+    return { cols: dayCols.length, days: days.length, wrong, shown,
+      period: S.period, from: S.from, to: S.to, first: days[0], last: days[days.length - 1],
+      nodue: document.querySelectorAll('.calgrid .cc-d.nodue .cc-t').length,
+      realNodue: visibleTasks().filter((t) => !t.due).length,
+      head: (document.querySelector('.calhead') || {}).textContent || '' }; });
+  want(cal.cols > 0 && cal.cols === cal.days,
+    `календарь рисует дни выбранного периода (колонок ${cal.cols}, дней ${cal.days})`);
+  want(cal.shown > 0 && cal.wrong === 0,
+    `каждая карточка стоит в клетке своего срока (карточек ${cal.shown}, не на месте ${cal.wrong}; период «${cal.period}» ${cal.first}…${cal.last})`);
+  want(cal.nodue === cal.realNodue,
+    `задачи без срока не исчезают, а стоят своей колонкой (${cal.nodue} из ${cal.realNodue})`);
+  /* вид показывает ПЛАН по срокам, а не факт «чем занимался»: подпись обязана это сказать */
+  want(/срок/i.test(cal.head), `подпись называет вид загрузкой по срокам («${cal.head.trim().slice(0, 44)}»)`);
+  /* работа за краем окна обязана быть названа числом: полупустая неделя иначе читается
+     как «людям нечего делать» */
+  const outside = await p.evaluate(() => {
+    const days = calDays(), last = days[days.length - 1];
+    return visibleTasks().filter((t) => t.due && (t.due < days[0] || t.due > last)).length; });
+  want(outside === 0 || new RegExp(`вне показанных дней ещё ${outside}`).test(cal.head),
+    `календарь называет числом работу вне показанных дней (за окном ${outside}, подпись «${cal.head.trim().slice(0, 80)}»)`);
+  await click('.bar [data-act="set-period"][data-v="week"]');
+  await new Promise((r) => setTimeout(r, 200));
+  const calWeek = await p.evaluate(() => ({
+    cols: document.querySelectorAll('.calgrid .cc-d:not(.nodue)').length, days: calDays().length }));
+  want(calWeek.cols === calWeek.days && calWeek.cols !== cal.cols,
+    `смена «Периода» меняет и календарь (было ${cal.cols}, стало ${calWeek.cols})`);
+  await shot('01c-tasks-calendar');
+  await click('.bar [data-act="set-period"][data-v="any"]');
+  const calBack = await calBtn();
+  if (calBack) { await calBack.click(); await new Promise((r) => setTimeout(r, 180)); }
+  want((await count('.calgrid')) === 0, 'кнопка «Календарный вид» выключается обратно в список');
   await pickStaff('моё и командное');
   /* Чужие задачи — только у админа: у остальных двери к ним нет вовсе. */
   const asOps = await p.evaluate(() => {
     const was = S.users.find((u) => u.id === ME).role;
     S.users = S.users.map((u) => u.id === ME ? { ...u, role: 'ops' } : u); render();
     const has = [...document.querySelectorAll('.bar .drop')].some((e) => /Сотрудник/.test(e.textContent));
+    const hasCal = !!document.querySelector('[data-act="tgl-cal"]');
     /* и мимо кнопки тоже: действие само отказывает, а не полагается на спрятанный орган */
     ACTS['pick-staff'](undefined, '502');
-    const forced = { assignee: S.assignee, staff: !!S.staff };
+    ACTS['tgl-cal']();
+    const forced = { assignee: S.assignee, staff: !!S.staff, cal: !!S.calView };
     S.users = S.users.map((u) => u.id === ME ? { ...u, role: was } : u);
     S.assignee = null; S.staff = false; render();
-    return { has, forced }; });
+    return { has, hasCal, forced }; });
   want(asOps.has === false, 'у неадмина кнопки «Сотрудники» на панели нет');
-  want(asOps.forced.assignee === null && asOps.forced.staff === false,
-    'неадмин не получает чужие задачи и в обход кнопки');
+  want(asOps.hasCal === false, 'у неадмина кнопки «Календарный вид» на панели нет');
+  want(asOps.forced.assignee === null && asOps.forced.staff === false && asOps.forced.cal === false,
+    'неадмин не получает ни чужих задач, ни календаря и в обход кнопок');
   /* Свёрнутые фильтры обязаны РАСКРЫВАТЬСЯ мышью: щелчок по скрытому пункту из кода
      проходит всегда, поэтому зелёный замер без этой проверки ничего не доказывает.
      И обязаны ЗАКРЫВАТЬСЯ: меню держалось на наведении и после нажатия висело, а клик
