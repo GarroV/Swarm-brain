@@ -822,6 +822,31 @@ function tokenCheck() {
     assignee: S.assignee, staff: !!S.staff }));
   want(!back.off && back.assignee === null && !back.staff,
     'снятие сотрудника возвращает переключатель и обычный срез');
+  /* «Все сотрудники» — это РАЗБИВКА ПО ЛЮДЯМ со сворачиванием, а не просто широкий срез:
+     руководитель смотрит «кто чем занят», а не «все задачи компании». */
+  want(await pickStaff('все сотрудники'), 'в меню «Сотрудники» выбираются все сразу');
+  const grp = await p.evaluate(() => ({
+    groups: document.querySelectorAll('.list tr.sect.grp').length,
+    people: new Set(visibleTasks().flatMap((t) => t.who.length ? t.who : [0])).size }));
+  want(grp.groups > 1 && grp.groups === grp.people,
+    `«все сотрудники» разбивает список по людям (групп ${grp.groups}, людей в срезе ${grp.people})`);
+  const rowsOf = () => p.evaluate(() => document.querySelectorAll('.list tbody tr[data-act="open-task"]').length);
+  /* заголовка нет — правило обязано УПАСТЬ с внятной причиной, а не уронить весь прогон:
+     на сломанной разбивке первый негативный заход оборвался на null.click() */
+  const clickGroup = async () => {
+    const h = await p.$('.list tr.sect.grp');
+    if (!h) return false;
+    await h.click(); await new Promise((r) => setTimeout(r, 160)); return true; };
+  const openRows = await rowsOf();
+  const clicked = await clickGroup();
+  const shutRows = await rowsOf();
+  const shut = await p.evaluate(() => !!document.querySelector('.list tr.sect.grp.shut'));
+  want(clicked && shut && shutRows < openRows,
+    `группа сотрудника сворачивается щелчком по заголовку (было ${openRows}, стало ${shutRows})`);
+  await clickGroup();
+  want((await rowsOf()) === openRows, 'повторный щелчок разворачивает группу обратно');
+  await shot('01b-tasks-by-staff');
+  await pickStaff('моё и командное');
   /* Чужие задачи — только у админа: у остальных двери к ним нет вовсе. */
   const asOps = await p.evaluate(() => {
     const was = S.users.find((u) => u.id === ME).role;

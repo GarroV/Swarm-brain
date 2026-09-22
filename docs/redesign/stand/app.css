@@ -711,6 +711,15 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
 .seg .sg.on{background:var(--accent);color:#fff;font-weight:600}
 /* Переключателю нечего делить: выбран конкретный сотрудник и показана вся его работа.
    Гасим, а не прячем — пропавший орган управления человек ищет и не находит. */
+/* Заголовок группы сотрудника: он кликабелен, и это обязано быть видно до нажатия. */
+.list tr.sect.grp td{cursor:pointer;user-select:none}
+.list tr.sect.grp td:hover{background:var(--surface-2)}
+.list tr.sect.grp .cv{margin-right:7px;transform:rotate(90deg);transition:transform .12s}
+.list tr.sect.grp.shut .cv{transform:none}
+.list tr.sect.grp .av{width:18px;height:18px;font-size:9px;margin-right:5px}
+.list tr.sect.grp .nm{font-weight:600;color:var(--ink)}
+.list tr.sect.grp .n{margin-left:9px;color:var(--ink-3);font-weight:500}
+.list tr.sect.grp .late{margin-left:9px;color:var(--bad);font-weight:600}
 .seg.off{opacity:.5}
 .seg.off .sg{cursor:default}
 .seg.off .sg:hover{background:var(--surface)}

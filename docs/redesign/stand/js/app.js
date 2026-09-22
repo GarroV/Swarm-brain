@@ -329,6 +329,12 @@ const ACTS = {
   "person-tasks": (id) => { A.go("tasks"); S.assignee = +id; S.lens = "all"; S.archOn = false; S.recurOnly = false;
     if (me().role === "admin") S.staff = true;   /* чужие задачи видны только админу */
     render(); },
+  /* Свернуть/развернуть группу сотрудника в разбивке «все сотрудники». */
+  "tgl-staff-group": (id) => {
+    const u = +id;
+    const next = new Set(S.collapsed);
+    next.has(u) ? next.delete(u) : next.add(u);
+    S.collapsed = next; render(); },
   /* Единственная дверь к чужим задачам — и она заперта ролью: у неадмина кнопки нет, а
      если действие всё же позовут, оно ничего не делает. */
   "pick-staff": (_, v) => {

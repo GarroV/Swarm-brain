@@ -123,6 +123,33 @@ function taskRow(t) {
 function groupRows(list) {
   const cols = 7;
   const sect = (n, k) => `<tr class="sect"><td colspan="${cols}">${esc(n)} · ${k}</td></tr>`;
+  /* «Все сотрудники» — это не просто широкий срез, а СПИСОК ПО ЛЮДЯМ: руководитель
+     смотрит не «все задачи компании», а «кто чем занят» (просьба владельца 22.09.2026:
+     «если он выберет всех сотрудников, значит тогда включается разбивка по всем
+     сотрудникам с возможностью их сворачивать»). Группы сворачиваются — иначе на
+     четырнадцати людях экран превращается в простыню.
+     Порядок — по числу задач, сверху заваленные: список читают ради перекоса нагрузки,
+     а не ради алфавита. В заголовке рядом с числом стоит просроченное — оно и есть
+     повод для разговора. Задача с двумя исполнителями попадает в обе группы: она и
+     правда работа обоих, а «показать один раз» прячет её у второго. */
+  if (S.staff && !S.assignee) {
+    const by = new Map();
+    list.forEach((t) => (t.who.length ? t.who : [0]).forEach((u) => {
+      if (!by.has(u)) by.set(u, []);
+      by.get(u).push(t); }));
+    const order = [...by.keys()].sort((a, b) => {
+      if (!a !== !b) return a ? -1 : 1;                 /* «не назначен» всегда последним */
+      const d = by.get(b).length - by.get(a).length;
+      return d || String(user(a) && user(a).n).localeCompare(String(user(b) && user(b).n)); });
+    return order.map((u) => {
+      const rows = by.get(u);
+      const late = rows.filter((t) => t.st !== "done" && dueKind(t.due) === "now").length;
+      const shut = S.collapsed.has(u);
+      const head = `<tr class="sect grp${shut ? " shut" : ""}" ${act("tgl-staff-group", u)}>
+        <td colspan="${cols}"><i class="cv"></i>${u ? avShort(u) : `<span class="muted">не назначен</span>`}
+        <span class="n">${rows.length}</span>${late ? `<span class="late">просрочено ${late}</span>` : ""}</td></tr>`;
+      return head + (shut ? "" : rows.map(taskRow).join("")); }).join("");
+  }
   if (S.byMarket) {
     const by = {};
     list.forEach((t) => { const k = t.mk || "Без рынка"; (by[k] = by[k] || []).push(t); });
