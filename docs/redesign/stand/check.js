@@ -764,7 +764,19 @@ function tokenCheck() {
     `неподключённый календарь объясняет себя и даёт дорогу («${calOff.text.trim().slice(0, 40)}»)`);
   await p.evaluate(() => { S.cal = 'on'; render(); });
   await new Promise((r) => setTimeout(r, 120));
-  /* «идёт сейчас» — отдельный факт от «рекордер включится»: путать их нельзя */
+  /* «идёт сейчас» — единственное состояние в строке встречи: по нему решают, заходить
+     в звонок или нет. Аватаров и состояния рекордера в строке быть не должно (решение
+     владельца 22.09.2026) — они на это решение не влияют, а строку дробят. */
+  const calRow = await p.evaluate(() => {
+    const rows = [...document.querySelectorAll('.home .calv .cev')];
+    return { rows: rows.length,
+      avatars: rows.filter((e) => e.querySelector('.av, .avs')).length,
+      recWords: rows.filter((e) => /рекордер|без записи/i.test(e.textContent)).length,
+      place: rows.filter((e) => (e.querySelector('.pl') || {}).textContent).length }; });
+  want(calRow.rows > 0 && calRow.avatars === 0 && calRow.recWords === 0,
+    `в строке встречи нет ни аватаров, ни состояния рекордера (аватаров ${calRow.avatars}, слов о записи ${calRow.recWords})`);
+  want(calRow.rows > 0 && calRow.place === calRow.rows,
+    `у каждой встречи дня названа площадка (${calRow.place} из ${calRow.rows})`);
   const nowMark = await p.evaluate(() => {
     const live = [...document.querySelectorAll('.home .cev')].filter((e) => e.classList.contains('now'));
     return { live: live.length, said: live.map((e) => e.textContent).filter((t) => /идёт сейчас/.test(t)).length,
