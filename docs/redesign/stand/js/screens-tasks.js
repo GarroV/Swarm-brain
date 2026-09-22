@@ -113,12 +113,12 @@ function taskRow(t) {
   const ping = t.ping && !t.pinged ? `<span class="ping" title="напомним ${fmtDate(t.ping)}">⏰ ${fmtDate(t.ping)}</span>` : "";
   return `<tr class="row${S.sel === t.id && S.selKind === "task" ? " sel" : ""}" ${act("open-task", t.id)} tabindex="0">
     ${cell(`${dot(t.st)}${priMark(t.prio)}${esc(t.t)}${t.priv ? ' <span class="lock" title="личная">🔒</span>' : ""}`, "t")}
+    ${cell(due(t.due, t.st === "done"))}
+    ${cell(taskQuick(t), "qc opt")}
+    ${cell(t.mk ? `<span class="cc">${t.mk}</span>` : `<span class="muted">—</span>`, "opt")}
     ${cell(esc(projPath(t.pr)))}
     ${cell(t.who.length ? avShort(t.who[0]) : `<span class="muted" title="исполнитель не назначен">—</span>`)}
-    ${cell(lbls(t.labels) + (t.recur ? tag(RECUR_SHORT[t.recur], "p") : "") + ping, "opt")}
-    ${cell(t.mk ? `<span class="cc">${t.mk}</span>` : `<span class="muted">—</span>`, "r opt")}
-    ${cell(due(t.due, t.st === "done"), "r")}
-    ${cell(taskQuick(t), "qc opt")}</tr>`;
+    ${cell(lbls(t.labels) + (t.recur ? tag(RECUR_SHORT[t.recur], "p") : "") + ping, "opt")}</tr>`;
 }
 
 function groupRows(list) {
@@ -234,10 +234,15 @@ function screenTasks() {
       + (hidden ? `<div class="emptyact">${btn("Показать все", "reset-filters", undefined, undefined, "pri")}</div>` : "");
   }
   if (S.calView) return head + calendarView(list);
+  /* Порядок колонок — по тому, чем в строке ПОЛЬЗУЮТСЯ (просьба владельца 22.09.2026):
+     «пиктограммы надо перенести вместе со сроком левее, ближе к названию, потом уже
+     рынок, а потом уже проект, исполнитель, списки». Быстрые действия и срок — то, что
+     меняют каждый день, и тянуться за ними через весь экран незачем; проект, исполнитель
+     и списки читают глазами, им место справа. */
   return head + table([
-    { t: "Задача" }, { t: "Проект", w: "20%" }, { t: "Исполнитель", short: "Кто", w: "15%" },
-    { t: "Списки", w: "17%", opt: true }, { t: "Рынок", r: true, w: "72px", opt: true }, { t: "Срок", r: true, w: "84px" },
-    { t: "", w: "180px", opt: true },
+    { t: "Задача" }, { t: "Срок", w: "84px" }, { t: "", w: "180px", opt: true },
+    { t: "Рынок", w: "72px", opt: true }, { t: "Проект", w: "20%" },
+    { t: "Исполнитель", short: "Кто", w: "15%" }, { t: "Списки", w: "17%", opt: true },
   ], groupRows(list)) + whatsNext(list);
 }
 

@@ -75,6 +75,24 @@ h1{flex:none;font-size:var(--fs-title);font-weight:650;letter-spacing:-.015em}
 
 /* ── ТАБЛИЦА ─────────────────────────────────────────────────── */
 .list{flex:1;overflow:auto}
+/* Список стоит по той же линии, что панель фильтров, и НЕ прилипает к правому краю:
+   контент впритык к границе окна читается как обрезанный — «кажется, что информация
+   утерялась» (владелец, 22.09.2026). Раньше у таблицы были свои 12px против 32px у панели.
+   Отступ даём КОНТЕЙНЕРУ, а не крайним ячейкам: резерв на последней колонке отнимает
+   место у неё одной, и прогон сразу поймал обрезанные «Списки» и «Напомнить в Telegram».
+   На контейнере те же 32px распределяются по всем колонкам сразу. */
+/* Поля РАЗДЕЛА, симметрично: список встаёт на ту же линию, что панель фильтров, и не
+   прилипает к правому краю — контент впритык к границе читается как обрезанный
+   («кажется, что информация утерялась», владелец 22.09.2026).
+   Два тупика, оба поймал прогон, оба записаны, чтобы не пройти их второй раз:
+   • резерв на последней ЯЧЕЙКЕ отнимает место у неё одной — порезало «Списки»;
+   • резерв ТОЛЬКО справа — это не поле раздела, а асимметричный резерв под кнопку,
+     и правило «пустой резерв 32px справа сломал строку» валит его намеренно.
+   Собственные 12px крайних ячеек снимаем: иначе поле складывается в 44px и снова тесно. */
+.list{padding:0 var(--gutter)}
+.list table{width:100%}
+.list th:first-child,.list td:first-child{padding-left:0}
+.list th:last-child,.list td:last-child{padding-right:0}
 table{width:100%;border-collapse:collapse}
 thead th{position:sticky;top:0;z-index:1;background:var(--surface-head);text-align:left;font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);font-weight:600;padding:7px 12px;border-bottom:1px solid var(--line-strong);white-space:nowrap}
 thead th.r,td.r{text-align:right}
@@ -714,11 +732,11 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
 /* ── календарный вид задач ───────────────────────────────────────
    День — колонка. Длинный период уезжает прокруткой вбок, а не жмёт колонки в нечитаемые
    полоски: обзор, в котором ничего не прочесть, обзором не является. */
-.calhead{display:flex;align-items:baseline;gap:10px;padding:12px 2px 9px;
+.calhead{display:flex;align-items:baseline;gap:10px;padding:12px var(--gutter) 9px;
   font:600 var(--fs-dense)/1.3 var(--font-ui);color:var(--ink)}
 .calhead .muted{font-weight:500;color:var(--ink-3)}
 .calhead .note{margin-left:auto;font-weight:500;color:var(--warn);font-size:var(--fs-meta)}
-.calgrid{display:flex;gap:8px;overflow-x:auto;padding-bottom:10px;align-items:flex-start}
+.calgrid{display:flex;gap:8px;overflow-x:auto;padding:0 var(--gutter) 10px;align-items:flex-start}
 .cc-d{flex:0 0 172px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
 .cc-d.off{background:var(--surface-2)}
 .cc-d.now{border-color:var(--accent);box-shadow:inset 0 2px 0 var(--accent)}
@@ -886,14 +904,22 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
 
 /* Быстрые действия в строке задачи: срок, пинг, повтор, исполнитель, рынок, списки.
    Кнопки узкие и без подписей — подпись у каждой в title, значение видно цветом. */
-.qas{display:inline-flex;gap:3px;justify-content:flex-end}
+.qas{display:inline-flex;gap:3px;justify-content:flex-start}
 .qa{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:22px;padding:0 4px;
   border:1px solid var(--line-control);border-radius:7px;background:var(--surface);color:var(--ink-2);
-  font:500 var(--fs-micro)/1 var(--font-ui)}
-.qa:hover{background:var(--surface-2);color:var(--ink)}
+  font:500 var(--fs-micro)/1 var(--font-ui);cursor:pointer;
+  transition:background .12s,border-color .12s,color .12s,transform .12s}
+/* Пиктограмма обязана отвечать на наведение: без отклика её принимают за значок-подпись
+   и не нажимают («никак не понятно, что они интерактивные» — владелец, 22.09.2026). */
+.qa:hover{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent);transform:translateY(-1px)}
+.qa:active{transform:none;background:var(--accent-line)}
 .qa.on{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent)}
+/* У включённой пиктограммы ховер не срабатывал совсем: .qa.on объявлен ПОСЛЕ .qa:hover
+   при равной специфичности и перекрывал его тем же цветом. Поймано правилом «пиктограмма
+   отвечает на наведение» — оно и мерило фон, а не смотрело на скриншот. */
+.qa.on:hover{background:var(--accent-line);border-color:var(--accent);color:var(--accent);transform:translateY(-1px)}
 .qa .cc{margin:0}
-td.qc{text-align:right;white-space:nowrap}
+td.qc{text-align:left;white-space:nowrap}
 /* спрятанные поля панели достаются кнопкой в том же ряду, что и чипы */
 .props.opt{margin-top:6px}
 .props.opt .btn{align-self:start}
