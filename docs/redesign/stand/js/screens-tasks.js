@@ -65,6 +65,7 @@ function tasksToolbar() {
           <div class="quick">${[["7", "неделя"], ["14", "2 недели"], ["21", "21 день"], ["30", "месяц"], ["90", "квартал"]]
             .map(([d, n]) => `<button class="chip" ${act("range-days", undefined, d)}>${n}</button>`).join("")}</div>
         </div>` : ""}</div></span>
+    ${admin ? btn("Календарный вид", "tgl-cal", undefined, undefined, "sm" + (S.calView ? " on" : "")) : ""}
     <span class="drop">${btn(nMore ? `Ещё · ${nMore}` : "Ещё", "noop", undefined, undefined, "sm" + (nMore ? " on" : ""))}${fmenu(more)}</span>
     ${fchips(extra)}
     <div class="right">
@@ -172,6 +173,45 @@ function groupRows(list) {
   return list.map(taskRow).join("");
 }
 
+/* ── календарный вид ─────────────────────────────────────────────
+   «Дать возможность руководству быстро посмотреть, где кто как занят» (владелец,
+   22.09.2026). День — колонка, внутри карточки с инициалами исполнителя: так видно и
+   перекос по дням, и кто за что отвечает, и держится любое число людей — хоть два,
+   хоть десять (решение владельца: колонки-дни, люди внутри).
+   Задача попадает в день ПО СРОКУ — другой даты у неё нет. Значит вид показывает
+   ПЛАН («к какому дню что должно быть сделано»), а не факт «чем занимался»; называем
+   это подписью, иначе вид обещает не то. Владелец 22.09: «по сроку дедлайна, в системе
+   все задачи должны быть с этим параметром» — поэтому задача без срока не исчезает, а
+   стоит отдельной колонкой слева: это не мусор, это непоставленный срок, и он виден.
+   Фильтры действуют как обычно — сетка берёт тот же visibleTasks(), что и список. */
+function calendarView(list) {
+  const days = calDays();
+  const [from, to] = calRange();
+  const cut = days.length && days[days.length - 1] < to;
+  const nodue = list.filter((t) => !t.due);
+  const card = (t) => `<div class="cc-t${t.st === "done" ? " done" : ""}" ${act("open-task", t.id)} tabindex="0"
+    title="${esc(t.t)}${t.who.length ? ` · ${user(t.who[0]).n}` : ""}">
+    ${t.who.length ? avOnly(t.who[0]) : `<span class="av none" title="не назначен">—</span>`}
+    ${priMark(t.prio)}<span class="tt">${esc(clip(t.t, 38))}</span></div>`;
+  /* карточки одного человека идут подряд: глаз ищет по кружку, а не по алфавиту задач */
+  const byPerson = (a, b) => (a.who[0] || 0) - (b.who[0] || 0);
+  const col = (d) => {
+    const items = list.filter((t) => t.due === d).sort(byPerson);
+    return `<div class="cc-d${d === TODAY ? " now" : ""}${isWeekend(d) ? " off" : ""}">
+      <div class="cc-h"><b>${dow(d)} ${+d.slice(8)}</b>${items.length ? `<span class="n">${items.length}</span>` : ""}</div>
+      <div class="cc-b">${items.map(card).join("")}</div></div>`;
+  };
+  const note = S.period === "any" ? "период не выбран — показана текущая неделя"
+    : cut ? `показаны первые ${CAL_MAX_DAYS} дней периода` : "";
+  return `<div class="calhead">Загрузка по срокам · ${fmtDate(from)} — ${fmtDate(days[days.length - 1] || to)}
+    <span class="muted">${days.length} ${plural(days.length, "день", "дня", "дней")}</span>
+    ${note ? `<span class="note">${esc(note)}</span>` : ""}</div>
+    <div class="calgrid">
+      ${nodue.length ? `<div class="cc-d nodue"><div class="cc-h"><b>без срока</b><span class="n">${nodue.length}</span></div>
+        <div class="cc-b">${nodue.sort(byPerson).map(card).join("")}</div></div>` : ""}
+      ${days.map(col).join("")}</div>`;
+}
+
 function screenTasks() {
   const list = visibleTasks();
   /* встречи дня живут на главной: в списке задач полоса занимала верх экрана и
@@ -185,6 +225,7 @@ function screenTasks() {
       : "Здесь пока ничего нет")
       + (hidden ? `<div class="emptyact">${btn("Показать все", "reset-filters", undefined, undefined, "pri")}</div>` : "");
   }
+  if (S.calView) return head + calendarView(list);
   return head + table([
     { t: "Задача" }, { t: "Проект", w: "20%" }, { t: "Исполнитель", short: "Кто", w: "15%" },
     { t: "Списки", w: "17%", opt: true }, { t: "Рынок", r: true, w: "72px", opt: true }, { t: "Срок", r: true, w: "84px" },

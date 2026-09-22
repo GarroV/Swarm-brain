@@ -329,6 +329,8 @@ const ACTS = {
   "person-tasks": (id) => { A.go("tasks"); S.assignee = +id; S.lens = "all"; S.archOn = false; S.recurOnly = false;
     if (me().role === "admin") S.staff = true;   /* чужие задачи видны только админу */
     render(); },
+  /* Календарный вид — тоже оверсайт руководителя, и тоже только у админа. */
+  "tgl-cal": () => { if (me().role !== "admin") return; S.calView = !S.calView; render(); },
   /* Свернуть/развернуть группу сотрудника в разбивке «все сотрудники». */
   "tgl-staff-group": (id) => {
     const u = +id;

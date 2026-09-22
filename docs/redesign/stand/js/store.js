@@ -13,7 +13,7 @@ const S = {
   bq: "", bcc: "", bmine: false,
   fbo: false,
   /* фильтр по человеку — ставится кликом по строке в «Команде» */
-  assignee: null, lensWas: null, collapsed: new Set(), activeOnly: false, showClosed: false,
+  assignee: null, lensWas: null, collapsed: new Set(), calView: false, activeOnly: false, showClosed: false,
   /* спринты */
   cycle: "c2", cycles: CYCLES.slice(), board: { drag: null },
   /* спринты: пространство, состав (sprint_items), группировка, пул набора, отчёт */
@@ -85,6 +85,33 @@ function inPeriod(t) {
   if (S.period === "week") return n <= 7;
   return n <= 31;
 }
+/* Календарный вид берёт дни из того же «Периода», что и список: два органа на одно
+   дело расходятся, и человек перестаёт понимать, что именно он сейчас видит
+   (решение владельца 22.09.2026 — «в зависимости от периода будет календарный вид
+   показываться»). «Любой срок» — не повод рисовать бесконечность: показываем текущую
+   неделю, понедельник–воскресенье, и говорим об этом подписью. */
+const CAL_MAX_DAYS = 92;
+function calRange() {
+  if (S.period === "range" && S.from && S.to && S.from <= S.to) return [S.from, S.to];
+  if (S.period === "today") return [TODAY, TODAY];
+  if (S.period === "week") return [TODAY, addDays(TODAY, 7)];
+  if (S.period === "month") return [TODAY, addDays(TODAY, 31)];
+  const d = new Date(TODAY + "T00:00:00").getDay();
+  const mon = addDays(TODAY, d === 0 ? -6 : 1 - d);
+  return [mon, addDays(mon, 6)];
+}
+/* Длинный период рисуем прокруткой вбок, но не бесконечно: год колонками — это не
+   обзор, а зависший экран. Обрез называем вслух в подписи, молча резать нельзя. */
+function calDays() {
+  const [from, to] = calRange();
+  const out = [];
+  for (let d = from; d <= to && out.length < CAL_MAX_DAYS; d = addDays(d, 1)) out.push(d);
+  return out;
+}
+const DOW = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+const dow = (iso) => DOW[new Date(iso + "T00:00:00").getDay()];
+const isWeekend = (iso) => [0, 6].includes(new Date(iso + "T00:00:00").getDay());
+
 /* в колонке метки длинная подпись повтора не помещается и режется: там короткая */
 const RECUR_SHORT = { weekly: "↻ неделя", monthly: "↻ месяц" };
 const RECUR_LABEL = { weekly: "каждую неделю", monthly: "каждый месяц", daily: "каждый день" };

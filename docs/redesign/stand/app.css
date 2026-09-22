@@ -711,6 +711,31 @@ mark{background:var(--accent-soft);color:var(--accent);border-radius:3px;padding
 .seg .sg.on{background:var(--accent);color:#fff;font-weight:600}
 /* Переключателю нечего делить: выбран конкретный сотрудник и показана вся его работа.
    Гасим, а не прячем — пропавший орган управления человек ищет и не находит. */
+/* ── календарный вид задач ───────────────────────────────────────
+   День — колонка. Длинный период уезжает прокруткой вбок, а не жмёт колонки в нечитаемые
+   полоски: обзор, в котором ничего не прочесть, обзором не является. */
+.calhead{display:flex;align-items:baseline;gap:10px;padding:12px 2px 9px;
+  font:600 var(--fs-dense)/1.3 var(--font-ui);color:var(--ink)}
+.calhead .muted{font-weight:500;color:var(--ink-3)}
+.calhead .note{margin-left:auto;font-weight:500;color:var(--warn);font-size:var(--fs-meta)}
+.calgrid{display:flex;gap:8px;overflow-x:auto;padding-bottom:10px;align-items:flex-start}
+.cc-d{flex:0 0 172px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
+.cc-d.off{background:var(--surface-2)}
+.cc-d.now{border-color:var(--accent);box-shadow:inset 0 2px 0 var(--accent)}
+.cc-d.nodue{flex-basis:196px;border-style:dashed}
+.cc-h{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:7px 9px;
+  border-bottom:1px solid var(--line);font:600 var(--fs-meta)/1 var(--font-ui);color:var(--ink-2)}
+.cc-d.now .cc-h{color:var(--accent)}
+.cc-h .n{color:var(--ink-3);font-weight:500}
+.cc-b{display:flex;flex-direction:column;gap:5px;padding:7px;min-height:56px}
+.cc-t{display:flex;align-items:center;gap:5px;padding:5px 6px;border-radius:6px;cursor:pointer;
+  background:var(--surface-2);font:500 var(--fs-meta)/1.3 var(--font-ui);color:var(--ink)}
+.cc-t:hover{background:var(--accent-soft)}
+.cc-t.done{opacity:.55;text-decoration:line-through}
+.cc-t .tt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cc-t .av{width:18px;height:18px;flex:none;font-size:9px}
+.cc-t .av.none{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;
+  background:var(--line);color:var(--ink-3)}
 /* Заголовок группы сотрудника: он кликабелен, и это обязано быть видно до нажатия. */
 .list tr.sect.grp td{cursor:pointer;user-select:none}
 .list tr.sect.grp td:hover{background:var(--surface-2)}
