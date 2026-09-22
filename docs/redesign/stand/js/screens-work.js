@@ -58,7 +58,7 @@ function boardCol(sec, id, n, tasks) {
   const items = tasks.filter((t) => id === "backlog" ? !ST_LABEL[t.st] : t.st === id);
   return `<div class="col"><h3>${dot(id === "backlog" ? "open" : id)}${n}<span class="n">${items.length}</span></h3>
     <div class="cards" data-drop="${id}" data-sec="${sec}">${items.map((t) => `<div class="card" draggable="true" data-card="${t.id}" ${act("open-task", t.id)} tabindex="0">
-      ${priMark(t.prio)}${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">не назначен</span>`}
+      ${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">не назначен</span>`}
       <span style="margin-left:auto">${due(t.due, t.st === "done")}</span></div></div>`).join("")
       || `<div class="drop-empty">перетащите сюда</div>`}
       <input class="qadd" placeholder="+ задача в «${esc(n)}»" data-qadd="${id}" data-qsec="${sec}"></div></div>`;
@@ -200,7 +200,7 @@ function sprintTaskRow(i) {
       : `<button class="mi" ${act("tgl-carry", t.id)}>Перенести в следующий спринт</button>`}
       <button class="mi" ${act("drop-item", t.id)}>Убрать из спринта</button></div></span>`;
   return `<div class="strow${S.sel === t.id && S.selKind === "task" ? " sel" : ""}">
-    <span class="t" ${act("open-task", t.id)} tabindex="0">${dot(t.st)}${priMark(t.prio)}${esc(t.t)}</span>
+    <span class="t" ${act("open-task", t.id)} tabindex="0">${dot(t.st)}${esc(t.t)}</span>
     ${i.plan ? "" : `<span class="over" title="добавлено после старта спринта">сверх плана</span>`}
     ${i.carry ? `<span class="carry" title="${esc(i.reason || "причина не указана")}">к переносу${i.cnt ? ` · ${i.cnt}-й раз` : ""}</span>` : ""}
     ${menu}
@@ -379,7 +379,7 @@ function sprintBoard(list) {
     return `<div class="col"><h3>${dot(cid)}${cn}<span class="n">${inCol.length}</span></h3>
       <div class="cards" data-drop="${cid}">${inCol.map((i) => { const t = itemTask(i);
         return `<div class="card" draggable="true" data-card="${t.id}" ${act("open-task", t.id)} tabindex="0">
-        ${priMark(t.prio)}${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">не назначен</span>`}
+        ${esc(t.t)}<div class="m">${t.who.length ? av(t.who[0]) : `<span class="muted">не назначен</span>`}
         <span style="margin-left:auto">${due(t.due, t.st === "done")}</span></div></div>`; }).join("")
         || `<div class="drop-empty">перетащите сюда</div>`}
         <input class="qadd" placeholder="+ задача в «${esc(cn)}»" data-qadd="${cid}"></div></div>`;

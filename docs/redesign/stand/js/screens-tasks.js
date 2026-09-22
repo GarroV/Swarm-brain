@@ -112,7 +112,7 @@ function taskRow(t) {
      обещал бы напоминание, которого не будет (правило продукта, TaskRow) */
   const ping = t.ping && !t.pinged ? `<span class="ping" title="напомним ${fmtDate(t.ping)}">⏰ ${fmtDate(t.ping)}</span>` : "";
   return `<tr class="row${S.sel === t.id && S.selKind === "task" ? " sel" : ""}" ${act("open-task", t.id)} tabindex="0">
-    ${cell(`${dot(t.st)}${priMark(t.prio)}${esc(t.t)}${t.priv ? ' <span class="lock" title="личная">🔒</span>' : ""}`, "t")}
+    ${cell(`${dot(t.st)}${esc(t.t)}${t.priv ? ' <span class="lock" title="личная">🔒</span>' : ""}`, "t")}
     ${cell(due(t.due, t.st === "done"))}
     ${cell(taskQuick(t), "qc opt")}
     ${cell(t.mk ? `<span class="cc">${t.mk}</span>` : `<span class="muted">—</span>`, "opt")}
@@ -192,7 +192,7 @@ function calendarView(list) {
   const card = (t) => `<div class="cc-t${t.st === "done" ? " done" : ""}" ${act("open-task", t.id)} tabindex="0"
     title="${esc(t.t)}${t.who.length ? ` · ${user(t.who[0]).n}` : ""}">
     ${t.who.length ? avOnly(t.who[0]) : `<span class="av none" title="не назначен">—</span>`}
-    ${priMark(t.prio)}<span class="tt">${esc(clip(t.t, 38))}</span></div>`;
+    <span class="tt">${esc(clip(t.t, 38))}</span></div>`;
   /* карточки одного человека идут подряд: глаз ищет по кружку, а не по алфавиту задач */
   const byPerson = (a, b) => (a.who[0] || 0) - (b.who[0] || 0);
   const col = (d) => {
@@ -255,7 +255,7 @@ function whatsNext(list) {
     .sort((a, b) => String(a.due).localeCompare(String(b.due))).slice(0, 4);
   const done = S.tasks.filter((t) => !t.arch && t.st === "done" && inLens(t, S.lens)).slice(0, 3);
   if (!soon.length && !done.length) return "";
-  const line = (t) => `<div class="nx" ${act("open-task", t.id)} tabindex="0">${priMark(t.prio)}${esc(clip(t.t, 54))}
+  const line = (t) => `<div class="nx" ${act("open-task", t.id)} tabindex="0">${esc(clip(t.t, 54))}
     <span class="r">${t.st === "done" ? state("закрыта", true) : due(t.due, false)}</span></div>`;
   return `<div class="next">
     ${soon.length ? `<div><div class="lab">Дальше по сроку</div>${soon.map(line).join("")}</div>` : ""}
@@ -275,10 +275,7 @@ function taskFormBody(preset) {
       ${fld("Проект", select("pr", S.projects.map((p) => [p.id, (p.parent ? "— " : "") + p.n]), "p1"))}
       ${fld("Исполнитель", select("who", [["", "— не назначен"], ...S.users.map((u) => [String(u.id), u.n])], String(v.who || ME)))}
     </div>
-    <div class="two">
-      ${fld("Срок", dateInput("due", v.due || ""))}
-      ${fld("Приоритет", select("prio", [["", "не задан"], ["high", "высокий"], ["med", "средний"], ["low", "низкий"]], ""))}
-    </div>
+    ${fld("Срок", dateInput("due", v.due || ""))}
     ${fld("Списки (личные)", pick("labels", S.labels.map((l) => [l.id, l.n]), []))}
     ${fld("Ссылки", area("urls", (v.urls || []).join("\n"), "по одной в строке: https://…"))}
     ${fld("Рынок", pick("mk", COUNTRIES.map((c) => [c.c, c.n]), [], true))}

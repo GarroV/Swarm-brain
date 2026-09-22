@@ -48,7 +48,7 @@ function screenHome() {
       ${team.length
         ? table([{ t: "Задача" }, { t: "Проект", w: "26%" }, { t: "Срок", r: true, w: "96px" }],
             team.slice(0, 5).map((t) => `<tr class="row${S.sel === t.id && S.selKind === "task" ? " sel" : ""}" ${act("open-task", t.id)} tabindex="0">
-              ${cell(`${dot(t.st)}${priMark(t.prio)}${esc(t.t)}`, "t")}${cell(esc(projPath(t.pr)))}${cell(due(t.due, false), "r")}</tr>`).join(""),
+              ${cell(`${dot(t.st)}${esc(t.t)}`, "t")}${cell(esc(projPath(t.pr)))}${cell(due(t.due, false), "r")}</tr>`).join(""),
             Math.max(320, workW() - HOME_SIDE))
         : empty("Ничьих задач нет", "Всё, что общее, кто-то уже взял")}
     </div>
@@ -75,7 +75,7 @@ function screenHome() {
 
 function homeRow(t) {
   return `<tr class="row${S.sel === t.id && S.selKind === "task" ? " sel" : ""}" ${act("open-task", t.id)} tabindex="0">
-    ${cell(`${dot(t.st)}${priMark(t.prio)}${esc(t.t)}`, "t")}
+    ${cell(`${dot(t.st)}${esc(t.t)}`, "t")}
     ${cell(esc(projPath(t.pr)))}
     ${cell(lbls(t.labels), "opt")}
     ${cell(due(t.due, false), "r")}</tr>`;

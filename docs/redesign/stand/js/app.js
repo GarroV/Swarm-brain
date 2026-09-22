@@ -165,7 +165,7 @@ const ACTS = {
   "proj-tasks": (id) => { S.sec = "tasks"; S.archOn = false; S.recurOnly = false; S.q = proj(id).n; A.set({}); },
   "new-task": () => newTaskModal(),
   "create-task": () => { const f = formData(); if (!f.title) return A.toast("Нужно название");
-    closeModal(); A.createTask({ title: f.title, pr: f.pr, who: f.who ? +f.who : null, due: f.due, prio: f.prio,
+    closeModal(); A.createTask({ title: f.title, pr: f.pr, who: f.who ? +f.who : null, due: f.due,
       labels: f.labels, mk: (f.mk || [])[0] || null, recur: f.recur || null, priv: f.priv || !!(f.labels || []).length, note: f.note,
       urls: urlList(f.urls),
       ping: f.ping || null }); },
@@ -178,7 +178,6 @@ const ACTS = {
   restore: (id) => A.restoreTask(+id),
   /* patchTask ждёт пару [событие, значение]; строка разбиралась по буквам и писала в
      журнал «п: р» — поэтому здесь и ниже пара, а не собранная фраза */
-  "set-prio": (id, v) => A.patchTask(+id, { prio: v }, ["Приоритет", PRIO_LABEL[v]]),
   "set-who": (id, v) => A.patchTask(+id, { who: v ? [+v] : [] }, ["Исполнитель", v ? user(+v).n : "снят"]),
   "set-priv": (id, v) => A.patchTask(+id, { priv: !!v }, ["Приватность", v ? "личная" : "общая"]),
   "set-mk": (id, v) => { const t = S.tasks.find((x) => x.id === +id); A.patchTask(+id, { mk: t.mk === v ? null : v }); },
@@ -394,7 +393,7 @@ const ACTS = {
   "gen-tasks": (id) => A.genTasks(id),
   "gen-open": (id) => genTaskModal(+id),
   "gen-save": (i) => { const f = formData(); closeModal();
-    A.genMake(+i, { title: f.title, pr: f.pr, who: +f.who || null, due: f.due, prio: f.prio || null,
+    A.genMake(+i, { title: f.title, pr: f.pr, who: +f.who || null, due: f.due,
       labels: f.labels, mk: (f.mk || [])[0] || null, recur: f.recur || null, priv: f.priv,
       note: f.note, ping: f.ping || null, urls: urlList(f.urls) }); },
   "gen-all": () => A.genAll(),
@@ -556,7 +555,7 @@ document.addEventListener("keydown", (e) => {
   if (qa && e.key === "Enter" && e.target.value.trim()) {
     const title = e.target.value.trim();
     const sec = e.target.dataset.qsec || null;                 /* доска проектов: секция = проект */
-    A.createTask({ title, pr: sec, who: ME, due: null, prio: null, labels: [], mk: null, recur: null, priv: false, note: "" });
+    A.createTask({ title, pr: sec, who: ME, due: null, labels: [], mk: null, recur: null, priv: false, note: "" });
     A.patchTask(S.sel, { st: qa });
     /* на канбане спринта карточка обязана попасть и в СОСТАВ спринта: поле у задачи
        состава не заменяет, иначе новая карточка исчезала при первой перерисовке */

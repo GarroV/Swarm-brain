@@ -19,7 +19,6 @@ const avShort = (id) => { const u = user(id); if (!u) return `<span class="muted
 const avOnly = (id) => { const u = user(id); if (!u) return `<span class="muted">не назначен</span>`;
   return `<span class="av" style="background:${u.c}" title="${esc(u.n)}">${u.i}</span>`; };
 const dot = (st) => `<span class="dot d-${st}"></span>`;
-const pri = (p) => `<span class="pdot p-${p}" title="приоритет: ${PRIO_LABEL[p]}"></span>`;
 /* срок: красный только у незавершённой задачи — у сделанной «просрочено» уже ничего не значит */
 const due = (iso, done) => iso ? `<span class="due ${done ? "" : dueKind(iso)}">${fmtDate(iso)}</span>` : `<span class="muted">—</span>`;
 /* дата факта (загружено, отправлено, добавлено) — она в прошлом всегда, красить её нечем */
@@ -29,7 +28,6 @@ const tag = (text, kind) => `<span class="tag tag-${kind || "o"}">${esc(text)}</
 const lbls = (ids) => ids.map((id) => { const l = label(id); return l ? tag(l.n, "l") : ""; }).join("")
   || `<span class="muted">—</span>`;
 /* в списке рядом с точкой статуса вторая точка нечитаема: показываем только высокий приоритет */
-const priMark = (p) => `<span class="pri-hi"${p === "high" ? ' title="высокий приоритет">!' : ">"}</span>`;
 const cc = (codes) => codes.length ? codes.map((c) => `<span class="cc" title="${esc(cname(c))}">${c}</span>`).join("") : "";
 const wsChip = () => {
   const cur = S.workspaces.find((w) => w.active) || S.workspaces[0];

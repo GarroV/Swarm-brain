@@ -64,7 +64,6 @@ const ST_LABEL = { in_progress: "В работе", done: "Готово" };
 const MEET_ST = { pending: "ждёт вычитки", draft: "черновик записи", confirmed: "подтверждена" };
 /* Приоритет в продукте НЕ обязателен: в проде он проставлен у 6 задач из 481, а в
    десктопной форме его вообще нет. Пустое значение — норма, и у него есть имя. */
-const PRIO_LABEL = { "": "не задан", high: "высокий", med: "средний", low: "низкий" };
 /* роли задач продукта: rnd / bd / marketing (на 21.09.2026 — 76 задач из 482) */
 const roleName = (id) => (S.roles.find((r) => r.id === id) || {}).n || "";
 /* период — та же ось, что RangePicker продукта: сужает список по сроку */
@@ -305,7 +304,7 @@ const A = {
   /* задачи */
   createTask(f) {
     const t = mkTask({ id: nextTaskId++, t: f.title, pr: f.pr, st: "in_progress", who: f.who ? [f.who] : [],
-      due: f.due || null, prio: f.prio, labels: f.labels, mk: f.mk, recur: f.recur, priv: f.priv, note: f.note,
+      due: f.due || null, labels: f.labels, mk: f.mk, recur: f.recur, priv: f.priv, note: f.note,
       ping: f.ping || null, role: f.role || null });
     S.tasks = [t, ...S.tasks];
     S.history = { ...S.history, [t.id]: [{ m: 0, who: ME, k: "Создана", v: "вручную" }] };
@@ -386,7 +385,7 @@ const A = {
   extractTasks(id) {
     const m = S.meetings.find((x) => x.id === id);
     const made = ["Уточнить сроки по итогам встречи", "Свести договорённости в документ"].map((t, k) => mkTask({
-      id: nextTaskId++, t, pr: null, who: [m.who[0]], due: null, prio: "med", src: m.id }));
+      id: nextTaskId++, t, pr: null, who: [m.who[0]], due: null, src: m.id }));
     S.tasks = [...made, ...S.tasks];
     S.meetings = S.meetings.map((x) => x.id === id ? { ...x, tasks: [...x.tasks, ...made.map((t) => t.id)] } : x);
     A.toast(`Создано задач: ${made.length}`);
@@ -453,7 +452,7 @@ const A = {
   taskFromEntry(id) {
     const e = S.entries.find((x) => x.id === id);
     if (!e) return;
-    A.createTask({ title: clip(e.h, 60), pr: null, who: ME, due: null, prio: "med",
+    A.createTask({ title: clip(e.h, 60), pr: null, who: ME, due: null,
       labels: [], mk: (e.cc || [])[0] || null, recur: null, priv: e.priv, note: e.p });
   },
   reindex(kind, id) {
@@ -703,7 +702,7 @@ const A = {
     const g = S.gen.find((x) => x.i === i);
     if (!g || g.made) return;
     const t = mkTask({ id: nextTaskId++, t: f.title, pr: f.pr, st: "in_progress", who: f.who ? [f.who] : [],
-      due: f.due || null, prio: f.prio || null, labels: f.labels || [], mk: f.mk || null,
+      due: f.due || null, labels: f.labels || [], mk: f.mk || null,
       recur: f.recur || null, priv: !!f.priv || !!(f.labels || []).length, note: f.note || "",
       ping: f.ping || null, urls: f.urls || [], src: S.genFor });
     S.tasks = [t, ...S.tasks];
