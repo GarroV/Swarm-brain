@@ -1010,7 +1010,7 @@ _Задачи / спринты / зависимости:_
 | `PATCH` | `/task-labels/:id` | Обновить `{ name?, icon?, color?, sort_order? }` — только владелец метки (иначе 404/403) |
 | `DELETE` | `/task-labels/:id` | Удалить метку + вычистить её id из `tasks.label_ids` владельца — только владелец |
 | `GET` | `/tasks/:id/comments` | Комментарии к задаче (старые→новые), с резолвом имени автора. Гейт = видимость задачи (`group_id` + приватность). Модуль `swarm-api/task-comments.ts` |
-| `POST` | `/tasks/:id/comments` | Добавить комментарий `{content}` (≤4000 символов, валидатор `_shared/tasks/comments.ts`). Автор — вызывающий (`added_by_telegram_id`) |
+| `POST` | `/tasks/:id/comments` | Добавить комментарий `{content}` (**≤20 000 символов**, валидатор `_shared/tasks/comments.ts`; было 4000 до 22.09.2026 — [решение](decisions/2026-09-22-comment-limit.md), issue #445). Отказ называет фактическую длину и предел, и веб показывает именно его, а не «Не удалось отправить». Автор — вызывающий (`added_by_telegram_id`) |
 | `DELETE` | `/tasks/:id/comments/:cid` | Удалить комментарий — только автор или админ |
 | `GET` | `/tasks/:id/subscription` | Состояние подписки вызывающего: `{state: subscribed\|muted\|null, reason, notified}`. `notified` — придут ли уведомления сейчас (это и показывает тумблер в карточке). Модуль `swarm-api/task-subscriptions.ts` |
 | `PATCH` | `/tasks/:id/subscription` | Явный выбор человека `{notify: boolean}` → `state` = `subscribed`/`muted`, `reason=manual`. Гейт тот же — видимость задачи |

@@ -21,3 +21,23 @@ Deno.test("validateCommentContent: длиннее лимита → ошибка"
   assertEquals(validateCommentContent(long).ok, false);
   assertEquals(validateCommentContent("a".repeat(COMMENT_MAX)).ok, true);
 });
+
+// Предел — договорённость с владельцем (22.09.2026, issue #445), а не деталь реализации:
+// тест выше параметризован COMMENT_MAX и остаётся зелёным при любом значении, поэтому
+// фиксируем само число — иначе оно уедет молча.
+Deno.test("COMMENT_MAX: предел — 20 000 знаков", () => {
+  assertEquals(COMMENT_MAX, 20_000);
+});
+
+Deno.test("validateCommentContent: длинный пост (10 000 знаков) проходит", () => {
+  // Ровно тот сценарий, из-за которого предел поднимали: вставить целиком большой текст.
+  assertEquals(validateCommentContent("я".repeat(10_000)).ok, true);
+});
+
+Deno.test("validateCommentContent: отказ называет фактическую длину и предел", () => {
+  const res = validateCommentContent("a".repeat(COMMENT_MAX + 7));
+  assertEquals(res.ok, false);
+  const error = (res as { ok: false; error: string }).error;
+  assertEquals(error.includes(String(COMMENT_MAX + 7)), true);
+  assertEquals(error.includes(String(COMMENT_MAX)), true);
+});
