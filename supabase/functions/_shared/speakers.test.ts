@@ -7,10 +7,14 @@
 import { assert, assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildSegments,
+  LABEL_OTHER,
+  LABEL_SELF,
   MAX_SPEAKER_NAME_LEN,
   MAX_SPEAKER_SPANS,
+  MAX_SPEAKER_TIMELINE_CHARS,
   nameAt,
   parseSpeakerTimeline,
+  RESERVED_LABEL_SUFFIX,
   type Segment,
   speakerLegend,
   type SpeakerPart,
@@ -400,4 +404,97 @@ Deno.test("speakerLegend: именованные + и «собеседник», 
   assert(legend.includes("«я»"));
   assert(legend.includes("«собеседник»"));
   assert(legend.includes("Василий"));
+});
+
+// ── Приёмка 23.09.2026: четыре находки разбора свежим взглядом ───────────────
+
+// 1. Имя участника, совпавшее со служебной меткой. Имя задаёт ПОСТОРОННИЙ участник встречи:
+// назвавшись «я», он получал бы на дорожке sys ту же метку, что и владелец записи, и его реплики
+// в стенограмме становились неотличимы от реплик владельца. Это подделка авторства в тексте,
+// который человек и модель читают как факт.
+
+Deno.test("parseSpeakerTimeline: имя «я» разводится со служебной меткой владельца", () => {
+  const [span] = parseSpeakerTimeline([{ start: 0, end: 1, name: "я" }]);
+  assertEquals(span.name, "я" + RESERVED_LABEL_SUFFIX);
+  assert(span.name !== LABEL_SELF, "метка участника не должна совпадать с меткой владельца");
+});
+
+Deno.test("parseSpeakerTimeline: имя «собеседник» разводится со служебной меткой", () => {
+  const [span] = parseSpeakerTimeline([{ start: 0, end: 1, name: "собеседник" }]);
+  assertEquals(span.name, "собеседник" + RESERVED_LABEL_SUFFIX);
+  assert(span.name !== LABEL_OTHER);
+});
+
+Deno.test("parseSpeakerTimeline: коллизия ловится в любом регистре и с лишними пробелами", () => {
+  for (const raw of ["Я", "  я  ", "СОБЕСЕДНИК", "Собеседник", "сОбЕсЕдНиК"]) {
+    const [span] = parseSpeakerTimeline([{ start: 0, end: 1, name: raw }]);
+    const low = span.name.toLowerCase();
+    assert(low !== LABEL_SELF && low !== LABEL_OTHER, `«${raw}» осталось служебной меткой: «${span.name}»`);
+    assert(span.name.toLowerCase().includes(raw.trim().toLowerCase()), `исходное имя потерялось: «${span.name}»`);
+  }
+});
+
+Deno.test("parseSpeakerTimeline: коллизию не обойти невидимым символом внутри имени", () => {
+  // «я» + zero-width space: после чистки это ровно «я», значит это та же коллизия.
+  const [span] = parseSpeakerTimeline([{ start: 0, end: 1, name: "я​" }]);
+  assert(span.name.toLowerCase() !== LABEL_SELF, `невидимый символ обошёл проверку: «${span.name}»`);
+});
+
+Deno.test("parseSpeakerTimeline: обычное имя не трогается", () => {
+  const [span] = parseSpeakerTimeline([{ start: 0, end: 1, name: "Яна Соболева" }]);
+  assertEquals(span.name, "Яна Соболева");
+});
+
+Deno.test("buildSegments: реплику с дорожки sys нельзя выдать за реплику владельца", () => {
+  const timeline = parseSpeakerTimeline([{ start: 0, end: 10, name: "я" }]);
+  const out = buildSegments([part("sys", true, [seg(0, 5, "Я так решил.")])], 0, timeline);
+  assert(out[0].speaker !== LABEL_SELF, `реплика чужого помечена как владелец: «${out[0].speaker}»`);
+});
+
+// 2. Невидимый юникод. В интерфейсе вычитки его не видно, а в промпт тезисов он уезжает как есть.
+
+Deno.test("parseSpeakerTimeline: невидимые символы удаляются, а не превращаются в пробел", () => {
+  const cases: Array<[string, string]> = [
+    ["Ан​на", "Анна"], // zero-width space внутри имени
+    ["Ан‌на", "Анна"], // zero-width non-joiner
+    ["Ан‍на", "Анна"], // zero-width joiner
+    ["﻿Анна", "Анна"], // BOM / zero-width no-break space
+    ["‮Анна‬", "Анна"], // bidi-оверрайд
+    ["⁦Анна⁩", "Анна"], // bidi-изоляты
+    ["Ан\u0085на", "Анна"], // C1
+    ["Анна\u{E0041}", "Анна"], // блок Unicode Tag
+    ["Ан­на", "Анна"], // мягкий перенос
+  ];
+  for (const [raw, expected] of cases) {
+    const [span] = parseSpeakerTimeline([{ start: 0, end: 1, name: raw }]);
+    assertEquals(span.name, expected, `имя ${JSON.stringify(raw)} почищено неверно`);
+  }
+});
+
+Deno.test("parseSpeakerTimeline: имя из одних невидимых символов — ошибка, а не пустая метка", () => {
+  expectSpeakerError(() => parseSpeakerTimeline([{ start: 0, end: 1, name: "​﻿‮" }]), "name");
+});
+
+Deno.test("parseSpeakerTimeline: перевод строки по-прежнему становится пробелом", () => {
+  // Разрыв строки на экране виден как разрыв — его заменяем пробелом, а не склеиваем слова.
+  const [span] = parseSpeakerTimeline([{ start: 0, end: 1, name: "Анна\nСоболева" }]);
+  assertEquals(span.name, "Анна Соболева");
+});
+
+// 4. Потолок на длину строки ДО разбора: без него JSON.parse платит за произвольно большой вход,
+// а MAX_SPEAKER_SPANS вступает в силу уже после.
+
+Deno.test("parseSpeakerTimeline: слишком длинная строка отвергается ДО JSON.parse", () => {
+  // Заведомо невалидный JSON: если бы сначала шёл разбор, ошибка была бы про JSON, а не про размер.
+  const huge = "[" + "x".repeat(MAX_SPEAKER_TIMELINE_CHARS);
+  const err = expectSpeakerError(() => parseSpeakerTimeline(huge));
+  assert(!err.message.includes("JSON"), `сработал разбор, а не потолок размера: «${err.message}»`);
+  assert(/too large|too long|characters/i.test(err.message), `сообщение не про размер: «${err.message}»`);
+});
+
+Deno.test("parseSpeakerTimeline: строка ровно по потолку разбирается", () => {
+  const one = '{"start":0,"end":1,"name":"A"}';
+  const body = `[${one}]`;
+  assert(body.length <= MAX_SPEAKER_TIMELINE_CHARS);
+  assertEquals(parseSpeakerTimeline(body).length, 1);
 });

@@ -148,17 +148,6 @@ Deno.serve(async (req: Request) => {
     return fail("meeting_id required");
   }
 
-  // Таймлайн говорящих — НЕОБЯЗАТЕЛЬНОЕ поле (его шлёт бот scriba, рекордер bumblebee о нём не
-  // знает). Валидируем на границе и ДО любых записей: мусор должен отбиваться внятной ошибкой,
-  // а не оседать в process_state и всплывать именем-абракадаброй в стенограмме.
-  let speakers: SpeakerSpan[];
-  try {
-    speakers = parseSpeakerTimeline(formData.get("speakers"));
-  } catch (e) {
-    if (e instanceof SpeakerTimelineError) return fail(e.message);
-    throw e;
-  }
-
   const { data: meeting } = await supabase
     .from("meetings")
     .select("id, claim_owner, notes_edited_at, summary_status")
@@ -176,6 +165,19 @@ Deno.serve(async (req: Request) => {
   // Аудио льёт только держатель права транскрибации (claim_owner).
   if (m.claim_owner !== identity.telegramId) {
     return fail("not the transcription owner for this meeting", 403);
+  }
+
+  // Таймлайн говорящих — НЕОБЯЗАТЕЛЬНОЕ поле (его шлёт бот scriba, рекордер bumblebee о нём не
+  // знает). Разбор идёт ПОСЛЕ проверки владения встречей: иначе держатель токена агента платил бы
+  // разбором за произвольный и даже несуществующий meeting_id. И всё ещё ДО любых записей — мусор
+  // обязан отбиваться внятной ошибкой, а не оседать в process_state и всплывать именем-абракадаброй
+  // в стенограмме.
+  let speakers: SpeakerSpan[];
+  try {
+    speakers = parseSpeakerTimeline(formData.get("speakers"));
+  } catch (e) {
+    if (e instanceof SpeakerTimelineError) return fail(e.message);
+    throw e;
   }
 
   const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${meetingId}` : "";

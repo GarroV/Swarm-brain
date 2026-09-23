@@ -39,18 +39,65 @@ export class SpeakerTimelineError extends Error {
 export const MAX_SPEAKER_SPANS = 5000;
 /** Потолок на длину имени: имя едет в промпт тезисов, «имя» на 10КБ — это мусор, а не имя. */
 export const MAX_SPEAKER_NAME_LEN = 120;
+/**
+ * Потолок на длину строки ДО `JSON.parse`. Считается из двух потолков выше с запасом на экранирование
+ * и разделители, поэтому предельно допустимый таймлайн под него проходит, а произвольно большой блоб
+ * отбивается, не дойдя до разбора, — так же как `OPENAI_AUDIO_MAX_BYTES` отбивает часть аудио до чтения.
+ */
+export const MAX_SPEAKER_TIMELINE_CHARS = MAX_SPEAKER_SPANS * (MAX_SPEAKER_NAME_LEN * 2 + 96);
 
 export const LABEL_OTHER = "собеседник";
 export const LABEL_SELF = "я";
+/**
+ * Чем метится участник, назвавшийся служебной меткой. Не 400: имя участника задаёт посторонний
+ * человек на площадке, и отказ на весь запрос означал бы, что любой участник одним ником срывает
+ * загрузку уже записанной встречи — восстановить её нечем. Разводим метку и продолжаем.
+ */
+export const RESERVED_LABEL_SUFFIX = " (участник)";
+
+// Невидимое в имени УДАЛЯЕМ, а не заменяем пробелом: на экране этих символов нет, и пробел вместо
+// них разорвал бы имя («Ан на» вместо «Анна»). Сюда входят C0 (кроме пробельных), DEL и C1,
+// мягкий перенос, zero-width и склейки, метки направления и bidi-оверрайды, изоляты, аннотации
+// и блок Unicode Tag. В интерфейсе вычитки их не видно, а в промпт тезисов они уезжают как есть.
+const INVISIBLE_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x00, 0x08], // C0 без пробельных (\t \n \v \f \r оставлены — их схлопывает \s ниже)
+  [0x0e, 0x1f],
+  [0x7f, 0x9f], // DEL и C1
+  [0xad, 0xad], // мягкий перенос
+  [0x34f, 0x34f], // combining grapheme joiner
+  [0x61c, 0x61c], // arabic letter mark
+  [0x180e, 0x180e], // mongolian vowel separator
+  [0x200b, 0x200f], // zero-width space/non-joiner/joiner, метки направления
+  [0x202a, 0x202e], // bidi-оверрайды
+  [0x2060, 0x2064], // word joiner и невидимые операторы
+  [0x2066, 0x206f], // bidi-изоляты и снятые форматные
+  [0xfeff, 0xfeff], // BOM / zero-width no-break space
+  [0xfff9, 0xfffb], // interlinear annotation
+  [0xe0000, 0xe007f], // блок Unicode Tag
+];
+// Класс собирается из списка выше, а НЕ пишется литералом: литерал этих символов в исходнике сам
+// невидим — его не найти grep-ом, не увидеть в diff и легко затереть случайной правкой.
+const INVISIBLE_RE = new RegExp(
+  "[" + INVISIBLE_RANGES.map(([from, to]) => `\\u{${from.toString(16)}}-\\u{${to.toString(16)}}`).join("") + "]",
+  "gu",
+);
 
 // Имя приходит из списка участников площадки, то есть его задаёт посторонний человек. В промпт и в
 // стенограмму оно попадает как есть, а формат стенограммы — построчный («метка: текст»), поэтому
 // перевод строки в имени ломает разметку и открывает инъекцию инструкций в промпт тезисов.
-// Управляющие символы схлопываем в пробел, а не отвергаем: странное имя участника — не повод
-// отбить всю запись.
+// Пробельное (включая \t \n \r и неразрывный пробел) схлопываем в один пробел: на экране это разрыв.
 function sanitizeName(raw: string): string {
-  // deno-lint-ignore no-control-regex
-  return raw.replace(/[\u0000-\u001F\u007F]+/g, " ").replace(/\s+/g, " ").trim();
+  return raw.replace(INVISIBLE_RE, "").replace(/\s+/gu, " ").trim();
+}
+
+/**
+ * Имя, совпавшее со служебной меткой, разводится суффиксом. Сверка — по очищенному имени и без учёта
+ * регистра: иначе «Я», « я » или «я» с zero-width внутри обходили бы проверку, а их реплики на
+ * дорожке `sys` становились бы неотличимы от реплик владельца записи.
+ */
+function disambiguateLabel(name: string): string {
+  const low = name.toLowerCase();
+  return low === LABEL_SELF || low === LABEL_OTHER ? name + RESERVED_LABEL_SUFFIX : name;
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -68,6 +115,13 @@ export function parseSpeakerTimeline(raw: unknown): SpeakerSpan[] {
   let value: unknown = raw;
   if (typeof value === "string") {
     if (value.trim().length === 0) return [];
+    // Потолок ДО разбора: иначе JSON.parse платит за произвольно большой вход, а ограничение на
+    // число интервалов вступает в силу уже после того, как строка разобрана.
+    if (value.length > MAX_SPEAKER_TIMELINE_CHARS) {
+      throw new SpeakerTimelineError(
+        `speakers: payload too large (${value.length} > ${MAX_SPEAKER_TIMELINE_CHARS} characters)`,
+      );
+    }
     try {
       value = JSON.parse(value);
     } catch {
@@ -105,6 +159,9 @@ export function parseSpeakerTimeline(raw: unknown): SpeakerSpan[] {
         `${at}: name too long (${name.length} > ${MAX_SPEAKER_NAME_LEN})`,
       );
     }
+    // Разводим ПОСЛЕ проверки длины: потолок относится к тому, что прислал клиент, а суффикс —
+    // наш собственный и в его бюджет не входит.
+    const label = disambiguateLabel(name);
 
     const start = finiteNumber(span.start);
     if (start === null) {
@@ -121,7 +178,7 @@ export function parseSpeakerTimeline(raw: unknown): SpeakerSpan[] {
       throw new SpeakerTimelineError(`${at}: end must be greater than start`);
     }
 
-    timeline.push({ start, end, name });
+    timeline.push({ start, end, name: label });
   }
   return timeline;
 }
