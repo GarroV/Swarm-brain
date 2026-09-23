@@ -2,6 +2,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { type InMemoryPart, runMeetingStep, uploadPartsAndBuildState } from "../_shared/meeting-processor.ts";
+import { parseSpeakerTimeline, type SpeakerSpan, SpeakerTimelineError } from "../_shared/speakers.ts";
 
 // meeting-ingest — приём АУДИО от claimer (см. transcribator/10-REVISED-DESIGN.md §4, §7.2).
 // Облачная схема: рекордер пишет звук → грузит сюда; сервер транскрибирует (OpenAI Whisper)
@@ -147,6 +148,17 @@ Deno.serve(async (req: Request) => {
     return fail("meeting_id required");
   }
 
+  // Таймлайн говорящих — НЕОБЯЗАТЕЛЬНОЕ поле (его шлёт бот scriba, рекордер bumblebee о нём не
+  // знает). Валидируем на границе и ДО любых записей: мусор должен отбиваться внятной ошибкой,
+  // а не оседать в process_state и всплывать именем-абракадаброй в стенограмме.
+  let speakers: SpeakerSpan[];
+  try {
+    speakers = parseSpeakerTimeline(formData.get("speakers"));
+  } catch (e) {
+    if (e instanceof SpeakerTimelineError) return fail(e.message);
+    throw e;
+  }
+
   const { data: meeting } = await supabase
     .from("meetings")
     .select("id, claim_owner, notes_edited_at, summary_status")
@@ -228,6 +240,7 @@ Deno.serve(async (req: Request) => {
       m.id,
       systemParts,
       micParts,
+      speakers,
     );
   } catch (e) {
     console.error(`meeting-ingest: storage upload failed for ${m.id}:`, e);
