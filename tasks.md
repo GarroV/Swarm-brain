@@ -12,34 +12,34 @@
 | T012 | identity | T011 | done | `resolveActingIdentity`: подмена личности один раз на входе, на выходе — человек | #327 | 1 |
 | T013 | identity | T012 | done | `meeting-claim`, `meeting-ingest`, `meeting-heartbeat` переведены на `resolveActingIdentity` | #328 | 1 |
 | T014 | identity | T013 | done | Блокирующие тесты: recorder не может `on_behalf_of`; бот не может указать чужой воркспейс; токен бота без `on_behalf_of` не даёт прав | #329 | 1 |
-| T015 | identity | T014 | in_progress | Регресс: `bumblebee` прогнан после правок эндпоинтов и работает как раньше | #330 | 1 |
+| T015 | identity | T014 | todo | Регресс: `bumblebee` прогнан после правок эндпоинтов и работает как раньше | #330 | 1 |
 | T020 | conference-link | — | done | `description` добавлен четвёртым источником ссылки, тест на него зелёный | #331 | 1 |
 | T021 | conference-link | — | done | `conferencePlatform` по хосту; тесты на три площадки, мусор и неизвестный хост | #332 | 1 |
 | T022 | conference-link | T021 | done | Ссылки нет → в ответе `reason: "no_conference_link"`, а не молчаливый `null` | #333 | 1 |
-| T030 | ingest-speakers | T012 | todo | `meeting-ingest` принимает поле `speakers`; мусор отвергается внятной ошибкой на границе | #334 | 1 |
-| T031 | ingest-speakers | — | todo | Чистая функция `nameAt`: тесты на перекрытия, дыры, пустой таймлайн, несовпадение времён | #335 | 1 |
-| T032 | ingest-speakers | T030,T031 | todo | Имена подставляются в `Segment.speaker`; мягкая деградация без таймлайна проверена тестом | #336 | 1 |
-| T033 | ingest-speakers | T032 | todo | Легенда говорящих в промпте тезисов согласована: не обещает «я», которого в стенограмме нет | #337 | 1 |
+| T030 | ingest-speakers | T012 | in_progress | `meeting-ingest` принимает поле `speakers`; мусор отвергается внятной ошибкой на границе | #334 | 1 |
+| T031 | ingest-speakers | — | in_progress | Чистая функция `nameAt`: тесты на перекрытия, дыры, пустой таймлайн, несовпадение времён | #335 | 1 |
+| T032 | ingest-speakers | T030,T031 | in_progress | Имена подставляются в `Segment.speaker`; мягкая деградация без таймлайна проверена тестом | #336 | 1 |
+| T033 | ingest-speakers | T032 | in_progress | Легенда говорящих в промпте тезисов согласована: не обещает «я», которого в стенограмме нет | #337 | 1 |
 | T040 | container | — | done | Dockerfile: playwright-образ + Xvfb + PulseAudio + ffmpeg; контейнер поднимается и гасится | #338 | 1 |
 | T041 | container | T040 | done | PulseAudio null-sink: `XDG_RUNTIME_DIR`, `set-default-sink`, monitor-source проверяется при старте | #339 | 1 |
 | T042 | container | T041 | done | Chromium стартует с `ignoreDefaultArgs: ['--mute-audio']`; звук реально попадает в sink | #340 | 1 |
 | T043 | container | T042 | done | Смоук записи звука падает на тишине и внятно говорит почему; прогнан на испорченной копии, порча подтверждена | #341 | 1 |
 | T044 | container | T042 | done | Нарезка ffmpeg по `segment_time` под лимит 25 МБ; каждая часть открывается самостоятельно | #342 | 1 |
 | T045 | container | T040 | done | Два контейнера одновременно не слышат друг друга (проверено запуском двух) | #343 | 1 |
-| T050 | meet-adapter | T042 | todo | `join`: вход по ссылке с вводом имени `scriba`; локаль запиннена `?hl=en` + `--lang=en-US` | #344 | 1 |
-| T051 | meet-adapter | T050 | todo | `waitAdmitted` различает admitted / denied / timeout / captcha; каждый исход проверен вживую | #345 | 1 |
-| T052 | meet-adapter | T050 | todo | `activeSpeaker` возвращает имя говорящего; селекторы по `aria-label`/`role`, не по классам | #346 | 1 |
-| T053 | meet-adapter | T050 | todo | `isAlone` и `leave`: бот выходит через 2 минуты один в звонке и освобождает ресурсы | #347 | 1 |
-| T060 | swarm-client | T013 | todo | Клиент пяти эндпоинтов; контрактный тест со стороны потребителя | #348 | 1 |
-| T061 | swarm-client | T060 | todo | Очередь выгрузки: ретраи с задержкой, локальный бэкап неотправленного, переживает обрыв сети | #349 | 1 |
-| T062 | swarm-client | T060 | todo | `claim` вернул `defer` → аудио не отправляется вообще (проверено тестом) | #350 | 1 |
-| T063 | swarm-client | T030,T052 | todo | Таймлайн говорящих собирается из опросов `activeSpeaker` и уходит полем `speakers` | #351 | 1 |
+| T050 | meet-adapter | T042 | in_progress | `join`: вход по ссылке с вводом имени `scriba`; локаль запиннена `?hl=en` + `--lang=en-US` | #344 | 1 |
+| T051 | meet-adapter | T050 | in_progress | `waitAdmitted` различает admitted / denied / timeout / captcha; каждый исход проверен вживую | #345 | 1 |
+| T052 | meet-adapter | T050 | in_progress | `activeSpeaker` возвращает имя говорящего; селекторы по `aria-label`/`role`, не по классам | #346 | 1 |
+| T053 | meet-adapter | T050 | in_progress | `isAlone` и `leave`: бот выходит через 2 минуты один в звонке и освобождает ресурсы | #347 | 1 |
+| T060 | swarm-client | T013 | in_progress | Клиент пяти эндпоинтов; контрактный тест со стороны потребителя | #348 | 1 |
+| T061 | swarm-client | T060 | in_progress | Очередь выгрузки: ретраи с задержкой, локальный бэкап неотправленного, переживает обрыв сети | #349 | 1 |
+| T062 | swarm-client | T060 | in_progress | `claim` вернул `defer` → аудио не отправляется вообще (проверено тестом) | #350 | 1 |
+| T063 | swarm-client | T030,T052 | in_progress | Таймлайн говорящих собирается из опросов `activeSpeaker` и уходит полем `speakers` | #351 | 1 |
 | T070 | orchestrator | T045,T060 | todo | `startForMeeting` / `stop` через dockerode; ручной запуск по ссылке работает | #352 | 1 |
 | T071 | orchestrator | T070 | todo | Heartbeat идёт; смерть контейнера посреди встречи видна существующему watchdog | #353 | 1 |
 | T072 | orchestrator | T070 | todo | Брошенных контейнеров не остаётся после падения оркестратора (проверено падением) | #354 | 1 |
-| T080 | notices | T012 | todo | Уведомление «стою у двери» владельцу встречи; повтор ровно один, затем выход | #355 | 1 |
-| T081 | notices | T080 | todo | Тексты уведомлений заведены на английском и русском | #356 | 1 |
-| T082 | notices | T022 | todo | Ни один сценарий отказа не завершается молча — проверено по списку из спеки | #357 | 1 |
+| T080 | notices | T012 | in_progress | Уведомление «стою у двери» владельцу встречи; повтор ровно один, затем выход | #355 | 1 |
+| T081 | notices | T080 | in_progress | Тексты уведомлений заведены на английском и русском | #356 | 1 |
+| T082 | notices | T022 | in_progress | Ни один сценарий отказа не завершается молча — проверено по списку из спеки | #357 | 1 |
 | T016 | identity | T013 | done | `meeting-current` и `meeting-status` переведены на `resolveActingIdentity`: бот ходит во все пять эндпоинтов, а не в три | #370 | 1 |
 | T017 | identity | T016 | blocked:Q007 | Сузить полномочия токена агента до участников встречи, а не всего воркспейса — по решению владельца | #371 | 1 |
 | T003 | chores | T015,T033,T044 | todo | `ARCHITECTURE.md` и `QUICK_REF.md` обновлены по факту изменений сервера и появления бота | #358 | 1 |
