@@ -8,8 +8,9 @@
 // Кому уходит сообщение: identity.telegramId из resolveActingIdentity — ВСЕГДА человек, и он
 // никогда не берётся из тела запроса. Иначе токен бота стал бы средством рассылки по людям.
 //
-// Дверь: attempt 1 — первое уведомление (через 90 с), attempt 2 — единственный повтор (через 3 мин),
-// attempt 3 → 409 и ничего не отправлено. Ответ ведёт бота: should_leave / next_reminder_in_s.
+// Сколько раз: считает СЕРВЕР по журналу `meeting_notices` (ключ встречи + получатель), а не бот
+// по присланному числу. Дверь — первое уведомление и ровно один повтор, остальные виды — по
+// одному на встречу, сверху общий потолок. Исчерпано → 409 и `should_leave: true`.
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, TELEGRAM_BOT_TOKEN,
 //      TELEGRAM_API_BASE (необязательная, по умолчанию https://api.telegram.org — подменяется
@@ -19,44 +20,16 @@
 // URL-импорты — канон этого репозитория: функции деплоятся без карты импортов.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleNotice } from "./handle.ts";
+import { makeTelegramSender } from "./telegram.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
-const TELEGRAM_API_BASE = Deno.env.get("TELEGRAM_API_BASE") ?? "https://api.telegram.org";
-
-/**
- * Отправка с ПРОВЕРКОЙ результата.
- *
- * Остальной код продукта шлёт в Telegram и не смотрит на ответ — для уведомления о сбое так
- * нельзя: недоставленное сообщение о том, что запись не идёт, и есть молчаливый отказ.
- * Поэтому здесь бросаем и на HTTP-код, и на `ok: false` в теле (Telegram умеет отвечать 200
- * с отказом внутри), и на отсутствующий токен — тоже бросаем, а не выходим тихо.
- */
-async function sendTelegram(chatId: number, text: string): Promise<void> {
-  if (TELEGRAM_BOT_TOKEN === "") throw new Error("TELEGRAM_BOT_TOKEN is not set on the server");
-  const res = await fetch(`${TELEGRAM_API_BASE}/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }),
-  });
-  let body: { ok?: boolean; description?: string } = {};
-  try {
-    body = (await res.json()) as { ok?: boolean; description?: string };
-  } catch {
-    body = {};
-  }
-  if (!res.ok || body.ok === false) {
-    throw new Error(`telegram ${res.status}: ${body.description ?? "no description in response"}`);
-  }
-}
+const sendTelegram = makeTelegramSender({
+  botToken: Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "",
+  apiBase: Deno.env.get("TELEGRAM_API_BASE") ?? "https://api.telegram.org",
+});
 
 Deno.serve((req: Request) => handleNotice(req, { supabase, sendTelegram }));

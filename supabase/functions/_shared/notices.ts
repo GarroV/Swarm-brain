@@ -1,9 +1,15 @@
 // Уведомления владельцу встречи о том, что запись НЕ идёт. Чистая часть блока notices:
-// разбор запроса, расписание двери и рендер текста. Отправкой занимается meeting-notice/.
+// разбор запроса, решение «отправлять или хватит» и рендер текста. Отправкой и журналом
+// занимается meeting-notice/.
 //
 // Почему блок вообще есть: первый принцип проекта — «громкий отказ важнее тихой работы».
 // scriba, который не смог записать и промолчал, хуже, чем его отсутствие: человек узнаёт об
 // этом через сутки по пустой очереди вычитки, когда записать уже нечего.
+//
+// ⚠️ Потолок повторов считает СЕРВЕР по журналу отправок (таблица meeting_notices), а не бот
+// по присланному числу. Прежняя редакция брала номер попытки из тела запроса — это был не
+// потолок, а просьба: зацикленный контейнер шлёт «попытка 1» сколько угодно раз, и человек
+// получает поток сообщений в личку. Поэтому `attempt` в запросе теперь отвергается.
 import { DETAIL_LABEL, NO_TITLE, NOTICE_TEXTS } from "./notice-texts.ts";
 
 /** Языки продукта. EN приоритетный: новый текст заводится на нём и на русском сразу. */
@@ -30,11 +36,16 @@ export const DOOR_WAIT_SECONDS = 90;
 export const DOOR_REPEAT_SECONDS = 180;
 /** Первое уведомление + ровно один повтор. Третьего не существует. */
 export const DOOR_MAX_ATTEMPTS = 2;
+/** Остальные виды отказа: по одному на встречу. Повторить «звука нет» нечем — это уже сказано. */
+export const MAX_PER_KIND = 1;
+/** Потолок потока на одну встречу, поверх поштучных: больше — это сбой бота, а не новости. */
+export const MAX_PER_MEETING = 6;
 
 export const MAX_TITLE_CHARS = 120;
 export const MAX_DETAIL_CHARS = 300;
+export const MAX_MEETING_KEY_CHARS = 200;
 
-/** Отказ на границе: 400 — запрос не разобран, 409 — потолок двери исчерпан. */
+/** Отказ на границе: 400 — запрос не разобран, 409 — по этой встрече уже сказано достаточно. */
 export class NoticeError extends Error {
   constructor(public readonly status: 400 | 409, message: string) {
     super(message);
@@ -44,8 +55,9 @@ export class NoticeError extends Error {
 
 export interface ParsedNotice {
   kind: NoticeKind;
+  /** Ключ встречи (meetings.identity_key). Обязателен: без него нечего считать и не с чем сверять. */
+  meetingKey: string;
   title: string | null;
-  attempt: number;
   lang: NoticeLang;
   detail: string | null;
 }
@@ -67,33 +79,10 @@ function readLang(value: unknown): NoticeLang {
   return head === "ru" ? "ru" : "en";
 }
 
-function readAttempt(raw: Record<string, unknown>, kind: NoticeKind): number {
-  const value = raw.attempt;
-  if (value === undefined || value === null) return 1;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
-    throw new NoticeError(400, `attempt must be a positive integer, got ${JSON.stringify(value)}`);
-  }
-  if (kind !== "door_waiting") {
-    if (value > 1) {
-      throw new NoticeError(400, `attempt > 1 exists only for door_waiting, not for ${kind}`);
-    }
-    return 1;
-  }
-  if (value > DOOR_MAX_ATTEMPTS) {
-    // Потолок держит сервер, а не добрая воля бота: зацикленный бот иначе превращает
-    // уведомление в рассылку, и человек перестаёт читать сообщения от scriba вообще.
-    throw new NoticeError(
-      409,
-      `door notice limit reached: one reminder only (attempt ${value} > ${DOOR_MAX_ATTEMPTS}) — the bot must leave`,
-    );
-  }
-  return value;
-}
-
 /** Разбор тела запроса. Мусор отвергается внятно: молчаливое «ну ладно» здесь запрещено. */
 export function parseNotice(raw: unknown): ParsedNotice {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-    throw new NoticeError(400, "body must be a JSON object with a kind");
+    throw new NoticeError(400, "body must be a JSON object with kind and meeting_key");
   }
   const body = raw as Record<string, unknown>;
   if (!isNoticeKind(body.kind)) {
@@ -102,44 +91,87 @@ export function parseNotice(raw: unknown): ParsedNotice {
       `unknown notice kind ${JSON.stringify(body.kind ?? null)} — allowed: ${NOTICE_KINDS.join(", ")}`,
     );
   }
+  // Номер попытки решает сервер по журналу отправок. Присланный молча игнорировать нельзя:
+  // отправитель считал бы, что им управляет, — поэтому отказ, а не тихое «не учтено».
+  if (body.attempt !== undefined) {
+    throw new NoticeError(400, "attempt is decided by the server from the notice journal — do not send it");
+  }
   const kind = body.kind;
+  const meetingKey = trimmed(body.meeting_key, MAX_MEETING_KEY_CHARS);
+  if (meetingKey === null) {
+    throw new NoticeError(400, "meeting_key is required: a notice that cannot name its meeting cannot be counted");
+  }
   const detail = trimmed(body.detail, MAX_DETAIL_CHARS);
   if (kind === "join_failed" && detail === null) {
     throw new NoticeError(400, "join_failed requires detail: «could not join» without a reason helps nobody");
   }
-  return {
-    kind,
-    title: trimmed(body.title, MAX_TITLE_CHARS),
-    attempt: readAttempt(body, kind),
-    lang: readLang(body.lang),
-    detail,
-  };
+  return { kind, meetingKey, title: trimmed(body.title, MAX_TITLE_CHARS), lang: readLang(body.lang), detail };
 }
 
-export interface DoorDecision {
-  /** Уйти из-под двери прямо сейчас: повтор был последним. */
-  shouldLeave: boolean;
-  /** Через сколько секунд спрашивать снова; null — больше не спрашивать. */
-  nextReminderInSeconds: number | null;
+/** Что уже ушло по этой встрече этому человеку — счёт из журнала, не из запроса. */
+export interface NoticeLedger {
+  /** Сколько уведомлений ЭТОГО вида уже отправлено. */
+  kindCount: number;
+  /** Сколько уведомлений всех видов отправлено по встрече. */
+  totalCount: number;
 }
 
-/** Расписание двери. Ответ сервера ведёт бота: у бота своего таймера решений нет. */
-export function doorPolicy(notice: ParsedNotice): DoorDecision {
-  if (notice.kind !== "door_waiting") return { shouldLeave: true, nextReminderInSeconds: null };
-  const last = notice.attempt >= DOOR_MAX_ATTEMPTS;
-  return {
-    shouldLeave: last,
-    nextReminderInSeconds: last ? null : DOOR_REPEAT_SECONDS,
-  };
+export type DeliveryDecision =
+  | {
+    allow: true;
+    /** Какая это по счёту отправка данного вида. Для двери: 1 — первое, 2 — единственный повтор. */
+    attempt: number;
+    shouldLeave: boolean;
+    nextReminderInSeconds: number | null;
+  }
+  | { allow: false; reason: string; shouldLeave: true };
+
+/**
+ * Отправлять ли — и что после этого делать боту.
+ *
+ * Решение считается ТОЛЬКО по журналу: сколько уже ушло. Отказ всегда велит боту уйти — если
+ * сервер перестал принимать уведомления по встрече, стоять под дверью дальше бессмысленно.
+ */
+export function decideDelivery(kind: NoticeKind, ledger: NoticeLedger): DeliveryDecision {
+  if (ledger.totalCount >= MAX_PER_MEETING) {
+    return {
+      allow: false,
+      reason:
+        `notice limit reached for this meeting: ${ledger.totalCount} of ${MAX_PER_MEETING} already sent — the bot must leave`,
+      shouldLeave: true,
+    };
+  }
+  if (kind === "door_waiting") {
+    const attempt = ledger.kindCount + 1;
+    if (attempt > DOOR_MAX_ATTEMPTS) {
+      return {
+        allow: false,
+        reason:
+          `door notice limit reached: one reminder only (${ledger.kindCount} already sent) — the bot must leave`,
+        shouldLeave: true,
+      };
+    }
+    const last = attempt >= DOOR_MAX_ATTEMPTS;
+    return { allow: true, attempt, shouldLeave: last, nextReminderInSeconds: last ? null : DOOR_REPEAT_SECONDS };
+  }
+  if (ledger.kindCount >= MAX_PER_KIND) {
+    return {
+      allow: false,
+      reason: `already notified about «${kind}» for this meeting — repeating it adds nothing`,
+      shouldLeave: true,
+    };
+  }
+  // Остальные отказы терминальные: ждать нечего, бот уходит сразу.
+  return { allow: true, attempt: 1, shouldLeave: true, nextReminderInSeconds: null };
 }
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function textKey(notice: ParsedNotice): keyof typeof NOTICE_TEXTS {
-  if (notice.kind === "door_waiting" && notice.attempt >= DOOR_MAX_ATTEMPTS) return "door_waiting_last";
-  return notice.kind;
+function textKey(kind: NoticeKind, attempt: number): keyof typeof NOTICE_TEXTS {
+  if (kind === "door_waiting" && attempt >= DOOR_MAX_ATTEMPTS) return "door_waiting_last";
+  return kind;
 }
 
 /**
@@ -147,11 +179,14 @@ function textKey(notice: ParsedNotice): keyof typeof NOTICE_TEXTS {
  *
  * Техническая причина идёт ОТДЕЛЬНОЙ строкой, а не подстановкой в предложение: подстановка
  * без значения оставляет в сообщении пустые скобки, и человек читает их как обрыв текста.
+ *
+ * @param title название встречи; сервер подставляет сюда своё, если строка встречи уже есть.
+ * @param attempt номер отправки, решённый сервером: от него зависит текст у двери.
  */
-export function renderNotice(notice: ParsedNotice): string {
-  const template = NOTICE_TEXTS[textKey(notice)][notice.lang];
-  const title = escapeHtml(notice.title ?? NO_TITLE[notice.lang]);
-  const body = template.replaceAll("{title}", title).replace(/[ \t]+\n/g, "\n").trim();
+export function renderNotice(notice: ParsedNotice, title: string | null, attempt: number): string {
+  const template = NOTICE_TEXTS[textKey(notice.kind, attempt)][notice.lang];
+  const shown = escapeHtml(title ?? NO_TITLE[notice.lang]);
+  const body = template.replaceAll("{title}", shown).replace(/[ \t]+\n/g, "\n").trim();
   if (notice.detail === null) return body;
   return `${body}\n\n${DETAIL_LABEL[notice.lang]} <code>${escapeHtml(notice.detail)}</code>`;
 }
