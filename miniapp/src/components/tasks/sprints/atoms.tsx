@@ -192,7 +192,11 @@ export function CountChip(
       aria-label={label}
       className="inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap text-[10px] tabular-nums text-ink-soft"
     >
-      <RoyIcon name={kind === "comments" ? "note" : "link"} size={10} strokeWidth={2} />
+      <RoyIcon
+        name={kind === "comments" ? "note" : "link"}
+        size={10}
+        strokeWidth={2}
+      />
       {count}
     </span>
   );

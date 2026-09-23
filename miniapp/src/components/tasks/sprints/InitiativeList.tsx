@@ -7,10 +7,10 @@ import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import {
   AssigneeChip,
-  CountChip,
   CarryBadge,
   CarryFlag,
   CheckBadge,
+  CountChip,
   DueBadge,
   ProgressBar,
   ProgressText,
@@ -483,6 +483,16 @@ export function InitiativeList(
                       onNote={onNote}
                     />
                   ))}
+                  {
+                    /* «+ задача» нужна и здесь: у направления без инициатив лежит БОЛЬШИНСТВО
+                      задач, и до сих пор кнопки в этой ветке не было вовсе. */
+                  }
+                  {onAdd && (
+                    <AddTaskRow
+                      projectId={dir.project?.id ?? null}
+                      onAdd={onAdd}
+                    />
+                  )}
                 </div>
               )
               : dir.initiatives.map((ini) => {
