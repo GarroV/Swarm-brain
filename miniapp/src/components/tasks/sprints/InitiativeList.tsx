@@ -7,6 +7,7 @@ import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import {
   AssigneeChip,
+  CountChip,
   CarryBadge,
   CarryFlag,
   CheckBadge,
@@ -204,6 +205,8 @@ function TaskRow(
             )}
           {item.to_carry && <CarryFlag reason={item.carry_reason} />}
           <CarryBadge count={item.carry_count} reason={item.carry_reason} />
+          <CountChip kind="comments" count={item.comment_count} />
+          <CountChip kind="links" count={item.link_count} />
           {item.due_date && <DueBadge date={item.due_date} closed={closed} />}
           {
             /* Исполнителя не повторяем, когда он один на всю инициативу: его имя стоит в
