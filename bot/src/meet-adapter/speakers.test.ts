@@ -37,7 +37,7 @@ describe("normalizeParticipantName", () => {
   });
 
   it("пустое имя — это отсутствие имени, а не пустая строка", () => {
-    expect(normalizeParticipantName("   ")).toBeNull();
+    expect(normalizeParticipantName(" ".repeat(3))).toBeNull();
   });
 });
 
@@ -88,16 +88,14 @@ describe("pickActiveSpeaker", () => {
   });
 
   it("атрибута громкости нет ни у кого — это отсутствие сигнала, а не тишина", () => {
-    const state = snapshot([
-      tile({ id: "a", name: "Анна" }),
-      tile({ id: "b", name: "Борис" }),
-    ]);
+    const state = snapshot([tile({ id: "a", name: "Анна" }), tile({ id: "b", name: "Борис" })]);
     expect(hasSpeakerSignal(state)).toBe(false);
     expect(pickActiveSpeaker(state)).toBeNull();
   });
 
   it("атрибут громкости есть — сигнал признаётся живым, даже если сейчас все молчат", () => {
-    expect(hasSpeakerSignal(snapshot([tile({ id: "a", name: "Анна", audioLevel: 0 })]))).toBe(true);
+    const state = snapshot([tile({ id: "a", name: "Анна", audioLevel: 0 })]);
+    expect(hasSpeakerSignal(state)).toBe(true);
   });
 });
 
@@ -118,7 +116,8 @@ describe("countParticipants и isAloneSnapshot", () => {
   });
 
   it("одна своя плитка — бот в звонке один", () => {
-    expect(isAloneSnapshot(snapshot([tile({ id: "self", name: "scriba", self: true })]))).toBe(true);
+    const state = snapshot([tile({ id: "self", name: "scriba", self: true })]);
+    expect(isAloneSnapshot(state)).toBe(true);
   });
 
   it("сигнала нет вовсе — «не знаю», а не «один»: уйти по ошибке дороже, чем постоять", () => {

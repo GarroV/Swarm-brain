@@ -12,20 +12,20 @@
  */
 import type { MeetSnapshot } from "./types.ts";
 
-/** Пометки Meet рядом с именем: частью имени они не являются. */
-const NAME_SUFFIXES = [/\s*\(you\)$/iu, /\s*\(presenting\)$/iu, /\s*\(host\)$/iu];
+/**
+Пометки Meet рядом с именем: частью имени они не являются.
+*/
+const NAME_SUFFIX = /\((?:you|presenting|host)\)$/iu;
 
 export function normalizeParticipantName(raw: string | null): string | null {
   if (raw === null) return null;
-  let name = raw.replaceAll(/\s+/gu, " ").trim();
-  for (const suffix of NAME_SUFFIXES) {
-    name = name.replace(suffix, "");
-  }
-  name = name.trim();
+  const name = raw.replaceAll(/\s+/gu, " ").trim().replace(NAME_SUFFIX, "").trim();
   return name === "" ? null : name;
 }
 
-/** Есть ли на странице сам сигнал громкости (а не тишина). */
+/**
+Есть ли на странице сам сигнал громкости (а не тишина).
+*/
 export function hasSpeakerSignal(snapshot: MeetSnapshot): boolean {
   return snapshot.tiles.some((tile) => tile.audioLevel !== null);
 }

@@ -35,6 +35,11 @@ describe("pinMeetLocale", () => {
   });
 
   it("отказывается от не-https: бот ходит в интернет, подмена схемы — не мелочь", () => {
-    expect(() => pinMeetLocale("http://meet.google.com/abc-defg-hij")).toThrow(/https/);
+    // Схема собирается из кусков намеренно: `eslint --fix` переписывает литерал
+    // «http://…» в «https://…» (unicorn/prefer-https) и молча превращает эту проверку
+    // в тавтологию — поймано на живом прогоне 2026-09-23.
+    const scheme = ["ht", "tp:"].join("");
+    const insecure = `${scheme}//meet.google.com/abc-defg-hij`;
+    expect(() => pinMeetLocale(insecure)).toThrow(/https/);
   });
 });

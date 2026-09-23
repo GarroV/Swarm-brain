@@ -8,7 +8,7 @@
  * лобби.
  */
 
-export const MEET_HOST = "meet.google.com";
+const MEET_HOST = "meet.google.com";
 export const MEET_LOCALE = "en";
 
 /**
@@ -34,5 +34,5 @@ export function pinMeetLocale(rawUrl: string): string {
   }
 
   url.searchParams.set("hl", MEET_LOCALE);
-  return url.toString();
+  return url.href;
 }

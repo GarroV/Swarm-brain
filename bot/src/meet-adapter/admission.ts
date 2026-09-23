@@ -19,15 +19,19 @@
  */
 import type { MeetSnapshot } from "./types.ts";
 
-export type AdmissionState = "admitted" | "denied" | "captcha" | "waiting";
+type AdmissionState = "admitted" | "denied" | "captcha" | "waiting";
 
 export interface AdmissionVerdict {
   readonly state: AdmissionState;
-  /** Человекочитаемая причина — она уходит в лог и в уведомление владельцу. */
+  /**
+  Человекочитаемая причина — она уходит в лог и в уведомление владельцу.
+  */
   readonly reason: string;
 }
 
-/** Прямой отказ живого человека. Его не отменяет ничто, включая капчу. */
+/**
+Прямой отказ живого человека. Его не отменяет ничто, включая капчу.
+*/
 const HOST_DENIAL_PHRASES = [
   "denied your request",
   "your request to join was denied",
@@ -39,7 +43,9 @@ const HOST_DENIAL_PHRASES = [
   "no one responded to your request",
 ] as const;
 
-/** Страница ошибки: войти некуда, ждать нечего. */
+/**
+Страница ошибки: войти некуда, ждать нечего.
+*/
 const ERROR_PAGE_PHRASES = [
   "check your meeting code",
   "meeting not found",
@@ -54,7 +60,9 @@ const ERROR_PAGE_PHRASES = [
   "you can't join this video call",
 ] as const;
 
-/** Комната ожидания: дверь ещё не открыли и ещё не закрыли. */
+/**
+Комната ожидания: дверь ещё не открыли и ещё не закрыли.
+*/
 const WAITING_PHRASES = [
   "asking to be let in",
   "you'll join the call when someone lets you",
@@ -70,12 +78,7 @@ const WAITING_PHRASES = [
  * типографским апострофом (’), а любой список фраз в коде — прямым.
  */
 export function normalizeMeetText(text: string): string {
-  return text
-    .replaceAll("’", "'")
-    .replaceAll("ʼ", "'")
-    .toLowerCase()
-    .replaceAll(/\s+/gu, " ")
-    .trim();
+  return text.replaceAll(/[’ʼ]/g, "'").toLowerCase().replaceAll(/\s+/gu, " ").trim();
 }
 
 function firstMatch(text: string, phrases: readonly string[]): string | null {

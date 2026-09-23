@@ -28,8 +28,68 @@ export class AloneTimer {
     return nowMs - this.#since >= this.#thresholdMs;
   }
 
-  /** Сколько миллисекунд бот уже один — для лога и уведомления владельцу. */
+  /**
+  Сколько миллисекунд бот уже один — для лога и уведомления владельцу.
+  */
   aloneForMs(nowMs: number): number {
     return this.#since === null ? 0 : nowMs - this.#since;
   }
+}
+
+export interface AloneWatchOptions {
+  /**
+  Тристатный опрос: `true` — один, `false` — не один, `null` — сигнала нет.
+  */
+  readonly probe: () => Promise<boolean | null>;
+  /**
+  Что делать, когда порог выдержан. В боте это `leave`.
+  */
+  readonly onLeave: () => Promise<void>;
+  readonly thresholdMs?: number;
+  readonly pollMs?: number;
+  readonly now?: () => number;
+  readonly sleep?: (ms: number) => Promise<void>;
+  readonly log?: (message: string) => void;
+  /**
+  Внешний выключатель: встреча кончилась по другой причине — сторож уходит.
+  */
+  readonly stopped?: () => boolean;
+}
+
+const DEFAULT_ALONE_POLL_MS = 5000;
+
+/**
+ * Сторож одиночества: опрашивает звонок и выходит, когда бот пробыл один дольше порога.
+ * Часы и ожидание — параметры, поэтому правило проверяется тестом за миллисекунды,
+ * а не двумя минутами реального ожидания.
+ *
+ * Возвращает `true`, если выход состоялся.
+ */
+// eslint-disable-next-line unicorn/consistent-boolean-name -- имя описывает действие сторожа, не предикат
+export async function watchAlone(options: AloneWatchOptions): Promise<boolean> {
+  const thresholdMs = options.thresholdMs ?? ALONE_TIMEOUT_MS;
+  const pollMs = options.pollMs ?? DEFAULT_ALONE_POLL_MS;
+  const now = options.now ?? ((): number => Date.now());
+  const wait =
+    options.sleep ??
+    (async (ms: number): Promise<void> =>
+      new Promise((resolve) => {
+        setTimeout(resolve, ms);
+      }));
+  const log = options.log ?? ((): void => undefined);
+  const timer = new AloneTimer(thresholdMs);
+
+  while (options.stopped?.() !== true) {
+    const alone = await options.probe();
+
+    if (timer.observe(alone, now())) {
+      log(`один в звонке дольше ${String(thresholdMs)} мс — выходим`);
+      await options.onLeave();
+      return true;
+    }
+
+    await wait(pollMs);
+  }
+
+  return false;
 }

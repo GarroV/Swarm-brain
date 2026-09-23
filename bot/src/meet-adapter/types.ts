@@ -18,12 +18,18 @@ export interface PlatformAdapter {
   leave(): Promise<void>;
 }
 
-/** Плитка участника: `[data-participant-id]` в вёрстке Meet. */
+/**
+Плитка участника: `[data-participant-id]` в вёрстке Meet.
+*/
 export interface MeetTile {
   readonly id: string;
-  /** Имя из плитки; `null` — плитка есть, имя не прочиталось. */
+  /**
+  Имя из плитки; `null` — плитка есть, имя не прочиталось.
+  */
   readonly name: string | null;
-  /** Наша собственная плитка (маркер `[data-self-name]`). */
+  /**
+  Наша собственная плитка (маркер `[data-self-name]`).
+  */
   readonly self: boolean;
   /**
    * Уровень звука из семантического атрибута `data-audio-level`. `null` значит
@@ -33,15 +39,25 @@ export interface MeetTile {
 }
 
 export interface MeetSnapshot {
-  /** Видимый текст страницы: нормализованный (нижний регистр, прямые апострофы) и урезанный. */
+  /**
+  Видимый текст страницы: нормализованный (нижний регистр, прямые апострофы) и урезанный.
+  */
   readonly text: string;
-  /** Поле ввода имени — признак лобби гостя. */
+  /**
+  Поле ввода имени — признак лобби гостя.
+  */
   readonly hasNameInput: boolean;
-  /** Кнопка входа («Ask to join» / «Join now»). */
+  /**
+  Кнопка входа («Ask to join» / «Join now»).
+  */
   readonly hasJoinCta: boolean;
-  /** Маркер собственной плитки `[data-self-name]`: в лобби его нет. */
+  /**
+  Маркер собственной плитки `[data-self-name]`: в лобби его нет.
+  */
   readonly hasSelfTile: boolean;
-  /** Кнопка показа экрана — есть только внутри звонка. */
+  /**
+  Кнопка показа экрана — есть только внутри звонка.
+  */
   readonly hasPresentControl: boolean;
   /**
    * ЖИВАЯ капча: видимый iframe reCAPTCHA размером с задачу. Невидимый фрейм грузится на
@@ -49,6 +65,8 @@ export interface MeetSnapshot {
    */
   readonly captchaChallenge: boolean;
   readonly tiles: readonly MeetTile[];
-  /** Число строк в панели участников, если панель открыта. */
+  /**
+  Число строк в панели участников, если панель открыта.
+  */
   readonly panelParticipantCount: number | null;
 }
