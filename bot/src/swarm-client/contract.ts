@@ -16,7 +16,7 @@
 /**
  * Как клиент увидел встречу. Бот ходит с `calendar` (событие из `meeting-current`).
  */
-export type IdentityKind = "calendar" | "room" | "manual";
+type IdentityKind = "calendar" | "room" | "manual";
 
 /**
  * Ответ арбитража: транскрибируем мы или уже пишет кто-то полнее.
@@ -26,9 +26,9 @@ export type ClaimDecision = "transcribe" | "defer";
 /**
  * Площадки, ссылку на которые сервер узнаёт в лицо. Неизвестный хост — `null`, а не догадка.
  */
-export type ConferencePlatform = "meet" | "kontur" | "zoom";
+type ConferencePlatform = "meet" | "kontur" | "zoom";
 
-export interface Attendee {
+interface Attendee {
   readonly name?: string | null;
   readonly email?: string | null;
 }
@@ -36,7 +36,7 @@ export interface Attendee {
 /**
  * Встреча, которую сервер считает идущей сейчас.
  */
-export interface CurrentMeeting {
+interface CurrentMeeting {
   readonly identity_kind: string;
   readonly identity_key: string;
   readonly title: string | null;
@@ -96,14 +96,6 @@ export interface SpeakerSpan {
   readonly name: string;
 }
 
-/**
- * Часть дорожки: имя поля в форме (`sys_0`, `sys_1`, …) и её сдвиг от начала записи в секундах.
- */
-export interface PartManifestEntry {
-  readonly name: string;
-  readonly offset: number;
-}
-
 export interface IngestResponse {
   readonly ok: boolean;
   readonly meeting_id: string;
@@ -125,11 +117,6 @@ export interface MeetingStatusItem {
   readonly id: string;
   readonly summary_status: string | null;
   readonly status: string | null;
-}
-
-export interface MeetingStatusResponse {
-  readonly ok: boolean;
-  readonly statuses: readonly MeetingStatusItem[];
 }
 
 /**

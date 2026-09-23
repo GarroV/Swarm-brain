@@ -12,7 +12,7 @@
  */
 import { isTransient, SwarmHttpError } from "./errors.ts";
 
-export interface RetryAttemptInfo {
+interface RetryAttemptInfo {
   /**
    * Номер неудавшейся попытки, начиная с 1.
    */

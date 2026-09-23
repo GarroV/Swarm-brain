@@ -14,7 +14,7 @@ import type { UploadQueue } from "./queue.ts";
 /**
  * Контракт блока для оркестратора (`docs/furca/blocks/swarm-client.md`).
  */
-export interface RecordingSessionContract {
+interface RecordingSessionContract {
   claim(): Promise<ClaimDecision>;
   pushAudioPart(part: Blob, offset: number): Promise<void>;
   finish(timeline: readonly SpeakerSpan[]): Promise<void>;

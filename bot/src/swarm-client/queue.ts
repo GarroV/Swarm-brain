@@ -58,7 +58,7 @@ export interface QueueEntry {
 export type QueueEventKind =
   "staged" | "sealed" | "uploaded" | "retry" | "dead-letter" | "released" | "expired";
 
-export interface QueueEvent {
+interface QueueEvent {
   readonly kind: QueueEventKind;
   readonly meetingId: string;
   readonly detail?: string;
@@ -229,12 +229,6 @@ export class UploadQueue {
       uploadedIds.push(entry.meetingId);
       return;
     }
-    if (entry.attempts >= this.maxAttempts) {
-      await this.moveToDeadLetter(entry.meetingId, "попытки исчерпаны");
-      result.deadLettered.push(entry.meetingId);
-      return;
-    }
-
     try {
       await this.uploadEntry(entry);
       await this.writeEntry({ ...entry, uploaded: true });
@@ -279,14 +273,6 @@ export class UploadQueue {
       this.emit("released", id);
     }
     return released;
-  }
-
-  /**
-   * Сколько частей уже лежит на диске у этой встречи.
-   */
-  async partCount(meetingId: string): Promise<number> {
-    const entry = await this.readEntry(this.dir(meetingId));
-    return entry?.parts.length ?? 0;
   }
 
   /**

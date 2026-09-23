@@ -42,7 +42,9 @@ describe("meeting-ingest", () => {
   });
 
   it("предел части — тот же, на который клиент проверяет её при укладке", () => {
-    expect(ingest).toContain(`const OPENAI_AUDIO_MAX_BYTES = ${String(INGEST_PART_MAX_BYTES / 1024 / 1024)} * 1024 * 1024`);
+    expect(ingest).toContain(
+      `const OPENAI_AUDIO_MAX_BYTES = ${String(INGEST_PART_MAX_BYTES / 1024 / 1024)} * 1024 * 1024`,
+    );
   });
 
   it("аудио льёт только держатель права транскрибации", () => {
@@ -104,9 +106,9 @@ describe("таймлайн говорящих", () => {
     // Приём `speakers` делает соседний блок (ingest-speakers, T030). Пока поля нет —
     // проверять нечего; как только появится, оно обязано читаться из формы как
     // `speakers`, иначе таймлайн уедет в пустоту и никто этого не заметит.
-    const mentionsSpeakers = ingest.includes("speakers");
-    expect(mentionsSpeakers ? ingest.includes(`formData.get("${INGEST_FIELD.speakers}")`) : true).toBe(
-      true,
-    );
+    const hasSpeakersField = ingest.includes("speakers");
+    expect(
+      hasSpeakersField ? ingest.includes(`formData.get("${INGEST_FIELD.speakers}")`) : true,
+    ).toBe(true);
   });
 });

@@ -35,6 +35,20 @@ describe("backoffMs", () => {
 });
 
 describe("withRetry", () => {
+  it("без подменённого сна ждёт по-настоящему — и всё равно доводит дело до конца", async () => {
+    let calls = 0;
+    const operation = (): Promise<string> => {
+      calls += 1;
+      if (calls === 1) throw new SwarmHttpError(503, "unavailable");
+      return Promise.resolve("ok");
+    };
+
+    await expect(withRetry(operation, { attempts: 2, baseMs: 1, maxBackoffMs: 1 })).resolves.toBe(
+      "ok",
+    );
+    expect(calls).toBe(2);
+  });
+
   it("успех с первой попытки не спит вовсе", async () => {
     const h = harness();
     const operation = vi.fn((): Promise<string> => Promise.resolve("ok"));
