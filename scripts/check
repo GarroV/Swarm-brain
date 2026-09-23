@@ -116,7 +116,12 @@ if [[ "$scope" == "all" || "$scope" == "server" ]]; then
       # каталог, и отчёт достаётся тому, кто закончил последним. Поймано 17.09.2026 на
       # приёмке первого блока: покрытие «выросло» до 99.77%, потому что в отчёте осталось
       # 6 файлов вместо 188 — прогон был зелёным и означал не то, что показывал.
+      # set -e обязателен: без него код возврата bash -c берётся от ПОСЛЕДНЕЙ команды
+      # (deno coverage), а падение deno test теряется. Поймано 23.09.2026 порчей на
+      # приёмке блока ingest-speakers: два теста красные, роль «сервер · тесты» ✔,
+      # итог «ЗЕЛЁНЫЙ», код возврата 0.
       run "сервер · тесты" bash -c '
+        set -e
         rm -rf .coverage-server
         deno test --allow-all --coverage=.coverage-server --junit-path=reports/check-server.xml supabase/functions
         deno coverage .coverage-server --lcov --output=reports/lcov-server.info'
