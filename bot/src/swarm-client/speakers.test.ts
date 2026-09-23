@@ -124,7 +124,10 @@ describe("SpeakerTimelineCollector", () => {
     const spans = await collector.stop();
 
     expect(spans.map((s) => s.name)).toEqual(["Вера", "Пётр", "Пётр"]);
-    expect(spans[0]?.start).toBe(0);
+    // Первый опрос случается не в математический ноль, а через миг после старта, и под
+    // нагрузкой этот миг растёт. Утверждение здесь — «таймлайн начинается с начала
+    // записи, а не позже», а не «ровно 0»: точное равенство делало прогон капризным.
+    expect(spans[0]?.start).toBeLessThan(0.5);
     for (const span of spans) expect(span.end).toBeGreaterThan(span.start);
   });
 
