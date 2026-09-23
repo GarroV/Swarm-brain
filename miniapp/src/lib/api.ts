@@ -1630,6 +1630,8 @@ export async function updateSprintCycle(
       start_date: string;
       end_date: string;
       summary: string | null;
+      /** Перенос спринта в другое пространство (#397); `null` — «Без пространства». */
+      tab_id: string | null;
     }
   >,
 ): Promise<SprintCycle> {

@@ -92,6 +92,7 @@ const SPRINT_SECTION = "__sprint__"; // канбан спринта — одна
 const CLOSED = new Set(["done", "cancelled"]);
 const DEFAULT_LENGTH_DAYS = 13; // двухнедельный спринт: старт + 13 = ровно 14 дней
 const ARCHIVE_NONE = "__archive__"; // «архив не выбран»: у ui/select пустая строка не значение
+const SPACE_NONE = "__no_space__"; // «Без пространства» — законное значение, а не пустота
 
 function iso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${
@@ -982,6 +983,53 @@ export function SprintsScreen() {
                 >
                   ✎
                 </button>
+              )}
+              {/* Перенос спринта в другое пространство (#397). Только в режиме правки: это
+                  структурное действие, а не ежедневное. Принятый спринт не двигаем — он
+                  слепок периода, и переезд задним числом переписал бы чужую историю. */}
+              {isAdmin && editMode && !accepted && renaming === null &&
+                spaces.length > 0 && (
+                <Select
+                  value={detail.tab_id ?? SPACE_NONE}
+                  onValueChange={async (v) => {
+                    const next = String(v) === SPACE_NONE ? null : String(v);
+                    if (next === (detail.tab_id ?? null)) return;
+                    setErr(null);
+                    try {
+                      await updateSprintCycle(detail.id, { tab_id: next });
+                      setSpace(next);
+                      setSpacePicked(true);
+                      await load();
+                    } catch (e) {
+                      setErr(
+                        e instanceof Error ? e.message : dt(
+                          "Не удалось перенести спринт",
+                          "Could not move the sprint",
+                        ),
+                      );
+                    }
+                  }}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    aria-label={dt("Пространство спринта", "Sprint space")}
+                    className="h-7 shrink-0 rounded-full border-line bg-surface px-2.5 text-[11px] font-semibold text-ink-soft dark:bg-surface dark:backdrop-blur-sm"
+                  >
+                    <SelectValue>
+                      {(v) =>
+                        spaces.find((sp) => sp.id === String(v))?.name ??
+                          dt("Без пространства", "No space")}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {spaces.map((sp) => (
+                      <SelectItem key={sp.id} value={sp.id}>{sp.name}</SelectItem>
+                    ))}
+                    <SelectItem value={SPACE_NONE}>
+                      {dt("Без пространства", "No space")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               )}
               <span className="text-xs text-ink-soft">
                 {fmtRange(detail.start_date, detail.end_date)}
