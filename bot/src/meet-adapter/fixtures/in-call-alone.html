@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Meet - in call (alone)</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: sans-serif;
+        background: #202124;
+        color: #ffffff;
+      }
+      .tiles {
+        display: flex;
+        gap: 8px;
+        padding: 16px;
+      }
+      .tile {
+        width: 160px;
+        height: 120px;
+        background: #3c4043;
+      }
+      .panel {
+        padding: 16px;
+      }
+      .toolbar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        gap: 8px;
+        padding: 12px;
+        background: #202124;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="tiles">
+      <div class="tile" data-participant-id="p-self" data-self-name="scriba">
+        <span class="name">scriba</span>
+      </div>
+    </section>
+
+    <div role="list" class="panel">
+      <div role="listitem">scriba</div>
+    </div>
+
+    <div class="toolbar" id="toolbar">
+      <button aria-label="Leave call"><span>Leave call</span></button>
+      <button aria-label="Present now"><span>Present now</span></button>
+      <button aria-label="People"><span>People</span></button>
+    </div>
+
+    <script>
+      (function () {
+        var toolbar = document.getElementById("toolbar");
+        var hideTimer = null;
+
+        function scheduleHide() {
+          if (hideTimer !== null) {
+            clearTimeout(hideTimer);
+          }
+          hideTimer = setTimeout(function () {
+            toolbar.style.visibility = "hidden";
+          }, 1500);
+        }
+
+        document.addEventListener("mousemove", function () {
+          toolbar.style.visibility = "visible";
+          scheduleHide();
+        });
+
+        scheduleHide();
+      })();
+    </script>
+  </body>
+</html>
