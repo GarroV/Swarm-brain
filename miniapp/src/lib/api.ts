@@ -1387,6 +1387,8 @@ function mockItemBase(): Omit<
 > {
   return {
     due_date: null,
+    comment_count: 0,
+    link_count: 0,
     check_status: null,
     check_note: null,
     check_at: null,
@@ -1518,6 +1520,10 @@ function mockItemsOf(cycleId: string): SprintCycleItem[] {
       project_id: t.project_id,
       project: projectName(t.project_id),
       due_date: t.due_date,
+      // Счётчики в моках выдуманы детерминированно: без них значки 💬/🔗 не увидеть в
+      // локальном прогоне, а именно их и надо смотреть глазами.
+      comment_count: t.id.length % 3,
+      link_count: t.id.length % 2,
       completed_at: t.status === "done" ? new Date().toISOString() : null,
       frozen: row.frozen ?? false,
       carry_count: row.carry_count ?? 0,
@@ -1624,6 +1630,8 @@ export async function updateSprintCycle(
       start_date: string;
       end_date: string;
       summary: string | null;
+      /** Перенос спринта в другое пространство (#397); `null` — «Без пространства». */
+      tab_id: string | null;
     }
   >,
 ): Promise<SprintCycle> {

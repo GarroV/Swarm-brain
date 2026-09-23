@@ -143,11 +143,22 @@ export async function updateCycle(
   id: string,
   fields: Partial<CycleInput> & { summary?: string | null },
   groupId: string,
-): Promise<SprintCycle | null> {
-  const { data } = await supabase.from("sprint_cycles")
+): Promise<SprintCycle | null | "tab_busy" | "tab_missing"> {
+  // Пространство подтверждаем в ЭТОМ воркспейсе (#397): без проверки чужой `tab_id` увёл бы
+  // спринт из поля зрения команды — строка осталась бы в базе, а с экрана пропала.
+  if (typeof fields.tab_id === "string") {
+    const { data: tab } = await supabase.from("sprints")
+      .select("id").eq("id", fields.tab_id).eq("group_id", groupId)
+      .is("archived_at", null).maybeSingle();
+    if (!tab) return "tab_missing";
+  }
+  const { data, error } = await supabase.from("sprint_cycles")
     .update({ ...fields, updated_at: new Date().toISOString() })
     .eq("id", id).eq("group_id", groupId)
     .select().maybeSingle();
+  // 23505 — частичный уникальный индекс «один незакрытый спринт на пространство». Отличаем
+  // его от прочих сбоев: это не поломка, а занятое место, и человеку надо сказать именно так.
+  if (error?.code === "23505") return "tab_busy";
   return (data as SprintCycle | null) ?? null;
 }
 
