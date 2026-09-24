@@ -24,6 +24,8 @@ export type ToolbarState = {
   onNew: () => void;
   onNewLabel: () => void;
   onEditLabel: (l: TaskLabel) => void;
+  calView: boolean;
+  setCalView: (on: boolean) => void;
 };
 
 const LENSES: Array<[Exclude<Lens, "staff">, string, string]> = [
@@ -150,6 +152,10 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
           </div>
         }
       />
+      {/* Календарный вид — обзор загрузки команды по срокам, у стенда он только у админа. */}
+      {admin && (
+        <ToolbarButton on={s.calView} onClick={() => s.setCalView(!s.calView)}>{dt("Календарный вид", "Calendar view")}</ToolbarButton>
+      )}
       <Menu label={nMore ? `${dt("Ещё", "More")} · ${nMore}` : dt("Ещё", "More")} on={nMore > 0} items={moreItems} />
 
       <div className="ml-auto flex items-center gap-2.5">

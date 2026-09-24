@@ -13,6 +13,9 @@ import { LabelEditor } from "@/components/tasks/LabelEditor";
 import { useReminderTasks } from "@/components/tasks/useReminderTasks";
 import { COLS, TaskTableRow } from "./TaskTableRow";
 import { TasksToolbar, type ToolbarState } from "./TasksToolbar";
+import { TaskCalendar, WhatsNextBlock } from "./TaskCalendar";
+import { whatsNext } from "@/lib/taskCalendar";
+import { matchesLens } from "@/lib/smartLists";
 
 // Экран «Задачи» нового вида (витрина, решение владельца 24.09.2026: «прям полную переделку
 // ебаш на стенд»). Образец — docs/redesign/stand/js/screens-tasks.js: одна панель фильтров,
@@ -29,6 +32,7 @@ export function TasksTable() {
   const [assignee, setAssignee] = useState<number | null>(null);
   const [market, setMarket] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [calView, setCalView] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [markets, setMarkets] = useState<string[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -102,11 +106,21 @@ export function TasksTable() {
     onNew: () => setModalTask("new"),
     onNewLabel: () => setLabelEditor("new"),
     onEditLabel: (l) => setLabelEditor(l),
+    calView: calView && !!r.me?.is_admin,
+    setCalView,
   };
+  // Под коротким списком — что дальше по сроку и что недавно закрыто (в охвате линзы).
+  const next = useMemo(
+    () => whatsNext((r.tasks ?? []).filter((t) => matchesLens(t, r.effLens, r.me)), list),
+    [r.tasks, r.effLens, r.me, list],
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <TasksToolbar r={r} s={toolbar} />
+      {toolbar.calView ? (
+        <TaskCalendar tasks={list} range={r.range} now={r.now} users={users} onOpen={setModalTask} />
+      ) : (
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="min-w-[960px]">
           <div
@@ -186,8 +200,10 @@ export function TasksTable() {
               </section>
             );
           })}
+          {!r.loading && <WhatsNextBlock next={next} onOpen={setModalTask} />}
         </div>
       </div>
+      )}
 
       <TaskModal
         task={modalTask !== null && modalTask !== "new" ? modalTask : undefined}
