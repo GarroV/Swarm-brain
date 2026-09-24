@@ -16,27 +16,26 @@ import { useDt } from "@/components/roy/nav";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 
 // «Настройки» десктопа по стенду (docs/redesign/stand/js/screens-system.js → screenSettings):
-// вкладки и панель со строками «поле — значение — действие». Содержимое — прежние секции
-// SettingsScreen, разложенные по вкладкам; действие строки раскрывает секцию под ней.
-// Вкладок стенда «Доступы», «Списки», «Роли задач» здесь нет: токены живут в карточках
+// одна страница, разделы подряд, в каждом строки «поле — значение — действие». Содержимое —
+// прежние секции SettingsScreen, разложенные по разделам; действие строки раскрывает секцию под ней.
+// Разделов стенда «Доступы», «Списки», «Роли задач» здесь нет: токены живут в карточках
 // интеграций, списки задач правятся на доске задач, ролей задач в продукте нет. Строк «Язык»
 // и «Тема» тоже нет — язык задаёт демо-режим, тема следует системе.
 
 type Tab = "profile" | "integr" | "notif" | "more";
-const TABS: [Tab, string, string][] = [
+const SECTIONS: [Tab, string, string][] = [
   ["profile", "Профиль", "Profile"], ["integr", "Интеграции", "Integrations"],
   ["notif", "Дайджест", "Digest"], ["more", "Файлы и фидбек", "Files & feedback"],
 ];
 const ROLE_LABEL: Record<string, string> = { bd: "BD", marketing: "Marketing", rnd: "R&D" };
 
-/** Маршрут «Настройки»: на десктопе — вкладки по стенду, на мобайле — прежний экран. */
+/** Маршрут «Настройки»: на десктопе — одна страница по стенду, на мобайле — прежний экран. */
 export function SettingsRoute() {
   return useIsDesktop() ? <SettingsDesk /> : <SettingsScreen />;
 }
 
 function SettingsDesk() {
   const dt = useDt();
-  const [tab, setTab] = useState<Tab>("profile");
   const [me, setMe] = useState<Me | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -44,35 +43,23 @@ function SettingsDesk() {
     fetchMe().then(setMe).catch((e) => { console.error("[SettingsDesk] me", e); setFailed(true); });
   }, []);
 
-  const title = TABS.find(([id]) => id === tab)!;
+  // Одна страница, разделы подряд (решение владельца 2026-09-25: «настройки давай сделаем
+  // ванпейджер. не будем разбивать») — вкладки прятали половину настроек за кликом.
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div role="tablist" className="flex shrink-0 items-end gap-5 overflow-x-auto border-b border-line px-5" style={{ height: 40 }}>
-        {TABS.map(([id, ru, en]) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-            className={cn(
-              "-mb-px whitespace-nowrap border-b-2 pb-2 font-medium transition-colors",
-              tab === id ? "border-primary font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink",
-            )}
-            style={{ fontSize: 13 }}>
-            {dt(ru, en)}
-          </button>
-        ))}
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto p-4">
-        <section className="rounded-[12px] border border-line bg-surface px-4 py-4">
-          <h3 className="font-semibold text-ink" style={{ fontSize: 15 }}>{dt(title[1], title[2])}</h3>
-          <p className="mb-3 mt-0.5 text-ink-mute" style={{ fontSize: 12.5 }}>
-            {dt("Настройки применяются к вашему аккаунту", "Settings apply to your account")}
+    <div className="h-full overflow-auto">
+      <div className="flex flex-col gap-4 p-4" style={{ maxWidth: 1080 }}>
+        {failed && (
+          <p className="text-ink-soft" style={{ fontSize: 13 }}>
+            {dt("Профиль не загрузился — обновите страницу", "The profile failed to load — reload the page")}
           </p>
-          {failed && (
-            <p className="text-ink-soft" style={{ fontSize: 13 }}>
-              {dt("Профиль не загрузился — обновите страницу", "The profile failed to load — reload the page")}
-            </p>
-          )}
-          {!failed && !me && <div className="roy-shim" style={{ height: 160, borderRadius: 10 }} />}
-          {me && <TabBody tab={tab} me={me} onProfileSaved={(patch) => setMe({ ...me, ...patch })} />}
-        </section>
+        )}
+        {!failed && !me && <div className="roy-shim" style={{ height: 160, borderRadius: 10 }} />}
+        {me && SECTIONS.map(([id, ru, en]) => (
+          <section key={id} aria-labelledby={`settings-${id}`} className="rounded-[12px] border border-line bg-surface px-4 py-4">
+            <h3 id={`settings-${id}`} className="mb-3 font-semibold text-ink" style={{ fontSize: 15 }}>{dt(ru, en)}</h3>
+            <TabBody tab={id} me={me} onProfileSaved={(patch) => setMe({ ...me, ...patch })} />
+          </section>
+        ))}
       </div>
     </div>
   );
