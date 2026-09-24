@@ -30,7 +30,7 @@ export function TeamScreen() {
           <p className="py-8 text-center text-sm text-ink-soft">Нет участников</p>
         ) : (
           users.map((u) => (
-            <div key={u.telegram_id} className="flex items-center gap-3 rounded-[10px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
+            <div key={u.telegram_id} className="flex items-center gap-3 rounded-[10px] border border-line bg-surface px-3 py-2.5">
               <Avatar size={38}>{initials(u.name)}</Avatar>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold text-ink" style={{ fontSize: 13.5 }}>

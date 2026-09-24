@@ -69,7 +69,7 @@ export function AgentReviewQueue({ onOpen }: Props) {
           const card = (
             <button
               onClick={isDesktop ? () => onOpen(m.id) : undefined}
-              className={`block w-full text-left p-3 rounded-lg border border-line bg-card dark:backdrop-blur-sm transition-colors hover:bg-surface-2 ${isDesktop ? "pr-[84px]" : ""}`}
+              className={`block w-full text-left p-3 rounded-lg border border-line bg-card transition-colors hover:bg-surface-2 ${isDesktop ? "pr-[84px]" : ""}`}
             >
               <p className="text-sm font-medium leading-snug line-clamp-1 text-ink">{m.title ?? "Встреча без названия"}</p>
               <p className="text-xs text-ink-soft mt-0.5">

@@ -33,7 +33,7 @@ export const ROY_TYPE = {
 
 // ── Card ───────────────────────────────────────────────────────────────────
 export function RoyCard({ className, ...props }: ComponentPropsWithoutRef<"div">) {
-  // dark:backdrop-blur — frosted-стекло поверх галактики (поверхности translucent в .dark);
+  // — frosted-стекло поверх галактики (поверхности translucent в .dark);
   // щели между карточками остаются прозрачными → галактика видна между панелями.
   return <div className={cn("bg-surface border border-line rounded-[10px] shadow-[0_1px_1px_rgba(27,32,40,.03)]", className)} {...props} />;
 }
@@ -332,7 +332,9 @@ export function RoyHeader({ title, right, sub, bell = true }: { title: ReactNode
   const isDesktop = useIsDesktop();
   const showBell = bell && !isDesktop;
   return (
-    <div className="px-5 pt-2 pb-3">
+    // relative z-30: окна шапки (колокольчик, меню) — поверх контента экрана, даже если там
+    // встретится свой слой отрисовки (transform, filter, backdrop-filter).
+    <div className="relative z-30 px-5 pt-2 pb-3">
       <div className="flex items-center justify-between gap-2.5">
         {/* Единый масштаб заголовка экрана — ROY_TYPE.pageTitle (см. канон выше). */}
         <h1 className="leading-[1.1]" style={ROY_TYPE.pageTitle}>
@@ -610,8 +612,9 @@ export function FAB({ onClick, className, "aria-label": ariaLabel = "Созда�
 
 // ── NavHeader (шапка push-экрана с «Назад») ──────────────────────────────────
 export function NavHeader({ onBack, title, right, bell = true }: { onBack: () => void; title?: ReactNode; right?: ReactNode; bell?: boolean }) {
+  // relative z-30 — как у RoyHeader: окно колокольчика не должно уходить под карточки экрана.
   return (
-    <div className="shrink-0 flex items-center gap-2.5 bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg" style={{ padding: "6px 14px 10px" }}>
+    <div className="relative z-30 shrink-0 flex items-center gap-2.5 bg-background dark:bg-[var(--surface)]" style={{ padding: "6px 14px 10px" }}>
       <button
         type="button"
         onClick={onBack}

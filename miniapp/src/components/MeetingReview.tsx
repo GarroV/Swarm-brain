@@ -130,7 +130,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
 
   const canRename = !!meeting && meeting.status !== "in_base";
   const header = (
-    <div className="flex items-center gap-2 px-4 pt-4 pb-2 border-b border-line shrink-0 bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg">
+    <div className="flex items-center gap-2 px-4 pt-4 pb-2 border-b border-line shrink-0 bg-background dark:bg-[var(--surface)]">
       {/* Тач-цели этого экрана были 17–20px при норме 44 (аудит мобилки 2026-08-24). Иконки
           оставлены прежнего размера — растёт только зона нажатия. */}
       <button onClick={onClose} aria-label="Назад" className="-ml-2 inline-flex items-center justify-center text-ink-soft transition-colors hover:text-ink" style={{ width: 40, height: 40 }}>
@@ -271,7 +271,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
       </div>
 
       {!published && notesReady && !editing && (
-        <div className="border-t border-line px-4 py-3 space-y-2.5 shrink-0 bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg">
+        <div className="border-t border-line px-4 py-3 space-y-2.5 shrink-0 bg-background dark:bg-[var(--surface)]">
           <Segmented
             items={[{ id: "workspace", label: "В команду" }, { id: "personal", label: "В личное" }]}
             value={base}

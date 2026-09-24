@@ -116,7 +116,7 @@ export function RecordDetail({ id }: { id: string }) {
         {err && <div className="py-8 text-center text-sm text-ink-soft">Не удалось загрузить запись.</div>}
         {e && <RecordBody entry={e} />}
       </div>
-      <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
+      <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
         <button
           type="button"
           onClick={handleCreateTask}

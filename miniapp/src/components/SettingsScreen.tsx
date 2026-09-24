@@ -765,7 +765,7 @@ export function SettingsScreen() {
           <>
             <ProfileHeader me={me} open={editing} onToggle={() => setEditing((v) => !v)} />
             {editing && (
-              <div className="rounded-[10px] border border-accent-line bg-surface px-3 py-3 dark:backdrop-blur-sm">
+              <div className="rounded-[10px] border border-accent-line bg-surface px-3 py-3">
                 <ProfileSection me={me} />
               </div>
             )}

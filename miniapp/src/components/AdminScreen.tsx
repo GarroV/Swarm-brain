@@ -55,7 +55,7 @@ function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => void })
   return (
     <div className="space-y-2">
       {creating ? (
-        <div className="space-y-2 rounded-[10px] border border-line bg-surface-2 p-3 dark:backdrop-blur-sm">
+        <div className="space-y-2 rounded-[10px] border border-line bg-surface-2 p-3">
           <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Название (напр. LATAM)" className={fieldCls} autoFocus />
           <input value={newId} onChange={(e) => setNewId(e.target.value)} placeholder="id-слаг (напр. latam)" className={`${fieldCls} font-mono`} />
           {err && <p className="font-semibold" style={{ fontSize: 12, color: "var(--pri-high)" }}>{err}</p>}
@@ -73,7 +73,7 @@ function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => void })
         <button
           key={ws.id}
           onClick={() => onSelect(ws)}
-          className="flex w-full items-center justify-between rounded-[10px] border border-line bg-surface px-4 py-3 text-left transition-colors hover:bg-surface-2 active:scale-[0.99] dark:backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          className="flex w-full items-center justify-between rounded-[10px] border border-line bg-surface px-4 py-3 text-left transition-colors hover:bg-surface-2 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
         >
           <div className="min-w-0">
             <p className="font-bold text-ink" style={{ fontSize: 15 }}>{ws.name}</p>
@@ -210,7 +210,7 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
       ) : (
         <div className="space-y-2">
           {users.map((u) => (
-            <div key={u.telegram_id ?? u.username ?? u.id} className="rounded-[10px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
+            <div key={u.telegram_id ?? u.username ?? u.id} className="rounded-[10px] border border-line bg-surface px-3 py-2.5">
               <div className="flex items-center gap-2">
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-1.5 truncate font-semibold text-ink" style={{ fontSize: 13.5 }}>
@@ -449,7 +449,7 @@ function BroadcastBlock() {
   };
 
   return (
-    <div className="rounded-[10px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
+    <div className="rounded-[10px] border border-line bg-surface px-3 py-2.5">
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between font-semibold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" style={{ fontSize: 13.5 }}>
         <span className="flex items-center gap-2"><RoyIcon name="note" size={15} className="text-ink-soft" /> Рассылка всем</span>
         <RoyIcon name="cright" size={14} className={`text-ink-soft transition-transform ${open ? "rotate-90" : ""}`} />
@@ -479,7 +479,7 @@ function ReviewQueueBlock() {
   const total = (rows ?? []).reduce((n, r) => n + r.count, 0);
 
   return (
-    <div className="rounded-[10px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
+    <div className="rounded-[10px] border border-line bg-surface px-3 py-2.5">
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between font-semibold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" style={{ fontSize: 13.5 }}>
         <span className="flex items-center gap-2"><RoyIcon name="cal" size={15} className="text-ink-soft" /> На вычитке по участникам{rows && total > 0 ? ` · ${total}` : ""}</span>
         <RoyIcon name="cright" size={14} className={`text-ink-soft transition-transform ${open ? "rotate-90" : ""}`} />

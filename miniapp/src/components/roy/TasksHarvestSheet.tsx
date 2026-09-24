@@ -258,7 +258,7 @@ function HarvestRow({ task, users, meId, busy, editing, onStartEdit, onStopEdit,
     <li
       // roy-harvest-row-in отыгрывается ОДИН раз при монтировании: строки приезжают потоком в
       // непредсказуемые моменты, и без собственного движения это читается как мигание списка.
-      className="roy-harvest-row-in rounded-[10px] border border-line bg-surface transition-colors hover:border-line-2 dark:backdrop-blur-lg"
+      className="roy-harvest-row-in rounded-[10px] border border-line bg-surface transition-colors hover:border-line-2"
       style={{ opacity: task._selected ? 1 : 0.55 }}
     >
       <div className="flex items-start gap-2 p-2">

@@ -32,9 +32,9 @@ import {
 // (замечание владельца 09.09.2026 по первому прогону на проде).
 
 const fieldCls =
-  "w-full min-h-9 rounded-[10px] border border-line bg-surface px-2.5 py-1.5 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute dark:backdrop-blur-sm";
+  "w-full min-h-9 rounded-[10px] border border-line bg-surface px-2.5 py-1.5 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute";
 const triggerCls =
-  "w-full min-h-9 h-9 rounded-[10px] border-line bg-surface px-2.5 text-sm text-ink data-[size=default]:h-9 dark:backdrop-blur-sm dark:bg-surface";
+  "w-full min-h-9 h-9 rounded-[10px] border-line bg-surface px-2.5 text-sm text-ink data-[size=default]:h-9 dark:bg-surface";
 
 export function SprintTaskPool(
   { tasks, projects, users, disabled, adding, onAdd, onHide }: {
@@ -114,7 +114,7 @@ export function SprintTaskPool(
   }
 
   return (
-    <div className="flex flex-col min-h-0 w-72 shrink-0 rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
+    <div className="flex flex-col min-h-0 w-72 shrink-0 rounded-2xl border border-line bg-surface-2">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-line">
         <RoyIcon name="task" size={14} strokeWidth={1.9} />
         <span className="text-sm font-bold text-ink">

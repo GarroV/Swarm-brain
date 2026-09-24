@@ -67,7 +67,7 @@ export function TasksScreen({ only }: { only?: View } = {}) {
               className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                 active
                   ? "bg-primary text-white"
-                  : "bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm"
+                  : "bg-surface text-ink-soft border border-line hover:bg-surface-2"
               }`}
             >
               <RoyIcon name={icon} size={14} strokeWidth={1.9} />
