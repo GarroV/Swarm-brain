@@ -911,7 +911,7 @@ _Все три: перевыпуск **убивает старый токен**,
 
 | Переменная | Значение | Назначение |
 |-----------|---------|-----------|
-| `NEXT_PUBLIC_API_URL` | `/api` (прокси) или прямой URL swarm-api | База API; `/api` → same-origin прокси через CF Pages Function (вариант B+) |
+| `NEXT_PUBLIC_API_URL` | `/api` (прокси) | База API; `/api` → same-origin прокси через CF Pages Function (вариант B+). **Прямой URL swarm-api игнорируется** (`src/lib/api.ts`, 24.09.2026): swarm-api пускает по CORS только боевой адрес, и у превью веток, где в переменной остался прямой адрес, падал каждый запрос. Учитывается только относительный путь |
 | `NEXT_PUBLIC_BOT_USERNAME` | напр. `swarm_brain_bot` (без `@`) | Username бота для Telegram Login Widget |
 | `NEXT_PUBLIC_DEV_MODE` | `true` / `false` | `true` — мок-данные без бэкенда (локальная разработка UI) |
 
