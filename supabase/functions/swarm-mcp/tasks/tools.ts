@@ -3,6 +3,8 @@ import { createTask, getTask, listTasks, updateTask, deleteTask } from "../../_s
 import { recurrencePatchFor, resolveRecurrence } from "../../_shared/tasks/recurrence.ts";
 import { validateCommentContent } from "../../_shared/tasks/comments.ts";
 import { canViewTask, taskAccessError } from "../../_shared/tasks/access.ts";
+import { subtaskLinkError } from "../../_shared/tasks/subtasks.ts";
+import type { Task } from "../../_shared/tasks/types.ts";
 import { pickProjectByName, type ProjectNameRow } from "../../_shared/tasks/project-access.ts";
 import { listProjects } from "../../_shared/tasks/projects.ts";
 import { visibleProjectNames } from "../../_shared/tasks/project-access.ts";
@@ -141,6 +143,43 @@ async function matchProject(
 
 // ── Tool implementations (MCP prослойки — резолв + shared engine + форматирование) ──
 
+// ── Подзадачи (#478, #485) ────────────────────────────────────────────────────
+// Родителя проверяем тем же гардом, что любое чтение задачи: чужую личную задачу нельзя ни
+// увидеть, ни подвесить под неё свою — отказ неотличим от «не найдена».
+async function loadParent(parentId: string, userId: number, groupId: string): Promise<Task | string> {
+  const parent = await getTask(parentId);
+  const denied = taskAccessError(parentId, parent, userId, userId === ADMIN_USER_ID, groupId);
+  return denied ?? parent!;
+}
+
+async function hasSubtasks(taskId: string): Promise<boolean> {
+  const { data } = await supabase.from("tasks").select("id")
+    .eq("parent_id", taskId).is("archived_at", null).limit(1);
+  return (data ?? []).length > 0;
+}
+
+/**
+ * Для выдачи get_tasks: названия родителей из той же выдачи и счёт подзадач у родителей.
+ * Считаем только подзадачи, видимые спрашивающему (тот же предикат, что в списках): иначе число
+ * рассказывало бы о чужих личных задачах.
+ */
+async function subtaskContext(tasks: Task[], viewerId: number) {
+  const titleById = new Map(tasks.map((t) => [t.id, t.title]));
+  const ids = tasks.filter((t) => !t.parent_id).map((t) => t.id);
+  const progress = new Map<string, { done: number; total: number }>();
+  if (ids.length) {
+    const { data } = await supabase.from("tasks").select("parent_id, status")
+      .in("parent_id", ids).is("archived_at", null)
+      .or(`is_private.eq.false,owner_id.eq.${viewerId}`);
+    for (const k of (data ?? []) as Array<{ parent_id: string; status: string }>) {
+      const p = progress.get(k.parent_id) ?? { done: 0, total: 0 };
+      const closed = k.status === "done" || k.status === "cancelled";
+      progress.set(k.parent_id, { done: p.done + (closed ? 1 : 0), total: p.total + 1 });
+    }
+  }
+  return { titleById, progress };
+}
+
 export async function toolAddTask(args: {
   title: string;
   description?: string;
@@ -155,6 +194,7 @@ export async function toolAddTask(args: {
   recur_freq?: string | null;
   status?: string;
   confirmed?: boolean;
+  parent_task_id?: string;
   requesting_user_id?: number;
 }): Promise<string> {
   const assignees: string[] = [];
@@ -187,6 +227,22 @@ export async function toolAddTask(args: {
     }
   }
 
+  // Подзадача: живёт в проекте родителя и наследует его срок и приватность — как в вебе
+  // (TaskSubtasks.tsx). Личный родитель с общей подзадачей выставил бы кусок личного на доску.
+  let parent: Task | null = null;
+  if (args.parent_task_id) {
+    if (!groupId || !args.requesting_user_id) return "Ошибка: пользователь не найден в системе.";
+    const loaded = await loadParent(args.parent_task_id, args.requesting_user_id, groupId);
+    if (typeof loaded === "string") return loaded;
+    const err = subtaskLinkError(loaded, null, { groupId, childHasKids: false });
+    if (err) return err;
+    if (args.project_name && project_id !== loaded.project_id) {
+      return "Подзадача живёт в проекте родителя: убери project_name или укажи проект родителя.";
+    }
+    parent = loaded;
+    project_id = loaded.project_id;
+  }
+
   // Смарт-метки: только на личной задаче владельца. Наличие меток делает задачу личной.
   const labelIds = args.labels?.length && args.requesting_user_id
     ? await resolveLabelIds(args.requesting_user_id, args.labels, true)
@@ -194,7 +250,8 @@ export async function toolAddTask(args: {
 
   // Цикличность — тем же хелпером, что в вебе: частота проверяется, число месяца выводится из
   // срока. Без срока считать следующее вхождение не от чего, поэтому отказ, а не тихое NULL.
-  const recur = resolveRecurrence(args.recur_freq, args.due_date ?? null);
+  const dueDate = args.due_date ?? parent?.due_date ?? null;
+  const recur = resolveRecurrence(args.recur_freq, dueDate);
   if (!recur.ok) return `Ошибка: ${recur.error}`;
 
   try {
@@ -204,7 +261,7 @@ export async function toolAddTask(args: {
       assignees,
       assignee_telegram_ids,
       country: args.country ?? null,
-      due_date: args.due_date ?? null,
+      due_date: dueDate,
       task_role: args.task_role ?? null,
       source: args.source,
       // Бэклог доски — это статус "backlog" (колонка «Бэклог» на SprintBoard ловит всё, что не
@@ -220,9 +277,16 @@ export async function toolAddTask(args: {
       confirmed: args.confirmed ?? true,
       created_by_telegram_id: args.requesting_user_id ?? null,
       label_ids: labelIds,
-      is_private: labelIds.length > 0 ? true : undefined,
-      owner_id: labelIds.length > 0 ? (args.requesting_user_id ?? null) : undefined,
+      is_private: labelIds.length > 0 || parent?.is_private ? true : undefined,
+      owner_id: labelIds.length > 0
+        ? (args.requesting_user_id ?? null)
+        : parent?.is_private
+        ? parent.owner_id
+        : undefined,
       project_id,
+      parent_id: parent?.id ?? null,
+      // Подзадача всегда в дереве проекта (как форсит swarm-api); без проекта дерева нет.
+      project_linked: parent ? !!project_id : undefined,
       recur_freq: recur.recur_freq,
       recur_anchor_dom: recur.recur_anchor_dom,
     }, groupId ?? undefined);
@@ -250,6 +314,7 @@ export async function toolUpdateTask(args: {
   labels?: string[];
   project_name?: string;
   recur_freq?: string | null;
+  parent_task_id?: string;
   requesting_user_id: number;
 }): Promise<string> {
   const task = await getTask(args.id);
@@ -331,6 +396,24 @@ export async function toolUpdateTask(args: {
     }
   }
 
+  // Подзадача: пустая строка — отвязать от родителя; id — привязать (правило — subtaskLinkError).
+  if (args.parent_task_id !== undefined) {
+    if (!args.parent_task_id) {
+      fields.parent_id = null;
+    } else {
+      const loaded = await loadParent(args.parent_task_id, args.requesting_user_id, groupId);
+      if (typeof loaded === "string") return loaded;
+      const effProject = "project_id" in fields ? (fields.project_id as string | null) : task.project_id;
+      const err = subtaskLinkError(loaded, { ...task, project_id: effProject }, {
+        groupId,
+        childHasKids: await hasSubtasks(task.id),
+      });
+      if (err) return err;
+      fields.parent_id = loaded.id;
+      if (effProject) fields.project_linked = true;
+    }
+  }
+
   try {
     await updateTask(args.id, fields, { actorTelegramId: args.requesting_user_id });
     return `✅ Задача обновлена.${matchWarning}`;
@@ -397,7 +480,14 @@ export async function toolGetTasks(args: {
 
   if (!tasks.length) return "Задач не найдено.";
 
-  return tasks.map((t) => formatTaskLine(t)).join("\n\n");
+  const { titleById, progress } = await subtaskContext(tasks, args.requesting_user_id);
+  return tasks.map((t) =>
+    formatTaskLine({
+      ...t,
+      parent_title: t.parent_id ? titleById.get(t.parent_id) ?? null : null,
+      subtasks: progress.get(t.id) ?? null,
+    })
+  ).join("\n\n");
 }
 
 // Дерево досок воркспейса (issue #198): без него агент не знал имён проектов и подпроектов и
@@ -569,6 +659,7 @@ export const TASK_TOOL_DEFINITIONS = [
         project_name: { type: "string", description: "Имя проекта или подпроекта доски (Проекты/SprintBoard) — без него задача на доску не попадёт, только в общий список. При неточном совпадении берётся ближайшее по имени; при отсутствии — предупреждение в ответе, задача всё равно создаётся." },
         recur_freq: { type: ["string", "null"], enum: ["daily", "weekly", "monthly", null], description: "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность." },
         status: { type: "string", enum: ["backlog", "open", "in_progress", "done", "cancelled"], description: "Колонка доски, куда положить задачу. По умолчанию open («Открыто»); backlog — колонка «Бэклог»." },
+        parent_task_id: { type: "string", description: "id родительской задачи — создать ПОДЗАДАЧУ. Вложенность одна: родитель — задача верхнего уровня. Подзадача берёт проект, срок (если не задан) и приватность родителя" },
         confirmed: { type: "boolean", description: "По умолчанию true — задача сразу на доске. false кладёт её в очередь «На проверке», которая видна ТОЛЬКО в Telegram-боте (в вебе такой задачи не видно вообще) — используй только если человек прямо попросил очередь." },
       },
       required: ["title", "source"],
@@ -595,6 +686,7 @@ export const TASK_TOOL_DEFINITIONS = [
         },
         project_name: { type: "string", description: "Имя проекта или подпроекта доски. Пустая строка — снять проект (задача уйдёт с доски в общий список)." },
         recur_freq: { type: ["string", "null"], enum: ["daily", "weekly", "monthly", null], description: "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность." },
+        parent_task_id: { type: "string", description: "Сделать подзадачей задачи с этим id (того же проекта, верхнего уровня). Пустая строка — отвязать от родителя" },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
       },
       required: ["id", "requesting_user_id"],

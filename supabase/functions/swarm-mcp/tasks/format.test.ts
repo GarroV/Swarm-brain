@@ -193,3 +193,13 @@ Deno.test("formatRecentComments: не обрезанная выдача не п�
   const out = formatRecentComments([recent()], { sinceISO: "2026-09-09T00:00:00.000Z" });
   assert(!out.includes("обрезана"), out);
 });
+
+Deno.test("formatTaskLine: подзадача показывает родителя, родитель — сколько подзадач закрыто", () => {
+  const sub = formatTaskLine({ id: "a1", status: "open", title: "Шаг", parent_id: "A", parent_title: "Большая" });
+  assertStringIncludes(sub, "↳ подзадача задачи «Большая» (id: A)");
+  const orphan = formatTaskLine({ id: "a2", status: "open", title: "Шаг", parent_id: "A" });
+  assertStringIncludes(orphan, "↳ подзадача задачи A");
+  const parent = formatTaskLine({ id: "A", status: "open", title: "Большая", subtasks: { done: 1, total: 3 } });
+  assertStringIncludes(parent, "Подзадачи: 1 из 3 закрыто");
+  assert(!formatTaskLine({ status: "open", title: "T" }).includes("одзадач"), "у обычной задачи — ни слова");
+});
