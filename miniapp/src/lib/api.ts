@@ -501,7 +501,11 @@ const mockGranolaUnprocessed: GranolaNote[] = [
 // База — same-origin прокси /api (CF Pages Function). В Telegram шлём initData
 // в Authorization: tma; в браузере — httpOnly cookie (credentials: include),
 // прокси перекладывает её в Bearer на сервере.
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
+// Прямой адрес swarm-api из NEXT_PUBLIC_API_URL не берём: swarm-api пускает по CORS только
+// боевой адрес, поэтому на превью ветки (там в переменной остался прямой адрес) браузер резал
+// каждый запрос, экран показывал «Не загрузилось» и не уводил на вход. Относительный путь — можно.
+const envApi = process.env.NEXT_PUBLIC_API_URL ?? "";
+const API_BASE = envApi.startsWith("/") ? envApi : "/api";
 
 function authHeaders(): Record<string, string> {
   const initData = getInitData();
