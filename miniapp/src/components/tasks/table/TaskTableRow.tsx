@@ -16,7 +16,12 @@ import type { SubtaskProgress } from "@/lib/subtasks";
 // по тому, чем в строке ПОЛЬЗУЮТСЯ (владелец 22.09.2026): срок и быстрые действия у названия,
 // дальше рынок, потом проект, исполнитель и списки — их читают глазами.
 
-export const COLS = "minmax(260px,1fr) 88px 168px 64px minmax(110px,18%) minmax(110px,15%) minmax(90px,14%)";
+// Колонки таблицы задач. Уже 1100px (узкая десктопная раскладка) «Проект» и «Списки» прячутся —
+// как на стенде, где набор колонок зависит от ширины: иначе на окне 720–1100px строка шире
+// экрана. Классы статичные, чтобы Tailwind их увидел; ячейки этих колонок — с NARROW_HIDDEN.
+export const TASK_GRID =
+  "grid-cols-[minmax(200px,1fr)_88px_168px_64px_minmax(110px,24%)] min-[1100px]:grid-cols-[minmax(260px,1fr)_88px_168px_64px_minmax(110px,18%)_minmax(110px,15%)_minmax(90px,14%)]";
+export const NARROW_HIDDEN = "max-[1099px]:hidden";
 
 const fmtDue = (iso: string, en: boolean) =>
   new Date(iso).toLocaleDateString(en ? "en-GB" : "ru-RU", { day: "numeric", month: "short" }).replace(".", "");
@@ -81,8 +86,8 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }}
-      className="group grid cursor-pointer items-center border-b border-line bg-surface transition-colors hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none"
-      style={{ gridTemplateColumns: COLS, minHeight: 34, fontSize: 13 }}
+      className={cn("group grid cursor-pointer items-center border-b border-line bg-surface transition-colors hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none", TASK_GRID)}
+      style={{ minHeight: 34, fontSize: 13 }}
     >
       <div className="flex min-w-0 items-center gap-2.5 px-3" style={depth ? { paddingLeft: 38 } : undefined}>
         <button
@@ -140,15 +145,17 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
       <CellPick title={task.country ? `${dt("Рынок", "Market")}: ${countryName(task.country)}` : dt("Рынок не указан", "No market")} items={marketItems}>
         <span className="font-mono text-ink-soft" style={{ fontSize: 12 }}>{task.country ?? <span className="text-ink-mute">—</span>}</span>
       </CellPick>
-      <div className="min-w-0 truncate px-2 text-ink-soft">{projectName ?? <span className="text-ink-mute">—</span>}</div>
+      <div className={cn("min-w-0 truncate px-2 text-ink-soft", NARROW_HIDDEN)}>{projectName ?? <span className="text-ink-mute">—</span>}</div>
       <CellPick title={whoName ? `${dt("Исполнитель", "Assignee")}: ${whoName}` : dt("Исполнитель не назначен", "Unassigned")} items={whoItems}>
         <span className="truncate text-ink-soft">{whoName || <span className="text-ink-mute">—</span>}</span>
       </CellPick>
-      {labels.length > 0 ? (
-        <CellPick title={dt("Списки — личные: задача станет личной", "Lists are personal: the task becomes private")} items={labelItems}>
-          <span className="truncate text-ink-mute" style={{ fontSize: 12.5 }}>{labelNames || "—"}</span>
-        </CellPick>
-      ) : <div className="min-w-0 truncate px-2 text-ink-mute" style={{ fontSize: 12.5 }}>—</div>}
+      <div className={cn("min-w-0", NARROW_HIDDEN)}>
+        {labels.length > 0 ? (
+          <CellPick title={dt("Списки — личные: задача станет личной", "Lists are personal: the task becomes private")} items={labelItems}>
+            <span className="truncate text-ink-mute" style={{ fontSize: 12.5 }}>{labelNames || "—"}</span>
+          </CellPick>
+        ) : <div className="min-w-0 truncate px-2 text-ink-mute" style={{ fontSize: 12.5 }}>—</div>}
+      </div>
     </div>
   );
 }

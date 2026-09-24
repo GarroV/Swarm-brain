@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
 import type { Project, Task, User } from "@/types";
 import { fetchConfig, fetchProjects, fetchUsers, type TaskLabel } from "@/lib/api";
 import { countryName } from "@/lib/countries";
@@ -11,7 +12,7 @@ import { TaskModal } from "@/components/TaskModal";
 import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { LabelEditor } from "@/components/tasks/LabelEditor";
 import { useReminderTasks } from "@/components/tasks/useReminderTasks";
-import { COLS, TaskTableRow } from "./TaskTableRow";
+import { NARROW_HIDDEN, TASK_GRID, TaskTableRow } from "./TaskTableRow";
 import { TasksToolbar, type ToolbarState } from "./TasksToolbar";
 import { TaskCalendar, WhatsNextBlock } from "./TaskCalendar";
 import { whatsNext } from "@/lib/taskCalendar";
@@ -122,20 +123,20 @@ export function TasksTable() {
         <TaskCalendar tasks={list} range={r.range} now={r.now} users={users} onOpen={setModalTask} />
       ) : (
       <div className="min-h-0 flex-1 overflow-auto">
-        <div className="min-w-[960px]">
+        <div className="min-w-[640px] min-[1100px]:min-w-[960px]">
           <div
             role="row"
             // Шапка по стенду (.th): капс, разрядка, серая подложка — визуальный шаг В2.
-            className="sticky top-0 z-10 grid border-b border-line bg-surface-2 font-semibold uppercase text-ink-soft"
-            style={{ gridTemplateColumns: COLS, fontSize: 10.5, letterSpacing: "0.07em", height: 32, alignItems: "center" }}
+            className={cn("sticky top-0 z-10 grid border-b border-line bg-surface-2 font-semibold uppercase text-ink-soft", TASK_GRID)}
+            style={{ fontSize: 10.5, letterSpacing: "0.07em", height: 32, alignItems: "center" }}
           >
             <span className="px-3">{dt("Задача", "Task")}</span>
             <span className="px-2">{dt("Срок", "Due")}</span>
             <span />
             <span className="px-2">{dt("Рынок", "Market")}</span>
-            <span className="px-2">{dt("Проект", "Project")}</span>
+            <span className={cn("px-2", NARROW_HIDDEN)}>{dt("Проект", "Project")}</span>
             <span className="px-2">{dt("Исполнитель", "Assignee")}</span>
-            <span className="px-2">{dt("Списки", "Lists")}</span>
+            <span className={cn("px-2", NARROW_HIDDEN)}>{dt("Списки", "Lists")}</span>
           </div>
 
           {r.loading && [0, 1, 2, 3].map((i) => <div key={i} className="roy-shim mx-3 my-1.5" style={{ height: 30, borderRadius: 6 }} />)}

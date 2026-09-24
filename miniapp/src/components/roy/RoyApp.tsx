@@ -33,7 +33,7 @@ import { NewEntry } from "./screens/NewEntry";
 import { RoyMeetingsScreen } from "./screens/RoyMeetingsScreen";
 import { MeetingDetail } from "./screens/MeetingDetail";
 import { RoyDashboard } from "./RoyDashboard";
-import { FeedbackDialog, FeedbackFab } from "./FeedbackFab";
+import { FeedbackDialog } from "./FeedbackFab";
 import { MeetingReview } from "@/components/MeetingReview";
 import { TasksScreen } from "@/components/tasks/TasksScreen";
 import { TasksTable } from "@/components/tasks/table/TasksTable";
@@ -481,7 +481,6 @@ export function RoyApp({ me }: { me: Me | null }) {
         /* На мобайле «?» была вторым FAB под «+» и спорила с главным действием экрана —
           фидбек переехал пунктом в «Ещё» (аудит мобилки 2026-08-22). */
       }
-      {isDesktop && <FeedbackFab />}
     </RoyNavContext.Provider>
   );
 }

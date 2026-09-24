@@ -1,6 +1,4 @@
 "use client";
-import { useState } from "react";
-import { RoyIcon } from "@/components/roy/icons";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FeedbackForm } from "./FeedbackForm";
 
@@ -18,30 +16,5 @@ export function FeedbackDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   );
 }
 
-/** Плавающая кнопка-пузырь в углу — открывает форму фидбека из любого экрана.
- *  На мобайле НЕ используется: там она стояла вторым FAB под «+» и спорила с главным
- *  действием экрана — фидбек живёт пунктом в «Ещё» (аудит мобилки 2026-08-22). */
-export function FeedbackFab() {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button
-        type="button"
-        aria-label="Оставить фидбек"
-        title="Оставить фидбек"
-        onClick={() => setOpen(true)}
-        className="fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white shadow-[0_8px_24px_rgba(0,0,0,.28)] transition-transform hover:scale-105 active:scale-95 lg:bottom-6 lg:right-6"
-      >
-        <RoyIcon name="feedback" size={22} strokeWidth={2} />
-      </button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>Фидбек</DialogTitle>
-          </DialogHeader>
-          <FeedbackForm onDone={() => setOpen(false)} />
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
+// Плавающей кнопки больше нет: на мобайле фидбек — пункт «Ещё» (аудит 2026-08-22), на десктопе —
+// пункт низа рейки (RoyRail → FeedbackItem, 25.09.2026: кнопка в углу закрывала кнопки строк).

@@ -7,6 +7,7 @@ import { RoyIcon, type RoyIconName } from "./icons";
 import { initials } from "./dash/shared";
 import { useDt, useRoyNav } from "./nav";
 import { saveRecent } from "./screens/SearchScreen";
+import { FeedbackDialog } from "./FeedbackFab";
 
 // Левая рейка десктопа — навигация нового вида (витрина, решение владельца 24.09.2026:
 // «оставляем текущие экраны, но навигация между ними уже новая»). Плоский список папок,
@@ -129,6 +130,7 @@ export function RoyRail({
       </div>
       <div className="flex flex-col gap-0.5 border-t border-line px-2 py-2">
         {foot.map(renderItem)}
+        <FeedbackItem />
       </div>
       <div className="flex items-center gap-2 border-t border-line px-3 py-2.5 max-[1099px]:justify-center max-[1099px]:px-0"
         title={displayName(me?.name) || undefined}>
@@ -191,5 +193,24 @@ function RailSearch() {
         )}
       </label>
     </form>
+  );
+}
+
+// Фидбек на десктопе — пункт низа рейки, а не плавающая кнопка: в узкой раскладке (720–1100px)
+// кнопка в углу закрывала кнопки строк («Вернуться» у встречи, найдено краулером на 800px).
+function FeedbackItem() {
+  const dt = useDt();
+  const [open, setOpen] = useState(false);
+  const label = dt("Фидбек", "Feedback");
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} title={label}
+        className="flex h-[34px] w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-ink-soft transition-colors hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] max-[1099px]:justify-center max-[1099px]:px-0"
+        style={{ fontSize: 13.5 }}>
+        <RoyIcon name="feedback" size={16} strokeWidth={1.7} />
+        <span className="min-w-0 flex-1 truncate max-[1099px]:hidden">{label}</span>
+      </button>
+      <FeedbackDialog open={open} onOpenChange={setOpen} />
+    </>
   );
 }
