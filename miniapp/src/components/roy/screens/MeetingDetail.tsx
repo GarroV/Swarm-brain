@@ -7,6 +7,7 @@ import { RoyIcon, type RoyIconName } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { TasksFromMeeting } from "../TasksFromMeeting";
+import { PanelEditor } from "../PanelEditor";
 import { fetchMeeting, patchMeeting, deleteMeeting, fetchTasks, resummarizeMeetingEntry, fetchConfig } from "@/lib/api";
 import { countryCode } from "@/lib/countries";
 import type { Entry, Task } from "@/types";
@@ -21,7 +22,7 @@ function fmtDate(iso: string | null): string {
 }
 
 // Видимая кнопка-действие (иконка + подпись). Раньше действия были спрятаны в меню «...».
-function ActionChip({ icon, label, onClick, danger }: { icon: RoyIconName; label: string; onClick: () => void; danger?: boolean }) {
+export function ActionChip({ icon, label, onClick, danger }: { icon: RoyIconName; label: string; onClick: () => void; danger?: boolean }) {
   return (
     <button
       type="button"
@@ -186,17 +187,8 @@ export function MeetingDetail({ id }: { id: string }) {
   const tezBlock = e && (
     <>
             {editing ? (
-              <div className="mb-4">
-                <textarea value={draft} onChange={(ev) => setDraft(ev.target.value)} rows={8} className="w-full resize-none rounded-[8px] border border-line-2 bg-surface px-4 py-3 text-ink outline-none focus:border-primary" style={{ fontSize: 14, lineHeight: 1.55 }} />
-                <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={saveSummary} disabled={busy} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
-                    Сохранить
-                  </button>
-                  <button type="button" onClick={() => setEditing(false)} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>
-                    Отмена
-                  </button>
-                </div>
-              </div>
+              <PanelEditor value={draft} onChange={setDraft} onSave={saveSummary} onCancel={() => setEditing(false)}
+                busy={busy} label={dt("Тезисы встречи", "Meeting summary")} />
             ) : e.summary ? (
               <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 10 }}>
                 <div className="mb-1.5 flex items-center justify-between gap-2">

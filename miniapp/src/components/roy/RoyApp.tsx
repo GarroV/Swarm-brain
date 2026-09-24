@@ -483,7 +483,7 @@ export function RoyApp({ me }: { me: Me | null }) {
   );
 }
 
-const PANEL_VIEWS = new Set<RoyRoute["view"]>(["meetingDetail", "record"]);
+const PANEL_VIEWS = new Set<RoyRoute["view"]>(["meetingDetail", "record", "meetingReview"]);
 
 // Панель карточки справа (десктоп): ширина — --detail-w стенда. Esc и клик мимо закрывают её,
 // но не когда поверх открыто окно (у него свой Esc).
@@ -493,6 +493,8 @@ function DetailPanel({ route, depth, section, onClose }: { route: RoyRoute; dept
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if (document.querySelector("[role=dialog], [role=alertdialog], [role=menu]")) return;
+      // Идёт правка текста (PanelEditor) — Esc отменяет её, а не закрывает панель.
+      if (document.activeElement?.closest("[data-panel-edit]")) return;
       onClose();
     };
     // capture: проверяем до того, как окно поверх обработает Esc и исчезнет из DOM.
@@ -563,8 +565,10 @@ function PushScreen({ route }: { route: RoyRoute }) {
 }
 
 function MeetingReviewScreen({ id }: { id: string }) {
-  const { pop } = useRoyNav();
-  return <MeetingReview id={id} onClose={pop} />;
+  const { pop, bumpTasks } = useRoyNav();
+  // Раздел под панелью остаётся смонтированным — бамп заставляет список встреч перечитаться
+  // после публикации/правки, иначе черновик висел бы в нём до перезагрузки.
+  return <MeetingReview id={id} onClose={pop} onChanged={bumpTasks} />;
 }
 
 // Интерактивная карта системы — самодостаточный HTML (canvas) в public/system-map.html,
