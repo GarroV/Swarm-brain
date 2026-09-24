@@ -18,8 +18,10 @@ export type MenuItem = {
   action?: boolean;
 };
 
-export function ToolbarButton({ on, children, onClick, title, disabled, popup }: {
+export function ToolbarButton({ on, children, onClick, title, disabled, popup, icon }: {
   on?: boolean;
+  /** Кнопка-пиктограмма: квадратная, подпись — в title и aria-label, состояние — aria-pressed. */
+  icon?: boolean;
   children: ReactNode;
   onClick?: () => void;
   title?: string;
@@ -35,12 +37,15 @@ export function ToolbarButton({ on, children, onClick, title, disabled, popup }:
       disabled={disabled}
       aria-haspopup={popup ? "menu" : undefined}
       aria-expanded={popup ? popup.open : undefined}
+      aria-label={icon ? title : undefined}
+      aria-pressed={icon ? !!on : undefined}
       className={cn(
         // Кнопка панели по .btn стенда: 30px, рамка line-control, выбранная — акцентная рамка.
-        "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border px-3 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-45",
+        "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-45",
         on
           ? "border-primary bg-accent-soft font-semibold text-accent-ink"
           : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2 hover:text-ink",
+        icon ? "w-[30px] justify-center" : "px-3",
       )}
       style={{ fontSize: 12.5 }}
     >

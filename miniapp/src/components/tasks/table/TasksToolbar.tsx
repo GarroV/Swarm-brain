@@ -4,14 +4,14 @@ import type { User } from "@/types";
 import type { TaskLabel } from "@/lib/api";
 import { countryName } from "@/lib/countries";
 import type { Lens } from "@/lib/smartLists";
-import { RoyIcon } from "@/components/roy/icons";
+import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { RangePicker } from "@/components/ui/RangePicker";
 import type { useReminderTasks } from "@/components/tasks/useReminderTasks";
 import { Menu, ToolbarButton, type MenuItem } from "./Menu";
 
 // Панель фильтров задач — ОДНА строка (стенд: screens-tasks.js → tasksToolbar): чья работа
-// (переключатель), готовые (один тумблер), остальное — меню. Справа поиск, счётчик и «＋ Задача».
+// (переключатель), готовые (один тумблер), фильтры — меню, режимы вида — пиктограммы. Справа поиск, счётчик и «＋ Задача».
 
 export type ToolbarState = {
   assignee: number | null;
@@ -42,7 +42,6 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
   const lensOff = s.assignee != null;
   const doneOn = r.statuses.has("done");
   const recurOnly = r.activeList === "recurring";
-  const nMore = (r.byMarket ? 1 : 0) + (recurOnly ? 1 : 0) + (s.calView ? 1 : 0);
   const activeLabel = r.labels.find((l) => l.id === r.activeLabelId) ?? null;
 
   const staffItems: MenuItem[] = [
@@ -90,13 +89,13 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
     })),
   ];
 
-  const moreItems: MenuItem[] = [
-    { key: "market", label: dt("Группировать по рынкам", "Group by market"), on: r.byMarket, onPick: () => r.setByMarket((v) => !v) },
-    { key: "recur", label: dt("Только регулярные", "Recurring only"), on: recurOnly,
-      onPick: () => r.setActiveList(recurOnly ? "all" : "recurring") },
-    // Календарный вид — обзор загрузки команды по срокам, у стенда он только у админа. Живёт
-    // в «Ещё», а не отдельной кнопкой: иначе панель фильтров не помещается в одну строку.
-    ...(admin ? [{ key: "cal", label: dt("Календарный вид", "Calendar view"), on: s.calView, onPick: () => s.setCalView(!s.calView) }] : []),
+  // Бывшее меню «Ещё» — пиктограммы в строке (решение владельца 2026-09-25: «заменим
+  // пиктограммами? место есть»). Календарный вид — только у админа, как у стенда.
+  const toggles: { key: string; icon: RoyIconName; label: string; on: boolean; onClick: () => void }[] = [
+    { key: "market", icon: "globe", label: dt("Группировать по рынкам", "Group by market"), on: r.byMarket, onClick: () => r.setByMarket((v) => !v) },
+    { key: "recur", icon: "repeat", label: dt("Только регулярные", "Recurring only"), on: recurOnly,
+      onClick: () => r.setActiveList(recurOnly ? "all" : "recurring") },
+    ...(admin ? [{ key: "cal", icon: "cal" as RoyIconName, label: dt("Календарный вид", "Calendar view"), on: s.calView, onClick: () => s.setCalView(!s.calView) }] : []),
   ];
 
   return (
@@ -155,17 +154,29 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
           </div>
         }
       />
-      <Menu label={nMore ? `${dt("Ещё", "More")} · ${nMore}` : dt("Ещё", "More")} on={nMore > 0} items={moreItems} />
+      <span className="inline-flex gap-1">
+        {toggles.map((t) => (
+          <ToolbarButton key={t.key} icon on={t.on} onClick={t.onClick} title={t.label}>
+            <RoyIcon name={t.icon} size={15} strokeWidth={1.8} />
+          </ToolbarButton>
+        ))}
+      </span>
 
       <div className="ml-auto flex items-center gap-2.5">
-        <label className="flex h-[30px] items-center gap-1.5 rounded-[7px] border border-line-2 bg-surface px-2.5 text-ink-mute hover:border-ink-mute/40 focus-within:border-primary">
-          <RoyIcon name="search" size={13} />
+        {/* Фильтр свёрнут в пиктограмму, пока пуст и не в фокусе: так панель влезает в одну
+            строку на 1300px. Клик по пиктограмме (это label) ставит фокус и раскрывает поле. */}
+        <label title={dt("Фильтр по названию", "Filter by title")}
+          className="group flex h-[30px] items-center gap-1.5 rounded-[7px] border border-line-2 bg-surface px-[7px] text-ink-mute hover:border-ink-mute/40 focus-within:border-primary">
+          <RoyIcon name="search" size={14} />
           <input
             value={r.query}
             onChange={(e) => r.setQuery(e.target.value)}
             placeholder={dt("Фильтр", "Filter")}
             aria-label={dt("Фильтр по названию", "Filter by title")}
-            className="w-[112px] bg-transparent text-ink outline-none placeholder:text-ink-mute"
+            className={cn(
+              "bg-transparent text-ink outline-none transition-[width] placeholder:text-ink-mute group-focus-within:w-[140px]",
+              r.query ? "w-[140px]" : "w-0",
+            )}
             style={{ fontSize: 12.5 }}
           />
         </label>
