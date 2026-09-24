@@ -1,4 +1,4 @@
-// Журнал пространства: одна лента событий по задачам вкладки — правки, комментарии, состав
+// Журнал пространства спринтов: одна лента событий по задачам его спринтов — правки, комментарии, состав
 // спринтов, сами спринты.
 //
 // Отдельным модулем, а не в index.ts: тот уже 2400+ строк при пределе 800 (issue #265).
@@ -57,24 +57,35 @@ function since(days: number | null): string | null {
 /**
  * Задачи пространства, которые этому человеку можно видеть.
  *
- * Пространство — вкладка доски: её проекты (`projects.sprint_id = tabId`), их задачи. Правило
- * видимости то же, что в списках задач: приватную видит только владелец. Админского обхода
- * здесь нет намеренно — журнал не должен быть щелью, которой нет в обычном списке.
+ * Задачи пространства — это состав его спринтов (`sprint_items`). НЕ проекты с
+ * `projects.sprint_id = tabId`: так было, пока пространство и вкладка доски «Проекты» были одной
+ * записью. После их разделения (issue #423) у пространства проектов нет вовсе, и журнал молча
+ * терял все правки задач и комментарии — на проде у обоих пространств выходил ноль (24.09.2026).
+ *
+ * Правило видимости то же, что в списках задач: приватную видит только владелец. Админского
+ * обхода здесь нет намеренно — журнал не должен быть щелью, которой нет в обычном списке.
  */
 async function visibleTasks(
   tabId: string,
   groupId: string,
   viewerId: number | null,
 ): Promise<Map<string, string>> {
-  const { data: projects } = await supabase.from("projects")
-    .select("id").eq("group_id", groupId).eq("sprint_id", tabId);
-  const projectIds = (projects ?? []).map((p) => (p as { id: string }).id);
   const titles = new Map<string, string>();
-  if (projectIds.length === 0) return titles;
+  const { data: cycles } = await supabase.from("sprint_cycles")
+    .select("id").eq("group_id", groupId).eq("tab_id", tabId);
+  const cycleIds = (cycles ?? []).map((c) => (c as { id: string }).id);
+  if (cycleIds.length === 0) return titles;
+
+  const { data: items } = await supabase.from("sprint_items")
+    .select("task_id").in("cycle_id", cycleIds).not("task_id", "is", null);
+  const taskIds = [
+    ...new Set((items ?? []).map((i) => (i as { task_id: string }).task_id)),
+  ];
+  if (taskIds.length === 0) return titles;
 
   let q = supabase.from("tasks")
     .select("id, title")
-    .eq("group_id", groupId).in("project_id", projectIds);
+    .eq("group_id", groupId).in("id", taskIds);
   q = viewerId === null
     ? q.eq("is_private", false)
     : q.or(`is_private.eq.false,owner_id.eq.${viewerId}`);
@@ -106,9 +117,11 @@ export async function handleSpaceJournalRoutes(
   const from = since(PERIODS[raw]);
 
   // Вкладка чужого воркспейса — 404, а не пустая лента: пустая выглядит как «событий нет» и
-  // не даёт понять, что человек смотрит не туда.
+  // не даёт понять, что человек смотрит не туда. Вкладка доски «Проекты» — тоже 404: это другая
+  // сущность в той же таблице (issue #423), журнала спринтов у неё нет.
   const { data: tab } = await supabase.from("sprints")
-    .select("id").eq("id", tabId).eq("group_id", groupId).maybeSingle();
+    .select("id").eq("id", tabId).eq("group_id", groupId).eq("kind", "space")
+    .maybeSingle();
   if (!tab) return apiErr(404, "Not found", origin);
 
   const titles = await visibleTasks(tabId, groupId, telegramId);

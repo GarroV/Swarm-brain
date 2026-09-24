@@ -39,8 +39,8 @@ async function seed(db: Client) {
     .queryArray`insert into workspaces (id, name) values (${WS}, 'Тестовый')`;
 
   const tab = await db.queryObject<{ id: string }>`
-    insert into sprints (id, group_id, name, start_date, end_date, status)
-    values (gen_random_uuid(), ${WS}, 'Пространство', current_date, current_date + 30, 'active')
+    insert into sprints (id, group_id, name, start_date, end_date, status, kind)
+    values (gen_random_uuid(), ${WS}, 'Пространство', current_date, current_date + 30, 'active', 'space')
     returning id`;
   const project = await db.queryObject<{ id: string }>`
     insert into projects (group_id, name) values (${WS}, 'Инициатива') returning id`;
