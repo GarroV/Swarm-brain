@@ -6,6 +6,8 @@ import { RoyIcon } from "../icons";
 import { entryTagKey, entryFacet, deriveEntryTitle, entryPreview } from "../entry";
 import { fetchEntriesWithTotal } from "@/lib/api";
 import type { Entry } from "@/types";
+import { useIsDesktop } from "../useIsDesktop";
+import { BaseDesk } from "./BaseDesk";
 
 // Встреч здесь нет (GET /entries отдаёт только entry_type='note'; встречи — свой таб).
 // Фильтры — по ФАСЕТУ заметки: заметки / ссылки / файлы.
@@ -26,6 +28,13 @@ function fmtDate(iso: string | null): string | null {
 }
 
 export function RoyBaseScreen({ onBack }: { onBack?: () => void }) {
+  // Десктопный раздел (не push с «Назад») — таблица по стенду.
+  const isDesktop = useIsDesktop();
+  if (isDesktop && !onBack) return <BaseDesk />;
+  return <BaseMobile onBack={onBack} />;
+}
+
+function BaseMobile({ onBack }: { onBack?: () => void }) {
   const { push, openAnswer } = useRoyNav();
   const dt = useDt();
   const [entries, setEntries] = useState<Entry[] | null>(null);
