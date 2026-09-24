@@ -67,7 +67,10 @@ export function SprintTabs(
     { id: "journal", label: dt("Журнал", "Journal") },
   ];
   return (
-    <nav className="flex items-stretch gap-0.5 self-stretch" aria-label={dt("Вкладки спринтов", "Sprint tabs")}>
+    <nav
+      className="flex items-stretch gap-0.5 self-stretch"
+      aria-label={dt("Вкладки спринтов", "Sprint tabs")}
+    >
       {tabs.map((t) => {
         const on = tab === t.id;
         return (
@@ -77,7 +80,9 @@ export function SprintTabs(
             aria-current={on ? "page" : undefined}
             onClick={() => onChange(t.id === "sprint" ? "list" : t.id)}
             className={`-mb-px flex items-center border-b-2 px-2.5 transition-colors ${
-              on ? "border-primary font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink"
+              on
+                ? "border-primary font-semibold text-ink"
+                : "border-transparent text-ink-soft hover:text-ink"
             }`}
             style={{ fontSize: 13 }}
           >
@@ -135,7 +140,10 @@ export function GroupingToggle(
   // Тихий текстовый переключатель (стенд: `.sgrp` + `.lk`): группировка — свойство списка,
   // а не отдельный экран, и кнопками она перетягивала бы внимание с состава.
   return (
-    <span className="ml-auto flex items-center gap-2.5" style={{ fontSize: 12 }}>
+    <span
+      className="ml-auto flex items-center gap-2.5"
+      style={{ fontSize: 12 }}
+    >
       <span className="text-ink-mute">{dt("группировать", "group")}</span>
       {opts.map((o) => (
         <button

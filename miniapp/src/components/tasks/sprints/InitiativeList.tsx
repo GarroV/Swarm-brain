@@ -43,20 +43,34 @@ function AddTaskRow({ projectId, onAdd }: {
 
 /** Группа: заголовок-строка и задачи под ним. Сворачивается — на кросс-командном проекте
  *  инициатив десятки, и развёрнутые разом они превращают экран в ленту без структуры. */
-function Group({ node, name, sub, due, addTo, collapsed, onToggle, unchecked, showExtra, h, onAdd }: {
-  node: InitiativeNode;
-  name: string;
-  sub?: string | null;
-  due?: string | null;
-  /** Куда класть «+ задачу». У направления без инициатив — в само направление. */
-  addTo?: string | null;
-  collapsed: boolean;
-  onToggle: () => void;
-  unchecked: boolean;
-  showExtra: boolean;
-  h: RowHandlers;
-  onAdd?: (projectId: string | null) => void;
-}) {
+function Group(
+  {
+    node,
+    name,
+    sub,
+    due,
+    addTo,
+    collapsed,
+    onToggle,
+    unchecked,
+    showExtra,
+    h,
+    onAdd,
+  }: {
+    node: InitiativeNode;
+    name: string;
+    sub?: string | null;
+    due?: string | null;
+    /** Куда класть «+ задачу». У направления без инициатив — в само направление. */
+    addTo?: string | null;
+    collapsed: boolean;
+    onToggle: () => void;
+    unchecked: boolean;
+    showExtra: boolean;
+    h: RowHandlers;
+    onAdd?: (projectId: string | null) => void;
+  },
+) {
   const dt = useDt();
   const { done, total } = node.progress;
   const bad = node.items.filter((i) => i.check_status === "problem").length;
@@ -72,12 +86,27 @@ function Group({ node, name, sub, due, addTo, collapsed, onToggle, unchecked, sh
           name="cright"
           size={10}
           strokeWidth={2.4}
-          className={cn("shrink-0 self-center text-ink-mute transition-transform", !collapsed && "rotate-90")}
+          className={cn(
+            "shrink-0 self-center text-ink-mute transition-transform",
+            !collapsed && "rotate-90",
+          )}
         />
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
           {node.project?.emoji && <span>{node.project.emoji}</span>}
-          <span className="min-w-0 truncate font-semibold text-ink" style={{ fontSize: 13.5 }}>{name}</span>
-          {sub && <span className="shrink-0 truncate text-ink-mute" style={{ fontSize: 12 }}>{sub}</span>}
+          <span
+            className="min-w-0 truncate font-semibold text-ink"
+            style={{ fontSize: 13.5 }}
+          >
+            {name}
+          </span>
+          {sub && (
+            <span
+              className="shrink-0 truncate text-ink-mute"
+              style={{ fontSize: 12 }}
+            >
+              {sub}
+            </span>
+          )}
           {due && (
             <span className="shrink-0 text-ink-mute" style={{ fontSize: 12 }}>
               · {dt("до", "due")} {fmtDay(due)}
@@ -85,12 +114,18 @@ function Group({ node, name, sub, due, addTo, collapsed, onToggle, unchecked, sh
           )}
         </span>
         {bad > 0 && (
-          <span className="shrink-0 font-semibold text-pri-high" style={{ fontSize: 12 }}>
+          <span
+            className="shrink-0 font-semibold text-pri-high"
+            style={{ fontSize: 12 }}
+          >
             {dt(`проблема: ${bad}`, `problem: ${bad}`)}
           </span>
         )}
         <span
-          className={cn("shrink-0 font-mono", total > 0 && done === total ? "text-status-done" : "text-ink-mute")}
+          className={cn(
+            "shrink-0 font-mono",
+            total > 0 && done === total ? "text-status-done" : "text-ink-mute",
+          )}
           style={{ fontSize: 12 }}
         >
           {dt(`${done} из ${total}`, `${done} of ${total}`)}
@@ -98,10 +133,23 @@ function Group({ node, name, sub, due, addTo, collapsed, onToggle, unchecked, sh
       </button>
       {!collapsed && (
         <div>
-          {nestBy(node.items, (i) => i.task_id, (i) => h.parentOf?.(i) ?? null).map(({ item, depth }) => (
-            <SprintRow key={item.id} item={item} depth={depth} unchecked={unchecked} showExtra={showExtra} h={h} />
-          ))}
-          {onAdd && <AddTaskRow projectId={addTo !== undefined ? addTo : node.project?.id ?? null} onAdd={onAdd} />}
+          {nestBy(node.items, (i) => i.task_id, (i) => h.parentOf?.(i) ?? null)
+            .map(({ item, depth }) => (
+              <SprintRow
+                key={item.id}
+                item={item}
+                depth={depth}
+                unchecked={unchecked}
+                showExtra={showExtra}
+                h={h}
+              />
+            ))}
+          {onAdd && (
+            <AddTaskRow
+              projectId={addTo !== undefined ? addTo : node.project?.id ?? null}
+              onAdd={onAdd}
+            />
+          )}
         </div>
       )}
     </div>
@@ -138,7 +186,8 @@ export function InitiativeList({
   const [closed, setClosed] = useState<Set<string>>(new Set());
 
   // Ответственный инициативы хранится telegram_id — показываем человека, а не число.
-  const ownerName = (id: number) => users.find((u) => u.telegram_id === id)?.name ?? String(id);
+  const ownerName = (id: number) =>
+    users.find((u) => u.telegram_id === id)?.name ?? String(id);
 
   const toggle = (key: string) =>
     setClosed((prev) => {
@@ -155,7 +204,12 @@ export function InitiativeList({
       <div
         role="row"
         className="sticky top-0 z-10 grid items-center rounded-t-[10px] border-b border-line bg-surface-2 font-semibold uppercase text-ink-mute"
-        style={{ gridTemplateColumns: SPRINT_COLS, height: 32, fontSize: 10.5, letterSpacing: "0.08em" }}
+        style={{
+          gridTemplateColumns: SPRINT_COLS,
+          height: 32,
+          fontSize: 10.5,
+          letterSpacing: "0.08em",
+        }}
       >
         <span className="px-3 pl-[27px]">{dt("Задача", "Task")}</span>
         <span className="px-2">{dt("Срок", "Due")}</span>
@@ -166,7 +220,8 @@ export function InitiativeList({
       </div>
       <div className="px-1 pb-2">
         {board.map((dir) => {
-          const dirName = dir.project?.name ?? noneLabel ?? dt("Без направления", "No direction");
+          const dirName = dir.project?.name ?? noneLabel ??
+            dt("Без направления", "No direction");
           const dirKey = dir.project?.id ?? "__none__";
           // Направление без инициатив (и каждый человек при группировке по людям) —
           // сразу группа: подпись капсом над одной группой с тем же именем была бы эхом.
@@ -194,7 +249,9 @@ export function InitiativeList({
               </div>
               {dir.initiatives.map((ini) => {
                 const key = `${dirKey}/${ini.project?.id ?? ""}`;
-                const owner = ini.project?.owner_telegram_id ? ownerName(ini.project.owner_telegram_id) : null;
+                const owner = ini.project?.owner_telegram_id
+                  ? ownerName(ini.project.owner_telegram_id)
+                  : null;
                 return (
                   <Group
                     key={key}
@@ -221,9 +278,11 @@ export function BoardSkeleton() {
   return (
     <div className="space-y-3" aria-hidden="true">
       {[0, 1, 2].map((i) => (
-        <div key={i} className="h-16 animate-pulse rounded-xl border border-line bg-surface/40" />
+        <div
+          key={i}
+          className="h-16 animate-pulse rounded-xl border border-line bg-surface/40"
+        />
       ))}
     </div>
   );
 }
-

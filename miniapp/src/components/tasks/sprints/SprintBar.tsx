@@ -4,7 +4,11 @@ import { cn } from "@/lib/utils";
 import type { Sprint, SprintCycle, SprintCycleDetail } from "@/types";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
-import { Menu, type MenuItem, ToolbarButton } from "@/components/tasks/table/Menu";
+import {
+  Menu,
+  type MenuItem,
+  ToolbarButton,
+} from "@/components/tasks/table/Menu";
 import { daysLeft, fmtDay, fmtRange } from "./format";
 import type { SprintView } from "./ViewToggle";
 
@@ -50,30 +54,71 @@ export function SprintBar(p: SprintBarProps) {
   const d = p.detail;
   const accepted = d?.status === "accepted";
   const stLabel = (c: SprintCycle) =>
-    c.status === "active" ? dt("идёт", "running") : c.status === "draft" ? dt("черновик", "draft") : dt("принят", "accepted");
+    c.status === "active"
+      ? dt("идёт", "running")
+      : c.status === "draft"
+      ? dt("черновик", "draft")
+      : dt("принят", "accepted");
 
   // Живые — сверху, принятые — архивом с датами (их со временем станет много).
   const items: MenuItem[] = [
     ...p.live.map((c) => ({
       key: c.id,
-      label: <>{c.name} <span className="text-ink-mute">· {stLabel(c)}</span></>,
+      label: (
+        <>
+          {c.name} <span className="text-ink-mute">· {stLabel(c)}</span>
+        </>
+      ),
       on: c.id === p.selectedId,
       action: true,
       onPick: () => p.onSelect(c.id),
     })),
-    ...[...p.archive].sort((a, b) => b.start_date.localeCompare(a.start_date)).map((c) => ({
-      key: c.id,
-      label: <>{c.name} <span className="text-ink-mute">· {fmtRange(c.start_date, c.end_date)}</span></>,
-      on: c.id === p.selectedId,
-      action: true,
-      onPick: () => p.onSelect(c.id),
-    })),
+    ...[...p.archive].sort((a, b) => b.start_date.localeCompare(a.start_date))
+      .map((c) => ({
+        key: c.id,
+        label: (
+          <>
+            {c.name}{" "}
+            <span className="text-ink-mute">
+              · {fmtRange(c.start_date, c.end_date)}
+            </span>
+          </>
+        ),
+        on: c.id === p.selectedId,
+        action: true,
+        onPick: () => p.onSelect(c.id),
+      })),
     ...(p.onNewSprint
-      ? [{ key: "__new__", label: <span className="text-accent-ink">{dt("＋ Новый спринт", "＋ New sprint")}</span>, action: true, onPick: p.onNewSprint }]
+      ? [{
+        key: "__new__",
+        label: (
+          <span className="text-accent-ink">
+            {dt("＋ Новый спринт", "＋ New sprint")}
+          </span>
+        ),
+        action: true,
+        onPick: p.onNewSprint,
+      }]
       : []),
-    ...(p.onRename ? [{ key: "__rename__", label: dt("Переименовать", "Rename"), action: true, onPick: p.onRename }] : []),
+    ...(p.onRename
+      ? [{
+        key: "__rename__",
+        label: dt("Переименовать", "Rename"),
+        action: true,
+        onPick: p.onRename,
+      }]
+      : []),
     ...(p.onDelete
-      ? [{ key: "__del__", label: <span className="text-pri-high">{dt("Удалить спринт", "Delete sprint")}</span>, action: true, onPick: p.onDelete }]
+      ? [{
+        key: "__del__",
+        label: (
+          <span className="text-pri-high">
+            {dt("Удалить спринт", "Delete sprint")}
+          </span>
+        ),
+        action: true,
+        onPick: p.onDelete,
+      }]
       : []),
   ];
 
@@ -91,7 +136,13 @@ export function SprintBar(p: SprintBarProps) {
         action: true,
         onPick: () => p.move!.onMove(sp.id),
       })),
-      { key: SPACE_NONE, label: dt("Без пространства", "No space"), on: !d?.tab_id, action: true, onPick: () => p.move!.onMove(null) },
+      {
+        key: SPACE_NONE,
+        label: dt("Без пространства", "No space"),
+        on: !d?.tab_id,
+        action: true,
+        onPick: () => p.move!.onMove(null),
+      },
     ]
     : [];
 
@@ -101,7 +152,11 @@ export function SprintBar(p: SprintBarProps) {
       {p.renameField ?? (items.length > 0 && (
         <Menu
           label={d
-            ? <span className="text-ink">{d.name} <span className="text-ink-mute">· {stLabel(d)}</span></span>
+            ? (
+              <span className="text-ink">
+                {d.name} <span className="text-ink-mute">· {stLabel(d)}</span>
+              </span>
+            )
             : dt("Спринт", "Sprint")}
           items={items}
         />
@@ -113,14 +168,20 @@ export function SprintBar(p: SprintBarProps) {
         <span
           className="mx-1 whitespace-nowrap font-mono text-ink-soft"
           style={{ fontSize: 12 }}
-          title={d.status === "active" && left >= 0 ? dt(`осталось ${left} дн.`, `${left} day(s) left`) : undefined}
+          title={d.status === "active" && left >= 0
+            ? dt(`осталось ${left} дн.`, `${left} day(s) left`)
+            : undefined}
         >
           {fmtRange(d.start_date, d.end_date)}
           {d.check_date && !accepted && (
-            <span className="text-ink-mute"> · {dt("сверка", "check")} {fmtDay(d.check_date)}</span>
+            <span className="text-ink-mute">
+              · {dt("сверка", "check")} {fmtDay(d.check_date)}
+            </span>
           )}
-          {/* Сколько осталось — в подсказке: полоса одна строка, а в строку это не влезало.
-              Просрочка — вслух: это сигнал, а не справка. */}
+          {
+            /* Сколько осталось — в подсказке: полоса одна строка, а в строку это не влезало.
+              Просрочка — вслух: это сигнал, а не справка. */
+          }
           {d.status === "active" && left < 0 && (
             <span className="text-pri-high">
               {" · "}
@@ -128,7 +189,9 @@ export function SprintBar(p: SprintBarProps) {
             </span>
           )}
           {accepted && d.accepted_at && (
-            <span className="text-ink-mute"> · {dt("принят", "accepted")} {fmtDay(d.accepted_at)}</span>
+            <span className="text-ink-mute">
+              · {dt("принят", "accepted")} {fmtDay(d.accepted_at)}
+            </span>
           )}
         </span>
       )}
@@ -147,10 +210,19 @@ export function SprintBar(p: SprintBarProps) {
                   disabled={off}
                   aria-pressed={on}
                   onClick={() => p.onView(v)}
-                  title={off ? dt("Канбан — только на компьютере", "Kanban is desktop only") : undefined}
+                  title={off
+                    ? dt(
+                      "Канбан — только на компьютере",
+                      "Kanban is desktop only",
+                    )
+                    : undefined}
                   className={cn(
                     "h-[28px] border-r border-line-2 px-3 font-medium transition-colors last:border-r-0",
-                    on ? "bg-primary font-semibold text-white" : off ? "text-ink-mute" : "text-ink-soft hover:bg-surface-2",
+                    on
+                      ? "bg-primary font-semibold text-white"
+                      : off
+                      ? "text-ink-mute"
+                      : "text-ink-soft hover:bg-surface-2",
                   )}
                   style={{ fontSize: 12.5 }}
                 >
@@ -160,18 +232,29 @@ export function SprintBar(p: SprintBarProps) {
             })}
           </span>
           {p.onPool && (
-            <ToolbarButton onClick={p.onPool} title={dt("Взять задачи из бэклога", "Take tasks from the backlog")}>
+            <ToolbarButton
+              onClick={p.onPool}
+              title={dt(
+                "Взять задачи из бэклога",
+                "Take tasks from the backlog",
+              )}
+            >
               <RoyIcon name="plus" size={12} strokeWidth={2} />
               {dt("Набрать состав", "Pick tasks")}
               <span className="font-mono text-ink-mute">{p.poolCount}</span>
             </ToolbarButton>
           )}
-          {/* Режим правки: вне его доска только читается — никаких «+», «✎», «✕». Ежедневные
-              отметки он НЕ прячет. */}
+          {
+            /* Режим правки: вне его доска только читается — никаких «+», «✎», «✕». Ежедневные
+              отметки он НЕ прячет. */
+          }
           <ToolbarButton
             on={p.editMode}
             onClick={p.onEditMode}
-            title={dt("Показать кнопки правки: завести, переименовать, удалить", "Show editing controls: create, rename, delete")}
+            title={dt(
+              "Показать кнопки правки: завести, переименовать, удалить",
+              "Show editing controls: create, rename, delete",
+            )}
           >
             <RoyIcon name="pencil" size={12} strokeWidth={2} />
             {dt("Правка", "Edit")}
@@ -211,12 +294,16 @@ export function SprintBar(p: SprintBarProps) {
               )}
               style={{ fontSize: 12.5 }}
             >
-              {over ? dt("Спринт закончился — принять", "Sprint is over — accept") : dt("Принять спринт", "Accept sprint")}
+              {over
+                ? dt("Спринт закончился — принять", "Sprint is over — accept")
+                : dt("Принять спринт", "Accept sprint")}
             </button>
           )}
           {accepted && (
             <ToolbarButton on={p.reportOpen} onClick={p.onReport}>
-              {p.reportOpen ? dt("Скрыть отчёт", "Hide report") : dt("Открыть отчёт", "Open report")}
+              {p.reportOpen
+                ? dt("Скрыть отчёт", "Hide report")
+                : dt("Открыть отчёт", "Open report")}
             </ToolbarButton>
           )}
         </div>

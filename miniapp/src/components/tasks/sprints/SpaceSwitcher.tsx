@@ -138,7 +138,9 @@ export function SpaceSwitcher(
     const c = counts?.get(id);
     // Отделено точкой: «Sprint 24» и счётчик 3 без разделителя читаются как «Sprint 243» —
     // проверено на живом экране, имя пространства превращалось в другое имя.
-    return c ? <span className="ml-1 font-mono text-ink-mute">· {c}</span> : null;
+    return c
+      ? <span className="ml-1 font-mono text-ink-mute">· {c}</span>
+      : null;
   };
   const items: MenuItem[] = [
     ...spaces.map((s) => ({
@@ -160,7 +162,11 @@ export function SpaceSwitcher(
     ...(onChanged
       ? [{
         key: "__new__",
-        label: <span className="text-accent-ink">{dt("＋ Новое пространство", "＋ New space")}</span>,
+        label: (
+          <span className="text-accent-ink">
+            {dt("＋ Новое пространство", "＋ New space")}
+          </span>
+        ),
         action: true,
         onPick: () => setDraft({ id: null, name: "" }),
       }]
@@ -175,7 +181,11 @@ export function SpaceSwitcher(
         },
         {
           key: "__delete__",
-          label: <span className="text-pri-high">{dt("Удалить пространство", "Delete space")}</span>,
+          label: (
+            <span className="text-pri-high">
+              {dt("Удалить пространство", "Delete space")}
+            </span>
+          ),
           action: true,
           onPick: remove,
         },
@@ -183,7 +193,9 @@ export function SpaceSwitcher(
       : []),
   ];
   const current = active?.name ??
-    (value === NO_SPACE && showOrphans ? dt("Без пространства", "No space") : dt("не выбрано", "none"));
+    (value === NO_SPACE && showOrphans
+      ? dt("Без пространства", "No space")
+      : dt("не выбрано", "none"));
 
   const iconBtn = (title: string, onClick: () => void, glyph: string) => (
     <button
@@ -203,7 +215,15 @@ export function SpaceSwitcher(
   // в той же полосе: меню закрывается на выборе пункта, и поле внутри него пропадало бы.
   return (
     <>
-      <Menu label={<>{dt("Пространство", "Space")}: <span className="text-ink">{current}</span></>} items={items} />
+      <Menu
+        label={
+          <>
+            {dt("Пространство", "Space")}:{" "}
+            <span className="text-ink">{current}</span>
+          </>
+        }
+        items={items}
+      />
       {draft && (
         <span className="flex items-center gap-1">
           <input
@@ -231,7 +251,9 @@ export function SpaceSwitcher(
           }, "✕")}
         </span>
       )}
-      {err && <span className="text-pri-high" style={{ fontSize: 11.5 }}>{err}</span>}
+      {err && (
+        <span className="text-pri-high" style={{ fontSize: 11.5 }}>{err}</span>
+      )}
     </>
   );
 }

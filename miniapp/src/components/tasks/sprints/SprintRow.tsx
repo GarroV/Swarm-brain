@@ -41,7 +41,10 @@ export type RowHandlers = {
   onOpen?: (item: SprintCycleItem) => void;
   onDone?: (item: SprintCycleItem) => void | Promise<void>;
   onCarry?: (item: SprintCycleItem) => void | Promise<void>;
-  onCheck?: (item: SprintCycleItem, status: CheckStatus | null) => void | Promise<void>;
+  onCheck?: (
+    item: SprintCycleItem,
+    status: CheckStatus | null,
+  ) => void | Promise<void>;
   /** Причина — отдельным обработчиком: у риска и проблемы это `check_note`, у переноса
    *  `carry_reason`, и строка не должна знать, какое поле куда класть. */
   onNote?: (
@@ -78,7 +81,9 @@ function CheckChip({ status, note, unchecked }: {
       title={note ?? undefined}
       className={cn(
         "inline-flex h-[22px] max-w-full items-center gap-1.5 truncate rounded-[6px] border px-2 font-medium",
-        status ? CHECK_TONE[status] : "border-transparent text-ink-mute group-hover:border-line",
+        status
+          ? CHECK_TONE[status]
+          : "border-transparent text-ink-mute group-hover:border-line",
       )}
       style={{ fontSize: 12 }}
     >
@@ -106,8 +111,11 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
 }) {
   const dt = useDt();
   const closed = CLOSED.has(item.status);
-  const needsNote = item.check_status === "risk" || item.check_status === "problem";
-  const noteField: "check_note" | "carry_reason" = needsNote ? "check_note" : "carry_reason";
+  const needsNote = item.check_status === "risk" ||
+    item.check_status === "problem";
+  const noteField: "check_note" | "carry_reason" = needsNote
+    ? "check_note"
+    : "carry_reason";
   const saved = (needsNote ? item.check_note : item.carry_reason) ?? "";
   const [note, setNote] = useState<string | null>(null);
   const noteValue = note ?? saved;
@@ -118,11 +126,14 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
   const who = item.assignees[0] ?? null;
   // Клик по кнопке не должен открывать карточку — иначе каждое быстрое действие
   // заканчивается всплывшей модалкой.
-  const act = (fn?: (i: SprintCycleItem) => void | Promise<void>) => (e: React.MouseEvent) => {
-    e.stopPropagation();
-    fn?.(item);
-  };
-  const quiet = "rounded-[6px] border px-1.5 py-0.5 leading-none transition-colors";
+  const act =
+    (fn?: (i: SprintCycleItem) => void | Promise<void>) =>
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      fn?.(item);
+    };
+  const quiet =
+    "rounded-[6px] border px-1.5 py-0.5 leading-none transition-colors";
 
   return (
     <div
@@ -132,11 +143,21 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
         "group grid items-center border-t border-line first:border-t-0 transition-colors",
         openable && "cursor-pointer hover:bg-surface-2",
       )}
-      style={{ gridTemplateColumns: SPRINT_COLS, minHeight: 38, fontSize: 13.5 }}
+      style={{
+        gridTemplateColumns: SPRINT_COLS,
+        minHeight: 38,
+        fontSize: 13.5,
+      }}
     >
-      <div className="flex min-w-0 items-center gap-2 px-3" style={depth ? { paddingLeft: 34 } : undefined}>
+      <div
+        className="flex min-w-0 items-center gap-2 px-3"
+        style={depth ? { paddingLeft: 34 } : undefined}
+      >
         <span
-          className={cn("size-[7px] shrink-0 rounded-full", STATUS_TONE[item.status] ?? "bg-status-open")}
+          className={cn(
+            "size-[7px] shrink-0 rounded-full",
+            STATUS_TONE[item.status] ?? "bg-status-open",
+          )}
           title={item.status}
         />
         <span
@@ -154,7 +175,10 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
           {item.hidden ? dt("Приватная задача", "Private task") : item.title}
         </span>
         {item.removed && (
-          <span className="shrink-0 whitespace-nowrap text-ink-mute" style={{ fontSize: 11 }}>
+          <span
+            className="shrink-0 whitespace-nowrap text-ink-mute"
+            style={{ fontSize: 11 }}
+          >
             {dt("удалена", "deleted")}
             {item.removed_at ? ` ${fmtDay(item.removed_at)}` : ""}
           </span>
@@ -163,7 +187,10 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
           <span className="flex shrink-0 items-center gap-1.5">
             {showExtra && !item.in_plan && (
               <span
-                title={dt("добавлено после старта спринта", "added after the sprint started")}
+                title={dt(
+                  "добавлено после старта спринта",
+                  "added after the sprint started",
+                )}
                 className="rounded-[5px] border border-line px-1.5 py-0.5 text-ink-mute"
                 style={{ fontSize: 10.5 }}
               >
@@ -178,8 +205,16 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
         )}
       </div>
 
-      <div className={cn("px-2 font-mono", late ? "font-semibold text-pri-high" : "text-ink-soft")} style={{ fontSize: 12 }}>
-        {item.due_date ? fmtDayShort(item.due_date) : <span className="text-ink-mute">—</span>}
+      <div
+        className={cn(
+          "px-2 font-mono",
+          late ? "font-semibold text-pri-high" : "text-ink-soft",
+        )}
+        style={{ fontSize: 12 }}
+      >
+        {item.due_date
+          ? fmtDayShort(item.due_date)
+          : <span className="text-ink-mute">—</span>}
       </div>
 
       <div className="px-2 font-mono text-ink-soft" style={{ fontSize: 12 }}>
@@ -191,18 +226,30 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
           ? (
             <button
               type="button"
-              onClick={act((i) => h.onCheck!(i, NEXT_CHECK[i.check_status ?? "none"]))}
+              onClick={act((i) =>
+                h.onCheck!(i, NEXT_CHECK[i.check_status ?? "none"])
+              )}
               title={dt(
                 "Как идут дела: по плану → риск → проблема",
                 "How it is going: on track → at risk → problem",
               )}
               className="max-w-full rounded-[6px] transition-opacity hover:opacity-80"
             >
-              <CheckChip status={item.check_status} note={item.check_note} unchecked={unchecked} />
+              <CheckChip
+                status={item.check_status}
+                note={item.check_note}
+                unchecked={unchecked}
+              />
             </button>
           )
           : live
-          ? <CheckChip status={item.check_status} note={item.check_note} unchecked={unchecked && !closed} />
+          ? (
+            <CheckChip
+              status={item.check_status}
+              note={item.check_note}
+              unchecked={unchecked && !closed}
+            />
+          )
           : null}
       </div>
 
@@ -211,10 +258,16 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
           <>
             {who ? <AssigneeChip name={who} /> : null}
             <span className="min-w-0 truncate">
-              {who ? displayName(who) : <span className="text-ink-mute">—</span>}
+              {who
+                ? displayName(who)
+                : <span className="text-ink-mute">—</span>}
             </span>
             {item.assignees.length > 1 && (
-              <span className="shrink-0 font-mono text-ink-mute" style={{ fontSize: 11 }} title={item.assignees.join(", ")}>
+              <span
+                className="shrink-0 font-mono text-ink-mute"
+                style={{ fontSize: 11 }}
+                title={item.assignees.join(", ")}
+              >
                 +{item.assignees.length - 1}
               </span>
             )}
@@ -223,12 +276,17 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
       </div>
 
       {/* Хвост строки: быстрые действия. На компьютере — по наведению, на телефоне видны всегда. */}
-      <div className="flex items-center justify-end gap-1 pr-3 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100" style={{ fontSize: 11 }}>
+      <div
+        className="flex items-center justify-end gap-1 pr-3 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100"
+        style={{ fontSize: 11 }}
+      >
         {live && h.onDone && (
           <button
             type="button"
             onClick={act(h.onDone)}
-            title={closed ? dt("Вернуть в работу", "Reopen") : dt("Выполнено", "Done")}
+            title={closed
+              ? dt("Вернуть в работу", "Reopen")
+              : dt("Выполнено", "Done")}
             className={cn(
               quiet,
               closed
@@ -258,9 +316,11 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
         )}
       </div>
 
-      {/* Причину спрашиваем там же, где поставили отметку: «риск» без причины к следующей
+      {
+        /* Причину спрашиваем там же, где поставили отметку: «риск» без причины к следующей
           встрече уже никто не помнит. Поле необязательное — принуждение даёт «нет времени»
-          вместо объяснения. */}
+          вместо объяснения. */
+      }
       {h.onNote && !closed && live && (needsNote || item.to_carry) && (
         <div className="col-span-full px-3 pb-2 pl-[27px]">
           <input
@@ -274,8 +334,14 @@ export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
               h.onNote!(item, { [noteField]: v || null });
             }}
             placeholder={needsNote
-              ? dt("что именно мешает (необязательно)", "what exactly is blocking (optional)")
-              : dt("почему переносится (необязательно)", "why it is carried over (optional)")}
+              ? dt(
+                "что именно мешает (необязательно)",
+                "what exactly is blocking (optional)",
+              )
+              : dt(
+                "почему переносится (необязательно)",
+                "why it is carried over (optional)",
+              )}
             className="w-full rounded-[6px] border border-line bg-surface px-2 py-1 text-ink outline-none focus:border-accent-line"
             style={{ fontSize: 12 }}
           />
