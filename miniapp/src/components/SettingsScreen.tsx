@@ -330,12 +330,13 @@ export function GranolaSection() {
 // ── Digest section ────────────────────────────────────────────────────────────
 
 export function DigestSection({ isAdmin }: { isAdmin: boolean }) {
+  const dt = useDt();
   const [days, setDays] = useState(7);
   const [allCountries, setAllCountries] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
-  // Период и охват сохраняются и используются секцией дайджеста на главной (см. dash/PersonalDigest).
+  // Период и охват сохраняются в localStorage; их же читает dash/PersonalDigest (с главной снят, компонент оставлен).
   useEffect(() => {
     const v = Number(localStorage.getItem("roy_digest_days"));
     if (v === 14 || v === 30) setDays(v);
@@ -357,6 +358,10 @@ export function DigestSection({ isAdmin }: { isAdmin: boolean }) {
     try {
       const { text } = await generateDigest(days, allCountries);
       setResult(text);
+    } catch (e) {
+      // Раньше сбой глотался: кнопка возвращалась, а под ней — пусто, как будто сводки нет.
+      console.error("[DigestSection] generate", e);
+      setResult(dt("Не получилось собрать дайджест. Попробуйте ещё раз через минуту.", "Could not build the digest. Try again in a minute."));
     } finally {
       setGenerating(false);
     }
