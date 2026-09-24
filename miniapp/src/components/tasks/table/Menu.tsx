@@ -15,12 +15,14 @@ export type MenuItem = {
   action?: boolean;
 };
 
-export function ToolbarButton({ on, children, onClick, title, disabled }: {
+export function ToolbarButton({ on, children, onClick, title, disabled, popup }: {
   on?: boolean;
   children: ReactNode;
   onClick?: () => void;
   title?: string;
   disabled?: boolean;
+  /** Кнопка открывает меню: состояние для экранного диктора (aria-haspopup/aria-expanded). */
+  popup?: { open: boolean };
 }) {
   return (
     <button
@@ -28,6 +30,8 @@ export function ToolbarButton({ on, children, onClick, title, disabled }: {
       onClick={onClick}
       title={title}
       disabled={disabled}
+      aria-haspopup={popup ? "menu" : undefined}
+      aria-expanded={popup ? popup.open : undefined}
       className={cn(
         // Кнопка панели по .btn стенда: 30px, рамка line-control, выбранная — акцентная рамка.
         "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border px-3 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-45",
@@ -67,14 +71,14 @@ export function Menu({ label, on, items, footer }: {
 
   return (
     <span ref={ref} className="relative">
-      <ToolbarButton on={on} onClick={() => setOpen((v) => !v)}>
+      <ToolbarButton on={on} popup={{ open }} onClick={() => setOpen((v) => !v)}>
         {label}
         <RoyIcon name="cright" size={11} strokeWidth={2.2} className="rotate-90 opacity-60" />
       </ToolbarButton>
       {open && (
         <div
           role="menu"
-          className="absolute left-0 top-full z-50 mt-1 flex max-h-[60vh] min-w-[200px] flex-col overflow-y-auto rounded-[9px] border border-line bg-[var(--popover)] p-1 shadow-[0_14px_36px_-12px_rgba(0,0,0,.35)]"
+          className="absolute left-0 top-full z-50 mt-1 flex max-h-[60vh] min-w-[200px] flex-col overflow-y-auto rounded-[10px] border border-line bg-[var(--popover)] p-1 shadow-[0_14px_36px_-12px_rgba(0,0,0,.35)]"
         >
           {items.map((it) => (
             <button
