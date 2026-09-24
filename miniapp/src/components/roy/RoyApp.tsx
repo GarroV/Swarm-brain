@@ -304,9 +304,14 @@ export function RoyApp({ me }: { me: Me | null }) {
     openTasks,
   };
   const top = stack[stack.length - 1];
+  // Десктоп по стенду (detail.js): карточки встречи и записи — панель справа поверх раздела,
+  // раздел под ней остаётся на месте. Только когда в стеке одни карточки: из «Команды»,
+  // «Настроек» и прочих push-экранов карточка открывается как раньше, экраном.
+  const panelMode = isDesktop && stack.length > 0 && stack.every((r) => PANEL_VIEWS.has(r.view));
+  const mainRoute = panelMode ? undefined : top;
   // На десктопе домашняя вкладка («Поиск») — бенто-дашборд во всю ширину; на мобайле и в
   // push-стеке остаётся центрированная колонка.
-  const isDashboard = isDesktop && tab === "search" && !top;
+  const isDashboard = isDesktop && tab === "search" && !mainRoute;
 
   // Левая рейка (десктоп): разделы — это табы, а Команда/Настройки/Админ — push-экраны,
   // которые рейка кладёт единственными в стек (повторный клик не наращивает «назад»).
@@ -394,7 +399,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                   : "max-w-[480px] lg:max-w-[1280px]",
               )}
             >
-              {top ? <PushScreen route={top} /> : (
+              {mainRoute ? <PushScreen route={mainRoute} /> : (
                 <>
                   {
                     /* Десктоп: разделы переключает левая рейка, здесь — только заголовок раздела
@@ -443,6 +448,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                 </div>
               )}
             </div>
+            {panelMode && top && <DetailPanel route={top} onClose={() => setStack([])} />}
             {
               /* Профиль/управление на десктопе — пункты левой рейки (Команда/Настройки/Админ),
               поповер ProfileMenu в углу больше не нужен. На мобайле — «Ещё» в таб-баре. */
@@ -474,6 +480,34 @@ export function RoyApp({ me }: { me: Me | null }) {
       }
       {isDesktop && <FeedbackFab />}
     </RoyNavContext.Provider>
+  );
+}
+
+const PANEL_VIEWS = new Set<RoyRoute["view"]>(["meetingDetail", "record"]);
+
+// Панель карточки справа (десктоп): ширина — --detail-w стенда. Esc и клик мимо закрывают её,
+// но не когда поверх открыто окно (у него свой Esc).
+function DetailPanel({ route, onClose }: { route: RoyRoute; onClose: () => void }) {
+  const dt = useDt();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector("[role=dialog], [role=alertdialog], [role=menu]")) return;
+      onClose();
+    };
+    // capture: проверяем до того, как окно поверх обработает Esc и исчезнет из DOM.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  return (
+    <>
+      <button type="button" aria-label={dt("Закрыть карточку", "Close the card")} onClick={onClose}
+        className="absolute inset-0 z-40 cursor-default bg-[rgba(10,13,17,.12)]" />
+      <aside aria-label={dt("Карточка", "Card")}
+        className="roy-pop absolute inset-y-0 right-0 z-40 flex w-[560px] max-w-[96vw] flex-col overflow-hidden border-l border-line bg-background shadow-[-12px_0_40px_rgba(10,13,17,.12)] min-[1560px]:w-[640px]">
+        <PushScreen key={JSON.stringify(route)} route={route} />
+      </aside>
+    </>
   );
 }
 
