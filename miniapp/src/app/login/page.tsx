@@ -14,7 +14,13 @@ const ERR_TEXT: Record<string, string> = {
   token: "Couldn't sign in with Google — please try again.",
   userinfo: "Couldn't fetch your Google account — please try again.",
   resolve: "Temporary sign-in error — please try again.",
+  token_login: "This token wasn't accepted — check that you copied it whole.",
+  owner_only: "This preview is open to its owner only.",
 };
+
+// Боевой адрес. На любом другом (превью ветки — витрина нового интерфейса) Google и Telegram
+// не работают, поэтому там вход по личному токену, и только для владельца (/api/auth/token).
+const PROD_HOST = "swarm-brain.pages.dev";
 
 // Соты (Hero Patterns Hexagons), янтарь на прозрачном — фоновая текстура «улья».
 const HONEYCOMB =
@@ -26,6 +32,7 @@ type TgAuth = { auth: (opts: { bot_id: number; request_access?: string }, cb: (u
 export default function LoginPage() {
   const [googleHref, setGoogleHref] = useState("/api/auth/google/start");
   const [err, setErr] = useState<string | null>(null);
+  const [isPreview, setIsPreview] = useState(false);
   const nextRef = useRef("");
 
   useEffect(() => {
@@ -39,6 +46,7 @@ export default function LoginPage() {
       } catch { /* кривой next → без редиректа */ }
     }
     nextRef.current = safeNext;
+    setIsPreview(window.location.hostname !== PROD_HOST);
     setGoogleHref(safeNext ? `/api/auth/google/start?next=${encodeURIComponent(safeNext)}` : "/api/auth/google/start");
 
     const e = params.get("err");
@@ -125,6 +133,17 @@ export default function LoginPage() {
           Sign in with Telegram
         </button>
       </div>
+
+      {isPreview && (
+        <form method="post" action="/api/auth/token" className="relative flex flex-col gap-2 w-full max-w-[19rem]">
+          <label htmlFor="preview-token" className="text-xs text-ink-soft text-center">
+            Preview · owner sign-in with your personal Swarm token
+          </label>
+          <input id="preview-token" name="token" type="password" autoComplete="off" required
+            placeholder="smcp_…" className="w-full rounded-2xl bg-surface px-4 py-3 text-sm border border-line-2" />
+          <button type="submit" className={btnClass} style={{ fontSize: 15 }}>Sign in with token</button>
+        </form>
+      )}
 
       <p className="relative text-xs text-ink-mute">Invite-only · @dodobrands.io</p>
     </main>
