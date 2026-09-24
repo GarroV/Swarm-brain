@@ -215,9 +215,8 @@ export function MeetingDetail({ id }: { id: string }) {
     </>
   );
   // Транскрипт нужен только на вычитке — по нему сверяют тезисы; после подтверждения он их
-  // дублирует (решение владельца 2026-09-25). Встречу без тезисов оставляем с текстом: иначе
-  // карточка пустая.
-  const showTranscript = !!e && (!confirmed || !e.summary);
+  // дублирует (решение владельца 2026-09-25; подтверждённой встречи без тезисов не бывает).
+  const showTranscript = !!e && !confirmed;
   const tab = view === "tr" && !showTranscript ? "tez" : view;
   const transcriptBlock = showTranscript && e && (
     <>

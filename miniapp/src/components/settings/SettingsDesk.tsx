@@ -6,8 +6,8 @@ import { countryCode } from "@/lib/countries";
 import { getInitData } from "@/lib/telegram";
 import type { Me } from "@/types";
 import {
-  AccountSection, ClaudeDesktopSection, DigestSection, FeedbackSection, GoogleCalendarSection,
-  GranolaSection, ProfileSection, RecorderSection, SettingsScreen, UploadSection,
+  AccountSection, ClaudeDesktopSection, DigestSection, GoogleCalendarSection,
+  GranolaSection, ProfileSection, RecorderSection, SettingsScreen,
 } from "@/components/SettingsScreen";
 import { ConnectorsSection } from "@/components/profile/ConnectorsSection";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
@@ -18,14 +18,15 @@ import { useIsDesktop } from "@/components/roy/useIsDesktop";
 // «Настройки» десктопа по стенду (docs/redesign/stand/js/screens-system.js → screenSettings):
 // одна страница, разделы подряд, в каждом строки «поле — значение — действие». Содержимое —
 // прежние секции SettingsScreen, разложенные по разделам; действие строки раскрывает секцию под ней.
-// Разделов стенда «Доступы», «Списки», «Роли задач» здесь нет: токены живут в карточках
+// Раздела «Файлы и фидбек» нет (решение владельца 2026-09-25: «файлы никто не добавляет»;
+// фидбек — плавающая кнопка). Разделов стенда «Доступы», «Списки», «Роли задач» здесь нет: токены живут в карточках
 // интеграций, списки задач правятся на доске задач, ролей задач в продукте нет. Строк «Язык»
 // и «Тема» тоже нет — язык задаёт демо-режим, тема следует системе.
 
-type Tab = "profile" | "integr" | "notif" | "more";
+type Tab = "profile" | "integr" | "notif";
 const SECTIONS: [Tab, string, string][] = [
   ["profile", "Профиль", "Profile"], ["integr", "Интеграции", "Integrations"],
-  ["notif", "Дайджест", "Digest"], ["more", "Файлы и фидбек", "Files & feedback"],
+  ["notif", "Дайджест", "Digest"],
 ];
 const ROLE_LABEL: Record<string, string> = { bd: "BD", marketing: "Marketing", rnd: "R&D" };
 
@@ -81,19 +82,6 @@ function TabBody({ tab, me, onProfileSaved }: { tab: Tab; me: Me; onProfileSaved
         <SettingRow label={dt("Дайджест", "Digest")} value={dt("период и охват для дайджеста; собрать сейчас", "period and scope; build one now")}
           action={dt("Настроить", "Set up")}>
           <DigestSection isAdmin={!!me.is_admin} />
-        </SettingRow>
-      </Rows>
-    );
-  }
-  if (tab === "more") {
-    return (
-      <Rows>
-        <SettingRow label={dt("Загрузить файл", "Upload a file")} value="PDF · XLSX · DOCX · TXT" action={dt("Выбрать", "Choose")}>
-          <UploadSection />
-        </SettingRow>
-        <SettingRow label={dt("Фидбек", "Feedback")} value={dt("идея, баг или вопрос команде SWARM", "an idea, a bug or a question")}
-          action={dt("Написать", "Write")}>
-          <FeedbackSection />
         </SettingRow>
       </Rows>
     );
