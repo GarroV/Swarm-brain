@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
@@ -76,6 +76,7 @@ export function RoyApp({ me }: { me: Me | null }) {
     { lens: Lens; list?: SmartListId } | null
   >(null);
   const isDesktop = useIsDesktop();
+  const visited = useVisitedTabs(tab);
   // Сколько черновиков встреч ждёт вычитки — для бейджа на табе «Встречи». Ошибку глотаем:
   // эндпоинт /agent-meetings может быть недоступен, и это не повод ронять каркас (та же
   // намеренная деградация, что в AgentReviewQueue).
@@ -415,10 +416,12 @@ export function RoyApp({ me }: { me: Me | null }) {
                     </div>
                   )}
                   <div className="min-h-0 flex-1 overflow-hidden">
-                    {tab === "search" &&
-                      (isDashboard ? <RoyDashboard /> : <SearchScreen />)}
-                    {tab === "task" &&
-                      (isDesktop ? <TasksTable /> : <RoyTasksScreen />)}
+                    <KeptTab id="search" tab={tab} visited={visited}>
+                      {isDashboard ? <RoyDashboard /> : <SearchScreen />}
+                    </KeptTab>
+                    <KeptTab id="task" tab={tab} visited={visited}>
+                      {isDesktop ? <TasksTable /> : <RoyTasksScreen />}
+                    </KeptTab>
                     {
                       /* Десктоп своей доской проектов уже владеет (TasksScreen → вид «Проекты»),
                       мобильный экран — отдельный: список проектов → задачи внутри. */
@@ -426,8 +429,8 @@ export function RoyApp({ me }: { me: Me | null }) {
                     {tab === "projects" &&
                       (isDesktop ? <TasksScreen only="sprint" /> : <RoyProjectsScreen />)}
                     {tab === "sprints" && <TasksScreen only="sprints" />}
-                    {tab === "book" && <RoyBaseScreen />}
-                    {tab === "cal" && <RoyMeetingsScreen />}
+                    <KeptTab id="book" tab={tab} visited={visited}><RoyBaseScreen /></KeptTab>
+                    <KeptTab id="cal" tab={tab} visited={visited}><RoyMeetingsScreen /></KeptTab>
                     {tab === "more" && <MoreScreen root />}
                   </div>
                   <RoyTabBar
@@ -481,6 +484,28 @@ export function RoyApp({ me }: { me: Me | null }) {
       {isDesktop && <FeedbackFab />}
     </RoyNavContext.Provider>
   );
+}
+
+// Разделы, которые после первого открытия остаются смонтированными (скрыты, пока не выбраны):
+// переход между ними не перезапрашивает всё с нуля на глазах (решение владельца 2026-09-25 —
+// «при переключениях между вкладками долго грузятся другие вкладки каждый раз»). Свежесть —
+// через tasksVersion, как и раньше. «Проекты», «Спринты» и «Ещё» сюда не входят: доска проектов —
+// защищённая поверхность, и у неё свои глобальные обработчики клавиш, которые в скрытом виде
+// продолжали бы ловить нажатия.
+const KEEP_ALIVE_TABS = new Set<RoyTab>(["search", "task", "book", "cal"]);
+
+function useVisitedTabs(tab: RoyTab): Set<RoyTab> {
+  const [visited, setVisited] = useState<Set<RoyTab>>(() => new Set([tab]));
+  useEffect(() => {
+    setVisited((v) => (v.has(tab) ? v : new Set([...v, tab])));
+  }, [tab]);
+  return visited;
+}
+
+function KeptTab({ id, tab, visited, children }: { id: RoyTab; tab: RoyTab; visited: Set<RoyTab>; children: ReactNode }) {
+  const active = tab === id;
+  if (!active && !(KEEP_ALIVE_TABS.has(id) && visited.has(id))) return null;
+  return <div hidden={!active} className="h-full">{children}</div>;
 }
 
 const PANEL_VIEWS = new Set<RoyRoute["view"]>(["meetingDetail", "record", "meetingReview"]);
