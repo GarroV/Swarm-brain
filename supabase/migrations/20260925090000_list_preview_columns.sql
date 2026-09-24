@@ -1,0 +1,53 @@
+-- Превью для СПИСОЧНЫХ ответов: обрезка длинных текстов уезжает из Deno в базу (issue #490).
+--
+-- Зачем. GET /meetings выбирал полные content/summary (транскрипт + тезисы) и резал их до 400
+-- символов уже в JS. База отдавала 3.6 МБ ради ответа в 440 кБ, и почти всё время запроса
+-- уходило на чтение TOAST-страниц и сериализацию текста, который тут же выбрасывался.
+-- Замерено на проде 25.09.2026 (283 видимых встречи, explain analyze):
+--     полные content/summary  →  654 мс
+--     left(content, 400)      →   15 мс
+--
+-- Почему generated-колонки, а не выражение в запросе: PostgREST не умеет произвольные SQL-
+-- функции в select — только колонки и алиасы. Колонка даёт тот же эффект и остаётся доступна
+-- любому будущему эндпоинту, которому нужен список.
+--
+-- ⚠️ Число 400 продублировано в LIST_PREVIEW_CHARS (meetings-payload.ts). Дрейф между ними
+-- ловит list-preview.db.test.ts — он сверяет длину превью из ЖИВОЙ базы с константой кода.
+
+alter table entries
+  add column if not exists content_preview text
+    generated always as (left(content, 400)) stored,
+  add column if not exists summary_preview text
+    generated always as (left(summary, 400)) stored,
+  -- Признак «в превью влезло не всё». Не косметика: по нему экран детали понимает, что запись
+  -- надо до-загрузить целиком, иначе обрезанный транскрипт будет показан как полный.
+  -- Считается от ИСХОДНОЙ длины — обрезанная строка о себе такого сказать уже не может.
+  add column if not exists list_truncated boolean
+    generated always as (
+      length(content) > 400 or coalesce(length(summary), 0) > 400
+    ) stored;
+
+comment on column entries.content_preview is
+  'Первые 400 символов content для списочных ответов (issue #490). Полный текст — GET /meetings/:id.';
+comment on column entries.summary_preview is
+  'Первые 400 символов summary для списочных ответов (issue #490).';
+comment on column entries.list_truncated is
+  'true, если content или summary длиннее превью. Сигнал клиенту до-загрузить запись целиком.';
+
+-- Очередь вычитки: тот же приём для draft_notes_md (issue #491).
+-- Список опрашивается каждые 10 секунд и текст тезисов в нём не рендерится — ему нужен только
+-- признак «готово/не готово». Раньше колонка выбиралась целиком и выбрасывалась в JS: 119 мс
+-- базы за опрос, из них ~88 мс на сериализацию выброшенного.
+--
+-- Пустая строка = НЕ готово: иначе список рапортует «тезисы готовы» на пустышке.
+--
+-- Проверяем «есть хоть один непробельный символ» регуляркой, а НЕ btrim(): btrim без второго
+-- аргумента срезает только пробелы и оставляет \n и \t, поэтому черновик из одних переводов
+-- строки считался бы готовым. JS-аналог (.trim() в toAgentListRow) ведёт себя иначе — и это
+-- расхождение поймал list-preview.db.test.ts на живой базе, до раскатки.
+alter table meetings
+  add column if not exists has_draft_notes boolean
+    generated always as (coalesce(draft_notes_md ~ '[^[:space:]]', false)) stored;
+
+comment on column meetings.has_draft_notes is
+  'Есть ли непустой draft_notes_md. Для списка очереди вычитки, чтобы не тянуть текст (issue #491).';
