@@ -109,8 +109,9 @@ export function TasksTable() {
         <div className="min-w-[960px]">
           <div
             role="row"
-            className="sticky top-0 z-10 grid border-b border-line bg-surface font-medium text-ink-mute"
-            style={{ gridTemplateColumns: COLS, fontSize: 11.5, height: 32, alignItems: "center" }}
+            // Шапка по стенду (.th): капс, разрядка, серая подложка — визуальный шаг В2.
+            className="sticky top-0 z-10 grid border-b border-line bg-surface-2 font-semibold uppercase text-ink-soft"
+            style={{ gridTemplateColumns: COLS, fontSize: 10.5, letterSpacing: "0.07em", height: 32, alignItems: "center" }}
           >
             <span className="px-3">{dt("Задача", "Task")}</span>
             <span className="px-2">{dt("Срок", "Due")}</span>
@@ -153,12 +154,12 @@ export function TasksTable() {
                   type="button"
                   onClick={() => toggleSection(sec.key)}
                   aria-expanded={!shut}
-                  className="flex w-full items-center gap-2 border-b border-line bg-surface-2 px-3 text-left font-semibold text-ink-soft"
-                  style={{ height: 30, fontSize: 12 }}
+                  // Подпись группы по стенду: «ПРОСРОЧЕНО · 10» капсом с разрядкой на серой полосе.
+                  className="flex w-full items-center gap-2 border-b border-line bg-surface-2 px-3 text-left font-semibold uppercase text-ink-soft"
+                  style={{ height: 30, fontSize: 10.5, letterSpacing: "0.07em" }}
                 >
-                  <RoyIcon name="cright" size={11} strokeWidth={2.4} className={shut ? "" : "rotate-90"} />
-                  <span>{sec.label}</span>
-                  <span className="font-mono font-normal text-ink-mute">{sec.tasks.length}</span>
+                  <RoyIcon name="cright" size={10} strokeWidth={2.4} className={shut ? "" : "rotate-90"} />
+                  <span>{sec.label} · {sec.tasks.length}</span>
                   {!!sec.late && (
                     <span className="font-normal text-pri-high">{dt(`просрочено ${sec.late}`, `${sec.late} overdue`)}</span>
                   )}
