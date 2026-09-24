@@ -61,12 +61,25 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
           type="button"
           onClick={(e) => { stop(e); onToggle(); }}
           aria-label={done ? dt("Вернуть в работу", "Reopen") : dt("Готово", "Done")}
-          className={cn(
-            "flex size-[17px] shrink-0 items-center justify-center rounded-full border-[1.6px] transition-colors",
-            done ? "border-status-done bg-status-done text-white" : inProgress ? "border-primary" : "border-ink-mute hover:border-primary",
-          )}
+          className="flex size-[17px] shrink-0 items-center justify-center"
         >
-          {done && <RoyIcon name="check" size={11} strokeWidth={2.6} />}
+          {/* Стенд: в покое — точка статуса; галочка-кружок проявляется при наведении и фокусе,
+              чтобы закрытие задачи оставалось в один клик (визуальный шаг В2). */}
+          {done ? (
+            <span className="flex size-[17px] items-center justify-center rounded-full bg-status-done text-white">
+              <RoyIcon name="check" size={11} strokeWidth={2.6} />
+            </span>
+          ) : (
+            <>
+              <span
+                className={cn(
+                  "size-[7px] rounded-full group-hover:hidden group-focus-within:hidden",
+                  inProgress ? "bg-status-prog" : "bg-status-open",
+                )}
+              />
+              <span className="hidden size-[17px] rounded-full border-[1.6px] border-ink-mute transition-colors hover:border-primary group-hover:block group-focus-within:block" />
+            </>
+          )}
         </button>
         <span className={cn("min-w-0 truncate", done ? "text-ink-mute line-through" : "text-ink")}>{task.title}</span>
         {progress && (

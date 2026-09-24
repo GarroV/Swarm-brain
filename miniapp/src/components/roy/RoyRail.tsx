@@ -3,7 +3,6 @@ import { cn, displayName } from "@/lib/utils";
 import { Avatar } from "./ui";
 import { RoyIcon, type RoyIconName } from "./icons";
 import { initials } from "./dash/shared";
-import { RoyMark } from "./RoyMark";
 import { useDt, useRoyNav } from "./nav";
 
 // Левая рейка десктопа — навигация нового вида (витрина, решение владельца 24.09.2026:
@@ -72,10 +71,8 @@ export function RoyRail({
         <RoyIcon name={item.icon} size={16} strokeWidth={1.7} />
         <span className="min-w-0 flex-1 truncate">{dt(item.label[0], item.label[1])}</span>
         {badge > 0 && (
-          <span
-            className="rounded-[5px] bg-primary px-1.5 font-mono font-semibold text-white"
-            style={{ fontSize: 10.5, lineHeight: "17px" }}
-          >
+          // Счётчик по стенду — тихой серой цифрой, не синей плашкой (визуальный шаг В2).
+          <span className="font-mono text-ink-mute" style={{ fontSize: 11 }}>
             {badge}
           </span>
         )}
@@ -89,9 +86,16 @@ export function RoyRail({
       className="flex w-[216px] shrink-0 flex-col border-r border-line bg-surface-2"
     >
       <div className="flex items-center gap-2.5 border-b border-line px-4 py-3.5">
-        <RoyMark size={24} />
-        <span className="font-semibold text-ink" style={{ fontSize: 15, letterSpacing: "-0.01em" }}>
-          Swarm
+        {/* Бренд-блок по стенду: тёмный квадрат с «S» и имя капсом (визуальный шаг В2). */}
+        <span
+          aria-hidden
+          className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-ink font-bold text-surface"
+          style={{ fontSize: 13 }}
+        >
+          S
+        </span>
+        <span className="font-bold text-ink" style={{ fontSize: 13.5, letterSpacing: "0.04em" }}>
+          SWARM
         </span>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2.5">
