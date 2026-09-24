@@ -36,6 +36,7 @@ import { RoyDashboard } from "./RoyDashboard";
 import { FeedbackDialog, FeedbackFab } from "./FeedbackFab";
 import { MeetingReview } from "@/components/MeetingReview";
 import { TasksScreen } from "@/components/tasks/TasksScreen";
+import { TasksTable } from "@/components/tasks/table/TasksTable";
 import { TeamScreen } from "@/components/TeamScreen";
 import { SettingsScreen } from "@/components/SettingsScreen";
 import { AdminScreen } from "@/components/AdminScreen";
@@ -411,7 +412,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                     {tab === "search" &&
                       (isDashboard ? <RoyDashboard /> : <SearchScreen />)}
                     {tab === "task" &&
-                      (isDesktop ? <TasksScreen only="list" /> : <RoyTasksScreen />)}
+                      (isDesktop ? <TasksTable /> : <RoyTasksScreen />)}
                     {
                       /* Десктоп своей доской проектов уже владеет (TasksScreen → вид «Проекты»),
                       мобильный экран — отдельный: список проектов → задачи внутри. */
