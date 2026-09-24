@@ -116,7 +116,30 @@ struct SwarmClient {
         var body: [String: Any] = ["recording": recording, "version": version, "on_call": onCall]
         if let meetingKey { body["meeting_key"] = meetingKey }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        _ = try? await Self.session.data(for: req)
+        // Best-effort, но не молча: отказ heartbeat пишем в журнал (issue #468).
+        do {
+            let (_, resp) = try await Self.session.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if code != 200 { Diagnostics.shared.log("HEARTBEAT HTTP \(code)") }
+        } catch {
+            Diagnostics.shared.log("HEARTBEAT сеть: \(error.localizedDescription)")
+        }
+    }
+
+    // POST /recorder-diag — строки постоянного журнала рекордера (issue #468). kind: "log" —
+    // очередная порция; "session_abnormal" / "session_clean" / "session_first_run" — отчёт о том,
+    // как закончилась прошлая сессия, с хвостом журнала и (если был) отчётом о падении.
+    // Возвращает HTTP-код, 0 — сеть.
+    func uploadDiagnostics(kind: String, build: Int, lines: [String], crash: String?) async -> Int {
+        var req = URLRequest(url: url("/recorder-diag"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        authed(&req)
+        var body: [String: Any] = ["kind": kind, "build": build, "lines": lines]
+        if let crash { body["crash"] = crash }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (_, resp) = try? await Self.session.data(for: req) else { return 0 }
+        return (resp as? HTTPURLResponse)?.statusCode ?? 0
     }
 
     // GET /meeting-current — идущая/ближайшая встреча из Google Calendar (на сервере).
