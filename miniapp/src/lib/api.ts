@@ -679,9 +679,16 @@ export async function fetchTodayMeetings(): Promise<TodayMeetings> {
   return apiFetch<TodayMeetings>(`/calendar/today?tz_offset=${tz}`);
 }
 
-export async function fetchConfig(): Promise<{ allowed_markets: string[] }> {
+export interface WorkspaceConfig {
+  allowed_markets: string[];
+  /** Имя воркспейса; null/нет — старый сервер или воркспейс без имени. */
+  workspace_name?: string | null;
+}
+
+export async function fetchConfig(): Promise<WorkspaceConfig> {
   if (DEV_MODE) {
     return {
+      workspace_name: "IMF BD",
       allowed_markets: [
         "RS",
         "HR",
@@ -713,7 +720,7 @@ export async function fetchConfig(): Promise<{ allowed_markets: string[] }> {
       ],
     };
   }
-  return apiFetch<{ allowed_markets: string[] }>("/config");
+  return apiFetch<WorkspaceConfig>("/config");
 }
 
 // Рекордер встреч (Mac): статус токена и минт/перевыпуск однострочника установки.

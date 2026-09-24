@@ -1,5 +1,7 @@
 "use client";
+import { useEffect, useState } from "react";
 import { cn, displayName } from "@/lib/utils";
+import { fetchConfig } from "@/lib/api";
 import { Avatar } from "./ui";
 import { RoyIcon, type RoyIconName } from "./icons";
 import { initials } from "./dash/shared";
@@ -50,6 +52,16 @@ export function RoyRail({
   const { me } = useRoyNav();
   const dt = useDt();
   const foot = FOOT.filter((i) => i.id !== "admin" || me?.is_admin);
+  const [wsName, setWsName] = useState<string | null>(null);
+
+  // Подпись воркспейса под брендом (стенд: .ws-sub). Не пришло имя — подписи нет, рейка не ломается.
+  useEffect(() => {
+    let alive = true;
+    fetchConfig()
+      .then((c) => { if (alive) setWsName(c.workspace_name?.trim() || null); })
+      .catch((e) => console.warn("[RoyRail] workspace name", e));
+    return () => { alive = false; };
+  }, []);
 
   const renderItem = (item: RailItem) => {
     const on = active === item.id;
@@ -94,8 +106,15 @@ export function RoyRail({
         >
           S
         </span>
-        <span className="font-bold text-ink" style={{ fontSize: 13.5, letterSpacing: "0.04em" }}>
-          SWARM
+        <span className="flex min-w-0 flex-col">
+          <span className="font-bold text-ink" style={{ fontSize: 13.5, letterSpacing: "0.04em" }}>
+            SWARM
+          </span>
+          {wsName && (
+            <span className="truncate uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.1em" }} title={wsName}>
+              {wsName}
+            </span>
+          )}
         </span>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2.5">

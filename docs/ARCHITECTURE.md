@@ -984,7 +984,7 @@ _Профиль / воркспейс:_
 |-------|------|-----------|
 | `GET` | `/me` | `{ telegram_id, name, group_id, language, role, markets, is_admin }` |
 | `PATCH` | `/me` | Правка профиля текущего пользователя: `role`, `markets` (нормализуются) в `user_profiles`; 204 |
-| `GET` | `/config` | `{ allowed_markets: string[] }` — ISO коды рынков воркспейса (из `workspaces.allowed_markets`, или глобальный список) |
+| `GET` | `/config` | `{ allowed_markets: string[], workspace_name: string | null }` — ISO коды рынков воркспейса (из `workspaces.allowed_markets`, или глобальный список) и имя воркспейса (`workspaces.name`, подпись под брендом на рейке веба) |
 | `GET` | `/recorder/setup` | `{ active, expiresAt }` — статус токена рекордера (для секции «Рекордер встреч» в вебе). Хелперы — `_shared/recorder-token.ts` |
 | `POST` | `/recorder/token` | Минт/перевыпуск токена рекордера → `{ oneLiner, expiresAt }`; токен ОТДЕЛЬНЫЙ от MCP, доступно всем участникам |
 | `GET` | `/mcp/setup` | `{ active, expiresAt }` — статус MCP-токена Claude Desktop (для секции «Claude Desktop» в вебе). Хелперы — `_shared/mcp-token.ts` |

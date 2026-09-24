@@ -708,13 +708,19 @@ Deno.serve(async (req: Request) => {
   if (req.method === "GET" && routePath === "/config") {
     const { data: ws } = await supabase
       .from("workspaces")
-      .select("allowed_markets")
+      .select("allowed_markets, name")
       .eq("id", groupId)
       .maybeSingle();
-    const allowedMarkets = (ws as { allowed_markets: string[] | null } | null)
-      ?.allowed_markets;
-    const markets = allowedMarkets ?? Object.keys(COUNTRY_NAMES);
-    return json({ allowed_markets: markets }, 200, origin);
+    const row = ws as
+      | { allowed_markets: string[] | null; name: string | null }
+      | null;
+    const markets = row?.allowed_markets ?? Object.keys(COUNTRY_NAMES);
+    // Имя воркспейса — для подписи под брендом в вебе. Пользователю показываем name, не id.
+    return json(
+      { allowed_markets: markets, workspace_name: row?.name ?? null },
+      200,
+      origin,
+    );
   }
 
   // GET /recorder/setup — статус токена рекордера (активен ли + до когда) для секции «Рекордер» в вебе.
