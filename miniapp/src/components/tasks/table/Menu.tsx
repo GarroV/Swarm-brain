@@ -46,11 +46,14 @@ export function ToolbarButton({ on, children, onClick, title, disabled, popup }:
   );
 }
 
-export function Menu({ label, on, items, footer }: {
+export function Menu({ label, on, items, footer, trigger, title }: {
   label: ReactNode;
   on?: boolean;
   items: MenuItem[];
   footer?: ReactNode;
+  /** Свой вид кнопки (выбор прямо в ячейке таблицы, стенд `cpick`); по умолчанию — кнопка панели. */
+  trigger?: (p: { open: boolean; toggle: () => void }) => ReactNode;
+  title?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
@@ -71,10 +74,12 @@ export function Menu({ label, on, items, footer }: {
 
   return (
     <span ref={ref} className="relative">
-      <ToolbarButton on={on} popup={{ open }} onClick={() => setOpen((v) => !v)}>
-        {label}
-        <RoyIcon name="cright" size={11} strokeWidth={2.2} className="rotate-90 opacity-60" />
-      </ToolbarButton>
+      {trigger ? trigger({ open, toggle: () => setOpen((v) => !v) }) : (
+        <ToolbarButton on={on} popup={{ open }} title={title} onClick={() => setOpen((v) => !v)}>
+          {label}
+          <RoyIcon name="cright" size={11} strokeWidth={2.2} className="rotate-90 opacity-60" />
+        </ToolbarButton>
+      )}
       {open && (
         <div
           role="menu"

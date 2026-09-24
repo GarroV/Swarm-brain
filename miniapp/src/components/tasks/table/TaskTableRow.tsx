@@ -6,7 +6,10 @@ import type { TaskLabel } from "@/lib/api";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { isDone, isOverdue } from "@/lib/smartLists";
-import { TaskQuickActions } from "@/components/tasks/TaskQuickActions";
+import { saveTaskPatch, TaskQuickActions, toggleLabelPatch } from "@/components/tasks/TaskQuickActions";
+import { COUNTRY_NAMES, countryName } from "@/lib/countries";
+import type { UpdateTaskInput } from "@/lib/api";
+import { Menu, type MenuItem } from "./Menu";
 import type { SubtaskProgress } from "@/lib/subtasks";
 
 // Строка таблицы задач нового вида (стенд: screens-tasks.js → taskRow). Порядок колонок —
@@ -46,6 +49,31 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
     .filter(Boolean)
     .join(", ");
   const stop = (e: MouseEvent) => e.stopPropagation();
+  const commit = (fields: UpdateTaskInput, patch: Partial<Task>) => saveTaskPatch(task.id, fields, patch, onPatch, onChanged);
+
+  // Выбор прямо в ячейке (стенд: cpick) — рынок, исполнитель, списки. Правила те же, что у
+  // быстрых действий: рынки воркспейса, список делает задачу личной.
+  const codes = markets.length ? [...markets] : Object.keys(COUNTRY_NAMES);
+  if (task.country && !codes.includes(task.country)) codes.push(task.country);
+  const marketItems: MenuItem[] = [
+    { key: "", label: dt("— без рынка", "— no market"), on: !task.country, action: true, onPick: () => commit({ country: null }, { country: null }) },
+    ...codes.map((c) => ({
+      key: c, label: <><span className="mr-1.5 font-mono text-ink-mute">{c}</span>{countryName(c)}</>, on: task.country === c, action: true,
+      onPick: () => commit({ country: c }, { country: c }),
+    })),
+  ];
+  const whoItems: MenuItem[] = [
+    { key: "", label: dt("— не назначен", "— unassigned"), on: who == null, action: true,
+      onPick: () => commit({ assignee_telegram_id: null }, { assignee_telegram_ids: [] }) },
+    ...users.map((u) => ({
+      key: String(u.telegram_id), label: displayName(u.name), on: who === u.telegram_id, action: true,
+      onPick: () => commit({ assignee_telegram_id: u.telegram_id }, { assignee_telegram_ids: [u.telegram_id] }),
+    })),
+  ];
+  const labelItems: MenuItem[] = labels.map((l) => ({
+    key: l.id, label: l.name, on: (task.label_ids ?? []).includes(l.id),
+    onPick: () => { const { fields, patch } = toggleLabelPatch(task, l.id); commit(fields, patch); },
+  }));
 
   return (
     <div
@@ -109,12 +137,35 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
       >
         <TaskQuickActions task={task} users={users} markets={markets} labels={labels} onPatch={onPatch} onChanged={onChanged} />
       </div>
-      <div className="px-2 font-mono text-ink-soft" style={{ fontSize: 12 }}>
-        {task.country ?? <span className="text-ink-mute">—</span>}
-      </div>
+      <CellPick title={task.country ? `${dt("Рынок", "Market")}: ${countryName(task.country)}` : dt("Рынок не указан", "No market")} items={marketItems}>
+        <span className="font-mono text-ink-soft" style={{ fontSize: 12 }}>{task.country ?? <span className="text-ink-mute">—</span>}</span>
+      </CellPick>
       <div className="min-w-0 truncate px-2 text-ink-soft">{projectName ?? <span className="text-ink-mute">—</span>}</div>
-      <div className="min-w-0 truncate px-2 text-ink-soft">{whoName || <span className="text-ink-mute">—</span>}</div>
-      <div className="min-w-0 truncate px-2 text-ink-mute" style={{ fontSize: 12.5 }}>{labelNames || "—"}</div>
+      <CellPick title={whoName ? `${dt("Исполнитель", "Assignee")}: ${whoName}` : dt("Исполнитель не назначен", "Unassigned")} items={whoItems}>
+        <span className="truncate text-ink-soft">{whoName || <span className="text-ink-mute">—</span>}</span>
+      </CellPick>
+      {labels.length > 0 ? (
+        <CellPick title={dt("Списки — личные: задача станет личной", "Lists are personal: the task becomes private")} items={labelItems}>
+          <span className="truncate text-ink-mute" style={{ fontSize: 12.5 }}>{labelNames || "—"}</span>
+        </CellPick>
+      ) : <div className="min-w-0 truncate px-2 text-ink-mute" style={{ fontSize: 12.5 }}>—</div>}
+    </div>
+  );
+}
+
+// Ячейка с выбором: вся ячейка — кнопка, клик не открывает карточку строки.
+function CellPick({ title, items, children }: { title: string; items: MenuItem[]; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0 px-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <Menu label={null} items={items} title={title} trigger={({ open, toggle }) => (
+        <button type="button" title={title} aria-haspopup="menu" aria-expanded={open} onClick={toggle}
+          className={cn(
+            "flex h-[26px] w-full min-w-0 items-center rounded-[6px] px-1 text-left transition-colors hover:bg-surface",
+            open && "bg-surface ring-1 ring-line-2",
+          )}>
+          {children}
+        </button>
+      )} />
     </div>
   );
 }

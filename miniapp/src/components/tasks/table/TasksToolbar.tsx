@@ -42,7 +42,7 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
   const lensOff = s.assignee != null;
   const doneOn = r.statuses.has("done");
   const recurOnly = r.activeList === "recurring";
-  const nMore = (r.byMarket ? 1 : 0) + (recurOnly ? 1 : 0);
+  const nMore = (r.byMarket ? 1 : 0) + (recurOnly ? 1 : 0) + (s.calView ? 1 : 0);
   const activeLabel = r.labels.find((l) => l.id === r.activeLabelId) ?? null;
 
   const staffItems: MenuItem[] = [
@@ -94,6 +94,9 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
     { key: "market", label: dt("Группировать по рынкам", "Group by market"), on: r.byMarket, onPick: () => r.setByMarket((v) => !v) },
     { key: "recur", label: dt("Только регулярные", "Recurring only"), on: recurOnly,
       onPick: () => r.setActiveList(recurOnly ? "all" : "recurring") },
+    // Календарный вид — обзор загрузки команды по срокам, у стенда он только у админа. Живёт
+    // в «Ещё», а не отдельной кнопкой: иначе панель фильтров не помещается в одну строку.
+    ...(admin ? [{ key: "cal", label: dt("Календарный вид", "Calendar view"), on: s.calView, onPick: () => s.setCalView(!s.calView) }] : []),
   ];
 
   return (
@@ -152,10 +155,6 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
           </div>
         }
       />
-      {/* Календарный вид — обзор загрузки команды по срокам, у стенда он только у админа. */}
-      {admin && (
-        <ToolbarButton on={s.calView} onClick={() => s.setCalView(!s.calView)}>{dt("Календарный вид", "Calendar view")}</ToolbarButton>
-      )}
       <Menu label={nMore ? `${dt("Ещё", "More")} · ${nMore}` : dt("Ещё", "More")} on={nMore > 0} items={moreItems} />
 
       <div className="ml-auto flex items-center gap-2.5">
@@ -164,8 +163,9 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
           <input
             value={r.query}
             onChange={(e) => r.setQuery(e.target.value)}
-            placeholder={dt("Фильтр по названию", "Filter by title")}
-            className="w-[150px] bg-transparent text-ink outline-none placeholder:text-ink-mute"
+            placeholder={dt("Фильтр", "Filter")}
+            aria-label={dt("Фильтр по названию", "Filter by title")}
+            className="w-[112px] bg-transparent text-ink outline-none placeholder:text-ink-mute"
             style={{ fontSize: 12.5 }}
           />
         </label>
