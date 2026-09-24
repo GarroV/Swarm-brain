@@ -222,7 +222,12 @@ export function MeetingDetail({ id }: { id: string }) {
 
     </>
   );
-  const transcriptBlock = e && (
+  // Транскрипт нужен только на вычитке — по нему сверяют тезисы; после подтверждения он их
+  // дублирует (решение владельца 2026-09-25). Встречу без тезисов оставляем с текстом: иначе
+  // карточка пустая.
+  const showTranscript = !!e && (!confirmed || !e.summary);
+  const tab = view === "tr" && !showTranscript ? "tez" : view;
+  const transcriptBlock = showTranscript && e && (
     <>
             <SectionLabel>Запись</SectionLabel>
             <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 14.5, lineHeight: 1.65 }}>
@@ -318,21 +323,21 @@ export function MeetingDetail({ id }: { id: string }) {
                   {([
                     ["tez", "Тезисы", "Summary", null],
                     ["tasks", "Задачи", "Tasks", tasks.length || null],
-                    ["tr", "Транскрипт", "Transcript", null],
+                    ...(showTranscript ? [["tr", "Транскрипт", "Transcript", null] as const] : []),
                   ] as const).map(([id, ru, en, n]) => (
-                    <button key={id} type="button" role="tab" aria-selected={view === id} onClick={() => setView(id)}
-                      className={`-mb-px flex items-center gap-1.5 border-b-2 pb-2 font-medium transition-colors ${view === id ? "border-primary font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink"}`}
+                    <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setView(id)}
+                      className={`-mb-px flex items-center gap-1.5 border-b-2 pb-2 font-medium transition-colors ${tab === id ? "border-primary font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink"}`}
                       style={{ fontSize: 13 }}>
                       {dt(ru, en)}
                       {n != null && <span className="text-ink-mute" style={{ fontSize: 11 }}>{n}</span>}
                     </button>
                   ))}
                 </div>
-                {view === "tez" && (editing || e.summary ? tezBlock : (
+                {tab === "tez" && (editing || e.summary ? tezBlock : (
                   <p className="text-ink-mute" style={{ fontSize: 13 }}>{dt("Тезисов пока нет — они появятся после обработки", "No summary yet — it appears after processing")}</p>
                 ))}
-                {view === "tasks" && tasksBlock}
-                {view === "tr" && transcriptBlock}
+                {tab === "tasks" && tasksBlock}
+                {tab === "tr" && transcriptBlock}
               </>
             ) : (
               <>
