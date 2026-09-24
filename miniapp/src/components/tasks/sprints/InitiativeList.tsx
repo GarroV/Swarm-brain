@@ -1,4 +1,5 @@
 "use client";
+import { nestBy } from "@/lib/subtasks";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { DirectionNode, InitiativeNode } from "@/lib/initiatives";
@@ -97,8 +98,8 @@ function Group({ node, name, sub, due, addTo, collapsed, onToggle, unchecked, sh
       </button>
       {!collapsed && (
         <div>
-          {node.items.map((item) => (
-            <SprintRow key={item.id} item={item} unchecked={unchecked} showExtra={showExtra} h={h} />
+          {nestBy(node.items, (i) => i.task_id, (i) => h.parentOf?.(i) ?? null).map(({ item, depth }) => (
+            <SprintRow key={item.id} item={item} depth={depth} unchecked={unchecked} showExtra={showExtra} h={h} />
           ))}
           {onAdd && <AddTaskRow projectId={addTo !== undefined ? addTo : node.project?.id ?? null} onAdd={onAdd} />}
         </div>

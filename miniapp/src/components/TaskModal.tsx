@@ -24,6 +24,7 @@ import { PropertyRow, PropertyLabel, PropertyValue, propertySelectCls } from "@/
 import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
+import { TaskSubtasks } from "@/components/tasks/TaskSubtasks";
 import { COUNTRY_NAMES, countryCode } from "@/lib/countries";
 import { CountryPopover } from "@/components/tasks/CountryPopover";
 import { linkify } from "@/lib/linkify";
@@ -795,6 +796,12 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
             </div>
           </div>
           </fieldset>
+
+          {isEdit && task && !isPartial && (
+            <div className="mt-1 border-t border-line pt-3">
+              <TaskSubtasks task={task} onChanged={onSaved} />
+            </div>
+          )}
 
           {isEdit && task && (
             <div className="mt-1 border-t border-line pt-3">

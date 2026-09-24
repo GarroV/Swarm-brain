@@ -4,6 +4,7 @@ import type { Project, Task, User } from "@/types";
 import { fetchConfig, fetchProjects, fetchUsers, type TaskLabel } from "@/lib/api";
 import { countryName } from "@/lib/countries";
 import { groupByDue, groupByPerson, type TaskSection } from "@/lib/taskTable";
+import { nestSubtasks, progressByParent } from "@/lib/subtasks";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { TaskModal } from "@/components/TaskModal";
@@ -65,6 +66,10 @@ export function TasksTable() {
     }
     return groupByDue(list, r.now, lang);
   }, [staffView, r.byMarket, list, users, r.now, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // «X из Y» у родителя считаем по ВСЕМ загруженным задачам, а не по срезу: фильтр не должен
+  // превращать «2 из 5» в «2 из 2».
+  const progress = useMemo(() => progressByParent(r.tasks ?? []), [r.tasks]);
 
   const projectName = useMemo(() => {
     const m = new Map(projects.map((p) => [p.id, p.name]));
@@ -158,9 +163,11 @@ export function TasksTable() {
                     <span className="font-normal text-pri-high">{dt(`просрочено ${sec.late}`, `${sec.late} overdue`)}</span>
                   )}
                 </button>
-                {!shut && sec.tasks.map((t) => (
+                {!shut && nestSubtasks(sec.tasks).map(({ task: t, depth }) => (
                   <TaskTableRow
                     key={`${sec.key}:${t.id}`}
+                    depth={depth}
+                    progress={progress.get(t.id)}
                     task={t}
                     now={r.now}
                     users={users}

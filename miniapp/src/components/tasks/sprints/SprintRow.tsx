@@ -50,6 +50,8 @@ export type RowHandlers = {
   ) => void | Promise<void>;
   /** Рынок живой задачи: в строке состава его нет, он берётся из самой задачи. */
   marketOf?: (item: SprintCycleItem) => string | null;
+  /** Родительская задача строки (#478): подзадача встаёт под родителя, если он тоже в составе. */
+  parentOf?: (item: SprintCycleItem) => string | null;
 };
 
 /**
@@ -94,8 +96,9 @@ function CheckChip({ status, note, unchecked }: {
 
 /** Строка задачи. Клик открывает карточку — но только у живой: у упоминания и у чужой
  *  приватной открывать нечего, и «кнопка, которая ничего не делает» хуже её отсутствия. */
-export function SprintRow({ item, unchecked, showExtra, h }: {
+export function SprintRow({ item, unchecked, showExtra, h, depth = 0 }: {
   item: SprintCycleItem;
+  depth?: 0 | 1;
   unchecked: boolean;
   /** Спринт начат: взятое после старта помечаем «сверх плана». */
   showExtra: boolean;
@@ -131,7 +134,7 @@ export function SprintRow({ item, unchecked, showExtra, h }: {
       )}
       style={{ gridTemplateColumns: SPRINT_COLS, minHeight: 38, fontSize: 13.5 }}
     >
-      <div className="flex min-w-0 items-center gap-2 px-3">
+      <div className="flex min-w-0 items-center gap-2 px-3" style={depth ? { paddingLeft: 34 } : undefined}>
         <span
           className={cn("size-[7px] shrink-0 rounded-full", STATUS_TONE[item.status] ?? "bg-status-open")}
           title={item.status}

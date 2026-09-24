@@ -7,6 +7,7 @@ import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { isDone, isOverdue } from "@/lib/smartLists";
 import { TaskQuickActions } from "@/components/tasks/TaskQuickActions";
+import type { SubtaskProgress } from "@/lib/subtasks";
 
 // Строка таблицы задач нового вида (стенд: screens-tasks.js → taskRow). Порядок колонок —
 // по тому, чем в строке ПОЛЬЗУЮТСЯ (владелец 22.09.2026): срок и быстрые действия у названия,
@@ -17,7 +18,7 @@ export const COLS = "minmax(260px,1fr) 88px 168px 64px minmax(110px,18%) minmax(
 const fmtDue = (iso: string, en: boolean) =>
   new Date(iso).toLocaleDateString(en ? "en-GB" : "ru-RU", { day: "numeric", month: "short" }).replace(".", "");
 
-export function TaskTableRow({ task, now, users, markets, labels, projectName, onOpen, onToggle, onPatch, onChanged }: {
+export function TaskTableRow({ task, now, users, markets, labels, projectName, onOpen, onToggle, onPatch, onChanged, depth = 0, progress }: {
   task: Task;
   now: Date;
   users: User[];
@@ -28,6 +29,9 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
   onToggle: () => void;
   onPatch: (patch: Partial<Task>) => void;
   onChanged: () => void;
+  // Подзадача под родителем (#478) — отступ; у родителя — «X из Y» по подзадачам.
+  depth?: 0 | 1;
+  progress?: SubtaskProgress;
 }) {
   const dt = useDt();
   const done = isDone(task);
@@ -52,7 +56,7 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
       className="group grid cursor-pointer items-center border-b border-line transition-colors hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none"
       style={{ gridTemplateColumns: COLS, minHeight: 40, fontSize: 13.5 }}
     >
-      <div className="flex min-w-0 items-center gap-2.5 px-3">
+      <div className="flex min-w-0 items-center gap-2.5 px-3" style={depth ? { paddingLeft: 38 } : undefined}>
         <button
           type="button"
           onClick={(e) => { stop(e); onToggle(); }}
@@ -65,6 +69,15 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
           {done && <RoyIcon name="check" size={11} strokeWidth={2.6} />}
         </button>
         <span className={cn("min-w-0 truncate", done ? "text-ink-mute line-through" : "text-ink")}>{task.title}</span>
+        {progress && (
+          <span
+            title={dt("Подзадачи: закрыто из всех", "Subtasks: done of total")}
+            className="shrink-0 rounded-[5px] border border-line px-1.5 font-mono text-ink-mute"
+            style={{ fontSize: 11, lineHeight: "17px" }}
+          >
+            {progress.done}/{progress.total}
+          </span>
+        )}
         {task.is_private && (
           <span title={dt("Личная", "Private")} className="shrink-0 text-ink-mute">
             <RoyIcon name="lock" size={12} />
