@@ -23,7 +23,7 @@ function Lbl({ t }: { t: string }) {
 }
 
 // ── Список воркспейсов + создание ─────────────────────────────────────────────
-function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => void }) {
+export function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => void }) {
   const [workspaces, setWorkspaces] = useState<AdminWorkspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -368,7 +368,7 @@ function WorkspaceMarkets({ ws, onUpdated }: { ws: AdminWorkspace; onUpdated: ()
 }
 
 // ── Деталь воркспейса (переименование + табы) ─────────────────────────────────
-function WorkspaceDetail({ ws, onBack }: { ws: AdminWorkspace; onBack: () => void }) {
+export function WorkspaceDetail({ ws, onBack }: { ws: AdminWorkspace; onBack: () => void }) {
   const [workspace, setWorkspace] = useState(ws);
   const [tab, setTab] = useState<"users" | "markets">("users");
   const [allWorkspaces, setAllWorkspaces] = useState<AdminWorkspace[]>([]);

@@ -39,7 +39,7 @@ import { TasksScreen } from "@/components/tasks/TasksScreen";
 import { TasksTable } from "@/components/tasks/table/TasksTable";
 import { TeamScreen } from "@/components/TeamScreen";
 import { SettingsRoute } from "@/components/settings/SettingsDesk";
-import { AdminScreen } from "@/components/AdminScreen";
+import { AdminRoute } from "@/components/admin/AdminDesk";
 import { MeetAdminScreen } from "./screens/MeetAdminScreen";
 import { type RailId, RoyRail } from "./RoyRail";
 import { NotificationsBell } from "./NotificationsBell";
@@ -515,7 +515,7 @@ function PushScreen({ route }: { route: RoyRoute }) {
   if (route.view === "admin") {
     return (
       <Wrapped title={dt("Админ", "Admin")}>
-        <AdminScreen />
+        <AdminRoute />
       </Wrapped>
     );
   }
