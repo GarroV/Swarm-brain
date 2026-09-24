@@ -83,7 +83,7 @@
    наложены на стандартные shadcn-переменные → ui/-компоненты перекрашиваются сами.
    Радиус 0.8rem → карточка (rounded-xl) ≈ 18px, кнопка (rounded-lg) ≈ 13px. */
 :root {
-  --background: #F4F1EB;
+  --background: #FFFFFF;             /* витрина: белый фон вместо бежевого (владелец 24.09.2026) */
   --foreground: #221F1A;
   --card: #FFFFFF;
   --card-foreground: #221F1A;

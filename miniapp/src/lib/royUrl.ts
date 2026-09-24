@@ -11,7 +11,7 @@
 // живёт в памяти сессии и в sessionStorage, как и раньше.
 import type { RoyRoute, RoyTab } from "./royRoute.ts";
 
-export const ROY_TABS_ALL = ["search", "task", "projects", "book", "cal", "more"] as const;
+export const ROY_TABS_ALL = ["search", "task", "projects", "sprints", "book", "cal", "more"] as const;
 
 export type RoyUrlState = { tab: RoyTab | null; route: RoyRoute | null };
 

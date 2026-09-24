@@ -43,9 +43,12 @@ function readInitialView(): View {
   return "list";
 }
 
-export function TasksScreen() {
+// `only` — один вид без переключателя: на десктопе левая рейка сама разводит Задачи / Проекты /
+// Спринты по своим пунктам, и чипы-виды сверху дублировали бы её.
+export function TasksScreen({ only }: { only?: View } = {}) {
   const dt = useDt();
-  const [view, setViewState] = useState<View>(readInitialView);
+  const [savedView, setViewState] = useState<View>(readInitialView);
+  const view = only ?? savedView;
   const setView = (v: View) => {
     setViewState(v);
     try { window.sessionStorage.setItem(VIEW_KEY, v); } catch { /* приватный режим/квота — не критично */ }
@@ -54,7 +57,7 @@ export function TasksScreen() {
   return (
     <div className="flex flex-col h-full">
       {/* Переключатель видов — лайн-арт RoyIcon + стеклянные чипы */}
-      <div className="flex gap-1.5 px-3 pt-3 pb-2 overflow-x-auto shrink-0">
+      {!only && <div className="flex gap-1.5 px-3 pt-3 pb-2 overflow-x-auto shrink-0">
         {VIEWS.map(({ id, label, icon }) => {
           const active = view === id;
           return (
@@ -72,7 +75,7 @@ export function TasksScreen() {
             </button>
           );
         })}
-      </div>
+      </div>}
 
       <div className="flex-1 min-h-0 flex flex-col">
         {view === "list" && <RemindersTasks />}

@@ -34,14 +34,13 @@ import { RoyMeetingsScreen } from "./screens/RoyMeetingsScreen";
 import { MeetingDetail } from "./screens/MeetingDetail";
 import { RoyDashboard } from "./RoyDashboard";
 import { FeedbackDialog, FeedbackFab } from "./FeedbackFab";
-import { RoyMark } from "./RoyMark";
 import { MeetingReview } from "@/components/MeetingReview";
 import { TasksScreen } from "@/components/tasks/TasksScreen";
 import { TeamScreen } from "@/components/TeamScreen";
 import { SettingsScreen } from "@/components/SettingsScreen";
 import { AdminScreen } from "@/components/AdminScreen";
 import { MeetAdminScreen } from "./screens/MeetAdminScreen";
-import { ProfileMenu } from "./ProfileMenu";
+import { type RailId, RoyRail } from "./RoyRail";
 import { NotificationsBell } from "./NotificationsBell";
 import { DeployNoticeBar } from "./DeployNoticeBar";
 import { AnswerModal } from "./AnswerModal";
@@ -190,7 +189,7 @@ export function RoyApp({ me }: { me: Me | null }) {
       // десктопные разделы. На мобайле сохранённые десктопные значения мигрируем, иначе человек с
       // живой сессией после деплоя попал бы на экран, которого в баре нет (подсветки таба нет).
       const valid = saved &&
-          (["search", "task", "projects", "book", "cal", "more"] as const)
+          (["search", "task", "projects", "sprints", "book", "cal", "more"] as const)
             .includes(saved as RoyTab)
         ? (saved as RoyTab)
         : null;
@@ -201,6 +200,8 @@ export function RoyApp({ me }: { me: Me | null }) {
         ? "task"
         : valid === "book"
         ? "more"
+        : valid === "sprints"
+        ? "projects"
         : valid;
       setTabState(initial);
       // Восстанавливаем и push-стек (открытую деталь), чтобы рефреш не сбрасывал на корень таба.
@@ -306,9 +307,47 @@ export function RoyApp({ me }: { me: Me | null }) {
   // push-стеке остаётся центрированная колонка.
   const isDashboard = isDesktop && tab === "search" && !top;
 
+  // Левая рейка (десктоп): разделы — это табы, а Команда/Настройки/Админ — push-экраны,
+  // которые рейка кладёт единственными в стек (повторный клик не наращивает «назад»).
+  const RAIL_TAB: Partial<Record<RailId, RoyTab>> = {
+    home: "search",
+    tasks: "task",
+    projects: "projects",
+    sprints: "sprints",
+    meetings: "cal",
+    base: "book",
+  };
+  const RAIL_PUSH: Partial<Record<RailId, "team" | "settings" | "admin">> = {
+    team: "team",
+    settings: "settings",
+    admin: "admin",
+  };
+  const railSelect = (id: RailId) => {
+    const t = RAIL_TAB[id];
+    if (t) return setTab(t);
+    const v = RAIL_PUSH[id];
+    if (v) setStack([{ view: v }]);
+  };
+  const pushed = stack[0]?.view;
+  const railActive: RailId | null =
+    pushed === "team" || pushed === "settings" || pushed === "admin"
+      ? pushed
+      : (Object.keys(RAIL_TAB) as RailId[]).find((k) => RAIL_TAB[k] === tab) ?? null;
+  const SECTION_TITLE: Partial<Record<RoyTab, [string, string]>> = {
+    task: ["Задачи", "Tasks"],
+    projects: ["Проекты", "Projects"],
+    sprints: ["Спринты", "Sprints"],
+    book: ["База", "Knowledge"],
+    cal: ["Встречи", "Meetings"],
+    more: ["Ещё", "More"],
+  };
+  const sectionTitle = SECTION_TITLE[tab];
+  // Провайдер навигации ниже по дереву, поэтому useDt() тут не работает — язык прямо из me.
+  const shellDt = (ru: string, en: string) => (me?.is_demo ? en : ru);
+
   return (
     <RoyNavContext.Provider value={nav}>
-      <div className="flex flex-col h-[100dvh] bg-background text-foreground dark:bg-transparent">
+      <div className="flex flex-col h-[100dvh] bg-background text-foreground">
         {/* Плашка «скоро обновление» — плавающая, поверх всех экранов, layout не сдвигает. */}
         <DeployNoticeBar />
         {me?.is_demo && (
@@ -336,14 +375,17 @@ export function RoyApp({ me }: { me: Me | null }) {
           </div>
         )}
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          {isDesktop && (
+            <RoyRail
+              active={railActive}
+              onSelect={railSelect}
+              badges={{ meetings: reviewCount }}
+            />
+          )}
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             <div
               className={cn(
                 "relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden",
-                // Тёмная тема: лёгкая вуаль БЕЗ blur — галактика видна в щелях между панелями
-                // (не размыта). Frost/стекло — на самих карточках (RoyCard). Читаемость голого
-                // текста подстрахована вуалью + приглушённой галактикой.
-                "dark:bg-[#0a0b07]/22",
                 // Десктоп — единая оптимальная ширина с авто-полями по краям (во всю ширину
                 // получалось «дерьмо»: строки/текст растягивались на весь монитор). Мобайл — узкая колонка.
                 isDashboard
@@ -354,20 +396,14 @@ export function RoyApp({ me }: { me: Me | null }) {
               {top ? <PushScreen route={top} /> : (
                 <>
                   {
-                    /* Desktop dashboard-центрично: сайдбара нет, дашборд — дом. На секции
-                    (Задачи/База/Встречи) ведут шапки панелей дашборда; назад на дашборд —
-                    эта строка. Push-экраны имеют свой «Назад». Мобайл — нижний таб-бар. */
+                    /* Десктоп: разделы переключает левая рейка, здесь — только заголовок раздела
+                    и колокольчик. Дом (дашборд) держит свою шапку. Мобайл — нижний таб-бар. */
                   }
                   {isDesktop && tab !== "search" && (
                     <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-2">
-                      <button
-                        type="button"
-                        onClick={() => setTab("search")}
-                        className="flex items-center gap-2 py-0.5 text-left font-semibold text-ink-soft transition-colors hover:text-ink"
-                      >
-                        <RoyMark size={22} />
-                        <span style={{ fontSize: 14 }}>← Главная</span>
-                      </button>
+                      <h1 className="font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>
+                        {sectionTitle ? shellDt(sectionTitle[0], sectionTitle[1]) : null}
+                      </h1>
                       <NotificationsBell />
                     </div>
                   )}
@@ -375,13 +411,14 @@ export function RoyApp({ me }: { me: Me | null }) {
                     {tab === "search" &&
                       (isDashboard ? <RoyDashboard /> : <SearchScreen />)}
                     {tab === "task" &&
-                      (isDesktop ? <TasksScreen /> : <RoyTasksScreen />)}
+                      (isDesktop ? <TasksScreen only="list" /> : <RoyTasksScreen />)}
                     {
                       /* Десктоп своей доской проектов уже владеет (TasksScreen → вид «Проекты»),
                       мобильный экран — отдельный: список проектов → задачи внутри. */
                     }
                     {tab === "projects" &&
-                      (isDesktop ? <TasksScreen /> : <RoyProjectsScreen />)}
+                      (isDesktop ? <TasksScreen only="sprint" /> : <RoyProjectsScreen />)}
+                    {tab === "sprints" && <TasksScreen only="sprints" />}
                     {tab === "book" && <RoyBaseScreen />}
                     {tab === "cal" && <RoyMeetingsScreen />}
                     {tab === "more" && <MoreScreen root />}
@@ -405,11 +442,9 @@ export function RoyApp({ me }: { me: Me | null }) {
               )}
             </div>
             {
-              /* Профиль/управление — внизу слева (desktop, вместо сайдбара): нативный поповер
-              в углу с inline-секциями Настройки/Команда/Админ, без перехода на страницу.
-              На мобайле — аватар в шапке + таб-бар. */
+              /* Профиль/управление на десктопе — пункты левой рейки (Команда/Настройки/Админ),
+              поповер ProfileMenu в углу больше не нужен. На мобайле — «Ещё» в таб-баре. */
             }
-            {isDesktop && <ProfileMenu />}
           </div>
         </div>
       </div>
