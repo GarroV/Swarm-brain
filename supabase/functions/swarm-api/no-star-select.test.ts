@@ -20,6 +20,7 @@ const FILES = [
   "task-comments.ts",
   "task-labels.ts",
   "task-subscriptions.ts",
+  "stats.ts",
 ];
 const HERE = new URL(".", import.meta.url).pathname;
 
@@ -45,12 +46,9 @@ function starSelectsOn(src: string, table: string): number[] {
 Deno.test('в swarm-api нет select("*") по таблице entries', async () => {
   const offenders: string[] = [];
   for (const f of FILES) {
-    let src: string;
-    try {
-      src = await Deno.readTextFile(HERE + f);
-    } catch {
-      continue;
-    }
+    // Файл из списка не читается — значит, его переименовали или удалили, и проверка молча
+    // перестала его покрывать. Падаем: пропущенная проверка — проваленная проверка.
+    const src = await Deno.readTextFile(HERE + f);
     const lines = src.split("\n");
     for (const ln of starSelectsOn(src, "entries")) {
       offenders.push(`${f}:${ln}  ${lines[ln - 1].trim()}`);

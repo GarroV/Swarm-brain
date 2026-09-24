@@ -110,6 +110,7 @@ import { handleAdminRoutes } from "./admin.ts";
 import { apiErr, corsHeaders, json, parseListLimit } from "./http.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
+import { handleStatsRoutes } from "./stats.ts";
 import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
@@ -866,6 +867,19 @@ Deno.serve(async (req: Request) => {
     resolveNames,
   );
   if (commentResp) return commentResp;
+
+  // Статистика по людям (/stats/people) — только числа; «на вычитке» — только админу.
+  const statsResp = await handleStatsRoutes(
+    supabase,
+    req,
+    routePath,
+    telegram_id,
+    groupId,
+    isAdmin,
+    origin,
+    resolveNames,
+  );
+  if (statsResp) return statsResp;
 
   // Подписка на уведомления о комментариях к задаче (/tasks/:id/subscription) — issue #82.
   const subResp = await handleTaskSubscriptionRoutes(
