@@ -222,10 +222,14 @@
    теме, поэтому в светлой body не прозрачнеет и фон остаётся чистым. */
 html.dark[data-backdrop="galaxy"] :is(body, .roy-shell),
 html[data-backdrop="dots"] :is(body, .roy-shell),
-html[data-backdrop="aurora"] :is(body, .roy-shell) {
+html[data-backdrop="aurora"] :is(body, .roy-shell),
+html[data-backdrop="custom"] :is(body, .roy-shell) {
   background-color: transparent;
 }
 .roy-backdrop { position: fixed; inset: 0; z-index: -10; pointer-events: none; }
+/* Своя картинка: cover по центру; размытие растягивает края — картинку чуть увеличиваем. */
+.roy-backdrop-image { background-size: cover; background-position: center; background-repeat: no-repeat; }
+.roy-backdrop-dim { background-color: var(--background); }
 .roy-backdrop-dots {
   background-image: radial-gradient(var(--line-2) 1px, transparent 1.4px);
   background-size: 20px 20px;

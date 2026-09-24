@@ -7,7 +7,7 @@
 //
 // Список вариантов зеркалит `UI_BACKDROPS` в swarm-api/index.ts — добавляя вариант, правь оба.
 
-export const BACKDROP_IDS = ["galaxy", "none", "dots", "aurora"] as const;
+export const BACKDROP_IDS = ["galaxy", "none", "dots", "aurora", "custom"] as const;
 export type BackdropId = (typeof BACKDROP_IDS)[number];
 
 /** По умолчанию — галактика: так было в проде, и владелец решил её оставить. */
@@ -15,6 +15,8 @@ export const DEFAULT_BACKDROP: BackdropId = "galaxy";
 
 export const BACKDROP_STORAGE_KEY = "swarm-backdrop";
 export const BACKDROP_CHANGE_EVENT = "swarm-backdrop-change";
+/** Своя картинка или её затемнение/размытие поменялись — слой перечитывает IndexedDB. */
+export const CUSTOM_BACKDROP_EVENT = "swarm-backdrop-custom-change";
 
 export interface BackdropOption {
   id: BackdropId;
@@ -29,7 +31,13 @@ export const BACKDROP_OPTIONS: readonly BackdropOption[] = [
   { id: "none", ru: "Без фона", en: "None", hintRu: "Чистый цвет темы", hintEn: "Plain background" },
   { id: "dots", ru: "Точки", en: "Dots", hintRu: "Тихая сетка точек", hintEn: "Quiet dot grid" },
   { id: "aurora", ru: "Сияние", en: "Aurora", hintRu: "Мягкий цветной свет по краям", hintEn: "Soft colour glow at the edges" },
+  { id: "custom", ru: "Своя картинка", en: "Your image", hintRu: "Любое фото — хранится в этом браузере", hintEn: "Any photo — kept in this browser" },
 ];
+
+/** Сообщить слою фона, что своя картинка/её настройки сохранены. */
+export function notifyCustomBackdropChanged(): void {
+  window.dispatchEvent(new Event(CUSTOM_BACKDROP_EVENT));
+}
 
 export function isBackdropId(v: unknown): v is BackdropId {
   return typeof v === "string" && (BACKDROP_IDS as readonly string[]).includes(v);

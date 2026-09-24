@@ -5,4 +5,4 @@
 alter table public.user_profiles add column if not exists ui_backdrop text;
 
 comment on column public.user_profiles.ui_backdrop is
-  'Задник веба: galaxy | none | dots | aurora; NULL = по умолчанию (galaxy). Проверяет swarm-api.';
+  'Фон веба: galaxy | none | dots | aurora | custom (своя картинка — в браузере, не на сервере); NULL = по умолчанию (galaxy). Проверяет swarm-api.';

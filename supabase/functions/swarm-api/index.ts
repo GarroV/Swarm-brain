@@ -137,7 +137,14 @@ import { isTaskStatus, taskStatusError } from "../_shared/tasks/statuses.ts";
 // статусов вместо клиентской (#111), громкое усечение — #112. Пока держим breadcrumb в логах.
 // Задники веба (PATCH /me ui_backdrop). Зеркало `miniapp/src/lib/backdrop.ts` — добавляя вариант,
 // правь оба места; null = «по умолчанию».
-const UI_BACKDROPS: readonly string[] = ["galaxy", "none", "dots", "aurora"];
+// "custom" — своя картинка; сама картинка живёт в IndexedDB браузера, на сервер не уходит.
+const UI_BACKDROPS: readonly string[] = [
+  "galaxy",
+  "none",
+  "dots",
+  "aurora",
+  "custom",
+];
 
 const TASKS_LIST_LIMIT = 2000;
 

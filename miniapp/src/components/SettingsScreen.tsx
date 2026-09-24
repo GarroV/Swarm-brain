@@ -459,7 +459,7 @@ function FeedbackSection() {
 function Section({ title, icon, children, defaultOpen = false }: { title: string; icon?: RoyIconName; children: React.ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-line rounded-[10px] overflow-hidden dark:backdrop-blur-sm">
+    <div className="border border-line rounded-[10px] overflow-hidden bg-surface">
       <button
         className="w-full flex items-center justify-between px-4 py-3 bg-surface-2 text-sm font-semibold text-ink transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
         onClick={() => setOpen((v) => !v)}

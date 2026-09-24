@@ -983,7 +983,7 @@ _Профиль / воркспейс:_
 | Метод | Путь | Что делает |
 |-------|------|-----------|
 | `GET` | `/me` | `{ telegram_id, name, username, group_id, language, role, markets, ui_backdrop, is_admin, is_demo }` — `ui_backdrop` = задник веба (`null` = по умолчанию) |
-| `PATCH` | `/me` | Правка профиля текущего пользователя: `role`, `markets` (нормализуются), `ui_backdrop` (`galaxy`\|`none`\|`dots`\|`aurora`\|`null`, иначе 400; список — `UI_BACKDROPS` в `swarm-api/index.ts`) в `user_profiles`; 204, ошибка записи → 500 |
+| `PATCH` | `/me` | Правка профиля текущего пользователя: `role`, `markets` (нормализуются), `ui_backdrop` (`galaxy`\|`none`\|`dots`\|`aurora`\|`custom`\|`null`, иначе 400; `custom` — своя картинка, сама картинка на сервер НЕ уходит, живёт в IndexedDB браузера; список — `UI_BACKDROPS` в `swarm-api/index.ts`) в `user_profiles`; 204, ошибка записи → 500 |
 | `GET` | `/config` | `{ allowed_markets: string[], workspace_name: string | null }` — ISO коды рынков воркспейса (из `workspaces.allowed_markets`, или глобальный список) и имя воркспейса (`workspaces.name`, подпись под брендом на рейке веба) |
 | `GET` | `/recorder/setup` | `{ active, expiresAt }` — статус токена рекордера (для секции «Рекордер встреч» в вебе). Хелперы — `_shared/recorder-token.ts` |
 | `POST` | `/recorder/token` | Минт/перевыпуск токена рекордера → `{ oneLiner, expiresAt }`; токен ОТДЕЛЬНЫЙ от MCP, доступно всем участникам |
