@@ -398,9 +398,10 @@ export function RoyApp({ me }: { me: Me | null }) {
                 <>
                   {
                     /* Десктоп: разделы переключает левая рейка, здесь — только заголовок раздела
-                    и колокольчик. Дом (дашборд) держит свою шапку. Мобайл — нижний таб-бар. */
+                    и колокольчик. Дом (дашборд) держит свою шапку, «Спринты» — тоже: у них в строке
+                    заголовка вкладки (стенд). Мобайл — нижний таб-бар. */
                   }
-                  {isDesktop && tab !== "search" && (
+                  {isDesktop && tab !== "search" && tab !== "sprints" && (
                     <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-2">
                       <h1 className="font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>
                         {sectionTitle ? shellDt(sectionTitle[0], sectionTitle[1]) : null}

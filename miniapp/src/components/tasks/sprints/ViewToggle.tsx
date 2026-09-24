@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useState } from "react";
-import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 
 // Список и канбан — два вида одного состава. Выбор запоминается у человека (решение
@@ -51,58 +50,42 @@ export function useSprintView(): [SprintView, (v: SprintView) => void] {
   return [view, choose];
 }
 
-export function ViewToggle(
-  { value, onChange, kanbanDisabled = false }: {
-    value: SprintView;
-    onChange: (v: SprintView) => void;
-    kanbanDisabled?: boolean;
-  },
+/**
+ * Вкладки раздела (стенд: подчёркнутые табы у заголовка): «Спринт · Аналитика · Журнал».
+ * Список и канбан — не вкладки, а вид внутри «Спринта»: переключатель живёт в полосе спринта.
+ * Таймлайна здесь нет — решение владельца: спрятан, код не удалён.
+ */
+export function SprintTabs(
+  { value, onChange }: { value: SprintView; onChange: (v: SprintView) => void },
 ) {
   const dt = useDt();
-  const views: {
-    id: SprintView;
-    icon: "task" | "board" | "timeline" | "clock";
-    label: string;
-  }[] = [
-    { id: "list", icon: "task", label: dt("Список", "List") },
-    { id: "kanban", icon: "board", label: dt("Канбан", "Kanban") },
+  const tab = value === "analytics" || value === "journal" ? value : "sprint";
+  const tabs: { id: "sprint" | "analytics" | "journal"; label: string }[] = [
+    { id: "sprint", label: dt("Спринт", "Sprint") },
     // Аналитика — тоже про пространство: семь таблиц по всем его спринтам.
-    { id: "analytics", icon: "timeline", label: dt("Аналитика", "Analytics") },
-    { id: "journal", icon: "clock", label: dt("Журнал", "Journal") },
+    { id: "analytics", label: dt("Аналитика", "Analytics") },
+    { id: "journal", label: dt("Журнал", "Journal") },
   ];
-
   return (
-    <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-line bg-surface p-0.5 dark:backdrop-blur-sm">
-      {views.map((v) => {
-        // Канбан на телефоне не работает: перетаскивание пальцем по трём колонкам
-        // нечитаемо (D003). Кнопку показываем отключённой и подписываем причину —
-        // молча пропавший переключатель выглядит поломкой.
-        const off = kanbanDisabled && v.id === "kanban";
-        const active = value === v.id;
+    <nav className="flex items-stretch gap-0.5 self-stretch" aria-label={dt("Вкладки спринтов", "Sprint tabs")}>
+      {tabs.map((t) => {
+        const on = tab === t.id;
         return (
           <button
-            key={v.id}
+            key={t.id}
             type="button"
-            disabled={off}
-            onClick={() => onChange(v.id)}
-            title={off
-              ? dt("Канбан — только на компьютере", "Kanban is desktop only")
-              : v.label}
-            aria-pressed={active}
-            className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
-              active
-                ? "bg-primary text-primary-foreground"
-                : off
-                ? "text-ink-soft/40"
-                : "text-ink-soft hover:bg-surface-2"
+            aria-current={on ? "page" : undefined}
+            onClick={() => onChange(t.id === "sprint" ? "list" : t.id)}
+            className={`-mb-px flex items-center border-b-2 px-2.5 transition-colors ${
+              on ? "border-primary font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink"
             }`}
+            style={{ fontSize: 13 }}
           >
-            <RoyIcon name={v.icon} size={12} strokeWidth={2} />
-            <span className="hidden sm:inline">{v.label}</span>
+            {t.label}
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }
 
@@ -149,26 +132,24 @@ export function GroupingToggle(
     { id: "initiatives", label: dt("по инициативам", "by initiative") },
     { id: "people", label: dt("по людям", "by person") },
   ];
+  // Тихий текстовый переключатель (стенд: `.sgrp` + `.lk`): группировка — свойство списка,
+  // а не отдельный экран, и кнопками она перетягивала бы внимание с состава.
   return (
-    <div className="mb-2 flex items-center gap-1 px-0.5">
-      <span className="mr-1 text-[11px] text-ink-soft">
-        {dt("группировать:", "group:")}
-      </span>
+    <span className="ml-auto flex items-center gap-2.5" style={{ fontSize: 12 }}>
+      <span className="text-ink-mute">{dt("группировать", "group")}</span>
       {opts.map((o) => (
         <button
           key={o.id}
           type="button"
           onClick={() => onChange(o.id)}
           aria-pressed={value === o.id}
-          className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors ${
-            value === o.id
-              ? "border-primary/40 bg-primary/10 text-primary"
-              : "border-line bg-surface text-ink-soft hover:bg-surface-2"
-          }`}
+          className={value === o.id
+            ? "font-semibold text-ink underline underline-offset-[3px]"
+            : "text-ink-soft hover:text-accent-ink"}
         >
           {o.label}
         </button>
       ))}
-    </div>
+    </span>
   );
 }
