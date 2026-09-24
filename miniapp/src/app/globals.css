@@ -4,6 +4,16 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Граница «десктоп / мобайл» — 720px вместо стандартных 1024 (решение владельца 2026-09-25:
+   мобильный вид — только на сверхузком окне). Держать в паре с DESKTOP_MIN_PX в
+   components/roy/useIsDesktop.ts: `lg:` и хук переключаются на одной ширине. */
+@theme {
+  --breakpoint-lg: 45rem;
+}
+/* Одного --breakpoint-lg мало: Tailwind 4.3 собрал `lg:` по прежним 64rem (проверено по
+   собранному CSS 25.09.2026), поэтому сам вариант переопределён явно. */
+@custom-variant lg (@media (width >= 45rem));
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

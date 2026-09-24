@@ -24,7 +24,6 @@ import { TaskModal } from "@/components/TaskModal";
 // с главной снят решением владельца; компонент dash/PersonalDigest.tsx оставлен.
 // На мобайле этот экран не рендерится (там SearchScreen).
 
-const SIDE_W = 344;
 
 export function RoyDashboard() {
   const data = useDashboardData();
@@ -58,7 +57,10 @@ export function RoyDashboard() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <HomeHeader />
-      <div className="grid min-h-0 flex-1 overflow-auto" style={{ gridTemplateColumns: `minmax(0,1fr) ${SIDE_W}px` }}>
+      {/* Правая колонка — 344px (стенд). Уже 1100px она уходит под задачи: на узком окне две
+          колонки съедали названия задач до пары слов. Класс статичный — Tailwind не видит
+          значений из переменных, поэтому 344 записано в нём самом. */}
+      <div className="grid min-h-0 flex-1 content-start overflow-auto min-[1100px]:grid-cols-[minmax(0,1fr)_344px] min-[1100px]:content-stretch">
         <div className="min-w-0 px-6 pb-6">
           <HomeLabel first count={loading ? undefined : mineCount}
             action={{ text: dt("+ новая задача", "+ new task"), onClick: () => setCreating(true) }}>
@@ -91,7 +93,7 @@ export function RoyDashboard() {
           </TasksSlot>
         </div>
 
-        <aside className="min-w-0 border-l border-line px-5 pb-6">
+        <aside className="min-w-0 border-t border-line px-6 pb-6 min-[1100px]:border-l min-[1100px]:border-t-0 min-[1100px]:px-5">
           <MeetingsToday flat first onCount={setMeetingsToday} />
           <HomeNews data={data} overdue={overdue} closedWeek={closedThisWeek(data.tasks, now)} meetingsToday={meetingsToday} />
           <WaitingForYou data={data} />

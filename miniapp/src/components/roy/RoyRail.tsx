@@ -73,8 +73,9 @@ export function RoyRail({
         type="button"
         onClick={() => onSelect(item.id)}
         aria-current={on ? "page" : undefined}
+        title={dt(item.label[0], item.label[1])}
         className={cn(
-          "flex h-[34px] w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+          "relative flex h-[34px] w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left max-[1099px]:justify-center max-[1099px]:px-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
           on
             ? "bg-accent-soft font-semibold text-accent-ink shadow-[inset_2px_0_0_var(--primary)]"
             : "text-ink-soft hover:bg-surface hover:text-ink",
@@ -82,10 +83,11 @@ export function RoyRail({
         style={{ fontSize: 13.5 }}
       >
         <RoyIcon name={item.icon} size={16} strokeWidth={1.7} />
-        <span className="min-w-0 flex-1 truncate">{dt(item.label[0], item.label[1])}</span>
+        <span className="min-w-0 flex-1 truncate max-[1099px]:hidden">{dt(item.label[0], item.label[1])}</span>
         {badge > 0 && (
-          // Счётчик по стенду — тихой серой цифрой, не синей плашкой (визуальный шаг В2).
-          <span className="font-mono text-ink-mute" style={{ fontSize: 11 }}>
+          // Счётчик по стенду — тихой серой цифрой, не синей плашкой (визуальный шаг В2). В узкой
+          // рейке — мелкой цифрой в углу пиктограммы.
+          <span className="font-mono text-ink-mute max-[1099px]:absolute max-[1099px]:right-1 max-[1099px]:top-0.5" style={{ fontSize: 11 }}>
             {badge}
           </span>
         )}
@@ -96,9 +98,11 @@ export function RoyRail({
   return (
     <nav
       aria-label={dt("Разделы", "Sections")}
-      className="flex w-[216px] shrink-0 flex-col border-r border-line bg-surface-2"
+      // Уже 1100px рейка сворачивается в пиктограммы (56px): десктопная раскладка тянется до
+      // 720px, а 216px рейки на таком окне съели бы треть экрана. Подписи — в title.
+      className="flex w-[216px] shrink-0 flex-col border-r border-line bg-surface-2 max-[1099px]:w-[56px]"
     >
-      <div className="flex items-center gap-2.5 border-b border-line px-4 py-3.5">
+      <div className="flex items-center gap-2.5 border-b border-line px-4 py-3.5 max-[1099px]:justify-center max-[1099px]:px-0">
         {/* Бренд-блок по стенду: тёмный квадрат с «S» и имя капсом (визуальный шаг В2). */}
         <span
           aria-hidden
@@ -107,7 +111,7 @@ export function RoyRail({
         >
           S
         </span>
-        <span className="flex min-w-0 flex-col">
+        <span className="flex min-w-0 flex-col max-[1099px]:hidden">
           {/* Полное имя продукта (решение владельца 2026-09-25: «тут надо сворм брейн»). */}
           <span className="truncate font-bold text-ink" style={{ fontSize: 13.5, letterSpacing: "0.04em" }}>
             SWARM BRAIN
@@ -126,9 +130,10 @@ export function RoyRail({
       <div className="flex flex-col gap-0.5 border-t border-line px-2 py-2">
         {foot.map(renderItem)}
       </div>
-      <div className="flex items-center gap-2 border-t border-line px-3 py-2.5">
+      <div className="flex items-center gap-2 border-t border-line px-3 py-2.5 max-[1099px]:justify-center max-[1099px]:px-0"
+        title={displayName(me?.name) || undefined}>
         <Avatar size={26}>{initials(me?.name)}</Avatar>
-        <div className="min-w-0">
+        <div className="min-w-0 max-[1099px]:hidden">
           <div className="truncate font-semibold text-ink" style={{ fontSize: 13 }}>
             {displayName(me?.name) || dt("Профиль", "Profile")}
           </div>
@@ -172,15 +177,17 @@ function RailSearch() {
   };
 
   return (
-    <form role="search" className="px-2 pt-2.5" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-      <label className="flex h-[30px] items-center gap-2 rounded-[7px] border border-line-2 bg-surface px-2.5 text-ink-mute transition-colors hover:border-ink-mute/40 focus-within:border-primary">
+    // В узкой рейке — пиктограмма; фокус (клик или ⌘K) раскрывает поле поверх экрана.
+    <form role="search" className="relative px-2 pt-2.5" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+      <label title={dt("Поиск · ⌘K", "Search · ⌘K")}
+        className="group/rs flex h-[30px] items-center gap-2 rounded-[7px] border border-line-2 bg-surface px-2.5 text-ink-mute transition-colors hover:border-ink-mute/40 focus-within:border-primary max-[1099px]:justify-center max-[1099px]:px-0 max-[1099px]:focus-within:absolute max-[1099px]:focus-within:left-2 max-[1099px]:focus-within:z-50 max-[1099px]:focus-within:w-[260px] max-[1099px]:focus-within:justify-start max-[1099px]:focus-within:px-2.5 max-[1099px]:focus-within:shadow-lg">
         <RoyIcon name="search" size={13} />
         <input ref={input} value={q} onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); e.currentTarget.blur(); } }}
           placeholder={dt("Поиск", "Search")} aria-label={dt("Спросить базу", "Ask the knowledge base")}
-          className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-mute" style={{ fontSize: 12.5 }} />
+          className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-mute max-[1099px]:w-0 max-[1099px]:flex-none max-[1099px]:group-focus-within/rs:w-auto max-[1099px]:group-focus-within/rs:flex-1" style={{ fontSize: 12.5 }} />
         {!q && (
-          <kbd className="rounded-[4px] border border-line-2 border-b-2 px-1 font-mono text-ink-mute" style={{ fontSize: 10 }}>⌘K</kbd>
+          <kbd className="max-[1099px]:hidden rounded-[4px] border border-line-2 border-b-2 px-1 font-mono text-ink-mute" style={{ fontSize: 10 }}>⌘K</kbd>
         )}
       </label>
     </form>

@@ -19,7 +19,7 @@ import type { Lens, SmartListId } from "@/lib/smartLists";
 import { Avatar, DetailPanelContext, NavHeader, ROY_TABS, RoyHeader, RoyTabBar } from "./ui";
 import { HeaderActions } from "./HeaderActions";
 import { initials } from "./dash/shared";
-import { useIsDesktop } from "./useIsDesktop";
+import { DESKTOP_QUERY, useIsDesktop } from "./useIsDesktop";
 import { SearchScreen } from "./screens/SearchScreen";
 import { AnswerScreen } from "./screens/AnswerScreen";
 import { RecordDetail } from "./screens/RecordDetail";
@@ -195,7 +195,7 @@ export function RoyApp({ me }: { me: Me | null }) {
             .includes(saved as RoyTab)
         ? (saved as RoyTab)
         : null;
-      const desktop = window.matchMedia("(min-width: 1024px)").matches;
+      const desktop = window.matchMedia(DESKTOP_QUERY).matches;
       const initial: RoyTab = desktop
         ? (valid ?? "search")
         : valid === null || valid === "search"
