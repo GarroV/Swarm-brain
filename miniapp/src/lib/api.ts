@@ -779,6 +779,60 @@ export async function fetchUsers(): Promise<User[]> {
   return apiFetch<User[]>("/users");
 }
 
+// ── Статистика по людям (GET /stats/people) ─────────────────────────────────
+// Форма — зеркало `PersonStats` из supabase/functions/_shared/stats/people.ts.
+export type PersonStats = {
+  telegram_id: number;
+  name: string;
+  tasks: {
+    open: number;
+    inProgress: number;
+    overdue: number;
+    closed: number;
+    closedRecent: number;
+    onTimeRate: number | null;
+    onTimeBase: number;
+    avgCloseDays: number | null;
+  };
+  /** inReview = null — смотрящему число не положено (выдаётся только админу). */
+  meetings: { published: number; inReview: number | null };
+  activity: { activeDays: number; strip: number[]; lastActiveAt: string | null };
+};
+export type PeopleStatsResponse = {
+  people: PersonStats[];
+  activityDays: number;
+  closedWindowDays: number;
+  reviewVisible: boolean;
+  tasksTruncated: boolean;
+};
+
+function mockPeopleStats(): PeopleStatsResponse {
+  const people = MOCK_USERS.map((u, i): PersonStats => {
+    const strip = Array.from({ length: 14 }, (_, d) => ((d * 7 + i * 3) % 5 === 0 ? 0 : (d + i) % 4));
+    return {
+      telegram_id: u.telegram_id,
+      name: u.name,
+      tasks: {
+        open: 3 + i * 2, inProgress: 1 + (i % 3), overdue: i % 3, closed: 12 + i * 5,
+        closedRecent: 4 + i, onTimeRate: i === 2 ? null : 0.6 + (i % 4) * 0.1, onTimeBase: i === 2 ? 0 : 5 + i,
+        avgCloseDays: i === 2 ? null : 2.5 + i,
+      },
+      meetings: { published: 6 + i * 3, inReview: i % 2 },
+      activity: {
+        activeDays: strip.filter((n) => n > 0).length,
+        strip,
+        lastActiveAt: new Date(Date.now() - i * 26 * 3_600_000).toISOString(),
+      },
+    };
+  });
+  return { people, activityDays: 14, closedWindowDays: 30, reviewVisible: true, tasksTruncated: false };
+}
+
+export async function fetchPeopleStats(): Promise<PeopleStatsResponse> {
+  if (DEV_MODE) return mockPeopleStats();
+  return apiFetch<PeopleStatsResponse>("/stats/people");
+}
+
 export async function fetchTasks(
   filters?: string | TaskFilters,
 ): Promise<Task[]> {
