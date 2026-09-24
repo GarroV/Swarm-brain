@@ -1,10 +1,13 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { RoyIcon } from "@/components/roy/icons";
 
 // Кнопка-меню панели задач (стенд: `.drop` + `.dmenu`). Подсвечена, когда фильтр в ней
 // что-то сузил: суженный молча список человек ищет глазами и не находит.
+
+const EDGE = 8;
+const MENU_MIN_H = 120;
 
 export type MenuItem = {
   key: string;
@@ -57,6 +60,24 @@ export function Menu({ label, on, items, footer, trigger, title }: {
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  // Куда раскрываться: у правого края таблицы — влево, у нижнего — вверх; высота — по месту.
+  const [place, setPlace] = useState<{ right: boolean; up: boolean; maxH: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) { setPlace(null); return; }
+    const trig = ref.current?.getBoundingClientRect();
+    const pop = popRef.current?.getBoundingClientRect();
+    if (!trig || !pop) return;
+    const below = innerHeight - trig.bottom - EDGE;
+    const above = trig.top - EDGE;
+    const up = pop.height > below && above > below;
+    setPlace({
+      right: trig.left + pop.width > innerWidth - EDGE,
+      up,
+      maxH: Math.max(MENU_MIN_H, Math.min(innerHeight * 0.6, up ? above : below)),
+    });
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -82,8 +103,15 @@ export function Menu({ label, on, items, footer, trigger, title }: {
       )}
       {open && (
         <div
+          ref={popRef}
           role="menu"
-          className="absolute left-0 top-full z-50 mt-1 flex max-h-[60vh] min-w-[200px] flex-col overflow-y-auto rounded-[10px] border border-line bg-[var(--popover)] p-1 shadow-[0_14px_36px_-12px_rgba(0,0,0,.35)]"
+          className={cn(
+            "absolute z-50 flex max-h-[60vh] min-w-[200px] flex-col overflow-y-auto rounded-[10px] border border-line bg-[var(--popover)] p-1 shadow-[0_14px_36px_-12px_rgba(0,0,0,.35)]",
+            place?.right ? "right-0" : "left-0",
+            place?.up ? "bottom-full mb-1" : "top-full mt-1",
+            !place && "invisible",
+          )}
+          style={place ? { maxHeight: place.maxH } : undefined}
         >
           {items.map((it) => (
             <button
