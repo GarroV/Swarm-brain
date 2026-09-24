@@ -97,7 +97,8 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line bg-surface-2 px-4 py-2">
       <span
-        className={cn("inline-flex rounded-[8px] border border-line bg-surface p-0.5", lensOff && "opacity-45")}
+        // Линзы — сегмент по .seg стенда: общая рамка, выбранная ячейка залита акцентом.
+        className={cn("inline-flex overflow-hidden rounded-[8px] border border-line-2 bg-surface", lensOff && "opacity-50")}
         title={lensOff ? dt("Выбран сотрудник — показана вся его работа", "A person is selected — showing all their work") : undefined}
       >
         {LENSES.map(([id, ru, en]) => (
@@ -107,10 +108,10 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
             disabled={lensOff}
             onClick={() => r.setLens(id)}
             className={cn(
-              "rounded-[6px] px-2.5 font-medium transition-colors",
-              r.lens === id ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:text-ink",
+              "border-r border-line-2 px-3 font-medium transition-colors last:border-r-0",
+              r.lens === id ? "bg-primary font-semibold text-white" : "text-ink-soft hover:bg-surface-2 hover:text-ink",
             )}
-            style={{ fontSize: 12.5, height: 24 }}
+            style={{ fontSize: 12.5, height: 28 }}
           >
             {dt(ru, en)}
           </button>
@@ -131,7 +132,7 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
         on={s.market != null}
         items={marketItems}
       />
-      <RangePicker value={r.range} onChange={r.setRange} variant="chip" />
+      <RangePicker value={r.range} onChange={r.setRange} variant="toolbar" />
       <Menu
         label={activeLabel ? `${dt("Список", "List")}: ${activeLabel.name}` : dt("Списки", "Lists")}
         on={!!activeLabel}
@@ -152,7 +153,7 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
       <Menu label={nMore ? `${dt("Ещё", "More")} · ${nMore}` : dt("Ещё", "More")} on={nMore > 0} items={moreItems} />
 
       <div className="ml-auto flex items-center gap-2.5">
-        <label className="flex h-[28px] items-center gap-1.5 rounded-[7px] border border-line bg-surface px-2 text-ink-mute focus-within:border-accent-line">
+        <label className="flex h-[30px] items-center gap-1.5 rounded-[7px] border border-line-2 bg-surface px-2.5 text-ink-mute hover:border-ink-mute/40 focus-within:border-primary">
           <RoyIcon name="search" size={13} />
           <input
             value={r.query}
@@ -168,7 +169,7 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
         <button
           type="button"
           onClick={s.onNew}
-          className="inline-flex h-[28px] items-center gap-1 rounded-[7px] bg-primary px-3 font-semibold text-white transition-transform active:scale-[0.97]"
+          className="inline-flex h-[30px] items-center gap-1 rounded-[7px] bg-primary px-3 font-semibold text-white transition-colors hover:bg-primary/90 active:scale-[0.97]"
           style={{ fontSize: 12.5 }}
         >
           <RoyIcon name="plus" size={13} strokeWidth={2.4} />

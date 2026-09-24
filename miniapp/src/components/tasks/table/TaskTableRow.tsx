@@ -100,7 +100,13 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
       <div className={cn("px-2 font-mono", late ? "font-semibold text-pri-high" : "text-ink-soft")} style={{ fontSize: 12 }}>
         {task.due_date ? fmtDue(task.due_date, dt("ru", "en") === "en") : <span className="text-ink-mute">—</span>}
       </div>
-      <div onClick={stop} className="flex items-center gap-0.5 px-1 opacity-60 transition-opacity group-hover:opacity-100">
+      {/* Быстрые действия — тихими иконками без рамок, как на стенде (визуальный шаг В3). Правило
+          бьёт только по кнопкам-триггерам: всплывающие окна пикеров рисуются порталом вне строки,
+          а в карточке задачи те же пикеры остаются в рамках. */}
+      <div
+        onClick={stop}
+        className="flex items-center gap-0.5 px-1 text-ink-mute opacity-70 transition-opacity group-hover:opacity-100 [&_button]:border-transparent [&_button]:bg-transparent [&_button]:text-ink-mute [&_button:hover]:bg-surface-2 [&_button:hover]:text-ink [&_svg]:text-current"
+      >
         <TaskQuickActions task={task} users={users} markets={markets} labels={labels} onPatch={onPatch} onChanged={onChanged} />
       </div>
       <div className="px-2 font-mono text-ink-soft" style={{ fontSize: 12 }}>

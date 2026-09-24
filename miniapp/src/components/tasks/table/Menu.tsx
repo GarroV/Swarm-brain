@@ -29,10 +29,11 @@ export function ToolbarButton({ on, children, onClick, title, disabled }: {
       title={title}
       disabled={disabled}
       className={cn(
-        "inline-flex h-[28px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border px-2.5 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-45",
+        // Кнопка панели по .btn стенда: 30px, рамка line-control, выбранная — акцентная рамка.
+        "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border px-3 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-45",
         on
-          ? "border-accent-line bg-accent-soft text-accent-ink"
-          : "border-line bg-surface text-ink-soft hover:bg-surface-2 hover:text-ink",
+          ? "border-primary bg-accent-soft font-semibold text-accent-ink"
+          : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2 hover:text-ink",
       )}
       style={{ fontSize: 12.5 }}
     >
