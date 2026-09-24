@@ -85,3 +85,39 @@ export function whatsNext(pool: Task[], shown: Task[]): WhatsNext {
     .slice(0, NEXT_DONE_LIMIT);
   return { soon, done };
 }
+
+// До недели — колонки по дням во всю ширину; дольше — месячная сетка, неделя строкой
+// (решение владельца 2026-09-25: не прокручивать колонки вбок, а провалиться в день).
+export const WEEK_DAYS = 7;
+// Сколько карточек влезает в ячейку сетки; остальное — «+N», клик проваливает в неделю дня.
+export const CELL_MAX = 3;
+
+export type CalendarMode = "week" | "month";
+export const calendarMode = (days: string[]): CalendarMode => (days.length > WEEK_DAYS ? "month" : "week");
+
+function shift(iso: string, n: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return toISO(new Date(y, m - 1, d + n));
+}
+
+/** Неделя дня, с понедельника по воскресенье. */
+export function weekOf(iso: string): string[] {
+  const [y, m, d] = iso.split("-").map(Number);
+  const back = (new Date(y, m - 1, d).getDay() + 6) % 7;
+  const mon = shift(iso, -back);
+  return Array.from({ length: WEEK_DAYS }, (_, i) => shift(mon, i));
+}
+
+export type GridCell = { iso: string; inRange: boolean };
+
+/** Месячная сетка по дням периода: целые недели с понедельника, дни вне периода помечены. */
+export function monthGrid(days: string[]): GridCell[][] {
+  if (!days.length) return [];
+  const shown = new Set(days);
+  const last = days[days.length - 1];
+  const weeks: GridCell[][] = [];
+  for (let mon = weekOf(days[0])[0]; mon <= last; mon = shift(mon, WEEK_DAYS)) {
+    weeks.push(weekOf(mon).map((iso) => ({ iso, inRange: shown.has(iso) })));
+  }
+  return weeks;
+}

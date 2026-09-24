@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import { CAL_MAX_DAYS, calendarDays, calendarLayout, whatsNext } from "./taskCalendar.ts";
+import { CAL_MAX_DAYS, calendarDays, calendarLayout, calendarMode, monthGrid, weekOf, whatsNext } from "./taskCalendar.ts";
 import type { Task } from "../types.ts";
 
 const NOW = new Date(2026, 8, 24, 12, 0, 0); // чт 24.09.2026
@@ -62,4 +62,23 @@ Deno.test("whatsNext: только под коротким списком, бе�
   assertEquals(ids(n.done), ["d2", "d1"]);
   const long = Array.from({ length: 7 }, (_, i) => task({ id: `x${i}` }));
   assertEquals(whatsNext(pool, long), { soon: [], done: [] });
+});
+
+Deno.test("calendarMode: до 7 дней — колонки, дольше — сетка", () => {
+  assertEquals(calendarMode(calendarDays(null, NOW).days), "week");
+  assertEquals(calendarMode(calendarDays({ preset: "custom", from: "2026-09-01", to: "2026-09-08" }, NOW).days), "month");
+});
+
+Deno.test("monthGrid: недели с понедельника, дни вне периода помечены", () => {
+  const days = calendarDays({ preset: "custom", from: "2026-09-02", to: "2026-09-15" }, NOW).days; // ср … вт
+  const g = monthGrid(days);
+  assertEquals(g.length, 3);
+  assertEquals(g[0].map((c) => c.iso), ["2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06"]);
+  assertEquals(g[0].map((c) => c.inRange), [false, false, true, true, true, true, true]);
+  assertEquals(g[2][1], { iso: "2026-09-15", inRange: true });
+  assertEquals(g[2][2].inRange, false);
+});
+
+Deno.test("weekOf: неделя дня с понедельника по воскресенье", () => {
+  assertEquals(weekOf("2026-09-27"), ["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27"]);
 });
