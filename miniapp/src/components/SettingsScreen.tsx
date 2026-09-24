@@ -14,6 +14,8 @@ import type { Me, Integration, GranolaNote } from "@/types";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { ConnectorsSection } from "@/components/profile/ConnectorsSection";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
+import { BackdropSection } from "@/components/profile/BackdropSection";
+import { useDt } from "@/components/roy/nav";
 import { SectionLabel } from "@/components/roy/ui";
 
 import { Button } from "@/components/ui/button";
@@ -750,6 +752,7 @@ function ClaudeDesktopSection() {
 export function SettingsScreen() {
   const [me, setMe] = useState<Me | null>(null);
   const [editing, setEditing] = useState(false);
+  const dt = useDt();
   // В браузере getInitData() пустой → показываем выход; внутри Telegram — нет.
   const isWebSession = !getInitData();
 
@@ -782,6 +785,9 @@ export function SettingsScreen() {
         )}
 
         <SectionLabel className="pt-1">Настройки</SectionLabel>
+        <Section icon="spark" title={dt("Задник", "Backdrop")}>
+          <BackdropSection />
+        </Section>
         <Section icon="note" title="Дайджест">
           <DigestSection isAdmin={!!me?.is_admin} />
         </Section>

@@ -242,6 +242,8 @@ export type Me = {
   markets: string[];
   is_admin: boolean;
   is_demo?: boolean;
+  /** Задник веба (lib/backdrop.ts); null — по умолчанию. Нет поля — сервер до #backdrop. */
+  ui_backdrop?: string | null;
 };
 
 export type AdminWorkspace = {

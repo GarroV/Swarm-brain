@@ -211,9 +211,30 @@
   html {
     @apply font-sans;
   }
-  /* Тёмная тема: за прозрачным body — фон-галактика (GalaxyBackground, fixed -z-10).
-     html держит тёмную базу как фоллбэк (до/без canvas), body прозрачен → галактика видна. */
-  html.dark { background-color: #0A0C0A; }
+  /* Под задником (BackdropLayer, fixed -z-10) html держит цвет фона темы как фоллбэк
+     (до/без canvas), а body и оболочка приложения становятся прозрачными — см. блок «Задник». */
+  html { background-color: var(--background); }
+}
+
+/* ── Задник (lib/backdrop.ts, выбор пользователя; data-backdrop на <html>) ──────────────
+   Прозрачными делаем ТОЛЬКО body и оболочку (.roy-shell): карточки, рейка, панели остаются
+   непрозрачными — задник виден в просветах, а не под текстом. Галактика рисуется лишь в тёмной
+   теме, поэтому в светлой body не прозрачнеет и фон остаётся чистым. */
+html.dark[data-backdrop="galaxy"] :is(body, .roy-shell),
+html[data-backdrop="dots"] :is(body, .roy-shell),
+html[data-backdrop="aurora"] :is(body, .roy-shell) {
+  background-color: transparent;
+}
+.roy-backdrop { position: fixed; inset: 0; z-index: -10; pointer-events: none; }
+.roy-backdrop-dots {
+  background-image: radial-gradient(var(--line-2) 1px, transparent 1.4px);
+  background-size: 20px 20px;
+}
+.roy-backdrop-aurora {
+  background:
+    radial-gradient(60% 50% at 8% 0%, color-mix(in srgb, var(--primary) 24%, transparent), transparent 72%),
+    radial-gradient(50% 45% at 96% 100%, color-mix(in srgb, var(--status-done) 18%, transparent), transparent 72%),
+    radial-gradient(40% 35% at 84% 4%, color-mix(in srgb, var(--pri-med) 13%, transparent), transparent 72%);
 }
 
 /* Анимации дизайн-хендоффа для роевых экранов: появление push, шиммер загрузки, спиннер. */

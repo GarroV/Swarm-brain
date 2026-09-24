@@ -1,4 +1,5 @@
 import { getInitData } from "./telegram";
+import type { BackdropId } from "./backdrop";
 import type {
   AdminUser,
   AdminWorkspace,
@@ -108,6 +109,7 @@ export type { ProposedTask } from "./proposedTasks";
 export type UpdateMeInput = {
   role?: string | null;
   markets?: string[];
+  ui_backdrop?: BackdropId | null;
 };
 
 class ApiError extends Error {

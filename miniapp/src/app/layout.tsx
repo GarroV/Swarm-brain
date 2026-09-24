@@ -5,6 +5,8 @@ import { TelegramProvider } from "@/components/TelegramProvider";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { SingleTabGate } from "@/components/SingleTabGate";
 import { ConfirmProvider } from "@/components/ui/confirm";
+import { BackdropLayer } from "@/components/roy/BackdropLayer";
+import { BACKDROP_SCRIPT } from "@/lib/backdrop";
 
 // Golos Text — весь UI, заголовки И метаданные (эталонная кириллица). IBM Plex Mono — цифры
 // и технические метки (сроки, счётчики, таймстампы): так набирает стенд редизайна
@@ -41,7 +43,9 @@ export default function RootLayout({
   return (
     <html lang="ru" className={`${golos.variable} ${mono.variable}`} suppressHydrationWarning>
       <body className="bg-background text-foreground antialiased min-h-screen">
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        {/* Один инлайн-скрипт (CSP): тема по системе + задник из кэша до первой отрисовки. */}
+        <script dangerouslySetInnerHTML={{ __html: `${THEME_SCRIPT};${BACKDROP_SCRIPT}` }} />
+        <BackdropLayer />
         <TelegramProvider>
           <ConfirmProvider>
             <SingleTabGate>{children}</SingleTabGate>

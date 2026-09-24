@@ -348,7 +348,7 @@ export function RoyApp({ me }: { me: Me | null }) {
 
   return (
     <RoyNavContext.Provider value={nav}>
-      <div className="flex flex-col h-[100dvh] bg-background text-foreground">
+      <div className="roy-shell flex flex-col h-[100dvh] bg-background text-foreground">
         {/* Плашка «скоро обновление» — плавающая, поверх всех экранов, layout не сдвигает. */}
         <DeployNoticeBar />
         {me?.is_demo && (

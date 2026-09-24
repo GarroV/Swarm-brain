@@ -53,7 +53,7 @@ export function TaskTableRow({ task, now, users, markets, labels, projectName, o
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }}
-      className="group grid cursor-pointer items-center border-b border-line transition-colors hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none"
+      className="group grid cursor-pointer items-center border-b border-line bg-surface transition-colors hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none"
       style={{ gridTemplateColumns: COLS, minHeight: 34, fontSize: 13 }}
     >
       <div className="flex min-w-0 items-center gap-2.5 px-3" style={depth ? { paddingLeft: 38 } : undefined}>
