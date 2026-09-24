@@ -1167,6 +1167,13 @@ _Админка (`admin.ts`, админы: `telegram_id 744230399` или `is_ad
 
 ---
 
+   - **Витрина на превью ветки (24.09.2026, ветка `feat/new-ui`)** — новый интерфейс проверяется на живой базе
+     (решение [decisions/2026-09-24-prod-2-0-on-muspelheim.md](decisions/2026-09-24-prod-2-0-on-muspelheim.md), «Пересмотр»).
+     У превью нет env: прокси `/api` берёт публичный адрес swarm-api прода (`miniapp/functions/_lib/api-url.ts`), а Google и
+     Telegram там не работают. Вход — `POST /api/auth/token` (форма с личным `smcp_`-токеном на `/login`, видна только не на
+     `swarm-brain.pages.dev`): Pages меняет токен на сессию через `meeting-webtoken` прода и ставит `roj_session` **только
+     владельцу** (`telegram_id` 744230399), остальным — `?err=owner_only`; на боевом адресе маршрут отдаёт 404. Сессия 7 дней
+     без продления (`WEB_JWT_SECRET` у превью нет). После переезда нового интерфейса на боевой адрес — маршрут удалить.
 ## swarm-mcp — структура файлов
 
 ```
