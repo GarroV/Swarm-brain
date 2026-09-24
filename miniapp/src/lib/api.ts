@@ -503,9 +503,10 @@ const mockGranolaUnprocessed: GranolaNote[] = [
 // прокси перекладывает её в Bearer на сервере.
 // Прямой адрес swarm-api из NEXT_PUBLIC_API_URL не берём: swarm-api пускает по CORS только
 // боевой адрес, поэтому на превью ветки (там в переменной остался прямой адрес) браузер резал
-// каждый запрос, экран показывал «Не загрузилось» и не уводил на вход. Относительный путь — можно.
+// каждый запрос, экран показывал «Не загрузилось» и не уводил на вход. Относительный путь — можно,
+// но не «//host»: браузер читает его как адрес другого хоста, и сессия ушла бы туда.
 const envApi = process.env.NEXT_PUBLIC_API_URL ?? "";
-const API_BASE = envApi.startsWith("/") ? envApi : "/api";
+const API_BASE = /^\/(?![/\\])/.test(envApi) ? envApi : "/api";
 
 function authHeaders(): Record<string, string> {
   const initData = getInitData();
