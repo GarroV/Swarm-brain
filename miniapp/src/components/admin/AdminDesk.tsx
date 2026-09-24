@@ -54,7 +54,7 @@ function AdminDesk() {
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         {tab === "ws" && (selected
-          ? <WorkspaceDetail ws={selected} onBack={() => setSelected(null)} />
+          ? <WorkspaceDetail ws={selected} onBack={() => setSelected(null)} desk />
           : <div className="p-4"><WorkspaceList onSelect={setSelected} /></div>)}
         {tab === "review" && <ReviewTable rows={reviews} total={queued} />}
         {tab === "broadcast" && <Broadcast />}
