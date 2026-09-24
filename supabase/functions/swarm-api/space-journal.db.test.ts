@@ -90,7 +90,9 @@ async function seed(db: Client) {
   // заводить свой живой.
   const cycle = await db.queryObject<{ id: string }>`
     insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status, accepted_at)
-    values (${WS}, ${tab.rows[0].id}, 'Спринт 0', current_date - 30, current_date - 16, 'accepted', now() - interval '16 days')
+    values (${WS}, ${
+    tab.rows[0].id
+  }, 'Спринт 0', current_date - 30, current_date - 16, 'accepted', now() - interval '16 days')
     returning id`;
   return {
     tabId: tab.rows[0].id,
