@@ -60,8 +60,8 @@ const AUTOSAVE_DELAY = 550;
 // Roy-стилизованные нативные контролы (без shadcn): стекло + линия + янтарный фокус.
 // min-h-10 — тач-цель полей на телефоне (было 38px при норме 44).
 const fieldCls =
-  "w-full min-h-10 rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute dark:backdrop-blur-sm";
-const labelCls = "mb-1 block font-semibold text-ink-soft";
+  "w-full min-h-9 rounded-[8px] border border-line-2 bg-surface px-2.5 py-2 text-sm text-ink outline-none transition-[border-color,box-shadow] focus:border-primary focus:ring-3 focus:ring-accent-soft placeholder:text-ink-mute";
+const labelCls = "mb-1 block font-medium text-ink-soft";
 
 interface TaskModalProps {
   task?: Task;
@@ -453,12 +453,12 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent
         showCloseButton={false}
-        className="gap-0 rounded-[20px] border border-line bg-[var(--popover)] p-0 sm:max-w-5xl dark:backdrop-blur-xl"
+        className="gap-0 rounded-[14px] border border-line bg-[var(--popover)] p-0 sm:max-w-5xl"
       >
         {/* Шапка: заголовок + индикатор автосейва (edit) + удалить (edit) + закрыть */}
-        <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
+        <div className="flex items-center justify-between gap-3 border-b border-line px-[18px] py-2.5">
           <div className="flex min-w-0 items-baseline gap-2.5">
-            <h2 className="shrink-0 font-bold text-ink" style={{ fontSize: 17, letterSpacing: "-0.01em" }}>
+            <h2 className="shrink-0 font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>
               {isEdit ? "Изменить задачу" : "Новая задача"}
             </h2>
             {isEdit && saveHint && (
@@ -479,7 +479,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                 aria-label="Удалить задачу"
                 title="Удалить задачу"
                 // Тач-цель 40x40: на телефоне кнопка была 29x29 при норме 44 — и это удаление.
-                className="flex size-10 items-center justify-center rounded-[10px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                className="flex size-10 items-center justify-center rounded-[7px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               >
                 <RoyIcon name="trash" size={17} />
               </button>
@@ -488,7 +488,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               type="button"
               onClick={handleClose}
               aria-label="Закрыть"
-              className="flex size-10 items-center justify-center rounded-[10px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="flex size-10 items-center justify-center rounded-[7px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             >
               <RoyIcon name="x" size={18} />
             </button>
@@ -496,12 +496,12 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
         </div>
 
         {/* Поля — две колонки: слева название + большое поле редактуры, справа настройки */}
-        <div className="max-h-[80vh] overflow-y-auto px-5 py-3">
+        <div className="max-h-[80vh] overflow-y-auto px-[18px] py-3.5">
           {/* Отказ догрузки — ГРОМКИЙ. Раньше это был один тост и навсегда мёртвая форма:
               человек правил задачу, ничего не сохранялось, и никто ему об этом не говорил. */}
           {hydrateFailed && (
             <div
-              className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[12px] border px-3 py-2"
+              className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[8px] border px-3 py-2"
               style={{
                 borderColor: "color-mix(in srgb, var(--pri-high) 40%, transparent)",
                 background: "color-mix(in srgb, var(--pri-high) 8%, transparent)",
@@ -517,8 +517,8 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               <button
                 type="button"
                 onClick={() => setHydrateAttempt((n) => n + 1)}
-                className="shrink-0 rounded-[10px] border border-line bg-surface px-3 font-semibold text-ink transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                style={{ fontSize: 12, minHeight: 32 }}
+                className="shrink-0 rounded-[7px] border border-line-2 bg-surface px-3 font-medium text-ink transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                style={{ fontSize: 12.5, minHeight: 30 }}
               >
                 {dt("Повторить", "Retry")}
               </button>
@@ -604,7 +604,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                         aria-label={s.label}
                         aria-pressed={on}
                         title={s.label}
-                        className={`flex flex-1 items-center justify-center gap-1.5 rounded-[10px] font-semibold transition-colors active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${on ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:bg-surface-2 hover:text-ink"}`}
+                        className={`flex flex-1 items-center justify-center gap-1.5 rounded-[7px] font-semibold transition-colors active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${on ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:bg-surface-2 hover:text-ink"}`}
                         style={{ fontSize: 12.5, minHeight: 40 }}
                       >
                         {s.icon === "circle" ? (
@@ -815,13 +815,13 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
 
         {/* Нижняя панель действий — только при создании (в edit сохранение автоматическое). */}
         {!isEdit && (
-          <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
+          <div className="flex items-center justify-end gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[18px] py-3">
             <button
               type="button"
               onClick={onClose}
               disabled={creating}
-              className="rounded-[12px] border border-line bg-surface px-4 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              style={{ fontSize: 14 }}
+              className="h-[30px] rounded-[7px] border border-line-2 bg-surface px-3 font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              style={{ fontSize: 12.5 }}
             >
               Отмена
             </button>
@@ -829,8 +829,8 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               type="button"
               onClick={handleCreate}
               disabled={creating}
-              className="rounded-[12px] bg-primary px-4 py-2 font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              style={{ fontSize: 14 }}
+              className="h-[30px] rounded-[7px] bg-primary px-3.5 font-semibold text-white transition-[transform,background-color] hover:bg-primary/90 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              style={{ fontSize: 12.5 }}
             >
               {creating ? "Создание…" : "Создать"}
             </button>
