@@ -239,8 +239,10 @@ Edge-функция: `supabase/functions/swarm-recorder-setup` (публичны
 1. Внести изменения в `recorder/`, **поднять `recorder/VERSION`** (напр. `2` → `3`).
 2. Закоммитить и смёржить в `main`. **Проверить, что собирается** (`./build-app.sh`).
 3. Поставить тег на этот коммит и запушить: `git tag recorder-build-3 && git push origin recorder-build-3`.
-4. **Залить готовый zip в Storage — раздача идёт ОТТУДА, не с GitHub** (репозиторий приватный
-   с 20.08.2026, release asset анонимно отдаёт 404 — issue #91):
+4. **Залить готовый zip в Storage — раздача идёт ОТТУДА, не с GitHub** (release asset анонимно
+   отдаёт 404 — issue #91). **С 24.09.2026 это делает сам `recorder-release.yml`** (шаг «Upload zip
+   to Supabase Storage», ключ через Management API, в конце проверяет анонимный GET = 200). Руками —
+   только если шаг упал (локальному CLI может не хватить прав на ключи):
    ```sh
    KEY="$(supabase projects api-keys --project-ref vbqglndbxkpmreccpqmr -o json \
      | python3 -c 'import sys,json;d=json.load(sys.stdin);ks=d["keys"] if isinstance(d,dict) else d;print(next(k["api_key"] for k in ks if k.get("id")=="service_role"))')"
