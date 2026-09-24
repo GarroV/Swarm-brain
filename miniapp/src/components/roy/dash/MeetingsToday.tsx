@@ -128,6 +128,69 @@ function MeetingRow({ m, dt, locale, joined, onJoined }: {
   );
 }
 
+// Строка главной по стенду (screens-extra.js → calendarList, .cev): время моноширинным,
+// название, «Перейти»/«Подключиться» справа; под ними — участники и состояние. Кнопки нет,
+// если нет ссылки: пустая кнопка «Перейти» хуже отсутствующей.
+function FlatMeetingRow({ m, dt, locale, joined, onJoined }: {
+  m: TodayMeeting;
+  dt: (ru: string, en: string) => string;
+  locale: string;
+  joined: boolean;
+  onJoined: (m: TodayMeeting) => void;
+}) {
+  const onAir = m.on_call || joined;
+  const live = m.is_now || onAir;
+  const dim = m.is_past && !onAir;
+  const join = () => {
+    if (!m.join_url) return;
+    window.open(m.join_url, "_blank", "noopener");
+    onJoined(m);
+  };
+  const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(m.starts_at));
+  return (
+    // Идущая встреча — полосой на всю строку (стенд .cev.now): день читается одним взглядом.
+    <div className={`-mx-2 grid items-center gap-x-2.5 gap-y-0.5 border-b border-line px-2 py-2 last:border-b-0 ${live ? "rounded-[8px] bg-accent-soft" : ""}`}
+      style={{ gridTemplateColumns: "auto minmax(0,1fr) auto", opacity: dim ? 0.55 : 1 }}>
+      <span className="font-mono font-semibold" style={{ fontSize: 12, color: live ? "var(--accent-ink)" : "var(--primary)" }}>{time}</span>
+      <b className="truncate font-semibold text-ink" style={{ fontSize: 13 }} title={m.title ?? undefined}>
+        {m.title ?? dt("Без названия", "Untitled")}
+      </b>
+      {m.join_url && (!m.is_past || onAir) ? (
+        <button type="button" onClick={join}
+          className={live && !onAir
+            ? "rounded-[6px] bg-primary px-2.5 py-1 font-semibold text-white transition-colors hover:bg-primary/90"
+            : "rounded-[6px] border border-line-2 bg-surface px-2.5 py-1 font-medium text-ink-soft transition-colors hover:text-ink"}
+          style={{ fontSize: 11.5 }}>
+          {onAir ? dt("Вернуться", "Back") : live ? dt("Подключиться", "Join") : dt("Перейти", "Open")}
+        </button>
+      ) : <span />}
+      <div className="col-start-2 col-end-4 flex flex-wrap items-center gap-1.5 text-ink-mute" style={{ fontSize: 11.5 }}>
+        <span>{slot(m, locale)}</span>
+        {m.attendees > 0 && <span>· {m.attendees === 1 ? "1:1" : `${m.attendees} ${dt("уч.", "ppl")}`}</span>}
+        {onAir && <Chip text="ON AIR" tone="air" />}
+        {m.recording && <Chip text="REC" tone="rec" />}
+        {m.is_now && !onAir && <span className="font-semibold" style={{ color: "var(--accent-ink)" }}>{dt("идёт сейчас", "happening now")}</span>}
+      </div>
+    </div>
+  );
+}
+
+// Пустое и «нет доступа» — словом и дорогой (стенд .cnone): пустой список при отвалившемся
+// календаре читался бы как «встреч сегодня нет», а это неправда.
+function CalNote({ title, hint, action }: { title: string; hint: string; action?: { text: string; href: string } }) {
+  return (
+    <div className="flex flex-col items-start gap-1 rounded-[10px] border border-dashed border-line-2 px-3 py-2.5">
+      <b className="font-semibold text-ink" style={{ fontSize: 13 }}>{title}</b>
+      <span className="text-ink-mute" style={{ fontSize: 12 }}>{hint}</span>
+      {action && (
+        <a href={action.href} className="mt-1 rounded-[6px] bg-primary px-2.5 py-1 font-semibold text-white" style={{ fontSize: 11.5 }}>
+          {action.text}
+        </a>
+      )}
+    </div>
+  );
+}
+
 export function MeetingsToday({ className, flat, first, onCount }: {
   className?: string;
   /** Вид главной по стенду — надпись вместо карточки. */
@@ -195,7 +258,7 @@ export function MeetingsToday({ className, flat, first, onCount }: {
       onRetry={load}
       errorText={dt("Не загрузилось", "Failed to load")}
       retryText={dt("Повторить", "Retry")}
-      empty={!needsCalendar && meetings.length === 0}
+      empty={!flat && !needsCalendar && meetings.length === 0}
       emptyText={reason === "calendar_error"
         ? dt("Календарь не ответил", "Calendar did not respond")
         : dt("Сегодня встреч нет", "No meetings today")}
@@ -204,7 +267,25 @@ export function MeetingsToday({ className, flat, first, onCount }: {
       first={first}
       count={flat && !needsCalendar ? meetings.length : undefined}
     >
-      {needsCalendar ? (
+      {flat ? (
+        needsCalendar ? (
+          <CalNote
+            title={reason === "token_expired" ? dt("Доступ к календарю истёк", "Calendar access expired") : dt("Календарь не подключён", "Calendar not connected")}
+            hint={reason === "token_expired"
+              ? dt("Google отозвал разрешение — встречи дня сейчас не приходят", "Google revoked access — today's meetings aren't coming in")
+              : dt("Встречи дня и запуск рекордера берутся из Google Calendar", "Today's meetings and the recorder come from Google Calendar")}
+            action={{ text: reason === "token_expired" ? dt("Переподключить", "Reconnect") : dt("Подключить календарь", "Connect calendar"), href: "/?settings=integrations" }}
+          />
+        ) : meetings.length === 0 ? (
+          reason === "calendar_error"
+            ? <CalNote title={dt("Календарь не ответил", "Calendar did not respond")} hint={dt("Попробуйте обновить страницу позже", "Try reloading later")} />
+            : <CalNote title={dt("Сегодня встреч нет", "No meetings today")} hint={dt("Календарь подключён — день свободен", "Calendar connected — the day is free")} />
+        ) : (
+          meetings.map((m) => (
+            <FlatMeetingRow key={m.id} m={m} dt={dt} locale={locale} joined={joinedIds.has(m.id)} onJoined={markLocal} />
+          ))
+        )
+      ) : needsCalendar ? (
         <div className="py-6 text-center">
           <div className="text-ink-soft" style={{ fontSize: 12.5 }}>
             {reason === "token_expired"
