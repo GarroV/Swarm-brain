@@ -38,7 +38,7 @@ import { MeetingReview } from "@/components/MeetingReview";
 import { TasksScreen } from "@/components/tasks/TasksScreen";
 import { TasksTable } from "@/components/tasks/table/TasksTable";
 import { TeamScreen } from "@/components/TeamScreen";
-import { SettingsScreen } from "@/components/SettingsScreen";
+import { SettingsRoute } from "@/components/settings/SettingsDesk";
 import { AdminScreen } from "@/components/AdminScreen";
 import { MeetAdminScreen } from "./screens/MeetAdminScreen";
 import { type RailId, RoyRail } from "./RoyRail";
@@ -501,7 +501,7 @@ function PushScreen({ route }: { route: RoyRoute }) {
   if (route.view === "settings") {
     return (
       <Wrapped title={dt("Настройки", "Settings")}>
-        <SettingsScreen />
+        <SettingsRoute />
       </Wrapped>
     );
   }

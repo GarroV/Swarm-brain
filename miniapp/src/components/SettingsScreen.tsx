@@ -30,7 +30,7 @@ import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 
 // ── Profile section ───────────────────────────────────────────────────────────
 
-function ProfileSection({ me }: { me: Me }) {
+export function ProfileSection({ me, onSaved }: { me: Me; onSaved?: (patch: Pick<Me, "role" | "markets">) => void }) {
   const [role, setRole] = useState<string | null>(me.role);
   const [markets, setMarkets] = useState<string[]>(me.markets);
   const [allowedMarkets, setAllowedMarkets] = useState<string[]>([]);
@@ -52,6 +52,7 @@ function ProfileSection({ me }: { me: Me }) {
     setSaving(true);
     try {
       await patchMe({ role: role || null, markets });
+      onSaved?.({ role: role || null, markets });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally {
@@ -192,7 +193,7 @@ function GranolaNoteModal({
 
 // ── Granola section ───────────────────────────────────────────────────────────
 
-function GranolaSection() {
+export function GranolaSection() {
   const confirm = useConfirm();
   const [integration, setIntegration] = useState<Integration | null>(null);
   const [loading, setLoading] = useState(true);
@@ -328,7 +329,7 @@ function GranolaSection() {
 
 // ── Digest section ────────────────────────────────────────────────────────────
 
-function DigestSection({ isAdmin }: { isAdmin: boolean }) {
+export function DigestSection({ isAdmin }: { isAdmin: boolean }) {
   const [days, setDays] = useState(7);
   const [allCountries, setAllCountries] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -405,7 +406,7 @@ function DigestSection({ isAdmin }: { isAdmin: boolean }) {
 
 // ── Upload section ────────────────────────────────────────────────────────────
 
-function UploadSection() {
+export function UploadSection() {
   const [file, setFile] = useState<File | null>(null);
   const [isPrivate, setIsPrivate] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -450,7 +451,7 @@ function UploadSection() {
 
 // ── Feedback section ──────────────────────────────────────────────────────────
 
-function FeedbackSection() {
+export function FeedbackSection() {
   return <FeedbackForm />;
 }
 
@@ -479,7 +480,7 @@ function Section({ title, icon, children, defaultOpen = false }: { title: string
 
 // Браузерная сессия (httpOnly cookie). Внутри Telegram Mini App initData непустой —
 // там аккаунт определяется тем, кто открыл бота, сменить его из приложения нельзя.
-function AccountSection() {
+export function AccountSection() {
   const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
 
@@ -508,7 +509,7 @@ function AccountSection() {
 
 // ── Google Calendar section ────────────────────────────────────────────────────
 
-function GoogleCalendarSection() {
+export function GoogleCalendarSection() {
   const confirm = useConfirm();
   const [connected, setConnected] = useState<boolean | null>(null);
   useEffect(() => {
@@ -549,7 +550,7 @@ function GoogleCalendarSection() {
 // Зеркало бот-команды /recordertoken: минт отдельного токена рекордера + однострочник
 // установки для Терминала. Токен НЕ Claude-Desktop MCP (/mytoken) — отдельный, на год.
 
-function RecorderSection() {
+export function RecorderSection() {
   const confirm = useConfirm();
   const [setup, setSetup] = useState<{ active: boolean; expiresAt: string | null; updateOneLiner?: string } | null>(null);
   const [oneLiner, setOneLiner] = useState<string | null>(null);
@@ -653,7 +654,7 @@ function RecorderSection() {
 // Зеркало бот-команды /setup: минт MCP-токена (Claude Desktop) + однострочник установки.
 // Токен отдельный от рекордера, бессрочный.
 
-function ClaudeDesktopSection() {
+export function ClaudeDesktopSection() {
   const confirm = useConfirm();
   const [active, setActive] = useState<boolean | null>(null);
   const [oneLiner, setOneLiner] = useState<string | null>(null);
