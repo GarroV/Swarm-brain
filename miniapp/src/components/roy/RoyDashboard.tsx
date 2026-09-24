@@ -2,12 +2,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Project } from "@/types";
 import { fetchProjects, fetchTaskLabels, type TaskLabel } from "@/lib/api";
-import { closedThisWeek, groupHome, hiddenCount, HOME_TEAM_LIMIT, homeTeam } from "@/lib/homeTasks";
-import { isOverdue } from "@/lib/smartLists";
+import { groupHome, hiddenCount, HOME_TEAM_LIMIT, homeTeam } from "@/lib/homeTasks";
 import { useDashboardData } from "./dash/useDashboardData";
 import { HomeLabel } from "./dash/shared";
 import { HomeTaskTable } from "./dash/HomeTaskTable";
-import { HomeNews, LatestInBase, WaitingForYou } from "./dash/HomeSide";
+import { HomeNews, LatestInBase } from "./dash/HomeSide";
 import { MeetingsToday } from "./dash/MeetingsToday";
 import { ProjectMapButton } from "./dash/ProjectMapButton";
 import { NotificationsBell } from "./NotificationsBell";
@@ -31,7 +30,6 @@ export function RoyDashboard() {
   const { openTasks, bumpTasks } = useRoyNav();
   const lang = dt("ru", "en") === "en" ? 1 : 0;
   const [creating, setCreating] = useState(false);
-  const [meetingsToday, setMeetingsToday] = useState<number | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [labels, setLabels] = useState<TaskLabel[]>([]);
 
@@ -45,7 +43,6 @@ export function RoyDashboard() {
   const mineSections = useMemo(() => groupHome(data.mine, now, lang), [data.mine, now, lang]);
   const more = hiddenCount(data.mine, mineSections, now);
   const team = useMemo(() => homeTeam(data.team, now), [data.team, now]);
-  const overdue = data.mine.filter((t) => isOverdue(t, now)).length;
 
   const projectName = (t: { project_id: string | null }) => projects.find((p) => p.id === t.project_id)?.name ?? null;
   const labelNames = (t: { label_ids?: string[] | null }) =>
@@ -94,9 +91,8 @@ export function RoyDashboard() {
         </div>
 
         <aside className="min-w-0 border-t border-line px-6 pb-6 min-[1100px]:border-l min-[1100px]:border-t-0 min-[1100px]:px-5">
-          <MeetingsToday flat first onCount={setMeetingsToday} />
-          <HomeNews data={data} overdue={overdue} closedWeek={closedThisWeek(data.tasks, now)} meetingsToday={meetingsToday} />
-          <WaitingForYou data={data} />
+          <MeetingsToday flat first />
+          <HomeNews data={data} now={now} />
           <LatestInBase data={data} />
         </aside>
       </div>

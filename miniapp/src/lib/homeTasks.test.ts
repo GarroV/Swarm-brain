@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import { closedThisWeek, groupHome, hiddenCount, homeNews, homeTeam } from "./homeTasks.ts";
+import { groupHome, hiddenCount, homeTeam } from "./homeTasks.ts";
 import type { Task } from "../types.ts";
 
 const NOW = new Date(2026, 8, 24, 12, 0, 0); // 24.09.2026, полдень
@@ -57,32 +57,4 @@ Deno.test("groupHome: пустой список — пустые секции н
 Deno.test("homeTeam: без закрытых, ближайший срок первым, без срока в конце", () => {
   const team = [task({ id: "n" }), task({ id: "d", status: "done" }), task({ id: "b", due_date: "2026-10-02" }), task({ id: "a", due_date: "2026-09-21" })];
   assertEquals(ids(homeTeam(team, NOW)), ["a", "b", "n"]);
-});
-
-Deno.test("closedThisWeek: только done с completed_at за последние 7 дней", () => {
-  const ts = [
-    task({ id: "in", status: "done", completed_at: "2026-09-20T10:00:00Z" }),
-    task({ id: "old", status: "done", completed_at: "2026-09-10T10:00:00Z" }),
-    task({ id: "noat", status: "done", completed_at: null }),
-    task({ id: "open", status: "open", completed_at: "2026-09-23T10:00:00Z" }),
-  ];
-  assertEquals(closedThisWeek(ts, NOW), 1);
-});
-
-Deno.test("homeNews: пять строк, у каждой число; цвет — требует ли действия", () => {
-  const n = homeNews({ overdue: 2, pendingReview: 0, meetingsToday: 3, agentProposals: 1, closedWeek: 4 }, ru);
-  assertEquals(n.map((x) => [x.text, x.kind]), [
-    ["Просрочено задач: 2", "bad"],
-    ["Ждут вычитки встреч: 0", "ok"],
-    ["Встреч сегодня: 3", "ok"],
-    ["Предложений агента: 1", "warn"],
-    ["Закрыто задач за неделю: 4", "ok"],
-  ]);
-});
-
-Deno.test("homeNews: нет просрочки — «Просроченного нет»; календарь не ответил — строки про встречи нет", () => {
-  const n = homeNews({ overdue: 0, pendingReview: 1, meetingsToday: null, agentProposals: 0, closedWeek: 0 }, ru);
-  assertEquals(n[0], { text: "Просроченного нет", kind: "ok", target: "tasks" });
-  assertEquals(n.some((x) => x.text.startsWith("Встреч сегодня")), false);
-  assertEquals(n.length, 4);
 });

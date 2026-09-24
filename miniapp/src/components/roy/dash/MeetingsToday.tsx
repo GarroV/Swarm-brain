@@ -191,13 +191,11 @@ function CalNote({ title, hint, action }: { title: string; hint: string; action?
   );
 }
 
-export function MeetingsToday({ className, flat, first, onCount }: {
+export function MeetingsToday({ className, flat, first }: {
   className?: string;
   /** Вид главной по стенду — надпись вместо карточки. */
   flat?: boolean;
   first?: boolean;
-  /** Сколько встреч сегодня — для «Топ 5 новостей»; null — календарь не ответил или не подключён. */
-  onCount?: (n: number | null) => void;
 }) {
   const dt = useDt();
   const locale = dt("ru-RU", "en-US");
@@ -239,11 +237,6 @@ export function MeetingsToday({ className, flat, first, onCount }: {
 
   const reason = state.data?.reason;
 
-  useEffect(() => {
-    if (!onCount || state.loading) return;
-    onCount(state.failed || reason ? null : meetings.length);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state]);
   // Календарь не подключён (или токен отвалился) — вместо текста-напоминания КНОПКА:
   // решение владельца 03.09.2026 («там же можно сделать кнопку для подключения»).
   const needsCalendar = reason === "not_connected" || reason === "token_expired";
