@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn, displayName } from "@/lib/utils";
 import { fetchConfig } from "@/lib/api";
 import { Avatar } from "./ui";
 import { RoyIcon, type RoyIconName } from "./icons";
 import { initials } from "./dash/shared";
 import { useDt, useRoyNav } from "./nav";
+import { saveRecent } from "./screens/SearchScreen";
 
 // Левая рейка десктопа — навигация нового вида (витрина, решение владельца 24.09.2026:
 // «оставляем текущие экраны, но навигация между ними уже новая»). Плоский список папок,
@@ -107,8 +108,9 @@ export function RoyRail({
           S
         </span>
         <span className="flex min-w-0 flex-col">
-          <span className="font-bold text-ink" style={{ fontSize: 13.5, letterSpacing: "0.04em" }}>
-            SWARM
+          {/* Полное имя продукта (решение владельца 2026-09-25: «тут надо сворм брейн»). */}
+          <span className="truncate font-bold text-ink" style={{ fontSize: 13.5, letterSpacing: "0.04em" }}>
+            SWARM BRAIN
           </span>
           {wsName && (
             <span className="truncate uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.1em" }} title={wsName}>
@@ -117,6 +119,7 @@ export function RoyRail({
           )}
         </span>
       </div>
+      <RailSearch />
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2.5">
         {MAIN.map(renderItem)}
       </div>
@@ -135,5 +138,51 @@ export function RoyRail({
         </div>
       </div>
     </nav>
+  );
+}
+
+// Поле поиска над разделами (стенд: .search в .nav; решение владельца 2026-09-25 — «наверху,
+// над столбцом вкладок надо добавить поле для поиска»). Enter задаёт вопрос базе — тот же
+// ответ со ссылками на источники, что и на экране поиска; ⌘K / Ctrl+K ставит фокус в поле.
+function RailSearch() {
+  const dt = useDt();
+  const { openAnswer } = useRoyNav();
+  const [q, setQ] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        input.current?.focus();
+        input.current?.select();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const submit = () => {
+    const v = q.trim();
+    if (!v) return;
+    saveRecent(v);
+    openAnswer(v);
+    setQ("");
+    input.current?.blur();
+  };
+
+  return (
+    <form role="search" className="px-2 pt-2.5" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+      <label className="flex h-[30px] items-center gap-2 rounded-[7px] border border-line-2 bg-surface px-2.5 text-ink-mute transition-colors hover:border-ink-mute/40 focus-within:border-primary">
+        <RoyIcon name="search" size={13} />
+        <input ref={input} value={q} onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Escape") { setQ(""); e.currentTarget.blur(); } }}
+          placeholder={dt("Поиск", "Search")} aria-label={dt("Спросить базу", "Ask the knowledge base")}
+          className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-mute" style={{ fontSize: 12.5 }} />
+        {!q && (
+          <kbd className="rounded-[4px] border border-line-2 border-b-2 px-1 font-mono text-ink-mute" style={{ fontSize: 10 }}>⌘K</kbd>
+        )}
+      </label>
+    </form>
   );
 }
