@@ -49,6 +49,7 @@ export const norm = (s: string): string => (s === "progress" ? "in_progress" : s
 // ── Панель: шапка-кнопка (раскрыть) + скроллируемое тело ─────────────────────────
 export function DashBlock({
   title, icon, tint, badge, headAction, loading, failed, errorText, retryText, onRetry, empty, emptyText, onHead, onAdd, addLabel, children, className,
+  flat, count, first,
 }: {
   title: string;
   icon: RoyIconName;
@@ -74,7 +75,30 @@ export function DashBlock({
   addLabel?: string;
   children: ReactNode;
   className?: string;
+  /** Вид главной по стенду: надпись-разделитель вместо карточки (screens-home.js → .lab). */
+  flat?: boolean;
+  /** Число рядом с надписью плоского вида: «Встречи сегодня · 3». */
+  count?: number;
+  /** Плоский вид первым в колонке — без линии сверху. */
+  first?: boolean;
 }) {
+  const body = (
+    <DashBody loading={loading} failed={failed} errorText={errorText} retryText={retryText} onRetry={onRetry}
+      empty={empty} emptyText={emptyText} flat={flat}>
+      {children}
+    </DashBody>
+  );
+  if (flat) {
+    return (
+      <section className={`flex min-h-0 flex-col ${className ?? ""}`}>
+        <HomeLabel first={first} count={count} action={onHead ? { text: headAction ?? "Открыть", onClick: onHead } : undefined}>
+          {title}
+        </HomeLabel>
+        {body}
+      </section>
+    );
+  }
+
   // Левая часть шапки (иконка + заголовок + бейдж) — общая для обоих вариантов шапки.
   const headLeft = (
     <div className="flex min-w-0 items-center gap-2.5">
@@ -151,27 +175,65 @@ export function DashBlock({
           </span>
         </button>
       )}
-      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2.5 py-2">
-        {loading && [0, 1, 2, 3].map((i) => <div key={i} className="roy-shim" style={{ height: 52, borderRadius: 8 }} />)}
-        {!loading && failed && (
-          <div className="flex flex-col items-center gap-2 py-9 text-center">
-            <span className="text-sm text-ink-soft">{errorText ?? "Не загрузилось"}</span>
-            {onRetry && (
-              <button
-                type="button"
-                onClick={onRetry}
-                className="rounded-[10px] px-3 py-1.5 font-semibold text-ink-mute transition-colors hover:bg-surface-2 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                style={{ fontSize: 12.5 }}
-              >
-                {retryText ?? "Повторить"}
-              </button>
-            )}
-          </div>
-        )}
-        {!loading && !failed && empty && <div className="py-10 text-center text-sm text-ink-soft">{emptyText}</div>}
-        {!loading && !failed && !empty && children}
-      </div>
+      {body}
     </RoyCard>
+  );
+}
+
+// Тело панели главной: скелетон, «не загрузилось · повторить», пусто или содержимое.
+// Общее для карточки и плоского вида — состояния не должны разойтись между ними.
+function DashBody({ loading, failed, errorText, retryText, onRetry, empty, emptyText, flat, children }: {
+  loading: boolean; failed?: boolean; errorText?: string; retryText?: string; onRetry?: () => void;
+  empty: boolean; emptyText: string; flat?: boolean; children: ReactNode;
+}) {
+  return (
+    <div className={flat ? "min-h-0" : "min-h-0 flex-1 space-y-1 overflow-y-auto px-2.5 py-2"}>
+      {loading && [0, 1, 2, 3].map((i) => <div key={i} className="roy-shim" style={{ height: 52, borderRadius: 8 }} />)}
+      {!loading && failed && (
+        <div className={`flex flex-col items-center gap-2 ${flat ? "py-4" : "py-9"} text-center`}>
+          <span className="text-sm text-ink-soft">{errorText ?? "Не загрузилось"}</span>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="rounded-[10px] px-3 py-1.5 font-semibold text-ink-mute transition-colors hover:bg-surface-2 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              style={{ fontSize: 12.5 }}
+            >
+              {retryText ?? "Повторить"}
+            </button>
+          )}
+        </div>
+      )}
+      {!loading && !failed && empty && <div className={flat ? "py-3 text-ink-mute" : "py-10 text-center text-sm text-ink-soft"} style={flat ? { fontSize: 12.5 } : undefined}>{emptyText}</div>}
+      {!loading && !failed && !empty && children}
+    </div>
+  );
+}
+
+// Надпись раздела главной по стенду (.lab): мелкие прописные, линия сверху, справа ссылка.
+export function HomeLabel({ children, count, action, first }: {
+  children: ReactNode;
+  count?: number;
+  action?: { text: ReactNode; onClick: () => void };
+  /** Первая надпись колонки — без линии сверху: над ней уже шапка экрана. */
+  first?: boolean;
+}) {
+  return (
+    <div className={`mb-[7px] flex items-center justify-between gap-2 ${first ? "pt-4" : "mt-[18px] border-t border-line pt-3.5"}`}>
+      <span className="font-semibold uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.1em" }}>
+        {children}{count != null && ` · ${count}`}
+      </span>
+      {action && (
+        <button
+          type="button"
+          onClick={action.onClick}
+          className="inline-flex min-h-6 items-center font-medium text-primary hover:underline"
+          style={{ fontSize: 12 }}
+        >
+          {action.text}
+        </button>
+      )}
+    </div>
   );
 }
 

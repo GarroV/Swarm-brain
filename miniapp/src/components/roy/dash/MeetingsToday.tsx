@@ -128,7 +128,14 @@ function MeetingRow({ m, dt, locale, joined, onJoined }: {
   );
 }
 
-export function MeetingsToday({ className }: { className?: string }) {
+export function MeetingsToday({ className, flat, first, onCount }: {
+  className?: string;
+  /** Вид главной по стенду — надпись вместо карточки. */
+  flat?: boolean;
+  first?: boolean;
+  /** Сколько встреч сегодня — для «Топ 5 новостей»; null — календарь не ответил или не подключён. */
+  onCount?: (n: number | null) => void;
+}) {
   const dt = useDt();
   const locale = dt("ru-RU", "en-US");
   const [state, setState] = useState<{ data: TodayMeetings | null; loading: boolean; failed: boolean }>({
@@ -168,6 +175,12 @@ export function MeetingsToday({ className }: { className?: string }) {
   };
 
   const reason = state.data?.reason;
+
+  useEffect(() => {
+    if (!onCount || state.loading) return;
+    onCount(state.failed || reason ? null : meetings.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
   // Календарь не подключён (или токен отвалился) — вместо текста-напоминания КНОПКА:
   // решение владельца 03.09.2026 («там же можно сделать кнопку для подключения»).
   const needsCalendar = reason === "not_connected" || reason === "token_expired";
@@ -187,6 +200,9 @@ export function MeetingsToday({ className }: { className?: string }) {
         ? dt("Календарь не ответил", "Calendar did not respond")
         : dt("Сегодня встреч нет", "No meetings today")}
       className={className}
+      flat={flat}
+      first={first}
+      count={flat && !needsCalendar ? meetings.length : undefined}
     >
       {needsCalendar ? (
         <div className="py-6 text-center">
