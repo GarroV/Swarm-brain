@@ -785,7 +785,7 @@ export function SettingsScreen() {
         )}
 
         <SectionLabel className="pt-1">Настройки</SectionLabel>
-        <Section icon="spark" title={dt("Задник", "Backdrop")}>
+        <Section icon="spark" title={dt("Настройки фона", "Background")}>
           <BackdropSection />
         </Section>
         <Section icon="note" title="Дайджест">

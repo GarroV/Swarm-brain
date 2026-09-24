@@ -43,7 +43,7 @@ export function BackdropSection() {
 
   return (
     <div className="space-y-2.5">
-      <div role="radiogroup" aria-label={dt("Задник", "Backdrop")} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div role="radiogroup" aria-label={dt("Фон", "Background")} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {BACKDROP_OPTIONS.map((o) => {
           const on = o.id === current;
           return (
@@ -72,8 +72,8 @@ export function BackdropSection() {
       {saveFailed && (
         <p className="text-[var(--pri-high)]" style={{ fontSize: 12 }}>
           {dt(
-            "Не удалось сохранить в профиль — задник действует только в этом браузере.",
-            "Couldn't save to your profile — the backdrop applies in this browser only.",
+            "Не удалось сохранить в профиль — фон действует только в этом браузере.",
+            "Couldn't save to your profile — the background applies in this browser only.",
           )}
         </p>
       )}
