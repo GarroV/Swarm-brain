@@ -211,7 +211,7 @@ export function SprintsScreen() {
   const [acceptOpen, setAcceptOpen] = useState(false);
 
   const COLUMNS = useMemo(() => [
-    { status: "open", label: dt("Открыто", "Open"), bar: "#8C8475" },
+    { status: "open", label: dt("Открыто", "Open"), bar: "var(--ink-mute)" },
     {
       status: "in_progress",
       label: dt("В работе", "In progress"),

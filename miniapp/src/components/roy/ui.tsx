@@ -278,12 +278,13 @@ export function Chip({ children, active, onClick, leading }: { children: ReactNo
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 font-semibold whitespace-nowrap rounded-full border",
+        // .chip стенда: выбранный — мягкий акцент, а не чёрная заливка.
+        // Высота 40 — тач-цель телефона (аудит мобилки 2026-08-24: было ~31 при норме 44); на десктопе 26, как у стенда.
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border min-h-10 px-[13px] lg:min-h-[26px] lg:px-[11px] transition-colors",
         TAP,
-        active ? "bg-ink text-surface border-ink" : "bg-surface text-ink-soft border-line-2",
+        active ? "bg-accent-soft text-accent-ink border-accent-line font-semibold" : "bg-surface text-ink-soft border-line-2 font-medium hover:bg-surface-2",
       )}
-      // Минимальная высота — тач-цель: было ~31px при норме 44 (аудит мобилки 2026-08-24).
-      style={{ fontSize: 13, padding: "7px 13px", minHeight: 40 }}
+      style={{ fontSize: 12.5 }}
     >
       {leading}
       {children}
@@ -596,7 +597,7 @@ export function FAB({ onClick, className, "aria-label": ariaLabel = "Созда�
       // верхнего края и съедал по ним тап и свайп (аудит мобилки 2026-08-24). Отступ снизу
       // считается от таб-бара (69px) плюс безопасная зона.
       className={cn(
-        "fixed z-20 flex items-center justify-center rounded-[18px] bg-primary text-white border-0 shadow-[0_10px_24px_-6px_rgba(31,78,156,.45)]",
+        "fixed z-20 flex items-center justify-center rounded-[14px] bg-primary text-white border-0 shadow-[0_10px_24px_-6px_rgba(31,78,156,.45)]",
         TAP,
         className,
       )}

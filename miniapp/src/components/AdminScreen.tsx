@@ -14,9 +14,9 @@ import { useDt } from "@/components/roy/nav";
 import { useConfirm } from "@/components/ui/confirm";
 
 const fieldCls =
-  "w-full rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute";
+  "w-full rounded-[8px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute";
 const btnPrimary =
-  "rounded-[12px] bg-primary px-3.5 py-2 font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
+  "rounded-[8px] bg-primary px-3.5 py-2 font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
 function Lbl({ t }: { t: string }) {
   return <span className="mb-1 block font-mono uppercase text-ink-mute" style={{ fontSize: 10, letterSpacing: "0.08em" }}>{t}</span>;
@@ -55,17 +55,17 @@ function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => void })
   return (
     <div className="space-y-2">
       {creating ? (
-        <div className="space-y-2 rounded-[16px] border border-line bg-surface-2 p-3 dark:backdrop-blur-sm">
+        <div className="space-y-2 rounded-[10px] border border-line bg-surface-2 p-3 dark:backdrop-blur-sm">
           <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Название (напр. LATAM)" className={fieldCls} autoFocus />
           <input value={newId} onChange={(e) => setNewId(e.target.value)} placeholder="id-слаг (напр. latam)" className={`${fieldCls} font-mono`} />
           {err && <p className="font-semibold" style={{ fontSize: 12, color: "var(--pri-high)" }}>{err}</p>}
           <div className="flex gap-2">
             <button onClick={handleCreate} disabled={saving} className={`${btnPrimary} flex-1`} style={{ fontSize: 13.5 }}>{saving ? "Создаю…" : "Создать"}</button>
-            <button onClick={() => { setCreating(false); setErr(null); }} className="rounded-[12px] border border-line bg-surface px-3.5 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface active:scale-[0.97]" style={{ fontSize: 13.5 }}>Отмена</button>
+            <button onClick={() => { setCreating(false); setErr(null); }} className="rounded-[8px] border border-line bg-surface px-3.5 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface active:scale-[0.97]" style={{ fontSize: 13.5 }}>Отмена</button>
           </div>
         </div>
       ) : (
-        <button onClick={() => setCreating(true)} className="flex w-full items-center justify-center gap-1.5 rounded-[16px] border border-dashed border-line-2 px-4 py-2.5 font-semibold text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" style={{ fontSize: 13.5 }}>
+        <button onClick={() => setCreating(true)} className="flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-line-2 px-4 py-2.5 font-semibold text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" style={{ fontSize: 13.5 }}>
           <RoyIcon name="plus" size={15} strokeWidth={2.2} /> Создать воркспейс
         </button>
       )}
@@ -73,7 +73,7 @@ function WorkspaceList({ onSelect }: { onSelect: (ws: AdminWorkspace) => void })
         <button
           key={ws.id}
           onClick={() => onSelect(ws)}
-          className="flex w-full items-center justify-between rounded-[16px] border border-line bg-surface px-4 py-3 text-left transition-colors hover:bg-surface-2 active:scale-[0.99] dark:backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          className="flex w-full items-center justify-between rounded-[10px] border border-line bg-surface px-4 py-3 text-left transition-colors hover:bg-surface-2 active:scale-[0.99] dark:backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
         >
           <div className="min-w-0">
             <p className="font-bold text-ink" style={{ fontSize: 15 }}>{ws.name}</p>
@@ -210,7 +210,7 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
       ) : (
         <div className="space-y-2">
           {users.map((u) => (
-            <div key={u.telegram_id ?? u.username ?? u.id} className="rounded-[14px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
+            <div key={u.telegram_id ?? u.username ?? u.id} className="rounded-[10px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
               <div className="flex items-center gap-2">
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-1.5 truncate font-semibold text-ink" style={{ fontSize: 13.5 }}>
@@ -284,7 +284,7 @@ function WorkspaceUsers({ wsId, allWorkspaces }: { wsId: string; allWorkspaces: 
                   )}
                   <div className="flex gap-2">
                     <button onClick={() => saveEdit(u)} disabled={savingEdit} className={`${btnPrimary} flex-1`} style={{ fontSize: 13 }}>{savingEdit ? dt("Сохраняю…", "Saving…") : u.pending ? dt("Привязать email", "Link email") : dt("Сохранить профиль", "Save profile")}</button>
-                    <button onClick={() => setEditKey(null)} className="rounded-[12px] border border-line bg-surface px-3 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97]" style={{ fontSize: 13 }}>Отмена</button>
+                    <button onClick={() => setEditKey(null)} className="rounded-[8px] border border-line bg-surface px-3 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97]" style={{ fontSize: 13 }}>Отмена</button>
                   </div>
                 </div>
               ) : !u.pending && others.length > 0 ? (
@@ -449,7 +449,7 @@ function BroadcastBlock() {
   };
 
   return (
-    <div className="rounded-[16px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
+    <div className="rounded-[10px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between font-semibold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" style={{ fontSize: 13.5 }}>
         <span className="flex items-center gap-2"><RoyIcon name="note" size={15} className="text-ink-soft" /> Рассылка всем</span>
         <RoyIcon name="cright" size={14} className={`text-ink-soft transition-transform ${open ? "rotate-90" : ""}`} />
@@ -479,7 +479,7 @@ function ReviewQueueBlock() {
   const total = (rows ?? []).reduce((n, r) => n + r.count, 0);
 
   return (
-    <div className="rounded-[16px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
+    <div className="rounded-[10px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between font-semibold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" style={{ fontSize: 13.5 }}>
         <span className="flex items-center gap-2"><RoyIcon name="cal" size={15} className="text-ink-soft" /> На вычитке по участникам{rows && total > 0 ? ` · ${total}` : ""}</span>
         <RoyIcon name="cright" size={14} className={`text-ink-soft transition-transform ${open ? "rotate-90" : ""}`} />

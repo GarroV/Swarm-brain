@@ -71,7 +71,7 @@ export function SwipeRow({ children, actions, onTap }: { children: ReactNode; ac
   const dragging = drag.current?.horizontal ?? false;
 
   return (
-    <div className="relative overflow-hidden rounded-[18px]">
+    <div className="relative overflow-hidden rounded-[10px]">
       {/* Слой действий существует, только когда шторка тронута. В покое он лежал под строкой и
           пробивался наружу тонкой дугой на скруглённых углах (заметно на светлой теме): строка
           поднята в композитор из-за transform, и клип контейнера ложится на слои с разным

@@ -437,7 +437,7 @@ export function RoyApp({ me }: { me: Me | null }) {
               {toastMsg && (
                 <div
                   role="status"
-                  className="roy-pop absolute bottom-[110px] left-1/2 z-50 -translate-x-1/2 rounded-[13px] bg-ink px-4 py-2.5 text-sm text-surface shadow-[0_10px_30px_rgba(0,0,0,.3)]"
+                  className="roy-pop absolute bottom-[110px] left-1/2 z-50 -translate-x-1/2 rounded-[8px] bg-ink px-4 py-2.5 text-sm text-surface shadow-[0_10px_30px_rgba(0,0,0,.3)]"
                 >
                   {toastMsg}
                 </div>
@@ -615,7 +615,7 @@ function MoreScreen({ root = false }: { root?: boolean }) {
             key={r.label}
             type="button"
             onClick={() => push(r.route)}
-            className="flex w-full items-center justify-between rounded-[18px] border border-line bg-surface px-4 py-3.5 text-left font-semibold text-ink transition-transform active:scale-[0.98]"
+            className="flex w-full items-center justify-between rounded-[10px] border border-line bg-surface px-4 py-3.5 text-left font-semibold text-ink transition-transform active:scale-[0.98]"
             style={{ fontSize: 15 }}
           >
             {r.label}
@@ -624,7 +624,7 @@ function MoreScreen({ root = false }: { root?: boolean }) {
         <button
           type="button"
           onClick={() => setFeedback(true)}
-          className="flex w-full items-center justify-between rounded-[18px] border border-line bg-surface px-4 py-3.5 text-left font-semibold text-ink transition-transform active:scale-[0.98]"
+          className="flex w-full items-center justify-between rounded-[10px] border border-line bg-surface px-4 py-3.5 text-left font-semibold text-ink transition-transform active:scale-[0.98]"
           style={{ fontSize: 15 }}
         >
           {dt("Оставить фидбек", "Send feedback")}

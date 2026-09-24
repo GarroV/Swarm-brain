@@ -59,7 +59,7 @@ export function ConnectorTile({ c, open, onToggle }: { c: Connector; open: boole
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      className={`flex w-full flex-col gap-2 rounded-[14px] border px-3 py-3 text-left transition-colors hover:border-line-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line dark:backdrop-blur-sm ${SKIN[c.state]} ${open ? "border-accent-line" : ""}`}
+      className={`flex w-full flex-col gap-2 rounded-[10px] border px-3 py-3 text-left transition-colors hover:border-line-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line dark:backdrop-blur-sm ${SKIN[c.state]} ${open ? "border-accent-line" : ""}`}
     >
       <span className="flex items-center justify-between">
         <RoyIcon name={ICON[c.id]} className={c.state === "expired" ? "text-accent-ink" : "text-ink-soft"} />

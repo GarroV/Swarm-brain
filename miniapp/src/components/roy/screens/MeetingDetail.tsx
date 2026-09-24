@@ -26,7 +26,7 @@ function ActionChip({ icon, label, onClick, danger }: { icon: RoyIconName; label
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-[11px] border px-3 py-2 font-semibold transition-transform active:scale-[0.96]"
+      className="inline-flex items-center gap-1.5 rounded-[8px] border px-3 py-2 font-semibold transition-transform active:scale-[0.96]"
       // Тач-цель: правка названия/тезисов/стран и удаление были 38px при норме 44.
       style={{ fontSize: 13, borderColor: "var(--line-2)", color: danger ? "var(--pri-high)" : "var(--accent-ink)", minHeight: 40 }}
     >
@@ -190,12 +190,12 @@ export function MeetingDetail({ id }: { id: string }) {
                   value={titleDraft}
                   onChange={(ev) => setTitleDraft(ev.target.value)}
                   autoFocus
-                  className="w-full rounded-[12px] border border-line-2 bg-surface px-3.5 py-2.5 font-bold text-ink outline-none focus:border-primary"
+                  className="w-full rounded-[8px] border border-line-2 bg-surface px-3.5 py-2.5 font-bold text-ink outline-none focus:border-primary"
                   style={{ fontSize: 20, letterSpacing: "-0.01em" }}
                 />
                 <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={saveTitle} disabled={busy} className="flex-1 rounded-[12px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>Сохранить</button>
-                  <button type="button" onClick={() => setEditingTitle(false)} className="rounded-[12px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>Отмена</button>
+                  <button type="button" onClick={saveTitle} disabled={busy} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>Сохранить</button>
+                  <button type="button" onClick={() => setEditingTitle(false)} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>Отмена</button>
                 </div>
               </div>
             ) : (
@@ -226,7 +226,7 @@ export function MeetingDetail({ id }: { id: string }) {
             )}
 
             {editingCountries && (
-              <div className="mb-4 rounded-[14px] border border-line-2 bg-surface p-4">
+              <div className="mb-4 rounded-[10px] border border-line-2 bg-surface p-4">
                 <SectionLabel>Страны встречи</SectionLabel>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {allowedMarkets.map((code) => {
@@ -245,10 +245,10 @@ export function MeetingDetail({ id }: { id: string }) {
                   })}
                 </div>
                 <div className="mt-3 flex gap-2">
-                  <button type="button" onClick={saveCountries} disabled={busy} className="flex-1 rounded-[12px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
+                  <button type="button" onClick={saveCountries} disabled={busy} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
                     Сохранить
                   </button>
-                  <button type="button" onClick={() => setEditingCountries(false)} className="rounded-[12px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>
+                  <button type="button" onClick={() => setEditingCountries(false)} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>
                     Отмена
                   </button>
                 </div>
@@ -257,18 +257,18 @@ export function MeetingDetail({ id }: { id: string }) {
 
             {editing ? (
               <div className="mb-4">
-                <textarea value={draft} onChange={(ev) => setDraft(ev.target.value)} rows={8} className="w-full resize-none rounded-[14px] border border-line-2 bg-surface px-4 py-3 text-ink outline-none focus:border-primary" style={{ fontSize: 14, lineHeight: 1.55 }} />
+                <textarea value={draft} onChange={(ev) => setDraft(ev.target.value)} rows={8} className="w-full resize-none rounded-[8px] border border-line-2 bg-surface px-4 py-3 text-ink outline-none focus:border-primary" style={{ fontSize: 14, lineHeight: 1.55 }} />
                 <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={saveSummary} disabled={busy} className="flex-1 rounded-[12px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
+                  <button type="button" onClick={saveSummary} disabled={busy} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
                     Сохранить
                   </button>
-                  <button type="button" onClick={() => setEditing(false)} className="rounded-[12px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>
+                  <button type="button" onClick={() => setEditing(false)} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>
                     Отмена
                   </button>
                 </div>
               </div>
             ) : e.summary ? (
-              <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 16 }}>
+              <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 10 }}>
                 <div className="mb-1.5 flex items-center justify-between gap-2">
                   <span className="font-bold uppercase text-accent-ink" style={{ fontSize: 11, letterSpacing: "0.05em" }}>
                     Кратко от ИИ
@@ -309,7 +309,7 @@ export function MeetingDetail({ id }: { id: string }) {
               onChange={(s) => setStorage(s as "shared" | "personal")}
             />
           </div>
-          <button type="button" onClick={confirm} disabled={busy} className="w-full rounded-[14px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
+          <button type="button" onClick={confirm} disabled={busy} className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
             {storage === "personal" ? "Сохранить в личное" : "Сохранить в базу"}
           </button>
         </div>

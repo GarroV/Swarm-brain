@@ -21,7 +21,7 @@ export function ProfileHeader({ me, open, onToggle }: { me: Me; open: boolean; o
   const rest = me.markets.length - shown.length;
 
   return (
-    <div className="flex items-start gap-3 rounded-[14px] border border-line bg-surface px-3 py-3 dark:backdrop-blur-sm">
+    <div className="flex items-start gap-3 rounded-[10px] border border-line bg-surface px-3 py-3 dark:backdrop-blur-sm">
       <Avatar size={36}>{initials(me.name)}</Avatar>
       <div className="min-w-0 flex-1">
         <p className="truncate text-ink" style={{ fontSize: 14, fontWeight: 600 }}>{me.name}</p>

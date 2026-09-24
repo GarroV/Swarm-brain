@@ -291,7 +291,7 @@ function itemRecorder(it: MeetItem): string | null {
 function StatChip({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
   return (
     <div
-      className="flex-1 rounded-[12px] border border-line bg-surface px-3 py-2.5"
+      className="flex-1 rounded-[8px] border border-line bg-surface px-3 py-2.5"
     >
       <div
         className="font-bold leading-none"
@@ -344,7 +344,7 @@ function ListRow({
       >
         <div className="flex items-start gap-3">
           <span
-            className="inline-flex shrink-0 items-center justify-center rounded-[11px]"
+            className="inline-flex shrink-0 items-center justify-center rounded-[8px]"
             style={{ width: 34, height: 34, background: "var(--meet-soft)", color: "var(--meet-ink)" }}
           >
             <RoyIcon name="meet" size={17} />
@@ -462,7 +462,7 @@ function ContentEditor({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             disabled={saving}
-            className="w-full resize-y rounded-[12px] border border-line bg-surface text-ink leading-relaxed outline-none focus:border-[var(--accent-ink)] disabled:opacity-50"
+            className="w-full resize-y rounded-[8px] border border-line bg-surface text-ink leading-relaxed outline-none focus:border-[var(--accent-ink)] disabled:opacity-50"
             style={{ fontSize: 13, padding: "10px 12px", minHeight: 220 }}
           />
           <div className="flex items-center gap-2">
@@ -470,7 +470,7 @@ function ContentEditor({
               type="button"
               disabled={saving}
               onClick={save}
-              className="inline-flex items-center gap-1.5 rounded-[11px] border-0 font-semibold transition-opacity disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-[8px] border-0 font-semibold transition-opacity disabled:opacity-50"
               style={{ padding: "8px 14px", fontSize: 13, background: "var(--accent-ink)", color: "var(--card)" }}
             >
               <RoyIcon name="check" size={14} strokeWidth={2.1} />
@@ -480,7 +480,7 @@ function ContentEditor({
               type="button"
               disabled={saving}
               onClick={cancel}
-              className="rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-opacity disabled:opacity-50"
+              className="rounded-[8px] border border-line bg-surface font-semibold text-ink-soft transition-opacity disabled:opacity-50"
               style={{ padding: "7px 14px", fontSize: 13 }}
             >
               Отмена
@@ -867,7 +867,7 @@ function AgentMeetingDetail({
         <RoyIcon name="spark" size={13} strokeWidth={1.9} /> {reprocessing ? "Обрабатываю…" : "Переобработать"}
       </button>
       {reprocMenu && !reprocessing && (
-        <div className="absolute right-0 z-20 mt-1 w-64 space-y-1 rounded-[12px] border border-line bg-card p-2 shadow-lg dark:backdrop-blur-lg">
+        <div className="absolute right-0 z-20 mt-1 w-64 space-y-1 rounded-[8px] border border-line bg-card p-2 shadow-lg dark:backdrop-blur-lg">
           <p className="px-1 pb-1 text-[11px] text-ink-soft">Что поменять в тезисах?</p>
           <button type="button" onClick={() => reprocess()} className="w-full rounded-md px-2 py-1.5 text-left text-xs text-ink hover:bg-surface-2">Просто пересобрать</button>
           {REPROC_PRESETS.map((p) => (
@@ -1000,10 +1000,10 @@ function AgentMeetingDetail({
               <div className="mt-1">
                 <MarkdownTextarea value={notesDraft} onChange={setNotesDraft} disabled={saving} autoFocus />
                 <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={saveNotes} disabled={saving} className="flex-1 rounded-[12px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
+                  <button type="button" onClick={saveNotes} disabled={saving} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
                     {saving ? "Сохраняем…" : "Сохранить тезисы"}
                   </button>
-                  <button type="button" onClick={() => setEditingNotes(false)} disabled={saving} className="rounded-[12px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft disabled:opacity-60" style={{ fontSize: 14 }}>
+                  <button type="button" onClick={() => setEditingNotes(false)} disabled={saving} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft disabled:opacity-60" style={{ fontSize: 14 }}>
                     Отмена
                   </button>
                 </div>
@@ -1260,7 +1260,7 @@ function ActionsPanel({
       {isConfirmed ? (
         /* Решение уже принято: показываем, куда сохранена, без органов управления. */
         <div
-          className="flex items-center gap-2 rounded-[12px] border border-line bg-surface px-3 py-2.5 text-ink-soft"
+          className="flex items-center gap-2 rounded-[8px] border border-line bg-surface px-3 py-2.5 text-ink-soft"
           style={{ fontSize: 13 }}
         >
           <RoyIcon name="check" size={15} strokeWidth={2.1} style={{ color: "var(--status-done)" }} />
@@ -1289,7 +1289,7 @@ function ActionsPanel({
             type="button"
             disabled={confirmState !== "idle"}
             onClick={handleConfirm}
-            className="flex w-full items-center justify-center gap-2 rounded-[13px] border-0 font-semibold transition-[transform,opacity,filter] duration-150 hover:scale-[1.02] hover:brightness-105 active:scale-[0.98] disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-[8px] border-0 font-semibold transition-[transform,opacity,filter] duration-150 hover:scale-[1.02] hover:brightness-105 active:scale-[0.98] disabled:opacity-50"
             style={{
               padding: "10px 14px",
               fontSize: 14,
@@ -1308,7 +1308,7 @@ function ActionsPanel({
         type="button"
         disabled={rejectState !== "idle"}
         onClick={handleReject}
-        className="flex w-full items-center justify-center gap-2 rounded-[13px] border border-line bg-surface font-semibold transition-[transform,background,border-color] duration-150 hover:scale-[1.02] hover:border-[var(--pri-high)] active:scale-[0.98] disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-[8px] border border-line bg-surface font-semibold transition-[transform,background,border-color] duration-150 hover:scale-[1.02] hover:border-[var(--pri-high)] active:scale-[0.98] disabled:opacity-50"
         style={{
           padding: "9px 14px",
           fontSize: 14,
@@ -1325,7 +1325,7 @@ function ActionsPanel({
           type="button"
           disabled={reclassState !== "idle"}
           onClick={handleReclassify}
-          className="flex w-full items-center justify-center gap-1.5 rounded-[13px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,background,border-color] duration-150 hover:scale-[1.02] hover:border-line-2 hover:bg-surface-2 active:scale-[0.98] disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-1.5 rounded-[8px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,background,border-color] duration-150 hover:scale-[1.02] hover:border-line-2 hover:bg-surface-2 active:scale-[0.98] disabled:opacity-50"
           style={{ padding: "9px 14px", fontSize: 13.5 }}
         >
           <RoyIcon name="note" size={15} strokeWidth={1.9} />
@@ -1651,7 +1651,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
             {isLoading && (
               <>
                 {[0, 1, 2].map((i) => (
-                  <div key={i} className="roy-shim" style={{ height: 66, borderRadius: 18 }} />
+                  <div key={i} className="roy-shim" style={{ height: 66, borderRadius: 10 }} />
                 ))}
               </>
             )}
@@ -1680,7 +1680,7 @@ export function MeetAdminScreen({ initialMode = "review" }: { initialMode?: "rev
             <div className="flex h-full items-center justify-center">
               <div className="text-center space-y-2">
                 <div
-                  className="inline-flex items-center justify-center rounded-[16px]"
+                  className="inline-flex items-center justify-center rounded-[10px]"
                   style={{ width: 56, height: 56, background: "var(--meet-soft)", color: "var(--meet-ink)" }}
                 >
                   <RoyIcon name="meet" size={28} />

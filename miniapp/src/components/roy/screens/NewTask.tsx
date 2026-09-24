@@ -25,7 +25,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-const inputCls = "w-full bg-surface border border-line-2 rounded-[18px] px-4 py-3 text-ink outline-none focus:border-primary";
+const inputCls = "w-full bg-surface border border-line-2 rounded-[8px] px-4 py-3 text-ink outline-none focus:border-primary";
 
 export function NewTask({ id }: { id?: string }) {
   const { me, pop, setTab, toast, openTasks } = useRoyNav();
@@ -149,7 +149,7 @@ export function NewTask({ id }: { id?: string }) {
             </div>
           </Field>
         )}
-        <button type="button" onClick={() => setIsPrivate((v) => !v)} className="flex w-full items-center justify-between rounded-[18px] border border-line bg-surface px-4 py-3.5">
+        <button type="button" onClick={() => setIsPrivate((v) => !v)} className="flex w-full items-center justify-between rounded-[10px] border border-line bg-surface px-4 py-3.5">
           <span className="font-medium text-ink" style={{ fontSize: 14.5 }}>
             Личная задача
           </span>
@@ -159,7 +159,7 @@ export function NewTask({ id }: { id?: string }) {
         </button>
       </div>
       <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
-        <button type="button" onClick={submit} disabled={saving} className="w-full rounded-[14px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
+        <button type="button" onClick={submit} disabled={saving} className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
           {editing ? "Сохранить" : "Создать задачу"}
         </button>
       </div>

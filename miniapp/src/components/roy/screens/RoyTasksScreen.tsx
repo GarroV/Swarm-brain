@@ -79,7 +79,7 @@ export function RoyTasksScreen() {
       </div>
 
       <div className="space-y-2.5 px-5 pb-28">
-        {r.loading && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 64, borderRadius: 18 }} />)}
+        {r.loading && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 64, borderRadius: 10 }} />)}
 
         {!r.loading && total === 0 && (
           <div className="py-10 text-center text-sm text-ink-soft">

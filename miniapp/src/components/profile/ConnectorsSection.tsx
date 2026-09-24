@@ -67,7 +67,7 @@ export function ConnectorsSection({ me, panels }: { me: Me; panels: Record<Conne
       </div>
 
       {open && (
-        <div className="rounded-[14px] border border-accent-line bg-surface px-3 py-3 dark:backdrop-blur-sm">
+        <div className="rounded-[10px] border border-accent-line bg-surface px-3 py-3 dark:backdrop-blur-sm">
           <p className="mb-2 text-ink" style={{ fontSize: 13, fontWeight: 500 }}>{dt(...TITLE[open])}</p>
           {panels[open]}
         </div>

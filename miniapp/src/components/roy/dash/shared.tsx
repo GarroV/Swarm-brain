@@ -152,7 +152,7 @@ export function DashBlock({
         </button>
       )}
       <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2.5 py-2">
-        {loading && [0, 1, 2, 3].map((i) => <div key={i} className="roy-shim" style={{ height: 52, borderRadius: 12 }} />)}
+        {loading && [0, 1, 2, 3].map((i) => <div key={i} className="roy-shim" style={{ height: 52, borderRadius: 8 }} />)}
         {!loading && failed && (
           <div className="flex flex-col items-center gap-2 py-9 text-center">
             <span className="text-sm text-ink-soft">{errorText ?? "Не загрузилось"}</span>
@@ -178,7 +178,7 @@ export function DashBlock({
 // ── Бейдж-счётчик «требует внимания» (акцент) ───────────────────────────────────
 export function AccentBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 font-semibold text-accent-ink" style={{ fontSize: 12 }}>
+    <span className="mr-1.5 inline-block max-w-[calc(100%-0.375rem)] truncate whitespace-nowrap rounded-full bg-accent-soft px-2 py-0.5 align-middle font-semibold text-accent-ink" style={{ fontSize: 12 }}>
       {children}
     </span>
   );
@@ -205,7 +205,7 @@ export function Row({ onClick, children }: { onClick: () => void; children: Reac
           onClick();
         }
       }}
-      className="flex w-full cursor-pointer items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line"
+      className="flex w-full cursor-pointer items-center gap-3 rounded-[8px] px-3 py-2.5 text-left transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line"
     >
       {children}
     </div>
@@ -235,7 +235,7 @@ export function DashTaskRow({ task, showAssignee = false }: { task: Task; showAs
       tabIndex={0}
       onClick={() => openTask(task)}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTask(task); } }}
-      className="cursor-pointer rounded-[12px] transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      className="cursor-pointer rounded-[8px] transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
     >
       <TaskRow task={task} showAssignee={showAssignee} onToggle={toggle} />
     </div>

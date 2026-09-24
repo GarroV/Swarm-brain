@@ -193,7 +193,7 @@ export function RoyMeetingsScreen() {
   const openReview = (id: string) => push({ view: "meetingReview", params: { id } });
 
   const segmented = <Segmented items={SEGS} value={seg} onChange={setSeg} />;
-  const skeleton = meetings == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 72, borderRadius: 18 }} />);
+  const skeleton = meetings == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 72, borderRadius: 10 }} />);
   const emptyFeed = meetings && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">Встреч нет</div>;
   const feedCards = (mobile: boolean) =>
     items.map((e) => <MeetingCard key={e.id} e={e} mobile={mobile} onOpen={() => open(e.id)} onRemove={() => remove(e)} />);

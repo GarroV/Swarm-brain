@@ -91,7 +91,7 @@ export default function LoginPage() {
             style={{ background: "rgba(31,78,156,0.30)", transform: "scale(1.15)" }} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icon.svg" alt="Swarm Brain" width={92} height={92}
-            className="relative rounded-[24px] shadow-[0_10px_40px_rgba(154,94,18,0.25)]" />
+            className="relative rounded-[24px] shadow-[0_10px_40px_rgba(31,78,156,0.25)]" />
         </div>
         <div>
           <h1 className="text-4xl font-bold tracking-tight text-ink">Swarm Brain</h1>

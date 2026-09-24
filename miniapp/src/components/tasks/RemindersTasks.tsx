@@ -182,7 +182,7 @@ export function RemindersTasks() {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-          {r.loading && [0, 1, 2].map((i) => <div key={i} className="roy-shim my-1" style={{ height: 56, borderRadius: 12 }} />)}
+          {r.loading && [0, 1, 2].map((i) => <div key={i} className="roy-shim my-1" style={{ height: 56, borderRadius: 8 }} />)}
 
           {!r.loading && total === 0 && (
             <p className="py-12 text-center text-ink-soft" style={{ fontSize: 13.5 }}>

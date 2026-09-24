@@ -121,7 +121,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, meI
           className="roy-harvest-backdrop fixed inset-0 z-50 bg-black/50 supports-backdrop-filter:backdrop-blur-md"
         />
         <Dialog.Popup
-          className="roy-harvest fixed z-50 flex flex-col overflow-hidden rounded-[20px] border border-line bg-[var(--popover)] shadow-2xl outline-none dark:backdrop-blur-xl"
+          className="roy-harvest fixed z-50 flex flex-col overflow-hidden rounded-[14px] border border-line bg-[var(--popover)] shadow-2xl outline-none dark:backdrop-blur-xl"
           style={{ ...(geo ?? {}), position: "fixed", ...flipVars(anchorRect, geo) }}
         >
           <div className="roy-harvest-body flex min-h-0 flex-auto flex-col">
@@ -146,7 +146,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, meI
                 aria-label={dt("Закрыть разбор", "Close review")}
                 onClick={onClose}
                 disabled={busy}
-                className="inline-flex shrink-0 items-center justify-center rounded-[11px] border border-line bg-surface text-ink-mute transition-[opacity,border-color] duration-150 hover:border-line-2 hover:opacity-70 disabled:opacity-40"
+                className="inline-flex shrink-0 items-center justify-center rounded-[8px] border border-line bg-surface text-ink-mute transition-[opacity,border-color] duration-150 hover:border-line-2 hover:opacity-70 disabled:opacity-40"
                 style={{ width: 40, height: 40 }}
               >
                 <RoyIcon name="x" size={16} strokeWidth={1.9} />
@@ -184,7 +184,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, meI
                   type="button"
                   onClick={() => actions.toggleAll(!allSelected)}
                   disabled={busy || streaming}
-                  className="rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
+                  className="rounded-[8px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
                   style={{ padding: "6px 12px", fontSize: 12, minHeight: 40 }}
                 >
                   {allSelected ? dt("Снять все", "Clear all") : dt("Выбрать все", "Select all")}
@@ -194,7 +194,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, meI
                 type="button"
                 onClick={actions.addOwn}
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-[8px] border border-line bg-surface font-semibold text-ink-soft transition-[transform,border-color] duration-150 hover:scale-[1.03] hover:border-line-2 active:scale-[0.97] disabled:opacity-50"
                 style={{ padding: "6px 12px", fontSize: 12, minHeight: 40 }}
               >
                 <RoyIcon name="plus" size={13} strokeWidth={2.1} />
@@ -204,7 +204,7 @@ export function TasksHarvestSheet({ open, onClose, anchorRect, tasks, users, meI
                 type="button"
                 onClick={actions.commit}
                 disabled={busy || streaming || selected.length === 0}
-                className="ml-auto inline-flex items-center justify-center gap-2 rounded-[13px] font-semibold transition-[transform,opacity,filter,background] duration-150 enabled:hover:scale-[1.02] enabled:hover:brightness-105 active:scale-[0.98] disabled:opacity-60"
+                className="ml-auto inline-flex items-center justify-center gap-2 rounded-[8px] font-semibold transition-[transform,opacity,filter,background] duration-150 enabled:hover:scale-[1.02] enabled:hover:brightness-105 active:scale-[0.98] disabled:opacity-60"
                 // Пока ничего не выбрано, кнопка НЕ выглядит главной: акцентная заливка на
                 // неработающей кнопке читается как «нажми», и человек тыкает в пустоту.
                 style={(selected.length === 0 || streaming) && !busy
@@ -258,7 +258,7 @@ function HarvestRow({ task, users, meId, busy, editing, onStartEdit, onStopEdit,
     <li
       // roy-harvest-row-in отыгрывается ОДИН раз при монтировании: строки приезжают потоком в
       // непредсказуемые моменты, и без собственного движения это читается как мигание списка.
-      className="roy-harvest-row-in rounded-[14px] border border-line bg-surface transition-colors hover:border-line-2 dark:backdrop-blur-lg"
+      className="roy-harvest-row-in rounded-[10px] border border-line bg-surface transition-colors hover:border-line-2 dark:backdrop-blur-lg"
       style={{ opacity: task._selected ? 1 : 0.55 }}
     >
       <div className="flex items-start gap-2 p-2">
@@ -380,7 +380,7 @@ function PendingRow() {
     <li
       aria-live="polite"
       aria-label={dt("Модель ищет задачи", "The model is finding tasks")}
-      className="roy-harvest-row-in rounded-[14px] border border-dashed border-line bg-surface/50 p-3"
+      className="roy-harvest-row-in rounded-[10px] border border-dashed border-line bg-surface/50 p-3"
     >
       <div className="roy-harvest-wave flex flex-col gap-2">
         <div className="rounded-[6px] bg-surface-2" style={{ height: 11, width: "62%" }} />

@@ -9,9 +9,9 @@ type Props = { id: string; onClose: () => void; onChanged?: () => void };
 
 // Roy-кнопки/поля (без shadcn).
 const btnPrimary =
-  "w-full rounded-[12px] bg-primary px-4 py-2.5 font-semibold text-white transition-transform active:scale-[0.98] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
+  "w-full rounded-[8px] bg-primary px-4 py-2.5 font-semibold text-white transition-transform active:scale-[0.98] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 const btnOutline =
-  "rounded-[12px] border border-line bg-surface px-4 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.98] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
+  "rounded-[8px] border border-line bg-surface px-4 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.98] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
 function fmtTs(sec: number): string {
   const t = Math.max(0, Math.floor(sec));
@@ -206,7 +206,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
                 <textarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  className="w-full min-h-[220px] resize-none rounded-[12px] border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)]"
+                  className="w-full min-h-[220px] resize-none rounded-[8px] border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)]"
                 />
                 <div className="flex gap-2">
                   <button onClick={handleSave} disabled={saving} className={`${btnPrimary} flex-1`} style={{ fontSize: 14 }}>{saving ? "…" : "Сохранить"}</button>
