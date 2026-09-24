@@ -19,6 +19,7 @@ import {
   fetchTask,
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger } from "@/components/ui/select";
 import { PropertyRow, PropertyLabel, PropertyValue, propertySelectCls } from "@/components/ui/PropertyRow";
 import { useConfirm } from "@/components/ui/confirm";
@@ -77,7 +78,13 @@ interface TaskModalProps {
   meetingId?: string | null;
   // Префилл проекта при создании (напр. из карточки/облака проекта). Игнорируется в режиме правки.
   projectId?: string | null;
+  // Панель справа на всю высоту вместо окна по центру (десктоп по стенду, docs/redesign/stand
+  // detail.js). Колонки формы в панели идут одна под другой.
+  drawer?: boolean;
 }
+
+// Панель справа: ширина — --detail-w стенда (560px), фон списка за ней лишь слегка притушен.
+const DRAWER_CLS = "inset-y-0 top-0 right-0 left-auto flex h-dvh max-h-dvh w-[560px] max-w-[96vw] translate-x-0 translate-y-0 flex-col rounded-none border-0 border-l sm:max-w-[560px] data-open:zoom-in-100 data-open:slide-in-from-right-8 data-closed:zoom-out-100 data-closed:slide-out-to-right-8";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -106,7 +113,7 @@ function TaskOrigin({ task }: { task: Task }) {
   );
 }
 
-export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, meetingId, projectId }: TaskModalProps) {
+export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, meetingId, projectId, drawer = false }: TaskModalProps) {
   // Догрузка полной задачи живёт ЗДЕСЬ, а не в вызывающем экране. Раньше это было требованием
   // к вызывающей стороне («открыл задачу из списка — догрузи по id»), и из пяти точек входа его
   // соблюдала одна: список, доска, таймлайн и облако проекта отдавали объект из проекции
@@ -453,7 +460,8 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent
         showCloseButton={false}
-        className="gap-0 rounded-[14px] border border-line bg-[var(--popover)] p-0 sm:max-w-5xl"
+        overlayClassName={drawer ? "bg-[rgba(10,13,17,.12)]" : undefined}
+        className={cn("gap-0 rounded-[14px] border border-line bg-[var(--popover)] p-0 sm:max-w-5xl", drawer && DRAWER_CLS)}
       >
         {/* Шапка: заголовок + индикатор автосейва (edit) + удалить (edit) + закрыть */}
         <div className="flex items-center justify-between gap-3 border-b border-line px-[18px] py-2.5">
@@ -496,7 +504,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
         </div>
 
         {/* Поля — две колонки: слева название + большое поле редактуры, справа настройки */}
-        <div className="max-h-[80vh] overflow-y-auto px-[18px] py-3.5">
+        <div className={cn("overflow-y-auto px-[18px] py-3.5", drawer ? "min-h-0 flex-1" : "max-h-[80vh]")}>
           {/* Отказ догрузки — ГРОМКИЙ. Раньше это был один тост и навсегда мёртвая форма:
               человек правил задачу, ничего не сохранялось, и никто ему об этом не говорил. */}
           {hydrateFailed && (
@@ -532,7 +540,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
             aria-busy={isPartial && !hydrateFailed}
             className={`m-0 min-w-0 border-0 p-0 ${isPartial ? "opacity-60" : ""}`}
           >
-          <div className="grid items-start gap-x-5 gap-y-3 sm:grid-cols-[1.4fr_1fr]">
+          <div className={cn("grid items-start gap-x-5 gap-y-3", !drawer && "sm:grid-cols-[1.4fr_1fr]")}>
             {/* Левая колонка: название + редактура */}
             <div className="flex flex-col gap-2.5">
               <div>
