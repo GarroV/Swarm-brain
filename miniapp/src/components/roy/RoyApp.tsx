@@ -477,6 +477,7 @@ export function RoyApp({ me }: { me: Me | null }) {
 }
 
 function PushScreen({ route }: { route: RoyRoute }) {
+  const dt = useDt();
   if (route.view === "meetingReview") {
     return <MeetingReviewScreen id={route.params.id} />;
   }
@@ -499,21 +500,21 @@ function PushScreen({ route }: { route: RoyRoute }) {
   if (route.view === "map") return <MapScreen />;
   if (route.view === "settings") {
     return (
-      <Wrapped title="Настройки">
+      <Wrapped title={dt("Настройки", "Settings")}>
         <SettingsScreen />
       </Wrapped>
     );
   }
   if (route.view === "team") {
     return (
-      <Wrapped title="Команда">
+      <Wrapped title={dt("Команда", "Team")}>
         <TeamScreen />
       </Wrapped>
     );
   }
   if (route.view === "admin") {
     return (
-      <Wrapped title="Админ">
+      <Wrapped title={dt("Админ", "Admin")}>
         <AdminScreen />
       </Wrapped>
     );
@@ -562,9 +563,19 @@ function Wrapped(
   { title, children }: { title: string; children: React.ReactNode },
 ) {
   const { pop } = useRoyNav();
+  const isDesktop = useIsDesktop();
   return (
     <div className="roy-pop flex h-full flex-col">
-      <NavHeader onBack={pop} title={title} />
+      {/* Десктоп: раздел из левой рейки — та же полоса заголовка, что у табов, без «Назад»
+          (рейка всегда на экране, стенд). Мобайл — push-экран с «Назад». */}
+      {isDesktop ? (
+        <div className="relative z-30 flex shrink-0 items-center justify-between border-b border-line px-5 py-2">
+          <h1 className="font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>{title}</h1>
+          <NotificationsBell />
+        </div>
+      ) : (
+        <NavHeader onBack={pop} title={title} />
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   );
