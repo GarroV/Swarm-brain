@@ -165,6 +165,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
 
+        // Автозапуск (issue #468): экземпляр, открытый не через launchd, передаёт эстафету агенту
+        // и выходит — иначе после падения его никто не поднимет. Маркер сессии при этом НЕ пишем:
+        // он хранит вердикт прошлого процесса, и следующий (уже под launchd) должен его прочитать.
+        switch AutoStart.action() {
+        case .handOff:
+            if AutoStart.handOff() {
+                Diagnostics.shared.log("LAUNCH build \(Updater.currentBuild) не под launchd → эстафета агенту")
+                NSApp.terminate(nil)
+                return
+            }
+            Diagnostics.shared.log("AUTOSTART эстафета не стартовала — работаю без присмотра launchd")
+        case .keepRunning:
+            AutoStart.writePlistIfNeeded()
+        case .none:
+            break
+        }
+        startDiagnostics()
+
         do { config = try SwarmConfig.load() }
         catch { configError = "нужен токен — вставь через меню" }
 
@@ -215,6 +233,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    // ── Журнал (issue #468) ──────────────────────────────────────────────────────
+    private var diagTimer: Timer?
+    private var sigtermSource: DispatchSourceSignal?
+
+    private func startDiagnostics() {
+        let diag = Diagnostics.shared
+        let launchedBy = AutoStart.isUnderLaunchd ? "launchd" : "user"
+        let verdict = diag.beginSession(build: Updater.currentBuild, launchedBy: launchedBy)
+        diag.pruneOld()
+        let macos = ProcessInfo.processInfo.operatingSystemVersionString
+        diag.log("LAUNCH build \(Updater.currentBuild) by \(launchedBy), macOS \(macos), прошлая сессия: \(describe(verdict))")
+
+        // SIGTERM шлют апдейтер (своп бинарника) и система (выход из учётки). Выходим с кодом 0:
+        // для launchd это штатный выход, и он не поднимет старый бинарник посреди подмены.
+        signal(SIGTERM, SIG_IGN)
+        let src = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        src.setEventHandler {
+            Diagnostics.shared.endSession(reason: "SIGTERM")
+            exit(0)
+        }
+        src.resume()
+        sigtermSource = src
+
+        // Строки журнала уезжают на сервер раз в 5 минут; отчёт о прошлой сессии — сразу.
+        let t = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in self?.uploadDiagnostics() }
+        RunLoop.main.add(t, forMode: .common)
+        diagTimer = t
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.reportPreviousSession(verdict) }
+    }
+
+    private func describe(_ v: SessionVerdict) -> String {
+        switch v {
+        case .firstRun: return "нет данных (первый запуск с журналом)"
+        case .clean(let reason): return "закрыта штатно (\(reason))"
+        case .abnormal(let alive, let reports):
+            let when = alive.map { ISO8601DateFormatter().string(from: $0) } ?? "?"
+            return "ОБОРВАЛАСЬ, последний признак жизни \(when), отчётов о падении: \(reports.count)"
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        Diagnostics.shared.endSession(reason: "quit")
+    }
+
+    private func reportPreviousSession(_ verdict: SessionVerdict) {
+        guard let cfg = config, configError == nil else { return }
+        let diag = Diagnostics.shared
+        var crash: String?
+        if case .abnormal(_, let reports) = verdict, let last = reports.last { crash = diag.crashSummary(last) }
+        let tail = diag.tail(lines: 400)
+        Task {
+            let status = await SwarmClient(config: cfg).uploadDiagnostics(
+                kind: "session_\(verdict.kind)", build: Updater.currentBuild, lines: tail, crash: crash)
+            if status != 200 { Diagnostics.shared.log("DIAG отчёт о прошлой сессии не ушёл: HTTP \(status)") }
+        }
+    }
+
+    private func uploadDiagnostics() {
+        guard let cfg = config, configError == nil else { return }
+        let lines = Diagnostics.shared.takePending()
+        guard !lines.isEmpty else { return }
+        Task {
+            let status = await SwarmClient(config: cfg).uploadDiagnostics(
+                kind: "log", build: Updater.currentBuild, lines: lines, crash: nil)
+            if status != 200 {
+                Diagnostics.shared.restorePending(lines)
+                Diagnostics.shared.log("DIAG выгрузка не прошла: HTTP \(status)")
+            }
+        }
+    }
+
     // ── Авто-детект (календарь + микрофон) ───────────────────────────────────────
     private func setupNotifications() {
         let center = UNUserNotificationCenter.current()
@@ -261,9 +350,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func setupPowerNotifications() {
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            Diagnostics.shared.log("SLEEP система засыпает")
             self?.handleWillSleep()
         }
         center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Diagnostics.shared.log("WAKE система проснулась")
             self?.handleDidWake()
         }
     }
@@ -459,6 +550,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // (CoreSpeech), иначе «звонок» виден всегда и сыпались бы ложные предложения записи.
             let micOn = CallDetector.realCallActive()
             DispatchQueue.main.async { [weak self] in
+                self?.logTick(meeting: meeting, lookupOK: lookup != nil, micOn: micOn)
                 if let m = meeting { self?.lastCalendar = (m, Date()) }
                 self?.handleDetection(meeting: meeting, micActive: micOn)
                 // Присутствие обновляем ОТДЕЛЬНО от handleDetection: тот выходит по
@@ -466,6 +558,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self?.pulsePresence(onCall: micOn, calendarKey: meeting?.key)
             }
         }
+    }
+
+    // Строка журнала на каждый тик: по последней видно, когда процесс перестал жить, а по полям —
+    // почему не появилось предложение записать (нет встречи / скрыта / микрофон свободен).
+    private func logTick(meeting: MeetingIdentity.Info?, lookupOK: Bool, micOn: Bool) {
+        let cal = meeting.map { "\($0.key)\(isMeetingDismissed($0.key) ? " (скрыта)" : "")" } ?? (lookupOK ? "нет" : "запрос не прошёл")
+        let offer = pendingMeeting != nil ? "встреча" : (callActive ? "звонок" : "нет")
+        Diagnostics.shared.log("TICK state=\(state) mic=\(micOn ? "занят" : "свободен") cal=\(cal) предложение=\(offer) rss=\(Diagnostics.residentMB())MB")
+        Diagnostics.shared.touchAlive()
     }
 
     // Подавлена ли встреча сейчас (с учётом срока). Истёкшие ключи чистим на месте, чтобы
@@ -858,11 +959,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc private func widgetDismiss() {
+        Diagnostics.shared.log("USER скрыл капсулу")
         if pendingMeeting != nil { dismissMeetingTapped() }
         else if callActive { dismissCallTapped() }
     }
 
     private func setState(_ s: State) {
+        Diagnostics.shared.log("STATE \(state) → \(s)")
         state = s
         // Замок «идёт работа» для авто-апдейтера: пока пишем/отправляем — он не подменит приложение.
         switch s {
@@ -1050,6 +1153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc private func recordTapped() {
+        Diagnostics.shared.log("USER «Записать» из меню")
         beginRecording(identity: manualStartIdentity())
     }
     @objc private func recordMeetingTapped() { acceptPrompt() }
@@ -1063,6 +1167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func acceptPrompt() {
+        Diagnostics.shared.log("USER принял предложение записать")
         if let m = pendingMeeting {
             pendingMeeting = nil
             beginRecording(identity: m)
@@ -1088,6 +1193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func beginRecording(identity id: MeetingIdentity.Info?) {
+        Diagnostics.shared.log("RECORD begin, ключ=\(id?.key ?? "ручная")")
         guard config != nil else { return }
         if case .recording = state { return }
         // Запоминаем контекст для «Повторить» (встреча/звонок/manual).
@@ -1379,17 +1485,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         stopTapped()
     }
 
-    // Диагностика в файл (читается снаружи) — временно, для отладки авто-стопа.
-    private func dbg(_ s: String) {
-        let line = "\(Date()) \(s)\n"
-        let url = URL(fileURLWithPath: "/tmp/swarm-calldetect.log")
-        guard let data = line.data(using: .utf8) else { return }
-        if let h = try? FileHandle(forWritingTo: url) {
-            h.seekToEndOfFile(); h.write(data); try? h.close()
-        } else {
-            try? data.write(to: url)
-        }
-    }
+    // Диагностика авто-стопа и записи — в общий постоянный журнал (Diagnostics.swift, issue #468).
+    // Раньше писалось в /tmp/swarm-calldetect.log, который стирался перезагрузкой.
+    private func dbg(_ s: String) { Diagnostics.shared.log(s) }
 
     // Разовое уведомление: Google-токен умер (был подключён, refresh не прошёл). Молчаливый отказ
     // прятал отвал календаря (авто-название/авто-стоп по расписанию тихо переставали работать).
@@ -1435,6 +1533,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc private func stopTapped() {
+        Diagnostics.shared.log("USER/AUTO stopTapped")
         guard config != nil else { return }
         stopCallEndWatch()
         armSending()

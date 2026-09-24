@@ -140,6 +140,19 @@ open bumblebee.app
 # логи: log stream --predicate 'process == "SwarmRecorder"'  (или Console.app)
 ```
 
+### Журнал и автозапуск (build 35, issue #468)
+
+- **Журнал:** `~/Library/Logs/SwarmRecorder/recorder-<дата>.log`, хранится 3 дня. Строка `TICK` раз в 25 с
+  (состояние, микрофон, встреча, предложение, память), `LAUNCH … прошлая сессия: …` на старте, `STATE`,
+  `EXIT clean: …`. Те же строки сами уезжают на сервер (`recorder-diag` → `recorder_diagnostics`) — у людей
+  файлы просить не нужно.
+- **Автозапуск:** приложение, установленное в `/Applications`, само ставит LaunchAgent
+  `~/Library/LaunchAgents/io.dodobrands.swarmrecorder.plist`: старт при входе в систему, подъём после
+  падения, но не после «Выйти». Экземпляр, открытый руками, передаёт эстафету launchd и перезапускается
+  (след — `~/Library/Logs/SwarmRecorder/autostart.log`). Dev-сборка из рабочей папки автозапуск не трогает.
+- **Выключить автозапуск:** `touch ~/Library/Application\ Support/SwarmRecorder/no-autostart`, затем
+  `launchctl bootout gui/$(id -u)/io.dodobrands.swarmrecorder`.
+
 При первом запуске macOS попросит доступ к записи экрана/системного звука
 (System Settings → Privacy → Screen Recording) и к микрофону — выдать вручную.
 После пересборки разрешения может понадобиться выдать заново — известное неудобство.

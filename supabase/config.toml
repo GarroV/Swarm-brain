@@ -401,6 +401,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.auth-resolve]
 verify_jwt = false
+[functions.recorder-diag]
+verify_jwt = false
 
 [edge_runtime]
 enabled = true
