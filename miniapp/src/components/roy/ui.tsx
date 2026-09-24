@@ -35,7 +35,7 @@ export const ROY_TYPE = {
 export function RoyCard({ className, ...props }: ComponentPropsWithoutRef<"div">) {
   // dark:backdrop-blur — frosted-стекло поверх галактики (поверхности translucent в .dark);
   // щели между карточками остаются прозрачными → галактика видна между панелями.
-  return <div className={cn("bg-surface border border-line rounded-[18px] dark:backdrop-blur-lg", className)} {...props} />;
+  return <div className={cn("bg-surface border border-line rounded-[10px] shadow-[0_1px_1px_rgba(27,32,40,.03)]", className)} {...props} />;
 }
 
 // ── TypeTag (тип записи базы) ────────────────────────────────────────────────
@@ -295,7 +295,7 @@ export function Chip({ children, active, onClick, leading }: { children: ReactNo
 type SegItem = { id: string; label: string; count?: number };
 export function Segmented({ items, value, onChange }: { items: SegItem[]; value: string; onChange: (id: string) => void }) {
   return (
-    <div className="flex gap-[3px] bg-surface-2 border border-line p-[3px]" style={{ borderRadius: 12 }}>
+    <div className="flex overflow-hidden rounded-[8px] border border-line-2 bg-surface">
       {items.map((it) => {
         const on = it.id === value;
         return (
@@ -304,15 +304,15 @@ export function Segmented({ items, value, onChange }: { items: SegItem[]; value:
             type="button"
             onClick={() => onChange(it.id)}
             className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 font-semibold border-0",
+              "flex-1 flex items-center justify-center gap-1.5 border-0 border-r border-line-2 last:border-r-0 min-h-10 lg:min-h-[30px] transition-colors",
               TAP,
-              on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(80,60,20,.1)]" : "bg-transparent text-ink-soft",
+              on ? "bg-primary text-white font-semibold" : "bg-transparent text-ink-soft font-medium hover:bg-surface-2",
             )}
-            style={{ fontSize: 13.5, padding: "8px 6px", borderRadius: 9, minHeight: 40 }}
+            style={{ fontSize: 12.5, padding: "0 11px" }}
           >
             {it.label}
             {it.count != null && (
-              <span style={{ fontSize: 11 }} className={on ? "text-accent-ink" : "text-ink-mute"}>
+              <span style={{ fontSize: 11 }} className={on ? "text-white/80" : "text-ink-mute"}>
                 {it.count}
               </span>
             )}
@@ -596,7 +596,7 @@ export function FAB({ onClick, className, "aria-label": ariaLabel = "Созда�
       // верхнего края и съедал по ним тап и свайп (аудит мобилки 2026-08-24). Отступ снизу
       // считается от таб-бара (69px) плюс безопасная зона.
       className={cn(
-        "fixed z-20 flex items-center justify-center rounded-[18px] bg-primary text-white border-0 shadow-[0_10px_24px_-6px_rgba(200,130,30,.6)]",
+        "fixed z-20 flex items-center justify-center rounded-[18px] bg-primary text-white border-0 shadow-[0_10px_24px_-6px_rgba(31,78,156,.45)]",
         TAP,
         className,
       )}

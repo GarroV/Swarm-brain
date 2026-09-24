@@ -48,10 +48,10 @@ function ActionIcon({ name, label, color, onClick }: { name: RoyIconName; label:
       type="button"
       aria-label={label}
       onClick={(ev) => { ev.stopPropagation(); onClick(); }}
-      className="flex items-center justify-center rounded-[10px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
-      style={{ width: 36, height: 36, color }}
+      className="flex items-center justify-center rounded-[7px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
+      style={{ width: 30, height: 30, color }}
     >
-      <RoyIcon name={name} size={18} strokeWidth={1.9} />
+      <RoyIcon name={name} size={15} strokeWidth={1.9} />
     </button>
   );
 }
@@ -66,7 +66,7 @@ function MeetingCard({ e, onOpen, onRemove, mobile }: { e: Entry; onOpen: () => 
     <div className="relative">
       <button type="button" onClick={mobile ? undefined : onOpen} className="block w-full text-left transition-transform active:scale-[0.99]">
         <RoyCard className="flex items-center gap-3 px-4 py-3.5">
-          <span className="inline-flex shrink-0 items-center justify-center rounded-[12px]" style={{ width: 38, height: 38, background: "var(--meet-soft)", color: "var(--meet-ink)" }}>
+          <span className="inline-flex shrink-0 items-center justify-center rounded-[8px]" style={{ width: 32, height: 32, background: "var(--meet-soft)", color: "var(--meet-ink)" }}>
             <RoyIcon name="meet" size={19} />
           </span>
           <div className="min-w-0 flex-1">
