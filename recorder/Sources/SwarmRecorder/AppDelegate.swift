@@ -280,8 +280,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func reportPreviousSession(_ verdict: SessionVerdict) {
         guard let cfg = config, configError == nil else { return }
         let diag = Diagnostics.shared
-        var crash: String?
-        if case .abnormal(_, let reports) = verdict, let last = reports.last { crash = diag.crashSummary(last) }
+        // let, а не var: захват var в Task релизный компилятор (macOS 14 SDK) не пропускает.
+        let crash: String? = {
+            if case .abnormal(_, let reports) = verdict, let last = reports.last { return diag.crashSummary(last) }
+            return nil
+        }()
         let tail = diag.tail(lines: 400)
         Task {
             let status = await SwarmClient(config: cfg).uploadDiagnostics(
