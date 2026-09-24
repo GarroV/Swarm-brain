@@ -16,7 +16,7 @@ import {
   useRoyNav,
 } from "./nav";
 import type { Lens, SmartListId } from "@/lib/smartLists";
-import { Avatar, NavHeader, ROY_TABS, RoyHeader, RoyTabBar } from "./ui";
+import { Avatar, DetailPanelContext, NavHeader, ROY_TABS, RoyHeader, RoyTabBar } from "./ui";
 import { HeaderActions } from "./HeaderActions";
 import { initials } from "./dash/shared";
 import { useIsDesktop } from "./useIsDesktop";
@@ -448,7 +448,7 @@ export function RoyApp({ me }: { me: Me | null }) {
                 </div>
               )}
             </div>
-            {panelMode && top && <DetailPanel route={top} onClose={() => setStack([])} />}
+            {panelMode && top && <DetailPanel route={top} depth={stack.length} section={sectionTitle ? shellDt(sectionTitle[0], sectionTitle[1]) : shellDt("Главная", "Home")} onClose={() => setStack([])} />}
             {
               /* Профиль/управление на десктопе — пункты левой рейки (Команда/Настройки/Админ),
               поповер ProfileMenu в углу больше не нужен. На мобайле — «Ещё» в таб-баре. */
@@ -487,7 +487,7 @@ const PANEL_VIEWS = new Set<RoyRoute["view"]>(["meetingDetail", "record"]);
 
 // Панель карточки справа (десктоп): ширина — --detail-w стенда. Esc и клик мимо закрывают её,
 // но не когда поверх открыто окно (у него свой Esc).
-function DetailPanel({ route, onClose }: { route: RoyRoute; onClose: () => void }) {
+function DetailPanel({ route, depth, section, onClose }: { route: RoyRoute; depth: number; section: string | null; onClose: () => void }) {
   const dt = useDt();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -505,7 +505,9 @@ function DetailPanel({ route, onClose }: { route: RoyRoute; onClose: () => void 
         className="absolute inset-0 z-40 cursor-default bg-[rgba(10,13,17,.12)]" />
       <aside aria-label={dt("Карточка", "Card")}
         className="roy-pop absolute inset-y-0 right-0 z-40 flex w-[560px] max-w-[96vw] flex-col overflow-hidden border-l border-line bg-background shadow-[-12px_0_40px_rgba(10,13,17,.12)] min-[1560px]:w-[640px]">
-        <PushScreen key={JSON.stringify(route)} route={route} />
+        <DetailPanelContext.Provider value={{ section, canBack: depth > 1, onClose }}>
+          <PushScreen key={JSON.stringify(route)} route={route} />
+        </DetailPanelContext.Provider>
       </aside>
     </>
   );

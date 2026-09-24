@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { cn, displayName } from "@/lib/utils";
@@ -611,7 +611,36 @@ export function FAB({ onClick, className, "aria-label": ariaLabel = "Созда�
 }
 
 // ── NavHeader (шапка push-экрана с «Назад») ──────────────────────────────────
+// Экран открыт в правой панели карточки (десктоп, стенд detail.js): шапка — путь «раздел ·
+// карточка» и ✕ вместо «Назад · заголовок · колокольчик». Кладёт RoyApp → DetailPanel.
+export type DetailPanelCtx = { section: string | null; canBack: boolean; onClose: () => void };
+export const DetailPanelContext = createContext<DetailPanelCtx | null>(null);
+
+function PanelHeader({ panel, onBack, title, right }: { panel: DetailPanelCtx; onBack: () => void; title?: ReactNode; right?: ReactNode }) {
+  const dt = useDt();
+  return (
+    <div className="relative z-30 flex shrink-0 items-center gap-2 border-b border-line bg-background px-4 dark:bg-[var(--surface)]" style={{ minHeight: 44 }}>
+      {panel.canBack && (
+        <button type="button" onClick={onBack} aria-label={dt("Назад", "Back")}
+          className="inline-flex size-7 items-center justify-center rounded-[7px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink">
+          <RoyIcon name="cleft" size={16} strokeWidth={2.2} />
+        </button>
+      )}
+      <div className="min-w-0 flex-1 truncate font-semibold uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.07em" }}>
+        {[panel.section, title].filter(Boolean).map((x, i) => <span key={i}>{i > 0 && " · "}{x}</span>)}
+      </div>
+      {right}
+      <button type="button" onClick={panel.onClose} aria-label={dt("Закрыть карточку", "Close the card")}
+        className="inline-flex size-7 items-center justify-center rounded-[7px] border border-line-2 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink">
+        <RoyIcon name="x" size={14} strokeWidth={2.2} />
+      </button>
+    </div>
+  );
+}
+
 export function NavHeader({ onBack, title, right, bell = true }: { onBack: () => void; title?: ReactNode; right?: ReactNode; bell?: boolean }) {
+  const panel = useContext(DetailPanelContext);
+  if (panel) return <PanelHeader panel={panel} onBack={onBack} title={title} right={right} />;
   // relative z-30 — как у RoyHeader: окно колокольчика не должно уходить под карточки экрана.
   return (
     <div className="relative z-30 shrink-0 flex items-center gap-2.5 bg-background dark:bg-[var(--surface)]" style={{ padding: "6px 14px 10px" }}>
