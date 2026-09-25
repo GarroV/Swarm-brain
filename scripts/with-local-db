@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Запускает команду с доступами к ЛОКАЛЬНОМУ контуру Supabase.
+# Запускает команду с доступами к тестовому контуру Supabase: своему на этой машине или общему
+# на MUSPELHEIM (см. ниже).
 #
 #   ./scripts/with-local-db deno test -A supabase/functions/
 #
@@ -14,16 +15,48 @@
 set -o pipefail
 cd "$(dirname "$0")/.."
 
-if command -v supabase >/dev/null 2>&1; then
-  while IFS='=' read -r key value; do
-    value=${value%\"}
-    value=${value#\"}
-    case "$key" in
-      API_URL) export SUPABASE_URL="$value" ;;
-      SERVICE_ROLE_KEY) export SUPABASE_SERVICE_ROLE_KEY="$value" ;;
-      DB_URL) export SUPABASE_DB_URL="$value" ;;
-    esac
-  done < <(supabase status -o env 2>/dev/null)
+# Откуда контур: сперва свой, на этой машине (так работает CI и временный стенд на Маке). Своего
+# нет — общий тестовый стек на MUSPELHEIM (решение владельца 25.09.2026: регулярные стенды живут
+# там, на Маке только временные). До него — SSH-туннель на те же порты 54321/54322, поэтому
+# адреса у тестов не меняются, а наружу стек не публикуется. SWARM_TEST_STAND=local — не ходить
+# на сервер вовсе.
+REMOTE_HOST=${SWARM_TEST_HOST:-muspelheim}
+REMOTE_DIR='C:\projects\swarm-test'
+
+status_env() {
+  command -v supabase >/dev/null 2>&1 || return 1
+  local out
+  out=$(supabase status -o env 2>/dev/null) || return 1
+  printf '%s\n' "$out" | grep -q '^DB_URL=' || return 1
+  printf '%s\n' "$out"
+}
+
+remote_env() {
+  [ "${SWARM_TEST_STAND:-}" = local ] && return 1
+  # Порт уже слушается — туннель поднят другим прогоном (или соседней сессией); второй не нужен.
+  if ! nc -z 127.0.0.1 54322 2>/dev/null; then
+    ssh -f -N -o ExitOnForwardFailure=yes -o ConnectTimeout=8 \
+      -L 54321:127.0.0.1:54321 -L 54322:127.0.0.1:54322 "$REMOTE_HOST" 2>/dev/null || return 1
+  fi
+  local out
+  out=$(ssh -o ConnectTimeout=8 "$REMOTE_HOST" "cd /d $REMOTE_DIR && supabase status -o env" 2>/dev/null | tr -d '\r') || return 1
+  printf '%s\n' "$out" | grep -q '^DB_URL=' || return 1
+  printf '%s\n' "$out"
+}
+
+ENV_OUT=$(status_env) || ENV_OUT=$(remote_env) || ENV_OUT=""
+if [ -z "$ENV_OUT" ]; then
+  echo "with-local-db: контура нет ни на этой машине, ни на $REMOTE_HOST — тесты базы упадут" >&2
 fi
+
+while IFS='=' read -r key value; do
+  value=${value%\"}
+  value=${value#\"}
+  case "$key" in
+    API_URL) export SUPABASE_URL="$value" ;;
+    SERVICE_ROLE_KEY) export SUPABASE_SERVICE_ROLE_KEY="$value" ;;
+    DB_URL) export SUPABASE_DB_URL="$value" ;;
+  esac
+done <<< "$ENV_OUT"
 
 exec "$@"

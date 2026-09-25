@@ -309,7 +309,7 @@ claude mcp add supabase-swarm -- npx -y @supabase/mcp-server-supabase@0.12.0 \
 6. **Проверить, что не отвалилось** (принцип №2): `deno check` + смоук реального флоу; что не проверил — сказать прямо.
    Для доски инициатив есть единая команда: **`./scripts/check`** (все шесть ролей проверок + машинный отчёт `reports/check.json`)
    и **`make porcha`** — ломает ядро и базу нарочно и убеждается, что тесты краснеют. Тесты ходят в настоящую базу, поэтому
-   сперва `supabase start && supabase db reset`; доступы подставляет `./scripts/with-local-db`, руками их задавать не нужно.
+   нужен стек Supabase: общий тестовый на MUSPELHEIM (туннель поднимает сама обёртка) или временный свой `supabase start && supabase db reset`; доступы подставляет `./scripts/with-local-db`, руками их задавать не нужно (подробности — `docs/DEPLOY.md` §Контуры).
 
 ---
 
