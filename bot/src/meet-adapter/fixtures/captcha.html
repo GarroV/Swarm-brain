@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Meet - captcha</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: sans-serif;
+        background: #202124;
+        color: #ffffff;
+      }
+      main {
+        padding: 24px;
+      }
+      iframe.challenge {
+        width: 304px;
+        height: 78px;
+        border: 0;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Asking to be let in&hellip;</h1>
+      <p>Please complete the security check to continue.</p>
+      <iframe
+        class="challenge"
+        src="https://www.google.com/recaptcha/api2/anchor"
+        width="304"
+        height="78"
+        title="recaptcha challenge"
+      ></iframe>
+      <iframe
+        src="https://www.google.com/recaptcha/api2/bframe"
+        style="display: none"
+        title="recaptcha challenge expansion"
+      ></iframe>
+    </main>
+  </body>
+</html>
