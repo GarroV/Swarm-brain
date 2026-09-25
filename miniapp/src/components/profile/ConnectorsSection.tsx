@@ -20,7 +20,7 @@ const TITLE: Record<ConnectorId, [string, string]> = {
  * сервиса жил внутри своей свёрнутой секции, и увидеть картину целиком было нельзя.
  * `fetchIntegrations` попутно перестал дублироваться — Granola и календарь брали его по разу каждый.
  */
-export function ConnectorsSection({ me, panels }: { me: Me; panels: Record<ConnectorId, ReactNode> }) {
+export function ConnectorsSection({ me, panels, dense = false }: { me: Me; panels: Record<ConnectorId, ReactNode>; dense?: boolean }) {
   const dt = useDt();
   const [list, setList] = useState<Connector[] | null>(null);
   const [open, setOpen] = useState<ConnectorId | null>(null);
@@ -53,16 +53,17 @@ export function ConnectorsSection({ me, panels }: { me: Me; panels: Record<Conne
   return (
     <section className="space-y-2">
       <div className="flex items-baseline justify-between">
-        <SectionLabel>{dt("Подключения", "Connections")}</SectionLabel>
+        {/* В бенто заголовок даёт плитка «Интеграции» — второй не нужен. */}
+        {dense ? <span /> : <SectionLabel>{dt("Подключения", "Connections")}</SectionLabel>}
         <span className="text-ink-mute" style={{ fontSize: 11 }}>
           {dt(`${connected} из ${total}`, `${connected} of ${total}`)}
           {attention > 0 && <span className="text-accent-ink"> · {attention} {dt("требуют внимания", "need attention")}</span>}
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className={dense ? "grid grid-cols-5 gap-2" : "grid grid-cols-2 gap-2 sm:grid-cols-3"}>
         {list.map((c) => (
-          <ConnectorTile key={c.id} c={c} open={open === c.id} onToggle={() => setOpen(open === c.id ? null : c.id)} />
+          <ConnectorTile key={c.id} c={c} dense={dense} open={open === c.id} onToggle={() => setOpen(open === c.id ? null : c.id)} />
         ))}
       </div>
 
