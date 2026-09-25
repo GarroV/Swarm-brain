@@ -51,7 +51,7 @@ q() {
 
 case "${1:-show}" in
   set)
-    case "$LEAD_MIN" in ''|*[!0-9]*) red "Минуты — целое число, а не «$LEAD_MIN»"; exit 2 ;; esac
+    case "$LEAD_MIN" in ''|*[!0-9]*) red "Минуты — целое число, а не «${LEAD_MIN}»"; exit 2 ;; esac
     # Свой текст — только как SQL-строка с удвоенными кавычками и не длиннее 300 символов.
     sql_text() { local q="'" t="${1:0:300}"; printf '%s%s%s' "$q" "${t//$q/$q$q}" "$q"; }
     EXTRA=""

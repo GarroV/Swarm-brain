@@ -61,7 +61,7 @@ jobs:
           NOTICE_RU: ${{ inputs.text_ru }}
           NOTICE_EN: ${{ inputs.text_en }}
         run: |
-          case "$MINUTES" in ''|*[!0-9]*) echo "::error::Минуты — целое число, а не «$MINUTES»"; exit 2 ;; esac
+          case "$MINUTES" in ''|*[!0-9]*) echo "::error::Минуты — целое число, а не «${MINUTES}»"; exit 2 ;; esac
           case "$ACTION" in
             notice)      ./scripts/deploy-notice.sh set "$MINUTES" ;;
             notice-off)  ./scripts/deploy-notice.sh off ;;
