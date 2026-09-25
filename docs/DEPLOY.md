@@ -11,8 +11,11 @@
 | Контур | Что | Base URL функций | БД |
 |---|---|---|---|
 | **local** | `supabase start` на Маке (Docker) | `http://127.0.0.1:54321/functions/v1` | локальный |
+| **test** (общий тестовый стек) | `supabase start` на **MUSPELHEIM**, `C:\projects\swarm-test` (клон `main`); с Мака — SSH-туннель на `127.0.0.1:54321/54322`, его поднимает `./scripts/with-local-db` | `http://127.0.0.1:54321/functions/v1` (через туннель) | на сервере, снаружи закрыт брандмауэром |
 | **staging** 🔻 _погашен 06.08.2026 (см. баннер)_ | self-hosted Supabase на **MUSPELHEIM** (Tailscale, приватно) | `http://100.64.116.67:8020/functions/v1` | `100.64.116.67:5433` |
 | **prod** | Supabase cloud `vbqglndbxkpmreccpqmr` | `https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1` | cloud |
+
+**Тестовый стек на MUSPELHEIM** (с 25.09.2026, решение владельца: регулярные стенды — на сервере, на Маке только временные, канон `dotfiles/claude/decisions/2026-09-25-stendy-na-muspelheim.md`). На нём идут тесты базы всех сессий Swarm. `./scripts/with-local-db` сперва ищет стек на своей машине (так работает CI), а если его нет — поднимает туннель к серверу; `SWARM_TEST_STAND=local` отключает поход на сервер. Ключи стандартные для `supabase start`, поэтому порты 54320–54329 закрыты для входящих правилом брандмауэра «Swarm test stand: no external access» — стек доступен только через туннель. Запуск на сервере — без studio, аналитики, vector и pg_meta: для тестов не нужны, а ядра ели: `supabase start -x 'studio,logflare,vector,postgres-meta,imgproxy'` — в PowerShell список **в кавычках**, иначе он рассыпается на отдельные аргументы и исключение молча не срабатывает. Схема на сервере — миграции `main`; чтобы прогнать тесты на миграциях своей ветки: `./scripts/with-local-db sh -c 'supabase db reset --db-url "$SUPABASE_DB_URL"'` (стек общий — сбрасывая, сбрасываешь его всем сессиям, как и раньше с общим стеком на Маке).
 
 Staging использует **демо-ключи** Supabase (ANON/SERVICE/JWT из `.env.example`) — ок, т.к. контур приватный (только tailnet, личное использование). Порты сдвинуты (kong `8020`, БД `5433`), чтобы не конфликтовать с n8n/template-postgres на MUSPELHEIM.
 
