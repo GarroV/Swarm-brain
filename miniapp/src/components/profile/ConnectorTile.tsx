@@ -43,7 +43,8 @@ function shortDate(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? "" : `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export function ConnectorTile({ c, open, onToggle }: { c: Connector; open: boolean; onToggle: () => void }) {
+/** `dense` — строка «пиктограмма · имя/статус · точка» для бенто настроек десктопа; без него — прежняя плитка (мобайл). */
+export function ConnectorTile({ c, open, onToggle, dense = false }: { c: Connector; open: boolean; onToggle: () => void; dense?: boolean }) {
   const dt = useDt();
 
   // «Не привязан» вместо «не подключён» — Telegram не подключают, к нему привязывают личность.
@@ -54,22 +55,36 @@ export function ConnectorTile({ c, open, onToggle }: { c: Connector; open: boole
     : c.id === "telegram" ? dt("Не привязан", "Not linked")
     : dt("Не подключён", "Not connected");
 
+  const iconTone = c.state === "expired" ? "text-accent-ink" : "text-ink-soft";
+  const statusTone = c.state === "expired" ? "text-accent-ink" : "text-ink-mute";
+  const frame = `w-full rounded-[10px] border text-left transition-colors hover:border-line-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line ${SKIN[c.state]} ${open ? "border-accent-line" : ""}`;
+
+  if (dense) {
+    return (
+      <button type="button" onClick={onToggle} aria-expanded={open} className={`flex items-center gap-2 px-2.5 py-2 ${frame}`}>
+        <RoyIcon name={ICON[c.id]} size={15} className={`shrink-0 ${iconTone}`} />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-ink" style={{ fontSize: 12.5, fontWeight: 500 }}>{TITLE[c.id]}</span>
+          <span className={`truncate ${statusTone}`} style={{ fontSize: 10.5 }}>{status}</span>
+        </span>
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[c.state]}`} aria-hidden />
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      className={`flex w-full flex-col gap-2 rounded-[10px] border px-3 py-3 text-left transition-colors hover:border-line-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-line ${SKIN[c.state]} ${open ? "border-accent-line" : ""}`}
+      className={`flex flex-col gap-2 px-3 py-3 ${frame}`}
     >
       <span className="flex items-center justify-between">
-        <RoyIcon name={ICON[c.id]} className={c.state === "expired" ? "text-accent-ink" : "text-ink-soft"} />
+        <RoyIcon name={ICON[c.id]} className={iconTone} />
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[c.state]}`} aria-hidden />
       </span>
       <span className="text-ink" style={{ fontSize: 13, fontWeight: 500 }}>{TITLE[c.id]}</span>
-      <span
-        className={c.state === "expired" ? "text-accent-ink" : "text-ink-mute"}
-        style={{ fontSize: 11 }}
-      >
+      <span className={statusTone} style={{ fontSize: 11 }}>
         {status}
       </span>
     </button>
