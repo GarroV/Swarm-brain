@@ -77,13 +77,22 @@ export function formatTaskLine(t: {
   due_date?: string | null;
   country?: string | null;
   confirmed?: boolean;
+  /** Подзадача (#478): родитель — названием, если он в той же выдаче, иначе id. */
+  parent_id?: string | null;
+  parent_title?: string | null;
+  /** Родитель: сколько подзадач закрыто из всех, что видны спрашивающему. */
+  subtasks?: { done: number; total: number } | null;
 }): string {
   const who = t.assignees?.join(", ") || "—";
   const id = t.id ? ` (id: ${t.id})` : "";
   const due = t.due_date ? ` | дедлайн: ${t.due_date}` : "";
   const country = t.country ? ` | ${t.country}` : "";
   const pending = t.confirmed === false ? " ⏳ на проверке (в вебе не видна)" : "";
-  return `• [${t.status}] ${t.title}${id}${pending}\n  Исполнитель: ${who}${due}${country}`;
+  const parent = t.parent_id
+    ? `\n  ↳ подзадача задачи ${t.parent_title ? `«${t.parent_title}» (id: ${t.parent_id})` : t.parent_id}`
+    : "";
+  const kids = t.subtasks?.total ? `\n  Подзадачи: ${t.subtasks.done} из ${t.subtasks.total} закрыто` : "";
+  return `• [${t.status}] ${t.title}${id}${pending}\n  Исполнитель: ${who}${due}${country}${parent}${kids}`;
 }
 
 /**

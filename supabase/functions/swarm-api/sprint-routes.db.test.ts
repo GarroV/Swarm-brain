@@ -74,12 +74,12 @@ async function seed(db: Client) {
   }
 
   const tab = await db.queryObject<{ id: string }>`
-    insert into sprints (id, group_id, name, start_date, end_date, status)
-    values (gen_random_uuid(), ${WS}, 'Пространство', current_date, current_date + 30, 'active')
+    insert into sprints (id, group_id, name, start_date, end_date, status, kind)
+    values (gen_random_uuid(), ${WS}, 'Пространство', current_date, current_date + 30, 'active', 'space')
     returning id`;
   const foreignTab = await db.queryObject<{ id: string }>`
-    insert into sprints (id, group_id, name, start_date, end_date, status)
-    values (gen_random_uuid(), ${OTHER_WS}, 'Чужое', current_date, current_date + 30, 'active')
+    insert into sprints (id, group_id, name, start_date, end_date, status, kind)
+    values (gen_random_uuid(), ${OTHER_WS}, 'Чужое', current_date, current_date + 30, 'active', 'space')
     returning id`;
   return { tabId: tab.rows[0].id, foreignTabId: foreignTab.rows[0].id };
 }
@@ -123,6 +123,45 @@ Deno.test("вкладка чужого воркспейса — отказ 400, 
   }
 });
 
+Deno.test("вкладка доски «Проекты» — не пространство: спринт на ней не заводится и туда не переносится", async () => {
+  const db = await connect();
+  try {
+    const { tabId } = await seed(db);
+    // Таблица `sprints` держит обе сущности (issue #423). Спринт на вкладке проектов в разделе
+    // «Спринты» не виден вовсе — так было в демо-данных до 24.09.2026.
+    const board = await db.queryObject<{ id: string }>`
+      insert into sprints (id, group_id, name, start_date, end_date, status, kind)
+      values (gen_random_uuid(), ${WS}, 'Доска', current_date, current_date + 30, 'active', 'board_tab')
+      returning id`;
+    const boardTabId = board.rows[0].id;
+    const onBoard = await call("POST", "/sprint-cycles", {
+      body: {
+        name: "Спринт на доске",
+        start_date: "2026-09-01",
+        end_date: "2026-09-14",
+        tab_id: boardTabId,
+      },
+    });
+    assertEquals(onBoard?.status, 400);
+
+    const created = await call("POST", "/sprint-cycles", {
+      body: {
+        name: "Спринт 1",
+        start_date: "2026-09-01",
+        end_date: "2026-09-14",
+        tab_id: tabId,
+      },
+    });
+    const { id } = await created!.json();
+    const moved = await call("PATCH", `/sprint-cycles/${id}`, {
+      body: { tab_id: boardTabId },
+    });
+    assertEquals(moved?.status, 404);
+  } finally {
+    await db.end();
+  }
+});
+
 Deno.test("второй незакрытый спринт в пространстве — 409 с человеческой причиной", async () => {
   const db = await connect();
   try {
@@ -157,8 +196,8 @@ Deno.test("спринт переносится в другое простран�
   try {
     const { tabId, foreignTabId } = await seed(db);
     const second = await db.queryObject<{ id: string }>`
-      insert into sprints (id, group_id, name, start_date, end_date, status)
-      values (gen_random_uuid(), ${WS}, 'Второе пространство', current_date, current_date + 30, 'active')
+      insert into sprints (id, group_id, name, start_date, end_date, status, kind)
+      values (gen_random_uuid(), ${WS}, 'Второе пространство', current_date, current_date + 30, 'active', 'space')
       returning id`;
     const otherTab = second.rows[0].id;
 
@@ -200,8 +239,8 @@ Deno.test("перенос в занятое пространство — 409, с
   try {
     const { tabId } = await seed(db);
     const second = await db.queryObject<{ id: string }>`
-      insert into sprints (id, group_id, name, start_date, end_date, status)
-      values (gen_random_uuid(), ${WS}, 'Занятое', current_date, current_date + 30, 'active')
+      insert into sprints (id, group_id, name, start_date, end_date, status, kind)
+      values (gen_random_uuid(), ${WS}, 'Занятое', current_date, current_date + 30, 'active', 'space')
       returning id`;
     const busyTab = second.rows[0].id;
 

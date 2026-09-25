@@ -73,10 +73,16 @@ export async function listCycles(
   return (data ?? []) as SprintCycle[];
 }
 
-/** Вкладка принадлежит этому воркспейсу? Чужую подсовывать нельзя — это чужое планирование. */
-async function tabInGroup(tabId: string, groupId: string): Promise<boolean> {
+/**
+ * Это пространство спринтов этого воркспейса? Чужое подсовывать нельзя — это чужое планирование.
+ *
+ * `kind = 'space'` обязателен: таблица `sprints` держит и вкладки доски «Проекты», и
+ * пространства раздела «Спринты» (issue #423). Спринт, привязанный к вкладке проектов, смешивает
+ * две сущности — так было в демо-данных до 24.09.2026, и в разделе «Спринты» его не видно вовсе.
+ */
+async function spaceInGroup(tabId: string, groupId: string): Promise<boolean> {
   const { data } = await supabase.from("sprints")
-    .select("id").eq("id", tabId).eq("group_id", groupId)
+    .select("id").eq("id", tabId).eq("group_id", groupId).eq("kind", "space")
     .is("archived_at", null).maybeSingle();
   return !!data;
 }
@@ -97,7 +103,7 @@ export async function createCycle(
   createdBy: string | null,
 ): Promise<SprintCycle> {
   const tabId = input.tab_id ?? null;
-  if (tabId !== null && !(await tabInGroup(tabId, groupId))) {
+  if (tabId !== null && !(await spaceInGroup(tabId, groupId))) {
     throw new UnknownTabError("Такого пространства нет в этом воркспейсе");
   }
 
@@ -146,11 +152,11 @@ export async function updateCycle(
 ): Promise<SprintCycle | null | "tab_busy" | "tab_missing"> {
   // Пространство подтверждаем в ЭТОМ воркспейсе (#397): без проверки чужой `tab_id` увёл бы
   // спринт из поля зрения команды — строка осталась бы в базе, а с экрана пропала.
-  if (typeof fields.tab_id === "string") {
-    const { data: tab } = await supabase.from("sprints")
-      .select("id").eq("id", fields.tab_id).eq("group_id", groupId)
-      .is("archived_at", null).maybeSingle();
-    if (!tab) return "tab_missing";
+  if (
+    typeof fields.tab_id === "string" &&
+    !(await spaceInGroup(fields.tab_id, groupId))
+  ) {
+    return "tab_missing";
   }
   const { data, error } = await supabase.from("sprint_cycles")
     .update({ ...fields, updated_at: new Date().toISOString() })

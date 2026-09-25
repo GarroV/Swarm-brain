@@ -69,22 +69,44 @@ async function seed(db: Client) {
   }
 
   const tab = await db.queryObject<{ id: string }>`
-    insert into sprints (id, group_id, name, start_date, end_date, status)
-    values (gen_random_uuid(), ${WS}, 'Пространство', current_date, current_date + 30, 'active')
+    insert into sprints (id, group_id, name, start_date, end_date, status, kind)
+    values (gen_random_uuid(), ${WS}, 'Пространство', current_date, current_date + 30, 'active', 'space')
     returning id`;
   const foreignTab = await db.queryObject<{ id: string }>`
-    insert into sprints (id, group_id, name, start_date, end_date, status)
-    values (gen_random_uuid(), ${OTHER_WS}, 'Чужое', current_date, current_date + 30, 'active')
+    insert into sprints (id, group_id, name, start_date, end_date, status, kind)
+    values (gen_random_uuid(), ${OTHER_WS}, 'Чужое', current_date, current_date + 30, 'active', 'space')
+    returning id`;
+  // Вкладка доски «Проекты» — другая сущность в той же таблице (issue #423). Проект живёт на
+  // ней, а не в пространстве: задачи попадают в пространство только составом спринта.
+  const boardTab = await db.queryObject<{ id: string }>`
+    insert into sprints (id, group_id, name, start_date, end_date, status, kind)
+    values (gen_random_uuid(), ${WS}, 'Доска', current_date, current_date + 30, 'active', 'board_tab')
     returning id`;
   const project = await db.queryObject<{ id: string }>`
     insert into projects (group_id, name, sprint_id) values (${WS}, 'Инициатива', ${
-    tab.rows[0].id
+    boardTab.rows[0].id
   }) returning id`;
+  // Принятый спринт: не занимает место «одного незакрытого на пространство», и тесты могут
+  // заводить свой живой.
+  const cycle = await db.queryObject<{ id: string }>`
+    insert into sprint_cycles (group_id, tab_id, name, start_date, end_date, status, accepted_at)
+    values (${WS}, ${
+    tab.rows[0].id
+  }, 'Спринт 0', current_date - 30, current_date - 16, 'accepted', now() - interval '16 days')
+    returning id`;
   return {
     tabId: tab.rows[0].id,
     foreignTabId: foreignTab.rows[0].id,
+    boardTabId: boardTab.rows[0].id,
     projectId: project.rows[0].id,
+    cycleId: cycle.rows[0].id,
   };
+}
+
+/** Задача попадает в пространство только составом его спринта. */
+async function intoSprint(db: Client, cycleId: string, taskId: string) {
+  await db.queryArray`
+    insert into sprint_items (cycle_id, task_id, in_plan) values (${cycleId}, ${taskId}, true)`;
 }
 
 async function journal(tabId: string, days = "7", as = ME) {
@@ -104,7 +126,7 @@ async function journal(tabId: string, days = "7", as = ME) {
 Deno.test("чужая приватная задача не попадает в ленту ни одним событием", async () => {
   const db = await connect();
   try {
-    const { tabId, projectId } = await seed(db);
+    const { tabId, projectId, cycleId } = await seed(db);
     const mine = await db.queryObject<{ id: string }>`
       insert into tasks (title, status, group_id, project_id, created_by)
       values ('Общая задача', 'open', ${WS}, ${projectId}, 'test') returning id`;
@@ -114,6 +136,7 @@ Deno.test("чужая приватная задача не попадает в �
       returning id`;
 
     for (const id of [mine.rows[0].id, theirs.rows[0].id]) {
+      await intoSprint(db, cycleId, id);
       await db.queryArray`
         insert into task_history (task_id, field, old_value, new_value, changed_by, group_id)
         values (${id}, 'status', 'open', 'in_progress', 'tester', ${WS})`;
@@ -171,10 +194,11 @@ Deno.test("вкладка чужого воркспейса — 404, а не п�
 Deno.test("период фильтрует: старое событие в «за сутки» не попадает", async () => {
   const db = await connect();
   try {
-    const { tabId, projectId } = await seed(db);
+    const { tabId, projectId, cycleId } = await seed(db);
     const task = await db.queryObject<{ id: string }>`
       insert into tasks (title, status, group_id, project_id, created_by)
       values ('Задача', 'open', ${WS}, ${projectId}, 'test') returning id`;
+    await intoSprint(db, cycleId, task.rows[0].id);
     await db.queryArray`
       insert into task_history (task_id, field, old_value, new_value, changed_by, group_id, created_at)
       values (${
@@ -193,6 +217,45 @@ Deno.test("период фильтрует: старое событие в «з�
       events: Event[];
     };
     assertEquals(all.events.some((e) => e.kind === "task_change"), true);
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("задачи пространства — состав его спринтов, а не проекты вкладки доски", async () => {
+  const db = await connect();
+  try {
+    const { tabId, projectId, cycleId } = await seed(db);
+    const inSprint = await db.queryObject<{ id: string }>`
+      insert into tasks (title, status, group_id, project_id, created_by)
+      values ('В спринте', 'open', ${WS}, ${projectId}, 'test') returning id`;
+    const onBoardOnly = await db.queryObject<{ id: string }>`
+      insert into tasks (title, status, group_id, project_id, created_by)
+      values ('Только на доске', 'open', ${WS}, ${projectId}, 'test') returning id`;
+    await intoSprint(db, cycleId, inSprint.rows[0].id);
+    for (const id of [inSprint.rows[0].id, onBoardOnly.rows[0].id]) {
+      await db.queryArray`
+        insert into task_history (task_id, field, old_value, new_value, changed_by, group_id)
+        values (${id}, 'status', 'open', 'in_progress', 'tester', ${WS})`;
+    }
+
+    const { events } = await (await journal(tabId)).json() as {
+      events: Event[];
+    };
+    const changed = events.filter((e) => e.kind === "task_change").map((e) =>
+      e.task_title
+    );
+    assertEquals(changed, ["В спринте"]);
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("вкладка доски «Проекты» — 404: журнала спринтов у неё нет", async () => {
+  const db = await connect();
+  try {
+    const { boardTabId } = await seed(db);
+    assertEquals((await journal(boardTabId)).status, 404);
   } finally {
     await db.end();
   }
