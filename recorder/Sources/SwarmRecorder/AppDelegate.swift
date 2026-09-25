@@ -940,10 +940,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     // Кнопка «Записать» в виджете — маршрутизируем по текущему контексту.
-    @objc private func widgetRecord() {
-        if pendingMeeting != nil { recordMeetingTapped() }
-        else if callActive { recordCallTapped() }
-        else { recordTapped() }
+    // `source` — только для журнала: иначе клики «Подключиться», «Записать» и меню неразличимы (#506).
+    @objc private func widgetRecord() { widgetRecord(source: "баннер «Записать»") }
+    private func widgetRecord(source: String) {
+        if pendingMeeting != nil || callActive { acceptPrompt(source: source) }
+        else { recordManually(source: source) }
     }
 
     // ── Блокнот ⇄ пилюля во время записи ────────────────────────────────────────
@@ -1155,22 +1156,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return MeetingIdentity.currentRoom()
     }
 
-    @objc private func recordTapped() {
-        Diagnostics.shared.log("USER «Записать» из меню")
+    @objc private func recordTapped() { recordManually(source: "меню") }
+    private func recordManually(source: String) {
+        Diagnostics.shared.log("USER «Записать» (\(source))")
         beginRecording(identity: manualStartIdentity())
     }
-    @objc private func recordMeetingTapped() { acceptPrompt() }
-    @objc private func recordCallTapped() { acceptPrompt() }
+    @objc private func recordMeetingTapped() { acceptPrompt(source: "меню") }
+    @objc private func recordCallTapped() { acceptPrompt(source: "меню") }
 
     // «Подключиться» на баннере: открыть звонок и сразу включить запись (референс Granola,
     // #193) — один клик вместо «найти ссылку в календаре, зайти, потом вспомнить про запись».
     private func widgetJoin() {
-        if let url = pendingMeeting?.joinURL { NSWorkspace.shared.open(url) }
-        widgetRecord()
+        openJoinLink(pendingMeeting?.joinURL)
+        widgetRecord(source: "баннер «Подключиться»")
     }
 
-    private func acceptPrompt() {
-        Diagnostics.shared.log("USER принял предложение записать")
+    // Журнал открытия ссылки: хост (без пути — в нём id комнаты), результат `open` и сколько
+    // экземпляров браузера-обработчика запущено. 25.09.2026 ссылка ушла в фоновый headless-Chrome
+    // от скрипта скриншотов и открылась невидимо; с `экземпляров=3` в журнале это видно сразу (#506).
+    private func openJoinLink(_ url: URL?) {
+        guard let url else {
+            Diagnostics.shared.log("JOIN ссылки нет — только запись")
+            return
+        }
+        let handler = NSWorkspace.shared.urlForApplication(toOpen: url)
+        let bundleID = handler.flatMap { Bundle(url: $0)?.bundleIdentifier }
+        let running = bundleID.map { NSRunningApplication.runningApplications(withBundleIdentifier: $0).count } ?? 0
+        let opened = NSWorkspace.shared.open(url)
+        Diagnostics.shared.log("JOIN host=\(url.host ?? "?") open=\(opened ? "ok" : "ОТКАЗ") "
+            + "обработчик=\(bundleID ?? "нет") экземпляров=\(running)")
+    }
+
+    private func acceptPrompt(source: String) {
+        Diagnostics.shared.log("USER принял предложение записать (\(source))")
         if let m = pendingMeeting {
             pendingMeeting = nil
             beginRecording(identity: m)
