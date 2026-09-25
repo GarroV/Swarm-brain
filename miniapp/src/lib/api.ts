@@ -28,6 +28,11 @@ import type {
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
+import {
+  type Maintenance,
+  parseMaintenanceResponse,
+  publishMaintenance,
+} from "@/lib/maintenance";
 
 export type CreateTaskInput = {
   title: string;
@@ -552,8 +557,30 @@ async function apiFetchRaw<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => ({ error: res.statusText }));
+  // Заморозка: сервер отвечает 503 на любое изменение. Узнаём о ней ровно в тот момент, когда
+  // человек попытался что-то сделать, — это раньше, чем придёт следующий опрос статуса, и
+  // честнее, чем показать «ошибка сети» на работах, о которых мы знаем.
+  if (res.status === 503) {
+    const frozen = parseMaintenanceResponse(body);
+    if (frozen) publishMaintenance(frozen);
+  }
   if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText);
   return body as T;
+}
+
+/**
+ * Публичный статус работ. Без авторизации намеренно: заглушку должен увидеть и тот, у кого
+ * протухла сессия, иначе вместо «идут работы» он получит экран входа и решит, что сломался он.
+ */
+export async function fetchMaintenance(): Promise<Maintenance | null> {
+  if (DEV_MODE) return null;
+  try {
+    const res = await fetch(`${API_BASE}/maintenance`, { cache: "no-store" });
+    return parseMaintenanceResponse(await res.json());
+  } catch {
+    // Молчим намеренно: недоступный статус — не повод пугать человека заглушкой.
+    return null;
+  }
 }
 
 // Загрузка файлов (multipart): всегда мутация — сбрасываем кэш чтения.

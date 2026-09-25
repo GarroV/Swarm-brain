@@ -131,6 +131,12 @@ import {
 } from "../_shared/meetings-today.ts";
 import { joinLink } from "../meeting-current/join-link.ts";
 import { isTaskStatus, taskStatusError } from "../_shared/tasks/statuses.ts";
+import {
+  isActive as maintenanceActive,
+  maintenancePayload,
+  maintenanceVerdict,
+  readMaintenance,
+} from "../_shared/maintenance.ts";
 
 // Сколько задач отдаём вебу за раз. Дефолт движка (_shared/tasks/db.ts) — 200, и для БОТА он
 // верен: тот печатает список сообщением в чат, дампить туда базу нельзя. Для веба он смертелен —
@@ -502,6 +508,24 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
 
+  // Режим обслуживания, публичный статус — БЕЗ авторизации. Заглушку должен увидеть и тот, у
+  // кого сессия протухла: иначе вместо «идут работы» человек получает экран входа и решает,
+  // что сломался он. Наружу уходит только факт, срок и текст — ничего о данных.
+  if (
+    req.method === "GET" &&
+    new URL(req.url).pathname.endsWith("/maintenance") &&
+    !req.headers.get("Authorization")
+  ) {
+    const st = await readMaintenance(supabase);
+    return json(
+      st && maintenanceActive(st, new Date())
+        ? maintenancePayload(st)
+        : { maintenance: false },
+      200,
+      origin,
+    );
+  }
+
   // ── Auth: два способа ─────────────────────────────────────────────────────
   //   • Telegram Mini App:  Authorization: tma <initData>
   //   • Веб (Login Widget):  Authorization: Bearer <JWT>  (вариант B+, проксируется CF Pages Function)
@@ -562,6 +586,35 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   // Strip /functions/v1/swarm-api prefix to get the route path
   const routePath = url.pathname.split("/swarm-api").pop() || "/";
+
+  // Заморозка на время раскатки: изменения не принимаем, чтение оставляем (пустой экран
+  // пугает сильнее честной плашки). Владелец проходит всегда — он катит и проверяет.
+  // 503 + Retry-After: рекордер и боты на этой паре сами уходят в повтор, поэтому запись не
+  // теряется, а откладывается до конца работ.
+  // Тот же статус, но для узнанного человека: владельцу заглушка сообщает, что он проходит,
+  // — иначе он не сможет ни проверить раскатку, ни снять режим через продукт.
+  if (req.method === "GET" && routePath === "/maintenance") {
+    const st = await readMaintenance(supabase);
+    return json(
+      st && maintenanceActive(st, new Date())
+        ? { ...maintenancePayload(st), bypass: telegram_id === ADMIN_USER_ID }
+        : { maintenance: false },
+      200,
+      origin,
+    );
+  }
+
+  const freeze = maintenanceVerdict({
+    state: await readMaintenance(supabase),
+    now: new Date(),
+    method: req.method,
+    isOwner: telegram_id === ADMIN_USER_ID,
+  });
+  if (freeze.frozen) {
+    return json(maintenancePayload(freeze.state), 503, origin, {
+      "Retry-After": String(freeze.retryAfterSec),
+    });
+  }
 
   // Admin routes (gated to telegram_id === 744230399)
   const adminResp = await handleAdminRoutes(
