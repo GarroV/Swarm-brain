@@ -15,6 +15,13 @@ import { isFeedbackStatus } from "../_shared/feedback-categories.ts";
 import { normalizeExtractedEventDate, todayIso } from "../_shared/llm-date.ts";
 import { entryAccessError, type EntryAccessRow } from "../_shared/entries/access.ts";
 import { withTokenIdentity } from "./identity.ts";
+import {
+  MEETING_REVIEW_TOOL_DEFINITIONS,
+  toolGetDraftMeeting,
+  toolGetReviewQueue,
+  toolPublishDraftMeeting,
+  toolUpdateDraftMeeting,
+} from "./meetings.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -191,6 +198,7 @@ const TOOLS = [
   ...LABEL_TOOL_DEFINITIONS,
   ...COMMENT_TOOL_DEFINITIONS,
   ...ANALYTICS_TOOL_DEFINITIONS,
+  ...MEETING_REVIEW_TOOL_DEFINITIONS,
   {
     name: "get_meetings",
     description: "Получить последние встречи из Read.ai сохранённые в базе знаний.",
@@ -1101,6 +1109,14 @@ Deno.serve(async (req: Request) => {
         result = await toolDeleteTaskComment(args as { task_id: string; comment_id: string; requesting_user_id: number });
       } else if (name === "add_task_comment") {
         result = await toolAddTaskComment(args as { task_id: string; content: string; requesting_user_id: number });
+      } else if (name === "get_review_queue") {
+        result = await toolGetReviewQueue(args as { requesting_user_id?: number });
+      } else if (name === "get_draft_meeting") {
+        result = await toolGetDraftMeeting(args as { meeting_id: string; requesting_user_id?: number });
+      } else if (name === "update_draft_meeting") {
+        result = await toolUpdateDraftMeeting(args as { meeting_id: string; notes?: string; title?: string; requesting_user_id?: number });
+      } else if (name === "publish_draft_meeting") {
+        result = await toolPublishDraftMeeting(args as { meeting_id: string; base?: string; countries?: string[]; requesting_user_id?: number });
       } else if (name === "get_meetings") {
         result = await toolGetMeetings(args as { limit?: number; requesting_user_id?: number });
       } else if (name === "get_users") {
