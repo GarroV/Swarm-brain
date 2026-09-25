@@ -142,10 +142,12 @@ export async function handleStatsRoutes(
         allRows<{ telegram_id: number }>(
           "allowed_users",
           (a, b) =>
+            // Приглашённый, но ещё не входивший — строка без telegram_id: это не участник,
+            // и null в `.in(...)` у resolveNames ронял запрос имён для всех (прод, 25.09).
             supabase.from("allowed_users").select("telegram_id").eq(
               "group_id",
               groupId,
-            )
+            ).not("telegram_id", "is", null)
               .order("telegram_id").range(a, b),
         ),
         listTasksWithTotal({
