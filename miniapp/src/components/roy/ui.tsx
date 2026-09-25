@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { cn, displayName } from "@/lib/utils";
@@ -33,9 +33,9 @@ export const ROY_TYPE = {
 
 // ── Card ───────────────────────────────────────────────────────────────────
 export function RoyCard({ className, ...props }: ComponentPropsWithoutRef<"div">) {
-  // dark:backdrop-blur — frosted-стекло поверх галактики (поверхности translucent в .dark);
+  // — frosted-стекло поверх галактики (поверхности translucent в .dark);
   // щели между карточками остаются прозрачными → галактика видна между панелями.
-  return <div className={cn("bg-surface border border-line rounded-[18px] dark:backdrop-blur-lg", className)} {...props} />;
+  return <div className={cn("bg-surface border border-line rounded-[10px] shadow-[0_1px_1px_rgba(27,32,40,.03)]", className)} {...props} />;
 }
 
 // ── TypeTag (тип записи базы) ────────────────────────────────────────────────
@@ -278,12 +278,13 @@ export function Chip({ children, active, onClick, leading }: { children: ReactNo
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 font-semibold whitespace-nowrap rounded-full border",
+        // .chip стенда: выбранный — мягкий акцент, а не чёрная заливка.
+        // Высота 40 — тач-цель телефона (аудит мобилки 2026-08-24: было ~31 при норме 44); на десктопе 26, как у стенда.
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border min-h-10 px-[13px] lg:min-h-[26px] lg:px-[11px] transition-colors",
         TAP,
-        active ? "bg-ink text-surface border-ink" : "bg-surface text-ink-soft border-line-2",
+        active ? "bg-accent-soft text-accent-ink border-accent-line font-semibold" : "bg-surface text-ink-soft border-line-2 font-medium hover:bg-surface-2",
       )}
-      // Минимальная высота — тач-цель: было ~31px при норме 44 (аудит мобилки 2026-08-24).
-      style={{ fontSize: 13, padding: "7px 13px", minHeight: 40 }}
+      style={{ fontSize: 12.5 }}
     >
       {leading}
       {children}
@@ -295,7 +296,7 @@ export function Chip({ children, active, onClick, leading }: { children: ReactNo
 type SegItem = { id: string; label: string; count?: number };
 export function Segmented({ items, value, onChange }: { items: SegItem[]; value: string; onChange: (id: string) => void }) {
   return (
-    <div className="flex gap-[3px] bg-surface-2 border border-line p-[3px]" style={{ borderRadius: 12 }}>
+    <div className="flex overflow-hidden rounded-[8px] border border-line-2 bg-surface">
       {items.map((it) => {
         const on = it.id === value;
         return (
@@ -304,15 +305,15 @@ export function Segmented({ items, value, onChange }: { items: SegItem[]; value:
             type="button"
             onClick={() => onChange(it.id)}
             className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 font-semibold border-0",
+              "flex-1 flex items-center justify-center gap-1.5 border-0 border-r border-line-2 last:border-r-0 min-h-10 lg:min-h-[30px] transition-colors",
               TAP,
-              on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(80,60,20,.1)]" : "bg-transparent text-ink-soft",
+              on ? "bg-primary text-white font-semibold" : "bg-transparent text-ink-soft font-medium hover:bg-surface-2",
             )}
-            style={{ fontSize: 13.5, padding: "8px 6px", borderRadius: 9, minHeight: 40 }}
+            style={{ fontSize: 12.5, padding: "0 11px" }}
           >
             {it.label}
             {it.count != null && (
-              <span style={{ fontSize: 11 }} className={on ? "text-accent-ink" : "text-ink-mute"}>
+              <span style={{ fontSize: 11 }} className={on ? "text-white/80" : "text-ink-mute"}>
                 {it.count}
               </span>
             )}
@@ -331,7 +332,9 @@ export function RoyHeader({ title, right, sub, bell = true }: { title: ReactNode
   const isDesktop = useIsDesktop();
   const showBell = bell && !isDesktop;
   return (
-    <div className="px-5 pt-2 pb-3">
+    // relative z-30: окна шапки (колокольчик, меню) — поверх контента экрана, даже если там
+    // встретится свой слой отрисовки (transform, filter, backdrop-filter).
+    <div className="relative z-30 px-5 pt-2 pb-3">
       <div className="flex items-center justify-between gap-2.5">
         {/* Единый масштаб заголовка экрана — ROY_TYPE.pageTitle (см. канон выше). */}
         <h1 className="leading-[1.1]" style={ROY_TYPE.pageTitle}>
@@ -597,7 +600,7 @@ export function FAB({ onClick, className, "aria-label": ariaLabel = "Созда�
       // верхнего края и съедал по ним тап и свайп (аудит мобилки 2026-08-24). Отступ снизу
       // считается от таб-бара (69px) плюс безопасная зона.
       className={cn(
-        "fixed z-20 flex items-center justify-center rounded-[18px] bg-primary text-white border-0 shadow-[0_10px_24px_-6px_rgba(200,130,30,.6)]",
+        "fixed z-20 flex items-center justify-center rounded-[14px] bg-primary text-white border-0 shadow-[0_10px_24px_-6px_rgba(31,78,156,.45)]",
         TAP,
         className,
       )}
@@ -609,9 +612,39 @@ export function FAB({ onClick, className, "aria-label": ariaLabel = "Созда�
 }
 
 // ── NavHeader (шапка push-экрана с «Назад») ──────────────────────────────────
-export function NavHeader({ onBack, title, right, bell = true }: { onBack: () => void; title?: ReactNode; right?: ReactNode; bell?: boolean }) {
+// Экран открыт в правой панели карточки (десктоп, стенд detail.js): шапка — путь «раздел ·
+// карточка» и ✕ вместо «Назад · заголовок · колокольчик». Кладёт RoyApp → DetailPanel.
+export type DetailPanelCtx = { section: string | null; canBack: boolean; onClose: () => void };
+export const DetailPanelContext = createContext<DetailPanelCtx | null>(null);
+
+function PanelHeader({ panel, onBack, title, right }: { panel: DetailPanelCtx; onBack: () => void; title?: ReactNode; right?: ReactNode }) {
+  const dt = useDt();
   return (
-    <div className="shrink-0 flex items-center gap-2.5 bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg" style={{ padding: "6px 14px 10px" }}>
+    <div className="relative z-30 flex shrink-0 items-center gap-2 border-b border-line bg-background px-4 dark:bg-[var(--surface)]" style={{ minHeight: 44 }}>
+      {panel.canBack && (
+        <button type="button" onClick={onBack} aria-label={dt("Назад", "Back")}
+          className="inline-flex size-7 items-center justify-center rounded-[7px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink">
+          <RoyIcon name="cleft" size={16} strokeWidth={2.2} />
+        </button>
+      )}
+      <div className="min-w-0 flex-1 truncate font-semibold uppercase text-ink-mute" style={{ fontSize: 10.5, letterSpacing: "0.07em" }}>
+        {[panel.section, title].filter(Boolean).map((x, i) => <span key={i}>{i > 0 && " · "}{x}</span>)}
+      </div>
+      {right}
+      <button type="button" onClick={panel.onClose} aria-label={dt("Закрыть карточку", "Close the card")}
+        className="inline-flex size-7 items-center justify-center rounded-[7px] border border-line-2 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink">
+        <RoyIcon name="x" size={14} strokeWidth={2.2} />
+      </button>
+    </div>
+  );
+}
+
+export function NavHeader({ onBack, title, right, bell = true }: { onBack: () => void; title?: ReactNode; right?: ReactNode; bell?: boolean }) {
+  const panel = useContext(DetailPanelContext);
+  if (panel) return <PanelHeader panel={panel} onBack={onBack} title={title} right={right} />;
+  // relative z-30 — как у RoyHeader: окно колокольчика не должно уходить под карточки экрана.
+  return (
+    <div className="relative z-30 shrink-0 flex items-center gap-2.5 bg-background dark:bg-[var(--surface)]" style={{ padding: "6px 14px 10px" }}>
       <button
         type="button"
         onClick={onBack}

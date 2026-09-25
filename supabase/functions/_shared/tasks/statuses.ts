@@ -38,6 +38,20 @@ export function isClosedStatus(v: unknown): boolean {
 }
 
 /**
+ * Закрыть ли вместе с задачей её подзадачи (#478, решение владельца 24.09.2026: «если задача
+ * закрывается, то подзадачи тоже логично закрыть»). Только на переходе открытая → закрытая:
+ * повторное «done» ничего не каскадит, а перекат регулярной задачи — не закрытие (она снова
+ * открыта), и подзадачи при нём остаются в работе. Уведомлений нет — решение того же дня.
+ */
+export function shouldCascadeClose(
+  prevStatus: string | null | undefined,
+  nextStatus: string | null | undefined,
+  recurred: boolean,
+): boolean {
+  return !recurred && isClosedStatus(nextStatus) && !isClosedStatus(prevStatus);
+}
+
+/**
  * Патч поля `completed_at` по новому статусу задачи.
  *
  * До 08.09.2026 даты закрытия не существовало: и веб, и отчёты брали `updated_at`, который

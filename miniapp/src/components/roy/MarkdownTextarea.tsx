@@ -63,7 +63,7 @@ export function MarkdownTextarea({ value, onChange, disabled, autoFocus }: Props
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className="w-full resize-y rounded-[14px] border border-line-2 bg-surface px-4 py-3 text-ink outline-none focus:border-primary disabled:opacity-50"
+        className="w-full resize-y rounded-[8px] border border-line-2 bg-surface px-4 py-3 text-ink outline-none focus:border-primary disabled:opacity-50"
         style={{ minHeight: "clamp(300px, 52vh, 680px)", fontSize: 14, lineHeight: 1.6, fontFamily: "ui-monospace, monospace" }}
       />
       <p className="mt-1 text-ink-mute" style={{ fontSize: 11 }}>

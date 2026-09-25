@@ -20,7 +20,7 @@ export type StoredTasksView = Omit<SavedTasksView, "activeList"> & { activeList?
 // лежит в localStorage. После переноса статуса в свою ось такой `activeList` невалиден: экран
 // открылся бы ПУСТЫМ, и человек решил бы, что задачи пропали (раскатка веба до людей доезжает
 // вместе с их старым хранилищем — см. docs/decisions про stale-бандл). Переводим на
-// «Все» + чип «Готово» — ровно то, что человек и смотрел.
+// «Все» + чип «Завершённые» — ровно то, что человек и смотрел.
 export function migrateSavedView(saved: StoredTasksView | null): SavedTasksView | null {
   if (!saved) return null;
   if (saved.activeList !== "done") return saved as SavedTasksView;

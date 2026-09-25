@@ -38,11 +38,11 @@ export function NewEntry() {
             rows={10}
             autoFocus
             placeholder="Вставь текст, заметку или транскрипт — ИИ сам сделает тезисы, тип и теги"
-            className="w-full resize-none rounded-[18px] border border-line-2 bg-surface px-4 py-3 text-ink outline-none focus:border-primary"
+            className="w-full resize-none rounded-[8px] border border-line-2 bg-surface px-4 py-3 text-ink outline-none focus:border-primary"
             style={{ fontSize: 15, lineHeight: 1.5 }}
           />
         </div>
-        <button type="button" onClick={() => setIsPrivate((v) => !v)} className="flex w-full items-center justify-between rounded-[18px] border border-line bg-surface px-4 py-3.5">
+        <button type="button" onClick={() => setIsPrivate((v) => !v)} className="flex w-full items-center justify-between rounded-[10px] border border-line bg-surface px-4 py-3.5">
           <span className="font-medium text-ink" style={{ fontSize: 14.5 }}>
             Личная запись
           </span>
@@ -54,8 +54,8 @@ export function NewEntry() {
           Заголовок, тип (документ/заметка/транскрипт) и рынки определит ИИ из текста.
         </p>
       </div>
-      <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
-        <button type="button" onClick={submit} disabled={saving} className="w-full rounded-[14px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
+      <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
+        <button type="button" onClick={submit} disabled={saving} className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
           Сохранить
         </button>
       </div>

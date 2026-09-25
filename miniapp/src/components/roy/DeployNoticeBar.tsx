@@ -74,7 +74,7 @@ export function DeployNoticeBar() {
       <div
         role="status"
         aria-live="polite"
-        className={`flex max-w-full items-center gap-2 rounded-full border px-3.5 py-1.5 font-semibold shadow-[0_4px_14px_rgba(34,29,23,0.10)] ${
+        className={`flex max-w-full items-center gap-2 rounded-full border px-3.5 py-1.5 font-semibold shadow-[0_4px_14px_rgba(27,32,40,0.10)] ${
           soon
             ? "border-accent-line bg-accent-soft text-accent-ink"
             : "border-transparent bg-primary text-white"

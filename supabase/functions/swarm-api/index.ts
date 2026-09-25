@@ -116,6 +116,7 @@ import { handleAdminRoutes } from "./admin.ts";
 import { apiErr, corsHeaders, json, parseListLimit } from "./http.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
+import { handleStatsRoutes } from "./stats.ts";
 import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
@@ -147,6 +148,17 @@ import {
 // 2000 — не «навсегда», а окно: на проде ~1.1 кБ на задачу, то есть 2000 задач ≈ 2.2 МБ, и это
 // уже путь, которым /meetings дорос до 10 МБ (#102). Настоящий фикс — серверная фильтрация
 // статусов вместо клиентской (#111), громкое усечение — #112. Пока держим breadcrumb в логах.
+// Задники веба (PATCH /me ui_backdrop). Зеркало `miniapp/src/lib/backdrop.ts` — добавляя вариант,
+// правь оба места; null = «по умолчанию».
+// "custom" — своя картинка; сама картинка живёт в IndexedDB браузера, на сервер не уходит.
+const UI_BACKDROPS: readonly string[] = [
+  "galaxy",
+  "none",
+  "dots",
+  "aurora",
+  "custom",
+];
+
 const TASKS_LIST_LIMIT = 2000;
 
 // TTL signed-URL для приватных файлов (swarm_private): достаточно, чтобы браузер/Telegram
@@ -619,7 +631,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "GET" && routePath === "/me") {
     const [{ data: profile }, { data: allowedUser }] = await Promise.all([
       supabase.from("user_profiles").select(
-        "first_name, last_name, role, markets",
+        "first_name, last_name, role, markets, ui_backdrop",
       ).eq("telegram_id", telegram_id).maybeSingle(),
       supabase.from("allowed_users").select("username").eq(
         "telegram_id",
@@ -631,6 +643,7 @@ Deno.serve(async (req: Request) => {
       last_name?: string;
       role?: string;
       markets?: string[];
+      ui_backdrop?: string | null;
     } | null;
     const username = (allowedUser as { username?: string } | null)?.username ??
       null;
@@ -646,6 +659,7 @@ Deno.serve(async (req: Request) => {
         language: language_code,
         role: p?.role ?? null,
         markets: p?.markets ?? [],
+        ui_backdrop: p?.ui_backdrop ?? null,
         is_admin: isAdmin,
         is_demo: isDemo,
       },
@@ -658,13 +672,19 @@ Deno.serve(async (req: Request) => {
   if (req.method === "GET" && routePath === "/config") {
     const { data: ws } = await supabase
       .from("workspaces")
-      .select("allowed_markets")
+      .select("allowed_markets, name")
       .eq("id", groupId)
       .maybeSingle();
-    const allowedMarkets = (ws as { allowed_markets: string[] | null } | null)
-      ?.allowed_markets;
-    const markets = allowedMarkets ?? Object.keys(COUNTRY_NAMES);
-    return json({ allowed_markets: markets }, 200, origin);
+    const row = ws as
+      | { allowed_markets: string[] | null; name: string | null }
+      | null;
+    const markets = row?.allowed_markets ?? Object.keys(COUNTRY_NAMES);
+    // Имя воркспейса — для подписи под брендом в вебе. Пользователю показываем name, не id.
+    return json(
+      { allowed_markets: markets, workspace_name: row?.name ?? null },
+      200,
+      origin,
+    );
   }
 
   // GET /recorder/setup — статус токена рекордера (активен ли + до когда) для секции «Рекордер» в вебе.
@@ -797,6 +817,19 @@ Deno.serve(async (req: Request) => {
     resolveNames,
   );
   if (commentResp) return commentResp;
+
+  // Статистика по людям (/stats/people) — только числа; «на вычитке» — только админу.
+  const statsResp = await handleStatsRoutes(
+    supabase,
+    req,
+    routePath,
+    telegram_id,
+    groupId,
+    isAdmin,
+    origin,
+    resolveNames,
+  );
+  if (statsResp) return statsResp;
 
   // Подписка на уведомления о комментариях к задаче (/tasks/:id/subscription) — issue #82.
   const subResp = await handleTaskSubscriptionRoutes(
@@ -1682,10 +1715,22 @@ Deno.serve(async (req: Request) => {
     if ("markets" in body && Array.isArray(body.markets)) {
       fields.markets = normalizeCountries(body.markets as string[]);
     }
-    await supabase.from("user_profiles").update(fields).eq(
-      "telegram_id",
-      telegram_id,
-    );
+    if ("ui_backdrop" in body) {
+      const b = body.ui_backdrop;
+      if (b !== null && !UI_BACKDROPS.includes(b as string)) {
+        return apiErr(400, "Unknown ui_backdrop", origin);
+      }
+      fields.ui_backdrop = b;
+    }
+    if (Object.keys(fields).length === 0) {
+      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+    }
+    const { error: meErr } = await supabase.from("user_profiles").update(fields)
+      .eq("telegram_id", telegram_id);
+    if (meErr) {
+      console.error("[PATCH /me] update failed", meErr);
+      return apiErr(500, "Could not save profile", origin);
+    }
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
   }
 

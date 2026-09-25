@@ -126,7 +126,7 @@ export function NotificationsBell({ className }: { className?: string }) {
             role="dialog"
             aria-label={dt("Уведомления", "Notifications")}
             className={cn(
-              "z-50 flex flex-col overflow-hidden rounded-[20px] border border-line bg-[var(--popover)] shadow-[0_24px_64px_-18px_rgba(0,0,0,.5)] dark:backdrop-blur-xl",
+              "z-50 flex flex-col overflow-hidden rounded-[10px] border border-line bg-[var(--popover)] shadow-[0_24px_64px_-18px_rgba(0,0,0,.5)] dark:backdrop-blur-xl",
               // Мобайл: кнопка стоит у правого края, и поповер шириной 380px, привязанный к ней,
               // уезжает за ЛЕВЫЙ край экрана. Поэтому во всю ширину с полями; top — высота
               // мобильной шапки SearchScreen (pt-3 + аватар 36 + pb-2 = 56) плюс зазор.
@@ -217,7 +217,7 @@ export function NotificationsBell({ className }: { className?: string }) {
             : dt("Уведомления", "Notifications")
         }
         aria-expanded={open}
-        className="relative flex size-10 items-center justify-center rounded-[12px] border border-line bg-surface shadow-[0_4px_14px_-8px_rgba(60,45,20,.4)] transition-colors hover:bg-surface-2 active:scale-[0.97] dark:backdrop-blur-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        className="relative flex size-10 items-center justify-center rounded-[8px] border border-line bg-surface shadow-[0_4px_14px_-8px_rgba(27,32,40,.25)] transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
       >
         <RoyIcon name="bell" size={20} className="text-ink-soft" />
         {unread > 0 && (

@@ -61,7 +61,7 @@ export function RecordBody({ entry: e }: { entry: Entry }) {
           target="_blank"
           rel="noreferrer"
           className="mb-3.5 inline-flex max-w-full items-center gap-2 px-3 py-2 text-ink transition hover:opacity-80"
-          style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 12, fontSize: 13 }}
+          style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 8, fontSize: 13 }}
         >
           <RoyIcon name={entryTagKey(e) === "pdf" ? "pdf" : "doc"} size={15} className="shrink-0 text-accent-ink" />
           <span className="truncate font-semibold">{fileName || "Скачать файл"}</span>
@@ -73,7 +73,7 @@ export function RecordBody({ entry: e }: { entry: Entry }) {
         </div>
       )}
       {e.summary && !isSearchIndexSummary(e) && (
-        <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 16 }}>
+        <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 10 }}>
           <div className="mb-1.5 font-mono font-semibold uppercase text-accent-ink" style={{ fontSize: 10.5, letterSpacing: "0.08em" }}>Кратко от ИИ</div>
           <TezisyBlocks text={e.summary} />
         </div>
@@ -116,12 +116,12 @@ export function RecordDetail({ id }: { id: string }) {
         {err && <div className="py-8 text-center text-sm text-ink-soft">Не удалось загрузить запись.</div>}
         {e && <RecordBody entry={e} />}
       </div>
-      <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
+      <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
         <button
           type="button"
           onClick={handleCreateTask}
           disabled={!e || creating}
-          className="w-full rounded-[14px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60"
+          className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60"
           style={{ fontSize: 15 }}
         >
           {creating ? "Создаём…" : "В задачу"}

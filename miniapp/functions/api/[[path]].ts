@@ -8,17 +8,16 @@
 // никогда. Это единственная точка, через которую ходит весь фронт, — другого места, где
 // можно поймать «пользователь ещё жив», у нас нет.
 import { verifyJWT, signJWT, shouldRefreshSession, SESSION_TTL_SEC } from "../_lib/jwt";
+import { swarmApiUrl } from "../_lib/api-url";
 
-type Env = { SWARM_API_URL: string; WEB_JWT_SECRET?: string };
+type Env = { SWARM_API_URL?: string; WEB_JWT_SECRET?: string };
 type Ctx = { request: Request; env: Env };
 
 export async function onRequest(ctx: Ctx): Promise<Response> {
   const { request, env } = ctx;
-  if (!env.SWARM_API_URL) return new Response("API not configured", { status: 500 });
-
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\//, "");
-  const target = `${env.SWARM_API_URL.replace(/\/$/, "")}/${path}${url.search}`;
+  const target = `${swarmApiUrl(env)}/${path}${url.search}`;
 
   const headers = new Headers(request.headers);
   const incomingAuth = headers.get("Authorization") ?? "";

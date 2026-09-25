@@ -47,7 +47,7 @@ Deno.test("дефолтный таб опускается: null означает
 });
 
 Deno.test("экраны без параметров открываются по одному имени", () => {
-  for (const view of ["settings", "team", "admin", "map", "base", "ask", "more", "newEntry"] as const) {
+  for (const view of ["settings", "team", "stats", "admin", "map", "base", "ask", "more", "newEntry"] as const) {
     assertEquals(queryToState(`?view=${view}`).route, { view });
   }
 });

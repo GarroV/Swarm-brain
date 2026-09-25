@@ -242,6 +242,8 @@ export type Me = {
   markets: string[];
   is_admin: boolean;
   is_demo?: boolean;
+  /** Задник веба (lib/backdrop.ts); null — по умолчанию. Нет поля — сервер до #backdrop. */
+  ui_backdrop?: string | null;
 };
 
 export type AdminWorkspace = {
@@ -358,6 +360,9 @@ export type AgentMeeting = {
   // transcript присутствует только в детальном GET /agent-meetings/:id
   transcript?: { language?: string; model?: string; segments?: TranscriptSegment[] } | null;
   recorders: RecorderRef[] | null;
+  // Совладельцы черновика — участники встречи с аккаунтом SWARM (решение 2026-09-25). Видят и
+  // вычитывают, но не удаляют; при нескольких владельцах публикация только в общую базу.
+  co_owners?: number[] | null;
   // Имена записавших (резолв recorders[].telegram_id → user_profiles на сервере). Уникальные,
   // фолбэк «#id». Отдаётся всеми ответами /agent-meetings (список и деталь).
   recorder_names?: string[] | null;

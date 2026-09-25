@@ -44,16 +44,6 @@ import type {
 import { SprintTaskPool } from "@/components/tasks/SprintTaskPool";
 import { SprintReport } from "@/components/tasks/SprintReport";
 import { TaskModal } from "@/components/TaskModal";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { RoyIcon } from "@/components/roy/icons";
 import { useConfirm } from "@/components/ui/confirm";
 import { buildQuickAddInput } from "@/lib/quickAddTask";
@@ -71,14 +61,16 @@ import {
   InitiativeList,
 } from "@/components/tasks/sprints/InitiativeList";
 import { SpaceSwitcher } from "@/components/tasks/sprints/SpaceSwitcher";
-import { SprintKpiHeader } from "@/components/tasks/sprints/SprintKpiHeader";
+import { SprintBar } from "@/components/tasks/sprints/SprintBar";
+import { SprintPulse } from "@/components/tasks/sprints/SprintPulse";
+import { NotificationsBell } from "@/components/roy/NotificationsBell";
 import {
   GroupingToggle,
   useSprintGrouping,
   useSprintView,
-  ViewToggle,
+  SprintTabs,
 } from "@/components/tasks/sprints/ViewToggle";
-import { daysLeft, fmtDay, fmtRange } from "@/components/tasks/sprints/format";
+import { fmtDay } from "@/components/tasks/sprints/format";
 
 // Экран «Спринты» — период работы команды с датами, планом и приёмкой (issue #267).
 // ⚠️ Не путать с доской «Проекты» (SprintBoard.tsx): там таблица `sprints` = ВКЛАДКИ доски,
@@ -91,8 +83,6 @@ import { daysLeft, fmtDay, fmtRange } from "@/components/tasks/sprints/format";
 const SPRINT_SECTION = "__sprint__"; // канбан спринта — одна секция, drop меняет только статус
 const CLOSED = new Set(["done", "cancelled"]);
 const DEFAULT_LENGTH_DAYS = 13; // двухнедельный спринт: старт + 13 = ровно 14 дней
-const ARCHIVE_NONE = "__archive__"; // «архив не выбран»: у ui/select пустая строка не значение
-const SPACE_NONE = "__no_space__"; // «Без пространства» — законное значение, а не пустота
 
 function iso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${
@@ -162,6 +152,12 @@ export function SprintsScreen() {
   const isDesktop = useIsDesktop();
   const [view, setView] = useSprintView();
   const [grouping, setGrouping] = useSprintGrouping();
+  // Вкладка «Спринт» возвращает тот вид состава, с которого ушли на «Аналитику»/«Журнал»:
+  // канбанщик не должен каждый раз переключаться обратно.
+  const [lastBoard, setLastBoard] = useState<"list" | "kanban">("list");
+  useEffect(() => {
+    if (view === "list" || view === "kanban") setLastBoard(view);
+  }, [view]);
 
   const [cycles, setCycles] = useState<SprintCycle[]>([]);
   const [spaces, setSpaces] = useState<Sprint[]>([]);
@@ -215,7 +211,7 @@ export function SprintsScreen() {
   const [acceptOpen, setAcceptOpen] = useState(false);
 
   const COLUMNS = useMemo(() => [
-    { status: "open", label: dt("Открыто", "Open"), bar: "#8C8475" },
+    { status: "open", label: dt("Открыто", "Open"), bar: "var(--ink-mute)" },
     {
       status: "in_progress",
       label: dt("В работе", "In progress"),
@@ -692,8 +688,8 @@ export function SprintsScreen() {
           <>
             <p>
               {dt(
-                "1. Слева отметьте задачи галочками — сверху появится «Добавить в спринт».",
-                "1. Tick the tasks on the left — an “Add to sprint” button appears above the list.",
+                "1. Нажмите «Набрать состав» в полосе сверху и отметьте задачи галочками — появится «Добавить в спринт».",
+                "1. Press “Pick tasks” in the bar above and tick the tasks — an “Add to sprint” button appears.",
               )}
             </p>
             <p>
@@ -731,163 +727,134 @@ export function SprintsScreen() {
     );
   }
 
+  const newSprint = () => {
+    const today = new Date();
+    const end = new Date();
+    end.setDate(end.getDate() + DEFAULT_LENGTH_DAYS);
+    // Имя предзаполнено датами: пустое поле упиралось в ошибку «введите название»
+    // на первом же клике, а имя по датам — то, как спринты и называют.
+    setForm({
+      name: defaultCycleName(today, end),
+      start_date: iso(today),
+      end_date: iso(end),
+    });
+    setCreating((v) => !v);
+  };
+
+  async function moveCycle(next: string | null) {
+    if (!detail || next === (detail.tab_id ?? null)) return;
+    setErr(null);
+    try {
+      await updateSprintCycle(detail.id, { tab_id: next });
+      setSpace(next);
+      setSpacePicked(true);
+      await load();
+    } catch (e) {
+      setErr(
+        e instanceof Error
+          ? e.message
+          : dt("Не удалось перенести спринт", "Could not move the sprint"),
+      );
+    }
+  }
+
+  const editable = !!detail && !accepted;
+  const sprintTab = !showAnalytics && !showJournal;
+
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* Пространство — первый вопрос («какой проект»), спринт — второй. */}
-      <SpaceSwitcher
-        spaces={spaces}
-        value={space}
-        showOrphans={hasOrphans}
-        counts={new Map(
-          [
-            ...spaces.map((s) =>
-              [
-                s.id as string | null,
-                cycles.filter((c) => c.tab_id === s.id).length,
-              ] as const
-            ),
-            [null, cycles.filter((c) => c.tab_id === null).length] as const,
-          ],
+      {/* Заголовок раздела с вкладками (стенд): на десктопе шапку оболочки заменяет эта строка,
+          на телефоне остаются одни вкладки. */}
+      <div className="flex shrink-0 items-stretch gap-5 border-b border-line px-4 lg:px-5" style={{ minHeight: 44 }}>
+        {isDesktop && (
+          <h1 className="self-center font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>
+            {dt("Спринты", "Sprints")}
+          </h1>
         )}
-        canManage={isAdmin && editMode}
-        onChanged={load}
-        onChange={(id) => {
-          setSpace(id);
-          setSpacePicked(true);
-          setSelectedId(null);
-        }}
-      />
-
-      {/* Селектор: живые спринты чипами, принятые — архивом (их со временем станет много) */}
-      <div className="flex items-center gap-1.5 px-4 pt-3 pb-2 overflow-x-auto shrink-0">
-        {live.map((c) => {
-          const active = selectedId === c.id;
-          return (
-            <button
-              key={c.id}
-              onClick={() => setSelectedId(c.id)}
-              className={`rounded-full px-3 py-1 text-xs font-semibold whitespace-nowrap transition-colors ${
-                active
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm"
-              }`}
-            >
-              {c.name}
-              {c.status === "active" ? " ·" : ""}
-            </button>
-          );
-        })}
-        {archive.length > 0 && (
-          /* Архив принятых спринтов, сгруппированный по годам. Общий ui/select, не нативный:
-             системное меню macOS выглядит чужеродно поверх интерфейса (владелец 09.09.2026). */
-          <Select
-            value={archive.some((c) => c.id === selectedId)
-              ? selectedId ?? ARCHIVE_NONE
-              : ARCHIVE_NONE}
-            onValueChange={(v) => {
-              const id = String(v);
-              if (id !== ARCHIVE_NONE) setSelectedId(id);
-            }}
-          >
-            <SelectTrigger
-              size="sm"
-              aria-label={dt("Архив спринтов", "Sprint archive")}
-              className="h-7 shrink-0 rounded-full border-line bg-surface px-2.5 text-xs font-semibold text-ink-soft dark:bg-surface dark:backdrop-blur-sm"
-            >
-              <SelectValue>
-                {(v) =>
-                  archive.find((c) => c.id === String(v))?.name ??
-                    dt("Архив", "Archive")}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ARCHIVE_NONE}>
-                {dt("Архив", "Archive")}
-              </SelectItem>
-              {[...new Set(archive.map((c) => c.start_date.slice(0, 4)))].sort()
-                .reverse().map((year) => (
-                  <SelectGroup key={year}>
-                    <SelectLabel>{year}</SelectLabel>
-                    {archive.filter((c) => c.start_date.startsWith(year)).map((
-                      c,
-                    ) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name} · {fmtRange(c.start_date, c.end_date)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                ))}
-            </SelectContent>
-          </Select>
-        )}
-        {editMode && (
-          <button
-            onClick={() => {
-              const today = new Date();
-              const end = new Date();
-              end.setDate(end.getDate() + DEFAULT_LENGTH_DAYS);
-              // Имя предзаполнено датами: пустое поле упиралось в ошибку «введите название»
-              // на первом же клике, а имя по датам — то, как спринты и называют.
-              setForm({
-                name: defaultCycleName(today, end),
-                start_date: iso(today),
-                end_date: iso(end),
-              });
-              setCreating((v) => !v);
-            }}
-            className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 dark:backdrop-blur-sm shrink-0"
-            title={dt("Новый спринт", "New sprint")}
-          >
-            <RoyIcon name="plus" size={14} strokeWidth={2} />
-          </button>
-        )}
-
-        {/* Вид запоминается у человека; канбан — только на компьютере (D003). */}
-        <div className="ml-auto flex items-center gap-2">
-          {!accepted && detail && (
-            <button
-              type="button"
-              onClick={() => setPoolOpen(true)}
-              className="flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-semibold text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink dark:backdrop-blur-sm"
-            >
-              <RoyIcon name="plus" size={12} strokeWidth={2} />
-              <span className="hidden sm:inline">
-                {dt("Взять из бэклога", "Take from the backlog")}
-              </span>
-              <span className="tabular-nums text-ink-soft/70">
-                {poolTasks.length}
-              </span>
-            </button>
-          )}
-          {/* Режим правки: вне его доска только читается — никаких «+», «✎», «✕». Ежедневные
-              отметки он НЕ прячет (см. комментарий у состояния). */}
-          <button
-            type="button"
-            onClick={() => setEditMode((v) => !v)}
-            aria-pressed={editMode}
-            title={dt(
-              "Показать кнопки правки: завести, переименовать, удалить",
-              "Show editing controls: create, rename, delete",
-            )}
-            className={`flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
-              editMode
-                ? "border-primary/40 bg-primary/10 text-primary"
-                : "border-line bg-surface text-ink-soft hover:bg-surface-2 dark:backdrop-blur-sm"
-            }`}
-          >
-            <RoyIcon name="pencil" size={12} strokeWidth={2} />
-            <span className="hidden sm:inline">{dt("Правка", "Edit")}</span>
-          </button>
-          <ViewToggle
-            value={isDesktop ? view : "list"}
-            onChange={setView}
-            kanbanDisabled={!isDesktop}
-          />
-        </div>
+        <SprintTabs
+          value={view}
+          onChange={(v) => setView(v === "list" ? lastBoard : v)}
+        />
+        {isDesktop && <NotificationsBell className="ml-auto self-center" />}
       </div>
 
+      <SprintBar
+        spaceMenu={
+          <SpaceSwitcher
+            spaces={spaces}
+            value={space}
+            showOrphans={hasOrphans}
+            counts={new Map(
+              [
+                ...spaces.map((s) =>
+                  [
+                    s.id as string | null,
+                    cycles.filter((c) => c.tab_id === s.id).length,
+                  ] as const
+                ),
+                [null, cycles.filter((c) => c.tab_id === null).length] as const,
+              ],
+            )}
+            canManage={isAdmin && editMode}
+            onChanged={load}
+            onChange={(id) => {
+              setSpace(id);
+              setSpacePicked(true);
+              setSelectedId(null);
+            }}
+          />
+        }
+        live={live}
+        archive={archive}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        detail={detail}
+        sprintTab={sprintTab}
+        view={isDesktop ? view : "list"}
+        onView={setView}
+        kanbanDisabled={!isDesktop}
+        poolCount={poolTasks.length}
+        onPool={editable ? () => setPoolOpen(true) : undefined}
+        editMode={editMode}
+        onEditMode={() => setEditMode((v) => !v)}
+        busy={busy}
+        // Пустое пространство правкой не защищаем: там нечего сломать, а спрятанная за
+        // тумблер первая кнопка превращает экран в тупик.
+        onNewSprint={editMode || spaceCycles.length === 0 ? newSprint : undefined}
+        onRename={isAdmin && editMode && editable ? () => setRenaming(detail!.name) : undefined}
+        onDelete={isAdmin && editable ? removeCycle : undefined}
+        move={isAdmin && editMode && editable && spaces.length > 0
+          ? { spaces, onMove: moveCycle }
+          : undefined}
+        onStart={start}
+        onAccept={() => setAcceptOpen(true)}
+        reportOpen={reportOpen}
+        onReport={() => setReportOpen((v) => !v)}
+        renameField={renaming !== null && detail
+          ? (
+            <input
+              autoFocus
+              value={renaming}
+              disabled={busy}
+              onChange={(e) => setRenaming(e.target.value)}
+              onBlur={() => setRenaming(null)}
+              onKeyDown={async (e) => {
+                if (e.key === "Escape") setRenaming(null);
+                if (e.key === "Enter" && renaming.trim()) {
+                  await updateSprintCycle(detail.id, { name: renaming.trim() });
+                  setRenaming(null);
+                  await load();
+                }
+              }}
+              className="h-[28px] w-56 rounded-[7px] border border-accent-line bg-surface px-2.5 font-semibold text-ink outline-none"
+              style={{ fontSize: 12.5 }}
+            />
+          )
+          : undefined}
+      />
+
       {creating && (
-        <div className="mx-4 mb-2 flex flex-wrap items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-4 pb-2 lg:px-5">
           <input
             autoFocus
             value={form.name}
@@ -897,31 +864,37 @@ export function SprintsScreen() {
               if (e.key === "Escape") setCreating(false);
             }}
             placeholder={dt("Название спринта", "Sprint name")}
-            className="w-44 rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-primary/50"
+            className="h-[28px] w-52 rounded-[7px] border border-line bg-surface px-2.5 text-ink outline-none focus:border-accent-line"
+            style={{ fontSize: 12.5 }}
           />
           <input
             type="date"
             value={form.start_date}
             onChange={(e) => setForm({ ...form, start_date: e.target.value })}
-            className="rounded-lg border border-line bg-card px-2 py-2 text-sm text-ink outline-none focus:border-primary/50"
+            className="h-[28px] rounded-[7px] border border-line bg-surface px-2 text-ink outline-none focus:border-accent-line"
+            style={{ fontSize: 12.5 }}
           />
           <input
             type="date"
             value={form.end_date}
             onChange={(e) => setForm({ ...form, end_date: e.target.value })}
-            className="rounded-lg border border-line bg-card px-2 py-2 text-sm text-ink outline-none focus:border-primary/50"
+            className="h-[28px] rounded-[7px] border border-line bg-surface px-2 text-ink outline-none focus:border-accent-line"
+            style={{ fontSize: 12.5 }}
           />
-          <Button
-            size="sm"
-            className="h-9 text-xs"
+          <button
+            type="button"
             onClick={submitCycle}
             disabled={busy}
+            className="h-[28px] rounded-[7px] bg-primary px-3 font-semibold text-white disabled:opacity-50"
+            style={{ fontSize: 12.5 }}
           >
             {busy ? dt("Создание…", "Creating…") : dt("Создать", "Create")}
-          </Button>
+          </button>
           <button
+            type="button"
             onClick={() => setCreating(false)}
-            className="text-xs text-ink-soft px-2"
+            className="px-2 text-ink-soft hover:text-ink"
+            style={{ fontSize: 12.5 }}
           >
             {dt("Отмена", "Cancel")}
           </button>
@@ -929,7 +902,7 @@ export function SprintsScreen() {
       )}
 
       {err && (
-        <p className="mx-4 mb-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
+        <p className="mx-4 mt-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive lg:mx-5">
           {err}
         </p>
       )}
@@ -939,185 +912,24 @@ export function SprintsScreen() {
           <p className="px-4 py-10 text-center text-sm text-ink-soft/70">
             {spaceCycles.length === 0
               ? dt(
-                "В этом пространстве спринтов пока нет. Создайте первый кнопкой «+» сверху — это может любой участник.",
-                "No sprints in this space yet. Create the first one with “+” above — any participant can.",
+                "В этом пространстве спринтов пока нет. Создайте первый: меню спринта в полосе сверху → «＋ Новый спринт» — это может любой участник.",
+                "No sprints in this space yet. Create the first one: the sprint menu in the bar above → “＋ New sprint” — any participant can.",
               )
-              : dt("Выберите спринт сверху.", "Pick a sprint above.")}
+              : dt("Выберите спринт в полосе сверху.", "Pick a sprint in the bar above.")}
           </p>
         )
         : (
           <>
-            {/* Шапка: даты, состояние, прогресс, действие по состоянию */}
-            <div className="mx-4 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-2xl border border-line bg-surface/40 px-3 py-2 dark:backdrop-blur-sm">
-              {renaming === null
-                ? (
-                  <span className="text-sm font-bold text-ink">
-                    {detail.name}
-                  </span>
-                )
-                : (
-                  <input
-                    autoFocus
-                    value={renaming}
-                    disabled={busy}
-                    onChange={(e) => setRenaming(e.target.value)}
-                    onKeyDown={async (e) => {
-                      if (e.key === "Escape") setRenaming(null);
-                      if (e.key === "Enter" && renaming.trim()) {
-                        await updateSprintCycle(detail.id, {
-                          name: renaming.trim(),
-                        });
-                        setRenaming(null);
-                        await load();
-                      }
-                    }}
-                    className="w-56 rounded-full border border-line bg-surface px-3 py-1 text-sm font-bold text-ink outline-none focus:border-ink-soft"
-                  />
-                )}
-              {isAdmin && editMode && !accepted && renaming === null && (
-                <button
-                  onClick={() => setRenaming(detail.name)}
-                  disabled={busy}
-                  title={dt("Переименовать спринт", "Rename sprint")}
-                  className="rounded-full border border-line bg-surface px-2 py-0.5 text-[11px] text-ink-soft hover:bg-surface-2 disabled:opacity-50 dark:backdrop-blur-sm"
-                >
-                  ✎
-                </button>
-              )}
-              {/* Перенос спринта в другое пространство (#397). Только в режиме правки: это
-                  структурное действие, а не ежедневное. Принятый спринт не двигаем — он
-                  слепок периода, и переезд задним числом переписал бы чужую историю. */}
-              {isAdmin && editMode && !accepted && renaming === null &&
-                spaces.length > 0 && (
-                <Select
-                  value={detail.tab_id ?? SPACE_NONE}
-                  onValueChange={async (v) => {
-                    const next = String(v) === SPACE_NONE ? null : String(v);
-                    if (next === (detail.tab_id ?? null)) return;
-                    setErr(null);
-                    try {
-                      await updateSprintCycle(detail.id, { tab_id: next });
-                      setSpace(next);
-                      setSpacePicked(true);
-                      await load();
-                    } catch (e) {
-                      setErr(
-                        e instanceof Error ? e.message : dt(
-                          "Не удалось перенести спринт",
-                          "Could not move the sprint",
-                        ),
-                      );
-                    }
-                  }}
-                >
-                  <SelectTrigger
-                    size="sm"
-                    aria-label={dt("Пространство спринта", "Sprint space")}
-                    className="h-7 shrink-0 rounded-full border-line bg-surface px-2.5 text-[11px] font-semibold text-ink-soft dark:bg-surface dark:backdrop-blur-sm"
-                  >
-                    <SelectValue>
-                      {(v) =>
-                        spaces.find((sp) => sp.id === String(v))?.name ??
-                          dt("Без пространства", "No space")}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {spaces.map((sp) => (
-                      <SelectItem key={sp.id} value={sp.id}>{sp.name}</SelectItem>
-                    ))}
-                    <SelectItem value={SPACE_NONE}>
-                      {dt("Без пространства", "No space")}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-              <span className="text-xs text-ink-soft">
-                {fmtRange(detail.start_date, detail.end_date)}
-              </span>
-              {detail.status === "active" && (
-                <span
-                  className={`text-xs ${
-                    daysLeft(detail.end_date) < 0
-                      ? "text-destructive"
-                      : "text-ink-soft"
-                  }`}
-                >
-                  {daysLeft(detail.end_date) < 0
-                    ? dt(
-                      `просрочен на ${-daysLeft(detail.end_date)} дн.`,
-                      `${-daysLeft(detail.end_date)} day(s) overdue`,
-                    )
-                    : dt(
-                      `осталось ${daysLeft(detail.end_date)} дн.`,
-                      `${daysLeft(detail.end_date)} day(s) left`,
-                    )}
-                </span>
-              )}
-              {accepted && (
-                <span className="rounded-full bg-surface-2 border border-line px-2 py-0.5 text-[11px] font-semibold text-ink-soft">
-                  {dt("принят", "accepted")}{" "}
-                  {detail.accepted_at ? fmtDay(detail.accepted_at) : ""}
-                </span>
-              )}
+            {sprintTab && (
+              <SprintPulse
+                kpi={kpi}
+                showUnchecked={unchecked}
+                extra={plan.length > 0 ? items.length - plan.length : 0}
+              />
+            )}
 
-              <SprintKpiHeader kpi={kpi} showUnchecked={unchecked} />
-              {plan.length > 0 && items.length > plan.length && (
-                <span className="text-xs text-ink-soft">
-                  {dt(
-                    `сверх плана ${items.length - plan.length}`,
-                    `extra ${items.length - plan.length}`,
-                  )}
-                </span>
-              )}
-
-              <div className="ml-auto flex items-center gap-2">
-                {detail.status === "draft" && (
-                  <Button
-                    size="sm"
-                    className="h-9 text-xs"
-                    onClick={start}
-                    disabled={busy}
-                  >
-                    {dt("Начать спринт", "Start sprint")}
-                  </Button>
-                )}
-                {detail.status === "active" && (
-                  <Button
-                    size="sm"
-                    className="h-9 text-xs"
-                    onClick={() => setAcceptOpen(true)}
-                    disabled={busy}
-                  >
-                    {dt("Принять спринт", "Accept sprint")}
-                  </Button>
-                )}
-                {accepted && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-9 text-xs"
-                    onClick={() => setReportOpen((v) => !v)}
-                  >
-                    {reportOpen
-                      ? dt("Скрыть отчёт", "Hide report")
-                      : dt("Открыть отчёт", "Open report")}
-                  </Button>
-                )}
-                {isAdmin && !accepted && (
-                  <button
-                    onClick={removeCycle}
-                    disabled={busy}
-                    title={dt("Удалить спринт", "Delete sprint")}
-                    className="rounded-full p-1.5 bg-surface text-ink-soft border border-line hover:bg-surface-2 hover:text-destructive disabled:opacity-50 dark:backdrop-blur-sm"
-                  >
-                    <RoyIcon name="trash" size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {accepted && (
-              <p className="mx-4 mb-2 text-xs text-ink-soft/70">
+            {accepted && sprintTab && (
+              <p className="mx-4 mt-2.5 rounded-[8px] border border-dashed border-line px-3 py-2 text-ink-soft lg:mx-5" style={{ fontSize: 12.5 }}>
                 {dt(
                   `Архив: карточки — слепок на момент приёмки ${
                     detail.accepted_at ? fmtDay(detail.accepted_at) : ""
@@ -1131,7 +943,7 @@ export function SprintsScreen() {
               </p>
             )}
 
-            <div className="flex-1 min-h-0 flex gap-3 px-4 pb-4">
+            <div className="flex-1 min-h-0 flex gap-3 px-4 pb-4 pt-3 lg:px-5">
               {
                 /* Пул — способ набрать состав, поэтому он нужен обоим видам; на телефоне его
                 нет (D003): выбор галочками в узкой колонке нечитаем. */
@@ -1154,19 +966,32 @@ export function SprintsScreen() {
                 )
                 : showList
                 ? (
-                  <div className="flex-1 min-w-0 overflow-y-auto">
+                  <div className="flex-1 min-w-0 overflow-auto">
                     {items.length === 0 ? emptyComposition : (
-                      <>
-                        <GroupingToggle
-                          value={grouping}
-                          onChange={setGrouping}
-                        />
+                      <div className="min-w-[640px]">
+                        {/* «Состав · N» и тихая группировка справа (стенд: `.shead`). */}
+                        <div className="mb-2 flex items-center gap-3 px-0.5">
+                          <span className="font-semibold text-ink" style={{ fontSize: 13 }}>
+                            {dt("Состав", "Tasks")} · <span className="font-mono">{items.length}</span>
+                          </span>
+                          <GroupingToggle
+                            value={grouping}
+                            onChange={setGrouping}
+                          />
+                        </div>
                         <InitiativeList
                           board={byPeople ? peopleBoard : board}
                           noneLabel={byPeople
                             ? dt("Без исполнителя", "Unassigned")
                             : undefined}
                           unchecked={unchecked}
+                          showExtra={plan.length > 0}
+                          marketOf={(item) =>
+                            item.frozen || !item.task_id
+                              ? null
+                              : tasks.find((t) => t.id === item.task_id)?.country ?? null}
+                          parentOf={(item) =>
+                            item.task_id ? tasks.find((t) => t.id === item.task_id)?.parent_id ?? null : null}
                           users={users}
                           // Принятый спринт — слепок: в него не дописывают. В группировке по
                           // людям «+ задача» нет: группа — человек, а не проект, и класть
@@ -1200,7 +1025,7 @@ export function SprintsScreen() {
                             if (live) setEditing(live);
                           }}
                         />
-                      </>
+                      </div>
                     )}
                   </div>
                 )

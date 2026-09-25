@@ -4,6 +4,8 @@ import { fetchUsers } from "@/lib/api";
 import type { User } from "@/types";
 import { Avatar } from "@/components/roy/ui";
 import { initials } from "@/components/roy/dash/shared";
+import { useIsDesktop } from "@/components/roy/useIsDesktop";
+import { TeamDesk } from "@/components/team/TeamDesk";
 
 const ROLE_LABELS: Record<string, string> = {
   marketing: "Marketing",
@@ -14,6 +16,13 @@ const ROLE_LABELS: Record<string, string> = {
 // Заголовок не рендерим: в поповере «Ещё» его даёт Segmented-таб «Команда», в мобильном
 // push-стеке — NavHeader. Свой h1 раньше дублировал их (двойной заголовок).
 export function TeamScreen() {
+  // Десктоп — таблица по стенду; мобайл и поповер «Ещё» — прежний список.
+  const isDesktop = useIsDesktop();
+  if (isDesktop) return <TeamDesk />;
+  return <TeamList />;
+}
+
+function TeamList() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -30,7 +39,7 @@ export function TeamScreen() {
           <p className="py-8 text-center text-sm text-ink-soft">Нет участников</p>
         ) : (
           users.map((u) => (
-            <div key={u.telegram_id} className="flex items-center gap-3 rounded-[14px] border border-line bg-surface px-3 py-2.5 dark:backdrop-blur-sm">
+            <div key={u.telegram_id} className="flex items-center gap-3 rounded-[10px] border border-line bg-surface px-3 py-2.5">
               <Avatar size={38}>{initials(u.name)}</Avatar>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold text-ink" style={{ fontSize: 13.5 }}>

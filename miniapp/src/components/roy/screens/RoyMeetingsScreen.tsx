@@ -1,18 +1,17 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useDt, useRoyNav } from "../nav";
-import { RoyHeader, Segmented, RoyCard, Market, SectionLabel, StorageBadge } from "../ui";
+import { RoyHeader, Segmented, RoyCard, Market, StorageBadge } from "../ui";
 import { HeaderActions } from "../HeaderActions";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { SwipeRow } from "../SwipeRow";
-import { DashTaskRow } from "../dash/shared";
 import { useIsDesktop } from "../useIsDesktop";
 import { deriveEntryTitle, entryImporterName } from "../entry";
-import { fetchMeetings, fetchTasks, deleteMeeting, fetchConfig } from "@/lib/api";
-import { countryCode } from "@/lib/countries";
+import { fetchMeetings, deleteMeeting } from "@/lib/api";
 import { AgentReviewQueue } from "@/components/AgentReviewQueue";
+import { MeetingsDesk } from "./MeetingsDesk";
 import { useConfirm } from "@/components/ui/confirm";
-import type { Entry, Task } from "@/types";
+import type { Entry } from "@/types";
 
 const SEGS = [
   { id: "all", label: "Все" },
@@ -35,23 +34,16 @@ function fmtDate(iso: string | null): string | null {
     return null;
   }
 }
-// Подсчёт с сортировкой по убыванию.
-function tally(keys: string[]): [string, number][] {
-  const m = new Map<string, number>();
-  keys.forEach((k) => m.set(k, (m.get(k) ?? 0) + 1));
-  return [...m.entries()].sort((a, b) => b[1] - a[1]);
-}
-
 function ActionIcon({ name, label, color, onClick }: { name: RoyIconName; label: string; color: string; onClick: () => void }) {
   return (
     <button
       type="button"
       aria-label={label}
       onClick={(ev) => { ev.stopPropagation(); onClick(); }}
-      className="flex items-center justify-center rounded-[10px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
-      style={{ width: 36, height: 36, color }}
+      className="flex items-center justify-center rounded-[7px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92]"
+      style={{ width: 30, height: 30, color }}
     >
-      <RoyIcon name={name} size={18} strokeWidth={1.9} />
+      <RoyIcon name={name} size={15} strokeWidth={1.9} />
     </button>
   );
 }
@@ -66,7 +58,7 @@ function MeetingCard({ e, onOpen, onRemove, mobile }: { e: Entry; onOpen: () => 
     <div className="relative">
       <button type="button" onClick={mobile ? undefined : onOpen} className="block w-full text-left transition-transform active:scale-[0.99]">
         <RoyCard className="flex items-center gap-3 px-4 py-3.5">
-          <span className="inline-flex shrink-0 items-center justify-center rounded-[12px]" style={{ width: 38, height: 38, background: "var(--meet-soft)", color: "var(--meet-ink)" }}>
+          <span className="inline-flex shrink-0 items-center justify-center rounded-[8px]" style={{ width: 32, height: 32, background: "var(--meet-soft)", color: "var(--meet-ink)" }}>
             <RoyIcon name="meet" size={19} />
           </span>
           <div className="min-w-0 flex-1">
@@ -114,52 +106,12 @@ function MeetingCard({ e, onOpen, onRemove, mobile }: { e: Entry; onOpen: () => 
   );
 }
 
-// Задачи, извлечённые из встреч (meeting_id != null) — быстрый доступ из раздела встреч.
-function MeetingTasksPanel() {
-  const { tasksVersion } = useRoyNav();
-  const [tasks, setTasks] = useState<Task[] | null>(null);
-  useEffect(() => {
-    fetchTasks()
-      .then((ts) => setTasks(ts.filter((t) => t.meeting_id && t.status !== "done")))
-      .catch(() => setTasks([]));
-  }, [tasksVersion]);
-  if (!tasks || tasks.length === 0) return null;
-  return (
-    <RoyCard className="px-3.5 py-3">
-      <SectionLabel className="!mb-2">Задачи из встреч · {tasks.length}</SectionLabel>
-      <div className="space-y-0.5">
-        {tasks.slice(0, 10).map((t) => (
-          <DashTaskRow key={t.id} task={t} showAssignee />
-        ))}
-      </div>
-    </RoyCard>
-  );
-}
-
-function CountsPanel({ title, counts }: { title: string; counts: [string, number][] }) {
-  if (counts.length === 0) return null;
-  return (
-    <RoyCard className="px-3.5 py-3">
-      <SectionLabel className="!mb-2">{title}</SectionLabel>
-      <div className="space-y-1.5">
-        {counts.map(([k, n]) => (
-          <div key={k} className="flex items-center justify-between gap-2" style={{ fontSize: 13 }}>
-            <span className="truncate text-ink-soft">{k}</span>
-            <span className="shrink-0 font-bold text-ink">{n}</span>
-          </div>
-        ))}
-      </div>
-    </RoyCard>
-  );
-}
-
 export function RoyMeetingsScreen() {
   const { push, toast } = useRoyNav();
   const dt = useDt();
   const confirm = useConfirm();
   const isDesktop = useIsDesktop();
   const [meetings, setMeetings] = useState<Entry[] | null>(null);
-  const [markets, setMarkets] = useState<string[] | null>(null);
   const [seg, setSeg] = useState("all");
 
   const load = useCallback(() => {
@@ -170,11 +122,6 @@ export function RoyMeetingsScreen() {
   useEffect(() => {
     load();
   }, [load]);
-  // Рынки воркспейса — чтобы «По странам» показывать только их (прочее → «Другие»).
-  useEffect(() => {
-    fetchConfig().then((c) => setMarkets(c.allowed_markets ?? null)).catch(() => setMarkets(null));
-  }, []);
-
   const all = meetings ?? [];
   const items = all.filter((e) => (seg === "all" ? true : seg === "confirmed" ? isConfirmed(e) : !isConfirmed(e)));
 
@@ -193,58 +140,13 @@ export function RoyMeetingsScreen() {
   const openReview = (id: string) => push({ view: "meetingReview", params: { id } });
 
   const segmented = <Segmented items={SEGS} value={seg} onChange={setSeg} />;
-  const skeleton = meetings == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 72, borderRadius: 18 }} />);
+  const skeleton = meetings == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 72, borderRadius: 10 }} />);
   const emptyFeed = meetings && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">Встреч нет</div>;
   const feedCards = (mobile: boolean) =>
     items.map((e) => <MeetingCard key={e.id} e={e} mobile={mobile} onOpen={() => open(e.id)} onRemove={() => remove(e)} />);
 
-  // «По странам»: только рынки воркспейса (allowed_markets), локализованные; всё прочее
-  // (экзотические страны из глобальных встреч, General, без страны) сворачиваем в «Другие».
-  const marketSet = new Set(markets ?? []);
-  const rawCountry = tally(all.flatMap((e) => (e.countries?.length ? e.countries : ["—"])));
-  const countryCounts: [string, number][] = (() => {
-    if (marketSet.size === 0) return rawCountry; // рынки не заданы — показываем всё как есть
-    const out: [string, number][] = [];
-    let other = 0;
-    for (const [code, n] of rawCountry) {
-      if (marketSet.has(code)) out.push([countryCode(code), n]);
-      else other += n;
-    }
-    out.sort((a, b) => b[1] - a[1]);
-    if (other) out.push(["Другие", other]);
-    return out;
-  })();
-
-  const sidebarCounts = (
-    <>
-      <CountsPanel title="По странам" counts={countryCounts} />
-      <CountsPanel title="Источники" counts={tally(all.map((e) => sourceLabel(e.source)))} />
-    </>
-  );
-
-  // ── Десктоп: лента + правый сайдбар (бенто) ──────────────────────────────────
-  if (isDesktop) {
-    return (
-      <div className="flex h-full flex-col overflow-hidden">
-        <RoyHeader title="Встречи" />
-        <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] gap-4 px-5 pb-5">
-          <div className="min-h-0 overflow-y-auto pr-1">
-            <div className="pb-3">{segmented}</div>
-            <div className="space-y-2.5 pb-4">
-              {skeleton}
-              {emptyFeed}
-              {feedCards(false)}
-            </div>
-          </div>
-          <aside className="min-h-0 space-y-3 overflow-y-auto">
-            <AgentReviewQueue onOpen={openReview} />
-            <MeetingTasksPanel />
-            {sidebarCounts}
-          </aside>
-        </div>
-      </div>
-    );
-  }
+  // ── Десктоп: таблица по стенду (MeetingsDesk) ─────────────────────────────────
+  if (isDesktop) return <MeetingsDesk />;
 
   // ── Мобайл: стопкой (как было) ───────────────────────────────────────────────
   return (

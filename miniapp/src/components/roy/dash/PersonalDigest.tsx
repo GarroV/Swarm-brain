@@ -131,7 +131,7 @@ export function PersonalDigest({ className }: { className?: string }) {
             </p>
             <button
               onClick={() => push({ view: "settings" })}
-              className="rounded-[12px] bg-primary px-4 py-2 font-semibold text-white transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="rounded-[8px] bg-primary px-4 py-2 font-semibold text-white transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               style={{ fontSize: 13.5 }}
             >
               {dt("Выбрать рынки", "Choose markets")}
@@ -157,7 +157,7 @@ export function PersonalDigest({ className }: { className?: string }) {
         ) : (
           <button
             onClick={() => run(days)}
-            className="w-full rounded-[12px] bg-primary py-2.5 font-semibold text-white transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            className="w-full rounded-[8px] bg-primary py-2.5 font-semibold text-white transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             style={{ fontSize: 14 }}
           >
             {dt("Сгенерировать дайджест", "Generate digest")} {plabel(days)}

@@ -19,6 +19,25 @@ import { useDt } from "@/components/roy/nav";
 
 const TRIGGER = "flex h-[26px] w-[26px] items-center justify-center rounded-[9px] border border-line-2 bg-surface transition-colors hover:bg-surface-2 active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
 
+/** Оптимистичная правка задачи: сразу патчим строку локально, затем персист + сверка (reload). */
+export async function saveTaskPatch(
+  id: string, fields: UpdateTaskInput, patch: Partial<Task>,
+  onPatch: (patch: Partial<Task>) => void, onChanged: () => void,
+) {
+  onPatch(patch);
+  try { await updateTask(id, fields); } finally { onChanged(); }
+}
+
+/** Переключение списка: списки личные, поэтому выбор списка делает задачу личной. */
+export function toggleLabelPatch(task: Task, labelId: string): { fields: UpdateTaskInput; patch: Partial<Task> } {
+  const cur = task.label_ids ?? [];
+  const next = cur.includes(labelId) ? cur.filter((x) => x !== labelId) : [...cur, labelId];
+  const fields: UpdateTaskInput = { label_ids: next };
+  const patch: Partial<Task> = { label_ids: next };
+  if (next.length > 0 && !task.is_private) { fields.is_private = true; patch.is_private = true; }
+  return { fields, patch };
+}
+
 export function TaskQuickActions({ task, users, markets, labels, onPatch, onChanged }: { task: Task; users: User[]; markets: string[]; labels: TaskLabel[]; onPatch: (patch: Partial<Task>) => void; onChanged: () => void }) {
   // Рынки — только рынки ВОРКСПЕЙСА (allowed_markets из /config); если не заданы — все из COUNTRY_NAMES.
   // Текущий рынок задачи добавляется, если его нет в списке (легаси-значение), чтобы выбор не «потерялся».
@@ -26,11 +45,7 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
   const codes = markets.length ? [...markets] : Object.keys(COUNTRY_NAMES);
   if (task.country && !codes.includes(task.country)) codes.push(task.country);
 
-  // Оптимистично: сразу патчим строку локально, затем персист + сверка (reload).
-  const commit = async (fields: UpdateTaskInput, patch: Partial<Task>) => {
-    onPatch(patch);
-    try { await updateTask(task.id, fields); } finally { onChanged(); }
-  };
+  const commit = (fields: UpdateTaskInput, patch: Partial<Task>) => saveTaskPatch(task.id, fields, patch, onPatch, onChanged);
 
   return (
     <>
@@ -88,12 +103,7 @@ export function TaskQuickActions({ task, users, markets, labels, onPatch, onChan
           options={labels.map((l) => ({ id: l.id, label: l.name, icon: ((l.icon as RoyIconName) || "tag") }))}
           selected={task.label_ids ?? []}
           onToggle={(id) => {
-            const cur = task.label_ids ?? [];
-            const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-            // Списки — личные: выбор списка делает задачу личной (метки только на личных).
-            const fields: UpdateTaskInput = { label_ids: next };
-            const patch: Partial<Task> = { label_ids: next };
-            if (next.length > 0 && !task.is_private) { fields.is_private = true; patch.is_private = true; }
+            const { fields, patch } = toggleLabelPatch(task, id);
             commit(fields, patch);
           }}
         />

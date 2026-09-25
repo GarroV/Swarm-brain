@@ -46,7 +46,7 @@ export function ProfileMenu() {
           <div
             role="dialog"
             aria-label={dt("Профиль и управление", "Profile & management")}
-            className="absolute bottom-full left-0 z-50 mb-2 flex w-[520px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[20px] border border-line bg-[var(--popover)] shadow-[0_24px_64px_-18px_rgba(0,0,0,.5)] dark:backdrop-blur-xl"
+            className="absolute bottom-full left-0 z-50 mb-2 flex w-[520px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[10px] border border-line bg-[var(--popover)] shadow-[0_24px_64px_-18px_rgba(0,0,0,.5)] dark:backdrop-blur-xl"
             style={{ height: "min(680px, 86vh)" }}
           >
             {/* шапка: профиль + закрыть */}
@@ -92,7 +92,7 @@ export function ProfileMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-label={dt("Профиль и настройки", "Profile & settings")}
         aria-expanded={open}
-        className="flex items-center gap-2 rounded-[12px] border border-line bg-surface px-3 py-2 shadow-[0_4px_14px_-8px_rgba(60,45,20,.4)] transition-colors hover:bg-surface-2 active:scale-[0.97] dark:backdrop-blur-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        className="flex items-center gap-2 rounded-[8px] border border-line bg-surface px-3 py-2 shadow-[0_4px_14px_-8px_rgba(27,32,40,.25)] transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
       >
         <Avatar size={28}>{initials(me?.name)}</Avatar>
         <span className="font-semibold text-ink-soft" style={{ fontSize: 13 }}>{dt("Ещё", "More")}</span>

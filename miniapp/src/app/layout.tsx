@@ -1,19 +1,20 @@
 import type { Metadata, Viewport } from "next";
-import { Golos_Text, JetBrains_Mono } from "next/font/google";
+import { Golos_Text, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { TelegramProvider } from "@/components/TelegramProvider";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { SingleTabGate } from "@/components/SingleTabGate";
 import { ConfirmProvider } from "@/components/ui/confirm";
-import { GalaxyBackground } from "@/components/roy/GalaxyBackground";
+import { BackdropLayer } from "@/components/roy/BackdropLayer";
+import { BACKDROP_SCRIPT } from "@/lib/backdrop";
 import { MaintenanceGate } from "@/components/MaintenanceGate";
 
-// Golos Text — весь UI, заголовки И метаданные (эталонная кириллица; дизайн-хендофф
-// набирает мету тоже на Golos). JetBrains Mono оставлен только для технических
-// таймстампов транскрипта в MeetingReview. Определяют CSS-переменные
+// Golos Text — весь UI, заголовки И метаданные (эталонная кириллица). IBM Plex Mono — цифры
+// и технические метки (сроки, счётчики, таймстампы): так набирает стенд редизайна
+// (--font-num в docs/redesign/stand/app.css), до 24.09.2026 был JetBrains Mono. Определяют CSS-переменные
 // --font-sans / --font-geist-mono, которые ждёт @theme в globals.css.
 const golos = Golos_Text({ subsets: ["latin", "cyrillic"], variable: "--font-sans", display: "swap" });
-const mono = JetBrains_Mono({ subsets: ["latin", "cyrillic"], variable: "--font-geist-mono", display: "swap" });
+const mono = IBM_Plex_Mono({ subsets: ["latin", "cyrillic"], weight: ["400", "500", "600"], variable: "--font-geist-mono", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Swarm Brain",
@@ -24,8 +25,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F4F1EB" },
-    { media: "(prefers-color-scheme: dark)", color: "#0A0C0A" },
+    { media: "(prefers-color-scheme: light)", color: "#FFFFFF" },
+    { media: "(prefers-color-scheme: dark)", color: "#0E1116" },
   ],
 };
 
@@ -42,9 +43,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" className={`${golos.variable} ${mono.variable}`} suppressHydrationWarning>
-      <body className="bg-background text-foreground antialiased min-h-screen dark:bg-transparent">
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
-        <GalaxyBackground />
+      <body className="bg-background text-foreground antialiased min-h-screen">
+        {/* Один инлайн-скрипт (CSP): тема по системе + задник из кэша до первой отрисовки. */}
+        <script dangerouslySetInnerHTML={{ __html: `${THEME_SCRIPT};${BACKDROP_SCRIPT}` }} />
+        <BackdropLayer />
         {/* Заглушка работ — ВЫШЕ провайдеров: её должен увидеть и тот, у кого протухла
             сессия, иначе вместо «идут работы» он получит экран входа. */}
         <MaintenanceGate />

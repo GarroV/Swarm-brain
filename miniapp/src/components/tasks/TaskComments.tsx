@@ -176,7 +176,7 @@ export function TaskComments({ taskId }: { taskId: string }) {
                    "Notifications for new comments are on. Click to unsubscribe.")
               : dt("Уведомления отключены. Нажмите, чтобы подписаться.",
                    "Notifications are off. Click to subscribe.")}
-            className="flex shrink-0 items-center gap-1.5 rounded-[10px] px-2 py-1 transition-colors hover:bg-surface-2 disabled:opacity-50"
+            className="flex shrink-0 items-center gap-1.5 rounded-[7px] px-2 py-1 transition-colors hover:bg-surface-2 disabled:opacity-50"
             style={{ fontSize: 12, color: sub.notified ? "var(--accent-ink)" : "var(--ink-mute)" }}
           >
             <RoyIcon name="bell" size={13} strokeWidth={2} />
@@ -196,7 +196,7 @@ export function TaskComments({ taskId }: { taskId: string }) {
           aria-invalid={tooLong}
           placeholder="Написать апдейт…  (Enter — отправить)"
           rows={1}
-          className="min-h-[38px] w-full resize-none overflow-y-auto rounded-[11px] border bg-surface px-3 py-2 text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute"
+          className="min-h-[38px] w-full resize-none overflow-y-auto rounded-[8px] border bg-surface px-3 py-2 text-ink outline-none transition-[border-color,box-shadow] focus:border-primary focus:ring-3 focus:ring-accent-soft placeholder:text-ink-mute"
           style={{
             fontSize: 13.5,
             lineHeight: 1.45,
@@ -210,7 +210,7 @@ export function TaskComments({ taskId }: { taskId: string }) {
           disabled={!draft.trim() || sending || tooLong}
           aria-label="Отправить"
           title="Отправить (Enter)"
-          className="flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-primary text-white transition-transform active:scale-[0.94] disabled:opacity-40"
+          className="flex size-10 shrink-0 items-center justify-center rounded-[8px] bg-primary text-white transition-transform active:scale-[0.94] disabled:opacity-40"
         >
           <RoyIcon name="arrow" size={16} strokeWidth={2.2} />
         </button>

@@ -1,12 +1,13 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
-import { useRoyNav } from "../nav";
-import { NavHeader, Market, SectionLabel, TezisyBlocks, Segmented, StorageBadge } from "../ui";
+import { useCallback, useContext, useEffect, useState } from "react";
+import { useDt, useRoyNav } from "../nav";
+import { DetailPanelContext, NavHeader, Market, SectionLabel, TezisyBlocks, Segmented, StorageBadge } from "../ui";
 import { DashTaskRow } from "../dash/shared";
 import { RoyIcon, type RoyIconName } from "../icons";
 import { deriveEntryTitle } from "../entry";
 import { sourceLabel } from "./RoyMeetingsScreen";
 import { TasksFromMeeting } from "../TasksFromMeeting";
+import { PanelEditor } from "../PanelEditor";
 import { fetchMeeting, patchMeeting, deleteMeeting, fetchTasks, resummarizeMeetingEntry, fetchConfig } from "@/lib/api";
 import { countryCode } from "@/lib/countries";
 import type { Entry, Task } from "@/types";
@@ -21,12 +22,12 @@ function fmtDate(iso: string | null): string {
 }
 
 // Видимая кнопка-действие (иконка + подпись). Раньше действия были спрятаны в меню «...».
-function ActionChip({ icon, label, onClick, danger }: { icon: RoyIconName; label: string; onClick: () => void; danger?: boolean }) {
+export function ActionChip({ icon, label, onClick, danger }: { icon: RoyIconName; label: string; onClick: () => void; danger?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-[11px] border px-3 py-2 font-semibold transition-transform active:scale-[0.96]"
+      className="inline-flex items-center gap-1.5 rounded-[8px] border px-3 py-2 font-semibold transition-transform active:scale-[0.96]"
       // Тач-цель: правка названия/тезисов/стран и удаление были 38px при норме 44.
       style={{ fontSize: 13, borderColor: "var(--line-2)", color: danger ? "var(--pri-high)" : "var(--accent-ink)", minHeight: 40 }}
     >
@@ -38,6 +39,9 @@ function ActionChip({ icon, label, onClick, danger }: { icon: RoyIconName; label
 
 export function MeetingDetail({ id }: { id: string }) {
   const { pop, toast, tasksVersion } = useRoyNav();
+  const panel = useContext(DetailPanelContext);
+  const dt = useDt();
+  const [view, setView] = useState<"tez" | "tasks" | "tr">("tez");
   const [e, setE] = useState<Entry | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [err, setErr] = useState(false);
@@ -118,7 +122,7 @@ export function MeetingDetail({ id }: { id: string }) {
     }
     setBusy(false);
   };
-  const startSummaryEdit = () => { setDraft(e?.summary ?? ""); setEditing(true); };
+  const startSummaryEdit = () => { setDraft(e?.summary ?? ""); setEditing(true); setView("tez"); };
   const saveSummary = async () => {
     setBusy(true);
     try {
@@ -163,6 +167,66 @@ export function MeetingDetail({ id }: { id: string }) {
     }
   };
 
+  const tasksBlock = e && (
+    <>
+            {/* Задачи из встречи — на виду, сразу под действиями (генерация из тезисов/транскрипта
+                или своя). Берём content||summary, чтобы блок не исчезал у встреч с пустым content. */}
+            {(e.content || e.summary) && (
+              <div className="mb-4">
+                <TasksFromMeeting text={e.content || e.summary || ""} meetingId={e.id} resetKey={e.id} onAdded={loadTasks} />
+                {tasks.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {tasks.map((t) => <DashTaskRow key={t.id} task={t} showAssignee />)}
+                  </div>
+                )}
+              </div>
+            )}
+
+    </>
+  );
+  const tezBlock = e && (
+    <>
+            {editing ? (
+              <PanelEditor value={draft} onChange={setDraft} onSave={saveSummary} onCancel={() => setEditing(false)}
+                busy={busy} label={dt("Тезисы встречи", "Meeting summary")} />
+            ) : e.summary ? (
+              <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 10 }}>
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="font-bold uppercase text-accent-ink" style={{ fontSize: 11, letterSpacing: "0.05em" }}>
+                    Кратко от ИИ
+                  </span>
+                  {Boolean(e.metadata?.meeting_id) && (
+                    <button
+                      type="button"
+                      onClick={reprocess}
+                      disabled={reproc}
+                      title="Пересобрать тезисы текущим ИИ-промптом из транскрипта"
+                      className="inline-flex items-center gap-1.5 rounded-[9px] border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
+                      style={{ padding: "3px 9px", fontSize: 11 }}
+                    >
+                      <RoyIcon name="spark" size={12} strokeWidth={1.9} /> {reproc ? "Обрабатываю…" : "Переобработать"}
+                    </button>
+                  )}
+                </div>
+                <TezisyBlocks text={e.summary} copyMeta={{ title: deriveEntryTitle(e), date: e.entry_date || e.created_at }} />
+              </div>
+            ) : null}
+
+    </>
+  );
+  // Транскрипт нужен только на вычитке — по нему сверяют тезисы; после подтверждения он их
+  // дублирует (решение владельца 2026-09-25; подтверждённой встречи без тезисов не бывает).
+  const showTranscript = !!e && !confirmed;
+  const tab = view === "tr" && !showTranscript ? "tez" : view;
+  const transcriptBlock = showTranscript && e && (
+    <>
+            <SectionLabel>Запись</SectionLabel>
+            <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 14.5, lineHeight: 1.65 }}>
+              {e.content}
+            </p>
+    </>
+  );
+
   return (
     <div className="roy-pop flex h-full flex-col">
       <NavHeader onBack={pop} title="Встреча" />
@@ -190,12 +254,12 @@ export function MeetingDetail({ id }: { id: string }) {
                   value={titleDraft}
                   onChange={(ev) => setTitleDraft(ev.target.value)}
                   autoFocus
-                  className="w-full rounded-[12px] border border-line-2 bg-surface px-3.5 py-2.5 font-bold text-ink outline-none focus:border-primary"
+                  className="w-full rounded-[8px] border border-line-2 bg-surface px-3.5 py-2.5 font-bold text-ink outline-none focus:border-primary"
                   style={{ fontSize: 20, letterSpacing: "-0.01em" }}
                 />
                 <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={saveTitle} disabled={busy} className="flex-1 rounded-[12px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>Сохранить</button>
-                  <button type="button" onClick={() => setEditingTitle(false)} className="rounded-[12px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>Отмена</button>
+                  <button type="button" onClick={saveTitle} disabled={busy} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>Сохранить</button>
+                  <button type="button" onClick={() => setEditingTitle(false)} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>Отмена</button>
                 </div>
               </div>
             ) : (
@@ -212,21 +276,8 @@ export function MeetingDetail({ id }: { id: string }) {
               <ActionChip icon="trash" label="Удалить" onClick={del} danger />
             </div>
 
-            {/* Задачи из встречи — на виду, сразу под действиями (генерация из тезисов/транскрипта
-                или своя). Берём content||summary, чтобы блок не исчезал у встреч с пустым content. */}
-            {(e.content || e.summary) && (
-              <div className="mb-4">
-                <TasksFromMeeting text={e.content || e.summary || ""} meetingId={e.id} resetKey={e.id} onAdded={loadTasks} />
-                {tasks.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {tasks.map((t) => <DashTaskRow key={t.id} task={t} showAssignee />)}
-                  </div>
-                )}
-              </div>
-            )}
-
             {editingCountries && (
-              <div className="mb-4 rounded-[14px] border border-line-2 bg-surface p-4">
+              <div className="mb-4 rounded-[10px] border border-line-2 bg-surface p-4">
                 <SectionLabel>Страны встречи</SectionLabel>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {allowedMarkets.map((code) => {
@@ -245,60 +296,52 @@ export function MeetingDetail({ id }: { id: string }) {
                   })}
                 </div>
                 <div className="mt-3 flex gap-2">
-                  <button type="button" onClick={saveCountries} disabled={busy} className="flex-1 rounded-[12px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
+                  <button type="button" onClick={saveCountries} disabled={busy} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
                     Сохранить
                   </button>
-                  <button type="button" onClick={() => setEditingCountries(false)} className="rounded-[12px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>
+                  <button type="button" onClick={() => setEditingCountries(false)} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>
                     Отмена
                   </button>
                 </div>
               </div>
             )}
 
-            {editing ? (
-              <div className="mb-4">
-                <textarea value={draft} onChange={(ev) => setDraft(ev.target.value)} rows={8} className="w-full resize-none rounded-[14px] border border-line-2 bg-surface px-4 py-3 text-ink outline-none focus:border-primary" style={{ fontSize: 14, lineHeight: 1.55 }} />
-                <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={saveSummary} disabled={busy} className="flex-1 rounded-[12px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
-                    Сохранить
-                  </button>
-                  <button type="button" onClick={() => setEditing(false)} className="rounded-[12px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>
-                    Отмена
-                  </button>
-                </div>
-              </div>
-            ) : e.summary ? (
-              <div className="mb-4 px-4 py-3.5" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 16 }}>
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <span className="font-bold uppercase text-accent-ink" style={{ fontSize: 11, letterSpacing: "0.05em" }}>
-                    Кратко от ИИ
-                  </span>
-                  {Boolean(e.metadata?.meeting_id) && (
-                    <button
-                      type="button"
-                      onClick={reprocess}
-                      disabled={reproc}
-                      title="Пересобрать тезисы текущим ИИ-промптом из транскрипта"
-                      className="inline-flex items-center gap-1.5 rounded-[9px] border border-accent-line bg-card/60 font-semibold text-accent-ink transition-transform active:scale-[0.97] disabled:opacity-50"
-                      style={{ padding: "3px 9px", fontSize: 11 }}
-                    >
-                      <RoyIcon name="spark" size={12} strokeWidth={1.9} /> {reproc ? "Обрабатываю…" : "Переобработать"}
+            {panel ? (
+              <>
+                {/* В правой панели (десктоп) — вкладками, как на стенде (detail.js → detailMeeting):
+                    три ленты подряд в 560px не читаются. На мобайле — по-прежнему лентой. */}
+                <div role="tablist" className="mb-3 flex items-end gap-4 border-b border-line">
+                  {([
+                    ["tez", "Тезисы", "Summary", null],
+                    ["tasks", "Задачи", "Tasks", tasks.length || null],
+                    ...(showTranscript ? [["tr", "Транскрипт", "Transcript", null] as const] : []),
+                  ] as const).map(([id, ru, en, n]) => (
+                    <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setView(id)}
+                      className={`-mb-px flex items-center gap-1.5 border-b-2 pb-2 font-medium transition-colors ${tab === id ? "border-primary font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink"}`}
+                      style={{ fontSize: 13 }}>
+                      {dt(ru, en)}
+                      {n != null && <span className="text-ink-mute" style={{ fontSize: 11 }}>{n}</span>}
                     </button>
-                  )}
+                  ))}
                 </div>
-                <TezisyBlocks text={e.summary} copyMeta={{ title: deriveEntryTitle(e), date: e.entry_date || e.created_at }} />
-              </div>
-            ) : null}
-
-            <SectionLabel>Запись</SectionLabel>
-            <p className="whitespace-pre-wrap text-ink" style={{ fontSize: 14.5, lineHeight: 1.65 }}>
-              {e.content}
-            </p>
+                {tab === "tez" && (editing || e.summary ? tezBlock : (
+                  <p className="text-ink-mute" style={{ fontSize: 13 }}>{dt("Тезисов пока нет — они появятся после обработки", "No summary yet — it appears after processing")}</p>
+                ))}
+                {tab === "tasks" && tasksBlock}
+                {tab === "tr" && transcriptBlock}
+              </>
+            ) : (
+              <>
+                {tasksBlock}
+                {tezBlock}
+                {transcriptBlock}
+              </>
+            )}
           </>
         )}
       </div>
       {e && !confirmed && !editing && !editingTitle && (
-        <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
+        <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
           <div className="mb-2.5">
             <Segmented
               items={[
@@ -309,7 +352,7 @@ export function MeetingDetail({ id }: { id: string }) {
               onChange={(s) => setStorage(s as "shared" | "personal")}
             />
           </div>
-          <button type="button" onClick={confirm} disabled={busy} className="w-full rounded-[14px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
+          <button type="button" onClick={confirm} disabled={busy} className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
             {storage === "personal" ? "Сохранить в личное" : "Сохранить в базу"}
           </button>
         </div>

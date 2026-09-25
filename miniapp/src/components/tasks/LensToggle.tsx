@@ -37,7 +37,7 @@ export function LensToggle({
               disabled={allStaff}
               className={cn(
                 "whitespace-nowrap rounded-[7px] px-3 py-1 font-semibold transition-colors",
-                on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(80,60,20,.1)]" : "text-ink-soft",
+                on ? "bg-surface text-ink shadow-[0_1px_4px_rgba(27,32,40,.08)]" : "text-ink-soft",
               )}
               style={{ fontSize: 12.5 }}
             >

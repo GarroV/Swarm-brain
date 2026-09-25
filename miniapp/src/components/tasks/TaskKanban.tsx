@@ -53,7 +53,7 @@ function KanbanCard({ task, badge, draggable, onDragStart, onDragEnd, onOpen, on
       onDragStart={(e) => { onDragStart(); e.dataTransfer.effectAllowed = "move"; }}
       onDragEnd={onDragEnd}
       onClick={(e) => { e.stopPropagation(); onOpen?.(); }}
-      className={`rounded-lg bg-card border border-line shadow-sm p-2.5 ${onOpen ? "cursor-pointer hover:border-primary/40" : ""} ${draggable ? "active:cursor-grabbing" : ""} dark:backdrop-blur-sm`}>
+      className={`rounded-lg bg-card border border-line shadow-sm p-2.5 ${onOpen ? "cursor-pointer hover:border-primary/40" : ""} ${draggable ? "active:cursor-grabbing" : ""}`}>
       {badge && <span className="inline-block mb-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-ink-soft bg-surface-2 border border-line">{badge}</span>}
       {onRemove ? (
         <div className="flex items-start gap-1.5">
@@ -116,7 +116,7 @@ export function KanbanColumn({ sectionId, column, tasks, badgeFor, groupOf, read
         e.preventDefault();
         if (drag) { onDropTask(drag.id, sectionId, column.status); onDragChange(null); }
       }}
-      className="w-64 shrink-0 flex flex-col rounded-xl bg-surface-2 border border-line p-2 dark:backdrop-blur-lg">
+      className="w-64 shrink-0 flex flex-col rounded-xl bg-surface-2 border border-line p-2">
       {/* «+» в заголовке — надёжный способ добавить задачу независимо от заполненности колонки:
           клик по пустому полю ниже (title="Кликни по пустому полю…") требует, собственно, пустого
           поля — забитая карточками колонка его не оставляет (владелец: «нереально тыкнуть по

@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Me, Task } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { cn } from "@/lib/utils";
@@ -16,10 +16,10 @@ import {
   useRoyNav,
 } from "./nav";
 import type { Lens, SmartListId } from "@/lib/smartLists";
-import { Avatar, NavHeader, ROY_TABS, RoyHeader, RoyTabBar } from "./ui";
+import { Avatar, DetailPanelContext, NavHeader, ROY_TABS, RoyHeader, RoyTabBar } from "./ui";
 import { HeaderActions } from "./HeaderActions";
 import { initials } from "./dash/shared";
-import { useIsDesktop } from "./useIsDesktop";
+import { DESKTOP_QUERY, useIsDesktop } from "./useIsDesktop";
 import { SearchScreen } from "./screens/SearchScreen";
 import { AnswerScreen } from "./screens/AnswerScreen";
 import { RecordDetail } from "./screens/RecordDetail";
@@ -27,21 +27,22 @@ import { RoyTasksScreen } from "./screens/RoyTasksScreen";
 import { RoyProjectsScreen } from "./screens/RoyProjectsScreen";
 import { ProjectTasksScreen } from "./screens/ProjectTasksScreen";
 import { TaskDetail } from "./screens/TaskDetail";
+import { StatsDesk } from "@/components/stats/StatsDesk";
 import { NewTask } from "./screens/NewTask";
 import { RoyBaseScreen } from "./screens/RoyBaseScreen";
 import { NewEntry } from "./screens/NewEntry";
 import { RoyMeetingsScreen } from "./screens/RoyMeetingsScreen";
 import { MeetingDetail } from "./screens/MeetingDetail";
 import { RoyDashboard } from "./RoyDashboard";
-import { FeedbackDialog, FeedbackFab } from "./FeedbackFab";
-import { RoyMark } from "./RoyMark";
+import { FeedbackDialog } from "./FeedbackFab";
 import { MeetingReview } from "@/components/MeetingReview";
 import { TasksScreen } from "@/components/tasks/TasksScreen";
+import { TasksTable } from "@/components/tasks/table/TasksTable";
 import { TeamScreen } from "@/components/TeamScreen";
-import { SettingsScreen } from "@/components/SettingsScreen";
-import { AdminScreen } from "@/components/AdminScreen";
+import { SettingsRoute } from "@/components/settings/SettingsDesk";
+import { AdminRoute } from "@/components/admin/AdminDesk";
 import { MeetAdminScreen } from "./screens/MeetAdminScreen";
-import { ProfileMenu } from "./ProfileMenu";
+import { type RailId, RoyRail } from "./RoyRail";
 import { NotificationsBell } from "./NotificationsBell";
 import { DeployNoticeBar } from "./DeployNoticeBar";
 import { AnswerModal } from "./AnswerModal";
@@ -76,6 +77,7 @@ export function RoyApp({ me }: { me: Me | null }) {
     { lens: Lens; list?: SmartListId } | null
   >(null);
   const isDesktop = useIsDesktop();
+  const visited = useVisitedTabs(tab);
   // Сколько черновиков встреч ждёт вычитки — для бейджа на табе «Встречи». Ошибку глотаем:
   // эндпоинт /agent-meetings может быть недоступен, и это не повод ронять каркас (та же
   // намеренная деградация, что в AgentReviewQueue).
@@ -190,17 +192,19 @@ export function RoyApp({ me }: { me: Me | null }) {
       // десктопные разделы. На мобайле сохранённые десктопные значения мигрируем, иначе человек с
       // живой сессией после деплоя попал бы на экран, которого в баре нет (подсветки таба нет).
       const valid = saved &&
-          (["search", "task", "projects", "book", "cal", "more"] as const)
+          (["search", "task", "projects", "sprints", "book", "cal", "more"] as const)
             .includes(saved as RoyTab)
         ? (saved as RoyTab)
         : null;
-      const desktop = window.matchMedia("(min-width: 1024px)").matches;
+      const desktop = window.matchMedia(DESKTOP_QUERY).matches;
       const initial: RoyTab = desktop
         ? (valid ?? "search")
         : valid === null || valid === "search"
         ? "task"
         : valid === "book"
         ? "more"
+        : valid === "sprints"
+        ? "projects"
         : valid;
       setTabState(initial);
       // Восстанавливаем и push-стек (открытую деталь), чтобы рефреш не сбрасывал на корень таба.
@@ -302,13 +306,57 @@ export function RoyApp({ me }: { me: Me | null }) {
     openTasks,
   };
   const top = stack[stack.length - 1];
+  // Десктоп по стенду (detail.js): карточки встречи и записи — панель справа поверх раздела,
+  // раздел под ней остаётся на месте. Только когда в стеке одни карточки: из «Команды»,
+  // «Настроек» и прочих push-экранов карточка открывается как раньше, экраном.
+  const panelMode = isDesktop && stack.length > 0 && stack.every((r) => PANEL_VIEWS.has(r.view));
+  const mainRoute = panelMode ? undefined : top;
   // На десктопе домашняя вкладка («Поиск») — бенто-дашборд во всю ширину; на мобайле и в
   // push-стеке остаётся центрированная колонка.
-  const isDashboard = isDesktop && tab === "search" && !top;
+  const isDashboard = isDesktop && tab === "search" && !mainRoute;
+
+  // Левая рейка (десктоп): разделы — это табы, а Команда/Настройки/Админ — push-экраны,
+  // которые рейка кладёт единственными в стек (повторный клик не наращивает «назад»).
+  const RAIL_TAB: Partial<Record<RailId, RoyTab>> = {
+    home: "search",
+    tasks: "task",
+    projects: "projects",
+    sprints: "sprints",
+    meetings: "cal",
+    base: "book",
+  };
+  const RAIL_PUSH: Partial<Record<RailId, "team" | "stats" | "settings" | "admin">> = {
+    team: "team",
+    stats: "stats",
+    settings: "settings",
+    admin: "admin",
+  };
+  const railSelect = (id: RailId) => {
+    const t = RAIL_TAB[id];
+    if (t) return setTab(t);
+    const v = RAIL_PUSH[id];
+    if (v) setStack([{ view: v }]);
+  };
+  const pushed = stack[0]?.view;
+  const railActive: RailId | null =
+    pushed === "team" || pushed === "stats" || pushed === "settings" || pushed === "admin"
+      ? pushed
+      : (Object.keys(RAIL_TAB) as RailId[]).find((k) => RAIL_TAB[k] === tab) ?? null;
+  const SECTION_TITLE: Partial<Record<RoyTab, [string, string]>> = {
+    task: ["Задачи", "Tasks"],
+    projects: ["Проекты", "Projects"],
+    sprints: ["Спринты", "Sprints"],
+    book: ["База", "Knowledge"],
+    cal: ["Встречи", "Meetings"],
+    more: ["Ещё", "More"],
+  };
+  const sectionTitle = SECTION_TITLE[tab];
+  // Провайдер навигации ниже по дереву, поэтому useDt() тут не работает — язык прямо из me.
+  const shellDt = (ru: string, en: string) => (me?.is_demo ? en : ru);
 
   return (
     <RoyNavContext.Provider value={nav}>
-      <div className="flex flex-col h-[100dvh] bg-background text-foreground dark:bg-transparent">
+      <div className="roy-shell flex flex-col h-[100dvh] bg-background text-foreground">
         {/* Плашка «скоро обновление» — плавающая, поверх всех экранов, layout не сдвигает. */}
         <DeployNoticeBar />
         {me?.is_demo && (
@@ -336,14 +384,17 @@ export function RoyApp({ me }: { me: Me | null }) {
           </div>
         )}
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          {isDesktop && (
+            <RoyRail
+              active={railActive}
+              onSelect={railSelect}
+              badges={{ meetings: reviewCount }}
+            />
+          )}
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             <div
               className={cn(
                 "relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden",
-                // Тёмная тема: лёгкая вуаль БЕЗ blur — галактика видна в щелях между панелями
-                // (не размыта). Frost/стекло — на самих карточках (RoyCard). Читаемость голого
-                // текста подстрахована вуалью + приглушённой галактикой.
-                "dark:bg-[#0a0b07]/22",
                 // Десктоп — единая оптимальная ширина с авто-полями по краям (во всю ширину
                 // получалось «дерьмо»: строки/текст растягивались на весь монитор). Мобайл — узкая колонка.
                 isDashboard
@@ -351,39 +402,37 @@ export function RoyApp({ me }: { me: Me | null }) {
                   : "max-w-[480px] lg:max-w-[1280px]",
               )}
             >
-              {top ? <PushScreen route={top} /> : (
+              {mainRoute ? <PushScreen route={mainRoute} /> : (
                 <>
                   {
-                    /* Desktop dashboard-центрично: сайдбара нет, дашборд — дом. На секции
-                    (Задачи/База/Встречи) ведут шапки панелей дашборда; назад на дашборд —
-                    эта строка. Push-экраны имеют свой «Назад». Мобайл — нижний таб-бар. */
+                    /* Десктоп: разделы переключает левая рейка, здесь — только заголовок раздела
+                    и колокольчик. Дом (дашборд) держит свою шапку, «Спринты» — тоже: у них в строке
+                    заголовка вкладки (стенд). Мобайл — нижний таб-бар. */
                   }
-                  {isDesktop && tab !== "search" && (
+                  {isDesktop && tab !== "search" && tab !== "sprints" && (
                     <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-2">
-                      <button
-                        type="button"
-                        onClick={() => setTab("search")}
-                        className="flex items-center gap-2 py-0.5 text-left font-semibold text-ink-soft transition-colors hover:text-ink"
-                      >
-                        <RoyMark size={22} />
-                        <span style={{ fontSize: 14 }}>← Главная</span>
-                      </button>
+                      <h1 className="font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>
+                        {sectionTitle ? shellDt(sectionTitle[0], sectionTitle[1]) : null}
+                      </h1>
                       <NotificationsBell />
                     </div>
                   )}
                   <div className="min-h-0 flex-1 overflow-hidden">
-                    {tab === "search" &&
-                      (isDashboard ? <RoyDashboard /> : <SearchScreen />)}
-                    {tab === "task" &&
-                      (isDesktop ? <TasksScreen /> : <RoyTasksScreen />)}
+                    <KeptTab id="search" tab={tab} visited={visited}>
+                      {isDashboard ? <RoyDashboard /> : <SearchScreen />}
+                    </KeptTab>
+                    <KeptTab id="task" tab={tab} visited={visited}>
+                      {isDesktop ? <TasksTable /> : <RoyTasksScreen />}
+                    </KeptTab>
                     {
                       /* Десктоп своей доской проектов уже владеет (TasksScreen → вид «Проекты»),
                       мобильный экран — отдельный: список проектов → задачи внутри. */
                     }
                     {tab === "projects" &&
-                      (isDesktop ? <TasksScreen /> : <RoyProjectsScreen />)}
-                    {tab === "book" && <RoyBaseScreen />}
-                    {tab === "cal" && <RoyMeetingsScreen />}
+                      (isDesktop ? <TasksScreen only="sprint" /> : <RoyProjectsScreen />)}
+                    {tab === "sprints" && <TasksScreen only="sprints" />}
+                    <KeptTab id="book" tab={tab} visited={visited}><RoyBaseScreen /></KeptTab>
+                    <KeptTab id="cal" tab={tab} visited={visited}><RoyMeetingsScreen /></KeptTab>
                     {tab === "more" && <MoreScreen root />}
                   </div>
                   <RoyTabBar
@@ -398,18 +447,17 @@ export function RoyApp({ me }: { me: Me | null }) {
               {toastMsg && (
                 <div
                   role="status"
-                  className="roy-pop absolute bottom-[110px] left-1/2 z-50 -translate-x-1/2 rounded-[13px] bg-ink px-4 py-2.5 text-sm text-surface shadow-[0_10px_30px_rgba(0,0,0,.3)]"
+                  className="roy-pop absolute bottom-[110px] left-1/2 z-50 -translate-x-1/2 rounded-[8px] bg-ink px-4 py-2.5 text-sm text-surface shadow-[0_10px_30px_rgba(0,0,0,.3)]"
                 >
                   {toastMsg}
                 </div>
               )}
             </div>
+            {panelMode && top && <DetailPanel route={top} depth={stack.length} section={sectionTitle ? shellDt(sectionTitle[0], sectionTitle[1]) : shellDt("Главная", "Home")} onClose={() => setStack([])} />}
             {
-              /* Профиль/управление — внизу слева (desktop, вместо сайдбара): нативный поповер
-              в углу с inline-секциями Настройки/Команда/Админ, без перехода на страницу.
-              На мобайле — аватар в шапке + таб-бар. */
+              /* Профиль/управление на десктопе — пункты левой рейки (Команда/Настройки/Админ),
+              поповер ProfileMenu в углу больше не нужен. На мобайле — «Ещё» в таб-баре. */
             }
-            {isDesktop && <ProfileMenu />}
           </div>
         </div>
       </div>
@@ -423,6 +471,7 @@ export function RoyApp({ me }: { me: Me | null }) {
         open={taskModalTask !== null}
         onClose={() => setTaskModalTask(null)}
         onSaved={() => setTasksVersion((v) => v + 1)}
+        drawer={isDesktop}
       />
       {answerQuery !== null && (
         <AnswerModal
@@ -434,12 +483,66 @@ export function RoyApp({ me }: { me: Me | null }) {
         /* На мобайле «?» была вторым FAB под «+» и спорила с главным действием экрана —
           фидбек переехал пунктом в «Ещё» (аудит мобилки 2026-08-22). */
       }
-      {isDesktop && <FeedbackFab />}
     </RoyNavContext.Provider>
   );
 }
 
+// Разделы, которые после первого открытия остаются смонтированными (скрыты, пока не выбраны):
+// переход между ними не перезапрашивает всё с нуля на глазах (решение владельца 2026-09-25 —
+// «при переключениях между вкладками долго грузятся другие вкладки каждый раз»). Свежесть —
+// через tasksVersion, как и раньше. «Проекты», «Спринты» и «Ещё» сюда не входят: доска проектов —
+// защищённая поверхность, и у неё свои глобальные обработчики клавиш, которые в скрытом виде
+// продолжали бы ловить нажатия.
+const KEEP_ALIVE_TABS = new Set<RoyTab>(["search", "task", "book", "cal"]);
+
+function useVisitedTabs(tab: RoyTab): Set<RoyTab> {
+  const [visited, setVisited] = useState<Set<RoyTab>>(() => new Set([tab]));
+  useEffect(() => {
+    setVisited((v) => (v.has(tab) ? v : new Set([...v, tab])));
+  }, [tab]);
+  return visited;
+}
+
+function KeptTab({ id, tab, visited, children }: { id: RoyTab; tab: RoyTab; visited: Set<RoyTab>; children: ReactNode }) {
+  const active = tab === id;
+  if (!active && !(KEEP_ALIVE_TABS.has(id) && visited.has(id))) return null;
+  return <div hidden={!active} className="h-full">{children}</div>;
+}
+
+const PANEL_VIEWS = new Set<RoyRoute["view"]>(["meetingDetail", "record", "meetingReview"]);
+
+// Панель карточки справа (десктоп): ширина — --detail-w стенда. Esc и клик мимо закрывают её,
+// но не когда поверх открыто окно (у него свой Esc).
+function DetailPanel({ route, depth, section, onClose }: { route: RoyRoute; depth: number; section: string | null; onClose: () => void }) {
+  const dt = useDt();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector("[role=dialog], [role=alertdialog], [role=menu]")) return;
+      // Идёт правка текста (PanelEditor) — Esc отменяет её, а не закрывает панель.
+      if (document.activeElement?.closest("[data-panel-edit]")) return;
+      onClose();
+    };
+    // capture: проверяем до того, как окно поверх обработает Esc и исчезнет из DOM.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  return (
+    <>
+      <button type="button" aria-label={dt("Закрыть карточку", "Close the card")} onClick={onClose}
+        className="absolute inset-0 z-40 cursor-default bg-[rgba(10,13,17,.12)]" />
+      <aside aria-label={dt("Карточка", "Card")}
+        className="roy-pop absolute inset-y-0 right-0 z-40 flex w-[560px] max-w-[96vw] flex-col overflow-hidden border-l border-line bg-background shadow-[-12px_0_40px_rgba(10,13,17,.12)] min-[1560px]:w-[640px]">
+        <DetailPanelContext.Provider value={{ section, canBack: depth > 1, onClose }}>
+          <PushScreen key={JSON.stringify(route)} route={route} />
+        </DetailPanelContext.Provider>
+      </aside>
+    </>
+  );
+}
+
 function PushScreen({ route }: { route: RoyRoute }) {
+  const dt = useDt();
   if (route.view === "meetingReview") {
     return <MeetingReviewScreen id={route.params.id} />;
   }
@@ -462,22 +565,29 @@ function PushScreen({ route }: { route: RoyRoute }) {
   if (route.view === "map") return <MapScreen />;
   if (route.view === "settings") {
     return (
-      <Wrapped title="Настройки">
-        <SettingsScreen />
+      <Wrapped title={dt("Настройки", "Settings")}>
+        <SettingsRoute />
+      </Wrapped>
+    );
+  }
+  if (route.view === "stats") {
+    return (
+      <Wrapped title={dt("Статистика", "Stats")}>
+        <StatsDesk />
       </Wrapped>
     );
   }
   if (route.view === "team") {
     return (
-      <Wrapped title="Команда">
+      <Wrapped title={dt("Команда", "Team")}>
         <TeamScreen />
       </Wrapped>
     );
   }
   if (route.view === "admin") {
     return (
-      <Wrapped title="Админ">
-        <AdminScreen />
+      <Wrapped title={dt("Админ", "Admin")}>
+        <AdminRoute />
       </Wrapped>
     );
   }
@@ -488,8 +598,10 @@ function PushScreen({ route }: { route: RoyRoute }) {
 }
 
 function MeetingReviewScreen({ id }: { id: string }) {
-  const { pop } = useRoyNav();
-  return <MeetingReview id={id} onClose={pop} />;
+  const { pop, bumpTasks } = useRoyNav();
+  // Раздел под панелью остаётся смонтированным — бамп заставляет список встреч перечитаться
+  // после публикации/правки, иначе черновик висел бы в нём до перезагрузки.
+  return <MeetingReview id={id} onClose={pop} onChanged={bumpTasks} />;
 }
 
 // Интерактивная карта системы — самодостаточный HTML (canvas) в public/system-map.html,
@@ -525,9 +637,19 @@ function Wrapped(
   { title, children }: { title: string; children: React.ReactNode },
 ) {
   const { pop } = useRoyNav();
+  const isDesktop = useIsDesktop();
   return (
     <div className="roy-pop flex h-full flex-col">
-      <NavHeader onBack={pop} title={title} />
+      {/* Десктоп: раздел из левой рейки — та же полоса заголовка, что у табов, без «Назад»
+          (рейка всегда на экране, стенд). Мобайл — push-экран с «Назад». */}
+      {isDesktop ? (
+        <div className="relative z-30 flex shrink-0 items-center justify-between border-b border-line px-5 py-2">
+          <h1 className="font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>{title}</h1>
+          <NotificationsBell />
+        </div>
+      ) : (
+        <NavHeader onBack={pop} title={title} />
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
     </div>
   );
@@ -543,6 +665,7 @@ function MoreScreen({ root = false }: { root?: boolean }) {
   const rows: { label: string; route: RoyRoute }[] = [
     { label: dt("База", "Knowledge base"), route: { view: "base" } },
     { label: dt("Команда", "Team"), route: { view: "team" } },
+    { label: dt("Статистика", "Stats"), route: { view: "stats" } },
     { label: dt("Настройки", "Settings"), route: { view: "settings" } },
     { label: dt("Карта системы", "System map"), route: { view: "map" } },
   ];
@@ -578,7 +701,7 @@ function MoreScreen({ root = false }: { root?: boolean }) {
             key={r.label}
             type="button"
             onClick={() => push(r.route)}
-            className="flex w-full items-center justify-between rounded-[18px] border border-line bg-surface px-4 py-3.5 text-left font-semibold text-ink transition-transform active:scale-[0.98]"
+            className="flex w-full items-center justify-between rounded-[10px] border border-line bg-surface px-4 py-3.5 text-left font-semibold text-ink transition-transform active:scale-[0.98]"
             style={{ fontSize: 15 }}
           >
             {r.label}
@@ -587,7 +710,7 @@ function MoreScreen({ root = false }: { root?: boolean }) {
         <button
           type="button"
           onClick={() => setFeedback(true)}
-          className="flex w-full items-center justify-between rounded-[18px] border border-line bg-surface px-4 py-3.5 text-left font-semibold text-ink transition-transform active:scale-[0.98]"
+          className="flex w-full items-center justify-between rounded-[10px] border border-line bg-surface px-4 py-3.5 text-left font-semibold text-ink transition-transform active:scale-[0.98]"
           style={{ fontSize: 15 }}
         >
           {dt("Оставить фидбек", "Send feedback")}

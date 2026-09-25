@@ -4,6 +4,7 @@ import {
   completionPatch,
   hidesClosedByDefault,
   isClosedStatus,
+  shouldCascadeClose,
 } from "./statuses.ts";
 import { buildRecurPatch, type RecurRow, todayInTz } from "./recurrence.ts";
 import { defaultDueDate } from "./due.ts";
@@ -326,6 +327,22 @@ export async function updateTask(
       if (error) {
         console.error(`task_history insert failed for ${id}:`, error.message);
       }
+    }
+  }
+
+  // Каскад закрытия на подзадачи (#478). Через ту же функцию: у каждой подзадачи свой журнал и
+  // своя дата закрытия. Вложенность — один уровень, так что рекурсия неглубокая.
+  if (prev && shouldCascadeClose(prev.status, nextStatus, !!result)) {
+    const { data: kids, error } = await supabase.from("tasks")
+      .select("id, status")
+      .eq("parent_id", id)
+      .is("archived_at", null);
+    if (error) {
+      console.error(`subtask cascade lookup failed for ${id}:`, error.message);
+    }
+    for (const k of (kids ?? []) as Array<{ id: string; status: string }>) {
+      if (isClosedStatus(k.status)) continue;
+      await updateTask(k.id, { status: nextStatus }, opts);
     }
   }
 

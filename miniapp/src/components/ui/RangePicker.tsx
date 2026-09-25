@@ -13,8 +13,9 @@ import { RANGE_PRESETS, presetRange, customRange, rangeLabel, type DateRange } f
 type Props = {
   value: DateRange | null;
   onChange: (range: DateRange | null) => void;
-  /** «rail» — строка в вертикальном рельсе (десктоп); «chip» — чип в ленте (мобайл). */
-  variant?: "rail" | "chip";
+  /** «rail» — строка в вертикальном рельсе; «chip» — чип в ленте (мобайл); «toolbar» — кнопка
+   *  панели таблицы задач витрины, в ряд с `ToolbarButton` (.btn стенда: 30px, рамка). */
+  variant?: "rail" | "chip" | "toolbar";
 };
 
 const POPOVER_W = 272, POPOVER_H = 400;
@@ -88,17 +89,24 @@ export function RangePicker({ value, onChange, variant = "rail" }: Props) {
         aria-label="Период"
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          variant === "chip"
+          variant === "toolbar"
+            ? cn(
+              "inline-flex h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border px-3 font-medium transition-colors",
+              active ? "border-primary bg-accent-soft font-semibold text-accent-ink" : "border-line-2 bg-surface text-ink-soft hover:bg-surface-2 hover:text-ink",
+            )
+            : variant === "chip"
             ? "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 font-semibold transition-colors"
             : "flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 font-semibold transition-colors",
-          variant === "chip"
+          variant === "toolbar"
+            ? null
+            : variant === "chip"
             ? (active ? "bg-primary text-white" : "bg-secondary text-secondary-foreground hover:bg-secondary/70")
             : (active ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:bg-surface"),
         )}
-        style={{ fontSize: variant === "chip" ? 12.5 : 13.5 }}
+        style={{ fontSize: variant === "rail" ? 13.5 : 12.5 }}
       >
-        <RoyIcon name="cal" size={variant === "chip" ? 13 : 16} strokeWidth={active ? 2.1 : 1.8} />
-        <span className={variant === "chip" ? undefined : "flex-1 truncate text-left"}>{label}</span>
+        <RoyIcon name="cal" size={variant === "rail" ? 16 : 13} strokeWidth={active ? 2.1 : 1.8} />
+        <span className={variant === "rail" ? "flex-1 truncate text-left" : undefined}>{label}</span>
         {active && variant === "rail" && (
           // Крестик очистки — прямо в строке рельса: снять период на один клик, не открывая поповер.
           <span

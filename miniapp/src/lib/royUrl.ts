@@ -11,7 +11,7 @@
 // живёт в памяти сессии и в sessionStorage, как и раньше.
 import type { RoyRoute, RoyTab } from "./royRoute.ts";
 
-export const ROY_TABS_ALL = ["search", "task", "projects", "book", "cal", "more"] as const;
+export const ROY_TABS_ALL = ["search", "task", "projects", "sprints", "book", "cal", "more"] as const;
 
 export type RoyUrlState = { tab: RoyTab | null; route: RoyRoute | null };
 
@@ -19,7 +19,7 @@ export type RoyUrlState = { tab: RoyTab | null; route: RoyRoute | null };
 const NEEDS_ID = new Set(["record", "taskDetail", "meetingDetail", "meetingReview", "project"]);
 
 /** Экраны без параметров — их можно открыть по одному имени. */
-const NO_PARAMS = new Set(["newEntry", "ask", "base", "settings", "team", "admin", "more", "map"]);
+const NO_PARAMS = new Set(["newEntry", "ask", "base", "settings", "team", "stats", "admin", "more", "map"]);
 
 function isTab(v: string | null): v is RoyTab {
   return !!v && (ROY_TABS_ALL as readonly string[]).includes(v);
