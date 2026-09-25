@@ -21,6 +21,7 @@ import {
   buildEntriesQuery,
   buildReviewQueueQuery,
   ENTRY_COLUMNS,
+  ENTRY_LIST_COLUMNS,
   EntryAccessError,
   getEntrySecure,
 } from "./entries-guard.ts";
@@ -2223,8 +2224,10 @@ Deno.serve(async (req: Request) => {
     // Несогласованные (очередь вычитки) — по причастности: владелец ИЛИ участник встречи.
     // Обычный фильтр видимости тут не годится: «ничья» неприватная встреча из read-ai висела
     // бы в очереди у всего воркспейса (issue #66). Согласованные — обычное правило.
-    // Очередь вычитки (единицы строк) — текст нужен сразу и целиком. Большой список —
-    // урезанный (toListRow ниже): 230 встреч × полный транскрипт = ~10 МБ в браузер (issue #102).
+    // Очередь вычитки (единицы строк) — текст нужен сразу и целиком, поэтому ENTRY_COLUMNS.
+    // Большой список — превью из базы (ENTRY_LIST_COLUMNS): 230 встреч × полный транскрипт =
+    // ~10 МБ в браузер (issue #102), а выбирать полный текст ради 400 символов стоило 654 мс
+    // базы против 15 мс (issue #490). Форму ответа приводит toListRow ниже.
     const isReviewQueue = confirmedParam === "false";
     let q = (isReviewQueue
       ? buildReviewQueueQuery(supabase, ENTRY_COLUMNS, {
@@ -2232,7 +2235,7 @@ Deno.serve(async (req: Request) => {
         telegramId: telegram_id,
         email: userEmail,
       })
-      : buildEntriesQuery(supabase, ENTRY_COLUMNS, {
+      : buildEntriesQuery(supabase, ENTRY_LIST_COLUMNS, {
         groupId,
         telegramId: telegram_id,
       }, { count: "exact" }))
@@ -2526,7 +2529,7 @@ Deno.serve(async (req: Request) => {
     const status = url.searchParams.get("status") ?? "awaiting_review";
     let q = supabase.from("meetings")
       .select(
-        "id, title, source, identity_kind, started_at, ended_at, status, draft_notes_md, recorders, co_owners, entry_id, created_at",
+        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, entry_id, created_at",
         { count: "exact" },
       )
       .eq("group_id", groupId)
@@ -2544,8 +2547,10 @@ Deno.serve(async (req: Request) => {
     q = q.or(draftMeetingsOwnScopedFilter(telegram_id));
     const { data, error, count } = await q;
     if (error) return apiErr(500, error.message, origin);
-    // draft_notes_md → признак has_draft_notes: список рисует название/дату/статус, а текст
+    // has_draft_notes вместо draft_notes_md: список рисует название/дату/статус, а текст
     // тезисов ехал в 10-секундном поллинге (154 кБ за опрос ≈ 55 МБ/час на вкладку, issue #108).
+    // С 25.09.2026 текст не выбирается ВООБЩЕ (issue #491) — раньше он читался и выбрасывался
+    // в toAgentListRow: 119 мс базы на опрос, из них ~88 мс на выброшенное.
     // Полный текст берёт деталь GET /agent-meetings/:id — она его и так до-загружает.
     const enrichedList = await withRecorderNames(
       (data ?? []) as Array<{ recorders?: unknown }>,
