@@ -394,9 +394,10 @@ export function RoyApp({ me }: { me: Me | null }) {
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
             <div
               className={cn(
-                "relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden",
-                // Десктоп — единая оптимальная ширина с авто-полями по краям (во всю ширину
-                // получалось «дерьмо»: строки/текст растягивались на весь монитор). Мобайл — узкая колонка.
+                "relative mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:ml-0",
+                // Десктоп — единая оптимальная ширина (во всю ширину получалось «дерьмо»: строки/текст
+                // растягивались на весь монитор), прижатая к рейке: свободное место уходит вправо, а не
+                // пустой полосой между рейкой и полем (владелец 2026-09-25). Мобайл — узкая колонка по центру.
                 isDashboard
                   ? "max-w-[1280px]"
                   : "max-w-[480px] lg:max-w-[1280px]",

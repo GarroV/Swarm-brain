@@ -30,11 +30,11 @@ export const viewport: Viewport = {
   ],
 };
 
-// Пре-гидрационный скрипт: тема следует за системой (prefers-color-scheme). Вешает/снимает
+// Пре-гидрационный скрипт: тема — выбор из рейки (localStorage «swarm-theme», lib/theme.ts), без выбора — как в системе (prefers-color-scheme). Вешает/снимает
 // класс `.dark` на <html> до первой отрисовки (без FOUC) и переключается вживую при смене
 // темы ОС. В Telegram Mini App вебвью выставляет prefers-color-scheme под тему Telegram —
 // поэтому отдельной интеграции с tg.colorScheme не требуется.
-const THEME_SCRIPT = `!function(){try{var m=matchMedia("(prefers-color-scheme: dark)"),a=function(){document.documentElement.classList.toggle("dark",m.matches)};a();m.addEventListener("change",a)}catch(e){}}()`;
+const THEME_SCRIPT = `!function(){try{var m=matchMedia("(prefers-color-scheme: dark)"),k="swarm-theme",a=function(){var t=null;try{t=localStorage.getItem(k)}catch(e){}document.documentElement.classList.toggle("dark",t==="dark"||(t!=="light"&&m.matches))};a();m.addEventListener("change",a)}catch(e){}}()`;
 
 export default function RootLayout({
   children,

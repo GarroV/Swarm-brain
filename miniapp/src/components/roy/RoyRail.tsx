@@ -8,6 +8,7 @@ import { initials } from "./dash/shared";
 import { useDt, useRoyNav } from "./nav";
 import { saveRecent } from "./screens/SearchScreen";
 import { FeedbackDialog } from "./FeedbackFab";
+import { readTheme, saveTheme, THEME_CHANGE_EVENT, THEME_IDS, type ThemeId } from "@/lib/theme";
 
 // Левая рейка десктопа — навигация нового вида (витрина, решение владельца 24.09.2026:
 // «оставляем текущие экраны, но навигация между ними уже новая»). Плоский список папок,
@@ -126,6 +127,7 @@ export function RoyRail({
         {MAIN.map(renderItem)}
       </div>
       <div className="flex flex-col gap-0.5 border-t border-line px-2 py-2">
+        <ThemeSwitch />
         {foot.map(renderItem)}
         <FeedbackItem />
       </div>
@@ -208,6 +210,54 @@ function FeedbackItem() {
         <span className="min-w-0 flex-1 truncate max-[1099px]:hidden">{label}</span>
       </button>
       <FeedbackDialog open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
+// Переключатель темы над «Настройками» (решение владельца 2026-09-25). Широкая рейка — три кнопки
+// «системная / светлая / тёмная», узкая (пиктограммы) — одна кнопка, листающая по кругу.
+const THEME_LABEL: Record<ThemeId, [string, string]> = {
+  system: ["Как в системе", "System"], light: ["Светлая", "Light"], dark: ["Тёмная", "Dark"],
+};
+const THEME_ICON: Record<ThemeId, RoyIconName> = { system: "monitor", light: "sun", dark: "moon" };
+
+function ThemeSwitch() {
+  const dt = useDt();
+  const [theme, setTheme] = useState<ThemeId>("system");
+
+  useEffect(() => {
+    const sync = () => setTheme(readTheme());
+    sync();
+    // Смену темы ОС при «как в системе» ловит инлайн-скрипт layout.tsx (он читает тот же ключ).
+    window.addEventListener(THEME_CHANGE_EVENT, sync);
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, sync);
+  }, []);
+
+  const pick = (t: ThemeId) => { saveTheme(t); setTheme(t); };
+  const next = THEME_IDS[(THEME_IDS.indexOf(theme) + 1) % THEME_IDS.length];
+
+  return (
+    <>
+      <div role="radiogroup" aria-label={dt("Тема", "Theme")}
+        className="mb-1 flex items-center gap-1 px-1 max-[1099px]:hidden">
+        <span className="flex-1 text-ink-mute" style={{ fontSize: 12 }}>{dt("Тема", "Theme")}</span>
+        {THEME_IDS.map((t) => (
+          <button key={t} type="button" role="radio" aria-checked={theme === t}
+            title={dt(...THEME_LABEL[t])} aria-label={dt(...THEME_LABEL[t])} onClick={() => pick(t)}
+            className={cn(
+              "grid size-[28px] place-items-center rounded-[7px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+              theme === t ? "bg-accent-soft text-accent-ink" : "text-ink-mute hover:bg-surface hover:text-ink",
+            )}>
+            <RoyIcon name={THEME_ICON[t]} size={15} strokeWidth={1.7} />
+          </button>
+        ))}
+      </div>
+      <button type="button" onClick={() => pick(next)}
+        title={`${dt("Тема", "Theme")}: ${dt(...THEME_LABEL[theme])}`}
+        aria-label={`${dt("Тема", "Theme")}: ${dt(...THEME_LABEL[theme])}`}
+        className="hidden h-[34px] w-full items-center justify-center rounded-[8px] text-ink-soft hover:bg-surface hover:text-ink max-[1099px]:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
+        <RoyIcon name={THEME_ICON[theme]} size={16} strokeWidth={1.7} />
+      </button>
     </>
   );
 }
