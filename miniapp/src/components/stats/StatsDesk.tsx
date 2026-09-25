@@ -9,7 +9,7 @@ import { ActivityStrip, PersonStatsPanel } from "./PersonStatsPanel";
 
 // «Статистика» (решение владельца 2026-09-25): столбец с командой, по клику — справа плитки
 // по человеку. Числа считает сервер (GET /stats/people, _shared/stats/people.ts) по тем данным,
-// что видны смотрящему; «на вычитке» — только админу.
+// что видны смотрящему; «на вычитке» — только число, видят все.
 
 export function StatsDesk() {
   const dt = useDt();

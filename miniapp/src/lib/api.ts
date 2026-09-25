@@ -794,15 +794,14 @@ export type PersonStats = {
     onTimeBase: number;
     avgCloseDays: number | null;
   };
-  /** inReview = null — смотрящему число не положено (выдаётся только админу). */
-  meetings: { published: number; inReview: number | null };
+  /** inReview — сколько встреч человека ждут вычитки; только число, содержимое черновиков не отдаётся. */
+  meetings: { published: number; inReview: number };
   activity: { activeDays: number; strip: number[]; lastActiveAt: string | null };
 };
 export type PeopleStatsResponse = {
   people: PersonStats[];
   activityDays: number;
   closedWindowDays: number;
-  reviewVisible: boolean;
   tasksTruncated: boolean;
 };
 
@@ -825,7 +824,7 @@ function mockPeopleStats(): PeopleStatsResponse {
       },
     };
   });
-  return { people, activityDays: 14, closedWindowDays: 30, reviewVisible: true, tasksTruncated: false };
+  return { people, activityDays: 14, closedWindowDays: 30, tasksTruncated: false };
 }
 
 export async function fetchPeopleStats(): Promise<PeopleStatsResponse> {

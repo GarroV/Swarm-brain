@@ -54,10 +54,8 @@ export function PersonStatsPanel({ person: p, meta }: { person: PersonStats; met
 
       <Group title={dt("Встречи", "Meetings")}>
         <Tile label={dt("Опубликовано", "Published")} value={p.meetings.published} />
-        {meta.reviewVisible && (
-          <Tile label={dt("На вычитке", "In review")} value={p.meetings.inReview}
-            tone={(p.meetings.inReview ?? 0) > 0 ? "warn" : undefined} />
-        )}
+        <Tile label={dt("На вычитке", "In review")} value={p.meetings.inReview}
+          tone={p.meetings.inReview > 0 ? "warn" : undefined} />
       </Group>
 
       <Group title={dt(`Активность за ${meta.activityDays} дней`, `Activity, last ${meta.activityDays} days`)}>

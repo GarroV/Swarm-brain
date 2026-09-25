@@ -16,8 +16,9 @@ import {
 // Доступ. Все выборки — через общие правила видимости: задачи через listTasksWithTotal
 // (приватные видит владелец, админ — все: оверсайт по задачам, решение 2026-08-21), записи через
 // buildEntriesQuery. Наружу уходят только числа и даты, без названий и текста.
-// «На вычитке» отдаём только админу: /admin/review-counts сделан админским намеренно («для
-// пригляда админа»); открыть его всем — решение владельца, а не побочный эффект этого экрана.
+// «На вычитке» — только число, его видят все (решение владельца 2026-09-25: «число "на вычитке"
+// можно показывать. саму вычитку никто кроме пользователя видеть не должен»). Содержимое
+// черновиков сюда не попадает: reviewCountsByMember отдаёт счётчики.
 //
 // Выборки узкие (id людей и даты), текст записей не тянем. Строки листаем страницами: PostgREST
 // отдаёт не больше max_rows = 1000 за запрос и режет молча.
@@ -168,9 +169,7 @@ export async function handleStatsRoutes(
             ).eq("entry_type", "meeting").eq("metadata->>confirmed", "true")
               .order("created_at").range(a, b),
         ),
-        isAdmin
-          ? reviewCountsByMember(supabase, groupId)
-          : Promise.resolve(null),
+        reviewCountsByMember(supabase, groupId),
         activityEvents(supabase, groupId, telegramId, sinceISO),
       ]);
 
@@ -196,7 +195,6 @@ export async function handleStatsRoutes(
         people,
         activityDays: ACTIVITY_DAYS,
         closedWindowDays: CLOSED_WINDOW_DAYS,
-        reviewVisible: isAdmin,
         // Задач больше лимита — числа по задачам неполные; экран обязан это сказать.
         tasksTruncated: taskRes.total !== null &&
           taskRes.total > taskRes.tasks.length,
