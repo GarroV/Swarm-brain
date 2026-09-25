@@ -9,7 +9,6 @@ import { nestSubtasks, progressByParent } from "@/lib/subtasks";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt } from "@/components/roy/nav";
 import { TaskModal } from "@/components/TaskModal";
-import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { LabelEditor } from "@/components/tasks/LabelEditor";
 import { useReminderTasks } from "@/components/tasks/useReminderTasks";
 import { NARROW_HIDDEN, TASK_GRID, TaskTableRow } from "./TaskTableRow";
@@ -24,7 +23,6 @@ import { matchesLens } from "@/lib/smartLists";
 // линзы видимости, статусы, оверсайт админа), меняется только вид.
 
 export function TasksTable() {
-  const isDesktop = useIsDesktop();
   const r = useReminderTasks();
   const dt = useDt();
   const lang = dt("ru", "en") === "en" ? 1 : 0;
@@ -211,7 +209,6 @@ export function TasksTable() {
         open={modalTask !== null}
         onClose={() => setModalTask(null)}
         onSaved={r.reload}
-        drawer={isDesktop}
       />
       {labelEditor && (
         <LabelEditor label={labelEditor} open onClose={() => setLabelEditor(null)} onSaved={r.reloadLabels} />
