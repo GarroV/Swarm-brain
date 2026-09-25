@@ -206,15 +206,23 @@ export async function resolveNames(
   ids: number[],
 ): Promise<Map<number, string>> {
   const out = new Map<number, string>();
+  // Один null в `.in(...)` превращает весь запрос в ошибку — и без имён остаются все.
+  ids = ids.filter((id) => typeof id === "number" && Number.isFinite(id));
   if (ids.length === 0) return out;
-  const [{ data: profs }, { data: aus }] = await Promise.all([
-    supabase.from("user_profiles").select("telegram_id, first_name, last_name")
-      .in("telegram_id", ids),
-    supabase.from("allowed_users").select("telegram_id, username").in(
-      "telegram_id",
-      ids,
-    ),
-  ]);
+  const [{ data: profs, error: profErr }, { data: aus, error: auErr }] =
+    await Promise.all([
+      supabase.from("user_profiles").select(
+        "telegram_id, first_name, last_name",
+      )
+        .in("telegram_id", ids),
+      supabase.from("allowed_users").select("telegram_id, username").in(
+        "telegram_id",
+        ids,
+      ),
+    ]);
+  if (profErr || auErr) {
+    console.error("[resolveNames]", profErr?.message ?? auErr?.message);
+  }
   const uname = new Map<number, string>();
   (aus ?? []).forEach(
     (u: { telegram_id: number; username?: string | null }) => {
