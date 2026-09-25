@@ -1,8 +1,18 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { canAccessDraftMeeting, type DraftMeetingRow, draftMeetingsOwnScoped } from "../_shared/meeting-access.ts";
 import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
-import { ADMIN_USER_ID, resolveGroupId } from "./tasks/tools.ts";
-import { type DraftRow, formatDraftMeeting, formatPublishOutcome, formatReviewQueue, type QueueRow } from "./meetings-format.ts";
+import { ADMIN_USER_ID, matchAssignee, resolveGroupId } from "./tasks/tools.ts";
+import { entryAccessError, type EntryAccessRow } from "../_shared/entries/access.ts";
+import { EXTRACT_MAX_TASKS, gptExtractTasks } from "../_shared/task-extract.ts";
+import {
+  type DraftRow,
+  formatDraftMeeting,
+  formatProposedTasks,
+  formatPublishOutcome,
+  formatReviewQueue,
+  type ProposedTask,
+  type QueueRow,
+} from "./meetings-format.ts";
 
 // Вычитка черновиков встреч из MCP (issue #513): очередь, черновик, правка, публикация.
 // Живая очередь — таблица meetings (черновики рекордера), а не entries.confirmed=false:
@@ -111,6 +121,46 @@ export async function toolPublishDraftMeeting(
   return formatPublishOutcome(result.entry, result.status);
 }
 
+// Текст встречи для извлечения: черновик (свой) или запись в базе (видимая вызывающему).
+async function meetingText(
+  args: Caller & { meeting_id?: string; entry_id?: string },
+): Promise<{ ok: true; text: string } | { ok: false; msg: string }> {
+  if (args.meeting_id) {
+    const got = await loadOwnDraft(args.meeting_id, args.requesting_user_id);
+    if (!got.ok) return got;
+    const notes = got.meeting.draft_notes_md as string | null;
+    return notes ? { ok: true, text: notes } : { ok: false, msg: "Тезисы черновика ещё не готовы." };
+  }
+  if (!args.entry_id) return { ok: false, msg: "Ошибка: нужен meeting_id (черновик) или entry_id (запись в базе)." };
+  const callerId = args.requesting_user_id;
+  if (!callerId) return { ok: false, msg: "Ошибка: личность не определена (нужен токен коннектора)." };
+  const groupId = await resolveGroupId(callerId);
+  const { data } = await supabase.from("entries")
+    .select("id, summary, content, is_private, owner_id, group_id").eq("id", args.entry_id).maybeSingle();
+  const row = data as (EntryAccessRow & { summary: string | null; content: string | null }) | null;
+  const denied = entryAccessError(args.entry_id, row, callerId, groupId ?? null);
+  if (denied) return { ok: false, msg: denied };
+  const text = row!.summary?.trim() || row!.content?.trim();
+  return text ? { ok: true, text } : { ok: false, msg: "У записи нет текста." };
+}
+
+export async function toolExtractTasksFromMeeting(
+  args: Caller & { meeting_id?: string; entry_id?: string },
+): Promise<string> {
+  const src = await meetingText(args);
+  if (!src.ok) return src.msg;
+  const extracted = (await gptExtractTasks(src.text)).slice(0, EXTRACT_MAX_TASKS);
+  const proposed: ProposedTask[] = await Promise.all(extracted.map(async (t) => ({
+    ...t,
+    resolved_assignee: t.assignee ? (await matchAssignee(t.assignee))?.display_name ?? null : null,
+  })));
+  const { data: me } = await supabase.from("user_profiles").select("first_name, last_name")
+    .eq("telegram_id", args.requesting_user_id!).maybeSingle();
+  const p = me as { first_name?: string | null; last_name?: string | null } | null;
+  const callerName = [p?.first_name, p?.last_name].filter(Boolean).join(" ") || "ты";
+  return formatProposedTasks(proposed, callerName);
+}
+
 const IDENTITY = { type: "number", description: "Заполняется из токена" };
 const MEETING_ID = { type: "string", description: "id черновика из get_review_queue" };
 
@@ -163,6 +213,19 @@ export const MEETING_REVIEW_TOOL_DEFINITIONS = [
         requesting_user_id: IDENTITY,
       },
       required: ["meeting_id"],
+    },
+  },
+  {
+    name: "extract_tasks_from_meeting",
+    description:
+      "Предложить задачи по тезисам встречи — тем же экстрактором, что кнопка «Сгенерировать» в вебе. Ничего не создаёт: покажи список человеку и заведи согласованные через add_task. Источник — черновик (meeting_id) или запись в базе (entry_id).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        meeting_id: { type: "string", description: "id черновика из get_review_queue" },
+        entry_id: { type: "string", description: "id записи-встречи в базе (из get_meetings / search_knowledge)" },
+        requesting_user_id: IDENTITY,
+      },
     },
   },
 ];

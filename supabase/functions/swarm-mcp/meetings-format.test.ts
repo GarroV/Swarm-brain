@@ -1,5 +1,5 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
-import { formatDraftMeeting, formatPublishOutcome, formatReviewQueue } from "./meetings-format.ts";
+import { formatDraftMeeting, formatProposedTasks, formatPublishOutcome, formatReviewQueue } from "./meetings-format.ts";
 
 const row = { id: "m1", title: "Синк", started_at: "2026-09-25T10:30:00Z", source: "desktop-agent", draft_notes_md: "- тезис" };
 
@@ -40,4 +40,19 @@ Deno.test("formatPublishOutcome: новая запись — в какую ба�
 
 Deno.test("formatPublishOutcome: повторная публикация", () => {
   assertStringIncludes(formatPublishOutcome({ id: "e1" }, 200), "уже был опубликован");
+});
+
+Deno.test("formatProposedTasks: ненайденный исполнитель — на разбирающего, с исходным именем", () => {
+  const out = formatProposedTasks([{ title: "Позвонить", assignee: "Петя", resolved_assignee: null }], "Vasiliy Garro");
+  assertStringIncludes(out, "Исполнитель: Vasiliy Garro (в тезисах «Петя», в команде не нашёлся)");
+  assertStringIncludes(out, "Ничего не создано");
+});
+
+Deno.test("formatProposedTasks: найденный исполнитель печатается как есть", () => {
+  const out = formatProposedTasks([{ title: "Позвонить", assignee: "Аня", resolved_assignee: "Анна Иванова" }], "Vasiliy Garro");
+  assertStringIncludes(out, "Исполнитель: Анна Иванова");
+});
+
+Deno.test("formatProposedTasks: пусто — словами", () => {
+  assertStringIncludes(formatProposedTasks([], "x"), "не нашлось");
 });

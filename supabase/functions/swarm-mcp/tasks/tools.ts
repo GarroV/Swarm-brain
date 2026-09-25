@@ -78,7 +78,7 @@ export async function toolListTaskLabels(args: { requesting_user_id: number }): 
   return rows.map((r) => `• ${r.name} (id: ${r.id})`).join("\n");
 }
 
-async function matchAssignee(name: string): Promise<{ telegram_id: number; display_name: string } | null> {
+export async function matchAssignee(name: string): Promise<{ telegram_id: number; display_name: string } | null> {
   // username — в allowed_users (НЕ в user_profiles). Раньше селект username из user_profiles
   // падал → data=null → matchAssignee всегда возвращал null (резолв исполнителя в MCP не работал).
   const [{ data: profs }, { data: aus }] = await Promise.all([

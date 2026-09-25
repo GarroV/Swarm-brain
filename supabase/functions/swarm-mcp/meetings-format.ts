@@ -60,3 +60,40 @@ export function formatPublishOutcome(entry: Record<string, unknown>, status: num
   const where = entry.is_private === true ? "в личную базу" : "в базу команды";
   return `✅ Опубликовано ${where}. Запись: ${id}`;
 }
+
+export type ProposedTask = {
+  title: string;
+  description?: string | null;
+  assignee?: string | null;
+  due_date?: string | null;
+  country?: string | null;
+  /** Кто из команды нашёлся по имени; null — не нашёлся или имя не названо. */
+  resolved_assignee?: string | null;
+};
+
+// Предложения, а не созданные задачи: агент показывает их человеку и заводит через add_task.
+// Исполнитель не нашёлся → задача на того, кто разбирает (решение владельца 2026-08-28,
+// docs/decisions/2026-08-28-assignee-falls-back-to-author.md) — говорим это прямо, иначе
+// агент заведёт ничью задачу, которая выпадет мимо «Сегодня» и «Мои» (инцидент #151).
+export function formatProposedTasks(tasks: ProposedTask[], callerName: string): string {
+  if (!tasks.length) return "В тезисах не нашлось поручений с конкретным результатом.";
+  const lines = tasks.map((t, i) => {
+    const who = t.resolved_assignee
+      ? t.resolved_assignee
+      : t.assignee
+      ? `${callerName} (в тезисах «${t.assignee}», в команде не нашёлся)`
+      : `${callerName} (исполнитель не назван)`;
+    const parts = [
+      `${i + 1}. ${t.title}`,
+      t.description ? `   ${t.description}` : null,
+      `   Исполнитель: ${who}`,
+      `   Срок: ${t.due_date ?? "—"} · Рынок: ${t.country ?? "—"}`,
+    ].filter(Boolean);
+    return parts.join("\n");
+  });
+  return [
+    `Предложено задач: ${tasks.length}. Ничего не создано — покажи список человеку и заведи согласованные через add_task.`,
+    "",
+    lines.join("\n\n"),
+  ].join("\n");
+}

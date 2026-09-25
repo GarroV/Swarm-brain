@@ -17,6 +17,7 @@ import { entryAccessError, type EntryAccessRow } from "../_shared/entries/access
 import { withTokenIdentity } from "./identity.ts";
 import {
   MEETING_REVIEW_TOOL_DEFINITIONS,
+  toolExtractTasksFromMeeting,
   toolGetDraftMeeting,
   toolGetReviewQueue,
   toolPublishDraftMeeting,
@@ -1109,6 +1110,8 @@ Deno.serve(async (req: Request) => {
         result = await toolDeleteTaskComment(args as { task_id: string; comment_id: string; requesting_user_id: number });
       } else if (name === "add_task_comment") {
         result = await toolAddTaskComment(args as { task_id: string; content: string; requesting_user_id: number });
+      } else if (name === "extract_tasks_from_meeting") {
+        result = await toolExtractTasksFromMeeting(args as { meeting_id?: string; entry_id?: string; requesting_user_id?: number });
       } else if (name === "get_review_queue") {
         result = await toolGetReviewQueue(args as { requesting_user_id?: number });
       } else if (name === "get_draft_meeting") {
