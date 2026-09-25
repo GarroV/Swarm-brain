@@ -1,0 +1,78 @@
+name: Плашка и заморозка (руками)
+
+# Кнопка для плашки «скоро обновление» и заморозки «идут работы».
+#
+# Зачем: обе живут строкой в app_settings на проде, а писать в прод-базу из рабочего окружения
+# нельзя — у CLI на личном токене нет права database_write, и расширять его не будем: токен
+# нужен другим проектам (решение владельца 2026-09-25). Здесь CLI ходит ключом из секретов
+# репозитория — тем же, что накатывает миграции (deploy-migrations.yml).
+#
+# Это ПРАВКА ПРОД-ДАННЫХ: жать только по «да» владельца на раскатку, как и любую раскатку.
+# Обе строки гаснут сами по сроку — забытая кнопка не оставит плашку на неделю.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Что сделать"
+        type: choice
+        options: [notice, notice-off, notice-show, freeze, unfreeze, freeze-status]
+        default: notice-show
+      minutes:
+        description: "Плашка: через сколько минут обновление. Заморозка: на сколько минут (не больше 180)"
+        type: string
+        default: "15"
+      text_ru:
+        description: "Плашка: свой текст по-русски (пусто — «Обновление через N мин»)"
+        type: string
+        default: ""
+      text_en:
+        description: "Плашка: свой текст по-английски"
+        type: string
+        default: ""
+
+concurrency:
+  group: notice
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Плашка / заморозка
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Привязать проект
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase link --project-ref vbqglndbxkpmreccpqmr
+      - name: Выполнить
+        # Ввод — только через env, не подстановкой ${{ }} в текст скрипта: иначе текст плашки
+        # исполнялся бы как shell.
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          ACTION: ${{ inputs.action }}
+          MINUTES: ${{ inputs.minutes }}
+          NOTICE_RU: ${{ inputs.text_ru }}
+          NOTICE_EN: ${{ inputs.text_en }}
+        run: |
+          case "$MINUTES" in ''|*[!0-9]*) echo "::error::Минуты — целое число, а не «${MINUTES}»"; exit 2 ;; esac
+          case "$ACTION" in
+            notice)      ./scripts/deploy-notice.sh set "$MINUTES" ;;
+            notice-off)  ./scripts/deploy-notice.sh off ;;
+            notice-show) ./scripts/deploy-notice.sh show ;;
+            freeze|unfreeze|freeze-status)
+              if [ ! -x scripts/maintenance.sh ]; then
+                echo "::error::scripts/maintenance.sh нет в этой ветке — заморозка (#507) ещё не влита"; exit 2
+              fi
+              case "$ACTION" in
+                freeze)        ./scripts/maintenance.sh freeze "$MINUTES" ;;
+                unfreeze)      ./scripts/maintenance.sh unfreeze ;;
+                freeze-status) ./scripts/maintenance.sh status ;;
+              esac ;;
+          esac
