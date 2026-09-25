@@ -30,6 +30,7 @@ import { COUNTRY_NAMES, countryCode } from "@/lib/countries";
 import { CountryPopover } from "@/components/tasks/CountryPopover";
 import { linkify } from "@/lib/linkify";
 import { useDt } from "@/components/roy/nav";
+import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { recurrenceOptions } from "@/lib/recurrenceLabels";
 import { buildProjectOptions } from "@/lib/projectPicker";
 
@@ -78,9 +79,6 @@ interface TaskModalProps {
   meetingId?: string | null;
   // Префилл проекта при создании (напр. из карточки/облака проекта). Игнорируется в режиме правки.
   projectId?: string | null;
-  // Панель справа на всю высоту вместо окна по центру (десктоп по стенду, docs/redesign/stand
-  // detail.js). Колонки формы в панели идут одна под другой.
-  drawer?: boolean;
 }
 
 // Панель справа: ширина — --detail-w стенда (560px), фон списка за ней лишь слегка притушен.
@@ -113,7 +111,13 @@ function TaskOrigin({ task }: { task: Task }) {
   );
 }
 
-export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, meetingId, projectId, drawer = false }: TaskModalProps) {
+export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, meetingId, projectId }: TaskModalProps) {
+  // На десктопе карточка задачи — ВСЕГДА панель справа на всю высоту (docs/redesign/stand
+  // detail.js), колонки формы в ней идут одна под другой. Решает само окно, а не вызывающий экран:
+  // пока это был флаг, его передавали три точки входа из десяти, и спринты, доска, таймлайн и
+  // проекты открывали окно по центру (владелец 25.09.2026: «визуал работы с задачами будет везде
+  // один: справа должно выходить окно для взаимодействия»). На мобайле — прежнее окно.
+  const drawer = useIsDesktop();
   // Догрузка полной задачи живёт ЗДЕСЬ, а не в вызывающем экране. Раньше это было требованием
   // к вызывающей стороне («открыл задачу из списка — догрузи по id»), и из пяти точек входа его
   // соблюдала одна: список, доска, таймлайн и облако проекта отдавали объект из проекции

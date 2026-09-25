@@ -471,7 +471,6 @@ export function RoyApp({ me }: { me: Me | null }) {
         open={taskModalTask !== null}
         onClose={() => setTaskModalTask(null)}
         onSaved={() => setTasksVersion((v) => v + 1)}
-        drawer={isDesktop}
       />
       {answerQuery !== null && (
         <AnswerModal
