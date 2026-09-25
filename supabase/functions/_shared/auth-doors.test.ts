@@ -12,20 +12,31 @@ import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.t
 
 const ROOT = new URL("../", import.meta.url).pathname;
 
-/** Эндпоинты, куда ходит бот: пять штук, все через resolveActingIdentity. */
+/** Эндпоинты, куда ходит бот: шесть штук, все через resolveActingIdentity. */
 const BOT_DOORS = [
   "meeting-current",
   "meeting-claim",
   "meeting-ingest",
   "meeting-heartbeat",
   "meeting-status",
+  "meeting-notice",
 ];
 
 /** Эндпоинты, закрытые для агентов наглухо. */
 const HUMAN_ONLY = ["meeting-webtoken"];
 
+/**
+ * Весь рабочий код функции, а не только index.ts: вход может жить в соседнем модуле
+ * (meeting-notice держит его в handle.ts, чтобы ручку можно было звать из теста).
+ * Тесты не читаются — упоминание двери в тесте не делает её дверью.
+ */
 async function source(fn: string): Promise<string> {
-  return await Deno.readTextFile(`${ROOT}${fn}/index.ts`);
+  const parts: string[] = [];
+  for await (const entry of Deno.readDir(`${ROOT}${fn}`)) {
+    if (!entry.isFile || !entry.name.endsWith(".ts") || entry.name.endsWith(".test.ts")) continue;
+    parts.push(await Deno.readTextFile(`${ROOT}${fn}/${entry.name}`));
+  }
+  return parts.join("\n");
 }
 
 for (const fn of BOT_DOORS) {
