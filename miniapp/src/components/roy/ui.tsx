@@ -307,13 +307,13 @@ export function Segmented({ items, value, onChange }: { items: SegItem[]; value:
             className={cn(
               "flex-1 flex items-center justify-center gap-1.5 border-0 border-r border-line-2 last:border-r-0 min-h-10 lg:min-h-[30px] transition-colors",
               TAP,
-              on ? "bg-primary text-white font-semibold" : "bg-transparent text-ink-soft font-medium hover:bg-surface-2",
+              on ? "bg-primary text-primary-foreground font-semibold" : "bg-transparent text-ink-soft font-medium hover:bg-surface-2",
             )}
             style={{ fontSize: 12.5, padding: "0 11px" }}
           >
             {it.label}
             {it.count != null && (
-              <span style={{ fontSize: 11 }} className={on ? "text-white/80" : "text-ink-mute"}>
+              <span style={{ fontSize: 11 }} className={on ? "text-primary-foreground/80" : "text-ink-mute"}>
                 {it.count}
               </span>
             )}
@@ -600,7 +600,7 @@ export function FAB({ onClick, className, "aria-label": ariaLabel = "Созда�
       // верхнего края и съедал по ним тап и свайп (аудит мобилки 2026-08-24). Отступ снизу
       // считается от таб-бара (69px) плюс безопасная зона.
       className={cn(
-        "fixed z-20 flex items-center justify-center rounded-[14px] bg-primary text-white border-0 shadow-[0_10px_24px_-6px_rgba(31,78,156,.45)]",
+        "fixed z-20 flex items-center justify-center rounded-[14px] bg-primary text-primary-foreground border-0 shadow-[0_10px_24px_-6px_rgba(31,78,156,.45)]",
         TAP,
         className,
       )}
@@ -697,7 +697,7 @@ export function RoyTabBar({ active, onChange, className, badges }: { active: str
                   с первого экрана, поэтому о нём должно быть видно, не заходя внутрь. */}
               {!!badges?.[t.id] && (
                 <span
-                  className="absolute -right-2 -top-1 inline-flex items-center justify-center rounded-full bg-primary font-bold text-white"
+                  className="absolute -right-2 -top-1 inline-flex items-center justify-center rounded-full bg-primary font-bold text-primary-foreground"
                   style={{ minWidth: 16, height: 16, fontSize: 10, padding: "0 4px" }}
                 >
                   {badges[t.id] > 9 ? "9+" : badges[t.id]}

@@ -903,7 +903,7 @@ function AgentMeetingDetail({
               className="min-w-0 flex-1 rounded-[10px] border border-line-2 bg-surface px-3 py-1.5 font-bold text-ink outline-none focus:border-primary disabled:opacity-50"
               style={{ fontSize: 24, letterSpacing: "-0.02em" }}
             />
-            <button type="button" onClick={saveTitle} disabled={saving} aria-label="Сохранить название" className="inline-flex items-center justify-center rounded-[9px] bg-primary text-white disabled:opacity-50" style={{ width: 32, height: 32 }}>
+            <button type="button" onClick={saveTitle} disabled={saving} aria-label="Сохранить название" className="inline-flex items-center justify-center rounded-[9px] bg-primary text-primary-foreground disabled:opacity-50" style={{ width: 32, height: 32 }}>
               <RoyIcon name="check" size={16} strokeWidth={2.2} />
             </button>
             <button type="button" onClick={() => setEditingTitle(false)} disabled={saving} aria-label="Отмена" className="inline-flex items-center justify-center rounded-[9px] border border-line bg-surface text-ink-soft disabled:opacity-50" style={{ width: 32, height: 32 }}>
@@ -1001,7 +1001,7 @@ function AgentMeetingDetail({
               <div className="mt-1">
                 <MarkdownTextarea value={notesDraft} onChange={setNotesDraft} disabled={saving} autoFocus />
                 <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={saveNotes} disabled={saving} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
+                  <button type="button" onClick={saveNotes} disabled={saving} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>
                     {saving ? "Сохраняем…" : "Сохранить тезисы"}
                   </button>
                   <button type="button" onClick={() => setEditingNotes(false)} disabled={saving} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft disabled:opacity-60" style={{ fontSize: 14 }}>

@@ -30,7 +30,7 @@ export function PanelEditor({ value, onChange, onSave, onCancel, busy, label }: 
         style={{ fontSize: 14, lineHeight: 1.55, height: panel ? PANEL_EDIT_H : undefined, minHeight: MOBILE_EDIT_MIN_H }} />
       <div className="sticky bottom-0 mt-2 flex items-center gap-2 bg-background py-2 dark:bg-[var(--surface)]">
         <button type="button" onClick={onSave} disabled={busy} title="⌘/Ctrl+Enter"
-          className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
+          className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>
           {busy ? dt("Сохраняю…", "Saving…") : dt("Сохранить", "Save")}
         </button>
         <button type="button" onClick={onCancel}

@@ -222,7 +222,7 @@ export function NotificationsBell({ className }: { className?: string }) {
         <RoyIcon name="bell" size={20} className="text-ink-soft" />
         {unread > 0 && (
           <span
-            className="absolute -right-1 -top-1 flex min-w-[17px] items-center justify-center rounded-full bg-primary px-1 font-bold text-white"
+            className="absolute -right-1 -top-1 flex min-w-[17px] items-center justify-center rounded-full bg-primary px-1 font-bold text-primary-foreground"
             style={{ fontSize: 10, height: 17, lineHeight: "17px" }}
           >
             {badge}

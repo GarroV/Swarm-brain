@@ -172,7 +172,7 @@ export function RemindersTasks() {
             <button
               type="button"
               onClick={() => setModalTask("new")}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary px-3.5 py-1.5 font-semibold text-white transition-transform active:scale-[0.97]"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary px-3.5 py-1.5 font-semibold text-primary-foreground transition-transform active:scale-[0.97]"
               style={{ fontSize: 13 }}
             >
               <RoyIcon name="plus" size={15} strokeWidth={2.3} />

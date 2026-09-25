@@ -113,7 +113,7 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
             onClick={() => r.setLens(id)}
             className={cn(
               "border-r border-line-2 px-3 font-medium transition-colors last:border-r-0",
-              r.lens === id ? "bg-primary font-semibold text-white" : "text-ink-soft hover:bg-surface-2 hover:text-ink",
+              r.lens === id ? "bg-primary font-semibold text-primary-foreground" : "text-ink-soft hover:bg-surface-2 hover:text-ink",
             )}
             style={{ fontSize: 12.5, height: 28 }}
           >
@@ -186,7 +186,7 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
         <button
           type="button"
           onClick={s.onNew}
-          className="inline-flex h-[30px] items-center gap-1 rounded-[7px] bg-primary px-3 font-semibold text-white transition-colors hover:bg-primary/90 active:scale-[0.97]"
+          className="inline-flex h-[30px] items-center gap-1 rounded-[7px] bg-primary px-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 active:scale-[0.97]"
           style={{ fontSize: 12.5 }}
         >
           <RoyIcon name="plus" size={13} strokeWidth={2.4} />

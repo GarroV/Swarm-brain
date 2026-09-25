@@ -77,7 +77,7 @@ export function DeployNoticeBar() {
         className={`flex max-w-full items-center gap-2 rounded-full border px-3.5 py-1.5 font-semibold shadow-[0_4px_14px_rgba(27,32,40,0.10)] ${
           soon
             ? "border-accent-line bg-accent-soft text-accent-ink"
-            : "border-transparent bg-primary text-white"
+            : "border-transparent bg-primary text-primary-foreground"
         }`}
         // Перенесённый на две строки текст в пилюле выглядит обрубком — скругляем мягче.
         style={custom ? { fontSize: 12.5, borderRadius: 14 } : { fontSize: 12.5 }}
@@ -85,7 +85,7 @@ export function DeployNoticeBar() {
         <RoyIcon name="clock" size={13} strokeWidth={2.1} />
         <span className={custom ? "min-w-0" : "truncate"}>{head}</span>
         {!custom && (
-          <span className={`hidden truncate font-normal sm:inline ${soon ? "text-accent-ink/70" : "text-white/80"}`}>
+          <span className={`hidden truncate font-normal sm:inline ${soon ? "text-accent-ink/70" : "text-primary-foreground/80"}`}>
             · {dt("страница перезагрузится сама", "the page will reload itself")}
           </span>
         )}

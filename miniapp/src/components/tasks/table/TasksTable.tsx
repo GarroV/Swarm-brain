@@ -153,7 +153,7 @@ export function TasksTable() {
                   <button
                     type="button"
                     onClick={resetFilters}
-                    className="mt-3 rounded-[7px] bg-primary px-3 py-1.5 font-semibold text-white"
+                    className="mt-3 rounded-[7px] bg-primary px-3 py-1.5 font-semibold text-primary-foreground"
                     style={{ fontSize: 13 }}
                   >
                     {dt("Показать все", "Show all")}

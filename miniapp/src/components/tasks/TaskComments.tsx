@@ -210,7 +210,7 @@ export function TaskComments({ taskId }: { taskId: string }) {
           disabled={!draft.trim() || sending || tooLong}
           aria-label="Отправить"
           title="Отправить (Enter)"
-          className="flex size-10 shrink-0 items-center justify-center rounded-[8px] bg-primary text-white transition-transform active:scale-[0.94] disabled:opacity-40"
+          className="flex size-10 shrink-0 items-center justify-center rounded-[8px] bg-primary text-primary-foreground transition-transform active:scale-[0.94] disabled:opacity-40"
         >
           <RoyIcon name="arrow" size={16} strokeWidth={2.2} />
         </button>

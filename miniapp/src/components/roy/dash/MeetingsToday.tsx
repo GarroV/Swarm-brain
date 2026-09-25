@@ -158,7 +158,7 @@ function FlatMeetingRow({ m, dt, locale, joined, onJoined }: {
       {m.join_url && (!m.is_past || onAir) ? (
         <button type="button" onClick={join}
           className={live && !onAir
-            ? "rounded-[6px] bg-primary px-2.5 py-1 font-semibold text-white transition-colors hover:bg-primary/90"
+            ? "rounded-[6px] bg-primary px-2.5 py-1 font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
             : "rounded-[6px] border border-line-2 bg-surface px-2.5 py-1 font-medium text-ink-soft transition-colors hover:text-ink"}
           style={{ fontSize: 11.5 }}>
           {onAir ? dt("Вернуться", "Back") : live ? dt("Подключиться", "Join") : dt("Перейти", "Open")}
@@ -183,7 +183,7 @@ function CalNote({ title, hint, action }: { title: string; hint: string; action?
       <b className="font-semibold text-ink" style={{ fontSize: 13 }}>{title}</b>
       <span className="text-ink-mute" style={{ fontSize: 12 }}>{hint}</span>
       {action && (
-        <a href={action.href} className="mt-1 rounded-[6px] bg-primary px-2.5 py-1 font-semibold text-white" style={{ fontSize: 11.5 }}>
+        <a href={action.href} className="mt-1 rounded-[6px] bg-primary px-2.5 py-1 font-semibold text-primary-foreground" style={{ fontSize: 11.5 }}>
           {action.text}
         </a>
       )}

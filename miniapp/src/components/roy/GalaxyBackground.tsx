@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 
-// Фон-бэкдроп «Рой»: тёплая тёмная база + спиральная галактика (тёплое ядро-балдж +
+// Фон-бэкдроп «Рой»: ночная сине-чёрная база + спиральная галактика (циановое ядро-балдж +
 // прохладные рукава) + сканлайны + виньетка. Порт фоновой части карты ядра
 // (miniapp/public/system-map.html / артефакт «Рой · карта»). Принят за стандарт визуала.
 //
@@ -24,7 +24,7 @@ export function GalaxyBackground() {
     let W = 0, H = 0, raf = 0, running = false;
 
     // Спиральная галактика: рукава + плотный балдж + звёздное поле. Тёплое ядро, прохладные рукава.
-    const TONES = ["rgba(250,238,212,", "rgba(150,210,225,", "rgba(110,170,200,", "rgba(225,205,160,"];
+    const TONES = ["rgba(226,240,255,", "rgba(120,225,245,", "rgba(90,160,230,", "rgba(160,235,255,"];
     type Star = { rf: number; a0: number; sz: number; tw: number; tone: number };
     const GAL: Star[] = [];
     const arms = 4, twist = 3.4, n = 900;
@@ -47,7 +47,7 @@ export function GalaxyBackground() {
       ctx.clearRect(0, 0, W, H);
       // тёплая тёмная база
       const bg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.9);
-      bg.addColorStop(0, "#101108"); bg.addColorStop(0.55, "#0A0C0A"); bg.addColorStop(1, "#070806");
+      bg.addColorStop(0, "#0A1020"); bg.addColorStop(0.55, "#070A12"); bg.addColorStop(1, "#040509");
       ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
       // галактика (additive)
@@ -60,7 +60,7 @@ export function GalaxyBackground() {
       ctx.fillStyle = hz; ctx.fillRect(0, 0, W, H);
       // Бульдж-ядро приглушено (раньше светило слишком ярко за текстом → нечитаемо).
       const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rMax * 0.4);
-      cg.addColorStop(0, "rgba(250,224,158,0.18)"); cg.addColorStop(0.16, "rgba(246,212,150,0.09)"); cg.addColorStop(0.5, "rgba(170,205,225,0.03)"); cg.addColorStop(1, "rgba(0,0,0,0)");
+      cg.addColorStop(0, "rgba(0,229,255,0.16)"); cg.addColorStop(0.16, "rgba(60,200,255,0.08)"); cg.addColorStop(0.5, "rgba(170,205,225,0.03)"); cg.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(cx, cy, rMax * 0.4, 0, 6.283); ctx.fill();
       let halos = 0;
       for (let i = 0; i < GAL.length; i++) {
@@ -77,9 +77,9 @@ export function GalaxyBackground() {
       // сканлайны (ретро-консоль) + тёмная вуаль (читаемость) + виньетка
       ctx.fillStyle = "rgba(120,210,220,0.014)";
       for (let yy = 0; yy < H; yy += 4) ctx.fillRect(0, yy, W, 1);
-      ctx.fillStyle = "rgba(8,9,6,0.06)"; ctx.fillRect(0, 0, W, H); // очень лёгкая вуаль (затемнение — на фрейме/карточках)
+      ctx.fillStyle = "rgba(4,6,12,0.06)"; ctx.fillRect(0, 0, W, H); // очень лёгкая вуаль (затемнение — на фрейме/карточках)
       const vg = ctx.createRadialGradient(cx, cy, Math.min(W, H) * 0.32, cx, cy, Math.max(W, H) * 0.9);
-      vg.addColorStop(0, "rgba(7,8,6,0)"); vg.addColorStop(1, "rgba(7,8,6,0.5)");
+      vg.addColorStop(0, "rgba(4,5,9,0)"); vg.addColorStop(1, "rgba(4,5,9,0.5)");
       ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
     };
 

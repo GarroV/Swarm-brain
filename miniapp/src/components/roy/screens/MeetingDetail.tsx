@@ -258,7 +258,7 @@ export function MeetingDetail({ id }: { id: string }) {
                   style={{ fontSize: 20, letterSpacing: "-0.01em" }}
                 />
                 <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={saveTitle} disabled={busy} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>Сохранить</button>
+                  <button type="button" onClick={saveTitle} disabled={busy} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>Сохранить</button>
                   <button type="button" onClick={() => setEditingTitle(false)} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>Отмена</button>
                 </div>
               </div>
@@ -287,7 +287,7 @@ export function MeetingDetail({ id }: { id: string }) {
                         key={code}
                         type="button"
                         onClick={() => toggleCountry(code)}
-                        className={`rounded-full border px-2.5 py-1 transition-colors ${on ? "bg-primary text-white border-primary" : "text-ink-soft border-line-2 hover:bg-surface-2"}`}
+                        className={`rounded-full border px-2.5 py-1 transition-colors ${on ? "bg-primary text-primary-foreground border-primary" : "text-ink-soft border-line-2 hover:bg-surface-2"}`}
                         style={{ fontSize: 12 }}
                       >
                         {countryCode(code)}
@@ -296,7 +296,7 @@ export function MeetingDetail({ id }: { id: string }) {
                   })}
                 </div>
                 <div className="mt-3 flex gap-2">
-                  <button type="button" onClick={saveCountries} disabled={busy} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>
+                  <button type="button" onClick={saveCountries} disabled={busy} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>
                     Сохранить
                   </button>
                   <button type="button" onClick={() => setEditingCountries(false)} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>
@@ -352,7 +352,7 @@ export function MeetingDetail({ id }: { id: string }) {
               onChange={(s) => setStorage(s as "shared" | "personal")}
             />
           </div>
-          <button type="button" onClick={confirm} disabled={busy} className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
+          <button type="button" onClick={confirm} disabled={busy} className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
             {storage === "personal" ? "Сохранить в личное" : "Сохранить в базу"}
           </button>
         </div>

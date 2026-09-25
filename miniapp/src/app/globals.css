@@ -95,6 +95,9 @@
    совпадают, а витрина держит на ink-mute подписи и плейсхолдеры — уровень ниже ink-soft нужен,
    поэтому он светлее (#8A929D). Радиус 0.5rem → кнопка (rounded-lg) 8px, карточка (rounded-xl) ≈ 11px. */
 :root {
+  /* «Нет свечения» — прозрачная тень, а не none: токен входит в составные box-shadow (рейка). */
+  --glow-sm: 0 0 0 transparent;
+  --glow-md: 0 0 0 transparent;
   --background: #FFFFFF;             /* витрина: белый фон (владелец 24.09.2026) */
   --foreground: #1B2028;
   --card: #FFFFFF;
@@ -154,47 +157,47 @@
   --tag-link: #1F6F8B;
 }
 .dark {
-  --background: #0E1116;              /* canvas тёмной темы стенда */
-  --foreground: #E8ECF2;
-  --card: #161A21;
-  --card-foreground: #E8ECF2;
-  --popover: #1B2029;
-  --popover-foreground: #E8ECF2;
-  --primary: #6FA0F0;
-  --primary-foreground: #FFFFFF;
-  --secondary: #1B2029;
-  --secondary-foreground: #E8ECF2;
-  --muted: #1B2029;
-  --muted-foreground: #A8B2C0;
-  --accent: #1C2735;
-  --accent-foreground: #6FA0F0;
+  --background: #070A10;              /* ночной canvas: сине-чёрный, как ночная тема multa */
+  --foreground: #EAF2FF;
+  --card: #0D1220;
+  --card-foreground: #EAF2FF;
+  --popover: #131A2E;
+  --popover-foreground: #EAF2FF;
+  --primary: #00E5FF;                  /* неон-циан: действие и «сейчас» */
+  --primary-foreground: #04121A;      /* тёмная подпись: белое на циане не читается */
+  --secondary: #131A2E;
+  --secondary-foreground: #EAF2FF;
+  --muted: #131A2E;
+  --muted-foreground: #93A4C3;
+  --accent: #0A2230;
+  --accent-foreground: #5CEBFF;
   --destructive: #E05252;
-  --border: #242B36;
-  --input: #333C49;
-  --ring: #6FA0F0;
-  --chart-1: #6FA0F0;
+  --border: #1E2A45;
+  --input: #2A3A5C;
+  --ring: #00E5FF;
+  --chart-1: #00E5FF;
   --chart-2: #8F7BF5;
   --chart-3: #4CB88A;
   --chart-4: #E0A03A;
   --chart-5: #E05252;
-  --sidebar: #161A21;
-  --sidebar-foreground: #E8ECF2;
-  --sidebar-primary: #6FA0F0;
-  --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #1C2735;
-  --sidebar-accent-foreground: #6FA0F0;
-  --sidebar-border: #242B36;
-  --sidebar-ring: #6FA0F0;
-  --surface: #161A21;
-  --surface-2: #1B2029;
-  --ink: #E8ECF2;
-  --ink-soft: #A8B2C0;
-  --ink-mute: #7C8694;
-  --line: #242B36;
-  --line-2: #333C49;
-  --accent-soft: #1C2735;
-  --accent-ink: #6FA0F0;
-  --accent-line: #2F4262;
+  --sidebar: #0B0F1A;
+  --sidebar-foreground: #EAF2FF;
+  --sidebar-primary: #00E5FF;
+  --sidebar-primary-foreground: #04121A;
+  --sidebar-accent: #0A2230;
+  --sidebar-accent-foreground: #5CEBFF;
+  --sidebar-border: #1E2A45;
+  --sidebar-ring: #00E5FF;
+  --surface: #0D1220;
+  --surface-2: #131A2E;
+  --ink: #EAF2FF;
+  --ink-soft: #93A4C3;
+  --ink-mute: #7084AD;
+  --line: #1E2A45;
+  --line-2: #2A3A5C;
+  --accent-soft: #0A2230;
+  --accent-ink: #5CEBFF;
+  --accent-line: #134A5C;
   --status-open: #5A6472;
   --status-prog: #6FA0F0;
   --status-done: #4CB88A;
@@ -209,6 +212,10 @@
   --tag-meet: #4CB88A;
   --tag-pdf: #E05252;
   --tag-link: #5BB0C9;
+  /* Свечение живёт только в этих токенах и только в ночной теме (в светлой — none):
+     тема переключается токенами, а не отдельными стилями. Рецепт — ночная тема multa. */
+  --glow-sm: 0 0 10px rgba(0, 229, 255, 0.55), 0 0 22px rgba(0, 229, 255, 0.2);
+  --glow-md: 0 0 14px rgba(0, 229, 255, 0.45), 0 0 34px rgba(0, 229, 255, 0.16);
 }
 
 @layer base {
@@ -353,3 +360,10 @@ html[data-backdrop="custom"] :is(body, .roy-shell) {
 @keyframes roy-harvest-wave { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.75; } }
 .roy-harvest-wave { animation: roy-harvest-wave 1.2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .roy-harvest-wave { animation: none; opacity: 0.5; } }
+
+/* ── Неон ночной темы ────────────────────────────────────────────────────────────────
+   Светятся только «действие и сейчас»: основная кнопка, активный пункт рейки, бренд-марка.
+   В светлой теме --glow-* прозрачные, так что правила ниже там ничего не делают. */
+/* Только в ночной теме и не под фокусом: вне слоёв это правило перебило бы кольцо фокуса
+   (Tailwind рисует его тем же box-shadow). */
+.dark .neon-glow:not(:focus-visible) { box-shadow: var(--glow-sm); }

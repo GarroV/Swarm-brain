@@ -121,7 +121,7 @@ export function RecordDetail({ id }: { id: string }) {
           type="button"
           onClick={handleCreateTask}
           disabled={!e || creating}
-          className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60"
+          className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60"
           style={{ fontSize: 15 }}
         >
           {creating ? "Создаём…" : "В задачу"}

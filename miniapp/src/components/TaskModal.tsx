@@ -837,7 +837,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               type="button"
               onClick={handleCreate}
               disabled={creating}
-              className="h-[30px] rounded-[7px] bg-primary px-3.5 font-semibold text-white transition-[transform,background-color] hover:bg-primary/90 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="h-[30px] rounded-[7px] bg-primary px-3.5 font-semibold text-primary-foreground transition-[transform,background-color] hover:bg-primary/90 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               style={{ fontSize: 12.5 }}
             >
               {creating ? "Создание…" : "Создать"}

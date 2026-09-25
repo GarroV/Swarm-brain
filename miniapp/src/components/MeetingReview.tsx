@@ -264,7 +264,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
               className="w-full rounded-[8px] border border-line-2 bg-surface px-3.5 py-2.5 font-bold text-ink outline-none focus:border-primary"
               style={{ fontSize: 20, letterSpacing: "-0.01em" }} />
             <div className="mt-2 flex gap-2">
-              <button type="button" onClick={saveTitle} disabled={savingTitle} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-white disabled:opacity-60" style={{ fontSize: 14 }}>{dt("Сохранить", "Save")}</button>
+              <button type="button" onClick={saveTitle} disabled={savingTitle} className="flex-1 rounded-[8px] bg-primary py-2.5 font-semibold text-primary-foreground disabled:opacity-60" style={{ fontSize: 14 }}>{dt("Сохранить", "Save")}</button>
               <button type="button" onClick={() => setEditingTitle(false)} className="rounded-[8px] border border-line-2 px-4 py-2.5 font-semibold text-ink-soft" style={{ fontSize: 14 }}>{dt("Отмена", "Cancel")}</button>
             </div>
           </div>
@@ -324,7 +324,7 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
               />
             </div>
           )}
-          <button onClick={handlePublish} disabled={publishing} className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
+          <button onClick={handlePublish} disabled={publishing} className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
             {publishing ? dt("Публикуем…", "Publishing…") : effectiveBase === "workspace" ? dt("Сохранить в базу команды", "Save to the team base") : dt("Сохранить в личное", "Save to personal")}
           </button>
         </div>
