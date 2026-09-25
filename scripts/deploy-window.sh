@@ -27,6 +27,48 @@ base_ref() {
   echo "$TAG"
 }
 
+# Миграции релиза, которых ещё нет на проде. Печатает неприменённые версии в stdout.
+# Коды: 0 — всё применено (или миграций нет), 1 — есть неприменённые, 3 — проверить НЕЧЕМ.
+#
+# Зачем гейт: до 25.09.2026 раскатка катила функции, не глядя на миграции, и код уезжал вперёд
+# схемы. Так функция, которой нужна новая колонка, начинает отвечать 400 — то есть раздел
+# продукта ложится у всей команды до утра, когда никто не смотрит (issue #509, случаи #494 и
+# #508). Опаснее всего, что мину взрывает ЧУЖАЯ раскатка: достаточно влить такой PR в main, и
+# ближайший ночной прогон по любому другому PR увезёт его функции вместе со своими.
+#
+# Спрашиваем Management API, а не базу: прод-ключа в CI нет и не будет (решение 2026-08-28), а
+# SUPABASE_ACCESS_TOKEN там есть — тот самый, которым и деплоятся функции.
+pending_migrations() {
+  local files="$1"
+  [ -n "$files" ] || return 0
+  [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || return 3
+  local applied
+  applied=$(curl -fsS -m 30 \
+    -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+    "https://api.supabase.com/v1/projects/$PROJECT_REF/database/migrations" 2>/dev/null) || return 3
+  local pending
+  pending=$(printf '%s' "$applied" | python3 -c '
+import json, re, sys
+try:
+    done = {str(m.get("version")) for m in json.load(sys.stdin)}
+except Exception:
+    sys.exit(3)   # ответ не разобрать — это «проверить нечем», а не «всё хорошо»
+missing = []
+for line in sys.argv[1].splitlines():
+    name = line.strip().rsplit("/", 1)[-1]
+    if not name:
+        continue
+    m = re.match(r"(\d{14})", name)
+    # Файл без версии в имени пропускать нельзя: молчаливый пропуск и есть та дыра, что чинится.
+    if not m or m.group(1) not in done:
+        missing.append(name)
+print("\n".join(missing))
+' "$files") || return 3
+  [ -z "$pending" ] && return 0
+  printf '%s\n' "$pending"
+  return 1
+}
+
 # Изменённые edge-функции. Правка в _shared/ тянет за собой всех её потребителей —
 # иначе на проде окажется функция со старой копией общего модуля.
 changed_functions() {
@@ -76,7 +118,20 @@ case "${1:-plan}" in
     fi
 
     head_ "Миграции БД"
-    [ -n "$MIGR" ] && { echo "$MIGR" | sed 's/^/  · /'; echo "  ⚠ накатывать вручную и НОЧЬЮ — тяжёлое идёт вне утреннего окна"; } || echo "  (нет)"
+    MIGR_PENDING=""
+    MIGR_STATE=0
+    if [ -n "$MIGR" ]; then
+      echo "$MIGR" | sed 's/^/  · /'
+      echo "  ⚠ накатывать вручную и НОЧЬЮ — тяжёлое идёт вне утреннего окна"
+      MIGR_PENDING=$(pending_migrations "$MIGR") || MIGR_STATE=$?
+      case "$MIGR_STATE" in
+        0) echo "  ✅ на проде уже применены — функции можно катить" ;;
+        1) echo "  ⛔ НЕ применены на проде:"; echo "$MIGR_PENDING" | sed 's/^/       · /' ;;
+        *) echo "  ⚠ проверить нечем (нет SUPABASE_ACCESS_TOKEN или API не ответил)" ;;
+      esac
+    else
+      echo "  (нет)"
+    fi
 
     head_ "Рекордер"
     [ "$REC" -gt 0 ] && echo "  $REC файл(ов) — отдельный runbook recorder/README.md (LATEST_BUILD)" || echo "  (нет)"
@@ -131,6 +186,23 @@ case "${1:-plan}" in
     # Релиз без функций — нормальный случай: правка только веба уезжает САМА при мёрже в main
     # (Cloudflare Pages). Раскатывать нечего, но метку двинуть надо — иначе следующий plan
     # снова покажет эти коммиты, и в шуме потеряется то, что действительно ждёт раскатки.
+    # Код вперёд схемы не пускаем: функция, которой нужна новая колонка, ответит 400 и
+    # положит раздел у всей команды до утра (issue #509). FORCE здесь НЕ обходит — он про
+    # окно и про людей в системе, а не про то, что база к этому коду не готова.
+    if [ -n "$FUNCS" ] && [ "$MIGR_STATE" != "0" ]; then
+      if [ "$MIGR_STATE" = "1" ]; then
+        die "Раскатка отменена: в релизе есть миграции, которых НЕТ на проде:
+$(echo "$MIGR_PENDING" | sed 's/^/  · /')
+Функции ждут этих изменений схемы — уехав раньше, они начнут отвечать 400.
+Сначала накатить миграции (кнопка «Миграции БД» в Actions), потом раскатывать."
+      fi
+      [ "${MIGRATIONS_OK:-0}" = "1" ] || die "Раскатка отменена: в релизе есть миграции, а проверить их на проде НЕЧЕМ (причина выше).
+Это НЕ значит «миграции не накатаны» — проверка просто не выполнилась.
+Убедись сам, что схема на проде готова к этому коду, и запусти осознанно:
+  MIGRATIONS_OK=1 ./scripts/deploy-window.sh go"
+      echo "⚠ Проверить миграции нечем, но MIGRATIONS_OK=1 — раскатываю."
+    fi
+
     if [ -n "$FUNCS" ]; then
       head_ "Раскатка"
       # shellcheck disable=SC2086
