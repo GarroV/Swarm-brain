@@ -6,6 +6,7 @@ import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { SingleTabGate } from "@/components/SingleTabGate";
 import { ConfirmProvider } from "@/components/ui/confirm";
 import { GalaxyBackground } from "@/components/roy/GalaxyBackground";
+import { MaintenanceGate } from "@/components/MaintenanceGate";
 
 // Golos Text — весь UI, заголовки И метаданные (эталонная кириллица; дизайн-хендофф
 // набирает мету тоже на Golos). JetBrains Mono оставлен только для технических
@@ -44,6 +45,9 @@ export default function RootLayout({
       <body className="bg-background text-foreground antialiased min-h-screen dark:bg-transparent">
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <GalaxyBackground />
+        {/* Заглушка работ — ВЫШЕ провайдеров: её должен увидеть и тот, у кого протухла
+            сессия, иначе вместо «идут работы» он получит экран входа. */}
+        <MaintenanceGate />
         <TelegramProvider>
           <ConfirmProvider>
             <SingleTabGate>{children}</SingleTabGate>
