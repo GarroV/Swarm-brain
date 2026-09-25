@@ -1,5 +1,10 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { canAccessDraftMeeting, draftMeetingsOwnScoped } from "./meeting-access.ts";
+import {
+  canAccessDraftMeeting,
+  canDeleteDraftMeeting,
+  draftMeetingsOwnScopedFilter,
+  hasCoOwners,
+} from "./meeting-access.ts";
 
 // Черновик на вычитке — это сырая запись чужого разговора: полный транскрипт, ещё не вычитанный
 // и не опубликованный автором. Решение владельца 2026-08-20: видит ТОЛЬКО тот, кто записал —
@@ -46,6 +51,32 @@ Deno.test("нет записи или пустые recorders — доступа 
 Deno.test("список очереди own-scoped ВСЕГДА, флага «показать все» больше нет", () => {
   // Сигнатура намеренно без параметров isAdmin/showAll: раньше ветка `all=true && isAdmin`
   // отдавала админу весь воркспейс. Если её вернут — этот тест придётся осознанно править.
-  assertEquals(draftMeetingsOwnScoped.length, 1);
-  assertEquals(JSON.stringify(draftMeetingsOwnScoped(555)), JSON.stringify([{ telegram_id: 555 }]));
+  assertEquals(draftMeetingsOwnScopedFilter.length, 1);
+  assertEquals(
+    draftMeetingsOwnScopedFilter(555),
+    'recorders.cs.[{"telegram_id":555}],co_owners.cs.{555}',
+  );
+});
+
+// Совладельцы (решение владельца 2026-09-25, п. 26–27): участник встречи с аккаунтом SWARM.
+const coOwned = { group_id: "cee", recorders: [{ telegram_id: RECORDER }], co_owners: [OTHER] };
+
+Deno.test("совладелец (участник встречи из SWARM) видит черновик, посторонний и админ — нет", () => {
+  assertEquals(canAccessDraftMeeting(coOwned, OTHER, false, "cee"), true);
+  assertEquals(canAccessDraftMeeting(coOwned, 333, false, "cee"), false);
+  assertEquals(canAccessDraftMeeting(coOwned, ADMIN, true, "cee"), false);
+  assertEquals(canAccessDraftMeeting(coOwned, OTHER, false, "other"), false);
+});
+
+Deno.test("удалить черновик может только записавший, совладелец — нет", () => {
+  assertEquals(canDeleteDraftMeeting(coOwned, RECORDER), true);
+  assertEquals(canDeleteDraftMeeting(coOwned, OTHER), false);
+  assertEquals(canDeleteDraftMeeting(null, RECORDER), false);
+});
+
+Deno.test("несколько владельцев: совладельцы или двое записавших", () => {
+  assertEquals(hasCoOwners(draft), false);
+  assertEquals(hasCoOwners(coOwned), true);
+  assertEquals(hasCoOwners({ recorders: [{ telegram_id: 1 }, { telegram_id: 2 }] }), true);
+  assertEquals(hasCoOwners({ recorders: [{ telegram_id: 1 }, { telegram_id: 1 }], co_owners: [] }), false);
 });

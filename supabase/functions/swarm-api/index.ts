@@ -104,8 +104,10 @@ import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
 import { normalizeExtractedDueDate, todayIso } from "../_shared/llm-date.ts";
 import {
   canAccessDraftMeeting,
+  canDeleteDraftMeeting,
+  hasCoOwners,
   type DraftMeetingRow,
-  draftMeetingsOwnScoped,
+  draftMeetingsOwnScopedFilter,
 } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
 import { apiErr, corsHeaders, json, parseListLimit } from "./http.ts";
@@ -2527,7 +2529,7 @@ Deno.serve(async (req: Request) => {
     const status = url.searchParams.get("status") ?? "awaiting_review";
     let q = supabase.from("meetings")
       .select(
-        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, entry_id, created_at",
+        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, entry_id, created_at",
         { count: "exact" },
       )
       .eq("group_id", groupId)
@@ -2541,10 +2543,8 @@ Deno.serve(async (req: Request) => {
     // ВСЕГДА только свои: черновик на вычитке — сырая запись чужого разговора, у админа тут
     // оверсайта нет (решение владельца 2026-08-20). Прежний `?all=true` для админа убран;
     // пригляд «у кого копится» — агрегат без контента GET /admin/review-counts.
-    q = q.contains(
-      "recorders",
-      JSON.stringify(draftMeetingsOwnScoped(telegram_id)),
-    );
+    // Свои = записывал ИЛИ совладелец: участник встречи с аккаунтом SWARM (решение 2026-09-25).
+    q = q.or(draftMeetingsOwnScopedFilter(telegram_id));
     const { data, error, count } = await q;
     if (error) return apiErr(500, error.message, origin);
     // has_draft_notes вместо draft_notes_md: список рисует название/дату/статус, а текст
@@ -2798,6 +2798,10 @@ Deno.serve(async (req: Request) => {
       if (meeting.status === "in_base") {
         return apiErr(409, "Уже в базе — удаляйте через раздел «База»", origin);
       }
+      // Совладелец по приглашению черновик не удаляет — он общий (решение владельца 2026-09-25).
+      if (!canDeleteDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
+        return apiErr(403, "Only the person who recorded this meeting can delete the draft", origin);
+      }
       await supabase.from("meetings").delete().eq("id", mId);
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
@@ -2811,6 +2815,10 @@ Deno.serve(async (req: Request) => {
         body = {};
       }
       const isPrivate = body.base === "personal";
+      // Встреча нескольких владельцев в личную базу не уходит: остальные потеряли бы к ней доступ.
+      if (isPrivate && meeting.status !== "in_base" && hasCoOwners(meeting as DraftMeetingRow)) {
+        return apiErr(409, "This meeting has several owners — publish it to the team base", origin);
+      }
 
       // идемпотентность: уже опубликовано → вернуть существующую запись
       if (meeting.status === "in_base" && meeting.entry_id) {
