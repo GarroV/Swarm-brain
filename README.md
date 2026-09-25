@@ -229,6 +229,9 @@ recorder/                       # bumblebee — macOS меню-бар рекор
 | `get_users` | Команда с профилями (включая владельца), фильтр по market |
 | `get_task_comments` | Комментарии-апдейты к задаче по её ID |
 | `add_task_comment` | Добавить комментарий-апдейт к задаче от своего лица |
+| `delete_task_comment` | Удалить свой комментарий к задаче |
+| `get_review_queue` / `get_draft_meeting` / `update_draft_meeting` / `publish_draft_meeting` | Вычитка черновиков встреч: очередь, черновик, правка, публикация |
+| `extract_tasks_from_meeting` | Предложения задач по тезисам встречи (ничего не создаёт) |
 
 ### Веб-интерфейс «Рой»
 
