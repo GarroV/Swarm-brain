@@ -35,7 +35,7 @@ node e2e/mobile-nav.mjs
 |---|---|---|
 | `SWARM_E2E_URL` | `http://localhost:3111/` | адрес приложения |
 | `SWARM_E2E_HEADED` | не задана | `=1` — видимое окно, когда хочется смотреть глазами |
-| `SWARM_E2E_CHROME` | `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` | путь к браузеру |
+| `SWARM_E2E_CHROME` | `chrome-for-testing --print-path` (утилита из dotfiles); нет её — личный Google Chrome с предупреждением | путь к браузеру. Chrome for Testing — чтобы ссылки из других приложений не уходили в браузер прогона |
 | `SWARM_E2E_CDP` | не задана | подключиться к УЖЕ запущенному браузеру вместо своего (напр. `http://127.0.0.1:9333`) |
 
 `puppeteer-core` в зависимостях miniapp **не** держим: `e2e/lib.mjs` берёт его из проекта, если он
