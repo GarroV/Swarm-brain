@@ -108,7 +108,6 @@ import {
 import {
   canAccessDraftMeeting,
   canDeleteDraftMeeting,
-  hasCoOwners,
   type DraftMeetingRow,
   draftMeetingsOwnScopedFilter,
 } from "../_shared/meeting-access.ts";
@@ -2690,7 +2689,11 @@ Deno.serve(async (req: Request) => {
       }
       // Совладелец по приглашению черновик не удаляет — он общий (решение владельца 2026-09-25).
       if (!canDeleteDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
-        return apiErr(403, "Only the person who recorded this meeting can delete the draft", origin);
+        return apiErr(
+          403,
+          "Only the person who recorded this meeting can delete the draft",
+          origin,
+        );
       }
       await supabase.from("meetings").delete().eq("id", mId);
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
@@ -2705,10 +2708,6 @@ Deno.serve(async (req: Request) => {
         body = {};
       }
       const isPrivate = body.base === "personal";
-      // Встреча нескольких владельцев в личную базу не уходит: остальные потеряли бы к ней доступ.
-      if (isPrivate && meeting.status !== "in_base" && hasCoOwners(meeting as DraftMeetingRow)) {
-        return apiErr(409, "This meeting has several owners — publish it to the team base", origin);
-      }
 
       const published = await publishDraftMeeting(supabase, meeting, {
         groupId,

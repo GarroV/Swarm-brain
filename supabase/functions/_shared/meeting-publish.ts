@@ -8,6 +8,7 @@ import {
 } from "./meta-extract.ts";
 import { findDuplicateMeeting, type MeetingAttendee } from "./meeting-dedup.ts";
 import { arbitrateFullness, type TranscriptLike } from "./meeting-fullness.ts";
+import { type DraftMeetingRow, hasCoOwners } from "./meeting-access.ts";
 
 // Публикация черновика встречи (таблица meetings) в базу знаний (entries). Одна реализация
 // для веба (swarm-api POST /agent-meetings/:id/publish) и MCP (publish_draft_meeting, issue #513):
@@ -33,7 +34,7 @@ export type PublishDraftOptions = {
 
 export type PublishDraftResult =
   | { ok: true; status: 200 | 201; entry: Record<string, unknown> }
-  | { ok: false; status: 400 | 500; message: string };
+  | { ok: false; status: 400 | 409 | 500; message: string };
 
 export async function publishDraftMeeting(
   supabase: SupabaseClient,
@@ -45,6 +46,20 @@ export async function publishDraftMeeting(
   // (GenericStringError). «*» для компилятора — строка без схемы, Record<string, any>;
   // в запрос уходит настоящий список колонок.
   const cols = opts.entryColumns as "*";
+
+  // Встреча нескольких владельцев в личную базу не уходит: остальные потеряли бы к ней доступ
+  // (решение владельца 2026-09-25, PR #508). Проверка здесь, а не у вызывающего, — чтобы она
+  // действовала и для веба, и для MCP.
+  if (
+    opts.isPrivate && meeting.status !== "in_base" &&
+    hasCoOwners(meeting as DraftMeetingRow)
+  ) {
+    return {
+      ok: false,
+      status: 409,
+      message: "This meeting has several owners — publish it to the team base",
+    };
+  }
   // идемпотентность: уже опубликовано → вернуть существующую запись
   if (meeting.status === "in_base" && meeting.entry_id) {
     const { data: existing } = await supabase.from("entries").select(

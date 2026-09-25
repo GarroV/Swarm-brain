@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { canAccessDraftMeeting, type DraftMeetingRow, draftMeetingsOwnScoped } from "../_shared/meeting-access.ts";
+import { canAccessDraftMeeting, type DraftMeetingRow, draftMeetingsOwnScopedFilter } from "../_shared/meeting-access.ts";
 import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
 import { ADMIN_USER_ID, matchAssignee, resolveGroupId } from "./tasks/tools.ts";
 import { entryAccessError, type EntryAccessRow } from "../_shared/entries/access.ts";
@@ -54,12 +54,12 @@ export async function toolGetReviewQueue(args: Caller): Promise<string> {
   if (!callerId) return "Ошибка: личность не определена (нужен токен коннектора).";
   const groupId = await resolveGroupId(callerId);
   if (!groupId) return "Ошибка: пользователь не найден в системе.";
-  // Тот же фильтр «только свои», что у GET /agent-meetings (jsonb-containment строкой — см. там).
+  // Тот же фильтр «свои», что у GET /agent-meetings: записывал ИЛИ совладелец (PR #508).
   const { data, error, count } = await supabase.from("meetings")
     .select("id, title, source, started_at, draft_notes_md", { count: "exact" })
     .eq("group_id", groupId)
     .eq("status", "awaiting_review")
-    .contains("recorders", JSON.stringify(draftMeetingsOwnScoped(callerId)))
+    .or(draftMeetingsOwnScopedFilter(callerId))
     .order("started_at", { ascending: false, nullsFirst: false })
     .limit(QUEUE_LIMIT);
   if (error) {
