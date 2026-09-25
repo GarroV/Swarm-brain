@@ -13,7 +13,7 @@
 // Оформление — только токены системы: янтарная пара accent-soft/accent-ink (та же, что у чипа
 // пинга) для предупреждения и filled primary в момент раскатки. Красный (`--destructive`)
 // намеренно НЕ используется: он у нас означает просрочку и ошибку, а обновление — не ошибка.
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { RoyIcon } from "@/components/roy/icons";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { fetchNotifications } from "@/lib/api";
@@ -25,24 +25,14 @@ import {
   type DeployNotice,
 } from "@/lib/deployNotice";
 
-const DISMISS_KEY = "roy_deploy_notice_dismissed";
 // Отсчёт в минутах — раз в 20 с достаточно, чтобы цифра не отставала заметно. Запросов не шлём.
 const TICK_MS = 20_000;
-
-function readDismissed(): string | null {
-  try { return localStorage.getItem(DISMISS_KEY); } catch { return null; }
-}
 
 export function DeployNoticeBar() {
   const dt = useDt();
   const { me } = useRoyNav();
   const [notice, setNotice] = useState<DeployNotice | null>(lastNotice);
   const [now, setNow] = useState(() => new Date());
-  const [dismissed, setDismissed] = useState<string | null>(null);
-
-  // localStorage читаем ПОСЛЕ монтирования: на сервере его нет, а разночтение первого рендера
-  // ломало бы гидрацию.
-  useEffect(() => { setDismissed(readDismissed()); }, []);
 
   useEffect(() => subscribeNotice(setNotice), []);
 
@@ -61,18 +51,10 @@ export function DeployNoticeBar() {
     return () => clearInterval(id);
   }, []);
 
-  const hide = useCallback(() => {
-    if (!notice) return;
-    // Помним ИМЕННО это объявление (по `until`): следующая раскатка покажет плашку снова.
-    try { localStorage.setItem(DISMISS_KEY, notice.until); } catch { /* приватный режим — плашка вернётся, не страшно */ }
-    setDismissed(notice.until);
-  }, [notice]);
-
   const view = noticeView(notice, now);
   // Демо — витрина продукта, наши раскатки смотрящего не касаются (и полоса Demo mode вверху
   // уже занимает это место).
   if (!view || me?.is_demo) return null;
-  if (notice && dismissed === notice.until) return null;
 
   const soon = view.phase === "soon";
   const custom = dt(notice?.ru ?? "", notice?.en ?? "");
@@ -81,6 +63,9 @@ export function DeployNoticeBar() {
       ? dt(`Обновление через ${view.minutes} мин`, `Update in ${view.minutes} min`)
       : dt("Идёт обновление", "Updating now"));
 
+  // Крестика нет (решение владельца 2026-09-25: «нельзя убрать уведомление, должно висеть и
+  // напоминать»): плашка висит, пока не снимут кнопкой или не выйдет срок `until`. Свой текст
+  // длинный — переносится на вторую строку, а не обрезается многоточием.
   // В ПОТОКЕ, а не `fixed`: плавающая пилюля накрывала заголовок экрана на мобилке (проверено
   // на 390px — «Задачи» читались из-под неё). Своя тонкая строка сдвигает контент один раз,
   // ровно как полоса Demo mode рядом, и ничего не закрывает.
@@ -94,23 +79,16 @@ export function DeployNoticeBar() {
             ? "border-accent-line bg-accent-soft text-accent-ink"
             : "border-transparent bg-primary text-white"
         }`}
-        style={{ fontSize: 12.5 }}
+        // Перенесённый на две строки текст в пилюле выглядит обрубком — скругляем мягче.
+        style={custom ? { fontSize: 12.5, borderRadius: 14 } : { fontSize: 12.5 }}
       >
         <RoyIcon name="clock" size={13} strokeWidth={2.1} />
-        <span className="truncate">{head}</span>
+        <span className={custom ? "min-w-0" : "truncate"}>{head}</span>
         {!custom && (
           <span className={`hidden truncate font-normal sm:inline ${soon ? "text-accent-ink/70" : "text-white/80"}`}>
             · {dt("страница перезагрузится сама", "the page will reload itself")}
           </span>
         )}
-        <button
-          type="button"
-          onClick={hide}
-          aria-label={dt("Скрыть объявление", "Dismiss notice")}
-          className={`ml-0.5 shrink-0 rounded-full p-0.5 transition-opacity hover:opacity-100 ${soon ? "opacity-60" : "opacity-80"}`}
-        >
-          <RoyIcon name="x" size={12} strokeWidth={2.2} />
-        </button>
       </div>
     </div>
   );

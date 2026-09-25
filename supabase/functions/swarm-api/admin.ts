@@ -475,7 +475,7 @@ export async function reviewCountsByMember(
     supabase.from("entries").select("owner_id, metadata")
       .eq("group_id", groupId).eq("entry_type", "meeting")
       .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false"),
-    supabase.from("meetings").select("recorders")
+    supabase.from("meetings").select("recorders, co_owners")
       .eq("group_id", groupId).eq("status", "awaiting_review"),
   ]);
   // Молча вернуть пустую карту = показать «0 на вычитке» как факт. Пусть вызывающий решает.
@@ -501,10 +501,18 @@ export async function reviewCountsByMember(
   }
   for (
     const m of (mtgRes.data ?? []) as Array<
-      { recorders: Array<{ telegram_id: number }> | null }
+      {
+        recorders: Array<{ telegram_id: number }> | null;
+        co_owners: number[] | null;
+      }
     >
   ) {
-    for (const r of (m.recorders ?? [])) bump(r.telegram_id);
+    // Каждому владельцу черновика по разу: записавшим и совладельцам (решение 2026-09-25).
+    const owners = new Set([
+      ...(m.recorders ?? []).map((r) => r.telegram_id),
+      ...(m.co_owners ?? []),
+    ]);
+    for (const id of owners) bump(id);
   }
 
   return counts;
