@@ -87,7 +87,7 @@ export function MaintenanceGate() {
     return (
       <div
         role="status"
-        className="fixed inset-x-0 top-0 z-[100] bg-primary px-4 py-1.5 text-center text-xs font-medium text-white"
+        className="fixed inset-x-0 top-0 z-[100] bg-primary px-4 py-1.5 text-center text-xs font-medium text-primary-foreground"
       >
         Maintenance mode is on for everyone else (~{left} min) · Режим работ включён для
         остальных — вы проходите

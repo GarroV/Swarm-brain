@@ -115,7 +115,7 @@ export function CustomBackdropPanel({ rec, onSaved, onDeleted }: {
           type="button"
           disabled={busy}
           onClick={() => input.current?.click()}
-          className="inline-flex h-[30px] items-center gap-1.5 rounded-[7px] bg-primary px-3 font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+          className="inline-flex h-[30px] items-center gap-1.5 rounded-[7px] bg-primary px-3 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
           style={{ fontSize: 12.5 }}
         >
           <RoyIcon name="plus" size={14} strokeWidth={2.2} />

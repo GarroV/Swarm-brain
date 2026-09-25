@@ -885,7 +885,7 @@ export function SprintsScreen() {
             type="button"
             onClick={submitCycle}
             disabled={busy}
-            className="h-[28px] rounded-[7px] bg-primary px-3 font-semibold text-white disabled:opacity-50"
+            className="h-[28px] rounded-[7px] bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50"
             style={{ fontSize: 12.5 }}
           >
             {busy ? dt("Создание…", "Creating…") : dt("Создать", "Create")}

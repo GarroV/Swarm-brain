@@ -75,7 +75,7 @@ export function LabelEditor({ label, open, onClose, onSaved }: Props) {
               type="button"
               onClick={save}
               disabled={!name.trim() || busy}
-              className="rounded-full bg-primary px-3.5 py-1.5 font-semibold text-white disabled:opacity-50"
+              className="rounded-full bg-primary px-3.5 py-1.5 font-semibold text-primary-foreground disabled:opacity-50"
               style={{ fontSize: 13 }}
             >
               Сохранить

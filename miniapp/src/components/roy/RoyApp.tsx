@@ -361,7 +361,7 @@ export function RoyApp({ me }: { me: Me | null }) {
         <DeployNoticeBar />
         {me?.is_demo && (
           <div
-            className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-4 py-1.5 text-white"
+            className="flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-4 py-1.5 text-primary-foreground"
             style={{ fontSize: 13 }}
           >
             <span className="font-semibold">🎬 Demo mode</span>

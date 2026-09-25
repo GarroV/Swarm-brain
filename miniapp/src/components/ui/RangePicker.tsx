@@ -100,7 +100,7 @@ export function RangePicker({ value, onChange, variant = "rail" }: Props) {
           variant === "toolbar"
             ? null
             : variant === "chip"
-            ? (active ? "bg-primary text-white" : "bg-secondary text-secondary-foreground hover:bg-secondary/70")
+            ? (active ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-secondary/70")
             : (active ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:bg-surface"),
         )}
         style={{ fontSize: variant === "rail" ? 13.5 : 12.5 }}

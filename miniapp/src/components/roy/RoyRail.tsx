@@ -80,7 +80,7 @@ export function RoyRail({
         className={cn(
           "relative flex h-[34px] w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left max-[1099px]:justify-center max-[1099px]:px-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
           on
-            ? "bg-accent-soft font-semibold text-accent-ink shadow-[inset_2px_0_0_var(--primary)]"
+            ? "bg-accent-soft font-semibold text-accent-ink shadow-[inset_2px_0_0_var(--primary),var(--glow-sm)]"
             : "text-ink-soft hover:bg-surface hover:text-ink",
         )}
         style={{ fontSize: 13.5 }}

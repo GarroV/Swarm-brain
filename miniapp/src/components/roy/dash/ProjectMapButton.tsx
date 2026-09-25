@@ -33,7 +33,7 @@ export function ProjectMapButton() {
       >
         <span className="font-bold text-ink" style={{ fontSize: 15, letterSpacing: "-0.01em" }}>{mapLabel}</span>
         <span
-          className="inline-flex shrink-0 items-center justify-center bg-primary text-white transition-[filter] group-hover:brightness-110"
+          className="inline-flex shrink-0 items-center justify-center bg-primary text-primary-foreground transition-[filter] group-hover:brightness-110"
           style={{ width: SIZE, height: SIZE, borderRadius: Math.round(SIZE * 0.31) }}
         >
           <MapGlyph />

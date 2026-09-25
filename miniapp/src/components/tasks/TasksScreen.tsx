@@ -66,7 +66,7 @@ export function TasksScreen({ only }: { only?: View } = {}) {
               onClick={() => setView(id)}
               className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                 active
-                  ? "bg-primary text-white"
+                  ? "bg-primary text-primary-foreground"
                   : "bg-surface text-ink-soft border border-line hover:bg-surface-2"
               }`}
             >

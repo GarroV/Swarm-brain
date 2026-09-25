@@ -147,7 +147,7 @@ function Broadcast() {
           style={{ fontSize: 13 }} />
         <div className="mt-2 flex items-center gap-3">
           <button type="button" onClick={send} disabled={sending || !text.trim()}
-            className="inline-flex h-[32px] items-center rounded-[7px] bg-primary px-3.5 font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+            className="inline-flex h-[32px] items-center rounded-[7px] bg-primary px-3.5 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             style={{ fontSize: 12.5 }}>
             {sending ? dt("Отправляю…", "Sending…") : dt("Отправить всем", "Send to all")}
           </button>
