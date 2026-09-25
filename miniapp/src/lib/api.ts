@@ -2730,6 +2730,8 @@ let mockAgentMeetings: AgentMeeting[] = [
       claimed_at: "2026-06-12T14:47:10+03:00",
       role: "transcribe",
     }],
+    // Второй участник встречи из SWARM — совладелец: показывает вид «только в общую базу».
+    co_owners: [135201285],
     entry_id: null,
     created_at: "2026-06-12T14:47:00+03:00",
   },

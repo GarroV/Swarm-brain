@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRoyNav, useDt } from "../nav";
+import { canDeleteDraft, hasSeveralOwners } from "@/lib/draftOwners";
 import { groupNotesByAuthor } from "@/lib/meetingNotes";
 import { NavHeader, RoyCard, SectionLabel, Avatar, Segmented, TezisyBlocks, Participants } from "../ui";
 import { RoyIcon } from "../icons";
@@ -1116,7 +1117,7 @@ function ActionsPanel({
   // кнопки «Согласовать» тут нет). Для очереди не нужна: там рынки уезжают вместе с решением.
   onSaveCountries: (countries: string[]) => Promise<void>;
 }) {
-  const { toast } = useRoyNav();
+  const { toast, me } = useRoyNav();
   const dt = useDt();
   const [confirmState, setConfirmState] = useState<ActionState>("idle");
   const [rejectState, setRejectState] = useState<ActionState>("idle");
@@ -1127,6 +1128,9 @@ function ActionsPanel({
   const [suggestSource, setSuggestSource] = useState<MarketSuggestion["source"]>(null);
   const [savingCountries, setSavingCountries] = useState(false);
   const isAgent = item.kind === "agent";
+  // Черновик нескольких владельцев (решение 2026-09-25): только в общую базу, удаляет записавший.
+  const sharedOwners = isAgent && hasSeveralOwners(item.data);
+  const canReject = !isAgent || canDeleteDraft(item.data, me?.telegram_id);
   // Встреча уже согласована и лежит в базе (режим «Все встречи»). Решение по ней принято —
   // выбор хранилища и «Согласовать» бессмысленны (владелец 2026-08-21: «почему на уже
   // сохранённых встречах до сих пор доступен выбор сохранения в разные пространства?»).
@@ -1275,14 +1279,20 @@ function ActionsPanel({
       {isConfirmed ? null : (
         <>
           {/* Выбор хранилища */}
-          <Segmented
-            items={[
-              { id: "shared", label: "Общее" },
-              { id: "personal", label: "Личное" },
-            ]}
-            value={storage}
-            onChange={(id) => setStorage(id as Storage)}
-          />
+          {sharedOwners ? (
+            <p className="text-ink-soft" style={{ fontSize: 12.5 }}>
+              {dt("Встреча общая: на ней были другие участники SWARM, поэтому она уходит в общее.", "A shared meeting: other SWARM members attended, so it goes to the team base.")}
+            </p>
+          ) : (
+            <Segmented
+              items={[
+                { id: "shared", label: "Общее" },
+                { id: "personal", label: "Личное" },
+              ]}
+              value={storage}
+              onChange={(id) => setStorage(id as Storage)}
+            />
+          )}
 
           {/* Кнопка «Согласовать / Опубликовать» */}
           <button
@@ -1303,8 +1313,8 @@ function ActionsPanel({
         </>
       )}
 
-      {/* Кнопка «Отклонить» */}
-      <button
+      {/* Кнопка «Отклонить» — у совладельца черновика её нет: удалить может только записавший */}
+      {canReject && <button
         type="button"
         disabled={rejectState !== "idle"}
         onClick={handleReject}
@@ -1317,7 +1327,7 @@ function ActionsPanel({
       >
         <RoyIcon name="trash" size={15} strokeWidth={1.9} />
         {rejectLabel}
-      </button>
+      </button>}
 
       {/* «Не встреча → в заметки» — полноценной кнопкой под «Отклонить» (только entry) */}
       {!isAgent && (

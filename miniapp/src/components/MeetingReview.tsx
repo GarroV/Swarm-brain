@@ -7,6 +7,7 @@ import { RoyIcon } from "@/components/roy/icons";
 import { ActionChip } from "@/components/roy/screens/MeetingDetail";
 import { PanelEditor } from "@/components/roy/PanelEditor";
 import { useDt } from "@/components/roy/nav";
+import { hasSeveralOwners } from "@/lib/draftOwners";
 
 type Props = { id: string; onClose: () => void; onChanged?: () => void };
 
@@ -116,7 +117,8 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   const handlePublish = async () => {
     setPublishing(true);
     try {
-      await publishAgentMeeting(id, base);
+      // Черновик нескольких владельцев — только в общую базу (сервер иначе ответит 409).
+      await publishAgentMeeting(id, meeting && hasSeveralOwners(meeting) ? "workspace" : base);
       onChanged?.();
       onClose();
     } finally { setPublishing(false); }
@@ -151,6 +153,8 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
   }
 
   const published = meeting.status === "in_base";
+  const sharedOwners = hasSeveralOwners(meeting);
+  const effectiveBase = sharedOwners ? "workspace" : base;
   const recorders = meeting.recorders ?? [];
   const segments = meeting.transcript?.segments ?? [];
   const hasTranscript = segments.length > 0;
@@ -307,15 +311,21 @@ export function MeetingReview({ id, onClose, onChanged }: Props) {
 
       {!published && notesReady && !editing && !editingTitle && (
         <div className="shrink-0 border-t border-line bg-background px-5 pt-3 dark:bg-[var(--surface)]" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
-          <div className="mb-2.5">
-            <Segmented
-              items={[{ id: "workspace", label: dt("В команду", "Team") }, { id: "personal", label: dt("В личное", "Personal") }]}
-              value={base}
-              onChange={(v) => setBase(v as "workspace" | "personal")}
-            />
-          </div>
+          {sharedOwners ? (
+            <p className="mb-2.5 text-xs text-ink-soft">
+              {dt("Встреча общая: на ней были другие участники SWARM, поэтому она уходит в базу команды.", "A shared meeting: other SWARM members attended, so it goes to the team base.")}
+            </p>
+          ) : (
+            <div className="mb-2.5">
+              <Segmented
+                items={[{ id: "workspace", label: dt("В команду", "Team") }, { id: "personal", label: dt("В личное", "Personal") }]}
+                value={base}
+                onChange={(v) => setBase(v as "workspace" | "personal")}
+              />
+            </div>
+          )}
           <button onClick={handlePublish} disabled={publishing} className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
-            {publishing ? dt("Публикуем…", "Publishing…") : base === "workspace" ? dt("Сохранить в базу команды", "Save to the team base") : dt("Сохранить в личное", "Save to personal")}
+            {publishing ? dt("Публикуем…", "Publishing…") : effectiveBase === "workspace" ? dt("Сохранить в базу команды", "Save to the team base") : dt("Сохранить в личное", "Save to personal")}
           </button>
         </div>
       )}

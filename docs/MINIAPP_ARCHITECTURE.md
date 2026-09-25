@@ -284,7 +284,7 @@ Push-стек управляется `RoyApp.tsx`: `push(route)` → `PushScreen
 | `newTask` | `{ id?: string }` | Создание/редактирование задачи | `screens/NewTask.tsx` |
 | `newEntry` | — | Новая запись в базу | `screens/NewEntry.tsx` |
 | `meetingDetail` | `{ id: string }` | Детали встречи (Entry) | `screens/MeetingDetail.tsx` |
-| `meetingReview` | `{ id: string }` | Вычитка черновика AgentMeeting | `MeetingReview.tsx` |
+| `meetingReview` | `{ id: string }` | Вычитка черновика AgentMeeting. У черновика нескольких владельцев (записавший + `co_owners`, решение 2026-09-25) выбора «В личное» нет — только база команды; кнопку удаления в `MeetAdminScreen` видит только записавший. Правило на клиенте — `lib/draftOwners.ts`, на сервере — `_shared/meeting-access.ts` | `MeetingReview.tsx` |
 | `meetAdmin` | — | **Desktop-ревью встреч (master-detail)** | `screens/MeetAdminScreen.tsx` |
 | `more` | — | Ещё (карта системы / настройки / команда / админ) | inline `MoreScreen` в RoyApp |
 | `map` | — | Карта системы (iframe на `/system-map.html`) | inline `MapScreen` в RoyApp |
