@@ -106,6 +106,18 @@ make deploy            # сам проверит активность, раск�
 make notice-off        # снять объявление вручную, если раскатку отменили
 ```
 
+**Без прав записи в базу — кнопка в Actions** «Плашка и заморозка (руками)» (`.github/workflows/notice.yml`). `make notice` пишет в базу личным токеном CLI, а у него права `database_write` нет, и расширять его не будем: токен нужен другим проектам (решение владельца 2026-09-25). Кнопка ходит в базу ключом из секретов репозитория, как накат миграций.
+
+```bash
+gh workflow run notice.yml -f action=notice -f minutes=30 \
+  -f text_ru="Сегодня 16:00–17:00 МСК — обновление SWARM" -f text_en="Today 16:00–17:00 MSK — SWARM update"
+gh workflow run notice.yml -f action=notice-off
+gh workflow run notice.yml -f action=freeze -f minutes=40     # после вливания заморозки (#507)
+gh workflow run notice.yml -f action=unfreeze
+```
+
+Свой текст плашки (`text_ru`, `text_en`) показывается вместо «Обновление через N мин». Кнопка тоже правит прод-данные, жать её — только по «да» владельца на раскатку.
+
 `make deploy` отказывается катить, если:
 
 - **идёт запись или обработка встречи** — жёсткий стоп, `FORCE=1` НЕ обходит (оборванный кусок
