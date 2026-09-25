@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createTask, getTask, listTasks, updateTask, deleteTask } from "../../_shared/tasks/db.ts";
 import { recurrencePatchFor, resolveRecurrence } from "../../_shared/tasks/recurrence.ts";
-import { validateCommentContent } from "../../_shared/tasks/comments.ts";
+import { commentDeleteDenial, validateCommentContent } from "../../_shared/tasks/comments.ts";
 import { canViewTask, taskAccessError } from "../../_shared/tasks/access.ts";
 import { pickProjectByName, type ProjectNameRow } from "../../_shared/tasks/project-access.ts";
 import { listProjects } from "../../_shared/tasks/projects.ts";
@@ -429,13 +429,13 @@ export async function toolGetTaskComments(args: { task_id: string; requesting_us
   const guard = await commentTaskGuard(args.task_id, args.requesting_user_id);
   if (!guard.ok) return guard.msg;
   const { data, error } = await supabase
-    .from("task_comments").select("content, added_by_telegram_id, created_at")
+    .from("task_comments").select("id, content, added_by_telegram_id, created_at")
     .eq("task_id", args.task_id).order("created_at", { ascending: true });
   if (error) {
     console.error("task_comments list failed:", error);
     return "Ошибка: не удалось загрузить комментарии.";
   }
-  const rows = (data ?? []) as Array<{ content: string; added_by_telegram_id: number | null; created_at: string }>;
+  const rows = (data ?? []) as Array<{ id: string; content: string; added_by_telegram_id: number | null; created_at: string }>;
   if (!rows.length) return "Комментариев пока нет.";
   const ids = [...new Set(rows.map((r) => r.added_by_telegram_id).filter((x): x is number => !!x))];
   const { data: profs } = await supabase.from("user_profiles").select("telegram_id, first_name, last_name").in("telegram_id", ids.length ? ids : [0]);
@@ -446,7 +446,8 @@ export async function toolGetTaskComments(args: { task_id: string; requesting_us
   return rows.map((r) => {
     const who = r.added_by_telegram_id ? (nameById.get(r.added_by_telegram_id) ?? String(r.added_by_telegram_id)) : "—";
     const when = r.created_at.slice(0, 10);
-    return `• [${when}] ${who}: ${r.content}`;
+    // id печатается: без него delete_task_comment нечем вызвать (issue #515).
+    return `• [${when}] ${who} (id: ${r.id}): ${r.content}`;
   }).join("\n\n");
 }
 
@@ -459,6 +460,32 @@ export async function toolAddTaskComment(args: { task_id: string; content: strin
     .from("task_comments").insert({ task_id: args.task_id, content: v.value, added_by_telegram_id: args.requesting_user_id });
   if (error) return `Ошибка: ${error.message}`;
   return "✅ Комментарий добавлен.";
+}
+
+// Удалить свой комментарий (issue #515). Правки текста нет сознательно: у комментария нет
+// отметки «изменено», а уведомление со старым текстом уже ушло — тихо переписанный апдейт
+// читался бы как исходный. Исправить опечатку = удалить и написать заново.
+export async function toolDeleteTaskComment(
+  args: { task_id: string; comment_id: string; requesting_user_id: number },
+): Promise<string> {
+  const guard = await commentTaskGuard(args.task_id, args.requesting_user_id);
+  if (!guard.ok) return guard.msg;
+  const { data: c } = await supabase
+    .from("task_comments").select("id, added_by_telegram_id")
+    .eq("id", args.comment_id).eq("task_id", args.task_id).maybeSingle();
+  if (!c) return "Комментарий не найден.";
+  const denied = commentDeleteDenial(
+    (c as { added_by_telegram_id: number | null }).added_by_telegram_id,
+    args.requesting_user_id,
+    false,
+  );
+  if (denied) return `Ошибка: ${denied}.`;
+  const { error } = await supabase.from("task_comments").delete().eq("id", args.comment_id);
+  if (error) {
+    console.error("task_comments delete failed:", error);
+    return "Ошибка: не удалось удалить комментарий.";
+  }
+  return "✅ Комментарий удалён.";
 }
 
 // Свежие комментарии одним запросом (issue #276). Сценарий — утренний дайджест по задачам
@@ -677,6 +704,19 @@ export const COMMENT_TOOL_DEFINITIONS = [
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен" },
       },
       required: ["task_id", "content", "requesting_user_id"],
+    },
+  },
+  {
+    name: "delete_task_comment",
+    description: "Удалить СВОЙ комментарий к задаче. Чужой удалить нельзя. Правки текста нет: чтобы исправить опечатку, удали комментарий и добавь заново. id комментария печатается в get_task_comments.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task_id: { type: "string", description: "ID задачи — полный uuid" },
+        comment_id: { type: "string", description: "ID комментария из выдачи get_task_comments" },
+        requesting_user_id: { type: "number", description: "Заполняется из токена" },
+      },
+      required: ["task_id", "comment_id"],
     },
   },
 ];

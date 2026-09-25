@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolGetProjects, toolListTaskLabels, toolGetTaskComments, toolGetRecentComments, toolAddTaskComment, TASK_TOOL_DEFINITIONS, PROJECT_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS, COMMENT_TOOL_DEFINITIONS } from "./tasks/tools.ts";
+import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolGetProjects, toolListTaskLabels, toolGetTaskComments, toolGetRecentComments, toolAddTaskComment, toolDeleteTaskComment, TASK_TOOL_DEFINITIONS, PROJECT_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS, COMMENT_TOOL_DEFINITIONS } from "./tasks/tools.ts";
 import {
   toolGetTaskStats,
   toolGetTaskHistory,
@@ -1097,6 +1097,8 @@ Deno.serve(async (req: Request) => {
         result = await toolGetRecentTaskChanges(args as { since?: string; limit?: number; requesting_user_id: number });
       } else if (name === "get_recent_comments") {
         result = await toolGetRecentComments(args as { since?: string; limit?: number; requesting_user_id: number });
+      } else if (name === "delete_task_comment") {
+        result = await toolDeleteTaskComment(args as { task_id: string; comment_id: string; requesting_user_id: number });
       } else if (name === "add_task_comment") {
         result = await toolAddTaskComment(args as { task_id: string; content: string; requesting_user_id: number });
       } else if (name === "get_meetings") {
