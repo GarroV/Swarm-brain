@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolGetProjects, toolListTaskLabels, toolGetTaskComments, toolGetRecentComments, toolAddTaskComment, TASK_TOOL_DEFINITIONS, PROJECT_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS, COMMENT_TOOL_DEFINITIONS } from "./tasks/tools.ts";
+import { toolAddTask, toolUpdateTask, toolDeleteTask, toolGetTasks as toolGetTasksMcp, toolGetProjects, toolListTaskLabels, toolGetTaskComments, toolGetRecentComments, toolAddTaskComment, toolDeleteTaskComment, TASK_TOOL_DEFINITIONS, PROJECT_TOOL_DEFINITIONS, LABEL_TOOL_DEFINITIONS, COMMENT_TOOL_DEFINITIONS } from "./tasks/tools.ts";
 import {
   toolGetTaskStats,
   toolGetTaskHistory,
@@ -14,6 +14,15 @@ import { ALL_MEETING_SOURCES } from "../_shared/sources.ts";
 import { isFeedbackStatus } from "../_shared/feedback-categories.ts";
 import { normalizeExtractedEventDate, todayIso } from "../_shared/llm-date.ts";
 import { entryAccessError, type EntryAccessRow } from "../_shared/entries/access.ts";
+import { withTokenIdentity } from "./identity.ts";
+import {
+  MEETING_REVIEW_TOOL_DEFINITIONS,
+  toolExtractTasksFromMeeting,
+  toolGetDraftMeeting,
+  toolGetReviewQueue,
+  toolPublishDraftMeeting,
+  toolUpdateDraftMeeting,
+} from "./meetings.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -151,6 +160,11 @@ async function uploadToStorage(
 
 const TOOLS = [
   {
+    name: "whoami",
+    description: "Кто я: имя, внутренний ID и воркспейс пользователя, от чьего имени работает этот коннектор (определяется токеном).",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "search_knowledge",
     description: "Семантический поиск по командной базе знаний. Ищет по смыслу — документы, заметки, встречи, ссылки.",
     inputSchema: {
@@ -185,6 +199,7 @@ const TOOLS = [
   ...LABEL_TOOL_DEFINITIONS,
   ...COMMENT_TOOL_DEFINITIONS,
   ...ANALYTICS_TOOL_DEFINITIONS,
+  ...MEETING_REVIEW_TOOL_DEFINITIONS,
   {
     name: "get_meetings",
     description: "Получить последние встречи из Read.ai сохранённые в базе знаний.",
@@ -405,14 +420,38 @@ async function toolGetMeetings(args: { limit?: number; requesting_user_id?: numb
   }).join("\n\n---\n\n");
 }
 
+async function toolWhoami(args: { requesting_user_id?: number }): Promise<string> {
+  const userId = args.requesting_user_id;
+  if (!userId) return "Личность не определена: коннектор подключён без токена (/mytoken в боте).";
+
+  const { data: user } = await supabase
+    .from("allowed_users")
+    .select("telegram_id, username, group_id")
+    .eq("telegram_id", userId)
+    .maybeSingle();
+  if (!user) return `Пользователь ${userId} не найден среди участников.`;
+  const row = user as { telegram_id: number; username: string | null; group_id: string | null };
+
+  const [{ data: profile }, { data: workspace }] = await Promise.all([
+    supabase.from("user_profiles").select("first_name, last_name").eq("telegram_id", userId).maybeSingle(),
+    row.group_id
+      ? supabase.from("workspaces").select("name").eq("id", row.group_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  const p = profile as { first_name?: string | null; last_name?: string | null } | null;
+  const name = [p?.first_name, p?.last_name].filter(Boolean).join(" ") || (row.username ? `@${row.username}` : "—");
+  const ws = (workspace as { name?: string } | null)?.name ?? row.group_id ?? "—";
+  const role = userId === ADMIN_USER_ID ? "\nРоль: владелец" : "";
+  return `Имя: ${name}\nВнутренний ID: ${userId}\nВоркспейс: ${ws}${role}`;
+}
+
 async function toolGetUsers(args: { market?: string; requesting_user_id?: number }): Promise<string> {
   let groupId: string | null = null;
   if (args.requesting_user_id) groupId = await getUserGroupId(args.requesting_user_id);
 
   let query = supabase
     .from("allowed_users")
-    .select("telegram_id, username")
-    .neq("telegram_id", ADMIN_USER_ID);
+    .select("telegram_id, username");
   if (groupId) query = query.eq("group_id", groupId);
 
   const { data: users, error } = await query;
@@ -1017,7 +1056,8 @@ Deno.serve(async (req: Request) => {
   }
 
   if (method === "tools/list") {
-    return ok(id, { tools: TOOLS });
+    // Личность — из токена: схемы не должны просить агента передавать её самому (issue #502).
+    return ok(id, { tools: TOOLS.map(withTokenIdentity) });
   }
 
   if (method === "tools/call") {
@@ -1040,7 +1080,9 @@ Deno.serve(async (req: Request) => {
     try {
       let result = "";
 
-      if (name === "search_knowledge") {
+      if (name === "whoami") {
+        result = await toolWhoami(args as { requesting_user_id?: number });
+      } else if (name === "search_knowledge") {
         result = await toolSearchKnowledge(args as { query: string; limit?: number; requesting_user_id?: number });
       } else if (name === "get_tasks") {
         result = await toolGetTasksMcp(args as { assignee?: string; country?: string; status?: string; period?: string; label?: string; project?: string; requesting_user_id: number });
@@ -1064,8 +1106,20 @@ Deno.serve(async (req: Request) => {
         result = await toolGetRecentTaskChanges(args as { since?: string; limit?: number; requesting_user_id: number });
       } else if (name === "get_recent_comments") {
         result = await toolGetRecentComments(args as { since?: string; limit?: number; requesting_user_id: number });
+      } else if (name === "delete_task_comment") {
+        result = await toolDeleteTaskComment(args as { task_id: string; comment_id: string; requesting_user_id: number });
       } else if (name === "add_task_comment") {
         result = await toolAddTaskComment(args as { task_id: string; content: string; requesting_user_id: number });
+      } else if (name === "extract_tasks_from_meeting") {
+        result = await toolExtractTasksFromMeeting(args as { meeting_id?: string; entry_id?: string; requesting_user_id?: number });
+      } else if (name === "get_review_queue") {
+        result = await toolGetReviewQueue(args as { requesting_user_id?: number });
+      } else if (name === "get_draft_meeting") {
+        result = await toolGetDraftMeeting(args as { meeting_id: string; requesting_user_id?: number });
+      } else if (name === "update_draft_meeting") {
+        result = await toolUpdateDraftMeeting(args as { meeting_id: string; notes?: string; title?: string; requesting_user_id?: number });
+      } else if (name === "publish_draft_meeting") {
+        result = await toolPublishDraftMeeting(args as { meeting_id: string; base?: string; countries?: string[]; requesting_user_id?: number });
       } else if (name === "get_meetings") {
         result = await toolGetMeetings(args as { limit?: number; requesting_user_id?: number });
       } else if (name === "get_users") {

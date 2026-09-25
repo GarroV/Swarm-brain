@@ -14,6 +14,7 @@
 // Здесь только ЧИСТАЯ логика: выбор страны и нарезка превью. Запросы к базе — в
 // functions/meeting-context. LLM тут нет и не нужен: тезисы и задачи уже в базе.
 import { pickSuggestedMarkets } from "./market-suggest.ts";
+import { detectToponymCountry } from "./toponyms.ts";
 
 export const PREVIEW_LIMITS = {
   /** Сколько заголовков разделов показать в свёрнутом виде. */
@@ -57,8 +58,14 @@ export function contextCountry(title: string | null): string | null {
   const { markets, source } = pickSuggestedMarkets({ title, participantMarkets: [], notesMarkets: [] });
   // Страховка на будущее: принимаем ровно сигнал названия. Если детектор когда-нибудь
   // начнёт возвращать что-то ещё при пустых остальных сигналах — здесь это отсечётся.
-  if (source !== "title") return null;
-  return markets.length === 1 ? markets[0] : null;
+  // Страна названа прямо — она и есть ответ, в топонимы не идём.
+  // ⚠️ Кросс-маркет здесь НЕ отсекается: детектор названия возвращает максимум одну страну
+  // (первое самое длинное совпадение), поэтому «Сербия и Хорватия» молча становится HR.
+  // Это поведение было до топонимов и не меняется здесь — issue #449.
+  if (source === "title") return markets.length === 1 ? markets[0] : null;
+  // Страна прямо не названа — пробуем топоним («Марибор» → SI, issue #229). Словарь отдельный
+  // и живёт только здесь: общий детектор (подсказка рынка, поиск) городов не знает и не должен.
+  return detectToponymCountry(title);
 }
 
 // Обрезка по слову: «…спрос выше мощ…» читается как сбой, поэтому режем по границе слова.

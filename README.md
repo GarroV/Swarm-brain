@@ -217,7 +217,7 @@ recorder/                       # bumblebee — macOS меню-бар рекор
 | `search_knowledge` | Семантический поиск (vector + keyword + file) |
 | `add_knowledge` | Добавить запись; `is_private` + `owner_telegram_id` для личного |
 | `get_entry` | Полный текст записи по ID |
-| `list_entries` | Список с фильтрами: source, entry_type, date, has_file, requesting_user_id |
+| `list_entries` | Список с фильтрами: source, entry_type, date, has_file |
 | `delete_entry` | Удалить запись + файл из Storage |
 | `update_entry` | Обновить content/summary/title/date/file |
 | `upload_file` | Загрузить файл в Storage (base64, до ~4MB) |
@@ -225,9 +225,13 @@ recorder/                       # bumblebee — macOS меню-бар рекор
 | `get_tasks` | Задачи с фильтрами: assignee, country, status, period |
 | `add_task` / `update_task` / `delete_task` | CRUD задач |
 | `get_meetings` | Последние встречи из Read.ai |
-| `get_users` | Команда с профилями, фильтр по market |
+| `whoami` | Кто вызывающий по токену: имя, внутренний ID, воркспейс |
+| `get_users` | Команда с профилями (включая владельца), фильтр по market |
 | `get_task_comments` | Комментарии-апдейты к задаче по её ID |
 | `add_task_comment` | Добавить комментарий-апдейт к задаче от своего лица |
+| `delete_task_comment` | Удалить свой комментарий к задаче |
+| `get_review_queue` / `get_draft_meeting` / `update_draft_meeting` / `publish_draft_meeting` | Вычитка черновиков встреч: очередь, черновик, правка, публикация |
+| `extract_tasks_from_meeting` | Предложения задач по тезисам встречи (ничего не создаёт) |
 
 ### Веб-интерфейс «Рой»
 

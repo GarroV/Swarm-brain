@@ -10,6 +10,7 @@ import {
   CarryBadge,
   CarryFlag,
   CheckBadge,
+  CountChip,
   DueBadge,
   ProgressBar,
   ProgressText,
@@ -204,6 +205,8 @@ function TaskRow(
             )}
           {item.to_carry && <CarryFlag reason={item.carry_reason} />}
           <CarryBadge count={item.carry_count} reason={item.carry_reason} />
+          <CountChip kind="comments" count={item.comment_count} />
+          <CountChip kind="links" count={item.link_count} />
           {item.due_date && <DueBadge date={item.due_date} closed={closed} />}
           {
             /* Исполнителя не повторяем, когда он один на всю инициативу: его имя стоит в
@@ -480,6 +483,16 @@ export function InitiativeList(
                       onNote={onNote}
                     />
                   ))}
+                  {
+                    /* «+ задача» нужна и здесь: у направления без инициатив лежит БОЛЬШИНСТВО
+                      задач, и до сих пор кнопки в этой ветке не было вовсе. */
+                  }
+                  {onAdd && (
+                    <AddTaskRow
+                      projectId={dir.project?.id ?? null}
+                      onAdd={onAdd}
+                    />
+                  )}
                 </div>
               )
               : dir.initiatives.map((ini) => {

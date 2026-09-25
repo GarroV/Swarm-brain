@@ -92,6 +92,7 @@ const SPRINT_SECTION = "__sprint__"; // канбан спринта — одна
 const CLOSED = new Set(["done", "cancelled"]);
 const DEFAULT_LENGTH_DAYS = 13; // двухнедельный спринт: старт + 13 = ровно 14 дней
 const ARCHIVE_NONE = "__archive__"; // «архив не выбран»: у ui/select пустая строка не значение
+const SPACE_NONE = "__no_space__"; // «Без пространства» — законное значение, а не пустота
 
 function iso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${
@@ -172,18 +173,25 @@ export function SprintsScreen() {
   );
   // Панель «Задачи» слева: нужна только при наборе состава. Выбор помнится между заходами —
   // как у переключателя видов (замечание владельца 19.09.2026).
-  const [poolOpen, setPoolOpen] = useState(true);
+  // Бэклог живёт в ШТОРКЕ, а не в постоянной колонке (владелец 19.09.2026: «добавление задач
+  // громоздко»): половина ширины экрана под список, из которого берут раз в неделю, — плохой
+  // размен. Открывается кнопкой и закрывается по Esc и клику вне.
+  const [poolOpen, setPoolOpen] = useState(false);
+  // Режим правки прячет СТРУКТУРНЫЕ кнопки (завести пространство, переименовать, удалить,
+  // взять из бэклога, «+ задача»). Ежедневные отметки — «готово», «к переносу», «как идут
+  // дела» — остаются всегда: прятать их за тумблер значит требовать два клика на действие,
+  // которое делают по десять раз в день.
+  const [editMode, setEditMode] = useState(false);
+  // Esc закрывает шторку: открытая поверх экрана панель обязана закрываться клавишей, иначе
+  // человек ищет крестик глазами.
   useEffect(() => {
-    try {
-      setPoolOpen(localStorage.getItem("swarm.sprints.pool") !== "0");
-    } catch { /* приватное окно — просто оставляем открытой */ }
-  }, []);
-  function togglePool(next: boolean) {
-    setPoolOpen(next);
-    try {
-      localStorage.setItem("swarm.sprints.pool", next ? "1" : "0");
-    } catch { /* приватное окно — панель просто не запомнится */ }
-  }
+    if (!poolOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPoolOpen(false);
+    };
+    globalThis.addEventListener("keydown", onKey);
+    return () => globalThis.removeEventListener("keydown", onKey);
+  }, [poolOpen]);
   // Переименование спринта: null — не правим, иначе черновик имени. Спринт, названный датами
   // при создании, со временем получает смысл («Запуск Эстонии»), и менять имя должно быть
   // можно, не пересоздавая период (#403).
@@ -741,7 +749,7 @@ export function SprintsScreen() {
             [null, cycles.filter((c) => c.tab_id === null).length] as const,
           ],
         )}
-        canManage={isAdmin}
+        canManage={isAdmin && editMode}
         onChanged={load}
         onChange={(id) => {
           setSpace(id);
@@ -812,7 +820,7 @@ export function SprintsScreen() {
             </SelectContent>
           </Select>
         )}
-        {
+        {editMode && (
           <button
             onClick={() => {
               const today = new Date();
@@ -832,10 +840,44 @@ export function SprintsScreen() {
           >
             <RoyIcon name="plus" size={14} strokeWidth={2} />
           </button>
-        }
+        )}
 
         {/* Вид запоминается у человека; канбан — только на компьютере (D003). */}
         <div className="ml-auto flex items-center gap-2">
+          {!accepted && detail && (
+            <button
+              type="button"
+              onClick={() => setPoolOpen(true)}
+              className="flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-semibold text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink dark:backdrop-blur-sm"
+            >
+              <RoyIcon name="plus" size={12} strokeWidth={2} />
+              <span className="hidden sm:inline">
+                {dt("Взять из бэклога", "Take from the backlog")}
+              </span>
+              <span className="tabular-nums text-ink-soft/70">
+                {poolTasks.length}
+              </span>
+            </button>
+          )}
+          {/* Режим правки: вне его доска только читается — никаких «+», «✎», «✕». Ежедневные
+              отметки он НЕ прячет (см. комментарий у состояния). */}
+          <button
+            type="button"
+            onClick={() => setEditMode((v) => !v)}
+            aria-pressed={editMode}
+            title={dt(
+              "Показать кнопки правки: завести, переименовать, удалить",
+              "Show editing controls: create, rename, delete",
+            )}
+            className={`flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
+              editMode
+                ? "border-primary/40 bg-primary/10 text-primary"
+                : "border-line bg-surface text-ink-soft hover:bg-surface-2 dark:backdrop-blur-sm"
+            }`}
+          >
+            <RoyIcon name="pencil" size={12} strokeWidth={2} />
+            <span className="hidden sm:inline">{dt("Правка", "Edit")}</span>
+          </button>
           <ViewToggle
             value={isDesktop ? view : "list"}
             onChange={setView}
@@ -932,7 +974,7 @@ export function SprintsScreen() {
                     className="w-56 rounded-full border border-line bg-surface px-3 py-1 text-sm font-bold text-ink outline-none focus:border-ink-soft"
                   />
                 )}
-              {isAdmin && !accepted && renaming === null && (
+              {isAdmin && editMode && !accepted && renaming === null && (
                 <button
                   onClick={() => setRenaming(detail.name)}
                   disabled={busy}
@@ -941,6 +983,53 @@ export function SprintsScreen() {
                 >
                   ✎
                 </button>
+              )}
+              {/* Перенос спринта в другое пространство (#397). Только в режиме правки: это
+                  структурное действие, а не ежедневное. Принятый спринт не двигаем — он
+                  слепок периода, и переезд задним числом переписал бы чужую историю. */}
+              {isAdmin && editMode && !accepted && renaming === null &&
+                spaces.length > 0 && (
+                <Select
+                  value={detail.tab_id ?? SPACE_NONE}
+                  onValueChange={async (v) => {
+                    const next = String(v) === SPACE_NONE ? null : String(v);
+                    if (next === (detail.tab_id ?? null)) return;
+                    setErr(null);
+                    try {
+                      await updateSprintCycle(detail.id, { tab_id: next });
+                      setSpace(next);
+                      setSpacePicked(true);
+                      await load();
+                    } catch (e) {
+                      setErr(
+                        e instanceof Error ? e.message : dt(
+                          "Не удалось перенести спринт",
+                          "Could not move the sprint",
+                        ),
+                      );
+                    }
+                  }}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    aria-label={dt("Пространство спринта", "Sprint space")}
+                    className="h-7 shrink-0 rounded-full border-line bg-surface px-2.5 text-[11px] font-semibold text-ink-soft dark:bg-surface dark:backdrop-blur-sm"
+                  >
+                    <SelectValue>
+                      {(v) =>
+                        spaces.find((sp) => sp.id === String(v))?.name ??
+                          dt("Без пространства", "No space")}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {spaces.map((sp) => (
+                      <SelectItem key={sp.id} value={sp.id}>{sp.name}</SelectItem>
+                    ))}
+                    <SelectItem value={SPACE_NONE}>
+                      {dt("Без пространства", "No space")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               )}
               <span className="text-xs text-ink-soft">
                 {fmtRange(detail.start_date, detail.end_date)}
@@ -1047,40 +1136,7 @@ export function SprintsScreen() {
                 /* Пул — способ набрать состав, поэтому он нужен обоим видам; на телефоне его
                 нет (D003): выбор галочками в узкой колонке нечитаем. */
               }
-              {accepted
-                ? (reportOpen && <SprintReport cycle={detail} />)
-                : isDesktop && !poolOpen
-                ? (
-                  /* Свёрнутая панель остаётся слева, на своём месте: кнопка, уехавшая в правый
-                     верх, читалась как «задачи куда-то делись» (владелец 19.09.2026). */
-                  <button
-                    type="button"
-                    onClick={() => togglePool(true)}
-                    title={dt("Показать задачи", "Show tasks")}
-                    className="flex w-9 shrink-0 flex-col items-center gap-2 rounded-xl border border-line bg-surface/40 py-2 text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink dark:backdrop-blur-sm"
-                  >
-                    <RoyIcon name="cright" size={14} />
-                    <span className="text-[11px] font-semibold tabular-nums">
-                      {poolTasks.length}
-                    </span>
-                    <span
-                      className="text-[11px] font-semibold tracking-wide"
-                      style={{ writingMode: "vertical-rl" }}
-                    >
-                      {dt("Задачи", "Tasks")}
-                    </span>
-                  </button>
-                )
-                : isDesktop && (
-                  <SprintTaskPool
-                    tasks={poolTasks}
-                    projects={projects}
-                    users={users}
-                    adding={busy}
-                    onAdd={addToSprint}
-                    onHide={() => togglePool(false)}
-                  />
-                )}
+              {accepted && reportOpen && <SprintReport cycle={detail} />}
               {showJournal
                 ? <JournalScreen space={space} />
                 : showAnalytics
@@ -1115,7 +1171,7 @@ export function SprintsScreen() {
                           // Принятый спринт — слепок: в него не дописывают. В группировке по
                           // людям «+ задача» нет: группа — человек, а не проект, и класть
                           // задачу «в человека» некуда.
-                          onAdd={accepted || byPeople
+                          onAdd={accepted || byPeople || !editMode
                             ? undefined
                             : (projectId) => setAddingTo(projectId)}
                           onDone={accepted ? undefined : toggleDone}
@@ -1176,6 +1232,42 @@ export function SprintsScreen() {
             </div>
           </>
         )}
+
+      {/* Шторка бэклога. Поверх экрана, а не колонкой: набор состава — редкое действие, и
+          отдавать ему половину ширины каждый день незачем (#407). Подложка закрывает по клику
+          вне, Esc — клавишей. */}
+      {poolOpen && (
+        <div className="fixed inset-0 z-40 flex justify-end">
+          <button
+            type="button"
+            aria-label={dt("Закрыть", "Close")}
+            onClick={() => setPoolOpen(false)}
+            className="absolute inset-0 bg-ink/30 backdrop-blur-[1px]"
+          />
+          <aside className="relative flex h-full w-full max-w-[420px] flex-col border-l border-line bg-background p-3 shadow-xl">
+            <div className="mb-2 flex items-center gap-2">
+              <h3 className="text-sm font-bold text-ink">
+                {dt("Взять из бэклога", "Take from the backlog")}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setPoolOpen(false)}
+                title={dt("Закрыть", "Close")}
+                className="ml-auto rounded-lg p-1.5 text-ink-soft hover:bg-surface-2 hover:text-ink"
+              >
+                <RoyIcon name="x" size={14} />
+              </button>
+            </div>
+            <SprintTaskPool
+              tasks={poolTasks}
+              projects={projects}
+              users={users}
+              adding={busy}
+              onAdd={addToSprint}
+            />
+          </aside>
+        </div>
+      )}
 
       <AcceptDialog
         open={acceptOpen && !!detail}

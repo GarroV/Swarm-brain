@@ -21,6 +21,7 @@ import {
   buildEntriesQuery,
   buildReviewQueueQuery,
   ENTRY_COLUMNS,
+  ENTRY_LIST_COLUMNS,
   EntryAccessError,
   getEntrySecure,
 } from "./entries-guard.ts";
@@ -95,16 +96,21 @@ import {
   findDuplicateMeeting,
   type MeetingAttendee,
 } from "../_shared/meeting-dedup.ts";
-import {
-  arbitrateFullness,
-  type TranscriptLike,
-} from "../_shared/meeting-fullness.ts";
+import { publishDraftMeeting } from "../_shared/meeting-publish.ts";
 import { canMutateTask, canViewTask } from "../_shared/tasks/access.ts";
-import { normalizeExtractedDueDate, todayIso } from "../_shared/llm-date.ts";
+import { todayIso } from "../_shared/llm-date.ts";
+import {
+  callExtractor,
+  EXTRACT_MAX_TASKS,
+  type ExtractedTask,
+  gptExtractTasks,
+  toExtractedTask,
+} from "../_shared/task-extract.ts";
 import {
   canAccessDraftMeeting,
+  canDeleteDraftMeeting,
   type DraftMeetingRow,
-  draftMeetingsOwnScoped,
+  draftMeetingsOwnScopedFilter,
 } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
 import { apiErr, corsHeaders, json, parseListLimit } from "./http.ts";
@@ -312,115 +318,6 @@ async function withFreshAssignees<
     );
     return fresh.length === tids.length ? { ...t, assignees: fresh } : t;
   });
-}
-
-// ── Извлечение задач из тезисов встречи (тот же подход, что POST /tasks/extract,
-//    плюс резолв исполнителей и привязка к встрече) ───────────────────────────────
-type ExtractedTask = {
-  title: string;
-  description?: string | null;
-  assignee?: string | null;
-  due_date?: string | null;
-  country?: string | null;
-};
-
-// Пустоты, которые модель выдаёт СТРОКОЙ вместо JSON null. Промпт ниже это запрещает, но
-// промпт можно проигнорировать, а проверку нет: строка "null" доезжала до карточки разбора
-// серым чипом «null» вместо страны (issue #125). Тот же список продублирован на клиенте
-// (`miniapp/src/lib/proposedTasks.ts`) — там он страхует уже любой кривой ответ API.
-const NULLISH_FIELDS = new Set([
-  "",
-  "null",
-  "none",
-  "nil",
-  "undefined",
-  "n/a",
-  "na",
-  "-",
-  "—",
-  "–",
-]);
-
-function cleanExtractedField(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return NULLISH_FIELDS.has(trimmed.toLowerCase()) ? null : trimmed;
-}
-
-// Промпт и тело запроса — ОДИН источник на оба режима (обычный ответ и поток). Копий промпта
-// извлечения задач в проекте и так три (бот, api, историчные дубли); четвёртая ради формата
-// доставки гарантированно разошлась бы с этой.
-const EXTRACT_MODEL = "gpt-4o-mini";
-const EXTRACT_MAX_TASKS = 10;
-
-function extractPrompt(today: string): string {
-  return `Сегодня ${today}. Извлеки задачи из тезисов встречи. Верни JSON массив (только JSON, без markdown): [{"title":"короткая формулировка действия","description":"1 фраза контекста из обсуждения: зачем/какой ожидаемый результат/важная деталь. НЕ повторяй заголовок другими словами","assignee":"полное имя ответственного","due_date":"YYYY-MM-DD","country":"ISO-код рынка, например RS"}]. Бери только реальные поручения/действия с конкретным результатом. Если задач нет — пустой массив [].\nЕсли для поля (кроме title) в тексте нет данных — ставь JSON-литерал null БЕЗ кавычек. Строка "null" запрещена: это текст, а не пустое значение, и он попадает пользователю на экран.\ndue_date: год считай от сегодняшней даты. Если в тексте назван только день и месяц («до 17 августа») — подставь ближайший подходящий год, НИКОГДА не бери год из головы. Если срок не назван — null.`;
-}
-
-function extractRequestBody(
-  text: string,
-  today: string,
-  stream: boolean,
-): string {
-  return JSON.stringify({
-    model: EXTRACT_MODEL,
-    messages: [
-      { role: "system", content: extractPrompt(today) },
-      { role: "user", content: text.slice(0, 8000) },
-    ],
-    max_tokens: 1200,
-    ...(stream ? { stream: true } : {}),
-  });
-}
-
-function callExtractor(
-  text: string,
-  today: string,
-  stream: boolean,
-): Promise<Response> {
-  return fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")!}`,
-    },
-    body: extractRequestBody(text, today, stream),
-  });
-}
-
-// Слой 2 поверх промпта: выдуманный моделью год и строковые «пустоты» чиним здесь — промпт
-// можно проигнорировать, проверку нет. Задача без заголовка отбрасывается (возвращаем null):
-// показывать и создавать там нечего.
-function toExtractedTask(raw: unknown, today: string): ExtractedTask | null {
-  const t = (raw ?? {}) as Record<string, unknown>;
-  const title = cleanExtractedField(t.title);
-  if (!title) return null;
-  return {
-    title,
-    description: cleanExtractedField(t.description),
-    assignee: cleanExtractedField(t.assignee),
-    due_date: normalizeExtractedDueDate(cleanExtractedField(t.due_date), today),
-    country: cleanExtractedField(t.country),
-  };
-}
-
-async function gptExtractTasks(text: string): Promise<ExtractedTask[]> {
-  const today = todayIso();
-  const res = await callExtractor(text, today, false);
-  if (!res.ok) return [];
-  try {
-    const raw = (await res.json()).choices[0].message.content.replace(
-      /```json\n?|\n?```/g,
-      "",
-    ).trim();
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return (parsed as unknown[])
-      .map((item) => toExtractedTask(item, today))
-      .filter((t): t is ExtractedTask => t !== null);
-  } catch {
-    return [];
-  }
 }
 
 // Потоковое извлечение (SSE). Экран разбора открывается мгновенно и дописывает задачи по мере
@@ -2274,8 +2171,10 @@ Deno.serve(async (req: Request) => {
     // Несогласованные (очередь вычитки) — по причастности: владелец ИЛИ участник встречи.
     // Обычный фильтр видимости тут не годится: «ничья» неприватная встреча из read-ai висела
     // бы в очереди у всего воркспейса (issue #66). Согласованные — обычное правило.
-    // Очередь вычитки (единицы строк) — текст нужен сразу и целиком. Большой список —
-    // урезанный (toListRow ниже): 230 встреч × полный транскрипт = ~10 МБ в браузер (issue #102).
+    // Очередь вычитки (единицы строк) — текст нужен сразу и целиком, поэтому ENTRY_COLUMNS.
+    // Большой список — превью из базы (ENTRY_LIST_COLUMNS): 230 встреч × полный транскрипт =
+    // ~10 МБ в браузер (issue #102), а выбирать полный текст ради 400 символов стоило 654 мс
+    // базы против 15 мс (issue #490). Форму ответа приводит toListRow ниже.
     const isReviewQueue = confirmedParam === "false";
     let q = (isReviewQueue
       ? buildReviewQueueQuery(supabase, ENTRY_COLUMNS, {
@@ -2283,7 +2182,7 @@ Deno.serve(async (req: Request) => {
         telegramId: telegram_id,
         email: userEmail,
       })
-      : buildEntriesQuery(supabase, ENTRY_COLUMNS, {
+      : buildEntriesQuery(supabase, ENTRY_LIST_COLUMNS, {
         groupId,
         telegramId: telegram_id,
       }, { count: "exact" }))
@@ -2577,7 +2476,7 @@ Deno.serve(async (req: Request) => {
     const status = url.searchParams.get("status") ?? "awaiting_review";
     let q = supabase.from("meetings")
       .select(
-        "id, title, source, identity_kind, started_at, ended_at, status, draft_notes_md, recorders, entry_id, created_at",
+        "id, title, source, identity_kind, started_at, ended_at, status, has_draft_notes, recorders, co_owners, entry_id, created_at",
         { count: "exact" },
       )
       .eq("group_id", groupId)
@@ -2591,14 +2490,14 @@ Deno.serve(async (req: Request) => {
     // ВСЕГДА только свои: черновик на вычитке — сырая запись чужого разговора, у админа тут
     // оверсайта нет (решение владельца 2026-08-20). Прежний `?all=true` для админа убран;
     // пригляд «у кого копится» — агрегат без контента GET /admin/review-counts.
-    q = q.contains(
-      "recorders",
-      JSON.stringify(draftMeetingsOwnScoped(telegram_id)),
-    );
+    // Свои = записывал ИЛИ совладелец: участник встречи с аккаунтом SWARM (решение 2026-09-25).
+    q = q.or(draftMeetingsOwnScopedFilter(telegram_id));
     const { data, error, count } = await q;
     if (error) return apiErr(500, error.message, origin);
-    // draft_notes_md → признак has_draft_notes: список рисует название/дату/статус, а текст
+    // has_draft_notes вместо draft_notes_md: список рисует название/дату/статус, а текст
     // тезисов ехал в 10-секундном поллинге (154 кБ за опрос ≈ 55 МБ/час на вкладку, issue #108).
+    // С 25.09.2026 текст не выбирается ВООБЩЕ (issue #491) — раньше он читался и выбрасывался
+    // в toAgentListRow: 119 мс базы на опрос, из них ~88 мс на выброшенное.
     // Полный текст берёт деталь GET /agent-meetings/:id — она его и так до-загружает.
     const enrichedList = await withRecorderNames(
       (data ?? []) as Array<{ recorders?: unknown }>,
@@ -2846,6 +2745,14 @@ Deno.serve(async (req: Request) => {
       if (meeting.status === "in_base") {
         return apiErr(409, "Уже в базе — удаляйте через раздел «База»", origin);
       }
+      // Совладелец по приглашению черновик не удаляет — он общий (решение владельца 2026-09-25).
+      if (!canDeleteDraftMeeting(meeting as DraftMeetingRow, telegram_id)) {
+        return apiErr(
+          403,
+          "Only the person who recorded this meeting can delete the draft",
+          origin,
+        );
+      }
       await supabase.from("meetings").delete().eq("id", mId);
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
@@ -2860,223 +2767,17 @@ Deno.serve(async (req: Request) => {
       }
       const isPrivate = body.base === "personal";
 
-      // идемпотентность: уже опубликовано → вернуть существующую запись
-      if (meeting.status === "in_base" && meeting.entry_id) {
-        const { data: existing } = await supabase.from("entries").select(
-          ENTRY_COLUMNS,
-        ).eq("id", meeting.entry_id as string).single();
-        return json(existing, 200, origin);
-      }
-      const draft = meeting.draft_notes_md as string | null;
-      if (!draft) {
-        return apiErr(400, "Тезисы ещё не готовы — публиковать нечего", origin);
-      }
-
-      // Рынки: приоритет у человека (issue #73). Пришли в теле с экрана вычитки — они и
-      // авторитетны, классификатор не зовём вовсе (ни лишнего вызова, ни его перетега).
-      // Порог 2+ применяется и к ним (issue #167, решение владельца 2026-08-28): чипы
-      // предзаполнены подсказкой, поэтому «выбрал человек» на практике часто значит
-      // «предложила система, человек нажал Согласовать» — а 2 рынка в записи это кросс-маркет,
-      // и она всплывала бы в дайджесте КАЖДОЙ из стран. Пустой список = «Общее», в базе это тег
-      // General, а не отсутствие тега. Поля countries в теле нет (бот, старый клиент) → классификатор.
-      const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY")!;
-      const countries = Array.isArray(body.countries)
-        ? marketTagsFromInput(body.countries as string[])
-        : applyGeneralSentinel(
-          (await extractEntryMeta(draft, OPENAI_KEY)).countries,
-        );
-      const embedding = await embed(
-        buildEmbeddingInput(draft, countries),
-        OPENAI_KEY,
-      );
-
-      const startedAt = meeting.started_at as string | null;
-      const entryDate = startedAt ? startedAt.split("T")[0] : null;
-      const mAttendees =
-        (meeting as { attendees?: MeetingAttendee[] }).attendees ?? [];
-
-      // Кросс-источниковый дедуп: эта встреча уже в базе (Granola / повторный паблиш)?
-      // Если совпавшая запись видима публикующему (публичная или его личная) — привязываем
-      // meeting к ней и возвращаем её, а не плодим вторую. Чужие приватные записи игнорируем
-      // (не привязываемся к ним и не раскрываем) — тогда публикуем как обычно.
-      const dup = await findDuplicateMeeting(supabase, {
+      const published = await publishDraftMeeting(supabase, meeting, {
         groupId,
-        entryDate,
-        startedAt,
-        attendees: mAttendees,
-        // identity_key решает однозначно только для СРАВНИМЫХ ключей (одно календарное событие
-        // или одна комната у двух рекордеров); ключи из разных пространств им не разводятся (#164).
-        identityKey: (meeting.identity_key as string | null) ?? null,
-        // Название — сигнал для Granola-записей (участников она не отдаёт вовсе).
-        title: (meeting.title as string | null) ?? null,
-        // E-mail публикующего — сигнал для записи из комнаты (ни названия, ни участников):
-        // сам записавший есть в attendees календарной записи той же встречи.
+        telegramId: telegram_id,
         viewerEmail: userEmail,
-        viewerId: telegram_id,
+        isPrivate,
+        countries: body.countries,
+        entryColumns: ENTRY_COLUMNS,
       });
-      // Фильтр приватности теперь ВНУТРИ findDuplicateMeeting (issue #45) — чужое личное сюда
-      // не доходит; прежняя ручная проверка на этой строке была единственной из четырёх.
-      if (dup) {
-        await supabase.from("meetings")
-          .update({
-            entry_id: dup.id,
-            status: "in_base",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", mId)
-          .is("entry_id", null);
-
-        // «В базу по дефолту идёт САМАЯ ПОЛНАЯ встреча» (решение владельца 2026-08-28, issue #176).
-        // Прежде тут молча оставалась версия того, кто опубликовал раньше — то самое правило
-        // «кто первый», за которое проект уже заплатил потерей записи на 2ч26м в claim (#23/#24).
-        // Полноту меряем объёмом РАСПОЗНАННОГО: длительность к потере звука собеседника слепа
-        // (26.08: 1920 с против 1980 с при 469 против 1097 сегментов).
-        const { data: pubMeeting } = await supabase.from("meetings")
-          .select("id, transcript, notes_edited_at")
-          .eq("entry_id", dup.id)
-          .neq("id", mId)
-          .order("recorded_seconds", { ascending: false, nullsFirst: false })
-          .limit(1)
-          .maybeSingle();
-        const verdict = arbitrateFullness(
-          {
-            transcript:
-              (meeting as { transcript?: TranscriptLike }).transcript ?? null,
-            notesEditedAt: (meeting.notes_edited_at as string | null) ?? null,
-          },
-          {
-            transcript: (pubMeeting as { transcript?: TranscriptLike } | null)
-              ?.transcript ?? null,
-            notesEditedAt:
-              (pubMeeting as { notes_edited_at?: string | null } | null)
-                ?.notes_edited_at ?? null,
-          },
-        );
-
-        if (verdict.replace) {
-          // Заменяем СОДЕРЖИМОЕ записи, id сохраняется: ссылки, задачи и привязки не рвутся.
-          // Прежние тезисы не пропадают — они остаются в draft_notes_md своей строки meetings,
-          // а факт замены пишем в metadata (кто, когда, чем именно оказалась полнее).
-          const prevMeta =
-            ((dup as unknown as { metadata?: Record<string, unknown> })
-              .metadata ?? {}) as Record<string, unknown>;
-          const { data: prevEntry } = await supabase.from("entries").select(
-            "metadata",
-          ).eq("id", dup.id).single();
-          const baseMeta =
-            ((prevEntry as { metadata?: Record<string, unknown> } | null)
-              ?.metadata ?? prevMeta) as Record<string, unknown>;
-          const newEmbedding = await embed(
-            buildEmbeddingInput(draft, countries),
-            OPENAI_KEY,
-          );
-          await supabase.from("entries").update({
-            content: draft,
-            summary: draft,
-            embedding: newEmbedding,
-            metadata: {
-              ...baseMeta,
-              meeting_id: mId,
-              title: meeting.title ?? baseMeta.title ?? null,
-              attendees: (meeting as { attendees?: unknown }).attendees ??
-                baseMeta.attendees ?? [],
-              identity_key: (meeting.identity_key as string | null) ?? null,
-              superseded: {
-                at: new Date().toISOString(),
-                by_telegram_id: telegram_id,
-                reason: verdict.reason,
-                prev_meeting_id: (pubMeeting as { id?: string } | null)?.id ??
-                  null,
-              },
-            },
-            updated_at: new Date().toISOString(),
-          }).eq("id", dup.id);
-          console.log(
-            `publish: версия встречи заменена на более полную ${dup.id} (${verdict.reason}, by ${telegram_id})`,
-          );
-        }
-
-        const { data: existing } = await supabase.from("entries").select(
-          ENTRY_COLUMNS,
-        ).eq("id", dup.id).single();
-        // Клиент обязан сказать правду (issue #170): либо «твоя версия стала основной, она полнее»,
-        // либо «встреча уже в базе, там своя версия — ты правишь общую запись». Прежний ответ был
-        // неотличим от «создал новую», и тост уверял «Черновик опубликован».
-        return json(
-          {
-            ...(existing as Record<string, unknown>),
-            duplicate: true,
-            replaced: verdict.replace,
-            arbitration: verdict.reason,
-          },
-          200,
-          origin,
-        );
-      }
-
-      const { data: created, error: insErr } = await supabase.from("entries")
-        .insert({
-          content: draft,
-          summary: draft,
-          embedding,
-          added_by: String(telegram_id),
-          source: (meeting.source as string) ?? "desktop-agent", // рекордер/granola/… — сохраняем провенанс
-          entry_type: "meeting",
-          // attendees из календаря (meetings.attendees, собран рекордером при claim) — несём в запись,
-          // чтобы участники были видны и после публикации (UI: блок «Участники»).
-          // identity_key несём в запись, чтобы будущий дедуп мог отличить разные встречи одного дня
-          // с тем же составом (регулярные командные созвоны) от повторной записи той же встречи.
-          metadata: {
-            meeting_id: mId,
-            title: meeting.title ?? null,
-            confirmed: true,
-            attendees: (meeting as { attendees?: unknown }).attendees ?? [],
-            identity_key: (meeting.identity_key as string | null) ?? null,
-          },
-          countries,
-          entry_date: entryDate,
-          group_id: groupId,
-          is_private: isPrivate,
-          // Автор = тот, кто записал встречу и завёл её в систему. Раньше здесь стояло
-          // `isPrivate ? telegram_id : null`: у общей записи автор стирался, потому что
-          // owner_id тащит две роли сразу — авторство и ключ приватности, а для видимости
-          // общей записи он не нужен (фильтр `is_private=false OR owner_id=…` проходит по
-          // первой половине). На видимость это поле у общей записи не влияет, зато без него
-          // автор не мог править и удалять собственную опубликованную встречу.
-          owner_id: telegram_id,
-        }).select(ENTRY_COLUMNS).single();
-      if (insErr || !created) {
-        return apiErr(500, insErr?.message ?? "publish failed", origin);
-      }
-
-      // привязка + статус с защитой от гонки (только если ещё не привязано)
-      const { data: linked } = await supabase.from("meetings")
-        .update({
-          entry_id: (created as { id: string }).id,
-          status: "in_base",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", mId)
-        .is("entry_id", null)
-        .select("id")
-        .maybeSingle();
-      if (!linked) {
-        // параллельная публикация — убираем дубль, возвращаем уже привязанную запись
-        await supabase.from("entries").delete().eq(
-          "id",
-          (created as { id: string }).id,
-        );
-        const { data: m2 } = await supabase.from("meetings").select("entry_id")
-          .eq("id", mId).single();
-        const existingId = (m2 as { entry_id: string | null }).entry_id;
-        const { data: existing } = await supabase.from("entries").select(
-          ENTRY_COLUMNS,
-        ).eq("id", existingId as string).single();
-        return json(existing, 200, origin);
-      }
-      // Задачи НЕ генерируем автоматически. Пользователь создаёт их вручную кнопкой
-      // «Сгенерировать задачи» в ревью встречи / на экране встречи (preview → добавить).
-      return json(created, 201, origin);
+      return published.ok
+        ? json(published.entry, published.status, origin)
+        : apiErr(published.status, published.message, origin);
     }
 
     return apiErr(405, "Method not allowed", origin);

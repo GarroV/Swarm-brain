@@ -140,6 +140,19 @@ open bumblebee.app
 # логи: log stream --predicate 'process == "SwarmRecorder"'  (или Console.app)
 ```
 
+### Журнал и автозапуск (build 35, issue #468)
+
+- **Журнал:** `~/Library/Logs/SwarmRecorder/recorder-<дата>.log`, хранится 3 дня. Строка `TICK` раз в 25 с
+  (состояние, микрофон, встреча, предложение, память), `LAUNCH … прошлая сессия: …` на старте, `STATE`,
+  `EXIT clean: …`. Те же строки сами уезжают на сервер (`recorder-diag` → `recorder_diagnostics`) — у людей
+  файлы просить не нужно.
+- **Автозапуск:** приложение, установленное в `/Applications`, само ставит LaunchAgent
+  `~/Library/LaunchAgents/io.dodobrands.swarmrecorder.plist`: старт при входе в систему, подъём после
+  падения, но не после «Выйти». Экземпляр, открытый руками, передаёт эстафету launchd и перезапускается
+  (след — `~/Library/Logs/SwarmRecorder/autostart.log`). Dev-сборка из рабочей папки автозапуск не трогает.
+- **Выключить автозапуск:** `touch ~/Library/Application\ Support/SwarmRecorder/no-autostart`, затем
+  `launchctl bootout gui/$(id -u)/io.dodobrands.swarmrecorder`.
+
 При первом запуске macOS попросит доступ к записи экрана/системного звука
 (System Settings → Privacy → Screen Recording) и к микрофону — выдать вручную.
 После пересборки разрешения может понадобиться выдать заново — известное неудобство.
@@ -226,8 +239,10 @@ Edge-функция: `supabase/functions/swarm-recorder-setup` (публичны
 1. Внести изменения в `recorder/`, **поднять `recorder/VERSION`** (напр. `2` → `3`).
 2. Закоммитить и смёржить в `main`. **Проверить, что собирается** (`./build-app.sh`).
 3. Поставить тег на этот коммит и запушить: `git tag recorder-build-3 && git push origin recorder-build-3`.
-4. **Залить готовый zip в Storage — раздача идёт ОТТУДА, не с GitHub** (репозиторий приватный
-   с 20.08.2026, release asset анонимно отдаёт 404 — issue #91):
+4. **Залить готовый zip в Storage — раздача идёт ОТТУДА, не с GitHub** (release asset анонимно
+   отдаёт 404 — issue #91). **С 24.09.2026 это делает сам `recorder-release.yml`** (шаг «Upload zip
+   to Supabase Storage», ключ через Management API, в конце проверяет анонимный GET = 200). Руками —
+   только если шаг упал (локальному CLI может не хватить прав на ключи):
    ```sh
    KEY="$(supabase projects api-keys --project-ref vbqglndbxkpmreccpqmr -o json \
      | python3 -c 'import sys,json;d=json.load(sys.stdin);ks=d["keys"] if isinstance(d,dict) else d;print(next(k["api_key"] for k in ks if k.get("id")=="service_role"))')"
