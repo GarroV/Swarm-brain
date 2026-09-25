@@ -106,14 +106,9 @@ export function RoyRail({
       className="flex w-[216px] shrink-0 flex-col border-r border-line bg-surface-2 max-[1099px]:w-[56px]"
     >
       <div className="flex items-center gap-2.5 border-b border-line px-4 py-3.5 max-[1099px]:justify-center max-[1099px]:px-0">
-        {/* Бренд-блок по стенду: тёмный квадрат с «S» и имя капсом (визуальный шаг В2). */}
-        <span
-          aria-hidden
-          className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-ink font-bold text-surface"
-          style={{ fontSize: 13 }}
-        >
-          S
-        </span>
+        {/* Бренд-блок: знак — тот же файл, что фавикон (циановый неон), и имя капсом. */}
+        {/* eslint-disable-next-line @next/next/no-img-element -- статичный SVG из app/icon.svg, оптимизатор не нужен */}
+        <img src="/icon.svg" alt="" aria-hidden width={28} height={28} className="size-7 shrink-0" />
         <span className="flex min-w-0 flex-col max-[1099px]:hidden">
           {/* Полное имя продукта (решение владельца 2026-09-25: «тут надо сворм брейн»). */}
           <span className="truncate font-bold text-ink" style={{ fontSize: 13.5, letterSpacing: "0.04em" }}>
