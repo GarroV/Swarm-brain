@@ -13,7 +13,17 @@ export default defineConfig({
       // Программы, которые исполняются только внутри контейнера: у них верхнеуровневый
       // await, запуск браузера и ffmpeg. Их проверяет живой смоук записи, а не юнит-тест,
       // и включение их в покрытие меряло бы не логику, а наличие контейнера.
-      exclude: ["src/container/verify-environment.ts", "src/container/smoke-audio.ts"],
+      exclude: [
+        "src/container/verify-environment.ts",
+        "src/container/smoke-audio.ts",
+        "src/meet-adapter/smoke-meet.ts",
+        // Те же основания, что выше, но для браузера: `dom.ts` исполняется В СТРАНИЦЕ
+        // (Playwright передаёт функцию исходником), `meet.ts` — это Playwright вокруг уже
+        // проверенных чистых функций. Их проверяет живой смоук `smoke-meet.ts` в контейнере,
+        // а юнит-мера здесь мерила бы наличие браузера, а не логику.
+        "src/meet-adapter/dom.ts",
+        "src/meet-adapter/meet.ts",
+      ],
     },
   },
 });
