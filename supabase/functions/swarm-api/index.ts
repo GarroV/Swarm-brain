@@ -632,6 +632,7 @@ Deno.serve(async (req: Request) => {
     telegram_id,
     isAdmin,
     origin,
+    resolveNames,
   );
   if (adminResp) return adminResp;
 
@@ -882,6 +883,7 @@ Deno.serve(async (req: Request) => {
     telegram_id,
     groupId,
     origin,
+    resolveNames,
   );
   if (journalResp) return journalResp;
 
@@ -959,10 +961,11 @@ Deno.serve(async (req: Request) => {
         // Имя + фамилия: в карточке задачи автор стоит рядом с исполнителем, а тот показан
         // полным именем («Vasiliy Garro»). Одно голое имя рядом с полным читается как разные
         // люди. Фамилии может не быть — тогда остаётся имя.
-        const { data: profiles } = await supabase
+        const { data: profiles, error: profErr } = await supabase
           .from("user_profiles")
           .select("telegram_id, first_name, last_name")
           .in("telegram_id", creatorIds);
+        if (profErr) console.error("[tasks creator names]", profErr.message);
         (profiles ?? []).forEach(
           (
             p: {

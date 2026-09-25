@@ -28,6 +28,7 @@ export async function handleAdminRoutes(
   telegramId: number,
   isAdmin: boolean,
   origin: string,
+  resolveNames: (ids: number[]) => Promise<Map<number, string>>,
 ): Promise<Response | null> {
   if (!routePath.startsWith("/admin")) return null;
 
@@ -51,27 +52,9 @@ export async function handleAdminRoutes(
     const counts = await reviewCountsByMember(supabase, groupId);
 
     const ids = [...counts.keys()];
-    const { data: profs } = ids.length
-      ? await supabase.from("user_profiles").select(
-        "telegram_id, first_name, last_name",
-      ).in("telegram_id", ids)
-      : {
-        data: [] as Array<
-          { telegram_id: number; first_name?: string; last_name?: string }
-        >,
-      };
-    const nameById = new Map<number, string>();
-    for (
-      const p of (profs ?? []) as Array<
-        { telegram_id: number; first_name?: string; last_name?: string }
-      >
-    ) {
-      nameById.set(
-        p.telegram_id,
-        [p.first_name, p.last_name].filter(Boolean).join(" ") ||
-          `#${p.telegram_id}`,
-      );
-    }
+    // Имена — общим resolveNames (профиль, затем @username, ошибка в лог). Свой запрос к
+    // user_profiles без фолбэка на username показывал людей как «#744230399».
+    const nameById = await resolveNames(ids);
     const result = ids
       .map((id) => ({
         telegram_id: id,

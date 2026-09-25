@@ -59,6 +59,7 @@ function patchReq(body: unknown): Request {
 }
 
 const ADMIN = 744230399;
+const noNames = () => Promise.resolve(new Map<number, string>());
 
 Deno.test("PATCH /admin/users/:username — ожидающему приглашению привязывается email (lower)", async () => {
   const { client, calls } = makeSupabase({ data: { id: 29 } });
@@ -69,6 +70,7 @@ Deno.test("PATCH /admin/users/:username — ожидающему приглаш�
     ADMIN,
     true,
     "*",
+    noNames,
   );
   assertEquals(res!.status, 200);
   assertEquals(await res!.json(), {
@@ -100,6 +102,7 @@ Deno.test("PATCH /admin/users/:email — ожидающее email-only приг�
     ADMIN,
     true,
     "*",
+    noNames,
   );
   assertEquals(res!.status, 200);
   assertEquals(calls.find((c) => c.method === "eq")?.args, [
@@ -117,6 +120,7 @@ Deno.test("PATCH ожидающему с полями профиля — чес�
     ADMIN,
     true,
     "*",
+    noNames,
   );
   assertEquals(res!.status, 400);
   assertEquals(calls.length, 0); // в базу не ходили
@@ -131,6 +135,7 @@ Deno.test("PATCH ожидающему без email — 400 (нечего сох�
     ADMIN,
     true,
     "*",
+    noNames,
   );
   assertEquals(res!.status, 400);
 });
@@ -144,6 +149,7 @@ Deno.test("PATCH — приглашение не найдено → 404", async 
     ADMIN,
     true,
     "*",
+    noNames,
   );
   assertEquals(res!.status, 404);
 });
@@ -160,6 +166,7 @@ Deno.test("PATCH — занятый email → 409 с понятным текст
     ADMIN,
     true,
     "*",
+    noNames,
   );
   assertEquals(res!.status, 409);
 });
@@ -173,6 +180,7 @@ Deno.test("PATCH реального юзера по telegram_id — прежни
     ADMIN,
     true,
     "*",
+    noNames,
   );
   assertEquals(res!.status, 200);
   assertEquals(calls.filter((c) => c.method === "from").map((c) => c.args[0]), [
@@ -197,6 +205,7 @@ Deno.test("не админ — 403 до любых запросов", async () =
     111,
     false,
     "*",
+    noNames,
   );
   assertEquals(res!.status, 403);
   assertEquals(calls.length, 0);
@@ -212,6 +221,7 @@ Deno.test("DELETE ожидающего по username — только строк
     ADMIN,
     true,
     "*",
+    noNames,
   );
   assertEquals(res!.status, 204);
   assertEquals(calls.find((c) => c.method === "is")?.args, [
@@ -234,6 +244,7 @@ Deno.test("DELETE суперадмина запрещён", async () => {
     ADMIN,
     true,
     "*",
+    noNames,
   );
   assertEquals(res!.status, 400);
 });
