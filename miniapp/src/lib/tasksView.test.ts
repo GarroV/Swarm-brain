@@ -4,7 +4,7 @@ import { assertEquals } from "jsr:@std/assert";
 import { migrateSavedView, savedStatuses } from "./tasksView.ts";
 import { DEFAULT_STATUSES } from "./smartLists.ts";
 
-Deno.test("старый вид «Готовые» переезжает на «Все» + чип «Готово», а не в пустой экран", () => {
+Deno.test("старый вид «Готовые» переезжает на «Все» + чип «Завершённые», а не в пустой экран", () => {
   const got = migrateSavedView({ activeList: "done", lens: "mine" });
   assertEquals(got?.activeList, "all");
   assertEquals(got?.statuses, ["done"]);

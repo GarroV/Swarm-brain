@@ -128,7 +128,7 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
         title={doneOn ? dt("Завершённые показаны", "Done tasks shown") : dt("Завершённые скрыты", "Done tasks hidden")}
       >
         <span className="size-[7px] rounded-full bg-status-done" />
-        {dt("Готово", "Done")}
+        {dt("Завершённые", "Completed")}
       </ToolbarButton>
       {admin && <Menu label={staffLabel} on={r.allStaff || s.assignee != null} items={staffItems} />}
       <Menu
