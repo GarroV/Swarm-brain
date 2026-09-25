@@ -454,20 +454,34 @@ async function toolGetUsers(args: { market?: string; requesting_user_id?: number
     .select("telegram_id, username");
   if (groupId) query = query.eq("group_id", groupId);
 
-  const { data: users, error } = await query;
+  const { data: rows, error } = await query;
   if (error) return `Ошибка: ${error.message}`;
-  if (!users?.length) return "Пользователей нет.";
+  // Приглашённые, но ещё не вошедшие — строки без telegram_id. Их не показываем, а один null
+  // в `.in(...)` ронял запрос профилей целиком (прод, 25.09).
+  const users = ((rows ?? []) as { telegram_id: number | null; username: string | null }[])
+    .filter((u): u is { telegram_id: number; username: string | null } => typeof u.telegram_id === "number");
+  if (!users.length) return "Пользователей нет.";
 
-  const ids = users.map((u: { telegram_id: number }) => u.telegram_id);
-  let profileQuery = supabase.from("user_profiles").select("*").in("telegram_id", ids);
-  if (args.market) profileQuery = profileQuery.ilike("markets", `%${args.market}%`);
-
-  const { data: profiles } = await profileQuery;
+  const ids = users.map((u) => u.telegram_id);
+  const { data: profiles, error: profErr } = await supabase.from("user_profiles").select("*").in("telegram_id", ids);
+  if (profErr) console.error("[get_users] profiles", profErr.message);
   const profileMap = Object.fromEntries((profiles ?? []).map((p: { telegram_id: number }) => [p.telegram_id, p]));
 
-  return users.map((u: { telegram_id: number; username: string | null }) => {
+  // markets — text[]: `.ilike` по массиву PostgREST не принимает. Фильтр в коде, без учёта
+  // регистра и по подстроке, как было задумано.
+  const market = args.market?.trim().toLowerCase();
+  const shown = market
+    ? users.filter((u) => {
+      const ms = (profileMap[u.telegram_id] as { markets?: string[] | null } | undefined)?.markets ?? [];
+      return ms.some((m) => m.toLowerCase().includes(market));
+    })
+    : users;
+  if (!shown.length) return market ? `Пользователей с рынком «${args.market}» нет.` : "Пользователей нет.";
+
+  return shown.map((u) => {
     const p = profileMap[u.telegram_id] as Record<string, unknown> | undefined;
-    const name = [p?.first_name, p?.last_name].filter(Boolean).join(" ") || `@${u.username ?? u.telegram_id}`;
+    const name = [p?.first_name, p?.last_name].filter(Boolean).join(" ") ||
+      (u.username ? `@${u.username}` : `#${u.telegram_id}`);
     const role = p?.role ? `\n  Роль: ${p.role}` : "";
     const markets = (p?.markets as string[] | undefined)?.length ? `\n  Рынки: ${(p?.markets as string[]).join(", ")}` : "";
     const phone = p?.phone ? `\n  Тел: ${p.phone}` : "";

@@ -366,8 +366,23 @@ export async function handleMeetingCallbacks(
   }
   if (data.startsWith("massign_")) {
     const meetingId = data.replace("massign_", "");
-    const { data: profiles } = await supabase.from("user_profiles").select("first_name, last_name, telegram_id");
-    const { data: allowedUsers } = await supabase.from("allowed_users").select("telegram_id, username");
+    // Встреча — из воркспейса нажавшего (как в meeting_tag_), и участников предлагаем только
+    // оттуда: раньше список шёл по всем воркспейсам сразу.
+    const { data: meetingEntries, error: meErr } = await supabase
+      .from("entries").select("id")
+      .eq("group_id", groupId)
+      .or(`metadata->>meeting_id.eq.${meetingId},id.eq.${meetingId}`).limit(1);
+    if (meErr) console.error("[massign] entry", meErr.message);
+    if (!meetingEntries?.length) { await sendMessage(chatId, "Встреча не найдена."); return true; }
+    // Приглашённые, но не вошедшие — строки без telegram_id: кнопку на них не строим.
+    const { data: allowedUsers, error: auErr } = await supabase.from("allowed_users")
+      .select("telegram_id, username").eq("group_id", groupId).not("telegram_id", "is", null);
+    if (auErr) console.error("[massign] allowed_users", auErr.message);
+    const memberIds = ((allowedUsers ?? []) as Array<{ telegram_id: number }>).map((u) => u.telegram_id);
+    const { data: profiles, error: profErr } = memberIds.length
+      ? await supabase.from("user_profiles").select("first_name, last_name, telegram_id").in("telegram_id", memberIds)
+      : { data: [], error: null };
+    if (profErr) console.error("[massign] profiles", profErr.message);
     type Profile = { telegram_id: number; first_name?: string; last_name?: string };
     const profileMap: Record<number, Profile> = Object.fromEntries(
       (profiles ?? []).map((p: Profile) => [p.telegram_id, p])
@@ -377,7 +392,8 @@ export async function handleMeetingCallbacks(
       .filter((u) => { if (seen.has(u.telegram_id)) return false; seen.add(u.telegram_id); return true; })
       .map((u) => {
         const p = profileMap[u.telegram_id];
-        const label = p ? [p.first_name, p.last_name].filter(Boolean).join(" ") : (u.username ? `@${u.username}` : `ID ${u.telegram_id}`);
+        const full = p ? [p.first_name, p.last_name].filter(Boolean).join(" ") : "";
+        const label = full || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`);
         return [{ text: `👤 ${label}`, callback_data: `mau_${meetingId}_${u.telegram_id}` }];
       });
     await sendInlineMessage(chatId, "Кто участвовал в встрече? Можно выбрать несколько:", buttons);
@@ -388,9 +404,12 @@ export async function handleMeetingCallbacks(
     const sep = rest.lastIndexOf("_");
     const meetingId = rest.slice(0, sep);
     const targetTgId = Number(rest.slice(sep + 1));
+    // Старая кнопка «mau_…_null» давала NaN, и в assignees уезжало «ID NaN».
+    if (sep < 0 || !Number.isSafeInteger(targetTgId)) { await sendMessage(chatId, "Участник не найден."); return true; }
     const { data: prof } = await supabase.from("user_profiles").select("first_name, last_name").eq("telegram_id", targetTgId).maybeSingle();
-    const { data: au } = await supabase.from("allowed_users").select("username").eq("telegram_id", targetTgId).maybeSingle();
-    const assigneeName = prof ? [prof.first_name, prof.last_name].filter(Boolean).join(" ") : (au?.username ? `@${au.username}` : `ID ${targetTgId}`);
+    const { data: au } = await supabase.from("allowed_users").select("username").eq("telegram_id", targetTgId).eq("group_id", groupId).maybeSingle();
+    const full = prof ? [prof.first_name, prof.last_name].filter(Boolean).join(" ") : "";
+    const assigneeName = full || (au?.username ? `@${au.username}` : `ID ${targetTgId}`);
     const { data: meetingTasks } = await supabase.from("tasks").select("id, assignees").eq("meeting_id", meetingId);
     for (const t of (meetingTasks ?? []) as Array<{ id: string; assignees: string[] }>) {
       const existing = t.assignees ?? [];

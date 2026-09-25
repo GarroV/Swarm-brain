@@ -29,13 +29,18 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
       .order("created_at");
     if (error) { await sendMessage(chatId, `Ошибка: ${error.message}`); return; }
 
-    const ids = (data ?? [])
-      .map((u: { telegram_id: number | null }) => u.telegram_id)
-      .filter((id: number | null): id is number => id !== null);
-    const { data: profiles } = await supabase.from("user_profiles").select("*").in("telegram_id", ids.length ? ids : [0]);
+    // Строка без telegram_id — приглашение, по которому человек ещё не вошёл: ни кнопки
+    // «pu_null», ни «ID null». Показываем их отдельно, по @username.
+    type Row = { telegram_id: number | null; username: string | null };
+    const rows = (data ?? []) as Row[];
+    const allUsers = rows.filter((u): u is { telegram_id: number; username: string | null } => typeof u.telegram_id === "number");
+    const pending = rows.filter((u) => u.telegram_id === null && u.username);
+    const ids = allUsers.map((u) => u.telegram_id);
+    const { data: profiles, error: profErr } = ids.length
+      ? await supabase.from("user_profiles").select("*").in("telegram_id", ids)
+      : { data: [], error: null };
+    if (profErr) console.error("[/users list] profiles", profErr.message);
     const profileMap = Object.fromEntries((profiles ?? []).map((p: { telegram_id: number; first_name?: string; last_name?: string }) => [p.telegram_id, p]));
-
-    const allUsers = (data ?? []).map((u: { telegram_id: number; username: string | null }) => u);
 
     const lines = allUsers.map((u) => {
       const p = profileMap[u.telegram_id];
@@ -43,9 +48,13 @@ export async function handleUsers(chatId: number, adminId: number, argText: stri
       const displayName = fullName || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`);
       return `• ${displayName}`;
     });
+    if (pending.length) {
+      lines.push("", `<i>Приглашены, ещё не вошли (${pending.length}):</i>`);
+      pending.forEach((u) => lines.push(`⏳ @${u.username}`));
+    }
 
     const userButtons = allUsers.map((u) => [{
-      text: `👤 ${profileMap[u.telegram_id]?.first_name ?? (u.username ? `@${u.username}` : `ID ${u.telegram_id}`)}`,
+      text: `👤 ${profileMap[u.telegram_id]?.first_name || (u.username ? `@${u.username}` : `ID ${u.telegram_id}`)}`,
       callback_data: `pu_${u.telegram_id}`,
     }]);
     userButtons.push([{ text: "➕ Добавить пользователя", callback_data: "ua_add" }]);
