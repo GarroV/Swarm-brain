@@ -16,10 +16,10 @@
 | T020 | conference-link | — | done | `description` добавлен четвёртым источником ссылки, тест на него зелёный | #331 | 1 |
 | T021 | conference-link | — | done | `conferencePlatform` по хосту; тесты на три площадки, мусор и неизвестный хост | #332 | 1 |
 | T022 | conference-link | T021 | done | Ссылки нет → в ответе `reason: "no_conference_link"`, а не молчаливый `null` | #333 | 1 |
-| T030 | ingest-speakers | T012 | in_progress | `meeting-ingest` принимает поле `speakers`; мусор отвергается внятной ошибкой на границе | #334 | 1 |
-| T031 | ingest-speakers | — | in_progress | Чистая функция `nameAt`: тесты на перекрытия, дыры, пустой таймлайн, несовпадение времён | #335 | 1 |
-| T032 | ingest-speakers | T030,T031 | in_progress | Имена подставляются в `Segment.speaker`; мягкая деградация без таймлайна проверена тестом | #336 | 1 |
-| T033 | ingest-speakers | T032 | in_progress | Легенда говорящих в промпте тезисов согласована: не обещает «я», которого в стенограмме нет | #337 | 1 |
+| T030 | ingest-speakers | T012 | done | `meeting-ingest` принимает поле `speakers`; мусор отвергается внятной ошибкой на границе | #334 | 1 |
+| T031 | ingest-speakers | — | done | Чистая функция `nameAt`: тесты на перекрытия, дыры, пустой таймлайн, несовпадение времён | #335 | 1 |
+| T032 | ingest-speakers | T030,T031 | done | Имена подставляются в `Segment.speaker`; мягкая деградация без таймлайна проверена тестом | #336 | 1 |
+| T033 | ingest-speakers | T032 | done | Легенда говорящих в промпте тезисов согласована: не обещает «я», которого в стенограмме нет | #337 | 1 |
 | T040 | container | — | done | Dockerfile: playwright-образ + Xvfb + PulseAudio + ffmpeg; контейнер поднимается и гасится | #338 | 1 |
 | T041 | container | T040 | done | PulseAudio null-sink: `XDG_RUNTIME_DIR`, `set-default-sink`, monitor-source проверяется при старте | #339 | 1 |
 | T042 | container | T041 | done | Chromium стартует с `ignoreDefaultArgs: ['--mute-audio']`; звук реально попадает в sink | #340 | 1 |
