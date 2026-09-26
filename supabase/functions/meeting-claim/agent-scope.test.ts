@@ -75,6 +75,19 @@ Deno.test("ключ события собирается так же, как ег
   assertEquals(calendarKeyOf({ ...standup, start: { date: "2026-09-25" } }), null);
 });
 
+Deno.test("собранный ключ распознаётся как календарный — сборка и keyShape не разошлись", () => {
+  const events: GEvent[] = [
+    standup,
+    { ...standup, iCalUID: undefined },
+    { ...standup, iCalUID: "abc123_R20260925T080000@google.com" },
+    { ...standup, start: { dateTime: "2026-12-31T23:30:00-05:00" } },
+  ];
+  for (const ev of events) {
+    const key = calendarKeyOf(ev);
+    assertEquals(key === null ? null : keyShape(key), "calendar", `ключ ${key}`);
+  }
+});
+
 Deno.test("форма ключа: календарь, комнаты рекордера (в т.ч. суженные датой), прочее", () => {
   assertEquals(keyShape(STANDUP_KEY), "calendar");
   assertEquals(keyShape("abc123_R20260925T080000@google.com:2026-09-25"), "calendar");
