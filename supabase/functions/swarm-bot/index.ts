@@ -213,7 +213,7 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
 // Здесь — только сигналы, где молчание = реальная проблема. Данные пишет meeting-heartbeat.
 async function checkRecorderHealth(): Promise<void> {
   // (1) Оборванная запись: писатель вёл запись (recording=true) и замолчал. Писателей двое —
-  //     рекордер человека (allowed_users) и бот scriba (service_agents, D007); решение и
+  //     рекордер человека (allowed_users) и бот scriba (meetings.agent_last_*, D018); решение и
   //     адресат — lib/recording-watchdog.ts. Сбой чтения не должен съесть сигнал (2).
   try {
     const r = await checkRecordingWatchdog({

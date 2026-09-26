@@ -6,12 +6,11 @@
 import { assert, assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   AGENT_STALE_MIN,
-  type AgentBeat,
+  type AgentMeetingBeat,
   checkRecordingWatchdog,
   type HumanBeat,
   isSilent,
   RECORDER_STALE_MIN,
-  type WatchdogMeeting,
   type WatchdogStore,
 } from "./recording-watchdog.ts";
 
@@ -20,21 +19,20 @@ const minutesAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
 
 interface FakeState {
   humans: HumanBeat[];
-  agents: AgentBeat[];
-  meetings: Record<string, WatchdogMeeting>;
+  /** Встречи с agent_last_recording = true. */
+  agentMeetings: AgentMeetingBeat[];
   diedNotices: Array<[string, number]>;
-  /** Агенты, у которых между чтением и сбросом успел прийти свежий heartbeat. */
-  racedAgents: string[];
+  /** Встречи, по которым между чтением и сбросом успел прийти свежий heartbeat бота. */
+  racedMeetings: string[];
   failSendTo: number[];
 }
 
 function harness(over: Partial<FakeState> = {}) {
   const state: FakeState = {
     humans: [],
-    agents: [],
-    meetings: {},
+    agentMeetings: [],
     diedNotices: [],
-    racedAgents: [],
+    racedMeetings: [],
     failSendTo: [],
     ...over,
   };
@@ -48,12 +46,11 @@ function harness(over: Partial<FakeState> = {}) {
       clearedHumans.push(id);
       return Promise.resolve();
     },
-    recordingAgents: () => Promise.resolve(state.agents),
-    clearAgentRecording: (id, seenAt) => {
-      clearedAgents.push([id, seenAt]);
-      return Promise.resolve(!state.racedAgents.includes(id));
+    recordingAgentMeetings: () => Promise.resolve(state.agentMeetings),
+    clearAgentRecording: (meetingId, seenAt) => {
+      clearedAgents.push([meetingId, seenAt]);
+      return Promise.resolve(!state.racedMeetings.includes(meetingId));
     },
-    latestMeetingByKey: (key) => Promise.resolve(state.meetings[key] ?? null),
     containerDiedNoticeSent: (meetingId, recipient) =>
       Promise.resolve(state.diedNotices.some(([m, r]) => m === meetingId && r === recipient)),
   };
@@ -66,7 +63,10 @@ function harness(over: Partial<FakeState> = {}) {
   return { run, clearedHumans, clearedAgents, sent, errors };
 }
 
-const MEETING: WatchdogMeeting = { id: "m-1", title: "Weekly <sync>", claim_owner: 501 };
+/** Встреча, которую бот пишет: последний удар — minutes назад. */
+function beat(minutes: number, over: Partial<AgentMeetingBeat> = {}): AgentMeetingBeat {
+  return { id: "m-1", title: "Weekly <sync>", claim_owner: 501, agent_last_seen_at: minutesAgo(minutes), ...over };
+}
 
 Deno.test("isSilent: тишина строго дольше порога; без отметки — не тишина (как прежний SQL lt)", () => {
   assertEquals(isSilent(minutesAgo(21), NOW, 20), true);
@@ -113,52 +113,64 @@ Deno.test("bumblebee: сбой Telegram у одного не глушит ост
   assertEquals(h.errors.length, 1);
 });
 
-// ── Бот scriba: heartbeat из service_agents ─────────────────────────────────────────
+// ── Бот scriba: heartbeat по встрече (D018, meetings.agent_last_*) ───────────────────
 
 Deno.test("бот замолчал на записи → алерт человеку, за которого он писал встречу (EN и RU)", async () => {
-  const h = harness({
-    agents: [{ id: "scriba", last_seen_at: minutesAgo(12), last_meeting_key: "k1" }],
-    meetings: { k1: MEETING },
-  });
+  const h = harness({ agentMeetings: [beat(12)] });
   const r = await h.run();
-  assertEquals(h.clearedAgents, [["scriba", minutesAgo(12)]]);
+  assertEquals(h.clearedAgents, [["m-1", minutesAgo(12)]]);
   assertEquals(h.sent.length, 1);
   assertEquals(h.sent[0].to, 501);
   const text = h.sent[0].text;
   assertStringIncludes(text, "scriba stopped responding");
   assertStringIncludes(text, "scriba перестал отвечать");
   assertStringIncludes(text, "Weekly &lt;sync&gt;"); // название экранировано под HTML Telegram
+  assert(!text.includes("<sync>"), "сырое название не должно попасть ни в одну из половин");
   assert(!text.includes("bumblebee"), "бот — не рекордер человека: текст не про bumblebee");
   assertEquals(r.agentAlerts, 1);
 });
 
-Deno.test("бот жив (heartbeat свежий) → ни алерта, ни сброса", async () => {
+Deno.test("БЛОКИРУЮЩИЙ: две встречи бота сразу — живая не прячет замолчавшую, алерт только по ней", async () => {
+  // Ради этого heartbeat и переехал в строку встречи: при одной строке на агента удары живого
+  // контейнера освежали общую отметку, и обрыв второй встречи проходил молча.
   const h = harness({
-    agents: [{ id: "scriba", last_seen_at: minutesAgo(3), last_meeting_key: "k1" }],
-    meetings: { k1: MEETING },
+    agentMeetings: [
+      beat(2, { id: "m-alive", title: "Daily", claim_owner: 601 }),
+      beat(12, { id: "m-dead", title: "Retro", claim_owner: 602 }),
+    ],
   });
+  const r = await h.run();
+  assertEquals(h.clearedAgents, [["m-dead", minutesAgo(12)]]);
+  assertEquals(h.sent.map((s) => s.to), [602]);
+  assertStringIncludes(h.sent[0].text, "Retro");
+  assertEquals(r.agentAlerts, 1);
+});
+
+Deno.test("бот: граница порога — ровно AGENT_STALE_MIN ещё жив, на минуту больше уже нет", async () => {
+  const alive = harness({ agentMeetings: [beat(AGENT_STALE_MIN)] });
+  await alive.run();
+  assertEquals(alive.sent, []);
+  const dead = harness({ agentMeetings: [beat(AGENT_STALE_MIN + 1)] });
+  await dead.run();
+  assertEquals(dead.sent.length, 1);
+});
+
+Deno.test("бот жив (heartbeat свежий) → ни алерта, ни сброса", async () => {
+  const h = harness({ agentMeetings: [beat(3)] });
   await h.run();
   assertEquals(h.clearedAgents, []);
   assertEquals(h.sent, []);
 });
 
 Deno.test("бот: пока читали, пришёл свежий heartbeat → сброс не удался, алерта нет", async () => {
-  const h = harness({
-    agents: [{ id: "scriba", last_seen_at: minutesAgo(12), last_meeting_key: "k1" }],
-    meetings: { k1: MEETING },
-    racedAgents: ["scriba"],
-  });
+  const h = harness({ agentMeetings: [beat(12)], racedMeetings: ["m-1"] });
   const r = await h.run();
   assertEquals(h.sent, []);
   assertEquals(r.agentAlerts, 0);
 });
 
 Deno.test("бот: оркестратор уже сказал container_died по этой встрече → второй раз не пугаем", async () => {
-  const h = harness({
-    agents: [{ id: "scriba", last_seen_at: minutesAgo(40), last_meeting_key: "k1" }],
-    meetings: { k1: MEETING },
-    diedNotices: [["m-1", 501]],
-  });
+  const h = harness({ agentMeetings: [beat(40)], diedNotices: [["m-1", 501]] });
   const r = await h.run();
   assertEquals(h.clearedAgents.length, 1, "флаг сбрасывается, иначе сторож повторит проверку каждый час");
   assertEquals(h.sent, []);
@@ -166,51 +178,28 @@ Deno.test("бот: оркестратор уже сказал container_died п�
 });
 
 Deno.test("бот: container_died ушёл ДРУГОМУ человеку → нашему адресату алерт всё равно идёт", async () => {
-  const h = harness({
-    agents: [{ id: "scriba", last_seen_at: minutesAgo(40), last_meeting_key: "k1" }],
-    meetings: { k1: MEETING },
-    diedNotices: [["m-1", 999]],
-  });
+  const h = harness({ agentMeetings: [beat(40)], diedNotices: [["m-1", 999]] });
   await h.run();
   assertEquals(h.sent.map((s) => s.to), [501]);
 });
 
-Deno.test("бот: встреча по ключу не нашлась → громкая ошибка в журнал, никому не пишем", async () => {
-  const h = harness({
-    agents: [{ id: "scriba", last_seen_at: minutesAgo(40), last_meeting_key: "gone" }],
-  });
-  const r = await h.run();
-  assertEquals(h.sent, []);
-  assertEquals(h.errors.length, 1);
-  assertStringIncludes(h.errors[0], "gone");
-  assertEquals(r.agentUnresolved, 1);
+Deno.test("бот: container_died по ДРУГОЙ встрече того же человека → алерт по этой всё равно идёт", async () => {
+  const h = harness({ agentMeetings: [beat(40)], diedNotices: [["m-other", 501]] });
+  await h.run();
+  assertEquals(h.sent.map((s) => s.to), [501]);
 });
 
 Deno.test("бот: у встречи нет claim_owner → громкая ошибка, никому не пишем", async () => {
-  const h = harness({
-    agents: [{ id: "scriba", last_seen_at: minutesAgo(40), last_meeting_key: "k1" }],
-    meetings: { k1: { ...MEETING, claim_owner: null } },
-  });
-  const r = await h.run();
-  assertEquals(h.sent, []);
-  assertEquals(r.agentUnresolved, 1);
-});
-
-Deno.test("бот: запись без ключа встречи → громкая ошибка, никому не пишем", async () => {
-  const h = harness({
-    agents: [{ id: "scriba", last_seen_at: minutesAgo(40), last_meeting_key: null }],
-  });
+  const h = harness({ agentMeetings: [beat(40, { claim_owner: null })] });
   const r = await h.run();
   assertEquals(h.sent, []);
   assertEquals(h.errors.length, 1);
+  assertStringIncludes(h.errors[0], "m-1");
   assertEquals(r.agentUnresolved, 1);
 });
 
 Deno.test("бот без названия встречи → подставляется «без названия», а не пустота", async () => {
-  const h = harness({
-    agents: [{ id: "scriba", last_seen_at: minutesAgo(40), last_meeting_key: "k1" }],
-    meetings: { k1: { ...MEETING, title: null } },
-  });
+  const h = harness({ agentMeetings: [beat(40, { title: null })] });
   await h.run();
   assertStringIncludes(h.sent[0].text, "untitled meeting");
   assertStringIncludes(h.sent[0].text, "встреча без названия");
@@ -219,12 +208,11 @@ Deno.test("бот без названия встречи → подставля�
 Deno.test("бот и человек в одном прогоне не смешиваются: каждый в свою таблицу, свой текст", async () => {
   const h = harness({
     humans: [{ telegram_id: 501, recorder_last_seen: minutesAgo(25) }],
-    agents: [{ id: "scriba", last_seen_at: minutesAgo(12), last_meeting_key: "k1" }],
-    meetings: { k1: MEETING },
+    agentMeetings: [beat(12)],
   });
   const r = await h.run();
   assertEquals(h.clearedHumans, [501]);
-  assertEquals(h.clearedAgents.map(([id]) => id), ["scriba"]);
+  assertEquals(h.clearedAgents.map(([id]) => id), ["m-1"]);
   assertEquals(h.sent.length, 2);
   assertStringIncludes(h.sent[0].text, "bumblebee");
   assertStringIncludes(h.sent[1].text, "scriba");
@@ -232,11 +220,7 @@ Deno.test("бот и человек в одном прогоне не смеши
 });
 
 Deno.test("бот: сбой Telegram → ошибка в журнал, прогон не падает", async () => {
-  const h = harness({
-    agents: [{ id: "scriba", last_seen_at: minutesAgo(12), last_meeting_key: "k1" }],
-    meetings: { k1: MEETING },
-    failSendTo: [501],
-  });
+  const h = harness({ agentMeetings: [beat(12)], failSendTo: [501] });
   const r = await h.run();
   assertEquals(h.errors.length, 1);
   assertEquals(r.agentAlerts, 0);

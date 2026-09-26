@@ -14,12 +14,15 @@
 //
 // Auth: resolveActingIdentity принимает recorder_token_hash ИЛИ claude_mcp_token_hash человека
 // (см. _shared/agent-auth), а также токен служебного агента с заголовком X-On-Behalf-Of.
-// Heartbeat агента при этом ложится в ЕГО строку service_agents, а не в строку человека:
-// иначе watchdog решил бы, что у человека работает рекордер, и погасил бы настоящий сигнал.
+// Heartbeat агента при этом НЕ ложится в строку человека: иначе watchdog решил бы, что у человека
+// работает рекордер, и погасил бы настоящий сигнал. С D018 удар агента несёт meeting_id и пишется
+// в строку встречи (meetings.agent_last_*) — только встречи его воркспейса, где claim_owner —
+// человек из X-On-Behalf-Of; чужая встреча → 403. Плюс строка агента (service_agents.last_seen_at,
+// last_version) — «бот вообще жив, такая-то сборка». Куда и с какими условиями — write.ts.
 // Деплой: supabase functions deploy meeting-heartbeat --no-verify-jwt (рекордер хитит с Bearer-токеном).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
-import { buildHeartbeatWrite, type HeartbeatBody } from "./write.ts";
+import { buildHeartbeatWrites, type HeartbeatBody, HeartbeatRejected, type HeartbeatWrite } from "./write.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -51,11 +54,30 @@ Deno.serve(async (req: Request) => {
     body = {};
   }
 
-  const write = buildHeartbeatWrite(identity, body, new Date().toISOString());
-  const { error } = await supabase
-    .from(write.table)
-    .update(write.patch)
-    .eq(write.matchColumn, write.matchValue);
-  if (error) return json({ error: "update failed" }, 500);
+  let writes: HeartbeatWrite[];
+  try {
+    writes = buildHeartbeatWrites(identity, body, new Date().toISOString());
+  } catch (e) {
+    if (e instanceof HeartbeatRejected) return json({ error: e.message }, e.status);
+    throw e;
+  }
+  for (const write of writes) {
+    const outcome = await apply(write);
+    if (outcome === "failed") return json({ error: "update failed" }, 500);
+    // Не отличаем «встречи нет» от «встреча чужая»: ответ не должен подтверждать чужие id.
+    if (outcome === "missed") return json({ error: "meeting is not yours" }, 403);
+  }
   return json({ ok: true });
 });
+
+async function apply(write: HeartbeatWrite): Promise<"ok" | "missed" | "failed"> {
+  let query = supabase.from(write.table).update(write.patch);
+  for (const [column, value] of Object.entries(write.match)) query = query.eq(column, value);
+  // Отдать назад только ключ: строка встречи несёт транскрипт, тащить его ради счёта незачем.
+  const { data, error } = await query.select(Object.keys(write.match)[0]);
+  if (error) {
+    console.error(`meeting-heartbeat: update ${write.table}: ${error.message}`);
+    return "failed";
+  }
+  return write.requireHit && (data ?? []).length === 0 ? "missed" : "ok";
+}

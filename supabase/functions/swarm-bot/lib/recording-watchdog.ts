@@ -4,20 +4,18 @@
 //
 // Писателей два, и живут они в РАЗНЫХ таблицах (решение D007):
 //   • рекордер человека (bumblebee) — allowed_users.recorder_last_*, heartbeat раз в 15 мин;
-//   • служебный агент (бот scriba)  — service_agents.last_*, heartbeat раз в 2 мин изнутри
-//     контейнера (bot/src/orchestrator/run-meeting.ts). Контейнер, убитый посреди встречи,
-//     финального recording:false не шлёт — последний удар так и остаётся recording:true.
+//   • служебный агент (бот scriba)  — meetings.agent_last_* САМОЙ встречи (D018), heartbeat раз
+//     в 2 мин изнутри контейнера (bot/src/orchestrator/run-meeting.ts). Контейнер, убитый посреди
+//     встречи, финального recording:false не шлёт — последний удар так и остаётся recording:true.
 // Смешать их нельзя: heartbeat бота в строке человека выглядел бы как живой рекордер и гасил
 // настоящий сигнал «запись оборвалась».
 //
-// Кому алерт. Рекордер — самому человеку (это его строка). Бот — человеку, за которого он
-// писал: у service_agents адресата нет, поэтому идём по last_meeting_key к строке встречи и
-// берём claim_owner. recording=true бот шлёт только с решением «transcribe», а его meeting-claim
-// ставит claim_owner = человек из X-On-Behalf-Of.
+// Кому алерт. Рекордер — самому человеку (это его строка). Бот — claim_owner той же встречи:
+// recording=true бот шлёт только с решением «transcribe», meeting-claim ставит claim_owner =
+// человек из X-On-Behalf-Of, а meeting-heartbeat пускает удар только в такую встречу.
 //
-// Известный предел: строка service_agents одна на агента. Два контейнера на двух встречах
-// пишут в неё по очереди, и живой своими ударами прячет замолчавший. Различать удары по
-// встрече можно только новой колонкой или таблицей — см. docs/furca/blocks/orchestrator.md.
+// Тишина считается по каждой встрече отдельно: два контейнера на двух встречах бьют в разные
+// строки, и живой больше не прячет замолчавший (до D018 строка была одна на агента).
 //
 // Сбросы флага — дедуп, а не удаление данных: так сторож не повторяет алерт каждый час.
 // Решение «жив/мёртв» принимает код (isSilent), а не SQL — чтобы его держали тесты.
@@ -33,16 +31,12 @@ export interface HumanBeat {
   recorder_last_seen: string | null;
 }
 
-export interface AgentBeat {
-  id: string;
-  last_seen_at: string | null;
-  last_meeting_key: string | null;
-}
-
-export interface WatchdogMeeting {
+/** Встреча, которую бот пишет: её строка meetings с последним ударом бота. */
+export interface AgentMeetingBeat {
   id: string;
   title: string | null;
   claim_owner: number | null;
+  agent_last_seen_at: string | null;
 }
 
 /** Узкая граница к базе. Реализация на supabase-js — recording-watchdog-store.ts. */
@@ -50,14 +44,13 @@ export interface WatchdogStore {
   /** allowed_users с recorder_last_recording = true. */
   recordingHumans(): Promise<HumanBeat[]>;
   clearHumanRecording(telegramId: number): Promise<void>;
-  /** service_agents с last_recording = true. */
-  recordingAgents(): Promise<AgentBeat[]>;
+  /** meetings с agent_last_recording = true. */
+  recordingAgentMeetings(): Promise<AgentMeetingBeat[]>;
   /**
-   * Сбросить last_recording, только если last_seen_at всё ещё равен прочитанному.
-   * false — между чтением и сбросом пришёл свежий удар: агент жив, алерт не нужен.
+   * Сбросить agent_last_recording, только если agent_last_seen_at всё ещё равен прочитанному.
+   * false — между чтением и сбросом пришёл свежий удар: бот жив, алерт не нужен.
    */
-  clearAgentRecording(agentId: string, seenAt: string): Promise<boolean>;
-  latestMeetingByKey(key: string): Promise<WatchdogMeeting | null>;
+  clearAgentRecording(meetingId: string, seenAt: string): Promise<boolean>;
   /** Оркестратор уже сказал этому человеку container_died по этой встрече. */
   containerDiedNoticeSent(meetingId: string, recipient: number): Promise<boolean>;
 }
@@ -121,18 +114,13 @@ async function checkHumans(deps: WatchdogDeps): Promise<number> {
 
 type AgentOutcome = "alerted" | "notified" | "unresolved" | "alive" | "send_failed";
 
-async function checkAgent(deps: WatchdogDeps, beat: AgentBeat): Promise<AgentOutcome> {
-  if (!beat.last_seen_at || !isSilent(beat.last_seen_at, deps.nowMs, AGENT_STALE_MIN)) return "alive";
-  if (!(await deps.store.clearAgentRecording(beat.id, beat.last_seen_at))) return "alive";
-  if (!beat.last_meeting_key) {
-    deps.logError(`checkRecorderHealth agent ${beat.id}: замолчал на записи без ключа встречи — адресата нет`);
-    return "unresolved";
-  }
-  const meeting = await deps.store.latestMeetingByKey(beat.last_meeting_key);
-  if (!meeting || meeting.claim_owner === null) {
+async function checkAgent(deps: WatchdogDeps, meeting: AgentMeetingBeat): Promise<AgentOutcome> {
+  const seenAt = meeting.agent_last_seen_at;
+  if (!seenAt || !isSilent(seenAt, deps.nowMs, AGENT_STALE_MIN)) return "alive";
+  if (!(await deps.store.clearAgentRecording(meeting.id, seenAt))) return "alive";
+  if (meeting.claim_owner === null) {
     deps.logError(
-      `checkRecorderHealth agent ${beat.id}: замолчал на записи, но по ключу ${beat.last_meeting_key} ` +
-        `нет встречи с claim_owner — адресата нет`,
+      `checkRecorderHealth meeting ${meeting.id}: бот замолчал на записи, но claim_owner нет — адресата нет`,
     );
     return "unresolved";
   }
@@ -141,7 +129,7 @@ async function checkAgent(deps: WatchdogDeps, beat: AgentBeat): Promise<AgentOut
     await deps.send(meeting.claim_owner, agentAlertText(meeting.title));
     return "alerted";
   } catch (e) {
-    deps.logError(`checkRecorderHealth agent ${beat.id} → ${meeting.claim_owner}: ${e}`);
+    deps.logError(`checkRecorderHealth meeting ${meeting.id} → ${meeting.claim_owner}: ${e}`);
     return "send_failed";
   }
 }
@@ -153,8 +141,8 @@ export async function checkRecordingWatchdog(deps: WatchdogDeps): Promise<Watchd
     agentAlreadyNotified: 0,
     agentUnresolved: 0,
   };
-  for (const beat of await deps.store.recordingAgents()) {
-    const outcome = await checkAgent(deps, beat);
+  for (const meeting of await deps.store.recordingAgentMeetings()) {
+    const outcome = await checkAgent(deps, meeting);
     if (outcome === "alerted") result.agentAlerts++;
     if (outcome === "notified") result.agentAlreadyNotified++;
     if (outcome === "unresolved") result.agentUnresolved++;
