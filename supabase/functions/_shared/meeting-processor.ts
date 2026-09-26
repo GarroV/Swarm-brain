@@ -22,7 +22,7 @@ import {
   WHISPER_HALLUCINATION_RE,
 } from "./whisper-hallucinations.ts";
 import { langCode, type LangVotePart, partsNeedingRetranscribe, resolveMeetingLang } from "./meeting-lang.ts";
-import { TEZISY_PROMPT } from "./tezisy-prompt.ts";
+import { buildTezisyUserMessage, TEZISY_PROMPT } from "./tezisy-prompt.ts";
 import { glossaryWhisperHint } from "./glossary.ts";
 import { extractChatContent } from "./openai-chat.ts";
 import { buildSegments, type Segment, speakerLegend, type SpeakerSpan } from "./speakers.ts";
@@ -45,8 +45,9 @@ export const LEASE_STALE_MS = 5 * 60_000;
 const OPENAI_AUDIO_MAX_BYTES = 25 * 1024 * 1024;
 
 // Канон тезисов — в _shared/tezisy-prompt.ts (DRY с granola/read-ai). Здесь добавляем только
-// спец-обработку пустой записи (НЕТ_ТЕЗИСОВ → плашка ниже).
-const TEZIS_SYSTEM = TEZISY_PROMPT + "\n" +
+// спец-обработку пустой записи (НЕТ_ТЕЗИСОВ → плашка ниже). Экспорт — для сухого прогона
+// scripts/tezisy-injection-dryrun.ts: он обязан звать ровно тот промпт и ту модель, что и прод.
+export const TEZIS_SYSTEM = TEZISY_PROMPT + "\n" +
   "НЕТ_ТЕЗИСОВ возвращай ТОЛЬКО для реально пустой записи: тест связи/микрофона, тишина, " +
   "пара бессвязных обрывков. Если в разговоре есть ХОТЬ КАКОЕ-ТО предметное содержание " +
   "(работа, планы, проблемы, договорённости) — пусть вперемешку с болтовнёй и на любом языке — " +
@@ -221,7 +222,7 @@ interface ChatOpts {
   maxTokens?: number;
 }
 
-async function chatComplete(system: string, user: string, opts: ChatOpts = {}): Promise<string> {
+export async function chatComplete(system: string, user: string, opts: ChatOpts = {}): Promise<string> {
   const maxTokens = opts.maxTokens ?? 4000;
   const messages = [{ role: "system", content: system }, { role: "user", content: user }];
 
@@ -442,7 +443,10 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
     const ownerName = await resolveOwnerName(supabase, micOwnerId(m.claim_owner, m.recorders));
     const raw = (await chatComplete(
       TEZIS_SYSTEM,
-      `Встреча: ${m.title ?? "без названия"}\n\n${speakerLegend(ownerName, labelsOf(segments))}\n${transcriptText}`,
+      // Текст встречи — недоверенные данные (issue #458): в маркерах, см. _shared/tezisy-prompt.ts.
+      buildTezisyUserMessage(
+        `Встреча: ${m.title ?? "без названия"}\n\n${speakerLegend(ownerName, labelsOf(segments))}\n${transcriptText}`,
+      ),
       { temperature: 0.3 }, // применяется к фолбэк-gpt-4o; terra (GPT-5) температуру игнорирует
     )).trim();
     // Пустой ответ модели при СОДЕРЖАТЕЛЬНОМ транскрипте — это сбой сводки, а НЕ пустая встреча.
@@ -548,14 +552,13 @@ export async function buildTezisyFromTranscript(
   const ownerName = await resolveOwnerName(supabase, micOwnerId(row?.claim_owner ?? null, row?.recorders ?? null));
   // Пожелание пользователя к этой переработке (из кнопки «Переработать»: короче/подробнее/акцент/…) —
   // добавляем в конец user-сообщения как приоритетную инструкцию поверх общего промпта.
-  const noteBlock = note.trim()
-    ? `\n\nПОЖЕЛАНИЕ пользователя к ЭТОЙ переработке тезисов — учти его в ПЕРВУЮ очередь: ${note.trim()}`
-    : "";
+  // Текст встречи — в маркерах как недоверенные данные, пожелание — после них (issue #458).
   const raw = (await chatComplete(
     TEZIS_SYSTEM,
-    `Встреча: ${row?.title ?? "без названия"}\n\n${
-      speakerLegend(ownerName, labelsOf(segments))
-    }\n${transcriptText}${noteBlock}`,
+    buildTezisyUserMessage(
+      `Встреча: ${row?.title ?? "без названия"}\n\n${speakerLegend(ownerName, labelsOf(segments))}\n${transcriptText}`,
+      note,
+    ),
     { temperature: 0.3 },
   )).trim();
   // Пустой ответ модели — не затираем существующие тезисы пустой строкой и не метим done;
