@@ -23,6 +23,11 @@
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
 import type { TokenResult } from "../_shared/google-calendar.ts";
 import type { GEvent } from "../meeting-current/select.ts";
+import { CALENDAR_KEY, calendarKeyOf } from "../_shared/calendar-key.ts";
+
+// Сборка календарного ключа — общая с meeting-current (_shared/calendar-key.ts); наружу
+// отдаётся и отсюда, чтобы у сверки и её тестов была одна точка входа.
+export { calendarKeyOf };
 
 export class AgentScopeError extends Error {
   constructor(public readonly status: 400 | 403 | 503, message: string) {
@@ -54,7 +59,8 @@ const MAX_EVENTS = 250;
 const DAY_MS = 86_400_000;
 
 // Формы ключей, которые на деле шлют клиенты:
-//   календарь — meeting-current: `<iCalUID|id>:<YYYY-MM-DD>`;
+//   календарь — meeting-current: `<iCalUID|id>:<YYYY-MM-DD>` (сборка и её регулярка CALENDAR_KEY —
+//               _shared/calendar-key.ts);
 //   комнаты   — рекордер (BrowserRoom.swift parseRoom): `meet:<код>` (строчные буквы и дефисы,
 //               10–14 символов), `kontur:<комната>` (буквы, цифры, `-`, `_`); сервер сужает их до
 //               дня суффиксом `:<YYYY-MM-DD>` (scopeRoomKey), повторный claim приходит уже с ним.
@@ -62,7 +68,6 @@ const DAY_MS = 86_400_000;
 const DATE_SUFFIX = /:(\d{4}-\d{2}-\d{2})$/;
 const ROOM_PREFIX = /^(meet|kontur|zoom):/;
 const ROOM_KEY = /^(meet:[a-z-]{10,14}|kontur:[\p{L}\p{N}_-]+)(:\d{4}-\d{2}-\d{2})?$/u;
-const CALENDAR_KEY = /^\S+:\d{4}-\d{2}-\d{2}$/;
 
 export type KeyShape = "calendar" | "room" | "other" | "invalid";
 
@@ -78,17 +83,6 @@ const KIND_OF_SHAPE: Record<KeyShape, string | null> = {
   other: "manual",
   invalid: null,
 };
-
-/**
- * Ключ календарной встречи — ровно так, как его собирает meeting-current: `<iCalUID|id>:<дата>`,
- * где дата — локальная дата начала из самого события. Разъедется формат — сверка перестанет
- * находить свои же встречи и будет отказывать громко, а не пропускать молча.
- */
-export function calendarKeyOf(ev: GEvent): string | null {
-  const start = ev.start?.dateTime;
-  if (!start) return null;
-  return `${ev.iCalUID ?? ev.id}:${start.slice(0, 10)}`;
-}
 
 type Loaded = { events: GEvent[] } | { failure: "not_connected" | "unavailable" };
 

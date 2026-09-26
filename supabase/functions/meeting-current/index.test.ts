@@ -3,6 +3,7 @@
 // разобранное доехало до ответа — а читают рекордер и бот именно ответ.
 //
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { calendarKeyOf, keyShape } from "../meeting-claim/agent-scope.ts";
 
 const TOKEN = "smcp_stub-token";
 const hashBuffer = await crypto.subtle.digest(
@@ -97,6 +98,8 @@ function meetingNow(extra: Record<string, unknown>) {
 /** Ровно то, что эндпоинт отдаёт наружу: причина про встречу — сверху, про ссылку — внутри meeting. */
 interface Answer {
   meeting?: {
+    identity_kind?: string;
+    identity_key?: string;
     join_url: string | null;
     platform: string | null;
     reason?: string;
@@ -133,6 +136,21 @@ Deno.test("встреча со ссылкой — в ответе ссылка �
   assertEquals(body.meeting?.join_url, "https://meet.google.com/abc-defg-hij");
   assertEquals(body.meeting?.platform, "meet");
   assertEquals(body.meeting?.reason, undefined);
+});
+
+Deno.test("ключ встречи тот же, по которому meeting-claim ищет её в календаре", async () => {
+  googleConnected = true;
+  tokenExchangeOk = true;
+  const ev = meetingNow({ iCalUID: "standup@google.com" });
+  calendarItems = [ev];
+
+  const { body } = await call();
+
+  // Формат — буквально: одинаково сломанная сборка на обеих сторонах совпала бы сама с собой.
+  assertEquals(body.meeting?.identity_key, `standup@google.com:${ev.start.dateTime.slice(0, 10)}`);
+  assertEquals(body.meeting?.identity_key, calendarKeyOf(ev));
+  assertEquals(keyShape(body.meeting!.identity_key!), "calendar");
+  assertEquals(body.meeting?.identity_kind, "calendar");
 });
 
 Deno.test("ссылку положили в описание — эндпоинт её находит", async () => {
