@@ -33,6 +33,16 @@ const OWNER_ID = 910_000_000_000 + RUN; // владелец встречи, ко
 const BLOCKED_ID = OWNER_ID + 1; // владелец, у которого Telegram откажет (заблокировал бота)
 const COLLEAGUE_ID = OWNER_ID + 2; // коллега из того же воркспейса — владелец чужой встречи
 const OUTSIDER_ID = OWNER_ID + 3; // человек из чужого воркспейса
+// Отдельные получатели для суточных потолков: их счёт не должен смешиваться со счётом владельца.
+const FLOOD_ID = OWNER_ID + 4; // получатель потока встреча-за-встречей
+const UNBOUND_ID = OWNER_ID + 5; // получатель потока до-встречных отказов с выдуманными ключами
+const DAY_CAP = 30; // MAX_PER_RECIPIENT_PER_DAY
+const UNBOUND_CAP = 6; // MAX_UNBOUND_PER_RECIPIENT_PER_DAY
+const MEETING_CAP = 6; // MAX_PER_MEETING
+const FLOOD_MEETINGS = Array.from(
+  { length: DAY_CAP + 5 },
+  () => crypto.randomUUID(),
+);
 const WS = `smoke-alpha-${RUN}`;
 const WS_OTHER = `smoke-beta-${RUN}`;
 const AGENT_ID = `scriba-smoke-${RUN}`;
@@ -46,6 +56,8 @@ const M = {
   blocked: crypto.randomUUID(),
   colleagues: crypto.randomUUID(),
   foreign: crypto.randomUUID(),
+  mixed: crypto.randomUUID(),
+  stale: crypto.randomUUID(),
 };
 
 async function sha256Hex(value: string): Promise<string> {
@@ -110,6 +122,8 @@ async function seed(): Promise<void> {
     person(BLOCKED_ID, WS, null),
     person(COLLEAGUE_ID, WS, null),
     person(OUTSIDER_ID, WS_OTHER, null),
+    person(FLOOD_ID, WS, null),
+    person(UNBOUND_ID, WS, null),
   ]);
   await rest("POST", "service_agents", [{
     id: AGENT_ID,
@@ -126,6 +140,9 @@ async function seed(): Promise<void> {
     meeting(M.blocked, WS, BLOCKED_ID, "Встреча заблокировавшего"),
     meeting(M.colleagues, WS, COLLEAGUE_ID, "Разбор зарплат"),
     meeting(M.foreign, WS_OTHER, OUTSIDER_ID, "Чужой совет"),
+    meeting(M.mixed, WS, OWNER_ID, "Всё сразу"),
+    meeting(M.stale, WS, OWNER_ID, "Упавшая отправка"),
+    ...FLOOD_MEETINGS.map((id, i) => meeting(id, WS, FLOOD_ID, `Поток ${i}`)),
   ]);
 }
 
@@ -140,7 +157,7 @@ async function cleanup(): Promise<string[]> {
     ["DELETE", `service_agents?id=eq.${AGENT_ID}`],
     [
       "DELETE",
-      `allowed_users?telegram_id=in.(${OWNER_ID},${BLOCKED_ID},${COLLEAGUE_ID},${OUTSIDER_ID})`,
+      `allowed_users?telegram_id=in.(${OWNER_ID},${BLOCKED_ID},${COLLEAGUE_ID},${OUTSIDER_ID},${FLOOD_ID},${UNBOUND_ID})`,
     ],
     ["DELETE", `workspaces?id=in.(${WS},${WS_OTHER})`],
   ];
@@ -533,6 +550,95 @@ async function blockedScenarios(): Promise<Outcome[]> {
   return out;
 }
 
+/** Сколько сообщений получил человек. */
+function receivedBy(chatId: number): number {
+  return inbox.filter((m) => m.chatId === chatId).length;
+}
+
+/**
+ * Агрегатные потолки под параллельным натиском. Уникальный индекс ловит только одинаковый
+ * кортеж (встреча, вид, номер); разные встречи и разные виды он не видит. Держит их только
+ * «посчитать → решить → вставить» одной транзакцией под блокировкой получателя.
+ */
+async function floodScenarios(): Promise<Outcome[]> {
+  const out: Outcome[] = [];
+  // Одна встреча, все встречные виды разом (и дверь дважды): потолок встречи — 6.
+  const kinds = [
+    "door_waiting",
+    "door_waiting",
+    "door_denied",
+    "captcha",
+    "no_audio",
+    "recording_lost",
+    "container_died",
+    "join_failed",
+  ];
+  const before = receivedBy(OWNER_ID);
+  await Promise.all(
+    kinds.map((kind) =>
+      call({ kind, meeting_id: M.mixed, detail: "flood", lang: "ru" }, {
+        onBehalfOf: OWNER_ID,
+      })
+    ),
+  );
+  const mixed = receivedBy(OWNER_ID) - before;
+  out.push(check(
+    `поток · ${kinds.length} разных видов по одной встрече разом`,
+    mixed === MEETING_CAP,
+    `сообщений: ${mixed} при потолке встречи ${MEETING_CAP}`,
+    "потолок встречи пробит параллельными вызовами разных видов",
+  ));
+  // Встреча за встречей: 35 разных встреч одному человеку разом — потолок суток 30.
+  await Promise.all(
+    FLOOD_MEETINGS.map((id) =>
+      call({ kind: "no_audio", meeting_id: id, lang: "ru" }, {
+        onBehalfOf: FLOOD_ID,
+      })
+    ),
+  );
+  out.push(check(
+    `поток · ${FLOOD_MEETINGS.length} разных встреч одному человеку разом`,
+    receivedBy(FLOOD_ID) === DAY_CAP,
+    `сообщений: ${receivedBy(FLOOD_ID)} при суточном потолке ${DAY_CAP}`,
+    "суточный потолок пробит параллельными вызовами по разным встречам",
+  ));
+  // До-встречные отказы с выдуманными ключами разом — их потолок 6.
+  await Promise.all(Array.from({ length: UNBOUND_CAP + 6 }, (_, i) =>
+    call(
+      {
+        kind: "no_conference_link",
+        meeting_key: `flood-${RUN}-${i}`,
+        lang: "ru",
+      },
+      { onBehalfOf: UNBOUND_ID },
+    )));
+  out.push(check(
+    `поток · ${UNBOUND_CAP + 6} до-встречных отказов с разными ключами разом`,
+    receivedBy(UNBOUND_ID) === UNBOUND_CAP,
+    `сообщений: ${receivedBy(UNBOUND_ID)} при потолке ${UNBOUND_CAP}`,
+    "потолок до-встречных отказов пробит параллельными вызовами",
+  ));
+  return out;
+}
+
+/** Отправка упала между резервом и отметкой: строка `sending` не держит слот вечно. */
+async function staleScenario(): Promise<Outcome> {
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60_000).toISOString();
+  await rest("POST", "meeting_notices", [{
+    meeting_id: M.stale,
+    recipient_id: OWNER_ID,
+    kind: "door_denied",
+    attempt: 1,
+    status: "sending",
+    sent_at: tenMinutesAgo,
+  }]);
+  return await scenario(
+    "зависшая отправка десятиминутной давности не съедает уведомление",
+    { kind: "door_denied", meeting_id: M.stale },
+    { onBehalfOf: OWNER_ID },
+  );
+}
+
 async function runScenarios(): Promise<Outcome[]> {
   const behalf = { onBehalfOf: OWNER_ID };
   return [
@@ -542,6 +648,8 @@ async function runScenarios(): Promise<Outcome[]> {
     ...await preMeetingScenarios(behalf),
     ...await accessScenarios(behalf),
     ...await blockedScenarios(),
+    ...await floodScenarios(),
+    await staleScenario(),
     // Два языка — правило проекта. Всё выше прошло по-русски; здесь по-английски.
     await scenario("EN · дверь, первое уведомление", {
       kind: "door_waiting",
