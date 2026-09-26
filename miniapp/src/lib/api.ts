@@ -3,6 +3,7 @@ import type { Me, Task, User, Entry, Integration, GranolaNote, AdminWorkspace, A
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
+import { type MeetingInvite, parseInviteResponse } from "./meetingInvite";
 
 export type CreateTaskInput = {
   title: string;
@@ -81,6 +82,8 @@ class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** Тело ответа с ошибкой — там, где сервер отдаёт машинный код (`{error, code}`). */
+    public body: unknown = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -261,7 +264,7 @@ async function apiFetchRaw<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => ({ error: res.statusText }));
-  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText);
+  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
   return body as T;
 }
 
@@ -286,7 +289,7 @@ async function apiFetchNoContentTypeRaw<T>(path: string, options?: RequestInit):
   });
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => ({ error: res.statusText }));
-  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText);
+  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
   return body as T;
 }
 
@@ -994,7 +997,7 @@ export async function apiFetchList<T>(path: string): Promise<{ rows: T[]; total:
     headers: { "Content-Type": "application/json", ...authHeaders() },
   });
   const body = await res.json().catch(() => ({ error: res.statusText }));
-  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText);
+  if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText, body);
   const raw = res.headers.get("X-Total-Count");
   const total = raw != null && /^\d+$/.test(raw) ? Number(raw) : null;
   return { rows: (body ?? []) as T[], total };
@@ -1308,6 +1311,42 @@ export async function publishAgentMeeting(id: string, base: "workspace" | "perso
     method: "POST",
     body: JSON.stringify(countries === undefined ? { base } : { base, countries }),
   });
+}
+
+// ── Приглашение бота на созвон (D017) ────────────────────────────────────────
+// Контракт и разбор ответа — lib/meetingInvite.ts. Ошибки приходят как ApiError с телом
+// `{error, error_ru, code}`: экран показывает текст по коду (parseInviteErrorCode).
+
+let mockInvites: MeetingInvite[] = [];
+
+function readInvite(body: unknown): MeetingInvite {
+  const invite = parseInviteResponse(body);
+  if (!invite) throw new ApiError(502, "Unexpected invite response");
+  return invite;
+}
+
+export async function createMeetingInvite(joinUrl: string): Promise<MeetingInvite> {
+  if (DEV_MODE) {
+    const same = mockInvites.find((x) => x.join_url === joinUrl.trim());
+    if (same) return same;
+    const now = Date.now();
+    const invite: MeetingInvite = {
+      id: crypto.randomUUID(), join_url: joinUrl.trim(), platform: "meet", status: "pending",
+      created_at: new Date(now).toISOString(), expires_at: new Date(now + 15 * 60_000).toISOString(), meeting_id: null,
+    };
+    mockInvites = [invite, ...mockInvites];
+    return invite;
+  }
+  return readInvite(await apiFetch<unknown>("/meeting-invites", { method: "POST", body: JSON.stringify({ join_url: joinUrl }) }));
+}
+
+export async function fetchMeetingInvite(id: string): Promise<MeetingInvite> {
+  if (DEV_MODE) {
+    const found = mockInvites.find((x) => x.id === id);
+    if (!found) throw new ApiError(404, "Invite not found", { code: "not_found" });
+    return found;
+  }
+  return readInvite(await apiFetch<unknown>(`/meeting-invites/${encodeURIComponent(id)}`));
 }
 
 // ── Integrations / Granola ────────────────────────────────────────────────────
