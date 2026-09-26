@@ -1,13 +1,13 @@
 // Уведомления владельцу встречи о том, что запись НЕ идёт. Чистая часть блока notices:
-// разбор запроса, решение «отправлять или хватит» и рендер текста. Отправкой и журналом
-// занимается meeting-notice/.
+// разбор запроса, величины потолков, расписание двери и рендер текста. Отправкой занимается
+// meeting-notice/, решение «отправлять или хватит» — функция базы meeting_notice_reserve.
 //
 // Почему блок вообще есть: первый принцип проекта — «громкий отказ важнее тихой работы».
 // scriba, который не смог записать и промолчал, хуже, чем его отсутствие: человек узнаёт об
 // этом через сутки по пустой очереди вычитки, когда записать уже нечего.
 //
-// ⚠️ Потолок повторов считает СЕРВЕР по журналу отправок (таблица meeting_notices), а не бот
-// по присланному числу. Прежняя редакция брала номер попытки из тела запроса — это был не
+// ⚠️ Потолок повторов считает БАЗА по журналу отправок (таблица meeting_notices) одной
+// транзакцией под блокировкой получателя, а не бот по присланному числу. Прежняя редакция брала номер попытки из тела запроса — это был не
 // потолок, а просьба: зацикленный контейнер шлёт «попытка 1» сколько угодно раз, и человек
 // получает поток сообщений в личку. Поэтому `attempt` в запросе теперь отвергается.
 import { DETAIL_LABEL, NO_TITLE, NOTICE_TEXTS } from "./notice-texts.ts";
@@ -160,70 +160,42 @@ export function parseNotice(raw: unknown): ParsedNotice {
   return { kind, scope, title, lang: readLang(body.lang), detail };
 }
 
-/** Что уже ушло этому человеку — счёт из журнала отправок, не из запроса. Отказы доставки не в счёт. */
-export interface NoticeLedger {
-  /** Сколько уведомлений ЭТОГО вида ушло по этой встрече (за всё время). */
-  kindCount: number;
-  /** Сколько уведомлений всех видов ушло по этой встрече (за всё время). */
-  totalCount: number;
-  /** Сколько ушло этому человеку за сутки по всем встречам. */
-  dayCount: number;
-  /** Из них — до-встречных, привязанных только к ключу календаря. */
-  unboundDayCount: number;
-}
+/**
+ * Сколько строка `sending` может висеть, прежде чем считаться недоставленной. Функция могла
+ * упасть между резервом и отметкой — без порога такая строка навсегда съела бы законный повтор.
+ */
+export const STALE_SENDING_SECONDS = 300;
 
-export type DeliveryDecision =
-  | {
-    allow: true;
-    /** Какая это по счёту отправка данного вида. Для двери: 1 — первое, 2 — единственный повтор. */
-    attempt: number;
-    shouldLeave: boolean;
-    nextReminderInSeconds: number | null;
-  }
-  | { allow: false; reason: string; shouldLeave: true };
+/**
+ * Потолки в том виде, в каком их принимает функция базы `meeting_notice_reserve`. Решение
+ * «отправлять или хватит» принимает база — посчитать, решить и занять слот одной транзакцией под
+ * блокировкой получателя; здесь у величин единственный дом, и сюда же смотрит миграция.
+ */
+export const NOTICE_LIMITS = {
+  door_max: DOOR_MAX_ATTEMPTS,
+  per_kind: MAX_PER_KIND,
+  per_meeting: MAX_PER_MEETING,
+  per_day: MAX_PER_RECIPIENT_PER_DAY,
+  unbound_per_day: MAX_UNBOUND_PER_RECIPIENT_PER_DAY,
+  day_seconds: DAY_SECONDS,
+  stale_seconds: STALE_SENDING_SECONDS,
+} as const;
 
-function refuse(reason: string): DeliveryDecision {
-  return { allow: false, reason, shouldLeave: true };
+/** Что делать боту после отправленного уведомления. */
+export interface NoticeSchedule {
+  shouldLeave: boolean;
+  nextReminderInSeconds: number | null;
 }
 
 /**
- * Отправлять ли — и что после этого делать боту.
- *
- * Решение считается ТОЛЬКО по журналу: сколько уже ушло. Отказ всегда велит боту уйти — если
- * сервер перестал принимать уведомления, стоять под дверью дальше бессмысленно.
+ * Расписание после отправки номер `attempt`. Дверь: после первого — ждать повтора, после
+ * последнего — уходить. Остальные отказы терминальные: ждать нечего, бот уходит сразу.
  */
-export function decideDelivery(notice: ParsedNotice, ledger: NoticeLedger): DeliveryDecision {
-  const { kind } = notice;
-  if (ledger.dayCount >= MAX_PER_RECIPIENT_PER_DAY) {
-    return refuse(
-      `daily notice limit reached for this person: ${ledger.dayCount} of ${MAX_PER_RECIPIENT_PER_DAY} in 24h`,
-    );
+export function scheduleAfter(kind: NoticeKind, attempt: number): NoticeSchedule {
+  if (kind === "door_waiting" && attempt < DOOR_MAX_ATTEMPTS) {
+    return { shouldLeave: false, nextReminderInSeconds: DOOR_REPEAT_SECONDS };
   }
-  if (notice.scope.type === "calendar" && ledger.unboundDayCount >= MAX_UNBOUND_PER_RECIPIENT_PER_DAY) {
-    return refuse(
-      `daily limit for pre-meeting notices reached: ${ledger.unboundDayCount} of ${MAX_UNBOUND_PER_RECIPIENT_PER_DAY} in 24h`,
-    );
-  }
-  if (ledger.totalCount >= MAX_PER_MEETING) {
-    return refuse(
-      `notice limit reached for this meeting: ${ledger.totalCount} of ${MAX_PER_MEETING} already sent — the bot must leave`,
-    );
-  }
-  if (kind === "door_waiting") {
-    const attempt = ledger.kindCount + 1;
-    if (attempt > DOOR_MAX_ATTEMPTS) {
-      return refuse(
-        `door notice limit reached: one reminder only (${ledger.kindCount} already sent) — the bot must leave`,
-      );
-    }
-    const last = attempt >= DOOR_MAX_ATTEMPTS;
-    return { allow: true, attempt, shouldLeave: last, nextReminderInSeconds: last ? null : DOOR_REPEAT_SECONDS };
-  }
-  if (ledger.kindCount >= MAX_PER_KIND) {
-    return refuse(`already notified about «${kind}» for this meeting — repeating it adds nothing`);
-  }
-  // Остальные отказы терминальные: ждать нечего, бот уходит сразу.
-  return { allow: true, attempt: 1, shouldLeave: true, nextReminderInSeconds: null };
+  return { shouldLeave: true, nextReminderInSeconds: null };
 }
 
 function escapeHtml(value: string): string {

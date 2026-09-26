@@ -14,10 +14,14 @@
 -- привязаны к ключу календаря (`meeting_key`, тот же формат, что meetings.identity_key). Ровно
 -- одно из двух — это держит check-ограничение.
 --
--- Гонка «два вызова одновременно» закрыта уникальным индексом: номер отправки считает сервер,
--- и второй вызов с тем же номером упирается в индекс, а не уходит человеку вторым сообщением.
--- Строка заводится ДО отправки (`sending`), после — `sent` или `failed`. Недоставленная не
--- занимает номер (индексы частичные), поэтому сбой Telegram не съедает единственный повтор.
+-- Решение «отправлять или хватит» принимает БАЗА, функцией meeting_notice_reserve (ниже): она
+-- под блокировкой получателя считает журнал, решает и заводит строку — одной транзакцией.
+-- Иначе потолки на встречу и на сутки обходились параллельными вызовами по разным встречам или
+-- разным видам: каждый вызов видел журнал до вставок соседей. Уникальный индекс остаётся
+-- страховкой от одинакового кортежа. Строка заводится ДО отправки (`sending`), после — `sent`
+-- или `failed`. Недоставленная не занимает номер (индексы частичные), поэтому сбой Telegram не
+-- съедает единственный повтор; `sending`, зависшая дольше порога (функция упала между резервом
+-- и отметкой), считается недоставленной.
 --
 -- Удаления у service_role нет: журнал — ответ на вопрос «что человеку уже сказали», историю не
 -- переписывают. Меняется только статус. Чистка по сроку — отдельная миграция с отдельным грантом.
@@ -76,3 +80,104 @@ grant usage, select on sequence public.meeting_notices_id_seq to service_role;
 -- RLS как внешний замок: включён, политик нет → anon/authenticated (anon-ключ публичен по дизайну)
 -- не получают ни одной строки. Приложение ходит service_role'ом, у которого rolbypassrls.
 alter table public.meeting_notices enable row level security;
+
+-- ── Резерв отправки: посчитать → решить → вставить атомарно ─────────────────────────────────
+--
+-- Порядок проверок и величины потолков — те же, что описаны в _shared/notices.ts; величины
+-- приходят оттуда параметром p_limits, чтобы у числа был один дом. Возврат:
+--   {"id": <строка журнала>, "attempt": <номер>}  — слот занят, можно слать;
+--   {"refused": "<причина>"}                        — потолок, слать нельзя.
+-- Блокировка — транзакционная advisory по получателю: вызовы одного человека выстраиваются в
+-- очередь, разных людей друг друга не ждут. Снимается сама на конце транзакции (вызова RPC).
+create or replace function public.meeting_notice_reserve(
+  p_recipient   bigint,
+  p_meeting_id  uuid,
+  p_meeting_key text,
+  p_kind        text,
+  p_limits      jsonb
+) returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_door_max        int := (p_limits->>'door_max')::int;
+  v_per_kind        int := (p_limits->>'per_kind')::int;
+  v_per_meeting     int := (p_limits->>'per_meeting')::int;
+  v_per_day         int := (p_limits->>'per_day')::int;
+  v_unbound_per_day int := (p_limits->>'unbound_per_day')::int;
+  v_day             interval := make_interval(secs => (p_limits->>'day_seconds')::int);
+  v_stale           interval := make_interval(secs => (p_limits->>'stale_seconds')::int);
+  v_kind_count int;
+  v_total      int;
+  v_day_count  int;
+  v_unbound    int;
+  v_attempt    int;
+  v_id         bigint;
+begin
+  if (p_meeting_id is null) = (p_meeting_key is null) then
+    raise exception 'meeting_notice_reserve: exactly one of meeting_id / meeting_key is required';
+  end if;
+  if v_door_max is null or v_per_kind is null or v_per_meeting is null or v_per_day is null
+     or v_unbound_per_day is null or v_day is null or v_stale is null then
+    raise exception 'meeting_notice_reserve: p_limits is incomplete: %', p_limits;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended('meeting_notices:' || p_recipient::text, 0));
+
+  -- Зависшая отправка: функция упала между резервом и отметкой. Дольше порога — не доставлено.
+  update public.meeting_notices
+     set status = 'failed'
+   where recipient_id = p_recipient and status = 'sending' and sent_at < now() - v_stale;
+
+  select count(*) filter (where kind = p_kind), count(*)
+    into v_kind_count, v_total
+    from public.meeting_notices
+   where recipient_id = p_recipient and status <> 'failed'
+     and (meeting_id = p_meeting_id or meeting_key = p_meeting_key);
+
+  select count(*), count(*) filter (where meeting_id is null)
+    into v_day_count, v_unbound
+    from public.meeting_notices
+   where recipient_id = p_recipient and status <> 'failed' and sent_at > now() - v_day;
+
+  if v_day_count >= v_per_day then
+    return jsonb_build_object('refused',
+      format('daily notice limit reached for this person: %s of %s in 24h', v_day_count, v_per_day));
+  end if;
+  if p_meeting_id is null and v_unbound >= v_unbound_per_day then
+    return jsonb_build_object('refused',
+      format('daily limit for pre-meeting notices reached: %s of %s in 24h', v_unbound, v_unbound_per_day));
+  end if;
+  if v_total >= v_per_meeting then
+    return jsonb_build_object('refused',
+      format('notice limit reached for this meeting: %s of %s already sent — the bot must leave', v_total, v_per_meeting));
+  end if;
+  if p_kind = 'door_waiting' then
+    v_attempt := v_kind_count + 1;
+    if v_attempt > v_door_max then
+      return jsonb_build_object('refused',
+        format('door notice limit reached: one reminder only (%s already sent) — the bot must leave', v_kind_count));
+    end if;
+  elsif v_kind_count >= v_per_kind then
+    return jsonb_build_object('refused',
+      format('already notified about «%s» for this meeting — repeating it adds nothing', p_kind));
+  else
+    v_attempt := 1;
+  end if;
+
+  insert into public.meeting_notices (meeting_id, meeting_key, recipient_id, kind, attempt, status)
+  values (p_meeting_id, p_meeting_key, p_recipient, p_kind, v_attempt, 'sending')
+  returning id into v_id;
+  return jsonb_build_object('id', v_id, 'attempt', v_attempt);
+end;
+$$;
+
+comment on function public.meeting_notice_reserve(bigint, uuid, text, text, jsonb) is
+  'Резерв уведомления scriba: под блокировкой получателя считает журнал, решает по потолкам и заводит строку sending. Одна транзакция — параллельные вызовы потолок не обходят.';
+
+-- EXECUTE — только service_role. Грант на PUBLIC наследуют anon и authenticated, и один
+-- REVOKE FROM anon его не снимает — поэтому снимается с PUBLIC явно.
+revoke all on function public.meeting_notice_reserve(bigint, uuid, text, text, jsonb) from public;
+revoke all on function public.meeting_notice_reserve(bigint, uuid, text, text, jsonb) from anon, authenticated;
+grant execute on function public.meeting_notice_reserve(bigint, uuid, text, text, jsonb) to service_role;

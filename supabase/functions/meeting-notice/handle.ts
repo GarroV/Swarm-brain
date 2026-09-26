@@ -4,25 +4,24 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import {
-  DAY_SECONDS,
-  decideDelivery,
+  NOTICE_LIMITS,
   NoticeError,
-  type NoticeLedger,
   type ParsedNotice,
   parseNotice,
   renderNotice,
+  scheduleAfter,
 } from "../_shared/notices.ts";
 
 export interface NoticeDeps {
   supabase: SupabaseClient;
   /** Отправка в Telegram. Обязана БРОСАТЬ, если сообщение не принято: молчаливый успех недопустим. */
   sendTelegram: (chatId: number, text: string) => Promise<void>;
-  /** Часы суточного счёта; подменяются тестом. */
-  now?: () => Date;
 }
 
 /** Таблица-журнал: она же счётчик. Канон схемы — migrations/20260926080446_meeting_notices.sql. */
 const JOURNAL = "meeting_notices";
+/** Функция резерва в базе — она решает, можно ли слать (та же миграция). */
+const RESERVE_FN = "meeting_notice_reserve";
 
 function json(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -85,79 +84,45 @@ async function checkMeeting(deps: NoticeDeps, meetingId: string, identity: Agent
   return { title: meeting.title };
 }
 
-interface JournalRow {
-  kind: string;
-  meeting_id: string | null;
-}
-
-/**
- * Что уже ушло этому человеку: по этой встрече (за всё время) и по всем встречам за сутки.
- * Недоставленное (`failed`) не в счёт — его номер свободен для повтора.
- */
-async function readLedger(
-  deps: NoticeDeps,
-  notice: ParsedNotice,
-  recipientId: number,
-  now: Date,
-): Promise<NoticeLedger | "error"> {
-  const scoped = deps.supabase.from(JOURNAL).select("kind, meeting_id").eq("recipient_id", recipientId)
-    .neq("status", "failed");
-  const inScope = notice.scope.type === "meeting"
-    ? scoped.eq("meeting_id", notice.scope.meetingId)
-    : scoped.eq("meeting_key", notice.scope.meetingKey);
-  const since = new Date(now.getTime() - DAY_SECONDS * 1000).toISOString();
-  const [scope, day] = await Promise.all([
-    inScope,
-    deps.supabase.from(JOURNAL).select("kind, meeting_id").eq("recipient_id", recipientId)
-      .neq("status", "failed").gte("sent_at", since),
-  ]);
-  const error = scope.error ?? day.error;
-  if (error) {
-    // Нечитаемый журнал = неизвестный счёт. Отправлять вслепую нельзя: именно так поток
-    // уведомлений и становится неограниченным. Отказ громкий, бот его увидит.
-    console.error(`meeting-notice: журнал не прочитать: ${error.message}`);
-    return "error";
-  }
-  const scopeRows = (scope.data ?? []) as JournalRow[];
-  const dayRows = (day.data ?? []) as JournalRow[];
-  return {
-    kindCount: scopeRows.filter((r) => r.kind === notice.kind).length,
-    totalCount: scopeRows.length,
-    dayCount: dayRows.length,
-    unboundDayCount: dayRows.filter((r) => r.meeting_id === null).length,
-  };
-}
-
-/** Postgres: нарушение уникальности. Второй вызов с тем же номером отправки упёрся в индекс. */
+/** Postgres: нарушение уникальности — страховочный индекс журнала поймал одинаковый кортеж. */
 const UNIQUE_VIOLATION = "23505";
 
+type Reserved = { id: number; attempt: number } | Response;
+
 /**
- * Занять номер отправки ДО отправки. Уникальный индекс журнала делает это атомарным: из двух
- * одновременных вызовов человеку уйдёт одно сообщение, второй получит 409.
+ * Занять слот отправки. Решение принимает БАЗА (`meeting_notice_reserve`): под блокировкой
+ * получателя она считает журнал, сверяет потолки и заводит строку `sending` — одной транзакцией.
+ * Счёт в коде и вставка отдельным запросом пропускали параллельные вызовы по разным встречам и
+ * разным видам: каждый видел журнал до вставок соседей, и потолок на сутки не держал ничего.
  */
-async function reserve(
-  deps: NoticeDeps,
-  notice: ParsedNotice,
-  recipientId: number,
-  attempt: number,
-): Promise<number | Response> {
-  const { data, error } = await deps.supabase.from(JOURNAL).insert({
-    meeting_id: notice.scope.type === "meeting" ? notice.scope.meetingId : null,
-    meeting_key: notice.scope.type === "calendar" ? notice.scope.meetingKey : null,
-    recipient_id: recipientId,
-    kind: notice.kind,
-    attempt,
-    status: "sending",
-  }).select("id").single();
+async function reserve(deps: NoticeDeps, notice: ParsedNotice, recipientId: number): Promise<Reserved> {
+  const { data, error } = await deps.supabase.rpc(RESERVE_FN, {
+    p_recipient: recipientId,
+    p_meeting_id: notice.scope.type === "meeting" ? notice.scope.meetingId : null,
+    p_meeting_key: notice.scope.type === "calendar" ? notice.scope.meetingKey : null,
+    p_kind: notice.kind,
+    p_limits: NOTICE_LIMITS,
+  });
   if (error?.code === UNIQUE_VIOLATION) {
-    console.warn(`meeting-notice: «${notice.kind}» #${attempt} уже отправляется параллельным вызовом`);
+    console.warn(`meeting-notice: «${notice.kind}» уже отправляется параллельным вызовом`);
     return json({ ok: false, delivered: false, error: "this notice is already being sent", should_leave: true }, 409);
   }
-  if (error || !data) {
-    console.error(`meeting-notice: журнал не принял запись: ${error?.message ?? "no row returned"}`);
+  const answer = data as { id?: unknown; attempt?: unknown; refused?: unknown } | null;
+  if (error || answer === null) {
+    // Нечитаемый журнал = неизвестный счёт. Отправлять вслепую нельзя: именно так поток
+    // уведомлений и становится неограниченным. Отказ громкий, бот его увидит.
+    console.error(`meeting-notice: журнал не принял резерв: ${error?.message ?? "empty answer"}`);
     return json({ ok: false, delivered: false, error: "notice journal unavailable — notice not sent" }, 503);
   }
-  return (data as { id: number }).id;
+  if (typeof answer.refused === "string") {
+    console.warn(`meeting-notice: «${notice.kind}» по ${describe(notice)} отклонено: ${answer.refused}`);
+    return json({ ok: false, delivered: false, error: answer.refused, should_leave: true }, 409);
+  }
+  if (typeof answer.id !== "number" || typeof answer.attempt !== "number") {
+    console.error(`meeting-notice: резерв вернул непонятное: ${JSON.stringify(answer)}`);
+    return json({ ok: false, delivered: false, error: "notice journal answered garbage — notice not sent" }, 503);
+  }
+  return { id: answer.id, attempt: answer.attempt };
 }
 
 async function markStatus(deps: NoticeDeps, id: number, status: "sent" | "failed"): Promise<boolean> {
@@ -205,21 +170,13 @@ export async function handleNotice(req: Request, deps: NoticeDeps): Promise<Resp
     title = checked.title;
   }
 
-  const ledger = await readLedger(deps, notice, identity.telegramId, deps.now?.() ?? new Date());
-  if (ledger === "error") {
-    return json({ ok: false, delivered: false, error: "notice journal unavailable — notice not sent" }, 503);
-  }
-  const decision = decideDelivery(notice, ledger);
-  if (!decision.allow) {
-    console.warn(`meeting-notice: «${notice.kind}» по ${describe(notice)} отклонено: ${decision.reason}`);
-    return json({ ok: false, delivered: false, error: decision.reason, should_leave: true }, 409);
-  }
-
-  const journalId = await reserve(deps, notice, identity.telegramId, decision.attempt);
-  if (journalId instanceof Response) return journalId;
+  const slot = await reserve(deps, notice, identity.telegramId);
+  if (slot instanceof Response) return slot;
+  const journalId = slot.id;
+  const schedule = scheduleAfter(notice.kind, slot.attempt);
 
   try {
-    await deps.sendTelegram(identity.telegramId, renderNotice(notice, title, decision.attempt));
+    await deps.sendTelegram(identity.telegramId, renderNotice(notice, title, slot.attempt));
   } catch (e) {
     // Самое дорогое место блока: если проглотить ошибку доставки и вернуть 200, то отказ,
     // ради громкости которого всё и строилось, станет молчаливым — причём дважды.
@@ -234,15 +191,15 @@ export async function handleNotice(req: Request, deps: NoticeDeps): Promise<Resp
   // сообщения это не даст, а человек своё уже получил. Громко в лог, вызывающему — успех.
   await markStatus(deps, journalId, "sent");
   console.log(
-    `meeting-notice: «${notice.kind}» (отправка ${decision.attempt}) доставлено ${identity.telegramId} по ${
+    `meeting-notice: «${notice.kind}» (отправка ${slot.attempt}) доставлено ${identity.telegramId} по ${
       describe(notice)
     }`,
   );
   return json({
     ok: true,
     delivered: true,
-    attempt: decision.attempt,
-    should_leave: decision.shouldLeave,
-    next_reminder_in_s: decision.nextReminderInSeconds,
+    attempt: slot.attempt,
+    should_leave: schedule.shouldLeave,
+    next_reminder_in_s: schedule.nextReminderInSeconds,
   });
 }

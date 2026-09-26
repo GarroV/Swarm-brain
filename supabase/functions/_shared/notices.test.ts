@@ -10,24 +10,24 @@
 //     отказом, ради которого блок и заведён.
 import { assert, assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
-  decideDelivery,
   DOOR_MAX_ATTEMPTS,
   DOOR_REPEAT_SECONDS,
   DOOR_WAIT_SECONDS,
   isPreMeetingKind,
   MAX_DETAIL_CHARS,
-  MAX_PER_KIND,
   MAX_PER_MEETING,
   MAX_PER_RECIPIENT_PER_DAY,
   MAX_TITLE_CHARS,
   MAX_UNBOUND_PER_RECIPIENT_PER_DAY,
   NOTICE_KINDS,
   NOTICE_LANGS,
+  NOTICE_LIMITS,
   NoticeError,
-  type NoticeLedger,
   parseNotice,
   PRE_MEETING_KINDS,
   renderNotice,
+  scheduleAfter,
+  STALE_SENDING_SECONDS,
 } from "./notices.ts";
 import { NO_TITLE, NOTICE_TEXTS } from "./notice-texts.ts";
 
@@ -47,49 +47,24 @@ function notice(over: Record<string, unknown> = {}) {
   return parseNotice(body(over));
 }
 
-/** Пустой журнал плюс то, что нужно тесту. */
-function ledger(over: Partial<NoticeLedger> = {}): NoticeLedger {
-  return { kindCount: 0, totalCount: 0, dayCount: 0, unboundDayCount: 0, ...over };
-}
+// ── Дверь и потолки ───────────────────────────────────────────────────────────
+//
+// Решение «отправлять или хватит» принимает база (meeting_notice_reserve), потому что только
+// там счёт и вставка идут одной транзакцией. Здесь — величины, которые ей передаются, и что
+// бот делает после отправки. Сами потолки под параллельным натиском держит живой смоук
+// (scripts/scriba-notices-smoke.ts).
 
-// ── Дверь: первое уведомление, ровно один повтор, выход ───────────────────────
-
-Deno.test("дверь: журнал пуст — первое уведомление, повтор обещан через 3 минуты", () => {
-  assertEquals(decideDelivery(notice(), ledger()), {
-    allow: true,
-    attempt: 1,
-    shouldLeave: false,
-    nextReminderInSeconds: DOOR_REPEAT_SECONDS,
-  });
+Deno.test("дверь: после первого уведомления — ждать повтора 3 минуты", () => {
+  assertEquals(scheduleAfter("door_waiting", 1), { shouldLeave: false, nextReminderInSeconds: DOOR_REPEAT_SECONDS });
 });
 
-Deno.test("дверь: одно уже ушло — это повтор, и он последний", () => {
-  assertEquals(decideDelivery(notice(), ledger({ kindCount: 1, totalCount: 1, dayCount: 1 })), {
-    allow: true,
-    attempt: 2,
-    shouldLeave: true,
-    nextReminderInSeconds: null,
-  });
+Deno.test("БЛОКИРУЮЩИЙ: после повтора у двери — уходить, третьего напоминания не обещано", () => {
+  assertEquals(scheduleAfter("door_waiting", DOOR_MAX_ATTEMPTS), { shouldLeave: true, nextReminderInSeconds: null });
 });
 
-Deno.test("БЛОКИРУЮЩИЙ: два уже ушло — третьего не будет, счёт по журналу", () => {
-  const decision = decideDelivery(notice(), ledger({ kindCount: 2, totalCount: 2, dayCount: 2 }));
-  assertEquals(decision.allow, false);
-  assert(decision.allow === false);
-  assertEquals(decision.shouldLeave, true, "боту не сказали уйти — он останется висеть у двери");
-  assert(
-    /one reminder|limit/i.test(decision.reason),
-    `отказ должен объяснять, что повтор ровно один: ${decision.reason}`,
-  );
-});
-
-Deno.test("БЛОКИРУЮЩИЙ: номер попытки из тела запроса не принимается вовсе", () => {
-  // Пока он принимался, «потолок» держался на добросовестности бота: пришли `attempt: 1`
-  // трижды — и человек получил три сообщения, а сервер отчитался, что всё в порядке.
-  for (const attempt of [1, 2, 99]) {
-    const e = assertThrows(() => notice({ attempt }), NoticeError, undefined, `attempt=${attempt}`);
-    assertEquals(e.status, 400);
-    assert(e.message.includes("server"), `в отказе должно быть сказано, что попытку считает сервер: ${e.message}`);
+Deno.test("терминальные отказы велят уйти сразу и повтора не обещают", () => {
+  for (const kind of NOTICE_KINDS.filter((k) => k !== "door_waiting")) {
+    assertEquals(scheduleAfter(kind, 1), { shouldLeave: true, nextReminderInSeconds: null }, kind);
   }
 });
 
@@ -99,61 +74,27 @@ Deno.test("дверь: расписание — 90 секунд до сигна�
   assertEquals(DOOR_MAX_ATTEMPTS, 2);
 });
 
-// ── Поток конечен для КАЖДОГО вида, по встрече и по человеку ──────────────────
-
-Deno.test("БЛОКИРУЮЩИЙ: один и тот же отказ не повторяется — «звука нет» уже сказано", () => {
-  const audio = notice({ kind: "no_audio" });
-  assertEquals(decideDelivery(audio, ledger({ totalCount: 1, dayCount: 1 })).allow, true);
-  const again = decideDelivery(audio, ledger({ kindCount: MAX_PER_KIND, totalCount: 2, dayCount: 2 }));
-  assertEquals(again.allow, false);
-  assert(again.allow === false);
-  assert(again.reason.includes("no_audio"), again.reason);
-  assertEquals(again.shouldLeave, true);
-});
-
-Deno.test("БЛОКИРУЮЩИЙ: общий потолок на встречу — дальше не шлём ничего, даже нового вида", () => {
-  for (const kind of NOTICE_KINDS) {
-    const decision = decideDelivery(
-      notice({ kind, detail: "x" }),
-      ledger({ totalCount: MAX_PER_MEETING, dayCount: MAX_PER_MEETING }),
-    );
-    assertEquals(decision.allow, false, `${kind}: поток по встрече не ограничен`);
-    assert(decision.allow === false);
-    assertEquals(decision.shouldLeave, true);
+Deno.test("БЛОКИРУЮЩИЙ: база получает все потолки, и они конечны", () => {
+  // Функция базы отвергает неполный набор. Пропавший ключ здесь — это 503 на каждом вызове,
+  // то есть человек не узнал бы ни об одном отказе.
+  const keys = ["door_max", "per_kind", "per_meeting", "per_day", "unbound_per_day", "day_seconds", "stale_seconds"];
+  assertEquals(Object.keys(NOTICE_LIMITS).sort(), [...keys].sort());
+  for (const [key, value] of Object.entries(NOTICE_LIMITS)) {
+    assert(Number.isInteger(value) && value > 0, `${key}=${value}`);
   }
-});
-
-Deno.test("БЛОКИРУЮЩИЙ: суточный потолок на человека — новая встреча не открывает новый поток", () => {
-  // Зацикленный оркестратор заводит встречу за встречей: поштучный счёт каждой пуст, и только
-  // счёт по человеку за сутки не даёт превратить личку в ленту.
-  for (const kind of NOTICE_KINDS) {
-    const decision = decideDelivery(notice({ kind, detail: "x" }), ledger({ dayCount: MAX_PER_RECIPIENT_PER_DAY }));
-    assertEquals(decision.allow, false, `${kind}: сутки без потолка`);
-    assert(decision.allow === false);
-    assert(/day|24/i.test(decision.reason), decision.reason);
-  }
-});
-
-Deno.test("БЛОКИРУЮЩИЙ: до-встречные отказы — свой суточный потолок, ключ календаря сервер не проверит", () => {
-  for (const kind of PRE_MEETING_KINDS) {
-    const decision = decideDelivery(
-      notice({ kind, meeting_key: `fresh-${kind}` }),
-      ledger({ unboundDayCount: MAX_UNBOUND_PER_RECIPIENT_PER_DAY, dayCount: MAX_UNBOUND_PER_RECIPIENT_PER_DAY }),
-    );
-    assertEquals(decision.allow, false, `${kind}: выдуманные ключи дают бесконечный поток`);
-  }
-  // Встречным видам этот счёт не мешает: их встреча проверена сервером.
-  const bound = decideDelivery(notice({ kind: "no_audio" }), ledger({ unboundDayCount: 99, dayCount: 1 }));
-  assertEquals(bound.allow, true);
+  assertEquals(NOTICE_LIMITS.door_max, 2, "повтор у двери ровно один");
   assert(MAX_UNBOUND_PER_RECIPIENT_PER_DAY < MAX_PER_RECIPIENT_PER_DAY);
+  assert(MAX_PER_MEETING < MAX_PER_RECIPIENT_PER_DAY);
+  assert(STALE_SENDING_SECONDS >= 60, "зависшую отправку нельзя признать неудачной, пока Telegram ещё может ответить");
 });
 
-Deno.test("терминальные отказы велят уйти сразу и повтора не обещают", () => {
-  for (const kind of NOTICE_KINDS.filter((k) => k !== "door_waiting")) {
-    const decision = decideDelivery(notice({ kind, detail: "x" }), ledger());
-    assert(decision.allow === true);
-    assertEquals(decision.shouldLeave, true, `${kind}: боту не сказано уйти`);
-    assertEquals(decision.nextReminderInSeconds, null, `${kind}: обещан повтор, которого не будет`);
+Deno.test("БЛОКИРУЮЩИЙ: номер попытки из тела запроса не принимается вовсе", () => {
+  // Пока он принимался, «потолок» держался на добросовестности бота: пришли `attempt: 1`
+  // трижды — и человек получил три сообщения, а сервер отчитался, что всё в порядке.
+  for (const attempt of [1, 2, 99]) {
+    const e = assertThrows(() => notice({ attempt }), NoticeError, undefined, `attempt=${attempt}`);
+    assertEquals(e.status, 400);
+    assert(e.message.includes("server"), `в отказе должно быть сказано, что попытку считает сервер: ${e.message}`);
   }
 });
 

@@ -2,15 +2,16 @@
 //
 // Здесь проверяется не «сообщение красивое», а то, что уже было источником молчаливого сбоя или
 // спама в этом продукте:
-//   • потолок держит СЕРВЕР по своему журналу: зацикленный контейнер, сколько бы раз ни прислал
-//     «дверь», получит ровно два сообщения на встречу — и одно при гонке двух вызовов;
+//   • решение «слать или хватит» — за базой (meeting_notice_reserve): ручка передаёт ей
+//     получателя из личности и все потолки, а её отказ доводит до бота как 409 «уходи».
+//     Сами потолки под параллельным натиском держит живой смоук scripts/scriba-notices-smoke.ts;
 //   • встреча сверяется: воркспейс агента, владелец — тот, кому уходит сообщение;
 //   • получатель НЕ приходит из тела запроса — иначе токен бота становится рассылкой по людям;
 //   • отказ доставки виден вызывающему и не съедает единственный повтор.
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { ON_BEHALF_OF_HEADER, sha256Hex } from "../_shared/agent-auth.ts";
-import { DOOR_MAX_ATTEMPTS, MAX_PER_RECIPIENT_PER_DAY, MAX_UNBOUND_PER_RECIPIENT_PER_DAY } from "../_shared/notices.ts";
+import { NOTICE_LIMITS } from "../_shared/notices.ts";
 import { handleNotice } from "./handle.ts";
 
 const BOT_TOKEN = "scriba-container-secret";
@@ -27,7 +28,10 @@ type Row = Record<string, unknown>;
 interface Store {
   meetings: Row[];
   meeting_notices: Row[];
-  failInsert?: boolean;
+  /** Что ответит функция резерва. По умолчанию — занять слот с номером 1. */
+  reserve?: (args: Row) => { data: unknown; error: { code: string; message: string } | null };
+  /** С какими аргументами звали резерв. */
+  reserveCalls: Row[];
 }
 
 function newStore(): Store {
@@ -38,6 +42,7 @@ function newStore(): Store {
       { id: FOREIGN_OWNER, title: "Salary review", group_id: "alpha", claim_owner: 222 },
     ],
     meeting_notices: [],
+    reserveCalls: [],
   };
 }
 
@@ -65,7 +70,6 @@ function tableQuery(store: Store, table: "meetings" | "meeting_notices") {
     update: (patch: Row) => ((pending = { update: patch }), q),
     single: () => {
       const row = pending.insert!;
-      if (store.failInsert) return Promise.resolve({ data: null, error: { code: "08006", message: "db down" } });
       const clash = store.meeting_notices.some((r) =>
         r.status !== "failed" && r.recipient_id === row.recipient_id && r.kind === row.kind &&
         r.attempt === row.attempt && r.meeting_id === row.meeting_id && r.meeting_key === row.meeting_key
@@ -103,6 +107,14 @@ async function makeSupabase(store: Store = newStore()): Promise<SupabaseClient> 
     recorder_token_prev_expires_at: null,
   };
   const client = {
+    rpc(fn: string, args: Row) {
+      if (fn !== "meeting_notice_reserve") throw new Error(`unexpected rpc ${fn}`);
+      store.reserveCalls.push(args);
+      if (store.reserve) return Promise.resolve(store.reserve(args));
+      const id = store.meeting_notices.length + 1;
+      store.meeting_notices.push({ id, status: "sending", ...args });
+      return Promise.resolve({ data: { id, attempt: 1 }, error: null });
+    },
     from(table: string) {
       if (table === "meetings" || table === "meeting_notices") return tableQuery(store, table);
       let byToken: string | null = null;
@@ -192,62 +204,94 @@ Deno.test("бот у двери: уведомление уходит владе�
   assert(sent[0].text.includes("Weekly sync"), sent[0].text);
 });
 
-Deno.test("БЛОКИРУЮЩИЙ: зацикленный контейнер — десять «дверей» подряд дают ровно два сообщения", async () => {
-  // Та самая находка приёмки: пока счёт жил в теле запроса, каждая «попытка 1» доходила до
-  // человека. Здесь бот ведёт себя худшим образом — и сервер всё равно пропускает два.
+Deno.test("БЛОКИРУЮЩИЙ: сбой Telegram — 502 с причиной, слот помечен failed и не сгорает", async () => {
   const store = newStore();
-  const { deps, sent } = makeDeps(await makeSupabase(store));
-  const statuses: number[] = [];
-  const answers: Record<string, unknown>[] = [];
-  for (let i = 0; i < 10; i++) {
-    const res = await handleNotice(asBot({ kind: "door_waiting", meeting_id: MEETING }), deps);
-    statuses.push(res.status);
-    answers.push(await payload(res));
-  }
-  assertEquals(sent.length, DOOR_MAX_ATTEMPTS, `человеку ушло ${sent.length} сообщений о двери`);
-  assertEquals(statuses, [200, 200, 409, 409, 409, 409, 409, 409, 409, 409]);
-  assertEquals(answers[1].should_leave, true, "повтор не велел уйти");
-  assertEquals(answers[1].next_reminder_in_s, null);
-  assert(sent[0].text !== sent[1].text, "повтор не сказал, что он последний");
-  assertEquals(answers[9].should_leave, true, "отказ не велел уйти — бот останется у двери");
-});
-
-Deno.test("БЛОКИРУЮЩИЙ: два одновременных вызова — одно сообщение, второй упирается в журнал", async () => {
-  const { deps, sent } = makeDeps(await makeSupabase());
-  const results = await Promise.all([
-    handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING }), deps),
-    handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING }), deps),
-  ]);
-  assertEquals(sent.length, 1, "гонка двух вызовов дала человеку два одинаковых сообщения");
-  assertEquals(results.map((r) => r.status).sort(), [200, 409]);
-});
-
-Deno.test("БЛОКИРУЮЩИЙ: сбой Telegram не съедает повтор — номер освобождается, 502 вызывающему", async () => {
-  const store = newStore();
-  const { deps, sent, state } = makeDeps(await makeSupabase(store), "telegram 429: too many requests");
+  const { deps } = makeDeps(await makeSupabase(store), "telegram 429: too many requests");
   const failed = await handleNotice(asBot({ kind: "container_died", meeting_id: MEETING }), deps);
   assertEquals(failed.status, 502, "недоставленное уведомление отчиталось успехом — человек не узнает ничего");
   const body = await payload(failed);
   assertEquals(body.delivered, false);
   assert(String(body.error).includes("429"), `причина недоставки должна дойти до вызывающего: ${String(body.error)}`);
-  assertEquals(store.meeting_notices[0].status, "failed");
-
-  state.fail = undefined;
-  const retried = await handleNotice(asBot({ kind: "container_died", meeting_id: MEETING }), deps);
-  assertEquals(retried.status, 200, "после сбоя доставки повторить нельзя — человек остался без сигнала");
-  assertEquals(sent.length, 1);
-  assertEquals(store.meeting_notices[1].status, "sent");
+  assertEquals(store.meeting_notices[0].status, "failed", "слот остался занят — повтор после сбоя невозможен");
 });
 
-Deno.test("журнал недоступен — 503, ничего не отправлено: вслепую не шлём", async () => {
-  const store = { ...newStore(), failInsert: true };
+Deno.test("доставлено — слот помечен sent", async () => {
+  const store = newStore();
+  const { deps } = makeDeps(await makeSupabase(store));
+  assertEquals((await handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING }), deps)).status, 200);
+  assertEquals(store.meeting_notices[0].status, "sent");
+});
+
+// ── Решение за базой ──────────────────────────────────────────────────────────
+
+Deno.test("БЛОКИРУЮЩИЙ: база получает получателя из личности, встречу и ВСЕ потолки", async () => {
+  const store = newStore();
+  const { deps } = makeDeps(await makeSupabase(store));
+  await handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING, telegram_id: 999 }), deps);
+  assertEquals(store.reserveCalls, [{
+    p_recipient: OWNER.telegram_id,
+    p_meeting_id: MEETING,
+    p_meeting_key: null,
+    p_kind: "no_audio",
+    p_limits: NOTICE_LIMITS,
+  }]);
+});
+
+Deno.test("до-встречный отказ резервируется по ключу календаря", async () => {
+  const store = newStore();
+  const { deps } = makeDeps(await makeSupabase(store));
+  await handleNotice(asBot({ kind: "no_owner", meeting_key: KEY }), deps);
+  assertEquals(store.reserveCalls[0].p_meeting_id, null);
+  assertEquals(store.reserveCalls[0].p_meeting_key, KEY);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: база отказала по потолку — 409, ничего не отправлено, боту сказано уйти", async () => {
+  const store = newStore();
+  store.reserve = () => ({ data: { refused: "door notice limit reached: one reminder only" }, error: null });
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  const res = await handleNotice(asBot({ kind: "door_waiting", meeting_id: MEETING }), deps);
+  assertEquals(res.status, 409);
+  assertEquals(sent.length, 0, "база сказала «хватит», а сообщение ушло");
+  const body = await payload(res);
+  assertEquals(body.should_leave, true, "боту не сказали уйти — он останется висеть у двери");
+  assert(String(body.error).includes("one reminder"), String(body.error));
+});
+
+Deno.test("повтор у двери: база дала номер 2 — ответ велит уходить", async () => {
+  const store = newStore();
+  store.reserve = () => ({ data: { id: 7, attempt: 2 }, error: null });
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  const res = await handleNotice(asBot({ kind: "door_waiting", meeting_id: MEETING }), deps);
+  const body = await payload(res);
+  assertEquals([res.status, body.attempt, body.should_leave, body.next_reminder_in_s], [200, 2, true, null]);
+  assertEquals(sent.length, 1);
+});
+
+Deno.test("страховочный индекс поймал дубль — 409, ничего не отправлено", async () => {
+  const store = newStore();
+  store.reserve = () => ({ data: null, error: { code: "23505", message: "duplicate key" } });
   const { deps, sent } = makeDeps(await makeSupabase(store));
   const res = await handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING }), deps);
-  assertEquals(res.status, 503);
+  assertEquals(res.status, 409);
   assertEquals(sent.length, 0);
 });
 
-// ── Встреча сверяется ─────────────────────────────────────────────────────────
+Deno.test("журнал недоступен или ответил мусором — 503, ничего не отправлено: вслепую не шлём", async () => {
+  for (
+    const answer of [
+      { data: null, error: { code: "08006", message: "db down" } },
+      { data: null, error: null },
+      { data: { id: "x" }, error: null },
+    ]
+  ) {
+    const store = newStore();
+    store.reserve = () => answer;
+    const { deps, sent } = makeDeps(await makeSupabase(store));
+    const res = await handleNotice(asBot({ kind: "no_audio", meeting_id: MEETING }), deps);
+    assertEquals(res.status, 503, JSON.stringify(answer));
+    assertEquals(sent.length, 0);
+  }
+});
 
 Deno.test("БЛОКИРУЮЩИЙ: встреча чужого воркспейса — 403, ничего не отправлено", async () => {
   const { deps, sent } = makeDeps(await makeSupabase());
@@ -273,30 +317,6 @@ Deno.test("встречи нет — 404 с подсказкой, ничего �
   assertEquals(sent.length, 0);
   assert(String((await payload(res)).error).includes("claim"));
 });
-
-// ── Суточные потолки на человека ──────────────────────────────────────────────
-
-Deno.test("БЛОКИРУЮЩИЙ: до-встречные отказы с выдуманными ключами — не больше суточного потолка", async () => {
-  const { deps, sent } = makeDeps(await makeSupabase());
-  for (let i = 0; i < MAX_UNBOUND_PER_RECIPIENT_PER_DAY + 5; i++) {
-    await handleNotice(asBot({ kind: "no_conference_link", meeting_key: `fresh-${i}` }), deps);
-  }
-  assertEquals(sent.length, MAX_UNBOUND_PER_RECIPIENT_PER_DAY);
-});
-
-Deno.test("БЛОКИРУЮЩИЙ: встреча за встречей — не больше суточного потолка на человека", async () => {
-  const store = newStore();
-  const ids = Array.from(
-    { length: MAX_PER_RECIPIENT_PER_DAY + 5 },
-    (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
-  );
-  for (const id of ids) store.meetings.push({ id, title: "x", group_id: "alpha", claim_owner: OWNER.telegram_id });
-  const { deps, sent } = makeDeps(await makeSupabase(store));
-  for (const id of ids) await handleNotice(asBot({ kind: "no_audio", meeting_id: id }), deps);
-  assertEquals(sent.length, MAX_PER_RECIPIENT_PER_DAY);
-});
-
-// ── Получатель и вход ─────────────────────────────────────────────────────────
 
 Deno.test("БЛОКИРУЮЩИЙ: получатель не берётся из тела запроса", async () => {
   const { deps, sent } = makeDeps(await makeSupabase());
