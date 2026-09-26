@@ -10,6 +10,8 @@ import {
 import { gateGroupMessage } from "./lib/group-gate.ts";
 import { checkRecordingWatchdog } from "./lib/recording-watchdog.ts";
 import { makeWatchdogStore } from "./lib/recording-watchdog-store.ts";
+import { sweepGhostMeetings } from "./lib/ghost-sweep.ts";
+import { makeGhostStore } from "./lib/ghost-sweep-store.ts";
 import { autoSyncProfile, clearSession, getSession } from "./lib/storage.ts";
 import { checkAllowedWithGroup } from "./lib/workspace.ts";
 import { getReadAiToken } from "./lib/readai.ts";
@@ -154,10 +156,10 @@ async function sendRecorderToken(chatId: number, userId: number): Promise<void> 
 //  (2) ПРИЗРАКИ: summary_status=null без transcript/process_state — claim был, а ingest не отработал
 //      (напр. совсем пустая запись: ни mic, ни system). UI поллит «готовятся» вечно. Старые такие
 //      метим 'failed' (без Telegram — обработка даже не начиналась), чтобы UI перестал ждать.
+//      Кроме встречи, которую ещё пишет бот scriba: он заявляет её до захода (#549).
 // Фолбэк на updated_at — для строк без heartbeat (легаси). Идемпотентно.
 async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
   const cutoffMs = Date.now() - staleMinutes * 60_000;
-  const cutoffIso = new Date(cutoffMs).toISOString();
   let swept = 0;
 
   type Recorder = { telegram_id: number };
@@ -195,22 +197,12 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
   }
 
   // (2) Призраки: claim был, ingest не отработал. Метим 'failed' (без уведомления), чтобы UI
-  // перестал поллить. Узкие гарды: пусто (нет transcript/notes/state), не опубликовано, старше cutoff.
-  const { data: ghosts } = await supabase
-    .from("meetings")
-    .select("id")
-    .is("summary_status", null)
-    .is("transcript", null)
-    .is("process_state", null)
-    .is("draft_notes_md", null)
-    .is("entry_id", null)
-    .lt("created_at", cutoffIso);
-  for (const g of (ghosts ?? []) as { id: string }[]) {
-    await supabase.from("meetings").update({ summary_status: "failed", updated_at: new Date().toISOString() }).eq(
-      "id",
-      g.id,
-    );
-    swept++;
+  // перестал поллить; встречу, которую ещё пишет бот scriba, не трогаем (#549). Решение —
+  // lib/ghost-sweep.ts. Сбой чтения не должен съесть сторож оборванной записи, идущий следом.
+  try {
+    swept += await sweepGhostMeetings({ store: makeGhostStore(supabase), nowMs: Date.now(), staleMinutes });
+  } catch (e) {
+    console.error("sweepStuckMeetings ghosts:", e);
   }
 
   return swept;
