@@ -28,6 +28,16 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
+async function replaceWithFile(target: string, attempts = 20): Promise<void> {
+  try {
+    await rm(target, { recursive: true, force: true });
+    await writeFile(target, "not a directory");
+  } catch (error) {
+    if (attempts <= 1) throw error;
+    await replaceWithFile(target, attempts - 1);
+  }
+}
+
 class FakeEngine implements ContainerEngine {
   private next = 0;
   readonly calls: string[] = [];
@@ -418,9 +428,10 @@ describe("оркестратор", () => {
         leaseIntervalMs: 10,
       });
       await orchestrator.init();
-      // Каталог поводка подменён файлом: следующая запись обязана упасть.
-      await rm(leaseDirectory, { recursive: true, force: true });
-      await writeFile(leaseDirectory, "not a directory");
+      // Каталог поводка подменён файлом: следующая запись обязана упасть. Таймер поводка
+      // (10 мс) может успеть пересоздать каталог между rm и writeFile — тогда подмена
+      // повторяется; на нагруженной машине это ловилось как EISDIR.
+      await replaceWithFile(leaseDirectory);
       await new Promise((resolve) => setTimeout(resolve, 40));
 
       expect(lines.some((line) => line.includes("поводок не записан"))).toBe(true);

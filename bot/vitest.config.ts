@@ -28,6 +28,9 @@ export default defineConfig({
         // (исходы встречи, смерть, сироты, разбор частей) живут в соседних файлах и покрыты
         // тестами; эти три проверяет живой смоук против настоящего Docker.
         "src/orchestrator/container-main.ts",
+        // Точка входа службы: разбор окружения и сигналы вокруг проверенных правил
+        // (invite-trigger, invite-service). Её гоняет живой смоук — сценарии invite, kontur, race.
+        "src/orchestrator/orchestrator-main.ts",
         "src/orchestrator/recorder.ts",
         "src/orchestrator/docker-engine.ts",
         "src/orchestrator/smoke-orchestrator.ts",
