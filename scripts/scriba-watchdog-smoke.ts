@@ -2,7 +2,11 @@
 // Смоук сторожа оборванной записи: настоящий heartbeat бота через настоящую функцию
 // meeting-heartbeat → настоящий cron swarm-bot {meetings_watchdog:true} → что увидел бы человек
 // в Telegram. Проверяется то, чего не видят юнит-тесты: запросы к живым таблицам
-// (service_agents, allowed_users, meetings, meeting_notices) и условный сброс флага.
+// (meetings.agent_last_*, service_agents, allowed_users, meeting_notices), условный сброс флага
+// и сверка владения встречей в meeting-heartbeat (чужая встреча → 403).
+//
+// Главный сценарий D018: ОДИН агент пишет несколько встреч сразу, одна замолкает — алерт только
+// по ней, остальные живы и не помечаются призраками.
 //
 // Что нужно: ЛОКАЛЬНЫЙ контур Supabase с накатанными миграциями. Прод сюда не подставлять:
 // смоук заводит, старит и удаляет строки.
@@ -35,29 +39,22 @@ const RUN = Math.floor(Math.random() * 1e6);
 const WS = `smoke-wd-${RUN}`;
 const OWNER = 920_000_000_000 + RUN * 10; // за него бот пишет встречу, которая оборвалась
 const OWNER_NOTIFIED = OWNER + 1; // ему оркестратор уже прислал container_died
-const OWNER_ALIVE = OWNER + 2; // его встречу бот пишет прямо сейчас
+const OWNER_ALIVE = OWNER + 2; // его встречи (две) бот пишет прямо сейчас
 const HUMAN_CRASH = OWNER + 3; // bumblebee замолчал посреди записи
 const HUMAN_ALIVE = OWNER + 4; // bumblebee пишет, heartbeat свежий
 const PEOPLE = [OWNER, OWNER_NOTIFIED, OWNER_ALIVE, HUMAN_CRASH, HUMAN_ALIVE];
+const FOREIGN_WS = `smoke-wd-foreign-${RUN}`; // чужой воркспейс: его встречу агент трогать не вправе
 
-const AGENT = {
-  dead: { id: `scriba-wd-dead-${RUN}`, token: `wd-dead-${RUN}`, owner: OWNER },
-  notified: {
-    id: `scriba-wd-notified-${RUN}`,
-    token: `wd-notified-${RUN}`,
-    owner: OWNER_NOTIFIED,
-  },
-  alive: {
-    id: `scriba-wd-alive-${RUN}`,
-    token: `wd-alive-${RUN}`,
-    owner: OWNER_ALIVE,
-  },
-};
+// Один агент на все встречи — ровно то, что прятало обрыв до D018: строка агента была общей.
+const AGENT = { id: `scriba-wd-${RUN}`, token: `wd-${RUN}` };
 const MEETING = {
   dead: { id: crypto.randomUUID(), title: "Weekly <sync>", owner: OWNER },
   notified: { id: crypto.randomUUID(), title: "Ретро", owner: OWNER_NOTIFIED },
+  alive2: { id: crypto.randomUUID(), title: "Planning", owner: OWNER_ALIVE },
   alive: { id: crypto.randomUUID(), title: "Daily", owner: OWNER_ALIVE },
 };
+// Встреча в чужом воркспейсе: heartbeat в неё обязан получить 403 и ничего не записать.
+const FOREIGN = { id: crypto.randomUUID(), owner: OWNER };
 const keyOf = (m: { id: string }) => `manual:${m.id}`;
 // Пустые встречи без бота — для сторожа призраков. Встречи из MEETING тоже пустые и тоже старые.
 const GHOST = {
@@ -81,8 +78,11 @@ const GHOST = {
   },
 };
 const MEETING_AGE_MIN = 40;
-const ALL_MEETING_IDS = [...Object.values(MEETING), ...Object.values(GHOST)]
-  .map((m) => m.id);
+const ALL_MEETING_IDS = [
+  ...Object.values(MEETING),
+  ...Object.values(GHOST),
+  FOREIGN,
+].map((m) => m.id);
 
 const minutesAgo = (m: number) =>
   new Date(Date.now() - m * 60_000).toISOString();
@@ -190,24 +190,31 @@ async function waitPort(port: number, ms: number): Promise<boolean> {
 // ── Засев и уборка ──────────────────────────────────────────────────────────────
 
 async function seed(): Promise<void> {
-  await rest("POST", "workspaces", [{ id: WS, name: "Smoke watchdog" }]);
+  await rest("POST", "workspaces", [
+    { id: WS, name: "Smoke watchdog" },
+    { id: FOREIGN_WS, name: "Smoke foreign" },
+  ]);
   await rest(
     "POST",
     "allowed_users",
     PEOPLE.map((id) => ({ telegram_id: id, group_id: WS, added_by: id })),
   );
-  await rest(
-    "POST",
-    "service_agents",
-    await Promise.all(
-      Object.values(AGENT).map(async (a) => ({
-        id: a.id,
-        name: "scriba",
-        group_id: WS,
-        token_hash: await sha256Hex(a.token),
-      })),
-    ),
-  );
+  await rest("POST", "service_agents", [{
+    id: AGENT.id,
+    name: "scriba",
+    group_id: WS,
+    token_hash: await sha256Hex(AGENT.token),
+  }]);
+  await rest("POST", "meetings", [{
+    id: FOREIGN.id,
+    source: "scriba-smoke",
+    identity_kind: "manual",
+    identity_key: `manual:${FOREIGN.id}`,
+    group_id: FOREIGN_WS,
+    claim_owner: FOREIGN.owner,
+    title: "Foreign",
+    created_at: minutesAgo(3),
+  }]);
   await rest(
     "POST",
     "meetings",
@@ -246,14 +253,9 @@ async function cleanup(): Promise<string[]> {
       "DELETE",
       `meetings?id=in.(${ALL_MEETING_IDS.join(",")})`,
     ], // notices — каскадом
-    [
-      "DELETE",
-      `service_agents?id=in.(${
-        Object.values(AGENT).map((a) => a.id).join(",")
-      })`,
-    ],
+    ["DELETE", `service_agents?id=eq.${AGENT.id}`],
     ["DELETE", `allowed_users?telegram_id=in.(${PEOPLE.join(",")})`],
-    ["DELETE", `workspaces?id=eq.${WS}`],
+    ["DELETE", `workspaces?id=in.(${WS},${FOREIGN_WS})`],
   ];
   for (const [method, path] of steps) {
     try {
@@ -272,39 +274,47 @@ function expect(name: string, ok: boolean, detail?: string): void {
   checks.push({ name, ok, detail });
 }
 
+/** Удар бота по встрече — от имени onBehalfOf, как шлёт его контейнер (session.heartbeat). */
 async function beat(
-  agent: { id: string; token: string; owner: number },
-  meetingKey: string,
+  meeting: { id: string },
+  onBehalfOf: number,
 ): Promise<number> {
   const res = await fetch(`http://127.0.0.1:${PORT_HB}/`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${agent.token}`,
-      "X-On-Behalf-Of": String(agent.owner),
+      Authorization: `Bearer ${AGENT.token}`,
+      "X-On-Behalf-Of": String(onBehalfOf),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       recording: true,
       version: 1,
       on_call: true,
-      meeting_key: meetingKey,
+      meeting_key: `manual:${meeting.id}`,
+      meeting_id: meeting.id,
     }),
   });
   await res.body?.cancel();
   return res.status;
 }
 
-async function agentRow(id: string) {
+async function agentRow() {
   const rows = await rest(
     "GET",
-    `service_agents?id=eq.${id}&select=last_seen_at,last_recording,last_meeting_key`,
+    `service_agents?id=eq.${AGENT.id}&select=last_seen_at,last_version`,
   );
   return (rows as Array<
-    {
-      last_seen_at: string | null;
-      last_recording: boolean | null;
-      last_meeting_key: string | null;
-    }
+    { last_seen_at: string | null; last_version: number | null }
+  >)[0];
+}
+
+async function meetingBeat(id: string) {
+  const rows = await rest(
+    "GET",
+    `meetings?id=eq.${id}&select=agent_last_seen_at,agent_last_recording`,
+  );
+  return (rows as Array<
+    { agent_last_seen_at: string | null; agent_last_recording: boolean | null }
   >)[0];
 }
 async function humanRecording(id: number): Promise<boolean | null> {
@@ -337,28 +347,55 @@ async function cron(): Promise<number> {
 const mine = () => inbox.filter((m) => PEOPLE.includes(m.chat_id));
 
 async function scenario(): Promise<void> {
-  // 1. Настоящий heartbeat бота через meeting-heartbeat: ложится в service_agents, не в человека.
-  for (const k of ["dead", "notified", "alive"] as const) {
-    const status = await beat(AGENT[k], keyOf(MEETING[k]));
+  // 1. Настоящий heartbeat ОДНОГО агента по четырём встречам через meeting-heartbeat. Живая
+  //    встреча бьёт последней: до D018 её удар затирал в общей строке агента удары остальных.
+  for (const k of ["dead", "notified", "alive2", "alive"] as const) {
+    const status = await beat(MEETING[k], MEETING[k].owner);
     expect(`heartbeat ${k} принят`, status === 200, `HTTP ${status}`);
   }
-  const deadRow = await agentRow(AGENT.dead.id);
+  const deadBeat = await meetingBeat(MEETING.dead.id);
   expect(
-    "heartbeat бота в service_agents: recording=true и ключ встречи",
-    deadRow?.last_recording === true &&
-      deadRow?.last_meeting_key === keyOf(MEETING.dead),
-    JSON.stringify(deadRow),
+    "heartbeat бота лёг в строку своей встречи: recording=true и время удара",
+    deadBeat?.agent_last_recording === true && !!deadBeat?.agent_last_seen_at,
+    JSON.stringify(deadBeat),
+  );
+  const agent = await agentRow();
+  expect(
+    "строка агента отмечает «жив, сборка 1»",
+    !!agent?.last_seen_at && agent?.last_version === 1,
+    JSON.stringify(agent),
   );
   expect(
     "heartbeat бота НЕ тронул строку человека",
     (await humanRecording(OWNER)) === null,
   );
 
-  // 2. Состарить: dead и notified замолчали 15 мин назад, alive свежий; люди — как в жизни.
+  // Владение: агент не освежает встречу, заявленную за другого человека, и встречу чужого
+  // воркспейса — иначе мог бы погасить её сторожа.
+  const foreignOwner = await beat(MEETING.dead, OWNER_ALIVE);
+  expect(
+    "удар во встречу другого человека (claim_owner не тот) → 403",
+    foreignOwner === 403,
+    `HTTP ${foreignOwner}`,
+  );
+  const foreignWs = await beat(FOREIGN, FOREIGN.owner);
+  expect(
+    "удар во встречу чужого воркспейса → 403",
+    foreignWs === 403,
+    `HTTP ${foreignWs}`,
+  );
+  expect(
+    "встреча чужого воркспейса осталась нетронутой",
+    (await meetingBeat(FOREIGN.id))?.agent_last_seen_at === null,
+    JSON.stringify(await meetingBeat(FOREIGN.id)),
+  );
+
+  // 2. Состарить: dead и notified замолчали 15 мин назад, обе встречи alive свежие; люди — как
+  //    в жизни. Строка агента при этом свежая (alive бил последним) — сторож обязан её не слушать.
   await rest(
     "PATCH",
-    `service_agents?id=in.(${AGENT.dead.id},${AGENT.notified.id})`,
-    { last_seen_at: minutesAgo(15) },
+    `meetings?id=in.(${MEETING.dead.id},${MEETING.notified.id})`,
+    { agent_last_seen_at: minutesAgo(15) },
   );
   await rest("PATCH", `allowed_users?telegram_id=eq.${HUMAN_CRASH}`, {
     recorder_last_recording: true,
@@ -392,7 +429,11 @@ async function scenario(): Promise<void> {
     "container_died уже был → второго алерта нет",
     to(OWNER_NOTIFIED).length === 0,
   );
-  expect("живой бот → тишина", to(OWNER_ALIVE).length === 0);
+  expect(
+    "две живые встречи того же агента → тишина по обеим",
+    to(OWNER_ALIVE).length === 0,
+    JSON.stringify(to(OWNER_ALIVE)),
+  );
   expect(
     "bumblebee замолчал → алерт ему самому, текст про bumblebee (как раньше)",
     to(HUMAN_CRASH).length === 1 &&
@@ -401,16 +442,17 @@ async function scenario(): Promise<void> {
   );
   expect("живой bumblebee → тишина", to(HUMAN_ALIVE).length === 0);
   expect(
-    "флаг мёртвого бота сброшен",
-    (await agentRow(AGENT.dead.id))?.last_recording === false,
+    "флаг замолчавшей встречи сброшен",
+    (await meetingBeat(MEETING.dead.id))?.agent_last_recording === false,
   );
   expect(
-    "флаг бота с container_died сброшен",
-    (await agentRow(AGENT.notified.id))?.last_recording === false,
+    "флаг встречи с container_died сброшен",
+    (await meetingBeat(MEETING.notified.id))?.agent_last_recording === false,
   );
   expect(
-    "флаг живого бота не тронут",
-    (await agentRow(AGENT.alive.id))?.last_recording === true,
+    "флаги живых встреч не тронуты",
+    (await meetingBeat(MEETING.alive.id))?.agent_last_recording === true &&
+      (await meetingBeat(MEETING.alive2.id))?.agent_last_recording === true,
   );
   expect(
     "флаг замолчавшего bumblebee сброшен",
@@ -423,9 +465,14 @@ async function scenario(): Promise<void> {
 
   // Сторож встреч-призраков (#549): все встречи пустые и старше 15 минут.
   expect(
-    "встреча, которую ещё пишет бот (свежий heartbeat по её ключу), не помечена failed",
+    "встреча, которую ещё пишет бот (свежий heartbeat по ней), не помечена failed",
     (await summaryStatus(MEETING.alive.id)) === null,
     String(await summaryStatus(MEETING.alive.id)),
+  );
+  expect(
+    "вторая одновременная встреча того же агента тоже не помечена failed",
+    (await summaryStatus(MEETING.alive2.id)) === null,
+    String(await summaryStatus(MEETING.alive2.id)),
   );
   expect(
     "встреча замолчавшего бота помечена failed, как раньше",
