@@ -8,6 +8,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { pickCurrentEvent } from "./select.ts";
 import { conferenceInfo } from "./join-link.ts";
+// Ключ встречи собирается там же, где его сверяет meeting-claim (issue #545).
+import { calendarKeyOf } from "../_shared/calendar-key.ts";
 // Обмен refresh→access и запрос событий — общий модуль (его же зовёт swarm-api для панели
 // «Встречи сегодня», issue #218). Здесь своей копии больше нет.
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
@@ -70,8 +72,8 @@ Deno.serve(async (req: Request) => {
   const ev = pickCurrentEvent(items, now.getTime());
   if (!ev) return json({ meeting: null, reason: "no_ongoing_event" });
 
-  const uid = ev.iCalUID ?? ev.id;
-  const date = ev.start!.dateTime!.slice(0, 10);
+  // pickCurrentEvent отдаёт только события со временем начала, поэтому ключ здесь всегда есть.
+  const identityKey = calendarKeyOf(ev)!;
   const attendees = (ev.attendees ?? [])
     .map((a) => ({ name: a.displayName ?? null, email: a.email ?? null }))
     .filter((a) => a.name || a.email);
@@ -79,7 +81,7 @@ Deno.serve(async (req: Request) => {
   return json({
     meeting: {
       identity_kind: "calendar",
-      identity_key: `${uid}:${date}`,
+      identity_key: identityKey,
       title: ev.summary ?? null,
       attendees,
       started_at: ev.start!.dateTime,

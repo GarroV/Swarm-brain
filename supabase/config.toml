@@ -391,6 +391,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.meeting-current]
 verify_jwt = false
+[functions.meeting-notice]
+verify_jwt = false
 [functions.meeting-webtoken]
 verify_jwt = false
 [functions.read-ai-webhook]
@@ -400,6 +402,15 @@ verify_jwt = false
 [functions.google-oauth]
 verify_jwt = false
 [functions.auth-resolve]
+verify_jwt = false
+
+[functions.meeting-heartbeat]
+verify_jwt = false
+
+[functions.meeting-context]
+verify_jwt = false
+
+[functions.granola-poller]
 verify_jwt = false
 
 [edge_runtime]
