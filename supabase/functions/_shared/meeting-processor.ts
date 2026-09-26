@@ -21,15 +21,13 @@ import {
   isWhisperHallucination,
   WHISPER_HALLUCINATION_RE,
 } from "./whisper-hallucinations.ts";
-import {
-  langCode,
-  type LangVotePart,
-  partsNeedingRetranscribe,
-  resolveMeetingLang,
-} from "./meeting-lang.ts";
+import { langCode, type LangVotePart, partsNeedingRetranscribe, resolveMeetingLang } from "./meeting-lang.ts";
 import { TEZISY_PROMPT } from "./tezisy-prompt.ts";
 import { glossaryWhisperHint } from "./glossary.ts";
 import { extractChatContent } from "./openai-chat.ts";
+import { buildSegments, type Segment, speakerLegend, type SpeakerSpan } from "./speakers.ts";
+
+export type { Segment, SpeakerSpan };
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -48,8 +46,7 @@ const OPENAI_AUDIO_MAX_BYTES = 25 * 1024 * 1024;
 
 // Канон тезисов — в _shared/tezisy-prompt.ts (DRY с granola/read-ai). Здесь добавляем только
 // спец-обработку пустой записи (НЕТ_ТЕЗИСОВ → плашка ниже).
-const TEZIS_SYSTEM =
-  TEZISY_PROMPT + "\n" +
+const TEZIS_SYSTEM = TEZISY_PROMPT + "\n" +
   "НЕТ_ТЕЗИСОВ возвращай ТОЛЬКО для реально пустой записи: тест связи/микрофона, тишина, " +
   "пара бессвязных обрывков. Если в разговоре есть ХОТЬ КАКОЕ-ТО предметное содержание " +
   "(работа, планы, проблемы, договорённости) — пусть вперемешку с болтовнёй и на любом языке — " +
@@ -61,25 +58,44 @@ const TEZIS_SYSTEM =
 // (если есть) видна на экране вычитки ниже; пустые/бессмысленные тезисы туда не пишем.
 const NO_TEZISY_NOTE = "В записи нет содержательного обсуждения — тезисы не сформированы. Ниже доступна стенограмма.";
 
-export interface Segment { start: number; end: number; text: string; speaker?: string }
+// Segment живёт в _shared/speakers.ts (там же сведение с таймлайном говорящих) и ре-экспортируется
+// выше — потребители продолжают импортировать его отсюда.
 // Одна часть дорожки в Storage. segments заполняются ПОСЛЕ успешной транскрибации (offset уже
 // прибавлен — глобальный сдвиг mic применяется на этапе summarize).
 export interface Part {
   track: "sys" | "mic";
   name: string;
   offset: number;
-  path: string;        // путь в бакете meeting-audio
+  path: string; // путь в бакете meeting-audio
   done: boolean;
   attempts: number;
   segments?: Segment[];
-  lang?: string;        // язык части, определённый Whisper (имя на англ.)
+  lang?: string; // язык части, определённый Whisper (имя на англ.)
   viaFallback?: boolean; // сегменты пришли только из d.text-фолбэка (не настоящая речь) → не якорим
 }
-export interface ProcessState { parts: Part[]; stage: "transcribe" | "summarize" }
+// speakers — необязательный таймлайн говорящих (секунды от начала записи), присланный полем
+// `speakers` формы meeting-ingest. Живёт в той же jsonb-колонке meetings.process_state, миграции
+// не требует; старые строки его не имеют — это и есть путь мягкой деградации.
+export interface ProcessState {
+  parts: Part[];
+  stage: "transcribe" | "summarize";
+  speakers?: SpeakerSpan[];
+}
 // Части в памяти (как их собрал meeting-ingest из multipart) до заливки в Storage.
-export interface InMemoryPart { blob: Blob; name: string; offset: number }
-interface RecorderEntry { telegram_id: number; claimed_at?: string; role?: string }
-interface InlineButton { text: string; url: string }
+export interface InMemoryPart {
+  blob: Blob;
+  name: string;
+  offset: number;
+}
+interface RecorderEntry {
+  telegram_id: number;
+  claimed_at?: string;
+  role?: string;
+}
+interface InlineButton {
+  text: string;
+  url: string;
+}
 interface MeetingRow {
   id: string;
   title: string | null;
@@ -107,7 +123,11 @@ async function openaiFetch(url: string, init: RequestInit, attempts = 4): Promis
   return res;
 }
 
-async function transcribeAudio(audio: Blob, filename: string, languageHint?: string): Promise<{ segments: Segment[]; language?: string; viaFallback: boolean }> {
+async function transcribeAudio(
+  audio: Blob,
+  filename: string,
+  languageHint?: string,
+): Promise<{ segments: Segment[]; language?: string; viaFallback: boolean }> {
   const form = new FormData();
   form.append("file", audio, filename);
   form.append("model", "whisper-1");
@@ -132,7 +152,7 @@ async function transcribeAudio(audio: Blob, filename: string, languageHint?: str
   }
   const d = data as {
     text?: string;
-    language?: string;   // язык, определённый Whisper (имя на англ.: "russian"/"english"/…)
+    language?: string; // язык, определённый Whisper (имя на англ.: "russian"/"english"/…)
     segments?: Array<{ start: number; end: number; text: string; no_speech_prob?: number; avg_logprob?: number }>;
   };
   const kept: Segment[] = (d.segments ?? [])
@@ -195,7 +215,11 @@ const isGpt5 = (model: string): boolean => /^gpt-5/.test(model);
 // оплачиваем сверху; остаточные пустые ответы ловит extractChatContent → фолбэк на gpt-4o.
 const GPT5_REASONING_HEADROOM = 8000;
 
-interface ChatOpts { temperature?: number; model?: string; maxTokens?: number }
+interface ChatOpts {
+  temperature?: number;
+  model?: string;
+  maxTokens?: number;
+}
 
 async function chatComplete(system: string, user: string, opts: ChatOpts = {}): Promise<string> {
   const maxTokens = opts.maxTokens ?? 4000;
@@ -205,7 +229,12 @@ async function chatComplete(system: string, user: string, opts: ChatOpts = {}): 
     // GPT-5 — max_completion_tokens + без temperature; старые модели — max_tokens (+ temperature).
     const body: Record<string, unknown> = isGpt5(model)
       ? { model, messages, max_completion_tokens: maxTokens + GPT5_REASONING_HEADROOM }
-      : { model, messages, max_tokens: maxTokens, ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}) };
+      : {
+        model,
+        messages,
+        max_tokens: maxTokens,
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+      };
     const res = await openaiFetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
@@ -265,7 +294,9 @@ async function downloadPart(supabase: SupabaseClient, path: string): Promise<Blo
 async function cleanupStorage(supabase: SupabaseClient, state: ProcessState): Promise<void> {
   const paths = state.parts.map((p) => p.path);
   if (paths.length === 0) return;
-  try { await supabase.storage.from(AUDIO_BUCKET).remove(paths); } catch { /* лучше осиротевший файл, чем сбой done */ }
+  try {
+    await supabase.storage.from(AUDIO_BUCKET).remove(paths);
+  } catch { /* лучше осиротевший файл, чем сбой done */ }
 }
 
 // Заливает части (из памяти) в Storage и строит начальный process_state. Часть > 25МБ
@@ -275,6 +306,7 @@ export async function uploadPartsAndBuildState(
   meetingId: string,
   systemParts: InMemoryPart[],
   micParts: InMemoryPart[],
+  speakers: readonly SpeakerSpan[] = [],
 ): Promise<ProcessState> {
   const parts: Part[] = [];
   const upload = async (track: "sys" | "mic", list: InMemoryPart[]) => {
@@ -289,7 +321,8 @@ export async function uploadPartsAndBuildState(
   };
   await upload("sys", systemParts);
   await upload("mic", micParts);
-  return { parts, stage: "transcribe" };
+  // Пустой таймлайн в состояние не пишем: старая форма process_state остаётся байт-в-байт прежней.
+  return speakers.length > 0 ? { parts, stage: "transcribe", speakers: [...speakers] } : { parts, stage: "transcribe" };
 }
 
 // ── Лиз и состояние ───────────────────────────────────────────────────────────
@@ -325,7 +358,8 @@ async function markFailed(supabase: SupabaseClient, m: MeetingRow): Promise<void
   await supabase.from("meetings")
     .update({ summary_status: "failed", processing_lease: null, updated_at: new Date().toISOString() })
     .eq("id", m.id);
-  const note = "⚠️ Не удалось обработать запись встречи — не получилось транскрибировать аудио. Попробуй записать заново.";
+  const note =
+    "⚠️ Не удалось обработать запись встречи — не получилось транскрибировать аудио. Попробуй записать заново.";
   for (const r of m.recorders ?? []) {
     if (r && typeof r.telegram_id === "number") await sendTelegram(r.telegram_id, note).catch(() => {});
   }
@@ -356,17 +390,18 @@ async function resolveOwnerName(supabase: SupabaseClient, telegramId: number | n
   return uname ? `@${uname}` : null;
 }
 
-// Легенда спикеров для промпта тезисов. Если владелец записи известен — называем его по имени,
-// чтобы модель атрибутировала реплики «я» именно ему, а не делала «главным героем» собеседника,
-// чьё имя всплывает в разговоре (корневая причина жалобы владельца на перекос атрибуции).
-function speakerLegend(ownerName: string | null): string {
-  const me = ownerName ? `«я» — это ${ownerName} (владелец записи)` : "«я» — владелец записи";
-  return `Стенограмма (реплики помечены «собеседник» — другие участники, ${me}):`;
+// Легенда спикеров для промпта тезисов живёт в _shared/speakers.ts: она обязана описывать ровно те
+// метки, которые в стенограмме есть (запись бота — только имена, реплик «я» там нет вовсе).
+// Метки берём из самих сегментов.
+function labelsOf(segments: readonly Segment[]): string[] {
+  return segments.map((s) => s.speaker ?? "");
 }
 
 // ── Финал: сводим транскрипт → тезисы → done → уведомляем → чистим Storage ──────
 async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state: ProcessState): Promise<void> {
-  const micOffset = typeof m.mic_start_offset === "number" && Number.isFinite(m.mic_start_offset) ? m.mic_start_offset : 0;
+  const micOffset = typeof m.mic_start_offset === "number" && Number.isFinite(m.mic_start_offset)
+    ? m.mic_start_offset
+    : 0;
   // Язык встречи — язык-нейтральный автодетект, взвешенный по объёму РЕАЛЬНОЙ речи по всем частям
   // (см. _shared/meeting-lang.ts). Русская встреча → russian, английская → english. Нет реальной
   // речи → undefined (пина нет, каждый чанк остаётся на своём автодетекте Whisper — без форс-ru).
@@ -389,15 +424,9 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
     if (idxs.length > 0) await saveState(supabase, m.id, state);
   }
 
-  const segments: Segment[] = [];
-  for (const p of state.parts) {
-    if (!p.done || !p.segments) continue;
-    const speaker = p.track === "sys" ? "собеседник" : "я";
-    // Глобальный сдвиг mic↔system добавляем тут (per-part offset уже учтён при транскрибации).
-    const shift = p.track === "mic" ? micOffset : 0;
-    for (const s of p.segments) segments.push({ start: s.start + shift, end: s.end + shift, text: s.text, speaker });
-  }
-  segments.sort((a, b) => a.start - b.start);
+  // Сборка стенограммы (сдвиг mic↔system, метки говорящих, сортировка) — в _shared/speakers.ts.
+  // Таймлайна нет → метки ровно прежние: sys → «собеседник», mic → «я».
+  const segments = buildSegments(state.parts, micOffset, state.speakers ?? []);
 
   const hasMic = state.parts.some((p) => p.track === "mic" && p.done);
   const transcript = { language: resolved, model: hasMic ? "whisper-1+mic" : "whisper-1", segments };
@@ -413,16 +442,23 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
     const ownerName = await resolveOwnerName(supabase, micOwnerId(m.claim_owner, m.recorders));
     const raw = (await chatComplete(
       TEZIS_SYSTEM,
-      `Встреча: ${m.title ?? "без названия"}\n\n${speakerLegend(ownerName)}\n${transcriptText}`,
+      `Встреча: ${m.title ?? "без названия"}\n\n${speakerLegend(ownerName, labelsOf(segments))}\n${transcriptText}`,
       { temperature: 0.3 }, // применяется к фолбэк-gpt-4o; terra (GPT-5) температуру игнорирует
     )).trim();
     // Пустой ответ модели при СОДЕРЖАТЕЛЬНОМ транскрипте — это сбой сводки, а НЕ пустая встреча.
     // Раньше "" сохранялось с summary_status="done" → ревью вечно «Тезисы готовятся…» без кнопки.
     // Транскрипт уже сохранён выше; метим failed → на ревью доступно «Переобработать».
     if (!raw) {
-      console.error(`meeting-processor: пустая сводка от модели для ${m.id} при непустом транскрипте (${transcriptText.length} симв) — mark failed`);
+      console.error(
+        `meeting-processor: пустая сводка от модели для ${m.id} при непустом транскрипте (${transcriptText.length} симв) — mark failed`,
+      );
       await supabase.from("meetings")
-        .update({ summary_status: "failed", last_progress_at: new Date().toISOString(), processing_lease: null, updated_at: new Date().toISOString() })
+        .update({
+          summary_status: "failed",
+          last_progress_at: new Date().toISOString(),
+          processing_lease: null,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", m.id);
       return;
     }
@@ -449,7 +485,14 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
 
   const nowIso = new Date().toISOString();
   await supabase.from("meetings")
-    .update({ draft_notes_md: tezisi, title: finalTitle, summary_status: "done", last_progress_at: nowIso, processing_lease: null, updated_at: nowIso })
+    .update({
+      draft_notes_md: tezisi,
+      title: finalTitle,
+      summary_status: "done",
+      last_progress_at: nowIso,
+      processing_lease: null,
+      updated_at: nowIso,
+    })
     .eq("id", m.id);
 
   const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${m.id}` : "";
@@ -467,7 +510,11 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
 // без повторной транскрибации. Для кнопки «Переобработать тезисы» на ревью (вызывается из swarm-api).
 // Тот же путь, что и при первичной сводке (TEZIS_SYSTEM, temp 0.3) — один источник правды.
 // Заголовок НЕ трогаем (мог быть отредактирован вручную). Возвращает новые тезисы.
-export async function resummarizeFromTranscript(supabase: SupabaseClient, meetingId: string, note = ""): Promise<string> {
+export async function resummarizeFromTranscript(
+  supabase: SupabaseClient,
+  meetingId: string,
+  note = "",
+): Promise<string> {
   const tezisi = await buildTezisyFromTranscript(supabase, meetingId, note);
   // Успешно записали тезисы → приводим summary_status в согласованность: встреча, ранее упавшая в
   // "failed", после успешной переобработки не должна оставаться "failed" (иначе UI врёт про статус).
@@ -480,9 +527,21 @@ export async function resummarizeFromTranscript(supabase: SupabaseClient, meetin
 // Та же сводка, но БЕЗ записи в базу — «сухой прогон». Отделено от resummarizeFromTranscript,
 // чтобы промпт можно было проверить на реальной встрече, не затирая ни авто-тезисы, ни правки
 // человека (у половины встреч стоит notes_edited_at — там перезапись уничтожила бы его работу).
-export async function buildTezisyFromTranscript(supabase: SupabaseClient, meetingId: string, note = ""): Promise<string> {
-  const { data } = await supabase.from("meetings").select("id, title, transcript, recorders, claim_owner").eq("id", meetingId).single();
-  const row = data as { title: string | null; transcript: { segments?: Segment[] } | null; recorders: RecorderEntry[] | null; claim_owner: number | null } | null;
+export async function buildTezisyFromTranscript(
+  supabase: SupabaseClient,
+  meetingId: string,
+  note = "",
+): Promise<string> {
+  const { data } = await supabase.from("meetings").select("id, title, transcript, recorders, claim_owner").eq(
+    "id",
+    meetingId,
+  ).single();
+  const row = data as {
+    title: string | null;
+    transcript: { segments?: Segment[] } | null;
+    recorders: RecorderEntry[] | null;
+    claim_owner: number | null;
+  } | null;
   const segments = row?.transcript?.segments ?? [];
   const transcriptText = segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n").slice(0, 100000);
   if (!transcriptText.trim()) return NO_TEZISY_NOTE;
@@ -494,7 +553,9 @@ export async function buildTezisyFromTranscript(supabase: SupabaseClient, meetin
     : "";
   const raw = (await chatComplete(
     TEZIS_SYSTEM,
-    `Встреча: ${row?.title ?? "без названия"}\n\n${speakerLegend(ownerName)}\n${transcriptText}${noteBlock}`,
+    `Встреча: ${row?.title ?? "без названия"}\n\n${
+      speakerLegend(ownerName, labelsOf(segments))
+    }\n${transcriptText}${noteBlock}`,
     { temperature: 0.3 },
   )).trim();
   // Пустой ответ модели — не затираем существующие тезисы пустой строкой и не метим done;
@@ -540,9 +601,7 @@ export async function runMeetingStep(
         // (язык-нейтрально). Пока речи мало (первые чанки тишины) — undefined → микрофон на
         // автодетекте Whisper; по мере накопления реальных символов пин сходится к языку встречи, а
         // ранние флипнутые чанки чинятся ре-транскрибацией на сведении. Форс-ru нет.
-        const micHint = pendingSys.length > 0
-          ? undefined
-          : langCode(resolveMeetingLang(toVoteParts(state.parts)));
+        const micHint = pendingSys.length > 0 ? undefined : langCode(resolveMeetingLang(toVoteParts(state.parts)));
         const batch = pending.slice(0, TRANSCRIBE_CONCURRENCY);
         await mapLimit(batch, TRANSCRIBE_CONCURRENCY, async (p) => {
           try {
