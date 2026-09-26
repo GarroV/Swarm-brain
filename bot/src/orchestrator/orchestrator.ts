@@ -35,7 +35,14 @@ export const LABEL = {
   platform: "scriba.platform",
 } as const;
 
-const CONTAINER_COMMAND = ["node", "/app/src/orchestrator/container-main.ts"];
+// Снятие типов у Node (strip-only) не умеет свойства-параметры конструктора, а ими пользуется
+// swarm-client (`constructor(private readonly …)`): без трансформации процесс встречи падает
+// на импорте с ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX. Проверено живым прогоном 2026-09-26.
+const CONTAINER_COMMAND = [
+  "node",
+  "--experimental-transform-types",
+  "/app/src/orchestrator/container-main.ts",
+];
 const RECORDINGS_PATH = "/recordings";
 const LEASE_PATH = "/lease";
 const SHM_BYTES = 1024 * 1024 * 1024;

@@ -11,7 +11,7 @@
  *
  * Запуск с хоста, образ собран заранее:
  *   docker build -f bot/container/Dockerfile -t scriba-orchestrator:dev bot/
- *   SCRIBA_SMOKE_STATE=<каталог> node bot/src/orchestrator/smoke-orchestrator.ts
+ *   SCRIBA_SMOKE_STATE=<каталог> node --experimental-transform-types bot/src/orchestrator/smoke-orchestrator.ts
  *
  * Переменные:
  *   SCRIBA_SMOKE_STATE    — каталог под поводки (обязателен: только свой, не общий tmp);
@@ -351,7 +351,7 @@ async function child(): Promise<void> {
 
 async function spawnChild(leaseName: string): Promise<{ id: string; kill: () => void }> {
   const script = fileURLToPath(import.meta.url);
-  const proc = spawn(process.execPath, [script, "child"], {
+  const proc = spawn(process.execPath, [...process.execArgv, script, "child"], {
     env: { ...process.env, SCRIBA_SMOKE_CHILD_LEASE: leaseName },
     stdio: ["ignore", "pipe", "inherit"],
   });

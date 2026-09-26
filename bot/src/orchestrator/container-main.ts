@@ -27,6 +27,7 @@ import { type MeetingConfig, readMeetingConfig } from "./config.ts";
 import { LeaseTracker, readLease } from "./lease.ts";
 import { inBackground } from "./background.ts";
 import { LogNotifier } from "./notices.ts";
+import { ALIVE_TOUCH_MS, adoptOrphanedRuns, runQueueRoot, touchAlive } from "./run-directories.ts";
 import { FfmpegRecorder } from "./recorder.ts";
 import { type MeetingRecorder, runMeeting } from "./run-meeting.ts";
 import { formatStateLine } from "./state-line.ts";
@@ -126,10 +127,21 @@ async function main(): Promise<number> {
     token: config.token,
     onBehalfOf: config.onBehalfOf,
   });
-  // Очередь — на томе, общая для встреч одного человека: что не уехало сейчас, уедет со
-  // следующим контейнером этого человека.
+  // Очередь — на томе, у каждого запуска своя (см. run-directories.ts): общая на человека давала
+  // двойную выгрузку, когда у него шли две встречи сразу.
+  const personDirectory = path.join(settings.outputDirectory, "queue", String(config.onBehalfOf));
+  const queueRoot = runQueueRoot(personDirectory, config.runId);
+  await touchAlive(queueRoot);
+  const aliveTimer = setInterval(() => {
+    inBackground(
+      async () => touchAlive(queueRoot),
+      (error) => {
+        log(`очередь: отметка alive не обновлена — ${String(error)}`);
+      },
+    );
+  }, ALIVE_TOUCH_MS);
   const queue = new UploadQueue({
-    root: path.join(settings.outputDirectory, "queue", String(config.onBehalfOf)),
+    root: queueRoot,
     client,
     onEvent: (event) => {
       const detail = event.detail === undefined ? "" : ` — ${event.detail}`;
@@ -151,7 +163,10 @@ async function main(): Promise<number> {
   });
   // Хвосты прошлых встреч этого человека — в фоне, встречу они не задерживают.
   inBackground(
-    async () => queue.drain(),
+    async () => {
+      await adoptOrphanedRuns({ personDirectory, ownRunId: config.runId, nowMs: Date.now(), log });
+      await queue.drain();
+    },
     (error) => {
       log(`очередь: прогон хвостов не удался — ${String(error)}`);
     },
@@ -220,6 +235,7 @@ async function main(): Promise<number> {
     return 0;
   } finally {
     stop.dispose();
+    clearInterval(aliveTimer);
     await browser.close();
   }
 }
