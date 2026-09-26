@@ -1,29 +1,71 @@
-import { supabase, ADMIN_USER_ID, isAdminUser } from "./lib/supabase.ts";
-import { sendMessage, sendInlineMessage, editInlineMessage, buildKeyboard, answerCallback, getBotUsername } from "./lib/telegram.ts";
+import { ADMIN_USER_ID, isAdminUser, supabase } from "./lib/supabase.ts";
+import {
+  answerCallback,
+  buildKeyboard,
+  editInlineMessage,
+  getBotUsername,
+  sendInlineMessage,
+  sendMessage,
+} from "./lib/telegram.ts";
 import { gateGroupMessage } from "./lib/group-gate.ts";
-import { autoSyncProfile, getSession, clearSession } from "./lib/storage.ts";
+import { checkRecordingWatchdog } from "./lib/recording-watchdog.ts";
+import { makeWatchdogStore } from "./lib/recording-watchdog-store.ts";
+import { autoSyncProfile, clearSession, getSession } from "./lib/storage.ts";
 import { checkAllowedWithGroup } from "./lib/workspace.ts";
 import { getReadAiToken } from "./lib/readai.ts";
 import { handleAdd, handleAsk } from "./handlers/knowledge.ts";
-import { handleVoice, handleDocument, handlePhoto, handleUrl } from "./handlers/media.ts";
-import { classifyEntryCommand, parseManageCommand, extractUrl, parseSaveCommand, parseCreateTaskCommand } from "./lib/intent.ts";
+import { handleDocument, handlePhoto, handleUrl, handleVoice } from "./handlers/media.ts";
+import {
+  classifyEntryCommand,
+  extractUrl,
+  parseCreateTaskCommand,
+  parseManageCommand,
+  parseSaveCommand,
+} from "./lib/intent.ts";
 import { ALL_MEETING_SOURCES, ENTRY_MEETING_SOURCES, sourceLabel } from "../_shared/sources.ts";
 import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
 import { handleEntryCommand, handleManageCallbacks, handleManageSessionInput } from "./handlers/manage.ts";
-import { handleTaskCallbacks, handleTasks, handleAddTask, handleTaskSessionInput, handleQuickCreateTask } from "./tasks/index.ts";
-import { handleMeetings, handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
-import { handleUsers, handleUserCallbacks, handleUserSessionInput, handleBroadcast } from "./handlers/users.ts";
-import { handleGranolaCallbacks, handleGranolaCommand, handleGranolaSessionInput, pollGranolaForUser, ingestNewGranolaNotesAllUsers } from "./handlers/granola.ts";
-import { handleFeedbackCommand, handleFeedbackCallbacks, handleFeedbackPhoto, handleFeedbackSessionInput, cleanupOldFeedback } from "./handlers/feedback.ts";
+import {
+  handleAddTask,
+  handleQuickCreateTask,
+  handleTaskCallbacks,
+  handleTasks,
+  handleTaskSessionInput,
+} from "./tasks/index.ts";
+import { handleMeetingCallbacks, handleMeetingSessionInput } from "./handlers/meetings.ts";
+import { handleBroadcast, handleUserCallbacks, handleUsers, handleUserSessionInput } from "./handlers/users.ts";
+import {
+  handleGranolaCallbacks,
+  handleGranolaCommand,
+  handleGranolaSessionInput,
+  ingestNewGranolaNotesAllUsers,
+  pollGranolaForUser,
+} from "./handlers/granola.ts";
+import {
+  cleanupOldFeedback,
+  handleFeedbackCallbacks,
+  handleFeedbackCommand,
+  handleFeedbackPhoto,
+  handleFeedbackSessionInput,
+} from "./handlers/feedback.ts";
 import { handleWorkspace } from "./handlers/workspace.ts";
 import { handleSuperadmin, handleSuperadminCallbacks, handleSuperadminSession } from "./handlers/superadmin.ts";
-import { sendAllDigests, generatePersonalDigest } from "./handlers/digest.ts";
+import { generatePersonalDigest, sendAllDigests } from "./handlers/digest.ts";
 import { sendDailyReport } from "./handlers/daily-report-send.ts";
 import { sendReviewReminders } from "./handlers/review-reminders-send.ts";
 import { sendTaskPings } from "./handlers/task-pings-send.ts";
-import { getHelpText, helpKeyboard, guideMenu, guideStep } from "./handlers/help.ts";
-import { mintMcpToken, buildSetupOneLiner, hasActiveMcpToken, mintRecorderToken, buildRecorderSetupOneLiner, buildRecorderUpdateOneLiner, hasActiveRecorderToken, revokeRecorderToken } from "./lib/mcp-setup.ts";
-import type { TgMessage, TgCallbackQuery } from "./lib/types.ts";
+import { getHelpText, guideMenu, guideStep, helpKeyboard } from "./handlers/help.ts";
+import {
+  buildRecorderSetupOneLiner,
+  buildRecorderUpdateOneLiner,
+  buildSetupOneLiner,
+  hasActiveMcpToken,
+  hasActiveRecorderToken,
+  mintMcpToken,
+  mintRecorderToken,
+  revokeRecorderToken,
+} from "./lib/mcp-setup.ts";
+import type { TgCallbackQuery, TgMessage } from "./lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
@@ -47,13 +89,14 @@ async function sendMyToken(chatId: number, userId: number): Promise<void> {
     await sendMessage(chatId, "❌ Не удалось сгенерировать токен. Обратись к администратору.");
     return;
   }
-  await sendMessage(chatId,
+  await sendMessage(
+    chatId,
     `🔑 <b>Твой токен для Claude Desktop</b>\n\n` +
-    `<code>${minted.token}</code>\n` +
-    `<i>👆 Нажми на токен — скопируется целиком.</i>\n\n` +
-    `Токен <b>бессрочный</b>. Сохрани — повторно не покажу. Потеряешь — запусти /mytoken снова (старый перестанет работать).\n\n` +
-    `Проще: /setup — подключит Claude Desktop автоматически, без ручной возни.\n\n` +
-    `Отозвать прямо сейчас: /revoketoken`
+      `<code>${minted.token}</code>\n` +
+      `<i>👆 Нажми на токен — скопируется целиком.</i>\n\n` +
+      `Токен <b>бессрочный</b>. Сохрани — повторно не покажу. Потеряешь — запусти /mytoken снова (старый перестанет работать).\n\n` +
+      `Проще: /setup — подключит Claude Desktop автоматически, без ручной возни.\n\n` +
+      `Отозвать прямо сейчас: /revoketoken`,
   );
 }
 
@@ -66,15 +109,16 @@ async function sendSetupOneLiner(chatId: number, userId: number): Promise<void> 
     await sendMessage(chatId, "❌ Не удалось подготовить подключение. Попробуй позже или напиши администратору.");
     return;
   }
-  await sendMessage(chatId,
+  await sendMessage(
+    chatId,
     `<b>🖥 Подключаем Claude Desktop за один шаг</b> (macOS)\n\n` +
-    `1️⃣ Открой приложение <b>Терминал</b>\n` +
-    `<i>(⌘+Пробел → набери «Терминал» → Enter)</i>\n\n` +
-    `2️⃣ Вставь эту команду (⌘+V) и нажми Enter:\n\n` +
-    `<code>${buildSetupOneLiner(minted.token)}</code>\n\n` +
-    `3️⃣ Подожди — скрипт сам поставит всё нужное и перезапустит Claude. Готово ✅\n\n` +
-    `<i>В команде твой личный токен (бессрочный). Никому не пересылай. Отозвать: /revoketoken.</i>\n\n` +
-    `Текст инструкций для проекта Claude → /claude`
+      `1️⃣ Открой приложение <b>Терминал</b>\n` +
+      `<i>(⌘+Пробел → набери «Терминал» → Enter)</i>\n\n` +
+      `2️⃣ Вставь эту команду (⌘+V) и нажми Enter:\n\n` +
+      `<code>${buildSetupOneLiner(minted.token)}</code>\n\n` +
+      `3️⃣ Подожди — скрипт сам поставит всё нужное и перезапустит Claude. Готово ✅\n\n` +
+      `<i>В команде твой личный токен (бессрочный). Никому не пересылай. Отозвать: /revoketoken.</i>\n\n` +
+      `Текст инструкций для проекта Claude → /claude`,
   );
 }
 
@@ -88,16 +132,17 @@ async function sendRecorderToken(chatId: number, userId: number): Promise<void> 
     return;
   }
   const expStr = minted.expiresAt.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
-  await sendMessage(chatId,
+  await sendMessage(
+    chatId,
     `<b>🎙 Подключаем bumblebee — запись встреч за один шаг</b> (macOS)\n\n` +
-    `Одна команда — скрипт сам поставит bumblebee, подпишет и пропишет токен. Пароль может спросить только установка Command Line Tools (если их ещё нет на маке).\n\n` +
-    `1️⃣ Открой приложение <b>Терминал</b>\n` +
-    `<i>(⌘+Пробел → набери «Терминал» → Enter)</i>\n\n` +
-    `2️⃣ Вставь эту команду (⌘+V) и нажми Enter:\n\n` +
-    `<code>${buildRecorderSetupOneLiner(minted.token)}</code>\n\n` +
-    `3️⃣ Приложение откроется само. Выдай разрешение: System Settings → Privacy → «Screen &amp; System Audio Recording» → включи bumblebee, затем ⌘Q и открой заново. Готово ✅\n\n` +
-    `Токен действует до <b>${expStr}</b>. Это <b>отдельный</b> токен — перевыпуск /mytoken для Claude Desktop его НЕ трогает. Никому не пересылай. Отозвать: /revokerecordertoken.\n\n` +
-    `<i>Вручную: вставь токен <code>${minted.token}</code> в bumblebee — иконка в меню-баре → «Вставить токен из буфера».</i>`
+      `Одна команда — скрипт сам поставит bumblebee, подпишет и пропишет токен. Пароль может спросить только установка Command Line Tools (если их ещё нет на маке).\n\n` +
+      `1️⃣ Открой приложение <b>Терминал</b>\n` +
+      `<i>(⌘+Пробел → набери «Терминал» → Enter)</i>\n\n` +
+      `2️⃣ Вставь эту команду (⌘+V) и нажми Enter:\n\n` +
+      `<code>${buildRecorderSetupOneLiner(minted.token)}</code>\n\n` +
+      `3️⃣ Приложение откроется само. Выдай разрешение: System Settings → Privacy → «Screen &amp; System Audio Recording» → включи bumblebee, затем ⌘Q и открой заново. Готово ✅\n\n` +
+      `Токен действует до <b>${expStr}</b>. Это <b>отдельный</b> токен — перевыпуск /mytoken для Claude Desktop его НЕ трогает. Никому не пересылай. Отозвать: /revokerecordertoken.\n\n` +
+      `<i>Вручную: вставь токен <code>${minted.token}</code> в bumblebee — иконка в меню-баре → «Вставить токен из буфера».</i>`,
   );
 }
 
@@ -116,15 +161,20 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
   let swept = 0;
 
   type Recorder = { telegram_id: number };
-  type Row = { id: string; title: string | null; recorders: Recorder[] | null; last_progress_at: string | null; updated_at: string | null };
+  type Row = {
+    id: string;
+    title: string | null;
+    recorders: Recorder[] | null;
+    last_progress_at: string | null;
+    updated_at: string | null;
+  };
 
   // (1) Зависшие в processing — по застою heartbeat.
   const { data: rows } = await supabase
     .from("meetings")
     .select("id, title, recorders, last_progress_at, updated_at")
     .eq("summary_status", "processing");
-  const note =
-    "⚠️ Не удалось обработать запись встречи — обработка превысила лимит времени. " +
+  const note = "⚠️ Не удалось обработать запись встречи — обработка превысила лимит времени. " +
     "Попробуй записать заново (по возможности короче).";
   for (const m of (rows ?? []) as Row[]) {
     const beat = m.last_progress_at ?? m.updated_at;
@@ -156,7 +206,10 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
     .is("entry_id", null)
     .lt("created_at", cutoffIso);
   for (const g of (ghosts ?? []) as { id: string }[]) {
-    await supabase.from("meetings").update({ summary_status: "failed", updated_at: new Date().toISOString() }).eq("id", g.id);
+    await supabase.from("meetings").update({ summary_status: "failed", updated_at: new Date().toISOString() }).eq(
+      "id",
+      g.id,
+    );
     swept++;
   }
 
@@ -166,25 +219,22 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
 // ── Watchdog рекордера: алерт на АНОМАЛИЮ, не на тишину ───────────────────────────
 // Read.ai-watchdog («давно не было встреч») убран как ложный шум: нет созвонов ≠ поломка.
 // Здесь — только сигналы, где молчание = реальная проблема. Данные пишет meeting-heartbeat.
-const RECORDER_STALE_MIN = 20; // тик heartbeat = 15 мин → живой рекордер всегда свежее 20
 async function checkRecorderHealth(): Promise<void> {
-  const staleIso = new Date(Date.now() - RECORDER_STALE_MIN * 60_000).toISOString();
-
-  // (1) Оборванная запись: рекордер писал (recording=true), но перестал пинговать >STALE.
-  //     При штатной остановке пришёл бы heartbeat recording=false → застрявший true = краш
-  //     приложения во время записи (аудио, скорее всего, не загрузилось). Сброс флага = дедуп.
-  const { data: crashed } = await supabase
-    .from("allowed_users")
-    .select("telegram_id")
-    .eq("recorder_last_recording", true)
-    .lt("recorder_last_seen", staleIso);
-  for (const u of (crashed ?? []) as { telegram_id: number }[]) {
-    await supabase.from("allowed_users").update({ recorder_last_recording: false }).eq("telegram_id", u.telegram_id);
-    try {
-      await sendMessage(u.telegram_id,
-        "⚠️ <b>Похоже, запись встречи прервалась</b> — bumblebee писал встречу, но перестал отвечать " +
-        "(возможно, приложение закрылось). Проверь, что bumblebee запущен, и при необходимости запиши заново.");
-    } catch (e) { console.error(`checkRecorderHealth signal1 ${u.telegram_id}:`, e); }
+  // (1) Оборванная запись: писатель вёл запись (recording=true) и замолчал. Писателей двое —
+  //     рекордер человека (allowed_users) и бот scriba (service_agents, D007); решение и
+  //     адресат — lib/recording-watchdog.ts. Сбой чтения не должен съесть сигнал (2).
+  try {
+    const r = await checkRecordingWatchdog({
+      store: makeWatchdogStore(supabase),
+      send: sendMessage,
+      nowMs: Date.now(),
+      logError: (m) => console.error(m),
+    });
+    if (r.humanAlerts + r.agentAlerts + r.agentAlreadyNotified + r.agentUnresolved > 0) {
+      console.log("checkRecorderHealth signal1:", JSON.stringify(r));
+    }
+  } catch (e) {
+    console.error("checkRecorderHealth signal1 failed:", e);
   }
 
   // (2) Токен рекордера истекает <7 дней и ещё не предупреждали (дедуп через recorder_expiry_warned,
@@ -203,10 +253,14 @@ async function checkRecorderHealth(): Promise<void> {
     const days = Math.max(1, Math.ceil((new Date(u.recorder_token_expires_at).getTime() - Date.now()) / 86_400_000));
     await supabase.from("allowed_users").update({ recorder_expiry_warned: true }).eq("telegram_id", u.telegram_id);
     try {
-      await sendMessage(u.telegram_id,
+      await sendMessage(
+        u.telegram_id,
         `🎙 <b>Токен bumblebee истекает через ${days} дн.</b> Чтобы запись встреч не прервалась — ` +
-        `переустанови bumblebee: /recordertoken.`);
-    } catch (e) { console.error(`checkRecorderHealth signal2 ${u.telegram_id}:`, e); }
+          `переустанови bumblebee: /recordertoken.`,
+      );
+    } catch (e) {
+      console.error(`checkRecorderHealth signal2 ${u.telegram_id}:`, e);
+    }
   }
 }
 
@@ -216,10 +270,19 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("OK", { status: 200 });
 
   let body: Record<string, unknown>;
-  try { body = await req.json(); } catch { return new Response("Bad Request", { status: 400 }); }
+  try {
+    body = await req.json();
+  } catch {
+    return new Response("Bad Request", { status: 400 });
+  }
 
   // ── Cron triggers (требуют X-Cron-Secret) ────────────────────────────────────
-  if (body.setup_commands === true || body.digest_cron === true || body.daily_report_cron === true || body.review_reminders_cron === true || body.task_pings_cron === true || body.feedback_retention_cron === true || body.readai_token_refresh === true || body.granola_poll === true || body.meetings_watchdog === true || body.webhook_info === true || body.set_webhook === true) {
+  if (
+    body.setup_commands === true || body.digest_cron === true || body.daily_report_cron === true ||
+    body.review_reminders_cron === true || body.task_pings_cron === true || body.feedback_retention_cron === true ||
+    body.readai_token_refresh === true || body.granola_poll === true || body.meetings_watchdog === true ||
+    body.webhook_info === true || body.set_webhook === true
+  ) {
     if (!CRON_SECRET || req.headers.get("X-Cron-Secret") !== CRON_SECRET) {
       return new Response("Forbidden", { status: 403 });
     }
@@ -244,32 +307,37 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({ url: target, allowed_updates: ["message", "callback_query"] }),
     });
     const json = await res.json();
-    return new Response(JSON.stringify({ target, telegram: json }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ target, telegram: json }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   if (body.setup_commands === true) {
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ commands: [
-        // Бот — точка быстрого доступа: в МЕНЮ команд оставлены только «Добавить» и «Спросить»
-        // (решение владельца 2026-08-09). Остальные команды СКРЫТЫ из меню, но их обработчики
-        // живы дальше по файлу — работают при ручном вводе и вернутся в меню позже.
-        // Чтобы вернуть команду в меню — раскомментировать её строку.
-        { command: "add", description: "Добавить запись в базу знаний" },
-        { command: "ask", description: "Задать вопрос" },
-        // { command: "start", description: "Главное меню" },
-        // { command: "tasks", description: "Задачи команды" },
-        // { command: "addtask", description: "Добавить задачу" },
-        // { command: "meetings", description: "Встречи на подтверждение" },
-        // { command: "status", description: "Состояние базы знаний" },
-        // { command: "digest", description: "Личный дайджест" },
-        // { command: "setup", description: "Подключить Claude Desktop (авто)" },
-        // { command: "recordertoken", description: "🎙 Рекордер встреч (Mac) — установка" },
-        // { command: "help", description: "Справка" },
-        // { command: "feedback", description: "Отправить фидбек" },
-        // { command: "reset", description: "Сбросить состояние бота" },
-      ]}),
+      body: JSON.stringify({
+        commands: [
+          // Бот — точка быстрого доступа: в МЕНЮ команд оставлены только «Добавить» и «Спросить»
+          // (решение владельца 2026-08-09). Остальные команды СКРЫТЫ из меню, но их обработчики
+          // живы дальше по файлу — работают при ручном вводе и вернутся в меню позже.
+          // Чтобы вернуть команду в меню — раскомментировать её строку.
+          { command: "add", description: "Добавить запись в базу знаний" },
+          { command: "ask", description: "Задать вопрос" },
+          // { command: "start", description: "Главное меню" },
+          // { command: "tasks", description: "Задачи команды" },
+          // { command: "addtask", description: "Добавить задачу" },
+          // { command: "meetings", description: "Встречи на подтверждение" },
+          // { command: "status", description: "Состояние базы знаний" },
+          // { command: "digest", description: "Личный дайджест" },
+          // { command: "setup", description: "Подключить Claude Desktop (авто)" },
+          // { command: "recordertoken", description: "🎙 Рекордер встреч (Mac) — установка" },
+          // { command: "help", description: "Справка" },
+          // { command: "feedback", description: "Отправить фидбек" },
+          // { command: "reset", description: "Сбросить состояние бота" },
+        ],
+      }),
     });
     const json = await res.json();
     return new Response(JSON.stringify(json), { status: 200 });
@@ -330,7 +398,9 @@ Deno.serve(async (req: Request) => {
       if (hoursAgo > 72) {
         await sendMessage(
           ADMIN_USER_ID,
-          `⚠️ <b>Встречи не поступают</b> — последняя была ${Math.round(hoursAgo / 24)} дн назад.\n\nПроверь вебхук в настройках Read.ai.`
+          `⚠️ <b>Встречи не поступают</b> — последняя была ${
+            Math.round(hoursAgo / 24)
+          } дн назад.\n\nПроверь вебхук в настройках Read.ai.`,
         );
       }
     }
@@ -437,9 +507,18 @@ Deno.serve(async (req: Request) => {
   await autoSyncProfile(userId, message.from?.first_name, message.from?.last_name, message.from?.username);
 
   try {
-    if (message.voice) { await handleVoice(chatId, username, message.voice.file_id, message.voice.duration, groupId); return new Response("OK", { status: 200 }); }
-    if (message.audio) { await handleVoice(chatId, username, message.audio.file_id, 0, groupId); return new Response("OK", { status: 200 }); }
-    if (message.document) { await handleDocument(chatId, username, message.document, groupId); return new Response("OK", { status: 200 }); }
+    if (message.voice) {
+      await handleVoice(chatId, username, message.voice.file_id, message.voice.duration, groupId);
+      return new Response("OK", { status: 200 });
+    }
+    if (message.audio) {
+      await handleVoice(chatId, username, message.audio.file_id, 0, groupId);
+      return new Response("OK", { status: 200 });
+    }
+    if (message.document) {
+      await handleDocument(chatId, username, message.document, groupId);
+      return new Response("OK", { status: 200 });
+    }
     if (message.photo?.length) {
       const photoSession = await getSession(chatId);
       if (photoSession?.action === "feedback_photo") {
@@ -453,7 +532,15 @@ Deno.serve(async (req: Request) => {
     const text = (gatedText ?? message.text)?.trim();
     if (!text) return new Response("OK", { status: 200 });
 
-    const BUTTON_LABELS = new Set(["📥 Добавить", "❓ Спросить", "📋 Задачи", "ℹ️ Помощь", "👥 Пользователи", "🎙 Встречи", "🎙 Read.ai"]);
+    const BUTTON_LABELS = new Set([
+      "📥 Добавить",
+      "❓ Спросить",
+      "📋 Задачи",
+      "ℹ️ Помощь",
+      "👥 Пользователи",
+      "🎙 Встречи",
+      "🎙 Read.ai",
+    ]);
     const isButtonPress = BUTTON_LABELS.has(text);
     const isCommand = text.startsWith("/") || isButtonPress;
 
@@ -484,7 +571,8 @@ Deno.serve(async (req: Request) => {
 
       const url = extractUrl(text);
       if (url && text.length < 300) {
-        const analyze = /посмотри|проанализируй|прочитай|загрузи|открой|что тут|что здесь|что это|summarize|analyze/i.test(text);
+        const analyze = /посмотри|проанализируй|прочитай|загрузи|открой|что тут|что здесь|что это|summarize|analyze/i
+          .test(text);
         await handleUrl(chatId, username, url, text, analyze, groupId);
         return new Response("OK", { status: 200 });
       }
@@ -501,7 +589,9 @@ Deno.serve(async (req: Request) => {
         // meeting session handled
       } else if (action && await handleUserSessionInput(chatId, userId, action, text)) {
         // user session handled
-      } else if (action && await handleTaskSessionInput(chatId, userId, action, text, session?.context ?? undefined, groupId)) {
+      } else if (
+        action && await handleTaskSessionInput(chatId, userId, action, text, session?.context ?? undefined, groupId)
+      ) {
         // task session handled
       } else if (action && await handleGranolaSessionInput(chatId, userId, action, text)) {
         // granola session handled
@@ -536,36 +626,39 @@ Deno.serve(async (req: Request) => {
       await sendMessage(chatId, "🔄 Сброс выполнен. Бот готов к работе.");
     } else if (command === "/start") {
       await clearSession(chatId);
-      await sendMessage(chatId,
+      await sendMessage(
+        chatId,
         `<b>Swarm Brain</b> — командная база знаний и задачи.\n\n` +
-        `Напиши вопрос — найду ответ по базе. Чтобы сохранить: кнопка 📥 <b>Добавить</b>, либо пришли 🎤 голос · 📎 файл · 🔗 ссылку · пересланное сообщение.\n\n` +
-        `🌐 <b>Swarm Brain</b> — приложение: задачи, встречи, поиск.\n` +
-        `🔗 https://swarm-brain.pages.dev — вход через Telegram, ставится как приложение (Dock / экран «Домой»).\n\n` +
-        `🎙 <b>bumblebee — запись встреч (Mac):</b> /recordertoken → приложение встанет в /Applications. Затем привяжи Google-календарь в Swarm Brain → Настройки → Google Calendar (без него bumblebee не видит встреч).\n\n` +
-        `🖥 <b>Claude Desktop:</b> /setup — подключить автоматически.\n\n` +
-        `📖 /help — полная справка`,
-        buildKeyboard()
+          `Напиши вопрос — найду ответ по базе. Чтобы сохранить: кнопка 📥 <b>Добавить</b>, либо пришли 🎤 голос · 📎 файл · 🔗 ссылку · пересланное сообщение.\n\n` +
+          `🌐 <b>Swarm Brain</b> — приложение: задачи, встречи, поиск.\n` +
+          `🔗 https://swarm-brain.pages.dev — вход через Telegram, ставится как приложение (Dock / экран «Домой»).\n\n` +
+          `🎙 <b>bumblebee — запись встреч (Mac):</b> /recordertoken → приложение встанет в /Applications. Затем привяжи Google-календарь в Swarm Brain → Настройки → Google Calendar (без него bumblebee не видит встреч).\n\n` +
+          `🖥 <b>Claude Desktop:</b> /setup — подключить автоматически.\n\n` +
+          `📖 /help — полная справка`,
+        buildKeyboard(),
       );
       // Register bot commands in side menu (idempotent)
       await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ commands: [
-          { command: "start", description: "Главное меню" },
-          { command: "add", description: "Добавить запись в базу знаний" },
-          { command: "ask", description: "Задать вопрос" },
-          { command: "tasks", description: "Задачи команды" },
-          { command: "addtask", description: "Добавить задачу" },
-          { command: "meetings", description: "Встречи на подтверждение" },
-          { command: "users", description: "Управление командой" },
-          { command: "status", description: "Состояние базы знаний" },
-          { command: "setup", description: "Подключить Claude Desktop (авто)" },
-          { command: "help", description: "Справка" },
-          { command: "feedback", description: "Отправить фидбек" },
-          { command: "reset", description: "Сбросить состояние бота" },
-          { command: "connect_claude", description: "Как подключить Claude Desktop" },
-          { command: "claude", description: "Инструкции для проекта Claude Desktop" },
-        ]}),
+        body: JSON.stringify({
+          commands: [
+            { command: "start", description: "Главное меню" },
+            { command: "add", description: "Добавить запись в базу знаний" },
+            { command: "ask", description: "Задать вопрос" },
+            { command: "tasks", description: "Задачи команды" },
+            { command: "addtask", description: "Добавить задачу" },
+            { command: "meetings", description: "Встречи на подтверждение" },
+            { command: "users", description: "Управление командой" },
+            { command: "status", description: "Состояние базы знаний" },
+            { command: "setup", description: "Подключить Claude Desktop (авто)" },
+            { command: "help", description: "Справка" },
+            { command: "feedback", description: "Отправить фидбек" },
+            { command: "reset", description: "Сбросить состояние бота" },
+            { command: "connect_claude", description: "Как подключить Claude Desktop" },
+            { command: "claude", description: "Инструкции для проекта Claude Desktop" },
+          ],
+        }),
       });
     } else if (command === "/help" || text === "ℹ️ Помощь") {
       // Справка с inline-кнопкой «⚙️ Настроить систему» (→ мастер настройки, callback guide_open).
@@ -595,8 +688,13 @@ Deno.serve(async (req: Request) => {
       if (!meetings?.length) {
         await sendMessage(chatId, "✅ Все встречи подтверждены, новых нет.");
       } else {
-        await sendMessage(chatId, `<b>📋 Встречи — ожидают проверки (${meetings.length})</b>\nОткрой каждую, проверь тезисы и подтверди:`);
-        const rows = meetings as Array<{ id: string; metadata: Record<string, unknown>; created_at: string; source: string; owner_id: number | null }>;
+        await sendMessage(
+          chatId,
+          `<b>📋 Встречи — ожидают проверки (${meetings.length})</b>\nОткрой каждую, проверь тезисы и подтверди:`,
+        );
+        const rows = meetings as Array<
+          { id: string; metadata: Record<string, unknown>; created_at: string; source: string; owner_id: number | null }
+        >;
         // Имена владельцев (owner_id → имя) одним батчем — пометка «от кого пришла запись».
         const ownerIds = [...new Set(rows.map((m) => m.owner_id).filter((x): x is number => typeof x === "number"))];
         const nameById = new Map<number, string>();
@@ -609,7 +707,11 @@ Deno.serve(async (req: Request) => {
             ((aus ?? []) as Array<{ telegram_id: number; username: string | null }>)
               .filter((u) => u.username).map((u) => [u.telegram_id, u.username as string]),
           );
-          for (const p of (profs ?? []) as Array<{ telegram_id: number; first_name: string | null; last_name: string | null }>) {
+          for (
+            const p of (profs ?? []) as Array<
+              { telegram_id: number; first_name: string | null; last_name: string | null }
+            >
+          ) {
             const full = [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
             if (full) nameById.set(p.telegram_id, full);
           }
@@ -620,7 +722,11 @@ Deno.serve(async (req: Request) => {
         for (const m of rows) {
           const title = (m.metadata?.title as string) ?? "Без названия";
           const entryDate = (m.metadata?.entry_date as string) ?? m.created_at.split("T")[0];
-          const dateStr = new Date(`${entryDate}T12:00:00`).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+          const dateStr = new Date(`${entryDate}T12:00:00`).toLocaleDateString("ru-RU", {
+            day: "2-digit",
+            month: "long",
+            year: "numeric",
+          });
           const src = m.source === "granola" ? "📓" : "📹";
           const owner = m.owner_id != null ? (nameById.get(m.owner_id) ?? "неизвестно") : null;
           await sendInlineMessage(chatId, `${src} <b>${title}</b>\n📅 ${dateStr}${owner ? ` · 🧑 ${owner}` : ""}`, [[
@@ -647,9 +753,12 @@ Deno.serve(async (req: Request) => {
         } else {
           await supabase.from("user_integrations").upsert(
             { telegram_id: userId, service: "granola", api_key: apiKey, last_polled_at: new Date().toISOString() },
-            { onConflict: "telegram_id,service" }
+            { onConflict: "telegram_id,service" },
           );
-          await sendMessage(chatId, "✅ <b>Granola подключена!</b>\n\nТеперь новые встречи будут прилетать автоматически раз в час.\nИли используй /granola для ручного импорта.");
+          await sendMessage(
+            chatId,
+            "✅ <b>Granola подключена!</b>\n\nТеперь новые встречи будут прилетать автоматически раз в час.\nИли используй /granola для ручного импорта.",
+          );
         }
       }
     } else if (command === "/disconnect") {
@@ -686,12 +795,13 @@ Deno.serve(async (req: Request) => {
       // другом Mac. Это была частая причина «токен протух»: повторный /setup рвал живое
       // подключение. Просим подтверждение — как /mytoken и /recordertoken.
       if (await hasActiveMcpToken(userId)) {
-        await sendInlineMessage(chatId,
+        await sendInlineMessage(
+          chatId,
           `🖥 <b>Claude Desktop уже подключён.</b>\n\n` +
-          `✅ Работает — <b>ничего делать не нужно</b>.\n\n` +
-          `⚠️ Claude пишет <b>«Invalid token»</b> / не видит базу, или ставишь на <b>новый Mac</b>? ` +
-          `Жми — переустановлю с новым токеном. Прежний Mac после этого перестанет видеть базу, пока не переустановишь и там.`,
-          [[{ text: "🔄 Всё равно переподключить", callback_data: "setup_reissue" }]]
+            `✅ Работает — <b>ничего делать не нужно</b>.\n\n` +
+            `⚠️ Claude пишет <b>«Invalid token»</b> / не видит базу, или ставишь на <b>новый Mac</b>? ` +
+            `Жми — переустановлю с новым токеном. Прежний Mac после этого перестанет видеть базу, пока не переустановишь и там.`,
+          [[{ text: "🔄 Всё равно переподключить", callback_data: "setup_reissue" }]],
         );
       } else {
         await sendSetupOneLiner(chatId, userId);
@@ -701,14 +811,15 @@ Deno.serve(async (req: Request) => {
       // Если живой токен уже есть — НЕ перевыпускаем молча (это убьёт рабочий config.json).
       // Предупреждаем и просим явного подтверждения.
       if (await hasActiveMcpToken(userId)) {
-        await sendInlineMessage(chatId,
+        await sendInlineMessage(
+          chatId,
           `🔑 <b>Токен в базе есть и активен.</b>\n\n` +
-          `✅ Claude отвечает по базе — ничего делать не нужно.\n\n` +
-          `⚠️ Claude пишет <b>«Invalid token»</b> / «токен протух» / не видит базу, или подключаешь <b>новое устройство</b>? ` +
-          `Значит в настройках Claude лежит <b>старый</b> токен. Жми кнопку — выдам свежий, вставь его в ` +
-          `claude.ai → Settings → Connectors → Bearer (или в config.json). На Mac проще — /setup.\n\n` +
-          `<i>Свежий токен убьёт старый — обнови его во всех местах, где вставлял.</i>`,
-          [[{ text: "🔄 Выдать свежий токен", callback_data: "mtk_reissue" }]]
+            `✅ Claude отвечает по базе — ничего делать не нужно.\n\n` +
+            `⚠️ Claude пишет <b>«Invalid token»</b> / «токен протух» / не видит базу, или подключаешь <b>новое устройство</b>? ` +
+            `Значит в настройках Claude лежит <b>старый</b> токен. Жми кнопку — выдам свежий, вставь его в ` +
+            `claude.ai → Settings → Connectors → Bearer (или в config.json). На Mac проще — /setup.\n\n` +
+            `<i>Свежий токен убьёт старый — обнови его во всех местах, где вставлял.</i>`,
+          [[{ text: "🔄 Выдать свежий токен", callback_data: "mtk_reissue" }]],
         );
       } else {
         await sendMyToken(chatId, userId);
@@ -721,7 +832,10 @@ Deno.serve(async (req: Request) => {
       if (revErr) {
         await sendMessage(chatId, "❌ Не удалось отозвать токен. Попробуй позже.");
       } else {
-        await sendMessage(chatId, "🔒 <b>Токен отозван.</b> Доступ к Swarm Brain из Claude закрыт. Новый — через /mytoken.");
+        await sendMessage(
+          chatId,
+          "🔒 <b>Токен отозван.</b> Доступ к Swarm Brain из Claude закрыт. Новый — через /mytoken.",
+        );
       }
     } else if (command === "/recordertoken") {
       // Отдельный токен для рекордера встреч (desktop-agent), независимый от /mytoken.
@@ -733,14 +847,15 @@ Deno.serve(async (req: Request) => {
         // Команда обновления идёт без токена: установщик возьмёт уже прописанный из конфига, и
         // брошенная на полпути установка ничего не сломает (issue #146). Перевыпуск оставлен
         // вторым планом — он для потери и утечки.
-        await sendInlineMessage(chatId,
+        await sendInlineMessage(
+          chatId,
           `🎙 <b>bumblebee уже подключён — токен менять не нужно.</b>\n\n` +
-          `Чтобы <b>обновить приложение</b> (или переустановить его на этом же маке), вставь в Терминал:\n\n` +
-          `<code>${buildRecorderUpdateOneLiner()}</code>\n\n` +
-          `Токен возьмётся из настроек на маке — доступ не прервётся, даже если бросишь на полпути.\n\n` +
-          `<i>Перевыпуск нужен, только если ты потерял токен, ставишь на ДРУГОЙ мак или подозреваешь утечку. ` +
-          `Прежний токен после него поработает ещё сутки, чтобы записи не потерялись.</i>`,
-          [[{ text: "🔄 Всё-таки перевыпустить токен", callback_data: "rtk_reissue" }]]
+            `Чтобы <b>обновить приложение</b> (или переустановить его на этом же маке), вставь в Терминал:\n\n` +
+            `<code>${buildRecorderUpdateOneLiner()}</code>\n\n` +
+            `Токен возьмётся из настроек на маке — доступ не прервётся, даже если бросишь на полпути.\n\n` +
+            `<i>Перевыпуск нужен, только если ты потерял токен, ставишь на ДРУГОЙ мак или подозреваешь утечку. ` +
+            `Прежний токен после него поработает ещё сутки, чтобы записи не потерялись.</i>`,
+          [[{ text: "🔄 Всё-таки перевыпустить токен", callback_data: "rtk_reissue" }]],
         );
       } else {
         await sendRecorderToken(chatId, userId);
@@ -748,30 +863,35 @@ Deno.serve(async (req: Request) => {
     } else if (command === "/revokerecordertoken") {
       // Отзыв гасит и перекрытие: команду зовут при утечке, «ещё сутки поработает» тут неуместно.
       const revoked = await revokeRecorderToken(userId);
-      await sendMessage(chatId, revoked ? "🔒 <b>Токен bumblebee отозван.</b> Новый — через /recordertoken." : "❌ Не удалось отозвать.");
+      await sendMessage(
+        chatId,
+        revoked ? "🔒 <b>Токен bumblebee отозван.</b> Новый — через /recordertoken." : "❌ Не удалось отозвать.",
+      );
     } else if (command === "/connect_claude") {
-      await sendMessage(chatId,
+      await sendMessage(
+        chatId,
         `<b>🖥 Как подключить Claude к базе знаний</b>\n\n` +
-        `<b>Вариант A — Claude Desktop (приложение на Mac)</b>\n` +
-        `Команда /setup пришлёт одну строчку для Терминала — она поставит и настроит всё сама. Ничего вручную трогать не нужно.\n\n` +
-        `<b>Вариант B — Claude в браузере (claude.ai)</b>\n` +
-        `1️⃣ Возьми токен: /mytoken\n` +
-        `2️⃣ На claude.ai: Settings → Connectors → Add custom connector\n` +
-        `3️⃣ URL: <code>${SWARM_MCP_URL}</code>\n` +
-        `4️⃣ Authentication → Bearer token → вставь свой токен\n` +
-        `5️⃣ Save. Готово.\n\n` +
-        `После подключения (любой вариант) создай проект:\n` +
-        `Projects → New Project → вставь инструкции из /claude в поле Instructions.\n\n` +
-        `<i>Токен протух / «Invalid token»? Он не истекает по времени — обычно это старый токен в настройках. Возьми свежий: /mytoken (или /setup на Mac) и обнови его в коннекторе.</i>`
+          `<b>Вариант A — Claude Desktop (приложение на Mac)</b>\n` +
+          `Команда /setup пришлёт одну строчку для Терминала — она поставит и настроит всё сама. Ничего вручную трогать не нужно.\n\n` +
+          `<b>Вариант B — Claude в браузере (claude.ai)</b>\n` +
+          `1️⃣ Возьми токен: /mytoken\n` +
+          `2️⃣ На claude.ai: Settings → Connectors → Add custom connector\n` +
+          `3️⃣ URL: <code>${SWARM_MCP_URL}</code>\n` +
+          `4️⃣ Authentication → Bearer token → вставь свой токен\n` +
+          `5️⃣ Save. Готово.\n\n` +
+          `После подключения (любой вариант) создай проект:\n` +
+          `Projects → New Project → вставь инструкции из /claude в поле Instructions.\n\n` +
+          `<i>Токен протух / «Invalid token»? Он не истекает по времени — обычно это старый токен в настройках. Возьми свежий: /mytoken (или /setup на Mac) и обнови его в коннекторе.</i>`,
       );
     } else if (command === "/claude") {
       const instructions = buildClaudeProjectPrompt(userId);
 
-      await sendMessage(chatId,
+      await sendMessage(
+        chatId,
         `<b>🖥 Claude Desktop — инструкции для проекта</b>\n\n` +
-        `Projects → New Project → скопируй в поле <b>Instructions</b>:\n\n` +
-        `<code>${instructions}</code>\n\n` +
-        `Сервер ещё не подключён? → /setup`
+          `Projects → New Project → скопируй в поле <b>Instructions</b>:\n\n` +
+          `<code>${instructions}</code>\n\n` +
+          `Сервер ещё не подключён? → /setup`,
       );
     } else if (command === "/status") {
       const [
@@ -783,11 +903,22 @@ Deno.serve(async (req: Request) => {
       ] = await Promise.all([
         // Статистика — по ВСЕМ источникам встреч (вкл. опубликованные рекордерные `desktop-agent`);
         // pending-фильтр ниже — только внешние (рекордерные pending живут в таблице `meetings`).
-        supabase.from("entries").select("*", { count: "exact", head: true }).eq("group_id", groupId).in("source", ALL_MEETING_SOURCES),
-        supabase.from("entries").select("id, metadata, created_at").eq("group_id", groupId).eq("source", "read_ai").eq("metadata->>confirmed", "false").order("created_at", { ascending: false }),
-        supabase.from("entries").select("metadata, created_at, source").eq("group_id", groupId).in("source", ALL_MEETING_SOURCES).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open").eq("is_private", false),
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open").eq("is_private", false).lt("due_date", new Date().toISOString().split("T")[0]),
+        supabase.from("entries").select("*", { count: "exact", head: true }).eq("group_id", groupId).in(
+          "source",
+          ALL_MEETING_SOURCES,
+        ),
+        supabase.from("entries").select("id, metadata, created_at").eq("group_id", groupId).eq("source", "read_ai").eq(
+          "metadata->>confirmed",
+          "false",
+        ).order("created_at", { ascending: false }),
+        supabase.from("entries").select("metadata, created_at, source").eq("group_id", groupId).in(
+          "source",
+          ALL_MEETING_SOURCES,
+        ).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open")
+          .eq("is_private", false),
+        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("group_id", groupId).eq("status", "open")
+          .eq("is_private", false).lt("due_date", new Date().toISOString().split("T")[0]),
       ]);
 
       let statusMsg = `<b>📊 Статус Swarm Brain</b>\n\n`;
@@ -795,7 +926,9 @@ Deno.serve(async (req: Request) => {
       statusMsg += `<b>🎙 Встречи</b>\n`;
       statusMsg += `Всего в базе: <b>${totalMeetings ?? 0}</b>\n`;
 
-      const unconfirmedList = (unconfirmed ?? []) as Array<{ id: string; metadata: Record<string, unknown>; created_at: string }>;
+      const unconfirmedList = (unconfirmed ?? []) as Array<
+        { id: string; metadata: Record<string, unknown>; created_at: string }
+      >;
       if (unconfirmedList.length > 0) {
         statusMsg += `⏳ Ожидают подтверждения: <b>${unconfirmedList.length}</b>\n`;
         for (const m of unconfirmedList.slice(0, 3)) {
@@ -809,8 +942,11 @@ Deno.serve(async (req: Request) => {
       }
 
       if (lastMeeting) {
-        const hoursAgo = Math.round((Date.now() - new Date((lastMeeting as { created_at: string }).created_at).getTime()) / 3_600_000);
-        const title = ((lastMeeting as { metadata: Record<string, unknown> }).metadata?.title as string) ?? "Без названия";
+        const hoursAgo = Math.round(
+          (Date.now() - new Date((lastMeeting as { created_at: string }).created_at).getTime()) / 3_600_000,
+        );
+        const title = ((lastMeeting as { metadata: Record<string, unknown> }).metadata?.title as string) ??
+          "Без названия";
         const src = sourceLabel((lastMeeting as { source: string }).source);
         const freshness = hoursAgo < 24 ? `${hoursAgo} ч назад` : `${Math.round(hoursAgo / 24)} дн назад`;
         statusMsg += `Последняя: <b>${title}</b> · ${src} · ${freshness}\n`;

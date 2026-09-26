@@ -34,17 +34,19 @@ export async function stop(id: ContainerId): Promise<void>;
 
 ## Состояние
 
-**2026-09-26 · готов к сдаче.** Человек (пока — вызывающий код; вход «по ссылке» ждёт Q008) даёт
-описание встречи → оркестратор поднимает контейнер → бот заявляет встречу (claim), заходит,
-пишет, отдаёт запись в очередь и meeting-ingest → контейнер гасится; смерть контейнера и
-смерть оркестратора видны и не оставляют сирот.
+**2026-09-26 · T147 (сторож) — половина сделана, вторая упёрлась в схему.** Человек, за которого
+бот писал встречу, теперь узнаёт от сервера, что бот замолчал посреди записи — даже если вместе с
+контейнером умер оркестратор и нотисы `container_died` не было. При двух встречах сразу живой
+контейнер по-прежнему может спрятать мёртвый: для этого нужна колонка или таблица (ниже).
 
-Где стою: T144 закрыт (`1a445f5d`). T070/T071/T072 — код и живой прогон готовы (`405c7191`,
-`6710eb70`), включая настоящий SIGKILL оркестратора. Ствол `feat/meeting-bot` влит
-(`9ff8129c`), клиент `meeting-notice` (`notice-client.ts`) заменил заглушку: юнит-тесты и
-порчи краснеют; живой смоук door, death, full, stop через прокси нотис (`smoke-notices.ts`,
-порт 4361 → fake-swarm 4362) зелёный: две `door_waiting` с `meeting_id` без `attempt`,
-`container_died` от имени человека. ARCHITECTURE.md §Бот scriba и QUICK_REF обновлены.
+Где стою: T144, T070/T071/T072 — код и живой прогон готовы (`405c7191`, `6710eb70`), ствол
+`feat/meeting-bot` влит, клиент `meeting-notice` заменил заглушку. T147 на `feat/agent-watchdog`:
+`swarm-bot/lib/recording-watchdog.ts` (жив/мёртв и адресат, тесты вперёд) +
+`recording-watchdog-store.ts` (запросы), `checkRecorderHealth` зовёт их; `swarm-bot/index.ts`
+отформатирован отдельным коммитом (D013 требует формат у тронутого файла). Бот молчит >10 мин на
+`last_recording=true` → алерт EN+RU `claim_owner` свежей встречи с `identity_key=last_meeting_key`;
+`container_died` уже ушла этому человеку по этой встрече → молчим; сброс флага условный по
+`last_seen_at`. bumblebee — прежние порог, текст, адресат.
 
 Дальше: сдача блока. `bot/container/.env.example` нет — переменные контейнера ставит
 оркестратор, канон имён `MEETING_ENV` в `config.ts`, перечень — ARCHITECTURE.md.
@@ -69,6 +71,13 @@ Q008 (тонкий слой): вход «ручной запуск по ссыл
 | `smoke-orchestrator.ts` | живой смоук против настоящего Docker и `fake-swarm` |
 
 Проверено:
+- T147: `recording-watchdog.test.ts` 16 тестов; порчи (8, все красные, файл возвращён копией):
+  тишина бота не проверяется, бот мерится порогом рекордера, нестрогая граница порога, гонка сброса
+  игнорируется, `container_died` не учитывается, бот шлёт текст bumblebee, рекордер человека не
+  проверяется, название не экранируется. Живой смоук `scripts/scriba-watchdog-smoke.ts` на стенде
+  `scriba-watchdog` (порты 4380-4389): 17 ожиданий зелёные — настоящий heartbeat через
+  meeting-heartbeat, настоящий cron swarm-bot, подделка Telegram; порчи store (не тот вид нотисы,
+  агенты не читаются, условный сброс не совпадает) краснеют.
 - `./scripts/check bot` зелёный, покрытие 100% (1135/1135).
 - Живой смоук (`docker build -f bot/container/Dockerfile -t scriba-orchestrator:dev bot/`,
   затем `SCRIBA_SMOKE_STATE=<scratch> SCRIBA_SMOKE_ONLY=<сценарии> node --experimental-transform-types bot/src/orchestrator/smoke-orchestrator.ts`):
@@ -83,10 +92,17 @@ Q008 (тонкий слой): вход «ручной запуск по ссыл
   усыновление своего запуска (1), ожидание выхода после старта (12).
 
 Открыто, решать не мне:
-- Существующий watchdog `checkRecorderHealth` читает только `allowed_users`, а heartbeat бота
-  пишется в `service_agents` (D007) — «смерть видна существующему watchdog» на сервере не
-  выполняется без правки swarm-bot. Строка `service_agents` одна на агента: при двух встречах
-  живой контейнер перекрывает замолчавший.
+- **T147, вторая половина — нужна схема (миграций в волне не веду, их ведёт identity).** Строка
+  `service_agents` одна на агента: два контейнера пишут в неё по очереди, живой прячет
+  замолчавший. Варианты: (а) `meetings.agent_last_seen_at timestamptz` + `agent_last_recording
+  boolean` — бот один на встречу, адресат уже есть (`claim_owner`), ручные ключи перестают быть
+  неоднозначными; (б) таблица `service_agent_runs (agent_id, meeting_id, on_behalf_of,
+  last_seen_at, last_recording)`, PK `(agent_id, meeting_id)` — если агентов на встречу станет
+  больше одного. В обоих heartbeat бота должен нести `meeting_id` (сессия знает его после claim):
+  правка `swarm-client` (`HeartbeatRequest`, `session.heartbeat`) и `meeting-heartbeat/write.ts`.
+  Сторож уже разделён: сменится только `recordingAgents`/`clearAgentRecording` в store.
+- Найдено попутно (#549): сторож-призраков `sweepStuckMeetings` метит `failed` встречу бота,
+  которая идёт дольше 15 мин — claim раньше захода, ingest только в конце.
 - Граф `plan.md`: добавлена стрелка meet-adapter → orchestrator в `.dependency-cruiser.cjs`.
 - swarm-client не запускается strip-only Node (свойства-параметры) — контейнер идёт с
   `--experimental-transform-types`.
