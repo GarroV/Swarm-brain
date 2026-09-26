@@ -21,7 +21,7 @@ export interface NoticeDeps {
   now?: () => Date;
 }
 
-/** Таблица-журнал: она же счётчик. Канон схемы — migrations/20260923120000_meeting_notices.sql. */
+/** Таблица-журнал: она же счётчик. Канон схемы — migrations/20260926080446_meeting_notices.sql. */
 const JOURNAL = "meeting_notices";
 
 function json(body: Record<string, unknown>, status = 200): Response {
