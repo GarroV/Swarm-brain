@@ -2,7 +2,7 @@
 // «жив/мёртв» и адресата решает recording-watchdog.ts. Держит этот файл живой смоук
 // scripts/scriba-watchdog-smoke.ts против настоящего Postgres, а не юнит-тест с подделкой.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import type { AgentBeat, HumanBeat, WatchdogMeeting, WatchdogStore } from "./recording-watchdog.ts";
+import type { AgentMeetingBeat, HumanBeat, WatchdogStore } from "./recording-watchdog.ts";
 
 function must<T>(what: string, res: { data: T | null; error: { message: string } | null }): T | null {
   // Ошибка чтения — громко: молча пустой список выглядит ровно как «все живы».
@@ -26,33 +26,24 @@ export function makeWatchdogStore(supabase: SupabaseClient): WatchdogStore {
       );
       must("clear allowed_users", res);
     },
-    async recordingAgents() {
-      const res = await supabase
-        .from("service_agents")
-        .select("id, last_seen_at, last_meeting_key")
-        .eq("last_recording", true);
-      return (must("service_agents", res) ?? []) as AgentBeat[];
-    },
-    async clearAgentRecording(agentId, seenAt) {
-      const res = await supabase
-        .from("service_agents")
-        .update({ last_recording: false })
-        .eq("id", agentId)
-        .eq("last_recording", true)
-        .eq("last_seen_at", seenAt)
-        .select("id");
-      return ((must("clear service_agents", res) ?? []) as unknown[]).length > 0;
-    },
-    async latestMeetingByKey(key) {
-      // Календарные и комнатные ключи уникальны; ручные — нет, поэтому самая свежая встреча.
+    async recordingAgentMeetings() {
       const res = await supabase
         .from("meetings")
-        .select("id, title, claim_owner")
-        .eq("identity_key", key)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      return must("meetings", res) as WatchdogMeeting | null;
+        .select("id, title, claim_owner, agent_last_seen_at")
+        .eq("agent_last_recording", true);
+      return (must("meetings", res) ?? []) as AgentMeetingBeat[];
+    },
+    async clearAgentRecording(meetingId, seenAt) {
+      // Условный сброс: свежий удар между чтением и сбросом двигает agent_last_seen_at, и тогда
+      // ни одна строка не совпадёт — бот жив, алерта не будет.
+      const res = await supabase
+        .from("meetings")
+        .update({ agent_last_recording: false })
+        .eq("id", meetingId)
+        .eq("agent_last_recording", true)
+        .eq("agent_last_seen_at", seenAt)
+        .select("id");
+      return ((must("clear meetings", res) ?? []) as unknown[]).length > 0;
     },
     async containerDiedNoticeSent(meetingId, recipient) {
       const res = await supabase

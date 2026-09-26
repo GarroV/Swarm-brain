@@ -2,11 +2,10 @@
 // «призрак или бот ещё пишет» решает ghost-sweep.ts. Держит этот файл живой смоук
 // scripts/scriba-watchdog-smoke.ts против настоящего Postgres, а не юнит-тест с подделкой.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import type { AgentBeat } from "./recording-watchdog.ts";
 import type { GhostCandidate, GhostStore } from "./ghost-sweep.ts";
 
 function must<T>(what: string, res: { data: T | null; error: { message: string } | null }): T | null {
-  // Ошибка чтения — громко: молча пустой список агентов выглядит ровно как «ботов нет».
+  // Ошибка чтения — громко: молча пустой список выглядит ровно как «призраков нет».
   if (res.error) throw new Error(`ghost-sweep: ${what}: ${res.error.message}`);
   return res.data;
 }
@@ -26,12 +25,11 @@ function onlyEmpty(query: any): any {
 export function makeGhostStore(supabase: SupabaseClient): GhostStore {
   return {
     async ghostCandidates(cutoffIso) {
-      const res = await onlyEmpty(supabase.from("meetings").select("id, identity_key")).lt("created_at", cutoffIso);
+      const res = await onlyEmpty(supabase.from("meetings").select("id, agent_last_seen_at")).lt(
+        "created_at",
+        cutoffIso,
+      );
       return (must("meetings", res) ?? []) as GhostCandidate[];
-    },
-    async agentBeats() {
-      const res = await supabase.from("service_agents").select("id, last_seen_at, last_meeting_key");
-      return (must("service_agents", res) ?? []) as AgentBeat[];
     },
     async markGhostFailed(meetingId) {
       const res = await onlyEmpty(
