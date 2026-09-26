@@ -34,19 +34,18 @@ export async function stop(id: ContainerId): Promise<void>;
 
 ## Состояние
 
-**2026-09-26 · T152 (сторож призраков) — готово, на `feat/ghost-sweep`.** Встреча, которую бот
-пишет дольше 15 минут, больше не выглядит посреди записи упавшей: сторож призраков
-`sweepStuckMeetings` не метит `failed` пустую встречу со свежим (≤10 мин) heartbeat бота по её ключу.
+**2026-09-26 · T151 (heartbeat по встрече, D018) — готово, на `feat/beat-per-meeting`.** Бот пишет
+две встречи сразу: одна замолкла — алерт EN+RU уходит только её `claim_owner`, вторая живая молчит и
+не метится `failed` призраком. Рекордер человека — как раньше.
 
-Где стою: T144, T070/T071/T072, T147 (первая половина) — сделаны и влиты. T152: решение —
-`swarm-bot/lib/ghost-sweep.ts` (`botKeepsMeetingAlive` — единственное место критерия, T151 переключит
-его на `meetings.agent_last_seen_at`), запросы — `ghost-sweep-store.ts` (пометка условная: встреча
-всё ещё пустая), `index.ts` ветка (2) зовёт их; сбой чтения логируется и не съедает сторож записи.
-Предел до T151: при двух встречах сразу в `service_agents` виден ключ одной — вторая может
-пометиться `failed` (как до исправления; дошедшая запись всё равно обработается). Heartbeat бот
-бьёт от начала записи до выхода из звонка: выгрузка дольше 10 мин после выхода — тот же исход.
-T147 (сторож оборванной записи): бот молчит >10 мин на `last_recording=true` → алерт EN+RU
-`claim_owner` свежей встречи с `identity_key=last_meeting_key`; `container_died` уже ушла → молчим.
+Где стою: T144, T070/T071/T072, T147, T152 — сделаны и влиты; T151 сделан. Устройство T151:
+миграция `20260926131629` (`meetings.agent_last_seen_at`, `agent_last_recording`); удар бота несёт
+`meeting_id` (`swarm-client` `HeartbeatRequest`, `session.heartbeat` — после claim); сервер
+`meeting-heartbeat/write.ts` `buildHeartbeatWrites` — UPDATE встречи с условиями `group_id` агента +
+`claim_owner` = человек из `X-On-Behalf-Of`, ноль строк → 403, запись без `meeting_id` → 400; строка
+агента — только `last_seen_at`/`last_version`. Сторожа: `recording-watchdog*.ts` читают/сбрасывают
+`meetings.agent_last_*`, `botKeepsMeetingAlive` смотрит на `agent_last_seen_at` кандидата.
+`service_agents.last_recording`/`last_meeting_key` больше не пишутся и не читаются — снять вторым шагом.
 
 Дальше: сдача блока. `bot/container/.env.example` нет — переменные контейнера ставит
 оркестратор, канон имён `MEETING_ENV` в `config.ts`, перечень — ARCHITECTURE.md.
@@ -71,6 +70,17 @@ Q008 (тонкий слой): вход «ручной запуск по ссыл
 | `smoke-orchestrator.ts` | живой смоук против настоящего Docker и `fake-swarm` |
 
 Проверено:
+- T151: `write.test.ts` 12, сторож записи 17 (новый: две встречи — алерт только по замолчавшей),
+  призраки 8 (новый: две живые встречи — ни одна не призрак). Порчи (все красные, файлы возвращены
+  копией): write.ts 8 (claim_owner/воркспейс не сверяются, промах не отказ, запись без meeting_id,
+  без uuid, агент без воркспейса, строка агента раньше встречи, рекордер пишет во встречу); сторож 8
+  (одна из них — экранирование EN — выжила, тест укреплён); призраки 6. Живой смоук
+  `scripts/scriba-watchdog-smoke.ts` (стенд `scriba-beat`, `SMOKE_PORT_BASE=4430`, один агент на
+  4 встречах): 28 ожиданий зелёные; прежний код на нём — 9 красных (алерт не ушёл, обе живые
+  `failed`, чужие встречи 200). Порчи через смоук: index.ts 2, store сторожа 3, store призраков 1 —
+  красные. `supabase db reset` на пустой базе накатил миграцию. `./scripts/check` зелёный.
+  Контейнерный смоук `smoke-orchestrator.ts` не гонялся: удар из сессии держит integration-тест
+  swarm-client через HTTP против двойника (двойник тоже отбивает запись без `meeting_id`).
 - T152: `ghost-sweep.test.ts` 9 тестов, сначала красные на прежней логике (3 из 9). Порчи модуля (7, все
   красные, файл возвращён копией): критерий всегда ложь, ключ не сверяется, пустой ключ совпадает с
   пустым, граница порога, свежесть не проверяется, удар без времени свежий, пометка без ответа базы.
@@ -99,9 +109,10 @@ Q008 (тонкий слой): вход «ручной запуск по ссыл
   усыновление своего запуска (1), ожидание выхода после старта (12).
 
 Открыто, решать не мне:
-- **T147, вторая половина — схема решена D018 (T151):** `meetings.agent_last_seen_at` +
-  `agent_last_recording`, heartbeat бота несёт `meeting_id` (swarm-client + `meeting-heartbeat/write.ts`).
-  Сменятся `recordingAgents`/`clearAgentRecording` в store сторожа и `botKeepsMeetingAlive`.
+- Перехват claim рекордером человека посреди записи бота: удары бота → 403, `agent_last_recording`
+  остаётся true — новому `claim_owner` придёт алерт «scriba перестал отвечать». Кто гасит флаг при
+  перехвате (например, meeting-claim) — не решено, в T151 не входило.
+- Снять `service_agents.last_recording`/`last_meeting_key` вторым шагом (код их уже не трогает).
 - Граф `plan.md`: добавлена стрелка meet-adapter → orchestrator в `.dependency-cruiser.cjs`.
 - swarm-client не запускается strip-only Node (свойства-параметры) — контейнер идёт с
   `--experimental-transform-types`.
