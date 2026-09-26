@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/dockerode": "^4.0.1",
     "@types/node": "^26.5.1",
     "@vitest/coverage-v8": "^5.0.0",
     "dependency-cruiser": "^18.2.0",
@@ -30,6 +31,7 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
+    "dockerode": "^5.0.1",
     "playwright": "1.63.0"
   }
 }

@@ -23,6 +23,14 @@ export default defineConfig({
         // а юнит-мера здесь мерила бы наличие браузера, а не логику.
         "src/meet-adapter/dom.ts",
         "src/meet-adapter/meet.ts",
+        // Процессы вокруг уже проверенных правил блока orchestrator: точка входа контейнера
+        // (Chromium, ffmpeg, сигналы), процесс ffmpeg и перевод вызовов в dockerode. Правила
+        // (исходы встречи, смерть, сироты, разбор частей) живут в соседних файлах и покрыты
+        // тестами; эти три проверяет живой смоук против настоящего Docker.
+        "src/orchestrator/container-main.ts",
+        "src/orchestrator/recorder.ts",
+        "src/orchestrator/docker-engine.ts",
+        "src/orchestrator/smoke-orchestrator.ts",
       ],
     },
   },

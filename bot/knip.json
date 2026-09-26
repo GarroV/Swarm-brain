@@ -5,7 +5,10 @@
     "src/**/*.test.ts",
     "src/container/verify-environment.ts",
     "src/container/smoke-audio.ts",
-    "src/meet-adapter/smoke-meet.ts"
+    "src/meet-adapter/smoke-meet.ts",
+    "src/orchestrator/container-main.ts",
+    "src/orchestrator/smoke-orchestrator.ts"
   ],
-  "project": ["src/**/*.ts"]
+  "project": ["src/**/*.ts"],
+  "ignoreBinaries": ["ffmpeg"]
 }

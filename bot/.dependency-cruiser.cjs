@@ -6,15 +6,19 @@
  *
  * Внутри бота граф такой:
  *   container    --> meet-adapter, orchestrator
- *   meet-adapter --> swarm-client
+ *   meet-adapter --> swarm-client, orchestrator
  *   swarm-client --> orchestrator
+ * Стрелки meet-adapter --> orchestrator в графе plan.md нет, но без неё оркестратор не может
+ * выбрать адаптер по площадке (контракт conference-link → orchestrator: «по ней выбирается
+ * адаптер захода») и собрать процесс встречи внутри контейнера (plan.md: «supervisor —
+ * meet-adapter + swarm-client»). Добавлена блоком orchestrator, 2026-09-26.
  * shared доступен всем и не импортирует ни один блок.
  */
 const BLOCKS = {
   container: [],
   "meet-adapter": ["container"],
   "swarm-client": ["meet-adapter"],
-  orchestrator: ["container", "swarm-client"],
+  orchestrator: ["container", "meet-adapter", "swarm-client"],
 };
 
 const boundaryRules = Object.entries(BLOCKS).map(([block, allowed]) => ({
