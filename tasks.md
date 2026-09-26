@@ -53,7 +53,7 @@
 | T121 | conference-link | T120 | todo | Ключ комнаты `zoom:<id>` заведён на сервере и в рекордере одновременно | #365 | 4 |
 | T130 | chores | — | todo | Переезд на корпоративную платформу контейнеров — до того, как бот станет единственным источником записи | #366 | 5 |
 | T140 | chores | — | todo | Промпт тезисов устойчив к недоверенному тексту стенограммы: данные отделены от инструкции | #458 | 2 |
-| T141 | chores | — | todo | config.toml: дописать meeting-heartbeat, meeting-context, granola-poller — локальный контур отбивает их 401 | #461 | 2 |
+| T141 | chores | — | done | config.toml: дописать meeting-heartbeat, meeting-context, granola-poller — локальный контур отбивает их 401 | #461 | 2 |
 | T142 | notices | T082 | done | meeting-notice добавлен в общий список дверей агента (auth-doors.test.ts) — после слияния блока | #462 | 1 |
 | T143 | chores | — | todo | `eslint --fix` молча переписывает данные тестов (unicorn/prefer-https превратил проверку в тавтологию) — защитить данные проверок от автоправки | #460 | 2 |
 | T144 | swarm-client | T060 | in_progress | Ответы `meeting-current` и `meeting-ingest` проверяются на границе, как у `claim`: сломанный ответ — громкий отказ, а не молчаливый undefined | #544 | 1 |
