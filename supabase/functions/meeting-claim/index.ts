@@ -3,6 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf } from "../_shared/meeting-title.ts";
 import { ROSTER_TOLERANCE_MIN, sameMeetingByRoster, scopeRoomKey } from "../_shared/meeting-roster.ts";
+import { accessToken, listEvents } from "../_shared/google-calendar.ts";
+import { AgentScopeError, assertCalendarMembership, type CalendarSource, mayJoinExisting } from "./agent-scope.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -30,6 +32,17 @@ const TAKEOVER_MIN_RATIO = 1.5; // новая запись длиннее тек
 const TAKEOVER_MIN_EXTRA_SEC = 300; // …и минимум на 5 минут в абсолюте
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+// Календарь человека для сверки служебного агента с составом встречи (agent-scope.ts, D016).
+const calendarSource: CalendarSource = {
+  refreshToken: async (telegramId) => {
+    const { data } = await supabase.from("user_integrations").select("api_key")
+      .eq("telegram_id", telegramId).eq("service", "google_calendar").maybeSingle();
+    return (data as { api_key?: string } | null)?.api_key ?? null;
+  },
+  accessToken,
+  listEvents,
+};
 
 type IdentityKind = "calendar" | "room" | "manual";
 type ClaimDecision = "transcribe" | "defer";
@@ -266,6 +279,7 @@ async function findMeetingByRoster(
   body: ClaimBody,
   myEmail: string | null,
   scopedKey: string,
+  mayJoin: (row: RosterCandidate) => boolean,
 ): Promise<{ row: RosterCandidate; reason: string } | null> {
   if (!body.started_at) return null;
   const startMs = new Date(body.started_at).getTime();
@@ -292,6 +306,9 @@ async function findMeetingByRoster(
     ownerEmail: myEmail,
   };
   for (const c of candidates) {
+    // Служебный агент не склеивается со встречей, в составе которой нет его человека: иначе
+    // подставленный в тело состав открывал бы ему чужую встречу (D016).
+    if (!mayJoin(c)) continue;
     const candEmail = await emailOfUser(c.claim_owner);
     const verdict = sameMeetingByRoster(incoming, {
       startedAt: c.started_at,
@@ -476,6 +493,14 @@ Deno.serve(async (req: Request) => {
     return fail(e instanceof Error ? e.message : "invalid body");
   }
 
+  // Служебный агент: календарная встреча обязана быть в календаре названного человека (D016).
+  try {
+    await assertCalendarMembership(calendarSource, identity, body);
+  } catch (e) {
+    if (e instanceof AgentScopeError) return fail(e.message, e.status);
+    throw e;
+  }
+
   const nowMs = Date.now();
   const nowIso = new Date(nowMs).toISOString();
   const leaseIso = new Date(nowMs + LEASE_TTL_SEC * 1000).toISOString();
@@ -542,6 +567,10 @@ Deno.serve(async (req: Request) => {
       body.started_at ?? null,
     );
     const myEmail = await emailOfUser(identity.telegramId);
+    // Ключ, уже подтверждённый календарём человека (только для агента и только календарный).
+    const provenKey = body.identity_kind === "calendar" ? scopedKey : null;
+    const mayJoin = (row: { identity_key: string | null; claim_owner: number | null; attendees: Attendee[] | null }) =>
+      mayJoinExisting(identity, myEmail, row, provenKey);
 
     // (2) до вставки: вдруг эта встреча уже открыта под другим ключом.
     const joined = await findMeetingByRoster(
@@ -549,6 +578,7 @@ Deno.serve(async (req: Request) => {
       body,
       myEmail,
       scopedKey,
+      mayJoin,
     );
     if (joined) {
       meetingId = joined.row.id;
@@ -589,6 +619,7 @@ Deno.serve(async (req: Request) => {
           body,
           myEmail,
           scopedKey,
+          mayJoin,
         );
         if (rival && rival.row.id !== meetingId) {
           await supabase.from("meetings").delete().eq("id", meetingId).is(
@@ -615,12 +646,18 @@ Deno.serve(async (req: Request) => {
         const { data: existing } = await supabase
           .from("meetings")
           .select(
-            "id, claim_owner, recorded_seconds, transcript, notes_edited_at, status",
+            "id, identity_key, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status",
           )
           .eq("identity_key", scopedKey)
           .single();
         if (!existing) return fail("claim conflict but meeting not found", 409);
-        const row = existing as ExistingMeetingRow;
+        const row = existing as RosterCandidate;
+        if (!mayJoin(row)) {
+          console.warn(
+            `meeting-claim: служебный агент за ${identity.telegramId} — встреча ${row.id} вне состава`,
+          );
+          return fail("service agent: the person is not a participant of this meeting", 403);
+        }
         meetingId = row.id;
         const res = await resolveExisting(
           row,
