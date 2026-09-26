@@ -8,6 +8,8 @@ import {
   sendMessage,
 } from "./lib/telegram.ts";
 import { gateGroupMessage } from "./lib/group-gate.ts";
+import { checkRecordingWatchdog } from "./lib/recording-watchdog.ts";
+import { makeWatchdogStore } from "./lib/recording-watchdog-store.ts";
 import { autoSyncProfile, clearSession, getSession } from "./lib/storage.ts";
 import { checkAllowedWithGroup } from "./lib/workspace.ts";
 import { getReadAiToken } from "./lib/readai.ts";
@@ -217,29 +219,22 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
 // ── Watchdog рекордера: алерт на АНОМАЛИЮ, не на тишину ───────────────────────────
 // Read.ai-watchdog («давно не было встреч») убран как ложный шум: нет созвонов ≠ поломка.
 // Здесь — только сигналы, где молчание = реальная проблема. Данные пишет meeting-heartbeat.
-const RECORDER_STALE_MIN = 20; // тик heartbeat = 15 мин → живой рекордер всегда свежее 20
 async function checkRecorderHealth(): Promise<void> {
-  const staleIso = new Date(Date.now() - RECORDER_STALE_MIN * 60_000).toISOString();
-
-  // (1) Оборванная запись: рекордер писал (recording=true), но перестал пинговать >STALE.
-  //     При штатной остановке пришёл бы heartbeat recording=false → застрявший true = краш
-  //     приложения во время записи (аудио, скорее всего, не загрузилось). Сброс флага = дедуп.
-  const { data: crashed } = await supabase
-    .from("allowed_users")
-    .select("telegram_id")
-    .eq("recorder_last_recording", true)
-    .lt("recorder_last_seen", staleIso);
-  for (const u of (crashed ?? []) as { telegram_id: number }[]) {
-    await supabase.from("allowed_users").update({ recorder_last_recording: false }).eq("telegram_id", u.telegram_id);
-    try {
-      await sendMessage(
-        u.telegram_id,
-        "⚠️ <b>Похоже, запись встречи прервалась</b> — bumblebee писал встречу, но перестал отвечать " +
-          "(возможно, приложение закрылось). Проверь, что bumblebee запущен, и при необходимости запиши заново.",
-      );
-    } catch (e) {
-      console.error(`checkRecorderHealth signal1 ${u.telegram_id}:`, e);
+  // (1) Оборванная запись: писатель вёл запись (recording=true) и замолчал. Писателей двое —
+  //     рекордер человека (allowed_users) и бот scriba (service_agents, D007); решение и
+  //     адресат — lib/recording-watchdog.ts. Сбой чтения не должен съесть сигнал (2).
+  try {
+    const r = await checkRecordingWatchdog({
+      store: makeWatchdogStore(supabase),
+      send: sendMessage,
+      nowMs: Date.now(),
+      logError: (m) => console.error(m),
+    });
+    if (r.humanAlerts + r.agentAlerts + r.agentAlreadyNotified + r.agentUnresolved > 0) {
+      console.log("checkRecorderHealth signal1:", JSON.stringify(r));
     }
+  } catch (e) {
+    console.error("checkRecorderHealth signal1 failed:", e);
   }
 
   // (2) Токен рекордера истекает <7 дней и ещё не предупреждали (дедуп через recorder_expiry_warned,
