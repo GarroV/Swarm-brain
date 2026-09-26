@@ -11,6 +11,7 @@ import { deriveEntryTitle, entryImporterName } from "../entry";
 import { fetchMeetings, fetchTasks, deleteMeeting, fetchConfig } from "@/lib/api";
 import { countryCode } from "@/lib/countries";
 import { AgentReviewQueue } from "@/components/AgentReviewQueue";
+import { InviteBotCard } from "../InviteBotCard";
 import { useConfirm } from "@/components/ui/confirm";
 import type { Entry, Task } from "@/types";
 
@@ -229,6 +230,10 @@ export function RoyMeetingsScreen() {
         <RoyHeader title="Встречи" />
         <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] gap-4 px-5 pb-5">
           <div className="min-h-0 overflow-y-auto pr-1">
+            {/* Позвать бота по ссылке (D017) — над лентой: это действие с встречами, а не сводка. */}
+            <div className="pb-3">
+              <InviteBotCard />
+            </div>
             <div className="pb-3">{segmented}</div>
             <div className="space-y-2.5 pb-4">
               {skeleton}
@@ -253,6 +258,9 @@ export function RoyMeetingsScreen() {
       {/* Очередь вычитки — ПОД заголовком экрана, а не над ним: блок «На вычитке» висел выше
           h1 и читался как отдельный экран без названия. */}
       <AgentReviewQueue onOpen={openReview} />
+      <div className="px-5 pt-3">
+        <InviteBotCard />
+      </div>
       <div className="px-5 pb-3 pt-3">{segmented}</div>
       <div className="space-y-2.5 px-5 pb-28">
         {skeleton}
