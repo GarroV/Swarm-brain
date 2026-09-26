@@ -173,6 +173,27 @@ describe("оркестратор", () => {
       ]);
     });
 
+    it("приглашение из веба едет в окружение и метку контейнера — бот предъявит его в claim", async () => {
+      await orchestrator.startForMeeting(MEET, "meet", 744, {
+        id: "inv-1",
+        joinUrl: MEET,
+      });
+
+      const spec = engine.specs[0];
+      expect(spec?.env).toEqual(
+        expect.arrayContaining([`SCRIBA_INVITE_ID=inv-1`, `SCRIBA_INVITE_JOIN_URL=${MEET}`]),
+      );
+      expect(spec?.labels[LABEL.invite]).toBe("inv-1");
+    });
+
+    it("без приглашения переменных и метки приглашения нет", async () => {
+      await orchestrator.startForMeeting(MEET, "meet", 744);
+
+      const spec = engine.specs[0];
+      expect(spec?.env.some((line) => line.startsWith("SCRIBA_INVITE_"))).toBe(false);
+      expect(spec?.labels).not.toHaveProperty(LABEL.invite);
+    });
+
     it("ожидание выхода регистрируется ДО старта: авто-удалённый контейнер иначе потерял бы код", async () => {
       await orchestrator.startForMeeting(MEET, "meet", 744);
 

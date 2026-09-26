@@ -10,7 +10,9 @@
  *  - `supabase/functions/meeting-claim/index.ts` — `ClaimBody` и ответ;
  *  - `supabase/functions/meeting-status/index.ts`, `meeting-heartbeat/index.ts` — целиком;
  *  - `supabase/functions/meeting-current/index.ts` — форма ответа;
- *  - `supabase/functions/_shared/agent-auth.ts` — `resolveActingIdentity` (общая авторизация).
+ *  - `supabase/functions/_shared/agent-auth.ts` — `resolveActingIdentity` (общая авторизация);
+ *  - `supabase/functions/meeting-invite/index.ts` + `_shared/meeting-invite.ts` — приглашения
+ *    бота (решение D017): забор ровно один раз и сверка приглашения в `meeting-claim`.
  *
  * Двойник — оракул для всего блока `swarm-client`, поэтому каждое правило приёмки должно падать
  * на сломанном входе: это проверяется тестами в `fake-swarm.test.ts`.
@@ -33,6 +35,25 @@ const DEFAULT_LEASE_TTL_SEC = 3600;
 const OTHER_HOLDER_ID = 111_111;
 const OTHER_HOLDER_NAME = "other";
 const ON_BEHALF_OF_HEADER = "x-on-behalf-of";
+const INVITE_DEFAULT_LIMIT = 10;
+const INVITE_MAX_LIMIT = 20;
+const INVITE_TTL_MS = 15 * 60_000;
+
+/**
+Комната по ссылке — как `parseInviteLink` на сервере: хост и путь без хвостовых слэшей,
+в нижнем регистре; query и якорь не в счёт.
+*/
+function inviteRoom(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  try {
+    const url = new URL(raw);
+    let path = url.pathname;
+    while (path.endsWith("/")) path = path.slice(0, -1);
+    return `${url.hostname}${path}`.toLowerCase();
+  } catch {
+    return null;
+  }
+}
 
 export interface FakeSwarmOptions {
   /**
@@ -55,6 +76,29 @@ export interface FakeSwarmOptions {
   Ответ meeting-current. По умолчанию — встреча с join_url на Meet.
   */
   readonly current?: CurrentMeetingResponse;
+  /**
+  Как настоящий сервер для служебного агента (D017): ручная заявка без верного приглашения — 403.
+  По умолчанию выключено — прежние тесты заявляются вручную без приглашений.
+  */
+  readonly requiresInvites?: boolean;
+}
+
+/**
+Приглашение бота в двойнике — те же поля, что отдаёт `POST /meeting-invite`.
+*/
+interface FakeInvite {
+  readonly id: string;
+  readonly invited_by: number;
+  readonly join_url: string;
+  readonly platform: string;
+  readonly created_at: string;
+  readonly expires_at: string;
+}
+
+interface InviteRecord {
+  readonly invite: FakeInvite;
+  taken: boolean;
+  used: boolean;
 }
 
 interface RecordedRequest {
@@ -123,6 +167,20 @@ export interface FakeSwarm {
   Состояние встреч для meeting-status: id → { summary_status, status }.
   */
   setStatus(id: string, value: { summary_status?: string | null; status?: string | null }): void;
+  /**
+  Человек вставил ссылку в вебе: заводит приглашение. По умолчанию — от того, кого сервер ждёт в
+  X-On-Behalf-Of, на Meet, со сроком 15 минут.
+  */
+  addInvite(input: {
+    joinUrl: string;
+    platform?: string;
+    invitedBy?: number;
+    expiresInMs?: number;
+  }): FakeInvite;
+  /**
+  Забрано ли приглашение оркестратором и погашено ли заявкой бота. Неизвестный id — ошибка.
+  */
+  inviteState(id: string): { taken: boolean; used: boolean };
   /**
   Закрыть сервер и дождаться закрытия. Идемпотентно.
   */
@@ -362,6 +420,9 @@ class FakeSwarmServer implements FakeSwarm {
   private readonly token: string;
   private readonly onBehalfOfId: number;
   private readonly current: CurrentMeetingResponse;
+  private readonly requiresInvites: boolean;
+  private readonly invites = new Map<string, InviteRecord>();
+  private inviteSeq = 0;
   private decision: ClaimDecision;
   private pendingFailure: PendingFailure | null = null;
   private actualPort = 0;
@@ -372,6 +433,7 @@ class FakeSwarmServer implements FakeSwarm {
     this.onBehalfOfId = options.onBehalfOf ?? DEFAULT_ON_BEHALF_OF;
     this.decision = options.decision ?? "transcribe";
     this.current = options.current ?? defaultCurrentResponse();
+    this.requiresInvites = options.requiresInvites ?? false;
   }
 
   private async handleRequestSafely(
@@ -434,6 +496,13 @@ class FakeSwarmServer implements FakeSwarm {
       return;
     }
 
+    // Дверь `meeting-invite` — resolveServiceAgent: только токен, подмена личности — 403.
+    if (path === "/meeting-invite") {
+      const result = this.handleInviteTake(method, authorization, onBehalfOf, rawBody);
+      finish(result.status, result.responseBody, result.requestBody);
+      return;
+    }
+
     const authFailure = checkAuth(authorization, onBehalfOf, this.token, this.onBehalfOfId);
     if (authFailure) {
       finish(authFailure.status, authFailure.body, null);
@@ -490,6 +559,9 @@ class FakeSwarmServer implements FakeSwarm {
       };
     }
 
+    const inviteRefusal = this.checkClaimInvite(parsed, identityKind);
+    if (inviteRefusal) return inviteRefusal;
+
     const meetingId = `m-${identityKey}`;
     const heldBy = this.decision === "defer" ? OTHER_HOLDER_ID : null;
     const heldByName = this.decision === "defer" ? OTHER_HOLDER_NAME : null;
@@ -504,6 +576,77 @@ class FakeSwarmServer implements FakeSwarm {
       },
       requestBody: parsed,
     };
+  }
+
+  private handleInviteTake(
+    method: string,
+    authorization: string | null,
+    onBehalfOf: string | null,
+    rawBody: Buffer,
+  ): RouteResult {
+    const parsed = parseJsonBody(rawBody);
+    const refuse = (status: number, error: string): RouteResult => ({
+      status,
+      responseBody: { ok: false, error },
+      requestBody: parsed,
+    });
+    if (method !== "POST") return refuse(405, "method not allowed");
+    if (authorization !== `Bearer ${this.token}`) return refuse(401, "bad token");
+    if (onBehalfOf !== null) return refuse(403, "X-On-Behalf-Of is not accepted by this endpoint");
+
+    const raw = isRecord(parsed) ? parsed.limit : undefined;
+    if (raw !== undefined && (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 1)) {
+      return refuse(400, "limit must be a positive integer");
+    }
+    const limit = Math.min(raw ?? INVITE_DEFAULT_LIMIT, INVITE_MAX_LIMIT);
+    const now = Date.now();
+    // Map хранит порядок вставки — это и есть «старые первыми». Забор синхронный, поэтому два
+    // одновременных опроса одну запись не делят — как условный UPDATE на сервере.
+    const pending: InviteRecord[] = [];
+    for (const record of this.invites.values()) {
+      const isOpen = !record.taken && !record.used;
+      if (isOpen && Date.parse(record.invite.expires_at) > now) pending.push(record);
+    }
+    pending.splice(limit);
+    for (const record of pending) record.taken = true;
+    return {
+      status: 200,
+      responseBody: { ok: true, invites: pending.map((record) => record.invite) },
+      requestBody: parsed,
+    };
+  }
+
+  /**
+  Сверка приглашения в заявке — как `checkInviteForClaim`: предъявленное приглашение сверяется
+  всегда; строгий двойник, кроме того, не пускает ручную заявку без приглашения.
+  */
+  private checkClaimInvite(parsed: unknown, identityKind: string): RouteResult | null {
+    const inviteId = isRecord(parsed) ? parsed.invite_id : undefined;
+    const isDemanded = this.requiresInvites && identityKind === "manual";
+    if (!isDemanded && inviteId === undefined) return null;
+    const refusal = this.inviteRefusal(inviteId, isRecord(parsed) ? parsed.join_url : undefined);
+    if (refusal === null) return null;
+    return {
+      status: 403,
+      responseBody: {
+        ok: false,
+        error: `service agent: a manual meeting needs a valid invite — the person pastes the call link in Swarm (${refusal})`,
+      },
+      requestBody: parsed,
+    };
+  }
+
+  private inviteRefusal(inviteId: unknown, joinUrl: unknown): string | null {
+    const record = typeof inviteId === "string" ? this.invites.get(inviteId) : undefined;
+    if (record === undefined) return "not_found";
+    if (record.invite.invited_by !== this.onBehalfOfId) return "other_person";
+    if (record.used) return "used";
+    if (Date.parse(record.invite.expires_at) <= Date.now()) return "expired";
+    const room = inviteRoom(joinUrl);
+    if (room === null || room !== inviteRoom(record.invite.join_url)) return "link_mismatch";
+    record.used = true;
+    record.taken = false;
+    return null;
   }
 
   private async handleIngest(rawBody: Buffer, contentType: string | null): Promise<RouteResult> {
@@ -654,6 +797,33 @@ class FakeSwarmServer implements FakeSwarm {
         value.summary_status === undefined ? existing.summary_status : value.summary_status,
       status: value.status === undefined ? existing.status : value.status,
     });
+  }
+
+  addInvite(input: {
+    joinUrl: string;
+    platform?: string;
+    invitedBy?: number;
+    expiresInMs?: number;
+  }): FakeInvite {
+    this.inviteSeq += 1;
+    // Время создания растёт строго: порядок «старые первыми» не зависит от разрешения часов.
+    const createdMs = Date.now() + this.inviteSeq;
+    const invite: FakeInvite = {
+      id: `invite-${String(this.inviteSeq)}`,
+      invited_by: input.invitedBy ?? this.onBehalfOfId,
+      join_url: input.joinUrl,
+      platform: input.platform ?? "meet",
+      created_at: new Date(createdMs).toISOString(),
+      expires_at: new Date(createdMs + (input.expiresInMs ?? INVITE_TTL_MS)).toISOString(),
+    };
+    this.invites.set(invite.id, { invite, taken: false, used: false });
+    return invite;
+  }
+
+  inviteState(id: string): { taken: boolean; used: boolean } {
+    const record = this.invites.get(id);
+    if (record === undefined) throw new Error(`fake-swarm: приглашения ${id} нет`);
+    return { taken: record.taken, used: record.used };
   }
 
   async close(): Promise<void> {

@@ -25,8 +25,26 @@ describe("readMeetingConfig", () => {
       segmentSeconds: null,
       timing: {},
       smokeMeetPage: null,
+      invite: null,
     });
   });
+
+  it("приглашение читается парой id и ссылки", () => {
+    const config = readMeetingConfig({
+      ...BASE,
+      [MEETING_ENV.inviteId]: "inv-1",
+      [MEETING_ENV.inviteJoinUrl]: "https://meet.google.com/abc-defg-hij",
+    });
+
+    expect(config.invite).toEqual({ id: "inv-1", joinUrl: "https://meet.google.com/abc-defg-hij" });
+  });
+
+  it.each([MEETING_ENV.inviteId, MEETING_ENV.inviteJoinUrl])(
+    "половина приглашения (только %s) — отказ на старте",
+    (name) => {
+      expect(() => readMeetingConfig({ ...BASE, [name]: "x" })).toThrow(/только вместе/u);
+    },
+  );
 
   it("ручки времени читаются, пустые пропускаются", () => {
     const config = readMeetingConfig({

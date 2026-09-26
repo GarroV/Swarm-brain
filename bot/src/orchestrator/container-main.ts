@@ -23,6 +23,7 @@ import { SwarmClient } from "../swarm-client/client.ts";
 import { UploadQueue } from "../swarm-client/queue.ts";
 import { RecordingSession } from "../swarm-client/session.ts";
 import { SpeakerTimelineCollector } from "../swarm-client/speakers.ts";
+import { manualClaim } from "./claim-request.ts";
 import { type MeetingConfig, readMeetingConfig } from "./config.ts";
 import { LeaseTracker, readLease } from "./lease.ts";
 import { inBackground } from "./background.ts";
@@ -184,15 +185,13 @@ async function main(): Promise<number> {
     client,
     queue,
     version: config.version,
-    claim: {
-      // Ручной запуск: каждая встреча своя, арбитража с календарной нет (решение D006 —
-      // бок о бок с bumblebee). Откуда берётся запуск — вопрос Q008, не этого файла.
-      identity_kind: "manual",
-      identity_key: `scriba:${config.runId}`,
-      started_at: new Date().toISOString(),
-      agent_version: `scriba-${String(config.version)}`,
-      recorded_seconds: 0,
-    },
+    // Ручной запуск по приглашению из веба (D017): приглашение едет в заявку.
+    claim: manualClaim({
+      runId: config.runId,
+      version: config.version,
+      startedAt: new Date().toISOString(),
+      invite: config.invite,
+    }),
   });
 
   const browser = await chromium.launch(meetLaunchOptions());
