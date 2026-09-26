@@ -12,12 +12,15 @@
  * Heartbeat на сервер шлёт процесс встречи изнутри контейнера: сигнал «жив» идёт от того,
  * чья жизнь меряется, поэтому смерть контейнера обрывает его без участия оркестратора.
  *
- * Откуда приходит команда запуска — не забота этого класса (вопрос владельцу Q008):
- * `startForMeeting` принимает описание встречи и не знает, кто его прислал.
+ * Откуда приходит команда запуска — не забота этого класса: `startForMeeting` принимает
+ * описание встречи и не знает, кто его прислал. Ручной запуск по приглашению из веба (D017)
+ * зовёт его из `invite-trigger.ts` и передаёт приглашение — без него сервер ручную заявку
+ * бота не примет.
  */
 import { randomUUID } from "node:crypto";
 
 import { pinMeetLocale } from "../meet-adapter/url.ts";
+import type { InviteReference } from "./claim-request.ts";
 import { MEETING_ENV, parsePlatform } from "./config.ts";
 import type { ContainerEngine, ContainerSpec, EngineContainer } from "./engine.ts";
 import { LEASE_WRITE_INTERVAL_MS, writeLease } from "./lease.ts";
@@ -34,6 +37,7 @@ export const LABEL = {
   run: "scriba.run",
   onBehalfOf: "scriba.on-behalf-of",
   platform: "scriba.platform",
+  invite: "scriba.invite",
 } as const;
 
 // Снятие типов у Node (strip-only) не умеет свойства-параметры конструктора, а ими пользуется
@@ -171,7 +175,12 @@ export class Orchestrator {
     );
   }
 
-  private environment(joinUrl: string, onBehalfOf: number, runId: string): string[] {
+  private environment(
+    joinUrl: string,
+    onBehalfOf: number,
+    runId: string,
+    invite: InviteReference | null,
+  ): string[] {
     const own: Record<string, string> = {
       [MEETING_ENV.joinUrl]: joinUrl,
       [MEETING_ENV.platform]: "meet",
@@ -181,22 +190,32 @@ export class Orchestrator {
       [MEETING_ENV.runId]: runId,
       [MEETING_ENV.version]: String(this.options.version),
       [MEETING_ENV.leaseDir]: LEASE_PATH,
+      ...(invite !== null && {
+        [MEETING_ENV.inviteId]: invite.id,
+        [MEETING_ENV.inviteJoinUrl]: invite.joinUrl,
+      }),
     };
     const merged = { ...this.options.extraEnv, ...own };
     return Object.entries(merged).map(([name, value]) => `${name}=${value}`);
   }
 
-  private spec(joinUrl: string, onBehalfOf: number, runId: string): ContainerSpec {
+  private spec(
+    joinUrl: string,
+    onBehalfOf: number,
+    runId: string,
+    invite: InviteReference | null,
+  ): ContainerSpec {
     return {
       name: `${this.options.project}-meeting-${runId}`,
       image: this.options.image,
       command: CONTAINER_COMMAND,
-      env: this.environment(joinUrl, onBehalfOf, runId),
+      env: this.environment(joinUrl, onBehalfOf, runId, invite),
       labels: {
         [LABEL.project]: this.options.project,
         [LABEL.run]: runId,
         [LABEL.onBehalfOf]: String(onBehalfOf),
         [LABEL.platform]: "meet",
+        ...(invite !== null && { [LABEL.invite]: invite.id }),
       },
       volume: { name: this.volume, target: RECORDINGS_PATH },
       readOnlyBind: { source: this.options.leaseDirectory, target: LEASE_PATH },
@@ -309,11 +328,15 @@ export class Orchestrator {
   /**
    * Поднять контейнер на встречу. Площадка без адаптера и кривая ссылка отвергаются ДО
    * подъёма: бот, ушедший не туда, хуже бота, который не пошёл.
+   *
+   * `invite` — приглашение из веба (D017): бот предъявит его в `meeting-claim`. Ручную встречу
+   * без приглашения сервер служебному агенту не заводит.
    */
   async startForMeeting(
     joinUrl: string,
     platform: string,
     onBehalfOf: number,
+    invite: InviteReference | null = null,
   ): Promise<ContainerId> {
     parsePlatform(platform);
     const pinned = pinMeetLocale(joinUrl);
@@ -321,7 +344,7 @@ export class Orchestrator {
     const runId = (this.options.newRunId ?? randomUUID)();
 
     const { engine } = this.options;
-    const id = await engine.create(this.spec(pinned, person, runId));
+    const id = await engine.create(this.spec(pinned, person, runId, invite));
     // Ожидание выхода регистрируется ДО старта: контейнер убирается сам сразу после выхода,
     // и опоздавшее ожидание не застало бы ни его, ни кода выхода.
     const exited = engine.waitExit(id, "next-exit");

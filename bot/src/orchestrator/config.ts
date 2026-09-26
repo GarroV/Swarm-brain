@@ -5,6 +5,7 @@
  * или кривая обязательная переменная — отказ на старте с именем переменной, а не встреча,
  * которая «пошла» и молча записала в никуда. Список совпадает с `bot/container/.env.example`.
  */
+import type { InviteReference } from "./claim-request.ts";
 import type { MeetingTiming } from "./run-meeting.ts";
 
 export const MEETING_ENV = {
@@ -25,6 +26,8 @@ export const MEETING_ENV = {
   heartbeatMs: "SCRIBA_HEARTBEAT_MS",
   pollMs: "SCRIBA_POLL_MS",
   smokeMeetPage: "SCRIBA_SMOKE_MEET_PAGE",
+  inviteId: "SCRIBA_INVITE_ID",
+  inviteJoinUrl: "SCRIBA_INVITE_JOIN_URL",
 } as const;
 
 /**
@@ -55,6 +58,11 @@ export interface MeetingConfig {
    * Только для смоука: страница-двойник вместо meet.google.com.
    */
   readonly smokeMeetPage: string | null;
+  /**
+   * Приглашение из веба (D017), по которому бот заявляет ручную встречу; `null` — запуск без
+   * приглашения (сервер такую ручную заявку агента отвергнет).
+   */
+  readonly invite: InviteReference | null;
 }
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -109,6 +117,22 @@ function readTiming(environment: Environment): Partial<MeetingTiming> {
   return timing;
 }
 
+/**
+ * Приглашение — оба поля или ни одного: половина приглашения сервером всё равно отвергается,
+ * и лучше узнать об этом на старте контейнера, чем после захода в звонок.
+ */
+function readInvite(environment: Environment): InviteReference | null {
+  const id = text(environment, MEETING_ENV.inviteId);
+  const joinUrl = text(environment, MEETING_ENV.inviteJoinUrl);
+  if (id === null && joinUrl === null) return null;
+  if (id === null || joinUrl === null) {
+    throw new Error(
+      `${MEETING_ENV.inviteId} и ${MEETING_ENV.inviteJoinUrl} задаются только вместе`,
+    );
+  }
+  return { id, joinUrl };
+}
+
 export function readMeetingConfig(environment: Environment): MeetingConfig {
   const onBehalfOf = positiveInteger(environment, MEETING_ENV.onBehalfOf);
   if (onBehalfOf === null) throw new Error(`${MEETING_ENV.onBehalfOf} не задан`);
@@ -128,5 +152,6 @@ export function readMeetingConfig(environment: Environment): MeetingConfig {
     segmentSeconds: positiveInteger(environment, MEETING_ENV.segmentSeconds),
     timing: readTiming(environment),
     smokeMeetPage: text(environment, MEETING_ENV.smokeMeetPage),
+    invite: readInvite(environment),
   };
 }

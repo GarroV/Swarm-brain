@@ -6,6 +6,9 @@
  * отдаёт запись в meeting-ingest и гасится; смерть контейнера видна (код выхода, нотиса,
  * heartbeat замолкает на `recording: true`); после падения оркестратора (настоящий SIGKILL
  * процесса) сирот не остаётся, а новый оркестратор подхватывает живые контейнеры.
+ * Ручной запуск по приглашению (D017) — сценарии invite, kontur, race — гоняет НАСТОЯЩУЮ
+ * службу `orchestrator-main.ts` дочерним процессом: приглашение забрано → контейнер → заявка
+ * по приглашению → запись; Контур — громкий отказ; две службы не берут одно приглашение дважды.
  *
  * Живой вход в настоящую встречу Google сюда не входит — это T004 (нужен аккаунт и человек).
  *
@@ -42,6 +45,7 @@ const TOKEN = "smoke-bot-token";
 const PERSON = 744_230_399;
 const MEET = "https://meet.google.com/abc-defg-hij";
 const SWARM_URL = `http://host.docker.internal:${String(PORT)}`;
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const SHORT_PAGE = "/app/src/orchestrator/fixtures/meeting.html";
 const LONG_PAGE = "/app/src/orchestrator/fixtures/meeting-long.html";
@@ -465,6 +469,185 @@ async function sceneAdopt(fake: Fake): Promise<void> {
   }
 }
 
+async function ourLabels(): Promise<string[]> {
+  const docker = new Docker();
+  const found = await docker.listContainers({
+    all: true,
+    filters: { label: [`${LABEL.project}=${PROJECT}`] },
+  });
+  return found.flatMap((info) =>
+    Object.entries(info.Labels).map(([key, value]) => `${key}=${value}`),
+  );
+}
+
+// ──── ручной запуск по приглашению (D017): настоящая служба orchestrator-main.ts дочерним процессом
+
+interface Service {
+  readonly lines: string[];
+  stop(): Promise<void>;
+}
+
+/**
+ * Поднять настоящую службу (`orchestrator-main.ts`) дочерним процессом: так смоук проверяет
+ * и разбор окружения, и провода, а не только классы.
+ */
+async function spawnService(leaseName: string, page: string): Promise<Service> {
+  const lines: string[] = [];
+  const service = spawn(
+    process.execPath,
+    ["--experimental-transform-types", path.join(HERE, "orchestrator-main.ts")],
+    {
+      env: {
+        ...process.env,
+        SCRIBA_SWARM_URL: `http://127.0.0.1:${String(PORT)}`,
+        SCRIBA_CONTAINER_SWARM_URL: SWARM_URL,
+        SCRIBA_BOT_TOKEN: TOKEN,
+        SCRIBA_IMAGE: IMAGE,
+        SCRIBA_PROJECT: PROJECT,
+        SCRIBA_LEASE_HOST_DIR: path.join(STATE, leaseName),
+        SCRIBA_BOT_VERSION: "1",
+        SCRIBA_INVITE_POLL_MS: "1000",
+        SCRIBA_CONTAINER_ENV: JSON.stringify({ ...BASE_ENV, SCRIBA_SMOKE_MEET_PAGE: page }),
+      },
+      stdio: ["ignore", "pipe", "inherit"],
+    },
+  );
+  createInterface({ input: service.stdout }).on("line", (line) => {
+    lines.push(line);
+    console.log(`    [${leaseName}] ${line.replace(/^\[orchestrator \S+\] /u, "")}`);
+  });
+  await until(30_000, `служба ${leaseName} запущена`, async () => {
+    await sleep(0);
+    return lines.some((line) => line.includes("служба запущена"));
+  });
+  const exited = new Promise<void>((resolve) => {
+    service.once("exit", () => {
+      resolve();
+    });
+  });
+  return {
+    lines,
+    stop: async (): Promise<void> => {
+      service.kill("SIGTERM");
+      await within(30_000, `служба ${leaseName} остановлена`, exited);
+    },
+  };
+}
+
+function inviteClaims(fake: Fake, inviteId: string): number {
+  return fake
+    .requestsTo("/meeting-claim")
+    .filter(
+      (request) =>
+        request.status === 200 &&
+        (request.body as Record<string, unknown> | null)?.invite_id === inviteId,
+    ).length;
+}
+
+async function sceneInvite(fake: Fake): Promise<void> {
+  console.log("\n──── приглашение из веба: забрано → контейнер → заявка по приглашению → запись");
+  const service = await spawnService("lease-svc-a", SHORT_PAGE);
+  const before = fake.ingested.length;
+  try {
+    const invite = fake.addInvite({ joinUrl: MEET });
+    await until(20_000, "приглашение забрано", async () => {
+      await sleep(0);
+      return fake.inviteState(invite.id).taken || fake.inviteState(invite.id).used;
+    });
+    check(true, "служба забрала приглашение");
+    await until(60_000, "контейнер поднят", async () => !(await isStandEmpty()));
+    const labels = await ourLabels();
+    check(labels.includes(`${LABEL.invite}=${invite.id}`), "у контейнера метка приглашения");
+    await until(120_000, "заявка по приглашению", async () => {
+      await sleep(0);
+      return fake.inviteState(invite.id).used;
+    });
+    check(inviteClaims(fake, invite.id) === 1, "бот заявил встречу по приглашению один раз");
+    const claim = fake
+      .requestsTo("/meeting-claim")
+      .find((request) => (request.body as Record<string, unknown> | null)?.invite_id === invite.id);
+    check(
+      claim?.onBehalfOf === String(PERSON),
+      "заявка от имени позвавшего",
+      claim?.onBehalfOf ?? "",
+    );
+    await until(180_000, "запись сдана", async () => {
+      await sleep(0);
+      return fake.ingested.length > before;
+    });
+    check(true, "meeting-ingest принял запись");
+    await until(60_000, "контейнер убран", isStandEmpty);
+    check(true, "после встречи контейнеров стенда не осталось");
+  } finally {
+    await service.stop();
+  }
+}
+
+async function sceneKontur(fake: Fake): Promise<void> {
+  console.log("\n──── приглашение на Контур.Толк: контейнер не поднят, человеку громкий отказ");
+  const service = await spawnService("lease-svc-a", SHORT_PAGE);
+  try {
+    const invite = fake.addInvite({ joinUrl: "https://ktalk.ru/room/abc", platform: "kontur" });
+    await until(20_000, "отказ ушёл", async () => {
+      await sleep(0);
+      return noticesOf(fake, "join_failed").length > 0;
+    });
+    const [notice] = noticesOf(fake, "join_failed");
+    check(
+      typeof notice?.detail === "string" && notice.detail.includes("Kontur.Talk"),
+      "join_failed с причиной на английском",
+      String(notice?.detail),
+    );
+    check(
+      typeof notice?.detail === "string" && notice.detail.includes("Контур.Толк"),
+      "и на русском",
+    );
+    check(fake.inviteState(invite.id).used, "приглашение погашено заявкой отказа");
+    await sleep(5000);
+    check(await isStandEmpty(), "контейнер на Контур не поднимался");
+  } finally {
+    await service.stop();
+  }
+}
+
+async function sceneRace(fake: Fake): Promise<void> {
+  console.log("\n──── две службы на одних приглашениях: каждое берётся ровно одной");
+  const left = await spawnService("lease-svc-a", SHORT_PAGE);
+  const right = await spawnService("lease-svc-b", SHORT_PAGE);
+  const before = fake.ingested.length;
+  try {
+    const invites = [1, 2, 3].map(() => fake.addInvite({ joinUrl: MEET }));
+    await until(180_000, "все три заявлены", async () => {
+      await sleep(0);
+      return invites.every((invite) => fake.inviteState(invite.id).used);
+    });
+    for (const invite of invites) {
+      const starts = [...left.lines, ...right.lines].filter((line) =>
+        line.includes(`приглашение ${invite.id} (от`),
+      ).length;
+      check(
+        starts === 1,
+        `${invite.id}: поднят ровно один контейнер`,
+        `запусков ${String(starts)}`,
+      );
+      check(inviteClaims(fake, invite.id) === 1, `${invite.id}: одна заявка`);
+    }
+    const byLeft = left.lines.filter((line) => line.includes("→ контейнер")).length;
+    const byRight = right.lines.filter((line) => line.includes("→ контейнер")).length;
+    console.log(`    разделили: ${String(byLeft)} + ${String(byRight)}`);
+    await until(240_000, "три записи сданы", async () => {
+      await sleep(0);
+      return fake.ingested.length >= before + 3;
+    });
+    check(fake.ingested.length === before + 3, "сдано ровно три записи");
+    await until(60_000, "контейнеры убраны", isStandEmpty);
+    check(true, "контейнеров стенда не осталось");
+  } finally {
+    await left.stop();
+    await right.stop();
+  }
+}
+
 const SCENES: Record<string, (fake: Fake) => Promise<void>> = {
   full: sceneFullMeeting,
   two: sceneTwoAtOnce,
@@ -473,6 +656,9 @@ const SCENES: Record<string, (fake: Fake) => Promise<void>> = {
   door: sceneDoor,
   orphans: sceneOrphans,
   adopt: sceneAdopt,
+  invite: sceneInvite,
+  kontur: sceneKontur,
+  race: sceneRace,
 };
 
 async function suite(): Promise<number> {

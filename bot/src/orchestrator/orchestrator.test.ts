@@ -28,6 +28,16 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
+async function replaceWithFile(target: string, attempts = 20): Promise<void> {
+  try {
+    await rm(target, { recursive: true, force: true });
+    await writeFile(target, "not a directory");
+  } catch (error) {
+    if (attempts <= 1) throw error;
+    await replaceWithFile(target, attempts - 1);
+  }
+}
+
 class FakeEngine implements ContainerEngine {
   private next = 0;
   readonly calls: string[] = [];
@@ -171,6 +181,27 @@ describe("оркестратор", () => {
       expect(orchestrator.list()).toEqual([
         { id: "c1", runId: "run-1", onBehalfOf: 744, meetingId: null },
       ]);
+    });
+
+    it("приглашение из веба едет в окружение и метку контейнера — бот предъявит его в claim", async () => {
+      await orchestrator.startForMeeting(MEET, "meet", 744, {
+        id: "inv-1",
+        joinUrl: MEET,
+      });
+
+      const spec = engine.specs[0];
+      expect(spec?.env).toEqual(
+        expect.arrayContaining([`SCRIBA_INVITE_ID=inv-1`, `SCRIBA_INVITE_JOIN_URL=${MEET}`]),
+      );
+      expect(spec?.labels[LABEL.invite]).toBe("inv-1");
+    });
+
+    it("без приглашения переменных и метки приглашения нет", async () => {
+      await orchestrator.startForMeeting(MEET, "meet", 744);
+
+      const spec = engine.specs[0];
+      expect(spec?.env.some((line) => line.startsWith("SCRIBA_INVITE_"))).toBe(false);
+      expect(spec?.labels).not.toHaveProperty(LABEL.invite);
     });
 
     it("ожидание выхода регистрируется ДО старта: авто-удалённый контейнер иначе потерял бы код", async () => {
@@ -397,9 +428,10 @@ describe("оркестратор", () => {
         leaseIntervalMs: 10,
       });
       await orchestrator.init();
-      // Каталог поводка подменён файлом: следующая запись обязана упасть.
-      await rm(leaseDirectory, { recursive: true, force: true });
-      await writeFile(leaseDirectory, "not a directory");
+      // Каталог поводка подменён файлом: следующая запись обязана упасть. Таймер поводка
+      // (10 мс) может успеть пересоздать каталог между rm и writeFile — тогда подмена
+      // повторяется; на нагруженной машине это ловилось как EISDIR.
+      await replaceWithFile(leaseDirectory);
       await new Promise((resolve) => setTimeout(resolve, 40));
 
       expect(lines.some((line) => line.includes("поводок не записан"))).toBe(true);

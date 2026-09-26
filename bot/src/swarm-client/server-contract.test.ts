@@ -23,6 +23,8 @@ const status = read("supabase/functions/meeting-status/index.ts");
 const heartbeat = read("supabase/functions/meeting-heartbeat/write.ts");
 const agentAuth = read("supabase/functions/_shared/agent-auth.ts");
 const plan = read("docs/furca/plan.md");
+const invite = read("supabase/functions/meeting-invite/index.ts");
+const agentScope = read("supabase/functions/meeting-claim/agent-scope.ts");
 
 describe("meeting-ingest", () => {
   it("принимает встречу по полю meeting_id", () => {
@@ -113,5 +115,32 @@ describe("таймлайн говорящих", () => {
     expect(
       hasSpeakersField ? ingest.includes(`formData.get("${INGEST_FIELD.speakers}")`) : true,
     ).toBe(true);
+  });
+});
+
+describe("приглашения бота (D017)", () => {
+  it("meeting-invite отдаёт ровно те поля, что разбирает клиент", () => {
+    // Порядок и состав — как в MeetingInvite; поле, пропавшее у сервера, клиент отложит
+    // в malformed, и бот молча не придёт на встречу.
+    expect(invite).toContain(
+      'const COLUMNS = "id, invited_by, join_url, platform, created_at, expires_at"',
+    );
+    expect(invite).toContain("json({ ok: true, invites })");
+  });
+
+  it("meeting-invite — дверь агента без подмены личности", () => {
+    expect(invite).toContain("resolveServiceAgent(supabase, req)");
+    expect(agentAuth).toContain("is not accepted by this endpoint");
+  });
+
+  it("предел limit клиент шлёт в теле под тем же именем", () => {
+    expect(invite).toContain(".limit;");
+  });
+
+  it("заявка по приглашению читает invite_id и join_url", () => {
+    expect(agentScope).toContain("invite_id?: unknown");
+    expect(agentScope).toContain("join_url?: unknown");
+    expect(agentScope).toContain("body.invite_id");
+    expect(agentScope).toContain("body.join_url");
   });
 });

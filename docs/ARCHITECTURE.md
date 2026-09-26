@@ -795,7 +795,9 @@ _Все три: перевыпуск **убивает старый токен**,
 Срок — 15 минут (`INVITE_TTL_MS`): бот заявляется ДО того, как постучаться, так что от вставки до заявки —
 опрос оркестратора и запуск контейнера. Код: чистые функции `_shared/meeting-invite.ts` (+ `.test.ts`),
 сверка в `meeting-claim/agent-scope.ts`, база — `meeting-claim/invites.ts`, вход человека —
-`swarm-api/meeting-invites.ts`, вход оркестратора — `meeting-invite/index.ts`. Людей (рекордер, кнопка
+`swarm-api/meeting-invites.ts`, вход оркестратора — `meeting-invite/index.ts`, его потребитель —
+служба оркестратора (`bot/src/orchestrator/invite-trigger.ts`, клиент `bot/src/swarm-client/invites.ts`,
+см. [оркестратор](#бот-scriba-оркестратор-встреч-botsrcorchestrator)). Людей (рекордер, кнопка
 в боте) приглашение не касается: их ручная встреча — как раньше.
 
 ## Говорящие в стенограмме (`_shared/speakers.ts`)
@@ -834,14 +836,29 @@ _Все три: перевыпуск **убивает старый токен**,
 
 **Что это.** Долгоживущая служба рядом с Docker: на каждую встречу поднимает отдельный контейнер
 бота-участника, следит за ним и гасит после. Сам контейнер заявляет встречу, заходит в звонок,
-пишет звук, отдаёт запись в очередь выгрузки и в `meeting-ingest`. Вход «ручной запуск по ссылке»
-на стороне сервера построен (приглашения, D017 — [Приглашение бота](#приглашение-бота-d017)); опрос
-`meeting-invite` оркестратором и передача `invite_id`/`join_url` в заявку — задачи оркестратора (T070,
-T150); `startForMeeting(joinUrl, platform, onBehalfOf)` берёт описание встречи от вызывающего кода. Контракт и состояние — [блок
+пишет звук, отдаёт запись в очередь выгрузки и в `meeting-ingest`. Вход — ручной запуск по
+приглашению из веба (D017, [Приглашение бота](#приглашение-бота-d017)): служба `orchestrator-main.ts`
+опрашивает `meeting-invite` и по каждому приглашению зовёт `startForMeeting(joinUrl, platform,
+onBehalfOf, invite)`; веб-поле для вставки ссылки — отдельная задача (T150). Контракт и состояние — [блок
 orchestrator](furca/blocks/orchestrator.md).
 
+**Ручной запуск (служба, `invite-trigger.ts`).** Раз в `SCRIBA_INVITE_POLL_MS` (5 с) —
+`POST /meeting-invite` токеном агента **без** `X-On-Behalf-Of` (`swarm-client/invites.ts`, без повторов:
+сервер отдаёт каждое приглашение один раз, повтор после потерянного ответа ничего не вернёт). Дальше:
+
+| Приглашение | Что делает служба |
+|---|---|
+| `platform = meet` | `startForMeeting` от имени `invited_by`; контейнер получает `SCRIBA_INVITE_ID` + `SCRIBA_INVITE_JOIN_URL` и метку `scriba.invite`, бот предъявляет `invite_id`/`join_url` в `meeting-claim` |
+| Контур.Толк, Zoom, иное | контейнер не поднимается; служба заявляет встречу по тому же приглашению (нотисе нужна строка встречи) и шлёт `join_failed` позвавшему с причиной на EN и RU (`refusalDetail`) |
+| контейнер не поднялся | тот же отказ, в причине — ошибка запуска |
+| пришло повторно | второго бота не поднимает (память до `expires_at`) |
+| не разобрано / отказ не доставлен | громкая строка в журнале службы (`ПРИГЛАШЕНИЕ ПОТЕРЯНО`, `ОТКАЗ НЕ ДОСТАВЛЕН`) |
+
+Цена отказа по Контуру — пустая ручная встреча на сервере и статус приглашения `used`, как у бота,
+которого не впустили: своего вида нотисы «площадка не поддерживается» у `meeting-notice` нет.
+
 **Путь встречи (внутри контейнера, `run-meeting.ts`).** `meeting-claim` (ручная встреча:
-`identity_kind:"manual"`, ключ `scriba:<runId>`) **раньше** захода — у встречных нотис должен быть
+`identity_kind:"manual"`, ключ `scriba:<runId>`, приглашение — `claim-request.ts`) **раньше** захода — у встречных нотис должен быть
 `meeting_id` → заход → дверь: 90 с → `door_waiting`, ещё 180 с → повтор, уход по `should_leave`
 сервера или по своему потолку 2 → запись ffmpeg частями → один в звонке 2 мин → выход → выгрузка.
 Heartbeat шлётся изнутри контейнера; финальный `recording:false` — только при штатном конце.
@@ -853,7 +870,7 @@ Heartbeat шлётся изнутри контейнера; финальный `
 | Очередь выгрузки | На томе `<project>-recordings`, своя на каждый запуск: `/recordings/queue/<person>/<runId>`; очереди, чей `alive` старше 5 мин, переносятся в очередь следующего запуска атомарным rename (`run-directories.ts`) |
 | Нотисы | `notice-client.ts` → `POST /meeting-notice`: `meeting_id` или `meeting_key`, без `attempt`; 409 = пора уходить; прочие отказы пишутся в журнал целиком (`JournaledNotifier`) |
 | Метки контейнера | `scriba.project`, `scriba.run`, `scriba.on-behalf-of`, `scriba.platform`; имя `<project>-meeting-<runId>`. Чужие метки оркестратор не трогает |
-| Живая проверка | `bot/src/orchestrator/smoke-orchestrator.ts` против настоящего Docker и `fake-swarm` (сценарии full, two, death, stop, door, orphans, adopt; настоящий SIGKILL) |
+| Живая проверка | `bot/src/orchestrator/smoke-orchestrator.ts` против настоящего Docker и `fake-swarm` (сценарии full, two, death, stop, door, orphans, adopt; настоящий SIGKILL; ручной запуск — invite, kontur, race, через настоящую службу дочерним процессом) |
 
 **Окружение контейнера** (ставит оркестратор; канон имён — `MEETING_ENV` в `config.ts`):
 обязательные `SCRIBA_JOIN_URL`, `SCRIBA_PLATFORM` (пока только `meet`), `SCRIBA_ON_BEHALF_OF`,
@@ -861,7 +878,15 @@ Heartbeat шлётся изнутри контейнера; финальный `
 необязательные `SCRIBA_DISPLAY_NAME`, `SCRIBA_MAX_MEETING_MINUTES` (потолок, по умолчанию 240),
 `SCRIBA_SEGMENT_SECONDS`, `SCRIBA_DOOR_WAIT_MS`, `SCRIBA_DOOR_REPEAT_MS`, `SCRIBA_ALONE_MS`,
 `SCRIBA_HEARTBEAT_MS`, `SCRIBA_POLL_MS` (времена — ручки смоука), `SCRIBA_SMOKE_MEET_PAGE`
-(только смоук: подменяет Meet страницей-двойником).
+(только смоук: подменяет Meet страницей-двойником), `SCRIBA_INVITE_ID` + `SCRIBA_INVITE_JOIN_URL`
+(приглашение D017; только парой, половина — отказ на старте).
+
+**Окружение службы** (`orchestrator-main.ts`; кривое — отказ на старте с именем переменной):
+обязательные `SCRIBA_SWARM_URL`, `SCRIBA_BOT_TOKEN`, `SCRIBA_IMAGE`, `SCRIBA_LEASE_HOST_DIR` (каталог
+поводка на хосте); необязательные `SCRIBA_PROJECT` (по умолчанию `scriba`), `SCRIBA_BOT_VERSION`,
+`SCRIBA_INVITE_POLL_MS` (5000), `SCRIBA_CONTAINER_SWARM_URL` (адрес функций изнутри контейнера, по
+умолчанию `SCRIBA_SWARM_URL`), `SCRIBA_CONTAINER_ENV` (JSON добавочного окружения контейнера — ручки
+смоука). Запуск: `node --experimental-transform-types bot/src/orchestrator/orchestrator-main.ts`.
 
 **Смерть бота видна серверу.** Сторож `checkRecorderHealth` (swarm-bot, cron `meetings_watchdog` /
 `granola_poll`) читает и `allowed_users.recorder_last_*`, и `meetings.agent_last_*`: решение и адресат —

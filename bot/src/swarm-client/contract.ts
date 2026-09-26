@@ -6,7 +6,9 @@
  *  - `supabase/functions/meeting-claim/index.ts` (`ClaimBody`, ответ в конце файла);
  *  - `supabase/functions/meeting-ingest/index.ts` (`buildTrackParts`, поля формы);
  *  - `supabase/functions/meeting-heartbeat/write.ts` (`HeartbeatBody`);
- *  - `supabase/functions/meeting-status/index.ts` (`?ids=` → `statuses`).
+ *  - `supabase/functions/meeting-status/index.ts` (`?ids=` → `statuses`);
+ *  - `supabase/functions/meeting-invite/index.ts` (`COLUMNS`, `invites`) — `MeetingInvite`;
+ *    поля `invite_id`/`join_url` заявки — `meeting-claim/agent-scope.ts` (решение D017).
  *
  * Имена полей — snake_case, как на проводе: переименование в camelCase здесь стоило бы
  * ровно одного молчаливого расхождения с сервером. За тем, что имена не разъехались,
@@ -75,6 +77,36 @@ export interface ClaimRequest {
    * Бот заявляется до записи, поэтому в первом claim это 0.
    */
   readonly recorded_seconds?: number;
+  /**
+   * Приглашение, по которому служебный агент заводит ручную встречу (решение D017): без него
+   * сервер ручную заявку агента отвергает 403.
+   */
+  readonly invite_id?: string;
+  /**
+   * Ссылка на звонок из того же приглашения — сервер сверяет комнату с приглашением.
+   */
+  readonly join_url?: string;
+}
+
+/**
+ * Приглашение бота, как его отдаёт `POST /meeting-invite` (решение D017): человек вставил в
+ * вебе ссылку на созвон, оркестратор забрал приглашение и запускает бота за `invited_by`.
+ * Каждое приглашение сервер отдаёт ровно один раз.
+ */
+export interface MeetingInvite {
+  readonly id: string;
+  /**
+   * Telegram-id того, кто позвал: бот действует от его имени (`X-On-Behalf-Of`).
+   */
+  readonly invited_by: number;
+  readonly join_url: string;
+  /**
+   * Площадка по ссылке. Строка, а не `ConferencePlatform`: новую площадку сервер может начать
+   * принимать раньше, чем бот научится в неё заходить, — и это отказ бота, а не сбой разбора.
+   */
+  readonly platform: string;
+  readonly created_at: string;
+  readonly expires_at: string;
 }
 
 export interface ClaimResponse {
