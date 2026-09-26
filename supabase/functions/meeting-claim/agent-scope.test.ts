@@ -8,10 +8,11 @@ import type { AgentIdentity } from "../_shared/agent-auth.ts";
 import type { GEvent } from "../meeting-current/select.ts";
 import {
   AgentScopeError,
-  assertCalendarMembership,
   calendarKeyOf,
   type CalendarSource,
+  keyShape,
   mayJoinExisting,
+  resolveAgentScope,
 } from "./agent-scope.ts";
 
 const PERSON = 111;
@@ -24,8 +25,14 @@ const standup: GEvent = {
   iCalUID: "standup@google.com",
   start: { dateTime: "2026-09-25T10:00:00+02:00" },
   end: { dateTime: "2026-09-25T10:30:00+02:00" },
+  attendees: [
+    { email: "person@team.io", displayName: "Person", self: true },
+    { email: "boss@team.io" },
+    { displayName: "Room 5" },
+  ],
 };
 const STANDUP_KEY = "standup@google.com:2026-09-25";
+const FORGED = [{ email: "person@team.io" }, { email: "victim@team.io" }];
 
 type Calls = { refresh: number[]; windows: Array<[string, string]> };
 
@@ -52,13 +59,15 @@ function source(
   };
 }
 
+const calendarClaim = { identity_kind: "calendar", identity_key: STANDUP_KEY, attendees: FORGED };
+
 async function refused(p: Promise<unknown>, status: number): Promise<string> {
   const e = await assertRejects(() => p, AgentScopeError);
   assertEquals(e.status, status, `ожидался отказ ${status}, пришёл ${e.status}: ${e.message}`);
   return e.message;
 }
 
-// ── Ключ календарной встречи ─────────────────────────────────────────────────
+// ── Форма ключа ─────────────────────────────────────────────────────────────
 
 Deno.test("ключ события собирается так же, как его отдаёт meeting-current", () => {
   assertEquals(calendarKeyOf(standup), STANDUP_KEY);
@@ -66,134 +75,184 @@ Deno.test("ключ события собирается так же, как ег
   assertEquals(calendarKeyOf({ ...standup, start: { date: "2026-09-25" } }), null);
 });
 
+Deno.test("форма ключа: календарь, комнаты рекордера (в т.ч. суженные датой), прочее", () => {
+  assertEquals(keyShape(STANDUP_KEY), "calendar");
+  assertEquals(keyShape("abc123_R20260925T080000@google.com:2026-09-25"), "calendar");
+  assertEquals(keyShape("meet:abc-defg-hij"), "room");
+  assertEquals(keyShape("meet:abc-defg-hij:2026-09-25"), "room");
+  assertEquals(keyShape("kontur:team_room-1"), "room");
+  assertEquals(keyShape("kontur:team_room-1:2026-09-25"), "room");
+  assertEquals(keyShape("tg:12345"), "other");
+  assertEquals(keyShape("6f1c2b1e-0000-4000-8000-000000000000"), "other");
+  assertEquals(keyShape("meet:NOT A CODE"), "invalid");
+  assertEquals(keyShape("kontur:"), "invalid");
+  assertEquals(keyShape("kontur:a b:2026-09-25"), "invalid");
+  assertEquals(keyShape("standup google:2026-09-25"), "invalid");
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: агент не меняет тип встречи, чтобы уйти от сверки → 400", async () => {
+  const cases = [
+    { identity_kind: "room", identity_key: STANDUP_KEY }, // календарный ключ под видом комнаты
+    { identity_kind: "manual", identity_key: STANDUP_KEY }, // …под видом ручной
+    { identity_kind: "calendar", identity_key: "kontur:abc" }, // комната под видом календаря
+    { identity_kind: "manual", identity_key: "meet:abc-defg-hij" }, // комната под видом ручной
+    { identity_kind: "calendar", identity_key: "tg:1" }, // произвольный ключ под видом календаря
+    { identity_kind: "room", identity_key: "tg:1" }, // …под видом комнаты
+    { identity_kind: "room", identity_key: "kontur:a b" }, // комната недопустимой формы
+  ];
+  for (const body of cases) {
+    const src = source();
+    const msg = await refused(resolveAgentScope(src, bot, body), 400);
+    assertEquals(src.calls.refresh, [], `до календаря не дошли: ${JSON.stringify(body)} (${msg})`);
+  }
+});
+
+Deno.test("люди шлют ключи как раньше — форма ключа с них не спрашивается", async () => {
+  for (const kind of ["recorder", "recorder_prev", "mcp"] as const) {
+    const scope = await resolveAgentScope(source({ refresh: null }), { ...recorder, kind }, {
+      identity_kind: "room",
+      identity_key: STANDUP_KEY,
+    });
+    assertEquals(scope, null);
+  }
+});
+
 // ── Календарная встреча: человек обязан её иметь в своём календаре ──────────
 
 Deno.test("БЛОКИРУЮЩИЙ: агент не заводит календарную встречу на человека, у которого её нет", async () => {
   const src = source({ events: [{ ...standup, iCalUID: "someone-elses@google.com" }] });
-  const msg = await refused(
-    assertCalendarMembership(src, bot, { identity_kind: "calendar", identity_key: STANDUP_KEY }),
-    403,
-  );
+  const msg = await refused(resolveAgentScope(src, bot, calendarClaim), 403);
   assertEquals(msg.includes("not a participant"), true, msg);
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: та же встреча другого дня не засчитывается (повторяющаяся серия)", async () => {
-  const src = source();
   await refused(
-    assertCalendarMembership(src, bot, {
-      identity_kind: "calendar",
-      identity_key: "standup@google.com:2026-09-26",
-    }),
+    resolveAgentScope(source(), bot, { ...calendarClaim, identity_key: "standup@google.com:2026-09-26" }),
     403,
   );
 });
 
 Deno.test("агент проходит, когда встреча есть в календаре названного человека", async () => {
   const src = source();
-  await assertCalendarMembership(src, bot, { identity_kind: "calendar", identity_key: STANDUP_KEY });
+  const scope = await resolveAgentScope(src, bot, calendarClaim);
   assertEquals(src.calls.refresh, [PERSON], "календарь смотрится ТОГО человека, за кого просят");
   const [[min, max]] = src.calls.windows;
   assertEquals(min <= "2026-09-25T00:00:00.000Z" && max >= "2026-09-26T00:00:00.000Z", true);
+  assertEquals(scope?.calendarKeys.has(STANDUP_KEY), true);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: состав календарной встречи агента — из события Google, не из тела", async () => {
+  const scope = await resolveAgentScope(source(), bot, calendarClaim);
+  assertEquals(scope?.attendees, [
+    { name: "Person", email: "person@team.io" },
+    { name: null, email: "boss@team.io" },
+    { name: "Room 5", email: null },
+  ]);
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: календарь человека не подключён → календарную встречу не заводим", async () => {
-  const msg = await refused(
-    assertCalendarMembership(source({ refresh: null }), bot, {
-      identity_kind: "calendar",
-      identity_key: STANDUP_KEY,
-    }),
-    403,
-  );
+  const msg = await refused(resolveAgentScope(source({ refresh: null }), bot, calendarClaim), 403);
   assertEquals(msg.includes("manual"), true, `отказ должен звать на ручной путь: ${msg}`);
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: календарь не отвечает → отказ, а не пропуск без сверки", async () => {
   for (const opts of [{ token: "dead" as const }, { token: "down" as const }, { events: null }]) {
-    await refused(
-      assertCalendarMembership(source(opts), bot, {
-        identity_kind: "calendar",
-        identity_key: STANDUP_KEY,
-      }),
-      503,
-    );
+    await refused(resolveAgentScope(source(opts), bot, calendarClaim), 503);
   }
 });
 
-Deno.test("БЛОКИРУЮЩИЙ: ключ без даты не сверяется и не проходит", async () => {
-  await refused(
-    assertCalendarMembership(source(), bot, {
-      identity_kind: "calendar",
-      identity_key: "standup@google.com",
-    }),
-    403,
-  );
+// ── Комнатная и ручная встречи агента ───────────────────────────────────────
+
+Deno.test("БЛОКИРУЮЩИЙ: состав комнатной встречи агента из тела не берётся", async () => {
+  const scope = await resolveAgentScope(source(), bot, {
+    identity_kind: "room",
+    identity_key: "kontur:abc",
+    started_at: "2026-09-25T08:00:00Z",
+    attendees: FORGED,
+  });
+  assertEquals(scope?.attendees, []);
+  assertEquals(scope?.calendarKeys.has(STANDUP_KEY), true, "календарь человека нужен для склейки");
 });
 
-Deno.test("ручная и комнатная встречи агента — без сверки состава (D015, D016)", async () => {
-  const src = source({ refresh: null });
-  await assertCalendarMembership(src, bot, { identity_kind: "manual", identity_key: "tg:1" });
-  await assertCalendarMembership(src, bot, { identity_kind: "room", identity_key: "kontur:abc" });
-  assertEquals(src.calls.refresh, [], "в календарь не ходим вовсе");
-});
-
-Deno.test("люди (рекордер, MCP) не сверяются — их поведение не меняется", async () => {
-  const src = source({ refresh: null });
-  for (const kind of ["recorder", "recorder_prev", "mcp"] as const) {
-    await assertCalendarMembership(src, { ...recorder, kind }, {
-      identity_kind: "calendar",
-      identity_key: STANDUP_KEY,
+Deno.test("комнатная встреча агента проходит и без календаря — сверки состава нет (D016)", async () => {
+  for (const opts of [{ refresh: null }, { token: "down" as const }, { events: null }]) {
+    const scope = await resolveAgentScope(source(opts), bot, {
+      identity_kind: "room",
+      identity_key: "kontur:abc",
+      started_at: "2026-09-25T08:00:00Z",
     });
+    assertEquals(scope?.calendarKeys.size, 0, "календаря нет — ни одна календарная встреча не открыта");
   }
+});
+
+Deno.test("ручная встреча агента — без сверки и без похода в календарь (D016, Q008)", async () => {
+  const src = source({ refresh: null });
+  const scope = await resolveAgentScope(src, bot, { identity_kind: "manual", identity_key: "tg:1" });
   assertEquals(src.calls.refresh, []);
+  assertEquals(scope?.attendees, undefined, "ручная ветка не тронута");
 });
 
 // ── Присоединение к уже открытой встрече ────────────────────────────────────
 
-const theirs = {
-  identity_key: "their-sync@google.com:2026-09-25",
+const noCalendar = { attendees: [], calendarKeys: new Set<string>() };
+const withStandup = { attendees: [], calendarKeys: new Set([STANDUP_KEY]) };
+
+const theirRoom = {
+  identity_key: "kontur:their:2026-09-25",
   claim_owner: OTHER,
   attendees: [{ name: "Other", email: "other@team.io" }, { email: "boss@team.io" }],
 };
+const theirCalendar = { ...theirRoom, identity_key: "their-sync@google.com:2026-09-25" };
 
-Deno.test("БЛОКИРУЮЩИЙ: агент не присоединяется к чужой встрече, где человека нет в составе", () => {
-  assertEquals(mayJoinExisting(bot, "person@team.io", theirs, null), false);
-  assertEquals(mayJoinExisting(bot, null, theirs, null), false, "без почты сверить нечем — отказ");
+Deno.test("БЛОКИРУЮЩИЙ: агент не присоединяется к чужой комнате, где человека нет в составе", () => {
+  assertEquals(mayJoinExisting(bot, "person@team.io", theirRoom, noCalendar), false);
+  assertEquals(mayJoinExisting(bot, null, theirRoom, noCalendar), false, "без почты сверить нечем — отказ");
 });
 
-Deno.test("БЛОКИРУЮЩИЙ: подтверждённый календарём ключ не открывает ДРУГУЮ встречу", () => {
-  assertEquals(mayJoinExisting(bot, "person@team.io", theirs, STANDUP_KEY), false);
+Deno.test("БЛОКИРУЮЩИЙ: к календарной встрече — только если она в календаре человека", () => {
+  // Почта в составе строки не спасает: состав могли прислать, календарь — нет.
+  const listed = { ...theirCalendar, attendees: [{ email: "person@team.io" }] };
+  assertEquals(mayJoinExisting(bot, "person@team.io", listed, withStandup), false);
+  assertEquals(mayJoinExisting(bot, "person@team.io", { ...theirCalendar, attendees: [] }, withStandup), false);
+  assertEquals(mayJoinExisting(bot, "person@team.io", { ...theirCalendar, attendees: null }, noCalendar), false);
 });
 
-Deno.test("агент присоединяется, если человек в составе (регистр почты не важен)", () => {
+Deno.test("агент присоединяется к календарной встрече из календаря своего человека", () => {
+  assertEquals(
+    mayJoinExisting(bot, "x@y.z", { ...theirCalendar, identity_key: STANDUP_KEY, attendees: [] }, withStandup),
+    true,
+  );
+});
+
+Deno.test("агент присоединяется к комнате, если человек в составе (регистр почты не важен)", () => {
   assertEquals(
     mayJoinExisting(bot, " Person@Team.io ", {
-      ...theirs,
-      attendees: [...theirs.attendees, { email: "person@team.IO" }],
-    }, null),
+      ...theirRoom,
+      attendees: [...theirRoom.attendees, { email: "person@team.IO" }],
+    }, noCalendar),
     true,
   );
 });
 
 Deno.test("агент присоединяется к встрече, которую уже держит тот же человек", () => {
-  assertEquals(mayJoinExisting(bot, null, { ...theirs, claim_owner: PERSON }, null), true);
+  assertEquals(mayJoinExisting(bot, null, { ...theirCalendar, claim_owner: PERSON }, noCalendar), true);
 });
 
-Deno.test("агент присоединяется к встрече своего подтверждённого ключа", () => {
+Deno.test("комната без состава — не сверяем (D016)", () => {
+  assertEquals(mayJoinExisting(bot, "person@team.io", { ...theirRoom, attendees: [] }, noCalendar), true);
   assertEquals(
-    mayJoinExisting(bot, "person@team.io", { ...theirs, identity_key: STANDUP_KEY }, STANDUP_KEY),
+    mayJoinExisting(bot, "person@team.io", { ...theirRoom, attendees: [{ name: "Без почты" }] }, noCalendar),
     true,
   );
-});
-
-Deno.test("состав неизвестен (ручная/комнатная встреча) — не сверяем (D016)", () => {
-  assertEquals(mayJoinExisting(bot, "person@team.io", { ...theirs, attendees: [] }, null), true);
-  assertEquals(
-    mayJoinExisting(bot, "person@team.io", { ...theirs, attendees: [{ name: "Без почты" }] }, null),
-    true,
-  );
-  assertEquals(mayJoinExisting(bot, "person@team.io", { ...theirs, attendees: null }, null), true);
+  assertEquals(mayJoinExisting(bot, "person@team.io", { ...theirRoom, attendees: null }, noCalendar), true);
 });
 
 Deno.test("люди присоединяются как раньше — сверка их не касается", () => {
-  assertEquals(mayJoinExisting(recorder, null, theirs, null), true);
+  assertEquals(mayJoinExisting(recorder, null, theirCalendar, null), true);
+  assertEquals(mayJoinExisting(recorder, null, theirRoom, null), true);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: агент без контекста сверки не присоединяется никуда, кроме своего", () => {
+  assertEquals(mayJoinExisting(bot, "person@team.io", { ...theirRoom, attendees: [] }, null), false);
+  assertEquals(mayJoinExisting(bot, null, { ...theirRoom, claim_owner: PERSON }, null), true);
 });

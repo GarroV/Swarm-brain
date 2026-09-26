@@ -4,7 +4,13 @@ import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_s
 import { defaultMeetingTitle, displayNameOf } from "../_shared/meeting-title.ts";
 import { ROSTER_TOLERANCE_MIN, sameMeetingByRoster, scopeRoomKey } from "../_shared/meeting-roster.ts";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
-import { AgentScopeError, assertCalendarMembership, type CalendarSource, mayJoinExisting } from "./agent-scope.ts";
+import {
+  type AgentScope,
+  AgentScopeError,
+  type CalendarSource,
+  mayJoinExisting,
+  resolveAgentScope,
+} from "./agent-scope.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -493,12 +499,20 @@ Deno.serve(async (req: Request) => {
     return fail(e instanceof Error ? e.message : "invalid body");
   }
 
-  // Служебный агент: календарная встреча обязана быть в календаре названного человека (D016).
+  // Служебный агент: тип встречи — по форме ключа, календарная — из календаря названного
+  // человека, состав — то, что сервер знает сам, а не то, что прислал агент (D016, agent-scope.ts).
+  let scope: AgentScope | null;
   try {
-    await assertCalendarMembership(calendarSource, identity, body);
+    scope = await resolveAgentScope(calendarSource, identity, body);
   } catch (e) {
     if (e instanceof AgentScopeError) return fail(e.message, e.status);
     throw e;
+  }
+  if (scope?.attendees !== undefined) {
+    body = {
+      ...body,
+      attendees: scope.attendees.map((a) => ({ name: a.name ?? undefined, email: a.email ?? undefined })),
+    };
   }
 
   const nowMs = Date.now();
@@ -567,10 +581,8 @@ Deno.serve(async (req: Request) => {
       body.started_at ?? null,
     );
     const myEmail = await emailOfUser(identity.telegramId);
-    // Ключ, уже подтверждённый календарём человека (только для агента и только календарный).
-    const provenKey = body.identity_kind === "calendar" ? scopedKey : null;
     const mayJoin = (row: { identity_key: string | null; claim_owner: number | null; attendees: Attendee[] | null }) =>
-      mayJoinExisting(identity, myEmail, row, provenKey);
+      mayJoinExisting(identity, myEmail, row, scope);
 
     // (2) до вставки: вдруг эта встреча уже открыта под другим ключом.
     const joined = await findMeetingByRoster(
@@ -646,7 +658,7 @@ Deno.serve(async (req: Request) => {
         const { data: existing } = await supabase
           .from("meetings")
           .select(
-            "id, identity_key, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status",
+            "id, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at",
           )
           .eq("identity_key", scopedKey)
           .single();
