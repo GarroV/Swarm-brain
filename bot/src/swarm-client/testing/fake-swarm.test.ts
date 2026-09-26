@@ -398,11 +398,22 @@ describe("meeting-ingest — правила манифеста (каждое п�
 describe("meeting-heartbeat", () => {
   it("отвечает {ok: true} и пишет тело в requests", async () => {
     const fake = await launch();
-    const payload = { recording: true, version: 3, on_call: true };
+    const payload = { recording: true, version: 3, on_call: true, meeting_id: "m-1" };
     const response = await postJson(`${fake.url}/meeting-heartbeat`, payload);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
     expect(fake.requests.at(-1)?.body).toEqual(payload);
+  });
+
+  it("запись без meeting_id — 400, как на сервере: такой обрыв сторож бы не увидел", async () => {
+    const fake = await launch();
+    const response = await postJson(`${fake.url}/meeting-heartbeat`, {
+      recording: true,
+      version: 3,
+    });
+    expect(response.status).toBe(400);
+    const idle = await postJson(`${fake.url}/meeting-heartbeat`, { recording: false, version: 3 });
+    expect(idle.status).toBe(200);
   });
 });
 

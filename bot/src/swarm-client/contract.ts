@@ -111,6 +111,11 @@ export interface HeartbeatRequest {
   readonly version: number;
   readonly on_call?: boolean;
   readonly meeting_key?: string;
+  /**
+   * Встреча, которую бот пишет (id из `meeting-claim`). Удар ложится в её строку — у каждой
+   * встречи своя тишина (D018). До claim встречи нет, и поле не отправляется.
+   */
+  readonly meeting_id?: string;
 }
 
 export interface MeetingStatusItem {

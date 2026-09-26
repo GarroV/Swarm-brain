@@ -96,7 +96,12 @@ describe("клиент пяти эндпоинтов", () => {
   });
 
   it("meeting-heartbeat принимает «бот жив»", async () => {
-    await clientFor(fake).heartbeat({ recording: true, version: 1, on_call: true });
+    await clientFor(fake).heartbeat({
+      recording: true,
+      version: 1,
+      on_call: true,
+      meeting_id: "m-1",
+    });
 
     expect(fake.requestsTo("/meeting-heartbeat")).toHaveLength(1);
   });
@@ -425,17 +430,31 @@ describe("сессия записи", () => {
     expect(fake.ingested[0]?.speakers).toBeUndefined();
   });
 
-  it("heartbeat говорит, что бот на звонке и какую встречу видит", async () => {
+  it("heartbeat говорит, что бот на звонке и какую встречу пишет — по id встречи сервера", async () => {
     const session = sessionFor();
     await session.claim();
 
     await session.heartbeat();
 
+    // meeting_id — по нему сервер кладёт удар в строку встречи (D018): у двух встреч бота
+    // одновременно своя тишина, и живой контейнер не прячет замолчавший.
     expect(fake.requestsTo("/meeting-heartbeat")[0]?.body).toMatchObject({
       recording: true,
       on_call: true,
       meeting_key: IDENTITY.identity_key,
+      meeting_id: session.id,
     });
+    expect(session.id).toEqual(expect.any(String));
+  });
+
+  it("heartbeat до claim не выдумывает встречу: meeting_id не отправляется", async () => {
+    const session = sessionFor();
+
+    await session.heartbeat();
+
+    const body = fake.requestsTo("/meeting-heartbeat")[0]?.body as Record<string, unknown>;
+    expect(body.recording).toBe(false);
+    expect("meeting_id" in body).toBe(false);
   });
 
   it("сбой выгрузки не теряет запись: она остаётся на диске до следующего прогона", async () => {

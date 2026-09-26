@@ -82,9 +82,12 @@ describe("meeting-status", () => {
 });
 
 describe("meeting-heartbeat", () => {
-  it.each(["recording", "version", "on_call", "meeting_key"])("принимает поле %s", (field) => {
-    expect(heartbeat).toContain(`${field}?: unknown`);
-  });
+  it.each(["recording", "version", "on_call", "meeting_key", "meeting_id"])(
+    "принимает поле %s",
+    (field) => {
+      expect(heartbeat).toContain(`${field}?: unknown`);
+    },
+  );
 });
 
 describe("подмена личности", () => {

@@ -102,7 +102,8 @@ export class RecordingSession implements RecordingSessionContract {
   }
 
   /**
-   * «Бот жив» — для серверного watchdog. Идёт в строку служебного агента, а не человека.
+   * «Бот жив» — для серверного watchdog. Идёт в строку заявленной встречи и служебного агента,
+   * а не человека.
    */
   async heartbeat(): Promise<void> {
     await this.options.client.heartbeat({
@@ -110,6 +111,7 @@ export class RecordingSession implements RecordingSessionContract {
       version: this.options.version,
       on_call: true,
       meeting_key: this.options.claim.identity_key,
+      ...(this.meetingId !== null && { meeting_id: this.meetingId }),
     });
   }
 }

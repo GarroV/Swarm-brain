@@ -267,7 +267,7 @@ export class SwarmClient {
   }
 
   /**
-   * `POST /meeting-heartbeat` — «бот жив». Пишется в строку служебного агента, не человека.
+   * `POST /meeting-heartbeat` — «бот жив». Пишется в строку встречи (`meeting_id`) и агента, не человека.
    */
   async heartbeat(request: HeartbeatRequest): Promise<void> {
     await this.json({

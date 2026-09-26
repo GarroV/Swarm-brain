@@ -584,6 +584,16 @@ class FakeSwarmServer implements FakeSwarm {
 
   private handleHeartbeat(rawBody: Buffer): RouteResult {
     const parsed = parseJsonBody(rawBody);
+    // meeting-heartbeat/write.ts: агент, пишущий запись, обязан назвать встречу (D018).
+    const isRecording = isRecord(parsed) && parsed.recording === true;
+    const meetingId = isRecord(parsed) ? parsed.meeting_id : undefined;
+    if (isRecording && (typeof meetingId !== "string" || meetingId.length === 0)) {
+      return {
+        status: 400,
+        responseBody: { error: "meeting_id is required while recording" },
+        requestBody: parsed,
+      };
+    }
     return { status: 200, responseBody: { ok: true }, requestBody: parsed };
   }
 
