@@ -115,6 +115,10 @@ function safeDirectoryName(meetingId: string): string {
   return `${cleaned.slice(0, 80)}-${digest}`;
 }
 
+// Аудио разговора и имена говорящих — только процессу бота.
+const PRIVATE_DIR_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
+
 export class UploadQueue {
   private readonly root: string;
 
@@ -125,6 +129,9 @@ export class UploadQueue {
   private readonly backupTtlMs: number;
 
   private readonly now: () => number;
+
+  // Идущий прогон: второй вызов присоединяется к нему, иначе запись уйдёт дважды.
+  private running: Promise<DrainResult> | null = null;
 
   constructor(private readonly options: UploadQueueOptions) {
     this.root = options.root;
@@ -153,18 +160,21 @@ export class UploadQueue {
 
   private async writeEntry(entry: QueueEntry): Promise<void> {
     const directory = this.dir(entry.meetingId);
-    await mkdir(directory, { recursive: true });
+    await mkdir(directory, { recursive: true, mode: PRIVATE_DIR_MODE });
     const target = path.join(directory, META_FILE);
     const temporary = `${target}.tmp`;
     // Атомарно: полусайдкар после падения посреди записи не отличить от целого.
-    await writeFile(temporary, JSON.stringify(entry, null, 2), "utf8");
+    await writeFile(temporary, JSON.stringify(entry, null, 2), {
+      encoding: "utf8",
+      mode: PRIVATE_FILE_MODE,
+    });
     await rename(temporary, target);
   }
 
   private async moveToDeadLetter(meetingId: string, reason: string): Promise<void> {
     const from = this.dir(meetingId);
     const to = this.dir(meetingId, FAILED_DIR);
-    await mkdir(path.join(this.root, FAILED_DIR), { recursive: true });
+    await mkdir(path.join(this.root, FAILED_DIR), { recursive: true, mode: PRIVATE_DIR_MODE });
     await rm(to, { recursive: true, force: true });
     await rename(from, to);
     this.emit("dead-letter", meetingId, reason);
@@ -275,6 +285,29 @@ export class UploadQueue {
     return released;
   }
 
+  private async runDrain(): Promise<DrainResult> {
+    const result = emptyResult();
+    await this.sweepExpired();
+
+    const uploadedIds: string[] = [];
+    const entries = await this.entries();
+    for (const entry of entries) {
+      if (!entry.sealed) continue;
+      await this.drainEntry(entry, result, uploadedIds);
+    }
+
+    result.released.push(...(await this.releasePublished(uploadedIds)));
+    return result;
+  }
+
+  private async runDrainOnce(): Promise<DrainResult> {
+    try {
+      return await this.runDrain();
+    } finally {
+      this.running = null;
+    }
+  }
+
   /**
    * Положить часть записи на диск. Это и есть локальный бэкап: дальше её потеря возможна
    * только вместе с диском.
@@ -292,7 +325,7 @@ export class UploadQueue {
     }
 
     const directory = this.dir(meetingId);
-    await mkdir(directory, { recursive: true });
+    await mkdir(directory, { recursive: true, mode: PRIVATE_DIR_MODE });
     const existing = await this.readEntry(directory);
     if (existing?.sealed) {
       throw new Error(`встреча ${meetingId} уже запечатана — часть после finish не принимается`);
@@ -300,7 +333,9 @@ export class UploadQueue {
 
     const name = `sys_${String(existing?.parts.length ?? 0)}`;
     const file = `${name}.m4a`;
-    await writeFile(path.join(directory, file), Buffer.from(await part.arrayBuffer()));
+    await writeFile(path.join(directory, file), Buffer.from(await part.arrayBuffer()), {
+      mode: PRIVATE_FILE_MODE,
+    });
 
     const queued: QueuedPart = { name, file, offset };
     await this.writeEntry({
@@ -361,20 +396,11 @@ export class UploadQueue {
   /**
    * Прогон очереди: отправить запечатанное, спросить статусы отправленного, отпустить
    * опубликованное. Зовётся после записи и периодически — пока сеть не вернётся, запись
-   * просто лежит.
+   * просто лежит. Вызовы внахлёст (таймер оркестратора и `finish()` сессии) получают
+   * один и тот же прогон.
    */
-  async drain(): Promise<DrainResult> {
-    const result = emptyResult();
-    await this.sweepExpired();
-
-    const uploadedIds: string[] = [];
-    const entries = await this.entries();
-    for (const entry of entries) {
-      if (!entry.sealed) continue;
-      await this.drainEntry(entry, result, uploadedIds);
-    }
-
-    result.released.push(...(await this.releasePublished(uploadedIds)));
-    return result;
+  drain(): Promise<DrainResult> {
+    this.running ??= this.runDrainOnce();
+    return this.running;
   }
 }

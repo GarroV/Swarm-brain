@@ -189,6 +189,18 @@ describe("очередь выгрузки", () => {
     expect(await readdir(path.join(root, "pending"))).toHaveLength(0);
   });
 
+  it("два прогона очереди внахлёст отправляют запись один раз", async () => {
+    const queue = new UploadQueue({ root, client: clientFor(fake) });
+    await queue.stagePart("m-1", part("часть"), 0);
+    await queue.seal("m-1", []);
+
+    const [first, second] = await Promise.all([queue.drain(), queue.drain()]);
+
+    expect(fake.requestsTo("/meeting-ingest")).toHaveLength(1);
+    expect(first.uploaded).toEqual(["m-1"]);
+    expect(second).toBe(first);
+  });
+
   it("успешная выгрузка бэкап не стирает: 202 ещё не «обработано»", async () => {
     const queue = new UploadQueue({ root, client: clientFor(fake) });
     await queue.stagePart("m-1", part("часть"), 0);
