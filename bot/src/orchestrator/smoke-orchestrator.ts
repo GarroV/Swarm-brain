@@ -29,8 +29,10 @@ import Docker from "dockerode";
 
 import { startFakeSwarm } from "../swarm-client/testing/fake-swarm.ts";
 import { DockerodeEngine } from "./docker-engine.ts";
-import { LogNotifier } from "./notices.ts";
+import { NoticeClient } from "./notice-client.ts";
+import { JournaledNotifier } from "./notices.ts";
 import { type ContainerId, LABEL, Orchestrator } from "./orchestrator.ts";
+import { type NoticeProxy, startNoticeProxy } from "./smoke-notices.ts";
 
 const PROJECT = process.env.SCRIBA_SMOKE_PROJECT ?? "scriba-orchestrator";
 const IMAGE = process.env.SCRIBA_SMOKE_IMAGE ?? "scriba-orchestrator:dev";
@@ -108,9 +110,13 @@ function orchestratorFor(leaseName: string, page: string, isVerbose = true): Orc
     swarmUrl: SWARM_URL,
     token: TOKEN,
     version: 1,
-    notifier: new LogNotifier((line) => {
-      console.log(`    [notice] ${line}`);
-    }),
+    notifierFor: (onBehalfOf) =>
+      new JournaledNotifier(
+        new NoticeClient({ baseUrl: `http://127.0.0.1:${String(PORT)}`, token: TOKEN, onBehalfOf }),
+        (line) => {
+          console.log(`    [notice] ${line}`);
+        },
+      ),
     log: isVerbose
       ? (line): void => {
           console.log(`    [orchestrator] ${line.split("\n", 1)[0] ?? ""}`);
@@ -151,7 +157,23 @@ async function waitMeetingId(orchestrator: Orchestrator, id: ContainerId): Promi
   return current() ?? "";
 }
 
-type Fake = Awaited<ReturnType<typeof startFakeSwarm>>;
+type Swarm = Awaited<ReturnType<typeof startFakeSwarm>>;
+
+/**
+ * Двойник сервера целиком: `fake-swarm` за прокси, который сам отвечает на `/meeting-notice`.
+ */
+type Fake = Swarm & { readonly noticeProxy: NoticeProxy };
+
+function noticesOf(fake: Fake, kind: string, meetingId?: string): Record<string, unknown>[] {
+  return fake.noticeProxy.notices
+    .filter(
+      (notice) =>
+        notice.onBehalfOf === String(PERSON) &&
+        notice.body.kind === kind &&
+        (meetingId === undefined || notice.body.meeting_id === meetingId),
+    )
+    .map((notice) => notice.body);
+}
 
 interface Beat {
   readonly recording: boolean;
@@ -274,6 +296,15 @@ async function sceneDeath(fake: Fake): Promise<void> {
       "смерть привязана к meeting_id",
       meetingId,
     );
+    await until(15_000, "нотиса container_died", async () => {
+      await sleep(0);
+      return noticesOf(fake, "container_died", meetingId).length > 0;
+    });
+    check(
+      noticesOf(fake, "container_died", meetingId).length === 1,
+      "человеку ушла нотиса container_died с meeting_id, от его имени",
+      JSON.stringify(noticesOf(fake, "container_died", meetingId)),
+    );
 
     await sleep(8000);
     const after = fake.requestsTo("/meeting-heartbeat").slice(beatsAtKill);
@@ -326,6 +357,19 @@ async function sceneDoor(fake: Fake): Promise<void> {
       JSON.stringify(exit),
     );
     check(fake.ingested.length === before, "ничего не отправлено");
+    const door = noticesOf(fake, "door_waiting");
+    const doorMeeting = door[0]?.meeting_id;
+    check(
+      door.length === 2 &&
+        typeof doorMeeting === "string" &&
+        door.every((body) => body.meeting_id === doorMeeting),
+      "две нотисы door_waiting с meeting_id (claim раньше захода), вторая вернула should_leave",
+      JSON.stringify(door),
+    );
+    check(
+      door.every((body) => !("attempt" in body)),
+      "в теле нотисы нет attempt — номер считает сервер",
+    );
   } finally {
     orchestrator.close();
   }
@@ -445,7 +489,9 @@ async function suite(): Promise<number> {
   }
   const selected = process.env.SCRIBA_SMOKE_ONLY ?? "";
   const only = selected === "" ? Object.keys(SCENES) : selected.split(",");
-  const fake = await startFakeSwarm({ token: TOKEN, onBehalfOf: PERSON, port: PORT });
+  const swarm = await startFakeSwarm({ token: TOKEN, onBehalfOf: PERSON, port: PORT + 1 });
+  const noticeProxy = await startNoticeProxy(PORT, PORT + 1);
+  const fake: Fake = Object.assign(swarm, { noticeProxy });
   try {
     for (const name of only) {
       const scene = SCENES[name];
@@ -464,7 +510,8 @@ async function suite(): Promise<number> {
       }
     }
   } finally {
-    await fake.close();
+    await noticeProxy.close();
+    await swarm.close();
   }
   console.log(
     failures.length === 0

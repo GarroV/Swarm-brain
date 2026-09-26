@@ -2,14 +2,11 @@
  * Громкие отказы наружу: интерфейс уведомителя.
  *
  * Виды и привязка списаны с контракта блока notices (`POST /meeting-notice`,
- * docs/furca/blocks/notices.md в ветке feat/notices). Встречные виды несут `meeting_id` —
- * поэтому процесс встречи сначала делает `meeting-claim` и только потом заходит в звонок.
- * До-встречные виды несут ключ календарной встречи.
- *
- * Клиента `meeting-notice` здесь пока нет: блок notices ещё не влит в ствол. До слияния
- * работает `LogNotifier` — он не шлёт в Telegram, но и не молчит: каждая нотиса уходит в
- * журнал строкой с пометкой, что человек её НЕ получил.
+ * docs/furca/blocks/notices.md). Встречные виды несут `meeting_id` — поэтому процесс встречи
+ * сначала делает `meeting-claim` и только потом заходит в звонок. До-встречные виды несут
+ * ключ календарной встречи. Клиент сервера — `notice-client.ts`.
  */
+import { describeError } from "./describe-error.ts";
 
 type MeetingNoticeKind =
   | "door_waiting"
@@ -55,14 +52,30 @@ export function describeNotice(notice: Notice): string {
 }
 
 /**
- * Уведомитель до слияния notices: пишет в журнал и честно говорит, что человек сообщения
- * не получил. `shouldLeave` не решает — решение потолка двери остаётся за процессом встречи.
+ * Обёртка, которая пишет каждую нотису и её исход в журнал: сервер шлёт человеку сообщение,
+ * а журнал контейнера остаётся единственным местом, где видно, что и когда ушло. Сбой
+ * доставки пишется и пробрасывается дальше — решать, что делать, вызывающему.
  */
-export class LogNotifier implements Notifier {
-  constructor(private readonly log: (line: string) => void) {}
+export class JournaledNotifier implements Notifier {
+  private readonly inner: Notifier;
 
-  notify(notice: Notice): Promise<NoticeResult> {
-    this.log(`${describeNotice(notice)} (НЕ доставлено: клиент meeting-notice ещё не подключён)`);
-    return Promise.resolve({ delivered: false, shouldLeave: false });
+  private readonly log: (line: string) => void;
+
+  constructor(inner: Notifier, log: (line: string) => void) {
+    this.inner = inner;
+    this.log = log;
+  }
+
+  async notify(notice: Notice): Promise<NoticeResult> {
+    try {
+      const result = await this.inner.notify(notice);
+      this.log(
+        `${describeNotice(notice)} delivered=${String(result.delivered)} should_leave=${String(result.shouldLeave)}`,
+      );
+      return result;
+    } catch (error) {
+      this.log(`${describeNotice(notice)} НЕ доставлено: ${describeError(error)}`);
+      throw error;
+    }
   }
 }

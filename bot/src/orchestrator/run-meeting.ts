@@ -19,6 +19,7 @@ import { AloneTimer } from "../meet-adapter/alone.ts";
 import type { ClaimDecision, SpeakerSpan } from "../swarm-client/contract.ts";
 import { inBackground } from "./background.ts";
 import type { Notice, NoticeResult, Notifier } from "./notices.ts";
+import { describeError } from "./describe-error.ts";
 
 /**
  * Адаптер площадки в том объёме, который нужен процессу встречи.
@@ -134,10 +135,6 @@ interface RunContext {
   readonly meetingId: string;
 }
 
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 async function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -152,7 +149,7 @@ async function sendNotice(context: RunContext, notice: Notice): Promise<NoticeRe
   try {
     return await context.options.notifier.notify(notice);
   } catch (error) {
-    context.log(`нотиса ${notice.kind} не отправлена: ${describe(error)}`);
+    context.log(`нотиса ${notice.kind} не отправлена: ${describeError(error)}`);
     return null;
   }
 }
@@ -161,7 +158,7 @@ async function leaveQuietly(context: RunContext): Promise<void> {
   try {
     await context.options.adapter.leave();
   } catch (error) {
-    context.log(`выход из звонка не удался: ${describe(error)}`);
+    context.log(`выход из звонка не удался: ${describeError(error)}`);
   }
 }
 
@@ -231,7 +228,7 @@ async function stayInCall(context: RunContext): Promise<void> {
     try {
       alone = await context.options.adapter.aloneSignal();
     } catch (error) {
-      context.log(`опрос участников не удался: ${describe(error)}`);
+      context.log(`опрос участников не удался: ${describeError(error)}`);
       alone = null;
     }
     if (timer.observe(alone, context.now())) {
@@ -248,7 +245,7 @@ function startHeartbeat(context: RunContext): () => void {
     inBackground(
       async () => context.options.session.heartbeat(),
       (error) => {
-        context.log(`heartbeat не ушёл: ${describe(error)}`);
+        context.log(`heartbeat не ушёл: ${describeError(error)}`);
       },
     );
   };
@@ -272,7 +269,7 @@ async function hand(
     await sendNotice(context, {
       kind: "recording_lost",
       meetingId: context.meetingId,
-      detail: describe(error),
+      detail: describeError(error),
     });
     return "upload_failed";
   }
@@ -286,7 +283,7 @@ async function record(context: RunContext): Promise<MeetingOutcome> {
     await sendNotice(context, {
       kind: "no_audio",
       meetingId: context.meetingId,
-      detail: describe(error),
+      detail: describeError(error),
     });
     await leaveQuietly(context);
     return "no_audio";
@@ -324,7 +321,7 @@ async function afterClaim(context: RunContext): Promise<MeetingOutcome> {
     await sendNotice(context, {
       kind: "join_failed",
       meetingId: context.meetingId,
-      detail: describe(error),
+      detail: describeError(error),
     });
     await leaveQuietly(context);
     return "join_failed";
@@ -372,7 +369,7 @@ export async function runMeeting(options: MeetingRunOptions): Promise<MeetingOut
   try {
     await options.finalHeartbeat();
   } catch (error) {
-    log(`финальный heartbeat не ушёл: ${describe(error)}`);
+    log(`финальный heartbeat не ушёл: ${describeError(error)}`);
   }
   log(`встреча закончена: ${outcome}`);
   return outcome;

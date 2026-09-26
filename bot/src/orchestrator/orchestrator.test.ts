@@ -102,6 +102,7 @@ describe("оркестратор", () => {
   let leaseDirectory: string;
   let engine: FakeEngine;
   let notices: Notice[];
+  let recipients: number[];
   let orchestrator: Orchestrator;
 
   function build(extraEnvironment?: Record<string, string>): Orchestrator {
@@ -113,12 +114,13 @@ describe("оркестратор", () => {
       swarmUrl: "https://swarm.example/functions/v1",
       token: "bot-token",
       version: 7,
-      notifier: {
+      notifierFor: (onBehalfOf) => ({
         notify: (notice): Promise<NoticeResult> => {
           notices.push(notice);
+          recipients.push(onBehalfOf);
           return Promise.resolve({ delivered: true, shouldLeave: false });
         },
-      },
+      }),
       log: (): void => {
         // журнал оркестратора в тестах не нужен
       },
@@ -132,6 +134,7 @@ describe("оркестратор", () => {
     leaseDirectory = await mkdtemp(path.join(tmpdir(), "scriba-orch-"));
     engine = new FakeEngine();
     notices = [];
+    recipients = [];
     orchestrator = build();
   });
 
@@ -233,6 +236,7 @@ describe("оркестратор", () => {
         meetingId: "m-9",
       });
       expect(notices).toEqual([{ kind: "container_died", meetingId: "m-9", detail: "exit 137" }]);
+      expect(recipients).toEqual([744]);
     });
 
     it("умер до claim — нотисе не к чему привязаться, но смерть зафиксирована", async () => {
@@ -264,7 +268,7 @@ describe("оркестратор", () => {
         swarmUrl: "https://swarm.example",
         token: "t",
         version: 1,
-        notifier: { notify: () => Promise.reject(new Error("502")) },
+        notifierFor: () => ({ notify: () => Promise.reject(new Error("502")) }),
         log: (): void => {
           // журнал оркестратора в тестах не нужен
         },
@@ -384,7 +388,9 @@ describe("оркестратор", () => {
         swarmUrl: "https://swarm.example",
         token: "t",
         version: 1,
-        notifier: { notify: () => Promise.resolve({ delivered: true, shouldLeave: false }) },
+        notifierFor: () => ({
+          notify: () => Promise.resolve({ delivered: true, shouldLeave: false }),
+        }),
         log: (line) => {
           lines.push(line);
         },
@@ -411,7 +417,9 @@ describe("оркестратор", () => {
         swarmUrl: "https://swarm.example",
         token: "t",
         version: 1,
-        notifier: { notify: () => Promise.resolve({ delivered: true, shouldLeave: false }) },
+        notifierFor: () => ({
+          notify: () => Promise.resolve({ delivered: true, shouldLeave: false }),
+        }),
       });
 
       await orchestrator.startForMeeting(MEET, "meet", 744);

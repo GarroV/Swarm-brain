@@ -40,13 +40,12 @@ export async function stop(id: ContainerId): Promise<void>;
 смерть оркестратора видны и не оставляют сирот.
 
 Где стою: T144 закрыт (`1a445f5d`). T070/T071/T072 — код и живой прогон готовы (`405c7191`,
-`6710eb70`), включая настоящий SIGKILL оркестратора. Уведомитель — журнальная заглушка
-`LogNotifier`, клиент meeting-notice — следующий шаг.
+`6710eb70`), включая настоящий SIGKILL оркестратора. Ствол `feat/meeting-bot` влит
+(`9ff8129c`), клиент `meeting-notice` (`notice-client.ts`) заменил заглушку: юнит-тесты и
+порчи зелёные/красные как положено; живой смоук с нотисами (door, death) ещё НЕ прогнан.
 
 Дальше:
-1. Влить ствол `git merge feat/meeting-bot` (notices влит, b0c348ff) и написать клиент
-   `meeting-notice` вместо `LogNotifier` (контракт — `docs/furca/blocks/notices.md`:
-   `meeting_id`, `attempt` запрещён, `should_leave` от сервера).
+1. Живой смоук `door,death` с прокси нотис (`smoke-notices.ts`, порт 4361 → fake-swarm 4362).
 2. ARCHITECTURE.md / QUICK_REF.md, env-переменные контейнера в `bot/container/.env.example`.
 
 Устройство (`bot/src/orchestrator/`):
@@ -60,7 +59,8 @@ export async function stop(id: ContainerId): Promise<void>;
 | `lease.ts` | поводок: контейнер без движения `seq` 90 с сам заканчивает встречу |
 | `run-directories.ts` | своя очередь у каждого запуска; осиротевшие (alive старше 5 мин) переезжают к следующему |
 | `recorder.ts` / `parts.ts` | ffmpeg и отдача закрытых частей в очередь ровно один раз |
-| `notices.ts` | виды нотис по контракту notices, `LogNotifier` до клиента |
+| `notices.ts` | виды нотис по контракту notices, `JournaledNotifier` — каждая нотиса и исход в журнал |
+| `notice-client.ts` | клиент `POST /meeting-notice`: без `attempt`, 409 → уйти, прочие отказы громко |
 | `smoke-orchestrator.ts` | живой смоук против настоящего Docker и `fake-swarm` |
 
 Проверено:

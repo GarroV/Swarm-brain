@@ -26,7 +26,8 @@ import { SpeakerTimelineCollector } from "../swarm-client/speakers.ts";
 import { type MeetingConfig, readMeetingConfig } from "./config.ts";
 import { LeaseTracker, readLease } from "./lease.ts";
 import { inBackground } from "./background.ts";
-import { LogNotifier } from "./notices.ts";
+import { NoticeClient } from "./notice-client.ts";
+import { JournaledNotifier } from "./notices.ts";
 import { ALIVE_TOUCH_MS, adoptOrphanedRuns, runQueueRoot, touchAlive } from "./run-directories.ts";
 import { FfmpegRecorder } from "./recorder.ts";
 import { type MeetingRecorder, runMeeting } from "./run-meeting.ts";
@@ -121,7 +122,14 @@ function audioRecorder(
 async function main(): Promise<number> {
   const config = readMeetingConfig(process.env);
   const settings = readSettings(process.env);
-  const notifier = new LogNotifier(log);
+  const notifier = new JournaledNotifier(
+    new NoticeClient({
+      baseUrl: config.swarmUrl,
+      token: config.token,
+      onBehalfOf: config.onBehalfOf,
+    }),
+    log,
+  );
   const client = new SwarmClient({
     baseUrl: config.swarmUrl,
     token: config.token,

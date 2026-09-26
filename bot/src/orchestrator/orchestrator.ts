@@ -24,6 +24,7 @@ import { LEASE_WRITE_INTERVAL_MS, writeLease } from "./lease.ts";
 import { inBackground } from "./background.ts";
 import type { Notifier } from "./notices.ts";
 import { parseStateLine } from "./state-line.ts";
+import { describeError } from "./describe-error.ts";
 
 // eslint-disable-next-line sonarjs/redundant-type-aliases -- имя из контракта блока (docs/furca/blocks/orchestrator.md)
 export type ContainerId = string;
@@ -67,7 +68,11 @@ export interface OrchestratorOptions {
   readonly swarmUrl: string;
   readonly token: string;
   readonly version: number;
-  readonly notifier: Notifier;
+  /**
+   * Уведомитель от имени человека: нотиса `container_died` уходит тому, за кого сидел
+   * контейнер (`X-On-Behalf-Of`), поэтому уведомитель у каждого контейнера свой.
+   */
+  readonly notifierFor: (onBehalfOf: number) => Notifier;
   readonly log?: (line: string) => void;
   /**
    * Добавка к окружению контейнера: ручки смоука и времени. Обязательные переменные ею не
@@ -98,10 +103,6 @@ export interface ManagedMeeting {
 export type ContainerExit =
   | { readonly kind: "finished"; readonly outcome: string | null }
   | { readonly kind: "died"; readonly exitCode: number | null; readonly meetingId: string | null };
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function validOnBehalfOf(value: number): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
@@ -154,7 +155,7 @@ export class Orchestrator {
     try {
       await this.options.engine.remove(id);
     } catch (error) {
-      this.log(`не удалось убрать ${id}: ${describe(error)}`);
+      this.log(`не удалось убрать ${id}: ${describeError(error)}`);
     }
   }
 
@@ -226,7 +227,7 @@ export class Orchestrator {
           this.onLogLine(managed, line);
         }),
       (error) => {
-        this.log(`журнал ${id} не читается: ${describe(error)}`);
+        this.log(`журнал ${id} не читается: ${describeError(error)}`);
       },
     );
   }
@@ -236,7 +237,7 @@ export class Orchestrator {
     try {
       code = await exitCode;
     } catch (error) {
-      this.log(`ожидание выхода ${managed.id} сорвалось: ${describe(error)}`);
+      this.log(`ожидание выхода ${managed.id} сорвалось: ${describeError(error)}`);
       code = null;
     }
     await this.onExit(managed, code);
@@ -269,13 +270,13 @@ export class Orchestrator {
       return;
     }
     try {
-      await this.options.notifier.notify({
+      await this.options.notifierFor(managed.onBehalfOf).notify({
         kind: "container_died",
         meetingId: managed.meetingId,
         detail: `exit ${String(code)}`,
       });
     } catch (error) {
-      this.log(`нотиса container_died не ушла: ${describe(error)}`);
+      this.log(`нотиса container_died не ушла: ${describeError(error)}`);
     }
   }
 
@@ -289,7 +290,7 @@ export class Orchestrator {
       inBackground(
         async () => this.beatLease(),
         (error) => {
-          this.log(`поводок не записан: ${describe(error)} — контейнеры сочтут себя сиротами`);
+          this.log(`поводок не записан: ${describeError(error)} — контейнеры сочтут себя сиротами`);
         },
       );
     }, this.options.leaseIntervalMs ?? LEASE_WRITE_INTERVAL_MS);
@@ -328,7 +329,7 @@ export class Orchestrator {
       await engine.start(id);
     } catch (error) {
       await this.removeQuietly(id);
-      throw new Error(`контейнер встречи не стартовал: ${describe(error)}`, { cause: error });
+      throw new Error(`контейнер встречи не стартовал: ${describeError(error)}`, { cause: error });
     }
     this.log(`контейнер ${id} поднят на встречу (запуск ${runId}, от имени ${String(person)})`);
     this.track(id, runId, person, exited);
