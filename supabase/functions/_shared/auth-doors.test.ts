@@ -12,7 +12,7 @@ import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.t
 
 const ROOT = new URL("../", import.meta.url).pathname;
 
-/** Эндпоинты, куда ходит бот: шесть штук, все через resolveActingIdentity. */
+/** Эндпоинты, куда ходит бот за человека: шесть штук, все через resolveActingIdentity. */
 const BOT_DOORS = [
   "meeting-current",
   "meeting-claim",
@@ -61,6 +61,24 @@ for (const fn of HUMAN_ONLY) {
     assert(
       src.includes("verifyAgentToken("),
       `${fn} должен проверять вход через verifyAgentToken`,
+    );
+  });
+}
+
+/**
+ * Эндпоинты агента «сам за себя» (D017): оркестратор забирает приглашения своего воркспейса.
+ * Дверь — resolveServiceAgent: только агент, без подмены и без человеческой личности на выходе.
+ */
+const AGENT_SELF = ["meeting-invite"];
+
+for (const fn of AGENT_SELF) {
+  Deno.test(`БЛОКИРУЮЩИЙ: ${fn} — дверь resolveServiceAgent, не человеческая и не подмены`, async () => {
+    const src = await source(fn);
+    assert(src.includes("resolveServiceAgent("), `${fn} не зовёт resolveServiceAgent`);
+    assertEquals(
+      src.includes("resolveActingIdentity(") || src.includes("verifyAgentToken("),
+      false,
+      `${fn} пускает по двери человека: приглашения воркспейса увидел бы личный токен любого сотрудника`,
     );
   });
 }

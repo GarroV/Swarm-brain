@@ -17,13 +17,16 @@
 //     по нему идёт склейка с чужими встречами;
 //   • к уже открытой встрече агент встаёт, только если она его человека: календарная — есть в
 //     его календаре, комнатная — он в её составе (состава нет — D016 оставляет открытой);
-//   • ручная встреча — без сверки (D015, D016).
+//   • ручная встреча — только по приглашению человека (D017): залогиненный человек вставил в
+//     вебе ссылку, сервер завёл одноразовую запись; агент предъявляет её id и ту же ссылку.
+//     Состав из тела не берётся — его не с чем сверить. Гасит приглашение index.ts, атомарно.
 //
 // Людей (рекордер, MCP) это не касается вовсе: их токен и есть их личность.
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
 import type { TokenResult } from "../_shared/google-calendar.ts";
 import type { GEvent } from "../meeting-current/select.ts";
 import { CALENDAR_KEY, calendarKeyOf } from "../_shared/calendar-key.ts";
+import { checkInviteForClaim, type InviteRow } from "../_shared/meeting-invite.ts";
 
 // Сборка календарного ключа — общая с meeting-current (_shared/calendar-key.ts); наружу
 // отдаётся и отсюда, чтобы у сверки и её тестов была одна точка входа.
@@ -43,14 +46,21 @@ export interface CalendarSource {
   listEvents(token: string, timeMin: string, timeMax: string, maxResults: number): Promise<GEvent[] | null>;
 }
 
+/** Откуда брать приглашение (таблица meeting_invites). Вынесено ради тех же тестов без базы. */
+export interface InviteSource {
+  find(id: string): Promise<InviteRow | null>;
+}
+
 export type ScopeAttendee = { name?: string | null; email?: string | null };
 
 /** Что сервер знает о встрече агента сам, без его слов. */
 export interface AgentScope {
-  /** Состав, которым заменяется присланный агентом. `undefined` — ручная ветка, не трогаем. */
-  attendees: ScopeAttendee[] | undefined;
+  /** Состав, которым заменяется присланный агентом. */
+  attendees: ScopeAttendee[];
   /** Ключи встреч из календаря названного человека вокруг даты встречи. */
   calendarKeys: Set<string>;
+  /** Ручная встреча: приглашение, по которому она заводится; гасится при создании встречи. */
+  inviteId?: string;
 }
 
 // Событий в окне трёх суток у одного человека заведомо меньше; больше — значит, не нашли бы и
@@ -139,13 +149,21 @@ async function calendarScope(
 
 /**
  * Что сервер сам знает о встрече, которую просит агент. `null` — пришёл человек, сверки нет.
- * Отказ — исключением: 400 (тип встречи не совпадает с формой ключа), 403 (человека во встрече нет
- * или сверить нечем), 503 (календарь временно не ответил: сверка не выполнена ≠ сверка пройдена).
+ * Отказ — исключением: 400 (тип встречи не совпадает с формой ключа), 403 (человека во встрече нет,
+ * сверить нечем или у ручной встречи нет действующего приглашения), 503 (календарь временно не ответил: сверка не выполнена ≠ сверка пройдена).
  */
 export async function resolveAgentScope(
   source: CalendarSource,
   identity: AgentIdentity,
-  body: { identity_kind: string; identity_key: string; started_at?: string; attendees?: unknown },
+  body: {
+    identity_kind: string;
+    identity_key: string;
+    started_at?: string;
+    attendees?: unknown;
+    invite_id?: unknown;
+    join_url?: unknown;
+  },
+  invites?: InviteSource,
 ): Promise<AgentScope | null> {
   if (identity.kind !== "bot") return null;
 
@@ -170,10 +188,30 @@ export async function resolveAgentScope(
     return { attendees: [], calendarKeys };
   }
 
-  // Ручная встреча: без сверки состава — решение владельца D016 (ручной путь постоянный по D015).
-  // Что агент сам заводит ручную встречу без приглашения от сервера — вынесено владельцу отдельным
-  // вопросом Q008 («ручной запуск по приглашению, выданному сервером»); до ответа не меняем.
-  return { attendees: undefined, calendarKeys: new Set<string>() };
+  return await manualScope(invites, identity, body);
+}
+
+const NO_INVITE = "service agent: a manual meeting needs a valid invite — the person pastes the call link in Swarm";
+
+// Ручная встреча агента — только по приглашению человека (D017). Все причины отказа наружу
+// звучат одинаково: разные тексты сделали бы из заявки оракул «есть ли такое приглашение и чьё».
+async function manualScope(
+  invites: InviteSource | undefined,
+  identity: AgentIdentity,
+  body: { invite_id?: unknown; join_url?: unknown },
+): Promise<AgentScope> {
+  const inviteId = typeof body.invite_id === "string" ? body.invite_id : "";
+  const invite = invites && inviteId !== "" ? await invites.find(inviteId) : null;
+  const verdict = checkInviteForClaim(invite, identity, body.join_url, Date.now());
+  if (!verdict.ok) {
+    console.warn(
+      `agent-scope: агент ${identity.agentId ?? "?"} за ${identity.telegramId}: ручная встреча по приглашению ${
+        inviteId || "—"
+      } отклонена (${verdict.reason})`,
+    );
+    throw new AgentScopeError(403, NO_INVITE);
+  }
+  return { attendees: [], calendarKeys: new Set<string>(), inviteId };
 }
 
 function normEmail(email: string | null | undefined): string | null {

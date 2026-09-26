@@ -6,10 +6,12 @@
 import { assertEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
 import type { GEvent } from "../meeting-current/select.ts";
+import type { InviteRow } from "../_shared/meeting-invite.ts";
 import {
   AgentScopeError,
   calendarKeyOf,
   type CalendarSource,
+  type InviteSource,
   keyShape,
   mayJoinExisting,
   resolveAgentScope,
@@ -198,11 +200,87 @@ Deno.test("комнатная встреча агента проходит и б
   }
 });
 
-Deno.test("ручная встреча агента — без сверки и без похода в календарь (D016, Q008)", async () => {
+// ── Ручная встреча агента — только по приглашению человека (D017) ──────────
+
+const INVITE_LINK = "https://meet.google.com/abc-defg-hij";
+const NOW_MS = Date.now();
+const validInvite: InviteRow = {
+  id: "inv-1",
+  group_id: "ws",
+  invited_by: PERSON,
+  join_url: INVITE_LINK,
+  platform: "meet",
+  created_at: new Date(NOW_MS - 60_000).toISOString(),
+  expires_at: new Date(NOW_MS + 600_000).toISOString(),
+  taken_at: null,
+  used_at: null,
+  meeting_id: null,
+};
+
+function invites(row: InviteRow | null): InviteSource & { asked: string[] } {
+  const asked: string[] = [];
+  return {
+    asked,
+    find: (id) => {
+      asked.push(id);
+      return Promise.resolve(row && row.id === id ? row : null);
+    },
+  };
+}
+
+const manualClaim = {
+  identity_kind: "manual",
+  identity_key: "scriba:run-1",
+  invite_id: "inv-1",
+  join_url: `${INVITE_LINK}?hl=en`,
+  attendees: FORGED,
+};
+
+Deno.test("ручная встреча агента по действующему приглашению — проходит, без похода в календарь", async () => {
   const src = source({ refresh: null });
-  const scope = await resolveAgentScope(src, bot, { identity_kind: "manual", identity_key: "tg:1" });
+  const scope = await resolveAgentScope(src, bot, manualClaim, invites(validInvite));
   assertEquals(src.calls.refresh, []);
-  assertEquals(scope?.attendees, undefined, "ручная ветка не тронута");
+  assertEquals(scope?.inviteId, "inv-1");
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: состав ручной встречи агента из тела не берётся", async () => {
+  const scope = await resolveAgentScope(source(), bot, manualClaim, invites(validInvite));
+  assertEquals(scope?.attendees, [], "подсунутый состав не должен лечь в строку");
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: агент без приглашения не заводит ручную встречу → 403", async () => {
+  const { invite_id: _drop, ...noInvite } = manualClaim;
+  await refused(resolveAgentScope(source(), bot, noInvite, invites(validInvite)), 403);
+  // Источник приглашений не передан — отказ, а не пропуск.
+  await refused(resolveAgentScope(source(), bot, manualClaim), 403);
+  // Несуществующее приглашение.
+  await refused(resolveAgentScope(source(), bot, { ...manualClaim, invite_id: "nope" }, invites(validInvite)), 403);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: чужое приглашение (другой человек, другой воркспейс) → 403", async () => {
+  await refused(resolveAgentScope(source(), bot, manualClaim, invites({ ...validInvite, invited_by: OTHER })), 403);
+  await refused(resolveAgentScope(source(), bot, manualClaim, invites({ ...validInvite, group_id: "other" })), 403);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: истёкшее или использованное приглашение → 403", async () => {
+  const expired = { ...validInvite, expires_at: new Date(NOW_MS - 1000).toISOString() };
+  await refused(resolveAgentScope(source(), bot, manualClaim, invites(expired)), 403);
+  const used = { ...validInvite, used_at: new Date(NOW_MS - 1000).toISOString() };
+  await refused(resolveAgentScope(source(), bot, manualClaim, invites(used)), 403);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: приглашение на одну ссылку, бот пришёл с другой → 403", async () => {
+  const swapped = { ...manualClaim, join_url: "https://meet.google.com/zzz-zzzz-zzz" };
+  await refused(resolveAgentScope(source(), bot, swapped, invites(validInvite)), 403);
+  const { join_url: _drop, ...noLink } = manualClaim;
+  await refused(resolveAgentScope(source(), bot, noLink, invites(validInvite)), 403);
+});
+
+Deno.test("люди заводят ручную встречу как раньше — приглашение с них не спрашивается", async () => {
+  const inv = invites(null);
+  const scope = await resolveAgentScope(source(), recorder, { identity_kind: "manual", identity_key: "tg:1" }, inv);
+  assertEquals(scope, null);
+  assertEquals(inv.asked, []);
 });
 
 // ── Присоединение к уже открытой встрече ────────────────────────────────────

@@ -11,6 +11,7 @@ import {
   mayJoinExisting,
   resolveAgentScope,
 } from "./agent-scope.ts";
+import { attachInvite, consumeInvite, inviteSource, releaseInvite } from "./invites.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -27,6 +28,9 @@ import {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
+
+// Отказ агенту без действующего приглашения — тот же текст, что в agent-scope.ts.
+const NO_INVITE = "service agent: a manual meeting needs a valid invite — the person pastes the call link in Swarm";
 
 // На сколько выдаётся право транскрибации. Истёк и транскрипта нет → claim перехватит другой.
 const LEASE_TTL_SEC = 1800;
@@ -76,6 +80,10 @@ interface ClaimBody {
   // Длительность записи претендента (сек). Основа арбитража: более полная запись перехватывает
   // право у более короткой. Отсутствует у старых сборок рекордера → перехват не запрашивается.
   recorded_seconds?: number;
+  // Ручная встреча служебного агента (D017): приглашение человека и ссылка, на которую бот пришёл.
+  // Людям не нужны и ими не читаются.
+  invite_id?: string;
+  join_url?: string;
 }
 
 function json(payload: unknown, status = 200): Response {
@@ -152,6 +160,8 @@ function validate(raw: unknown): ClaimBody {
     agent_version: typeof b.agent_version === "string" ? b.agent_version : undefined,
     mic_start_offset: typeof micOffset === "number" && Number.isFinite(micOffset) ? micOffset : undefined,
     recorded_seconds: typeof recSec === "number" && Number.isFinite(recSec) && recSec > 0 ? recSec : undefined,
+    invite_id: typeof b.invite_id === "string" ? b.invite_id : undefined,
+    join_url: typeof b.join_url === "string" ? b.join_url : undefined,
   };
 }
 
@@ -503,12 +513,12 @@ Deno.serve(async (req: Request) => {
   // человека, состав — то, что сервер знает сам, а не то, что прислал агент (D016, agent-scope.ts).
   let scope: AgentScope | null;
   try {
-    scope = await resolveAgentScope(calendarSource, identity, body);
+    scope = await resolveAgentScope(calendarSource, identity, body, inviteSource(supabase));
   } catch (e) {
     if (e instanceof AgentScopeError) return fail(e.message, e.status);
     throw e;
   }
-  if (scope?.attendees !== undefined) {
+  if (scope) {
     body = {
       ...body,
       attendees: scope.attendees.map((a) => ({ name: a.name ?? undefined, email: a.email ?? undefined })),
@@ -551,6 +561,15 @@ Deno.serve(async (req: Request) => {
 
   if (body.identity_kind === "manual") {
     // Telegram/кнопка — без дедупа, всегда новая встреча, всегда транскрибируем сами.
+    // Служебный агент — только по приглашению (D017): гасим его ДО создания встречи, одним
+    // условным UPDATE, — из двух одновременных заявок по одному приглашению проходит одна.
+    const inviteId = scope?.inviteId;
+    if (identity.kind === "bot" && !inviteId) return fail(NO_INVITE, 403);
+    const who = { telegramId: identity.telegramId, groupId: identity.groupId };
+    if (inviteId && !(await consumeInvite(supabase, inviteId, who, nowIso))) {
+      console.warn(`meeting-claim: приглашение ${inviteId} уже использовано или истекло к моменту гашения`);
+      return fail(NO_INVITE, 403);
+    }
     const { data, error } = await supabase
       .from("meetings")
       .insert({
@@ -561,10 +580,12 @@ Deno.serve(async (req: Request) => {
       .select("id")
       .single();
     if (error || !data) {
+      if (inviteId) await releaseInvite(supabase, inviteId);
       return fail(`create failed: ${error?.message ?? "unknown"}`, 500);
     }
     meetingId = (data as { id: string }).id;
     decision = "transcribe";
+    if (inviteId) await attachInvite(supabase, inviteId, meetingId);
   } else {
     // calendar/room. Три пути, по возрастанию сложности:
     //   1) точный ключ — уникальный индекс meetings_identity_key_uq детерминированно разрешает гонку;
