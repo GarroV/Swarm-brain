@@ -40,7 +40,8 @@ export interface RecordingSession {
 | `contract.ts` | форма запросов и ответов пяти эндпоинтов; имена полей — как на проводе |
 | `errors.ts` | `SwarmHttpError` / `SwarmTransportError`, `isTransient` (5xx и 429 — да, прочие 4xx — нет) |
 | `retry.ts` | `withRetry`: full-jitter бэкофф, `Retry-After` уважается; сон и случайность внедряются |
-| `client.ts` | `SwarmClient` — пять вызовов, `Authorization: Bearer` + `X-On-Behalf-Of` |
+| `client.ts` | `SwarmClient` — пять вызовов, `Authorization: Bearer` + `X-On-Behalf-Of`; `claim`/`statuses` проверяют ответ сами |
+| `responses.ts` | проверка формы ответов `meeting-current` и `meeting-ingest` на границе: поле пропало, переименовано или незнакомо (в т.ч. площадка) → `SwarmProtocolError` с именем поля, а не `undefined` ниже по цепочке |
 | `speakers.ts` | `spansFromSamples` (чистая) + `SpeakerTimelineCollector` — опросы `activeSpeaker` |
 | `queue.ts` | `UploadQueue` — папка на встречу, `meta.json`, ретраи между запусками, dead-letter |
 | `session.ts` | `RecordingSession` — сборка claim → части → finish; ворота `defer` |

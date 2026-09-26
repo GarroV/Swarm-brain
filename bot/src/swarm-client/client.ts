@@ -24,6 +24,7 @@ import {
   SwarmProtocolError,
   SwarmTransportError,
 } from "./errors.ts";
+import { parseCurrentMeeting, parseIngestResponse } from "./responses.ts";
 import { type RetryOptions, withRetry } from "./retry.ts";
 
 /**
@@ -208,8 +209,7 @@ export class SwarmClient {
    */
   async currentMeeting(): Promise<CurrentMeetingResponse> {
     const body = await this.json({ method: "GET", path: "/meeting-current" });
-    if (!isRecord(body)) throw new SwarmProtocolError("meeting-current: ответ не объект");
-    return body as unknown as CurrentMeetingResponse;
+    return parseCurrentMeeting(body);
   }
 
   /**
@@ -263,8 +263,7 @@ export class SwarmClient {
       body: () => buildIngestForm(input, mic),
       timeoutMs: this.config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS,
     });
-    if (!isRecord(body)) throw new SwarmProtocolError("meeting-ingest: ответ не объект");
-    return body as unknown as IngestResponse;
+    return parseIngestResponse(body);
   }
 
   /**

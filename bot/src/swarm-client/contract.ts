@@ -26,9 +26,9 @@ export type ClaimDecision = "transcribe" | "defer";
 /**
  * Площадки, ссылку на которые сервер узнаёт в лицо. Неизвестный хост — `null`, а не догадка.
  */
-type ConferencePlatform = "meet" | "kontur" | "zoom";
+export type ConferencePlatform = "meet" | "kontur" | "zoom";
 
-interface Attendee {
+export interface Attendee {
   readonly name?: string | null;
   readonly email?: string | null;
 }
@@ -36,7 +36,7 @@ interface Attendee {
 /**
  * Встреча, которую сервер считает идущей сейчас.
  */
-interface CurrentMeeting {
+export interface CurrentMeeting {
   readonly identity_kind: string;
   readonly identity_key: string;
   readonly title: string | null;
