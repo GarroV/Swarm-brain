@@ -14,6 +14,7 @@ import type {
   MeetingLiveNote,
   MeetingNotes,
   Project,
+  ProjectLink,
   Sprint,
   SprintCycle,
   SprintCycleDetail,
@@ -2229,6 +2230,9 @@ export async function updateProject(
       owner_telegram_id: number | null;
       start_date: string | null;
       end_date: string | null;
+      goal: string | null;
+      description: string | null;
+      links: ProjectLink[];
     }
   >,
 ): Promise<Project> {

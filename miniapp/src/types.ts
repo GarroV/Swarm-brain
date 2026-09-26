@@ -219,10 +219,18 @@ export type Project = {
   owner_telegram_id: number | null;
   start_date: string | null;
   end_date: string | null;
+  // Справка «О проекте» (всплывашка ⓘ в шапке проекта на доске, 27.09.2026). До раскатки
+  // миграции сервер этих полей не отдаёт — поэтому необязательные.
+  goal?: string | null;
+  description?: string | null;
+  links?: ProjectLink[];
   // Отдаётся из GET /projects (агрегаты):
   task_count?: number;
   backlog_count?: number;
 };
+
+/** Ссылка на артефакт проекта. url — только http(s), сервер проверяет. */
+export type ProjectLink = { title: string; url: string };
 
 export type User = {
   telegram_id: number;
