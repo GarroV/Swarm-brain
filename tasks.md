@@ -35,8 +35,8 @@
 | T062 | swarm-client | T060 | done | `claim` вернул `defer` → аудио не отправляется вообще (проверено тестом) | #350 | 1 |
 | T063 | swarm-client | T030,T052 | done | Таймлайн говорящих собирается из опросов `activeSpeaker` и уходит полем `speakers` | #351 | 1 |
 | T070 | orchestrator | T045,T060 | blocked:Q008 | `startForMeeting` / `stop` через dockerode; ручной запуск по ссылке работает | #352 | 1 |
-| T071 | orchestrator | T070 | in_progress | Heartbeat идёт; смерть контейнера посреди встречи видна существующему watchdog | #353 | 1 |
-| T072 | orchestrator | T070 | in_progress | Брошенных контейнеров не остаётся после падения оркестратора (проверено падением) | #354 | 1 |
+| T071 | orchestrator | T070,T147 | todo | Heartbeat идёт; смерть контейнера посреди встречи видна существующему watchdog | #353 | 1 |
+| T072 | orchestrator | T070 | done | Брошенных контейнеров не остаётся после падения оркестратора (проверено падением) | #354 | 1 |
 | T080 | notices | T012 | done | Уведомление «стою у двери» владельцу встречи; повтор ровно один, затем выход | #355 | 1 |
 | T081 | notices | T080 | done | Тексты уведомлений заведены на английском и русском | #356 | 1 |
 | T082 | notices | T022 | done | Ни один сценарий отказа не завершается молча — проверено по списку из спеки | #357 | 1 |
@@ -56,6 +56,8 @@
 | T141 | chores | — | done | config.toml: дописать meeting-heartbeat, meeting-context, granola-poller — локальный контур отбивает их 401 | #461 | 2 |
 | T142 | notices | T082 | done | meeting-notice добавлен в общий список дверей агента (auth-doors.test.ts) — после слияния блока | #462 | 1 |
 | T143 | chores | — | todo | `eslint --fix` молча переписывает данные тестов (unicorn/prefer-https превратил проверку в тавтологию) — защитить данные проверок от автоправки | #460 | 2 |
-| T144 | swarm-client | T060 | in_progress | Ответы `meeting-current` и `meeting-ingest` проверяются на границе, как у `claim`: сломанный ответ — громкий отказ, а не молчаливый undefined | #544 | 1 |
+| T144 | swarm-client | T060 | done | Ответы `meeting-current` и `meeting-ingest` проверяются на границе, как у `claim`: сломанный ответ — громкий отказ, а не молчаливый undefined | #544 | 1 |
 | T145 | identity | T017 | done | Ключ календарной встречи — одна функция в `_shared/` для `meeting-current` и `agent-scope`; тест на совпадение | #545 | 1 |
 | T146 | chores | T082 | todo | Смоук лимитов уведомлений (`scripts/scriba-notices-smoke.ts`) идёт в CI против живой базы — иначе снятая блокировка в `meeting_notice_reserve` проходит гейт зелёной | #546 | 2 |
+| T147 | orchestrator | T072 | todo | Серверный сторож `checkRecorderHealth` видит heartbeat бота из `service_agents` (D007), и живой контейнер не прячет мёртвый при двух встречах сразу — половина DoD T071 | #547 | 1 |
+| T148 | chores | — | todo | `swarm-client` совместим со strip-only Node — контейнер без `--experimental-transform-types` | #548 | 2 |
