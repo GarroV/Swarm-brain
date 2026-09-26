@@ -34,7 +34,7 @@ export async function stop(id: ContainerId): Promise<void>;
 
 ## Состояние
 
-**2026-09-26 · в работе.** Человек (пока — вызывающий код; вход «по ссылке» ждёт Q008) даёт
+**2026-09-26 · готов к сдаче.** Человек (пока — вызывающий код; вход «по ссылке» ждёт Q008) даёт
 описание встречи → оркестратор поднимает контейнер → бот заявляет встречу (claim), заходит,
 пишет, отдаёт запись в очередь и meeting-ingest → контейнер гасится; смерть контейнера и
 смерть оркестратора видны и не оставляют сирот.
@@ -42,11 +42,16 @@ export async function stop(id: ContainerId): Promise<void>;
 Где стою: T144 закрыт (`1a445f5d`). T070/T071/T072 — код и живой прогон готовы (`405c7191`,
 `6710eb70`), включая настоящий SIGKILL оркестратора. Ствол `feat/meeting-bot` влит
 (`9ff8129c`), клиент `meeting-notice` (`notice-client.ts`) заменил заглушку: юнит-тесты и
-порчи зелёные/красные как положено; живой смоук с нотисами (door, death) ещё НЕ прогнан.
+порчи краснеют; живой смоук door, death, full, stop через прокси нотис (`smoke-notices.ts`,
+порт 4361 → fake-swarm 4362) зелёный: две `door_waiting` с `meeting_id` без `attempt`,
+`container_died` от имени человека. ARCHITECTURE.md §Бот scriba и QUICK_REF обновлены.
 
-Дальше:
-1. Живой смоук `door,death` с прокси нотис (`smoke-notices.ts`, порт 4361 → fake-swarm 4362).
-2. ARCHITECTURE.md / QUICK_REF.md, env-переменные контейнера в `bot/container/.env.example`.
+Дальше: сдача блока. `bot/container/.env.example` нет — переменные контейнера ставит
+оркестратор, канон имён `MEETING_ENV` в `config.ts`, перечень — ARCHITECTURE.md.
+
+Q008 (тонкий слой): вход «ручной запуск по ссылке» не построен. Когда владелец решит, триггер
+(HTTP или CLI) зовёт `orchestrator.startForMeeting(joinUrl, "meet", onBehalfOf)` — больше
+ничего не нужно; сейчас его зовут только тесты и смоук.
 
 Устройство (`bot/src/orchestrator/`):
 

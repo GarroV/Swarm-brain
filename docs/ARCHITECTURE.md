@@ -807,6 +807,42 @@ _Все три: перевыпуск **убивает старый токен**,
 молчаливая и дорогая: неверное имя в стенограмме выглядит правдоподобно. Порядок проверок в обработчике
 (401 → 404 → 403 → разбор `speakers`) держит смоук `meeting-ingest/index.test.ts`.
 
+## Бот scriba: оркестратор встреч (`bot/src/orchestrator/`)
+
+**Что это.** Долгоживущая служба рядом с Docker: на каждую встречу поднимает отдельный контейнер
+бота-участника, следит за ним и гасит после. Сам контейнер заявляет встречу, заходит в звонок,
+пишет звук, отдаёт запись в очередь выгрузки и в `meeting-ingest`. Вход «ручной запуск по ссылке»
+(HTTP/CLI) **не построен** — ждёт решения владельца Q008; `startForMeeting(joinUrl, platform,
+onBehalfOf)` берёт описание встречи от вызывающего кода. Контракт и состояние — [блок
+orchestrator](furca/blocks/orchestrator.md).
+
+**Путь встречи (внутри контейнера, `run-meeting.ts`).** `meeting-claim` (ручная встреча:
+`identity_kind:"manual"`, ключ `scriba:<runId>`) **раньше** захода — у встречных нотис должен быть
+`meeting_id` → заход → дверь: 90 с → `door_waiting`, ещё 180 с → повтор, уход по `should_leave`
+сервера или по своему потолку 2 → запись ffmpeg частями → один в звонке 2 мин → выход → выгрузка.
+Heartbeat шлётся изнутри контейнера; финальный `recording:false` — только при штатном конце.
+
+| Что | Как |
+|---|---|
+| Смерть контейнера | Ненулевой код выхода = смерть. Оркестратор берёт `meeting_id` из строки `scriba-state {...}` журнала контейнера и шлёт `container_died` от имени того же человека. Heartbeat замолкает на `recording:true` — сам по себе сигнал |
+| Смерть оркестратора | Поводок (`lease.ts`): оркестратор каждые 5 с переписывает `{"seq":N}` в каталоге, смонтированном в контейнер только на чтение; `seq` стоит больше 90 с по часам контейнера → контейнер сам штатно заканчивает встречу и отдаёт запись. Поднятый заново оркестратор подхватывает живые контейнеры своего `scriba.project` и убирает остановленные |
+| Очередь выгрузки | На томе `<project>-recordings`, своя на каждый запуск: `/recordings/queue/<person>/<runId>`; очереди, чей `alive` старше 5 мин, переносятся в очередь следующего запуска атомарным rename (`run-directories.ts`) |
+| Нотисы | `notice-client.ts` → `POST /meeting-notice`: `meeting_id` или `meeting_key`, без `attempt`; 409 = пора уходить; прочие отказы пишутся в журнал целиком (`JournaledNotifier`) |
+| Метки контейнера | `scriba.project`, `scriba.run`, `scriba.on-behalf-of`, `scriba.platform`; имя `<project>-meeting-<runId>`. Чужие метки оркестратор не трогает |
+| Живая проверка | `bot/src/orchestrator/smoke-orchestrator.ts` против настоящего Docker и `fake-swarm` (сценарии full, two, death, stop, door, orphans, adopt; настоящий SIGKILL) |
+
+**Окружение контейнера** (ставит оркестратор; канон имён — `MEETING_ENV` в `config.ts`):
+обязательные `SCRIBA_JOIN_URL`, `SCRIBA_PLATFORM` (пока только `meet`), `SCRIBA_ON_BEHALF_OF`,
+`SCRIBA_SWARM_URL`, `SCRIBA_BOT_TOKEN`, `SCRIBA_RUN_ID`, `SCRIBA_BOT_VERSION`, `SCRIBA_LEASE_DIR`;
+необязательные `SCRIBA_DISPLAY_NAME`, `SCRIBA_MAX_MEETING_MINUTES` (потолок, по умолчанию 240),
+`SCRIBA_SEGMENT_SECONDS`, `SCRIBA_DOOR_WAIT_MS`, `SCRIBA_DOOR_REPEAT_MS`, `SCRIBA_ALONE_MS`,
+`SCRIBA_HEARTBEAT_MS`, `SCRIBA_POLL_MS` (времена — ручки смоука), `SCRIBA_SMOKE_MEET_PAGE`
+(только смоук: подменяет Meet страницей-двойником).
+
+**Известный разрыв:** серверный watchdog `checkRecorderHealth` читает heartbeat из `allowed_users`,
+а бот пишет его в `service_agents` (D007) — смерть бота сервером пока не видна; видна оркестратору
+и человеку через `container_died`.
+
 ## MCP-аутентификация
 
 Персональные токены вместо `requesting_user_id` на доверии.
