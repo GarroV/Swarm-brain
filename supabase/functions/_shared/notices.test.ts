@@ -14,28 +14,48 @@ import {
   DOOR_MAX_ATTEMPTS,
   DOOR_REPEAT_SECONDS,
   DOOR_WAIT_SECONDS,
+  isPreMeetingKind,
   MAX_DETAIL_CHARS,
   MAX_PER_KIND,
   MAX_PER_MEETING,
+  MAX_PER_RECIPIENT_PER_DAY,
   MAX_TITLE_CHARS,
+  MAX_UNBOUND_PER_RECIPIENT_PER_DAY,
   NOTICE_KINDS,
   NOTICE_LANGS,
   NoticeError,
+  type NoticeLedger,
   parseNotice,
+  PRE_MEETING_KINDS,
   renderNotice,
 } from "./notices.ts";
 import { NO_TITLE, NOTICE_TEXTS } from "./notice-texts.ts";
 
+const MEETING_ID = "5f0c6b1e-8a2d-4c3f-9b7e-1d2a3c4b5e6f";
 const KEY = "abc123@google.com:2026-09-23";
 
+/** Тело запроса нужной формы: у встречных видов — meeting_id, у до-встречных — ключ календаря. */
+function body(over: Record<string, unknown> = {}): Record<string, unknown> {
+  const kind = (over.kind ?? "door_waiting") as string;
+  const base = (PRE_MEETING_KINDS as readonly string[]).includes(kind)
+    ? { kind, meeting_key: KEY, title: "Weekly sync" }
+    : { kind, meeting_id: MEETING_ID };
+  return { ...base, ...over };
+}
+
 function notice(over: Record<string, unknown> = {}) {
-  return parseNotice({ kind: "door_waiting", meeting_key: KEY, title: "Weekly sync", ...over });
+  return parseNotice(body(over));
+}
+
+/** Пустой журнал плюс то, что нужно тесту. */
+function ledger(over: Partial<NoticeLedger> = {}): NoticeLedger {
+  return { kindCount: 0, totalCount: 0, dayCount: 0, unboundDayCount: 0, ...over };
 }
 
 // ── Дверь: первое уведомление, ровно один повтор, выход ───────────────────────
 
 Deno.test("дверь: журнал пуст — первое уведомление, повтор обещан через 3 минуты", () => {
-  assertEquals(decideDelivery("door_waiting", { kindCount: 0, totalCount: 0 }), {
+  assertEquals(decideDelivery(notice(), ledger()), {
     allow: true,
     attempt: 1,
     shouldLeave: false,
@@ -44,7 +64,7 @@ Deno.test("дверь: журнал пуст — первое уведомлен
 });
 
 Deno.test("дверь: одно уже ушло — это повтор, и он последний", () => {
-  assertEquals(decideDelivery("door_waiting", { kindCount: 1, totalCount: 1 }), {
+  assertEquals(decideDelivery(notice(), ledger({ kindCount: 1, totalCount: 1, dayCount: 1 })), {
     allow: true,
     attempt: 2,
     shouldLeave: true,
@@ -53,7 +73,7 @@ Deno.test("дверь: одно уже ушло — это повтор, и он
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: два уже ушло — третьего не будет, счёт по журналу", () => {
-  const decision = decideDelivery("door_waiting", { kindCount: 2, totalCount: 2 });
+  const decision = decideDelivery(notice(), ledger({ kindCount: 2, totalCount: 2, dayCount: 2 }));
   assertEquals(decision.allow, false);
   assert(decision.allow === false);
   assertEquals(decision.shouldLeave, true, "боту не сказали уйти — он останется висеть у двери");
@@ -79,11 +99,12 @@ Deno.test("дверь: расписание — 90 секунд до сигна�
   assertEquals(DOOR_MAX_ATTEMPTS, 2);
 });
 
-// ── Поток по встрече конечен для КАЖДОГО вида, не только для двери ────────────
+// ── Поток конечен для КАЖДОГО вида, по встрече и по человеку ──────────────────
 
 Deno.test("БЛОКИРУЮЩИЙ: один и тот же отказ не повторяется — «звука нет» уже сказано", () => {
-  assertEquals(decideDelivery("no_audio", { kindCount: 0, totalCount: 1 }).allow, true);
-  const again = decideDelivery("no_audio", { kindCount: MAX_PER_KIND, totalCount: 2 });
+  const audio = notice({ kind: "no_audio" });
+  assertEquals(decideDelivery(audio, ledger({ totalCount: 1, dayCount: 1 })).allow, true);
+  const again = decideDelivery(audio, ledger({ kindCount: MAX_PER_KIND, totalCount: 2, dayCount: 2 }));
   assertEquals(again.allow, false);
   assert(again.allow === false);
   assert(again.reason.includes("no_audio"), again.reason);
@@ -92,36 +113,86 @@ Deno.test("БЛОКИРУЮЩИЙ: один и тот же отказ не по�
 
 Deno.test("БЛОКИРУЮЩИЙ: общий потолок на встречу — дальше не шлём ничего, даже нового вида", () => {
   for (const kind of NOTICE_KINDS) {
-    const decision = decideDelivery(kind, { kindCount: 0, totalCount: MAX_PER_MEETING });
+    const decision = decideDelivery(
+      notice({ kind, detail: "x" }),
+      ledger({ totalCount: MAX_PER_MEETING, dayCount: MAX_PER_MEETING }),
+    );
     assertEquals(decision.allow, false, `${kind}: поток по встрече не ограничен`);
     assert(decision.allow === false);
     assertEquals(decision.shouldLeave, true);
   }
 });
 
+Deno.test("БЛОКИРУЮЩИЙ: суточный потолок на человека — новая встреча не открывает новый поток", () => {
+  // Зацикленный оркестратор заводит встречу за встречей: поштучный счёт каждой пуст, и только
+  // счёт по человеку за сутки не даёт превратить личку в ленту.
+  for (const kind of NOTICE_KINDS) {
+    const decision = decideDelivery(notice({ kind, detail: "x" }), ledger({ dayCount: MAX_PER_RECIPIENT_PER_DAY }));
+    assertEquals(decision.allow, false, `${kind}: сутки без потолка`);
+    assert(decision.allow === false);
+    assert(/day|24/i.test(decision.reason), decision.reason);
+  }
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: до-встречные отказы — свой суточный потолок, ключ календаря сервер не проверит", () => {
+  for (const kind of PRE_MEETING_KINDS) {
+    const decision = decideDelivery(
+      notice({ kind, meeting_key: `fresh-${kind}` }),
+      ledger({ unboundDayCount: MAX_UNBOUND_PER_RECIPIENT_PER_DAY, dayCount: MAX_UNBOUND_PER_RECIPIENT_PER_DAY }),
+    );
+    assertEquals(decision.allow, false, `${kind}: выдуманные ключи дают бесконечный поток`);
+  }
+  // Встречным видам этот счёт не мешает: их встреча проверена сервером.
+  const bound = decideDelivery(notice({ kind: "no_audio" }), ledger({ unboundDayCount: 99, dayCount: 1 }));
+  assertEquals(bound.allow, true);
+  assert(MAX_UNBOUND_PER_RECIPIENT_PER_DAY < MAX_PER_RECIPIENT_PER_DAY);
+});
+
 Deno.test("терминальные отказы велят уйти сразу и повтора не обещают", () => {
   for (const kind of NOTICE_KINDS.filter((k) => k !== "door_waiting")) {
-    const decision = decideDelivery(kind, { kindCount: 0, totalCount: 0 });
+    const decision = decideDelivery(notice({ kind, detail: "x" }), ledger());
     assert(decision.allow === true);
     assertEquals(decision.shouldLeave, true, `${kind}: боту не сказано уйти`);
     assertEquals(decision.nextReminderInSeconds, null, `${kind}: обещан повтор, которого не будет`);
   }
 });
 
-// ── Разбор запроса: мусор на границе отвергается внятно ───────────────────────
+// ── Разбор запроса: встреча названа, мусор отвергается внятно ─────────────────
 
-Deno.test("БЛОКИРУЮЩИЙ: без ключа встречи уведомление не принимается — считать было бы нечего", () => {
-  for (const bad of [undefined, null, "", "   ", 42]) {
-    const e = assertThrows(
-      () => parseNotice({ kind: "no_audio", meeting_key: bad }),
-      NoticeError,
-      undefined,
-      `meeting_key=${JSON.stringify(bad)}`,
-    );
-    assertEquals(e.status, 400);
-    assert(e.message.includes("meeting_key"), e.message);
+Deno.test("БЛОКИРУЮЩИЙ: встречный отказ без meeting_id не принимается — сверять было бы не с чем", () => {
+  for (const kind of NOTICE_KINDS.filter((k) => !isPreMeetingKind(k))) {
+    for (const bad of [undefined, null, "", "not-a-uuid", 42, KEY]) {
+      const e = assertThrows(
+        () => parseNotice({ kind, meeting_id: bad, detail: "x" }),
+        NoticeError,
+        undefined,
+        `${kind} meeting_id=${JSON.stringify(bad)}`,
+      );
+      assertEquals(e.status, 400);
+      assert(e.message.includes("meeting_id"), e.message);
+    }
   }
-  assertEquals(notice({ kind: "no_audio" }).meetingKey, KEY);
+  const parsed = notice({ kind: "no_audio" });
+  assertEquals(parsed.scope, { type: "meeting", meetingId: MEETING_ID });
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: у встречного отказа название не принимается — его берёт сервер из встречи", () => {
+  const e = assertThrows(() => notice({ kind: "door_denied", title: "Salary review" }), NoticeError);
+  assertEquals(e.status, 400);
+  assert(e.message.includes("title"), e.message);
+});
+
+Deno.test("до-встречный отказ: строки встречи ещё нет — ключ календаря обязателен, meeting_id нет", () => {
+  for (const kind of PRE_MEETING_KINDS) {
+    assertEquals(notice({ kind }).scope, { type: "calendar", meetingKey: KEY });
+    for (const bad of [undefined, "", "   ", 42]) {
+      const e = assertThrows(() => parseNotice({ kind, meeting_key: bad }), NoticeError);
+      assertEquals(e.status, 400);
+      assert(e.message.includes("meeting_key"), e.message);
+    }
+    const withId = assertThrows(() => notice({ kind, meeting_id: MEETING_ID }), NoticeError);
+    assertEquals(withId.status, 400);
+  }
 });
 
 Deno.test("неизвестный kind отвергается и перечисляет допустимые", () => {
@@ -153,7 +224,7 @@ Deno.test("язык: ru остаётся ru, всё прочее падает в
 
 Deno.test("длинные название и причина обрезаются, а не улетают простынёй в чат", () => {
   const parsed = notice({
-    kind: "join_failed",
+    kind: "no_conference_link",
     title: "т".repeat(MAX_TITLE_CHARS + 50),
     detail: "d".repeat(MAX_DETAIL_CHARS + 50),
   });
@@ -162,8 +233,8 @@ Deno.test("длинные название и причина обрезаютс�
 });
 
 Deno.test("пустое название — это отсутствие названия, а не пустая строка в сообщении", () => {
-  assertEquals(notice({ title: "   " }).title, null);
-  assertEquals(notice({ title: 42 }).title, null);
+  assertEquals(notice({ kind: "no_owner", title: "   " }).title, null);
+  assertEquals(notice({ kind: "no_owner", title: 42 }).title, null);
 });
 
 // ── Тексты: оба языка у каждого отказа ────────────────────────────────────────
