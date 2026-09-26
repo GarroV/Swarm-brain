@@ -42,11 +42,12 @@ function saveIds(ids: string[]): void {
   }
 }
 
-const STATUS_STYLE: Record<InviteStatus, { background: string; color: string }> = {
+const STATUS_STYLE: Record<InviteStatus, { background: string; color: string; border?: string }> = {
   pending: { background: "var(--surface-2)", color: "var(--ink-soft)" },
   taken: { background: "var(--accent-soft)", color: "var(--accent-ink)" },
   used: { background: "var(--meet-soft)", color: "var(--meet-ink)" },
-  expired: { background: "var(--surface-2)", color: "var(--ink-mute)" },
+  // Окончательный отказ не должен выглядеть как живое ожидание: без заливки, пунктирная рамка.
+  expired: { background: "transparent", color: "var(--ink-mute)", border: "1px dashed var(--line-2)" },
 };
 
 function linkText(url: string): string {
@@ -60,15 +61,16 @@ function InviteRow({ invite, onOpenMeeting, onDismiss }: { invite: MeetingInvite
   const dt = useDt();
   const final = isFinalStatus(invite.status);
   return (
-    <li className="flex items-center gap-2.5 rounded-[12px] border border-line px-3 py-2">
-      <div className="min-w-0 flex-1">
+    // flex-wrap: на 320 px кнопка «Открыть встречу» уходит под статус, а не наезжает на него.
+    <li className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-[12px] border border-line px-3 py-2">
+      <div className="min-w-0 flex-[1_1_170px]">
         <div className="truncate text-ink" style={{ fontSize: 13 }} title={invite.join_url}>
           <span className="font-semibold">{invitePlatformLabel(invite.platform)}</span>
           <span className="text-ink-mute"> · {linkText(invite.join_url)}</span>
         </div>
         <span
           role="status"
-          className="mt-1 inline-flex items-center font-semibold"
+          className="mt-1 inline-flex items-center whitespace-nowrap font-semibold"
           style={{ fontSize: 11, borderRadius: 7, padding: "1px 7px", ...STATUS_STYLE[invite.status] }}
         >
           {inviteStatusLabel(invite.status, dt)}
