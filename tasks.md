@@ -57,4 +57,4 @@
 | T142 | notices | T082 | todo | meeting-notice добавлен в общий список дверей агента (auth-doors.test.ts) — после слияния блока | #462 | 1 |
 | T143 | chores | — | todo | `eslint --fix` молча переписывает данные тестов (unicorn/prefer-https превратил проверку в тавтологию) — защитить данные проверок от автоправки | #460 | 2 |
 | T144 | swarm-client | T060 | in_progress | Ответы `meeting-current` и `meeting-ingest` проверяются на границе, как у `claim`: сломанный ответ — громкий отказ, а не молчаливый undefined | #544 | 1 |
-| T145 | identity | T017 | in_progress | Ключ календарной встречи — одна функция в `_shared/` для `meeting-current` и `agent-scope`; тест на совпадение | #545 | 1 |
+| T145 | identity | T017 | done | Ключ календарной встречи — одна функция в `_shared/` для `meeting-current` и `agent-scope`; тест на совпадение | #545 | 1 |
