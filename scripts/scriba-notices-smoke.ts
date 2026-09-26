@@ -49,13 +49,21 @@ const M = {
 };
 
 async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 // ── Живая база: засев и уборка через PostgREST под service_role ────────────────
 
-async function rest(method: string, path: string, body?: unknown): Promise<unknown> {
+async function rest(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<unknown> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     method,
     headers: {
@@ -72,7 +80,12 @@ async function rest(method: string, path: string, body?: unknown): Promise<unkno
 }
 
 function person(id: number, groupId: string, recorderHash: string | null) {
-  return { telegram_id: id, group_id: groupId, added_by: id, recorder_token_hash: recorderHash };
+  return {
+    telegram_id: id,
+    group_id: groupId,
+    added_by: id,
+    recorder_token_hash: recorderHash,
+  };
 }
 
 function meeting(id: string, groupId: string, owner: number, title: string) {
@@ -88,7 +101,10 @@ function meeting(id: string, groupId: string, owner: number, title: string) {
 }
 
 async function seed(): Promise<void> {
-  await rest("POST", "workspaces", [{ id: WS, name: "Smoke A" }, { id: WS_OTHER, name: "Smoke B" }]);
+  await rest("POST", "workspaces", [{ id: WS, name: "Smoke A" }, {
+    id: WS_OTHER,
+    name: "Smoke B",
+  }]);
   await rest("POST", "allowed_users", [
     person(OWNER_ID, WS, await sha256Hex(HUMAN_TOKEN)),
     person(BLOCKED_ID, WS, null),
@@ -117,9 +133,15 @@ async function seed(): Promise<void> {
 async function cleanup(): Promise<string[]> {
   const problems: string[] = [];
   const steps: [string, string][] = [
-    ["DELETE", `meetings?source=eq.scriba-smoke&group_id=in.(${WS},${WS_OTHER})`],
+    [
+      "DELETE",
+      `meetings?source=eq.scriba-smoke&group_id=in.(${WS},${WS_OTHER})`,
+    ],
     ["DELETE", `service_agents?id=eq.${AGENT_ID}`],
-    ["DELETE", `allowed_users?telegram_id=in.(${OWNER_ID},${BLOCKED_ID},${COLLEAGUE_ID},${OUTSIDER_ID})`],
+    [
+      "DELETE",
+      `allowed_users?telegram_id=in.(${OWNER_ID},${BLOCKED_ID},${COLLEAGUE_ID},${OUTSIDER_ID})`,
+    ],
     ["DELETE", `workspaces?id=in.(${WS},${WS_OTHER})`],
   ];
   for (const [method, path] of steps) {
@@ -132,8 +154,13 @@ async function cleanup(): Promise<string[]> {
   return problems;
 }
 
-async function journal(filter: string): Promise<{ kind: string; attempt: number; status: string }[]> {
-  return await rest("GET", `meeting_notices?select=kind,attempt,status&${filter}&order=id`) as {
+async function journal(
+  filter: string,
+): Promise<{ kind: string; attempt: number; status: string }[]> {
+  return await rest(
+    "GET",
+    `meeting_notices?select=kind,attempt,status&${filter}&order=id`,
+  ) as {
     kind: string;
     attempt: number;
     status: string;
@@ -150,12 +177,20 @@ interface TgMessage {
 const inbox: TgMessage[] = [];
 
 function startTelegram(): Deno.HttpServer {
-  return Deno.serve({ port: PORT_TG, hostname: "127.0.0.1", onListen: () => {} }, async (req) => {
+  return Deno.serve({
+    port: PORT_TG,
+    hostname: "127.0.0.1",
+    onListen: () => {},
+  }, async (req) => {
     const body = await req.json() as { chat_id: number; text: string };
     // Живой отказ Telegram: человек не начинал диалог с ботом или заблокировал его.
     if (body.chat_id === BLOCKED_ID) {
       return Response.json(
-        { ok: false, error_code: 403, description: "Forbidden: bot was blocked by the user" },
+        {
+          ok: false,
+          error_code: 403,
+          description: "Forbidden: bot was blocked by the user",
+        },
         { status: 403 },
       );
     }
@@ -179,7 +214,9 @@ async function call(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const headers = new Headers({ "Content-Type": "application/json" });
   headers.set("Authorization", `Bearer ${opts.token ?? BOT_TOKEN}`);
-  if (opts.onBehalfOf !== undefined) headers.set("X-On-Behalf-Of", String(opts.onBehalfOf));
+  if (opts.onBehalfOf !== undefined) {
+    headers.set("X-On-Behalf-Of", String(opts.onBehalfOf));
+  }
   const res = await fetch(`http://127.0.0.1:${PORT_FN}/meeting-notice`, {
     method: "POST",
     headers,
@@ -211,42 +248,73 @@ async function scenario(
 ): Promise<Outcome> {
   const expect = opts.expect ?? "delivered";
   const before = inbox.length;
-  const withLang = typeof body === "object" && body !== null ? { ...body, lang: opts.lang ?? "ru" } : body;
+  const withLang = typeof body === "object" && body !== null
+    ? { ...body, lang: opts.lang ?? "ru" }
+    : body;
   const { status, body: answer } = await call(withLang, opts);
   const delivered = inbox.slice(before);
   const error = typeof answer.error === "string" ? answer.error : "";
   const leave = answer.should_leave === true ? " · боту сказано уйти" : "";
 
   if (delivered.length > 1) {
-    return { name, status, signal: `ушло ${delivered.length} сообщений`, problem: "один вызов — одно сообщение" };
+    return {
+      name,
+      status,
+      signal: `ушло ${delivered.length} сообщений`,
+      problem: "один вызов — одно сообщение",
+    };
   }
   if (delivered.length === 1) {
     const signal = `→ ${delivered[0].chatId}: ${delivered[0].text}${leave}`;
-    const problem = expect === "refused" ? "сообщение ушло человеку, хотя сценарий должен был быть отклонён" : null;
+    const problem = expect === "refused"
+      ? "сообщение ушло человеку, хотя сценарий должен был быть отклонён"
+      : null;
     return { name, status, signal, problem };
   }
   if (status >= 200 && status < 300) {
     // 2xx без сообщения человеку — ровно тот молчаливый успех, который ищем.
-    return { name, status, signal: "НИЧЕГО НЕ ОТПРАВЛЕНО, но ответ 2xx", problem: "тишина: успех без сигнала" };
+    return {
+      name,
+      status,
+      signal: "НИЧЕГО НЕ ОТПРАВЛЕНО, но ответ 2xx",
+      problem: "тишина: успех без сигнала",
+    };
   }
   if (error.trim() === "") {
-    return { name, status, signal: "отказ без объяснения", problem: "тишина: отказ без причины" };
+    return {
+      name,
+      status,
+      signal: "отказ без объяснения",
+      problem: "тишина: отказ без причины",
+    };
   }
-  const problem = expect === "delivered" ? "сообщение не дошло до человека, хотя сценарий этого требует" : null;
+  const problem = expect === "delivered"
+    ? "сообщение не дошло до человека, хотя сценарий этого требует"
+    : null;
   return { name, status, signal: `отказ: ${error}${leave}`, problem };
 }
 
-function check(name: string, ok: boolean, signal: string, problem: string): Outcome {
+function check(
+  name: string,
+  ok: boolean,
+  signal: string,
+  problem: string,
+): Outcome {
   return { name, status: 0, signal, problem: ok ? null : problem };
 }
 
 /** Дверь: первое, единственный повтор, дальше — зацикленный бот, которому сервер не верит. */
-async function doorScenarios(behalf: { onBehalfOf: number }): Promise<Outcome[]> {
+async function doorScenarios(
+  behalf: { onBehalfOf: number },
+): Promise<Outcome[]> {
   const door = { kind: "door_waiting", meeting_id: M.door };
   const out: Outcome[] = [
     await scenario("дверь · не впустили (90 с)", door, behalf),
     await scenario("дверь · единственный повтор (+3 мин)", door, behalf),
-    await scenario("дверь · третьего уведомления не бывает", door, { ...behalf, expect: "refused" }),
+    await scenario("дверь · третьего уведомления не бывает", door, {
+      ...behalf,
+      expect: "refused",
+    }),
   ];
   const before = inbox.length;
   for (let i = 0; i < 7; i++) await call({ ...door, lang: "ru" }, behalf);
@@ -254,11 +322,16 @@ async function doorScenarios(behalf: { onBehalfOf: number }): Promise<Outcome[]>
   out.push(check(
     "дверь · зацикленный бот, ещё 7 вызовов",
     inbox.length === before && rows.length === 2,
-    `новых сообщений: ${inbox.length - before}; в журнале по встрече: ${rows.length}`,
+    `новых сообщений: ${
+      inbox.length - before
+    }; в журнале по встрече: ${rows.length}`,
     "потолок пробит: зацикленный бот дошёл до человека",
   ));
   out.push(
-    await scenario("номер попытки из тела запроса — не принимается", { ...door, attempt: 1 }, {
+    await scenario("номер попытки из тела запроса — не принимается", {
+      ...door,
+      attempt: 1,
+    }, {
       ...behalf,
       expect: "refused",
     }),
@@ -272,7 +345,10 @@ async function raceScenario(behalf: { onBehalfOf: number }): Promise<Outcome> {
   // Пять, а не два: гонка зависит от расписания, и на двух вызовах сломанный индекс ловился не
   // каждым прогоном (проверено порчей: 2 из 3). Пять одновременных делают промах маловероятным.
   const results = await Promise.all(
-    Array.from({ length: 5 }, () => call({ kind: "no_audio", meeting_id: M.race, lang: "ru" }, behalf)),
+    Array.from(
+      { length: 5 },
+      () => call({ kind: "no_audio", meeting_id: M.race, lang: "ru" }, behalf),
+    ),
   );
   const statuses = results.map((r) => r.status).sort().join(",");
   return check(
@@ -283,12 +359,27 @@ async function raceScenario(behalf: { onBehalfOf: number }): Promise<Outcome> {
   );
 }
 
-async function meetingScenarios(behalf: { onBehalfOf: number }): Promise<Outcome[]> {
+async function meetingScenarios(
+  behalf: { onBehalfOf: number },
+): Promise<Outcome[]> {
   return [
-    await scenario("вход отклонён хостом", { kind: "door_denied", meeting_id: M.entry }, behalf),
-    await scenario("капча на входе", { kind: "captcha", meeting_id: M.entry }, behalf),
-    await scenario("звука нет, запись не начата", { kind: "no_audio", meeting_id: M.entry }, behalf),
-    await scenario("«звука нет» второй раз — уже сказано", { kind: "no_audio", meeting_id: M.entry }, {
+    await scenario("вход отклонён хостом", {
+      kind: "door_denied",
+      meeting_id: M.entry,
+    }, behalf),
+    await scenario(
+      "капча на входе",
+      { kind: "captcha", meeting_id: M.entry },
+      behalf,
+    ),
+    await scenario("звука нет, запись не начата", {
+      kind: "no_audio",
+      meeting_id: M.entry,
+    }, behalf),
+    await scenario("«звука нет» второй раз — уже сказано", {
+      kind: "no_audio",
+      meeting_id: M.entry,
+    }, {
       ...behalf,
       expect: "refused",
     }),
@@ -307,7 +398,10 @@ async function meetingScenarios(behalf: { onBehalfOf: number }): Promise<Outcome
       meeting_id: M.late,
       detail: "meet: selector timeout",
     }, behalf),
-    await scenario("иная причина без объяснения — не принимается", { kind: "join_failed", meeting_id: M.late }, {
+    await scenario("иная причина без объяснения — не принимается", {
+      kind: "join_failed",
+      meeting_id: M.late,
+    }, {
       ...behalf,
       expect: "refused",
     }),
@@ -319,7 +413,9 @@ async function meetingScenarios(behalf: { onBehalfOf: number }): Promise<Outcome
   ];
 }
 
-async function preMeetingScenarios(behalf: { onBehalfOf: number }): Promise<Outcome[]> {
+async function preMeetingScenarios(
+  behalf: { onBehalfOf: number },
+): Promise<Outcome[]> {
   const key = `smoke-${RUN}@google.com:2026-09-26`;
   return [
     await scenario("ссылка на звонок не распозналась", {
@@ -327,7 +423,10 @@ async function preMeetingScenarios(behalf: { onBehalfOf: number }): Promise<Outc
       meeting_key: key,
       title: "Дневной синк",
     }, behalf),
-    await scenario("владелец встречи не определился", { kind: "no_owner", meeting_key: key }, behalf),
+    await scenario("владелец встречи не определился", {
+      kind: "no_owner",
+      meeting_key: key,
+    }, behalf),
     await scenario("до-встречный отказ с meeting_id — не принимается", {
       kind: "no_owner",
       meeting_id: M.entry,
@@ -335,21 +434,35 @@ async function preMeetingScenarios(behalf: { onBehalfOf: number }): Promise<Outc
   ];
 }
 
-async function accessScenarios(behalf: { onBehalfOf: number }): Promise<Outcome[]> {
+async function accessScenarios(
+  behalf: { onBehalfOf: number },
+): Promise<Outcome[]> {
   const out = [
-    await scenario("встреча чужого воркспейса", { kind: "no_audio", meeting_id: M.foreign }, {
+    await scenario("встреча чужого воркспейса", {
+      kind: "no_audio",
+      meeting_id: M.foreign,
+    }, {
       ...behalf,
       expect: "refused",
     }),
-    await scenario("встреча коллеги — не владелец", { kind: "door_denied", meeting_id: M.colleagues }, {
+    await scenario("встреча коллеги — не владелец", {
+      kind: "door_denied",
+      meeting_id: M.colleagues,
+    }, {
       ...behalf,
       expect: "refused",
     }),
-    await scenario("встречи нет", { kind: "no_audio", meeting_id: crypto.randomUUID() }, {
+    await scenario("встречи нет", {
+      kind: "no_audio",
+      meeting_id: crypto.randomUUID(),
+    }, {
       ...behalf,
       expect: "refused",
     }),
-    await scenario("человек из чужого воркспейса — вход запрещён", { kind: "no_audio", meeting_id: M.foreign }, {
+    await scenario("человек из чужого воркспейса — вход запрещён", {
+      kind: "no_audio",
+      meeting_id: M.foreign,
+    }, {
       onBehalfOf: OUTSIDER_ID,
       expect: "refused",
     }),
@@ -359,17 +472,33 @@ async function accessScenarios(behalf: { onBehalfOf: number }): Promise<Outcome[
       chat_id: COLLEAGUE_ID,
       telegram_id: COLLEAGUE_ID,
     }, behalf),
-    await scenario("токен бота умер", { kind: "no_audio", meeting_id: M.entry }, {
-      token: "dead-token",
+    await scenario(
+      "токен бота умер",
+      { kind: "no_audio", meeting_id: M.entry },
+      {
+        token: "dead-token",
+        ...behalf,
+        expect: "refused",
+      },
+    ),
+    await scenario("токен бота без указания человека", {
+      kind: "no_audio",
+      meeting_id: M.entry,
+    }, {
+      expect: "refused",
+    }),
+    await scenario("личный токен человека", {
+      kind: "door_denied",
+      meeting_id: M.late,
+    }, { token: HUMAN_TOKEN }),
+    await scenario("мусор в теле запроса", "{это не json", {
       ...behalf,
       expect: "refused",
     }),
-    await scenario("токен бота без указания человека", { kind: "no_audio", meeting_id: M.entry }, {
-      expect: "refused",
-    }),
-    await scenario("личный токен человека", { kind: "door_denied", meeting_id: M.late }, { token: HUMAN_TOKEN }),
-    await scenario("мусор в теле запроса", "{это не json", { ...behalf, expect: "refused" }),
-    await scenario("неизвестный вид отказа", { kind: "vsyo_horosho", meeting_id: M.entry }, {
+    await scenario("неизвестный вид отказа", {
+      kind: "vsyo_horosho",
+      meeting_id: M.entry,
+    }, {
       ...behalf,
       expect: "refused",
     }),
@@ -386,7 +515,10 @@ async function accessScenarios(behalf: { onBehalfOf: number }): Promise<Outcome[
 
 async function blockedScenarios(): Promise<Outcome[]> {
   const out = [
-    await scenario("Telegram не принял уведомление", { kind: "no_audio", meeting_id: M.blocked }, {
+    await scenario("Telegram не принял уведомление", {
+      kind: "no_audio",
+      meeting_id: M.blocked,
+    }, {
       onBehalfOf: BLOCKED_ID,
       expect: "refused",
     }),
@@ -411,11 +543,17 @@ async function runScenarios(): Promise<Outcome[]> {
     ...await accessScenarios(behalf),
     ...await blockedScenarios(),
     // Два языка — правило проекта. Всё выше прошло по-русски; здесь по-английски.
-    await scenario("EN · дверь, первое уведомление", { kind: "door_waiting", meeting_id: M.en }, {
+    await scenario("EN · дверь, первое уведомление", {
+      kind: "door_waiting",
+      meeting_id: M.en,
+    }, {
       ...behalf,
       lang: "en",
     }),
-    await scenario("EN · звука нет", { kind: "no_audio", meeting_id: M.en }, { ...behalf, lang: "en" }),
+    await scenario("EN · звука нет", { kind: "no_audio", meeting_id: M.en }, {
+      ...behalf,
+      lang: "en",
+    }),
   ];
 }
 
@@ -425,7 +563,9 @@ async function waitReady(deadlineMs: number): Promise<boolean> {
   const until = Date.now() + deadlineMs;
   while (Date.now() < until) {
     try {
-      const res = await fetch(`http://127.0.0.1:${PORT_FN}/meeting-notice`, { method: "GET" });
+      const res = await fetch(`http://127.0.0.1:${PORT_FN}/meeting-notice`, {
+        method: "GET",
+      });
       await res.body?.cancel();
       return true;
     } catch {
@@ -439,13 +579,17 @@ function report(outcomes: Outcome[], cleanupProblems: string[]): void {
   console.log(`\n════ сценарии отказа (${outcomes.length})\n`);
   for (const o of outcomes) {
     const code = o.status === 0 ? "" : ` [HTTP ${o.status}]`;
-    console.log(`${o.problem === null ? "✔" : "✘"} ${o.name}${code}\n   ${o.signal}`);
+    console.log(
+      `${o.problem === null ? "✔" : "✘"} ${o.name}${code}\n   ${o.signal}`,
+    );
     if (o.problem !== null) console.log(`   ✘ ${o.problem}`);
     console.log("");
   }
   const broken = outcomes.filter((o) => o.problem !== null);
   if (cleanupProblems.length > 0) {
-    console.error(`КРАСНЫЙ: уборка не прошла — строки прогона остались в базе:`);
+    console.error(
+      `КРАСНЫЙ: уборка не прошла — строки прогона остались в базе:`,
+    );
     for (const p of cleanupProblems) console.error(`  ✘ ${p}`);
   }
   if (broken.length > 0) {
@@ -453,16 +597,22 @@ function report(outcomes: Outcome[], cleanupProblems: string[]): void {
     for (const o of broken) console.error(`  ✘ ${o.name}: ${o.problem}`);
   }
   if (broken.length > 0 || cleanupProblems.length > 0) Deno.exit(1);
-  console.log(`ЗЕЛЁНЫЙ: ${outcomes.length} сценариев, каждый закончился сигналом человеку либо внятным отказом.`);
+  console.log(
+    `ЗЕЛЁНЫЙ: ${outcomes.length} сценариев, каждый закончился сигналом человеку либо внятным отказом.`,
+  );
 }
 
 async function main(): Promise<void> {
   if (SUPABASE_URL === "" || SERVICE_KEY === "") {
-    console.error("КРАСНЫЙ: нет SMOKE_SUPABASE_URL / SMOKE_SERVICE_KEY — смоук не выполнялся (см. шапку).");
+    console.error(
+      "КРАСНЫЙ: нет SMOKE_SUPABASE_URL / SMOKE_SERVICE_KEY — смоук не выполнялся (см. шапку).",
+    );
     Deno.exit(1);
   }
   const tg = startTelegram();
-  const fnPath = new URL("../supabase/functions/meeting-notice/index.ts", import.meta.url).pathname;
+  const fnPath =
+    new URL("../supabase/functions/meeting-notice/index.ts", import.meta.url)
+      .pathname;
   const child = new Deno.Command("deno", {
     args: ["run", "--allow-all", fnPath],
     env: {
@@ -490,7 +640,9 @@ async function main(): Promise<void> {
     cleanupProblems = await cleanup();
   }
   if (!ready) {
-    console.error(`КРАСНЫЙ: функция не поднялась на порту ${PORT_FN} за 20 с — проверять нечего.`);
+    console.error(
+      `КРАСНЫЙ: функция не поднялась на порту ${PORT_FN} за 20 с — проверять нечего.`,
+    );
     Deno.exit(1);
   }
   report(outcomes, cleanupProblems);
