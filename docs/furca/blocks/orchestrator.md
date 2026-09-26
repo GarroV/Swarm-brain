@@ -39,16 +39,15 @@ export async function stop(id: ContainerId): Promise<void>;
 пишет, отдаёт запись в очередь и meeting-ingest → контейнер гасится; смерть контейнера и
 смерть оркестратора видны и не оставляют сирот.
 
-Где стою: T144 закрыт (`1a445f5d`). T070/T071 — код и живой прогон готовы (`405c7191`,
-`6710eb70`). T072 — код готов, живой прогон падения оркестратора (сценарии `orphans`,
-`adopt`) ещё НЕ прогнан. Уведомитель — журнальная заглушка `LogNotifier`.
+Где стою: T144 закрыт (`1a445f5d`). T070/T071/T072 — код и живой прогон готовы (`405c7191`,
+`6710eb70`), включая настоящий SIGKILL оркестратора. Уведомитель — журнальная заглушка
+`LogNotifier`, клиент meeting-notice — следующий шаг.
 
 Дальше:
-1. Прогнать `orphans,adopt` (команда ниже), закрыть T072.
-2. Влить ствол `git merge feat/meeting-bot` (notices влит, b0c348ff) и написать клиент
+1. Влить ствол `git merge feat/meeting-bot` (notices влит, b0c348ff) и написать клиент
    `meeting-notice` вместо `LogNotifier` (контракт — `docs/furca/blocks/notices.md`:
    `meeting_id`, `attempt` запрещён, `should_leave` от сервера).
-3. ARCHITECTURE.md / QUICK_REF.md, env-переменные контейнера в `bot/container/.env.example`.
+2. ARCHITECTURE.md / QUICK_REF.md, env-переменные контейнера в `bot/container/.env.example`.
 
 Устройство (`bot/src/orchestrator/`):
 
@@ -71,7 +70,12 @@ export async function stop(id: ContainerId): Promise<void>;
   `full` (6 частей, таймлайн, heartbeat true…false, контейнер убран), `two` (две встречи, две
   записи — после починки общей очереди), `death` (kill → 137, `container_died` с meeting_id,
   heartbeat замолк на `recording:true`), `stop` (SIGTERM → запись ушла), `door` (door_timeout,
-  ничего не отправлено).
+  ничего не отправлено), `orphans` (SIGKILL процесса оркестратора → контейнер-сирота сам
+  закончил встречу и исчез через 97 с, запись отдана), `adopt` (оркестратор убит и поднят
+  снова → живой контейнер подхвачен, 100 с не счёл себя сиротой, погашен штатно).
+- Порчи (все красные, файлы возвращены копией): смерть читается как штатный конец (6 тестов),
+  поводок никогда не рвётся (3), финальный heartbeat на сбое (3), снятые ворота defer (1),
+  усыновление своего запуска (1), ожидание выхода после старта (12).
 
 Открыто, решать не мне:
 - Существующий watchdog `checkRecorderHealth` читает только `allowed_users`, а heartbeat бота
