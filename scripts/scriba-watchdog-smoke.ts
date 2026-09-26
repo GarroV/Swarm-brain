@@ -10,17 +10,22 @@
 //   SMOKE_SUPABASE_URL   — http://127.0.0.1:<порт API локального контура>
 //   SMOKE_SERVICE_KEY    — SERVICE_ROLE_KEY из `supabase status -o env`
 //
-// Порты блока orchestrator/сторож (4380-4389; 4380-4383 — сам контур): 4384 — функция
-// meeting-heartbeat, 4388 — функция swarm-bot, 4389 — поддельный Telegram. swarm-bot ходит в
+// Тот же cron гоняет и сторож встреч-призраков (#549): живая встреча бота старше 15 минут не
+// должна помечаться 'failed', а замолчавшего бота и рекордера человека — должна, как раньше.
+//
+// Порты — от SMOKE_PORT_BASE (по умолчанию 4380, диапазон блока orchestrator/сторож; base..base+3
+// — сам контур): base+4 — функция meeting-heartbeat, base+8 — функция swarm-bot, base+9 —
+// поддельный Telegram. swarm-bot ходит в
 // api.telegram.org напрямую, поэтому fetch подменяется предзагрузкой (--preload) только для
 // этого хоста: настоящим людям ничего не уходит.
 //
 // Запуск: SMOKE_SUPABASE_URL=… SMOKE_SERVICE_KEY=… deno run --allow-all scripts/scriba-watchdog-smoke.ts
 // Красный, если хоть одно ожидание не сошлось или окружения нет.
 
-const PORT_HB = 4384;
-const PORT_BOT = 4388;
-const PORT_TG = 4389;
+const PORT_BASE = Number(Deno.env.get("SMOKE_PORT_BASE") ?? "4380");
+const PORT_HB = PORT_BASE + 4;
+const PORT_BOT = PORT_BASE + 8;
+const PORT_TG = PORT_BASE + 9;
 const CRON_SECRET = "smoke-cron-secret";
 
 const SUPABASE_URL = Deno.env.get("SMOKE_SUPABASE_URL") ?? "";
@@ -54,6 +59,33 @@ const MEETING = {
   alive: { id: crypto.randomUUID(), title: "Daily", owner: OWNER_ALIVE },
 };
 const keyOf = (m: { id: string }) => `manual:${m.id}`;
+// Пустые встречи без бота — для сторожа призраков. Встречи из MEETING тоже пустые и тоже старые.
+const GHOST = {
+  human: {
+    id: crypto.randomUUID(),
+    key: `cal:smoke-${RUN}`,
+    ageMin: 40,
+    transcript: null,
+  },
+  fresh: {
+    id: crypto.randomUUID(),
+    key: `cal:smoke-fresh-${RUN}`,
+    ageMin: 3,
+    transcript: null,
+  },
+  filled: {
+    id: crypto.randomUUID(),
+    key: `cal:smoke-filled-${RUN}`,
+    ageMin: 40,
+    transcript: "hello",
+  },
+};
+const MEETING_AGE_MIN = 40;
+const ALL_MEETING_IDS = [...Object.values(MEETING), ...Object.values(GHOST)]
+  .map((m) => m.id);
+
+const minutesAgo = (m: number) =>
+  new Date(Date.now() - m * 60_000).toISOString();
 
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest(
@@ -187,6 +219,22 @@ async function seed(): Promise<void> {
       group_id: WS,
       claim_owner: m.owner,
       title: m.title,
+      created_at: minutesAgo(MEETING_AGE_MIN),
+    })),
+  );
+  await rest(
+    "POST",
+    "meetings",
+    Object.values(GHOST).map((g) => ({
+      id: g.id,
+      source: "desktop-agent",
+      identity_kind: "calendar",
+      identity_key: g.key,
+      group_id: WS,
+      claim_owner: HUMAN_ALIVE,
+      title: "Ghost",
+      transcript: g.transcript,
+      created_at: minutesAgo(g.ageMin),
     })),
   );
 }
@@ -196,7 +244,7 @@ async function cleanup(): Promise<string[]> {
   const steps: Array<[string, string]> = [
     [
       "DELETE",
-      `meetings?id=in.(${Object.values(MEETING).map((m) => m.id).join(",")})`,
+      `meetings?id=in.(${ALL_MEETING_IDS.join(",")})`,
     ], // notices — каскадом
     [
       "DELETE",
@@ -246,9 +294,6 @@ async function beat(
   return res.status;
 }
 
-const minutesAgo = (m: number) =>
-  new Date(Date.now() - m * 60_000).toISOString();
-
 async function agentRow(id: string) {
   const rows = await rest(
     "GET",
@@ -269,6 +314,11 @@ async function humanRecording(id: number): Promise<boolean | null> {
   );
   return (rows as Array<{ recorder_last_recording: boolean | null }>)[0]
     ?.recorder_last_recording ?? null;
+}
+
+async function summaryStatus(id: string): Promise<string | null | undefined> {
+  const rows = await rest("GET", `meetings?id=eq.${id}&select=summary_status`);
+  return (rows as Array<{ summary_status: string | null }>)[0]?.summary_status;
 }
 
 async function cron(): Promise<number> {
@@ -369,6 +419,33 @@ async function scenario(): Promise<void> {
   expect(
     "флаг живого bumblebee не тронут",
     (await humanRecording(HUMAN_ALIVE)) === true,
+  );
+
+  // Сторож встреч-призраков (#549): все встречи пустые и старше 15 минут.
+  expect(
+    "встреча, которую ещё пишет бот (свежий heartbeat по её ключу), не помечена failed",
+    (await summaryStatus(MEETING.alive.id)) === null,
+    String(await summaryStatus(MEETING.alive.id)),
+  );
+  expect(
+    "встреча замолчавшего бота помечена failed, как раньше",
+    (await summaryStatus(MEETING.dead.id)) === "failed",
+    String(await summaryStatus(MEETING.dead.id)),
+  );
+  expect(
+    "призрак рекордера человека (бота нет) помечен failed, как раньше",
+    (await summaryStatus(GHOST.human.id)) === "failed",
+    String(await summaryStatus(GHOST.human.id)),
+  );
+  expect(
+    "пустая встреча моложе 15 минут не тронута",
+    (await summaryStatus(GHOST.fresh.id)) === null,
+    String(await summaryStatus(GHOST.fresh.id)),
+  );
+  expect(
+    "старая встреча с транскриптом не тронута",
+    (await summaryStatus(GHOST.filled.id)) === null,
+    String(await summaryStatus(GHOST.filled.id)),
   );
 
   // 4. Повторный прогон: дедуп, ни одного нового сообщения.
