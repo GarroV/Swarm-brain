@@ -1,11 +1,11 @@
 import { supabase } from "../lib/supabase.ts";
 import { chatComplete, getEmbedding } from "../lib/openai.ts";
-import { sendMessage, sendInlineMessage } from "../lib/telegram.ts";
-import { setSession, clearSession, getSession, extractEntryMeta } from "../lib/storage.ts";
+import { sendInlineMessage, sendMessage } from "../lib/telegram.ts";
+import { clearSession, extractEntryMeta, getSession, setSession } from "../lib/storage.ts";
 import { applyGeneralSentinel, specificCountries } from "../../_shared/meta-extract.ts";
 import { getUserGroupId } from "../lib/workspace.ts";
-import { TEZISY_PROMPT } from "../../_shared/tezisy-prompt.ts";
-import { findDuplicateMeeting, parseMeetingContent, type MeetingAttendee } from "../../_shared/meeting-dedup.ts";
+import { buildTezisyUserMessage, TEZISY_PROMPT } from "../../_shared/tezisy-prompt.ts";
+import { findDuplicateMeeting, type MeetingAttendee, parseMeetingContent } from "../../_shared/meeting-dedup.ts";
 import type { TgCallbackQuery } from "../lib/types.ts";
 
 const GRANOLA_API = "https://public-api.granola.ai/v1";
@@ -44,7 +44,7 @@ async function fetchGranolaNote(apiKey: string, noteId: string): Promise<Record<
 async function fetchNotesSince(apiKey: string, createdAfter: string): Promise<GranolaNote[]> {
   const res = await fetch(
     `${GRANOLA_API}/notes?created_after=${encodeURIComponent(createdAfter)}&limit=50`,
-    { headers: { Authorization: `Bearer ${apiKey}` } }
+    { headers: { Authorization: `Bearer ${apiKey}` } },
   );
   if (!res.ok) return [];
   const data = await res.json() as { notes: GranolaNote[] };
@@ -58,7 +58,11 @@ function buildNoteContent(note: Record<string, unknown>): string {
   const calEvent = note.calendar_event as Record<string, unknown> | undefined;
   if (calEvent?.scheduled_start_time) {
     const date = new Date(calEvent.scheduled_start_time as string).toLocaleString("ru-RU", {
-      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
     parts.push(`Дата: ${date}`);
   }
@@ -102,7 +106,7 @@ async function getProcessedIds(telegramId: number): Promise<Set<string>> {
   const saved = new Set<string>(
     (savedRes.data ?? [])
       .map((e: { metadata: Record<string, unknown> }) => e.metadata?.granola_note_id as string)
-      .filter(Boolean)
+      .filter(Boolean),
   );
 
   for (const m of (pendingRes.data ?? []) as Array<{ identity_key?: string }>) {
@@ -144,13 +148,19 @@ async function offerNextGranolaNote(chatId: number, telegramId: number): Promise
   const title = note.title || "Встреча";
   const ts = note.calendar_event?.scheduled_start_time ?? note.created_at;
   const date = new Date(ts).toLocaleString("ru-RU", {
-    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
   const attendeeNames = (note.attendees ?? [])
     .map((a) => a.name || a.email || "").filter(Boolean).slice(0, 4).join(", ");
 
   const counter = remaining.length > 1 ? ` · ещё ${remaining.length - 1}` : "";
-  const text = `➡️ Следующая встреча${counter}:\n📓 <b>${title}</b>\n📅 ${date}${attendeeNames ? `\n👥 ${attendeeNames}` : ""}`;
+  const text = `➡️ Следующая встреча${counter}:\n📓 <b>${title}</b>\n📅 ${date}${
+    attendeeNames ? `\n👥 ${attendeeNames}` : ""
+  }`;
   await sendInlineMessage(chatId, text, [[
     { text: "🔍 Тезисы", callback_data: `gp_${note.id}` },
     { text: "🗑 Пропустить", callback_data: `gd_${note.id}` },
@@ -200,7 +210,7 @@ async function prepareGranolaEntry(
   const [tezises, entryMeta] = await Promise.all([
     cached
       ? Promise.resolve(cached.tezises)
-      : chatComplete(GRANOLA_TEZISY_PROMPT, content.slice(0, 12000)),
+      : chatComplete(GRANOLA_TEZISY_PROMPT, buildTezisyUserMessage(content.slice(0, 12000))),
     extractEntryMeta(content.slice(0, 4000)),
   ]);
 
@@ -254,10 +264,18 @@ async function saveGranolaNote(
     return false;
   }
   const { title, tezises, entryDate, startTime, attendees } = prepared;
-  void username; void isPrivate; // приватность решается при публикации; в вычитку все — единообразно
+  void username;
+  void isPrivate; // приватность решается при публикации; в вычитку все — единообразно
 
   // Эта встреча уже опубликована в базе (другой участник / рекордер / повторно)? Не дублируем.
-  const dup = await findDuplicateMeeting(supabase, { groupId, entryDate, startedAt: startTime, attendees, title, viewerId: telegramId });
+  const dup = await findDuplicateMeeting(supabase, {
+    groupId,
+    entryDate,
+    startedAt: startTime,
+    attendees,
+    title,
+    viewerId: telegramId,
+  });
   if (dup) {
     await markSkipped(telegramId, noteId);
     await sendMessage(chatId, `Эта встреча уже в базе: <b>${dup.title}</b> — повторно не импортирую.`);
@@ -291,11 +309,19 @@ async function saveGranolaNote(
     return false;
   }
 
-  await sendMessage(chatId, `✅ В очереди вычитки: <b>${title}</b>\nОткрой <a href="${WEB_URL}">Swarm Brain</a> → Встречи → «на вычитке», проверь и опубликуй.`);
+  await sendMessage(
+    chatId,
+    `✅ В очереди вычитки: <b>${title}</b>\nОткрой <a href="${WEB_URL}">Swarm Brain</a> → Встречи → «на вычитке», проверь и опубликуй.`,
+  );
   return true;
 }
 
-async function sendNotesList(chatId: number, telegramId: number, createdAfter: string, periodLabel: string): Promise<void> {
+async function sendNotesList(
+  chatId: number,
+  telegramId: number,
+  createdAfter: string,
+  periodLabel: string,
+): Promise<void> {
   await sendMessage(chatId, `Загружаю заметки Granola (${periodLabel})...`);
 
   const apiKey = await getUserApiKey(telegramId);
@@ -315,13 +341,20 @@ async function sendNotesList(chatId: number, telegramId: number, createdAfter: s
     return;
   }
 
-  await sendMessage(chatId, `<b>📓 Granola — ${periodLabel}</b>\nНайдено: ${notes.length}. Выбери что добавить в базу:`);
+  await sendMessage(
+    chatId,
+    `<b>📓 Granola — ${periodLabel}</b>\nНайдено: ${notes.length}. Выбери что добавить в базу:`,
+  );
 
   for (const note of notes) {
     const title = note.title || "Встреча";
     const ts = note.calendar_event?.scheduled_start_time ?? note.created_at;
     const date = new Date(ts).toLocaleString("ru-RU", {
-      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
     const attendeeNames = (note.attendees ?? [])
       .map((a) => a.name || a.email || "").filter(Boolean).slice(0, 4).join(", ");
@@ -355,18 +388,25 @@ export async function pollGranolaForUser(chatId: number, telegramId: number): Pr
   const savedIds = new Set<string>(
     (savedRes.data ?? [])
       .map((e: { metadata: Record<string, unknown> }) => e.metadata?.granola_note_id as string)
-      .filter(Boolean)
+      .filter(Boolean),
   );
   const skippedIds = new Set<string>(integration.skipped_note_ids ?? []);
   const newNotes = notes.filter((n) => !savedIds.has(n.id) && !skippedIds.has(n.id));
 
   if (newNotes.length) {
-    await sendMessage(chatId, `📓 <b>Новые встречи Granola (${newNotes.length})</b>\nНайдены встречи, которых ещё нет в базе:`);
+    await sendMessage(
+      chatId,
+      `📓 <b>Новые встречи Granola (${newNotes.length})</b>\nНайдены встречи, которых ещё нет в базе:`,
+    );
     for (const note of newNotes) {
       const title = note.title || "Встреча";
       const ts = note.calendar_event?.scheduled_start_time ?? note.created_at;
       const date = new Date(ts).toLocaleString("ru-RU", {
-        day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
       const attendeeNames = (note.attendees ?? [])
         .map((a) => a.name || a.email || "").filter(Boolean).slice(0, 4).join(", ");
@@ -421,7 +461,12 @@ async function ingestNewGranolaNotesForUser(integration: {
     // Кросс-источниковый дедуп: эта встреча уже опубликована в базе (другой участник / рекордер)?
     // Если да — не плодим черновик, помечаем заметку обработанной.
     const dup = await findDuplicateMeeting(supabase, {
-      groupId, entryDate, startedAt: startTime, attendees, title, viewerId: integration.telegram_id,
+      groupId,
+      entryDate,
+      startedAt: startTime,
+      attendees,
+      title,
+      viewerId: integration.telegram_id,
     });
     if (dup) {
       console.log("granola ingest skip duplicate", integration.telegram_id, note.id, "→", dup.id, `(${dup.source})`);
@@ -461,13 +506,18 @@ async function ingestNewGranolaNotesForUser(integration: {
 
     const ts = note.calendar_event?.scheduled_start_time ?? note.created_at;
     const date = new Date(ts).toLocaleString("ru-RU", {
-      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
     const attendeeNames = (note.attendees ?? [])
       .map((a) => a.name || a.email || "").filter(Boolean).slice(0, 4).join(", ");
     let text = `📓 <b>Новая встреча Granola</b>\n<b>${title}</b>\n📅 ${date}`;
     if (attendeeNames) text += `\n👥 ${attendeeNames}`;
-    text += `\n\nДобавлена в очередь вычитки. Открой <a href="${WEB_URL}">Swarm Brain</a> → Встречи → «на вычитке», проверь тезисы и опубликуй.`;
+    text +=
+      `\n\nДобавлена в очередь вычитки. Открой <a href="${WEB_URL}">Swarm Brain</a> → Встречи → «на вычитке», проверь тезисы и опубликуй.`;
     await sendMessage(integration.telegram_id, text);
   }
 
@@ -502,9 +552,10 @@ export async function ingestNewGranolaNotesAllUsers(): Promise<number> {
 export async function handleGranolaCommand(chatId: number, telegramId: number): Promise<void> {
   const apiKey = await getUserApiKey(telegramId);
   if (!apiKey) {
-    await sendMessage(chatId,
+    await sendMessage(
+      chatId,
       "📓 <b>Granola не подключена</b>\n\nЧтобы подключить — отправь:\n<code>/connect granola ВАШ_КЛЮЧ</code>\n\n" +
-      "Ключ можно найти в настройках Granola → API."
+        "Ключ можно найти в настройках Granola → API.",
     );
     return;
   }
@@ -515,7 +566,7 @@ export async function handleGranolaCommand(chatId: number, telegramId: number): 
     [
       [{ text: "Сегодня", callback_data: "gran_today" }, { text: "7 дней", callback_data: "gran_7d" }],
       [{ text: "30 дней", callback_data: "gran_30d" }, { text: "Свой период", callback_data: "gran_custom" }],
-    ]
+    ],
   );
 }
 
@@ -528,7 +579,8 @@ export async function handleGranolaCallbacks(
   const data = cb.data;
 
   if (data === "gran_today") {
-    const since = new Date(); since.setHours(0, 0, 0, 0);
+    const since = new Date();
+    since.setHours(0, 0, 0, 0);
     await sendNotesList(chatId, userId, since.toISOString(), "сегодня");
     return true;
   }
@@ -550,14 +602,20 @@ export async function handleGranolaCallbacks(
     await sendMessage(chatId, "Загружаю тезисы...");
 
     const apiKey = await getUserApiKey(userId);
-    if (!apiKey) { await sendMessage(chatId, "Granola не подключена."); return true; }
+    if (!apiKey) {
+      await sendMessage(chatId, "Granola не подключена.");
+      return true;
+    }
 
     const note = await fetchGranolaNote(apiKey, noteId);
-    if (!note) { await sendMessage(chatId, "Не удалось загрузить заметку из Granola."); return true; }
+    if (!note) {
+      await sendMessage(chatId, "Не удалось загрузить заметку из Granola.");
+      return true;
+    }
 
     const title = (note.title as string) || "Встреча";
     const content = buildNoteContent(note);
-    const tezises = await chatComplete(GRANOLA_TEZISY_PROMPT, content.slice(0, 12000));
+    const tezises = await chatComplete(GRANOLA_TEZISY_PROMPT, buildTezisyUserMessage(content.slice(0, 12000)));
 
     await setSession(chatId, `granola_preview_${noteId}`, JSON.stringify({ content, title, tezises }));
 
@@ -585,7 +643,7 @@ export async function handleGranolaCallbacks(
     await sendMessage(
       chatId,
       "Напиши инструкцию: что изменить в тезисах.\n\n" +
-      "<i>Например: «убери раздел Финансы», «сделай тезисы короче», «добавь задачу на Васю»</i>"
+        "<i>Например: «убери раздел Финансы», «сделай тезисы короче», «добавь задачу на Васю»</i>",
     );
     return true;
   }
@@ -644,19 +702,22 @@ export async function handleGranolaSessionInput(
 
     const raw = await chatComplete(
       "Ты помощник команды. Измени тезисы и/или название встречи согласно инструкции пользователя.\n" +
-      "Не домысливай — только то что есть в исходном тексте или в текущих данных.\n" +
-      "Верни ТОЛЬКО JSON без markdown: {\"title\": \"новое название или null если не менять\", \"tezises\": \"новые тезисы\"}\n" +
-      "Тезисы — в формате: ### Тема\n- тезис\n- тезис\n\n" +
-      `Инструкция: ${text.trim()}\n\n` +
-      `Текущее название: ${cached.title}\n` +
-      `Текущие тезисы:\n${cached.tezises}`,
-      cached.content.slice(0, 6000)
+        "Не домысливай — только то что есть в исходном тексте или в текущих данных.\n" +
+        'Верни ТОЛЬКО JSON без markdown: {"title": "новое название или null если не менять", "tezises": "новые тезисы"}\n' +
+        "Тезисы — в формате: ### Тема\n- тезис\n- тезис\n\n" +
+        `Инструкция: ${text.trim()}\n\n` +
+        `Текущее название: ${cached.title}\n` +
+        `Текущие тезисы:\n${cached.tezises}`,
+      cached.content.slice(0, 6000),
     );
 
     let newTitle = cached.title;
     let newTezises = cached.tezises;
     try {
-      const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()) as { title?: string | null; tezises?: string };
+      const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()) as {
+        title?: string | null;
+        tezises?: string;
+      };
       if (parsed.title) newTitle = parsed.title;
       if (parsed.tezises) newTezises = parsed.tezises;
     } catch {
@@ -686,7 +747,7 @@ export async function handleGranolaSessionInput(
   const today = new Date().toISOString().split("T")[0];
   const parsed = await chatComplete(
     `Сегодня ${today}. Преобразуй дату из текста пользователя в формат ГГГГ-ММ-ДД. Верни ТОЛЬКО дату, без пояснений. Если не можешь распознать — верни "null".`,
-    text.trim()
+    text.trim(),
   );
 
   const dateVal = /^\d{4}-\d{2}-\d{2}$/.test(parsed.trim()) ? parsed.trim() : null;
@@ -696,7 +757,9 @@ export async function handleGranolaSessionInput(
   }
 
   const label = new Date(`${dateVal}T12:00:00`).toLocaleDateString("ru-RU", {
-    day: "numeric", month: "long", year: "numeric",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
   });
   await sendNotesList(chatId, telegramId, new Date(`${dateVal}T00:00:00.000Z`).toISOString(), `с ${label}`);
   return true;
