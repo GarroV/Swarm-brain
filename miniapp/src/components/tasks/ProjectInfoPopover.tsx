@@ -187,7 +187,7 @@ export function ProjectInfoPopover({ project, stats, subprojectCount, onSave }: 
                         <a href={l.url} target="_blank" rel="noopener noreferrer"
                           className="flex items-center gap-1.5 text-primary hover:underline" title={l.url}>
                           <RoyIcon name="link" size={12} />
-                          <span className="truncate">{l.title}</span>
+                          <span className="truncate">{l.title || l.url}</span>
                         </a>
                       </li>
                     ))}

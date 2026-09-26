@@ -40,7 +40,9 @@ function readLinks(v: unknown): { links: ProjectLink[] } | string {
   if (v.length > LINKS_MAX) return `links: не больше ${LINKS_MAX} ссылок`;
   const links: ProjectLink[] = [];
   for (const item of v) {
-    if (!item || typeof item !== "object") return "links: каждый элемент — {title, url}";
+    if (!item || typeof item !== "object") {
+      return "links: каждый элемент — {title, url}";
+    }
     const { title, url } = item as Record<string, unknown>;
     if (typeof url !== "string") return "links: у ссылки нет адреса";
     const u = url.trim();
@@ -53,7 +55,9 @@ function readLinks(v: unknown): { links: ProjectLink[] } | string {
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
       return "links: адрес должен начинаться с http:// или https://";
     }
-    if (u.length > LINK_URL_MAX) return `links: адрес не длиннее ${LINK_URL_MAX} символов`;
+    if (u.length > LINK_URL_MAX) {
+      return `links: адрес не длиннее ${LINK_URL_MAX} символов`;
+    }
     const t = typeof title === "string" ? title.trim() : "";
     if (t.length > LINK_TITLE_MAX) {
       return `links: название не длиннее ${LINK_TITLE_MAX} символов`;
