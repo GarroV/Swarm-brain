@@ -328,3 +328,27 @@ export async function resolveActingIdentity(
     agentId: agent.id,
   };
 }
+
+/**
+ * Дверь агента «сам за себя»: оркестратор забирает приглашения своего воркспейса (D017), ни за
+ * кого не действуя. На выходе — только агент и его воркспейс, человеческой личности нет, поэтому
+ * эту дверь нельзя подставить туда, где пишется что-то от имени человека.
+ *
+ * Люди сюда не проходят (401): их токен — их личность, а приглашения воркспейса — не их дело.
+ * Заголовок подмены — 403: действовать «за человека» здесь нечего.
+ */
+export async function resolveServiceAgent(
+  supabase: SupabaseClient,
+  req: Request,
+): Promise<{ agentId: string; groupId: string }> {
+  const hashHex = await bearerHash(req);
+  if (readOnBehalfOf(req) !== null) {
+    throw new AgentAuthError(403, `${ON_BEHALF_OF_HEADER} is not accepted by this endpoint`);
+  }
+  const agent = await findAgent(supabase, hashHex);
+  if (!agent.groupId) {
+    console.warn(`agent-auth: у служебного агента ${agent.id} нет воркспейса`);
+    throw new AgentAuthError(403, "service agent has no workspace");
+  }
+  return { agentId: agent.id, groupId: agent.groupId };
+}

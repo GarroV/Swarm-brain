@@ -1,3 +1,7 @@
+// deno-fmt-ignore-file
+// Легаси-файл вне канона формата (решение D013): гейт `scripts/check` проверяет формат затронутого
+// файла ЦЕЛИКОМ, а переформатирование этого — ~700 строк дифа поверх параллельных веток. Новый код
+// роутера живёт в модулях рядом (task-labels.ts, meeting-invites.ts …), они по канону.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { verifyInitData } from "./auth.ts";
 import { verifyJWT, signJWT } from "../_shared/jwt.ts";
@@ -18,7 +22,6 @@ import { resolveDigestScope } from "./digest-scope.ts";
 import {
   createTask,
   getTask,
-  listTasks,
   listTasksWithTotal,
   updateTask,
   deleteTask,
@@ -54,6 +57,7 @@ import { normalizeExtractedDueDate, todayIso } from "../_shared/llm-date.ts";
 import { canAccessDraftMeeting, draftMeetingsOwnScoped, type DraftMeetingRow } from "../_shared/meeting-access.ts";
 import { handleAdminRoutes } from "./admin.ts";
 import { corsHeaders, json, apiErr, parseListLimit } from "./http.ts";
+import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
@@ -581,6 +585,14 @@ Deno.serve(async (req: Request) => {
   }
 
   // Персональные смарт-метки задач (/task-labels*) — доступ строго свой (owner_id).
+  // Приглашение бота на созвон (D017): человек вставляет ссылку — бот постучится.
+  const inviteResp = await handleMeetingInviteRoutes(
+    { supabase, telegramId: telegram_id, groupId, isDemo, origin },
+    req,
+    routePath,
+  );
+  if (inviteResp) return inviteResp;
+
   const labelResp = await handleTaskLabelRoutes(supabase, req, routePath, telegram_id, groupId, origin);
   if (labelResp) return labelResp;
 

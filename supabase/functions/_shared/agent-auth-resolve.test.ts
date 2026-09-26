@@ -12,6 +12,7 @@ import {
   AgentAuthError,
   ON_BEHALF_OF_HEADER,
   resolveActingIdentity,
+  resolveServiceAgent,
   sha256Hex,
   verifyAgentToken,
 } from "./agent-auth.ts";
@@ -497,4 +498,35 @@ Deno.test("БЛОКИРУЮЩИЙ: отказ по подмене не выда�
       `отказы различаются и выдают существование человека: ${JSON.stringify(messages)}`,
     );
   }
+});
+
+// ── Дверь агента «сам за себя» (resolveServiceAgent, D017) ────────────────────
+// Оркестратор забирает приглашения СВОЕГО воркспейса, ни за кого не действуя. Дверь отдаёт только
+// агента и его воркспейс — человеческой личности на выходе нет, и люди в неё не проходят.
+
+Deno.test("агент без подмены проходит в свою дверь — на выходе агент и его воркспейс", async () => {
+  const { client } = makeSupabase({ agentByToken: await botRow(), personById: people });
+  assertEquals(await resolveServiceAgent(client, req(BOT_TOKEN)), { agentId: "scriba", groupId: "alpha" });
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: личные токены (рекордер, MCP) в дверь агента не проходят", async () => {
+  for (const token of [HUMAN_TOKEN, MCP_TOKEN]) {
+    const { client } = makeSupabase({ userByToken: await userRow(), personById: people });
+    await refuses(resolveServiceAgent(client, req(token)), 401, `личный токен ${token}`);
+  }
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: в двери агента подмена личности не принимается", async () => {
+  const { client } = makeSupabase({ agentByToken: await botRow(), personById: people });
+  await refuses(resolveServiceAgent(client, req(BOT_TOKEN, 111)), 403, "агент с X-On-Behalf-Of");
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: агент без воркспейса не получает ничего", async () => {
+  const { client } = makeSupabase({ agentByToken: await botRow({ group_id: null }), personById: people });
+  await refuses(resolveServiceAgent(client, req(BOT_TOKEN)), 403, "агент без воркспейса");
+});
+
+Deno.test("выключенный агент в свою дверь не проходит", async () => {
+  const { client } = makeSupabase({ agentByToken: await botRow({ is_active: false }), personById: people });
+  await refuses(resolveServiceAgent(client, req(BOT_TOKEN)), 401, "выключенный агент");
 });
