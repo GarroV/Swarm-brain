@@ -7,14 +7,21 @@
 //   POST /meeting-invites      { "join_url": "https://meet.google.com/abc-defg-hij" }
 //        201 { invite: InviteView }         — заведено
 //        200 { invite: InviteView }         — та же ссылка уже ждёт бота: отдаём её же, не дубль
-//        400 invalid_link · 403 demo_not_allowed · 429 too_many_invites
+//        400 invalid_link · 400 unsupported_platform (Контур.Толк, Zoom — бот ходит только в Meet)
+//        · 403 demo_not_allowed · 429 too_many_invites
 //   GET  /meeting-invites/:id  200 { invite: InviteView } — только своё; чужое и несуществующее — 404
 //
 //   InviteView = { id, join_url, platform: "meet"|"kontur"|"zoom", status: "pending"|"taken"|
 //                  "used"|"expired", created_at, expires_at, meeting_id: string|null }
 //   Ошибка     = { error: <EN>, error_ru: <RU>, code: <код> } — веб показывает по коду на своём языке.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { INVITE_TTL_MS, type InviteRow, inviteStatus, parseInviteLink } from "../_shared/meeting-invite.ts";
+import {
+  botJoinsPlatform,
+  INVITE_TTL_MS,
+  type InviteRow,
+  inviteStatus,
+  parseInviteLink,
+} from "../_shared/meeting-invite.ts";
 import { json } from "./http.ts";
 
 /** Сколько живых приглашений держит один человек: больше — это уже рассылка бота по ссылкам. */
@@ -26,8 +33,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ERRORS = {
   invalid_link: {
     status: 400,
-    en: "Paste a link to a Google Meet, Kontur.Talk or Zoom call",
-    ru: "Вставьте ссылку на звонок Google Meet, Контур.Толк или Zoom",
+    en: "Paste a link to a Google Meet call",
+    ru: "Вставьте ссылку на звонок Google Meet",
+  },
+  unsupported_platform: {
+    status: 400,
+    en: "The bot joins Google Meet calls only — Kontur.Talk and Zoom are not supported yet",
+    ru: "Бот пока ходит только в Google Meet — Контур.Толк и Zoom не поддерживаются",
   },
   demo_not_allowed: {
     status: 403,
@@ -79,6 +91,9 @@ async function createInvite(ctx: InviteContext, req: Request): Promise<Response>
   }
   const link = parseInviteLink(raw);
   if (!link) return inviteErr("invalid_link", ctx.origin);
+  // Отказ сразу, до базы: приглашение туда, куда бот не войдёт, человек увидел бы только потом —
+  // пустой встречей с join_failed (страховка в оркестраторе остаётся, invite-trigger.ts).
+  if (!botJoinsPlatform(link.platform)) return inviteErr("unsupported_platform", ctx.origin);
 
   const nowMs = Date.now();
   const nowIso = new Date(nowMs).toISOString();

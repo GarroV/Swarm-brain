@@ -54,6 +54,18 @@ export function parseInviteLink(raw: unknown): InviteLink | null {
   return { url: url.href, platform, room: `${url.hostname}${path}`.toLowerCase() };
 }
 
+/**
+ * Площадки, куда бот умеет войти: адаптер есть только у Google Meet. Ссылку другой площадки
+ * `parseInviteLink` распознаёт (она нужна сверке комнаты и тексту отказа), но приглашение на неё
+ * сервер не заводит — иначе оно кончалось бы пустой встречей с `join_failed`. Площадка
+ * добавляется сюда вместе с адаптером бота.
+ */
+export const BOT_PLATFORMS: readonly ConferencePlatform[] = ["meet"];
+
+export function botJoinsPlatform(platform: ConferencePlatform): boolean {
+  return BOT_PLATFORMS.includes(platform);
+}
+
 /** Одна ли это комната. Бот пинит язык (`?hl=en`), поэтому сверяются хост и путь, а не строка. */
 export function sameRoom(a: unknown, b: unknown): boolean {
   const pa = parseInviteLink(a);

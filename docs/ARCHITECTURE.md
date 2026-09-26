@@ -787,7 +787,7 @@ _Все три: перевыпуск **убивает старый токен**,
 
 | Шаг | Кто и чем | Что проверяет сервер |
 |---|---|---|
-| 1. позвать | человек, `swarm-api` `POST /meeting-invites {join_url}` (его JWT веба) | ссылка — https Meet / Контур.Толк / Zoom с комнатой (`parseInviteLink`), не демо, не больше 3 живых приглашений на человека (429); та же комната повторно — то же приглашение (200) |
+| 1. позвать | человек, `swarm-api` `POST /meeting-invites {join_url}` (его JWT веба) | ссылка — https с комнатой (`parseInviteLink`) и **только Google Meet** (`BOT_PLATFORMS` в `_shared/meeting-invite.ts`: адаптер у бота один; Контур.Толк и Zoom — 400 `unsupported_platform` сразу, до базы, веб показывает текст EN+RU под полем; `join_failed` в `invite-trigger.ts` остаётся страховкой), не демо, не больше 3 живых приглашений на человека (429); та же комната повторно — то же приглашение (200) |
 | 2. забрать | оркестратор, `POST /meeting-invite` (токен агента, без подмены) | только свой воркспейс; каждое отдаётся раз (`taken_at`) |
 | 3. заявиться | бот, `meeting-claim` `{identity_kind:"manual", invite_id, join_url}` + `X-On-Behalf-Of: <invited_by>` | `checkInviteForClaim` + гашение `used_at` условным UPDATE; встреча помнит `meeting_id` |
 | 4. видеть | человек, `swarm-api` `GET /meeting-invites/:id` | только своё; `status` = `pending` → `taken` → `used` (или `expired`) |
@@ -1216,7 +1216,7 @@ _Приглашение бота на созвон — `/meeting-invites` (D017,
 
 | Метод | Путь | Что делает |
 |-------|------|-----------|
-| `POST` | `/meeting-invites` | `{ join_url }` → **201** `{ invite }` (заведено) или **200** `{ invite }` (та же комната уже ждёт бота). Ошибки `{ error (EN), error_ru, code }`: `invalid_link` 400 (не https Meet / Контур.Толк / Zoom с комнатой), `demo_not_allowed` 403, `too_many_invites` 429 (3 живых на человека) |
+| `POST` | `/meeting-invites` | `{ join_url }` → **201** `{ invite }` (заведено) или **200** `{ invite }` (та же комната уже ждёт бота). Ошибки `{ error (EN), error_ru, code }`: `invalid_link` 400 (не https-ссылка на звонок с комнатой), `unsupported_platform` 400 (Контур.Толк / Zoom: бот ходит только в Meet, приглашение не заводится), `demo_not_allowed` 403, `too_many_invites` 429 (3 живых на человека) |
 | `GET` | `/meeting-invites/:id` | Своё приглашение → `{ invite }`; чужое и несуществующее — 404 `not_found` |
 
 `invite` = `{ id, join_url, platform: meet|kontur|zoom, status: pending|taken|used|expired, created_at, expires_at, meeting_id }`.

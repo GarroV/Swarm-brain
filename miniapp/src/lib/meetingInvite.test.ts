@@ -1,6 +1,13 @@
 // deno test --allow-read miniapp/src/lib/meetingInvite.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { isFinalStatus, type MeetingInvite, parseInviteErrorCode, parseInviteResponse, upsertInvite } from "./meetingInvite.ts";
+import {
+  inviteErrorText,
+  isFinalStatus,
+  type MeetingInvite,
+  parseInviteErrorCode,
+  parseInviteResponse,
+  upsertInvite,
+} from "./meetingInvite.ts";
 
 const invite = (o: Partial<MeetingInvite> = {}): MeetingInvite => ({
   id: "11111111-1111-4111-8111-111111111111",
@@ -35,6 +42,15 @@ Deno.test("код ошибки читается из тела, незнаком�
   assertEquals(parseInviteErrorCode({ error: "x", error_ru: "y", code: "too_many_invites" }), "too_many_invites");
   assertEquals(parseInviteErrorCode({ error: "x", code: "boom" }), null);
   assertEquals(parseInviteErrorCode({ error: "no code" }), null);
+});
+
+Deno.test("отказ площадки (Контур.Толк, Zoom) показывается своим текстом, а не общим «не удалось»", () => {
+  const body = { error: "x", error_ru: "y", code: "unsupported_platform" };
+  assertEquals(parseInviteErrorCode(body), "unsupported_platform");
+  const en = inviteErrorText(parseInviteErrorCode(body), (_ru, en) => en);
+  const ru = inviteErrorText(parseInviteErrorCode(body), (ru) => ru);
+  assertEquals(en, "The bot joins Google Meet calls only — Kontur.Talk and Zoom are not supported yet");
+  assertEquals(ru, "Бот пока ходит только в Google Meet — Контур.Толк и Zoom не поддерживаются");
 });
 
 Deno.test("опрос идёт, пока бот не записывает и срок не вышел", () => {
