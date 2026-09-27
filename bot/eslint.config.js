@@ -6,6 +6,18 @@ import tseslint from "typescript-eslint";
 import sonarjs from "eslint-plugin-sonarjs";
 import unicorn from "eslint-plugin-unicorn";
 
+// Автофикс не трогает файлы тестов. Их литералы — это данные проверки, часто намеренно
+// испорченный вход: 2026-09 `unicorn/prefer-https` молча переписал "http://…" в тесте
+// отказа от ссылки без TLS на "https://…", и проверка стала тавтологией (issue #460).
+// Процессор без `supportsAutofix` — штатный способ ESLint: замечания остаются и валят
+// линт, а `--fix` их не применяет, так что решение принимает человек, а не правило.
+// Охрану держит `scripts/autofix-guard.mjs` — он краснеет, если автофикс снова дотянется.
+const testDataProcessor = {
+  meta: { name: "scriba/no-autofix-in-tests" },
+  preprocess: (text) => [text],
+  postprocess: (messages) => messages.flat(),
+};
+
 export default tseslint.config(
   { ignores: ["coverage/**", "node_modules/**", "dist/**", "reports/**"] },
   js.configs.recommended,
@@ -25,4 +37,5 @@ export default tseslint.config(
       "unicorn/no-null": "off",
     },
   },
+  { files: ["src/**/*.test.ts"], processor: testDataProcessor },
 );

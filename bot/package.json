@@ -10,6 +10,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
     "lint": "eslint .",
+    "lint:autofix-guard": "node scripts/autofix-guard.mjs",
     "format:check": "prettier --check .",
     "test": "vitest run --coverage",
     "deadcode": "knip",

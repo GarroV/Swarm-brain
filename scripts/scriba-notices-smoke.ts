@@ -15,12 +15,17 @@
 // процессом; 4342 — поддельный Telegram (записывает, что человек увидел бы в чате, и умеет
 // отказать). Живого Telegram здесь нет намеренно: сообщения настоящим людям не уходят.
 //
+// Порты сдвигаются окружением: SMOKE_PORT_FN и SMOKE_PORT_TG (стенд другой копии — свой диапазон).
+//
 // Запуск: SMOKE_SUPABASE_URL=… SMOKE_SERVICE_KEY=… deno run --allow-all scripts/scriba-notices-smoke.ts
+// В CI его гоняет .github/workflows/scriba-notices-smoke.yml на `supabase start` в раннере —
+// на каждую правку миграций, meeting-notice, _shared и самого смоука (issue #546).
 // Красный, если хотя бы один сценарий закончился тишиной, если потолок пропустил лишнее
 // сообщение или если окружения нет (непроверенное не выдаётся за проверенное).
 
-const PORT_FN = 4340;
-const PORT_TG = 4342;
+// Порты можно сдвинуть окружением — стенду другой копии репозитория достаётся свой диапазон.
+const PORT_FN = Number(Deno.env.get("SMOKE_PORT_FN") ?? 4340);
+const PORT_TG = Number(Deno.env.get("SMOKE_PORT_TG") ?? 4342);
 
 const SUPABASE_URL = Deno.env.get("SMOKE_SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SMOKE_SERVICE_KEY") ?? "";
