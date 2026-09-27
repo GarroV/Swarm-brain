@@ -26,6 +26,8 @@ import { buildTezisyUserMessage, TEZISY_PROMPT } from "./tezisy-prompt.ts";
 import { glossaryWhisperHint } from "./glossary.ts";
 import { extractChatContent } from "./openai-chat.ts";
 import { buildSegments, type Segment, speakerLegend, type SpeakerSpan } from "./speakers.ts";
+import { arbitrateFullness, transcriptVolume } from "./meeting-fullness.ts";
+import { discardState, promoteQueued, requeueLost } from "./meeting-queue.ts";
 
 export type { Segment, SpeakerSpan };
 
@@ -77,10 +79,34 @@ export interface Part {
 // speakers — необязательный таймлайн говорящих (секунды от начала записи), присланный полем
 // `speakers` формы meeting-ingest. Живёт в той же jsonb-колонке meetings.process_state, миграции
 // не требует; старые строки его не имеют — это и есть путь мягкой деградации.
+//
+// Поля второй записи одной встречи (T156) — все необязательные, старые состояния их не имеют и
+// обрабатываются ровно как раньше:
+//   gen      — поколение выгрузки. Воркер пишет в строку, только пока `process_state.gen` — его:
+//              состояние, обнулённое перехватом claim или заменённое другой записью, он не
+//              перетирает (раньше побеждал последний писавший, см. meeting-queue.requeueLost);
+//   source   — чья выгрузка (`agent:<id>` | `person`, meeting-ingest/second-recording.ts);
+//   sources  — все источники, чьи выгрузки встреча приняла (повтор не становится «второй записью»);
+//   owner    — claim_owner на момент выгрузки;
+//   challenge — вторая запись: в конце сравнить объём распознанного с текущей стенограммой и
+//              оставить более полную; priorStatus — какой summary_status вернуть, если текущая полнее.
 export interface ProcessState {
   parts: Part[];
   stage: "transcribe" | "summarize";
   speakers?: SpeakerSpan[];
+  gen?: string;
+  source?: string;
+  sources?: string[];
+  owner?: number;
+  challenge?: { priorStatus: string | null };
+}
+/** Кто и какую выгрузку кладёт в состояние (meeting-ingest). */
+export interface UploadMeta {
+  gen: string;
+  source: string;
+  sources: string[];
+  owner: number;
+  challenge?: { priorStatus: string | null };
 }
 // Части в памяти (как их собрал meeting-ingest из multipart) до заливки в Storage.
 export interface InMemoryPart {
@@ -308,12 +334,16 @@ export async function uploadPartsAndBuildState(
   systemParts: InMemoryPart[],
   micParts: InMemoryPart[],
   speakers: readonly SpeakerSpan[] = [],
+  meta?: UploadMeta,
 ): Promise<ProcessState> {
   const parts: Part[] = [];
+  // Части выгрузки с поколением лежат в своём каталоге: одноимённые части второй записи той же
+  // встречи иначе перетёрли бы аудио первой (upsert), пока её воркер ещё транскрибирует.
+  const dir = meta ? `${meetingId}/${meta.gen}` : meetingId;
   const upload = async (track: "sys" | "mic", list: InMemoryPart[]) => {
     for (const p of list) {
       if (p.blob.size > OPENAI_AUDIO_MAX_BYTES) throw new Error(`part "${p.name}" too large (>25MB)`);
-      const path = `${meetingId}/${track}-${p.name}`;
+      const path = `${dir}/${track}-${p.name}`;
       const { error } = await supabase.storage.from(AUDIO_BUCKET)
         .upload(path, p.blob, { contentType: "audio/m4a", upsert: true });
       if (error) throw new Error(`upload ${path}: ${error.message}`);
@@ -323,7 +353,10 @@ export async function uploadPartsAndBuildState(
   await upload("sys", systemParts);
   await upload("mic", micParts);
   // Пустой таймлайн в состояние не пишем: старая форма process_state остаётся байт-в-байт прежней.
-  return speakers.length > 0 ? { parts, stage: "transcribe", speakers: [...speakers] } : { parts, stage: "transcribe" };
+  const base: ProcessState = speakers.length > 0
+    ? { parts, stage: "transcribe", speakers: [...speakers] }
+    : { parts, stage: "transcribe" };
+  return meta ? { ...base, ...meta } : base;
 }
 
 // ── Лиз и состояние ───────────────────────────────────────────────────────────
@@ -343,22 +376,43 @@ async function claimLease(supabase: SupabaseClient, id: string): Promise<boolean
   return !!data;
 }
 
-async function releaseLease(supabase: SupabaseClient, id: string): Promise<void> {
-  await supabase.from("meetings").update({ processing_lease: null }).eq("id", id);
+// Запись в строку встречи от имени воркера — только пока состояние в строке его поколения.
+// Состояние старой формы (без gen) пишется без условия, как раньше. true — строка обновлена.
+async function writeOwn(
+  supabase: SupabaseClient,
+  id: string,
+  gen: string | undefined,
+  patch: Record<string, unknown>,
+): Promise<boolean> {
+  let q = supabase.from("meetings").update(patch).eq("id", id);
+  if (gen) q = q.eq("process_state->>gen", gen);
+  const { data, error } = await q.select("id");
+  if (error) throw new Error(`meetings ${id}: ${error.message}`);
+  return (data?.length ?? 0) > 0;
+}
+
+async function releaseLease(supabase: SupabaseClient, id: string, gen?: string): Promise<void> {
+  await writeOwn(supabase, id, gen, { processing_lease: null });
 }
 
 // Персист прогресса: process_state + heartbeat. summary_status НЕ трогаем (остаётся processing).
-async function saveState(supabase: SupabaseClient, id: string, state: ProcessState): Promise<void> {
+// false — состояние в строке уже не наше (см. writeOwn).
+async function saveState(supabase: SupabaseClient, id: string, state: ProcessState): Promise<boolean> {
   const nowIso = new Date().toISOString();
-  await supabase.from("meetings")
-    .update({ process_state: state, last_progress_at: nowIso, updated_at: nowIso })
-    .eq("id", id);
+  return await writeOwn(supabase, id, state.gen, {
+    process_state: state,
+    last_progress_at: nowIso,
+    updated_at: nowIso,
+  });
 }
 
-async function markFailed(supabase: SupabaseClient, m: MeetingRow): Promise<void> {
-  await supabase.from("meetings")
-    .update({ summary_status: "failed", processing_lease: null, updated_at: new Date().toISOString() })
-    .eq("id", m.id);
+async function markFailed(supabase: SupabaseClient, m: MeetingRow, state: ProcessState): Promise<void> {
+  const applied = await writeOwn(supabase, m.id, state.gen, {
+    summary_status: "failed",
+    processing_lease: null,
+    updated_at: new Date().toISOString(),
+  });
+  if (!applied) return; // запись вытеснена — о чужой встрече её владельцу не пишем
   const note =
     "⚠️ Не удалось обработать запись встречи — не получилось транскрибировать аудио. Попробуй записать заново.";
   for (const r of m.recorders ?? []) {
@@ -398,6 +452,42 @@ function labelsOf(segments: readonly Segment[]): string[] {
   return segments.map((s) => s.speaker ?? "");
 }
 
+// ── Вторая запись: оставить текущую стенограмму, если она не беднее ──────────────
+// Канон сравнения — объём распознанного (`_shared/meeting-fullness.ts`, тот же порог, что на
+// публикации): длительность слепа к потерянному звуку (#10), а длительность бота серверу не
+// известна вовсе. true — текущая остаётся, встреча вернулась в прежний статус, уведомлений нет.
+async function keepCurrentTranscript(
+  supabase: SupabaseClient,
+  id: string,
+  state: ProcessState,
+  segments: Segment[],
+): Promise<boolean> {
+  const { data } = await supabase.from("meetings").select("transcript, notes_edited_at").eq("id", id).maybeSingle();
+  const current = data as { transcript: { segments?: Segment[] } | null; notes_edited_at: string | null } | null;
+  const incoming = { segments };
+  const verdict = arbitrateFullness(
+    { transcript: incoming },
+    { transcript: current?.transcript ?? null, notesEditedAt: current?.notes_edited_at ?? null },
+  );
+  console.log(
+    `meeting-processor: вторая запись ${id} (${state.source ?? "?"}) — распознано ${
+      transcriptVolume(incoming)
+    } против ${transcriptVolume(current?.transcript ?? null)} у текущей → ${
+      verdict.replace ? "заменяем" : "оставляем текущую"
+    } (${verdict.reason})`,
+  );
+  if (verdict.replace) return false;
+  const nowIso = new Date().toISOString();
+  await writeOwn(supabase, id, state.gen, {
+    summary_status: state.challenge?.priorStatus ?? "done",
+    processing_lease: null,
+    last_progress_at: nowIso,
+    updated_at: nowIso,
+  });
+  await discardState(supabase, id, state, false);
+  return true;
+}
+
 // ── Финал: сводим транскрипт → тезисы → done → уведомляем → чистим Storage ──────
 async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state: ProcessState): Promise<void> {
   const micOffset = typeof m.mic_start_offset === "number" && Number.isFinite(m.mic_start_offset)
@@ -429,9 +519,15 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
   // Таймлайна нет → метки ровно прежние: sys → «собеседник», mic → «я».
   const segments = buildSegments(state.parts, micOffset, state.speakers ?? []);
 
+  // Вторая запись встречи (T156): стенограмма заменяется ЦЕЛИКОМ, только если эта полнее.
+  if (state.challenge && await keepCurrentTranscript(supabase, m.id, state, segments)) return;
+
   const hasMic = state.parts.some((p) => p.track === "mic" && p.done);
   const transcript = { language: resolved, model: hasMic ? "whisper-1+mic" : "whisper-1", segments };
-  await supabase.from("meetings").update({ transcript, updated_at: new Date().toISOString() }).eq("id", m.id);
+  if (!(await writeOwn(supabase, m.id, state.gen, { transcript, updated_at: new Date().toISOString() }))) {
+    await requeueLost(supabase, m.id, state);
+    return;
+  }
 
   const transcriptText = segments.map((s) => `${s.speaker ?? ""}: ${s.text}`).join("\n").slice(0, 100000);
   // Пустая стенограмма (всё вычищено фильтром) → не зовём GPT за «отпиской». Иначе GPT сам решает:
@@ -456,14 +552,12 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
       console.error(
         `meeting-processor: пустая сводка от модели для ${m.id} при непустом транскрипте (${transcriptText.length} симв) — mark failed`,
       );
-      await supabase.from("meetings")
-        .update({
-          summary_status: "failed",
-          last_progress_at: new Date().toISOString(),
-          processing_lease: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", m.id);
+      await writeOwn(supabase, m.id, state.gen, {
+        summary_status: "failed",
+        last_progress_at: new Date().toISOString(),
+        processing_lease: null,
+        updated_at: new Date().toISOString(),
+      });
       return;
     }
     tezisi = /^НЕТ[_\s]?ТЕЗИСОВ/i.test(raw) ? NO_TEZISY_NOTE : raw;
@@ -488,16 +582,19 @@ async function summarizeAndFinish(supabase: SupabaseClient, m: MeetingRow, state
   }
 
   const nowIso = new Date().toISOString();
-  await supabase.from("meetings")
-    .update({
-      draft_notes_md: tezisi,
-      title: finalTitle,
-      summary_status: "done",
-      last_progress_at: nowIso,
-      processing_lease: null,
-      updated_at: nowIso,
-    })
-    .eq("id", m.id);
+  const finished = await writeOwn(supabase, m.id, state.gen, {
+    draft_notes_md: tezisi,
+    title: finalTitle,
+    summary_status: "done",
+    last_progress_at: nowIso,
+    processing_lease: null,
+    updated_at: nowIso,
+  });
+  if (!finished) {
+    // Вытеснены между стенограммой и тезисами: уведомлять не о чем, запись — в очередь.
+    await requeueLost(supabase, m.id, state);
+    return;
+  }
 
   const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${m.id}` : "";
   const titleStr = finalTitle ? `: <b>${finalTitle}</b>` : "";
@@ -567,6 +664,19 @@ export async function buildTezisyFromTranscript(
   return /^НЕТ[_\s]?ТЕЗИСОВ/i.test(raw) ? NO_TEZISY_NOTE : raw;
 }
 
+// Встреча закончена (done/failed). Если ждёт вторая запись той же встречи (T156) — она идёт в
+// обработку сейчас; тогда done=false: встречу продолжит следующий проход (cron или inline).
+async function finishAndPromote(
+  supabase: SupabaseClient,
+  meetingId: string,
+): Promise<{ claimed: boolean; done: boolean }> {
+  const promoted = await promoteQueued(supabase, meetingId).catch((e) => {
+    console.error(`meeting-processor: очередь ${meetingId} не продвинута (cron/ingest повторят):`, e);
+    return false;
+  });
+  return { claimed: true, done: !promoted };
+}
+
 // ── Главный шаг ─────────────────────────────────────────────────────────────
 // Делает ОГРАНИЧЕННУЮ бюджетом работу по одной встрече: берёт лиз, транскрибирует следующие
 // части, и если все готовы — сводит тезисы. Безопасно прерывается по бюджету (cron продолжит).
@@ -578,6 +688,7 @@ export async function runMeetingStep(
 ): Promise<{ claimed: boolean; done: boolean }> {
   const startedAt = Date.now();
   if (!(await claimLease(supabase, meetingId))) return { claimed: false, done: false };
+  let gen: string | undefined;
 
   try {
     const { data } = await supabase
@@ -590,6 +701,7 @@ export async function runMeetingStep(
       return { claimed: true, done: m?.summary_status === "done" };
     }
     const state = m.process_state;
+    gen = state.gen;
 
     if (state.stage === "transcribe") {
       while (Date.now() - startedAt < budgetMs) {
@@ -616,26 +728,32 @@ export async function runMeetingStep(
             console.error(`meeting-processor: part ${p.path} attempt ${p.attempts} failed:`, e);
           }
         });
-        await saveState(supabase, meetingId, state);
+        if (!(await saveState(supabase, meetingId, state))) {
+          await requeueLost(supabase, meetingId, state);
+          return { claimed: true, done: true };
+        }
       }
       const recoverable = state.parts.filter((p) => !p.done && p.attempts < MAX_PART_ATTEMPTS);
       if (recoverable.length > 0) return { claimed: true, done: false }; // ещё есть части — продолжит следующий тик
       // Все оставшиеся части либо готовы, либо отравлены. Если не вышло НИ ОДНОЙ — это провал.
       if (!state.parts.some((p) => p.done)) {
-        await markFailed(supabase, m);
-        return { claimed: true, done: true };
+        await markFailed(supabase, m, state);
+        return await finishAndPromote(supabase, meetingId);
       }
       state.stage = "summarize";
-      await saveState(supabase, meetingId, state);
+      if (!(await saveState(supabase, meetingId, state))) {
+        await requeueLost(supabase, meetingId, state);
+        return { claimed: true, done: true };
+      }
     }
 
     if (state.stage === "summarize") {
       await summarizeAndFinish(supabase, m, state);
-      return { claimed: true, done: true };
+      return await finishAndPromote(supabase, meetingId);
     }
     return { claimed: true, done: false };
   } finally {
-    // Снимаем лиз, ЕСЛИ встреча ещё processing (done/failed уже обнулили его сами).
-    await releaseLease(supabase, meetingId).catch(() => {});
+    // Снимаем лиз, ЕСЛИ встреча ещё processing (done/failed уже обнулили его сами) — и только свой.
+    await releaseLease(supabase, meetingId, gen).catch(() => {});
   }
 }
