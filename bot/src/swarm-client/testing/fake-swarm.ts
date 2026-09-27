@@ -737,6 +737,19 @@ class FakeSwarmServer implements FakeSwarm {
         requestBody: parsed,
       };
     }
+    // meeting-heartbeat/write.ts: записанные секунды — число от 0 до суток, иначе 400 (T155).
+    const seconds = isRecord(parsed) ? parsed.recorded_seconds : undefined;
+    if (
+      seconds !== undefined &&
+      seconds !== null &&
+      (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0 || seconds > 86_400)
+    ) {
+      return {
+        status: 400,
+        responseBody: { error: "recorded_seconds must be a number from 0 to 86400" },
+        requestBody: parsed,
+      };
+    }
     return { status: 200, responseBody: { ok: true }, requestBody: parsed };
   }
 

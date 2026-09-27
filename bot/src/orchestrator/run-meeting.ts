@@ -38,7 +38,12 @@ interface MeetingAdapter {
 interface MeetingSession {
   claim(): Promise<ClaimDecision>;
   readonly id: string | null;
-  heartbeat(): Promise<void>;
+  /**
+   * «Бот жив» по заявленной встрече. `recordedSeconds` — сколько записано к удару: сервер пишет
+   * их в `recorded_seconds` встречи и продлевает лиз, и арбитраж `meeting-claim` сравнивает
+   * претендента с настоящей записью бота, а не с 0 из заявки до захода (T155).
+   */
+  heartbeat(recordedSeconds: number): Promise<void>;
   finish(timeline: readonly SpeakerSpan[]): Promise<void>;
 }
 
@@ -102,8 +107,13 @@ export interface MeetingRunOptions {
    * встречу (`meetingId`): пульс бота лежит в её строке (D018), и без встречи флаг записи там
    * остался бы `true` — сторож принял бы штатный конец за смерть контейнера. `null` — встреча
    * больше не наша (право ушло другой записи), и удар идёт только в строку агента.
+   * `recordedSeconds` — вся длина записи для арбитража; `null` — записи не было, и заявленное
+   * при claim не переписывается.
    */
-  readonly finalHeartbeat: (meetingId: string | null) => Promise<void>;
+  readonly finalHeartbeat: (
+    meetingId: string | null,
+    recordedSeconds: number | null,
+  ) => Promise<void>;
   /**
    * Остановка снаружи: SIGTERM от оркестратора, оборванный поводок, потолок длительности.
    */
@@ -167,6 +177,20 @@ interface RunContext {
    * Взводится, когда сервер отбил heartbeat перехватом (`isTakenOver`).
    */
   readonly takenOver: { value: boolean };
+  /**
+   * Когда началась и когда остановилась запись (часы `now`); `null` — ещё нет.
+   */
+  readonly recording: { startedAt: number | null; stoppedAt: number | null };
+}
+
+/**
+ * Сколько секунд записано к этому моменту; `null` — запись не начиналась. После остановки —
+ * вся длина записи: запечатывание и выход из звонка в неё не входят.
+ */
+function recordedSeconds(context: RunContext): number | null {
+  const { startedAt, stoppedAt } = context.recording;
+  if (startedAt === null) return null;
+  return Math.round(((stoppedAt ?? context.now()) - startedAt) / 1000);
 }
 
 async function defaultSleep(ms: number): Promise<void> {
@@ -278,7 +302,7 @@ async function stayInCall(context: RunContext): Promise<void> {
 function startHeartbeat(context: RunContext): () => void {
   const beat = (): void => {
     inBackground(
-      async () => context.options.session.heartbeat(),
+      async () => context.options.session.heartbeat(recordedSeconds(context) ?? 0),
       (error) => {
         if (isTakenOver(error)) context.takenOver.value = true;
         context.log(`heartbeat не ушёл: ${describeError(error)}`);
@@ -325,6 +349,7 @@ async function record(context: RunContext): Promise<MeetingOutcome> {
     return "no_audio";
   }
 
+  context.recording.startedAt = context.now();
   timeline.start();
   const stopHeartbeat = startHeartbeat(context);
   try {
@@ -333,6 +358,7 @@ async function record(context: RunContext): Promise<MeetingOutcome> {
     stopHeartbeat();
   }
 
+  context.recording.stoppedAt = context.now();
   const spans = await timeline.stop();
   const parts = await recorder.stop();
   await leaveQuietly(context);
@@ -411,10 +437,13 @@ export async function runMeeting(options: MeetingRunOptions): Promise<MeetingOut
     log,
     meetingId,
     takenOver: { value: false },
+    recording: { startedAt: null, stoppedAt: null },
   };
   const outcome = await afterClaim(context);
   try {
-    await options.finalHeartbeat(context.takenOver.value ? null : meetingId);
+    await (context.takenOver.value
+      ? options.finalHeartbeat(null, null)
+      : options.finalHeartbeat(meetingId, recordedSeconds(context)));
   } catch (error) {
     log(`финальный heartbeat не ушёл: ${describeError(error)}`);
   }

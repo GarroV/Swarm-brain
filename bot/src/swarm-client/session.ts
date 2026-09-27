@@ -18,7 +18,7 @@ interface RecordingSessionContract {
   claim(): Promise<ClaimDecision>;
   pushAudioPart(part: Blob, offset: number): Promise<void>;
   finish(timeline: readonly SpeakerSpan[]): Promise<void>;
-  heartbeat(): Promise<void>;
+  heartbeat(recordedSeconds?: number): Promise<void>;
 }
 
 export interface RecordingSessionOptions {
@@ -103,15 +103,19 @@ export class RecordingSession implements RecordingSessionContract {
 
   /**
    * «Бот жив» — для серверного watchdog. Идёт в строку заявленной встречи и служебного агента,
-   * а не человека.
+   * а не человека. `recordedSeconds` — сколько записано к удару: по заявленной встрече сервер
+   * кладёт их в арбитраж и продлевает лиз; без встречи им некуда лечь, и они не отправляются.
    */
-  async heartbeat(): Promise<void> {
+  async heartbeat(recordedSeconds?: number): Promise<void> {
+    const meetingId = this.meetingId;
     await this.options.client.heartbeat({
       recording: this.decision === "transcribe",
       version: this.options.version,
       on_call: true,
       meeting_key: this.options.claim.identity_key,
-      ...(this.meetingId !== null && { meeting_id: this.meetingId }),
+      ...(meetingId !== null && { meeting_id: meetingId }),
+      ...(meetingId !== null &&
+        recordedSeconds !== undefined && { recorded_seconds: recordedSeconds }),
     });
   }
 }

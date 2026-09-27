@@ -84,7 +84,7 @@ describe("meeting-status", () => {
 });
 
 describe("meeting-heartbeat", () => {
-  it.each(["recording", "version", "on_call", "meeting_key", "meeting_id"])(
+  it.each(["recording", "version", "on_call", "meeting_key", "meeting_id", "recorded_seconds"])(
     "принимает поле %s",
     (field) => {
       expect(heartbeat).toContain(`${field}?: unknown`);

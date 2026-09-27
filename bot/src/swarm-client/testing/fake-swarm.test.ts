@@ -415,6 +415,25 @@ describe("meeting-heartbeat", () => {
     const idle = await postJson(`${fake.url}/meeting-heartbeat`, { recording: false, version: 3 });
     expect(idle.status).toBe(200);
   });
+
+  it("негодные записанные секунды — 400, как на сервере: в арбитраж они не попадают", async () => {
+    const fake = await launch();
+    const base = { recording: true, version: 3, meeting_id: "m-1" };
+    for (const bad of [-1, "600", 86_401]) {
+      const response = await postJson(`${fake.url}/meeting-heartbeat`, {
+        ...base,
+        recorded_seconds: bad,
+      });
+      expect(response.status, `recorded_seconds=${String(bad)}`).toBe(400);
+    }
+    for (const good of [0, 86_400, null]) {
+      const response = await postJson(`${fake.url}/meeting-heartbeat`, {
+        ...base,
+        recorded_seconds: good,
+      });
+      expect(response.status, `recorded_seconds=${String(good)}`).toBe(200);
+    }
+  });
 });
 
 describe("meeting-status", () => {

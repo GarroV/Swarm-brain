@@ -17,6 +17,14 @@ interface World {
    * Какую встречу назвал каждый финальный heartbeat (`null` — без встречи).
    */
   readonly finals: (string | null)[];
+  /**
+   * Сколько записанных секунд сообщил каждый удар (`heartbeat`) — для арбитража meeting-claim.
+   */
+  readonly beats: number[];
+  /**
+   * Сколько секунд назвал каждый финальный heartbeat (`null` — записи не было).
+   */
+  readonly finalSeconds: (number | null)[];
   now: number;
   readonly options: MeetingRunOptions;
   readonly stop: AbortController;
@@ -54,6 +62,8 @@ function build(script: Script = {}): World {
   const calls: string[] = [];
   const notices: Notice[] = [];
   const finals: (string | null)[] = [];
+  const beats: number[] = [];
+  const finalSeconds: (number | null)[] = [];
   const stop = new AbortController();
   const door = script.door ?? ["admitted"];
   const alone = script.alone ?? [true];
@@ -64,6 +74,8 @@ function build(script: Script = {}): World {
     calls,
     notices,
     finals,
+    beats,
+    finalSeconds,
     now: 0,
     stop,
     options: {
@@ -115,8 +127,9 @@ function build(script: Script = {}): World {
           calls.push("claim");
           return Promise.resolve(script.decision ?? "transcribe");
         },
-        heartbeat: () => {
+        heartbeat: (recordedSeconds) => {
           calls.push("heartbeat");
+          beats.push(recordedSeconds);
           return script.heartbeatError ? Promise.reject(script.heartbeatError) : Promise.resolve();
         },
         finish: (timeline: readonly SpeakerSpan[]) => {
@@ -149,9 +162,10 @@ function build(script: Script = {}): World {
           });
         },
       },
-      finalHeartbeat: (meetingId) => {
+      finalHeartbeat: (meetingId, recordedSeconds) => {
         calls.push("heartbeat:final");
         finals.push(meetingId);
+        finalSeconds.push(recordedSeconds);
         return Promise.resolve();
       },
     },
@@ -233,6 +247,70 @@ describe("финальный heartbeat называет встречу", () => {
     expect(await runMeeting(world.options)).toBe("door_denied");
 
     expect(world.finals).toEqual(["m-1"]);
+  });
+});
+
+describe("удары несут записанные секунды — арбитраж meeting-claim видит запись бота (T155)", () => {
+  it("первый удар в начале записи — 0 с, дальше каждый несёт, сколько записано к нему", async () => {
+    // Интервал ударов — на подменённых таймерах, в такт подменённым часам встречи.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const world = build({ alone: [false], stopAfterPolls: 60 });
+      const options: MeetingRunOptions = {
+        ...world.options,
+        timing: { ...TIMING, heartbeatMs: 120_000 },
+        sleep: (ms) => {
+          world.now += ms;
+          vi.advanceTimersByTime(ms);
+          return Promise.resolve();
+        },
+      };
+
+      expect(await runMeeting(options)).toBe("recorded");
+
+      // 60 опросов по 5 с — 295 с между первым опросом и последним сном: удары на 0, 120, 240 с.
+      expect(world.beats).toEqual([0, 120, 240]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("финальный удар называет всю длину записи: до остановки записи, а не до выхода", async () => {
+    const world = build({ alone: [false, false, true] });
+    const options: MeetingRunOptions = {
+      ...world.options,
+      recorder: {
+        ...world.options.recorder,
+        stop: () => {
+          world.calls.push("record:stop");
+          world.now += 7000; // запечатывание частей после остановки в запись не входит
+          return Promise.resolve(3);
+        },
+      },
+    };
+
+    expect(await runMeeting(options)).toBe("recorded");
+
+    // Два опроса «люди» и 25 опросов «один» до порога 120 с, по 5 с на опрос: 26 снов = 130 с.
+    expect(world.finalSeconds).toEqual([130]);
+    expect(world.beats).toEqual([0]);
+  });
+
+  it("записи не было (не впустили) — финальный удар без секунд: заявленные 0 не переписываются", async () => {
+    const world = build({ door: ["denied"] });
+
+    expect(await runMeeting(world.options)).toBe("door_denied");
+
+    expect(world.finalSeconds).toEqual([null]);
+    expect(world.beats).toEqual([]);
+  });
+
+  it("запись не завелась — финальный удар без секунд", async () => {
+    const world = build({ recorderError: new Error("ffmpeg: no such device") });
+
+    expect(await runMeeting(world.options)).toBe("no_audio");
+
+    expect(world.finalSeconds).toEqual([null]);
   });
 });
 

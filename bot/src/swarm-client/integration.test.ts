@@ -434,7 +434,7 @@ describe("сессия записи", () => {
     const session = sessionFor();
     await session.claim();
 
-    await session.heartbeat();
+    await session.heartbeat(754);
 
     // meeting_id — по нему сервер кладёт удар в строку встречи (D018): у двух встреч бота
     // одновременно своя тишина, и живой контейнер не прячет замолчавший.
@@ -443,6 +443,8 @@ describe("сессия записи", () => {
       on_call: true,
       meeting_key: IDENTITY.identity_key,
       meeting_id: session.id,
+      // Записанное к удару — в арбитраж meeting-claim (T155).
+      recorded_seconds: 754,
     });
     expect(session.id).toEqual(expect.any(String));
   });
@@ -450,11 +452,12 @@ describe("сессия записи", () => {
   it("heartbeat до claim не выдумывает встречу: meeting_id не отправляется", async () => {
     const session = sessionFor();
 
-    await session.heartbeat();
+    await session.heartbeat(30);
 
     const body = fake.requestsTo("/meeting-heartbeat")[0]?.body as Record<string, unknown>;
     expect(body.recording).toBe(false);
     expect("meeting_id" in body).toBe(false);
+    expect("recorded_seconds" in body).toBe(false);
   });
 
   it("сбой выгрузки не теряет запись: она остаётся на диске до следующего прогона", async () => {
