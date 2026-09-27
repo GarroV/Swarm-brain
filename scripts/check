@@ -47,6 +47,7 @@ if [[ "$scope" == "all" || "$scope" == "bot" ]]; then
   if [[ -d bot/node_modules ]]; then
     run "бот · формат"           npm --prefix bot run format:check
     run "бот · линт с типами"    npm --prefix bot run lint
+    run "бот · автофикс не трогает данные тестов" npm --prefix bot run lint:autofix-guard
     run "бот · типы"             npm --prefix bot run typecheck
     if find bot/src -name '*.test.ts' -print -quit | grep -q .; then
       run "бот · тесты"          npm --prefix bot run test
