@@ -55,10 +55,10 @@
 | T140 | chores | — | done | Промпт тезисов устойчив к недоверенному тексту стенограммы: данные отделены от инструкции | #458 | 2 |
 | T141 | chores | — | done | config.toml: дописать meeting-heartbeat, meeting-context, granola-poller — локальный контур отбивает их 401 | #461 | 2 |
 | T142 | notices | T082 | done | meeting-notice добавлен в общий список дверей агента (auth-doors.test.ts) — после слияния блока | #462 | 1 |
-| T143 | chores | — | in_progress | `eslint --fix` молча переписывает данные тестов (unicorn/prefer-https превратил проверку в тавтологию) — защитить данные проверок от автоправки | #460 | 2 |
+| T143 | chores | — | done | `eslint --fix` молча переписывает данные тестов (unicorn/prefer-https превратил проверку в тавтологию) — защитить данные проверок от автоправки | #460 | 2 |
 | T144 | swarm-client | T060 | done | Ответы `meeting-current` и `meeting-ingest` проверяются на границе, как у `claim`: сломанный ответ — громкий отказ, а не молчаливый undefined | #544 | 1 |
 | T145 | identity | T017 | done | Ключ календарной встречи — одна функция в `_shared/` для `meeting-current` и `agent-scope`; тест на совпадение | #545 | 1 |
-| T146 | chores | T082 | in_progress | Смоук лимитов уведомлений (`scripts/scriba-notices-smoke.ts`) идёт в CI против живой базы — иначе снятая блокировка в `meeting_notice_reserve` проходит гейт зелёной | #546 | 2 |
+| T146 | chores | T082 | done | Смоук лимитов уведомлений (`scripts/scriba-notices-smoke.ts`) идёт в CI против живой базы — иначе снятая блокировка в `meeting_notice_reserve` проходит гейт зелёной | #546 | 2 |
 | T147 | orchestrator | T072 | done | Первая половина (D018 — вторая в T151): Серверный сторож `checkRecorderHealth` видит heartbeat бота из `service_agents` (D007), и живой контейнер не прячет мёртвый при двух встречах сразу — половина DoD T071 | #547 | 1 |
 | T148 | chores | — | todo | `swarm-client` совместим со strip-only Node — контейнер без `--experimental-transform-types` | #548 | 2 |
 | T149 | identity | T017 | done | Приглашение бота (D017): сервер заводит одноразовую запись «кто позвал, ссылка, срок» по запросу залогиненного человека; ручную встречу агент заводит в meeting-claim только по действующему приглашению, без него — 403; приглашение гасится после использования. Миграция — одна в волне | — | 1 |
