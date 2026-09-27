@@ -478,9 +478,36 @@ async function scenario(): Promise<void> {
     expectOnly("E (бот в обработке, рекордер короче)", await settle(id), "bot", 40);
   }
 
+  // G. Встреча длиннее лиза бота (30 мин): claim рекордера занимает её без сброса маркеров, пока бот
+  //    ещё транскрибируется, — выгрузка рекордера встаёт в очередь и сравнивается после бота.
+  {
+    const started = ago(200);
+    const id = await botClaim(started);
+    await rest("PATCH", `meetings?id=eq.${id}`, { lease_expires_at: ago(1) });
+    const botUpload = ingest(
+      "bot",
+      ingestForm(id, "bot", [{ segments: 3, delayMs: 2500 }, { segments: 3, delayMs: 2500 }]),
+    );
+    await sleep(1200);
+    const claim = await recorderClaim(started, 1800);
+    expect(
+      "G: claim рекордера — та же встреча, право у него",
+      claim.meeting_id === id && claim.decision === "transcribe",
+      JSON.stringify(claim),
+    );
+    const rec = await ingest("rec", ingestForm(id, "rec", [{ segments: 20 }, { segments: 20 }]));
+    expect(
+      "G: выгрузка рекордера посреди обработки бота принята в очередь (202 processing), не отброшена",
+      rec.status === 202 && rec.body.summary_status === "processing",
+      JSON.stringify(rec),
+    );
+    await botUpload;
+    expectOnly("G (лиз бота истёк, рекордер полнее, в очереди)", await settle(id), "rec", 40);
+  }
+
   // F. Повтор той же выгрузки (ответ потерялся, клиент ретраит) — вторая обработка не запускается.
   {
-    const started = ago(170);
+    const started = ago(230);
     const id = await botClaim(started);
     await ingest("bot", ingestForm(id, "bot", [{ segments: 5 }]));
     await settle(id);

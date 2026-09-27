@@ -2,6 +2,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { type InMemoryPart, runMeetingStep, uploadPartsAndBuildState } from "../_shared/meeting-processor.ts";
+import { promoteQueued, readQueued, writeQueued } from "../_shared/meeting-queue.ts";
+import { decideUpload, uploadSource } from "./second-recording.ts";
 import { parseSpeakerTimeline, type SpeakerSpan, SpeakerTimelineError } from "../_shared/speakers.ts";
 
 // meeting-ingest — приём АУДИО от claimer (см. transcribator/10-REVISED-DESIGN.md §4, §7.2).
@@ -126,6 +128,18 @@ async function buildTrackParts(
   return [await toPart(legacy, fallbackName, 0)];
 }
 
+// Inline-проход после ответа: короткую встречу добивает сразу; длинную подхватит cron meeting-process.
+function runInline(id: string): Promise<void> {
+  const job = runMeetingStep(supabase, id, INLINE_BUDGET_MS).then(() => {}).catch((e) => {
+    console.error(`meeting-ingest: inline step failed for ${id} (cron подхватит):`, e);
+  });
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime) {
+    EdgeRuntime.waitUntil(job);
+    return Promise.resolve();
+  }
+  return job;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("OK", { status: 200 });
 
@@ -150,7 +164,11 @@ Deno.serve(async (req: Request) => {
 
   const { data: meeting } = await supabase
     .from("meetings")
-    .select("id, claim_owner, notes_edited_at, summary_status")
+    // Источники и первый сегмент — без тяжёлых jsonb целиком: только чтобы решить судьбу второй
+    // записи той же встречи (second-recording.ts).
+    .select(
+      "id, claim_owner, notes_edited_at, summary_status, sources:process_state->sources, first_segment:transcript->segments->0",
+    )
     .eq("id", meetingId)
     .maybeSingle();
 
@@ -160,6 +178,8 @@ Deno.serve(async (req: Request) => {
     claim_owner: number | null;
     notes_edited_at: string | null;
     summary_status: string | null;
+    sources: unknown;
+    first_segment: unknown;
   };
 
   // Аудио льёт только держатель права транскрибации (claim_owner).
@@ -193,8 +213,18 @@ Deno.serve(async (req: Request) => {
   }
 
   // Идемпотентность: повторный upload (потерянный 202 → ретрай клиента) не должен запускать
-  // вторую обработку. 'failed'/null — можно (пере)обработать, 'processing'/'done' — нет.
-  if (m.summary_status === "processing" || m.summary_status === "done") {
+  // вторую обработку. Но выгрузка ДРУГОГО источника той же встречи — не повтор, а вторая запись
+  // (бот и рекордер одного человека, T156): она ждёт очереди или сравнивается с готовой.
+  const source = uploadSource(identity);
+  const sources = Array.isArray(m.sources) ? m.sources.filter((s): s is string => typeof s === "string") : null;
+  const decision = decideUpload({
+    summaryStatus: m.summary_status,
+    sources,
+    hasTranscript: m.first_segment !== null && m.first_segment !== undefined,
+    incoming: source,
+  });
+  const queued = decision === "queue" ? await readQueued(supabase, m.id) : null;
+  if (decision === "already_processed" || queued?.source === source) {
     return json({
       ok: true,
       meeting_id: meetingId,
@@ -237,16 +267,27 @@ Deno.serve(async (req: Request) => {
   // Кладём части в Storage и пишем манифест в process_state. Метим 'processing' ДО фоновой работы.
   let state;
   try {
-    state = await uploadPartsAndBuildState(
-      supabase,
-      m.id,
-      systemParts,
-      micParts,
-      speakers,
-    );
+    state = await uploadPartsAndBuildState(supabase, m.id, systemParts, micParts, speakers, {
+      gen: crypto.randomUUID(),
+      source,
+      sources: [...new Set([...(sources ?? []), source])],
+      owner: identity.telegramId,
+      ...(decision === "challenge" ? { challenge: { priorStatus: m.summary_status } } : {}),
+    });
+    if (decision === "queue") await writeQueued(supabase, m.id, state);
   } catch (e) {
     console.error(`meeting-ingest: storage upload failed for ${m.id}:`, e);
     return fail("failed to store audio", 500);
+  }
+  if (decision === "queue") {
+    // Первая запись ещё обрабатывается. Перечитываем статус ПОСЛЕ записи в очередь: если она уже
+    // закончила, продвигаем сами (воркер проверил очередь до того, как мы в неё встали).
+    console.log(`meeting-ingest: ${m.id} — вторая запись (${source}) ждёт, пока обработается первая`);
+    if (await promoteQueued(supabase, m.id)) await runInline(m.id);
+    return json({ ok: true, meeting_id: meetingId, web_url: webUrl, summary_status: "processing" }, 202);
+  }
+  if (decision === "challenge") {
+    console.log(`meeting-ingest: ${m.id} — вторая запись (${source}), сравним с текущей стенограммой`);
   }
   const nowIso = new Date().toISOString();
   await supabase
@@ -260,18 +301,7 @@ Deno.serve(async (req: Request) => {
     })
     .eq("id", m.id);
 
-  // Inline-проход после ответа: короткую встречу добивает сразу; длинную подхватит cron meeting-process.
-  const job = runMeetingStep(supabase, m.id, INLINE_BUDGET_MS).catch((e) => {
-    console.error(
-      `meeting-ingest: inline step failed for ${m.id} (cron подхватит):`,
-      e,
-    );
-  });
-  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime) {
-    EdgeRuntime.waitUntil(job);
-  } else {
-    await job;
-  }
+  await runInline(m.id);
 
   return json({
     ok: true,
