@@ -35,6 +35,7 @@ export default defineConfig({
         "src/orchestrator/docker-engine.ts",
         "src/orchestrator/smoke-orchestrator.ts",
         "src/orchestrator/smoke-notices.ts",
+        "src/orchestrator/smoke-pulse.ts",
       ],
     },
   },

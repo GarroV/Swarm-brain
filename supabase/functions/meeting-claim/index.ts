@@ -1,5 +1,6 @@
 // ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { occupyPatch, takeoverPatch } from "./claim-patch.ts";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf } from "../_shared/meeting-title.ts";
 import { ROSTER_TOLERANCE_MIN, sameMeetingByRoster, scopeRoomKey } from "../_shared/meeting-roster.ts";
@@ -47,7 +48,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const calendarSource: CalendarSource = {
   refreshToken: async (telegramId) => {
     const { data } = await supabase.from("user_integrations").select("api_key")
-      .eq("telegram_id", telegramId).eq("service", "google_calendar").maybeSingle();
+      .eq("telegram_id", telegramId).eq("service", "google_calendar")
+      .maybeSingle();
     return (data as { api_key?: string } | null)?.api_key ?? null;
   },
   accessToken,
@@ -360,13 +362,13 @@ async function resolveExisting(
   // (1) Свободна (никто не держит / лиз истёк и транскрипта нет) — занимаем.
   const { data: claimed } = await supabase
     .from("meetings")
-    .update({
-      claim_owner: identity.telegramId,
-      lease_expires_at: leaseIso,
-      updated_at: nowIso,
-      mic_start_offset: body.mic_start_offset ?? null,
-      recorded_seconds: body.recorded_seconds ?? null,
-    })
+    .update(occupyPatch({
+      ownerId: identity.telegramId,
+      leaseIso,
+      nowIso,
+      micStartOffset: body.mic_start_offset ?? null,
+      recordedSeconds: body.recorded_seconds ?? null,
+    }))
     .eq("id", row.id)
     .is("transcript", null)
     .or(`claim_owner.is.null,lease_expires_at.lt.${nowIso}`)
@@ -391,20 +393,16 @@ async function resolveExisting(
     return { decision: "defer", supersededOwner: null, heldBy };
   }
 
-  // Сбрасываем ТОЛЬКО маркеры обработки: transcript/draft_notes_md остаются до прихода нового аудио.
+  // Сбрасываем ТОЛЬКО маркеры обработки (и пульс бота, D019) — claim-patch.ts.
   const { data: took } = await supabase
     .from("meetings")
-    .update({
-      claim_owner: identity.telegramId,
-      lease_expires_at: leaseIso,
-      updated_at: nowIso,
-      mic_start_offset: body.mic_start_offset ?? null,
-      recorded_seconds: candidate,
-      summary_status: null,
-      process_state: null,
-      processing_lease: null,
-      last_progress_at: null,
-    })
+    .update(takeoverPatch({
+      ownerId: identity.telegramId,
+      leaseIso,
+      nowIso,
+      micStartOffset: body.mic_start_offset ?? null,
+      recordedSeconds: candidate,
+    }))
     .eq("id", row.id)
     .eq("claim_owner", row.claim_owner) // никто не перехватил, пока мы считали
     .select("id")
@@ -513,7 +511,12 @@ Deno.serve(async (req: Request) => {
   // человека, состав — то, что сервер знает сам, а не то, что прислал агент (D016, agent-scope.ts).
   let scope: AgentScope | null;
   try {
-    scope = await resolveAgentScope(calendarSource, identity, body, inviteSource(supabase));
+    scope = await resolveAgentScope(
+      calendarSource,
+      identity,
+      body,
+      inviteSource(supabase),
+    );
   } catch (e) {
     if (e instanceof AgentScopeError) return fail(e.message, e.status);
     throw e;
@@ -521,7 +524,10 @@ Deno.serve(async (req: Request) => {
   if (scope) {
     body = {
       ...body,
-      attendees: scope.attendees.map((a) => ({ name: a.name ?? undefined, email: a.email ?? undefined })),
+      attendees: scope.attendees.map((a) => ({
+        name: a.name ?? undefined,
+        email: a.email ?? undefined,
+      })),
     };
   }
 
@@ -567,7 +573,9 @@ Deno.serve(async (req: Request) => {
     if (identity.kind === "bot" && !inviteId) return fail(NO_INVITE, 403);
     const who = { telegramId: identity.telegramId, groupId: identity.groupId };
     if (inviteId && !(await consumeInvite(supabase, inviteId, who, nowIso))) {
-      console.warn(`meeting-claim: приглашение ${inviteId} уже использовано или истекло к моменту гашения`);
+      console.warn(
+        `meeting-claim: приглашение ${inviteId} уже использовано или истекло к моменту гашения`,
+      );
       return fail(NO_INVITE, 403);
     }
     const { data, error } = await supabase
@@ -602,8 +610,13 @@ Deno.serve(async (req: Request) => {
       body.started_at ?? null,
     );
     const myEmail = await emailOfUser(identity.telegramId);
-    const mayJoin = (row: { identity_key: string | null; claim_owner: number | null; attendees: Attendee[] | null }) =>
-      mayJoinExisting(identity, myEmail, row, scope);
+    const mayJoin = (
+      row: {
+        identity_key: string | null;
+        claim_owner: number | null;
+        attendees: Attendee[] | null;
+      },
+    ) => mayJoinExisting(identity, myEmail, row, scope);
 
     // (2) до вставки: вдруг эта встреча уже открыта под другим ключом.
     const joined = await findMeetingByRoster(
@@ -689,7 +702,10 @@ Deno.serve(async (req: Request) => {
           console.warn(
             `meeting-claim: служебный агент за ${identity.telegramId} — встреча ${row.id} вне состава`,
           );
-          return fail("service agent: the person is not a participant of this meeting", 403);
+          return fail(
+            "service agent: the person is not a participant of this meeting",
+            403,
+          );
         }
         meetingId = row.id;
         const res = await resolveExisting(

@@ -229,8 +229,13 @@ async function main(): Promise<number> {
         },
       }),
       notifier,
-      finalHeartbeat: async () =>
-        client.heartbeat({ recording: false, version: config.version, on_call: false }),
+      finalHeartbeat: async (meetingId) =>
+        client.heartbeat({
+          recording: false,
+          version: config.version,
+          on_call: false,
+          ...(meetingId !== null && { meeting_id: meetingId }),
+        }),
       stop: stop.signal,
       timing: config.timing,
       log,

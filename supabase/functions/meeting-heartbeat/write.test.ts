@@ -49,7 +49,13 @@ Deno.test("рекордер человека пишет в свою строку
 
 Deno.test("рекордер человека с meeting_id в теле не трогает строку встречи", () => {
   // Поля встречи — сигнал бота. Рекордер, написавший в них, выглядел бы для сторожа живым ботом.
-  const w = only(buildHeartbeatWrites(human, { recording: true, meeting_id: MEETING_ID }, NOW));
+  const w = only(
+    buildHeartbeatWrites(
+      human,
+      { recording: true, meeting_id: MEETING_ID },
+      NOW,
+    ),
+  );
   assertEquals(w.table, "allowed_users");
 });
 
@@ -71,7 +77,10 @@ Deno.test("БЛОКИРУЮЩИЙ: heartbeat бота по встрече идё
       "ни одно поле рекордера человека не должно быть тронуто",
     );
   }
-  assertEquals(writes[0].patch, { agent_last_seen_at: NOW, agent_last_recording: true });
+  assertEquals(writes[0].patch, {
+    agent_last_seen_at: NOW,
+    agent_last_recording: true,
+  });
   assertEquals(writes[1].match, { id: "scriba" });
   assertEquals(writes[1].patch, { last_seen_at: NOW, last_version: 7 });
 });
@@ -79,23 +88,51 @@ Deno.test("БЛОКИРУЮЩИЙ: heartbeat бота по встрече идё
 Deno.test("БЛОКИРУЮЩИЙ: бот обновляет только встречу своего воркспейса, заявленную за того, за кого он пришёл", () => {
   // Сверка владения — условия той же UPDATE, а не отдельное чтение: ни гонки, ни второго запроса.
   // Не совпало ни одной строки (чужая встреча, чужой воркспейс, встречи нет) — отказ, а не тишина.
-  const meeting = buildHeartbeatWrites(bot, { recording: false, meeting_id: MEETING_ID }, NOW)[0];
+  const meeting = buildHeartbeatWrites(
+    bot,
+    { recording: false, meeting_id: MEETING_ID },
+    NOW,
+  )[0];
   assertEquals(meeting.table, "meetings");
-  assertEquals(meeting.match, { id: MEETING_ID, group_id: "alpha", claim_owner: 111 });
+  assertEquals(meeting.match, {
+    id: MEETING_ID,
+    group_id: "alpha",
+    claim_owner: 111,
+  });
   assertEquals(meeting.requireHit, true);
   assertEquals(meeting.patch.agent_last_recording, false);
 });
 
+Deno.test("удар бота по встрече монотонен: опоздавший не перетирает более свежий", () => {
+  // Два удара коммитятся в любом порядке; без условия поздний recording:true поверх свежего
+  // recording:false взвёл бы сторожа на закончившейся встрече. Строка агента — без условия:
+  // она сторожей не взводит.
+  const [meeting, agent] = buildHeartbeatWrites(bot, {
+    recording: true,
+    meeting_id: MEETING_ID,
+  }, NOW);
+  assertEquals(meeting.newerThan, { column: "agent_last_seen_at", value: NOW });
+  assertEquals(meeting.patch.agent_last_seen_at, meeting.newerThan?.value);
+  assertEquals(agent.newerThan, undefined);
+});
+
 Deno.test("бот без воркспейса не пишет во встречу: сверять владение не с чем", () => {
   rejected(
-    () => buildHeartbeatWrites({ ...bot, groupId: null }, { recording: true, meeting_id: MEETING_ID }, NOW),
+    () =>
+      buildHeartbeatWrites({ ...bot, groupId: null }, {
+        recording: true,
+        meeting_id: MEETING_ID,
+      }, NOW),
     403,
   );
 });
 
 Deno.test("meeting_id не uuid — 400, а не 500 из базы", () => {
   for (const bad of ["not-a-uuid", 42, "", `${MEETING_ID}' or 1=1`]) {
-    rejected(() => buildHeartbeatWrites(bot, { recording: false, meeting_id: bad }, NOW), 400);
+    rejected(
+      () => buildHeartbeatWrites(bot, { recording: false, meeting_id: bad }, NOW),
+      400,
+    );
   }
 });
 
@@ -104,7 +141,9 @@ Deno.test("бот пишет запись без meeting_id — 400: сторо�
 });
 
 Deno.test("бот вне записи без meeting_id отмечается только в своей строке", () => {
-  const w = only(buildHeartbeatWrites(bot, { recording: false, version: 3 }, NOW));
+  const w = only(
+    buildHeartbeatWrites(bot, { recording: false, version: 3 }, NOW),
+  );
   assertEquals(w.table, "service_agents");
   assertEquals(w.patch, { last_seen_at: NOW, last_version: 3 });
   assertEquals(w.requireHit, false);
@@ -140,7 +179,9 @@ Deno.test("мусор в теле не роняет heartbeat и не попад
 });
 
 Deno.test("пробельный ключ встречи считается отсутствующим", () => {
-  const w = only(buildHeartbeatWrites(human, { recording: true, meeting_key: "   " }, NOW));
+  const w = only(
+    buildHeartbeatWrites(human, { recording: true, meeting_key: "   " }, NOW),
+  );
   assertEquals(w.patch.recorder_last_meeting_key, null);
 });
 
@@ -150,5 +191,11 @@ Deno.test("бот без agentId — громкая ошибка, а не зап
     groupId: "alpha",
     kind: "bot",
   };
-  assertThrows(() => buildHeartbeatWrites(broken, { recording: true, meeting_id: MEETING_ID }, NOW));
+  assertThrows(() =>
+    buildHeartbeatWrites(
+      broken,
+      { recording: true, meeting_id: MEETING_ID },
+      NOW,
+    )
+  );
 });

@@ -22,7 +22,13 @@
 // Деплой: supabase functions deploy meeting-heartbeat --no-verify-jwt (рекордер хитит с Bearer-токеном).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
-import { buildHeartbeatWrites, type HeartbeatBody, HeartbeatRejected, type HeartbeatWrite } from "./write.ts";
+import {
+  buildHeartbeatWrites,
+  type HeartbeatBody,
+  HeartbeatRejected,
+  type HeartbeatWrite,
+  NOT_CLAIM_OWNER,
+} from "./write.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -58,26 +64,61 @@ Deno.serve(async (req: Request) => {
   try {
     writes = buildHeartbeatWrites(identity, body, new Date().toISOString());
   } catch (e) {
-    if (e instanceof HeartbeatRejected) return json({ error: e.message }, e.status);
+    if (e instanceof HeartbeatRejected) {
+      return json({ error: e.message }, e.status);
+    }
     throw e;
   }
   for (const write of writes) {
     const outcome = await apply(write);
     if (outcome === "failed") return json({ error: "update failed" }, 500);
     // Не отличаем «встречи нет» от «встреча чужая»: ответ не должен подтверждать чужие id.
-    if (outcome === "missed") return json({ error: "meeting is not yours" }, 403);
+    // code — для бота: по своей встрече такой отказ значит «право ушло другой записи» (D019).
+    if (outcome === "missed") {
+      return json(
+        { error: "meeting is not yours", code: NOT_CLAIM_OWNER },
+        403,
+      );
+    }
+    // Опоздавший удар: встречу уже освежил более поздний. Ничего не пишем дальше — строку агента
+    // тот, более поздний, тоже освежил.
+    if (outcome === "stale") return json({ ok: true, stale: true });
   }
   return json({ ok: true });
 });
 
-async function apply(write: HeartbeatWrite): Promise<"ok" | "missed" | "failed"> {
+type Outcome = "ok" | "missed" | "stale" | "failed";
+
+async function apply(write: HeartbeatWrite): Promise<Outcome> {
   let query = supabase.from(write.table).update(write.patch);
-  for (const [column, value] of Object.entries(write.match)) query = query.eq(column, value);
+  for (const [column, value] of Object.entries(write.match)) {
+    query = query.eq(column, value);
+  }
+  if (write.newerThan) {
+    const { column, value } = write.newerThan;
+    query = query.or(`${column}.is.null,${column}.lt.${value}`);
+  }
   // Отдать назад только ключ: строка встречи несёт транскрипт, тащить его ради счёта незачем.
-  const { data, error } = await query.select(Object.keys(write.match)[0]);
+  const key = Object.keys(write.match)[0];
+  const { data, error } = await query.select(key);
   if (error) {
     console.error(`meeting-heartbeat: update ${write.table}: ${error.message}`);
     return "failed";
   }
-  return write.requireHit && (data ?? []).length === 0 ? "missed" : "ok";
+  if (!write.requireHit || (data ?? []).length > 0) return "ok";
+  if (!write.newerThan) return "missed";
+  // Промах при условии свежести: встреча либо не того, кто пришёл, либо удар опоздал. Различаем
+  // тем же набором условий владения, но уже без свежести.
+  let owned = supabase.from(write.table).select(key);
+  for (const [column, value] of Object.entries(write.match)) {
+    owned = owned.eq(column, value);
+  }
+  const { data: rows, error: ownedError } = await owned;
+  if (ownedError) {
+    console.error(
+      `meeting-heartbeat: select ${write.table}: ${ownedError.message}`,
+    );
+    return "failed";
+  }
+  return (rows ?? []).length > 0 ? "stale" : "missed";
 }
