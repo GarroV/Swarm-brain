@@ -5,6 +5,8 @@
 // каждая граница — отдельным тестом, и каждая проверена порчей.
 import { assertEquals, assertNotEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  BOT_PLATFORMS,
+  botJoinsPlatform,
   checkInviteForClaim,
   INVITE_TTL_MS,
   type InviteRow,
@@ -22,6 +24,14 @@ Deno.test("ссылки трёх площадок принимаются, пло
   assertEquals(parseInviteLink("https://team.ktalk.ru/room42")?.platform, "kontur");
   assertEquals(parseInviteLink("https://talk.kontur.ru/room42")?.platform, "kontur");
   assertEquals(parseInviteLink("https://us02web.zoom.us/j/123456789?pwd=abc")?.platform, "zoom");
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: бот входит только в Meet — Контур.Толк и Zoom отбиваются при приглашении", () => {
+  assertEquals(botJoinsPlatform("meet"), true);
+  assertEquals(botJoinsPlatform("kontur"), false);
+  assertEquals(botJoinsPlatform("zoom"), false);
+  // Площадку добавляют вместе с адаптером бота, а не заодно: список — одна строка.
+  assertEquals([...BOT_PLATFORMS], ["meet"]);
 });
 
 Deno.test("ссылка приводится к виду без фрагмента и пробелов; запрос (пароль Zoom) сохраняется", () => {

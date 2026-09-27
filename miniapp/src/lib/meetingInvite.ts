@@ -3,8 +3,9 @@
 // экран (`components/roy/InviteBotCard.tsx`) только рисует то, что здесь решено.
 //
 // Контракт — docs/ARCHITECTURE.md «Приглашение бота (D017)»:
-//   POST /meeting-invites {join_url} → 201/200 { invite } · 400 invalid_link · 403 demo_not_allowed
-//                                     · 429 too_many_invites
+//   POST /meeting-invites {join_url} → 201/200 { invite } · 400 invalid_link
+//                                     · 400 unsupported_platform (Контур.Толк, Zoom — бот ходит только в Meet)
+//                                     · 403 demo_not_allowed · 429 too_many_invites
 //   GET  /meeting-invites/:id        → 200 { invite } · 404 not_found
 
 export type InviteStatus = "pending" | "taken" | "used" | "expired";
@@ -20,11 +21,22 @@ export interface MeetingInvite {
   meeting_id: string | null;
 }
 
-export type InviteErrorCode = "invalid_link" | "demo_not_allowed" | "too_many_invites" | "not_found";
+export type InviteErrorCode =
+  | "invalid_link"
+  | "unsupported_platform"
+  | "demo_not_allowed"
+  | "too_many_invites"
+  | "not_found";
 
 const STATUSES: readonly InviteStatus[] = ["pending", "taken", "used", "expired"];
 const PLATFORMS: readonly InvitePlatform[] = ["meet", "kontur", "zoom"];
-const ERROR_CODES: readonly InviteErrorCode[] = ["invalid_link", "demo_not_allowed", "too_many_invites", "not_found"];
+const ERROR_CODES: readonly InviteErrorCode[] = [
+  "invalid_link",
+  "unsupported_platform",
+  "demo_not_allowed",
+  "too_many_invites",
+  "not_found",
+];
 
 /** Сколько приглашений экран помнит между заходами (сервер держит не больше 3 живых). */
 export const REMEMBERED_INVITES = 3;
@@ -94,7 +106,12 @@ export function inviteStatusLabel(status: InviteStatus, dt: Dt): string {
 export function inviteErrorText(code: InviteErrorCode | null, dt: Dt): string {
   switch (code) {
     case "invalid_link":
-      return dt("Вставьте ссылку на звонок Google Meet, Контур.Толк или Zoom", "Paste a link to a Google Meet, Kontur.Talk or Zoom call");
+      return dt("Вставьте ссылку на звонок Google Meet", "Paste a link to a Google Meet call");
+    case "unsupported_platform":
+      return dt(
+        "Бот пока ходит только в Google Meet — Контур.Толк и Zoom не поддерживаются",
+        "The bot joins Google Meet calls only — Kontur.Talk and Zoom are not supported yet",
+      );
     case "demo_not_allowed":
       return dt("В демо бота позвать нельзя", "The bot cannot be invited from the demo");
     case "too_many_invites":

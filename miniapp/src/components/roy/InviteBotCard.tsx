@@ -178,8 +178,8 @@ export function InviteBotCard() {
       <SectionLabel className="!mb-1.5">{dt("Позвать бота на созвон", "Invite the bot to a call")}</SectionLabel>
       <p className="mx-1 mb-2.5 text-ink-soft" style={{ fontSize: 12.5, lineHeight: 1.4 }}>
         {dt(
-          "Вставьте ссылку на Google Meet, Контур.Толк или Zoom — бот постучится и запишет встречу.",
-          "Paste a Google Meet, Kontur.Talk or Zoom link — the bot will knock and record the meeting.",
+          "Вставьте ссылку на Google Meet — бот постучится и запишет встречу.",
+          "Paste a Google Meet link — the bot will knock and record the meeting.",
         )}
       </p>
       {/* noValidate: мусор в поле должен дойти до сервера и вернуться нашим текстом, а не

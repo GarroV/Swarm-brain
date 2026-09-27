@@ -1327,6 +1327,10 @@ function readInvite(body: unknown): MeetingInvite {
 
 export async function createMeetingInvite(joinUrl: string): Promise<MeetingInvite> {
   if (DEV_MODE) {
+    // Как сервер: бот ходит только в Meet, остальные площадки отбиваются сразу.
+    if (/(^|\.)(ktalk\.ru|kontur\.ru|zoom\.us)(\/|$)/i.test(joinUrl.trim().replace(/^https?:\/\//, ""))) {
+      throw new ApiError(400, "The bot joins Google Meet calls only", { code: "unsupported_platform" });
+    }
     const same = mockInvites.find((x) => x.join_url === joinUrl.trim());
     if (same) return same;
     const now = Date.now();
