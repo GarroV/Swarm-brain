@@ -49,11 +49,12 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      # Смоуку нужны только база и REST над ней: остальные службы — лишние минуты скачивания.
+      # Смоуку нужны база и REST над ней; auth (gotrue) оставлен, потому что без него
+      # `supabase status` не отдаёт SERVICE_ROLE_KEY. Остальное — лишние минуты скачивания.
       - name: Поднять локальную базу со всеми миграциями
         run: >
           supabase start
-          -x gotrue,realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
       - name: Смоук лимитов уведомлений
         run: |
           eval "$(supabase status -o env | grep -E '^(API_URL|SERVICE_ROLE_KEY)=')"
