@@ -3,6 +3,7 @@ import { verifyAgentToken, AgentAuthError, type AgentIdentity } from "../_shared
 import { defaultMeetingTitle, displayNameOf } from "../_shared/meeting-title.ts";
 import { sameMeetingByRoster, scopeRoomKey, ROSTER_TOLERANCE_MIN } from "../_shared/meeting-roster.ts";
 import { CLAIM_LEASE_TTL_SEC } from "../_shared/meeting-lease.ts";
+import { coOwnersFromAttendees, mergeAttendees } from "../_shared/meeting-owners.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -156,9 +157,11 @@ async function registerRecorder(
   nowIso: string,
   recordedSeconds: number | undefined,
   supersedeOwner?: number | null,
+  incomingAttendees?: Attendee[],
 ): Promise<void> {
-  const { data } = await supabase.from("meetings").select("recorders").eq("id", meetingId).single();
-  const recorders = ((data as { recorders?: RecorderEntry[] } | null)?.recorders) ?? [];
+  const { data } = await supabase.from("meetings").select("recorders, attendees, group_id").eq("id", meetingId).single();
+  const row = data as { recorders?: RecorderEntry[]; attendees?: Attendee[] | null; group_id?: string | null } | null;
+  const recorders = row?.recorders ?? [];
   const next: RecorderEntry[] = recorders.map((r) =>
     supersedeOwner != null && r.telegram_id === supersedeOwner && r.role === "transcribe"
       ? { ...r, role: "superseded" as RecorderRole }
@@ -173,7 +176,29 @@ async function registerRecorder(
   const at = next.findIndex((r) => r.telegram_id === telegramId);
   if (at >= 0) next[at] = { ...next[at], ...mine };
   else next.push(mine);
-  await supabase.from("meetings").update({ recorders: next, updated_at: nowIso }).eq("id", meetingId);
+  // Участники второго записавшего раньше терялись: attendees писались только при INSERT.
+  // Совладельцы — участники встречи с аккаунтом SWARM в том же воркспейсе (решение владельца
+  // 2026-09-25, _shared/meeting-owners.ts). Пересчитываем на каждом claim.
+  const attendees = mergeAttendees(row?.attendees, incomingAttendees);
+  const coOwners = await coOwnersOf(row?.group_id ?? null, attendees, next.map((r) => r.telegram_id));
+  await supabase.from("meetings").update({
+    recorders: next,
+    attendees,
+    ...(coOwners ? { co_owners: coOwners } : {}),
+    updated_at: nowIso,
+  }).eq("id", meetingId);
+}
+
+// null — не смогли прочитать участников воркспейса: оставляем прежних совладельцев, а не обнуляем.
+async function coOwnersOf(groupId: string | null, attendees: Attendee[], recorderIds: number[]): Promise<number[] | null> {
+  if (!groupId) return [];
+  if (!attendees.some((a) => a?.email)) return [];
+  const { data, error } = await supabase.from("allowed_users").select("telegram_id, email").eq("group_id", groupId);
+  if (error) {
+    console.error("meeting-claim: участники воркспейса не прочитаны, совладельцы не пересчитаны", error.message);
+    return null;
+  }
+  return coOwnersFromAttendees(attendees, (data ?? []) as Array<{ telegram_id: number | null; email: string | null }>, recorderIds);
 }
 
 // Длительность записи, которая СЕЙЧАС лежит за встречей (сек). Для строк, заведённых старым
@@ -553,7 +578,7 @@ Deno.serve(async (req: Request) => {
     `meeting-claim: ${decision} ${meetingId} kind=${body.identity_kind} sec=${Math.round(body.recorded_seconds ?? 0)} by=${identity.telegramId} heldBy=${heldBy ?? "—"}`,
   );
 
-  await registerRecorder(meetingId, identity.telegramId, decision, nowIso, body.recorded_seconds, supersededOwner);
+  await registerRecorder(meetingId, identity.telegramId, decision, nowIso, body.recorded_seconds, supersededOwner, body.attendees);
 
   // Личные пометки — best-effort: их сбой не должен валить координацию транскрибации.
   if (body.user_notes && body.user_notes.length > 0) {

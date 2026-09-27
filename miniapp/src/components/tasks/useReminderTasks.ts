@@ -77,6 +77,16 @@ export function useReminderTasks() {
   const [query, setQuery] = useState("");
   const [labels, setLabels] = useState<TaskLabel[]>([]);
   const [activeLabelId, setActiveLabelId] = useState<string | null>(() => (taskView ? null : readSavedView()?.activeLabelId ?? null));
+  // Доска остаётся смонтированной между переходами по разделам (RoyApp держит открытые разделы
+  // живыми) — новый вход с дашборда применяем и к уже открытой доске, а не только при монтировании.
+  const mountedView = useRef(taskView);
+  useEffect(() => {
+    if (!taskView || taskView === mountedView.current) return;
+    mountedView.current = taskView;
+    setLens(taskView.lens);
+    if (taskView.list) setActiveList(taskView.list);
+    setActiveLabelId(null);
+  }, [taskView]);
 
   // Сохраняем выбранный вид (список/метка/линза/тумблеры), чтобы он пережил рефреш страницы.
   useEffect(() => {

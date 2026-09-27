@@ -1,4 +1,5 @@
 import { getInitData } from "./telegram";
+import type { BackdropId } from "./backdrop";
 import type {
   AdminUser,
   AdminWorkspace,
@@ -13,6 +14,7 @@ import type {
   MeetingLiveNote,
   MeetingNotes,
   Project,
+  ProjectLink,
   Sprint,
   SprintCycle,
   SprintCycleDetail,
@@ -27,6 +29,11 @@ import type {
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
+import {
+  type Maintenance,
+  parseMaintenanceResponse,
+  publishMaintenance,
+} from "@/lib/maintenance";
 
 export type CreateTaskInput = {
   title: string;
@@ -108,6 +115,7 @@ export type { ProposedTask } from "./proposedTasks";
 export type UpdateMeInput = {
   role?: string | null;
   markets?: string[];
+  ui_backdrop?: BackdropId | null;
 };
 
 class ApiError extends Error {
@@ -501,7 +509,12 @@ const mockGranolaUnprocessed: GranolaNote[] = [
 // База — same-origin прокси /api (CF Pages Function). В Telegram шлём initData
 // в Authorization: tma; в браузере — httpOnly cookie (credentials: include),
 // прокси перекладывает её в Bearer на сервере.
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
+// Прямой адрес swarm-api из NEXT_PUBLIC_API_URL не берём: swarm-api пускает по CORS только
+// боевой адрес, поэтому на превью ветки (там в переменной остался прямой адрес) браузер резал
+// каждый запрос, экран показывал «Не загрузилось» и не уводил на вход. Относительный путь — можно,
+// но не «//host»: браузер читает его как адрес другого хоста, и сессия ушла бы туда.
+const envApi = process.env.NEXT_PUBLIC_API_URL ?? "";
+const API_BASE = /^\/(?![/\\])/.test(envApi) ? envApi : "/api";
 
 function authHeaders(): Record<string, string> {
   const initData = getInitData();
@@ -545,8 +558,30 @@ async function apiFetchRaw<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => ({ error: res.statusText }));
+  // Заморозка: сервер отвечает 503 на любое изменение. Узнаём о ней ровно в тот момент, когда
+  // человек попытался что-то сделать, — это раньше, чем придёт следующий опрос статуса, и
+  // честнее, чем показать «ошибка сети» на работах, о которых мы знаем.
+  if (res.status === 503) {
+    const frozen = parseMaintenanceResponse(body);
+    if (frozen) publishMaintenance(frozen);
+  }
   if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText);
   return body as T;
+}
+
+/**
+ * Публичный статус работ. Без авторизации намеренно: заглушку должен увидеть и тот, у кого
+ * протухла сессия, иначе вместо «идут работы» он получит экран входа и решит, что сломался он.
+ */
+export async function fetchMaintenance(): Promise<Maintenance | null> {
+  if (DEV_MODE) return null;
+  try {
+    const res = await fetch(`${API_BASE}/maintenance`, { cache: "no-store" });
+    return parseMaintenanceResponse(await res.json());
+  } catch {
+    // Молчим намеренно: недоступный статус — не повод пугать человека заглушкой.
+    return null;
+  }
 }
 
 // Загрузка файлов (multipart): всегда мутация — сбрасываем кэш чтения.
@@ -674,9 +709,16 @@ export async function fetchTodayMeetings(): Promise<TodayMeetings> {
   return apiFetch<TodayMeetings>(`/calendar/today?tz_offset=${tz}`);
 }
 
-export async function fetchConfig(): Promise<{ allowed_markets: string[] }> {
+export interface WorkspaceConfig {
+  allowed_markets: string[];
+  /** Имя воркспейса; null/нет — старый сервер или воркспейс без имени. */
+  workspace_name?: string | null;
+}
+
+export async function fetchConfig(): Promise<WorkspaceConfig> {
   if (DEV_MODE) {
     return {
+      workspace_name: "IMF BD",
       allowed_markets: [
         "RS",
         "HR",
@@ -708,7 +750,7 @@ export async function fetchConfig(): Promise<{ allowed_markets: string[] }> {
       ],
     };
   }
-  return apiFetch<{ allowed_markets: string[] }>("/config");
+  return apiFetch<WorkspaceConfig>("/config");
 }
 
 // Рекордер встреч (Mac): статус токена и минт/перевыпуск однострочника установки.
@@ -763,6 +805,59 @@ export async function patchMe(fields: UpdateMeInput): Promise<void> {
 export async function fetchUsers(): Promise<User[]> {
   if (DEV_MODE) return MOCK_USERS;
   return apiFetch<User[]>("/users");
+}
+
+// ── Статистика по людям (GET /stats/people) ─────────────────────────────────
+// Форма — зеркало `PersonStats` из supabase/functions/_shared/stats/people.ts.
+export type PersonStats = {
+  telegram_id: number;
+  name: string;
+  tasks: {
+    open: number;
+    inProgress: number;
+    overdue: number;
+    closed: number;
+    closedRecent: number;
+    onTimeRate: number | null;
+    onTimeBase: number;
+    avgCloseDays: number | null;
+  };
+  /** inReview — сколько встреч человека ждут вычитки; только число, содержимое черновиков не отдаётся. */
+  meetings: { published: number; inReview: number };
+  activity: { activeDays: number; strip: number[]; lastActiveAt: string | null };
+};
+export type PeopleStatsResponse = {
+  people: PersonStats[];
+  activityDays: number;
+  closedWindowDays: number;
+  tasksTruncated: boolean;
+};
+
+function mockPeopleStats(): PeopleStatsResponse {
+  const people = MOCK_USERS.map((u, i): PersonStats => {
+    const strip = Array.from({ length: 14 }, (_, d) => ((d * 7 + i * 3) % 5 === 0 ? 0 : (d + i) % 4));
+    return {
+      telegram_id: u.telegram_id,
+      name: u.name,
+      tasks: {
+        open: 3 + i * 2, inProgress: 1 + (i % 3), overdue: i % 3, closed: 12 + i * 5,
+        closedRecent: 4 + i, onTimeRate: i === 2 ? null : 0.6 + (i % 4) * 0.1, onTimeBase: i === 2 ? 0 : 5 + i,
+        avgCloseDays: i === 2 ? null : 2.5 + i,
+      },
+      meetings: { published: 6 + i * 3, inReview: i % 2 },
+      activity: {
+        activeDays: strip.filter((n) => n > 0).length,
+        strip,
+        lastActiveAt: new Date(Date.now() - i * 26 * 3_600_000).toISOString(),
+      },
+    };
+  });
+  return { people, activityDays: 14, closedWindowDays: 30, tasksTruncated: false };
+}
+
+export async function fetchPeopleStats(): Promise<PeopleStatsResponse> {
+  if (DEV_MODE) return mockPeopleStats();
+  return apiFetch<PeopleStatsResponse>("/stats/people");
 }
 
 export async function fetchTasks(
@@ -2135,6 +2230,9 @@ export async function updateProject(
       owner_telegram_id: number | null;
       start_date: string | null;
       end_date: string | null;
+      goal: string | null;
+      description: string | null;
+      links: ProjectLink[];
     }
   >,
 ): Promise<Project> {
@@ -2663,6 +2761,8 @@ let mockAgentMeetings: AgentMeeting[] = [
       claimed_at: "2026-06-12T14:47:10+03:00",
       role: "transcribe",
     }],
+    // Второй участник встречи из SWARM — совладелец: показывает вид «только в общую базу».
+    co_owners: [135201285],
     entry_id: null,
     created_at: "2026-06-12T14:47:00+03:00",
   },

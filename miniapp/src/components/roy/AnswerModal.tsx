@@ -54,7 +54,7 @@ export function AnswerModal({ query, onClose }: { query: string; onClose: () => 
         role="dialog"
         aria-label="Ответ"
         onClick={(e) => e.stopPropagation()}
-        className="flex w-full flex-col overflow-hidden border border-line bg-[var(--popover)] shadow-[0_24px_64px_-18px_rgba(0,0,0,.5)] dark:backdrop-blur-xl sm:max-w-[760px] sm:rounded-[20px]"
+        className="flex w-full flex-col overflow-hidden border border-line bg-[var(--popover)] shadow-[0_24px_64px_-18px_rgba(0,0,0,.5)] sm:max-w-[760px] sm:rounded-[14px]"
         style={{ maxHeight: "88vh" }}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-3.5">

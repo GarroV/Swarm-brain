@@ -4,16 +4,17 @@ import type { Sprint } from "@/types";
 import { useDt } from "@/components/roy/nav";
 import { useConfirm } from "@/components/ui/confirm";
 import { createSprint, deleteSprint, updateSprint } from "@/lib/api";
+import { Menu, type MenuItem } from "@/components/tasks/table/Menu";
 
-// Пространство — вкладка доски со своей чередой спринтов. Переключатель отдельным рядом
-// над спринтами, потому что порядок вопросов у человека такой: сперва «какой проект», потом
+// Пространство — вкладка доски со своей чередой спринтов. Переключатель — первая кнопка
+// полосы спринта, перед выбором спринта, потому что порядок вопросов у человека такой: сперва «какой проект», потом
 // «какой спринт». Обратный порядок заставляет искать свой спринт среди чужих.
 //
 // ⚠️ `Sprint` здесь — ВКЛАДКА доски (таблица `sprints`, имя историческое), а не период
 // работы: период — `SprintCycle`.
 //
 // Управление пространствами живёт здесь же, а не на экране: экран уже за 1000 строк (#265),
-// а создание, переименование и удаление — это ровно про этот ряд чипов. Серверная часть
+// а создание, переименование и удаление — это ровно про это меню. Серверная часть
 // существовала и раньше (`POST/PATCH/DELETE /sprints`), не хватало входа с экрана (#403).
 
 /** null — «Без пространства»: спринты, заведённые до пространств, и они не должны пропасть. */
@@ -133,31 +134,69 @@ export function SpaceSwitcher(
     }
   }
 
-  const chip = (id: string | null, label: string) => {
-    const isActive = value === id;
-    const n = counts?.get(id);
-    return (
-      <button
-        key={id ?? "__none__"}
-        type="button"
-        onClick={() => onChange(id)}
-        className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-          isActive
-            ? "bg-ink text-background"
-            : "border border-line bg-surface text-ink-soft hover:bg-surface-2 dark:backdrop-blur-sm"
-        }`}
-      >
-        {label}
-        {
-          /* Отделено точкой: «Sprint 24» и счётчик 3 без разделителя читаются как «Sprint 243» —
-            проверено на живом экране, имя пространства превращалось в другое имя. */
-        }
-        {n ? <span className="ml-1 tabular-nums opacity-60">· {n}</span> : null}
-      </button>
-    );
+  const n = (id: string | null) => {
+    const c = counts?.get(id);
+    // Отделено точкой: «Sprint 24» и счётчик 3 без разделителя читаются как «Sprint 243» —
+    // проверено на живом экране, имя пространства превращалось в другое имя.
+    return c
+      ? <span className="ml-1 font-mono text-ink-mute">· {c}</span>
+      : null;
   };
+  const items: MenuItem[] = [
+    ...spaces.map((s) => ({
+      key: s.id,
+      label: <>{s.name}{n(s.id)}</>,
+      on: value === s.id,
+      action: true,
+      onPick: () => onChange(s.id),
+    })),
+    ...(showOrphans
+      ? [{
+        key: "__none__",
+        label: <>{dt("Без пространства", "No space")}{n(NO_SPACE)}</>,
+        on: value === NO_SPACE,
+        action: true,
+        onPick: () => onChange(NO_SPACE),
+      }]
+      : []),
+    ...(onChanged
+      ? [{
+        key: "__new__",
+        label: (
+          <span className="text-accent-ink">
+            {dt("＋ Новое пространство", "＋ New space")}
+          </span>
+        ),
+        action: true,
+        onPick: () => setDraft({ id: null, name: "" }),
+      }]
+      : []),
+    ...(onChanged && canManage && active
+      ? [
+        {
+          key: "__rename__",
+          label: dt("Переименовать пространство", "Rename space"),
+          action: true,
+          onPick: () => setDraft({ id: active.id, name: active.name }),
+        },
+        {
+          key: "__delete__",
+          label: (
+            <span className="text-pri-high">
+              {dt("Удалить пространство", "Delete space")}
+            </span>
+          ),
+          action: true,
+          onPick: remove,
+        },
+      ]
+      : []),
+  ];
+  const current = active?.name ??
+    (value === NO_SPACE && showOrphans
+      ? dt("Без пространства", "No space")
+      : dt("не выбрано", "none"));
 
-  // Иконка-кнопка ряда: мелкая, без подписи — ряд и так длинный, а действий три.
   const iconBtn = (title: string, onClick: () => void, glyph: string) => (
     <button
       type="button"
@@ -165,40 +204,28 @@ export function SpaceSwitcher(
       aria-label={title}
       disabled={busy}
       onClick={onClick}
-      className="shrink-0 rounded-full border border-line bg-surface px-2 py-1 text-xs text-ink-soft transition-colors hover:bg-surface-2 disabled:opacity-40"
+      className="h-[28px] shrink-0 rounded-[7px] border border-line bg-surface px-2 text-ink-soft transition-colors hover:bg-surface-2 disabled:opacity-40"
+      style={{ fontSize: 12.5 }}
     >
       {glyph}
     </button>
   );
 
+  // Кнопка-меню полосы спринта (стенд: sprintBar → «Пространство: …»). Черновик имени — рядом
+  // в той же полосе: меню закрывается на выборе пункта, и поле внутри него пропадало бы.
   return (
-    <div className="px-4 pt-3">
-      <div className="flex items-center gap-1.5 overflow-x-auto">
-        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-ink-soft/60">
-          {dt("Пространство", "Space")}
-        </span>
-        {spaces.map((s) => chip(s.id, s.name))}
-        {showOrphans && chip(NO_SPACE, dt("Без пространства", "No space"))}
-        {onChanged && !draft && (
+    <>
+      <Menu
+        label={
           <>
-            {iconBtn(
-              dt("Новое пространство", "New space"),
-              () => setDraft({ id: null, name: "" }),
-              "+",
-            )}
-            {canManage && active && iconBtn(
-              dt("Переименовать", "Rename"),
-              () => setDraft({ id: active.id, name: active.name }),
-              "✎",
-            )}
-            {canManage && active &&
-              iconBtn(dt("Удалить", "Delete"), remove, "✕")}
+            {dt("Пространство", "Space")}:{" "}
+            <span className="text-ink">{current}</span>
           </>
-        )}
-      </div>
-
+        }
+        items={items}
+      />
       {draft && (
-        <div className="mt-2 flex items-center gap-1.5">
+        <span className="flex items-center gap-1">
           <input
             ref={inputRef}
             value={draft.name}
@@ -214,17 +241,19 @@ export function SpaceSwitcher(
             placeholder={draft.id === null
               ? dt("Название пространства", "Space name")
               : dt("Новое название", "New name")}
-            className="w-56 rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink outline-none focus:border-ink-soft"
+            className="h-[28px] w-48 rounded-[7px] border border-line bg-surface px-2.5 text-ink outline-none focus:border-accent-line"
+            style={{ fontSize: 12.5 }}
           />
           {iconBtn(dt("Сохранить", "Save"), save, "✓")}
           {iconBtn(dt("Отмена", "Cancel"), () => {
             setDraft(null);
             setErr(null);
           }, "✕")}
-        </div>
+        </span>
       )}
-
-      {err && <div className="mt-1 text-[11px] text-danger">{err}</div>}
-    </div>
+      {err && (
+        <span className="text-pri-high" style={{ fontSize: 11.5 }}>{err}</span>
+      )}
+    </>
   );
 }

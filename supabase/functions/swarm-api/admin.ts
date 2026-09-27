@@ -28,6 +28,7 @@ export async function handleAdminRoutes(
   telegramId: number,
   isAdmin: boolean,
   origin: string,
+  resolveNames: (ids: number[]) => Promise<Map<number, string>>,
 ): Promise<Response | null> {
   if (!routePath.startsWith("/admin")) return null;
 
@@ -48,58 +49,12 @@ export async function handleAdminRoutes(
     const groupId = (adminRow as { group_id?: string } | null)?.group_id;
     if (!groupId) return json([], 200, origin);
 
-    const [entRes, mtgRes] = await Promise.all([
-      supabase.from("entries").select("owner_id, metadata")
-        .eq("group_id", groupId).eq("entry_type", "meeting")
-        .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false"),
-      supabase.from("meetings").select("recorders")
-        .eq("group_id", groupId).eq("status", "awaiting_review"),
-    ]);
-
-    const counts = new Map<number, number>();
-    const bump = (id: number | null | undefined) => {
-      if (typeof id === "number") counts.set(id, (counts.get(id) ?? 0) + 1);
-    };
-    for (
-      const e of (entRes.data ?? []) as Array<
-        {
-          owner_id: number | null;
-          metadata: { added_by_telegram_id?: number } | null;
-        }
-      >
-    ) {
-      bump(e.owner_id ?? e.metadata?.added_by_telegram_id ?? null);
-    }
-    for (
-      const m of (mtgRes.data ?? []) as Array<
-        { recorders: Array<{ telegram_id: number }> | null }
-      >
-    ) {
-      for (const r of (m.recorders ?? [])) bump(r.telegram_id);
-    }
+    const counts = await reviewCountsByMember(supabase, groupId);
 
     const ids = [...counts.keys()];
-    const { data: profs } = ids.length
-      ? await supabase.from("user_profiles").select(
-        "telegram_id, first_name, last_name",
-      ).in("telegram_id", ids)
-      : {
-        data: [] as Array<
-          { telegram_id: number; first_name?: string; last_name?: string }
-        >,
-      };
-    const nameById = new Map<number, string>();
-    for (
-      const p of (profs ?? []) as Array<
-        { telegram_id: number; first_name?: string; last_name?: string }
-      >
-    ) {
-      nameById.set(
-        p.telegram_id,
-        [p.first_name, p.last_name].filter(Boolean).join(" ") ||
-          `#${p.telegram_id}`,
-      );
-    }
+    // Имена — общим resolveNames (профиль, затем @username, ошибка в лог). Свой запрос к
+    // user_profiles без фолбэка на username показывал людей как «#744230399».
+    const nameById = await resolveNames(ids);
     const result = ids
       .map((id) => ({
         telegram_id: id,
@@ -488,4 +443,60 @@ export async function handleAdminRoutes(
   }
 
   return apiErr(404, "Admin route not found", origin);
+}
+
+/**
+ * Сколько встреч на вычитке у каждого участника воркспейса — только числа, без контента.
+ * Непубликованные entry (confirmed null/false) — по владельцу, черновики рекордера
+ * (awaiting_review) — каждому записавшему. Общая для /admin/review-counts и /stats/people.
+ */
+export async function reviewCountsByMember(
+  supabase: SupabaseClient,
+  groupId: string,
+): Promise<Map<number, number>> {
+  const [entRes, mtgRes] = await Promise.all([
+    supabase.from("entries").select("owner_id, metadata")
+      .eq("group_id", groupId).eq("entry_type", "meeting")
+      .or("metadata->>confirmed.is.null,metadata->>confirmed.eq.false"),
+    supabase.from("meetings").select("recorders, co_owners")
+      .eq("group_id", groupId).eq("status", "awaiting_review"),
+  ]);
+  // Молча вернуть пустую карту = показать «0 на вычитке» как факт. Пусть вызывающий решает.
+  if (entRes.error || mtgRes.error) {
+    throw new Error(
+      `review counts: ${entRes.error?.message ?? mtgRes.error?.message}`,
+    );
+  }
+
+  const counts = new Map<number, number>();
+  const bump = (id: number | null | undefined) => {
+    if (typeof id === "number") counts.set(id, (counts.get(id) ?? 0) + 1);
+  };
+  for (
+    const e of (entRes.data ?? []) as Array<
+      {
+        owner_id: number | null;
+        metadata: { added_by_telegram_id?: number } | null;
+      }
+    >
+  ) {
+    bump(e.owner_id ?? e.metadata?.added_by_telegram_id ?? null);
+  }
+  for (
+    const m of (mtgRes.data ?? []) as Array<
+      {
+        recorders: Array<{ telegram_id: number }> | null;
+        co_owners: number[] | null;
+      }
+    >
+  ) {
+    // Каждому владельцу черновика по разу: записавшим и совладельцам (решение 2026-09-25).
+    const owners = new Set([
+      ...(m.recorders ?? []).map((r) => r.telegram_id),
+      ...(m.co_owners ?? []),
+    ]);
+    for (const id of owners) bump(id);
+  }
+
+  return counts;
 }

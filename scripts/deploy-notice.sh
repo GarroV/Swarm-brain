@@ -9,6 +9,10 @@
 #   ./scripts/deploy-notice.sh off           — снять
 #   ./scripts/deploy-notice.sh show          — что сейчас объявлено
 #
+# Свой текст плашки вместо «Обновление через N мин» — переменные NOTICE_RU / NOTICE_EN
+# (веб показывает их как есть, см. DeployNoticeBar). Тот же скрипт зовёт кнопка в Actions
+# `.github/workflows/notice.yml` — она ходит в базу ключом из секретов репозитория.
+#
 # ⚠️ Это ПРАВКА ПРОД-ДАННЫХ, то есть по правилу раскатки — под «да» владельца
 # (docs/decisions/2026-08-24-deploy-window.md). Строка не секретная и гаснет сама, но
 # запускать её «просто посмотреть» не надо.
@@ -47,13 +51,19 @@ q() {
 
 case "${1:-show}" in
   set)
+    case "$LEAD_MIN" in ''|*[!0-9]*) red "Минуты — целое число, а не «${LEAD_MIN}»"; exit 2 ;; esac
+    # Свой текст — только как SQL-строка с удвоенными кавычками и не длиннее 300 символов.
+    sql_text() { local q="'" t="${1:0:300}"; printf '%s%s%s' "$q" "${t//$q/$q$q}" "$q"; }
+    EXTRA=""
+    if [ -n "${NOTICE_RU:-}" ]; then EXTRA="$EXTRA, 'ru', to_jsonb($(sql_text "$NOTICE_RU")::text)"; fi
+    if [ -n "${NOTICE_EN:-}" ]; then EXTRA="$EXTRA, 'en', to_jsonb($(sql_text "$NOTICE_EN")::text)"; fi
     # to_jsonb от timestamptz даёт полный ISO со смещением (+00:00) — такой формат парсится
     # Date() во всех браузерах, в отличие от усечённого «+00».
     q "
       insert into app_settings (key, value, updated_at)
       values ('$KEY', jsonb_build_object(
         'at',    to_jsonb((now() + interval '$LEAD_MIN minutes')::timestamptz),
-        'until', to_jsonb((now() + interval '$((LEAD_MIN + GRACE_MIN)) minutes')::timestamptz)
+        'until', to_jsonb((now() + interval '$((LEAD_MIN + GRACE_MIN)) minutes')::timestamptz)$EXTRA
       ), now())
       on conflict (key) do update set value = excluded.value, updated_at = now();
     " >/dev/null

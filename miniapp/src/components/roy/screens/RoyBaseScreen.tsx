@@ -6,6 +6,8 @@ import { RoyIcon } from "../icons";
 import { entryTagKey, entryFacet, deriveEntryTitle, entryPreview } from "../entry";
 import { fetchEntriesWithTotal } from "@/lib/api";
 import type { Entry } from "@/types";
+import { useIsDesktop } from "../useIsDesktop";
+import { BaseDesk } from "./BaseDesk";
 
 // Встреч здесь нет (GET /entries отдаёт только entry_type='note'; встречи — свой таб).
 // Фильтры — по ФАСЕТУ заметки: заметки / ссылки / файлы.
@@ -26,6 +28,13 @@ function fmtDate(iso: string | null): string | null {
 }
 
 export function RoyBaseScreen({ onBack }: { onBack?: () => void }) {
+  // Десктопный раздел (не push с «Назад») — таблица по стенду.
+  const isDesktop = useIsDesktop();
+  if (isDesktop && !onBack) return <BaseDesk />;
+  return <BaseMobile onBack={onBack} />;
+}
+
+function BaseMobile({ onBack }: { onBack?: () => void }) {
   const { push, openAnswer } = useRoyNav();
   const dt = useDt();
   const [entries, setEntries] = useState<Entry[] | null>(null);
@@ -54,7 +63,7 @@ export function RoyBaseScreen({ onBack }: { onBack?: () => void }) {
       {onBack ? <NavHeader onBack={onBack} title={dt("База", "Knowledge base")} /> : <RoyHeader title={dt("База", "Knowledge base")} />}
       <div className="px-5">
         <form onSubmit={(e) => { e.preventDefault(); go(q); }}>
-          <div className="flex items-center gap-2.5 rounded-[15px] border border-line-2 bg-surface px-4 py-3">
+          <div className="flex items-center gap-2.5 rounded-[8px] border border-line-2 bg-surface px-4 py-3">
             <RoyIcon name="spark" size={18} className="shrink-0 text-primary" />
             <input
               value={q}
@@ -75,7 +84,7 @@ export function RoyBaseScreen({ onBack }: { onBack?: () => void }) {
         ))}
       </div>
       <div className="space-y-2.5 px-5 pb-28">
-        {entries == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 88, borderRadius: 18 }} />)}
+        {entries == null && [0, 1, 2].map((i) => <div key={i} className="roy-shim" style={{ height: 88, borderRadius: 10 }} />)}
         {entries && items.length === 0 && <div className="py-10 text-center text-sm text-ink-soft">Здесь пока пусто</div>}
         {/* Честный признак усечения: экран не имеет права рисовать приехавший кусок как весь
             набор. Показываем только когда список реально обрезан — иначе это шум. */}
