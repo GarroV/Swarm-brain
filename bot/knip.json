@@ -8,7 +8,8 @@
     "src/meet-adapter/smoke-meet.ts",
     "src/orchestrator/container-main.ts",
     "src/orchestrator/orchestrator-main.ts",
-    "src/orchestrator/smoke-orchestrator.ts"
+    "src/orchestrator/smoke-orchestrator.ts",
+    "src/orchestrator/smoke-pulse.ts"
   ],
   "project": ["src/**/*.ts"],
   "ignoreBinaries": ["ffmpeg"]

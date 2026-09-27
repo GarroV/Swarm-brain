@@ -38,25 +38,24 @@ export async function stop(id: ContainerId): Promise<void>;
 
 ## Состояние
 
-**2026-09-28 · T153 сделана и запушена (`e8003a18`), T071 — в работе.**
+**2026-09-28 · T153 и T071 сделаны, ветка `feat/beat-takeover`.**
 
-Где стою. T144, T070/T071-часть/T072, T147, T150, T151, T152 влиты в ствол `feat/meeting-bot`. T153
-(ветка `feat/beat-takeover`): перехват в `meeting-claim` гасит `meetings.agent_last_recording` тем же
-UPDATE (`meeting-claim/claim-patch.ts`, D019); `meeting-heartbeat` — 403 с `code:"not_claim_owner"` и
+Где стою. T153: перехват в `meeting-claim` гасит `meetings.agent_last_recording` тем же UPDATE
+(`meeting-claim/claim-patch.ts`, D019); `meeting-heartbeat` — 403 с `code:"not_claim_owner"` и
 монотонная запись пульса (`write.ts` `newerThan`, опоздавший удар → `200 stale`); бот на этот 403
-останавливает запись и выходит без выгрузки и нотисы (исход `superseded`, `run-meeting.ts`), финальный
-удар без `meeting_id` оживляет `service_agents.last_seen_at`. Находка по ходу (T071): финальный heartbeat
-штатного конца шёл БЕЗ `meeting_id` → флаг встречи оставался `true` → сторож слал бы «scriba перестал
-отвечать» после каждой нормальной встречи. Починено тем же коммитом (`container-main.ts`).
+останавливает запись и выходит без выгрузки и нотисы (исход `superseded`), финальный удар без
+`meeting_id` оживляет `service_agents.last_seen_at`. T071: найдено и починено — финальный heartbeat
+штатного конца шёл БЕЗ `meeting_id`, флаг встречи оставался `true`, и сторож слал «scriba перестал
+отвечать» после каждой нормальной встречи (воспроизведено живьём на старом коде). Сквозной смоук —
+`bot/src/orchestrator/smoke-pulse.ts`.
 
-Дальше (T071): живой сквозной смоук — настоящий контейнер (образ `scriba-beat2:dev`), настоящие
-`meeting-heartbeat`/`meeting-claim`/`swarm-bot` поверх локального Supabase стенда `scriba-beat2`
-(порты 4440–4449, конфиг — копия `supabase/config.toml` с портами блока в scratch `w-beat2/stand`),
-`fake-swarm` за прокси (claim → подмена `meeting_id` на засеянную uuid-встречу). Сценарии: штатный
-конец → алерта нет; kill посреди записи → пульс замолк → сторож шлёт алерт `claim_owner`; перехват
-настоящим `meeting-claim` → контейнер `superseded`, алерта нет. Файл — `bot/src/orchestrator/smoke-pulse.ts`
-(ещё не написан). Потом — CHANGELOG не ведём (генерируется из git), `./scripts/check`, уборка стенда
-(`supabase stop --workdir <scratch>/stand --no-backup`, образ `scriba-beat2:dev`).
+Проверено (T071): `smoke-pulse.ts` на стенде `scriba-beat2` (Supabase 4440–4443, функции 4444/4445/4448,
+fake-swarm 4446, прокси 4447, Telegram 4449; образ `scriba-beat2:dev`): 22 ожидания зелёные — пульс из
+живого контейнера в строке встречи, штатный конец гасит флаг и сторож молчит; kill → 137, пульс замолк на
+`recording:true`, настоящий cron шлёт алерт EN+RU `claim_owner`; настоящий `meeting-claim` перехватил →
+контейнер сам вышел `superseded`, выгрузки нет, строка агента освежена, алерта нет. Порча образа
+(`scriba-beat2:porcha`: финальный удар без встречи + 403 не распознаётся): «штатный конец» — 2 красных
+(флаг true, ложный алерт пришёл), «перехват» — красный (контейнер не ушёл за 120 с).
 
 Проверено (T153): `claim-patch.test.ts` 6 (порча — сброс убран — 3 красных), `write.test.ts` 13
 (порча `newerThan` — красный), `run-meeting.test.ts` 27, из них 8 новых (порчи: статус 403 не
