@@ -1,14 +1,7 @@
 // деплоятся с URL-импортами, перевод на голые спецификаторы из линта непроверяем из ветки.
-import {
-  assertEquals,
-  assertThrows,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
-import {
-  buildHeartbeatWrites,
-  HeartbeatRejected,
-  type HeartbeatWrite,
-} from "./write.ts";
+import { buildHeartbeatWrites, HeartbeatRejected, type HeartbeatWrite } from "./write.ts";
 
 const NOW = "2026-09-17T10:00:00.000Z";
 const MEETING_ID = "0b7c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3";
@@ -137,8 +130,7 @@ Deno.test("бот без воркспейса не пишет во встреч�
 Deno.test("meeting_id не uuid — 400, а не 500 из базы", () => {
   for (const bad of ["not-a-uuid", 42, "", `${MEETING_ID}' or 1=1`]) {
     rejected(
-      () =>
-        buildHeartbeatWrites(bot, { recording: false, meeting_id: bad }, NOW),
+      () => buildHeartbeatWrites(bot, { recording: false, meeting_id: bad }, NOW),
       400,
     );
   }

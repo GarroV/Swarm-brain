@@ -10,11 +10,7 @@ import {
   checkRecordingWatchdog,
   type WatchdogStore,
 } from "../swarm-bot/lib/recording-watchdog.ts";
-import {
-  type ClaimPatchInput,
-  occupyPatch,
-  takeoverPatch,
-} from "./claim-patch.ts";
+import { type ClaimPatchInput, occupyPatch, takeoverPatch } from "./claim-patch.ts";
 
 const NOW_MS = Date.parse("2026-09-26T12:00:00.000Z");
 const BOT_OWNER = 111; // за него бот писал встречу
@@ -51,8 +47,7 @@ async function watchdogSends(
   const store: WatchdogStore = {
     recordingHumans: () => Promise.resolve([]),
     clearHumanRecording: () => Promise.resolve(),
-    recordingAgentMeetings: () =>
-      Promise.resolve(rows.filter((r) => r.agent_last_recording === true)),
+    recordingAgentMeetings: () => Promise.resolve(rows.filter((r) => r.agent_last_recording === true)),
     clearAgentRecording: (id, seenAt) => {
       const row = rows.find((r) =>
         r.id === id && r.agent_last_recording === true &&

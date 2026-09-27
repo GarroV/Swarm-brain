@@ -49,8 +49,7 @@ export class HeartbeatRejected extends Error {
   }
 }
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Встречи в записях нет — null; есть, но не uuid — отказ (иначе 500 из Postgres). */
 function readMeetingId(raw: unknown): string | null {
@@ -116,9 +115,7 @@ export function buildHeartbeatWrites(
   }
 
   const onCall = body.on_call === true;
-  const rawKey = typeof body.meeting_key === "string"
-    ? body.meeting_key.trim()
-    : "";
+  const rawKey = typeof body.meeting_key === "string" ? body.meeting_key.trim() : "";
   // Ключ держим только пока человек в звонке (или мы пишем). Иначе он завис бы после
   // созвона и панель показывала бы ON AIR на давно закончившейся встрече.
   const meetingKey = (onCall || recording) && rawKey ? rawKey : null;

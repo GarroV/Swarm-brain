@@ -21,10 +21,7 @@
 // last_version) — «бот вообще жив, такая-то сборка». Куда и с какими условиями — write.ts.
 // Деплой: supabase functions deploy meeting-heartbeat --no-verify-jwt (рекордер хитит с Bearer-токеном).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import {
-  AgentAuthError,
-  resolveActingIdentity,
-} from "../_shared/agent-auth.ts";
+import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import {
   buildHeartbeatWrites,
   type HeartbeatBody,
