@@ -6,12 +6,17 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AdmissionOutcome } from "../meet-adapter/types.ts";
 import type { ClaimDecision, SpeakerSpan } from "../swarm-client/contract.ts";
+import { SwarmHttpError } from "../swarm-client/errors.ts";
 import type { Notice, NoticeResult } from "./notices.ts";
 import { type MeetingRunOptions, runMeeting } from "./run-meeting.ts";
 
 interface World {
   readonly calls: string[];
   readonly notices: Notice[];
+  /**
+   * Какую встречу назвал каждый финальный heartbeat (`null` — без встречи).
+   */
+  readonly finals: (string | null)[];
   now: number;
   readonly options: MeetingRunOptions;
   readonly stop: AbortController;
@@ -33,6 +38,7 @@ interface Script {
   readonly finishError?: Error;
   readonly shouldLeaveOnNotice?: boolean;
   readonly stopAfterPolls?: number;
+  readonly heartbeatError?: Error;
 }
 
 const TIMING = {
@@ -47,6 +53,7 @@ const TIMING = {
 function build(script: Script = {}): World {
   const calls: string[] = [];
   const notices: Notice[] = [];
+  const finals: (string | null)[] = [];
   const stop = new AbortController();
   const door = script.door ?? ["admitted"];
   const alone = script.alone ?? [true];
@@ -56,6 +63,7 @@ function build(script: Script = {}): World {
   const world: World = {
     calls,
     notices,
+    finals,
     now: 0,
     stop,
     options: {
@@ -109,7 +117,7 @@ function build(script: Script = {}): World {
         },
         heartbeat: () => {
           calls.push("heartbeat");
-          return Promise.resolve();
+          return script.heartbeatError ? Promise.reject(script.heartbeatError) : Promise.resolve();
         },
         finish: (timeline: readonly SpeakerSpan[]) => {
           calls.push(`finish:${String(timeline.length)}`);
@@ -141,8 +149,9 @@ function build(script: Script = {}): World {
           });
         },
       },
-      finalHeartbeat: () => {
+      finalHeartbeat: (meetingId) => {
         calls.push("heartbeat:final");
+        finals.push(meetingId);
         return Promise.resolve();
       },
     },
@@ -202,6 +211,101 @@ describe("штатная встреча", () => {
 
     expect(outcome).toBe("recorded");
     expect(world.now).toBeGreaterThanOrEqual(99 * 5000);
+  });
+});
+
+function refusal(body: unknown): SwarmHttpError {
+  return new SwarmHttpError(403, typeof body === "string" ? body : JSON.stringify(body));
+}
+
+describe("финальный heartbeat называет встречу", () => {
+  it("штатный конец: recording:false уходит в строку встречи — иначе сторож видит обрыв там, где его нет", async () => {
+    const world = build({ alone: [false, true] });
+
+    expect(await runMeeting(world.options)).toBe("recorded");
+
+    expect(world.finals).toEqual(["m-1"]);
+  });
+
+  it("не впустили — финальный heartbeat тоже по встрече: она заявлена за этим ботом", async () => {
+    const world = build({ door: ["denied"] });
+
+    expect(await runMeeting(world.options)).toBe("door_denied");
+
+    expect(world.finals).toEqual(["m-1"]);
+  });
+});
+
+describe("право транскрибации ушло другой записи (D019)", () => {
+  const TAKEN_OVER = { error: "meeting is not yours", code: "not_claim_owner" };
+
+  it("heartbeat отбит «встреча не твоя» → запись остановлена, из звонка вышли, выгрузки и нотисы нет", async () => {
+    // Люди в звонке всё время; остановка снаружи — только страховка на 1000-м опросе.
+    const world = build({
+      alone: [false],
+      stopAfterPolls: 1000,
+      heartbeatError: refusal(TAKEN_OVER),
+    });
+
+    const outcome = await runMeeting(world.options);
+
+    expect(outcome).toBe("superseded");
+    expect(world.stop.signal.aborted).toBe(false);
+    expect(world.calls).toEqual([
+      "claim",
+      "report:m-1",
+      "join:https://meet.google.com/abc-defg-hij",
+      "record:start",
+      "timeline:start",
+      "heartbeat",
+      "record:stop",
+      "leave",
+      "heartbeat:final",
+    ]);
+    expect(world.notices).toEqual([]);
+  });
+
+  it("после перехвата финальный heartbeat — без встречи: она не наша, а строка агента должна ожить", async () => {
+    const world = build({
+      alone: [false],
+      stopAfterPolls: 1000,
+      heartbeatError: refusal(TAKEN_OVER),
+    });
+
+    await runMeeting(world.options);
+
+    expect(world.finals).toEqual([null]);
+  });
+
+  it("другой 403 (доверенность отозвана) — не перехват: встречу дописываем и отдаём", async () => {
+    const world = build({
+      alone: [false, true],
+      heartbeatError: refusal({ error: "Unauthorized" }),
+    });
+
+    expect(await runMeeting(world.options)).toBe("recorded");
+    expect(world.finals).toEqual(["m-1"]);
+  });
+
+  it("403 без машинной причины (старый сервер) — не перехват", async () => {
+    const world = build({ alone: [false, true], heartbeatError: refusal("meeting is not yours") });
+
+    expect(await runMeeting(world.options)).toBe("recorded");
+  });
+
+  it("та же причина, но не 403 — не перехват", async () => {
+    const world = build({
+      alone: [false, true],
+      heartbeatError: new SwarmHttpError(500, JSON.stringify(TAKEN_OVER)),
+    });
+
+    expect(await runMeeting(world.options)).toBe("recorded");
+  });
+
+  it("сбой сети на heartbeat — не перехват", async () => {
+    const world = build({ alone: [false, true], heartbeatError: new Error("ECONNRESET") });
+
+    expect(await runMeeting(world.options)).toBe("recorded");
   });
 });
 

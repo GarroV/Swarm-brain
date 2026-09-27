@@ -17,9 +17,14 @@
 // Тот же cron гоняет и сторож встреч-призраков (#549): живая встреча бота старше 15 минут не
 // должна помечаться 'failed', а замолчавшего бота и рекордера человека — должна, как раньше.
 //
+// Перехват (D019): рекордер человека через НАСТОЯЩИЙ meeting-claim отбирает у бота право на
+// встречу → флаг пульса бота гаснет тем же UPDATE, удары бота получают 403 с причиной
+// not_claim_owner, и новому claim_owner сторож не шлёт ложный алерт. Монотонность: опоздавший
+// удар recording:true не перетирает более свежий.
+//
 // Порты — от SMOKE_PORT_BASE (по умолчанию 4380, диапазон блока orchestrator/сторож; base..base+3
-// — сам контур): base+4 — функция meeting-heartbeat, base+8 — функция swarm-bot, base+9 —
-// поддельный Telegram. swarm-bot ходит в
+// — сам контур): base+4 — функция meeting-heartbeat, base+5 — функция meeting-claim, base+8 —
+// функция swarm-bot, base+9 — поддельный Telegram. swarm-bot ходит в
 // api.telegram.org напрямую, поэтому fetch подменяется предзагрузкой (--preload) только для
 // этого хоста: настоящим людям ничего не уходит.
 //
@@ -28,6 +33,7 @@
 
 const PORT_BASE = Number(Deno.env.get("SMOKE_PORT_BASE") ?? "4380");
 const PORT_HB = PORT_BASE + 4;
+const PORT_CLAIM = PORT_BASE + 5;
 const PORT_BOT = PORT_BASE + 8;
 const PORT_TG = PORT_BASE + 9;
 const CRON_SECRET = "smoke-cron-secret";
@@ -42,7 +48,18 @@ const OWNER_NOTIFIED = OWNER + 1; // ему оркестратор уже при
 const OWNER_ALIVE = OWNER + 2; // его встречи (две) бот пишет прямо сейчас
 const HUMAN_CRASH = OWNER + 3; // bumblebee замолчал посреди записи
 const HUMAN_ALIVE = OWNER + 4; // bumblebee пишет, heartbeat свежий
-const PEOPLE = [OWNER, OWNER_NOTIFIED, OWNER_ALIVE, HUMAN_CRASH, HUMAN_ALIVE];
+const TAKER = OWNER + 5; // его bumblebee перехватывает у бота встречу более полной записью
+const OWNER_LATE = OWNER + 6; // за него бот пишет встречу, на которую приходит опоздавший удар
+const PEOPLE = [
+  OWNER,
+  OWNER_NOTIFIED,
+  OWNER_ALIVE,
+  HUMAN_CRASH,
+  HUMAN_ALIVE,
+  TAKER,
+  OWNER_LATE,
+];
+const TAKER_TOKEN = `taker-${RUN}`;
 const FOREIGN_WS = `smoke-wd-foreign-${RUN}`; // чужой воркспейс: его встречу агент трогать не вправе
 
 // Один агент на все встречи — ровно то, что прятало обрыв до D018: строка агента была общей.
@@ -55,6 +72,14 @@ const MEETING = {
 };
 // Встреча в чужом воркспейсе: heartbeat в неё обязан получить 403 и ничего не записать.
 const FOREIGN = { id: crypto.randomUUID(), owner: OWNER };
+// Календарная встреча, которую бот пишет за OWNER, а рекордер TAKER перехватывает (D019).
+const TAKEN = {
+  id: crypto.randomUUID(),
+  key: `cal:smoke-taken-${RUN}`,
+  owner: OWNER,
+};
+// Встреча, в строку которой уже лёг более свежий удар, чем тот, что придёт опоздавшим.
+const LATE = { id: crypto.randomUUID(), owner: OWNER_LATE };
 const keyOf = (m: { id: string }) => `manual:${m.id}`;
 // Пустые встречи без бота — для сторожа призраков. Встречи из MEETING тоже пустые и тоже старые.
 const GHOST = {
@@ -82,6 +107,8 @@ const ALL_MEETING_IDS = [
   ...Object.values(MEETING),
   ...Object.values(GHOST),
   FOREIGN,
+  TAKEN,
+  LATE,
 ].map((m) => m.id);
 
 const minutesAgo = (m: number) =>
@@ -197,7 +224,12 @@ async function seed(): Promise<void> {
   await rest(
     "POST",
     "allowed_users",
-    PEOPLE.map((id) => ({ telegram_id: id, group_id: WS, added_by: id })),
+    await Promise.all(PEOPLE.map(async (id) => ({
+      telegram_id: id,
+      group_id: WS,
+      added_by: id,
+      recorder_token_hash: id === TAKER ? await sha256Hex(TAKER_TOKEN) : null,
+    }))),
   );
   await rest("POST", "service_agents", [{
     id: AGENT.id,
@@ -229,6 +261,27 @@ async function seed(): Promise<void> {
       created_at: minutesAgo(MEETING_AGE_MIN),
     })),
   );
+  await rest("POST", "meetings", [{
+    id: TAKEN.id,
+    source: "scriba-smoke",
+    identity_kind: "calendar",
+    identity_key: TAKEN.key,
+    group_id: WS,
+    claim_owner: TAKEN.owner,
+    lease_expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+    title: "Taken over",
+    created_at: minutesAgo(MEETING_AGE_MIN),
+  }, {
+    id: LATE.id,
+    source: "scriba-smoke",
+    identity_kind: "manual",
+    identity_key: keyOf(LATE),
+    group_id: WS,
+    claim_owner: LATE.owner,
+    lease_expires_at: null,
+    title: "Late beat",
+    created_at: minutesAgo(3),
+  }]);
   await rest(
     "POST",
     "meetings",
@@ -279,6 +332,13 @@ async function beat(
   meeting: { id: string },
   onBehalfOf: number,
 ): Promise<number> {
+  return (await beatRaw(meeting, onBehalfOf)).status;
+}
+
+async function beatRaw(
+  meeting: { id: string },
+  onBehalfOf: number,
+): Promise<{ status: number; body: Record<string, unknown> }> {
   const res = await fetch(`http://127.0.0.1:${PORT_HB}/`, {
     method: "POST",
     headers: {
@@ -294,8 +354,34 @@ async function beat(
       meeting_id: meeting.id,
     }),
   });
-  await res.body?.cancel();
-  return res.status;
+  const body = await res.json().catch(() => ({}));
+  return { status: res.status, body };
+}
+
+/** Заявка bumblebee человека TAKER через настоящий meeting-claim: запись на час. */
+async function takeOver(): Promise<
+  { status: number; body: Record<string, unknown> }
+> {
+  const res = await fetch(`http://127.0.0.1:${PORT_CLAIM}/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${TAKER_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      identity_kind: "calendar",
+      identity_key: TAKEN.key,
+      recorded_seconds: 3600,
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  return { status: res.status, body };
+}
+
+async function claimOwner(id: string): Promise<number | null> {
+  const rows = await rest("GET", `meetings?id=eq.${id}&select=claim_owner`);
+  return (rows as Array<{ claim_owner: number | null }>)[0]?.claim_owner ??
+    null;
 }
 
 async function agentRow() {
@@ -390,11 +476,58 @@ async function scenario(): Promise<void> {
     JSON.stringify(await meetingBeat(FOREIGN.id)),
   );
 
+  // 1б. Перехват (D019). Бот пишет календарную встречу за OWNER, рекордер TAKER отбирает право
+  //     настоящим meeting-claim (час записи против нуля у бота).
+  const takenBeat = await beat(TAKEN, TAKEN.owner);
+  expect(
+    "heartbeat бота по будущей перехваченной встрече принят",
+    takenBeat === 200,
+    `HTTP ${takenBeat}`,
+  );
+  const claim = await takeOver();
+  expect(
+    "meeting-claim: рекордер TAKER перехватил встречу у бота (transcribe, та же встреча)",
+    claim.status === 200 && claim.body.decision === "transcribe" &&
+      claim.body.meeting_id === TAKEN.id,
+    JSON.stringify(claim),
+  );
+  const afterTake = await meetingBeat(TAKEN.id);
+  expect(
+    "перехват тем же UPDATE погасил пульс бота: claim_owner = TAKER, agent_last_recording = false",
+    (await claimOwner(TAKEN.id)) === TAKER &&
+      afterTake?.agent_last_recording === false,
+    JSON.stringify(afterTake),
+  );
+  const refused = await beatRaw(TAKEN, TAKEN.owner);
+  expect(
+    "удар бота после перехвата → 403 с причиной not_claim_owner, флаг не вернулся",
+    refused.status === 403 && refused.body.code === "not_claim_owner" &&
+      (await meetingBeat(TAKEN.id))?.agent_last_recording === false,
+    JSON.stringify(refused),
+  );
+
+  // 1в. Монотонность: в строке уже более свежий удар (recording:false), опоздавший recording:true
+  //     не должен его перетереть — иначе сторож взвёлся бы на закончившейся встрече.
+  const fresher = new Date(Date.now() + 2 * 60_000).toISOString();
+  await rest("PATCH", `meetings?id=eq.${LATE.id}`, {
+    agent_last_seen_at: fresher,
+    agent_last_recording: false,
+  });
+  const late = await beatRaw(LATE, LATE.owner);
+  const lateRow = await meetingBeat(LATE.id);
+  expect(
+    "опоздавший удар принят без записи (200, stale) и не перетёр более свежий",
+    late.status === 200 && late.body.stale === true &&
+      lateRow?.agent_last_recording === false &&
+      Date.parse(lateRow?.agent_last_seen_at ?? "") === Date.parse(fresher),
+    JSON.stringify({ late, lateRow }),
+  );
+
   // 2. Состарить: dead и notified замолчали 15 мин назад, обе встречи alive свежие; люди — как
   //    в жизни. Строка агента при этом свежая (alive бил последним) — сторож обязан её не слушать.
   await rest(
     "PATCH",
-    `meetings?id=in.(${MEETING.dead.id},${MEETING.notified.id})`,
+    `meetings?id=in.(${MEETING.dead.id},${MEETING.notified.id},${TAKEN.id})`,
     { agent_last_seen_at: minutesAgo(15) },
   );
   await rest("PATCH", `allowed_users?telegram_id=eq.${HUMAN_CRASH}`, {
@@ -441,6 +574,11 @@ async function scenario(): Promise<void> {
     JSON.stringify(to(HUMAN_CRASH)),
   );
   expect("живой bumblebee → тишина", to(HUMAN_ALIVE).length === 0);
+  expect(
+    "перехваченная встреча: новому claim_owner нет ложного алерта «scriba перестал отвечать»",
+    to(TAKER).length === 0,
+    JSON.stringify(to(TAKER)),
+  );
   expect(
     "флаг замолчавшей встречи сброшен",
     (await meetingBeat(MEETING.dead.id))?.agent_last_recording === false,
@@ -517,6 +655,10 @@ async function main(): Promise<void> {
     "../supabase/functions/meeting-heartbeat/index.ts",
     PORT_HB,
   );
+  const claimFn = spawnFunction(
+    "../supabase/functions/meeting-claim/index.ts",
+    PORT_CLAIM,
+  );
   const bot = spawnFunction(
     "../supabase/functions/swarm-bot/index.ts",
     PORT_BOT,
@@ -527,12 +669,15 @@ async function main(): Promise<void> {
   try {
     await seed();
     ready = (await waitPort(PORT_HB, 30_000)) &&
+      (await waitPort(PORT_CLAIM, 30_000)) &&
       (await waitPort(PORT_BOT, 30_000));
     if (ready) await scenario();
   } finally {
     hb.kill("SIGTERM");
+    claimFn.kill("SIGTERM");
     bot.kill("SIGTERM");
     await hb.status;
+    await claimFn.status;
     await bot.status;
     await tg.shutdown();
     cleanupProblems = await cleanup();

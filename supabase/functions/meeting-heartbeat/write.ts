@@ -29,7 +29,17 @@ export interface HeartbeatWrite {
   patch: Record<string, unknown>;
   /** true — ноль обновлённых строк означает отказ: встреча не того, кто пришёл. */
   requireHit: boolean;
+  /**
+   * Монотонность: UPDATE проходит, только если в колонке пусто или значение старше `value`.
+   * Два удара, обрабатываемые одновременно, коммитятся в любом порядке; без условия опоздавший
+   * `recording:true` перетёр бы более свежий `recording:false` и взвёл сторожа на закончившейся
+   * встрече. Промах по этому условию при совпавшем владении — не отказ, а опоздавший удар.
+   */
+  newerThan?: { column: string; value: string };
 }
+
+/** Машинная причина 403 «встреча не твоя»: бот по ней понимает, что право ушло (D019). */
+export const NOT_CLAIM_OWNER = "not_claim_owner";
 
 /** Отказ, который index.ts отдаёт клиенту как есть. */
 export class HeartbeatRejected extends Error {
@@ -39,7 +49,8 @@ export class HeartbeatRejected extends Error {
   }
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Встречи в записях нет — null; есть, но не uuid — отказ (иначе 500 из Postgres). */
 function readMeetingId(raw: unknown): string | null {
@@ -82,9 +93,14 @@ function agentWrites(
   // Встреча первой: отказ по ней не должен успеть освежить строку агента.
   return [{
     table: "meetings",
-    match: { id: meetingId, group_id: identity.groupId, claim_owner: identity.telegramId },
+    match: {
+      id: meetingId,
+      group_id: identity.groupId,
+      claim_owner: identity.telegramId,
+    },
     patch: { agent_last_seen_at: nowIso, agent_last_recording: recording },
     requireHit: true,
+    newerThan: { column: "agent_last_seen_at", value: nowIso },
   }, agentRow];
 }
 
@@ -95,10 +111,14 @@ export function buildHeartbeatWrites(
 ): HeartbeatWrite[] {
   const recording = body.recording === true;
   const version = typeof body.version === "number" ? body.version : null;
-  if (identity.kind === "bot") return agentWrites(identity, body, nowIso, recording, version);
+  if (identity.kind === "bot") {
+    return agentWrites(identity, body, nowIso, recording, version);
+  }
 
   const onCall = body.on_call === true;
-  const rawKey = typeof body.meeting_key === "string" ? body.meeting_key.trim() : "";
+  const rawKey = typeof body.meeting_key === "string"
+    ? body.meeting_key.trim()
+    : "";
   // Ключ держим только пока человек в звонке (или мы пишем). Иначе он завис бы после
   // созвона и панель показывала бы ON AIR на давно закончившейся встрече.
   const meetingKey = (onCall || recording) && rawKey ? rawKey : null;

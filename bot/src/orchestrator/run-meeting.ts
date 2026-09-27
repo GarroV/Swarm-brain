@@ -17,6 +17,7 @@
 import type { AdmissionOutcome } from "../meet-adapter/types.ts";
 import { AloneTimer } from "../meet-adapter/alone.ts";
 import type { ClaimDecision, SpeakerSpan } from "../swarm-client/contract.ts";
+import { SwarmHttpError } from "../swarm-client/errors.ts";
 import { inBackground } from "./background.ts";
 import type { Notice, NoticeResult, Notifier } from "./notices.ts";
 import { describeError } from "./describe-error.ts";
@@ -97,9 +98,12 @@ export interface MeetingRunOptions {
   readonly timeline: TimelineCollector;
   readonly notifier: Notifier;
   /**
-   * Heartbeat штатного конца: `recording: false`. Зовётся ТОЛЬКО на штатном пути.
+   * Heartbeat штатного конца: `recording: false`. Зовётся ТОЛЬКО на штатном пути. Называет
+   * встречу (`meetingId`): пульс бота лежит в её строке (D018), и без встречи флаг записи там
+   * остался бы `true` — сторож принял бы штатный конец за смерть контейнера. `null` — встреча
+   * больше не наша (право ушло другой записи), и удар идёт только в строку агента.
    */
-  readonly finalHeartbeat: () => Promise<void>;
+  readonly finalHeartbeat: (meetingId: string | null) => Promise<void>;
   /**
    * Остановка снаружи: SIGTERM от оркестратора, оборванный поводок, потолок длительности.
    */
@@ -124,7 +128,33 @@ export type MeetingOutcome =
   | "stopped_at_door"
   | "no_audio"
   | "nothing_recorded"
-  | "upload_failed";
+  | "upload_failed"
+  | "superseded";
+
+/**
+ * Машинная причина отказа `meeting-heartbeat` «встреча не твоя» (`meeting-heartbeat/write.ts`).
+ */
+const NOT_CLAIM_OWNER = "not_claim_owner";
+
+/**
+ * Право транскрибации ушло другой записи (D019): сервер отбил удар по НАШЕЙ встрече с причиной
+ * «не claim_owner». Её `meeting-claim` передал рекордеру человека — арбитраж счёл его запись
+ * заметно полнее, или истёк лиз. Любой другой отказ (доверенность, сеть, 5xx, старый сервер без
+ * причины) перехватом не считается: запись, выброшенная по ошибке, не возвращается.
+ */
+function isTakenOver(error: unknown): boolean {
+  if (!(error instanceof SwarmHttpError) || error.status !== 403) return false;
+  try {
+    const body: unknown = JSON.parse(error.bodyText);
+    return (
+      typeof body === "object" &&
+      body !== null &&
+      (body as { code?: unknown }).code === NOT_CLAIM_OWNER
+    );
+  } catch {
+    return false;
+  }
+}
 
 interface RunContext {
   readonly options: MeetingRunOptions;
@@ -133,6 +163,10 @@ interface RunContext {
   readonly sleep: (ms: number) => Promise<void>;
   readonly log: (line: string) => void;
   readonly meetingId: string;
+  /**
+   * Взводится, когда сервер отбил heartbeat перехватом (`isTakenOver`).
+   */
+  readonly takenOver: { value: boolean };
 }
 
 async function defaultSleep(ms: number): Promise<void> {
@@ -224,6 +258,7 @@ async function passDoor(context: RunContext): Promise<DoorResult> {
 async function stayInCall(context: RunContext): Promise<void> {
   const timer = new AloneTimer(context.timing.aloneMs);
   while (!context.options.stop.aborted) {
+    if (context.takenOver.value) return;
     let alone: boolean | null;
     try {
       alone = await context.options.adapter.aloneSignal();
@@ -245,6 +280,7 @@ function startHeartbeat(context: RunContext): () => void {
     inBackground(
       async () => context.options.session.heartbeat(),
       (error) => {
+        if (isTakenOver(error)) context.takenOver.value = true;
         context.log(`heartbeat не ушёл: ${describeError(error)}`);
       },
     );
@@ -300,6 +336,16 @@ async function record(context: RunContext): Promise<MeetingOutcome> {
   const spans = await timeline.stop();
   const parts = await recorder.stop();
   await leaveQuietly(context);
+
+  if (context.takenOver.value) {
+    // Выгрузка всё равно получила бы 403 (meeting-ingest пускает только claim_owner), а нотиса
+    // «записанное не ушло» была бы ложной тревогой: встречу пишет другая, более полная запись.
+    // Тот же исход, что defer на claim, только посреди встречи — поэтому и без нотисы.
+    context.log(
+      `право транскрибации ушло другой записи — выходим без выгрузки (${context.meetingId})`,
+    );
+    return "superseded";
+  }
 
   if (parts === 0) {
     await sendNotice(context, {
@@ -364,10 +410,11 @@ export async function runMeeting(options: MeetingRunOptions): Promise<MeetingOut
     sleep: options.sleep ?? defaultSleep,
     log,
     meetingId,
+    takenOver: { value: false },
   };
   const outcome = await afterClaim(context);
   try {
-    await options.finalHeartbeat();
+    await options.finalHeartbeat(context.takenOver.value ? null : meetingId);
   } catch (error) {
     log(`финальный heartbeat не ушёл: ${describeError(error)}`);
   }
