@@ -1,9 +1,11 @@
 // деплоятся с URL-импортами, перевод на голые спецификаторы из линта непроверяем из ветки.
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
-import { buildHeartbeatWrites, HeartbeatRejected, type HeartbeatWrite } from "./write.ts";
+import { buildHeartbeatWrites, HeartbeatRejected, type HeartbeatWrite, MAX_RECORDED_SECONDS } from "./write.ts";
 
 const NOW = "2026-09-17T10:00:00.000Z";
+// NOW + 30 минут: лиз права транскрибации, который удар бота продлевает (CLAIM_LEASE_TTL_SEC).
+const LEASE_UNTIL = "2026-09-17T10:30:00.000Z";
 const MEETING_ID = "0b7c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3";
 
 const human: AgentIdentity = {
@@ -68,6 +70,7 @@ Deno.test("БЛОКИРУЮЩИЙ: heartbeat бота по встрече идё
     version: 7,
     meeting_key: "uid:2026-09-17",
     meeting_id: MEETING_ID,
+    recorded_seconds: 1260,
   }, NOW);
   assertEquals(writes.map((w) => w.table), ["meetings", "service_agents"]);
   for (const w of writes) {
@@ -80,6 +83,8 @@ Deno.test("БЛОКИРУЮЩИЙ: heartbeat бота по встрече идё
   assertEquals(writes[0].patch, {
     agent_last_seen_at: NOW,
     agent_last_recording: true,
+    lease_expires_at: LEASE_UNTIL,
+    recorded_seconds: 1260,
   });
   assertEquals(writes[1].match, { id: "scriba" });
   assertEquals(writes[1].patch, { last_seen_at: NOW, last_version: 7 });
@@ -105,15 +110,78 @@ Deno.test("БЛОКИРУЮЩИЙ: бот обновляет только вст
 
 Deno.test("удар бота по встрече монотонен: опоздавший не перетирает более свежий", () => {
   // Два удара коммитятся в любом порядке; без условия поздний recording:true поверх свежего
-  // recording:false взвёл бы сторожа на закончившейся встрече. Строка агента — без условия:
-  // она сторожей не взводит.
+  // recording:false взвёл бы сторожа на закончившейся встрече, а поздний recorded_seconds
+  // занизил бы запись для арбитража. Строка агента — с тем же условием по своей колонке: иначе
+  // опоздавший удар старой сборки вернул бы в last_version её номер (перестановка — apply.test.ts).
   const [meeting, agent] = buildHeartbeatWrites(bot, {
     recording: true,
     meeting_id: MEETING_ID,
   }, NOW);
   assertEquals(meeting.newerThan, { column: "agent_last_seen_at", value: NOW });
   assertEquals(meeting.patch.agent_last_seen_at, meeting.newerThan?.value);
-  assertEquals(agent.newerThan, undefined);
+  assertEquals(agent.newerThan, { column: "last_seen_at", value: NOW });
+  assertEquals(agent.patch.last_seen_at, agent.newerThan?.value);
+});
+
+Deno.test("ЯДРО: удар бота по своей встрече продлевает лиз — claim через 30 минут не считает живого бота истёкшим", () => {
+  // Бот заявляется до захода, и лиз 30 минут отсчитывается от claim. Без продления любой claim
+  // после этого срока занимал встречу как брошенную (ветка «лиз истёк» в meeting-claim), хотя бот
+  // пишет её прямо сейчас. Продление — условие той же UPDATE, что сверяет claim_owner: удар после
+  // перехвата встречу не находит и лиз новому владельцу не трогает.
+  for (const recording of [true, false]) {
+    const [meeting] = buildHeartbeatWrites(bot, { recording, meeting_id: MEETING_ID }, NOW);
+    assertEquals(meeting.table, "meetings");
+    assertEquals(meeting.patch.lease_expires_at, LEASE_UNTIL);
+    assertEquals(meeting.match.claim_owner, 111);
+  }
+});
+
+Deno.test("ЯДРО: удар бота несёт записанные секунды в recorded_seconds — арбитраж видит запись, а не 0", () => {
+  // meeting-claim сравнивает претендента с recorded_seconds строки. Бот заявился с 0 секунд, и
+  // без этого поля любой рекордер с записью от 5 минут отбирал у него встречу.
+  const [meeting] = buildHeartbeatWrites(bot, {
+    recording: true,
+    meeting_id: MEETING_ID,
+    recorded_seconds: 2400.6,
+  }, NOW);
+  assertEquals(meeting.patch.recorded_seconds, 2400.6);
+  const [zero] = buildHeartbeatWrites(bot, { recording: true, meeting_id: MEETING_ID, recorded_seconds: 0 }, NOW);
+  assertEquals(zero.patch.recorded_seconds, 0);
+});
+
+Deno.test("удар бота без recorded_seconds не трогает записанное — продлевает только лиз", () => {
+  // Старая сборка бота секунд не шлёт: затирать ими записанное (null) значило бы обнулить запись
+  // для арбитража.
+  const [meeting] = buildHeartbeatWrites(bot, { recording: true, meeting_id: MEETING_ID }, NOW);
+  assertEquals("recorded_seconds" in meeting.patch, false);
+  assertEquals(meeting.patch.lease_expires_at, LEASE_UNTIL);
+});
+
+Deno.test("ЯДРО: recorded_seconds не число, отрицательно или сверх суток — 400, в арбитраж не попадает", () => {
+  // Завышенные секунды навсегда закрыли бы встречу от перехвата более полной записью.
+  for (const bad of [-1, "600", true, MAX_RECORDED_SECONDS + 1, 1e308]) {
+    rejected(
+      () => buildHeartbeatWrites(bot, { recording: true, meeting_id: MEETING_ID, recorded_seconds: bad }, NOW),
+      400,
+    );
+  }
+  const [edge] = buildHeartbeatWrites(bot, {
+    recording: true,
+    meeting_id: MEETING_ID,
+    recorded_seconds: MAX_RECORDED_SECONDS,
+  }, NOW);
+  assertEquals(edge.patch.recorded_seconds, MAX_RECORDED_SECONDS);
+});
+
+Deno.test("удар без встречи и удар рекордера человека не пишут ни лиз, ни секунды", () => {
+  const agentOnly = only(buildHeartbeatWrites(bot, { recording: false, recorded_seconds: 600 }, NOW));
+  assertEquals(agentOnly.table, "service_agents");
+  assertEquals(agentOnly.patch, { last_seen_at: NOW, last_version: null });
+  const person = only(
+    buildHeartbeatWrites(human, { recording: true, recorded_seconds: 600, meeting_id: MEETING_ID }, NOW),
+  );
+  assertEquals(person.table, "allowed_users");
+  assertEquals("lease_expires_at" in person.patch || "recorded_seconds" in person.patch, false);
 });
 
 Deno.test("бот без воркспейса не пишет во встречу: сверять владение не с чем", () => {

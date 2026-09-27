@@ -19,21 +19,52 @@
 // в строку встречи (meetings.agent_last_*) — только встречи его воркспейса, где claim_owner —
 // человек из X-On-Behalf-Of; чужая встреча → 403. Плюс строка агента (service_agents.last_seen_at,
 // last_version) — «бот вообще жив, такая-то сборка». Куда и с какими условиями — write.ts.
+// Удар бота по своей встрече ещё продлевает лиз права транскрибации и пишет recorded_seconds —
+// так арбитраж meeting-claim видит запись бота честно (T155, write.ts).
 // Деплой: supabase functions deploy meeting-heartbeat --no-verify-jwt (рекордер хитит с Bearer-токеном).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import {
+  applyWrites,
   buildHeartbeatWrites,
   type HeartbeatBody,
   HeartbeatRejected,
   type HeartbeatWrite,
   NOT_CLAIM_OWNER,
+  type WriteStore,
 } from "./write.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
+
+// Таблицы в Postgres через PostgREST. Условие свежести — `col is null or col < value` той же UPDATE.
+const store: WriteStore = {
+  async update(write) {
+    let query = supabase.from(write.table).update(write.patch);
+    for (const [column, value] of Object.entries(write.match)) {
+      query = query.eq(column, value);
+    }
+    if (write.newerThan) {
+      const { column, value } = write.newerThan;
+      query = query.or(`${column}.is.null,${column}.lt.${value}`);
+    }
+    // Отдать назад только ключ: строка встречи несёт транскрипт, тащить его ради счёта незачем.
+    const { data, error } = await query.select(Object.keys(write.match)[0]);
+    if (error) throw new Error(`update ${write.table}: ${error.message}`);
+    return (data ?? []).length;
+  },
+  async count(write) {
+    let query = supabase.from(write.table).select(Object.keys(write.match)[0]);
+    for (const [column, value] of Object.entries(write.match)) {
+      query = query.eq(column, value);
+    }
+    const { data, error } = await query;
+    if (error) throw new Error(`select ${write.table}: ${error.message}`);
+    return (data ?? []).length;
+  },
+};
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -69,56 +100,20 @@ Deno.serve(async (req: Request) => {
     }
     throw e;
   }
-  for (const write of writes) {
-    const outcome = await apply(write);
-    if (outcome === "failed") return json({ error: "update failed" }, 500);
-    // Не отличаем «встречи нет» от «встреча чужая»: ответ не должен подтверждать чужие id.
-    // code — для бота: по своей встрече такой отказ значит «право ушло другой записи» (D019).
-    if (outcome === "missed") {
-      return json(
-        { error: "meeting is not yours", code: NOT_CLAIM_OWNER },
-        403,
-      );
-    }
-    // Опоздавший удар: встречу уже освежил более поздний. Ничего не пишем дальше — строку агента
-    // тот, более поздний, тоже освежил.
-    if (outcome === "stale") return json({ ok: true, stale: true });
+  let outcome;
+  try {
+    outcome = await applyWrites(writes, store);
+  } catch (e) {
+    console.error(`meeting-heartbeat: ${e instanceof Error ? e.message : String(e)}`);
+    return json({ error: "update failed" }, 500);
   }
+  // Не отличаем «встречи нет» от «встреча чужая»: ответ не должен подтверждать чужие id.
+  // code — для бота: по своей встрече такой отказ значит «право ушло другой записи» (D019).
+  if (outcome === "missed") {
+    return json({ error: "meeting is not yours", code: NOT_CLAIM_OWNER }, 403);
+  }
+  // Опоздавший удар: встречу уже освежил более поздний. Дальше ничего не пишется — строку агента
+  // тот, более поздний, тоже освежил.
+  if (outcome === "stale") return json({ ok: true, stale: true });
   return json({ ok: true });
 });
-
-type Outcome = "ok" | "missed" | "stale" | "failed";
-
-async function apply(write: HeartbeatWrite): Promise<Outcome> {
-  let query = supabase.from(write.table).update(write.patch);
-  for (const [column, value] of Object.entries(write.match)) {
-    query = query.eq(column, value);
-  }
-  if (write.newerThan) {
-    const { column, value } = write.newerThan;
-    query = query.or(`${column}.is.null,${column}.lt.${value}`);
-  }
-  // Отдать назад только ключ: строка встречи несёт транскрипт, тащить его ради счёта незачем.
-  const key = Object.keys(write.match)[0];
-  const { data, error } = await query.select(key);
-  if (error) {
-    console.error(`meeting-heartbeat: update ${write.table}: ${error.message}`);
-    return "failed";
-  }
-  if (!write.requireHit || (data ?? []).length > 0) return "ok";
-  if (!write.newerThan) return "missed";
-  // Промах при условии свежести: встреча либо не того, кто пришёл, либо удар опоздал. Различаем
-  // тем же набором условий владения, но уже без свежести.
-  let owned = supabase.from(write.table).select(key);
-  for (const [column, value] of Object.entries(write.match)) {
-    owned = owned.eq(column, value);
-  }
-  const { data: rows, error: ownedError } = await owned;
-  if (ownedError) {
-    console.error(
-      `meeting-heartbeat: select ${write.table}: ${ownedError.message}`,
-    );
-    return "failed";
-  }
-  return (rows ?? []).length > 0 ? "stale" : "missed";
-}

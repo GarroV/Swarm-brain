@@ -148,6 +148,12 @@ export interface HeartbeatRequest {
    * встречи своя тишина (D018). До claim встречи нет, и поле не отправляется.
    */
   readonly meeting_id?: string;
+  /**
+   * Сколько секунд записано к удару. Только вместе с `meeting_id`: сервер пишет их в
+   * `recorded_seconds` встречи и продлевает лиз права транскрибации — так арбитраж `meeting-claim`
+   * сравнивает претендента с настоящей записью бота, а не с 0 из заявки до захода (T155).
+   */
+  readonly recorded_seconds?: number;
 }
 
 export interface MeetingStatusItem {

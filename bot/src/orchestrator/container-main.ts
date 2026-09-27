@@ -229,12 +229,15 @@ async function main(): Promise<number> {
         },
       }),
       notifier,
-      finalHeartbeat: async (meetingId) =>
+      finalHeartbeat: async (meetingId, recordedSeconds) =>
         client.heartbeat({
           recording: false,
           version: config.version,
           on_call: false,
           ...(meetingId !== null && { meeting_id: meetingId }),
+          // Вся длина записи — последнее слово бота в арбитраже meeting-claim (T155).
+          ...(meetingId !== null &&
+            recordedSeconds !== null && { recorded_seconds: recordedSeconds }),
         }),
       stop: stop.signal,
       timing: config.timing,

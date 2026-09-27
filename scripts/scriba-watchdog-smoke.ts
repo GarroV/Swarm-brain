@@ -22,6 +22,10 @@
 // not_claim_owner, и новому claim_owner сторож не шлёт ложный алерт. Монотонность: опоздавший
 // удар recording:true не перетирает более свежий.
 //
+// Арбитраж (T155): удар бота продлевает лиз и пишет recorded_seconds — рекордер с записью короче
+// не отбирает у бота встречу, claim после истечения лиза из claim не считает живого бота
+// брошенным, а заметно более полная запись по-прежнему перехватывает.
+//
 // Порты — от SMOKE_PORT_BASE (по умолчанию 4380, диапазон блока orchestrator/сторож; base..base+3
 // — сам контур): base+4 — функция meeting-heartbeat, base+5 — функция meeting-claim, base+8 —
 // функция swarm-bot, base+9 — поддельный Telegram. swarm-bot ходит в
@@ -50,6 +54,7 @@ const HUMAN_CRASH = OWNER + 3; // bumblebee замолчал посреди за
 const HUMAN_ALIVE = OWNER + 4; // bumblebee пишет, heartbeat свежий
 const TAKER = OWNER + 5; // его bumblebee перехватывает у бота встречу более полной записью
 const OWNER_LATE = OWNER + 6; // за него бот пишет встречу, на которую приходит опоздавший удар
+const OWNER_ARB = OWNER + 7; // за него бот пишет встречи арбитража (T155)
 const PEOPLE = [
   OWNER,
   OWNER_NOTIFIED,
@@ -58,6 +63,7 @@ const PEOPLE = [
   HUMAN_ALIVE,
   TAKER,
   OWNER_LATE,
+  OWNER_ARB,
 ];
 const TAKER_TOKEN = `taker-${RUN}`;
 const FOREIGN_WS = `smoke-wd-foreign-${RUN}`; // чужой воркспейс: его встречу агент трогать не вправе
@@ -77,6 +83,14 @@ const TAKEN = {
   id: crypto.randomUUID(),
   key: `cal:smoke-taken-${RUN}`,
   owner: OWNER,
+};
+// Арбитраж (T155): бот заявился до захода с 0 секунд 40 минут назад — лиз из claim истёк.
+//   long  — бот пишет 40 минут; рекордер с 15 минутами не отбирает, с 62 минутами отбирает честно;
+//   lease — бот пишет 2 минуты; claim рекордера с 1 минутой после истечения лиза из claim не
+//           занимает встречу как брошенную: удар бота лиз продлил.
+const ARB = {
+  long: { id: crypto.randomUUID(), key: `cal:smoke-arb-long-${RUN}` },
+  lease: { id: crypto.randomUUID(), key: `cal:smoke-arb-lease-${RUN}` },
 };
 // Встреча, в строку которой уже лёг более свежий удар, чем тот, что придёт опоздавшим.
 const LATE = { id: crypto.randomUUID(), owner: OWNER_LATE };
@@ -109,6 +123,7 @@ const ALL_MEETING_IDS = [
   FOREIGN,
   TAKEN,
   LATE,
+  ...Object.values(ARB),
 ].map((m) => m.id);
 
 const minutesAgo = (m: number) =>
@@ -285,6 +300,22 @@ async function seed(): Promise<void> {
   await rest(
     "POST",
     "meetings",
+    Object.values(ARB).map((m) => ({
+      id: m.id,
+      source: "scriba-smoke",
+      identity_kind: "calendar",
+      identity_key: m.key,
+      group_id: WS,
+      claim_owner: OWNER_ARB,
+      recorded_seconds: 0, // так заявляется бот до захода (claim-request.ts)
+      lease_expires_at: minutesAgo(10), // выдан claim-ом 40 минут назад на 30
+      title: "Arbitration",
+      created_at: minutesAgo(MEETING_AGE_MIN),
+    })),
+  );
+  await rest(
+    "POST",
+    "meetings",
     Object.values(GHOST).map((g) => ({
       id: g.id,
       source: "desktop-agent",
@@ -338,6 +369,7 @@ async function beat(
 async function beatRaw(
   meeting: { id: string },
   onBehalfOf: number,
+  extra: Record<string, unknown> = {},
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const res = await fetch(`http://127.0.0.1:${PORT_HB}/`, {
     method: "POST",
@@ -352,6 +384,7 @@ async function beatRaw(
       on_call: true,
       meeting_key: `manual:${meeting.id}`,
       meeting_id: meeting.id,
+      ...extra,
     }),
   });
   const body = await res.json().catch(() => ({}));
@@ -376,6 +409,108 @@ async function takeOver(): Promise<
   });
   const body = await res.json().catch(() => ({}));
   return { status: res.status, body };
+}
+
+/** Заявка bumblebee человека TAKER на встречу `key` с записью `seconds` — настоящий meeting-claim. */
+async function claimAs(
+  key: string,
+  seconds: number,
+): Promise<{ status: number; decision: unknown }> {
+  const res = await fetch(`http://127.0.0.1:${PORT_CLAIM}/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${TAKER_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      identity_kind: "calendar",
+      identity_key: key,
+      recorded_seconds: seconds,
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  return {
+    status: res.status,
+    decision: (body as { decision?: unknown }).decision,
+  };
+}
+
+async function arbRow(id: string) {
+  const rows = await rest(
+    "GET",
+    `meetings?id=eq.${id}&select=claim_owner,recorded_seconds,lease_expires_at,agent_last_recording`,
+  );
+  return (rows as Array<{
+    claim_owner: number | null;
+    recorded_seconds: number | null;
+    lease_expires_at: string | null;
+    agent_last_recording: boolean | null;
+  }>)[0];
+}
+
+/** Арбитраж meeting-claim видит запись бота честно (T155). */
+async function arbitration(): Promise<void> {
+  // Удар бота на 40-й минуте записи: секунды в арбитраж, лиз продлён от удара.
+  const hit = await beatRaw(ARB.long, OWNER_ARB, {
+    recorded_seconds: 2400,
+    version: 7,
+  });
+  const afterBeat = await arbRow(ARB.long.id);
+  expect(
+    "удар бота записал 2400 с и продлил лиз на 30 минут от удара",
+    hit.status === 200 && afterBeat?.recorded_seconds === 2400 &&
+      Date.parse(afterBeat?.lease_expires_at ?? "") > Date.now() + 29 * 60_000,
+    JSON.stringify({ hit, afterBeat }),
+  );
+  const agent = await agentRow();
+  expect(
+    "строка агента освежена условной UPDATE (версия удара легла)",
+    agent?.last_version === 7,
+    JSON.stringify(agent),
+  );
+
+  // Рекордер с 15 минутами: до T155 отбирал (0 с у бота, 900 ≥ 300), теперь — defer.
+  const short = await claimAs(ARB.long.key, 900);
+  const afterShort = await arbRow(ARB.long.id);
+  expect(
+    "рекордер с записью короче не отбирает встречу у бота (defer, claim_owner прежний)",
+    short.status === 200 && short.decision === "defer" &&
+      afterShort?.claim_owner === OWNER_ARB &&
+      afterShort?.agent_last_recording === true,
+    JSON.stringify({ short, afterShort }),
+  );
+
+  // Рекордер с 62 минутами — заметно полнее 40 (×1.5 и +5 мин): арбитраж честный, не глухой.
+  const full = await claimAs(ARB.long.key, 3720);
+  const afterFull = await arbRow(ARB.long.id);
+  expect(
+    "заметно более полная запись по-прежнему перехватывает (transcribe, флаг бота погашен)",
+    full.status === 200 && full.decision === "transcribe" &&
+      afterFull?.claim_owner === TAKER &&
+      afterFull?.agent_last_recording === false,
+    JSON.stringify({ full, afterFull }),
+  );
+
+  // Лиз из claim истёк, но бот жив: удар продлил, и claim после 30 минут не берёт встречу как
+  // брошенную. До T155 ветка «лиз истёк» отдала бы её рекордеру с одной минутой записи.
+  await beatRaw(ARB.lease, OWNER_ARB, { recorded_seconds: 120 });
+  const lease = await claimAs(ARB.lease.key, 60);
+  const afterLease = await arbRow(ARB.lease.id);
+  expect(
+    "claim после истечения лиза из claim не считает живого бота истёкшим (defer)",
+    lease.status === 200 && lease.decision === "defer" &&
+      afterLease?.claim_owner === OWNER_ARB,
+    JSON.stringify({ lease, afterLease }),
+  );
+
+  // Негодные секунды — 400, в арбитраж не попадают.
+  const bad = await beatRaw(ARB.lease, OWNER_ARB, { recorded_seconds: 90_000 });
+  expect(
+    "recorded_seconds сверх суток — 400, записанное не тронуто",
+    bad.status === 400 &&
+      (await arbRow(ARB.lease.id))?.recorded_seconds === 120,
+    JSON.stringify(bad),
+  );
 }
 
 async function claimOwner(id: string): Promise<number | null> {
@@ -641,6 +776,9 @@ async function scenario(): Promise<void> {
     mine().length === before,
     `${before} → ${mine().length}`,
   );
+
+  // 5. Арбитраж (T155) — после сторожа: его ожидания считают сообщения людям.
+  await arbitration();
 }
 
 async function main(): Promise<void> {

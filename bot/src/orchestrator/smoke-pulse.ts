@@ -7,7 +7,8 @@
  * рекордером — нет.
  *
  * Сценарии:
- *   end      — встреча записана и отдана → финальный удар гасит флаг → сторож молчит;
+ *   end      — встреча записана и отдана → финальный удар гасит флаг → сторож молчит; удары несут
+ *              записанные секунды и продлевают лиз (T155) — арбитраж видит запись бота, а не 0;
  *   death    — kill посреди записи → пульс замолк на recording:true → алерт EN+RU claim_owner;
  *   takeover — рекордер человека перехватывает встречу настоящим `meeting-claim` → удар бота 403
  *              not_claim_owner → контейнер уходит `superseded` без выгрузки → сторож молчит.
@@ -146,12 +147,14 @@ interface Pulse {
   readonly claim_owner: number | null;
   readonly agent_last_seen_at: string | null;
   readonly agent_last_recording: boolean | null;
+  readonly recorded_seconds: number | null;
+  readonly lease_expires_at: string | null;
 }
 
 async function pulseOf(meeting: SeededMeeting): Promise<Pulse | undefined> {
   const rows = (await rest(
     "GET",
-    `meetings?id=eq.${meeting.id}&select=claim_owner,agent_last_seen_at,agent_last_recording`,
+    `meetings?id=eq.${meeting.id}&select=claim_owner,agent_last_seen_at,agent_last_recording,recorded_seconds,lease_expires_at`,
   )) as Pulse[];
   return rows[0];
 }
@@ -163,6 +166,11 @@ async function agentSeenAt(): Promise<number> {
   return Date.parse(rows[0]?.last_seen_at ?? "");
 }
 
+/**
+ * Лиз, с которым засеяны встречи: удар бота обязан сдвинуть его вперёд (T155).
+ */
+const seeded = { leaseMs: 0 };
+
 async function seed(): Promise<void> {
   await rest("POST", "workspaces", [{ id: WS, name: "Smoke pulse" }]);
   await rest("POST", "allowed_users", [
@@ -172,7 +180,8 @@ async function seed(): Promise<void> {
   await rest("POST", "service_agents", [
     { id: AGENT_ID, name: "scriba", group_id: WS, token_hash: sha256(TOKEN) },
   ]);
-  const lease = new Date(Date.now() + 30 * 60_000).toISOString();
+  seeded.leaseMs = Date.now() + 30 * 60_000;
+  const lease = new Date(seeded.leaseMs).toISOString();
   await rest(
     "POST",
     "meetings",
@@ -463,6 +472,16 @@ async function sceneEnd(fake: Fake): Promise<void> {
       pulse?.agent_last_recording === false,
       "финальный удар погасил флаг в строке встречи",
       JSON.stringify(pulse),
+    );
+    check(
+      (pulse?.recorded_seconds ?? 0) > 0,
+      "удары принесли записанные секунды в recorded_seconds — арбитраж видит запись, а не 0",
+      JSON.stringify(pulse),
+    );
+    check(
+      Date.parse(pulse?.lease_expires_at ?? "") > seeded.leaseMs,
+      "удары продлили лиз права транскрибации",
+      JSON.stringify({ pulse, seededLease: new Date(seeded.leaseMs).toISOString() }),
     );
     const alerts = await watchdogAbout(meeting);
     check(alerts.length === 0, "сторож не принял штатный конец за смерть", JSON.stringify(alerts));

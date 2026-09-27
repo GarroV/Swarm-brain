@@ -13,6 +13,7 @@ import {
   resolveAgentScope,
 } from "./agent-scope.ts";
 import { attachInvite, consumeInvite, inviteSource, releaseInvite } from "./invites.ts";
+import { CLAIM_LEASE_TTL_SEC } from "../_shared/claim-lease.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -34,7 +35,8 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const NO_INVITE = "service agent: a manual meeting needs a valid invite — the person pastes the call link in Swarm";
 
 // На сколько выдаётся право транскрибации. Истёк и транскрипта нет → claim перехватит другой.
-const LEASE_TTL_SEC = 1800;
+// Удар бота по своей встрече продлевает его тем же сроком (_shared/claim-lease.ts).
+const LEASE_TTL_SEC = CLAIM_LEASE_TTL_SEC;
 
 // Перехват права более полной записью. Оба порога должны выполниться разом — чтобы почти
 // одинаковые записи (штатный случай: все стопнули в пределах минуты) не гоняли перетранскрибацию
