@@ -28,3 +28,6 @@ miniapp/src/lib/taskLinks.test.ts
 miniapp/src/components/tasks/TaskLinksField.tsx
 miniapp/src/lib/people.ts
 miniapp/src/lib/people.test.ts
+miniapp/src/lib/projectOrder.ts
+miniapp/src/lib/projectOrder.test.ts
+miniapp/src/components/tasks/projectDnd.ts

@@ -1978,6 +1978,7 @@ let mockProjects: Project[] = [
     color: "#5b8def",
     emoji: null,
     parent_id: null,
+    position: 1000,
     sprint_id: "sp1",
     created_by: 123456,
     created_at: new Date().toISOString(),
@@ -1995,6 +1996,7 @@ let mockProjects: Project[] = [
     color: null,
     emoji: null,
     parent_id: null,
+    position: 2000,
     sprint_id: "sp1",
     created_by: 123456,
     created_at: new Date().toISOString(),
@@ -2012,6 +2014,7 @@ let mockProjects: Project[] = [
     color: null,
     emoji: null,
     parent_id: "prg1",
+    position: 1000,
     sprint_id: null,
     created_by: 123456,
     created_at: new Date().toISOString(),
@@ -2029,6 +2032,7 @@ let mockProjects: Project[] = [
     color: null,
     emoji: null,
     parent_id: "prg1",
+    position: 2000,
     sprint_id: null,
     created_by: 123456,
     created_at: new Date().toISOString(),
@@ -2046,6 +2050,7 @@ let mockProjects: Project[] = [
     color: null,
     emoji: null,
     parent_id: null,
+    position: 3000,
     sprint_id: "sp1",
     created_by: null,
     created_at: new Date().toISOString(),
@@ -2063,6 +2068,7 @@ let mockProjects: Project[] = [
     color: null,
     emoji: null,
     parent_id: null,
+    position: 4000,
     sprint_id: "sp1",
     created_by: 123456,
     created_at: new Date().toISOString(),
@@ -2080,6 +2086,7 @@ let mockProjects: Project[] = [
     color: null,
     emoji: null,
     parent_id: null,
+    position: 5000,
     sprint_id: "sp1",
     created_by: MOCK_COLLEAGUE,
     created_at: new Date().toISOString(),
@@ -2097,6 +2104,7 @@ let mockProjects: Project[] = [
     color: null,
     emoji: null,
     parent_id: "pr4",
+    position: 1000,
     sprint_id: null,
     created_by: MOCK_COLLEAGUE,
     created_at: new Date().toISOString(),
@@ -2203,6 +2211,13 @@ export async function createProject(
       start_date: null,
       end_date: null,
       is_private: input.is_private ?? false,
+      // Как на сервере (nextPosition): новая строка встаёт в конец списка своих братьев.
+      position: Math.max(
+        0,
+        ...mockProjects
+          .filter((x) => (x.parent_id ?? null) === (input.parent_id ?? null))
+          .map((x) => x.position ?? 0),
+      ) + 1000,
       task_count: 0,
       backlog_count: 0,
     };
@@ -2230,6 +2245,7 @@ export async function updateProject(
       owner_telegram_id: number | null;
       start_date: string | null;
       end_date: string | null;
+      position: number | null;
       goal: string | null;
       description: string | null;
       links: ProjectLink[];

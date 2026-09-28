@@ -19,3 +19,6 @@ supabase/functions/swarm-api/project-fields.ts|supabase/functions/swarm-api/proj
 # Ссылки задачи: список схем в коде — единственное, что стоит между `javascript:` в поле
 # и этим же адресом в href на экране. Ошибка здесь не падает, она делает ссылку кликабельной.
 miniapp/src/lib/taskLinks.ts|miniapp/src/lib/taskLinks.test.ts
+# Порядок проектов на доске: ошибка в расчёте позиции не падает — список выходит ПОЧТИ
+# правильным, и человек читает это как «карточки сами прыгают», а не как поломку.
+miniapp/src/lib/projectOrder.ts|miniapp/src/lib/projectOrder.test.ts
