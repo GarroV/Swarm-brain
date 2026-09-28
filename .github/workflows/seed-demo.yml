@@ -1,13 +1,15 @@
 name: Демо-данные (руками)
 
-# Заливает витринные данные доски инициатив в ДЕМО-воркспейс прода (`scripts/seed-demo.sql`).
+# Сбрасывает ДЕМО-воркспейс прода к эталону сейчас, не дожидаясь ближайшего тика pg_cron
+# `demo-reset` (он идёт сам каждые 30 минут). Сброс — функция `public.demo_reset()`, вызов лежит
+# в `scripts/seed-demo.sql`. Нужен, например, сразу после раскатки новой версии эталона.
 #
 # Зачем через CI: скрипт умеет ходить в удалённую базу (`ALLOW_REMOTE=1`), но пароль прод-базы
 # живёт только в секретах репозитория — локально его нет, как и у наката миграций (issue #398).
 #
 # Замки — те же, что в самом скрипте, и ещё один сверху:
-#   · воркспейс только `demo`/`demo-*` (рабочие слаги скрипт отбивает сам);
-#   · сид идемпотентный: фиксированные UUID и `on conflict do update`, ни одного `delete`;
+#   · воркспейс только `demo`: слаг зашит константой в функции, передать другой некуда;
+#   · сброс идемпотентный: сносит только демо и засевает эталон заново, в одной транзакции;
 #   · кнопка требует ввести слово `demo` — чтобы случайный клик ничего не запустил.
 #
 # Это раскатка: нужно «да» владельца, как на любую правку прод-данных.
@@ -16,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: "Введите demo, чтобы подтвердить заливку витринных данных"
+        description: "Введите demo, чтобы подтвердить сброс демо к эталону"
         type: string
         required: true
 
@@ -26,7 +28,7 @@ concurrency:
 
 jobs:
   seed:
-    name: Залить демо-данные
+    name: Сбросить демо к эталону
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -42,7 +44,7 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: 2.118.0
-      - name: Залить
+      - name: Сбросить
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
@@ -50,11 +52,8 @@ jobs:
           # по IPv4 — прямое подключение отвечает «Network is unreachable». Пулер потребовал бы
           # пароль базы, которого в секретах нет (проверено прогоном 23.09.2026).
           #
-          # Management API не понимает psql-команд, поэтому из сида убираем `\set` и
-          # подставляем воркспейс литералом. Слаг задан ЗДЕСЬ и только `demo`: рабочие
-          # воркспейсы этой кнопкой недостижимы.
+          # Management API не понимает psql-команд — поэтому в `scripts/seed-demo.sql` их нет:
+          # там один вызов функции, и слаг воркспейса живёт в ней, а не в подстановке здесь.
           supabase link --project-ref vbqglndbxkpmreccpqmr
-          sed -e "/^\\\\/d" -e "s/:'gid'/'demo'/g" -e "s/:gid/'demo'/g" \
-            scripts/seed-demo.sql > /tmp/seed-demo-remote.sql
-          grep -q "'demo'" /tmp/seed-demo-remote.sql || { echo "воркспейс не подставился" >&2; exit 1; }
-          supabase db query --linked -f /tmp/seed-demo-remote.sql
+          grep -q "public.demo_reset()" scripts/seed-demo.sql || { echo "в сиде нет вызова demo_reset()" >&2; exit 1; }
+          supabase db query --linked -f scripts/seed-demo.sql

@@ -314,6 +314,8 @@ select cron.schedule(
 );
 ```
 
+Сброс демо-воркспейса к эталону (`demo-reset`, каждые 30 минут) регистрировать руками не нужно: он зовёт SQL-функцию без секрета, и его заводит сама миграция `20260928180000_demo_auto_reset.sql`, если pg_cron включён.
+
 > Для pg_cron требуется расширение `pg_net`. Включить в Supabase Dashboard → Database → Extensions.
 
 ---
