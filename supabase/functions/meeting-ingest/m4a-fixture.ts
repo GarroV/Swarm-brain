@@ -35,6 +35,8 @@ export interface Overrides {
   reuseFirstChunk?: boolean;
   /** Смещения чанков 64-битные (co64). */
   co64?: boolean;
+  /** Сэмплов в чанке по stsc; по умолчанию FRAMES_PER_CHUNK. */
+  framesPerChunk?: number;
 }
 
 export function box(type: string, ...bodies: Uint8Array[]): Uint8Array<ArrayBuffer> {
@@ -96,7 +98,7 @@ function stbl(frames: number, o: Overrides, chunkOffsets: number[]): Uint8Array 
   const stsz = o.constantSize
     ? fullBox("stsz", [size, declared])
     : box("stsz", u32s([0, 0, declared]), u32s(new Array<number>(declared).fill(size)));
-  const stsc = fullBox("stsc", [1, 1, FRAMES_PER_CHUNK, 1]);
+  const stsc = fullBox("stsc", [1, 1, o.framesPerChunk ?? FRAMES_PER_CHUNK, 1]);
   const stco = o.co64
     ? box("co64", u32s([0, chunkOffsets.length]), u32s(chunkOffsets.flatMap((c) => [0, c])))
     : box("stco", u32s([0, chunkOffsets.length]), u32s(chunkOffsets));
@@ -123,8 +125,9 @@ export function m4aOf(seconds: number, o: Overrides = {}): Uint8Array<ArrayBuffe
   const declared = frames + (o.extraDeclaredFrames ?? 0);
   const payload = new Uint8Array(frames * (o.frameBytes ?? 16));
   const ftyp = box("ftyp", new TextEncoder().encode("M4A \0\0\0\0M4A isom"));
-  const chunkCount = Math.ceil(declared / FRAMES_PER_CHUNK);
-  const chunkBytes = FRAMES_PER_CHUNK * (o.frameBytes ?? 16);
+  const perChunk = o.framesPerChunk ?? FRAMES_PER_CHUNK;
+  const chunkCount = Math.ceil(declared / perChunk);
+  const chunkBytes = perChunk * (o.frameBytes ?? 16);
   const offsetsFrom = (mdatStart: number) =>
     Array.from(
       { length: chunkCount },

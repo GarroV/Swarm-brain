@@ -170,6 +170,10 @@ function samplesInMdat(dv: DataView, stbl: Box, samples: number, mdats: Box[]): 
   const sizes = sampleSizes(dv, stsz);
   const perChunk = samplesPerChunk(dv, stsc, offsets.length);
   if (!sizes || !perChunk || sizes.count !== samples) return null;
+  // Счётчики сэмплов — числа из таблиц, а не байты: без этой границы файл в сотни байт
+  // объявляет миллиард сэмплов, и цикл ниже идёт секунды. Кадр AAC весит хотя бы байт.
+  const payload = mdats.reduce((n, m) => n + (m.end - m.bodyStart), 0);
+  if (samples > payload) return null;
   let sample = 0;
   let bytes = 0;
   for (const [i, start] of offsets.entries()) {
@@ -179,7 +183,6 @@ function samplesInMdat(dv: DataView, stbl: Box, samples: number, mdats: Box[]): 
     if (!inside) return null;
     bytes += chunkBytes;
   }
-  const payload = mdats.reduce((n, m) => n + (m.end - m.bodyStart), 0);
   return sample === samples && bytes <= payload ? bytes : null;
 }
 

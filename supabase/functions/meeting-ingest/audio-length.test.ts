@@ -73,6 +73,14 @@ Deno.test("ЯДРО: слишком мало байт на секунду для
   assertEquals(mp4DurationSec(m4aOf(600, { frameBytes: 1000, frameDelta: 24_000 })), null);
 });
 
+Deno.test("ЯДРО: огромные счётчики сэмплов при крошечном файле — не измерено и без долгого разбора", () => {
+  const file = m4aOf(2, { constantSize: true, extraDeclaredFrames: 1_000_000_000, framesPerChunk: 1_000_000_000 });
+  const t0 = performance.now();
+  assertEquals(mp4DurationSec(file), null);
+  const ms = performance.now() - t0;
+  assertEquals(ms < 50, true, `разбор шёл ${ms.toFixed(0)} мс`);
+});
+
 Deno.test("mp4: moov до mdat, co64, одинаковый размер кадра в stsz — меряются", () => {
   assertAlmostEquals(mp4DurationSec(m4aOf(300, { moovFirst: true })) ?? -1, 300, 0.05);
   assertAlmostEquals(mp4DurationSec(m4aOf(300, { co64: true })) ?? -1, 300, 0.05);
