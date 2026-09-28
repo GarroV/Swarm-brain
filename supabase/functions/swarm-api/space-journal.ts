@@ -72,9 +72,13 @@ async function visibleTasks(
   viewerId: number | null,
 ): Promise<Map<string, string>> {
   const titles = new Map<string, string>();
-  const { data: cycles, error: cyclesErr } = await supabase.from("sprint_cycles")
+  const { data: cycles, error: cyclesErr } = await supabase.from(
+    "sprint_cycles",
+  )
     .select("id").eq("group_id", groupId).eq("tab_id", tabId);
-  if (cyclesErr) console.error("[space-journal] sprint_cycles", cyclesErr.message);
+  if (cyclesErr) {
+    console.error("[space-journal] sprint_cycles", cyclesErr.message);
+  }
   const cycleIds = (cycles ?? []).map((c) => (c as { id: string }).id);
   if (cycleIds.length === 0) return titles;
 
