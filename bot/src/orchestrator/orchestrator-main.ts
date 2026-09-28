@@ -27,7 +27,10 @@
  *   SCRIBA_GOOGLE_STATE_FILE    — сохранённый вход аккаунта бота (storageState, T175); задан —
  *                                 обязателен и SCRIBA_ACCOUNT_COPIES_DIR. Файла нет — гостем;
  *   SCRIBA_ACCOUNT_COPIES_DIR   — каталог копий входа, путь как у демона Docker (приём поводка):
- *                                 в контейнер монтируется своя копия одним файлом на чтение.
+ *                                 в контейнер монтируется своя копия одним файлом на чтение;
+ *   SCRIBA_EGRESS_EXTRA         — добавка к списку выхода контейнеров встреч наружу (T178), через
+ *                                 запятую, только точные host:port. Всё остальное, кроме
+ *                                 Google/Meet и SCRIBA_CONTAINER_SWARM_URL, закрыто.
  *
  * Кривое окружение — отказ на старте с именем переменной: служба, которая «работает» и никого
  * не зовёт, — ровно та тишина, против которой она заведена.
@@ -39,6 +42,7 @@ import {
 } from "../container/isolation.ts";
 import { type AccountCopies, FileAccountCopies } from "./account.ts";
 import { DockerodeEngine } from "./docker-engine.ts";
+import { DockerMeetingEgress } from "./egress.ts";
 import { calendarTriggerFor } from "./calendar-service.ts";
 import { inviteTriggerFor } from "./invite-service.ts";
 import { NoticeClient } from "./notice-client.ts";
@@ -125,12 +129,28 @@ async function main(environment: Environment): Promise<void> {
     new JournaledNotifier(new NoticeClient({ baseUrl: swarmUrl, token: grant, onBehalfOf }), log);
 
   const account = accountCopies(environment);
+  const engine = new DockerodeEngine();
+  const project = nonEmpty(environment.SCRIBA_PROJECT) ?? "scriba";
+  const image = required(environment, "SCRIBA_IMAGE");
+  const containerSwarmUrl = nonEmpty(environment.SCRIBA_CONTAINER_SWARM_URL) ?? swarmUrl;
+  const egress = new DockerMeetingEgress({
+    engine,
+    project,
+    image,
+    swarmUrl: containerSwarmUrl,
+    extraTargets: (environment.SCRIBA_EGRESS_EXTRA ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item !== ""),
+    log,
+  });
   const orchestrator = new Orchestrator({
-    engine: new DockerodeEngine(),
-    project: nonEmpty(environment.SCRIBA_PROJECT) ?? "scriba",
-    image: required(environment, "SCRIBA_IMAGE"),
+    engine,
+    egress,
+    project,
+    image,
     leaseDirectory: required(environment, "SCRIBA_LEASE_HOST_DIR"),
-    swarmUrl: nonEmpty(environment.SCRIBA_CONTAINER_SWARM_URL) ?? swarmUrl,
+    swarmUrl: containerSwarmUrl,
     token,
     version,
     notifierFor,

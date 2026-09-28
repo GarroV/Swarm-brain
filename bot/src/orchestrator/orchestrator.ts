@@ -28,6 +28,7 @@ import {
   validMaxMeetings,
 } from "../container/isolation.ts";
 import { pinMeetLocale } from "../meet-adapter/url.ts";
+import { EGRESS_PROXY_ENV } from "../container/browser.ts";
 import { ACCOUNT_STATE_TARGET, type AccountCopies } from "./account.ts";
 import { isCalendarBasis, type MeetingBasis } from "./claim-request.ts";
 import { MEETING_ENV, parsePlatform } from "./config.ts";
@@ -37,6 +38,7 @@ import { inBackground } from "./background.ts";
 import type { Notifier } from "./notices.ts";
 import { parseStateLine } from "./state-line.ts";
 import { describeError } from "./describe-error.ts";
+import type { MeetingEgress, MeetingNetwork } from "./egress.ts";
 
 // eslint-disable-next-line sonarjs/redundant-type-aliases -- имя из контракта блока (docs/furca/blocks/orchestrator.md)
 export type ContainerId = string;
@@ -104,6 +106,11 @@ export interface OrchestratorOptions {
    * Вход аккаунта бота (T175): своя копия на каждый контейнер. Не задан — бот идёт гостем.
    */
   readonly account?: AccountCopies;
+  /**
+   * Выход встречи наружу (T178): своя internal-сеть и egress-прокси. Обязателен — встреча без
+   * него ходила бы куда угодно с живой сессией аккаунта бота в браузере.
+   */
+  readonly egress: MeetingEgress;
 }
 
 interface Managed {
@@ -135,6 +142,21 @@ export type ContainerExit =
 /**
  * Переменные основания встречи для процесса в контейнере (`config.ts` читает их обратно).
  */
+/**
+ * Куда контейнер встречи ходит наружу: браузер — флагом из `SCRIBA_EGRESS_PROXY`, node-клиент
+ * Swarm — штатным прокси из окружения (`NODE_USE_ENV_PROXY`, Node ≥ 24.5). Мимо прокси пути нет:
+ * сеть встречи internal.
+ */
+function egressEnvironment(network: MeetingNetwork): Record<string, string> {
+  return {
+    [EGRESS_PROXY_ENV]: network.proxyUrl,
+    HTTPS_PROXY: network.proxyUrl,
+    HTTP_PROXY: network.proxyUrl,
+    NO_PROXY: "localhost,127.0.0.1",
+    NODE_USE_ENV_PROXY: "1",
+  };
+}
+
 function basisEnvironment(basis: MeetingBasis | null): Record<string, string> {
   if (basis === null) return {};
   if (isCalendarBasis(basis)) {
@@ -244,6 +266,14 @@ export class Orchestrator {
     );
   }
 
+  private async releaseEgress(runId: string): Promise<void> {
+    try {
+      await this.options.egress.release(runId);
+    } catch (error) {
+      this.log(`сеть встречи запуска ${runId} не убрана: ${describeError(error)}`);
+    }
+  }
+
   private async releaseAccount(runId: string): Promise<void> {
     try {
       await this.options.account?.release(runId);
@@ -258,6 +288,7 @@ export class Orchestrator {
     runId: string,
     basis: MeetingBasis | null,
     account: string | null,
+    network: MeetingNetwork,
   ): string[] {
     const own: Record<string, string> = {
       [MEETING_ENV.joinUrl]: joinUrl,
@@ -272,6 +303,7 @@ export class Orchestrator {
       [MEETING_ENV.leaseDir]: LEASE_PATH,
       ...basisEnvironment(basis),
       ...(account !== null && { [MEETING_ENV.accountState]: ACCOUNT_STATE_TARGET }),
+      ...egressEnvironment(network),
     };
     const merged = { ...this.options.extraEnv, ...own };
     return Object.entries(merged).map(([name, value]) => `${name}=${value}`);
@@ -283,12 +315,13 @@ export class Orchestrator {
     runId: string,
     basis: MeetingBasis | null,
     account: string | null,
+    network: MeetingNetwork,
   ): ContainerSpec {
     return {
       name: `${this.options.project}-meeting-${runId}`,
       image: this.options.image,
       command: CONTAINER_COMMAND,
-      env: this.environment(joinUrl, onBehalfOf, runId, basis, account),
+      env: this.environment(joinUrl, onBehalfOf, runId, basis, account, network),
       labels: {
         [LABEL.project]: this.options.project,
         [LABEL.run]: runId,
@@ -302,6 +335,7 @@ export class Orchestrator {
       shmBytes: SHM_BYTES,
       limits: this.limits,
       seccompProfile: this.seccompProfile,
+      network: network.network,
     };
   }
 
@@ -356,14 +390,21 @@ export class Orchestrator {
 
   private async onExit(managed: Managed, code: number | null): Promise<void> {
     this.running.delete(managed.id);
+    // Исход — сразу вслед за удалением из `running`: `whenExited`, пришедший в промежутке,
+    // иначе не нашёл бы ни живого контейнера, ни его исхода.
+    this.exits.set(
+      managed.id,
+      code === 0
+        ? { kind: "finished", outcome: managed.outcome }
+        : { kind: "died", exitCode: code, meetingId: managed.meetingId },
+    );
     await this.releaseAccount(managed.runId);
+    await this.releaseEgress(managed.runId);
     if (code === 0) {
-      this.exits.set(managed.id, { kind: "finished", outcome: managed.outcome });
       this.log(`контейнер ${managed.id} закончил встречу: ${managed.outcome ?? "исход не назван"}`);
       return;
     }
 
-    this.exits.set(managed.id, { kind: "died", exitCode: code, meetingId: managed.meetingId });
     this.log(
       `КОНТЕЙНЕР УМЕР ${managed.id} (запуск ${managed.runId}, код ${String(code)}, ` +
         `встреча ${managed.meetingId ?? "не заявлена"}). Хвост журнала:\n  ${managed.tail.join("\n  ")}`,
@@ -434,6 +475,11 @@ export class Orchestrator {
     await this.reconcile();
     const liveRuns = new Set(Array.from(this.running.values(), (managed) => managed.runId));
     await this.options.account?.sweep(liveRuns);
+    try {
+      await this.options.egress.sweep(liveRuns);
+    } catch (error) {
+      this.log(`разбор сетей встреч сорвался: ${describeError(error)}`);
+    }
   }
 
   /**
@@ -468,12 +514,18 @@ export class Orchestrator {
     try {
       const account = (await this.options.account?.prepare(runId)) ?? null;
       try {
-        return await this.launch(
-          this.spec(pinned, person, runId, basis, account),
-          runId,
-          person,
-          basis?.grantToken ?? this.options.token,
-        );
+        const network = await this.options.egress.prepare(runId);
+        try {
+          return await this.launch(
+            this.spec(pinned, person, runId, basis, account, network),
+            runId,
+            person,
+            basis?.grantToken ?? this.options.token,
+          );
+        } catch (error) {
+          await this.releaseEgress(runId);
+          throw error;
+        }
       } catch (error) {
         await this.releaseAccount(runId);
         throw error;

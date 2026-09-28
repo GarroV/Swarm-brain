@@ -9,6 +9,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ACCOUNT_STATE_TARGET, type AccountCopies } from "./account.ts";
+import type { MeetingEgress, MeetingNetwork } from "./egress.ts";
 import type { ContainerEngine, ContainerSpec, EngineContainer } from "./engine.ts";
 import { readLease } from "./lease.ts";
 import type { Notice, NoticeResult } from "./notices.ts";
@@ -69,6 +70,34 @@ class FakeAccount implements AccountCopies {
   sweep(liveRunIds: ReadonlySet<string>): Promise<void> {
     this.calls.push(`sweep:${[...liveRunIds].join(",")}`);
     return Promise.resolve();
+  }
+}
+
+// Схема собирается из кусков: `eslint --fix` переписал бы литерал в https (см. url.test.ts).
+const PROXY_URL = `${["ht", "tp:"].join("")}//egress:3128`;
+
+class FakeEgress implements MeetingEgress {
+  readonly calls: string[] = [];
+  shouldFailPrepare = false;
+  shouldFailRelease = false;
+  shouldFailSweep = false;
+
+  prepare(runId: string): Promise<MeetingNetwork> {
+    this.calls.push(`prepare:${runId}`);
+    if (this.shouldFailPrepare) return Promise.reject(new Error("egress-прокси не стартовал"));
+    return Promise.resolve({ network: `net-${runId}`, proxyUrl: PROXY_URL });
+  }
+
+  release(runId: string): Promise<void> {
+    this.calls.push(`release:${runId}`);
+    return this.shouldFailRelease
+      ? Promise.reject(new Error("active endpoints"))
+      : Promise.resolve();
+  }
+
+  sweep(liveRunIds: ReadonlySet<string>): Promise<void> {
+    this.calls.push(`sweep:${[...liveRunIds].join(",")}`);
+    return this.shouldFailSweep ? Promise.reject(new Error("docker down")) : Promise.resolve();
   }
 }
 
@@ -145,6 +174,7 @@ class FakeEngine implements ContainerEngine {
 describe("оркестратор", () => {
   let leaseDirectory: string;
   let engine: FakeEngine;
+  let egress: FakeEgress;
   let notices: Notice[];
   let recipients: number[];
   let noticeTokens: string[];
@@ -155,6 +185,7 @@ describe("оркестратор", () => {
     isolation: Partial<Pick<OrchestratorOptions, "maxMeetings" | "limits" | "account">> = {},
   ): Orchestrator {
     return new Orchestrator({
+      egress,
       ...isolation,
       engine,
       project: "scriba-test",
@@ -183,6 +214,7 @@ describe("оркестратор", () => {
   beforeEach(async () => {
     leaseDirectory = await mkdtemp(path.join(tmpdir(), "scriba-orch-"));
     engine = new FakeEngine();
+    egress = new FakeEgress();
     notices = [];
     recipients = [];
     noticeTokens = [];
@@ -306,6 +338,7 @@ describe("оркестратор", () => {
     it("у каждого человека свой том записей: чужая очередь выгрузки контейнеру не видна", async () => {
       let run = 0;
       orchestrator = new Orchestrator({
+        egress,
         engine,
         project: "scriba-test",
         image: "scriba:dev",
@@ -508,6 +541,7 @@ describe("оркестратор", () => {
 
     it("нотиса не ушла — оркестратор не падает", async () => {
       orchestrator = new Orchestrator({
+        egress,
         engine,
         project: "scriba-test",
         image: "scriba:dev",
@@ -628,6 +662,7 @@ describe("оркестратор", () => {
     it("поводок не пишется — оркестратор не падает, а говорит об этом", async () => {
       const lines: string[] = [];
       orchestrator = new Orchestrator({
+        egress,
         engine,
         project: "scriba-test",
         image: "scriba:dev",
@@ -658,6 +693,7 @@ describe("оркестратор", () => {
         // консоль в тестах глушим
       });
       orchestrator = new Orchestrator({
+        egress,
         engine,
         project: "scriba-test",
         image: "scriba:dev",
@@ -674,6 +710,97 @@ describe("оркестратор", () => {
 
       expect(spy).toHaveBeenCalled();
       spy.mockRestore();
+    });
+  });
+
+  describe("выход встречи наружу (T178)", () => {
+    it("контейнер встаёт в свою сеть встречи и ходит только через прокси — браузер и node", async () => {
+      await orchestrator.startForMeeting(MEET, "meet", 744);
+
+      const spec = engine.specs[0];
+      expect(egress.calls).toEqual(["prepare:run-1"]);
+      expect(spec?.network).toBe("net-run-1");
+      expect(environmentOf(spec)).toEqual(
+        expect.arrayContaining([
+          `SCRIBA_EGRESS_PROXY=${PROXY_URL}`,
+          `HTTPS_PROXY=${PROXY_URL}`,
+          `HTTP_PROXY=${PROXY_URL}`,
+          "NODE_USE_ENV_PROXY=1",
+        ]),
+      );
+    });
+
+    it("ручки смоука не снимают прокси", async () => {
+      orchestrator = build({ HTTPS_PROXY: "", SCRIBA_EGRESS_PROXY: "", NODE_USE_ENV_PROXY: "0" });
+
+      await orchestrator.startForMeeting(MEET, "meet", 744);
+
+      expect(environmentOf(engine.specs[0])).toEqual(
+        expect.arrayContaining([
+          `SCRIBA_EGRESS_PROXY=${PROXY_URL}`,
+          `HTTPS_PROXY=${PROXY_URL}`,
+          "NODE_USE_ENV_PROXY=1",
+        ]),
+      );
+    });
+
+    it("сеть встречи не поднялась — контейнера нет, копия входа убрана, место свободно", async () => {
+      const account = new FakeAccount();
+      orchestrator = build(undefined, { account, maxMeetings: 1 });
+      egress.shouldFailPrepare = true;
+
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).rejects.toThrow(/egress/u);
+      expect(engine.specs).toEqual([]);
+      expect(account.calls).toContain("release:run-1");
+
+      egress.shouldFailPrepare = false;
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).resolves.toBe("c1");
+    });
+
+    it("контейнер не стартовал — сеть встречи убрана", async () => {
+      engine.shouldFailStart = true;
+
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).rejects.toThrow();
+      expect(egress.calls).toEqual(["prepare:run-1", "release:run-1"]);
+    });
+
+    it("встреча кончилась или контейнер умер — сеть встречи убрана", async () => {
+      const first = await orchestrator.startForMeeting(MEET, "meet", 744);
+      engine.exit(first, 0);
+      await orchestrator.whenExited(first);
+      const second = await orchestrator.startForMeeting(MEET, "meet", 744);
+      engine.exit(second, 137);
+      await orchestrator.whenExited(second);
+
+      expect(egress.calls.filter((call) => call.startsWith("release:"))).toHaveLength(2);
+    });
+
+    it("сеть не убралась — это строка журнала, а не падение разбора выхода", async () => {
+      egress.shouldFailRelease = true;
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      engine.exit(id, 0);
+
+      await expect(orchestrator.whenExited(id)).resolves.toMatchObject({ kind: "finished" });
+    });
+
+    it("старт службы разбирает сети встреч по живым запускам; сбой разбора службу не роняет", async () => {
+      engine.existing = [
+        {
+          id: "old",
+          running: true,
+          labels: {
+            [LABEL.project]: "scriba-test",
+            [LABEL.run]: "run-old",
+            [LABEL.onBehalfOf]: "744",
+          },
+        },
+      ];
+      egress.shouldFailSweep = true;
+      orchestrator.close();
+      orchestrator = build();
+
+      await expect(orchestrator.init()).resolves.toBeUndefined();
+      expect(egress.calls).toContain("sweep:run-old");
     });
   });
 

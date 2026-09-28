@@ -32,6 +32,59 @@ export interface ContainerSpec {
    * Профиль seccomp строкой JSON: разрешает песочнице Chromium её пространства имён.
    */
   readonly seccompProfile: string;
+  /**
+   * Сеть встречи (T178): internal, без выхода наружу; единственный сосед — egress-прокси.
+   */
+  readonly network: string;
+}
+
+/**
+ * Контейнер egress-прокси стенда: тот же образ, свой процесс, обычная сеть Docker с выходом
+ * наружу. Встречи видят его только через свои internal-сети.
+ */
+export interface ProxySpec {
+  readonly name: string;
+  readonly image: string;
+  readonly command: readonly string[];
+  readonly env: readonly string[];
+  readonly labels: Readonly<Record<string, string>>;
+  readonly limits: ContainerLimits;
+}
+
+export interface EngineNetwork {
+  readonly name: string;
+  readonly labels: Readonly<Record<string, string>>;
+}
+
+/**
+ * Сети встреч и прокси. Отдельно от `ContainerEngine`: оркестратор о сетях не знает, ими
+ * ведает `egress.ts`.
+ */
+export interface EgressEngine {
+  /**
+   * Поднять прокси; `start` и `remove` — общие с контейнерами встреч.
+   */
+  createProxy(spec: ProxySpec): Promise<string>;
+  start(id: string): Promise<void>;
+  remove(id: string): Promise<void>;
+  listByLabel(label: string, value: string): Promise<EngineContainer[]>;
+  /**
+   * Internal-сеть: маршрута наружу нет, внешние имена не резолвятся.
+   */
+  createInternalNetwork(name: string, labels: Readonly<Record<string, string>>): Promise<void>;
+  /**
+   * Уже подключён — не ошибка.
+   */
+  connect(network: string, containerId: string, alias: string): Promise<void>;
+  /**
+   * Не подключён или сети нет — не ошибка.
+   */
+  disconnect(network: string, containerId: string): Promise<void>;
+  /**
+   * Сети нет — не ошибка.
+   */
+  removeNetwork(name: string): Promise<void>;
+  listNetworksByLabel(label: string, value: string): Promise<EngineNetwork[]>;
 }
 
 export interface EngineContainer {
