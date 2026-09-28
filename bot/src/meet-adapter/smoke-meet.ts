@@ -13,9 +13,12 @@
  *   SCRIBA_MEET_LIVE=0   — не ходить в живой meet.google.com; прогон тогда НЕ полный и
  *                          заканчивается кодом 2, а не зелёным.
  */
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { type Browser, chromium } from "playwright";
+import { type Browser, type Route, chromium } from "playwright";
 
 import { MeetAdapter, meetLaunchOptions } from "./meet.ts";
 import { pinMeetLocale } from "./url.ts";
@@ -53,7 +56,30 @@ interface Scene {
   readonly browser: Browser;
 }
 
-async function openScene(browser: Browser, fixture: string): Promise<Scene> {
+interface SceneOptions {
+  /**
+  Сохранённый вход аккаунта бота (T175): путь к storageState-двойнику.
+  */
+  readonly storageStatePath?: string;
+  /**
+  Двойник страницы входа Google: туда уводит `to-signin.html`.
+  */
+  readonly accountsFixture?: string;
+}
+
+function serve(name: string): (route: Route) => Promise<void> {
+  return async (route) =>
+    route.fulfill({
+      path: `${FIXTURES_DIRECTORY}${name}`,
+      contentType: "text/html; charset=utf-8",
+    });
+}
+
+async function openScene(
+  browser: Browser,
+  fixture: string,
+  options: SceneOptions = {},
+): Promise<Scene> {
   const log: string[] = [];
   const adapter = new MeetAdapter({
     browser,
@@ -61,13 +87,12 @@ async function openScene(browser: Browser, fixture: string): Promise<Scene> {
     log: (message) => {
       log.push(message);
     },
+    ...(options.storageStatePath !== undefined && { storageStatePath: options.storageStatePath }),
     prepareContext: async (context) => {
-      await context.route("https://meet.google.com/**", async (route) => {
-        await route.fulfill({
-          path: `${FIXTURES_DIRECTORY}${fixture}`,
-          contentType: "text/html; charset=utf-8",
-        });
-      });
+      await context.route("https://meet.google.com/**", serve(fixture));
+      if (options.accountsFixture !== undefined) {
+        await context.route("https://accounts.google.com/**", serve(options.accountsFixture));
+      }
     },
   });
 
@@ -104,6 +129,110 @@ async function sceneDoor(browser: Browser, fixture: string, expected: string): P
   equals(await scene.adapter.waitAdmitted(2500), expected, `исход двери по ${fixture}`);
   await scene.adapter.leave();
   equals(browser.contexts().length, 0, "контекст закрыт после leave");
+}
+
+/**
+ * Двойник сохранённого входа: форма storageState Playwright, куки ненастоящие. Проверяет, что
+ * адаптер открывает контекст с входом и ведёт себя как вошедший, — не сам вход в Google.
+ */
+async function fakeSignIn(): Promise<{ file: string; dispose: () => Promise<void> }> {
+  const directory = await mkdtemp(path.join(tmpdir(), "scriba-smoke-account-"));
+  const file = path.join(directory, "google-state.json");
+  const cookie = { name: "SMOKE", value: "not-a-session", domain: ".google.com", path: "/" };
+  await writeFile(
+    file,
+    JSON.stringify({
+      cookies: [{ ...cookie, expires: -1, httpOnly: true, secure: true, sameSite: "Lax" }],
+      origins: [],
+    }),
+    { mode: 0o600 },
+  );
+  return { file, dispose: async () => rm(directory, { recursive: true, force: true }) };
+}
+
+async function sceneSignedIn(browser: Browser, storageStatePath: string): Promise<void> {
+  console.log("\n──── под аккаунтом бота: имя не вводится, «Ask to join» нажат, стоим у двери");
+  const scene = await openScene(browser, "lobby-signed-in.html", { storageStatePath });
+  const cookies = await browser.contexts().at(-1)?.cookies("https://meet.google.com");
+  check(
+    cookies?.some((cookie) => cookie.name === "SMOKE") === true,
+    "контекст открыт с сохранённым входом",
+  );
+  check(
+    scene.log.some((line) => line.includes("под аккаунтом бота")),
+    "адаптер знает, что идёт под аккаунтом, а не гостем",
+  );
+  check(
+    scene.log.some((line) => line.includes("клик: войти")),
+    "в дверь постучались",
+  );
+  equals(
+    await scene.adapter.waitAdmitted(1200),
+    "timeout",
+    "лобби под аккаунтом без ответа — timeout",
+  );
+  await scene.adapter.leave();
+  equals(browser.contexts().length, 0, "контекст закрыт после leave");
+}
+
+async function sceneSignedOut(
+  browser: Browser,
+  what: string,
+  fixture: string,
+  options: SceneOptions,
+  expected: string,
+): Promise<void> {
+  const redirect = options.accountsFixture === undefined ? "" : ` → ${options.accountsFixture}`;
+  console.log(`\n──── ${what}: ${fixture}${redirect} → ${expected}`);
+  const scene = await openScene(browser, fixture, options);
+  equals(await scene.adapter.waitAdmitted(4000), expected, what);
+  if (options.storageStatePath !== undefined) {
+    check(
+      scene.log.every((line) => !line.includes("клик: войти")),
+      "гостем бот не стучался",
+      scene.log.join(" | "),
+    );
+  }
+  await scene.adapter.leave();
+  equals(browser.contexts().length, 0, "контекст закрыт после leave");
+}
+
+async function sceneAccount(browser: Browser): Promise<void> {
+  const signIn = await fakeSignIn();
+  try {
+    await sceneSignedIn(browser, signIn.file);
+    const signedIn = { storageStatePath: signIn.file };
+    await sceneSignedOut(
+      browser,
+      "вход слетел: Meet показал лобби гостя",
+      "lobby.html",
+      signedIn,
+      "signin_required",
+    );
+    await sceneSignedOut(
+      browser,
+      "вход слетел: Meet увёл на страницу входа",
+      "to-signin.html",
+      { ...signedIn, accountsFixture: "signin.html" },
+      "signin_required",
+    );
+    await sceneSignedOut(
+      browser,
+      "Google просит подтвердить вход",
+      "to-signin.html",
+      { ...signedIn, accountsFixture: "verify.html" },
+      "signin_required",
+    );
+    await sceneSignedOut(
+      browser,
+      "гостем: Meet увёл на страницу входа — встреча не пускает гостя",
+      "to-signin.html",
+      { accountsFixture: "signin.html" },
+      "blocked",
+    );
+  } finally {
+    await signIn.dispose();
+  }
 }
 
 async function sceneInCall(browser: Browser): Promise<void> {
@@ -246,6 +375,7 @@ async function main(): Promise<void> {
     await sceneInCall(browser);
     await sceneAlone(browser);
     await sceneNoSignal(browser);
+    await sceneAccount(browser);
   } finally {
     await browser.close();
   }

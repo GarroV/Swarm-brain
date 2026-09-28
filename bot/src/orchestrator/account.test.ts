@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { FileAccountCopies } from "./account.ts";
+import { FileAccountCopies, hasGoogleSession } from "./account.ts";
 
 const SIGN_IN = JSON.stringify({
   cookies: [{ name: "SID", value: "secret-cookie-value", domain: ".google.com", path: "/" }],
@@ -119,5 +119,28 @@ describe("FileAccountCopies — вход аккаунта бота в конте
 
   it("sweep без каталога копий — не ошибка", async () => {
     await expect(copies.sweep(new Set())).resolves.toBeUndefined();
+  });
+});
+
+describe("hasGoogleSession — вошёл ли человек в окне входа", () => {
+  it("кука сессии на .google.com — вошёл", () => {
+    expect(hasGoogleSession([{ name: "__Secure-1PSID", domain: ".google.com" }])).toBe(true);
+  });
+
+  it("только служебные куки (NID, согласие) — не вошёл, сохранять нечего", () => {
+    const cookies = [
+      { name: "NID", domain: ".google.com" },
+      { name: "SOCS", domain: ".google.com" },
+    ];
+    expect(hasGoogleSession(cookies)).toBe(false);
+  });
+
+  it("кука с именем сессии, но чужого домена — не вход в Google", () => {
+    expect(hasGoogleSession([{ name: "SID", domain: ".notgoogle.com" }])).toBe(false);
+    expect(hasGoogleSession([{ name: "SID", domain: "evil-google.com" }])).toBe(false);
+  });
+
+  it("пусто — не вошёл", () => {
+    expect(hasGoogleSession([])).toBe(false);
   });
 });

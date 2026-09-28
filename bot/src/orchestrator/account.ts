@@ -37,6 +37,28 @@ const COPY_SUFFIX = ".json";
 const COPY_MODE = 0o444;
 const COPIES_DIRECTORY_MODE = 0o700;
 
+/**
+ * Куки, без которых сессии Google нет. Есть хоть одна из них у домена google.com — в профиле
+ * кто-то вошёл; нет ни одной — сохранять нечего (человек закрыл окно, не войдя).
+ */
+const GOOGLE_SESSION_COOKIES = new Set(["SID", "__Secure-1PSID", "__Secure-3PSID"]);
+
+interface CookieLike {
+  readonly name: string;
+  readonly domain: string;
+}
+
+/**
+Есть ли в сохраняемом входе сессия Google. Значения кук не смотрит.
+*/
+export function hasGoogleSession(cookies: readonly CookieLike[]): boolean {
+  return cookies.some(
+    (cookie) =>
+      GOOGLE_SESSION_COOKIES.has(cookie.name) &&
+      (cookie.domain === "google.com" || cookie.domain.endsWith(".google.com")),
+  );
+}
+
 export interface AccountCopies {
   /**
    * Копия входа для запуска: путь к ней (тот, что монтируется в контейнер) или `null`, если
