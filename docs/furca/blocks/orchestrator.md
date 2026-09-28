@@ -56,6 +56,25 @@ export async function stop(id: ContainerId): Promise<void>;
 Развилка владельцу (не решаю сам): кому бот приходит сам — см. отчёт; до решения автозапуск
 выключен у всех (`allowed_users.scriba_autojoin=false`), механизм работает на тех, у кого включён.
 
-Дальше: миграция → ядро отбора с тестами → функция → оркестратор и контейнер → смоук на стенде.
+Сделано и в `origin`: миграция `20260928063104_meeting_calendar_jobs.sql`; ядро отбора
+`_shared/calendar-dispatch.ts` (тесты до кода, порча 4 границ — красная); функция
+`meeting-calendar/` (`sweep.ts` + тесты); бот — `calendar-client.ts`, `calendar-trigger.ts`,
+`calendar-service.ts`, `poll-loop.ts` (общий цикл с `invite-trigger.ts`), `claimFor`/`calendarClaim`
+в `claim-request.ts`, `SCRIBA_CALENDAR_KEY`+`SCRIBA_CALENDAR_STARTS_AT` в `config.ts`,
+`startForMeeting(..., basis: InviteReference | CalendarReference | null)`.
+
+Контракт тестов бота (optio): `calendar-client.test.ts` — разбор ответа (не `ok` / нет `jobs` /
+нет `skipped` → `SwarmProtocolError`; кривое задание — в `malformed`, соседи целы; кривой пропуск
+отброшен), HTTP-ошибка → `SwarmHttpError`, сеть → `SwarmTransportError`, запрос без
+`X-On-Behalf-Of`; сверка имён полей с `JOB_COLUMNS` сервера. `calendar-trigger.test.ts` — задание
+Meet → `start` один раз, повтор того же id — второго нет; не Meet → `refuse` с текстом площадки;
+`start` бросил → `refuse` c `start_failed`; `refuse` бросил → строка «ОТКАЗ НЕ ДОСТАВЛЕН»; пропуск
+пишется один раз за час и снова после; сбой `sweep` — строка в журнал, не исключение.
+`claim-request.test.ts` — `calendarClaim`/`claimFor`. `config.test.ts` — пара переменных
+календаря вместе, время, не вместе с приглашением. `orchestrator.test.ts` — у календарного
+основания в окружении ключ и начало, метка `scriba.calendar`, приглашения нет.
+
+Дальше: смоук `scripts/scriba-calendar-smoke.ts` (локальный Supabase 4400–4403, функции 4404+,
+поддельный Google) → доки (ARCHITECTURE, QUICK_REF) → гейт.
 
 Устройство — ARCHITECTURE.md «Бот scriba: оркестратор встреч».
