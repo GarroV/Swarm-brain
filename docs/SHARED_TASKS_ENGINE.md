@@ -73,8 +73,10 @@ updateTask(id, fields, opts?) → Promise<RecurResult | null>
      Живёт здесь намеренно: это единственная точка записи статуса, обойти перекат нельзя.
   opts.actor — кто правит (идёт в task_history.changed_by; по умолчанию "recurring").
 
-deleteTask(id) → Promise<void>
-  Сначала task_history, потом tasks.
+deleteTask(id, archivedBy?: number) → Promise<void>
+  АРХИВИРУЕТ: ставит archived_at/archived_by, строку не удаляет (решение владельца
+  21.09.2026, issue #427). task_history НЕ трогается — журнал и нужен для ответа
+  «кто убрал задачу». Читающие (getTask, listTasksWithTotal) фильтруют archived_at is null.
 ```
 
 ---
@@ -85,21 +87,27 @@ deleteTask(id) → Promise<void>
 `groupId` обязателен во всех функциях.
 
 ```
-listSprints(groupId: string) → Promise<Sprint[]>
-  eq(group_id). Порядок: start_date DESC. Ошибки не бросает — пустой массив.
+listSprints(groupId: string, kind: SprintKind | "all" = "all") → Promise<Sprint[]>
+  eq(group_id) + archived_at is null. kind фильтрует сущность: "board_tab" — пространства
+  доски «Проекты», "space" — пространства раздела «Спринты» (issue #423; список без фильтра
+  однажды притащил чужое пространство на доску и оставил раздел пустым у всех).
+  Порядок: start_date DESC. Ошибки не бросает — пустой массив.
 
 createSprint(input: SprintInput, groupId: string) → Promise<Sprint>
-  Вставляет name, start_date, end_date; status дефолт "planned".
+  Вставляет name, start_date, end_date; status дефолт "planned", kind дефолт "board_tab"
+  (поверхность указывает kind сама).
   group_id всегда из аргумента (не из input). Бросает при ошибке.
 
 updateSprint(id, fields: Partial<SprintInput>, groupId) → Promise<Sprint | null>
   Обновляет только спринт своего воркспейса: eq(id) + eq(group_id).
   Возвращает обновлённый Sprint или null (не найден / чужой воркспейс).
 
-deleteSprint(id, groupId) → Promise<boolean>
-  Удаляет только свой воркспейс: eq(id) + eq(group_id).
-  true если строка удалена, false если не найдена/чужая.
-  Задачи освобождаются автоматически (FK ON DELETE SET NULL).
+deleteSprint(id, groupId, archivedBy?: number) → Promise<boolean>
+  АРХИВИРУЕТ пространство своего воркспейса: eq(id) + eq(group_id) + archived_at is null.
+  true если строка помечена, false если не найдена/чужая/уже в архиве.
+  Проекты и задачи ПОМНЯТ своё пространство — sprint_id не обнуляется. Раньше здесь был
+  DELETE, и `ON DELETE SET NULL` молча выкидывал из пространства всё содержимое: так
+  19–21.09.2026 раздел «Проекты» опустел у всей команды (issue #423/#427).
 
 setTasksSprint(taskIds: string[], sprintId: string | null, groupId) → Promise<number>
   Массовое назначение/снятие sprint_id у задач воркспейса.

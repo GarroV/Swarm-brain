@@ -28,7 +28,8 @@ graphify-out/
 aitriage-reports/
 bot/node_modules/
 bot/coverage/
-reports/check.xml
-reports/lcov-*.info
 .coverage-server/
-reports/check-server.xml
+
+# Машинные отчёты прогона проверок (scripts/check) — артефакт, не код
+# (покрывает reports/check.xml, reports/check-server.xml, reports/lcov-*.info)
+reports/

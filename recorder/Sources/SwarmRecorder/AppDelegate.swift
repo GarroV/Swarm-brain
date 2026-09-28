@@ -98,12 +98,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var presenceSent: PresenceBeacon.State?
     private var presenceSentAt: Date?
     private var callDismissedUntil: Date?
+    // Последняя календарная встреча от сервера и когда она получена. Нужна, чтобы ручной старт
+    // («Записать» в меню, ответ на подсказку о звонке) привязывался к идущей встрече, а не писал
+    // её как manual мимо склейки с коллегами (решение владельца 18.09.2026, issue #379).
+    // Живёт отдельно от pendingMeeting: то — предложение в капсуле, его можно закрыть крестиком.
+    private var lastCalendar: (info: MeetingIdentity.Info, at: Date)?
     private var watchTimer: Timer?
     private var maintTimer: Timer?
     // Авто-стоп по концу звонка (per-process детект во время записи).
     private var recWatchTimer: Timer?
     private var callSeenDuringRec = false
     private var silentTicks = 0
+    // «Разговор начался» — собеседников слышно 2 тика подряд. До этого правила (0) и (а) запись не
+    // останавливают: они про конец разговора, а до начала ловят ожидание в лобби (issue #379).
+    private var conversation = ConversationGate()
     // Тики подряд, когда НИКТО не звучит: ни системная дорожка (собеседники), ни СВОЙ микрофон.
     // Считается независимо от mic-детекта занятости: ловит конец БРАУЗЕРНОГО звонка (Google Meet /
     // Контур.Толк во вкладке), где браузер держит микрофон непрерывно даже после выхода.
@@ -161,6 +169,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
 
+        // Автозапуск (issue #468): экземпляр, открытый не через launchd, передаёт эстафету агенту
+        // и выходит — иначе после падения его никто не поднимет. Маркер сессии при этом НЕ пишем:
+        // он хранит вердикт прошлого процесса, и следующий (уже под launchd) должен его прочитать.
+        switch AutoStart.action() {
+        case .handOff:
+            if AutoStart.handOff() {
+                Diagnostics.shared.log("LAUNCH build \(Updater.currentBuild) не под launchd → эстафета агенту")
+                NSApp.terminate(nil)
+                return
+            }
+            Diagnostics.shared.log("AUTOSTART эстафета не стартовала — работаю без присмотра launchd")
+        case .keepRunning:
+            AutoStart.writePlistIfNeeded()
+        case .none:
+            break
+        }
+        startDiagnostics()
+
         do { config = try SwarmConfig.load() }
         catch { configError = "нужен токен — вставь через меню" }
 
@@ -217,6 +243,80 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    // ── Журнал (issue #468) ──────────────────────────────────────────────────────
+    private var diagTimer: Timer?
+    private var sigtermSource: DispatchSourceSignal?
+
+    private func startDiagnostics() {
+        let diag = Diagnostics.shared
+        let launchedBy = AutoStart.isUnderLaunchd ? "launchd" : "user"
+        let verdict = diag.beginSession(build: Updater.currentBuild, launchedBy: launchedBy)
+        diag.pruneOld()
+        let macos = ProcessInfo.processInfo.operatingSystemVersionString
+        diag.log("LAUNCH build \(Updater.currentBuild) by \(launchedBy), macOS \(macos), прошлая сессия: \(describe(verdict))")
+
+        // SIGTERM шлют апдейтер (своп бинарника) и система (выход из учётки). Выходим с кодом 0:
+        // для launchd это штатный выход, и он не поднимет старый бинарник посреди подмены.
+        signal(SIGTERM, SIG_IGN)
+        let src = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        src.setEventHandler {
+            Diagnostics.shared.endSession(reason: "SIGTERM")
+            exit(0)
+        }
+        src.resume()
+        sigtermSource = src
+
+        // Строки журнала уезжают на сервер раз в 5 минут; отчёт о прошлой сессии — сразу.
+        let t = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in self?.uploadDiagnostics() }
+        RunLoop.main.add(t, forMode: .common)
+        diagTimer = t
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.reportPreviousSession(verdict) }
+    }
+
+    private func describe(_ v: SessionVerdict) -> String {
+        switch v {
+        case .firstRun: return "нет данных (первый запуск с журналом)"
+        case .clean(let reason): return "закрыта штатно (\(reason))"
+        case .abnormal(let alive, let reports):
+            let when = alive.map { ISO8601DateFormatter().string(from: $0) } ?? "?"
+            return "ОБОРВАЛАСЬ, последний признак жизни \(when), отчётов о падении: \(reports.count)"
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        Diagnostics.shared.endSession(reason: "quit")
+    }
+
+    private func reportPreviousSession(_ verdict: SessionVerdict) {
+        guard let cfg = config, configError == nil else { return }
+        let diag = Diagnostics.shared
+        // let, а не var: захват var в Task релизный компилятор (macOS 14 SDK) не пропускает.
+        let crash: String? = {
+            if case .abnormal(_, let reports) = verdict, let last = reports.last { return diag.crashSummary(last) }
+            return nil
+        }()
+        let tail = diag.tail(lines: 400)
+        Task {
+            let status = await SwarmClient(config: cfg).uploadDiagnostics(
+                kind: "session_\(verdict.kind)", build: Updater.currentBuild, lines: tail, crash: crash)
+            if status != 200 { Diagnostics.shared.log("DIAG отчёт о прошлой сессии не ушёл: HTTP \(status)") }
+        }
+    }
+
+    private func uploadDiagnostics() {
+        guard let cfg = config, configError == nil else { return }
+        let lines = Diagnostics.shared.takePending()
+        guard !lines.isEmpty else { return }
+        Task {
+            let status = await SwarmClient(config: cfg).uploadDiagnostics(
+                kind: "log", build: Updater.currentBuild, lines: lines, crash: nil)
+            if status != 200 {
+                Diagnostics.shared.restorePending(lines)
+                Diagnostics.shared.log("DIAG выгрузка не прошла: HTTP \(status)")
+            }
+        }
+    }
+
     // ── Авто-детект (календарь + микрофон) ───────────────────────────────────────
     private func setupNotifications() {
         let center = UNUserNotificationCenter.current()
@@ -263,9 +363,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func setupPowerNotifications() {
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            Diagnostics.shared.log("SLEEP система засыпает")
             self?.handleWillSleep()
         }
         center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Diagnostics.shared.log("WAKE система проснулась")
             self?.handleDidWake()
         }
     }
@@ -462,12 +564,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // (CoreSpeech), иначе «звонок» виден всегда и сыпались бы ложные предложения записи.
             let micOn = CallDetector.realCallActive()
             DispatchQueue.main.async { [weak self] in
+                self?.logTick(meeting: meeting, lookupOK: lookup != nil, micOn: micOn)
+                if let m = meeting { self?.lastCalendar = (m, Date()) }
                 self?.handleDetection(meeting: meeting, micActive: micOn)
                 // Присутствие обновляем ОТДЕЛЬНО от handleDetection: тот выходит по
                 // `guard case .idle`, а панели нужен сигнал и во время записи.
                 self?.pulsePresence(onCall: micOn, calendarKey: meeting?.key)
             }
         }
+    }
+
+    // Строка журнала на каждый тик: по последней видно, когда процесс перестал жить, а по полям —
+    // почему не появилось предложение записать (нет встречи / скрыта / микрофон свободен).
+    private func logTick(meeting: MeetingIdentity.Info?, lookupOK: Bool, micOn: Bool) {
+        let cal = meeting.map { "\($0.key)\(isMeetingDismissed($0.key) ? " (скрыта)" : "")" } ?? (lookupOK ? "нет" : "запрос не прошёл")
+        let offer = pendingMeeting != nil ? "встреча" : (callActive ? "звонок" : "нет")
+        Diagnostics.shared.log("TICK state=\(state) mic=\(micOn ? "занят" : "свободен") cal=\(cal) предложение=\(offer) rss=\(Diagnostics.residentMB())MB")
+        Diagnostics.shared.touchAlive()
     }
 
     // Подавлена ли встреча сейчас (с учётом срока). Истёкшие ключи чистим на месте, чтобы
@@ -696,6 +809,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             switch state {
             case .recording:
                 menu.addItem(NSMenuItem(title: "Остановить и отправить", action: #selector(stopTapped), keyEquivalent: "s"))
+                // Оговорка владельца к «календарь берём всегда» (18.09.2026): запись включают и на
+                // ОФЛАЙН встрече, а в календаре в это время стоит другое событие. Тогда человек
+                // отвязывает запись — она уедет отдельной встречей, а не подменит календарную.
+                if let title = identity?.title, identity?.kind == .calendar {
+                    menu.addItem(NSMenuItem(title: "Это не «\(title)» — писать отдельно",
+                                            action: #selector(detachMeetingTapped), keyEquivalent: ""))
+                }
             case .sending:
                 break
             default:
@@ -869,11 +989,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc private func widgetDismiss() {
+        Diagnostics.shared.log("USER скрыл капсулу")
         if pendingMeeting != nil { dismissMeetingTapped() }
         else if callActive { dismissCallTapped() }
     }
 
     private func setState(_ s: State) {
+        Diagnostics.shared.log("STATE \(state) → \(s)")
         state = s
         // Замок «идёт работа» для авто-апдейтера: пока пишем/отправляем — он не подменит приложение.
         switch s {
@@ -1003,7 +1125,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             c.body = "Твоя запись принята — она полнее той, что была в базе. Тезисы перегенерируются и придут в Telegram."
         } else if let refused {
             c.title = "Сервер снова отказал"
-            c.body = "Право транскрибации держит \(refused.hasPrefix("@") ? refused : "@\(refused)"): его запись не короче твоей. Аудио осталось в бэкапе."
+            // Не утверждаем «его запись не короче»: в состоянии published (встречу правили или
+            // опубликовали) перехват запрещён независимо от длительностей — issue #274.
+            c.body = "Встречу обрабатывает \(refused.hasPrefix("@") ? refused : "@\(refused)") — твоя запись не понадобилась. Аудио осталось в бэкапе."
         } else {
             c.title = "Не удалось дослать запись"
             c.body = "\(error ?? "неизвестная ошибка"). Аудио на месте — попробуй позже."
@@ -1044,8 +1168,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     // ── Запись ───────────────────────────────────────────────────────────────────
+    // Идентичность для старта «руками»: календарь (если он свежий и слот идёт) → комната → manual.
+    // Порядок тот же, что у сервера: календарь богаче комнаты (название, участники, границы слота)
+    // и склеивает запись с записями коллег об этой же встрече.
+    private func manualStartIdentity() -> MeetingIdentity.Info? {
+        let iso = ISO8601DateFormatter()
+        if let cal = lastCalendar,
+           StartIdentity.useCalendar(fetchedAt: cal.at,
+                                     start: cal.info.startISO.flatMap { iso.date(from: $0) },
+                                     end: cal.info.endISO.flatMap { iso.date(from: $0) },
+                                     now: Date()) {
+            return cal.info
+        }
+        return MeetingIdentity.currentRoom()
+    }
+
     @objc private func recordTapped() {
-        beginRecording(identity: MeetingIdentity.currentRoom())
+        Diagnostics.shared.log("USER «Записать» из меню")
+        beginRecording(identity: manualStartIdentity())
     }
     @objc private func recordMeetingTapped() { acceptPrompt() }
     @objc private func recordCallTapped() { acceptPrompt() }
@@ -1058,12 +1198,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func acceptPrompt() {
+        Diagnostics.shared.log("USER принял предложение записать")
         if let m = pendingMeeting {
             pendingMeeting = nil
             beginRecording(identity: m)
         } else {
             callActive = false
-            beginRecording(identity: MeetingIdentity.currentRoom())
+            beginRecording(identity: manualStartIdentity())
         }
     }
 
@@ -1083,6 +1224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func beginRecording(identity id: MeetingIdentity.Info?) {
+        Diagnostics.shared.log("RECORD begin, ключ=\(id?.key ?? "ручная")")
         guard config != nil else { return }
         if case .recording = state { return }
         // Запоминаем контекст для «Повторить» (встреча/звонок/manual).
@@ -1188,6 +1330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func startCallEndWatch() {
         callSeenDuringRec = false
         silentTicks = 0
+        conversation = ConversationGate()
         systemSilentTicks = 0
         systemOnlySilentTicks = 0
         roomGoneTicks = 0
@@ -1270,6 +1413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if loudStreak >= 2 { systemSilentTicks = 0 }
         }
         // Бэкстоп только по собеседникам (мик не участвует) — см. объявление счётчика.
+        conversation.observe(otherSideAudible: systemPeak >= Self.systemSilenceLevel)
         if systemPeak < Self.systemSilenceLevel {
             systemOnlySilentTicks += 1
         } else {
@@ -1282,7 +1426,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if #available(macOS 14.0, *) {
             let info = CallDetector.othersUsingMicInfo()
             realCall = !info.isEmpty
-            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) silent=\(silentTicks) sysPeak=\(String(format: "%.3f", systemPeak)) micPeak=\(String(format: "%.3f", micPeak)) sysSilent=\(systemSilentTicks) sysOnly=\(systemOnlySilentTicks) roomGone=\(roomGoneTicks) elapsed=\(Int(elapsed))s")
+            dbg("tick others=\(info.map { "\($0.pid):\($0.bundle)" }) seen=\(callSeenDuringRec) talk=\(conversation.isOpen) silent=\(silentTicks) sysPeak=\(String(format: "%.3f", systemPeak)) micPeak=\(String(format: "%.3f", micPeak)) sysSilent=\(systemSilentTicks) sysOnly=\(systemOnlySilentTicks) roomGone=\(roomGoneTicks) elapsed=\(Int(elapsed))s")
         }
 
         // (Сигнал вкладки) Быстрый конец БРАУЗЕРНОГО созвона: вкладка комнаты (Meet/Контур) закрыта
@@ -1312,8 +1456,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // (0) Конец БРАУЗЕРНОГО звонка по тишине ОБЕИХ дорожек. Срабатывает ДАЖЕ когда
         // mic-холдер (браузер) всё ещё держит мик — НЕ гейтим на realCall==false. Требуем, чтобы
-        // звонок хоть раз был замечен (callSeenDuringRec), чтобы не стопать «пустой» ручной старт.
-        if callSeenDuringRec && systemSilentTicks >= Self.systemSilenceTicksToStop {
+        // звонок хоть раз был замечен (callSeenDuringRec), чтобы не стопать «пустой» ручной старт,
+        // и чтобы разговор уже начался (conversation.isOpen): три минуты тишины в лобби до прихода
+        // собеседников — это ожидание, а не конец звонка (issue #379).
+        if callSeenDuringRec && conversation.isOpen && systemSilentTicks >= Self.systemSilenceTicksToStop {
             autoStop(reason: "звонок завершён (тишина)")
             return
         }
@@ -1340,8 +1486,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // Реального созвона сейчас нет — копим «тихие» тики (5с каждый).
         silentTicks += 1
-        // (а) Созвон был и смолк ~15с → закончился → стоп.
-        if callSeenDuringRec && silentTicks >= 3 {
+        // (а) Созвон был и смолк ~15с → закончился → стоп. Только после начала разговора: переход
+        // из лобби в звонок (или из вкладки в приложение) может отпустить микрофон дольше 15 с
+        // (issue #379). До разговора запись держат бэкстопы (0б) и (б).
+        if callSeenDuringRec && conversation.isOpen && silentTicks >= 3 {
             autoStop(reason: "звонок завершён")
             return
         }
@@ -1368,17 +1516,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         stopTapped()
     }
 
-    // Диагностика в файл (читается снаружи) — временно, для отладки авто-стопа.
-    private func dbg(_ s: String) {
-        let line = "\(Date()) \(s)\n"
-        let url = URL(fileURLWithPath: "/tmp/swarm-calldetect.log")
-        guard let data = line.data(using: .utf8) else { return }
-        if let h = try? FileHandle(forWritingTo: url) {
-            h.seekToEndOfFile(); h.write(data); try? h.close()
-        } else {
-            try? data.write(to: url)
-        }
-    }
+    // Диагностика авто-стопа и записи — в общий постоянный журнал (Diagnostics.swift, issue #468).
+    // Раньше писалось в /tmp/swarm-calldetect.log, который стирался перезагрузкой.
+    private func dbg(_ s: String) { Diagnostics.shared.log(s) }
 
     // Разовое уведомление: Google-токен умер (был подключён, refresh не прошёл). Молчаливый отказ
     // прятал отвал календаря (авто-название/авто-стоп по расписанию тихо переставали работать).
@@ -1424,6 +1564,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc private func stopTapped() {
+        Diagnostics.shared.log("USER/AUTO stopTapped")
         guard config != nil else { return }
         stopCallEndWatch()
         armSending()
@@ -1459,6 +1600,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             pendingSend = captured
             await performSend(captured)
         }
+    }
+
+    // «Это не та встреча»: снимаем календарную привязку прямо во время записи — дальше она уедет
+    // как manual (сервер на manual всегда заводит новую встречу, чужую не тронет). Мету переписываем
+    // тем же движением, иначе восстановление после краша вернёт старую привязку.
+    @objc private func detachMeetingTapped() {
+        guard case .recording = state else { return }
+        identity = nil
+        scheduledEndAt = nil
+        if let dir = currentRecDir, let base = currentRecBase {
+            writeRecordingMeta(dir: dir, base: base, startedAt: recordStartedAt ?? Date(), identity: nil)
+        }
+        dbg("DETACH: запись отвязана от календарной встречи")
+        refreshStatusTitle()
+        rebuildMenu()
     }
 
     // Взвести «Отправка…» + watchdog: если через sendWatchdogSeconds всё ещё .sending (та же
@@ -1600,12 +1756,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // Запись отклонена сервером (транскрибирует другой участник). Раньше этот исход был НЕОТЛИЧИМ
     // от успеха: файлы стирались, индикатор гас, показывалось штатное «сохраняю встречу».
     // Теперь говорим прямо — пока аудио ещё живо в карантине и решение можно откатить.
-    private func notifyDeferred(holder: String?, seconds: Double) {
-        let who = holder.map { "@\($0)" } ?? "другой участник"
+    //
+    // ⚠️ Текст ИНФОРМИРУЕТ, а не просит решать (issue #274, фидбек владельца 09.09.2026).
+    // Прежняя формулировка — «твоя запись сохранена, если она полнее, дошли её» — перекладывала
+    // на человека выбор, которого он сделать не может: длительности чужой записи он не видит,
+    // сервер этот выбор уже сделал сам по порогам (TAKEOVER_MIN_RATIO/EXTRA_SEC в meeting-claim),
+    // а повторная заявка уходит с ТЕМИ ЖЕ секундами и получает тот же отказ. В состоянии
+    // published (встречу правил человек или её опубликовали) досылание не сработает вообще
+    // никогда. Поэтому текст разведён по причине отказа, которую теперь присылает сервер.
+    private func notifyDeferred(holder: String?, seconds: Double, heldSeconds: Double?, reason: String?) {
+        let who = holder.map { "@\($0)" } ?? "коллега"
+        let mine = Self.humanDuration(seconds)
         let c = UNMutableNotificationContent()
-        c.title = "Твоя запись не пошла в обработку"
-        c.body = "Эту встречу транскрибирует \(who). Твоя запись (\(Self.humanDuration(seconds))) сохранена на 3 суток — если она полнее, дошли её через меню: «Дослать мою запись»."
         c.sound = .default
+
+        switch reason {
+        case "published":
+            // Перехват запрещён навсегда — предлагать что-либо сделать было бы ложью.
+            c.title = "Встреча уже собрана"
+            c.body = "Эту встречу записал и уже опубликовал \(who) — твоя запись (\(mine)) не нужна. Копия хранится 3 суток и удалится сама."
+        case "shorter":
+            // Держатель ДЛИННЕЕ — называем обе длительности, решение сервера видно из чисел.
+            let theirs = heldSeconds.map { Self.humanDuration($0) }
+            c.title = "Запись обрабатывает \(who)"
+            c.body = theirs.map {
+                "В обработку пошла запись \(who) — \($0) против твоих \(mine). Делать ничего не нужно, тезисы придут всем. Твоя копия хранится 3 суток."
+            } ?? "В обработку пошла запись \(who), она полнее твоей (\(mine)). Делать ничего не нужно, тезисы придут всем. Твоя копия хранится 3 суток."
+        case "similar":
+            // Наша запись НЕ короче, но разница не дотянула до порогов перехвата. Числа тут
+            // показывать обязательно с объяснением: «взяли 36 мин вместо твоих 38» без причины
+            // читается как ошибка, хотя это защита от перетранскрибации почти одинаковых записей.
+            c.title = "Запись обрабатывает \(who)"
+            let theirsSimilar = heldSeconds.map { Self.humanDuration($0) }
+            c.body = theirsSimilar.map {
+                "Записи практически совпали: твоя \(mine), в обработке \($0) у \(who). Право осталось у того, кто заявился первым — перезапускать обработку из-за такой разницы смысла нет. Твоя копия хранится 3 суток."
+            } ?? "Записи практически совпали по длительности (твоя \(mine)) — обрабатывается запись \(who), заявившаяся первой. Твоя копия хранится 3 суток."
+        default:
+            // race / unknown / старый сервер без причины — общий honest-текст без просьб.
+            c.title = "Запись обрабатывает \(who)"
+            c.body = "Эту встречу обрабатывает \(who) — двойная транскрибация не нужна. Твоя запись (\(mine)) хранится 3 суток на случай сбоя."
+        }
+
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "deferred-\(Int(Date().timeIntervalSince1970))", content: c, trigger: nil))
     }
 
@@ -1712,7 +1903,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                             recordedSeconds: recordedSeconds)
                     )
                     await MainActor.run {
-                        self.notifyDeferred(holder: claim.heldByName, seconds: recordedSeconds)
+                        self.notifyDeferred(holder: claim.heldByName, seconds: recordedSeconds,
+                                            heldSeconds: claim.heldSeconds, reason: claim.deferReason)
                     }
                 } catch {
                     staged = false

@@ -93,6 +93,7 @@ const FIELD_LABEL: Record<string, string> = {
   project: "проект",
   sprint: "спринт",
   priority: "приоритет",
+  links: "ссылки",
 };
 
 const change = (r: JournalRow): string => {

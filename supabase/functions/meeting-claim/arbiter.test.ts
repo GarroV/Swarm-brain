@@ -6,12 +6,13 @@ import {
   botStillRecording,
   claimAction,
   decideHeld,
+  deferReasonOf,
   type Guard,
   heldGuards,
   type HeldRow,
   readClaimSeconds,
 } from "./arbiter.ts";
-import { MAX_RECORDED_SECONDS } from "../_shared/claim-lease.ts";
+import { MAX_RECORDED_SECONDS } from "../_shared/meeting-lease.ts";
 
 const NOW = "2026-09-28T12:00:00.000Z";
 const BOT_OWNER = 111; // за него бот пишет встречу
@@ -172,4 +173,21 @@ Deno.test("ЯДРО T160: заявка другого человека в claim 
   assertEquals(claimAction("defer"), "defer");
   assertEquals(claimAction("reserve"), "reserve");
   assertEquals(claimAction("refresh"), "refresh");
+});
+
+// ── Причина отказа (issue #274 из main, сведено со стройкой 28.09.2026) ─────────────────────
+
+Deno.test("deferReasonOf: причина отказа совпадает с веткой decideHeld, которая дала defer", () => {
+  const stopped: HeldRow = { ...liveBotRow(3000), agent_last_recording: false };
+  // Опубликованную/правленную не перехватить никогда — даже при пишущем боте причина «published».
+  assertEquals(deferReasonOf({ ...liveBotRow(600), status: "in_base" }, 7200, NOW), "published");
+  assertEquals(deferReasonOf({ ...stopped, notes_edited_at: NOW }, 7200, NOW), "published");
+  // Бот другого человека ещё пишет — отказ из-за D020, а не из-за длины.
+  assertEquals(decideHeld(liveBotRow(600), 7200, OTHER, NOW), "defer");
+  assertEquals(deferReasonOf(liveBotRow(600), 7200, NOW), "recording");
+  // Бот остановился: короче, почти так же, неизвестно.
+  assertEquals(deferReasonOf(stopped, 1200, NOW), "shorter");
+  assertEquals(deferReasonOf(stopped, 3100, NOW), "similar");
+  assertEquals(deferReasonOf(stopped, 0, NOW), "unknown");
+  assertEquals(deferReasonOf({ ...stopped, recorded_seconds: null }, 1200, NOW), "unknown");
 });

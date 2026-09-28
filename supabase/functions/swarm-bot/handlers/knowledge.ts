@@ -7,6 +7,11 @@ import { TASK_KEYWORDS, smartTaskSearch } from "../tasks/index.ts";
 import { normalizeCountry, detectQueryCountry } from "../../_shared/countries.ts";
 import { matchEntries } from "../../_shared/search.ts";
 
+import { normalizeFileLink } from "../../_shared/storage-links.ts";
+
+// Ссылка на файл в сообщении бота ведёт в веб: там сессия человека и проверка доступа.
+const WEB_BASE_URL = Deno.env.get("WEB_BASE_URL") ?? "https://swarm-brain.pages.dev";
+
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 
@@ -280,7 +285,12 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         if (!combined.length) return "Ничего не найдено по запросу.";
         return combined.slice(0, 5).map((e: KbEntry) => {
           const rawUrl = (e.metadata?.file_url ?? e.metadata?.drive_link) as string | undefined;
-          const fileUrl = rawUrl && !rawUrl.startsWith("sandbox:") && rawUrl.startsWith("http") ? rawUrl : undefined;
+          // В metadata теперь ПУТЬ объекта, а у старых записей — публичный URL. Прежняя
+          // проверка startsWith("http") молча выбросила бы все новые файлы из выдачи.
+          const fileUrl = rawUrl && !rawUrl.startsWith("sandbox:")
+            ? (normalizeFileLink(rawUrl, { baseUrl: WEB_BASE_URL })
+              ?? (rawUrl.startsWith("http") ? rawUrl : undefined))
+            : undefined;
           if (fileUrl) {
             const fileName = (e.metadata?.file_name as string | undefined) ?? e.source ?? "файл";
             return `[id:${e.id}] ${e.source ?? ""}: ${fileName}\n[Скачать оригинал: ${fileUrl}]`;
@@ -361,7 +371,12 @@ export async function executeTool(name: string, args: Record<string, unknown>, u
         if (!links.length) return "Ссылок по этой теме не найдено. Попробуй search_knowledge для поиска по всей базе.";
 
         return links.slice(0, 5).map((e: KbEntry) => {
-          const url = (e.metadata?.url ?? e.metadata?.file_url) as string | undefined;
+          // metadata.url — внешняя ссылка записи, file_url — наш файл (теперь путь):
+          // без нормализации в сообщение ушёл бы голый путь вида uploads/2026-09-05_x.pdf.
+          const rawLink = (e.metadata?.url ?? e.metadata?.file_url) as string | undefined;
+          const url = e.metadata?.url
+            ? (e.metadata.url as string)
+            : (normalizeFileLink(rawLink, { baseUrl: WEB_BASE_URL }) ?? rawLink);
           const title = (e.metadata?.title ?? e.summary ?? e.content ?? "").toString().slice(0, 200);
           return url ? `🔗 ${title}\n${url}` : `[id:${e.id}] ${e.summary ?? e.content ?? ""}`;
         }).join("\n\n");
@@ -810,7 +825,7 @@ export async function handleAsk(chatId: number, question: string, userId: number
 
   let finalAnswer = "";
   let exportFile: { content: string; filename: string } | null = null;
-  let exportDriveLink: { url: string; title: string } | null = null;
+  let exportDriveLink: { url: string; title: string; external: boolean } | null = null;
 
   for (let round = 0; round < 6; round++) {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -859,13 +874,14 @@ export async function handleAsk(chatId: number, question: string, userId: number
           } else {
             const meta = entry.metadata as Record<string, unknown> | null ?? {};
             const rawFileUrl = (meta.file_url ?? meta.drive_link) as string | undefined;
-            const fileUrl = rawFileUrl && rawFileUrl.startsWith("http") ? rawFileUrl : undefined;
+            const ourFileUrl = rawFileUrl ? normalizeFileLink(rawFileUrl, { baseUrl: WEB_BASE_URL }) : null;
+            const fileUrl = ourFileUrl ?? (rawFileUrl?.startsWith("http") ? rawFileUrl : undefined);
             const rawTitle = (meta.title as string | undefined)
               ?? (meta.file_name as string | undefined)
               ?? (entry.source as string | undefined)
               ?? "entry";
             if (fileUrl) {
-              exportDriveLink = { url: fileUrl, title: rawTitle };
+              exportDriveLink = { url: fileUrl, title: rawTitle, external: !ourFileUrl };
               result = "Ссылка на оригинальный файл готова.";
             } else {
               // Use summary if it's longer (complete tezises); otherwise reassemble chunks via group_id
@@ -903,7 +919,10 @@ export async function handleAsk(chatId: number, question: string, userId: number
     const caption = finalAnswer && finalAnswer !== "В базе знаний нет информации по этому вопросу."
       ? `${finalAnswer}\n\n`
       : "";
-    await sendMessage(chatId, `${caption}📎 <b>${exportDriveLink.title}</b>\n<a href="${exportDriveLink.url}">Открыть оригинальный файл на Google Drive</a>`);
+    const linkLabel = exportDriveLink.external
+      ? "Открыть оригинальный файл на Google Drive"
+      : "Открыть оригинальный файл";
+    await sendMessage(chatId, `${caption}📎 <b>${exportDriveLink.title}</b>\n<a href="${exportDriveLink.url}">${linkLabel}</a>`);
     return;
   }
 

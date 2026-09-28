@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Локальный контур Supabase для CI: поднять только то, что нужно тестам, и пережить отказ реестра.
+#
+# Зачем. Образы контура качаются с public.ecr.aws, а он режет анонимные скачивания с общих
+# адресов раннеров GitHub («toomanyrequests: Rate exceeded»). 28.09.2026 гейт на PR #484 упал
+# так четыре раза подряд, ни разу не дойдя до кода, — а порча, ради которой он есть, не
+# прогналась вовсе. Меньше образов — меньше шанс упереться; повтор с паузой — пережить всплеск.
+#
+# Что НЕ поднимаем: тесты ходят в Postgres (54322) и в REST через kong (54321). Хранилище
+# оставлено — миграция 20260919190000 пишет в storage.buckets, схему которой создаёт
+# storage-api; auth оставлен — на нём держится kong-маршрутизация контура.
+set -uo pipefail
+
+EXCLUDE="realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor"
+ATTEMPTS=3
+
+for i in $(seq 1 "$ATTEMPTS"); do
+  if supabase start -x "$EXCLUDE"; then
+    supabase db reset
+    exit $?
+  fi
+  echo "контур не поднялся (попытка $i из $ATTEMPTS)" >&2
+  supabase stop --no-backup >/dev/null 2>&1 || true
+  [ "$i" -lt "$ATTEMPTS" ] && sleep $((i * 45))
+done
+
+echo "ОТКАЗ: контур Supabase не поднялся за $ATTEMPTS попытки — смотри строки выше (реестр образов?)" >&2
+exit 1

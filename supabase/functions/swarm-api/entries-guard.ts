@@ -11,6 +11,19 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 export const ENTRY_COLUMNS =
   "id,content,summary,added_by,source,metadata,countries,entry_type,entry_date,group_id,is_private,owner_id,created_at,updated_at";
 
+/**
+ * То же, что ENTRY_COLUMNS, но для СПИСКОВ: вместо полных content/summary берутся
+ * generated-колонки с превью, под теми же именами (PostgREST-алиас `имя:колонка`).
+ *
+ * Зачем отдельный набор (issue #490): выбирать полный транскрипт, чтобы показать из него
+ * 400 символов, стоит 654 мс базы на 283 встречах — против 15 мс, когда режет SQL. Форма
+ * ответа при этом не меняется: клиент по-прежнему видит `content`, `summary` и `truncated`.
+ *
+ * Где НЕ применять: одиночный доступ (GET /:id) и очередь вычитки — там текст нужен целиком.
+ */
+export const ENTRY_LIST_COLUMNS =
+  "id,content:content_preview,summary:summary_preview,list_truncated,added_by,source,metadata,countries,entry_type,entry_date,group_id,is_private,owner_id,created_at,updated_at";
+
 export type EntryRow = {
   id: string;
   content: string;
@@ -110,7 +123,9 @@ export function buildEntriesQuery(
     .from("entries")
     .select(select, opts?.count ? { count: opts.count } : undefined)
     .eq("group_id", groupId)
-    .or(`is_private.eq.false,and(is_private.eq.true,owner_id.eq.${telegramId})`);
+    .or(
+      `is_private.eq.false,and(is_private.eq.true,owner_id.eq.${telegramId})`,
+    );
 }
 
 /**
@@ -135,7 +150,11 @@ export function buildEntriesQuery(
 export function buildReviewQueueQuery(
   supabase: SupabaseClient,
   select: string,
-  { groupId, telegramId, email }: { groupId: string; telegramId: number; email?: string | null },
+  { groupId, telegramId, email }: {
+    groupId: string;
+    telegramId: number;
+    email?: string | null;
+  },
 ) {
   const mine = `owner_id.eq.${telegramId}`;
   const clean = (email ?? "").trim().toLowerCase();

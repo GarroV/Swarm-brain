@@ -1,7 +1,8 @@
-import { saveEntry, generateSummary, uploadToStorage } from "../lib/storage.ts"; // generateSummary used for multi-chunk docs only
+import { saveEntry, generateSummary, uploadToStorage, fileLink, registerUploadedFile } from "../lib/storage.ts"; // generateSummary used for multi-chunk docs only
 import { sendMessage, getTelegramFileUrl } from "../lib/telegram.ts";
 import { TgMessage } from "../lib/types.ts";
 import {
+
   dropConsecutiveRuns,
   isRepeatedFiller,
   isSingleTokenSpam,
@@ -10,6 +11,25 @@ import {
 } from "../../_shared/whisper-hallucinations.ts";
 // @ts-ignore - esm.sh module
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+
+
+// Файл залит, но текста из него не достали (не разобрался формат / пусто). Запись всё равно
+// создаём: она ВЛАДЕЛЕЦ файла. Без неё объект остаётся в хранилище ничей, реестра нет, и
+// ссылка на него не проходит проверку доступа — человек получил бы битую ссылку на свой же файл.
+async function keepFileOnly(
+  name: string,
+  username: string,
+  groupId: string | undefined,
+  mime: string,
+  path: string,
+): Promise<string> {
+  const saved = await saveEntry(
+    `Файл: ${name}`, username, "document",
+    { file_name: name, mime, file_url: path }, undefined, groupId,
+  );
+  await registerUploadedFile(path, saved.id);
+  return fileLink(path);
+}
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
@@ -360,14 +380,18 @@ export async function handleDocument(chatId: number, username: string, doc: NonN
     const CHUNK = 3000, OVL = 200;
     const chunks: string[] = [];
     for (let p = 0; p < text.length; p += CHUNK - OVL) chunks.push(text.slice(p, p + CHUNK));
+    let ownerEntryId: string | null = null;
     for (let i = 0; i < chunks.length; i++) {
-      await saveEntry(chunks[i], username, "document",
-        { file_name: name, mime: mime || "text/plain", chunk: i + 1, total_chunks: chunks.length, file_url: stored.url },
+      const saved = await saveEntry(chunks[i], username, "document",
+        { file_name: name, mime: mime || "text/plain", chunk: i + 1, total_chunks: chunks.length, file_url: stored.path },
         i === 0 ? (summary ?? undefined) : undefined,
         groupId,
       );
+      if (i === 0) ownerEntryId = saved.id;
     }
-    const fileMsg = stored.url ? `\n📎 <a href="${stored.url}">Скачать файл</a>` : (stored.error ? `\n⚠️ Storage: ${stored.error}` : "");
+    // Файл один на все чанки — владельцем реестра делаем первый (права у чанков одинаковые).
+    if (stored.path && ownerEntryId) await registerUploadedFile(stored.path, ownerEntryId);
+    const fileMsg = stored.path ? `\n📎 <a href="${fileLink(stored.path)}">Скачать файл</a>` : (stored.error ? `\n⚠️ Storage: ${stored.error}` : "");
     const summaryMsg = summary ? `\n\n<b>Тезисы:</b>\n${summary}` : "";
     await sendMessage(chatId, `✅ Файл <b>${name}</b> сохранён (${text.length} символов).${summaryMsg}${fileMsg}`);
     return;
@@ -384,13 +408,19 @@ export async function handleDocument(chatId: number, username: string, doc: NonN
     try {
       extracted = parseSpreadsheet(buffer);
     } catch {
-      const fileMsg = stored.url ? ` <a href="${stored.url}">Скачать файл</a>.` : (stored.error ? ` ⚠️ Storage: ${stored.error}` : "");
+      const link = stored.path
+        ? await keepFileOnly(name, username, groupId, mime || "spreadsheet", stored.path)
+        : null;
+      const fileMsg = link ? ` <a href="${link}">Скачать файл</a>.` : (stored.error ? ` ⚠️ Storage: ${stored.error}` : "");
       await sendMessage(chatId, `Не удалось прочитать таблицу.${fileMsg}`);
       return;
     }
 
     if (!extracted.trim()) {
-      const fileMsg = stored.url ? ` <a href="${stored.url}">Скачать файл</a>.` : "";
+      const link = stored.path
+        ? await keepFileOnly(name, username, groupId, mime || "spreadsheet", stored.path)
+        : null;
+      const fileMsg = link ? ` <a href="${link}">Скачать файл</a>.` : "";
       await sendMessage(chatId, `Таблица пустая или все листы без данных.${fileMsg}`);
       return;
     }
@@ -399,14 +429,17 @@ export async function handleDocument(chatId: number, username: string, doc: NonN
     const CHUNK = 3000, OVL = 200;
     const chunks: string[] = [];
     for (let p = 0; p < extracted.length; p += CHUNK - OVL) chunks.push(extracted.slice(p, p + CHUNK));
+    let sheetOwnerId: string | null = null;
     for (let i = 0; i < chunks.length; i++) {
-      await saveEntry(chunks[i], username, "document",
-        { file_name: name, mime: mime || "spreadsheet", chunk: i + 1, total_chunks: chunks.length, file_url: stored.url },
+      const saved = await saveEntry(chunks[i], username, "document",
+        { file_name: name, mime: mime || "spreadsheet", chunk: i + 1, total_chunks: chunks.length, file_url: stored.path },
         i === 0 ? (summary ?? undefined) : undefined,
         groupId,
       );
+      if (i === 0) sheetOwnerId = saved.id;
     }
-    const fileMsg = stored.url ? `\n📎 <a href="${stored.url}">Скачать файл</a>` : (stored.error ? `\n⚠️ Storage: ${stored.error}` : "");
+    if (stored.path && sheetOwnerId) await registerUploadedFile(stored.path, sheetOwnerId);
+    const fileMsg = stored.path ? `\n📎 <a href="${fileLink(stored.path)}">Скачать файл</a>` : (stored.error ? `\n⚠️ Storage: ${stored.error}` : "");
     const summaryMsg = summary ? `\n\n<b>Тезисы:</b>\n${summary}` : "";
     await sendMessage(chatId, `✅ Таблица <b>${name}</b> сохранена (${extracted.length} символов).${summaryMsg}${fileMsg}`);
     return;
@@ -419,13 +452,14 @@ export async function handleDocument(chatId: number, username: string, doc: NonN
     const pdfBuffer = await pdfRes.arrayBuffer();
     const stored = await uploadToStorage(name, pdfBuffer, "application/pdf", "pdfs");
 
-    if (!stored.url) {
+    if (!stored.path) {
       await sendMessage(chatId, `⚠️ Не удалось сохранить PDF: ${stored.error ?? "неизвестная ошибка"}`);
       return;
     }
 
-    await saveEntry(`PDF файл: ${name}`, username, "pdf", { file_name: name, file_url: stored.url }, undefined, groupId);
-    await sendMessage(chatId, `✅ PDF <b>${name}</b> сохранён.\n📎 <a href="${stored.url}">Скачать файл</a>`);
+    const savedPdf = await saveEntry(`PDF файл: ${name}`, username, "pdf", { file_name: name, file_url: stored.path }, undefined, groupId);
+    await registerUploadedFile(stored.path, savedPdf.id);
+    await sendMessage(chatId, `✅ PDF <b>${name}</b> сохранён.\n📎 <a href="${fileLink(stored.path)}">Скачать файл</a>`);
     return;
   }
 

@@ -85,7 +85,7 @@ export function LensMenu({
         <div
           ref={popRef}
           role="menu"
-          className="fixed z-[60] overflow-hidden rounded-[16px] border border-line bg-surface shadow-[0_16px_44px_rgba(0,0,0,.28)] dark:backdrop-blur-lg"
+          className="fixed z-[60] overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_16px_44px_rgba(0,0,0,.28)] dark:backdrop-blur-lg"
           style={{ left: pos.left, top: pos.top, width: W }}
         >
           <Label>{dt("Чьи задачи", "Whose tasks")}</Label>

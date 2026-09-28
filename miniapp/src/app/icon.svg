@@ -1,13 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- Фавикон «Рой/соты». Адаптивен к теме браузера: на тёмной — янтарь чуть ярче. -->
-  <style>
-    .chip { fill: #D98A2B; }
-    @media (prefers-color-scheme: dark) { .chip { fill: #ECA945; } }
-  </style>
-  <rect class="chip" width="512" height="512" rx="112"/>
-  <path d="M406 256 331 386 181 386 106 256 181 126 331 126Z"
-        fill="none" stroke="#ffffff" stroke-width="32" stroke-linejoin="round"/>
-  <g fill="#ffffff">
+  <!-- Фавикон «Рой/соты» — циановый неон (#00e5ff, как в multa) на фоне тёмной темы Swarm #0E1116.
+       Свечение — размытая копия знака под чётким контуром; толщина подобрана под 16px во вкладке. -->
+  <defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#0E1116"/>
+  <rect x="8" y="8" width="496" height="496" rx="104" fill="none" stroke="#2F4262" stroke-width="8"/>
+  <g filter="url(#glow)">
+    <path d="M406 256 331 386 181 386 106 256 181 126 331 126Z" fill="none" stroke="#00e5ff" stroke-width="44" stroke-linejoin="round"/>
+    <g fill="#00e5ff">
+      <circle cx="256" cy="205" r="29"/>
+      <circle cx="209" cy="284" r="29"/>
+      <circle cx="303" cy="284" r="29"/>
+    </g>
+  </g>
+  <path d="M406 256 331 386 181 386 106 256 181 126 331 126Z" fill="none" stroke="#00e5ff" stroke-width="30" stroke-linejoin="round"/>
+  <path d="M406 256 331 386 181 386 106 256 181 126 331 126Z" fill="none" stroke="#7ff3ff" stroke-width="10" stroke-linejoin="round"/>
+  <g fill="#dffbff">
     <circle cx="256" cy="205" r="29"/>
     <circle cx="209" cy="284" r="29"/>
     <circle cx="303" cy="284" r="29"/>

@@ -38,22 +38,15 @@ export const STATUS_FILTERS: readonly StatusFilter[] = ["open", "in_progress", "
 // Дефолт — незакрытое: экран выглядит как до появления фильтра, пока человек его не тронул.
 export const DEFAULT_STATUSES: StatusSet = new Set<StatusFilter>(["open", "in_progress"]);
 
-// Статусы, замьюченные в модуле задач (решение владельца 03.09.2026: «надо эти пендинг и
-// беклог как-то замьютить, спринты не используются, нет смысла туда смотреть даже»):
-//   • `backlog` — колонка «Бэклог» доски спринта (issue #200), а спринтами не пользуются;
-// `pending` убран из мьюта 05.09.2026 вместе с самим статусом (решение владельца:
-// «пендинг вообще убираем, не понимаю смысла»). Его писали бот и read-ai-webhook при
-// авто-извлечении задач из встречи; обе трубы убраны в тот же день, 32 накопившиеся
-// задачи удалены (#208). Если такой статус всё же появится — уедет в «Открыто»
-// вместе с любым незнакомым, то есть будет ВИДЕН, а не спрятан молча.
-const MUTED_STATUSES: ReadonlySet<string> = new Set(["backlog"]);
-
-// Какому чипу принадлежит задача. `null` — замьючена (не показывается вообще).
+// Замьюченных статусов НЕТ — любой статус виден в разделе «Задачи» (решение владельца
+// 21.09.2026: «задачи все и всегда должны быть в разделе задач. он для этого и нужен чтобы
+// там отслеживать вообще все»). Мьют `backlog` от 03.09.2026 снят: карточка из колонки
+// «Бэклог задач» выпадала из списков, поиска И счётчиков разом — задача существовала, была
+// видна на главной и не находилась в разделе задач ничем (issue #440).
 // НЕЗНАКОМЫЙ статус попадает в «Открыто», а не выбрасывается: иначе значение, добавленное
 // в базу завтра, молча исчезнет с экрана — ровно так и получился #208.
-export function statusBucket(task: Task): StatusFilter | null {
+export function statusBucket(task: Task): StatusFilter {
   const status = normStatus(task.status);
-  if (MUTED_STATUSES.has(status)) return null;
   // «Отменена» — тоже закрытая: в боте у неё кнопка «Переоткрыть», значит задача живая.
   if (status === "done" || status === "cancelled") return "done";
   if (status === "in_progress") return "in_progress";
@@ -66,11 +59,9 @@ export function isOnlyDone(statuses: StatusSet): boolean {
   return statuses.size === 1 && statuses.has("done");
 }
 
-// Проходит ли задача ось статуса. Пустой набор = фильтра нет (но мьют действует всегда).
+// Проходит ли задача ось статуса. Пустой набор = фильтра нет.
 function matchesStatus(task: Task, statuses: StatusSet): boolean {
-  const bucket = statusBucket(task);
-  if (bucket === null) return false;
-  return statuses.size === 0 || statuses.has(bucket);
+  return statuses.size === 0 || statuses.has(statusBucket(task));
 }
 
 export type SmartListDef = { id: SmartListId; label: string; labelEn: string; icon: RoyIconName };
@@ -203,7 +194,7 @@ export function matchesList(task: Task, listId: SmartListId, now: Date = new Dat
 }
 
 function inList(task: Task, listId: SmartListId, now: Date, range: DateRange | null = null, statuses: StatusSet = DEFAULT_STATUSES): boolean {
-  // Ось статуса — первой: она же отсекает замьюченное (pending/backlog).
+  // Ось статуса — первой: она дешевле остальных проверок.
   if (!matchesStatus(task, statuses)) return false;
   if (!inPeriod(task, range)) return false;
   if (listId === "all") return true;

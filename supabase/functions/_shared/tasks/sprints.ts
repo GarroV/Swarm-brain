@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import type { Sprint, SprintInput } from "./types.ts";
+import type { Sprint, SprintInput, SprintKind } from "./types.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -8,20 +8,32 @@ const supabase = createClient(
 
 // Все операции изолированы по group_id — спринт принадлежит воркспейсу.
 
-export async function listSprints(groupId: string): Promise<Sprint[]> {
-  const { data } = await supabase
-    .from("sprints").select("*").eq("group_id", groupId)
-    .order("start_date", { ascending: false });
+// `kind` обязателен на вызове: список без фильтра однажды притащил пространство спринтов
+// вкладкой на доску «Проекты» и оставил раздел пустым у всех (issue #423). Кому правда нужны
+// обе сущности разом — передаёт "all" осознанно.
+export async function listSprints(
+  groupId: string,
+  kind: SprintKind | "all" = "all",
+): Promise<Sprint[]> {
+  let q = supabase.from("sprints").select("*").eq("group_id", groupId)
+    .is("archived_at", null);
+  if (kind !== "all") q = q.eq("kind", kind);
+  const { data } = await q.order("start_date", { ascending: false });
   return (data ?? []) as Sprint[];
 }
 
-export async function createSprint(input: SprintInput, groupId: string): Promise<Sprint> {
+export async function createSprint(
+  input: SprintInput,
+  groupId: string,
+): Promise<Sprint> {
   const { data, error } = await supabase.from("sprints").insert({
     group_id: groupId,
     name: input.name,
     start_date: input.start_date,
     end_date: input.end_date,
     status: input.status ?? "planned",
+    // Без явного kind запись становится вкладкой доски — поверхность указывает его сама.
+    kind: input.kind ?? "board_tab",
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Sprint;
@@ -40,10 +52,27 @@ export async function updateSprint(
   return (data as Sprint | null) ?? null;
 }
 
-// Удаляет спринт своего воркспейса. Задачи освобождаются автоматически (FK ON DELETE SET NULL).
-export async function deleteSprint(id: string, groupId: string): Promise<boolean> {
+// АРХИВИРУЕТ пространство своего воркспейса (решение владельца 21.09.2026, issue #427).
+//
+// Раньше здесь был DELETE, и он уносил с собой раскладку: `projects.sprint_id` и `tasks.sprint_id`
+// стоят на `on delete set null`, поэтому снос пространства молча выкидывал из него ВСЕ проекты.
+// Именно так 19–21.09.2026 раздел «Проекты» опустел у всей команды, а восстанавливать пришлось
+// по косвенному следу — строк уже не было.
+//
+// Теперь связь остаётся: проекты по-прежнему помнят своё пространство и видны в обзоре доски,
+// а вернуть пространство можно одним UPDATE, вместе со всем его составом.
+export async function deleteSprint(
+  id: string,
+  groupId: string,
+  archivedBy?: number,
+): Promise<boolean> {
   const { data } = await supabase.from("sprints")
-    .delete().eq("id", id).eq("group_id", groupId).select("id").maybeSingle();
+    .update({
+      archived_at: new Date().toISOString(),
+      archived_by: archivedBy ?? null,
+    })
+    .eq("id", id).eq("group_id", groupId).is("archived_at", null)
+    .select("id").maybeSingle();
   return !!data;
 }
 

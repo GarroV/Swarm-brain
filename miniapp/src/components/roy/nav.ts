@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext } from "react";
+import { createContext, useCallback, useContext } from "react";
 import type { Me, Task } from "@/types";
 import type { Lens, SmartListId } from "@/lib/smartLists";
 
@@ -63,5 +63,7 @@ export function useRoyNav(): RoyNav {
 export function useDt(): (ru: string, en: string) => string {
   const ctx = useContext(RoyNavContext);
   const demo = !!ctx?.me?.is_demo;
-  return (ru, en) => (demo ? en : ru);
+  // Стабильная ссылка обязательна: dt сидит в зависимостях useCallback/useEffect, и новая
+  // функция на каждом рендере зацикливала загрузку «Спринтов» (сотни запросов в секунду).
+  return useCallback((ru: string, en: string) => (demo ? en : ru), [demo]);
 }

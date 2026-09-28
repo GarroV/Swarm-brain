@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   fetchTasks, updateTask, fetchSprints, createSprint,
   removeTasksFromSprint, deleteSprint,
@@ -9,15 +9,22 @@ import type { Task, Sprint, Project } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { Button } from "@/components/ui/button";
 import { RoyIcon } from "@/components/roy/icons";
+import { MoveProjectMenu } from "./MoveProjectMenu";
+import { ProjectInfoPopover } from "./ProjectInfoPopover";
 import { buildQuickAddInput } from "@/lib/quickAddTask";
 import { useConfirm } from "@/components/ui/confirm";
 import { useDt, useRoyNav } from "@/components/roy/nav";
 import { KanbanColumn, TaskKanban } from "@/components/tasks/TaskKanban";
+import { useProjectDnd } from "@/components/tasks/projectDnd";
+import { planAppend, planReorder, sortByPosition } from "@/lib/projectOrder";
+import type { DropTarget, PositionChange } from "@/lib/projectOrder";
 import type { KanbanColumnDef, KanbanDrag, KanbanHandlers } from "@/components/tasks/TaskKanban";
 
-// Колонки по статусу. Бэклог — куда копятся задачи/идеи; оттуда тянутся в работу.
+// Колонки по статусу. Первая — общий бэклог проекта: «Бэклог задач» (решение владельца
+// 21.09.2026: «идеи не факт что у всех идеи»). Оттуда задачи тянутся в работу; это обычные
+// задачи, видимые в разделе «Задачи» наравне со всеми, а не отдельная сущность.
 const COLUMNS = [
-  { status: "backlog", label: "Бэклог", bar: "var(--status-open)" },
+  { status: "backlog", label: "Бэклог задач", bar: "var(--status-open)" },
   { status: "open", label: "Открыто", bar: "#8C8475" },
   { status: "in_progress", label: "В работе", bar: "var(--status-prog)" },
   { status: "done", label: "Готово", bar: "var(--status-done)" },
@@ -26,6 +33,15 @@ const COLUMNS = [
 // Рабочие колонки пространства подпроекта (без бэклога — бэклог общий на проект, слева).
 const WORK_COLUMNS = COLUMNS.filter((c) => c.status !== "backlog");
 const isBacklogStatus = (s: string) => s !== "open" && s !== "in_progress" && s !== "done";
+
+/** Сводка справки «О проекте»: число задач по колонкам доски — те же статусы, что видно глазом. */
+function statusCounts(list: Task[], dt: (ru: string, en: string) => string) {
+  const EN: Record<string, string> = { backlog: "Backlog", open: "Open", in_progress: "In progress", done: "Done" };
+  return COLUMNS.map((c) => ({
+    label: dt(c.label, EN[c.status]),
+    count: list.filter((t) => (c.status === "backlog" ? isBacklogStatus(t.status) : t.status === c.status)).length,
+  }));
+}
 
 const ALL = "__all__";            // селектор вкладок: показать проекты ВСЕХ вкладок (обзор)
 const EXPANDED_KEY = "swarm.board.expandedProjects"; // localStorage: какие проекты раскрыты (персонально)
@@ -119,14 +135,16 @@ export function SprintBoard() {
     if (typeof window === "undefined") return new Set();
     try { return new Set(JSON.parse(localStorage.getItem(COLLAPSED_SUBS_KEY) ?? "[]") as string[]); } catch { return new Set(); }
   });
-  // Drag подпроекта между проектами верхнего уровня (reparent) — отдельно от drag задачи (dragRef),
-  // чтобы drop-зоны колонок и drop-зоны заголовков проектов не путали события друг друга.
-  const [dragProj, setDragProj] = useState<string | null>(null);
-  const [dragOverProject, setDragOverProject] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [t, s, p] = await Promise.all([fetchTasks(), fetchSprints(), fetchProjects()]);
+      // Только вкладки доски: пространства раздела «Спринты» лежат в той же таблице, и одно из
+      // них однажды стало здесь первой вкладкой, оставив раздел пустым у всех (issue #423).
+      const [t, s, p] = await Promise.all([
+        fetchTasks(),
+        fetchSprints("board_tab"),
+        fetchProjects(),
+      ]);
       setTasks(t); setSprints(s); setProjects(p);
     } catch { /* keep */ } finally { setLoading(false); }
   }, []);
@@ -149,21 +167,25 @@ export function SprintBoard() {
     };
   }, [load]);
 
-  // Автовыбор первой вкладки при заходе на доску: на ALL кнопка «+ Проект» скрыта (нужен явный
-  // выбор вкладки — проект создаётся В неё), и без вкладок список выглядит как «кнопки нет».
-  // Один раз за жизнь компонента (autoSelectedRef) — дальше пользователь волен вернуться на «Все».
-  const autoSelectedRef = useRef(false);
-  useEffect(() => {
-    if (autoSelectedRef.current || sprints.length === 0) return;
-    autoSelectedRef.current = true;
-    setSelected(sprints[0].id);
-  }, [sprints]);
+  // Автовыбора вкладки здесь НЕТ и быть не должно (снят 21.09.2026, владелец: «верни все
+  // проекты на место»). Он стоял с eb4089a ради кнопки «+ Проект», а сломал главное: доска
+  // открывается в обзоре ALL, и все проекты воркспейса видны сразу. Пока таблица `sprints`
+  // была пуста, автовыбор молчал; 19.09.2026 в разделе «Спринты» завели пространство
+  // «Инициативы качества» — оно лежит в ТОЙ ЖЕ таблице `sprints`, стало первой вкладкой доски,
+  // и автовыбор перекинул на неё всех пользователей. Проектов в ней нет (у всех 54 проектов
+  // sprint_id = null), поэтому доска у всех выглядела пустой, хотя данные были целы.
 
   // Вкладка ВЛАДЕЕТ проектами (решение владельца 2026-08-09): выбранная вкладка → её проекты
   // (project.sprint_id === selected), а задача принадлежит вкладке ЧЕРЕЗ свой проект. ALL — обзор
   // проектов всех вкладок. Дерево: верхний уровень = проекты без parent_id; подпроект наследует вкладку.
-  const topLevel = projects.filter((p) => !p.parent_id && (selected === ALL || p.sprint_id === selected));
-  const childrenOf = (id: string) => projects.filter((p) => p.parent_id === id);
+  // Порядок задаёт `position` — его двигает перетаскивание (issue #433); строки без позиции идут
+  // в хвост по дате создания. Та же сортировка стоит на сервере: список не должен переставляться
+  // между ответом API и первой локальной правкой.
+  const topLevel = sortByPosition(projects.filter((p) => !p.parent_id && (selected === ALL || p.sprint_id === selected)));
+  const childrenOf = (id: string) => sortByPosition(projects.filter((p) => p.parent_id === id));
+  // Братья по позиции — ВСЕ строки того же уровня в воркспейсе, а не только видимые на вкладке:
+  // позиция общая, и перестановка на одной вкладке не должна перемешивать порядок на другой.
+  const siblingsOf = (p: Project) => projects.filter((x) => (x.parent_id ?? null) === (p.parent_id ?? null));
 
   // Доска показывает ТОЛЬКО задачи с проектом (решение владельца 2026-08-07): задачи без
   // проекта на спринт-доску не сыпятся — проект задаче назначается в её карточке.
@@ -221,8 +243,67 @@ export function SprintBoard() {
     if (!kid || !newParent || kid.id === newParentId || kid.parent_id === newParentId) return;
     if (newParent.parent_id) return; // цель сама подпроект — нельзя вкладывать глубже 2 уровней
     const sprint_id = newParent.sprint_id;
-    setProjects((prev) => prev.map((p) => (p.id === kidId ? { ...p, parent_id: newParentId, sprint_id } : p)));
-    try { await updateProject(kidId, { parent_id: newParentId, sprint_id }); } catch { load(); }
+    // Встаёт в конец списка новых братьев: место внутри проекта человек задаёт следующим жестом,
+    // а без позиции строка уехала бы в хвост по дате создания — то есть в непредсказуемое место.
+    const plan = planAppend(childrenOf(newParentId), kidId);
+    await applyPositionPlan(plan, { id: kidId, fields: { parent_id: newParentId, sprint_id } });
+  }
+
+  // Перестановка строки: встать до/после другой строки СВОЕГО уровня. Если цель живёт в другом
+  // проекте, подпроект заодно меняет родителя — жест один и тот же, отдельного «перенести, потом
+  // расставить» человек делать не должен.
+  async function reorderProject(movedId: string, target: DropTarget) {
+    const moved = projects.find((p) => p.id === movedId);
+    const t = projects.find((p) => p.id === target.id);
+    if (!moved || !t || movedId === t.id) return;
+    const movedIsTop = !moved.parent_id, targetIsTop = !t.parent_id;
+    if (movedIsTop !== targetIsTop) return; // уровни не смешиваем: проект в подпроекты не кладём
+    const newParent = t.parent_id ?? null;
+    const reparented = (moved.parent_id ?? null) !== newParent;
+    const plan = planReorder(reparented ? [...siblingsOf(t), moved] : siblingsOf(t), movedId, target);
+    await applyPositionPlan(
+      plan,
+      reparented && newParent
+        ? { id: movedId, fields: { parent_id: newParent, sprint_id: t.sprint_id } }
+        : null,
+    );
+  }
+
+  // Применение плана: список обычно из одной правки (позиция-середина), из нескольких — когда
+  // зазор между соседями кончился и порядок раскладывается заново. Сначала локально (доска
+  // отзывается сразу), потом в базу; сорвалось — перечитываем, чтобы не остаться с выдуманным
+  // порядком на экране.
+  async function applyPositionPlan(
+    plan: PositionChange[],
+    extra: { id: string; fields: { parent_id: string; sprint_id: string | null } } | null,
+  ) {
+    if (plan.length === 0 && !extra) return;
+    const byId = new Map(plan.map((c) => [c.id, c.position]));
+    setProjects((prev) => prev.map((p) => {
+      const isMoved = p.id === extra?.id;
+      if (!isMoved && !byId.has(p.id)) return p;
+      return {
+        ...p,
+        ...(isMoved ? extra.fields : {}),
+        ...(byId.has(p.id) ? { position: byId.get(p.id)! } : {}),
+      };
+    }));
+    const calls = plan.map((c) => updateProject(c.id, {
+      position: c.position,
+      ...(c.id === extra?.id ? extra.fields : {}),
+    }));
+    // Смена родителя без правки позиции (позиция уже подходит) — отдельным запросом.
+    if (extra && !byId.has(extra.id)) calls.push(updateProject(extra.id, extra.fields));
+    try { await Promise.all(calls); } catch { load(); }
+  }
+
+  // Перенос проекта в другое пространство (issue #426). Подпроекты сервер тащит сам — инвариант
+  // «подпроект живёт в пространстве родителя»; здесь же двигаем их в локальном состоянии, иначе
+  // до перезагрузки дети остались бы нарисованными в старом пространстве.
+  async function moveProject(id: string, spaceId: string | null) {
+    setProjects((prev) => prev.map((p) =>
+      p.id === id || p.parent_id === id ? { ...p, sprint_id: spaceId } : p));
+    try { await updateProject(id, { sprint_id: spaceId }); } catch { load(); }
   }
 
   async function renameSection(id: string, name: string) {
@@ -241,6 +322,15 @@ export function SprintBoard() {
     const next = !current;
     setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, is_private: next } : p)));
     try { await updateProject(id, { is_private: next }); } catch { load(); }
+  }
+
+  // Справка «О проекте» (всплывашка ⓘ). В отличие от переименования ошибку НЕ глотаем: сервер
+  // отказывает по делу («адрес должен начинаться с http…»), и текст нужен в самой форме.
+  async function saveProjectInfo(id: string, fields: Pick<Project, "goal" | "description" | "links">) {
+    const updated = await updateProject(id, {
+      goal: fields.goal ?? null, description: fields.description ?? null, links: fields.links ?? [],
+    });
+    setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, ...updated } : p)));
   }
 
   async function removeSection(id: string, name: string) {
@@ -294,7 +384,12 @@ export function SprintBoard() {
     // подставляем сегодняшнюю (пользователь их не видит).
     const today = new Date().toISOString().slice(0, 10);
     try {
-      const created = await createSprint({ name: form.name.trim(), start_date: today, end_date: today });
+      const created = await createSprint({
+        name: form.name.trim(),
+        start_date: today,
+        end_date: today,
+        kind: "board_tab",
+      });
       setForm({ name: "", start_date: "", end_date: "" }); setCreating(false);
       await load(); setSelected(created.id);
     } catch (e) { setFormErr(e instanceof Error ? e.message : "Не удалось создать вкладку"); }
@@ -351,6 +446,10 @@ export function SprintBoard() {
     onQuickAddSubmit: addTask,
     onOpenTask: (t) => setEditing(t),
   };
+
+  // Перетаскивание самих проектов (порядок + перенос подпроекта) — состояние и биндеры пропсов
+  // в отдельном модуле, здесь остаются только действия над данными.
+  const dnd = useProjectDnd(projects, { reorder: reorderProject, moveInto: moveSubproject });
 
   if (loading) return <p className="text-center text-ink-soft py-12 text-sm">Загрузка…</p>;
 
@@ -425,11 +524,11 @@ export function SprintBoard() {
           if (!open) {
             return (
               <button key={sec.id} type="button" onClick={() => toggleExpanded(sec.id)}
-                onDragOver={(e) => { if (dragProj) { e.preventDefault(); setDragOverProject(sec.id); } }}
-                onDragLeave={() => setDragOverProject((p) => (p === sec.id ? null : p))}
-                onDrop={(e) => { if (dragProj) { e.preventDefault(); moveSubproject(dragProj, sec.id); setDragProj(null); setDragOverProject(null); } }}
-                className={`roy-pop w-56 shrink-0 self-start rounded-2xl border p-3 text-left select-none cursor-pointer transition-colors dark:backdrop-blur-sm ${dragOverProject === sec.id ? "border-primary bg-primary/10" : "border-line bg-surface/40 hover:border-line-2"}`}
-                title={dt("Открыть проект", "Open project")}>
+                {...dnd.dragProps(sec.id)}
+                {...dnd.dropProps(sec, "x")}
+                style={{ boxShadow: dnd.hintShadow(sec.id, "x") }}
+                className={`roy-pop w-56 shrink-0 self-start rounded-2xl border p-3 text-left select-none cursor-grab active:cursor-grabbing transition-colors dark:backdrop-blur-sm ${dnd.overProject === sec.id ? "border-primary bg-primary/10" : "border-line bg-surface/40 hover:border-line-2"}`}
+                title={dt("Открыть проект · перетащить — изменить порядок", "Open project · drag to reorder")}>
                 <div className="flex items-center gap-2">
                   <RoyIcon name="board" size={15} strokeWidth={1.9} />
                   <span className="flex-1 truncate text-sm font-bold text-ink">{sec.name}</span>
@@ -450,14 +549,16 @@ export function SprintBoard() {
           // Раскрытый проект — на всю ширину (w-full → своя строка в flex-wrap).
           return (
             <section key={sec.id} className="roy-pop w-full rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
-              {/* Заголовок раскрытого проекта. Двойной клик — свернуть обратно в плитку.
+              {/* Заголовок раскрытого проекта. Клик по шапке — свернуть обратно в плитку (просьба
+                  владельца 27.09.2026: раньше был двойной клик, и сворачивали только шевроном).
+                  Кнопки справа и ⓘ глушат всплытие — их нажатие проект не сворачивает.
                   Тоже drop-зона для переноса подпроекта (#30). */}
-              <div onDoubleClick={() => toggleExpanded(sec.id)}
-                onDragOver={(e) => { if (dragProj) { e.preventDefault(); setDragOverProject(sec.id); } }}
-                onDragLeave={() => setDragOverProject((p) => (p === sec.id ? null : p))}
-                onDrop={(e) => { if (dragProj) { e.preventDefault(); moveSubproject(dragProj, sec.id); setDragProj(null); setDragOverProject(null); } }}
-                className={`flex items-center gap-2 px-3 py-2 select-none cursor-pointer border-b ${dragOverProject === sec.id ? "border-primary bg-primary/10" : "border-line"}`}
-                title={dt("Двойной клик — свернуть", "Double-click to collapse")}>
+              <div onClick={() => toggleExpanded(sec.id)}
+                {...dnd.dragProps(sec.id, renaming?.id !== sec.id)}
+                {...dnd.dropProps(sec, "y")}
+                style={{ boxShadow: dnd.hintShadow(sec.id, "y") }}
+                className={`flex items-center gap-2 px-3 py-2 select-none cursor-pointer active:cursor-grabbing border-b ${dnd.overProject === sec.id ? "border-primary bg-primary/10" : "border-line"}`}
+                title={dt("Нажмите — свернуть · перетащите — изменить порядок", "Click to collapse · drag to reorder")}>
                 <button onClick={(e) => { e.stopPropagation(); toggleExpanded(sec.id); }} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={open ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
                   <RoyIcon name="cright" size={12} style={{ transform: open ? "rotate(90deg)" : undefined }} />
                 </button>
@@ -472,6 +573,9 @@ export function SprintBoard() {
                 ) : (
                   <span className="text-sm font-bold text-ink">{sec.name}</span>
                 )}
+                <ProjectInfoPopover project={sec} subprojectCount={kids.length}
+                  stats={statusCounts([...secDirectTasks, ...kidsWithTasks.flatMap((k) => k.tasks)], dt)}
+                  onSave={(f) => saveProjectInfo(sec.id, f)} />
                 <span className="text-xs text-ink-soft">{total}</span>
                 {/* Добавить задачу (в каждой колонке уже есть свой «+», см. KanbanColumn в TaskKanban.tsx) и
                     добавить подпроект (дублировано дальше в теле, см. renderAddSubproject) убраны
@@ -487,6 +591,8 @@ export function SprintBoard() {
                       hint: dt("Закрыт вместе с подпроектами — показать команде", "Hidden with its subprojects — show to the team"),
                       inherited: "",
                     }} />
+                  <MoveProjectMenu spaces={sprints} currentId={sec.sprint_id ?? null}
+                    onMove={(spaceId) => moveProject(sec.id, spaceId)} />
                   <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Переименовать проект", "Rename project")}>
                     <RoyIcon name="pencil" size={13} />
                   </button>
@@ -517,15 +623,18 @@ export function SprintBoard() {
                       <div key={kid.id}>
                         {/* Заголовок подпроекта: draggable (перенос в другой проект, #30) +
                             сворачивание (#29, та же семантика, что у проекта верхнего уровня). */}
-                        <div draggable={renaming?.id !== kid.id}
-                          onDragStart={(e) => { setDragProj(kid.id); e.dataTransfer.effectAllowed = "move"; }}
-                          onDragEnd={() => { setDragProj(null); setDragOverProject(null); }}
+                        <div onClick={() => toggleCollapsedSub(kid.id)}
+                          {...dnd.dragProps(kid.id, renaming?.id !== kid.id)}
+                          {...dnd.dropProps(kid, "y")}
+                          style={{ boxShadow: dnd.hintShadow(kid.id, "y") }}
+                          title={dt("Нажмите — свернуть · перетащите — изменить порядок или перенести в другой проект", "Click to collapse · drag to reorder or move to another project")}
                           className="flex items-center gap-2 px-1 pb-1.5 cursor-grab active:cursor-grabbing">
-                          <button onClick={() => toggleCollapsedSub(kid.id)} className="rounded-full p-0.5 text-ink-soft hover:bg-surface-2" title={subOpen ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
+                          <button onClick={(e) => { e.stopPropagation(); toggleCollapsedSub(kid.id); }} className="rounded-full p-0.5 text-ink-soft hover:bg-surface-2" title={subOpen ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
                             <RoyIcon name="cright" size={11} className="transition-transform duration-200" style={{ transform: subOpen ? "rotate(90deg)" : undefined }} />
                           </button>
                           {renaming?.id === kid.id ? (
                             <input autoFocus value={renaming.name}
+                              onClick={(e) => e.stopPropagation()}
                               onChange={(e) => setRenaming({ id: kid.id, name: e.target.value })}
                               onKeyDown={(e) => { if (e.key === "Enter") renameSection(kid.id, renaming.name); if (e.key === "Escape") setRenaming(null); }}
                               onBlur={() => renameSection(kid.id, renaming.name)}
@@ -534,7 +643,7 @@ export function SprintBoard() {
                             <span className="text-xs font-bold text-ink">{kid.name}</span>
                           )}
                           <span className="text-[11px] text-ink-soft">{kidTasks.filter((t) => !isBacklogStatus(t.status)).length}</span>
-                          <div className="ml-auto flex items-center gap-0.5">
+                          <div className="ml-auto flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                             {/* Тумблер подпроекта. Закрытая ГРУППА уже закрыла его — тогда вместо кнопки
                                 метка: нажатие ничего бы не поменяло, а обещать обратное нечестно. */}
                             <PrivacyToggle compact

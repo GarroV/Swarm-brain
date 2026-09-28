@@ -7,6 +7,7 @@ import { promoteQueued, readQueued, writeQueued } from "../_shared/meeting-queue
 import { decideUpload, uploadSource } from "./second-recording.ts";
 import { freshChallenge, holderSecondsCorrection, mayCorrectHolderSeconds } from "./challenge.ts";
 import { lowerHolderSeconds, measureUpload, type Rival, settleChallengeUpload } from "./challenge-io.ts";
+import { claimLeaseUntil } from "../_shared/meeting-lease.ts";
 import { isFrozen } from "../_shared/meeting-frozen.ts";
 import { parseSpeakerTimeline, type SpeakerSpan, SpeakerTimelineError } from "../_shared/speakers.ts";
 
@@ -345,6 +346,10 @@ Deno.serve(async (req: Request) => {
     console.log(`meeting-ingest: ${m.id} — вторая запись (${source}), сравним с текущей стенограммой`);
   }
   const nowIso = new Date().toISOString();
+  // Лиз права транскрибации продлеваем вместе с приёмом аудио (issue #285). Аудио уже здесь и
+  // обработка вот-вот начнётся — если оставить лиз с момента claim, он истечёт посреди работы,
+  // встреча снова станет «свободной» и право заберёт следующий претендент, даже с записью на
+  // три минуты (ветка «свободна» в meeting-claim длительности не сравнивает).
   await supabase
     .from("meetings")
     .update({
@@ -352,6 +357,7 @@ Deno.serve(async (req: Request) => {
       process_state: state,
       last_progress_at: nowIso,
       processing_lease: null,
+      lease_expires_at: claimLeaseUntil(),
       updated_at: nowIso,
     })
     .eq("id", m.id);

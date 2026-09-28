@@ -9,7 +9,9 @@
 // `book` — база. На мобайле их в таб-баре нет: поиск живёт иконкой в шапке (push-роут `ask`),
 // база — пунктом «Ещё» (push-роут `base`). Решение владельца 2026-08-22 (набор табов «задачи,
 // проекты, встречи, еще»), см. docs/decisions/2026-08-22-mobile-nav.md.
-export type RoyTab = "search" | "task" | "projects" | "book" | "cal" | "more";
+// `sprints` — десктопный раздел левой рейки (витрина нового вида, 24.09.2026): спринты
+// отдельным пунктом, а не видом внутри доски задач.
+export type RoyTab = "search" | "task" | "projects" | "sprints" | "book" | "cal" | "more";
 
 export type RoyRoute =
   | { view: "answer"; params: { query: string } }
@@ -24,6 +26,7 @@ export type RoyRoute =
   | { view: "meetingReview"; params: { id: string } }
   | { view: "settings" }
   | { view: "team" }
+  | { view: "stats" }
   | { view: "admin" }
   | { view: "more" }
   | { view: "map" }

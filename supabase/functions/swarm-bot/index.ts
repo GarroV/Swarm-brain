@@ -25,6 +25,7 @@ import {
   parseSaveCommand,
 } from "./lib/intent.ts";
 import { ALL_MEETING_SOURCES, ENTRY_MEETING_SOURCES, sourceLabel } from "../_shared/sources.ts";
+import { timingSafeEq } from "../_shared/timing-safe.ts";
 import { buildClaudeProjectPrompt } from "../_shared/claude-project-prompt.ts";
 import { handleEntryCommand, handleManageCallbacks, handleManageSessionInput } from "./handlers/manage.ts";
 import {
@@ -71,8 +72,28 @@ import type { TgCallbackQuery, TgMessage } from "./lib/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
+// Секрет вебхука Telegram. Две переменные намеренно: значение и включение проверки.
+// Одной не обойтись — если начать отбивать апдейты раньше, чем Telegram узнает секрет
+// через setWebhook, бот перестанет отвечать людям. Порядок: задать SECRET → дёрнуть
+// set_webhook → убедиться, что апдейты идут → только потом ENFORCE=1.
+const TELEGRAM_WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "";
+const TELEGRAM_WEBHOOK_ENFORCE = Deno.env.get("TELEGRAM_WEBHOOK_ENFORCE") === "1";
 // Эндпоинт MCP-сервера для ручного подключения (веб-коннектор claude.ai: URL + Bearer-токен).
 const SWARM_MCP_URL = "https://vbqglndbxkpmreccpqmr.supabase.co/functions/v1/swarm-mcp";
+
+// Боковое меню команд Telegram — для пользователя видны ТОЛЬКО эти три (решение владельца
+// 2026-08-09, расширено 2026-09-09: «Спросить, Добавить, Добавить задачу — всё, больше там
+// ничего не должно быть»). Единственный источник: раньше список дублировался в setup_commands
+// и в /start, они разъехались (/start незаметно возвращал в меню все 14 команд на каждый
+// /start — /addtask из владельческого решения молча жил только в этом дубле).
+// Остальные команды НЕ удалены — их хендлеры работают при ручном вводе, просто не в меню:
+// start, tasks, meetings, users, status, digest, setup, recordertoken, help, feedback, reset,
+// connect_claude, claude.
+const VISIBLE_BOT_COMMANDS = [
+  { command: "add", description: "Добавить запись в базу знаний" },
+  { command: "ask", description: "Задать вопрос" },
+  { command: "addtask", description: "Добавить задачу" },
+];
 
 // ── Background runner — returns 200 to Telegram immediately, processes async ──
 
@@ -261,6 +282,16 @@ async function checkRecorderHealth(): Promise<void> {
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("OK", { status: 200 });
 
+  // Подлинность источника апдейтов. Проверяем ДО req.json(): подделанное тело не должно
+  // доходить до разбора — иначе чужой POST тратит OpenAI и отдаёт команды от имени админа.
+  // Cron-триггеры ходят со своим X-Cron-Secret и проверяются ниже, их сюда не пускаем.
+  if (TELEGRAM_WEBHOOK_ENFORCE && !req.headers.get("X-Cron-Secret")) {
+    const provided = req.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
+    if (!TELEGRAM_WEBHOOK_SECRET || !timingSafeEq(provided, TELEGRAM_WEBHOOK_SECRET)) {
+      return new Response("Unauthorized", { status: 401 });
+    }
+  }
+
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -296,7 +327,12 @@ Deno.serve(async (req: Request) => {
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: target, allowed_updates: ["message", "callback_query"] }),
+      body: JSON.stringify({
+        url: target,
+        allowed_updates: ["message", "callback_query"],
+        // Пустой secret_token Telegram трактует как «снять секрет» — поэтому только когда задан.
+        ...(TELEGRAM_WEBHOOK_SECRET ? { secret_token: TELEGRAM_WEBHOOK_SECRET } : {}),
+      }),
     });
     const json = await res.json();
     return new Response(JSON.stringify({ target, telegram: json }), {
@@ -306,30 +342,15 @@ Deno.serve(async (req: Request) => {
   }
 
   if (body.setup_commands === true) {
+    // Решение владельца 2026-08-09, расширено 2026-09-09 («Спросить, Добавить, Добавить
+    // задачу — всё, больше там ничего не должно быть») — список команд единый,
+    // VISIBLE_BOT_COMMANDS у констант вверху файла (там же полный текст решения и список
+    // скрытых-но-живых команд). Раньше он был захардкожен здесь ВТОРОЙ раз и разъехался со
+    // списком в /start ниже — /start молча возвращал в меню все 14 команд.
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        commands: [
-          // Бот — точка быстрого доступа: в МЕНЮ команд оставлены только «Добавить» и «Спросить»
-          // (решение владельца 2026-08-09). Остальные команды СКРЫТЫ из меню, но их обработчики
-          // живы дальше по файлу — работают при ручном вводе и вернутся в меню позже.
-          // Чтобы вернуть команду в меню — раскомментировать её строку.
-          { command: "add", description: "Добавить запись в базу знаний" },
-          { command: "ask", description: "Задать вопрос" },
-          // { command: "start", description: "Главное меню" },
-          // { command: "tasks", description: "Задачи команды" },
-          // { command: "addtask", description: "Добавить задачу" },
-          // { command: "meetings", description: "Встречи на подтверждение" },
-          // { command: "status", description: "Состояние базы знаний" },
-          // { command: "digest", description: "Личный дайджест" },
-          // { command: "setup", description: "Подключить Claude Desktop (авто)" },
-          // { command: "recordertoken", description: "🎙 Рекордер встреч (Mac) — установка" },
-          // { command: "help", description: "Справка" },
-          // { command: "feedback", description: "Отправить фидбек" },
-          // { command: "reset", description: "Сбросить состояние бота" },
-        ],
-      }),
+      body: JSON.stringify({ commands: VISIBLE_BOT_COMMANDS }),
     });
     const json = await res.json();
     return new Response(JSON.stringify(json), { status: 200 });
@@ -629,28 +650,14 @@ Deno.serve(async (req: Request) => {
           `📖 /help — полная справка`,
         buildKeyboard(),
       );
-      // Register bot commands in side menu (idempotent)
+      // Register bot commands in side menu (idempotent) — VISIBLE_BOT_COMMANDS, тот же список,
+      // что и в setup_commands выше. До 2026-09-09 здесь был отдельный захардкоженный список из
+      // 14 команд — он молча возвращал в меню всё, что setup_commands деликатно прятал, на
+      // каждый /start любого пользователя.
       await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          commands: [
-            { command: "start", description: "Главное меню" },
-            { command: "add", description: "Добавить запись в базу знаний" },
-            { command: "ask", description: "Задать вопрос" },
-            { command: "tasks", description: "Задачи команды" },
-            { command: "addtask", description: "Добавить задачу" },
-            { command: "meetings", description: "Встречи на подтверждение" },
-            { command: "users", description: "Управление командой" },
-            { command: "status", description: "Состояние базы знаний" },
-            { command: "setup", description: "Подключить Claude Desktop (авто)" },
-            { command: "help", description: "Справка" },
-            { command: "feedback", description: "Отправить фидбек" },
-            { command: "reset", description: "Сбросить состояние бота" },
-            { command: "connect_claude", description: "Как подключить Claude Desktop" },
-            { command: "claude", description: "Инструкции для проекта Claude Desktop" },
-          ],
-        }),
+        body: JSON.stringify({ commands: VISIBLE_BOT_COMMANDS }),
       });
     } else if (command === "/help" || text === "ℹ️ Помощь") {
       // Справка с inline-кнопкой «⚙️ Настроить систему» (→ мастер настройки, callback guide_open).

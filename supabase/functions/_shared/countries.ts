@@ -102,6 +102,22 @@ function queryCountryRegex(alias: string): RegExp {
   return new RegExp(`(?<![\\p{L}])${escapeRe(alias)}[a-z]*`, "iu");
 }
 
+/**
+ * Все страны, которые нашлись в тексте по ПРОИЗВОЛЬНОМУ словарю алиасов, без повторов.
+ * Отличие от `detectQueryCountry`: там нужен один ответ (первое самое длинное совпадение),
+ * а вызывающему здесь важно именно «одна страна или несколько» — при нескольких он обязан
+ * отказаться, а не выбрать наугад. Механика совпадения та же (склонения, границы слова),
+ * поэтому она живёт в одном месте, а не копируется под каждый словарь.
+ */
+export function detectAliasCountries(text: string, aliases: Record<string, string>): string[] {
+  const t = (text ?? "").toLowerCase();
+  const found = new Set<string>();
+  for (const [alias, iso] of Object.entries(aliases)) {
+    if (queryCountryRegex(alias).test(t)) found.add(iso);
+  }
+  return [...found];
+}
+
 export function detectQueryCountry(text: string): string | null {
   const t = (text ?? "").toLowerCase();
   // Длинные алиасы первыми: «united arab emirates» раньше «uae»; «индонезия» раньше «индия».

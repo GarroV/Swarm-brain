@@ -41,10 +41,14 @@ export function longDate(iso: string | null | undefined, locale: string): string
   }
 }
 
+// Шапка — в markdown, как и сами тезисы (их разделы — `###`): редакторы, куда вставляют копию,
+// разбирают разметку при вставке. Решение владельца 25.09.2026: крупно — название встречи и
+// дата (`#`, на уровень выше разделов тезисов), под ними мелко — пометка об AI (курсив).
 export function buildTezisyCopyText(text: string, meta: TezisyCopyMeta, l: TezisyCopyLabels): string {
-  const head = [l.notice];
   const parts = [meta.title?.trim(), longDate(meta.date, l.locale)].filter(Boolean);
-  if (parts.length > 0) head.push(`${l.meeting}: ${parts.join(" · ")}`);
+  // Без названия одна дата в заголовке ни о чём не говорит — подписываем её «Встреча».
+  if (parts.length > 0 && !meta.title?.trim()) parts.unshift(l.meeting);
+  const head = parts.length > 0 ? [`# ${parts.join(" · ")}`, `_${l.notice}_`] : [`_${l.notice}_`];
   const body = text.trim();
   return body ? `${head.join("\n")}\n\n${body}` : head.join("\n");
 }

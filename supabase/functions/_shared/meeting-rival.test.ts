@@ -2,7 +2,7 @@
 // встречи переходит вместе со стенограммой — только если осталась запись претендента.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { rivalOwnershipPatch, rivalRecorders } from "./meeting-rival.ts";
-import { CLAIM_LEASE_TTL_SEC } from "./claim-lease.ts";
+import { CLAIM_LEASE_TTL_SEC } from "./meeting-lease.ts";
 
 const NOW = "2026-09-28T12:00:00.000Z";
 const HOLDER = 1;
