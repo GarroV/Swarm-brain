@@ -91,12 +91,21 @@ public struct MissedTracker: Equatable, Sendable {
     public let invited: Set<String>
     /// Что сейчас открыто и видно человеку (меню).
     public let open: [MissedMeeting]
+    /// Пропуски, которые человек закрыл ✕ в капсуле (D025): из капсулы уходят, в меню остаются —
+    /// звать бота можно и дальше. Пропуск, пропавший с сервера и вернувшийся, показывается снова.
+    public let dismissed: Set<String>
 
-    public init(announced: Set<String> = [], invited: Set<String> = [], open: [MissedMeeting] = []) {
+    public init(announced: Set<String> = [], invited: Set<String> = [], open: [MissedMeeting] = [],
+                dismissed: Set<String> = []) {
         self.announced = announced
         self.invited = invited
         self.open = open
+        self.dismissed = dismissed
     }
+
+    /// Какой пропуск говорит капсула. Капсула одна (решение 2026-09-07), поэтому пропуск в ней
+    /// тоже один — первый открытый, не закрытый человеком; остальные ждут в меню.
+    public var capsuleMiss: MissedMeeting? { open.first { !dismissed.contains($0.id) } }
 
     public struct Update: Equatable, Sendable {
         /// Новые пропуски — показать баннер.
@@ -113,7 +122,8 @@ public struct MissedTracker: Equatable, Sendable {
         let gone = announced.subtracting(visibleIds).sorted()
         let next = MissedTracker(announced: announced.intersection(visibleIds).union(fresh.map(\.id)),
                                  invited: invited.intersection(Set(misses.map(\.id))),
-                                 open: visible)
+                                 open: visible,
+                                 dismissed: dismissed.intersection(visibleIds))
         return (next, Update(announce: fresh, withdraw: gone))
     }
 
@@ -121,8 +131,16 @@ public struct MissedTracker: Equatable, Sendable {
     public func invitedBot(_ id: String) -> (MissedTracker, Update) {
         let next = MissedTracker(announced: announced.subtracting([id]),
                                  invited: invited.union([id]),
-                                 open: open.filter { $0.id != id })
+                                 open: open.filter { $0.id != id },
+                                 dismissed: dismissed.subtracting([id]))
         return (next, Update(announce: [], withdraw: [id]))
+    }
+
+    /// ✕ в капсуле: пропуск уходит из капсулы, но не из меню и не с сервера.
+    public func dismissing(_ id: String) -> MissedTracker {
+        guard open.contains(where: { $0.id == id }) else { return self }
+        return MissedTracker(announced: announced, invited: invited, open: open,
+                             dismissed: dismissed.union([id]))
     }
 
     /// Автозапуск выключен или токена нет — всё показанное снимается.
@@ -138,6 +156,9 @@ public enum MissedTexts {
     public static let notInvitableTitle = LocalizedText(en: "The bot won't come on its own",
                                                         ru: "Бот сам не придёт")
     public static let inviteAction = LocalizedText(en: "Invite the bot", ru: "Позвать бота")
+    /// Короткая строка пропуска внутри капсулы встречи — рядом с «Записать»/«Подключиться».
+    public static let capsuleLine = LocalizedText(en: "No bot", ru: "Бота нет")
+    public static let inviting = LocalizedText(en: "Inviting…", ru: "Зову…")
     public static let invitedTitle = LocalizedText(en: "The bot is on its way", ru: "Бот позван")
     public static let invitedBodyFormat = LocalizedText(en: "Invite sent — the bot will join \u{201C}%@\u{201D}.",
                                                         ru: "Приглашение отправлено — бот зайдёт на «%@».")
@@ -166,6 +187,53 @@ public enum MissedTexts {
 
     public static func menuItem(_ title: String?, _ lang: RecorderLanguage) -> String {
         String(format: menuItemFormat.text(lang), meetingName(title, lang))
+    }
+}
+
+/// Что капсула говорит о пропуске (D025). Чистое значение: собирается из пропуска, последнего
+/// отказа приглашения и того, идёт ли приглашение сейчас, — AppKit только рисует.
+public struct MissedCapsule: Equatable, Sendable {
+    public let missId: String
+    /// Заголовок отдельной капсулы: «Бота нет на встрече» / «Бот сам не придёт».
+    public let line: String
+    /// Строка внутри капсулы встречи, где заголовок — название встречи: «Бота нет» / «Бот сам не придёт».
+    public let shortLine: String
+    /// Почему и что из этого следует: текст сервера, а после неудачного приглашения — причина отказа.
+    public let detail: String
+    /// Есть ли кнопка «Позвать бота» (календарь не подключён — звать некуда).
+    public let canInvite: Bool
+    /// Приглашение уже ушло — кнопка неактивна, двойной клик не зовёт дважды.
+    public let busy: Bool
+    /// Подпись кнопки: «Позвать бота» или «Зову…».
+    public let buttonTitle: String
+    /// Последнее приглашение не удалось — `detail` говорит почему; в капсуле встречи отказ
+    /// показывается вместо короткой строки, а не прячется в подсказку.
+    public let failed: Bool
+
+    public init(missId: String, line: String, shortLine: String, detail: String, canInvite: Bool,
+                busy: Bool, buttonTitle: String, failed: Bool) {
+        self.missId = missId
+        self.line = line
+        self.shortLine = shortLine
+        self.detail = detail
+        self.canInvite = canInvite
+        self.busy = busy
+        self.buttonTitle = buttonTitle
+        self.failed = failed
+    }
+
+    public static func compose(_ miss: MissedMeeting, failure: String?, busy: Bool,
+                               lang: RecorderLanguage) -> MissedCapsule {
+        let failed = (failure ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let why = failed.isEmpty
+            ? miss.message.text(lang)
+            : "\(MissedTexts.failedTitle.text(lang)) — \(failed)"
+        let line = miss.canInvite ? MissedTexts.invitableTitle : MissedTexts.notInvitableTitle
+        let short = miss.canInvite ? MissedTexts.capsuleLine : MissedTexts.notInvitableTitle
+        return MissedCapsule(missId: miss.id, line: line.text(lang), shortLine: short.text(lang),
+                             detail: why, canInvite: miss.canInvite, busy: busy && miss.canInvite,
+                             buttonTitle: (busy ? MissedTexts.inviting : MissedTexts.inviteAction).text(lang),
+                             failed: !failed.isEmpty)
     }
 }
 
