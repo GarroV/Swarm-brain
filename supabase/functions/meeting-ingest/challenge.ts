@@ -116,14 +116,29 @@ export function settleRecorders(
  * хранит самую полную) и только без бота на встрече: секунды бота уже ограничены ударами
  * (meeting-heartbeat), а его выгрузка и запасная запись рекордера меряют разное. null — не трогать.
  */
+export interface HolderSecondsRow {
+  claim_owner: number | null;
+  recorded_seconds: number | null;
+  agent_last_seen_at: string | null;
+}
+
+/** Стоит ли вообще мерить выгрузку ради поправки (замер — копия каждой части в памяти). */
+export function mayCorrectHolderSeconds(
+  row: HolderSecondsRow,
+  uploader: number,
+  priorSources: readonly string[] | null,
+): boolean {
+  if (row.claim_owner !== uploader || row.agent_last_seen_at !== null) return false;
+  if (priorSources !== null && priorSources.length > 0) return false;
+  return row.recorded_seconds !== null;
+}
+
 export function holderSecondsCorrection(
-  row: { claim_owner: number | null; recorded_seconds: number | null; agent_last_seen_at: string | null },
+  row: HolderSecondsRow,
   uploader: number,
   priorSources: readonly string[] | null,
   measuredSec: number | null,
 ): number | null {
-  if (row.claim_owner !== uploader || row.agent_last_seen_at !== null) return null;
-  if (priorSources !== null && priorSources.length > 0) return null;
-  if (measuredSec === null || row.recorded_seconds === null) return null;
-  return row.recorded_seconds > measuredSec ? measuredSec : null;
+  if (!mayCorrectHolderSeconds(row, uploader, priorSources) || measuredSec === null) return null;
+  return row.recorded_seconds !== null && row.recorded_seconds > measuredSec ? measuredSec : null;
 }

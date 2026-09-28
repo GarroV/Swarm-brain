@@ -4,6 +4,8 @@ import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts"
 import { type InMemoryPart, runMeetingStep, uploadPartsAndBuildState } from "../_shared/meeting-processor.ts";
 import { promoteQueued, readQueued, writeQueued } from "../_shared/meeting-queue.ts";
 import { decideUpload, uploadSource } from "./second-recording.ts";
+import { freshChallenge, holderSecondsCorrection, mayCorrectHolderSeconds } from "./challenge.ts";
+import { lowerHolderSeconds, measureUpload, settleChallengeUpload } from "./challenge-io.ts";
 import { parseSpeakerTimeline, type SpeakerSpan, SpeakerTimelineError } from "../_shared/speakers.ts";
 
 // meeting-ingest — приём АУДИО от claimer (см. transcribator/10-REVISED-DESIGN.md §4, §7.2).
@@ -128,6 +130,31 @@ async function buildTrackParts(
   return [await toPart(legacy, fallbackName, 0)];
 }
 
+interface TrackParts {
+  systemParts: InMemoryPart[];
+  micParts: InMemoryPart[];
+}
+
+// Части обеих дорожек (файлы уже в памяти после req.formData()) или готовый ответ об ошибке.
+async function readParts(formData: FormData): Promise<TrackParts | Response> {
+  let systemParts: InMemoryPart[];
+  let micParts: InMemoryPart[];
+  try {
+    systemParts = await buildTrackParts(formData, "sys_parts", "audio", "audio.m4a", 1);
+    micParts = await buildTrackParts(formData, "mic_parts", "audio_mic", "audio_mic.m4a", 1024);
+  } catch (e) {
+    if (e instanceof PartError) return fail(e.message, e.status);
+    throw e;
+  }
+  // Принимаем запись с ОДНОЙ дорожкой: только система ИЛИ только микрофон. mic-only — частый кейс:
+  // юзер говорил, но через систему ничего не воспроизводилось → sys-дорожка пустая, рекордер её не
+  // шлёт (гард >1024Б в Segmenter). Отклоняем лишь совсем пустую запись (нет ни одной дорожки).
+  if (systemParts.length === 0 && micParts.length === 0) {
+    return fail("audio required (sys_parts/mic_parts manifest or legacy audio field)");
+  }
+  return { systemParts, micParts };
+}
+
 // Inline-проход после ответа: короткую встречу добивает сразу; длинную подхватит cron meeting-process.
 function runInline(id: string): Promise<void> {
   const job = runMeetingStep(supabase, id, INLINE_BUDGET_MS).then(() => {}).catch((e) => {
@@ -167,23 +194,29 @@ Deno.serve(async (req: Request) => {
     // Источники и первый сегмент — без тяжёлых jsonb целиком: только чтобы решить судьбу второй
     // записи той же встречи (second-recording.ts).
     .select(
-      "id, claim_owner, notes_edited_at, summary_status, sources:process_state->sources, first_segment:transcript->segments->0",
+      "id, claim_owner, notes_edited_at, summary_status, sources:process_state->sources, first_segment:transcript->segments->0, recorded_seconds, agent_last_seen_at, recorders",
     )
     .eq("id", meetingId)
     .maybeSingle();
 
   if (!meeting) return fail("meeting not found", 404);
-  const m = meeting as {
+  let m = meeting as {
     id: string;
     claim_owner: number | null;
     notes_edited_at: string | null;
     summary_status: string | null;
     sources: unknown;
     first_segment: unknown;
+    recorded_seconds: number | null;
+    agent_last_seen_at: string | null;
+    recorders: unknown;
   };
 
-  // Аудио льёт только держатель права транскрибации (claim_owner).
-  if (m.claim_owner !== identity.telegramId) {
+  // Аудио льёт держатель права транскрибации (claim_owner) — или свежий претендент (T160): заявку
+  // другого человека claim не перехватывает, право решит длина этой выгрузки (challenge.ts).
+  const uploader = identity.telegramId;
+  const challenge = m.claim_owner === uploader ? null : freshChallenge(m.recorders, uploader, new Date().toISOString());
+  if (m.claim_owner !== identity.telegramId && !challenge) {
     return fail("not the transcription owner for this meeting", 403);
   }
 
@@ -201,6 +234,26 @@ Deno.serve(async (req: Request) => {
   }
 
   const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${meetingId}` : "";
+
+  // Претендент: сперва измерить выгрузку и решить право (до защиты правок и идемпотентности — они
+  // смотрят на строку, какой она станет после перехвата). Отказ — 409, строка встречи не тронута.
+  let parts: TrackParts | null = null;
+  if (challenge) {
+    const read = await readParts(formData);
+    if (read instanceof Response) return read;
+    parts = read;
+    const settled = await settleChallengeUpload(
+      supabase,
+      m.id,
+      uploader,
+      challenge.micStartOffset,
+      [...read.systemParts, ...read.micParts],
+      new Date().toISOString(),
+    );
+    if (!settled.ok) return fail(settled.error, settled.status);
+    // Перехват сбросил маркеры обработки тем же UPDATE (claim-patch.ts takeoverPatch).
+    m = { ...m, claim_owner: uploader, ...(settled.reset ? { summary_status: null, sources: null } : {}) };
+  }
 
   // Защита правок человека: черновик уже правили → не перетранскрибируем и не перегенерим.
   if (m.notes_edited_at) {
@@ -233,35 +286,17 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Собираем части дорожек (файлы уже в памяти после req.formData()).
-  let systemParts: InMemoryPart[];
-  let micParts: InMemoryPart[];
-  try {
-    systemParts = await buildTrackParts(
-      formData,
-      "sys_parts",
-      "audio",
-      "audio.m4a",
-      1,
-    );
-    micParts = await buildTrackParts(
-      formData,
-      "mic_parts",
-      "audio_mic",
-      "audio_mic.m4a",
-      1024,
-    );
-  } catch (e) {
-    if (e instanceof PartError) return fail(e.message, e.status);
-    throw e;
-  }
-  // Принимаем запись с ОДНОЙ дорожкой: только система ИЛИ только микрофон. mic-only — частый кейс:
-  // юзер говорил, но через систему ничего не воспроизводилось → sys-дорожка пустая, рекордер её не
-  // шлёт (гард >1024Б в Segmenter). Отклоняем лишь совсем пустую запись (нет ни одной дорожки).
-  if (systemParts.length === 0 && micParts.length === 0) {
-    return fail(
-      "audio required (sys_parts/mic_parts manifest or legacy audio field)",
-    );
+  const read = parts ?? await readParts(formData);
+  if (read instanceof Response) return read;
+  const { systemParts, micParts } = read;
+
+  // Первая выгрузка держателя меряется: заявленные секунды больше измеренного — встреча получает
+  // измеренные (challenge.ts holderSecondsCorrection), иначе завышенная заявка первого заявителя
+  // закрывала бы встречу от перехвата более полной записью.
+  if (!challenge && m.recorded_seconds !== null && mayCorrectHolderSeconds(m, uploader, sources)) {
+    const measured = await measureUpload([...systemParts, ...micParts]);
+    const lowered = holderSecondsCorrection(m, uploader, sources, measured);
+    if (lowered !== null) await lowerHolderSeconds(supabase, m.id, uploader, m.recorded_seconds, lowered);
   }
 
   // Кладём части в Storage и пишем манифест в process_state. Метим 'processing' ДО фоновой работы.
