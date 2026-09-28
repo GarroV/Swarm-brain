@@ -35,6 +35,7 @@ const SKIP_MEANING: Readonly<Record<string, string>> = {
   unsupported_platform: "звонок не в Google Meet — бот туда не умеет",
   unrecognized_link: "ссылку на Meet не удалось разобрать",
   declined: "человек отклонил приглашение",
+  not_accepted: "человек не ответил «да» на приглашение",
   manual_invite_exists: "бота на эту комнату уже позвали руками",
   calendar_not_connected: "автозапуск включён, а Google-календарь не подключён",
   calendar_token_dead: "доступ к календарю отозван или протух — нужно переподключить",

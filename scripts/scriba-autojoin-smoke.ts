@@ -46,6 +46,7 @@ const SHARED = {
   start: { dateTime: iso(1) },
   end: { dateTime: iso(30) },
   hangoutLink: "https://meet.google.com/aj-shrd-abc",
+  organizer: { self: true }, // своя встреча без гостей — «да» (D024)
 };
 const SHARED_KEY = `${SHARED.iCalUID}:${SHARED.start.dateTime.slice(0, 10)}`;
 const calendars = new Map<number, Json[]>([[X, [SHARED]], [Y, [SHARED]], [
@@ -299,6 +300,11 @@ async function scenario(): Promise<void> {
     "опрос отдаёт общую встречу за Y, и только её",
     res.status === 200 &&
       JSON.stringify(taken) === JSON.stringify([[Y, SHARED_KEY]]),
+    body,
+  );
+  expect(
+    "к заданию выдан пропуск бота на эту встречу (grant_token sgr_)",
+    (body.jobs ?? []).every((j) => String(j.grant_token ?? "").startsWith("sgr_")),
     body,
   );
 

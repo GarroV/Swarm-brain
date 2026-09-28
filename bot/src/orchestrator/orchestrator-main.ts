@@ -98,8 +98,9 @@ async function main(environment: Environment): Promise<void> {
   const swarmUrl = required(environment, "SCRIBA_SWARM_URL");
   const token = required(environment, "SCRIBA_BOT_TOKEN");
   const version = positive(environment, "SCRIBA_BOT_VERSION", 0);
-  const notifierFor = (onBehalfOf: number): Notifier =>
-    new JournaledNotifier(new NoticeClient({ baseUrl: swarmUrl, token, onBehalfOf }), log);
+  // Нотиса за человека — по пропуску его встречи (T165); общий токен сервер за человека не принимает.
+  const notifierFor = (onBehalfOf: number, grant: string): Notifier =>
+    new JournaledNotifier(new NoticeClient({ baseUrl: swarmUrl, token: grant, onBehalfOf }), log);
 
   const orchestrator = new Orchestrator({
     engine: new DockerodeEngine(),

@@ -30,6 +30,7 @@ function ev(uid: string, startMin: number, endMin: number, extra: Partial<GEvent
     status: "confirmed",
     start: { dateTime: at(startMin) },
     end: { dateTime: at(endMin) },
+    organizer: { self: true }, // своя встреча без гостей — «да» (D024)
     ...extra,
   } as GEvent;
 }

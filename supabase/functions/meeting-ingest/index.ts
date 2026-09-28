@@ -1,6 +1,7 @@
 // ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
+import { assertGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
 import { type InMemoryPart, runMeetingStep, uploadPartsAndBuildState } from "../_shared/meeting-processor.ts";
 import { promoteQueued, readQueued, writeQueued } from "../_shared/meeting-queue.ts";
 import { decideUpload, uploadSource } from "./second-recording.ts";
@@ -188,6 +189,13 @@ Deno.serve(async (req: Request) => {
   const meetingId = formData.get("meeting_id");
   if (typeof meetingId !== "string" || meetingId.length === 0) {
     return fail("meeting_id required");
+  }
+  // Бот выгружает только во встречу своего пропуска (T165) — до чтения строки встречи.
+  try {
+    assertGrantMeeting(identity, meetingId);
+  } catch (e) {
+    if (e instanceof GrantScopeError) return fail(e.message, e.status);
+    throw e;
   }
 
   const { data: meeting } = await supabase

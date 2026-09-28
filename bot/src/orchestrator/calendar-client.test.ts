@@ -45,7 +45,9 @@ describe("сверка с сервером", () => {
   });
 
   it("ответ — { ok: true, jobs, skipped }", () => {
-    expect(server).toContain("json({ ok: true, ...result })");
+    // jobs — те же задания с пропуском бота на встречу (T165), под именем grant_token.
+    expect(server).toContain("json({ ok: true, ...result, jobs })");
+    expect(server).toContain("grant_token: tokens[n]");
   });
 });
 
@@ -81,6 +83,7 @@ describe("parseCalendarSweep", () => {
     ["starts_at не время", { ...validJob, starts_at: "не время" }, /starts_at/u],
     ["ends_at не время", { ...validJob, ends_at: undefined }, /ends_at/u],
     ["title не строка и не null", { ...validJob, title: 7 }, /title/u],
+    ["пропуск пустой", { ...validJob, grant_token: "" }, /grant_token/u],
     ["не объект", "job-9", /не объект/u],
   ])("%s — кривое задание в malformed, соседи целы", (_name, broken, reason) => {
     const parsed = parseCalendarSweep({ ok: true, jobs: [broken, validJob], skipped: [] });

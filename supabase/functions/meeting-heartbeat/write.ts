@@ -1,4 +1,5 @@
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
+import { assertGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
 import { CLAIM_LEASE_TTL_SEC, claimLeaseUntil, MAX_RECORDED_SECONDS } from "../_shared/claim-lease.ts";
 
 // Куда именно ложится heartbeat. Вынесено чистой функцией не ради красоты: разница между
@@ -134,6 +135,14 @@ function agentWrites(
     newerThan: { column: "last_seen_at", value: nowIso },
   };
   if (meetingId === null) return [agentRow];
+  // Встреча — только та, которую открыл пропуск бота (T165): отметка «пишу» держит встречу за
+  // ботом (D020), поэтому сверка идёт до любой записи, а не одним условием владельца.
+  try {
+    assertGrantMeeting(identity, meetingId);
+  } catch (e) {
+    if (e instanceof GrantScopeError) throw new HeartbeatRejected(403, e.message);
+    throw e;
+  }
   if (!identity.groupId) {
     throw new HeartbeatRejected(403, "agent has no workspace");
   }

@@ -59,7 +59,7 @@ export interface InviteServiceOptions {
     onBehalfOf: number,
     invite: InviteReference,
   ) => Promise<string>;
-  readonly notifierFor: (onBehalfOf: number) => Notifier;
+  readonly notifierFor: (onBehalfOf: number, token: string) => Notifier;
   readonly log: (line: string) => void;
   readonly intervalMs?: number;
   readonly fetch?: typeof globalThis.fetch;
@@ -77,18 +77,21 @@ export function inviteTriggerFor(options: InviteServiceOptions): InviteTrigger {
       options.startForMeeting(invite.join_url, invite.platform, invite.invited_by, {
         id: invite.id,
         joinUrl: invite.join_url,
+        ...(invite.grant_token !== undefined && { grantToken: invite.grant_token }),
       }),
+    // Отказ идёт по пропуску этого приглашения (T165): за человека общий токен не действует.
     refuse: async (invite, detail) => {
+      const token = invite.grant_token ?? options.token;
       const client = new SwarmClient({
         baseUrl: options.swarmUrl,
-        token: options.token,
+        token,
         onBehalfOf: invite.invited_by,
         ...(options.fetch !== undefined && { fetch: options.fetch }),
       });
       await refuseInvite(
         {
           claim: async (request) => client.claim(request),
-          notifier: options.notifierFor(invite.invited_by),
+          notifier: options.notifierFor(invite.invited_by, token),
           version: options.version,
           runId: randomUUID(),
           startedAt: new Date().toISOString(),

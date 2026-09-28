@@ -14,6 +14,7 @@ import type { GEvent } from "../meeting-current/select.ts";
 import { conferenceInfo } from "../meeting-current/join-link.ts";
 import type { ConferencePlatform } from "../meeting-current/join-link.ts";
 import { calendarKeyOf } from "./calendar-key.ts";
+import { acceptedBySelf } from "./calendar-attendance.ts";
 import { botJoinsPlatform, parseInviteLink } from "./meeting-invite.ts";
 
 /**
@@ -43,6 +44,8 @@ export type SkipReason =
   | "unsupported_platform"
   | "unrecognized_link"
   | "declined"
+  // Человек не ответил «да» («может быть», не ответил, событие без его строки) — D024.
+  | "not_accepted"
   | "manual_invite_exists"
   // Причины уровня человека (встречи не видно вовсе) — ставит meeting-calendar, не отбор.
   | "calendar_not_connected"
@@ -117,8 +120,14 @@ export function planPersonDispatch(
         ...span,
       });
 
+    // Бот идёт только туда, где человек ответил «да» (D024, _shared/calendar-attendance.ts).
+    // Отклонённое — своей причиной: так пропуск читается без догадок.
     if (declinedBySelf(ev)) {
       skip("declined");
+      continue;
+    }
+    if (!acceptedBySelf(ev)) {
+      skip("not_accepted");
       continue;
     }
     const info = conferenceInfo(ev);

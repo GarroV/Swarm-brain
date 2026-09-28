@@ -17,7 +17,23 @@ const MEETING_ID = "0b7c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3";
 const T1 = "2026-09-28T10:00:00.000Z";
 const T2 = "2026-09-28T10:02:00.000Z";
 
-const bot: AgentIdentity = { telegramId: 111, groupId: "alpha", kind: "bot", agentId: "scriba" };
+// Бот с пропуском встречи, привязанным заявкой к MEETING_ID (T165).
+const bot: AgentIdentity = {
+  telegramId: 111,
+  groupId: "alpha",
+  kind: "bot",
+  agentId: "scriba",
+  grant: {
+    id: "g1",
+    agentId: "scriba",
+    basis: "calendar",
+    inviteId: null,
+    calendarKey: "uid:2026-09-28",
+    joinUrl: "https://meet.google.com/abc-defg-hij",
+    title: null,
+    meetingId: MEETING_ID,
+  },
+};
 
 type Row = Record<string, unknown>;
 type Tables = Record<string, Row[]>;

@@ -24,13 +24,19 @@ afterEach(async () => {
 interface Wiring {
   readonly server: FakeSwarm;
   readonly starts: [string, string, number, InviteReference][];
-  readonly notices: [number, Notice][];
+  readonly notices: [number, Notice, string][];
   readonly lines: string[];
   readonly poll: () => Promise<void>;
 }
 
 async function wire(): Promise<Wiring> {
-  const server = await startFakeSwarm({ token: TOKEN, onBehalfOf: PERSON, requiresInvites: true });
+  // Строгий двойник: за человека — только пропуск встречи (T165), общий токен — 403.
+  const server = await startFakeSwarm({
+    token: TOKEN,
+    onBehalfOf: PERSON,
+    requiresInvites: true,
+    requiresGrants: true,
+  });
   servers.push(server);
   const starts: Wiring["starts"] = [];
   const notices: Wiring["notices"] = [];
@@ -43,9 +49,9 @@ async function wire(): Promise<Wiring> {
       starts.push([joinUrl, platform, onBehalfOf, invite]);
       return Promise.resolve("c1");
     },
-    notifierFor: (onBehalfOf) => ({
+    notifierFor: (onBehalfOf, token) => ({
       notify: (notice): Promise<NoticeResult> => {
-        notices.push([onBehalfOf, notice]);
+        notices.push([onBehalfOf, notice, token]);
         return Promise.resolve({ delivered: true, shouldLeave: false });
       },
     }),
@@ -64,7 +70,10 @@ describe("inviteTriggerFor", () => {
 
     await w.poll();
 
-    expect(w.starts).toEqual([[MEET, "meet", PERSON, { id: invite.id, joinUrl: MEET }]]);
+    // Контейнер получит пропуск этого приглашения, а не общий токен агента (T165).
+    expect(w.starts).toEqual([
+      [MEET, "meet", PERSON, { id: invite.id, joinUrl: MEET, grantToken: invite.grant_token }],
+    ]);
     expect(w.server.requestsTo("/meeting-invite")[0]?.onBehalfOf).toBeNull();
     expect(w.server.inviteState(invite.id)).toEqual({ taken: true, used: false });
   });
@@ -79,6 +88,8 @@ describe("inviteTriggerFor", () => {
     const [claim] = w.server.requestsTo("/meeting-claim");
     expect(claim?.status).toBe(200);
     expect(claim?.onBehalfOf).toBe(String(PERSON));
+    // Заявка и отказ — по пропуску приглашения: общим токеном строгий двойник ответил бы 403.
+    expect(claim?.authorization).toBe(`Bearer ${invite.grant_token}`);
     expect(claim?.body).toMatchObject({
       identity_kind: "manual",
       invite_id: invite.id,
@@ -86,8 +97,9 @@ describe("inviteTriggerFor", () => {
       agent_version: "scriba-3",
     });
     expect(w.server.inviteState(invite.id).used).toBe(true);
-    const [recipient, notice] = w.notices[0] ?? [];
+    const [recipient, notice, noticeToken] = w.notices[0] ?? [];
     expect(recipient).toBe(PERSON);
+    expect(noticeToken).toBe(invite.grant_token);
     expect(notice).toMatchObject({ kind: "join_failed" });
     expect(notice && "meetingId" in notice ? notice.meetingId : "").toMatch(/^m-scriba:/u);
     expect(notice?.detail).toMatch(/Kontur\.Talk/u);

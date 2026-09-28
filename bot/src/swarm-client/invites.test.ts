@@ -146,6 +146,7 @@ describe("parseTakenInvites", () => {
     ["без площадки", { ...valid, platform: "" }, /platform/u],
     ["без created_at", { ...valid, created_at: undefined }, /created_at/u],
     ["без expires_at", { ...valid, expires_at: 7 }, /expires_at/u],
+    ["пропуск не строка", { ...valid, grant_token: 7 }, /grant_token/u],
     ["не объект", "inv-2", /не объект/u],
   ])("%s — кривое откладывается с причиной, соседи проходят", (_name, broken, reason) => {
     const parsed = parseTakenInvites({ ok: true, invites: [broken, valid] });
