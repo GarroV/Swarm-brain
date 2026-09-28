@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MUTE_AUDIO_ARG, chromiumLaunchOptions } from "./browser.ts";
+import { MUTE_AUDIO_ARG, NO_SANDBOX_ARG, chromiumLaunchOptions } from "./browser.ts";
 
 describe("chromiumLaunchOptions", () => {
   const options = chromiumLaunchOptions();
@@ -38,5 +38,14 @@ describe("chromiumLaunchOptions", () => {
 
   it("попытка передать --mute-audio снаружи — громкий отказ, а не тихая тишина в записи", () => {
     expect(() => chromiumLaunchOptions({ extraArgs: [MUTE_AUDIO_ARG] })).toThrow(/mute-audio/);
+  });
+
+  it("песочница Chromium включена: без явного флага Playwright сам добавил бы --no-sandbox", () => {
+    expect(options.chromiumSandbox).toBe(true);
+    expect(options.args).not.toContain(NO_SANDBOX_ARG);
+  });
+
+  it("выключить песочницу снаружи нельзя — громкий отказ", () => {
+    expect(() => chromiumLaunchOptions({ extraArgs: [NO_SANDBOX_ARG] })).toThrow(/no-sandbox/);
   });
 });

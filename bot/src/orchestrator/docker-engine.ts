@@ -53,6 +53,14 @@ export class DockerodeEngine implements ContainerEngine {
         Init: true,
         AutoRemove: true,
         ShmSize: spec.shmBytes,
+        Memory: spec.limits.memoryBytes,
+        // Равен Memory: своп сверх потолка не даётся, иначе потолок только замедлит хост.
+        MemorySwap: spec.limits.memoryBytes,
+        NanoCpus: spec.limits.nanoCpus,
+        PidsLimit: spec.limits.pids,
+        // Песочнице Chromium нужны свои пространства имён (профиль разрешает ровно их);
+        // повысить права через setuid-бинарник процесс внутри не сможет.
+        SecurityOpt: [`seccomp=${spec.seccompProfile}`, "no-new-privileges:true"],
         Mounts: [
           { Type: "volume", Source: spec.volume.name, Target: spec.volume.target },
           {

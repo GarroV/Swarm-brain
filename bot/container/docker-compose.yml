@@ -16,17 +16,28 @@ x-scriba: &scriba
   build:
     context: ..
     dockerfile: container/Dockerfile
-  image: scriba-container:dev
+  # Тег образа — свой у каждого стенда: общий тег пересобрал бы образ соседу.
+  image: ${SCRIBA_CONTAINER_IMAGE:-scriba-container:dev}
   # tini первым процессом: иначе `sleep`/`node` в роли PID 1 игнорируют SIGTERM, и
   # остановка стенда каждый раз ждёт таймаут и добивает контейнер по SIGKILL.
   init: true
   # /dev/shm по умолчанию 64 МБ — Chromium на этом падает посреди встречи.
   shm_size: 1gb
+  # Те же границы, что ставит оркестратор (src/container/isolation.ts): песочница Chromium
+  # живёт под своим профилем seccomp, без него браузер не стартует; потолки ресурсов — чтобы
+  # смоук мерил встречу в тех же рамках, что и прод.
+  security_opt:
+    - seccomp=../src/container/seccomp-chromium.json
+    - no-new-privileges:true
+  mem_limit: 2g
+  memswap_limit: 2g
+  cpus: 2
+  pids_limit: 1024
 
 services:
   scriba:
     <<: *scriba
-    container_name: scriba-container-solo
+    container_name: ${SCRIBA_CONTAINER_PREFIX:-scriba-container}-solo
     volumes:
       - recordings:/recordings
 
@@ -35,14 +46,14 @@ services:
   # контейнера, а не на том, что кто-то выбрал разные имена.
   scriba-a:
     <<: *scriba
-    container_name: scriba-container-a
+    container_name: ${SCRIBA_CONTAINER_PREFIX:-scriba-container}-a
     profiles: ["pair"]
     volumes:
       - recordings-a:/recordings
 
   scriba-b:
     <<: *scriba
-    container_name: scriba-container-b
+    container_name: ${SCRIBA_CONTAINER_PREFIX:-scriba-container}-b
     profiles: ["pair"]
     volumes:
       - recordings-b:/recordings

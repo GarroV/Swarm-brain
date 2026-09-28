@@ -907,7 +907,8 @@ Heartbeat шлётся изнутри контейнера; финальный `
 |---|---|
 | Смерть контейнера | Ненулевой код выхода = смерть. Оркестратор берёт `meeting_id` из строки `scriba-state {...}` журнала контейнера и шлёт `container_died` от имени того же человека. Heartbeat замолкает на `recording:true` — сам по себе сигнал |
 | Смерть оркестратора | Поводок (`lease.ts`): оркестратор каждые 5 с переписывает `{"seq":N}` в каталоге, смонтированном в контейнер только на чтение; `seq` стоит больше 90 с по часам контейнера → контейнер сам штатно заканчивает встречу и отдаёт запись. Поднятый заново оркестратор подхватывает живые контейнеры своего `scriba.project` и убирает остановленные |
-| Очередь выгрузки | На томе `<project>-recordings`, своя на каждый запуск: `/recordings/queue/<person>/<runId>`; очереди, чей `alive` старше 5 мин, переносятся в очередь следующего запуска атомарным rename (`run-directories.ts`) |
+| Очередь выгрузки | На томе `<project>-recordings-<person>` — своём у каждого человека, чужие очереди контейнеру не видны; внутри своя на каждый запуск: `/recordings/queue/<person>/<runId>`; очереди, чей `alive` старше 5 мин, переносятся в очередь следующего запуска атомарным rename (`run-directories.ts`) |
+| Изоляция контейнера | Контейнер встречи открывает чужую страницу звонка и считается недоверенным (`bot/src/container/isolation.ts`). Потолок одновременных встреч `SCRIBA_MAX_MEETINGS` (4): сверх него `startForMeeting` отказывает до подъёма контейнера, триггер доносит отказ человеку (`start_failed`); запуски в процессе создания бронируют место, так что приглашение и календарь разом потолок не проскакивают. Потолки на контейнер: память 2 ГБ без свопа, 2 ядра, 1024 процесса/потока. Chromium — с песочницей (`chromiumSandbox: true`, `--no-sandbox` снаружи запрещён) под профилем seccomp `container/seccomp-chromium.json` (профиль Docker по умолчанию + `clone`/`setns`/`unshare` для пространств имён песочницы), `no-new-privileges`. Смоук записи проверяет песочницу по `chrome://sandbox` |
 | Нотисы | `notice-client.ts` → `POST /meeting-notice`: `meeting_id` или `meeting_key`, без `attempt`; 409 = пора уходить; прочие отказы пишутся в журнал целиком (`JournaledNotifier`) |
 | Метки контейнера | `scriba.project`, `scriba.run`, `scriba.on-behalf-of`, `scriba.platform`, `scriba.invite` или `scriba.calendar` (основание встречи); имя `<project>-meeting-<runId>`. Чужие метки оркестратор не трогает |
 | Живая проверка | `bot/src/orchestrator/smoke-orchestrator.ts` против настоящего Docker и `fake-swarm` (сценарии full, two, death, stop, door, orphans, adopt; настоящий SIGKILL; ручной запуск — invite, kontur, race, через настоящую службу дочерним процессом) |
@@ -927,7 +928,8 @@ Heartbeat шлётся изнутри контейнера; финальный `
 поводка на хосте); необязательные `SCRIBA_PROJECT` (по умолчанию `scriba`), `SCRIBA_BOT_VERSION`,
 `SCRIBA_INVITE_POLL_MS` (5000), `SCRIBA_CALENDAR_POLL_MS` (60000), `SCRIBA_CONTAINER_SWARM_URL` (адрес функций изнутри контейнера, по
 умолчанию `SCRIBA_SWARM_URL`), `SCRIBA_CONTAINER_ENV` (JSON добавочного окружения контейнера — ручки
-смоука). Запуск: `node bot/src/orchestrator/orchestrator-main.ts`.
+смоука), `SCRIBA_MAX_MEETINGS` (4), `SCRIBA_CONTAINER_MEMORY_MB` (2048), `SCRIBA_CONTAINER_CPUS` (2),
+`SCRIBA_CONTAINER_PIDS` (1024) — потолки из строки «Изоляция контейнера»; ноль или мусор — отказ на старте. Запуск: `node bot/src/orchestrator/orchestrator-main.ts`.
 
 **Смерть бота видна серверу.** Сторож `checkRecorderHealth` (swarm-bot, cron `meetings_watchdog` /
 `granola_poll`) читает и `allowed_users.recorder_last_*`, и `meetings.agent_last_*`: решение и адресат —

@@ -12,9 +12,16 @@
  */
 
 export const MUTE_AUDIO_ARG = "--mute-audio";
+export const NO_SANDBOX_ARG = "--no-sandbox";
 
 export interface ChromiumLaunchOptions {
   readonly headless: false;
+  /**
+   * Песочница включена всегда. Без явного `true` Playwright сам добавляет `--no-sandbox`
+   * (проверено по исходнику playwright-core 1.63). Контейнеру для неё нужен профиль
+   * seccomp из `isolation.ts`: без него Chromium не стартует — громко, а не без песочницы.
+   */
+  readonly chromiumSandbox: true;
   readonly ignoreDefaultArgs: readonly string[];
   readonly args: readonly string[];
 }
@@ -22,11 +29,6 @@ export interface ChromiumLaunchOptions {
 export interface ChromiumLaunchInput {
   readonly lang?: string;
   readonly extraArgs?: readonly string[];
-  /**
-   * Песочница Chromium требует user namespaces, которых в контейнере под чужим seccomp может
-   * не быть; контейнер эфемерный и живёт одну встречу, поэтому по умолчанию она выключена.
-   */
-  readonly sandbox?: boolean;
 }
 
 export function chromiumLaunchOptions(input: ChromiumLaunchInput = {}): ChromiumLaunchOptions {
@@ -37,13 +39,19 @@ export function chromiumLaunchOptions(input: ChromiumLaunchInput = {}): Chromium
         "этого не заметит — аргумент запрещён явно",
     );
   }
+  if (extra.includes(NO_SANDBOX_ARG)) {
+    throw new Error(
+      `${NO_SANDBOX_ARG} передан снаружи: браузер открывает чужую страницу звонка и без ` +
+        "песочницы не работает — аргумент запрещён явно",
+    );
+  }
 
   return {
     headless: false,
+    chromiumSandbox: true,
     // Страховка от возможного будущего дефолта Playwright (см. шапку файла).
     ignoreDefaultArgs: [MUTE_AUDIO_ARG],
     args: [
-      ...(input.sandbox === true ? [] : ["--no-sandbox"]),
       `--lang=${input.lang ?? "en-US"}`,
       // Жать «играть» в звонке некому: бот заходит без человека.
       "--autoplay-policy=no-user-gesture-required",

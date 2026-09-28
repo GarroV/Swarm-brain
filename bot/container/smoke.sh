@@ -23,12 +23,16 @@
 #   bot/container/smoke.sh
 set -uo pipefail
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
+# `pwd -W` — путь Windows в Git Bash: с MSYS_NO_PATHCONV=1 docker.exe не понял бы /c/...
+HERE="$(cd "$(dirname "$0")" && (pwd -W 2>/dev/null || pwd))"
 PROJECT="${COMPOSE_PROJECT_NAME:-scriba-container}"
 SERVICE="${SCRIBA_SMOKE_SERVICE:-scriba}"
-CONTAINER="${SCRIBA_SMOKE_CONTAINER:-scriba-container-solo}"
-PAIR_A="${SCRIBA_SMOKE_PAIR_A:-scriba-container-a}"
-PAIR_B="${SCRIBA_SMOKE_PAIR_B:-scriba-container-b}"
+# Префикс имён контейнеров — тот же, что в docker-compose.yml: стенд параллельной копии
+# (например, живой стенд scriba-live) не перехватывает чужие контейнеры по имени.
+PREFIX="${SCRIBA_CONTAINER_PREFIX:-scriba-container}"
+CONTAINER="${SCRIBA_SMOKE_CONTAINER:-$PREFIX-solo}"
+PAIR_A="${SCRIBA_SMOKE_PAIR_A:-$PREFIX-a}"
+PAIR_B="${SCRIBA_SMOKE_PAIR_B:-$PREFIX-b}"
 compose() { docker compose -p "$PROJECT" -f "$HERE/docker-compose.yml" "$@"; }
 
 failures=0
