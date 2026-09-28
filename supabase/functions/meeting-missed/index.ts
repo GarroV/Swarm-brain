@@ -13,7 +13,8 @@
 //          checked=false — сегодня календарь человека не снят (Google не ответил на всех снимках дня, снимка
 //          ещё не было) или сверка упала; показано записанное. snapshot_at — время последнего снимка.
 //   POST { miss_id } → 201/200 { invite } — как POST /meeting-invites (swarm-api/meeting-invites.ts);
-//          404 not_found · 409 cannot_invite / meeting_over / autojoin_off · 400/429 — правила приглашений.
+//          404 not_found · 409 cannot_invite / meeting_over / autojoin_off · 400/429 и 409 already_invited
+//          (коллега уже позвал бота в эту комнату) — правила приглашений.
 //   401 не токен · 403 не токен рекордера · 405 не GET/POST · 500 сбой базы.
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
