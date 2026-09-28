@@ -40,11 +40,13 @@ export function MeetingsDesk() {
   const [f, setF] = useState<MeetingsFilterState>(() => ({ ...loadSavedFilters(), status: "any" }));
 
   useEffect(() => {
-    fetchMeetings().then(setMeetings).catch((e) => { console.error("[MeetingsDesk] meetings", e); setFailed(true); setMeetings([]); });
-    fetchAgentMeetings("awaiting_review").then(setDrafts).catch((e) => console.warn("[MeetingsDesk] drafts", e));
     fetchConfig().then((c) => setMarkets(c.allowed_markets ?? [])).catch(() => setMarkets([]));
   }, []);
+  // Встречи и черновики перечитываются вместе с задачами: панель вычитки бампает tasksVersion
+  // после публикации и удаления, и без этого черновик висел в списке до перезагрузки.
   useEffect(() => {
+    fetchMeetings().then(setMeetings).catch((e) => { console.error("[MeetingsDesk] meetings", e); setFailed(true); setMeetings([]); });
+    fetchAgentMeetings("awaiting_review").then(setDrafts).catch((e) => console.warn("[MeetingsDesk] drafts", e));
     fetchTasks().then(setTasks).catch((e) => console.warn("[MeetingsDesk] tasks", e));
   }, [tasksVersion]);
 
