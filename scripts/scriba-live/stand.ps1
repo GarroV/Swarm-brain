@@ -121,7 +121,7 @@ function Stand-Up {
   Say 'Supabase: конфиг стенда и миграции ветки'
   Write-SupabaseWorkdir
   Invoke-Native 'supabase start' { supabase start --workdir $Sb -x $Exclude }
-  Invoke-Native 'supabase migration up' { supabase migration up --local --workdir $Sb }
+  Invoke-Native 'supabase migration up' { supabase migration up --local --include-all --workdir $Sb }
 
   $secrets = Get-Secrets
   $stand = [ordered]@{}
