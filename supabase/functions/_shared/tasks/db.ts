@@ -1,7 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Task, TaskInput } from "./types.ts";
-import { completionPatch, hidesClosedByDefault, isClosedStatus } from "./statuses.ts";
-import { buildRecurPatch, todayInTz, type RecurRow } from "./recurrence.ts";
+import {
+  completionPatch,
+  hidesClosedByDefault,
+  isClosedStatus,
+  shouldCascadeClose,
+} from "./statuses.ts";
+import { buildRecurPatch, type RecurRow, todayInTz } from "./recurrence.ts";
+import { defaultDueDate } from "./due.ts";
 import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
 
 const supabase = createClient(
@@ -9,15 +15,24 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-export async function createTask(input: TaskInput, groupId?: string): Promise<Task> {
+export async function createTask(
+  input: TaskInput,
+  groupId?: string,
+): Promise<Task> {
   const { data, error } = await supabase.from("tasks").insert({
     title: input.title,
     description: input.description ?? null,
     assignees: input.assignees ?? [],
     assignee_telegram_ids: input.assignee_telegram_ids ?? [],
-    due_date: input.due_date ?? null,
+    // Срок обязателен у КАЖДОЙ задачи, откуда бы она ни пришла — веб, бот, MCP, доска
+    // (решение владельца 21.09.2026: «по дефолту дедлайн +1 день от времени добавления»).
+    // Значение ставится здесь, в единственной точке создания, а не в трёх клиентах: копии
+    // одного правила в разных клиентах у нас уже расходились (линза задач, #440).
+    due_date: input.due_date ?? defaultDueDate(),
     remind_date: input.remind_date ?? null,
-    remind_set_by: input.remind_date ? (input.remind_set_by ?? input.created_by_telegram_id ?? null) : null,
+    remind_set_by: input.remind_date
+      ? (input.remind_set_by ?? input.created_by_telegram_id ?? null)
+      : null,
     tags: input.tags ?? [],
     country: input.country ?? null,
     task_role: input.task_role ?? null,
@@ -25,7 +40,9 @@ export async function createTask(input: TaskInput, groupId?: string): Promise<Ta
     source: input.source ?? "manual",
     status: input.status ?? "open",
     // Задача может родиться уже закрытой (импорт, MCP) — тогда дата закрытия ставится сразу.
-    completed_at: isClosedStatus(input.status) ? new Date().toISOString() : null,
+    completed_at: isClosedStatus(input.status)
+      ? new Date().toISOString()
+      : null,
     meeting_id: input.meeting_id ?? null,
     group_id: groupId ?? input.group_id ?? null,
     confirmed: input.confirmed ?? false,
@@ -43,13 +60,19 @@ export async function createTask(input: TaskInput, groupId?: string): Promise<Ta
     tree_y: input.tree_y ?? null,
     recur_freq: input.recur_freq ?? null,
     recur_anchor_dom: input.recur_anchor_dom ?? null,
+    // Пустой массив, а не null: колонка объявлена not null, и «ссылок нет» — это пустой
+    // список, по которому фронт сразу рисует поле, не проверяя на null.
+    links: input.links ?? [],
   }).select().single();
   if (error) throw new Error(error.message);
   return data as Task;
 }
 
 export async function getTask(id: string): Promise<Task | null> {
-  const { data } = await supabase.from("tasks").select("*").eq("id", id).maybeSingle();
+  // Архивная задача для приложения не существует — ровно как удалённая до 21.09.2026 (issue #427).
+  const { data } = await supabase.from("tasks").select("*").eq("id", id)
+    .is("archived_at", null)
+    .maybeSingle();
   return data as Task | null;
 }
 
@@ -68,11 +91,11 @@ export async function listTasksWithTotal(filters: {
   createdBy?: number;
   dueToday?: boolean;
   // Модуль задач (Рой):
-  viewerId?: number;        // для visibility приватных задач
-  isAdmin?: boolean;        // админ видит все приватные
+  viewerId?: number; // для visibility приватных задач
+  isAdmin?: boolean; // админ видит все приватные
   sprintId?: string;
-  tags?: string[];          // ANY-совпадение (overlaps)
-  labelIds?: string[];      // ANY-совпадение (overlaps по label_ids)
+  tags?: string[]; // ANY-совпадение (overlaps)
+  labelIds?: string[]; // ANY-совпадение (overlaps по label_ids)
   projectId?: string;
   startDateFrom?: string;
   startDateTo?: string;
@@ -82,6 +105,7 @@ export async function listTasksWithTotal(filters: {
   let q = supabase
     .from("tasks")
     .select(filters.columns ?? "*", { count: "exact" })
+    .is("archived_at", null)
     .order("due_date", { ascending: true, nullsFirst: false });
 
   // Видимость приватных задач: приватная видна только владельцу (админ — все).
@@ -97,15 +121,23 @@ export async function listTasksWithTotal(filters: {
   if (filters.confirmed !== undefined) q = q.eq("confirmed", filters.confirmed);
   // Правило «закрытые прячем» живёт в statuses.ts чистой функцией (issue #304): здесь оно
   // накладывалось ДО eq("status", …), и явный запрос `status: "done"` давал пустое пересечение.
-  if (hidesClosedByDefault(filters)) q = q.not("status", "in", '("done","cancelled","draft")');
+  if (hidesClosedByDefault(filters)) {
+    q = q.not("status", "in", '("done","cancelled","draft")');
+  }
 
   if (filters.status) q = q.eq("status", filters.status);
   if (filters.country) q = q.ilike("country", `%${filters.country}%`);
-  if (filters.createdBy !== undefined) q = q.eq("created_by_telegram_id", filters.createdBy);
+  if (filters.createdBy !== undefined) {
+    q = q.eq("created_by_telegram_id", filters.createdBy);
+  }
   if (filters.sprintId) q = q.eq("sprint_id", filters.sprintId);
   if (filters.projectId) q = q.eq("project_id", filters.projectId);
-  if (filters.tags && filters.tags.length > 0) q = q.overlaps("tags", filters.tags);
-  if (filters.labelIds && filters.labelIds.length > 0) q = q.overlaps("label_ids", filters.labelIds);
+  if (filters.tags && filters.tags.length > 0) {
+    q = q.overlaps("tags", filters.tags);
+  }
+  if (filters.labelIds && filters.labelIds.length > 0) {
+    q = q.overlaps("label_ids", filters.labelIds);
+  }
   if (filters.startDateFrom) q = q.gte("start_date", filters.startDateFrom);
   if (filters.startDateTo) q = q.lte("start_date", filters.startDateTo);
   if (filters.dueDateFrom) q = q.gte("due_date", filters.dueDateFrom);
@@ -122,7 +154,8 @@ export async function listTasksWithTotal(filters: {
 
   if (filters.period === "week") {
     const today = new Date().toISOString().split("T")[0];
-    const end = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
+    const end =
+      new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
     q = q.gte("due_date", today).lte("due_date", end);
   }
 
@@ -143,7 +176,9 @@ export async function listTasksWithTotal(filters: {
 
   if (filters.assigneeText) {
     const lower = filters.assigneeText.toLowerCase();
-    tasks = tasks.filter(t => t.assignees?.some(a => a.toLowerCase().includes(lower)));
+    tasks = tasks.filter((t) =>
+      t.assignees?.some((a) => a.toLowerCase().includes(lower))
+    );
     total = null;
   }
 
@@ -177,7 +212,11 @@ export interface RecurResult {
 
 export async function updateTask(
   id: string,
-  fields: Partial<TaskInput> & { status?: string; url?: string; due_date?: string | null },
+  fields: Partial<TaskInput> & {
+    status?: string;
+    url?: string;
+    due_date?: string | null;
+  },
   opts: { actor?: string; actorTelegramId?: number } = {},
 ): Promise<RecurResult | null> {
   let patch: Record<string, unknown> = { ...fields };
@@ -212,16 +251,28 @@ export async function updateTask(
         // задачу одним запросом (MCP умеет), и считать надо от нового графика, а не от прежнего.
         const effective: RecurRow = {
           status: (fields.status as string) ?? row.status,
-          recur_freq: fields.recur_freq !== undefined ? fields.recur_freq ?? null : row.recur_freq,
-          recur_anchor_dom: fields.recur_anchor_dom !== undefined ? fields.recur_anchor_dom ?? null : row.recur_anchor_dom,
-          due_date: fields.due_date !== undefined ? fields.due_date ?? null : row.due_date,
-          start_date: fields.start_date !== undefined ? fields.start_date ?? null : row.start_date,
-          remind_date: fields.remind_date !== undefined ? fields.remind_date ?? null : row.remind_date,
+          recur_freq: fields.recur_freq !== undefined
+            ? fields.recur_freq ?? null
+            : row.recur_freq,
+          recur_anchor_dom: fields.recur_anchor_dom !== undefined
+            ? fields.recur_anchor_dom ?? null
+            : row.recur_anchor_dom,
+          due_date: fields.due_date !== undefined
+            ? fields.due_date ?? null
+            : row.due_date,
+          start_date: fields.start_date !== undefined
+            ? fields.start_date ?? null
+            : row.start_date,
+          remind_date: fields.remind_date !== undefined
+            ? fields.remind_date ?? null
+            : row.remind_date,
         };
         const recurPatch = buildRecurPatch(effective, todayInTz());
         if (recurPatch) {
           patch = { ...patch, ...recurPatch }; // у переката приоритет над «done» из запроса
-          result = { recurred: { from: effective.due_date!, to: recurPatch.due_date } };
+          result = {
+            recurred: { from: effective.due_date!, to: recurPatch.due_date },
+          };
         }
       }
     }
@@ -230,7 +281,14 @@ export async function updateTask(
   // Дата закрытия считается от ЭФФЕКТИВНОГО статуса — то есть уже после переката, который
   // возвращает задачу в «open»: перекатившаяся задача закрытой не считается.
   const nextStatus = patch.status as string | undefined;
-  patch = { ...patch, ...completionPatch(nextStatus, prev?.completed_at, new Date().toISOString()) };
+  patch = {
+    ...patch,
+    ...completionPatch(
+      nextStatus,
+      prev?.completed_at,
+      new Date().toISOString(),
+    ),
+  };
 
   await supabase.from("tasks")
     .update({ ...patch, updated_at: new Date().toISOString() })
@@ -245,7 +303,8 @@ export async function updateTask(
       changed_by: opts.actor ?? "recurring",
       old_status: fields.status ?? null,
       new_status: "open",
-      note: `цикл закрыт, следующий срок ${result.recurred.to} (было ${result.recurred.from})`,
+      note:
+        `цикл закрыт, следующий срок ${result.recurred.to} (было ${result.recurred.from})`,
     });
   } else {
     // Журнал изменений: статус, срок, исполнитель, проект, спринт, приоритет — по строке на
@@ -265,14 +324,44 @@ export async function updateTask(
       const { error } = await supabase.from("task_history").insert(rows);
       // Журнал не должен ронять апдейт задачи, но и молчать нельзя: пустой отчёт через месяц
       // неотличим от «никто ничего не двигал».
-      if (error) console.error(`task_history insert failed for ${id}:`, error.message);
+      if (error) {
+        console.error(`task_history insert failed for ${id}:`, error.message);
+      }
+    }
+  }
+
+  // Каскад закрытия на подзадачи (#478). Через ту же функцию: у каждой подзадачи свой журнал и
+  // своя дата закрытия. Вложенность — один уровень, так что рекурсия неглубокая.
+  if (prev && shouldCascadeClose(prev.status, nextStatus, !!result)) {
+    const { data: kids, error } = await supabase.from("tasks")
+      .select("id, status")
+      .eq("parent_id", id)
+      .is("archived_at", null);
+    if (error) {
+      console.error(`subtask cascade lookup failed for ${id}:`, error.message);
+    }
+    for (const k of (kids ?? []) as Array<{ id: string; status: string }>) {
+      if (isClosedStatus(k.status)) continue;
+      await updateTask(k.id, { status: nextStatus }, opts);
     }
   }
 
   return result;
 }
 
-export async function deleteTask(id: string): Promise<void> {
-  await supabase.from("task_history").delete().eq("task_id", id);
-  await supabase.from("tasks").delete().eq("id", id);
+// АРХИВИРУЕТ задачу (решение владельца 21.09.2026, issue #427). Для человека поведение
+// прежнее: задача исчезает из списков. Разница — строка остаётся в базе.
+//
+// Историю больше НЕ стираем. Раньше `deleteTask` сносил `task_history` первым делом, и журнал
+// пропадал ровно в том случае, ради которого заводился: «куда делась задача и кто её убрал».
+export async function deleteTask(
+  id: string,
+  archivedBy?: number,
+): Promise<void> {
+  await supabase.from("tasks")
+    .update({
+      archived_at: new Date().toISOString(),
+      archived_by: archivedBy ?? null,
+    })
+    .eq("id", id).is("archived_at", null);
 }

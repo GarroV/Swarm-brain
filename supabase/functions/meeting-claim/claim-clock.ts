@@ -13,7 +13,7 @@
 // Заявиться можно и много позже встречи (досылка из карантина рекордера): тогда потолок велик — это
 // ограничение сверху, а не проверка длины записи.
 
-import { MAX_RECORDED_SECONDS } from "../_shared/claim-lease.ts";
+import { MAX_RECORDED_SECONDS } from "../_shared/meeting-lease.ts";
 
 /** Запас к прошедшему времени — тот же, что у удара бота. */
 export const CLAIM_CLOCK_GROWTH_FACTOR = 1.1;

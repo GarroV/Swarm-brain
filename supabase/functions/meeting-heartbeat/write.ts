@@ -1,6 +1,6 @@
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
 import { assertGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
-import { CLAIM_LEASE_TTL_SEC, claimLeaseUntil, MAX_RECORDED_SECONDS } from "../_shared/claim-lease.ts";
+import { CLAIM_LEASE_TTL_SEC, claimLeaseUntil, MAX_RECORDED_SECONDS } from "../_shared/meeting-lease.ts";
 
 // Куда именно ложится heartbeat. Вынесено чистой функцией не ради красоты: разница между
 // «рекордер человека жив» и «служебный агент жив», а для агента ещё и «по какой встрече и его ли
@@ -80,7 +80,7 @@ export class HeartbeatRejected extends Error {
   }
 }
 
-/** Потолок записанных секунд в ударе — общий с claim (_shared/claim-lease.ts). */
+/** Потолок записанных секунд в ударе — общий с claim (_shared/meeting-lease.ts). */
 export { MAX_RECORDED_SECONDS };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

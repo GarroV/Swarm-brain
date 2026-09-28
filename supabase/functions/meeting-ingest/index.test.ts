@@ -60,6 +60,9 @@ const stubFetch = ((input: Request | URL | string, init?: RequestInit) => {
   throw new Error(`смоук не ждал запроса наружу: ${url.href}`);
 }) as typeof fetch;
 
+// Прежние значения запоминаются и возвращаются, а не стираются: тесты базы (*.db.test.ts) идут в
+// том же процессе и берут настоящие доступы контура из этих же переменных (scripts/with-local-db).
+const envBefore = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"].map((k) => [k, Deno.env.get(k)] as const);
 Deno.env.set("SUPABASE_URL", "https://stub.supabase.invalid");
 Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "stub-service-role-key");
 type Handler = (req: Request) => Response | Promise<Response>;
@@ -73,8 +76,7 @@ denoAny.serve = (h: Handler) => {
 };
 await import("./index.ts");
 denoAny.serve = realServe;
-Deno.env.delete("SUPABASE_URL");
-Deno.env.delete("SUPABASE_SERVICE_ROLE_KEY");
+for (const [k, v] of envBefore) v === undefined ? Deno.env.delete(k) : Deno.env.set(k, v);
 
 async function call(
   meetingId: string,

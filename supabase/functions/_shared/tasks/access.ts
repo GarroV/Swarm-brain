@@ -22,12 +22,20 @@ export type TaskAccessRow = {
 
 // Приватную задачу видит только владелец или админ; командную — любой в воркспейсе.
 // owner_id = null у приватной задачи (осиротевшая) закрыта для всех, кроме админа: fail-closed.
-export function canViewTask(task: TaskAccessRow, viewerId: number, isAdmin: boolean): boolean {
+export function canViewTask(
+  task: TaskAccessRow,
+  viewerId: number,
+  isAdmin: boolean,
+): boolean {
   return !task.is_private || isAdmin || task.owner_id === viewerId;
 }
 
 // Мутировать приватную задачу может только владелец или админ.
-export function canMutateTask(task: TaskAccessRow, viewerId: number, isAdmin: boolean): boolean {
+export function canMutateTask(
+  task: TaskAccessRow,
+  viewerId: number,
+  isAdmin: boolean,
+): boolean {
   return !task.is_private || isAdmin || task.owner_id === viewerId;
 }
 
@@ -47,7 +55,9 @@ export function taskAccessError(
 ): string | null {
   const notFound = `Задача ${id} не найдена.`;
   if (!task) return notFound;
-  if (viewerGroupId !== undefined && task.group_id !== viewerGroupId) return notFound;
+  if (viewerGroupId !== undefined && task.group_id !== viewerGroupId) {
+    return notFound;
+  }
   if (!canViewTask(task, viewerId, isAdmin)) return notFound;
   return null;
 }

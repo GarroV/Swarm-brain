@@ -1,6 +1,7 @@
 import { supabase } from "../lib/supabase.ts";
+import { removeStorageObject } from "../../_shared/storage-links.ts";
 import { sendMessage, sendInlineMessage, getTelegramFileUrl } from "../lib/telegram.ts";
-import { uploadToStorage, setSession, clearSession, getSession } from "../lib/storage.ts";
+import { uploadToStorage, setSession, clearSession, getSession, registerFeedbackFile, discardOrphanFile } from "../lib/storage.ts";
 import {
   FEEDBACK_CATEGORIES,
   feedbackCategoryLabel,
@@ -64,15 +65,21 @@ async function postToChannel(
   }
 }
 
-/** Скачать фото из Telegram и переложить в swarm_drive → durable public URL. */
+/** Скачать фото из Telegram и переложить в приватный бакет → путь (показ только админу). */
 async function screenshotToStorage(photoFileId: string): Promise<string | undefined> {
   try {
     const tgUrl = await getTelegramFileUrl(photoFileId);
     const res = await fetch(tgUrl);
     if (!res.ok) return undefined;
     const buffer = await res.arrayBuffer();
-    const { url } = await uploadToStorage("feedback.jpg", buffer, "image/jpeg", "feedback");
-    return url ?? undefined;
+    const { path } = await uploadToStorage("feedback.jpg", buffer, "image/jpeg", "feedback");
+    if (!path) return undefined;
+    // Незарегистрированный скрин не отдаст ни один эндпоинт — такой файл только занимает место.
+    if (await registerFeedbackFile(path)) {
+      await discardOrphanFile(path);
+      return undefined;
+    }
+    return path;
   } catch {
     return undefined; // скрин — не критично; фидбек сохраняем и без него
   }
@@ -195,7 +202,7 @@ export async function handleFeedbackPhoto(
 
 /**
  * Retention: удалить давно закрытый фидбек (done/wontfix старше N дней) вместе со
- * скринами в swarm_drive. Незакрытый (new/triaged) НЕ трогаем. Дёргается pg_cron
+ * скринами в приватном бакете. Незакрытый (new/triaged) НЕ трогаем. Дёргается pg_cron
  * через {feedback_retention_cron:true}. Возвращает число удалённых строк.
  */
 const FEEDBACK_RETENTION_DAYS = 90;
@@ -208,15 +215,23 @@ export async function cleanupOldFeedback(): Promise<number> {
     .lt("resolved_at", cutoff);
   if (error || !data?.length) return 0;
 
-  const paths = (data as Array<{ screenshot_url: string | null }>)
-    .map((f) => f.screenshot_url)
-    .filter((u): u is string => Boolean(u))
-    .map((u) => u.split("/swarm_drive/")[1])
-    .filter((p): p is string => Boolean(p));
-  if (paths.length) await supabase.storage.from("swarm_drive").remove(paths);
+  // Путь и бакет — через общий хелпер: скрины переезжают в приватный бакет, а прежний
+  // split("/swarm_drive/") молча дал бы пустой список (файл цел, чистка «прошла»).
+  const rows = data as Array<{ id: string; screenshot_url: string | null }>;
+  const stuck: string[] = [];
+  for (const f of rows) {
+    if (!f.screenshot_url) continue;
+    const res = await removeStorageObject(supabase, f.screenshot_url);
+    if (res.status === "failed") {
+      stuck.push(f.id);
+      console.error(`[feedback cleanup] файл не удалён (${f.id}): ${res.error}`);
+    }
+  }
 
-  const ids = (data as Array<{ id: string }>).map((f) => f.id);
-  await supabase.from("feedback").delete().in("id", ids);
+  // Строку удаляем только там, где файла уже нет. Иначе теряется единственная ссылка
+  // на объект: скрин остаётся в хранилище навсегда и без владельца.
+  const ids = rows.filter((f) => !stuck.includes(f.id)).map((f) => f.id);
+  if (ids.length) await supabase.from("feedback").delete().in("id", ids);
   return ids.length;
 }
 

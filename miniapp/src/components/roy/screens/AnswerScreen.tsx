@@ -38,10 +38,10 @@ function Loading() {
         <RoyIcon name="spark" size={16} className="text-primary roy-spin" />
         Swarm ищет по базе, встречам и задачам…
       </div>
-      <div className="roy-shim" style={{ height: 86, borderRadius: 16 }} />
+      <div className="roy-shim" style={{ height: 86, borderRadius: 10 }} />
       <div className="space-y-2.5">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="roy-shim" style={{ height: 64, borderRadius: 18 }} />
+          <div key={i} className="roy-shim" style={{ height: 64, borderRadius: 10 }} />
         ))}
       </div>
     </div>
@@ -80,7 +80,7 @@ export function AnswerBody({ query, onFollowup, onOpenRecord }: { query: string;
           {data.answer && (
             <div className="mb-5">
               <SectionLabel>Ответ</SectionLabel>
-              <div className="px-4 py-4" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 16 }}>
+              <div className="px-4 py-4" style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)", borderRadius: 10 }}>
                 <AnswerText text={data.answer} />
               </div>
             </div>

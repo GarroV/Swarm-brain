@@ -46,9 +46,25 @@ export type Task = {
   // из due_date — отдельно не хранятся. recur_anchor_dom помнит исходное число месяца.
   recur_freq: string | null;
   recur_anchor_dom: number | null;
+  /**
+   * Ссылки на материалы задачи: макет, документ, переписка. Отдельным полем, а не строкой в
+   * описании, — чтобы их можно было открыть, не открывая карточку. Списочный GET их не отдаёт.
+   */
+  links?: TaskLink[];
+};
+
+/** Ссылка задачи. Схема и проверки — `_shared/tasks/links.ts` (только http/https). */
+export type TaskLink = {
+  title: string | null;
+  url: string;
 };
 
 export type SprintStatus = "planned" | "active" | "completed";
+
+// Одна таблица под две сущности: `board_tab` — вкладка доски «Проекты», `space` — пространство
+// раздела «Спринты». Разведены 21.09.2026 (issue #423): пространство, показанное вкладкой в
+// проектах, оставило раздел пустым у всех пользователей.
+export type SprintKind = "board_tab" | "space";
 
 export type Sprint = {
   id: string;
@@ -57,6 +73,8 @@ export type Sprint = {
   start_date: string;
   end_date: string;
   status: SprintStatus;
+  // Необязательное: старый ответ API (до раскатки функций) поля не содержит — читаем как board_tab.
+  kind?: SprintKind;
   created_at: string;
 };
 
@@ -65,6 +83,7 @@ export type Sprint = {
 // Спринт как период работы — `SprintCycle` (таблица `sprint_cycles`, роуты `/sprint-cycles`).
 export type CycleStatus = "draft" | "active" | "accepted";
 
+/** Зеркало `_shared/tasks/sprint-stats.ts`: считает сервер на приёмке, веб только показывает. */
 export type SprintStats = {
   plan: number;
   planDone: number;
@@ -73,6 +92,17 @@ export type SprintStats = {
   extraDone: number;
   /** Незакрытые на момент приёмки — они уезжают в следующий спринт. */
   carried: number;
+  /** Из них помечены человеком «к переносу» (с причиной). */
+  carried_manual: number;
+  /** Из них уехали сами: спринт кончился, а задача нет. */
+  carried_auto: number;
+  /** Отменённые — отдельной цифрой, вне процента (решение владельца 18.09.2026). */
+  cancelled: number;
+  /** Упоминания удалённых задач: в составе видны, в счёте не участвуют. */
+  removed: number;
+  check_ok: number;
+  check_risk: number;
+  check_problem: number;
   unassigned: number;
   byPerson: { name: string; plan: number; done: number }[];
   byProject: { name: string | null; total: number; done: number }[];
@@ -85,6 +115,13 @@ export type SprintCycle = {
   name: string;
   start_date: string;
   end_date: string;
+  /**
+   * Пространство спринта — вкладка доски (`Sprint.id`). null = «Без вкладки»: спринты,
+   * заведённые до пространств. Живой спринт в пространстве ровно один — это держит база.
+   */
+  tab_id: string | null;
+  /** День сверки в середине спринта; null — ритуал не назначен. */
+  check_date: string | null;
   status: CycleStatus;
   created_by: string | null;
   started_at: string | null;
@@ -95,6 +132,9 @@ export type SprintCycle = {
   stats: SprintStats | null;
   created_at: string;
 };
+
+/** Отметка сверки: как идут дела у задачи в середине спринта. */
+export type CheckStatus = "ok" | "risk" | "problem";
 
 /** Задача в составе спринта: до приёмки — живая, после — из клона (`frozen`). */
 export type SprintCycleItem = {
@@ -108,7 +148,52 @@ export type SprintCycleItem = {
   project_id: string | null;
   project: string | null;
   completed_at: string | null;
+  due_date: string | null;
   frozen: boolean;
+  check_status: CheckStatus | null;
+  check_note: string | null;
+  check_at: string | null;
+  check_by: string | null;
+  to_carry: boolean;
+  carry_reason: string | null;
+  /** Сколько раз задача уже переезжала: с двух показываем «×N». */
+  carry_count: number;
+  carried_manual: boolean | null;
+  /**
+   * Сколько у задачи комментариев и ссылок. В списке важно ЧИСЛО, а не содержимое: видно,
+   * где шло обсуждение и где лежит материал, не открывая карточку. У скрытой приватной — 0.
+   */
+  comment_count: number;
+  link_count: number;
+  /** Задача удалена: строка осталась упоминанием и в счёт не идёт. */
+  removed: boolean;
+  removed_at: string | null;
+  /**
+   * Задача приватная и смотрящий не владелец: строка видна, содержимого нет. Убрать её совсем
+   * значило бы молча уменьшить состав, и цифры отчёта перестали бы сходиться у разных людей.
+   */
+  hidden: boolean;
+};
+
+/** Событие журнала пространства: кто и что сделал. Пишется не в таблицу — собирается из
+ *  истории задач, комментариев и состава спринтов (`swarm-api/space-journal.ts`). */
+export type JournalKind =
+  | "task_change"
+  | "comment"
+  | "item_added"
+  | "check"
+  | "carry"
+  | "removed"
+  | "cycle_started"
+  | "cycle_accepted";
+
+export type JournalEvent = {
+  at: string;
+  kind: JournalKind;
+  actor: string | null;
+  task_id: string | null;
+  task_title: string | null;
+  text: string;
 };
 
 /** GET /sprint-cycles/:id отдаёт спринт вместе с составом — экран без него бесполезен. */
@@ -129,10 +214,27 @@ export type Project = {
   // доска общая, закрывается точечно глазом). Закрытая строка видна только своему created_by,
   // админского обхода нет; закрытая группа уносит вниз все свои подпроекты.
   is_private: boolean;
+  // Поля инициативы (доска инициатив): у направления и подпроекта одинаковые, смысл разный —
+  // у инициативы это «кто ведёт и до какого числа», у направления обычно пусто.
+  owner_telegram_id: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  // Порядок в списке братьев (один родитель), общий для команды: меньше — выше. Двигается
+  // перетаскиванием на доске; расчёт новой позиции — miniapp/src/lib/projectOrder.ts.
+  // null — строка ещё не размещена, показывается в хвосте по дате создания.
+  position: number | null;
+  // Справка «О проекте» (всплывашка ⓘ в шапке проекта на доске, 27.09.2026). До раскатки
+  // миграции сервер этих полей не отдаёт — поэтому необязательные.
+  goal?: string | null;
+  description?: string | null;
+  links?: ProjectLink[];
   // Отдаётся из GET /projects (агрегаты):
   task_count?: number;
   backlog_count?: number;
 };
+
+/** Ссылка на артефакт проекта. url — только http(s), сервер проверяет. */
+export type ProjectLink = { title: string; url: string };
 
 export type User = {
   telegram_id: number;
@@ -152,6 +254,8 @@ export type Me = {
   markets: string[];
   is_admin: boolean;
   is_demo?: boolean;
+  /** Задник веба (lib/backdrop.ts); null — по умолчанию. Нет поля — сервер до #backdrop. */
+  ui_backdrop?: string | null;
 };
 
 export type AdminWorkspace = {
@@ -268,6 +372,9 @@ export type AgentMeeting = {
   // transcript присутствует только в детальном GET /agent-meetings/:id
   transcript?: { language?: string; model?: string; segments?: TranscriptSegment[] } | null;
   recorders: RecorderRef[] | null;
+  // Совладельцы черновика — участники встречи с аккаунтом SWARM (решение 2026-09-25). Видят и
+  // вычитывают, но не удаляют; при нескольких владельцах публикация только в общую базу.
+  co_owners?: number[] | null;
   // Имена записавших (резолв recorders[].telegram_id → user_profiles на сервере). Уникальные,
   // фолбэк «#id». Отдаётся всеми ответами /agent-meetings (список и деталь).
   recorder_names?: string[] | null;

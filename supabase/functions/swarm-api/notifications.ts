@@ -1,7 +1,11 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
 import { canViewTask } from "../_shared/tasks/access.ts";
-import { commentRecipients, isInvolvedInTask, type NotifiableTask } from "../_shared/tasks/notify.ts";
+import {
+  commentRecipients,
+  isInvolvedInTask,
+  type NotifiableTask,
+} from "../_shared/tasks/notify.ts";
 import { loadSubscribers } from "./task-subscriptions.ts";
 
 // Лента уведомлений (колокольчик) + рассылка события «к твоей задаче написали комментарий».
@@ -46,7 +50,12 @@ async function sendTelegram(chatId: number, text: string): Promise<void> {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true }),
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }),
   });
 }
 
@@ -65,7 +74,8 @@ export type CommentNotificationInput = {
 // а повторить POST пользователь не может — получился бы дубль в ленте задачи).
 export async function notifyTaskComment(
   supabase: SupabaseClient,
-  { task, commentId, content, actorTelegramId, actorName }: CommentNotificationInput,
+  { task, commentId, content, actorTelegramId, actorName }:
+    CommentNotificationInput,
 ): Promise<void> {
   // Подписки — исключения из круга по умолчанию: добавляют непричастных (обычно админа,
   // который ведёт людей и не может обходить карточки руками) и убирают отписавшихся.
@@ -89,7 +99,9 @@ export async function notifyTaskComment(
     ? `\n\n<a href="${MINIAPP_ORIGIN}/?task=${task.id}">Открыть задачу</a>`
     : "";
   const text =
-    `💬 <b>${escapeHtml(actorName)}</b> — комментарий к задаче «${escapeHtml(task.title)}»\n\n` +
+    `💬 <b>${escapeHtml(actorName)}</b> — комментарий к задаче «${
+      escapeHtml(task.title)
+    }»\n\n` +
     escapeHtml(truncate(content, PUSH_PREVIEW_MAX)) + link;
 
   // Пришло ПО ПОДПИСКЕ, а не потому что задача твоя → объясняем, откуда взялось, и куда идти
@@ -97,17 +109,24 @@ export async function notifyTaskComment(
   // понимает почему (решение владельца: подписывать с пометкой).
   const subscribedOnly = new Set(
     subscribers
-      .filter((sub) => sub.state === "subscribed" && !isInvolvedInTask(task, sub.telegram_id))
+      .filter((sub) =>
+        sub.state === "subscribed" && !isInvolvedInTask(task, sub.telegram_id)
+      )
       .map((sub) => sub.telegram_id),
   );
-  const hint = "\n\n<i>Вы получаете это, потому что комментировали задачу. Отписаться — тумблером в её карточке.</i>";
+  const hint =
+    "\n\n<i>Вы получаете это, потому что комментировали задачу. Отписаться — тумблером в её карточке.</i>";
 
   const results = await Promise.allSettled(
-    recipients.map((rid) => sendTelegram(rid, subscribedOnly.has(rid) ? text + hint : text)),
+    recipients.map((rid) =>
+      sendTelegram(rid, subscribedOnly.has(rid) ? text + hint : text)
+    ),
   );
   for (const r of results) {
     // Отписался от бота / заблокировал — норма, не ошибка приложения: в колокольчике уведомление уже лежит.
-    if (r.status === "rejected") console.error("notification push failed:", r.reason);
+    if (r.status === "rejected") {
+      console.error("notification push failed:", r.reason);
+    }
   }
 }
 
@@ -116,7 +135,12 @@ export async function notifyTaskComment(
 /** Ключ строки `app_settings` с объявлением о раскатке. */
 export const DEPLOY_NOTICE_KEY = "deploy_notice";
 
-type DeployNoticeValue = { at?: unknown; until?: unknown; ru?: unknown; en?: unknown };
+type DeployNoticeValue = {
+  at?: unknown;
+  until?: unknown;
+  ru?: unknown;
+  en?: unknown;
+};
 
 /**
  * Объявление «скоро обновление» — едет ПРИЦЕПОМ к ленте уведомлений, которую веб и так
@@ -139,10 +163,14 @@ async function loadDeployNotice(
     return null;
   }
   const v = (data?.value ?? null) as DeployNoticeValue | null;
-  if (!v || typeof v.at !== "string" || typeof v.until !== "string") return null;
+  if (!v || typeof v.at !== "string" || typeof v.until !== "string") {
+    return null;
+  }
 
   const until = new Date(v.until).getTime();
-  if (Number.isNaN(until) || Number.isNaN(new Date(v.at).getTime())) return null;
+  if (Number.isNaN(until) || Number.isNaN(new Date(v.at).getTime())) {
+    return null;
+  }
   if (Date.now() >= until) return null;
 
   return {
@@ -162,12 +190,16 @@ export async function handleNotificationRoutes(
   origin: string,
   resolveNames: (ids: number[]) => Promise<Map<number, string>>,
 ): Promise<Response | null> {
-  if (routePath !== "/notifications" && routePath !== "/notifications/read") return null;
+  if (routePath !== "/notifications" && routePath !== "/notifications/read") {
+    return null;
+  }
 
   // GET /notifications?limit=30 — лента (новые сверху) + счётчик непрочитанных.
   if (routePath === "/notifications" && req.method === "GET") {
     const raw = parseInt(new URL(req.url).searchParams.get("limit") ?? "", 10);
-    const limit = Number.isFinite(raw) ? Math.min(Math.max(raw, 1), MAX_LIMIT) : DEFAULT_LIMIT;
+    const limit = Number.isFinite(raw)
+      ? Math.min(Math.max(raw, 1), MAX_LIMIT)
+      : DEFAULT_LIMIT;
 
     const { data, error } = await supabase
       .from("notifications")
@@ -187,7 +219,9 @@ export async function handleNotificationRoutes(
     // на доске, смысла нет (решение владельца 2026-08-24,
     // docs/decisions/2026-08-24-comment-subscription.md).
     const rows = (data ?? []) as unknown as NotificationRow[];
-    const visible = rows.filter((r) => r.tasks && canViewTask(r.tasks, telegramId, isAdmin));
+    const visible = rows.filter((r) =>
+      r.tasks && canViewTask(r.tasks, telegramId, isAdmin)
+    );
 
     const names = await resolveNames(
       visible.map((r) => r.actor_telegram_id).filter((x): x is number => !!x),
@@ -208,13 +242,23 @@ export async function handleNotificationRoutes(
     }));
     // Счётчик — по видимым в этом же окне, чтобы бейдж не показывал то, чего в ленте нет.
     const notice = await loadDeployNotice(supabase);
-    return json({ items, unread: items.filter((i) => !i.read_at).length, notice }, 200, origin);
+    return json(
+      {
+        items,
+        unread: items.filter((i) => !i.read_at).length,
+        notice,
+      },
+      200,
+      origin,
+    );
   }
 
   // POST /notifications/read { ids?: string[] } — без ids помечает прочитанным всё.
   if (routePath === "/notifications/read" && req.method === "POST") {
     const body = await req.json().catch(() => ({})) as { ids?: unknown };
-    const ids = Array.isArray(body.ids) ? body.ids.filter((x): x is string => typeof x === "string") : null;
+    const ids = Array.isArray(body.ids)
+      ? body.ids.filter((x): x is string => typeof x === "string")
+      : null;
     if (ids && ids.length === 0) return json({ ok: true }, 200, origin);
 
     // Фильтр по recipient_telegram_id — чужие уведомления пометить нельзя даже по точному id.

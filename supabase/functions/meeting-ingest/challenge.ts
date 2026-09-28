@@ -17,7 +17,7 @@
 // и начало, и секунды), и завышенная заявка закрывала бы встречу от перехвата. Первая выгрузка
 // держателя, измеренная короче его заявки, опускает секунды встречи до измеренного.
 
-import { CLAIM_LEASE_TTL_SEC } from "../_shared/claim-lease.ts";
+import { CLAIM_LEASE_TTL_SEC } from "../_shared/meeting-lease.ts";
 import { decideHeld, type HeldRow } from "../meeting-claim/arbiter.ts";
 import { boundClaimSeconds, type MeetingClock } from "../meeting-claim/claim-clock.ts";
 

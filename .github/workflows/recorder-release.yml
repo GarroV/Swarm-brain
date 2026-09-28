@@ -45,3 +45,25 @@ jobs:
             per-machine сертификатом (issue #19).
           files: recorder/SwarmRecorder-${{ steps.v.outputs.build }}.zip
           fail_on_unmatched_files: true
+
+      # Раздача идёт из Supabase Storage, не с GitHub (issue #91: release asset анонимно 404).
+      # Раньше заливали руками с service_role из локального CLI, а у него нет прав на ключи
+      # (403 api_gateway_keys_read, 24.09.2026). Ключ берём Management API тем же токеном,
+      # которым CI раскатывает функции. Проверка — анонимный GET должен отдать 200.
+      - name: Upload zip to Supabase Storage (раздача установщику и апдейтеру)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          REF: vbqglndbxkpmreccpqmr
+          BUILD: ${{ steps.v.outputs.build }}
+        run: |
+          set -euo pipefail
+          KEY="$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$REF/api-keys?reveal=true" \
+            | python3 -c 'import sys,json; print(next(k["api_key"] for k in json.load(sys.stdin) if k.get("name")=="service_role"))')"
+          echo "::add-mask::$KEY"
+          curl -fsS -X POST "https://$REF.supabase.co/storage/v1/object/swarm_drive/recorder/SwarmRecorder-$BUILD.zip" \
+            -H "authorization: Bearer $KEY" -H "content-type: application/zip" -H "x-upsert: true" \
+            --data-binary "@recorder/SwarmRecorder-$BUILD.zip" > /dev/null
+          CODE="$(curl -sS -o /dev/null -w '%{http_code}' "https://$REF.supabase.co/storage/v1/object/public/swarm_drive/recorder/SwarmRecorder-$BUILD.zip")"
+          echo "анонимная раздача SwarmRecorder-$BUILD.zip: HTTP $CODE"
+          [ "$CODE" = "200" ]

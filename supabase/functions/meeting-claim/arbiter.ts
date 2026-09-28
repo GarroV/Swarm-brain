@@ -14,7 +14,7 @@
 //     (second-recording.ts, T156). Умер бот — запасная уже в базе.
 // Бот не пишет (остановился или умер: лиз истёк) — прежнее правило полноты.
 
-import { MAX_RECORDED_SECONDS } from "../_shared/claim-lease.ts";
+import { MAX_RECORDED_SECONDS } from "../_shared/meeting-lease.ts";
 import { isFrozen, PUBLISHED_STATUS } from "../_shared/meeting-frozen.ts";
 
 // Перехват права более полной записью. Оба порога должны выполниться разом — чтобы почти
@@ -91,6 +91,32 @@ export function decideHeld(row: HeldRow, candidate: number, ownerId: number, now
   if (botStillRecording(row, nowIso)) return sameOwner ? "reserve" : "defer";
   if (!(candidate > 0 && isSubstantiallyLonger(candidate, heldSeconds(row)))) return "defer";
   return sameOwner ? "refresh" : "takeover";
+}
+
+/**
+ * Почему заявка получила defer. Нужна КЛИЕНТУ, а не только логам (issue #274): раньше рекордер знал
+ * лишь «defer» и печатал один текст на все случаи — «если твоя запись полнее, дошли её», — то есть
+ * просил человека принять решение, которое сервер уже принял сам и данных для которого у человека нет.
+ *   published — встречу правил человек или её уже опубликовали: перехват невозможен НИКОГДА;
+ *   recording — встречу ещё пишет бот scriba другого человека (D020): право останется у него;
+ *   shorter   — наша запись КОРОЧЕ записи держателя;
+ *   similar   — наша не короче, но разница не дотянула до порогов TAKEOVER_* (типовой случай:
+ *               все остановили запись в пределах минуты). Отделено от shorter, потому что
+ *               человеку нельзя показывать «взяли 36 минут вместо твоих 38» без объяснения —
+ *               это выглядит как ошибка арбитража, хотя это защита от перетранскрибации;
+ *   race      — держатель сменился, пока мы считали: повтор имеет смысл;
+ *   unknown   — длительность неизвестна (старая сборка рекордера или пустая у держателя).
+ * Рекордер показывает на неизвестную ему причину (сейчас — recording) общий честный текст.
+ */
+export type DeferReason = "published" | "recording" | "shorter" | "similar" | "race" | "unknown";
+
+/** Причина отказа для решения `defer` из decideHeld — в том же порядке проверок. */
+export function deferReasonOf(row: HeldRow, candidate: number, nowIso: string): DeferReason {
+  if (isFrozen(row)) return "published";
+  if (botStillRecording(row, nowIso)) return "recording";
+  const held = heldSeconds(row);
+  if (candidate <= 0 || held <= 0) return "unknown";
+  return candidate >= held ? "similar" : "shorter";
 }
 
 /**

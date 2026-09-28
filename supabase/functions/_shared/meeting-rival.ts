@@ -6,7 +6,7 @@
 // по объёму распознанного осталась она. Иначе встреча говорила бы от имени одного человека, а
 // стенограмма была бы другого («я» в тезисах, уведомления, право правки).
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { claimLeaseUntil } from "./claim-lease.ts";
+import { claimLeaseUntil } from "./meeting-lease.ts";
 import { updateRecorders } from "./recorders-write.ts";
 import { occupyPatch } from "../meeting-claim/claim-patch.ts";
 import { type RecorderEntry, settleRecorders } from "../meeting-ingest/challenge.ts";

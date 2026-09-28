@@ -14,6 +14,8 @@ import type { Me, Integration, GranolaNote } from "@/types";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { ConnectorsSection } from "@/components/profile/ConnectorsSection";
 import { TelegramPanel } from "@/components/profile/TelegramPanel";
+import { BackdropSection } from "@/components/profile/BackdropSection";
+import { useDt } from "@/components/roy/nav";
 import { SectionLabel } from "@/components/roy/ui";
 
 import { Button } from "@/components/ui/button";
@@ -29,7 +31,7 @@ import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 
 // ── Profile section ───────────────────────────────────────────────────────────
 
-function ProfileSection({ me }: { me: Me }) {
+export function ProfileSection({ me, onSaved }: { me: Me; onSaved?: (patch: Pick<Me, "role" | "markets">) => void }) {
   const [role, setRole] = useState<string | null>(me.role);
   const [markets, setMarkets] = useState<string[]>(me.markets);
   const [allowedMarkets, setAllowedMarkets] = useState<string[]>([]);
@@ -51,6 +53,7 @@ function ProfileSection({ me }: { me: Me }) {
     setSaving(true);
     try {
       await patchMe({ role: role || null, markets });
+      onSaved?.({ role: role || null, markets });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally {
@@ -191,7 +194,7 @@ function GranolaNoteModal({
 
 // ── Granola section ───────────────────────────────────────────────────────────
 
-function GranolaSection() {
+export function GranolaSection() {
   const confirm = useConfirm();
   const [integration, setIntegration] = useState<Integration | null>(null);
   const [loading, setLoading] = useState(true);
@@ -327,13 +330,14 @@ function GranolaSection() {
 
 // ── Digest section ────────────────────────────────────────────────────────────
 
-function DigestSection({ isAdmin }: { isAdmin: boolean }) {
+export function DigestSection({ isAdmin }: { isAdmin: boolean }) {
+  const dt = useDt();
   const [days, setDays] = useState(7);
   const [allCountries, setAllCountries] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
-  // Период и охват сохраняются и используются секцией дайджеста на главной (см. dash/PersonalDigest).
+  // Период и охват сохраняются в localStorage; их же читает dash/PersonalDigest (с главной снят, компонент оставлен).
   useEffect(() => {
     const v = Number(localStorage.getItem("roy_digest_days"));
     if (v === 14 || v === 30) setDays(v);
@@ -355,6 +359,10 @@ function DigestSection({ isAdmin }: { isAdmin: boolean }) {
     try {
       const { text } = await generateDigest(days, allCountries);
       setResult(text);
+    } catch (e) {
+      // Раньше сбой глотался: кнопка возвращалась, а под ней — пусто, как будто сводки нет.
+      console.error("[DigestSection] generate", e);
+      setResult(dt("Не получилось собрать дайджест. Попробуйте ещё раз через минуту.", "Could not build the digest. Try again in a minute."));
     } finally {
       setGenerating(false);
     }
@@ -404,7 +412,7 @@ function DigestSection({ isAdmin }: { isAdmin: boolean }) {
 
 // ── Upload section ────────────────────────────────────────────────────────────
 
-function UploadSection() {
+export function UploadSection() {
   const [file, setFile] = useState<File | null>(null);
   const [isPrivate, setIsPrivate] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -449,7 +457,7 @@ function UploadSection() {
 
 // ── Feedback section ──────────────────────────────────────────────────────────
 
-function FeedbackSection() {
+export function FeedbackSection() {
   return <FeedbackForm />;
 }
 
@@ -458,7 +466,7 @@ function FeedbackSection() {
 function Section({ title, icon, children, defaultOpen = false }: { title: string; icon?: RoyIconName; children: React.ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-line rounded-[14px] overflow-hidden dark:backdrop-blur-sm">
+    <div className="border border-line rounded-[10px] overflow-hidden bg-surface">
       <button
         className="w-full flex items-center justify-between px-4 py-3 bg-surface-2 text-sm font-semibold text-ink transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
         onClick={() => setOpen((v) => !v)}
@@ -478,7 +486,7 @@ function Section({ title, icon, children, defaultOpen = false }: { title: string
 
 // Браузерная сессия (httpOnly cookie). Внутри Telegram Mini App initData непустой —
 // там аккаунт определяется тем, кто открыл бота, сменить его из приложения нельзя.
-function AccountSection() {
+export function AccountSection() {
   const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
 
@@ -507,7 +515,7 @@ function AccountSection() {
 
 // ── Google Calendar section ────────────────────────────────────────────────────
 
-function GoogleCalendarSection({ isDemo }: { isDemo: boolean }) {
+export function GoogleCalendarSection({ isDemo }: { isDemo: boolean }) {
   const confirm = useConfirm();
   const [connected, setConnected] = useState<boolean | null>(null);
   useEffect(() => {
@@ -550,7 +558,7 @@ function GoogleCalendarSection({ isDemo }: { isDemo: boolean }) {
 // Зеркало бот-команды /recordertoken: минт отдельного токена рекордера + однострочник
 // установки для Терминала. Токен НЕ Claude-Desktop MCP (/mytoken) — отдельный, на год.
 
-function RecorderSection() {
+export function RecorderSection() {
   const confirm = useConfirm();
   const [setup, setSetup] = useState<{ active: boolean; expiresAt: string | null; updateOneLiner?: string } | null>(null);
   const [oneLiner, setOneLiner] = useState<string | null>(null);
@@ -654,7 +662,7 @@ function RecorderSection() {
 // Зеркало бот-команды /setup: минт MCP-токена (Claude Desktop) + однострочник установки.
 // Токен отдельный от рекордера, бессрочный.
 
-function ClaudeDesktopSection() {
+export function ClaudeDesktopSection() {
   const confirm = useConfirm();
   const [active, setActive] = useState<boolean | null>(null);
   const [oneLiner, setOneLiner] = useState<string | null>(null);
@@ -753,6 +761,7 @@ function ClaudeDesktopSection() {
 export function SettingsScreen() {
   const [me, setMe] = useState<Me | null>(null);
   const [editing, setEditing] = useState(false);
+  const dt = useDt();
   // В браузере getInitData() пустой → показываем выход; внутри Telegram — нет.
   const isWebSession = !getInitData();
 
@@ -765,7 +774,7 @@ export function SettingsScreen() {
           <>
             <ProfileHeader me={me} open={editing} onToggle={() => setEditing((v) => !v)} />
             {editing && (
-              <div className="rounded-[14px] border border-accent-line bg-surface px-3 py-3 dark:backdrop-blur-sm">
+              <div className="rounded-[10px] border border-accent-line bg-surface px-3 py-3">
                 <ProfileSection me={me} />
               </div>
             )}
@@ -785,6 +794,9 @@ export function SettingsScreen() {
         )}
 
         <SectionLabel className="pt-1">Настройки</SectionLabel>
+        <Section icon="spark" title={dt("Настройки фона", "Background")}>
+          <BackdropSection />
+        </Section>
         <Section icon="note" title="Дайджест">
           <DigestSection isAdmin={!!me?.is_admin} />
         </Section>

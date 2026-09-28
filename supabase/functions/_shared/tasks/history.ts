@@ -79,7 +79,13 @@ export function historyValue(v: unknown): string | null {
   if (v === null || v === undefined) return null;
   let s: string;
   if (Array.isArray(v)) {
-    const parts = v.map((x) => String(x ?? "").trim()).filter((x) => x.length > 0);
+    // Ссылки приходят объектами {title, url}: без этого в журнале встало бы
+    // «[object Object]», и строка истории не сказала бы ничего.
+    const parts = v.map((x) =>
+      x && typeof x === "object" && "url" in (x as Record<string, unknown>)
+        ? String((x as { url: unknown }).url ?? "").trim()
+        : String(x ?? "").trim()
+    ).filter((x) => x.length > 0);
     if (!parts.length) return null;
     s = parts.join(", ");
   } else if (typeof v === "object") {
@@ -105,11 +111,45 @@ export function historyValue(v: unknown): string | null {
  * поэтому журнал молча не писался вовсе (issue #287, поймано на проде 09.09.2026: 4 смены
  * статуса после раскатки и ноль строк в журнале). Никогда не возвращает null.
  */
-export function actorName(actor?: string | null, telegramId?: number | null): string {
+export function actorName(
+  actor?: string | null,
+  telegramId?: number | null,
+): string {
   const name = actor?.trim();
   if (name) return name;
   if (telegramId != null) return String(telegramId);
   return "system";
+}
+
+/**
+ * Общее ядро журналов: какие поля патча реально изменились. Возвращает уже приведённые к
+ * тексту значения и имя поля журнала.
+ *
+ * Отдельно от `historyRowsFor`, потому что журнал проектов (#426) устроен так же, но пишет в
+ * свою таблицу и со своим списком пропускаемых колонок. Копия этого сравнения во втором файле
+ * означала бы, что правка «не писать поле X» делается в одном месте и забывается в другом.
+ */
+export function diffFields(args: {
+  snapshot: Record<string, unknown>;
+  patch: Record<string, unknown>;
+  skip?: (column: string) => boolean;
+  rename?: (column: string) => string;
+}): Array<
+  { field: string; old_value: string | null; new_value: string | null }
+> {
+  const skip = args.skip ?? ((c: string) => !isJournaled(c));
+  const rename = args.rename ?? journalFieldName;
+  const out: Array<
+    { field: string; old_value: string | null; new_value: string | null }
+  > = [];
+  for (const column of Object.keys(args.patch)) {
+    if (skip(column)) continue;
+    const before = historyValue(args.snapshot[column]);
+    const after = historyValue(args.patch[column]);
+    if (before === after) continue;
+    out.push({ field: rename(column), old_value: before, new_value: after });
+  }
+  return out;
 }
 
 export function historyRowsFor(args: {
@@ -124,25 +164,18 @@ export function historyRowsFor(args: {
   const { taskId, snapshot, patch } = args;
   if (!snapshot) return [];
 
-  const rows: HistoryRow[] = [];
-  for (const column of Object.keys(patch)) {
-    if (!isJournaled(column)) continue;
-    const before = historyValue(snapshot[column]);
-    const after = historyValue(patch[column]);
-    if (before === after) continue;
-    const field = journalFieldName(column);
-    rows.push({
-      task_id: taskId,
-      field,
-      old_value: before,
-      new_value: after,
-      changed_by: actorName(args.actor, args.actorTelegramId),
-      changed_by_telegram_id: args.actorTelegramId ?? null,
-      group_id: args.groupId ?? null,
-      old_status: field === "status" ? before : null,
-      new_status: field === "status" ? after : null,
-      note: args.note ?? null,
-    });
-  }
-  return rows;
+  return diffFields({ snapshot, patch }).map((
+    { field, old_value, new_value },
+  ) => ({
+    task_id: taskId,
+    field,
+    old_value,
+    new_value,
+    changed_by: actorName(args.actor, args.actorTelegramId),
+    changed_by_telegram_id: args.actorTelegramId ?? null,
+    group_id: args.groupId ?? null,
+    old_status: field === "status" ? old_value : null,
+    new_status: field === "status" ? new_value : null,
+    note: args.note ?? null,
+  }));
 }

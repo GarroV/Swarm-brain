@@ -10,7 +10,7 @@ import {
   holderSecondsCorrection,
   settleRecorders,
 } from "./challenge.ts";
-import { CLAIM_LEASE_TTL_SEC } from "../_shared/claim-lease.ts";
+import { CLAIM_LEASE_TTL_SEC } from "../_shared/meeting-lease.ts";
 
 const NOW = "2026-09-28T12:00:00.000Z";
 const at = (minutesAgo: number) => new Date(Date.parse(NOW) - minutesAgo * 60_000).toISOString();

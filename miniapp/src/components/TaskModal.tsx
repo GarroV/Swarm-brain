@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo, useRef } from "react";
-import type { Task, User, Project } from "@/types";
+import type { Task, TaskLink, User, Project } from "@/types";
+import { TaskLinksField } from "@/components/tasks/TaskLinksField";
 import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
 import {
@@ -18,15 +19,18 @@ import {
   fetchTask,
 } from "@/lib/api";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger } from "@/components/ui/select";
 import { PropertyRow, PropertyLabel, PropertyValue, propertySelectCls } from "@/components/ui/PropertyRow";
 import { useConfirm } from "@/components/ui/confirm";
 import { RoyIcon, type RoyIconName } from "@/components/roy/icons";
 import { TaskComments } from "@/components/tasks/TaskComments";
+import { TaskSubtasks } from "@/components/tasks/TaskSubtasks";
 import { COUNTRY_NAMES, countryCode } from "@/lib/countries";
 import { CountryPopover } from "@/components/tasks/CountryPopover";
 import { linkify } from "@/lib/linkify";
 import { useDt } from "@/components/roy/nav";
+import { useIsDesktop } from "@/components/roy/useIsDesktop";
 import { recurrenceOptions } from "@/lib/recurrenceLabels";
 import { buildProjectOptions } from "@/lib/projectPicker";
 
@@ -58,14 +62,16 @@ const AUTOSAVE_DELAY = 550;
 // Roy-стилизованные нативные контролы (без shadcn): стекло + линия + янтарный фокус.
 // min-h-10 — тач-цель полей на телефоне (было 38px при норме 44).
 const fieldCls =
-  "w-full min-h-10 rounded-[12px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-[var(--accent-ink)] placeholder:text-ink-mute dark:backdrop-blur-sm";
-const labelCls = "mb-1 block font-semibold text-ink-soft";
+  "w-full min-h-9 rounded-[8px] border border-line-2 bg-surface px-2.5 py-2 text-sm text-ink outline-none transition-[border-color,box-shadow] focus:border-primary focus:ring-3 focus:ring-accent-soft placeholder:text-ink-mute";
+const labelCls = "mb-1 block font-medium text-ink-soft";
 
 interface TaskModalProps {
   task?: Task;
   open: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  /** Вызывается после сохранения. Для НОВОЙ задачи получает созданную — экран спринтов по
+   *  ней сразу кладёт задачу в спринт. Существующие вызывающие параметр игнорируют. */
+  onSaved: (created?: Task) => void;
   // Создание с префиллом (напр. задача из встречи): начальные значения формы. Игнорируются
   // в режиме правки (когда передан task). assignee не префиллим — GPT даёт имя, не telegram_id.
   prefill?: { title?: string; description?: string | null; country?: string | null; due_date?: string | null };
@@ -74,6 +80,9 @@ interface TaskModalProps {
   // Префилл проекта при создании (напр. из карточки/облака проекта). Игнорируется в режиме правки.
   projectId?: string | null;
 }
+
+// Панель справа: ширина — --detail-w стенда (560px), фон списка за ней лишь слегка притушен.
+const DRAWER_CLS = "inset-y-0 top-0 right-0 left-auto flex h-dvh max-h-dvh w-[560px] max-w-[96vw] translate-x-0 translate-y-0 flex-col rounded-none border-0 border-l sm:max-w-[560px] data-open:zoom-in-100 data-open:slide-in-from-right-8 data-closed:zoom-out-100 data-closed:slide-out-to-right-8";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -103,6 +112,12 @@ function TaskOrigin({ task }: { task: Task }) {
 }
 
 export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, meetingId, projectId }: TaskModalProps) {
+  // На десктопе карточка задачи — ВСЕГДА панель справа на всю высоту (docs/redesign/stand
+  // detail.js), колонки формы в ней идут одна под другой. Решает само окно, а не вызывающий экран:
+  // пока это был флаг, его передавали три точки входа из десяти, и спринты, доска, таймлайн и
+  // проекты открывали окно по центру (владелец 25.09.2026: «визуал работы с задачами будет везде
+  // один: справа должно выходить окно для взаимодействия»). На мобайле — прежнее окно.
+  const drawer = useIsDesktop();
   // Догрузка полной задачи живёт ЗДЕСЬ, а не в вызывающем экране. Раньше это было требованием
   // к вызывающей стороне («открыл задачу из списка — догрузи по id»), и из пяти точек входа его
   // соблюдала одна: список, доска, таймлайн и облако проекта отдавали объект из проекции
@@ -120,6 +135,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState("open");
   const [description, setDescription] = useState("");
+  const [links, setLinks] = useState<TaskLink[]>([]);
   // Пока в описании есть сохранённый текст — показываем его как read-only с кликабельными
   // ссылками (linkify); textarea появляется по клику. Пустое описание — сразу editable.
   const [descEditing, setDescEditing] = useState(true);
@@ -205,11 +221,15 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
     const initialRole = task?.task_role ?? NONE;
     const cur = task?.assignee_telegram_ids?.[0]?.toString() ?? NONE;
     const initialLabels = task?.label_ids ?? [];
+    // Ссылок нет в списочной проекции: у недогруженной задачи здесь undefined, и пустой
+    // список НЕ отправляется (isPartial глушит автосейв целиком — см. ниже).
+    const initialLinks = task?.links ?? [];
     const initialProject = task?.project_id ?? projectId ?? null;
 
     setTitle(initialTitle);
     setStatus(initialStatus);
     setDescription(initialDescription);
+    setLinks(initialLinks);
     setDescEditing(!initialDescription.trim());
     setDueDate(initialDue);
     setRemindDate(initialRemind);
@@ -238,6 +258,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
       assigneeId: cur,
       selProject: initialProject,
       labelIds: initialLabels,
+      links: initialLinks,
     });
 
     fetchUsers().then(setUsers).catch(() => {});
@@ -306,7 +327,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
 
   // Текущий снапшот формы (для сравнения с сохранённым) — те же ключи, что в useEffect open.
   const formSnapshot = () =>
-    JSON.stringify({ title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds });
+    JSON.stringify({ title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds, links });
 
   // Собрать PATCH из текущих значений формы. null → сохранять нечего/нельзя (пустое название).
   const buildPatch = (): UpdateTaskInput | null => {
@@ -323,6 +344,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
       task_role: taskRole === NONE ? null : taskRole,
       status,
       project_id: selProject,
+      links,
     };
     // Исполнителя шлём только если поменяли — иначе правка других полей затёрла бы назначение,
     // которое нельзя было префиллить (имя без telegram_id).
@@ -354,7 +376,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
     }, AUTOSAVE_DELAY);
     return () => clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isEdit, isPartial, title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds]);
+  }, [open, isEdit, isPartial, title, description, status, dueDate, remindDate, recurFreq, country, taskRole, assigneeId, selProject, labelIds, links]);
 
   // Закрытие: досрочно сохраняем pending-изменения (пока debounce не успел сработать).
   const handleClose = () => {
@@ -383,6 +405,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
       const base = {
         title: title.trim(),
         description: description.trim() || null,
+        links,
         due_date: dueDate || null,
         remind_date: remindDate || null,
         recur_freq: recurFreq,
@@ -396,7 +419,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
       const created = await createTask(fields);
       // POST /tasks не принимает label_ids — вешаем метки вторым шагом на уже личную задачу.
       if (labelIds.length > 0) await updateTask(created.id, { label_ids: labelIds });
-      onSaved();
+      onSaved(created);
       onClose();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Не удалось создать");
@@ -441,12 +464,13 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent
         showCloseButton={false}
-        className="gap-0 rounded-[20px] border border-line bg-[var(--popover)] p-0 sm:max-w-5xl dark:backdrop-blur-xl"
+        overlayClassName={drawer ? "bg-[rgba(10,13,17,.12)]" : undefined}
+        className={cn("gap-0 rounded-[14px] border border-line bg-[var(--popover)] p-0 sm:max-w-5xl", drawer && DRAWER_CLS)}
       >
         {/* Шапка: заголовок + индикатор автосейва (edit) + удалить (edit) + закрыть */}
-        <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
+        <div className="flex items-center justify-between gap-3 border-b border-line px-[18px] py-2.5">
           <div className="flex min-w-0 items-baseline gap-2.5">
-            <h2 className="shrink-0 font-bold text-ink" style={{ fontSize: 17, letterSpacing: "-0.01em" }}>
+            <h2 className="shrink-0 font-semibold text-ink" style={{ fontSize: 16, letterSpacing: "-0.01em" }}>
               {isEdit ? "Изменить задачу" : "Новая задача"}
             </h2>
             {isEdit && saveHint && (
@@ -467,7 +491,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                 aria-label="Удалить задачу"
                 title="Удалить задачу"
                 // Тач-цель 40x40: на телефоне кнопка была 29x29 при норме 44 — и это удаление.
-                className="flex size-10 items-center justify-center rounded-[10px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                className="flex size-10 items-center justify-center rounded-[7px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-[var(--pri-high)] active:scale-[0.95] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               >
                 <RoyIcon name="trash" size={17} />
               </button>
@@ -476,7 +500,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               type="button"
               onClick={handleClose}
               aria-label="Закрыть"
-              className="flex size-10 items-center justify-center rounded-[10px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="flex size-10 items-center justify-center rounded-[7px] text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.95] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             >
               <RoyIcon name="x" size={18} />
             </button>
@@ -484,12 +508,12 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
         </div>
 
         {/* Поля — две колонки: слева название + большое поле редактуры, справа настройки */}
-        <div className="max-h-[80vh] overflow-y-auto px-5 py-3">
+        <div className={cn("overflow-y-auto px-[18px] py-3.5", drawer ? "min-h-0 flex-1" : "max-h-[80vh]")}>
           {/* Отказ догрузки — ГРОМКИЙ. Раньше это был один тост и навсегда мёртвая форма:
               человек правил задачу, ничего не сохранялось, и никто ему об этом не говорил. */}
           {hydrateFailed && (
             <div
-              className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[12px] border px-3 py-2"
+              className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[8px] border px-3 py-2"
               style={{
                 borderColor: "color-mix(in srgb, var(--pri-high) 40%, transparent)",
                 background: "color-mix(in srgb, var(--pri-high) 8%, transparent)",
@@ -505,8 +529,8 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               <button
                 type="button"
                 onClick={() => setHydrateAttempt((n) => n + 1)}
-                className="shrink-0 rounded-[10px] border border-line bg-surface px-3 font-semibold text-ink transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                style={{ fontSize: 12, minHeight: 32 }}
+                className="shrink-0 rounded-[7px] border border-line-2 bg-surface px-3 font-medium text-ink transition-colors hover:bg-surface-2 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                style={{ fontSize: 12.5, minHeight: 30 }}
               >
                 {dt("Повторить", "Retry")}
               </button>
@@ -520,7 +544,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
             aria-busy={isPartial && !hydrateFailed}
             className={`m-0 min-w-0 border-0 p-0 ${isPartial ? "opacity-60" : ""}`}
           >
-          <div className="grid items-start gap-x-5 gap-y-3 sm:grid-cols-[1.4fr_1fr]">
+          <div className={cn("grid items-start gap-x-5 gap-y-3", !drawer && "sm:grid-cols-[1.4fr_1fr]")}>
             {/* Левая колонка: название + редактура */}
             <div className="flex flex-col gap-2.5">
               <div>
@@ -533,6 +557,11 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                   placeholder="Название задачи"
                 />
               </div>
+              {/* Ссылки — НАД описанием (решение владельца 18.09.2026): их ищут глазами
+                  первыми, а описание бывает на экран длиной. У недогруженной задачи поле
+                  показываем только для чтения — отправлять её ссылки всё равно нельзя. */}
+              <TaskLinksField links={links} onChange={setLinks} disabled={isPartial} />
+
               <div className="flex flex-col">
                 <label htmlFor="modal-desc" className={labelCls} style={{ fontSize: 12 }}>Описание</label>
                 {descEditing ? (
@@ -587,7 +616,7 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
                         aria-label={s.label}
                         aria-pressed={on}
                         title={s.label}
-                        className={`flex flex-1 items-center justify-center gap-1.5 rounded-[10px] font-semibold transition-colors active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${on ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:bg-surface-2 hover:text-ink"}`}
+                        className={`flex flex-1 items-center justify-center gap-1.5 rounded-[7px] font-semibold transition-colors active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${on ? "bg-accent-soft text-accent-ink" : "text-ink-soft hover:bg-surface-2 hover:text-ink"}`}
                         style={{ fontSize: 12.5, minHeight: 40 }}
                       >
                         {s.icon === "circle" ? (
@@ -780,6 +809,12 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
           </div>
           </fieldset>
 
+          {isEdit && task && !isPartial && (
+            <div className="mt-1 border-t border-line pt-3">
+              <TaskSubtasks task={task} onChanged={onSaved} />
+            </div>
+          )}
+
           {isEdit && task && (
             <div className="mt-1 border-t border-line pt-3">
               <TaskComments taskId={task.id} />
@@ -792,13 +827,13 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
 
         {/* Нижняя панель действий — только при создании (в edit сохранение автоматическое). */}
         {!isEdit && (
-          <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
+          <div className="flex items-center justify-end gap-2 rounded-b-[14px] border-t border-line bg-surface-2 px-[18px] py-3">
             <button
               type="button"
               onClick={onClose}
               disabled={creating}
-              className="rounded-[12px] border border-line bg-surface px-4 py-2 font-semibold text-ink-soft transition-colors hover:bg-surface-2 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              style={{ fontSize: 14 }}
+              className="h-[30px] rounded-[7px] border border-line-2 bg-surface px-3 font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              style={{ fontSize: 12.5 }}
             >
               Отмена
             </button>
@@ -806,8 +841,8 @@ export function TaskModal({ task: taskProp, open, onClose, onSaved, prefill, mee
               type="button"
               onClick={handleCreate}
               disabled={creating}
-              className="rounded-[12px] bg-primary px-4 py-2 font-semibold text-white transition-transform active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              style={{ fontSize: 14 }}
+              className="h-[30px] rounded-[7px] bg-primary px-3.5 font-semibold text-primary-foreground transition-[transform,background-color] hover:bg-primary/90 active:scale-[0.97] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              style={{ fontSize: 12.5 }}
             >
               {creating ? "Создание…" : "Создать"}
             </button>

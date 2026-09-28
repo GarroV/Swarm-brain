@@ -20,8 +20,18 @@ export type ProjectAccessRow = {
 // группы. Строится один раз на запрос — вызывающий и так держит весь список.
 export type ProjectIndex = Map<string, ProjectAccessRow>;
 
-export function parentLookup(rows: Array<ProjectAccessRow & { id: string }>): ProjectIndex {
-  return new Map(rows.map((r) => [r.id, { parent_id: r.parent_id, created_by: r.created_by, is_private: r.is_private }]));
+export function parentLookup(
+  rows: Array<ProjectAccessRow & { id: string }>,
+): ProjectIndex {
+  return new Map(
+    rows.map((
+      r,
+    ) => [r.id, {
+      parent_id: r.parent_id,
+      created_by: r.created_by,
+      is_private: r.is_private,
+    }]),
+  );
 }
 
 // Ровно 2 уровня по устройству доски (DB-гард, migration 20260812140000), но обход всё равно
@@ -35,7 +45,10 @@ const MAX_DEPTH = 8;
 // До 2026-08-24 приватным считался ЛЮБОЙ подпроект (`parent_id ≠ null`) — из-за этого руководитель
 // не видел рабочие подпроекты по сотрудникам, а сам флаг `is_private` на подпроекте не работал
 // (issue #86). Тумблер на подпроекте — замена той автоматике.
-export function isProjectPrivate(row: ProjectAccessRow, index: ProjectIndex): boolean {
+export function isProjectPrivate(
+  row: ProjectAccessRow,
+  index: ProjectIndex,
+): boolean {
   let cur: ProjectAccessRow | undefined = row;
   for (let depth = 0; cur && depth < MAX_DEPTH; depth++) {
     if (cur.is_private) return true;
@@ -67,7 +80,9 @@ export function canViewProject(
   for (let depth = 0; cur && depth < MAX_DEPTH; depth++) {
     // Закрытая строка на любом уровне цепочки рубит доступ, если зритель не её автор:
     // подпроект внутри чужой закрытой группы закрыт даже для того, кто создал сам подпроект.
-    if (cur.is_private && cur.created_by !== null && cur.created_by !== viewerId) return false;
+    if (
+      cur.is_private && cur.created_by !== null && cur.created_by !== viewerId
+    ) return false;
     if (cur.parent_id === null) return true;
     cur = index.get(cur.parent_id);
   }
@@ -104,7 +119,12 @@ export function pickProjectByName(
 // Имена проектов, видимых зрителю — тем же предикатом, что и резолв по имени. Нужен, чтобы
 // отказ «проект не найден» мог перечислить, что вообще есть (issue #199): без списка агент
 // перебирает имена вслепую, а закрытый проект в подсказку попасть не должен.
-export function visibleProjectNames(rows: ProjectNameRow[], viewerId: number | undefined): string[] {
+export function visibleProjectNames(
+  rows: ProjectNameRow[],
+  viewerId: number | undefined,
+): string[] {
   const index = parentLookup(rows);
-  return rows.filter((p) => canViewProject(p, viewerId, index)).map((p) => p.name);
+  return rows.filter((p) => canViewProject(p, viewerId, index)).map((p) =>
+    p.name
+  );
 }
