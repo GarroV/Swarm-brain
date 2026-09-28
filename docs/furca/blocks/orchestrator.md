@@ -50,25 +50,23 @@ T168 принят и влит; его хвосты — в `git log -p` этог�
 (нужен уникальный индекс), веб не знает `already_invited`, контейнер, подхваченный после
 перезапуска, пропуска не знает; порядок раскатки T165 — бот, потом сервер, T173 — сервер, потом бот.
 
-## T175 — бот входит в Meet под своим аккаунтом Google
+T175 (вход бота под своим аккаунтом Google) сдан; проверки и хвосты — в `git log -p` этого файла
+(до коммита «T177: состояние»). Главное открытое: живой вход владельцем и живой прогон встречи под
+аккаунтом не делались; стенду scriba-live нужны `SCRIBA_GOOGLE_STATE_FILE`/`SCRIBA_ACCOUNT_COPIES_DIR`.
 
-**2026-09-28 · готово, кроме живого входа (он только вместе с владельцем).** Устройство — в
-ARCHITECTURE.md, «Аккаунт бота». Окно входа: `scripts/scriba-login.sh login` (MUSPELHEIM,
-`C:\projects\scriba-login`, порт 4450 только на адресе Tailscale, ключ VNC на каждое открытие);
-выгрузка `orchestrator/login-export.ts`; копия на контейнер `orchestrator/account.ts`; распознавание
-слетевшего входа `meet-adapter/admission.ts` → нотиса `account_signin_required` (EN+RU, сервер).
+## T177 — граница бот ↔ ядро (D029, D030)
 
-Проверено: юниты бота 593 (покрытие 100%, база та же), `notices.test.ts` 24; порчи красные
-(лобби гостя под входом, release на выходе, домен куки сессии, текст про доступ встречи).
-MUSPELHEIM: `smoke-meet.ts` 47 проверок, из них сцены входа (лобби под аккаунтом, слетевший вход,
-страница входа, «Verify it's you», гость → blocked) и живой meet.google.com; сцена `account`
-смоука оркестратора на настоящем Docker зелёная (копия одним файлом RO, каталог входа не
-смонтирован, исход и нотиса, копия убрана), порча `ReadOnly: false` → красный с причиной.
-Окно входа: noVNC 200 по Tailscale, слушает только 100.64.116.67:4450, VNC требует пароль
-(тип безопасности 2, «None» нет); закрытый без входа браузер → «✘ в профиле нет сессии Google»,
-файл не создан. Стенд стёрт (`wipe account`).
+**2026-09-28 · сделано, ждёт приёмки.** Настройки бота — в двух профилях: `bot/src/orchestrator/profile.ts`
+и `supabase/functions/_shared/bot-profile.ts`; тексты уведомлений — `_shared/bot-notice-texts.ts`
+(бывший `notice-texts.ts`, `{bot}`/`{door_wait}`). Дубли в `notices.ts`, `meeting-invite.ts`,
+`agent-grant.ts`, `recording-watchdog.ts`, `calendar-dispatch.ts`, `config.ts`, `run-meeting.ts` берут
+значения из профилей. Карта и что осталось — `docs/furca/bot-boundary.md`.
 
-Открыто: живой вход владельцем и живой прогон встречи под аккаунтом не делались; стенд встреч
-(scriba-live) ещё не подключён к входу — нужны `SCRIBA_GOOGLE_STATE_FILE`/`SCRIBA_ACCOUNT_COPIES_DIR`
-у его оркестратора; блок-доки `meet-adapter.md`/`notices.md` не обновлены (чужие блоки); гейт
-красен только «типы-веб»: в копии нет `miniapp/node_modules`. Раскатка: сервер раньше бота.
+Проверено: контракт `_shared/bot-profile.test.ts` (4), граница `_shared/bot-boundary.test.ts` (3) — обе
+красные на порче (дверь 60 с в профиле бота; имя бота в `meeting-claim/index.ts`, импорт
+`calendar-dispatch.ts` из `meeting-heartbeat/write.ts`), зелёные после возврата копией. Все тексты людям
+(уведомления, алерт сторожа, пропуски автозапуска — 133 строки) отрендерены до и после: совпадают.
+Смоуки `scripts/scriba-*-smoke.ts` (7) на стенде MUSPELHEIM `scriba-boundary` — зелёные до и после.
+
+Открыто: колонка `scriba_autojoin` и маршрут `/scriba/autojoin` — имя бота в схеме и адресе (в ядре
+колонка из профиля); веб пишет имя бота сам; блок-док `notices.md` (чужой) ещё называет `notice-texts.ts`.

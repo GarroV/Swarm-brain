@@ -4,7 +4,7 @@
 //
 // Писателей два, и живут они в РАЗНЫХ таблицах (решение D007):
 //   • рекордер человека (bumblebee) — allowed_users.recorder_last_*, heartbeat раз в 15 мин;
-//   • служебный агент (бот scriba)  — meetings.agent_last_* САМОЙ встречи (D018), heartbeat раз
+//   • служебный агент (бот встреч)  — meetings.agent_last_* САМОЙ встречи (D018), heartbeat раз
 //     в 2 мин изнутри контейнера (bot/src/orchestrator/run-meeting.ts). Контейнер, убитый посреди
 //     встречи, финального recording:false не шлёт — последний удар так и остаётся recording:true.
 // Смешать их нельзя: heartbeat бота в строке человека выглядел бы как живой рекордер и гасил
@@ -19,12 +19,13 @@
 //
 // Сбросы флага — дедуп, а не удаление данных: так сторож не повторяет алерт каждый час.
 // Решение «жив/мёртв» принимает код (isSilent), а не SQL — чтобы его держали тесты.
-import { NO_TITLE } from "../../_shared/notice-texts.ts";
+import { BOT_SILENT_ALERT, fillBotTemplate, NO_TITLE } from "../../_shared/bot-notice-texts.ts";
+import { BOT_PROFILE } from "../../_shared/bot-profile.ts";
 
 /** Рекордер бьёт раз в 15 мин → живой всегда свежее 20. */
 export const RECORDER_STALE_MIN = 20;
-/** Бот бьёт раз в 2 мин → 10 мин тишины это пять пропущенных ударов, а не сетевой всплеск. */
-export const AGENT_STALE_MIN = 10;
+/** Порог тишины служебного агента — в профиле бота (silentMinutes). */
+export const AGENT_STALE_MIN = BOT_PROFILE.silentMinutes;
 
 export interface HumanBeat {
   telegram_id: number;
@@ -85,16 +86,9 @@ function escapeHtml(value: string): string {
 
 /** Язык человека сервер не знает — поэтому оба, английский первым (правило проекта). */
 export function agentAlertText(title: string | null): string {
-  const en = escapeHtml(title ?? NO_TITLE.en);
-  const ru = escapeHtml(title ?? NO_TITLE.ru);
-  return (
-    `⚠️ <b>${en}</b>: scriba stopped responding in the middle of the meeting — it was recording ` +
-    `and then went silent, most likely its container crashed. The recording may be incomplete ` +
-    `or missing; check the meeting in Swarm.\n\n` +
-    `⚠️ «<b>${ru}</b>»: scriba перестал отвечать посреди встречи — он вёл запись и замолчал, ` +
-    `скорее всего упал его контейнер. Запись может быть неполной или не дойти вовсе; проверьте ` +
-    `встречу в Swarm.`
-  );
+  const fill = (lang: "en" | "ru") =>
+    fillBotTemplate(BOT_SILENT_ALERT[lang]).replaceAll("{title}", escapeHtml(title ?? NO_TITLE[lang]));
+  return `${fill("en")}\n\n${fill("ru")}`;
 }
 
 async function checkHumans(deps: WatchdogDeps): Promise<number> {

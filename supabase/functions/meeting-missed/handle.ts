@@ -30,6 +30,7 @@ import {
 } from "../_shared/calendar-snapshot.ts";
 import type { JobRow, MissRow, MissStore } from "../_shared/calendar-miss-store.ts";
 import { parseInviteLink } from "../_shared/meeting-invite.ts";
+import { BOT_PROFILE } from "../_shared/bot-profile.ts";
 
 /** Человек, чей рекордер спрашивает. */
 export interface Person {
@@ -78,8 +79,8 @@ const ERRORS = {
   meeting_over: { status: 409, en: "This meeting is already over", ru: "Эта встреча уже закончилась" },
   autojoin_off: {
     status: 409,
-    en: "scriba autostart is off for you",
-    ru: "У вас выключен автозапуск scriba",
+    en: `${BOT_PROFILE.name} autostart is off for you`,
+    ru: `У вас выключен автозапуск ${BOT_PROFILE.name}`,
   },
 } as const;
 

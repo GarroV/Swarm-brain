@@ -21,6 +21,7 @@ import { SwarmHttpError } from "../swarm-client/errors.ts";
 import { inBackground } from "./background.ts";
 import type { Notice, NoticeResult, Notifier } from "./notices.ts";
 import { describeError } from "./describe-error.ts";
+import { BOT_PROFILE } from "./profile.ts";
 
 /**
  * Адаптер площадки в том объёме, который нужен процессу встречи.
@@ -86,12 +87,12 @@ export interface MeetingTiming {
 }
 
 const DEFAULT_TIMING: MeetingTiming = {
-  doorWaitMs: 90_000,
-  doorRepeatMs: 180_000,
-  doorMaxNotices: 2,
-  aloneMs: 120_000,
-  heartbeatMs: 120_000,
-  pollMs: 5000,
+  doorWaitMs: BOT_PROFILE.door.waitMs,
+  doorRepeatMs: BOT_PROFILE.door.repeatMs,
+  doorMaxNotices: BOT_PROFILE.door.maxNotices,
+  aloneMs: BOT_PROFILE.aloneMs,
+  heartbeatMs: BOT_PROFILE.heartbeatMs,
+  pollMs: BOT_PROFILE.pollMs,
 };
 
 export interface MeetingRunOptions {

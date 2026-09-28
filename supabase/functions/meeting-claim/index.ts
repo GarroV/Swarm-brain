@@ -31,6 +31,7 @@ import { updateRecorders } from "../_shared/recorders-write.ts";
 import { PUBLISHED_STATUS } from "../_shared/meeting-frozen.ts";
 import { bindGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
 import { coOwnersFromAttendees, mergeAttendees } from "../_shared/meeting-owners.ts";
+import { BOT_PROFILE } from "../_shared/bot-profile.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -62,11 +63,12 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 // Календарь человека для сверки служебного агента с составом встречи (agent-scope.ts, D016).
 const calendarSource: CalendarSource = {
   autojoin: async (telegramId) => {
-    const { data, error } = await supabase.from("allowed_users").select("scriba_autojoin")
+    const column = BOT_PROFILE.autojoin.consentColumn;
+    const { data, error } = await supabase.from("allowed_users").select(column)
       .eq("telegram_id", telegramId).maybeSingle();
     // Не прочитали согласие — не считаем, что оно есть.
     if (error) console.error(`meeting-claim: согласие ${telegramId} не прочитано: ${error.message}`);
-    return (data as { scriba_autojoin?: boolean } | null)?.scriba_autojoin === true;
+    return (data as Record<string, unknown> | null)?.[column] === true;
   },
   refreshToken: async (telegramId) => {
     const { data } = await supabase.from("user_integrations").select("api_key")

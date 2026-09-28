@@ -11,6 +11,7 @@
 // Здесь — чистые функции: разбор ссылки, сверка приглашения, статус. Хождение в базу — у
 // вызывающих (swarm-api, meeting-invite, meeting-claim): так границы проверяются без базы.
 import { type ConferencePlatform, conferencePlatform } from "../meeting-current/join-link.ts";
+import { BOT_PROFILE } from "./bot-profile.ts";
 
 /**
  * Сколько живёт приглашение. Бот заявляется на встречу ДО того, как постучаться (номер встречи
@@ -55,12 +56,11 @@ export function parseInviteLink(raw: unknown): InviteLink | null {
 }
 
 /**
- * Площадки, куда бот умеет войти: адаптер есть только у Google Meet. Ссылку другой площадки
- * `parseInviteLink` распознаёт (она нужна сверке комнаты и тексту отказа), но приглашение на неё
- * сервер не заводит — иначе оно кончалось бы пустой встречей с `join_failed`. Площадка
- * добавляется сюда вместе с адаптером бота.
+ * Площадки, куда бот умеет войти. Список — в профиле бота (`bot-profile.ts`): площадка
+ * добавляется там вместе с адаптером бота. Ссылку другой площадки `parseInviteLink` распознаёт
+ * (сверка комнаты, текст отказа), но приглашение на неё сервер не заводит.
  */
-export const BOT_PLATFORMS: readonly ConferencePlatform[] = ["meet"];
+export const BOT_PLATFORMS: readonly ConferencePlatform[] = BOT_PROFILE.platforms;
 
 export function botJoinsPlatform(platform: ConferencePlatform): boolean {
   return BOT_PLATFORMS.includes(platform);

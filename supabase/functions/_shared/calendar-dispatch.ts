@@ -16,17 +16,18 @@ import type { ConferencePlatform } from "../meeting-current/join-link.ts";
 import { calendarKeyOf } from "./calendar-key.ts";
 import { acceptedBySelf } from "./calendar-attendance.ts";
 import { botJoinsPlatform, parseInviteLink } from "./meeting-invite.ts";
+import { BOT_PROFILE } from "./bot-profile.ts";
 
 /**
  * За сколько до начала бот выходит на встречу. Контейнеру нужны секунды на подъём и заход, а стучаться
- * раньше времени — стоять у двери пустой комнаты. Две минуты — с запасом на минутный опрос.
+ * раньше времени — стоять у двери пустой комнаты. Значение — в профиле бота (autojoin.leadMs).
  */
-export const DISPATCH_LEAD_MS = 2 * 60_000;
+export const DISPATCH_LEAD_MS = BOT_PROFILE.autojoin.leadMs;
 /**
  * Насколько бот может опоздать. Оркестратор мог лежать, событие могли поставить на ходу; позже —
  * встреча идёт давно, и если бота не позвали руками, то, видимо, и не ждут.
  */
-export const DISPATCH_LATE_MS = 10 * 60_000;
+export const DISPATCH_LATE_MS = BOT_PROFILE.autojoin.lateMs;
 
 /** Задание боту: встреча и за кого он на неё идёт. */
 export interface DispatchJob {
