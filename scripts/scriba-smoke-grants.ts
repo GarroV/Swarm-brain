@@ -127,3 +127,39 @@ export async function seedCalendarGrant(
   }]);
   return token;
 }
+
+/**
+ * Календарный пропуск по УЖЕ существующему заданию — за другого человека, чем тот, кому сервер
+ * выдал бы его сам. Нужен смоукам, которые проверяют, что заявка за человека без этой встречи
+ * в календаре отбивается сверкой календаря, а не только отсутствием пропуска.
+ */
+export async function seedGrantForJob(
+  rest: Rest,
+  seed: {
+    agentId: string;
+    groupId: string;
+    telegramId: number;
+    calendarKey: string;
+  },
+): Promise<string> {
+  const [job] = await rest(
+    "GET",
+    `meeting_calendar_jobs?group_id=eq.${seed.groupId}&calendar_key=eq.${
+      encodeURIComponent(seed.calendarKey)
+    }&select=id,join_url,title`,
+  ) as Array<{ id: string; join_url: string; title: string | null }>;
+  if (!job) throw new Error(`нет задания по ${seed.calendarKey}`);
+  const token = `sgr_smoke_${crypto.randomUUID()}`;
+  await rest("POST", "meeting_agent_grants", [{
+    token_hash: await sha256Hex(token),
+    agent_id: seed.agentId,
+    group_id: seed.groupId,
+    telegram_id: seed.telegramId,
+    calendar_job_id: job.id,
+    calendar_key: seed.calendarKey,
+    join_url: job.join_url,
+    title: job.title,
+    expires_at: new Date(Date.now() + 60 * 60_000).toISOString(),
+  }]);
+  return token;
+}

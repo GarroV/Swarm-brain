@@ -38,6 +38,7 @@
 // Запуск: SMOKE_SUPABASE_URL=… SMOKE_SERVICE_KEY=… deno run --allow-all scripts/scriba-calendar-smoke.ts
 // Красный, если хоть одно ожидание не сошлось или окружения нет.
 
+import { seedGrantForJob } from "./scriba-smoke-grants.ts";
 const PORT_BASE = Number(Deno.env.get("SMOKE_PORT_BASE") ?? "4490");
 const PORT_CALENDAR = PORT_BASE + 4;
 const PORT_CLAIM = PORT_BASE + 5;
@@ -336,6 +337,7 @@ async function cleanup(): Promise<string[]> {
     `meeting_calendar_snapshot_events?group_id=eq.${WS}`,
     `meeting_calendar_snapshot_runs?group_id=eq.${WS}`,
     `meeting_notices?recipient_id=in.(${ids})`,
+    `meeting_agent_grants?group_id=eq.${WS}`,
     `meeting_calendar_jobs?group_id=eq.${WS}`,
     `meeting_invites?group_id=eq.${WS}`,
     `meetings?group_id=eq.${WS}`,
@@ -369,11 +371,19 @@ async function call(
     method: "POST",
     ...init,
   });
-  return {
-    status: res.status,
-    body: await res.json().catch(() => ({})) as Json,
-  };
+  const body = await res.json().catch(() => ({})) as Json;
+  if (port === PORT_CALENDAR) {
+    for (const j of (body.jobs ?? []) as Array<Job & { grant_token?: string }>) {
+      if (j.grant_token) issued.set(`${j.invited_by}|${j.calendar_key}`, j.grant_token);
+    }
+  }
+  return { status: res.status, body };
 }
+
+// Пропуска, выданные meeting-calendar к заданиям (T165): человек|ключ → пропуск. Бот заявляет
+// встречу пропуском своего задания; за человека, которому задание не выдано, — пропуском по
+// чужому заданию (seedGrantForJob), чтобы отказ давала сверка календаря, а не его отсутствие.
+const issued = new Map<string, string>();
 
 const agentAuth = { Authorization: `Bearer ${AGENT.token}` };
 type Skip = {
@@ -414,9 +424,16 @@ async function claimAs(
   person: number,
   key: string,
 ): Promise<{ status: number; body: Json }> {
+  const grant = issued.get(`${person}|${key}`) ??
+    await seedGrantForJob(rest, {
+      agentId: AGENT.id,
+      groupId: WS,
+      telegramId: person,
+      calendarKey: key,
+    });
   return await call(PORT_CLAIM, {
     headers: {
-      ...agentAuth,
+      Authorization: `Bearer ${grant}`,
       "X-On-Behalf-Of": String(person),
       "Content-Type": "application/json",
     },
@@ -450,6 +467,7 @@ async function scenario(): Promise<void> {
   expect(
     "одна встреча у A и B — одно задание, за A (первого по id)",
     jobs.length === 1 && jobs[0].calendar_key === keyOf(SHARED) &&
+      issued.has(`${PEOPLE.a}|${keyOf(SHARED)}`) &&
       jobs[0].invited_by === PEOPLE.a,
     jobs,
   );

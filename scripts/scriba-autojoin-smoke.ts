@@ -302,6 +302,11 @@ async function scenario(): Promise<void> {
       JSON.stringify(taken) === JSON.stringify([[Y, SHARED_KEY]]),
     body,
   );
+  expect(
+    "к заданию выдан пропуск бота на эту встречу (grant_token sgr_)",
+    (body.jobs ?? []).every((j) => String(j.grant_token ?? "").startsWith("sgr_")),
+    body,
+  );
 
   const rows = await rest(
     "GET",
