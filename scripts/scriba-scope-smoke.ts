@@ -350,7 +350,7 @@ async function scenario(): Promise<void> {
   );
   const room = await call(PORT.claim, gA1, {
     identity_kind: "room",
-    identity_key: `meet:scp-${String(RUN)}-1`,
+    identity_key: "meet:abc-defg-hij",
     started_at: startedAt(),
     recorded_seconds: 0,
   });
