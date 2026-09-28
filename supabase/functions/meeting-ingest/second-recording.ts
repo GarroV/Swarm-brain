@@ -9,7 +9,9 @@
 // Стенограмма заменяется целиком или не трогается вовсе — две записи в ней не смешиваются.
 //
 // Источник — не токен и не клиент, а «кто пишет»: у человека рекордер один (сменная сборка,
-// повтор выгрузки и прошлый токен — тот же источник), агент различается по своему id.
+// повтор выгрузки и прошлый токен — тот же источник), агент различается по своему id. Человек в
+// источнике обязателен: право на встречу может перейти к другому участнику, пока первая запись
+// ещё обрабатывается, и без него запись другого человека выглядела бы повтором чужой выгрузки.
 
 export type UploadDecision =
   /** Обычная обработка — как было всегда. */
@@ -21,8 +23,10 @@ export type UploadDecision =
   /** Стенограмма уже есть — обработать вторую запись и оставить более полную. */
   | "challenge";
 
-export function uploadSource(identity: { kind: string; agentId?: string }): string {
-  return identity.kind === "bot" ? `agent:${identity.agentId ?? "?"}` : "person";
+export function uploadSource(identity: { kind: string; agentId?: string; telegramId: number }): string {
+  return identity.kind === "bot"
+    ? `agent:${identity.agentId ?? "?"}:${identity.telegramId}`
+    : `person:${identity.telegramId}`;
 }
 
 export interface UploadContext {

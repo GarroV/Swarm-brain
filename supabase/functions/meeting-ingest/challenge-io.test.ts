@@ -44,6 +44,7 @@ function fakeDb(row: Record<string, unknown> | null, updateHits: boolean[]) {
           const q = {
             eq: (c: string, v: unknown) => (call.filters.push(`${c}=eq.${v}`), q),
             is: (c: string, v: unknown) => (call.filters.push(`${c}=is.${v}`), q),
+            neq: (c: string, v: unknown) => (call.filters.push(`${c}=neq.${v}`), q),
             or: (f: string) => (call.filters.push(`or(${f})`), q),
             select: (_c: string) => ({
               maybeSingle: () => Promise.resolve({ data: hit ? { id: "m" } : null, error: null }),
@@ -114,6 +115,8 @@ Deno.test("ЯДРО: выгрузка полнее — перехват UPDATE �
     `claim_owner=eq.${HOLDER}`,
     "recorded_seconds=eq.180",
     `or(agent_last_recording.is.null,agent_last_recording.is.false,lease_expires_at.is.null,lease_expires_at.lt.${NOW})`,
+    "notes_edited_at=is.null",
+    "status=neq.in_base",
   ]);
   assertEquals(rolesOf(calls.at(-1)), { [HOLDER]: "superseded", [TAKER]: "transcribe" });
 });
@@ -150,7 +153,34 @@ Deno.test("брошенная встреча (лиз истёк, стеногр�
   assertEquals(out, { ok: true, reset: false, measuredSec: 60 });
   const take = calls.find((c) => c.op === "update" && "claim_owner" in (c.patch ?? {}));
   assertEquals("summary_status" in (take?.patch ?? {}), false);
-  assertEquals(take?.filters, ["id=eq.m", "transcript=is.null", `or(claim_owner.is.null,lease_expires_at.lt.${NOW})`]);
+  assertEquals(take?.filters, [
+    "id=eq.m",
+    "transcript=is.null",
+    `or(claim_owner.is.null,lease_expires_at.lt.${NOW})`,
+    "notes_edited_at=is.null",
+    "status=neq.in_base",
+  ]);
+});
+
+Deno.test("ЯДРО: у держателя готовая стенограмма — выгрузка полнее идёт на сравнение, право пока не переходит", async () => {
+  for (const extra of [{ transcript: { segments: [{ end: 170 }] } }, { summary_status: "processing" }]) {
+    const { client, calls } = fakeDb(heldRow(extra), [true]);
+    const out = await settleChallengeUpload(
+      client,
+      "m",
+      TAKER,
+      1.5,
+      [part(0, 900), part(900, 900), part(1800, 900)],
+      NOW,
+    );
+    assertEquals(out, {
+      ok: true,
+      reset: false,
+      measuredSec: 2700,
+      rival: { recordedSeconds: 2700, micStartOffset: 1.5 },
+    });
+    assertEquals(calls.filter((c) => c.op === "update").length, 0, "строка встречи и recorders не тронуты");
+  }
 });
 
 Deno.test("встречи нет — 404, в базу ничего не пишется", async () => {

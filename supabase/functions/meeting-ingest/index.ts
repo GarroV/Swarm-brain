@@ -5,7 +5,8 @@ import { type InMemoryPart, runMeetingStep, uploadPartsAndBuildState } from "../
 import { promoteQueued, readQueued, writeQueued } from "../_shared/meeting-queue.ts";
 import { decideUpload, uploadSource } from "./second-recording.ts";
 import { freshChallenge, holderSecondsCorrection, mayCorrectHolderSeconds } from "./challenge.ts";
-import { lowerHolderSeconds, measureUpload, settleChallengeUpload } from "./challenge-io.ts";
+import { lowerHolderSeconds, measureUpload, type Rival, settleChallengeUpload } from "./challenge-io.ts";
+import { isFrozen } from "../_shared/meeting-frozen.ts";
 import { parseSpeakerTimeline, type SpeakerSpan, SpeakerTimelineError } from "../_shared/speakers.ts";
 
 // meeting-ingest — приём АУДИО от claimer (см. transcribator/10-REVISED-DESIGN.md §4, §7.2).
@@ -194,7 +195,7 @@ Deno.serve(async (req: Request) => {
     // Источники и первый сегмент — без тяжёлых jsonb целиком: только чтобы решить судьбу второй
     // записи той же встречи (second-recording.ts).
     .select(
-      "id, claim_owner, notes_edited_at, summary_status, sources:process_state->sources, first_segment:transcript->segments->0, recorded_seconds, agent_last_seen_at, recorders",
+      "id, claim_owner, notes_edited_at, status, summary_status, sources:process_state->sources, first_segment:transcript->segments->0, recorded_seconds, agent_last_seen_at, recorders",
     )
     .eq("id", meetingId)
     .maybeSingle();
@@ -204,6 +205,7 @@ Deno.serve(async (req: Request) => {
     id: string;
     claim_owner: number | null;
     notes_edited_at: string | null;
+    status: string | null;
     summary_status: string | null;
     sources: unknown;
     first_segment: unknown;
@@ -235,9 +237,22 @@ Deno.serve(async (req: Request) => {
 
   const webUrl = WEB_BASE_URL ? `${WEB_BASE_URL}/?meeting=${meetingId}` : "";
 
-  // Претендент: сперва измерить выгрузку и решить право (до защиты правок и идемпотентности — они
-  // смотрят на строку, какой она станет после перехвата). Отказ — 409, строка встречи не тронута.
+  // Правленное человеком или опубликованное команде не трогает никто (_shared/meeting-frozen.ts):
+  // ни держатель, ни претендент. 200 — клиенту выгружать больше нечего.
+  if (isFrozen(m)) {
+    return json({
+      ok: true,
+      meeting_id: meetingId,
+      web_url: webUrl,
+      summary_status: m.notes_edited_at ? "skipped_human_edit" : "skipped_published",
+    });
+  }
+
+  // Претендент: сперва измерить выгрузку и решить право (до идемпотентности — она смотрит на
+  // строку, какой она станет после перехвата). Отказ — 409, строка встречи не тронута. Если у
+  // держателя уже есть своя версия, право не переходит сейчас: запись идёт на сравнение (`rival`).
   let parts: TrackParts | null = null;
+  let rival: Rival | undefined;
   if (challenge) {
     const read = await readParts(formData);
     if (read instanceof Response) return read;
@@ -251,33 +266,29 @@ Deno.serve(async (req: Request) => {
       new Date().toISOString(),
     );
     if (!settled.ok) return fail(settled.error, settled.status);
+    rival = settled.rival;
     // Перехват сбросил маркеры обработки тем же UPDATE (claim-patch.ts takeoverPatch).
-    m = { ...m, claim_owner: uploader, ...(settled.reset ? { summary_status: null, sources: null } : {}) };
-  }
-
-  // Защита правок человека: черновик уже правили → не перетранскрибируем и не перегенерим.
-  if (m.notes_edited_at) {
-    return json({
-      ok: true,
-      meeting_id: meetingId,
-      web_url: webUrl,
-      summary_status: "skipped_human_edit",
-    });
+    if (!rival) {
+      m = { ...m, claim_owner: uploader, ...(settled.reset ? { summary_status: null, sources: null } : {}) };
+    }
   }
 
   // Идемпотентность: повторный upload (потерянный 202 → ретрай клиента) не должен запускать
   // вторую обработку. Но выгрузка ДРУГОГО источника той же встречи — не повтор, а вторая запись
   // (бот и рекордер одного человека, T156): она ждёт очереди или сравнивается с готовой.
   const source = uploadSource(identity);
-  const sources = Array.isArray(m.sources) ? m.sources.filter((s): s is string => typeof s === "string") : null;
+  const listed = Array.isArray(m.sources) ? m.sources.filter((s): s is string => typeof s === "string") : null;
+  // Запись претендента — другой человек по построению: «старая форма без источников» не делает её
+  // повтором чужой выгрузки.
+  const sources = rival && listed === null ? [] : listed;
   const decision = decideUpload({
     summaryStatus: m.summary_status,
     sources,
     hasTranscript: m.first_segment !== null && m.first_segment !== undefined,
     incoming: source,
   });
-  const queued = decision === "queue" ? await readQueued(supabase, m.id) : null;
-  if (decision === "already_processed" || queued?.source === source) {
+  const queued = decision === "queue" ? await readQueued(supabase, m.id, source) : null;
+  if (decision === "already_processed" || queued !== null) {
     return json({
       ok: true,
       meeting_id: meetingId,
@@ -307,6 +318,7 @@ Deno.serve(async (req: Request) => {
       source,
       sources: [...new Set([...(sources ?? []), source])],
       owner: identity.telegramId,
+      ...(rival ? { rival } : {}),
       ...(decision === "challenge" ? { challenge: { priorStatus: m.summary_status } } : {}),
     });
     if (decision === "queue") await writeQueued(supabase, m.id, state);
