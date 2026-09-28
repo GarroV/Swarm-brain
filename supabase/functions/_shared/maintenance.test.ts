@@ -150,3 +150,18 @@ Deno.test("начало читается из строки кнопки; мус�
   assertEquals(parseMaintenance(v)?.startsAt, "2026-09-25T23:20:00Z");
   assertEquals(parseMaintenance({ ...v, starts_at: "завтра" })?.startsAt, null);
 });
+
+Deno.test("live-пометки рекордера проходят заморозку — повтора у него нет, 503 = потеря", () => {
+  const v = (path: string) =>
+    maintenanceVerdict({
+      state: state(),
+      now: NOW,
+      method: "POST",
+      isOwner: false,
+      path,
+    }).frozen;
+  assertEquals(v("/agent-meetings/abc-123/notes"), false);
+  // Соседние записи той же встречи заморозку не обходят.
+  assertEquals(v("/agent-meetings/abc-123/publish"), true);
+  assertEquals(v("/agent-meetings/abc-123/notes/extra"), true);
+});

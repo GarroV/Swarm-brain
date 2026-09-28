@@ -75,6 +75,14 @@ export function isActive(state: MaintenanceState | null, now: Date): boolean {
   return Date.parse(state.until) > now.getTime();
 }
 
+/**
+ * Записи рекордера, которые заморозка пропускает. Рекордер сливает live-пометки один раз, на
+ * стопе записи, и повтора не делает: на 503 пометки остаются в буфере, а следующая запись его
+ * стирает — то есть заморозка молча теряла бы пометки человека. Пара строк в таблицу пометок
+ * миграции не мешает, потеря — мешает.
+ */
+const RECORDER_WRITES: readonly RegExp[] = [/^\/agent-meetings\/[^/]+\/notes$/];
+
 export type Verdict =
   | { frozen: false }
   | { frozen: true; retryAfterSec: number; state: MaintenanceState };
@@ -89,6 +97,7 @@ export type Verdict =
  *     он не сможет ни убедиться, что всё встало, ни снять режим через продукт;
  *   • чтение (GET/HEAD/OPTIONS) → пускаем: оно ничего не портит, а «белый экран вместо
  *     данных» пугает сильнее честной плашки;
+ *   • live-пометки рекордера → пускаем: повтора у него нет, 503 = потеря (см. RECORDER_WRITES);
  *   • всё остальное → 503, потому что изменение во время переезда либо потеряется, либо
  *     ляжет поверх мигрирующей схемы.
  */
@@ -97,12 +106,16 @@ export function maintenanceVerdict(args: {
   now: Date;
   method: string;
   isOwner: boolean;
+  path?: string;
 }): Verdict {
-  const { state, now, method, isOwner } = args;
+  const { state, now, method, isOwner, path } = args;
   if (!isActive(state, now)) return { frozen: false };
   if (isOwner) return { frozen: false };
   const m = method.toUpperCase();
   if (m === "GET" || m === "HEAD" || m === "OPTIONS") return { frozen: false };
+  if (path && RECORDER_WRITES.some((re) => re.test(path))) {
+    return { frozen: false };
+  }
   const left = Math.ceil((Date.parse(state!.until) - now.getTime()) / 1000);
   return {
     frozen: true,
