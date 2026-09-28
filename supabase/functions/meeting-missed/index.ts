@@ -13,7 +13,8 @@
 //          checked=false — сегодня календарь человека не снят (Google не ответил на всех снимках дня, снимка
 //          ещё не было) или сверка упала; показано записанное. snapshot_at — время последнего снимка.
 //   POST { miss_id } → 201/200 { invite } — как POST /meeting-invites (swarm-api/meeting-invites.ts);
-//          404 not_found · 409 cannot_invite / meeting_over / autojoin_off · 400/429 — правила приглашений.
+//          404 not_found · 409 cannot_invite / meeting_over / autojoin_off · 400/429 и 409 already_invited
+//          (коллега уже позвал бота в эту комнату) — правила приглашений.
 //   401 не токен · 403 не токен рекордера · 405 не GET/POST · 500 сбой базы.
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
@@ -23,6 +24,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, verifyAgentToken } from "../_shared/agent-auth.ts";
 import { makeMissStore, MISS_COLUMNS, type MissRow } from "../_shared/calendar-miss-store.ts";
+import { isDemoSession } from "../_shared/demo-session.ts";
+import { loadCoveredRooms } from "../_shared/manual-rooms.ts";
 import type { SnapshotEvent, SnapshotRun } from "../_shared/calendar-snapshot.ts";
 import { handleMeetingInviteRoutes, type InviteContext } from "../swarm-api/meeting-invites.ts";
 import { handleMissed, type MissedDeps, type Person } from "./handle.ts";
@@ -42,12 +45,13 @@ function must<T>(what: string, res: { data: T | null; error: { message: string }
 }
 
 function inviteCtx(person: Person): InviteContext {
-  // Демо-воркспейс автозапуска не имеет (его люди без scriba_autojoin); отказ демо — правило веба.
+  // Демо автозапуска не имеет (его люди без scriba_autojoin); отказ демо — правило веба, решается
+  // по личности (_shared/demo-session.ts), а не по слагу группы.
   return {
     supabase,
     telegramId: person.telegramId,
     groupId: person.groupId,
-    isDemo: person.groupId === "demo",
+    isDemo: isDemoSession(person.telegramId),
     origin: "",
   };
 }
@@ -94,13 +98,7 @@ const deps: MissedDeps = {
     ) ?? [];
     return data as SnapshotEvent[];
   },
-  async recentInviteLinks(groupId, sinceIso) {
-    const data = must(
-      "meeting_invites",
-      await supabase.from("meeting_invites").select("join_url").eq("group_id", groupId).gte("created_at", sinceIso),
-    ) ?? [];
-    return (data as { join_url: string }[]).map((r) => r.join_url);
-  },
+  manualRooms: (groupId, nowMs) => loadCoveredRooms(supabase, groupId, nowMs),
   store: makeMissStore(supabase),
   async openMisses(person, sinceIso) {
     const data = must(

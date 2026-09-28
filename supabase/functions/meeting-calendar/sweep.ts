@@ -16,7 +16,6 @@ import {
   mergeDispatch,
   planPersonDispatch,
 } from "../_shared/calendar-dispatch.ts";
-import { parseInviteLink } from "../_shared/meeting-invite.ts";
 
 /** Задание, как его получает оркестратор. */
 export interface TakenJob extends DispatchJob {
@@ -26,8 +25,8 @@ export interface TakenJob extends DispatchJob {
 export interface SweepSource {
   /** Люди воркспейса, включившие автозапуск. */
   autojoinPeople(groupId: string): Promise<number[]>;
-  /** Ссылки живых ручных приглашений воркспейса (D017): на эти комнаты бот уже идёт. */
-  liveInviteLinks(groupId: string, nowIso: string): Promise<string[]>;
+  /** Комнаты, куда бота уже позвали руками (D017): он туда едет или уже пишет (_shared/manual-rooms.ts). */
+  manualRooms(groupId: string, nowMs: number): Promise<ReadonlySet<string>>;
   refreshToken(telegramId: number): Promise<string | null>;
   accessToken(refresh: string): Promise<TokenResult>;
   listEvents(token: string, timeMin: string, timeMax: string, maxResults: number): Promise<GEvent[] | null>;
@@ -78,13 +77,10 @@ export async function sweep(
   nowMs: number,
 ): Promise<SweepResult> {
   const nowIso = new Date(nowMs).toISOString();
-  const [people, links] = await Promise.all([
+  const [people, manualRooms] = await Promise.all([
     source.autojoinPeople(agent.groupId),
-    source.liveInviteLinks(agent.groupId, nowIso),
+    source.manualRooms(agent.groupId, nowMs),
   ]);
-  const manualRooms = new Set(
-    links.map((l) => parseInviteLink(l)?.room).filter((r): r is string => r !== undefined),
-  );
   // Порядок людей стабилен (по telegram_id у источника): одна встреча у двоих — за первого.
   const plans = await Promise.all(people.map((p) => personPlan(source, p, nowMs, manualRooms)));
   const merged = mergeDispatch(plans);

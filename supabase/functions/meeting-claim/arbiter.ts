@@ -14,6 +14,7 @@
 //     (second-recording.ts, T156). Умер бот — запасная уже в базе.
 // Бот не пишет (остановился или умер: лиз истёк) — прежнее правило полноты.
 
+import { botStillRecording } from "../_shared/bot-recording.ts";
 import { MAX_RECORDED_SECONDS } from "../_shared/meeting-lease.ts";
 import { isFrozen, PUBLISHED_STATUS } from "../_shared/meeting-frozen.ts";
 
@@ -53,15 +54,8 @@ export function readClaimSeconds(raw: unknown): number | undefined {
   return raw;
 }
 
-/**
- * Бот ещё пишет встречу: флаг записи взведён ударом recording:true И лиз действует. Лиз продлевают
- * только удары recording:true (meeting-heartbeat), так что умерший бот с оставшимся флагом
- * перестаёт считаться пишущим не позже, чем через срок лиза.
- */
-export function botStillRecording(row: HeldRow, nowIso: string): boolean {
-  return row.agent_last_recording === true && row.lease_expires_at !== null &&
-    Date.parse(row.lease_expires_at) > Date.parse(nowIso);
-}
+// Правило «бот ещё пишет» — одно с _shared/manual-rooms.ts, живёт в _shared/bot-recording.ts.
+export { botStillRecording };
 
 /**
  * Длительность записи, которая СЕЙЧАС лежит за встречей (сек). Для строк, заведённых старым
