@@ -80,7 +80,7 @@ case "${1:-status}" in
   meetings)
     jar="$(session_cookie)"
     trap 'rm -f "$jar"' EXIT
-    remote "docker exec supabase_db_scriba-live psql -U postgres -At -F ' | ' -c \"select id, status, source, confirmed, owner_id, jsonb_array_length(coalesce(process_state->'speakers','[]'::jsonb)) as speakers, created_at from meetings order by created_at desc limit 10\""
+    remote "docker exec supabase_db_scriba-live psql -U postgres -At -F ' | ' -c \"select id, status, source, identity_kind, claim_owner, recorded_seconds, jsonb_array_length(coalesce(process_state->'speakers','[]'::jsonb)) as speakers, jsonb_array_length(coalesce(transcript->'segments','[]'::jsonb)) as segments, created_at from meetings order by created_at desc limit 10\""
     printf '\nочередь вычитки владельца (GET /api/meetings?confirmed=false):\n'
     curl -sS -b "$jar" "${WEB}/api/meetings?confirmed=false" | head -c 1500
     echo
