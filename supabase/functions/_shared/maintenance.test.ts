@@ -13,6 +13,7 @@ const state = (over: Partial<MaintenanceState> = {}): MaintenanceState => ({
   messageEn: "Swarm is being updated.",
   messageRu: "Идёт обновление Swarm.",
   startedAt: "2026-09-25T23:05:00Z",
+  startsAt: null,
   ...over,
 });
 
@@ -113,4 +114,26 @@ Deno.test("тело ответа несёт срок и оба языка — в
   assertEquals(p.until, "2026-09-25T23:40:00Z");
   assertEquals(p.message_en, "Swarm is being updated.");
   assertEquals(p.message_ru, "Идёт обновление Swarm.");
+});
+
+Deno.test("плановая заморозка до начала пропускает правки — люди дописывают начатое (#609)", () => {
+  const planned = state({ startsAt: "2026-09-25T23:20:00Z" });
+  assertEquals(isActive(planned, NOW), false);
+  assertEquals(
+    maintenanceVerdict({ state: planned, now: NOW, method: "PATCH", isOwner: false }).frozen,
+    false,
+  );
+  // С момента начала — обычная заморозка.
+  const at = new Date("2026-09-25T23:20:00Z");
+  assertEquals(isActive(planned, at), true);
+  assertEquals(
+    maintenanceVerdict({ state: planned, now: at, method: "PATCH", isOwner: false }).frozen,
+    true,
+  );
+});
+
+Deno.test("начало читается из строки кнопки; мусор в начале = «сразу», а не «никогда»", () => {
+  const v = { until: "2026-09-25T23:40:00Z", starts_at: "2026-09-25T23:20:00Z" };
+  assertEquals(parseMaintenance(v)?.startsAt, "2026-09-25T23:20:00Z");
+  assertEquals(parseMaintenance({ ...v, starts_at: "завтра" })?.startsAt, null);
 });

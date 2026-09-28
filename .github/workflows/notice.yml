@@ -9,6 +9,11 @@ name: Плашка и заморозка (руками)
 #
 # Это ПРАВКА ПРОД-ДАННЫХ: жать только по «да» владельца на раскатку, как и любую раскатку.
 # Обе строки гаснут сами по сроку — забытая кнопка не оставит плашку на неделю.
+#
+# freeze — одно нажатие на весь цикл (issue #609): сразу плашка «работы в ЧЧ:ММ на N мин» и
+# уведомление в колокольчик всем рабочим воркспейсам, через `lead` минут — заморозка, по сроку
+# `minutes` — снятие само. Повторное нажатие — та же заморозка (перенос/продление), без дублей
+# в колокольчике. unfreeze — снять идущую или отменить плановую.
 
 on:
   workflow_dispatch:
@@ -22,12 +27,16 @@ on:
         description: "Плашка: через сколько минут обновление. Заморозка: на сколько минут (не больше 180)"
         type: string
         default: "15"
+      lead:
+        description: "Заморозка: через сколько минут начать (0 — сразу). До начала висит плашка, в колокольчик уходит уведомление"
+        type: string
+        default: "15"
       text_ru:
-        description: "Плашка: свой текст по-русски (пусто — «Обновление через N мин»)"
+        description: "Свой текст по-русски — плашке, а для заморозки ещё заглушке и колокольчику (пусто — стандартный)"
         type: string
         default: ""
       text_en:
-        description: "Плашка: свой текст по-английски"
+        description: "Свой текст по-английски (то же)"
         type: string
         default: ""
 
@@ -58,10 +67,12 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           ACTION: ${{ inputs.action }}
           MINUTES: ${{ inputs.minutes }}
+          LEAD_MIN: ${{ inputs.lead }}
           NOTICE_RU: ${{ inputs.text_ru }}
           NOTICE_EN: ${{ inputs.text_en }}
         run: |
           case "$MINUTES" in ''|*[!0-9]*) echo "::error::Минуты — целое число, а не «${MINUTES}»"; exit 2 ;; esac
+          case "$LEAD_MIN" in ''|*[!0-9]*) echo "::error::Начало — целое число минут, а не «${LEAD_MIN}»"; exit 2 ;; esac
           case "$ACTION" in
             notice)      ./scripts/deploy-notice.sh set "$MINUTES" ;;
             notice-off)  ./scripts/deploy-notice.sh off ;;
@@ -71,7 +82,9 @@ jobs:
                 echo "::error::scripts/maintenance.sh нет в этой ветке — заморозка (#507) ещё не влита"; exit 2
               fi
               case "$ACTION" in
-                freeze)        ./scripts/maintenance.sh freeze "$MINUTES" ;;
+                # Одно нажатие: плашка сейчас → заморозка через LEAD_MIN → снятие по сроку сама.
+                # Тот же текст, что у плашки, — заглушке и колокольчику (оба языка).
+                freeze)        MSG_RU="$NOTICE_RU" MSG_EN="$NOTICE_EN" ./scripts/maintenance.sh freeze "$MINUTES" ;;
                 unfreeze)      ./scripts/maintenance.sh unfreeze ;;
                 freeze-status) ./scripts/maintenance.sh status ;;
               esac ;;

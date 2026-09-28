@@ -31,6 +31,9 @@ export type MaintenanceState = {
   messageEn: string;
   messageRu: string;
   startedAt: string | null;
+  /** С какого момента режим действует. До него — предупреждение плашкой, а не заморозка
+   *  (issue #609: одно нажатие даёт «предупредить → заморозить → снять»). null — сразу. */
+  startsAt: string | null;
 };
 
 /**
@@ -55,12 +58,17 @@ export function parseMaintenance(value: unknown): MaintenanceState | null {
       "Идёт обновление Swarm. Пожалуйста, зайдите чуть позже.",
     ),
     startedAt: typeof v.started_at === "string" ? v.started_at : null,
+    startsAt: typeof v.starts_at === "string" && !Number.isNaN(Date.parse(v.starts_at))
+      ? v.starts_at
+      : null,
   };
 }
 
-/** Активна ли заморозка прямо сейчас (срок в данных, а не в дисциплине). */
+/** Активна ли заморозка прямо сейчас (срок в данных, а не в дисциплине). Плановая — ещё нет:
+ *  до `starts_at` люди видят предупреждение и спокойно дописывают начатое. */
 export function isActive(state: MaintenanceState | null, now: Date): boolean {
   if (!state) return false;
+  if (state.startsAt && Date.parse(state.startsAt) > now.getTime()) return false;
   return Date.parse(state.until) > now.getTime();
 }
 
