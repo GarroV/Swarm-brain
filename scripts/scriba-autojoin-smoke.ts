@@ -46,6 +46,7 @@ const SHARED = {
   start: { dateTime: iso(1) },
   end: { dateTime: iso(30) },
   hangoutLink: "https://meet.google.com/aj-shrd-abc",
+  organizer: { self: true }, // своя встреча без гостей — «да» (D024)
 };
 const SHARED_KEY = `${SHARED.iCalUID}:${SHARED.start.dateTime.slice(0, 10)}`;
 const calendars = new Map<number, Json[]>([[X, [SHARED]], [Y, [SHARED]], [

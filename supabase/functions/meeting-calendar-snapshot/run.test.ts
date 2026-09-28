@@ -20,6 +20,7 @@ const MEETING: GEvent = {
   start: { dateTime: "2026-09-28T09:00:00Z" },
   end: { dateTime: "2026-09-28T09:30:00Z" },
   hangoutLink: "https://meet.google.com/abc-defg-hij",
+  organizer: { self: true }, // своя встреча без гостей — «да» (D024)
 } as GEvent;
 
 interface Log {

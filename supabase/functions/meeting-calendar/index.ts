@@ -13,7 +13,8 @@
 //
 // Всё, на что бот не пойдёт, возвращается в `skipped` с причиной — громко (D015):
 //   calendar_not_connected · calendar_token_dead · calendar_unavailable — у человека (ключа нет);
-//   no_conference_link · unsupported_platform · unrecognized_link · declined · manual_invite_exists —
+//   no_conference_link · unsupported_platform · unrecognized_link · declined · not_accepted ·
+//   manual_invite_exists —
 //   у встречи. Список — _shared/calendar-dispatch.ts (SkipReason).
 //
 // Дверь — resolveServiceAgent: только токен агента, без подмены личности; люди сюда не проходят.

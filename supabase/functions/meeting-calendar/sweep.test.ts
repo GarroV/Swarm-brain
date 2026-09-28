@@ -16,6 +16,7 @@ function meeting(): GEvent {
     start: { dateTime: "2026-09-28T07:01:00Z" },
     end: { dateTime: "2026-09-28T07:30:00Z" },
     hangoutLink: MEET,
+    organizer: { self: true }, // своя встреча без гостей — «да» (D024)
   };
 }
 

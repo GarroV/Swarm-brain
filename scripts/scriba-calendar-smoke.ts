@@ -97,6 +97,8 @@ function ev(uid: string, extra: Json = {}): FakeEvent {
     status: "confirmed",
     start: { dateTime: iso(1) },
     end: { dateTime: iso(30) },
+    // Своя встреча без гостей: Google не ведёт статус организатору — это «да» (D024).
+    organizer: { self: true },
     ...extra,
   };
 }
@@ -110,6 +112,17 @@ const ZOOM = ev(`zoom-${RUN}`, {
 const NOLINK = ev(`nolink-${RUN}`);
 const OWN_E = ev(`own-e-${RUN}`, {
   hangoutLink: "https://meet.google.com/smk-owne-abc",
+});
+// Приглашение, на которое человек не ответил «да» (D024): бот не идёт, это не пропуск рекордера.
+const NOTYES = ev(`notyes-${RUN}`, {
+  hangoutLink: "https://meet.google.com/smk-noys-abc",
+  organizer: { self: false },
+  attendees: [{ email: "a@smoke.test", self: true, responseStatus: "needsAction" }],
+});
+const MAYBE = ev(`maybe-${RUN}`, {
+  hangoutLink: "https://meet.google.com/smk-mayb-abc",
+  organizer: { self: false },
+  attendees: [{ email: "a@smoke.test", self: true, responseStatus: "tentative" }],
 });
 const MANUAL_ROOM = "https://meet.google.com/smk-manl-abc";
 const MANUAL = ev(`manual-${RUN}`, { hangoutLink: MANUAL_ROOM });
@@ -139,7 +152,7 @@ const ZOOM_NOW = ev(`zoomnow-${RUN}`, {
 });
 
 const calendars = new Map<number, FakeEvent[]>([
-  [PEOPLE.a, [SHARED, ZOOM, NOLINK]],
+  [PEOPLE.a, [SHARED, ZOOM, NOLINK, NOTYES, MAYBE]],
   [PEOPLE.b, [SHARED]],
   [PEOPLE.d, [SHARED]],
   [PEOPLE.e, [OWN_E]],
@@ -390,6 +403,8 @@ function skipsOf(body: Json): string[] {
 const EXPECTED_SKIPS = [
   `${PEOPLE.a}|${keyOf(ZOOM)}|unsupported_platform|zoom`,
   `${PEOPLE.a}|${keyOf(NOLINK)}|no_conference_link`,
+  `${PEOPLE.a}|${keyOf(NOTYES)}|not_accepted`,
+  `${PEOPLE.a}|${keyOf(MAYBE)}|not_accepted`,
   `${PEOPLE.c}|-|calendar_not_connected`,
   `${PEOPLE.d}|-|calendar_token_dead`,
   `${PEOPLE.f}|${keyOf(MANUAL)}|manual_invite_exists|meet`,
@@ -738,6 +753,20 @@ async function recorderMisses(): Promise<void> {
       report.ok === 4 && report.calendar_not_connected === 1 &&
       report.calendar_token_dead === 1 && report.failed === 0,
     snap,
+  );
+  const notYes = [keyOf(NOTYES), keyOf(MAYBE)].join(",");
+  const notYesSnap = await rest(
+    "GET",
+    `meeting_calendar_snapshot_events?calendar_key=in.(${notYes})&select=calendar_key`,
+  ) as Json[];
+  const notYesMiss = await rest(
+    "GET",
+    `meeting_calendar_misses?calendar_key=in.(${notYes})&select=calendar_key`,
+  ) as Json[];
+  expect(
+    "D024: встречи без «да» не ждут бота — ни строки снимка, ни пропуска",
+    notYesSnap.length === 0 && notYesMiss.length === 0,
+    { notYesSnap, notYesMiss },
   );
   const runG = await runOf(PEOPLE.g);
 

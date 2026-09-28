@@ -28,7 +28,7 @@ const standup: GEvent = {
   start: { dateTime: "2026-09-25T10:00:00+02:00" },
   end: { dateTime: "2026-09-25T10:30:00+02:00" },
   attendees: [
-    { email: "person@team.io", displayName: "Person", self: true },
+    { email: "person@team.io", displayName: "Person", self: true, responseStatus: "accepted" },
     { email: "boss@team.io" },
     { displayName: "Room 5" },
   ],
@@ -138,6 +138,17 @@ Deno.test("БЛОКИРУЮЩИЙ: агент не заводит календа
   const src = source({ events: [{ ...standup, iCalUID: "someone-elses@google.com" }] });
   const msg = await refused(resolveAgentScope(src, bot, calendarClaim), 403);
   assertEquals(msg.includes("not a participant"), true, msg);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ (D024): встреча есть, но человек не ответил «да» → 403, бот за него не заводит", async () => {
+  for (const status of ["needsAction", "tentative", "declined"]) {
+    const attendees = [{ email: "person@team.io", self: true, responseStatus: status }, { email: "boss@team.io" }];
+    const msg = await refused(
+      resolveAgentScope(source({ events: [{ ...standup, attendees }] }), bot, calendarClaim),
+      403,
+    );
+    assertEquals(msg.includes("accepted"), true, msg);
+  }
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: та же встреча другого дня не засчитывается (повторяющаяся серия)", async () => {

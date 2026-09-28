@@ -26,6 +26,7 @@ import type { AgentIdentity } from "../_shared/agent-auth.ts";
 import type { TokenResult } from "../_shared/google-calendar.ts";
 import type { GEvent } from "../meeting-current/select.ts";
 import { CALENDAR_KEY, calendarKeyOf } from "../_shared/calendar-key.ts";
+import { acceptedBySelf } from "../_shared/calendar-attendance.ts";
 import { checkInviteForClaim, type InviteRow } from "../_shared/meeting-invite.ts";
 
 // Сборка календарного ключа — общая с meeting-current (_shared/calendar-key.ts); наружу
@@ -139,6 +140,15 @@ async function calendarScope(
       } просил календарную встречу ${key} за ${identity.telegramId} — в его календаре её нет`,
     );
     throw new AgentScopeError(403, "service agent: the person is not a participant of this calendar meeting");
+  }
+  // То же правило, по которому бот сюда пошёл (D024): ответ мог смениться после отбора задания.
+  if (!acceptedBySelf(event)) {
+    console.warn(
+      `agent-scope: агент ${
+        identity.agentId ?? "?"
+      } просил календарную встречу ${key} за ${identity.telegramId} — «да» нет`,
+    );
+    throw new AgentScopeError(403, "service agent: the person has not accepted this calendar meeting");
   }
   // Та же выборка полей, что отдаёт meeting-current: встреча агента выглядит как встреча рекордера.
   const attendees = (event.attendees ?? [])
