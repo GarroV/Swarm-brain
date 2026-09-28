@@ -91,16 +91,31 @@ export interface MeasuredPart {
 }
 
 /**
- * До какой секунды записи в выгрузке есть звук: конец самой поздней части по обеим дорожкам.
- * Рекордер вырезает длинные паузы, но каждой части ставит её настоящий старт, поэтому охват
- * близок к длине записи. Хоть одна часть не измерена или частей нет — null.
+ * Сколько секунд шкалы записи покрыто звуком: объединение интервалов [offset, offset+длина] частей
+ * обеих дорожек. Не «конец самой поздней части»: offset присылает клиент, и одна короткая часть,
+ * поставленная на сутки вперёд, давала бы сутки — то есть тот же самоотчёт, от которого замер и
+ * защищает. Объединение не раздувается ни сдвигом, ни повтором части, ни второй дорожкой поверх
+ * первой. Рекордер вырезает тишину (SilenceTrimmer), поэтому охват бывает меньше длины встречи —
+ * это честная мера того, сколько звука у сервера на руках, и держатель меряется так же
+ * (challenge.ts holderSecondsCorrection). Хоть одна часть не измерена или частей нет — null.
  */
-export function trackSpanSec(parts: readonly MeasuredPart[]): number | null {
+export function trackCoverageSec(parts: readonly MeasuredPart[]): number | null {
   if (parts.length === 0) return null;
-  let span = 0;
+  const spans: Array<[number, number]> = [];
   for (const p of parts) {
     if (p.durationSec === null) return null;
-    span = Math.max(span, p.offset + p.durationSec);
+    spans.push([p.offset, p.offset + p.durationSec]);
   }
-  return span;
+  const sorted = [...spans].sort((a, b) => a[0] - b[0]);
+  let covered = 0;
+  let [from, to] = sorted[0];
+  for (const [start, end] of sorted.slice(1)) {
+    if (start <= to) {
+      to = Math.max(to, end);
+      continue;
+    }
+    covered += to - from;
+    [from, to] = [start, end];
+  }
+  return covered + (to - from);
 }

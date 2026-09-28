@@ -2,7 +2,7 @@
 // стенограммой (перехват права claim проверяется по ней, а не по заявке клиента), поэтому ошибка
 // здесь — не шум: «не удалось измерить» обязано быть null, а не нулём или суточной цифрой.
 import { assertAlmostEquals, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { mp4DurationSec, trackSpanSec } from "./audio-length.ts";
+import { mp4DurationSec, trackCoverageSec } from "./audio-length.ts";
 
 function box(type: string, body: Uint8Array): Uint8Array {
   const out = new Uint8Array(8 + body.length);
@@ -75,19 +75,32 @@ Deno.test("mp4: без moov (фрагменты, обрыв записи) — н
   assertEquals(mp4DurationSec(concat(ftyp, mdat(64))), null);
 });
 
-Deno.test("охват дорожек: конец самой поздней части с учётом её offset", () => {
+Deno.test("ЯДРО: охват — объединение интервалов частей обеих дорожек, пересечения не удваиваются", () => {
   assertEquals(
-    trackSpanSec([
+    trackCoverageSec([
       { offset: 0, durationSec: 600 },
       { offset: 600, durationSec: 600 },
       { offset: 1300, durationSec: 250 },
-      { offset: 30, durationSec: 100 },
+      { offset: 30, durationSec: 100 }, // вторая дорожка внутри первой части
     ]),
-    1550,
+    1450,
   );
 });
 
+Deno.test("ЯДРО: offset — самоотчёт клиента, охват им не раздувается (часть на сутках даёт свою длину)", () => {
+  assertEquals(trackCoverageSec([{ offset: 86_000, durationSec: 20 }]), 20);
+  assertEquals(
+    trackCoverageSec([{ offset: 0, durationSec: 60 }, { offset: 3_600, durationSec: 60 }]),
+    120,
+  );
+});
+
+Deno.test("ЯДРО: одна и та же часть, присланная дважды, считается один раз", () => {
+  const part = { offset: 0, durationSec: 900 };
+  assertEquals(trackCoverageSec([part, part, part]), 900);
+});
+
 Deno.test("охват дорожек: хоть одна часть не измерена или частей нет — null", () => {
-  assertEquals(trackSpanSec([{ offset: 0, durationSec: 600 }, { offset: 600, durationSec: null }]), null);
-  assertEquals(trackSpanSec([]), null);
+  assertEquals(trackCoverageSec([{ offset: 0, durationSec: 600 }, { offset: 600, durationSec: null }]), null);
+  assertEquals(trackCoverageSec([]), null);
 });

@@ -7,19 +7,19 @@ import { claimLeaseUntil } from "../_shared/claim-lease.ts";
 import { heldGuards } from "../meeting-claim/arbiter.ts";
 import { occupyPatch, takeoverPatch } from "../meeting-claim/claim-patch.ts";
 import { withGuards } from "../meeting-claim/guard-query.ts";
-import { mp4DurationSec, trackSpanSec } from "./audio-length.ts";
+import { mp4DurationSec, trackCoverageSec } from "./audio-length.ts";
 import { type ChallengeRow, decideChallenge, settleRecorders } from "./challenge.ts";
 
 const CHALLENGE_COLUMNS =
   "claim_owner, recorded_seconds, transcript, notes_edited_at, status, lease_expires_at, agent_last_recording, started_at, created_at, recorders";
 
-/** До какой секунды записи в выгрузке есть звук, по заголовкам частей; не измерено — null. */
+/** Сколько секунд записи покрыто звуком, по заголовкам частей (audio-length.ts); не измерено — null. */
 export async function measureUpload(parts: readonly InMemoryPart[]): Promise<number | null> {
   const measured = await Promise.all(parts.map(async (p) => ({
     offset: p.offset,
     durationSec: mp4DurationSec(new Uint8Array(await p.blob.arrayBuffer())),
   })));
-  return trackSpanSec(measured);
+  return trackCoverageSec(measured);
 }
 
 export type ChallengeOutcome =
