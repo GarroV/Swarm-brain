@@ -16,6 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private var config: SwarmConfig?
     private var configError: String?
+    // Пропуски бота (T162, D022): «бот не пришёл на встречу» + кнопка «Позвать бота».
+    private lazy var missed = MissedMeetingsWatcher(
+        config: { [weak self] in self?.configError == nil ? self?.config : nil },
+        onChange: { [weak self] in self?.rebuildMenu() })
     // Типизированные сбои вместо общего .error(String): каждый даёт точный текст «куда идти»
     // в System Settings + кнопку «Повторить». .error(String) остаётся только для по-настоящему
     // непредвиденного (не классифицировали) — чтобы не прятать причину.
@@ -198,6 +202,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         setupNotifications()
         setupPowerNotifications()
         startWatching()
+        missed.registerCategory()
+        missed.start()
 
         // Дозагрузка на старте: если в прошлый раз приложение закрыли/упало с висящими записями
         // в pending/, заливаем их сейчас (meetingId переиспользуется, claim не повторяем).
@@ -290,6 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // приложению об этом никто не сообщает. Пробуждение единственный момент, когда дёшево
         // переспросить систему, чтобы подсказка в меню не врала (issue #155).
         refreshNotificationAuthorization()
+        missed.pollNow()   // таймер во сне стоял — пропуск мог появиться, пока крышка была закрыта
     }
 
     private func startWatching() {
@@ -513,11 +520,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         completionHandler([.banner, .sound])
     }
 
-    // Клик по уведомлению НИЧЕГО не запускает. Раньше здесь стоял `acceptPrompt()` на
+    // Клик по уведомлению НИЧЕГО не запускает — кроме явной кнопки «Позвать бота» на баннере
+    // пропуска (T162): это отдельное действие с подписью, а не клик по телу уведомления. Раньше здесь стоял `acceptPrompt()` на
     // `UNNotificationDefaultActionIdentifier` — то есть запись начиналась от клика по ЛЮБОМУ
     // уведомлению приложения, включая «нужен новый токен» и «звонок завершён, сохраняю».
     // Предложение записать теперь живёт только в капсуле, и решение принимается там.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        if response.actionIdentifier == MissedMeetingsWatcher.inviteActionId,
+           let missId = response.notification.request.content.userInfo[MissedMeetingsWatcher.missIdKey] as? String {
+            Task { @MainActor in await self.missed.invite(missId) }
+        }
         completionHandler()
     }
 
@@ -646,6 +658,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: statusText(), action: nil, keyEquivalent: ""))
         menu.addItem(.separator())
+        // Бот не пришёл на встречу — первым, под статусом: звать его имеет смысл, пока встреча идёт.
+        let missedItems = configError == nil ? missed.menuItems() : []
+        if !missedItems.isEmpty {
+            missedItems.forEach(menu.addItem)
+            menu.addItem(.separator())
+        }
 
         // 401: токен протух — показываем явный путь «Получить новый токен» (ведёт в бот к
         // /recordertoken) + обычную вставку из буфера. Запись недоступна, пока токен невалиден.
@@ -739,7 +757,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Выйти", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        for item in menu.items where item.action != nil && item.action != #selector(NSApplication.terminate(_:)) {
+        // Пункты со своей целью (пропуски бота — у MissedMeetingsWatcher) не перехватываем.
+        for item in menu.items where item.action != nil && item.target == nil && item.action != #selector(NSApplication.terminate(_:)) {
             item.target = self
         }
         statusItem.menu = menu
@@ -1006,6 +1025,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             state = .idle
             rebuildMenu()
             info("Токен сохранён ✅", "smcp_…\(clip.suffix(4))")
+            missed.pollNow()
             // Свежий токен → пробуем дозалить всё, что копилось при протухшем (включая 401-висяки).
             if let cfg = config {
                 Task { await UploadQueue.shared.drain(config: cfg); await refreshQueueBadge() }
