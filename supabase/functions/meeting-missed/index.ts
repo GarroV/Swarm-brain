@@ -1,26 +1,29 @@
 // meeting-missed — рекордер человека узнаёт, что бот на его встречу не пошёл или не дошёл, и зовёт
 // его руками (T102, решения D015/D021/D022). Логика — handle.ts, что считается пропуском —
 // _shared/calendar-missed.ts, хранилище — _shared/calendar-miss-store.ts. Показывает рекордер (T162).
+// В Google не ходит (T164, D023): календарь снимает по расписанию meeting-calendar-snapshot, здесь
+// читаются снимок (meeting_calendar_snapshot_runs / _events) и задания.
 //
 // Дверь — токен рекордера самого человека (verifyAgentToken, kind recorder / recorder_prev);
 // X-On-Behalf-Of не принимается, токен служебного агента и MCP-токен — 403. Автозапуск выключен
 // (allowed_users.scriba_autojoin=false, D021) — пропусков нет по определению.
 //
-//   GET  → 200 { autojoin, checked, misses: [{ id, reason, title, starts_at, ends_at, join_url,
-//              platform, detected_at, can_invite, message: { en, ru } }] }
-//          checked=false — живая проверка календаря не удалась (Google не ответил), показано записанное.
+//   GET  → 200 { autojoin, checked, snapshot_at, misses: [{ id, reason, title, starts_at, ends_at,
+//              join_url, platform, detected_at, can_invite, message: { en, ru } }] }
+//          checked=false — сегодня календарь человека не снят (Google не ответил на всех снимках дня, снимка
+//          ещё не было) или сверка упала; показано записанное. snapshot_at — время последнего снимка.
 //   POST { miss_id } → 201/200 { invite } — как POST /meeting-invites (swarm-api/meeting-invites.ts);
 //          404 not_found · 409 cannot_invite / meeting_over / autojoin_off · 400/429 — правила приглашений.
 //   401 не токен · 403 не токен рекордера · 405 не GET/POST · 500 сбой базы.
 //
-// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET.
+// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 // Деплой: supabase functions deploy meeting-missed --no-verify-jwt (рекордер хитит с Bearer-токеном).
 //
 // URL-импорты — канон этого репозитория: функции деплоятся без карты импортов.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, verifyAgentToken } from "../_shared/agent-auth.ts";
-import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 import { makeMissStore, MISS_COLUMNS, type MissRow } from "../_shared/calendar-miss-store.ts";
+import type { SnapshotEvent, SnapshotRun } from "../_shared/calendar-snapshot.ts";
 import { handleMeetingInviteRoutes, type InviteContext } from "../swarm-api/meeting-invites.ts";
 import { handleMissed, type MissedDeps, type Person } from "./handle.ts";
 
@@ -73,16 +76,24 @@ const deps: MissedDeps = {
     ) as { scriba_autojoin?: boolean } | null;
     return data?.scriba_autojoin === true;
   },
-  async refreshToken(telegramId) {
+  async snapshotRun(person) {
     const data = must(
-      "user_integrations",
-      await supabase.from("user_integrations").select("api_key")
-        .eq("telegram_id", telegramId).eq("service", "google_calendar").maybeSingle(),
-    ) as { api_key?: string } | null;
-    return data?.api_key ?? null;
+      "meeting_calendar_snapshot_runs",
+      await supabase.from("meeting_calendar_snapshot_runs").select("snapshot_at, attempted_at, outcome")
+        .eq("invited_by", person.telegramId).eq("group_id", person.groupId).maybeSingle(),
+    );
+    return data as SnapshotRun | null;
   },
-  accessToken,
-  listEvents,
+  async snapshotEvents(person, snapshotAt, nowIso) {
+    const data = must(
+      "meeting_calendar_snapshot_events",
+      await supabase.from("meeting_calendar_snapshot_events")
+        .select("calendar_key, outcome, title, join_url, platform, starts_at, ends_at")
+        .eq("invited_by", person.telegramId).eq("group_id", person.groupId).eq("snapshot_at", snapshotAt)
+        .lte("starts_at", nowIso).gt("ends_at", nowIso).limit(50),
+    ) ?? [];
+    return data as SnapshotEvent[];
+  },
   async recentInviteLinks(groupId, sinceIso) {
     const data = must(
       "meeting_invites",

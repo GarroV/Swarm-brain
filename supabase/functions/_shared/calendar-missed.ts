@@ -3,8 +3,9 @@
 // Пропуски автозапуска по календарю (T102, решения D015/D022). Чистые функции: что считается
 // пропуском, под каким ключом он хранится (таблица meeting_calendar_misses), когда по нему можно
 // позвать бота руками и что о нём сказать человеку. Показывает пропуск рекордер человека (bumblebee,
-// функция meeting-missed); пишут его meeting-calendar (на опросе оркестратора) и meeting-missed (на
-// опросе рекордера — так пропуск виден, даже когда оркестратор лежит и не опрашивает ничего).
+// функция meeting-missed); пишут его meeting-calendar (на опросе оркестратора), meeting-calendar-snapshot
+// (причины уровня человека, по расписанию) и meeting-missed (на опросе рекордера — по снимку календаря,
+// _shared/calendar-snapshot.ts: так пропуск виден, даже когда оркестратор лежит и не опрашивает ничего).
 //
 // Что считается пропуском. Правило одно: человек включил автозапуск и ЖДЁТ бота на этой встрече.
 //   пропуск: unsupported_platform (встреча не в Meet), unrecognized_link (ссылку в событии не разобрали),
@@ -18,8 +19,7 @@
 //
 // Сколько раз. Пропуск встречи — один на встречу и причину (ключ = ключ встречи). Причина человека
 // встречи не имеет — один в сутки команды (ключ `autojoin:<дата по Белграду>`).
-import type { GEvent } from "../meeting-current/select.ts";
-import { type DispatchJob, type DispatchSkip, planPersonDispatch } from "./calendar-dispatch.ts";
+import type { DispatchJob, DispatchSkip } from "./calendar-dispatch.ts";
 import { NO_TITLE } from "./notice-texts.ts";
 
 /** После начала встречи: задания всё нет или его никто не забрал — служба автозапуска не отозвалась. */
@@ -169,32 +169,6 @@ export function notArrivedMiss(
 export interface OngoingPlan {
   jobs: DispatchJob[];
   misses: MissRecord[];
-}
-
-/**
- * Встречи, которые уже начались и ещё идут, — каждая оценивается тем же отбором, что у оркестратора,
- * как будто сейчас момент её начала: опоздание оркестратора не должно превращать встречу в «не нашу».
- */
-export function ongoingPlan(
-  events: GEvent[],
-  person: number,
-  nowMs: number,
-  manualRooms: ReadonlySet<string>,
-): OngoingPlan {
-  const jobs: DispatchJob[] = [];
-  const misses: MissRecord[] = [];
-  for (const ev of events) {
-    const start = Date.parse(ev.start?.dateTime ?? "");
-    const end = Date.parse(ev.end?.dateTime ?? "");
-    if (Number.isNaN(start) || Number.isNaN(end) || start > nowMs || end <= nowMs) continue;
-    const plan = planPersonDispatch([ev], person, start, manualRooms);
-    jobs.push(...plan.jobs);
-    for (const s of plan.skipped) {
-      const miss = missFromSkip(s, nowMs);
-      if (miss !== null) misses.push(miss);
-    }
-  }
-  return { jobs, misses };
 }
 
 /**

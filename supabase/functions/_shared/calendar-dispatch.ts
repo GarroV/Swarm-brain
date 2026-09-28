@@ -66,11 +66,20 @@ export interface DispatchPlan {
   skipped: DispatchSkip[];
 }
 
-function inWindow(ev: GEvent, nowMs: number): boolean {
-  const start = Date.parse(ev.start?.dateTime ?? "");
-  const end = Date.parse(ev.end?.dateTime ?? "");
-  if (Number.isNaN(start) || Number.isNaN(end)) return false;
-  return start <= nowMs + DISPATCH_LEAD_MS && start >= nowMs - DISPATCH_LATE_MS && end > nowMs;
+/**
+ * Время встречи, если она со временем и в окне. Строки начала и конца отдаются отсюда, а не
+ * перечитываются из события: у события на весь день (`start.date`) или с концом без времени их нет,
+ * и такое событие отсекается здесь, а не уезжает в задание или пропуск без времени.
+ */
+function windowSpan(ev: GEvent, nowMs: number): { starts_at: string; ends_at: string } | null {
+  const starts_at = ev.start?.dateTime;
+  const ends_at = ev.end?.dateTime;
+  if (starts_at === undefined || ends_at === undefined) return null;
+  const start = Date.parse(starts_at);
+  const end = Date.parse(ends_at);
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  const open = start <= nowMs + DISPATCH_LEAD_MS && start >= nowMs - DISPATCH_LATE_MS && end > nowMs;
+  return open ? { starts_at, ends_at } : null;
 }
 
 function declinedBySelf(ev: GEvent): boolean {
@@ -92,7 +101,9 @@ export function planPersonDispatch(
   const jobs: DispatchJob[] = [];
   const skipped: DispatchSkip[] = [];
   for (const ev of events) {
-    if (ev.status === "cancelled" || !inWindow(ev, nowMs)) continue;
+    if (ev.status === "cancelled") continue;
+    const span = windowSpan(ev, nowMs);
+    if (span === null) continue;
     const key = calendarKeyOf(ev);
     if (key === null) continue;
     const title = ev.summary ?? null;
@@ -103,8 +114,7 @@ export function planPersonDispatch(
         title,
         reason,
         ...(platform !== undefined && { platform }),
-        starts_at: ev.start!.dateTime!,
-        ends_at: ev.end!.dateTime!,
+        ...span,
       });
 
     if (declinedBySelf(ev)) {
@@ -135,8 +145,7 @@ export function planPersonDispatch(
       join_url: link.url,
       platform: link.platform,
       title,
-      starts_at: ev.start!.dateTime!,
-      ends_at: ev.end!.dateTime!,
+      ...span,
     });
   }
   return { jobs, skipped };

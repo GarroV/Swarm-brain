@@ -4,26 +4,30 @@
 // Рекордер человека (bumblebee) под СВОИМ токеном спрашивает: на какие мои встречи бот не пошёл или
 // не дошёл — и одним действием зовёт бота руками на такую встречу (приглашение D017).
 //
-// GET: сперва живая проверка по календарю человека — встречи, которые уже идут, оцениваются тем же
-// отбором, что у оркестратора, и сверяются с заданиями: задания нет или его никто не забрал → служба
-// автозапуска не отозвалась (not_picked_up); забрал, но в звонке нет и ничего не сказал → not_arrived.
-// Так пропуск виден и тогда, когда оркестратор лежит и сам ничего не пишет. Найденное записывается в
-// meeting_calendar_misses, в ответ идут открытые пропуски человека.
+// GET: в Google НЕ ходит (T164, D023). Календарь человека снимает по расписанию
+// meeting-calendar-snapshot; здесь идущие встречи из его последнего снимка сверяются с заданиями:
+// задания нет или его никто не забрал → служба автозапуска не отозвалась (not_picked_up); забрал, но
+// в звонке нет и ничего не сказал → not_arrived. Так пропуск виден и тогда, когда оркестратор лежит и
+// сам ничего не пишет. Найденное записывается в meeting_calendar_misses, в ответ идут открытые
+// пропуски человека. Причины уровня человека (календаря нет / доступ умер) пишет сам снимок.
 // POST { miss_id }: позвать бота на встречу пропуска — заводится обычное ручное приглашение (правила
 // те же, что у веба: swarm-api/meeting-invites.ts), пропуск закрывается им (invite_id).
-import type { GEvent } from "../meeting-current/select.ts";
-import type { TokenResult } from "../_shared/google-calendar.ts";
 import {
   arrivalCheckDue,
   canInvite,
-  missFromSkip,
   missMessage,
   type MissRecord,
   notArrivedMiss,
-  ongoingPlan,
+  type OngoingPlan,
   personMissKey,
   pickupMiss,
 } from "../_shared/calendar-missed.ts";
+import {
+  ongoingFromSnapshot,
+  snapshotChecked,
+  type SnapshotEvent,
+  type SnapshotRun,
+} from "../_shared/calendar-snapshot.ts";
 import type { JobRow, MissRow, MissStore } from "../_shared/calendar-miss-store.ts";
 import { parseInviteLink } from "../_shared/meeting-invite.ts";
 
@@ -37,9 +41,10 @@ export interface MissedDeps {
   /** Дверь: только токен рекордера самого человека. Отказ — готовый ответ. */
   identify(req: Request): Promise<Person | Response>;
   autojoin(telegramId: number): Promise<boolean>;
-  refreshToken(telegramId: number): Promise<string | null>;
-  accessToken(refresh: string): Promise<TokenResult>;
-  listEvents(token: string, timeMin: string, timeMax: string, maxResults: number): Promise<GEvent[] | null>;
+  /** Последняя попытка снять календарь человека (meeting_calendar_snapshot_runs), или null. */
+  snapshotRun(person: Person): Promise<SnapshotRun | null>;
+  /** Встречи снимка `snapshotAt`, идущие в момент `nowIso`. */
+  snapshotEvents(person: Person, snapshotAt: string, nowIso: string): Promise<SnapshotEvent[]>;
   /** Ссылки приглашений воркспейса, заведённых с `sinceIso` (любого статуса): туда бота уже звали. */
   recentInviteLinks(groupId: string, sinceIso: string): Promise<string[]>;
   store: MissStore;
@@ -57,8 +62,6 @@ export interface MissedDeps {
 
 /** Сколько назад смотреть приглашения и пропуски: дольше встречи не длятся. */
 export const LOOKBACK_MS = 12 * 60 * 60_000;
-/** Событий, идущих прямо сейчас, у человека — единицы; предел страхует от странного ответа. */
-const MAX_EVENTS = 25;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const ERRORS = {
@@ -97,14 +100,10 @@ function roomsOf(links: readonly string[]): Set<string> {
   return new Set(links.map((l) => parseInviteLink(l)?.room).filter((r): r is string => r !== undefined));
 }
 
-function personSkip(person: Person, reason: "calendar_not_connected" | "calendar_token_dead", nowMs: number) {
-  return missFromSkip({ invited_by: person.telegramId, calendar_key: null, title: null, reason }, nowMs);
-}
-
 async function jobMisses(
   deps: MissedDeps,
   person: Person,
-  jobs: ReturnType<typeof ongoingPlan>["jobs"],
+  jobs: OngoingPlan["jobs"],
   nowMs: number,
 ): Promise<MissRecord[]> {
   const rows = await deps.store.jobsFor(person.groupId, jobs.map((j) => j.calendar_key));
@@ -123,20 +122,17 @@ async function jobMisses(
   return misses;
 }
 
-/** Живая проверка календаря человека. Возвращает найденные пропуски; бросает только сбой базы. */
-async function liveMisses(deps: MissedDeps, person: Person, rooms: ReadonlySet<string>, nowMs: number) {
-  const refresh = await deps.refreshToken(person.telegramId);
-  if (!refresh) return [personSkip(person, "calendar_not_connected", nowMs)];
-  const tok = await deps.accessToken(refresh);
-  if (!tok.ok) {
-    if (tok.deadGrant) return [personSkip(person, "calendar_token_dead", nowMs)];
-    throw new Error("Google token endpoint did not answer");
-  }
-  // Google отбирает по пересечению: конец после timeMin, начало до timeMax — то есть идущие сейчас.
-  const nowIso = new Date(nowMs).toISOString();
-  const events = await deps.listEvents(tok.token, nowIso, new Date(nowMs + 1000).toISOString(), MAX_EVENTS);
-  if (events === null) throw new Error("Google Calendar did not answer");
-  const plan = ongoingPlan(events, person.telegramId, nowMs, rooms);
+/** Пропуски идущих встреч по снимку календаря. Google не зовётся; бросает только сбой базы. */
+async function snapshotMisses(
+  deps: MissedDeps,
+  person: Person,
+  run: SnapshotRun | null,
+  rooms: ReadonlySet<string>,
+  nowMs: number,
+): Promise<MissRecord[]> {
+  if (run?.snapshot_at == null) return [];
+  const rows = await deps.snapshotEvents(person, run.snapshot_at, new Date(nowMs).toISOString());
+  const plan = ongoingFromSnapshot(rows, person.telegramId, nowMs, rooms);
   return [...plan.misses, ...await jobMisses(deps, person, plan.jobs, nowMs)];
 }
 
@@ -175,27 +171,31 @@ function view(miss: MissRow) {
 }
 
 async function list(deps: MissedDeps, person: Person): Promise<Response> {
-  if (!(await deps.autojoin(person.telegramId))) return json({ autojoin: false, checked: false, misses: [] });
+  if (!(await deps.autojoin(person.telegramId))) {
+    return json({ autojoin: false, checked: false, snapshot_at: null, misses: [] });
+  }
   const nowMs = deps.now();
   const since = new Date(nowMs - LOOKBACK_MS).toISOString();
   const rooms = roomsOf(await deps.recentInviteLinks(person.groupId, since));
 
-  let checked = true;
+  let run: SnapshotRun | null = null;
+  let checked = false;
   try {
-    const found = (await liveMisses(deps, person, rooms, nowMs)).filter((m): m is MissRecord => m !== null);
-    await deps.store.recordMisses(person.groupId, found);
+    run = await deps.snapshotRun(person);
+    checked = snapshotChecked(run, nowMs);
+    await deps.store.recordMisses(person.groupId, await snapshotMisses(deps, person, run, rooms, nowMs));
   } catch (e) {
-    // Сбой живой проверки — не отказ: записанное раньше всё равно показываем, и честно говорим,
-    // что свежей проверки не было.
+    // Сбой сверки — не отказ: записанное раньше всё равно показываем, и честно говорим, что свежей
+    // проверки не было.
     checked = false;
-    deps.log(`meeting-missed: живая проверка ${person.telegramId} не удалась: ${describe(e)}`);
+    deps.log(`meeting-missed: сверка по снимку ${person.telegramId} не удалась: ${describe(e)}`);
   }
 
   const open: MissRow[] = [];
   for (const miss of await deps.openMisses(person, since)) {
     if (isOpen(miss, nowMs) && await stillMissed(deps, person, miss, rooms)) open.push(miss);
   }
-  return json({ autojoin: true, checked, misses: open.map(view) });
+  return json({ autojoin: true, checked, snapshot_at: run?.snapshot_at ?? null, misses: open.map(view) });
 }
 
 async function readBody(req: Request): Promise<string | null> {
