@@ -97,7 +97,7 @@ export function RoyDashboard() {
         </aside>
       </div>
       {/* Быстрое создание задачи с главной — окно поверх, без ухода на доску. */}
-      <TaskModal open={creating} onClose={() => setCreating(false)} onSaved={bumpTasks} drawer />
+      <TaskModal open={creating} onClose={() => setCreating(false)} onSaved={bumpTasks} />
     </div>
   );
 }
