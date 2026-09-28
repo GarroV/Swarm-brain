@@ -3,6 +3,7 @@
 // что ушло, сколько раз позволено и что вернулось вызывающему, когда не ушло.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
+import { assertGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
 import {
   NOTICE_LIMITS,
   NoticeError,
@@ -153,6 +154,31 @@ async function parse(req: Request): Promise<ParsedNotice | Response> {
   }
 }
 
+/**
+ * Бот говорит человеку только о встрече своего пропуска (T165): встречный отказ — о встрече, к
+ * которой пропуск привязан, до-встречный — о событии его задания. Название до-встречного отказа
+ * у бота берётся из пропуска (из календаря, сервером), а не из тела: текст, который человек видит
+ * от бота Swarm, не пишет контейнер. Людям их токен — их личность, им сверять нечего.
+ */
+function grantScope(identity: AgentIdentity, notice: ParsedNotice): { title: string | null } | Response {
+  if (identity.kind !== "bot") return { title: notice.title };
+  try {
+    if (notice.scope.type === "meeting") {
+      assertGrantMeeting(identity, notice.scope.meetingId);
+      return { title: null };
+    }
+    const grant = identity.grant;
+    if (!grant || grant.basis !== "calendar" || grant.calendarKey !== notice.scope.meetingKey) {
+      throw new GrantScopeError("service agent: the grant does not cover this meeting");
+    }
+    return { title: grant.title };
+  } catch (e) {
+    if (!(e instanceof GrantScopeError)) throw e;
+    console.warn(`meeting-notice: пропуск не открывает ${describe(notice)}: ${e.message}`);
+    return json({ ok: false, delivered: false, error: e.message }, 403);
+  }
+}
+
 export async function handleNotice(req: Request, deps: NoticeDeps): Promise<Response> {
   if (req.method !== "POST") {
     return json({ ok: false, error: "POST only: send {kind, meeting_id | meeting_key, lang?, detail?}" }, 405);
@@ -163,7 +189,10 @@ export async function handleNotice(req: Request, deps: NoticeDeps): Promise<Resp
   const notice = await parse(req);
   if (notice instanceof Response) return notice;
 
-  let title = notice.title;
+  const granted = grantScope(identity, notice);
+  if (granted instanceof Response) return granted;
+
+  let title = granted.title;
   if (notice.scope.type === "meeting") {
     const checked = await checkMeeting(deps, notice.scope.meetingId, identity);
     if (checked instanceof Response) return checked;

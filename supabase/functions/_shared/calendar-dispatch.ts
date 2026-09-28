@@ -14,6 +14,7 @@ import type { GEvent } from "../meeting-current/select.ts";
 import { conferenceInfo } from "../meeting-current/join-link.ts";
 import type { ConferencePlatform } from "../meeting-current/join-link.ts";
 import { calendarKeyOf } from "./calendar-key.ts";
+import { acceptedBySelf } from "./calendar-attendance.ts";
 import { botJoinsPlatform, parseInviteLink } from "./meeting-invite.ts";
 
 /**
@@ -43,6 +44,8 @@ export type SkipReason =
   | "unsupported_platform"
   | "unrecognized_link"
   | "declined"
+  // Человек не ответил «да» («может быть», не ответил, событие без его строки) — D024.
+  | "not_accepted"
   | "manual_invite_exists"
   // Причины уровня человека (встречи не видно вовсе) — ставит meeting-calendar, не отбор.
   | "calendar_not_connected"
@@ -56,6 +59,9 @@ export interface DispatchSkip {
   title: string | null;
   reason: SkipReason;
   platform?: ConferencePlatform | null;
+  /** Время встречи — у причин уровня встречи (у причин человека встречи нет). */
+  starts_at?: string;
+  ends_at?: string;
 }
 
 export interface DispatchPlan {
@@ -63,11 +69,20 @@ export interface DispatchPlan {
   skipped: DispatchSkip[];
 }
 
-function inWindow(ev: GEvent, nowMs: number): boolean {
-  const start = Date.parse(ev.start?.dateTime ?? "");
-  const end = Date.parse(ev.end?.dateTime ?? "");
-  if (Number.isNaN(start) || Number.isNaN(end)) return false;
-  return start <= nowMs + DISPATCH_LEAD_MS && start >= nowMs - DISPATCH_LATE_MS && end > nowMs;
+/**
+ * Время встречи, если она со временем и в окне. Строки начала и конца отдаются отсюда, а не
+ * перечитываются из события: у события на весь день (`start.date`) или с концом без времени их нет,
+ * и такое событие отсекается здесь, а не уезжает в задание или пропуск без времени.
+ */
+function windowSpan(ev: GEvent, nowMs: number): { starts_at: string; ends_at: string } | null {
+  const starts_at = ev.start?.dateTime;
+  const ends_at = ev.end?.dateTime;
+  if (starts_at === undefined || ends_at === undefined) return null;
+  const start = Date.parse(starts_at);
+  const end = Date.parse(ends_at);
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  const open = start <= nowMs + DISPATCH_LEAD_MS && start >= nowMs - DISPATCH_LATE_MS && end > nowMs;
+  return open ? { starts_at, ends_at } : null;
 }
 
 function declinedBySelf(ev: GEvent): boolean {
@@ -89,7 +104,9 @@ export function planPersonDispatch(
   const jobs: DispatchJob[] = [];
   const skipped: DispatchSkip[] = [];
   for (const ev of events) {
-    if (ev.status === "cancelled" || !inWindow(ev, nowMs)) continue;
+    if (ev.status === "cancelled") continue;
+    const span = windowSpan(ev, nowMs);
+    if (span === null) continue;
     const key = calendarKeyOf(ev);
     if (key === null) continue;
     const title = ev.summary ?? null;
@@ -100,10 +117,17 @@ export function planPersonDispatch(
         title,
         reason,
         ...(platform !== undefined && { platform }),
+        ...span,
       });
 
+    // Бот идёт только туда, где человек ответил «да» (D024, _shared/calendar-attendance.ts).
+    // Отклонённое — своей причиной: так пропуск читается без догадок.
     if (declinedBySelf(ev)) {
       skip("declined");
+      continue;
+    }
+    if (!acceptedBySelf(ev)) {
+      skip("not_accepted");
       continue;
     }
     const info = conferenceInfo(ev);
@@ -130,8 +154,7 @@ export function planPersonDispatch(
       join_url: link.url,
       platform: link.platform,
       title,
-      starts_at: ev.start!.dateTime!,
-      ends_at: ev.end!.dateTime!,
+      ...span,
     });
   }
   return { jobs, skipped };

@@ -107,6 +107,11 @@ export interface MeetingInvite {
   readonly platform: string;
   readonly created_at: string;
   readonly expires_at: string;
+  /**
+   * Пропуск бота на эту встречу (T165): с ним контейнер ходит в двери за `invited_by`. Сервер без
+   * пропусков его не присылает.
+   */
+  readonly grant_token?: string;
 }
 
 export interface ClaimResponse {

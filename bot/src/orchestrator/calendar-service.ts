@@ -22,14 +22,18 @@ export interface CalendarServiceOptions {
     onBehalfOf: number,
     calendar: CalendarReference,
   ) => Promise<string>;
-  readonly notifierFor: (onBehalfOf: number) => Notifier;
+  readonly notifierFor: (onBehalfOf: number, token: string) => Notifier;
   readonly log: (line: string) => void;
   readonly intervalMs?: number;
   readonly fetch?: typeof globalThis.fetch;
 }
 
 function referenceOf(job: CalendarJob): CalendarReference {
-  return { calendarKey: job.calendar_key, startsAt: job.starts_at };
+  return {
+    calendarKey: job.calendar_key,
+    startsAt: job.starts_at,
+    ...(job.grant_token !== undefined && { grantToken: job.grant_token }),
+  };
 }
 
 export function calendarTriggerFor(options: CalendarServiceOptions): CalendarTrigger {
@@ -44,17 +48,19 @@ export function calendarTriggerFor(options: CalendarServiceOptions): CalendarTri
       options.startForMeeting(job.join_url, job.platform, job.invited_by, referenceOf(job)),
     // Нотисе `join_failed` нужна строка встречи — её заводит только `meeting-claim`, поэтому
     // сперва календарная заявка (сервер сверит встречу с календарём человека), затем отказ.
+    // Отказ — по пропуску задания (T165): за человека общий токен не действует.
     refuse: async (job, detail) => {
+      const token = job.grant_token ?? options.token;
       const client = new SwarmClient({
         baseUrl: options.swarmUrl,
-        token: options.token,
+        token,
         onBehalfOf: job.invited_by,
         ...(options.fetch !== undefined && { fetch: options.fetch }),
       });
       const claimed = await client.claim(
         calendarClaim({ version: options.version, calendar: referenceOf(job) }),
       );
-      await options.notifierFor(job.invited_by).notify({
+      await options.notifierFor(job.invited_by, token).notify({
         kind: "join_failed",
         meetingId: claimed.meeting_id,
         detail,

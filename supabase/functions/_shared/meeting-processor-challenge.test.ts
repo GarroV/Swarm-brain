@@ -44,9 +44,17 @@ function fake(row: Row) {
           };
           const chain = {
             eq: (col: string, v: unknown) => {
-              filters.push(col === "process_state->>gen" ? () => gen() === v : () => row[col] === v);
+              filters.push(
+                col === "process_state->>gen"
+                  ? () => gen() === v
+                  : col === "recorders"
+                  ? () => JSON.stringify(row[col]) === JSON.stringify(JSON.parse(String(v)))
+                  : () => row[col] === v,
+              );
               return chain;
             },
+            is: (col: string, _v: null) => (filters.push(() => row[col] == null), chain),
+            neq: (col: string, v: unknown) => (filters.push(() => row[col] !== v), chain),
             or: (expr: string) => (filters.push(() => leaseFree(expr)), chain),
             select: () => {
               const data = apply();
@@ -147,5 +155,66 @@ Deno.test("вторая запись полнее текущей → стено�
     assert(updates.some((u) => "transcript" in u), "более полная вторая запись не заменила стенограмму");
     assertEquals((row.transcript as { segments: Array<{ text: string }> }).segments[0].text, FULL);
     assert(calls.some((u) => u.includes("api.openai.com")), "после замены стенограммы сводку не запрашивали");
+  });
+});
+
+// ── Претендент (T168): владелец встречи переходит вместе со стенограммой ─────────────
+
+const HOLDER = 42;
+const RIVAL = 77;
+
+function rivalRow(currentText: string, incomingText: string): Row {
+  const r = challengerRow(currentText, incomingText);
+  const state = r.process_state as ProcessState;
+  r.process_state = {
+    ...state,
+    source: `person:${RIVAL}`,
+    owner: RIVAL,
+    rival: { recordedSeconds: 2400, micStartOffset: 1.5 },
+  };
+  r.recorded_seconds = 600;
+  r.recorders = [
+    { telegram_id: HOLDER, claimed_at: "2026-09-28T09:00:00Z", role: "transcribe" },
+    { telegram_id: RIVAL, claimed_at: "2026-09-28T09:40:00Z", role: "challenger" },
+  ];
+  return r;
+}
+
+const rolesOf = (row: Row) =>
+  Object.fromEntries(
+    (row.recorders as Array<{ telegram_id: number; role: string }>).map((r) => [r.telegram_id, r.role]),
+  );
+
+Deno.test("ЯДРО: запись претендента полнее — стенограмма и владелец переходят к нему одной UPDATE", async () => {
+  await withFetchStub(async () => {
+    const { client, updates, row } = fake(rivalRow(POOR, FULL));
+    await assertRejects(() => runMeetingStep(client, ID, 10_000));
+    const write = updates.find((u) => "transcript" in u);
+    assertEquals(write?.claim_owner, RIVAL, "владелец не переехал той же записью, что стенограмма");
+    assertEquals(row.claim_owner, RIVAL);
+    assertEquals(row.recorded_seconds, 2400);
+    assertEquals(row.mic_start_offset, 1.5);
+    assertEquals(rolesOf(row), { [HOLDER]: "superseded", [RIVAL]: "transcribe" });
+  });
+});
+
+Deno.test("ЯДРО: запись претендента беднее — встреча остаётся у держателя, претендент defer", async () => {
+  await withFetchStub(async () => {
+    const { client, row } = fake(rivalRow(FULL, POOR));
+    await runMeetingStep(client, ID, 10_000).catch((e: unknown) => e);
+    assertEquals(row.claim_owner, HOLDER);
+    assertEquals(row.recorded_seconds, 600);
+    assertEquals((row.transcript as { segments: Array<{ text: string }> }).segments[0].text, FULL);
+    assertEquals(rolesOf(row), { [HOLDER]: "transcribe", [RIVAL]: "defer" });
+  });
+});
+
+Deno.test("ЯДРО: встречу опубликовали, пока шла вторая запись, — полнее, но не заменяет", async () => {
+  await withFetchStub(async (calls) => {
+    const { client, updates, row } = fake({ ...challengerRow(POOR, FULL), status: "in_base" });
+    await runMeetingStep(client, ID, 10_000).catch((e: unknown) => e);
+    assert(updates.every((u) => !("transcript" in u)), "опубликованную встречу переписали");
+    assertEquals(row.summary_status, "done");
+    assertEquals(calls, []);
   });
 });

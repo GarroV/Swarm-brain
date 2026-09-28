@@ -24,6 +24,7 @@
 // сообщение или если окружения нет (непроверенное не выдаётся за проверенное).
 
 // Порты можно сдвинуть окружением — стенду другой копии репозитория достаётся свой диапазон.
+import { seedCalendarGrant, seedInviteGrant } from "./scriba-smoke-grants.ts";
 const PORT_FN = Number(Deno.env.get("SMOKE_PORT_FN") ?? 4340);
 const PORT_TG = Number(Deno.env.get("SMOKE_PORT_TG") ?? 4342);
 
@@ -159,6 +160,9 @@ async function cleanup(): Promise<string[]> {
       "DELETE",
       `meetings?source=eq.scriba-smoke&group_id=in.(${WS},${WS_OTHER})`,
     ],
+    ["DELETE", `meeting_agent_grants?group_id=eq.${WS}`],
+    ["DELETE", `meeting_invites?group_id=eq.${WS}`],
+    ["DELETE", `meeting_calendar_jobs?group_id=eq.${WS}`],
     ["DELETE", `service_agents?id=eq.${AGENT_ID}`],
     [
       "DELETE",
@@ -230,12 +234,44 @@ interface Outcome {
   problem: string | null; // чем сценарий не сошёлся: тишина, не тот исход, пробитый потолок
 }
 
+// Бот за человека ходит пропуском своей встречи (T165), а не токеном агента. Пропуск засевается
+// тем, что выдал бы сервер: к встрече по meeting_id — пропуск приглашения, привязанный к ней (если
+// строки нет — непривязанный), к meeting_key — календарный пропуск задания по этому событию.
+// Токен агента остаётся у сценариев, где за человека его не указали: там ждётся отказ.
+const grantCacheByScope = new Map<string, Promise<string>>();
+const seededMeetings = new Set<string>([...Object.values(M), ...FLOOD_MEETINGS]);
+
+function grantFor(person: number, body: unknown): Promise<string> {
+  const b = typeof body === "object" && body !== null
+    ? body as Record<string, unknown>
+    : {};
+  const key = typeof b.meeting_key === "string" ? b.meeting_key : null;
+  const meetingId = typeof b.meeting_id === "string" &&
+      seededMeetings.has(b.meeting_id)
+    ? b.meeting_id
+    : null;
+  const scope = `${String(person)}:${key ?? meetingId ?? "-"}`;
+  let hit = grantCacheByScope.get(scope);
+  if (!hit) {
+    const base = { agentId: AGENT_ID, groupId: WS, telegramId: person };
+    hit = key !== null
+      ? seedCalendarGrant(rest, { ...base, calendarKey: key })
+      : seedInviteGrant(rest, { ...base, meetingId }).then((g) => g.token);
+    grantCacheByScope.set(scope, hit);
+  }
+  return hit;
+}
+
 async function call(
   body: unknown,
   opts: { token?: string; onBehalfOf?: number | string } = {},
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const headers = new Headers({ "Content-Type": "application/json" });
-  headers.set("Authorization", `Bearer ${opts.token ?? BOT_TOKEN}`);
+  const token = opts.token ??
+    (typeof opts.onBehalfOf === "number"
+      ? await grantFor(opts.onBehalfOf, body)
+      : BOT_TOKEN);
+  headers.set("Authorization", `Bearer ${token}`);
   if (opts.onBehalfOf !== undefined) {
     headers.set("X-On-Behalf-Of", String(opts.onBehalfOf));
   }

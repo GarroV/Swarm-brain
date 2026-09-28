@@ -2,7 +2,15 @@
 // транскрибации и какими условиями UPDATE оно защищено от гонки. Ядро: здесь решается, чья запись
 // станет стенограммой встречи, которую команда читает как факт.
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { botStillRecording, decideHeld, type Guard, heldGuards, type HeldRow, readClaimSeconds } from "./arbiter.ts";
+import {
+  botStillRecording,
+  claimAction,
+  decideHeld,
+  type Guard,
+  heldGuards,
+  type HeldRow,
+  readClaimSeconds,
+} from "./arbiter.ts";
 import { MAX_RECORDED_SECONDS } from "../_shared/claim-lease.ts";
 
 const NOW = "2026-09-28T12:00:00.000Z";
@@ -101,6 +109,8 @@ function passes(held: HeldRow, guards: Guard[]): boolean {
         return row[g.column] === g.value;
       case "isNull":
         return row[g.column] === null;
+      case "neq":
+        return row[g.column] !== g.value;
       case "notTrue":
         return row[g.column] !== true;
       case "before": {
@@ -139,6 +149,14 @@ Deno.test("ЯДРО (TOCTOU): перехват сверяет в UPDATE, что 
   assertEquals(passes({ ...read, agent_last_recording: null }, guards), true);
 });
 
+Deno.test("ЯДРО (TOCTOU): перехват не ложится на встречу, опубликованную или правленную после чтения", () => {
+  const read = { ...liveBotRow(600), agent_last_recording: false, status: "awaiting_review" };
+  const guards = heldGuards(read, NOW);
+  assertEquals(passes(read, guards), true);
+  assertEquals(passes({ ...read, status: "in_base" }, guards), false, "опубликовали, пока считали");
+  assertEquals(passes({ ...read, notes_edited_at: "2026-09-28T11:59:00.000Z" }, guards), false, "правили");
+});
+
 Deno.test("ЯДРО: секунды сверх суток в claim — отказ, как в heartbeat (разбор прав T155, LOW)", () => {
   // Завышенное значение навсегда закрыло бы встречу от перехвата более полной записью.
   assertThrows(() => readClaimSeconds(MAX_RECORDED_SECONDS + 1), Error, "recorded_seconds");
@@ -147,4 +165,11 @@ Deno.test("ЯДРО: секунды сверх суток в claim — отка�
   // Прежнее поведение для мусора и нуля: секунд нет, перехват не запрашивается.
   for (const soft of [undefined, null, "600", Number.NaN, -5, 0]) assertEquals(readClaimSeconds(soft), undefined);
   assertEquals(readClaimSeconds(1260.5), 1260.5);
+});
+
+Deno.test("ЯДРО T160: заявка другого человека в claim не перехватывает — только претендент до измеренной выгрузки", () => {
+  assertEquals(claimAction("takeover"), "challenge");
+  assertEquals(claimAction("defer"), "defer");
+  assertEquals(claimAction("reserve"), "reserve");
+  assertEquals(claimAction("refresh"), "refresh");
 });

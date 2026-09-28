@@ -26,6 +26,8 @@ function event(over: Partial<GEvent> = {}, startMin = 1, lengthMin = 30): GEvent
     start: { dateTime: at(startMin) },
     end: { dateTime: at(startMin + lengthMin) },
     hangoutLink: MEET,
+    // Своя встреча без гостей: Google не ведёт статус организатору, это «да» (D024).
+    organizer: { self: true },
     ...over,
   };
 }
@@ -79,6 +81,9 @@ Deno.test("ГРОМКО: нет ссылки на звонок — пропус�
   assertEquals(skipped[0].invited_by, PERSON);
   assertEquals(skipped[0].calendar_key, "uid1@google.com:2026-09-28");
   assertEquals(skipped[0].title, "Weekly");
+  // Время встречи едет с пропуском: по нему рекордер понимает, что встреча ещё идёт (T102).
+  assertEquals(typeof skipped[0].starts_at, "string");
+  assertEquals(typeof skipped[0].ends_at, "string");
 });
 
 Deno.test("ГРОМКО: не Meet (Zoom, Контур, неизвестная ссылка) — пропуск unsupported_platform с площадкой", () => {
@@ -107,6 +112,29 @@ Deno.test("ДОСТУП: человек отклонил приглашение 
   const { jobs, skipped } = plan([declined]);
   assertEquals(jobs, []);
   assertEquals(skipped.map((s) => s.reason), ["declined"]);
+});
+
+Deno.test("ДОСТУП (D024): не ответил «да» — бот не идёт, пропуск not_accepted; «да» — идёт", () => {
+  for (const status of ["needsAction", "tentative"]) {
+    const ev = event({
+      organizer: { self: false },
+      attendees: [{ email: "me@x.io", self: true, responseStatus: status }, { email: "b@x.io" }],
+    });
+    const { jobs, skipped } = plan([ev]);
+    assertEquals(jobs, [], status);
+    assertEquals(skipped.map((s) => s.reason), ["not_accepted"], status);
+  }
+  const yes = event({
+    organizer: { self: false },
+    attendees: [{ email: "me@x.io", self: true, responseStatus: "accepted" }, { email: "b@x.io" }],
+  });
+  assertEquals(plan([yes]).jobs.length, 1);
+});
+
+Deno.test("ДОСТУП (D024): чужое событие без строки человека — не идёт", () => {
+  const ev = event({ organizer: { self: false }, attendees: [{ email: "b@x.io", responseStatus: "accepted" }] });
+  assertEquals(plan([ev]).jobs, []);
+  assertEquals(plan([ev]).skipped.map((s) => s.reason), ["not_accepted"]);
 });
 
 Deno.test("отклонил ДРУГОЙ участник — не повод не идти", () => {

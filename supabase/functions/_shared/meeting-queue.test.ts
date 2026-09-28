@@ -31,6 +31,13 @@ function fake(row: Row | null, files: Record<string, string> = {}) {
           bucket.set(path, await body.text());
           return { error: null };
         },
+        list: (prefix: string) =>
+          Promise.resolve({
+            data: [...bucket.keys()].filter((k) => k.startsWith(`${prefix}/`)).map((k) => ({
+              name: k.slice(prefix.length + 1),
+            })),
+            error: null,
+          }),
         remove: (paths: string[]) => {
           for (const p of paths) {
             bucket.delete(p);
@@ -54,8 +61,15 @@ function fake(row: Row | null, files: Record<string, string> = {}) {
       update: (patch: Row) => {
         const filters: Array<(r: Row) => boolean> = [];
         const chain = {
-          eq: (col: string, v: unknown) => (filters.push((r) => r[col] === v), chain),
+          eq: (
+            col: string,
+            v: unknown,
+          ) => (filters.push((r) =>
+            col === "process_state->>gen" ? (r.process_state as ProcessState | null)?.gen === v : r[col] === v
+          ),
+            chain),
           is: (col: string, v: unknown) => (filters.push((r) => (r[col] ?? null) === v), chain),
+          neq: (col: string, v: unknown) => (filters.push((r) => r[col] !== v), chain),
           or: (expr: string) => {
             assertEquals(expr, "summary_status.is.null,summary_status.neq.processing");
             filters.push((r) => r.summary_status !== "processing");
@@ -75,6 +89,7 @@ function fake(row: Row | null, files: Record<string, string> = {}) {
   return { client: client as unknown as SupabaseClient, bucket, removed, updates };
 }
 
+const SRC = "agent:scriba";
 const botState: ProcessState = {
   parts: [{
     track: "sys",
@@ -101,9 +116,9 @@ Deno.test("в очередь пишется состояние без флага
 });
 
 Deno.test("битый queued.json выбрасывается, а не валит обработку", async () => {
-  const f = fake({ id: ID }, { [queuedPath(ID)]: "{не json" });
+  const f = fake({ id: ID }, { [queuedPath(ID, SRC)]: "{не json" });
   assertEquals(await readQueued(f.client, ID), null);
-  assert(f.removed.includes(queuedPath(ID)));
+  assert(f.removed.includes(queuedPath(ID, SRC)));
 });
 
 Deno.test("пустая очередь — продвигать нечего", async () => {
@@ -113,9 +128,11 @@ Deno.test("пустая очередь — продвигать нечего", a
 });
 
 Deno.test("первая запись ещё в обработке — ожидающая остаётся в очереди", async () => {
-  const f = fake({ id: ID, summary_status: "processing", notes_edited_at: null }, { [queuedPath(ID)]: queuedJson });
+  const f = fake({ id: ID, summary_status: "processing", notes_edited_at: null }, {
+    [queuedPath(ID, SRC)]: queuedJson,
+  });
   assertEquals(await promoteQueued(f.client, ID), false);
-  assert(f.bucket.has(queuedPath(ID)));
+  assert(f.bucket.has(queuedPath(ID, SRC)));
 });
 
 Deno.test("первая закончила — вторая идёт претендентом, с новым поколением и общими источниками", async () => {
@@ -126,29 +143,29 @@ Deno.test("первая закончила — вторая идёт прете�
     status: "awaiting_review",
     process_state: { parts: [], stage: "summarize", sources: ["person"] },
   };
-  const f = fake(row, { [queuedPath(ID)]: queuedJson });
+  const f = fake(row, { [queuedPath(ID, SRC)]: queuedJson });
   assertEquals(await promoteQueued(f.client, ID), true);
   const state = row.process_state as ProcessState;
   assertEquals(row.summary_status, "processing");
   assertEquals(state.challenge, { priorStatus: "done" });
   assert(state.gen !== "g-bot", "поколение обязано смениться: прежний воркер не должен писать в новое состояние");
   assertEquals(state.sources, ["person", "agent:scriba"]);
-  assert(!f.bucket.has(queuedPath(ID)), "очередь освобождена");
+  assert(!f.bucket.has(queuedPath(ID, SRC)), "очередь освобождена");
 });
 
 Deno.test("тезисы правил человек — вторая запись выбрасывается вместе с частями", async () => {
   const f = fake(
     { id: ID, summary_status: "done", notes_edited_at: "2026-09-28T10:00:00Z", status: "awaiting_review" },
-    { [queuedPath(ID)]: queuedJson },
+    { [queuedPath(ID, SRC)]: queuedJson },
   );
   assertEquals(await promoteQueued(f.client, ID), false);
   assertEquals(f.updates.length, 0);
-  assert(f.removed.includes(queuedPath(ID)) && f.removed.includes(botState.parts[0].path));
+  assert(f.removed.includes(queuedPath(ID, SRC)) && f.removed.includes(botState.parts[0].path));
 });
 
 Deno.test("запись уже у команды (in_base) — вторая запись выбрасывается", async () => {
   const f = fake({ id: ID, summary_status: "done", notes_edited_at: null, status: "in_base" }, {
-    [queuedPath(ID)]: queuedJson,
+    [queuedPath(ID, SRC)]: queuedJson,
   });
   assertEquals(await promoteQueued(f.client, ID), false);
   assertEquals(f.updates.length, 0);
@@ -167,23 +184,65 @@ Deno.test("вытеснили посреди обработки, владеле�
 Deno.test("вытеснили, пока обрабатывается чужая выгрузка того же владельца — ждёт в очереди", async () => {
   const f = fake({ id: ID, claim_owner: OWNER, summary_status: "processing", notes_edited_at: null, status: null });
   await requeueLost(f.client, ID, botState);
-  assert(f.bucket.has(queuedPath(ID)));
+  assert(f.bucket.has(queuedPath(ID, SRC)));
   assertEquals(f.updates.length, 0);
 });
 
 Deno.test("вытеснили, а владелец сменился — запись выбрасывается, в очередь не встаёт", async () => {
   const f = fake({ id: ID, claim_owner: 777, summary_status: "processing", notes_edited_at: null, status: null });
   await requeueLost(f.client, ID, botState);
-  assert(!f.bucket.has(queuedPath(ID)));
+  assert(!f.bucket.has(queuedPath(ID, SRC)));
   assert(f.removed.includes(botState.parts[0].path));
 });
 
-Deno.test("вытеснили, а очередь уже занята — вторую очередь не затираем", async () => {
-  const other = JSON.stringify({ ...botState, source: "person", gen: "g-rec" });
+Deno.test("вытеснили, а в очереди ждёт запись другого источника — обе ждут, ни одна не затёрта", async () => {
+  const other = JSON.stringify({ ...botState, source: "person:42", gen: "g-rec" });
   const f = fake({ id: ID, claim_owner: OWNER, summary_status: "processing", notes_edited_at: null, status: null }, {
-    [queuedPath(ID)]: other,
+    [queuedPath(ID, "person:42")]: other,
   });
   await requeueLost(f.client, ID, botState);
-  assertEquals(f.bucket.get(queuedPath(ID)), other);
+  assertEquals(f.bucket.get(queuedPath(ID, "person:42")), other);
+  assert(f.bucket.has(queuedPath(ID, SRC)));
+  assertEquals(f.removed.includes(botState.parts[0].path), false);
+});
+
+Deno.test("вытеснили, а эта же запись уже ждёт — копию не держим", async () => {
+  const f = fake({ id: ID, claim_owner: OWNER, summary_status: "processing", notes_edited_at: null, status: null }, {
+    [queuedPath(ID, SRC)]: queuedJson,
+  });
+  await requeueLost(f.client, ID, { ...botState, gen: "g-bot-2" });
   assert(f.removed.includes(botState.parts[0].path));
+});
+
+Deno.test("две ожидающие записи — продвигается одна, вторая ждёт следующего финала", async () => {
+  const other = JSON.stringify({ ...botState, source: "person:7", gen: "g-other", owner: 7 });
+  const row: Row = { id: ID, summary_status: "done", notes_edited_at: null, status: "awaiting_review" };
+  const f = fake(row, { [queuedPath(ID, SRC)]: queuedJson, [queuedPath(ID, "person:7")]: other });
+  assertEquals(await promoteQueued(f.client, ID), true);
+  assertEquals((row.process_state as ProcessState).source, SRC);
+  assert(f.bucket.has(queuedPath(ID, "person:7")), "вторая осталась в очереди");
+  assert(!f.bucket.has(queuedPath(ID, SRC)));
+});
+
+Deno.test("ЯДРО: встречу опубликовали посреди обработки — запись выбрасывается, встреча выходит из обработки", async () => {
+  const row: Row = {
+    id: ID,
+    claim_owner: OWNER,
+    summary_status: "processing",
+    notes_edited_at: null,
+    status: "in_base",
+    process_state: { ...botState },
+  };
+  const f = fake(row);
+  await requeueLost(f.client, ID, { ...botState, challenge: { priorStatus: "done" } });
+  assertEquals(row.summary_status, "done");
+  assert(f.removed.includes(botState.parts[0].path));
+  assert(!f.bucket.has(queuedPath(ID, SRC)));
+});
+
+Deno.test("ЯДРО: запись претендента вытеснили — она ждёт в очереди, хотя встреча пока у держателя", async () => {
+  const f = fake({ id: ID, claim_owner: 777, summary_status: "processing", notes_edited_at: null, status: null });
+  await requeueLost(f.client, ID, { ...botState, rival: { recordedSeconds: 2400, micStartOffset: null } });
+  assert(f.bucket.has(queuedPath(ID, SRC)));
+  assertEquals(f.removed.includes(botState.parts[0].path), false);
 });

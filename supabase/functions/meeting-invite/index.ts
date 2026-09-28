@@ -5,14 +5,17 @@
 // получает ожидающие приглашения СВОЕГО воркспейса; каждое отдаётся ровно один раз: забор — один
 // условный UPDATE (taken_at is null), и два одновременных опроса одну строку не делят.
 //
-// Дальше оркестратор запускает бота за `invited_by` (X-On-Behalf-Of), и бот предъявляет `id` и
-// `join_url` в meeting-claim — там приглашение сверяется и гасится (meeting-claim/agent-scope.ts).
+// К каждому приглашению сервер выдаёт пропуск бота на эту встречу (`grant_token`, T165,
+// _shared/agent-grant.ts): за `invited_by` бот ходит только с ним, общий токен агента за человека
+// не действует. Бот предъявляет `id` и `join_url` в meeting-claim — там приглашение сверяется с
+// пропуском и гасится (meeting-claim/agent-scope.ts). Пропуск не выдался — приглашения возвращаются
+// в очередь, а не теряются.
 //
 // Дверь — resolveServiceAgent: только токен агента, без подмены личности; люди сюда не проходят.
 //
 // POST, тело необязательно: { "limit"?: 1..20 } (по умолчанию 10).
-// 200 { ok: true, invites: [{ id, invited_by, join_url, platform, created_at, expires_at }] }
-// 401 не агент · 403 X-On-Behalf-Of или агент без воркспейса · 405 не POST.
+// 200 { ok: true, invites: [{ id, invited_by, join_url, platform, created_at, expires_at, grant_token }] }
+// 401 не агент · 403 X-On-Behalf-Of или агент без воркспейса · 405 не POST · 500 сбой базы.
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 // Деплой: supabase functions deploy meeting-invite --no-verify-jwt (бот хитит с Bearer-токеном).
@@ -20,6 +23,7 @@
 // URL-импорты — канон этого репозитория: функции деплоятся без карты импортов.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveServiceAgent } from "../_shared/agent-auth.ts";
+import { mintGrants } from "../_shared/agent-grant.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -87,8 +91,32 @@ Deno.serve(async (req: Request) => {
     .select(COLUMNS);
   if (takeErr) return json({ ok: false, error: `take failed: ${takeErr.message}` }, 500);
 
-  const invites = ((taken ?? []) as Array<{ created_at: string }>)
+  type Taken = { id: string; invited_by: number; join_url: string; created_at: string };
+  const invites = ((taken ?? []) as Taken[])
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  let tokens: string[];
+  try {
+    tokens = await mintGrants(
+      supabase,
+      invites.map((i) => ({
+        agentId: agent.agentId,
+        groupId: agent.groupId,
+        telegramId: i.invited_by,
+        joinUrl: i.join_url,
+        inviteId: i.id,
+      })),
+      Date.now(),
+    );
+  } catch (e) {
+    // Приглашение без пропуска боту бесполезно: вернуть в очередь, следующий опрос заберёт снова.
+    console.error(`meeting-invite: пропуска не выданы: ${e instanceof Error ? e.message : String(e)}`);
+    const { error: backErr } = await supabase.from("meeting_invites")
+      .update({ taken_at: null, taken_by: null })
+      .in("id", invites.map((i) => i.id))
+      .eq("taken_by", agent.agentId);
+    if (backErr) console.error(`meeting-invite: приглашения не вернулись в очередь: ${backErr.message}`);
+    return json({ ok: false, error: "grant issue failed" }, 500);
+  }
   console.log(`meeting-invite: агент ${agent.agentId} (${agent.groupId}) забрал ${invites.length}`);
-  return json({ ok: true, invites });
+  return json({ ok: true, invites: invites.map((i, n) => ({ ...i, grant_token: tokens[n] })) });
 });

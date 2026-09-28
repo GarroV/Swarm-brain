@@ -19,6 +19,14 @@
  */
 import { randomUUID } from "node:crypto";
 
+import {
+  type ContainerLimits,
+  DEFAULT_CONTAINER_LIMITS,
+  DEFAULT_MAX_MEETINGS,
+  loadSeccompProfile,
+  validLimits,
+  validMaxMeetings,
+} from "../container/isolation.ts";
 import { pinMeetLocale } from "../meet-adapter/url.ts";
 import { isCalendarBasis, type MeetingBasis } from "./claim-request.ts";
 import { MEETING_ENV, parsePlatform } from "./config.ts";
@@ -72,7 +80,7 @@ export interface OrchestratorOptions {
    * Уведомитель от имени человека: нотиса `container_died` уходит тому, за кого сидел
    * контейнер (`X-On-Behalf-Of`), поэтому уведомитель у каждого контейнера свой.
    */
-  readonly notifierFor: (onBehalfOf: number) => Notifier;
+  readonly notifierFor: (onBehalfOf: number, token: string) => Notifier;
   readonly log?: (line: string) => void;
   /**
    * Добавка к окружению контейнера: ручки смоука и времени. Обязательные переменные ею не
@@ -81,12 +89,27 @@ export interface OrchestratorOptions {
   readonly extraEnv?: Readonly<Record<string, string>>;
   readonly leaseIntervalMs?: number;
   readonly newRunId?: () => string;
+  /**
+   * Сколько встреч идёт разом. Сверх потолка `startForMeeting` отказывает до подъёма
+   * контейнера, и триггер доносит отказ человеку (`start_failed`).
+   */
+  readonly maxMeetings?: number;
+  readonly limits?: ContainerLimits;
+  /**
+   * Профиль seccomp строкой JSON; по умолчанию — `container/seccomp-chromium.json`.
+   */
+  readonly seccompProfile?: string;
 }
 
 interface Managed {
   readonly id: ContainerId;
   readonly runId: string;
   readonly onBehalfOf: number;
+  /**
+   * Чем контейнер ходит в двери за человека: пропуск встречи (T165) или, у сервера без пропусков
+   * и у подхваченных после перезапуска, общий токен.
+   */
+  readonly token: string;
   meetingId: string | null;
   outcome: string | null;
   readonly tail: string[];
@@ -145,8 +168,24 @@ export class Orchestrator {
 
   private readonly options: OrchestratorOptions;
 
+  /**
+   * Запуски, которые уже заняли место под потолком, но ещё не попали в `running`:
+   * между проверкой потолка и `track` идут `create` и `start`, и без этой брони два
+   * одновременных запуска (приглашение и календарь) проскочили бы потолок оба.
+   */
+  private starting = 0;
+
+  private readonly maxMeetings: number;
+
+  private readonly limits: ContainerLimits;
+
+  private readonly seccompProfile: string;
+
   constructor(options: OrchestratorOptions) {
     this.options = options;
+    this.maxMeetings = validMaxMeetings(options.maxMeetings ?? DEFAULT_MAX_MEETINGS);
+    this.limits = validLimits(options.limits ?? DEFAULT_CONTAINER_LIMITS);
+    this.seccompProfile = options.seccompProfile ?? loadSeccompProfile();
     this.log =
       options.log ??
       ((line: string): void => {
@@ -154,8 +193,13 @@ export class Orchestrator {
       });
   }
 
-  private get volume(): string {
-    return `${this.options.project}-recordings`;
+  /**
+   * Том записей — свой у каждого человека: контейнер встречи видит только очередь выгрузки
+   * того, за кого сидит. Не на запуск, а на человека: недовыгруженную запись умершего
+   * контейнера подбирает следующий запуск того же человека (`run-directories.ts`).
+   */
+  private volumeFor(onBehalfOf: number): string {
+    return `${this.options.project}-recordings-${String(onBehalfOf)}`;
   }
 
   private async beatLease(): Promise<void> {
@@ -206,7 +250,9 @@ export class Orchestrator {
       [MEETING_ENV.platform]: "meet",
       [MEETING_ENV.onBehalfOf]: String(onBehalfOf),
       [MEETING_ENV.swarmUrl]: this.options.swarmUrl,
-      [MEETING_ENV.token]: this.options.token,
+      // Пропуск встречи вместо общего токена агента (T165): контейнер действует только в
+      // границах своей встречи. Общий токен — лишь если сервер пропуска не выдал.
+      [MEETING_ENV.token]: basis?.grantToken ?? this.options.token,
       [MEETING_ENV.runId]: runId,
       [MEETING_ENV.version]: String(this.options.version),
       [MEETING_ENV.leaseDir]: LEASE_PATH,
@@ -234,9 +280,11 @@ export class Orchestrator {
         [LABEL.platform]: "meet",
         ...basisLabel(basis),
       },
-      volume: { name: this.volume, target: RECORDINGS_PATH },
+      volume: { name: this.volumeFor(onBehalfOf), target: RECORDINGS_PATH },
       readOnlyBind: { source: this.options.leaseDirectory, target: LEASE_PATH },
       shmBytes: SHM_BYTES,
+      limits: this.limits,
+      seccompProfile: this.seccompProfile,
     };
   }
 
@@ -245,11 +293,13 @@ export class Orchestrator {
     runId: string,
     onBehalfOf: number,
     exitCode: Promise<number | null>,
+    token: string = this.options.token,
   ): void {
     const managed: Managed = {
       id,
       runId,
       onBehalfOf,
+      token,
       meetingId: null,
       outcome: null,
       tail: [],
@@ -306,7 +356,7 @@ export class Orchestrator {
       return;
     }
     try {
-      await this.options.notifierFor(managed.onBehalfOf).notify({
+      await this.options.notifierFor(managed.onBehalfOf, managed.token).notify({
         kind: "container_died",
         meetingId: managed.meetingId,
         detail: `exit ${String(code)}`,
@@ -314,6 +364,39 @@ export class Orchestrator {
     } catch (error) {
       this.log(`нотиса container_died не ушла: ${describeError(error)}`);
     }
+  }
+
+  private reserveSlot(): void {
+    const busy = this.running.size + this.starting;
+    if (busy >= this.maxMeetings) {
+      // Текст уходит человеку внутрь «scriba could not start for this call: …».
+      throw new Error(
+        `all ${String(busy)} of ${String(this.maxMeetings)} meeting slots are busy right now`,
+      );
+    }
+    this.starting += 1;
+  }
+
+  private async launch(
+    spec: ContainerSpec,
+    runId: string,
+    person: number,
+    token: string,
+  ): Promise<ContainerId> {
+    const { engine } = this.options;
+    const id = await engine.create(spec);
+    // Ожидание выхода регистрируется ДО старта: контейнер убирается сам сразу после выхода,
+    // и опоздавшее ожидание не застало бы ни его, ни кода выхода.
+    const exited = engine.waitExit(id, "next-exit");
+    try {
+      await engine.start(id);
+    } catch (error) {
+      await this.removeQuietly(id);
+      throw new Error(`контейнер встречи не стартовал: ${describeError(error)}`, { cause: error });
+    }
+    this.log(`контейнер ${id} поднят на встречу (запуск ${runId}, от имени ${String(person)})`);
+    this.track(id, runId, person, exited, token);
+    return id;
   }
 
   /**
@@ -361,20 +444,17 @@ export class Orchestrator {
     const person = validOnBehalfOf(onBehalfOf);
     const runId = (this.options.newRunId ?? randomUUID)();
 
-    const { engine } = this.options;
-    const id = await engine.create(this.spec(pinned, person, runId, basis));
-    // Ожидание выхода регистрируется ДО старта: контейнер убирается сам сразу после выхода,
-    // и опоздавшее ожидание не застало бы ни его, ни кода выхода.
-    const exited = engine.waitExit(id, "next-exit");
+    this.reserveSlot();
     try {
-      await engine.start(id);
-    } catch (error) {
-      await this.removeQuietly(id);
-      throw new Error(`контейнер встречи не стартовал: ${describeError(error)}`, { cause: error });
+      return await this.launch(
+        this.spec(pinned, person, runId, basis),
+        runId,
+        person,
+        basis?.grantToken ?? this.options.token,
+      );
+    } finally {
+      this.starting -= 1;
     }
-    this.log(`контейнер ${id} поднят на встречу (запуск ${runId}, от имени ${String(person)})`);
-    this.track(id, runId, person, exited);
-    return id;
   }
 
   /**

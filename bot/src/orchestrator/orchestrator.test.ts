@@ -11,7 +11,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContainerEngine, ContainerSpec, EngineContainer } from "./engine.ts";
 import { readLease } from "./lease.ts";
 import type { Notice, NoticeResult } from "./notices.ts";
-import { LABEL, Orchestrator, STOP_GRACE_SECONDS } from "./orchestrator.ts";
+import {
+  LABEL,
+  Orchestrator,
+  type OrchestratorOptions,
+  STOP_GRACE_SECONDS,
+} from "./orchestrator.ts";
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -113,10 +118,15 @@ describe("оркестратор", () => {
   let engine: FakeEngine;
   let notices: Notice[];
   let recipients: number[];
+  let noticeTokens: string[];
   let orchestrator: Orchestrator;
 
-  function build(extraEnvironment?: Record<string, string>): Orchestrator {
+  function build(
+    extraEnvironment?: Record<string, string>,
+    isolation: Partial<Pick<OrchestratorOptions, "maxMeetings" | "limits">> = {},
+  ): Orchestrator {
     return new Orchestrator({
+      ...isolation,
       engine,
       project: "scriba-test",
       image: "scriba:dev",
@@ -124,10 +134,11 @@ describe("оркестратор", () => {
       swarmUrl: "https://swarm.example/functions/v1",
       token: "bot-token",
       version: 7,
-      notifierFor: (onBehalfOf) => ({
+      notifierFor: (onBehalfOf, token) => ({
         notify: (notice): Promise<NoticeResult> => {
           notices.push(notice);
           recipients.push(onBehalfOf);
+          noticeTokens.push(token);
           return Promise.resolve({ delivered: true, shouldLeave: false });
         },
       }),
@@ -145,6 +156,7 @@ describe("оркестратор", () => {
     engine = new FakeEngine();
     notices = [];
     recipients = [];
+    noticeTokens = [];
     orchestrator = build();
   });
 
@@ -176,7 +188,7 @@ describe("оркестратор", () => {
           "SCRIBA_LEASE_DIR=/lease",
         ]),
       );
-      expect(spec?.volume).toEqual({ name: "scriba-test-recordings", target: "/recordings" });
+      expect(spec?.volume).toEqual({ name: "scriba-test-recordings-744", target: "/recordings" });
       expect(spec?.readOnlyBind).toEqual({ source: leaseDirectory, target: "/lease" });
       expect(orchestrator.list()).toEqual([
         { id: "c1", runId: "run-1", onBehalfOf: 744, meetingId: null },
@@ -261,6 +273,129 @@ describe("оркестратор", () => {
     });
   });
 
+  describe("изоляция встреч друг от друга и от хоста", () => {
+    it("у каждого человека свой том записей: чужая очередь выгрузки контейнеру не видна", async () => {
+      let run = 0;
+      orchestrator = new Orchestrator({
+        engine,
+        project: "scriba-test",
+        image: "scriba:dev",
+        leaseDirectory,
+        swarmUrl: "https://swarm.example/functions/v1",
+        token: "bot-token",
+        version: 7,
+        notifierFor: () => ({
+          notify: (): Promise<NoticeResult> =>
+            Promise.resolve({ delivered: true, shouldLeave: false }),
+        }),
+        log: (): void => {
+          // журнал оркестратора в тестах не нужен
+        },
+        newRunId: () => {
+          run += 1;
+          return `run-${String(run)}`;
+        },
+      });
+
+      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 745);
+      await orchestrator.startForMeeting(MEET, "meet", 744);
+
+      expect(engine.specs.map((spec) => spec.volume.name)).toEqual([
+        "scriba-test-recordings-744",
+        "scriba-test-recordings-745",
+        // Тот же человек — тот же том: осиротевшую запись подберёт его следующий запуск.
+        "scriba-test-recordings-744",
+      ]);
+    });
+
+    it("потолок одновременных встреч: сверх него — громкий отказ, и контейнер не создаётся", async () => {
+      orchestrator = build(undefined, { maxMeetings: 2 });
+      await orchestrator.startForMeeting(MEET, "meet", 744);
+      await orchestrator.startForMeeting(MEET, "meet", 745);
+
+      await expect(orchestrator.startForMeeting(MEET, "meet", 746)).rejects.toThrow(
+        /2 of 2 meeting slots/,
+      );
+      expect(engine.specs).toHaveLength(2);
+    });
+
+    it("одновременные запуски не проскакивают потолок, пока первый ещё создаётся", async () => {
+      orchestrator = build(undefined, { maxMeetings: 2 });
+
+      const results = await Promise.allSettled([
+        orchestrator.startForMeeting(MEET, "meet", 744),
+        orchestrator.startForMeeting(MEET, "meet", 745),
+        orchestrator.startForMeeting(MEET, "meet", 746),
+      ]);
+
+      expect(results.map((result) => result.status)).toEqual([
+        "fulfilled",
+        "fulfilled",
+        "rejected",
+      ]);
+      expect(engine.specs).toHaveLength(2);
+    });
+
+    it("место освобождается, когда встреча кончилась или контейнер не стартовал", async () => {
+      orchestrator = build(undefined, { maxMeetings: 1 });
+      engine.shouldFailStart = true;
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).rejects.toThrow(/не стартовал/);
+      engine.shouldFailStart = false;
+
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      engine.exit(id, 0);
+      await orchestrator.whenExited(id);
+
+      await expect(orchestrator.startForMeeting(MEET, "meet", 745)).resolves.toBe("c3");
+    });
+
+    it("подхваченные после перезапуска контейнеры занимают места под потолком", async () => {
+      engine.existing = [
+        { id: "old-1", running: true, labels: { [LABEL.run]: "r0", [LABEL.onBehalfOf]: "744" } },
+      ];
+      orchestrator = build(undefined, { maxMeetings: 1 });
+      await orchestrator.init();
+
+      await expect(orchestrator.startForMeeting(MEET, "meet", 745)).rejects.toThrow(/1 of 1/);
+    });
+
+    it("контейнеру заданы потолки памяти, процессора и процессов", async () => {
+      const limits = { memoryBytes: 512 * 1024 * 1024, nanoCpus: 1_500_000_000, pids: 300 };
+      orchestrator = build(undefined, { limits });
+      await orchestrator.startForMeeting(MEET, "meet", 744);
+
+      expect(engine.specs[0]?.limits).toEqual(limits);
+    });
+
+    it("по умолчанию потолки тоже есть — не «без ограничений»", async () => {
+      await orchestrator.startForMeeting(MEET, "meet", 744);
+
+      const limits = engine.specs[0]?.limits;
+      expect(limits?.memoryBytes).toBeGreaterThan(0);
+      expect(limits?.nanoCpus).toBeGreaterThan(0);
+      expect(limits?.pids).toBeGreaterThan(0);
+    });
+
+    it("профиль seccomp едет в контейнер и разрешает песочнице Chromium её пространства имён", async () => {
+      await orchestrator.startForMeeting(MEET, "meet", 744);
+
+      const profile = JSON.parse(engine.specs[0]?.seccompProfile ?? "{}") as {
+        defaultAction?: string;
+        syscalls?: { names: string[]; action: string; includes?: object }[];
+      };
+      expect(profile.defaultAction).toBe("SCMP_ACT_ERRNO");
+      const sandboxRule = profile.syscalls?.find(
+        (rule) => rule.names.includes("unshare") && rule.includes === undefined,
+      );
+      expect(sandboxRule?.action).toBe("SCMP_ACT_ALLOW");
+    });
+
+    it("кривой потолок — отказ при сборке оркестратора, а не «без ограничений»", () => {
+      expect(() => build(undefined, { maxMeetings: 0 })).toThrow(/maxMeetings/);
+    });
+  });
+
   describe("смерть контейнера", () => {
     it("штатный выход (0) — исход из журнала, нотисы нет", async () => {
       const id = await orchestrator.startForMeeting(MEET, "meet", 744);
@@ -286,6 +421,40 @@ describe("оркестратор", () => {
       });
       expect(notices).toEqual([{ kind: "container_died", meetingId: "m-9", detail: "exit 137" }]);
       expect(recipients).toEqual([744]);
+    });
+
+    it("БЛОКИРУЮЩИЙ (T165): контейнер получает пропуск встречи, а не общий токен агента", async () => {
+      await orchestrator.startForMeeting(MEET, "meet", 744, {
+        calendarKey: "evt-1:2026-09-28",
+        startsAt: "2026-09-28T10:00:00.000Z",
+        grantToken: "sgr_calendar-pass",
+      });
+      await orchestrator.startForMeeting(MEET, "meet", 744, {
+        id: "inv-1",
+        joinUrl: MEET,
+        grantToken: "sgr_invite-pass",
+      });
+
+      const [calendar, invite] = engine.specs;
+      expect(calendar?.env).toContain("SCRIBA_BOT_TOKEN=sgr_calendar-pass");
+      expect(invite?.env).toContain("SCRIBA_BOT_TOKEN=sgr_invite-pass");
+      for (const spec of engine.specs) {
+        expect(spec.env.join("\n")).not.toContain("bot-token");
+        expect(Object.values(spec.labels).join("\n")).not.toContain("sgr_");
+      }
+    });
+
+    it("умер посреди встречи с пропуском — container_died уходит по пропуску этой встречи", async () => {
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, {
+        id: "inv-1",
+        joinUrl: MEET,
+        grantToken: "sgr_pass",
+      });
+      engine.say(id, '[scriba] scriba-state {"meetingId":"m-9"}');
+      engine.exit(id, 137);
+      await orchestrator.whenExited(id);
+
+      expect(noticeTokens).toEqual(["sgr_pass"]);
     });
 
     it("умер до claim — нотисе не к чему привязаться, но смерть зафиксирована", async () => {

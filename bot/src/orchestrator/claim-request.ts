@@ -9,6 +9,10 @@
 import type { ClaimRequest } from "../swarm-client/contract.ts";
 
 export interface InviteReference {
+  /**
+   * Пропуск бота на эту встречу, выданный сервером вместе с приглашением (T165).
+   */
+  readonly grantToken?: string;
   readonly id: string;
   /**
    * Ссылка на звонок; сервер сверяет её комнату с комнатой приглашения.
@@ -41,6 +45,11 @@ export function manualClaim(input: {
  * человека (D016). Приглашение здесь не нужно и не предъявляется.
  */
 export interface CalendarReference {
+  /**
+   * Пропуск бота на эту встречу, выданный сервером вместе с заданием (T165). С ним контейнер
+   * ходит в двери за человека; нет — сервер старый, контейнер идёт с общим токеном.
+   */
+  readonly grantToken?: string;
   /**
    * `<iCalUID|id>:<YYYY-MM-DD>` — `_shared/calendar-key.ts` на сервере.
    */

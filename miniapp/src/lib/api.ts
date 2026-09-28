@@ -1391,6 +1391,27 @@ export async function disconnectGoogle(): Promise<void> {
   return apiFetch<void>("/integrations/google", { method: "DELETE" });
 }
 
+// Автозапуск бота по календарю (D021): бот scriba сам приходит на встречи Meet — только если
+// человек включил. По умолчанию выключено; выключение гасит и уже заведённые задания (сервер).
+let mockAutojoin = false;
+
+export async function fetchAutojoin(): Promise<boolean> {
+  if (DEV_MODE) return mockAutojoin;
+  return (await apiFetch<{ enabled: boolean }>("/scriba/autojoin")).enabled;
+}
+
+export async function setAutojoin(enabled: boolean): Promise<boolean> {
+  if (DEV_MODE) {
+    mockAutojoin = enabled;
+    return enabled;
+  }
+  const res = await apiFetch<{ enabled: boolean }>("/scriba/autojoin", {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+  return res.enabled;
+}
+
 export async function fetchGranolaUnprocessed(period: "today" | "7d" | "30d" = "7d"): Promise<GranolaNote[]> {
   if (DEV_MODE) return mockGranolaUnprocessed;
   return apiFetch<GranolaNote[]>(`/granola/notes?period=${period}`);

@@ -62,6 +62,9 @@ function inviteProblem(item: Record<string, unknown>): string | null {
   if (!isFilledString(item.platform)) return "нет platform";
   if (!isFilledString(item.created_at)) return "нет created_at";
   if (!isFilledString(item.expires_at)) return "нет expires_at";
+  // Пропуск необязателен (сервер до T165 его не шлёт), но присланный обязан быть строкой.
+  if (item.grant_token !== undefined && !isFilledString(item.grant_token))
+    return "grant_token не строка";
   return null;
 }
 

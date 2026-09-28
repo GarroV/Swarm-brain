@@ -151,6 +151,33 @@ struct SwarmClient {
         return MeetingLookup(meeting: info, tokenDead: false)
     }
 
+    // GET /meeting-missed — встречи, на которые бот не пошёл или не дошёл (T162, D022). Сервер в
+    // Google не ходит, читает снимок календаря — поэтому опрашивать раз в минуту можно.
+    // Не-2xx → SwarmError.http с телом: в нём текст отказа, его показывают человеку.
+    func missedMeetings() async throws -> MissedList {
+        var req = URLRequest(url: url("/meeting-missed"))
+        authed(&req)
+        let (data, resp) = try await Self.session.data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200...299).contains(code) else {
+            throw SwarmError.http(code, String(data: data, encoding: .utf8) ?? "")
+        }
+        return try MissedList.decode(data)
+    }
+
+    // POST /meeting-missed {miss_id} — позвать бота на пропущенную встречу. Код и тело отдаём как
+    // есть: успех — 200/201 `{invite}`, отказ — `{error, error_ru, code}`, его читает человек.
+    // Сетевой сбой (до ответа не дошли) — бросает URLError.
+    func inviteBot(missId: String) async throws -> (status: Int, body: Data) {
+        var req = URLRequest(url: url("/meeting-missed"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        authed(&req)
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["miss_id": missId])
+        let (data, resp) = try await Self.session.data(for: req)
+        return ((resp as? HTTPURLResponse)?.statusCode ?? 0, data)
+    }
+
     // GET /meeting-status?ids=a,b,c → [meetingId: summary_status]. Нужно UploadQueue: локальный
     // Статус встречи для рекордера: `summary` (транскрибация: ""/processing/done/failed) гасит капсулу
     // «в обработке»; `published` (status=='in_base') — сигнал удалить локальный бэкап аудио. Возвращает

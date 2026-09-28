@@ -29,6 +29,8 @@
 // Запуск: SMOKE_SUPABASE_URL=… SMOKE_SERVICE_KEY=… deno run --allow-all scripts/scriba-same-owner-smoke.ts
 // Красный, если хоть одно ожидание не сошлось или окружения нет.
 
+import { seedInviteGrant } from "./scriba-smoke-grants.ts";
+
 const PORT_BASE = Number(Deno.env.get("SMOKE_PORT_BASE") ?? "4490");
 const PORT_CLAIM = PORT_BASE + 4;
 const PORT_INGEST = PORT_BASE + 5;
@@ -258,6 +260,7 @@ async function cleanup(): Promise<string[]> {
     }
   }
   const steps: Array<[string, string]> = [
+    ["DELETE", `meeting_agent_grants?group_id=eq.${WS}`],
     ["DELETE", `meeting_invites?group_id=eq.${WS}`],
     ...(ids.length > 0
       ? [["DELETE", `meetings?id=in.(${ids.join(",")})`] as [string, string]]
@@ -294,36 +297,38 @@ async function post(
   return { status: res.status, body: parsed };
 }
 
-const botHeaders = {
-  Authorization: `Bearer ${AGENT.token}`,
-  "X-On-Behalf-Of": String(OWNER),
-};
+// Бот за человека ходит пропуском своей встречи (T165): пропуск выдаётся к приглашению, первая
+// заявка привязывает его к встрече. Здесь — пропуск каждой встречи бота по её id.
+const grants = new Map<string, string>();
+function botHeaders(meetingId: string): Record<string, string> {
+  const grant = grants.get(meetingId);
+  if (!grant) throw new Error(`нет пропуска бота на встречу ${meetingId}`);
+  return { Authorization: `Bearer ${grant}`, "X-On-Behalf-Of": String(OWNER) };
+}
 const recHeaders = { Authorization: `Bearer ${RECORDER_TOKEN}` };
 
 /** Бот заявляется до захода: ручная встреча по приглашению, запись 0 с (как `manualClaim`). */
 async function botClaim(startedAt: string): Promise<string> {
-  const joinUrl = `https://meet.google.com/smk-${RUN}-${
-    Math.floor(Math.random() * 1e6)
-  }`;
-  const [invite] = await rest("POST", "meeting_invites", [{
-    group_id: WS,
-    invited_by: OWNER,
-    join_url: joinUrl,
-    platform: "meet",
-    expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
-    taken_at: new Date().toISOString(),
-    taken_by: AGENT.id,
-  }]) as Array<{ id: string }>;
+  const { token, inviteId, joinUrl } = await seedInviteGrant(rest, {
+    agentId: AGENT.id,
+    groupId: WS,
+    telegramId: OWNER,
+    meetingId: null,
+  });
   const res = await post(
     PORT_CLAIM,
-    { ...botHeaders, "Content-Type": "application/json" },
+    {
+      Authorization: `Bearer ${token}`,
+      "X-On-Behalf-Of": String(OWNER),
+      "Content-Type": "application/json",
+    },
     JSON.stringify({
       identity_kind: "manual",
       identity_key: `scriba:${crypto.randomUUID()}`,
       started_at: startedAt,
       agent_version: "scriba-1",
       recorded_seconds: 0,
-      invite_id: invite?.id,
+      invite_id: inviteId,
       join_url: joinUrl,
     }),
   );
@@ -332,6 +337,7 @@ async function botClaim(startedAt: string): Promise<string> {
     throw new Error(`claim бота: ${res.status} ${JSON.stringify(res.body)}`);
   }
   createdMeetings.add(id);
+  grants.set(id, token);
   return id;
 }
 
@@ -399,7 +405,7 @@ async function botBeat(
 ): Promise<{ status: number; body: Json }> {
   return await post(
     PORT_HB,
-    { ...botHeaders, "Content-Type": "application/json" },
+    { ...botHeaders(meetingId), "Content-Type": "application/json" },
     JSON.stringify({
       recording,
       version: 1,
@@ -462,7 +468,10 @@ async function ingest(
   who: "bot" | "rec",
   form: FormData,
 ): Promise<{ status: number; body: Json }> {
-  return await post(PORT_INGEST, who === "bot" ? botHeaders : recHeaders, form);
+  const headers = who === "bot"
+    ? botHeaders(String(form.get("meeting_id")))
+    : recHeaders;
+  return await post(PORT_INGEST, headers, form);
 }
 
 // ── Наблюдение ──────────────────────────────────────────────────────────────────
