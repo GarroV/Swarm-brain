@@ -748,6 +748,8 @@ async function execIn(id: string, command: string[]): Promise<{ code: number; ou
   return { code: info.ExitCode ?? -1, out: Buffer.concat(chunks).toString("utf8") };
 }
 
+// Адреса — 1.1.1.1: достижим из обычной сети Docker (проверено), поэтому отказ здесь значит
+// «нет маршрута», а не «адрес умер». Ждём именно ENETUNREACH, а не любой сбой.
 const PROBE = `
 const net = require("node:net");
 const dgram = require("node:dgram");
@@ -757,9 +759,9 @@ const tryIt = async (name, fn) => { try { console.log(name, "OK", await fn()); }
 (async () => {
   await tryIt("fetch-example", async () => (await fetch("https://example.com/", { signal: t(10000) })).status);
   await tryIt("fetch-meet", async () => (await fetch("https://meet.google.com/", { signal: t(15000), redirect: "manual" })).status);
-  await tryIt("tcp-direct", () => new Promise((ok, no) => { const s = net.connect(443, "93.184.215.14"); s.setTimeout(5000, () => no(new Error("timeout"))); s.on("connect", () => { s.destroy(); ok("connected"); }); s.on("error", no); }));
+  await tryIt("tcp-direct", () => new Promise((ok, no) => { const s = net.connect(443, "1.1.1.1"); s.setTimeout(5000, () => no(new Error("timeout"))); s.on("connect", () => { s.destroy(); ok("connected"); }); s.on("error", no); }));
   await tryIt("dns-example", async () => (await dns.lookup("example.com")).address);
-  await tryIt("udp-direct", () => new Promise((ok, no) => { const u = dgram.createSocket("udp4"); u.send(Buffer.from("x"), 53, "8.8.8.8", (e) => { u.close(); e ? no(e) : ok("sent"); }); }));
+  await tryIt("udp-direct", () => new Promise((ok, no) => { const u = dgram.createSocket("udp4"); u.send(Buffer.from("x"), 53, "1.1.1.1", (e) => { u.close(); e ? no(e) : ok("sent"); }); }));
 })();
 `;
 
@@ -781,9 +783,9 @@ async function sceneEgress(fake: Fake): Promise<void> {
     );
     check(probe.out.includes("fetch-example FAIL"), "посторонний адрес через прокси — отказ");
     check(probe.out.includes("fetch-meet OK"), "Meet через прокси — открывается");
-    check(probe.out.includes("tcp-direct FAIL"), "TCP мимо прокси — нет маршрута");
+    check(probe.out.includes("tcp-direct FAIL ENETUNREACH"), "TCP мимо прокси — нет маршрута");
     check(probe.out.includes("dns-example FAIL"), "внешние имена мимо прокси не резолвятся");
-    check(probe.out.includes("udp-direct FAIL"), "UDP мимо прокси — нет маршрута");
+    check(probe.out.includes("udp-direct FAIL ENETUNREACH"), "UDP мимо прокси — нет маршрута");
     const chromium = await execIn(id, [
       "sh",
       "-c",
