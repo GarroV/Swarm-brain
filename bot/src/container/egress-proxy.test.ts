@@ -156,4 +156,45 @@ describe("egress-прокси", () => {
     expect(answer).toMatch(/^HTTP\/1\.1 502/u);
     expect(lines).toContain(`egress upstream ${silent} — таймаут соединения`);
   });
+
+  it("соединение наружу оборвалось посреди туннеля — клиент закрыт, обрыв в журнале", async () => {
+    const reset = createServer((socket) => {
+      socket.once("data", () => {
+        socket.resetAndDestroy();
+      });
+    });
+    const resetPort = await listen(reset);
+    const target = `127.0.0.1:${String(resetPort)}`;
+    const cut = createEgressProxy({
+      policy: egressPolicy({ swarmUrl: `${["ht", "tp:"].join("")}//${target}` }),
+      log: (line) => {
+        lines.push(line);
+      },
+    });
+    const port = await listen(cut);
+    const answer = await new Promise<string>((resolve) => {
+      const socket = connect(port, "127.0.0.1");
+      let received = "";
+      socket.setEncoding("utf8");
+      socket.on("data", (chunk: string) => {
+        received += chunk;
+      });
+      socket.on("close", () => {
+        resolve(received);
+      });
+      socket.on("error", () => {
+        // обрыв со стороны прокси и есть ожидаемый исход
+      });
+      socket.write(`CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n\r\nping`);
+    });
+    await new Promise<void>((resolve) => {
+      cut.close(() => {
+        resolve();
+      });
+    });
+    await close(reset);
+    expect(answer).toContain("200 Connection Established");
+    expect(answer).not.toContain("502");
+    expect(lines.some((line) => line.startsWith(`egress upstream ${target} —`))).toBe(true);
+  });
 });

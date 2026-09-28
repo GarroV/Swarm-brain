@@ -206,4 +206,23 @@ describe("сеть встречи и egress-прокси", () => {
     expect(engine.networks.map((n) => n.name)).toEqual(["stand-meeting-live", "other-meeting-x"]);
     expect(lines).toContain("убираю сеть встречи прошлого запуска stand-meeting-dead");
   });
+
+  it("без подменённого сна повтор удаления сети ждёт по-настоящему", async () => {
+    const engine = new FakeEgressEngine();
+    const egress = new DockerMeetingEgress({
+      engine,
+      project: "stand",
+      image: "scriba:dev",
+      swarmUrl: "https://abc.supabase.co",
+      log: () => {
+        // журнал здесь не нужен
+      },
+    });
+    await egress.prepare("r1");
+    engine.busyRemovals = 1;
+    const started = Date.now();
+    await egress.release("r1");
+    expect(Date.now() - started).toBeGreaterThanOrEqual(400);
+    expect(engine.networks).toEqual([]);
+  });
 });
