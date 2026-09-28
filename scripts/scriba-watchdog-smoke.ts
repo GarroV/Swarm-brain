@@ -22,23 +22,33 @@
 // not_claim_owner, и новому claim_owner сторож не шлёт ложный алерт. Монотонность: опоздавший
 // удар recording:true не перетирает более свежий.
 //
+// Перехват решает выгрузка (T160): заявка другого человека в meeting-claim ничего не отбирает —
+// она становится претендентом, а право переходит, только когда настоящий meeting-ingest измерил
+// выгруженное аудио сам и оно заметно полнее. Заявка «на час» с выгрузкой на десять минут
+// встречу не получает.
+//
 // Арбитраж (T155): удар бота продлевает лиз и пишет recorded_seconds — рекордер с записью короче
 // не отбирает у бота встречу, claim после истечения лиза из claim не считает живого бота
 // брошенным, а заметно более полная запись перехватывает — но только у непишущего бота (D020):
 // пока бот пишет (лиз действует и последний удар recording:true), чужая запись получает defer.
 //
 // Порты — от SMOKE_PORT_BASE (по умолчанию 4380, диапазон блока orchestrator/сторож; base..base+3
-// — сам контур): base+4 — функция meeting-heartbeat, base+5 — функция meeting-claim, base+8 —
-// функция swarm-bot, base+9 — поддельный Telegram. swarm-bot ходит в
-// api.telegram.org напрямую, поэтому fetch подменяется предзагрузкой (--preload) только для
-// этого хоста: настоящим людям ничего не уходит.
+// — сам контур): base+4 — функция meeting-heartbeat, base+5 — функция meeting-claim, base+6 —
+// функция meeting-ingest, base+8 — функция swarm-bot, base+9 — поддельные Telegram и OpenAI.
+// swarm-bot и обработка встречи после выгрузки ходят в api.telegram.org и api.openai.com
+// напрямую, поэтому fetch подменяется предзагрузкой (--preload) только для этих хостов:
+// настоящим людям и в настоящий OpenAI ничего не уходит.
 //
 // Запуск: SMOKE_SUPABASE_URL=… SMOKE_SERVICE_KEY=… deno run --allow-all scripts/scriba-watchdog-smoke.ts
 // Красный, если хоть одно ожидание не сошлось или окружения нет.
 
+import { ingestFormOf } from "./smoke-m4a.ts";
+
 const PORT_BASE = Number(Deno.env.get("SMOKE_PORT_BASE") ?? "4380");
 const PORT_HB = PORT_BASE + 4;
 const PORT_CLAIM = PORT_BASE + 5;
+const PORT_INGEST = PORT_BASE + 6;
+const BUCKET = "meeting-audio";
 const PORT_BOT = PORT_BASE + 8;
 const PORT_TG = PORT_BASE + 9;
 const CRON_SECRET = "smoke-cron-secret";
@@ -131,6 +141,9 @@ const ALL_MEETING_IDS = [
   LATE,
   ...Object.values(ARB),
 ].map((m) => m.id);
+// Встречи, которые завёл сам meeting-claim (новая строка), — их id известен только из ответа.
+const createdMeetingIds: string[] = [];
+const meetingIdsToClean = () => [...ALL_MEETING_IDS, ...createdMeetingIds];
 
 const minutesAgo = (m: number) =>
   new Date(Date.now() - m * 60_000).toISOString();
@@ -164,6 +177,29 @@ async function rest(
   return text === "" ? null : JSON.parse(text);
 }
 
+async function storage(method: string, path: string, body?: unknown): Promise<Response> {
+  return await fetch(`${SUPABASE_URL}/storage/v1/${path}`, {
+    method,
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+/** Части, которые meeting-ingest положил в Storage по встрече (вложенность — до одного уровня). */
+async function storedParts(meetingId: string): Promise<string[]> {
+  const list = async (prefix: string) => {
+    const res = await storage("POST", `object/list/${BUCKET}`, { prefix, limit: 1000 });
+    return res.ok ? await res.json() as Array<{ name: string; id: string | null }> : [];
+  };
+  const rows = await list(meetingId);
+  const nested = await Promise.all(
+    rows.filter((r) => r.id === null).map(async (dir) =>
+      (await list(`${meetingId}/${dir.name}`)).map((f) => `${meetingId}/${dir.name}/${f.name}`)
+    ),
+  );
+  return [...rows.filter((r) => r.id !== null).map((r) => `${meetingId}/${r.name}`), ...nested.flat()];
+}
+
 // ── Поддельный Telegram ─────────────────────────────────────────────────────────
 
 const inbox: Array<{ chat_id: number; text: string }> = [];
@@ -173,8 +209,19 @@ function startTelegram(): Deno.HttpServer {
     port: PORT_TG,
     onListen: () => {},
   }, async (req) => {
+    const path = new URL(req.url).pathname;
+    // Обработка встречи после выгрузки перехватчика: поддельный Whisper и тезисы.
+    if (path === "/v1/audio/transcriptions") {
+      await req.body?.cancel();
+      const segments = [{ start: 0, end: 9, text: "smoke takeover", no_speech_prob: 0.01, avg_logprob: -0.2 }];
+      return Response.json({ text: "smoke takeover", language: "english", segments });
+    }
+    if (path === "/v1/chat/completions") {
+      await req.body?.cancel();
+      return Response.json({ choices: [{ message: { content: "- smoke" }, finish_reason: "stop" }] });
+    }
     const body = await req.json().catch(() => ({}));
-    if (new URL(req.url).pathname.endsWith("/sendMessage")) {
+    if (path.endsWith("/sendMessage")) {
       inbox.push({
         chat_id: Number(body.chat_id),
         text: String(body.text ?? ""),
@@ -184,14 +231,15 @@ function startTelegram(): Deno.HttpServer {
   });
 }
 
-// Предзагрузка для swarm-bot: api.telegram.org → поддельный Telegram. Больше ничего не трогает.
+// Предзагрузка для swarm-bot и meeting-ingest: api.telegram.org и api.openai.com → поддельный
+// сервер. Больше ничего не трогает.
 const PRELOAD = `data:application/typescript,${
   encodeURIComponent(`
 const real = globalThis.fetch;
 globalThis.fetch = (input, init) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-  if (url.startsWith("https://api.telegram.org/")) {
-    return real(url.replace("https://api.telegram.org", "http://127.0.0.1:${PORT_TG}"), init);
+  for (const host of ["https://api.telegram.org", "https://api.openai.com"]) {
+    if (url.startsWith(host + "/")) return real(url.replace(host, "http://127.0.0.1:${PORT_TG}"), init);
   }
   return real(input, init);
 };`)
@@ -214,6 +262,7 @@ function spawnFunction(
       SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY,
       TELEGRAM_BOT_TOKEN: "smoke-telegram-token",
+      OPENAI_API_KEY: "smoke-openai-key",
       CRON_SECRET,
     },
     stdout: "inherit",
@@ -238,6 +287,8 @@ async function waitPort(port: number, ms: number): Promise<boolean> {
 // ── Засев и уборка ──────────────────────────────────────────────────────────────
 
 async function seed(): Promise<void> {
+  const bucket = await storage("POST", "bucket", { id: BUCKET, name: BUCKET, public: false });
+  await bucket.body?.cancel(); // уже есть — 409, это нормально
   await rest("POST", "workspaces", [
     { id: WS, name: "Smoke watchdog" },
     { id: FOREIGN_WS, name: "Smoke foreign" },
@@ -339,10 +390,16 @@ async function seed(): Promise<void> {
 
 async function cleanup(): Promise<string[]> {
   const problems: string[] = [];
+  const parts = (await Promise.all(meetingIdsToClean().map(storedParts))).flat();
+  if (parts.length > 0) {
+    const res = await storage("DELETE", `object/${BUCKET}`, { prefixes: parts });
+    if (!res.ok) problems.push(`storage: ${res.status} ${await res.text()}`);
+    else await res.body?.cancel();
+  }
   const steps: Array<[string, string]> = [
     [
       "DELETE",
-      `meetings?id=in.(${ALL_MEETING_IDS.join(",")})`,
+      `meetings?id=in.(${meetingIdsToClean().join(",")})`,
     ], // notices — каскадом
     ["DELETE", `service_agents?id=eq.${AGENT.id}`],
     ["DELETE", `allowed_users?telegram_id=in.(${PEOPLE.join(",")})`],
@@ -442,6 +499,25 @@ async function claimAs(
   };
 }
 
+/** Выгрузка рекордера TAKER в настоящий meeting-ingest: `seconds` аудио, измеримых сервером. */
+async function uploadAs(meetingId: string, seconds: number): Promise<{ status: number; body: Record<string, unknown> }> {
+  const res = await fetch(`http://127.0.0.1:${PORT_INGEST}/`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${TAKER_TOKEN}` },
+    body: ingestFormOf(meetingId, seconds),
+  });
+  const body = await res.json().catch(() => ({}));
+  return { status: res.status, body };
+}
+
+/** Роль TAKER в recorders встречи. */
+async function takerRole(id: string): Promise<string | undefined> {
+  const rows = await rest("GET", `meetings?id=eq.${id}&select=recorders`) as Array<{
+    recorders: Array<{ telegram_id: number; role: string }> | null;
+  }>;
+  return (rows[0]?.recorders ?? []).find((r) => r.telegram_id === TAKER)?.role;
+}
+
 async function arbRow(id: string) {
   const rows = await rest(
     "GET",
@@ -500,14 +576,38 @@ async function arbitration(): Promise<void> {
     recording: false,
     recorded_seconds: 2400,
   });
+  // Бот закончил запись, заявка на 62 минуты — претендент: строка встречи не тронута, пока
+  // сервер не измерил выгрузку. Выгружено 10 минут — отказ, право у бота; 62 минуты — перехват.
+  const claimed = await claimAs(ARB.long.key, 3720);
+  const afterClaim = await arbRow(ARB.long.id);
+  expect(
+    "T160: заявка заметно полнее — претендент (transcribe клиенту), право и лиз бота не тронуты",
+    claimed.status === 200 && claimed.decision === "transcribe" &&
+      afterClaim?.claim_owner === OWNER_ARB && afterClaim?.recorded_seconds === 2400 &&
+      (await takerRole(ARB.long.id)) === "challenger",
+    JSON.stringify({ claimed, afterClaim }),
+  );
+  const short10 = await uploadAs(ARB.long.id, 600);
+  const afterShortUpload = await arbRow(ARB.long.id);
+  expect(
+    "T160: заявлено 62 минуты, выгружено 10 — 409, право у бота, претендент стал defer",
+    short10.status === 409 && afterShortUpload?.claim_owner === OWNER_ARB &&
+      afterShortUpload?.recorded_seconds === 2400 && (await takerRole(ARB.long.id)) === "defer",
+    JSON.stringify({ short10, afterShortUpload }),
+  );
+  expect(
+    "T160: после отказа выгрузка без новой заявки не принимается (403)",
+    (await uploadAs(ARB.long.id, 3720)).status === 403,
+  );
   const full = await claimAs(ARB.long.key, 3720);
+  const fullUpload = await uploadAs(ARB.long.id, 3720);
   const afterFull = await arbRow(ARB.long.id);
   expect(
-    "бот закончил запись — заметно более полная перехватывает (transcribe, флаг бота погашен)",
-    full.status === 200 && full.decision === "transcribe" &&
-      afterFull?.claim_owner === TAKER &&
-      afterFull?.agent_last_recording === false,
-    JSON.stringify({ full, afterFull }),
+    "бот закончил запись — выгрузка заметно полнее перехватывает (202, секунды измеренные, флаг бота погашен)",
+    full.status === 200 && full.decision === "transcribe" && fullUpload.status === 202 &&
+      afterFull?.claim_owner === TAKER && afterFull?.recorded_seconds === 3720 &&
+      afterFull?.agent_last_recording === false && (await takerRole(ARB.long.id)) === "transcribe",
+    JSON.stringify({ full, fullUpload, afterFull }),
   );
 
   // Лиз из claim истёк, но бот жив: удар продлил, и claim после 30 минут не берёт встречу как
@@ -553,6 +653,26 @@ async function arbitration(): Promise<void> {
     "в recorders легли урезанные секунды заявки: не больше времени встречи с запасом",
     capSec > 0 && capSec <= ARB_STARTED_MIN * 60 * 1.1 + 300 + 5,
     JSON.stringify(takerEntry),
+  );
+
+  // Новая строка (T160): у неё потолка по часам нет, первый заявитель сам ставит секунды. Сутки в
+  // заявке закрывали бы встречу от перехвата — первая выгрузка держателя опускает секунды встречи
+  // до измеренного.
+  const fresh = await fetch(`http://127.0.0.1:${PORT_CLAIM}/`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${TAKER_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ identity_kind: "manual", identity_key: `manual:smoke-fresh-${RUN}`, recorded_seconds: 86_000 }),
+  });
+  const freshBody = await fresh.json().catch(() => ({})) as { decision?: string; meeting_id?: string };
+  if (typeof freshBody.meeting_id === "string") createdMeetingIds.push(freshBody.meeting_id);
+  const freshId = freshBody.meeting_id ?? "";
+  const freshUpload = freshBody.decision === "transcribe" ? await uploadAs(freshId, 600) : null;
+  const afterFresh = await arbRow(freshId);
+  expect(
+    "T160: новая встреча с сутками в заявке — первая выгрузка держателя опускает секунды до измеренных",
+    fresh.status === 200 && freshBody.decision === "transcribe" && freshUpload?.status === 202 &&
+      afterFresh?.claim_owner === TAKER && afterFresh?.recorded_seconds === 600,
+    JSON.stringify({ freshBody, freshUpload, afterFresh }),
   );
 
   // Негодные секунды — 400, в арбитраж не попадают.
@@ -692,14 +812,20 @@ async function scenario(): Promise<void> {
   );
   const claim = await takeOver();
   expect(
-    "meeting-claim: у непишущего бота рекордер TAKER встречу перехватил (transcribe, та же встреча)",
+    "meeting-claim: у непишущего бота рекордер TAKER — претендент (transcribe, та же встреча)",
     claim.status === 200 && claim.body.decision === "transcribe" &&
-      claim.body.meeting_id === TAKEN.id,
+      claim.body.meeting_id === TAKEN.id && (await claimOwner(TAKEN.id)) === TAKEN.owner,
     JSON.stringify(claim),
+  );
+  const upload = await uploadAs(TAKEN.id, 3600);
+  expect(
+    "meeting-ingest: выгрузка часа записи принята и измерена — право перешло к TAKER",
+    upload.status === 202 && upload.body.ok === true,
+    JSON.stringify(upload),
   );
   const afterTake = await meetingBeat(TAKEN.id);
   expect(
-    "перехват тем же UPDATE погасил пульс бота: claim_owner = TAKER, agent_last_recording = false",
+    "перехват по выгрузке тем же UPDATE погасил пульс бота: claim_owner = TAKER, agent_last_recording = false",
     (await claimOwner(TAKEN.id)) === TAKER &&
       afterTake?.agent_last_recording === false,
     JSON.stringify(afterTake),
@@ -782,7 +908,7 @@ async function scenario(): Promise<void> {
   expect("живой bumblebee → тишина", to(HUMAN_ALIVE).length === 0);
   expect(
     "перехваченная встреча: новому claim_owner нет ложного алерта «scriba перестал отвечать»",
-    to(TAKER).length === 0,
+    !to(TAKER).some((m) => m.text.includes("scriba stopped responding") || m.text.includes("scriba перестал отвечать")),
     JSON.stringify(to(TAKER)),
   );
   expect(
@@ -873,18 +999,26 @@ async function main(): Promise<void> {
     PORT_BOT,
     [`--preload=${PRELOAD}`],
   );
+  const ingest = spawnFunction(
+    "../supabase/functions/meeting-ingest/index.ts",
+    PORT_INGEST,
+    [`--preload=${PRELOAD}`],
+  );
   let cleanupProblems: string[] = [];
   let ready = false;
   try {
     await seed();
     ready = (await waitPort(PORT_HB, 30_000)) &&
       (await waitPort(PORT_CLAIM, 30_000)) &&
-      (await waitPort(PORT_BOT, 30_000));
+      (await waitPort(PORT_BOT, 30_000)) &&
+      (await waitPort(PORT_INGEST, 30_000));
     if (ready) await scenario();
   } finally {
     hb.kill("SIGTERM");
     claimFn.kill("SIGTERM");
     bot.kill("SIGTERM");
+    ingest.kill("SIGTERM");
+    await ingest.status;
     await hb.status;
     await claimFn.status;
     await bot.status;
@@ -893,7 +1027,7 @@ async function main(): Promise<void> {
   }
   if (!ready) {
     console.error(
-      `КРАСНЫЙ: функции не поднялись на ${PORT_HB}/${PORT_BOT} за 30 с — проверять нечего.`,
+      `КРАСНЫЙ: функции не поднялись на ${PORT_HB}/${PORT_CLAIM}/${PORT_BOT}/${PORT_INGEST} за 30 с — проверять нечего.`,
     );
     Deno.exit(1);
   }
