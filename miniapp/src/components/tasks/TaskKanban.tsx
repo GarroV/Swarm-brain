@@ -147,7 +147,7 @@ export function KanbanColumn({ sectionId, column, tasks, badgeFor, groupOf, read
       )}
       <div className={`flex-1 overflow-y-auto space-y-2 pt-1 min-h-[56px]${readOnly ? "" : " cursor-text"}`}
         onClick={(e) => { if (!readOnly && e.target === e.currentTarget && !adding) onQuickAddChange({ section: sectionId, status: column.status, title: "" }); }}
-        title={readOnly ? undefined : "Кликни по пустому полю — добавить задачу"}>
+        title={readOnly ? undefined : dt("Кликни по пустому полю — добавить задачу", "Click the empty area to add a task")}>
         {groupOf
           ? groupTasks(tasks, groupOf, dt("Без проекта", "No project")).map(([label, items]) => (
             <div key={label} className="space-y-2">

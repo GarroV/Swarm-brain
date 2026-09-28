@@ -1,14 +1,16 @@
 "use client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FeedbackForm } from "./FeedbackForm";
+import { useDt } from "@/components/roy/nav";
 
 /** Диалог фидбека без своей кнопки — для пунктов меню («Ещё» на мобайле). */
 export function FeedbackDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const dt = useDt();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[420px]">
         <DialogHeader>
-          <DialogTitle>Фидбек</DialogTitle>
+          <DialogTitle>{dt("Фидбек", "Feedback")}</DialogTitle>
         </DialogHeader>
         <FeedbackForm onDone={() => onOpenChange(false)} />
       </DialogContent>

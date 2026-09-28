@@ -1,11 +1,14 @@
 "use client";
 import { cn } from "@/lib/utils";
 import type { Lens } from "@/lib/smartLists";
+import { useDt } from "@/components/roy/nav";
 
-const SCOPE_ITEMS: { id: Lens; label: string }[] = [
-  { id: "mine", label: "Мои" },
-  { id: "team", label: "Команда" },
-  { id: "all", label: "Все" },
+// Подписи парой [RU, EN] — константа живёт вне компонента, где хук `useDt` недоступен;
+// выбор языка делает потребитель (см. тот же приём в TasksScreen/smartLists).
+const SCOPE_ITEMS: { id: Lens; label: [string, string] }[] = [
+  { id: "mine", label: ["Мои", "Mine"] },
+  { id: "team", label: ["Команда", "Team"] },
+  { id: "all", label: ["Все", "All"] },
 ];
 
 // Переключатель вида: 3-позиционный охват (Мои/Команда/Все, взаимоисключающий) + два независимых
@@ -24,6 +27,7 @@ export function LensToggle({
   byMarket: boolean; onToggleMarket: () => void;
   allStaff: boolean; onToggleAllStaff: () => void; showAllStaff: boolean;
 }) {
+  const dt = useDt();
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <div className={cn("inline-flex shrink-0 gap-[3px] rounded-[10px] border border-line bg-surface-2 p-[3px] transition-opacity", allStaff && "pointer-events-none opacity-40")}>
@@ -41,13 +45,13 @@ export function LensToggle({
               )}
               style={{ fontSize: 12.5 }}
             >
-              {it.label}
+              {dt(...it.label)}
             </button>
           );
         })}
       </div>
-      <ToggleChip on={byMarket} onClick={onToggleMarket} label="По рынкам" />
-      {showAllStaff && <ToggleChip on={allStaff} onClick={onToggleAllStaff} label="Все сотрудники" />}
+      <ToggleChip on={byMarket} onClick={onToggleMarket} label={dt("По рынкам", "By market")} />
+      {showAllStaff && <ToggleChip on={allStaff} onClick={onToggleAllStaff} label={dt("Все сотрудники", "All staff")} />}
     </div>
   );
 }
