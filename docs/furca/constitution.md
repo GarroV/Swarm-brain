@@ -97,7 +97,8 @@ Changelog руками не ведём: он собирается из commit-с
 <!-- A product with an interface must have a live demo that needs no registration: an isolated demo account or workspace, an idempotent seed of representative data, and a light entry point. The demo's language is always English, regardless of the product's language. The demo is isolated from real data and returns to a clean state by itself. -->
 
 Демо уже есть: изолированный воркспейс `demo` (барьер `isDemo`, `DEMO_USER_ID`), вход по секретной
-ссылке без регистрации, сид — `supabase/demo-seed.sql`, идемпотентный.
+ссылке без регистрации, эталон — функция `public.demo_reset()`, сама возвращает демо к нему каждые
+30 минут (pg_cron `demo-reset`, issue #580).
 
 Для доски инициатив сид дополняется пространством с направлениями, инициативами, живым спринтом,
 отметками сверки и одним принятым спринтом — чтобы аналитика и журнал были не пустыми. Содержание

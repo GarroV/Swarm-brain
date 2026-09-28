@@ -7,6 +7,8 @@
 #
 # Миграция накатывается повторно целиком: она вся идемпотентна (create or replace, add column
 # if not exists, drop trigger if exists). Поэтому восстановление — это просто накат исходника.
+#
+# Какую миграцию ломать — четвёртое поле строки списка; пусто — доска инициатив (MIGRATION).
 set -o pipefail
 cd "$(dirname "$0")/.."
 
@@ -23,19 +25,20 @@ if ! psql "$DB_URL" -Atc 'select 1' >/dev/null 2>&1; then
   exit 1
 fi
 
-restore() { psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$MIGRATION" >/dev/null; }
+restore() { psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$MIG" >/dev/null; }
 
-while IFS='|' read -r FROM TO TEST; do
+while IFS='|' read -r FROM TO TEST MIG; do
   case "$FROM" in ''|\#*) continue ;; esac
+  MIG="${MIG:-$MIGRATION}"
 
-  if ! grep -qF "$FROM" "$MIGRATION"; then
+  if ! grep -qF "$FROM" "$MIG"; then
     echo "порча-sql  ОТКАЗ    не нашёл в миграции: $FROM — список порчи отстал от кода"
     FAILED=1; continue
   fi
 
   TMP=$(mktemp)
-  FROM="$FROM" TO="$TO" perl -pe 's/\Q$ENV{FROM}\E/$ENV{TO}/g' "$MIGRATION" > "$TMP"
-  if cmp -s "$TMP" "$MIGRATION"; then
+  FROM="$FROM" TO="$TO" perl -pe 's/\Q$ENV{FROM}\E/$ENV{TO}/g' "$MIG" > "$TMP"
+  if cmp -s "$TMP" "$MIG"; then
     echo "порча-sql  ОТКАЗ    подстановка не применилась: $FROM"
     rm -f "$TMP"; FAILED=1; continue
   fi

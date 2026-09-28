@@ -11,3 +11,15 @@ si.carry_count + 1|si.carry_count|supabase/functions/_shared/tasks/sprint-accept
 v_cycle.status <> 'active'|v_cycle.status = 'нет такого статуса'|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
 before delete on public.tasks|before insert on public.tasks|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
 and frozen_at is null|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
+# Сброс демо (issue #580). Четвёртое поле — миграция сброса. Порча, РАСШИРЯЮЩАЯ удаление за
+# пределы демо, здесь только точечная — на строку тестового пользователя 800000901: тестовый
+# контур общий, и порча «удалить без условия» стёрла бы чужие данные на самом стенде.
+delete from public.projects           where group_id = c_ws;|perform 1;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+delete from public.sprint_cycles      where group_id = c_ws;|perform 1;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+delete from public.user_integrations  where telegram_id = any (v_users);|perform 1;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+delete from public.feedback           where telegram_id = any (v_users);|delete from public.feedback where telegram_id = any (v_users) or telegram_id = 800000901;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+claude_mcp_token_hash = null, claude_mcp_token_expires_at = null,|claude_mcp_token_expires_at = null,|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+revoke all on function public.demo_reset() from public, anon, authenticated;|grant execute on function public.demo_reset() to anon;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+# Расписание cron сюда не входит: порча меняет базу, а тест расписания читает сам файл миграции
+# (на контуре нет pg_cron, и зарегистрированной задачи в базе не бывает). Его порча проверена
+# руками правкой файла — тест краснеет.
