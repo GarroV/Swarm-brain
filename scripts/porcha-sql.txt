@@ -19,9 +19,10 @@ delete from public.sprint_cycles      where group_id = c_ws;|perform 1;|supabase
 delete from public.user_integrations  where telegram_id = any (v_users);|perform 1;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
 delete from public.user_integrations  where telegram_id = any (v_users);|delete from public.user_integrations where telegram_id = any (v_users) or telegram_id = 800000901;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
 -- feedback не трогаем: «фидбек нужен конечно»|delete from public.feedback where telegram_id = any (v_users); --|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
-or not exists (select 1 from public.feedback f where f.telegram_id = p.telegram_id));|or true);|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
 claude_mcp_token_hash = null, claude_mcp_token_expires_at = null,|claude_mcp_token_expires_at = null,|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
 revoke all on function public.demo_reset() from public, anon, authenticated;|grant execute on function public.demo_reset() to anon;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
 # Расписание cron сюда не входит: порча меняет базу, а тест расписания читает сам файл миграции
 # (на контуре нет pg_cron, и зарегистрированной задачи в базе не бывает). Его порча проверена
 # руками правкой файла — тест краснеет.
+  v_users := c_users;|  select coalesce(pg_catalog.array_agg(telegram_id), '{}') into v_users from public.allowed_users where group_id = c_ws or telegram_id = any (c_users);|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+delete from public.user_profiles      where telegram_id = any (c_users);|delete from public.user_profiles      where telegram_id between 900000001 and 900000099;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql

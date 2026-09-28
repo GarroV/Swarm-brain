@@ -29,7 +29,7 @@ const DEMO_USERS = [
   900000006,
   900000007,
 ];
-const EXTRA_DEMO_USER = 900000099;
+const EXTRA_DEMO_USER = 800000099; // вне диапазона демо-id: это «живой» человек, занесённый в demo
 // Лишний человек демо, оставивший фидбек: его фидбек и сам он сброс переживают.
 const FEEDBACK_DEMO_USER = 900000098;
 const DEMO_FEEDBACK = [
@@ -68,7 +68,7 @@ async function withDb(fn: (db: Client) => Promise<void>) {
 const DEMO_SCOPE: Record<string, string> = {
   workspaces: `id = '${DEMO}'`,
   allowed_users:
-    `(group_id = '${DEMO}' or telegram_id between 900000001 and 900000099) and telegram_id <> ${FEEDBACK_DEMO_USER}`,
+    `(group_id = '${DEMO}' or telegram_id between 900000001 and 900000099) and telegram_id not in (${FEEDBACK_DEMO_USER}, ${EXTRA_DEMO_USER})`,
   user_profiles:
     `telegram_id between 900000001 and 900000099 and telegram_id <> ${FEEDBACK_DEMO_USER}`,
   tasks: `group_id = '${DEMO}'`,
@@ -312,6 +312,12 @@ async function breakDemo(db: Client) {
   await db.queryArray`
     insert into allowed_users (telegram_id, username, group_id, is_admin, added_by)
     values (${EXTRA_DEMO_USER}, 'extra', ${DEMO}, false, 0) on conflict (telegram_id) do nothing`;
+  // Живой человек, которого занесли в demo: его данные вне членства — не демо, сброс их не трогает.
+  await db.queryArray`
+    insert into user_profiles (telegram_id, first_name) values (${EXTRA_DEMO_USER}, 'Real person')
+    on conflict (telegram_id) do nothing`;
+  await db
+    .queryArray`insert into user_integrations (telegram_id, service, api_key) values (${EXTRA_DEMO_USER}, 'granola', 'real-key')`;
   await db.queryArray`
     insert into allowed_users (telegram_id, username, group_id, is_admin, added_by)
     values (${FEEDBACK_DEMO_USER}, 'extra-fb', ${DEMO}, false, 0) on conflict (telegram_id) do nothing`;
@@ -328,6 +334,12 @@ async function cleanDemoFeedback(db: Client) {
   await db.queryArray`delete from feedback where text = any (${DEMO_FEEDBACK})`;
   await db
     .queryArray`delete from user_profiles where telegram_id = ${FEEDBACK_DEMO_USER}`;
+  await db
+    .queryArray`delete from user_profiles where telegram_id = ${EXTRA_DEMO_USER}`;
+  await db
+    .queryArray`delete from user_integrations where telegram_id = ${EXTRA_DEMO_USER}`;
+  await db
+    .queryArray`delete from allowed_users where telegram_id = ${EXTRA_DEMO_USER}`;
   await db
     .queryArray`delete from allowed_users where telegram_id = ${FEEDBACK_DEMO_USER}`;
 }
@@ -385,8 +397,16 @@ Deno.test("demo_reset: наломанное демо возвращается к
         select count(*)::int as n from allowed_users where telegram_id = ${EXTRA_DEMO_USER}`;
       assertEquals(
         extra.rows[0].n,
-        0,
-        "лишний человек без фидбека остался в демо",
+        1,
+        "сброс вычеркнул живого человека, занесённого в demo",
+      );
+      const kept = await db.queryObject<{ p: number; i: number }>`
+        select (select count(*)::int from user_profiles where telegram_id = ${EXTRA_DEMO_USER}) as p,
+               (select count(*)::int from user_integrations where telegram_id = ${EXTRA_DEMO_USER}) as i`;
+      assertEquals(
+        kept.rows[0],
+        { p: 1, i: 1 },
+        "сброс снёс профиль или интеграцию живого человека, занесённого в demo",
       );
 
       // Точечно — то, что висело мусором в проде и ломало прежний сид.

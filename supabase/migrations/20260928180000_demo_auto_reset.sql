@@ -46,13 +46,10 @@ begin
   -- Два сброса разом (cron + кнопка) не должны переплетаться: второй ждёт первого.
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('public.demo_reset'));
 
-  -- Демо-люди = эталонные + все, кого занесли в воркспейс demo сверх них.
-  select coalesce(pg_catalog.array_agg(distinct u), '{}')
-    into v_users
-    from (select pg_catalog.unnest(c_users) as u
-          union
-          select telegram_id from public.allowed_users where group_id = c_ws) s
-   where u is not null;
+  -- Демо-люди — ТОЛЬКО эталонные id. Живой человек, которого занесли в воркспейс demo,
+  -- демо-человеком не становится: его данные в других воркспейсах (календарь, личные списки,
+  -- подписки, профиль) сброс не трогает ни при каких условиях — только его строки внутри demo.
+  v_users := c_users;
 
   -- ── 1. Снести всё демо ──────────────────────────────────────────────────────────────────
   -- Порядок — от листьев к корню, чтобы внешние ключи без каскада не отбили удаление.
@@ -76,14 +73,10 @@ begin
   delete from public.sessions           where chat_id = any (v_users);
   -- Лишний человек воркспейса (не из эталона), оставивший фидбек, остаётся вместе с профилем:
   -- по нему фидбек опознаёт автора, а ссылка «кто написал» дороже чистоты витрины.
-  delete from public.user_profiles p
-   where p.telegram_id = any (v_users)
-     and (p.telegram_id = any (c_users)
-          or not exists (select 1 from public.feedback f where f.telegram_id = p.telegram_id));
-  -- Остальные лишние люди — их строки в демо уже снесены выше.
-  delete from public.allowed_users a
-   where a.group_id = c_ws and not (a.telegram_id = any (c_users))
-     and not exists (select 1 from public.feedback f where f.telegram_id = a.telegram_id);
+  delete from public.user_profiles      where telegram_id = any (c_users);
+  -- Лишних людей воркспейса (не эталонных) сброс НЕ удаляет: allowed_users — одна строка на
+  -- человека, и её удаление каскадом стирает его профиль, то есть живого человека, которого
+  -- занесли в demo, сброс вычеркнул бы из Swarm целиком. Их данные внутри demo уже снесены выше.
 
   -- ── 2. Воркспейс и команда ──────────────────────────────────────────────────────────────
   -- Эталон — правдоподобная работа небольшой ВЫДУМАННОЙ команды: сеть кофеен по соседству и
