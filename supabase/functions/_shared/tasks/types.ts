@@ -140,7 +140,14 @@ export type Project = {
   // закрытую строку видит только её created_by, админского обхода нет. Наследуется вниз — закрытый
   // проект закрывает свои подпроекты. Предикат — canViewProject (_shared/tasks/project-access.ts).
   is_private: boolean;
+  /** Справка «О проекте» (27.09.2026): зачем ведём, что это, ссылки на артефакты. */
+  goal: string | null;
+  description: string | null;
+  links: ProjectLink[];
 };
+
+/** Ссылка на артефакт проекта. url — только http(s), проверяет swarm-api/project-fields.ts. */
+export type ProjectLink = { title: string; url: string };
 
 export type ProjectInput = {
   name: string;
@@ -153,4 +160,7 @@ export type ProjectInput = {
   owner_telegram_id?: number | null;
   start_date?: string | null;
   end_date?: string | null;
+  goal?: string | null;
+  description?: string | null;
+  links?: ProjectLink[];
 };

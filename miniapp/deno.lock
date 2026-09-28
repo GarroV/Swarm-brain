@@ -65,6 +65,7 @@
         "npm:class-variance-authority@~0.7.1",
         "npm:clsx@^2.1.1",
         "npm:d3-hierarchy@^3.1.2",
+        "npm:heic-to@1.5.2",
         "npm:lucide-react@^1.17.0",
         "npm:next@16.2.6",
         "npm:react-dom@19.2.4",

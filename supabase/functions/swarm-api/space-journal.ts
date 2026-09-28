@@ -12,6 +12,7 @@
 // deno-lint-ignore-file no-import-prefix
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { apiErr, json } from "./http.ts";
+import { actorIds, displayActor } from "./journal-actors.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -71,13 +72,15 @@ async function visibleTasks(
   viewerId: number | null,
 ): Promise<Map<string, string>> {
   const titles = new Map<string, string>();
-  const { data: cycles } = await supabase.from("sprint_cycles")
+  const { data: cycles, error: cyclesErr } = await supabase.from("sprint_cycles")
     .select("id").eq("group_id", groupId).eq("tab_id", tabId);
+  if (cyclesErr) console.error("[space-journal] sprint_cycles", cyclesErr.message);
   const cycleIds = (cycles ?? []).map((c) => (c as { id: string }).id);
   if (cycleIds.length === 0) return titles;
 
-  const { data: items } = await supabase.from("sprint_items")
+  const { data: items, error: itemsErr } = await supabase.from("sprint_items")
     .select("task_id").in("cycle_id", cycleIds).not("task_id", "is", null);
+  if (itemsErr) console.error("[space-journal] sprint_items", itemsErr.message);
   const taskIds = [
     ...new Set((items ?? []).map((i) => (i as { task_id: string }).task_id)),
   ];
@@ -90,7 +93,8 @@ async function visibleTasks(
     ? q.eq("is_private", false)
     : q.or(`is_private.eq.false,owner_id.eq.${viewerId}`);
 
-  const { data: tasks } = await q.limit(2000);
+  const { data: tasks, error: tasksErr } = await q.limit(2000);
+  if (tasksErr) console.error("[space-journal] tasks", tasksErr.message);
   for (const t of (tasks ?? []) as { id: string; title: string }[]) {
     titles.set(t.id, t.title);
   }
@@ -104,6 +108,7 @@ export async function handleSpaceJournalRoutes(
   telegramId: number,
   groupId: string,
   origin: string,
+  resolveNames: (ids: number[]) => Promise<Map<number, string>>,
 ): Promise<Response | null> {
   const match = routePath.match(/^\/spaces\/([^/]+)\/journal$/);
   if (!match) return null;
@@ -133,9 +138,10 @@ export async function handleSpaceJournalRoutes(
       .select("task_id, field, old_value, new_value, changed_by, created_at")
       .in("task_id", taskIds);
     if (from) hq = hq.gte("created_at", from);
-    const { data: history } = await hq.order("created_at", {
+    const { data: history, error: histErr } = await hq.order("created_at", {
       ascending: false,
     }).limit(MAX_ROWS);
+    if (histErr) console.error("[space-journal] history", histErr.message);
 
     for (
       const h of (history ?? []) as {
@@ -158,25 +164,30 @@ export async function handleSpaceJournalRoutes(
     }
 
     let cq = supabase.from("task_comments")
-      .select("task_id, content, added_by, created_at")
+      .select("task_id, content, added_by, added_by_telegram_id, created_at")
       .in("task_id", taskIds);
     if (from) cq = cq.gte("created_at", from);
-    const { data: comments } = await cq.order("created_at", {
+    const { data: comments, error: comErr } = await cq.order("created_at", {
       ascending: false,
     }).limit(MAX_ROWS);
+    if (comErr) console.error("[space-journal] comments", comErr.message);
 
     for (
       const c of (comments ?? []) as {
         task_id: string;
         content: string;
-        added_by: string;
+        added_by: string | null;
+        added_by_telegram_id: number | null;
         created_at: string;
       }[]
     ) {
       events.push({
         at: c.created_at,
         kind: "comment",
-        actor: c.added_by,
+        // Новые комментарии пишут автора в added_by_telegram_id, added_by — старые строки.
+        actor: c.added_by_telegram_id !== null
+          ? String(c.added_by_telegram_id)
+          : c.added_by,
         task_id: c.task_id,
         task_title: titles.get(c.task_id) ?? null,
         text: c.content,
@@ -185,9 +196,10 @@ export async function handleSpaceJournalRoutes(
   }
 
   // События спринтов пространства: сам спринт и его состав.
-  const { data: cycles } = await supabase.from("sprint_cycles")
+  const { data: cycles, error: cycErr } = await supabase.from("sprint_cycles")
     .select("id, name, status, started_at, accepted_at, accepted_by, stats")
     .eq("group_id", groupId).eq("tab_id", tabId);
+  if (cycErr) console.error("[space-journal] cycles", cycErr.message);
 
   const cycleNames = new Map<string, string>();
   for (
@@ -228,11 +240,12 @@ export async function handleSpaceJournalRoutes(
 
   const cycleIds = [...cycleNames.keys()];
   if (cycleIds.length > 0) {
-    const { data: items } = await supabase.from("sprint_items")
+    const { data: items, error: itemsErr } = await supabase.from("sprint_items")
       .select(
         "cycle_id, task_id, added_at, added_by, check_status, check_at, check_by, to_carry, carry_reason, carry_at, carry_by, removed_title, removed_at",
       )
       .in("cycle_id", cycleIds).limit(MAX_ROWS);
+    if (itemsErr) console.error("[space-journal] items", itemsErr.message);
 
     for (
       const it of (items ?? []) as {
@@ -304,5 +317,13 @@ export async function handleSpaceJournalRoutes(
   }
 
   events.sort((a, b) => b.at.localeCompare(a.at));
-  return json({ events: events.slice(0, MAX_ROWS) }, 200, origin);
+  const page = events.slice(0, MAX_ROWS);
+  // Автор в старых строках — telegram_id строкой (sprint-cycles писал String(id)): показываем
+  // имя. Имена и 'demo' остаются как есть.
+  const names = await resolveNames(actorIds(page.map((e) => e.actor)));
+  const named = page.map((e) => ({
+    ...e,
+    actor: displayActor(e.actor, names),
+  }));
+  return json({ events: named }, 200, origin);
 }

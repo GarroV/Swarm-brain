@@ -6,6 +6,7 @@
 // принимать статус, а разъехавшийся CHECK начнёт отбивать вставки на проде.
 import { assertEquals } from "jsr:@std/assert@1";
 import {
+  shouldCascadeClose,
   completionPatch,
   hidesClosedByDefault,
   isTaskStatus,
@@ -137,4 +138,12 @@ Deno.test("закрытые прячем только когда про стат
   assertEquals(hidesClosedByDefault({ confirmed: true }), false);
   assertEquals(hidesClosedByDefault({ confirmed: false }), false);
   assertEquals(hidesClosedByDefault({ dueToday: true }), false);
+});
+
+Deno.test("shouldCascadeClose: только переход открытая → закрытая, без переката", () => {
+  assertEquals(shouldCascadeClose("open", "done", false), true);
+  assertEquals(shouldCascadeClose("in_progress", "cancelled", false), true);
+  assertEquals(shouldCascadeClose("done", "done", false), false);
+  assertEquals(shouldCascadeClose("open", "in_progress", false), false);
+  assertEquals(shouldCascadeClose("open", "done", true), false);
 });
