@@ -391,6 +391,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.meeting-current]
 verify_jwt = false
+[functions.meeting-calendar]
+verify_jwt = false
 [functions.meeting-notice]
 verify_jwt = false
 [functions.meeting-invite]
