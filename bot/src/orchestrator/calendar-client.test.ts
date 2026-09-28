@@ -45,7 +45,9 @@ describe("сверка с сервером", () => {
   });
 
   it("ответ — { ok: true, jobs, skipped }", () => {
-    expect(server).toContain("json({ ok: true, ...result })");
+    // jobs — те же задания с пропуском бота на встречу (T165), под именем grant_token.
+    expect(server).toContain("json({ ok: true, ...result, jobs })");
+    expect(server).toContain("grant_token: tokens[n]");
   });
 });
 

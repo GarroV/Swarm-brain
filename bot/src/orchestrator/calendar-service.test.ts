@@ -21,6 +21,7 @@ const JOB = {
   title: "Weekly",
   starts_at: "2026-09-28T07:01:00+00:00",
   ends_at: "2026-09-28T07:30:00+00:00",
+  grant_token: "sgr_job-pass",
 };
 
 interface Seen {
@@ -32,7 +33,7 @@ interface Seen {
 function wire(start: () => Promise<string>) {
   const seen: Seen[] = [];
   const starts: [string, string, number, CalendarReference][] = [];
-  const notices: [number, Notice][] = [];
+  const notices: [number, Notice, string][] = [];
   const lines: string[] = [];
   const fetchStub: typeof globalThis.fetch = (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
@@ -57,9 +58,9 @@ function wire(start: () => Promise<string>) {
       starts.push([joinUrl, platform, onBehalfOf, calendar]);
       return start();
     },
-    notifierFor: (onBehalfOf) => ({
+    notifierFor: (onBehalfOf, token) => ({
       notify: (notice): Promise<NoticeResult> => {
-        notices.push([onBehalfOf, notice]);
+        notices.push([onBehalfOf, notice, token]);
         return Promise.resolve({ delivered: true, shouldLeave: false });
       },
     }),
@@ -77,7 +78,12 @@ describe("calendarTriggerFor", () => {
     const { trigger, seen, starts, notices } = wire(() => Promise.resolve("c1"));
     await trigger.pollOnce();
     expect(starts).toEqual([
-      [JOB.join_url, "meet", PERSON, { calendarKey: JOB.calendar_key, startsAt: JOB.starts_at }],
+      [
+        JOB.join_url,
+        "meet",
+        PERSON,
+        { calendarKey: JOB.calendar_key, startsAt: JOB.starts_at, grantToken: JOB.grant_token },
+      ],
     ]);
     expect(seen).toHaveLength(1);
     expect(seen[0]?.headers.get("Authorization")).toBe(`Bearer ${TOKEN}`);
@@ -90,6 +96,8 @@ describe("calendarTriggerFor", () => {
     await trigger.pollOnce();
     const claim = seen.find((s) => s.url.endsWith("/meeting-claim"));
     expect(claim?.headers.get("X-On-Behalf-Of")).toBe(String(PERSON));
+    // Заявка и отказ — по пропуску задания (T165), не общим токеном агента.
+    expect(claim?.headers.get("Authorization")).toBe(`Bearer ${JOB.grant_token}`);
     expect(claim?.body).toMatchObject({
       identity_kind: "calendar",
       identity_key: JOB.calendar_key,
@@ -98,6 +106,7 @@ describe("calendarTriggerFor", () => {
     expect(claim?.body).not.toHaveProperty("invite_id");
     expect(notices).toHaveLength(1);
     expect(notices[0]?.[0]).toBe(PERSON);
+    expect(notices[0]?.[2]).toBe(JOB.grant_token);
     expect(notices[0]?.[1]).toMatchObject({ kind: "join_failed", meetingId: "m-1" });
     expect(JSON.stringify(notices[0]?.[1])).toContain("docker down");
   });

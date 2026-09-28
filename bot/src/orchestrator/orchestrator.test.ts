@@ -113,6 +113,7 @@ describe("оркестратор", () => {
   let engine: FakeEngine;
   let notices: Notice[];
   let recipients: number[];
+  let noticeTokens: string[];
   let orchestrator: Orchestrator;
 
   function build(extraEnvironment?: Record<string, string>): Orchestrator {
@@ -124,10 +125,11 @@ describe("оркестратор", () => {
       swarmUrl: "https://swarm.example/functions/v1",
       token: "bot-token",
       version: 7,
-      notifierFor: (onBehalfOf) => ({
+      notifierFor: (onBehalfOf, token) => ({
         notify: (notice): Promise<NoticeResult> => {
           notices.push(notice);
           recipients.push(onBehalfOf);
+          noticeTokens.push(token);
           return Promise.resolve({ delivered: true, shouldLeave: false });
         },
       }),
@@ -145,6 +147,7 @@ describe("оркестратор", () => {
     engine = new FakeEngine();
     notices = [];
     recipients = [];
+    noticeTokens = [];
     orchestrator = build();
   });
 
@@ -286,6 +289,40 @@ describe("оркестратор", () => {
       });
       expect(notices).toEqual([{ kind: "container_died", meetingId: "m-9", detail: "exit 137" }]);
       expect(recipients).toEqual([744]);
+    });
+
+    it("БЛОКИРУЮЩИЙ (T165): контейнер получает пропуск встречи, а не общий токен агента", async () => {
+      await orchestrator.startForMeeting(MEET, "meet", 744, {
+        calendarKey: "evt-1:2026-09-28",
+        startsAt: "2026-09-28T10:00:00.000Z",
+        grantToken: "sgr_calendar-pass",
+      });
+      await orchestrator.startForMeeting(MEET, "meet", 744, {
+        id: "inv-1",
+        joinUrl: MEET,
+        grantToken: "sgr_invite-pass",
+      });
+
+      const [calendar, invite] = engine.specs;
+      expect(calendar?.env).toContain("SCRIBA_BOT_TOKEN=sgr_calendar-pass");
+      expect(invite?.env).toContain("SCRIBA_BOT_TOKEN=sgr_invite-pass");
+      for (const spec of engine.specs) {
+        expect(spec.env.join("\n")).not.toContain("bot-token");
+        expect(Object.values(spec.labels).join("\n")).not.toContain("sgr_");
+      }
+    });
+
+    it("умер посреди встречи с пропуском — container_died уходит по пропуску этой встречи", async () => {
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744, {
+        id: "inv-1",
+        joinUrl: MEET,
+        grantToken: "sgr_pass",
+      });
+      engine.say(id, '[scriba] scriba-state {"meetingId":"m-9"}');
+      engine.exit(id, 137);
+      await orchestrator.whenExited(id);
+
+      expect(noticeTokens).toEqual(["sgr_pass"]);
     });
 
     it("умер до claim — нотисе не к чему привязаться, но смерть зафиксирована", async () => {

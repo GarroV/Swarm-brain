@@ -300,7 +300,10 @@ Deno.test("БЛОКИРУЮЩИЙ: человек пропуска вне вор
       agentByToken: await botRow(),
       personById: people,
     });
-    const e = await assertRejects(() => resolveActingIdentity(client, req(GRANT_TOKEN)), AgentAuthError) as AgentAuthError;
+    const e = await assertRejects(
+      () => resolveActingIdentity(client, req(GRANT_TOKEN)),
+      AgentAuthError,
+    ) as AgentAuthError;
     assertEquals(e.status, 403, `человек ${id}`);
     messages.push(e.message);
   }
@@ -323,7 +326,11 @@ Deno.test("БЛОКИРУЮЩИЙ: выключенный или истёкши�
     ["другой воркспейс", { group_id: "beta" }],
   ];
   for (const [what, over] of cases) {
-    const { client } = makeSupabase({ grantByToken: await grantRow(), agentByToken: await botRow(over), personById: people });
+    const { client } = makeSupabase({
+      grantByToken: await grantRow(),
+      agentByToken: await botRow(over),
+      personById: people,
+    });
     await refuses(resolveActingIdentity(client, req(GRANT_TOKEN)), 401, `агент: ${what}`);
   }
 });

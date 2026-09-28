@@ -56,8 +56,7 @@ const FORGED = [{ email: "person@team.io" }, { email: "victim@team.io" }];
 type Calls = { refresh: number[]; windows: Array<[string, string]>; consent: number[] };
 
 function source(
-  opts: { refresh?: string | null; token?: "ok" | "dead" | "down"; events?: GEvent[] | null; autojoin?: boolean } =
-    {},
+  opts: { refresh?: string | null; token?: "ok" | "dead" | "down"; events?: GEvent[] | null; autojoin?: boolean } = {},
 ): CalendarSource & { calls: Calls } {
   const calls: Calls = { refresh: [], windows: [], consent: [] };
   return {
@@ -298,12 +297,21 @@ Deno.test("БЛОКИРУЮЩИЙ: агент без приглашения не
   // Источник приглашений не передан — отказ, а не пропуск.
   await refused(resolveAgentScope(source(), inviteBot, manualClaim), 403);
   // Несуществующее приглашение.
-  await refused(resolveAgentScope(source(), inviteBot, { ...manualClaim, invite_id: "nope" }, invites(validInvite)), 403);
+  await refused(
+    resolveAgentScope(source(), inviteBot, { ...manualClaim, invite_id: "nope" }, invites(validInvite)),
+    403,
+  );
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: чужое приглашение (другой человек, другой воркспейс) → 403", async () => {
-  await refused(resolveAgentScope(source(), inviteBot, manualClaim, invites({ ...validInvite, invited_by: OTHER })), 403);
-  await refused(resolveAgentScope(source(), inviteBot, manualClaim, invites({ ...validInvite, group_id: "other" })), 403);
+  await refused(
+    resolveAgentScope(source(), inviteBot, manualClaim, invites({ ...validInvite, invited_by: OTHER })),
+    403,
+  );
+  await refused(
+    resolveAgentScope(source(), inviteBot, manualClaim, invites({ ...validInvite, group_id: "other" })),
+    403,
+  );
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: истёкшее или использованное приглашение → 403", async () => {

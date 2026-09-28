@@ -88,6 +88,7 @@ describe("POST /meeting-invite", () => {
         platform: "meet",
         created_at: invite.created_at,
         expires_at: invite.expires_at,
+        grant_token: invite.grant_token,
       },
     ]);
     expect(server.inviteState(invite.id)).toEqual({ taken: true, used: false });

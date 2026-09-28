@@ -7,9 +7,12 @@
 // Выключивший автозапуск (переключатель в вебе, D021) теряет и заведённые, но не забранные задания —
 // sweep.ts гасит их на ближайшем опросе, до забора.
 //
-// Дальше оркестратор поднимает бота за `invited_by` (X-On-Behalf-Of), бот заявляет встречу в
-// meeting-claim как `calendar` с `calendar_key` — и сервер сам сверяет, что встреча в календаре этого
-// человека (D016, meeting-claim/agent-scope.ts). Задание пропуском в ручную встречу не является.
+// К каждому заданию сервер выдаёт пропуск бота на эту встречу (`grant_token`, T165,
+// _shared/agent-grant.ts): за `invited_by` бот ходит только с ним. Бот заявляет встречу в
+// meeting-claim как `calendar` с `calendar_key` своего пропуска — и сервер сам сверяет, что встреча в
+// календаре этого человека, что он ответил «да» (D016, D024) и что автозапуск всё ещё включён (D021,
+// meeting-claim/agent-scope.ts). Задание пропуском в ручную встречу не является. Пропуск не выдался —
+// задания возвращаются в очередь.
 //
 // Всё, на что бот не пойдёт, возвращается в `skipped` с причиной — громко (D015):
 //   calendar_not_connected · calendar_token_dead · calendar_unavailable — у человека (ключа нет);
@@ -20,7 +23,8 @@
 // Дверь — resolveServiceAgent: только токен агента, без подмены личности; люди сюда не проходят.
 //
 // POST, тело не читается.
-// 200 { ok: true, jobs: [{ id, calendar_key, invited_by, join_url, platform, title, starts_at, ends_at }],
+// 200 { ok: true, jobs: [{ id, calendar_key, invited_by, join_url, platform, title, starts_at, ends_at,
+//                         grant_token }],
 //       skipped: [{ invited_by, calendar_key, title, reason, platform? }] }
 // 401 не агент · 403 X-On-Behalf-Of или агент без воркспейса · 405 не POST · 500 сбой базы.
 //
@@ -38,6 +42,7 @@ import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 import { sweep, type SweepSource, type TakenJob } from "./sweep.ts";
 import { recordSweepMisses } from "./missed.ts";
 import { makeMissStore } from "../_shared/calendar-miss-store.ts";
+import { mintGrants } from "../_shared/agent-grant.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -125,6 +130,32 @@ Deno.serve(async (req: Request) => {
         `meeting-calendar: ${agent.groupId} ${s.invited_by} ${s.calendar_key ?? "—"} — бот не пойдёт: ${s.reason}`,
       );
     }
+    let tokens: string[];
+    try {
+      tokens = await mintGrants(
+        supabase,
+        result.jobs.map((j) => ({
+          agentId: agent.agentId,
+          groupId: agent.groupId,
+          telegramId: j.invited_by,
+          joinUrl: j.join_url,
+          calendarJobId: j.id,
+          calendarKey: j.calendar_key,
+          title: j.title,
+        })),
+        Date.now(),
+      );
+    } catch (e) {
+      // Задание без пропуска боту бесполезно: вернуть в очередь, следующий опрос заберёт снова.
+      console.error(`meeting-calendar: пропуска не выданы: ${e instanceof Error ? e.message : String(e)}`);
+      const { error: backErr } = await supabase.from("meeting_calendar_jobs")
+        .update({ taken_at: null, taken_by: null })
+        .in("id", result.jobs.map((j) => j.id))
+        .eq("taken_by", agent.agentId);
+      if (backErr) console.error(`meeting-calendar: задания не вернулись в очередь: ${backErr.message}`);
+      return json({ ok: false, error: "grant issue failed" }, 500);
+    }
+    const jobs = result.jobs.map((j, n) => ({ ...j, grant_token: tokens[n] }));
     console.log(`meeting-calendar: агент ${agent.agentId} (${agent.groupId}) забрал ${result.jobs.length}`);
     // Записать пропуски и недошедших ботов. Не бросает: задания боту важнее записи, а незаписанное
     // повторится на следующем опросе.
@@ -136,7 +167,7 @@ Deno.serve(async (req: Request) => {
       (l) => console.warn(l),
     );
     if (missed.failed > 0) console.error(`meeting-calendar: пропуски записаны не все ${JSON.stringify(missed)}`);
-    return json({ ok: true, ...result });
+    return json({ ok: true, ...result, jobs });
   } catch (e) {
     console.error(`meeting-calendar: ${e instanceof Error ? e.message : String(e)}`);
     return json({ ok: false, error: "calendar sweep failed" }, 500);

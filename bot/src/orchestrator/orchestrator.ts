@@ -72,7 +72,7 @@ export interface OrchestratorOptions {
    * Уведомитель от имени человека: нотиса `container_died` уходит тому, за кого сидел
    * контейнер (`X-On-Behalf-Of`), поэтому уведомитель у каждого контейнера свой.
    */
-  readonly notifierFor: (onBehalfOf: number) => Notifier;
+  readonly notifierFor: (onBehalfOf: number, token: string) => Notifier;
   readonly log?: (line: string) => void;
   /**
    * Добавка к окружению контейнера: ручки смоука и времени. Обязательные переменные ею не
@@ -87,6 +87,11 @@ interface Managed {
   readonly id: ContainerId;
   readonly runId: string;
   readonly onBehalfOf: number;
+  /**
+   * Чем контейнер ходит в двери за человека: пропуск встречи (T165) или, у сервера без пропусков
+   * и у подхваченных после перезапуска, общий токен.
+   */
+  readonly token: string;
   meetingId: string | null;
   outcome: string | null;
   readonly tail: string[];
@@ -206,7 +211,9 @@ export class Orchestrator {
       [MEETING_ENV.platform]: "meet",
       [MEETING_ENV.onBehalfOf]: String(onBehalfOf),
       [MEETING_ENV.swarmUrl]: this.options.swarmUrl,
-      [MEETING_ENV.token]: this.options.token,
+      // Пропуск встречи вместо общего токена агента (T165): контейнер действует только в
+      // границах своей встречи. Общий токен — лишь если сервер пропуска не выдал.
+      [MEETING_ENV.token]: basis?.grantToken ?? this.options.token,
       [MEETING_ENV.runId]: runId,
       [MEETING_ENV.version]: String(this.options.version),
       [MEETING_ENV.leaseDir]: LEASE_PATH,
@@ -245,11 +252,13 @@ export class Orchestrator {
     runId: string,
     onBehalfOf: number,
     exitCode: Promise<number | null>,
+    token: string = this.options.token,
   ): void {
     const managed: Managed = {
       id,
       runId,
       onBehalfOf,
+      token,
       meetingId: null,
       outcome: null,
       tail: [],
@@ -306,7 +315,7 @@ export class Orchestrator {
       return;
     }
     try {
-      await this.options.notifierFor(managed.onBehalfOf).notify({
+      await this.options.notifierFor(managed.onBehalfOf, managed.token).notify({
         kind: "container_died",
         meetingId: managed.meetingId,
         detail: `exit ${String(code)}`,
@@ -373,7 +382,7 @@ export class Orchestrator {
       throw new Error(`контейнер встречи не стартовал: ${describeError(error)}`, { cause: error });
     }
     this.log(`контейнер ${id} поднят на встречу (запуск ${runId}, от имени ${String(person)})`);
-    this.track(id, runId, person, exited);
+    this.track(id, runId, person, exited, basis?.grantToken ?? this.options.token);
     return id;
   }
 

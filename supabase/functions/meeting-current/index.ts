@@ -37,6 +37,13 @@ Deno.serve(async (req: Request) => {
     throw e;
   }
 
+  // Бот видит только событие своего пропуска (T165): пропуск задания — это событие и ничего
+  // больше из календаря человека, пропуск приглашения — календаря не открывает вовсе.
+  const grant = identity.kind === "bot" ? identity.grant ?? null : null;
+  if (identity.kind === "bot" && grant?.basis !== "calendar") {
+    return json({ meeting: null, reason: "no_ongoing_event" });
+  }
+
   const { data } = await supabase.from("user_integrations")
     .select("api_key").eq("telegram_id", identity.telegramId).eq(
       "service",
@@ -69,7 +76,9 @@ Deno.serve(async (req: Request) => {
   if (!items) return json({ meeting: null, reason: "calendar_api_error" });
   // Выбор события среди перекрывающихся — скоринг по RSVP/организатору/плотности (см. select.ts).
   // Фаза B (привязка по ссылке комнаты) ляжет поверх коротким замыканием при room-match.
-  const ev = pickCurrentEvent(items, now.getTime());
+  const ev = grant
+    ? items.find((e) => e.start?.dateTime !== undefined && calendarKeyOf(e) === grant.calendarKey) ?? null
+    : pickCurrentEvent(items, now.getTime());
   if (!ev) return json({ meeting: null, reason: "no_ongoing_event" });
 
   // pickCurrentEvent отдаёт только события со временем начала, поэтому ключ здесь всегда есть.

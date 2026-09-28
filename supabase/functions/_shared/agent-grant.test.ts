@@ -29,7 +29,13 @@ const calendarGrant: AgentGrant = {
   title: "Standup",
   meetingId: null,
 };
-const inviteGrant: AgentGrant = { ...calendarGrant, basis: "invite", inviteId: "inv-1", calendarKey: null, title: null };
+const inviteGrant: AgentGrant = {
+  ...calendarGrant,
+  basis: "invite",
+  inviteId: "inv-1",
+  calendarKey: null,
+  title: null,
+};
 const bot = (grant: AgentGrant | undefined) => ({ kind: "bot", grant });
 const human = { kind: "recorder" };
 

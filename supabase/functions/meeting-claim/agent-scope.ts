@@ -207,7 +207,9 @@ export async function resolveAgentScope(
     // задания: выключил между забором и заявкой — бот за него уже не заявляется.
     if (!(await source.autojoin(identity.telegramId))) {
       console.warn(
-        `agent-scope: агент ${identity.agentId ?? "?"} за ${identity.telegramId}: автозапуск выключен — заявка ${body.identity_key} отклонена`,
+        `agent-scope: агент ${
+          identity.agentId ?? "?"
+        } за ${identity.telegramId}: автозапуск выключен — заявка ${body.identity_key} отклонена`,
       );
       throw new AgentScopeError(403, "service agent: the person has not enabled the bot for calendar meetings");
     }

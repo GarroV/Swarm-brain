@@ -81,6 +81,12 @@ export interface FakeSwarmOptions {
   По умолчанию выключено — прежние тесты заявляются вручную без приглашений.
   */
   readonly requiresInvites?: boolean;
+  /**
+  Как настоящий сервер после T165: за человека двери пускают только пропуск встречи
+  (`grant_token` из `meeting-invite`), общий токен агента — 403. По умолчанию выключено —
+  прежние тесты ходят общим токеном.
+  */
+  readonly requiresGrants?: boolean;
 }
 
 /**
@@ -93,6 +99,7 @@ interface FakeInvite {
   readonly platform: string;
   readonly created_at: string;
   readonly expires_at: string;
+  readonly grant_token: string;
 }
 
 interface InviteRecord {
@@ -259,10 +266,24 @@ function checkAuth(
   onBehalfOfHeader: string | null,
   token: string,
   onBehalfOfId: number,
+  grants: { readonly issued: ReadonlySet<string>; readonly required: boolean },
 ): AuthFailure | null {
-  if (authorization !== `Bearer ${token}`) {
+  const presented = authorization?.startsWith("Bearer ") === true ? authorization.slice(7) : null;
+  const isGrant = presented !== null && grants.issued.has(presented);
+  if (!isGrant && presented !== token) {
     return { status: 401, body: { error: "bad token" } };
   }
+  if (!isGrant && grants.required) {
+    return {
+      status: 403,
+      body: {
+        error:
+          "service agent token grants nothing on its own — the bot acts for a person only with a meeting grant",
+      },
+    };
+  }
+  // Пропуск сам называет человека: без заголовка он действует за того, кому выдан.
+  if (isGrant && onBehalfOfHeader === null) return null;
   if (onBehalfOfHeader === null) {
     return {
       status: 403,
@@ -421,6 +442,11 @@ class FakeSwarmServer implements FakeSwarm {
   private readonly onBehalfOfId: number;
   private readonly current: CurrentMeetingResponse;
   private readonly requiresInvites: boolean;
+  private readonly requiresGrants: boolean;
+  /**
+  Пропуска, выданные при заборе приглашений.
+  */
+  private readonly grants = new Set<string>();
   private readonly invites = new Map<string, InviteRecord>();
   private inviteSeq = 0;
   private decision: ClaimDecision;
@@ -434,6 +460,7 @@ class FakeSwarmServer implements FakeSwarm {
     this.decision = options.decision ?? "transcribe";
     this.current = options.current ?? defaultCurrentResponse();
     this.requiresInvites = options.requiresInvites ?? false;
+    this.requiresGrants = options.requiresGrants ?? false;
   }
 
   private async handleRequestSafely(
@@ -503,7 +530,10 @@ class FakeSwarmServer implements FakeSwarm {
       return;
     }
 
-    const authFailure = checkAuth(authorization, onBehalfOf, this.token, this.onBehalfOfId);
+    const authFailure = checkAuth(authorization, onBehalfOf, this.token, this.onBehalfOfId, {
+      issued: this.grants,
+      required: this.requiresGrants,
+    });
     if (authFailure) {
       finish(authFailure.status, authFailure.body, null);
       return;
@@ -608,7 +638,10 @@ class FakeSwarmServer implements FakeSwarm {
       if (isOpen && Date.parse(record.invite.expires_at) > now) pending.push(record);
     }
     pending.splice(limit);
-    for (const record of pending) record.taken = true;
+    for (const record of pending) {
+      record.taken = true;
+      this.grants.add(record.invite.grant_token);
+    }
     return {
       status: 200,
       responseBody: { ok: true, invites: pending.map((record) => record.invite) },
@@ -838,6 +871,8 @@ class FakeSwarmServer implements FakeSwarm {
       platform: input.platform ?? "meet",
       created_at: new Date(createdMs).toISOString(),
       expires_at: new Date(createdMs + (input.expiresInMs ?? INVITE_TTL_MS)).toISOString(),
+      // Пропуск встречи — как у сервера после T165; действует после забора приглашения.
+      grant_token: `grant-invite-${String(this.inviteSeq)}`,
     };
     this.invites.set(invite.id, { invite, taken: false, used: false });
     return invite;
