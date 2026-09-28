@@ -88,7 +88,7 @@ function Open-Login {
   # Порт публикуется только на адресе Tailscale: из интернета и из локальной сети окна не видно.
   Invoke-Native 'docker run (окно входа)' {
     docker run -d --rm --name $Window `
-      --label scriba.project=scriba-login `
+      --label scriba-login.stand=true `
       -p "${Addr}:${WindowPort}:6080" `
       --shm-size 1g `
       --security-opt "seccomp=$Seccomp" --security-opt no-new-privileges:true `
@@ -137,7 +137,7 @@ function Close-Login {
 function Run-Smoke {
   Say 'смоук адаптера Meet: двойники страниц, живой meet.google.com'
   Invoke-Native 'smoke-meet' {
-    docker run --rm --name scriba-login-smoke-meet --label scriba.project=scriba-login `
+    docker run --rm --name scriba-login-smoke-meet --label scriba-login.stand=true `
       --shm-size 1g --security-opt "seccomp=$Seccomp" `
       $Image node /app/src/meet-adapter/smoke-meet.ts
   }
@@ -145,7 +145,7 @@ function Run-Smoke {
   New-Item -ItemType Directory -Force "$State\smoke" | Out-Null
   $only = if ($Arg) { $Arg } else { 'account,door' }
   Invoke-Native 'smoke-orchestrator' {
-    docker run --rm --name scriba-login-smoke-orchestrator --label scriba.project=scriba-login `
+    docker run --rm --name scriba-login-smoke-orchestrator --label scriba-login.stand=true `
       --user root --entrypoint node `
       -p "127.0.0.1:${SmokePort}:${SmokePort}" `
       -v //var/run/docker.sock:/var/run/docker.sock `
@@ -159,7 +159,11 @@ function Run-Smoke {
 
 function Stand-Down {
   if (Test-Running $Window) { docker stop $Window | Out-Null }
-  foreach ($id in docker ps -aq --filter 'label=scriba.project=scriba-login') { docker rm -f $id | Out-Null }
+  # Свои служебные контейнеры (окно, смоуки) — по своей метке; контейнеры встреч смоука —
+  # по метке оркестратора. Метку оркестратора служебным не ставим: он счёл бы их встречами.
+  foreach ($label in 'scriba-login.stand=true', 'scriba.project=scriba-login') {
+    foreach ($id in docker ps -aq --filter "label=$label") { docker rm -f $id | Out-Null }
+  }
   if (Test-Path $KeyFile) { Remove-Item -Force $KeyFile }
   Say 'своё погашено: окно входа, контейнеры смоука; сохранённый вход не тронут'
 }
