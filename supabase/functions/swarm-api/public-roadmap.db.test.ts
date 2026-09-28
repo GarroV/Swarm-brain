@@ -34,6 +34,7 @@ const WS = "t_public_roadmap";
 const BOARD = "7e570000-0000-4000-8000-000000000001";
 const UNPUBLISHED = "7e570000-0000-4000-8000-000000000002";
 const ARCHIVED_BOARD = "7e570000-0000-4000-8000-000000000003";
+const PRIVATE_BOARD = "7e570000-0000-4000-8000-000000000004";
 const SUB_A = "7e570000-0000-4000-8000-00000000000a";
 const SUB_B = "7e570000-0000-4000-8000-00000000000b";
 const SUB_PRIVATE = "7e570000-0000-4000-8000-00000000000c";
@@ -81,6 +82,10 @@ async function seed(db: Client) {
       (${BOARD},          ${WS}, 'Доска',          true,  null,  null,       null, ${SECRETS.description}),
       (${UNPUBLISHED},    ${WS}, 'Неопубликована', false, null,  null,       null, null),
       (${ARCHIVED_BOARD}, ${WS}, 'Архивная',       true,  now(), null,       null, null)`;
+  // Личная доска с флагом публикации: флаг приватность не снимает.
+  await db.queryArray`
+    insert into projects (id, group_id, name, public_roadmap, is_private) values
+      (${PRIVATE_BOARD}, ${WS}, 'Личная доска', true, true)`;
   await db.queryArray`
     insert into projects (id, group_id, name, parent_id, position, is_private, archived_at) values
       (${SUB_B},        ${WS}, 'Второй',   ${BOARD}, 2000, false, null),
@@ -155,11 +160,12 @@ Deno.test({
       await seed(db);
 
       await t.step(
-        "404 одинаковый для неопубликованной, архивной, несуществующей доски и мусора",
+        "404 одинаковый для неопубликованной, личной, архивной, несуществующей доски и мусора",
         async () => {
           for (
             const id of [
               UNPUBLISHED,
+              PRIVATE_BOARD,
               ARCHIVED_BOARD,
               MISSING,
               "not-a-uuid",
