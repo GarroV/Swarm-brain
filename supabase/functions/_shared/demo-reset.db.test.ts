@@ -30,9 +30,15 @@ const DEMO_USERS = [
   900000007,
 ];
 const EXTRA_DEMO_USER = 900000099;
+// Лишний человек демо, оставивший фидбек: его фидбек и сам он сброс переживают.
+const FEEDBACK_DEMO_USER = 900000098;
+const DEMO_FEEDBACK = [
+  "visitor feedback (demo-reset test)",
+  "extra user feedback (demo-reset test)",
+];
 const OTHER = "t_demo_reset_other";
 const OTHER_USER = 800000901;
-const LIVE_CYCLE = "d0000000-0000-4000-8000-000000000302";
+const LIVE_CYCLE = "d0000000-0000-4000-8000-000000000304";
 const SPACE = "d0000000-0000-4000-8000-000000000002";
 const OPERATIONS = "d0000000-0000-4000-8000-000000000101";
 
@@ -62,8 +68,9 @@ async function withDb(fn: (db: Client) => Promise<void>) {
 const DEMO_SCOPE: Record<string, string> = {
   workspaces: `id = '${DEMO}'`,
   allowed_users:
-    `group_id = '${DEMO}' or telegram_id between 900000001 and 900000099`,
-  user_profiles: `telegram_id between 900000001 and 900000099`,
+    `(group_id = '${DEMO}' or telegram_id between 900000001 and 900000099) and telegram_id <> ${FEEDBACK_DEMO_USER}`,
+  user_profiles:
+    `telegram_id between 900000001 and 900000099 and telegram_id <> ${FEEDBACK_DEMO_USER}`,
   tasks: `group_id = '${DEMO}'`,
   task_comments:
     `task_id in (select id from public.tasks where group_id = '${DEMO}')`,
@@ -82,7 +89,7 @@ const DEMO_SCOPE: Record<string, string> = {
   entries: `group_id = '${DEMO}'`,
   meetings: `group_id = '${DEMO}'`,
   meeting_live_notes: `group_id = '${DEMO}'`,
-  feedback: `telegram_id between 900000001 and 900000099`,
+  // feedback — не в снимке: сброс его не трогает («фидбек нужен конечно»), проверяется отдельно.
   user_integrations: `telegram_id between 900000001 and 900000099`,
   recorder_diagnostics: `telegram_id between 900000001 and 900000099`,
   sessions: `chat_id between 900000001 and 900000099`,
@@ -256,7 +263,7 @@ async function breakDemo(db: Client) {
   await db
     .queryArray`delete from tasks where id = 'd0000000-0000-4000-8000-000000000206'`;
   await db
-    .queryArray`update tasks set status = 'done', title = 'hacked' where group_id = ${DEMO} and title = 'Launch summer menu'`;
+    .queryArray`update tasks set status = 'done', title = 'hacked' where group_id = ${DEMO} and title = 'Launch the autumn menu'`;
   const t = await db.queryObject<{ id: string }>`
     insert into tasks (title, status, group_id, created_by) values ('visitor task', 'open', ${DEMO}, 'demo') returning id`;
   const c = await db.queryObject<{ id: string }>`
@@ -295,7 +302,9 @@ async function breakDemo(db: Client) {
   await db
     .queryArray`insert into user_integrations (telegram_id, service, api_key) values (${guest}, 'granola', 'visitor-key')`;
   await db
-    .queryArray`insert into feedback (telegram_id, text) values (${guest}, 'visitor feedback')`;
+    .queryArray`insert into feedback (telegram_id, text) values (${guest}, ${
+    DEMO_FEEDBACK[0]
+  })`;
   await db
     .queryArray`insert into recorder_diagnostics (telegram_id, kind) values (${guest}, 'test')`;
   await db
@@ -303,6 +312,24 @@ async function breakDemo(db: Client) {
   await db.queryArray`
     insert into allowed_users (telegram_id, username, group_id, is_admin, added_by)
     values (${EXTRA_DEMO_USER}, 'extra', ${DEMO}, false, 0) on conflict (telegram_id) do nothing`;
+  await db.queryArray`
+    insert into allowed_users (telegram_id, username, group_id, is_admin, added_by)
+    values (${FEEDBACK_DEMO_USER}, 'extra-fb', ${DEMO}, false, 0) on conflict (telegram_id) do nothing`;
+  await db.queryArray`
+    insert into user_profiles (telegram_id, first_name) values (${FEEDBACK_DEMO_USER}, 'Feedback')
+    on conflict (telegram_id) do nothing`;
+  await db
+    .queryArray`insert into feedback (telegram_id, text) values (${FEEDBACK_DEMO_USER}, ${
+    DEMO_FEEDBACK[1]
+  })`;
+}
+
+async function cleanDemoFeedback(db: Client) {
+  await db.queryArray`delete from feedback where text = any (${DEMO_FEEDBACK})`;
+  await db
+    .queryArray`delete from user_profiles where telegram_id = ${FEEDBACK_DEMO_USER}`;
+  await db
+    .queryArray`delete from allowed_users where telegram_id = ${FEEDBACK_DEMO_USER}`;
 }
 
 Deno.test("demo_reset: наломанное демо возвращается к эталону, чужое не тронуто ни на строку", async () => {
@@ -321,12 +348,13 @@ Deno.test("demo_reset: наломанное демо возвращается к
       );
       assertEquals(counts, {
         users: 7,
-        tasks: 20,
-        entries: 4,
+        tasks: 46,
+        entries: 7,
         meetings: 1,
         spaces: 2,
-        projects: 8,
-        cycles: 2,
+        projects: 14,
+        cycles: 4,
+        comments: 9,
       });
 
       await breakDemo(db);
@@ -345,6 +373,22 @@ Deno.test("demo_reset: наломанное демо возвращается к
         "сброс демо задел строки не-демо воркспейса",
       );
 
+      // Фидбек из демо пережил сброс, и автор-«лишний человек» — тоже (иначе фидбек безымянный).
+      const fb = await db.queryObject<{ text: string }>`
+        select text from feedback where text = any (${DEMO_FEEDBACK}) order by text`;
+      assertEquals(fb.rows.map((r) => r.text), [...DEMO_FEEDBACK].sort());
+      const author = await db.queryObject<{ n: number }>`
+        select count(*)::int as n from allowed_users a join user_profiles p using (telegram_id)
+         where a.telegram_id = ${FEEDBACK_DEMO_USER}`;
+      assertEquals(author.rows[0].n, 1, "автор фидбека из демо удалён сбросом");
+      const extra = await db.queryObject<{ n: number }>`
+        select count(*)::int as n from allowed_users where telegram_id = ${EXTRA_DEMO_USER}`;
+      assertEquals(
+        extra.rows[0].n,
+        0,
+        "лишний человек без фидбека остался в демо",
+      );
+
       // Точечно — то, что висело мусором в проде и ломало прежний сид.
       const junk = await db.queryObject<{ n: number }>`
         select count(*)::int as n from projects where group_id = ${DEMO} and name = 'qefqf'`;
@@ -352,7 +396,10 @@ Deno.test("demo_reset: наломанное демо возвращается к
       const goal = await db.queryObject<
         { goal: string | null }
       >`select goal from projects where id = ${OPERATIONS}`;
-      assertEquals(goal.rows[0].goal, null);
+      assertEquals(
+        goal.rows[0].goal,
+        "Every store runs the same playbook and serves a drink in under 4 minutes at peak.",
+      );
       const live = await db.queryObject<{ id: string }>`
         select id from sprint_cycles
          where tab_id = ${SPACE} and status in ('draft','active') and archived_at is null`;
@@ -363,6 +410,7 @@ Deno.test("demo_reset: наломанное демо возвращается к
       assertEquals(await snapshot(db, DEMO_SCOPE, VOLATILE), etalon);
       assertEquals(await snapshot(db, OTHER_SCOPE, []), other);
     } finally {
+      await cleanDemoFeedback(db);
       await cleanOther(db);
     }
   });

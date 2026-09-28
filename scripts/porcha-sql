@@ -31,7 +31,7 @@ while IFS='|' read -r FROM TO TEST MIG; do
   case "$FROM" in ''|\#*) continue ;; esac
   MIG="${MIG:-$MIGRATION}"
 
-  if ! grep -qF "$FROM" "$MIG"; then
+  if ! grep -qF -- "$FROM" "$MIG"; then
     echo "порча-sql  ОТКАЗ    не нашёл в миграции: $FROM — список порчи отстал от кода"
     FAILED=1; continue
   fi
