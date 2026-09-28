@@ -149,12 +149,14 @@ final class MissedMeetingsTests: XCTestCase {
         XCTAssertTrue(c.canInvite)
         XCTAssertFalse(c.busy)
         XCTAssertEqual(c.buttonTitle, "Позвать бота")
+        XCTAssertFalse(c.failed)
     }
 
     func testCapsuleShowsRefusalInsteadOfReason() {
         let c = MissedCapsule.compose(miss("a"), failure: "У вас выключен автозапуск scriba", busy: false, lang: .ru)
         XCTAssertEqual(c.detail, "Не удалось позвать бота — У вас выключен автозапуск scriba")
         XCTAssertTrue(c.canInvite, "после отказа кнопка остаётся — повторить")
+        XCTAssertTrue(c.failed)
     }
 
     func testCapsuleWhileInvitingIsBusy() {

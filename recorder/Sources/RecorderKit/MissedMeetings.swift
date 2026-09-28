@@ -206,9 +206,12 @@ public struct MissedCapsule: Equatable, Sendable {
     public let busy: Bool
     /// Подпись кнопки: «Позвать бота» или «Зову…».
     public let buttonTitle: String
+    /// Последнее приглашение не удалось — `detail` говорит почему; в капсуле встречи отказ
+    /// показывается вместо короткой строки, а не прячется в подсказку.
+    public let failed: Bool
 
     public init(missId: String, line: String, shortLine: String, detail: String, canInvite: Bool,
-                busy: Bool, buttonTitle: String) {
+                busy: Bool, buttonTitle: String, failed: Bool) {
         self.missId = missId
         self.line = line
         self.shortLine = shortLine
@@ -216,6 +219,7 @@ public struct MissedCapsule: Equatable, Sendable {
         self.canInvite = canInvite
         self.busy = busy
         self.buttonTitle = buttonTitle
+        self.failed = failed
     }
 
     public static func compose(_ miss: MissedMeeting, failure: String?, busy: Bool,
@@ -228,7 +232,8 @@ public struct MissedCapsule: Equatable, Sendable {
         let short = miss.canInvite ? MissedTexts.capsuleLine : MissedTexts.notInvitableTitle
         return MissedCapsule(missId: miss.id, line: line.text(lang), shortLine: short.text(lang),
                              detail: why, canInvite: miss.canInvite, busy: busy && miss.canInvite,
-                             buttonTitle: (busy ? MissedTexts.inviting : MissedTexts.inviteAction).text(lang))
+                             buttonTitle: (busy ? MissedTexts.inviting : MissedTexts.inviteAction).text(lang),
+                             failed: !failed.isEmpty)
     }
 }
 

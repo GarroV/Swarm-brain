@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private var config: SwarmConfig?
     private var configError: String?
-    // Пропуски бота (T162, D022): «бот не пришёл на встречу» + кнопка «Позвать бота».
+    // Пропуски бота (T162, D022, D025): «бот не пришёл на встречу» + «Позвать бота» — в капсуле и в меню.
     private lazy var missed = MissedMeetingsWatcher(
         config: { [weak self] in self?.configError == nil ? self?.config : nil },
         onChange: { [weak self] in self?.rebuildMenu() })
@@ -175,6 +175,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         widget.onRecord = { [weak self] in self?.widgetRecord() }
         widget.onJoin = { [weak self] in self?.widgetJoin() }
         widget.onDismiss = { [weak self] in self?.widgetDismiss() }
+        widget.onInviteBot = { [weak self] id in
+            guard let self else { return }
+            Task { @MainActor in await self.missed.invite(id) }
+        }
+        widget.onMissedDismiss = { [weak self] id in self?.missed.dismissInCapsule(id) }
         widget.onProcessingDismiss = { [weak self] in self?.dismissProcessing() }
         widget.onToggleNotes = { [weak self] in self?.expandNotes() }   // клик по марке на пилюле → блокнот
         // Сигналы из UploadQueue (постятся из актора, ловим на .main): принято в обработку / готово.
@@ -202,7 +207,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         setupNotifications()
         setupPowerNotifications()
         startWatching()
-        missed.registerCategory()
         missed.start()
 
         // Дозагрузка на старте: если в прошлый раз приложение закрыли/упало с висящими записями
@@ -520,16 +524,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         completionHandler([.banner, .sound])
     }
 
-    // Клик по уведомлению НИЧЕГО не запускает — кроме явной кнопки «Позвать бота» на баннере
-    // пропуска (T162): это отдельное действие с подписью, а не клик по телу уведомления. Раньше здесь стоял `acceptPrompt()` на
+    // Клик по уведомлению НИЧЕГО не запускает. Кнопок у уведомлений приложения нет: «Позвать бота»
+    // живёт в капсуле (D025), предложение записать — тоже (2026-09-07). Раньше здесь стоял `acceptPrompt()` на
     // `UNNotificationDefaultActionIdentifier` — то есть запись начиналась от клика по ЛЮБОМУ
     // уведомлению приложения, включая «нужен новый токен» и «звонок завершён, сохраняю».
     // Предложение записать теперь живёт только в капсуле, и решение принимается там.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
-        if response.actionIdentifier == MissedMeetingsWatcher.inviteActionId,
-           let missId = response.notification.request.content.userInfo[MissedMeetingsWatcher.missIdKey] as? String {
-            Task { @MainActor in await self.missed.invite(missId) }
-        }
         completionHandler()
     }
 
@@ -765,9 +765,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         syncWidget()
     }
 
-    // Плавающий виджет следует за состоянием.
+    // Плавающий виджет следует за состоянием. Пропуск бота (D025) — в той же капсуле: строкой
+    // под предложением записать, а без предложения — отдельной капсулой вместо пустоты. Во время
+    // своей записи капсула — узкая пилюля без текста, пропуск говорит только меню: встреча и так
+    // пишется, а после записи капсула пропуска вернётся, если он ещё открыт.
     private func syncWidget() {
         if configError != nil { widget.hide(); return }
+        let miss = missed.capsule
         switch state {
         case .recording:
             // Развёрнут блокнот → показываем его (пилюлю прячем); свёрнуто → вертикальная пилюля рекордера.
@@ -776,21 +780,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         case .sending:
             // Спиннер-капсулу НЕ показываем (она читалась как «зависла» и была лишним виджетом):
             // обработка идёт в фоне, «отправлено — тезисы придут в Telegram» приходит уведомлением.
-            widget.hide()
+            if let miss { widget.showMissed(miss) } else { widget.hide() }
         case .idle:
             if let m = pendingMeeting {
-                widget.showPending(notice: notice(for: m), canJoin: m.joinURL != nil)
+                widget.showPending(notice: notice(for: m), canJoin: m.joinURL != nil, missed: miss)
             } else if callActive {
                 // Звонок без календаря: слота нет, а «подключиться» некуда — человек уже в нём.
                 // Подзаголовок пустой: «Идёт звонок» + «идёт» — дубль, а не информация.
                 widget.showPending(notice: MeetingNotice(title: "Идёт звонок", subtitle: ""),
-                                   canJoin: false)
+                                   canJoin: false, missed: miss)
+            } else if let miss {
+                widget.showMissed(miss)
             } else {
-                widget.hide()   // никакого «кружка»: пилюля только на детект встречи/звонка
+                widget.hide()   // никакого «кружка»: пилюля только на детект встречи/звонка/пропуск
             }
         case .error, .tokenExpired,
              .noScreenRecording, .noSystemAudio, .noMic, .offline:
-            widget.hide()
+            // Сбой записи бота не отменяет: пропуск говорится, звать его можно (у своего токена
+            // отказ придёт в капсулу текстом).
+            if let miss { widget.showMissed(miss) } else { widget.hide() }
         }
     }
 

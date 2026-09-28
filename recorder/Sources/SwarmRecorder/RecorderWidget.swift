@@ -5,7 +5,10 @@ import RecorderKit
 //   • запись / обработка → узкая ВЕРТИКАЛЬНАЯ капсула без текста (72×110):
 //       ✕ (стоп) / 🎙 (красный, пульсирует) + полосы уровня / марка «Рой»;
 //   • встреча или звонок → БАННЕР (см. buildBanner): янтарная полоска · название ·
-//       время слота с обратным счётом · «Подключиться» + «Записать» · ✕ в правом верхнем углу.
+//       время слота с обратным счётом · «Подключиться» + «Записать» · ✕ в правом верхнем углу;
+//   • бот не пришёл на встречу (D025) → тот же баннер: «Бота нет на встрече» · почему (текст
+//       сервера) · «Позвать бота». Если в этот момент идёт предложение записать — пропуск НЕ
+//       второй капсулой, а строкой «Бота нет · Позвать бота» под кнопками встречи.
 //
 // Размер меняется вместе с обликом (currentSize), место считает RecorderKit/WidgetPlacement:
 // куда перетащили — там и появляется, иначе правый край ниже полосы управления.
@@ -16,6 +19,9 @@ final class RecorderWidget {
     // «Подключиться» на баннере встречи — открыть звонок И включить запись (референс Granola).
     var onJoin: (() -> Void)?
     var onDismiss: (() -> Void)?
+    // «Позвать бота» по пропуску (D025) — id пропуска; ✕ на капсуле пропуска — убрать его из капсулы.
+    var onInviteBot: ((String) -> Void)?
+    var onMissedDismiss: ((String) -> Void)?
     // ✕ на капсуле «в обработке» — убрать индикатор с экрана (обработка продолжится в фоне).
     var onProcessingDismiss: (() -> Void)?
     // Клик по марке «Рой» во время записи — свернуть/развернуть панель заметок (Granola-режим).
@@ -81,6 +87,16 @@ final class RecorderWidget {
     private let bannerButtons = NSStackView()
     private let bannerColumn = NSStackView()
     private let bannerRow = NSStackView()
+    // Пропуск бота (D025). Отдельной капсулой — кнопка bannerInvite среди bannerButtons;
+    // внутри капсулы встречи — строка missedRow под её кнопками.
+    private let bannerInvite = NSButton()
+    private let missedLabel = NSTextField(wrappingLabelWithString: "")
+    private let missedInvite = NSButton()
+    private let missedRow = NSStackView()
+    /// Что капсула сейчас говорит о пропуске. nil — пропуска в капсуле нет.
+    private(set) var shownMissed: MissedCapsule?
+    /// Капсула говорит только о пропуске (предложения записать нет): ✕ закрывает один пропуск.
+    private var missedOnly = false
 
     // Состояние «в обработке»: ✕ (убрать) сверху → крутилка / зелёная галка → марка «Рой».
     private let procMark = NSImageView()
@@ -91,6 +107,7 @@ final class RecorderWidget {
 
     func showRecording(startedAt: Date) {
         ensurePanel()
+        shownMissed = nil
         recRow.isHidden = false
         bannerRow.isHidden = true
         bannerClose.isHidden = true
@@ -102,26 +119,85 @@ final class RecorderWidget {
 
     /// Баннер встречи. `notice` — что читает человек (RecorderKit/MeetingNotice),
     /// `canJoin` — есть ли ссылка на звонок (нет → кнопки «Подключиться» тоже нет).
-    func showPending(notice: MeetingNotice, canJoin: Bool) {
+    /// `missed` — пропуск бота на той же капсуле (D025): строка под кнопками встречи.
+    func showPending(notice: MeetingNotice, canJoin: Bool, missed: MissedCapsule? = nil) {
         ensurePanel()
         stopLevelMeter()
+        missedOnly = false
+        shownMissed = missed
         bannerTitle.stringValue = notice.title
         bannerTitle.toolTip = notice.title          // название целиком, если обрезалось
-        bannerSubtitle.stringValue = notice.subtitle
-        bannerSubtitle.isHidden = notice.subtitle.isEmpty
+        setSubtitle(notice.subtitle, lines: 1)
+        bannerSubtitle.toolTip = nil
         bannerJoin.isHidden = !canJoin
+        bannerRecord.isHidden = false
+        bannerInvite.isHidden = true
         bannerClose.isHidden = false
+        bannerClose.toolTip = "Не записывать эту встречу"
         // Единственное действие обязано выглядеть главным: нет ссылки — «Записать» заливаем.
         paint(bannerRecord, filled: !canJoin)
+        if let missed {
+            // Отказ приглашения — вместо короткой строки: он и есть главное, что надо прочитать.
+            missedLabel.stringValue = missed.failed ? missed.detail : missed.shortLine
+            missedLabel.toolTip = missed.detail
+            configInvite(missedInvite, missed)
+            missedRow.isHidden = false
+        } else {
+            missedRow.isHidden = true
+        }
+        showBanner()
+    }
+
+    /// Отдельная капсула пропуска: предложения записать нет, говорит только «бота нет».
+    func showMissed(_ missed: MissedCapsule) {
+        ensurePanel()
+        stopPulse()
+        stopLevelMeter()
+        missedOnly = true
+        shownMissed = missed
+        bannerTitle.stringValue = missed.line
+        bannerTitle.toolTip = missed.line
+        // Текст сервера — целое предложение с названием встречи: в одну строку он не читается.
+        setSubtitle(missed.detail, lines: 3)
+        bannerSubtitle.toolTip = missed.detail
+        bannerJoin.isHidden = true
+        bannerRecord.isHidden = true
+        configInvite(bannerInvite, missed)
+        bannerButtons.isHidden = !missed.canInvite
+        missedRow.isHidden = true
+        bannerClose.isHidden = false
+        bannerClose.toolTip = "Скрыть — пропуск останется в меню"
+        showBanner()
+    }
+
+    private func showBanner() {
+        if !missedOnly { bannerButtons.isHidden = false }
         recRow.isHidden = true
         bannerRow.isHidden = false
         hideProcessingRow()
         present()
     }
 
+    private func setSubtitle(_ text: String, lines: Int) {
+        bannerSubtitle.stringValue = text
+        bannerSubtitle.isHidden = text.isEmpty
+        bannerSubtitle.maximumNumberOfLines = lines
+        bannerSubtitle.lineBreakMode = lines == 1 ? .byTruncatingTail : .byWordWrapping
+        bannerSubtitle.cell?.wraps = lines > 1
+        bannerSubtitle.cell?.truncatesLastVisibleLine = true
+    }
+
+    private func configInvite(_ b: NSButton, _ missed: MissedCapsule) {
+        b.isHidden = !missed.canInvite
+        b.isEnabled = !missed.busy
+        b.title = missed.buttonTitle
+        b.alphaValue = missed.busy ? 0.6 : 1
+    }
+
     // Запись отправлена и обрабатывается на сервере — крутилка (без текста, как и вся капсула).
     func showProcessing() {
         ensurePanel()
+        shownMissed = nil
         stopPulse()
         stopLevelMeter()
         recRow.isHidden = true
@@ -137,6 +213,7 @@ final class RecorderWidget {
     // Обработка завершена — короткая зелёная галка (AppDelegate сам прячет через пару секунд).
     func showProcessingDone() {
         ensurePanel()
+        shownMissed = nil
         stopPulse()
         stopLevelMeter()
         recRow.isHidden = true
@@ -150,6 +227,7 @@ final class RecorderWidget {
     }
 
     func hide() {
+        shownMissed = nil
         stopPulse()
         stopLevelMeter()
         hideProcessingRow()
@@ -298,16 +376,35 @@ final class RecorderWidget {
         iconButton(bannerClose, symbol: "xmark", color: NSColor(white: 1, alpha: 0.5), action: #selector(dismissAction))
         sizeIcon(bannerClose, 11)
         bannerClose.toolTip = "Не записывать эту встречу"
+        bannerClose.setAccessibilityIdentifier("banner.close")
+        bannerClose.setAccessibilityLabel("Закрыть")
 
         bannerButtons.orientation = .horizontal
         bannerButtons.spacing = 6
         bannerButtons.alignment = .centerY
-        bannerButtons.setViews([bannerJoin, bannerRecord], in: .leading)
+        textButton(bannerInvite, title: "Позвать бота", filled: true, action: #selector(inviteAction))
+        bannerInvite.setAccessibilityIdentifier("missed.invite")
+        bannerInvite.isHidden = true
+        bannerButtons.setViews([bannerJoin, bannerRecord, bannerInvite], in: .leading)
+
+        // Пропуск внутри капсулы встречи: тонкая строка «Бота нет» + вторичная кнопка.
+        missedLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        missedLabel.textColor = RoyArt.amber
+        missedLabel.maximumNumberOfLines = 2
+        missedLabel.translatesAutoresizingMaskIntoConstraints = false
+        missedLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 150).isActive = true
+        textButton(missedInvite, title: "Позвать бота", filled: false, action: #selector(inviteAction))
+        missedInvite.setAccessibilityIdentifier("missed.inviteInline")
+        missedRow.orientation = .horizontal
+        missedRow.spacing = 8
+        missedRow.alignment = .centerY
+        missedRow.setViews([missedLabel, missedInvite], in: .leading)
+        missedRow.isHidden = true
 
         bannerColumn.orientation = .vertical
         bannerColumn.spacing = 4
         bannerColumn.alignment = .leading
-        bannerColumn.setViews([bannerTitle, bannerSubtitle, bannerButtons], in: .top)
+        bannerColumn.setViews([bannerTitle, bannerSubtitle, bannerButtons, missedRow], in: .top)
 
         bannerRow.orientation = .horizontal
         bannerRow.spacing = 10
@@ -540,6 +637,15 @@ final class RecorderWidget {
     @objc private func toggleNotesAction() { onToggleNotes?() }
     @objc private func stopAction() { onStop?() }
     @objc private func recordAction() { onRecord?() }
-    @objc private func dismissAction() { onDismiss?() }
+    // ✕ закрывает всё, что говорит капсула: предложение записать и пропуск в нём вместе —
+    // «не записывать эту встречу» не должно тут же смениться капсулой «бота нет».
+    @objc private func dismissAction() {
+        if let m = shownMissed { onMissedDismiss?(m.missId) }
+        if !missedOnly { onDismiss?() }
+    }
+    @objc private func inviteAction() {
+        guard let m = shownMissed, m.canInvite, !m.busy else { return }
+        onInviteBot?(m.missId)
+    }
     @objc private func procDismissAction() { onProcessingDismiss?() }
 }

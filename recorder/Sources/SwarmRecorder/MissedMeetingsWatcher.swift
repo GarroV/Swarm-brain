@@ -1,32 +1,28 @@
 import AppKit
 import Foundation
 import RecorderKit
-import UserNotifications
 
 // Пропуски бота на экране человека (T162, решение D022): bumblebee говорит, что scriba не пошёл или
 // не дошёл на встречу, и одной кнопкой «Позвать бота» зовёт его. Главный путь записи — бот; эта
 // поверхность нужна, чтобы отказ автозапуска не прошёл молча.
 //
-// Поверхности две, и обе нужны:
-//   • штатный баннер macOS с кнопкой «Позвать бота» — тот же механизм, что у информационных
-//     уведомлений рекордера (`deferred-*`, #274); это НЕ предложение записать, у которого баннер
-//     снят решением 2026-09-07;
-//   • пункт меню — на случай, когда баннер закрыли или уведомления выключены (#155): иначе
-//     пропуск был бы сказан один раз и потерян.
+// Поверхности две (D025, продолжение решения 2026-09-07 «одна поверхность — капсула»):
+//   • НАША капсула — «Бота нет на встрече» + «Позвать бота»; штатного баннера macOS у пропуска
+//     нет. Что именно рисовать, отдаёт `capsule`, куда — решает AppDelegate.syncWidget: отдельной
+//     капсулой или строкой в капсуле встречи, во время записи — нигде (встреча и так пишется);
+//   • пункт меню — пропуски все, в том числе закрытые ✕ в капсуле, и отказ приглашения строкой.
 //
 // Опрос раз в минуту: `GET /meeting-missed` в Google не ходит (T164, D023), читает снимок и задания
 // в базе, а пропуск нужен человеку в первую минуту встречи, пока звать бота ещё имеет смысл.
 // Автозапуск выключен — пропусков нет по определению (D021), опрос редеет до раза в 10 минут:
 // включают его в вебе, и рекордер узнаёт об этом без перезапуска.
 //
-// Логика «что показать, что погасить» — RecorderKit/MissedMeetings.swift (MissedTracker).
+// Логика «что показать, что погасить» — RecorderKit/MissedMeetings.swift (MissedTracker, MissedCapsule).
 final class MissedMeetingsWatcher: NSObject {
-    static let categoryId = "MISSED_BOT"
-    static let inviteActionId = "INVITE_BOT"
-    static let missIdKey = "miss_id"
-
     static let pollSeconds: TimeInterval = 60
     static let autojoinOffPollSeconds: TimeInterval = 600
+    /// Сколько капсула держит «Бот позван» после удачного приглашения.
+    static let confirmationSeconds: TimeInterval = 5
 
     private let lang = RecorderLanguage.current
     private let configProvider: () -> SwarmConfig?
@@ -36,14 +32,15 @@ final class MissedMeetingsWatcher: NSObject {
     private var nextPollAt = Date.distantPast
     private var polling = false
     private var inviting: Set<String> = []
+    /// Отказ последнего приглашения по пропуску — капсула и меню говорят его, пока пропуск открыт.
+    private var failures: [String: String] = [:]
+    /// «Бот позван» — капсула держит его несколько секунд, затем гаснет сама.
+    private var confirmation: MissedCapsule?
 
     /// Календарь сегодня не сверен — пропуски видны не все (сервер: `checked=false`).
     private(set) var notChecked = false
     /// Последний опрос не удался — текст для меню. nil — опрос прошёл.
     private(set) var pollError: String?
-
-    /// Баннеры идут только из собранного .app: без бандла UNUserNotificationCenter падает.
-    private let canNotify = Bundle.main.bundleIdentifier != nil
 
     init(config: @escaping () -> SwarmConfig?, onChange: @escaping () -> Void) {
         self.configProvider = config
@@ -53,15 +50,23 @@ final class MissedMeetingsWatcher: NSObject {
 
     var open: [MissedMeeting] { tracker.open }
 
-    /// Категория с кнопкой. Других категорий у приложения нет (сняты решением 2026-09-07), поэтому
-    /// setNotificationCategories ничего чужого не затирает.
-    func registerCategory() {
-        guard canNotify else { return }
-        let invite = UNNotificationAction(identifier: Self.inviteActionId,
-                                          title: MissedTexts.inviteAction.text(lang), options: [])
-        let category = UNNotificationCategory(identifier: Self.categoryId, actions: [invite],
-                                              intentIdentifiers: [], options: [])
-        UNUserNotificationCenter.current().setNotificationCategories([category])
+    /// Что сказать в капсуле: «Бот позван» сразу после приглашения, иначе первый открытый пропуск,
+    /// не закрытый ✕. nil — капсуле о пропусках говорить нечего.
+    var capsule: MissedCapsule? {
+        if let confirmation { return confirmation }
+        guard let miss = tracker.capsuleMiss else { return nil }
+        return MissedCapsule.compose(miss, failure: failures[miss.id], busy: inviting.contains(miss.id), lang: lang)
+    }
+
+    /// ✕ в капсуле: пропуск уходит из капсулы, в меню остаётся.
+    func dismissInCapsule(_ id: String) {
+        if confirmation?.missId == id {
+            confirmation = nil
+        } else {
+            tracker = tracker.dismissing(id)
+            NSLog("SwarmRecorder: пропуск \(id) закрыт в капсуле (в меню остаётся)")
+        }
+        onChange()
     }
 
     func start() {
@@ -114,8 +119,12 @@ final class MissedMeetingsWatcher: NSObject {
     private func apply(_ update: MissedTracker.Update, next: MissedTracker) {
         let changed = next != tracker
         tracker = next
-        if !update.withdraw.isEmpty { withdraw(update.withdraw) }
-        update.announce.forEach(announce)
+        let openIds = Set(next.open.map(\.id))
+        failures = failures.filter { openIds.contains($0.key) }
+        for miss in update.announce {
+            NSLog("SwarmRecorder: пропуск бота [\(miss.id)] \(miss.reason) — \(miss.message.text(lang))")
+        }
+        for id in update.withdraw { NSLog("SwarmRecorder: пропуск бота [\(id)] закрыт") }
         if changed || !update.announce.isEmpty || !update.withdraw.isEmpty { onChange() }
     }
 
@@ -123,30 +132,54 @@ final class MissedMeetingsWatcher: NSObject {
     @discardableResult
     @MainActor func invite(_ missId: String) async -> Bool {
         guard let cfg = configProvider() else {
-            fail(MissedTexts.tokenInvalid.text(lang))
+            fail(missId, MissedTexts.tokenInvalid.text(lang))
             return false
         }
         guard !inviting.contains(missId) else { return false }   // двойной клик — одно приглашение
         inviting.insert(missId)
+        onChange()                                                 // кнопка капсулы → «Зову…»
         defer { inviting.remove(missId) }
         let title = tracker.open.first { $0.id == missId }?.title
         do {
             let (status, body) = try await SwarmClient(config: cfg).inviteBot(missId: missId)
             guard status == 200 || status == 201 else {
                 NSLog("SwarmRecorder: позвать бота по пропуску \(missId) — HTTP \(status): \(String(data: body, encoding: .utf8) ?? "")")
-                fail(MissedFailure.text(status: status, body: body, lang: lang))
+                fail(missId, MissedFailure.text(status: status, body: body, lang: lang))
                 return false
             }
+            failures[missId] = nil
+            confirm(missId, title: title)
             let (next, update) = tracker.invitedBot(missId)
             apply(update, next: next)
-            post(id: "missed-invited-\(missId)", title: MissedTexts.invitedTitle.text(lang),
-                 body: MissedTexts.invitedBody(title, lang), invitable: false, missId: nil)
             NSLog("SwarmRecorder: позвал бота по пропуску \(missId)")
             return true
         } catch {
             NSLog("SwarmRecorder: позвать бота по пропуску \(missId) — \(error)")
-            fail(describe(error))
+            fail(missId, describe(error))
             return false
+        }
+    }
+
+    private func fail(_ missId: String, _ reason: String) {
+        NSLog("SwarmRecorder: не удалось позвать бота [\(missId)] — \(reason)")
+        failures[missId] = reason
+        // Отказ показывается в капсуле, даже если человек её закрыл: он нажал кнопку и ждёт ответа.
+        tracker = MissedTracker(announced: tracker.announced, invited: tracker.invited, open: tracker.open,
+                                dismissed: tracker.dismissed.subtracting([missId]))
+        inviting.remove(missId)
+        onChange()
+    }
+
+    private func confirm(_ missId: String, title: String?) {
+        let id = "invited-\(missId)"
+        let done = MissedTexts.invitedTitle.text(lang)
+        confirmation = MissedCapsule(missId: id, line: done, shortLine: done,
+                                     detail: MissedTexts.invitedBody(title, lang), canInvite: false,
+                                     busy: false, buttonTitle: "", failed: false)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.confirmationSeconds) { [weak self] in
+            guard let self, self.confirmation?.missId == id else { return }
+            self.confirmation = nil
+            self.onChange()
         }
     }
 
@@ -166,6 +199,9 @@ final class MissedMeetingsWatcher: NSObject {
                 item.representedObject = miss.id
                 item.toolTip = miss.message.text(lang)
                 items.append(item)
+                if let failure = failures[miss.id] {
+                    items.append(disabled("\(MissedTexts.failedTitle.text(lang)) — \(failure)"))
+                }
             } else {
                 items.append(disabled(miss.message.text(lang)))
             }
@@ -180,43 +216,6 @@ final class MissedMeetingsWatcher: NSObject {
         item.isEnabled = false
         return item
     }
-
-    // ── Баннеры ─────────────────────────────────────────────────────────────────
-    private func announce(_ miss: MissedMeeting) {
-        let title = miss.canInvite ? MissedTexts.invitableTitle : MissedTexts.notInvitableTitle
-        post(id: bannerId(miss.id), title: title.text(lang), body: miss.message.text(lang),
-             invitable: miss.canInvite, missId: miss.id)
-    }
-
-    private func withdraw(_ ids: [String]) {
-        guard canNotify else { return }
-        let banners = ids.map(bannerId)
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: banners)
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: banners)
-    }
-
-    private func fail(_ reason: String) {
-        post(id: "missed-failed-\(Int(Date().timeIntervalSince1970))", title: MissedTexts.failedTitle.text(lang),
-             body: reason, invitable: false, missId: nil)
-    }
-
-    private func post(id: String, title: String, body: String, invitable: Bool, missId: String?) {
-        NSLog("SwarmRecorder: уведомление [\(id)] \(title) — \(body)")
-        guard canNotify else { return }
-        let c = UNMutableNotificationContent()
-        c.title = title
-        c.body = body
-        c.sound = .default
-        if invitable, let missId {
-            c.categoryIdentifier = Self.categoryId
-            c.userInfo = [Self.missIdKey: missId]
-        }
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: c, trigger: nil)) { err in
-            if let err { NSLog("SwarmRecorder: уведомление [\(id)] не поставлено — \(err)") }
-        }
-    }
-
-    private func bannerId(_ missId: String) -> String { "missed-\(missId)" }
 
     private func describe(_ error: Error) -> String {
         if error is URLError { return MissedFailure.text(status: nil, body: nil, lang: lang) }
