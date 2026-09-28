@@ -4,6 +4,8 @@
 // Google-календари людей СВОЕГО воркспейса, включивших автозапуск (allowed_users.scriba_autojoin),
 // берёт встречи Meet, начинающиеся в ближайшие минуты, заводит задание (одно на встречу воркспейса,
 // таблица meeting_calendar_jobs) и отдаёт оркестратору ещё не забранные — каждое ровно один раз.
+// Выключивший автозапуск (переключатель в вебе, D021) теряет и заведённые, но не забранные задания —
+// sweep.ts гасит их на ближайшем опросе, до забора.
 //
 // Дальше оркестратор поднимает бота за `invited_by` (X-On-Behalf-Of), бот заявляет встречу в
 // meeting-claim как `calendar` с `calendar_key` — и сервер сам сверяет, что встреча в календаре этого
@@ -83,11 +85,21 @@ const source: SweepSource = {
       });
     fail("meeting_calendar_jobs insert", error);
   },
-  async takeJobs(groupId, agentId, nowIso) {
+  async dropPendingJobsExcept(groupId, people) {
+    // Незабранное задание — служебная строка очереди, не запись человека: удаляем. Забранные
+    // (бот уже поднимается) не трогаются — условие taken_at is null.
+    let q = supabase.from("meeting_calendar_jobs").delete().eq("group_id", groupId).is("taken_at", null);
+    if (people.length > 0) q = q.not("invited_by", "in", `(${people.join(",")})`);
+    const { error } = await q;
+    fail("meeting_calendar_jobs drop", error);
+  },
+  async takeJobs(groupId, agentId, nowIso, people) {
+    if (people.length === 0) return [];
     // Забор — один условный UPDATE (taken_at is null): два одновременных опроса одну строку не делят.
+    // Только задания тех, чьё согласие перечитано перед забором (D021).
     const { data, error } = await supabase.from("meeting_calendar_jobs")
       .update({ taken_at: nowIso, taken_by: agentId })
-      .eq("group_id", groupId).is("taken_at", null).gt("ends_at", nowIso)
+      .eq("group_id", groupId).is("taken_at", null).gt("ends_at", nowIso).in("invited_by", [...people])
       .select(JOB_COLUMNS);
     fail("meeting_calendar_jobs take", error);
     return ((data ?? []) as TakenJob[]).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
