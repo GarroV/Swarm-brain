@@ -787,10 +787,12 @@ async function sceneEgress(fake: Fake): Promise<void> {
     const chromium = await execIn(id, [
       "sh",
       "-c",
-      "ps -eo chromium | grep -c -- '--proxy-server=http://egress:3128'",
+      // Число процессов Chromium с прокси — последней строкой «procs=N»: вывод exec идёт с
+      // заголовками кадров, и цифры из них не должны сойти за ответ.
+      "echo procs=$(ps -eo args | grep -- '--proxy-server=http://egress:3128' | grep -vc grep)",
     ]);
     check(
-      Number(chromium.out.replaceAll(/\D/gu, "")) > 1,
+      Number(/procs=(\d+)/u.exec(chromium.out)?.[1] ?? "0") > 0,
       "Chromium запущен с прокси стенда",
       chromium.out.trim(),
     );
