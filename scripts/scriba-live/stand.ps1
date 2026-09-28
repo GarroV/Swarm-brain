@@ -28,6 +28,9 @@ $Exclude = 'realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare
 $OwnerId = '7100000001'
 $WebUrl = 'http://100.64.116.67:4425'
 $LeaseDaemonDir = '/run/desktop/mnt/host/c/projects/scriba-live/state/lease'
+$AccountCopiesDaemonDir = '/run/desktop/mnt/host/c/projects/scriba-live/state/account-copies'
+# Вход бота живёт у стенда входа (scripts/scriba-login.sh); нет файла — бот ходит гостем.
+$AccountDir = if ($env:SCRIBA_ACCOUNT_DIR) { $env:SCRIBA_ACCOUNT_DIR } else { 'C:\projects\scriba-login\state\account' }
 $Utf8 = New-Object System.Text.UTF8Encoding $false
 
 function Say([string]$Text) { Write-Output "[stand $(Get-Date -Format HH:mm:ss)] $Text" }
@@ -115,6 +118,12 @@ function Wait-Http([string]$Url, [int]$Seconds) {
 
 function Stand-Up {
   New-Item -ItemType Directory -Force "$State\lease" | Out-Null
+  # Копии входа бота в Google (T175): в каждой — живая сессия аккаунта, поэтому каталог только
+  # владельцу машины и SYSTEM, как и сам вход в C:\projects\scriba-login\state\account.
+  New-Item -ItemType Directory -Force "$State\account-copies" | Out-Null
+  $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+  Invoke-Native "icacls account-copies" { icacls "$State\account-copies" /inheritance:r /grant:r "${me}:(OI)(CI)F" 'SYSTEM:(OI)(CI)F' /Q }
+  New-Item -ItemType Directory -Force $AccountDir | Out-Null
   $rev = (git -C $Repo rev-parse --short HEAD).Trim()
   Say "код стенда: $rev ($(git -C $Repo rev-parse --abbrev-ref HEAD))"
 
@@ -131,6 +140,8 @@ function Stand-Up {
   $stand['OPENAI_API_KEY'] = if (Test-Path $openai) { (Get-Content -Raw $openai).Trim() } else { 'stand-fake-openai' }
   $stand['STAND_STATE_DIR'] = ($State -replace '\\', '/')
   $stand['STAND_LEASE_DAEMON_DIR'] = $LeaseDaemonDir
+  $stand['STAND_ACCOUNT_COPIES_DAEMON_DIR'] = $AccountCopiesDaemonDir
+  $stand['STAND_ACCOUNT_DIR'] = ($AccountDir -replace '\\', '/')
   $stand['STAND_OWNER_ID'] = $OwnerId
   $stand['STAND_WEB_URL'] = $WebUrl
   $extra = "$State\container-env.json"
