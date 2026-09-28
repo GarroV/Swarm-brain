@@ -2,6 +2,7 @@
 // исключения) и проверить деплой с голым спецификатором из ветки нельзя. Перевод импортов ради
 // линта = непроверяемый риск для живого конвейера. Дефект гейта вынесен диспетчеру.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { AgentGrant } from "./agent-grant.ts";
 
 // Аутентификация агентов по токену. Два вида предъявителя, и разница между ними существенна:
 //
@@ -38,6 +39,8 @@ export interface AgentIdentity {
   kind: TokenKind;
   /** Заполнен только при kind: "bot" — какой именно агент пришёл (для его heartbeat и логов). */
   agentId?: string;
+  /** Только при kind: "bot": пропуск встречи, по которому он пришёл (_shared/agent-grant.ts). */
+  grant?: AgentGrant;
 }
 
 // ── Классификация токена ─────────────────────────────────────────────────────
@@ -277,44 +280,45 @@ export async function resolveActingIdentity(
     return human;
   }
 
-  const agent = await findAgent(supabase, hashHex);
-  if (behalf === null) {
+  const grant = await findGrant(supabase, hashHex);
+  if (!grant) {
+    // Общий токен агента за человека не действует НИКОГДА — ни без заголовка, ни с ним: заголовок
+    // — слово бота, а не основание сервера. За человека бот ходит по пропуску встречи (T165).
+    const agent = await findAgent(supabase, hashHex);
+    console.warn(
+      `agent-auth: агент ${agent.id} пришёл общим токеном в дверь за человека${
+        behalf === null ? "" : ` (${ON_BEHALF_OF_HEADER}: ${behalf})`
+      } — нужен пропуск встречи`,
+    );
     throw new AgentAuthError(
       403,
-      `service agent token grants nothing on its own — send ${ON_BEHALF_OF_HEADER}`,
+      "service agent token grants nothing on its own — the bot acts for a person only with a meeting grant",
     );
   }
-  if (!agent.groupId) {
-    console.warn(`agent-auth: у служебного агента ${agent.id} нет воркспейса`);
-    throw new AgentAuthError(403, "service agent has no workspace");
+  if (behalf !== null && behalf !== grant.telegramId) {
+    console.warn(`agent-auth: пропуск ${grant.grant.id} за ${grant.telegramId} просил действовать за ${behalf}`);
+    throw new AgentAuthError(403, `${ON_BEHALF_OF_HEADER} does not match the meeting grant`);
   }
 
   const { data } = await supabase
     .from("allowed_users")
     .select("telegram_id, group_id")
-    .eq("telegram_id", behalf)
+    .eq("telegram_id", grant.telegramId)
     .maybeSingle();
   const person = data as
     | { telegram_id: number; group_id: string | null }
     | null;
-  // Воркспейс сверяем строго: агент обслуживает один воркспейс и не может назвать владельцем
-  // человека из чужого. Человек без воркспейса тоже не подходит — встреча стала бы ничьей.
+  // Человек пропуска обязан оставаться в воркспейсе пропуска: ушёл — пропуск за него не действует.
   //
-  // Отказ ОДИН на все причины, как и в findAgent выше. Разные тексты («unknown user» против
-  // «outside the workspace») превращали заголовок в оракул существования: держатель токена
-  // агента подставлял произвольные telegram_id и по тексту 403 узнавал, заведён ли человек
-  // в Swarm вообще — в любом чужом воркспейсе, не имея прав ни на один. Telegram id не секрет
-  // и резолвится из username, так что это давало скомпрометированному токену список
-  // пользователей всей системы. Причина отказа остаётся в логе: она нужна нам, не чужому.
-  if (!person || person.group_id === null || person.group_id !== agent.groupId) {
+  // Отказ ОДИН на все причины, как и в findAgent: разные тексты («unknown user» против «outside the
+  // workspace») делали бы из отказа оракул «заведён ли человек в Swarm». Причина — в логе.
+  if (!person || person.group_id === null || person.group_id !== grant.groupId) {
     const reason = !person
       ? "человек не заведён"
       : person.group_id === null
       ? "человек без воркспейса"
       : `чужой воркспейс ${person.group_id}`;
-    console.warn(
-      `agent-auth: агент ${agent.id} (${agent.groupId}) просил действовать за ${behalf}: ${reason}`,
-    );
+    console.warn(`agent-auth: пропуск ${grant.grant.id} (${grant.groupId}) за ${grant.telegramId}: ${reason}`);
     throw new AgentAuthError(
       403,
       `${ON_BEHALF_OF_HEADER}: not a user of this agent's workspace`,
@@ -325,7 +329,78 @@ export async function resolveActingIdentity(
     telegramId: person.telegram_id,
     groupId: person.group_id,
     kind: "bot",
-    agentId: agent.id,
+    agentId: grant.grant.agentId,
+    grant: grant.grant,
+  };
+}
+
+const GRANT_COLUMNS =
+  "id, token_hash, agent_id, group_id, telegram_id, invite_id, calendar_job_id, join_url, calendar_key, title, meeting_id, expires_at";
+
+interface GrantRow {
+  id: string;
+  token_hash: string;
+  agent_id: string;
+  group_id: string;
+  telegram_id: number;
+  invite_id: string | null;
+  calendar_job_id: string | null;
+  join_url: string;
+  calendar_key: string | null;
+  title: string | null;
+  meeting_id: string | null;
+  expires_at: string;
+}
+
+/**
+ * Пропуск встречи по хэшу. `null` — это не пропуск. Живой пропуск держится на живом агенте:
+ * выключенный агент (или агент с истёкшим токеном) гасит все свои пропуска разом.
+ */
+async function findGrant(
+  supabase: SupabaseClient,
+  hashHex: string,
+): Promise<{ telegramId: number; groupId: string; grant: AgentGrant } | null> {
+  const { data } = await supabase
+    .from("meeting_agent_grants")
+    .select(GRANT_COLUMNS)
+    .eq("token_hash", hashHex)
+    .maybeSingle();
+  const row = data as GrantRow | null;
+  if (!row || row.token_hash !== hashHex) return null;
+  if (isExpired(row.expires_at, Date.now())) {
+    console.warn(`agent-auth: пропуск ${row.id} истёк`);
+    throw new AgentAuthError(401, "Unauthorized");
+  }
+
+  const { data: agentData } = await supabase
+    .from("service_agents")
+    .select(AGENT_COLUMNS)
+    .eq("id", row.agent_id)
+    .maybeSingle();
+  const agent = agentData as
+    | (AgentRow & { id: string; group_id: string | null; is_active: boolean })
+    | null;
+  if (
+    !agent || agent.id !== row.agent_id || !agent.is_active || agent.group_id !== row.group_id ||
+    isExpired(agent.token_expires_at, Date.now())
+  ) {
+    console.warn(`agent-auth: пропуск ${row.id} — агент ${row.agent_id} выключен, истёк или сменил воркспейс`);
+    throw new AgentAuthError(401, "Unauthorized");
+  }
+
+  return {
+    telegramId: row.telegram_id,
+    groupId: row.group_id,
+    grant: {
+      id: row.id,
+      agentId: row.agent_id,
+      basis: row.invite_id !== null ? "invite" : "calendar",
+      inviteId: row.invite_id,
+      calendarKey: row.calendar_key,
+      joinUrl: row.join_url,
+      title: row.title,
+      meetingId: row.meeting_id,
+    },
   };
 }
 

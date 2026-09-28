@@ -23,11 +23,22 @@ const human: AgentIdentity = {
   groupId: "alpha",
   kind: "recorder",
 };
+// Бот приходит с пропуском встречи, привязанным заявкой к MEETING_ID (T165).
 const bot: AgentIdentity = {
   telegramId: 111,
   groupId: "alpha",
   kind: "bot",
   agentId: "scriba",
+  grant: {
+    id: "g1",
+    agentId: "scriba",
+    basis: "calendar",
+    inviteId: null,
+    calendarKey: "uid:2026-09-17",
+    joinUrl: "https://meet.google.com/abc-defg-hij",
+    title: null,
+    meetingId: MEETING_ID,
+  },
 };
 
 function only(writes: HeartbeatWrite[]): HeartbeatWrite {
@@ -99,6 +110,18 @@ Deno.test("БЛОКИРУЮЩИЙ: heartbeat бота по встрече идё
   assertEquals(writes[0].reportedSeconds, 1260);
   assertEquals(writes[1].match, { id: "scriba" });
   assertEquals(writes[1].patch, { last_seen_at: NOW, last_version: 7 });
+});
+
+Deno.test("БЛОКИРУЮЩИЙ (T165): бот не отмечает «пишу» на встрече, которую его пропуск не открывает", () => {
+  // Отметка бота держит встречу за ним (D020, лиз): на чужой встрече пропуска она держала бы
+  // и её — сверка по пропуску, а не только по владельцу, до какой-либо записи.
+  const other = "1b7c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3";
+  rejected(() => buildHeartbeatWrites(bot, { recording: true, meeting_id: other }, NOW), 403);
+  rejected(() => buildHeartbeatWrites(bot, { recording: false, meeting_id: other }, NOW), 403);
+  const unbound = { ...bot, grant: { ...bot.grant!, meetingId: null } };
+  rejected(() => buildHeartbeatWrites(unbound, { recording: true, meeting_id: MEETING_ID }, NOW), 403);
+  // Без встречи — только своя строка агента, пропуск тут не при чём.
+  assertEquals(buildHeartbeatWrites(unbound, { recording: false }, NOW).map((w) => w.table), ["service_agents"]);
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: бот обновляет только встречу своего воркспейса, заявленную за того, за кого он пришёл", () => {

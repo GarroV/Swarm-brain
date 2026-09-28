@@ -16,12 +16,14 @@ import {
   sha256Hex,
   verifyAgentToken,
 } from "./agent-auth.ts";
+import type { AgentGrant } from "./agent-grant.ts";
 
 // ── Стенд ─────────────────────────────────────────────────────────────────────
 
 const HUMAN_TOKEN = "recorder-token-of-a-real-person";
 const MCP_TOKEN = "smcp_personal_token";
-const BOT_TOKEN = "scriba-container-secret";
+const BOT_TOKEN = "scriba-orchestrator-secret";
+const GRANT_TOKEN = "sgr_one-meeting-pass";
 
 const HUMAN = { telegram_id: 111, group_id: "alpha" };
 const OUTSIDER = { telegram_id: 222, group_id: "beta" };
@@ -38,6 +40,7 @@ type Call = { method: string; args: unknown[] };
 function makeSupabase(opts: {
   userByToken?: Row;
   agentByToken?: Row;
+  grantByToken?: Row;
   personById?: (id: number) => Row;
 }): { client: SupabaseClient; updates: Call[]; personLookups: unknown[] } {
   const updates: Call[] = [];
@@ -59,6 +62,9 @@ function makeSupabase(opts: {
       builder.maybeSingle = () => {
         if (table === "service_agents") {
           return Promise.resolve({ data: opts.agentByToken ?? null });
+        }
+        if (table === "meeting_agent_grants") {
+          return Promise.resolve({ data: opts.grantByToken ?? null });
         }
         const byId = calls.find((c) => c.method === "eq" && c.args[0] === "telegram_id");
         if (byId) {
@@ -107,6 +113,36 @@ async function botRow(over: Record<string, unknown> = {}) {
     ...over,
   };
 }
+
+async function grantRow(over: Record<string, unknown> = {}) {
+  return {
+    id: "grant-1",
+    token_hash: await sha256Hex(GRANT_TOKEN),
+    agent_id: "scriba",
+    group_id: "alpha",
+    telegram_id: 111,
+    invite_id: null,
+    calendar_job_id: "job-1",
+    join_url: "https://meet.google.com/abc-defg-hij",
+    calendar_key: "standup@google.com:2026-09-28",
+    title: "Standup",
+    meeting_id: null,
+    expires_at: "2099-01-01T00:00:00Z",
+    ...over,
+  };
+}
+
+/** Всё, что пропуск несёт в дверь: основание, ключ, название — из строки сервера. */
+const GRANT: AgentGrant = {
+  id: "grant-1",
+  agentId: "scriba",
+  basis: "calendar",
+  inviteId: null,
+  calendarKey: "standup@google.com:2026-09-28",
+  joinUrl: "https://meet.google.com/abc-defg-hij",
+  title: "Standup",
+  meetingId: null,
+};
 
 function req(token: string, onBehalfOf?: number | string): Request {
   const headers = new Headers({ Authorization: `Bearer ${token}` });
@@ -213,101 +249,98 @@ Deno.test("БЛОКИРУЮЩИЙ: токен бота без on_behalf_of не 
     AgentAuthError,
   ) as AgentAuthError;
   assertEquals(e.status, 403);
-  assertEquals(
-    e.message.includes(ON_BEHALF_OF_HEADER),
-    true,
-    `отказ обязан назвать, чего не хватает: «${e.message}»`,
-  );
-  assertEquals(
-    personLookups,
-    [],
-    "без подмены в таблицу людей не ходим вообще",
-  );
+  assertEquals(e.message.includes("meeting grant"), true, `отказ обязан назвать, чего не хватает: «${e.message}»`);
+  assertEquals(personLookups, [], "без пропуска в таблицу людей не ходим вообще");
 });
 
-Deno.test("БЛОКИРУЮЩИЙ: бот не может указать человека из чужого воркспейса", async () => {
-  const { client } = makeSupabase({
-    agentByToken: await botRow(),
-    personById: people,
-  });
-  await refuses(
-    resolveActingIdentity(client, req(BOT_TOKEN, 222)),
-    403,
-    "чужой воркспейс",
-  );
+Deno.test("БЛОКИРУЮЩИЙ: общий токен агента не действует за человека и с X-On-Behalf-Of (T165)", async () => {
+  // Заголовок — слово бота, а не основание сервера: за человека бот ходит только по пропуску
+  // встречи, который сервер выдал там, где человек позвал бота или включил автозапуск.
+  for (const id of [111, 222, 333, 999]) {
+    const { client, personLookups } = makeSupabase({ agentByToken: await botRow(), personById: people });
+    await refuses(resolveActingIdentity(client, req(BOT_TOKEN, id)), 403, `общий токен за ${id}`);
+    assertEquals(personLookups, [], "человека по слову бота не ищем");
+  }
 });
 
-Deno.test("БЛОКИРУЮЩИЙ: бот не может указать человека без воркспейса", async () => {
-  const { client } = makeSupabase({
-    agentByToken: await botRow(),
-    personById: people,
-  });
-  await refuses(
-    resolveActingIdentity(client, req(BOT_TOKEN, 333)),
-    403,
-    "человек без воркспейса",
-  );
-});
-
-Deno.test("БЛОКИРУЮЩИЙ: бот без воркспейса не действует ни за кого", async () => {
-  const { client } = makeSupabase({
-    agentByToken: await botRow({ group_id: null }),
-    personById: people,
-  });
-  await refuses(
-    resolveActingIdentity(client, req(BOT_TOKEN, 111)),
-    403,
-    "бот без воркспейса",
-  );
-});
-
-Deno.test("бот не может указать несуществующего человека", async () => {
-  const { client } = makeSupabase({
-    agentByToken: await botRow(),
-    personById: people,
-  });
-  await refuses(
-    resolveActingIdentity(client, req(BOT_TOKEN, 999)),
-    403,
-    "неизвестный человек",
-  );
-});
-
-Deno.test("на выходе — человек, а не бот: telegramId и воркспейс принадлежат человеку", async () => {
-  const { client } = makeSupabase({
-    agentByToken: await botRow(),
-    personById: people,
-  });
-  assertEquals(await resolveActingIdentity(client, req(BOT_TOKEN, 111)), {
+Deno.test("пропуск встречи — личность человека пропуска и сам пропуск", async () => {
+  const { client } = makeSupabase({ grantByToken: await grantRow(), agentByToken: await botRow(), personById: people });
+  assertEquals(await resolveActingIdentity(client, req(GRANT_TOKEN)), {
     telegramId: 111,
     groupId: "alpha",
     kind: "bot",
     agentId: "scriba",
+    grant: GRANT,
   });
+  // Бот по-прежнему шлёт X-On-Behalf-Of — совпадающий заголовок не мешает.
+  const again = makeSupabase({ grantByToken: await grantRow(), agentByToken: await botRow(), personById: people });
+  assertEquals((await resolveActingIdentity(again.client, req(GRANT_TOKEN, 111))).telegramId, 111);
 });
 
-Deno.test("выключенный агент не проходит, хотя токен верный", async () => {
-  const { client } = makeSupabase({
-    agentByToken: await botRow({ is_active: false }),
-    personById: people,
-  });
-  await refuses(
-    resolveActingIdentity(client, req(BOT_TOKEN, 111)),
-    401,
-    "выключенный агент",
-  );
+Deno.test("пропуск по приглашению несёт приглашение, а не ключ календаря", async () => {
+  const row = await grantRow({ invite_id: "inv-1", calendar_job_id: null, calendar_key: null, title: null });
+  const { client } = makeSupabase({ grantByToken: row, agentByToken: await botRow(), personById: people });
+  const { grant } = await resolveActingIdentity(client, req(GRANT_TOKEN));
+  assertEquals(grant, { ...GRANT, basis: "invite" as const, inviteId: "inv-1", calendarKey: null, title: null });
 });
 
-Deno.test("истёкший токен агента не проходит", async () => {
+Deno.test("БЛОКИРУЮЩИЙ: пропуск одного человека не действует за другого", async () => {
+  const { client } = makeSupabase({ grantByToken: await grantRow(), agentByToken: await botRow(), personById: people });
+  await refuses(resolveActingIdentity(client, req(GRANT_TOKEN, 222)), 403, "заголовок за другого");
+  const arg = makeSupabase({ grantByToken: await grantRow(), agentByToken: await botRow(), personById: people });
+  await refuses(resolveActingIdentity(arg.client, req(GRANT_TOKEN), 222), 403, "аргумент за другого");
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: человек пропуска вне воркспейса пропуска — отказ, один текст на все причины", async () => {
+  // Разные тексты превращали бы отказ в оракул «заведён ли человек» (см. тест ниже про подмену).
+  const messages: string[] = [];
+  for (const id of [999, 222, 333]) { // не заведён · чужой воркспейс · без воркспейса
+    const { client } = makeSupabase({
+      grantByToken: await grantRow({ telegram_id: id }),
+      agentByToken: await botRow(),
+      personById: people,
+    });
+    const e = await assertRejects(() => resolveActingIdentity(client, req(GRANT_TOKEN)), AgentAuthError) as AgentAuthError;
+    assertEquals(e.status, 403, `человек ${id}`);
+    messages.push(e.message);
+  }
+  assertEquals(new Set(messages).size, 1, JSON.stringify(messages));
+});
+
+Deno.test("истёкший пропуск не действует", async () => {
   const { client } = makeSupabase({
-    agentByToken: await botRow({ token_expires_at: "2020-01-01T00:00:00Z" }),
+    grantByToken: await grantRow({ expires_at: "2020-01-01T00:00:00Z" }),
+    agentByToken: await botRow(),
     personById: people,
   });
-  await refuses(
-    resolveActingIdentity(client, req(BOT_TOKEN, 111)),
-    401,
-    "истёкший токен агента",
-  );
+  await refuses(resolveActingIdentity(client, req(GRANT_TOKEN)), 401, "истёкший пропуск");
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: выключенный или истёкший агент гасит свои пропуска", async () => {
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ["выключен", { is_active: false }],
+    ["токен истёк", { token_expires_at: "2020-01-01T00:00:00Z" }],
+    ["другой воркспейс", { group_id: "beta" }],
+  ];
+  for (const [what, over] of cases) {
+    const { client } = makeSupabase({ grantByToken: await grantRow(), agentByToken: await botRow(over), personById: people });
+    await refuses(resolveActingIdentity(client, req(GRANT_TOKEN)), 401, `агент: ${what}`);
+  }
+});
+
+Deno.test("строка пропуска найдена, но хэш не её — 401", async () => {
+  const { client } = makeSupabase({
+    grantByToken: await grantRow({ token_hash: "somebody-elses-hash" }),
+    agentByToken: await botRow(),
+    personById: people,
+  });
+  await refuses(resolveActingIdentity(client, req(GRANT_TOKEN)), 401, "хэш пропуска не совпал");
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: пропуск не открывает ни дверь людей, ни дверь оркестратора", async () => {
+  const opts = async () => ({ grantByToken: await grantRow(), agentByToken: null, personById: people });
+  await refuses(verifyAgentToken(makeSupabase(await opts()).client, req(GRANT_TOKEN)), 401, "дверь людей");
+  await refuses(resolveServiceAgent(makeSupabase(await opts()).client, req(GRANT_TOKEN)), 401, "дверь оркестратора");
 });
 
 // ── Границы входа ─────────────────────────────────────────────────────────────
@@ -330,12 +363,13 @@ Deno.test("без заголовка Authorization — 401", async () => {
 Deno.test("мусор в заголовке подмены — внятный отказ, а не молчаливое игнорирование", async () => {
   // Молча проигнорированный заголовок = бот пишет встречу «ничью» и никто не узнал.
   const { client } = makeSupabase({
+    grantByToken: await grantRow(),
     agentByToken: await botRow(),
     personById: people,
   });
   for (const junk of ["abc", "0", "-5", "1.5", "111; drop"]) {
     await refuses(
-      resolveActingIdentity(client, req(BOT_TOKEN, junk)),
+      resolveActingIdentity(client, req(GRANT_TOKEN, junk)),
       403,
       `мусор «${junk}»`,
     );
@@ -344,11 +378,12 @@ Deno.test("мусор в заголовке подмены — внятный о
 
 Deno.test("заголовок и аргумент расходятся — отказ, а не тихий выбор одного из двух", async () => {
   const { client } = makeSupabase({
+    grantByToken: await grantRow(),
     agentByToken: await botRow(),
     personById: people,
   });
   await refuses(
-    resolveActingIdentity(client, req(BOT_TOKEN, 222), 111),
+    resolveActingIdentity(client, req(GRANT_TOKEN, 222), 111),
     403,
     "конфликт источников",
   );
@@ -452,52 +487,6 @@ Deno.test("перекрытие при перевыпуске: предыдущ�
     1,
     "вход новым токеном гасит перекрытие немедленно",
   );
-});
-
-Deno.test("строка агента найдена, но хэш не её — 401, а не личность агента", async () => {
-  // Защита от запроса, который вернул не ту строку: доверяем сверке хэша, а не факту ответа базы.
-  const { client } = makeSupabase({
-    agentByToken: await botRow({ token_hash: "somebody-elses-hash" }),
-    personById: people,
-  });
-  await refuses(
-    resolveActingIdentity(client, req(BOT_TOKEN, 111)),
-    401,
-    "хэш не совпал",
-  );
-});
-
-Deno.test("БЛОКИРУЮЩИЙ: отказ по подмене не выдаёт, заведён ли человек в системе", async () => {
-  // Разные тексты отказа превращали заголовок подмены в оракул существования:
-  // держатель токена агента подставлял произвольные telegram_id и по тексту 403
-  // узнавал, заведён ли человек в Swarm вообще — в любом чужом воркспейсе, не имея
-  // прав ни на один. Telegram id не секрет и резолвится из username, поэтому это
-  // давало скомпрометированному токену список пользователей всей системы.
-  //
-  // Тест сравнивает тексты трёх разных причин отказа и требует, чтобы они совпали.
-  // Проверен порчей: с прежними формулировками падает.
-  const messages: string[] = [];
-  for (const id of [999, 222, 333]) { // не заведён · чужой воркспейс · без воркспейса
-    const { client } = makeSupabase({
-      agentByToken: await botRow(),
-      personById: people,
-    });
-    try {
-      await resolveActingIdentity(client, req(BOT_TOKEN, id));
-      throw new Error(`подмена за ${id} прошла, хотя не должна была`);
-    } catch (e) {
-      if (!(e instanceof AgentAuthError)) throw e;
-      messages.push(e.message);
-    }
-  }
-  const [first] = messages;
-  for (const m of messages) {
-    assertEquals(
-      m,
-      first,
-      `отказы различаются и выдают существование человека: ${JSON.stringify(messages)}`,
-    );
-  }
 });
 
 // ── Дверь агента «сам за себя» (resolveServiceAgent, D017) ────────────────────

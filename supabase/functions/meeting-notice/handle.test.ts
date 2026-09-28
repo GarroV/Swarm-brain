@@ -21,6 +21,10 @@ const MEETING = "5f0c6b1e-8a2d-4c3f-9b7e-1d2a3c4b5e6f";
 const FOREIGN_WS = "6f0c6b1e-8a2d-4c3f-9b7e-1d2a3c4b5e6f";
 const FOREIGN_OWNER = "7f0c6b1e-8a2d-4c3f-9b7e-1d2a3c4b5e6f";
 const KEY = "abc123@google.com:2026-09-23";
+// Вторая встреча того же владельца в том же воркспейсе: её пропуск бота на MEETING не открывает.
+const OWN_OTHER = "8f0c6b1e-8a2d-4c3f-9b7e-1d2a3c4b5e6f";
+/** Пропуск бота (T165): токен → встреча, к которой он привязан, или ключ события до заявки. */
+const grantToken = (meeting: string | null, key: string | null = null) => `sgr_${meeting ?? "none"}_${key ?? "none"}`;
 
 type Row = Record<string, unknown>;
 
@@ -40,6 +44,7 @@ function newStore(): Store {
       { id: MEETING, title: "Weekly sync", group_id: "alpha", claim_owner: OWNER.telegram_id },
       { id: FOREIGN_WS, title: "Board", group_id: "beta", claim_owner: OWNER.telegram_id },
       { id: FOREIGN_OWNER, title: "Salary review", group_id: "alpha", claim_owner: 222 },
+      { id: OWN_OTHER, title: "Another meeting", group_id: "alpha", claim_owner: OWNER.telegram_id },
     ],
     meeting_notices: [],
     reserveCalls: [],
@@ -119,6 +124,7 @@ async function makeSupabase(store: Store = newStore()): Promise<SupabaseClient> 
       if (table === "meetings" || table === "meeting_notices") return tableQuery(store, table);
       let byToken: string | null = null;
       let byId: number | null = null;
+      let byAgentId: string | null = null;
       const builder: Record<string, unknown> = {
         select: () => builder,
         or: (expr: string) => {
@@ -128,10 +134,34 @@ async function makeSupabase(store: Store = newStore()): Promise<SupabaseClient> 
         eq: (column: string, value: unknown) => {
           if (column === "token_hash") byToken = String(value);
           if (column === "telegram_id") byId = Number(value);
+          if (column === "id") byAgentId = String(value);
           return builder;
         },
-        maybeSingle: () => {
+        maybeSingle: async () => {
           let data: Row | null = null;
+          if (table === "meeting_agent_grants") {
+            for (const m of [MEETING, FOREIGN_WS, FOREIGN_OWNER, OWN_OTHER, null]) {
+              for (const k of [KEY, null]) {
+                const token = grantToken(m, k);
+                if (byToken !== await sha256Hex(token)) continue;
+                data = {
+                  id: `g-${token}`,
+                  token_hash: byToken,
+                  agent_id: agent.id,
+                  group_id: "alpha",
+                  telegram_id: OWNER.telegram_id,
+                  invite_id: null,
+                  calendar_job_id: "job-1",
+                  join_url: "https://meet.google.com/abc-defg-hij",
+                  calendar_key: k ?? "other@google.com:2026-09-23",
+                  title: "Weekly sync (calendar)",
+                  meeting_id: m,
+                  expires_at: "2099-01-01T00:00:00Z",
+                };
+              }
+            }
+          }
+          if (table === "service_agents" && byAgentId === agent.id) data = agent;
           if (table === "allowed_users" && byToken === humanHash) data = human;
           if (table === "allowed_users" && byId === OWNER.telegram_id) {
             data = { telegram_id: OWNER.telegram_id, group_id: OWNER.group_id };
@@ -177,9 +207,9 @@ function request(body: unknown, opts: { token?: string; onBehalfOf?: number; met
   });
 }
 
-/** Запрос бота от имени владельца. */
-function asBot(body: unknown): Request {
-  return request(body, { onBehalfOf: OWNER.telegram_id });
+/** Запрос бота от имени владельца — с пропуском встречи (по умолчанию привязан к MEETING). */
+function asBot(body: unknown, grant: string = grantToken(MEETING)): Request {
+  return request(body, { token: grant, onBehalfOf: OWNER.telegram_id });
 }
 
 async function payload(res: Response): Promise<Record<string, unknown>> {
@@ -240,7 +270,7 @@ Deno.test("БЛОКИРУЮЩИЙ: база получает получател�
 Deno.test("до-встречный отказ резервируется по ключу календаря", async () => {
   const store = newStore();
   const { deps } = makeDeps(await makeSupabase(store));
-  await handleNotice(asBot({ kind: "no_owner", meeting_key: KEY }), deps);
+  await handleNotice(asBot({ kind: "no_owner", meeting_key: KEY }, grantToken(null, KEY)), deps);
   assertEquals(store.reserveCalls[0].p_meeting_id, null);
   assertEquals(store.reserveCalls[0].p_meeting_key, KEY);
 });
@@ -295,14 +325,17 @@ Deno.test("журнал недоступен или ответил мусоро�
 
 Deno.test("БЛОКИРУЮЩИЙ: встреча чужого воркспейса — 403, ничего не отправлено", async () => {
   const { deps, sent } = makeDeps(await makeSupabase());
-  const res = await handleNotice(asBot({ kind: "no_audio", meeting_id: FOREIGN_WS }), deps);
+  const res = await handleNotice(asBot({ kind: "no_audio", meeting_id: FOREIGN_WS }, grantToken(FOREIGN_WS)), deps);
   assertEquals(res.status, 403);
   assertEquals(sent.length, 0);
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: уведомляемый — не владелец встречи — 403, ничего не отправлено", async () => {
   const { deps, sent } = makeDeps(await makeSupabase());
-  const res = await handleNotice(asBot({ kind: "door_denied", meeting_id: FOREIGN_OWNER }), deps);
+  const res = await handleNotice(
+    asBot({ kind: "door_denied", meeting_id: FOREIGN_OWNER }, grantToken(FOREIGN_OWNER)),
+    deps,
+  );
   assertEquals(res.status, 403);
   assertEquals(sent.length, 0, "сообщение о чужой встрече ушло человеку");
 });
@@ -310,7 +343,8 @@ Deno.test("БЛОКИРУЮЩИЙ: уведомляемый — не владе�
 Deno.test("встречи нет — 404 с подсказкой, ничего не отправлено", async () => {
   const { deps, sent } = makeDeps(await makeSupabase());
   const res = await handleNotice(
-    asBot({ kind: "no_audio", meeting_id: "00000000-0000-4000-8000-000000000000" }),
+    // Человек: у бота встреча вне пропуска — 403 раньше, чем дело дойдёт до поиска строки.
+    request({ kind: "no_audio", meeting_id: "00000000-0000-4000-8000-000000000000" }, { token: HUMAN_TOKEN }),
     deps,
   );
   assertEquals(res.status, 404);
@@ -356,6 +390,42 @@ Deno.test("токен бота без X-On-Behalf-Of прав не даёт", as
   assertEquals(sent.length, 0);
 });
 
+// ── Пропуск встречи (T165): бот говорит человеку только о встрече своего пропуска ──
+
+Deno.test("БЛОКИРУЮЩИЙ: общий токен агента с X-On-Behalf-Of — 403, ничего не отправлено", async () => {
+  const { deps, sent } = makeDeps(await makeSupabase());
+  for (const body of [{ kind: "no_audio", meeting_id: MEETING }, { kind: "no_conference_link", meeting_key: KEY }]) {
+    const res = await handleNotice(request(body, { onBehalfOf: OWNER.telegram_id }), deps);
+    assertEquals(res.status, 403, JSON.stringify(body));
+  }
+  assertEquals(sent.length, 0);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: пропуск одной встречи не шлёт уведомление о другой встрече того же человека", async () => {
+  const { deps, sent } = makeDeps(await makeSupabase());
+  const res = await handleNotice(asBot({ kind: "no_audio", meeting_id: OWN_OTHER }), deps);
+  assertEquals(res.status, 403);
+  assertEquals(sent.length, 0, "уведомление о встрече вне пропуска ушло человеку");
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: до-встречный отказ бота — только по ключу своего пропуска, название — сервера", async () => {
+  const store = newStore();
+  const { deps, sent } = makeDeps(await makeSupabase(store));
+  const other = await handleNotice(
+    asBot({ kind: "no_conference_link", meeting_key: "made-up:2026-09-23", title: "x" }, grantToken(null, KEY)),
+    deps,
+  );
+  assertEquals(other.status, 403, "ключ не из пропуска");
+  const ok = await handleNotice(
+    asBot({ kind: "no_conference_link", meeting_key: KEY, title: "Text from the request body" }, grantToken(null, KEY)),
+    deps,
+  );
+  assertEquals(ok.status, 200);
+  assertEquals(sent.length, 1);
+  assert(sent[0].text.includes("Weekly sync (calendar)"), sent[0].text);
+  assert(!sent[0].text.includes("Text from the request body"), "текст из тела дошёл до человека");
+});
+
 Deno.test("неизвестный kind — 400, в ответе видно что прислали, ничего не отправлено", async () => {
   const { deps, sent } = makeDeps(await makeSupabase());
   const res = await handleNotice(asBot({ kind: "vsyo_horosho", meeting_id: MEETING }), deps);
@@ -366,7 +436,7 @@ Deno.test("неизвестный kind — 400, в ответе видно чт�
 
 Deno.test("тело не JSON — 400, а не 500 и не тишина", async () => {
   const { deps, sent } = makeDeps(await makeSupabase());
-  const res = await handleNotice(request("{не json", { onBehalfOf: OWNER.telegram_id }), deps);
+  const res = await handleNotice(asBot("{не json"), deps);
   assertEquals(res.status, 400);
   assertEquals(sent.length, 0);
 });

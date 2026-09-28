@@ -13,8 +13,11 @@
 //     событие «комнатой» или «ручной» и уходил от сверки (найдено ревью на приёмке блока);
 //   • календарная встреча обязана быть в Google-календаре названного человека — сервер смотрит
 //     сам, и СОСТАВ берёт из этого же события, а не из тела запроса;
-//   • у комнатной встречи агента состав из тела не берётся вовсе: его не с чем сверить, а
-//     по нему идёт склейка с чужими встречами;
+//   • заявка обязана быть встречей пропуска (T165, _shared/agent-grant.ts): пропуск задания
+//     автозапуска открывает только своё календарное событие, пропуск приглашения — только свою
+//     ручную встречу; комнатную встречу бот не заводит вовсе — основания на неё сервер не выдаёт;
+//   • календарная встреча — только пока человек не выключил автозапуск (D021) и только если он
+//     ответил на неё «да» (D024);
 //   • к уже открытой встрече агент встаёт, только если она его человека: календарная — есть в
 //     его календаре, комнатная — он в её составе (состава нет — D016 оставляет открытой);
 //   • ручная встреча — только по приглашению человека (D017): залогиненный человек вставил в
@@ -28,6 +31,7 @@ import type { GEvent } from "../meeting-current/select.ts";
 import { CALENDAR_KEY, calendarKeyOf } from "../_shared/calendar-key.ts";
 import { acceptedBySelf } from "../_shared/calendar-attendance.ts";
 import { checkInviteForClaim, type InviteRow } from "../_shared/meeting-invite.ts";
+import { assertGrantClaim, GrantScopeError } from "../_shared/agent-grant.ts";
 
 // Сборка календарного ключа — общая с meeting-current (_shared/calendar-key.ts); наружу
 // отдаётся и отсюда, чтобы у сверки и её тестов была одна точка входа.
@@ -42,6 +46,8 @@ export class AgentScopeError extends Error {
 
 /** Откуда брать календарь человека. Вынесено, чтобы границы проверялись без живого Google. */
 export interface CalendarSource {
+  /** Включил ли человек автозапуск (allowed_users.scriba_autojoin, D021) — прямо сейчас. */
+  autojoin(telegramId: number): Promise<boolean>;
   refreshToken(telegramId: number): Promise<string | null>;
   accessToken(refresh: string): Promise<TokenResult>;
   listEvents(token: string, timeMin: string, timeMax: string, maxResults: number): Promise<GEvent[] | null>;
@@ -187,15 +193,25 @@ export async function resolveAgentScope(
     throw new AgentScopeError(400, "service agent: identity_kind does not match the shape of identity_key");
   }
 
-  if (shape === "calendar") return await calendarScope(source, identity, body.identity_key);
+  // Пропуск встречи (T165): заявка обязана быть той встречей, на которую сервер его выдал. До
+  // календаря и приглашений не ходим — чужая заявка отбивается сразу.
+  try {
+    assertGrantClaim(identity, KIND_OF_SHAPE[shape] as "calendar" | "room" | "manual", body);
+  } catch (e) {
+    if (e instanceof GrantScopeError) throw new AgentScopeError(403, e.message);
+    throw e;
+  }
 
-  if (shape === "room") {
-    // Календарь нужен только склейке: встать в календарную встречу агент может, лишь если она
-    // в календаре его человека. Нет календаря — ни одна календарная встреча ему не открыта.
-    const date = (body.started_at ?? "").slice(0, 10);
-    const loaded = /^\d{4}-\d{2}-\d{2}$/.test(date) ? await loadCalendar(source, identity.telegramId, date) : null;
-    const calendarKeys = loaded && "events" in loaded ? keysOf(loaded.events) : new Set<string>();
-    return { attendees: [], calendarKeys };
+  if (shape === "calendar") {
+    // Согласие на автозапуск (D021) — источник истины на момент заявки, а не на момент забора
+    // задания: выключил между забором и заявкой — бот за него уже не заявляется.
+    if (!(await source.autojoin(identity.telegramId))) {
+      console.warn(
+        `agent-scope: агент ${identity.agentId ?? "?"} за ${identity.telegramId}: автозапуск выключен — заявка ${body.identity_key} отклонена`,
+      );
+      throw new AgentScopeError(403, "service agent: the person has not enabled the bot for calendar meetings");
+    }
+    return await calendarScope(source, identity, body.identity_key);
   }
 
   return await manualScope(invites, identity, body);

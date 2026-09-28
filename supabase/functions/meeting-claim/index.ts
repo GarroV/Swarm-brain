@@ -18,6 +18,7 @@ import {
 } from "./agent-scope.ts";
 import { attachInvite, consumeInvite, inviteSource, releaseInvite } from "./invites.ts";
 import { CLAIM_LEASE_TTL_SEC } from "../_shared/claim-lease.ts";
+import { bindGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -48,6 +49,13 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 // Календарь человека для сверки служебного агента с составом встречи (agent-scope.ts, D016).
 const calendarSource: CalendarSource = {
+  autojoin: async (telegramId) => {
+    const { data, error } = await supabase.from("allowed_users").select("scriba_autojoin")
+      .eq("telegram_id", telegramId).maybeSingle();
+    // Не прочитали согласие — не считаем, что оно есть.
+    if (error) console.error(`meeting-claim: согласие ${telegramId} не прочитано: ${error.message}`);
+    return (data as { scriba_autojoin?: boolean } | null)?.scriba_autojoin === true;
+  },
   refreshToken: async (telegramId) => {
     const { data } = await supabase.from("user_integrations").select("api_key")
       .eq("telegram_id", telegramId).eq("service", "google_calendar")
@@ -781,6 +789,16 @@ Deno.serve(async (req: Request) => {
     supersededOwner,
     body.mic_start_offset,
   );
+
+  // Пропуск бота открывает дальше только эту встречу (T165): heartbeat, выгрузка, статус и
+  // уведомления по нему сверяются с meeting_agent_grants.meeting_id.
+  try {
+    await bindGrantMeeting(supabase, identity, meetingId);
+  } catch (e) {
+    if (e instanceof GrantScopeError) return fail(e.message, e.status);
+    console.error(`meeting-claim: пропуск не привязан к ${meetingId}: ${e instanceof Error ? e.message : String(e)}`);
+    return fail("grant bind failed", 500);
+  }
 
   // Личные пометки — best-effort: их сбой не должен валить координацию транскрибации.
   if (body.user_notes && body.user_notes.length > 0) {

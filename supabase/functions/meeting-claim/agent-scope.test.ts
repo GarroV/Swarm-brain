@@ -7,6 +7,7 @@ import { assertEquals, assertRejects } from "https://deno.land/std@0.224.0/asser
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
 import type { GEvent } from "../meeting-current/select.ts";
 import type { InviteRow } from "../_shared/meeting-invite.ts";
+import type { AgentGrant } from "../_shared/agent-grant.ts";
 import {
   AgentScopeError,
   calendarKeyOf,
@@ -19,7 +20,24 @@ import {
 
 const PERSON = 111;
 const OTHER = 222;
-const bot: AgentIdentity = { telegramId: PERSON, groupId: "ws", kind: "bot", agentId: "scriba" };
+const STANDUP_KEY = "standup@google.com:2026-09-25";
+// Бот приходит только с пропуском встречи (T165): по заданию автозапуска — на своё событие, по
+// приглашению — на свою ручную встречу.
+const calendarGrant: AgentGrant = {
+  id: "g1",
+  agentId: "scriba",
+  basis: "calendar",
+  inviteId: null,
+  calendarKey: STANDUP_KEY,
+  joinUrl: "https://meet.google.com/abc-defg-hij",
+  title: "Standup",
+  meetingId: null,
+};
+const bot: AgentIdentity = { telegramId: PERSON, groupId: "ws", kind: "bot", agentId: "scriba", grant: calendarGrant };
+const inviteBot: AgentIdentity = {
+  ...bot,
+  grant: { ...calendarGrant, basis: "invite", inviteId: "inv-1", calendarKey: null, title: null },
+};
 const recorder: AgentIdentity = { telegramId: PERSON, groupId: "ws", kind: "recorder" };
 
 const standup: GEvent = {
@@ -33,17 +51,21 @@ const standup: GEvent = {
     { displayName: "Room 5" },
   ],
 };
-const STANDUP_KEY = "standup@google.com:2026-09-25";
 const FORGED = [{ email: "person@team.io" }, { email: "victim@team.io" }];
 
-type Calls = { refresh: number[]; windows: Array<[string, string]> };
+type Calls = { refresh: number[]; windows: Array<[string, string]>; consent: number[] };
 
 function source(
-  opts: { refresh?: string | null; token?: "ok" | "dead" | "down"; events?: GEvent[] | null } = {},
+  opts: { refresh?: string | null; token?: "ok" | "dead" | "down"; events?: GEvent[] | null; autojoin?: boolean } =
+    {},
 ): CalendarSource & { calls: Calls } {
-  const calls: Calls = { refresh: [], windows: [] };
+  const calls: Calls = { refresh: [], windows: [], consent: [] };
   return {
     calls,
+    autojoin: (id) => {
+      calls.consent.push(id);
+      return Promise.resolve(opts.autojoin ?? true);
+    },
     refreshToken: (id) => {
       calls.refresh.push(id);
       return Promise.resolve(opts.refresh === undefined ? "refresh" : opts.refresh);
@@ -151,9 +173,26 @@ Deno.test("БЛОКИРУЮЩИЙ (D024): встреча есть, но чело
   }
 });
 
+Deno.test("БЛОКИРУЮЩИЙ: пропуск задания открывает только своё событие — календарь даже не читается", async () => {
+  const src = source({ events: [{ ...standup, iCalUID: "other@google.com" }, standup] });
+  await refused(resolveAgentScope(src, bot, { ...calendarClaim, identity_key: "other@google.com:2026-09-25" }), 403);
+  await refused(resolveAgentScope(src, inviteBot, calendarClaim), 403);
+  assertEquals(src.calls.refresh, [], "до календаря не дошли");
+});
+
+Deno.test("БЛОКИРУЮЩИЙ (D021): человек выключил автозапуск — календарную встречу бот за него не заводит", async () => {
+  const src = source({ autojoin: false });
+  const msg = await refused(resolveAgentScope(src, bot, calendarClaim), 403);
+  assertEquals(src.calls.consent, [PERSON], msg);
+});
+
 Deno.test("БЛОКИРУЮЩИЙ: та же встреча другого дня не засчитывается (повторяющаяся серия)", async () => {
   await refused(
-    resolveAgentScope(source(), bot, { ...calendarClaim, identity_key: "standup@google.com:2026-09-26" }),
+    resolveAgentScope(
+      source(),
+      { ...bot, grant: { ...calendarGrant, calendarKey: "standup@google.com:2026-09-26" } },
+      { ...calendarClaim, identity_key: "standup@google.com:2026-09-26" },
+    ),
     403,
   );
 });
@@ -189,25 +228,19 @@ Deno.test("БЛОКИРУЮЩИЙ: календарь не отвечает → 
 
 // ── Комнатная и ручная встречи агента ───────────────────────────────────────
 
-Deno.test("БЛОКИРУЮЩИЙ: состав комнатной встречи агента из тела не берётся", async () => {
-  const scope = await resolveAgentScope(source(), bot, {
-    identity_kind: "room",
-    identity_key: "kontur:abc",
-    started_at: "2026-09-25T08:00:00Z",
-    attendees: FORGED,
-  });
-  assertEquals(scope?.attendees, []);
-  assertEquals(scope?.calendarKeys.has(STANDUP_KEY), true, "календарь человека нужен для склейки");
-});
-
-Deno.test("комнатная встреча агента проходит и без календаря — сверки состава нет (D016)", async () => {
-  for (const opts of [{ refresh: null }, { token: "down" as const }, { events: null }]) {
-    const scope = await resolveAgentScope(source(opts), bot, {
-      identity_kind: "room",
-      identity_key: "kontur:abc",
-      started_at: "2026-09-25T08:00:00Z",
-    });
-    assertEquals(scope?.calendarKeys.size, 0, "календаря нет — ни одна календарная встреча не открыта");
+Deno.test("БЛОКИРУЮЩИЙ: комнатную встречу бот не заводит — основания на неё сервер не выдаёт (D017)", async () => {
+  for (const who of [bot, inviteBot]) {
+    const src = source();
+    await refused(
+      resolveAgentScope(src, who, {
+        identity_kind: "room",
+        identity_key: "kontur:abc",
+        started_at: "2026-09-25T08:00:00Z",
+        attendees: FORGED,
+      }, invites(validInvite)),
+      403,
+    );
+    assertEquals(src.calls.refresh, [], "до календаря не дошли");
   }
 });
 
@@ -249,42 +282,49 @@ const manualClaim = {
 
 Deno.test("ручная встреча агента по действующему приглашению — проходит, без похода в календарь", async () => {
   const src = source({ refresh: null });
-  const scope = await resolveAgentScope(src, bot, manualClaim, invites(validInvite));
+  const scope = await resolveAgentScope(src, inviteBot, manualClaim, invites(validInvite));
   assertEquals(src.calls.refresh, []);
   assertEquals(scope?.inviteId, "inv-1");
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: состав ручной встречи агента из тела не берётся", async () => {
-  const scope = await resolveAgentScope(source(), bot, manualClaim, invites(validInvite));
+  const scope = await resolveAgentScope(source(), inviteBot, manualClaim, invites(validInvite));
   assertEquals(scope?.attendees, [], "подсунутый состав не должен лечь в строку");
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: агент без приглашения не заводит ручную встречу → 403", async () => {
   const { invite_id: _drop, ...noInvite } = manualClaim;
-  await refused(resolveAgentScope(source(), bot, noInvite, invites(validInvite)), 403);
+  await refused(resolveAgentScope(source(), inviteBot, noInvite, invites(validInvite)), 403);
   // Источник приглашений не передан — отказ, а не пропуск.
-  await refused(resolveAgentScope(source(), bot, manualClaim), 403);
+  await refused(resolveAgentScope(source(), inviteBot, manualClaim), 403);
   // Несуществующее приглашение.
-  await refused(resolveAgentScope(source(), bot, { ...manualClaim, invite_id: "nope" }, invites(validInvite)), 403);
+  await refused(resolveAgentScope(source(), inviteBot, { ...manualClaim, invite_id: "nope" }, invites(validInvite)), 403);
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: чужое приглашение (другой человек, другой воркспейс) → 403", async () => {
-  await refused(resolveAgentScope(source(), bot, manualClaim, invites({ ...validInvite, invited_by: OTHER })), 403);
-  await refused(resolveAgentScope(source(), bot, manualClaim, invites({ ...validInvite, group_id: "other" })), 403);
+  await refused(resolveAgentScope(source(), inviteBot, manualClaim, invites({ ...validInvite, invited_by: OTHER })), 403);
+  await refused(resolveAgentScope(source(), inviteBot, manualClaim, invites({ ...validInvite, group_id: "other" })), 403);
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: истёкшее или использованное приглашение → 403", async () => {
   const expired = { ...validInvite, expires_at: new Date(NOW_MS - 1000).toISOString() };
-  await refused(resolveAgentScope(source(), bot, manualClaim, invites(expired)), 403);
+  await refused(resolveAgentScope(source(), inviteBot, manualClaim, invites(expired)), 403);
   const used = { ...validInvite, used_at: new Date(NOW_MS - 1000).toISOString() };
-  await refused(resolveAgentScope(source(), bot, manualClaim, invites(used)), 403);
+  await refused(resolveAgentScope(source(), inviteBot, manualClaim, invites(used)), 403);
 });
 
 Deno.test("БЛОКИРУЮЩИЙ: приглашение на одну ссылку, бот пришёл с другой → 403", async () => {
   const swapped = { ...manualClaim, join_url: "https://meet.google.com/zzz-zzzz-zzz" };
-  await refused(resolveAgentScope(source(), bot, swapped, invites(validInvite)), 403);
+  await refused(resolveAgentScope(source(), inviteBot, swapped, invites(validInvite)), 403);
   const { join_url: _drop, ...noLink } = manualClaim;
-  await refused(resolveAgentScope(source(), bot, noLink, invites(validInvite)), 403);
+  await refused(resolveAgentScope(source(), inviteBot, noLink, invites(validInvite)), 403);
+});
+
+Deno.test("БЛОКИРУЮЩИЙ: пропуск одного приглашения не открывает ручную встречу по другому", async () => {
+  const other = { ...validInvite, id: "inv-2" };
+  await refused(resolveAgentScope(source(), inviteBot, { ...manualClaim, invite_id: "inv-2" }, invites(other)), 403);
+  // И пропуск задания автозапуска ручную встречу не открывает вовсе.
+  await refused(resolveAgentScope(source(), bot, manualClaim, invites(validInvite)), 403);
 });
 
 Deno.test("люди заводят ручную встречу как раньше — приглашение с них не спрашивается", async () => {
