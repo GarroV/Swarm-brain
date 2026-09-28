@@ -12,6 +12,11 @@
 //   • бот заявляет встречу календарным ключом за владельца календаря — meeting-claim пускает (D016),
 //     за человека, в чьём календаре этой встречи нет, — 403.
 //
+// Пропуски (T102, D022): громкие причины прохода и «бот забрал задание и не дошёл» записываются в
+// meeting_calendar_misses один раз; рекордер под своим токеном (meeting-missed) видит свои пропуски,
+// в том числе встречу, которую служба автозапуска не подхватила вовсе, и зовёт бота руками одним
+// действием — заводится приглашение D017, пропуск закрыт им. Чужой пропуск — 404, не рекордер — 403.
+//
 // Что нужно: ЛОКАЛЬНЫЙ контур Supabase с накатанными миграциями. Прод сюда не подставлять: смоук
 // заводит и удаляет строки.
 //
@@ -19,7 +24,7 @@
 //   SMOKE_SERVICE_KEY    — SERVICE_ROLE_KEY из `supabase status -o env`
 //
 // Порты — от SMOKE_PORT_BASE (по умолчанию 4490; base..base+3 — сам контур): base+4 — функция
-// meeting-calendar, base+5 — функция meeting-claim, base+6 — поддельный Google. Функции ходят в
+// meeting-calendar, base+5 — функция meeting-claim, base+6 — поддельный Google, base+7 — meeting-missed. Функции ходят в
 // oauth2.googleapis.com и www.googleapis.com напрямую, поэтому fetch подменяется предзагрузкой
 // (--preload) только для этих хостов.
 //
@@ -30,6 +35,7 @@ const PORT_BASE = Number(Deno.env.get("SMOKE_PORT_BASE") ?? "4490");
 const PORT_CALENDAR = PORT_BASE + 4;
 const PORT_CLAIM = PORT_BASE + 5;
 const PORT_FAKE = PORT_BASE + 6;
+const PORT_MISSED = PORT_BASE + 7;
 
 const SUPABASE_URL = Deno.env.get("SMOKE_SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SMOKE_SERVICE_KEY") ?? "";
@@ -45,6 +51,8 @@ const PEOPLE = {
   d: BASE_ID + 4, // автозапуск, токен мёртв
   e: BASE_ID + 5, // автозапуск ВЫКЛЮЧЕН, своя встреча Meet
   f: BASE_ID + 6, // автозапуск, встреча Meet, куда бота уже позвали руками
+  g: BASE_ID + 7, // автозапуск, рекордер: идущие встречи, которые служба не подхватила
+  h: BASE_ID + 8, // автозапуск ВЫКЛЮЧЕН, рекордер
 } as const;
 const AUTOJOIN = new Set<number>([
   PEOPLE.a,
@@ -52,7 +60,11 @@ const AUTOJOIN = new Set<number>([
   PEOPLE.c,
   PEOPLE.d,
   PEOPLE.f,
+  PEOPLE.g,
 ]);
+/** Токены рекордера и MCP (для отказа) — по человеку. */
+const recorderToken = (person: number) => `rec-${RUN}-${person}`;
+const mcpToken = (person: number) => `mcp-${RUN}-${person}`;
 const AGENT = { id: `scriba-cal-${RUN}`, token: `cal-bot-${RUN}` };
 
 type Json = Record<string, unknown>;
@@ -95,6 +107,27 @@ const MANUAL = ev(`manual-${RUN}`, { hangoutLink: MANUAL_ROOM });
 const RACE = ev(`race-${RUN}`, {
   hangoutLink: "https://meet.google.com/smk-race-abc",
 });
+// Бот забрал задание, пришёл к двери и сам сказал человеку (нотиса) — это не пропуск.
+const TOLD = ev(`told-${RUN}`, {
+  hangoutLink: "https://meet.google.com/smk-told-abc",
+});
+// Идущие встречи G: начались 12 минут назад — вне окна оркестратора, задания на них нет.
+const ORPHAN_ROOM = "https://meet.google.com/smk-orph-abc";
+const ORPHAN = ev(`orphan-${RUN}`, {
+  hangoutLink: ORPHAN_ROOM,
+  start: { dateTime: iso(-12) },
+  end: { dateTime: iso(40) },
+});
+const LOSTBOT = ev(`lostbot-${RUN}`, {
+  hangoutLink: "https://meet.google.com/smk-lost-abc",
+  start: { dateTime: iso(-12) },
+  end: { dateTime: iso(40) },
+});
+const ZOOM_NOW = ev(`zoomnow-${RUN}`, {
+  location: "https://us02web.zoom.us/j/987654321",
+  start: { dateTime: iso(-12) },
+  end: { dateTime: iso(40) },
+});
 
 const calendars = new Map<number, FakeEvent[]>([
   [PEOPLE.a, [SHARED, ZOOM, NOLINK]],
@@ -102,6 +135,7 @@ const calendars = new Map<number, FakeEvent[]>([
   [PEOPLE.d, [SHARED]],
   [PEOPLE.e, [OWN_E]],
   [PEOPLE.f, [MANUAL]],
+  [PEOPLE.g, [ORPHAN, LOSTBOT, ZOOM_NOW]],
 ]);
 const refreshOf = (person: number) =>
   person === PEOPLE.d ? "rt-dead" : `rt-${person}`;
@@ -231,10 +265,18 @@ async function seed(): Promise<void> {
       scriba_autojoin: AUTOJOIN.has(id),
     })),
   );
+  for (const id of Object.values(PEOPLE)) {
+    await rest("PATCH", `allowed_users?telegram_id=eq.${id}`, {
+      recorder_token_hash: await sha256Hex(recorderToken(id)),
+      recorder_token_expires_at: iso(60 * 24),
+      claude_mcp_token_hash: await sha256Hex(mcpToken(id)),
+      claude_mcp_token_expires_at: iso(60 * 24),
+    });
+  }
   await rest(
     "POST",
     "user_integrations",
-    [PEOPLE.a, PEOPLE.b, PEOPLE.d, PEOPLE.e, PEOPLE.f].map((id) => ({
+    [PEOPLE.a, PEOPLE.b, PEOPLE.d, PEOPLE.e, PEOPLE.f, PEOPLE.g].map((id) => ({
       telegram_id: id,
       service: "google_calendar",
       api_key: refreshOf(id),
@@ -259,6 +301,8 @@ async function cleanup(): Promise<string[]> {
   const problems: string[] = [];
   const ids = Object.values(PEOPLE).join(",");
   const steps = [
+    `meeting_calendar_misses?group_id=eq.${WS}`,
+    `meeting_notices?recipient_id=in.(${ids})`,
     `meeting_calendar_jobs?group_id=eq.${WS}`,
     `meeting_invites?group_id=eq.${WS}`,
     `meetings?group_id=eq.${WS}`,
@@ -459,6 +503,300 @@ async function scenario(): Promise<void> {
   );
 }
 
+// ── Пропуски (T102) ─────────────────────────────────────────────────────────────
+
+type MissRow = {
+  invited_by: number;
+  miss_key: string;
+  reason: string;
+  invite_id: string | null;
+};
+
+async function missesInDb(): Promise<string[]> {
+  const rows = await rest(
+    "GET",
+    `meeting_calendar_misses?group_id=eq.${WS}&select=invited_by,miss_key,reason,invite_id`,
+  ) as MissRow[];
+  return rows.map((r) => `${r.invited_by}|${r.miss_key}|${r.reason}`).sort();
+}
+
+/** Сутки команды — как у пропусков уровня человека (_shared/calendar-missed.ts). */
+function teamDay(): string {
+  const p = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Belgrade",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (t: string) => p.find((x) => x.type === t)?.value ?? "";
+  return `autojoin:${part("year")}-${part("month")}-${part("day")}`;
+}
+
+async function sweepMisses(): Promise<void> {
+  const day = teamDay();
+  const expected = [
+    `${PEOPLE.a}|${keyOf(ZOOM)}|unsupported_platform`,
+    `${PEOPLE.c}|${day}|calendar_not_connected`,
+    `${PEOPLE.d}|${day}|calendar_token_dead`,
+  ].sort();
+  const afterPasses = await missesInDb();
+  expect(
+    "пропуски прохода записаны один раз, тихие причины — нет",
+    JSON.stringify(afterPasses) === JSON.stringify(expected),
+    { got: afterPasses, want: expected },
+  );
+
+  // Бот не дошёл. TOLD — задание B, бот заявил встречу и сам сказал человеку (нотиса двери).
+  calendars.set(PEOPLE.b, [SHARED, RACE, TOLD]);
+  const told = await call(PORT_CALENDAR, { headers: agentAuth });
+  expect(
+    "задание TOLD забрано",
+    (told.body.jobs as Job[] ?? []).some((j) => j.calendar_key === keyOf(TOLD)),
+    told,
+  );
+  const toldClaim = await claimAs(PEOPLE.b, keyOf(TOLD));
+  await rest("POST", "meeting_notices", [{
+    meeting_id: toldClaim.body.meeting_id,
+    recipient_id: PEOPLE.b,
+    kind: "door_denied",
+    attempt: 1,
+    status: "sent",
+  }]);
+  // SHARED: бот (claim за A выше) подал heartbeat — дошёл. RACE: заявки нет вовсе — не дошёл.
+  await rest(
+    "PATCH",
+    `meetings?group_id=eq.${WS}&identity_key=eq.${
+      encodeURIComponent(keyOf(SHARED))
+    }`,
+    {
+      agent_last_seen_at: new Date().toISOString(),
+    },
+  );
+  await rest("PATCH", `meeting_calendar_jobs?group_id=eq.${WS}`, {
+    taken_at: iso(-7),
+  });
+  const check = await call(PORT_CALENDAR, { headers: agentAuth });
+  expect(
+    "проход с проверкой «дошёл ли бот» — 200",
+    check.status === 200,
+    check,
+  );
+  const withArrival = await missesInDb();
+  const lost = withArrival.filter((m) => m.endsWith("|not_arrived"));
+  expect(
+    "не дошёл только RACE (за B); дошедший SHARED и сказавший TOLD — не пропуск",
+    JSON.stringify(lost) ===
+      JSON.stringify([`${PEOPLE.b}|${keyOf(RACE)}|not_arrived`]),
+    lost,
+  );
+  const jobs = await rest(
+    "GET",
+    `meeting_calendar_jobs?group_id=eq.${WS}&select=calendar_key,arrival_checked_at`,
+  ) as Json[];
+  expect(
+    "у всех забранных заданий итог проверки записан",
+    jobs.length === 3 && jobs.every((j) => j.arrival_checked_at !== null),
+    jobs,
+  );
+  await call(PORT_CALENDAR, { headers: agentAuth });
+  expect(
+    "повторный проход не множит пропуски",
+    JSON.stringify(await missesInDb()) === JSON.stringify(withArrival),
+  );
+}
+
+async function missed(
+  token: string | null,
+  init: RequestInit = {},
+): Promise<{ status: number; body: Json }> {
+  const res = await fetch(`http://127.0.0.1:${PORT_MISSED}/`, {
+    method: "GET",
+    ...init,
+    headers: {
+      ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
+      ...(init.body === undefined
+        ? {}
+        : { "Content-Type": "application/json" }),
+    },
+  });
+  return {
+    status: res.status,
+    body: await res.json().catch(() => ({})) as Json,
+  };
+}
+
+type MissView = {
+  id: string;
+  reason: string;
+  title: string | null;
+  join_url: string | null;
+  can_invite: boolean;
+  message: { en: string; ru: string };
+};
+
+async function recorderMisses(): Promise<void> {
+  // Встреча, которую служба не подхватила бы вовсе, и встреча, где бот забрал задание и пропал.
+  await rest("POST", "meeting_calendar_jobs", [{
+    group_id: WS,
+    calendar_key: keyOf(LOSTBOT),
+    invited_by: PEOPLE.g,
+    join_url: LOSTBOT.hangoutLink,
+    platform: "meet",
+    title: LOSTBOT.summary,
+    starts_at: LOSTBOT.start.dateTime,
+    ends_at: LOSTBOT.end.dateTime,
+    taken_at: iso(-8),
+    taken_by: AGENT.id,
+    arrival_checked_at: iso(-1),
+  }]);
+
+  expect("рекордер без токена — 401", (await missed(null)).status === 401);
+  expect(
+    "MCP-токен — 403, нужен токен рекордера",
+    (await missed(mcpToken(PEOPLE.g))).status === 403,
+  );
+  expect(
+    "токен служебного агента — 401",
+    (await missed(AGENT.token)).status === 401,
+  );
+  const off = await missed(recorderToken(PEOPLE.h));
+  expect(
+    "автозапуск выключен — пропусков нет",
+    off.status === 200 && off.body.autojoin === false &&
+      (off.body.misses as unknown[]).length === 0,
+    off,
+  );
+
+  const first = await missed(recorderToken(PEOPLE.g));
+  const list = (first.body.misses ?? []) as MissView[];
+  const byReason = new Map(list.map((m) => [m.reason, m]));
+  expect(
+    "рекордер G — 200, живая проверка прошла",
+    first.status === 200 && first.body.checked === true,
+    first,
+  );
+  expect(
+    "G видит: служба не подхватила ORPHAN, бот не дошёл до LOSTBOT, ZOOM_NOW не в Meet",
+    JSON.stringify(list.map((m) => `${m.title}|${m.reason}`).sort()) ===
+      JSON.stringify(
+        [
+          `${ORPHAN.summary}|not_picked_up`,
+          `${LOSTBOT.summary}|not_arrived`,
+          `${ZOOM_NOW.summary}|unsupported_platform`,
+        ].sort(),
+      ),
+    list,
+  );
+  const orphan = byReason.get("not_picked_up");
+  expect(
+    "по неподхваченной встрече можно позвать руками, по Zoom — нет; тексты EN+RU",
+    orphan?.can_invite === true && orphan.join_url === ORPHAN_ROOM &&
+      byReason.get("unsupported_platform")?.can_invite === false &&
+      list.every((m) => m.message.en.length > 0 && m.message.ru.length > 0),
+    list,
+  );
+  const again = await missed(recorderToken(PEOPLE.g));
+  expect(
+    "повторный опрос — те же пропуски, строк в базе не прибавилось",
+    JSON.stringify(
+          ((again.body.misses ?? []) as MissView[]).map((m) => m.id).sort(),
+        ) ===
+        JSON.stringify(list.map((m) => m.id).sort()) &&
+      (await missesInDb()).filter((m) => m.startsWith(`${PEOPLE.g}|`))
+          .length === 3,
+    again.body,
+  );
+
+  const aZoom = await rest(
+    "GET",
+    `meeting_calendar_misses?group_id=eq.${WS}&invited_by=eq.${PEOPLE.a}&select=id`,
+  ) as { id: string }[];
+  const foreign = await missed(recorderToken(PEOPLE.g), {
+    method: "POST",
+    body: JSON.stringify({ miss_id: aZoom[0]?.id }),
+  });
+  expect("чужой пропуск — 404", foreign.status === 404, foreign);
+  const zoomInvite = await missed(recorderToken(PEOPLE.g), {
+    method: "POST",
+    body: JSON.stringify({ miss_id: byReason.get("unsupported_platform")?.id }),
+  });
+  expect(
+    "позвать на Zoom — 409 cannot_invite",
+    zoomInvite.status === 409,
+    zoomInvite,
+  );
+
+  const invite = await missed(recorderToken(PEOPLE.g), {
+    method: "POST",
+    body: JSON.stringify({ miss_id: orphan?.id }),
+  });
+  const inv = invite.body.invite as Json | undefined;
+  expect(
+    "позвать бота по пропуску — 201, приглашение на ту же комнату",
+    invite.status === 201 && inv?.join_url === ORPHAN_ROOM &&
+      inv.status === "pending",
+    invite,
+  );
+  const rows = await rest(
+    "GET",
+    `meeting_invites?group_id=eq.${WS}&invited_by=eq.${PEOPLE.g}&select=id`,
+  ) as { id: string }[];
+  const missRow = await rest(
+    "GET",
+    `meeting_calendar_misses?id=eq.${orphan?.id}&select=invite_id`,
+  ) as MissRow[];
+  expect(
+    "приглашение одно, пропуск закрыт им",
+    rows.length === 1 && missRow[0]?.invite_id === rows[0].id,
+    { rows, missRow },
+  );
+  const twice = await missed(recorderToken(PEOPLE.g), {
+    method: "POST",
+    body: JSON.stringify({ miss_id: orphan?.id }),
+  });
+  expect(
+    "второе нажатие — то же приглашение, не второе",
+    twice.status === 200 &&
+      (twice.body.invite as Json | undefined)?.id === rows[0].id,
+    twice,
+  );
+  const after = await missed(recorderToken(PEOPLE.g));
+  expect(
+    "позванная встреча из списка ушла",
+    !((after.body.misses ?? []) as MissView[]).some((m) => m.id === orphan?.id),
+    after.body,
+  );
+
+  // Бот всё-таки пришёл на LOSTBOT (heartbeat) — пропуск больше не показывается.
+  await claimAs(PEOPLE.g, keyOf(LOSTBOT));
+  await rest(
+    "PATCH",
+    `meetings?group_id=eq.${WS}&identity_key=eq.${
+      encodeURIComponent(keyOf(LOSTBOT))
+    }`,
+    {
+      agent_last_seen_at: new Date().toISOString(),
+    },
+  );
+  const arrived = await missed(recorderToken(PEOPLE.g));
+  expect(
+    "бот появился в звонке — «не дошёл» больше не показывается",
+    !((arrived.body.misses ?? []) as MissView[]).some((m) =>
+      m.reason === "not_arrived"
+    ),
+    arrived.body,
+  );
+
+  const noCal = await missed(recorderToken(PEOPLE.c));
+  expect(
+    "C без календаря видит пропуск уровня человека на сегодня",
+    noCal.status === 200 &&
+      ((noCal.body.misses ?? []) as MissView[]).map((m) => m.reason).join() ===
+        "calendar_not_connected",
+    noCal.body,
+  );
+}
+
 async function main(): Promise<void> {
   if (!SUPABASE_URL || !SERVICE_KEY) {
     console.error(
@@ -473,14 +811,20 @@ async function main(): Promise<void> {
       PORT_CALENDAR,
     ),
     spawnFunction("../supabase/functions/meeting-claim/index.ts", PORT_CLAIM),
+    spawnFunction("../supabase/functions/meeting-missed/index.ts", PORT_MISSED),
   ];
   let cleanupProblems: string[] = [];
   let ready = false;
   try {
     await seed();
     ready = (await waitPort(PORT_CALENDAR, 30_000)) &&
-      (await waitPort(PORT_CLAIM, 30_000));
-    if (ready) await scenario();
+      (await waitPort(PORT_CLAIM, 30_000)) &&
+      (await waitPort(PORT_MISSED, 30_000));
+    if (ready) {
+      await scenario();
+      await sweepMisses();
+      await recorderMisses();
+    }
   } finally {
     for (const f of fns) f.kill("SIGTERM");
     for (const f of fns) await f.status;
@@ -489,7 +833,7 @@ async function main(): Promise<void> {
   }
   if (!ready) {
     console.error(
-      `КРАСНЫЙ: функции не поднялись на ${PORT_CALENDAR}/${PORT_CLAIM} за 30 с.`,
+      `КРАСНЫЙ: функции не поднялись на ${PORT_CALENDAR}/${PORT_CLAIM}/${PORT_MISSED} за 30 с.`,
     );
     Deno.exit(1);
   }

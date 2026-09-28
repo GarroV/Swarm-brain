@@ -21,6 +21,10 @@
 //       skipped: [{ invited_by, calendar_key, title, reason, platform? }] }
 // 401 не агент · 403 X-On-Behalf-Of или агент без воркспейса · 405 не POST · 500 сбой базы.
 //
+// Пропуски (бот не пойдёт / забрал задание и не дошёл) записываются в meeting_calendar_misses —
+// какие причины, решает _shared/calendar-missed.ts, запись — missed.ts; показывает их рекордер
+// человека через meeting-missed (T102, D022).
+//
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET.
 // Деплой: supabase functions deploy meeting-calendar --no-verify-jwt (бот хитит с Bearer-токеном).
 //
@@ -29,8 +33,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveServiceAgent } from "../_shared/agent-auth.ts";
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
 import { sweep, type SweepSource, type TakenJob } from "./sweep.ts";
+import { recordSweepMisses } from "./missed.ts";
+import { makeMissStore } from "../_shared/calendar-miss-store.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+// Пропуски автозапуска (T102) пишутся в meeting_calendar_misses — их показывает рекордер человека.
+const missStore = makeMissStore(supabase);
 
 const JOB_COLUMNS = "id, calendar_key, invited_by, join_url, platform, title, starts_at, ends_at";
 
@@ -104,6 +113,16 @@ Deno.serve(async (req: Request) => {
       );
     }
     console.log(`meeting-calendar: агент ${agent.agentId} (${agent.groupId}) забрал ${result.jobs.length}`);
+    // Записать пропуски и недошедших ботов. Не бросает: задания боту важнее записи, а незаписанное
+    // повторится на следующем опросе.
+    const missed = await recordSweepMisses(
+      missStore,
+      agent.groupId,
+      result.skipped,
+      Date.now(),
+      (l) => console.warn(l),
+    );
+    if (missed.failed > 0) console.error(`meeting-calendar: пропуски записаны не все ${JSON.stringify(missed)}`);
     return json({ ok: true, ...result });
   } catch (e) {
     console.error(`meeting-calendar: ${e instanceof Error ? e.message : String(e)}`);

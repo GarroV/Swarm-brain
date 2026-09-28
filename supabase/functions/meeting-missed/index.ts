@@ -1,0 +1,132 @@
+// meeting-missed — рекордер человека узнаёт, что бот на его встречу не пошёл или не дошёл, и зовёт
+// его руками (T102, решения D015/D021/D022). Логика — handle.ts, что считается пропуском —
+// _shared/calendar-missed.ts, хранилище — _shared/calendar-miss-store.ts. Показывает рекордер (T162).
+//
+// Дверь — токен рекордера самого человека (verifyAgentToken, kind recorder / recorder_prev);
+// X-On-Behalf-Of не принимается, токен служебного агента и MCP-токен — 403. Автозапуск выключен
+// (allowed_users.scriba_autojoin=false, D021) — пропусков нет по определению.
+//
+//   GET  → 200 { autojoin, checked, misses: [{ id, reason, title, starts_at, ends_at, join_url,
+//              platform, detected_at, can_invite, message: { en, ru } }] }
+//          checked=false — живая проверка календаря не удалась (Google не ответил), показано записанное.
+//   POST { miss_id } → 201/200 { invite } — как POST /meeting-invites (swarm-api/meeting-invites.ts);
+//          404 not_found · 409 cannot_invite / meeting_over / autojoin_off · 400/429 — правила приглашений.
+//   401 не токен · 403 не токен рекордера · 405 не GET/POST · 500 сбой базы.
+//
+// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET.
+// Деплой: supabase functions deploy meeting-missed --no-verify-jwt (рекордер хитит с Bearer-токеном).
+//
+// URL-импорты — канон этого репозитория: функции деплоятся без карты импортов.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { AgentAuthError, verifyAgentToken } from "../_shared/agent-auth.ts";
+import { accessToken, listEvents } from "../_shared/google-calendar.ts";
+import { makeMissStore, MISS_COLUMNS, type MissRow } from "../_shared/calendar-miss-store.ts";
+import { handleMeetingInviteRoutes, type InviteContext } from "../swarm-api/meeting-invites.ts";
+import { handleMissed, type MissedDeps, type Person } from "./handle.ts";
+
+const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+/** Токены, с которыми приходит рекордер. MCP-токен — это Claude Desktop, не рекордер. */
+const RECORDER_KINDS = new Set(["recorder", "recorder_prev"]);
+
+function json(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
+function must<T>(what: string, res: { data: T | null; error: { message: string } | null }): T | null {
+  if (res.error) throw new Error(`${what}: ${res.error.message}`);
+  return res.data;
+}
+
+function inviteCtx(person: Person): InviteContext {
+  // Демо-воркспейс автозапуска не имеет (его люди без scriba_autojoin); отказ демо — правило веба.
+  return {
+    supabase,
+    telegramId: person.telegramId,
+    groupId: person.groupId,
+    isDemo: person.groupId === "demo",
+    origin: "",
+  };
+}
+
+async function viaInviteRoutes(person: Person, req: Request, path: string): Promise<Response> {
+  const res = await handleMeetingInviteRoutes(inviteCtx(person), req, path);
+  return res ?? json({ error: "invite route not found" }, 500);
+}
+
+const deps: MissedDeps = {
+  async identify(req) {
+    try {
+      const who = await verifyAgentToken(supabase, req);
+      if (!RECORDER_KINDS.has(who.kind)) return json({ error: "recorder token required" }, 403);
+      if (!who.groupId) return json({ error: "no workspace" }, 403);
+      return { telegramId: who.telegramId, groupId: who.groupId };
+    } catch (e) {
+      if (e instanceof AgentAuthError) return json({ error: e.message }, e.status);
+      throw e;
+    }
+  },
+  async autojoin(telegramId) {
+    const data = must(
+      "allowed_users",
+      await supabase.from("allowed_users").select("scriba_autojoin").eq("telegram_id", telegramId).maybeSingle(),
+    ) as { scriba_autojoin?: boolean } | null;
+    return data?.scriba_autojoin === true;
+  },
+  async refreshToken(telegramId) {
+    const data = must(
+      "user_integrations",
+      await supabase.from("user_integrations").select("api_key")
+        .eq("telegram_id", telegramId).eq("service", "google_calendar").maybeSingle(),
+    ) as { api_key?: string } | null;
+    return data?.api_key ?? null;
+  },
+  accessToken,
+  listEvents,
+  async recentInviteLinks(groupId, sinceIso) {
+    const data = must(
+      "meeting_invites",
+      await supabase.from("meeting_invites").select("join_url").eq("group_id", groupId).gte("created_at", sinceIso),
+    ) ?? [];
+    return (data as { join_url: string }[]).map((r) => r.join_url);
+  },
+  store: makeMissStore(supabase),
+  async openMisses(person, sinceIso) {
+    const data = must(
+      "meeting_calendar_misses",
+      await supabase.from("meeting_calendar_misses").select(MISS_COLUMNS)
+        .eq("invited_by", person.telegramId).eq("group_id", person.groupId).is("invite_id", null)
+        .gte("detected_at", sinceIso).order("detected_at", { ascending: false }).limit(50),
+    ) ?? [];
+    return data as unknown as MissRow[];
+  },
+  async missById(person, id) {
+    const data = must(
+      "meeting_calendar_misses by id",
+      await supabase.from("meeting_calendar_misses").select(MISS_COLUMNS)
+        .eq("id", id).eq("invited_by", person.telegramId).eq("group_id", person.groupId).maybeSingle(),
+    );
+    return data as unknown as MissRow | null;
+  },
+  async attachInvite(missId, inviteId) {
+    must(
+      "meeting_calendar_misses invite",
+      await supabase.from("meeting_calendar_misses").update({ invite_id: inviteId }).eq("id", missId).is(
+        "invite_id",
+        null,
+      ),
+    );
+  },
+  createInvite: (person, joinUrl) =>
+    viaInviteRoutes(
+      person,
+      new Request("http://local/meeting-invites", { method: "POST", body: JSON.stringify({ join_url: joinUrl }) }),
+      "/meeting-invites",
+    ),
+  readInvite: (person, inviteId) =>
+    viaInviteRoutes(person, new Request(`http://local/meeting-invites/${inviteId}`), `/meeting-invites/${inviteId}`),
+  log: (line) => console.warn(line),
+  now: () => Date.now(),
+};
+
+Deno.serve((req: Request) => handleMissed(req, deps));
