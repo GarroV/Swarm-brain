@@ -92,7 +92,12 @@ const TAKEN = {
 const ARB = {
   long: { id: crypto.randomUUID(), key: `cal:smoke-arb-long-${RUN}` },
   lease: { id: crypto.randomUUID(), key: `cal:smoke-arb-lease-${RUN}` },
+  // Заявка сверх времени встречи (T159): держатель записал 55 минут, бот не пишет.
+  cap: { id: crypto.randomUUID(), key: `cal:smoke-arb-cap-${RUN}` },
 };
+// Встреча арбитража началась раньше, чем бот заявился: рекордер человека пишет её с начала, и его
+// заявка в 62 минуты должна укладываться во время встречи по часам сервера (claim-clock.ts).
+const ARB_STARTED_MIN = 70;
 // Встреча, в строку которой уже лёг более свежий удар, чем тот, что придёт опоздавшим.
 const LATE = { id: crypto.randomUUID(), owner: OWNER_LATE };
 const keyOf = (m: { id: string }) => `manual:${m.id}`;
@@ -311,6 +316,7 @@ async function seed(): Promise<void> {
       recorded_seconds: 0, // так заявляется бот до захода (claim-request.ts)
       lease_expires_at: minutesAgo(10), // выдан claim-ом 40 минут назад на 30
       title: "Arbitration",
+      started_at: minutesAgo(ARB_STARTED_MIN),
       created_at: minutesAgo(MEETING_AGE_MIN),
     })),
   );
@@ -514,6 +520,39 @@ async function arbitration(): Promise<void> {
     lease.status === 200 && lease.decision === "defer" &&
       afterLease?.claim_owner === OWNER_ARB,
     JSON.stringify({ lease, afterLease }),
+  );
+
+  // Заявка сверх времени встречи (T159): встреча идёт 70 минут, держатель записал 55, бот не пишет.
+  // Сутки в заявке урезаются до времени встречи и заметно полнее держателя уже не выходят — defer;
+  // в строку и в recorders ложатся урезанные секунды, а не присланные.
+  await rest("PATCH", `meetings?id=eq.${ARB.cap.id}`, {
+    recorded_seconds: 3300,
+    agent_last_recording: false,
+    // Лиз держателя действует: истёкший лиз без стенограммы — брошенная встреча, её занимает любой.
+    lease_expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+  });
+  const capped = await claimAs(ARB.cap.key, 86_000);
+  const capRows = await rest(
+    "GET",
+    `meetings?id=eq.${ARB.cap.id}&select=claim_owner,recorded_seconds,recorders`,
+  ) as Array<{
+    claim_owner: number | null;
+    recorded_seconds: number | null;
+    recorders: Array<{ telegram_id: number; recorded_seconds?: number }> | null;
+  }>;
+  const capRow = capRows[0];
+  const takerEntry = (capRow?.recorders ?? []).find((r) => r.telegram_id === TAKER);
+  expect(
+    "заявка сверх времени встречи урезана и чужую запись не перехватывает (defer, секунды держателя целы)",
+    capped.status === 200 && capped.decision === "defer" &&
+      capRow?.claim_owner === OWNER_ARB && capRow?.recorded_seconds === 3300,
+    JSON.stringify({ capped, capRow }),
+  );
+  const capSec = takerEntry?.recorded_seconds ?? Number.NaN;
+  expect(
+    "в recorders легли урезанные секунды заявки: не больше времени встречи с запасом",
+    capSec > 0 && capSec <= ARB_STARTED_MIN * 60 * 1.1 + 300 + 5,
+    JSON.stringify(takerEntry),
   );
 
   // Негодные секунды — 400, в арбитраж не попадают.

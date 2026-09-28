@@ -2,6 +2,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { occupyPatch, refreshPatch, takeoverPatch } from "./claim-patch.ts";
 import { decideHeld, type Guard, heldGuards, type HeldRow, heldSeconds, readClaimSeconds } from "./arbiter.ts";
+import { boundClaimSeconds, type MeetingClock } from "./claim-clock.ts";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf } from "../_shared/meeting-title.ts";
 import { ROSTER_TOLERANCE_MIN, sameMeetingByRoster, scopeRoomKey } from "../_shared/meeting-roster.ts";
@@ -309,8 +310,8 @@ async function findMeetingByRoster(
  * действовал бы только на одном из двух путей — ровно так и разъехались claim и публикация).
  */
 async function resolveExisting(
-  row: ExistingMeetingRow,
-  body: ClaimBody,
+  row: ExistingMeetingRow & MeetingClock,
+  claimBody: ClaimBody,
   identity: AgentIdentity,
   nowIso: string,
   leaseIso: string,
@@ -319,9 +320,22 @@ async function resolveExisting(
     decision: ClaimDecision;
     supersededOwner: number | null;
     heldBy: number | null;
+    /** Секунды заявки после потолка встречи — их и пишет вызывающий в recorders. */
+    recordedSeconds: number | undefined;
   }
 > {
   let heldBy = row.claim_owner;
+  // Заявка на существующую встречу — не больше, чем встреча могла идти по часам сервера
+  // (claim-clock.ts). Дальше идут только урезанные секунды: в арбитраж, в строку, в recorders.
+  const recordedSeconds = boundClaimSeconds(row, claimBody.recorded_seconds, nowIso);
+  if (recordedSeconds !== claimBody.recorded_seconds) {
+    console.log(
+      `meeting-claim: заявка ${row.id} — секунды ${Math.round(claimBody.recorded_seconds ?? 0)}→${
+        Math.round(recordedSeconds ?? 0)
+      } по времени встречи`,
+    );
+  }
+  const body: ClaimBody = { ...claimBody, recorded_seconds: recordedSeconds };
 
   // (1) Свободна (никто не держит / лиз истёк и транскрипта нет) — занимаем.
   const { data: claimed } = await supabase
@@ -343,6 +357,7 @@ async function resolveExisting(
       decision: "transcribe",
       supersededOwner: null,
       heldBy: identity.telegramId,
+      recordedSeconds,
     };
   }
 
@@ -350,7 +365,7 @@ async function resolveExisting(
   const candidate = body.recorded_seconds ?? 0;
   const held = heldSeconds(row);
   const verdict = decideHeld(row, candidate, identity.telegramId, nowIso);
-  if (verdict === "defer") return { decision: "defer", supersededOwner: null, heldBy };
+  if (verdict === "defer") return { decision: "defer", supersededOwner: null, heldBy, recordedSeconds };
 
   if (verdict === "reserve") {
     await keepReserve(row.id, body, identity.telegramId);
@@ -359,7 +374,7 @@ async function resolveExisting(
         Math.round(candidate)
       }с у ${identity.telegramId}, бот того же человека ещё пишет (${Math.round(held)}с)`,
     );
-    return { decision: "transcribe", supersededOwner: null, heldBy: identity.telegramId };
+    return { decision: "transcribe", supersededOwner: null, heldBy: identity.telegramId, recordedSeconds };
   }
 
   // refresh — тот же человек, маркеры обработки не сбрасываются; takeover — право переходит, и
@@ -378,7 +393,7 @@ async function resolveExisting(
   )
     .select("id")
     .maybeSingle();
-  if (!took) return { decision: "defer", supersededOwner: null, heldBy };
+  if (!took) return { decision: "defer", supersededOwner: null, heldBy, recordedSeconds };
 
   heldBy = identity.telegramId;
   console.log(
@@ -388,7 +403,7 @@ async function resolveExisting(
   );
   // Прежний владелец уступает право только при переходе к другому человеку.
   const superseded = verdict === "takeover" ? heldOwnerOf(row) : null;
-  return { decision: "transcribe", supersededOwner: superseded, heldBy };
+  return { decision: "transcribe", supersededOwner: superseded, heldBy, recordedSeconds };
 }
 
 /** Кто держал право до перехвата (не запись владельца — чтение). */
@@ -595,6 +610,8 @@ Deno.serve(async (req: Request) => {
   // Кого перехватили (для recorders) и кто держит право, если нам отказали (для сообщения юзеру).
   let supersededOwner: number | null = null;
   let heldBy: number | null = null;
+  // Секунды, с которыми заявка прошла арбитраж: у существующей встречи — урезанные её временем.
+  let claimedSeconds = body.recorded_seconds;
 
   if (body.identity_kind === "manual") {
     // Telegram/кнопка — без дедупа, всегда новая встреча, всегда транскрибируем сами.
@@ -669,6 +686,7 @@ Deno.serve(async (req: Request) => {
       decision = res.decision;
       supersededOwner = res.supersededOwner;
       heldBy = res.heldBy;
+      claimedSeconds = res.recordedSeconds;
       console.log(
         `meeting-claim: склейка по составу ${meetingId} (${joined.reason}) — ключ ${scopedKey} присоединён к ${joined.row.identity_key}, решение ${decision}`,
       );
@@ -714,6 +732,7 @@ Deno.serve(async (req: Request) => {
           decision = res.decision;
           supersededOwner = res.supersededOwner;
           heldBy = res.heldBy;
+          claimedSeconds = res.recordedSeconds;
           console.log(
             `meeting-claim: гонка склейки — свою строку убрал, присоединился к ${meetingId} (${rival.reason}), решение ${decision}`,
           );
@@ -747,6 +766,7 @@ Deno.serve(async (req: Request) => {
         decision = res.decision;
         supersededOwner = res.supersededOwner;
         heldBy = res.heldBy;
+        claimedSeconds = res.recordedSeconds;
       } else {
         return fail(`create failed: ${insErr?.message ?? "unknown"}`, 500);
       }
@@ -758,7 +778,7 @@ Deno.serve(async (req: Request) => {
   // (docs/decisions/2026-08-28-fullness-over-recency.md, мера №3).
   console.log(
     `meeting-claim: ${decision} ${meetingId} kind=${body.identity_kind} sec=${
-      Math.round(body.recorded_seconds ?? 0)
+      Math.round(claimedSeconds ?? 0)
     } by=${identity.telegramId} heldBy=${heldBy ?? "—"}`,
   );
 
@@ -767,7 +787,7 @@ Deno.serve(async (req: Request) => {
     identity.telegramId,
     decision,
     nowIso,
-    body.recorded_seconds,
+    claimedSeconds,
     supersededOwner,
   );
 
