@@ -80,3 +80,50 @@ export function grantCache(
     return hit;
   };
 }
+
+/**
+ * Засеять забранное задание автозапуска по событию `calendarKey` и календарный пропуск по нему
+ * (как выдал бы meeting-calendar). Название события — `title`: его, а не присланное, увидит
+ * человек в уведомлении до встречи. Уборка — `meeting_calendar_jobs?group_id=eq.<ws>`.
+ */
+export async function seedCalendarGrant(
+  rest: Rest,
+  seed: {
+    agentId: string;
+    groupId: string;
+    telegramId: number;
+    calendarKey: string;
+    title?: string | null;
+  },
+): Promise<string> {
+  const now = Date.now();
+  const joinUrl = `https://meet.google.com/cal-${
+    crypto.randomUUID().slice(0, 8)
+  }`;
+  const title = seed.title ?? null;
+  const [job] = await rest("POST", "meeting_calendar_jobs", [{
+    group_id: seed.groupId,
+    calendar_key: seed.calendarKey,
+    invited_by: seed.telegramId,
+    join_url: joinUrl,
+    platform: "meet",
+    title,
+    starts_at: new Date(now).toISOString(),
+    ends_at: new Date(now + 30 * 60_000).toISOString(),
+    taken_at: new Date(now).toISOString(),
+    taken_by: seed.agentId,
+  }]) as Array<{ id: string }>;
+  const token = `sgr_smoke_${crypto.randomUUID()}`;
+  await rest("POST", "meeting_agent_grants", [{
+    token_hash: await sha256Hex(token),
+    agent_id: seed.agentId,
+    group_id: seed.groupId,
+    telegram_id: seed.telegramId,
+    calendar_job_id: job.id,
+    calendar_key: seed.calendarKey,
+    join_url: joinUrl,
+    title,
+    expires_at: new Date(now + 60 * 60_000).toISOString(),
+  }]);
+  return token;
+}
