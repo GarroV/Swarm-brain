@@ -153,7 +153,13 @@ Deno.test("брошенная встреча (лиз истёк, стеногр�
   assertEquals(out, { ok: true, reset: false, measuredSec: 60 });
   const take = calls.find((c) => c.op === "update" && "claim_owner" in (c.patch ?? {}));
   assertEquals("summary_status" in (take?.patch ?? {}), false);
-  assertEquals(take?.filters, ["id=eq.m", "transcript=is.null", `or(claim_owner.is.null,lease_expires_at.lt.${NOW})`]);
+  assertEquals(take?.filters, [
+    "id=eq.m",
+    "transcript=is.null",
+    `or(claim_owner.is.null,lease_expires_at.lt.${NOW})`,
+    "notes_edited_at=is.null",
+    "status=neq.in_base",
+  ]);
 });
 
 Deno.test("ЯДРО: у держателя готовая стенограмма — выгрузка полнее идёт на сравнение, право пока не переходит", async () => {

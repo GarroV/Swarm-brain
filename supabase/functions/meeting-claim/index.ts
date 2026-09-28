@@ -19,6 +19,7 @@ import {
 import { attachInvite, consumeInvite, inviteSource, releaseInvite } from "./invites.ts";
 import { CLAIM_LEASE_TTL_SEC } from "../_shared/claim-lease.ts";
 import { updateRecorders } from "../_shared/recorders-write.ts";
+import { PUBLISHED_STATUS } from "../_shared/meeting-frozen.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -359,6 +360,8 @@ async function resolveExisting(
     .is("transcript", null)
     .or(`claim_owner.is.null,lease_expires_at.lt.${nowIso}`)
     .or("summary_status.is.null,summary_status.neq.processing")
+    .is("notes_edited_at", null)
+    .neq("status", PUBLISHED_STATUS)
     .select("id")
     .maybeSingle();
   if (claimed) {

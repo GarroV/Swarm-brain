@@ -6,6 +6,7 @@ import type { InMemoryPart } from "../_shared/meeting-processor.ts";
 import { claimLeaseUntil } from "../_shared/claim-lease.ts";
 import { updateRecorders } from "../_shared/recorders-write.ts";
 import type { RivalClaim } from "../_shared/meeting-rival.ts";
+import { unfrozen } from "../_shared/meeting-frozen.ts";
 import { heldGuards } from "../meeting-claim/arbiter.ts";
 import { occupyPatch, takeoverPatch } from "../meeting-claim/claim-patch.ts";
 import { withGuards } from "../meeting-claim/guard-query.ts";
@@ -83,8 +84,10 @@ export async function settleChallengeUpload(
       supabase.from("meetings").update(takeoverPatch(patchInput)).eq("id", meetingId),
       heldGuards(row, nowIso),
     )
-    : supabase.from("meetings").update(occupyPatch(patchInput)).eq("id", meetingId).is("transcript", null)
-      .or(`claim_owner.is.null,lease_expires_at.lt.${nowIso}`);
+    : unfrozen(
+      supabase.from("meetings").update(occupyPatch(patchInput)).eq("id", meetingId).is("transcript", null)
+        .or(`claim_owner.is.null,lease_expires_at.lt.${nowIso}`),
+    );
   const { data: took } = await update.select("id").maybeSingle();
   if (!took) {
     // Строка изменилась, пока считали (удар бота, другой перехват): решение по устаревшему чтению.
