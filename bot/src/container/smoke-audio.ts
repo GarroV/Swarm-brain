@@ -19,7 +19,7 @@
 import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 
-import { chromium } from "playwright";
+import { type Browser, chromium } from "playwright";
 
 import { chromiumLaunchOptions } from "./browser.ts";
 import { readSettings } from "./environment.ts";
@@ -33,6 +33,27 @@ class SmokeFailure extends Error {}
 const fail = (message: string): never => {
   throw new SmokeFailure(message);
 };
+
+const SANDBOX_OK = "You are adequately sandboxed";
+
+/**
+ * Песочница — по словам самого Chromium, а не по нашим аргументам: `chrome://sandbox`
+ * показывает, какие слои реально включены.
+ */
+async function assertSandboxed(browser: Browser): Promise<void> {
+  const tab = await browser.newPage();
+  try {
+    await tab.goto("chrome://sandbox");
+    const text = await tab.locator("body").innerText();
+    const report = text.replaceAll(/\s+/g, " ").trim();
+    if (!report.includes(SANDBOX_OK)) {
+      fail(`песочница Chromium не работает — браузер открывает чужую страницу без неё: ${report}`);
+    }
+    console.log("· песочница Chromium включена (chrome://sandbox)");
+  } finally {
+    await tab.close();
+  }
+}
 
 async function measureParts(directory: string): Promise<number> {
   const names = await readdir(directory);
@@ -109,6 +130,7 @@ async function main(): Promise<number> {
 
   let loudest: number;
   try {
+    await assertSandboxed(browser);
     const tab = await browser.newPage();
     await tab.goto(page);
     // Звук должен успеть пойти до того, как ffmpeg начнёт писать.
