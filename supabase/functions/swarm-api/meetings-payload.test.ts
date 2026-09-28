@@ -103,3 +103,74 @@ Deno.test("остальные поля черновика проходят на�
   assertEquals(out.status, "awaiting_review");
   assertEquals(out.recorders, [{ telegram_id: 1 }]);
 });
+
+// ── превью приходит из базы (issue #490) ─────────────────────────────────────
+//
+// Новый путь: SQL уже отдал обрезанные колонки и признак усечения. Проверяем, что форма
+// ответа осталась ПРЕЖНЕЙ — клиент не должен заметить, что обрезка переехала.
+
+Deno.test("превью из базы: служебный list_truncated наружу не уезжает", () => {
+  const out = toListRow({
+    id: "a",
+    content: "x".repeat(LIST_PREVIEW_CHARS),
+    summary: null,
+    list_truncated: true,
+    metadata: {},
+  }) as Record<string, unknown>;
+  assertEquals("list_truncated" in out, false);
+  assertEquals(out.truncated, true);
+});
+
+Deno.test("превью из базы: truncated берётся от ИСХОДНОЙ длины, а не от обрезанной", () => {
+  // Ровно тот случай, ради которого флаг и нужен: строка уже обрезана до 400, по её длине
+  // усечения не видно — знает об этом только база. Без флага список показал бы кусок
+  // транскрипта как полный текст.
+  const out = toListRow({
+    id: "a",
+    content: "x".repeat(LIST_PREVIEW_CHARS),
+    summary: "y".repeat(LIST_PREVIEW_CHARS),
+    list_truncated: true,
+    metadata: {},
+  });
+  assertEquals(out.content.length, LIST_PREVIEW_CHARS);
+  assertEquals(out.truncated, true);
+});
+
+Deno.test("превью из базы: короткая запись не помечается усечённой", () => {
+  const out = toListRow({
+    id: "a",
+    content: "Планёрка",
+    summary: "Кратко",
+    list_truncated: false,
+    metadata: {},
+  });
+  assertEquals(out.truncated, undefined);
+  assertEquals(out.content, "Планёрка");
+});
+
+Deno.test("страховка: полные колонки в обход ENTRY_LIST_COLUMNS всё равно режутся", () => {
+  // Если новый эндпоинт забудет превью-колонки, ответ не должен стать десятимегабайтным.
+  const out = toListRow({
+    id: "a",
+    content: "x".repeat(50_000),
+    summary: null,
+    metadata: {},
+  });
+  assertEquals(out.content.length, LIST_PREVIEW_CHARS);
+  assertEquals(out.truncated, true);
+});
+
+Deno.test("toAgentListRow: признак из базы, текст в строке вообще не приходит", () => {
+  const out = toAgentListRow({
+    id: "a",
+    title: "Планёрка",
+    has_draft_notes: true,
+  }) as Record<string, unknown>;
+  assertEquals(out.has_draft_notes, true);
+  assertEquals("draft_notes_md" in out, false);
+});
+
+Deno.test("toAgentListRow: has_draft_notes=false из базы — это НЕ «поля нет»", () => {
+  const out = toAgentListRow({ id: "a", has_draft_notes: false });
+  assertEquals(out.has_draft_notes, false);
+});

@@ -84,3 +84,102 @@ Deno.test("одинаковые даты — это один день, а не �
   });
   assertEquals(out.error, null);
 });
+
+// ── позиция в списке (перестановка на доске, issue #433) ─────────────────────
+// Мусор в позиции ломается молча: строка уедет в непредсказуемое место списка или порядок
+// схлопнется в дубли — на экране это выглядит как «карточки сами прыгают», а не как ошибка.
+
+Deno.test("позиция принимается числом, в том числе дробным и отрицательным", () => {
+  assertEquals(parseProjectFields({ position: 2500 }).fields.position, 2500);
+  assertEquals(
+    parseProjectFields({ position: 1500.5 }).fields.position,
+    1500.5,
+  );
+  assertEquals(parseProjectFields({ position: -1000 }).fields.position, -1000);
+});
+
+Deno.test("позиция снимается только явным null", () => {
+  assertEquals(parseProjectFields({ position: null }).fields, {
+    position: null,
+  });
+  assertEquals(parseProjectFields({}).fields.position, undefined);
+});
+
+Deno.test("нечисло и не-конечное число в позиции — отказ, а не молчаливая запись", () => {
+  for (
+    const bad of [
+      "вверх",
+      "",
+      true,
+      {},
+      [],
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+    ]
+  ) {
+    const out = parseProjectFields({ position: bad });
+    assertEquals(out.fields, {}, `принято мусорное значение: ${String(bad)}`);
+    assertEquals(typeof out.error, "string");
+  }
+});
+// ── Справка «О проекте»: цель, описание, ссылки ─────────────────────────────────────────────
+
+Deno.test("цель и описание: строка обрезается, пустая снимает значение", () => {
+  assertEquals(
+    parseProjectFields({ goal: "  Свести P&L  ", description: "" }).fields,
+    { goal: "Свести P&L", description: null },
+  );
+  assertEquals(parseProjectFields({ goal: null }).fields, { goal: null });
+});
+
+Deno.test("цель и описание: не строка и слишком длинный текст — отказ", () => {
+  assertEquals(parseProjectFields({ goal: 42 }).error !== null, true);
+  assertEquals(
+    parseProjectFields({ description: "x".repeat(5001) }).error !== null,
+    true,
+  );
+});
+
+Deno.test("ссылки: пробелы срезаются, пустое название заменяется адресом", () => {
+  assertEquals(
+    parseProjectFields({
+      links: [
+        { title: " Репозиторий ", url: " https://github.com/x/y " },
+        { title: "", url: "http://demo.example.com" },
+      ],
+    }).fields,
+    {
+      links: [
+        { title: "Репозиторий", url: "https://github.com/x/y" },
+        { title: "http://demo.example.com", url: "http://demo.example.com" },
+      ],
+    },
+  );
+  assertEquals(parseProjectFields({ links: null }).fields, { links: [] });
+});
+
+Deno.test("ссылки: не http(s) и мусор — отказ (javascript: в href исполнился бы по клику)", () => {
+  for (
+    const bad of [
+      [{ title: "x", url: "javascript:alert(1)" }],
+      [{ title: "x", url: "не адрес" }],
+      [{ title: "x" }],
+      "https://a.b",
+      [null],
+    ]
+  ) {
+    assertEquals(
+      parseProjectFields({ links: bad }).error !== null,
+      true,
+      JSON.stringify(bad),
+    );
+  }
+});
+
+Deno.test("ссылки: больше предела — отказ", () => {
+  const many = Array.from({ length: 31 }, (_, i) => ({
+    title: `l${i}`,
+    url: `https://e.com/${i}`,
+  }));
+  assertEquals(parseProjectFields({ links: many }).error !== null, true);
+});

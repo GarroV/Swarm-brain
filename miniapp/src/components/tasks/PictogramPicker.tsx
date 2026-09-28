@@ -78,7 +78,7 @@ export function PictogramPicker({ triggerIcon, ariaLabel, options, selected, mul
           aria-expanded={open}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
-          className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-[12px]"
+          className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-[8px]"
         >
           {trigger}
         </button>

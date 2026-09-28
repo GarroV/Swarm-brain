@@ -6,6 +6,7 @@
 // ЛЮБОМ жесте и лечится только перезапуском браузера — проверено на себе: 42/42, 42/42, затем
 // «touch timeout» на первом же свайпе. Свой процесс на чистом профиле убирает это в корне.
 // Подключиться к внешнему браузеру всё ещё можно: `SWARM_E2E_CDP=http://127.0.0.1:9333`.
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import os from "node:os";
 import nodePath from "node:path";
@@ -30,7 +31,19 @@ function loadPuppeteer() {
 }
 
 export const BASE_URL = process.env.SWARM_E2E_URL ?? "http://localhost:3111/";
-export const CHROME = process.env.SWARM_E2E_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+export const CHROME = process.env.SWARM_E2E_CHROME ?? defaultChrome();
+
+// Chrome for Testing, а не личный Google Chrome: для macOS копия, запущенная прогоном, — тот же
+// com.google.Chrome, и ссылки из других приложений могут уйти в неё невидимо (25.09.2026 так
+// пропал звонок из «Подключиться» рекордера). Утилита `chrome-for-testing` — из dotfiles.
+function defaultChrome() {
+  try {
+    return execFileSync("chrome-for-testing", ["--print-path"], { encoding: "utf8" }).trim();
+  } catch {
+    console.warn("⚠️  нет chrome-for-testing (dotfiles) — запускаю личный Google Chrome");
+    return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+  }
+}
 // iPhone 14/15: 390x844. Второй профиль — низкий экран, на нём список гарантированно скроллится.
 export const PHONE = { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 export const PHONE_SHORT = { ...PHONE, height: 430 };

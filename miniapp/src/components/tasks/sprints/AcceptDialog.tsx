@@ -79,7 +79,7 @@ export function AcceptDialog(
         <DialogPrimitive.Backdrop className="fixed inset-0 z-[100] bg-black/45 supports-backdrop-filter:backdrop-blur-[2px]" />
         <DialogPrimitive.Popup
           aria-labelledby="accept-title"
-          className="fixed top-1/2 left-1/2 z-[100] flex max-h-[85vh] w-[calc(100%-2rem)] max-w-[560px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[22px] border border-line bg-[var(--popover)] p-5 text-popover-foreground shadow-[0_28px_70px_-20px_rgba(0,0,0,.55)] outline-none dark:backdrop-blur-xl"
+          className="fixed top-1/2 left-1/2 z-[100] flex max-h-[85vh] w-[calc(100%-2rem)] max-w-[560px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[14px] border border-line bg-[var(--popover)] p-5 text-popover-foreground shadow-[0_28px_70px_-20px_rgba(0,0,0,.55)] outline-none dark:backdrop-blur-xl"
         >
           <div className="flex items-start gap-3.5">
             <span
@@ -187,7 +187,7 @@ export function AcceptDialog(
             <Button
               variant="outline"
               size="lg"
-              className="h-11 rounded-[14px] text-[15px]"
+              className="h-11 rounded-[8px] text-[15px]"
               disabled={busy}
               onClick={onCancel}
             >
@@ -195,7 +195,7 @@ export function AcceptDialog(
             </Button>
             <Button
               size="lg"
-              className="h-11 rounded-[14px] text-[15px] font-semibold"
+              className="h-11 rounded-[8px] text-[15px] font-semibold"
               disabled={busy}
               onClick={submit}
             >

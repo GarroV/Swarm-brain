@@ -48,7 +48,7 @@ export function SprintReport({ cycle }: { cycle: SprintCycle }) {
   const s = cycle.stats;
 
   return (
-    <div className="flex flex-col min-h-0 w-72 shrink-0 rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
+    <div className="flex flex-col min-h-0 w-72 shrink-0 rounded-2xl border border-line bg-surface-2">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-line">
         <RoyIcon name="doc" size={14} strokeWidth={1.9} />
         <span className="text-sm font-bold text-ink">{dt("Итоги спринта", "Sprint results")}</span>

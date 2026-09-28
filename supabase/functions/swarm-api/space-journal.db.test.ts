@@ -97,6 +97,7 @@ async function journal(tabId: string, days = "7", as = ME) {
     as,
     WS,
     "https://web.test",
+    () => Promise.resolve(new Map()),
   );
   return res!;
 }

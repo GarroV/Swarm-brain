@@ -64,5 +64,7 @@ jobs:
           FORCE: ${{ inputs.force && '1' || '0' }}
           # Только токен раскатки. Прод-ключ в CI не нужен: проверка «кто в проде» в ночном окне
           # пропускается осознанно (см. deploy-window-merge.sh), а деплою функций хватает этого токена.
+          # Этим же токеном гейт миграций спрашивает Management API, применена ли схема (issue #509):
+          # без него он честно скажет «проверить нечем» и остановит раскатку, а не пропустит молча.
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: bash scripts/deploy-window-merge.sh

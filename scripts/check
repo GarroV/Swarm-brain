@@ -79,8 +79,19 @@ while IFS= read -r e; do ENTRIES+=("$e"); done < <(find supabase/functions -mind
 out=$(deno check "${CFG[@]}" "${ENTRIES[@]}" 2>&1); st=$?; keep типы-функции "$out"
 row "типы-функции" "$([ $st -eq 0 ] && echo pass || echo fail)" "${#ENTRIES[@]}" 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
 
-out=$(cd miniapp && npx --no-install tsc --noEmit 2>&1); st=$?; keep типы-веб "$out"
-row "типы-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
+# Без miniapp/node_modules `npx --no-install` молча берёт ГЛОБАЛЬНЫЙ tsc: типы зависимостей
+# не резолвятся, и проверка печатает ошибки в исходниках — то есть винит код, которого никто
+# не трогал. Так гейт однажды указал на ConnectorsSection.tsx в чистом worktree, хотя в CI
+# (там `npm ci`) тот же коммит проходит начисто (issue #493). «Не смог проверить» обязано
+# звучать иначе, чем «нашёл поломку»: сбою, который выглядит результатом проверки, верят.
+if [ ! -d miniapp/node_modules ]; then
+  out="в miniapp/ нет node_modules — зависимости не установлены, тип-чек не запускался. Выполни: npm ci --prefix miniapp"
+  keep типы-веб "$out"
+  row "типы-веб" "fail" 0 0 "$out"
+else
+  out=$(cd miniapp && npx --no-install tsc --noEmit 2>&1); st=$?; keep типы-веб "$out"
+  row "типы-веб" "$([ $st -eq 0 ] && echo pass || echo fail)" 1 0 "$(echo "$out" | tail -1 | tr -d '"' | tr '\n' ' ')"
+fi
 
 # Тесты: машинный отчёт JUnit + покрытие. Пропущенный тест — падение (см. ниже).
 # Два прогона, как их гоняет сам проект: функции с проверкой типов, веб без неё

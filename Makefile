@@ -10,7 +10,7 @@ SB         := C:/projects/swarm-staging
 # Инициализация (демо-дефолт Supabase для приватного staging): см. docs/DEPLOY.md.
 STAGING_PGPW := $(shell cat $(HOME)/.swarm/staging_pgpw 2>/dev/null)
 
-.PHONY: help smoke-staging smoke-prod staging-sync-functions staging-migrate staging-psql staging-ps staging-up staging-down deploy-plan deploy who notice notice-off
+.PHONY: help smoke-staging smoke-prod staging-sync-functions staging-migrate staging-psql staging-ps staging-up staging-down deploy-plan deploy who notice notice-off freeze unfreeze freeze-status
 
 check: ## Единый прогон проверок доски инициатив (формат, линт, типы, тесты, покрытие, мёртвый код, границы)
 	@./scripts/check
@@ -25,6 +25,9 @@ help:
 	@echo "who                    — кто сейчас в проде (запись/обработка встречи = стоп; люди = предупреждение)"
 	@echo "notice MIN=15          — объявить обновление: плашка в вебе с отсчётом (правка прод-данных!)"
 	@echo "notice-off             — снять объявление вручную (deploy снимает его сам)"
+	@echo "freeze MIN=30          — ЗАМОРОЗИТЬ: заглушка «идут работы», изменения не принимаются"
+	@echo "unfreeze               — снять заморозку (она и сама гаснет по сроку)"
+	@echo "freeze-status          — заморожено ли сейчас и до какого времени"
 	@echo "smoke-staging          — смоук edge-функций на staging (MUSPELHEIM)"
 	@echo "smoke-prod             — смоук edge-функций на проде"
 	@echo "staging-sync-functions — залить supabase/functions на staging + рестарт edge-runtime"
@@ -82,3 +85,13 @@ notice:
 
 notice-off:
 	@./scripts/deploy-notice.sh off
+
+# Заморозка: в отличие от notice — не предупреждение, а отказ принимать изменения.
+freeze:
+	@./scripts/maintenance.sh freeze $(or $(MIN),30)
+
+unfreeze:
+	@./scripts/maintenance.sh unfreeze
+
+freeze-status:
+	@./scripts/maintenance.sh status
