@@ -107,6 +107,69 @@ final class MissedMeetingsTests: XCTestCase {
         XCTAssertEqual(t1.open.first?.canInvite, false)
     }
 
+    // ── Капсула (D025): один пропуск, ✕ убирает из капсулы, не из меню ──────────
+    func testCapsuleShowsFirstOpenMiss() {
+        let (t, _) = MissedTracker().applying([miss("a"), miss("b")])
+        XCTAssertEqual(t.capsuleMiss?.id, "a", "капсула одна — и пропуск в ней один")
+    }
+
+    func testDismissedMissLeavesCapsuleButStaysInMenu() {
+        let (t1, _) = MissedTracker().applying([miss("a"), miss("b")])
+        let t2 = t1.dismissing("a")
+        XCTAssertEqual(t2.capsuleMiss?.id, "b")
+        XCTAssertEqual(t2.open.map(\.id), ["a", "b"], "в меню пропуск остаётся — звать можно и дальше")
+        let (t3, _) = t2.applying([miss("a"), miss("b")])
+        XCTAssertEqual(t3.capsuleMiss?.id, "b", "следующий опрос закрытый ✕ не возвращает")
+    }
+
+    func testDismissedMissReturnsWhenServerReopensIt() {
+        let (t1, _) = MissedTracker().applying([miss("a")])
+        let (t2, _) = t1.dismissing("a").applying([])
+        let (t3, _) = t2.applying([miss("a")])
+        XCTAssertEqual(t3.capsuleMiss?.id, "a")
+    }
+
+    func testDismissingUnknownMissChangesNothing() {
+        let (t1, _) = MissedTracker().applying([miss("a")])
+        XCTAssertEqual(t1.dismissing("zzz"), t1)
+    }
+
+    func testClearedForgetsDismissed() {
+        let (t1, _) = MissedTracker().applying([miss("a")])
+        let (t2, _) = t1.dismissing("a").cleared()
+        XCTAssertTrue(t2.dismissed.isEmpty)
+        XCTAssertNil(t2.capsuleMiss)
+    }
+
+    func testCapsuleSaysServerReasonAndOffersInvite() {
+        let c = MissedCapsule.compose(miss("a"), failure: nil, busy: false, lang: .ru)
+        XCTAssertEqual(c.line, "Бота нет на встрече")
+        XCTAssertEqual(c.shortLine, "Бота нет")
+        XCTAssertEqual(c.detail, "ru a")
+        XCTAssertTrue(c.canInvite)
+        XCTAssertFalse(c.busy)
+        XCTAssertEqual(c.buttonTitle, "Позвать бота")
+    }
+
+    func testCapsuleShowsRefusalInsteadOfReason() {
+        let c = MissedCapsule.compose(miss("a"), failure: "У вас выключен автозапуск scriba", busy: false, lang: .ru)
+        XCTAssertEqual(c.detail, "Не удалось позвать бота — У вас выключен автозапуск scriba")
+        XCTAssertTrue(c.canInvite, "после отказа кнопка остаётся — повторить")
+    }
+
+    func testCapsuleWhileInvitingIsBusy() {
+        let c = MissedCapsule.compose(miss("a"), failure: nil, busy: true, lang: .en)
+        XCTAssertTrue(c.busy)
+        XCTAssertEqual(c.buttonTitle, "Inviting…")
+    }
+
+    func testNotInvitableCapsuleHasNoButton() {
+        let c = MissedCapsule.compose(miss("p", invite: false), failure: nil, busy: true, lang: .ru)
+        XCTAssertFalse(c.canInvite)
+        XCTAssertFalse(c.busy)
+        XCTAssertEqual(c.shortLine, "Бот сам не придёт")
+    }
+
     // ── Отказ по-человечески ────────────────────────────────────────────────────
     func testServerRefusalOnInterfaceLanguage() {
         let body = Data(#"{"error":"This meeting is already over","error_ru":"Эта встреча уже закончилась","code":"meeting_over"}"#.utf8)
