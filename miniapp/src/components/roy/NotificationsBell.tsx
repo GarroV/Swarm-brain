@@ -190,7 +190,11 @@ export function NotificationsBell({ className }: { className?: string }) {
                       {/* Две строки максимум: лента остаётся сканируемой, полный текст — в задаче.
                           line-clamp именно на этом span, а не на вложенном: вложенный становится
                           -webkit-box и уносит текст на строку ниже имени автора. */}
-                      <span className="mt-0.5 line-clamp-2 text-ink-soft" style={{ fontSize: 12.5 }}>
+                      {/* У работ — три строки: время + свой текст в две не влезают на мобилке. */}
+                      <span
+                        className={cn("mt-0.5 text-ink-soft", n.type === "maintenance" ? "line-clamp-3" : "line-clamp-2")}
+                        style={{ fontSize: 12.5 }}
+                      >
                         {/* У пинга нет автора и текста: событие системное, и «— : » выглядело бы поломкой. */}
                         {n.type === "maintenance" ? (
                           <MaintenanceLine n={n} dt={dt} locale={locale} />

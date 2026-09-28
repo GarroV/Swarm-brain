@@ -58,9 +58,10 @@ export function parseMaintenance(value: unknown): MaintenanceState | null {
       "Идёт обновление Swarm. Пожалуйста, зайдите чуть позже.",
     ),
     startedAt: typeof v.started_at === "string" ? v.started_at : null,
-    startsAt: typeof v.starts_at === "string" && !Number.isNaN(Date.parse(v.starts_at))
-      ? v.starts_at
-      : null,
+    startsAt:
+      typeof v.starts_at === "string" && !Number.isNaN(Date.parse(v.starts_at))
+        ? v.starts_at
+        : null,
   };
 }
 
@@ -68,7 +69,9 @@ export function parseMaintenance(value: unknown): MaintenanceState | null {
  *  до `starts_at` люди видят предупреждение и спокойно дописывают начатое. */
 export function isActive(state: MaintenanceState | null, now: Date): boolean {
   if (!state) return false;
-  if (state.startsAt && Date.parse(state.startsAt) > now.getTime()) return false;
+  if (state.startsAt && Date.parse(state.startsAt) > now.getTime()) {
+    return false;
+  }
   return Date.parse(state.until) > now.getTime();
 }
 

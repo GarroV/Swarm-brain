@@ -120,20 +120,33 @@ Deno.test("плановая заморозка до начала пропуск�
   const planned = state({ startsAt: "2026-09-25T23:20:00Z" });
   assertEquals(isActive(planned, NOW), false);
   assertEquals(
-    maintenanceVerdict({ state: planned, now: NOW, method: "PATCH", isOwner: false }).frozen,
+    maintenanceVerdict({
+      state: planned,
+      now: NOW,
+      method: "PATCH",
+      isOwner: false,
+    }).frozen,
     false,
   );
   // С момента начала — обычная заморозка.
   const at = new Date("2026-09-25T23:20:00Z");
   assertEquals(isActive(planned, at), true);
   assertEquals(
-    maintenanceVerdict({ state: planned, now: at, method: "PATCH", isOwner: false }).frozen,
+    maintenanceVerdict({
+      state: planned,
+      now: at,
+      method: "PATCH",
+      isOwner: false,
+    }).frozen,
     true,
   );
 });
 
 Deno.test("начало читается из строки кнопки; мусор в начале = «сразу», а не «никогда»", () => {
-  const v = { until: "2026-09-25T23:40:00Z", starts_at: "2026-09-25T23:20:00Z" };
+  const v = {
+    until: "2026-09-25T23:40:00Z",
+    starts_at: "2026-09-25T23:20:00Z",
+  };
   assertEquals(parseMaintenance(v)?.startsAt, "2026-09-25T23:20:00Z");
   assertEquals(parseMaintenance({ ...v, starts_at: "завтра" })?.startsAt, null);
 });

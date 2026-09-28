@@ -2367,9 +2367,10 @@ export async function fetchNotifications(
       },
     ];
     // DEV_MODE: объявление о раскатке через 8 минут — иначе плашку не посмотреть локально.
-    // `?notice=deploy` — обычная плашка раскатки; по умолчанию — плашка перед заморозкой.
-    const deployOnly = typeof window !== "undefined" &&
-      new URLSearchParams(window.location.search).get("notice") === "deploy";
+    // localStorage `dev-notice=deploy` — обычная плашка раскатки; по умолчанию — плашка перед
+    // заморозкой. Не параметром адреса: роутер оболочки снимает query при входе.
+    let deployOnly = false;
+    try { deployOnly = window.localStorage.getItem("dev-notice") === "deploy"; } catch { /* нет хранилища — показываем заморозку */ }
     const notice: DeployNotice = deployOnly
       ? {
         at: new Date(Date.now() + 8 * 60 * 1000).toISOString(),

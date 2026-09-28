@@ -162,7 +162,8 @@ type DeployNoticeValue = {
 async function loadDeployNotice(
   supabase: SupabaseClient,
 ): Promise<
-  { at: string; until: string; ru?: string; en?: string; kind?: "freeze" } | null
+  | { at: string; until: string; ru?: string; en?: string; kind?: "freeze" }
+  | null
 > {
   const { data, error } = await supabase
     .from("app_settings")

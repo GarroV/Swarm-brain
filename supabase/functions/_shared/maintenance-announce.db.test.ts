@@ -211,7 +211,10 @@ Deno.test("maintenance_announce: повторное нажатие — та же
     assertEquals(same.id, first.id);
     let rows = await myRows(db);
     assertEquals(rows.length, 2);
-    assert(rows[0].read_at, "то же событие не должно снова стать непрочитанным");
+    assert(
+      rows[0].read_at,
+      "то же событие не должно снова стать непрочитанным",
+    );
 
     // Перенесли время — строка та же, но снова непрочитанная: прежнее время уже неправда.
     const moved = await announce(db, 40, 30);

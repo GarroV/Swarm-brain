@@ -102,12 +102,22 @@ export function DeployNoticeBar() {
         data-notice-kind={notice?.kind ?? "deploy"}
       >
         <RoyIcon name={win ? "warn" : "clock"} size={13} strokeWidth={2.1} />
-        <span className={custom || win ? "min-w-0" : "truncate"}>{head}</span>
-        {sub && (
-          // Время работ рядом со своим текстом — не прячем на мобилке: без него текст неполный.
-          <span className={`font-normal ${win ? "min-w-0" : "hidden truncate sm:inline"} ${soon ? "text-accent-ink/70" : "text-primary-foreground/80"}`}>
-            · {sub}
+        {win ? (
+          // Перед заморозкой — одним абзацем: свой текст и время работ читаются подряд, а не
+          // двумя узкими колонками (на 390px так и выходило). Время не прячем и на мобилке.
+          <span className="min-w-0">
+            {head}
+            {sub && <span className={`font-normal ${soon ? "text-accent-ink/75" : "text-primary-foreground/80"}`}> · {sub}</span>}
           </span>
+        ) : (
+          <>
+            <span className={custom ? "min-w-0" : "truncate"}>{head}</span>
+            {sub && (
+              <span className={`hidden truncate font-normal sm:inline ${soon ? "text-accent-ink/70" : "text-primary-foreground/80"}`}>
+                · {sub}
+              </span>
+            )}
+          </>
         )}
       </div>
     </div>
