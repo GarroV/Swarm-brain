@@ -490,7 +490,10 @@ async function arbitration(): Promise<void> {
       (await arbRow(ARB.long.id))?.claim_owner === OWNER_ARB,
     JSON.stringify(fullWhileWriting),
   );
-  await beatRaw(ARB.long, OWNER_ARB, { recording: false, recorded_seconds: 2400 });
+  await beatRaw(ARB.long, OWNER_ARB, {
+    recording: false,
+    recorded_seconds: 2400,
+  });
   const full = await claimAs(ARB.long.key, 3720);
   const afterFull = await arbRow(ARB.long.id);
   expect(
