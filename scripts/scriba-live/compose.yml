@@ -1,0 +1,131 @@
+# Стенд живого прогона бота scriba (T004) на MUSPELHEIM. Управляется с Мака одной командой:
+#   scripts/scriba-live.sh up | down | status | invite <ссылка> | logs | notices | login-url
+# Руками этот файл не запускают: переменные (${...}) пишет stand.ps1 в state/stand.env.
+#
+# Состав: локальный Supabase (`supabase start`, project_id scriba-live, порты 4420–4422) живёт
+# своим стеком рядом; здесь — функции с ветки (4424), веб (4425), оркестратор бота. Контейнеры
+# встреч поднимает оркестратор сам: имена scriba-live-meeting-<run>, том scriba-live-recordings.
+# Порты — только 4420–4429: площадка общая.
+name: scriba-live
+
+x-deno: &deno
+  image: denoland/deno:2.9.7
+  working_dir: /repo
+  restart: unless-stopped
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  volumes:
+    - type: bind
+      source: ../..
+      target: /repo
+      read_only: true
+    - type: bind
+      source: ${STAND_STATE_DIR}
+      target: /state
+    - deno-cache:/deno-dir
+
+services:
+  functions:
+    <<: *deno
+    command: ["deno", "run", "--allow-all", "/repo/scripts/scriba-live/functions-host.ts"]
+    ports:
+      - "4424:8000"
+    environment:
+      STAND_PORT: "8000"
+      STAND_STATE: /state
+      SUPABASE_URL: http://host.docker.internal:4420
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      TELEGRAM_BOT_TOKEN: stand-fake-telegram
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CRON_SECRET: ${CRON_SECRET}
+      WEB_JWT_SECRET: ${WEB_JWT_SECRET}
+      WEB_BASE_URL: ${STAND_WEB_URL}
+      MINIAPP_ORIGIN: ${STAND_WEB_URL}
+
+  web:
+    <<: *deno
+    command: ["deno", "run", "--allow-all", "/repo/scripts/scriba-live/web-host.ts"]
+    ports:
+      - "4425:8000"
+    environment:
+      STAND_PORT: "8000"
+      WEB_ROOT: /state/web
+      FUNCTIONS_URL: http://functions:8000/functions/v1
+      WEB_JWT_SECRET: ${WEB_JWT_SECRET}
+      STAND_LOGIN_KEY: ${STAND_LOGIN_KEY}
+      STAND_OWNER_ID: ${STAND_OWNER_ID}
+
+  orchestrator:
+    image: scriba-live:dev
+    restart: unless-stopped
+    # Образ встречи, но без entrypoint'а экрана и звука: службе нужны только node и dockerode.
+    entrypoint: ["node", "/app/src/orchestrator/orchestrator-main.ts"]
+    user: root
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      SCRIBA_SWARM_URL: http://functions:8000/functions/v1
+      SCRIBA_CONTAINER_SWARM_URL: http://host.docker.internal:4424/functions/v1
+      SCRIBA_BOT_TOKEN: ${SCRIBA_BOT_TOKEN}
+      SCRIBA_IMAGE: scriba-live:dev
+      SCRIBA_PROJECT: scriba-live
+      SCRIBA_BOT_VERSION: "1"
+      # Путь поводка одинаков у службы и у демона Docker: оркестратор пишет файл сам и тот же
+      # путь монтирует в контейнеры встреч (демон Docker Desktop видит диск C: по этому адресу).
+      SCRIBA_LEASE_HOST_DIR: ${STAND_LEASE_DAEMON_DIR}
+      SCRIBA_CONTAINER_ENV: ${SCRIBA_CONTAINER_ENV}
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: bind
+        source: ${STAND_STATE_DIR}/lease
+        target: ${STAND_LEASE_DAEMON_DIR}
+
+  # Разовые шаги `up` (profiles=tools, сами не поднимаются).
+  seed:
+    <<: *deno
+    restart: "no"
+    profiles: ["tools"]
+    command: ["deno", "run", "--allow-all", "/repo/scripts/scriba-live/seed.ts"]
+    environment:
+      SUPABASE_URL: http://host.docker.internal:4420
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      STAND_OWNER_ID: ${STAND_OWNER_ID}
+      SCRIBA_BOT_TOKEN: ${SCRIBA_BOT_TOKEN}
+
+  web-build:
+    image: node:24-bookworm
+    restart: "no"
+    profiles: ["tools"]
+    working_dir: /build
+    environment:
+      NEXT_PUBLIC_API_URL: /api
+      NEXT_PUBLIC_DEV_MODE: "false"
+      NEXT_PUBLIC_BOT_USERNAME: scriba_live_stand_bot
+      NEXT_TELEMETRY_DISABLED: "1"
+    command:
+      - bash
+      - -euc
+      - |
+        # Сборка во внутренней ФС контейнера: node_modules в клоне на диске Windows — это
+        # и медленно, и мусор в рабочем дереве.
+        rm -rf /build/m && cp -r /repo/miniapp /build/m && cd /build/m
+        npm ci --no-audit --no-fund
+        npm run build
+        rm -rf /state/web.new && cp -r out /state/web.new
+        rm -rf /state/web && mv /state/web.new /state/web
+        echo "веб собран"
+    volumes:
+      - type: bind
+        source: ../..
+        target: /repo
+        read_only: true
+      - type: bind
+        source: ${STAND_STATE_DIR}
+        target: /state
+      - npm-cache:/root/.npm
+
+volumes:
+  deno-cache:
+  npm-cache:
