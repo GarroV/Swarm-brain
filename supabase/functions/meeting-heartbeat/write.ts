@@ -1,5 +1,5 @@
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
-import { claimLeaseUntil, MAX_RECORDED_SECONDS } from "../_shared/claim-lease.ts";
+import { CLAIM_LEASE_TTL_SEC, claimLeaseUntil, MAX_RECORDED_SECONDS } from "../_shared/claim-lease.ts";
 
 // Куда именно ложится heartbeat. Вынесено чистой функцией не ради красоты: разница между
 // «рекордер человека жив» и «служебный агент жив», а для агента ещё и «по какой встрече и его ли
@@ -22,6 +22,13 @@ import { claimLeaseUntil, MAX_RECORDED_SECONDS } from "../_shared/claim-lease.ts
 // 2 минуты с meeting_id, сверяет claim_owner условием той же UPDATE (после перехвата лиз новому
 // владельцу не продлить), а claim одноразово гасит приглашение (D017), ходит в календарь (D016) и
 // считает эмбеддинг — повторять его раз в 2 минуты нельзя.
+//
+// Ограничения права (T157, разбор прав T155): лиз продлевает только удар recording:true — живой
+// контейнер, который уже не пишет, не держит встречу; секунды пишутся только в большую сторону
+// (`recorded_seconds` встречи = самая полная из записей её владельца, иначе удар бота после
+// «запасной» записи рекордера того же человека занизил бы её) и растут не быстрее прошедшего
+// времени с запасом `RECORDED_GROWTH_FACTOR` — скачок до суток от агента с ошибкой единиц или
+// с украденным токеном навсегда закрыл бы встречу от более полной записи.
 
 export interface HeartbeatBody {
   recording?: unknown;
@@ -46,6 +53,13 @@ export interface HeartbeatWrite {
    * встрече. Промах по этому условию при совпавшем владении — не отказ, а опоздавший удар.
    */
   newerThan?: { column: string; value: string };
+  /**
+   * Только вверх: UPDATE проходит, если в колонке пусто или значение меньше `value`. Промах —
+   * не отказ (записано уже больше).
+   */
+  below?: { column: string; value: number };
+  /** У записи встречи: сколько секунд прислал удар. Пишется отдельной записью (`planWrites`). */
+  reportedSeconds?: number;
 }
 
 /** Машинная причина 403 «встреча не твоя»: бот по ней понимает, что право ушло (D019). */
@@ -129,11 +143,13 @@ function agentWrites(
     patch: {
       agent_last_seen_at: nowIso,
       agent_last_recording: recording,
-      lease_expires_at: claimLeaseUntil(nowIso),
-      ...(recordedSeconds !== undefined && { recorded_seconds: recordedSeconds }),
+      // Лиз — только пока бот пишет: иначе агент, держащий контейнер в звонке без записи, держал
+      // бы и встречу — ни рекордер, ни claim после истечения её бы не заняли.
+      ...(recording && { lease_expires_at: claimLeaseUntil(nowIso) }),
     },
     requireHit: true,
     newerThan: { column: "agent_last_seen_at", value: nowIso },
+    ...(recordedSeconds !== undefined && { reportedSeconds: recordedSeconds }),
   }, agentRow];
 }
 
@@ -167,6 +183,82 @@ export function buildHeartbeatWrites(
   }];
 }
 
+/** Запас к прошедшему времени: на 10% быстрее часов сервера секунды расти не могут. */
+export const RECORDED_GROWTH_FACTOR = 1.1;
+
+/** Что было в строке встречи до удара — от этого отсчитывается, насколько могли вырасти секунды. */
+export interface RecordedPrior {
+  recorded_seconds: number | null;
+  agent_last_seen_at: string | null;
+  lease_expires_at: string | null;
+}
+
+/**
+ * Сколько секунд удар вправе записать: прежние секунды плюс прошедшее время с запасом. Отсчёт — от
+ * прошлого удара, а первого удара ещё не было — от выдачи лиза (claim бота: бот заявляется до
+ * захода, так что его запись не старше лиза). Ни того, ни другого — роста нет.
+ *
+ * Отсчёт от прошлого удара, а не постоянный запас на каждый удар: запас «+N секунд за удар»
+ * частые удары складывали бы без предела.
+ */
+export function recordedSecondsCeiling(prior: RecordedPrior, nowIso: string): number {
+  const base = prior.recorded_seconds ?? 0;
+  const anchorMs = prior.agent_last_seen_at !== null
+    ? Date.parse(prior.agent_last_seen_at)
+    : prior.lease_expires_at !== null
+    ? Date.parse(prior.lease_expires_at) - CLAIM_LEASE_TTL_SEC * 1000
+    : Number.NaN;
+  if (!Number.isFinite(anchorMs)) return base;
+  const elapsedSec = Math.max(0, (Date.parse(nowIso) - anchorMs) / 1000);
+  return base + elapsedSec * RECORDED_GROWTH_FACTOR;
+}
+
+/**
+ * Запись секунд удара: присланное, урезанное потолком, и только вверх. null — писать нечего
+ * (прислано не больше, чем уже записано, или удар без секунд).
+ */
+export function recordedSecondsWrite(
+  meeting: HeartbeatWrite,
+  prior: RecordedPrior,
+  nowIso: string,
+): HeartbeatWrite | null {
+  if (meeting.reportedSeconds === undefined) return null;
+  const value = Math.min(meeting.reportedSeconds, recordedSecondsCeiling(prior, nowIso));
+  // Не больше записанного — писать нечего; ноль поверх пустого тоже не пишется: пусто у строки
+  // старого клиента значит «оценить по стенограмме», и ноль отнял бы у неё эту оценку.
+  if (value <= (prior.recorded_seconds ?? 0)) return null;
+  return {
+    table: "meetings",
+    match: meeting.match,
+    patch: { recorded_seconds: value },
+    requireHit: false,
+    below: { column: "recorded_seconds", value },
+  };
+}
+
+/**
+ * Удар с секундами читает строку встречи ДО записи (потолок считается от прошлого удара, а запись
+ * удара его перетрёт) и ставит запись секунд сразу за записью встречи: отказ или опоздание по
+ * встрече останавливают удар до неё.
+ */
+export async function planWrites(
+  writes: HeartbeatWrite[],
+  store: WriteStore,
+  nowIso: string,
+): Promise<HeartbeatWrite[]> {
+  const at = writes.findIndex((w) => w.reportedSeconds !== undefined);
+  if (at === -1) return writes;
+  const prior = await store.read(writes[at]);
+  const seconds = prior === null ? null : recordedSecondsWrite(writes[at], prior, nowIso);
+  if (seconds === null) return writes;
+  return [...writes.slice(0, at + 1), seconds, ...writes.slice(at + 1)];
+}
+
+/** Удар целиком: прочитать, что нужно для потолка секунд, и разложить по таблицам. */
+export async function runHeartbeat(writes: HeartbeatWrite[], store: WriteStore, nowIso: string): Promise<WriteOutcome> {
+  return applyWrites(await planWrites(writes, store, nowIso), store);
+}
+
 /** Чем кончилась запись удара: всё легло / встреча не того, кто пришёл / удар опоздал. */
 export type WriteOutcome = "ok" | "missed" | "stale";
 
@@ -174,8 +266,10 @@ export type WriteOutcome = "ok" | "missed" | "stale";
  * Где лежат таблицы. Ошибка базы — исключение: index.ts отвечает на него 500.
  */
 export interface WriteStore {
-  /** UPDATE по всем равенствам `match` и условию `newerThan`; сколько строк обновлено. */
+  /** UPDATE по всем равенствам `match` и условиям `newerThan`/`below`; сколько строк обновлено. */
   update(write: HeartbeatWrite): Promise<number>;
+  /** Секунды, прошлый удар и лиз строки встречи по `match`; нет строки — null. */
+  read(write: HeartbeatWrite): Promise<RecordedPrior | null>;
   /** Сколько строк совпадает с `match` без условия свежести. */
   count(write: HeartbeatWrite): Promise<number>;
 }

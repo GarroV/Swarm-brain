@@ -1,7 +1,16 @@
 // деплоятся с URL-импортами, перевод на голые спецификаторы из линта непроверяем из ветки.
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
-import { buildHeartbeatWrites, HeartbeatRejected, type HeartbeatWrite, MAX_RECORDED_SECONDS } from "./write.ts";
+import {
+  buildHeartbeatWrites,
+  HeartbeatRejected,
+  type HeartbeatWrite,
+  MAX_RECORDED_SECONDS,
+  RECORDED_GROWTH_FACTOR,
+  type RecordedPrior,
+  recordedSecondsCeiling,
+  recordedSecondsWrite,
+} from "./write.ts";
 
 const NOW = "2026-09-17T10:00:00.000Z";
 // NOW + 30 минут: лиз права транскрибации, который удар бота продлевает (CLAIM_LEASE_TTL_SEC).
@@ -84,8 +93,9 @@ Deno.test("БЛОКИРУЮЩИЙ: heartbeat бота по встрече идё
     agent_last_seen_at: NOW,
     agent_last_recording: true,
     lease_expires_at: LEASE_UNTIL,
-    recorded_seconds: 1260,
   });
+  // Секунды — отдельной записью после чтения строки (planWrites): только вверх и с потолком.
+  assertEquals(writes[0].reportedSeconds, 1260);
   assertEquals(writes[1].match, { id: "scriba" });
   assertEquals(writes[1].patch, { last_seen_at: NOW, last_version: 7 });
 });
@@ -128,12 +138,18 @@ Deno.test("ЯДРО: удар бота по своей встрече продл
   // после этого срока занимал встречу как брошенную (ветка «лиз истёк» в meeting-claim), хотя бот
   // пишет её прямо сейчас. Продление — условие той же UPDATE, что сверяет claim_owner: удар после
   // перехвата встречу не находит и лиз новому владельцу не трогает.
-  for (const recording of [true, false]) {
-    const [meeting] = buildHeartbeatWrites(bot, { recording, meeting_id: MEETING_ID }, NOW);
-    assertEquals(meeting.table, "meetings");
-    assertEquals(meeting.patch.lease_expires_at, LEASE_UNTIL);
-    assertEquals(meeting.match.claim_owner, 111);
-  }
+  const [meeting] = buildHeartbeatWrites(bot, { recording: true, meeting_id: MEETING_ID }, NOW);
+  assertEquals(meeting.table, "meetings");
+  assertEquals(meeting.patch.lease_expires_at, LEASE_UNTIL);
+  assertEquals(meeting.match.claim_owner, 111);
+});
+
+Deno.test("ЯДРО: удар recording:false лиз НЕ продлевает — контейнер без записи встречу не держит", () => {
+  // Разбор прав T155 (HIGH): агент, который шлёт удары без записи, иначе держал бы встречу вечно.
+  const [meeting] = buildHeartbeatWrites(bot, { recording: false, meeting_id: MEETING_ID, recorded_seconds: 900 }, NOW);
+  assertEquals("lease_expires_at" in meeting.patch, false);
+  assertEquals(meeting.patch.agent_last_recording, false);
+  assertEquals(meeting.reportedSeconds, 900, "финальный удар несёт всю длину записи — секунды пишутся");
 });
 
 Deno.test("ЯДРО: удар бота несёт записанные секунды в recorded_seconds — арбитраж видит запись, а не 0", () => {
@@ -144,9 +160,9 @@ Deno.test("ЯДРО: удар бота несёт записанные секу�
     meeting_id: MEETING_ID,
     recorded_seconds: 2400.6,
   }, NOW);
-  assertEquals(meeting.patch.recorded_seconds, 2400.6);
+  assertEquals(meeting.reportedSeconds, 2400.6);
   const [zero] = buildHeartbeatWrites(bot, { recording: true, meeting_id: MEETING_ID, recorded_seconds: 0 }, NOW);
-  assertEquals(zero.patch.recorded_seconds, 0);
+  assertEquals(zero.reportedSeconds, 0);
 });
 
 Deno.test("удар бота без recorded_seconds не трогает записанное — продлевает только лиз", () => {
@@ -154,6 +170,7 @@ Deno.test("удар бота без recorded_seconds не трогает зап�
   // для арбитража.
   const [meeting] = buildHeartbeatWrites(bot, { recording: true, meeting_id: MEETING_ID }, NOW);
   assertEquals("recorded_seconds" in meeting.patch, false);
+  assertEquals(meeting.reportedSeconds, undefined);
   assertEquals(meeting.patch.lease_expires_at, LEASE_UNTIL);
 });
 
@@ -170,7 +187,76 @@ Deno.test("ЯДРО: recorded_seconds не число, отрицательно 
     meeting_id: MEETING_ID,
     recorded_seconds: MAX_RECORDED_SECONDS,
   }, NOW);
-  assertEquals(edge.patch.recorded_seconds, MAX_RECORDED_SECONDS);
+  assertEquals(edge.reportedSeconds, MAX_RECORDED_SECONDS);
+});
+
+// ── Потолок секунд: не быстрее прошедшего времени с запасом, и только вверх ────
+
+const MINUTE = 60_000;
+const minutesBefore = (m: number) => new Date(Date.parse(NOW) - m * MINUTE).toISOString();
+function meetingWith(seconds: number): HeartbeatWrite {
+  return buildHeartbeatWrites(bot, { recording: true, meeting_id: MEETING_ID, recorded_seconds: seconds }, NOW)[0];
+}
+
+Deno.test("ЯДРО: скачок секунд до суток урезается до прошедшего с прошлого удара времени с запасом", () => {
+  // Разбор прав T155 (HIGH): агент с ошибкой единиц или украденным токеном одним ударом ставил
+  // 86400 с, и встреча навсегда закрывалась от более полной записи.
+  const prior: RecordedPrior = { recorded_seconds: 600, agent_last_seen_at: minutesBefore(2), lease_expires_at: null };
+  const w = recordedSecondsWrite(meetingWith(MAX_RECORDED_SECONDS), prior, NOW);
+  assertEquals(w?.patch.recorded_seconds, 600 + 120 * RECORDED_GROWTH_FACTOR);
+  assertEquals(recordedSecondsCeiling(prior, NOW), 600 + 120 * RECORDED_GROWTH_FACTOR);
+});
+
+Deno.test("честный удар проходит как есть: 2 минуты записи за 2 минуты с запасом на задержку сети", () => {
+  const prior: RecordedPrior = { recorded_seconds: 600, agent_last_seen_at: minutesBefore(2), lease_expires_at: null };
+  // Прошлый удар шёл 10 с, этот — мгновенно: сервер видит 110 с, а бот записал 120.
+  const w = recordedSecondsWrite(meetingWith(720), { ...prior, agent_last_seen_at: minutesBefore(110 / 60) }, NOW);
+  assertEquals(w?.patch.recorded_seconds, 720);
+  assertEquals(w?.below, { column: "recorded_seconds", value: 720 });
+  assertEquals(w?.requireHit, false);
+  assertEquals(w?.match, meetingWith(720).match, "та же сверка владения, что у записи встречи");
+});
+
+Deno.test("ЯДРО: первый удар отсчитывается от выдачи лиза (claim бота), а не от начала времён", () => {
+  // Бот заявляется до захода: лиз выдан claim-ом 20 минут назад — больше 20 минут записи быть не может.
+  const prior: RecordedPrior = {
+    recorded_seconds: null,
+    agent_last_seen_at: null,
+    lease_expires_at: new Date(Date.parse(NOW) + 10 * MINUTE).toISOString(), // выдан 20 мин назад
+  };
+  assertEquals(recordedSecondsCeiling(prior, NOW), 1200 * RECORDED_GROWTH_FACTOR);
+  assertEquals(recordedSecondsWrite(meetingWith(1100), prior, NOW)?.patch.recorded_seconds, 1100);
+  assertEquals(
+    recordedSecondsWrite(meetingWith(5000), prior, NOW)?.patch.recorded_seconds,
+    1200 * RECORDED_GROWTH_FACTOR,
+  );
+});
+
+Deno.test("ЯДРО: секунды только вверх — меньшее значение не пишется вовсе", () => {
+  // Сдача T156: запасная запись рекордера того же человека подняла секунды встречи до 1200, а бот
+  // к этой минуте записал 660. Удар, вернувший 660, дал бы рекордеру повод «перехватить» снова.
+  const prior: RecordedPrior = { recorded_seconds: 1200, agent_last_seen_at: minutesBefore(2), lease_expires_at: null };
+  assertEquals(recordedSecondsWrite(meetingWith(660), prior, NOW), null);
+  assertEquals(recordedSecondsWrite(meetingWith(1200), prior, NOW), null);
+  assertEquals(recordedSecondsWrite(meetingWith(1300), prior, NOW)?.patch.recorded_seconds, 1300);
+});
+
+Deno.test("опоздавший удар (прошлый удар позже этого) и строка без отсчёта роста не дают", () => {
+  const late: RecordedPrior = {
+    recorded_seconds: 600,
+    agent_last_seen_at: new Date(Date.parse(NOW) + MINUTE).toISOString(),
+    lease_expires_at: null,
+  };
+  assertEquals(recordedSecondsCeiling(late, NOW), 600);
+  const bare: RecordedPrior = { recorded_seconds: null, agent_last_seen_at: null, lease_expires_at: null };
+  assertEquals(recordedSecondsCeiling(bare, NOW), 0);
+  assertEquals(recordedSecondsWrite(meetingWith(300), bare, NOW), null);
+});
+
+Deno.test("удар без секунд записи секунд не порождает", () => {
+  const [meeting] = buildHeartbeatWrites(bot, { recording: true, meeting_id: MEETING_ID }, NOW);
+  const prior: RecordedPrior = { recorded_seconds: 0, agent_last_seen_at: minutesBefore(2), lease_expires_at: null };
+  assertEquals(recordedSecondsWrite(meeting, prior, NOW), null);
 });
 
 Deno.test("удар без встречи и удар рекордера человека не пишут ни лиз, ни секунды", () => {

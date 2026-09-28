@@ -20,17 +20,19 @@
 // человек из X-On-Behalf-Of; чужая встреча → 403. Плюс строка агента (service_agents.last_seen_at,
 // last_version) — «бот вообще жив, такая-то сборка». Куда и с какими условиями — write.ts.
 // Удар бота по своей встрече ещё продлевает лиз права транскрибации и пишет recorded_seconds —
-// так арбитраж meeting-claim видит запись бота честно (T155, write.ts).
+// так арбитраж meeting-claim видит запись бота честно (T155, write.ts). Лиз — только при
+// recording:true, секунды — только вверх и не быстрее прошедшего времени с запасом (T157, write.ts).
 // Деплой: supabase functions deploy meeting-heartbeat --no-verify-jwt (рекордер хитит с Bearer-токеном).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import {
-  applyWrites,
   buildHeartbeatWrites,
   type HeartbeatBody,
   HeartbeatRejected,
   type HeartbeatWrite,
   NOT_CLAIM_OWNER,
+  type RecordedPrior,
+  runHeartbeat,
   type WriteStore,
 } from "./write.ts";
 
@@ -46,14 +48,26 @@ const store: WriteStore = {
     for (const [column, value] of Object.entries(write.match)) {
       query = query.eq(column, value);
     }
-    if (write.newerThan) {
-      const { column, value } = write.newerThan;
+    // Одно условие «пусто или меньше» на запись: два `or` в одном запросе PostgREST не сложит.
+    const condition = write.newerThan ?? write.below;
+    if (write.newerThan && write.below) throw new Error(`update ${write.table}: newerThan и below вместе`);
+    if (condition) {
+      const { column, value } = condition;
       query = query.or(`${column}.is.null,${column}.lt.${value}`);
     }
     // Отдать назад только ключ: строка встречи несёт транскрипт, тащить его ради счёта незачем.
     const { data, error } = await query.select(Object.keys(write.match)[0]);
     if (error) throw new Error(`update ${write.table}: ${error.message}`);
     return (data ?? []).length;
+  },
+  async read(write) {
+    let query = supabase.from(write.table).select("recorded_seconds, agent_last_seen_at, lease_expires_at");
+    for (const [column, value] of Object.entries(write.match)) {
+      query = query.eq(column, value);
+    }
+    const { data, error } = await query.maybeSingle();
+    if (error) throw new Error(`select ${write.table}: ${error.message}`);
+    return data as RecordedPrior | null;
   },
   async count(write) {
     let query = supabase.from(write.table).select(Object.keys(write.match)[0]);
@@ -91,9 +105,10 @@ Deno.serve(async (req: Request) => {
     body = {};
   }
 
+  const nowIso = new Date().toISOString();
   let writes: HeartbeatWrite[];
   try {
-    writes = buildHeartbeatWrites(identity, body, new Date().toISOString());
+    writes = buildHeartbeatWrites(identity, body, nowIso);
   } catch (e) {
     if (e instanceof HeartbeatRejected) {
       return json({ error: e.message }, e.status);
@@ -102,7 +117,7 @@ Deno.serve(async (req: Request) => {
   }
   let outcome;
   try {
-    outcome = await applyWrites(writes, store);
+    outcome = await runHeartbeat(writes, store, nowIso);
   } catch (e) {
     console.error(`meeting-heartbeat: ${e instanceof Error ? e.message : String(e)}`);
     return json({ error: "update failed" }, 500);
