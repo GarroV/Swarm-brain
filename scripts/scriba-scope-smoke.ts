@@ -179,15 +179,17 @@ const createdMeetings = new Set<string>();
 
 async function seed(): Promise<void> {
   await rest("POST", "workspaces", [{ id: WS, name: "Smoke scope" }]);
-  await rest("POST", "allowed_users", [
-    {
-      telegram_id: A,
-      group_id: WS,
-      added_by: A,
-      recorder_token_hash: await sha256Hex(A_RECORDER),
-    },
-    { telegram_id: B, group_id: WS, added_by: A },
-  ]);
+  await rest("POST", "allowed_users", [{
+    telegram_id: A,
+    group_id: WS,
+    added_by: A,
+    recorder_token_hash: await sha256Hex(A_RECORDER),
+  }]);
+  await rest("POST", "allowed_users", [{
+    telegram_id: B,
+    group_id: WS,
+    added_by: A,
+  }]);
   await rest("POST", "service_agents", [{
     id: AGENT.id,
     name: "scriba",
