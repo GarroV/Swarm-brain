@@ -7,24 +7,48 @@
 //
 // Теперь список один и на него смотрят трое: валидация на входе (400 вместо тихой записи),
 // CHECK в базе (миграция 20260905190000_tasks_status_check) и тест, сверяющий его с enum'ами MCP.
-export const TASK_STATUSES = ["open", "in_progress", "done", "cancelled", "backlog"] as const;
+export const TASK_STATUSES = [
+  "open",
+  "in_progress",
+  "done",
+  "cancelled",
+  "backlog",
+] as const;
 
 export type TaskStatus = typeof TASK_STATUSES[number];
 
 export function isTaskStatus(v: unknown): v is TaskStatus {
-  return typeof v === "string" && (TASK_STATUSES as readonly string[]).includes(v);
+  return typeof v === "string" &&
+    (TASK_STATUSES as readonly string[]).includes(v);
 }
 
 /** Текст отказа для API: называет и что пришло, и что принимается. */
 export function taskStatusError(v: unknown): string {
-  return `Недопустимый статус задачи: ${JSON.stringify(v)}. Принимаются: ${TASK_STATUSES.join(", ")}.`;
+  return `Недопустимый статус задачи: ${JSON.stringify(v)}. Принимаются: ${
+    TASK_STATUSES.join(", ")
+  }.`;
 }
 
 /** Статусы, означающие, что работа над задачей закончена. */
 export const CLOSED_STATUSES = ["done", "cancelled"] as const;
 
 export function isClosedStatus(v: unknown): boolean {
-  return typeof v === "string" && (CLOSED_STATUSES as readonly string[]).includes(v);
+  return typeof v === "string" &&
+    (CLOSED_STATUSES as readonly string[]).includes(v);
+}
+
+/**
+ * Закрыть ли вместе с задачей её подзадачи (#478, решение владельца 24.09.2026: «если задача
+ * закрывается, то подзадачи тоже логично закрыть»). Только на переходе открытая → закрытая:
+ * повторное «done» ничего не каскадит, а перекат регулярной задачи — не закрытие (она снова
+ * открыта), и подзадачи при нём остаются в работе. Уведомлений нет — решение того же дня.
+ */
+export function shouldCascadeClose(
+  prevStatus: string | null | undefined,
+  nextStatus: string | null | undefined,
+  recurred: boolean,
+): boolean {
+  return !recurred && isClosedStatus(nextStatus) && !isClosedStatus(prevStatus);
 }
 
 /**
@@ -48,7 +72,9 @@ export function completionPatch(
   nowIso: string,
 ): { completed_at?: string | null } {
   if (nextStatus === undefined) return {};
-  if (isClosedStatus(nextStatus)) return prevCompletedAt ? {} : { completed_at: nowIso };
+  if (isClosedStatus(nextStatus)) {
+    return prevCompletedAt ? {} : { completed_at: nowIso };
+  }
   return prevCompletedAt ? { completed_at: null } : {};
 }
 
@@ -69,5 +95,6 @@ export function hidesClosedByDefault(filters: {
   dueToday?: boolean;
   status?: string;
 }): boolean {
-  return filters.confirmed === undefined && !filters.dueToday && !filters.status;
+  return filters.confirmed === undefined && !filters.dueToday &&
+    !filters.status;
 }

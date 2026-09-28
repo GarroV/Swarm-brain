@@ -1,7 +1,9 @@
 // Ось «статус» на экране задач (issue #216) — независимый фильтр поверх оси времени.
 // Решения владельца 03.09.2026:
 //   • статусы «Открыто / В процессе / Готово» накладываются НА «Сегодня/Ближайшие/Все»;
-//   • `backlog` замьючен («спринты не используются, нет смысла туда смотреть»);
+//   • `backlog` был замьючен («спринты не используются, нет смысла туда смотреть») —
+//     МЬЮТ СНЯТ 21.09.2026: «задачи все и всегда должны быть в разделе задач. он для этого
+//     и нужен чтобы там отслеживать вообще все» (issue #440);
 //   • `pending` убран из мьюта 05.09.2026 вместе с самим статусом — «пендинг вообще
 //     убираем, не понимаю смысла» (#208, трубы, писавшие его, удалены);
 //   • ось времени для ЗАКРЫТЫХ задач считается по дате закрытия («Сегодня + Готово» =
@@ -48,8 +50,10 @@ Deno.test("statusBucket: cancelled считается закрытой вмес�
   assertEquals(statusBucket(task({ id: "b", status: "cancelled" })), "done");
 });
 
-Deno.test("statusBucket: замьючен только backlog (решение владельца 03.09.2026)", () => {
-  assertEquals(statusBucket(task({ id: "b", status: "backlog" })), null);
+Deno.test("statusBucket: backlog виден как «Открыто» — мьют снят 21.09.2026", () => {
+  // Карточка колонки «Бэклог задач» — обычная задача: «идея это тоже задача, не надо
+  // плодить сущности». Замьюченная, она выпадала из списков, поиска и счётчиков (#440).
+  assertEquals(statusBucket(task({ id: "b", status: "backlog" })), "open");
 });
 
 Deno.test("statusBucket: pending больше не мьютится — статус убран целиком 05.09.2026", () => {
@@ -63,12 +67,12 @@ Deno.test("statusBucket: НЕЗНАКОМЫЙ статус попадает в �
   assertEquals(statusBucket(task({ id: "a", status: "whatever" })), "open");
 });
 
-Deno.test("замьюченные задачи не показываются даже в «Все» со всеми чипами", () => {
+Deno.test("«Все» показывает ВСЕ задачи, включая backlog (решение владельца 21.09.2026)", () => {
   const tasks = [
     task({ id: "open", status: "open" }),
     task({ id: "back", status: "backlog" }),
   ];
-  assertEquals(filter(tasks, "all", set("open", "in_progress", "done")), ["open"]);
+  assertEquals(filter(tasks, "all", set("open", "in_progress", "done")).sort(), ["back", "open"]);
 });
 
 Deno.test("чипы фильтруют внутри выбранного списка", () => {
@@ -82,13 +86,13 @@ Deno.test("чипы фильтруют внутри выбранного спи�
   assertEquals(filter(tasks, "all", set("open", "in_progress")).sort(), ["o", "p"]);
 });
 
-Deno.test("пустой набор чипов = без фильтра по статусу (кроме замьюченных)", () => {
+Deno.test("пустой набор чипов = без фильтра по статусу", () => {
   const tasks = [
     task({ id: "o", status: "open" }),
     task({ id: "d", status: "done" }),
     task({ id: "back", status: "backlog" }),
   ];
-  assertEquals(filter(tasks, "all", set()).sort(), ["d", "o"]);
+  assertEquals(filter(tasks, "all", set()).sort(), ["back", "d", "o"]);
 });
 
 Deno.test("дефолт — «Открыто» + «В процессе»: закрытые не показываются", () => {
@@ -146,14 +150,15 @@ Deno.test("счётчики списков считаются с учётом в
     task({ id: "d", status: "done", updated_at: "2026-09-03T09:00:00+00:00" }),
     task({ id: "back", status: "backlog", due_date: "2026-09-03" }),
   ];
+  // `back` считается наравне с `o`: backlog — это «Открыто» с 21.09.2026.
   const onlyOpen = countLists(tasks, "mine", ME, NOW, null, set("open"));
-  assertEquals(onlyOpen.today, 1);
-  assertEquals(onlyOpen.all, 1);
+  assertEquals(onlyOpen.today, 2);
+  assertEquals(onlyOpen.all, 2);
   const openAndProgress = countLists(tasks, "mine", ME, NOW, null, set("open", "in_progress"));
-  assertEquals(openAndProgress.today, 2);
-  // Замьюченная не попадает ни в один счётчик — иначе цифра обещает задачу, которой не видно.
+  assertEquals(openAndProgress.today, 3);
+  // Счётчик обязан совпадать со списком: скрытая задача, не попавшая в цифру, и была #440.
   const everything = countLists(tasks, "mine", ME, NOW, null, set("open", "in_progress", "done"));
-  assertEquals(everything.all, 3);
+  assertEquals(everything.all, 4);
 });
 
 Deno.test("«Готовые» больше НЕ смарт-список: в оси времени остались Сегодня/Ближайшие/Все/Регулярные", async () => {

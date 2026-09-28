@@ -20,7 +20,11 @@ async function signInitData(
     false,
     ["sign"],
   );
-  const secret = await crypto.subtle.sign("HMAC", webAppKey, enc.encode(BOT_TOKEN));
+  const secret = await crypto.subtle.sign(
+    "HMAC",
+    webAppKey,
+    enc.encode(BOT_TOKEN),
+  );
   const secretKey = await crypto.subtle.importKey(
     "raw",
     secret,
@@ -28,7 +32,11 @@ async function signInitData(
     false,
     ["sign"],
   );
-  const hashBytes = await crypto.subtle.sign("HMAC", secretKey, enc.encode(dataCheckString));
+  const hashBytes = await crypto.subtle.sign(
+    "HMAC",
+    secretKey,
+    enc.encode(dataCheckString),
+  );
   const hash = Array.from(new Uint8Array(hashBytes))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -83,11 +91,17 @@ Deno.test("verifyInitData — rejects wrong bot token", async () => {
     auth_date: String(nowSec()),
     user: JSON.stringify({ id: 1 }),
   });
-  assertEquals(await verifyInitData(initData, "999999:OTHER_TOKEN", 3600), null);
+  assertEquals(
+    await verifyInitData(initData, "999999:OTHER_TOKEN", 3600),
+    null,
+  );
 });
 
 Deno.test("verifyInitData — rejects missing hash", async () => {
-  assertEquals(await verifyInitData("auth_date=123&user=%7B%7D", BOT_TOKEN, 3600), null);
+  assertEquals(
+    await verifyInitData("auth_date=123&user=%7B%7D", BOT_TOKEN, 3600),
+    null,
+  );
 });
 
 Deno.test("verifyInitData — rejects missing user", async () => {

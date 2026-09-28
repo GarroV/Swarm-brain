@@ -3,7 +3,7 @@
 // того, что строка изменилась, пока ingest считал.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { InMemoryPart } from "../_shared/meeting-processor.ts";
-import { claimLeaseUntil } from "../_shared/claim-lease.ts";
+import { claimLeaseUntil } from "../_shared/meeting-lease.ts";
 import { updateRecorders } from "../_shared/recorders-write.ts";
 import type { RivalClaim } from "../_shared/meeting-rival.ts";
 import { unfrozen } from "../_shared/meeting-frozen.ts";

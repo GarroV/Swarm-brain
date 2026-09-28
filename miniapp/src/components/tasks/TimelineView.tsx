@@ -202,7 +202,7 @@ export function TimelineView() {
                 >
                   {c.isToday ? (
                     <span
-                      className="inline-flex items-center justify-center rounded-full bg-primary font-bold text-white"
+                      className="inline-flex items-center justify-center rounded-full bg-primary font-bold text-primary-foreground"
                       style={{ minWidth: 18, height: 18, fontSize: 10.5, padding: "0 5px" }}
                     >
                       {c.dayOfMonth}

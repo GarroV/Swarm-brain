@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { conferenceInfo, conferencePlatform, joinLink } from "./join-link.ts";
+import { conferenceCall, conferenceInfo, conferencePlatform, joinLink } from "./join-link.ts";
 import type { GEvent } from "./select.ts";
 
 // Ссылка на звонок для кнопки «Подключиться» в уведомлении рекордера (#193).
@@ -269,4 +269,32 @@ Deno.test("ссылка есть, площадка незнакомая — эт
     join_url: "https://teams.microsoft.com/l/meetup-join/19",
     platform: null,
   });
+});
+
+// conferenceCall — созвон ли это вообще (D026): только ссылка известной площадки.
+Deno.test("conferenceCall: Meet из conferenceData — созвон", () => {
+  assertEquals(
+    conferenceCall({
+      id: "e",
+      conferenceData: { entryPoints: [{ entryPointType: "video", uri: "https://meet.google.com/abc-defg-hij" }] },
+    }),
+    { join_url: "https://meet.google.com/abc-defg-hij", platform: "meet" },
+  );
+});
+
+Deno.test("conferenceCall: без ссылки и с ссылкой незнакомой площадки — не созвон", () => {
+  assertEquals(conferenceCall({ id: "e", location: "Переговорка 3" }), null);
+  assertEquals(conferenceCall({ id: "e", description: "https://teams.microsoft.com/l/meetup-join/1" }), null);
+  assertEquals(conferenceCall({ id: "e", hangoutLink: "http://meet.google.com/abc-defg-hij" }), null);
+});
+
+Deno.test("conferenceCall: известная площадка из описания важнее чужой ссылки в месте проведения", () => {
+  assertEquals(
+    conferenceCall({
+      id: "e",
+      location: "https://maps.google.com/?q=1",
+      description: "Zoom: https://us02web.zoom.us/j/123",
+    }),
+    { join_url: "https://us02web.zoom.us/j/123", platform: "zoom" },
+  );
 });

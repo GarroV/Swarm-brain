@@ -137,7 +137,7 @@ export default function LivePage() {
     return map;
   }, [notes]);
 
-  const card: CSSProperties = { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 16, backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)" };
+  const card: CSSProperties = { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 10, backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)" };
 
   // ── авторизация в реальном режиме ──
   if (real && loadErr === "AUTH") {

@@ -67,6 +67,10 @@ export type PanelState = {
 };
 
 export type DashboardData = {
+  /** все видимые задачи (для счётчика «закрыто за неделю») */
+  tasks: Task[];
+  /** четыре последних записи и встречи базы */
+  latest: Entry[];
   /** «мои» задачи (assignee = me) */
   mine: Task[];
   /** ОБЩИЕ задачи команды: не приватные и без конкретного исполнителя (линза «team») */
@@ -141,6 +145,12 @@ export function useDashboardData(): DashboardData {
     // Granola-встречи не видны в ленте, хотя пользователь их там ждёт.
     const materials = recentEntries([...(entries.list ?? []), ...(meetings.list ?? [])], Date.now());
 
+    // «Последнее в базе» (главная по стенду): четыре свежих записи и встречи, без окна в сутки —
+    // в тихий день блок не должен пустеть.
+    const latest = [...(entries.list ?? []), ...(meetings.list ?? [])]
+      .sort((a, b) => Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""))
+      .slice(0, 4);
+
     const pendingList = pending.list ?? [];
     // «Недавние» — только опубликованные (подтверждённые) из видимых; pending показываем
     // отдельной секцией, поэтому здесь их исключаем (иначе свои pending задвоились бы).
@@ -153,6 +163,8 @@ export function useDashboardData(): DashboardData {
       week,
       noDate,
       materials,
+      latest,
+      tasks: tasks.list ?? [],
       pendingList,
       recentMeetings,
       pendingMeetings: pendingList.length,

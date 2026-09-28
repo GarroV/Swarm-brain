@@ -61,3 +61,17 @@ Deno.test("profileNameUpdate: пробелы в существующем зна�
     { first_name: "Anna" },
   );
 });
+
+Deno.test("profileNameUpdate: заглушка из почты («a.petrova») заменяется именем из Google", () => {
+  assertEquals(
+    profileNameUpdate({ first_name: "a.petrova", last_name: null }, { given: "Anna", family: "Petrova" }, "A.Petrova"),
+    { first_name: "Anna", last_name: "Petrova" },
+  );
+});
+
+Deno.test("profileNameUpdate: имя, совпавшее с заглушкой не целиком, — ручное, не трогаем", () => {
+  assertEquals(
+    profileNameUpdate({ first_name: "Anna", last_name: null }, { given: "Anya", family: null }, "anna.petrova"),
+    null,
+  );
+});

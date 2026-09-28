@@ -1,7 +1,16 @@
 // ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { occupyPatch, refreshPatch } from "./claim-patch.ts";
-import { claimAction, decideHeld, heldGuards, type HeldRow, heldSeconds, readClaimSeconds } from "./arbiter.ts";
+import {
+  claimAction,
+  decideHeld,
+  type DeferReason,
+  deferReasonOf,
+  heldGuards,
+  type HeldRow,
+  heldSeconds,
+  readClaimSeconds,
+} from "./arbiter.ts";
 import { withGuards } from "./guard-query.ts";
 import { CHALLENGER_ROLE } from "../meeting-ingest/challenge.ts";
 import { boundClaimSeconds, type MeetingClock } from "./claim-clock.ts";
@@ -17,10 +26,11 @@ import {
   resolveAgentScope,
 } from "./agent-scope.ts";
 import { attachInvite, consumeInvite, inviteSource, releaseInvite } from "./invites.ts";
-import { CLAIM_LEASE_TTL_SEC } from "../_shared/claim-lease.ts";
+import { CLAIM_LEASE_TTL_SEC } from "../_shared/meeting-lease.ts";
 import { updateRecorders } from "../_shared/recorders-write.ts";
 import { PUBLISHED_STATUS } from "../_shared/meeting-frozen.ts";
 import { bindGrantMeeting, GrantScopeError } from "../_shared/agent-grant.ts";
+import { coOwnersFromAttendees, mergeAttendees } from "../_shared/meeting-owners.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -42,7 +52,7 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 const NO_INVITE = "service agent: a manual meeting needs a valid invite — the person pastes the call link in Swarm";
 
 // На сколько выдаётся право транскрибации. Истёк и транскрипта нет → claim перехватит другой.
-// Удар бота по своей встрече продлевает его тем же сроком (_shared/claim-lease.ts).
+// Удар бота по своей встрече продлевает его тем же сроком (_shared/meeting-lease.ts).
 const LEASE_TTL_SEC = CLAIM_LEASE_TTL_SEC;
 
 // Перехват права более полной записью и поправка «бот ещё пишет» (D020) — arbiter.ts.
@@ -213,6 +223,7 @@ async function registerRecorder(
   recordedSeconds: number | undefined,
   supersedeOwner?: number | null,
   micStartOffset?: number,
+  incomingAttendees?: Attendee[],
 ): Promise<void> {
   const mine: RecorderEntry = {
     telegram_id: telegramId,
@@ -235,6 +246,49 @@ async function registerRecorder(
     return next;
   }, { updated_at: nowIso });
   if (!ok) console.error(`meeting-claim: recorders ${meetingId} — ${telegramId} не вписан (список менялся)`);
+  await refreshAttendees(meetingId, incomingAttendees, nowIso);
+}
+
+// Участники второго записавшего раньше терялись: attendees писались только при INSERT.
+// Совладельцы — участники встречи с аккаунтом SWARM в том же воркспейсе (решение владельца
+// 2026-09-25, _shared/meeting-owners.ts). Пересчитываем на каждом claim — после записи recorders,
+// чтобы записавшие (они владельцы и так) в совладельцы не попадали.
+async function refreshAttendees(meetingId: string, incoming: Attendee[] | undefined, nowIso: string): Promise<void> {
+  const { data, error } = await supabase.from("meetings").select("recorders, attendees, group_id").eq("id", meetingId)
+    .maybeSingle();
+  if (error || !data) {
+    console.error(`meeting-claim: участники ${meetingId} не прочитаны: ${error?.message ?? "строки нет"}`);
+    return;
+  }
+  const row = data as { recorders?: RecorderEntry[] | null; attendees?: Attendee[] | null; group_id?: string | null };
+  const attendees = mergeAttendees(row.attendees, incoming);
+  const coOwners = await coOwnersOf(row.group_id ?? null, attendees, (row.recorders ?? []).map((r) => r.telegram_id));
+  const { error: werr } = await supabase.from("meetings").update({
+    attendees,
+    ...(coOwners ? { co_owners: coOwners } : {}),
+    updated_at: nowIso,
+  }).eq("id", meetingId);
+  if (werr) console.error(`meeting-claim: участники ${meetingId} не записаны: ${werr.message}`);
+}
+
+// null — не смогли прочитать участников воркспейса: оставляем прежних совладельцев, а не обнуляем.
+async function coOwnersOf(
+  groupId: string | null,
+  attendees: Attendee[],
+  recorderIds: number[],
+): Promise<number[] | null> {
+  if (!groupId) return [];
+  if (!attendees.some((a) => a?.email)) return [];
+  const { data, error } = await supabase.from("allowed_users").select("telegram_id, email").eq("group_id", groupId);
+  if (error) {
+    console.error("meeting-claim: участники воркспейса не прочитаны, совладельцы не пересчитаны", error.message);
+    return null;
+  }
+  return coOwnersFromAttendees(
+    attendees,
+    (data ?? []) as Array<{ telegram_id: number | null; email: string | null }>,
+    recorderIds,
+  );
 }
 
 // E-mail участника по telegram_id — нужен, чтобы понять «а этот человек есть в списке участников
@@ -338,6 +392,10 @@ async function resolveExisting(
     heldBy: number | null;
     /** Секунды заявки после потолка встречи — их и пишет вызывающий в recorders. */
     recordedSeconds: number | undefined;
+    /** Почему defer (issue #274) — клиент говорит человеку, что произошло; null при transcribe. */
+    deferReason: DeferReason | null;
+    /** Секунды записи держателя — для текста отказа; null, если не сравнивали. */
+    heldSeconds: number | null;
   }
 > {
   const heldBy = row.claim_owner;
@@ -378,6 +436,8 @@ async function resolveExisting(
       supersededOwner: null,
       heldBy: identity.telegramId,
       recordedSeconds,
+      deferReason: null,
+      heldSeconds: null,
     };
   }
 
@@ -385,7 +445,16 @@ async function resolveExisting(
   const candidate = body.recorded_seconds ?? 0;
   const held = heldSeconds(row);
   const verdict = decideHeld(row, candidate, identity.telegramId, nowIso);
-  if (verdict === "defer") return { decision: "defer", supersededOwner: null, heldBy, recordedSeconds };
+  if (verdict === "defer") {
+    return {
+      decision: "defer",
+      supersededOwner: null,
+      heldBy,
+      recordedSeconds,
+      deferReason: deferReasonOf(row, candidate, nowIso),
+      heldSeconds: held,
+    };
+  }
 
   if (verdict === "reserve") {
     await keepReserve(row.id, body, identity.telegramId);
@@ -394,7 +463,14 @@ async function resolveExisting(
         Math.round(candidate)
       }с у ${identity.telegramId}, бот того же человека ещё пишет (${Math.round(held)}с)`,
     );
-    return { decision: "transcribe", supersededOwner: null, heldBy: identity.telegramId, recordedSeconds };
+    return {
+      decision: "transcribe",
+      supersededOwner: null,
+      heldBy: identity.telegramId,
+      recordedSeconds,
+      deferReason: null,
+      heldSeconds: held,
+    };
   }
 
   // Другой человек с заметно более полной заявкой — претендент, не перехват (T160, arbiter.ts
@@ -412,6 +488,8 @@ async function resolveExisting(
       supersededOwner: null,
       heldBy,
       recordedSeconds,
+      deferReason: null,
+      heldSeconds: held,
     };
   }
 
@@ -428,14 +506,30 @@ async function resolveExisting(
   )
     .select("id")
     .maybeSingle();
-  if (!took) return { decision: "defer", supersededOwner: null, heldBy, recordedSeconds };
+  if (!took) {
+    return {
+      decision: "defer",
+      supersededOwner: null,
+      heldBy,
+      recordedSeconds,
+      deferReason: "race",
+      heldSeconds: held,
+    };
+  }
 
   console.log(
     `meeting-claim: обновление права ${row.id} — ${Math.round(candidate)}с у ${identity.telegramId} против ${
       Math.round(held)
     }с`,
   );
-  return { decision: "transcribe", supersededOwner: null, heldBy: identity.telegramId, recordedSeconds };
+  return {
+    decision: "transcribe",
+    supersededOwner: null,
+    heldBy: identity.telegramId,
+    recordedSeconds,
+    deferReason: null,
+    heldSeconds: held,
+  };
 }
 
 /**
@@ -609,6 +703,8 @@ Deno.serve(async (req: Request) => {
   let claimedSeconds = body.recorded_seconds;
   // Роль в recorders, если она не совпадает с решением: претендент (T160) отвечает transcribe.
   let recorderRole: RecorderRole | undefined;
+  let deferReason: DeferReason | null = null;
+  let holderSeconds: number | null = null;
 
   if (body.identity_kind === "manual") {
     // Telegram/кнопка — без дедупа, всегда новая встреча, всегда транскрибируем сами.
@@ -685,6 +781,8 @@ Deno.serve(async (req: Request) => {
       supersededOwner = res.supersededOwner;
       heldBy = res.heldBy;
       claimedSeconds = res.recordedSeconds;
+      deferReason = res.deferReason;
+      holderSeconds = res.heldSeconds;
       console.log(
         `meeting-claim: склейка по составу ${meetingId} (${joined.reason}) — ключ ${scopedKey} присоединён к ${joined.row.identity_key}, решение ${decision}`,
       );
@@ -732,6 +830,8 @@ Deno.serve(async (req: Request) => {
           supersededOwner = res.supersededOwner;
           heldBy = res.heldBy;
           claimedSeconds = res.recordedSeconds;
+          deferReason = res.deferReason;
+          holderSeconds = res.heldSeconds;
           console.log(
             `meeting-claim: гонка склейки — свою строку убрал, присоединился к ${meetingId} (${rival.reason}), решение ${decision}`,
           );
@@ -767,6 +867,8 @@ Deno.serve(async (req: Request) => {
         supersededOwner = res.supersededOwner;
         heldBy = res.heldBy;
         claimedSeconds = res.recordedSeconds;
+        deferReason = res.deferReason;
+        holderSeconds = res.heldSeconds;
       } else {
         return fail(`create failed: ${insErr?.message ?? "unknown"}`, 500);
       }
@@ -790,6 +892,7 @@ Deno.serve(async (req: Request) => {
     claimedSeconds,
     supersededOwner,
     body.mic_start_offset,
+    body.attendees,
   );
 
   // Пропуск бота открывает дальше только эту встречу (T165): heartbeat, выгрузка, статус и
@@ -834,5 +937,9 @@ Deno.serve(async (req: Request) => {
     lease_ttl_sec: LEASE_TTL_SEC,
     held_by: heldBy,
     held_by_name: heldByName,
+    // Длительность записи держателя и причина отказа — чтобы клиент сказал человеку, ЧТО
+    // произошло, вместо просьбы сравнить свою запись с невидимой чужой (issue #274).
+    held_seconds: decision === "defer" ? holderSeconds : null,
+    defer_reason: decision === "defer" ? deferReason : null,
   });
 });

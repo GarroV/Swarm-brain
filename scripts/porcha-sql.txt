@@ -1,0 +1,28 @@
+# Порча для базы: что ломаем в миграции | на что меняем | каким тестом ловим.
+# Разделитель — символ «|», в SQL-подстановках его быть не должно.
+#
+# Каждая строка отвечает на вопрос «если убрать это условие, тест покраснеет?». Если нет —
+# условие держится ни на чём, и в базе оно осталось только потому, что его никто не проверял.
+and t.is_private = false|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
+# Условия «на всякий случай» сюда не попадают: их порча краснеть не заставит, потому что они
+# ничего не держат. Такое условие не вносится в список, а убирается из SQL — 18.09.2026 так
+# ушло `si.removed_at is null` из приёмки: упоминание отсекает соединение по внешнему ключу.
+si.carry_count + 1|si.carry_count|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
+v_cycle.status <> 'active'|v_cycle.status = 'нет такого статуса'|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
+before delete on public.tasks|before insert on public.tasks|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
+and frozen_at is null|and true|supabase/functions/_shared/tasks/sprint-accept.db.test.ts
+# Сброс демо (issue #580). Четвёртое поле — миграция сброса. Порча, РАСШИРЯЮЩАЯ удаление за
+# пределы демо, здесь только точечная — на строку тестового пользователя 800000901: тестовый
+# контур общий, и порча «удалить без условия» стёрла бы чужие данные на самом стенде.
+delete from public.projects           where group_id = c_ws;|perform 1;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+delete from public.sprint_cycles      where group_id = c_ws;|perform 1;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+delete from public.user_integrations  where telegram_id = any (v_users);|perform 1;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+delete from public.user_integrations  where telegram_id = any (v_users);|delete from public.user_integrations where telegram_id = any (v_users) or telegram_id = 800000901;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+-- feedback не трогаем: «фидбек нужен конечно»|delete from public.feedback where telegram_id = any (v_users); --|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+claude_mcp_token_hash = null, claude_mcp_token_expires_at = null,|claude_mcp_token_expires_at = null,|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+revoke all on function public.demo_reset() from public, anon, authenticated;|grant execute on function public.demo_reset() to anon;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+# Расписание cron сюда не входит: порча меняет базу, а тест расписания читает сам файл миграции
+# (на контуре нет pg_cron, и зарегистрированной задачи в базе не бывает). Его порча проверена
+# руками правкой файла — тест краснеет.
+  v_users := c_users;|  select coalesce(pg_catalog.array_agg(telegram_id), '{}') into v_users from public.allowed_users where group_id = c_ws or telegram_id = any (c_users);|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql
+delete from public.user_profiles      where telegram_id = any (c_users);|delete from public.user_profiles      where telegram_id between 900000001 and 900000099;|supabase/functions/_shared/demo-reset.db.test.ts|supabase/migrations/20260928180000_demo_auto_reset.sql

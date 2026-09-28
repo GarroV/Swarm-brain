@@ -33,11 +33,21 @@ export function nameSigPayload(email: string, n: GoogleName): string {
 
 // Что дописать в user_profiles: только пустые поля, только если Google реально дал значение.
 // null = писать нечего (не делаем лишний UPDATE на каждый вход).
-export function profileNameUpdate(existing: ProfileNames | null, n: GoogleName): ProfileNames | null {
+// emailLocal — локальная часть почты: ею auth-resolve засевает first_name, если Google имени
+// не дал. Это заглушка, а не ручной ввод, поэтому при следующем входе с именем её заменяем.
+// Без этого заглушка («a.nuralieva») оставалась в фильтре сотрудников навсегда.
+export function profileNameUpdate(
+  existing: ProfileNames | null,
+  n: GoogleName,
+  emailLocal?: string | null,
+): ProfileNames | null {
   const given = normalizeName(n.given);
   const family = normalizeName(n.family);
   const upd: ProfileNames = {};
-  if (given && !normalizeName(existing?.first_name)) upd.first_name = given;
+  const first = normalizeName(existing?.first_name);
+  const isPlaceholder = first != null && emailLocal != null &&
+    first.toLowerCase() === emailLocal.trim().toLowerCase();
+  if (given && (!first || isPlaceholder)) upd.first_name = given;
   if (family && !normalizeName(existing?.last_name)) upd.last_name = family;
   return Object.keys(upd).length > 0 ? upd : null;
 }

@@ -55,7 +55,7 @@ export async function verifyInitData(
     encoder.encode(dataCheckString),
   );
   const computedHash = Array.from(new Uint8Array(computedHashBytes))
-    .map(b => b.toString(16).padStart(2, "0"))
+    .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
   if (computedHash !== hash) return null;

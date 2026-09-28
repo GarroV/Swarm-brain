@@ -23,8 +23,16 @@ export function isRecurFreq(v: unknown): v is RecurFreq {
 // 22:00 UTC в Белграде уже следующий день, и перекат уехал бы на сутки назад.
 export const TASK_TZ = "Europe/Belgrade";
 
-export function todayInTz(now: Date = new Date(), tz: string = TASK_TZ): string {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
+export function todayInTz(
+  now: Date = new Date(),
+  tz: string = TASK_TZ,
+): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
     .formatToParts(now);
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")}`;
@@ -39,7 +47,9 @@ function parseISO(iso: string): { y: number; m: number; d: number } | null {
 }
 
 function fmt(y: number, m: number, d: number): string {
-  return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${
+    String(d).padStart(2, "0")
+  }`;
 }
 
 function daysInMonth(y: number, m: number): number {
@@ -95,13 +105,18 @@ export function nextOccurrence(
 
   // monthly: то же число месяца. anchor помнит исходное число (31), чтобы после зажатия
   // по короткому месяцу вернуться к нему, а не остаться на 28-м.
-  const anchor = anchorDom && anchorDom >= 1 && anchorDom <= 31 ? anchorDom : due.d;
+  const anchor = anchorDom && anchorDom >= 1 && anchorDom <= 31
+    ? anchorDom
+    : due.d;
   let y = due.y, m = due.m;
   for (let i = 0; i < MAX_MONTH_STEPS; i++) {
     const cand = fmt(y, m, Math.min(anchor, daysInMonth(y, m)));
     if (cand > floor) return cand;
     m += 1;
-    if (m > 12) { m = 1; y += 1; }
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
   }
   return null;
 }
@@ -134,14 +149,26 @@ export interface RecurPatch {
  * следующую же правку задачи). `reminded_at` сбрасывается — пинг взводится заново, тем же
  * правилом, что при ручном переносе напоминания.
  */
-export function buildRecurPatch(row: RecurRow, todayISO: string): RecurPatch | null {
-  const next = nextOccurrence(row.recur_freq, row.recur_anchor_dom, row.due_date, todayISO);
+export function buildRecurPatch(
+  row: RecurRow,
+  todayISO: string,
+): RecurPatch | null {
+  const next = nextOccurrence(
+    row.recur_freq,
+    row.recur_anchor_dom,
+    row.due_date,
+    todayISO,
+  );
   if (!next || !row.due_date) return null;
 
   const delta = diffDays(row.due_date, next);
   // Новый цикл начинается с «Открыто»: иначе задача, закрытая из «В работе», навсегда
   // осталась бы в работе.
-  const patch: RecurPatch = { status: "open", due_date: next, reminded_at: null };
+  const patch: RecurPatch = {
+    status: "open",
+    due_date: next,
+    reminded_at: null,
+  };
   if (row.start_date) patch.start_date = addDays(row.start_date, delta);
   if (row.remind_date) patch.remind_date = addDays(row.remind_date, delta);
   return patch;
@@ -164,14 +191,25 @@ export function resolveRecurrence(
   freq: unknown,
   dueISO: string | null | undefined,
 ): ResolvedRecurrence {
-  if (freq === null || freq === undefined) return { ok: true, recur_freq: null, recur_anchor_dom: null };
-  if (!isRecurFreq(freq)) return { ok: false, error: "recur_freq: ожидается daily, weekly или monthly" };
+  if (freq === null || freq === undefined) {
+    return { ok: true, recur_freq: null, recur_anchor_dom: null };
+  }
+  if (!isRecurFreq(freq)) {
+    return {
+      ok: false,
+      error: "recur_freq: ожидается daily, weekly или monthly",
+    };
+  }
 
   const due = dueISO ? parseISO(dueISO) : null;
   // День недели и число берутся из срока — без срока цикличность бессмысленна.
   if (!due) return { ok: false, error: "цикличность требует срока (due_date)" };
 
-  return { ok: true, recur_freq: freq, recur_anchor_dom: freq === "monthly" ? due.d : null };
+  return {
+    ok: true,
+    recur_freq: freq,
+    recur_anchor_dom: freq === "monthly" ? due.d : null,
+  };
 }
 
 export type RecurrencePatch =
@@ -192,17 +230,26 @@ export type RecurrencePatch =
 export function recurrencePatchFor(
   bodyFreq: unknown,
   effDueISO: string | null | undefined,
-  stored: { recur_freq: string | null; recur_anchor_dom: number | null; due_date: string | null },
+  stored: {
+    recur_freq: string | null;
+    recur_anchor_dom: number | null;
+    due_date: string | null;
+  },
 ): RecurrencePatch {
   const resolved = resolveRecurrence(bodyFreq, effDueISO);
   if (!resolved.ok) return resolved;
 
   const freqChanged = resolved.recur_freq !== stored.recur_freq;
   const dueChanged = (effDueISO ?? null) !== stored.due_date;
-  const anchorMissing = resolved.recur_freq === "monthly" && stored.recur_anchor_dom == null;
+  const anchorMissing = resolved.recur_freq === "monthly" &&
+    stored.recur_anchor_dom == null;
 
   if (freqChanged || dueChanged || anchorMissing) {
-    return { ok: true, recur_freq: resolved.recur_freq, recur_anchor_dom: resolved.recur_anchor_dom };
+    return {
+      ok: true,
+      recur_freq: resolved.recur_freq,
+      recur_anchor_dom: resolved.recur_anchor_dom,
+    };
   }
   return { ok: true, recur_freq: resolved.recur_freq };
 }
@@ -217,6 +264,8 @@ const FREQ_LABEL_RU: Record<RecurFreq, string> = {
   monthly: "раз в месяц",
 };
 
-export function recurFreqLabelRu(freq: string | null | undefined): string | null {
+export function recurFreqLabelRu(
+  freq: string | null | undefined,
+): string | null {
   return isRecurFreq(freq) ? FREQ_LABEL_RU[freq] : null;
 }

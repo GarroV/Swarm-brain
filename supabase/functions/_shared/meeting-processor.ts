@@ -30,6 +30,7 @@ import { arbitrateFullness, transcriptVolume } from "./meeting-fullness.ts";
 import { discardState, promoteQueued, requeueLost } from "./meeting-queue.ts";
 import { isFrozen, unfrozen } from "./meeting-frozen.ts";
 import { type RivalClaim, rivalOwnershipPatch, settleRival } from "./meeting-rival.ts";
+import { claimLeaseUntil } from "./meeting-lease.ts";
 
 export type { Segment, SpeakerSpan };
 
@@ -406,12 +407,16 @@ async function releaseLease(supabase: SupabaseClient, id: string, gen?: string):
 }
 
 // Персист прогресса: process_state + heartbeat. summary_status НЕ трогаем (остаётся processing).
+// Вместе с прогрессом продлеваем лиз права транскрибации (issue #285): обработка длинной записи
+// идёт дольше 30 минут (на проде такие встречи есть), а истёкший лиз означает «встреча свободна» —
+// и её подхватывал любой следующий claim, теряя уже принятое аудио держателя.
 // false — состояние в строке уже не наше (см. writeOwn).
 async function saveState(supabase: SupabaseClient, id: string, state: ProcessState): Promise<boolean> {
   const nowIso = new Date().toISOString();
   return await writeOwn(supabase, id, state.gen, {
     process_state: state,
     last_progress_at: nowIso,
+    lease_expires_at: claimLeaseUntil(),
     updated_at: nowIso,
   });
 }

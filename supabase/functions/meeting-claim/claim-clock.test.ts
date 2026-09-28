@@ -9,7 +9,7 @@ import {
   claimSecondsCeiling,
 } from "./claim-clock.ts";
 import { decideHeld, type HeldRow } from "./arbiter.ts";
-import { MAX_RECORDED_SECONDS } from "../_shared/claim-lease.ts";
+import { MAX_RECORDED_SECONDS } from "../_shared/meeting-lease.ts";
 
 const NOW = "2026-09-28T12:00:00.000Z";
 const minutesBefore = (min: number) => new Date(Date.parse(NOW) - min * 60_000).toISOString();

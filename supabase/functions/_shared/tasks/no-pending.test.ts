@@ -31,7 +31,10 @@ async function sources(): Promise<Array<{ path: string; text: string }>> {
       const p = `${dir}/${e.name}`;
       if (e.isDirectory) await walk(p);
       else if (e.name.endsWith(".ts") && !e.name.includes(".test.")) {
-        out.push({ path: p.slice(ROOT.length), text: codeOnly(await Deno.readTextFile(p)) });
+        out.push({
+          path: p.slice(ROOT.length),
+          text: codeOnly(await Deno.readTextFile(p)),
+        });
       }
     }
   }
@@ -54,7 +57,9 @@ Deno.test("никто не создаёт задачу в статусе pending
 
 Deno.test("бот не извлекает задачи из встречи сам", async () => {
   const src = await sources();
-  const есть = src.filter((f) => /analyzeAndCreateTasks|extractAndSaveTasks/.test(f.text)).map((f) => f.path);
+  const есть = src.filter((f) =>
+    /analyzeAndCreateTasks|extractAndSaveTasks/.test(f.text)
+  ).map((f) => f.path);
   assertEquals(
     есть,
     [],
@@ -64,8 +69,10 @@ Deno.test("бот не извлекает задачи из встречи са�
 });
 
 Deno.test("детектор ловит ту самую форму", () => {
-  const было = 'await supabase.from("tasks").insert({ title, status: "pending", group_id: "cee" });';
+  const было =
+    'await supabase.from("tasks").insert({ title, status: "pending", group_id: "cee" });';
   assertEquals(/status:\s*["'`]pending["'`]/.test(было), true);
-  const стало = 'await supabase.from("tasks").insert({ title, status: "open", confirmed: true });';
+  const стало =
+    'await supabase.from("tasks").insert({ title, status: "open", confirmed: true });';
   assertEquals(/status:\s*["'`]pending["'`]/.test(стало), false);
 });

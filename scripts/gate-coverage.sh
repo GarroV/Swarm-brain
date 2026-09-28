@@ -8,8 +8,29 @@
 # порога нет вовсе, у vitest он абсолютный — поэтому считаем сами, одинаково для
 # обоих стеков.
 #
-# Использование: scripts/gate-coverage.sh <путь к lcov.info> <имя базы>
+# Два режима — у каждой стройки в репозитории свой порог, и оба относительные:
+#   scripts/gate-coverage.sh <путь к lcov.info> <имя базы> [--promote]
+#       scriba: не ниже, чем на прошлой приёмке; база в reports/coverage-baseline-<имя>.txt.
+#   scripts/gate-coverage.sh <порог N> [путь к lcov, по умолчанию reports/cov.lcov]
+#       доска инициатив: красный, если покрытие строк ниже N процентов. N хранится в
+#       scripts/coverage-floor.txt и поднимается по факту приёмки, а не назначается
+#       абсолютной цифрой (решение admissio по замеру 61 дефекта).
+# Режим выбирается по первому аргументу: число — порог доски, иначе путь к отчёту.
 set -euo pipefail
+
+if [[ "${1:-}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  MIN="$1"; REPORT="${2:-reports/cov.lcov}"
+  awk -F: -v min="$MIN" '
+    /^LF:/ { found += $2 }
+    /^LH:/ { hit   += $2 }
+    END {
+      if (found == 0) { print "покрытие: нет данных — отчёт пуст"; exit 1 }
+      pct = hit * 100 / found
+      printf "покрытие строк: %.1f%% (порог %s%%)\n", pct, min
+      if (pct + 0.0001 < min) exit 1
+    }' "$REPORT"
+  exit $?
+fi
 
 lcov_path="${1:?укажите путь к lcov.info}"
 baseline_name="${2:?укажите имя базы, например bot или server}"

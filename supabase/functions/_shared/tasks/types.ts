@@ -74,10 +74,17 @@ export type TaskInput = {
   tree_y?: number | null;
   recur_freq?: string | null;
   recur_anchor_dom?: number | null;
+  /** Ссылки на материалы: массив {title, url}. Разбор и проверка схемы — `links.ts`. */
+  links?: { title: string | null; url: string }[];
 };
 
 // ── Спринты ───────────────────────────────────────────────────────────────────
 export type SprintStatus = "planned" | "active" | "completed";
+
+// Таблица `sprints` обслуживает две разные поверхности, и их нельзя мешать: пространство,
+// заведённое в разделе «Спринты», однажды вылезло вкладкой в «Проектах» и уронило весь раздел
+// (разведены 21.09.2026, issue #423).
+export type SprintKind = "board_tab" | "space";
 
 export type Sprint = {
   id: string;
@@ -86,6 +93,7 @@ export type Sprint = {
   start_date: string;
   end_date: string;
   status: SprintStatus;
+  kind: SprintKind;
   created_at: string;
 };
 
@@ -94,6 +102,7 @@ export type SprintInput = {
   start_date: string;
   end_date: string;
   status?: SprintStatus;
+  kind?: SprintKind;
 };
 
 // ── Зависимости задач ─────────────────────────────────────────────────────────
@@ -117,6 +126,13 @@ export type Project = {
   created_by: number | null;
   created_at: string;
   parent_id: string | null;
+  /**
+   * Ответственный за направление или инициативу и её сроки (доска инициатив, 18.09.2026).
+   * У задач отдельного «ответственного» нет и не заводится — там работает исполнитель.
+   */
+  owner_telegram_id: number | null;
+  start_date: string | null;
+  end_date: string | null;
   // Вкладка-владелец проекта (sprints.id). Проект принадлежит одной вкладке; подпроект наследует
   // вкладку родителя. null — проект вне вкладок (легаси/после удаления вкладки: ON DELETE SET NULL).
   sprint_id: string | null;
@@ -124,7 +140,20 @@ export type Project = {
   // закрытую строку видит только её created_by, админского обхода нет. Наследуется вниз — закрытый
   // проект закрывает свои подпроекты. Предикат — canViewProject (_shared/tasks/project-access.ts).
   is_private: boolean;
+  /**
+   * Порядок в списке братьев (один родитель + один воркспейс), общий для команды: меньше — выше.
+   * Вставка между соседями считается как середина их позиций, поэтому перетаскивание правит одну
+   * строку. NULL — строка ещё не размещена, показывается в хвосте по дате создания.
+   */
+  position: number | null;
+  /** Справка «О проекте» (27.09.2026): зачем ведём, что это, ссылки на артефакты. */
+  goal: string | null;
+  description: string | null;
+  links: ProjectLink[];
 };
+
+/** Ссылка на артефакт проекта. url — только http(s), проверяет swarm-api/project-fields.ts. */
+export type ProjectLink = { title: string; url: string };
 
 export type ProjectInput = {
   name: string;
@@ -133,4 +162,13 @@ export type ProjectInput = {
   parent_id?: string | null;
   sprint_id?: string | null;
   is_private?: boolean;
+  /** Ответственный за направление или инициативу (telegram id участника воркспейса). */
+  owner_telegram_id?: number | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  /** Порядок среди братьев; не передан при создании — проект встаёт в конец списка. */
+  position?: number | null;
+  goal?: string | null;
+  description?: string | null;
+  links?: ProjectLink[];
 };
