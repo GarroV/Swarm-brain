@@ -14,6 +14,10 @@ class Recorder {
     this.filters.push(`${column}=is.null`);
     return this;
   }
+  neq(column: string, value: string): Recorder {
+    this.filters.push(`${column}=neq.${value}`);
+    return this;
+  }
   or(filters: string): Recorder {
     this.filters.push(`or(${filters})`);
     return this;
@@ -24,6 +28,7 @@ Deno.test("ЯДРО: каждое условие — свой фильтр то�
   const guards: Guard[] = [
     { kind: "eq", column: "claim_owner", value: 7 },
     { kind: "isNull", column: "recorded_seconds" },
+    { kind: "neq", column: "status", value: "in_base" },
     { kind: "notTrue", column: "agent_last_recording" },
     { kind: "before", column: "lease_expires_at", value: "2026-09-28T12:00:00Z" },
     {
@@ -37,6 +42,7 @@ Deno.test("ЯДРО: каждое условие — свой фильтр то�
   assertEquals(withGuards(new Recorder(), guards).filters, [
     "claim_owner=eq.7",
     "recorded_seconds=is.null",
+    "status=neq.in_base",
     "or(agent_last_recording.is.null,agent_last_recording.is.false)",
     "or(lease_expires_at.lt.2026-09-28T12:00:00Z)",
     "or(status.eq.draft,or(a.is.null,b.lt.x))",

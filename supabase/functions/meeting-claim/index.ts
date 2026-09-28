@@ -18,6 +18,7 @@ import {
 } from "./agent-scope.ts";
 import { attachInvite, consumeInvite, inviteSource, releaseInvite } from "./invites.ts";
 import { CLAIM_LEASE_TTL_SEC } from "../_shared/claim-lease.ts";
+import { updateRecorders } from "../_shared/recorders-write.ts";
 
 // meeting-claim — шаг ДО транскрибации (см. transcribator/10-REVISED-DESIGN.md §4, §7.1).
 // Записывают все участники; перед запуском Whisper каждый делает claim по ключу встречи.
@@ -189,9 +190,9 @@ interface RecorderEntry {
   mic_start_offset?: number;
 }
 
-// Регистрируем записавшего в meetings.recorders. Read-modify-write: при низкой
-// одновременности достаточно; гонка двух одновременных claim'ов теоретически может
-// потерять одну запись в массиве — приемлемо для MVP (важна сама встреча, не точный список).
+// Регистрируем записавшего в meetings.recorders — условной записью по прочитанному списку с
+// повтором (_shared/recorders-write.ts): роль challenger в списке даёт право выгрузки, и
+// одновременный claim или сверка претендента в meeting-ingest не должны её стирать.
 // Повторный claim того же человека ОБНОВЛЯЕТ его строку (роль могла смениться defer→transcribe),
 // а при перехвате прежний владелец переводится в superseded — иначе в массиве осталось бы два
 // «transcribe» и по нему нельзя было бы понять, чьё аудио реально в базе.
@@ -204,17 +205,6 @@ async function registerRecorder(
   supersedeOwner?: number | null,
   micStartOffset?: number,
 ): Promise<void> {
-  const { data } = await supabase.from("meetings").select("recorders").eq(
-    "id",
-    meetingId,
-  ).single();
-  const recorders = ((data as { recorders?: RecorderEntry[] } | null)?.recorders) ?? [];
-  const next: RecorderEntry[] = recorders.map((r) =>
-    supersedeOwner != null && r.telegram_id === supersedeOwner &&
-      r.role === "transcribe"
-      ? { ...r, role: "superseded" as RecorderRole }
-      : r
-  );
   const mine: RecorderEntry = {
     telegram_id: telegramId,
     claimed_at: nowIso,
@@ -222,13 +212,20 @@ async function registerRecorder(
     ...(recordedSeconds !== undefined ? { recorded_seconds: recordedSeconds } : {}),
     ...(role === CHALLENGER_ROLE && micStartOffset !== undefined ? { mic_start_offset: micStartOffset } : {}),
   };
-  const at = next.findIndex((r) => r.telegram_id === telegramId);
-  if (at >= 0) next[at] = { ...next[at], ...mine };
-  else next.push(mine);
-  await supabase.from("meetings").update({
-    recorders: next,
-    updated_at: nowIso,
-  }).eq("id", meetingId);
+  const ok = await updateRecorders(supabase, meetingId, (current) => {
+    const recorders = current as RecorderEntry[];
+    const next: RecorderEntry[] = recorders.map((r) =>
+      supersedeOwner != null && r.telegram_id === supersedeOwner &&
+        r.role === "transcribe"
+        ? { ...r, role: "superseded" as RecorderRole }
+        : r
+    );
+    const at = next.findIndex((r) => r.telegram_id === telegramId);
+    if (at >= 0) next[at] = { ...next[at], ...mine };
+    else next.push(mine);
+    return next;
+  }, { updated_at: nowIso });
+  if (!ok) console.error(`meeting-claim: recorders ${meetingId} — ${telegramId} не вписан (список менялся)`);
 }
 
 // E-mail участника по telegram_id — нужен, чтобы понять «а этот человек есть в списке участников
@@ -347,7 +344,8 @@ async function resolveExisting(
   }
   const body: ClaimBody = { ...claimBody, recorded_seconds: recordedSeconds };
 
-  // (1) Свободна (никто не держит / лиз истёк и транскрипта нет) — занимаем.
+  // (1) Свободна (никто не держит / лиз истёк, транскрипта нет и запись держателя не
+  // обрабатывается) — занимаем. Идущая обработка — версия держателя: её сравнивает ingest.
   const { data: claimed } = await supabase
     .from("meetings")
     .update(occupyPatch({
@@ -360,6 +358,7 @@ async function resolveExisting(
     .eq("id", row.id)
     .is("transcript", null)
     .or(`claim_owner.is.null,lease_expires_at.lt.${nowIso}`)
+    .or("summary_status.is.null,summary_status.neq.processing")
     .select("id")
     .maybeSingle();
   if (claimed) {

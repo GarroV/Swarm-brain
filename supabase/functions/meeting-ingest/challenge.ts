@@ -24,7 +24,7 @@ import { boundClaimSeconds, type MeetingClock } from "../meeting-claim/claim-clo
 /** Роль в `meetings.recorders`: заявка другого человека ждёт сверки по выгрузке. */
 export const CHALLENGER_ROLE = "challenger";
 
-export type ChallengeRow = HeldRow & MeetingClock;
+export type ChallengeRow = HeldRow & MeetingClock & { summary_status?: string | null };
 
 export interface RecorderEntry {
   telegram_id: number;
@@ -62,8 +62,18 @@ export type ChallengeVerdict =
   | { kind: "takeover"; seconds: number }
   | { kind: "refuse"; reason: string };
 
+/**
+ * Есть ли у держателя своя версия встречи: готовая стенограмма или запись, которая ещё
+ * обрабатывается. Тогда более длинная выгрузка претендента право сразу не забирает — обе версии
+ * сравниваются по объёму распознанного (meeting-processor, `challenge`), и владелец встречи
+ * переходит вместе со стенограммой, а не раньше неё.
+ */
+export function holderHasVersion(row: Pick<ChallengeRow, "transcript" | "summary_status">): boolean {
+  return row.transcript !== null || row.summary_status === "processing";
+}
+
 function isFree(row: ChallengeRow, nowIso: string): boolean {
-  if (row.transcript !== null) return false;
+  if (holderHasVersion(row)) return false;
   return row.claim_owner === null ||
     (row.lease_expires_at !== null && Date.parse(row.lease_expires_at) < Date.parse(nowIso));
 }

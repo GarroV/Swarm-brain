@@ -6,6 +6,7 @@ import {
   type ChallengeRow,
   decideChallenge,
   freshChallenge,
+  holderHasVersion,
   holderSecondsCorrection,
   settleRecorders,
 } from "./challenge.ts";
@@ -93,6 +94,19 @@ Deno.test("встреча брошена (лиз истёк, стенограм�
   assertEquals(decideChallenge(free, null, TAKER, NOW), { kind: "occupy", seconds: null });
   const noOwner = row({ transcript: null, claim_owner: null });
   assertEquals(decideChallenge(noOwner, 90, TAKER, NOW), { kind: "occupy", seconds: 90 });
+});
+
+Deno.test("запись держателя ещё обрабатывается — встреча не брошена, даже если лиз заявки истёк", () => {
+  const busy = row({ transcript: null, lease_expires_at: at(1), summary_status: "processing" });
+  assertEquals(decideChallenge(busy, 8785, TAKER, NOW).kind, "takeover");
+  assertEquals(decideChallenge(busy, 700, TAKER, NOW).kind, "refuse");
+});
+
+Deno.test("у держателя есть своя версия (стенограмма или идущая обработка) — сравнивать есть с чем", () => {
+  assertEquals(holderHasVersion(row()), true);
+  assertEquals(holderHasVersion(row({ transcript: null, summary_status: "processing" })), true);
+  assertEquals(holderHasVersion(row({ transcript: null, summary_status: null })), false);
+  assertEquals(holderHasVersion(row({ transcript: null, summary_status: "failed" })), false);
 });
 
 // ── settleRecorders ───────────────────────────────────────────────────────────

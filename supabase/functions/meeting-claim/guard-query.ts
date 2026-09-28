@@ -7,6 +7,7 @@ import type { Guard } from "./arbiter.ts";
 interface GuardableQuery<Q> {
   eq(column: string, value: string | number): Q;
   is(column: string, value: null): Q;
+  neq(column: string, value: string): Q;
   or(filters: string): Q;
 }
 
@@ -16,6 +17,8 @@ function orClause(g: Guard): string {
       return `${g.column}.eq.${g.value}`;
     case "isNull":
       return `${g.column}.is.null`;
+    case "neq":
+      return `${g.column}.neq.${g.value}`;
     case "notTrue":
       return `${g.column}.is.null,${g.column}.is.false`;
     case "before":
@@ -30,6 +33,7 @@ export function withGuards<Q extends GuardableQuery<Q>>(query: Q, guards: Guard[
   for (const g of guards) {
     if (g.kind === "eq") q = q.eq(g.column, g.value);
     else if (g.kind === "isNull") q = q.is(g.column, null);
+    else if (g.kind === "neq") q = q.neq(g.column, g.value);
     else q = q.or(g.kind === "anyOf" ? g.clauses.map(orClause).join(",") : orClause(g));
   }
   return q;

@@ -3,14 +3,30 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { decideUpload, uploadSource } from "./second-recording.ts";
 
-const BOT = "agent:scriba-1";
-const PERSON = "person";
+const ME = 7;
+const OTHER = 8;
+const BOT = "agent:scriba-1:7";
+const PERSON = "person:7";
 
-Deno.test("источник выгрузки: агент — по его id, человек — один на всех своих клиентов", () => {
-  assertEquals(uploadSource({ kind: "bot", agentId: "scriba-1" }), BOT);
-  assertEquals(uploadSource({ kind: "recorder" }), PERSON);
-  assertEquals(uploadSource({ kind: "recorder_prev" }), PERSON);
-  assertEquals(uploadSource({ kind: "mcp" }), PERSON);
+Deno.test("источник выгрузки: агент — по его id и человеку, за которого пишет; человек — один на всех своих клиентов", () => {
+  assertEquals(uploadSource({ kind: "bot", agentId: "scriba-1", telegramId: ME }), BOT);
+  assertEquals(uploadSource({ kind: "recorder", telegramId: ME }), PERSON);
+  assertEquals(uploadSource({ kind: "recorder_prev", telegramId: ME }), PERSON);
+  assertEquals(uploadSource({ kind: "mcp", telegramId: ME }), PERSON);
+});
+
+Deno.test("запись другого человека — другой источник, а не повтор чужой выгрузки", () => {
+  assertEquals(uploadSource({ kind: "recorder", telegramId: OTHER }) === PERSON, false);
+  assertEquals(uploadSource({ kind: "bot", agentId: "scriba-1", telegramId: OTHER }) === BOT, false);
+  assertEquals(
+    decideUpload({
+      summaryStatus: "processing",
+      sources: [PERSON],
+      hasTranscript: false,
+      incoming: uploadSource({ kind: "recorder", telegramId: OTHER }),
+    }),
+    "queue",
+  );
 });
 
 Deno.test("первая выгрузка встречи — обычная обработка", () => {

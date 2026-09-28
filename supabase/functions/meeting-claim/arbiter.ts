@@ -15,6 +15,7 @@
 // Бот не пишет (остановился или умер: лиз истёк) — прежнее правило полноты.
 
 import { MAX_RECORDED_SECONDS } from "../_shared/claim-lease.ts";
+import { isFrozen, PUBLISHED_STATUS } from "../_shared/meeting-frozen.ts";
 
 // Перехват права более полной записью. Оба порога должны выполниться разом — чтобы почти
 // одинаковые записи (штатный случай: все стопнули в пределах минуты) не гоняли перетранскрибацию
@@ -85,7 +86,7 @@ function isSubstantiallyLonger(candidate: number, held: number): boolean {
 
 export function decideHeld(row: HeldRow, candidate: number, ownerId: number, nowIso: string): HeldDecision {
   // Правленное человеком или опубликованное команде не трогает никто.
-  if (row.notes_edited_at !== null || row.status === "in_base") return "defer";
+  if (isFrozen(row)) return "defer";
   const sameOwner = row.claim_owner === ownerId;
   if (botStillRecording(row, nowIso)) return sameOwner ? "reserve" : "defer";
   if (!(candidate > 0 && isSubstantiallyLonger(candidate, heldSeconds(row)))) return "defer";
@@ -108,6 +109,7 @@ export function claimAction(verdict: HeldDecision): ClaimAction {
 export type Guard =
   | { kind: "eq"; column: string; value: string | number }
   | { kind: "isNull"; column: string }
+  | { kind: "neq"; column: string; value: string }
   | { kind: "notTrue"; column: string }
   | { kind: "before"; column: string; value: string }
   | { kind: "anyOf"; clauses: Guard[] };
@@ -117,7 +119,8 @@ export type Guard =
  *   • claim_owner прежний — никто не перехватил, пока мы считали;
  *   • recorded_seconds тот же, что прочитан, — иначе удар бота успел записать больше, и решение
  *     «заметно полнее» принято по устаревшей цифре;
- *   • бот не начал писать: флаг не взведён или лиз истёк.
+ *   • бот не начал писать: флаг не взведён или лиз истёк;
+ *   • встречу не опубликовали и не правили (_shared/meeting-frozen.ts).
  */
 export function heldGuards(row: HeldRow, nowIso: string): Guard[] {
   return [
@@ -135,5 +138,7 @@ export function heldGuards(row: HeldRow, nowIso: string): Guard[] {
         { kind: "before", column: "lease_expires_at", value: nowIso },
       ],
     },
+    { kind: "isNull", column: "notes_edited_at" },
+    { kind: "neq", column: "status", value: PUBLISHED_STATUS },
   ];
 }
