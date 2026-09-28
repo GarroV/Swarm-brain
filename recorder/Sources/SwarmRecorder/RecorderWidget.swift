@@ -6,6 +6,8 @@ import RecorderKit
 //       ✕ (стоп) / 🎙 (красный, пульсирует) + полосы уровня / марка «Рой»;
 //   • встреча или звонок → БАННЕР (см. buildBanner): янтарная полоска · название ·
 //       время слота с обратным счётом · «Подключиться» + «Записать» · ✕ в правом верхнем углу;
+//   • несколько созвонов в одно время (D027) → тот же баннер с выбором: по строке на созвон —
+//       название · время · своя «Подключиться» (этот созвон) и «Записать» (к этой встрече);
 //   • бот не пришёл на встречу (D025) → тот же баннер: «Бота нет на встрече» · почему (текст
 //       сервера) · «Позвать бота». Если в этот момент идёт предложение записать — пропуск НЕ
 //       второй капсулой, а строкой «Бота нет · Позвать бота» под кнопками встречи.
@@ -19,6 +21,12 @@ final class RecorderWidget {
     // «Подключиться» на баннере встречи — открыть звонок И включить запись (референс Granola).
     var onJoin: (() -> Void)?
     var onDismiss: (() -> Void)?
+    // Выбор из пересекающихся созвонов (D027): ключ выбранной встречи, а не номер строки.
+    var onJoinChoice: ((String) -> Void)?
+    var onRecordChoice: ((String) -> Void)?
+
+    /// Строка выбора: ключ встречи + что читает человек.
+    struct Choice { let key: String; let notice: MeetingNotice }
     // «Позвать бота» по пропуску (D025) — id пропуска; ✕ на капсуле пропуска — убрать его из капсулы.
     var onInviteBot: ((String) -> Void)?
     var onMissedDismiss: ((String) -> Void)?
@@ -98,6 +106,11 @@ final class RecorderWidget {
     private(set) var shownMissed: MissedCapsule?
     /// Капсула говорит только о пропуске (предложения записать нет): ✕ закрывает один пропуск.
     private var missedOnly = false
+    // Выбор созвона (D027): строки собираются заново на каждый показ.
+    private let choiceStack = NSStackView()
+    /// Ключи строк ровно в том порядке, в каком их видит человек: кнопка несёт номер строки,
+    /// ключ берётся отсюда — из показанного, а не из списка, который мог обновиться.
+    private(set) var shownChoiceKeys: [String] = []
 
     // Состояние «в обработке»: ✕ (убрать) сверху → крутилка / зелёная галка → марка «Рой».
     private let procMark = NSImageView()
@@ -109,6 +122,7 @@ final class RecorderWidget {
     func showRecording(startedAt: Date) {
         ensurePanel()
         shownMissed = nil
+        hideChoice()
         recRow.isHidden = false
         bannerRow.isHidden = true
         bannerClose.isHidden = true
@@ -126,6 +140,7 @@ final class RecorderWidget {
         stopLevelMeter()
         missedOnly = false
         shownMissed = missed
+        hideChoice()
         bannerTitle.stringValue = notice.title
         bannerTitle.toolTip = notice.title          // название целиком, если обрезалось
         setSubtitle(notice.subtitle, lines: 1)
@@ -137,6 +152,76 @@ final class RecorderWidget {
         bannerClose.toolTip = "Не записывать эту встречу"
         // Единственное действие обязано выглядеть главным: нет ссылки — «Записать» заливаем.
         paint(bannerRecord, filled: !canJoin)
+        configMissedRow(missed)
+        showBanner()
+    }
+
+    /// Выбор из пересекающихся созвонов (D027) в той же капсуле: заголовок, по строке на созвон,
+    /// под ними — строка пропуска бота, если он есть (одна капсула, не две).
+    func showChoice(_ choices: [Choice], missed: MissedCapsule? = nil) {
+        ensurePanel()
+        stopLevelMeter()
+        missedOnly = false
+        shownMissed = missed
+        bannerTitle.stringValue = "Встречи в одно время"
+        bannerTitle.toolTip = nil
+        setSubtitle("Выбери, куда подключиться", lines: 1)
+        bannerSubtitle.toolTip = nil
+        choiceStack.setViews(choices.enumerated().map { choiceRow($0.element, index: $0.offset) }, in: .top)
+        shownChoiceKeys = choices.map(\.key)
+        choiceStack.isHidden = false
+        bannerButtons.isHidden = true
+        bannerClose.isHidden = false
+        bannerClose.toolTip = "Не записывать эти встречи"
+        configMissedRow(missed)
+        showBanner()
+    }
+
+    private func hideChoice() {
+        choiceStack.isHidden = true
+        choiceStack.setViews([], in: .top)
+        shownChoiceKeys = []
+    }
+
+    // Строка выбора: название · время слота · «Подключиться» (главная) + «Записать».
+    private func choiceRow(_ c: Choice, index: Int) -> NSView {
+        let title = NSTextField(labelWithString: c.notice.title)
+        title.font = .systemFont(ofSize: 12, weight: .semibold)
+        title.textColor = NSColor(white: 1, alpha: 0.95)
+        title.lineBreakMode = .byTruncatingTail
+        title.maximumNumberOfLines = 1
+        title.toolTip = c.notice.title
+        let when = NSTextField(labelWithString: c.notice.subtitle)
+        when.font = .systemFont(ofSize: 11, weight: .regular)
+        when.textColor = NSColor(white: 1, alpha: 0.55)
+        when.lineBreakMode = .byTruncatingTail
+        when.isHidden = c.notice.subtitle.isEmpty
+        for label in [title, when] {
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.widthAnchor.constraint(lessThanOrEqualToConstant: 232).isActive = true
+        }
+        let join = NSButton()
+        textButton(join, title: "Подключиться", filled: true, action: #selector(joinChoiceAction(_:)))
+        join.tag = index
+        join.toolTip = "Откроет «\(c.notice.title)» и включит запись"
+        join.setAccessibilityIdentifier("choice.join.\(index)")
+        join.setAccessibilityLabel("Подключиться: \(c.notice.title)")
+        let record = NSButton()
+        textButton(record, title: "Записать", filled: false, action: #selector(recordChoiceAction(_:)))
+        record.tag = index
+        record.setAccessibilityIdentifier("choice.record.\(index)")
+        record.setAccessibilityLabel("Записать: \(c.notice.title)")
+        let buttons = NSStackView(views: [join, record])
+        buttons.orientation = .horizontal
+        buttons.spacing = 6
+        let row = NSStackView(views: [title, when, buttons])
+        row.orientation = .vertical
+        row.alignment = .leading
+        row.spacing = 3
+        return row
+    }
+
+    private func configMissedRow(_ missed: MissedCapsule?) {
         if let missed {
             // Отказ приглашения — вместо короткой строки: он и есть главное, что надо прочитать.
             missedLabel.stringValue = missed.failed ? missed.detail : missed.shortLine
@@ -152,7 +237,6 @@ final class RecorderWidget {
         } else {
             missedRow.isHidden = true
         }
-        showBanner()
     }
 
     /// Отдельная капсула пропуска: предложения записать нет, говорит только «бота нет».
@@ -162,6 +246,7 @@ final class RecorderWidget {
         stopLevelMeter()
         missedOnly = true
         shownMissed = missed
+        hideChoice()
         bannerTitle.stringValue = missed.line
         bannerTitle.toolTip = missed.line
         // Текст сервера — целое предложение с названием встречи: в одну строку он не читается.
@@ -178,7 +263,7 @@ final class RecorderWidget {
     }
 
     private func showBanner() {
-        if !missedOnly { bannerButtons.isHidden = false }
+        if !missedOnly && choiceStack.isHidden { bannerButtons.isHidden = false }
         recRow.isHidden = true
         bannerRow.isHidden = false
         hideProcessingRow()
@@ -205,6 +290,7 @@ final class RecorderWidget {
     func showProcessing() {
         ensurePanel()
         shownMissed = nil
+        hideChoice()
         stopPulse()
         stopLevelMeter()
         recRow.isHidden = true
@@ -221,6 +307,7 @@ final class RecorderWidget {
     func showProcessingDone() {
         ensurePanel()
         shownMissed = nil
+        hideChoice()
         stopPulse()
         stopLevelMeter()
         recRow.isHidden = true
@@ -235,6 +322,7 @@ final class RecorderWidget {
 
     func hide() {
         shownMissed = nil
+        hideChoice()
         stopPulse()
         stopLevelMeter()
         hideProcessingRow()
@@ -412,7 +500,13 @@ final class RecorderWidget {
         bannerColumn.orientation = .vertical
         bannerColumn.spacing = 4
         bannerColumn.alignment = .leading
-        bannerColumn.setViews([bannerTitle, bannerSubtitle, bannerButtons, missedRow], in: .top)
+        choiceStack.orientation = .vertical
+        choiceStack.alignment = .leading
+        choiceStack.spacing = 10
+        choiceStack.edgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 2, right: 0)
+        choiceStack.isHidden = true
+
+        bannerColumn.setViews([bannerTitle, bannerSubtitle, choiceStack, bannerButtons, missedRow], in: .top)
 
         bannerRow.orientation = .horizontal
         bannerRow.spacing = 10
@@ -448,6 +542,14 @@ final class RecorderWidget {
     }
 
     @objc private func joinAction() { onJoin?() }
+    @objc private func joinChoiceAction(_ sender: NSButton) {
+        guard shownChoiceKeys.indices.contains(sender.tag) else { return }
+        onJoinChoice?(shownChoiceKeys[sender.tag])
+    }
+    @objc private func recordChoiceAction(_ sender: NSButton) {
+        guard shownChoiceKeys.indices.contains(sender.tag) else { return }
+        onRecordChoice?(shownChoiceKeys[sender.tag])
+    }
 
     private func configMark(_ v: NSImageView) {
         v.image = RoyArt.markImage(size: 24)
