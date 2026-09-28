@@ -1,5 +1,5 @@
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
-import { claimLeaseUntil } from "../_shared/claim-lease.ts";
+import { claimLeaseUntil, MAX_RECORDED_SECONDS } from "../_shared/claim-lease.ts";
 
 // Куда именно ложится heartbeat. Вынесено чистой функцией не ради красоты: разница между
 // «рекордер человека жив» и «служебный агент жив», а для агента ещё и «по какой встрече и его ли
@@ -59,11 +59,8 @@ export class HeartbeatRejected extends Error {
   }
 }
 
-/**
- * Потолок записанных секунд в ударе — сутки. Завышенное значение навсегда закрыло бы встречу от
- * перехвата более полной записью, поэтому явно невозможное отбивается, а не пишется.
- */
-export const MAX_RECORDED_SECONDS = 86_400;
+/** Потолок записанных секунд в ударе — общий с claim (_shared/claim-lease.ts). */
+export { MAX_RECORDED_SECONDS };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

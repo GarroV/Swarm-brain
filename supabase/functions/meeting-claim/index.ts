@@ -1,6 +1,7 @@
 // ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { occupyPatch, takeoverPatch } from "./claim-patch.ts";
+import { occupyPatch, refreshPatch, takeoverPatch } from "./claim-patch.ts";
+import { decideHeld, type Guard, heldGuards, type HeldRow, heldSeconds, readClaimSeconds } from "./arbiter.ts";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf } from "../_shared/meeting-title.ts";
 import { ROSTER_TOLERANCE_MIN, sameMeetingByRoster, scopeRoomKey } from "../_shared/meeting-roster.ts";
@@ -38,11 +39,7 @@ const NO_INVITE = "service agent: a manual meeting needs a valid invite — the 
 // Удар бота по своей встрече продлевает его тем же сроком (_shared/claim-lease.ts).
 const LEASE_TTL_SEC = CLAIM_LEASE_TTL_SEC;
 
-// Перехват права более полной записью. Оба порога должны выполниться разом — чтобы почти
-// одинаковые записи (штатный случай: все стопнули в пределах минуты) не гоняли перетранскрибацию
-// туда-сюда, но провал вроде «3 минуты против 2.5 часов» закрывался гарантированно.
-const TAKEOVER_MIN_RATIO = 1.5; // новая запись длиннее текущей минимум в полтора раза
-const TAKEOVER_MIN_EXTRA_SEC = 300; // …и минимум на 5 минут в абсолюте
+// Перехват права более полной записью и поправка «бот ещё пишет» (D020) — arbiter.ts.
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -163,7 +160,7 @@ function validate(raw: unknown): ClaimBody {
     user_notes: notes,
     agent_version: typeof b.agent_version === "string" ? b.agent_version : undefined,
     mic_start_offset: typeof micOffset === "number" && Number.isFinite(micOffset) ? micOffset : undefined,
-    recorded_seconds: typeof recSec === "number" && Number.isFinite(recSec) && recSec > 0 ? recSec : undefined,
+    recorded_seconds: readClaimSeconds(recSec),
     invite_id: typeof b.invite_id === "string" ? b.invite_id : undefined,
     join_url: typeof b.join_url === "string" ? b.join_url : undefined,
   };
@@ -225,36 +222,6 @@ async function registerRecorder(
   }).eq("id", meetingId);
 }
 
-// Длительность записи, которая СЕЙЧАС лежит за встречей (сек). Для строк, заведённых старым
-// клиентом, recorded_seconds пуст — оцениваем по последнему таймстампу сохранённого транскрипта.
-// Это позволяет перехватить право у записи старой сборки, не дожидаясь обновления всей команды.
-function heldSeconds(
-  row: {
-    recorded_seconds?: number | null;
-    transcript?: { segments?: Array<{ end?: number }> } | null;
-  },
-): number {
-  if (
-    typeof row.recorded_seconds === "number" &&
-    Number.isFinite(row.recorded_seconds)
-  ) {
-    return row.recorded_seconds;
-  }
-  const segs = row.transcript?.segments ?? [];
-  let max = 0;
-  for (const s of segs) {
-    const e = typeof s?.end === "number" && Number.isFinite(s.end) ? s.end : 0;
-    if (e > max) max = e;
-  }
-  return max;
-}
-
-// Заметно ли претендент полнее того, что уже есть. Оба порога разом — см. константы.
-function isSubstantiallyLonger(candidate: number, held: number): boolean {
-  return candidate >= held * TAKEOVER_MIN_RATIO &&
-    candidate >= held + TAKEOVER_MIN_EXTRA_SEC;
-}
-
 // E-mail участника по telegram_id — нужен, чтобы понять «а этот человек есть в списке участников
 // той встречи?». Единственный доступный серверу признак для записи из комнаты: у неё нет ни
 // названия, ни attendees, но сам записавший в календарном списке другой стороны присутствует.
@@ -269,14 +236,11 @@ async function emailOfUser(
   return ((data as { email?: string | null } | null)?.email ?? null);
 }
 
-type ExistingMeetingRow = {
-  id: string;
-  claim_owner: number | null;
-  recorded_seconds: number | null;
-  transcript: { segments?: Array<{ end?: number }> } | null;
-  notes_edited_at: string | null;
-  status: string | null;
-};
+type ExistingMeetingRow = HeldRow & { id: string };
+
+// Колонки строки встречи для арбитража: и найденной по составу, и по конфликту ключа.
+const EXISTING_COLUMNS =
+  "id, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at, lease_expires_at, agent_last_recording";
 
 type RosterCandidate = ExistingMeetingRow & {
   identity_key: string | null;
@@ -309,9 +273,7 @@ async function findMeetingByRoster(
 
   const { data } = await supabase
     .from("meetings")
-    .select(
-      "id, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at",
-    )
+    .select(EXISTING_COLUMNS)
     .eq("group_id", groupId)
     .gte("started_at", from)
     .lte("started_at", to)
@@ -384,40 +346,107 @@ async function resolveExisting(
     };
   }
 
-  // (2) Занята. Перехватываем, только если НАША запись заметно полнее — и не трогаем то, что
-  // правил человек или уже опубликовали команде.
+  // (2) Занята. Кто получает право — arbiter.ts: правило полноты и поправка «бот ещё пишет» (D020).
   const candidate = body.recorded_seconds ?? 0;
   const held = heldSeconds(row);
-  const protectedRow = row.notes_edited_at !== null || row.status === "in_base";
-  if (
-    !(candidate > 0 && !protectedRow && isSubstantiallyLonger(candidate, held))
-  ) {
-    return { decision: "defer", supersededOwner: null, heldBy };
+  const verdict = decideHeld(row, candidate, identity.telegramId, nowIso);
+  if (verdict === "defer") return { decision: "defer", supersededOwner: null, heldBy };
+
+  if (verdict === "reserve") {
+    await keepReserve(row.id, body, identity.telegramId);
+    console.log(
+      `meeting-claim: запасная запись ${row.id} — ${
+        Math.round(candidate)
+      }с у ${identity.telegramId}, бот того же человека ещё пишет (${Math.round(held)}с)`,
+    );
+    return { decision: "transcribe", supersededOwner: null, heldBy: identity.telegramId };
   }
 
-  // Сбрасываем ТОЛЬКО маркеры обработки (и пульс бота, D019) — claim-patch.ts.
-  const { data: took } = await supabase
-    .from("meetings")
-    .update(takeoverPatch({
-      ownerId: identity.telegramId,
-      leaseIso,
-      nowIso,
-      micStartOffset: body.mic_start_offset ?? null,
-      recordedSeconds: candidate,
-    }))
-    .eq("id", row.id)
-    .eq("claim_owner", row.claim_owner) // никто не перехватил, пока мы считали
+  // refresh — тот же человек, маркеры обработки не сбрасываются; takeover — право переходит, и
+  // сбрасываются ТОЛЬКО маркеры обработки (и пульс бота, D019). Оба — claim-patch.ts.
+  const patchInput = {
+    ownerId: identity.telegramId,
+    leaseIso,
+    nowIso,
+    micStartOffset: body.mic_start_offset ?? null,
+    recordedSeconds: candidate,
+  };
+  const patch = verdict === "refresh" ? refreshPatch(patchInput) : takeoverPatch(patchInput);
+  const { data: took } = await withGuards(
+    supabase.from("meetings").update(patch).eq("id", row.id),
+    heldGuards(row, nowIso),
+  )
     .select("id")
     .maybeSingle();
   if (!took) return { decision: "defer", supersededOwner: null, heldBy };
 
   heldBy = identity.telegramId;
   console.log(
-    `meeting-claim: перехват ${row.id} — ${Math.round(candidate)}с у ${identity.telegramId} против ${
-      Math.round(held)
-    }с у ${row.claim_owner}`,
+    `meeting-claim: ${verdict === "refresh" ? "обновление права" : "перехват"} ${row.id} — ${
+      Math.round(candidate)
+    }с у ${identity.telegramId} против ${Math.round(held)}с у ${row.claim_owner}`,
   );
-  return { decision: "transcribe", supersededOwner: row.claim_owner, heldBy };
+  // Прежний владелец уступает право только при переходе к другому человеку.
+  const superseded = verdict === "takeover" ? heldOwnerOf(row) : null;
+  return { decision: "transcribe", supersededOwner: superseded, heldBy };
+}
+
+/** Кто держал право до перехвата (не запись владельца — чтение). */
+function heldOwnerOf(row: ExistingMeetingRow): number | null {
+  return row.claim_owner;
+}
+
+/**
+ * Запасная запись (D020): строку встречи не перехватываем — лиз, маркеры обработки и пульс бота
+ * остаются как есть. Пишутся только два факта этой записи, и оба — под условием, что встреча всё
+ * ещё за тем же человеком: сдвиг mic-дорожки (обработка её аудио сведёт реплики по нему; у бота
+ * mic-дорожки нет) и секунды — только в большую сторону: recorded_seconds встречи = самая полная
+ * из записей её владельца.
+ */
+async function keepReserve(meetingId: string, body: ClaimBody, ownerId: number): Promise<void> {
+  if (body.mic_start_offset !== undefined) {
+    const { error } = await supabase.from("meetings").update({ mic_start_offset: body.mic_start_offset })
+      .eq("id", meetingId).eq("claim_owner", ownerId);
+    if (error) console.error(`meeting-claim: запасная ${meetingId} — mic_start_offset: ${error.message}`);
+  }
+  const seconds = body.recorded_seconds;
+  if (seconds === undefined) return;
+  const { error } = await supabase.from("meetings").update({ recorded_seconds: seconds })
+    .eq("id", meetingId).eq("claim_owner", ownerId)
+    .or(`recorded_seconds.is.null,recorded_seconds.lt.${seconds}`);
+  if (error) console.error(`meeting-claim: запасная ${meetingId} — recorded_seconds: ${error.message}`);
+}
+
+// Условия arbiter.ts → фильтры PostgREST той же UPDATE.
+interface GuardableQuery<Q> {
+  eq(column: string, value: string | number): Q;
+  is(column: string, value: null): Q;
+  or(filters: string): Q;
+}
+
+function orClause(g: Guard): string {
+  switch (g.kind) {
+    case "eq":
+      return `${g.column}.eq.${g.value}`;
+    case "isNull":
+      return `${g.column}.is.null`;
+    case "notTrue":
+      return `${g.column}.is.null,${g.column}.is.false`;
+    case "before":
+      return `${g.column}.lt.${g.value}`;
+    case "anyOf":
+      return `or(${g.clauses.map(orClause).join(",")})`;
+  }
+}
+
+function withGuards<Q extends GuardableQuery<Q>>(query: Q, guards: Guard[]): Q {
+  let q = query;
+  for (const g of guards) {
+    if (g.kind === "eq") q = q.eq(g.column, g.value);
+    else if (g.kind === "isNull") q = q.is(g.column, null);
+    else q = q.or(g.kind === "anyOf" ? g.clauses.map(orClause).join(",") : orClause(g));
+  }
+  return q;
 }
 
 // Личные пометки участника → приватная entry (is_private, owner_id) с metadata.meeting_id.
@@ -693,9 +722,7 @@ Deno.serve(async (req: Request) => {
         // Встреча с этим ключом уже есть → решаем по тому же правилу, что и при склейке.
         const { data: existing } = await supabase
           .from("meetings")
-          .select(
-            "id, identity_key, started_at, attendees, claim_owner, recorded_seconds, transcript, notes_edited_at, status, created_at",
-          )
+          .select(EXISTING_COLUMNS)
           .eq("identity_key", scopedKey)
           .single();
         if (!existing) return fail("claim conflict but meeting not found", 409);
