@@ -23,6 +23,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, verifyAgentToken } from "../_shared/agent-auth.ts";
 import { makeMissStore, MISS_COLUMNS, type MissRow } from "../_shared/calendar-miss-store.ts";
+import { isDemoSession } from "../_shared/demo-session.ts";
 import type { SnapshotEvent, SnapshotRun } from "../_shared/calendar-snapshot.ts";
 import { handleMeetingInviteRoutes, type InviteContext } from "../swarm-api/meeting-invites.ts";
 import { handleMissed, type MissedDeps, type Person } from "./handle.ts";
@@ -42,12 +43,13 @@ function must<T>(what: string, res: { data: T | null; error: { message: string }
 }
 
 function inviteCtx(person: Person): InviteContext {
-  // Демо-воркспейс автозапуска не имеет (его люди без scriba_autojoin); отказ демо — правило веба.
+  // Демо автозапуска не имеет (его люди без scriba_autojoin); отказ демо — правило веба, решается
+  // по личности (_shared/demo-session.ts), а не по слагу группы.
   return {
     supabase,
     telegramId: person.telegramId,
     groupId: person.groupId,
-    isDemo: person.groupId === "demo",
+    isDemo: isDemoSession(person.telegramId),
     origin: "",
   };
 }
