@@ -59,13 +59,22 @@ values (900000001, 'demo', 0, false, :'gid')
 on conflict (telegram_id) do update
   set group_id = excluded.group_id, is_admin = false, username = excluded.username;
 
--- Пространство = вкладка доски. Имя выдумано; к реальным проектам команды отношения не имеет.
-insert into sprints (id, group_id, name, start_date, end_date, status)
+-- Вкладка доски «Проекты» и пространство раздела «Спринты» — РАЗНЫЕ сущности, хоть и живут в
+-- одной таблице `sprints` (разведены полем kind, issue #423). До 24.09.2026 демо держало обе на
+-- одной записи, и его спринты в разделе «Спринты» не было видно. Имена выдуманы.
+insert into sprints (id, group_id, name, start_date, end_date, status, kind)
 values ('d0000000-0000-4000-8000-000000000001', :'gid', 'Store Experience',
-        current_date - 90, current_date + 90, 'active')
+        current_date - 90, current_date + 90, 'active', 'board_tab')
 on conflict (id) do update
-  set name = excluded.name, group_id = excluded.group_id,
+  set name = excluded.name, group_id = excluded.group_id, kind = excluded.kind,
       start_date = excluded.start_date, end_date = excluded.end_date;
+
+-- Пространство спринтов. Даты схема требует, человеку они не показываются.
+insert into sprints (id, group_id, name, start_date, end_date, status, kind)
+values ('d0000000-0000-4000-8000-000000000002', :'gid', 'Store Experience',
+        current_date, current_date, 'active', 'space')
+on conflict (id) do update
+  set name = excluded.name, group_id = excluded.group_id, kind = excluded.kind;
 
 -- Направления (проекты верхнего уровня) и инициативы (подпроекты). Вкладку держит
 -- `sprint_id` у направления; подпроект наследует её у родителя — так же, как в продукте.
@@ -150,7 +159,7 @@ on conflict (id) do update
 -- именно записанное число, как и продукт.
 insert into sprint_cycles (id, group_id, tab_id, name, start_date, end_date, check_date,
                            status, created_by, started_at, accepted_at, accepted_by, summary, stats)
-values ('d0000000-0000-4000-8000-000000000301', :'gid', 'd0000000-0000-4000-8000-000000000001',
+values ('d0000000-0000-4000-8000-000000000301', :'gid', 'd0000000-0000-4000-8000-000000000002',
         'Sprint 12', current_date - 28, current_date - 15, current_date - 21, 'accepted',
         'demo', (current_date - 28)::timestamptz, (current_date - 15)::timestamptz, 'demo',
         'Prep checklist rewritten, supplier reports collected. Audit scorecard slipped a week.',
@@ -164,7 +173,7 @@ on conflict (id) do update
 -- Живой спринт: один незакрытый на пространство — иначе частичный уникальный индекс отобьёт.
 insert into sprint_cycles (id, group_id, tab_id, name, start_date, end_date, check_date,
                            status, created_by, started_at)
-values ('d0000000-0000-4000-8000-000000000302', :'gid', 'd0000000-0000-4000-8000-000000000001',
+values ('d0000000-0000-4000-8000-000000000302', :'gid', 'd0000000-0000-4000-8000-000000000002',
         'Sprint 13', current_date - 6, current_date + 7, current_date - 1, 'active',
         'demo', (current_date - 6)::timestamptz)
 on conflict (id) do update
