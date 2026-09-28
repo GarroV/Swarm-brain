@@ -1,104 +1,96 @@
-// Кого и о чём будит пропуск автозапуска по календарю (T102, решение D015).
+// Пропуски автозапуска по календарю (T102, решения D015/D022): что считается пропуском, под каким
+// ключом он хранится и когда рекордер может позвать бота руками.
 //
-// Ядро: ошибка здесь молчалива в обе стороны. Лишний «громкий» пропуск — человек получает сообщение о
-// каждом обеде в календаре и перестаёт читать сигналы бота вообще; потерянный — человек не узнаёт, что
-// бот не придёт, и обнаруживает пустую запись. Поэтому каждая причина и каждая граница — тестом.
+// Ядро: ошибка здесь молчалива в обе стороны. Лишний пропуск — рекордер зовёт человека «бот не пришёл»
+// на обед или на встречу, куда бот уже идёт, и человек перестаёт этому верить; потерянный — человек не
+// узнаёт, что бот не придёт, и обнаруживает пустую запись. Поэтому каждая причина и граница — тестом.
 import { assert, assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import type { DispatchSkip } from "./calendar-dispatch.ts";
-import { ARRIVAL_GRACE_MS, arrivalCheckDue, type ArrivalJob, notArrivedNotice, skipNotice } from "./calendar-missed.ts";
+import type { GEvent } from "../meeting-current/select.ts";
+import type { DispatchJob, DispatchSkip } from "./calendar-dispatch.ts";
+import {
+  ARRIVAL_GRACE_MS,
+  arrivalCheckDue,
+  type ArrivalJob,
+  canInvite,
+  MISS_REASONS,
+  missFromSkip,
+  missMessage,
+  notArrivedMiss,
+  ongoingPlan,
+  PICKUP_GRACE_MS,
+  pickupMiss,
+} from "./calendar-missed.ts";
 
 const PERSON = 111;
 const KEY = "uid-1@google.com:2026-09-28";
-/** 10:00 по Белграду (UTC+2 в сентябре). */
-const DAY = Date.parse("2026-09-28T08:00:00Z");
+const STARTS = "2026-09-28T10:00:00+02:00";
+const ENDS = "2026-09-28T11:00:00+02:00";
+const START_MS = Date.parse(STARTS);
+const MEET = "https://meet.google.com/abc-defg-hij";
 
 function skip(reason: DispatchSkip["reason"], extra: Partial<DispatchSkip> = {}): DispatchSkip {
-  const personLevel = reason.startsWith("calendar_");
+  if (reason.startsWith("calendar_")) return { invited_by: PERSON, calendar_key: null, title: null, reason, ...extra };
   return {
     invited_by: PERSON,
-    calendar_key: personLevel ? null : KEY,
-    title: personLevel ? null : "Weekly sync",
+    calendar_key: KEY,
+    title: "Weekly sync",
     reason,
+    starts_at: STARTS,
+    ends_at: ENDS,
     ...extra,
   };
 }
 
-Deno.test("тихие причины не будят человека: нет ссылки, отклонил, уже позвали руками, Google моргнул", () => {
+Deno.test("не пропуск: нет ссылки (обед, встреча вживую), отклонил, уже позвали руками, Google моргнул", () => {
   for (const reason of ["no_conference_link", "declined", "manual_invite_exists", "calendar_unavailable"] as const) {
-    assertEquals(skipNotice(skip(reason), DAY), null, reason);
+    assertEquals(missFromSkip(skip(reason), START_MS), null, reason);
   }
 });
 
-Deno.test("не Meet — сообщение владельцу календаря о ЭТОЙ встрече, площадка названа, совет — рекордер", () => {
-  const n = skipNotice(skip("unsupported_platform", { platform: "zoom" }), DAY);
-  assert(n !== null);
-  assertEquals(n.recipient, PERSON);
-  assertEquals(n.meetingKey, KEY);
-  assertEquals(n.kind, "autojoin_unsupported_platform");
-  assertStringIncludes(n.html, "Weekly sync");
-  assertStringIncludes(n.html, "Zoom");
-  assertStringIncludes(n.html, "bumblebee");
+Deno.test("пропуск встречи хранится под ключом встречи, со временем и площадкой", () => {
+  const m = missFromSkip(skip("unsupported_platform", { platform: "zoom" }), START_MS);
+  assertEquals(m, {
+    invited_by: PERSON,
+    miss_key: KEY,
+    calendar_key: KEY,
+    reason: "unsupported_platform",
+    title: "Weekly sync",
+    join_url: null,
+    platform: "zoom",
+    starts_at: STARTS,
+    ends_at: ENDS,
+  });
 });
 
-Deno.test("ссылка не разобралась — подсказка позвать бота руками, на обоих языках, английский первым", () => {
-  const n = skipNotice(skip("unrecognized_link", { platform: "meet" }), DAY);
-  assert(n !== null);
-  assertEquals(n.kind, "autojoin_unrecognized_link");
-  const en = n.html.indexOf("Invite the bot to a call");
-  const ru = n.html.indexOf("Позвать бота на созвон");
-  assert(en >= 0 && ru > en, n.html);
+Deno.test("причина уровня человека — один пропуск в сутки по дате Белграда, у каждой причины свой", () => {
+  const late = Date.parse("2026-09-28T23:30:00+02:00");
+  const dead = missFromSkip(skip("calendar_token_dead"), late);
+  const none = missFromSkip(skip("calendar_not_connected"), late);
+  assertEquals(dead?.miss_key, "autojoin:2026-09-28");
+  assertEquals(none?.miss_key, "autojoin:2026-09-28");
+  assertEquals(dead?.reason, "calendar_token_dead");
+  assertEquals(dead?.calendar_key, null);
+  // 00:30 по Белграду — это ещё 28-е по UTC, но уже новые сутки команды.
+  const nextDay = missFromSkip(skip("calendar_token_dead"), Date.parse("2026-09-29T00:30:00+02:00"));
+  assertEquals(nextDay?.miss_key, "autojoin:2026-09-29");
 });
 
-Deno.test("причина уровня человека — раз в сутки по дате Белграда, у каждой причины свой счёт", () => {
-  const dead = skipNotice(skip("calendar_token_dead"), DAY);
-  const none = skipNotice(skip("calendar_not_connected"), DAY);
-  assert(dead !== null && none !== null);
-  assertEquals(dead.meetingKey, "autojoin:2026-09-28");
-  assertEquals(none.meetingKey, "autojoin:2026-09-28");
-  assertEquals(dead.kind, "autojoin_calendar_token_dead");
-  assertEquals(none.kind, "autojoin_calendar_not_connected");
-  assertStringIncludes(dead.html, "Invite the bot to a call");
-  assertStringIncludes(none.html, "Connections");
+Deno.test("причина встречи без ключа встречи — сбой отбора, а не пропуск без счёта", () => {
+  assertEquals(missFromSkip(skip("unrecognized_link", { calendar_key: null }), START_MS), null);
 });
 
-Deno.test("причина уровня человека ночью молчит: будить не о чем, встречи мы не видим", () => {
-  const belgrade = (hhmm: string) => Date.parse(`2026-09-28T${hhmm}:00+02:00`);
-  assertEquals(skipNotice(skip("calendar_token_dead"), belgrade("07:59")), null);
-  assert(skipNotice(skip("calendar_token_dead"), belgrade("08:00")) !== null);
-  assert(skipNotice(skip("calendar_token_dead"), belgrade("19:59")) !== null);
-  assertEquals(skipNotice(skip("calendar_token_dead"), belgrade("20:00")), null);
-  assertEquals(skipNotice(skip("calendar_token_dead"), belgrade("23:30")), null);
-});
-
-Deno.test("пропуск встречи ночью всё равно громкий: встреча-то у человека есть", () => {
-  const night = Date.parse("2026-09-28T23:30:00+02:00");
-  assert(skipNotice(skip("unrecognized_link"), night) !== null);
-});
-
-Deno.test("название из календаря экранируется: это чужой текст в HTML-сообщении", () => {
-  const n = skipNotice(skip("unrecognized_link", { title: "<b>R&D</b>" }), DAY);
-  assert(n !== null);
-  assertStringIncludes(n.html, "&lt;b&gt;R&amp;D&lt;/b&gt;");
-  assert(!n.html.includes("<b>R&D"), n.html);
-});
-
-Deno.test("встреча без названия не даёт пустых кавычек", () => {
-  const n = skipNotice(skip("unrecognized_link", { title: null }), DAY);
-  assert(n !== null);
-  assertStringIncludes(n.html, "untitled meeting");
-  assertStringIncludes(n.html, "встреча без названия");
-});
-
-const TAKEN = Date.parse("2026-09-28T10:00:00+02:00");
+const TAKEN = START_MS - 60_000;
 
 function job(extra: Partial<ArrivalJob> = {}): ArrivalJob {
   return {
     calendar_key: KEY,
     invited_by: PERSON,
     title: "Weekly sync",
-    join_url: "https://meet.google.com/abc-defg-hij",
+    join_url: MEET,
+    platform: "meet",
+    starts_at: STARTS,
+    ends_at: ENDS,
     taken_at: new Date(TAKEN).toISOString(),
-    ends_at: "2026-09-28T11:00:00+02:00",
     ...extra,
   };
 }
@@ -106,26 +98,106 @@ function job(extra: Partial<ArrivalJob> = {}): ArrivalJob {
 Deno.test("дошёл ли бот, спрашиваем не раньше запаса после забора и не после конца встречи", () => {
   assertEquals(arrivalCheckDue(job(), TAKEN + ARRIVAL_GRACE_MS - 1), false);
   assertEquals(arrivalCheckDue(job(), TAKEN + ARRIVAL_GRACE_MS), true);
-  assertEquals(arrivalCheckDue(job(), Date.parse("2026-09-28T11:00:00+02:00")), false);
+  assertEquals(arrivalCheckDue(job(), Date.parse(ENDS)), false);
   assertEquals(arrivalCheckDue(job({ taken_at: null }), TAKEN + ARRIVAL_GRACE_MS), false);
 });
 
-Deno.test("бот пишет или уже сам сказал человеку, что не зашёл, — второго сообщения нет", () => {
-  assertEquals(notArrivedNotice(job(), { botSeen: true, noticeSent: false }), null);
-  assertEquals(notArrivedNotice(job(), { botSeen: false, noticeSent: true }), null);
+Deno.test("бот пишет или сам сказал человеку, почему не зашёл, — пропуска нет", () => {
+  assertEquals(notArrivedMiss(job(), { botSeen: true, noticeSent: false }), null);
+  assertEquals(notArrivedMiss(job(), { botSeen: false, noticeSent: true }), null);
 });
 
-Deno.test("бот не дошёл и промолчал — человеку причина, ссылка и ручной путь", () => {
-  const n = notArrivedNotice(job({ join_url: "https://meet.google.com/abc-defg-hij?a=1&b=2" }), {
-    botSeen: false,
-    noticeSent: false,
-  });
-  assert(n !== null);
-  assertEquals(n.recipient, PERSON);
-  assertEquals(n.meetingKey, KEY);
-  assertEquals(n.kind, "autojoin_not_arrived");
-  assertStringIncludes(n.html, "Weekly sync");
-  assertStringIncludes(n.html, "https://meet.google.com/abc-defg-hij?a=1&amp;b=2");
-  assertStringIncludes(n.html, "Invite the bot to a call");
-  assertStringIncludes(n.html, "Позвать бота на созвон");
+Deno.test("бот не дошёл и промолчал — пропуск со ссылкой, по нему можно позвать руками", () => {
+  const m = notArrivedMiss(job(), { botSeen: false, noticeSent: false });
+  assertEquals(m?.reason, "not_arrived");
+  assertEquals(m?.miss_key, KEY);
+  assertEquals(m?.join_url, MEET);
+  assertEquals(m?.ends_at, ENDS);
+  assert(m !== null && canInvite(m));
+});
+
+const dispatchJob: DispatchJob = {
+  calendar_key: KEY,
+  invited_by: PERSON,
+  join_url: MEET,
+  platform: "meet",
+  title: "Weekly sync",
+  starts_at: STARTS,
+  ends_at: ENDS,
+};
+
+Deno.test("задания нет или никто не забрал — служба автозапуска не отозвалась, но не раньше запаса", () => {
+  const due = START_MS + PICKUP_GRACE_MS;
+  assertEquals(pickupMiss(dispatchJob, null, due - 1), null);
+  assertEquals(pickupMiss(dispatchJob, null, due)?.reason, "not_picked_up");
+  assertEquals(pickupMiss(dispatchJob, { taken_at: null }, due)?.reason, "not_picked_up");
+  assertEquals(pickupMiss(dispatchJob, { taken_at: new Date(START_MS).toISOString() }, due), null);
+  assertEquals(pickupMiss(dispatchJob, null, Date.parse(ENDS)), null);
+  const m = pickupMiss(dispatchJob, null, due);
+  assert(m !== null && canInvite(m) && m.join_url === MEET);
+});
+
+function ev(uid: string, startMin: number, endMin: number, extra: Partial<GEvent> = {}): GEvent {
+  const at = (min: number) => new Date(START_MS + min * 60_000).toISOString();
+  return {
+    id: uid,
+    iCalUID: uid,
+    summary: uid,
+    status: "confirmed",
+    start: { dateTime: at(startMin) },
+    end: { dateTime: at(endMin) },
+    ...extra,
+  } as GEvent;
+}
+
+Deno.test("идущие встречи оцениваются как в момент их начала: и опоздавшая на полчаса, и Zoom", () => {
+  const now = START_MS + 30 * 60_000;
+  const plan = ongoingPlan(
+    [
+      ev("meet", 0, 60, { hangoutLink: MEET }),
+      ev("zoom", 0, 60, { location: "https://us02web.zoom.us/j/123456789" }),
+      ev("lunch", 0, 60),
+      ev("future", 45, 90, { hangoutLink: "https://meet.google.com/fut-ureq-abc" }),
+      ev("over", -60, 0, { hangoutLink: "https://meet.google.com/ove-rrrr-abc" }),
+    ],
+    PERSON,
+    now,
+    new Set(),
+  );
+  assertEquals(plan.jobs.map((j) => j.title), ["meet"]);
+  assertEquals(plan.misses.map((m) => `${m.title}:${m.reason}`), ["zoom:unsupported_platform"]);
+});
+
+Deno.test("комната, куда уже позвали руками, — не ожидаемая встреча", () => {
+  const plan = ongoingPlan(
+    [ev("meet", 0, 60, { hangoutLink: MEET })],
+    PERSON,
+    START_MS + 60_000,
+    new Set(["meet.google.com/abc-defg-hij"]),
+  );
+  assertEquals(plan, { jobs: [], misses: [] });
+});
+
+Deno.test("позвать руками можно только туда, куда бот умеет и где есть ссылка", () => {
+  for (const reason of MISS_REASONS) {
+    const base = { ...notArrivedMiss(job(), { botSeen: false, noticeSent: false })!, reason };
+    assertEquals(canInvite(base), reason === "not_arrived" || reason === "not_picked_up", reason);
+  }
+  const noLink = { ...notArrivedMiss(job(), { botSeen: false, noticeSent: false })!, join_url: null };
+  assertEquals(canInvite(noLink), false);
+});
+
+Deno.test("у каждой причины текст на обоих языках, название встречи в нём, пустого нет", () => {
+  for (const reason of MISS_REASONS) {
+    const m = { ...notArrivedMiss(job(), { botSeen: false, noticeSent: false })!, reason };
+    const text = missMessage(m);
+    assert(text.en.length > 20 && text.ru.length > 20, reason);
+    if (m.calendar_key !== null && !reason.startsWith("calendar_")) {
+      assertStringIncludes(text.en, "Weekly sync");
+      assertStringIncludes(text.ru, "Weekly sync");
+    }
+  }
+  const untitled = missMessage({ ...notArrivedMiss(job(), { botSeen: false, noticeSent: false })!, title: null });
+  assertStringIncludes(untitled.en, "untitled meeting");
+  assertStringIncludes(untitled.ru, "встреча без названия");
 });

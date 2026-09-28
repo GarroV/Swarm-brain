@@ -1,152 +1,114 @@
 // Импорты по URL, а не голыми спецификаторами: так во ВСЕХ функциях, см. _shared/agent-auth.ts.
 //
-// Пропуск автозапуска по календарю → сообщение человеку (T102, решение D015). Чистые функции: что
-// сообщать, кому, под каким ключом журнала и каким текстом. Отправку делает meeting-calendar/missed.ts
-// через журнал meeting_notices и его потолки (meeting_notice_reserve).
+// Пропуски автозапуска по календарю (T102, решения D015/D022). Чистые функции: что считается
+// пропуском, под каким ключом он хранится (таблица meeting_calendar_misses), когда по нему можно
+// позвать бота руками и что о нём сказать человеку. Показывает пропуск рекордер человека (bumblebee,
+// функция meeting-missed); пишут его meeting-calendar (на опросе оркестратора) и meeting-missed (на
+// опросе рекордера — так пропуск виден, даже когда оркестратор лежит и не опрашивает ничего).
 //
-// Какие причины будят человека. Правило одно: сообщаем, когда человек ЖДЁТ бота и может что-то
-// сделать, пока встреча не прошла.
-//   громко: unsupported_platform (встреча не в Meet — записать рекордером), unrecognized_link (ссылку
-//           не разобрали — позвать руками), calendar_not_connected и calendar_token_dead (бот не видит
-//           НИ ОДНОЙ встречи — переподключить, пока звать руками), бот не дошёл (not_arrived);
-//   тихо:   no_conference_link — событие без ссылки обычно не созвон (обед, фокус, встреча вживую):
-//           сообщение о каждом из них научило бы человека не читать сигналы бота вообще;
-//           declined — человек сам не идёт; manual_invite_exists — бот уже идёт по ручному приглашению;
-//           calendar_unavailable — Google моргнул, следующий опрос через минуту, окно встречи 12 минут.
+// Что считается пропуском. Правило одно: человек включил автозапуск и ЖДЁТ бота на этой встрече.
+//   пропуск: unsupported_platform (встреча не в Meet), unrecognized_link (ссылку в событии не разобрали),
+//            calendar_not_connected / calendar_token_dead (бот не видит НИ ОДНОЙ встречи человека),
+//            not_picked_up (встреча началась, а задания нет или его никто не забрал — служба
+//            автозапуска не отозвалась), not_arrived (забрал, но в звонке не появился и сам ничего не
+//            сказал: контейнер упал до двери, оркестратор умер после забора);
+//   не пропуск: no_conference_link — событие без ссылки обычно не созвон (обед, фокус, встреча
+//            вживую); declined — человек сам не идёт; manual_invite_exists — бот уже идёт по ручному
+//            приглашению; calendar_unavailable — Google моргнул, опрос повторится через минуту.
 //
-// Сколько раз. Причина встречи — одно сообщение на встречу и причину (ключ журнала = ключ встречи,
-// вид = причина). Причина человека встречи не имеет — раз в сутки по дате Белграда и только днём:
-// о «календарь протух» в три ночи будить незачем, встречи мы всё равно не видим.
-//
-// Язык человека сервер не знает — поэтому оба, английский первым (как у сторожа записи,
-// swarm-bot/lib/recording-watchdog.ts).
-import type { DispatchSkip, SkipReason } from "./calendar-dispatch.ts";
+// Сколько раз. Пропуск встречи — один на встречу и причину (ключ = ключ встречи). Причина человека
+// встречи не имеет — один в сутки команды (ключ `autojoin:<дата по Белграду>`).
+import type { GEvent } from "../meeting-current/select.ts";
+import { type DispatchJob, type DispatchSkip, planPersonDispatch } from "./calendar-dispatch.ts";
 import { NO_TITLE } from "./notice-texts.ts";
 
-/** Через сколько после забора задания бот обязан подать признак жизни или сам сказать об отказе. */
+/** После начала встречи: задания всё нет или его никто не забрал — служба автозапуска не отозвалась. */
+export const PICKUP_GRACE_MS = 3 * 60_000;
+/** После забора задания: бот обязан подать heartbeat или сам сказать человеку об отказе. */
 export const ARRIVAL_GRACE_MS = 6 * 60_000;
 
-/** Часовой пояс команды: по нему сутки и «день» для причин уровня человека. */
+/** Часовой пояс команды: по нему сутки для причин уровня человека. */
 export const TEAM_TIME_ZONE = "Europe/Belgrade";
-/** Причины уровня человека шлются с этого часа (включительно)… */
-export const PERSON_NOTICE_FROM_HOUR = 8;
-/** …и до этого часа (не включая). */
-export const PERSON_NOTICE_UNTIL_HOUR = 20;
 
-/** Что отправить: кому, под каким ключом и видом журнала, каким текстом (HTML для Telegram). */
-export interface MissedNotice {
-  recipient: number;
-  meetingKey: string;
-  kind: string;
-  html: string;
+export const MISS_REASONS = [
+  "unsupported_platform",
+  "unrecognized_link",
+  "calendar_not_connected",
+  "calendar_token_dead",
+  "not_picked_up",
+  "not_arrived",
+] as const;
+export type MissReason = (typeof MISS_REASONS)[number];
+
+/** Пропуск, как он лежит в meeting_calendar_misses (без служебных колонок). */
+export interface MissRecord {
+  invited_by: number;
+  miss_key: string;
+  calendar_key: string | null;
+  reason: MissReason;
+  title: string | null;
+  join_url: string | null;
+  platform: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
 }
 
-type Lang = "en" | "ru";
-type Loud = "unsupported_platform" | "unrecognized_link" | "calendar_not_connected" | "calendar_token_dead";
-
-const PERSON_LEVEL: ReadonlySet<SkipReason> = new Set(["calendar_not_connected", "calendar_token_dead"]);
-const LOUD: ReadonlySet<SkipReason> = new Set([
+const FROM_SKIP: ReadonlySet<string> = new Set([
   "unsupported_platform",
   "unrecognized_link",
   "calendar_not_connected",
   "calendar_token_dead",
 ]);
+const PERSON_LEVEL: ReadonlySet<string> = new Set(["calendar_not_connected", "calendar_token_dead"]);
+/** По каким причинам бот в эту комнату вообще может пойти — только тогда зовём руками. */
+const INVITABLE: ReadonlySet<MissReason> = new Set(["not_picked_up", "not_arrived"]);
 
-const PLATFORM_NAME: Readonly<Record<string, string>> = { zoom: "Zoom", kontur: "Kontur.Talk", meet: "Google Meet" };
-
-const MANUAL: Record<Lang, string> = {
-  en: "To record it anyway, open Meetings in Swarm → «Invite the bot to a call» and paste the call link.",
-  ru: "Чтобы всё-таки записать, откройте в Swarm «Встречи» → «Позвать бота на созвон» и вставьте ссылку на звонок.",
-};
-
-function escapeHtml(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-}
-
-function shownTitle(title: string | null, lang: Lang): string {
-  return escapeHtml(title ?? NO_TITLE[lang]);
-}
-
-function platformName(platform: string | null | undefined): Record<Lang, string> {
-  const name = typeof platform === "string" ? PLATFORM_NAME[platform] : undefined;
-  return name === undefined ? { en: "another service", ru: "другом сервисе" } : { en: name, ru: name };
-}
-
-function skipText(reason: Loud, skip: DispatchSkip): Record<Lang, string> {
-  const t = { en: shownTitle(skip.title, "en"), ru: shownTitle(skip.title, "ru") };
-  switch (reason) {
-    case "unsupported_platform": {
-      const p = platformName(skip.platform);
-      return {
-        en:
-          `⚠️ <b>${t.en}</b> is on ${p.en}, and scriba only joins Google Meet calls — it won't come to this meeting. If you need a recording, record it with bumblebee.`,
-        ru:
-          `⚠️ «<b>${t.ru}</b>» идёт в ${p.ru}, а scriba ходит только в Google Meet — на эту встречу он не придёт. Если запись нужна, запишите её через bumblebee.`,
-      };
-    }
-    case "unrecognized_link":
-      return {
-        en:
-          `⚠️ <b>${t.en}</b>: scriba couldn't read the Google Meet link in the calendar event, so it won't join on its own. ${MANUAL.en}`,
-        ru:
-          `⚠️ «<b>${t.ru}</b>»: scriba не смог разобрать ссылку на Google Meet в событии календаря и сам не придёт. ${MANUAL.ru}`,
-      };
-    case "calendar_not_connected":
-      return {
-        en:
-          "⚠️ scriba autostart is on for you, but no Google Calendar is connected — the bot can't see your meetings and won't come to any of them. Connect the calendar in your Swarm profile → Connections. " +
-          MANUAL.en,
-        ru:
-          "⚠️ У вас включён автозапуск scriba, но Google-календарь не подключён — бот не видит ваших встреч и не придёт ни на одну. Подключите календарь в профиле Swarm → «Подключения». " +
-          MANUAL.ru,
-      };
-    case "calendar_token_dead":
-      return {
-        en:
-          "⚠️ scriba lost access to your Google Calendar (it expired or was revoked) — until you reconnect it, the bot won't come to your meetings on its own. Reconnect it in your Swarm profile → Connections. " +
-          MANUAL.en,
-        ru:
-          "⚠️ scriba потерял доступ к вашему Google-календарю (истёк или отозван) — пока его не переподключить, бот сам на встречи не придёт. Переподключите календарь в профиле Swarm → «Подключения». " +
-          MANUAL.ru,
-      };
-  }
-}
-
-function both(text: Record<Lang, string>): string {
-  return `${text.en}\n\n${text.ru}`;
-}
-
-/** Дата и час в часовом поясе команды. */
-function teamClock(nowMs: number): { date: string; hour: number } {
+/** Дата в часовом поясе команды. */
+export function teamDate(nowMs: number): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: TEAM_TIME_ZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    hour: "2-digit",
-    hourCycle: "h23",
   }).formatToParts(new Date(nowMs));
   const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  return { date: `${part("year")}-${part("month")}-${part("day")}`, hour: Number(part("hour")) };
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
-function isLoud(reason: SkipReason): reason is Loud {
-  return LOUD.has(reason);
+/** Ключ пропуска уровня человека: один на сутки команды. */
+export function personMissKey(nowMs: number): string {
+  return `autojoin:${teamDate(nowMs)}`;
 }
 
-/** Пропуск из прохода по календарю → сообщение, или null, если будить не о чем. */
-export function skipNotice(skip: DispatchSkip, nowMs: number): MissedNotice | null {
-  if (!isLoud(skip.reason)) return null;
-  const html = both(skipText(skip.reason, skip));
-  const kind = `autojoin_${skip.reason}`;
-  if (PERSON_LEVEL.has(skip.reason)) {
-    const clock = teamClock(nowMs);
-    if (clock.hour < PERSON_NOTICE_FROM_HOUR || clock.hour >= PERSON_NOTICE_UNTIL_HOUR) return null;
-    return { recipient: skip.invited_by, meetingKey: `autojoin:${clock.date}`, kind, html };
+/** Пропуск из прохода по календарю, или null, если это не пропуск. */
+export function missFromSkip(skip: DispatchSkip, nowMs: number): MissRecord | null {
+  if (!FROM_SKIP.has(skip.reason)) return null;
+  const reason = skip.reason as MissReason;
+  if (PERSON_LEVEL.has(reason)) {
+    return {
+      invited_by: skip.invited_by,
+      miss_key: personMissKey(nowMs),
+      calendar_key: null,
+      reason,
+      title: null,
+      join_url: null,
+      platform: null,
+      starts_at: null,
+      ends_at: null,
+    };
   }
-  // Причина встречи без ключа встречи — сбой отбора, а не повод слать без счёта.
   if (skip.calendar_key === null) return null;
-  return { recipient: skip.invited_by, meetingKey: skip.calendar_key, kind, html };
+  return {
+    invited_by: skip.invited_by,
+    miss_key: skip.calendar_key,
+    calendar_key: skip.calendar_key,
+    reason,
+    title: skip.title,
+    join_url: null,
+    platform: skip.platform ?? null,
+    starts_at: skip.starts_at ?? null,
+    ends_at: skip.ends_at ?? null,
+  };
 }
 
 /** Забранное задание, как его видит проверка «дошёл ли бот». */
@@ -155,8 +117,24 @@ export interface ArrivalJob {
   invited_by: number;
   title: string | null;
   join_url: string;
-  taken_at: string | null;
+  platform: string;
+  starts_at: string;
   ends_at: string;
+  taken_at: string | null;
+}
+
+function fromJob(job: DispatchJob | ArrivalJob, person: number, reason: MissReason): MissRecord {
+  return {
+    invited_by: person,
+    miss_key: job.calendar_key,
+    calendar_key: job.calendar_key,
+    reason,
+    title: job.title,
+    join_url: job.join_url,
+    platform: job.platform,
+    starts_at: job.starts_at,
+    ends_at: job.ends_at,
+  };
 }
 
 /** Что известно о встрече: бот подал heartbeat · человеку по встрече уже ушла нотиса бота. */
@@ -175,19 +153,116 @@ export function arrivalCheckDue(job: ArrivalJob, nowMs: number): boolean {
 }
 
 /**
- * Бот забрал задание и не подал признака жизни, а сам человеку ничего не сказал (контейнер упал до
- * двери, оркестратор умер после забора) → сообщение. Иначе null: бот пишет, или уже объяснил отказ.
+ * Бот забрал задание, не подал признака жизни и сам человеку ничего не сказал → пропуск.
+ * @param person за кого пропуск: владелец задания или коллега, у которого та же встреча.
  */
-export function notArrivedNotice(job: ArrivalJob, evidence: ArrivalEvidence): MissedNotice | null {
+export function notArrivedMiss(
+  job: ArrivalJob,
+  evidence: ArrivalEvidence,
+  person: number = job.invited_by,
+): MissRecord | null {
   if (evidence.botSeen || evidence.noticeSent) return null;
-  const url = escapeHtml(job.join_url);
-  const html = both({
-    en: `⚠️ <b>${
-      shownTitle(job.title, "en")
-    }</b>: scriba was due to join from your calendar but hasn't made it into the call — the meeting is not being recorded. ${MANUAL.en}\n<code>${url}</code>`,
-    ru: `⚠️ «<b>${
-      shownTitle(job.title, "ru")
-    }</b>»: scriba должен был прийти по календарю, но в звонок так и не попал — встреча не записывается. ${MANUAL.ru}\n<code>${url}</code>`,
-  });
-  return { recipient: job.invited_by, meetingKey: job.calendar_key, kind: "autojoin_not_arrived", html };
+  return fromJob(job, person, "not_arrived");
+}
+
+/** Ожидаемые встречи человека (бот должен быть там) и пропуски, видные по самому календарю. */
+export interface OngoingPlan {
+  jobs: DispatchJob[];
+  misses: MissRecord[];
+}
+
+/**
+ * Встречи, которые уже начались и ещё идут, — каждая оценивается тем же отбором, что у оркестратора,
+ * как будто сейчас момент её начала: опоздание оркестратора не должно превращать встречу в «не нашу».
+ */
+export function ongoingPlan(
+  events: GEvent[],
+  person: number,
+  nowMs: number,
+  manualRooms: ReadonlySet<string>,
+): OngoingPlan {
+  const jobs: DispatchJob[] = [];
+  const misses: MissRecord[] = [];
+  for (const ev of events) {
+    const start = Date.parse(ev.start?.dateTime ?? "");
+    const end = Date.parse(ev.end?.dateTime ?? "");
+    if (Number.isNaN(start) || Number.isNaN(end) || start > nowMs || end <= nowMs) continue;
+    const plan = planPersonDispatch([ev], person, start, manualRooms);
+    jobs.push(...plan.jobs);
+    for (const s of plan.skipped) {
+      const miss = missFromSkip(s, nowMs);
+      if (miss !== null) misses.push(miss);
+    }
+  }
+  return { jobs, misses };
+}
+
+/**
+ * Ожидаемая встреча без забранного задания после запаса → служба автозапуска не отозвалась.
+ * @param row задание в meeting_calendar_jobs, если оно заведено.
+ */
+export function pickupMiss(
+  job: DispatchJob,
+  row: { taken_at: string | null } | null,
+  nowMs: number,
+  person: number = job.invited_by,
+): MissRecord | null {
+  if (row !== null && row.taken_at !== null) return null;
+  const start = Date.parse(job.starts_at);
+  const end = Date.parse(job.ends_at);
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  if (nowMs < start + PICKUP_GRACE_MS || nowMs >= end) return null;
+  return fromJob(job, person, "not_picked_up");
+}
+
+/** Можно ли по пропуску позвать бота руками одним действием (приглашение D017). */
+export function canInvite(miss: MissRecord): boolean {
+  return INVITABLE.has(miss.reason) && miss.join_url !== null && miss.platform === "meet";
+}
+
+type Lang = "en" | "ru";
+
+const PLATFORM_NAME: Readonly<Record<string, string>> = { zoom: "Zoom", kontur: "Kontur.Talk" };
+
+/** Что сказать человеку о пропуске — обычный текст, EN и RU (рекордер показывает на своём языке). */
+export function missMessage(miss: MissRecord): Record<Lang, string> {
+  const t = { en: miss.title ?? NO_TITLE.en, ru: miss.title ?? NO_TITLE.ru };
+  switch (miss.reason) {
+    case "unsupported_platform": {
+      const p = miss.platform === null ? undefined : PLATFORM_NAME[miss.platform];
+      return {
+        en: `"${t.en}" is on ${
+          p ?? "another service"
+        }, and scriba only joins Google Meet — it won't come to this meeting.`,
+        ru: `«${t.ru}» идёт в ${
+          p ?? "другом сервисе"
+        }, а scriba ходит только в Google Meet — на эту встречу он не придёт.`,
+      };
+    }
+    case "unrecognized_link":
+      return {
+        en: `"${t.en}": scriba couldn't read the Google Meet link in the calendar event, so it won't join on its own.`,
+        ru: `«${t.ru}»: scriba не разобрал ссылку на Google Meet в событии календаря и сам не придёт.`,
+      };
+    case "calendar_not_connected":
+      return {
+        en: "scriba autostart is on, but no Google Calendar is connected — the bot can't see your meetings.",
+        ru: "Автозапуск scriba включён, но Google-календарь не подключён — бот не видит ваших встреч.",
+      };
+    case "calendar_token_dead":
+      return {
+        en: "scriba lost access to your Google Calendar — reconnect it; until then the bot won't come on its own.",
+        ru: "scriba потерял доступ к вашему Google-календарю — переподключите его, до тех пор бот сам не придёт.",
+      };
+    case "not_picked_up":
+      return {
+        en: `"${t.en}" has started, but scriba's autostart didn't pick it up — the bot isn't coming.`,
+        ru: `«${t.ru}» уже идёт, а автозапуск scriba её не подхватил — бот не придёт.`,
+      };
+    case "not_arrived":
+      return {
+        en: `"${t.en}": scriba was on its way but never made it into the call — the meeting isn't being recorded.`,
+        ru: `«${t.ru}»: scriba выехал на встречу, но в звонок так и не попал — встреча не записывается.`,
+      };
+  }
 }

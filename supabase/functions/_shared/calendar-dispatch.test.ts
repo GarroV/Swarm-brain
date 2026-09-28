@@ -79,6 +79,9 @@ Deno.test("ГРОМКО: нет ссылки на звонок — пропус�
   assertEquals(skipped[0].invited_by, PERSON);
   assertEquals(skipped[0].calendar_key, "uid1@google.com:2026-09-28");
   assertEquals(skipped[0].title, "Weekly");
+  // Время встречи едет с пропуском: по нему рекордер понимает, что встреча ещё идёт (T102).
+  assertEquals(typeof skipped[0].starts_at, "string");
+  assertEquals(typeof skipped[0].ends_at, "string");
 });
 
 Deno.test("ГРОМКО: не Meet (Zoom, Контур, неизвестная ссылка) — пропуск unsupported_platform с площадкой", () => {

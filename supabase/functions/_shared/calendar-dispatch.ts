@@ -56,6 +56,9 @@ export interface DispatchSkip {
   title: string | null;
   reason: SkipReason;
   platform?: ConferencePlatform | null;
+  /** Время встречи — у причин уровня встречи (у причин человека встречи нет). */
+  starts_at?: string;
+  ends_at?: string;
 }
 
 export interface DispatchPlan {
@@ -100,6 +103,8 @@ export function planPersonDispatch(
         title,
         reason,
         ...(platform !== undefined && { platform }),
+        starts_at: ev.start!.dateTime!,
+        ends_at: ev.end!.dateTime!,
       });
 
     if (declinedBySelf(ev)) {
