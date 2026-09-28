@@ -380,6 +380,12 @@ if CommandLine.arguments.contains("--selftest-notes") {
     runAnalyze(Array(CommandLine.arguments[(ai + 1)...]))
 } else if CommandLine.arguments.contains("--selftest-update") {
     runUpdateSelfTest(apply: CommandLine.arguments.contains("--apply"))   // не возвращается до exit()
+} else if CommandLine.arguments.contains("--selftest-missed") {
+    setvbuf(stdout, nil, _IOLBF, 0)   // построчно: прогон читают из файла, пока он идёт
+    let keep = CommandLine.arguments.firstIndex(of: "--keep").flatMap { i -> Double? in
+        i + 1 < CommandLine.arguments.count ? Double(CommandLine.arguments[i + 1]) : nil
+    }
+    runMissedSelfTest(seconds: keep ?? 180, inviteFirst: CommandLine.arguments.contains("--invite-first"))
 } else if CommandLine.arguments.contains("--selftest-quarantine") {
     runQuarantineSelfTest()   // не возвращается (RunLoop) до exit()
 } else if CommandLine.arguments.contains("--selftest") {
