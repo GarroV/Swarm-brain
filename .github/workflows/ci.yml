@@ -62,9 +62,9 @@ jobs:
       # пропуск «базы нет» считается падением, а не пропуском.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.118.0
       - name: Локальный контур Supabase
-        run: supabase start && supabase db reset
+        run: ./scripts/ci-supabase-up
       - name: deno test
         run: ./scripts/with-local-db deno test -A supabase/functions/
 
@@ -116,9 +116,9 @@ jobs:
         run: npm ci
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.118.0
       - name: Локальный контур Supabase
-        run: supabase start && supabase db reset
+        run: ./scripts/ci-supabase-up
       - name: Гейт
         run: ./scripts/check
       # Порча отвечает на вопрос, на который гейт не отвечает: проверяют ли эти проверки хоть
