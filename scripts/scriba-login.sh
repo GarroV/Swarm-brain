@@ -36,8 +36,10 @@ sync_code() {
   if [ "$(git rev-parse --abbrev-ref HEAD)" = "$BRANCH" ] && [ "$(git rev-parse HEAD)" != "$remote_head" ]; then
     echo "⚠ локальный HEAD не равен origin/${BRANCH}: на сервер едет origin" >&2
   fi
-  remote "if not exist ${REPO}\\.git git clone -q --branch ${BRANCH} ${ORIGIN} ${REPO}"
-  remote "git -C ${REPO} fetch -q origin +refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH} && git -C ${REPO} checkout -q -B ${BRANCH} origin/${BRANCH} && git -C ${REPO} log --oneline -1"
+  # Без autocrlf=false Git на Windows отдаёт скрипты с CRLF, и `bash\r` в образе не стартует.
+  remote "if not exist ${REPO}\\.git git clone -q -c core.autocrlf=false --branch ${BRANCH} ${ORIGIN} ${REPO}"
+  remote "git -C ${REPO} config core.autocrlf false"
+  remote "git -C ${REPO} fetch -q origin +refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH} && git -C ${REPO} checkout -q -f -B ${BRANCH} origin/${BRANCH} && git -C ${REPO} log --oneline -1"
 }
 
 case "${1:-status}" in
