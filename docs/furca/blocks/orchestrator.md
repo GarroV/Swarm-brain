@@ -47,20 +47,21 @@ T168 принят и влит; его хвосты — в `git log -p` этог�
 
 ## T173 — страница ошибки Meet больше не выдаётся за отказ хоста
 
-**2026-09-28 · код и юниты готовы, смоук на MUSPELHEIM — в работе.** Факт 28.09 с живого
-meet.google.com: гостю без аккаунта на встрече с доступом «Trusted» и на несуществующий код Google
-показывает слово в слово один экран («You can't join this video call», «Your meeting is safe») —
-причину со страницы не различить. Поэтому: `admission.ts` → `blocked` (этот экран и родня) и
-`unavailable` (явное «check your meeting code» / «meeting has ended»); `run-meeting.ts` шлёт
-`door_blocked` / `meeting_unavailable`; сервер (`_shared/notices.ts`, `notice-texts.ts`) их
-принимает, тексты EN+RU называют обе причины и что сделать (доступ «Open» или ждать аккаунт бота;
-проверить ссылку). Прямой отказ хоста — по-прежнему `door_denied`. Схема не менялась (у
-`meeting_notices.kind` нет check). Раскатка: сервер раньше бота.
+**2026-09-28 · готово, смоуки на MUSPELHEIM зелёные.** Факт 28.09 с живого meet.google.com:
+гостю без аккаунта на встрече с доступом «Trusted» и на несуществующий код Google показывает
+слово в слово один экран («You can't join this video call», «Your meeting is safe») — причину со
+страницы не различить. Поэтому: `admission.ts` → `blocked` (этот экран и родня) и `unavailable`
+(явное «check your meeting code» / «meeting has ended»); `run-meeting.ts` шлёт `door_blocked` /
+`meeting_unavailable`; сервер (`_shared/notices.ts`, `notice-texts.ts`) их принимает, тексты EN+RU
+называют обе причины и что сделать (доступ «Open» или ждать аккаунт бота; проверить ссылку).
+Прямой отказ хоста — по-прежнему `door_denied`. Схема не менялась (у `meeting_notices.kind` нет
+check). **Раскатка: сервер раньше бота** — старый сервер ответит новому виду 400.
 
-Проверено: юниты бота 82 в двух файлах (порчи: `blocked`→`denied` в admission и
-`door_blocked`→`door_denied` в run-meeting — по одному красному), сервер `notices.test.ts` 22 +
-`meeting-notice` (новые два теста красные до кода). Остаётся: смоук адаптера с двойниками
-`blocked.html`/`unavailable.html` и живой сценой, `scriba-notices-smoke.ts` с двумя новыми сценами.
+Проверено: юниты бота и сервера (порчи в admission, run-meeting и тексте — красные);
+`./scripts/check` зелёный. MUSPELHEIM (`C:\projects\scriba-meetdeny`, 4410–4419, погашен):
+`smoke-meet.ts` в образе бота — 31 проверка, живой meet.google.com даёт `blocked`, порча двойника
+`blocked.html` → внятный провал; `scriba-notices-smoke.ts` на локальном контуре — 39 сценариев,
+два новых доходят человеку, порча текста («отклонил») → красный.
 
 ## T166 — бот по календарю идёт только туда, где человек ответил «да» (D024)
 
