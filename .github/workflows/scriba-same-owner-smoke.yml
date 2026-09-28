@@ -3,7 +3,7 @@ name: Scriba — две записи одной встречи
 # Бот scriba и рекордер того же человека пишут одну встречу и оба выгружают аудио. Правило
 # «вторая запись заменяет стенограмму, только если она полнее» держится местом вызова арбитра
 # полноты в `_shared/meeting-processor.ts`, очередью выгрузок в бакете и поколением воркера —
-# то есть настоящими meeting-claim / meeting-ingest / meeting-process поверх настоящей базы и
+# то есть настоящими meeting-claim / meeting-heartbeat / meeting-ingest / meeting-process поверх настоящей базы и
 # Storage. Юнит-тесты это целиком не видят: порча «заменять стенограмму всегда» проходила их
 # зелёной. Этот прогон поднимает локальный контур (`supabase start`, все миграции) и гоняет смоук
 # `scripts/scriba-same-owner-smoke.ts`: функции запускаются как процессы Deno, OpenAI и Telegram
@@ -19,6 +19,7 @@ on:
       - supabase/migrations/**
       - supabase/config.toml
       - supabase/functions/meeting-claim/**
+      - supabase/functions/meeting-heartbeat/**
       - supabase/functions/meeting-ingest/**
       - supabase/functions/meeting-process/**
       - supabase/functions/_shared/**
@@ -29,6 +30,7 @@ on:
       - supabase/migrations/**
       - supabase/config.toml
       - supabase/functions/meeting-claim/**
+      - supabase/functions/meeting-heartbeat/**
       - supabase/functions/meeting-ingest/**
       - supabase/functions/meeting-process/**
       - supabase/functions/_shared/**
