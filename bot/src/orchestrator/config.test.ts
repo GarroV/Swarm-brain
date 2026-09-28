@@ -78,6 +78,56 @@ describe("readMeetingConfig", () => {
   });
 });
 
+describe("readMeetingConfig — событие календаря (T100)", () => {
+  it("без ключа и начала — calendar null", () => {
+    const config = readMeetingConfig(BASE);
+
+    expect(config.calendar).toBeNull();
+  });
+
+  it("ключ и начало читаются вместе", () => {
+    const config = readMeetingConfig({
+      ...BASE,
+      [MEETING_ENV.calendarKey]: "evt-1:2026-09-28",
+      [MEETING_ENV.calendarStartsAt]: "2026-09-28T10:00:00.000Z",
+    });
+
+    expect(config.calendar).toEqual({
+      calendarKey: "evt-1:2026-09-28",
+      startsAt: "2026-09-28T10:00:00.000Z",
+    });
+  });
+
+  it.each([MEETING_ENV.calendarKey, MEETING_ENV.calendarStartsAt])(
+    "половина пары (только %s) — отказ на старте",
+    (name) => {
+      expect(() => readMeetingConfig({ ...BASE, [name]: "x" })).toThrow(/только вместе/u);
+    },
+  );
+
+  it("начало не читается как время — отказ с именем переменной", () => {
+    expect(() =>
+      readMeetingConfig({
+        ...BASE,
+        [MEETING_ENV.calendarKey]: "evt-1:2026-09-28",
+        [MEETING_ENV.calendarStartsAt]: "не время",
+      }),
+    ).toThrow(new RegExp(MEETING_ENV.calendarStartsAt, "u"));
+  });
+
+  it("не сочетается с приглашением — у встречи одно основание", () => {
+    expect(() =>
+      readMeetingConfig({
+        ...BASE,
+        [MEETING_ENV.inviteId]: "inv-1",
+        [MEETING_ENV.inviteJoinUrl]: "https://meet.google.com/abc-defg-hij",
+        [MEETING_ENV.calendarKey]: "evt-1:2026-09-28",
+        [MEETING_ENV.calendarStartsAt]: "2026-09-28T10:00:00.000Z",
+      }),
+    ).toThrow(/одно основание/u);
+  });
+});
+
 describe("parsePlatform", () => {
   it("meet — есть адаптер", () => {
     expect(parsePlatform("meet")).toBe("meet");

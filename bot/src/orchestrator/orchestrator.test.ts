@@ -204,6 +204,24 @@ describe("оркестратор", () => {
       expect(spec?.labels).not.toHaveProperty(LABEL.invite);
     });
 
+    it("событие календаря едет в окружение ключом и началом, метка scriba.calendar, приглашения нет", async () => {
+      await orchestrator.startForMeeting(MEET, "meet", 744, {
+        calendarKey: "evt-1:2026-09-28",
+        startsAt: "2026-09-28T10:00:00.000Z",
+      });
+
+      const spec = engine.specs[0];
+      expect(spec?.env).toEqual(
+        expect.arrayContaining([
+          "SCRIBA_CALENDAR_KEY=evt-1:2026-09-28",
+          "SCRIBA_CALENDAR_STARTS_AT=2026-09-28T10:00:00.000Z",
+        ]),
+      );
+      expect(spec?.env.some((line) => line.startsWith("SCRIBA_INVITE_"))).toBe(false);
+      expect(spec?.labels[LABEL.calendar]).toBe("evt-1:2026-09-28");
+      expect(spec?.labels).not.toHaveProperty(LABEL.invite);
+    });
+
     it("ожидание выхода регистрируется ДО старта: авто-удалённый контейнер иначе потерял бы код", async () => {
       await orchestrator.startForMeeting(MEET, "meet", 744);
 
