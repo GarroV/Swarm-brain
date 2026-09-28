@@ -655,8 +655,9 @@ async function arbitration(): Promise<void> {
   const capped = await claimAs(ARB.cap.key, 86_000);
   const capRows = await rest(
     "GET",
-    `meetings?id=eq.${ARB.cap.id}&select=claim_owner,recorded_seconds,recorders`,
+    `meetings?id=eq.${ARB.cap.id}&select=claim_owner,recorded_seconds,recorders,started_at`,
   ) as Array<{
+    started_at: string;
     claim_owner: number | null;
     recorded_seconds: number | null;
     recorders: Array<{ telegram_id: number; recorded_seconds?: number }> | null;
@@ -672,7 +673,9 @@ async function arbitration(): Promise<void> {
   const capSec = takerEntry?.recorded_seconds ?? Number.NaN;
   expect(
     "в recorders легли урезанные секунды заявки: не больше времени встречи с запасом",
-    capSec > 0 && capSec <= ARB_STARTED_MIN * 60 * 1.1 + 300 + 5,
+    // Потолок — от started_at до момента заявки (×1.1 + 5 мин); «сейчас» позже заявки, поэтому
+    // граница по нему не тесней настоящей, а время самого прогона до этой точки её не ломает.
+    capSec > 0 && capSec <= ((Date.now() - Date.parse(capRow?.started_at ?? "")) / 1000) * 1.1 + 300,
     JSON.stringify(takerEntry),
   );
 
