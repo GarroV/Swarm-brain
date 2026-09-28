@@ -80,6 +80,20 @@ ARCHITECTURE.md «Автозапуск по календарю». Кому бо�
   рекордер получит `checked=false`, но пропуска не будет.
 - CI-прогона смоука календаря нет (workflow не мой); `CHANGELOG.md` не ведётся (D010).
 
+## T164
+
+**2026-09-28 · в работе, ветка `feat/calendar-snapshot`.** Цель: рекордер узнаёт о пропущенной
+встрече, не заставляя сервер ходить в Google на каждый свой запрос (D023).
+
+План. Снимок календаря дня — таблицы `meeting_calendar_snapshot_runs` (человек: когда снят, итог) и
+`meeting_calendar_snapshot_events` (встречи дня: ожидаемая или громкая причина). Пишет новая функция
+`meeting-calendar-snapshot` (pg_cron, `X-Cron-Secret`, часы по Белграду в коде), причины человека
+пишет сразу в `meeting_calendar_misses`. `meeting-missed` GET читает только снимок + задания.
+Ядро — `_shared/calendar-snapshot.ts`, тесты до кода. Попутно `calendar-dispatch.ts` берёт время из
+проверенного окна, а не `start!.dateTime!`.
+
+Следующее: ядро → миграция → функция снимка → meeting-missed → смоук на MUSPELHEIM (4440–4449).
+
 ## T160
 
 **2026-09-28 · сделан, ветка `fix/claim-end-bound`, ждёт приёмки.**

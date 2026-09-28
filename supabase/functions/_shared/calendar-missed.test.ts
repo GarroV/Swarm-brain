@@ -5,7 +5,6 @@
 // на обед или на встречу, куда бот уже идёт, и человек перестаёт этому верить; потерянный — человек не
 // узнаёт, что бот не придёт, и обнаруживает пустую запись. Поэтому каждая причина и граница — тестом.
 import { assert, assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import type { GEvent } from "../meeting-current/select.ts";
 import type { DispatchJob, DispatchSkip } from "./calendar-dispatch.ts";
 import {
   ARRIVAL_GRACE_MS,
@@ -16,7 +15,6 @@ import {
   missFromSkip,
   missMessage,
   notArrivedMiss,
-  ongoingPlan,
   PICKUP_GRACE_MS,
   pickupMiss,
 } from "./calendar-missed.ts";
@@ -135,47 +133,6 @@ Deno.test("задания нет или никто не забрал — слу�
   assertEquals(pickupMiss(dispatchJob, null, Date.parse(ENDS)), null);
   const m = pickupMiss(dispatchJob, null, due);
   assert(m !== null && canInvite(m) && m.join_url === MEET);
-});
-
-function ev(uid: string, startMin: number, endMin: number, extra: Partial<GEvent> = {}): GEvent {
-  const at = (min: number) => new Date(START_MS + min * 60_000).toISOString();
-  return {
-    id: uid,
-    iCalUID: uid,
-    summary: uid,
-    status: "confirmed",
-    start: { dateTime: at(startMin) },
-    end: { dateTime: at(endMin) },
-    ...extra,
-  } as GEvent;
-}
-
-Deno.test("идущие встречи оцениваются как в момент их начала: и опоздавшая на полчаса, и Zoom", () => {
-  const now = START_MS + 30 * 60_000;
-  const plan = ongoingPlan(
-    [
-      ev("meet", 0, 60, { hangoutLink: MEET }),
-      ev("zoom", 0, 60, { location: "https://us02web.zoom.us/j/123456789" }),
-      ev("lunch", 0, 60),
-      ev("future", 45, 90, { hangoutLink: "https://meet.google.com/fut-ureq-abc" }),
-      ev("over", -60, 0, { hangoutLink: "https://meet.google.com/ove-rrrr-abc" }),
-    ],
-    PERSON,
-    now,
-    new Set(),
-  );
-  assertEquals(plan.jobs.map((j) => j.title), ["meet"]);
-  assertEquals(plan.misses.map((m) => `${m.title}:${m.reason}`), ["zoom:unsupported_platform"]);
-});
-
-Deno.test("комната, куда уже позвали руками, — не ожидаемая встреча", () => {
-  const plan = ongoingPlan(
-    [ev("meet", 0, 60, { hangoutLink: MEET })],
-    PERSON,
-    START_MS + 60_000,
-    new Set(["meet.google.com/abc-defg-hij"]),
-  );
-  assertEquals(plan, { jobs: [], misses: [] });
 });
 
 Deno.test("позвать руками можно только туда, куда бот умеет и где есть ссылка", () => {

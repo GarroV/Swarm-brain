@@ -17,6 +17,12 @@
 // в том числе встречу, которую служба автозапуска не подхватила вовсе, и зовёт бота руками одним
 // действием — заводится приглашение D017, пропуск закрыт им. Чужой пропуск — 404, не рекордер — 403.
 //
+// Снимок календаря (T164, D023): рекордер в Google не ходит — календарь снимает по расписанию
+// meeting-calendar-snapshot (дверь — X-Cron-Secret), meeting-missed читает только снимок. Проверяется:
+// до первого снимка checked=false; ни один запрос рекордера не дёргает Google (счётчик поддельного
+// Google); встреча, поставленная после снимка, не видна до следующего; Google моргнул на снимке —
+// прежний снимок в силе, snapshot_at не сдвинулся.
+//
 // Что нужно: ЛОКАЛЬНЫЙ контур Supabase с накатанными миграциями. Прод сюда не подставлять: смоук
 // заводит и удаляет строки.
 //
@@ -24,7 +30,8 @@
 //   SMOKE_SERVICE_KEY    — SERVICE_ROLE_KEY из `supabase status -o env`
 //
 // Порты — от SMOKE_PORT_BASE (по умолчанию 4490; base..base+3 — сам контур): base+4 — функция
-// meeting-calendar, base+5 — функция meeting-claim, base+6 — поддельный Google, base+7 — meeting-missed. Функции ходят в
+// meeting-calendar, base+5 — функция meeting-claim, base+6 — поддельный Google, base+7 — meeting-missed,
+// base+8 — meeting-calendar-snapshot. Функции ходят в
 // oauth2.googleapis.com и www.googleapis.com напрямую, поэтому fetch подменяется предзагрузкой
 // (--preload) только для этих хостов.
 //
@@ -36,6 +43,8 @@ const PORT_CALENDAR = PORT_BASE + 4;
 const PORT_CLAIM = PORT_BASE + 5;
 const PORT_FAKE = PORT_BASE + 6;
 const PORT_MISSED = PORT_BASE + 7;
+const PORT_SNAPSHOT = PORT_BASE + 8;
+const CRON_SECRET = `smoke-cron-${crypto.randomUUID()}`;
 
 const SUPABASE_URL = Deno.env.get("SMOKE_SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SMOKE_SERVICE_KEY") ?? "";
@@ -137,6 +146,8 @@ const calendars = new Map<number, FakeEvent[]>([
   [PEOPLE.f, [MANUAL]],
   [PEOPLE.g, [ORPHAN, LOSTBOT, ZOOM_NOW]],
 ]);
+/** Запросы в поддельный Google (токен + события) и человек, у которого Google «лежит». */
+const google = { hits: 0, downFor: null as number | null };
 const refreshOf = (person: number) =>
   person === PEOPLE.d ? "rt-dead" : `rt-${person}`;
 
@@ -178,6 +189,7 @@ function startFake(): Deno.HttpServer {
     onListen: () => {},
   }, async (req) => {
     const url = new URL(req.url);
+    google.hits += 1;
     if (url.pathname === "/token") {
       const form = new URLSearchParams(await req.text());
       const refresh = form.get("refresh_token") ?? "";
@@ -191,6 +203,9 @@ function startFake(): Deno.HttpServer {
         "Bearer at:rt-",
         "",
       );
+      if (Number(token) === google.downFor) {
+        return new Response("backend error", { status: 503 });
+      }
       const events = calendars.get(Number(token)) ?? [];
       // Как Google: пересечение с окном — конец после timeMin, начало до timeMax.
       const min = Date.parse(url.searchParams.get("timeMin") ?? "");
@@ -230,6 +245,7 @@ function spawnFunction(path: string, port: number): Deno.ChildProcess {
       SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY,
       GOOGLE_CLIENT_ID: "smoke-client",
       GOOGLE_CLIENT_SECRET: "smoke-secret",
+      CRON_SECRET,
     },
     stdout: "inherit",
     stderr: "inherit",
@@ -302,6 +318,8 @@ async function cleanup(): Promise<string[]> {
   const ids = Object.values(PEOPLE).join(",");
   const steps = [
     `meeting_calendar_misses?group_id=eq.${WS}`,
+    `meeting_calendar_snapshot_events?group_id=eq.${WS}`,
+    `meeting_calendar_snapshot_runs?group_id=eq.${WS}`,
     `meeting_notices?recipient_id=in.(${ids})`,
     `meeting_calendar_jobs?group_id=eq.${WS}`,
     `meeting_invites?group_id=eq.${WS}`,
@@ -625,6 +643,29 @@ async function missed(
   };
 }
 
+async function snapshot(
+  secret: string | null,
+  init: RequestInit = { method: "POST", body: JSON.stringify({ force: true }) },
+): Promise<{ status: number; body: Json }> {
+  const res = await fetch(`http://127.0.0.1:${PORT_SNAPSHOT}/`, {
+    ...init,
+    headers: secret === null ? {} : { "X-Cron-Secret": secret },
+  });
+  return {
+    status: res.status,
+    body: await res.json().catch(() => ({})) as Json,
+  };
+}
+
+type RunRow = { snapshot_at: string | null; outcome: string };
+async function runOf(person: number): Promise<RunRow | undefined> {
+  const rows = await rest(
+    "GET",
+    `meeting_calendar_snapshot_runs?invited_by=eq.${person}&select=snapshot_at,outcome`,
+  ) as RunRow[];
+  return rows[0];
+}
+
 type MissView = {
   id: string;
   reason: string;
@@ -667,12 +708,47 @@ async function recorderMisses(): Promise<void> {
     off,
   );
 
+  const hitsBefore = google.hits;
+  const before = await missed(recorderToken(PEOPLE.g));
+  expect(
+    "до первого снимка: checked=false, пропусков по встречам нет, Google не тронут",
+    before.status === 200 && before.body.checked === false &&
+      before.body.snapshot_at === null &&
+      (before.body.misses as unknown[]).length === 0 &&
+      google.hits === hitsBefore,
+    before,
+  );
+
+  expect("снимок без секрета — 403", (await snapshot(null)).status === 403);
+  expect(
+    "снимок с чужим секретом — 403",
+    (await snapshot(`${CRON_SECRET}x`)).status === 403,
+  );
+  expect(
+    "снимок не POST — 405",
+    (await snapshot(CRON_SECRET, { method: "GET" })).status === 405,
+  );
+  const snap = await snapshot(CRON_SECRET);
+  const report = snap.body.report as Json | undefined;
+  expect(
+    "снимок: 6 человек с автозапуском — 4 прочитаны, C без календаря, D с мёртвым токеном",
+    snap.status === 200 && snap.body.due === true && report?.people === 6 &&
+      report.ok === 4 && report.calendar_not_connected === 1 &&
+      report.calendar_token_dead === 1 && report.failed === 0,
+    snap,
+  );
+  const runG = await runOf(PEOPLE.g);
+  const hitsAfterSnapshot = google.hits;
+
   const first = await missed(recorderToken(PEOPLE.g));
   const list = (first.body.misses ?? []) as MissView[];
   const byReason = new Map(list.map((m) => [m.reason, m]));
   expect(
-    "рекордер G — 200, живая проверка прошла",
-    first.status === 200 && first.body.checked === true,
+    "рекордер G — 200, снимок за сегодня есть",
+    first.status === 200 && first.body.checked === true &&
+      typeof first.body.snapshot_at === "string" &&
+      Date.parse(first.body.snapshot_at) ===
+        Date.parse(runG?.snapshot_at ?? ""),
     first,
   );
   expect(
@@ -790,10 +866,71 @@ async function recorderMisses(): Promise<void> {
   const noCal = await missed(recorderToken(PEOPLE.c));
   expect(
     "C без календаря видит пропуск уровня человека на сегодня",
-    noCal.status === 200 &&
+    noCal.status === 200 && noCal.body.checked === true &&
       ((noCal.body.misses ?? []) as MissView[]).map((m) => m.reason).join() ===
         "calendar_not_connected",
     noCal.body,
+  );
+  expect(
+    "ни один запрос рекордера не ходил в Google",
+    google.hits === hitsAfterSnapshot,
+    { before: hitsAfterSnapshot, after: google.hits },
+  );
+  await snapshotBetweenRuns();
+}
+
+/** Встреча после снимка, отменённая встреча и Google, моргнувший на снимке. */
+async function snapshotBetweenRuns(): Promise<void> {
+  const late = ev(`late-${RUN}`, {
+    hangoutLink: "https://meet.google.com/smk-late-abc",
+    start: { dateTime: iso(-5) },
+    end: { dateTime: iso(40) },
+  });
+  calendars.set(PEOPLE.g, [ORPHAN, LOSTBOT, late]); // ZOOM_NOW отменили, LATE поставили
+  const lateSeen = async () =>
+    ((await missed(recorderToken(PEOPLE.g))).body.misses as MissView[] ?? [])
+      .some((m) => m.title === late.summary);
+  expect(
+    "встреча, поставленная после снимка, до следующего не видна",
+    !(await lateSeen()),
+  );
+
+  const again = await snapshot(CRON_SECRET);
+  expect("второй снимок — 200", again.status === 200, again);
+  expect("после снимка LATE видна: служба её не подхватила", await lateSeen());
+  const runG = await runOf(PEOPLE.g);
+  const current = await rest(
+    "GET",
+    `meeting_calendar_snapshot_events?invited_by=eq.${PEOPLE.g}&snapshot_at=eq.${
+      encodeURIComponent(runG?.snapshot_at ?? "")
+    }&select=calendar_key`,
+  ) as { calendar_key: string }[];
+  expect(
+    "отменённая встреча в текущий снимок не входит (строка осталась со старым временем)",
+    !current.some((r) => r.calendar_key === keyOf(ZOOM_NOW)) &&
+      current.some((r) => r.calendar_key === keyOf(late)),
+    current,
+  );
+
+  google.downFor = PEOPLE.g;
+  const down = await snapshot(CRON_SECRET);
+  google.downFor = null;
+  const runDown = await runOf(PEOPLE.g);
+  expect(
+    "Google моргнул на снимке G — итог calendar_unavailable, snapshot_at прежний",
+    (down.body.report as Json | undefined)?.calendar_unavailable === 1 &&
+      runDown?.outcome === "calendar_unavailable" &&
+      runDown.snapshot_at === runG?.snapshot_at,
+    { down, runDown, runG },
+  );
+  const stillThere = await missed(recorderToken(PEOPLE.g));
+  expect(
+    "после моргнувшего снимка рекордер видит прежний снимок, checked=true",
+    stillThere.body.checked === true &&
+      ((stillThere.body.misses ?? []) as MissView[]).some((m) =>
+        m.title === late.summary
+      ),
+    stillThere.body,
   );
 }
 
@@ -812,6 +949,10 @@ async function main(): Promise<void> {
     ),
     spawnFunction("../supabase/functions/meeting-claim/index.ts", PORT_CLAIM),
     spawnFunction("../supabase/functions/meeting-missed/index.ts", PORT_MISSED),
+    spawnFunction(
+      "../supabase/functions/meeting-calendar-snapshot/index.ts",
+      PORT_SNAPSHOT,
+    ),
   ];
   let cleanupProblems: string[] = [];
   let ready = false;
@@ -819,7 +960,8 @@ async function main(): Promise<void> {
     await seed();
     ready = (await waitPort(PORT_CALENDAR, 30_000)) &&
       (await waitPort(PORT_CLAIM, 30_000)) &&
-      (await waitPort(PORT_MISSED, 30_000));
+      (await waitPort(PORT_MISSED, 30_000)) &&
+      (await waitPort(PORT_SNAPSHOT, 30_000));
     if (ready) {
       await scenario();
       await sweepMisses();
@@ -833,7 +975,7 @@ async function main(): Promise<void> {
   }
   if (!ready) {
     console.error(
-      `КРАСНЫЙ: функции не поднялись на ${PORT_CALENDAR}/${PORT_CLAIM}/${PORT_MISSED} за 30 с.`,
+      `КРАСНЫЙ: функции не поднялись на ${PORT_CALENDAR}/${PORT_CLAIM}/${PORT_MISSED}/${PORT_SNAPSHOT} за 30 с.`,
     );
     Deno.exit(1);
   }
