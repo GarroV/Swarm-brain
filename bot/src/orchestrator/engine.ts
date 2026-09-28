@@ -3,6 +3,7 @@
  * живёт в `docker-engine.ts`. Так правила оркестратора (смерть, сироты, подхват) проверяются
  * тестом на двойнике, а живой Docker проверяет смоук.
  */
+import type { ContainerLimits } from "../container/isolation.ts";
 
 export interface ContainerSpec {
   readonly name: string;
@@ -19,6 +20,14 @@ export interface ContainerSpec {
    */
   readonly readOnlyBind: { readonly source: string; readonly target: string };
   readonly shmBytes: number;
+  /**
+   * Потолки ресурсов хоста на одну встречу.
+   */
+  readonly limits: ContainerLimits;
+  /**
+   * Профиль seccomp строкой JSON: разрешает песочнице Chromium её пространства имён.
+   */
+  readonly seccompProfile: string;
 }
 
 export interface EngineContainer {

@@ -58,6 +58,7 @@ export function meetLaunchOptions(input: { lang?: string } = {}): LaunchOptions 
   const options = chromiumLaunchOptions({ lang: input.lang ?? MEET_BROWSER_LANG });
   return {
     headless: options.headless,
+    chromiumSandbox: options.chromiumSandbox,
     ignoreDefaultArgs: [...options.ignoreDefaultArgs],
     args: [...options.args],
   };

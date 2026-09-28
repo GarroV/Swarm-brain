@@ -101,6 +101,7 @@ async function main(): Promise<number> {
   );
   const browser = await chromium.launch({
     headless: planned.headless,
+    chromiumSandbox: planned.chromiumSandbox,
     args: [...planned.args],
     // Пустой список = ничего не игнорируем, то есть Playwright оставляет свой --mute-audio.
     ignoreDefaultArgs: shouldForceMute ? [] : [...planned.ignoreDefaultArgs],
