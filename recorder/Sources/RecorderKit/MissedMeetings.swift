@@ -42,9 +42,11 @@ public struct MissedMeeting: Decodable, Equatable, Sendable {
     public let endsAt: String?
     public let canInvite: Bool
     public let message: LocalizedText
+    /// Ссылка на созвон из календаря — по ней кнопка встаёт в капсулу именно этого созвона (D031).
+    public let joinURL: String?
 
     public init(id: String, reason: String, title: String?, startsAt: String?, endsAt: String?,
-                canInvite: Bool, message: LocalizedText) {
+                canInvite: Bool, message: LocalizedText, joinURL: String? = nil) {
         self.id = id
         self.reason = reason
         self.title = title
@@ -52,6 +54,7 @@ public struct MissedMeeting: Decodable, Equatable, Sendable {
         self.endsAt = endsAt
         self.canInvite = canInvite
         self.message = message
+        self.joinURL = joinURL
     }
 
     enum CodingKeys: String, CodingKey {
@@ -59,6 +62,7 @@ public struct MissedMeeting: Decodable, Equatable, Sendable {
         case startsAt = "starts_at"
         case endsAt = "ends_at"
         case canInvite = "can_invite"
+        case joinURL = "join_url"
     }
 }
 
@@ -103,9 +107,18 @@ public struct MissedTracker: Equatable, Sendable {
         self.dismissed = dismissed
     }
 
-    /// Какой пропуск говорит капсула. Капсула одна (решение 2026-09-07), поэтому пропуск в ней
-    /// тоже один — первый открытый, не закрытый человеком; остальные ждут в меню.
-    public var capsuleMiss: MissedMeeting? { open.first { !dismissed.contains($0.id) } }
+    /// Чью кнопку «Позвать бота» показать в капсуле созвона (D031). Текста о боте в капсуле нет,
+    /// поэтому кнопка обязана звать бота именно на тот созвон, рядом с которым стоит:
+    /// `joinURL` — ссылка созвона из капсулы, пропуск берётся с той же ссылкой; ссылки нет
+    /// («Идёт звонок» без календаря) — кнопка только если звать можно ровно на один созвон, иначе
+    /// её не угадать, и пропуски ждут в меню. Закрытые ✕ и те, куда звать нельзя, кнопки не дают.
+    public func capsuleMiss(forCall joinURL: String?) -> MissedMeeting? {
+        let candidates = open.filter { $0.canInvite && !dismissed.contains($0.id) }
+        guard let call = joinURL.flatMap(CallLink.normalized) else {
+            return candidates.count == 1 ? candidates[0] : nil
+        }
+        return candidates.first { $0.joinURL.flatMap(CallLink.normalized) == call }
+    }
 
     public struct Update: Equatable, Sendable {
         /// Новые пропуски — показать баннер.
@@ -151,17 +164,8 @@ public struct MissedTracker: Equatable, Sendable {
 
 /// Тексты рекордера про пропуски. Текст самого пропуска приходит с сервера (`message`).
 public enum MissedTexts {
-    public static let invitableTitle = LocalizedText(en: "The bot isn't in your meeting",
-                                                     ru: "Бота нет на встрече")
-    public static let notInvitableTitle = LocalizedText(en: "The bot won't come on its own",
-                                                        ru: "Бот сам не придёт")
     public static let inviteAction = LocalizedText(en: "Invite the bot", ru: "Позвать бота")
-    /// Короткая строка пропуска внутри капсулы встречи — рядом с «Записать»/«Подключиться».
-    public static let capsuleLine = LocalizedText(en: "No bot", ru: "Бота нет")
     public static let inviting = LocalizedText(en: "Inviting…", ru: "Зову…")
-    public static let invitedTitle = LocalizedText(en: "The bot is on its way", ru: "Бот позван")
-    public static let invitedBodyFormat = LocalizedText(en: "Invite sent — the bot will join \u{201C}%@\u{201D}.",
-                                                        ru: "Приглашение отправлено — бот зайдёт на «%@».")
     public static let untitled = LocalizedText(en: "untitled meeting", ru: "встреча без названия")
     public static let failedTitle = LocalizedText(en: "Couldn't invite the bot", ru: "Не удалось позвать бота")
     public static let menuItemFormat = LocalizedText(en: "Invite the bot to \u{201C}%@\u{201D}",
@@ -181,59 +185,53 @@ public enum MissedTexts {
         return t.isEmpty ? untitled.text(lang) : t
     }
 
-    public static func invitedBody(_ title: String?, _ lang: RecorderLanguage) -> String {
-        String(format: invitedBodyFormat.text(lang), meetingName(title, lang))
-    }
-
     public static func menuItem(_ title: String?, _ lang: RecorderLanguage) -> String {
         String(format: menuItemFormat.text(lang), meetingName(title, lang))
     }
 }
 
-/// Что капсула говорит о пропуске (D025). Чистое значение: собирается из пропуска, последнего
-/// отказа приглашения и того, идёт ли приглашение сейчас, — AppKit только рисует.
+/// Кнопка «Позвать бота» в капсуле созвона (D031). Чистое значение: собирается из пропуска,
+/// последнего отказа приглашения и того, идёт ли приглашение сейчас, — AppKit только рисует.
+/// Текста о боте в капсуле нет: человек на звонке и так видит, есть бот или нет. Единственный
+/// текст — отказ, и только как ответ на нажатие: человек нажал и ждёт.
 public struct MissedCapsule: Equatable, Sendable {
     public let missId: String
-    /// Заголовок отдельной капсулы: «Бота нет на встрече» / «Бот сам не придёт».
-    public let line: String
-    /// Строка внутри капсулы встречи, где заголовок — название встречи: «Бота нет» / «Бот сам не придёт».
-    public let shortLine: String
-    /// Почему и что из этого следует: текст сервера, а после неудачного приглашения — причина отказа.
-    public let detail: String
-    /// Есть ли кнопка «Позвать бота» (календарь не подключён — звать некуда).
-    public let canInvite: Bool
     /// Приглашение уже ушло — кнопка неактивна, двойной клик не зовёт дважды.
     public let busy: Bool
     /// Подпись кнопки: «Позвать бота» или «Зову…».
     public let buttonTitle: String
-    /// Последнее приглашение не удалось — `detail` говорит почему; в капсуле встречи отказ
-    /// показывается вместо короткой строки, а не прячется в подсказку.
-    public let failed: Bool
+    /// Последнее приглашение не удалось — почему; nil — отказа не было, текста под кнопкой нет.
+    public let failure: String?
 
-    public init(missId: String, line: String, shortLine: String, detail: String, canInvite: Bool,
-                busy: Bool, buttonTitle: String, failed: Bool) {
+    public init(missId: String, busy: Bool, buttonTitle: String, failure: String?) {
         self.missId = missId
-        self.line = line
-        self.shortLine = shortLine
-        self.detail = detail
-        self.canInvite = canInvite
         self.busy = busy
         self.buttonTitle = buttonTitle
-        self.failed = failed
+        self.failure = failure
     }
 
+    /// nil — звать бота на этот пропуск нельзя (календарь не подключён): кнопки нет, а текста в
+    /// капсуле нет и подавно — пропуск говорит меню.
     public static func compose(_ miss: MissedMeeting, failure: String?, busy: Bool,
-                               lang: RecorderLanguage) -> MissedCapsule {
+                               lang: RecorderLanguage) -> MissedCapsule? {
+        guard miss.canInvite else { return nil }
         let failed = (failure ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let why = failed.isEmpty
-            ? miss.message.text(lang)
-            : "\(MissedTexts.failedTitle.text(lang)) — \(failed)"
-        let line = miss.canInvite ? MissedTexts.invitableTitle : MissedTexts.notInvitableTitle
-        let short = miss.canInvite ? MissedTexts.capsuleLine : MissedTexts.notInvitableTitle
-        return MissedCapsule(missId: miss.id, line: line.text(lang), shortLine: short.text(lang),
-                             detail: why, canInvite: miss.canInvite, busy: busy && miss.canInvite,
+        return MissedCapsule(missId: miss.id, busy: busy,
                              buttonTitle: (busy ? MissedTexts.inviting : MissedTexts.inviteAction).text(lang),
-                             failed: !failed.isEmpty)
+                             failure: failed.isEmpty || busy ? nil : "\(MissedTexts.failedTitle.text(lang)) — \(failed)")
+    }
+}
+
+/// Одна и та же ли это ссылка на созвон. Календарь и сервер пишут её по-разному: регистр хоста,
+/// хвостовой «/», `?authuser=0` и прочие параметры входа. Созвон определяют схема, хост и путь.
+public enum CallLink {
+    public static func normalized(_ raw: String) -> String? {
+        guard let c = URLComponents(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = c.scheme?.lowercased(), let host = c.host?.lowercased(), !host.isEmpty
+        else { return nil }
+        var path = c.path
+        while path.hasSuffix("/") { path.removeLast() }
+        return "\(scheme)://\(host)\(path.lowercased())"
     }
 }
 

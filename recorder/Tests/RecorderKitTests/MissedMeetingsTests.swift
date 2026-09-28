@@ -5,9 +5,11 @@ import XCTest
 // Ошибка здесь молчаливая — баннер не пришёл или пришёл дважды, погашенный пропуск всплыл снова,
 // отказ сервера превратился в пустую строку, — поэтому правила проверены тестами.
 final class MissedMeetingsTests: XCTestCase {
-    private func miss(_ id: String, invite: Bool = true, title: String? = "Weekly sync") -> MissedMeeting {
+    private func miss(_ id: String, invite: Bool = true, title: String? = "Weekly sync",
+                      url: String? = nil) -> MissedMeeting {
         MissedMeeting(id: id, reason: "not_picked_up", title: title, startsAt: nil, endsAt: nil,
-                      canInvite: invite, message: LocalizedText(en: "en \(id)", ru: "ru \(id)"))
+                      canInvite: invite, message: LocalizedText(en: "en \(id)", ru: "ru \(id)"),
+                      joinURL: url ?? "https://meet.google.com/\(id)")
     }
 
     // ── Разбор ответа сервера ───────────────────────────────────────────────────
@@ -29,6 +31,7 @@ final class MissedMeetingsTests: XCTestCase {
         XCTAssertNil(list.misses[0].title)
         XCTAssertEqual(list.misses[0].endsAt, "2026-09-28T10:00:00Z")
         XCTAssertEqual(list.misses[0].message.text(.ru), "не попал")
+        XCTAssertEqual(list.misses[0].joinURL, "https://meet.google.com/abc-defg-hij")
     }
 
     func testAutojoinOffDecodesEmpty() throws {
@@ -48,7 +51,6 @@ final class MissedMeetingsTests: XCTestCase {
     func testUntitledMeetingIsNamedNotBlank() {
         XCTAssertEqual(MissedTexts.menuItem(nil, .ru), "Позвать бота на «встреча без названия»")
         XCTAssertEqual(MissedTexts.menuItem("  ", .en), "Invite the bot to \u{201C}untitled meeting\u{201D}")
-        XCTAssertEqual(MissedTexts.invitedBody("Sync", .ru), "Приглашение отправлено — бот зайдёт на «Sync».")
     }
 
     // ── Что показать, что погасить ──────────────────────────────────────────────
@@ -107,26 +109,63 @@ final class MissedMeetingsTests: XCTestCase {
         XCTAssertEqual(t1.open.first?.canInvite, false)
     }
 
-    // ── Капсула (D025): один пропуск, ✕ убирает из капсулы, не из меню ──────────
-    func testCapsuleShowsFirstOpenMiss() {
+    // ── Капсула (D031): только кнопка, на тот созвон, рядом с которым стоит ─────
+    private let callA = "https://meet.google.com/a"
+
+    func testButtonGoesToCapsuleOfSameCallOnly() {
         let (t, _) = MissedTracker().applying([miss("a"), miss("b")])
-        XCTAssertEqual(t.capsuleMiss?.id, "a", "капсула одна — и пропуск в ней один")
+        XCTAssertEqual(t.capsuleMiss(forCall: "https://meet.google.com/b")?.id, "b",
+                       "кнопка без текста обязана звать бота именно на этот созвон")
+        XCTAssertNil(t.capsuleMiss(forCall: "https://meet.google.com/zzz"),
+                     "бот пропущен на другом созвоне — кнопки в этой капсуле нет")
+    }
+
+    func testSameCallDespiteCaseSlashAndQuery() {
+        let (t, _) = MissedTracker().applying([miss("a", url: "https://meet.google.com/abc-defg-hij")])
+        XCTAssertEqual(t.capsuleMiss(forCall: "https://Meet.Google.com/abc-defg-hij/?authuser=0")?.id, "a")
+        XCTAssertNil(t.capsuleMiss(forCall: "https://meet.google.com/abc-defg-hik"))
+    }
+
+    func testMissWithoutLinkNeverMatchesCallWithLink() {
+        let (t, _) = MissedTracker().applying([miss("a", url: "")])
+        XCTAssertNil(t.capsuleMiss(forCall: callA))
+    }
+
+    func testCallWithoutCalendarGetsButtonOnlyWhenOneCandidate() {
+        let (one, _) = MissedTracker().applying([miss("a"), miss("p", invite: false)])
+        XCTAssertEqual(one.capsuleMiss(forCall: nil)?.id, "a", "звать можно ровно на один созвон — он и есть")
+        let (two, _) = MissedTracker().applying([miss("a"), miss("b")])
+        XCTAssertNil(two.capsuleMiss(forCall: nil), "двух не угадать — пропуски ждут в меню")
+    }
+
+    func testNotInvitableMissGivesNoButton() {
+        let (t, _) = MissedTracker().applying([miss("a", invite: false)])
+        XCTAssertNil(t.capsuleMiss(forCall: callA))
+        XCTAssertNil(MissedCapsule.compose(miss("a", invite: false), failure: nil, busy: false, lang: .ru),
+                     "звать некуда — ни кнопки, ни текста")
     }
 
     func testDismissedMissLeavesCapsuleButStaysInMenu() {
         let (t1, _) = MissedTracker().applying([miss("a"), miss("b")])
         let t2 = t1.dismissing("a")
-        XCTAssertEqual(t2.capsuleMiss?.id, "b")
+        XCTAssertNil(t2.capsuleMiss(forCall: callA))
         XCTAssertEqual(t2.open.map(\.id), ["a", "b"], "в меню пропуск остаётся — звать можно и дальше")
         let (t3, _) = t2.applying([miss("a"), miss("b")])
-        XCTAssertEqual(t3.capsuleMiss?.id, "b", "следующий опрос закрытый ✕ не возвращает")
+        XCTAssertNil(t3.capsuleMiss(forCall: callA), "следующий опрос закрытый ✕ не возвращает")
+        XCTAssertEqual(t3.capsuleMiss(forCall: nil)?.id, "b", "закрытый не считается кандидатом")
     }
 
     func testDismissedMissReturnsWhenServerReopensIt() {
         let (t1, _) = MissedTracker().applying([miss("a")])
         let (t2, _) = t1.dismissing("a").applying([])
         let (t3, _) = t2.applying([miss("a")])
-        XCTAssertEqual(t3.capsuleMiss?.id, "a")
+        XCTAssertEqual(t3.capsuleMiss(forCall: callA)?.id, "a")
+    }
+
+    func testInvitedMissButtonDisappears() {
+        let (t1, _) = MissedTracker().applying([miss("a")])
+        let (t2, _) = t1.invitedBot("a")
+        XCTAssertNil(t2.capsuleMiss(forCall: callA), "по успеху кнопка исчезает")
     }
 
     func testDismissingUnknownMissChangesNothing() {
@@ -138,38 +177,28 @@ final class MissedMeetingsTests: XCTestCase {
         let (t1, _) = MissedTracker().applying([miss("a")])
         let (t2, _) = t1.dismissing("a").cleared()
         XCTAssertTrue(t2.dismissed.isEmpty)
-        XCTAssertNil(t2.capsuleMiss)
+        XCTAssertNil(t2.capsuleMiss(forCall: callA))
     }
 
-    func testCapsuleSaysServerReasonAndOffersInvite() {
+    func testButtonHasNoTextUntilRefusal() {
         let c = MissedCapsule.compose(miss("a"), failure: nil, busy: false, lang: .ru)
-        XCTAssertEqual(c.line, "Бота нет на встрече")
-        XCTAssertEqual(c.shortLine, "Бота нет")
-        XCTAssertEqual(c.detail, "ru a")
-        XCTAssertTrue(c.canInvite)
-        XCTAssertFalse(c.busy)
-        XCTAssertEqual(c.buttonTitle, "Позвать бота")
-        XCTAssertFalse(c.failed)
+        XCTAssertEqual(c?.buttonTitle, "Позвать бота")
+        XCTAssertEqual(c?.busy, false)
+        XCTAssertNil(c?.failure, "без нажатия и отказа в капсуле нет ни слова о боте")
     }
 
-    func testCapsuleShowsRefusalInsteadOfReason() {
+    func testRefusalIsShownAfterPress() {
         let c = MissedCapsule.compose(miss("a"), failure: "У вас выключен автозапуск scriba", busy: false, lang: .ru)
-        XCTAssertEqual(c.detail, "Не удалось позвать бота — У вас выключен автозапуск scriba")
-        XCTAssertTrue(c.canInvite, "после отказа кнопка остаётся — повторить")
-        XCTAssertTrue(c.failed)
+        XCTAssertEqual(c?.failure, "Не удалось позвать бота — У вас выключен автозапуск scriba")
+        XCTAssertEqual(c?.buttonTitle, "Позвать бота", "после отказа кнопка остаётся — повторить")
+        XCTAssertNil(MissedCapsule.compose(miss("a"), failure: "  ", busy: false, lang: .ru)?.failure)
     }
 
-    func testCapsuleWhileInvitingIsBusy() {
-        let c = MissedCapsule.compose(miss("a"), failure: nil, busy: true, lang: .en)
-        XCTAssertTrue(c.busy)
-        XCTAssertEqual(c.buttonTitle, "Inviting…")
-    }
-
-    func testNotInvitableCapsuleHasNoButton() {
-        let c = MissedCapsule.compose(miss("p", invite: false), failure: nil, busy: true, lang: .ru)
-        XCTAssertFalse(c.canInvite)
-        XCTAssertFalse(c.busy)
-        XCTAssertEqual(c.shortLine, "Бот сам не придёт")
+    func testWhileInvitingButtonIsBusyAndOldRefusalHidden() {
+        let c = MissedCapsule.compose(miss("a"), failure: "сеть", busy: true, lang: .en)
+        XCTAssertEqual(c?.busy, true)
+        XCTAssertEqual(c?.buttonTitle, "Inviting…")
+        XCTAssertNil(c?.failure, "повторное нажатие — ждём ответ, прошлый отказ не висит")
     }
 
     // ── Отказ по-человечески ────────────────────────────────────────────────────
