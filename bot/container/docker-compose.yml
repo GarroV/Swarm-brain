@@ -16,7 +16,8 @@ x-scriba: &scriba
   build:
     context: ..
     dockerfile: container/Dockerfile
-  image: scriba-container:dev
+  # Тег образа — свой у каждого стенда: общий тег пересобрал бы образ соседу.
+  image: ${SCRIBA_CONTAINER_IMAGE:-scriba-container:dev}
   # tini первым процессом: иначе `sleep`/`node` в роли PID 1 игнорируют SIGTERM, и
   # остановка стенда каждый раз ждёт таймаут и добивает контейнер по SIGKILL.
   init: true
@@ -26,7 +27,7 @@ x-scriba: &scriba
 services:
   scriba:
     <<: *scriba
-    container_name: scriba-container-solo
+    container_name: ${SCRIBA_CONTAINER_PREFIX:-scriba-container}-solo
     volumes:
       - recordings:/recordings
 
@@ -35,14 +36,14 @@ services:
   # контейнера, а не на том, что кто-то выбрал разные имена.
   scriba-a:
     <<: *scriba
-    container_name: scriba-container-a
+    container_name: ${SCRIBA_CONTAINER_PREFIX:-scriba-container}-a
     profiles: ["pair"]
     volumes:
       - recordings-a:/recordings
 
   scriba-b:
     <<: *scriba
-    container_name: scriba-container-b
+    container_name: ${SCRIBA_CONTAINER_PREFIX:-scriba-container}-b
     profiles: ["pair"]
     volumes:
       - recordings-b:/recordings
