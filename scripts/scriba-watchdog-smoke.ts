@@ -24,7 +24,8 @@
 //
 // Арбитраж (T155): удар бота продлевает лиз и пишет recorded_seconds — рекордер с записью короче
 // не отбирает у бота встречу, claim после истечения лиза из claim не считает живого бота
-// брошенным, а заметно более полная запись по-прежнему перехватывает.
+// брошенным, а заметно более полная запись перехватывает — но только у непишущего бота (D020):
+// пока бот пишет (лиз действует и последний удар recording:true), чужая запись получает defer.
 //
 // Порты — от SMOKE_PORT_BASE (по умолчанию 4380, диапазон блока orchestrator/сторож; base..base+3
 // — сам контур): base+4 — функция meeting-heartbeat, base+5 — функция meeting-claim, base+8 —
@@ -480,11 +481,20 @@ async function arbitration(): Promise<void> {
     JSON.stringify({ short, afterShort }),
   );
 
-  // Рекордер с 62 минутами — заметно полнее 40 (×1.5 и +5 мин): арбитраж честный, не глухой.
+  // Рекордер с 62 минутами — заметно полнее 40 (×1.5 и +5 мин). Пока бот пишет — всё равно defer
+  // (D020: перехват только у непишущего бота); бот закончил запись — арбитраж честный, не глухой.
+  const fullWhileWriting = await claimAs(ARB.long.key, 3720);
+  expect(
+    "D020: даже заметно более полная запись другого человека не перехватывает у пишущего бота",
+    fullWhileWriting.status === 200 && fullWhileWriting.decision === "defer" &&
+      (await arbRow(ARB.long.id))?.claim_owner === OWNER_ARB,
+    JSON.stringify(fullWhileWriting),
+  );
+  await beatRaw(ARB.long, OWNER_ARB, { recording: false, recorded_seconds: 2400 });
   const full = await claimAs(ARB.long.key, 3720);
   const afterFull = await arbRow(ARB.long.id);
   expect(
-    "заметно более полная запись по-прежнему перехватывает (transcribe, флаг бота погашен)",
+    "бот закончил запись — заметно более полная перехватывает (transcribe, флаг бота погашен)",
     full.status === 200 && full.decision === "transcribe" &&
       afterFull?.claim_owner === TAKER &&
       afterFull?.agent_last_recording === false,
@@ -611,17 +621,36 @@ async function scenario(): Promise<void> {
     JSON.stringify(await meetingBeat(FOREIGN.id)),
   );
 
-  // 1б. Перехват (D019). Бот пишет календарную встречу за OWNER, рекордер TAKER отбирает право
-  //     настоящим meeting-claim (час записи против нуля у бота).
+  // 1б. Перехват (D019, D020). Бот пишет календарную встречу за OWNER. Пока он пишет, рекордер
+  //     TAKER с часом записи встречу НЕ перехватывает (D020: запись другого человека откладывается).
+  //     Бот перестал писать (удар recording:false, контейнер ещё жив) — перехват настоящим
+  //     meeting-claim по прежнему правилу полноты (час записи против нуля у бота).
   const takenBeat = await beat(TAKEN, TAKEN.owner);
   expect(
     "heartbeat бота по будущей перехваченной встрече принят",
     takenBeat === 200,
     `HTTP ${takenBeat}`,
   );
+  const whileWriting = await takeOver();
+  const afterDefer = await meetingBeat(TAKEN.id);
+  expect(
+    "D020: пока бот пишет, запись другого человека встречу не перехватывает (defer, пульс бота цел)",
+    whileWriting.status === 200 && whileWriting.body.decision === "defer" &&
+      (await claimOwner(TAKEN.id)) === TAKEN.owner &&
+      afterDefer?.agent_last_recording === true,
+    JSON.stringify({ whileWriting, afterDefer }),
+  );
+  const leaseBefore = (await arbRow(TAKEN.id))?.lease_expires_at;
+  const stopped = await beatRaw(TAKEN, TAKEN.owner, { recording: false });
+  expect(
+    "удар бота recording:false принят и лиз НЕ продлил — непишущий контейнер встречу не держит",
+    stopped.status === 200 &&
+      (await arbRow(TAKEN.id))?.lease_expires_at === leaseBefore,
+    JSON.stringify({ stopped, leaseBefore, after: await arbRow(TAKEN.id) }),
+  );
   const claim = await takeOver();
   expect(
-    "meeting-claim: рекордер TAKER перехватил встречу у бота (transcribe, та же встреча)",
+    "meeting-claim: у непишущего бота рекордер TAKER встречу перехватил (transcribe, та же встреча)",
     claim.status === 200 && claim.body.decision === "transcribe" &&
       claim.body.meeting_id === TAKEN.id,
     JSON.stringify(claim),
