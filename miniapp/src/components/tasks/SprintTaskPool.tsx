@@ -114,7 +114,7 @@ export function SprintTaskPool(
   }
 
   return (
-    <div className="flex flex-col min-h-0 w-72 shrink-0 rounded-2xl border border-line bg-surface-2">
+    <div className="flex flex-1 flex-col min-h-0 w-full rounded-2xl border border-line bg-surface-2">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-line">
         <RoyIcon name="task" size={14} strokeWidth={1.9} />
         <span className="text-sm font-bold text-ink">
