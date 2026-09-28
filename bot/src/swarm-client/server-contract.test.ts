@@ -125,7 +125,8 @@ describe("приглашения бота (D017)", () => {
     expect(invite).toContain(
       'const COLUMNS = "id, invited_by, join_url, platform, created_at, expires_at"',
     );
-    expect(invite).toContain("json({ ok: true, invites })");
+    // К каждому приглашению — пропуск бота на встречу (T165), тем же именем, что в MeetingInvite.
+    expect(invite).toContain("invites: invites.map((i, n) => ({ ...i, grant_token: tokens[n] }))");
   });
 
   it("meeting-invite — дверь агента без подмены личности", () => {

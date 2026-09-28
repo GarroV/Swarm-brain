@@ -88,6 +88,7 @@ describe("POST /meeting-invite", () => {
         platform: "meet",
         created_at: invite.created_at,
         expires_at: invite.expires_at,
+        grant_token: invite.grant_token,
       },
     ]);
     expect(server.inviteState(invite.id)).toEqual({ taken: true, used: false });
@@ -151,6 +152,25 @@ describe("POST /meeting-invite", () => {
     expect(status).toBe(403);
     const after = await take(server);
     expect(after.body.invites).toHaveLength(1);
+  });
+
+  it("строгий двойник: за человека общий токен — 403, выданный пропуск — пускает (T165)", async () => {
+    const server = await startFakeSwarm({ token: TOKEN, onBehalfOf: PERSON, requiresGrants: true });
+    servers.push(server);
+    const invite = server.addInvite({ joinUrl: MEET });
+    const { body } = await take(server);
+    const grant = (body.invites as { grant_token: string }[])[0]?.grant_token ?? "";
+
+    const byToken = await claim(server, manual(invite.id));
+    const byGrant = await fetch(`${server.url}/meeting-claim`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${grant}`, "Content-Type": "application/json" },
+      body: JSON.stringify(manual(invite.id)),
+    });
+    await byGrant.body?.cancel();
+
+    expect(byToken.status).toBe(403);
+    expect(byGrant.status).toBe(200);
   });
 
   it("чужой токен — 401", async () => {

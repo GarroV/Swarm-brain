@@ -31,6 +31,10 @@ export interface CalendarJob {
   readonly title: string | null;
   readonly starts_at: string;
   readonly ends_at: string;
+  /**
+   * Пропуск бота на эту встречу (T165); сервер без пропусков его не присылает.
+   */
+  readonly grant_token?: string;
 }
 
 /**
@@ -82,6 +86,9 @@ function jobProblem(item: Record<string, unknown>): string | null {
     return "ends_at не время";
   }
   if (item.title !== null && typeof item.title !== "string") return "title не строка";
+  // Пропуск необязателен (сервер до T165 его не шлёт), но присланный обязан быть строкой.
+  if (item.grant_token !== undefined && !isFilledString(item.grant_token))
+    return "grant_token не строка";
   return null;
 }
 

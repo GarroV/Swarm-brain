@@ -38,6 +38,7 @@
 // Запуск: SMOKE_SUPABASE_URL=… SMOKE_SERVICE_KEY=… deno run --allow-all scripts/scriba-calendar-smoke.ts
 // Красный, если хоть одно ожидание не сошлось или окружения нет.
 
+import { seedGrantForJob } from "./scriba-smoke-grants.ts";
 const PORT_BASE = Number(Deno.env.get("SMOKE_PORT_BASE") ?? "4490");
 const PORT_CALENDAR = PORT_BASE + 4;
 const PORT_CLAIM = PORT_BASE + 5;
@@ -97,6 +98,8 @@ function ev(uid: string, extra: Json = {}): FakeEvent {
     status: "confirmed",
     start: { dateTime: iso(1) },
     end: { dateTime: iso(30) },
+    // Своя встреча без гостей: Google не ведёт статус организатору — это «да» (D024).
+    organizer: { self: true },
     ...extra,
   };
 }
@@ -110,6 +113,17 @@ const ZOOM = ev(`zoom-${RUN}`, {
 const NOLINK = ev(`nolink-${RUN}`);
 const OWN_E = ev(`own-e-${RUN}`, {
   hangoutLink: "https://meet.google.com/smk-owne-abc",
+});
+// Приглашение, на которое человек не ответил «да» (D024): бот не идёт, это не пропуск рекордера.
+const NOTYES = ev(`notyes-${RUN}`, {
+  hangoutLink: "https://meet.google.com/smk-noys-abc",
+  organizer: { self: false },
+  attendees: [{ email: "a@smoke.test", self: true, responseStatus: "needsAction" }],
+});
+const MAYBE = ev(`maybe-${RUN}`, {
+  hangoutLink: "https://meet.google.com/smk-mayb-abc",
+  organizer: { self: false },
+  attendees: [{ email: "a@smoke.test", self: true, responseStatus: "tentative" }],
 });
 const MANUAL_ROOM = "https://meet.google.com/smk-manl-abc";
 const MANUAL = ev(`manual-${RUN}`, { hangoutLink: MANUAL_ROOM });
@@ -139,7 +153,7 @@ const ZOOM_NOW = ev(`zoomnow-${RUN}`, {
 });
 
 const calendars = new Map<number, FakeEvent[]>([
-  [PEOPLE.a, [SHARED, ZOOM, NOLINK]],
+  [PEOPLE.a, [SHARED, ZOOM, NOLINK, NOTYES, MAYBE]],
   [PEOPLE.b, [SHARED]],
   [PEOPLE.d, [SHARED]],
   [PEOPLE.e, [OWN_E]],
@@ -323,6 +337,7 @@ async function cleanup(): Promise<string[]> {
     `meeting_calendar_snapshot_events?group_id=eq.${WS}`,
     `meeting_calendar_snapshot_runs?group_id=eq.${WS}`,
     `meeting_notices?recipient_id=in.(${ids})`,
+    `meeting_agent_grants?group_id=eq.${WS}`,
     `meeting_calendar_jobs?group_id=eq.${WS}`,
     `meeting_invites?group_id=eq.${WS}`,
     `meetings?group_id=eq.${WS}`,
@@ -356,11 +371,19 @@ async function call(
     method: "POST",
     ...init,
   });
-  return {
-    status: res.status,
-    body: await res.json().catch(() => ({})) as Json,
-  };
+  const body = await res.json().catch(() => ({})) as Json;
+  if (port === PORT_CALENDAR) {
+    for (const j of (body.jobs ?? []) as Array<Job & { grant_token?: string }>) {
+      if (j.grant_token) issued.set(`${j.invited_by}|${j.calendar_key}`, j.grant_token);
+    }
+  }
+  return { status: res.status, body };
 }
+
+// Пропуска, выданные meeting-calendar к заданиям (T165): человек|ключ → пропуск. Бот заявляет
+// встречу пропуском своего задания; за человека, которому задание не выдано, — пропуском по
+// чужому заданию (seedGrantForJob), чтобы отказ давала сверка календаря, а не его отсутствие.
+const issued = new Map<string, string>();
 
 const agentAuth = { Authorization: `Bearer ${AGENT.token}` };
 type Skip = {
@@ -390,6 +413,8 @@ function skipsOf(body: Json): string[] {
 const EXPECTED_SKIPS = [
   `${PEOPLE.a}|${keyOf(ZOOM)}|unsupported_platform|zoom`,
   `${PEOPLE.a}|${keyOf(NOLINK)}|no_conference_link`,
+  `${PEOPLE.a}|${keyOf(NOTYES)}|not_accepted`,
+  `${PEOPLE.a}|${keyOf(MAYBE)}|not_accepted`,
   `${PEOPLE.c}|-|calendar_not_connected`,
   `${PEOPLE.d}|-|calendar_token_dead`,
   `${PEOPLE.f}|${keyOf(MANUAL)}|manual_invite_exists|meet`,
@@ -399,9 +424,16 @@ async function claimAs(
   person: number,
   key: string,
 ): Promise<{ status: number; body: Json }> {
+  const grant = issued.get(`${person}|${key}`) ??
+    await seedGrantForJob(rest, {
+      agentId: AGENT.id,
+      groupId: WS,
+      telegramId: person,
+      calendarKey: key,
+    });
   return await call(PORT_CLAIM, {
     headers: {
-      ...agentAuth,
+      Authorization: `Bearer ${grant}`,
       "X-On-Behalf-Of": String(person),
       "Content-Type": "application/json",
     },
@@ -435,6 +467,7 @@ async function scenario(): Promise<void> {
   expect(
     "одна встреча у A и B — одно задание, за A (первого по id)",
     jobs.length === 1 && jobs[0].calendar_key === keyOf(SHARED) &&
+      issued.has(`${PEOPLE.a}|${keyOf(SHARED)}`) &&
       jobs[0].invited_by === PEOPLE.a,
     jobs,
   );
@@ -738,6 +771,20 @@ async function recorderMisses(): Promise<void> {
       report.ok === 4 && report.calendar_not_connected === 1 &&
       report.calendar_token_dead === 1 && report.failed === 0,
     snap,
+  );
+  const notYes = [keyOf(NOTYES), keyOf(MAYBE)].join(",");
+  const notYesSnap = await rest(
+    "GET",
+    `meeting_calendar_snapshot_events?calendar_key=in.(${notYes})&select=calendar_key`,
+  ) as Json[];
+  const notYesMiss = await rest(
+    "GET",
+    `meeting_calendar_misses?calendar_key=in.(${notYes})&select=calendar_key`,
+  ) as Json[];
+  expect(
+    "D024: встречи без «да» не ждут бота — ни строки снимка, ни пропуска",
+    notYesSnap.length === 0 && notYesMiss.length === 0,
+    { notYesSnap, notYesMiss },
   );
   const runG = await runOf(PEOPLE.g);
 
