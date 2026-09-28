@@ -6,6 +6,7 @@
  * которая «пошла» и молча записала в никуда. Список совпадает с `bot/container/.env.example`.
  */
 import type { CalendarReference, InviteReference } from "./claim-request.ts";
+import { BOT_PROFILE } from "./profile.ts";
 import type { MeetingTiming } from "./run-meeting.ts";
 
 export const MEETING_ENV = {
@@ -34,12 +35,11 @@ export const MEETING_ENV = {
 } as const;
 
 /**
- * Площадки, для которых у бота есть адаптер. Остальные отвергаются до подъёма контейнера.
+ * Площадки, для которых у бота есть адаптер (профиль бота). Остальные отвергаются до подъёма
+ * контейнера.
  */
-const SUPPORTED_PLATFORMS = ["meet"] as const;
+const SUPPORTED_PLATFORMS = BOT_PROFILE.platforms;
 export type SupportedPlatform = (typeof SUPPORTED_PLATFORMS)[number];
-
-const DEFAULT_MAX_MINUTES = 240;
 
 export interface MeetingConfig {
   readonly joinUrl: string;
@@ -185,10 +185,11 @@ export function readMeetingConfig(environment: Environment): MeetingConfig {
     token: required(environment, MEETING_ENV.token),
     runId: required(environment, MEETING_ENV.runId),
     version: positiveInteger(environment, MEETING_ENV.version) ?? 0,
-    displayName: text(environment, MEETING_ENV.displayName) ?? "scriba",
+    displayName: text(environment, MEETING_ENV.displayName) ?? BOT_PROFILE.name,
     leaseDir: text(environment, MEETING_ENV.leaseDir) ?? "/lease",
     maxMeetingMs:
-      (positiveInteger(environment, MEETING_ENV.maxMinutes) ?? DEFAULT_MAX_MINUTES) * 60_000,
+      (positiveInteger(environment, MEETING_ENV.maxMinutes) ?? BOT_PROFILE.maxMeetingMinutes) *
+      60_000,
     segmentSeconds: positiveInteger(environment, MEETING_ENV.segmentSeconds),
     timing: readTiming(environment),
     smokeMeetPage: text(environment, MEETING_ENV.smokeMeetPage),
