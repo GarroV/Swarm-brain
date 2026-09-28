@@ -60,7 +60,7 @@
 | T145 | identity | T017 | done | Ключ календарной встречи — одна функция в `_shared/` для `meeting-current` и `agent-scope`; тест на совпадение | #545 | 1 |
 | T146 | chores | T082 | done | Смоук лимитов уведомлений (`scripts/scriba-notices-smoke.ts`) идёт в CI против живой базы — иначе снятая блокировка в `meeting_notice_reserve` проходит гейт зелёной | #546 | 2 |
 | T147 | orchestrator | T072 | done | Первая половина (D018 — вторая в T151): Серверный сторож `checkRecorderHealth` видит heartbeat бота из `service_agents` (D007), и живой контейнер не прячет мёртвый при двух встречах сразу — половина DoD T071 | #547 | 1 |
-| T148 | chores | — | todo | `swarm-client` совместим со strip-only Node — контейнер без `--experimental-transform-types` | #548 | 2 |
+| T148 | chores | — | done | `swarm-client` совместим со strip-only Node — контейнер без `--experimental-transform-types` | #548 | 2 |
 | T149 | identity | T017 | done | Приглашение бота (D017): сервер заводит одноразовую запись «кто позвал, ссылка, срок» по запросу залогиненного человека; ручную встречу агент заводит в meeting-claim только по действующему приглашению, без него — 403; приглашение гасится после использования. Миграция — одна в волне | — | 1 |
 | T150 | orchestrator | T149 | done | Веб: поле «вставь ссылку на созвон — бот постучится» (EN/RU) заводит приглашение; человек видит, что бот уже стучится / не пустили / записывает. miniapp — вливать в main только в окно раскатки | — | 1 |
 | T151 | orchestrator | T147,T149 | done | Heartbeat бота по встрече (D018): миграция `meetings.agent_last_seen_at`/`agent_last_recording`, heartbeat несёт `meeting_id` (swarm-client + meeting-heartbeat), сторож — по каждой встрече; при двух встречах живой контейнер не прячет мёртвый | #547 | 1 |
