@@ -29,12 +29,13 @@ type NotificationRow = {
   actor_telegram_id: number | null;
   read_at: string | null;
   created_at: string;
+  payload: Record<string, unknown> | null;
   tasks: { title: string; is_private: boolean; owner_id: number | null } | null;
   task_comments: { content: string } | null;
 };
 
 const SELECT_WITH_REFS =
-  "id, type, task_id, comment_id, actor_telegram_id, read_at, created_at, " +
+  "id, type, task_id, comment_id, actor_telegram_id, read_at, created_at, payload, " +
   "tasks(title, is_private, owner_id), task_comments(content)";
 
 function escapeHtml(s: string): string {
@@ -132,10 +133,18 @@ export async function notifyTaskComment(
 
 // ── Роуты ────────────────────────────────────────────────────────────────────
 
+/** Типы без задачи: содержимое события лежит в `payload`. Рассылает их SQL-функция
+ *  `public.maintenance_announce()` (миграция 20260928200000), а не этот модуль. */
+const SYSTEM_TYPES = new Set(["maintenance"]);
+function isSystemNotification(type: string): boolean {
+  return SYSTEM_TYPES.has(type);
+}
+
 /** Ключ строки `app_settings` с объявлением о раскатке. */
 export const DEPLOY_NOTICE_KEY = "deploy_notice";
 
 type DeployNoticeValue = {
+  kind?: unknown;
   at?: unknown;
   until?: unknown;
   ru?: unknown;
@@ -152,7 +161,10 @@ type DeployNoticeValue = {
  */
 async function loadDeployNotice(
   supabase: SupabaseClient,
-): Promise<{ at: string; until: string; ru?: string; en?: string } | null> {
+): Promise<
+  | { at: string; until: string; ru?: string; en?: string; kind?: "freeze" }
+  | null
+> {
   const { data, error } = await supabase
     .from("app_settings")
     .select("value")
@@ -178,6 +190,8 @@ async function loadDeployNotice(
     until: v.until,
     ...(typeof v.ru === "string" && v.ru ? { ru: v.ru } : {}),
     ...(typeof v.en === "string" && v.en ? { en: v.en } : {}),
+    // Плашка перед заморозкой (issue #609): веб подписывает её временем работ, а не «обновлением».
+    ...(v.kind === "freeze" ? { kind: "freeze" as const } : {}),
   };
 }
 
@@ -219,8 +233,10 @@ export async function handleNotificationRoutes(
     // на доске, смысла нет (решение владельца 2026-08-24,
     // docs/decisions/2026-08-24-comment-subscription.md).
     const rows = (data ?? []) as unknown as NotificationRow[];
+    // Системные события (заморозка, issue #609) задачи не имеют — их видит адресат, и только.
     const visible = rows.filter((r) =>
-      r.tasks && canViewTask(r.tasks, telegramId, isAdmin)
+      isSystemNotification(r.type) ||
+      (r.tasks && canViewTask(r.tasks, telegramId, isAdmin))
     );
 
     const names = await resolveNames(
@@ -239,6 +255,7 @@ export async function handleNotificationRoutes(
         : "—",
       read_at: r.read_at,
       created_at: r.created_at,
+      ...(isSystemNotification(r.type) ? { payload: r.payload ?? {} } : {}),
     }));
     // Счётчик — по видимым в этом же окне, чтобы бейдж не показывал то, чего в ленте нет.
     const notice = await loadDeployNotice(supabase);

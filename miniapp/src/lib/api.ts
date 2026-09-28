@@ -29,6 +29,7 @@ import type {
 import { createRequestCache, REQUEST_CACHE_TTL_MS } from "./request-cache";
 import { normalizeProposedTasks, type ProposedTask } from "./proposedTasks";
 import type { DeployNotice } from "@/lib/deployNotice";
+import type { MaintenanceNotice } from "@/lib/maintenance";
 import {
   type Maintenance,
   parseMaintenanceResponse,
@@ -2284,7 +2285,8 @@ export type TaskComment = {
 // поле `type` заведено под назначения/смены статуса (беклог), UI на него уже смотрит.
 export type SwarmNotification = {
   id: string;
-  type: "task_comment" | "task_reminder";
+  /** maintenance — плановые работы (заморозка, issue #609): без задачи, содержимое в payload. */
+  type: "task_comment" | "task_reminder" | "maintenance";
   task_id: string | null;
   task_title: string;
   comment_id: string | null;
@@ -2293,6 +2295,7 @@ export type SwarmNotification = {
   actor_name: string;
   read_at: string | null;
   created_at: string;
+  payload?: MaintenanceNotice;
 };
 
 export type NotificationsResponse = {
@@ -2307,6 +2310,25 @@ export async function fetchNotifications(
 ): Promise<NotificationsResponse> {
   if (DEV_MODE) {
     const items: SwarmNotification[] = [
+      {
+        // DEV_MODE: плановые работы через 8 минут — та же заморозка, что объявляет плашка ниже.
+        id: "n-freeze",
+        type: "maintenance",
+        task_id: null,
+        task_title: "",
+        comment_id: null,
+        content: "",
+        actor_telegram_id: null,
+        actor_name: "—",
+        read_at: null,
+        created_at: new Date(Date.now() - 60 * 1000).toISOString(),
+        payload: {
+          starts_at: new Date(Date.now() + 8 * 60 * 1000).toISOString(),
+          until: new Date(Date.now() + 38 * 60 * 1000).toISOString(),
+          message_ru: "Переезжаем на новый вид. Допишите начатое — изменения на время работ не принимаются.",
+          message_en: "Moving to the new look. Finish what you are editing — changes are paused during the work.",
+        },
+      },
       {
         id: "n1",
         type: "task_comment",
@@ -2345,10 +2367,22 @@ export async function fetchNotifications(
       },
     ];
     // DEV_MODE: объявление о раскатке через 8 минут — иначе плашку не посмотреть локально.
-    const notice: DeployNotice = {
-      at: new Date(Date.now() + 8 * 60 * 1000).toISOString(),
-      until: new Date(Date.now() + 40 * 60 * 1000).toISOString(),
-    };
+    // localStorage `dev-notice=deploy` — обычная плашка раскатки; по умолчанию — плашка перед
+    // заморозкой. Не параметром адреса: роутер оболочки снимает query при входе.
+    let deployOnly = false;
+    try { deployOnly = window.localStorage.getItem("dev-notice") === "deploy"; } catch { /* нет хранилища — показываем заморозку */ }
+    const notice: DeployNotice = deployOnly
+      ? {
+        at: new Date(Date.now() + 8 * 60 * 1000).toISOString(),
+        until: new Date(Date.now() + 40 * 60 * 1000).toISOString(),
+      }
+      : {
+        kind: "freeze",
+        at: new Date(Date.now() + 8 * 60 * 1000).toISOString(),
+        until: new Date(Date.now() + 38 * 60 * 1000).toISOString(),
+        ru: "Переезжаем на новый вид.",
+        en: "Moving to the new look.",
+      };
     return { items, unread: items.filter((i) => !i.read_at).length, notice };
   }
   return apiFetch<NotificationsResponse>(`/notifications?limit=${limit}`);

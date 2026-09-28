@@ -82,3 +82,48 @@ export function subscribeMaintenance(
     listeners.delete(fn);
   };
 }
+
+// ── Объявление о заморозке: плашка и колокольчик (issue #609) ─────────────────
+// Одно нажатие кнопки даёт «предупредить → заморозить → снять». Людям до начала показываем
+// КОГДА и НА СКОЛЬКО — в местном времени смотрящего, а не в UTC сервера.
+
+/** Содержимое уведомления «плановые работы» — кладёт SQL-функция maintenance_announce. */
+export type MaintenanceNotice = {
+  starts_at?: string;
+  until?: string;
+  message_en?: string;
+  message_ru?: string;
+  /** Работы сняли раньше срока или отменили плановые. */
+  cancelled_at?: string;
+};
+
+export type FreezeWindow = {
+  /** «23:30» в местном времени. */
+  start: string;
+  end: string;
+  /** Длительность целыми минутами. */
+  minutes: number;
+  phase: "planned" | "running" | "over" | "cancelled";
+};
+
+/** Окно работ для подписи. null — данных нет или они битые: подпись не рисуем, мусор не показываем. */
+export function freezeWindow(
+  n: MaintenanceNotice | null | undefined,
+  locale: string,
+  now: Date = new Date(),
+): FreezeWindow | null {
+  const s = n?.starts_at ? new Date(n.starts_at).getTime() : NaN;
+  const u = n?.until ? new Date(n.until).getTime() : NaN;
+  if (Number.isNaN(s) || Number.isNaN(u) || u <= s) return null;
+  const clock = (t: number) =>
+    new Date(t).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  const t = now.getTime();
+  const phase = n?.cancelled_at
+    ? "cancelled"
+    : t < s
+    ? "planned"
+    : t < u
+    ? "running"
+    : "over";
+  return { start: clock(s), end: clock(u), minutes: Math.round((u - s) / 60_000), phase };
+}

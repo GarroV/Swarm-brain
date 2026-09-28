@@ -367,3 +367,20 @@ html[data-backdrop="custom"] :is(body, .roy-shell) {
 /* Только в ночной теме и не под фокусом: вне слоёв это правило перебило бы кольцо фокуса
    (Tailwind рисует его тем же box-shadow). */
 .dark .neon-glow:not(:focus-visible) { box-shadow: var(--glow-sm); }
+
+/* Колокольчик с непрочитанным (issue #609): короткое покачивание раз в 9 с. Движение — только
+   в первые ~12% цикла, остальное время он неподвижен: сигнал «загляни», а не мигалка. Ось —
+   у дужки сверху, как у настоящего колокольчика. transform — compositor, без перерисовки. */
+@keyframes roy-bell-nudge {
+  0%, 12%, 100% { transform: rotate(0); }
+  2%  { transform: rotate(14deg); }
+  4%  { transform: rotate(-12deg); }
+  6%  { transform: rotate(8deg); }
+  8%  { transform: rotate(-5deg); }
+  10% { transform: rotate(2deg); }
+}
+.roy-bell-nudge {
+  transform-origin: 50% 12%;
+  animation: roy-bell-nudge 9s ease-in-out 1.5s infinite;
+}
+@media (prefers-reduced-motion: reduce) { .roy-bell-nudge { animation: none; } }

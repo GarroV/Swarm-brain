@@ -1,5 +1,6 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  freezeWindow,
   isMaintenanceActive,
   type Maintenance,
   minutesLeft,
@@ -56,4 +57,26 @@ Deno.test("подписка получает и заморозку, и её сн
   assertEquals(seen[0]?.until, m.until);
   assertEquals(seen[1], null);
   publishMaintenance(null);
+});
+
+Deno.test("окно работ: время начала/конца, длительность и фаза по часам смотрящего (#609)", () => {
+  const n = { starts_at: "2026-09-28T21:30:00Z", until: "2026-09-28T22:00:00Z" };
+  const before = freezeWindow(n, "en-GB", new Date("2026-09-28T21:00:00Z"));
+  assertEquals(before?.minutes, 30);
+  assertEquals(before?.phase, "planned");
+  assertEquals(freezeWindow(n, "en-GB", new Date("2026-09-28T21:40:00Z"))?.phase, "running");
+  assertEquals(freezeWindow(n, "en-GB", new Date("2026-09-28T22:01:00Z"))?.phase, "over");
+  assertEquals(
+    freezeWindow({ ...n, cancelled_at: "2026-09-28T21:10:00Z" }, "en-GB", new Date("2026-09-28T21:40:00Z"))?.phase,
+    "cancelled",
+  );
+});
+
+Deno.test("окно работ: битые или перевёрнутые времена не рисуются вовсе", () => {
+  assertEquals(freezeWindow(null, "en-GB"), null);
+  assertEquals(freezeWindow({ starts_at: "завтра", until: "2026-09-28T22:00:00Z" }, "en-GB"), null);
+  assertEquals(
+    freezeWindow({ starts_at: "2026-09-28T22:00:00Z", until: "2026-09-28T21:00:00Z" }, "en-GB"),
+    null,
+  );
 });

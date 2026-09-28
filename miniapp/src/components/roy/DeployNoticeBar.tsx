@@ -24,6 +24,7 @@ import {
   subscribeNotice,
   type DeployNotice,
 } from "@/lib/deployNotice";
+import { freezeWindow } from "@/lib/maintenance";
 
 // Отсчёт в минутах — раз в 20 с достаточно, чтобы цифра не отставала заметно. Запросов не шлём.
 const TICK_MS = 20_000;
@@ -58,10 +59,27 @@ export function DeployNoticeBar() {
 
   const soon = view.phase === "soon";
   const custom = dt(notice?.ru ?? "", notice?.en ?? "");
+  // Перед заморозкой (issue #609) подпись — КОГДА и НА СКОЛЬКО, всегда, даже рядом со своим
+  // текстом: «переезжаем» без времени не даёт человеку решить, успеет ли он дописать.
+  const win = notice?.kind === "freeze"
+    ? freezeWindow({ starts_at: notice.at, until: notice.until }, dt("ru-RU", "en-GB"), now)
+    : null;
+  const freezeLine = win
+    ? (soon
+      ? dt(
+        `Работы в ${win.start}–${win.end} (через ${view.minutes} мин): изменения на это время не принимаются`,
+        `Maintenance ${win.start}–${win.end} (in ${view.minutes} min): changes are paused meanwhile`,
+      )
+      : dt(`Идут работы до ${win.end}`, `Maintenance until ${win.end}`))
+    : null;
   const head = custom
+    || freezeLine
     || (soon
       ? dt(`Обновление через ${view.minutes} мин`, `Update in ${view.minutes} min`)
       : dt("Идёт обновление", "Updating now"));
+  const sub = win
+    ? (custom ? freezeLine : null)
+    : (custom ? null : dt("страница перезагрузится сама", "the page will reload itself"));
 
   // Крестика нет (решение владельца 2026-09-25: «нельзя убрать уведомление, должно висеть и
   // напоминать»): плашка висит, пока не снимут кнопкой или не выйдет срок `until`. Свой текст
@@ -80,14 +98,26 @@ export function DeployNoticeBar() {
             : "border-transparent bg-primary text-primary-foreground"
         }`}
         // Перенесённый на две строки текст в пилюле выглядит обрубком — скругляем мягче.
-        style={custom ? { fontSize: 12.5, borderRadius: 14 } : { fontSize: 12.5 }}
+        style={custom || win ? { fontSize: 12.5, borderRadius: 14 } : { fontSize: 12.5 }}
+        data-notice-kind={notice?.kind ?? "deploy"}
       >
-        <RoyIcon name="clock" size={13} strokeWidth={2.1} />
-        <span className={custom ? "min-w-0" : "truncate"}>{head}</span>
-        {!custom && (
-          <span className={`hidden truncate font-normal sm:inline ${soon ? "text-accent-ink/70" : "text-primary-foreground/80"}`}>
-            · {dt("страница перезагрузится сама", "the page will reload itself")}
+        <RoyIcon name={win ? "warn" : "clock"} size={13} strokeWidth={2.1} />
+        {win ? (
+          // Перед заморозкой — одним абзацем: свой текст и время работ читаются подряд, а не
+          // двумя узкими колонками (на 390px так и выходило). Время не прячем и на мобилке.
+          <span className="min-w-0">
+            {head}
+            {sub && <span className={`font-normal ${soon ? "text-accent-ink/75" : "text-primary-foreground/80"}`}> · {sub}</span>}
           </span>
+        ) : (
+          <>
+            <span className={custom ? "min-w-0" : "truncate"}>{head}</span>
+            {sub && (
+              <span className={`hidden truncate font-normal sm:inline ${soon ? "text-accent-ink/70" : "text-primary-foreground/80"}`}>
+                · {sub}
+              </span>
+            )}
+          </>
         )}
       </div>
     </div>
