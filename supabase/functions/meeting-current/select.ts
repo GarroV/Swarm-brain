@@ -80,17 +80,27 @@ function isCandidate(e: GEvent): boolean {
     e.transparency !== "transparent";
 }
 
-// Выбирает событие: сперва лучшее из ИДУЩИХ сейчас (по скорингу), иначе ближайшее предстоящее
-// (для упреждающего уведомления). null — если кандидатов нет.
+// Текущие события списком (D027): все ИДУЩИЕ сейчас — лучшее первым (по скорингу); идущих нет —
+// все предстоящие в окне, ближайшее первым (для упреждающего «через N мин»). `keep` отсекает
+// неподходящие ДО деления на идущие и предстоящие: идущий слот без ссылки не должен заслонять
+// созвон, который начнётся через три минуты (D026).
+export function currentEvents(
+  items: GEvent[],
+  nowMs: number,
+  keep: (e: GEvent) => boolean = () => true,
+): GEvent[] {
+  const cand = items.filter((e) => isCandidate(e) && keep(e));
+  const ongoing = cand.filter((e) => startMs(e) <= nowMs && nowMs <= Date.parse(e.end!.dateTime!));
+  if (ongoing.length) return ongoing.slice().sort(betterFirst);
+  return cand
+    .filter((e) => startMs(e) > nowMs)
+    .sort((a, b) => startMs(a) - startMs(b) || betterFirst(a, b));
+}
+
+// Одно событие — первое из списка: лучшее из идущих, иначе ближайшее предстоящее. null — пусто.
 export function pickCurrentEvent(
   items: GEvent[],
   nowMs: number,
 ): GEvent | null {
-  const cand = items.filter(isCandidate);
-  const ongoing = cand.filter((e) => startMs(e) <= nowMs && nowMs <= Date.parse(e.end!.dateTime!));
-  if (ongoing.length) return ongoing.slice().sort(betterFirst)[0];
-  const upcoming = cand
-    .filter((e) => startMs(e) > nowMs)
-    .sort((a, b) => startMs(a) - startMs(b));
-  return upcoming[0] ?? null;
+  return currentEvents(items, nowMs)[0] ?? null;
 }
