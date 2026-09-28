@@ -173,7 +173,7 @@ final class RecorderWidget {
         bannerButtons.isHidden = true
         bannerClose.isHidden = false
         bannerClose.toolTip = "Не записывать эти встречи"
-        configMissedRow(missed)
+        configMissedRow(missed, named: true)
         showBanner()
     }
 
@@ -221,17 +221,20 @@ final class RecorderWidget {
         return row
     }
 
-    private func configMissedRow(_ missed: MissedCapsule?) {
+    /// `named` — капсула выбора (D027): встреч несколько, и короткое «Бота нет» не говорит, про какую.
+    /// Тогда строка — полный текст сервера, в нём есть название встречи.
+    private func configMissedRow(_ missed: MissedCapsule?, named: Bool = false) {
         if let missed {
             // Отказ приглашения — вместо короткой строки: он и есть главное, что надо прочитать.
-            missedLabel.stringValue = missed.failed ? missed.detail : missed.shortLine
+            let long = missed.failed || named
+            missedLabel.stringValue = long ? missed.detail : missed.shortLine
             missedLabel.toolTip = missed.detail
-            // Отказ длинный: рядом с кнопкой в 150 pt он молча резался. Тогда строка встаёт над
+            // Длинный текст рядом с кнопкой в 150 pt молча резался. Тогда строка встаёт над
             // кнопкой во всю ширину капсулы; короткое «Бота нет» остаётся с кнопкой в одну линию.
-            missedRow.orientation = missed.failed ? .vertical : .horizontal
-            missedRow.alignment = missed.failed ? .leading : .centerY
-            missedRow.spacing = missed.failed ? 4 : 8
-            missedLabelWidth.constant = missed.failed ? 232 : 150
+            missedRow.orientation = long ? .vertical : .horizontal
+            missedRow.alignment = long ? .leading : .centerY
+            missedRow.spacing = long ? 4 : 8
+            missedLabelWidth.constant = long ? 232 : 150
             configInvite(missedInvite, missed)
             missedRow.isHidden = false
         } else {
@@ -502,7 +505,7 @@ final class RecorderWidget {
         bannerColumn.alignment = .leading
         choiceStack.orientation = .vertical
         choiceStack.alignment = .leading
-        choiceStack.spacing = 10
+        choiceStack.spacing = 16
         choiceStack.edgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 2, right: 0)
         choiceStack.isHidden = true
 
