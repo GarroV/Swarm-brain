@@ -24,8 +24,8 @@
 //
 // Перехват решает выгрузка (T160): заявка другого человека в meeting-claim ничего не отбирает —
 // она становится претендентом, а право переходит, только когда настоящий meeting-ingest измерил
-// выгруженное аудио сам и оно заметно полнее. Заявка «на час» с выгрузкой на десять минут
-// встречу не получает.
+// выгруженное аудио сам (по содержимому файла, не по заголовку) и оно заметно полнее. Заявка
+// «на час» с выгрузкой на десять минут встречу не получает.
 //
 // Арбитраж (T155): удар бота продлевает лиз и пишет recorded_seconds — рекордер с записью короче
 // не отбирает у бота встречу, claim после истечения лиза из claim не считает живого бота
@@ -43,6 +43,7 @@
 // Красный, если хоть одно ожидание не сошлось или окружения нет.
 
 import { ingestFormOf } from "./smoke-m4a.ts";
+import type { Overrides } from "../supabase/functions/meeting-ingest/m4a-fixture.ts";
 
 const PORT_BASE = Number(Deno.env.get("SMOKE_PORT_BASE") ?? "4380");
 const PORT_HB = PORT_BASE + 4;
@@ -500,11 +501,15 @@ async function claimAs(
 }
 
 /** Выгрузка рекордера TAKER в настоящий meeting-ingest: `seconds` аудио, измеримых сервером. */
-async function uploadAs(meetingId: string, seconds: number): Promise<{ status: number; body: Record<string, unknown> }> {
+async function uploadAs(
+  meetingId: string,
+  seconds: number,
+  overrides: Overrides = {},
+): Promise<{ status: number; body: Record<string, unknown> }> {
   const res = await fetch(`http://127.0.0.1:${PORT_INGEST}/`, {
     method: "POST",
     headers: { Authorization: `Bearer ${TAKER_TOKEN}` },
-    body: ingestFormOf(meetingId, seconds),
+    body: ingestFormOf(meetingId, seconds, 900, overrides),
   });
   const body = await res.json().catch(() => ({}));
   return { status: res.status, body };
@@ -586,6 +591,22 @@ async function arbitration(): Promise<void> {
       afterClaim?.claim_owner === OWNER_ARB && afterClaim?.recorded_seconds === 2400 &&
       (await takerRole(ARB.long.id)) === "challenger",
     JSON.stringify({ claimed, afterClaim }),
+  );
+  // Длина — по содержимому: две секунды звука под заголовком на 62 минуты — не 62 минуты.
+  const headerOnly = await uploadAs(ARB.long.id, 2, { mvhdSec: 3720 });
+  const afterHeaderOnly = await arbRow(ARB.long.id);
+  expect(
+    "длина по содержимому: файл на 2 с с заголовком на 62 минуты — 409, право у бота",
+    headerOnly.status === 409 && afterHeaderOnly?.claim_owner === OWNER_ARB &&
+      afterHeaderOnly?.recorded_seconds === 2400 && (await takerRole(ARB.long.id)) === "defer",
+    JSON.stringify({ headerOnly, afterHeaderOnly }),
+  );
+  const reclaimed = await claimAs(ARB.long.key, 3720);
+  expect(
+    "после отказа новая заявка снова делает претендентом",
+    reclaimed.status === 200 && reclaimed.decision === "transcribe" &&
+      (await takerRole(ARB.long.id)) === "challenger",
+    JSON.stringify(reclaimed),
   );
   const short10 = await uploadAs(ARB.long.id, 600);
   const afterShortUpload = await arbRow(ARB.long.id);

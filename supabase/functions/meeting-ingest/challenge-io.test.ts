@@ -5,26 +5,10 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { InMemoryPart } from "../_shared/meeting-processor.ts";
 import { lowerHolderSeconds, measureUpload, settleChallengeUpload } from "./challenge-io.ts";
+import { m4aOf, type Overrides } from "./m4a-fixture.ts";
 
-/** Часть .m4a длиной `seconds` по заголовку moov/mvhd (шкала 1000) — звук серверу не нужен. */
-function fakeM4a(seconds: number): Uint8Array<ArrayBuffer> {
-  const box = (type: string, body: Uint8Array) => {
-    const out = new Uint8Array(8 + body.length);
-    new DataView(out.buffer).setUint32(0, out.length);
-    out.set(new TextEncoder().encode(type), 4);
-    out.set(body, 8);
-    return out;
-  };
-  const mvhd = new Uint8Array(100);
-  new DataView(mvhd.buffer).setUint32(12, 1000);
-  new DataView(mvhd.buffer).setUint32(16, Math.round(seconds * 1000));
-  const moov = box("moov", box("mvhd", mvhd));
-  const ftyp = box("ftyp", new TextEncoder().encode("M4A \0\0\0\0"));
-  const out = new Uint8Array(ftyp.length + moov.length);
-  out.set(ftyp, 0);
-  out.set(moov, ftyp.length);
-  return out;
-}
+/** Часть .m4a длиной `seconds` по содержимому (m4a-fixture.ts) — звук серверу не нужен, нужна форма. */
+const fakeM4a = (seconds: number, o: Overrides = {}) => m4aOf(seconds, o);
 
 const NOW = "2026-09-28T12:00:00.000Z";
 const HOLDER = 100;
@@ -75,8 +59,8 @@ function fakeDb(row: Record<string, unknown> | null, updateHits: boolean[]) {
   return { client: client as unknown as SupabaseClient, calls };
 }
 
-const part = (offset: number, seconds: number): InMemoryPart =>
-  ({ blob: new Blob([fakeM4a(seconds)]), offset, name: `p${offset}` }) as unknown as InMemoryPart;
+const part = (offset: number, seconds: number, o: Overrides = {}): InMemoryPart =>
+  ({ blob: new Blob([fakeM4a(seconds, o)]), offset, name: `p${offset}` }) as unknown as InMemoryPart;
 
 function heldRow(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -104,7 +88,7 @@ const rolesOf = (call: Call | undefined) =>
     ) => [r.telegram_id, r.role]),
   );
 
-Deno.test("замер выгрузки: охват частей по заголовкам, пересечение дорожек не удваивается", async () => {
+Deno.test("замер выгрузки: охват частей по содержимому, пересечение дорожек не удваивается", async () => {
   assertEquals(await measureUpload([part(0, 900), part(900, 600), part(100, 300)]), 1500);
   assertEquals(await measureUpload([part(0, 900), { ...part(900, 1), blob: new Blob(["не mp4"]) }]), null);
 });
@@ -141,6 +125,16 @@ Deno.test("ЯДРО: заявлено много, выгружено мало �
   assertEquals(out.ok === false && out.status, 409);
   assertEquals(calls.filter((c) => c.op === "update" && "claim_owner" in (c.patch ?? {})).length, 0);
   assertEquals(rolesOf(calls.at(-1)), { [HOLDER]: "transcribe", [TAKER]: "defer" });
+});
+
+Deno.test("ЯДРО: длинный заголовок у короткого или пустого файла — 409, перехвата нет", async () => {
+  for (const parts of [[part(0, 2, { mvhdSec: 9000 })], [part(0, 9000, { noMdat: true })]]) {
+    const { client, calls } = fakeDb(heldRow(), [true]);
+    const out = await settleChallengeUpload(client, "m", TAKER, null, parts, NOW);
+    assertEquals(out.ok === false && out.status, 409);
+    assertEquals(calls.filter((c) => c.op === "update" && "claim_owner" in (c.patch ?? {})).length, 0);
+    assertEquals(rolesOf(calls.at(-1)), { [HOLDER]: "transcribe", [TAKER]: "defer" });
+  }
 });
 
 Deno.test("ЯДРО: строка изменилась за время сверки (UPDATE не лёг) — 409 и defer, а не перехват", async () => {
