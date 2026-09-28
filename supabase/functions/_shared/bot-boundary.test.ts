@@ -123,5 +123,8 @@ Deno.test("граница: проверка краснеет на имени б�
     1,
   );
   assertEquals(violations("_shared/x.ts", 'import { BOT_PROFILE } from "./bot-profile.ts";').length, 0);
-  assertEquals(violations("meeting-ingest/x.ts", 'import { h } from "../swarm-api/autojoin.ts";').length, 1);
+  // Строка импорта собирается по частям: иначе граф модулей scripts/check-graph.ts принял бы
+  // пример порчи за настоящий импорт роута из _shared.
+  const routeImport = ["import { h } from ", '"../swarm-api/autojoin.ts";'].join("");
+  assertEquals(violations("meeting-ingest/x.ts", routeImport).length, 1);
 });
