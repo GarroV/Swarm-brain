@@ -12,14 +12,14 @@
 #   scripts/scriba-live.sh meetings    — встречи стенда: статус, источник, говорящие, в очереди ли
 #
 # Код на сервер попадает клоном ветки из origin, не с диска Мака: сначала запушь.
-# Ветка — SCRIBA_LIVE_BRANCH (по умолчанию chores/live-stand).
+# Ветка — SCRIBA_LIVE_BRANCH (по умолчанию chores/live-stand-2).
 # Прод не участвует: база — локальный контур на MUSPELHEIM, Telegram подменён, OpenAI подменён,
 # пока в state/openai.key на сервере нет живого ключа (docs/furca/live-run-T004.md).
 set -euo pipefail
 
 HOST="${SCRIBA_LIVE_SSH:-muspelheim}"
 ADDR="${SCRIBA_LIVE_ADDR:-100.64.116.67}"
-BRANCH="${SCRIBA_LIVE_BRANCH:-chores/live-stand}"
+BRANCH="${SCRIBA_LIVE_BRANCH:-chores/live-stand-2}"
 REPO='C:\projects\scriba-live\repo'
 PS="pwsh -NoProfile -File C:\\projects\\scriba-live\\repo\\scripts\\scriba-live\\stand.ps1"
 WEB="http://${ADDR}:4425"
@@ -38,7 +38,7 @@ sync_code() {
   if [ "$(git rev-parse --abbrev-ref HEAD)" = "$BRANCH" ] && [ "$local_head" != "$remote_head" ]; then
     echo "⚠ локальный HEAD ${local_head:0:8} не равен origin/${BRANCH} ${remote_head:0:8}: на стенд едет origin" >&2
   fi
-  remote "git -C ${REPO} fetch -q origin ${BRANCH} && git -C ${REPO} checkout -q -B ${BRANCH} origin/${BRANCH} && git -C ${REPO} log --oneline -1"
+  remote "git -C ${REPO} fetch -q origin +refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH} && git -C ${REPO} checkout -q -B ${BRANCH} origin/${BRANCH} && git -C ${REPO} log --oneline -1"
 }
 
 secret() { remote "$PS secret $1" | tr -d '\r\n'; }
