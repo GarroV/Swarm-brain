@@ -25,6 +25,9 @@ export const NOTICE_KINDS = [
   "door_blocked",
   // Страница прямо говорит, что встречи нет: код неверный или встреча закончилась.
   "meeting_unavailable",
+  // Бот идёт под своим аккаунтом Google (T175), а Google вместо встречи просит войти или
+  // подтвердить вход: чинит это тот, кто ведёт аккаунт бота, а не организатор встречи.
+  "account_signin_required",
   "captcha",
   "no_conference_link",
   "no_owner",

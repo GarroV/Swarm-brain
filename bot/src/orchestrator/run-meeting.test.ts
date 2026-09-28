@@ -439,6 +439,8 @@ describe("дверь", () => {
     { door: "blocked", outcome: "door_blocked", what: "Meet не пустил гостя до лобби" },
     { door: "unavailable", outcome: "meeting_unavailable", what: "встречи нет или она кончилась" },
     { door: "captcha", outcome: "captcha", what: "капча" },
+    // Вход аккаунта бота слетел (T175): чинить вход бота, а не доступ к встрече.
+    { door: "signin_required", outcome: "account_signin_required", what: "Google просит вход" },
   ] as const)("$what → нотиса $outcome, выход", async ({ door, outcome }) => {
     const world = build({ door: [door] });
 

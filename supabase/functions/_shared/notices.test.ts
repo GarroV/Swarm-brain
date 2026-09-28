@@ -169,6 +169,24 @@ Deno.test("текст страницы ошибки не говорит, что 
   }
 });
 
+Deno.test("вход аккаунта бота слетел (T175) — свой вид, привязан к встрече", () => {
+  const parsed = notice({ kind: "account_signin_required" });
+  assertEquals(parsed.kind, "account_signin_required");
+  assertEquals(parsed.scope.type, "meeting");
+});
+
+Deno.test("текст «вход бота слетел» не винит хоста и доступ встречи, а говорит, кому и что сделать", () => {
+  for (const lang of NOTICE_LANGS) {
+    const text = renderNotice(notice({ kind: "account_signin_required", lang }), null, 1);
+    const blocked = renderNotice(notice({ kind: "door_blocked", lang }), null, 1);
+    assert(text !== blocked, `${lang}: текст совпал со «страницей ошибки»`);
+    assert(!/declined|отклонил/i.test(text), `${lang}: никто не отклонял — ${text}`);
+    assert(!/Meeting access|доступ к встрече/i.test(text), `${lang}: доступ встречи тут ни при чём — ${text}`);
+    assert(/Google account|аккаунт Google/i.test(text), `${lang}: не сказано, что дело в аккаунте бота — ${text}`);
+    assert(/sign .*in again|войти заново|заново войти/i.test(text), `${lang}: не сказано, что сделать — ${text}`);
+  }
+});
+
 Deno.test("тело без kind и тело не-объект отвергаются, а не проглатываются", () => {
   for (const bad of [null, "door_waiting", 42, [], {}, { kind: "" }, { kind: 7 }]) {
     const e = assertThrows(() => parseNotice(bad), NoticeError, undefined, `тело ${JSON.stringify(bad)}`);

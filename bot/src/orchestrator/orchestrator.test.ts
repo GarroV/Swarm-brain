@@ -8,6 +8,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ACCOUNT_STATE_TARGET, type AccountCopies } from "./account.ts";
 import type { ContainerEngine, ContainerSpec, EngineContainer } from "./engine.ts";
 import { readLease } from "./lease.ts";
 import type { Notice, NoticeResult } from "./notices.ts";
@@ -40,6 +41,34 @@ async function replaceWithFile(target: string, attempts = 20): Promise<void> {
   } catch (error) {
     if (attempts <= 1) throw error;
     await replaceWithFile(target, attempts - 1);
+  }
+}
+
+function environmentOf(spec: ContainerSpec | undefined): string[] {
+  return [...(spec?.env ?? [])];
+}
+
+class FakeAccount implements AccountCopies {
+  readonly calls: string[] = [];
+  hasSignIn = true;
+  shouldFail = false;
+  shouldFailRelease = false;
+
+  prepare(runId: string): Promise<string | null> {
+    this.calls.push(`prepare:${runId}`);
+    if (this.shouldFail)
+      return Promise.reject(new Error("the bot's saved Google sign-in is damaged"));
+    return Promise.resolve(this.hasSignIn ? `/copies/${runId}.json` : null);
+  }
+
+  release(runId: string): Promise<void> {
+    this.calls.push(`release:${runId}`);
+    return this.shouldFailRelease ? Promise.reject(new Error("EBUSY")) : Promise.resolve();
+  }
+
+  sweep(liveRunIds: ReadonlySet<string>): Promise<void> {
+    this.calls.push(`sweep:${[...liveRunIds].join(",")}`);
+    return Promise.resolve();
   }
 }
 
@@ -123,7 +152,7 @@ describe("оркестратор", () => {
 
   function build(
     extraEnvironment?: Record<string, string>,
-    isolation: Partial<Pick<OrchestratorOptions, "maxMeetings" | "limits">> = {},
+    isolation: Partial<Pick<OrchestratorOptions, "maxMeetings" | "limits" | "account">> = {},
   ): Orchestrator {
     return new Orchestrator({
       ...isolation,
@@ -645,6 +674,120 @@ describe("оркестратор", () => {
 
       expect(spy).toHaveBeenCalled();
       spy.mockRestore();
+    });
+  });
+
+  describe("вход аккаунта бота (T175)", () => {
+    it("вход сохранён — в контейнер едет своя копия одним файлом на чтение и путь к ней", async () => {
+      const account = new FakeAccount();
+      orchestrator = build(undefined, { account });
+
+      await orchestrator.startForMeeting(MEET, "meet", 744);
+
+      const spec = engine.specs[0];
+      expect(account.calls).toEqual(["prepare:run-1"]);
+      expect(spec?.accountState).toEqual({
+        source: "/copies/run-1.json",
+        target: ACCOUNT_STATE_TARGET,
+      });
+      expect(environmentOf(spec)).toContain(`SCRIBA_GOOGLE_STATE=${ACCOUNT_STATE_TARGET}`);
+    });
+
+    it("входа нет — контейнер идёт гостем: ни монтирования, ни переменной", async () => {
+      const account = new FakeAccount();
+      account.hasSignIn = false;
+      orchestrator = build(undefined, { account });
+
+      await orchestrator.startForMeeting(MEET, "meet", 744);
+
+      const spec = engine.specs[0];
+      expect(spec?.accountState).toBeUndefined();
+      expect(environmentOf(spec).some((line) => line.startsWith("SCRIBA_GOOGLE_STATE="))).toBe(
+        false,
+      );
+    });
+
+    it("ручки смоука не подменяют путь к входу", async () => {
+      const account = new FakeAccount();
+      orchestrator = build({ SCRIBA_GOOGLE_STATE: "/elsewhere.json" }, { account });
+
+      await orchestrator.startForMeeting(MEET, "meet", 744);
+
+      expect(environmentOf(engine.specs[0])).toContain(
+        `SCRIBA_GOOGLE_STATE=${ACCOUNT_STATE_TARGET}`,
+      );
+      expect(environmentOf(engine.specs[0])).not.toContain("SCRIBA_GOOGLE_STATE=/elsewhere.json");
+    });
+
+    it("испорченный вход — громкий отказ до подъёма контейнера, место освобождено", async () => {
+      const account = new FakeAccount();
+      account.shouldFail = true;
+      orchestrator = build(undefined, { account, maxMeetings: 1 });
+
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).rejects.toThrow(/sign-in/u);
+      expect(engine.specs).toEqual([]);
+
+      account.shouldFail = false;
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).resolves.toBe("c1");
+    });
+
+    it("контейнер закончил встречу — копия входа убрана", async () => {
+      const account = new FakeAccount();
+      orchestrator = build(undefined, { account });
+
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      engine.exit(id, 0);
+      await orchestrator.whenExited(id);
+
+      expect(account.calls).toContain("release:run-1");
+    });
+
+    it("контейнер умер — копия входа тоже убрана", async () => {
+      const account = new FakeAccount();
+      orchestrator = build(undefined, { account });
+
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      engine.exit(id, 137);
+      await orchestrator.whenExited(id);
+
+      expect(account.calls).toContain("release:run-1");
+    });
+
+    it("копия не убралась — выход контейнера всё равно учтён, оркестратор не падает", async () => {
+      const account = new FakeAccount();
+      account.shouldFailRelease = true;
+      orchestrator = build(undefined, { account });
+
+      const id = await orchestrator.startForMeeting(MEET, "meet", 744);
+      engine.exit(id, 0);
+
+      expect(await orchestrator.whenExited(id)).toEqual({ kind: "finished", outcome: null });
+    });
+
+    it("контейнер не стартовал — копия убрана вместе с ним", async () => {
+      const account = new FakeAccount();
+      engine.shouldFailStart = true;
+      orchestrator = build(undefined, { account });
+
+      await expect(orchestrator.startForMeeting(MEET, "meet", 744)).rejects.toThrow();
+
+      expect(account.calls).toEqual(["prepare:run-1", "release:run-1"]);
+    });
+
+    it("на старте копии упавшего оркестратора убираются, копии подхваченных живых — нет", async () => {
+      const account = new FakeAccount();
+      engine.existing = [
+        {
+          id: "old",
+          running: true,
+          labels: { [LABEL.run]: "run-alive", [LABEL.onBehalfOf]: "744" },
+        },
+      ];
+      orchestrator = build(undefined, { account });
+
+      await orchestrator.init();
+
+      expect(account.calls).toEqual(["sweep:run-alive"]);
     });
   });
 });
