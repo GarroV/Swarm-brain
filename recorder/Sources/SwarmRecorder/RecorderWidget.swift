@@ -93,6 +93,7 @@ final class RecorderWidget {
     private let missedLabel = NSTextField(wrappingLabelWithString: "")
     private let missedInvite = NSButton()
     private let missedRow = NSStackView()
+    private lazy var missedLabelWidth = missedLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 150)
     /// Что капсула сейчас говорит о пропуске. nil — пропуска в капсуле нет.
     private(set) var shownMissed: MissedCapsule?
     /// Капсула говорит только о пропуске (предложения записать нет): ✕ закрывает один пропуск.
@@ -140,6 +141,12 @@ final class RecorderWidget {
             // Отказ приглашения — вместо короткой строки: он и есть главное, что надо прочитать.
             missedLabel.stringValue = missed.failed ? missed.detail : missed.shortLine
             missedLabel.toolTip = missed.detail
+            // Отказ длинный: рядом с кнопкой в 150 pt он молча резался. Тогда строка встаёт над
+            // кнопкой во всю ширину капсулы; короткое «Бота нет» остаётся с кнопкой в одну линию.
+            missedRow.orientation = missed.failed ? .vertical : .horizontal
+            missedRow.alignment = missed.failed ? .leading : .centerY
+            missedRow.spacing = missed.failed ? 4 : 8
+            missedLabelWidth.constant = missed.failed ? 232 : 150
             configInvite(missedInvite, missed)
             missedRow.isHidden = false
         } else {
@@ -390,9 +397,10 @@ final class RecorderWidget {
         // Пропуск внутри капсулы встречи: тонкая строка «Бота нет» + вторичная кнопка.
         missedLabel.font = .systemFont(ofSize: 11, weight: .medium)
         missedLabel.textColor = RoyArt.amber
-        missedLabel.maximumNumberOfLines = 2
         missedLabel.translatesAutoresizingMaskIntoConstraints = false
-        missedLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 150).isActive = true
+        missedLabel.maximumNumberOfLines = 3
+        missedLabel.cell?.truncatesLastVisibleLine = true
+        missedLabelWidth.isActive = true
         textButton(missedInvite, title: "Позвать бота", filled: false, action: #selector(inviteAction))
         missedInvite.setAccessibilityIdentifier("missed.inviteInline")
         missedRow.orientation = .horizontal
