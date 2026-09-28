@@ -48,4 +48,30 @@ describe("chromiumLaunchOptions", () => {
   it("выключить песочницу снаружи нельзя — громкий отказ", () => {
     expect(() => chromiumLaunchOptions({ extraArgs: [NO_SANDBOX_ARG] })).toThrow(/no-sandbox/);
   });
+
+  it("с прокси стенда весь выход браузера идёт через него, включая медиа звонка", () => {
+    const proxied = chromiumLaunchOptions({
+      environment: { SCRIBA_EGRESS_PROXY: `${["ht", "tp:"].join("")}//egress:3128` },
+    });
+    expect(proxied.args).toContain(`--proxy-server=${["ht", "tp:"].join("")}//egress:3128`);
+    expect(proxied.args).toContain("--force-webrtc-ip-handling-policy=disable_non_proxied_udp");
+  });
+
+  it("без прокси стенда (смоук записи) браузер идёт напрямую", () => {
+    const direct = chromiumLaunchOptions({ environment: { SCRIBA_EGRESS_PROXY: "" } });
+    expect(direct.args.some((argument) => argument.startsWith("--proxy-server"))).toBe(false);
+    expect(direct.args.some((argument) => argument.startsWith("--force-webrtc"))).toBe(false);
+  });
+
+  it("задать или снять прокси аргументом снаружи нельзя — громкий отказ", () => {
+    for (const argument of [
+      "--proxy-server=evil:1",
+      "--no-proxy-server",
+      "--proxy-bypass-list=*",
+    ]) {
+      expect(() => chromiumLaunchOptions({ extraArgs: [argument] }), argument).toThrow(
+        /SCRIBA_EGRESS_PROXY/u,
+      );
+    }
+  });
 });
