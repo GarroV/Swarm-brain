@@ -1054,6 +1054,15 @@ let MOCK_LABELS: TaskLabel[] = [
     sort_order: 0,
     count: 0,
   },
+  // Второй список — чтобы в моках было видно ячейку «Айти · +1» в таблице задач.
+  {
+    id: "l-routine",
+    name: "Регулярка",
+    icon: "repeat",
+    color: null,
+    sort_order: 1,
+    count: 0,
+  },
 ];
 
 export async function fetchTaskLabels(): Promise<TaskLabel[]> {

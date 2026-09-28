@@ -26,6 +26,9 @@ export type ToolbarState = {
   onEditLabel: (l: TaskLabel) => void;
   calView: boolean;
   setCalView: (on: boolean) => void;
+  // Ширины/порядок колонок отличаются от дефолта — показываем «Сбросить колонки».
+  columnsCustom: boolean;
+  onResetColumns: () => void;
 };
 
 const LENSES: Array<[Exclude<Lens, "staff">, string, string]> = [
@@ -180,6 +183,17 @@ export function TasksToolbar({ r, s }: { r: ReturnType<typeof useReminderTasks>;
             style={{ fontSize: 12.5 }}
           />
         </label>
+        {s.columnsCustom && !s.calView && (
+          <button
+            type="button"
+            onClick={s.onResetColumns}
+            title={dt("Вернуть ширину и порядок колонок по умолчанию", "Restore default column widths and order")}
+            className="whitespace-nowrap rounded-[6px] px-1.5 text-ink-soft underline-offset-2 transition-colors hover:text-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            style={{ fontSize: 12.5, height: 28 }}
+          >
+            {dt("Сбросить колонки", "Reset columns")}
+          </button>
+        )}
         <span className="whitespace-nowrap text-ink-mute" style={{ fontSize: 12.5 }}>
           {dt("Показано", "Shown")} <b className="text-ink">{s.shown}</b>
         </span>
