@@ -913,6 +913,30 @@ async function snapshotBetweenRuns(): Promise<void> {
     current,
   );
 
+  // Строка прежнего снимка (встречу отменили до второго снимка) — рекордер её не видит.
+  const stale = `stale-${RUN}`;
+  await rest("POST", "meeting_calendar_snapshot_events", [{
+    group_id: WS,
+    invited_by: PEOPLE.g,
+    calendar_key: `${stale}:${iso(0).slice(0, 10)}`,
+    snapshot_at: iso(-600),
+    outcome: "expected",
+    title: stale,
+    join_url: "https://meet.google.com/smk-stal-abc",
+    platform: "meet",
+    starts_at: iso(-10),
+    ends_at: iso(40),
+  }]);
+  const afterStale = await missed(recorderToken(PEOPLE.g));
+  expect(
+    "встреча из прежнего снимка не читается как текущая",
+    afterStale.status === 200 &&
+      !((afterStale.body.misses ?? []) as MissView[]).some((m) =>
+        m.title === stale
+      ),
+    afterStale.body,
+  );
+
   google.downFor = PEOPLE.g;
   const down = await snapshot(CRON_SECRET);
   google.downFor = null;
