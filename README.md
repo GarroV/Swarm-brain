@@ -57,6 +57,7 @@ Granola и Read.ai — альтернативные источники встр�
 | bumblebee | macOS меню-бар; установка из `/recordertoken` **или веб → Настройки → bumblebee** | `meeting-claim`, `meeting-ingest`, `meeting-process` |
 | Granola | API-ключ на пользователя (`/connect granola`), часовой поллинг → единая приёмная встреч (`meetings`) | `swarm-bot` (`granola_poll`) |
 | Read.ai | OAuth2 + webhook — **отключается** (`READ_AI_ENABLED` off, не развивается) | `read-ai-auth`, `read-ai-webhook` |
+| Хаб проектов (публичная дорожная карта) | без авторизации, только чтение: `GET /swarm-api/public/roadmap/:projectId` отдаёт опубликованную доску (флаг `projects.public_roadmap`) — название, статус, срок, дата выкатки задач; описаний, исполнителей и комментариев нет | `swarm-api` |
 
 ---
 

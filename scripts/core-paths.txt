@@ -22,3 +22,4 @@ miniapp/src/lib/taskLinks.ts|miniapp/src/lib/taskLinks.test.ts
 # Порядок проектов на доске: ошибка в расчёте позиции не падает — список выходит ПОЧТИ
 # правильным, и человек читает это как «карточки сами прыгают», а не как поломку.
 miniapp/src/lib/projectOrder.ts|miniapp/src/lib/projectOrder.test.ts
+supabase/functions/swarm-api/public-roadmap.ts|supabase/functions/swarm-api/public-roadmap.test.ts
