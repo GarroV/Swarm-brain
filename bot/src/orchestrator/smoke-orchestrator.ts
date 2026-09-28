@@ -36,11 +36,13 @@ import Docker from "dockerode";
 import { startFakeSwarm } from "../swarm-client/testing/fake-swarm.ts";
 import { ACCOUNT_STATE_TARGET, FileAccountCopies } from "./account.ts";
 import { DockerodeEngine } from "./docker-engine.ts";
+import { DockerMeetingEgress } from "./egress.ts";
 import { NoticeClient } from "./notice-client.ts";
 import { JournaledNotifier } from "./notices.ts";
 import { type ContainerId, LABEL, Orchestrator } from "./orchestrator.ts";
 import { type NoticeProxy, startNoticeProxy } from "./smoke-notices.ts";
 
+const ENGINE = new DockerodeEngine();
 const PROJECT = process.env.SCRIBA_SMOKE_PROJECT ?? "scriba-orchestrator";
 const IMAGE = process.env.SCRIBA_SMOKE_IMAGE ?? "scriba-orchestrator:dev";
 const PORT = Number(process.env.SCRIBA_SMOKE_PORT ?? "4361");
@@ -119,7 +121,16 @@ function orchestratorFor(
 ): Orchestrator {
   return new Orchestrator({
     ...(account !== undefined && { account }),
-    engine: new DockerodeEngine(),
+    engine: ENGINE,
+    egress: new DockerMeetingEgress({
+      engine: ENGINE,
+      project: PROJECT,
+      image: IMAGE,
+      swarmUrl: SWARM_URL,
+      log: (line) => {
+        console.log(`    [egress] ${line}`);
+      },
+    }),
     project: PROJECT,
     image: IMAGE,
     leaseDirectory: path.join(STATE, leaseName),
@@ -713,7 +724,113 @@ async function sceneRace(fake: Fake): Promise<void> {
   }
 }
 
+/**
+ * Выполнить команду внутри контейнера встречи и вернуть код и вывод.
+ */
+async function execIn(id: string, command: string[]): Promise<{ code: number; out: string }> {
+  const docker = new Docker();
+  const exec = await docker.getContainer(id).exec({
+    Cmd: command,
+    AttachStdout: true,
+    AttachStderr: true,
+  });
+  const stream = await exec.start({});
+  const chunks: Buffer[] = [];
+  await new Promise<void>((resolve, reject) => {
+    stream.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+    stream.on("end", resolve);
+    stream.on("error", reject);
+  });
+  const info = await exec.inspect();
+  // Заголовки кадров мультиплекса (8 байт) выкидываются грубо: нам нужны только слова.
+  return { code: info.ExitCode ?? -1, out: Buffer.concat(chunks).toString("utf8") };
+}
+
+// Адреса — 1.1.1.1: достижим из обычной сети Docker (проверено), поэтому отказ здесь значит
+// «нет маршрута», а не «адрес умер». Ждём именно ENETUNREACH, а не любой сбой.
+const PROBE = `
+const net = require("node:net");
+const dgram = require("node:dgram");
+const dns = require("node:dns/promises");
+const t = (ms) => AbortSignal.timeout(ms);
+const tryIt = async (name, fn) => { try { console.log(name, "OK", await fn()); } catch (e) { console.log(name, "FAIL", e.cause?.code ?? e.code ?? e.message); } };
+(async () => {
+  await tryIt("fetch-example", async () => (await fetch("https://example.com/", { signal: t(10000) })).status);
+  await tryIt("fetch-meet", async () => (await fetch("https://meet.google.com/", { signal: t(15000), redirect: "manual" })).status);
+  await tryIt("tcp-direct", () => new Promise((ok, no) => { const s = net.connect(443, "1.1.1.1"); s.setTimeout(5000, () => no(new Error("timeout"))); s.on("connect", () => { s.destroy(); ok("connected"); }); s.on("error", no); }));
+  await tryIt("dns-example", async () => (await dns.lookup("example.com")).address);
+  await tryIt("udp-direct", () => new Promise((ok, no) => { const u = dgram.createSocket("udp4"); u.send(Buffer.from("x"), 53, "1.1.1.1", (e) => { u.close(); e ? no(e) : ok("sent"); }); }));
+})();
+`;
+
+async function sceneEgress(fake: Fake): Promise<void> {
+  console.log("\n──── выход наружу: только Google/Meet и свой Swarm (T178)");
+  const orchestrator = orchestratorFor("lease-main", LONG_PAGE);
+  await orchestrator.init();
+  const before = fake.ingested.length;
+  try {
+    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    await waitMeetingId(orchestrator, id);
+    check(true, "заявка встречи дошла до Swarm через прокси");
+    const probe = await execIn(id, ["node", "-e", PROBE]);
+    console.log(
+      `    [probe] ${probe.out
+        .replaceAll(/[^\p{L}\p{N}\s:._-]/gu, "")
+        .trim()
+        .replaceAll("\n", "\n    [probe] ")}`,
+    );
+    check(probe.out.includes("fetch-example FAIL"), "посторонний адрес через прокси — отказ");
+    check(probe.out.includes("fetch-meet OK"), "Meet через прокси — открывается");
+    check(probe.out.includes("tcp-direct FAIL ENETUNREACH"), "TCP мимо прокси — нет маршрута");
+    check(probe.out.includes("dns-example FAIL"), "внешние имена мимо прокси не резолвятся");
+    check(probe.out.includes("udp-direct FAIL ENETUNREACH"), "UDP мимо прокси — нет маршрута");
+    const chromium = await execIn(id, [
+      "sh",
+      "-c",
+      // Число процессов Chromium с прокси — последней строкой «procs=N»: вывод exec идёт с
+      // заголовками кадров, и цифры из них не должны сойти за ответ.
+      "echo procs=$(ps -eo args | grep -- '--proxy-server=http://egress:3128' | grep -vc grep)",
+    ]);
+    check(
+      Number(/procs=(\d+)/u.exec(chromium.out)?.[1] ?? "0") > 0,
+      "Chromium запущен с прокси стенда",
+      chromium.out.trim(),
+    );
+
+    const docker = new Docker();
+    const [proxy] = await docker.listContainers({
+      filters: { label: [`scriba.egress-of=${PROJECT}`] },
+    });
+    const logs =
+      proxy === undefined
+        ? Buffer.from("")
+        : await docker.getContainer(proxy.Id).logs({ stdout: true, stderr: true });
+    const proxyLog = logs.toString("utf8");
+    check(
+      proxyLog.includes("egress deny example.com:443"),
+      "прокси записал отказ посторонним адресам",
+    );
+    check(proxyLog.includes("egress allow meet.google.com:443"), "прокси записал выход в Meet");
+
+    await within(180_000, "stop", orchestrator.stop(id));
+    check(fake.ingested.length === before + 1, "запись ушла в meeting-ingest через прокси");
+    const networks = await docker.listNetworks({
+      filters: { label: [`scriba.egress-of=${PROJECT}`] },
+    });
+    check(
+      networks.length === 0,
+      "сеть встречи убрана после конца",
+      networks.map((n) => n.Name).join(","),
+    );
+  } finally {
+    orchestrator.close();
+  }
+}
+
 const SCENES: Record<string, (fake: Fake) => Promise<void>> = {
+  egress: sceneEgress,
   full: sceneFullMeeting,
   two: sceneTwoAtOnce,
   death: sceneDeath,

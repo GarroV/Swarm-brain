@@ -6,7 +6,14 @@ import { PassThrough } from "node:stream";
 
 import Docker from "dockerode";
 
-import type { ContainerEngine, ContainerSpec, EngineContainer } from "./engine.ts";
+import type {
+  ContainerEngine,
+  ContainerSpec,
+  EgressEngine,
+  EngineContainer,
+  EngineNetwork,
+  ProxySpec,
+} from "./engine.ts";
 
 const NOT_FOUND = 404;
 const NOT_MODIFIED = 304;
@@ -15,6 +22,10 @@ function statusOf(error: unknown): number | undefined {
   if (typeof error !== "object" || error === null) return undefined;
   const status = (error as { statusCode?: unknown }).statusCode;
   return typeof status === "number" ? status : undefined;
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function lines(stream: PassThrough, onLine: (line: string) => void): void {
@@ -34,7 +45,7 @@ function lines(stream: PassThrough, onLine: (line: string) => void): void {
   });
 }
 
-export class DockerodeEngine implements ContainerEngine {
+export class DockerodeEngine implements ContainerEngine, EgressEngine {
   private readonly docker: Docker;
 
   constructor(docker: Docker = new Docker()) {
@@ -80,12 +91,84 @@ export class DockerodeEngine implements ContainerEngine {
                 },
               ]),
         ],
+        // Сеть встречи — internal (T178): наружу только через egress-прокси.
+        NetworkMode: spec.network,
+      },
+    });
+    return container.id;
+  }
+
+  async createProxy(spec: ProxySpec): Promise<string> {
+    const container = await this.docker.createContainer({
+      name: spec.name,
+      Image: spec.image,
+      // Образ встречи начинает с entrypoint звука и экрана — прокси они не нужны.
+      Entrypoint: [...spec.command],
+      Cmd: [],
+      Env: [...spec.env],
+      Labels: { ...spec.labels },
+      HostConfig: {
+        Init: true,
+        // Упавший прокси — встречи без сети: Docker поднимает его сам.
+        RestartPolicy: { Name: "unless-stopped" },
+        Memory: spec.limits.memoryBytes,
+        MemorySwap: spec.limits.memoryBytes,
+        NanoCpus: spec.limits.nanoCpus,
+        PidsLimit: spec.limits.pids,
+        SecurityOpt: ["no-new-privileges:true"],
+        NetworkMode: "bridge",
         // Двойник сервера в смоуке живёт на хосте; в Docker на Linux без этой строки
         // host.docker.internal не резолвится.
         ExtraHosts: ["host.docker.internal:host-gateway"],
       },
     });
     return container.id;
+  }
+
+  async createInternalNetwork(
+    name: string,
+    labels: Readonly<Record<string, string>>,
+  ): Promise<void> {
+    await this.docker.createNetwork({
+      Name: name,
+      Driver: "bridge",
+      Internal: true,
+      Labels: { ...labels },
+    });
+  }
+
+  async connect(network: string, containerId: string, alias: string): Promise<void> {
+    try {
+      await this.docker
+        .getNetwork(network)
+        .connect({ Container: containerId, EndpointConfig: { Aliases: [alias] } });
+    } catch (error) {
+      if (/already exists/iu.test(messageOf(error))) return;
+      throw error;
+    }
+  }
+
+  async disconnect(network: string, containerId: string): Promise<void> {
+    try {
+      await this.docker.getNetwork(network).disconnect({ Container: containerId, Force: true });
+    } catch (error) {
+      if (statusOf(error) === NOT_FOUND || /not connected/iu.test(messageOf(error))) return;
+      throw error;
+    }
+  }
+
+  async removeNetwork(name: string): Promise<void> {
+    try {
+      await this.docker.getNetwork(name).remove();
+    } catch (error) {
+      if (statusOf(error) === NOT_FOUND) return;
+      throw error;
+    }
+  }
+
+  async listNetworksByLabel(label: string, value: string): Promise<EngineNetwork[]> {
+    const found = await this.docker.listNetworks({ filters: { label: [`${label}=${value}`] } });
+    return found.map((info) => ({ name: info.Name, labels: info.Labels ?? {} }));
   }
 
   async start(id: string): Promise<void> {

@@ -26,9 +26,30 @@ export interface ChromiumLaunchOptions {
   readonly args: readonly string[];
 }
 
+/**
+ * Адрес egress-прокси стенда (T178). Задаёт его оркестратор; контейнер встречи живёт в сети
+ * без выхода наружу, и прокси — единственная дверь. Нет переменной (смоук записи без сети) —
+ * браузер идёт напрямую.
+ */
+export const EGRESS_PROXY_ENV = "SCRIBA_EGRESS_PROXY";
+
 export interface ChromiumLaunchInput {
   readonly lang?: string;
   readonly extraArgs?: readonly string[];
+  /**
+   * Откуда брать `SCRIBA_EGRESS_PROXY`; по умолчанию окружение процесса.
+   */
+  readonly environment?: Readonly<Record<string, string | undefined>>;
+}
+
+/**
+ * Через прокси идёт всё, включая медиа звонка: UDP мимо прокси запрещён, и WebRTC шлёт медиа
+ * по TCP/TLS через CONNECT (Google держит этот путь для сетей без UDP). Без второго флага
+ * браузер пробовал бы UDP, которого в сети встречи нет, и тратил бы на это вход в звонок.
+ */
+function egressArguments(proxy: string | undefined): string[] {
+  if (proxy === undefined || proxy === "") return [];
+  return [`--proxy-server=${proxy}`, "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"];
 }
 
 export function chromiumLaunchOptions(input: ChromiumLaunchInput = {}): ChromiumLaunchOptions {
@@ -37,6 +58,14 @@ export function chromiumLaunchOptions(input: ChromiumLaunchInput = {}): Chromium
     throw new Error(
       `${MUTE_AUDIO_ARG} передан снаружи: с ним запись будет тишиной, и ни одна проверка ` +
         "этого не заметит — аргумент запрещён явно",
+    );
+  }
+  if (
+    extra.some((argument) => argument.startsWith("--proxy-") || argument === "--no-proxy-server")
+  ) {
+    throw new Error(
+      "прокси передан снаружи: выход браузера наружу задаёт только SCRIBA_EGRESS_PROXY — " +
+        "аргумент запрещён явно",
     );
   }
   if (extra.includes(NO_SANDBOX_ARG)) {
@@ -57,6 +86,7 @@ export function chromiumLaunchOptions(input: ChromiumLaunchInput = {}): Chromium
       "--autoplay-policy=no-user-gesture-required",
       // /dev/shm в контейнере по умолчанию 64 МБ — Chromium на этом падает посреди встречи.
       "--disable-dev-shm-usage",
+      ...egressArguments((input.environment ?? process.env)[EGRESS_PROXY_ENV]),
       ...extra,
     ],
   };

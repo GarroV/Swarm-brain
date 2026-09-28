@@ -16,6 +16,9 @@ export default defineConfig({
       exclude: [
         "src/container/verify-environment.ts",
         "src/container/smoke-audio.ts",
+        // Процесс egress-прокси: окружение и сигналы вокруг `egress-proxy.ts` и `egress-policy.ts`,
+        // которые покрыты тестами; сам процесс гоняет смоук оркестратора в настоящем Docker.
+        "src/container/egress-proxy-main.ts",
         "src/meet-adapter/smoke-meet.ts",
         // Те же основания, что выше, но для браузера: `dom.ts` исполняется В СТРАНИЦЕ
         // (Playwright передаёт функцию исходником), `meet.ts` — это Playwright вокруг уже
