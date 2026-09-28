@@ -122,3 +122,64 @@ Deno.test("нечисло и не-конечное число в позиции 
     assertEquals(typeof out.error, "string");
   }
 });
+// ── Справка «О проекте»: цель, описание, ссылки ─────────────────────────────────────────────
+
+Deno.test("цель и описание: строка обрезается, пустая снимает значение", () => {
+  assertEquals(
+    parseProjectFields({ goal: "  Свести P&L  ", description: "" }).fields,
+    { goal: "Свести P&L", description: null },
+  );
+  assertEquals(parseProjectFields({ goal: null }).fields, { goal: null });
+});
+
+Deno.test("цель и описание: не строка и слишком длинный текст — отказ", () => {
+  assertEquals(parseProjectFields({ goal: 42 }).error !== null, true);
+  assertEquals(
+    parseProjectFields({ description: "x".repeat(5001) }).error !== null,
+    true,
+  );
+});
+
+Deno.test("ссылки: пробелы срезаются, пустое название заменяется адресом", () => {
+  assertEquals(
+    parseProjectFields({
+      links: [
+        { title: " Репозиторий ", url: " https://github.com/x/y " },
+        { title: "", url: "http://demo.example.com" },
+      ],
+    }).fields,
+    {
+      links: [
+        { title: "Репозиторий", url: "https://github.com/x/y" },
+        { title: "http://demo.example.com", url: "http://demo.example.com" },
+      ],
+    },
+  );
+  assertEquals(parseProjectFields({ links: null }).fields, { links: [] });
+});
+
+Deno.test("ссылки: не http(s) и мусор — отказ (javascript: в href исполнился бы по клику)", () => {
+  for (
+    const bad of [
+      [{ title: "x", url: "javascript:alert(1)" }],
+      [{ title: "x", url: "не адрес" }],
+      [{ title: "x" }],
+      "https://a.b",
+      [null],
+    ]
+  ) {
+    assertEquals(
+      parseProjectFields({ links: bad }).error !== null,
+      true,
+      JSON.stringify(bad),
+    );
+  }
+});
+
+Deno.test("ссылки: больше предела — отказ", () => {
+  const many = Array.from({ length: 31 }, (_, i) => ({
+    title: `l${i}`,
+    url: `https://e.com/${i}`,
+  }));
+  assertEquals(parseProjectFields({ links: many }).error !== null, true);
+});

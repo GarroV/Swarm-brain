@@ -94,7 +94,9 @@ function csp(hashes) {
     "img-src 'self' data: blob: https://telegram.org",
     "font-src 'self' data:",
     `connect-src 'self' ${apiOrigin} ${TELEGRAM_LOGIN}`,
-    "worker-src 'self'",
+    // blob: — декодер фото с айфона (heic-to) поднимает воркер из собственного Blob; чужой код так
+    // не запустить — blob-URL создаёт только скрипт нашей же страницы.
+    "worker-src 'self' blob:",
     "manifest-src 'self'",
     // Виджет Telegram может рисовать iframe (oauth.telegram.org) — оставляем ему место.
     "frame-src 'self' https://oauth.telegram.org https://telegram.org",

@@ -172,7 +172,7 @@ export function RemindersTasks() {
             <button
               type="button"
               onClick={() => setModalTask("new")}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary px-3.5 py-1.5 font-semibold text-white transition-transform active:scale-[0.97]"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary px-3.5 py-1.5 font-semibold text-primary-foreground transition-transform active:scale-[0.97]"
               style={{ fontSize: 13 }}
             >
               <RoyIcon name="plus" size={15} strokeWidth={2.3} />
@@ -182,7 +182,7 @@ export function RemindersTasks() {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-          {r.loading && [0, 1, 2].map((i) => <div key={i} className="roy-shim my-1" style={{ height: 56, borderRadius: 12 }} />)}
+          {r.loading && [0, 1, 2].map((i) => <div key={i} className="roy-shim my-1" style={{ height: 56, borderRadius: 8 }} />)}
 
           {!r.loading && total === 0 && (
             <p className="py-12 text-center text-ink-soft" style={{ fontSize: 13.5 }}>

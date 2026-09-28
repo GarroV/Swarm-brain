@@ -523,7 +523,7 @@ export async function handleTaskCallbacks(
   // tk_delc_{taskId} — execute delete
   if (data.startsWith("tk_delc_")) {
     const taskId = data.replace("tk_delc_", "");
-    await dbDeleteTask(taskId);
+    await dbDeleteTask(taskId, userId);
     await editInlineMessage(
       chatId,
       cb.message.message_id,
@@ -538,7 +538,7 @@ export async function handleTaskCallbacks(
   // /addtask: cancel → tacx_{taskId}
   if (data.startsWith("tacx_")) {
     const taskId = data.replace("tacx_", "");
-    await dbDeleteTask(taskId);
+    await dbDeleteTask(taskId, userId);
     await clearSession(chatId);
     await sendMessage(chatId, "❌ Создание задачи отменено.");
     return true;
@@ -601,7 +601,7 @@ export async function handleTaskCallbacks(
   if (data.startsWith("tdconf_")) {
     const taskId = data.replace("tdconf_", "");
     const task = await dbGetTask(taskId);
-    await dbDeleteTask(taskId);
+    await dbDeleteTask(taskId, userId);
     await sendMessage(chatId, `🗑 Удалено: <b>${task?.title ?? taskId}</b>`);
     return true;
   }

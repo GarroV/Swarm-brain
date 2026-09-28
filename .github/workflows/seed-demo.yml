@@ -1,0 +1,60 @@
+name: Демо-данные (руками)
+
+# Заливает витринные данные доски инициатив в ДЕМО-воркспейс прода (`scripts/seed-demo.sql`).
+#
+# Зачем через CI: скрипт умеет ходить в удалённую базу (`ALLOW_REMOTE=1`), но пароль прод-базы
+# живёт только в секретах репозитория — локально его нет, как и у наката миграций (issue #398).
+#
+# Замки — те же, что в самом скрипте, и ещё один сверху:
+#   · воркспейс только `demo`/`demo-*` (рабочие слаги скрипт отбивает сам);
+#   · сид идемпотентный: фиксированные UUID и `on conflict do update`, ни одного `delete`;
+#   · кнопка требует ввести слово `demo` — чтобы случайный клик ничего не запустил.
+#
+# Это раскатка: нужно «да» владельца, как на любую правку прод-данных.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Введите demo, чтобы подтвердить заливку витринных данных"
+        type: string
+        required: true
+
+concurrency:
+  group: deploy-window          # общая с раскаткой: две операции над продом разом не нужны
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    name: Залить демо-данные
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Проверить подтверждение
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "demo" ]; then
+            echo "отказ: подтверждение не совпало (ожидалось demo)" >&2
+            exit 1
+          fi
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Залить
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          # Через Management API, а не psql: у базы проекта только IPv6, а раннер GitHub ходит
+          # по IPv4 — прямое подключение отвечает «Network is unreachable». Пулер потребовал бы
+          # пароль базы, которого в секретах нет (проверено прогоном 23.09.2026).
+          #
+          # Management API не понимает psql-команд, поэтому из сида убираем `\set` и
+          # подставляем воркспейс литералом. Слаг задан ЗДЕСЬ и только `demo`: рабочие
+          # воркспейсы этой кнопкой недостижимы.
+          supabase link --project-ref vbqglndbxkpmreccpqmr
+          sed -e "/^\\\\/d" -e "s/:'gid'/'demo'/g" -e "s/:gid/'demo'/g" \
+            scripts/seed-demo.sql > /tmp/seed-demo-remote.sql
+          grep -q "'demo'" /tmp/seed-demo-remote.sql || { echo "воркспейс не подставился" >&2; exit 1; }
+          supabase db query --linked -f /tmp/seed-demo-remote.sql

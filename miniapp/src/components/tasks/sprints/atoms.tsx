@@ -169,3 +169,35 @@ export function DueBadge({ date, closed = false }: {
     </span>
   );
 }
+
+/**
+ * Значок «здесь есть о чём почитать»: сколько у задачи комментариев или ссылок. Ноль не
+ * рисуется вовсе — пустой значок в каждой строке был бы ещё одной колонкой шума.
+ *
+ * Разворачивать содержимое прямо в строке (как в исходном макете) намеренно не стали: и
+ * комментарии, и ссылки уже живут в карточке задачи, а второе место для них означало бы два
+ * набора правил и два вида одного и того же.
+ */
+export function CountChip(
+  { kind, count }: { kind: "comments" | "links"; count: number },
+) {
+  const dt = useDt();
+  if (count <= 0) return null;
+  const label = kind === "comments"
+    ? dt(`комментариев: ${count}`, `comments: ${count}`)
+    : dt(`ссылок: ${count}`, `links: ${count}`);
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      className="inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap text-[10px] tabular-nums text-ink-soft"
+    >
+      <RoyIcon
+        name={kind === "comments" ? "note" : "link"}
+        size={10}
+        strokeWidth={2}
+      />
+      {count}
+    </span>
+  );
+}

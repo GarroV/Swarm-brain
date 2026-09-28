@@ -4,6 +4,7 @@ import { useRoyNav } from "../nav";
 import { NavHeader, SectionLabel, Chip, Segmented } from "../ui";
 import { createTask, updateTask, fetchTask, fetchConfig, fetchUsers } from "@/lib/api";
 import { matchesLens, matchesList, DEFAULT_STATUSES } from "@/lib/smartLists";
+import { tomorrowLocalISO } from "@/lib/dateRange";
 import { readSavedTasksView } from "@/components/tasks/useReminderTasks";
 import { displayName } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/DatePicker";
@@ -24,7 +25,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-const inputCls = "w-full bg-surface border border-line-2 rounded-[18px] px-4 py-3 text-ink outline-none focus:border-primary";
+const inputCls = "w-full bg-surface border border-line-2 rounded-[8px] px-4 py-3 text-ink outline-none focus:border-primary";
 
 export function NewTask({ id }: { id?: string }) {
   const { me, pop, setTab, toast, openTasks } = useRoyNav();
@@ -33,7 +34,9 @@ export function NewTask({ id }: { id?: string }) {
   const [desc, setDesc] = useState("");
   const [country, setCountry] = useState<string | null>(null);
   const [priority, setPriority] = useState("med");
-  const [due, setDue] = useState("");
+  // Срок обязателен и по умолчанию завтрашний (решение владельца 21.09.2026): пустое поле
+  // рождало задачу без срока, а такая не попадала ни в «Сегодня», ни в «Ближайшие» (#440).
+  const [due, setDue] = useState(tomorrowLocalISO());
   const [assignee, setAssignee] = useState<number | null>(null);
   const [isPrivate, setIsPrivate] = useState(false);
   const [markets, setMarkets] = useState<string[]>([]);
@@ -71,7 +74,7 @@ export function NewTask({ id }: { id?: string }) {
       description: desc.trim() || null,
       country,
       priority,
-      due_date: due || null,
+      due_date: due || tomorrowLocalISO(),
       assignee_telegram_id: assignee,
       is_private: isPrivate,
     };
@@ -146,7 +149,7 @@ export function NewTask({ id }: { id?: string }) {
             </div>
           </Field>
         )}
-        <button type="button" onClick={() => setIsPrivate((v) => !v)} className="flex w-full items-center justify-between rounded-[18px] border border-line bg-surface px-4 py-3.5">
+        <button type="button" onClick={() => setIsPrivate((v) => !v)} className="flex w-full items-center justify-between rounded-[10px] border border-line bg-surface px-4 py-3.5">
           <span className="font-medium text-ink" style={{ fontSize: 14.5 }}>
             Личная задача
           </span>
@@ -155,8 +158,8 @@ export function NewTask({ id }: { id?: string }) {
           </span>
         </button>
       </div>
-      <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] dark:backdrop-blur-lg px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
-        <button type="button" onClick={submit} disabled={saving} className="w-full rounded-[14px] bg-primary py-3.5 font-semibold text-white transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
+      <div className="shrink-0 border-t border-line bg-background dark:bg-[var(--surface)] px-5 pt-3" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
+        <button type="button" onClick={submit} disabled={saving} className="w-full rounded-[8px] bg-primary py-3.5 font-semibold text-primary-foreground transition-transform active:scale-[0.99] disabled:opacity-60" style={{ fontSize: 15 }}>
           {editing ? "Сохранить" : "Создать задачу"}
         </button>
       </div>

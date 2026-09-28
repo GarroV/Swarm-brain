@@ -114,7 +114,7 @@ export function JournalScreen({ space }: { space: string | null }) {
             className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
               days === p
                 ? "bg-ink text-background"
-                : "border border-line bg-surface text-ink-soft hover:bg-surface-2 dark:backdrop-blur-sm"
+                : "border border-line bg-surface text-ink-soft hover:bg-surface-2"
             }`}
           >
             {labels[p]}
@@ -163,7 +163,7 @@ export function JournalScreen({ space }: { space: string | null }) {
           <h3 className="px-0.5 text-xs font-bold text-ink-soft">
             {dayLabel(rows[0].at, dt)}
           </h3>
-          <div className="rounded-xl border border-line bg-surface/40 dark:backdrop-blur-sm">
+          <div className="rounded-xl border border-line bg-surface-2">
             {rows.map((e, i) => (
               <div
                 key={`${e.at}-${i}`}

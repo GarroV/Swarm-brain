@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { json } from "./http.ts";
-import { validateCommentContent } from "../_shared/tasks/comments.ts";
+import {
+  commentDeleteDenial,
+  validateCommentContent,
+} from "../_shared/tasks/comments.ts";
 import { canViewTask } from "../_shared/tasks/access.ts";
 import { notifyTaskComment } from "./notifications.ts";
 import { ensureCommentSubscription } from "./task-subscriptions.ts";
@@ -152,12 +155,12 @@ export async function handleTaskCommentRoutes(
         commentId,
       ).eq("task_id", taskId).maybeSingle();
     if (!c) return json({ error: "Комментарий не найден" }, 404, origin);
-    const owns =
-      (c as { added_by_telegram_id: number | null }).added_by_telegram_id ===
-        telegramId;
-    if (!owns && !isAdmin) {
-      return json({ error: "Нельзя удалить чужой комментарий" }, 403, origin);
-    }
+    const denied = commentDeleteDenial(
+      (c as { added_by_telegram_id: number | null }).added_by_telegram_id,
+      telegramId,
+      isAdmin,
+    );
+    if (denied) return json({ error: denied }, 403, origin);
     const { error } = await supabase.from("task_comments").delete().eq(
       "id",
       commentId,

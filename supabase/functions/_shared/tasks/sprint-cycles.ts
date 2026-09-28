@@ -63,7 +63,8 @@ export async function listCycles(
   groupId: string,
   tabId?: string | null,
 ): Promise<SprintCycle[]> {
-  let q = supabase.from("sprint_cycles").select("*").eq("group_id", groupId);
+  let q = supabase.from("sprint_cycles").select("*").eq("group_id", groupId)
+    .is("archived_at", null);
   // Без параметра — все спринты воркспейса, как было до пространств: так старый веб в ночь
   // раскатки продолжает видеть то же, что видел.
   if (tabId === null) q = q.is("tab_id", null);
@@ -75,7 +76,8 @@ export async function listCycles(
 /** Вкладка принадлежит этому воркспейсу? Чужую подсовывать нельзя — это чужое планирование. */
 async function tabInGroup(tabId: string, groupId: string): Promise<boolean> {
   const { data } = await supabase.from("sprints")
-    .select("id").eq("id", tabId).eq("group_id", groupId).maybeSingle();
+    .select("id").eq("id", tabId).eq("group_id", groupId)
+    .is("archived_at", null).maybeSingle();
   return !!data;
 }
 
@@ -84,7 +86,8 @@ export async function getCycle(
   groupId: string,
 ): Promise<SprintCycle | null> {
   const { data } = await supabase.from("sprint_cycles")
-    .select("*").eq("id", id).eq("group_id", groupId).maybeSingle();
+    .select("*").eq("id", id).eq("group_id", groupId)
+    .is("archived_at", null).maybeSingle();
   return (data as SprintCycle | null) ?? null;
 }
 
@@ -140,21 +143,40 @@ export async function updateCycle(
   id: string,
   fields: Partial<CycleInput> & { summary?: string | null },
   groupId: string,
-): Promise<SprintCycle | null> {
-  const { data } = await supabase.from("sprint_cycles")
+): Promise<SprintCycle | null | "tab_busy" | "tab_missing"> {
+  // Пространство подтверждаем в ЭТОМ воркспейсе (#397): без проверки чужой `tab_id` увёл бы
+  // спринт из поля зрения команды — строка осталась бы в базе, а с экрана пропала.
+  if (typeof fields.tab_id === "string") {
+    const { data: tab } = await supabase.from("sprints")
+      .select("id").eq("id", fields.tab_id).eq("group_id", groupId)
+      .is("archived_at", null).maybeSingle();
+    if (!tab) return "tab_missing";
+  }
+  const { data, error } = await supabase.from("sprint_cycles")
     .update({ ...fields, updated_at: new Date().toISOString() })
     .eq("id", id).eq("group_id", groupId)
     .select().maybeSingle();
+  // 23505 — частичный уникальный индекс «один незакрытый спринт на пространство». Отличаем
+  // его от прочих сбоев: это не поломка, а занятое место, и человеку надо сказать именно так.
+  if (error?.code === "23505") return "tab_busy";
   return (data as SprintCycle | null) ?? null;
 }
 
+// АРХИВИРУЕТ спринт (решение владельца 21.09.2026, issue #427): состав `sprint_items` и
+// снимки приёмки остаются на месте, а не утекают каскадом вслед за строкой цикла.
 export async function deleteCycle(
   id: string,
   groupId: string,
+  archivedBy?: number,
 ): Promise<boolean> {
-  // Принятый спринт — архив, его не удаляют: иначе исчезает единственная память о периоде.
+  // Принятый спринт — архив, его не убирают: иначе исчезает единственная память о периоде.
   const { data } = await supabase.from("sprint_cycles")
-    .delete().eq("id", id).eq("group_id", groupId).neq("status", "accepted")
+    .update({
+      archived_at: new Date().toISOString(),
+      archived_by: archivedBy ?? null,
+    })
+    .eq("id", id).eq("group_id", groupId).neq("status", "accepted")
+    .is("archived_at", null)
     .select("id").maybeSingle();
   return !!data;
 }

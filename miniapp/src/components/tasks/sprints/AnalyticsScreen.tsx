@@ -34,7 +34,7 @@ function Table(
     <section className="space-y-1.5">
       <h3 className="px-0.5 text-sm font-bold text-ink">{title}</h3>
       {/* Таблица шире экрана прокручивается сама, а не растягивает страницу. */}
-      <div className="overflow-x-auto rounded-xl border border-line bg-surface/40 dark:backdrop-blur-sm">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface-2">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-line/60 text-left text-ink-soft">
@@ -127,7 +127,7 @@ export function AnalyticsScreen(
         <button
           type="button"
           onClick={copy}
-          className="ml-auto rounded-full border border-line bg-surface px-3 py-1 text-xs font-semibold text-ink-soft hover:bg-surface-2 dark:backdrop-blur-sm"
+          className="ml-auto rounded-full border border-line bg-surface px-3 py-1 text-xs font-semibold text-ink-soft hover:bg-surface-2"
         >
           {copied
             ? dt("Скопировано", "Copied")

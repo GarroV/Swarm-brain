@@ -4,8 +4,10 @@ import {
   completionPatch,
   hidesClosedByDefault,
   isClosedStatus,
+  shouldCascadeClose,
 } from "./statuses.ts";
 import { buildRecurPatch, type RecurRow, todayInTz } from "./recurrence.ts";
+import { defaultDueDate } from "./due.ts";
 import { historyRowsFor, isJournaled, type TaskSnapshot } from "./history.ts";
 
 const supabase = createClient(
@@ -22,7 +24,11 @@ export async function createTask(
     description: input.description ?? null,
     assignees: input.assignees ?? [],
     assignee_telegram_ids: input.assignee_telegram_ids ?? [],
-    due_date: input.due_date ?? null,
+    // Срок обязателен у КАЖДОЙ задачи, откуда бы она ни пришла — веб, бот, MCP, доска
+    // (решение владельца 21.09.2026: «по дефолту дедлайн +1 день от времени добавления»).
+    // Значение ставится здесь, в единственной точке создания, а не в трёх клиентах: копии
+    // одного правила в разных клиентах у нас уже расходились (линза задач, #440).
+    due_date: input.due_date ?? defaultDueDate(),
     remind_date: input.remind_date ?? null,
     remind_set_by: input.remind_date
       ? (input.remind_set_by ?? input.created_by_telegram_id ?? null)
@@ -63,7 +69,9 @@ export async function createTask(
 }
 
 export async function getTask(id: string): Promise<Task | null> {
+  // Архивная задача для приложения не существует — ровно как удалённая до 21.09.2026 (issue #427).
   const { data } = await supabase.from("tasks").select("*").eq("id", id)
+    .is("archived_at", null)
     .maybeSingle();
   return data as Task | null;
 }
@@ -97,6 +105,7 @@ export async function listTasksWithTotal(filters: {
   let q = supabase
     .from("tasks")
     .select(filters.columns ?? "*", { count: "exact" })
+    .is("archived_at", null)
     .order("due_date", { ascending: true, nullsFirst: false });
 
   // Видимость приватных задач: приватная видна только владельцу (админ — все).
@@ -321,10 +330,38 @@ export async function updateTask(
     }
   }
 
+  // Каскад закрытия на подзадачи (#478). Через ту же функцию: у каждой подзадачи свой журнал и
+  // своя дата закрытия. Вложенность — один уровень, так что рекурсия неглубокая.
+  if (prev && shouldCascadeClose(prev.status, nextStatus, !!result)) {
+    const { data: kids, error } = await supabase.from("tasks")
+      .select("id, status")
+      .eq("parent_id", id)
+      .is("archived_at", null);
+    if (error) {
+      console.error(`subtask cascade lookup failed for ${id}:`, error.message);
+    }
+    for (const k of (kids ?? []) as Array<{ id: string; status: string }>) {
+      if (isClosedStatus(k.status)) continue;
+      await updateTask(k.id, { status: nextStatus }, opts);
+    }
+  }
+
   return result;
 }
 
-export async function deleteTask(id: string): Promise<void> {
-  await supabase.from("task_history").delete().eq("task_id", id);
-  await supabase.from("tasks").delete().eq("id", id);
+// АРХИВИРУЕТ задачу (решение владельца 21.09.2026, issue #427). Для человека поведение
+// прежнее: задача исчезает из списков. Разница — строка остаётся в базе.
+//
+// Историю больше НЕ стираем. Раньше `deleteTask` сносил `task_history` первым делом, и журнал
+// пропадал ровно в том случае, ради которого заводился: «куда делась задача и кто её убрал».
+export async function deleteTask(
+  id: string,
+  archivedBy?: number,
+): Promise<void> {
+  await supabase.from("tasks")
+    .update({
+      archived_at: new Date().toISOString(),
+      archived_by: archivedBy ?? null,
+    })
+    .eq("id", id).is("archived_at", null);
 }

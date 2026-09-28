@@ -159,6 +159,12 @@ export type SprintCycleItem = {
   /** Сколько раз задача уже переезжала: с двух показываем «×N». */
   carry_count: number;
   carried_manual: boolean | null;
+  /**
+   * Сколько у задачи комментариев и ссылок. В списке важно ЧИСЛО, а не содержимое: видно,
+   * где шло обсуждение и где лежит материал, не открывая карточку. У скрытой приватной — 0.
+   */
+  comment_count: number;
+  link_count: number;
   /** Задача удалена: строка осталась упоминанием и в счёт не идёт. */
   removed: boolean;
   removed_at: string | null;
@@ -217,10 +223,18 @@ export type Project = {
   // перетаскиванием на доске; расчёт новой позиции — miniapp/src/lib/projectOrder.ts.
   // null — строка ещё не размещена, показывается в хвосте по дате создания.
   position: number | null;
+  // Справка «О проекте» (всплывашка ⓘ в шапке проекта на доске, 27.09.2026). До раскатки
+  // миграции сервер этих полей не отдаёт — поэтому необязательные.
+  goal?: string | null;
+  description?: string | null;
+  links?: ProjectLink[];
   // Отдаётся из GET /projects (агрегаты):
   task_count?: number;
   backlog_count?: number;
 };
+
+/** Ссылка на артефакт проекта. url — только http(s), сервер проверяет. */
+export type ProjectLink = { title: string; url: string };
 
 export type User = {
   telegram_id: number;
@@ -240,6 +254,8 @@ export type Me = {
   markets: string[];
   is_admin: boolean;
   is_demo?: boolean;
+  /** Задник веба (lib/backdrop.ts); null — по умолчанию. Нет поля — сервер до #backdrop. */
+  ui_backdrop?: string | null;
 };
 
 export type AdminWorkspace = {
@@ -356,6 +372,9 @@ export type AgentMeeting = {
   // transcript присутствует только в детальном GET /agent-meetings/:id
   transcript?: { language?: string; model?: string; segments?: TranscriptSegment[] } | null;
   recorders: RecorderRef[] | null;
+  // Совладельцы черновика — участники встречи с аккаунтом SWARM (решение 2026-09-25). Видят и
+  // вычитывают, но не удаляют; при нескольких владельцах публикация только в общую базу.
+  co_owners?: number[] | null;
   // Имена записавших (резолв recorders[].telegram_id → user_profiles на сервере). Уникальные,
   // фолбэк «#id». Отдаётся всеми ответами /agent-meetings (список и деталь).
   recorder_names?: string[] | null;

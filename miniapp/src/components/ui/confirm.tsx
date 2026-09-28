@@ -84,7 +84,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
           <DialogPrimitive.Popup
             initialFocus={cancelRef}
             aria-labelledby="confirm-title"
-            className="fixed top-1/2 left-1/2 z-[100] w-[calc(100%-2rem)] max-w-[380px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[22px] border border-line bg-[var(--popover)] p-5 text-popover-foreground shadow-[0_28px_70px_-20px_rgba(0,0,0,.55)] outline-none duration-150 dark:backdrop-blur-xl data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 motion-reduce:animate-none"
+            className="fixed top-1/2 left-1/2 z-[100] w-[calc(100%-2rem)] max-w-[380px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[14px] border border-line bg-[var(--popover)] p-5 text-popover-foreground shadow-[0_28px_70px_-20px_rgba(0,0,0,.55)] outline-none duration-150 dark:backdrop-blur-xl data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 motion-reduce:animate-none"
           >
             {options && (
               <>
@@ -118,7 +118,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                     ref={cancelRef}
                     variant="outline"
                     size="lg"
-                    className="h-11 rounded-[14px] text-[15px]"
+                    className="h-11 rounded-[8px] text-[15px]"
                     onClick={() => settle(false)}
                   >
                     {cancelText}
@@ -127,7 +127,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                     variant={tone === "danger" ? "destructive" : "default"}
                     size="lg"
                     className={cn(
-                      "h-11 rounded-[14px] text-[15px] font-semibold",
+                      "h-11 rounded-[8px] text-[15px] font-semibold",
                       tone === "danger" &&
                         "bg-destructive text-white hover:bg-destructive/90 dark:bg-destructive dark:text-white dark:hover:bg-destructive/90",
                     )}

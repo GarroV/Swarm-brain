@@ -146,7 +146,14 @@ export type Project = {
    * строку. NULL — строка ещё не размещена, показывается в хвосте по дате создания.
    */
   position: number | null;
+  /** Справка «О проекте» (27.09.2026): зачем ведём, что это, ссылки на артефакты. */
+  goal: string | null;
+  description: string | null;
+  links: ProjectLink[];
 };
+
+/** Ссылка на артефакт проекта. url — только http(s), проверяет swarm-api/project-fields.ts. */
+export type ProjectLink = { title: string; url: string };
 
 export type ProjectInput = {
   name: string;
@@ -161,4 +168,7 @@ export type ProjectInput = {
   end_date?: string | null;
   /** Порядок среди братьев; не передан при создании — проект встаёт в конец списка. */
   position?: number | null;
+  goal?: string | null;
+  description?: string | null;
+  links?: ProjectLink[];
 };

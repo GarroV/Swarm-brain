@@ -1,11 +1,11 @@
-// Бренд-марка «Рой»: янтарный чип + сота (honeycomb) с роем из трёх точек.
-// Заменяет прежнюю букву «Р». Масштабируется размером; цвет глифа — currentColor (белый на чипе).
+// Бренд-марка «Рой»: чип основного цвета + сота (honeycomb) с роем из трёх точек.
+// Масштабируется размером; цвет глифа — currentColor (primary-foreground на чипе), в ночной теме чип светится.
 export function RoyMark({ size = 32, className }: { size?: number; className?: string }) {
   const radius = Math.round(size * 0.31);
   const glyph = Math.round(size * 0.64);
   return (
     <span
-      className={`inline-flex shrink-0 items-center justify-center bg-primary text-white ${className ?? ""}`}
+      className={`inline-flex shrink-0 items-center justify-center bg-primary text-primary-foreground neon-glow ${className ?? ""}`}
       style={{ width: size, height: size, borderRadius: radius }}
       aria-hidden
     >

@@ -139,6 +139,12 @@ export async function handleSprintCycleRoutes(
       if (typeof body.summary === "string" || body.summary === null) {
         fields.summary = body.summary as string | null;
       }
+      // Перенос спринта в другое пространство (#397). Пространство подтверждаем в ЭТОМ
+      // воркспейсе: без проверки чужой `tab_id` увёл бы спринт из поля зрения команды —
+      // строка осталась бы в базе, а на экране пропала.
+      if (typeof body.tab_id === "string" || body.tab_id === null) {
+        fields.tab_id = body.tab_id as string | null;
+      }
       if (
         fields.start_date && fields.end_date &&
         fields.start_date > fields.end_date
@@ -146,13 +152,27 @@ export async function handleSprintCycleRoutes(
         return apiErr(400, "start_date не может быть позже end_date", origin);
       }
       const updated = await updateCycle(id, fields, groupId);
+      if (updated === "tab_missing") {
+        return apiErr(404, "Пространство не найдено", origin);
+      }
+      if (updated === "tab_busy") {
+        // В пространстве может жить только один незакрытый спринт (частичный уникальный
+        // индекс). Молча оставить спринт на месте нельзя: человек увидит «сохранено» и не
+        // поймёт, почему ничего не переехало.
+        return apiErr(
+          409,
+          "В этом пространстве уже есть незакрытый спринт",
+          origin,
+        );
+      }
       if (!updated) return apiErr(404, "Not found", origin);
       return json(updated, 200, origin);
     }
     if (req.method === "DELETE") {
-      // Единственное действие под админом: удаление необратимо и стирает историю периода.
+      // Под админом с 18.09.2026. Необратимым это действие быть перестало (архивация, #427),
+      // но право не расширяем без просьбы владельца — спринт общий.
       if (!isAdmin) return apiErr(403, "Forbidden", origin);
-      const ok = await deleteCycle(id, groupId);
+      const ok = await deleteCycle(id, groupId, telegramId);
       // Принятый спринт не удаляется — это архив периода, другой памяти о нём нет.
       if (!ok) return apiErr(404, "Not found или спринт уже принят", origin);
       return new Response(null, { status: 204, headers: corsHeaders(origin) });

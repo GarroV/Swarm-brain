@@ -9,6 +9,8 @@ import type { Task, Sprint, Project } from "@/types";
 import { TaskModal } from "@/components/TaskModal";
 import { Button } from "@/components/ui/button";
 import { RoyIcon } from "@/components/roy/icons";
+import { MoveProjectMenu } from "./MoveProjectMenu";
+import { ProjectInfoPopover } from "./ProjectInfoPopover";
 import { buildQuickAddInput } from "@/lib/quickAddTask";
 import { useConfirm } from "@/components/ui/confirm";
 import { useDt, useRoyNav } from "@/components/roy/nav";
@@ -18,9 +20,11 @@ import { planAppend, planReorder, sortByPosition } from "@/lib/projectOrder";
 import type { DropTarget, PositionChange } from "@/lib/projectOrder";
 import type { KanbanColumnDef, KanbanDrag, KanbanHandlers } from "@/components/tasks/TaskKanban";
 
-// Колонки по статусу. Бэклог — куда копятся задачи/идеи; оттуда тянутся в работу.
+// Колонки по статусу. Первая — общий бэклог проекта: «Бэклог задач» (решение владельца
+// 21.09.2026: «идеи не факт что у всех идеи»). Оттуда задачи тянутся в работу; это обычные
+// задачи, видимые в разделе «Задачи» наравне со всеми, а не отдельная сущность.
 const COLUMNS = [
-  { status: "backlog", label: "Бэклог", bar: "var(--status-open)" },
+  { status: "backlog", label: "Бэклог задач", bar: "var(--status-open)" },
   { status: "open", label: "Открыто", bar: "#8C8475" },
   { status: "in_progress", label: "В работе", bar: "var(--status-prog)" },
   { status: "done", label: "Готово", bar: "var(--status-done)" },
@@ -29,6 +33,15 @@ const COLUMNS = [
 // Рабочие колонки пространства подпроекта (без бэклога — бэклог общий на проект, слева).
 const WORK_COLUMNS = COLUMNS.filter((c) => c.status !== "backlog");
 const isBacklogStatus = (s: string) => s !== "open" && s !== "in_progress" && s !== "done";
+
+/** Сводка справки «О проекте»: число задач по колонкам доски — те же статусы, что видно глазом. */
+function statusCounts(list: Task[], dt: (ru: string, en: string) => string) {
+  const EN: Record<string, string> = { backlog: "Backlog", open: "Open", in_progress: "In progress", done: "Done" };
+  return COLUMNS.map((c) => ({
+    label: dt(c.label, EN[c.status]),
+    count: list.filter((t) => (c.status === "backlog" ? isBacklogStatus(t.status) : t.status === c.status)).length,
+  }));
+}
 
 const ALL = "__all__";            // селектор вкладок: показать проекты ВСЕХ вкладок (обзор)
 const EXPANDED_KEY = "swarm.board.expandedProjects"; // localStorage: какие проекты раскрыты (персонально)
@@ -284,6 +297,15 @@ export function SprintBoard() {
     try { await Promise.all(calls); } catch { load(); }
   }
 
+  // Перенос проекта в другое пространство (issue #426). Подпроекты сервер тащит сам — инвариант
+  // «подпроект живёт в пространстве родителя»; здесь же двигаем их в локальном состоянии, иначе
+  // до перезагрузки дети остались бы нарисованными в старом пространстве.
+  async function moveProject(id: string, spaceId: string | null) {
+    setProjects((prev) => prev.map((p) =>
+      p.id === id || p.parent_id === id ? { ...p, sprint_id: spaceId } : p));
+    try { await updateProject(id, { sprint_id: spaceId }); } catch { load(); }
+  }
+
   async function renameSection(id: string, name: string) {
     const n = name.trim(); setRenaming(null);
     if (!n) return;
@@ -300,6 +322,15 @@ export function SprintBoard() {
     const next = !current;
     setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, is_private: next } : p)));
     try { await updateProject(id, { is_private: next }); } catch { load(); }
+  }
+
+  // Справка «О проекте» (всплывашка ⓘ). В отличие от переименования ошибку НЕ глотаем: сервер
+  // отказывает по делу («адрес должен начинаться с http…»), и текст нужен в самой форме.
+  async function saveProjectInfo(id: string, fields: Pick<Project, "goal" | "description" | "links">) {
+    const updated = await updateProject(id, {
+      goal: fields.goal ?? null, description: fields.description ?? null, links: fields.links ?? [],
+    });
+    setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, ...updated } : p)));
   }
 
   async function removeSection(id: string, name: string) {
@@ -518,14 +549,16 @@ export function SprintBoard() {
           // Раскрытый проект — на всю ширину (w-full → своя строка в flex-wrap).
           return (
             <section key={sec.id} className="roy-pop w-full rounded-2xl border border-line bg-surface/40 dark:backdrop-blur-sm">
-              {/* Заголовок раскрытого проекта. Двойной клик — свернуть обратно в плитку.
+              {/* Заголовок раскрытого проекта. Клик по шапке — свернуть обратно в плитку (просьба
+                  владельца 27.09.2026: раньше был двойной клик, и сворачивали только шевроном).
+                  Кнопки справа и ⓘ глушат всплытие — их нажатие проект не сворачивает.
                   Тоже drop-зона для переноса подпроекта (#30). */}
-              <div onDoubleClick={() => toggleExpanded(sec.id)}
+              <div onClick={() => toggleExpanded(sec.id)}
                 {...dnd.dragProps(sec.id, renaming?.id !== sec.id)}
                 {...dnd.dropProps(sec, "y")}
                 style={{ boxShadow: dnd.hintShadow(sec.id, "y") }}
-                className={`flex items-center gap-2 px-3 py-2 select-none cursor-grab active:cursor-grabbing border-b ${dnd.overProject === sec.id ? "border-primary bg-primary/10" : "border-line"}`}
-                title={dt("Двойной клик — свернуть · перетащить — изменить порядок", "Double-click to collapse · drag to reorder")}>
+                className={`flex items-center gap-2 px-3 py-2 select-none cursor-pointer active:cursor-grabbing border-b ${dnd.overProject === sec.id ? "border-primary bg-primary/10" : "border-line"}`}
+                title={dt("Нажмите — свернуть · перетащите — изменить порядок", "Click to collapse · drag to reorder")}>
                 <button onClick={(e) => { e.stopPropagation(); toggleExpanded(sec.id); }} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={open ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
                   <RoyIcon name="cright" size={12} style={{ transform: open ? "rotate(90deg)" : undefined }} />
                 </button>
@@ -540,6 +573,9 @@ export function SprintBoard() {
                 ) : (
                   <span className="text-sm font-bold text-ink">{sec.name}</span>
                 )}
+                <ProjectInfoPopover project={sec} subprojectCount={kids.length}
+                  stats={statusCounts([...secDirectTasks, ...kidsWithTasks.flatMap((k) => k.tasks)], dt)}
+                  onSave={(f) => saveProjectInfo(sec.id, f)} />
                 <span className="text-xs text-ink-soft">{total}</span>
                 {/* Добавить задачу (в каждой колонке уже есть свой «+», см. KanbanColumn в TaskKanban.tsx) и
                     добавить подпроект (дублировано дальше в теле, см. renderAddSubproject) убраны
@@ -555,6 +591,8 @@ export function SprintBoard() {
                       hint: dt("Закрыт вместе с подпроектами — показать команде", "Hidden with its subprojects — show to the team"),
                       inherited: "",
                     }} />
+                  <MoveProjectMenu spaces={sprints} currentId={sec.sprint_id ?? null}
+                    onMove={(spaceId) => moveProject(sec.id, spaceId)} />
                   <button onClick={() => setRenaming({ id: sec.id, name: sec.name })} className="rounded-full p-1 text-ink-soft hover:bg-surface-2" title={dt("Переименовать проект", "Rename project")}>
                     <RoyIcon name="pencil" size={13} />
                   </button>
@@ -585,17 +623,18 @@ export function SprintBoard() {
                       <div key={kid.id}>
                         {/* Заголовок подпроекта: draggable (перенос в другой проект, #30) +
                             сворачивание (#29, та же семантика, что у проекта верхнего уровня). */}
-                        <div
+                        <div onClick={() => toggleCollapsedSub(kid.id)}
                           {...dnd.dragProps(kid.id, renaming?.id !== kid.id)}
                           {...dnd.dropProps(kid, "y")}
                           style={{ boxShadow: dnd.hintShadow(kid.id, "y") }}
-                          title={dt("Перетащить — изменить порядок или перенести в другой проект", "Drag to reorder or move to another project")}
+                          title={dt("Нажмите — свернуть · перетащите — изменить порядок или перенести в другой проект", "Click to collapse · drag to reorder or move to another project")}
                           className="flex items-center gap-2 px-1 pb-1.5 cursor-grab active:cursor-grabbing">
-                          <button onClick={() => toggleCollapsedSub(kid.id)} className="rounded-full p-0.5 text-ink-soft hover:bg-surface-2" title={subOpen ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
+                          <button onClick={(e) => { e.stopPropagation(); toggleCollapsedSub(kid.id); }} className="rounded-full p-0.5 text-ink-soft hover:bg-surface-2" title={subOpen ? dt("Свернуть", "Collapse") : dt("Развернуть", "Expand")}>
                             <RoyIcon name="cright" size={11} className="transition-transform duration-200" style={{ transform: subOpen ? "rotate(90deg)" : undefined }} />
                           </button>
                           {renaming?.id === kid.id ? (
                             <input autoFocus value={renaming.name}
+                              onClick={(e) => e.stopPropagation()}
                               onChange={(e) => setRenaming({ id: kid.id, name: e.target.value })}
                               onKeyDown={(e) => { if (e.key === "Enter") renameSection(kid.id, renaming.name); if (e.key === "Escape") setRenaming(null); }}
                               onBlur={() => renameSection(kid.id, renaming.name)}
@@ -604,7 +643,7 @@ export function SprintBoard() {
                             <span className="text-xs font-bold text-ink">{kid.name}</span>
                           )}
                           <span className="text-[11px] text-ink-soft">{kidTasks.filter((t) => !isBacklogStatus(t.status)).length}</span>
-                          <div className="ml-auto flex items-center gap-0.5">
+                          <div className="ml-auto flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                             {/* Тумблер подпроекта. Закрытая ГРУППА уже закрыла его — тогда вместо кнопки
                                 метка: нажатие ничего бы не поменяло, а обещать обратное нечестно. */}
                             <PrivacyToggle compact

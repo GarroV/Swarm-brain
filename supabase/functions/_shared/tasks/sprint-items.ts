@@ -20,7 +20,7 @@ const supabase = createClient(
 );
 
 const TASK_FIELDS =
-  "id, title, status, assignees, project_id, completed_at, due_date, is_private, owner_id";
+  "id, title, status, assignees, project_id, completed_at, due_date, is_private, owner_id, links";
 
 /** Отметка сверки: как идут дела у задачи в середине спринта. */
 export const CHECK_STATUSES = ["ok", "risk", "problem"] as const;
@@ -56,6 +56,13 @@ export interface SprintItem {
   /** Задача удалена: строка осталась упоминанием и в счёт не идёт. */
   removed: boolean;
   removed_at: string | null;
+  /**
+   * Сколько у задачи комментариев и ссылок. Не содержимое, а ЧИСЛО: в списке нужно понять,
+   * где шло обсуждение и где лежит материал, не открывая карточку. У скрытой приватной — 0:
+   * даже счётчик рассказывал бы о чужой задаче больше, чем человеку положено видеть.
+   */
+  comment_count: number;
+  link_count: number;
   /**
    * Задача скрыта от смотрящего (она приватная, а он не владелец). Строка остаётся видимой,
    * но без содержимого: убрать её совсем значило бы молча уменьшить состав спринта, и цифры
@@ -126,6 +133,7 @@ export async function listItems(
   }
 
   const projectNames = await loadProjectNames(items, live);
+  const comments = await countComments(liveIds);
 
   return items.map((r) => {
     const t = r.task_id ? live.get(r.task_id as string) : undefined;
@@ -183,9 +191,31 @@ export async function listItems(
       carried_manual: (r.carried_manual as boolean | null) ?? null,
       removed,
       removed_at: (r.removed_at as string | null) ?? null,
+      comment_count: hidden || frozen || removed
+        ? 0
+        : comments.get(r.task_id as string) ?? 0,
+      link_count: hidden || frozen || removed
+        ? 0
+        : ((t?.links as unknown[] | null) ?? []).length,
       hidden,
     };
   });
+}
+
+/**
+ * Сколько комментариев у каждой задачи. Отдельным запросом по узкому полю, а не подзапросом:
+ * PostgREST не умеет group by, а тащить тела комментариев ради счёта — это мегабайты на
+ * ровном месте. Пустой список задач запроса не делает.
+ */
+async function countComments(taskIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (taskIds.length === 0) return counts;
+  const { data } = await supabase.from("task_comments")
+    .select("task_id").in("task_id", taskIds);
+  for (const row of (data ?? []) as { task_id: string }[]) {
+    counts.set(row.task_id, (counts.get(row.task_id) ?? 0) + 1);
+  }
+  return counts;
 }
 
 async function loadProjectNames(

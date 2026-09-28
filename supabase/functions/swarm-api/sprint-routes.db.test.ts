@@ -150,6 +150,96 @@ Deno.test("второй незакрытый спринт в пространс�
   }
 });
 
+Deno.test("спринт переносится в другое пространство, чужое — 404", async () => {
+  // Перенос — про ВИДИМОСТЬ: уехав в чужой воркспейс, спринт остался бы в базе, но пропал
+  // бы с экрана команды, и это выглядело бы как потеря данных.
+  const db = await connect();
+  try {
+    const { tabId, foreignTabId } = await seed(db);
+    const second = await db.queryObject<{ id: string }>`
+      insert into sprints (id, group_id, name, start_date, end_date, status)
+      values (gen_random_uuid(), ${WS}, 'Второе пространство', current_date, current_date + 30, 'active')
+      returning id`;
+    const otherTab = second.rows[0].id;
+
+    const created = await call("POST", "/sprint-cycles", {
+      body: {
+        name: "Спринт 1",
+        start_date: "2026-09-01",
+        end_date: "2026-09-14",
+        tab_id: tabId,
+      },
+    });
+    assertEquals(created?.status, 201);
+    const id = (await created!.json()).id as string;
+
+    const moved = await call("PATCH", `/sprint-cycles/${id}`, {
+      body: { tab_id: otherTab },
+    });
+    assertEquals(moved?.status, 200);
+    assertEquals((await moved!.json()).tab_id, otherTab);
+
+    const foreign = await call("PATCH", `/sprint-cycles/${id}`, {
+      body: { tab_id: foreignTabId },
+    });
+    assertEquals(foreign?.status, 404, "чужое пространство принимать нельзя");
+    const stayed = await db.queryObject<{ tab_id: string }>`
+      select tab_id from sprint_cycles where id = ${id}::uuid`;
+    assertEquals(
+      stayed.rows[0].tab_id,
+      otherTab,
+      "отказ не должен ничего менять",
+    );
+  } finally {
+    await db.end();
+  }
+});
+
+Deno.test("перенос в занятое пространство — 409, спринт остаётся на месте", async () => {
+  const db = await connect();
+  try {
+    const { tabId } = await seed(db);
+    const second = await db.queryObject<{ id: string }>`
+      insert into sprints (id, group_id, name, start_date, end_date, status)
+      values (gen_random_uuid(), ${WS}, 'Занятое', current_date, current_date + 30, 'active')
+      returning id`;
+    const busyTab = second.rows[0].id;
+
+    const a = await call("POST", "/sprint-cycles", {
+      body: {
+        name: "Спринт A",
+        start_date: "2026-09-01",
+        end_date: "2026-09-14",
+        tab_id: tabId,
+      },
+    });
+    const b = await call("POST", "/sprint-cycles", {
+      body: {
+        name: "Спринт B",
+        start_date: "2026-09-01",
+        end_date: "2026-09-14",
+        tab_id: busyTab,
+      },
+    });
+    assertEquals(a?.status, 201);
+    assertEquals(b?.status, 201);
+    const idA = (await a!.json()).id as string;
+
+    const clash = await call("PATCH", `/sprint-cycles/${idA}`, {
+      body: { tab_id: busyTab },
+    });
+    assertEquals(clash?.status, 409);
+    const text = await clash!.text();
+    assertEquals(
+      text.includes("незакрытый спринт"),
+      true,
+      `отказ должен объяснять причину, а пришло: ${text}`,
+    );
+  } finally {
+    await db.end();
+  }
+});
+
 Deno.test("день сверки ставится сам — на шестой день от старта", async () => {
   const db = await connect();
   try {
