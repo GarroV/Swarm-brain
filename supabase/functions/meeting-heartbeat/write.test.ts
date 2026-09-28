@@ -3,6 +3,7 @@ import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert
 import type { AgentIdentity } from "../_shared/agent-auth.ts";
 import {
   buildHeartbeatWrites,
+  freshnessFilter,
   HeartbeatRejected,
   type HeartbeatWrite,
   MAX_RECORDED_SECONDS,
@@ -213,8 +214,12 @@ Deno.test("честный удар проходит как есть: 2 мину�
   const w = recordedSecondsWrite(meetingWith(720), { ...prior, agent_last_seen_at: minutesBefore(110 / 60) }, NOW);
   assertEquals(w?.patch.recorded_seconds, 720);
   assertEquals(w?.below, { column: "recorded_seconds", value: 720 });
-  assertEquals(w?.requireHit, false);
   assertEquals(w?.match, meetingWith(720).match, "та же сверка владения, что у записи встречи");
+  // Секунды — в той же UPDATE, что отметка удара: соседний удар не прочтёт одно без другого.
+  assertEquals(w?.patch.agent_last_seen_at, NOW);
+  assertEquals(w?.newerThan, meetingWith(720).newerThan);
+  assertEquals(w?.fallback?.patch.recorded_seconds, undefined, "промах по секундам — удар ложится без них");
+  assertEquals(w?.fallback?.requireHit, true);
 });
 
 Deno.test("ЯДРО: первый удар отсчитывается от выдачи лиза (claim бота), а не от начала времён", () => {
@@ -352,4 +357,16 @@ Deno.test("бот без agentId — громкая ошибка, а не зап
       NOW,
     )
   );
+});
+
+Deno.test("ЯДРО: запись встречи с секундами требует в базе ОБА условия — свежесть удара и рост секунд", () => {
+  const prior: RecordedPrior = { recorded_seconds: 600, agent_last_seen_at: minutesBefore(2), lease_expires_at: null };
+  const w = recordedSecondsWrite(meetingWith(720), prior, NOW)!;
+  assertEquals(
+    freshnessFilter(w),
+    `and(agent_last_seen_at.is.null,recorded_seconds.is.null),and(agent_last_seen_at.is.null,recorded_seconds.lt.720),` +
+      `and(agent_last_seen_at.lt.${NOW},recorded_seconds.is.null),and(agent_last_seen_at.lt.${NOW},recorded_seconds.lt.720)`,
+  );
+  assertEquals(freshnessFilter(w.fallback!), `agent_last_seen_at.is.null,agent_last_seen_at.lt.${NOW}`);
+  assertEquals(freshnessFilter({ table: "allowed_users", match: {}, patch: {}, requireHit: false }), null);
 });

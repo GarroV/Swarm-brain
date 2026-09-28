@@ -45,7 +45,7 @@ function matches(row: Row, write: HeartbeatWrite): boolean {
 function fresher(row: Row, write: HeartbeatWrite): boolean {
   if (write.below) {
     const current = row[write.below.column];
-    return current === null || (typeof current === "number" && current < write.below.value);
+    if (!(current === null || (typeof current === "number" && current < write.below.value))) return false;
   }
   if (!write.newerThan) return true;
   const current = row[write.newerThan.column];
@@ -123,7 +123,8 @@ function beatWrites(nowIso: string, version: number, seconds: number): Heartbeat
 }
 
 // Порядки, в которых могут дойти до базы запросы двух ударов: старого (O) и нового (N). У удара с
-// секундами их четыре (чтение строки, встреча, секунды, агент) — все перестановки 4+4.
+// секундами их до четырёх (чтение строки, встреча с секундами, встреча без секунд или агент, …) —
+// все перестановки первых 4+4, остаток досчитывается.
 function interleavings(o: number, n: number): string[] {
   if (o === 0) return ["N".repeat(n)];
   if (n === 0) return ["O".repeat(o)];
@@ -220,4 +221,25 @@ Deno.test("ЯДРО: удары recording:false не продлевают лиз
   assertEquals(tables.meetings[0].lease_expires_at, "2026-09-28T09:30:00.000Z");
   assertEquals(tables.meetings[0].agent_last_recording, false);
   assertEquals(tables.meetings[0].recorded_seconds, 300, "финальные секунды записаны");
+});
+
+Deno.test("ЯДРО: секунды выросли между чтением и записью (запасная запись того же человека) — удар всё равно ложится", async () => {
+  // meeting-claim `reserve` поднимает recorded_seconds той же строки в любой момент. Запись
+  // «встреча + секунды» тогда промахивается по росту секунд — но удар бота обязан лечь: иначе
+  // лиз не продлится и бот, который пишет, ответит stale и потеряет встречу через 30 минут.
+  const tables = freshTables();
+  const inner = memoryStore(tables);
+  const store: WriteStore = {
+    ...inner,
+    async read(write) {
+      const prior = await inner.read(write);
+      tables.meetings[0].recorded_seconds = 5000;
+      return prior;
+    },
+  };
+  assertEquals(await runHeartbeat(beatWrites(T1, 40, 600), store, T1), "ok");
+  assertEquals(tables.meetings[0].recorded_seconds, 5000, "секунды не занижены");
+  assertEquals(tables.meetings[0].agent_last_seen_at, T1);
+  assertEquals(tables.meetings[0].lease_expires_at, "2026-09-28T10:30:00.000Z", "лиз продлён");
+  assertEquals(tables.service_agents[0].last_version, 40);
 });

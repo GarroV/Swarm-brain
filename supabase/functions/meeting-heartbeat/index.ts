@@ -27,6 +27,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import {
   buildHeartbeatWrites,
+  freshnessFilter,
   type HeartbeatBody,
   HeartbeatRejected,
   type HeartbeatWrite,
@@ -48,13 +49,8 @@ const store: WriteStore = {
     for (const [column, value] of Object.entries(write.match)) {
       query = query.eq(column, value);
     }
-    // Одно условие «пусто или меньше» на запись: два `or` в одном запросе PostgREST не сложит.
-    const condition = write.newerThan ?? write.below;
-    if (write.newerThan && write.below) throw new Error(`update ${write.table}: newerThan и below вместе`);
-    if (condition) {
-      const { column, value } = condition;
-      query = query.or(`${column}.is.null,${column}.lt.${value}`);
-    }
+    const filter = freshnessFilter(write);
+    if (filter) query = query.or(filter);
     // Отдать назад только ключ: строка встречи несёт транскрипт, тащить его ради счёта незачем.
     const { data, error } = await query.select(Object.keys(write.match)[0]);
     if (error) throw new Error(`update ${write.table}: ${error.message}`);

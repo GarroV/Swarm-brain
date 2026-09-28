@@ -58,8 +58,14 @@ export interface HeartbeatWrite {
    * не отказ (записано уже больше).
    */
   below?: { column: string; value: number };
-  /** У записи встречи: сколько секунд прислал удар. Пишется отдельной записью (`planWrites`). */
+  /** У записи встречи: сколько секунд прислал удар. Кладётся в ту же запись (`planWrites`). */
   reportedSeconds?: number;
+  /**
+   * Что писать, если эта запись не легла ни в одну строку: запись встречи без секунд. Нужна записи
+   * «встреча + секунды»: её промах по `below` (записано уже больше) не отказ и не опоздание —
+   * сам удар всё равно должен лечь.
+   */
+  fallback?: HeartbeatWrite;
 }
 
 /** Машинная причина 403 «встреча не твоя»: бот по ней понимает, что право ушло (D019). */
@@ -214,8 +220,14 @@ export function recordedSecondsCeiling(prior: RecordedPrior, nowIso: string): nu
 }
 
 /**
- * Запись секунд удара: присланное, урезанное потолком, и только вверх. null — писать нечего
- * (прислано не больше, чем уже записано, или удар без секунд).
+ * Запись встречи вместе с секундами удара: присланное, урезанное потолком, и только вверх. null —
+ * секунд писать нечего (прислано не больше, чем уже записано, или удар без секунд).
+ *
+ * Секунды и отметка удара (`agent_last_seen_at`, от которой считается потолок) меняются ОДНОЙ
+ * UPDATE. Раздельными записями соседний удар, прочитавший строку между ними, видел бы новую отметку
+ * при старых секундах — потолок от неё почти ноль, и свежий удар молча недописывал бы запись
+ * бота. Вместе же любая прочитанная пара «секунды, отметка» — состояние после целого удара, и
+ * параллельные удары не складывают рост: запись только вверх, а не прибавка.
  */
 export function recordedSecondsWrite(
   meeting: HeartbeatWrite,
@@ -227,19 +239,18 @@ export function recordedSecondsWrite(
   // Не больше записанного — писать нечего; ноль поверх пустого тоже не пишется: пусто у строки
   // старого клиента значит «оценить по стенограмме», и ноль отнял бы у неё эту оценку.
   if (value <= (prior.recorded_seconds ?? 0)) return null;
+  const { reportedSeconds: _reported, ...plain } = meeting;
   return {
-    table: "meetings",
-    match: meeting.match,
-    patch: { recorded_seconds: value },
-    requireHit: false,
+    ...plain,
+    patch: { ...meeting.patch, recorded_seconds: value },
     below: { column: "recorded_seconds", value },
+    fallback: plain,
   };
 }
 
 /**
  * Удар с секундами читает строку встречи ДО записи (потолок считается от прошлого удара, а запись
- * удара его перетрёт) и ставит запись секунд сразу за записью встречи: отказ или опоздание по
- * встрече останавливают удар до неё.
+ * удара его перетрёт) и заменяет запись встречи записью «встреча + секунды».
  */
 export async function planWrites(
   writes: HeartbeatWrite[],
@@ -249,9 +260,24 @@ export async function planWrites(
   const at = writes.findIndex((w) => w.reportedSeconds !== undefined);
   if (at === -1) return writes;
   const prior = await store.read(writes[at]);
-  const seconds = prior === null ? null : recordedSecondsWrite(writes[at], prior, nowIso);
-  if (seconds === null) return writes;
-  return [...writes.slice(0, at + 1), seconds, ...writes.slice(at + 1)];
+  const combined = prior === null ? null : recordedSecondsWrite(writes[at], prior, nowIso);
+  if (combined === null) return writes;
+  return [...writes.slice(0, at), combined, ...writes.slice(at + 1)];
+}
+
+/**
+ * Условия `newerThan` и `below` записи одной строкой `or` для PostgREST («пусто или меньше»): два
+ * `.or()` в одном запросе он не сложит, поэтому оба условия (запись встречи с секундами)
+ * раскрываются в четыре `and`. Условий нет — null.
+ */
+export function freshnessFilter(write: HeartbeatWrite): string | null {
+  const parts: string[][] = [];
+  for (const c of [write.newerThan, write.below]) {
+    if (c) parts.push([`${c.column}.is.null`, `${c.column}.lt.${c.value}`]);
+  }
+  if (parts.length === 0) return null;
+  if (parts.length === 1) return parts[0].join(",");
+  return parts[0].flatMap((x) => parts[1].map((y) => `and(${x},${y})`)).join(",");
 }
 
 /** Удар целиком: прочитать, что нужно для потолка секунд, и разложить по таблицам. */
@@ -266,7 +292,7 @@ export type WriteOutcome = "ok" | "missed" | "stale";
  * Где лежат таблицы. Ошибка базы — исключение: index.ts отвечает на него 500.
  */
 export interface WriteStore {
-  /** UPDATE по всем равенствам `match` и условиям `newerThan`/`below`; сколько строк обновлено. */
+  /** UPDATE по всем равенствам `match` и условиям `newerThan` и `below` вместе; сколько строк обновлено. */
   update(write: HeartbeatWrite): Promise<number>;
   /** Секунды, прошлый удар и лиз строки встречи по `match`; нет строки — null. */
   read(write: HeartbeatWrite): Promise<RecordedPrior | null>;
@@ -280,8 +306,13 @@ export interface WriteStore {
  * более старую сборку (строку освежил тот, более поздний).
  */
 export async function applyWrites(writes: HeartbeatWrite[], store: WriteStore): Promise<WriteOutcome> {
-  for (const write of writes) {
-    const hit = await store.update(write);
+  for (const planned of writes) {
+    let write = planned;
+    let hit = await store.update(write);
+    if (hit === 0 && write.fallback) {
+      write = write.fallback;
+      hit = await store.update(write);
+    }
     if (!write.requireHit || hit > 0) continue;
     if (!write.newerThan) return "missed";
     // Промах при условии свежести: встреча либо не того, кто пришёл, либо удар опоздал.
