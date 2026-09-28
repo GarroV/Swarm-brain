@@ -42,6 +42,8 @@
 // Запуск: SMOKE_SUPABASE_URL=… SMOKE_SERVICE_KEY=… deno run --allow-all scripts/scriba-watchdog-smoke.ts
 // Красный, если хоть одно ожидание не сошлось или окружения нет.
 
+import { grantCache } from "./scriba-smoke-grants.ts";
+
 import { ingestFormOf } from "./smoke-m4a.ts";
 import type { Overrides } from "../supabase/functions/meeting-ingest/m4a-fixture.ts";
 
@@ -401,7 +403,9 @@ async function cleanup(): Promise<string[]> {
     [
       "DELETE",
       `meetings?id=in.(${meetingIdsToClean().join(",")})`,
-    ], // notices — каскадом
+    ], // notices и пропуска — каскадом
+    ["DELETE", `meeting_agent_grants?group_id=eq.${WS}`],
+    ["DELETE", `meeting_invites?group_id=eq.${WS}`],
     ["DELETE", `service_agents?id=eq.${AGENT.id}`],
     ["DELETE", `allowed_users?telegram_id=in.(${PEOPLE.join(",")})`],
     ["DELETE", `workspaces?id=in.(${WS},${FOREIGN_WS})`],
@@ -423,6 +427,8 @@ function expect(name: string, ok: boolean, detail?: string): void {
   checks.push({ name, ok, detail });
 }
 
+const grantFor = grantCache(rest, { agentId: AGENT.id, groupId: WS });
+
 /** Удар бота по встрече — от имени onBehalfOf, как шлёт его контейнер (session.heartbeat). */
 async function beat(
   meeting: { id: string },
@@ -439,7 +445,8 @@ async function beatRaw(
   const res = await fetch(`http://127.0.0.1:${PORT_HB}/`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${AGENT.token}`,
+      // Бот за человека ходит пропуском своей встречи (T165), а не токеном агента.
+      Authorization: `Bearer ${await grantFor(onBehalfOf, meeting.id)}`,
       "X-On-Behalf-Of": String(onBehalfOf),
       "Content-Type": "application/json",
     },
