@@ -595,18 +595,24 @@ async function sceneOtherPerson(): Promise<void> {
   await sleep(1500);
   await rest("PATCH", `meetings?id=eq.${id}`, { lease_expires_at: ago(1) });
   const cb = await claim(B, key, started, 2400);
+  const afterClaim = await row(id);
   expect(
-    "F: заявка B — та же встреча",
-    cb.meeting_id === id && cb.decision === "transcribe",
-    JSON.stringify(cb),
+    "F: заявка B — та же встреча; идущая обработка A — не брошенная встреча, B претендент",
+    cb.meeting_id === id && cb.decision === "transcribe" &&
+      afterClaim.claim_owner === A && roleOf(afterClaim, B) === "challenger",
+    `${JSON.stringify(cb)} claim_owner=${afterClaim.claim_owner} recorders=${
+      JSON.stringify(afterClaim.recorders)
+    }`,
   );
   const upB = await ingest(recHeaders(B), m4aForm(id, "b", 2400, 20));
   await upA;
   const r = await settle(id);
   expectOnly("F (A обрабатывается с истёкшей заявкой, B полнее)", r, "b", 60);
   expect(
-    "F: встреча у B — того, чья стенограмма",
-    r.claim_owner === B,
+    "F: встреча у B — того, чья стенограмма; A superseded, B transcribe, секунды B",
+    r.claim_owner === B && roleOf(r, A) === "superseded" &&
+      roleOf(r, B) === "transcribe" &&
+      r.recorded_seconds === 2400,
     `claim_owner=${r.claim_owner} ответ B=${JSON.stringify(upB)}`,
   );
 }
