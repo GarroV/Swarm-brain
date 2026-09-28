@@ -58,6 +58,7 @@ import { canAccessDraftMeeting, draftMeetingsOwnScoped, type DraftMeetingRow } f
 import { handleAdminRoutes } from "./admin.ts";
 import { corsHeaders, json, apiErr, parseListLimit } from "./http.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
+import { handleAutojoinRoutes, makeAutojoinStore } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
 import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
@@ -592,6 +593,14 @@ Deno.serve(async (req: Request) => {
     routePath,
   );
   if (inviteResp) return inviteResp;
+
+  // Автозапуск бота по календарю (D021): человек включает и выключает его себе, рядом с календарём.
+  const autojoinResp = await handleAutojoinRoutes(
+    { store: makeAutojoinStore(supabase), telegramId: telegram_id, isDemo, origin },
+    req,
+    routePath,
+  );
+  if (autojoinResp) return autojoinResp;
 
   const labelResp = await handleTaskLabelRoutes(supabase, req, routePath, telegram_id, groupId, origin);
   if (labelResp) return labelResp;

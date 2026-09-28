@@ -33,8 +33,10 @@ export interface SweepSource {
   listEvents(token: string, timeMin: string, timeMax: string, maxResults: number): Promise<GEvent[] | null>;
   /** Завести задания; уже заведённые на ту же встречу воркспейса не трогаются. */
   insertJobs(groupId: string, jobs: DispatchJob[]): Promise<void>;
-  /** Забрать ожидающие задания воркспейса, у которых встреча ещё не кончилась. Каждое — один раз. */
-  takeJobs(groupId: string, agentId: string, nowIso: string): Promise<TakenJob[]>;
+  /** Погасить незабранные задания воркспейса тех, кого нет в `people` (выключили автозапуск). */
+  dropPendingJobsExcept(groupId: string, people: readonly number[]): Promise<void>;
+  /** Забрать ожидающие задания `people`, у которых встреча ещё не кончилась. Каждое — один раз. */
+  takeJobs(groupId: string, agentId: string, nowIso: string, people: readonly number[]): Promise<TakenJob[]>;
 }
 
 export interface SweepResult {
@@ -86,7 +88,15 @@ export async function sweep(
   // Порядок людей стабилен (по telegram_id у источника): одна встреча у двоих — за первого.
   const plans = await Promise.all(people.map((p) => personPlan(source, p, nowMs, manualRooms)));
   const merged = mergeDispatch(plans);
+  // Выключение автозапуска гасит и заведённые, но не забранные задания (D021): задание — не
+  // согласие, согласие — флаг сейчас. Гасим ДО вставки: иначе задание выключившего держало бы
+  // ключ встречи, и коллега с той же встречей остался бы без бота (вставка по ключу молчит).
+  await source.dropPendingJobsExcept(agent.groupId, people);
   if (merged.jobs.length > 0) await source.insertJobs(agent.groupId, merged.jobs);
-  const jobs = await source.takeJobs(agent.groupId, agent.agentId, nowIso);
+  // Проход идёт секунды (календари в Google), за них человек мог выключить — перечитываем
+  // согласие перед самым забором. Остаётся окно между этим чтением и UPDATE забора — миллисекунды.
+  const current = await source.autojoinPeople(agent.groupId);
+  if (people.some((p) => !current.includes(p))) await source.dropPendingJobsExcept(agent.groupId, current);
+  const jobs = await source.takeJobs(agent.groupId, agent.agentId, nowIso, current);
   return { jobs, skipped: merged.skipped };
 }
