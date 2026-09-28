@@ -16,6 +16,7 @@
 import type { MeetingInvite } from "../swarm-client/contract.ts";
 import type { TakenInvites } from "../swarm-client/invites.ts";
 import { describeError } from "./describe-error.ts";
+import { PollLoop } from "./poll-loop.ts";
 
 /**
  * Предел `detail` у `meeting-notice` (`MAX_DETAIL_CHARS` в `_shared/notices.ts`).
@@ -80,16 +81,17 @@ export class InviteTrigger {
    */
   private readonly remembered = new Map<string, number>();
 
-  private timer: NodeJS.Timeout | undefined;
-
-  private running: Promise<void> | null = null;
-
-  private isStarted = false;
+  private readonly loop: PollLoop;
 
   private readonly options: InviteTriggerOptions;
 
   constructor(options: InviteTriggerOptions) {
     this.options = options;
+    this.loop = new PollLoop(
+      "приглашения",
+      async () => this.pollOnce(),
+      options.intervalMs ?? DEFAULT_INTERVAL_MS,
+    );
   }
 
   private get nowMs(): number {
@@ -161,32 +163,16 @@ export class InviteTrigger {
   }
 
   /**
-   * Опрашивать по кругу: следующий опрос — через интервал после конца предыдущего, так что
-   * медленный сервер не наслаивает опросы друг на друга.
+   * Опрашивать по кругу (`PollLoop`).
    */
   start(): void {
-    if (this.isStarted) throw new Error("опрос приглашений уже запущен");
-    this.isStarted = true;
-    const cycle = async (): Promise<void> => {
-      await this.pollOnce();
-      this.running = null;
-      if (this.isStarted) {
-        this.timer = setTimeout(loop, this.options.intervalMs ?? DEFAULT_INTERVAL_MS);
-      }
-    };
-    const loop = (): void => {
-      this.running = cycle();
-    };
-    loop();
+    this.loop.start();
   }
 
   /**
    * Перестать опрашивать; идущий опрос доводится до конца — забранное не бросается.
    */
   async close(): Promise<void> {
-    this.isStarted = false;
-    clearTimeout(this.timer);
-    this.timer = undefined;
-    await this.running;
+    await this.loop.close();
   }
 }

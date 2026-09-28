@@ -1,7 +1,8 @@
 /**
  * Служба оркестратора: долгоживущий процесс рядом с Docker. Поднимает поводок, подхватывает
- * контейнеры прошлого запуска и опрашивает приглашения из веба (D017) — по каждому поднимает
- * бота от имени позвавшего, а на площадку без адаптера отвечает громким отказом.
+ * контейнеры прошлого запуска, раз в минуту берёт задания по календарям людей (T100) и опрашивает
+ * приглашения из веба (D017) — по каждому поднимает бота от имени человека, а на площадку без
+ * адаптера отвечает громким отказом.
  *
  * Запуск (внутри WSL2 рядом с Docker):
  *   node bot/src/orchestrator/orchestrator-main.ts
@@ -14,6 +15,7 @@
  *   SCRIBA_PROJECT              — имя стенда, метка контейнеров и тома (по умолчанию scriba);
  *   SCRIBA_BOT_VERSION          — номер сборки, уходит в heartbeat и заявку (по умолчанию 0);
  *   SCRIBA_INVITE_POLL_MS       — пауза между опросами приглашений (по умолчанию 5000);
+ *   SCRIBA_CALENDAR_POLL_MS     — пауза между проходами по календарям (по умолчанию 60000);
  *   SCRIBA_CONTAINER_SWARM_URL  — корень функций, каким его видит контейнер (по умолчанию
  *                                 SCRIBA_SWARM_URL; для стенда — host.docker.internal);
  *   SCRIBA_CONTAINER_ENV        — JSON-объект добавочного окружения контейнера (ручки смоука).
@@ -22,6 +24,7 @@
  * не зовёт, — ровно та тишина, против которой она заведена.
  */
 import { DockerodeEngine } from "./docker-engine.ts";
+import { calendarTriggerFor } from "./calendar-service.ts";
 import { inviteTriggerFor } from "./invite-service.ts";
 import { NoticeClient } from "./notice-client.ts";
 import { JournaledNotifier, type Notifier } from "./notices.ts";
@@ -95,13 +98,28 @@ async function main(environment: Environment): Promise<void> {
     intervalMs,
   });
 
+  const calendarMs = positive(environment, "SCRIBA_CALENDAR_POLL_MS", 60_000);
+  const calendar = calendarTriggerFor({
+    swarmUrl,
+    token,
+    version,
+    startForMeeting: async (joinUrl, platform, onBehalfOf, event) =>
+      orchestrator.startForMeeting(joinUrl, platform, onBehalfOf, event),
+    notifierFor,
+    log,
+    intervalMs: calendarMs,
+  });
+
   await orchestrator.init();
   trigger.start();
-  log(`служба запущена: приглашения опрашиваются каждые ${String(intervalMs)} мс`);
+  calendar.start();
+  log(
+    `служба запущена: приглашения опрашиваются каждые ${String(intervalMs)} мс, календари — каждые ${String(calendarMs)} мс`,
+  );
 
   const shutdown = async (signal: string): Promise<void> => {
     log(`${signal}: перестаю опрашивать; идущие встречи не трогаю — поводок их отпустит`);
-    await trigger.close();
+    await Promise.all([trigger.close(), calendar.close()]);
     orchestrator.close();
     // eslint-disable-next-line unicorn/no-process-exit -- служба и есть CLI
     process.exit(0);
