@@ -41,7 +41,7 @@ final class RecorderWidget {
     // Рисуется второй тонкой полосой — видно, что коллег пишем живьём. Опрашивается тем же таймером.
     var systemLevelProvider: (() -> Float)?
 
-    private var panel: NSPanel?
+    private(set) var panel: NSPanel?   // чтение — SelfTestProbe (самопроверки)
     /// Фактическая рамка окна на экране — только для чтения. Нужна режиму
     /// `--selftest-widget`: положение виджета иначе проверяется глазами по скриншоту,
     /// а «кажется, стало выше» — не проверка (правка дефолта 03.09.2026).
@@ -611,7 +611,7 @@ final class RecorderWidget {
     }
 
     /// Размер под текущее состояние: баннер — по своему контенту, остальное — узкая капсула.
-    private func currentSize() -> CGSize {
+    func currentSize() -> CGSize {   // не private: SelfTestProbe снимает кадр в целевом размере
         guard !bannerRow.isHidden else { return Self.pillSize }
         let fit = bannerRow.fittingSize
         return CGSize(width: max(Self.bannerMinSize.width, fit.width + 20),

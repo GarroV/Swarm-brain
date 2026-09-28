@@ -26,6 +26,7 @@ final class MissedSelfTest: NSObject {
     private let withMeeting: Bool
     private var invitedOnce = false
     private var meetingDismissed = false
+    private var probe: SelfTestProbe?
 
     init(config: SwarmConfig, inviteFirst: Bool, withMeeting: Bool) {
         self.inviteFirst = inviteFirst
@@ -57,6 +58,8 @@ final class MissedSelfTest: NSObject {
         if Bundle.main.bundleIdentifier == nil {
             print("missed: ⚠️ запущено не из бандла — проверка системных уведомлений пропущена")
         }
+        probe = SelfTestProbe(widget: widget, tag: "missed")
+        probe?.start()
         watcher.start()
         watcher.pollNow()
         changed()

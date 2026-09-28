@@ -18,6 +18,7 @@ import RecorderKit
 final class PickSelfTest: NSObject {
     private let client: SwarmClient
     private let watcher: MissedMeetingsWatcher
+    private var probe: SelfTestProbe?
     private let widget = RecorderWidget()
     private let openLinks: Bool
     private var offers: [MeetingIdentity.Info] = []
@@ -50,6 +51,8 @@ final class PickSelfTest: NSObject {
     }
 
     func start() {
+        probe = SelfTestProbe(widget: widget, tag: "pick")
+        probe?.start()
         watcher.start()
         watcher.pollNow()
         poll()
