@@ -148,6 +148,8 @@ const calendars = new Map<number, FakeEvent[]>([
 ]);
 /** Запросы в поддельный Google (токен + события) и человек, у которого Google «лежит». */
 const google = { hits: 0, downFor: null as number | null };
+/** Запросы в Google, пришедшиеся на вызовы meeting-missed (claim бота ходит в календарь законно). */
+let recorderGoogleHits = 0;
 const refreshOf = (person: number) =>
   person === PEOPLE.d ? "rt-dead" : `rt-${person}`;
 
@@ -627,6 +629,7 @@ async function missed(
   token: string | null,
   init: RequestInit = {},
 ): Promise<{ status: number; body: Json }> {
+  const hitsAtStart = google.hits;
   const res = await fetch(`http://127.0.0.1:${PORT_MISSED}/`, {
     method: "GET",
     ...init,
@@ -637,10 +640,9 @@ async function missed(
         : { "Content-Type": "application/json" }),
     },
   });
-  return {
-    status: res.status,
-    body: await res.json().catch(() => ({})) as Json,
-  };
+  const body = await res.json().catch(() => ({})) as Json;
+  recorderGoogleHits += google.hits - hitsAtStart;
+  return { status: res.status, body };
 }
 
 async function snapshot(
@@ -738,7 +740,6 @@ async function recorderMisses(): Promise<void> {
     snap,
   );
   const runG = await runOf(PEOPLE.g);
-  const hitsAfterSnapshot = google.hits;
 
   const first = await missed(recorderToken(PEOPLE.g));
   const list = (first.body.misses ?? []) as MissView[];
@@ -871,12 +872,12 @@ async function recorderMisses(): Promise<void> {
         "calendar_not_connected",
     noCal.body,
   );
+  await snapshotBetweenRuns();
   expect(
     "ни один запрос рекордера не ходил в Google",
-    google.hits === hitsAfterSnapshot,
-    { before: hitsAfterSnapshot, after: google.hits },
+    recorderGoogleHits === 0,
+    { recorderGoogleHits },
   );
-  await snapshotBetweenRuns();
 }
 
 /** Встреча после снимка, отменённая встреча и Google, моргнувший на снимке. */
