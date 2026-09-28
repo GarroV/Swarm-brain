@@ -203,3 +203,12 @@ Deno.test("formatTaskLine: подзадача показывает родите�
   assertStringIncludes(parent, "Подзадачи: 1 из 3 закрыто");
   assert(!formatTaskLine({ status: "open", title: "T" }).includes("одзадач"), "у обычной задачи — ни слова");
 });
+
+Deno.test("formatTaskLine: скрытая с хаба задача помечена, обычная — без пометки (issue #562)", () => {
+  assertStringIncludes(
+    formatTaskLine({ status: "open", title: "T", confirmed: true, hidden_from_hub: true }),
+    "скрыта с хаба",
+  );
+  const plain = formatTaskLine({ status: "open", title: "T", confirmed: true, hidden_from_hub: false });
+  assert(!plain.includes("скрыта с хаба"), plain);
+});

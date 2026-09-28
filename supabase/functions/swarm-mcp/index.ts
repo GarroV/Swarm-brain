@@ -1107,7 +1107,7 @@ Deno.serve(async (req: Request) => {
       } else if (name === "add_task") {
         result = await toolAddTask(args as { title: string; description?: string; assignee_name?: string; country?: string; due_date?: string; task_role?: string; source: string; context_id?: string; labels?: string[]; project_name?: string; status?: string; confirmed?: boolean; parent_task_id?: string; requesting_user_id?: number });
       } else if (name === "update_task") {
-        result = await toolUpdateTask(args as { id: string; title?: string; description?: string; assignee_name?: string; country?: string; due_date?: string | null; status?: string; task_role?: string; labels?: string[]; project_name?: string; parent_task_id?: string; requesting_user_id: number });
+        result = await toolUpdateTask(args as { id: string; title?: string; description?: string; assignee_name?: string; country?: string; due_date?: string | null; status?: string; task_role?: string; labels?: string[]; project_name?: string; parent_task_id?: string; recur_freq?: string | null; hidden_from_hub?: boolean; requesting_user_id: number });
       } else if (name === "get_projects") {
         result = await toolGetProjects(args as { requesting_user_id: number });
       } else if (name === "list_task_labels") {

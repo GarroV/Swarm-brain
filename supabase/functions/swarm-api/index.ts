@@ -121,6 +121,10 @@ import { handleSprintCycleRoutes } from "./sprint-cycles.ts";
 import { handleSpaceJournalRoutes } from "./space-journal.ts";
 import { handleNotificationRoutes } from "./notifications.ts";
 import { handleTaskSubscriptionRoutes } from "./task-subscriptions.ts";
+import {
+  handlePublicRoadmap,
+  isPublicRoadmapPath,
+} from "./public-roadmap.ts";
 // Календарь на сегодня для панели главной (issue #218): доступ к Google — общий модуль
 // (его же зовёт meeting-current), отбор событий дня и границы суток — чистая логика под тестами.
 import { accessToken, listEvents } from "../_shared/google-calendar.ts";
@@ -511,6 +515,15 @@ async function sprintInWorkspace(
 
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get("Origin") ?? "";
+
+  // Публичная дорожная карта доски для хаба проектов (issue #562) — БЕЗ авторизации и раньше
+  // общего OPTIONS: у неё свой CORS (`*`, только GET), приватный MINIAPP_ORIGIN ей не подходит.
+  // Что уходит наружу — строго белый список модуля public-roadmap.ts.
+  const publicPath = new URL(req.url).pathname.split("/swarm-api").pop() ||
+    "/";
+  if (isPublicRoadmapPath(publicPath)) {
+    return handlePublicRoadmap(supabase, req, publicPath);
+  }
 
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(origin) });

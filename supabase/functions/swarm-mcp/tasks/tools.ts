@@ -315,6 +315,7 @@ export async function toolUpdateTask(args: {
   project_name?: string;
   recur_freq?: string | null;
   parent_task_id?: string;
+  hidden_from_hub?: boolean;
   requesting_user_id: number;
 }): Promise<string> {
   const task = await getTask(args.id);
@@ -362,6 +363,14 @@ export async function toolUpdateTask(args: {
   if ("due_date" in args) fields.due_date = args.due_date ?? null;
   if (args.status !== undefined) fields.status = args.status;
   if (args.task_role !== undefined) fields.task_role = args.task_role;
+  // Скрыть задачу с публичной дорожной карты хаба (issue #562). Только настоящий boolean:
+  // строка «false» — истина в JS, и задача молча осталась бы на хабе (или ушла с него).
+  if (args.hidden_from_hub !== undefined) {
+    if (typeof args.hidden_from_hub !== "boolean") {
+      return "Ошибка: hidden_from_hub — true или false.";
+    }
+    fields.hidden_from_hub = args.hidden_from_hub;
+  }
 
   // Цикличность (null — снять). Считаем от ИТОГОВОГО срока: его могли поменять этим же вызовом.
   // Якорь числа месяца хелпер трогает только когда изменился срок или частота — иначе правка
@@ -714,6 +723,7 @@ export const TASK_TOOL_DEFINITIONS = [
         project_name: { type: "string", description: "Имя проекта или подпроекта доски. Пустая строка — снять проект (задача уйдёт с доски в общий список)." },
         recur_freq: { type: ["string", "null"], enum: ["daily", "weekly", "monthly", null], description: "Цикличность: задача не закрывается, а переносится на следующее вхождение (daily — каждый день, weekly — тот же день недели, monthly — то же число месяца). ТРЕБУЕТ due_date: день недели и число берутся из срока. null — снять цикличность." },
         parent_task_id: { type: "string", description: "Сделать подзадачей задачи с этим id (того же проекта, верхнего уровня). Пустая строка — отвязать от родителя" },
+        hidden_from_hub: { type: "boolean", description: "true — не показывать задачу в публичной дорожной карте хаба проектов (даже если доска опубликована); false — вернуть." },
         requesting_user_id: { type: "number", description: "Твой Telegram user ID — обязателен для проверки доступа" },
       },
       required: ["id", "requesting_user_id"],

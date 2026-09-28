@@ -39,6 +39,9 @@ export type Task = {
   // recur_anchor_dom помнит исходное число месяца для monthly (31 янв → 28 фев → 31 мар).
   recur_freq: string | null;
   recur_anchor_dom: number | null;
+  // Не показывать в публичной дорожной карте хаба (issue #562). Необязательно в типе: узкие
+  // проекции (TASK_LIST_COLUMNS) его не читают.
+  hidden_from_hub?: boolean;
 };
 
 export type TaskInput = {
@@ -74,6 +77,7 @@ export type TaskInput = {
   tree_y?: number | null;
   recur_freq?: string | null;
   recur_anchor_dom?: number | null;
+  hidden_from_hub?: boolean;
   /** Ссылки на материалы: массив {title, url}. Разбор и проверка схемы — `links.ts`. */
   links?: { title: string | null; url: string }[];
 };
