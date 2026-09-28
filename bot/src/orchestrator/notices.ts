@@ -11,6 +11,8 @@ import { describeError } from "./describe-error.ts";
 type MeetingNoticeKind =
   | "door_waiting"
   | "door_denied"
+  | "door_blocked"
+  | "meeting_unavailable"
   | "captcha"
   | "no_audio"
   | "recording_lost"

@@ -432,19 +432,19 @@ describe("дверь", () => {
     expect(kinds(world)).toEqual(["door_waiting"]);
   });
 
-  it("хост отклонил → door_denied, выход", async () => {
-    const world = build({ door: ["denied"] });
+  // Каждому исходу двери — своё уведомление. Страница ошибки Meet — не «хост отклонил» (T173):
+  // хост заявки не видел, и человеку нужен другой совет.
+  it.each([
+    { door: "denied", outcome: "door_denied", what: "хост отклонил" },
+    { door: "blocked", outcome: "door_blocked", what: "Meet не пустил гостя до лобби" },
+    { door: "unavailable", outcome: "meeting_unavailable", what: "встречи нет или она кончилась" },
+    { door: "captcha", outcome: "captcha", what: "капча" },
+  ] as const)("$what → нотиса $outcome, выход", async ({ door, outcome }) => {
+    const world = build({ door: [door] });
 
-    expect(await runMeeting(world.options)).toBe("door_denied");
-    expect(kinds(world)).toEqual(["door_denied"]);
+    expect(await runMeeting(world.options)).toBe(outcome);
+    expect(kinds(world)).toEqual([outcome]);
     expect(world.calls).toContain("leave");
-  });
-
-  it("капча → нотиса captcha, выход", async () => {
-    const world = build({ door: ["captcha"] });
-
-    expect(await runMeeting(world.options)).toBe("captcha");
-    expect(kinds(world)).toEqual(["captcha"]);
   });
 
   it("остановили у двери → уходим без записи и без нотисы о двери", async () => {

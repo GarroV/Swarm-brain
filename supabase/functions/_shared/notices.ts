@@ -20,6 +20,11 @@ export type NoticeLang = (typeof NOTICE_LANGS)[number];
 export const NOTICE_KINDS = [
   "door_waiting",
   "door_denied",
+  // Страница ошибки Meet вместо двери (T173): встреча не пускает гостя без аккаунта —
+  // Google отвечает этим же экраном и на неверную ссылку, различить их со страницы нельзя.
+  "door_blocked",
+  // Страница прямо говорит, что встречи нет: код неверный или встреча закончилась.
+  "meeting_unavailable",
   "captcha",
   "no_conference_link",
   "no_owner",

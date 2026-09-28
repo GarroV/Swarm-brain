@@ -417,6 +417,14 @@ async function raceScenario(behalf: { onBehalfOf: number }): Promise<Outcome> {
   );
 }
 
+/** Сообщение о странице ошибки Meet, которое говорит «хост отклонил», — ложь человеку. */
+function notDeclined(outcome: Outcome): Outcome {
+  if (outcome.problem !== null || !/отклонил|declined/i.test(outcome.signal)) {
+    return outcome;
+  }
+  return { ...outcome, problem: "страница ошибки Meet выдана за отказ хоста" };
+}
+
 async function meetingScenarios(
   behalf: { onBehalfOf: number },
 ): Promise<Outcome[]> {
@@ -451,6 +459,19 @@ async function meetingScenarios(
       meeting_id: M.late,
       detail: "exit code 137 (OOM)",
     }, behalf),
+    // Страница ошибки Meet (T173): хост заявки не видел — текст не смеет сказать «отклонил».
+    notDeclined(
+      await scenario("Meet не пустил гостя без аккаунта до лобби", {
+        kind: "door_blocked",
+        meeting_id: M.late,
+      }, behalf),
+    ),
+    notDeclined(
+      await scenario("встречи нет или она кончилась", {
+        kind: "meeting_unavailable",
+        meeting_id: M.late,
+      }, behalf),
+    ),
     await scenario("иная причина захода", {
       kind: "join_failed",
       meeting_id: M.late,

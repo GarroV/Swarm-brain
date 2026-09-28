@@ -8,7 +8,13 @@
  * функциях рядом и проверены тестами.
  */
 
-export type AdmissionOutcome = "admitted" | "denied" | "timeout" | "captcha";
+/**
+ * `denied` — отказал живой хост; `blocked` — Meet не пустил гостя до лобби, хост заявки не
+ * видел; `unavailable` — страница говорит, что встречи нет или она кончилась. Путать их
+ * нельзя: человеку уходят разные уведомления и разные советы (T173).
+ */
+export type AdmissionOutcome =
+  "admitted" | "denied" | "blocked" | "unavailable" | "timeout" | "captcha";
 
 export interface PlatformAdapter {
   join(url: string, displayName: string): Promise<void>;
