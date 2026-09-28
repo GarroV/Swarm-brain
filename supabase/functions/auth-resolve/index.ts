@@ -88,7 +88,11 @@ Deno.serve(async (req: Request) => {
   if (telegramId != null) {
     const { data: prof } = await supabase
       .from("user_profiles").select("first_name, last_name").eq("telegram_id", telegramId).maybeSingle();
-    const upd = profileNameUpdate(prof as { first_name?: string | null; last_name?: string | null } | null, trustedName);
+    const upd = profileNameUpdate(
+      prof as { first_name?: string | null; last_name?: string | null } | null,
+      trustedName,
+      email.split("@")[0],
+    );
     if (upd) {
       const { error: profErr } = await supabase
         .from("user_profiles").upsert({ telegram_id: telegramId, ...upd }, { onConflict: "telegram_id" });
