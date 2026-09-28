@@ -24,6 +24,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgentAuthError, verifyAgentToken } from "../_shared/agent-auth.ts";
 import { makeMissStore, MISS_COLUMNS, type MissRow } from "../_shared/calendar-miss-store.ts";
 import { isDemoSession } from "../_shared/demo-session.ts";
+import { loadCoveredRooms } from "../_shared/manual-rooms.ts";
 import type { SnapshotEvent, SnapshotRun } from "../_shared/calendar-snapshot.ts";
 import { handleMeetingInviteRoutes, type InviteContext } from "../swarm-api/meeting-invites.ts";
 import { handleMissed, type MissedDeps, type Person } from "./handle.ts";
@@ -96,13 +97,7 @@ const deps: MissedDeps = {
     ) ?? [];
     return data as SnapshotEvent[];
   },
-  async recentInviteLinks(groupId, sinceIso) {
-    const data = must(
-      "meeting_invites",
-      await supabase.from("meeting_invites").select("join_url").eq("group_id", groupId).gte("created_at", sinceIso),
-    ) ?? [];
-    return (data as { join_url: string }[]).map((r) => r.join_url);
-  },
+  manualRooms: (groupId, nowMs) => loadCoveredRooms(supabase, groupId, nowMs),
   store: makeMissStore(supabase),
   async openMisses(person, sinceIso) {
     const data = must(

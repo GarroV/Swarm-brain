@@ -43,6 +43,7 @@ import { sweep, type SweepSource, type TakenJob } from "./sweep.ts";
 import { recordSweepMisses } from "./missed.ts";
 import { makeMissStore } from "../_shared/calendar-miss-store.ts";
 import { mintGrants } from "../_shared/agent-grant.ts";
+import { loadCoveredRooms } from "../_shared/manual-rooms.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -69,12 +70,7 @@ const source: SweepSource = {
     fail("allowed_users", error);
     return (data ?? []).map((r) => (r as { telegram_id: number }).telegram_id);
   },
-  async liveInviteLinks(groupId, nowIso) {
-    const { data, error } = await supabase.from("meeting_invites")
-      .select("join_url").eq("group_id", groupId).is("used_at", null).gt("expires_at", nowIso);
-    fail("meeting_invites", error);
-    return (data ?? []).map((r) => (r as { join_url: string }).join_url);
-  },
+  manualRooms: (groupId, nowMs) => loadCoveredRooms(supabase, groupId, nowMs),
   async refreshToken(telegramId) {
     const { data, error } = await supabase.from("user_integrations")
       .select("api_key").eq("telegram_id", telegramId).eq("service", "google_calendar").maybeSingle();

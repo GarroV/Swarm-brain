@@ -4,6 +4,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { GEvent } from "../meeting-current/select.ts";
 import type { DispatchJob } from "../_shared/calendar-dispatch.ts";
 import { sweep, type SweepSource, type TakenJob } from "./sweep.ts";
+import { parseInviteLink } from "../_shared/meeting-invite.ts";
 
 const NOW = Date.parse("2026-09-28T07:00:00Z");
 const AGENT = { agentId: "scriba", groupId: "g1" };
@@ -32,7 +33,7 @@ function fakeSource(
   const inserted: DispatchJob[] = [];
   const source: SweepSource = {
     autojoinPeople: () => Promise.resolve([1]),
-    liveInviteLinks: () => Promise.resolve([]),
+    manualRooms: () => Promise.resolve(new Set<string>()),
     refreshToken: (id) => Promise.resolve(over.tokens ? (over.tokens[id] ?? null) : "r"),
     accessToken: () => Promise.resolve({ ok: true, token: "a" }),
     listEvents: () => Promise.resolve([meeting()]),
@@ -88,7 +89,9 @@ Deno.test("ГРОМКО: календарь не подключён / токен
 });
 
 Deno.test("живое ручное приглашение на ту же комнату — задание не заводится", async () => {
-  const { source, inserted } = fakeSource({ liveInviteLinks: () => Promise.resolve([`${MEET}?hl=en`]) });
+  const { source, inserted } = fakeSource({
+    manualRooms: () => Promise.resolve(new Set([parseInviteLink(`${MEET}?hl=en`)?.room ?? "?"])),
+  });
   const result = await sweep(source, AGENT, NOW);
   assertEquals(inserted, []);
   assertEquals(result.skipped.map((s) => s.reason), ["manual_invite_exists"]);

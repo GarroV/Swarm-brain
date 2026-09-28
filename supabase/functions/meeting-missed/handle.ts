@@ -45,8 +45,11 @@ export interface MissedDeps {
   snapshotRun(person: Person): Promise<SnapshotRun | null>;
   /** Встречи снимка `snapshotAt`, идущие в момент `nowIso`. */
   snapshotEvents(person: Person, snapshotAt: string, nowIso: string): Promise<SnapshotEvent[]>;
-  /** Ссылки приглашений воркспейса, заведённых с `sinceIso` (любого статуса): туда бота уже звали. */
-  recentInviteLinks(groupId: string, sinceIso: string): Promise<string[]>;
+  /**
+   * Комнаты, куда бота уже позвали руками и он туда едет или уже пишет — то же правило, что у
+   * автозапуска (_shared/manual-rooms.ts). Мёртвое или отработанное приглашение пропуск не глушит.
+   */
+  manualRooms(groupId: string, nowMs: number): Promise<ReadonlySet<string>>;
   store: MissStore;
   /** Пропуски человека без приглашения, замеченные с `sinceIso`. */
   openMisses(person: Person, sinceIso: string): Promise<MissRow[]>;
@@ -94,10 +97,6 @@ function err(code: keyof typeof ERRORS): Response {
 
 function describe(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
-}
-
-function roomsOf(links: readonly string[]): Set<string> {
-  return new Set(links.map((l) => parseInviteLink(l)?.room).filter((r): r is string => r !== undefined));
 }
 
 async function jobMisses(
@@ -176,7 +175,7 @@ async function list(deps: MissedDeps, person: Person): Promise<Response> {
   }
   const nowMs = deps.now();
   const since = new Date(nowMs - LOOKBACK_MS).toISOString();
-  const rooms = roomsOf(await deps.recentInviteLinks(person.groupId, since));
+  const rooms = await deps.manualRooms(person.groupId, nowMs);
 
   let run: SnapshotRun | null = null;
   let checked = false;
