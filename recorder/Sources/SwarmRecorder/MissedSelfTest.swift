@@ -32,6 +32,9 @@ final class MissedSelfTest: NSObject, UNUserNotificationCenterDelegate {
         if Bundle.main.bundleIdentifier != nil {
             let center = UNUserNotificationCenter.current()
             center.delegate = self
+            // Прошлый прогон оставил баннеры с теми же id — замена доставленного не показывает его
+            // заново, и прогон видел бы старое. Только свой тестовый бандл, рабочий bumblebee не задет.
+            center.removeAllDeliveredNotifications()
             center.requestAuthorization(options: [.alert, .sound]) { ok, err in
                 print("missed: разрешение на уведомления — \(ok ? "есть" : "НЕТ") \(err.map { "\($0)" } ?? "")")
             }
@@ -42,6 +45,20 @@ final class MissedSelfTest: NSObject, UNUserNotificationCenterDelegate {
         watcher.start()
         watcher.pollNow()
         changed()
+        reportDelivered()
+    }
+
+    /// Что лежит в Центре уведомлений от этого бандла — раз в 15 с. Баннер мог показаться и уйти,
+    /// а доставленное остаётся: по нему видно и появление пропуска, и то, что он погас.
+    private func reportDelivered() {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+            UNUserNotificationCenter.current().getDeliveredNotifications { list in
+                let rows = list.map { "[\($0.request.identifier)] «\($0.request.content.title)» кнопка=\($0.request.content.categoryIdentifier.isEmpty ? "нет" : $0.request.content.categoryIdentifier)" }
+                print("missed: в Центре уведомлений \(list.count): \(rows.joined(separator: "; "))")
+            }
+            self?.reportDelivered()
+        }
     }
 
     private func changed() {
