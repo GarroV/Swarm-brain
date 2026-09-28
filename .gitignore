@@ -31,5 +31,7 @@ bot/coverage/
 .coverage-server/
 
 # Машинные отчёты прогона проверок (scripts/check) — артефакт, не код
-# (покрывает reports/check.xml, reports/check-server.xml, reports/lcov-*.info)
-reports/
+# (покрывает reports/check.xml, reports/check-server.xml, reports/lcov-*.info). Исключение —
+# базы относительного порога покрытия scriba: их поднимает приёмка, и они версионируются.
+reports/*
+!reports/coverage-baseline-*.txt

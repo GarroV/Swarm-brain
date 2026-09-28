@@ -85,9 +85,9 @@ await import("./index.ts");
 denoAny.serve = realServe;
 for (const [k, v] of envBefore) v === undefined ? Deno.env.delete(k) : Deno.env.set(k, v);
 
-function meetingNow(extra: Record<string, unknown>) {
-  const start = new Date(Date.now() - 60_000).toISOString();
-  const end = new Date(Date.now() + 30 * 60_000).toISOString();
+function meetingNow(extra: Record<string, unknown>, startInMin = -1, lastsMin = 31) {
+  const start = new Date(Date.now() + startInMin * 60_000).toISOString();
+  const end = new Date(Date.now() + (startInMin + lastsMin) * 60_000).toISOString();
   return {
     id: "e1",
     summary: "Планёрка",
@@ -98,14 +98,17 @@ function meetingNow(extra: Record<string, unknown>) {
 }
 
 /** Ровно то, что эндпоинт отдаёт наружу: причина про встречу — сверху, про ссылку — внутри meeting. */
+interface Meeting {
+  identity_kind?: string;
+  identity_key?: string;
+  title?: string | null;
+  join_url: string | null;
+  platform: string | null;
+  reason?: string;
+}
 interface Answer {
-  meeting?: {
-    identity_kind?: string;
-    identity_key?: string;
-    join_url: string | null;
-    platform: string | null;
-    reason?: string;
-  } | null;
+  meetings?: Meeting[];
+  meeting?: Meeting | null;
   reason?: string;
   error?: string;
 }
@@ -143,7 +146,7 @@ Deno.test("встреча со ссылкой — в ответе ссылка �
 Deno.test("ключ встречи тот же, по которому meeting-claim ищет её в календаре", async () => {
   googleConnected = true;
   tokenExchangeOk = true;
-  const ev = meetingNow({ iCalUID: "standup@google.com" });
+  const ev = meetingNow({ iCalUID: "standup@google.com", hangoutLink: "https://meet.google.com/abc-defg-hij" });
   calendarItems = [ev];
 
   const { body } = await call();
@@ -168,14 +171,81 @@ Deno.test("ссылку положили в описание — эндпоин�
   assertEquals(body.meeting?.platform, "kontur");
 });
 
-Deno.test("встреча без ссылки — в ответе явная причина, а не молчаливый null", async () => {
-  calendarItems = [meetingNow({ location: "Переговорка 3, второй этаж" })];
+Deno.test("событие без ссылки на созвон — не встреча для капсулы (D026)", async () => {
+  calendarItems = [meetingNow({ summary: "слот под встречу IMF BD", location: "Переговорка 3, второй этаж" })];
 
   const { body } = await call();
 
-  assertEquals(body.meeting?.join_url, null);
-  assertEquals(body.meeting?.platform, null);
-  assertEquals(body.meeting?.reason, "no_conference_link");
+  assertEquals(body.meetings, []);
+  assertEquals(body.meeting, null);
+  assertEquals(body.reason, "no_ongoing_event");
+});
+
+Deno.test("ссылка незнакомой площадки созвоном не считается (D026)", async () => {
+  calendarItems = [meetingNow({ description: "Повестка: https://docs.google.com/document/d/1" })];
+
+  const { body } = await call();
+
+  assertEquals(body.meetings, []);
+  assertEquals(body.meeting, null);
+});
+
+Deno.test("пересекающиеся созвоны — все списком, лучший первым, заглушка отсеяна (D027)", async () => {
+  const me = (responseStatus: string) => [{ email: "me@x.test", self: true, responseStatus }];
+  calendarItems = [
+    meetingNow(
+      {
+        id: "allhands",
+        summary: "All hands",
+        hangoutLink: "https://meet.google.com/aaa-bbbb-ccc",
+        attendees: me("tentative"),
+      },
+      -20,
+      60,
+    ),
+    meetingNow({ id: "slot", summary: "слот под встречу", attendees: me("accepted") }, -5, 30),
+    meetingNow(
+      { id: "partner", summary: "Partner call", location: "https://ktalk.ru/partner", attendees: me("accepted") },
+      -2,
+      30,
+    ),
+  ];
+
+  const { body } = await call();
+
+  assertEquals(body.meetings?.map((m) => [m.title, m.join_url, m.platform]), [
+    ["Partner call", "https://ktalk.ru/partner", "kontur"],
+    ["All hands", "https://meet.google.com/aaa-bbbb-ccc", "meet"],
+  ]);
+  // Старое поле — ровно первый из списка: раскатанный рекордер видит лучший созвон, а не заглушку.
+  assertEquals(body.meeting, body.meetings?.[0]);
+  assertEquals(body.meetings?.every((m) => m.reason === undefined), true);
+});
+
+Deno.test("идущая заглушка без ссылки не заслоняет созвон, который вот-вот начнётся", async () => {
+  calendarItems = [
+    meetingNow({ id: "slot", summary: "Фокус-время" }, -30, 60),
+    meetingNow({ id: "soon", summary: "Weekly sync", hangoutLink: "https://meet.google.com/abc-defg-hij" }, 3, 30),
+  ];
+
+  const { body } = await call();
+
+  assertEquals(body.meetings?.map((m) => m.title), ["Weekly sync"]);
+  assertEquals(body.meeting?.title, "Weekly sync");
+});
+
+Deno.test("ссылка на карту в месте проведения не заслоняет Толк из описания", async () => {
+  calendarItems = [
+    meetingNow({
+      location: "Офис https://maps.google.com/?q=office",
+      description: "Звонок: https://ktalk.ru/weekly-42",
+    }),
+  ];
+
+  const { body } = await call();
+
+  assertEquals(body.meeting?.join_url, "https://ktalk.ru/weekly-42");
+  assertEquals(body.meeting?.platform, "kontur");
 });
 
 Deno.test("встречи нет — причина про встречу, а не про ссылку", async () => {
@@ -183,6 +253,7 @@ Deno.test("встречи нет — причина про встречу, а н
 
   const { body } = await call();
 
+  assertEquals(body.meetings, []);
   assertEquals(body.meeting, null);
   assertEquals(body.reason, "no_ongoing_event");
 });

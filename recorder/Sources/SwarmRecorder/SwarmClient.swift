@@ -142,18 +142,25 @@ struct SwarmClient {
         return (resp as? HTTPURLResponse)?.statusCode ?? 0
     }
 
-    // GET /meeting-current — идущая/ближайшая встреча из Google Calendar (на сервере).
-    // nil, если Google не подключён / событий нет / сетевой сбой.
-    // Результат: встреча (или nil) + флаг «Google-токен сдох» (reason=token_refresh_failed).
-    // tokenDead=true ТОЛЬКО когда был подключён и refresh не прошёл (не путать с
-    // google_not_connected — тогда не дёргаем, юзер просто не подключал). Молчаливый отказ = плохо.
-    struct MeetingLookup { let meeting: MeetingIdentity.Info?; let tokenDead: Bool }
+    // GET /meeting-current — идущие/ближайшие созвоны из Google Calendar (на сервере).
+    // Пусто, если Google не подключён / созвонов нет / сетевой сбой.
+    // Результат: созвоны списком (D027: пересекающиеся — все, лучший первым) + флаг «Google-токен
+    // сдох» (reason=token_refresh_failed). tokenDead=true ТОЛЬКО когда был подключён и refresh не
+    // прошёл (не путать с google_not_connected — тогда не дёргаем, юзер просто не подключал).
+    // Только события со ссылкой (D026): сервер других не шлёт, а старый сервер (одно поле `meeting`,
+    // возможно без ссылки) отсекается здесь же — капсула не всплывает на слот без созвона.
+    struct MeetingLookup {
+        let meetings: [MeetingIdentity.Info]
+        let tokenDead: Bool
+        /// Лучший из созвонов — там, где нужен один (конец записи по календарю, присутствие).
+        var meeting: MeetingIdentity.Info? { meetings.first }
+    }
     func currentMeeting() async throws -> MeetingLookup {
         var req = URLRequest(url: url("/meeting-current"))
         authed(&req)
         let (data, resp) = try await Self.session.data(for: req)
         guard (200...299).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else {
-            return MeetingLookup(meeting: nil, tokenDead: false)
+            return MeetingLookup(meetings: [], tokenDead: false)
         }
         struct M: Decodable {
             let identityKey: String
@@ -163,15 +170,18 @@ struct SwarmClient {
             let endedAt: String?
             let joinUrl: String?
         }
-        struct Resp: Decodable { let meeting: M?; let reason: String? }
+        struct Resp: Decodable { let meetings: [M]?; let meeting: M?; let reason: String? }
         let r = try decoder.decode(Resp.self, from: data)
         let dead = (r.reason == "token_refresh_failed")
-        guard let m = r.meeting else { return MeetingLookup(meeting: nil, tokenDead: dead) }
-        let join = JoinLink.safeURL(m.joinUrl)   // только https, см. RecorderKit/JoinLink
-        let info = MeetingIdentity.Info(kind: .calendar, key: m.identityKey, title: m.title,
+        // Новый сервер — список; раскатанный до D027 — одно поле.
+        let raw = r.meetings ?? (r.meeting.map { [$0] } ?? [])
+        let meetings: [MeetingIdentity.Info] = raw.compactMap { m in
+            guard let join = JoinLink.safeURL(m.joinUrl) else { return nil }   // только https, см. RecorderKit/JoinLink
+            return MeetingIdentity.Info(kind: .calendar, key: m.identityKey, title: m.title,
                                         attendees: m.attendees ?? [], startISO: m.startedAt, endISO: m.endedAt,
                                         joinURL: join)
-        return MeetingLookup(meeting: info, tokenDead: false)
+        }
+        return MeetingLookup(meetings: meetings, tokenDead: dead && meetings.isEmpty)
     }
 
     // GET /meeting-missed — встречи, на которые бот не пошёл или не дошёл (T162, D022). Сервер в
