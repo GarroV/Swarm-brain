@@ -3,14 +3,15 @@
 // meeting-notice/, решение «отправлять или хватит» — функция базы meeting_notice_reserve.
 //
 // Почему блок вообще есть: первый принцип проекта — «громкий отказ важнее тихой работы».
-// scriba, который не смог записать и промолчал, хуже, чем его отсутствие: человек узнаёт об
+// Бот, который не смог записать и промолчал, хуже, чем его отсутствие: человек узнаёт об
 // этом через сутки по пустой очереди вычитки, когда записать уже нечего.
 //
 // ⚠️ Потолок повторов считает БАЗА по журналу отправок (таблица meeting_notices) одной
 // транзакцией под блокировкой получателя, а не бот по присланному числу. Прежняя редакция брала номер попытки из тела запроса — это был не
 // потолок, а просьба: зацикленный контейнер шлёт «попытка 1» сколько угодно раз, и человек
 // получает поток сообщений в личку. Поэтому `attempt` в запросе теперь отвергается.
-import { DETAIL_LABEL, NO_TITLE, NOTICE_TEXTS } from "./notice-texts.ts";
+import { BOT_PROFILE } from "./bot-profile.ts";
+import { DETAIL_LABEL, fillBotTemplate, NO_TITLE, NOTICE_TEXTS } from "./bot-notice-texts.ts";
 
 /** Языки продукта. EN приоритетный: новый текст заводится на нём и на русском сразу. */
 export const NOTICE_LANGS = ["en", "ru"] as const;
@@ -38,12 +39,12 @@ export const NOTICE_KINDS = [
 ] as const;
 export type NoticeKind = (typeof NOTICE_KINDS)[number];
 
-/** Сколько бот стоит у двери до первого сигнала. */
-export const DOOR_WAIT_SECONDS = 90;
+/** Сколько бот стоит у двери до первого сигнала. Значение — в профиле бота. */
+export const DOOR_WAIT_SECONDS = BOT_PROFILE.door.waitSeconds;
 /** Пауза до единственного повтора. */
-export const DOOR_REPEAT_SECONDS = 180;
+export const DOOR_REPEAT_SECONDS = BOT_PROFILE.door.repeatSeconds;
 /** Первое уведомление + ровно один повтор. Третьего не существует. */
-export const DOOR_MAX_ATTEMPTS = 2;
+export const DOOR_MAX_ATTEMPTS = BOT_PROFILE.door.maxAttempts;
 /** Остальные виды отказа: по одному на встречу. Повторить «звука нет» нечем — это уже сказано. */
 export const MAX_PER_KIND = 1;
 /** Потолок потока на одну встречу, поверх поштучных: больше — это сбой бота, а не новости. */
@@ -227,7 +228,7 @@ function textKey(kind: NoticeKind, attempt: number): keyof typeof NOTICE_TEXTS {
 export function renderNotice(notice: ParsedNotice, title: string | null, attempt: number): string {
   const template = NOTICE_TEXTS[textKey(notice.kind, attempt)][notice.lang];
   const shown = escapeHtml(title ?? NO_TITLE[notice.lang]);
-  const body = template.replaceAll("{title}", shown).replace(/[ \t]+\n/g, "\n").trim();
+  const body = fillBotTemplate(template).replaceAll("{title}", shown).replace(/[ \t]+\n/g, "\n").trim();
   if (notice.detail === null) return body;
   return `${body}\n\n${DETAIL_LABEL[notice.lang]} <code>${escapeHtml(notice.detail)}</code>`;
 }

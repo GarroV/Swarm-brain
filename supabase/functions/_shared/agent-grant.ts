@@ -11,12 +11,13 @@
 // Вход по пропуску — _shared/agent-auth.ts (resolveActingIdentity): личность и пропуск приходят в
 // дверь вместе, и каждая дверь сверяет встречу запроса с пропуском через assertGrantMeeting.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { BOT_PROFILE } from "./bot-profile.ts";
 
 /**
- * Сколько живёт пропуск. Встреча бота длится не дольше SCRIBA_MAX_MEETING_MINUTES (240 мин), после
- * неё — досылка частей. Шесть часов покрывают и то и другое; дольше пропуску жить незачем.
+ * Сколько живёт пропуск: потолок длины встречи бота плюс досылка частей после неё (оба — в
+ * профиле бота; сейчас 240 + 120 мин = шесть часов). Дольше пропуску жить незачем.
  */
-export const GRANT_TTL_MS = 6 * 60 * 60_000;
+export const GRANT_TTL_MS = (BOT_PROFILE.maxMeetingMinutes + BOT_PROFILE.uploadTailMinutes) * 60_000;
 
 /** Префикс пропуска: по нему человек в логах отличает пропуск от токена агента. */
 const GRANT_PREFIX = "sgr_";

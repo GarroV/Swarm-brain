@@ -20,7 +20,11 @@
 // Сколько раз. Пропуск встречи — один на встречу и причину (ключ = ключ встречи). Причина человека
 // встречи не имеет — один в сутки команды (ключ `autojoin:<дата по Белграду>`).
 import type { DispatchJob, DispatchSkip } from "./calendar-dispatch.ts";
-import { NO_TITLE } from "./notice-texts.ts";
+import { NO_TITLE } from "./bot-notice-texts.ts";
+import { BOT_PROFILE } from "./bot-profile.ts";
+
+/** Имя бота в текстах о пропусках — из профиля. */
+const BOT = BOT_PROFILE.name;
 
 /** После начала встречи: задания всё нет или его никто не забрал — служба автозапуска не отозвалась. */
 export const PICKUP_GRACE_MS = 3 * 60_000;
@@ -207,36 +211,36 @@ export function missMessage(miss: MissRecord): Record<Lang, string> {
       return {
         en: `"${t.en}" is on ${
           p ?? "another service"
-        }, and scriba only joins Google Meet — it won't come to this meeting.`,
+        }, and ${BOT} only joins Google Meet — it won't come to this meeting.`,
         ru: `«${t.ru}» идёт в ${
           p ?? "другом сервисе"
-        }, а scriba ходит только в Google Meet — на эту встречу он не придёт.`,
+        }, а ${BOT} ходит только в Google Meet — на эту встречу он не придёт.`,
       };
     }
     case "unrecognized_link":
       return {
-        en: `"${t.en}": scriba couldn't read the Google Meet link in the calendar event, so it won't join on its own.`,
-        ru: `«${t.ru}»: scriba не разобрал ссылку на Google Meet в событии календаря и сам не придёт.`,
+        en: `"${t.en}": ${BOT} couldn't read the Google Meet link in the calendar event, so it won't join on its own.`,
+        ru: `«${t.ru}»: ${BOT} не разобрал ссылку на Google Meet в событии календаря и сам не придёт.`,
       };
     case "calendar_not_connected":
       return {
-        en: "scriba autostart is on, but no Google Calendar is connected — the bot can't see your meetings.",
-        ru: "Автозапуск scriba включён, но Google-календарь не подключён — бот не видит ваших встреч.",
+        en: `${BOT} autostart is on, but no Google Calendar is connected — the bot can't see your meetings.`,
+        ru: `Автозапуск ${BOT} включён, но Google-календарь не подключён — бот не видит ваших встреч.`,
       };
     case "calendar_token_dead":
       return {
-        en: "scriba lost access to your Google Calendar — reconnect it; until then the bot won't come on its own.",
-        ru: "scriba потерял доступ к вашему Google-календарю — переподключите его, до тех пор бот сам не придёт.",
+        en: `${BOT} lost access to your Google Calendar — reconnect it; until then the bot won't come on its own.`,
+        ru: `${BOT} потерял доступ к вашему Google-календарю — переподключите его, до тех пор бот сам не придёт.`,
       };
     case "not_picked_up":
       return {
-        en: `"${t.en}" has started, but scriba's autostart didn't pick it up — the bot isn't coming.`,
-        ru: `«${t.ru}» уже идёт, а автозапуск scriba её не подхватил — бот не придёт.`,
+        en: `"${t.en}" has started, but ${BOT}'s autostart didn't pick it up — the bot isn't coming.`,
+        ru: `«${t.ru}» уже идёт, а автозапуск ${BOT} её не подхватил — бот не придёт.`,
       };
     case "not_arrived":
       return {
-        en: `"${t.en}": scriba was on its way but never made it into the call — the meeting isn't being recorded.`,
-        ru: `«${t.ru}»: scriba выехал на встречу, но в звонок так и не попал — встреча не записывается.`,
+        en: `"${t.en}": ${BOT} was on its way but never made it into the call — the meeting isn't being recorded.`,
+        ru: `«${t.ru}»: ${BOT} выехал на встречу, но в звонок так и не попал — встреча не записывается.`,
       };
   }
 }

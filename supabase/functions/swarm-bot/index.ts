@@ -177,7 +177,7 @@ async function sendRecorderToken(chatId: number, userId: number): Promise<void> 
 //  (2) ПРИЗРАКИ: summary_status=null без transcript/process_state — claim был, а ingest не отработал
 //      (напр. совсем пустая запись: ни mic, ни system). UI поллит «готовятся» вечно. Старые такие
 //      метим 'failed' (без Telegram — обработка даже не начиналась), чтобы UI перестал ждать.
-//      Кроме встречи, которую ещё пишет бот scriba: он заявляет её до захода (#549).
+//      Кроме встречи, которую ещё пишет бот встреч: он заявляет её до захода (#549).
 // Фолбэк на updated_at — для строк без heartbeat (легаси). Идемпотентно.
 async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
   const cutoffMs = Date.now() - staleMinutes * 60_000;
@@ -218,7 +218,7 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
   }
 
   // (2) Призраки: claim был, ingest не отработал. Метим 'failed' (без уведомления), чтобы UI
-  // перестал поллить; встречу, которую ещё пишет бот scriba, не трогаем (#549). Решение —
+  // перестал поллить; встречу, которую ещё пишет бот встреч, не трогаем (#549). Решение —
   // lib/ghost-sweep.ts. Сбой чтения не должен съесть сторож оборванной записи, идущий следом.
   try {
     swept += await sweepGhostMeetings({ store: makeGhostStore(supabase), nowMs: Date.now(), staleMinutes });
@@ -234,7 +234,7 @@ async function sweepStuckMeetings(staleMinutes = 15): Promise<number> {
 // Здесь — только сигналы, где молчание = реальная проблема. Данные пишет meeting-heartbeat.
 async function checkRecorderHealth(): Promise<void> {
   // (1) Оборванная запись: писатель вёл запись (recording=true) и замолчал. Писателей двое —
-  //     рекордер человека (allowed_users) и бот scriba (meetings.agent_last_*, D018); решение и
+  //     рекордер человека (allowed_users) и бот встреч (meetings.agent_last_*, D018); решение и
   //     адресат — lib/recording-watchdog.ts. Сбой чтения не должен съесть сигнал (2).
   try {
     const r = await checkRecordingWatchdog({

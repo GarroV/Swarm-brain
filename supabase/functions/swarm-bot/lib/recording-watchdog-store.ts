@@ -1,6 +1,6 @@
 // Реализация WatchdogStore на supabase-js (service_role). Решений здесь нет — только запросы;
 // «жив/мёртв» и адресата решает recording-watchdog.ts. Держит этот файл живой смоук
-// scripts/scriba-watchdog-smoke.ts против настоящего Postgres, а не юнит-тест с подделкой.
+// смоук сторожей в scripts/ (…-watchdog-smoke.ts) против настоящего Postgres, а не юнит-тест с подделкой.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { AgentMeetingBeat, HumanBeat, WatchdogStore } from "./recording-watchdog.ts";
 
