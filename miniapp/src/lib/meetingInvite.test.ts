@@ -73,3 +73,14 @@ Deno.test("помним не больше трёх", () => {
   for (const id of ["1", "2", "3", "4"]) list = upsertInvite(list, invite({ id }));
   assertEquals(list.map((x) => x.id), ["4", "3", "2"]);
 });
+
+Deno.test("коллега уже позвал бота в этот звонок — свой текст, а не общее «не удалось»", () => {
+  const code = parseInviteErrorCode({ error: "x", code: "already_invited" });
+  assertEquals(code, "already_invited");
+  const general = inviteErrorText(null, (_ru, en) => en);
+  const en = inviteErrorText(code, (_ru, en) => en);
+  const ru = inviteErrorText(code, (ru) => ru);
+  assertEquals(en === general, false);
+  assertEquals(en.includes("colleague"), true);
+  assertEquals(ru.includes("коллега"), true);
+});
