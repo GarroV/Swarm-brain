@@ -23,7 +23,11 @@
  *                                 громкий отказ человеку, контейнер не поднимается;
  *   SCRIBA_CONTAINER_MEMORY_MB  — потолок памяти контейнера встречи, МБ (по умолчанию 2048);
  *   SCRIBA_CONTAINER_CPUS       — потолок процессора контейнера, ядер (по умолчанию 2);
- *   SCRIBA_CONTAINER_PIDS       — потолок процессов и потоков контейнера (по умолчанию 1024).
+ *   SCRIBA_CONTAINER_PIDS       — потолок процессов и потоков контейнера (по умолчанию 1024);
+ *   SCRIBA_GOOGLE_STATE_FILE    — сохранённый вход аккаунта бота (storageState, T175); задан —
+ *                                 обязателен и SCRIBA_ACCOUNT_COPIES_DIR. Файла нет — гостем;
+ *   SCRIBA_ACCOUNT_COPIES_DIR   — каталог копий входа, путь как у демона Docker (приём поводка):
+ *                                 в контейнер монтируется своя копия одним файлом на чтение.
  *
  * Кривое окружение — отказ на старте с именем переменной: служба, которая «работает» и никого
  * не зовёт, — ровно та тишина, против которой она заведена.
@@ -33,6 +37,7 @@ import {
   DEFAULT_CONTAINER_LIMITS,
   DEFAULT_MAX_MEETINGS,
 } from "../container/isolation.ts";
+import { type AccountCopies, FileAccountCopies } from "./account.ts";
 import { DockerodeEngine } from "./docker-engine.ts";
 import { calendarTriggerFor } from "./calendar-service.ts";
 import { inviteTriggerFor } from "./invite-service.ts";
@@ -94,6 +99,23 @@ function containerLimits(environment: Environment): ContainerLimits {
   };
 }
 
+/**
+ * Вход аккаунта бота: обе переменные вместе или ни одной. Половина — ошибка настройки стенда,
+ * и молча пойти гостем значило бы спрятать её за «Meet не пустил».
+ */
+function accountCopies(environment: Environment): AccountCopies | undefined {
+  const stateFile = nonEmpty(environment.SCRIBA_GOOGLE_STATE_FILE);
+  const copiesDirectory = nonEmpty(environment.SCRIBA_ACCOUNT_COPIES_DIR);
+  if (stateFile === undefined && copiesDirectory === undefined) {
+    log("вход аккаунта бота не настроен — бот ходит на встречи гостем");
+    return undefined;
+  }
+  if (stateFile === undefined || copiesDirectory === undefined) {
+    throw new Error("SCRIBA_GOOGLE_STATE_FILE и SCRIBA_ACCOUNT_COPIES_DIR задаются только вместе");
+  }
+  return new FileAccountCopies({ stateFile, copiesDirectory, log });
+}
+
 async function main(environment: Environment): Promise<void> {
   const swarmUrl = required(environment, "SCRIBA_SWARM_URL");
   const token = required(environment, "SCRIBA_BOT_TOKEN");
@@ -102,6 +124,7 @@ async function main(environment: Environment): Promise<void> {
   const notifierFor = (onBehalfOf: number, grant: string): Notifier =>
     new JournaledNotifier(new NoticeClient({ baseUrl: swarmUrl, token: grant, onBehalfOf }), log);
 
+  const account = accountCopies(environment);
   const orchestrator = new Orchestrator({
     engine: new DockerodeEngine(),
     project: nonEmpty(environment.SCRIBA_PROJECT) ?? "scriba",
@@ -115,6 +138,7 @@ async function main(environment: Environment): Promise<void> {
     extraEnv: extraEnvironment(environment),
     maxMeetings: positive(environment, "SCRIBA_MAX_MEETINGS", DEFAULT_MAX_MEETINGS),
     limits: containerLimits(environment),
+    ...(account !== undefined && { account }),
   });
   const intervalMs = positive(environment, "SCRIBA_INVITE_POLL_MS", 5000);
   const trigger = inviteTriggerFor({

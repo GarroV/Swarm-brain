@@ -118,6 +118,7 @@ import {
 import { handleAdminRoutes } from "./admin.ts";
 import { apiErr, corsHeaders, json, parseListLimit } from "./http.ts";
 import { handleMeetingInviteRoutes } from "./meeting-invites.ts";
+import { DEMO_GROUP_ID, isDemoSession } from "../_shared/demo-session.ts";
 import { handleAutojoinRoutes, makeAutojoinStore } from "./autojoin.ts";
 import { handleTaskLabelRoutes } from "./task-labels.ts";
 import { handleTaskCommentRoutes } from "./task-comments.ts";
@@ -174,8 +175,8 @@ const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
 const MAX_AGE = parseInt(Deno.env.get("INITDATA_MAX_AGE") ?? "86400", 10);
 const ADMIN_USER_ID = 744230399; // см. lib/supabase.ts swarm-bot — единый суперадмин
 // Demo-сессия для показа заказчику (секретная ссылка → JWT с этим telegram_id). Жёстко
-// изолирована в воркспейс 'demo': не админ, не видит рабочие данные, не минтит токены.
-const DEMO_USER_ID = 900000001;
+// изолирована в синтетический воркспейс: не админ, не видит рабочие данные, не минтит токены.
+// Правило «это демо» — одно на все функции: _shared/demo-session.ts.
 const WEB_JWT_SECRET = Deno.env.get("WEB_JWT_SECRET"); // подпись веб-сессий (Login Widget, B+)
 
 const supabase = createClient(
@@ -580,10 +581,8 @@ Deno.serve(async (req: Request) => {
   // Demo-сессия (секретная ссылка, telegram_id === DEMO_USER_ID): жёсткая изоляция.
   // Группа форсится в 'demo' (НЕ из БД), админ-права запрещены. Барьер «нет дыр в рабочие»:
   // все data-запросы фильтруются по этому group_id, admin-роуты недоступны (isAdmin=false).
-  const isDemo = telegram_id === DEMO_USER_ID;
-  const groupId = isDemo
-    ? "demo"
-    : (userRow as { group_id: string | null }).group_id;
+  const isDemo = isDemoSession(telegram_id);
+  const groupId = isDemo ? DEMO_GROUP_ID : (userRow as { group_id: string | null }).group_id;
   if (!groupId) {
     return apiErr(403, "No workspace assigned", origin);
   }

@@ -47,6 +47,7 @@ declare const document: {
   querySelectorAll(selector: string): Iterable<DomElement>;
 };
 declare function getComputedStyle(element: DomElement): DomStyle;
+declare const location: { readonly hostname: string };
 
 /**
 Порядок важен: локаленезависимое — первым, английские подписи — запасными.
@@ -117,6 +118,11 @@ export interface SnapshotCss {
   readonly nameInput: readonly string[];
   readonly joinCta: readonly string[];
   readonly presentControl: readonly string[];
+  /**
+   * Приглашение войти: ссылки на страницу входа Google. Кнопку с текстом «Sign in» скрапер
+   * ищет сам — `:has-text()` внутри страницы не работает (см. выше).
+   */
+  readonly signInPrompt: readonly string[];
   readonly textLimit: number;
 }
 
@@ -132,6 +138,11 @@ export const SNAPSHOT_CSS: SnapshotCss = {
     'button[aria-label*="Present now"]',
     'button[aria-label*="Share screen"]',
     'button[aria-label*="Present"]',
+  ],
+  signInPrompt: [
+    'a[href*="accounts.google.com/ServiceLogin"]',
+    'a[href*="accounts.google.com/signin"]',
+    'a[href*="accounts.google.com/v3/signin"]',
   ],
   textLimit: SNAPSHOT_TEXT_LIMIT,
 };
@@ -222,8 +233,14 @@ export function collectMeetSnapshot(css: SnapshotCss): MeetSnapshot {
     },
   );
 
+  const hasSignInButton = [...document.querySelectorAll('a, button, [role="button"]')].some(
+    (element) => element.textContent?.trim().toLowerCase() === "sign in" && isVisible(element),
+  );
+
   return {
     text: (document.body?.innerText ?? "").slice(0, css.textLimit),
+    host: location.hostname,
+    hasSignInPrompt: hasSignInButton || hasAnyVisible(css.signInPrompt),
     hasNameInput: hasAnyVisible(css.nameInput),
     hasJoinCta: hasAnyVisible(css.joinCta),
     hasSelfTile: document.querySelector("[data-self-name]") !== null,

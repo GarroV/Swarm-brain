@@ -7,6 +7,7 @@
 //   POST /meeting-invites      { "join_url": "https://meet.google.com/abc-defg-hij" }
 //        201 { invite: InviteView }         — заведено
 //        200 { invite: InviteView }         — та же ссылка уже ждёт бота: отдаём её же, не дубль
+//        409 already_invited                — в эту комнату бота уже позвал коллега: бот один на звонок
 //        400 invalid_link · 400 unsupported_platform (Контур.Толк, Zoom — бот ходит только в Meet)
 //        · 403 demo_not_allowed · 429 too_many_invites
 //   GET  /meeting-invites/:id  200 { invite: InviteView } — только своё; чужое и несуществующее — 404
@@ -50,6 +51,11 @@ const ERRORS = {
     status: 429,
     en: `You already have ${MAX_ACTIVE_INVITES} invites waiting — wait for the bot or try again in a few minutes`,
     ru: `У вас уже ${MAX_ACTIVE_INVITES} приглашения ждут бота — дождитесь его или повторите через несколько минут`,
+  },
+  already_invited: {
+    status: 409,
+    en: "A colleague has already invited the bot to this call — it will join once",
+    ru: "Коллега уже позвал бота на этот звонок — бот придёт один раз",
   },
   not_found: { status: 404, en: "Invite not found", ru: "Приглашение не найдено" },
 } as const;
@@ -97,20 +103,26 @@ async function createInvite(ctx: InviteContext, req: Request): Promise<Response>
 
   const nowMs = Date.now();
   const nowIso = new Date(nowMs).toISOString();
+  // Живые приглашения всего воркспейса, а не только свои: бот на звонок один (D018), и ссылку,
+  // которую уже вставил коллега, второй раз бот не получает (иначе два бота, две встречи, две
+  // расшифровки). Остаётся окно гонки между этим чтением и вставкой — его закрыл бы только
+  // уникальный индекс по живой комнате (это миграция схемы).
   const { data: active, error: listErr } = await ctx.supabase
     .from("meeting_invites")
     .select(COLUMNS)
-    .eq("invited_by", ctx.telegramId)
     .eq("group_id", ctx.groupId)
     .is("used_at", null)
     .gt("expires_at", nowIso);
   if (listErr) return json({ error: `invite lookup failed: ${listErr.message}` }, 500, ctx.origin);
   const rows = (active ?? []) as InviteRow[];
 
-  // Вставил ту же ссылку ещё раз, пока бот не пришёл, — это то же приглашение, а не второе.
   const same = rows.find((r) => parseInviteLink(r.join_url)?.room === link.room);
-  if (same) return json({ invite: view(same, nowMs) }, 200, ctx.origin);
-  if (rows.length >= MAX_ACTIVE_INVITES) return inviteErr("too_many_invites", ctx.origin);
+  // Вставил ту же ссылку ещё раз, пока бот не пришёл, — это то же приглашение, а не второе.
+  if (same && same.invited_by === ctx.telegramId) return json({ invite: view(same, nowMs) }, 200, ctx.origin);
+  // Чужое приглашение не отдаём: читать его (GET /:id) может только позвавший.
+  if (same) return inviteErr("already_invited", ctx.origin);
+  const mine = rows.filter((r) => r.invited_by === ctx.telegramId);
+  if (mine.length >= MAX_ACTIVE_INVITES) return inviteErr("too_many_invites", ctx.origin);
 
   const { data, error } = await ctx.supabase
     .from("meeting_invites")

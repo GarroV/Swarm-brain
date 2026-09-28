@@ -21,9 +21,12 @@
  *   SCRIBA_SMOKE_PROJECT  — имя стенда, по умолчанию scriba-orchestrator;
  *   SCRIBA_SMOKE_IMAGE    — образ, по умолчанию scriba-orchestrator:dev;
  *   SCRIBA_SMOKE_PORT     — порт двойника сервера, по умолчанию 4361;
- *   SCRIBA_SMOKE_ONLY     — через запятую: какие сценарии гнать (по умолчанию все).
+ *   SCRIBA_SMOKE_ONLY     — через запятую: какие сценарии гнать (по умолчанию все);
+ *   SCRIBA_SMOKE_LISTEN   — адрес, на котором двойник сервера ждёт контейнеры (по умолчанию
+ *                           127.0.0.1; смоук, запущенный сам в контейнере, — 0.0.0.0).
  */
 import { spawn } from "node:child_process";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -31,6 +34,7 @@ import { fileURLToPath } from "node:url";
 import Docker from "dockerode";
 
 import { startFakeSwarm } from "../swarm-client/testing/fake-swarm.ts";
+import { ACCOUNT_STATE_TARGET, FileAccountCopies } from "./account.ts";
 import { DockerodeEngine } from "./docker-engine.ts";
 import { NoticeClient } from "./notice-client.ts";
 import { JournaledNotifier } from "./notices.ts";
@@ -41,6 +45,7 @@ const PROJECT = process.env.SCRIBA_SMOKE_PROJECT ?? "scriba-orchestrator";
 const IMAGE = process.env.SCRIBA_SMOKE_IMAGE ?? "scriba-orchestrator:dev";
 const PORT = Number(process.env.SCRIBA_SMOKE_PORT ?? "4361");
 const STATE = process.env.SCRIBA_SMOKE_STATE ?? "";
+const LISTEN_HOST = process.env.SCRIBA_SMOKE_LISTEN ?? "127.0.0.1";
 const TOKEN = "smoke-bot-token";
 const PERSON = 744_230_399;
 const MEET = "https://meet.google.com/abc-defg-hij";
@@ -50,6 +55,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHORT_PAGE = "/app/src/orchestrator/fixtures/meeting.html";
 const LONG_PAGE = "/app/src/orchestrator/fixtures/meeting-long.html";
 const DOOR_PAGE = "/app/src/meet-adapter/fixtures/waiting.html";
+const GUEST_LOBBY_PAGE = "/app/src/meet-adapter/fixtures/lobby.html";
 
 const BASE_ENV: Record<string, string> = {
   SCRIBA_ALONE_MS: "6000",
@@ -105,8 +111,14 @@ async function until(ms: number, what: string, isDone: () => Promise<boolean>): 
   throw new Error(`${what}: не дождались за ${String(ms / 1000)} с`);
 }
 
-function orchestratorFor(leaseName: string, page: string, isVerbose = true): Orchestrator {
+function orchestratorFor(
+  leaseName: string,
+  page: string,
+  isVerbose = true,
+  account?: FileAccountCopies,
+): Orchestrator {
   return new Orchestrator({
+    ...(account !== undefined && { account }),
     engine: new DockerodeEngine(),
     project: PROJECT,
     image: IMAGE,
@@ -376,6 +388,63 @@ async function sceneDoor(fake: Fake): Promise<void> {
     );
   } finally {
     orchestrator.close();
+  }
+}
+
+/**
+ * Вход аккаунта бота (T175) на настоящем Docker: копия едет в контейнер одним файлом только на
+ * чтение, контейнер идёт под аккаунтом, а слетевший вход (двойник Meet отдаёт лобби гостя) — это
+ * нотиса account_signin_required, а не стук в дверь гостем. Копия убирается с выходом.
+ */
+async function sceneAccount(fake: Fake): Promise<void> {
+  console.log("\n──── вход аккаунта бота: копия на чтение, слетевший вход — громко, копия убрана");
+  const accountDirectory = path.join(STATE, "account");
+  const copiesDirectory = path.join(STATE, "account-copies");
+  const stateFile = path.join(accountDirectory, "google-state.json");
+  await mkdir(accountDirectory, { recursive: true });
+  const cookie = { name: "SMOKE", value: "not-a-session", domain: ".google.com", path: "/" };
+  const signIn = {
+    cookies: [{ ...cookie, expires: -1, httpOnly: true, secure: true, sameSite: "Lax" }],
+    origins: [],
+  };
+  await writeFile(stateFile, JSON.stringify(signIn), { mode: 0o600 });
+  const account = new FileAccountCopies({ stateFile, copiesDirectory });
+  const orchestrator = orchestratorFor("lease-main", GUEST_LOBBY_PAGE, true, account);
+  await orchestrator.init();
+  try {
+    const id = await orchestrator.startForMeeting(MEET, "meet", PERSON);
+    const info = await new Docker().getContainer(id).inspect();
+    const mount = info.Mounts.find((item) => item.Destination === ACCOUNT_STATE_TARGET);
+    check(
+      mount !== undefined && !mount.RW && mount.Source.endsWith(".json"),
+      "копия входа смонтирована одним файлом только на чтение",
+      JSON.stringify(mount),
+    );
+    check(
+      info.Mounts.every((item) => !item.Source.endsWith("/account")),
+      "каталог состояния с самим входом в контейнер не смонтирован",
+    );
+    check(
+      info.Config.Env.includes(`SCRIBA_GOOGLE_STATE=${ACCOUNT_STATE_TARGET}`),
+      "контейнер знает, где лежит вход",
+    );
+    const exit = await within(120_000, "уход от двери", orchestrator.whenExited(id));
+    check(
+      exit?.kind === "finished" && exit.outcome === "account_signin_required",
+      "исход account_signin_required",
+      JSON.stringify(exit),
+    );
+    check(
+      noticesOf(fake, "account_signin_required").length === 1,
+      "человеку ушла одна нотиса account_signin_required",
+    );
+    check(noticesOf(fake, "door_waiting").length === 0, "гостем в дверь не стучались");
+    const leftCopies = await readdir(copiesDirectory);
+    check(leftCopies.length === 0, "копия входа убрана после выхода", leftCopies.join(", "));
+  } finally {
+    orchestrator.close();
+    await rm(accountDirectory, { recursive: true, force: true });
+    await rm(copiesDirectory, { recursive: true, force: true });
   }
 }
 
@@ -655,6 +724,7 @@ const SCENES: Record<string, (fake: Fake) => Promise<void>> = {
   invite: sceneInvite,
   kontur: sceneKontur,
   race: sceneRace,
+  account: sceneAccount,
 };
 
 async function suite(): Promise<number> {
@@ -672,7 +742,7 @@ async function suite(): Promise<number> {
   const selected = process.env.SCRIBA_SMOKE_ONLY ?? "";
   const only = selected === "" ? Object.keys(SCENES) : selected.split(",");
   const swarm = await startFakeSwarm({ token: TOKEN, onBehalfOf: PERSON, port: PORT + 1 });
-  const noticeProxy = await startNoticeProxy(PORT, PORT + 1);
+  const noticeProxy = await startNoticeProxy(PORT, PORT + 1, LISTEN_HOST);
   const fake: Fake = Object.assign(swarm, { noticeProxy });
   try {
     for (const name of only) {

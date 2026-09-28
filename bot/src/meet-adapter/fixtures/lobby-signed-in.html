@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Meet - signed-in lobby</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: sans-serif;
+        background: #ffffff;
+      }
+      main {
+        padding: 24px;
+      }
+      button {
+        font-size: 14px;
+        padding: 8px 16px;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        margin: 16px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Лобби под аккаунтом (T175): поля имени нет, имя и адрес — из профиля Google. -->
+    <main>
+      <h1>Ready to join?</h1>
+      <p>Scriba Notetaker</p>
+      <p>bot-account@example.com</p>
+      <a href="#">Switch account</a>
+      <div class="controls">
+        <button aria-label="Turn off microphone"><span>Mic</span></button>
+        <button aria-label="Turn off camera"><span>Camera</span></button>
+      </div>
+      <button aria-label="Ask to join"><span>Ask to join</span></button>
+    </main>
+  </body>
+</html>

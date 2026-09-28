@@ -8,7 +8,15 @@
  * функциях рядом и проверены тестами.
  */
 
-export type AdmissionOutcome = "admitted" | "denied" | "timeout" | "captcha";
+/**
+ * `denied` — отказал живой хост; `blocked` — Meet не пустил гостя до лобби, хост заявки не
+ * видел; `unavailable` — страница говорит, что встречи нет или она кончилась. Путать их
+ * нельзя: человеку уходят разные уведомления и разные советы (T173).
+ * `signin_required` — бот идёт под своим аккаунтом Google, а Google вместо встречи просит
+ * войти или подтвердить вход (T175): до двери он не дошёл, чинит это человек, а не хост.
+ */
+export type AdmissionOutcome =
+  "admitted" | "denied" | "blocked" | "unavailable" | "signin_required" | "timeout" | "captcha";
 
 export interface PlatformAdapter {
   join(url: string, displayName: string): Promise<void>;
@@ -64,6 +72,15 @@ export interface MeetSnapshot {
    * каждом обычном входе, поэтому сам факт фрейма капчей не является (грабля из Vexa).
    */
   readonly captchaChallenge: boolean;
+  /**
+  Хост открытой страницы: Google уводит на `accounts.google.com`, когда вход слетел.
+  */
+  readonly host: string;
+  /**
+   * Видимое приглашение войти (ссылка на страницу входа Google или кнопка «Sign in»). Под
+   * сохранённым входом его быть не должно: есть — значит сессия умерла молча.
+   */
+  readonly hasSignInPrompt: boolean;
   readonly tiles: readonly MeetTile[];
   /**
   Число строк в панели участников, если панель открыта.

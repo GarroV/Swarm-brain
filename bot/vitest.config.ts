@@ -32,6 +32,9 @@ export default defineConfig({
         // (invite-trigger, invite-service). Её гоняет живой смоук — сценарии invite, kontur, race.
         "src/orchestrator/orchestrator-main.ts",
         "src/orchestrator/recorder.ts",
+        // Выгрузка входа аккаунта бота (T175): Chromium с профилем окна входа. Правило «есть ли
+        // сессия» — в account.ts под тестами; саму выгрузку проверяет прогон окна входа.
+        "src/orchestrator/login-export.ts",
         "src/orchestrator/docker-engine.ts",
         "src/orchestrator/smoke-orchestrator.ts",
         "src/orchestrator/smoke-notices.ts",

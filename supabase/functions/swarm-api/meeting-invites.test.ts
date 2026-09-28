@@ -154,3 +154,31 @@ Deno.test("БЛОКИРУЮЩИЙ: чтение приглашения — то�
   assertEquals(bad?.status, 404);
   assertEquals(await handleMeetingInviteRoutes(c, get("x"), "/meeting-invites/x/y"), null);
 });
+
+// ── Один бот на звонок (D018): ссылку вставили двое — второго бота не зовём ────────────────────
+
+Deno.test("БЛОКИРУЮЩИЙ: коллега уже позвал бота в эту комнату — 409 already_invited на EN и RU, второе не заводится", async () => {
+  const db = fakeDb([row({ invited_by: 2 })]);
+  const res = await handleMeetingInviteRoutes({ ...ctx(), supabase: db.client }, post(MEET), "/meeting-invites");
+  assertEquals(res?.status, 409);
+  const body = await res!.json();
+  assertEquals(body.code, "already_invited");
+  assertEquals([typeof body.error, typeof body.error_ru], ["string", "string"]);
+  assertEquals(body.invite, undefined, "чужое приглашение не отдаём: читать его позвавший всё равно не может");
+  assertEquals(db.inserted.length, 0);
+});
+
+Deno.test("дубль ищется по всему воркспейсу, а не только среди своих приглашений", async () => {
+  const db = fakeDb([]);
+  await handleMeetingInviteRoutes({ ...ctx(), supabase: db.client }, post(MEET), "/meeting-invites");
+  assertEquals(db.filters.some(([k]) => k === "invited_by"), false);
+  assertEquals(db.filters.some(([k, v]) => k === "group_id" && v === "ws1"), true);
+});
+
+Deno.test("потолок считает только свои: три живых приглашения коллег в другие комнаты — моё 201", async () => {
+  const rooms = ["aaa-bbbb-ccc", "ddd-eeee-fff", "ggg-hhhh-iii"];
+  const db = fakeDb(rooms.map((r) => row({ invited_by: 2, join_url: `https://meet.google.com/${r}` })));
+  const res = await handleMeetingInviteRoutes({ ...ctx(), supabase: db.client }, post(MEET), "/meeting-invites");
+  assertEquals(res?.status, 201);
+  assertEquals(db.inserted.length, 1);
+});

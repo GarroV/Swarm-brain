@@ -23,6 +23,8 @@ const snapshot = (tiles: readonly MeetTile[], panel: number | null = null): Meet
   hasSelfTile: tiles.some((t) => t.self),
   hasPresentControl: true,
   captchaChallenge: false,
+  host: "meet.google.com",
+  hasSignInPrompt: false,
   tiles,
   panelParticipantCount: panel,
 });
