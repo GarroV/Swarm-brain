@@ -39,31 +39,45 @@ ffmpeg, Docker в WSL2.
 
 ## Статус
 
-in_progress · 2026-09-28 · T178 — исходящий трафик контейнера встречи только к Google/Meet и своему Swarm
+ready_for_review · 2026-09-28 · T178 — контейнер встречи выходит наружу только к Google/Meet и своему Swarm
 
 ### Где стоим
 
-Механизм выбран и проверен пробой на MUSPELHEIM (Docker 29.6.1, Docker Desktop/WSL2):
-контейнер в сети Docker `--internal` не имеет маршрута наружу (`ENETUNREACH`) и не
-резолвит внешние имена (`getent hosts example.com` → 2). Значит: у каждой встречи своя
-internal-сеть, в ней единственный сосед — egress-прокси стенда (тот же образ, свой процесс
-`egress-proxy-main.ts`), который пускает CONNECT только по списку. Браузер ходит через
-`--proxy-server`, WebRTC — `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`
-(медиа по TCP/TLS через прокси — Google поддерживает, качество видео хуже, звук нам достаточен);
-node-клиент Swarm — `NODE_USE_ENV_PROXY=1` (Node 24.20 в образе). iptables отвергнут:
-нужен NET_ADMIN, а на Docker Desktop правила хоста не наши.
+Сделано и запушено в `feat/meeting-egress`. У каждой встречи своя сеть Docker `--internal`
+(`<project>-meeting-<runId>`), в ней единственный сосед — egress-прокси стенда
+(`<project>-egress`, тот же образ, `src/container/egress-proxy-main.ts`). Прокси пускает только
+CONNECT по правилу `src/container/egress-policy.ts`; сети и прокси ведёт `src/orchestrator/egress.ts`
+(поднять, переподнять при смене списка, подключить сети живых встреч на старте, убрать сети
+сирот). Браузер — `--proxy-server` + `disable_non_proxied_udp`; node-клиент — `NODE_USE_ENV_PROXY`.
 
-Список (Google «Prepare your network for Meet»): медиа Meet — 74.125.250.0/24,
-74.125.247.128/32, 142.250.82.0/24 и SNI `meet.turns.goog`/`workspace.turns.goog` на портах
-443, 3478, 19302–19309; веб — домены Google на 443; Swarm — ровно host:port из
-`SCRIBA_CONTAINER_SWARM_URL`.
+Почему не iptables: нужен NET_ADMIN, а на Docker Desktop правила хоста не наши; internal-сеть —
+примитив Docker, одинаковый на MUSPELHEIM (Docker Desktop 29.6.1, WSL2) и на Linux-хосте.
+Список — по Google «Prepare your network for Meet»: медиа 74.125.250.0/24, 74.125.247.128/32,
+142.250.82.0/24, `*.turns.goog` на 443/3478/19302–19309; веб — домены Google на 443 без хостов,
+куда страница пишет сама (Apps Script, Документы, Диск, Сайты, Gmail, облачное хранилище…).
+Памятка владельцу про права аккаунта — ARCHITECTURE.md, «Аккаунт бота».
+
+### Что проверено и как (MUSPELHEIM, стенд `scriba-egress`, порты 4460–4461)
+
+- проба до кода: контейнер в internal-сети — `ENETUNREACH` наружу, `getent hosts example.com` → 2;
+- смоук оркестратора, сценарий `egress`, изнутри живого контейнера встречи: `fetch example.com`
+  через прокси — отказ (в журнале прокси `egress deny example.com:443`); `fetch meet.google.com` —
+  302; TCP и UDP мимо прокси — `ENETUNREACH`; DNS мимо прокси — `EAI_AGAIN`; Chromium запущен с
+  `--proxy-server`; заявка, heartbeat и запись дошли до двойника Swarm через прокси; сеть встречи
+  убрана после конца;
+- регресс смоука оркестратора — см. «Что дальше»;
+- юнит: правило (18 случаев), прокси на настоящих сокетах, сети/прокси на двойнике, оркестратор.
 
 ### Что дальше
 
-ядро списка (тесты сначала) → прокси → сеть и прокси в оркестраторе → смоук на стенде
-`scriba-egress` (порты 4460–4469) → памятка про права аккаунта бота.
+Приёмка. Главное мерило — живая встреча Meet со звуком под прокси на стенде scriba-live
+(нужен человек): смотреть `docker logs scriba-live-egress | grep "egress deny"`; нехватающий
+хост добавляется `SCRIBA_EGRESS_EXTRA` без правки кода.
 
 ### Открыто
 
-- живая встреча Meet со звуком под прокси — только на стенде scriba-live с человеком;
+- живой Meet со звуком через прокси не прогнан (нужен человек и настоящая встреча);
+  медиа по TCP через прокси Google поддерживает, но это проверит только живой звонок;
+- `smoke-pulse.ts` (нужен локальный Supabase) не прогнан; heartbeat через прокси проверен
+  смоуком оркестратора;
 - ключ на одну встречу вместо общего токена — T165.
