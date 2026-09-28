@@ -2,7 +2,15 @@
 // транскрибации и какими условиями UPDATE оно защищено от гонки. Ядро: здесь решается, чья запись
 // станет стенограммой встречи, которую команда читает как факт.
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { botStillRecording, decideHeld, type Guard, heldGuards, type HeldRow, readClaimSeconds } from "./arbiter.ts";
+import {
+  botStillRecording,
+  claimAction,
+  decideHeld,
+  type Guard,
+  heldGuards,
+  type HeldRow,
+  readClaimSeconds,
+} from "./arbiter.ts";
 import { MAX_RECORDED_SECONDS } from "../_shared/claim-lease.ts";
 
 const NOW = "2026-09-28T12:00:00.000Z";
@@ -147,4 +155,11 @@ Deno.test("ЯДРО: секунды сверх суток в claim — отка�
   // Прежнее поведение для мусора и нуля: секунд нет, перехват не запрашивается.
   for (const soft of [undefined, null, "600", Number.NaN, -5, 0]) assertEquals(readClaimSeconds(soft), undefined);
   assertEquals(readClaimSeconds(1260.5), 1260.5);
+});
+
+Deno.test("ЯДРО T160: заявка другого человека в claim не перехватывает — только претендент до измеренной выгрузки", () => {
+  assertEquals(claimAction("takeover"), "challenge");
+  assertEquals(claimAction("defer"), "defer");
+  assertEquals(claimAction("reserve"), "reserve");
+  assertEquals(claimAction("refresh"), "refresh");
 });

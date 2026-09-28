@@ -92,6 +92,18 @@ export function decideHeld(row: HeldRow, candidate: number, ownerId: number, now
   return sameOwner ? "refresh" : "takeover";
 }
 
+/**
+ * Что claim делает по решению арбитража (T160). `takeover` другого человека в claim НЕ выполняется:
+ * секунды заявки — самоотчёт клиента, и поданная много позже встречи заявка иначе отбирала бы право
+ * по одной цифре. Заявка становится претендентом (`challenge`): клиент выгружает аудио, и перехват
+ * решает meeting-ingest по длине, которую измерил сам (meeting-ingest/challenge.ts).
+ */
+export type ClaimAction = "defer" | "reserve" | "refresh" | "challenge";
+
+export function claimAction(verdict: HeldDecision): ClaimAction {
+  return verdict === "takeover" ? "challenge" : verdict;
+}
+
 /** Условие UPDATE — описанием, чтобы тест проверял его на строке, а index.ts переводил в PostgREST. */
 export type Guard =
   | { kind: "eq"; column: string; value: string | number }

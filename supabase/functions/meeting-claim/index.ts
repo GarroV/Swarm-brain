@@ -1,7 +1,9 @@
 // ВСЕХ функциях); перевод на голые спецификаторы из import-map из ветки непроверяем. См. _shared/agent-auth.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { occupyPatch, refreshPatch, takeoverPatch } from "./claim-patch.ts";
-import { decideHeld, type Guard, heldGuards, type HeldRow, heldSeconds, readClaimSeconds } from "./arbiter.ts";
+import { occupyPatch, refreshPatch } from "./claim-patch.ts";
+import { claimAction, decideHeld, heldGuards, type HeldRow, heldSeconds, readClaimSeconds } from "./arbiter.ts";
+import { withGuards } from "./guard-query.ts";
+import { CHALLENGER_ROLE } from "../meeting-ingest/challenge.ts";
 import { boundClaimSeconds, type MeetingClock } from "./claim-clock.ts";
 import { AgentAuthError, type AgentIdentity, resolveActingIdentity } from "../_shared/agent-auth.ts";
 import { defaultMeetingTitle, displayNameOf } from "../_shared/meeting-title.ts";
@@ -174,13 +176,17 @@ function formatTs(sec: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-// role=superseded — запись, у которой право транскрибации отобрала более полная (см. арбитраж).
-type RecorderRole = ClaimDecision | "superseded";
+// role=superseded — запись, у которой право транскрибации отобрала более полная (см. арбитраж);
+// role=challenger — заявка другого человека ждёт сверки по измеренной выгрузке (T160,
+// meeting-ingest/challenge.ts): ingest примет аудио только от свежего претендента.
+type RecorderRole = ClaimDecision | "superseded" | typeof CHALLENGER_ROLE;
 interface RecorderEntry {
   telegram_id: number;
   claimed_at: string;
   role: RecorderRole;
   recorded_seconds?: number;
+  /** Сдвиг mic претендента: при переходе права его выставит ingest (в строку встречи он не пишется). */
+  mic_start_offset?: number;
 }
 
 // Регистрируем записавшего в meetings.recorders. Read-modify-write: при низкой
@@ -196,6 +202,7 @@ async function registerRecorder(
   nowIso: string,
   recordedSeconds: number | undefined,
   supersedeOwner?: number | null,
+  micStartOffset?: number,
 ): Promise<void> {
   const { data } = await supabase.from("meetings").select("recorders").eq(
     "id",
@@ -213,6 +220,7 @@ async function registerRecorder(
     claimed_at: nowIso,
     role,
     ...(recordedSeconds !== undefined ? { recorded_seconds: recordedSeconds } : {}),
+    ...(role === CHALLENGER_ROLE && micStartOffset !== undefined ? { mic_start_offset: micStartOffset } : {}),
   };
   const at = next.findIndex((r) => r.telegram_id === telegramId);
   if (at >= 0) next[at] = { ...next[at], ...mine };
@@ -318,13 +326,15 @@ async function resolveExisting(
 ): Promise<
   {
     decision: ClaimDecision;
+    /** Роль в recorders, если она не совпадает с решением (претендент отвечает клиенту transcribe). */
+    recorderRole?: RecorderRole;
     supersededOwner: number | null;
     heldBy: number | null;
     /** Секунды заявки после потолка встречи — их и пишет вызывающий в recorders. */
     recordedSeconds: number | undefined;
   }
 > {
-  let heldBy = row.claim_owner;
+  const heldBy = row.claim_owner;
   // Заявка на существующую встречу — не больше, чем встреча могла идти по часам сервера
   // (claim-clock.ts). Дальше идут только урезанные секунды: в арбитраж, в строку, в recorders.
   const recordedSeconds = boundClaimSeconds(row, claimBody.recorded_seconds, nowIso);
@@ -377,38 +387,45 @@ async function resolveExisting(
     return { decision: "transcribe", supersededOwner: null, heldBy: identity.telegramId, recordedSeconds };
   }
 
-  // refresh — тот же человек, маркеры обработки не сбрасываются; takeover — право переходит, и
-  // сбрасываются ТОЛЬКО маркеры обработки (и пульс бота, D019). Оба — claim-patch.ts.
-  const patchInput = {
-    ownerId: identity.telegramId,
-    leaseIso,
-    nowIso,
-    micStartOffset: body.mic_start_offset ?? null,
-    recordedSeconds: candidate,
-  };
-  const patch = verdict === "refresh" ? refreshPatch(patchInput) : takeoverPatch(patchInput);
+  // Другой человек с заметно более полной заявкой — претендент, не перехват (T160, arbiter.ts
+  // claimAction): строка встречи не трогается, клиент выгружает аудио, и право решит длина, которую
+  // meeting-ingest измерит сам. Держатель, его лиз и маркеры обработки остаются как были.
+  if (claimAction(verdict) === "challenge") {
+    console.log(
+      `meeting-claim: претендент ${row.id} — заявлено ${Math.round(candidate)}с у ${identity.telegramId} против ${
+        Math.round(held)
+      }с у ${row.claim_owner}; право решит измеренная выгрузка`,
+    );
+    return {
+      decision: "transcribe",
+      recorderRole: CHALLENGER_ROLE,
+      supersededOwner: null,
+      heldBy,
+      recordedSeconds,
+    };
+  }
+
+  // refresh — тот же человек, бот не пишет: маркеры обработки не сбрасываются (claim-patch.ts).
   const { data: took } = await withGuards(
-    supabase.from("meetings").update(patch).eq("id", row.id),
+    supabase.from("meetings").update(refreshPatch({
+      ownerId: identity.telegramId,
+      leaseIso,
+      nowIso,
+      micStartOffset: body.mic_start_offset ?? null,
+      recordedSeconds: candidate,
+    })).eq("id", row.id),
     heldGuards(row, nowIso),
   )
     .select("id")
     .maybeSingle();
   if (!took) return { decision: "defer", supersededOwner: null, heldBy, recordedSeconds };
 
-  heldBy = identity.telegramId;
   console.log(
-    `meeting-claim: ${verdict === "refresh" ? "обновление права" : "перехват"} ${row.id} — ${
-      Math.round(candidate)
-    }с у ${identity.telegramId} против ${Math.round(held)}с у ${row.claim_owner}`,
+    `meeting-claim: обновление права ${row.id} — ${Math.round(candidate)}с у ${identity.telegramId} против ${
+      Math.round(held)
+    }с`,
   );
-  // Прежний владелец уступает право только при переходе к другому человеку.
-  const superseded = verdict === "takeover" ? heldOwnerOf(row) : null;
-  return { decision: "transcribe", supersededOwner: superseded, heldBy, recordedSeconds };
-}
-
-/** Кто держал право до перехвата (не запись владельца — чтение). */
-function heldOwnerOf(row: ExistingMeetingRow): number | null {
-  return row.claim_owner;
+  return { decision: "transcribe", supersededOwner: null, heldBy: identity.telegramId, recordedSeconds };
 }
 
 /**
@@ -430,38 +447,6 @@ async function keepReserve(meetingId: string, body: ClaimBody, ownerId: number):
     .eq("id", meetingId).eq("claim_owner", ownerId)
     .or(`recorded_seconds.is.null,recorded_seconds.lt.${seconds}`);
   if (error) console.error(`meeting-claim: запасная ${meetingId} — recorded_seconds: ${error.message}`);
-}
-
-// Условия arbiter.ts → фильтры PostgREST той же UPDATE.
-interface GuardableQuery<Q> {
-  eq(column: string, value: string | number): Q;
-  is(column: string, value: null): Q;
-  or(filters: string): Q;
-}
-
-function orClause(g: Guard): string {
-  switch (g.kind) {
-    case "eq":
-      return `${g.column}.eq.${g.value}`;
-    case "isNull":
-      return `${g.column}.is.null`;
-    case "notTrue":
-      return `${g.column}.is.null,${g.column}.is.false`;
-    case "before":
-      return `${g.column}.lt.${g.value}`;
-    case "anyOf":
-      return `or(${g.clauses.map(orClause).join(",")})`;
-  }
-}
-
-function withGuards<Q extends GuardableQuery<Q>>(query: Q, guards: Guard[]): Q {
-  let q = query;
-  for (const g of guards) {
-    if (g.kind === "eq") q = q.eq(g.column, g.value);
-    else if (g.kind === "isNull") q = q.is(g.column, null);
-    else q = q.or(g.kind === "anyOf" ? g.clauses.map(orClause).join(",") : orClause(g));
-  }
-  return q;
 }
 
 // Личные пометки участника → приватная entry (is_private, owner_id) с metadata.meeting_id.
@@ -612,6 +597,8 @@ Deno.serve(async (req: Request) => {
   let heldBy: number | null = null;
   // Секунды, с которыми заявка прошла арбитраж: у существующей встречи — урезанные её временем.
   let claimedSeconds = body.recorded_seconds;
+  // Роль в recorders, если она не совпадает с решением: претендент (T160) отвечает transcribe.
+  let recorderRole: RecorderRole | undefined;
 
   if (body.identity_kind === "manual") {
     // Telegram/кнопка — без дедупа, всегда новая встреча, всегда транскрибируем сами.
@@ -684,6 +671,7 @@ Deno.serve(async (req: Request) => {
         leaseIso,
       );
       decision = res.decision;
+      recorderRole = res.recorderRole;
       supersededOwner = res.supersededOwner;
       heldBy = res.heldBy;
       claimedSeconds = res.recordedSeconds;
@@ -730,6 +718,7 @@ Deno.serve(async (req: Request) => {
             leaseIso,
           );
           decision = res.decision;
+          recorderRole = res.recorderRole;
           supersededOwner = res.supersededOwner;
           heldBy = res.heldBy;
           claimedSeconds = res.recordedSeconds;
@@ -764,6 +753,7 @@ Deno.serve(async (req: Request) => {
           leaseIso,
         );
         decision = res.decision;
+        recorderRole = res.recorderRole;
         supersededOwner = res.supersededOwner;
         heldBy = res.heldBy;
         claimedSeconds = res.recordedSeconds;
@@ -785,10 +775,11 @@ Deno.serve(async (req: Request) => {
   await registerRecorder(
     meetingId,
     identity.telegramId,
-    decision,
+    recorderRole ?? decision,
     nowIso,
     claimedSeconds,
     supersededOwner,
+    body.mic_start_offset,
   );
 
   // Личные пометки — best-effort: их сбой не должен валить координацию транскрибации.
