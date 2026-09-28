@@ -23,7 +23,8 @@
 #   bot/container/smoke.sh
 set -uo pipefail
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
+# `pwd -W` — путь Windows в Git Bash: с MSYS_NO_PATHCONV=1 docker.exe не понял бы /c/...
+HERE="$(cd "$(dirname "$0")" && (pwd -W 2>/dev/null || pwd))"
 PROJECT="${COMPOSE_PROJECT_NAME:-scriba-container}"
 SERVICE="${SCRIBA_SMOKE_SERVICE:-scriba}"
 # Префикс имён контейнеров — тот же, что в docker-compose.yml: стенд параллельной копии
