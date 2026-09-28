@@ -4,7 +4,7 @@
  * бота от имени позвавшего, а на площадку без адаптера отвечает громким отказом.
  *
  * Запуск (внутри WSL2 рядом с Docker):
- *   node --experimental-transform-types bot/src/orchestrator/orchestrator-main.ts
+ *   node bot/src/orchestrator/orchestrator-main.ts
  *
  * Окружение (перечень и смысл — docs/ARCHITECTURE.md, «Бот scriba: оркестратор встреч»):
  *   SCRIBA_SWARM_URL            — корень функций Swarm (обязательно);

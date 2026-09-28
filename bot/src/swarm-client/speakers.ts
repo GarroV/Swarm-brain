@@ -108,10 +108,12 @@ export class SpeakerTimelineCollector {
   private wake: (() => void) | undefined;
   private loop: Promise<void> = Promise.resolve();
 
-  constructor(
-    private readonly source: SpeakerSource,
-    private readonly options: CollectorOptions = {},
-  ) {
+  private readonly source: SpeakerSource;
+  private readonly options: CollectorOptions;
+
+  constructor(source: SpeakerSource, options: CollectorOptions = {}) {
+    this.source = source;
+    this.options = options;
     this.intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
     this.now = options.now ?? Date.now;
   }

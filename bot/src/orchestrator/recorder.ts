@@ -54,7 +54,10 @@ export class FfmpegRecorder implements MeetingRecorder {
 
   private readonly listPath: string;
 
-  constructor(private readonly options: FfmpegRecorderOptions) {
+  private readonly options: FfmpegRecorderOptions;
+
+  constructor(options: FfmpegRecorderOptions) {
+    this.options = options;
     this.listPath = path.join(options.directory, "parts.csv");
     this.stager = new PartStager({
       readList: async () => readOrNull(this.listPath),

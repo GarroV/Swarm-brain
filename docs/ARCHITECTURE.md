@@ -900,7 +900,7 @@ Heartbeat шлётся изнутри контейнера; финальный `
 поводка на хосте); необязательные `SCRIBA_PROJECT` (по умолчанию `scriba`), `SCRIBA_BOT_VERSION`,
 `SCRIBA_INVITE_POLL_MS` (5000), `SCRIBA_CONTAINER_SWARM_URL` (адрес функций изнутри контейнера, по
 умолчанию `SCRIBA_SWARM_URL`), `SCRIBA_CONTAINER_ENV` (JSON добавочного окружения контейнера — ручки
-смоука). Запуск: `node --experimental-transform-types bot/src/orchestrator/orchestrator-main.ts`.
+смоука). Запуск: `node bot/src/orchestrator/orchestrator-main.ts`.
 
 **Смерть бота видна серверу.** Сторож `checkRecorderHealth` (swarm-bot, cron `meetings_watchdog` /
 `granola_poll`) читает и `allowed_users.recorder_last_*`, и `meetings.agent_last_*`: решение и адресат —

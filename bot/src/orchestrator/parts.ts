@@ -56,7 +56,11 @@ export class PartStager {
 
   private running: Promise<void> = Promise.resolve();
 
-  constructor(private readonly options: PartStagerOptions) {}
+  private readonly options: PartStagerOptions;
+
+  constructor(options: PartStagerOptions) {
+    this.options = options;
+  }
 
   private async flushOnce(): Promise<void> {
     const text = await this.options.readList();

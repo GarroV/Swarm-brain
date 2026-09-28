@@ -147,7 +147,10 @@ export class SwarmClient {
 
   private readonly doFetch: typeof globalThis.fetch;
 
-  constructor(private readonly config: SwarmClientConfig) {
+  private readonly config: SwarmClientConfig;
+
+  constructor(config: SwarmClientConfig) {
+    this.config = config;
     this.baseUrl = trimTrailingSlashes(config.baseUrl);
     this.doFetch = config.fetch ?? globalThis.fetch;
   }

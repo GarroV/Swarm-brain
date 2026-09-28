@@ -41,7 +41,11 @@ export class RecordingSession implements RecordingSessionContract {
 
   private heldBy: number | null = null;
 
-  constructor(private readonly options: RecordingSessionOptions) {}
+  private readonly options: RecordingSessionOptions;
+
+  constructor(options: RecordingSessionOptions) {
+    this.options = options;
+  }
 
   /**
    * Бросает, если запись отклонена или ещё не заявлена. Один вход для обоих запретов:

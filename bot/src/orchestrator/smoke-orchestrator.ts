@@ -14,7 +14,7 @@
  *
  * Запуск с хоста, образ собран заранее:
  *   docker build -f bot/container/Dockerfile -t scriba-orchestrator:dev bot/
- *   SCRIBA_SMOKE_STATE=<каталог> node --experimental-transform-types bot/src/orchestrator/smoke-orchestrator.ts
+ *   SCRIBA_SMOKE_STATE=<каталог> node bot/src/orchestrator/smoke-orchestrator.ts
  *
  * Переменные:
  *   SCRIBA_SMOKE_STATE    — каталог под поводки (обязателен: только свой, не общий tmp);
@@ -493,25 +493,21 @@ interface Service {
  */
 async function spawnService(leaseName: string, page: string): Promise<Service> {
   const lines: string[] = [];
-  const service = spawn(
-    process.execPath,
-    ["--experimental-transform-types", path.join(HERE, "orchestrator-main.ts")],
-    {
-      env: {
-        ...process.env,
-        SCRIBA_SWARM_URL: `http://127.0.0.1:${String(PORT)}`,
-        SCRIBA_CONTAINER_SWARM_URL: SWARM_URL,
-        SCRIBA_BOT_TOKEN: TOKEN,
-        SCRIBA_IMAGE: IMAGE,
-        SCRIBA_PROJECT: PROJECT,
-        SCRIBA_LEASE_HOST_DIR: path.join(STATE, leaseName),
-        SCRIBA_BOT_VERSION: "1",
-        SCRIBA_INVITE_POLL_MS: "1000",
-        SCRIBA_CONTAINER_ENV: JSON.stringify({ ...BASE_ENV, SCRIBA_SMOKE_MEET_PAGE: page }),
-      },
-      stdio: ["ignore", "pipe", "inherit"],
+  const service = spawn(process.execPath, [path.join(HERE, "orchestrator-main.ts")], {
+    env: {
+      ...process.env,
+      SCRIBA_SWARM_URL: `http://127.0.0.1:${String(PORT)}`,
+      SCRIBA_CONTAINER_SWARM_URL: SWARM_URL,
+      SCRIBA_BOT_TOKEN: TOKEN,
+      SCRIBA_IMAGE: IMAGE,
+      SCRIBA_PROJECT: PROJECT,
+      SCRIBA_LEASE_HOST_DIR: path.join(STATE, leaseName),
+      SCRIBA_BOT_VERSION: "1",
+      SCRIBA_INVITE_POLL_MS: "1000",
+      SCRIBA_CONTAINER_ENV: JSON.stringify({ ...BASE_ENV, SCRIBA_SMOKE_MEET_PAGE: page }),
     },
-  );
+    stdio: ["ignore", "pipe", "inherit"],
+  });
   createInterface({ input: service.stdout }).on("line", (line) => {
     lines.push(line);
     console.log(`    [${leaseName}] ${line.replace(/^\[orchestrator \S+\] /u, "")}`);

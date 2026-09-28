@@ -133,7 +133,10 @@ export class UploadQueue {
   // Идущий прогон: второй вызов присоединяется к нему, иначе запись уйдёт дважды.
   private running: Promise<DrainResult> | null = null;
 
-  constructor(private readonly options: UploadQueueOptions) {
+  private readonly options: UploadQueueOptions;
+
+  constructor(options: UploadQueueOptions) {
+    this.options = options;
     this.root = options.root;
     this.client = options.client;
     this.maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;

@@ -43,10 +43,10 @@ export class LeaseTracker {
 
   private lastChangeAt: number;
 
-  constructor(
-    startedAt: number,
-    private readonly staleMs: number = LEASE_STALE_MS,
-  ) {
+  private readonly staleMs: number;
+
+  constructor(startedAt: number, staleMs: number = LEASE_STALE_MS) {
+    this.staleMs = staleMs;
     // Отсчёт от старта: контейнер, которому поводок так и не показали, тоже сирота.
     this.lastChangeAt = startedAt;
   }

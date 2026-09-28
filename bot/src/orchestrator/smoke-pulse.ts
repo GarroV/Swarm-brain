@@ -30,7 +30,7 @@
  *   SCRIBA_SMOKE_IMAGE, SCRIBA_SMOKE_PROJECT, SCRIBA_SMOKE_STATE, SCRIBA_SMOKE_ONLY — как у
  *                      smoke-orchestrator.ts.
  *
- * Запуск: node --experimental-transform-types bot/src/orchestrator/smoke-pulse.ts
+ * Запуск: node bot/src/orchestrator/smoke-pulse.ts
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash, randomInt, randomUUID } from "node:crypto";

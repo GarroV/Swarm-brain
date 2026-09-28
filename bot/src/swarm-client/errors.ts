@@ -12,15 +12,18 @@
  * Сервер ответил, и ответ не в диапазоне 2xx.
  */
 export class SwarmHttpError extends Error {
-  constructor(
-    readonly status: number,
-    readonly bodyText: string,
-    /**
-     * Сколько сервер просит подождать (`Retry-After`), если просил.
-     */
-    readonly retryAfterMs?: number,
-  ) {
+  readonly status: number;
+  readonly bodyText: string;
+  /**
+   * Сколько сервер просит подождать (`Retry-After`), если просил.
+   */
+  readonly retryAfterMs: number | undefined;
+
+  constructor(status: number, bodyText: string, retryAfterMs?: number) {
     super(`HTTP ${String(status)}: ${bodyText.slice(0, 500)}`);
+    this.status = status;
+    this.bodyText = bodyText;
+    this.retryAfterMs = retryAfterMs;
     this.name = "SwarmHttpError";
   }
 }
@@ -54,13 +57,15 @@ export class SwarmProtocolError extends Error {
  * и спрятал бы ошибку оркестратора, который дошёл до выгрузки после отказа.
  */
 export class SwarmDeferredError extends Error {
-  constructor(
-    readonly meetingId: string,
-    readonly heldBy: number | null,
-  ) {
+  readonly meetingId: string;
+  readonly heldBy: number | null;
+
+  constructor(meetingId: string, heldBy: number | null) {
     super(
       `meeting ${meetingId} is claimed by someone else (held_by=${String(heldBy)}) — audio not sent`,
     );
+    this.meetingId = meetingId;
+    this.heldBy = heldBy;
     this.name = "SwarmDeferredError";
   }
 }

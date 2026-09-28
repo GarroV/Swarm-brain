@@ -86,7 +86,11 @@ export class InviteTrigger {
 
   private isStarted = false;
 
-  constructor(private readonly options: InviteTriggerOptions) {}
+  private readonly options: InviteTriggerOptions;
+
+  constructor(options: InviteTriggerOptions) {
+    this.options = options;
+  }
 
   private get nowMs(): number {
     return (this.options.now ?? Date.now)();

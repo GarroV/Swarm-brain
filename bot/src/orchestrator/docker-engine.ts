@@ -35,7 +35,11 @@ function lines(stream: PassThrough, onLine: (line: string) => void): void {
 }
 
 export class DockerodeEngine implements ContainerEngine {
-  constructor(private readonly docker: Docker = new Docker()) {}
+  private readonly docker: Docker;
+
+  constructor(docker: Docker = new Docker()) {
+    this.docker = docker;
+  }
 
   async create(spec: ContainerSpec): Promise<string> {
     const container = await this.docker.createContainer({

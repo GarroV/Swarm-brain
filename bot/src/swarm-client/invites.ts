@@ -104,7 +104,10 @@ export class InviteClient {
 
   private readonly doFetch: typeof globalThis.fetch;
 
-  constructor(private readonly config: InviteClientConfig) {
+  private readonly config: InviteClientConfig;
+
+  constructor(config: InviteClientConfig) {
+    this.config = config;
     this.url = withoutTrailingSlashes(config.baseUrl) + PATH;
     this.doFetch = config.fetch ?? globalThis.fetch;
   }
