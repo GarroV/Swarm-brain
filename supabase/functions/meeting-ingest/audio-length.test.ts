@@ -1,78 +1,96 @@
-// Длина выгруженного аудио, измеренная сервером (T160). От неё зависит, чья запись станет
-// стенограммой (перехват права claim проверяется по ней, а не по заявке клиента), поэтому ошибка
-// здесь — не шум: «не удалось измерить» обязано быть null, а не нулём или суточной цифрой.
+// Длина выгруженного аудио, измеренная сервером по содержимому файла. От неё зависит, чья запись
+// станет стенограммой (перехват права claim проверяется по ней, а не по заявке клиента), поэтому
+// ошибка здесь — не шум: «не удалось измерить» обязано быть null, а не нулём или суточной цифрой.
 import { assertAlmostEquals, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { mp4DurationSec, trackCoverageSec } from "./audio-length.ts";
-
-function box(type: string, body: Uint8Array): Uint8Array {
-  const out = new Uint8Array(8 + body.length);
-  new DataView(out.buffer).setUint32(0, out.length);
-  out.set(new TextEncoder().encode(type), 4);
-  out.set(body, 8);
-  return out;
-}
-
-function concat(...parts: Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  return out;
-}
-
-function mvhdV0(timescale: number, duration: number): Uint8Array {
-  const body = new Uint8Array(100);
-  const dv = new DataView(body.buffer);
-  dv.setUint32(12, timescale);
-  dv.setUint32(16, duration);
-  return box("mvhd", body);
-}
-
-function mvhdV1(timescale: number, duration: bigint): Uint8Array {
-  const body = new Uint8Array(112);
-  const dv = new DataView(body.buffer);
-  body[0] = 1;
-  dv.setUint32(20, timescale);
-  dv.setBigUint64(24, duration);
-  return box("mvhd", body);
-}
+import { box, concat, m4aOf } from "./m4a-fixture.ts";
 
 const ftyp = box("ftyp", new TextEncoder().encode("M4A \0\0\0\0M4A isom"));
-const mdat = (n: number) => box("mdat", new Uint8Array(n));
 
-Deno.test("mp4: длительность из mvhd версии 0, moov после mdat (как пишет ffmpeg)", () => {
-  const file = concat(ftyp, mdat(4096), box("moov", mvhdV0(44_100, 44_100 * 900)));
-  assertAlmostEquals(mp4DurationSec(file) ?? -1, 900, 1e-9);
+/** Заголовок, в котором длина есть, а звука нет, — так выглядел бы файл, собранный руками. */
+function headerOnly(seconds: number, withMdat: boolean): Uint8Array {
+  const mvhd = new Uint8Array(100);
+  new DataView(mvhd.buffer).setUint32(12, 1000);
+  new DataView(mvhd.buffer).setUint32(16, seconds * 1000);
+  const moov = box("moov", box("mvhd", mvhd));
+  return withMdat ? concat(ftyp, box("mdat", new Uint8Array(2048)), moov) : concat(ftyp, moov);
+}
+
+const testdata = (name: string) => Deno.readFileSync(new URL(`./testdata/${name}`, import.meta.url));
+
+// Настоящие файлы клиентов (testdata/): бот — ffmpeg с флагами bot/src/container/segments.ts
+// (48 кГц моно, 32k, -f segment -reset_timestamps 1 -segment_format ipod); рекордер — AVAudioFile
+// (48 кГц 32k и 16 кГц 24k, как SystemAudioCapturer) и нарезка AVAssetExportSession passthrough
+// (как Segmenter), плюс afconvert. Тишина — худший случай для нижней границы байт/с: кадр AAC
+// тишины весит 4 байта. Длительности — то, что показывает ffprobe (format=duration).
+const REAL: Array<[string, number]> = [
+  ["bot-noise-000.m4a", 5.013333],
+  ["bot-silence-000.m4a", 5.013333],
+  ["bot-silence-001.m4a", 1.008],
+  ["rec-part1-noise.m4a", 5.034667],
+  ["rec-part0-silence.m4a", 5.184],
+  ["rec-avfile-16k-silence.m4a", 8.192],
+  ["afconvert-silence-24k.m4a", 20.096],
+];
+
+Deno.test("ЯДРО: настоящие файлы бота и рекордера меряются, как их показывает ffprobe", () => {
+  for (const [name, seconds] of REAL) {
+    const got = mp4DurationSec(testdata(name));
+    if (got === null || Math.abs(got - seconds) > 0.05) throw new Error(`${name}: ${got} вместо ${seconds}`);
+  }
 });
 
-Deno.test("mp4: mvhd версии 1 (64-битная длительность), moov перед mdat", () => {
-  const file = concat(ftyp, box("moov", mvhdV1(1000, 5_400_500n)), mdat(16));
-  assertAlmostEquals(mp4DurationSec(file) ?? -1, 5400.5, 1e-9);
+Deno.test("ЯДРО: длина — по таблице сэмплов, а заголовок её только урезает", () => {
+  assertAlmostEquals(mp4DurationSec(m4aOf(900)) ?? -1, 900, 0.05);
+  assertAlmostEquals(mp4DurationSec(m4aOf(900, { mvhdSec: 12 * 3600 })) ?? -1, 900, 0.05);
+  assertAlmostEquals(mp4DurationSec(m4aOf(900, { mvhdSec: 600 })) ?? -1, 600, 1e-9);
 });
 
-Deno.test("mp4: не-mp4, пустой файл и обрезанный заголовок — не измерено (null)", () => {
+Deno.test("ЯДРО: заголовок без звука — не измерено, есть mdat или нет", () => {
+  assertEquals(mp4DurationSec(headerOnly(1200, false)), null);
+  assertEquals(mp4DurationSec(headerOnly(1200, true)), null);
+  assertEquals(mp4DurationSec(m4aOf(600, { noMdat: true })), null);
+});
+
+Deno.test("ЯДРО: кадры таблицы вне присланного mdat — не измерено", () => {
+  assertEquals(mp4DurationSec(m4aOf(600, { mdatShortBy: 1 })), null);
+  assertEquals(mp4DurationSec(m4aOf(600, { chunkShift: 1 })), null);
+  assertEquals(mp4DurationSec(m4aOf(600, { chunkShift: -9 })), null);
+  assertEquals(mp4DurationSec(m4aOf(600, { extraDeclaredFrames: 5 })), null);
+});
+
+Deno.test("ЯДРО: одни и те же байты под всеми чанками засчитываются один раз — не измерено", () => {
+  assertEquals(mp4DurationSec(m4aOf(600, { reuseFirstChunk: true })), null);
+});
+
+Deno.test("ЯДРО: слишком мало байт на секунду для AAC или слишком длинный кадр — не измерено", () => {
+  assertEquals(mp4DurationSec(m4aOf(600, { frameBytes: 0 })), null);
+  // 1 байт на кадр в 1024 сэмпла при 48 кГц — 47 байт/с: ниже любой тишины AAC у клиентов
+  // (4 байта на кадр), но выше порога; тот же байт на кадр вдвое длиннее — 23 байт/с, ниже порога.
+  assertAlmostEquals(mp4DurationSec(m4aOf(600, { frameBytes: 1 })) ?? -1, 600, 0.05);
+  assertEquals(mp4DurationSec(m4aOf(600, { frameBytes: 1, frameDelta: 2048 })), null);
+  // Кадр в полсекунды при 2000 байт/с: байт хватает, но кадров AAC такой длины не бывает.
+  assertEquals(mp4DurationSec(m4aOf(600, { frameBytes: 1000, frameDelta: 24_000 })), null);
+});
+
+Deno.test("mp4: moov до mdat, co64, одинаковый размер кадра в stsz — меряются", () => {
+  assertAlmostEquals(mp4DurationSec(m4aOf(300, { moovFirst: true })) ?? -1, 300, 0.05);
+  assertAlmostEquals(mp4DurationSec(m4aOf(300, { co64: true })) ?? -1, 300, 0.05);
+  assertAlmostEquals(mp4DurationSec(m4aOf(300, { constantSize: true })) ?? -1, 300, 0.05);
+});
+
+Deno.test("mp4: дорожка не звуковая — не измерено", () => {
+  assertEquals(mp4DurationSec(m4aOf(300, { handler: "vide" })), null);
+});
+
+Deno.test("mp4: не-mp4, пустой, обрезанный файл и бокс за концом файла — не измерено", () => {
   assertEquals(mp4DurationSec(new TextEncoder().encode("label:12:0")), null);
   assertEquals(mp4DurationSec(new Uint8Array(0)), null);
-  const moov = box("moov", mvhdV0(1000, 60_000));
-  assertEquals(mp4DurationSec(concat(ftyp, moov.subarray(0, 20))), null);
-});
-
-Deno.test("mp4: нулевая шкала, нулевая и «неизвестная» длительность — не измерено", () => {
-  assertEquals(mp4DurationSec(concat(ftyp, box("moov", mvhdV0(0, 1000)))), null);
-  assertEquals(mp4DurationSec(concat(ftyp, box("moov", mvhdV0(1000, 0)))), null);
-  assertEquals(mp4DurationSec(concat(ftyp, box("moov", mvhdV0(1000, 0xffff_ffff)))), null);
-});
-
-Deno.test("mp4: размер бокса, вылезающий за файл, — не измерено, а не чтение мусора", () => {
-  const moov = box("moov", mvhdV0(1000, 60_000));
-  new DataView(moov.buffer).setUint32(0, moov.length + 1000);
-  assertEquals(mp4DurationSec(concat(ftyp, moov)), null);
-});
-
-Deno.test("mp4: без moov (фрагменты, обрыв записи) — не измерено", () => {
-  assertEquals(mp4DurationSec(concat(ftyp, mdat(64))), null);
+  const file = m4aOf(60);
+  assertEquals(mp4DurationSec(file.subarray(0, file.length - 20)), null);
+  const grown = m4aOf(60);
+  new DataView(grown.buffer).setUint32(0, 1_000_000);
+  assertEquals(mp4DurationSec(grown), null);
 });
 
 Deno.test("ЯДРО: охват — объединение интервалов частей обеих дорожек, пересечения не удваиваются", () => {
