@@ -87,7 +87,7 @@ function Open-Login {
   [IO.File]::WriteAllText($KeyFile, $key, $Utf8)
   # Порт публикуется только на адресе Tailscale: из интернета и из локальной сети окна не видно.
   Invoke-Native 'docker run (окно входа)' {
-    docker run -d --rm --name $Window `
+    docker run -d --rm --init --name $Window `
       --label scriba-login.stand=true `
       -p "${Addr}:${WindowPort}:6080" `
       --shm-size 1g `
@@ -119,6 +119,8 @@ function Show-LoginStatus {
   } else {
     Say 'окно входа не открыто'
   }
+  $result = "$Account\last-login.txt"
+  if (Test-Path $result) { Say "последняя выгрузка: $((Get-Content $result) -join ' ')" }
   $file = "$Account\google-state.json"
   if (Test-Path $file) {
     $info = Get-Item $file

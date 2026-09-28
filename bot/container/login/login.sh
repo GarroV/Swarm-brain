@@ -70,4 +70,12 @@ CHROME="$(ls -d /ms-playwright/chromium-*/chrome-linux*/chrome 2>/dev/null | hea
   >/tmp/chrome.log 2>&1 || true
 echo "браузер закрыт — выгружаю вход"
 
-node /app/src/orchestrator/login-export.ts "$PROFILE" "$OUT_FILE"
+# Итог выгрузки — строкой рядом со входом: контейнер окна убирается сам, и его журнал вместе
+# с ним. В строке только вердикт и время, без содержимого входа.
+RESULT="$(dirname "$OUT_FILE")/last-login.txt"
+set +e
+node /app/src/orchestrator/login-export.ts "$PROFILE" "$OUT_FILE" 2>&1 | tee /tmp/export.log
+CODE=${PIPESTATUS[0]}
+set -e
+{ date -u '+%Y-%m-%dT%H:%M:%SZ'; grep -E '✔|✘' /tmp/export.log | tail -1; } >"$RESULT"
+exit "$CODE"
