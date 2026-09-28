@@ -117,3 +117,34 @@ export function conferenceInfo(ev: GEvent): ConferenceInfo {
   }
   return { join_url: url, platform: conferencePlatform(url) };
 }
+
+/** Ссылка на созвон известной площадки — то, ради чего капсула рекордера вообще всплывает. */
+export interface ConferenceCall {
+  join_url: string;
+  platform: ConferencePlatform;
+}
+
+/**
+ * Созвон события: первая ссылка ИЗВЕСТНОЙ площадки (Meet, Контур.Толк, Zoom) по тем же источникам
+ * и в том же порядке, что у `joinLink`. `null` — событие не созвон (D026): слот, заглушка,
+ * напоминание, встреча в переговорке. Такие капсулу не вызывают — для них есть уведомления Google.
+ *
+ * Отдельно от `joinLink`, потому что там «хоть какая-то ссылка» лучше, чем ничего, а здесь нет:
+ * ссылка на карту офиса в месте проведения не должна ни звать капсулу, ни заслонять Толк из описания.
+ */
+export function conferenceCall(ev: GEvent): ConferenceCall | null {
+  const candidates = [
+    ...(ev.conferenceData?.entryPoints ?? [])
+      .filter((e) => e.entryPointType === "video")
+      .map((e) => e.uri),
+    ev.hangoutLink,
+    ...linksIn(ev.location),
+    ...linksIn(ev.description),
+  ];
+  for (const raw of candidates) {
+    const url = httpsOnly(raw);
+    const platform = url ? conferencePlatform(url) : null;
+    if (url && platform) return { join_url: url, platform };
+  }
+  return null;
+}
