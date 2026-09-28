@@ -43,3 +43,19 @@ export function takeoverPatch(input: ClaimPatchInput): Record<string, unknown> {
     last_progress_at: null,
   };
 }
+
+/**
+ * Тот же человек с заметно более полной записью, бот при этом не пишет (arbiter.ts, `refresh`).
+ * claim_owner не меняется, поэтому маркеры обработки НЕ сбрасываются: сброс посреди работы воркера
+ * стоил повторной транскрибации (сдача T156), а вторую запись того же владельца meeting-ingest
+ * сравнивает сам (очередь / претендент). Пульс бота тоже не трогается: алерт о замолчавшем боте
+ * уходит тому же человеку и правдив.
+ */
+export function refreshPatch(input: ClaimPatchInput): Record<string, unknown> {
+  return {
+    lease_expires_at: input.leaseIso,
+    updated_at: input.nowIso,
+    mic_start_offset: input.micStartOffset,
+    recorded_seconds: input.recordedSeconds,
+  };
+}

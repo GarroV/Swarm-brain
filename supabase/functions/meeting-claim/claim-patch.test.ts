@@ -10,7 +10,7 @@ import {
   checkRecordingWatchdog,
   type WatchdogStore,
 } from "../swarm-bot/lib/recording-watchdog.ts";
-import { type ClaimPatchInput, occupyPatch, takeoverPatch } from "./claim-patch.ts";
+import { type ClaimPatchInput, occupyPatch, refreshPatch, takeoverPatch } from "./claim-patch.ts";
 
 const NOW_MS = Date.parse("2026-09-26T12:00:00.000Z");
 const BOT_OWNER = 111; // за него бот писал встречу
@@ -114,4 +114,15 @@ Deno.test("занятие свободной встречи не трогает 
   const patch = occupyPatch(input);
   assertEquals("summary_status" in patch, false);
   assertEquals("process_state" in patch, false);
+});
+
+Deno.test("ЯДРО: «перехват» тем же человеком не сбрасывает маркеры обработки и не меняет владельца", () => {
+  // Сдача T156: сброс посреди работы воркера — лишняя транскрибация; claim_owner тот же.
+  const patch = refreshPatch({ ...input, ownerId: BOT_OWNER });
+  for (const key of ["summary_status", "process_state", "processing_lease", "last_progress_at", "claim_owner"]) {
+    assertEquals(key in patch, false, key);
+  }
+  assertEquals("agent_last_recording" in patch, false, "пульс бота — правда для того же человека");
+  assertEquals(patch.recorded_seconds, 3600);
+  assertEquals(patch.lease_expires_at, input.leaseIso);
 });

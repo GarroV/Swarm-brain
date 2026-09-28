@@ -10,3 +10,10 @@ export const CLAIM_LEASE_TTL_SEC = 1800;
 export function claimLeaseUntil(nowIso: string): string {
   return new Date(Date.parse(nowIso) + CLAIM_LEASE_TTL_SEC * 1000).toISOString();
 }
+
+/**
+ * Потолок записанных секунд — сутки, один на удар бота (meeting-heartbeat) и на claim. Завышенное
+ * значение навсегда закрыло бы встречу от перехвата более полной записью, поэтому явно невозможное
+ * отбивается 400, а не пишется. Разойдись потолки, через claim проходило бы то, что heartbeat отбивает.
+ */
+export const MAX_RECORDED_SECONDS = 86_400;
