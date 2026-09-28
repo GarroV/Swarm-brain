@@ -104,7 +104,7 @@ export function RoyRail({
       aria-label={dt("Разделы", "Sections")}
       // Уже 1100px рейка сворачивается в пиктограммы (56px): десктопная раскладка тянется до
       // 720px, а 216px рейки на таком окне съели бы треть экрана. Подписи — в title.
-      className="flex w-[216px] shrink-0 flex-col border-r border-line bg-surface-2 max-[1099px]:w-[56px]"
+      className="roy-rail flex w-[216px] shrink-0 flex-col border-r border-line bg-surface-2 max-[1099px]:w-[56px]"
     >
       <div className="flex items-center gap-2.5 border-b border-line px-4 py-3.5 max-[1099px]:justify-center max-[1099px]:px-0">
         {/* Бренд-блок: знак — тот же файл, что фавикон (циановый неон), и имя капсом. */}
