@@ -28,6 +28,7 @@ import {
   validMaxMeetings,
 } from "../container/isolation.ts";
 import { pinMeetLocale } from "../meet-adapter/url.ts";
+import { ACCOUNT_STATE_TARGET, type AccountCopies } from "./account.ts";
 import { isCalendarBasis, type MeetingBasis } from "./claim-request.ts";
 import { MEETING_ENV, parsePlatform } from "./config.ts";
 import type { ContainerEngine, ContainerSpec, EngineContainer } from "./engine.ts";
@@ -99,6 +100,10 @@ export interface OrchestratorOptions {
    * Профиль seccomp строкой JSON; по умолчанию — `container/seccomp-chromium.json`.
    */
   readonly seccompProfile?: string;
+  /**
+   * Вход аккаунта бота (T175): своя копия на каждый контейнер. Не задан — бот идёт гостем.
+   */
+  readonly account?: AccountCopies;
 }
 
 interface Managed {
@@ -239,11 +244,20 @@ export class Orchestrator {
     );
   }
 
+  private async releaseAccount(runId: string): Promise<void> {
+    try {
+      await this.options.account?.release(runId);
+    } catch (error) {
+      this.log(`копия входа запуска ${runId} не убрана: ${describeError(error)}`);
+    }
+  }
+
   private environment(
     joinUrl: string,
     onBehalfOf: number,
     runId: string,
     basis: MeetingBasis | null,
+    account: string | null,
   ): string[] {
     const own: Record<string, string> = {
       [MEETING_ENV.joinUrl]: joinUrl,
@@ -257,6 +271,7 @@ export class Orchestrator {
       [MEETING_ENV.version]: String(this.options.version),
       [MEETING_ENV.leaseDir]: LEASE_PATH,
       ...basisEnvironment(basis),
+      ...(account !== null && { [MEETING_ENV.accountState]: ACCOUNT_STATE_TARGET }),
     };
     const merged = { ...this.options.extraEnv, ...own };
     return Object.entries(merged).map(([name, value]) => `${name}=${value}`);
@@ -267,12 +282,13 @@ export class Orchestrator {
     onBehalfOf: number,
     runId: string,
     basis: MeetingBasis | null,
+    account: string | null,
   ): ContainerSpec {
     return {
       name: `${this.options.project}-meeting-${runId}`,
       image: this.options.image,
       command: CONTAINER_COMMAND,
-      env: this.environment(joinUrl, onBehalfOf, runId, basis),
+      env: this.environment(joinUrl, onBehalfOf, runId, basis, account),
       labels: {
         [LABEL.project]: this.options.project,
         [LABEL.run]: runId,
@@ -282,6 +298,7 @@ export class Orchestrator {
       },
       volume: { name: this.volumeFor(onBehalfOf), target: RECORDINGS_PATH },
       readOnlyBind: { source: this.options.leaseDirectory, target: LEASE_PATH },
+      ...(account !== null && { accountState: { source: account, target: ACCOUNT_STATE_TARGET } }),
       shmBytes: SHM_BYTES,
       limits: this.limits,
       seccompProfile: this.seccompProfile,
@@ -339,6 +356,7 @@ export class Orchestrator {
 
   private async onExit(managed: Managed, code: number | null): Promise<void> {
     this.running.delete(managed.id);
+    await this.releaseAccount(managed.runId);
     if (code === 0) {
       this.exits.set(managed.id, { kind: "finished", outcome: managed.outcome });
       this.log(`контейнер ${managed.id} закончил встречу: ${managed.outcome ?? "исход не назван"}`);
@@ -414,6 +432,8 @@ export class Orchestrator {
       );
     }, this.options.leaseIntervalMs ?? LEASE_WRITE_INTERVAL_MS);
     await this.reconcile();
+    const liveRuns = new Set(Array.from(this.running.values(), (managed) => managed.runId));
+    await this.options.account?.sweep(liveRuns);
   }
 
   /**
@@ -446,12 +466,18 @@ export class Orchestrator {
 
     this.reserveSlot();
     try {
-      return await this.launch(
-        this.spec(pinned, person, runId, basis),
-        runId,
-        person,
-        basis?.grantToken ?? this.options.token,
-      );
+      const account = (await this.options.account?.prepare(runId)) ?? null;
+      try {
+        return await this.launch(
+          this.spec(pinned, person, runId, basis, account),
+          runId,
+          person,
+          basis?.grantToken ?? this.options.token,
+        );
+      } catch (error) {
+        await this.releaseAccount(runId);
+        throw error;
+      }
     } finally {
       this.starting -= 1;
     }

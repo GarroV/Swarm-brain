@@ -64,6 +64,7 @@ const M = {
   foreign: crypto.randomUUID(),
   mixed: crypto.randomUUID(),
   stale: crypto.randomUUID(),
+  account: crypto.randomUUID(),
 };
 
 async function sha256Hex(value: string): Promise<string> {
@@ -148,6 +149,7 @@ async function seed(): Promise<void> {
     meeting(M.foreign, WS_OTHER, OUTSIDER_ID, "Чужой совет"),
     meeting(M.mixed, WS, OWNER_ID, "Всё сразу"),
     meeting(M.stale, WS, OWNER_ID, "Упавшая отправка"),
+    meeting(M.account, WS, OWNER_ID, "Созвон под аккаунтом бота"),
     ...FLOOD_MEETINGS.map((id, i) => meeting(id, WS, FLOOD_ID, `Поток ${i}`)),
   ]);
 }
@@ -239,7 +241,10 @@ interface Outcome {
 // строки нет — непривязанный), к meeting_key — календарный пропуск задания по этому событию.
 // Токен агента остаётся у сценариев, где за человека его не указали: там ждётся отказ.
 const grantCacheByScope = new Map<string, Promise<string>>();
-const seededMeetings = new Set<string>([...Object.values(M), ...FLOOD_MEETINGS]);
+const seededMeetings = new Set<string>([
+  ...Object.values(M),
+  ...FLOOD_MEETINGS,
+]);
 
 function grantFor(person: number, body: unknown): Promise<string> {
   const b = typeof body === "object" && body !== null
@@ -470,6 +475,13 @@ async function meetingScenarios(
       await scenario("встречи нет или она кончилась", {
         kind: "meeting_unavailable",
         meeting_id: M.late,
+      }, behalf),
+    ),
+    // Вход аккаунта бота слетел (T175): чинит тот, кто ведёт аккаунт, — хост тут ни при чём.
+    notDeclined(
+      await scenario("Google просит заново войти в аккаунт бота", {
+        kind: "account_signin_required",
+        meeting_id: M.account,
       }, behalf),
     ),
     await scenario("иная причина захода", {

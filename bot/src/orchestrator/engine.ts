@@ -19,6 +19,10 @@ export interface ContainerSpec {
    * Каталог хоста только на чтение: поводок оркестратора.
    */
   readonly readOnlyBind: { readonly source: string; readonly target: string };
+  /**
+   * Копия входа аккаунта бота (T175) — один файл хоста только на чтение. Нет — бот идёт гостем.
+   */
+  readonly accountState?: { readonly source: string; readonly target: string };
   readonly shmBytes: number;
   /**
    * Потолки ресурсов хоста на одну встречу.

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Meet - redirecting to sign-in</title>
+  </head>
+  <body>
+    <!-- Сессии нет: Meet уводит на страницу входа Google (T175). -->
+    <script>
+      location.replace(
+        "https://accounts.google.com/v3/signin/identifier?continue=https%3A%2F%2Fmeet.google.com%2Fabc-defg-hij",
+      );
+    </script>
+  </body>
+</html>

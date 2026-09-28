@@ -91,7 +91,11 @@ function handleNotice(
   };
 }
 
-export async function startNoticeProxy(port: number, upstreamPort: number): Promise<NoticeProxy> {
+export async function startNoticeProxy(
+  port: number,
+  upstreamPort: number,
+  host = "127.0.0.1",
+): Promise<NoticeProxy> {
   const notices: RecordedNotice[] = [];
   const counts = new Map<string, number>();
   const server = createServer((incoming, response) => {
@@ -117,9 +121,11 @@ export async function startNoticeProxy(port: number, upstreamPort: number): Prom
       answer(response, result.status, result.body);
     });
   });
-  // Как и fake-swarm — только loopback: Docker Desktop доводит host.docker.internal до него.
+  // Как и fake-swarm — по умолчанию только loopback: Docker Desktop доводит host.docker.internal
+  // до него. Смоук, который сам живёт в контейнере (стенд MUSPELHEIM), слушает на всех
+  // интерфейсах контейнера, и порт публикуется наружу только туда, куда велит стенд.
   await new Promise<void>((resolve) => {
-    server.listen(port, "127.0.0.1", resolve);
+    server.listen(port, host, resolve);
   });
   return {
     notices,

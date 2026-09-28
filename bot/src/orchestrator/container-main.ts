@@ -196,8 +196,10 @@ async function main(): Promise<number> {
   });
 
   const browser = await chromium.launch(meetLaunchOptions());
+  if (config.accountStatePath !== null) log("вход в Meet — под аккаунтом бота");
   const adapter = new MeetAdapter({
     browser,
+    ...(config.accountStatePath !== null && { storageStatePath: config.accountStatePath }),
     log: (line) => {
       log(`meet: ${line}`);
     },

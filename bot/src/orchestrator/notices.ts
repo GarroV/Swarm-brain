@@ -13,6 +13,7 @@ type MeetingNoticeKind =
   | "door_denied"
   | "door_blocked"
   | "meeting_unavailable"
+  | "account_signin_required"
   | "captcha"
   | "no_audio"
   | "recording_lost"

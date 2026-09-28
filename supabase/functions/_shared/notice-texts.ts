@@ -52,6 +52,15 @@ export const NOTICE_TEXTS: Record<NoticeTextKey, Record<NoticeLang, string>> = {
     ru:
       "«<b>{title}</b>»: Google Meet сообщил, что такой встречи нет или она уже закончилась, — scriba было некуда заходить. Проверьте ссылку на встречу; если встреча переехала на новую ссылку, позовите scriba по ней. Запись вестись не будет.",
   },
+  // Сохранённый вход аккаунта бота не действует: Google показал страницу входа или попросил
+  // подтвердить, что это он. Организатор встречи тут ни при чём — войти заново должен тот, кто
+  // ведёт аккаунт бота; пароль бот не вводит и не хранит.
+  account_signin_required: {
+    en:
+      "<b>{title}</b>: scriba couldn't get to the meeting: Google asked it to sign in to its Google account again (the saved sign-in expired or Google wants to confirm it). This isn't about the meeting's settings — whoever runs scriba needs to sign the bot in again, then invite it once more. The meeting will not be recorded.",
+    ru:
+      "«<b>{title}</b>»: scriba не дошёл до встречи: Google попросил его заново войти в свой аккаунт Google (сохранённый вход истёк или Google хочет его подтвердить). Настройки встречи тут ни при чём — тому, кто ведёт scriba, нужно войти за бота заново и позвать его ещё раз. Запись вестись не будет.",
+  },
   // На входе капча. Бот её не проходит по устройству, ждать бесполезно.
   captcha: {
     en:

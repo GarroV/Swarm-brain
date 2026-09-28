@@ -69,6 +69,16 @@ export class DockerodeEngine implements ContainerEngine {
             Target: spec.readOnlyBind.target,
             ReadOnly: true,
           },
+          ...(spec.accountState === undefined
+            ? []
+            : [
+                {
+                  Type: "bind" as const,
+                  Source: spec.accountState.source,
+                  Target: spec.accountState.target,
+                  ReadOnly: true,
+                },
+              ]),
         ],
         // Двойник сервера в смоуке живёт на хосте; в Docker на Linux без этой строки
         // host.docker.internal не резолвится.

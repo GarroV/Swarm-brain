@@ -49,6 +49,13 @@ export interface MeetAdapterDependencies {
    * ответов `meet.google.com` страницами-двойниками — прод-путь при этом не меняется.
    */
   readonly prepareContext?: (context: BrowserContext) => Promise<void>;
+  /**
+   * Сохранённый вход аккаунта бота (Playwright storageState, T175). Есть — бот идёт под своим
+   * аккаунтом Google: имя берётся из профиля, поле имени гостя не заполняется, а страница
+   * входа вместо встречи — это `signin_required`. Нет — бот идёт гостем, как раньше.
+   * Содержимое файла адаптер не читает и не пишет в журнал: его открывает сам Chromium.
+   */
+  readonly storageStatePath?: string;
 }
 
 /**
@@ -139,13 +146,30 @@ export class MeetAdapter implements PlatformAdapter {
     }
   }
 
+  async #typeGuestName(displayName: string): Promise<void> {
+    const nameInput = await this.#findVisible(NAME_INPUT_SELECTORS);
+    if (nameInput === null) {
+      this.#log("поле имени не найдено — либо это не лобби гостя, либо вёрстка изменилась");
+      return;
+    }
+    await nameInput.click();
+    await nameInput.fill("");
+    await nameInput.pressSequentially(displayName, { delay: TYPE_DELAY_MS });
+  }
+
+  get #isSignedIn(): boolean {
+    return this.#deps.storageStatePath !== undefined;
+  }
+
   async join(url: string, displayName: string): Promise<void> {
     const target = pinMeetLocale(url);
     this.#displayName = displayName;
+    const storageState = this.#deps.storageStatePath;
 
     const context = await this.#deps.browser.newContext({
       locale: MEET_BROWSER_LANG,
       viewport: { width: 1280, height: 720 },
+      ...(storageState !== undefined && { storageState }),
     });
     this.#context = context;
     await this.#deps.prepareContext?.(context);
@@ -153,19 +177,25 @@ export class MeetAdapter implements PlatformAdapter {
     const page = await context.newPage();
     this.#page = page;
     await page.goto(target, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS });
-    this.#log(`открыта встреча ${target} под именем «${displayName}»`);
+    this.#log(
+      this.#isSignedIn
+        ? `открыта встреча ${target} под аккаунтом бота (имя — из профиля)`
+        : `открыта встреча ${target} под именем «${displayName}»`,
+    );
 
     await this.#wakeUi();
     // Диалог «камеры и микрофона нет»: без него Meet не пускает дальше на машине без устройств.
     await this.#clickFirst(NO_DEVICE_CONTINUE_SELECTORS, "продолжить без устройств");
 
-    const nameInput = await this.#findVisible(NAME_INPUT_SELECTORS);
-    if (nameInput === null) {
-      this.#log("поле имени не найдено — либо это не лобби гостя, либо вёрстка изменилась");
+    if (this.#isSignedIn) {
+      // Слетевший вход — не повод стучаться гостем: вердикт вынесет waitAdmitted.
+      const verdict = classifyAdmission(await this.#snapshot(), { isSignedIn: true });
+      if (verdict.state === "signin_required") {
+        this.#log(`вход аккаунта не действует — в дверь не стучимся: ${verdict.reason}`);
+        return;
+      }
     } else {
-      await nameInput.click();
-      await nameInput.fill("");
-      await nameInput.pressSequentially(displayName, { delay: TYPE_DELAY_MS });
+      await this.#typeGuestName(displayName);
     }
 
     await this.#clickFirst(MIC_OFF_SELECTORS, "выключить микрофон");
@@ -187,7 +217,7 @@ export class MeetAdapter implements PlatformAdapter {
 
     while (Date.now() < deadline) {
       await this.#wakeUi();
-      const verdict = classifyAdmission(await this.#snapshot());
+      const verdict = classifyAdmission(await this.#snapshot(), { isSignedIn: this.#isSignedIn });
       lastReason = verdict.reason;
 
       if (verdict.state !== "waiting") {

@@ -135,6 +135,7 @@ export type MeetingOutcome =
   | "door_denied"
   | "door_blocked"
   | "meeting_unavailable"
+  | "account_signin_required"
   | "door_timeout"
   | "captcha"
   | "stopped_at_door"
@@ -274,6 +275,10 @@ async function passDoor(context: RunContext): Promise<DoorResult> {
     case "unavailable": {
       await sendNotice(context, { kind: "meeting_unavailable", meetingId });
       return "meeting_unavailable";
+    }
+    case "signin_required": {
+      await sendNotice(context, { kind: "account_signin_required", meetingId });
+      return "account_signin_required";
     }
     case "captcha": {
       await sendNotice(context, { kind: "captcha", meetingId });
