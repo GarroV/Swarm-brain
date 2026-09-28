@@ -36,6 +36,22 @@ export const NOTICE_TEXTS: Record<NoticeTextKey, Record<NoticeLang, string>> = {
       "<b>{title}</b>: the host declined scriba's request to join. There's nothing to wait for — the meeting will not be recorded.",
     ru: "«<b>{title}</b>»: организатор отклонил заявку scriba на вход. Ждать нечего — запись вестись не будет.",
   },
+  // Meet показал «You can't join this video call» ещё до лобби. Никто вход не отклонял: так
+  // Google отвечает гостю без аккаунта, когда доступ встречи — «Trusted» (по умолчанию в
+  // рабочем домене), и ровно так же — на неверную ссылку. Говорим обе причины и что сделать.
+  door_blocked: {
+    en:
+      "<b>{title}</b>: Google Meet didn't let scriba in: it showed \"You can't join this video call\" before the waiting room, so nobody even saw a request to join. Usually this means the meeting only admits people with an account from your organization, and scriba joins as a guest without one. To record this meeting, set Host controls → Meeting access to <b>Open</b> and invite scriba again; otherwise it will be able to join once it has its own account. If access is already Open, check the meeting link. The meeting will not be recorded.",
+    ru:
+      "«<b>{title}</b>»: Google Meet не пустил scriba: ещё до комнаты ожидания он показал «You can't join this video call», так что заявку на вход никто даже не увидел. Обычно это значит, что встреча пускает только людей с аккаунтом вашей организации, а scriba заходит гостем без аккаунта. Чтобы записать встречу, в настройках организатора поставьте доступ к встрече <b>«Открытый»</b> (Meeting access → Open) и позовите scriba снова; иначе бот сможет заходить, когда у него появится свой аккаунт. Если доступ уже открытый — проверьте ссылку на встречу. Запись вестись не будет.",
+  },
+  // Страница прямо говорит, что встречи нет: неверный код или встреча уже закончилась.
+  meeting_unavailable: {
+    en:
+      "<b>{title}</b>: Google Meet says this meeting doesn't exist or has already ended, so scriba had nowhere to join. Check the meeting link — if the meeting was moved to a new link, invite scriba with that one. The meeting will not be recorded.",
+    ru:
+      "«<b>{title}</b>»: Google Meet сообщил, что такой встречи нет или она уже закончилась, — scriba было некуда заходить. Проверьте ссылку на встречу; если встреча переехала на новую ссылку, позовите scriba по ней. Запись вестись не будет.",
+  },
   // На входе капча. Бот её не проходит по устройству, ждать бесполезно.
   captcha: {
     en:

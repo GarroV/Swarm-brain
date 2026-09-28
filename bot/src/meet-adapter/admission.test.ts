@@ -70,12 +70,34 @@ describe("classifyAdmission", () => {
     );
   });
 
-  it("страница ошибки («check your meeting code») — отказ, а не ожидание", () => {
-    expect(classifyAdmission(snapshot({ text: "Check your meeting code" })).state).toBe("denied");
+  it("страница ошибки («check your meeting code») — встречи нет, а не отказ хоста", () => {
+    expect(classifyAdmission(snapshot({ text: "Check your meeting code" })).state).toBe(
+      "unavailable",
+    );
   });
 
-  it("встреча закончилась — отказ", () => {
-    expect(classifyAdmission(snapshot({ text: "This meeting has ended" })).state).toBe("denied");
+  it("встреча закончилась — встречи нет, а не отказ хоста", () => {
+    expect(classifyAdmission(snapshot({ text: "This meeting has ended" })).state).toBe(
+      "unavailable",
+    );
+  });
+
+  it("живая страница «You can’t join this video call» (снята 28.09 с meet.google.com) — не пустили гостя, а не отказ хоста", () => {
+    const livePage =
+      "You can’t join this video call\nReturn to home screen\nSubmit feedback\nYour meeting is safe\n" +
+      "No one can join a meeting unless invited or admitted by the host\nLearn more";
+    const verdict = classifyAdmission(snapshot({ text: livePage }));
+    expect(verdict.state).toBe("blocked");
+    expect(verdict.reason).toMatch(/can't join this video call/);
+  });
+
+  it("прямой отказ хоста остаётся отказом, даже рядом с текстом страницы ошибки", () => {
+    const verdict = classifyAdmission(
+      snapshot({
+        text: "Someone in the call denied your request to join. You can't join this video call",
+      }),
+    );
+    expect(verdict.state).toBe("denied");
   });
 
   it("живая капча поверх ожидания — капча", () => {

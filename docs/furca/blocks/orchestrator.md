@@ -45,6 +45,23 @@ ARCHITECTURE.md (разделы «Автозапуск по календарю»
 
 T168 принят и влит; его хвосты — в `git log -p` этого файла (коммит «T168: состояние»). Открытое с T164: на проде ждёт миграции, функции, `CRON_SECRET` и pg_cron (в окно, по «да» владельца); сцена `takeover` в `bot/src/orchestrator/smoke-pulse.ts` устарела (issue #608).
 
+## T173 — страница ошибки Meet больше не выдаётся за отказ хоста
+
+**2026-09-28 · код и юниты готовы, смоук на MUSPELHEIM — в работе.** Факт 28.09 с живого
+meet.google.com: гостю без аккаунта на встрече с доступом «Trusted» и на несуществующий код Google
+показывает слово в слово один экран («You can't join this video call», «Your meeting is safe») —
+причину со страницы не различить. Поэтому: `admission.ts` → `blocked` (этот экран и родня) и
+`unavailable` (явное «check your meeting code» / «meeting has ended»); `run-meeting.ts` шлёт
+`door_blocked` / `meeting_unavailable`; сервер (`_shared/notices.ts`, `notice-texts.ts`) их
+принимает, тексты EN+RU называют обе причины и что сделать (доступ «Open» или ждать аккаунт бота;
+проверить ссылку). Прямой отказ хоста — по-прежнему `door_denied`. Схема не менялась (у
+`meeting_notices.kind` нет check). Раскатка: сервер раньше бота.
+
+Проверено: юниты бота 82 в двух файлах (порчи: `blocked`→`denied` в admission и
+`door_blocked`→`door_denied` в run-meeting — по одному красному), сервер `notices.test.ts` 22 +
+`meeting-notice` (новые два теста красные до кода). Остаётся: смоук адаптера с двойниками
+`blocked.html`/`unavailable.html` и живой сценой, `scriba-notices-smoke.ts` с двумя новыми сценами.
+
 ## T166 — бот по календарю идёт только туда, где человек ответил «да» (D024)
 
 **2026-09-28 · готово, живой смоук зелёный.** Одно правило

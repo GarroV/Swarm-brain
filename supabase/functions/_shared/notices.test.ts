@@ -143,6 +143,32 @@ Deno.test("неизвестный kind отвергается и перечис�
   assert(e.message.includes("door_waiting"), "в отказе должен быть список допустимых kind");
 });
 
+Deno.test("страница ошибки Meet — свои виды, а не «хост отклонил»: сервер их принимает и привязывает к встрече", () => {
+  for (const kind of ["door_blocked", "meeting_unavailable"]) {
+    const parsed = notice({ kind });
+    assertEquals(parsed.kind, kind);
+    assertEquals(parsed.scope.type, "meeting");
+  }
+});
+
+Deno.test("текст страницы ошибки не говорит, что кто-то отклонил вход, и говорит, что сделать", () => {
+  for (const lang of NOTICE_LANGS) {
+    const blocked = renderNotice(notice({ kind: "door_blocked", lang }), null, 1);
+    const unavailable = renderNotice(notice({ kind: "meeting_unavailable", lang }), null, 1);
+    const denied = renderNotice(notice({ kind: "door_denied", lang }), null, 1);
+    for (const text of [blocked, unavailable]) {
+      assert(!/declined|отклонил/i.test(text), `${lang}: никто не отклонял — ${text}`);
+      assert(text !== denied, `${lang}: текст совпал с отказом хоста`);
+    }
+    assert(
+      blocked.includes(lang === "en" ? "Open" : "«Открытый»"),
+      `${lang}: не сказано, какой доступ открыть — ${blocked}`,
+    );
+    assert(/account|аккаунт/i.test(blocked), `${lang}: не сказано про аккаунт бота — ${blocked}`);
+    assert(/link|ссылк/i.test(unavailable), `${lang}: не сказано проверить ссылку — ${unavailable}`);
+  }
+});
+
 Deno.test("тело без kind и тело не-объект отвергаются, а не проглатываются", () => {
   for (const bad of [null, "door_waiting", 42, [], {}, { kind: "" }, { kind: 7 }]) {
     const e = assertThrows(() => parseNotice(bad), NoticeError, undefined, `тело ${JSON.stringify(bad)}`);

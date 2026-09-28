@@ -41,6 +41,8 @@
 | --- | --- | --- |
 | `door_waiting` | `meeting_id` | стоит у двери 90 с; второй вызов через 3 мин — единственный повтор |
 | `door_denied` | `meeting_id` | хост отклонил вход |
+| `door_blocked` | `meeting_id` | Meet ещё до лобби показал «You can't join this video call»: встреча не пускает гостя без аккаунта (или ссылка неверна — Google отвечает тем же экраном); хост заявки не видел |
+| `meeting_unavailable` | `meeting_id` | страница прямо говорит, что встречи нет или она кончилась |
 | `captcha` | `meeting_id` | на входе капча — бот её не проходит |
 | `no_conference_link` | `meeting_key` | `meeting-current` вернул `reason: "no_conference_link"` |
 | `no_owner` | `meeting_key` | владелец встречи не определился — бот не заходит |
@@ -87,7 +89,7 @@ true`; дальше 409. Прочие виды — по одному на вст
 Сперва `meeting-claim` (он даёт `meeting_id`), потом заход. `waitAdmitted(90_000)` вернул `timeout`
 → `POST /meeting-notice {kind:"door_waiting", meeting_id}` → ждать `next_reminder_in_s` секунд →
 если всё ещё не впустили, тот же вызов ещё раз → выйти по `should_leave`. `denied` → `door_denied`,
-`captcha` → `captcha`, дальше по таблице видов. Ответ 4xx/5xx — не повод замолчать: его текст
+`blocked` → `door_blocked`, `unavailable` → `meeting_unavailable`, `captcha` → `captcha`, дальше по таблице видов. Ответ 4xx/5xx — не повод замолчать: его текст
 пишется в лог контейнера целиком. Потребителя в `bot/` пока нет (оркестратор не построен).
 
 ## Поверхность в рекордере (T162 → T170, D022, D025: не Telegram, наша капсула)

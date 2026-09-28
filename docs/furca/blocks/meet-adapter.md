@@ -10,7 +10,7 @@
 ```ts
 export interface PlatformAdapter {
   join(url: string, displayName: string): Promise<void>;
-  waitAdmitted(timeoutMs: number): Promise<"admitted" | "denied" | "timeout" | "captcha">;
+  waitAdmitted(timeoutMs: number): Promise<"admitted" | "denied" | "blocked" | "unavailable" | "timeout" | "captcha">;
   activeSpeaker(): Promise<string | null>;
   isAlone(): Promise<boolean>;
   leave(): Promise<void>;
@@ -46,7 +46,7 @@ export interface PlatformAdapter {
 | `types.ts` | `PlatformAdapter`, `MeetSnapshot`, `MeetTile` — единственная форма, в которой знание о странице покидает браузер |
 | `url.ts` | пиннинг `?hl=en`, отказ от чужой площадки и не-https |
 | `dom.ts` | СЕЛЕКТОРЫ и скрапер `collectMeetSnapshot()` — исполняется в контексте страницы, потому самодостаточен |
-| `admission.ts` | вердикт двери по снимку: `admitted` / `denied` / `captcha` / `waiting` |
+| `admission.ts` | вердикт двери по снимку: `admitted` / `denied` (отказал хост) / `blocked` (Meet не пустил гостя до лобби, хост заявки не видел) / `unavailable` (встречи нет или кончилась) / `captcha` / `waiting` |
 | `speakers.ts` | говорящий и число участников по снимку |
 | `alone.ts` | правило «2 минуты один — выходим» (`AloneTimer`) и сторож `watchAlone` |
 | `meet.ts` | `MeetAdapter` — Playwright вокруг перечисленного |
@@ -71,6 +71,8 @@ export interface PlatformAdapter {
 | `lobby.html` | `input[jsname][type=text][aria-label="Your name"]`; `button[aria-label="Ask to join"]`; кнопки `Turn off microphone` / `Turn off camera`; НЕТ `[data-participant-id]` |
 | `waiting.html` | текст «Asking to be let in»; ни поля имени, ни плиток |
 | `denied.html` | «Someone in the call denied your request to join» И оставшийся текст лобби «Asking to be let in» И кнопка «Return to home screen» (ловушка: она не отказ) |
+| `blocked.html` | живой текст meet.google.com 28.09.2026: «You can’t join this video call», «Your meeting is safe», «Return to home screen» → `blocked` |
+| `unavailable.html` | «Check your meeting code» → `unavailable` |
 | `captcha.html` | текст ожидания + видимый `iframe[src*="recaptcha"]` 304×78 + второй такой же `display:none` (невидимый капчей не считается) |
 | `in-call-speaking.html` | три `[data-participant-id]`: своя с `data-self-name="scriba"`, «Василий Гарро» через `span.notranslate` с `data-audio-level="0.8"`, «Анна» через `aria-label` с `data-audio-level="0"`; панель `[role=list]` с тремя `[role=listitem]`; тулбар (`Leave call`, `Present now`, `People`), который прячется через 1.5 с бездействия (`visibility:hidden`) и возвращается на `mousemove` |
 | `in-call-alone.html` | только своя плитка; панель с одним `[role=listitem]`; тулбар с тем же автоскрытием |
@@ -92,7 +94,7 @@ in_progress · 2026-09-23 · T050–T053 закрыты кодом и смоук
 | адаптер целиком | `node src/meet-adapter/smoke-meet.ts` в контейнере, живой Chromium под Xvfb | 26 проверок, зелено |
 | смоук ловит поломку | те же двойники с порчей (`SCRIBA_MEET_FIXTURES=/tmp/broken/`) | 4 внятных провала, код 1 |
 | пиннинг локали | ЖИВОЙ `meet.google.com`, браузер с `--lang=ru-RU` | без `hl` — русский, с `hl=en` — английский |
-| отказ двери | ЖИВОЙ `meet.google.com`, несуществующий код | «You can't join this video call» → `denied` |
+| страница ошибки | ЖИВОЙ `meet.google.com`, несуществующий код | «You can't join this video call» → `blocked` (28.09.2026: слово в слово тот же экран, что гостю без аккаунта на встрече с доступом «Trusted», — причину со страницы не различить) |
 | граница вёрстки | `depcruise` + поиск селекторов по `bot/` | вне `src/meet-adapter/` ни одного |
 
 Смоук требует живой сети; `SCRIBA_MEET_LIVE=0` пропускает её и выходит кодом 2 — «зелёного нет».

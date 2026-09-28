@@ -127,7 +127,7 @@ export async function resolveActingIdentity(
 ```ts
 export interface PlatformAdapter {
   join(url: string, displayName: string): Promise<void>;
-  waitAdmitted(timeoutMs: number): Promise<"admitted" | "denied" | "timeout" | "captcha">;
+  waitAdmitted(timeoutMs: number): Promise<"admitted" | "denied" | "blocked" | "unavailable" | "timeout" | "captcha">;
   activeSpeaker(): Promise<string | null>;
   isAlone(): Promise<boolean>;
   leave(): Promise<void>;

@@ -1,5 +1,5 @@
 /**
- * Дверь встречи: впустили / отказали / капча / стоим дальше.
+ * Дверь встречи: впустили / отказали / не пустили гостя / встречи нет / капча / стоим дальше.
  *
  * Порядок проверок здесь — не вкусовщина, а чужие оплаченные ошибки (приёмы из Vexa,
  * Apache-2.0):
@@ -19,7 +19,7 @@
  */
 import type { MeetSnapshot } from "./types.ts";
 
-type AdmissionState = "admitted" | "denied" | "captcha" | "waiting";
+type AdmissionState = "admitted" | "denied" | "blocked" | "unavailable" | "captcha" | "waiting";
 
 export interface AdmissionVerdict {
   readonly state: AdmissionState;
@@ -44,20 +44,31 @@ const HOST_DENIAL_PHRASES = [
 ] as const;
 
 /**
-Страница ошибки: войти некуда, ждать нечего.
+Страница ошибки, которая прямо говорит, что встречи нет: код неверный или встреча кончилась.
 */
-const ERROR_PAGE_PHRASES = [
+const UNAVAILABLE_PHRASES = [
   "check your meeting code",
   "meeting not found",
-  "couldn't join the video call",
-  "can't join this call",
-  "cannot join this call",
-  "unable to join",
   "invalid video call name",
   "this meeting has ended",
   "meeting has ended",
   "your meeting code is invalid",
+] as const;
+
+/**
+ * Страница ошибки без объяснения: Meet не пускает гостя ещё до лобби. Хост заявки не видел —
+ * это НЕ его отказ. Живой прогон T004 (28.09.2026): встреча в рабочем домене с доступом
+ * «Trusted» отвечает гостю без аккаунта «You can't join this video call». Тот же экран,
+ * слово в слово, Google отдаёт и на несуществующий код (проверено в тот же день) — существование
+ * встречи он гостю не раскрывает, поэтому причину со страницы не различить и уведомление
+ * называет обе.
+ */
+const BLOCKED_PHRASES = [
   "you can't join this video call",
+  "couldn't join the video call",
+  "can't join this call",
+  "cannot join this call",
+  "unable to join",
 ] as const;
 
 /**
@@ -97,9 +108,14 @@ export function classifyAdmission(snapshot: MeetSnapshot): AdmissionVerdict {
     return { state: "captcha", reason: "на странице живая капча — вход без человека невозможен" };
   }
 
-  const error = firstMatch(text, ERROR_PAGE_PHRASES);
-  if (error !== null) {
-    return { state: "denied", reason: `страница ошибки: «${error}»` };
+  const unavailable = firstMatch(text, UNAVAILABLE_PHRASES);
+  if (unavailable !== null) {
+    return { state: "unavailable", reason: `встречи нет: «${unavailable}»` };
+  }
+
+  const blocked = firstMatch(text, BLOCKED_PHRASES);
+  if (blocked !== null) {
+    return { state: "blocked", reason: `Meet не пустил гостя до лобби: «${blocked}»` };
   }
 
   const waiting = firstMatch(text, WAITING_PHRASES);

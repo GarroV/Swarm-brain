@@ -206,11 +206,14 @@ async function sceneLiveLocale(): Promise<void> {
 /**
  * Живой Google, вторая половина: настоящий адаптер против настоящей вёрстки Meet.
  * Ссылка с несуществующим кодом — единственный исход двери, который воспроизводится без
- * аккаунта и без человека у двери. Google отвечает «You can\'t join this video call», и
- * адаптер обязан назвать это отказом, а не стоять до таймаута.
+ * аккаунта и без человека у двери. Google отвечает «You can\'t join this video call» — тем же
+ * экраном, что и гостю без аккаунта на закрытой встрече (T173), — и адаптер обязан назвать это
+ * «не пустили гостя» (blocked), а не отказом хоста и не стоять до таймаута.
  */
 async function sceneLiveDoor(): Promise<void> {
-  console.log("\n──── живой meet.google.com: несуществующая встреча читается как отказ");
+  console.log(
+    "\n──── живой meet.google.com: несуществующая встреча читается как «не пустили гостя»",
+  );
   const browser = await chromium.launch(meetLaunchOptions());
   try {
     const log: string[] = [];
@@ -223,7 +226,7 @@ async function sceneLiveDoor(): Promise<void> {
     });
 
     await adapter.join(MEETING_URL, "scriba");
-    equals(await adapter.waitAdmitted(20_000), "denied", "живой Meet: несуществующий код");
+    equals(await adapter.waitAdmitted(20_000), "blocked", "живой Meet: несуществующий код");
     console.log(`  из лога адаптера: ${log.at(-1) ?? "(пусто)"}`);
     await adapter.leave();
   } finally {
@@ -237,6 +240,8 @@ async function main(): Promise<void> {
     await sceneLobby(browser);
     await sceneDoor(browser, "waiting.html", "timeout");
     await sceneDoor(browser, "denied.html", "denied");
+    await sceneDoor(browser, "blocked.html", "blocked");
+    await sceneDoor(browser, "unavailable.html", "unavailable");
     await sceneDoor(browser, "captcha.html", "captcha");
     await sceneInCall(browser);
     await sceneAlone(browser);
