@@ -161,6 +161,7 @@ function job(invitedBy: number, key: string, extra: Json = {}): Json {
     title: "Smoke",
     starts_at: iso(1),
     ends_at: iso(30),
+    taken_at: null, // PostgREST: у всех строк пачки одни ключи
     ...extra,
   };
 }
