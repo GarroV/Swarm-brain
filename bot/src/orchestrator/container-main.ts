@@ -23,7 +23,7 @@ import { SwarmClient } from "../swarm-client/client.ts";
 import { UploadQueue } from "../swarm-client/queue.ts";
 import { RecordingSession } from "../swarm-client/session.ts";
 import { SpeakerTimelineCollector } from "../swarm-client/speakers.ts";
-import { manualClaim } from "./claim-request.ts";
+import { claimFor } from "./claim-request.ts";
 import { type MeetingConfig, readMeetingConfig } from "./config.ts";
 import { LeaseTracker, readLease } from "./lease.ts";
 import { inBackground } from "./background.ts";
@@ -185,12 +185,13 @@ async function main(): Promise<number> {
     client,
     queue,
     version: config.version,
-    // Ручной запуск по приглашению из веба (D017): приглашение едет в заявку.
-    claim: manualClaim({
+    // Основание встречи едет в заявку: событие календаря (T100) — календарной заявкой, приглашение
+    // из веба (D017) — ручной.
+    claim: claimFor({
       runId: config.runId,
       version: config.version,
       startedAt: new Date().toISOString(),
-      invite: config.invite,
+      basis: config.calendar ?? config.invite,
     }),
   });
 

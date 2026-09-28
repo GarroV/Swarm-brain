@@ -1,0 +1,112 @@
+// meeting-calendar — бот приходит на встречу сам, по календарю человека (T100, решения D015/D016).
+//
+// Оркестратор под токеном служебного агента зовёт этот эндпоинт раз в минуту. Сервер читает
+// Google-календари людей СВОЕГО воркспейса, включивших автозапуск (allowed_users.scriba_autojoin),
+// берёт встречи Meet, начинающиеся в ближайшие минуты, заводит задание (одно на встречу воркспейса,
+// таблица meeting_calendar_jobs) и отдаёт оркестратору ещё не забранные — каждое ровно один раз.
+//
+// Дальше оркестратор поднимает бота за `invited_by` (X-On-Behalf-Of), бот заявляет встречу в
+// meeting-claim как `calendar` с `calendar_key` — и сервер сам сверяет, что встреча в календаре этого
+// человека (D016, meeting-claim/agent-scope.ts). Задание пропуском в ручную встречу не является.
+//
+// Всё, на что бот не пойдёт, возвращается в `skipped` с причиной — громко (D015):
+//   calendar_not_connected · calendar_token_dead · calendar_unavailable — у человека (ключа нет);
+//   no_conference_link · unsupported_platform · unrecognized_link · declined · manual_invite_exists —
+//   у встречи. Список — _shared/calendar-dispatch.ts (SkipReason).
+//
+// Дверь — resolveServiceAgent: только токен агента, без подмены личности; люди сюда не проходят.
+//
+// POST, тело не читается.
+// 200 { ok: true, jobs: [{ id, calendar_key, invited_by, join_url, platform, title, starts_at, ends_at }],
+//       skipped: [{ invited_by, calendar_key, title, reason, platform? }] }
+// 401 не агент · 403 X-On-Behalf-Of или агент без воркспейса · 405 не POST · 500 сбой базы.
+//
+// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET.
+// Деплой: supabase functions deploy meeting-calendar --no-verify-jwt (бот хитит с Bearer-токеном).
+//
+// URL-импорты — канон этого репозитория: функции деплоятся без карты импортов.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { AgentAuthError, resolveServiceAgent } from "../_shared/agent-auth.ts";
+import { accessToken, listEvents } from "../_shared/google-calendar.ts";
+import { sweep, type SweepSource, type TakenJob } from "./sweep.ts";
+
+const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+const JOB_COLUMNS = "id, calendar_key, invited_by, join_url, platform, title, starts_at, ends_at";
+
+function json(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+}
+
+function fail(what: string, error: { message: string } | null): void {
+  if (error) throw new Error(`${what}: ${error.message}`);
+}
+
+const source: SweepSource = {
+  async autojoinPeople(groupId) {
+    const { data, error } = await supabase.from("allowed_users")
+      .select("telegram_id").eq("group_id", groupId).eq("scriba_autojoin", true).order("telegram_id");
+    fail("allowed_users", error);
+    return (data ?? []).map((r) => (r as { telegram_id: number }).telegram_id);
+  },
+  async liveInviteLinks(groupId, nowIso) {
+    const { data, error } = await supabase.from("meeting_invites")
+      .select("join_url").eq("group_id", groupId).is("used_at", null).gt("expires_at", nowIso);
+    fail("meeting_invites", error);
+    return (data ?? []).map((r) => (r as { join_url: string }).join_url);
+  },
+  async refreshToken(telegramId) {
+    const { data, error } = await supabase.from("user_integrations")
+      .select("api_key").eq("telegram_id", telegramId).eq("service", "google_calendar").maybeSingle();
+    fail("user_integrations", error);
+    return (data as { api_key?: string } | null)?.api_key ?? null;
+  },
+  accessToken,
+  listEvents,
+  async insertJobs(groupId, jobs) {
+    const { error } = await supabase.from("meeting_calendar_jobs")
+      .upsert(jobs.map((j) => ({ ...j, group_id: groupId })), {
+        onConflict: "group_id,calendar_key",
+        ignoreDuplicates: true,
+      });
+    fail("meeting_calendar_jobs insert", error);
+  },
+  async takeJobs(groupId, agentId, nowIso) {
+    // Забор — один условный UPDATE (taken_at is null): два одновременных опроса одну строку не делят.
+    const { data, error } = await supabase.from("meeting_calendar_jobs")
+      .update({ taken_at: nowIso, taken_by: agentId })
+      .eq("group_id", groupId).is("taken_at", null).gt("ends_at", nowIso)
+      .select(JOB_COLUMNS);
+    fail("meeting_calendar_jobs take", error);
+    return ((data ?? []) as TakenJob[]).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  },
+};
+
+Deno.serve(async (req: Request) => {
+  if (req.method !== "POST") return json({ ok: false, error: "method not allowed" }, 405);
+
+  let agent: { agentId: string; groupId: string };
+  try {
+    agent = await resolveServiceAgent(supabase, req);
+  } catch (e) {
+    if (e instanceof AgentAuthError) return json({ ok: false, error: e.message }, e.status);
+    throw e;
+  }
+
+  try {
+    const result = await sweep(source, agent, Date.now());
+    for (const s of result.skipped) {
+      console.warn(
+        `meeting-calendar: ${agent.groupId} ${s.invited_by} ${s.calendar_key ?? "—"} — бот не пойдёт: ${s.reason}`,
+      );
+    }
+    console.log(`meeting-calendar: агент ${agent.agentId} (${agent.groupId}) забрал ${result.jobs.length}`);
+    return json({ ok: true, ...result });
+  } catch (e) {
+    console.error(`meeting-calendar: ${e instanceof Error ? e.message : String(e)}`);
+    return json({ ok: false, error: "calendar sweep failed" }, 500);
+  }
+});

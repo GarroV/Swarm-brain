@@ -5,7 +5,7 @@
  * или кривая обязательная переменная — отказ на старте с именем переменной, а не встреча,
  * которая «пошла» и молча записала в никуда. Список совпадает с `bot/container/.env.example`.
  */
-import type { InviteReference } from "./claim-request.ts";
+import type { CalendarReference, InviteReference } from "./claim-request.ts";
 import type { MeetingTiming } from "./run-meeting.ts";
 
 export const MEETING_ENV = {
@@ -28,6 +28,8 @@ export const MEETING_ENV = {
   smokeMeetPage: "SCRIBA_SMOKE_MEET_PAGE",
   inviteId: "SCRIBA_INVITE_ID",
   inviteJoinUrl: "SCRIBA_INVITE_JOIN_URL",
+  calendarKey: "SCRIBA_CALENDAR_KEY",
+  calendarStartsAt: "SCRIBA_CALENDAR_STARTS_AT",
 } as const;
 
 /**
@@ -63,6 +65,11 @@ export interface MeetingConfig {
    * приглашения (сервер такую ручную заявку агента отвергнет).
    */
   readonly invite: InviteReference | null;
+  /**
+   * Событие календаря (T100), по которому бот заявляет календарную встречу; с приглашением
+   * не сочетается — у встречи одно основание.
+   */
+  readonly calendar: CalendarReference | null;
 }
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -133,9 +140,37 @@ function readInvite(environment: Environment): InviteReference | null {
   return { id, joinUrl };
 }
 
+/**
+ * Событие календаря — ключ и начало вместе, и не вместе с приглашением: заявка по двум основаниям
+ * сразу означала бы, что оркестратор перепутал встречи.
+ */
+function readCalendar(
+  environment: Environment,
+  invite: InviteReference | null,
+): CalendarReference | null {
+  const calendarKey = text(environment, MEETING_ENV.calendarKey);
+  const startsAt = text(environment, MEETING_ENV.calendarStartsAt);
+  if (calendarKey === null && startsAt === null) return null;
+  if (calendarKey === null || startsAt === null) {
+    throw new Error(
+      `${MEETING_ENV.calendarKey} и ${MEETING_ENV.calendarStartsAt} задаются только вместе`,
+    );
+  }
+  if (Number.isNaN(Date.parse(startsAt))) {
+    throw new TypeError(`${MEETING_ENV.calendarStartsAt} не время: «${startsAt}»`);
+  }
+  if (invite !== null) {
+    throw new Error(
+      `у встречи одно основание: ${MEETING_ENV.calendarKey} не сочетается с ${MEETING_ENV.inviteId}`,
+    );
+  }
+  return { calendarKey, startsAt };
+}
+
 export function readMeetingConfig(environment: Environment): MeetingConfig {
   const onBehalfOf = positiveInteger(environment, MEETING_ENV.onBehalfOf);
   if (onBehalfOf === null) throw new Error(`${MEETING_ENV.onBehalfOf} не задан`);
+  const invite = readInvite(environment);
 
   return {
     joinUrl: required(environment, MEETING_ENV.joinUrl),
@@ -152,6 +187,7 @@ export function readMeetingConfig(environment: Environment): MeetingConfig {
     segmentSeconds: positiveInteger(environment, MEETING_ENV.segmentSeconds),
     timing: readTiming(environment),
     smokeMeetPage: text(environment, MEETING_ENV.smokeMeetPage),
-    invite: readInvite(environment),
+    invite,
+    calendar: readCalendar(environment, invite),
   };
 }
