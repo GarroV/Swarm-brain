@@ -83,8 +83,11 @@ export function formatTaskLine(t: {
   /** Родитель: сколько подзадач закрыто из всех, что видны спрашивающему. */
   subtasks?: { done: number; total: number } | null;
   hidden_from_hub?: boolean | null;
+  /** Проект задачи (issue #626): имя, «без проекта» или null — проект зрителю не виден. */
+  project_label?: string | null;
 }): string {
   const who = t.assignees?.join(", ") || "—";
+  const project = t.project_label ? ` | проект: ${t.project_label}` : "";
   const id = t.id ? ` (id: ${t.id})` : "";
   const due = t.due_date ? ` | дедлайн: ${t.due_date}` : "";
   const country = t.country ? ` | ${t.country}` : "";
@@ -96,7 +99,7 @@ export function formatTaskLine(t: {
   // Флаг печатается только включённым: в выдаче он редок, и строка «не скрыта» у каждой задачи
   // была бы шумом. Без пометки агент не узнал бы, почему задачи нет на хабе (issue #562).
   const hidden = t.hidden_from_hub === true ? " 🙈 скрыта с хаба" : "";
-  return `• [${t.status}] ${t.title}${id}${pending}${hidden}\n  Исполнитель: ${who}${due}${country}${parent}${kids}`;
+  return `• [${t.status}] ${t.title}${id}${pending}${hidden}\n  Исполнитель: ${who}${due}${country}${project}${parent}${kids}`;
 }
 
 /**
